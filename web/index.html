@@ -418,7 +418,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     <div class="modal-footer" style="gap:8px">
       <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:6px;align-items:center">
+        <span id="check-update-result" style="font-size:11px;margin-right:4px"></span>
         <button class="btn btn-ghost" id="btn-reload-ui" title="Reload UI without breaking sessions">↻ Reload</button>
         <button class="btn btn-ghost" id="btn-check-update">Check Update</button>
         <button class="btn btn-ghost" id="btn-close-about">Close</button>
@@ -1288,11 +1289,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
   document.getElementById('btn-check-update').addEventListener('click', async () => {
     const btn = document.getElementById('btn-check-update');
-    btn.textContent = lang === 'zh-TW' ? '檢查中...' : 'Checking...';
+    const result = document.getElementById('check-update-result');
     btn.disabled = true;
-    await checkForUpdate();
+    result.style.color = '#565f89';
+    result.textContent = lang === 'zh-TW' ? '檢查中...' : 'Checking...';
+
+    try {
+      const raw = await pywebview.api.check_update();
+      const info = JSON.parse(raw);
+      if (info.error) {
+        result.style.color = '#f7768e';
+        result.textContent = lang === 'zh-TW' ? '檢查失敗' : 'Check failed';
+      } else if (info.update_available) {
+        result.style.color = '#e0af68';
+        result.textContent = lang === 'zh-TW' ? `v${info.remote} 可更新` : `v${info.remote} available`;
+      } else {
+        result.style.color = '#9ece6a';
+        result.textContent = lang === 'zh-TW' ? '✓ 已是最新版' : '✓ Up to date';
+      }
+    } catch(e) {
+      result.style.color = '#f7768e';
+      result.textContent = lang === 'zh-TW' ? '檢查失敗' : 'Failed';
+    }
     btn.disabled = false;
-    btn.textContent = lang === 'zh-TW' ? '檢查更新' : 'Check Update';
+    // Also refresh the header status
+    checkForUpdate();
   });
   document.getElementById('btn-reload-ui').addEventListener('click', () => location.reload());
   $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
