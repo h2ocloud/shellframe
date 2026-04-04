@@ -1286,7 +1286,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch(e) {}
   });
   document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
-  document.getElementById('btn-check-update').addEventListener('click', () => checkForUpdate());
+  document.getElementById('btn-check-update').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-check-update');
+    btn.textContent = lang === 'zh-TW' ? '檢查中...' : 'Checking...';
+    btn.disabled = true;
+    await checkForUpdate();
+    btn.disabled = false;
+    btn.textContent = lang === 'zh-TW' ? '檢查更新' : 'Check Update';
+  });
   document.getElementById('btn-reload-ui').addEventListener('click', () => location.reload());
   $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
 
@@ -1311,19 +1318,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         $updateStatus.textContent = info.error;
       } else if (info.update_available) {
         $updateStatus.className = 'status available';
-        $updateStatus.textContent = `Update available: v${info.remote} (current: v${info.local})`;
+        $updateStatus.textContent = lang === 'zh-TW'
+          ? `有新版本：v${info.remote}（目前 v${info.local}）`
+          : `Update available: v${info.remote} (current: v${info.local})`;
         const btn = document.createElement('button');
         btn.className = 'btn-update';
-        btn.textContent = 'Update now';
+        btn.textContent = lang === 'zh-TW' ? '立即更新' : 'Update now';
         btn.addEventListener('click', doUpdate);
         $updateBar.appendChild(btn);
       } else {
         $updateStatus.className = 'status up-to-date';
-        $updateStatus.textContent = `Up to date (v${info.local})`;
+        $updateStatus.textContent = (lang === 'zh-TW' ? '✓ 已是最新版' : '✓ Up to date') + ` (v${info.local})`;
       }
     } catch(e) {
       $updateStatus.className = 'status error';
-      $updateStatus.textContent = 'Update check failed';
+      $updateStatus.textContent = lang === 'zh-TW' ? '檢查更新失敗' : 'Update check failed';
     }
   }
 
