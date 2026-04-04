@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>cli-gui</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
+
+  /* ── Tab bar ── */
+  #tab-bar {
+    display: flex; align-items: center; background: #16161e; border-bottom: 1px solid #292e42;
+    height: 38px; padding: 0 4px; -webkit-app-region: drag; user-select: none;
+  }
+  .tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; margin: 3px 2px; border-radius: 6px;
+    font-size: 12px; cursor: pointer; white-space: nowrap;
+    background: transparent; color: #565f89; border: none;
+    -webkit-app-region: no-drag; transition: all .15s;
+  }
+  .tab:hover { background: #1a1b26; color: #a9b1d6; }
+  .tab.active { background: #1a1b26; color: #c0caf5; }
+  .tab .icon { font-size: 13px; }
+  .tab .close-tab {
+    margin-left: 4px; font-size: 14px; color: #565f89; border: none;
+    background: none; cursor: pointer; border-radius: 3px; padding: 0 3px;
+    line-height: 1; -webkit-app-region: no-drag;
+  }
+  .tab .close-tab:hover { color: #f7768e; background: #292e42; }
+  #btn-new-tab {
+    padding: 4px 10px; margin-left: 2px; background: none; border: 1px solid #292e42;
+    color: #565f89; border-radius: 6px; cursor: pointer; font-size: 16px;
+    -webkit-app-region: no-drag; transition: all .15s;
+  }
+  #btn-new-tab:hover { background: #292e42; color: #7aa2f7; }
+
+  /* ── Image preview ── */
+  #image-bar {
+    display: none; align-items: center; gap: 10px;
+    padding: 6px 12px; background: #1f2335; border-bottom: 1px solid #292e42;
+  }
+  #image-bar img { max-height: 54px; max-width: 100px; border-radius: 4px; border: 1px solid #3b4261; }
+  #image-bar .info { flex: 1; font-size: 11px; }
+  #image-bar .info .path { color: #7aa2f7; font-family: monospace; }
+  #image-bar .close-img {
+    color: #565f89; cursor: pointer; font-size: 16px; padding: 2px 6px;
+    border: none; background: none; border-radius: 3px;
+  }
+  #image-bar .close-img:hover { color: #f7768e; background: #292e42; }
+
+  /* ── Terminal area ── */
+  #terminal-wrap { flex: 1; position: relative; }
+  .term-pane { position: absolute; inset: 0; display: none; }
+  .term-pane.active { display: block; }
+
+  body { display: flex; flex-direction: column; }
+
+  /* ── New-tab modal ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    z-index: 100; justify-content: center; align-items: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #1f2335; border: 1px solid #292e42; border-radius: 12px;
+    padding: 20px; width: 420px; max-height: 80vh; overflow-y: auto;
+  }
+  .modal h2 { font-size: 15px; color: #c0caf5; margin-bottom: 14px; font-weight: 500; }
+  .preset-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .preset-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    background: #24283b; border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+    transition: all .15s;
+  }
+  .preset-item:hover { border-color: #7aa2f7; background: #292e42; }
+  .preset-item .p-icon { font-size: 18px; }
+  .preset-item .p-info { flex: 1; }
+  .preset-item .p-name { font-size: 13px; color: #c0caf5; }
+  .preset-item .p-cmd { font-size: 11px; color: #565f89; font-family: monospace; }
+  .preset-item .p-del {
+    color: #565f89; border: none; background: none; cursor: pointer;
+    font-size: 14px; padding: 2px 6px; border-radius: 3px;
+  }
+  .preset-item .p-del:hover { color: #f7768e; background: #1a1b26; }
+
+  .custom-cmd { display: flex; gap: 8px; }
+  .custom-cmd input {
+    flex: 1; background: #24283b; border: 1px solid #3b4261; border-radius: 6px;
+    padding: 8px 10px; color: #c0caf5; font-size: 13px; font-family: monospace;
+    outline: none;
+  }
+  .custom-cmd input:focus { border-color: #7aa2f7; }
+  .custom-cmd input::placeholder { color: #3b4261; }
+  .btn {
+    padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 500; transition: all .15s;
+  }
+  .btn-primary { background: #7aa2f7; color: #1a1b26; }
+  .btn-primary:hover { background: #89b4fa; }
+  .btn-ghost { background: none; color: #565f89; }
+  .btn-ghost:hover { color: #a9b1d6; }
+  .modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+
+  /* ── Save preset modal ── */
+  .save-row { display: flex; gap: 8px; margin-top: 10px; }
+  .save-row input { flex: 1; background: #24283b; border: 1px solid #3b4261; border-radius: 6px; padding: 6px 8px; color: #c0caf5; font-size: 12px; outline: none; }
+  .save-row input:focus { border-color: #7aa2f7; }
+</style>
+</head>
+<body>
+
+<!-- Tab bar -->
+<div id="tab-bar">
+  <div id="tabs"></div>
+  <button id="btn-new-tab" title="New tab">+</button>
+</div>
+
+<!-- Image preview -->
+<div id="image-bar">
+  <img id="preview-img"/>
+  <div class="info">
+    <div>Screenshot attached</div>
+    <div class="path" id="image-path"></div>
+  </div>
+  <button class="close-img" id="close-preview" title="Remove">&times;</button>
+</div>
+
+<!-- Terminal panes -->
+<div id="terminal-wrap"></div>
+
+<!-- New tab modal -->
+<div class="modal-overlay" id="modal-new">
+  <div class="modal">
+    <h2>New Session</h2>
+    <div class="preset-list" id="preset-list"></div>
+    <div class="custom-cmd">
+      <input type="text" id="custom-cmd" placeholder="custom command, e.g. claude --channels plugin:telegram"/>
+      <button class="btn btn-primary" id="btn-run-custom">Run</button>
+    </div>
+    <div class="save-row" id="save-row" style="display:none">
+      <input type="text" id="save-name" placeholder="Preset name"/>
+      <input type="text" id="save-icon" placeholder="Icon" value="⚙️" style="width:50px;text-align:center"/>
+      <button class="btn btn-primary" id="btn-save-preset">Save</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-toggle-save">Save as preset...</button>
+      <button class="btn btn-ghost" id="btn-cancel-modal">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+<script>
+(function() {
+  const THEME = {
+    background: '#1a1b26', foreground: '#a9b1d6', cursor: '#c0caf5',
+    selectionBackground: '#33467c',
+    black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
+    blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+    brightBlack: '#414868', brightRed: '#f7768e', brightGreen: '#9ece6a',
+    brightYellow: '#e0af68', brightBlue: '#7aa2f7', brightMagenta: '#bb9af7',
+    brightCyan: '#7dcfff', brightWhite: '#c0caf5'
+  };
+
+  // State
+  let sessions = {};   // sid -> { term, fitAddon, cmd, imagePath }
+  let activeId = null;
+  let config = null;
+
+  const $tabs = document.getElementById('tabs');
+  const $wrap = document.getElementById('terminal-wrap');
+  const $modal = document.getElementById('modal-new');
+  const $presets = document.getElementById('preset-list');
+  const $customCmd = document.getElementById('custom-cmd');
+
+  // ── API bridge ──
+  function waitApi() {
+    return new Promise(r => {
+      if (window.pywebview?.api) return r();
+      window.addEventListener('pywebviewready', r);
+    });
+  }
+
+  // ── Config / presets ──
+  async function loadConfig() {
+    const raw = await pywebview.api.get_config();
+    config = JSON.parse(raw);
+    renderPresets();
+  }
+
+  function renderPresets() {
+    $presets.innerHTML = '';
+    (config.presets || []).forEach(p => {
+      const el = document.createElement('div');
+      el.className = 'preset-item';
+      el.innerHTML = `
+        <span class="p-icon">${p.icon || '▶'}</span>
+        <div class="p-info">
+          <div class="p-name">${esc(p.name)}</div>
+          <div class="p-cmd">${esc(p.cmd)}</div>
+        </div>
+        <button class="p-del" data-name="${esc(p.name)}" title="Delete">&times;</button>
+      `;
+      el.addEventListener('click', (e) => {
+        if (e.target.classList.contains('p-del')) return;
+        openSession(p.cmd, p.name);
+        closeModal();
+      });
+      el.querySelector('.p-del').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const raw = await pywebview.api.delete_preset(p.name);
+        config = JSON.parse(raw);
+        renderPresets();
+      });
+      $presets.appendChild(el);
+    });
+  }
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  // ── Session management ──
+  async function openSession(cmd, label) {
+    const pane = document.createElement('div');
+    pane.className = 'term-pane';
+    $wrap.appendChild(pane);
+
+    const term = new Terminal({
+      fontSize: 14,
+      fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
+      theme: THEME, cursorBlink: true, scrollback: 10000, allowProposedApi: true
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    term.open(pane);
+    fitAddon.fit();
+
+    const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], imagePath: null };
+
+    // Input → PTY
+    term.onData(data => pywebview.api.write_input(sid, data));
+
+    // Resize
+    const ro = new ResizeObserver(() => {
+      if (activeId === sid) {
+        fitAddon.fit();
+        pywebview.api.resize(sid, term.cols, term.rows);
+      }
+    });
+    ro.observe(pane);
+
+    // Output polling
+    (async function poll() {
+      while (sessions[sid]) {
+        try {
+          const out = await pywebview.api.read_output(sid);
+          if (out) term.write(out);
+          const alive = await pywebview.api.is_alive(sid);
+          if (!alive && !out) {
+            term.write('\r\n\x1b[90m[process exited]\x1b[0m\r\n');
+            break;
+          }
+        } catch(e) {}
+        await new Promise(r => setTimeout(r, 16));
+      }
+    })();
+
+    switchTab(sid);
+    renderTabs();
+  }
+
+  function switchTab(sid) {
+    if (activeId && sessions[activeId]) {
+      sessions[activeId].pane.classList.remove('active');
+    }
+    activeId = sid;
+    if (sessions[sid]) {
+      sessions[sid].pane.classList.add('active');
+      sessions[sid].fitAddon.fit();
+      sessions[sid].term.focus();
+    }
+    renderTabs();
+    updateImageBar();
+  }
+
+  async function closeTab(sid) {
+    const s = sessions[sid];
+    if (!s) return;
+    await pywebview.api.close_session(sid);
+    s.pane.remove();
+    delete sessions[sid];
+
+    const ids = Object.keys(sessions);
+    if (ids.length > 0) {
+      switchTab(activeId === sid ? ids[ids.length - 1] : activeId);
+    } else {
+      activeId = null;
+    }
+    renderTabs();
+  }
+
+  function renderTabs() {
+    $tabs.innerHTML = '';
+    Object.entries(sessions).forEach(([sid, s]) => {
+      const tab = document.createElement('button');
+      tab.className = 'tab' + (sid === activeId ? ' active' : '');
+      tab.innerHTML = `
+        <span class="label">${esc(s.label)}</span>
+        <span class="close-tab" data-sid="${sid}">&times;</span>
+      `;
+      tab.addEventListener('click', (e) => {
+        if (e.target.dataset.sid) { closeTab(e.target.dataset.sid); return; }
+        switchTab(sid);
+      });
+      $tabs.appendChild(tab);
+    });
+  }
+
+  // ── Image paste ──
+  function updateImageBar() {
+    const s = activeId && sessions[activeId];
+    const bar = document.getElementById('image-bar');
+    if (s && s.imagePath) {
+      document.getElementById('preview-img').src = s.imageDataUrl || '';
+      document.getElementById('image-path').textContent = s.imagePath;
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+
+  document.addEventListener('paste', async (e) => {
+    if (!activeId || !sessions[activeId]) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const dataUrl = reader.result;
+          const path = await pywebview.api.save_image(dataUrl);
+          const s = sessions[activeId];
+          s.imagePath = path;
+          s.imageDataUrl = dataUrl;
+          updateImageBar();
+        };
+        reader.readAsDataURL(blob);
+        return;
+      }
+    }
+  });
+
+  document.getElementById('close-preview').addEventListener('click', () => {
+    if (activeId && sessions[activeId]) {
+      sessions[activeId].imagePath = null;
+      sessions[activeId].imageDataUrl = null;
+    }
+    updateImageBar();
+  });
+
+  // Intercept Enter → inject image path
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const s = activeId && sessions[activeId];
+      if (s && s.imagePath) {
+        // Check we're focused on terminal (not modal input)
+        if (document.activeElement?.tagName === 'INPUT') return;
+        e.preventDefault();
+        const path = ' ' + s.imagePath;
+        pywebview.api.write_input(activeId, path + '\r');
+        s.imagePath = null;
+        s.imageDataUrl = null;
+        updateImageBar();
+      }
+    }
+  });
+
+  // ── Modal ──
+  document.getElementById('btn-new-tab').addEventListener('click', () => { $modal.classList.add('open'); $customCmd.focus(); });
+  document.getElementById('btn-cancel-modal').addEventListener('click', closeModal);
+  $modal.addEventListener('click', (e) => { if (e.target === $modal) closeModal(); });
+
+  document.getElementById('btn-run-custom').addEventListener('click', () => {
+    const cmd = $customCmd.value.trim();
+    if (cmd) { openSession(cmd); closeModal(); }
+  });
+  $customCmd.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { document.getElementById('btn-run-custom').click(); }
+    if (e.key === 'Escape') { closeModal(); }
+  });
+
+  document.getElementById('btn-toggle-save').addEventListener('click', () => {
+    const row = document.getElementById('save-row');
+    row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  });
+  document.getElementById('btn-save-preset').addEventListener('click', async () => {
+    const cmd = $customCmd.value.trim();
+    const name = document.getElementById('save-name').value.trim();
+    const icon = document.getElementById('save-icon').value.trim() || '⚙️';
+    if (!cmd || !name) return;
+    const raw = await pywebview.api.save_preset(name, cmd, icon);
+    config = JSON.parse(raw);
+    renderPresets();
+    document.getElementById('save-row').style.display = 'none';
+    document.getElementById('save-name').value = '';
+  });
+
+  function closeModal() {
+    $modal.classList.remove('open');
+    $customCmd.value = '';
+    document.getElementById('save-row').style.display = 'none';
+    if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Cmd/Ctrl+T → new tab
+    if ((e.metaKey || e.ctrlKey) && e.key === 't') {
+      e.preventDefault();
+      $modal.classList.add('open');
+      $customCmd.focus();
+    }
+    // Cmd/Ctrl+W → close tab
+    if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
+      e.preventDefault();
+      if (activeId) closeTab(activeId);
+    }
+    // Ctrl+Tab → next tab
+    if (e.ctrlKey && e.key === 'Tab') {
+      e.preventDefault();
+      const ids = Object.keys(sessions);
+      if (ids.length < 2) return;
+      const idx = ids.indexOf(activeId);
+      switchTab(ids[(idx + (e.shiftKey ? -1 : 1) + ids.length) % ids.length]);
+    }
+  });
+
+  // ── Init ──
+  async function init() {
+    await waitApi();
+    await loadConfig();
+    // Auto-open first session if presets exist
+    if (config.presets?.length > 0) {
+      const first = config.presets[0];
+      openSession(first.cmd, first.name);
+    } else {
+      $modal.classList.add('open');
+    }
+  }
+  init();
+})();
+</script>
+</body>
+</html>
