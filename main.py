@@ -365,6 +365,12 @@ class Api:
             s.kill()
         self.sessions.clear()
 
+    def cleanup_and_exit(self):
+        """Clean up and force exit — pywebview on macOS can hang after window close."""
+        self.cleanup_all()
+        # Give child processes a moment to die, then force exit
+        threading.Timer(1.5, lambda: os._exit(0)).start()
+
 
 def main():
     api = Api()
@@ -372,8 +378,8 @@ def main():
 
     # Safety net: clean up on exit no matter what
     atexit.register(api.cleanup_all)
-    signal.signal(signal.SIGINT, lambda *_: (api.cleanup_all(), sys.exit(0)))
-    signal.signal(signal.SIGTERM, lambda *_: (api.cleanup_all(), sys.exit(0)))
+    signal.signal(signal.SIGINT, lambda *_: (api.cleanup_all(), os._exit(0)))
+    signal.signal(signal.SIGTERM, lambda *_: (api.cleanup_all(), os._exit(0)))
 
     window = webview.create_window(
         "shellframe",
@@ -385,8 +391,12 @@ def main():
         text_select=True,
         background_color="#1a1b26",
     )
-    window.events.closed += api.cleanup_all
+    window.events.closed += api.cleanup_and_exit
     webview.start(debug=("--debug" in sys.argv))
+
+    # If webview.start() returns but process is still alive, force exit
+    api.cleanup_all()
+    os._exit(0)
 
 
 if __name__ == "__main__":
