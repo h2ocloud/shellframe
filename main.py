@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -35,6 +36,10 @@ if not IS_WIN:
 
 CLAUDE_TMP = Path.home() / ".claude" / "tmp"
 CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
+
+APP_DIR = Path(__file__).parent
+VERSION_FILE = APP_DIR / "version.json"
+REPO_URL = "https://raw.githubusercontent.com/h2ocloud/shellframe/main/version.json"
 
 CONFIG_DIR = Path.home() / ".config" / "shellframe"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -293,6 +298,57 @@ class Api:
             return str(path)
         except Exception as e:
             return f"ERROR: {e}"
+
+    def get_version(self) -> str:
+        """Return current local version info."""
+        try:
+            return VERSION_FILE.read_text()
+        except:
+            return json.dumps({"version": "unknown", "channel": "main"})
+
+    def check_update(self) -> str:
+        """Check GitHub for latest version. Returns JSON with local, remote, update_available."""
+        try:
+            local = json.loads(VERSION_FILE.read_text()) if VERSION_FILE.exists() else {"version": "0.0.0"}
+        except:
+            local = {"version": "0.0.0"}
+
+        try:
+            req = urllib.request.Request(REPO_URL, headers={"User-Agent": "shellframe"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                remote = json.loads(resp.read().decode())
+        except:
+            return json.dumps({"local": local["version"], "remote": None, "update_available": False, "error": "Could not reach GitHub"})
+
+        local_v = tuple(int(x) for x in local["version"].split("."))
+        remote_v = tuple(int(x) for x in remote["version"].split("."))
+        has_update = remote_v > local_v
+
+        return json.dumps({
+            "local": local["version"],
+            "remote": remote["version"],
+            "update_available": has_update,
+        })
+
+    def do_update(self) -> str:
+        """Pull latest from git and return result."""
+        try:
+            result = subprocess.run(
+                ["git", "pull", "--ff-only"],
+                cwd=str(APP_DIR),
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0:
+                # Re-read version
+                try:
+                    new_ver = json.loads(VERSION_FILE.read_text())["version"]
+                except:
+                    new_ver = "unknown"
+                return json.dumps({"success": True, "message": result.stdout.strip(), "version": new_ver})
+            else:
+                return json.dumps({"success": False, "message": result.stderr.strip()})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
 
     def cleanup_all(self):
         for s in list(self.sessions.values()):

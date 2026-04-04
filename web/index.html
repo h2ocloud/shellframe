@@ -115,6 +115,14 @@
   .about-header .logo { font-size: 48px; margin-bottom: 8px; font-family: 'Menlo', monospace; color: #7aa2f7; }
   .about-header .app-name { font-size: 20px; color: #c0caf5; font-weight: 600; }
   .about-header .version { font-size: 12px; color: #565f89; margin-top: 2px; }
+  .update-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; justify-content: center; }
+  .update-bar .status { font-size: 11px; }
+  .update-bar .status.checking { color: #565f89; }
+  .update-bar .status.up-to-date { color: #9ece6a; }
+  .update-bar .status.available { color: #e0af68; }
+  .update-bar .status.error { color: #f7768e; }
+  .btn-update { padding: 3px 10px; border-radius: 4px; border: 1px solid #e0af68; background: none; color: #e0af68; cursor: pointer; font-size: 11px; }
+  .btn-update:hover { background: #e0af68; color: #1a1b26; }
   .about-section { margin-bottom: 14px; }
   .about-section h3 { font-size: 12px; color: #7aa2f7; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .about-section p, .about-section li { font-size: 12px; color: #a9b1d6; line-height: 1.6; }
@@ -210,7 +218,10 @@
     <div class="about-header">
       <div class="logo">&gt;_</div>
       <div class="app-name">ShellFrame</div>
-      <div class="version">v0.1.0</div>
+      <div class="version" id="about-version">v0.1.0</div>
+      <div class="update-bar" id="update-bar">
+        <span class="status checking" id="update-status">Checking for updates...</span>
+      </div>
     </div>
 
     <div class="about-section">
@@ -585,11 +596,94 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('add-cmd').value = '';
   });
 
-  // ── About modal ──
+  // ── About modal + update check ──
   const $modalAbout = document.getElementById('modal-about');
-  document.getElementById('btn-about').addEventListener('click', () => $modalAbout.classList.add('open'));
+  const $updateStatus = document.getElementById('update-status');
+  const $updateBar = document.getElementById('update-bar');
+
+  document.getElementById('btn-about').addEventListener('click', () => {
+    $modalAbout.classList.add('open');
+    checkForUpdate();
+  });
   document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
   $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
+
+  async function checkForUpdate() {
+    $updateStatus.className = 'status checking';
+    $updateStatus.textContent = 'Checking for updates...';
+    $updateBar.innerHTML = '';
+    $updateBar.appendChild($updateStatus);
+
+    try {
+      // Show current version
+      const verRaw = await pywebview.api.get_version();
+      const ver = JSON.parse(verRaw);
+      document.getElementById('about-version').textContent = 'v' + ver.version;
+
+      const raw = await pywebview.api.check_update();
+      const info = JSON.parse(raw);
+
+      if (info.error) {
+        $updateStatus.className = 'status error';
+        $updateStatus.textContent = info.error;
+      } else if (info.update_available) {
+        $updateStatus.className = 'status available';
+        $updateStatus.textContent = `Update available: v${info.remote} (current: v${info.local})`;
+        const btn = document.createElement('button');
+        btn.className = 'btn-update';
+        btn.textContent = 'Update now';
+        btn.addEventListener('click', doUpdate);
+        $updateBar.appendChild(btn);
+      } else {
+        $updateStatus.className = 'status up-to-date';
+        $updateStatus.textContent = `Up to date (v${info.local})`;
+      }
+    } catch(e) {
+      $updateStatus.className = 'status error';
+      $updateStatus.textContent = 'Update check failed';
+    }
+  }
+
+  async function doUpdate() {
+    $updateStatus.className = 'status checking';
+    $updateStatus.textContent = 'Updating...';
+    $updateBar.querySelectorAll('.btn-update').forEach(b => b.remove());
+
+    try {
+      const raw = await pywebview.api.do_update();
+      const result = JSON.parse(raw);
+      if (result.success) {
+        $updateStatus.className = 'status up-to-date';
+        $updateStatus.textContent = `Updated to v${result.version}. Restart to apply.`;
+        document.getElementById('about-version').textContent = 'v' + result.version;
+      } else {
+        $updateStatus.className = 'status error';
+        $updateStatus.textContent = 'Update failed: ' + result.message;
+      }
+    } catch(e) {
+      $updateStatus.className = 'status error';
+      $updateStatus.textContent = 'Update failed';
+    }
+  }
+
+  // Auto-check on startup (non-blocking)
+  async function startupUpdateCheck() {
+    await waitApi();
+    try {
+      const raw = await pywebview.api.check_update();
+      const info = JSON.parse(raw);
+      if (info.update_available) {
+        // Show subtle notification in tab bar
+        const notice = document.createElement('span');
+        notice.style.cssText = 'font-size:10px;color:#e0af68;margin-right:6px;cursor:pointer;-webkit-app-region:no-drag';
+        notice.textContent = `v${info.remote} available`;
+        notice.title = 'Click to update';
+        notice.addEventListener('click', () => { $modalAbout.classList.add('open'); checkForUpdate(); });
+        document.getElementById('tab-bar').appendChild(notice);
+      }
+    } catch(e) {}
+  }
+  setTimeout(startupUpdateCheck, 2000);
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
