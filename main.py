@@ -41,8 +41,6 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "presets": [
-        {"name": "Claude Code", "cmd": "claude", "icon": "\u2728"},
-        {"name": "Codex", "cmd": "codex", "icon": "\u26a1"},
         {"name": "Bash", "cmd": "bash", "icon": "\u25b6"},
     ]
 }

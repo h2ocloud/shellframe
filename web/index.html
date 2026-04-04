@@ -446,13 +446,9 @@
   async function init() {
     await waitApi();
     await loadConfig();
-    // Auto-open first session if presets exist
-    if (config.presets?.length > 0) {
-      const first = config.presets[0];
-      openSession(first.cmd, first.name);
-    } else {
-      $modal.classList.add('open');
-    }
+    // Always show launcher on start — let user choose what to open
+    $modal.classList.add('open');
+    $customCmd.focus();
   }
   init();
 })();
