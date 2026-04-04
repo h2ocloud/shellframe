@@ -29,12 +29,14 @@
     line-height: 1; -webkit-app-region: no-drag;
   }
   .tab .close-tab:hover { color: #f7768e; background: #292e42; }
-  #btn-new-tab {
+  #btn-new-tab, .tab-action {
     padding: 4px 10px; margin-left: 2px; background: none; border: 1px solid #292e42;
     color: #565f89; border-radius: 6px; cursor: pointer; font-size: 16px;
     -webkit-app-region: no-drag; transition: all .15s;
   }
-  #btn-new-tab:hover { background: #292e42; color: #7aa2f7; }
+  #btn-new-tab:hover, .tab-action:hover { background: #292e42; color: #7aa2f7; }
+  .tab-spacer { flex: 1; -webkit-app-region: drag; }
+  .tab-action { font-size: 14px; padding: 4px 8px; }
 
   /* ── Image preview ── */
   #image-bar {
@@ -107,6 +109,35 @@
   .save-row { display: flex; gap: 8px; margin-top: 10px; }
   .save-row input { flex: 1; background: #24283b; border: 1px solid #3b4261; border-radius: 6px; padding: 6px 8px; color: #c0caf5; font-size: 12px; outline: none; }
   .save-row input:focus { border-color: #7aa2f7; }
+
+  /* ── About modal ── */
+  .about-header { text-align: center; margin-bottom: 16px; }
+  .about-header .logo { font-size: 48px; margin-bottom: 8px; font-family: 'Menlo', monospace; color: #7aa2f7; }
+  .about-header .app-name { font-size: 20px; color: #c0caf5; font-weight: 600; }
+  .about-header .version { font-size: 12px; color: #565f89; margin-top: 2px; }
+  .about-section { margin-bottom: 14px; }
+  .about-section h3 { font-size: 12px; color: #7aa2f7; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .about-section p, .about-section li { font-size: 12px; color: #a9b1d6; line-height: 1.6; }
+  .about-section ul { list-style: none; padding: 0; }
+  .about-section li::before { content: ''; display: inline-block; width: 4px; height: 4px; background: #7aa2f7; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+  .about-section code { background: #24283b; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #7dcfff; }
+  .about-section a { color: #7aa2f7; text-decoration: none; }
+  .about-section a:hover { text-decoration: underline; }
+  .license-text { font-size: 10px; color: #565f89; line-height: 1.5; white-space: pre-wrap; background: #24283b; padding: 10px; border-radius: 6px; max-height: 100px; overflow-y: auto; }
+  .kbd { background: #24283b; border: 1px solid #3b4261; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: inherit; color: #a9b1d6; }
+
+  /* ── Settings modal ── */
+  .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; }
+  .settings-preset input { background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; padding: 4px 6px; color: #c0caf5; font-size: 12px; outline: none; }
+  .settings-preset input:focus { border-color: #7aa2f7; }
+  .settings-preset .sp-icon { width: 36px; text-align: center; }
+  .settings-preset .sp-name { width: 100px; }
+  .settings-preset .sp-cmd { flex: 1; font-family: monospace; }
+  .settings-preset .sp-del { color: #565f89; border: none; background: none; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 3px; }
+  .settings-preset .sp-del:hover { color: #f7768e; }
+  .settings-add { display: flex; gap: 6px; margin-top: 8px; }
+  .settings-add input { background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; padding: 6px 8px; color: #c0caf5; font-size: 12px; outline: none; }
+  .settings-add input:focus { border-color: #7aa2f7; }
 </style>
 </head>
 <body>
@@ -114,7 +145,10 @@
 <!-- Tab bar -->
 <div id="tab-bar">
   <div id="tabs"></div>
-  <button id="btn-new-tab" title="New tab">+</button>
+  <button id="btn-new-tab" title="New tab (Cmd+T)">+</button>
+  <div class="tab-spacer"></div>
+  <button class="tab-action" id="btn-settings" title="Settings">&#9881;</button>
+  <button class="tab-action" id="btn-about" title="About">?</button>
 </div>
 
 <!-- Image preview -->
@@ -147,6 +181,87 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" id="btn-toggle-save">Save as preset...</button>
       <button class="btn btn-ghost" id="btn-cancel-modal">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-overlay" id="modal-settings">
+  <div class="modal" style="width:500px">
+    <h2>Settings</h2>
+    <div style="font-size:12px;color:#565f89;margin-bottom:10px">Manage presets — edit name, command, or icon. Changes save automatically.</div>
+    <div id="settings-presets"></div>
+    <div class="settings-add">
+      <input type="text" id="add-icon" placeholder="Icon" value="" style="width:44px;text-align:center"/>
+      <input type="text" id="add-name" placeholder="Name" style="width:100px"/>
+      <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
+      <button class="btn btn-primary" id="btn-add-preset">Add</button>
+    </div>
+    <div class="modal-footer">
+      <div></div>
+      <button class="btn btn-ghost" id="btn-close-settings">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- About modal -->
+<div class="modal-overlay" id="modal-about">
+  <div class="modal" style="width:440px">
+    <div class="about-header">
+      <div class="logo">&gt;_</div>
+      <div class="app-name">ShellFrame</div>
+      <div class="version">v0.1.0</div>
+    </div>
+
+    <div class="about-section">
+      <h3>About</h3>
+      <p>Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.</p>
+    </div>
+
+    <div class="about-section">
+      <h3>Usage</h3>
+      <ul>
+        <li>Click <code>+</code> or press <span class="kbd">Cmd+T</span> to open a new session</li>
+        <li>Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal</li>
+        <li>Press <span class="kbd">Enter</span> to send with image path auto-attached</li>
+        <li><span class="kbd">Cmd+W</span> to close tab, <span class="kbd">Ctrl+Tab</span> to switch</li>
+        <li>Click <span class="kbd">&#9881;</span> to manage presets</li>
+      </ul>
+    </div>
+
+    <div class="about-section">
+      <h3>Keyboard Shortcuts</h3>
+      <ul>
+        <li><span class="kbd">Cmd+T</span> / <span class="kbd">Ctrl+T</span> — New tab</li>
+        <li><span class="kbd">Cmd+W</span> / <span class="kbd">Ctrl+W</span> — Close tab</li>
+        <li><span class="kbd">Ctrl+Tab</span> — Next tab</li>
+        <li><span class="kbd">Ctrl+Shift+Tab</span> — Previous tab</li>
+        <li><span class="kbd">Cmd+V</span> — Paste image from clipboard</li>
+        <li><span class="kbd">Cmd+,</span> — Settings</li>
+      </ul>
+    </div>
+
+    <div class="about-section">
+      <h3>Author</h3>
+      <p>Howard Wu (<a href="https://github.com/h2ocloud" target="_blank">@h2ocloud</a>)</p>
+    </div>
+
+    <div class="about-section">
+      <h3>License</h3>
+      <div class="license-text">MIT License
+
+Copyright (c) 2026 Howard Wu (h2ocloud)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.</div>
+    </div>
+
+    <div class="modal-footer">
+      <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
+      <button class="btn btn-ghost" id="btn-close-about">Close</button>
     </div>
   </div>
 </div>
@@ -419,6 +534,63 @@
     if (activeId && sessions[activeId]) sessions[activeId].term.focus();
   }
 
+  // ── Settings modal ──
+  const $modalSettings = document.getElementById('modal-settings');
+
+  document.getElementById('btn-settings').addEventListener('click', () => { $modalSettings.classList.add('open'); renderSettingsPresets(); });
+  document.getElementById('btn-close-settings').addEventListener('click', () => $modalSettings.classList.remove('open'));
+  $modalSettings.addEventListener('click', (e) => { if (e.target === $modalSettings) $modalSettings.classList.remove('open'); });
+
+  function renderSettingsPresets() {
+    const container = document.getElementById('settings-presets');
+    container.innerHTML = '';
+    (config.presets || []).forEach((p, i) => {
+      const row = document.createElement('div');
+      row.className = 'settings-preset';
+      row.innerHTML = `
+        <input class="sp-icon" value="${esc(p.icon || '')}" data-field="icon" data-idx="${i}"/>
+        <input class="sp-name" value="${esc(p.name)}" data-field="name" data-idx="${i}"/>
+        <input class="sp-cmd" value="${esc(p.cmd)}" data-field="cmd" data-idx="${i}"/>
+        <button class="sp-del" data-idx="${i}">&times;</button>
+      `;
+      // Inline edit on blur
+      row.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('change', async () => {
+          const idx = parseInt(inp.dataset.idx);
+          const field = inp.dataset.field;
+          config.presets[idx][field] = inp.value;
+          const raw = await pywebview.api.save_preset(config.presets[idx].name, config.presets[idx].cmd, config.presets[idx].icon);
+          config = JSON.parse(raw);
+        });
+      });
+      row.querySelector('.sp-del').addEventListener('click', async () => {
+        const raw = await pywebview.api.delete_preset(p.name);
+        config = JSON.parse(raw);
+        renderSettingsPresets();
+      });
+      container.appendChild(row);
+    });
+  }
+
+  document.getElementById('btn-add-preset').addEventListener('click', async () => {
+    const icon = document.getElementById('add-icon').value.trim() || '>';
+    const name = document.getElementById('add-name').value.trim();
+    const cmd = document.getElementById('add-cmd').value.trim();
+    if (!name || !cmd) return;
+    const raw = await pywebview.api.save_preset(name, cmd, icon);
+    config = JSON.parse(raw);
+    renderSettingsPresets();
+    document.getElementById('add-icon').value = '';
+    document.getElementById('add-name').value = '';
+    document.getElementById('add-cmd').value = '';
+  });
+
+  // ── About modal ──
+  const $modalAbout = document.getElementById('modal-about');
+  document.getElementById('btn-about').addEventListener('click', () => $modalAbout.classList.add('open'));
+  document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
+  $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
+
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     // Cmd/Ctrl+T → new tab
@@ -439,6 +611,17 @@
       if (ids.length < 2) return;
       const idx = ids.indexOf(activeId);
       switchTab(ids[(idx + (e.shiftKey ? -1 : 1) + ids.length) % ids.length]);
+    }
+    // Cmd/Ctrl+, → settings
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+      e.preventDefault();
+      $modalSettings.classList.add('open');
+      renderSettingsPresets();
+    }
+    // Escape → close any modal
+    if (e.key === 'Escape') {
+      $modalSettings.classList.remove('open');
+      $modalAbout.classList.remove('open');
     }
   });
 
