@@ -954,20 +954,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('add-cmd').value = '';
   });
 
-  // ── Bridge ──
+  // ── Bridge (global, multi-session) ──
   const $btnBridge = document.getElementById('btn-bridge');
   const $modalBridge = document.getElementById('modal-bridge');
-  let bridgeStates = {}; // sid -> status
+  let bridgeState = null; // global bridge status
 
-  // Show/hide bridge button based on active tab
   function updateBridgeButton() {
-    if (!activeId) { $btnBridge.style.display = 'none'; return; }
     $btnBridge.style.display = 'inline-block';
-    const state = bridgeStates[activeId];
-    if (state && state.active) {
-      $btnBridge.className = 'bridge-toggle' + (state.paused ? ' paused' : ' active');
-      $btnBridge.textContent = 'TG' + (state.paused ? ' ⏸' : ' ●');
-      $btnBridge.title = state.bot ? `@${state.bot}` + (state.paused ? ' (paused)' : '') : 'Telegram Bridge';
+    if (bridgeState && bridgeState.active) {
+      $btnBridge.className = 'bridge-toggle' + (bridgeState.paused ? ' paused' : ' active');
+      const count = bridgeState.sessions || 0;
+      $btnBridge.textContent = 'TG' + (bridgeState.paused ? ' ⏸' : ` ● ${count}`);
+      $btnBridge.title = bridgeState.bot
+        ? `@${bridgeState.bot} — ${count} sessions` + (bridgeState.paused ? ' (paused)' : '')
+        : 'Telegram Bridge';
     } else {
       $btnBridge.className = 'bridge-toggle';
       $btnBridge.textContent = 'TG';
@@ -976,45 +976,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   $btnBridge.addEventListener('click', async () => {
-    if (!activeId) return;
-    const state = bridgeStates[activeId];
-    if (state && state.active) {
-      // Toggle pause/resume
-      const raw = await pywebview.api.toggle_bridge(activeId);
-      const result = JSON.parse(raw);
-      if (result.exists) {
-        bridgeStates[activeId] = result;
-        updateBridgeButton();
-      }
+    if (bridgeState && bridgeState.active) {
+      const raw = await pywebview.api.toggle_bridge();
+      bridgeState = JSON.parse(raw);
+      updateBridgeButton();
     } else {
-      // Open bridge setup modal
       $modalBridge.classList.add('open');
     }
   });
 
-  // Right-click to disconnect
   $btnBridge.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
-    if (!activeId) return;
-    const state = bridgeStates[activeId];
-    if (state && state.active) {
-      await pywebview.api.stop_bridge(activeId);
-      delete bridgeStates[activeId];
+    if (bridgeState && bridgeState.active) {
+      await pywebview.api.stop_bridge();
+      bridgeState = null;
       updateBridgeButton();
     }
   });
 
-  // Bridge modal
   const $bridgePrefix = document.getElementById('bridge-prefix-toggle');
-  $bridgePrefix.addEventListener('click', () => {
-    $bridgePrefix.classList.toggle('on');
-  });
+  $bridgePrefix.addEventListener('click', () => $bridgePrefix.classList.toggle('on'));
 
   document.getElementById('btn-bridge-cancel').addEventListener('click', () => $modalBridge.classList.remove('open'));
   $modalBridge.addEventListener('click', (e) => { if (e.target === $modalBridge) $modalBridge.classList.remove('open'); });
 
   document.getElementById('btn-bridge-start').addEventListener('click', async () => {
-    if (!activeId) return;
     const token = document.getElementById('bridge-token').value.trim();
     if (!token) return;
 
@@ -1023,11 +1009,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const prefix = $bridgePrefix.classList.contains('on');
     const prompt = document.getElementById('bridge-prompt').value.trim();
 
-    const raw = await pywebview.api.start_bridge(activeId, token, JSON.stringify(users), prefix, prompt);
+    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, prompt);
     const result = JSON.parse(raw);
 
     if (result.success !== false) {
-      bridgeStates[activeId] = result;
+      bridgeState = result;
       updateBridgeButton();
       $modalBridge.classList.remove('open');
     } else {
@@ -1035,37 +1021,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
-  // Refresh bridge states on tab switch
-  async function refreshBridgeState() {
-    if (!activeId) return;
-    try {
-      const raw = await pywebview.api.get_bridge_status(activeId);
-      const result = JSON.parse(raw);
-      if (result.exists) {
-        bridgeStates[activeId] = result;
-      }
-    } catch(e) {}
-    updateBridgeButton();
-  }
-
-  // Patch switchTab to also update bridge
-  const _origSwitchTab = switchTab;
-  switchTab = function(sid) {
-    _origSwitchTab(sid);
-    refreshBridgeState();
-  };
-
-  // Poll bridge states periodically (for auto-resume detection)
+  // Poll bridge status periodically
   setInterval(async () => {
-    if (!activeId) return;
     try {
-      const raw = await pywebview.api.get_bridge_status(activeId);
+      const raw = await pywebview.api.get_bridge_status();
       const result = JSON.parse(raw);
       if (result.exists) {
-        const prev = bridgeStates[activeId];
-        bridgeStates[activeId] = result;
-        // If state changed (e.g. auto-resumed), update button
-        if (!prev || prev.paused !== result.paused || prev.state !== result.state) {
+        const prev = bridgeState;
+        bridgeState = result;
+        if (!prev || prev.paused !== result.paused || prev.sessions !== result.sessions) {
           updateBridgeButton();
         }
       }
@@ -1214,10 +1178,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         for (const s of existing) {
           await reconnectSession(s.sid, s.cmd);
         }
-        // Restore bridge states
+        // Restore bridge state
         try {
-          const bridges = JSON.parse(await pywebview.api.list_bridges());
-          Object.entries(bridges).forEach(([sid, status]) => { bridgeStates[sid] = status; });
+          const bs = JSON.parse(await pywebview.api.get_bridge_status());
+          if (bs.exists) { bridgeState = bs; updateBridgeButton(); }
         } catch(e) {}
         switchTab(existing[0].sid);
         return;

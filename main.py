@@ -281,9 +281,8 @@ class Api:
 
     def __init__(self):
         self.sessions: dict[str, Session] = {}
-        self.bridges: dict[str, TelegramBridge] = {}  # sid -> bridge
+        self.bridge: TelegramBridge = None  # single global bridge
         self._counter = 0
-        self._bridge_counter = 0
 
     def get_config(self) -> str:
         return json.dumps(load_config())
@@ -326,9 +325,18 @@ class Api:
         sid = f"s{self._counter}"
         session = Session(sid, cmd, cols, rows)
         self.sessions[sid] = session
+        # Auto-register with bridge
+        if self.bridge:
+            label = cmd.split()[0] if cmd else sid
+            self.bridge.register_session(sid, label, lambda text, _s=session: _s.write(text))
+            self.bridge.refresh_commands()
         return sid
 
     def close_session(self, sid: str):
+        # Unregister from bridge
+        if self.bridge:
+            self.bridge.unregister_session(sid)
+            self.bridge.refresh_commands()
         s = self.sessions.pop(sid, None)
         if s:
             s.kill()
@@ -343,10 +351,9 @@ class Api:
         if not s:
             return ""
         data = s.read()
-        # Feed output to bridge if attached
-        bridge = self.bridges.get(sid)
-        if bridge and data:
-            bridge.feed_output(data)
+        # Feed output to global bridge
+        if self.bridge and data:
+            self.bridge.feed_output(sid, data)
         return data
 
     def is_alive(self, sid: str) -> bool:
@@ -435,17 +442,11 @@ class Api:
 
     # ── Bridge API ──
 
-    def start_bridge(self, sid: str, bot_token: str, allowed_users_json: str,
+    def start_bridge(self, bot_token: str, allowed_users_json: str,
                      prefix_enabled: bool, initial_prompt: str) -> str:
-        """Start a TG bridge attached to session sid."""
-        s = self.sessions.get(sid)
-        if not s:
-            return json.dumps({"success": False, "message": "Session not found"})
-
-        # Stop existing bridge on this session
-        old = self.bridges.get(sid)
-        if old:
-            old.stop()
+        """Start the global TG bridge. Registers all current sessions."""
+        if self.bridge:
+            self.bridge.stop()
 
         allowed = json.loads(allowed_users_json) if allowed_users_json else []
         config = TelegramBridgeConfig(
@@ -455,51 +456,63 @@ class Api:
             initial_prompt=initial_prompt,
         )
 
-        self._bridge_counter += 1
-        bridge_id = f"b{self._bridge_counter}"
-
-        bridge = TelegramBridge(
-            bridge_id=bridge_id,
+        self.bridge = TelegramBridge(
+            bridge_id="tg",
             config=config,
-            write_fn=lambda text: s.write(text),
         )
-        bridge.start()
-        self.bridges[sid] = bridge
 
-        status = bridge.get_status()
-        return json.dumps({"success": bridge.connected, **status})
+        # Register all existing sessions
+        for sid, s in self.sessions.items():
+            label = s.cmd.split()[0] if s.cmd else sid
+            self.bridge.register_session(sid, label, lambda text, _s=s: _s.write(text))
 
-    def stop_bridge(self, sid: str) -> str:
-        bridge = self.bridges.pop(sid, None)
-        if bridge:
-            bridge.stop()
+        self.bridge.start()
+
+        # Send initial prompt to first session only
+        if initial_prompt and self.sessions:
+            first_sid = list(self.sessions.keys())[0]
+            self.sessions[first_sid].write(initial_prompt + "\n")
+
+        return json.dumps({"success": self.bridge.connected, **self.bridge.get_status()})
+
+    def stop_bridge(self) -> str:
+        if self.bridge:
+            self.bridge.stop()
+            self.bridge = None
             return json.dumps({"success": True})
-        return json.dumps({"success": False, "message": "No bridge on this session"})
+        return json.dumps({"success": False, "message": "No bridge running"})
 
-    def toggle_bridge(self, sid: str) -> str:
-        """Toggle pause/resume. Returns new state."""
-        bridge = self.bridges.get(sid)
-        if not bridge:
+    def toggle_bridge(self) -> str:
+        """Toggle pause/resume."""
+        if not self.bridge:
             return json.dumps({"active": False, "exists": False})
-        is_active = bridge.toggle_pause()
-        return json.dumps({"active": is_active, "exists": True, **bridge.get_status()})
+        is_active = self.bridge.toggle_pause()
+        return json.dumps({"active": is_active, "exists": True, **self.bridge.get_status()})
 
-    def get_bridge_status(self, sid: str) -> str:
-        bridge = self.bridges.get(sid)
-        if not bridge:
+    def get_bridge_status(self) -> str:
+        if not self.bridge:
             return json.dumps({"exists": False})
-        return json.dumps({"exists": True, **bridge.get_status()})
+        return json.dumps({"exists": True, **self.bridge.get_status()})
 
-    def list_bridges(self) -> str:
-        result = {}
-        for sid, b in self.bridges.items():
-            result[sid] = b.get_status()
-        return json.dumps(result)
+    def bridge_register_session(self, sid: str, label: str):
+        """Register a new session with the running bridge."""
+        if not self.bridge:
+            return
+        s = self.sessions.get(sid)
+        if s:
+            self.bridge.register_session(sid, label, lambda text, _s=s: _s.write(text))
+            self.bridge.refresh_commands()
+
+    def bridge_unregister_session(self, sid: str):
+        """Remove a session from the bridge."""
+        if self.bridge:
+            self.bridge.unregister_session(sid)
+            self.bridge.refresh_commands()
 
     def cleanup_all(self):
-        for b in list(self.bridges.values()):
-            b.stop()
-        self.bridges.clear()
+        if self.bridge:
+            self.bridge.stop()
+            self.bridge = None
         for s in list(self.sessions.values()):
             s.kill()
         self.sessions.clear()
