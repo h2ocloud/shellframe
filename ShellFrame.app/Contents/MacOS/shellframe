@@ -1,0 +1,15 @@
+#!/bin/bash
+# ShellFrame.app launcher
+DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+
+# Ensure venv exists
+if [ ! -d "$DIR/.venv" ]; then
+  python3 -m venv "$DIR/.venv"
+  "$DIR/.venv/bin/pip" install -q pywebview
+fi
+
+# Inherit user's PATH so claude/codex/etc. are found
+if [ -f "$HOME/.zprofile" ]; then source "$HOME/.zprofile" 2>/dev/null; fi
+if [ -f "$HOME/.zshrc" ]; then source "$HOME/.zshrc" 2>/dev/null; fi
+
+exec "$DIR/.venv/bin/python" "$DIR/main.py" "$@"
