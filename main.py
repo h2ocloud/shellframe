@@ -7,6 +7,7 @@ Mac: WKWebView + pty.fork()
 Windows: Edge WebView2 + subprocess
 """
 
+import atexit
 import base64
 import json
 import os
@@ -185,17 +186,34 @@ class Session:
             if self.win_proc:
                 self.win_proc.terminate()
         else:
-            if self.child_pid:
-                try:
-                    os.kill(self.child_pid, signal.SIGTERM)
-                except OSError:
-                    pass
+            # Close master fd first — sends SIGHUP to child
             if self.master_fd is not None:
                 try:
                     os.close(self.master_fd)
                 except OSError:
                     pass
                 self.master_fd = None
+            if self.child_pid:
+                # SIGTERM the process group
+                try:
+                    os.killpg(os.getpgid(self.child_pid), signal.SIGTERM)
+                except (OSError, ProcessLookupError):
+                    pass
+                # Give it a moment, then SIGKILL if still alive
+                threading.Timer(1.0, self._force_kill).start()
+
+    def _force_kill(self):
+        if self.child_pid:
+            try:
+                os.waitpid(self.child_pid, os.WNOHANG)
+            except ChildProcessError:
+                return  # already dead
+            except OSError:
+                return
+            try:
+                os.killpg(os.getpgid(self.child_pid), signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                pass
 
 
 class Api:
@@ -285,6 +303,11 @@ class Api:
 def main():
     api = Api()
     html_path = Path(__file__).parent / "web" / "index.html"
+
+    # Safety net: clean up on exit no matter what
+    atexit.register(api.cleanup_all)
+    signal.signal(signal.SIGINT, lambda *_: (api.cleanup_all(), sys.exit(0)))
+    signal.signal(signal.SIGTERM, lambda *_: (api.cleanup_all(), sys.exit(0)))
 
     window = webview.create_window(
         "cli-gui",
