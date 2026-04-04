@@ -1,5 +1,5 @@
 #!/bin/bash
-# cli-gui: GUI terminal wrapper with image paste support
+# shellframe: GUI terminal wrapper with image paste support
 cd "$(dirname "$0")"
 
 # Use existing venv or create one

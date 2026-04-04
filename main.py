@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cli-gui — Multi-tab GUI terminal with clipboard image paste support.
+shellframe — Multi-tab GUI terminal with clipboard image paste support.
 Runs any CLI tool (Claude, Codex, bash, etc.) in tabbed PTY sessions.
 
 Mac: WKWebView + pty.fork()
@@ -36,7 +36,7 @@ if not IS_WIN:
 CLAUDE_TMP = Path.home() / ".claude" / "tmp"
 CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
 
-CONFIG_DIR = Path.home() / ".config" / "cli-gui"
+CONFIG_DIR = Path.home() / ".config" / "shellframe"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
@@ -310,7 +310,7 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: (api.cleanup_all(), sys.exit(0)))
 
     window = webview.create_window(
-        "cli-gui",
+        "shellframe",
         url=str(html_path),
         js_api=api,
         width=1000,
