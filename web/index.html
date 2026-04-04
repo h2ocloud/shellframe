@@ -129,11 +129,24 @@
   .btn-update:hover { background: #e0af68; color: #1a1b26; }
   .release-notes {
     margin-top: 8px; padding: 10px; background: #24283b; border-radius: 6px;
-    max-height: 150px; overflow-y: auto; font-size: 11px; color: #a9b1d6; line-height: 1.5;
+    max-height: 200px; overflow-y: auto; font-size: 11px; color: #a9b1d6; line-height: 1.5;
     white-space: pre-wrap; display: none;
   }
   .release-notes h2, .release-notes h3 { color: #7aa2f7; font-size: 12px; margin: 6px 0 3px; }
   .release-notes li { margin-left: 12px; }
+
+  /* ── Update notification modal ── */
+  .update-modal { text-align: center; }
+  .update-modal .version-badge {
+    display: inline-block; padding: 4px 14px; background: #e0af68; color: #1a1b26;
+    border-radius: 20px; font-size: 13px; font-weight: 600; margin: 10px 0;
+  }
+  .update-modal .update-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+  .update-modal .changelog-preview {
+    text-align: left; margin-top: 12px; padding: 10px; background: #24283b; border-radius: 6px;
+    max-height: 200px; overflow-y: auto; font-size: 11px; color: #a9b1d6; line-height: 1.5;
+    white-space: pre-wrap;
+  }
   .about-section { margin-bottom: 14px; }
   .about-section h3 { font-size: 12px; color: #7aa2f7; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .about-section p, .about-section li { font-size: 12px; color: #a9b1d6; line-height: 1.6; }
@@ -344,6 +357,35 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     <div class="modal-footer">
       <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
       <button class="btn btn-ghost" id="btn-close-about">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Update notification modal -->
+<div class="modal-overlay" id="modal-update">
+  <div class="modal update-modal" style="width:400px">
+    <div class="logo" style="font-size:36px;color:#7aa2f7;font-family:monospace">&gt;_</div>
+    <div style="font-size:14px;color:#c0caf5;margin:6px 0">ShellFrame</div>
+    <div class="version-badge" id="update-badge">v0.0.0 → v0.0.0</div>
+    <div style="font-size:12px;color:#a9b1d6;margin:8px 0" id="update-msg"></div>
+    <div class="changelog-preview" id="update-changelog"></div>
+    <div class="update-actions">
+      <button class="btn btn-ghost" id="btn-update-skip">Skip</button>
+      <button class="btn btn-primary" id="btn-update-now">Update Now</button>
+    </div>
+  </div>
+</div>
+
+<!-- Release notes modal (shown after update) -->
+<div class="modal-overlay" id="modal-release">
+  <div class="modal" style="width:440px">
+    <div style="text-align:center;margin-bottom:12px">
+      <div style="font-size:36px;color:#9ece6a">✓</div>
+      <div style="font-size:15px;color:#c0caf5;font-weight:500" id="release-title">Updated!</div>
+    </div>
+    <div class="changelog-preview" id="release-changelog" style="display:block;max-height:300px"></div>
+    <div style="text-align:center;margin-top:14px">
+      <button class="btn btn-primary" id="btn-release-ok">OK</button>
     </div>
   </div>
 </div>
@@ -1149,24 +1191,81 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
-  // Auto-check on startup (non-blocking)
+  // ── Startup update notification (modal) ──
+  const $modalUpdate = document.getElementById('modal-update');
+  const $modalRelease = document.getElementById('modal-release');
+
   async function startupUpdateCheck() {
     await waitApi();
     try {
       const raw = await pywebview.api.check_update();
       const info = JSON.parse(raw);
       if (info.update_available) {
-        // Show subtle notification in tab bar
-        const notice = document.createElement('span');
-        notice.style.cssText = 'font-size:10px;color:#e0af68;margin-right:6px;cursor:pointer;-webkit-app-region:no-drag';
-        notice.textContent = `v${info.remote} available`;
-        notice.title = 'Click to update';
-        notice.addEventListener('click', () => { $modalAbout.classList.add('open'); checkForUpdate(); });
-        document.getElementById('tab-bar').appendChild(notice);
+        // Show update modal
+        document.getElementById('update-badge').textContent = `v${info.local} → v${info.remote}`;
+        document.getElementById('update-msg').textContent =
+          lang === 'zh-TW' ? '有新版本可用' : 'A new version is available';
+
+        // Fetch remote changelog preview
+        try {
+          const resp = await fetch(`https://raw.githubusercontent.com/h2ocloud/shellframe/main/CHANGELOG.md`);
+          if (resp.ok) {
+            const md = await resp.text();
+            const sections = md.split(/^## /m).filter(Boolean);
+            document.getElementById('update-changelog').textContent = '## ' + (sections[0] || '').substring(0, 1000);
+          }
+        } catch(e) {}
+
+        $modalUpdate.classList.add('open');
       }
+
+      // Check if we just updated (version changed from last session)
+      const lastVer = localStorage.getItem('shellframe_last_version');
+      if (lastVer && lastVer !== info.local) {
+        // Show release notes for current version
+        showReleaseNotes(info.local);
+      }
+      localStorage.setItem('shellframe_last_version', info.local);
     } catch(e) {}
   }
-  setTimeout(startupUpdateCheck, 2000);
+
+  document.getElementById('btn-update-skip').addEventListener('click', () => $modalUpdate.classList.remove('open'));
+  document.getElementById('btn-update-now').addEventListener('click', async () => {
+    const badge = document.getElementById('update-badge');
+    badge.textContent = lang === 'zh-TW' ? '更新中...' : 'Updating...';
+    document.getElementById('btn-update-now').disabled = true;
+
+    const raw = await pywebview.api.do_update();
+    const result = JSON.parse(raw);
+
+    if (result.success) {
+      $modalUpdate.classList.remove('open');
+      localStorage.setItem('shellframe_last_version', '__updating__');
+      if (result.can_hot_reload) {
+        setTimeout(() => location.reload(), 500);
+      } else {
+        showReleaseNotes(result.version);
+      }
+    } else {
+      badge.textContent = (lang === 'zh-TW' ? '更新失敗：' : 'Failed: ') + result.message;
+      document.getElementById('btn-update-now').disabled = false;
+    }
+  });
+
+  async function showReleaseNotes(version) {
+    document.getElementById('release-title').textContent =
+      lang === 'zh-TW' ? `已更新至 v${version}` : `Updated to v${version}`;
+    try {
+      const changelog = await pywebview.api.get_changelog();
+      const sections = changelog.split(/^## /m).filter(Boolean);
+      document.getElementById('release-changelog').textContent = '## ' + (sections[0] || '').substring(0, 2000);
+    } catch(e) {}
+    $modalRelease.classList.add('open');
+  }
+
+  document.getElementById('btn-release-ok').addEventListener('click', () => $modalRelease.classList.remove('open'));
+
+  setTimeout(startupUpdateCheck, 1500);
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {

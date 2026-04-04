@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.1 (2026-04-04)
+
+### Improvements
+- **Update notification** — Startup modal shows available update with changelog preview
+- **Release notes** — After update, shows what's new in a dedicated modal
+- **Multi-session TG bridge** — One bot routes across all tabs with /list, /1, /2 slash commands
+- **Version tracking** — Detects version change between sessions
+
+### 改善
+- **更新通知** — 啟動時彈出更新視窗，顯示更新內容預覽
+- **Release Notes** — 更新後直接顯示新版本的變更說明
+- **多 Session TG 橋接** — 一個 bot 管所有 tab，用 /list、/1、/2 切換
+- **版號追蹤** — 偵測版本變化，自動顯示更新內容
+
+---
+
 ## v0.2.0 (2026-04-04)
 
 ### New Features
