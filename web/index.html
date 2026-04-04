@@ -537,6 +537,59 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     renderTabs();
   }
 
+  // Reconnect to an existing PTY session after page reload (hot update)
+  async function reconnectSession(sid, cmd) {
+    const pane = document.createElement('div');
+    pane.className = 'term-pane';
+    $wrap.appendChild(pane);
+
+    const term = new Terminal({
+      fontSize: currentFontSize,
+      fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
+      theme: THEME, cursorBlink: true, scrollback: 10000, allowProposedApi: true
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    term.open(pane);
+    fitAddon.fit();
+
+    const label = cmd.split(/\s/)[0];
+    sessions[sid] = { term, fitAddon, pane, cmd, label, attachPath: null };
+
+    // Resize PTY to match new terminal size
+    await pywebview.api.resize(sid, term.cols, term.rows);
+
+    // Input → PTY
+    term.onData(data => pywebview.api.write_input(sid, data));
+
+    const ro = new ResizeObserver(() => {
+      if (activeId === sid) {
+        fitAddon.fit();
+        pywebview.api.resize(sid, term.cols, term.rows);
+      }
+    });
+    ro.observe(pane);
+
+    // Output polling
+    (async function poll() {
+      while (sessions[sid]) {
+        try {
+          const out = await pywebview.api.read_output(sid);
+          if (out) term.write(out);
+          const alive = await pywebview.api.is_alive(sid);
+          if (!alive && !out) {
+            term.write('\r\n\x1b[90m' + t('processExited') + '\x1b[0m\r\n');
+            break;
+          }
+        } catch(e) {}
+        await new Promise(r => setTimeout(r, 16));
+      }
+    })();
+
+    renderTabs();
+  }
+
   function switchTab(sid) {
     if (activeId && sessions[activeId]) {
       sessions[activeId].pane.classList.remove('active');
@@ -890,7 +943,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   async function doUpdate() {
     $updateStatus.className = 'status checking';
-    $updateStatus.textContent = 'Updating...';
+    $updateStatus.textContent = t('updating');
     $updateBar.querySelectorAll('.btn-update').forEach(b => b.remove());
 
     try {
@@ -898,15 +951,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const result = JSON.parse(raw);
       if (result.success) {
         $updateStatus.className = 'status up-to-date';
-        $updateStatus.textContent = `Updated to v${result.version}. Restart to apply.`;
         document.getElementById('about-version').textContent = 'v' + result.version;
+
+        if (result.can_hot_reload) {
+          // Hot reload: refresh page, sessions reconnect automatically
+          $updateStatus.textContent = `v${result.version} — reloading...`;
+          setTimeout(() => location.reload(), 800);
+        } else {
+          $updateStatus.textContent = t('updateDone');
+        }
       } else {
         $updateStatus.className = 'status error';
-        $updateStatus.textContent = 'Update failed: ' + result.message;
+        $updateStatus.textContent = t('updateFailed') + ': ' + result.message;
       }
     } catch(e) {
       $updateStatus.className = 'status error';
-      $updateStatus.textContent = 'Update failed';
+      $updateStatus.textContent = t('updateFailed');
     }
   }
 
@@ -967,7 +1027,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function init() {
     await waitApi();
     await loadConfig();
-    // Always show launcher on start — let user choose what to open
+
+    // Check for existing sessions (reconnect after hot reload)
+    try {
+      const existing = JSON.parse(await pywebview.api.list_sessions());
+      if (existing.length > 0) {
+        for (const s of existing) {
+          await reconnectSession(s.sid, s.cmd);
+        }
+        switchTab(existing[0].sid);
+        return; // Skip launcher modal — we reconnected
+      }
+    } catch(e) {}
+
+    // No existing sessions — show launcher
     $modal.classList.add('open');
     $customCmd.focus();
   }

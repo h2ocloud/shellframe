@@ -260,6 +260,14 @@ class Api:
         save_config(cfg)
         return json.dumps(cfg)
 
+    def list_sessions(self) -> str:
+        """Return list of active sessions (for reconnect after page reload)."""
+        result = []
+        for sid, s in self.sessions.items():
+            if s.alive:
+                result.append({"sid": sid, "cmd": s.cmd, "alive": True})
+        return json.dumps(result)
+
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
         self._counter += 1
         sid = f"s{self._counter}"
@@ -341,7 +349,7 @@ class Api:
         })
 
     def do_update(self) -> str:
-        """Pull latest from git and return result."""
+        """Pull latest from git. Sessions stay alive — frontend reloads to pick up changes."""
         try:
             result = subprocess.run(
                 ["git", "pull", "--ff-only"],
@@ -349,12 +357,17 @@ class Api:
                 capture_output=True, text=True, timeout=30
             )
             if result.returncode == 0:
-                # Re-read version
                 try:
                     new_ver = json.loads(VERSION_FILE.read_text())["version"]
                 except:
                     new_ver = "unknown"
-                return json.dumps({"success": True, "message": result.stdout.strip(), "version": new_ver})
+                has_sessions = len(self.sessions) > 0
+                return json.dumps({
+                    "success": True,
+                    "message": result.stdout.strip(),
+                    "version": new_ver,
+                    "can_hot_reload": has_sessions,
+                })
             else:
                 return json.dumps({"success": False, "message": result.stderr.strip()})
         except Exception as e:
