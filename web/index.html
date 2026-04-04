@@ -288,6 +288,35 @@
       <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
       <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
     </div>
+    <!-- Telegram Bridge -->
+    <div class="bridge-setup" style="margin-top:14px">
+      <h4 style="display:flex;align-items:center;justify-content:space-between">
+        <span>Telegram Bridge</span>
+        <span id="settings-bridge-status" style="font-size:11px;color:#565f89"></span>
+      </h4>
+      <div class="bridge-field">
+        <label>Bot Token</label>
+        <input type="password" id="settings-bridge-token" placeholder="123456:ABC-DEF..."/>
+      </div>
+      <div class="bridge-field">
+        <label>Users</label>
+        <input type="text" id="settings-bridge-users" placeholder="User IDs (comma separated), empty = all"/>
+      </div>
+      <div class="bridge-field">
+        <label>Prefix</label>
+        <button class="toggle-switch on" id="settings-bridge-prefix"></button>
+        <span style="font-size:11px;color:#565f89">[TG @user]: message</span>
+      </div>
+      <div class="bridge-field" style="align-items:flex-start">
+        <label>System Prompt</label>
+        <textarea id="settings-bridge-prompt" style="font-size:11px">You are now receiving messages bridged from Telegram. Keep responses concise and mobile-friendly. Messages from Telegram will be prefixed with [TG username].</textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" id="btn-settings-bridge-connect">Connect</button>
+        <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none">Disconnect</button>
+      </div>
+    </div>
+
     <div class="modal-footer">
       <div></div>
       <button class="btn btn-ghost" id="btn-close-settings" data-i18n="close">Close</button>
@@ -930,6 +959,64 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-fontsize').value = currentFontSize;
     document.getElementById('fontsize-val').textContent = currentFontSize;
     document.getElementById('setting-lang').value = lang;
+    syncSettingsBridge();
+  });
+
+  // Settings bridge section
+  document.getElementById('settings-bridge-prefix').addEventListener('click', function() { this.classList.toggle('on'); });
+
+  async function syncSettingsBridge() {
+    const statusEl = document.getElementById('settings-bridge-status');
+    const connectBtn = document.getElementById('btn-settings-bridge-connect');
+    const disconnectBtn = document.getElementById('btn-settings-bridge-disconnect');
+
+    try {
+      const raw = await pywebview.api.get_bridge_status();
+      const result = JSON.parse(raw);
+      if (result.exists && result.active) {
+        statusEl.textContent = result.paused ? '⏸ Paused' : `● Connected (@${result.bot})`;
+        statusEl.style.color = result.paused ? '#e0af68' : '#9ece6a';
+        connectBtn.style.display = 'none';
+        disconnectBtn.style.display = 'inline-block';
+      } else {
+        statusEl.textContent = 'Not connected';
+        statusEl.style.color = '#565f89';
+        connectBtn.style.display = 'inline-block';
+        disconnectBtn.style.display = 'none';
+      }
+    } catch(e) {
+      statusEl.textContent = '';
+      connectBtn.style.display = 'inline-block';
+      disconnectBtn.style.display = 'none';
+    }
+  }
+
+  document.getElementById('btn-settings-bridge-connect').addEventListener('click', async () => {
+    const token = document.getElementById('settings-bridge-token').value.trim();
+    if (!token) { alert(lang === 'zh-TW' ? '請輸入 Bot Token' : 'Bot Token required'); return; }
+
+    const usersStr = document.getElementById('settings-bridge-users').value.trim();
+    const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const prefix = document.getElementById('settings-bridge-prefix').classList.contains('on');
+    const prompt = document.getElementById('settings-bridge-prompt').value.trim();
+
+    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, prompt);
+    const result = JSON.parse(raw);
+
+    if (result.success !== false) {
+      bridgeState = result;
+      updateBridgeButton();
+      syncSettingsBridge();
+    } else {
+      alert(result.message || 'Connection failed');
+    }
+  });
+
+  document.getElementById('btn-settings-bridge-disconnect').addEventListener('click', async () => {
+    await pywebview.api.stop_bridge();
+    bridgeState = null;
+    updateBridgeButton();
+    syncSettingsBridge();
   });
 
   // Font size slider
