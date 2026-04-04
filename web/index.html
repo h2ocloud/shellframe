@@ -12,7 +12,10 @@
   #tab-bar {
     display: flex; align-items: center; background: #16161e; border-bottom: 1px solid #292e42;
     height: 38px; padding: 0 4px; -webkit-app-region: drag; user-select: none;
+    flex-shrink: 0;
   }
+  #tabs { display: flex; align-items: center; overflow-x: auto; flex-shrink: 1; min-width: 0; }
+  #tabs::-webkit-scrollbar { display: none; }
   .tab {
     display: flex; align-items: center; gap: 6px;
     padding: 6px 12px; margin: 3px 2px; border-radius: 6px;
@@ -42,6 +45,7 @@
   #image-bar {
     display: none; align-items: center; gap: 10px;
     padding: 6px 12px; background: #1f2335; border-bottom: 1px solid #292e42;
+    flex-shrink: 0;
   }
   #image-bar img { max-height: 54px; max-width: 100px; border-radius: 4px; border: 1px solid #3b4261; }
   #image-bar .info { flex: 1; font-size: 11px; }
@@ -159,14 +163,22 @@
   <button class="tab-action" id="btn-about" title="About">?</button>
 </div>
 
-<!-- Image preview -->
+<!-- Image / file preview -->
 <div id="image-bar">
   <img id="preview-img"/>
   <div class="info">
-    <div>Screenshot attached</div>
+    <div id="attach-label">Screenshot attached</div>
     <div class="path" id="image-path"></div>
   </div>
   <button class="close-img" id="close-preview" title="Remove">&times;</button>
+</div>
+
+<!-- Drop overlay -->
+<div id="drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(122,162,247,.12);z-index:50;pointer-events:none;justify-content:center;align-items:center">
+  <div style="background:#1f2335;border:2px dashed #7aa2f7;border-radius:12px;padding:32px 48px;text-align:center">
+    <div style="font-size:32px;margin-bottom:8px">+</div>
+    <div style="color:#7aa2f7;font-size:14px">Drop file to attach</div>
+  </div>
 </div>
 
 <!-- Terminal panes -->
@@ -366,7 +378,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], imagePath: null };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachPath: null };
 
     // Input → PTY
     term.onData(data => pywebview.api.write_input(sid, data));
@@ -407,7 +419,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     activeId = sid;
     if (sessions[sid]) {
       sessions[sid].pane.classList.add('active');
-      sessions[sid].fitAddon.fit();
+      // Defer fit to next frame so layout is settled
+      requestAnimationFrame(() => {
+        sessions[sid].fitAddon.fit();
+        pywebview.api.resize(sid, sessions[sid].term.cols, sessions[sid].term.rows);
+      });
       sessions[sid].term.focus();
     }
     renderTabs();
@@ -447,19 +463,45 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   }
 
-  // ── Image paste ──
+  // ── Image / file attach ──
+  function shortPath(p) {
+    const name = p.split('/').pop().split('\\').pop();
+    return name.length > 30 ? name.substring(0, 27) + '...' : name;
+  }
+
   function updateImageBar() {
     const s = activeId && sessions[activeId];
     const bar = document.getElementById('image-bar');
-    if (s && s.imagePath) {
-      document.getElementById('preview-img').src = s.imageDataUrl || '';
-      document.getElementById('image-path').textContent = s.imagePath;
+    const img = document.getElementById('preview-img');
+    if (s && s.attachPath) {
+      if (s.imageDataUrl) {
+        img.src = s.imageDataUrl;
+        img.style.display = 'block';
+        document.getElementById('attach-label').textContent = 'Screenshot attached';
+      } else {
+        img.style.display = 'none';
+        document.getElementById('attach-label').textContent = 'File attached';
+      }
+      document.getElementById('image-path').textContent = '[' + shortPath(s.attachPath) + ']';
+      document.getElementById('image-path').title = s.attachPath;
       bar.style.display = 'flex';
+      // Refit terminal after bar appears
+      requestAnimationFrame(() => { if (sessions[activeId]) sessions[activeId].fitAddon.fit(); });
     } else {
       bar.style.display = 'none';
+      requestAnimationFrame(() => { if (activeId && sessions[activeId]) sessions[activeId].fitAddon.fit(); });
     }
   }
 
+  function attachFile(path, dataUrl) {
+    if (!activeId || !sessions[activeId]) return;
+    const s = sessions[activeId];
+    s.attachPath = path;
+    s.imageDataUrl = dataUrl || null;
+    updateImageBar();
+  }
+
+  // Clipboard paste
   document.addEventListener('paste', async (e) => {
     if (!activeId || !sessions[activeId]) return;
     const items = e.clipboardData?.items;
@@ -472,10 +514,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         reader.onload = async () => {
           const dataUrl = reader.result;
           const path = await pywebview.api.save_image(dataUrl);
-          const s = sessions[activeId];
-          s.imagePath = path;
-          s.imageDataUrl = dataUrl;
-          updateImageBar();
+          attachFile(path, dataUrl);
         };
         reader.readAsDataURL(blob);
         return;
@@ -483,25 +522,72 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
+  // Drag & drop files
+  const $dropOverlay = document.getElementById('drop-overlay');
+  let dragCounter = 0;
+
+  document.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    $dropOverlay.style.display = 'flex';
+  });
+  document.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; $dropOverlay.style.display = 'none'; }
+  });
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    $dropOverlay.style.display = 'none';
+
+    if (!activeId || !sessions[activeId]) return;
+
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      // For images, show preview
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const path = await pywebview.api.save_image(reader.result);
+          attachFile(path, reader.result);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // Non-image file: get path from drop data
+        // pywebview file drops include path in name
+        const path = file.path || file.name;
+        attachFile(path, null);
+      }
+      return;
+    }
+
+    // URL/text drop — try to get file path from text
+    const text = e.dataTransfer?.getData('text/plain');
+    if (text && text.trim()) {
+      attachFile(text.trim(), null);
+    }
+  });
+
   document.getElementById('close-preview').addEventListener('click', () => {
     if (activeId && sessions[activeId]) {
-      sessions[activeId].imagePath = null;
+      sessions[activeId].attachPath = null;
       sessions[activeId].imageDataUrl = null;
     }
     updateImageBar();
   });
 
-  // Intercept Enter → inject image path
+  // Intercept Enter → inject attached file path
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const s = activeId && sessions[activeId];
-      if (s && s.imagePath) {
-        // Check we're focused on terminal (not modal input)
+      if (s && s.attachPath) {
         if (document.activeElement?.tagName === 'INPUT') return;
         e.preventDefault();
-        const path = ' ' + s.imagePath;
-        pywebview.api.write_input(activeId, path + '\r');
-        s.imagePath = null;
+        pywebview.api.write_input(activeId, ' ' + s.attachPath + '\r');
+        s.attachPath = null;
         s.imageDataUrl = null;
         updateImageBar();
       }
