@@ -121,10 +121,26 @@ class Session:
     def _start_win(self, cols, rows):
         args = shlex.split(self.cmd)
         exe = shutil.which(args[0])
-        cmd = [exe] + args[1:] if exe else ["cmd.exe", "/c", self.cmd]
+        cmd_args = [exe] + args[1:] if exe else ["cmd.exe", "/c", self.cmd]
 
+        # Try pywinpty for full ConPTY support (colors, TUI)
+        try:
+            import winpty
+            self._winpty = winpty.PtyProcess.spawn(
+                cmd_args,
+                dimensions=(rows, cols),
+                env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"},
+            )
+            self._use_winpty = True
+            threading.Thread(target=self._reader_winpty, daemon=True).start()
+            return
+        except ImportError:
+            pass
+
+        # Fallback: plain subprocess (no PTY, limited interactivity)
+        self._use_winpty = False
         self.win_proc = subprocess.Popen(
-            cmd,
+            cmd_args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -148,7 +164,22 @@ class Session:
                 self.alive = False
                 break
 
+    def _reader_winpty(self):
+        """Read from pywinpty ConPTY."""
+        while self.alive:
+            try:
+                data = self._winpty.read(16384)
+                if data:
+                    with self.lock:
+                        self.buffer.extend(data.encode("utf-8", errors="replace") if isinstance(data, str) else data)
+                else:
+                    break
+            except (EOFError, OSError):
+                break
+        self.alive = False
+
     def _reader_win(self):
+        """Read from plain subprocess (fallback)."""
         while self.alive and self.win_proc and self.win_proc.poll() is None:
             try:
                 data = self.win_proc.stdout.read(4096)
@@ -162,6 +193,12 @@ class Session:
         self.alive = False
 
     def write(self, data: str):
+        if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
+            try:
+                self._winpty.write(data)
+            except (EOFError, OSError):
+                pass
+            return
         raw = data.encode("utf-8", errors="replace")
         if IS_WIN:
             if self.win_proc and self.win_proc.stdin:
@@ -186,7 +223,12 @@ class Session:
         return data.decode("utf-8", errors="replace")
 
     def resize(self, cols, rows):
-        if not IS_WIN and self.master_fd is not None:
+        if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
+            try:
+                self._winpty.setwinsize(rows, cols)
+            except (OSError, AttributeError):
+                pass
+        elif not IS_WIN and self.master_fd is not None:
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
             try:
                 fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
@@ -196,7 +238,12 @@ class Session:
     def kill(self):
         self.alive = False
         if IS_WIN:
-            if self.win_proc:
+            if hasattr(self, '_use_winpty') and self._use_winpty:
+                try:
+                    self._winpty.terminate()
+                except:
+                    pass
+            elif self.win_proc:
                 self.win_proc.terminate()
         else:
             # Close master fd first — sends SIGHUP to child
