@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.3 (2026-04-04)
+
+### Fixes
+- **Changelog display** — Fixed release notes showing "# Changelog" header instead of version content
+- **Check Update button** — Added to About modal for manual update check
+- **Reload UI button** — Reload frontend without breaking active sessions
+
+### 修正
+- **Changelog 顯示** — 修正 release notes 顯示標題而非版本內容
+- **檢查更新按鈕** — About 介面新增手動檢查更新
+- **重載 UI 按鈕** — 重載前端不影響現有 session
+
+---
+
 ## v0.2.2 (2026-04-04)
 
 ### Improvements

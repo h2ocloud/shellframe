@@ -400,9 +400,13 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.</div>
     </div>
 
-    <div class="modal-footer">
+    <div class="modal-footer" style="gap:8px">
       <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
-      <button class="btn btn-ghost" id="btn-close-about">Close</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost" id="btn-reload-ui" title="Reload UI without breaking sessions">↻ Reload</button>
+        <button class="btn btn-ghost" id="btn-check-update">Check Update</button>
+        <button class="btn btn-ghost" id="btn-close-about">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1241,14 +1245,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (changelog) {
         const notes = document.getElementById('release-notes');
         const sections = changelog.split(/^## /m).filter(Boolean);
-        if (sections[0]) {
-          notes.textContent = '## ' + sections[0].substring(0, 1500);
+        if (sections[1]) {
+          notes.textContent = '## ' + sections[1].substring(0, 1500);
           notes.style.display = 'block';
         }
       }
     } catch(e) {}
   });
   document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
+  document.getElementById('btn-check-update').addEventListener('click', () => checkForUpdate());
+  document.getElementById('btn-reload-ui').addEventListener('click', () => location.reload());
   $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
 
   async function checkForUpdate() {
@@ -1309,7 +1315,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             const isZh = lang === 'zh-TW';
             // Simple: show the section between first ## and second ##
             const sections = changelog.split(/^## /m).filter(Boolean);
-            const latest = sections[0] || '';
+            const latest = sections[1] || '';
             // Filter by language: show Chinese lines for zh-TW, English for en
             notes.textContent = '## ' + latest.substring(0, 1500);
             notes.style.display = 'block';
@@ -1353,7 +1359,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (resp.ok) {
             const md = await resp.text();
             const sections = md.split(/^## /m).filter(Boolean);
-            document.getElementById('update-changelog').textContent = '## ' + (sections[0] || '').substring(0, 1000);
+            document.getElementById('update-changelog').textContent = '## ' + (sections[1] || '').substring(0, 1000);
           }
         } catch(e) {}
 
@@ -1399,7 +1405,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       const changelog = await pywebview.api.get_changelog();
       const sections = changelog.split(/^## /m).filter(Boolean);
-      document.getElementById('release-changelog').textContent = '## ' + (sections[0] || '').substring(0, 2000);
+      document.getElementById('release-changelog').textContent = '## ' + (sections[1] || '').substring(0, 2000);
     } catch(e) {}
     $modalRelease.classList.add('open');
   }
