@@ -391,6 +391,14 @@ class Api:
         except:
             return json.dumps({"version": "unknown", "channel": "main"})
 
+    def get_changelog(self) -> str:
+        """Return changelog content."""
+        changelog = APP_DIR / "CHANGELOG.md"
+        try:
+            return changelog.read_text()
+        except:
+            return ""
+
     def check_update(self) -> str:
         """Check GitHub for latest version. Returns JSON with local, remote, update_available."""
         try:

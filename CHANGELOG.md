@@ -1,0 +1,61 @@
+# Changelog
+
+## v0.2.0 (2026-04-04)
+
+### New Features
+- **Telegram Bridge** — Bidirectional TG bot ↔ PTY bridging with multi-session routing
+- **Slash Commands** — `/list`, `/1`, `/2`... to switch sessions from TG
+- **Pause/Resume** — One-click bridge toggle, auto-resume on TG message
+- **Drag & Drop** — Drop files into window to attach file paths
+- **i18n** — Traditional Chinese (繁體中文) + English
+- **Font Size** — Adjustable in Settings (10-24px)
+- **Auto Update** — Check for updates on startup, one-click update with hot reload
+- **Windows ConPTY** — Full terminal experience on Windows via pywinpty
+- **Settings Modal** — Manage presets, font size, language
+- **About Modal** — Version, usage guide, shortcuts, license, update check
+
+### 新功能
+- **Telegram 橋接** — 雙向 TG bot ↔ PTY 橋接，支援多 session 路由
+- **Slash 指令** — `/list`、`/1`、`/2`... 在 TG 切換 session
+- **暫停/恢復** — 一鍵切換橋接，收到 TG 訊息自動恢復
+- **拖拉檔案** — 拖檔案進視窗自動附加路徑
+- **多語系** — 繁體中文 + 英文
+- **字型大小** — 在設定中調整（10-24px）
+- **自動更新** — 啟動時檢查新版，一鍵更新 + 熱重載（session 不斷）
+- **Windows ConPTY** — Windows 完整終端體驗
+- **設定介面** — 管理預設指令、字型大小、語言
+- **關於介面** — 版本、使用說明、快捷鍵、授權、更新檢查
+
+### Improvements
+- Enlarged Settings/About icons in tab bar
+- Fixed terminal refit on tab switch
+- Fixed window close not killing child processes
+- Tab bar scrollable when many tabs open
+- Image path shortened in preview bar
+
+### 改善
+- 放大 tab bar 的設定/關於圖示
+- 修正切換 tab 時終端機跑版
+- 修正關閉視窗時子進程未正確終止
+- 多 tab 時 tab bar 可捲動
+- 預覽列路徑顯示縮短
+
+---
+
+## v0.1.0 (2026-04-04)
+
+### Initial Release
+- Multi-tab PTY sessions
+- Clipboard image paste (Cmd+V) with inline preview
+- Preset system for quick-launch commands
+- Cross-platform: Mac (.app) / Windows / Linux
+- macOS .app bundle with Spotlight/Launchpad support
+- One-line install script (curl | bash)
+
+### 初始版本
+- 多分頁 PTY sessions
+- 剪貼簿圖片貼上（Cmd+V）+ inline 預覽
+- 預設指令系統
+- 跨平台：Mac (.app) / Windows / Linux
+- macOS .app 支援 Spotlight/Launchpad
+- 一行安裝腳本

@@ -127,6 +127,13 @@
   .update-bar .status.error { color: #f7768e; }
   .btn-update { padding: 3px 10px; border-radius: 4px; border: 1px solid #e0af68; background: none; color: #e0af68; cursor: pointer; font-size: 11px; }
   .btn-update:hover { background: #e0af68; color: #1a1b26; }
+  .release-notes {
+    margin-top: 8px; padding: 10px; background: #24283b; border-radius: 6px;
+    max-height: 150px; overflow-y: auto; font-size: 11px; color: #a9b1d6; line-height: 1.5;
+    white-space: pre-wrap; display: none;
+  }
+  .release-notes h2, .release-notes h3 { color: #7aa2f7; font-size: 12px; margin: 6px 0 3px; }
+  .release-notes li { margin-left: 12px; }
   .about-section { margin-bottom: 14px; }
   .about-section h3 { font-size: 12px; color: #7aa2f7; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .about-section p, .about-section li { font-size: 12px; color: #a9b1d6; line-height: 1.6; }
@@ -285,6 +292,7 @@
       <div class="update-bar" id="update-bar">
         <span class="status checking" id="update-status">Checking for updates...</span>
       </div>
+      <div class="release-notes" id="release-notes"></div>
     </div>
 
     <div class="about-section">
@@ -1041,18 +1049,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   const $updateStatus = document.getElementById('update-status');
   const $updateBar = document.getElementById('update-bar');
 
-  document.getElementById('btn-about').addEventListener('click', () => {
+  document.getElementById('btn-about').addEventListener('click', async () => {
     $modalAbout.classList.add('open');
     checkForUpdate();
+    // Show current release notes
+    try {
+      const changelog = await pywebview.api.get_changelog();
+      if (changelog) {
+        const notes = document.getElementById('release-notes');
+        const sections = changelog.split(/^## /m).filter(Boolean);
+        if (sections[0]) {
+          notes.textContent = '## ' + sections[0].substring(0, 1500);
+          notes.style.display = 'block';
+        }
+      }
+    } catch(e) {}
   });
   document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
   $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
 
   async function checkForUpdate() {
     $updateStatus.className = 'status checking';
-    $updateStatus.textContent = 'Checking for updates...';
+    $updateStatus.textContent = t('checkingUpdate');
     $updateBar.innerHTML = '';
     $updateBar.appendChild($updateStatus);
+    document.getElementById('release-notes').style.display = 'none';
 
     try {
       // Show current version
@@ -1096,10 +1117,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         $updateStatus.className = 'status up-to-date';
         document.getElementById('about-version').textContent = 'v' + result.version;
 
+        // Show release notes
+        try {
+          const changelog = await pywebview.api.get_changelog();
+          if (changelog) {
+            const notes = document.getElementById('release-notes');
+            // Extract current version section based on language
+            const isZh = lang === 'zh-TW';
+            // Simple: show the section between first ## and second ##
+            const sections = changelog.split(/^## /m).filter(Boolean);
+            const latest = sections[0] || '';
+            // Filter by language: show Chinese lines for zh-TW, English for en
+            notes.textContent = '## ' + latest.substring(0, 1500);
+            notes.style.display = 'block';
+          }
+        } catch(e) {}
+
         if (result.can_hot_reload) {
-          // Hot reload: refresh page, sessions reconnect automatically
           $updateStatus.textContent = `v${result.version} — reloading...`;
-          setTimeout(() => location.reload(), 800);
+          setTimeout(() => location.reload(), 1500);
         } else {
           $updateStatus.textContent = t('updateDone');
         }
