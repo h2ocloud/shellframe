@@ -39,7 +39,7 @@
   }
   #btn-new-tab:hover, .tab-action:hover { background: #292e42; color: #7aa2f7; }
   .tab-spacer { flex: 1; -webkit-app-region: drag; }
-  .tab-action { font-size: 14px; padding: 4px 8px; }
+  .tab-action { font-size: 18px; padding: 4px 10px; }
 
   /* ── Image preview ── */
   #image-bar {
@@ -177,7 +177,7 @@
 <div id="drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(122,162,247,.12);z-index:50;pointer-events:none;justify-content:center;align-items:center">
   <div style="background:#1f2335;border:2px dashed #7aa2f7;border-radius:12px;padding:32px 48px;text-align:center">
     <div style="font-size:32px;margin-bottom:8px">+</div>
-    <div style="color:#7aa2f7;font-size:14px">Drop file to attach</div>
+    <div style="color:#7aa2f7;font-size:14px" data-i18n="dropToAttach">Drop file to attach</div>
   </div>
 </div>
 
@@ -187,20 +187,20 @@
 <!-- New tab modal -->
 <div class="modal-overlay" id="modal-new">
   <div class="modal">
-    <h2>New Session</h2>
+    <h2 data-i18n="newSession">New Session</h2>
     <div class="preset-list" id="preset-list"></div>
     <div class="custom-cmd">
-      <input type="text" id="custom-cmd" placeholder="custom command, e.g. claude --channels plugin:telegram"/>
-      <button class="btn btn-primary" id="btn-run-custom">Run</button>
+      <input type="text" id="custom-cmd" data-i18n="customPlaceholder" placeholder="custom command, e.g. claude --channels plugin:telegram"/>
+      <button class="btn btn-primary" id="btn-run-custom" data-i18n="run">Run</button>
     </div>
     <div class="save-row" id="save-row" style="display:none">
-      <input type="text" id="save-name" placeholder="Preset name"/>
+      <input type="text" id="save-name" data-i18n="presetName" placeholder="Preset name"/>
       <input type="text" id="save-icon" placeholder="Icon" value="⚙️" style="width:50px;text-align:center"/>
-      <button class="btn btn-primary" id="btn-save-preset">Save</button>
+      <button class="btn btn-primary" id="btn-save-preset" data-i18n="save">Save</button>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" id="btn-toggle-save">Save as preset...</button>
-      <button class="btn btn-ghost" id="btn-cancel-modal">Cancel</button>
+      <button class="btn btn-ghost" id="btn-toggle-save" data-i18n="saveAsPreset">Save as preset...</button>
+      <button class="btn btn-ghost" id="btn-cancel-modal" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -208,18 +208,38 @@
 <!-- Settings modal -->
 <div class="modal-overlay" id="modal-settings">
   <div class="modal" style="width:500px">
-    <h2>Settings</h2>
-    <div style="font-size:12px;color:#565f89;margin-bottom:10px">Manage presets — edit name, command, or icon. Changes save automatically.</div>
+    <h2 data-i18n="settings">Settings</h2>
+
+    <!-- General settings -->
+    <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:#24283b;border-radius:8px">
+      <div style="flex:1">
+        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Font size</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="range" id="setting-fontsize" min="10" max="24" value="14" style="flex:1;accent-color:#7aa2f7"/>
+          <span id="fontsize-val" style="font-size:12px;color:#c0caf5;min-width:24px;text-align:center">14</span>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="language">Language</label>
+        <select id="setting-lang" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 8px;color:#c0caf5;font-size:12px;outline:none">
+          <option value="en">English</option>
+          <option value="zh-TW">繁體中文</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
     <div id="settings-presets"></div>
     <div class="settings-add">
       <input type="text" id="add-icon" placeholder="Icon" value="" style="width:44px;text-align:center"/>
       <input type="text" id="add-name" placeholder="Name" style="width:100px"/>
       <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
-      <button class="btn btn-primary" id="btn-add-preset">Add</button>
+      <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
     </div>
     <div class="modal-footer">
       <div></div>
-      <button class="btn btn-ghost" id="btn-close-settings">Close</button>
+      <button class="btn btn-ghost" id="btn-close-settings" data-i18n="close">Close</button>
     </div>
   </div>
 </div>
@@ -237,40 +257,40 @@
     </div>
 
     <div class="about-section">
-      <h3>About</h3>
-      <p>Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.</p>
+      <h3 data-i18n="about">About</h3>
+      <p data-i18n="aboutDesc">Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.</p>
     </div>
 
     <div class="about-section">
-      <h3>Usage</h3>
-      <ul>
+      <h3 data-i18n="usage">Usage</h3>
+      <ul id="about-usage-list">
         <li>Click <code>+</code> or press <span class="kbd">Cmd+T</span> to open a new session</li>
         <li>Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal</li>
-        <li>Press <span class="kbd">Enter</span> to send with image path auto-attached</li>
-        <li><span class="kbd">Cmd+W</span> to close tab, <span class="kbd">Ctrl+Tab</span> to switch</li>
-        <li>Click <span class="kbd">&#9881;</span> to manage presets</li>
+        <li>Drag & drop files into window to attach</li>
+        <li>Press <span class="kbd">Enter</span> to send with file path auto-attached</li>
+        <li><span class="kbd">Cmd+W</span> close tab, <span class="kbd">Ctrl+Tab</span> switch tabs</li>
       </ul>
     </div>
 
     <div class="about-section">
-      <h3>Keyboard Shortcuts</h3>
+      <h3 data-i18n="shortcuts">Keyboard Shortcuts</h3>
       <ul>
         <li><span class="kbd">Cmd+T</span> / <span class="kbd">Ctrl+T</span> — New tab</li>
         <li><span class="kbd">Cmd+W</span> / <span class="kbd">Ctrl+W</span> — Close tab</li>
         <li><span class="kbd">Ctrl+Tab</span> — Next tab</li>
         <li><span class="kbd">Ctrl+Shift+Tab</span> — Previous tab</li>
-        <li><span class="kbd">Cmd+V</span> — Paste image from clipboard</li>
+        <li><span class="kbd">Cmd+V</span> — Paste image</li>
         <li><span class="kbd">Cmd+,</span> — Settings</li>
       </ul>
     </div>
 
     <div class="about-section">
-      <h3>Author</h3>
+      <h3 data-i18n="author">Author</h3>
       <p>Howard Wu (<a href="https://github.com/h2ocloud" target="_blank">@h2ocloud</a>)</p>
     </div>
 
     <div class="about-section">
-      <h3>License</h3>
+      <h3 data-i18n="license">License</h3>
       <div class="license-text">MIT License
 
 Copyright (c) 2026 Howard Wu (h2ocloud)
@@ -304,10 +324,96 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     brightCyan: '#7dcfff', brightWhite: '#c0caf5'
   };
 
+  // ── i18n ──
+  const I18N = {
+    en: {
+      newSession: 'New Session',
+      customPlaceholder: 'custom command, e.g. claude --channels plugin:telegram',
+      run: 'Run',
+      saveAsPreset: 'Save as preset...',
+      presetName: 'Preset name',
+      save: 'Save',
+      cancel: 'Cancel',
+      close: 'Close',
+      settings: 'Settings',
+      settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
+      addPreset: 'Add',
+      fontSize: 'Font size',
+      language: 'Language',
+      about: 'About',
+      aboutDesc: 'Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.',
+      usage: 'Usage',
+      usageItems: [
+        'Click <code>+</code> or press <span class="kbd">Cmd+T</span> to open a new session',
+        'Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal',
+        'Drag & drop files into window to attach',
+        'Press <span class="kbd">Enter</span> to send with file path auto-attached',
+        '<span class="kbd">Cmd+W</span> close tab, <span class="kbd">Ctrl+Tab</span> switch tabs',
+      ],
+      shortcuts: 'Keyboard Shortcuts',
+      author: 'Author',
+      license: 'License',
+      checkingUpdate: 'Checking for updates...',
+      upToDate: 'Up to date',
+      updateAvailable: 'Update available',
+      updateNow: 'Update now',
+      updating: 'Updating...',
+      updateDone: 'Updated! Restart to apply.',
+      updateFailed: 'Update failed',
+      screenshotAttached: 'Screenshot attached',
+      fileAttached: 'File attached',
+      dropToAttach: 'Drop file to attach',
+      processExited: '[process exited]',
+    },
+    'zh-TW': {
+      newSession: '新增工作階段',
+      customPlaceholder: '自訂指令，例如 claude --channels plugin:telegram',
+      run: '執行',
+      saveAsPreset: '儲存為預設...',
+      presetName: '預設名稱',
+      save: '儲存',
+      cancel: '取消',
+      close: '關閉',
+      settings: '設定',
+      settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
+      addPreset: '新增',
+      fontSize: '字型大小',
+      language: '語言',
+      about: '關於',
+      aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
+      usage: '使用方式',
+      usageItems: [
+        '點 <code>+</code> 或按 <span class="kbd">Cmd+T</span> 開啟新工作階段',
+        '用 <span class="kbd">Cmd+V</span> 貼上截圖 — 預覽會出現在終端機上方',
+        '拖拉檔案到視窗中即可附加',
+        '按 <span class="kbd">Enter</span> 送出時自動附加檔案路徑',
+        '<span class="kbd">Cmd+W</span> 關閉分頁，<span class="kbd">Ctrl+Tab</span> 切換分頁',
+      ],
+      shortcuts: '鍵盤快捷鍵',
+      author: '作者',
+      license: '授權',
+      checkingUpdate: '檢查更新中...',
+      upToDate: '已是最新版',
+      updateAvailable: '有新版本',
+      updateNow: '立即更新',
+      updating: '更新中...',
+      updateDone: '更新完成！重啟後生效。',
+      updateFailed: '更新失敗',
+      screenshotAttached: '已附加截圖',
+      fileAttached: '已附加檔案',
+      dropToAttach: '放開以附加檔案',
+      processExited: '[程序已結束]',
+    }
+  };
+
+  let lang = 'en';
+  function t(key) { return (I18N[lang] || I18N.en)[key] || I18N.en[key] || key; }
+
   // State
-  let sessions = {};   // sid -> { term, fitAddon, cmd, imagePath }
+  let sessions = {};
   let activeId = null;
   let config = null;
+  let currentFontSize = 14;
 
   const $tabs = document.getElementById('tabs');
   const $wrap = document.getElementById('terminal-wrap');
@@ -327,7 +433,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function loadConfig() {
     const raw = await pywebview.api.get_config();
     config = JSON.parse(raw);
+    // Apply settings
+    const s = config.settings || {};
+    lang = s.language || 'en';
+    currentFontSize = s.fontSize || 14;
     renderPresets();
+    applyI18n();
+  }
+
+  function applyI18n() {
+    // Update static text elements
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.dataset.i18n;
+      if (el.tagName === 'INPUT') el.placeholder = t(key);
+      else el.innerHTML = t(key);
+    });
+    // Update about usage list
+    const usageList = document.getElementById('about-usage-list');
+    if (usageList) {
+      usageList.innerHTML = t('usageItems').map(s => `<li>${s}</li>`).join('');
+    }
   }
 
   function renderPresets() {
@@ -367,7 +492,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     $wrap.appendChild(pane);
 
     const term = new Terminal({
-      fontSize: 14,
+      fontSize: currentFontSize,
       fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
       theme: THEME, cursorBlink: true, scrollback: 10000, allowProposedApi: true
     });
@@ -477,10 +602,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (s.imageDataUrl) {
         img.src = s.imageDataUrl;
         img.style.display = 'block';
-        document.getElementById('attach-label').textContent = 'Screenshot attached';
+        document.getElementById('attach-label').textContent = t('screenshotAttached');
       } else {
         img.style.display = 'none';
-        document.getElementById('attach-label').textContent = 'File attached';
+        document.getElementById('attach-label').textContent = t('fileAttached');
       }
       document.getElementById('image-path').textContent = '[' + shortPath(s.attachPath) + ']';
       document.getElementById('image-path').title = s.attachPath;
@@ -634,7 +759,40 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // ── Settings modal ──
   const $modalSettings = document.getElementById('modal-settings');
 
-  document.getElementById('btn-settings').addEventListener('click', () => { $modalSettings.classList.add('open'); renderSettingsPresets(); });
+  document.getElementById('btn-settings').addEventListener('click', () => {
+    $modalSettings.classList.add('open');
+    renderSettingsPresets();
+    // Sync controls
+    document.getElementById('setting-fontsize').value = currentFontSize;
+    document.getElementById('fontsize-val').textContent = currentFontSize;
+    document.getElementById('setting-lang').value = lang;
+  });
+
+  // Font size slider
+  document.getElementById('setting-fontsize').addEventListener('input', (e) => {
+    document.getElementById('fontsize-val').textContent = e.target.value;
+  });
+  document.getElementById('setting-fontsize').addEventListener('change', async (e) => {
+    currentFontSize = parseInt(e.target.value);
+    // Apply to all existing terminals
+    Object.values(sessions).forEach(s => {
+      s.term.options.fontSize = currentFontSize;
+      s.fitAddon.fit();
+    });
+    // Save
+    config.settings = config.settings || {};
+    config.settings.fontSize = currentFontSize;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  });
+
+  // Language select
+  document.getElementById('setting-lang').addEventListener('change', async (e) => {
+    lang = e.target.value;
+    applyI18n();
+    config.settings = config.settings || {};
+    config.settings.language = lang;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  });
   document.getElementById('btn-close-settings').addEventListener('click', () => $modalSettings.classList.remove('open'));
   $modalSettings.addEventListener('click', (e) => { if (e.target === $modalSettings) $modalSettings.classList.remove('open'); });
 

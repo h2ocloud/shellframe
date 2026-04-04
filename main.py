@@ -48,7 +48,11 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_CONFIG = {
     "presets": [
         {"name": "Bash", "cmd": "bash", "icon": "\u25b6"},
-    ]
+    ],
+    "settings": {
+        "fontSize": 14,
+        "language": "en"
+    }
 }
 
 
@@ -241,6 +245,12 @@ class Api:
                 save_config(cfg)
                 return json.dumps(cfg)
         cfg["presets"].append({"name": name, "cmd": cmd, "icon": icon})
+        save_config(cfg)
+        return json.dumps(cfg)
+
+    def save_settings(self, settings_json: str) -> str:
+        cfg = load_config()
+        cfg["settings"] = json.loads(settings_json)
         save_config(cfg)
         return json.dumps(cfg)
 
