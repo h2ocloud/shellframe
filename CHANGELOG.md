@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.4 (2026-04-04)
+
+### Fixes
+- **Update-first startup** — Update notification now shows BEFORE launcher modal, not after
+- **Release notes on update** — After updating and reloading, release notes display automatically
+- **Skip → launcher** — Clicking "Skip" on update opens the session launcher
+
+### 修正
+- **更新優先啟動** — 更新通知現在在 launcher 之前顯示，不是之後
+- **更新後 Release Notes** — 更新重載後自動顯示版本說明
+- **跳過 → launcher** — 點「跳過」後自動開啟 session 選單
+
+---
+
 ## v0.2.3 (2026-04-04)
 
 ### Fixes

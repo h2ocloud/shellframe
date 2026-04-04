@@ -1347,13 +1347,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       const raw = await pywebview.api.check_update();
       const info = JSON.parse(raw);
+
+      // Check if we just updated (version changed from last session)
+      const lastVer = localStorage.getItem('shellframe_last_version');
+      if (lastVer && lastVer !== info.local && lastVer !== '__updating__') {
+        localStorage.setItem('shellframe_last_version', info.local);
+        showReleaseNotes(info.local);
+        return true;
+      }
+      localStorage.setItem('shellframe_last_version', info.local);
+
       if (info.update_available) {
-        // Show update modal
         document.getElementById('update-badge').textContent = `v${info.local} → v${info.remote}`;
         document.getElementById('update-msg').textContent =
           lang === 'zh-TW' ? '有新版本可用' : 'A new version is available';
 
-        // Fetch remote changelog preview
         try {
           const resp = await fetch(`https://raw.githubusercontent.com/h2ocloud/shellframe/main/CHANGELOG.md`);
           if (resp.ok) {
@@ -1364,19 +1372,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         } catch(e) {}
 
         $modalUpdate.classList.add('open');
+        return true;
       }
-
-      // Check if we just updated (version changed from last session)
-      const lastVer = localStorage.getItem('shellframe_last_version');
-      if (lastVer && lastVer !== info.local) {
-        // Show release notes for current version
-        showReleaseNotes(info.local);
-      }
-      localStorage.setItem('shellframe_last_version', info.local);
     } catch(e) {}
+    return false;
   }
 
-  document.getElementById('btn-update-skip').addEventListener('click', () => $modalUpdate.classList.remove('open'));
+  document.getElementById('btn-update-skip').addEventListener('click', () => {
+    $modalUpdate.classList.remove('open');
+    // Show launcher if no sessions
+    if (Object.keys(sessions).length === 0) {
+      $modal.classList.add('open');
+      $customCmd.focus();
+    }
+  });
   document.getElementById('btn-update-now').addEventListener('click', async () => {
     const badge = document.getElementById('update-badge');
     badge.textContent = lang === 'zh-TW' ? '更新中...' : 'Updating...';
@@ -1412,7 +1421,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   document.getElementById('btn-release-ok').addEventListener('click', () => $modalRelease.classList.remove('open'));
 
-  setTimeout(startupUpdateCheck, 1500);
+  // startupUpdateCheck is now called directly from init()
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -1460,19 +1469,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         for (const s of existing) {
           await reconnectSession(s.sid, s.cmd);
         }
-        // Restore bridge state
         try {
           const bs = JSON.parse(await pywebview.api.get_bridge_status());
           if (bs.exists) { bridgeState = bs; updateBridgeButton(); }
         } catch(e) {}
         switchTab(existing[0].sid);
+        // Still check for updates after reconnect
+        await startupUpdateCheck();
         return;
       }
     } catch(e) {}
 
-    // No existing sessions — show launcher
-    $modal.classList.add('open');
-    $customCmd.focus();
+    // Check for updates FIRST, then show launcher
+    const hasUpdate = await startupUpdateCheck();
+    if (!hasUpdate) {
+      // No update modal shown — show launcher
+      $modal.classList.add('open');
+      $customCmd.focus();
+    }
+    // If update modal is shown, launcher opens after skip/update via callback
   }
   init();
 })();
