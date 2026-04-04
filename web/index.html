@@ -72,7 +72,11 @@
   .modal {
     background: #1f2335; border: 1px solid #292e42; border-radius: 12px;
     padding: 20px; width: 420px; max-height: 80vh; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: #3b4261 transparent;
   }
+  .modal::-webkit-scrollbar { width: 6px; }
+  .modal::-webkit-scrollbar-track { background: transparent; }
+  .modal::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 3px; }
   .modal h2 { font-size: 15px; color: #c0caf5; margin-bottom: 14px; font-weight: 500; }
   .preset-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
   .preset-item {
@@ -135,9 +139,12 @@
   .update-banner:hover { opacity: .85; }
   .release-notes {
     margin-top: 8px; padding: 10px; background: #24283b; border-radius: 6px;
-    max-height: 200px; overflow-y: auto; font-size: 11px; color: #a9b1d6; line-height: 1.5;
+    max-height: 150px; overflow-y: auto; font-size: 11px; color: #a9b1d6; line-height: 1.5;
     white-space: pre-wrap; display: none;
+    scrollbar-width: thin; scrollbar-color: #3b4261 transparent;
   }
+  .release-notes::-webkit-scrollbar { width: 4px; }
+  .release-notes::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 2px; }
   .release-notes h2, .release-notes h3 { color: #7aa2f7; font-size: 12px; margin: 6px 0 3px; }
   .release-notes li { margin-left: 12px; }
 
@@ -161,7 +168,13 @@
   .about-section code { background: #24283b; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #7dcfff; }
   .about-section a { color: #7aa2f7; text-decoration: none; }
   .about-section a:hover { text-decoration: underline; }
-  .license-text { font-size: 10px; color: #565f89; line-height: 1.5; white-space: pre-wrap; background: #24283b; padding: 10px; border-radius: 6px; max-height: 100px; overflow-y: auto; }
+  .license-text {
+    font-size: 10px; color: #565f89; line-height: 1.5; white-space: pre-wrap;
+    background: #24283b; padding: 10px; border-radius: 6px; max-height: 80px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: #3b4261 transparent;
+  }
+  .license-text::-webkit-scrollbar { width: 4px; }
+  .license-text::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 2px; }
   .kbd { background: #24283b; border: 1px solid #3b4261; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: inherit; color: #a9b1d6; }
 
   /* ── Settings modal ── */
@@ -388,14 +401,13 @@
 
     <div class="about-section">
       <h3 data-i18n="shortcuts">Keyboard Shortcuts</h3>
-      <ul>
-        <li><span class="kbd">Cmd+T</span> / <span class="kbd">Ctrl+T</span> — New tab</li>
-        <li><span class="kbd">Cmd+W</span> / <span class="kbd">Ctrl+W</span> — Close tab</li>
-        <li><span class="kbd">Ctrl+Tab</span> — Next tab</li>
-        <li><span class="kbd">Ctrl+Shift+Tab</span> — Previous tab</li>
-        <li><span class="kbd">Cmd+V</span> — Paste image</li>
-        <li><span class="kbd">Cmd+,</span> — Settings</li>
-      </ul>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:11px">
+        <span class="kbd">Cmd+T</span><span>New tab</span>
+        <span class="kbd">Cmd+W</span><span>Close tab</span>
+        <span class="kbd">Ctrl+Tab</span><span>Switch tab</span>
+        <span class="kbd">Cmd+V</span><span>Paste image</span>
+        <span class="kbd">Cmd+,</span><span>Settings</span>
+      </div>
     </div>
 
     <div class="about-section">
@@ -418,11 +430,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     <div class="modal-footer" style="gap:8px">
       <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <span id="check-update-result" style="font-size:11px;margin-right:4px"></span>
-        <button class="btn btn-ghost" id="btn-reload-ui" title="Reload UI without breaking sessions">↻ Reload</button>
-        <button class="btn btn-ghost" id="btn-check-update">Check Update</button>
-        <button class="btn btn-ghost" id="btn-close-about">Close</button>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap">
+        <span id="check-update-result" style="font-size:11px;white-space:nowrap"></span>
+        <button class="btn btn-ghost" id="btn-reload-ui" style="white-space:nowrap">↻</button>
+        <button class="btn btn-ghost" id="btn-check-update" style="white-space:nowrap">Check</button>
+        <button class="btn btn-ghost" id="btn-close-about" style="white-space:nowrap">Close</button>
       </div>
     </div>
   </div>
