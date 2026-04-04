@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.2 (2026-04-04)
+
+### Improvements
+- **Emoji picker** — Icon field replaced with clickable emoji selector (24 options)
+- **UI polish** — Fixed white background on icon buttons, aligned add-preset row
+- **Settings TG Bridge** — Configure Telegram Bridge directly in Settings modal
+
+### 改善
+- **Emoji 選擇器** — Icon 欄位改為點擊式 emoji 選單（24 個選項）
+- **UI 修正** — 修正 icon 按鈕白底問題，對齊新增列
+- **設定 TG 橋接** — 在設定介面直接配置 Telegram Bridge
+
+---
+
 ## v0.2.1 (2026-04-04)
 
 ### Improvements

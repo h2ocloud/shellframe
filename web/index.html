@@ -162,7 +162,12 @@
   .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; }
   .settings-preset input { background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; padding: 4px 6px; color: #c0caf5; font-size: 12px; outline: none; }
   .settings-preset input:focus { border-color: #7aa2f7; }
-  .settings-preset .sp-icon { width: 36px; text-align: center; cursor: pointer; font-size: 16px; }
+  .settings-preset .sp-icon {
+    width: 36px; text-align: center; cursor: pointer; font-size: 16px;
+    background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; color: #c0caf5;
+    padding: 4px; line-height: 1;
+  }
+  .settings-preset .sp-icon:hover { border-color: #7aa2f7; }
   .emoji-picker {
     position: absolute; background: #24283b; border: 1px solid #3b4261; border-radius: 8px;
     padding: 8px; display: none; z-index: 200; flex-wrap: wrap; gap: 4px; width: 220px;
@@ -295,7 +300,7 @@
     <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
     <div id="settings-presets"></div>
     <div class="settings-add">
-      <button class="sp-icon emoji-btn" id="add-icon" style="width:44px">▶</button>
+      <button class="sp-icon emoji-btn" id="add-icon" style="width:36px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:4px;font-size:16px;cursor:pointer;line-height:1">▶</button>
       <input type="text" id="add-name" placeholder="Name" style="width:100px"/>
       <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
       <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
