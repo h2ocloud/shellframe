@@ -162,7 +162,19 @@
   .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; }
   .settings-preset input { background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; padding: 4px 6px; color: #c0caf5; font-size: 12px; outline: none; }
   .settings-preset input:focus { border-color: #7aa2f7; }
-  .settings-preset .sp-icon { width: 36px; text-align: center; }
+  .settings-preset .sp-icon { width: 36px; text-align: center; cursor: pointer; font-size: 16px; }
+  .emoji-picker {
+    position: absolute; background: #24283b; border: 1px solid #3b4261; border-radius: 8px;
+    padding: 8px; display: none; z-index: 200; flex-wrap: wrap; gap: 4px; width: 220px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
+  .emoji-picker.open { display: flex; }
+  .emoji-picker span {
+    font-size: 20px; cursor: pointer; padding: 4px; border-radius: 4px;
+    line-height: 1; text-align: center; width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .emoji-picker span:hover { background: #3b4261; }
   .settings-preset .sp-name { width: 100px; }
   .settings-preset .sp-cmd { flex: 1; font-family: monospace; }
   .settings-preset .sp-del { color: #565f89; border: none; background: none; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 3px; }
@@ -283,7 +295,7 @@
     <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
     <div id="settings-presets"></div>
     <div class="settings-add">
-      <input type="text" id="add-icon" placeholder="Icon" value="" style="width:44px;text-align:center"/>
+      <button class="sp-icon emoji-btn" id="add-icon" style="width:44px">▶</button>
       <input type="text" id="add-name" placeholder="Name" style="width:100px"/>
       <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
       <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
@@ -1047,6 +1059,44 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-close-settings').addEventListener('click', () => $modalSettings.classList.remove('open'));
   $modalSettings.addEventListener('click', (e) => { if (e.target === $modalSettings) $modalSettings.classList.remove('open'); });
 
+  // ── Emoji picker ──
+  const EMOJI_LIST = ['✨','⚡','▶','🤖','📱','💻','🔧','🧪','📝','🎯','🚀','🔥','💡','🌐','📦','🎨','⭐','💬','🔒','🧠','📊','🎮','🛠','☁️'];
+  let emojiTarget = null; // current button being edited
+
+  const emojiPicker = document.createElement('div');
+  emojiPicker.className = 'emoji-picker';
+  EMOJI_LIST.forEach(e => {
+    const s = document.createElement('span');
+    s.textContent = e;
+    s.addEventListener('click', async () => {
+      if (emojiTarget) {
+        emojiTarget.textContent = e;
+        // Save if it's a preset icon
+        const idx = emojiTarget.dataset.idx;
+        if (idx !== undefined && config.presets[idx]) {
+          config.presets[idx].icon = e;
+          await pywebview.api.save_preset(config.presets[idx].name, config.presets[idx].cmd, e);
+        }
+      }
+      emojiPicker.classList.remove('open');
+    });
+    emojiPicker.appendChild(s);
+  });
+  document.body.appendChild(emojiPicker);
+
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('emoji-btn')) {
+      emojiTarget = e.target;
+      const rect = e.target.getBoundingClientRect();
+      emojiPicker.style.top = (rect.bottom + 4) + 'px';
+      emojiPicker.style.left = rect.left + 'px';
+      emojiPicker.classList.add('open');
+      e.stopPropagation();
+    } else if (!emojiPicker.contains(e.target)) {
+      emojiPicker.classList.remove('open');
+    }
+  });
+
   function renderSettingsPresets() {
     const container = document.getElementById('settings-presets');
     container.innerHTML = '';
@@ -1054,12 +1104,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const row = document.createElement('div');
       row.className = 'settings-preset';
       row.innerHTML = `
-        <input class="sp-icon" value="${esc(p.icon || '')}" data-field="icon" data-idx="${i}"/>
+        <button class="sp-icon emoji-btn" data-field="icon" data-idx="${i}">${p.icon || '▶'}</button>
         <input class="sp-name" value="${esc(p.name)}" data-field="name" data-idx="${i}"/>
         <input class="sp-cmd" value="${esc(p.cmd)}" data-field="cmd" data-idx="${i}"/>
         <button class="sp-del" data-idx="${i}">&times;</button>
       `;
-      // Inline edit on blur
       row.querySelectorAll('input').forEach(inp => {
         inp.addEventListener('change', async () => {
           const idx = parseInt(inp.dataset.idx);
@@ -1079,7 +1128,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   document.getElementById('btn-add-preset').addEventListener('click', async () => {
-    const icon = document.getElementById('add-icon').value.trim() || '>';
+    const icon = document.getElementById('add-icon').textContent.trim() || '▶';
     const name = document.getElementById('add-name').value.trim();
     const cmd = document.getElementById('add-cmd').value.trim();
     if (!name || !cmd) return;
