@@ -127,6 +127,12 @@
   .update-bar .status.error { color: #f7768e; }
   .btn-update { padding: 3px 10px; border-radius: 4px; border: 1px solid #e0af68; background: none; color: #e0af68; cursor: pointer; font-size: 11px; }
   .btn-update:hover { background: #e0af68; color: #1a1b26; }
+  .update-banner {
+    font-size: 11px; color: #1a1b26; background: #e0af68; padding: 2px 10px;
+    border-radius: 4px; cursor: pointer; -webkit-app-region: no-drag;
+    margin-right: 6px; font-weight: 500; transition: opacity .2s;
+  }
+  .update-banner:hover { opacity: .85; }
   .release-notes {
     margin-top: 8px; padding: 10px; background: #24283b; border-radius: 6px;
     max-height: 200px; overflow-y: auto; font-size: 11px; color: #a9b1d6; line-height: 1.5;
@@ -294,6 +300,10 @@
           <option value="zh-TW">繁體中文</option>
         </select>
       </div>
+      <div>
+        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto Update</label>
+        <button class="toggle-switch on" id="setting-autoupdate"></button>
+      </div>
     </div>
 
     <!-- Presets -->
@@ -352,6 +362,11 @@
         <span class="status checking" id="update-status">Checking for updates...</span>
       </div>
       <div class="release-notes" id="release-notes"></div>
+    </div>
+
+    <div class="about-section">
+      <h3>Release History</h3>
+      <div class="release-notes" id="release-history" style="display:block;max-height:200px"></div>
     </div>
 
     <div class="about-section">
@@ -598,6 +613,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = config.settings || {};
     lang = s.language || 'en';
     currentFontSize = s.fontSize || 14;
+    autoUpdateEnabled = s.autoUpdate !== false; // default true
     renderPresets();
     applyI18n();
   }
@@ -980,6 +996,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-fontsize').value = currentFontSize;
     document.getElementById('fontsize-val').textContent = currentFontSize;
     document.getElementById('setting-lang').value = lang;
+    $autoUpdateToggle.classList.toggle('on', autoUpdateEnabled);
     syncSettingsBridge();
   });
 
@@ -1054,6 +1071,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Save
     config.settings = config.settings || {};
     config.settings.fontSize = currentFontSize;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  });
+
+  // Auto-update toggle
+  let autoUpdateEnabled = true;
+  const $autoUpdateToggle = document.getElementById('setting-autoupdate');
+  $autoUpdateToggle.addEventListener('click', async function() {
+    this.classList.toggle('on');
+    autoUpdateEnabled = this.classList.contains('on');
+    config.settings = config.settings || {};
+    config.settings.autoUpdate = autoUpdateEnabled;
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   });
 
@@ -1239,16 +1267,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-about').addEventListener('click', async () => {
     $modalAbout.classList.add('open');
     checkForUpdate();
-    // Show current release notes
+    // Show current release notes + release history (last 5)
     try {
       const changelog = await pywebview.api.get_changelog();
       if (changelog) {
-        const notes = document.getElementById('release-notes');
         const sections = changelog.split(/^## /m).filter(Boolean);
+        // Current version notes
         if (sections[1]) {
+          const notes = document.getElementById('release-notes');
           notes.textContent = '## ' + sections[1].substring(0, 1500);
           notes.style.display = 'block';
         }
+        // Release history (last 5 versions)
+        const history = sections.slice(1, 6).map(s => '## ' + s).join('\n');
+        document.getElementById('release-history').textContent = history.substring(0, 4000);
       }
     } catch(e) {}
   });
@@ -1421,7 +1453,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   document.getElementById('btn-release-ok').addEventListener('click', () => $modalRelease.classList.remove('open'));
 
-  // startupUpdateCheck is now called directly from init()
+  // Periodic update check (every 5 minutes)
+  setInterval(async () => {
+    if (!autoUpdateEnabled) return;
+    try {
+      const raw = await pywebview.api.check_update();
+      const info = JSON.parse(raw);
+      if (info.update_available && !document.getElementById('update-banner-btn')) {
+        // Pull silently
+        await pywebview.api.do_update();
+        // Show "Reload to update" banner in tab bar
+        const banner = document.createElement('span');
+        banner.className = 'update-banner';
+        banner.id = 'update-banner-btn';
+        banner.textContent = lang === 'zh-TW' ? `v${info.remote} 重載以更新` : `v${info.remote} Reload to update`;
+        banner.addEventListener('click', () => location.reload());
+        const spacer = document.querySelector('.tab-spacer');
+        spacer.parentNode.insertBefore(banner, spacer.nextSibling);
+      }
+    } catch(e) {}
+  }, 300000); // 5 min
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {

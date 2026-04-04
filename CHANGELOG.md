@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.5 (2026-04-04)
+
+### New Features
+- **Auto-update toggle** — Disable automatic update checks in Settings
+- **Background update check** — Every 5 minutes, silently pulls if update available
+- **"Reload to update" banner** — Yellow banner in tab bar after background update
+- **Release history** — About modal shows last 5 versions of changelog
+
+### 新功能
+- **自動更新開關** — 在設定中可關閉自動更新檢查
+- **背景更新偵測** — 每 5 分鐘自動檢查，有更新靜默拉取
+- **「重載以更新」提示** — 背景更新後 tab bar 顯示黃色提示
+- **版本歷史** — About 介面顯示最近 5 個版本的 changelog
+
+---
+
 ## v0.2.4 (2026-04-04)
 
 ### Fixes
