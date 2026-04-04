@@ -150,6 +150,36 @@
   .settings-add { display: flex; gap: 6px; margin-top: 8px; }
   .settings-add input { background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; padding: 6px 8px; color: #c0caf5; font-size: 12px; outline: none; }
   .settings-add input:focus { border-color: #7aa2f7; }
+
+  /* ── Bridge ── */
+  .bridge-toggle {
+    padding: 2px 8px; margin-left: 4px; border-radius: 4px; cursor: pointer;
+    font-size: 11px; border: 1px solid #3b4261; background: none; color: #565f89;
+    -webkit-app-region: no-drag; transition: all .15s;
+  }
+  .bridge-toggle:hover { border-color: #7aa2f7; color: #7aa2f7; }
+  .bridge-toggle.active { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.1); }
+  .bridge-toggle.paused { border-color: #e0af68; color: #e0af68; background: rgba(224,175,104,.1); }
+  .bridge-setup { margin-top: 12px; padding: 12px; background: #24283b; border-radius: 8px; }
+  .bridge-setup h4 { font-size: 12px; color: #c0caf5; margin-bottom: 10px; }
+  .bridge-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .bridge-field label { font-size: 11px; color: #565f89; min-width: 80px; }
+  .bridge-field input, .bridge-field textarea, .bridge-field select {
+    flex: 1; background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px;
+    padding: 5px 8px; color: #c0caf5; font-size: 12px; outline: none; font-family: inherit;
+  }
+  .bridge-field input:focus, .bridge-field textarea:focus { border-color: #7aa2f7; }
+  .bridge-field textarea { min-height: 50px; resize: vertical; }
+  .bridge-field .toggle-switch {
+    width: 36px; height: 20px; border-radius: 10px; background: #3b4261;
+    cursor: pointer; position: relative; border: none; transition: background .2s;
+  }
+  .bridge-field .toggle-switch.on { background: #9ece6a; }
+  .bridge-field .toggle-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: #c0caf5; transition: transform .2s;
+  }
+  .bridge-field .toggle-switch.on::after { transform: translateX(16px); }
 </style>
 </head>
 <body>
@@ -159,6 +189,7 @@
   <div id="tabs"></div>
   <button id="btn-new-tab" title="New tab (Cmd+T)">+</button>
   <div class="tab-spacer"></div>
+  <button class="bridge-toggle" id="btn-bridge" title="Telegram Bridge" style="display:none">TG</button>
   <button class="tab-action" id="btn-settings" title="Settings">&#9881;</button>
   <button class="tab-action" id="btn-about" title="About">?</button>
 </div>
@@ -305,6 +336,36 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     <div class="modal-footer">
       <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
       <button class="btn btn-ghost" id="btn-close-about">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bridge config modal -->
+<div class="modal-overlay" id="modal-bridge">
+  <div class="modal" style="width:480px">
+    <h2>Telegram Bridge</h2>
+    <div class="bridge-setup">
+      <div class="bridge-field">
+        <label>Bot Token</label>
+        <input type="password" id="bridge-token" placeholder="123456:ABC-DEF..."/>
+      </div>
+      <div class="bridge-field">
+        <label>Allowed Users</label>
+        <input type="text" id="bridge-users" placeholder="User IDs (comma separated), empty = allow all"/>
+      </div>
+      <div class="bridge-field">
+        <label>Prefix</label>
+        <button class="toggle-switch on" id="bridge-prefix-toggle"></button>
+        <span style="font-size:11px;color:#565f89">[TG @user]: message</span>
+      </div>
+      <div class="bridge-field" style="align-items:flex-start">
+        <label>System Prompt</label>
+        <textarea id="bridge-prompt">You are now receiving messages bridged from Telegram. Keep responses concise and mobile-friendly. Messages from Telegram will be prefixed with [TG username].</textarea>
+      </div>
+    </div>
+    <div class="modal-footer" style="margin-top:14px">
+      <button class="btn btn-ghost" id="btn-bridge-cancel">Cancel</button>
+      <button class="btn btn-primary" id="btn-bridge-start">Connect</button>
     </div>
   </div>
 </div>
@@ -893,6 +954,124 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('add-cmd').value = '';
   });
 
+  // ── Bridge ──
+  const $btnBridge = document.getElementById('btn-bridge');
+  const $modalBridge = document.getElementById('modal-bridge');
+  let bridgeStates = {}; // sid -> status
+
+  // Show/hide bridge button based on active tab
+  function updateBridgeButton() {
+    if (!activeId) { $btnBridge.style.display = 'none'; return; }
+    $btnBridge.style.display = 'inline-block';
+    const state = bridgeStates[activeId];
+    if (state && state.active) {
+      $btnBridge.className = 'bridge-toggle' + (state.paused ? ' paused' : ' active');
+      $btnBridge.textContent = 'TG' + (state.paused ? ' ⏸' : ' ●');
+      $btnBridge.title = state.bot ? `@${state.bot}` + (state.paused ? ' (paused)' : '') : 'Telegram Bridge';
+    } else {
+      $btnBridge.className = 'bridge-toggle';
+      $btnBridge.textContent = 'TG';
+      $btnBridge.title = 'Click to set up Telegram Bridge';
+    }
+  }
+
+  $btnBridge.addEventListener('click', async () => {
+    if (!activeId) return;
+    const state = bridgeStates[activeId];
+    if (state && state.active) {
+      // Toggle pause/resume
+      const raw = await pywebview.api.toggle_bridge(activeId);
+      const result = JSON.parse(raw);
+      if (result.exists) {
+        bridgeStates[activeId] = result;
+        updateBridgeButton();
+      }
+    } else {
+      // Open bridge setup modal
+      $modalBridge.classList.add('open');
+    }
+  });
+
+  // Right-click to disconnect
+  $btnBridge.addEventListener('contextmenu', async (e) => {
+    e.preventDefault();
+    if (!activeId) return;
+    const state = bridgeStates[activeId];
+    if (state && state.active) {
+      await pywebview.api.stop_bridge(activeId);
+      delete bridgeStates[activeId];
+      updateBridgeButton();
+    }
+  });
+
+  // Bridge modal
+  const $bridgePrefix = document.getElementById('bridge-prefix-toggle');
+  $bridgePrefix.addEventListener('click', () => {
+    $bridgePrefix.classList.toggle('on');
+  });
+
+  document.getElementById('btn-bridge-cancel').addEventListener('click', () => $modalBridge.classList.remove('open'));
+  $modalBridge.addEventListener('click', (e) => { if (e.target === $modalBridge) $modalBridge.classList.remove('open'); });
+
+  document.getElementById('btn-bridge-start').addEventListener('click', async () => {
+    if (!activeId) return;
+    const token = document.getElementById('bridge-token').value.trim();
+    if (!token) return;
+
+    const usersStr = document.getElementById('bridge-users').value.trim();
+    const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const prefix = $bridgePrefix.classList.contains('on');
+    const prompt = document.getElementById('bridge-prompt').value.trim();
+
+    const raw = await pywebview.api.start_bridge(activeId, token, JSON.stringify(users), prefix, prompt);
+    const result = JSON.parse(raw);
+
+    if (result.success !== false) {
+      bridgeStates[activeId] = result;
+      updateBridgeButton();
+      $modalBridge.classList.remove('open');
+    } else {
+      alert(result.message || 'Bridge connection failed');
+    }
+  });
+
+  // Refresh bridge states on tab switch
+  async function refreshBridgeState() {
+    if (!activeId) return;
+    try {
+      const raw = await pywebview.api.get_bridge_status(activeId);
+      const result = JSON.parse(raw);
+      if (result.exists) {
+        bridgeStates[activeId] = result;
+      }
+    } catch(e) {}
+    updateBridgeButton();
+  }
+
+  // Patch switchTab to also update bridge
+  const _origSwitchTab = switchTab;
+  switchTab = function(sid) {
+    _origSwitchTab(sid);
+    refreshBridgeState();
+  };
+
+  // Poll bridge states periodically (for auto-resume detection)
+  setInterval(async () => {
+    if (!activeId) return;
+    try {
+      const raw = await pywebview.api.get_bridge_status(activeId);
+      const result = JSON.parse(raw);
+      if (result.exists) {
+        const prev = bridgeStates[activeId];
+        bridgeStates[activeId] = result;
+        // If state changed (e.g. auto-resumed), update button
+        if (!prev || prev.paused !== result.paused || prev.state !== result.state) {
+          updateBridgeButton();
+        }
+      }
+    } catch(e) {}
+  }, 3000);
+
   // ── About modal + update check ──
   const $modalAbout = document.getElementById('modal-about');
   const $updateStatus = document.getElementById('update-status');
@@ -1035,8 +1214,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         for (const s of existing) {
           await reconnectSession(s.sid, s.cmd);
         }
+        // Restore bridge states
+        try {
+          const bridges = JSON.parse(await pywebview.api.list_bridges());
+          Object.entries(bridges).forEach(([sid, status]) => { bridgeStates[sid] = status; });
+        } catch(e) {}
         switchTab(existing[0].sid);
-        return; // Skip launcher modal — we reconnected
+        return;
       }
     } catch(e) {}
 

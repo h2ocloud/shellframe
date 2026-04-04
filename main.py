@@ -25,6 +25,10 @@ from pathlib import Path
 
 import webview
 
+# Add app dir to path for bridge imports
+sys.path.insert(0, str(Path(__file__).parent))
+from bridge_telegram import TelegramBridge, TelegramBridgeConfig
+
 IS_WIN = platform.system() == "Windows"
 
 if not IS_WIN:
@@ -230,7 +234,9 @@ class Api:
 
     def __init__(self):
         self.sessions: dict[str, Session] = {}
+        self.bridges: dict[str, TelegramBridge] = {}  # sid -> bridge
         self._counter = 0
+        self._bridge_counter = 0
 
     def get_config(self) -> str:
         return json.dumps(load_config())
@@ -287,7 +293,14 @@ class Api:
 
     def read_output(self, sid: str) -> str:
         s = self.sessions.get(sid)
-        return s.read() if s else ""
+        if not s:
+            return ""
+        data = s.read()
+        # Feed output to bridge if attached
+        bridge = self.bridges.get(sid)
+        if bridge and data:
+            bridge.feed_output(data)
+        return data
 
     def is_alive(self, sid: str) -> bool:
         s = self.sessions.get(sid)
@@ -373,7 +386,73 @@ class Api:
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
 
+    # ── Bridge API ──
+
+    def start_bridge(self, sid: str, bot_token: str, allowed_users_json: str,
+                     prefix_enabled: bool, initial_prompt: str) -> str:
+        """Start a TG bridge attached to session sid."""
+        s = self.sessions.get(sid)
+        if not s:
+            return json.dumps({"success": False, "message": "Session not found"})
+
+        # Stop existing bridge on this session
+        old = self.bridges.get(sid)
+        if old:
+            old.stop()
+
+        allowed = json.loads(allowed_users_json) if allowed_users_json else []
+        config = TelegramBridgeConfig(
+            bot_token=bot_token,
+            allowed_users=[int(u) for u in allowed],
+            prefix_enabled=prefix_enabled,
+            initial_prompt=initial_prompt,
+        )
+
+        self._bridge_counter += 1
+        bridge_id = f"b{self._bridge_counter}"
+
+        bridge = TelegramBridge(
+            bridge_id=bridge_id,
+            config=config,
+            write_fn=lambda text: s.write(text),
+        )
+        bridge.start()
+        self.bridges[sid] = bridge
+
+        status = bridge.get_status()
+        return json.dumps({"success": bridge.connected, **status})
+
+    def stop_bridge(self, sid: str) -> str:
+        bridge = self.bridges.pop(sid, None)
+        if bridge:
+            bridge.stop()
+            return json.dumps({"success": True})
+        return json.dumps({"success": False, "message": "No bridge on this session"})
+
+    def toggle_bridge(self, sid: str) -> str:
+        """Toggle pause/resume. Returns new state."""
+        bridge = self.bridges.get(sid)
+        if not bridge:
+            return json.dumps({"active": False, "exists": False})
+        is_active = bridge.toggle_pause()
+        return json.dumps({"active": is_active, "exists": True, **bridge.get_status()})
+
+    def get_bridge_status(self, sid: str) -> str:
+        bridge = self.bridges.get(sid)
+        if not bridge:
+            return json.dumps({"exists": False})
+        return json.dumps({"exists": True, **bridge.get_status()})
+
+    def list_bridges(self) -> str:
+        result = {}
+        for sid, b in self.bridges.items():
+            result[sid] = b.get_status()
+        return json.dumps(result)
+
     def cleanup_all(self):
+        for b in list(self.bridges.values()):
+            b.stop()
+        self.bridges.clear()
         for s in list(self.sessions.values()):
             s.kill()
         self.sessions.clear()
