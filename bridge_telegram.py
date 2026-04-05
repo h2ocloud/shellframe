@@ -205,8 +205,9 @@ class SessionSlot:
         self.output_buf = ""
         self.output_lock = threading.Lock()
         self.last_output_time = 0
-        self.sent_texts = []  # track what we sent to PTY (for echo filtering)
-        self.has_user_msg = False  # True after first real user message received
+        self.first_output_time = 0  # when buffer started accumulating
+        self.sent_texts = []
+        self.has_user_msg = False
 
 
 class TelegramBridge(BridgeBase):
@@ -361,6 +362,8 @@ class TelegramBridge(BridgeBase):
             was_empty = not slot.output_buf
             slot.output_buf += raw_text
             slot.last_output_time = time.time()
+            if was_empty:
+                slot.first_output_time = time.time()
         # Send typing on first output chunk
         if was_empty:
             threading.Thread(target=self._send_typing, args=(sid,), daemon=True).start()
@@ -384,8 +387,11 @@ class TelegramBridge(BridgeBase):
                     if not slot.has_user_msg:
                         slot.output_buf = ""
                         continue
-                    if time.time() - slot.last_output_time < 4.0:
-                        # Still receiving output — refresh typing indicator
+                    now = time.time()
+                    idle = now - slot.last_output_time
+                    total = now - slot.first_output_time
+                    # Flush if idle 3s OR buffer accumulated 12s (force flush for chatty terminals)
+                    if idle < 3.0 and total < 12.0:
                         self._send_typing(sid)
                         continue
                     text = slot.output_buf
