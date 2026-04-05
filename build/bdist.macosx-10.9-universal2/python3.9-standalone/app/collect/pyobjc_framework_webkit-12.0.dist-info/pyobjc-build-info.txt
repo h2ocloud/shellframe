@@ -1,3 +1,0 @@
-macOS 15.2 (24C101)
-Apple clang version 16.0.0 (clang-1600.0.26.6)
-SDK: macOS 15.2
