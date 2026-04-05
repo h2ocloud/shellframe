@@ -268,6 +268,15 @@ class TelegramBridge(BridgeBase):
 
     # ── Output capture (PTY → TG) ──
 
+    def _send_typing(self, sid: str):
+        """Send typing indicator to users watching this session."""
+        for uid, active_sid in list(self._user_active.items()):
+            if active_sid == sid and uid in self._user_chat:
+                tg_api(self.config.bot_token, "sendChatAction", {
+                    "chat_id": self._user_chat[uid],
+                    "action": "typing",
+                })
+
     def feed_output(self, sid: str, raw_text: str):
         """Feed PTY output from a specific session."""
         if not self.active:
@@ -276,8 +285,12 @@ class TelegramBridge(BridgeBase):
         if not slot:
             return
         with slot.output_lock:
+            was_empty = not slot.output_buf
             slot.output_buf += raw_text
             slot.last_output_time = time.time()
+        # Send typing on first output chunk
+        if was_empty:
+            threading.Thread(target=self._send_typing, args=(sid,), daemon=True).start()
 
     def _flush_loop(self):
         """Flush buffered output from all sessions to TG."""
@@ -295,6 +308,8 @@ class TelegramBridge(BridgeBase):
                     if not slot.output_buf:
                         continue
                     if time.time() - slot.last_output_time < 4.0:
+                        # Still receiving output — refresh typing indicator
+                        self._send_typing(sid)
                         continue
                     text = slot.output_buf
                     slot.output_buf = ""
