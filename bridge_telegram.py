@@ -388,62 +388,56 @@ class TelegramBridge(BridgeBase):
         if was_empty:
             threading.Thread(target=self._send_typing, args=(sid,), daemon=True).start()
 
+    # AI response markers used by CLI tools
+    AI_MARKERS = ('• ', '⏺ ', '⏺')
+
     def _extract_new_text(self, slot):
-        """Compare current screen with previous snapshot, return new lines."""
-        c = _get_compiled()
+        """Compare screen with previous snapshot.
+
+        Simple approach: only extract lines starting with AI response
+        markers (• or ⏺). Everything else is UI noise.
+        This works because Claude Code, Codex, and similar CLI tools
+        always prefix AI responses with these markers.
+        """
         curr = [line.rstrip() for line in slot.screen.display]
         new_lines = []
         for i, (prev, now) in enumerate(zip(slot.prev_screen, curr)):
             if now and now != prev:
-                # Clean the line
                 stripped = now.strip()
                 if not stripped:
                     continue
-                # Skip known noise
-                lower = stripped.lower()
-                lower_nospace = lower.replace(' ', '')
-                if any(kw.replace(' ', '') in lower_nospace for kw in c["echo_keywords"]):
+
+                # Only extract lines that start with AI response markers
+                response = None
+                for marker in self.AI_MARKERS:
+                    if stripped.startswith(marker):
+                        response = stripped[len(marker):].strip()
+                        break
+
+                if not response:
+                    # Continuation lines: indented text that's part of a multi-line AI response
+                    # Must be after a marker line, indented, and not look like UI chrome
+                    if (new_lines and now.startswith('  ')
+                        and not stripped.startswith(('›', '❯', '$', '/', 'gpt-', 'claude-'))
+                        and '%' not in stripped
+                        and not re.match(r'\w+[-.][\d.]+', stripped)):  # skip model names
+                        response = stripped
+
+                if not response:
                     continue
-                # Skip sent text echo
+
+                # Skip echo of sent text
                 is_echo = False
                 for sent in slot.sent_texts:
-                    norm = sent.replace(' ', '').lower()
-                    sl = stripped.replace(' ', '').lower()
-                    if len(sl) > 3 and (sl in norm or norm[:25] in sl):
+                    norm_r = response.replace(' ', '').lower()
+                    norm_s = sent.replace(' ', '').lower()
+                    if len(norm_r) > 3 and (norm_r in norm_s or norm_s[:25] in norm_r):
                         is_echo = True
                         break
                 if is_echo:
                     continue
-                # Skip loading/spinner lines
-                if c["loading"].fullmatch(stripped) or c["loading"].fullmatch(stripped.rstrip('….')):
-                    continue
-                # Skip prompt-only lines
-                if stripped in ('›', '•', '⏺', '❯', '$', '%'):
-                    continue
-                # Skip thinking indicators
-                if stripped == '(thinking)' or re.match(r'\(thought for \d+s?\)', stripped):
-                    continue
-                # Skip status bar / CLI chrome
-                if re.search(r'\d+%\s*left', stripped):
-                    continue
-                if stripped.startswith('Use /') or stripped.startswith('Tip:'):
-                    continue
-                if stripped.startswith('Run /'):
-                    continue
-                if re.match(r'(gpt-|claude-|sonnet|opus|haiku)', stripped):
-                    continue
-                if re.match(r'model:', stripped) or re.match(r'directory:', stripped):
-                    continue
-                # Skip Codex placeholders
-                if re.search(r'/\w+ (on|to|for|with|in) ', stripped) and len(stripped) < 60:
-                    continue
-                # Strip prompt markers
-                for marker in ('› ', '• ', '⏺ ', '❯ '):
-                    if stripped.startswith(marker):
-                        stripped = stripped[len(marker):]
-                        break
-                if stripped:
-                    new_lines.append(stripped)
+
+                new_lines.append(response)
         # Update snapshot
         slot.prev_screen = curr[:]
         return new_lines
