@@ -394,8 +394,19 @@ class TelegramBridge(BridgeBase):
     # Responses that are system-prompt acks or tool-use status, not real replies
     _FILTERED_RESPONSES = {"Understood.", "Understood"}
     _FILTERED_PREFIXES = (
-        "Searching the web", "Searched ", "Reading ", "Writing ",
-        "Editing ", "Running ", "Working (", "Calling ",
+        # Tool-use status (Codex style)
+        "Searching the web", "Searched ",
+        # Tool calls (Claude Code style)
+        "Web Search(", "Fetch(", "Read(", "Write(", "Edit(",
+        "Bash(", "Grep(", "Glob(", "Agent(", "Skill(",
+        "TodoWrite(", "NotebookEdit(", "WebFetch(", "WebSearch(",
+        "TaskCreate(", "TaskUpdate(",
+        # Tool results
+        "⎿", "Did ", "Received ", "Error:",
+        # Status indicators
+        "Working (", "Determining", "Cooked for", "Cooking",
+        # General tool actions
+        "Reading ", "Writing ", "Editing ", "Running ", "Calling ",
         "Creating ", "Deleting ", "Updating ", "Fetching ",
         "Analyzing ", "Scanning ", "Checking ", "Installing ",
         "Building ", "Compiling ", "Downloading ", "Uploading ",
@@ -417,6 +428,10 @@ class TelegramBridge(BridgeBase):
         for line in slot.screen.display:
             stripped = line.rstrip().strip()
             raw_lstripped = line.lstrip()
+
+            # Skip status/loading lines (not part of any block)
+            if any(stripped.startswith(s) for s in ('✻ ', '✢ ', '✳ ', '✶ ', '✽ ', '· ')):
+                continue
 
             # Check for prompt markers — ends current block
             if stripped.startswith(('› ', '❯ ', '›', '❯')):
@@ -459,8 +474,13 @@ class TelegramBridge(BridgeBase):
             if not block_lines:
                 continue
 
-            # Remove decoration lines within block
-            block_lines = [l for l in block_lines if not (l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l))]
+            # Remove decoration lines and tool result lines within block
+            block_lines = [l for l in block_lines if not (
+                (l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)) or
+                l.strip().startswith('⎿') or
+                l.strip().startswith('Sources:') or
+                l.strip().startswith('- http')
+            )]
             # Re-trim
             while block_lines and not block_lines[-1]:
                 block_lines.pop()
@@ -480,8 +500,21 @@ class TelegramBridge(BridgeBase):
                 slot.sent_responses.add(text)
                 continue
 
-            # Skip if already sent (use full block text as key)
+            # Skip if already sent or is a superset of previously sent
             if text in slot.sent_responses:
+                continue
+            # Check if this is an expanded version of something already sent
+            already_sent = False
+            for prev in list(slot.sent_responses):
+                if prev in text:
+                    # This is a longer version — remove old, send new
+                    slot.sent_responses.discard(prev)
+                    break
+                if text in prev:
+                    # This is a shorter version of something already sent
+                    already_sent = True
+                    break
+            if already_sent:
                 continue
 
             # Skip echo of sent text
