@@ -80,7 +80,7 @@ def _build_regex():
         "spinner": re.compile(f'[{re.escape(spinner_chars)}]+'),
         "loading": re.compile(
             '(?:' + '|'.join(re.escape(w) for w in loading_words) + r')(?:…|\.\.\.)?'
-            r'|[A-Z][a-z]{2,}(?:ing|ling|ting|ning|ring)(?:…|\.\.\.)'  # catch any Xxxing… pattern
+            r'|[A-Z]\w{2,}(?:ing|ling|ting|ning|ring)(?:…|\.\.\.)'  # catch any Xxxing… (incl. accented chars)
         ),
         "tui": re.compile(f'[{re.escape(box_chars)}]+'),
         "mcp": re.compile('|'.join(mcp_pats)),
@@ -110,40 +110,52 @@ def reload_filters():
 
 
 def strip_ansi(text, sent_texts=None):
-    """Remove terminal noise. Rules loaded dynamically from filters.json."""
+    """Extract AI response from terminal output.
+
+    Strategy:
+    1. Try marker extraction (>>> response <<<) - most reliable
+    2. Fallback: regex strip + keyword filter
+    """
     c = _get_compiled()
 
-    text = c["ansi"].sub('', text)
-    text = c["spinner"].sub('', text)
-    text = c["loading"].sub('', text)
-    text = c["tui"].sub('', text)
-    text = c["mcp"].sub('', text)
+    # Strip ANSI first
+    clean = c["ansi"].sub('', text)
+    clean = c["spinner"].sub('', clean)
+
+    # Strategy 1: Marker extraction (>>> ... <<<)
+    marker_match = re.search(r'>>>\s*(.*?)\s*<<<', clean, re.DOTALL)
+    if marker_match:
+        return marker_match.group(1).strip()
+
+    # Strategy 2: Fallback regex cleaning
+    clean = c["loading"].sub('', clean)
+    clean = c["tui"].sub('', clean)
+    clean = c["mcp"].sub('', clean)
     if c["status"]:
-        text = c["status"].sub('', text)
+        clean = c["status"].sub('', clean)
     for osc_re in c["osc"]:
-        text = osc_re.sub('', text)
-    text = re.sub(r'[•›]\s*$', '', text, flags=re.MULTILINE)
+        clean = osc_re.sub('', clean)
+    # Remove thinking indicators
+    clean = re.sub(r'\(thinking\)', '', clean)
+    clean = re.sub(r'\(thought for \d+s?\)', '', clean)
+    clean = re.sub(r'[•›]\s*$', '', clean, flags=re.MULTILINE)
 
     lines = []
-    for l in text.split('\n'):
+    for l in clean.split('\n'):
         stripped = l.strip()
         if not stripped or stripped in c["skip_chars"] or len(stripped) <= 1:
             continue
-        # Skip decoration-only lines
         if len(stripped) > 2 and all(ch in c["decoration_chars"] for ch in stripped):
-            continue
-        # Skip short lines that are animation fragments (only non-alpha chars)
-        if len(stripped) < 8 and not any(ch.isalpha() for ch in stripped):
             continue
         if stripped.startswith('› '):
             stripped = stripped[2:]
         elif stripped.startswith('• '):
             stripped = stripped[2:]
+        elif stripped.startswith('\u23fa '):  # ⏺
+            stripped = stripped[2:]
 
-        # Filter echo of user messages
         if stripped.startswith('[TG @') or stripped.startswith('[TG@'):
             continue
-        # Filter by keyword blacklist (also check smushed text without spaces)
         lower = stripped.lower()
         lower_nospace = lower.replace(' ', '')
         if any(kw in lower or kw.replace(' ', '') in lower_nospace for kw in c["echo_keywords"]):
@@ -151,8 +163,6 @@ def strip_ansi(text, sent_texts=None):
         if sent_texts:
             is_echo = False
             for sent in sent_texts:
-                # Fuzzy match: normalize whitespace and check substring
-                # Normalize: remove all spaces, lowercase
                 norm_line = stripped.replace(' ', '').lower()
                 norm_sent = sent.replace(' ', '').lower()
                 if len(norm_line) > 3 and (norm_line in norm_sent or norm_sent[:25] in norm_line):
@@ -163,6 +173,7 @@ def strip_ansi(text, sent_texts=None):
 
         lines.append(stripped)
     return '\n'.join(lines)
+
 
 
 def tg_api(token: str, method: str, data=None) -> dict:
@@ -190,7 +201,9 @@ class TelegramBridgeConfig(BridgeConfigBase):
         "1. Messages from remote users will appear as 'username: message'. "
         "2. Reply ONLY as plain text in this terminal. NEVER use MCP tools, plugins, or any telegram/reply tools. "
         "3. Keep responses concise. "
-        "4. If you see a message like 'Howard: hello', just reply directly with text."
+        "4. If you see a message like 'Howard: hello', just reply directly with text. "
+        "5. CRITICAL: Start your reply with >>> and end with <<< so the bridge can extract it. "
+        'Example: >>> Hello! How can I help? <<<'
     )
 
 
