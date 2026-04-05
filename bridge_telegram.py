@@ -391,8 +391,15 @@ class TelegramBridge(BridgeBase):
     # AI response markers used by CLI tools
     AI_MARKERS = ('• ', '⏺ ', '⏺')
 
-    # Responses that are system-prompt acknowledgments, not real replies
+    # Responses that are system-prompt acks or tool-use status, not real replies
     _FILTERED_RESPONSES = {"Understood.", "Understood"}
+    _FILTERED_PREFIXES = (
+        "Searching the web", "Searched ", "Reading ", "Writing ",
+        "Editing ", "Running ", "Working (", "Calling ",
+        "Creating ", "Deleting ", "Updating ", "Fetching ",
+        "Analyzing ", "Scanning ", "Checking ", "Installing ",
+        "Building ", "Compiling ", "Downloading ", "Uploading ",
+    )
 
     def _extract_new_text(self, slot):
         """Scan screen for AI responses not yet sent.
@@ -452,10 +459,24 @@ class TelegramBridge(BridgeBase):
             if not block_lines:
                 continue
 
+            # Remove decoration lines within block
+            block_lines = [l for l in block_lines if not (l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l))]
+            # Re-trim
+            while block_lines and not block_lines[-1]:
+                block_lines.pop()
+            while block_lines and not block_lines[0]:
+                block_lines.pop(0)
+            if not block_lines:
+                continue
+
             text = '\n'.join(block_lines)
 
-            # Skip filtered system-prompt acknowledgments
+            # Skip filtered responses (system acks, tool-use status)
+            first_line = block_lines[0].strip() if block_lines else ""
             if text.strip() in self._FILTERED_RESPONSES:
+                slot.sent_responses.add(text)
+                continue
+            if any(first_line.startswith(p) for p in self._FILTERED_PREFIXES):
                 slot.sent_responses.add(text)
                 continue
 
