@@ -491,8 +491,12 @@ class Api:
         # Send initial prompt to first session (delayed to let CLI load)
         if initial_prompt and self.sessions:
             first_sid = list(self.sessions.keys())[0]
+            # Track in sent_texts so echo gets filtered
+            slot = self.bridge.slots.get(first_sid)
+            if slot:
+                slot.sent_texts.append(initial_prompt)
             def _send_prompt(sid=first_sid, text=initial_prompt):
-                time.sleep(3)  # wait for CLI to be ready
+                time.sleep(3)
                 s = self.sessions.get(sid)
                 if s:
                     s.write(text)
