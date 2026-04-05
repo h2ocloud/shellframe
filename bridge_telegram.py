@@ -680,9 +680,13 @@ class TelegramBridge(BridgeBase):
 
         # ── Slash commands ──
         if text.startswith("/"):
-            cmd = text.split()[0][1:].split("@")[0].lower()  # strip /cmd@botname
-            self._handle_command(cmd, user_id, chat_id)
-            return
+            cmd = text.split()[0][1:].split("@")[0].lower()
+            # Bridge-own commands
+            if cmd in ('list', 'status', 'pause', 'resume', 'start') or cmd.isdigit():
+                self._handle_command(cmd, user_id, chat_id)
+                return
+            # Everything else: forward as CLI slash command (e.g., /model, /skills, /compact)
+            # Don't add prefix — send the raw slash command to the CLI
 
         # Skip if paused
         if self.paused:
@@ -703,7 +707,12 @@ class TelegramBridge(BridgeBase):
         slot = self.slots[active_sid]
         username = user.get("username") or user.get("first_name", "user")
 
-        if self.config.prefix_enabled:
+        # CLI slash commands: forward raw without prefix
+        is_cli_cmd = text.startswith("/")
+
+        if is_cli_cmd:
+            forwarded = text
+        elif self.config.prefix_enabled:
             forwarded = f"{username}: {text}"
         else:
             forwarded = text
