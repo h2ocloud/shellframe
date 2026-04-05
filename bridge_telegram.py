@@ -224,7 +224,7 @@ class SessionSlot:
         self.screen = pyte.Screen(200, 50)
         self.stream = pyte.Stream(self.screen)
         self.prev_screen = [""] * 50  # previous screen snapshot
-        self.pending_text = ""  # extracted text waiting to be sent
+        self.sent_responses = set()  # track responses already sent to TG
 
 
 class TelegramBridge(BridgeBase):
@@ -376,7 +376,7 @@ class TelegramBridge(BridgeBase):
         if not slot:
             return
         with slot.output_lock:
-            was_empty = not slot.pending_text and slot.last_output_time == 0
+            was_empty = slot.last_output_time == 0
             # Feed into pyte virtual terminal
             try:
                 slot.stream.feed(raw_text)
@@ -392,54 +392,61 @@ class TelegramBridge(BridgeBase):
     AI_MARKERS = ('• ', '⏺ ', '⏺')
 
     def _extract_new_text(self, slot):
-        """Compare screen with previous snapshot.
+        """Scan screen for AI responses not yet sent.
 
-        Simple approach: only extract lines starting with AI response
-        markers (• or ⏺). Everything else is UI noise.
-        This works because Claude Code, Codex, and similar CLI tools
-        always prefix AI responses with these markers.
+        Approach: find all • / ⏺ lines on screen, skip ones already sent.
+        No diff needed — just track what we've sent before.
         """
-        curr = [line.rstrip() for line in slot.screen.display]
         new_lines = []
-        for i, (prev, now) in enumerate(zip(slot.prev_screen, curr)):
-            if now and now != prev:
-                stripped = now.strip()
-                if not stripped:
-                    continue
+        in_response = False
 
-                # Only extract lines that start with AI response markers
-                response = None
-                for marker in self.AI_MARKERS:
-                    if stripped.startswith(marker):
-                        response = stripped[len(marker):].strip()
-                        break
+        for line in slot.screen.display:
+            stripped = line.rstrip().strip()
+            if not stripped:
+                in_response = False
+                continue
 
-                if not response:
-                    # Continuation lines: indented text that's part of a multi-line AI response
-                    # Must be after a marker line, indented, and not look like UI chrome
-                    if (new_lines and now.startswith('  ')
-                        and not stripped.startswith(('›', '❯', '$', '/', 'gpt-', 'claude-'))
-                        and '%' not in stripped
-                        and not re.match(r'\w+[-.][\d.]+', stripped)):  # skip model names
-                        response = stripped
+            # Check for AI response marker
+            response = None
+            for marker in self.AI_MARKERS:
+                if stripped.startswith(marker):
+                    response = stripped[len(marker):].strip()
+                    in_response = True
+                    break
 
-                if not response:
-                    continue
+            # Continuation line (indented, after a marker line)
+            if not response and in_response and line.startswith('  '):
+                if not stripped.startswith(('›', '❯', '$', '/')):
+                    response = stripped
 
-                # Skip echo of sent text
-                is_echo = False
-                for sent in slot.sent_texts:
-                    norm_r = response.replace(' ', '').lower()
-                    norm_s = sent.replace(' ', '').lower()
-                    if len(norm_r) > 3 and (norm_r in norm_s or norm_s[:25] in norm_r):
-                        is_echo = True
-                        break
-                if is_echo:
-                    continue
+            if not response:
+                in_response = False
+                continue
 
-                new_lines.append(response)
-        # Update snapshot
-        slot.prev_screen = curr[:]
+            # Skip if already sent
+            if response in slot.sent_responses:
+                continue
+
+            # Skip echo of sent text
+            is_echo = False
+            for sent in slot.sent_texts:
+                nr = response.replace(' ', '').lower()
+                ns = sent.replace(' ', '').lower()
+                if len(nr) > 3 and (nr in ns or ns[:25] in nr):
+                    is_echo = True
+                    break
+            if is_echo:
+                continue
+
+            new_lines.append(response)
+
+        # Mark as sent
+        for line in new_lines:
+            slot.sent_responses.add(line)
+        # Keep sent_responses from growing forever (last 200)
+        if len(slot.sent_responses) > 200:
+            slot.sent_responses = set(list(slot.sent_responses)[-100:])
+
         return new_lines
 
     def _flush_loop(self):
@@ -468,7 +475,7 @@ class TelegramBridge(BridgeBase):
                         self._send_typing(sid)
                         continue
 
-                    # Extract new text via screen diff
+                    # Extract new text via screen diff (only final changes)
                     new_lines = self._extract_new_text(slot)
                     slot.sent_texts.clear()
                     slot.last_output_time = 0
