@@ -15,84 +15,130 @@ from dataclasses import dataclass, field
 from bridge_base import BridgeBase, BridgeConfigBase
 
 
-# Aggressive terminal escape stripping
-ANSI_RE = re.compile(
-    r'\x1b\[[\d;?]*[A-Za-z~]'  # CSI sequences incl. DEC private mode (?25h, ?2026h, etc.)
-    r'|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)'  # OSC sequences (title bar)
-    r'|\x1b[()][A-Z0-9]'       # charset
-    r'|\x1b[78=>NOMDEHc]'       # single-char escapes
-    r'|\r'                      # carriage return
-    r'|\x07'                    # bell
-    r'|\x08'                    # backspace
-    r'|\[[\??\d;]+[A-Za-z]'     # bare CSI without ESC (sometimes leaked as raw text)
-, re.DOTALL)
+# ── Dynamic filter system ──
+# Loads rules from filters.json (local or remote), falls back to hardcoded defaults.
 
-# Spinner chars (braille + star variants + Claude Code animations)
-SPINNER_RE = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏺⏵▐▛▜▝▘█]+')
-# Loading animation words
-LOADING_RE = re.compile(r'(?:Channelling|Undulating|Gitifying|Thinking|Initializing)(?:…|\.\.\.)?')
-# Box drawing and TUI chrome
-TUI_RE = re.compile(r'[╭╮╰╯│─┌┐└┘┤├┬┴┼═║╔╗╚╝╠╣╦╩╬]+')
-# MCP / plugin error lines
-MCP_RE = re.compile(r'plugin:.*MCP|MCP server failed|reply failed|allowlisted|/telegram:access|sendChatAction')
+import os as _os
+from pathlib import Path as _Path
 
-# Status bar patterns (Claude Code, Codex, etc.)
-STATUS_RE = re.compile(
-    r'›\s*(?:Write tests|Working|Thinking|Reading|Searching|Editing|Running|Use /\w+).*$'
-    r'|(?:gpt-[\d.]+|claude-[\w.-]+|sonnet|opus|haiku)\s+\w+\s*·\s*\d+%\s*left.*$'
-    r'|•\s*Working\([\ds]+.*?\)'
-    r'|\bWor(?:k(?:i(?:n(?:g)?)?)?)?(?=\s|$)'  # partial "Working" fragments
-    r'|bypass\s*permissions?\s*on.*$'  # Claude Code permission prompt
-    r'|shift\+tab\s*to\s*cycle.*$'
-    r'|esc\s*to\s*interrupt.*$'
-    r'|Use /\w+ to .*$'  # CLI hints like "Use /skills to list..."
-    r'|Tip:.*$'  # Codex tips
-    r'|\d+%\s*left\s*·\s*/'
-    r'|esc to interrupt'
-, re.MULTILINE)
+_FILTERS_FILE = _Path(__file__).parent / "filters.json"
+_FILTERS_URL = "https://raw.githubusercontent.com/h2ocloud/shellframe/main/filters.json"
+_filters_cache = None
+
+
+def _load_filters():
+    """Load filter rules from local file, fetch remote if newer."""
+    global _filters_cache
+    if _filters_cache:
+        return _filters_cache
+
+    # Try local file
+    try:
+        with open(_FILTERS_FILE) as f:
+            _filters_cache = json.load(f)
+    except:
+        _filters_cache = {}
+
+    # Background: fetch remote and update local if version is newer
+    def _fetch_remote():
+        global _filters_cache
+        try:
+            req = urllib.request.Request(_FILTERS_URL, headers={"User-Agent": "shellframe"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                remote = json.loads(resp.read().decode())
+            if remote.get("version", 0) > _filters_cache.get("version", 0):
+                _filters_cache = remote
+                with open(_FILTERS_FILE, 'w') as f:
+                    json.dump(remote, f, indent=2, ensure_ascii=False)
+        except:
+            pass
+    threading.Thread(target=_fetch_remote, daemon=True).start()
+
+    return _filters_cache
+
+
+def _build_regex():
+    """Build compiled regexes from filter rules."""
+    f = _load_filters()
+
+    spinner_chars = f.get("spinner_chars", "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏺⏵▐▛▜▝▘█")
+    loading_words = f.get("loading_words", ["Channelling", "Undulating", "Gitifying", "Thinking", "Initializing"])
+    box_chars = f.get("box_drawing_chars", "╭╮╰╯│─┌┐└┘┤├┬┴┼═║╔╗╚╝╠╣╦╩╬")
+    mcp_pats = f.get("mcp_patterns", ["plugin:.*MCP", "MCP server failed", "reply failed", "allowlisted"])
+    status_pats = f.get("status_bar_patterns", [])
+    osc_pats = f.get("osc_cleanup_patterns", [])
+
+    return {
+        "ansi": re.compile(
+            r'\x1b\[[\d;?]*[A-Za-z~]'
+            r'|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)'
+            r'|\x1b[()][A-Z0-9]'
+            r'|\x1b[78=>NOMDEHc]'
+            r'|\r|\x07|\x08'
+            r'|\[[\??\d;]+[A-Za-z]'
+        , re.DOTALL),
+        "spinner": re.compile(f'[{re.escape(spinner_chars)}]+'),
+        "loading": re.compile('(?:' + '|'.join(re.escape(w) for w in loading_words) + r')(?:…|\.\.\.)?'),
+        "tui": re.compile(f'[{re.escape(box_chars)}]+'),
+        "mcp": re.compile('|'.join(mcp_pats)),
+        "status": re.compile('|'.join(status_pats), re.MULTILINE) if status_pats else None,
+        "osc": [re.compile(p) for p in osc_pats],
+        "echo_keywords": f.get("echo_keywords", []),
+        "skip_chars": set(f.get("skip_line_chars", "›•\\/⎿M")),
+        "decoration_chars": set(f.get("decoration_chars", "─━═│║╭╮╰╯┌┐└┘ |-_")),
+    }
+
+
+_compiled = None
+
+def _get_compiled():
+    global _compiled
+    if not _compiled:
+        _compiled = _build_regex()
+    return _compiled
+
+
+def reload_filters():
+    """Force reload filters from disk/remote."""
+    global _filters_cache, _compiled
+    _filters_cache = None
+    _compiled = None
+    _load_filters()
 
 
 def strip_ansi(text, sent_texts=None):
-    """Remove ANSI escapes, spinners, status bar noise, and echo of sent text."""
-    text = ANSI_RE.sub('', text)
-    text = SPINNER_RE.sub('', text)
-    text = LOADING_RE.sub('', text)
-    text = TUI_RE.sub('', text)
-    text = MCP_RE.sub('', text)
-    text = STATUS_RE.sub('', text)
-    text = re.sub(r'\][\d;]+[^\n]*?\\', '', text)
-    text = re.sub(r'\[[\d;?]+[^\n]*?\\', '', text)
+    """Remove terminal noise. Rules loaded dynamically from filters.json."""
+    c = _get_compiled()
+
+    text = c["ansi"].sub('', text)
+    text = c["spinner"].sub('', text)
+    text = c["loading"].sub('', text)
+    text = c["tui"].sub('', text)
+    text = c["mcp"].sub('', text)
+    if c["status"]:
+        text = c["status"].sub('', text)
+    for osc_re in c["osc"]:
+        text = osc_re.sub('', text)
     text = re.sub(r'[•›]\s*$', '', text, flags=re.MULTILINE)
 
     lines = []
     for l in text.split('\n'):
         stripped = l.strip()
-        if not stripped or stripped in ('›', '•', '\\', 'M', '/', '⎿'):
+        if not stripped or stripped in c["skip_chars"] or len(stripped) <= 1:
             continue
-        # Skip decoration-only lines (dashes, boxes, etc.)
-        if len(stripped) > 2 and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in stripped):
+        # Skip decoration-only lines
+        if len(stripped) > 2 and all(ch in c["decoration_chars"] for ch in stripped):
             continue
         if stripped.startswith('› '):
             stripped = stripped[2:]
         elif stripped.startswith('• '):
             stripped = stripped[2:]
 
-        # Filter echo of user messages (both old and new format)
+        # Filter echo of user messages
         if stripped.startswith('[TG @') or stripped.startswith('[TG@'):
             continue
-        # Filter system prompt acknowledgments + Claude Code noise
-        if any(kw in stripped.lower() for kw in [
-            'keep replies concise', 'mobile-friendly', 'sender prefix', 'treat [tg',
-            'reply directly', 'do not use any telegram', 'shellframe bridge',
-            'not use any telegram tools', 'respond normally', 'never use mcp',
-            'telegram channel isn\'t set up', '/telegram:access',
-            'allowlisted', 'reply failed', 'mcp server failed',
-            'welcome back', 'run /init', 'recent activity', 'no recent activity',
-            'tips for getting started', 'claude code v',
-            'claude max', 'organization', '/mcp',
-            'i\'m ready and listening', 'ready and listening for messages',
-            'plain text in this terminal',
-        ]):
+        # Filter by keyword blacklist
+        if any(kw in stripped.lower() for kw in c["echo_keywords"]):
             continue
         if sent_texts:
             is_echo = False

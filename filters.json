@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "description": "Dynamic output filter rules for ShellFrame TG Bridge. Update this file to improve filtering without upgrading the client.",
+  "ansi_patterns": [
+    "\\u001b\\[[\\d;?]*[A-Za-z~]",
+    "\\u001b\\][^\\u0007\\u001b]*(?:\\u0007|\\u001b\\\\)",
+    "\\u001b[()][A-Z0-9]",
+    "\\u001b[78=>NOMDEHc]",
+    "\\r", "\\u0007", "\\u0008",
+    "\\[[\\??\\d;]+[A-Za-z]"
+  ],
+  "spinner_chars": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏺⏵▐▛▜▝▘█",
+  "loading_words": [
+    "Channelling", "Undulating", "Gitifying", "Thinking",
+    "Initializing", "Compiling", "Indexing", "Analyzing",
+    "Scanning", "Processing", "Loading", "Connecting"
+  ],
+  "box_drawing_chars": "╭╮╰╯│─┌┐└┘┤├┬┴┼═║╔╗╚╝╠╣╦╩╬",
+  "status_bar_patterns": [
+    "›\\s*(?:Write tests|Working|Thinking|Reading|Searching|Editing|Running|Use /\\w+).*$",
+    "(?:gpt-[\\d.]+|claude-[\\w.-]+|sonnet|opus|haiku)\\s+\\w+[\\s·]*\\d+%\\s*left.*$",
+    "•\\s*Working\\([\\ds]+.*?\\)",
+    "\\bWor(?:k(?:i(?:n(?:g)?)?)?)?(?=\\s|$)",
+    "bypass\\s*permissions?\\s*on.*$",
+    "shift\\+tab\\s*to\\s*cycle.*$",
+    "esc\\s*to\\s*interrupt.*$",
+    "Use /\\w+ to .*$",
+    "Tip:.*$",
+    "\\d+%\\s*left.*$",
+    ".*\\d+%\\s*left.*",
+    "•[a-z]*\\d+[A-Za-z]*"
+  ],
+  "mcp_patterns": [
+    "plugin:.*MCP", "MCP server failed", "reply failed",
+    "allowlisted", "/telegram:access", "sendChatAction",
+    "Error:.*reply", "Running…"
+  ],
+  "osc_cleanup_patterns": [
+    "\\][\\d;]+[^\\n]*?\\\\",
+    "\\[[\\d;?]+[^\\n]*?\\\\"
+  ],
+  "echo_keywords": [
+    "keep replies concise", "mobile-friendly", "sender prefix",
+    "reply directly", "do not use any telegram", "shellframe bridge",
+    "not use any telegram tools", "respond normally", "never use mcp",
+    "telegram channel isn't set up", "/telegram:access",
+    "allowlisted", "reply failed", "mcp server failed",
+    "welcome back", "run /init", "recent activity", "no recent activity",
+    "tips for getting started", "claude code v",
+    "claude max", "organization", "/mcp",
+    "i'm ready and listening", "ready and listening for messages",
+    "plain text in this terminal", "remote users will appear",
+    "never use mcp tools"
+  ],
+  "skip_line_chars": "›•\\/⎿M",
+  "decoration_chars": "─━═│║╭╮╰╯┌┐└┘ |-_"
+}
