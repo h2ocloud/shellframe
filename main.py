@@ -495,7 +495,9 @@ class Api:
                 time.sleep(3)  # wait for CLI to be ready
                 s = self.sessions.get(sid)
                 if s:
-                    s.write(text + "\r")
+                    s.write(text)
+                    time.sleep(0.3)
+                    s.write("\r")
             threading.Thread(target=_send_prompt, daemon=True).start()
 
         # Persist bridge config

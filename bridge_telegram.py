@@ -17,14 +17,14 @@ from bridge_base import BridgeBase, BridgeConfigBase
 
 # Aggressive terminal escape stripping
 ANSI_RE = re.compile(
-    r'\x1b\[[0-9;]*[A-Za-z]'   # CSI sequences (colors, cursor)
+    r'\x1b\[[\d;?]*[A-Za-z~]'  # CSI sequences incl. DEC private mode (?25h, ?2026h, etc.)
     r'|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)'  # OSC sequences (title bar)
-    r'|\x1b\[[\d;]*[@-~]'      # more CSI
     r'|\x1b[()][A-Z0-9]'       # charset
     r'|\x1b[78=>NOMDEHc]'       # single-char escapes
     r'|\r'                      # carriage return
     r'|\x07'                    # bell
     r'|\x08'                    # backspace
+    r'|\[[\??\d;]+[A-Za-z]'     # bare CSI without ESC (sometimes leaked as raw text)
 , re.DOTALL)
 
 # Braille spinner chars
@@ -32,9 +32,10 @@ SPINNER_RE = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿]+')
 
 # Status bar patterns (Claude Code, Codex, etc.)
 STATUS_RE = re.compile(
-    r'›\s*(?:Write tests|Working|Thinking|Reading|Searching|Editing|Running).*$'
+    r'›\s*(?:Write tests|Working|Thinking|Reading|Searching|Editing|Running|Use /\w+).*$'
     r'|(?:gpt-[\d.]+|claude-[\w.-]+|sonnet|opus|haiku)\s+\w+\s*·\s*\d+%\s*left.*$'
     r'|•\s*Working\([\ds]+.*?\)'
+    r'|\bWor(?:k(?:i(?:n(?:g)?)?)?)?(?=\s|$)'  # partial "Working" fragments
     r'|\d+%\s*left\s*·\s*/'
     r'|esc to interrupt'
 , re.MULTILINE)
@@ -366,7 +367,13 @@ class TelegramBridge(BridgeBase):
         else:
             forwarded = text
 
-        slot.write_fn(forwarded + "\r")
+        # Write text first, then Enter after a brief delay
+        # Some TUIs need time to process input before receiving \r
+        def _send():
+            slot.write_fn(forwarded)
+            time.sleep(0.3)
+            slot.write_fn("\r")
+        threading.Thread(target=_send, daemon=True).start()
 
     def _handle_command(self, cmd: str, user_id: int, chat_id: int):
         """Handle slash commands."""
