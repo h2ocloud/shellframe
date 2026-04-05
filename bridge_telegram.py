@@ -12,6 +12,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
+import pyte
+
 from bridge_base import BridgeBase, BridgeConfigBase
 
 
@@ -201,9 +203,7 @@ class TelegramBridgeConfig(BridgeConfigBase):
         "1. Messages from remote users will appear as 'username: message'. "
         "2. Reply ONLY as plain text in this terminal. NEVER use MCP tools, plugins, or any telegram/reply tools. "
         "3. Keep responses concise. "
-        "4. If you see a message like 'Howard: hello', just reply directly with text. "
-        "5. CRITICAL: Start your reply with >>> and end with <<< so the bridge can extract it. "
-        'Example: >>> Hello! How can I help? <<<'
+        "4. If you see a message like 'Howard: hello', just reply directly with text."
     )
 
 
@@ -214,13 +214,17 @@ class SessionSlot:
         self.sid = sid
         self.label = label
         self.write_fn = write_fn
-        self.index = index  # 1-based display index
-        self.output_buf = ""
+        self.index = index
         self.output_lock = threading.Lock()
         self.last_output_time = 0
-        self.first_output_time = 0  # when buffer started accumulating
+        self.first_output_time = 0
         self.sent_texts = []
         self.has_user_msg = False
+        # Virtual terminal for screen-based text extraction
+        self.screen = pyte.Screen(200, 50)
+        self.stream = pyte.Stream(self.screen)
+        self.prev_screen = [""] * 50  # previous screen snapshot
+        self.pending_text = ""  # extracted text waiting to be sent
 
 
 class TelegramBridge(BridgeBase):
@@ -365,27 +369,73 @@ class TelegramBridge(BridgeBase):
                 })
 
     def feed_output(self, sid: str, raw_text: str):
-        """Feed PTY output from a specific session."""
+        """Feed PTY output through virtual terminal for screen-based extraction."""
         if not self.active:
             return
         slot = self.slots.get(sid)
         if not slot:
-            # Debug: log missing slot
-            with open('/tmp/shellframe_bridge.log', 'a') as f:
-                f.write(f"feed_output: slot {sid} NOT FOUND. slots={list(self.slots.keys())}\n")
             return
         with slot.output_lock:
-            was_empty = not slot.output_buf
-            slot.output_buf += raw_text
+            was_empty = not slot.pending_text and slot.last_output_time == 0
+            # Feed into pyte virtual terminal
+            try:
+                slot.stream.feed(raw_text)
+            except Exception:
+                pass
             slot.last_output_time = time.time()
-            if was_empty:
+            if was_empty or slot.first_output_time == 0:
                 slot.first_output_time = time.time()
-        # Send typing on first output chunk
         if was_empty:
             threading.Thread(target=self._send_typing, args=(sid,), daemon=True).start()
 
+    def _extract_new_text(self, slot):
+        """Compare current screen with previous snapshot, return new lines."""
+        c = _get_compiled()
+        curr = [line.rstrip() for line in slot.screen.display]
+        new_lines = []
+        for i, (prev, now) in enumerate(zip(slot.prev_screen, curr)):
+            if now and now != prev:
+                # Clean the line
+                stripped = now.strip()
+                if not stripped:
+                    continue
+                # Skip known noise
+                lower = stripped.lower()
+                lower_nospace = lower.replace(' ', '')
+                if any(kw.replace(' ', '') in lower_nospace for kw in c["echo_keywords"]):
+                    continue
+                # Skip sent text echo
+                is_echo = False
+                for sent in slot.sent_texts:
+                    norm = sent.replace(' ', '').lower()
+                    sl = stripped.replace(' ', '').lower()
+                    if len(sl) > 3 and (sl in norm or norm[:25] in sl):
+                        is_echo = True
+                        break
+                if is_echo:
+                    continue
+                # Skip loading/spinner lines
+                if c["loading"].fullmatch(stripped) or c["loading"].fullmatch(stripped.rstrip('….')):
+                    continue
+                # Skip prompt-only lines
+                if stripped in ('›', '•', '⏺', '❯', '$', '%'):
+                    continue
+                # Skip thinking indicators
+                if stripped == '(thinking)' or re.match(r'\(thought for \d+s?\)', stripped):
+                    continue
+                # Strip prompt markers
+                for marker in ('› ', '• ', '⏺ ', '❯ '):
+                    if stripped.startswith(marker):
+                        stripped = stripped[len(marker):]
+                        break
+                if stripped:
+                    new_lines.append(stripped)
+        # Update snapshot
+        slot.prev_screen = curr[:]
+        return new_lines
+
     def _flush_loop(self):
-        """Flush buffered output from all sessions to TG."""
+        """Extract new text from virtual terminal and send to TG."""
         while self.active and not self._stop_event.is_set():
             time.sleep(0.5)
             with self._slots_lock:
@@ -397,37 +447,36 @@ class TelegramBridge(BridgeBase):
                     continue
 
                 with slot.output_lock:
-                    if not slot.output_buf:
+                    if slot.last_output_time == 0:
                         continue
-                    # Don't send output until first real user message
                     if not slot.has_user_msg:
-                        slot.output_buf = ""
+                        # Reset screen snapshot (discard pre-message content)
+                        slot.prev_screen = [line.rstrip() for line in slot.screen.display]
                         continue
                     now = time.time()
                     idle = now - slot.last_output_time
                     total = now - slot.first_output_time
-                    # Flush if idle 3s OR buffer accumulated 12s (force flush for chatty terminals)
-                    if idle < 3.0 and total < 12.0:
+                    if idle < 3.0 and total < 15.0:
                         self._send_typing(sid)
                         continue
-                    text = slot.output_buf
-                    slot.output_buf = ""
 
-                clean = strip_ansi(text, sent_texts=slot.sent_texts).strip()
-                slot.sent_texts.clear()
+                    # Extract new text via screen diff
+                    new_lines = self._extract_new_text(slot)
+                    slot.sent_texts.clear()
+                    slot.last_output_time = 0
+                    slot.first_output_time = 0
 
                 # Debug log
                 with open('/tmp/shellframe_bridge.log', 'a') as f:
-                    f.write(f"flush {sid}: raw={len(text)}b clean={len(clean)}b "
-                            f"users={dict(self._user_active)} chats={dict(self._user_chat)} "
-                            f"has_msg={slot.has_user_msg}\n")
-                    if clean:
-                        f.write(f"  clean: {clean[:300]}\n")
-                    # Dump raw sample for debugging
-                    f.write(f"  raw sample: {repr(text[:500])}\n")
+                    f.write(f"flush {sid}: new_lines={len(new_lines)} "
+                            f"users={dict(self._user_active)} has_msg={slot.has_user_msg}\n")
+                    for l in new_lines[:5]:
+                        f.write(f"  [{l}]\n")
 
-                if not clean or len(clean) < 2:
+                if not new_lines:
                     continue
+
+                clean = '\n'.join(new_lines)
 
                 # Tag with session label
                 prefix = f"[{slot.label}] " if len(self.slots) > 1 else ""
