@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "Dynamic output filter rules for ShellFrame TG Bridge. Update this file to improve filtering without upgrading the client.",
   "ansi_patterns": [
     "\\u001b\\[[\\d;?]*[A-Za-z~]",
@@ -60,7 +60,8 @@
     "tips for getting", "getting started",
     "h2ocloud6328", "noreply@anthropic",
     "ready to receive telegram", "ready to receive messages",
-    "[>0q", "[>4m", "[<u"
+    "[>0q", "[>4m", "[<u",
+    "checking for updates", "checking updates"
   ],
   "skip_line_chars": "›•\\/⎿M",
   "decoration_chars": "─━═│║╭╮╰╯┌┐└┘ |-_"

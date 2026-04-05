@@ -503,6 +503,10 @@ class TelegramBridge(BridgeBase):
             forwarded = text
 
         # Mark that this session has received a real user message
+        # Clear any pre-existing buffer (system prompt responses, etc.)
+        if not slot.has_user_msg:
+            with slot.output_lock:
+                slot.output_buf = ""
         slot.has_user_msg = True
         # Track what we send so we can filter echo from output
         slot.sent_texts.append(forwarded)
