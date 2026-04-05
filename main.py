@@ -509,10 +509,10 @@ class Api:
         if self.bridge:
             self.bridge.stop()
             self.bridge = None
-        # Remove from config
-        cfg = load_config()
-        cfg.pop("bridge", None)
-        save_config(cfg)
+            # Remove from config
+            cfg = load_config()
+            cfg.pop("bridge", None)
+            save_config(cfg)
             return json.dumps({"success": True})
         return json.dumps({"success": False, "message": "No bridge running"})
 
