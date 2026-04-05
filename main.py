@@ -479,7 +479,7 @@ class Api:
         # Send initial prompt to first session only
         if initial_prompt and self.sessions:
             first_sid = list(self.sessions.keys())[0]
-            self.sessions[first_sid].write(initial_prompt + "\n")
+            self.sessions[first_sid].write(initial_prompt + "\r")
 
         return json.dumps({"success": self.bridge.connected, **self.bridge.get_status()})
 

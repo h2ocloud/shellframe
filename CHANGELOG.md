@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.6 (2026-04-05)
+
+### Fixes
+- **TG Bridge: messages not submitted** — Changed `\n` to `\r` (carriage return) when writing to PTY. Terminal expects `\r` to simulate Enter key, `\n` only moves cursor without submitting.
+
+### 修正
+- **TG 橋接：訊息沒有送出** — PTY 寫入改用 `\r`（carriage return）。終端機需要 `\r` 才等於按 Enter，`\n` 只會換行不會送出。
+
+---
+
 ## v0.2.5 (2026-04-04)
 
 ### New Features

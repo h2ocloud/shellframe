@@ -322,7 +322,7 @@ class TelegramBridge(BridgeBase):
         else:
             forwarded = text
 
-        slot.write_fn(forwarded + "\n")
+        slot.write_fn(forwarded + "\r")
 
     def _handle_command(self, cmd: str, user_id: int, chat_id: int):
         """Handle slash commands."""
