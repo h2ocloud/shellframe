@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.7 (2026-04-05)
+
+### Fixes
+- **Bridge config persisted** — Bot token, allowed users, prefix, prompt saved to config.json and restored on restart
+- **Settings pre-filled** — Opening Settings or TG modal auto-fills saved bridge config
+
+### 修正
+- **橋接設定持久化** — Bot token、白名單、前綴、prompt 存入 config.json，重開自動還原
+- **設定自動填入** — 開啟 Settings 或 TG modal 自動帶入已存設定
+
+---
+
 ## v0.2.6 (2026-04-05)
 
 ### Fixes

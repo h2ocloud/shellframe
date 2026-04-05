@@ -1022,6 +1022,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const connectBtn = document.getElementById('btn-settings-bridge-connect');
     const disconnectBtn = document.getElementById('btn-settings-bridge-disconnect');
 
+    // Restore saved bridge config into form fields
+    try {
+      const saved = JSON.parse(await pywebview.api.get_saved_bridge());
+      if (saved) {
+        const tokenEl = document.getElementById('settings-bridge-token');
+        const usersEl = document.getElementById('settings-bridge-users');
+        const prefixEl = document.getElementById('settings-bridge-prefix');
+        const promptEl = document.getElementById('settings-bridge-prompt');
+        if (!tokenEl.value) tokenEl.value = saved.bot_token || '';
+        if (!usersEl.value) usersEl.value = (saved.allowed_users || []).join(', ');
+        prefixEl.classList.toggle('on', saved.prefix_enabled !== false);
+        if (saved.initial_prompt) promptEl.value = saved.initial_prompt;
+      }
+    } catch(e) {}
+
     try {
       const raw = await pywebview.api.get_bridge_status();
       const result = JSON.parse(raw);
@@ -1218,6 +1233,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       bridgeState = JSON.parse(raw);
       updateBridgeButton();
     } else {
+      // Restore saved config into modal fields
+      try {
+        const saved = JSON.parse(await pywebview.api.get_saved_bridge());
+        if (saved) {
+          document.getElementById('bridge-token').value = saved.bot_token || '';
+          document.getElementById('bridge-users').value = (saved.allowed_users || []).join(', ');
+          document.getElementById('bridge-prefix-toggle').classList.toggle('on', saved.prefix_enabled !== false);
+          if (saved.initial_prompt) document.getElementById('bridge-prompt').value = saved.initial_prompt;
+        }
+      } catch(e) {}
       $modalBridge.classList.add('open');
     }
   });

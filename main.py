@@ -287,6 +287,18 @@ class Api:
     def get_config(self) -> str:
         return json.dumps(load_config())
 
+    def get_saved_bridge(self) -> str:
+        """Return saved bridge config (for restoring on startup)."""
+        cfg = load_config()
+        bridge = cfg.get("bridge")
+        if bridge:
+            # Mask token for display (show last 6 chars)
+            masked = bridge.copy()
+            t = masked.get("bot_token", "")
+            masked["bot_token_masked"] = "..." + t[-6:] if len(t) > 6 else t
+            return json.dumps(masked)
+        return json.dumps(None)
+
     def save_preset(self, name: str, cmd: str, icon: str) -> str:
         cfg = load_config()
         # Update existing or add new
@@ -481,12 +493,26 @@ class Api:
             first_sid = list(self.sessions.keys())[0]
             self.sessions[first_sid].write(initial_prompt + "\r")
 
+        # Persist bridge config
+        cfg = load_config()
+        cfg["bridge"] = {
+            "bot_token": bot_token,
+            "allowed_users": [int(u) for u in allowed],
+            "prefix_enabled": prefix_enabled,
+            "initial_prompt": initial_prompt,
+        }
+        save_config(cfg)
+
         return json.dumps({"success": self.bridge.connected, **self.bridge.get_status()})
 
     def stop_bridge(self) -> str:
         if self.bridge:
             self.bridge.stop()
             self.bridge = None
+        # Remove from config
+        cfg = load_config()
+        cfg.pop("bridge", None)
+        save_config(cfg)
             return json.dumps({"success": True})
         return json.dumps({"success": False, "message": "No bridge running"})
 
