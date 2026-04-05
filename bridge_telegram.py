@@ -423,6 +423,13 @@ class TelegramBridge(BridgeBase):
                 # Skip thinking indicators
                 if stripped == '(thinking)' or re.match(r'\(thought for \d+s?\)', stripped):
                     continue
+                # Skip status bar lines (model info, % left, CLI hints)
+                if re.search(r'\d+%\s*left', stripped):
+                    continue
+                if stripped.startswith('Use /') or stripped.startswith('Tip:'):
+                    continue
+                if re.match(r'(gpt-|claude-|sonnet|opus|haiku)', stripped):
+                    continue
                 # Strip prompt markers
                 for marker in ('› ', '• ', '⏺ ', '❯ '):
                     if stripped.startswith(marker):
