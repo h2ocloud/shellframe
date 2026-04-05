@@ -15,11 +15,55 @@ from dataclasses import dataclass, field
 from bridge_base import BridgeBase, BridgeConfigBase
 
 
-ANSI_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?\x07|\x1b\[.*?[@-~]|\r')
+# Aggressive terminal escape stripping
+ANSI_RE = re.compile(
+    r'\x1b\[[0-9;]*[A-Za-z]'   # CSI sequences (colors, cursor)
+    r'|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)'  # OSC sequences (title bar)
+    r'|\x1b\[[\d;]*[@-~]'      # more CSI
+    r'|\x1b[()][A-Z0-9]'       # charset
+    r'|\x1b[78=>NOMDEHc]'       # single-char escapes
+    r'|\r'                      # carriage return
+    r'|\x07'                    # bell
+    r'|\x08'                    # backspace
+, re.DOTALL)
+
+# Braille spinner chars
+SPINNER_RE = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿]+')
+
+# Status bar patterns (Claude Code, Codex, etc.)
+STATUS_RE = re.compile(
+    r'›\s*(?:Write tests|Working|Thinking|Reading|Searching|Editing|Running).*$'
+    r'|(?:gpt-[\d.]+|claude-[\w.-]+|sonnet|opus|haiku)\s+\w+\s*·\s*\d+%\s*left.*$'
+    r'|•\s*Working\([\ds]+.*?\)'
+    r'|\d+%\s*left\s*·\s*/'
+    r'|esc to interrupt'
+, re.MULTILINE)
 
 
 def strip_ansi(text: str) -> str:
-    return ANSI_RE.sub('', text)
+    """Remove ANSI escapes, spinners, and status bar noise."""
+    text = ANSI_RE.sub('', text)
+    text = SPINNER_RE.sub('', text)
+    text = STATUS_RE.sub('', text)
+    # Catch remaining OSC/query sequences (]0;...\, [10;?...\, etc.)
+    text = re.sub(r'\][\d;]+[^\n]*?\\', '', text)
+    text = re.sub(r'\[[\d;?]+[^\n]*?\\', '', text)
+    # Remove lone control chars and prompt markers
+    text = re.sub(r'[•›]\s*$', '', text, flags=re.MULTILINE)
+    # Clean up resulting empty/whitespace-only lines
+    # Strip leading prompt markers
+    lines = []
+    for l in text.split('\n'):
+        stripped = l.strip()
+        if not stripped or stripped in ('›', '•', '\\', 'M'):
+            continue
+        # Remove leading › or • prompt markers
+        if stripped.startswith('› '):
+            stripped = stripped[2:]
+        elif stripped.startswith('• '):
+            stripped = stripped[2:]
+        lines.append(stripped)
+    return '\n'.join(lines)
 
 
 def tg_api(token: str, method: str, data=None) -> dict:
@@ -211,7 +255,7 @@ class TelegramBridge(BridgeBase):
                 with slot.output_lock:
                     if not slot.output_buf:
                         continue
-                    if time.time() - slot.last_output_time < 2.0:
+                    if time.time() - slot.last_output_time < 4.0:
                         continue
                     text = slot.output_buf
                     slot.output_buf = ""
