@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Dynamic output filter rules for ShellFrame TG Bridge. Update this file to improve filtering without upgrading the client.",
   "ansi_patterns": [
     "\\u001b\\[[\\d;?]*[A-Za-z~]",
@@ -13,7 +13,12 @@
   "loading_words": [
     "Channelling", "Undulating", "Gitifying", "Thinking",
     "Initializing", "Compiling", "Indexing", "Analyzing",
-    "Scanning", "Processing", "Loading", "Connecting"
+    "Scanning", "Processing", "Loading", "Connecting",
+    "Simmering", "Unfurling", "Percolating", "Crystallizing",
+    "Synthesizing", "Weaving", "Brewing", "Distilling",
+    "Fermenting", "Marinating", "Pondering", "Conjuring",
+    "Assembling", "Decoding", "Parsing", "Resolving",
+    "Warming", "Calibrating", "Harmonizing", "Manifesting"
   ],
   "box_drawing_chars": "╭╮╰╯│─┌┐└┘┤├┬┴┼═║╔╗╚╝╠╣╦╩╬",
   "status_bar_patterns": [
@@ -50,7 +55,12 @@
     "claude max", "organization", "/mcp",
     "i'm ready and listening", "ready and listening for messages",
     "plain text in this terminal", "remote users will appear",
-    "never use mcp tools"
+    "never use mcp tools",
+    "opus 4", "sonnet 4", "haiku 4", "claude max",
+    "tips for getting", "getting started",
+    "h2ocloud6328", "noreply@anthropic",
+    "ready to receive telegram", "ready to receive messages",
+    "[>0q", "[>4m", "[<u"
   ],
   "skip_line_chars": "›•\\/⎿M",
   "decoration_chars": "─━═│║╭╮╰╯┌┐└┘ |-_"

@@ -78,7 +78,10 @@ def _build_regex():
             r'|\[[\??\d;]+[A-Za-z]'
         , re.DOTALL),
         "spinner": re.compile(f'[{re.escape(spinner_chars)}]+'),
-        "loading": re.compile('(?:' + '|'.join(re.escape(w) for w in loading_words) + r')(?:…|\.\.\.)?'),
+        "loading": re.compile(
+            '(?:' + '|'.join(re.escape(w) for w in loading_words) + r')(?:…|\.\.\.)?'
+            r'|[A-Z][a-z]{2,}(?:ing|ling|ting|ning|ring)(?:…|\.\.\.)'  # catch any Xxxing… pattern
+        ),
         "tui": re.compile(f'[{re.escape(box_chars)}]+'),
         "mcp": re.compile('|'.join(mcp_pats)),
         "status": re.compile('|'.join(status_pats), re.MULTILINE) if status_pats else None,
@@ -129,6 +132,12 @@ def strip_ansi(text, sent_texts=None):
         # Skip decoration-only lines
         if len(stripped) > 2 and all(ch in c["decoration_chars"] for ch in stripped):
             continue
+        # Skip single/double char lines (animation fragments)
+        if len(stripped) <= 2:
+            continue
+        # Skip short lines that look like animation fragment build-up
+        if len(stripped) < 15 and sum(1 for ch in stripped if ch.isalpha()) <= 5:
+            continue
         if stripped.startswith('› '):
             stripped = stripped[2:]
         elif stripped.startswith('• '):
@@ -137,16 +146,19 @@ def strip_ansi(text, sent_texts=None):
         # Filter echo of user messages
         if stripped.startswith('[TG @') or stripped.startswith('[TG@'):
             continue
-        # Filter by keyword blacklist
-        if any(kw in stripped.lower() for kw in c["echo_keywords"]):
+        # Filter by keyword blacklist (also check smushed text without spaces)
+        lower = stripped.lower()
+        lower_nospace = lower.replace(' ', '')
+        if any(kw in lower or kw.replace(' ', '') in lower_nospace for kw in c["echo_keywords"]):
             continue
         if sent_texts:
             is_echo = False
             for sent in sent_texts:
                 # Fuzzy match: normalize whitespace and check substring
-                norm_line = ' '.join(stripped.split())
-                norm_sent = ' '.join(sent.split())
-                if len(norm_line) > 5 and (norm_line in norm_sent or norm_sent[:30] in norm_line):
+                # Normalize: remove all spaces, lowercase
+                norm_line = stripped.replace(' ', '').lower()
+                norm_sent = sent.replace(' ', '').lower()
+                if len(norm_line) > 3 and (norm_line in norm_sent or norm_sent[:25] in norm_line):
                     is_echo = True
                     break
             if is_echo:
