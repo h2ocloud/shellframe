@@ -409,7 +409,9 @@ class TelegramBridge(BridgeBase):
                             f"users={dict(self._user_active)} chats={dict(self._user_chat)} "
                             f"has_msg={slot.has_user_msg}\n")
                     if clean:
-                        f.write(f"  clean text: {clean[:200]}\n")
+                        f.write(f"  clean: {clean[:300]}\n")
+                    # Dump raw sample for debugging
+                    f.write(f"  raw sample: {repr(text[:500])}\n")
 
                 if not clean or len(clean) < 2:
                     continue
