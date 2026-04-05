@@ -488,10 +488,15 @@ class Api:
 
         self.bridge.start()
 
-        # Send initial prompt to first session only
+        # Send initial prompt to first session (delayed to let CLI load)
         if initial_prompt and self.sessions:
             first_sid = list(self.sessions.keys())[0]
-            self.sessions[first_sid].write(initial_prompt + "\r")
+            def _send_prompt(sid=first_sid, text=initial_prompt):
+                time.sleep(3)  # wait for CLI to be ready
+                s = self.sessions.get(sid)
+                if s:
+                    s.write(text + "\r")
+            threading.Thread(target=_send_prompt, daemon=True).start()
 
         # Persist bridge config
         cfg = load_config()
