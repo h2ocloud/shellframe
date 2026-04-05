@@ -453,10 +453,16 @@ class TelegramBridge(BridgeBase):
                 continue
 
             # Check for prompt markers — ends current block
+            # But numbered menu items (› 1. xxx) should be included in the block
             if stripped.startswith(('› ', '❯ ', '›', '❯')):
-                if current_block is not None:
-                    blocks.append(current_block)
-                    current_block = None
+                after_prompt = stripped.lstrip('›❯ ')
+                if current_block is not None and re.match(r'\d+\.?\s', after_prompt):
+                    # This is a numbered menu item — include in current block
+                    current_block.append(after_prompt)
+                else:
+                    if current_block is not None:
+                        blocks.append(current_block)
+                        current_block = None
                 continue
 
             # Check for AI response marker — starts a new block
