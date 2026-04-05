@@ -490,6 +490,9 @@ class TelegramBridge(BridgeBase):
 
         # ── Forward message to active session ──
         active_sid = self.get_active_sid(user_id)
+        # Ensure user is tracked in _user_active (so flush/typing can find them)
+        if active_sid and user_id not in self._user_active:
+            self._user_active[user_id] = active_sid
         if not active_sid or active_sid not in self.slots:
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
