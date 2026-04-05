@@ -391,26 +391,41 @@ class TelegramBridge(BridgeBase):
     # AI response markers used by CLI tools
     AI_MARKERS = ('• ', '⏺ ', '⏺')
 
-    # Responses that are system-prompt acks or tool-use status, not real replies
+    # Responses that are system-prompt acks, not real replies
     _FILTERED_RESPONSES = {"Understood.", "Understood"}
-    _FILTERED_PREFIXES = (
-        # Tool-use status (Codex style)
-        "Searching the web", "Searched ",
-        # Tool calls (Claude Code style)
-        "Web Search(", "Fetch(", "Read(", "Write(", "Edit(",
-        "Bash(", "Grep(", "Glob(", "Agent(", "Skill(",
-        "TodoWrite(", "NotebookEdit(", "WebFetch(", "WebSearch(",
-        "TaskCreate(", "TaskUpdate(",
-        # Tool results
-        "⎿", "Did ", "Received ", "Error:",
-        # Status indicators
-        "Working (", "Determining", "Cooked for", "Cooking",
-        # General tool actions
-        "Reading ", "Writing ", "Editing ", "Running ", "Calling ",
-        "Creating ", "Deleting ", "Updating ", "Fetching ",
-        "Analyzing ", "Scanning ", "Checking ", "Installing ",
-        "Building ", "Compiling ", "Downloading ", "Uploading ",
-    )
+
+    # All 48 spinner verbs from Claude Code source (Spinner.tsx)
+    _SPINNER_VERBS = {
+        'Accomplishing', 'Actioning', 'Actualizing', 'Baking', 'Brewing',
+        'Calculating', 'Cerebrating', 'Churning', 'Clauding', 'Coalescing',
+        'Cogitating', 'Computing', 'Conjuring', 'Considering', 'Cooking',
+        'Crafting', 'Creating', 'Crunching', 'Deliberating', 'Determining',
+        'Doing', 'Effecting', 'Finagling', 'Forging', 'Forming',
+        'Generating', 'Hatching', 'Herding', 'Honking', 'Hustling',
+        'Ideating', 'Inferring', 'Manifesting', 'Marinating', 'Moseying',
+        'Mulling', 'Mustering', 'Musing', 'Noodling', 'Percolating',
+        'Pondering', 'Processing', 'Puttering', 'Reticulating', 'Ruminating',
+        'Schlepping', 'Shucking', 'Simmering', 'Smooshing', 'Spinning',
+        'Stewing', 'Synthesizing', 'Thinking', 'Transmuting', 'Vibing',
+        'Working',
+        # Codex-specific (observed)
+        'Channelling', 'Undulating', 'Gitifying', 'Unfurling', 'Sautéing',
+    }
+
+    @staticmethod
+    def _is_tool_call(text):
+        """Detect tool calls: ToolName(params) pattern."""
+        # Pattern: starts with capitalized word(s) followed by (
+        # e.g., "Web Search(...)", "Fetch(https://...)", "Read(/path/...)"
+        if re.match(r'^[A-Z][\w\s]*\(', text):
+            return True
+        # Codex style: "Searching the web", "Searched xxx"
+        if text.startswith(('Searching ', 'Searched ')):
+            return True
+        # Tool result prefix
+        if text.startswith('⎿'):
+            return True
+        return False
 
     def _extract_new_text(self, slot):
         """Scan screen for AI responses not yet sent.
@@ -429,8 +444,12 @@ class TelegramBridge(BridgeBase):
             stripped = line.rstrip().strip()
             raw_lstripped = line.lstrip()
 
-            # Skip status/loading lines (not part of any block)
-            if any(stripped.startswith(s) for s in ('✻ ', '✢ ', '✳ ', '✶ ', '✽ ', '· ')):
+            # Skip spinner/status lines (6 spinner chars from Claude Code source)
+            if any(stripped.startswith(s) for s in ('✻ ', '✢ ', '✳ ', '∗ ', '✽ ', '· ')):
+                continue
+            # Skip standalone spinner verb lines (e.g., "Simmering…")
+            first_word = stripped.split('…')[0].split('(')[0].split(' ')[0].rstrip('.')
+            if first_word in self._SPINNER_VERBS:
                 continue
 
             # Check for prompt markers — ends current block
@@ -496,7 +515,8 @@ class TelegramBridge(BridgeBase):
             if text.strip() in self._FILTERED_RESPONSES:
                 slot.sent_responses.add(text)
                 continue
-            if any(first_line.startswith(p) for p in self._FILTERED_PREFIXES):
+            # Skip tool calls (ToolName(params) pattern)
+            if self._is_tool_call(first_line):
                 slot.sent_responses.add(text)
                 continue
 
