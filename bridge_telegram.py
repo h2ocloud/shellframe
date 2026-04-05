@@ -41,28 +41,40 @@ STATUS_RE = re.compile(
 , re.MULTILINE)
 
 
-def strip_ansi(text: str) -> str:
-    """Remove ANSI escapes, spinners, and status bar noise."""
+def strip_ansi(text, sent_texts=None):
+    """Remove ANSI escapes, spinners, status bar noise, and echo of sent text."""
     text = ANSI_RE.sub('', text)
     text = SPINNER_RE.sub('', text)
     text = STATUS_RE.sub('', text)
-    # Catch remaining OSC/query sequences (]0;...\, [10;?...\, etc.)
     text = re.sub(r'\][\d;]+[^\n]*?\\', '', text)
     text = re.sub(r'\[[\d;?]+[^\n]*?\\', '', text)
-    # Remove lone control chars and prompt markers
     text = re.sub(r'[•›]\s*$', '', text, flags=re.MULTILINE)
-    # Clean up resulting empty/whitespace-only lines
-    # Strip leading prompt markers
+
     lines = []
     for l in text.split('\n'):
         stripped = l.strip()
         if not stripped or stripped in ('›', '•', '\\', 'M'):
             continue
-        # Remove leading › or • prompt markers
         if stripped.startswith('› '):
             stripped = stripped[2:]
         elif stripped.startswith('• '):
             stripped = stripped[2:]
+
+        # Filter echo of text we sent to PTY + [TG @user] lines
+        if stripped.startswith('[TG @'):
+            continue
+        if sent_texts:
+            is_echo = False
+            for sent in sent_texts:
+                # Fuzzy match: normalize whitespace and check substring
+                norm_line = ' '.join(stripped.split())
+                norm_sent = ' '.join(sent.split())
+                if len(norm_line) > 5 and (norm_line in norm_sent or norm_sent[:30] in norm_line):
+                    is_echo = True
+                    break
+            if is_echo:
+                continue
+
         lines.append(stripped)
     return '\n'.join(lines)
 
@@ -105,6 +117,7 @@ class SessionSlot:
         self.output_buf = ""
         self.output_lock = threading.Lock()
         self.last_output_time = 0
+        self.sent_texts = []  # track what we sent to PTY (for echo filtering)
 
 
 class TelegramBridge(BridgeBase):
@@ -261,7 +274,9 @@ class TelegramBridge(BridgeBase):
                     text = slot.output_buf
                     slot.output_buf = ""
 
-                clean = strip_ansi(text).strip()
+                clean = strip_ansi(text, sent_texts=slot.sent_texts).strip()
+                # Clear sent_texts after filtering
+                slot.sent_texts.clear()
                 if not clean or len(clean) < 2:
                     continue
 
@@ -367,8 +382,13 @@ class TelegramBridge(BridgeBase):
         else:
             forwarded = text
 
+        # Track what we send so we can filter echo from output
+        slot.sent_texts.append(forwarded)
+        # Keep only last 10 sent texts
+        if len(slot.sent_texts) > 10:
+            slot.sent_texts = slot.sent_texts[-10:]
+
         # Write text first, then Enter after a brief delay
-        # Some TUIs need time to process input before receiving \r
         def _send():
             slot.write_fn(forwarded)
             time.sleep(0.3)
