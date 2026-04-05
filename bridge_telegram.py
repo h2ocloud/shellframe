@@ -224,7 +224,7 @@ class SessionSlot:
         self.screen = pyte.Screen(200, 50)
         self.stream = pyte.Stream(self.screen)
         self.prev_screen = [""] * 50  # previous screen snapshot
-        self.sent_responses = set()  # track responses already sent to TG
+        self.sent_responses = {"Understood.", "Understood"}  # pre-filter system acks
 
 
 class TelegramBridge(BridgeBase):
@@ -391,46 +391,82 @@ class TelegramBridge(BridgeBase):
     # AI response markers used by CLI tools
     AI_MARKERS = ('• ', '⏺ ', '⏺')
 
+    # Responses that are system-prompt acknowledgments, not real replies
+    _FILTERED_RESPONSES = {"Understood.", "Understood"}
+
     def _extract_new_text(self, slot):
         """Scan screen for AI responses not yet sent.
 
-        Approach: find all • / ⏺ lines on screen, skip ones already sent.
-        No diff needed — just track what we've sent before.
+        Logic:
+        1. Find a line starting with AI_MARKERS (• / ⏺) = start of response block
+        2. Collect ALL subsequent lines (including empty) until hitting a
+           prompt marker (› / ❯) or another AI marker (next response)
+        3. Join collected lines as one response; skip if already in sent_responses
         """
-        new_lines = []
-        in_response = False
+        # Collect response blocks: list of list-of-lines
+        blocks = []
+        current_block = None
 
         for line in slot.screen.display:
             stripped = line.rstrip().strip()
-            if not stripped:
-                in_response = False
+            raw_lstripped = line.lstrip()
+
+            # Check for prompt markers — ends current block
+            if stripped.startswith(('› ', '❯ ', '›', '❯')):
+                if current_block is not None:
+                    blocks.append(current_block)
+                    current_block = None
                 continue
 
-            # Check for AI response marker
-            response = None
+            # Check for AI response marker — starts a new block
+            marker_hit = False
             for marker in self.AI_MARKERS:
                 if stripped.startswith(marker):
-                    response = stripped[len(marker):].strip()
-                    in_response = True
+                    # If we were already collecting, save that block first
+                    if current_block is not None:
+                        blocks.append(current_block)
+                    current_block = [stripped[len(marker):].strip()]
+                    marker_hit = True
                     break
 
-            # Continuation line (indented, after a marker line)
-            if not response and in_response and line.startswith('  '):
-                if not stripped.startswith(('›', '❯', '$', '/')):
-                    response = stripped
-
-            if not response:
-                in_response = False
+            if marker_hit:
                 continue
 
-            # Skip if already sent
-            if response in slot.sent_responses:
+            # If we're inside a response block, collect the line (even if empty)
+            if current_block is not None:
+                current_block.append(stripped)
+
+        # Don't forget the last block
+        if current_block is not None:
+            blocks.append(current_block)
+
+        new_texts = []
+        for block_lines in blocks:
+            # Strip trailing empty lines
+            while block_lines and not block_lines[-1]:
+                block_lines.pop()
+            # Strip leading empty lines
+            while block_lines and not block_lines[0]:
+                block_lines.pop(0)
+
+            if not block_lines:
+                continue
+
+            text = '\n'.join(block_lines)
+
+            # Skip filtered system-prompt acknowledgments
+            if text.strip() in self._FILTERED_RESPONSES:
+                slot.sent_responses.add(text)
+                continue
+
+            # Skip if already sent (use full block text as key)
+            if text in slot.sent_responses:
                 continue
 
             # Skip echo of sent text
             is_echo = False
+            nr = text.replace(' ', '').replace('\n', '').lower()
             for sent in slot.sent_texts:
-                nr = response.replace(' ', '').lower()
                 ns = sent.replace(' ', '').lower()
                 if len(nr) > 3 and (nr in ns or ns[:25] in nr):
                     is_echo = True
@@ -438,16 +474,16 @@ class TelegramBridge(BridgeBase):
             if is_echo:
                 continue
 
-            new_lines.append(response)
+            new_texts.append(text)
 
         # Mark as sent
-        for line in new_lines:
-            slot.sent_responses.add(line)
+        for text in new_texts:
+            slot.sent_responses.add(text)
         # Keep sent_responses from growing forever (last 200)
         if len(slot.sent_responses) > 200:
             slot.sent_responses = set(list(slot.sent_responses)[-100:])
 
-        return new_lines
+        return new_texts
 
     def _flush_loop(self):
         """Extract new text from virtual terminal and send to TG."""
