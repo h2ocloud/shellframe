@@ -61,7 +61,9 @@
     "h2ocloud6328", "noreply@anthropic",
     "ready to receive telegram", "ready to receive messages",
     "[>0q", "[>4m", "[<u",
-    "checking for updates", "checking updates"
+    "checking for updates", "checking updates",
+    "understood.", "summarize recent commits",
+    "switch models or reasoning"
   ],
   "skip_line_chars": "›•\\/⎿M",
   "decoration_chars": "─━═│║╭╮╰╯┌┐└┘ |-_"

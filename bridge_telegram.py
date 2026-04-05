@@ -132,11 +132,8 @@ def strip_ansi(text, sent_texts=None):
         # Skip decoration-only lines
         if len(stripped) > 2 and all(ch in c["decoration_chars"] for ch in stripped):
             continue
-        # Skip single/double char lines (animation fragments)
-        if len(stripped) <= 2:
-            continue
-        # Skip short lines that look like animation fragment build-up
-        if len(stripped) < 15 and sum(1 for ch in stripped if ch.isalpha()) <= 5:
+        # Skip short lines that are animation fragments (only non-alpha chars)
+        if len(stripped) < 8 and not any(ch.isalpha() for ch in stripped):
             continue
         if stripped.startswith('› '):
             stripped = stripped[2:]
