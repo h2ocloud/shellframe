@@ -27,8 +27,9 @@ ANSI_RE = re.compile(
     r'|\[[\??\d;]+[A-Za-z]'     # bare CSI without ESC (sometimes leaked as raw text)
 , re.DOTALL)
 
-# Braille spinner chars
-SPINNER_RE = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿]+')
+# Spinner chars (braille + star variants + Claude Code channelling)
+SPINNER_RE = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏺⏵]+')
+CHANNELLING_RE = re.compile(r'Channelling…|Channelling\.\.\.')
 
 # Status bar patterns (Claude Code, Codex, etc.)
 STATUS_RE = re.compile(
@@ -36,6 +37,11 @@ STATUS_RE = re.compile(
     r'|(?:gpt-[\d.]+|claude-[\w.-]+|sonnet|opus|haiku)\s+\w+\s*·\s*\d+%\s*left.*$'
     r'|•\s*Working\([\ds]+.*?\)'
     r'|\bWor(?:k(?:i(?:n(?:g)?)?)?)?(?=\s|$)'  # partial "Working" fragments
+    r'|bypass\s*permissions?\s*on.*$'  # Claude Code permission prompt
+    r'|shift\+tab\s*to\s*cycle.*$'
+    r'|esc\s*to\s*interrupt.*$'
+    r'|Use /\w+ to .*$'  # CLI hints like "Use /skills to list..."
+    r'|Tip:.*$'  # Codex tips
     r'|\d+%\s*left\s*·\s*/'
     r'|esc to interrupt'
 , re.MULTILINE)
@@ -45,6 +51,7 @@ def strip_ansi(text, sent_texts=None):
     """Remove ANSI escapes, spinners, status bar noise, and echo of sent text."""
     text = ANSI_RE.sub('', text)
     text = SPINNER_RE.sub('', text)
+    text = CHANNELLING_RE.sub('', text)
     text = STATUS_RE.sub('', text)
     text = re.sub(r'\][\d;]+[^\n]*?\\', '', text)
     text = re.sub(r'\[[\d;?]+[^\n]*?\\', '', text)
@@ -64,7 +71,12 @@ def strip_ansi(text, sent_texts=None):
         if stripped.startswith('[TG @'):
             continue
         # Filter system prompt acknowledgments
-        if any(kw in stripped.lower() for kw in ['keep replies concise', 'mobile-friendly', 'sender prefix', 'treat [tg']):
+        if any(kw in stripped.lower() for kw in [
+            'keep replies concise', 'mobile-friendly', 'sender prefix', 'treat [tg',
+            'reply directly', 'do not use any telegram', 'shellframe bridge',
+            'not use any telegram tools', 'respond normally',
+            'telegram channel isn\'t set up', '/telegram:access',
+        ]):
             continue
         if sent_texts:
             is_echo = False
@@ -103,9 +115,10 @@ def tg_api(token: str, method: str, data=None) -> dict:
 class TelegramBridgeConfig(BridgeConfigBase):
     bot_token: str = ""
     initial_prompt: str = (
-        "You are now receiving messages bridged from Telegram. "
-        "Keep responses concise and mobile-friendly. "
-        "Messages from Telegram will be prefixed with [TG username]."
+        "IMPORTANT: You are receiving messages bridged from Telegram via ShellFrame. "
+        "Reply DIRECTLY in this terminal as plain text. Do NOT use any Telegram tools, plugins, or MCP. "
+        "Do NOT call reply, react, or any telegram-related tool. Just respond normally. "
+        "Messages will be prefixed with [TG @username]. Keep responses concise and mobile-friendly."
     )
 
 
@@ -458,6 +471,14 @@ class TelegramBridge(BridgeBase):
                         "chat_id": chat_id,
                         "text": f"Switched to {slot.label} (/{slot.index})",
                     })
+                    # Send system prompt to new session so AI knows context
+                    if self.config.initial_prompt:
+                        slot.sent_texts.append(self.config.initial_prompt)
+                        def _send_prompt(s=slot, text=self.config.initial_prompt):
+                            s.write_fn(text)
+                            time.sleep(0.3)
+                            s.write_fn("\r")
+                        threading.Thread(target=_send_prompt, daemon=True).start()
                 else:
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
