@@ -209,6 +209,7 @@ class SessionSlot:
         self.output_lock = threading.Lock()
         self.last_output_time = 0
         self.sent_texts = []  # track what we sent to PTY (for echo filtering)
+        self.has_user_msg = False  # True after first real user message received
 
 
 class TelegramBridge(BridgeBase):
@@ -382,6 +383,10 @@ class TelegramBridge(BridgeBase):
                 with slot.output_lock:
                     if not slot.output_buf:
                         continue
+                    # Don't send output until first real user message
+                    if not slot.has_user_msg:
+                        slot.output_buf = ""
+                        continue
                     if time.time() - slot.last_output_time < 4.0:
                         # Still receiving output — refresh typing indicator
                         self._send_typing(sid)
@@ -497,6 +502,8 @@ class TelegramBridge(BridgeBase):
         else:
             forwarded = text
 
+        # Mark that this session has received a real user message
+        slot.has_user_msg = True
         # Track what we send so we can filter echo from output
         slot.sent_texts.append(forwarded)
         # Keep only last 10 sent texts
