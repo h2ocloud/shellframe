@@ -357,6 +357,9 @@ class TelegramBridge(BridgeBase):
             return
         slot = self.slots.get(sid)
         if not slot:
+            # Debug: log missing slot
+            with open('/tmp/shellframe_bridge.log', 'a') as f:
+                f.write(f"feed_output: slot {sid} NOT FOUND. slots={list(self.slots.keys())}\n")
             return
         with slot.output_lock:
             was_empty = not slot.output_buf
@@ -398,8 +401,16 @@ class TelegramBridge(BridgeBase):
                     slot.output_buf = ""
 
                 clean = strip_ansi(text, sent_texts=slot.sent_texts).strip()
-                # Clear sent_texts after filtering
                 slot.sent_texts.clear()
+
+                # Debug log
+                with open('/tmp/shellframe_bridge.log', 'a') as f:
+                    f.write(f"flush {sid}: raw={len(text)}b clean={len(clean)}b "
+                            f"users={dict(self._user_active)} chats={dict(self._user_chat)} "
+                            f"has_msg={slot.has_user_msg}\n")
+                    if clean:
+                        f.write(f"  clean text: {clean[:200]}\n")
+
                 if not clean or len(clean) < 2:
                     continue
 
