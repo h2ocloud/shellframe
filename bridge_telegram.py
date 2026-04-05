@@ -27,9 +27,14 @@ ANSI_RE = re.compile(
     r'|\[[\??\d;]+[A-Za-z]'     # bare CSI without ESC (sometimes leaked as raw text)
 , re.DOTALL)
 
-# Spinner chars (braille + star variants + Claude Code channelling)
-SPINNER_RE = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏺⏵]+')
-CHANNELLING_RE = re.compile(r'Channelling…|Channelling\.\.\.')
+# Spinner chars (braille + star variants + Claude Code animations)
+SPINNER_RE = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏺⏵▐▛▜▝▘█]+')
+# Loading animation words
+LOADING_RE = re.compile(r'(?:Channelling|Undulating|Gitifying|Thinking|Initializing)(?:…|\.\.\.)?')
+# Box drawing and TUI chrome
+TUI_RE = re.compile(r'[╭╮╰╯│─┌┐└┘┤├┬┴┼═║╔╗╚╝╠╣╦╩╬]+')
+# MCP / plugin error lines
+MCP_RE = re.compile(r'plugin:.*MCP|MCP server failed|reply failed|allowlisted|/telegram:access|sendChatAction')
 
 # Status bar patterns (Claude Code, Codex, etc.)
 STATUS_RE = re.compile(
@@ -51,7 +56,9 @@ def strip_ansi(text, sent_texts=None):
     """Remove ANSI escapes, spinners, status bar noise, and echo of sent text."""
     text = ANSI_RE.sub('', text)
     text = SPINNER_RE.sub('', text)
-    text = CHANNELLING_RE.sub('', text)
+    text = LOADING_RE.sub('', text)
+    text = TUI_RE.sub('', text)
+    text = MCP_RE.sub('', text)
     text = STATUS_RE.sub('', text)
     text = re.sub(r'\][\d;]+[^\n]*?\\', '', text)
     text = re.sub(r'\[[\d;?]+[^\n]*?\\', '', text)
@@ -60,22 +67,31 @@ def strip_ansi(text, sent_texts=None):
     lines = []
     for l in text.split('\n'):
         stripped = l.strip()
-        if not stripped or stripped in ('›', '•', '\\', 'M'):
+        if not stripped or stripped in ('›', '•', '\\', 'M', '/', '⎿'):
+            continue
+        # Skip decoration-only lines (dashes, boxes, etc.)
+        if len(stripped) > 2 and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in stripped):
             continue
         if stripped.startswith('› '):
             stripped = stripped[2:]
         elif stripped.startswith('• '):
             stripped = stripped[2:]
 
-        # Filter echo of text we sent to PTY + [TG @user] lines
-        if stripped.startswith('[TG @'):
+        # Filter echo of user messages (both old and new format)
+        if stripped.startswith('[TG @') or stripped.startswith('[TG@'):
             continue
-        # Filter system prompt acknowledgments
+        # Filter system prompt acknowledgments + Claude Code noise
         if any(kw in stripped.lower() for kw in [
             'keep replies concise', 'mobile-friendly', 'sender prefix', 'treat [tg',
             'reply directly', 'do not use any telegram', 'shellframe bridge',
-            'not use any telegram tools', 'respond normally',
+            'not use any telegram tools', 'respond normally', 'never use mcp',
             'telegram channel isn\'t set up', '/telegram:access',
+            'allowlisted', 'reply failed', 'mcp server failed',
+            'welcome back', 'run /init', 'recent activity', 'no recent activity',
+            'tips for getting started', 'claude code v',
+            'claude max', 'organization', '/mcp',
+            'i\'m ready and listening', 'ready and listening for messages',
+            'plain text in this terminal',
         ]):
             continue
         if sent_texts:
@@ -115,10 +131,11 @@ def tg_api(token: str, method: str, data=None) -> dict:
 class TelegramBridgeConfig(BridgeConfigBase):
     bot_token: str = ""
     initial_prompt: str = (
-        "IMPORTANT: You are receiving messages bridged from Telegram via ShellFrame. "
-        "Reply DIRECTLY in this terminal as plain text. Do NOT use any Telegram tools, plugins, or MCP. "
-        "Do NOT call reply, react, or any telegram-related tool. Just respond normally. "
-        "Messages will be prefixed with [TG @username]. Keep responses concise and mobile-friendly."
+        "IMPORTANT RULES: "
+        "1. Messages from remote users will appear as 'username: message'. "
+        "2. Reply ONLY as plain text in this terminal. NEVER use MCP tools, plugins, or any telegram/reply tools. "
+        "3. Keep responses concise. "
+        "4. If you see a message like 'Howard: hello', just reply directly with text."
     )
 
 
@@ -418,7 +435,7 @@ class TelegramBridge(BridgeBase):
         username = user.get("username") or user.get("first_name", "user")
 
         if self.config.prefix_enabled:
-            forwarded = f"[TG @{username}]: {text}"
+            forwarded = f"{username}: {text}"
         else:
             forwarded = text
 
