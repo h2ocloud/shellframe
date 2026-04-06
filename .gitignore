@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 build/
 dist/
+ShellFrame.app/Contents/MacOS/shellframe.bak.bin

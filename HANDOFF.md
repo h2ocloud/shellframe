@@ -1,111 +1,67 @@
-# ShellFrame v0.2.8 開發交接
+# ShellFrame v0.3.0 開發交接
 
-> 最後更新：2026-04-06，commit `b61c94f`
+> 最後更新：2026-04-06
 
-## 本次改動總覽
+## 本次改動總覽（v0.2.8 → v0.3.0）
 
-### 1. TG Bridge 回應擷取修復（核心 bug）
+### 1. 剪貼簿貼圖修復
 
-**問題**：TG 收不到 Claude 的回應。  
-**根因**：`pyte.Screen(200, 50)` 只保留最後 50 行，Claude 的長回應（tool calls + 多個 `⏺` block）超過後早期內容直接消失。
+**問題**：Cmd+V 貼圖完全失效。  
+**根因**：v0.2.8 加了 `if (el.tagName === 'TEXTAREA') return` 保護，但 xterm.js 用隱藏 `<textarea>` 接收輸入，所以 paste handler 永遠跳出。加上 xterm.js 的 `handlePasteEvent` 呼叫 `stopPropagation()`，事件無法冒泡到 document。  
+**修正**：改用 capture phase（`addEventListener('paste', ..., true)`），圖片/檔案時 `stopPropagation()` 阻止 xterm 處理，純文字放行。
 
-**修了什麼**（`bridge_telegram.py`）：
-- `SessionSlot.__init__`：`pyte.Screen` → `pyte.HistoryScreen(200, 50, history=10000)`
-- `_extract_new_text()`：現在從 `screen.history.top`（scrollback）+ `screen.display` 一起讀
-  - 用 `_history_offset` 追蹤已處理的 history 行，避免重複處理
-  - history 的每行是 `StaticDefaultDict`，取文字用 `hist_line[col].data for col in range(cols)`
-- flush timeout：15s → 60s（Claude 跑 1-2 分鐘很常見）
-- `filters.json`：從 `spinner_chars` 移除 `⏺`（它是 AI 回應標記，不是 spinner）
+### 2. 多檔案附加
 
-**已驗證**：用模擬測試確認 55+ 行 filler 後的 `⏺` block 在舊 Screen 下消失（False），HistoryScreen 正確保留（True）。
+**問題**：每次貼圖/檔案都覆蓋前一個。  
+**修正**：`attachPath`（string）→ `attachments[]`（array of `{path, dataUrl}`），支援累加、去重、批次送出。
 
-### 2. 熱載入（Hot Reload）
+### 3. TG 圖片/檔案接收
 
-**`bridge_telegram.py`**：
-- `TelegramBridge.__init__` 新增 `on_reload` callback 參數
-- `/reload` TG 指令 → 呼叫 callback → 在背景線程執行
-- 已註冊到 bot commands menu
+**問題**：TG 傳圖或檔案，bridge 直接忽略（`if not text: return`）。  
+**修正**：新增 `_download_tg_file()` 透過 `getFile` API 下載到 `~/.claude/tmp/`，路徑附加到訊息一起送入 CLI。
 
-**`main.py`**：
-- `hot_reload_bridge()`：用 `importlib.reload(bridge_telegram)` 重載模組
-  - 保存舊 config → stop bridge → reload module → 用新 class 重建 bridge → re-register 所有 session → start
-  - PTY session 完全不受影響
-- `start_bridge()` 和 `hot_reload_bridge()` 都傳入 `on_reload=self.hot_reload_bridge`
+### 4. `/reload` 無限迴圈
 
-**注意**：`bridge_base.py` 是被 bridge_telegram import 的，如果改了 base 也需要 reload。目前只 reload `bridge_telegram`。
+**問題**：`/reload` 後新 bridge 的 `_offset=0`，重新拉到 `/reload` 訊息。  
+**修正**：`hot_reload_bridge()` 保留並傳遞 `saved_offset`。
 
-### 3. 啟動更新檢查
+### 5. Output pusher pending buffer
 
-**`web/index.html`**：
-- `startupUpdateCheck()` 加了 `if (!autoUpdateEnabled) return false;`
-  - 在 `loadConfig()` 之後才執行，所以 `autoUpdateEnabled` 已經從 config 讀入
-- changelog 改用 `renderChangelog()` 做簡易 markdown → HTML（`###` 標題、`- **粗體**` bullet）
-- `showReleaseNotes()` 也改用 HTML 渲染，且會 match 對應版本的 section
+**問題**：頁面 reload 時 pusher 用 `s.read()` 清空 buffer，但前端還沒 ready，資料丟失（白畫面）。  
+**修正**：pusher 用 `pending` dict 暫存，`evaluate_js` 失敗時保留，下次重試。
 
-### 4. Finder 檔案貼上
+### 6. `.app` 改用原始碼啟動
 
-**`main.py`**：
-- `get_clipboard_files()`：macOS 用 `osascript` 讀取 `«class furl»`（Finder 複製的檔案路徑）
-  - Windows 用 PowerShell `Get-Clipboard -Format FileDropList`
-  - 回傳 JSON array of paths，有驗證 `os.path.exists()`
-- `save_file_from_clipboard()`：存非圖片的 clipboard blob 到 `~/.claude/tmp/`
+**問題**：`ShellFrame.app` 跑的是 py2app 打包的舊 binary（v0.2.5），所有 main.py 改動無效。  
+**修正**：`.app/Contents/MacOS/shellframe` 改為 shell script，source `~/.zprofile` + `~/.zshrc` 後執行 `.venv/bin/python main.py`。
 
-**`web/index.html` paste handler**：
-- 優先級：①圖片 blob → ②非圖片 file blob → ③系統剪貼簿檔案（Finder copy）
-- 多檔時 `attachPath` 用空格串接所有路徑，顯示 `[N files]`
-- 按 Enter 送出路徑到 PTY（跟既有圖片行為一致）
+### 7. Init prompt 自動注入
 
-**限制**：瀏覽器 Clipboard API 拿不到 Finder 複製的檔案路徑，必須走 Python → osascript。已測試可正常偵測。
+**設計**：
+- `INIT_PROMPT.md` 集中管理知識，分兩段：基礎 ShellFrame context + TG bridge context
+- `AI_CLI_TOOLS` 白名單（claude, codex, aider, cursor, copilot, goose, gemini）+ preset `inject_init` override
+- `_should_inject_init()` 兩層判斷：preset override → 白名單 heuristic
+- 注入時機：使用者第一次 Enter 且 CLI output 有 AI-ready 信號（`>` prompt、`Tip:`、`model:` 等）
+- 未登入時 Enter 正常通過，`_init_pending` 保持 true，登入完成後下一次 Enter 才注入
+- 注入方式：init prompt + `\n\n---\nUser's first message: ` + 使用者輸入，合併送出
 
-### 5. 全域資源管控
+### 8. `sfctl` 遠端控制
 
-- `~/.claude/CLAUDE.md`：新建，寫入 8GB RAM 機器的資源管控規範
-- `~/.claude/skills/medium-publish/SKILL.md`、`notebooklm/SKILL.md`：加了資源管控提醒
-- Memory：`feedback_resource_management.md`
-
----
-
-## 尚未測試 / 已知需要注意的
-
-| 項目 | 狀態 | 說明 |
-|------|------|------|
-| HistoryScreen 實際 TG 測試 | 未測 | 模擬測試通過，但需要實際開 ShellFrame + TG bridge 驗證 |
-| `/reload` 指令 | 未測 | 邏輯寫好了，需要實際從 TG 發 `/reload` 測試 |
-| Finder 貼上 | 部分測試 | `get_clipboard_files()` 的 osascript 已驗證，前端整合未測 |
-| 多檔貼上 | 未測 | 空格串接路徑可能在含空格的路徑出問題，考慮改用其他分隔 |
-| Windows 相容 | 未測 | `get_clipboard_files()` 的 PowerShell 路徑未驗證 |
-| `renderChangelog()` | 未測 | 簡易 regex 轉換，複雜 markdown 可能跑版 |
+**新增檔案**：`sfctl.py`（symlink 到 `~/.local/bin/sfctl`）  
+**機制**：file-based IPC（`/tmp/shellframe_cmd.json` → `/tmp/shellframe_result.json`）  
+**指令**：`sfctl reload`（熱載入 bridge）、`sfctl status`（查狀態）  
+**main.py**：`_start_command_watcher()` 背景 thread，0.5s 輪詢，30s 過期保護。
 
 ## 檔案清單
 
-```
-bridge_telegram.py  — HistoryScreen + /reload + flush timeout
-main.py             — hot_reload_bridge + get_clipboard_files + save_file_from_clipboard
-web/index.html      — startup check + renderChangelog + paste handler
-filters.json        — 移除 ⏺ from spinner_chars
-version.json        — 0.2.7 → 0.2.8
-CHANGELOG.md        — v0.2.8 release notes（中英雙語）
-```
-
-## 快速開發指引
-
-```bash
-# 開發模式（有 DevTools）
-cd ~/.local/apps/shellframe
-.venv/bin/python3 main.py --debug
-
-# 測試 bridge module 載入
-.venv/bin/python3 -c "import bridge_telegram; print('OK')"
-
-# 測試 HistoryScreen extraction
-.venv/bin/python3 -c "
-from bridge_telegram import *
-slot = SessionSlot('t', 'test', lambda x: None, 1)
-slot.has_user_msg = True
-slot.stream.feed('⏺ Hello world\r\n❯ \r\n')
-bridge = TelegramBridge('t', TelegramBridgeConfig(bot_token='x'))
-bridge.slots = {'t': slot}
-bridge._slot_order = ['t']
-print(bridge._extract_new_text(slot))
-"
-```
+| 檔案 | 改動類型 |
+|------|---------|
+| `web/index.html` | 修改：paste capture phase、多檔案 attachments |
+| `main.py` | 修改：output pusher pending buffer、init prompt injection、sfctl watcher、.Session._recent |
+| `bridge_telegram.py` | 修改：`_download_tg_file`、`_handle_update` 支援 photo/doc、`load_init_prompt()` |
+| `INIT_PROMPT.md` | 新增：集中管理 init 知識 |
+| `sfctl.py` | 新增：遠端控制 CLI |
+| `version.json` | 更新：0.2.8 → 0.3.0 |
+| `CHANGELOG.md` | 更新：v0.3.0 release notes |
+| `ShellFrame.app/Contents/MacOS/shellframe` | 改為 shell script launcher |
+| `test_init_prompt.py` | 新增：27 case 測試 |

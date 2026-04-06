@@ -195,16 +195,30 @@ def tg_api(token: str, method: str, data=None) -> dict:
         return {"ok": False, "description": str(e)}
 
 
+_INIT_PROMPT_FILE = _Path(__file__).parent / "INIT_PROMPT.md"
+
+
+def load_init_prompt() -> str:
+    """Load initial prompt from INIT_PROMPT.md. Always reads fresh from disk."""
+    try:
+        return _INIT_PROMPT_FILE.read_text().strip()
+    except Exception:
+        return (
+            "You are running inside ShellFrame with a Telegram bridge. "
+            "User messages appear as 'username: message'. Reply as plain text only. "
+            "Run `sfctl reload` after modifying bridge code. "
+            "Acknowledge briefly and wait for the user's first message."
+        )
+
+
 @dataclass
 class TelegramBridgeConfig(BridgeConfigBase):
     bot_token: str = ""
-    initial_prompt: str = (
-        "IMPORTANT RULES: "
-        "1. Messages from remote users will appear as 'username: message'. "
-        "2. Reply ONLY as plain text in this terminal. NEVER use MCP tools, plugins, or any telegram/reply tools. "
-        "3. Keep responses concise. "
-        "4. If you see a message like 'Howard: hello', just reply directly with text."
-    )
+    initial_prompt: str = ""
+
+    def __post_init__(self):
+        if not self.initial_prompt:
+            self.initial_prompt = load_init_prompt()
 
 
 class SessionSlot:
@@ -617,6 +631,8 @@ class TelegramBridge(BridgeBase):
                     slot.sent_texts.clear()
                     slot.last_output_time = 0
                     slot.first_output_time = 0
+                    # Reset: wait for next user message before extracting again
+                    slot.has_user_msg = False
 
                 # Debug log
                 with open('/tmp/shellframe_bridge.log', 'a') as f:
@@ -677,6 +693,34 @@ class TelegramBridge(BridgeBase):
             except Exception:
                 time.sleep(5)
 
+    def _download_tg_file(self, file_id: str, ext: str = "") -> str:
+        """Download a Telegram file by file_id, save to CLAUDE_TMP. Returns local path or ''."""
+        try:
+            result = tg_api(self.config.bot_token, "getFile", {"file_id": file_id})
+            if not result.get("ok"):
+                return ""
+            file_path = result["result"].get("file_path", "")
+            if not file_path:
+                return ""
+            # Determine extension from TG file path if not provided
+            if not ext:
+                ext = _Path(file_path).suffix or ".bin"
+            elif not ext.startswith("."):
+                ext = "." + ext
+            url = f"https://api.telegram.org/file/bot{self.config.bot_token}/{file_path}"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
+            from datetime import datetime
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            tmp_dir = _Path.home() / ".claude" / "tmp"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            local = tmp_dir / f"tg_{ts}{ext}"
+            local.write_bytes(data)
+            return str(local)
+        except Exception:
+            return ""
+
     def _handle_update(self, update: dict):
         msg = update.get("message")
         if not msg:
@@ -686,11 +730,38 @@ class TelegramBridge(BridgeBase):
         user_id = user.get("id", 0)
         chat_id = msg.get("chat", {}).get("id", 0)
         text = msg.get("text", "")
-        if not text:
-            return
+        caption = msg.get("caption", "")
 
         # Track chat
         self._user_chat[user_id] = chat_id
+
+        # ── Handle photo / document / file messages ──
+        file_paths = []
+        has_photo = bool(msg.get("photo"))
+        has_doc = bool(msg.get("document"))
+        with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            _f.write(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} doc={has_doc}\n")
+        if has_photo:
+            # TG sends multiple sizes; pick the largest (last)
+            photo = msg["photo"][-1]
+            path = self._download_tg_file(photo["file_id"], ".png")
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  photo download: file_id={photo['file_id']} path={path!r}\n")
+            if path:
+                file_paths.append(path)
+        if has_doc:
+            doc = msg["document"]
+            fname = doc.get("file_name", "file")
+            ext = _Path(fname).suffix or ".bin"
+            path = self._download_tg_file(doc["file_id"], ext)
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  doc download: fname={fname} path={path!r}\n")
+            if path:
+                file_paths.append(path)
+
+        # If message has only files (no text), we still need to proceed
+        if not text and not file_paths:
+            return
 
         # Whitelist check
         if self.config.allowed_users and user_id not in self.config.allowed_users:
@@ -705,8 +776,12 @@ class TelegramBridge(BridgeBase):
             self.paused = False
             self._emit_status({"state": "connected", "bot": self.bot_info.get("username", ""), "auto_resumed": True})
 
-        # ── Slash commands ──
-        if text.startswith("/"):
+        # Use caption as text if no text but has caption (photo/doc with caption)
+        if not text and caption:
+            text = caption
+
+        # ── Slash commands (text-only, no files) ──
+        if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
             if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload') or cmd.isdigit():
@@ -734,15 +809,32 @@ class TelegramBridge(BridgeBase):
         slot = self.slots[active_sid]
         username = user.get("username") or user.get("first_name", "user")
 
-        # CLI slash commands: forward raw without prefix
-        is_cli_cmd = text.startswith("/")
+        # Build the message to forward
+        # Append file paths so the CLI tool can read them
+        parts = []
+        if text:
+            is_cli_cmd = text.startswith("/")
+            if is_cli_cmd:
+                parts.append(text)
+            elif self.config.prefix_enabled:
+                parts.append(f"{username}: {text}")
+            else:
+                parts.append(text)
+        for fp in file_paths:
+            parts.append(fp)
+        forwarded = " ".join(parts)
 
-        if is_cli_cmd:
-            forwarded = text
-        elif self.config.prefix_enabled:
-            forwarded = f"{username}: {text}"
-        else:
-            forwarded = text
+        if not forwarded.strip():
+            return
+
+        # Confirm file receipt to TG user
+        if file_paths:
+            count = len(file_paths)
+            names = ", ".join(_Path(p).name for p in file_paths)
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": f"📎 {count} file{'s' if count > 1 else ''} received: {names}",
+            })
 
         # Mark that this session has received a real user message
         # Clear any pre-existing buffer (system prompt responses, etc.)
@@ -814,10 +906,11 @@ class TelegramBridge(BridgeBase):
                         "chat_id": chat_id,
                         "text": f"Switched to {slot.label} (/{slot.index})",
                     })
-                    # Send system prompt to new session so AI knows context
-                    if self.config.initial_prompt:
-                        slot.sent_texts.append(self.config.initial_prompt)
-                        def _send_prompt(s=slot, text=self.config.initial_prompt):
+                    # Send fresh init prompt to new session so AI knows context
+                    prompt = load_init_prompt()
+                    if prompt:
+                        slot.sent_texts.append(prompt)
+                        def _send_prompt(s=slot, text=prompt):
                             s.write_fn(text)
                             time.sleep(0.3)
                             s.write_fn("\r")

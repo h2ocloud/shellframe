@@ -43,6 +43,10 @@ if not IS_WIN:
 CLAUDE_TMP = Path.home() / ".claude" / "tmp"
 CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
 
+# AI CLI tools that should receive the init prompt.
+# Matched against the base command name (last path component, no extension).
+AI_CLI_TOOLS = {"claude", "codex", "aider", "cursor", "copilot", "goose", "gemini"}
+
 APP_DIR = Path(__file__).parent
 VERSION_FILE = APP_DIR / "version.json"
 REPO_URL = "https://raw.githubusercontent.com/h2ocloud/shellframe/main/version.json"
@@ -87,6 +91,7 @@ class Session:
         self.child_pid = None
         self.win_proc = None
         self.alive = True
+        self._recent = bytearray()  # ring buffer for peeking (last 1KB), not consumed by read()
         self._start(cols, rows)
 
     def _start(self, cols, rows):
@@ -162,6 +167,10 @@ class Session:
                         break
                     with self.lock:
                         self.buffer.extend(data)
+                        self._recent.extend(data)
+                        # Keep only last 1KB
+                        if len(self._recent) > 1024:
+                            self._recent = self._recent[-1024:]
             except (OSError, ValueError):
                 self.alive = False
                 break
@@ -285,6 +294,42 @@ class Api:
         self.sessions: dict[str, Session] = {}
         self.bridge: TelegramBridge = None  # single global bridge
         self._counter = 0
+        self._window = None
+        self._pusher_started = False
+
+    def _start_output_pusher(self):
+        """Background thread that pushes PTY output to frontend via evaluate_js.
+        Eliminates polling overhead — data arrives as soon as PTY produces it."""
+        if self._pusher_started:
+            return
+        self._pusher_started = True
+        # Pending buffer: data read from PTY but not yet delivered to frontend
+        pending = {}  # sid -> str
+        def pusher():
+            while True:
+                pushed = False
+                for sid, s in list(self.sessions.items()):
+                    data = s.read()
+                    if data:
+                        # Feed to TG bridge immediately (always works)
+                        if self.bridge:
+                            self.bridge.feed_output(sid, data)
+                        # Accumulate pending data
+                        pending[sid] = pending.get(sid, "") + data
+
+                    # Try to flush pending data to frontend
+                    chunk = pending.get(sid)
+                    if chunk and self._window:
+                        escaped = json.dumps(chunk)
+                        try:
+                            self._window.evaluate_js(f'_pushOutput("{sid}",{escaped})')
+                            pending.pop(sid, None)
+                            pushed = True
+                        except Exception:
+                            pass  # keep in pending, retry next cycle
+                # Tight loop when active, back off when idle
+                time.sleep(0.005 if pushed else 0.015)
+        threading.Thread(target=pusher, daemon=True).start()
 
     def get_config(self) -> str:
         return json.dumps(load_config())
@@ -344,7 +389,49 @@ class Api:
             label = cmd.split()[0] if cmd else sid
             self.bridge.register_session(sid, label, lambda text, _s=session: _s.write(text))
             self.bridge.refresh_commands()
+
+        # Mark session for init prompt — only for AI CLI tools, not shells/editors/etc.
+        session._init_pending = self._should_inject_init(cmd)
         return sid
+
+    def _should_inject_init(self, cmd: str) -> bool:
+        """Decide whether a session command should receive the init prompt.
+
+        Logic:
+        1. If the preset has an explicit "inject_init" field, honour it.
+        2. Otherwise, check if the base command name (or any arg) matches AI_CLI_TOOLS.
+           This handles direct invocations (claude, codex) and wrapper forms
+           (npx claude, bunx codex, /usr/local/bin/claude --model opus).
+        """
+        # Check preset-level override first
+        cfg = load_config()
+        for preset in cfg.get("presets", []):
+            if preset.get("cmd", "").strip() == cmd.strip():
+                override = preset.get("inject_init")
+                if override is not None:
+                    return bool(override)
+
+        # Fall back to whitelist heuristic: scan all tokens in the command
+        tokens = shlex.split(cmd) if cmd else []
+        for token in tokens:
+            # Strip path and get base name (e.g. /usr/local/bin/claude -> claude)
+            base = Path(token).stem  # stem strips extension too (.exe, .py)
+            if base in AI_CLI_TOOLS:
+                return True
+        return False
+
+    def _get_init_prompt(self) -> str:
+        """Load init prompt, strip TG section if bridge not active."""
+        prompt = bridge_telegram.load_init_prompt()
+        if not prompt:
+            return ""
+        if not self.bridge or not self.bridge.active:
+            marker = "\n## Telegram Bridge"
+            idx = prompt.find(marker)
+            if idx > 0:
+                prompt = prompt[:idx].rstrip()
+                prompt += "\n\nAcknowledge briefly and wait for the user's first message."
+        return prompt
 
     def close_session(self, sid: str):
         # Unregister from bridge
@@ -355,20 +442,52 @@ class Api:
         if s:
             s.kill()
 
+    # Patterns in CLI output that indicate the AI tool is ready for conversation
+    # (not in login/setup/auth flow). Checked after stripping ANSI escapes.
+    import re as _re
+    _ANSI_RE = _re.compile(r'\x1b\[[^A-Za-z]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b.|\x07')
+    _AI_READY_RE = _re.compile(
+        r'[>›]\s*$'           # Claude Code / Codex input prompt
+        r'|^\s*Tip:'           # Codex tip line (shown after ready)
+        r'|model:\s+\S'        # Codex model info box
+        r'|claude\.ai'         # Claude Code welcome
+        r'|What can I help'    # Common AI greeting
+        , _re.MULTILINE
+    )
+
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
-        if s:
-            s.write(data)
+        if not s:
+            return
+        # On user Enter, check if we should inject init prompt
+        if getattr(s, '_init_pending', False) and '\r' in data:
+            # Check if CLI output looks like an AI tool ready for conversation
+            # (not a login screen, auth flow, or shell prompt)
+            with s.lock:
+                tail = bytes(s._recent).decode('utf-8', errors='replace')
+            clean = self._ANSI_RE.sub('', tail) if tail else ""
+            if self._AI_READY_RE.search(clean):
+                # AI tool is ready — inject init prompt with this message
+                s._init_pending = False
+                prompt = self._get_init_prompt()
+                if prompt:
+                    if self.bridge:
+                        slot = self.bridge.slots.get(sid)
+                        if slot:
+                            slot.sent_texts.append(prompt)
+                    user_text = data.rstrip('\r\n')
+                    combined = prompt + "\n\n---\nUser's first message: " + user_text + "\r"
+                    s.write(combined)
+                    return
+            # Not ready yet (login/auth flow) — pass through, keep _init_pending
+        s.write(data)
 
     def read_output(self, sid: str) -> str:
+        """Read buffered output. Used only during reconnect — normal output is pushed."""
         s = self.sessions.get(sid)
         if not s:
             return ""
-        data = s.read()
-        # Feed output to global bridge
-        if self.bridge and data:
-            self.bridge.feed_output(sid, data)
-        return data
+        return s.read()
 
     def is_alive(self, sid: str) -> bool:
         s = self.sessions.get(sid)
@@ -605,9 +724,11 @@ class Api:
             # Save current bridge config
             old_config = None
             was_active = False
+            saved_offset = 0
             if self.bridge:
                 was_active = self.bridge.active
                 old_config = self.bridge.config
+                saved_offset = self.bridge._offset
                 self.bridge.stop()
 
             # Reload the module
@@ -624,6 +745,8 @@ class Api:
                     config=old_config,
                     on_reload=self.hot_reload_bridge,
                 )
+                # Preserve TG polling offset so it doesn't re-process the /reload command
+                self.bridge._offset = saved_offset
                 for sid, s in self.sessions.items():
                     label = s.cmd.split()[0] if s.cmd else sid
                     self.bridge.register_session(sid, label, lambda text, _s=s: _s.write(text))
@@ -649,6 +772,79 @@ class Api:
         if self.bridge:
             self.bridge.unregister_session(sid)
             self.bridge.refresh_commands()
+
+    # ── Remote control (sfctl) ──
+
+    _CMD_FILE = "/tmp/shellframe_cmd.json"
+    _RESULT_FILE = "/tmp/shellframe_result.json"
+
+    def _start_command_watcher(self):
+        """Watch for commands from sfctl CLI (file-based IPC)."""
+        def watcher():
+            while True:
+                time.sleep(0.5)
+                if not os.path.exists(self._CMD_FILE):
+                    continue
+                try:
+                    with open(self._CMD_FILE) as f:
+                        cmd_data = json.load(f)
+                    os.unlink(self._CMD_FILE)
+                except (json.JSONDecodeError, IOError, OSError):
+                    continue
+
+                # Ignore stale commands (older than 30s)
+                if time.time() - cmd_data.get("ts", 0) > 30:
+                    continue
+
+                cmd = cmd_data.get("cmd", "")
+                result = self._execute_sfctl(cmd)
+
+                try:
+                    with open(self._RESULT_FILE, "w") as f:
+                        json.dump(result, f)
+                except IOError:
+                    pass
+        threading.Thread(target=watcher, daemon=True).start()
+
+    def _execute_sfctl(self, cmd: str) -> dict:
+        """Execute a sfctl command and return result dict."""
+        if cmd == "reload":
+            try:
+                result_json = self.hot_reload_bridge()
+                result = json.loads(result_json) if isinstance(result_json, str) else result_json
+                return {
+                    "success": result.get("success", False),
+                    "message": result.get("message", "Reload completed"),
+                    "details": {
+                        "state": result.get("state", "unknown"),
+                        "bot": result.get("bot", ""),
+                        "sessions": result.get("sessions", 0),
+                    }
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Reload failed: {e}"}
+
+        elif cmd == "status":
+            if not self.bridge:
+                return {
+                    "success": True,
+                    "message": "Bridge not running",
+                    "details": {"state": "stopped", "sessions": len(self.sessions)}
+                }
+            status = self.bridge.get_status()
+            return {
+                "success": True,
+                "message": f"Bridge {status.get('state', 'unknown')} — @{status.get('bot', '?')}",
+                "details": {
+                    "state": status.get("state"),
+                    "bot": status.get("bot"),
+                    "sessions": status.get("sessions", 0),
+                    "paused": status.get("paused", False),
+                }
+            }
+
+        else:
+            return {"success": False, "message": f"Unknown command: {cmd}"}
 
     def cleanup_all(self):
         if self.bridge:
@@ -684,7 +880,10 @@ def main():
         text_select=True,
         background_color="#1a1b26",
     )
+    api._window = window
+    window.events.loaded += lambda: api._start_output_pusher()
     window.events.closed += api.cleanup_and_exit
+    api._start_command_watcher()
     webview.start(debug=("--debug" in sys.argv))
 
     # If webview.start() returns but process is still alive, force exit
