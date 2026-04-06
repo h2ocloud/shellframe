@@ -9,6 +9,7 @@ Windows: Edge WebView2 + subprocess
 
 import atexit
 import base64
+import importlib
 import json
 import os
 import platform
@@ -27,6 +28,7 @@ import webview
 
 # Add app dir to path for bridge imports
 sys.path.insert(0, str(Path(__file__).parent))
+import bridge_telegram
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
 
 IS_WIN = platform.system() == "Windows"
@@ -377,6 +379,61 @@ class Api:
         if s:
             s.resize(cols, rows)
 
+    def get_clipboard_files(self) -> str:
+        """Get file paths from system clipboard (Finder copy).
+        Returns JSON array of file paths, or empty array if no files."""
+        try:
+            if IS_WIN:
+                # Windows: use PowerShell to read clipboard file list
+                result = subprocess.run(
+                    ["powershell", "-Command", "Get-Clipboard -Format FileDropList | ForEach-Object { $_.FullName }"],
+                    capture_output=True, text=True, timeout=3
+                )
+                paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
+                return json.dumps(paths)
+            else:
+                # macOS: use osascript to read Finder clipboard
+                result = subprocess.run(
+                    ["osascript", "-e",
+                     'try\n'
+                     'set theFiles to (the clipboard as «class furl»)\n'
+                     'POSIX path of theFiles\n'
+                     'on error\n'
+                     'try\n'
+                     'set theList to (the clipboard as list)\n'
+                     'set out to ""\n'
+                     'repeat with f in theList\n'
+                     'set out to out & POSIX path of f & linefeed\n'
+                     'end repeat\n'
+                     'out\n'
+                     'on error\n'
+                     '""\n'
+                     'end try\n'
+                     'end try'],
+                    capture_output=True, text=True, timeout=3
+                )
+                paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
+                # Validate paths exist
+                paths = [p for p in paths if os.path.exists(p)]
+                return json.dumps(paths)
+        except Exception:
+            return json.dumps([])
+
+    def save_file_from_clipboard(self, data_url: str, filename: str) -> str:
+        """Save a non-image file from clipboard data URL. Returns saved path."""
+        try:
+            _, encoded = data_url.split(",", 1)
+            file_data = base64.b64decode(encoded)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Preserve original extension
+            ext = Path(filename).suffix or '.bin'
+            safe_name = Path(filename).stem[:50]
+            path = CLAUDE_TMP / f"clipboard_{ts}_{safe_name}{ext}"
+            path.write_bytes(file_data)
+            return str(path)
+        except Exception as e:
+            return f"ERROR: {e}"
+
     def save_image(self, data_url: str) -> str:
         try:
             _, encoded = data_url.split(",", 1)
@@ -479,6 +536,7 @@ class Api:
         self.bridge = TelegramBridge(
             bridge_id="tg",
             config=config,
+            on_reload=self.hot_reload_bridge,
         )
 
         # Register all existing sessions
@@ -538,6 +596,44 @@ class Api:
         if not self.bridge:
             return json.dumps({"exists": False})
         return json.dumps({"exists": True, **self.bridge.get_status()})
+
+    def hot_reload_bridge(self) -> str:
+        """Hot-reload bridge_telegram module without restarting the app.
+        Preserves PTY sessions — only restarts the TG bridge with new code."""
+        global bridge_telegram, TelegramBridge, TelegramBridgeConfig
+        try:
+            # Save current bridge config
+            old_config = None
+            was_active = False
+            if self.bridge:
+                was_active = self.bridge.active
+                old_config = self.bridge.config
+                self.bridge.stop()
+
+            # Reload the module
+            bridge_telegram = importlib.reload(bridge_telegram)
+            TelegramBridge = bridge_telegram.TelegramBridge
+            TelegramBridgeConfig = bridge_telegram.TelegramBridgeConfig
+            # Also reload filters
+            bridge_telegram.reload_filters()
+
+            # Restart bridge with same config if it was running
+            if was_active and old_config:
+                self.bridge = TelegramBridge(
+                    bridge_id="tg",
+                    config=old_config,
+                    on_reload=self.hot_reload_bridge,
+                )
+                for sid, s in self.sessions.items():
+                    label = s.cmd.split()[0] if s.cmd else sid
+                    self.bridge.register_session(sid, label, lambda text, _s=s: _s.write(text))
+                self.bridge.start()
+                return json.dumps({"success": True, "message": "Bridge reloaded and restarted", **self.bridge.get_status()})
+            else:
+                self.bridge = None
+                return json.dumps({"success": True, "message": "Bridge module reloaded (bridge was not running)"})
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"Reload failed: {e}"})
 
     def bridge_register_session(self, sid: str, label: str):
         """Register a new session with the running bridge."""

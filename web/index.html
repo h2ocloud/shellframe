@@ -870,11 +870,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     updateImageBar();
   }
 
-  // Clipboard paste
+  // Clipboard paste — images, files copied from Finder, or generic file blobs
   document.addEventListener('paste', async (e) => {
     if (!activeId || !sessions[activeId]) return;
+    // Don't intercept paste in input fields
+    if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
     const items = e.clipboardData?.items;
     if (!items) return;
+
+    // 1. Check for image data
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
@@ -889,6 +894,48 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         return;
       }
     }
+
+    // 2. Check for file blobs (non-image files pasted from some apps)
+    for (const item of items) {
+      if (item.kind === 'file') {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const path = await pywebview.api.save_file_from_clipboard(reader.result, blob.name || 'file');
+          if (!path.startsWith('ERROR')) {
+            attachFile(path, null);
+          }
+        };
+        reader.readAsDataURL(blob);
+        return;
+      }
+    }
+
+    // 3. Check system clipboard for Finder-copied files (macOS/Windows)
+    //    Browser clipboard API can't access file paths, so ask Python backend
+    try {
+      const raw = await pywebview.api.get_clipboard_files();
+      const paths = JSON.parse(raw);
+      if (paths.length > 0) {
+        e.preventDefault();
+        // Attach first file; if image, show preview
+        const filePath = paths[0];
+        const ext = filePath.split('.').pop().toLowerCase();
+        // Attach the file path (use original path, don't copy)
+        attachFile(filePath, null);
+        // If multiple files, show count
+        if (paths.length > 1) {
+          const s = sessions[activeId];
+          if (s) {
+            s.attachPath = paths.join(' ');
+            document.getElementById('image-path').textContent = `[${paths.length} files]`;
+            document.getElementById('image-path').title = paths.join('\n');
+          }
+        }
+        return;
+      }
+    } catch(e2) {}
   });
 
   // Drag & drop files
@@ -1442,6 +1489,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   const $modalUpdate = document.getElementById('modal-update');
   const $modalRelease = document.getElementById('modal-release');
 
+  // Simple markdown → HTML for changelog display
+  function renderChangelog(md) {
+    return md
+      .replace(/^### (.+)$/gm, '<div style="color:#7aa2f7;font-weight:600;margin:8px 0 4px">$1</div>')
+      .replace(/^- \*\*(.+?)\*\*(.*)$/gm, '<div style="margin:2px 0"><span style="color:#c0caf5;font-weight:500">• $1</span><span style="color:#a9b1d6">$2</span></div>')
+      .replace(/^- (.+)$/gm, '<div style="margin:2px 0;color:#a9b1d6">• $1</div>')
+      .replace(/---/g, '')
+      .replace(/\n{2,}/g, '<div style="height:6px"></div>');
+  }
+
   async function startupUpdateCheck() {
     await waitApi();
     try {
@@ -1457,6 +1514,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
       localStorage.setItem('shellframe_last_version', info.local);
 
+      // Skip update check if auto-update is disabled in settings
+      if (!autoUpdateEnabled) return false;
+
       if (info.update_available) {
         document.getElementById('update-badge').textContent = `v${info.local} → v${info.remote}`;
         document.getElementById('update-msg').textContent =
@@ -1466,8 +1526,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           const resp = await fetch(`https://raw.githubusercontent.com/h2ocloud/shellframe/main/CHANGELOG.md`);
           if (resp.ok) {
             const md = await resp.text();
+            // Extract the FIRST version section (newest = the remote version)
             const sections = md.split(/^## /m).filter(Boolean);
-            document.getElementById('update-changelog').textContent = '## ' + (sections[1] || '').substring(0, 1000);
+            // sections[0] is the "# Changelog" header line, sections[1] is newest version
+            const latestSection = sections[1] || sections[0] || '';
+            // Pick the right language block based on current lang
+            const $cl = document.getElementById('update-changelog');
+            $cl.innerHTML = renderChangelog('## ' + latestSection.substring(0, 1500));
+            $cl.style.display = 'block';
           }
         } catch(e) {}
 
@@ -1514,7 +1580,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       const changelog = await pywebview.api.get_changelog();
       const sections = changelog.split(/^## /m).filter(Boolean);
-      document.getElementById('release-changelog').textContent = '## ' + (sections[1] || '').substring(0, 2000);
+      // Find the section matching this version, or use the first version section
+      let section = sections.find(s => s.startsWith(`v${version}`)) || sections[1] || '';
+      const $rl = document.getElementById('release-changelog');
+      $rl.innerHTML = renderChangelog('## ' + section.substring(0, 2000));
     } catch(e) {}
     $modalRelease.classList.add('open');
   }

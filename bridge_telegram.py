@@ -221,9 +221,10 @@ class SessionSlot:
         self.sent_texts = []
         self.has_user_msg = False
         # Virtual terminal for screen-based text extraction
-        self.screen = pyte.Screen(200, 50)
+        # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
+        self.screen = pyte.HistoryScreen(200, 50, history=10000)
         self.stream = pyte.Stream(self.screen)
-        self.prev_screen = [""] * 50  # previous screen snapshot
+        self._history_offset = 0  # tracks processed history lines
         self.sent_responses = {"Understood.", "Understood"}  # pre-filter system acks
 
 
@@ -235,12 +236,13 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
         self._thread = None
         self._stop_event = threading.Event()
+        self._on_reload = on_reload  # callback for hot-reload from TG
         self._offset = 0
         self._flush_thread = None
 
@@ -341,6 +343,7 @@ class TelegramBridge(BridgeBase):
             {"command": "status", "description": "Show current session & bridge status"},
             {"command": "pause", "description": "Pause bridge (stop forwarding)"},
             {"command": "resume", "description": "Resume bridge"},
+            {"command": "reload", "description": "Hot-reload bridge code"},
         ]
         # Add numbered commands for quick switching
         with self._slots_lock:
@@ -428,19 +431,35 @@ class TelegramBridge(BridgeBase):
         return False
 
     def _extract_new_text(self, slot):
-        """Scan screen for AI responses not yet sent.
+        """Scan screen + scrollback history for AI responses not yet sent.
 
         Logic:
-        1. Find a line starting with AI_MARKERS (• / ⏺) = start of response block
-        2. Collect ALL subsequent lines (including empty) until hitting a
-           prompt marker (› / ❯) or another AI marker (next response)
-        3. Join collected lines as one response; skip if already in sent_responses
+        1. Combine scrollback history (lines scrolled off top) + current screen
+        2. Find a line starting with AI_MARKERS (• / ⏺) = start of response block
+        3. Collect ALL subsequent lines until hitting a prompt marker (› / ❯) or another AI marker
+        4. Join collected lines as one response; skip if already in sent_responses
         """
+        # Build full line list: unprocessed history + current display
+        all_lines = []
+
+        # History lines that scrolled off the top (pyte.HistoryScreen)
+        # Each history line is a StaticDefaultDict mapping col -> Char
+        history = list(slot.screen.history.top)
+        cols = slot.screen.columns
+        for hist_line in history[slot._history_offset:]:
+            text = "".join(hist_line[col].data for col in range(cols)).rstrip()
+            all_lines.append(text)
+        slot._history_offset = len(history)
+
+        # Current screen display
+        for line in slot.screen.display:
+            all_lines.append(line.rstrip())
+
         # Collect response blocks: list of list-of-lines
         blocks = []
         current_block = None
 
-        for line in slot.screen.display:
+        for line in all_lines:
             stripped = line.rstrip().strip()
             raw_lstripped = line.lstrip()
 
@@ -587,7 +606,9 @@ class TelegramBridge(BridgeBase):
                     now = time.time()
                     idle = now - slot.last_output_time
                     total = now - slot.first_output_time
-                    if idle < 3.0 and total < 15.0:
+                    # Wait for 3s idle OR 60s total before extracting
+                    # Claude can take 2+ minutes; 15s was too aggressive
+                    if idle < 3.0 and total < 60.0:
                         self._send_typing(sid)
                         continue
 
@@ -688,7 +709,7 @@ class TelegramBridge(BridgeBase):
         if text.startswith("/"):
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload') or cmd.isdigit():
                 self._handle_command(cmd, user_id, chat_id)
                 return
             # Everything else: forward as CLI slash command (e.g., /model, /skills, /compact)
@@ -807,10 +828,39 @@ class TelegramBridge(BridgeBase):
                         "text": f"Invalid session number. Use /list to see available sessions.",
                     })
 
+        elif cmd == "reload":
+            if self._on_reload:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "🔄 Hot-reloading bridge module...",
+                })
+                # Run reload in a thread (it stops/restarts the bridge)
+                def _do_reload():
+                    try:
+                        result = self._on_reload()
+                        if isinstance(result, str):
+                            result = json.loads(result)
+                        msg = result.get("message", "done") if isinstance(result, dict) else str(result)
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"✅ {msg}",
+                        })
+                    except Exception as e:
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"❌ Reload failed: {e}",
+                        })
+                threading.Thread(target=_do_reload, daemon=True).start()
+            else:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "Reload not available (no callback registered).",
+                })
+
         elif cmd == "start":
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
-                "text": f"ShellFrame Bridge\n\n/list — list sessions\n/1, /2, ... — switch session\n/pause — pause bridge\n/resume — resume\n/status — show status",
+                "text": f"ShellFrame Bridge\n\n/list — list sessions\n/1, /2, ... — switch session\n/pause — pause bridge\n/resume — resume\n/reload — hot-reload bridge code\n/status — show status",
             })
 
         else:

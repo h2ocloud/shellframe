@@ -9,7 +9,7 @@
     "\\r", "\\u0007", "\\u0008",
     "\\[[\\??\\d;]+[A-Za-z]"
   ],
-  "spinner_chars": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏺⏵▐▛▜▝▘█",
+  "spinner_chars": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠛⠿✢✳✶✻✽·⏵▐▛▜▝▘█",
   "loading_words": [
     "Channelling", "Undulating", "Gitifying", "Thinking",
     "Initializing", "Compiling", "Indexing", "Analyzing",
