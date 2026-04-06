@@ -9,6 +9,38 @@ BIN_DIR="${HOME}/.local/bin"
 
 echo "Installing ShellFrame..."
 
+# Check prerequisites
+if ! command -v git &>/dev/null; then
+  echo "Error: git is required. Install it first:"
+  echo "  macOS:  xcode-select --install"
+  echo "  Linux:  sudo apt install git"
+  exit 1
+fi
+
+if ! command -v python3 &>/dev/null; then
+  echo "Python 3 not found. Attempting to install..."
+  if [ "$(uname)" = "Darwin" ]; then
+    # macOS: try Homebrew, then Xcode CLI tools
+    if command -v brew &>/dev/null; then
+      brew install python@3.12
+    else
+      echo "  Installing Xcode CLI tools (includes Python 3)..."
+      xcode-select --install 2>/dev/null || true
+      echo "  Run this installer again after Xcode tools finish installing."
+      exit 1
+    fi
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get update -q && sudo apt-get install -y -q python3 python3-venv
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -y python3
+  elif command -v pacman &>/dev/null; then
+    sudo pacman -S --noconfirm python
+  else
+    echo "Error: Could not install Python 3. Install it manually and re-run."
+    exit 1
+  fi
+fi
+
 # Clone or update
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "Updating existing installation..."
