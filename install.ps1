@@ -31,19 +31,64 @@ if (-not (Test-Path ".venv")) {
 Write-Host "Installing dependencies..."
 .venv\Scripts\pip install -q -r requirements.txt
 
-# CLI launcher
+# CLI launchers
 if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir -Force | Out-Null }
-$launcher = @"
+
+# shellframe — main app (absolute paths)
+$launcherMain = @"
 @echo off
-"%~dp0..\..\apps\shellframe\.venv\Scripts\python.exe" "%~dp0..\..\apps\shellframe\main.py" %*
+"$InstallDir\.venv\Scripts\python.exe" "$InstallDir\main.py" %*
 "@
-Set-Content -Path "$BinDir\shellframe.bat" -Value $launcher
+Set-Content -Path "$BinDir\shellframe.bat" -Value $launcherMain
+
+# sfctl — remote control for AI agents (absolute paths)
+$launcherSfctl = @"
+@echo off
+"$InstallDir\.venv\Scripts\python.exe" "$InstallDir\sfctl.py" %*
+"@
+Set-Content -Path "$BinDir\sfctl.bat" -Value $launcherSfctl
+
+# Ensure BinDir is in user PATH
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (-not $userPath) { $userPath = "" }
+if ($userPath -split ";" | Where-Object { $_ -eq $BinDir }) {
+    # already in PATH
+} else {
+    $newPath = if ($userPath) { "$BinDir;$userPath" } else { $BinDir }
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    $env:Path = "$BinDir;$env:Path"
+    Write-Host "  Added $BinDir to user PATH" -ForegroundColor Yellow
+}
+
+# Desktop shortcut
+try {
+    $desktopPath = [Environment]::GetFolderPath("Desktop")
+    $shortcutPath = "$desktopPath\ShellFrame.lnk"
+    if (-not (Test-Path $shortcutPath)) {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = "$BinDir\shellframe.bat"
+        $shortcut.WorkingDirectory = $InstallDir
+        $shortcut.Description = "ShellFrame"
+        $shortcut.Save()
+        Write-Host "  Desktop shortcut created" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "  (Skipped desktop shortcut: $_)" -ForegroundColor DarkGray
+}
+
+# Read version
+$version = "?"
+try {
+    $versionJson = Get-Content "$InstallDir\version.json" -Raw | ConvertFrom-Json
+    $version = $versionJson.version
+} catch {}
 
 Pop-Location
 
 Write-Host ""
-Write-Host "ShellFrame installed!" -ForegroundColor Green
-Write-Host "  CLI:  shellframe"
-Write-Host "  Path: $InstallDir"
+Write-Host "ShellFrame v$version installed!" -ForegroundColor Green
+Write-Host "  CLI:       shellframe"
+Write-Host "  Control:   sfctl"
+Write-Host "  Path:      $InstallDir"
 Write-Host ""
-Write-Host "Add $BinDir to your PATH if not already." -ForegroundColor Yellow
