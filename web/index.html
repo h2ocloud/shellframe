@@ -704,16 +704,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
     sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [] };
 
-    // Input → PTY (with IME dedup for WKWebView)
+    // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
-      let lastData = '', lastTime = 0;
+      let composing = false, lastSent = '', lastTime = 0;
+      let inputBuf = '', inputTimer = null;
+      const textarea = pane.querySelector('textarea.xterm-helper-textarea');
+      if (textarea) {
+        textarea.addEventListener('compositionstart', () => { composing = true; });
+        textarea.addEventListener('compositionend', () => { composing = false; });
+      }
       term.onData(data => {
+        if (composing) return;
         const now = Date.now();
-        // IME dedup: skip duplicate non-ASCII multi-char input within 300ms
-        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data) && data === lastData && now - lastTime < 300) return;
-        lastData = data;
-        lastTime = now;
-        pywebview.api.write_input(sid, data);
+        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
+          if (data === lastSent && now - lastTime < 400) return;
+          lastSent = data; lastTime = now;
+        }
+        inputBuf += data;
+        if (!inputTimer) {
+          inputTimer = setTimeout(() => {
+            pywebview.api.write_input(sid, inputBuf);
+            inputBuf = ''; inputTimer = null;
+          }, 0);
+        }
       });
     }
 
@@ -767,15 +780,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Resize PTY to match new terminal size
     await pywebview.api.resize(sid, term.cols, term.rows);
 
-    // Input → PTY (with IME dedup)
+    // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
-      let lastData = '', lastTime = 0;
+      let composing = false, lastSent = '', lastTime = 0;
+      let inputBuf = '', inputTimer = null;
+      const textarea = pane.querySelector('textarea.xterm-helper-textarea');
+      if (textarea) {
+        textarea.addEventListener('compositionstart', () => { composing = true; });
+        textarea.addEventListener('compositionend', () => { composing = false; });
+      }
       term.onData(data => {
+        if (composing) return;
         const now = Date.now();
-        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data) && data === lastData && now - lastTime < 300) return;
-        lastData = data;
-        lastTime = now;
-        pywebview.api.write_input(sid, data);
+        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
+          if (data === lastSent && now - lastTime < 400) return;
+          lastSent = data; lastTime = now;
+        }
+        inputBuf += data;
+        if (!inputTimer) {
+          inputTimer = setTimeout(() => {
+            pywebview.api.write_input(sid, inputBuf);
+            inputBuf = ''; inputTimer = null;
+          }, 0);
+        }
       });
     }
 

@@ -23,6 +23,7 @@ import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from queue import SimpleQueue
 
 import webview
 
@@ -82,7 +83,7 @@ def save_config(cfg):
 class Session:
     """One PTY tab session."""
 
-    def __init__(self, sid: str, cmd: str, cols: int, rows: int):
+    def __init__(self, sid: str, cmd: str, cols: int, rows: int, on_data=None):
         self.sid = sid
         self.cmd = cmd
         self.buffer = bytearray()
@@ -92,6 +93,7 @@ class Session:
         self.win_proc = None
         self.alive = True
         self._recent = bytearray()  # ring buffer for peeking (last 1KB), not consumed by read()
+        self._on_data = on_data     # callback to signal new data (e.g. threading.Event.set)
         self._start(cols, rows)
 
     def _start(self, cols, rows):
@@ -168,9 +170,10 @@ class Session:
                     with self.lock:
                         self.buffer.extend(data)
                         self._recent.extend(data)
-                        # Keep only last 1KB
                         if len(self._recent) > 1024:
                             self._recent = self._recent[-1024:]
+                    if self._on_data:
+                        self._on_data()
             except (OSError, ValueError):
                 self.alive = False
                 break
@@ -183,6 +186,8 @@ class Session:
                 if data:
                     with self.lock:
                         self.buffer.extend(data.encode("utf-8", errors="replace") if isinstance(data, str) else data)
+                    if self._on_data:
+                        self._on_data()
                 else:
                     break
             except (EOFError, OSError):
@@ -197,6 +202,8 @@ class Session:
                 if data:
                     with self.lock:
                         self.buffer.extend(data)
+                    if self._on_data:
+                        self._on_data()
                 else:
                     break
             except:
@@ -296,28 +303,27 @@ class Api:
         self._counter = 0
         self._window = None
         self._pusher_started = False
+        self._output_event = threading.Event()   # signalled by reader threads
+        self._bridge_queue = SimpleQueue()        # feed_output off the hot path
 
     def _start_output_pusher(self):
-        """Background thread that pushes PTY output to frontend via evaluate_js.
-        Eliminates polling overhead — data arrives as soon as PTY produces it."""
+        """Background threads that push PTY output to frontend via evaluate_js.
+        Event-driven: reader threads signal _output_event so pusher wakes instantly."""
         if self._pusher_started:
             return
         self._pusher_started = True
-        # Pending buffer: data read from PTY but not yet delivered to frontend
         pending = {}  # sid -> str
+
         def pusher():
             while True:
+                self._output_event.clear()
                 pushed = False
                 for sid, s in list(self.sessions.items()):
                     data = s.read()
                     if data:
-                        # Feed to TG bridge immediately (always works)
                         if self.bridge:
-                            self.bridge.feed_output(sid, data)
-                        # Accumulate pending data
+                            self._bridge_queue.put_nowait((sid, data))
                         pending[sid] = pending.get(sid, "") + data
-
-                    # Try to flush pending data to frontend
                     chunk = pending.get(sid)
                     if chunk and self._window:
                         escaped = json.dumps(chunk)
@@ -326,10 +332,18 @@ class Api:
                             pending.pop(sid, None)
                             pushed = True
                         except Exception:
-                            pass  # keep in pending, retry next cycle
-                # Tight loop when active, back off when idle
-                time.sleep(0.005 if pushed else 0.015)
+                            pass
+                # Event-driven: wake instantly on new data, idle-back-off otherwise
+                self._output_event.wait(0.001 if pushed else 0.015)
+
+        def bridge_feeder():
+            while True:
+                sid, data = self._bridge_queue.get()
+                if self.bridge:
+                    self.bridge.feed_output(sid, data)
+
         threading.Thread(target=pusher, daemon=True).start()
+        threading.Thread(target=bridge_feeder, daemon=True).start()
 
     def get_config(self) -> str:
         return json.dumps(load_config())
@@ -382,7 +396,7 @@ class Api:
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
         self._counter += 1
         sid = f"s{self._counter}"
-        session = Session(sid, cmd, cols, rows)
+        session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
         self.sessions[sid] = session
         # Auto-register with bridge
         if self.bridge:
@@ -459,23 +473,11 @@ class Api:
         , _re.MULTILINE
     )
 
-    # IME dedup state per session
-    _ime_dedup = {}  # sid -> (data, timestamp)
-
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
         if not s:
             return
-        # IME dedup: skip duplicate non-ASCII multi-char input within 500ms
-        if len(data) > 1 and any(ord(c) > 127 for c in data):
-            import time as _t
-            prev = self._ime_dedup.get(sid)
-            now = _t.time()
-            if prev and prev[0] == data and now - prev[1] < 0.5:
-                return  # duplicate IME commit, skip
-            self._ime_dedup[sid] = (data, now)
-        else:
-            self._ime_dedup.pop(sid, None)
+        # IME dedup is handled in JS (compositionstart/end + time window)
         # On user Enter, check if we should inject init prompt
         if getattr(s, '_init_pending', False) and '\r' in data:
             # Check if CLI output looks like an AI tool ready for conversation
