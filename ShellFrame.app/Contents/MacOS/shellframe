@@ -5,5 +5,12 @@ if [ -f "$HOME/.zprofile" ]; then source "$HOME/.zprofile"; fi
 if [ -f "$HOME/.zshrc" ]; then source "$HOME/.zshrc" 2>/dev/null; fi
 
 DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
-cd "$DIR"
+
+# Support both regular and Homebrew installs
+if [ -d "$DIR/libexec/.venv" ]; then
+  cd "$DIR/libexec"
+else
+  cd "$DIR"
+fi
+
 exec .venv/bin/python main.py "$@"

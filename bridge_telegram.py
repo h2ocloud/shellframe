@@ -735,9 +735,9 @@ class TelegramBridge(BridgeBase):
                     now = time.time()
                     idle = now - slot.last_output_time
                     total = now - slot.first_output_time
-                    # Wait for 3s idle OR 60s total before extracting
-                    # Claude can take 2+ minutes; 15s was too aggressive
-                    if idle < 3.0 and total < 60.0:
+                    # Wait for 3s idle OR 120s total before extracting
+                    # Claude can take 2+ minutes for long responses
+                    if idle < 3.0 and total < 120.0:
                         self._send_typing(sid)
                         continue
 
@@ -746,8 +746,9 @@ class TelegramBridge(BridgeBase):
                     slot.sent_texts.clear()
                     slot.last_output_time = 0
                     slot.first_output_time = 0
-                    # Reset: wait for next user message before extracting again
-                    slot.has_user_msg = False
+                    # Keep has_user_msg=True so subsequent responses still get
+                    # forwarded.  It resets only when a NEW user message arrives
+                    # (the _handle_update path sets it fresh each time).
 
                 # Debug log
                 with open('/tmp/shellframe_bridge.log', 'a') as f:
