@@ -704,8 +704,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
     sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [] };
 
-    // Input → PTY
-    term.onData(data => pywebview.api.write_input(sid, data));
+    // Input → PTY (with IME dedup for WKWebView)
+    {
+      let lastData = '', lastTime = 0;
+      term.onData(data => {
+        const now = Date.now();
+        // IME dedup: skip duplicate non-ASCII multi-char input within 300ms
+        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data) && data === lastData && now - lastTime < 300) return;
+        lastData = data;
+        lastTime = now;
+        pywebview.api.write_input(sid, data);
+      });
+    }
 
     // Resize
     const ro = new ResizeObserver(() => {
@@ -757,8 +767,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Resize PTY to match new terminal size
     await pywebview.api.resize(sid, term.cols, term.rows);
 
-    // Input → PTY
-    term.onData(data => pywebview.api.write_input(sid, data));
+    // Input → PTY (with IME dedup)
+    {
+      let lastData = '', lastTime = 0;
+      term.onData(data => {
+        const now = Date.now();
+        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data) && data === lastData && now - lastTime < 300) return;
+        lastData = data;
+        lastTime = now;
+        pywebview.api.write_input(sid, data);
+      });
+    }
 
     const ro = new ResizeObserver(() => {
       if (activeId === sid) {

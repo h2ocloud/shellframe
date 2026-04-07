@@ -224,10 +224,11 @@ class TelegramBridgeConfig(BridgeConfigBase):
 class SessionSlot:
     """One session registered with the bridge."""
 
-    def __init__(self, sid: str, label: str, write_fn, index: int):
+    def __init__(self, sid: str, label: str, write_fn, index: int, peek_fn=None):
         self.sid = sid
         self.label = label
         self.write_fn = write_fn
+        self.peek_fn = peek_fn  # returns recent PTY bytes as fallback
         self.index = index
         self.output_lock = threading.Lock()
         self.last_output_time = 0
@@ -250,13 +251,14 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
         self._thread = None
         self._stop_event = threading.Event()
         self._on_reload = on_reload  # callback for hot-reload from TG
+        self._on_close_session = on_close_session  # callback(sid) to close a session
         self._offset = 0
         self._flush_thread = None
 
@@ -267,17 +269,49 @@ class TelegramBridge(BridgeBase):
         self._user_chat = {}       # user_id -> chat_id
         self._slots_lock = threading.Lock()
 
+    # ── IPC with main.py (via sfctl file mechanism) ──
+
+    _CMD_FILE = "/tmp/shellframe_cmd.json"
+    _RESULT_FILE = "/tmp/shellframe_result.json"
+
+    def _sfctl_call(self, cmd: str, args: dict = None, timeout: float = 5.0) -> dict:
+        """Send a command to main.py via sfctl IPC and wait for result."""
+        import os as _os
+        # Clean stale result
+        try:
+            _os.unlink(self._RESULT_FILE)
+        except OSError:
+            pass
+        # Write command
+        with open(self._CMD_FILE, 'w') as f:
+            json.dump({"cmd": cmd, "args": args or {}, "ts": time.time()}, f)
+        # Wait for result
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(0.2)
+            if _os.path.exists(self._RESULT_FILE):
+                try:
+                    with open(self._RESULT_FILE) as f:
+                        result = json.load(f)
+                    _os.unlink(self._RESULT_FILE)
+                    return result
+                except (json.JSONDecodeError, IOError):
+                    pass
+        return {"success": False, "message": "Timeout waiting for main.py"}
+
     # ── Session management ──
 
-    def register_session(self, sid: str, label: str, write_fn):
+    def register_session(self, sid: str, label: str, write_fn, peek_fn=None):
         """Register a session tab with the bridge."""
         with self._slots_lock:
             if sid in self.slots:
                 self.slots[sid].label = label
                 self.slots[sid].write_fn = write_fn
+                if peek_fn:
+                    self.slots[sid].peek_fn = peek_fn
                 return
             idx = len(self._slot_order) + 1
-            self.slots[sid] = SessionSlot(sid, label, write_fn, idx)
+            self.slots[sid] = SessionSlot(sid, label, write_fn, idx, peek_fn=peek_fn)
             self._slot_order.append(sid)
 
     def unregister_session(self, sid: str):
@@ -358,6 +392,8 @@ class TelegramBridge(BridgeBase):
             {"command": "pause", "description": "Pause bridge (stop forwarding)"},
             {"command": "resume", "description": "Resume bridge"},
             {"command": "reload", "description": "Hot-reload bridge code"},
+            {"command": "new", "description": "New session (default: claude)"},
+            {"command": "close", "description": "Close current session"},
         ]
         # Add numbered commands for quick switching
         with self._slots_lock:
@@ -598,6 +634,78 @@ class TelegramBridge(BridgeBase):
 
         return new_texts
 
+    def _peek_last_response(self, slot) -> str:
+        """Read-only peek at the last AI response block on screen (no state mutation)."""
+        all_lines = []
+        history = list(slot.screen.history.top)
+        cols = slot.screen.columns
+        # Only scan last 200 history lines + screen (enough for context)
+        for hist_line in history[-200:]:
+            text = "".join(hist_line[col].data for col in range(cols)).rstrip()
+            all_lines.append(text)
+        for line in slot.screen.display:
+            all_lines.append(line.rstrip())
+
+        # Fallback: if pyte screen is empty, use PTY's recent buffer
+        non_empty = [l for l in all_lines if l.strip()]
+        if not non_empty and slot.peek_fn:
+            raw = slot.peek_fn()
+            if raw:
+                clean = strip_ansi(raw)
+                if clean.strip():
+                    # Return last ~10 meaningful lines
+                    lines = [l for l in clean.strip().split('\n') if l.strip()]
+                    return '\n'.join(lines[-10:])
+            return ""
+
+        # Find AI response blocks (same logic as _extract_new_text)
+        blocks = []
+        current_block = None
+        for line in all_lines:
+            stripped = line.strip()
+            first_word = stripped.split('…')[0].split('(')[0].split(' ')[0].rstrip('.')
+            if first_word in self._SPINNER_VERBS:
+                continue
+            if stripped.startswith(('› ', '❯ ', '›', '❯')):
+                if current_block is not None:
+                    blocks.append(current_block)
+                    current_block = None
+                continue
+
+            # Check all AI markers
+            marker_hit = False
+            for marker in self.AI_MARKERS:
+                if stripped.startswith(marker):
+                    if current_block is not None:
+                        blocks.append(current_block)
+                    current_block = [stripped[len(marker):].strip()]
+                    marker_hit = True
+                    break
+            if not marker_hit and current_block is not None:
+                current_block.append(stripped)
+
+        if current_block is not None:
+            blocks.append(current_block)
+
+        if not blocks:
+            return ""
+
+        # Take the last block, clean up
+        last = blocks[-1]
+        while last and not last[-1]:
+            last.pop()
+        while last and not last[0]:
+            last.pop(0)
+        last = [l for l in last if not (
+            l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)
+        )]
+        text = '\n'.join(last).strip()
+        if text in self._FILTERED_RESPONSES:
+            return ""
+        if self._is_tool_call(last[0].strip() if last else ""):
+            return ""
+        return text
+
     def _flush_loop(self):
         """Extract new text from virtual terminal and send to TG."""
         while self.active and not self._stop_event.is_set():
@@ -614,8 +722,15 @@ class TelegramBridge(BridgeBase):
                     if slot.last_output_time == 0:
                         continue
                     if not slot.has_user_msg:
-                        # Reset screen snapshot (discard pre-message content)
-                        slot.prev_screen = [line.rstrip() for line in slot.screen.display]
+                        # Drain old content so it won't be re-extracted later
+                        # when a TG message arrives. This advances _history_offset
+                        # and marks existing AI blocks as "sent".
+                        now = time.time()
+                        idle = now - slot.last_output_time
+                        if idle >= 1.0:
+                            self._extract_new_text(slot)
+                            slot.last_output_time = 0
+                            slot.first_output_time = 0
                         continue
                     now = time.time()
                     idle = now - slot.last_output_time
@@ -646,6 +761,9 @@ class TelegramBridge(BridgeBase):
 
                 clean = '\n'.join(new_lines)
 
+                # Detect file paths in response for TG file sending
+                file_paths = self._extract_file_paths(clean)
+
                 # Tag with session label
                 prefix = f"[{slot.label}] " if len(self.slots) > 1 else ""
                 msg = prefix + clean
@@ -653,26 +771,107 @@ class TelegramBridge(BridgeBase):
                 if len(msg) > 4000:
                     msg = msg[:4000] + "\n...(truncated)"
 
-                # Send to all users who have this as active session
-                sent_to = set()
+                # Collect target chat_ids
+                target_chats = set()
                 for uid, active_sid in list(self._user_active.items()):
                     if active_sid == sid and uid in self._user_chat:
-                        chat_id = self._user_chat[uid]
-                        if chat_id not in sent_to:
-                            tg_api(self.config.bot_token, "sendMessage", {
-                                "chat_id": chat_id,
-                                "text": msg,
-                            })
-                            sent_to.add(chat_id)
-
+                        target_chats.add(self._user_chat[uid])
                 # Also send to users with no explicit selection if this is first slot
                 if sid == (self._slot_order[0] if self._slot_order else ""):
                     for uid, chat_id in self._user_chat.items():
-                        if uid not in self._user_active and chat_id not in sent_to:
-                            tg_api(self.config.bot_token, "sendMessage", {
-                                "chat_id": chat_id,
-                                "text": msg,
-                            })
+                        if uid not in self._user_active:
+                            target_chats.add(chat_id)
+
+                for chat_id in target_chats:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": msg,
+                    })
+                    # Send detected files as documents
+                    for fp in file_paths:
+                        self._send_tg_file(chat_id, fp)
+
+    # ── File detection & sending ──
+
+    # File extensions worth sending to TG
+    _SENDABLE_EXTS = {
+        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.zip', '.tar', '.gz', '.7z', '.rar',
+        '.txt', '.csv', '.json', '.xml', '.yaml', '.yml',
+        '.mp3', '.mp4', '.wav', '.ogg', '.webm',
+        '.py', '.js', '.ts', '.html', '.css', '.md', '.sh',
+    }
+
+    _FILE_PATH_RE = re.compile(
+        r'(?:^|\s|`)'                        # preceded by whitespace or backtick
+        r'((?:/[\w.\-]+)+(?:\.\w{1,10})?'    # absolute path: /foo/bar/baz.ext
+        r'|~(?:/[\w.\-]+)+(?:\.\w{1,10})?)'  # or ~/foo/bar.ext
+        r'(?=\s|`|$|[)\]},;:])'              # followed by whitespace, backtick, or end
+    )
+
+    def _extract_file_paths(self, text: str) -> list:
+        """Find real file paths in AI response text that exist on disk."""
+        paths = []
+        seen = set()
+        for m in self._FILE_PATH_RE.finditer(text):
+            raw = m.group(1)
+            expanded = _os.path.expanduser(raw)
+            if expanded in seen:
+                continue
+            seen.add(expanded)
+            if not _os.path.isfile(expanded):
+                continue
+            ext = _Path(expanded).suffix.lower()
+            if ext not in self._SENDABLE_EXTS:
+                continue
+            # Skip very large files (>50MB TG limit)
+            try:
+                if _os.path.getsize(expanded) > 50 * 1024 * 1024:
+                    continue
+            except OSError:
+                continue
+            paths.append(expanded)
+        return paths
+
+    def _send_tg_file(self, chat_id: int, file_path: str):
+        """Send a local file to TG chat as document (or photo for images)."""
+        import mimetypes
+        try:
+            fname = _Path(file_path).name
+            mime = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
+            ext = _Path(file_path).suffix.lower()
+
+            # Use sendPhoto for images, sendDocument for everything else
+            is_image = ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')
+            method = "sendPhoto" if is_image else "sendDocument"
+            field = "photo" if is_image else "document"
+
+            # Multipart upload
+            import uuid
+            boundary = uuid.uuid4().hex
+            with open(file_path, 'rb') as f:
+                file_data = f.read()
+
+            body = (
+                f'--{boundary}\r\n'
+                f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+                f'{chat_id}\r\n'
+                f'--{boundary}\r\n'
+                f'Content-Disposition: form-data; name="{field}"; filename="{fname}"\r\n'
+                f'Content-Type: {mime}\r\n\r\n'
+            ).encode() + file_data + f'\r\n--{boundary}--\r\n'.encode()
+
+            url = f"https://api.telegram.org/bot{self.config.bot_token}/{method}"
+            req = urllib.request.Request(
+                url, data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                resp.read()
+        except Exception as e:
+            with open('/tmp/shellframe_bridge.log', 'a') as f:
+                f.write(f"_send_tg_file error: {file_path} -> {e}\n")
 
     # ── TG Polling ──
 
@@ -784,7 +983,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload', 'close', 'new') or cmd.isdigit():
                 self._handle_command(cmd, user_id, chat_id)
                 return
             # Everything else: forward as CLI slash command (e.g., /model, /skills, /compact)
@@ -902,19 +1101,16 @@ class TelegramBridge(BridgeBase):
                     sid = self._slot_order[idx - 1]
                     self._user_active[user_id] = sid
                     slot = self.slots[sid]
+                    # Peek at last AI response before sending switch msg
+                    last_resp = self._peek_last_response(slot)
+                    switch_msg = f"Switched to {slot.label} (/{slot.index})"
+                    if last_resp:
+                        preview = last_resp[:3000] + "\n...(truncated)" if len(last_resp) > 3000 else last_resp
+                        switch_msg += f"\n\n💬 Last AI response:\n{preview}"
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
-                        "text": f"Switched to {slot.label} (/{slot.index})",
+                        "text": switch_msg,
                     })
-                    # Send fresh init prompt to new session so AI knows context
-                    prompt = load_init_prompt()
-                    if prompt:
-                        slot.sent_texts.append(prompt)
-                        def _send_prompt(s=slot, text=prompt):
-                            s.write_fn(text)
-                            time.sleep(0.3)
-                            s.write_fn("\r")
-                        threading.Thread(target=_send_prompt, daemon=True).start()
                 else:
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
@@ -950,10 +1146,61 @@ class TelegramBridge(BridgeBase):
                     "text": "Reload not available (no callback registered).",
                 })
 
+        elif cmd == "close":
+            active_sid = self.get_active_sid(user_id)
+            if not active_sid:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "No active session to close.",
+                })
+                return
+            slot = self.slots.get(active_sid)
+            label = slot.label if slot else active_sid
+            if len(self.slots) <= 1:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "Can't close the last session.",
+                })
+                return
+            def _do_close():
+                result = self._sfctl_call("close_session", {"sid": active_sid})
+                if result.get("success"):
+                    new_sid = self.get_active_sid(user_id)
+                    new_label = self.slots[new_sid].label if new_sid and new_sid in self.slots else "none"
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"✕ Closed {label}\nSwitched to {new_label}",
+                    })
+                else:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"❌ {result.get('message', 'Close failed')}",
+                    })
+            threading.Thread(target=_do_close, daemon=True).start()
+
+        elif cmd == "new":
+            # Get preset from args if provided, default to "claude"
+            parts = text.split(maxsplit=1) if text else []
+            preset_cmd = parts[1] if len(parts) > 1 else "claude"
+            def _do_new():
+                result = self._sfctl_call("new_session", {"cmd": preset_cmd})
+                if result.get("success"):
+                    new_sid = result.get("details", {}).get("sid", "?")
+                    # Auto-switch user to new session
+                    self._user_active[user_id] = new_sid
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"✚ Created new session: {preset_cmd}\nSwitched to it. Use /list to see all.",
+                    })
+                else:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"❌ {result.get('message', 'Create failed')}",
+                    })
+            threading.Thread(target=_do_new, daemon=True).start()
+
         elif cmd == "start":
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
-                "text": f"ShellFrame Bridge\n\n/list — list sessions\n/1, /2, ... — switch session\n/pause — pause bridge\n/resume — resume\n/reload — hot-reload bridge code\n/status — show status",
+                "text": f"ShellFrame Bridge\n\n/list — list sessions\n/new [cmd] — new session (default: claude)\n/close — close current session\n/1, /2, ... — switch session\n/pause — pause bridge\n/resume — resume\n/reload — hot-reload bridge code\n/status — show status",
             })
 
         else:

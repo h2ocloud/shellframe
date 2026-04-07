@@ -387,7 +387,11 @@ class Api:
         # Auto-register with bridge
         if self.bridge:
             label = cmd.split()[0] if cmd else sid
-            self.bridge.register_session(sid, label, lambda text, _s=session: _s.write(text))
+            self.bridge.register_session(
+                sid, label,
+                lambda text, _s=session: _s.write(text),
+                peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
+            )
             self.bridge.refresh_commands()
 
         # Mark session for init prompt — only for AI CLI tools, not shells/editors/etc.
@@ -455,10 +459,23 @@ class Api:
         , _re.MULTILINE
     )
 
+    # IME dedup state per session
+    _ime_dedup = {}  # sid -> (data, timestamp)
+
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
         if not s:
             return
+        # IME dedup: skip duplicate non-ASCII multi-char input within 500ms
+        if len(data) > 1 and any(ord(c) > 127 for c in data):
+            import time as _t
+            prev = self._ime_dedup.get(sid)
+            now = _t.time()
+            if prev and prev[0] == data and now - prev[1] < 0.5:
+                return  # duplicate IME commit, skip
+            self._ime_dedup[sid] = (data, now)
+        else:
+            self._ime_dedup.pop(sid, None)
         # On user Enter, check if we should inject init prompt
         if getattr(s, '_init_pending', False) and '\r' in data:
             # Check if CLI output looks like an AI tool ready for conversation
@@ -656,12 +673,17 @@ class Api:
             bridge_id="tg",
             config=config,
             on_reload=self.hot_reload_bridge,
+            on_close_session=self.close_session,
         )
 
         # Register all existing sessions
         for sid, s in self.sessions.items():
             label = s.cmd.split()[0] if s.cmd else sid
-            self.bridge.register_session(sid, label, lambda text, _s=s: _s.write(text))
+            self.bridge.register_session(
+                sid, label,
+                lambda text, _s=s: _s.write(text),
+                peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+            )
 
         self.bridge.start()
 
@@ -744,12 +766,17 @@ class Api:
                     bridge_id="tg",
                     config=old_config,
                     on_reload=self.hot_reload_bridge,
+                    on_close_session=self.close_session,
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
                 for sid, s in self.sessions.items():
                     label = s.cmd.split()[0] if s.cmd else sid
-                    self.bridge.register_session(sid, label, lambda text, _s=s: _s.write(text))
+                    self.bridge.register_session(
+                        sid, label,
+                        lambda text, _s=s: _s.write(text),
+                        peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                    )
                 self.bridge.start()
                 return json.dumps({"success": True, "message": "Bridge reloaded and restarted", **self.bridge.get_status()})
             else:
@@ -764,7 +791,11 @@ class Api:
             return
         s = self.sessions.get(sid)
         if s:
-            self.bridge.register_session(sid, label, lambda text, _s=s: _s.write(text))
+            self.bridge.register_session(
+                sid, label,
+                lambda text, _s=s: _s.write(text),
+                peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+            )
             self.bridge.refresh_commands()
 
     def bridge_unregister_session(self, sid: str):
@@ -797,7 +828,8 @@ class Api:
                     continue
 
                 cmd = cmd_data.get("cmd", "")
-                result = self._execute_sfctl(cmd)
+                args = cmd_data.get("args", {})
+                result = self._execute_sfctl(cmd, args)
 
                 try:
                     with open(self._RESULT_FILE, "w") as f:
@@ -806,9 +838,34 @@ class Api:
                     pass
         threading.Thread(target=watcher, daemon=True).start()
 
-    def _execute_sfctl(self, cmd: str) -> dict:
+    def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
         """Execute a sfctl command and return result dict."""
-        if cmd == "reload":
+        args = args or {}
+        if cmd == "new_session":
+            try:
+                preset_cmd = args.get("cmd", "claude")
+                cols = args.get("cols", 200)
+                rows = args.get("rows", 50)
+                sid = self.new_session(preset_cmd, cols, rows)
+                return {
+                    "success": True,
+                    "message": f"Created session {sid}",
+                    "details": {"sid": sid, "cmd": preset_cmd},
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Failed: {e}"}
+
+        elif cmd == "close_session":
+            try:
+                sid = args.get("sid", "")
+                if not sid:
+                    return {"success": False, "message": "No sid provided"}
+                self.close_session(sid)
+                return {"success": True, "message": f"Closed {sid}"}
+            except Exception as e:
+                return {"success": False, "message": f"Failed: {e}"}
+
+        elif cmd == "reload":
             try:
                 result_json = self.hot_reload_bridge()
                 result = json.loads(result_json) if isinstance(result_json, str) else result_json
