@@ -407,6 +407,8 @@ class Api:
         if IS_WIN or not _has_tmux():
             return json.dumps([])
         existing = _list_tmux_sessions()
+        cfg = load_config()
+        saved_labels = cfg.get("session_labels", {})
         restored = []
         for info in existing:
             tmux_name = info["name"]
@@ -422,6 +424,9 @@ class Api:
             self.sessions[sid] = session
             session._bridge_enabled = True
             session._init_pending = False
+            # Restore custom label
+            if sid in saved_labels:
+                session._custom_label = saved_labels[sid]
             restored.append({"sid": sid, "cmd": cmd})
         return json.dumps(restored)
 
@@ -581,6 +586,13 @@ class Api:
         s = self.sessions.pop(sid, None)
         if s:
             s.kill()
+            # Clean up persisted label
+            cfg = load_config()
+            labels = cfg.get("session_labels", {})
+            if sid in labels:
+                del labels[sid]
+                cfg["session_labels"] = labels
+                save_config(cfg)
 
     # Patterns in CLI output that indicate the AI tool is ready for conversation
     # (not in login/setup/auth flow). Checked after stripping ANSI escapes.
@@ -821,7 +833,7 @@ class Api:
         for sid, s in self.sessions.items():
             if not getattr(s, '_bridge_enabled', True):
                 continue
-            label = s.cmd.split()[0] if s.cmd else sid
+            label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
             self.bridge.register_session(
                 sid, label,
                 lambda text, _s=s: _s.write(text),
@@ -889,7 +901,7 @@ class Api:
         s._bridge_enabled = bool(enabled)
         if self.bridge:
             if enabled:
-                label = s.cmd.split()[0] if s.cmd else sid
+                label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
                 self.bridge.register_session(
                     sid, label,
                     lambda text, _s=s: _s.write(text),
@@ -967,7 +979,7 @@ class Api:
                 for sid, s in self.sessions.items():
                     if not getattr(s, '_bridge_enabled', True):
                         continue
-                    label = s.cmd.split()[0] if s.cmd else sid
+                    label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
                     self.bridge.register_session(
                         sid, label,
                         lambda text, _s=s: _s.write(text),
@@ -995,7 +1007,7 @@ class Api:
             self.bridge.refresh_commands()
 
     def rename_session(self, sid: str, name: str) -> str:
-        """Rename a session. Updates bridge label if connected."""
+        """Rename a session. Updates bridge label if connected. Persists to config."""
         s = self.sessions.get(sid)
         if not s:
             return json.dumps({"success": False})
@@ -1003,6 +1015,12 @@ class Api:
         if self.bridge and sid in self.bridge.slots:
             self.bridge.slots[sid].label = name
             self.bridge.refresh_commands()
+        # Persist
+        cfg = load_config()
+        labels = cfg.get("session_labels", {})
+        labels[sid] = name
+        cfg["session_labels"] = labels
+        save_config(cfg)
         return json.dumps({"success": True})
 
     def bridge_unregister_session(self, sid: str):
