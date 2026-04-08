@@ -943,10 +943,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
       // Drag reorder
       tab.addEventListener('dragstart', (e) => {
+        _tabDragging = true;
         e.dataTransfer.setData('text/plain', sid);
+        e.dataTransfer.effectAllowed = 'move';
         tab.style.opacity = '.4';
       });
-      tab.addEventListener('dragend', () => { tab.style.opacity = ''; });
+      tab.addEventListener('dragend', () => { tab.style.opacity = ''; _tabDragging = false; });
       tab.addEventListener('dragover', (e) => { e.preventDefault(); tab.style.borderLeft = '2px solid #7aa2f7'; });
       tab.addEventListener('dragleave', () => { tab.style.borderLeft = ''; });
       tab.addEventListener('drop', (e) => {
@@ -1126,17 +1128,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Not an image/file paste — let it through to xterm.js for normal text paste
   }, true);  // ← capture phase
 
-  // Drag & drop files
+  // Drag & drop files (skip internal tab reorder drags)
   const $dropOverlay = document.getElementById('drop-overlay');
   let dragCounter = 0;
+  let _tabDragging = false;
 
   document.addEventListener('dragenter', (e) => {
     e.preventDefault();
+    if (_tabDragging) return;
     dragCounter++;
     $dropOverlay.style.display = 'flex';
   });
   document.addEventListener('dragleave', (e) => {
     e.preventDefault();
+    if (_tabDragging) return;
     dragCounter--;
     if (dragCounter <= 0) { dragCounter = 0; $dropOverlay.style.display = 'none'; }
   });
@@ -1145,6 +1150,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     e.preventDefault();
     dragCounter = 0;
     $dropOverlay.style.display = 'none';
+    if (_tabDragging) return;
 
     if (!activeId || !sessions[activeId]) return;
 
