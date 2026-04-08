@@ -1313,6 +1313,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function setupAttachKeyHandler(sid, term) {
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
+      // Esc in plain terminal → send Ctrl+U to kill current line
+      if (ev.key === 'Escape' && !isAiSession(sid)) {
+        pywebview.api.write_input(sid, '\x15'); // Ctrl+U = line kill
+        return false;
+      }
       if (ev.key !== 'Enter' || ev.ctrlKey || ev.metaKey || ev.altKey) return true;
       const s = sessions[sid];
       if (!s || s.attachments.length === 0) return true;
@@ -1360,16 +1365,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     updateImageBar();
   }
 
+  // ── Detect AI vs plain terminal sessions ──
+  const AI_CLI_TOOLS = new Set(['claude', 'codex', 'aider', 'cursor', 'copilot', 'goose', 'gemini']);
+  function isAiSession(sid) {
+    const s = sessions[sid];
+    if (!s) return false;
+    const tokens = s.cmd.split(/\s+/);
+    return tokens.some(t => AI_CLI_TOOLS.has(t.split('/').pop().replace(/\.\w+$/, '')));
+  }
+
   // Clipboard paste — images, files copied from Finder, or generic file blobs
   // Use CAPTURE phase because xterm.js calls stopPropagation() in its paste handler
   document.addEventListener('paste', async (e) => {
     if (!activeId || !sessions[activeId]) return;
     // Don't intercept paste in real UI input fields (modals, settings)
     const el = document.activeElement;
-    if (el && el.tagName === 'INPUT') return;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
 
     const items = e.clipboardData?.items;
     if (!items) return;
+
+    const ai = isAiSession(activeId);
 
     // 1. Check for image data
     for (const item of items) {
@@ -1381,7 +1397,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         reader.onload = async () => {
           const dataUrl = reader.result;
           const path = await pywebview.api.save_image(dataUrl);
-          attachFile(path, dataUrl);
+          if (ai) { attachFile(path, dataUrl); }
+          else { await pywebview.api.write_input(activeId, path); }
         };
         reader.readAsDataURL(blob);
         return;
@@ -1398,7 +1415,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         reader.onload = async () => {
           const path = await pywebview.api.save_file_from_clipboard(reader.result, blob.name || 'file');
           if (!path.startsWith('ERROR')) {
-            attachFile(path, null);
+            if (ai) { attachFile(path, null); }
+            else { await pywebview.api.write_input(activeId, path); }
           }
         };
         reader.readAsDataURL(blob);
@@ -1414,9 +1432,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (paths.length > 0) {
         e.stopPropagation();
         e.preventDefault();
-        // Attach all files from Finder
-        for (const filePath of paths) {
-          attachFile(filePath, null);
+        if (ai) {
+          for (const filePath of paths) attachFile(filePath, null);
+        } else {
+          await pywebview.api.write_input(activeId, paths.join(' '));
         }
         return;
       }
