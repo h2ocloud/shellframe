@@ -69,6 +69,8 @@
   #terminal-wrap { flex: 1; position: relative; }
   .term-pane { position: absolute; inset: 0; display: none; overflow: hidden; }
   .term-pane.active { display: block; }
+  /* Prevent IME composition text from overflowing and bouncing at edge */
+  .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
 
   body { display: flex; flex-direction: column; }
 
@@ -2056,18 +2058,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
 
   // ── Right-click: select → copy, no select → paste (Windows CMD style) ──
+  // Capture selection on mousedown because xterm.js clears it before contextmenu fires
+  let _pendingSel = '';
+  $wrap.addEventListener('mousedown', (e) => {
+    if (e.button === 2 && activeId && sessions[activeId]) {
+      _pendingSel = sessions[activeId].term.getSelection() || '';
+    }
+  });
   $wrap.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
     if (!activeId || !sessions[activeId]) return;
     const term = sessions[activeId].term;
-    const sel = term.getSelection();
-    if (sel) {
-      await pywebview.api.copy_text(sel);
+    if (_pendingSel) {
+      await pywebview.api.copy_text(_pendingSel);
       term.clearSelection();
+      _pendingSel = '';
     } else {
       try {
         const text = await pywebview.api.paste_text();
-        if (text) term.paste(text);
+        if (text) await pywebview.api.write_input(activeId, text);
       } catch(err) {}
     }
   });
