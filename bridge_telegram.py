@@ -600,6 +600,18 @@ class TelegramBridge(BridgeBase):
 
             text = '\n'.join(block_lines)
 
+            # Strip AI echo of username prefix (e.g., "Howard: response" → "response")
+            # Some AI tools mimic the input prefix format in their responses
+            for sent in slot.sent_texts:
+                # Extract username prefix pattern from sent text (e.g., "Howard: ")
+                m = re.match(r'^(\w+):\s', sent)
+                if m:
+                    prefix = m.group(0)  # "Howard: "
+                    if text.startswith(prefix):
+                        text = text[len(prefix):]
+                        block_lines[0] = block_lines[0][len(prefix):]
+                    break
+
             # Skip filtered responses (system acks, tool-use status)
             first_line = block_lines[0].strip() if block_lines else ""
             if text.strip() in self._FILTERED_RESPONSES:
