@@ -587,6 +587,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -796,6 +797,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    const unicode11 = new Unicode11Addon.Unicode11Addon();
+    term.loadAddon(unicode11);
+    term.unicode.activeVersion = '11';
     term.open(pane);
     fitAddon.fit();
 
@@ -872,6 +876,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    const unicode11 = new Unicode11Addon.Unicode11Addon();
+    term.loadAddon(unicode11);
+    term.unicode.activeVersion = '11';
     term.open(pane);
     fitAddon.fit();
 
@@ -2183,9 +2190,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           await reconnectSession(s.sid, s.cmd);
           if (sessions[s.sid]) sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
         }
+        // Auto-restore TG bridge if config was saved
         try {
           const bs = JSON.parse(await pywebview.api.get_bridge_status());
-          if (bs.exists) { bridgeState = bs; updateBridgeButton(); syncBridgeOrder(); }
+          if (bs.exists && bs.active) {
+            bridgeState = bs; updateBridgeButton(); syncBridgeOrder();
+          } else {
+            // Bridge not running — try auto-start from saved config
+            const saved = JSON.parse(await pywebview.api.get_saved_bridge());
+            if (saved && saved.bot_token) {
+              const raw = await pywebview.api.start_bridge(
+                saved.bot_token,
+                JSON.stringify(saved.allowed_users || []),
+                saved.prefix_enabled !== false,
+                ''  // skip initial_prompt on restore
+              );
+              const result = JSON.parse(raw);
+              if (result.success) {
+                bridgeState = result; updateBridgeButton(); syncBridgeOrder();
+              }
+            }
+          }
         } catch(e) {}
         renderTabs();
         // Restore last active tab, fallback to first
