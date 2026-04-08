@@ -719,7 +719,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Output push receiver — called from Python via evaluate_js (no polling needed)
   window._pushOutput = function(sid, data) {
     const s = sessions[sid];
-    if (s) s.term.write(data);
+    if (!s) return;
+    if (s._userScrolledUp) {
+      // Preserve scroll position while writing new data
+      const vp = s.term.buffer.active.viewportY;
+      s.term.write(data, () => { s.term.scrollToLine(vp); });
+    } else {
+      s.term.write(data);
+    }
   };
 
   const $tabs = document.getElementById('tabs');
@@ -836,8 +843,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const buf = term.buffer.active;
       sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
     });
-    term.onKey(() => { sessions[sid]._userScrolledUp = false; });
-
     // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
       let composing = false, lastSent = '', lastTime = 0;
@@ -849,6 +854,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
       term.onData(data => {
         if (composing) return;
+        // Reset scroll lock on Enter (user submitted input)
+        if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
           if (data === lastSent && now - lastTime < 400) return;
@@ -914,8 +921,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const buf = term.buffer.active;
       sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
     });
-    term.onKey(() => { sessions[sid]._userScrolledUp = false; });
-
     // Resize PTY to match new terminal size
     await pywebview.api.resize(sid, term.cols, term.rows);
 
@@ -930,6 +935,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
       term.onData(data => {
         if (composing) return;
+        if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
           if (data === lastSent && now - lastTime < 400) return;
