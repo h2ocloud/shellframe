@@ -279,19 +279,17 @@
   .sb-tg.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
   .sb-tg.active-tg { border-color: #7aa2f7; color: #7aa2f7; background: rgba(122,162,247,.1); }
   .sb-divider {
-    display: flex; align-items: center; gap: 6px; padding: 6px 12px;
-    font-size: 9px; color: #3b4261; user-select: none;
+    display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+    font-size: 9px; color: #3b4261; user-select: none; min-height: 28px;
   }
   .sb-divider::before, .sb-divider::after {
     content: ''; flex: 1; height: 1px; background: #292e42;
   }
-  .sb-divider.drag-over { color: #7aa2f7; }
+  .sb-divider.drag-over { color: #7aa2f7; background: rgba(122,162,247,.06); border-radius: 4px; }
   .sb-divider.drag-over::before, .sb-divider.drag-over::after { background: #7aa2f7; }
   .sb-item.disabled { opacity: .45; }
   .sb-item[draggable] { cursor: grab; }
   .sb-item[draggable]:active { cursor: grabbing; }
-  .sb-drop-zone { min-height: 4px; transition: min-height .1s; }
-  .sb-drop-zone.drag-over { min-height: 24px; background: rgba(122,162,247,.08); border-radius: 4px; }
   .sb-footer-btn {
     display: flex; align-items: center; gap: 8px;
     padding: 6px 10px; background: none; border: none;
@@ -1014,7 +1012,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!container) return;
     container.innerHTML = '';
     const hasBridge = bridgeState && bridgeState.active;
-    const activeTgSid = bridgeState?.active_sid || '';
+    // Default active_sid to first enabled session if not set
+    const enabledSids = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled !== false);
+    const activeTgSid = bridgeState?.active_sid || (enabledSids[0] || '');
 
     // Split sessions into TG-enabled (top) and TG-disabled (bottom)
     const enabled = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled !== false);
@@ -1096,30 +1096,48 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (item) container.appendChild(item);
     });
 
-    // Divider (only when bridge is active)
+    // Divider + disabled section (only when bridge is active)
     if (hasBridge) {
+      // Helper: wire a drop zone that disables TG for the dragged session
+      function wireDisableZone(el) {
+        el.addEventListener('dragover', (e) => { e.preventDefault(); divider.classList.add('drag-over'); });
+        el.addEventListener('dragleave', (e) => {
+          // Only remove highlight if leaving the zone entirely
+          if (!el.contains(e.relatedTarget)) divider.classList.remove('drag-over');
+        });
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          divider.classList.remove('drag-over');
+          const fromSid = e.dataTransfer.getData('text/plain');
+          if (fromSid && sessions[fromSid]?.bridgeEnabled !== false) {
+            toggleSessionBridge(fromSid, false);
+          }
+        });
+      }
+
       const divider = document.createElement('div');
       divider.className = 'sb-divider';
       divider.textContent = 'TG off';
-      // Drop on divider → disable TG for dragged session
-      divider.addEventListener('dragover', (e) => { e.preventDefault(); divider.classList.add('drag-over'); });
-      divider.addEventListener('dragleave', () => divider.classList.remove('drag-over'));
-      divider.addEventListener('drop', (e) => {
-        e.preventDefault();
-        divider.classList.remove('drag-over');
-        const fromSid = e.dataTransfer.getData('text/plain');
-        if (fromSid && sessions[fromSid]?.bridgeEnabled !== false) {
-          toggleSessionBridge(fromSid, false);
-        }
-      });
+      wireDisableZone(divider);
       container.appendChild(divider);
-    }
 
-    // Render TG-disabled sessions
-    disabled.forEach(sid => {
-      const item = makeItem(sid, false);
-      if (item) container.appendChild(item);
-    });
+      // Disabled items — also act as drop zone to disable TG
+      const disabledWrap = document.createElement('div');
+      disabledWrap.style.cssText = 'min-height:20px;flex:1';
+      wireDisableZone(disabledWrap);
+      disabled.forEach(sid => {
+        const item = makeItem(sid, false);
+        if (item) disabledWrap.appendChild(item);
+      });
+      container.appendChild(disabledWrap);
+    } else {
+      // No bridge — just show all sessions flat
+      sessionOrder.forEach(sid => {
+        if (!enabled.includes(sid) && !disabled.includes(sid)) return;
+        const item = makeItem(sid, false);
+        if (item) container.appendChild(item);
+      });
+    }
   }
 
   async function toggleSessionBridge(sid, enabled) {
@@ -1459,6 +1477,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (result.success !== false) {
       bridgeState = result;
       updateBridgeButton();
+      renderTabs();
       syncSettingsBridge();
     } else {
       alert(result.message || 'Connection failed');
@@ -1469,6 +1488,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await pywebview.api.stop_bridge();
     bridgeState = null;
     updateBridgeButton();
+    renderTabs();
     syncSettingsBridge();
   });
 
@@ -1639,6 +1659,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       await pywebview.api.stop_bridge();
       bridgeState = null;
       updateBridgeButton();
+      renderTabs();
     }
   });
 
@@ -1663,6 +1684,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (result.success !== false) {
       bridgeState = result;
       updateBridgeButton();
+      renderTabs();
       $modalBridge.classList.remove('open');
     } else {
       alert(result.message || 'Bridge connection failed');
