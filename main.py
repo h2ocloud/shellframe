@@ -763,6 +763,14 @@ class Api:
             self.bridge.refresh_commands()
         return json.dumps({"success": True, "enabled": enabled})
 
+    def reorder_sessions(self, order_json: str) -> str:
+        """Reorder sessions. Updates TG bridge /1 /2 commands to match."""
+        order = json.loads(order_json)
+        if self.bridge:
+            self.bridge.reorder_slots(order)
+            self.bridge.refresh_commands()
+        return json.dumps({"success": True})
+
     def hot_reload_bridge(self) -> str:
         """Hot-reload bridge_telegram module without restarting the app.
         Preserves PTY sessions — only restarts the TG bridge with new code."""

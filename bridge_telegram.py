@@ -332,6 +332,19 @@ class TelegramBridge(BridgeBase):
                     else:
                         del self._user_active[uid]
 
+    def reorder_slots(self, ordered_sids: list):
+        """Reorder session slots to match the given sid list. Reindexes /1, /2, etc."""
+        with self._slots_lock:
+            # Keep only sids that exist in slots
+            new_order = [s for s in ordered_sids if s in self.slots]
+            # Append any existing sids not in the new order (safety)
+            for s in self._slot_order:
+                if s not in new_order and s in self.slots:
+                    new_order.append(s)
+            self._slot_order = new_order
+            for i, s in enumerate(self._slot_order):
+                self.slots[s].index = i + 1
+
     def get_active_sid(self, user_id: int) -> str:
         """Get the active session for a user. Defaults to first slot."""
         sid = self._user_active.get(user_id)

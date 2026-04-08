@@ -32,6 +32,8 @@
     line-height: 1; -webkit-app-region: no-drag;
   }
   .tab .close-tab:hover { color: #f7768e; background: #292e42; }
+  .tab[draggable] { cursor: grab; }
+  .tab[draggable]:active { cursor: grabbing; }
   #btn-new-tab, .tab-action {
     padding: 4px 10px; margin-left: 2px; background: none; border: 1px solid #292e42;
     color: #565f89; border-radius: 6px; cursor: pointer; font-size: 16px;
@@ -655,6 +657,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // State
   let sessions = {};
+  let sessionOrder = [];  // ordered sid list — drives tab numbering & TG /1 /2
   let activeId = null;
   let config = null;
   let currentFontSize = 14;
@@ -755,6 +758,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
     sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], bridgeEnabled: true };
+    if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
 
     // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
@@ -828,6 +832,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     const label = cmd.split(/\s/)[0];
     sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [], bridgeEnabled: true };
+    if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
 
     // Resize PTY to match new terminal size
     await pywebview.api.resize(sid, term.cols, term.rows);
@@ -907,8 +912,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await pywebview.api.close_session(sid);
     s.pane.remove();
     delete sessions[sid];
+    sessionOrder = sessionOrder.filter(id => id !== sid);
 
-    const ids = Object.keys(sessions);
+    const ids = sessionOrder.length ? sessionOrder : Object.keys(sessions);
     if (ids.length > 0) {
       switchTab(activeId === sid ? ids[ids.length - 1] : activeId);
     } else {
@@ -919,16 +925,42 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   function renderTabs() {
     $tabs.innerHTML = '';
-    Object.entries(sessions).forEach(([sid, s]) => {
+    sessionOrder.forEach((sid, i) => {
+      const s = sessions[sid];
+      if (!s) return;
       const tab = document.createElement('button');
       tab.className = 'tab' + (sid === activeId ? ' active' : '');
+      tab.draggable = true;
+      tab.dataset.sid = sid;
       tab.innerHTML = `
+        <span class="icon" style="opacity:.45;font-size:10px;min-width:12px">${i + 1}</span>
         <span class="label">${esc(s.label)}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
       `;
       tab.addEventListener('click', (e) => {
-        if (e.target.dataset.sid) { closeTab(e.target.dataset.sid); return; }
+        if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
         switchTab(sid);
+      });
+      // Drag reorder
+      tab.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', sid);
+        tab.style.opacity = '.4';
+      });
+      tab.addEventListener('dragend', () => { tab.style.opacity = ''; });
+      tab.addEventListener('dragover', (e) => { e.preventDefault(); tab.style.borderLeft = '2px solid #7aa2f7'; });
+      tab.addEventListener('dragleave', () => { tab.style.borderLeft = ''; });
+      tab.addEventListener('drop', (e) => {
+        e.preventDefault();
+        tab.style.borderLeft = '';
+        const fromSid = e.dataTransfer.getData('text/plain');
+        if (fromSid === sid) return;
+        const fromIdx = sessionOrder.indexOf(fromSid);
+        const toIdx = sessionOrder.indexOf(sid);
+        if (fromIdx < 0 || toIdx < 0) return;
+        sessionOrder.splice(fromIdx, 1);
+        sessionOrder.splice(toIdx, 0, fromSid);
+        renderTabs();
+        pywebview.api.reorder_sessions(JSON.stringify(sessionOrder));
       });
       $tabs.appendChild(tab);
     });
@@ -941,11 +973,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!container) return;
     container.innerHTML = '';
     const hasBridge = bridgeState && bridgeState.active;
-    Object.entries(sessions).forEach(([sid, s]) => {
+    sessionOrder.forEach((sid, i) => {
+      const s = sessions[sid];
+      if (!s) return;
       const item = document.createElement('div');
       item.className = 'sb-item' + (sid === activeId ? ' active' : '');
       const on = s.bridgeEnabled !== false;
-      item.innerHTML = `<span class="sb-label">${esc(s.label)}</span>`
+      item.innerHTML = `<span style="opacity:.4;font-size:10px;min-width:14px">${i + 1}</span><span class="sb-label">${esc(s.label)}</span>`
         + (hasBridge ? `<button class="sb-tg${on ? ' on' : ''}" data-sid="${sid}">TG</button>` : '');
       item.addEventListener('click', (e) => {
         if (e.target.dataset.sid) return;
@@ -1782,10 +1816,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Ctrl+Tab → next tab
     if (e.ctrlKey && e.key === 'Tab') {
       e.preventDefault();
-      const ids = Object.keys(sessions);
-      if (ids.length < 2) return;
-      const idx = ids.indexOf(activeId);
-      switchTab(ids[(idx + (e.shiftKey ? -1 : 1) + ids.length) % ids.length]);
+      if (sessionOrder.length < 2) return;
+      const idx = sessionOrder.indexOf(activeId);
+      switchTab(sessionOrder[(idx + (e.shiftKey ? -1 : 1) + sessionOrder.length) % sessionOrder.length]);
     }
     // Cmd/Ctrl+, → settings
     if ((e.metaKey || e.ctrlKey) && e.key === ',') {
