@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.4.3 (2026-04-08)
+
+### New Features
+- **Session rename** — Double-click tab or sidebar item to rename. Custom names sync to TG bridge `/list` and persist across reload/restart.
+- **Smart paste for plain terminals** — Bash sessions: paste image/file writes path directly, no chip UI. AI sessions keep existing attach behavior.
+- **Esc line kill** — Press Esc in plain terminal to clear current input line (sends Ctrl+U).
+- **Settings tabs** — Settings modal split into "General" and "Telegram Bridge" tabs.
+- **About buttons moved** — Check + Reload buttons moved to top of About modal for quick access.
+
+### Fixes
+- **Right-click copy/paste** — Capture selection on mousedown before xterm clears it. Paste uses write_input directly.
+- **IME bounce** — Constrain xterm helper textarea width to prevent Chinese composition text bouncing at edge.
+- **Rename UX** — In-page modal (no Python icon), optimistic update with green flash, dual-persist (localStorage + config.json).
+
+### 新功能
+- **Session 命名** — 雙擊分頁或側邊欄即可命名。名稱同步到 TG `/list`，reload/重啟後保留。
+- **純終端智慧貼上** — Bash：貼圖/檔案直接寫入路徑，不跳附件 UI。AI session 維持原行為。
+- **Esc 清行** — 純終端按 Esc 送 Ctrl+U 清掉整行輸入。
+- **設定分頁** — 設定 modal 分為「一般」和「Telegram Bridge」兩個分頁。
+- **About 按鈕上移** — Check 和 Reload 按鈕移到 About modal 頂部。
+
+### 修正
+- **右鍵複製/貼上** — 在 mousedown 時暫存選取文字，避免 xterm 清掉。貼上改用 write_input。
+- **IME 彈跳** — 限制 xterm helper textarea 寬度，防止中文組字溢出邊緣。
+- **命名 UX** — 改用頁內 modal、optimistic update + 綠色閃爍確認、雙重持久化。
+
 ## v0.4.0 (2026-04-08)
 
 ### New Features
