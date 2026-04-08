@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.5.0 (2026-04-09)
+
+### New Features
+- **Settings tabs** — Settings modal split into "General" and "Telegram Bridge" tabs.
+- **Session rename** — Double-click tab or sidebar to rename. Persists via localStorage + config.json. Syncs to TG `/list`.
+- **Smart paste for plain terminals** — Bash: image/file paste writes path directly. AI sessions keep attach UI.
+- **Esc line kill** — Esc in plain terminal sends Ctrl+U to clear input line.
+- **Preset save button** — Explicit ✓ button appears when preset name/cmd is modified.
+
+### Fixes
+- **Scroll lock** — Freely scroll back during AI output without snapping to bottom. Only resets on Enter.
+- **Right-click copy/paste** — Capture selection on mousedown before xterm clears it.
+- **IME bounce** — Constrain helper textarea to prevent Chinese composition bounce at edge.
+- **Paste broken** — Fixed TEXTAREA check blocking xterm paste handler.
+- **TG session switch from UI** — Sidebar switch now works even before any TG message is sent.
+- **TG prefix echo** — Strip "Howard:" prefix when AI mimics the input format in responses.
+- **About buttons** — Check + Reload moved to top of About modal.
+- **Hot-reload error logging** — Traceback printed on `/reload` failure.
+
+### 新功能
+- **設定分頁** — 設定分為「一般」和「Telegram Bridge」兩頁。
+- **Session 命名** — 雙擊分頁或側邊欄命名，localStorage + config.json 雙重持久化，同步 TG `/list`。
+- **純終端智慧貼上** — Bash：貼圖/檔案直接寫路徑。AI session 維持附件 UI。
+- **Esc 清行** — 純終端按 Esc 清掉整行。
+- **Preset 儲存按鈕** — 修改指令後顯示 ✓ 按鈕，明確儲存。
+
+### 修正
+- **捲動鎖定** — AI 輸出時可自由回滾，不再被拉回底部。按 Enter 才重置。
+- **右鍵複製/貼上** — mousedown 暫存選取文字。
+- **IME 彈跳** — 限制 textarea 寬度防止中文組字溢出。
+- **貼圖失效** — 修正 TEXTAREA 判斷誤擋 xterm paste。
+- **TG session 切換** — 從側邊欄切換在重啟後也能正確運作。
+- **TG 前綴回聲** — AI 模仿 "Howard:" 格式時自動去除。
+- **About 按鈕上移** — Check 和 Reload 移到頂部。
+
 ## v0.4.3 (2026-04-08)
 
 ### New Features
