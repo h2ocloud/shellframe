@@ -775,8 +775,25 @@ class Api:
         """Switch TG bridge active session and notify TG users."""
         if not self.bridge:
             return json.dumps({"success": False, "message": "No bridge"})
-        self.bridge.switch_active_session(sid)
-        return json.dumps({"success": True, "active_sid": sid})
+        try:
+            self.bridge.switch_active_session(sid)
+            return json.dumps({"success": True, "active_sid": sid})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def debug_bridge_info(self) -> str:
+        """Debug: return bridge internals for troubleshooting."""
+        if not self.bridge:
+            return json.dumps({"bridge": False})
+        b = self.bridge
+        return json.dumps({
+            "bridge": True,
+            "slot_order": list(b._slot_order),
+            "slots": list(b.slots.keys()),
+            "user_active": {str(k): v for k, v in b._user_active.items()},
+            "user_chat": {str(k): v for k, v in b._user_chat.items()},
+            "active_sid": b.get_primary_active_sid(),
+        })
 
     def hot_reload_bridge(self) -> str:
         """Hot-reload bridge_telegram module without restarting the app.

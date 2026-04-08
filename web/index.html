@@ -288,7 +288,7 @@
   .sb-divider.drag-over { color: #7aa2f7; background: rgba(122,162,247,.06); border-radius: 4px; }
   .sb-divider.drag-over::before, .sb-divider.drag-over::after { background: #7aa2f7; }
   .sb-item.disabled { opacity: .45; }
-  .sb-item { cursor: grab; }
+  .sb-item { cursor: grab; -webkit-user-select: none; user-select: none; }
   .sb-item:active { cursor: grabbing; }
   .sb-footer-btn {
     display: flex; align-items: center; gap: 8px;
@@ -334,6 +334,7 @@
     <div class="sb-section-title">Sessions</div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
+      <pre id="sb-debug" style="font-size:8px;color:#565f89;padding:4px 8px;margin:0;white-space:pre-wrap;word-break:break-all;max-height:100px;overflow-y:auto;border-top:1px solid #292e42"></pre>
       <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
       <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
     </div>
@@ -1072,11 +1073,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // TG badge click → switch TG active session
     const tgAction = e.target.closest('[data-action="switch-tg"]');
     if (tgAction) {
+      e.preventDefault();
+      e.stopPropagation();
       const sid = tgAction.dataset.sid;
-      pywebview.api.switch_bridge_session(sid).then(() => {
+      _dbg('TG click: ' + sid);
+      pywebview.api.switch_bridge_session(sid).then((raw) => {
+        _dbg('switch result: ' + raw);
         if (bridgeState) bridgeState.active_sid = sid;
         renderSidebar();
-      });
+      }).catch(err => _dbg('switch error: ' + err));
       return;
     }
     // Session click → switch tab
@@ -1086,11 +1091,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
+  // Debug log visible in sidebar footer
+  let _dbgLines = [];
+  function _dbg(msg) {
+    _dbgLines.push(new Date().toLocaleTimeString().slice(0,8) + ' ' + msg);
+    if (_dbgLines.length > 8) _dbgLines.shift();
+    const el = document.getElementById('sb-debug');
+    if (el) el.textContent = _dbgLines.join('\n');
+  }
+  // Periodically log bridge state
+  setInterval(async () => {
+    try {
+      const raw = await pywebview.api.debug_bridge_info();
+      const info = JSON.parse(raw);
+      if (info.bridge) {
+        _dbg('poll active_sid=' + info.active_sid + ' slots=' + info.slot_order.join(','));
+      }
+    } catch(e) { _dbg('poll err: ' + e); }
+  }, 5000);
+
   // Mouse-based drag for sidebar reorder + TG toggle
   document.getElementById('sidebar-sessions').addEventListener('mousedown', (e) => {
     const item = e.target.closest('.sb-item');
     if (!item || !item.dataset.sid) return;
-    if (e.target.closest('[data-action]')) return; // don't drag on action buttons
+    if (e.target.closest('[data-action]')) return;
+    _dbg('mousedown: ' + item.dataset.sid);
     const sid = item.dataset.sid;
     let moved = false;
     const startY = e.clientY;
@@ -1127,8 +1152,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const dropSection = dropEl.dataset?.section;
       const fromEnabled = sessions[sid]?.bridgeEnabled !== false;
 
+      _dbg('drop: ' + sid + ' → section=' + dropSection + ' target=' + (dropEl.dataset?.sid || 'none'));
       if (dropSection === 'divider' || dropSection === 'off') {
-        // Drop onto divider or disabled section → disable TG
         if (fromEnabled) toggleSessionBridge(sid, false);
       } else if (dropSection === 'on' && !fromEnabled) {
         // Drop onto enabled section → enable TG
