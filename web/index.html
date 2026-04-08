@@ -1175,7 +1175,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const item = e.target.closest('.sb-item');
     if (!item || !item.dataset.sid) return;
     if (e.target.closest('[data-action]')) return;
-    e.preventDefault();
     const sid = item.dataset.sid;
     let moved = false;
     const startY = e.clientY;
@@ -1183,6 +1182,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     function onMove(ev) {
       if (!moved && Math.abs(ev.clientY - startY) < 5) return;
+      if (!moved) ev.preventDefault();
       moved = true;
       _sbDragging = true;
       item.style.opacity = '.3';
