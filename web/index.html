@@ -1744,20 +1744,40 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <input class="sp-cmd" value="${esc(p.cmd)}" data-field="cmd" data-idx="${i}"/>
         <button class="sp-del" data-idx="${i}">&times;</button>
       `;
+      // Track dirty state per row
+      let dirty = false;
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn btn-primary';
+      saveBtn.style.cssText = 'font-size:10px;padding:2px 8px;display:none;white-space:nowrap';
+      saveBtn.textContent = '✓';
       row.querySelectorAll('input').forEach(inp => {
-        inp.addEventListener('change', async () => {
-          const idx = parseInt(inp.dataset.idx);
-          const field = inp.dataset.field;
-          config.presets[idx][field] = inp.value;
-          const raw = await pywebview.api.save_preset(config.presets[idx].name, config.presets[idx].cmd, config.presets[idx].icon);
-          config = JSON.parse(raw);
+        inp.addEventListener('input', () => {
+          dirty = true;
+          saveBtn.style.display = 'inline-block';
         });
+      });
+      saveBtn.addEventListener('click', async () => {
+        const idx = i;
+        const nameVal = row.querySelector('.sp-name').value;
+        const cmdVal = row.querySelector('.sp-cmd').value;
+        const iconVal = row.querySelector('.sp-icon').textContent.trim();
+        config.presets[idx] = { name: nameVal, cmd: cmdVal, icon: iconVal };
+        const raw = await pywebview.api.save_preset(nameVal, cmdVal, iconVal);
+        config = JSON.parse(raw);
+        dirty = false;
+        saveBtn.style.display = 'none';
+        saveBtn.textContent = '✓';
+        // Flash green on the row
+        row.style.background = 'rgba(158,206,106,.1)';
+        setTimeout(() => row.style.background = '', 500);
       });
       row.querySelector('.sp-del').addEventListener('click', async () => {
         const raw = await pywebview.api.delete_preset(p.name);
         config = JSON.parse(raw);
         renderSettingsPresets();
       });
+      // Insert save button before delete
+      row.querySelector('.sp-del').before(saveBtn);
       container.appendChild(row);
     });
   }
