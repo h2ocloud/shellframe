@@ -991,6 +991,8 @@ class Api:
                 self.bridge = None
                 return json.dumps({"success": True, "message": "Bridge module reloaded (bridge was not running)"})
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return json.dumps({"success": False, "message": f"Reload failed: {e}"})
 
     def bridge_register_session(self, sid: str, label: str):

@@ -1386,7 +1386,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!activeId || !sessions[activeId]) return;
     // Don't intercept paste in real UI input fields (modals, settings)
     const el = document.activeElement;
-    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+    if (el && el.tagName === 'INPUT') return;
+    if (el && el.tagName === 'TEXTAREA' && !el.classList.contains('xterm-helper-textarea')) return;
 
     const items = e.clipboardData?.items;
     if (!items) return;
