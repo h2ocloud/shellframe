@@ -80,10 +80,49 @@ def save_config(cfg):
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
 
 
+TMUX_PREFIX = "sf_"  # tmux session name prefix
+
+def _has_tmux() -> bool:
+    """Check if tmux is available on PATH."""
+    return shutil.which("tmux") is not None
+
+def _tmux_session_exists(name: str) -> bool:
+    """Check if a tmux session with the given name exists."""
+    r = subprocess.run(["tmux", "has-session", "-t", name],
+                       capture_output=True, timeout=3)
+    return r.returncode == 0
+
+def _list_tmux_sessions() -> list[dict]:
+    """List all sf_* tmux sessions. Returns [{name, cmd}]."""
+    try:
+        r = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True, text=True, timeout=3)
+        if r.returncode != 0:
+            return []
+        result = []
+        for line in r.stdout.strip().split("\n"):
+            name = line.strip()
+            if not name.startswith(TMUX_PREFIX):
+                continue
+            # Get the original command from tmux env
+            cr = subprocess.run(
+                ["tmux", "show-environment", "-t", name, "SF_CMD"],
+                capture_output=True, text=True, timeout=3)
+            cmd = ""
+            if cr.returncode == 0 and "=" in cr.stdout:
+                cmd = cr.stdout.strip().split("=", 1)[1]
+            result.append({"name": name, "cmd": cmd})
+        return result
+    except Exception:
+        return []
+
+
 class Session:
     """One PTY tab session."""
 
-    def __init__(self, sid: str, cmd: str, cols: int, rows: int, on_data=None):
+    def __init__(self, sid: str, cmd: str, cols: int, rows: int,
+                 on_data=None, tmux_name: str = None):
         self.sid = sid
         self.cmd = cmd
         self.buffer = bytearray()
@@ -94,15 +133,61 @@ class Session:
         self.alive = True
         self._recent = bytearray()  # ring buffer for peeking (last 1KB), not consumed by read()
         self._on_data = on_data     # callback to signal new data (e.g. threading.Event.set)
+        self._tmux_name = tmux_name  # tmux session name (None = no tmux)
         self._start(cols, rows)
 
     def _start(self, cols, rows):
         if IS_WIN:
             self._start_win(cols, rows)
+        elif _has_tmux():
+            self._start_tmux(cols, rows)
         else:
             self._start_unix(cols, rows)
 
+    def _start_tmux(self, cols, rows):
+        """Start or reattach a tmux session."""
+        if not self._tmux_name:
+            self._tmux_name = f"{TMUX_PREFIX}{self.sid}"
+
+        if not _tmux_session_exists(self._tmux_name):
+            # Create new tmux session (detached) running the command
+            subprocess.run([
+                "tmux", "new-session", "-d",
+                "-s", self._tmux_name,
+                "-x", str(cols), "-y", str(rows),
+                self.cmd,
+            ], capture_output=True, timeout=5)
+            # Store original command in tmux environment for recovery
+            subprocess.run([
+                "tmux", "set-environment", "-t", self._tmux_name,
+                "SF_CMD", self.cmd,
+            ], capture_output=True, timeout=3)
+        else:
+            # Resize existing tmux session to match terminal
+            subprocess.run([
+                "tmux", "resize-window", "-t", self._tmux_name,
+                "-x", str(cols), "-y", str(rows),
+            ], capture_output=True, timeout=3)
+
+        # Attach via PTY fork — child runs `tmux attach`, parent reads master_fd
+        self.child_pid, self.master_fd = pty.fork()
+        if self.child_pid == 0:
+            env = os.environ.copy()
+            env["TERM"] = "xterm-256color"
+            env["COLORTERM"] = "truecolor"
+            env.setdefault("LANG", "en_US.UTF-8")
+            tmux = shutil.which("tmux")
+            os.execve(tmux, ["tmux", "attach-session", "-t", self._tmux_name], env)
+        else:
+            winsize = struct.pack("HHHH", rows, cols, 0, 0)
+            try:
+                fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
+            except OSError:
+                pass
+            threading.Thread(target=self._reader_unix, daemon=True).start()
+
     def _start_unix(self, cols, rows):
+        """Fallback: direct PTY fork (no tmux)."""
         args = shlex.split(self.cmd)
         exe = shutil.which(args[0])
 
@@ -252,8 +337,15 @@ class Session:
                 fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
             except OSError:
                 pass
+            # Also resize the tmux window so it doesn't clip
+            if self._tmux_name:
+                subprocess.run(
+                    ["tmux", "resize-window", "-t", self._tmux_name,
+                     "-x", str(cols), "-y", str(rows)],
+                    capture_output=True, timeout=3)
 
-    def kill(self):
+    def kill(self, kill_tmux=True):
+        """Kill the session. If kill_tmux=False, only detach (tmux session stays alive)."""
         self.alive = False
         if IS_WIN:
             if hasattr(self, '_use_winpty') and self._use_winpty:
@@ -264,20 +356,23 @@ class Session:
             elif self.win_proc:
                 self.win_proc.terminate()
         else:
-            # Close master fd first — sends SIGHUP to child
+            # Close master fd first — sends SIGHUP to the attach process (not the tmux session)
             if self.master_fd is not None:
                 try:
                     os.close(self.master_fd)
                 except OSError:
                     pass
                 self.master_fd = None
-            if self.child_pid:
-                # SIGTERM the process group
+            if self._tmux_name and kill_tmux:
+                # Kill the tmux session (and the process inside it)
+                subprocess.run(["tmux", "kill-session", "-t", self._tmux_name],
+                               capture_output=True, timeout=3)
+            elif not self._tmux_name and self.child_pid:
+                # No tmux — kill child process directly
                 try:
                     os.killpg(os.getpgid(self.child_pid), signal.SIGTERM)
                 except (OSError, ProcessLookupError):
                     pass
-                # Give it a moment, then SIGKILL if still alive
                 threading.Timer(1.0, self._force_kill).start()
 
     def _force_kill(self):
@@ -305,6 +400,30 @@ class Api:
         self._pusher_started = False
         self._output_event = threading.Event()   # signalled by reader threads
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
+
+    def restore_tmux_sessions(self, cols: int = 80, rows: int = 24) -> str:
+        """Detect orphaned sf_* tmux sessions and reattach them.
+        Called from frontend on startup before list_sessions."""
+        if IS_WIN or not _has_tmux():
+            return json.dumps([])
+        existing = _list_tmux_sessions()
+        restored = []
+        for info in existing:
+            tmux_name = info["name"]
+            cmd = info["cmd"] or "bash"
+            # Extract sid from tmux name: sf_s1 → s1
+            sid = tmux_name[len(TMUX_PREFIX):]
+            if sid in self.sessions:
+                continue  # already attached
+            self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
+            session = Session(sid, cmd, cols, rows,
+                              on_data=self._output_event.set,
+                              tmux_name=tmux_name)
+            self.sessions[sid] = session
+            session._bridge_enabled = True
+            session._init_pending = False
+            restored.append({"sid": sid, "cmd": cmd})
+        return json.dumps(restored)
 
     def _start_output_pusher(self):
         """Background threads that push PTY output to frontend via evaluate_js.
@@ -984,7 +1103,8 @@ class Api:
             self.bridge.stop()
             self.bridge = None
         for s in list(self.sessions.values()):
-            s.kill()
+            # Detach only — tmux sessions stay alive for reattach on restart
+            s.kill(kill_tmux=False)
         self.sessions.clear()
 
     def cleanup_and_exit(self):

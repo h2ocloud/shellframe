@@ -2174,7 +2174,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       document.getElementById('sidebar').classList.remove('collapsed');
     }
 
-    // Check for existing sessions (reconnect after hot reload)
+    // Restore tmux sessions from previous run, then check for hot-reload sessions
+    try { await pywebview.api.restore_tmux_sessions(80, 24); } catch(e) {}
     try {
       const existing = JSON.parse(await pywebview.api.list_sessions());
       if (existing.length > 0) {
