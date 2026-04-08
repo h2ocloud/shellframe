@@ -346,10 +346,13 @@ class TelegramBridge(BridgeBase):
                 self.slots[s].index = i + 1
 
     def get_active_sid(self, user_id: int) -> str:
-        """Get the active session for a user. Defaults to first slot."""
+        """Get the active session for a user. Defaults to UI-selected or first slot."""
         sid = self._user_active.get(user_id)
         if sid and sid in self.slots:
             return sid
+        default = getattr(self, '_default_active_sid', None)
+        if default and default in self.slots:
+            return default
         if self._slot_order:
             return self._slot_order[0]
         return ""
@@ -1247,6 +1250,9 @@ class TelegramBridge(BridgeBase):
         """Return the active session sid for the primary (first) TG user."""
         if self._user_active:
             return next(iter(self._user_active.values()))
+        default = getattr(self, '_default_active_sid', None)
+        if default and default in self.slots:
+            return default
         return self._slot_order[0] if self._slot_order else ""
 
     def switch_active_session(self, sid: str):
@@ -1254,6 +1260,8 @@ class TelegramBridge(BridgeBase):
         if sid not in self.slots:
             return
         slot = self.slots[sid]
+        # Store default active session (used when no user has interacted yet)
+        self._default_active_sid = sid
         for uid in list(self._user_active):
             self._user_active[uid] = sid
         # Also set for users with no explicit selection
