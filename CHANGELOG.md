@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.3 (2026-04-08)
+
+### New Features
+- **Left sidebar** — Collapsible sidebar (☰) with session list, Settings & About links moved from tab bar. State persists via localStorage.
+- **Per-session TG bridge toggle** — Each session shows a TG badge in the sidebar when bridge is active. Click to disable bridge monitoring for sessions that already handle their own TG connection.
+
+### 新功能
+- **左側欄** — 可收合的側邊欄（☰），顯示 session 列表，Settings 與 About 移入側邊欄底部。展開狀態透過 localStorage 記憶。
+- **單一 Session TG 橋接開關** — Bridge 啟用時，側邊欄每個 session 旁顯示 TG badge，點擊可關閉該 session 的橋接監控，避免與 session 自帶的 TG 連線衝突。
+
 ## v0.3.2 (2026-04-07)
 
 ### Fixes

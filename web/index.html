@@ -239,18 +239,60 @@
     border-radius: 50%; background: #c0caf5; transition: transform .2s;
   }
   .toggle-switch.on::after { transform: translateX(16px); }
+
+  /* ── Sidebar ── */
+  #app-body { flex: 1; display: flex; min-height: 0; }
+  #sidebar {
+    width: 220px; background: #16161e; border-right: 1px solid #292e42;
+    display: flex; flex-direction: column; flex-shrink: 0;
+    transition: width .15s ease; overflow: hidden;
+  }
+  #sidebar.collapsed { width: 0; border-right-color: transparent; }
+  .sb-section-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+    color: #565f89; padding: 10px 12px 6px; user-select: none; white-space: nowrap;
+  }
+  #sidebar-sessions { flex: 1; overflow-y: auto; overflow-x: hidden; }
+  #sidebar-sessions::-webkit-scrollbar { width: 4px; }
+  #sidebar-sessions::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 2px; }
+  #sidebar-footer {
+    padding: 6px; border-top: 1px solid #292e42;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .sb-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; cursor: pointer; font-size: 12px;
+    color: #a9b1d6; white-space: nowrap; transition: background .1s;
+    border-left: 2px solid transparent;
+  }
+  .sb-item:hover { background: #1f2335; }
+  .sb-item.active { background: #1f2335; color: #c0caf5; border-left-color: #7aa2f7; }
+  .sb-item .sb-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .sb-tg {
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; line-height: 1.3;
+    border: 1px solid #3b4261; background: none; color: #565f89;
+    cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .sb-tg:hover { border-color: #7aa2f7; color: #7aa2f7; }
+  .sb-tg.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
+  .sb-footer-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; background: none; border: none;
+    color: #565f89; cursor: pointer; font-size: 12px;
+    border-radius: 4px; white-space: nowrap; transition: all .1s;
+  }
+  .sb-footer-btn:hover { background: #1f2335; color: #a9b1d6; }
 </style>
 </head>
 <body>
 
 <!-- Tab bar -->
 <div id="tab-bar">
+  <button class="tab-action" id="btn-sidebar" title="Toggle sidebar" style="font-size:14px">☰</button>
   <div id="tabs"></div>
   <button id="btn-new-tab" title="New tab (Cmd+T)">+</button>
   <div class="tab-spacer"></div>
   <button class="bridge-toggle" id="btn-bridge" title="Telegram Bridge" style="display:none">TG</button>
-  <button class="tab-action" id="btn-settings" title="Settings">&#9881;</button>
-  <button class="tab-action" id="btn-about" title="About">?</button>
 </div>
 
 <!-- Image / file preview -->
@@ -271,8 +313,18 @@
   </div>
 </div>
 
-<!-- Terminal panes -->
-<div id="terminal-wrap"></div>
+<!-- Main content -->
+<div id="app-body">
+  <div id="sidebar" class="collapsed">
+    <div class="sb-section-title">Sessions</div>
+    <div id="sidebar-sessions"></div>
+    <div id="sidebar-footer">
+      <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
+      <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
+    </div>
+  </div>
+  <div id="terminal-wrap"></div>
+</div>
 
 <!-- New tab modal -->
 <div class="modal-overlay" id="modal-new">
@@ -702,7 +754,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [] };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], bridgeEnabled: true };
 
     // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
@@ -775,7 +827,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const label = cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [] };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [], bridgeEnabled: true };
 
     // Resize PTY to match new terminal size
     await pywebview.api.resize(sid, term.cols, term.rows);
@@ -880,7 +932,54 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
       $tabs.appendChild(tab);
     });
+    renderSidebar();
   }
+
+  // ── Sidebar ──
+  function renderSidebar() {
+    const container = document.getElementById('sidebar-sessions');
+    if (!container) return;
+    container.innerHTML = '';
+    const hasBridge = bridgeState && bridgeState.active;
+    Object.entries(sessions).forEach(([sid, s]) => {
+      const item = document.createElement('div');
+      item.className = 'sb-item' + (sid === activeId ? ' active' : '');
+      const on = s.bridgeEnabled !== false;
+      item.innerHTML = `<span class="sb-label">${esc(s.label)}</span>`
+        + (hasBridge ? `<button class="sb-tg${on ? ' on' : ''}" data-sid="${sid}">TG</button>` : '');
+      item.addEventListener('click', (e) => {
+        if (e.target.dataset.sid) return;
+        switchTab(sid);
+      });
+      container.appendChild(item);
+    });
+    container.querySelectorAll('.sb-tg').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const sid = btn.dataset.sid;
+        const isOn = btn.classList.contains('on');
+        const raw = await pywebview.api.set_session_bridge(sid, !isOn);
+        const result = JSON.parse(raw);
+        if (result.success) {
+          sessions[sid].bridgeEnabled = result.enabled;
+          renderSidebar();
+        }
+      });
+    });
+  }
+
+  document.getElementById('btn-sidebar').addEventListener('click', () => {
+    const sb = document.getElementById('sidebar');
+    sb.classList.toggle('collapsed');
+    localStorage.setItem('sf_sidebar', sb.classList.contains('collapsed') ? '0' : '1');
+    // Refit terminal after sidebar transition
+    setTimeout(() => {
+      if (activeId && sessions[activeId]) {
+        sessions[activeId].fitAddon.fit();
+        pywebview.api.resize(activeId, sessions[activeId].term.cols, sessions[activeId].term.rows);
+      }
+    }, 180);
+  });
 
   // ── Image / file attach ──
   function shortPath(p) {
@@ -1706,12 +1805,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await waitApi();
     await loadConfig();
 
+    // Restore sidebar state
+    if (localStorage.getItem('sf_sidebar') === '1') {
+      document.getElementById('sidebar').classList.remove('collapsed');
+    }
+
     // Check for existing sessions (reconnect after hot reload)
     try {
       const existing = JSON.parse(await pywebview.api.list_sessions());
       if (existing.length > 0) {
         for (const s of existing) {
           await reconnectSession(s.sid, s.cmd);
+          if (sessions[s.sid]) sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
         }
         try {
           const bs = JSON.parse(await pywebview.api.get_bridge_status());

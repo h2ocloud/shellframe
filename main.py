@@ -321,7 +321,7 @@ class Api:
                 for sid, s in list(self.sessions.items()):
                     data = s.read()
                     if data:
-                        if self.bridge:
+                        if self.bridge and getattr(s, '_bridge_enabled', True):
                             self._bridge_queue.put_nowait((sid, data))
                         pending[sid] = pending.get(sid, "") + data
                     chunk = pending.get(sid)
@@ -390,7 +390,8 @@ class Api:
         result = []
         for sid, s in self.sessions.items():
             if s.alive:
-                result.append({"sid": sid, "cmd": s.cmd, "alive": True})
+                result.append({"sid": sid, "cmd": s.cmd, "alive": True,
+                               "bridge_enabled": getattr(s, '_bridge_enabled', True)})
         return json.dumps(result)
 
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
@@ -398,6 +399,7 @@ class Api:
         sid = f"s{self._counter}"
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
         self.sessions[sid] = session
+        session._bridge_enabled = True
         # Auto-register with bridge
         if self.bridge:
             label = cmd.split()[0] if cmd else sid
@@ -678,8 +680,10 @@ class Api:
             on_close_session=self.close_session,
         )
 
-        # Register all existing sessions
+        # Register existing sessions (skip bridge-disabled ones)
         for sid, s in self.sessions.items():
+            if not getattr(s, '_bridge_enabled', True):
+                continue
             label = s.cmd.split()[0] if s.cmd else sid
             self.bridge.register_session(
                 sid, label,
@@ -740,6 +744,25 @@ class Api:
             return json.dumps({"exists": False})
         return json.dumps({"exists": True, **self.bridge.get_status()})
 
+    def set_session_bridge(self, sid: str, enabled: bool) -> str:
+        """Enable/disable TG bridge for a specific session."""
+        s = self.sessions.get(sid)
+        if not s:
+            return json.dumps({"success": False})
+        s._bridge_enabled = bool(enabled)
+        if self.bridge:
+            if enabled:
+                label = s.cmd.split()[0] if s.cmd else sid
+                self.bridge.register_session(
+                    sid, label,
+                    lambda text, _s=s: _s.write(text),
+                    peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                )
+            else:
+                self.bridge.unregister_session(sid)
+            self.bridge.refresh_commands()
+        return json.dumps({"success": True, "enabled": enabled})
+
     def hot_reload_bridge(self) -> str:
         """Hot-reload bridge_telegram module without restarting the app.
         Preserves PTY sessions — only restarts the TG bridge with new code."""
@@ -773,6 +796,8 @@ class Api:
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
                 for sid, s in self.sessions.items():
+                    if not getattr(s, '_bridge_enabled', True):
+                        continue
                     label = s.cmd.split()[0] if s.cmd else sid
                     self.bridge.register_session(
                         sid, label,
