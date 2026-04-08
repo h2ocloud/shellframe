@@ -1133,14 +1133,46 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // ── Rename session (double-click on label) ──
-  async function renameSession(sid) {
+  function renameSession(sid) {
     const s = sessions[sid];
     if (!s) return;
-    const newName = prompt('Session name:', s.label);
-    if (newName === null || newName.trim() === '') return;
-    s.label = newName.trim();
-    await pywebview.api.rename_session(sid, s.label);
-    renderTabs();
+    // In-page rename dialog
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:300px;padding:16px">
+        <h2 style="font-size:14px;margin-bottom:12px">Session Name</h2>
+        <input type="text" id="rename-input" value="${esc(s.label)}"
+          style="width:100%;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+          <button class="btn btn-ghost" id="rename-cancel">Cancel</button>
+          <button class="btn btn-primary" id="rename-ok">OK</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = document.getElementById('rename-input');
+    input.select();
+    input.focus();
+    function finish(save) {
+      if (save) {
+        const val = input.value.trim();
+        if (val) {
+          s.label = val;
+          pywebview.api.rename_session(sid, val);
+          renderTabs();
+        }
+      }
+      overlay.remove();
+      if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+    }
+    document.getElementById('rename-ok').addEventListener('click', () => finish(true));
+    document.getElementById('rename-cancel').addEventListener('click', () => finish(false));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    });
   }
 
   // Event delegation for sidebar clicks
@@ -1164,11 +1196,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
-  // Double-click sidebar label to rename
-  document.getElementById('sidebar-sessions').addEventListener('dblclick', (e) => {
-    const item = e.target.closest('.sb-item');
-    if (item && item.dataset.sid) renameSession(item.dataset.sid);
-  });
+  // Double-click sidebar label to rename (manual detection — native dblclick breaks because renderSidebar rebuilds DOM)
+  {
+    let _sbLastClickSid = null, _sbLastClickTime = 0;
+    document.getElementById('sidebar-sessions').addEventListener('click', (e) => {
+      if (e.target.closest('[data-action]')) return;
+      const item = e.target.closest('.sb-item');
+      if (!item || !item.dataset.sid) return;
+      const sid = item.dataset.sid;
+      const now = Date.now();
+      if (_sbLastClickSid === sid && now - _sbLastClickTime < 400) {
+        _sbLastClickSid = null;
+        renameSession(sid);
+        return;
+      }
+      _sbLastClickSid = sid;
+      _sbLastClickTime = now;
+    });
+  }
 
   // Mouse-based drag for sidebar reorder + TG toggle
   document.getElementById('sidebar-sessions').addEventListener('mousedown', (e) => {
