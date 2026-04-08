@@ -973,17 +973,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // Drag reorder
       tab.addEventListener('dragstart', (e) => {
         _tabDragging = true;
+        _dragSid = sid;
         e.dataTransfer.setData('text/plain', sid);
         e.dataTransfer.effectAllowed = 'move';
         tab.style.opacity = '.4';
       });
-      tab.addEventListener('dragend', () => { tab.style.opacity = ''; _tabDragging = false; });
+      tab.addEventListener('dragend', () => { tab.style.opacity = ''; _tabDragging = false; _dragSid = null; });
       tab.addEventListener('dragover', (e) => { e.preventDefault(); tab.style.borderLeft = '2px solid #7aa2f7'; });
       tab.addEventListener('dragleave', () => { tab.style.borderLeft = ''; });
       tab.addEventListener('drop', (e) => {
         e.preventDefault();
         tab.style.borderLeft = '';
-        const fromSid = e.dataTransfer.getData('text/plain');
+        const fromSid = _dragSid || e.dataTransfer.getData('text/plain');
         if (fromSid === sid) return;
         const fromIdx = sessionOrder.indexOf(fromSid);
         const toIdx = sessionOrder.indexOf(sid);
@@ -1065,14 +1066,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         });
       }
 
-      // Drag handlers
+      // Drag handlers (use _dragSid variable — WKWebView dataTransfer is unreliable)
       item.addEventListener('dragstart', (e) => {
         _sbDragging = true;
-        e.dataTransfer.setData('text/plain', sid);
+        _dragSid = sid;
         e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', sid);
         item.style.opacity = '.3';
       });
-      item.addEventListener('dragend', () => { item.style.opacity = ''; _sbDragging = false; });
+      item.addEventListener('dragend', () => { item.style.opacity = ''; _sbDragging = false; _dragSid = null; });
       item.addEventListener('dragover', (e) => {
         e.preventDefault();
         item.style.background = '#292e42';
@@ -1081,9 +1083,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       item.addEventListener('drop', (e) => {
         e.preventDefault();
         item.style.background = '';
-        const fromSid = e.dataTransfer.getData('text/plain');
+        const fromSid = _dragSid || e.dataTransfer.getData('text/plain');
         if (!fromSid || fromSid === sid) return;
-        // Move fromSid to same position as this item in sessionOrder
         handleSidebarDrop(fromSid, sid, isTgEnabled);
       });
 
@@ -1102,13 +1103,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       function wireDisableZone(el) {
         el.addEventListener('dragover', (e) => { e.preventDefault(); divider.classList.add('drag-over'); });
         el.addEventListener('dragleave', (e) => {
-          // Only remove highlight if leaving the zone entirely
           if (!el.contains(e.relatedTarget)) divider.classList.remove('drag-over');
         });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
           divider.classList.remove('drag-over');
-          const fromSid = e.dataTransfer.getData('text/plain');
+          const fromSid = _dragSid || e.dataTransfer.getData('text/plain');
           if (fromSid && sessions[fromSid]?.bridgeEnabled !== false) {
             toggleSessionBridge(fromSid, false);
           }
@@ -1292,10 +1292,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Not an image/file paste — let it through to xterm.js for normal text paste
   }, true);  // ← capture phase
 
-  // Drag & drop files (skip internal tab reorder drags)
+  // Drag & drop files (skip internal tab/sidebar reorder drags)
   const $dropOverlay = document.getElementById('drop-overlay');
   let dragCounter = 0;
   let _tabDragging = false;
+  let _dragSid = null;  // shared drag state (WKWebView dataTransfer workaround)
 
   document.addEventListener('dragenter', (e) => {
     e.preventDefault();
@@ -1701,7 +1702,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         bridgeState = result;
         if (!prev || prev.paused !== result.paused || prev.sessions !== result.sessions || prev.active_sid !== result.active_sid) {
           updateBridgeButton();
-          renderSidebar();
+          renderTabs();
         }
       }
     } catch(e) {}
