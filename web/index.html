@@ -1155,15 +1155,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     input.select();
     input.focus();
     function finish(save) {
+      overlay.remove();
       if (save) {
         const val = input.value.trim();
-        if (val) {
+        if (val && val !== s.label) {
           s.label = val;
-          pywebview.api.rename_session(sid, val);
           renderTabs();
+          // Flash the tab to confirm rename
+          const tab = $tabs.querySelector(`[data-sid="${sid}"] .label`);
+          if (tab) { tab.style.color = '#9ece6a'; setTimeout(() => tab.style.color = '', 600); }
+          // Persist in background (fire-and-forget)
+          pywebview.api.rename_session(sid, val).catch(() => {});
         }
       }
-      overlay.remove();
       if (activeId && sessions[activeId]) sessions[activeId].term.focus();
     }
     document.getElementById('rename-ok').addEventListener('click', () => finish(true));
