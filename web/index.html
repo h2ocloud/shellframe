@@ -229,7 +229,18 @@
   .bridge-toggle:hover { border-color: #7aa2f7; color: #7aa2f7; }
   .bridge-toggle.active { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.1); }
   .bridge-toggle.paused { border-color: #e0af68; color: #e0af68; background: rgba(224,175,104,.1); }
-  .bridge-setup { margin-top: 12px; padding: 12px; background: #24283b; border-radius: 8px; }
+  /* ── Settings tabs ── */
+  .settings-tabs { display: flex; gap: 0; margin-bottom: 14px; border-bottom: 1px solid #3b4261; }
+  .settings-tab {
+    padding: 6px 16px; font-size: 12px; color: #565f89; cursor: pointer;
+    border: none; background: none; border-bottom: 2px solid transparent;
+    transition: all .15s;
+  }
+  .settings-tab:hover { color: #a9b1d6; }
+  .settings-tab.active { color: #7aa2f7; border-bottom-color: #7aa2f7; }
+  .settings-tab-panel { display: none; }
+  .settings-tab-panel.active { display: block; }
+  .bridge-setup { margin-top: 0; padding: 12px; background: #24283b; border-radius: 8px; }
   .bridge-setup h4 { font-size: 12px; color: #c0caf5; margin-bottom: 10px; }
   .bridge-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .bridge-field label { font-size: 11px; color: #565f89; min-width: 80px; }
@@ -384,63 +395,72 @@
   <div class="modal" style="width:500px">
     <h2 data-i18n="settings">Settings</h2>
 
-    <!-- General settings -->
-    <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:#24283b;border-radius:8px">
-      <div style="flex:1">
-        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Font size</label>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="range" id="setting-fontsize" min="10" max="24" value="14" style="flex:1;accent-color:#7aa2f7"/>
-          <span id="fontsize-val" style="font-size:12px;color:#c0caf5;min-width:24px;text-align:center">14</span>
+    <div class="settings-tabs">
+      <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
+      <button class="settings-tab" data-tab="bridge">Telegram Bridge</button>
+    </div>
+
+    <!-- Tab: General -->
+    <div class="settings-tab-panel active" id="settings-panel-general">
+      <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:#24283b;border-radius:8px">
+        <div style="flex:1">
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Font size</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" id="setting-fontsize" min="10" max="24" value="14" style="flex:1;accent-color:#7aa2f7"/>
+            <span id="fontsize-val" style="font-size:12px;color:#c0caf5;min-width:24px;text-align:center">14</span>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="language">Language</label>
+          <select id="setting-lang" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 8px;color:#c0caf5;font-size:12px;outline:none">
+            <option value="en">English</option>
+            <option value="zh-TW">繁體中文</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto Update</label>
+          <button class="toggle-switch on" id="setting-autoupdate"></button>
         </div>
       </div>
-      <div>
-        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="language">Language</label>
-        <select id="setting-lang" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 8px;color:#c0caf5;font-size:12px;outline:none">
-          <option value="en">English</option>
-          <option value="zh-TW">繁體中文</option>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto Update</label>
-        <button class="toggle-switch on" id="setting-autoupdate"></button>
+
+      <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
+      <div id="settings-presets"></div>
+      <div class="settings-add">
+        <button class="sp-icon emoji-btn" id="add-icon" style="width:36px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:4px;font-size:16px;cursor:pointer;line-height:1">▶</button>
+        <input type="text" id="add-name" placeholder="Name" style="width:100px"/>
+        <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
+        <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
       </div>
     </div>
 
-    <!-- Presets -->
-    <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
-    <div id="settings-presets"></div>
-    <div class="settings-add">
-      <button class="sp-icon emoji-btn" id="add-icon" style="width:36px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:4px;font-size:16px;cursor:pointer;line-height:1">▶</button>
-      <input type="text" id="add-name" placeholder="Name" style="width:100px"/>
-      <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
-      <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
-    </div>
-    <!-- Telegram Bridge -->
-    <div class="bridge-setup" style="margin-top:14px">
-      <h4 style="display:flex;align-items:center;justify-content:space-between">
-        <span>Telegram Bridge</span>
-        <span id="settings-bridge-status" style="font-size:11px;color:#565f89"></span>
-      </h4>
-      <div class="bridge-field">
-        <label>Bot Token</label>
-        <input type="password" id="settings-bridge-token" placeholder="123456:ABC-DEF..."/>
-      </div>
-      <div class="bridge-field">
-        <label>Users</label>
-        <input type="text" id="settings-bridge-users" placeholder="User IDs (comma separated), empty = all"/>
-      </div>
-      <div class="bridge-field">
-        <label>Prefix</label>
-        <button class="toggle-switch on" id="settings-bridge-prefix"></button>
-        <span style="font-size:11px;color:#565f89">[TG @user]: message</span>
-      </div>
-      <div class="bridge-field" style="align-items:flex-start">
-        <label>System Prompt</label>
-        <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-primary" id="btn-settings-bridge-connect">Connect</button>
-        <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none">Disconnect</button>
+    <!-- Tab: Telegram Bridge -->
+    <div class="settings-tab-panel" id="settings-panel-bridge">
+      <div class="bridge-setup">
+        <h4 style="display:flex;align-items:center;justify-content:space-between">
+          <span>Telegram Bridge</span>
+          <span id="settings-bridge-status" style="font-size:11px;color:#565f89"></span>
+        </h4>
+        <div class="bridge-field">
+          <label>Bot Token</label>
+          <input type="password" id="settings-bridge-token" placeholder="123456:ABC-DEF..."/>
+        </div>
+        <div class="bridge-field">
+          <label>Users</label>
+          <input type="text" id="settings-bridge-users" placeholder="User IDs (comma separated), empty = all"/>
+        </div>
+        <div class="bridge-field">
+          <label>Prefix</label>
+          <button class="toggle-switch on" id="settings-bridge-prefix"></button>
+          <span style="font-size:11px;color:#565f89">[TG @user]: message</span>
+        </div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label>System Prompt</label>
+          <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" id="btn-settings-bridge-connect">Connect</button>
+          <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none">Disconnect</button>
+        </div>
       </div>
     </div>
 
@@ -458,6 +478,11 @@
       <div class="logo">&gt;_</div>
       <div class="app-name">ShellFrame</div>
       <div class="version" id="about-version">v0.1.0</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+        <span id="check-update-result" style="font-size:11px;white-space:nowrap"></span>
+        <button class="btn btn-ghost" id="btn-check-update" style="white-space:nowrap;font-size:11px;padding:2px 8px">Check</button>
+        <button class="btn btn-ghost" id="btn-reload-ui" style="white-space:nowrap;font-size:11px;padding:2px 8px">↻</button>
+      </div>
       <div class="update-bar" id="update-bar">
         <span class="status checking" id="update-status">Checking for updates...</span>
       </div>
@@ -517,12 +542,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     <div class="modal-footer" style="gap:8px">
       <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap">
-        <span id="check-update-result" style="font-size:11px;white-space:nowrap"></span>
-        <button class="btn btn-ghost" id="btn-reload-ui" style="white-space:nowrap">↻</button>
-        <button class="btn btn-ghost" id="btn-check-update" style="white-space:nowrap">Check</button>
-        <button class="btn btn-ghost" id="btn-close-about" style="white-space:nowrap">Close</button>
-      </div>
+      <button class="btn btn-ghost" id="btn-close-about" style="white-space:nowrap">Close</button>
     </div>
   </div>
 </div>
@@ -614,6 +634,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: 'Cancel',
       close: 'Close',
       settings: 'Settings',
+      settingsGeneral: 'General',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
       addPreset: 'Add',
       fontSize: 'Font size',
@@ -653,6 +674,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: '取消',
       close: '關閉',
       settings: '設定',
+      settingsGeneral: '一般',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
       addPreset: '新增',
       fontSize: '字型大小',
@@ -1447,6 +1469,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── Settings modal ──
   const $modalSettings = document.getElementById('modal-settings');
+
+  // Settings tab switching
+  $modalSettings.querySelectorAll('.settings-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      $modalSettings.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+      $modalSettings.querySelectorAll('.settings-tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('settings-panel-' + tab.dataset.tab).classList.add('active');
+    });
+  });
 
   document.getElementById('btn-settings').addEventListener('click', () => {
     $modalSettings.classList.add('open');
