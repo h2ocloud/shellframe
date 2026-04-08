@@ -456,6 +456,8 @@ class TelegramBridge(BridgeBase):
 
     # AI response markers used by CLI tools
     AI_MARKERS = ('• ', '⏺ ', '⏺')
+    # Prompt markers that signal end of AI response / start of user input
+    PROMPT_MARKERS = ('› ', '❯ ', '> ', '›', '❯')
 
     # Responses that are system-prompt acks, not real replies
     _FILTERED_RESPONSES = {"Understood.", "Understood"}
@@ -536,7 +538,7 @@ class TelegramBridge(BridgeBase):
 
             # Check for prompt markers — ends current block
             # But numbered menu items (› 1. xxx) should be included in the block
-            if stripped.startswith(('› ', '❯ ', '›', '❯')):
+            if stripped.startswith(self.PROMPT_MARKERS):
                 after_prompt = stripped.lstrip('›❯ ')
                 if current_block is not None and re.match(r'\d+\.?\s', after_prompt):
                     # This is a numbered menu item — include in current block
@@ -769,6 +771,10 @@ class TelegramBridge(BridgeBase):
                             f"users={dict(self._user_active)} has_msg={slot.has_user_msg}\n")
                     for l in new_lines[:5]:
                         f.write(f"  [{l}]\n")
+                    if not new_lines:
+                        # Log screen content for debugging
+                        screen_lines = [l.rstrip() for l in slot.screen.display if l.rstrip()]
+                        f.write(f"  screen({len(screen_lines)}): {[l[:60] for l in screen_lines[-5:]]}\n")
 
                 if not new_lines:
                     continue
