@@ -519,6 +519,23 @@ class Api:
         if s:
             s.resize(cols, rows)
 
+    def copy_text(self, text: str) -> str:
+        """Copy text to system clipboard."""
+        try:
+            p = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
+            p.communicate(text.encode('utf-8'))
+            return 'ok'
+        except Exception as e:
+            return f'ERROR: {e}'
+
+    def paste_text(self) -> str:
+        """Read text from system clipboard."""
+        try:
+            result = subprocess.run(['pbpaste'], capture_output=True, text=True, timeout=3)
+            return result.stdout
+        except Exception as e:
+            return ''
+
     def get_clipboard_files(self) -> str:
         """Get file paths from system clipboard (Finder copy).
         Returns JSON array of file paths, or empty array if no files."""

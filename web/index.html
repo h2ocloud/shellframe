@@ -45,15 +45,22 @@
 
   /* ── Image preview ── */
   #image-bar {
-    display: none; align-items: center; gap: 10px;
-    padding: 6px 12px; background: #1f2335; border-bottom: 1px solid #292e42;
-    flex-shrink: 0;
+    display: none; align-items: center; gap: 6px;
+    padding: 4px 8px; background: #1f2335; border-bottom: 1px solid #292e42;
+    flex-shrink: 0; flex-wrap: wrap;
   }
-  #image-bar img { max-height: 54px; max-width: 100px; border-radius: 4px; border: 1px solid #3b4261; }
-  #image-bar .info { flex: 1; font-size: 11px; }
-  #image-bar .info .path { color: #7aa2f7; font-family: monospace; }
+  #attach-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+  .attach-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; background: #292e42; border-radius: 4px;
+    font-size: 11px; color: #a9b1d6; cursor: default; max-width: 260px;
+  }
+  .attach-chip b { color: #7aa2f7; font-weight: 600; }
+  .attach-chip .chip-thumb { height: 20px; max-width: 36px; border-radius: 2px; object-fit: cover; }
+  .attach-chip .chip-close { cursor: pointer; opacity: .4; margin-left: 2px; font-size: 13px; }
+  .attach-chip .chip-close:hover { opacity: 1; color: #f7768e; }
   #image-bar .close-img {
-    color: #565f89; cursor: pointer; font-size: 16px; padding: 2px 6px;
+    color: #565f89; cursor: pointer; font-size: 14px; padding: 2px 6px;
     border: none; background: none; border-radius: 3px;
   }
   #image-bar .close-img:hover { color: #f7768e; background: #292e42; }
@@ -297,6 +304,18 @@
     border-radius: 4px; white-space: nowrap; transition: all .1s;
   }
   .sb-footer-btn:hover { background: #1f2335; color: #a9b1d6; }
+
+  /* ── Code block copy button ── */
+  .code-copy-btn {
+    position: fixed; z-index: 100; display: none;
+    background: #292e42; border: 1px solid #3b4261; color: #7aa2f7;
+    border-radius: 4px; padding: 2px 8px; font-size: 11px;
+    cursor: pointer; opacity: 0; transition: opacity .15s;
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  .code-copy-btn.visible { opacity: 1; }
+  .code-copy-btn:hover { background: #3b4261; }
+  .code-copy-btn.copied { color: #9ece6a; }
 </style>
 </head>
 <body>
@@ -310,14 +329,10 @@
   <button class="bridge-toggle" id="btn-bridge" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
-<!-- Image / file preview -->
+<!-- Attachment chips -->
 <div id="image-bar">
-  <img id="preview-img"/>
-  <div class="info">
-    <div id="attach-label">Screenshot attached</div>
-    <div class="path" id="image-path"></div>
-  </div>
-  <button class="close-img" id="close-preview" title="Remove">&times;</button>
+  <div id="attach-chips"></div>
+  <button class="close-img" id="close-preview" title="Remove all">&times;</button>
 </div>
 
 <!-- Drop overlay -->
@@ -334,7 +349,6 @@
     <div class="sb-section-title">Sessions</div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
-      <pre id="sb-debug" style="font-size:8px;color:#565f89;padding:4px 8px;margin:0;white-space:pre-wrap;word-break:break-all;max-height:100px;overflow-y:auto;border-top:1px solid #292e42"></pre>
       <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
       <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
     </div>
@@ -465,7 +479,7 @@
         <li>Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal</li>
         <li>Drag & drop files into window to attach</li>
         <li>Press <span class="kbd">Enter</span> to send with file path auto-attached</li>
-        <li><span class="kbd">Cmd+W</span> close tab, <span class="kbd">Ctrl+Tab</span> switch tabs</li>
+        <li><span class="kbd">Cmd+W</span> close tab, <span class="kbd">Cmd+]</span>/<span class="kbd">[</span> switch tabs</li>
       </ul>
     </div>
 
@@ -474,7 +488,8 @@
       <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:11px">
         <span class="kbd">Cmd+T</span><span>New tab</span>
         <span class="kbd">Cmd+W</span><span>Close tab</span>
-        <span class="kbd">Ctrl+Tab</span><span>Switch tab</span>
+        <span class="kbd">Ctrl+Tab</span><span>Next tab</span>
+        <span class="kbd">Cmd+]</span> / <span class="kbd">Cmd+[</span><span>Next / Prev tab</span>
         <span class="kbd">Cmd+V</span><span>Paste image</span>
         <span class="kbd">Cmd+,</span><span>Settings</span>
       </div>
@@ -771,8 +786,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], bridgeEnabled: true };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
+    setupAttachKeyHandler(sid, term);
 
     // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
@@ -845,8 +861,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const label = cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [], bridgeEnabled: true };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [], attachCounter: 0, bridgeEnabled: true };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
+    setupAttachKeyHandler(sid, term);
 
     // Resize PTY to match new terminal size
     await pywebview.api.resize(sid, term.cols, term.rows);
@@ -1007,8 +1024,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // ── Sidebar (mouse-based drag — HTML5 drag unreliable in WKWebView) ──
-  let _sbDragSid = null;
-  let _sbDragEl = null;
+  let _sbDragging = false;
 
   function renderSidebar() {
     const container = document.getElementById('sidebar-sessions');
@@ -1076,12 +1092,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       e.preventDefault();
       e.stopPropagation();
       const sid = tgAction.dataset.sid;
-      _dbg('TG click: ' + sid);
       pywebview.api.switch_bridge_session(sid).then((raw) => {
-        _dbg('switch result: ' + raw);
         if (bridgeState) bridgeState.active_sid = sid;
         renderSidebar();
-      }).catch(err => _dbg('switch error: ' + err));
+      }).catch(err => console.warn('switch error:', err));
       return;
     }
     // Session click → switch tab
@@ -1091,31 +1105,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
-  // Debug log visible in sidebar footer
-  let _dbgLines = [];
-  function _dbg(msg) {
-    _dbgLines.push(new Date().toLocaleTimeString().slice(0,8) + ' ' + msg);
-    if (_dbgLines.length > 8) _dbgLines.shift();
-    const el = document.getElementById('sb-debug');
-    if (el) el.textContent = _dbgLines.join('\n');
-  }
-  // Periodically log bridge state
-  setInterval(async () => {
-    try {
-      const raw = await pywebview.api.debug_bridge_info();
-      const info = JSON.parse(raw);
-      if (info.bridge) {
-        _dbg('poll active_sid=' + info.active_sid + ' slots=' + info.slot_order.join(','));
-      }
-    } catch(e) { _dbg('poll err: ' + e); }
-  }, 5000);
-
   // Mouse-based drag for sidebar reorder + TG toggle
   document.getElementById('sidebar-sessions').addEventListener('mousedown', (e) => {
     const item = e.target.closest('.sb-item');
     if (!item || !item.dataset.sid) return;
     if (e.target.closest('[data-action]')) return;
-    _dbg('mousedown: ' + item.dataset.sid);
+    e.preventDefault();
     const sid = item.dataset.sid;
     let moved = false;
     const startY = e.clientY;
@@ -1124,6 +1119,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     function onMove(ev) {
       if (!moved && Math.abs(ev.clientY - startY) < 5) return;
       moved = true;
+      _sbDragging = true;
       item.style.opacity = '.3';
       // Highlight drop target
       container.querySelectorAll('.sb-item, .sb-divider, [data-section="off"]').forEach(el => {
@@ -1140,6 +1136,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     function onUp(ev) {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      _sbDragging = false;
       item.style.opacity = '';
       container.querySelectorAll('.sb-item, .sb-divider, [data-section="off"]').forEach(el => {
         el.style.background = '';
@@ -1152,7 +1149,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const dropSection = dropEl.dataset?.section;
       const fromEnabled = sessions[sid]?.bridgeEnabled !== false;
 
-      _dbg('drop: ' + sid + ' → section=' + dropSection + ' target=' + (dropEl.dataset?.sid || 'none'));
       if (dropSection === 'divider' || dropSection === 'off') {
         if (fromEnabled) toggleSessionBridge(sid, false);
       } else if (dropSection === 'on' && !fromEnabled) {
@@ -1181,6 +1177,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const result = JSON.parse(raw);
     if (result.success) {
       sessions[sid].bridgeEnabled = result.enabled;
+      // Refresh bridgeState immediately (active_sid may have changed)
+      try {
+        const bs = JSON.parse(await pywebview.api.get_bridge_status());
+        if (bs.exists) bridgeState = bs;
+      } catch(e) {}
       renderTabs();
     }
   }
@@ -1198,6 +1199,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }, 180);
   });
 
+  // ── Attach: intercept Enter before xterm to inject file paths ──
+  function setupAttachKeyHandler(sid, term) {
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown') return true;
+      if (ev.key !== 'Enter' || ev.ctrlKey || ev.metaKey || ev.altKey) return true;
+      const s = sessions[sid];
+      if (!s || s.attachments.length === 0) return true;
+      // Block xterm Enter, inject paths + submit
+      const paths = s.attachments.map(a => a.path).join(' ');
+      pywebview.api.write_input(sid, ' ' + paths + '\r');
+      s.attachments = [];
+      updateImageBar();
+      return false;
+    });
+  }
+
   // ── Image / file attach ──
   function shortPath(p) {
     const name = p.split('/').pop().split('\\').pop();
@@ -1207,29 +1224,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function updateImageBar() {
     const s = activeId && sessions[activeId];
     const bar = document.getElementById('image-bar');
-    const img = document.getElementById('preview-img');
+    const chips = document.getElementById('attach-chips');
     if (s && s.attachments.length > 0) {
-      const last = s.attachments[s.attachments.length - 1];
-      if (last.dataUrl) {
-        img.src = last.dataUrl;
-        img.style.display = 'block';
-      } else {
-        img.style.display = 'none';
-      }
-      const n = s.attachments.length;
-      const label = n === 1
-        ? (last.dataUrl ? t('screenshotAttached') : t('fileAttached'))
-        : `${n} files attached`;
-      document.getElementById('attach-label').textContent = label;
-      const pathText = n === 1
-        ? '[' + shortPath(last.path) + ']'
-        : s.attachments.map(a => shortPath(a.path)).join(', ');
-      document.getElementById('image-path').textContent = pathText;
-      document.getElementById('image-path').title = s.attachments.map(a => a.path).join('\n');
+      chips.innerHTML = s.attachments.map((a, i) => {
+        const isImg = a.dataUrl || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path);
+        const icon = isImg ? '📷' : '📎';
+        const name = shortPath(a.path);
+        const thumb = a.dataUrl ? `<img src="${a.dataUrl}" class="chip-thumb"/>` : '';
+        return `<span class="attach-chip" title="${esc(a.path)}">${thumb}${icon} <b>#${a.tag}</b> ${esc(name)} <span class="chip-close" data-idx="${i}">&times;</span></span>`;
+      }).join('');
       bar.style.display = 'flex';
       requestAnimationFrame(() => { if (sessions[activeId]) sessions[activeId].fitAddon.fit(); });
     } else {
       bar.style.display = 'none';
+      chips.innerHTML = '';
       requestAnimationFrame(() => { if (activeId && sessions[activeId]) sessions[activeId].fitAddon.fit(); });
     }
   }
@@ -1237,9 +1245,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function attachFile(path, dataUrl) {
     if (!activeId || !sessions[activeId]) return;
     const s = sessions[activeId];
-    // Avoid duplicate paths
     if (!s.attachments.some(a => a.path === path)) {
-      s.attachments.push({ path, dataUrl: dataUrl || null });
+      s.attachCounter = (s.attachCounter || 0) + 1;
+      s.attachments.push({ path, dataUrl: dataUrl || null, tag: s.attachCounter });
     }
     updateImageBar();
   }
@@ -1369,19 +1377,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     updateImageBar();
   });
-
-  // Intercept Enter → inject attached file paths
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const s = activeId && sessions[activeId];
-      if (s && s.attachments.length > 0) {
-        if (document.activeElement?.tagName === 'INPUT') return;
-        e.preventDefault();
-        const paths = s.attachments.map(a => a.path).join(' ');
-        pywebview.api.write_input(activeId, ' ' + paths + '\r');
-        s.attachments = [];
-        updateImageBar();
-      }
+  document.getElementById('attach-chips').addEventListener('click', (e) => {
+    const closeBtn = e.target.closest('.chip-close');
+    if (!closeBtn) return;
+    const idx = parseInt(closeBtn.dataset.idx);
+    const s = activeId && sessions[activeId];
+    if (s && idx >= 0 && idx < s.attachments.length) {
+      s.attachments.splice(idx, 1);
+      updateImageBar();
     }
   });
 
@@ -1702,6 +1705,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (result.success !== false) {
       bridgeState = result;
       updateBridgeButton();
+      syncBridgeOrder();
       renderTabs();
       $modalBridge.classList.remove('open');
     } else {
@@ -2006,12 +2010,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       e.preventDefault();
       if (activeId) closeTab(activeId);
     }
-    // Ctrl+Tab → next tab
+    // Ctrl+Tab / Cmd+] → next tab, Ctrl+Shift+Tab / Cmd+[ → prev tab
     if (e.ctrlKey && e.key === 'Tab') {
       e.preventDefault();
       if (sessionOrder.length < 2) return;
       const idx = sessionOrder.indexOf(activeId);
       switchTab(sessionOrder[(idx + (e.shiftKey ? -1 : 1) + sessionOrder.length) % sessionOrder.length]);
+    }
+    if (e.metaKey && !e.ctrlKey && (e.key === ']' || e.key === '[')) {
+      e.preventDefault();
+      if (sessionOrder.length < 2) return;
+      const idx = sessionOrder.indexOf(activeId);
+      const dir = e.key === ']' ? 1 : -1;
+      switchTab(sessionOrder[(idx + dir + sessionOrder.length) % sessionOrder.length]);
     }
     // Cmd/Ctrl+, → settings
     if ((e.metaKey || e.ctrlKey) && e.key === ',') {
@@ -2025,6 +2036,122 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       $modalAbout.classList.remove('open');
     }
   });
+
+  // ── Right-click: select → copy, no select → paste (Windows CMD style) ──
+  $wrap.addEventListener('contextmenu', async (e) => {
+    e.preventDefault();
+    if (!activeId || !sessions[activeId]) return;
+    const term = sessions[activeId].term;
+    const sel = term.getSelection();
+    if (sel) {
+      await pywebview.api.copy_text(sel);
+      term.clearSelection();
+    } else {
+      try {
+        const text = await pywebview.api.paste_text();
+        if (text) term.paste(text);
+      } catch(err) {}
+    }
+  });
+
+  // ── Code block copy button ──
+  {
+    const $copyBtn = document.createElement('button');
+    $copyBtn.className = 'code-copy-btn';
+    $copyBtn.textContent = 'Copy';
+    document.body.appendChild($copyBtn);
+
+    let _hideTimer = null, _block = null, _lastRow = -1;
+
+    function _lineCodeBg(term, bufRow) {
+      const line = term.buffer.active.getLine(bufRow);
+      if (!line) return null;
+      let bgMode = 0, bgColor = 0, count = 0;
+      for (let c = 0; c < term.cols; c++) {
+        const cell = line.getCell(c);
+        if (cell && cell.getBgColorMode() !== 0) {
+          if (count === 0) { bgMode = cell.getBgColorMode(); bgColor = cell.getBgColor(); }
+          if (cell.getBgColorMode() === bgMode && cell.getBgColor() === bgColor) count++;
+        }
+      }
+      return count > term.cols * 0.5 ? { bgMode, bgColor } : null;
+    }
+
+    function _extractBlock(term, viewportRow) {
+      const bufRow = viewportRow + term.buffer.active.viewportY;
+      const info = _lineCodeBg(term, bufRow);
+      if (!info) return null;
+      const { bgMode, bgColor } = info;
+      const match = (r) => { const i = _lineCodeBg(term, r); return i && i.bgMode === bgMode && i.bgColor === bgColor; };
+      let top = bufRow;
+      while (top > 0 && match(top - 1)) top--;
+      let bot = bufRow;
+      const max = term.buffer.active.length - 1;
+      while (bot < max && match(bot + 1)) bot++;
+      const lines = [];
+      for (let r = top; r <= bot; r++) {
+        const l = term.buffer.active.getLine(r);
+        if (l) lines.push(l.translateToString(true));
+      }
+      return { top, bot, text: lines.join('\n').trim() };
+    }
+
+    $wrap.addEventListener('mousemove', (e) => {
+      if (!activeId || !sessions[activeId]) return;
+      const { term, pane } = sessions[activeId];
+      const screen = pane.querySelector('.xterm-screen');
+      if (!screen) return;
+      const rect = screen.getBoundingClientRect();
+      const cellH = rect.height / term.rows;
+      const vRow = Math.floor((e.clientY - rect.top) / cellH);
+      if (vRow === _lastRow) return;
+      _lastRow = vRow;
+
+      const block = _extractBlock(term, vRow);
+      if (block && block.text.length > 0) {
+        _block = block;
+        const bTop = rect.top + (block.top - term.buffer.active.viewportY) * cellH;
+        $copyBtn.style.top = Math.max(bTop + 2, rect.top) + 'px';
+        $copyBtn.style.left = (rect.right - 56) + 'px';
+        $copyBtn.style.display = 'block';
+        $copyBtn.textContent = 'Copy';
+        $copyBtn.classList.remove('copied');
+        requestAnimationFrame(() => $copyBtn.classList.add('visible'));
+        clearTimeout(_hideTimer);
+      } else {
+        _hideTimer = setTimeout(() => {
+          $copyBtn.classList.remove('visible');
+          setTimeout(() => { $copyBtn.style.display = 'none'; _block = null; }, 150);
+        }, 200);
+      }
+    });
+
+    $wrap.addEventListener('mouseleave', () => {
+      _hideTimer = setTimeout(() => {
+        $copyBtn.classList.remove('visible');
+        setTimeout(() => { $copyBtn.style.display = 'none'; _block = null; }, 150);
+      }, 200);
+    });
+
+    $copyBtn.addEventListener('mouseenter', () => clearTimeout(_hideTimer));
+    $copyBtn.addEventListener('mouseleave', () => {
+      _hideTimer = setTimeout(() => {
+        $copyBtn.classList.remove('visible');
+        setTimeout(() => { $copyBtn.style.display = 'none'; _block = null; }, 150);
+      }, 200);
+    });
+
+    $copyBtn.addEventListener('click', async () => {
+      if (!_block) return;
+      await pywebview.api.copy_text(_block.text);
+      $copyBtn.textContent = 'Copied!';
+      $copyBtn.classList.add('copied');
+      setTimeout(() => {
+        $copyBtn.classList.remove('visible');
+        setTimeout(() => { $copyBtn.style.display = 'none'; _block = null; }, 150);
+      }, 800);
+    });
+  }
 
   // ── Init ──
   async function init() {
@@ -2046,8 +2173,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
         try {
           const bs = JSON.parse(await pywebview.api.get_bridge_status());
-          if (bs.exists) { bridgeState = bs; updateBridgeButton(); }
+          if (bs.exists) { bridgeState = bs; updateBridgeButton(); syncBridgeOrder(); }
         } catch(e) {}
+        renderTabs();
         switchTab(existing[0].sid);
         // Still check for updates after reconnect
         await startupUpdateCheck();
