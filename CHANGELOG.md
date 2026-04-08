@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.4.0 (2026-04-08)
+
+### New Features
+- **Tmux-backed sessions** — PTY sessions now run inside tmux. Close ShellFrame and reopen — all tabs and their terminal state survive the restart. Requires `tmux` on PATH.
+- **Auto-restore TG bridge** — Telegram bridge automatically reconnects on startup if previously configured. No more manual reconnect after restart.
+- **Right-click copy/paste** — Windows CMD-style right-click: select text → right-click to copy; no selection → right-click to paste. Code blocks also get a copy button.
+- **Sidebar rewrite** — Mouse-based drag reorder with event delegation. Two-section TG layout with active session indicator. Debug panel for troubleshooting TG switch + drag.
+- **Tab drag reorder** — Tab numbering synced with TG bridge slot order. Drag tabs to reorder, reflected in TG `/list`.
+
+### Fixes
+- **Attachment UX** — Fixed scroll stability, tab switching artifacts, and TG sync issues with file attachments.
+- **Drag conflicts** — Fixed tab drag accidentally triggering file drop handler. Sidebar drag uses internal variable instead of `dataTransfer` for reliable TG session switching.
+- **TG active indicator** — Correct highlight for active session in sidebar TG section. Fixed divider drag zone interference.
+
+### Dependencies
+- **Python**: `pywebview>=5.0`, `pyte>=0.8` (install via `pip install -r requirements.txt`)
+- **System**: `tmux` (required for session persistence — `brew install tmux` on macOS)
+- **Windows only**: `pywinpty>=2.0` (auto-installed from requirements.txt)
+
+### 新功能
+- **Tmux 持久化 Session** — PTY session 改在 tmux 內執行。關閉 ShellFrame 再重開，所有分頁和終端狀態完整恢復。需要系統安裝 `tmux`。
+- **TG 橋接自動重連** — 啟動時自動恢復先前設定的 Telegram 橋接連線，不需手動重連。
+- **右鍵複製/貼上** — Windows CMD 風格：選取文字 → 右鍵複製；無選取 → 右鍵貼上。程式碼區塊也新增複製按鈕。
+- **側邊欄重寫** — 滑鼠拖拉排序 + 事件委派架構。TG 雙區段佈局含作用中 session 指示器。新增除錯面板。
+- **分頁拖拉排序** — 分頁編號與 TG bridge slot 順序同步，拖拉排序後 TG `/list` 即時反映。
+
+### 修正
+- **附件 UX** — 修正捲動穩定性、分頁切換殘影、TG 同步問題。
+- **拖拉衝突** — 修正分頁拖拉誤觸檔案拖放。側邊欄改用內部變數取代 `dataTransfer`，TG session 切換更可靠。
+- **TG 作用中指示器** — 側邊欄 TG 區段正確高亮作用中 session，修正分隔線拖拉區域干擾。
+
+### 依賴
+- **Python**: `pywebview>=5.0`、`pyte>=0.8`（執行 `pip install -r requirements.txt`）
+- **系統**: `tmux`（session 持久化必要 — macOS 用 `brew install tmux`）
+- **僅 Windows**: `pywinpty>=2.0`（由 requirements.txt 自動安裝）
+
 ## v0.3.3 (2026-04-08)
 
 ### New Features
