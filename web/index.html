@@ -907,7 +907,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const label = cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     setupAttachKeyHandler(sid, term);
     term.onScroll(() => {
@@ -1032,6 +1032,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
         switchTab(sid);
       });
+      tab.addEventListener('dblclick', (e) => {
+        if (e.target.classList.contains('close-tab')) return;
+        renameSession(sid);
+      });
       // Drag reorder
       tab.addEventListener('dragstart', (e) => {
         _tabDragging = true;
@@ -1128,6 +1132,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
+  // ── Rename session (double-click on label) ──
+  async function renameSession(sid) {
+    const s = sessions[sid];
+    if (!s) return;
+    const newName = prompt('Session name:', s.label);
+    if (newName === null || newName.trim() === '') return;
+    s.label = newName.trim();
+    await pywebview.api.rename_session(sid, s.label);
+    renderTabs();
+  }
+
   // Event delegation for sidebar clicks
   document.getElementById('sidebar-sessions').addEventListener('click', (e) => {
     // TG badge click → switch TG active session
@@ -1147,6 +1162,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (item && item.dataset.sid) {
       switchTab(item.dataset.sid);
     }
+  });
+
+  // Double-click sidebar label to rename
+  document.getElementById('sidebar-sessions').addEventListener('dblclick', (e) => {
+    const item = e.target.closest('.sb-item');
+    if (item && item.dataset.sid) renameSession(item.dataset.sid);
   });
 
   // Mouse-based drag for sidebar reorder + TG toggle
@@ -2229,7 +2250,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (existing.length > 0) {
         for (const s of existing) {
           await reconnectSession(s.sid, s.cmd);
-          if (sessions[s.sid]) sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
+          if (sessions[s.sid]) {
+            sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
+            if (s.label) { sessions[s.sid].label = s.label; }
+          }
         }
         // Auto-restore TG bridge if config was saved
         try {

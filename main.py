@@ -510,7 +510,8 @@ class Api:
         for sid, s in self.sessions.items():
             if s.alive:
                 result.append({"sid": sid, "cmd": s.cmd, "alive": True,
-                               "bridge_enabled": getattr(s, '_bridge_enabled', True)})
+                               "bridge_enabled": getattr(s, '_bridge_enabled', True),
+                               "label": getattr(s, '_custom_label', None)})
         return json.dumps(result)
 
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
@@ -992,6 +993,17 @@ class Api:
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
             )
             self.bridge.refresh_commands()
+
+    def rename_session(self, sid: str, name: str) -> str:
+        """Rename a session. Updates bridge label if connected."""
+        s = self.sessions.get(sid)
+        if not s:
+            return json.dumps({"success": False})
+        s._custom_label = name
+        if self.bridge and sid in self.bridge.slots:
+            self.bridge.slots[sid].label = name
+            self.bridge.refresh_commands()
+        return json.dumps({"success": True})
 
     def bridge_unregister_session(self, sid: str):
         """Remove a session from the bridge."""
