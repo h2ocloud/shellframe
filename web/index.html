@@ -277,6 +277,21 @@
   }
   .sb-tg:hover { border-color: #7aa2f7; color: #7aa2f7; }
   .sb-tg.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
+  .sb-tg.active-tg { border-color: #7aa2f7; color: #7aa2f7; background: rgba(122,162,247,.1); }
+  .sb-divider {
+    display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+    font-size: 9px; color: #3b4261; user-select: none;
+  }
+  .sb-divider::before, .sb-divider::after {
+    content: ''; flex: 1; height: 1px; background: #292e42;
+  }
+  .sb-divider.drag-over { color: #7aa2f7; }
+  .sb-divider.drag-over::before, .sb-divider.drag-over::after { background: #7aa2f7; }
+  .sb-item.disabled { opacity: .45; }
+  .sb-item[draggable] { cursor: grab; }
+  .sb-item[draggable]:active { cursor: grabbing; }
+  .sb-drop-zone { min-height: 4px; transition: min-height .1s; }
+  .sb-drop-zone.drag-over { min-height: 24px; background: rgba(122,162,247,.08); border-radius: 4px; }
   .sb-footer-btn {
     display: flex; align-items: center; gap: 8px;
     padding: 6px 10px; background: none; border: none;
@@ -923,17 +938,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     renderTabs();
   }
 
+  function getTgIndex(sid) {
+    // TG index: 1-based among bridge-enabled sessions in sessionOrder
+    let idx = 0;
+    for (const id of sessionOrder) {
+      if (sessions[id]?.bridgeEnabled !== false) {
+        idx++;
+        if (id === sid) return idx;
+      }
+    }
+    return 0; // not enabled
+  }
+
   function renderTabs() {
     $tabs.innerHTML = '';
-    sessionOrder.forEach((sid, i) => {
+    const hasBridge = bridgeState && bridgeState.active;
+    sessionOrder.forEach((sid) => {
       const s = sessions[sid];
       if (!s) return;
+      const tgNum = hasBridge ? getTgIndex(sid) : 0;
       const tab = document.createElement('button');
       tab.className = 'tab' + (sid === activeId ? ' active' : '');
       tab.draggable = true;
       tab.dataset.sid = sid;
+      const numLabel = tgNum ? tgNum : '·';
+      const numOpacity = tgNum ? '.45' : '.2';
       tab.innerHTML = `
-        <span class="icon" style="opacity:.45;font-size:10px;min-width:12px">${i + 1}</span>
+        <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(s.label)}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
       `;
@@ -962,46 +993,161 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         sessionOrder.splice(fromIdx, 1);
         sessionOrder.splice(toIdx, 0, fromSid);
         renderTabs();
-        pywebview.api.reorder_sessions(JSON.stringify(sessionOrder));
+        syncBridgeOrder();
       });
       $tabs.appendChild(tab);
     });
     renderSidebar();
   }
 
+  function syncBridgeOrder() {
+    pywebview.api.reorder_sessions(JSON.stringify(
+      sessionOrder.filter(s => sessions[s]?.bridgeEnabled !== false)
+    ));
+  }
+
   // ── Sidebar ──
+  let _sbDragging = false;
+
   function renderSidebar() {
     const container = document.getElementById('sidebar-sessions');
     if (!container) return;
     container.innerHTML = '';
     const hasBridge = bridgeState && bridgeState.active;
-    sessionOrder.forEach((sid, i) => {
+    const activeTgSid = bridgeState?.active_sid || '';
+
+    // Split sessions into TG-enabled (top) and TG-disabled (bottom)
+    const enabled = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled !== false);
+    const disabled = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled === false);
+
+    let tgIdx = 0;
+    function makeItem(sid, isTgEnabled) {
       const s = sessions[sid];
-      if (!s) return;
+      if (!s) return null;
       const item = document.createElement('div');
-      item.className = 'sb-item' + (sid === activeId ? ' active' : '');
-      const on = s.bridgeEnabled !== false;
-      item.innerHTML = `<span style="opacity:.4;font-size:10px;min-width:14px">${i + 1}</span><span class="sb-label">${esc(s.label)}</span>`
-        + (hasBridge ? `<button class="sb-tg${on ? ' on' : ''}" data-sid="${sid}">TG</button>` : '');
+      const isActive = sid === activeId;
+      const isActiveTg = hasBridge && isTgEnabled && sid === activeTgSid;
+      item.className = 'sb-item' + (isActive ? ' active' : '') + (!isTgEnabled && hasBridge ? ' disabled' : '');
+      item.draggable = true;
+      item.dataset.sid = sid;
+
+      let numHtml;
+      if (hasBridge && isTgEnabled) {
+        tgIdx++;
+        numHtml = `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>`;
+      } else {
+        numHtml = `<span style="opacity:.2;font-size:10px;min-width:14px">·</span>`;
+      }
+
+      let tgHtml = '';
+      if (hasBridge && isTgEnabled) {
+        tgHtml = `<button class="sb-tg on${isActiveTg ? ' active-tg' : ''}" data-sid="${sid}" title="${isActiveTg ? 'TG active' : 'Click to switch TG here'}">${isActiveTg ? '◀ TG' : 'TG'}</button>`;
+      } else if (hasBridge) {
+        tgHtml = `<span class="sb-tg" style="opacity:.3;cursor:default">TG</span>`;
+      }
+
+      item.innerHTML = numHtml + `<span class="sb-label">${esc(s.label)}</span>` + tgHtml;
+
+      // Click session → switch tab
       item.addEventListener('click', (e) => {
-        if (e.target.dataset.sid) return;
+        if (e.target.closest('.sb-tg')) return;
         switchTab(sid);
       });
-      container.appendChild(item);
-    });
-    container.querySelectorAll('.sb-tg').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const sid = btn.dataset.sid;
-        const isOn = btn.classList.contains('on');
-        const raw = await pywebview.api.set_session_bridge(sid, !isOn);
-        const result = JSON.parse(raw);
-        if (result.success) {
-          sessions[sid].bridgeEnabled = result.enabled;
+
+      // Click TG badge → switch TG active session
+      const tgBtn = item.querySelector('.sb-tg.on');
+      if (tgBtn) {
+        tgBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await pywebview.api.switch_bridge_session(sid);
+          if (bridgeState) bridgeState.active_sid = sid;
           renderSidebar();
+        });
+      }
+
+      // Drag handlers
+      item.addEventListener('dragstart', (e) => {
+        _sbDragging = true;
+        e.dataTransfer.setData('text/plain', sid);
+        e.dataTransfer.effectAllowed = 'move';
+        item.style.opacity = '.3';
+      });
+      item.addEventListener('dragend', () => { item.style.opacity = ''; _sbDragging = false; });
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        item.style.background = '#292e42';
+      });
+      item.addEventListener('dragleave', () => { item.style.background = ''; });
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        item.style.background = '';
+        const fromSid = e.dataTransfer.getData('text/plain');
+        if (!fromSid || fromSid === sid) return;
+        // Move fromSid to same position as this item in sessionOrder
+        handleSidebarDrop(fromSid, sid, isTgEnabled);
+      });
+
+      return item;
+    }
+
+    // Render TG-enabled sessions
+    enabled.forEach(sid => {
+      const item = makeItem(sid, true);
+      if (item) container.appendChild(item);
+    });
+
+    // Divider (only when bridge is active)
+    if (hasBridge) {
+      const divider = document.createElement('div');
+      divider.className = 'sb-divider';
+      divider.textContent = 'TG off';
+      // Drop on divider → disable TG for dragged session
+      divider.addEventListener('dragover', (e) => { e.preventDefault(); divider.classList.add('drag-over'); });
+      divider.addEventListener('dragleave', () => divider.classList.remove('drag-over'));
+      divider.addEventListener('drop', (e) => {
+        e.preventDefault();
+        divider.classList.remove('drag-over');
+        const fromSid = e.dataTransfer.getData('text/plain');
+        if (fromSid && sessions[fromSid]?.bridgeEnabled !== false) {
+          toggleSessionBridge(fromSid, false);
         }
       });
+      container.appendChild(divider);
+    }
+
+    // Render TG-disabled sessions
+    disabled.forEach(sid => {
+      const item = makeItem(sid, false);
+      if (item) container.appendChild(item);
     });
+  }
+
+  async function toggleSessionBridge(sid, enabled) {
+    const raw = await pywebview.api.set_session_bridge(sid, enabled);
+    const result = JSON.parse(raw);
+    if (result.success) {
+      sessions[sid].bridgeEnabled = result.enabled;
+      renderTabs();
+    }
+  }
+
+  function handleSidebarDrop(fromSid, toSid, toIsTgEnabled) {
+    // If crossing the divider (enabled→disabled or vice versa), toggle bridge
+    const fromEnabled = sessions[fromSid]?.bridgeEnabled !== false;
+    if (fromEnabled !== toIsTgEnabled) {
+      toggleSessionBridge(fromSid, toIsTgEnabled);
+      return;
+    }
+    // Reorder within sessionOrder
+    const fromIdx = sessionOrder.indexOf(fromSid);
+    const toIdx = sessionOrder.indexOf(toSid);
+    if (fromIdx < 0 || toIdx < 0) return;
+    sessionOrder.splice(fromIdx, 1);
+    sessionOrder.splice(toIdx, 0, fromSid);
+    renderTabs();
+    pywebview.api.reorder_sessions(JSON.stringify(
+      sessionOrder.filter(s => sessions[s]?.bridgeEnabled !== false)
+    ));
   }
 
   document.getElementById('btn-sidebar').addEventListener('click', () => {
@@ -1135,13 +1281,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   document.addEventListener('dragenter', (e) => {
     e.preventDefault();
-    if (_tabDragging) return;
+    if (_tabDragging || _sbDragging) return;
     dragCounter++;
     $dropOverlay.style.display = 'flex';
   });
   document.addEventListener('dragleave', (e) => {
     e.preventDefault();
-    if (_tabDragging) return;
+    if (_tabDragging || _sbDragging) return;
     dragCounter--;
     if (dragCounter <= 0) { dragCounter = 0; $dropOverlay.style.display = 'none'; }
   });
@@ -1150,7 +1296,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     e.preventDefault();
     dragCounter = 0;
     $dropOverlay.style.display = 'none';
-    if (_tabDragging) return;
+    if (_tabDragging || _sbDragging) return;
 
     if (!activeId || !sessions[activeId]) return;
 
@@ -1531,8 +1677,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (result.exists) {
         const prev = bridgeState;
         bridgeState = result;
-        if (!prev || prev.paused !== result.paused || prev.sessions !== result.sessions) {
+        if (!prev || prev.paused !== result.paused || prev.sessions !== result.sessions || prev.active_sid !== result.active_sid) {
           updateBridgeButton();
+          renderSidebar();
         }
       }
     } catch(e) {}

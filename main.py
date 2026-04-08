@@ -771,6 +771,13 @@ class Api:
             self.bridge.refresh_commands()
         return json.dumps({"success": True})
 
+    def switch_bridge_session(self, sid: str) -> str:
+        """Switch TG bridge active session and notify TG users."""
+        if not self.bridge:
+            return json.dumps({"success": False, "message": "No bridge"})
+        self.bridge.switch_active_session(sid)
+        return json.dumps({"success": True, "active_sid": sid})
+
     def hot_reload_bridge(self) -> str:
         """Hot-reload bridge_telegram module without restarting the app.
         Preserves PTY sessions — only restarts the TG bridge with new code."""

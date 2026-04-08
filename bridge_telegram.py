@@ -1225,6 +1225,33 @@ class TelegramBridge(BridgeBase):
 
     # ── Status ──
 
+    def get_primary_active_sid(self) -> str:
+        """Return the active session sid for the primary (first) TG user."""
+        if self._user_active:
+            return next(iter(self._user_active.values()))
+        return self._slot_order[0] if self._slot_order else ""
+
+    def switch_active_session(self, sid: str):
+        """Switch all TG users to the given session and notify them."""
+        if sid not in self.slots:
+            return
+        slot = self.slots[sid]
+        for uid in list(self._user_active):
+            self._user_active[uid] = sid
+        # Also set for users with no explicit selection
+        for uid in self._user_chat:
+            self._user_active[uid] = sid
+        # Notify TG
+        last_resp = self._peek_last_response(slot)
+        switch_msg = f"Switched to {slot.label} (/{slot.index})"
+        if last_resp:
+            preview = last_resp[:3000] + "\n...(truncated)" if len(last_resp) > 3000 else last_resp
+            switch_msg += f"\n\n💬 Last AI response:\n{preview}"
+        for chat_id in set(self._user_chat.values()):
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": switch_msg,
+            })
+
     def get_status(self) -> dict:
         return {
             "bridge_id": self.bridge_id,
@@ -1234,4 +1261,5 @@ class TelegramBridge(BridgeBase):
             "paused": self.paused,
             "active": self.active,
             "sessions": len(self.slots),
+            "active_sid": self.get_primary_active_sid(),
         }
