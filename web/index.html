@@ -768,6 +768,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+  // Fit terminal to pane — always scroll to bottom unless user explicitly scrolled up
+  const _fitTimers = {};
+  function fitTerm(sid) {
+    if (_fitTimers[sid]) return;
+    _fitTimers[sid] = requestAnimationFrame(() => {
+      _fitTimers[sid] = null;
+      const s = sessions[sid];
+      if (!s) return;
+      s.fitAddon.fit();
+      if (!s._userScrolledUp) s.term.scrollToBottom();
+      pywebview.api.resize(sid, s.term.cols, s.term.rows);
+    });
+  }
+
   // ── Session management ──
   async function openSession(cmd, label) {
     const pane = document.createElement('div');
@@ -786,9 +800,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     setupAttachKeyHandler(sid, term);
+    // Track user scroll: scrolled up = true, any keystroke resets to false (follows output)
+    term.onScroll(() => {
+      const buf = term.buffer.active;
+      sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
+    });
+    term.onKey(() => { sessions[sid]._userScrolledUp = false; });
 
     // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
@@ -817,12 +837,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
 
     // Resize
-    const ro = new ResizeObserver(() => {
-      if (activeId === sid) {
-        fitAddon.fit();
-        pywebview.api.resize(sid, term.cols, term.rows);
-      }
-    });
+    const ro = new ResizeObserver(() => { if (activeId === sid) fitTerm(sid); });
     ro.observe(pane);
 
     // Process alive check (output is pushed from Python, no polling needed)
@@ -861,9 +876,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const label = cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [], attachCounter: 0, bridgeEnabled: true };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     setupAttachKeyHandler(sid, term);
+    term.onScroll(() => {
+      const buf = term.buffer.active;
+      sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
+    });
+    term.onKey(() => { sessions[sid]._userScrolledUp = false; });
 
     // Resize PTY to match new terminal size
     await pywebview.api.resize(sid, term.cols, term.rows);
@@ -894,12 +914,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
     }
 
-    const ro = new ResizeObserver(() => {
-      if (activeId === sid) {
-        fitAddon.fit();
-        pywebview.api.resize(sid, term.cols, term.rows);
-      }
-    });
+    const ro = new ResizeObserver(() => { if (activeId === sid) fitTerm(sid); });
     ro.observe(pane);
 
     // Process alive check (output is pushed from Python)
@@ -924,13 +939,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       sessions[activeId].pane.classList.remove('active');
     }
     activeId = sid;
+    localStorage.setItem('sf_active_tab', sid);
     if (sessions[sid]) {
       sessions[sid].pane.classList.add('active');
-      // Defer fit to next frame so layout is settled
-      requestAnimationFrame(() => {
-        sessions[sid].fitAddon.fit();
-        pywebview.api.resize(sid, sessions[sid].term.cols, sessions[sid].term.rows);
-      });
+      sessions[sid]._userScrolledUp = false;
+      fitTerm(sid);
       sessions[sid].term.focus();
     }
     renderTabs();
@@ -1191,12 +1204,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     sb.classList.toggle('collapsed');
     localStorage.setItem('sf_sidebar', sb.classList.contains('collapsed') ? '0' : '1');
     // Refit terminal after sidebar transition
-    setTimeout(() => {
-      if (activeId && sessions[activeId]) {
-        sessions[activeId].fitAddon.fit();
-        pywebview.api.resize(activeId, sessions[activeId].term.cols, sessions[activeId].term.rows);
-      }
-    }, 180);
+    setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
 
   // ── Attach: intercept Enter before xterm to inject file paths ──
@@ -1206,12 +1214,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (ev.key !== 'Enter' || ev.ctrlKey || ev.metaKey || ev.altKey) return true;
       const s = sessions[sid];
       if (!s || s.attachments.length === 0) return true;
-      // Block xterm Enter, inject paths + submit
-      const paths = s.attachments.map(a => a.path).join(' ');
-      pywebview.api.write_input(sid, ' ' + paths + '\r');
+      // Enter clears chip display (paths already in terminal from paste)
       s.attachments = [];
       updateImageBar();
-      return false;
+      return true; // let Enter through normally
     });
   }
 
@@ -1234,11 +1240,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         return `<span class="attach-chip" title="${esc(a.path)}">${thumb}${icon} <b>#${a.tag}</b> ${esc(name)} <span class="chip-close" data-idx="${i}">&times;</span></span>`;
       }).join('');
       bar.style.display = 'flex';
-      requestAnimationFrame(() => { if (sessions[activeId]) sessions[activeId].fitAddon.fit(); });
     } else {
       bar.style.display = 'none';
       chips.innerHTML = '';
-      requestAnimationFrame(() => { if (activeId && sessions[activeId]) sessions[activeId].fitAddon.fit(); });
     }
   }
 
@@ -1248,6 +1252,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!s.attachments.some(a => a.path === path)) {
       s.attachCounter = (s.attachCounter || 0) + 1;
       s.attachments.push({ path, dataUrl: dataUrl || null, tag: s.attachCounter });
+      // Write path directly into terminal input so Enter just works
+      pywebview.api.write_input(activeId, ' ' + path);
     }
     updateImageBar();
   }
@@ -1374,6 +1380,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('close-preview').addEventListener('click', () => {
     if (activeId && sessions[activeId]) {
       sessions[activeId].attachments = [];
+      // Clear current input line (paths already written there)
+      pywebview.api.write_input(activeId, '\x15'); // Ctrl+U
     }
     updateImageBar();
   });
@@ -1384,6 +1392,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = activeId && sessions[activeId];
     if (s && idx >= 0 && idx < s.attachments.length) {
       s.attachments.splice(idx, 1);
+      if (s.attachments.length === 0) {
+        pywebview.api.write_input(activeId, '\x15'); // Ctrl+U
+      }
       updateImageBar();
     }
   });
@@ -1520,9 +1531,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('setting-fontsize').addEventListener('change', async (e) => {
     currentFontSize = parseInt(e.target.value);
     // Apply to all existing terminals
-    Object.values(sessions).forEach(s => {
+    Object.entries(sessions).forEach(([sid, s]) => {
       s.term.options.fontSize = currentFontSize;
-      s.fitAddon.fit();
+      fitTerm(sid);
     });
     // Save
     config.settings = config.settings || {};
@@ -2176,7 +2187,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (bs.exists) { bridgeState = bs; updateBridgeButton(); syncBridgeOrder(); }
         } catch(e) {}
         renderTabs();
-        switchTab(existing[0].sid);
+        // Restore last active tab, fallback to first
+        const lastActive = localStorage.getItem('sf_active_tab');
+        const restoreSid = (lastActive && sessions[lastActive]) ? lastActive : existing[0].sid;
+        switchTab(restoreSid);
         // Still check for updates after reconnect
         await startupUpdateCheck();
         return;
