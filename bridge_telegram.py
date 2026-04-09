@@ -665,7 +665,13 @@ class TelegramBridge(BridgeBase):
         return new_texts
 
     def _peek_last_response(self, slot) -> str:
-        """Read-only peek at the last AI response block on screen (no state mutation)."""
+        """Read-only peek at the last AI response block on screen (no state mutation).
+
+        Strategy:
+        1. Scan screen+history for AI marker blocks (• / ⏺) → return last block
+        2. Fallback: return last ~12 meaningful lines from screen (strip TUI chrome)
+        3. Last resort: read raw PTY buffer via peek_fn
+        """
         all_lines = []
         history = list(slot.screen.history.top)
         cols = slot.screen.columns
@@ -675,18 +681,6 @@ class TelegramBridge(BridgeBase):
             all_lines.append(text)
         for line in slot.screen.display:
             all_lines.append(line.rstrip())
-
-        # Fallback: if pyte screen is empty, use PTY's recent buffer
-        non_empty = [l for l in all_lines if l.strip()]
-        if not non_empty and slot.peek_fn:
-            raw = slot.peek_fn()
-            if raw:
-                clean = strip_ansi(raw)
-                if clean.strip():
-                    # Return last ~10 meaningful lines
-                    lines = [l for l in clean.strip().split('\n') if l.strip()]
-                    return '\n'.join(lines[-10:])
-            return ""
 
         # Find AI response blocks (same logic as _extract_new_text)
         blocks = []
@@ -717,24 +711,70 @@ class TelegramBridge(BridgeBase):
         if current_block is not None:
             blocks.append(current_block)
 
-        if not blocks:
-            return ""
+        if blocks:
+            # Take the last block, clean up
+            last = blocks[-1]
+            while last and not last[-1]:
+                last.pop()
+            while last and not last[0]:
+                last.pop(0)
+            last = [l for l in last if not (
+                l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)
+            )]
+            text = '\n'.join(last).strip()
+            if text and text not in self._FILTERED_RESPONSES and not self._is_tool_call(last[0].strip() if last else ""):
+                return text
 
-        # Take the last block, clean up
-        last = blocks[-1]
-        while last and not last[-1]:
-            last.pop()
-        while last and not last[0]:
-            last.pop(0)
-        last = [l for l in last if not (
-            l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)
-        )]
-        text = '\n'.join(last).strip()
-        if text in self._FILTERED_RESPONSES:
-            return ""
-        if self._is_tool_call(last[0].strip() if last else ""):
-            return ""
-        return text
+        # Fallback 1: scan all_lines for any meaningful content (no AI markers found)
+        meaningful = self._extract_meaningful_lines(all_lines)
+        if meaningful:
+            return '\n'.join(meaningful[-12:])
+
+        # Fallback 2: raw PTY buffer (when pyte screen is empty)
+        if slot.peek_fn:
+            raw = slot.peek_fn()
+            if raw:
+                clean = strip_ansi(raw)
+                if clean.strip():
+                    lines = self._extract_meaningful_lines(clean.split('\n'))
+                    if lines:
+                        return '\n'.join(lines[-12:])
+        return ""
+
+    def _extract_meaningful_lines(self, lines):
+        """Filter screen lines to keep only meaningful conversation content.
+        Drops: empty, spinners, prompts, tool-call status, decoration boxes."""
+        result = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Skip pure decoration / box-drawing
+            if all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in stripped):
+                continue
+            # Skip spinner verbs ("Cooking…", "Thinking…")
+            first_word = stripped.split('…')[0].split('(')[0].split(' ')[0].rstrip('.')
+            if first_word in self._SPINNER_VERBS:
+                continue
+            # Skip prompt-only lines (› / ❯ alone)
+            if stripped in ('›', '❯', '> ', '>'):
+                continue
+            # Skip Claude Code status bar markers
+            if stripped.startswith(('? for shortcuts', 'esc to ', '⏵⏵ accept')):
+                continue
+            # Drop AI markers (• / ⏺) prefix and › prompt prefix to clean output
+            for marker in self.AI_MARKERS:
+                if stripped.startswith(marker):
+                    stripped = stripped[len(marker):].strip()
+                    break
+            if stripped.startswith('› '):
+                stripped = stripped[2:]
+            elif stripped.startswith('❯ '):
+                stripped = stripped[2:]
+            if not stripped:
+                continue
+            result.append(stripped)
+        return result
 
     def _flush_loop(self):
         """Extract new text from virtual terminal and send to TG."""
@@ -1096,11 +1136,21 @@ class TelegramBridge(BridgeBase):
             lines = ["📋 Sessions:\n"]
             active_sid = self.get_active_sid(user_id)
             with self._slots_lock:
-                for sid in self._slot_order:
-                    slot = self.slots[sid]
-                    marker = " ◀" if sid == active_sid else ""
-                    lines.append(f"  /{slot.index}  {slot.label}{marker}")
-            if not self._slot_order:
+                slots_snapshot = [(sid, self.slots[sid]) for sid in self._slot_order]
+            for sid, slot in slots_snapshot:
+                marker = " ◀ active" if sid == active_sid else ""
+                lines.append(f"\n/{slot.index}  {slot.label}{marker}")
+                preview = self._peek_last_response(slot)
+                if preview:
+                    # Compact preview: first 3 lines, max 200 chars
+                    plines = [l for l in preview.split('\n') if l.strip()][:3]
+                    snippet = '\n'.join(f"   {l}" for l in plines)
+                    if len(snippet) > 220:
+                        snippet = snippet[:220] + "…"
+                    lines.append(snippet)
+                else:
+                    lines.append("   (no recent activity)")
+            if not slots_snapshot:
                 lines.append("  (no sessions)")
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": "\n".join(lines),
