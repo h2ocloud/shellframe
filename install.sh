@@ -79,11 +79,13 @@ ln -sf "$INSTALL_DIR/sfctl.py" "$BIN_DIR/sfctl"
 
 # macOS .app (for Spotlight / Launchpad)
 if [ "$(uname)" = "Darwin" ]; then
-  APP_LINK="${HOME}/Applications/ShellFrame.app"
+  APP_DEST="${HOME}/Applications/ShellFrame.app"
   mkdir -p ~/Applications
-  # Remove stale symlink if exists
-  [ -L "$APP_LINK" ] && rm "$APP_LINK"
-  ln -sf "$INSTALL_DIR/ShellFrame.app" "$APP_LINK"
+  # Copy .app bundle (not symlink — Spotlight won't index symlinks to dot-folders)
+  rm -rf "$APP_DEST"
+  cp -R "$INSTALL_DIR/ShellFrame.app" "$APP_DEST"
+  # Register with Launch Services for Spotlight indexing
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST" 2>/dev/null
   echo "  Mac app: ~/Applications/ShellFrame.app (Spotlight: ShellFrame)"
 fi
 
