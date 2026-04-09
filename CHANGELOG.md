@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.5.1 (2026-04-09)
+
+### New Features
+- **AI busy indicator** — Tabs and sidebar entries now show a pulsing orange dot when an AI session is actively responding. Detection is purely client-side: lights up only when PTY output streams continuously (≥3 chunks spread over ≥400ms in a 1.5s window), so single-frame bursts from page reload, tmux reattach, or window resize don't false-trigger.
+- **`/list` shows session previews** — Telegram `/list` now embeds a 3-line preview of each session's last AI response, so you can pick by content instead of by sid.
+- **One-command install** — `install.sh` now runs end-to-end: clones, sets up venv, auto-installs `tmux` via Homebrew if missing, drops the `.app` bundle into `/Applications` for Launchpad/Spotlight visibility, and resolves the launcher PATH through symlinks.
+
+### Fixes
+- **TG bridge: switch always shows context** — `/N` switch messages used to come back empty when pyte couldn't find a `•`/`⏺` AI marker on the screen. The bridge now prefers `tmux capture-pane` (the same renderer you'd see attaching directly), with the pyte parser kept as fallback. Far fewer "Switched to claude" messages with no preview.
+- **Scrollbar always visible** — WKWebView's auto-hiding overlay scrollbar made it nearly impossible to grab the xterm scrollbar on long conversations. Now styled as a 10px draggable bar that's always visible.
+- **Scroll position survives tab switch** — Switching to another tab and back used to drop you to the bottom of the previous one. Scroll lock state is now preserved across `switchTab`.
+- **Scroll position robust to overflow** — `_pushOutput`'s preserve-scroll path now anchors on absolute line first and falls back to offset-from-bottom if scrollback drops the original line.
+- **`.app` launcher PATH** — Resolve symlinks before computing the bundle's PATH so launching from `/Applications` finds Homebrew binaries.
+
+### 新功能
+- **AI 忙碌燈號** — 分頁與側邊欄上的 session 名稱旁，AI 在回應時會顯示一個 pulse 中的橘色圓點。偵測完全在前端完成：只有在 PTY 持續吐 output 時（1.5 秒內 ≥3 次且 spread ≥400ms）才會亮，所以 reload UI、tmux reattach、視窗縮放等瞬間爆發不會誤觸。
+- **`/list` 顯示對話 preview** — Telegram `/list` 每個 session 會帶最後 AI 回應的 3 行 preview，用對話內容找 session 而不是看 sid。
+- **一行指令安裝** — `install.sh` 現在跑完整流程：clone、建 venv、缺 `tmux` 自動用 Homebrew 裝起來、把 `.app` 複製到 `/Applications` 讓 Launchpad / Spotlight 找得到，並 resolve symlinks 設好 launcher PATH。
+
+### 修正
+- **TG 切換永遠帶上下文** — `/N` 切 session 之前若 pyte 找不到 `•`/`⏺` AI marker 就送出空 preview。Bridge 改成優先用 `tmux capture-pane`（跟你直接 attach 看到的同一份內容），pyte 留作 fallback，幾乎不會再出現空 preview。
+- **Scrollbar 永遠看得到** — WKWebView 的自動隱藏 overlay scrollbar 在長對話下幾乎抓不到。現在 xterm viewport 強制顯示 10px 可拖的 scrollbar。
+- **切 tab 不再掉到底** — 在 A tab 滾上去看歷史，切到 B tab 再切回 A，scroll 位置會留在原本的位置而不是被拉回最底部。
+- **Scroll 位置抗 scrollback overflow** — `_pushOutput` 保留位置時優先用絕對行號，超出 scrollback 時自動 fallback 到「距離底部 N 行」的相對錨點。
+- **`.app` launcher PATH** — 從 `/Applications` 啟動時先 resolve symlinks 才推算 PATH，確保抓得到 Homebrew binaries。
+
 ## v0.5.0 (2026-04-09)
 
 ### New Features

@@ -34,6 +34,20 @@
   .tab .close-tab:hover { color: #f7768e; background: #292e42; }
   .tab[draggable] { cursor: grab; }
   .tab[draggable]:active { cursor: grabbing; }
+  .busy-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: transparent; flex-shrink: 0;
+    transition: background .3s, box-shadow .3s;
+  }
+  .busy-dot.on {
+    background: #e0af68;
+    box-shadow: 0 0 6px #e0af68, 0 0 2px #e0af68;
+    animation: busy-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes busy-pulse {
+    0%, 100% { opacity: .55; }
+    50%      { opacity: 1; }
+  }
   #btn-new-tab, .tab-action {
     padding: 4px 10px; margin-left: 2px; background: none; border: 1px solid #292e42;
     color: #565f89; border-radius: 6px; cursor: pointer; font-size: 16px;
@@ -71,6 +85,19 @@
   .term-pane.active { display: block; }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
+  /* Force xterm scrollbar always visible (WKWebView overlay scrollbars are
+     hidden by default and impossible to grab on long conversations) */
+  .xterm .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: #3b4261 transparent;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  .xterm .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background: #3b4261; border-radius: 5px; min-height: 30px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: #565f89; background-clip: padding-box; }
 
   body { display: flex; flex-direction: column; }
 
@@ -720,6 +747,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   window._pushOutput = function(sid, data) {
     const s = sessions[sid];
     if (!s) return;
+    const now = Date.now();
+    s._lastOutputTs = now;
+    if (!s._pushTimes) s._pushTimes = [];
+    s._pushTimes.push(now);
+    if (s._pushTimes.length > 12) s._pushTimes.shift();
     if (s._userScrolledUp) {
       // Pin to the same content line. Track offset-from-bottom too in case
       // scrollback overflows and absolute line drops off the top.
@@ -844,7 +876,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     setupAttachKeyHandler(sid, term);
     // Track user scroll: scrolled up = true, any keystroke resets to false (follows output)
@@ -923,7 +955,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     fitAddon.fit();
 
     const label = cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     setupAttachKeyHandler(sid, term);
     term.onScroll(() => {
@@ -1040,6 +1072,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const numLabel = tgNum ? tgNum : '·';
       const numOpacity = tgNum ? '.45' : '.2';
       tab.innerHTML = `
+        <span class="busy-dot${s._busy ? ' on' : ''}"></span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(s.label)}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
@@ -1111,6 +1144,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.dataset.sid = sid;
       el.dataset.section = 'on';
       el.innerHTML =
+        `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
         (hasBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         (hasBridge ? `<span class="sb-tg on${isActiveTg ? ' active-tg' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '');
@@ -1132,6 +1166,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         el.dataset.sid = sid;
         el.dataset.section = 'off';
         el.innerHTML =
+          `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
           `<span style="opacity:.2;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
           `<span class="sb-tg" style="opacity:.3">TG</span>`;
@@ -1907,6 +1942,39 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
     } catch(e) {}
   }, 3000);
+
+  // ── Busy indicator tick ──
+  // Mark a session as "busy" only when PTY output is *streaming continuously*:
+  //   ≥3 push events within the last 1500ms AND spread over ≥400ms.
+  // The spread check filters out single-frame bursts (page reload, tmux
+  // reattach, window resize) that emit a few chunks back-to-back but aren't
+  // a real spinner. A real Claude/Codex spinner emits ~10 chunks/sec for the
+  // duration of thinking → easily passes both checks.
+  // Direct DOM toggle (no full re-render) avoids interrupting drag/click.
+  const BUSY_WINDOW_MS = 1500;
+  const BUSY_MIN_SPREAD_MS = 400;
+  const BUSY_MIN_PUSHES = 3;
+  setInterval(() => {
+    const now = Date.now();
+    for (const sid of Object.keys(sessions)) {
+      const s = sessions[sid];
+      if (!s) continue;
+      let isBusy = false;
+      if (s._pushTimes && s._pushTimes.length >= BUSY_MIN_PUSHES) {
+        const recent = s._pushTimes.filter(t => now - t < BUSY_WINDOW_MS);
+        if (recent.length >= BUSY_MIN_PUSHES) {
+          const spread = recent[recent.length - 1] - recent[0];
+          isBusy = spread >= BUSY_MIN_SPREAD_MS;
+        }
+      }
+      if (s._busy === isBusy) continue;
+      s._busy = isBusy;
+      const tabDot = $tabs.querySelector(`.tab[data-sid="${sid}"] .busy-dot`);
+      if (tabDot) tabDot.classList.toggle('on', isBusy);
+      const sbDot = document.querySelector(`#sidebar-sessions [data-sid="${sid}"] .busy-dot`);
+      if (sbDot) sbDot.classList.toggle('on', isBusy);
+    }
+  }, 500);
 
   // ── About modal + update check ──
   const $modalAbout = document.getElementById('modal-about');
