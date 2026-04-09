@@ -4,7 +4,17 @@
 if [ -f "$HOME/.zprofile" ]; then source "$HOME/.zprofile"; fi
 if [ -f "$HOME/.zshrc" ]; then source "$HOME/.zshrc" 2>/dev/null; fi
 
-DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+# Resolve real path through symlinks (~/Applications/ShellFrame.app is a symlink)
+SELF="$0"
+if [ -L "$SELF" ]; then
+  SELF="$(readlink "$SELF")"
+fi
+DIR="$(cd "$(dirname "$SELF")/../../.." 2>/dev/null && pwd)"
+
+# If DIR doesn't have .venv, try the hardcoded install path as fallback
+if [ ! -d "$DIR/.venv" ] && [ ! -d "$DIR/libexec/.venv" ]; then
+  DIR="$HOME/.local/apps/shellframe"
+fi
 
 # Support both regular and Homebrew installs
 if [ -d "$DIR/libexec/.venv" ]; then

@@ -87,18 +87,16 @@ if [ "$(uname)" = "Darwin" ]; then
   echo "  Mac app: ~/Applications/ShellFrame.app (Spotlight: ShellFrame)"
 fi
 
-# Ensure ~/.local/bin is in PATH
-if ! echo "$PATH" | tr ':' '\n' | grep -q "$BIN_DIR"; then
-  SHELL_RC=""
-  case "$(basename "$SHELL")" in
-    zsh)  SHELL_RC="$HOME/.zshrc" ;;
-    bash) SHELL_RC="$HOME/.bashrc" ;;
-    fish) SHELL_RC="$HOME/.config/fish/config.fish" ;;
-  esac
-  if [ -n "$SHELL_RC" ] && ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
-    echo "  Added ~/.local/bin to PATH in $(basename "$SHELL_RC")"
-  fi
+# Ensure ~/.local/bin is in PATH (always check shell RC, not current env)
+SHELL_RC=""
+case "$(basename "${SHELL:-zsh}")" in
+  zsh)  SHELL_RC="$HOME/.zshrc" ;;
+  bash) SHELL_RC="$HOME/.bashrc" ;;
+  fish) SHELL_RC="$HOME/.config/fish/config.fish" ;;
+esac
+if [ -n "$SHELL_RC" ] && ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+  echo "  Added ~/.local/bin to PATH in $(basename "$SHELL_RC")"
 fi
 
 echo ""
