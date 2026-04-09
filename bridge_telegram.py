@@ -680,29 +680,24 @@ class TelegramBridge(BridgeBase):
     def _detect_menu_prompt(self, slot) -> str:
         """Detect a numbered menu prompt waiting for user input.
         Returns formatted menu string or empty if none found."""
-        # Scan current screen for ❯ 1. xxx / 2. yyy / 3. zzz pattern
+        # Scan current screen for consecutive "N. xxx" lines (with optional ❯ cursor)
+        # Cursor ❯ may be on any line, not just the first
         lines = [l.rstrip() for l in slot.screen.display]
         menu_lines = []
-        in_menu = False
         for line in lines:
-            stripped = line.strip()
-            # Match "❯ 1. xxx" (first option, indicates start of menu)
-            m = re.match(r'^[❯›]\s*(\d+)\.\s*(.+)$', stripped)
+            # Strip leading ❯/› cursor markers and whitespace
+            stripped = line.lstrip().lstrip('❯›').lstrip()
+            # Match "N. xxx" or "N) xxx"
+            m = re.match(r'^(\d+)[\.\)]\s+(.+)$', stripped)
             if m:
-                in_menu = True
-                menu_lines = [f"{m.group(1)}. {m.group(2)}"]
-                continue
-            if in_menu:
-                # Match continuation lines: "  2. xxx", "  3. xxx"
-                m2 = re.match(r'^(\d+)\.\s*(.+)$', stripped)
-                if m2:
-                    menu_lines.append(f"{m2.group(1)}. {m2.group(2)}")
-                    continue
-                # End markers
-                if 'Esc to cancel' in stripped or 'Tab to' in stripped or not stripped:
+                menu_lines.append(f"{m.group(1)}. {m.group(2)}")
+            elif menu_lines:
+                # Hit end markers — stop collecting
+                if 'Esc to cancel' in line or 'Tab to' in line or not line.strip():
                     if len(menu_lines) >= 2:
                         break
-                    in_menu = False
+                # Non-menu line in middle — reset (false positive)
+                if line.strip() and not re.search(r'esc|cancel|tab', line, re.I):
                     menu_lines = []
         if len(menu_lines) >= 2:
             return "❓ Choose an option:\n" + "\n".join(menu_lines) + "\n\nReply with the number (1, 2, ...)"
