@@ -751,7 +751,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     s._lastOutputTs = now;
     if (!s._pushTimes) s._pushTimes = [];
     s._pushTimes.push(now);
-    if (s._pushTimes.length > 12) s._pushTimes.shift();
+    if (s._pushTimes.length > 30) s._pushTimes.shift();
     if (s._userScrolledUp) {
       // Pin to the same content line. Track offset-from-bottom too in case
       // scrollback overflows and absolute line drops off the top.
@@ -1944,23 +1944,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }, 3000);
 
   // ── Busy indicator tick ──
-  // Mark a session as "busy" only when PTY output is *streaming continuously*:
-  //   ≥3 push events within the last 1500ms AND spread over ≥400ms.
-  // The spread check filters out single-frame bursts (page reload, tmux
-  // reattach, window resize) that emit a few chunks back-to-back but aren't
-  // a real spinner. A real Claude/Codex spinner emits ~10 chunks/sec for the
-  // duration of thinking → easily passes both checks.
-  // Direct DOM toggle (no full re-render) avoids interrupting drag/click.
-  const BUSY_WINDOW_MS = 1500;
-  const BUSY_MIN_SPREAD_MS = 400;
-  const BUSY_MIN_PUSHES = 3;
+  // Mark a session as "busy" when PTY output is streaming. Lenient enough
+  // for slow spinners (Codex emits ~1 chunk/sec) while filtering out
+  // single-frame bursts (reload/reattach/resize).
+  //
+  // Conditions for busy:
+  //   1. Last push happened within 1200ms (recent activity), AND
+  //   2. At least 2 pushes in the last 3000ms with spread ≥600ms
+  //      (rules out single-burst events).
+  const BUSY_RECENT_MS = 1200;
+  const BUSY_WINDOW_MS = 3000;
+  const BUSY_MIN_PUSHES = 2;
+  const BUSY_MIN_SPREAD_MS = 600;
   setInterval(() => {
     const now = Date.now();
     for (const sid of Object.keys(sessions)) {
       const s = sessions[sid];
       if (!s) continue;
       let isBusy = false;
-      if (s._pushTimes && s._pushTimes.length >= BUSY_MIN_PUSHES) {
+      if (s._lastOutputTs && now - s._lastOutputTs < BUSY_RECENT_MS && s._pushTimes) {
         const recent = s._pushTimes.filter(t => now - t < BUSY_WINDOW_MS);
         if (recent.length >= BUSY_MIN_PUSHES) {
           const spread = recent[recent.length - 1] - recent[0];
@@ -1974,7 +1976,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const sbDot = document.querySelector(`#sidebar-sessions [data-sid="${sid}"] .busy-dot`);
       if (sbDot) sbDot.classList.toggle('on', isBusy);
     }
-  }, 500);
+  }, 300);
 
   // ── About modal + update check ──
   const $modalAbout = document.getElementById('modal-about');
