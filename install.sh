@@ -9,26 +9,18 @@ BIN_DIR="${HOME}/.local/bin"
 
 echo "Installing ShellFrame..."
 
-# Check prerequisites
-if ! command -v git &>/dev/null; then
-  echo "Error: git is required. Install it first:"
-  echo "  macOS:  xcode-select --install"
-  echo "  Linux:  sudo apt install git"
-  exit 1
-fi
-
-# Auto-install system dependencies
+# ── Helper ──────────────────────────────────────────────────
 install_if_missing() {
-  local cmd="$1" pkg_brew="$2" pkg_apt="$3" pkg_dnf="$4"
+  local cmd="$1" pkg_brew="$2" pkg_apt="${3:-$2}" pkg_dnf="${4:-$2}"
   if command -v "$cmd" &>/dev/null; then return 0; fi
-  echo "$cmd not found. Installing..."
+  echo "  Installing $cmd..."
   if [ "$(uname)" = "Darwin" ]; then
     if command -v brew &>/dev/null; then
-      brew install "$pkg_brew"
+      brew install -q "$pkg_brew"
     else
-      echo "  Error: Homebrew required to install $cmd. Install Homebrew first:"
-      echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-      return 1
+      echo "  Error: Homebrew is required. Install it first:"
+      echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+      exit 1
     fi
   elif command -v apt-get &>/dev/null; then
     sudo apt-get update -q && sudo apt-get install -y -q $pkg_apt
@@ -38,30 +30,33 @@ install_if_missing() {
     sudo pacman -S --noconfirm "$cmd"
   else
     echo "  Error: Could not install $cmd. Install it manually and re-run."
-    return 1
+    exit 1
   fi
 }
 
-# Python 3 — core runtime
+# ── 1. System dependencies ──────────────────────────────────
+echo "Checking dependencies..."
+
+# git
+if ! command -v git &>/dev/null; then
+  echo "Error: git is required."
+  [ "$(uname)" = "Darwin" ] && echo "  Run: xcode-select --install" || echo "  Run: sudo apt install git"
+  exit 1
+fi
+
+# Python 3
 if ! command -v python3 &>/dev/null; then
   if [ "$(uname)" = "Darwin" ]; then
-    if command -v brew &>/dev/null; then
-      brew install python@3.12
-    else
-      echo "  Installing Xcode CLI tools (includes Python 3)..."
-      xcode-select --install 2>/dev/null || true
-      echo "  Run this installer again after Xcode tools finish installing."
-      exit 1
-    fi
+    install_if_missing python3 python@3.12
   else
     install_if_missing python3 python@3.12 "python3 python3-venv" python3
   fi
 fi
 
-# tmux — session persistence (sessions survive ShellFrame restart)
+# tmux (session persistence — sessions survive ShellFrame restart)
 install_if_missing tmux tmux tmux tmux
 
-# Clone or update
+# ── 2. Clone or update ──────────────────────────────────────
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "Updating existing installation..."
   cd "$INSTALL_DIR" && git pull --ff-only
@@ -73,21 +68,20 @@ fi
 
 cd "$INSTALL_DIR"
 
-# Set up Python venv
+# ── 3. Python venv + pip dependencies ───────────────────────
 if [ ! -d ".venv" ]; then
   echo "Creating virtual environment..."
   python3 -m venv .venv
 fi
-echo "Installing dependencies..."
+echo "Installing Python dependencies..."
 .venv/bin/pip install -q -r requirements.txt
 
-# CLI launchers
+# ── 4. CLI launchers ────────────────────────────────────────
 mkdir -p "$BIN_DIR"
 
-# shellframe — main app
+# shellframe — main GUI app
 cat > "$BIN_DIR/shellframe" << 'LAUNCHER'
 #!/bin/bash
-# Source user profile for full PATH (nvm, etc.)
 if [ -f "$HOME/.zprofile" ]; then source "$HOME/.zprofile" 2>/dev/null; fi
 if [ -f "$HOME/.zshrc" ]; then source "$HOME/.zshrc" 2>/dev/null; fi
 exec ~/.local/apps/shellframe/.venv/bin/python ~/.local/apps/shellframe/main.py "$@"
@@ -95,28 +89,39 @@ LAUNCHER
 chmod +x "$BIN_DIR/shellframe"
 
 # sfctl — remote control for AI agents
-ln -sf "$INSTALL_DIR/sfctl.py" "$BIN_DIR/sfctl"
+cat > "$BIN_DIR/sfctl" << 'SFCTL'
+#!/bin/bash
+exec ~/.local/apps/shellframe/.venv/bin/python ~/.local/apps/shellframe/sfctl.py "$@"
+SFCTL
+chmod +x "$BIN_DIR/sfctl"
 
-# macOS .app (for Spotlight / Launchpad)
+# ── 5. macOS .app (Spotlight + Launchpad + Finder) ──────────
 if [ "$(uname)" = "Darwin" ]; then
-  # Try /Applications first (visible in Launchpad), fall back to ~/Applications
+  # Prefer /Applications (Launchpad visible), fall back to ~/Applications
   if [ -w /Applications ] || [ -w /Applications/ShellFrame.app ]; then
     APP_DEST="/Applications/ShellFrame.app"
   else
     APP_DEST="${HOME}/Applications/ShellFrame.app"
     mkdir -p ~/Applications
   fi
-  # Copy .app bundle (not symlink — Spotlight/Launchpad won't index symlinks to dot-folders)
+
+  # Copy .app bundle (not symlink — Spotlight/Launchpad ignore symlinks to dot-folders)
   rm -rf "$APP_DEST"
   cp -R "$INSTALL_DIR/ShellFrame.app" "$APP_DEST"
-  # Also clean up old location if migrating
+
+  # Clean up old ~/Applications copy if we migrated to /Applications
   [ "$APP_DEST" = "/Applications/ShellFrame.app" ] && rm -rf "${HOME}/Applications/ShellFrame.app" 2>/dev/null
-  # Register with Launch Services for Spotlight/Launchpad
-  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST" 2>/dev/null
-  echo "  Mac app: $APP_DEST (Spotlight & Launchpad)"
+
+  # Ad-hoc code sign (unsigned apps may be hidden by Gatekeeper in Finder)
+  codesign --force --deep --sign - "$APP_DEST" 2>/dev/null || true
+
+  # Register with Launch Services for Spotlight indexing
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST" 2>/dev/null || true
+
+  echo "  App: $APP_DEST"
 fi
 
-# Ensure ~/.local/bin is in PATH (always check shell RC, not current env)
+# ── 6. Ensure ~/.local/bin is in PATH ───────────────────────
 SHELL_RC=""
 case "$(basename "${SHELL:-zsh}")" in
   zsh)  SHELL_RC="$HOME/.zshrc" ;;
@@ -128,9 +133,12 @@ if [ -n "$SHELL_RC" ] && ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
   echo "  Added ~/.local/bin to PATH in $(basename "$SHELL_RC")"
 fi
 
+# ── Done ────────────────────────────────────────────────────
+VERSION=$(.venv/bin/python -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo '?')
 echo ""
-echo "ShellFrame v$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo '?') installed!"
+echo "✅ ShellFrame v${VERSION} installed!"
 echo ""
-echo "  Launch:  shellframe"
-echo "  or open ShellFrame from Spotlight"
+echo "  Launch:    shellframe"
+echo "  Spotlight: search \"ShellFrame\""
+echo "  Launchpad: look for ShellFrame icon"
 echo ""
