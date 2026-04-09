@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.2 (2026-04-09)
+
+### New Features
+- **TG menu prompts** — When an AI session is waiting on a numbered choice (e.g., Claude permission dialog `❯ 1. Yes / 2. No`), the bridge now forwards the options to TG. Reply with just `1`, `2`, etc. and the digit is sent raw (no `Howard:` prefix) so the CLI picks the option.
+
+### 新功能
+- **TG 選單回應** — AI session 卡在編號選項（例如 Claude 權限對話框 `❯ 1. Yes / 2. No`）時，bridge 會把選項送到 TG。直接回 `1`、`2` 等數字即可，bridge 會跳過 `Howard:` 前綴讓 CLI 正確選擇。
+
 ## v0.5.1 (2026-04-09)
 
 ### New Features

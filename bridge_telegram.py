@@ -236,6 +236,7 @@ class SessionSlot:
         self.first_output_time = 0
         self.sent_texts = []
         self.has_user_msg = False
+        self.pending_menu = False  # True if last extract found a menu prompt
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
         self.screen = pyte.HistoryScreen(200, 50, history=10000)
@@ -663,7 +664,49 @@ class TelegramBridge(BridgeBase):
         if len(slot.sent_responses) > 200:
             slot.sent_responses = set(list(slot.sent_responses)[-100:])
 
+        # If no normal responses extracted, check for a pending menu prompt
+        # (e.g., Claude permission dialog: ❯ 1. Yes / 2. No)
+        if not new_texts:
+            menu = self._detect_menu_prompt(slot)
+            if menu and menu not in slot.sent_responses:
+                slot.sent_responses.add(menu)
+                slot.pending_menu = True
+                new_texts.append(menu)
+        else:
+            slot.pending_menu = False
+
         return new_texts
+
+    def _detect_menu_prompt(self, slot) -> str:
+        """Detect a numbered menu prompt waiting for user input.
+        Returns formatted menu string or empty if none found."""
+        # Scan current screen for ❯ 1. xxx / 2. yyy / 3. zzz pattern
+        lines = [l.rstrip() for l in slot.screen.display]
+        menu_lines = []
+        in_menu = False
+        for line in lines:
+            stripped = line.strip()
+            # Match "❯ 1. xxx" (first option, indicates start of menu)
+            m = re.match(r'^[❯›]\s*(\d+)\.\s*(.+)$', stripped)
+            if m:
+                in_menu = True
+                menu_lines = [f"{m.group(1)}. {m.group(2)}"]
+                continue
+            if in_menu:
+                # Match continuation lines: "  2. xxx", "  3. xxx"
+                m2 = re.match(r'^(\d+)\.\s*(.+)$', stripped)
+                if m2:
+                    menu_lines.append(f"{m2.group(1)}. {m2.group(2)}")
+                    continue
+                # End markers
+                if 'Esc to cancel' in stripped or 'Tab to' in stripped or not stripped:
+                    if len(menu_lines) >= 2:
+                        break
+                    in_menu = False
+                    menu_lines = []
+        if len(menu_lines) >= 2:
+            return "❓ Choose an option:\n" + "\n".join(menu_lines) + "\n\nReply with the number (1, 2, ...)"
+        return ""
 
     @staticmethod
     def _tmux_capture(sid: str, history_lines: int = 3000) -> str:
@@ -1110,8 +1153,18 @@ class TelegramBridge(BridgeBase):
         parts = []
         if text:
             is_cli_cmd = text.startswith("/")
+            # If session has a pending menu and user replied with just a digit,
+            # send raw without prefix so the CLI selects the option
+            is_menu_choice = (
+                slot.pending_menu
+                and text.strip().isdigit()
+                and 1 <= int(text.strip()) <= 9
+            )
             if is_cli_cmd:
                 parts.append(text)
+            elif is_menu_choice:
+                parts.append(text.strip())
+                slot.pending_menu = False
             elif self.config.prefix_enabled:
                 parts.append(f"{username}: {text}")
             else:
