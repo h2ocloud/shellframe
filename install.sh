@@ -99,14 +99,21 @@ ln -sf "$INSTALL_DIR/sfctl.py" "$BIN_DIR/sfctl"
 
 # macOS .app (for Spotlight / Launchpad)
 if [ "$(uname)" = "Darwin" ]; then
-  APP_DEST="${HOME}/Applications/ShellFrame.app"
-  mkdir -p ~/Applications
-  # Copy .app bundle (not symlink — Spotlight won't index symlinks to dot-folders)
+  # Try /Applications first (visible in Launchpad), fall back to ~/Applications
+  if [ -w /Applications ] || [ -w /Applications/ShellFrame.app ]; then
+    APP_DEST="/Applications/ShellFrame.app"
+  else
+    APP_DEST="${HOME}/Applications/ShellFrame.app"
+    mkdir -p ~/Applications
+  fi
+  # Copy .app bundle (not symlink — Spotlight/Launchpad won't index symlinks to dot-folders)
   rm -rf "$APP_DEST"
   cp -R "$INSTALL_DIR/ShellFrame.app" "$APP_DEST"
-  # Register with Launch Services for Spotlight indexing
+  # Also clean up old location if migrating
+  [ "$APP_DEST" = "/Applications/ShellFrame.app" ] && rm -rf "${HOME}/Applications/ShellFrame.app" 2>/dev/null
+  # Register with Launch Services for Spotlight/Launchpad
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST" 2>/dev/null
-  echo "  Mac app: ~/Applications/ShellFrame.app (Spotlight: ShellFrame)"
+  echo "  Mac app: $APP_DEST (Spotlight & Launchpad)"
 fi
 
 # Ensure ~/.local/bin is in PATH (always check shell RC, not current env)
