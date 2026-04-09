@@ -721,9 +721,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = sessions[sid];
     if (!s) return;
     if (s._userScrolledUp) {
-      // Preserve scroll position while writing new data
-      const vp = s.term.buffer.active.viewportY;
-      s.term.write(data, () => { s.term.scrollToLine(vp); });
+      // Pin to the same content line. Track offset-from-bottom too in case
+      // scrollback overflows and absolute line drops off the top.
+      const buf = s.term.buffer.active;
+      const vp = buf.viewportY;
+      const offsetFromBottom = buf.baseY - buf.viewportY;
+      s.term.write(data, () => {
+        const nb = s.term.buffer.active;
+        // Prefer absolute position; if it would put us below the new bottom
+        // (impossible) or above 0, fall back to offset-from-bottom anchor.
+        const target = vp <= nb.baseY ? vp : Math.max(0, nb.baseY - offsetFromBottom);
+        s.term.scrollToLine(target);
+      });
     } else {
       s.term.write(data);
     }
@@ -979,7 +988,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     localStorage.setItem('sf_active_tab', sid);
     if (sessions[sid]) {
       sessions[sid].pane.classList.add('active');
-      sessions[sid]._userScrolledUp = false;
+      // Preserve user's scroll position on tab switch — don't force-bottom.
+      // _userScrolledUp stays as-is so fitTerm respects current position.
       fitTerm(sid);
       sessions[sid].term.focus();
     }

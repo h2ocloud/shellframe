@@ -6,6 +6,7 @@ Zero external dependencies (uses urllib).
 
 import json
 import re
+import subprocess
 import threading
 import time
 import urllib.error
@@ -228,7 +229,7 @@ class SessionSlot:
         self.sid = sid
         self.label = label
         self.write_fn = write_fn
-        self.peek_fn = peek_fn  # returns recent PTY bytes as fallback
+        self.peek_fn = peek_fn  # returns recent PTY bytes (last ~1KB ring buffer)
         self.index = index
         self.output_lock = threading.Lock()
         self.last_output_time = 0
@@ -664,23 +665,44 @@ class TelegramBridge(BridgeBase):
 
         return new_texts
 
+    @staticmethod
+    def _tmux_capture(sid: str, history_lines: int = 3000) -> str:
+        """Capture a tmux pane's rendered scrollback as plain text. Returns ''
+        if tmux unavailable or session missing. Uses sf_<sid> naming convention."""
+        try:
+            r = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-J",
+                 "-t", f"sf_{sid}",
+                 "-S", f"-{history_lines}"],
+                capture_output=True, text=True, timeout=3)
+            if r.returncode == 0:
+                return r.stdout
+        except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
+            pass
+        return ""
+
     def _peek_last_response(self, slot) -> str:
         """Read-only peek at the last AI response block on screen (no state mutation).
 
         Strategy:
-        1. Scan screen+history for AI marker blocks (• / ⏺) → return last block
-        2. Fallback: return last ~12 meaningful lines from screen (strip TUI chrome)
-        3. Last resort: read raw PTY buffer via peek_fn
+        1. Prefer tmux capture-pane (battle-tested renderer, handles all TUI cases)
+        2. Else scan pyte screen+history for AI marker blocks (• / ⏺)
+        3. Fallback: return last ~12 meaningful lines from whichever source
+        4. Last resort: read raw PTY ring buffer via peek_fn
         """
         all_lines = []
-        history = list(slot.screen.history.top)
-        cols = slot.screen.columns
-        # Only scan last 200 history lines + screen (enough for context)
-        for hist_line in history[-200:]:
-            text = "".join(hist_line[col].data for col in range(cols)).rstrip()
-            all_lines.append(text)
-        for line in slot.screen.display:
-            all_lines.append(line.rstrip())
+        # Prefer tmux capture — it gives clean rendered text including scrollback
+        captured = self._tmux_capture(slot.sid)
+        if captured:
+            all_lines = captured.split('\n')
+        if not all_lines:
+            history = list(slot.screen.history.top)
+            cols = slot.screen.columns
+            for hist_line in history[-200:]:
+                text = "".join(hist_line[col].data for col in range(cols)).rstrip()
+                all_lines.append(text)
+            for line in slot.screen.display:
+                all_lines.append(line.rstrip())
 
         # Find AI response blocks (same logic as _extract_new_text)
         blocks = []
