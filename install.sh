@@ -17,10 +17,34 @@ if ! command -v git &>/dev/null; then
   exit 1
 fi
 
-if ! command -v python3 &>/dev/null; then
-  echo "Python 3 not found. Attempting to install..."
+# Auto-install system dependencies
+install_if_missing() {
+  local cmd="$1" pkg_brew="$2" pkg_apt="$3" pkg_dnf="$4"
+  if command -v "$cmd" &>/dev/null; then return 0; fi
+  echo "$cmd not found. Installing..."
   if [ "$(uname)" = "Darwin" ]; then
-    # macOS: try Homebrew, then Xcode CLI tools
+    if command -v brew &>/dev/null; then
+      brew install "$pkg_brew"
+    else
+      echo "  Error: Homebrew required to install $cmd. Install Homebrew first:"
+      echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+      return 1
+    fi
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get update -q && sudo apt-get install -y -q $pkg_apt
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -y $pkg_dnf
+  elif command -v pacman &>/dev/null; then
+    sudo pacman -S --noconfirm "$cmd"
+  else
+    echo "  Error: Could not install $cmd. Install it manually and re-run."
+    return 1
+  fi
+}
+
+# Python 3 — core runtime
+if ! command -v python3 &>/dev/null; then
+  if [ "$(uname)" = "Darwin" ]; then
     if command -v brew &>/dev/null; then
       brew install python@3.12
     else
@@ -29,17 +53,13 @@ if ! command -v python3 &>/dev/null; then
       echo "  Run this installer again after Xcode tools finish installing."
       exit 1
     fi
-  elif command -v apt-get &>/dev/null; then
-    sudo apt-get update -q && sudo apt-get install -y -q python3 python3-venv
-  elif command -v dnf &>/dev/null; then
-    sudo dnf install -y python3
-  elif command -v pacman &>/dev/null; then
-    sudo pacman -S --noconfirm python
   else
-    echo "Error: Could not install Python 3. Install it manually and re-run."
-    exit 1
+    install_if_missing python3 python@3.12 "python3 python3-venv" python3
   fi
 fi
+
+# tmux — session persistence (sessions survive ShellFrame restart)
+install_if_missing tmux tmux tmux tmux
 
 # Clone or update
 if [ -d "$INSTALL_DIR/.git" ]; then
