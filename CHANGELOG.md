@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.0 (2026-04-10)
+
+### New Features
+- **Two-tier reload** — Updates now distinguish between UI-only changes and core (Python/filters) changes. Web-only updates trigger a hot UI reload (current behavior); Python changes prompt a restart confirmation modal that explicitly tells you sessions will be preserved (tmux reattaches automatically).
+- **Manual reload chooser** — Clicking ↻ in About now opens a small chooser: "Reload UI" (frontend only) or "Restart ShellFrame" (full app restart, sessions preserved). Lets you decide instead of guessing.
+- **`restart_app` API** — New Python API spawns the launcher then exits cleanly. Detaches from tmux without killing sessions.
+
+### 新功能
+- **兩段式重新載入** — 更新時會分辨改動範圍：純 web 改動走 UI hot-reload；Python / 核心改動會跳重啟確認框，明確告訴你 session 會被保留（tmux 自動 reattach）。
+- **手動重載選單** — About 裡點 ↻ 現在會跳小選單：「重載 UI」（只重整前端）或「重啟 ShellFrame」（完整重啟，session 保留），自己決定。
+- **`restart_app` API** — 新 Python API 會 spawn launcher 再乾淨退出，detach tmux 但不殺 session。
+
 ## v0.5.5 (2026-04-10)
 
 ### Fixes

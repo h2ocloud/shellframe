@@ -2183,7 +2183,39 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Also refresh the header status
     checkForUpdate();
   });
-  document.getElementById('btn-reload-ui').addEventListener('click', () => location.reload());
+  // Manual reload — offer choice between UI reload and full restart
+  document.getElementById('btn-reload-ui').addEventListener('click', () => {
+    const isZh = lang === 'zh-TW';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '400';
+    overlay.innerHTML = `
+      <div class="modal" style="width:340px;padding:18px">
+        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '重新載入' : 'Reload'}</h2>
+        <div style="font-size:11px;color:#787c99;text-align:center;margin-bottom:14px">
+          ${isZh ? '選擇重新載入方式' : 'Choose how to reload'}
+        </div>
+        <button class="btn btn-ghost" id="reload-ui" style="width:100%;text-align:left;padding:10px 12px;margin-bottom:6px">
+          <div style="font-size:12px;color:#c0caf5;font-weight:500">↻ ${isZh ? '重載 UI' : 'Reload UI'}</div>
+          <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '只重整前端，最快' : 'Frontend only, fastest'}</div>
+        </button>
+        <button class="btn btn-ghost" id="reload-restart" style="width:100%;text-align:left;padding:10px 12px">
+          <div style="font-size:12px;color:#c0caf5;font-weight:500">⟲ ${isZh ? '重啟 ShellFrame' : 'Restart ShellFrame'}</div>
+          <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '套用 Python / 核心改動，session 會保留' : 'Apply Python/core changes, sessions preserved'}</div>
+        </button>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-ghost" id="reload-cancel" style="font-size:11px">${isZh ? '取消' : 'Cancel'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.getElementById('reload-cancel').addEventListener('click', () => overlay.remove());
+    document.getElementById('reload-ui').addEventListener('click', () => { overlay.remove(); location.reload(); });
+    document.getElementById('reload-restart').addEventListener('click', () => {
+      overlay.remove();
+      confirmRestart(null, false);
+    });
+  });
   $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
 
   async function checkForUpdate() {
@@ -2349,7 +2381,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (result.success) {
       $modalUpdate.classList.remove('open');
       localStorage.setItem('shellframe_last_version', '__updating__');
-      if (result.can_hot_reload) {
+      if (result.needs_restart) {
+        // Core file changed → need full app restart
+        confirmRestart(result.version, true);
+      } else if (result.can_hot_reload) {
         setTimeout(() => location.reload(), 500);
       } else {
         showReleaseNotes(result.version);
@@ -2359,6 +2394,42 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       document.getElementById('btn-update-now').disabled = false;
     }
   });
+
+  // ── Restart confirmation modal ──
+  function confirmRestart(version, fromUpdate) {
+    const isZh = lang === 'zh-TW';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '400';
+    overlay.innerHTML = `
+      <div class="modal" style="width:380px;padding:20px">
+        <div style="text-align:center;font-size:32px;color:#7aa2f7;font-family:monospace;margin-bottom:8px">↻</div>
+        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '需要重啟 ShellFrame' : 'Restart Required'}</h2>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin-bottom:6px">
+          ${version ? `<div style="color:#9ece6a;margin-bottom:6px">v${version}</div>` : ''}
+          ${isZh
+            ? '此次更新包含核心程式碼改動，需要重啟 ShellFrame 才能生效。'
+            : 'This update changes core code. ShellFrame needs to restart.'}
+        </div>
+        <div style="font-size:11px;color:#9ece6a;background:rgba(158,206,106,.08);border-left:2px solid #9ece6a;padding:8px 10px;margin:10px 0;border-radius:3px">
+          ${isZh
+            ? '✓ 你的 session 會被保留 — 重啟後 tmux 會自動 reattach，對話從原本的位置繼續。'
+            : '✓ Your sessions will be preserved — tmux reattaches automatically after restart.'}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" id="restart-later">${isZh ? '稍後' : 'Later'}</button>
+          <button class="btn btn-primary" id="restart-now">${isZh ? '立即重啟' : 'Restart Now'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('restart-later').addEventListener('click', () => overlay.remove());
+    document.getElementById('restart-now').addEventListener('click', async () => {
+      document.getElementById('restart-now').disabled = true;
+      document.getElementById('restart-now').textContent = isZh ? '重啟中...' : 'Restarting...';
+      await pywebview.api.restart_app();
+      // The current process will exit; new window will appear shortly
+    });
+  }
 
   async function showReleaseNotes(version) {
     document.getElementById('release-title').textContent =

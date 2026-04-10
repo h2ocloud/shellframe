@@ -923,8 +923,19 @@ class Api:
         })
 
     def do_update(self) -> str:
-        """Pull latest from git. Sessions stay alive — frontend reloads to pick up changes."""
+        """Pull latest from git. Sessions stay alive — frontend reloads to pick up changes.
+
+        Detects which files changed:
+          - web/* only        → UI hot-reload sufficient
+          - main.py / *.py    → needs full app restart
+        """
         try:
+            old_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(APP_DIR),
+                capture_output=True, text=True, timeout=10
+            ).stdout.strip()
+
             result = subprocess.run(
                 ["git", "pull", "--ff-only"],
                 cwd=str(APP_DIR),
@@ -935,15 +946,65 @@ class Api:
                     new_ver = json.loads(VERSION_FILE.read_text())["version"]
                 except:
                     new_ver = "unknown"
+
+                # Determine what changed
+                changed_files = []
+                needs_restart = False
+                if old_head:
+                    diff = subprocess.run(
+                        ["git", "diff", "--name-only", old_head, "HEAD"],
+                        cwd=str(APP_DIR),
+                        capture_output=True, text=True, timeout=10
+                    )
+                    changed_files = [f for f in diff.stdout.strip().split('\n') if f]
+                    needs_restart = any(
+                        f.endswith('.py') or f == 'requirements.txt' or f == 'filters.json'
+                        for f in changed_files
+                    )
+
                 has_sessions = len(self.sessions) > 0
                 return json.dumps({
                     "success": True,
                     "message": result.stdout.strip(),
                     "version": new_ver,
                     "can_hot_reload": has_sessions,
+                    "needs_restart": needs_restart,
+                    "changed_files": changed_files,
                 })
             else:
                 return json.dumps({"success": False, "message": result.stderr.strip()})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def restart_app(self) -> str:
+        """Restart the app — spawns a new instance and exits the current one.
+        tmux-backed sessions persist; the new instance reattaches on startup."""
+        try:
+            # Prefer the .app bundle launcher if available
+            launcher = APP_DIR / "ShellFrame.app" / "Contents" / "MacOS" / "shellframe"
+            if launcher.exists():
+                subprocess.Popen(
+                    [str(launcher)],
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                # Fallback: relaunch via Python directly
+                subprocess.Popen(
+                    [sys.executable, str(APP_DIR / "main.py")],
+                    cwd=str(APP_DIR),
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            # Schedule exit so the response can return cleanly first
+            def _exit_soon():
+                time.sleep(0.6)
+                self.cleanup_all()  # detaches from tmux without killing
+                os._exit(0)
+            threading.Thread(target=_exit_soon, daemon=True).start()
+            return json.dumps({"success": True})
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
 
