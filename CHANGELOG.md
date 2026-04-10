@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.5 (2026-04-10)
+
+### Fixes
+- **Renaming a session no longer interrupts the running CLI** — Double-clicking a tab to rename and pressing `Esc` to cancel (or `Enter` to save) used to leak the keystroke into the underlying xterm helper textarea after the modal closed. Claude Code interprets a stray `Esc` as "interrupt current operation", so the user's conversation got cancelled mid-response. Fixed by `preventDefault + stopPropagation` inside the rename modal's keydown handler, and by deferring `term.focus()` to the next tick so the original keystroke fully unwinds first.
+- **Global Esc modal handler same leak** — `Esc` to close the Settings/About/New-tab modals also bubbled into xterm. Now only swallows the key if a modal was actually open; otherwise lets it through so plain Esc still reaches Claude as the interrupt signal.
+
+### Internal
+- **Debug log at `/tmp/shellframe_debug.log`** — Captures every PTY write (sid, length, escaped preview), every tmux scroll/copy-mode call, every session lifecycle event (`new_session`, `close_session`, `rename_session`, `restore_tmux_sessions`), and every resize. Used to retroactively diagnose "what just interrupted my session" — the rename leak above was caught by spotting a stray 1-byte `\e` write in the log right after a tab interaction.
+
+### 修正
+- **重命名 session 不再中斷對話** — 雙擊 tab 改名，按 `Esc` 取消或 `Enter` 確認時，鍵盤事件原本會在 modal 關閉後 bubble 到 xterm 的 helper textarea，xterm 把它送進 PTY。Claude Code 把單獨的 `\e` 解讀成「中斷當前操作」，所以對話會在回應一半被掛掉。用 `preventDefault + stopPropagation` 在 rename modal 的 keydown handler 內擋掉，並用 `setTimeout(0)` 把 `term.focus()` 延後到下一個 tick，等原本的 keystroke 走完才換 focus。
+- **全域 Esc 關 modal 也有同樣洩漏** — 關 Settings/About/New-tab modal 用的 Esc 也會 bubble 到 xterm。現在只在「真的有 modal 開著」時 swallow 該鍵，沒 modal 開著就放行讓 Esc 正常傳到 Claude 當中斷信號。
+
+### 內部
+- **`/tmp/shellframe_debug.log` 偵錯日誌** — 紀錄每次 PTY write（sid、長度、escape preview）、每次 tmux scroll/copy-mode 呼叫、每次 session 生命週期事件（`new_session` / `close_session` / `rename_session` / `restore_tmux_sessions`）、每次 resize。可以事後追查「剛剛是什麼把對話打斷的」— 上面那個 rename 洩漏 bug 就是從 log 裡看到 tab 互動後跑出一個孤立的 1-byte `\e` write 才定位出來的。
+
 ## v0.5.4 (2026-04-10)
 
 ### New Features

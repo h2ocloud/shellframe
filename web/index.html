@@ -1250,14 +1250,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           pywebview.api.rename_session(sid, val).catch(() => {});
         }
       }
-      if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+      // Defer the term.focus() to the next tick so the keydown event that
+      // triggered finish() is fully processed FIRST. Otherwise the same
+      // keystroke (Escape / Enter) bubbles into the now-focused xterm
+      // helper textarea and gets sent to the CLI as raw input, which
+      // Claude interprets as "interrupt" (Esc) or "submit" (Enter).
+      setTimeout(() => {
+        if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+      }, 0);
     }
     document.getElementById('rename-ok').addEventListener('click', () => finish(true));
     document.getElementById('rename-cancel').addEventListener('click', () => finish(false));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') finish(true);
-      if (e.key === 'Escape') finish(false);
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        // Stop the keystroke from leaking to the document / xterm textarea
+        // after we close the modal. Without this, Esc → Claude interrupt
+        // and Enter → blank line submit in the underlying CLI.
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Enter') finish(true);
+        else finish(false);
+      }
     });
   }
 
@@ -2436,8 +2450,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     // Escape → close any modal
     if (e.key === 'Escape') {
-      $modalSettings.classList.remove('open');
-      $modalAbout.classList.remove('open');
+      // Only consume Escape if a modal was actually open — otherwise let
+      // the keystroke fall through to xterm (Claude treats it as interrupt
+      // signal, which is the expected behaviour when no modal is up).
+      const closedSomething =
+        $modalSettings.classList.contains('open') ||
+        $modalAbout.classList.contains('open') ||
+        $modal.classList.contains('open');
+      if (closedSomething) {
+        $modalSettings.classList.remove('open');
+        $modalAbout.classList.remove('open');
+        $modal.classList.remove('open');
+        e.preventDefault();
+        e.stopPropagation();
+        // Defer focus restoration so the consumed keystroke doesn't bubble
+        // back into the now-focused xterm helper textarea.
+        setTimeout(() => {
+          if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+        }, 0);
+      }
     }
   });
 

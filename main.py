@@ -83,6 +83,22 @@ def save_config(cfg):
 
 TMUX_PREFIX = "sf_"  # tmux session name prefix
 
+DEBUG_LOG = "/tmp/shellframe_debug.log"
+
+
+def _dlog(category: str, msg: str):
+    """Append a timestamped line to the debug log. Best-effort, never raises.
+    Used to capture session lifecycle, PTY writes, tmux subprocess calls,
+    scroll history operations, etc. — so we can pinpoint what interrupted a
+    session after the fact."""
+    try:
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        with open(DEBUG_LOG, 'a') as f:
+            f.write(f"{ts} [{category}] {msg}\n")
+    except Exception:
+        pass
+
+
 def _has_tmux() -> bool:
     """Check if tmux is available on PATH."""
     return shutil.which("tmux") is not None
@@ -301,6 +317,9 @@ class Session:
         self.alive = False
 
     def write(self, data: str):
+        # Truncate + escape for log so multi-line / control bytes are visible
+        preview = data[:80].replace('\r', '\\r').replace('\n', '\\n').replace('\x1b', '\\e')
+        _dlog("write", f"sid={self.sid} len={len(data)} preview={preview!r}")
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
             try:
                 self._winpty.write(data)
@@ -412,9 +431,11 @@ class Api:
     def restore_tmux_sessions(self, cols: int = 80, rows: int = 24) -> str:
         """Detect orphaned sf_* tmux sessions and reattach them.
         Called from frontend on startup before list_sessions."""
+        _dlog("lifecycle", f"restore_tmux_sessions called cols={cols} rows={rows}")
         if IS_WIN or not _has_tmux():
             return json.dumps([])
         existing = _list_tmux_sessions()
+        _dlog("lifecycle", f"  found tmux sessions: {[e['name'] for e in existing]}")
         cfg = load_config()
         saved_labels = cfg.get("session_labels", {})
         restored = []
@@ -530,6 +551,7 @@ class Api:
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
         self._counter += 1
         sid = f"s{self._counter}"
+        _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows}")
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
         self.sessions[sid] = session
         session._bridge_enabled = True
@@ -587,6 +609,7 @@ class Api:
         return prompt
 
     def close_session(self, sid: str):
+        _dlog("lifecycle", f"close_session sid={sid}")
         # Unregister from bridge
         if self.bridge:
             self.bridge.unregister_session(sid)
@@ -655,6 +678,7 @@ class Api:
         return s.alive if s else False
 
     def resize(self, sid: str, cols: int, rows: int):
+        _dlog("resize", f"sid={sid} cols={cols} rows={rows}")
         s = self.sessions.get(sid)
         if s:
             s.resize(cols, rows)
@@ -685,6 +709,7 @@ class Api:
         across the visible rows). Auto-exits when scrolling reaches the live
         bottom — also forces cursor to bottom-line on exit so the live view
         is fully visible. Returns whether still in copy-mode after scrolling."""
+        _dlog("scroll", f"sid={sid} direction={direction} lines={lines}")
         s = self.sessions.get(sid)
         if not s or not s._tmux_name:
             return json.dumps({"success": False, "inCopyMode": False})
@@ -695,6 +720,7 @@ class Api:
                 ["tmux", "display-message", "-t", t, "-p", "#{pane_in_mode}"],
                 capture_output=True, text=True, timeout=3)
             in_mode = r.stdout.strip() == "1"
+            _dlog("scroll", f"  in_mode={in_mode}")
 
             if direction == "up":
                 if not in_mode:
@@ -740,8 +766,10 @@ class Api:
                 ["tmux", "display-message", "-t", t, "-p", "#{pane_in_mode}"],
                 capture_output=True, text=True, timeout=3)
             still_in = r2.stdout.strip() == "1"
+            _dlog("scroll", f"  done sid={sid} still_in_copy_mode={still_in}")
             return json.dumps({"success": True, "inCopyMode": still_in})
         except Exception as e:
+            _dlog("scroll", f"  ERROR sid={sid} {e}")
             return json.dumps({"success": False, "inCopyMode": False, "reason": str(e)})
 
     def set_active_tab(self, sid: str) -> str:
@@ -1123,6 +1151,7 @@ class Api:
 
     def rename_session(self, sid: str, name: str) -> str:
         """Rename a session. Updates bridge label if connected. Persists to config."""
+        _dlog("lifecycle", f"rename_session sid={sid} name={name!r}")
         s = self.sessions.get(sid)
         if not s:
             return json.dumps({"success": False})
