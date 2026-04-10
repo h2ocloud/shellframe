@@ -2175,6 +2175,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     /Running…/,
     /↑\s*\d+\s*tokens/,         // Claude active token counter
     /\(\d+s\s*[·•]/,             // "(15s · ..." spinner duration
+    /\d+\s+local\s+agents?/i,    // "3 local agents · ..." subagent status
+    /to\s+stop\s+agents?/i,       // "ctrl+x ctrl+k to stop agents"
+    /agents?\s+running/i,         // generic "agents running"
   ];
   // Permission / menu prompt markers (waiting for user input)
   const ATTENTION_MARKERS = [

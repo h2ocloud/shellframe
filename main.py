@@ -978,34 +978,87 @@ class Api:
 
     def restart_app(self) -> str:
         """Restart the app — spawns a new instance and exits the current one.
-        tmux-backed sessions persist; the new instance reattaches on startup."""
+        tmux-backed sessions persist; the new instance reattaches on startup.
+
+        On macOS we use `open -n -a` so launchd treats the new instance as
+        fully detached (avoids parent-child / window-server issues that can
+        prevent the new window from appearing)."""
         try:
-            # Prefer the .app bundle launcher if available
-            launcher = APP_DIR / "ShellFrame.app" / "Contents" / "MacOS" / "shellframe"
-            if launcher.exists():
-                subprocess.Popen(
-                    [str(launcher)],
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                # Fallback: relaunch via Python directly
-                subprocess.Popen(
-                    [sys.executable, str(APP_DIR / "main.py")],
-                    cwd=str(APP_DIR),
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+            spawned = False
+            err_msgs = []
+
+            # Strategy 1: macOS `open -n -a` against the .app bundle
+            if not IS_WIN:
+                # Find the .app bundle (resolve symlinks)
+                candidates = [
+                    APP_DIR / "ShellFrame.app",
+                    Path("/Applications/ShellFrame.app"),
+                    Path.home() / "Applications" / "ShellFrame.app",
+                ]
+                app_path = None
+                for c in candidates:
+                    try:
+                        if c.exists():
+                            app_path = c.resolve()
+                            break
+                    except Exception:
+                        pass
+                if app_path:
+                    try:
+                        subprocess.Popen(
+                            ["/usr/bin/open", "-n", "-a", str(app_path)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        spawned = True
+                    except Exception as e:
+                        err_msgs.append(f"open -n -a failed: {e}")
+
+            # Strategy 2: launcher script directly
+            if not spawned:
+                launcher = APP_DIR / "ShellFrame.app" / "Contents" / "MacOS" / "shellframe"
+                if launcher.exists():
+                    try:
+                        subprocess.Popen(
+                            [str(launcher)],
+                            start_new_session=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        spawned = True
+                    except Exception as e:
+                        err_msgs.append(f"launcher failed: {e}")
+
+            # Strategy 3: relaunch via current Python
+            if not spawned:
+                try:
+                    subprocess.Popen(
+                        [sys.executable, str(APP_DIR / "main.py")],
+                        cwd=str(APP_DIR),
+                        start_new_session=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    spawned = True
+                except Exception as e:
+                    err_msgs.append(f"python relaunch failed: {e}")
+
+            if not spawned:
+                return json.dumps({"success": False, "message": "; ".join(err_msgs) or "no spawn method worked"})
+
             # Schedule exit so the response can return cleanly first
             def _exit_soon():
-                time.sleep(0.6)
-                self.cleanup_all()  # detaches from tmux without killing
+                time.sleep(0.8)
+                try:
+                    self.cleanup_all()  # detaches from tmux without killing
+                except Exception:
+                    pass
                 os._exit(0)
             threading.Thread(target=_exit_soon, daemon=True).start()
             return json.dumps({"success": True})
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return json.dumps({"success": False, "message": str(e)})
 
     # ── Bridge API ──
