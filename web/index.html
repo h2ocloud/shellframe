@@ -2167,17 +2167,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   const BUSY_MIN_PUSHES = 2;
   const BUSY_MIN_SPREAD_MS = 600;
 
-  // Markers that mean "Claude is doing something" (running tool / subagent / spinner)
+  // Markers that mean "Claude is doing something" — must be unambiguous
+  // signals of CURRENT activity (avoid persistent status bar text).
   const ACTIVITY_MARKERS = [
-    /esc to interrupt/i,
-    /Working\s*\(/,
-    /\bTask\(/,
+    /esc to interrupt/i,         // active spinner only
+    /Working\s*\(\d+s/,           // "Working (15s ..." — explicit timer
+    /\bTask\([^)]*\)\s*\n.*Running/m,  // Task( ... ) followed by Running
     /Running…/,
-    /↑\s*\d+\s*tokens/,         // Claude active token counter
-    /\(\d+s\s*[·•]/,             // "(15s · ..." spinner duration
-    /\d+\s+local\s+agents?/i,    // "3 local agents · ..." subagent status
-    /to\s+stop\s+agents?/i,       // "ctrl+x ctrl+k to stop agents"
-    /agents?\s+running/i,         // generic "agents running"
+    /↑\s*\d+\s*tokens/,          // Claude active token counter
+    /\(\d+s\s*[·•]\s*esc/i,       // "(15s · esc to interrupt)"
   ];
   // Permission / menu prompt markers (waiting for user input)
   const ATTENTION_MARKERS = [
@@ -2186,12 +2184,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   ];
 
   function scanTerminalActivity(s) {
-    // Read visible buffer rows from xterm
+    // Only scan the BOTTOM rows of the *current viewport* — not scrollback.
+    // Activity markers (spinners, "esc to interrupt", "Working (Xs") all
+    // appear at the bottom of Claude's UI, not in past history.
     if (!s.term || !s.term.buffer || !s.term.buffer.active) return { active: false, attention: false };
     const buf = s.term.buffer.active;
-    const startRow = Math.max(0, buf.length - 30);   // last ~30 lines is enough
+    const rows = s.term.rows || 24;
+    // Bottom of viewport = baseY + rows. Scan last 12 rows of viewport only.
+    const bottom = buf.baseY + rows;
+    const startRow = Math.max(buf.baseY, bottom - 12);
     let txt = '';
-    for (let r = startRow; r < buf.length; r++) {
+    for (let r = startRow; r < bottom; r++) {
       const line = buf.getLine(r);
       if (line) txt += line.translateToString(true) + '\n';
     }
