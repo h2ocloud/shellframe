@@ -1032,12 +1032,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     renderTabs();
   }
 
+  let _saveActiveTabTimer = null;
+  function persistActiveTab(sid) {
+    // Debounced save to Python config (durable, survives WKWebView storage clears)
+    if (_saveActiveTabTimer) clearTimeout(_saveActiveTabTimer);
+    _saveActiveTabTimer = setTimeout(() => {
+      try { pywebview.api.set_active_tab(sid); } catch(e) {}
+    }, 500);
+  }
+
   function switchTab(sid) {
     if (activeId && sessions[activeId]) {
       sessions[activeId].pane.classList.remove('active');
     }
     activeId = sid;
     localStorage.setItem('sf_active_tab', sid);
+    persistActiveTab(sid);
     if (sessions[sid]) {
       sessions[sid].pane.classList.add('active');
       // Preserve user's scroll position on tab switch — don't force-bottom.
@@ -1401,45 +1411,82 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── Scroll history via tmux copy-mode ──
   // xterm.js scrollback is always 0 for TUI apps that redraw in-place.
-  // When user scrolls up at the empty buffer top, enter tmux copy-mode
-  // which has the real scrollback. Debounced to avoid triggering on every
-  // single wheel tick.
+  // When user scrolls up at the top, enter tmux copy-mode and forward
+  // all subsequent wheel events to tmux as Up/Down key sequences.
+  // User exits copy-mode by pressing 'q' (handled by tmux natively).
   function setupScrollHistory(sid, pane) {
-    let _scrollHistDebounce = null;
     let _inCopyMode = false;
+    let _throttle = null;
+    let _toastEl = null;
+
+    function showToast() {
+      if (_toastEl) return;
+      _toastEl = document.createElement('div');
+      _toastEl.textContent = '📜 Scroll history — press q to exit';
+      _toastEl.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);' +
+        'background:#1f2335;color:#7aa2f7;padding:4px 14px;border-radius:6px;font-size:12px;' +
+        'z-index:20;border:1px solid #3b4261;pointer-events:none;opacity:0.95';
+      pane.appendChild(_toastEl);
+    }
+    function hideToast() {
+      if (_toastEl) { _toastEl.remove(); _toastEl = null; }
+    }
+
     pane.addEventListener('wheel', (e) => {
       const s = sessions[sid];
       if (!s) return;
 
-      // Scroll DOWN while in copy-mode → exit copy-mode automatically
-      if (_inCopyMode && e.deltaY > 0) {
-        // Send 'q' to exit tmux copy-mode
-        pywebview.api.write_input(sid, 'q');
-        _inCopyMode = false;
-        return;
-      }
-
-      if (e.deltaY >= 0) return;  // only scroll-up triggers entry
+      const direction = e.deltaY < 0 ? 'up' : 'down';
       const buf = s.term.buffer.active;
-      // Only trigger when xterm.js has no scrollback to offer
-      if (buf.baseY > 0 && buf.viewportY > 0) return;
-      if (_inCopyMode || _scrollHistDebounce) return;
-      _scrollHistDebounce = setTimeout(() => { _scrollHistDebounce = null; }, 1000);
-      _inCopyMode = true;
-      // Brief toast
-      const toast = document.createElement('div');
-      toast.textContent = '📜 Scroll history — scroll down or press q to exit';
-      toast.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);' +
-        'background:#1f2335;color:#7aa2f7;padding:4px 14px;border-radius:6px;font-size:12px;' +
-        'z-index:20;border:1px solid #3b4261;pointer-events:none;opacity:0.95';
-      pane.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
-      // Enter tmux copy-mode
-      pywebview.api.enter_scroll_history(sid).then(() => {
-        // Safety: auto-clear after 2 minutes to avoid stuck state
-        setTimeout(() => { _inCopyMode = false; }, 120000);
+
+      // If NOT in copy-mode and xterm.js has scrollback, let xterm handle
+      if (!_inCopyMode && direction === 'up' && buf.viewportY > 0) return;
+      // If NOT in copy-mode and scrolling down, nothing to do
+      if (!_inCopyMode && direction === 'down') return;
+
+      // Throttle API calls (100ms between calls to avoid flooding)
+      if (_throttle) return;
+      _throttle = setTimeout(() => { _throttle = null; }, 100);
+
+      const lines = Math.max(1, Math.min(Math.ceil(Math.abs(e.deltaY) / 25), 8));
+
+      pywebview.api.scroll_history(sid, direction, lines).then(res => {
+        try {
+          const result = JSON.parse(res);
+          const wasIn = _inCopyMode;
+          _inCopyMode = result.inCopyMode;
+
+          if (_inCopyMode && !wasIn) showToast();
+          if (!_inCopyMode && wasIn) {
+            hideToast();
+            // Clear stale copy-mode output from xterm.js scrollback
+            setTimeout(() => { if (s.term) s.term.scrollToBottom(); }, 300);
+          }
+        } catch(err) { /* ignore parse errors */ }
       });
     }, { passive: true });
+
+    // Reset copy-mode flag when user types (e.g., 'q' to exit copy-mode)
+    const s = sessions[sid];
+    if (s && s.term) {
+      s.term.onData(() => {
+        if (_inCopyMode) {
+          // User typed something → tmux will likely exit copy-mode
+          setTimeout(() => {
+            pywebview.api.scroll_history(sid, 'down', 0).then(res => {
+              try {
+                const result = JSON.parse(res);
+                _inCopyMode = result.inCopyMode;
+                if (!_inCopyMode) {
+                  hideToast();
+                  setTimeout(() => { if (s.term) s.term.scrollToBottom(); }, 300);
+                }
+              } catch(err) {}
+            });
+          }, 200);
+        }
+      });
+    }
   }
 
   // ── Image / file attach ──
@@ -2565,10 +2612,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
         } catch(e) {}
         renderTabs();
-        // Restore last active tab, fallback to first
-        const lastActive = localStorage.getItem('sf_active_tab');
+        // Restore last active tab. Prefer Python-persisted value (survives
+        // WKWebView storage clears) → fallback to localStorage → fallback first.
+        let lastActive = '';
+        try {
+          const raw = await pywebview.api.get_active_tab();
+          const data = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+          lastActive = (data && data.sid) || '';
+        } catch(e) {}
+        if (!lastActive || !sessions[lastActive]) {
+          lastActive = localStorage.getItem('sf_active_tab') || '';
+        }
         const restoreSid = (lastActive && sessions[lastActive]) ? lastActive : existing[0].sid;
         switchTab(restoreSid);
+        // Defensive double-apply: some renders during async restore can race
+        // with the initial switchTab. Re-apply on next frame to make sure
+        // the tab highlight + visible pane both end up on restoreSid.
+        requestAnimationFrame(() => {
+          if (activeId !== restoreSid && sessions[restoreSid]) {
+            switchTab(restoreSid);
+          } else {
+            // Even if activeId is correct, force one more renderTabs in case
+            // a stale render painted the wrong tab as active.
+            renderTabs();
+          }
+        });
         // Still check for updates after reconnect
         await startupUpdateCheck();
         return;
@@ -2584,6 +2652,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     // If update modal is shown, launcher opens after skip/update via callback
   }
+
+  // Final save of active tab on window close — flush the debounced timer
+  // and write synchronously so the next launch always restores correctly.
+  window.addEventListener('beforeunload', () => {
+    if (activeId) {
+      try { pywebview.api.set_active_tab(activeId); } catch(e) {}
+    }
+  });
+
   init();
 })();
 </script>

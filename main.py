@@ -678,6 +678,92 @@ class Api:
         except Exception as e:
             return json.dumps({"success": False, "reason": str(e)})
 
+    def scroll_history(self, sid: str, direction: str, lines: int = 3) -> str:
+        """Scroll within tmux copy-mode. Enters copy-mode automatically if
+        needed. On first entry parks the cursor at top-line so the very next
+        scroll-up walks straight into scrollback (no wasted cursor motion
+        across the visible rows). Auto-exits when scrolling reaches the live
+        bottom — also forces cursor to bottom-line on exit so the live view
+        is fully visible. Returns whether still in copy-mode after scrolling."""
+        s = self.sessions.get(sid)
+        if not s or not s._tmux_name:
+            return json.dumps({"success": False, "inCopyMode": False})
+        lines = max(1, min(lines, 15))
+        t = s._tmux_name
+        try:
+            r = subprocess.run(
+                ["tmux", "display-message", "-t", t, "-p", "#{pane_in_mode}"],
+                capture_output=True, text=True, timeout=3)
+            in_mode = r.stdout.strip() == "1"
+
+            if direction == "up":
+                if not in_mode:
+                    subprocess.run(["tmux", "copy-mode", "-t", t],
+                                   capture_output=True, timeout=3)
+                    # Park cursor at the very top of the visible area so the
+                    # next cursor-up motion immediately scrolls into history
+                    # rather than walking down→up across visible rows.
+                    subprocess.run(
+                        ["tmux", "send-keys", "-t", t, "-X", "top-line"],
+                        capture_output=True, timeout=3)
+                # Use semantic copy-mode command (works under both vi/emacs)
+                for _ in range(lines):
+                    subprocess.run(
+                        ["tmux", "send-keys", "-t", t, "-X", "cursor-up"],
+                        capture_output=True, timeout=3)
+            elif direction == "down" and in_mode:
+                # Park cursor at the bottom of the visible area first, so the
+                # subsequent cursor-down keys actually scroll the SCREEN
+                # (driving the scrollbar back toward live) instead of just
+                # walking the cursor across visible rows.
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", t, "-X", "bottom-line"],
+                    capture_output=True, timeout=3)
+                for _ in range(lines):
+                    subprocess.run(
+                        ["tmux", "send-keys", "-t", t, "-X", "cursor-down"],
+                        capture_output=True, timeout=3)
+                # Check scroll position — at bottom (0) → exit cleanly
+                rp = subprocess.run(
+                    ["tmux", "display-message", "-t", t, "-p", "#{scroll_position}"],
+                    capture_output=True, text=True, timeout=3)
+                try:
+                    scroll_pos = int(rp.stdout.strip() or "0")
+                except (ValueError, TypeError):
+                    scroll_pos = 0
+                if scroll_pos == 0:
+                    subprocess.run(
+                        ["tmux", "send-keys", "-t", t, "-X", "cancel"],
+                        capture_output=True, timeout=3)
+
+            r2 = subprocess.run(
+                ["tmux", "display-message", "-t", t, "-p", "#{pane_in_mode}"],
+                capture_output=True, text=True, timeout=3)
+            still_in = r2.stdout.strip() == "1"
+            return json.dumps({"success": True, "inCopyMode": still_in})
+        except Exception as e:
+            return json.dumps({"success": False, "inCopyMode": False, "reason": str(e)})
+
+    def set_active_tab(self, sid: str) -> str:
+        """Persist the user's active tab sid to config.json. localStorage in
+        WKWebView can be cleared unpredictably across launches; this is the
+        durable backup."""
+        try:
+            cfg = load_config()
+            cfg["last_active_tab"] = sid
+            save_config(cfg)
+            return json.dumps({"success": True})
+        except Exception as e:
+            return json.dumps({"success": False, "reason": str(e)})
+
+    def get_active_tab(self) -> str:
+        """Return the last persisted active tab sid as JSON (or empty)."""
+        try:
+            cfg = load_config()
+            return json.dumps({"sid": cfg.get("last_active_tab", "") or ""})
+        except Exception:
+            return json.dumps({"sid": ""})
+
     def copy_text(self, text: str) -> str:
         """Copy text to system clipboard."""
         try:

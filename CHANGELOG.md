@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.5.4 (2026-04-10)
+
+### New Features
+- **Active tab persistence** — The tab you had focused when closing shellframe is now restored on next launch. Backed by `~/.config/shellframe/config.json` (durable across WKWebView storage clears) with localStorage as a secondary cache. Saved on every tab switch (debounced) and on `beforeunload`. The init flow does a `requestAnimationFrame` double-apply so the highlight + visible pane stay in sync even if an async render races.
+- **Edge-driven scroll history** — Refined the tmux scroll history flow so it actually drives the scrollbar: on scroll-up, parks the tmux cursor at `top-line` so the next motion scrolls the screen straight into scrollback; on scroll-down, jumps the cursor to `bottom-line` so motion scrolls the screen back toward live (instead of walking the cursor across visible rows). Auto-cancels copy-mode at `scroll_position == 0`.
+
+### Fixes
+- **Active tab restore was painting wrong tab** — `get_active_tab` previously returned a raw Python string which pywebview occasionally surfaced as something other than a clean string. Now returns `{"sid": "..."}` JSON like every other API method, defensively parsed in JS.
+- **Scroll-down line-walking** — Replaced literal `Up`/`Down` keys with semantic `-X cursor-up` / `-X cursor-down` (works under both vi and emacs `mode-keys`).
+
+### 新功能
+- **Active tab 記住** — 關閉 shellframe 時的當前 tab，下次開啟會自動回到。寫進 `~/.config/shellframe/config.json`（不怕 WKWebView 清 localStorage），localStorage 當二級 cache。每次切 tab debounce 寫一次、`beforeunload` 也補一次。init 流程加 `requestAnimationFrame` 二次校對，避免非同步 render race 把高亮畫錯 tab。
+- **邊緣驅動的歷史滾動** — 重做 tmux scroll history：往上滾時把 tmux cursor 釘到 `top-line`，下一次 motion 直接把畫面往上推進歷史；往下滾時釘到 `bottom-line`，motion 往下推回 live，不再讓 cursor 在可見區走步。`scroll_position == 0` 自動 `cancel` 退出 copy-mode。
+
+### 修正
+- **Active tab 還原時高亮錯 tab** — `get_active_tab` 之前回 Python 純字串，pywebview 偶爾傳回的不是乾淨字串。改回 `{"sid": "..."}` JSON 格式跟其他 API 一致，JS 端 defensive parse。
+- **滾動 cursor 走步** — 把 literal `Up`/`Down` key 換成 semantic `-X cursor-up` / `-X cursor-down`，vi 跟 emacs `mode-keys` 都通。
+
 ## v0.5.3 (2026-04-10)
 
 ### New Features
