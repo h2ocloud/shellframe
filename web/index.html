@@ -88,6 +88,21 @@
 
   /* ── Terminal area ── */
   #terminal-wrap { flex: 1; position: relative; }
+
+  /* ── UI scale (interface size: small / medium / large) ──
+     Applies CSS zoom to chrome elements only — terminal-wrap is exempt
+     so xterm.js stays controlled by its own font size. */
+  #sidebar, #tab-bar, #image-bar, .modal-overlay {
+    zoom: var(--ui-scale, 1);
+  }
+  /* UI scale button group */
+  .ui-scale-btn {
+    flex: 1; padding: 4px 8px; font-size: 12px;
+    background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px;
+    color: #565f89; cursor: pointer; transition: all .15s;
+  }
+  .ui-scale-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
+  .ui-scale-btn.active { color: #7aa2f7; border-color: #7aa2f7; background: rgba(122,162,247,.1); }
   .term-pane { position: absolute; inset: 0; display: none; overflow: hidden; }
   .term-pane.active { display: block; }
   /* Prevent IME composition text from overflowing and bouncing at edge */
@@ -452,12 +467,20 @@
 
     <!-- Tab: General -->
     <div class="settings-tab-panel active" id="settings-panel-general">
-      <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:#24283b;border-radius:8px">
-        <div style="flex:1">
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Font size</label>
+      <div style="display:flex;gap:16px;margin-bottom:10px;padding:12px;background:#24283b;border-radius:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Terminal font</label>
           <div style="display:flex;align-items:center;gap:8px">
             <input type="range" id="setting-fontsize" min="10" max="24" value="14" style="flex:1;accent-color:#7aa2f7"/>
             <span id="fontsize-val" style="font-size:12px;color:#c0caf5;min-width:24px;text-align:center">14</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="uiScale">Interface size</label>
+          <div style="display:flex;gap:4px" id="setting-uiscale">
+            <button class="ui-scale-btn" data-scale="0.85">S</button>
+            <button class="ui-scale-btn active" data-scale="1">M</button>
+            <button class="ui-scale-btn" data-scale="1.18">L</button>
           </div>
         </div>
         <div>
@@ -687,7 +710,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       settingsGeneral: 'General',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
       addPreset: 'Add',
-      fontSize: 'Font size',
+      fontSize: 'Terminal font',
+      uiScale: 'Interface size',
       language: 'Language',
       about: 'About',
       aboutDesc: 'Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.',
@@ -727,7 +751,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       settingsGeneral: '一般',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
       addPreset: '新增',
-      fontSize: '字型大小',
+      fontSize: '終端字型',
+      uiScale: '介面大小',
       language: '語言',
       about: '關於',
       aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
@@ -805,6 +830,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     lang = s.language || 'en';
     currentFontSize = s.fontSize || 14;
     autoUpdateEnabled = s.autoUpdate !== false; // default true
+    // Apply UI scale (interface size)
+    const uiScale = s.uiScale || 1;
+    document.documentElement.style.setProperty('--ui-scale', uiScale);
     renderPresets();
     applyI18n();
   }
@@ -1781,7 +1809,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('fontsize-val').textContent = currentFontSize;
     document.getElementById('setting-lang').value = lang;
     $autoUpdateToggle.classList.toggle('on', autoUpdateEnabled);
+    // Sync UI scale buttons
+    const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
+    document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => {
+      b.classList.toggle('active', Math.abs(parseFloat(b.dataset.scale) - cur) < 0.01);
+    });
     syncSettingsBridge();
+  });
+
+  // UI scale buttons
+  document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const scale = parseFloat(btn.dataset.scale);
+      document.documentElement.style.setProperty('--ui-scale', scale);
+      document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Persist
+      config.settings = config.settings || {};
+      config.settings.uiScale = scale;
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
   });
 
   // Settings bridge section
