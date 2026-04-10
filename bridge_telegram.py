@@ -237,6 +237,12 @@ class SessionSlot:
         self.sent_texts = []
         self.has_user_msg = False
         self.pending_menu = False  # True if last extract found a menu prompt
+        # Stall detection: warn when we wrote to the session but got no
+        # meaningful output for ~15s. Common cause: macOS TCC permission
+        # dialog blocking the CLI in the background.
+        self.last_write_ts = 0.0        # time of last TG → PTY write
+        self.last_chunk_ts = 0.0        # time of last PTY chunk (NOT reset by extraction)
+        self.stall_warned = False
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
         self.screen = pyte.HistoryScreen(200, 50, history=10000)
@@ -421,7 +427,26 @@ class TelegramBridge(BridgeBase):
                     "command": str(slot.index),
                     "description": f"Switch to {slot.label}",
                 })
-        tg_api(self.config.bot_token, "setMyCommands", {"commands": commands[:30]})
+        # The claude-plugins-official telegram plugin shares this bot token
+        # and continuously overwrites the all_private_chats scope with its
+        # own /start /help /status commands. We can't win that race at the
+        # same scope level, so we set per-chat scope (botCommandScopeChat)
+        # which is the HIGHEST priority for any specific chat. This ensures
+        # our commands always show up for allowed users regardless of what
+        # the plugin does to all_private_chats.
+        cmds = commands[:30]
+        tg_api(self.config.bot_token, "setMyCommands", {"commands": cmds})
+        for uid in (self.config.allowed_users or []):
+            tg_api(self.config.bot_token, "setMyCommands", {
+                "commands": cmds,
+                "scope": {"type": "chat", "chat_id": uid},
+            })
+        # Force the chat menu button to be the "commands" list. Without this
+        # the TG client on some platforms (esp. iOS) can get stuck showing an
+        # empty / stale menu, even when setMyCommands has succeeded.
+        tg_api(self.config.bot_token, "setChatMenuButton", {
+            "menu_button": {"type": "commands"},
+        })
 
     def refresh_commands(self):
         """Re-register commands after sessions change."""
@@ -439,6 +464,42 @@ class TelegramBridge(BridgeBase):
                     "action": "typing",
                 })
 
+    def _warn_stalled(self, sid: str, age_s: int):
+        """Notify user that a session hasn't responded — usually a macOS
+        permission dialog blocking the CLI in the background."""
+        slot = self.slots.get(sid)
+        if not slot:
+            return
+        label = slot.label or sid
+        msg = (f"⚠️ [{label}] no reply for ~{age_s}s\n"
+               f"Likely a macOS permission popup blocking the CLI in the "
+               f"background. Bring shellframe to the front and check.")
+
+        # 1) TG warning to users who have this session active (or any user if
+        #    it's the default-active slot)
+        target_chats = set()
+        for uid, active_sid in list(self._user_active.items()):
+            if active_sid == sid and uid in self._user_chat:
+                target_chats.add(self._user_chat[uid])
+        if not target_chats and self._slot_order and sid == self._slot_order[0]:
+            for chat_id in self._user_chat.values():
+                target_chats.add(chat_id)
+        for chat_id in target_chats:
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": msg,
+            })
+
+        # 2) Local macOS Notification Center bubble (silent no-op on other OSes)
+        try:
+            import subprocess as _sp
+            note = (f'display notification "Session {label} stalled — '
+                    f'check for a permission popup" '
+                    f'with title "shellframe" sound name "Ping"')
+            _sp.run(["osascript", "-e", note],
+                    capture_output=True, timeout=3)
+        except (FileNotFoundError, OSError, Exception):
+            pass
+
     def feed_output(self, sid: str, raw_text: str):
         """Feed PTY output through virtual terminal for screen-based extraction."""
         if not self.active:
@@ -453,9 +514,11 @@ class TelegramBridge(BridgeBase):
                 slot.stream.feed(raw_text)
             except Exception:
                 pass
-            slot.last_output_time = time.time()
+            now_ts = time.time()
+            slot.last_output_time = now_ts
+            slot.last_chunk_ts = now_ts  # for stall detection (not reset by flush)
             if was_empty or slot.first_output_time == 0:
-                slot.first_output_time = time.time()
+                slot.first_output_time = now_ts
         if was_empty:
             threading.Thread(target=self._send_typing, args=(sid,), daemon=True).start()
 
@@ -836,12 +899,33 @@ class TelegramBridge(BridgeBase):
             result.append(stripped)
         return result
 
+    # Stall thresholds
+    STALL_WRITE_MIN_AGE = 15.0   # TG msg must be at least this old to consider stalling
+    STALL_SILENCE_MIN = 10.0     # PTY must have been silent at least this long
+
     def _flush_loop(self):
         """Extract new text from virtual terminal and send to TG."""
         while self.active and not self._stop_event.is_set():
             time.sleep(0.5)
             with self._slots_lock:
                 sids = list(self._slot_order)
+
+            # Stall detection runs first, outside the output_lock path below,
+            # because a truly stalled slot has no output activity to flush.
+            now_stall = time.time()
+            for sid in sids:
+                slot = self.slots.get(sid)
+                if not slot or slot.stall_warned or slot.last_write_ts <= 0:
+                    continue
+                write_age = now_stall - slot.last_write_ts
+                silence = now_stall - slot.last_chunk_ts if slot.last_chunk_ts > 0 else write_age
+                if write_age > self.STALL_WRITE_MIN_AGE and silence > self.STALL_SILENCE_MIN:
+                    slot.stall_warned = True
+                    threading.Thread(
+                        target=self._warn_stalled,
+                        args=(sid, int(write_age)),
+                        daemon=True,
+                    ).start()
 
             for sid in sids:
                 slot = self.slots.get(sid)
@@ -876,6 +960,10 @@ class TelegramBridge(BridgeBase):
                     slot.sent_texts.clear()
                     slot.last_output_time = 0
                     slot.first_output_time = 0
+                    # Response extracted → close the stall-watch window
+                    if new_lines:
+                        slot.last_write_ts = 0.0
+                        slot.stall_warned = False
                     # Keep has_user_msg=True so subsequent responses still get
                     # forwarded.  It resets only when a NEW user message arrives
                     # (the _handle_update path sets it fresh each time).
@@ -1191,6 +1279,10 @@ class TelegramBridge(BridgeBase):
         # Keep only last 10 sent texts
         if len(slot.sent_texts) > 10:
             slot.sent_texts = slot.sent_texts[-10:]
+
+        # Mark the start of a write → reply watch cycle for stall detection
+        slot.last_write_ts = time.time()
+        slot.stall_warned = False
 
         # Write text first, then Enter after a brief delay
         def _send():

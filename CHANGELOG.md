@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.5.3 (2026-04-10)
+
+### New Features
+- **Scroll history via tmux copy-mode** — Claude/Codex TUIs redraw in-place via cursor positioning, so xterm.js scrollback is always empty. Now when you scroll up at the top of the terminal, shellframe automatically enters tmux copy-mode and jumps to the first page of real scrollback history. Navigate with PageUp/Down and arrow keys, press `q` to exit back to normal.
+- **Stall detection** — If a TG message gets no response for 15s (common when macOS pops a permission dialog that blocks the CLI in the background), the bridge sends a TG warning and a macOS Notification Center alert with sound so you know to check your Mac.
+- **Multi-image paste** — Pasting multiple images from clipboard now correctly attaches ALL of them (previously only the first was kept). The attach bar shows a count summary (`📷 4 images`) and each chip is tagged `#1` through `#N`.
+- **TG slash commands per-chat scope** — Commands are now registered with `botCommandScopeChat` (highest priority), so they always show in the TG menu even when the Claude Code telegram plugin continuously overwrites the `all_private_chats` scope with its own `/start /help /status`.
+
+### Fixes
+- **Scrollbar visible but couldn't scroll** — The custom `scrollToLine` in `_pushOutput` was fighting xterm.js's native scroll-preserve behavior, snapping the viewport back on every PTY push. Removed entirely — xterm.js handles it natively.
+- **UTF-8 garbled characters** (`─���─`) — `Session.read()` used a stateless `bytes.decode()` which replaced partial multi-byte characters at 16KB chunk boundaries with U+FFFD. Switched to `codecs.getincrementaldecoder('utf-8')` which carries incomplete sequences across calls.
+- **TG bridge button wrapping** — Added `white-space: nowrap` to the TG status button so `TG ● 6` doesn't break across two lines when the tab bar is narrow.
+- **setChatMenuButton** — Bridge now explicitly sets the menu button type to `commands` on every startup, preventing stale iOS TG client caches from showing an empty menu.
+
+### 新功能
+- **tmux copy-mode 滾動歷史** — Claude/Codex 的 TUI 用 cursor positioning 原地重繪，xterm.js 的 scrollback 永遠是 0 行。現在在終端頂端往上滾，shellframe 會自動進入 tmux copy-mode 並跳到第一頁歷史。用 PageUp/Down 和方向鍵翻閱，按 `q` 回到正常模式。
+- **TG 無回應偵測** — 送出 TG 訊息 15 秒後若沒有 PTY 回應（常見原因：macOS 權限彈窗在背景擋住 CLI），bridge 會發 TG 警告並在 Mac 右上角跳 Notification Center 通知 + 聲音提醒。
+- **多圖貼上** — 從剪貼簿一次貼多張圖，現在會正確附加全部（以前只留第一張）。附件列顯示 `📷 4 images` 總數，每個 chip 標 `#1` ~ `#N`。
+- **TG slash 指令 per-chat scope** — 指令改用 `botCommandScopeChat` 註冊（最高優先），即使 Claude Code telegram plugin 不斷覆寫 `all_private_chats` scope 的 `/start /help /status`，你的 TG menu 永遠看得到 shellframe 完整指令。
+
+### 修正
+- **Scrollbar 看得到但滑不動** — `_pushOutput` 裡自訂的 `scrollToLine` 跟 xterm.js 內建的 scroll-preserve 互相打架，每次 PTY push 都把 viewport 拽回去。移除自訂邏輯，完全信任 xterm.js 原生行為。
+- **UTF-8 亂碼** (`─���─`) — `Session.read()` 用無狀態 `bytes.decode()`，16KB chunk 剛好切在多位元字元中間就產生 U+FFFD。改用 `codecs.getincrementaldecoder('utf-8')` 跨 call 保留不完整 sequence。
+- **TG 按鈕跑版** — TG 狀態按鈕加 `white-space: nowrap`，「TG ● 6」不再在窄 tab bar 時斷行。
+- **setChatMenuButton** — Bridge 每次啟動都 explicit 設 menu button type 為 `commands`，避免 iOS TG client cache 卡住。
+
 ## v0.5.2 (2026-04-09)
 
 ### New Features

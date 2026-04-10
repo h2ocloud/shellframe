@@ -9,6 +9,7 @@ Windows: Edge WebView2 + subprocess
 
 import atexit
 import base64
+import codecs
 import importlib
 import json
 import os
@@ -134,6 +135,10 @@ class Session:
         self._recent = bytearray()  # ring buffer for peeking (last 1KB), not consumed by read()
         self._on_data = on_data     # callback to signal new data (e.g. threading.Event.set)
         self._tmux_name = tmux_name  # tmux session name (None = no tmux)
+        # Stateful UTF-8 decoder — carries incomplete multi-byte sequences
+        # across read() calls so CJK / box-drawing chars never get split
+        # into U+FFFD replacement characters (the "─���─" garble).
+        self._decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
         self._start(cols, rows)
 
     def _start(self, cols, rows):
@@ -323,7 +328,10 @@ class Session:
                 return ""
             data = bytes(self.buffer)
             self.buffer.clear()
-        return data.decode("utf-8", errors="replace")
+        # Incremental decode: any trailing partial multi-byte sequence is
+        # stashed in self._decoder and emitted on the next call, so CJK or
+        # box-drawing characters spanning a 16KB read boundary stay intact.
+        return self._decoder.decode(data)
 
     def resize(self, cols, rows):
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
@@ -650,6 +658,25 @@ class Api:
         s = self.sessions.get(sid)
         if s:
             s.resize(cols, rows)
+
+    def enter_scroll_history(self, sid: str) -> str:
+        """Enter tmux copy-mode for scrollable history.
+        xterm.js scrollback is always empty for TUI apps (Claude/Codex) that
+        use cursor-positioning instead of line-feeds. tmux's own pane buffer
+        has the real scrollback. This triggers copy-mode + PageUp so the user
+        sees old conversation. Press q to exit."""
+        s = self.sessions.get(sid)
+        if not s or not s._tmux_name:
+            return json.dumps({"success": False, "reason": "no tmux"})
+        try:
+            subprocess.run(["tmux", "copy-mode", "-t", s._tmux_name],
+                           capture_output=True, timeout=3)
+            # Immediate PageUp so the user sees history right away
+            subprocess.run(["tmux", "send-keys", "-t", s._tmux_name, "PageUp"],
+                           capture_output=True, timeout=3)
+            return json.dumps({"success": True})
+        except Exception as e:
+            return json.dumps({"success": False, "reason": str(e)})
 
     def copy_text(self, text: str) -> str:
         """Copy text to system clipboard."""

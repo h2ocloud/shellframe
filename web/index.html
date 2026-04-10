@@ -63,7 +63,14 @@
     padding: 4px 8px; background: #1f2335; border-bottom: 1px solid #292e42;
     flex-shrink: 0; flex-wrap: wrap;
   }
-  #attach-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+  #attach-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; align-items: center; }
+  .attach-summary {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 8px; font-size: 11px; font-weight: 600;
+    color: #7aa2f7; background: #1a1b26;
+    border: 1px solid #3b4261; border-radius: 4px;
+    margin-right: 4px;
+  }
   .attach-chip {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 2px 8px; background: #292e42; border-radius: 4px;
@@ -85,19 +92,34 @@
   .term-pane.active { display: block; }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
-  /* Force xterm scrollbar always visible (WKWebView overlay scrollbars are
-     hidden by default and impossible to grab on long conversations) */
+  /* Force xterm scrollbar always visible. WKWebView's default overlay
+     scrollbar hides itself — `-webkit-appearance: none` is what opts out
+     of the native overlay and lets our custom ::-webkit-scrollbar rules
+     actually render as a permanent draggable bar. */
   .xterm .xterm-viewport {
-    scrollbar-width: thin;
-    scrollbar-color: #3b4261 transparent;
+    scrollbar-width: thin !important;
+    scrollbar-color: #565f89 transparent !important;
+    overflow-y: scroll !important;
   }
-  .xterm .xterm-viewport::-webkit-scrollbar { width: 10px; }
-  .xterm .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+  .xterm .xterm-viewport::-webkit-scrollbar {
+    -webkit-appearance: none !important;
+    width: 12px !important;
+    background: rgba(36, 40, 59, 0.5) !important;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
   .xterm .xterm-viewport::-webkit-scrollbar-thumb {
-    background: #3b4261; border-radius: 5px; min-height: 30px;
-    border: 2px solid transparent; background-clip: padding-box;
+    background-color: #565f89 !important;
+    border-radius: 6px !important;
+    min-height: 40px !important;
+    border: 2px solid transparent !important;
+    background-clip: padding-box !important;
   }
-  .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: #565f89; background-clip: padding-box; }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background-color: #7aa2f7 !important;
+    background-clip: padding-box !important;
+  }
 
   body { display: flex; flex-direction: column; }
 
@@ -252,6 +274,7 @@
     padding: 2px 8px; margin-left: 4px; border-radius: 4px; cursor: pointer;
     font-size: 11px; border: 1px solid #3b4261; background: none; color: #565f89;
     -webkit-app-region: no-drag; transition: all .15s;
+    white-space: nowrap; flex-shrink: 0;
   }
   .bridge-toggle:hover { border-color: #7aa2f7; color: #7aa2f7; }
   .bridge-toggle.active { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.1); }
@@ -744,6 +767,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let currentFontSize = 14;
 
   // Output push receiver — called from Python via evaluate_js (no polling needed)
+  // xterm.js natively preserves viewport position when the user has scrolled
+  // up (baseY advances but viewportY stays put). A custom scrollToLine here
+  // fights that built-in behaviour and is why dragging the scrollbar didn't
+  // actually show old content — each new PTY push snapped back. Just write.
   window._pushOutput = function(sid, data) {
     const s = sessions[sid];
     if (!s) return;
@@ -752,22 +779,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!s._pushTimes) s._pushTimes = [];
     s._pushTimes.push(now);
     if (s._pushTimes.length > 30) s._pushTimes.shift();
-    if (s._userScrolledUp) {
-      // Pin to the same content line. Track offset-from-bottom too in case
-      // scrollback overflows and absolute line drops off the top.
-      const buf = s.term.buffer.active;
-      const vp = buf.viewportY;
-      const offsetFromBottom = buf.baseY - buf.viewportY;
-      s.term.write(data, () => {
-        const nb = s.term.buffer.active;
-        // Prefer absolute position; if it would put us below the new bottom
-        // (impossible) or above 0, fall back to offset-from-bottom anchor.
-        const target = vp <= nb.baseY ? vp : Math.max(0, nb.baseY - offsetFromBottom);
-        s.term.scrollToLine(target);
-      });
-    } else {
-      s.term.write(data);
-    }
+    s.term.write(data);
   };
 
   const $tabs = document.getElementById('tabs');
@@ -916,6 +928,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const ro = new ResizeObserver(() => { if (activeId === sid) fitTerm(sid); });
     ro.observe(pane);
 
+    // Scroll-up → tmux history: xterm.js scrollback is always empty for TUI
+    // apps (Claude/Codex use cursor positioning, not line-feeds). When user
+    // scrolls up at the top of the empty buffer, enter tmux copy-mode so
+    // they can browse the real scrollback stored in tmux's pane buffer.
+    setupScrollHistory(sid, pane);
+
     // Process alive check (output is pushed from Python, no polling needed)
     (async function aliveLoop() {
       while (sessions[sid]) {
@@ -994,6 +1012,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     const ro = new ResizeObserver(() => { if (activeId === sid) fitTerm(sid); });
     ro.observe(pane);
+
+    setupScrollHistory(sid, pane);
 
     // Process alive check (output is pushed from Python)
     (async function aliveLoop() {
@@ -1379,6 +1399,49 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   }
 
+  // ── Scroll history via tmux copy-mode ──
+  // xterm.js scrollback is always 0 for TUI apps that redraw in-place.
+  // When user scrolls up at the empty buffer top, enter tmux copy-mode
+  // which has the real scrollback. Debounced to avoid triggering on every
+  // single wheel tick.
+  function setupScrollHistory(sid, pane) {
+    let _scrollHistDebounce = null;
+    let _inCopyMode = false;
+    pane.addEventListener('wheel', (e) => {
+      const s = sessions[sid];
+      if (!s) return;
+
+      // Scroll DOWN while in copy-mode → exit copy-mode automatically
+      if (_inCopyMode && e.deltaY > 0) {
+        // Send 'q' to exit tmux copy-mode
+        pywebview.api.write_input(sid, 'q');
+        _inCopyMode = false;
+        return;
+      }
+
+      if (e.deltaY >= 0) return;  // only scroll-up triggers entry
+      const buf = s.term.buffer.active;
+      // Only trigger when xterm.js has no scrollback to offer
+      if (buf.baseY > 0 && buf.viewportY > 0) return;
+      if (_inCopyMode || _scrollHistDebounce) return;
+      _scrollHistDebounce = setTimeout(() => { _scrollHistDebounce = null; }, 1000);
+      _inCopyMode = true;
+      // Brief toast
+      const toast = document.createElement('div');
+      toast.textContent = '📜 Scroll history — scroll down or press q to exit';
+      toast.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);' +
+        'background:#1f2335;color:#7aa2f7;padding:4px 14px;border-radius:6px;font-size:12px;' +
+        'z-index:20;border:1px solid #3b4261;pointer-events:none;opacity:0.95';
+      pane.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+      // Enter tmux copy-mode
+      pywebview.api.enter_scroll_history(sid).then(() => {
+        // Safety: auto-clear after 2 minutes to avoid stuck state
+        setTimeout(() => { _inCopyMode = false; }, 120000);
+      });
+    }, { passive: true });
+  }
+
   // ── Image / file attach ──
   function shortPath(p) {
     const name = p.split('/').pop().split('\\').pop();
@@ -1390,13 +1453,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const bar = document.getElementById('image-bar');
     const chips = document.getElementById('attach-chips');
     if (s && s.attachments.length > 0) {
-      chips.innerHTML = s.attachments.map((a, i) => {
+      const total = s.attachments.length;
+      const imgCount = s.attachments.filter(a =>
+        a.dataUrl || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path)).length;
+      const fileCount = total - imgCount;
+      // Count summary: "📷 4 images" / "📎 2 files" / "📷 3 📎 1"
+      let summary = '';
+      if (imgCount && fileCount) summary = `📷 ${imgCount} 📎 ${fileCount}`;
+      else if (imgCount) summary = `📷 ${imgCount} image${imgCount > 1 ? 's' : ''}`;
+      else summary = `📎 ${fileCount} file${fileCount > 1 ? 's' : ''}`;
+      const summaryHtml = `<span class="attach-summary">${summary}</span>`;
+      const chipsHtml = s.attachments.map((a, i) => {
         const isImg = a.dataUrl || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path);
         const icon = isImg ? '📷' : '📎';
         const name = shortPath(a.path);
         const thumb = a.dataUrl ? `<img src="${a.dataUrl}" class="chip-thumb"/>` : '';
         return `<span class="attach-chip" title="${esc(a.path)}">${thumb}${icon} <b>#${a.tag}</b> ${esc(name)} <span class="chip-close" data-idx="${i}">&times;</span></span>`;
       }).join('');
+      chips.innerHTML = summaryHtml + chipsHtml;
       bar.style.display = 'flex';
     } else {
       bar.style.display = 'none';
@@ -1439,41 +1513,57 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     const ai = isAiSession(activeId);
 
-    // 1. Check for image data
+    // Helper: read a blob to DataURL as a Promise so we can process multiple
+    // clipboard items in parallel instead of returning after the first one.
+    const readDataUrl = (blob) => new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    });
+
+    // 1. Collect ALL image items (clipboard can hold multiple screenshots)
+    const imageBlobs = [];
     for (const item of items) {
       if (item.type.startsWith('image/')) {
-        e.stopPropagation();
-        e.preventDefault();
-        const blob = item.getAsFile();
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const dataUrl = reader.result;
-          const path = await pywebview.api.save_image(dataUrl);
-          if (ai) { attachFile(path, dataUrl); }
-          else { await pywebview.api.write_input(activeId, path); }
-        };
-        reader.readAsDataURL(blob);
-        return;
+        const b = item.getAsFile();
+        if (b) imageBlobs.push(b);
       }
     }
+    if (imageBlobs.length > 0) {
+      e.stopPropagation();
+      e.preventDefault();
+      // Save each one sequentially (attachFile needs to write paths in order
+      // so the #N tags line up with what appears in the terminal)
+      for (const blob of imageBlobs) {
+        const dataUrl = await readDataUrl(blob);
+        const path = await pywebview.api.save_image(dataUrl);
+        if (ai) { attachFile(path, dataUrl); }
+        else { await pywebview.api.write_input(activeId, path); }
+      }
+      return;
+    }
 
-    // 2. Check for file blobs (non-image files pasted from some apps)
+    // 2. Collect ALL file blobs (non-image files pasted from some apps)
+    const fileBlobs = [];
     for (const item of items) {
       if (item.kind === 'file') {
-        e.stopPropagation();
-        e.preventDefault();
-        const blob = item.getAsFile();
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const path = await pywebview.api.save_file_from_clipboard(reader.result, blob.name || 'file');
-          if (!path.startsWith('ERROR')) {
-            if (ai) { attachFile(path, null); }
-            else { await pywebview.api.write_input(activeId, path); }
-          }
-        };
-        reader.readAsDataURL(blob);
-        return;
+        const b = item.getAsFile();
+        if (b) fileBlobs.push(b);
       }
+    }
+    if (fileBlobs.length > 0) {
+      e.stopPropagation();
+      e.preventDefault();
+      for (const blob of fileBlobs) {
+        const dataUrl = await readDataUrl(blob);
+        const path = await pywebview.api.save_file_from_clipboard(dataUrl, blob.name || 'file');
+        if (!path.startsWith('ERROR')) {
+          if (ai) { attachFile(path, null); }
+          else { await pywebview.api.write_input(activeId, path); }
+        }
+      }
+      return;
     }
 
     // 3. Check system clipboard for Finder-copied files (macOS/Windows)
@@ -2272,6 +2362,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const idx = sessionOrder.indexOf(activeId);
       const dir = e.key === ']' ? 1 : -1;
       switchTab(sessionOrder[(idx + dir + sessionOrder.length) % sessionOrder.length]);
+    }
+    // Ctrl+Shift+D → debug: show xterm.js buffer state
+    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      e.preventDefault();
+      if (activeId && sessions[activeId]) {
+        const t = sessions[activeId].term;
+        const b = t.buffer.active;
+        alert(
+          `xterm.js buffer debug (${activeId}):\n` +
+          `  rows (visible): ${t.rows}\n` +
+          `  scrollback setting: ${t.options.scrollback}\n` +
+          `  buffer.length (total lines): ${b.length}\n` +
+          `  buffer.baseY (scroll-bottom line): ${b.baseY}\n` +
+          `  buffer.viewportY (viewport top line): ${b.viewportY}\n` +
+          `  scrollable lines: ${b.baseY}\n` +
+          `  _userScrolledUp: ${sessions[activeId]._userScrolledUp}`
+        );
+      }
     }
     // Cmd/Ctrl+, → settings
     if ((e.metaKey || e.ctrlKey) && e.key === ',') {
