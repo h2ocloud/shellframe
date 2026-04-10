@@ -44,6 +44,12 @@
     box-shadow: 0 0 6px #e0af68, 0 0 2px #e0af68;
     animation: busy-pulse 1.1s ease-in-out infinite;
   }
+  /* Attention state — waiting on user input (permission dialog, menu prompt) */
+  .busy-dot.on.attention {
+    background: #f7768e;
+    box-shadow: 0 0 6px #f7768e, 0 0 2px #f7768e;
+    animation: busy-pulse 1.6s ease-in-out infinite;
+  }
   @keyframes busy-pulse {
     0%, 100% { opacity: .55; }
     50%      { opacity: 1; }
@@ -2142,23 +2148,67 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }, 3000);
 
   // ── Busy indicator tick ──
-  // Mark a session as "busy" when PTY output is streaming. Lenient enough
-  // for slow spinners (Codex emits ~1 chunk/sec) while filtering out
-  // single-frame bursts (reload/reattach/resize).
+  // Two complementary detection paths:
   //
-  // Conditions for busy:
-  //   1. Last push happened within 1200ms (recent activity), AND
-  //   2. At least 2 pushes in the last 3000ms with spread ≥600ms
-  //      (rules out single-burst events).
+  //   A. Push-rate (already there) — catches active streaming output:
+  //      Last push within 1200ms AND ≥2 pushes in last 3000ms with spread ≥600ms.
+  //
+  //   B. Screen content scan — catches states where Claude is "not idle"
+  //      but no output is streaming right now. Looks for markers in the
+  //      visible terminal buffer:
+  //        • "esc to interrupt" / "Working ("       → spinner / running tool
+  //        • "Task(" with adjacent "Running"        → subagent active
+  //        • "❯ 1." pattern                          → waiting on permission
+  //        • Single-line "✻/✢/✳/⏺ Verb..."         → spinner verb line
+  //
+  //   The dot lights up if EITHER path indicates activity.
   const BUSY_RECENT_MS = 1200;
   const BUSY_WINDOW_MS = 3000;
   const BUSY_MIN_PUSHES = 2;
   const BUSY_MIN_SPREAD_MS = 600;
+
+  // Markers that mean "Claude is doing something" (running tool / subagent / spinner)
+  const ACTIVITY_MARKERS = [
+    /esc to interrupt/i,
+    /Working\s*\(/,
+    /\bTask\(/,
+    /Running…/,
+    /↑\s*\d+\s*tokens/,         // Claude active token counter
+    /\(\d+s\s*[·•]/,             // "(15s · ..." spinner duration
+  ];
+  // Permission / menu prompt markers (waiting for user input)
+  const ATTENTION_MARKERS = [
+    /❯\s*\d+\.\s/,
+    /Esc to cancel/i,
+  ];
+
+  function scanTerminalActivity(s) {
+    // Read visible buffer rows from xterm
+    if (!s.term || !s.term.buffer || !s.term.buffer.active) return { active: false, attention: false };
+    const buf = s.term.buffer.active;
+    const startRow = Math.max(0, buf.length - 30);   // last ~30 lines is enough
+    let txt = '';
+    for (let r = startRow; r < buf.length; r++) {
+      const line = buf.getLine(r);
+      if (line) txt += line.translateToString(true) + '\n';
+    }
+    let active = false, attention = false;
+    for (const re of ACTIVITY_MARKERS) {
+      if (re.test(txt)) { active = true; break; }
+    }
+    for (const re of ATTENTION_MARKERS) {
+      if (re.test(txt)) { attention = true; break; }
+    }
+    return { active, attention };
+  }
+
   setInterval(() => {
     const now = Date.now();
     for (const sid of Object.keys(sessions)) {
       const s = sessions[sid];
       if (!s) continue;
+
+      // Path A: push-rate
       let isBusy = false;
       if (s._lastOutputTs && now - s._lastOutputTs < BUSY_RECENT_MS && s._pushTimes) {
         const recent = s._pushTimes.filter(t => now - t < BUSY_WINDOW_MS);
@@ -2167,14 +2217,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           isBusy = spread >= BUSY_MIN_SPREAD_MS;
         }
       }
-      if (s._busy === isBusy) continue;
-      s._busy = isBusy;
+
+      // Path B: screen content scan (also catches "needs attention")
+      let isAttention = false;
+      if (!isBusy || !s._wasBusy) {
+        const scan = scanTerminalActivity(s);
+        if (scan.active) isBusy = true;
+        if (scan.attention) isAttention = true;
+      }
+      s._wasBusy = isBusy;
+
+      // The dot toggles on for either active or attention state
+      const dotOn = isBusy || isAttention;
+      // Style: orange = active, yellow = attention (waiting on input)
+      const dotClass = isAttention && !isBusy ? 'on attention' : (dotOn ? 'on' : '');
+
+      if (s._busy === dotOn && s._dotClass === dotClass) continue;
+      s._busy = dotOn;
+      s._dotClass = dotClass;
       const tabDot = $tabs.querySelector(`.tab[data-sid="${sid}"] .busy-dot`);
-      if (tabDot) tabDot.classList.toggle('on', isBusy);
+      if (tabDot) tabDot.className = 'busy-dot ' + dotClass;
       const sbDot = document.querySelector(`#sidebar-sessions [data-sid="${sid}"] .busy-dot`);
-      if (sbDot) sbDot.classList.toggle('on', isBusy);
+      if (sbDot) sbDot.className = 'busy-dot ' + dotClass;
     }
-  }, 300);
+  }, 400);
 
   // ── About modal + update check ──
   const $modalAbout = document.getElementById('modal-about');
