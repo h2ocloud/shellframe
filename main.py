@@ -1070,11 +1070,16 @@ class Api:
             self.bridge.stop()
 
         allowed = json.loads(allowed_users_json) if allowed_users_json else []
+        # Pull STT settings from config so they survive across restarts
+        cfg_now = load_config()
+        bridge_cfg = cfg_now.get("bridge", {})
         config = TelegramBridgeConfig(
             bot_token=bot_token,
             allowed_users=[int(u) for u in allowed],
             prefix_enabled=prefix_enabled,
             initial_prompt=initial_prompt,
+            stt_backend=bridge_cfg.get("stt_backend", "auto"),
+            stt_remote_url=bridge_cfg.get("stt_remote_url", ""),
         )
 
         self.bridge = TelegramBridge(
@@ -1082,6 +1087,8 @@ class Api:
             config=config,
             on_reload=self.hot_reload_bridge,
             on_close_session=self.close_session,
+            on_restart=self.restart_app,
+            on_check_update=self.check_update,
         )
 
         # Register existing sessions (skip bridge-disabled ones)
@@ -1113,17 +1120,91 @@ class Api:
                     s.write("\r")
             threading.Thread(target=_send_prompt, daemon=True).start()
 
-        # Persist bridge config
+        # Persist bridge config (preserve existing STT settings)
         cfg = load_config()
+        prev_bridge = cfg.get("bridge", {})
         cfg["bridge"] = {
             "bot_token": bot_token,
             "allowed_users": [int(u) for u in allowed],
             "prefix_enabled": prefix_enabled,
             "initial_prompt": initial_prompt,
+            "stt_backend": prev_bridge.get("stt_backend", "auto"),
+            "stt_remote_url": prev_bridge.get("stt_remote_url", ""),
         }
         save_config(cfg)
 
         return json.dumps({"success": self.bridge.connected, **self.bridge.get_status()})
+
+    # ── STT (Speech-to-Text) settings ──
+    def stt_status(self) -> str:
+        """Return diagnostic info: which STT backends are available."""
+        cfg = load_config().get("bridge", {})
+        remote_url = cfg.get("stt_remote_url", "")
+        backend = cfg.get("stt_backend", "auto")
+        try:
+            status = TelegramBridge.stt_status(remote_url)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+        status["backend"] = backend
+        return json.dumps(status)
+
+    def stt_save_settings(self, backend: str, remote_url: str) -> str:
+        """Update STT backend and remote URL in config + live bridge."""
+        cfg = load_config()
+        bridge_cfg = cfg.get("bridge", {})
+        if backend in ("auto", "local", "remote", "off"):
+            bridge_cfg["stt_backend"] = backend
+        if remote_url is not None:
+            bridge_cfg["stt_remote_url"] = remote_url.strip()
+        cfg["bridge"] = bridge_cfg
+        save_config(cfg)
+        # Apply to running bridge
+        if self.bridge:
+            self.bridge.config.stt_backend = bridge_cfg.get("stt_backend", "auto")
+            self.bridge.config.stt_remote_url = bridge_cfg.get("stt_remote_url", "")
+        return json.dumps({"success": True})
+
+    def stt_install_local(self) -> str:
+        """Install whisper-cpp via Homebrew + download base model.
+        Returns progress as JSON. Runs synchronously (blocks until done)."""
+        try:
+            steps = []
+            # Step 1: ensure brew exists
+            brew = shutil.which("brew")
+            if not brew:
+                return json.dumps({"success": False, "message": "Homebrew not found. Install from https://brew.sh first."})
+
+            # Step 2: brew install whisper-cpp
+            r = subprocess.run([brew, "install", "whisper-cpp"], capture_output=True, text=True, timeout=600)
+            steps.append({"step": "brew install whisper-cpp", "rc": r.returncode, "out": r.stdout[-500:], "err": r.stderr[-500:]})
+            if r.returncode != 0 and "already installed" not in (r.stderr + r.stdout).lower():
+                return json.dumps({"success": False, "message": f"brew install failed: {r.stderr[-300:]}", "steps": steps})
+
+            # Step 3: download model if not present
+            model_dir = TelegramBridge.LOCAL_MODEL_DIR
+            model_dir.mkdir(parents=True, exist_ok=True)
+            model_path = model_dir / TelegramBridge.LOCAL_MODEL_NAME
+            if not model_path.exists():
+                steps.append({"step": "download model", "url": TelegramBridge.LOCAL_MODEL_URL})
+                req = urllib.request.Request(TelegramBridge.LOCAL_MODEL_URL, headers={"User-Agent": "shellframe"})
+                with urllib.request.urlopen(req, timeout=600) as resp, open(model_path, "wb") as out:
+                    while True:
+                        chunk = resp.read(64 * 1024)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+            steps.append({"step": "model_path", "path": str(model_path), "exists": model_path.exists()})
+
+            return json.dumps({
+                "success": True,
+                "message": "Local STT installed",
+                "model": str(model_path),
+                "steps": steps,
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return json.dumps({"success": False, "message": str(e)})
 
     def stop_bridge(self) -> str:
         if self.bridge:
@@ -1228,6 +1309,8 @@ class Api:
                     config=old_config,
                     on_reload=self.hot_reload_bridge,
                     on_close_session=self.close_session,
+                    on_restart=self.restart_app,
+                    on_check_update=self.check_update,
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
@@ -1382,6 +1465,22 @@ class Api:
                     "paused": status.get("paused", False),
                 }
             }
+
+        elif cmd == "do_update":
+            try:
+                result_json = self.do_update()
+                result = json.loads(result_json) if isinstance(result_json, str) else result_json
+                return {
+                    "success": result.get("success", False),
+                    "message": result.get("message", ""),
+                    "details": {
+                        "version": result.get("version", "?"),
+                        "needs_restart": result.get("needs_restart", False),
+                        "can_hot_reload": result.get("can_hot_reload", False),
+                    }
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Update failed: {e}"}
 
         else:
             return {"success": False, "message": f"Unknown command: {cmd}"}

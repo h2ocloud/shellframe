@@ -6,6 +6,7 @@ Zero external dependencies (uses urllib).
 
 import json
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -216,6 +217,8 @@ def load_init_prompt() -> str:
 class TelegramBridgeConfig(BridgeConfigBase):
     bot_token: str = ""
     initial_prompt: str = ""
+    stt_backend: str = "auto"   # auto / local / remote / off
+    stt_remote_url: str = ""    # blank → DEFAULT_REMOTE_STT_URL
 
     def __post_init__(self):
         if not self.initial_prompt:
@@ -259,7 +262,7 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
@@ -267,6 +270,8 @@ class TelegramBridge(BridgeBase):
         self._stop_event = threading.Event()
         self._on_reload = on_reload  # callback for hot-reload from TG
         self._on_close_session = on_close_session  # callback(sid) to close a session
+        self._on_restart = on_restart  # callback for full app restart from TG
+        self._on_check_update = on_check_update  # callback for update check from TG
         self._offset = 0
         self._flush_thread = None
 
@@ -1115,26 +1120,129 @@ class TelegramBridge(BridgeBase):
             except Exception:
                 time.sleep(5)
 
-    # Local STT endpoint — faster-whisper on Howard's home server
-    STT_URL = "http://192.168.51.197:8765/transcribe"
-    STT_HEALTH = "http://192.168.51.197:8765/health"
+    # ── STT (Speech-to-Text) ──
+    # Two backends: local whisper.cpp (if installed) and remote faster-whisper.
+    # Backend selection comes from config (stt_backend: auto/local/remote/off).
+    DEFAULT_REMOTE_STT_URL = "http://192.168.51.197:8765"
+    LOCAL_MODEL_DIR = _Path.home() / ".local" / "share" / "shellframe" / "whisper-models"
+    LOCAL_MODEL_NAME = "ggml-base.bin"  # ~150MB, decent quality, fast on Apple Silicon
+    LOCAL_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
 
-    def _transcribe_voice(self, audio_path: str) -> str:
-        """Send an audio file to the local STT server and return transcribed text.
-        Returns '' on failure."""
+    @classmethod
+    def _stt_local_binary(cls):
+        """Return path to whisper-cli binary if installed, else ''."""
+        for name in ("whisper-cli", "whisper-cpp", "main"):
+            p = shutil.which(name)
+            if p:
+                return p
+        return ""
+
+    @classmethod
+    def _stt_local_model_path(cls):
+        """Return path to local whisper model if downloaded, else ''."""
+        p = cls.LOCAL_MODEL_DIR / cls.LOCAL_MODEL_NAME
+        return str(p) if p.exists() else ""
+
+    @classmethod
+    def stt_status(cls, remote_url: str = "") -> dict:
+        """Diagnostic: return whether local + remote STT are available."""
+        local_bin = cls._stt_local_binary()
+        local_model = cls._stt_local_model_path()
+        local_ok = bool(local_bin and local_model)
+
+        url = remote_url or cls.DEFAULT_REMOTE_STT_URL
+        remote_ok = False
+        remote_err = ""
         try:
-            # Quick health check first
-            req = urllib.request.Request(self.STT_HEALTH)
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            req = urllib.request.Request(url.rstrip("/") + "/health")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                remote_ok = resp.status == 200
+        except Exception as e:
+            remote_err = str(e)
+
+        return {
+            "local": {
+                "binary": local_bin,
+                "model": local_model,
+                "ready": local_ok,
+            },
+            "remote": {
+                "url": url,
+                "ready": remote_ok,
+                "error": remote_err,
+            },
+        }
+
+    def _transcribe_local(self, audio_path: str) -> str:
+        """Run whisper-cli locally on the audio file. Returns '' on failure."""
+        binary = self._stt_local_binary()
+        model = self._stt_local_model_path()
+        if not binary or not model:
+            return ""
+        try:
+            # Convert ogg/opus to 16kHz mono WAV via ffmpeg (whisper.cpp wants WAV)
+            ffmpeg = shutil.which("ffmpeg")
+            if not ffmpeg:
+                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                    _f.write(f"  local STT: ffmpeg not found\n")
+                return ""
+            wav_path = audio_path.rsplit(".", 1)[0] + ".wav"
+            r = subprocess.run(
+                [ffmpeg, "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path],
+                capture_output=True, timeout=60,
+            )
+            if r.returncode != 0 or not _Path(wav_path).exists():
+                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                    _f.write(f"  ffmpeg convert failed: {r.stderr[:200]}\n")
+                return ""
+
+            # Run whisper-cli — output plain text to stdout
+            r = subprocess.run(
+                [binary, "-m", model, "-f", wav_path, "-l", "auto",
+                 "-nt", "-np", "--output-txt", "false"],
+                capture_output=True, text=True, timeout=180,
+            )
+            # whisper-cli prints transcription lines mixed with status — strip
+            # to just the recognized text. Lines starting with '[' are timestamps.
+            lines = []
+            for line in r.stdout.splitlines():
+                line = line.strip()
+                if not line or line.startswith("whisper_") or line.startswith("system_info"):
+                    continue
+                # Lines like "[00:00:00.000 --> 00:00:02.500]   Hello world"
+                if line.startswith("["):
+                    parts = line.split("]", 1)
+                    if len(parts) == 2:
+                        lines.append(parts[1].strip())
+                else:
+                    lines.append(line)
+            text = " ".join(lines).strip()
+            try:
+                _Path(wav_path).unlink()
+            except Exception:
+                pass
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  local STT transcribed: {len(text)} chars\n")
+            return text
+        except Exception as e:
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  local STT failed: {e}\n")
+            return ""
+
+    def _transcribe_remote(self, audio_path: str, url: str = "") -> str:
+        """POST audio to remote faster-whisper STT server. Returns '' on failure."""
+        base = (url or self.DEFAULT_REMOTE_STT_URL).rstrip("/")
+        try:
+            req = urllib.request.Request(base + "/health")
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 if resp.status != 200:
                     return ""
         except Exception as e:
             with open('/tmp/shellframe_bridge.log', 'a') as _f:
-                _f.write(f"  STT health check failed: {e}\n")
+                _f.write(f"  remote STT health check failed: {e}\n")
             return ""
 
         try:
-            # Build multipart/form-data manually (stdlib only — no requests dep)
             import uuid, mimetypes
             boundary = f"----sf{uuid.uuid4().hex}"
             fname = _Path(audio_path).name
@@ -1148,7 +1256,7 @@ class TelegramBridge(BridgeBase):
             ).encode("utf-8") + file_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
 
             req = urllib.request.Request(
-                self.STT_URL,
+                base + "/transcribe",
                 data=body,
                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
             )
@@ -1156,12 +1264,36 @@ class TelegramBridge(BridgeBase):
                 result = json.loads(resp.read().decode("utf-8"))
             text = (result.get("text") or "").strip()
             with open('/tmp/shellframe_bridge.log', 'a') as _f:
-                _f.write(f"  STT transcribed: {len(text)} chars\n")
+                _f.write(f"  remote STT transcribed: {len(text)} chars\n")
             return text
         except Exception as e:
             with open('/tmp/shellframe_bridge.log', 'a') as _f:
-                _f.write(f"  STT transcribe failed: {e}\n")
+                _f.write(f"  remote STT failed: {e}\n")
             return ""
+
+    def _transcribe_voice(self, audio_path: str) -> str:
+        """Transcribe audio using configured backend. Returns '' on failure.
+
+        Backend strategy from config.stt_backend:
+          - 'auto'   (default): try local first, fall back to remote
+          - 'local':  local whisper-cli only
+          - 'remote': remote STT server only
+          - 'off':    disabled
+        """
+        backend = getattr(self.config, "stt_backend", "auto") or "auto"
+        remote_url = getattr(self.config, "stt_remote_url", "") or self.DEFAULT_REMOTE_STT_URL
+
+        if backend == "off":
+            return ""
+        if backend == "local":
+            return self._transcribe_local(audio_path)
+        if backend == "remote":
+            return self._transcribe_remote(audio_path, remote_url)
+        # auto: local first, then remote
+        text = self._transcribe_local(audio_path)
+        if text:
+            return text
+        return self._transcribe_remote(audio_path, remote_url)
 
     def _download_tg_file(self, file_id: str, ext: str = "") -> str:
         """Download a Telegram file by file_id, save to CLAUDE_TMP. Returns local path or ''."""
@@ -1288,7 +1420,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload', 'close', 'new') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload', 'close', 'new', 'restart', 'update', 'update_now') or cmd.isdigit():
                 self._handle_command(cmd, user_id, chat_id)
                 return
             # Everything else: forward as CLI slash command (e.g., /model, /skills, /compact)
@@ -1526,10 +1658,97 @@ class TelegramBridge(BridgeBase):
                     })
             threading.Thread(target=_do_new, daemon=True).start()
 
+        elif cmd == "restart":
+            if not self._on_restart:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "Restart not available.",
+                })
+                return
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": "♻️ 重啟 ShellFrame 中… session 會自動 reattach",
+            })
+            def _do_restart():
+                try:
+                    self._on_restart()
+                except Exception as e:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": f"❌ Restart failed: {e}",
+                    })
+            threading.Thread(target=_do_restart, daemon=True).start()
+
+        elif cmd == "update":
+            if not self._on_check_update:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "Update check not available.",
+                })
+                return
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": "🔍 檢查更新中…",
+            })
+            def _do_update():
+                try:
+                    info = self._on_check_update()
+                    if isinstance(info, str):
+                        info = json.loads(info)
+                    local = info.get("local", "?")
+                    remote = info.get("remote", "?")
+                    if info.get("update_available"):
+                        msg = f"⬆️ 有新版本\n本地: v{local}\n遠端: v{remote}\n\n回 /update_now 套用"
+                    else:
+                        msg = f"✅ 已是最新版 (v{local})"
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": msg,
+                    })
+                except Exception as e:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": f"❌ Update check failed: {e}",
+                    })
+            threading.Thread(target=_do_update, daemon=True).start()
+
+        elif cmd == "update_now":
+            if not self._on_restart or not self._on_check_update:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "Update not available.",
+                })
+                return
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": "⬇️ 拉取更新中…",
+            })
+            def _do_update_now():
+                try:
+                    # Run git pull via the shared do_update mechanism
+                    result = self._sfctl_call("do_update", {})
+                    if not result.get("success"):
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"❌ {result.get('message', 'Update failed')}",
+                        })
+                        return
+                    details = result.get("details", {})
+                    new_ver = details.get("version", "?")
+                    needs_restart = details.get("needs_restart", False)
+                    if needs_restart:
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"✅ 拉到 v{new_ver} — 觸發重啟（session 會保留）",
+                        })
+                        self._on_restart()
+                    else:
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"✅ 拉到 v{new_ver} — 純 UI 改動，下次 reload 即可",
+                        })
+                except Exception as e:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": f"❌ Update failed: {e}",
+                    })
+            threading.Thread(target=_do_update_now, daemon=True).start()
+
         elif cmd == "start":
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
-                "text": f"ShellFrame Bridge\n\n/list — list sessions\n/new [cmd] — new session (default: claude)\n/close — close current session\n/1, /2, ... — switch session\n/pause — pause bridge\n/resume — resume\n/reload — hot-reload bridge code\n/status — show status",
+                "text": f"ShellFrame Bridge\n\n/list — list sessions\n/new [cmd] — new session (default: claude)\n/close — close current session\n/1, /2, ... — switch session\n/pause — pause bridge\n/resume — resume\n/reload — hot-reload bridge code\n/restart — full app restart (sessions preserved)\n/update — check for updates\n/update_now — pull + restart if needed\n/status — show status",
             })
 
         else:

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.1 (2026-04-11)
+
+### New Features
+- **STT backend selection** — Settings → Telegram Bridge gains a 🎙 STT panel: pick `Auto` (local first → remote), `Local` (whisper.cpp), `Remote` (faster-whisper server), or `Off`. Local backend uses `whisper-cli` + a downloaded `ggml-base.bin` model. Status pill shows which backends are reachable; an "安裝本地 STT" button runs `brew install whisper-cpp` and downloads the model into `~/.local/share/shellframe/whisper-models/`.
+- **TG `/restart`** — Trigger full app restart from Telegram. Sessions persist via tmux reattach.
+- **TG `/update`** + **`/update_now`** — Check for ShellFrame updates from Telegram. `/update_now` pulls + restarts (if Python changed) or reports UI-only changes.
+
+### 新功能
+- **STT 後端選擇** — 設定 → Telegram Bridge 多了 🎙 STT 面板：可選 `Auto`（本地優先 → 遠端）、`Local`（whisper.cpp）、`Remote`（faster-whisper 伺服器）或 `Off`。本地後端用 `whisper-cli` + `ggml-base.bin` 模型。狀態 pill 顯示哪些後端可用；「安裝本地 STT」按鈕會跑 `brew install whisper-cpp` 並下載模型到 `~/.local/share/shellframe/whisper-models/`。
+- **TG `/restart`** — 從 Telegram 直接觸發完整重啟，session 會透過 tmux 自動 reattach。
+- **TG `/update`** + **`/update_now`** — 從 Telegram 檢查更新。`/update_now` 會 pull + 重啟（若有 Python 改動）或回報純 UI 改動。
+
 ## v0.7.0 (2026-04-11)
 
 ### New Features

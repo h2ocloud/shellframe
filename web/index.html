@@ -541,6 +541,33 @@
           <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none">Disconnect</button>
         </div>
       </div>
+
+      <!-- STT (voice transcription) -->
+      <div class="bridge-setup" style="margin-top:10px">
+        <h4 style="display:flex;align-items:center;justify-content:space-between">
+          <span>🎙 語音轉錄 (STT)</span>
+          <span id="stt-status-pill" style="font-size:11px;color:#565f89"></span>
+        </h4>
+        <div class="bridge-field">
+          <label>Backend</label>
+          <select id="stt-backend" style="flex:1">
+            <option value="auto">Auto (本地優先 → 遠端)</option>
+            <option value="local">本地 (whisper.cpp)</option>
+            <option value="remote">遠端 (faster-whisper server)</option>
+            <option value="off">關閉</option>
+          </select>
+        </div>
+        <div class="bridge-field">
+          <label>遠端 URL</label>
+          <input type="text" id="stt-remote-url" placeholder="http://192.168.51.197:8765"/>
+        </div>
+        <div id="stt-detail" style="font-size:11px;color:#787c99;margin-top:6px;line-height:1.5"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-ghost" id="btn-stt-refresh">↻ 檢查</button>
+          <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
+          <button class="btn btn-primary" id="btn-stt-save">儲存</button>
+        </div>
+      </div>
     </div>
 
     <div class="modal-footer">
@@ -1879,7 +1906,93 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       connectBtn.style.display = 'inline-block';
       disconnectBtn.style.display = 'none';
     }
+    // Sync STT panel
+    syncSttPanel();
   }
+
+  // ── STT settings ──
+  async function syncSttPanel() {
+    try {
+      const raw = await pywebview.api.stt_status();
+      const status = JSON.parse(raw);
+      const pill = document.getElementById('stt-status-pill');
+      const detail = document.getElementById('stt-detail');
+      const backendSel = document.getElementById('stt-backend');
+      const urlInput = document.getElementById('stt-remote-url');
+
+      backendSel.value = status.backend || 'auto';
+      urlInput.value = status.remote?.url || '';
+
+      const local = status.local || {};
+      const remote = status.remote || {};
+      const localOk = local.ready;
+      const remoteOk = remote.ready;
+
+      // Pill summary
+      if (localOk && remoteOk) {
+        pill.textContent = '● 本地 + 遠端 OK';
+        pill.style.color = '#9ece6a';
+      } else if (localOk) {
+        pill.textContent = '● 本地 OK';
+        pill.style.color = '#9ece6a';
+      } else if (remoteOk) {
+        pill.textContent = '● 遠端 OK';
+        pill.style.color = '#9ece6a';
+      } else {
+        pill.textContent = '✗ 無可用 STT';
+        pill.style.color = '#f7768e';
+      }
+
+      // Detail rows
+      const lines = [];
+      lines.push(`<div>本地: ${localOk ? '✓ 已安裝' : '✗ 未安裝'} ${local.binary ? '(' + local.binary.split('/').pop() + ')' : ''}</div>`);
+      if (local.binary && !local.model) {
+        lines.push(`<div style="color:#e0af68">  ⚠ 缺少模型 — 點「安裝本地 STT」會自動下載</div>`);
+      }
+      lines.push(`<div>遠端: ${remoteOk ? '✓ 在線' : '✗ 離線'} ${remote.error ? '(' + remote.error.substring(0, 60) + ')' : ''}</div>`);
+      detail.innerHTML = lines.join('');
+    } catch(e) {
+      document.getElementById('stt-detail').textContent = 'Error: ' + e;
+    }
+  }
+
+  document.getElementById('btn-stt-refresh').addEventListener('click', syncSttPanel);
+
+  document.getElementById('btn-stt-save').addEventListener('click', async () => {
+    const backend = document.getElementById('stt-backend').value;
+    const url = document.getElementById('stt-remote-url').value.trim();
+    const btn = document.getElementById('btn-stt-save');
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      await pywebview.api.stt_save_settings(backend, url);
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = '儲存'; btn.disabled = false; }, 800);
+      syncSttPanel();
+    } catch(e) {
+      btn.textContent = '失敗';
+      setTimeout(() => { btn.textContent = '儲存'; btn.disabled = false; }, 1500);
+    }
+  });
+
+  document.getElementById('btn-stt-install').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-stt-install');
+    btn.disabled = true;
+    btn.textContent = '安裝中… (可能要幾分鐘)';
+    try {
+      const raw = await pywebview.api.stt_install_local();
+      const result = JSON.parse(raw);
+      if (result.success) {
+        btn.textContent = '✓ 已安裝';
+        syncSttPanel();
+      } else {
+        btn.textContent = '✗ ' + (result.message || 'failed').substring(0, 30);
+      }
+    } catch(e) {
+      btn.textContent = '✗ Error';
+    }
+    setTimeout(() => { btn.textContent = '安裝本地 STT'; btn.disabled = false; }, 3000);
+  });
 
   document.getElementById('btn-settings-bridge-connect').addEventListener('click', async () => {
     const token = document.getElementById('settings-bridge-token').value.trim();
