@@ -240,6 +240,8 @@ class SessionSlot:
         self.sent_texts = []
         self.has_user_msg = False
         self.pending_menu = False  # True if last extract found a menu prompt
+        self.awaiting_response = False  # True between user msg and first AI response extraction
+        self.last_extraction_ts = 0.0   # time of last successful response extraction
         # Stall detection: warn when we wrote to the session but got no
         # meaningful output for ~15s. Common cause: macOS TCC permission
         # dialog blocking the CLI in the background.
@@ -524,7 +526,7 @@ class TelegramBridge(BridgeBase):
             slot.last_chunk_ts = now_ts  # for stall detection (not reset by flush)
             if was_empty or slot.first_output_time == 0:
                 slot.first_output_time = now_ts
-        if was_empty:
+        if was_empty and slot.awaiting_response:
             threading.Thread(target=self._send_typing, args=(sid,), daemon=True).start()
 
     # AI response markers used by CLI tools
@@ -957,7 +959,12 @@ class TelegramBridge(BridgeBase):
                     # Wait for 3s idle OR 120s total before extracting
                     # Claude can take 2+ minutes for long responses
                     if idle < 3.0 and total < 120.0:
-                        self._send_typing(sid)
+                        # Only animate typing while we're actually waiting on a
+                        # fresh user message — Claude's TUI status bar refreshes
+                        # otherwise keep last_output_time hot forever and the
+                        # typing indicator would never stop.
+                        if slot.awaiting_response:
+                            self._send_typing(sid)
                         continue
 
                     # Extract new text via screen diff (only final changes)
@@ -969,6 +976,8 @@ class TelegramBridge(BridgeBase):
                     if new_lines:
                         slot.last_write_ts = 0.0
                         slot.stall_warned = False
+                        slot.awaiting_response = False  # response delivered, stop typing
+                        slot.last_extraction_ts = now
                     # Keep has_user_msg=True so subsequent responses still get
                     # forwarded.  It resets only when a NEW user message arrives
                     # (the _handle_update path sets it fresh each time).
@@ -1524,6 +1533,7 @@ class TelegramBridge(BridgeBase):
             with slot.output_lock:
                 slot.output_buf = ""
         slot.has_user_msg = True
+        slot.awaiting_response = True  # arm typing indicator + flush extraction
         # Track what we send so we can filter echo from output
         slot.sent_texts.append(forwarded)
         # Keep only last 10 sent texts
