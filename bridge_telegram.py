@@ -1143,7 +1143,7 @@ class TelegramBridge(BridgeBase):
                 result = tg_api(self.config.bot_token, "getUpdates", {
                     "offset": self._offset,
                     "timeout": 30,
-                    "allowed_updates": ["message"],
+                    "allowed_updates": ["message", "callback_query"],
                 })
                 if not result.get("ok"):
                     time.sleep(5)
@@ -1502,7 +1502,101 @@ class TelegramBridge(BridgeBase):
         except Exception:
             return ""
 
+    @staticmethod
+    def _load_presets() -> list:
+        """Load presets from main config.json (for inline keyboard pickers)."""
+        try:
+            from main import load_config
+            cfg = load_config()
+            return cfg.get("presets", []) or []
+        except Exception:
+            return []
+
+    def _handle_callback_query(self, cq: dict):
+        """Handle inline keyboard button taps."""
+        cq_id = cq.get("id", "")
+        data = cq.get("data", "")
+        user = cq.get("from", {})
+        user_id = user.get("id", 0)
+        message = cq.get("message", {}) or {}
+        chat_id = message.get("chat", {}).get("id", 0)
+        message_id = message.get("message_id", 0)
+
+        with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            _f.write(f"_handle_callback_query: data={data!r} user={user_id}\n")
+
+        # Whitelist check
+        if self.config.allowed_users and user_id not in self.config.allowed_users:
+            tg_api(self.config.bot_token, "answerCallbackQuery", {
+                "callback_query_id": cq_id, "text": "Access denied"})
+            return
+
+        # Always ack the callback so TG stops the spinner
+        tg_api(self.config.bot_token, "answerCallbackQuery", {"callback_query_id": cq_id})
+
+        if data.startswith("new:"):
+            choice = data[4:]
+            if choice == "cancel":
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "✕ 已取消",
+                })
+                return
+            # Look up preset by name
+            presets = self._load_presets()
+            preset = next((p for p in presets if p.get("name") == choice), None)
+            if not preset:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": f"❌ Preset not found: {choice}",
+                })
+                return
+            preset_cmd = preset.get("cmd", "")
+            if not preset_cmd:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": f"❌ Preset has no cmd",
+                })
+                return
+            # Track chat (callback message has chat too)
+            self._user_chat[user_id] = chat_id
+            # Create the session
+            def _do_create():
+                new_sid = ""
+                err = ""
+                if self._on_new_session:
+                    try:
+                        new_sid = self._on_new_session(preset_cmd)
+                    except Exception as e:
+                        err = str(e)
+                else:
+                    result = self._sfctl_call("new_session", {"cmd": preset_cmd})
+                    if result.get("success"):
+                        new_sid = result.get("details", {}).get("sid", "")
+                    else:
+                        err = result.get("message", "")
+                if new_sid:
+                    self._user_active[user_id] = new_sid
+                    self._default_active_sid = new_sid
+                    tg_api(self.config.bot_token, "editMessageText", {
+                        "chat_id": chat_id, "message_id": message_id,
+                        "text": f"✚ {preset.get('icon', '▶')} {preset.get('name')} 已建立\n切到此 session（/list 可看全部）",
+                    })
+                else:
+                    tg_api(self.config.bot_token, "editMessageText", {
+                        "chat_id": chat_id, "message_id": message_id,
+                        "text": f"❌ Create failed: {err or 'unknown error'}",
+                    })
+            threading.Thread(target=_do_create, daemon=True).start()
+            return
+
     def _handle_update(self, update: dict):
+        # Inline keyboard button taps come as callback_query, not message
+        cq = update.get("callback_query")
+        if cq:
+            self._handle_callback_query(cq)
+            return
+
         msg = update.get("message")
         if not msg:
             return
@@ -1850,9 +1944,38 @@ class TelegramBridge(BridgeBase):
             threading.Thread(target=_do_close, daemon=True).start()
 
         elif cmd == "new":
-            # Get preset from args if provided, default to "claude"
+            # Parse args from message text
             parts = text.split(maxsplit=1) if text else []
-            preset_cmd = parts[1] if len(parts) > 1 else "claude"
+            if len(parts) <= 1:
+                # No args → show preset picker as inline keyboard
+                presets = self._load_presets()
+                if presets:
+                    keyboard = []
+                    # 2 columns of preset buttons
+                    row = []
+                    for i, p in enumerate(presets):
+                        icon = p.get("icon", "▶")
+                        name = p.get("name", "preset")
+                        row.append({
+                            "text": f"{icon} {name}",
+                            "callback_data": f"new:{name}",
+                        })
+                        if len(row) == 2:
+                            keyboard.append(row)
+                            row = []
+                    if row:
+                        keyboard.append(row)
+                    keyboard.append([{"text": "❌ Cancel", "callback_data": "new:cancel"}])
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": "✚ 選擇 preset，或直接回 `/new <command>` 開自訂指令：",
+                        "reply_markup": {"inline_keyboard": keyboard},
+                    })
+                    return
+                # Fallback: no presets configured, default to claude
+                preset_cmd = "claude"
+            else:
+                preset_cmd = parts[1]
             def _do_new():
                 new_sid = ""
                 err = ""
