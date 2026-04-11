@@ -1102,8 +1102,30 @@ class TelegramBridge(BridgeBase):
                 f.write(f"_send_tg_file error: {file_path} -> {e}\n")
 
     # ── TG Polling ──
+    # Offset persistence — survives full app restarts so /restart and
+    # /update_now don't re-process themselves on the new instance.
+    _OFFSET_FILE = _Path.home() / ".config" / "shellframe" / "tg_offset.json"
+
+    @classmethod
+    def _load_offset(cls) -> int:
+        try:
+            data = json.loads(cls._OFFSET_FILE.read_text())
+            return int(data.get("offset", 0))
+        except Exception:
+            return 0
+
+    def _save_offset(self):
+        try:
+            self._OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self._OFFSET_FILE.write_text(json.dumps({"offset": self._offset}))
+        except Exception:
+            pass
 
     def _poll_loop(self):
+        # Restore offset from disk on first run (handles full app restart)
+        if self._offset == 0:
+            self._offset = self._load_offset()
+        first_batch = True
         while self.active and not self._stop_event.is_set():
             try:
                 result = tg_api(self.config.bot_token, "getUpdates", {
@@ -1114,9 +1136,23 @@ class TelegramBridge(BridgeBase):
                 if not result.get("ok"):
                     time.sleep(5)
                     continue
-                for update in result.get("result", []):
+                updates = result.get("result", [])
+                for update in updates:
                     self._offset = update["update_id"] + 1
+                    self._save_offset()  # persist BEFORE handling so restart can't re-process
+                    # Safety net: on the very first poll batch after startup,
+                    # skip self-restart commands. Prevents infinite restart loops
+                    # when the previous instance died before saving the offset.
+                    if first_batch:
+                        msg = update.get("message", {})
+                        text = (msg.get("text") or "").strip().lower()
+                        cmd = text.split()[0] if text else ""
+                        if cmd in ("/restart", "/update_now", "/reload"):
+                            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                                _f.write(f"  startup safety: skipping {cmd}\n")
+                            continue
                     self._handle_update(update)
+                first_batch = False
             except Exception:
                 time.sleep(5)
 
