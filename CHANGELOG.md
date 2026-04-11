@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.8.0 (2026-04-11)
+
+### Breaking — STT is now plugin-driven
+- **No hardcoded STT servers in the repo.** The previous build shipped specific intranet IPs (192.168.51.151, 192.168.51.197) baked into `bridge_telegram.py`. That made the project unusable for anyone else and leaked a personal infra detail. Removed.
+- **Provider chain via config** — `config.bridge.stt_providers` is now a JSON list. Each provider entry: `{name, url, field, health?, query?, result_keys?}`. Bridge tries them in order; first non-empty response wins.
+- **Plugin file hook** — Drop a Python module at `~/.config/shellframe/stt_plugin.py` exporting `transcribe(audio_path: str) -> str`. Tried before built-in backends. Lets you wire any STT (cloud API, custom binary, sub-process) without modifying ShellFrame source.
+- **Backends**: `auto` (plugin → local → remote chain) / `plugin` / `local` (whisper.cpp) / `remote` / `off`.
+- **Settings UI** rewritten: providers are edited as a JSON textarea with placeholder example. Status panel shows each provider's individual reachability.
+- **Migration**: if you used the v0.7 hardcoded chain, paste your endpoints into Settings → Telegram Bridge → 🎙 STT → Providers and save.
+
+### Fixes
+- **Dropped `stt_remote_url`** legacy field — replaced by the provider list.
+- **`_transcribe_voice` failure message** now lists each endpoint individually with its error so you can see which one(s) failed.
+
+### 重大改動 — STT 改為 plugin 架構
+- **Repo 不再硬寫 STT 伺服器位址。** 上一版把私人內網 IP（192.168.51.151、192.168.51.197）寫進 `bridge_telegram.py`，這對其他使用者完全沒用而且洩漏個人 infra 設定。移除。
+- **改用 config 設定 provider chain** — `config.bridge.stt_providers` 是 JSON 陣列，每筆 provider：`{name, url, field, health?, query?, result_keys?}`。Bridge 依序嘗試，第一個有回應的勝出。
+- **Plugin 檔案介面** — 在 `~/.config/shellframe/stt_plugin.py` 放一個 Python module 並 export `transcribe(audio_path: str) -> str`，會在內建後端之前先試。可以接任何 STT（雲端 API、自製 binary、子進程）而不用改 ShellFrame 原始碼。
+- **後端**: `auto`（plugin → local → remote chain）/ `plugin` / `local`（whisper.cpp）/ `remote` / `off`。
+- **設定 UI 改寫**：providers 用 JSON textarea 編輯，附 placeholder 範例。狀態面板顯示每個 provider 各自的連線狀況。
+- **遷移**：v0.7 hardcoded chain 的使用者，把端點貼到 設定 → Telegram Bridge → 🎙 STT → Providers 然後存檔即可。
+
 ## v0.7.1 (2026-04-11)
 
 ### New Features

@@ -551,21 +551,30 @@
         <div class="bridge-field">
           <label>Backend</label>
           <select id="stt-backend" style="flex:1">
-            <option value="auto">Auto (本地優先 → 遠端)</option>
-            <option value="local">本地 (whisper.cpp)</option>
-            <option value="remote">遠端 (faster-whisper server)</option>
-            <option value="off">關閉</option>
+            <option value="auto">Auto (plugin → 本地 → 遠端)</option>
+            <option value="plugin">Plugin only</option>
+            <option value="local">Local (whisper.cpp)</option>
+            <option value="remote">Remote chain only</option>
+            <option value="off">Off</option>
           </select>
         </div>
-        <div class="bridge-field">
-          <label>遠端 URL</label>
-          <input type="text" id="stt-remote-url" placeholder="http://192.168.51.197:8765"/>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label>Providers</label>
+          <textarea id="stt-providers" style="font-size:11px;font-family:monospace;min-height:90px"
+            placeholder='[
+  {"name":"home", "url":"http://host:8787/stt", "field":"file", "query":{"language":"zh"}},
+  {"name":"backup", "url":"http://other:8765/transcribe", "field":"audio"}
+]'></textarea>
         </div>
         <div id="stt-detail" style="font-size:11px;color:#787c99;margin-top:6px;line-height:1.5"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btn-stt-refresh">↻ 檢查</button>
           <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
           <button class="btn btn-primary" id="btn-stt-save">儲存</button>
+        </div>
+        <div style="font-size:10px;color:#565f89;margin-top:6px;line-height:1.4">
+          Plugin: drop a Python file at <code>~/.config/shellframe/stt_plugin.py</code>
+          exporting <code>transcribe(audio_path) → str</code> for custom STT logic.
         </div>
       </div>
     </div>
@@ -1918,38 +1927,55 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const pill = document.getElementById('stt-status-pill');
       const detail = document.getElementById('stt-detail');
       const backendSel = document.getElementById('stt-backend');
-      const urlInput = document.getElementById('stt-remote-url');
+      const providersTxt = document.getElementById('stt-providers');
 
       backendSel.value = status.backend || 'auto';
-      urlInput.value = status.remote?.url || '';
+      // Pretty-print configured providers (read from main.py via stt_get_providers)
+      try {
+        const provRaw = await pywebview.api.stt_get_providers();
+        const providers = JSON.parse(provRaw);
+        if (providers && providers.length > 0) {
+          providersTxt.value = JSON.stringify(providers, null, 2);
+        }
+      } catch(e) {}
 
       const local = status.local || {};
+      const plugin = status.plugin || {};
       const remote = status.remote || {};
       const localOk = local.ready;
+      const pluginOk = plugin.ready;
       const remoteOk = remote.ready;
 
       // Pill summary
-      if (localOk && remoteOk) {
-        pill.textContent = '● 本地 + 遠端 OK';
-        pill.style.color = '#9ece6a';
-      } else if (localOk) {
-        pill.textContent = '● 本地 OK';
-        pill.style.color = '#9ece6a';
-      } else if (remoteOk) {
-        pill.textContent = '● 遠端 OK';
+      const ready = [];
+      if (pluginOk) ready.push('Plugin');
+      if (localOk) ready.push('Local');
+      if (remoteOk) ready.push(remote.active || 'Remote');
+      if (ready.length > 0) {
+        pill.textContent = '● ' + ready.join(' + ');
         pill.style.color = '#9ece6a';
       } else {
-        pill.textContent = '✗ 無可用 STT';
+        pill.textContent = '✗ No STT available';
         pill.style.color = '#f7768e';
       }
 
       // Detail rows
       const lines = [];
-      lines.push(`<div>本地: ${localOk ? '✓ 已安裝' : '✗ 未安裝'} ${local.binary ? '(' + local.binary.split('/').pop() + ')' : ''}</div>`);
+      lines.push(`<div>Plugin: ${pluginOk ? '✓ ' + plugin.path : '✗ (no ' + plugin.path + ')'}</div>`);
+      lines.push(`<div>Local: ${localOk ? '✓ ' + (local.binary ? local.binary.split('/').pop() : '') : '✗ not installed'}</div>`);
       if (local.binary && !local.model) {
-        lines.push(`<div style="color:#e0af68">  ⚠ 缺少模型 — 點「安裝本地 STT」會自動下載</div>`);
+        lines.push(`<div style="color:#e0af68">  ⚠ binary 已裝但缺少模型 — 點「安裝本地 STT」會自動下載</div>`);
       }
-      lines.push(`<div>遠端: ${remoteOk ? '✓ 在線' : '✗ 離線'} ${remote.error ? '(' + remote.error.substring(0, 60) + ')' : ''}</div>`);
+      const eps = remote.endpoints || [];
+      if (eps.length === 0) {
+        lines.push(`<div>Remote: ✗ no providers configured</div>`);
+      } else {
+        for (const ep of eps) {
+          const dot = ep.ready ? '✓' : '✗';
+          const err = ep.error ? ` <span style="color:#f7768e">(${ep.error.substring(0, 40)})</span>` : '';
+          lines.push(`<div>  ${dot} ${ep.name}${err}</div>`);
+        }
+      }
       detail.innerHTML = lines.join('');
     } catch(e) {
       document.getElementById('stt-detail').textContent = 'Error: ' + e;
@@ -1960,12 +1986,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   document.getElementById('btn-stt-save').addEventListener('click', async () => {
     const backend = document.getElementById('stt-backend').value;
-    const url = document.getElementById('stt-remote-url').value.trim();
+    const providersStr = document.getElementById('stt-providers').value.trim();
     const btn = document.getElementById('btn-stt-save');
+    // Validate JSON
+    let providers = [];
+    if (providersStr) {
+      try {
+        providers = JSON.parse(providersStr);
+        if (!Array.isArray(providers)) throw new Error('must be a JSON array');
+      } catch(e) {
+        btn.textContent = 'JSON 錯誤';
+        setTimeout(() => { btn.textContent = '儲存'; }, 1500);
+        return;
+      }
+    }
     btn.disabled = true;
     btn.textContent = '...';
     try {
-      await pywebview.api.stt_save_settings(backend, url);
+      await pywebview.api.stt_save_settings(backend, JSON.stringify(providers));
       btn.textContent = '✓';
       setTimeout(() => { btn.textContent = '儲存'; btn.disabled = false; }, 800);
       syncSttPanel();

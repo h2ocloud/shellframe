@@ -217,8 +217,7 @@ def load_init_prompt() -> str:
 class TelegramBridgeConfig(BridgeConfigBase):
     bot_token: str = ""
     initial_prompt: str = ""
-    stt_backend: str = "auto"   # auto / local / remote / off
-    stt_remote_url: str = ""    # blank → DEFAULT_REMOTE_STT_URL
+    stt_backend: str = "auto"   # auto / plugin / local / remote / off
 
     def __post_init__(self):
         if not self.initial_prompt:
@@ -1166,12 +1165,54 @@ class TelegramBridge(BridgeBase):
                 time.sleep(5)
 
     # ── STT (Speech-to-Text) ──
-    # Two backends: local whisper.cpp (if installed) and remote faster-whisper.
-    # Backend selection comes from config (stt_backend: auto/local/remote/off).
-    DEFAULT_REMOTE_STT_URL = "http://192.168.51.197:8765"
+    # Pluggable provider chain. Two built-in backends:
+    #
+    #   1. Local: whisper.cpp via `whisper-cli` binary + ggml model
+    #   2. Remote HTTP: any whisper-compatible server (see provider schema below)
+    #
+    # Providers come from config.bridge.stt_providers — a list of dicts. Each
+    # provider entry describes how to talk to one HTTP endpoint:
+    #
+    #   {
+    #     "name":   "label for logs / UI",            (required)
+    #     "url":    "http://host:port/transcribe",    (required)
+    #     "health": "http://host:port/health",        (optional, default = url root)
+    #     "field":  "audio" | "file",                 (multipart field name; default "audio")
+    #     "query":  {"language": "zh"},               (optional URL params)
+    #     "result_keys": ["text", "transcript"],      (optional response keys to try)
+    #   }
+    #
+    # The repo ships ZERO providers — users add their own via Settings UI
+    # (or via config.json directly). For a plugin-style integration, drop a
+    # python module at ~/.config/shellframe/stt_plugin.py exporting
+    # `transcribe(audio_path: str) -> str`; it's tried before the HTTP chain.
     LOCAL_MODEL_DIR = _Path.home() / ".local" / "share" / "shellframe" / "whisper-models"
     LOCAL_MODEL_NAME = "ggml-base.bin"  # ~150MB, decent quality, fast on Apple Silicon
     LOCAL_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+    PLUGIN_FILE = _Path.home() / ".config" / "shellframe" / "stt_plugin.py"
+
+    @classmethod
+    def _stt_providers_from_config(cls) -> list:
+        """Read provider chain from config.bridge.stt_providers, applying defaults."""
+        try:
+            from main import load_config
+            cfg = load_config()
+        except Exception:
+            cfg = {}
+        raw = (cfg.get("bridge", {}) or {}).get("stt_providers") or []
+        normalized = []
+        for p in raw:
+            if not isinstance(p, dict) or not p.get("url"):
+                continue
+            normalized.append({
+                "name": p.get("name") or p["url"],
+                "url": p["url"].rstrip("/"),
+                "health": p.get("health") or p["url"],
+                "field": p.get("field") or "audio",
+                "query": p.get("query") or None,
+                "result_keys": p.get("result_keys") or ["text", "transcript"],
+            })
+        return normalized
 
     @classmethod
     def _stt_local_binary(cls):
@@ -1190,20 +1231,42 @@ class TelegramBridge(BridgeBase):
 
     @classmethod
     def stt_status(cls, remote_url: str = "") -> dict:
-        """Diagnostic: return whether local + remote STT are available."""
+        """Diagnostic: return state of local + plugin + remote provider chain."""
         local_bin = cls._stt_local_binary()
         local_model = cls._stt_local_model_path()
         local_ok = bool(local_bin and local_model)
+        plugin_ok = cls.PLUGIN_FILE.exists()
 
-        url = remote_url or cls.DEFAULT_REMOTE_STT_URL
-        remote_ok = False
-        remote_err = ""
-        try:
-            req = urllib.request.Request(url.rstrip("/") + "/health")
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                remote_ok = resp.status == 200
-        except Exception as e:
-            remote_err = str(e)
+        providers = cls._stt_providers_from_config()
+        # Allow overriding provider chain with a single URL (legacy / quick test)
+        if remote_url:
+            providers = [{
+                "name": "custom",
+                "url": remote_url.rstrip("/"),
+                "health": remote_url.rstrip("/"),
+                "field": "audio",
+                "query": None,
+            }] + providers
+
+        endpoints_status = []
+        first_ok = None
+        for ep in providers:
+            ep_ok = False
+            ep_err = ""
+            try:
+                req = urllib.request.Request(ep["health"])
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    ep_ok = 200 <= resp.status < 500
+            except Exception as e:
+                ep_err = str(e)
+            endpoints_status.append({
+                "name": ep["name"],
+                "url": ep["url"],
+                "ready": ep_ok,
+                "error": ep_err,
+            })
+            if ep_ok and first_ok is None:
+                first_ok = ep
 
         return {
             "local": {
@@ -1211,10 +1274,17 @@ class TelegramBridge(BridgeBase):
                 "model": local_model,
                 "ready": local_ok,
             },
+            "plugin": {
+                "path": str(cls.PLUGIN_FILE),
+                "ready": plugin_ok,
+            },
             "remote": {
-                "url": url,
-                "ready": remote_ok,
-                "error": remote_err,
+                "url": first_ok["url"] if first_ok else "",
+                "active": first_ok["name"] if first_ok else "",
+                "ready": first_ok is not None,
+                "endpoints": endpoints_status,
+                "configured": len(providers),
+                "error": "" if first_ok else ("no providers configured" if not providers else "all unreachable"),
             },
         }
 
@@ -1276,71 +1346,129 @@ class TelegramBridge(BridgeBase):
                 _f.write(f"  local STT failed: {e}\n")
             return ""
 
-    def _transcribe_remote(self, audio_path: str, url: str = "") -> str:
-        """POST audio to remote faster-whisper STT server. Returns '' on failure."""
-        base = (url or self.DEFAULT_REMOTE_STT_URL).rstrip("/")
-        try:
-            req = urllib.request.Request(base + "/health")
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                if resp.status != 200:
-                    return ""
-        except Exception as e:
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
-                _f.write(f"  remote STT health check failed: {e}\n")
+    def _transcribe_plugin(self, audio_path: str) -> str:
+        """Run a user-provided STT plugin if installed.
+
+        Plugin contract: ~/.config/shellframe/stt_plugin.py exports
+        `transcribe(audio_path: str) -> str` returning the recognized text
+        (or empty string on failure)."""
+        if not self.PLUGIN_FILE.exists():
             return ""
-
         try:
-            import uuid, mimetypes
-            boundary = f"----sf{uuid.uuid4().hex}"
-            fname = _Path(audio_path).name
-            ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
-            with open(audio_path, "rb") as f:
-                file_data = f.read()
-            body = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="audio"; filename="{fname}"\r\n'
-                f"Content-Type: {ctype}\r\n\r\n"
-            ).encode("utf-8") + file_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
-
-            req = urllib.request.Request(
-                base + "/transcribe",
-                data=body,
-                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-            )
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-            text = (result.get("text") or "").strip()
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("sf_stt_plugin", str(self.PLUGIN_FILE))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if not hasattr(mod, "transcribe"):
+                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                    _f.write(f"  STT plugin missing transcribe(): {self.PLUGIN_FILE}\n")
+                return ""
+            text = (mod.transcribe(audio_path) or "").strip()
             with open('/tmp/shellframe_bridge.log', 'a') as _f:
-                _f.write(f"  remote STT transcribed: {len(text)} chars\n")
+                _f.write(f"  STT plugin transcribed: {len(text)} chars\n")
             return text
         except Exception as e:
             with open('/tmp/shellframe_bridge.log', 'a') as _f:
-                _f.write(f"  remote STT failed: {e}\n")
+                _f.write(f"  STT plugin failed: {e}\n")
             return ""
+
+    def _transcribe_remote(self, audio_path: str, url: str = "") -> str:
+        """Try the configured remote provider chain in order.
+        Returns transcribed text, or '' if all providers fail."""
+        # Provider chain: config first, optionally prepended with a quick override URL
+        chain = self._stt_providers_from_config()
+        if url:
+            chain = [{
+                "name": "override",
+                "url": url.rstrip("/"),
+                "health": url.rstrip("/"),
+                "field": "audio",
+                "query": None,
+                "result_keys": ["text", "transcript"],
+            }] + chain
+
+        if not chain:
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  remote STT: no providers configured\n")
+            return ""
+
+        import uuid, mimetypes, urllib.parse
+        fname = _Path(audio_path).name
+        ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+        with open(audio_path, "rb") as f:
+            file_data = f.read()
+
+        last_err = ""
+        for ep in chain:
+            name = ep["name"]
+            try:
+                boundary = f"----sf{uuid.uuid4().hex}"
+                body = (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{ep["field"]}"; filename="{fname}"\r\n'
+                    f"Content-Type: {ctype}\r\n\r\n"
+                ).encode("utf-8") + file_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+                target = ep["url"]
+                if ep.get("query"):
+                    sep = "&" if "?" in target else "?"
+                    target = target + sep + urllib.parse.urlencode(ep["query"])
+
+                req = urllib.request.Request(
+                    target,
+                    data=body,
+                    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                )
+                with urllib.request.urlopen(req, timeout=180) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                # Try the provider's preferred result keys
+                text = ""
+                for k in ep.get("result_keys", ["text", "transcript"]):
+                    if result.get(k):
+                        text = str(result[k]).strip()
+                        break
+                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                    _f.write(f"  remote STT [{name}] transcribed: {len(text)} chars\n")
+                if text:
+                    return text
+                last_err = f"{name}: empty response"
+            except Exception as e:
+                last_err = f"{name}: {e}"
+                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                    _f.write(f"  remote STT [{name}] failed: {e}\n")
+                continue
+        with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            _f.write(f"  all remote STT providers failed; last={last_err}\n")
+        return ""
 
     def _transcribe_voice(self, audio_path: str) -> str:
         """Transcribe audio using configured backend. Returns '' on failure.
 
         Backend strategy from config.stt_backend:
-          - 'auto'   (default): try local first, fall back to remote
+          - 'auto'   (default): plugin → local → remote chain
+          - 'plugin': user plugin only
           - 'local':  local whisper-cli only
-          - 'remote': remote STT server only
+          - 'remote': remote provider chain only
           - 'off':    disabled
         """
         backend = getattr(self.config, "stt_backend", "auto") or "auto"
-        remote_url = getattr(self.config, "stt_remote_url", "") or self.DEFAULT_REMOTE_STT_URL
 
         if backend == "off":
             return ""
+        if backend == "plugin":
+            return self._transcribe_plugin(audio_path)
         if backend == "local":
             return self._transcribe_local(audio_path)
         if backend == "remote":
-            return self._transcribe_remote(audio_path, remote_url)
-        # auto: local first, then remote
+            return self._transcribe_remote(audio_path)
+        # auto: plugin → local → remote
+        text = self._transcribe_plugin(audio_path)
+        if text:
+            return text
         text = self._transcribe_local(audio_path)
         if text:
             return text
-        return self._transcribe_remote(audio_path, remote_url)
+        return self._transcribe_remote(audio_path)
 
     def _download_tg_file(self, file_id: str, ext: str = "") -> str:
         """Download a Telegram file by file_id, save to CLAUDE_TMP. Returns local path or ''."""
@@ -1437,17 +1565,25 @@ class TelegramBridge(BridgeBase):
                     })
                 else:
                     # Build a helpful diagnostic so the user knows WHY it failed
-                    status = self.stt_status(getattr(self.config, "stt_remote_url", ""))
+                    status = self.stt_status()
                     backend = getattr(self.config, "stt_backend", "auto") or "auto"
+                    plugin_ok = status.get("plugin", {}).get("ready", False)
                     local_ok = status.get("local", {}).get("ready", False)
-                    remote_ok = status.get("remote", {}).get("ready", False)
-                    lines = ["⚠ 語音轉錄失敗", f"模式: {backend}"]
-                    lines.append(f"本地: {'✓' if local_ok else '✗ 未安裝'}")
-                    lines.append(f"遠端: {'✓' if remote_ok else '✗ 離線'}")
-                    if not local_ok and not remote_ok:
+                    remote = status.get("remote", {}) or {}
+                    remote_ok = remote.get("ready", False)
+                    eps = remote.get("endpoints", []) or []
+                    lines = ["⚠ 語音轉錄失敗", f"Mode: {backend}"]
+                    lines.append(f"Plugin: {'✓' if plugin_ok else '✗'}")
+                    lines.append(f"Local:  {'✓' if local_ok else '✗ not installed'}")
+                    if not eps:
+                        lines.append("Remote: ✗ no providers configured")
+                    else:
+                        for ep in eps:
+                            mark = '✓' if ep.get("ready") else '✗'
+                            lines.append(f"  {mark} {ep.get('name')}")
+                    if not (plugin_ok or local_ok or remote_ok):
                         lines.append("")
-                        lines.append("💡 建議：開設定 → Telegram Bridge → 🎙 STT")
-                        lines.append("    點「安裝本地 STT」")
+                        lines.append("💡 設定 → Telegram Bridge → 🎙 STT")
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
                         "text": "\n".join(lines),

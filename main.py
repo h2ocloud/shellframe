@@ -1079,7 +1079,6 @@ class Api:
             prefix_enabled=prefix_enabled,
             initial_prompt=initial_prompt,
             stt_backend=bridge_cfg.get("stt_backend", "auto"),
-            stt_remote_url=bridge_cfg.get("stt_remote_url", ""),
         )
 
         self.bridge = TelegramBridge(
@@ -1129,7 +1128,7 @@ class Api:
             "prefix_enabled": prefix_enabled,
             "initial_prompt": initial_prompt,
             "stt_backend": prev_bridge.get("stt_backend", "auto"),
-            "stt_remote_url": prev_bridge.get("stt_remote_url", ""),
+            "stt_providers": prev_bridge.get("stt_providers", []),
         }
         save_config(cfg)
 
@@ -1148,21 +1147,31 @@ class Api:
         status["backend"] = backend
         return json.dumps(status)
 
-    def stt_save_settings(self, backend: str, remote_url: str) -> str:
-        """Update STT backend and remote URL in config + live bridge."""
+    def stt_save_settings(self, backend: str, providers_json: str) -> str:
+        """Update STT backend + provider chain in config + live bridge."""
         cfg = load_config()
         bridge_cfg = cfg.get("bridge", {})
-        if backend in ("auto", "local", "remote", "off"):
+        if backend in ("auto", "plugin", "local", "remote", "off"):
             bridge_cfg["stt_backend"] = backend
-        if remote_url is not None:
-            bridge_cfg["stt_remote_url"] = remote_url.strip()
+        if providers_json is not None:
+            try:
+                providers = json.loads(providers_json) if providers_json else []
+                if not isinstance(providers, list):
+                    return json.dumps({"success": False, "message": "providers must be a list"})
+                bridge_cfg["stt_providers"] = providers
+            except json.JSONDecodeError as e:
+                return json.dumps({"success": False, "message": f"invalid JSON: {e}"})
         cfg["bridge"] = bridge_cfg
         save_config(cfg)
         # Apply to running bridge
         if self.bridge:
             self.bridge.config.stt_backend = bridge_cfg.get("stt_backend", "auto")
-            self.bridge.config.stt_remote_url = bridge_cfg.get("stt_remote_url", "")
         return json.dumps({"success": True})
+
+    def stt_get_providers(self) -> str:
+        """Return the configured provider chain (for the settings UI)."""
+        cfg = load_config()
+        return json.dumps((cfg.get("bridge", {}) or {}).get("stt_providers") or [])
 
     def stt_install_local(self) -> str:
         """Install whisper-cpp via Homebrew + download base model.
