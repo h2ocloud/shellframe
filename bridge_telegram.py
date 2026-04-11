@@ -1115,6 +1115,54 @@ class TelegramBridge(BridgeBase):
             except Exception:
                 time.sleep(5)
 
+    # Local STT endpoint — faster-whisper on Howard's home server
+    STT_URL = "http://192.168.51.197:8765/transcribe"
+    STT_HEALTH = "http://192.168.51.197:8765/health"
+
+    def _transcribe_voice(self, audio_path: str) -> str:
+        """Send an audio file to the local STT server and return transcribed text.
+        Returns '' on failure."""
+        try:
+            # Quick health check first
+            req = urllib.request.Request(self.STT_HEALTH)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status != 200:
+                    return ""
+        except Exception as e:
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  STT health check failed: {e}\n")
+            return ""
+
+        try:
+            # Build multipart/form-data manually (stdlib only — no requests dep)
+            import uuid, mimetypes
+            boundary = f"----sf{uuid.uuid4().hex}"
+            fname = _Path(audio_path).name
+            ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+            with open(audio_path, "rb") as f:
+                file_data = f.read()
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="audio"; filename="{fname}"\r\n'
+                f"Content-Type: {ctype}\r\n\r\n"
+            ).encode("utf-8") + file_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+            req = urllib.request.Request(
+                self.STT_URL,
+                data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            )
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            text = (result.get("text") or "").strip()
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  STT transcribed: {len(text)} chars\n")
+            return text
+        except Exception as e:
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  STT transcribe failed: {e}\n")
+            return ""
+
     def _download_tg_file(self, file_id: str, ext: str = "") -> str:
         """Download a Telegram file by file_id, save to CLAUDE_TMP. Returns local path or ''."""
         try:
@@ -1157,12 +1205,14 @@ class TelegramBridge(BridgeBase):
         # Track chat
         self._user_chat[user_id] = chat_id
 
-        # ── Handle photo / document / file messages ──
+        # ── Handle photo / document / voice / file messages ──
         file_paths = []
         has_photo = bool(msg.get("photo"))
         has_doc = bool(msg.get("document"))
+        has_voice = bool(msg.get("voice"))       # TG voice note (ogg/opus)
+        has_audio = bool(msg.get("audio"))       # TG audio file
         with open('/tmp/shellframe_bridge.log', 'a') as _f:
-            _f.write(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} doc={has_doc}\n")
+            _f.write(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} doc={has_doc} voice={has_voice} audio={has_audio}\n")
         if has_photo:
             # TG sends multiple sizes; pick the largest (last)
             photo = msg["photo"][-1]
@@ -1180,6 +1230,38 @@ class TelegramBridge(BridgeBase):
                 _f.write(f"  doc download: fname={fname} path={path!r}\n")
             if path:
                 file_paths.append(path)
+
+        # ── Voice / audio → transcribe via local STT ──
+        if has_voice or has_audio:
+            media = msg.get("voice") or msg.get("audio")
+            ext = ".oga" if has_voice else (_Path(media.get("file_name", "")).suffix or ".mp3")
+            audio_path = self._download_tg_file(media["file_id"], ext)
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  voice download: path={audio_path!r}\n")
+            if audio_path:
+                # Acknowledge receipt immediately so user knows we're processing
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "🎙 轉錄中…",
+                })
+                transcribed = self._transcribe_voice(audio_path)
+                if transcribed:
+                    # Use transcribed text as the message text, append 🎙 prefix
+                    if text:
+                        text = text + " " + transcribed
+                    else:
+                        text = f"🎙 {transcribed}"
+                    # Confirm transcription to user
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"✓ {transcribed[:200]}{'…' if len(transcribed) > 200 else ''}",
+                    })
+                else:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": "⚠ 語音轉錄失敗（STT 服務不可用或錯誤）",
+                    })
+                    return
 
         # If message has only files (no text), we still need to proceed
         if not text and not file_paths:

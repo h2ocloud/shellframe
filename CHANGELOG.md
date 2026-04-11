@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.0 (2026-04-11)
+
+### New Features
+- **TG voice messages** — Send a voice note via Telegram and the bridge downloads it, transcribes via local STT server (`192.168.51.197:8765`, faster-whisper), and forwards the text to the active AI session. Bridge replies with a `🎙 轉錄中…` placeholder then `✓ <preview>` once transcribed. Audio files (`audio` type) supported too.
+
+### 新功能
+- **TG 語音訊息** — 在 Telegram 按著麥克風錄語音，bridge 會自動下載、送到本地 STT 服務（`192.168.51.197:8765`，faster-whisper）轉文字後轉發給 AI session。Bridge 會先回 `🎙 轉錄中…`，完成後回 `✓ <preview>`。也支援一般音訊檔。
+
 ## v0.6.0 (2026-04-10)
 
 ### New Features
