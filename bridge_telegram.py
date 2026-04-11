@@ -1223,6 +1223,8 @@ class TelegramBridge(BridgeBase):
         binary = self._stt_local_binary()
         model = self._stt_local_model_path()
         if not binary or not model:
+            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                _f.write(f"  local STT skipped: binary={binary!r} model={model!r}\n")
             return ""
         try:
             # Convert ogg/opus to 16kHz mono WAV via ffmpeg (whisper.cpp wants WAV)
@@ -1434,9 +1436,21 @@ class TelegramBridge(BridgeBase):
                         "text": f"✓ {transcribed[:200]}{'…' if len(transcribed) > 200 else ''}",
                     })
                 else:
+                    # Build a helpful diagnostic so the user knows WHY it failed
+                    status = self.stt_status(getattr(self.config, "stt_remote_url", ""))
+                    backend = getattr(self.config, "stt_backend", "auto") or "auto"
+                    local_ok = status.get("local", {}).get("ready", False)
+                    remote_ok = status.get("remote", {}).get("ready", False)
+                    lines = ["⚠ 語音轉錄失敗", f"模式: {backend}"]
+                    lines.append(f"本地: {'✓' if local_ok else '✗ 未安裝'}")
+                    lines.append(f"遠端: {'✓' if remote_ok else '✗ 離線'}")
+                    if not local_ok and not remote_ok:
+                        lines.append("")
+                        lines.append("💡 建議：開設定 → Telegram Bridge → 🎙 STT")
+                        lines.append("    點「安裝本地 STT」")
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
-                        "text": "⚠ 語音轉錄失敗（STT 服務不可用或錯誤）",
+                        "text": "\n".join(lines),
                     })
                     return
 
