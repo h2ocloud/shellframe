@@ -2282,6 +2282,56 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
+  // Reconcile frontend session list with backend (catches sessions
+  // created/closed via TG /new /close, sfctl, or any non-UI path).
+  // Returns true if anything changed.
+  async function syncSessionsFromBackend() {
+    try {
+      const raw = await pywebview.api.list_sessions();
+      const backend = JSON.parse(raw);
+      const backendSids = new Set(backend.map(s => s.sid));
+      const localSids = new Set(Object.keys(sessions));
+      let changed = false;
+
+      // Remove sessions that no longer exist in backend (closed via TG)
+      for (const sid of localSids) {
+        if (!backendSids.has(sid)) {
+          const s = sessions[sid];
+          if (s && s.pane) s.pane.remove();
+          delete sessions[sid];
+          sessionOrder = sessionOrder.filter(id => id !== sid);
+          if (activeId === sid) activeId = null;
+          changed = true;
+        }
+      }
+
+      // Attach to sessions that exist in backend but not in frontend
+      // (created via TG /new). Use reconnectSession — it spawns the term,
+      // applies custom label, hooks up the input pipe, etc.
+      for (const s of backend) {
+        if (!localSids.has(s.sid)) {
+          await reconnectSession(s.sid, s.cmd);
+          if (sessions[s.sid]) {
+            sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
+            if (s.label) sessions[s.sid].label = s.label;
+          }
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        // Pick a reasonable active tab if we lost ours
+        if (!activeId && sessionOrder.length > 0) {
+          switchTab(sessionOrder[0]);
+        }
+        renderTabs();
+      }
+      return changed;
+    } catch(e) {
+      return false;
+    }
+  }
+
   // Poll bridge status periodically
   setInterval(async () => {
     try {
@@ -2290,13 +2340,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (result.exists) {
         const prev = bridgeState;
         bridgeState = result;
+        // If session count changed, reconcile the actual list (catches
+        // sessions created/closed via TG that the frontend doesn't know about)
+        if (!prev || prev.sessions !== result.sessions) {
+          await syncSessionsFromBackend();
+        }
         if (!prev || prev.paused !== result.paused || prev.sessions !== result.sessions || prev.active_sid !== result.active_sid) {
           updateBridgeButton();
           renderTabs();
         }
       }
     } catch(e) {}
-  }, 3000);
+  }, 1500);
 
   // ── Busy indicator tick ──
   // Two complementary detection paths:
