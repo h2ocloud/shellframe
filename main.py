@@ -1088,6 +1088,7 @@ class Api:
             on_close_session=self.close_session,
             on_restart=self.restart_app,
             on_check_update=self.check_update,
+            on_new_session=lambda c: self.new_session(c, 200, 50),
         )
 
         # Register existing sessions (skip bridge-disabled ones)
@@ -1320,6 +1321,7 @@ class Api:
                     on_close_session=self.close_session,
                     on_restart=self.restart_app,
                     on_check_update=self.check_update,
+                    on_new_session=lambda c: self.new_session(c, 200, 50),
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset

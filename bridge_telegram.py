@@ -263,7 +263,7 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
@@ -273,6 +273,7 @@ class TelegramBridge(BridgeBase):
         self._on_close_session = on_close_session  # callback(sid) to close a session
         self._on_restart = on_restart  # callback for full app restart from TG
         self._on_check_update = on_check_update  # callback for update check from TG
+        self._on_new_session = on_new_session  # callback(cmd) -> sid, create new session
         self._offset = 0
         self._flush_thread = None
 
@@ -1619,7 +1620,7 @@ class TelegramBridge(BridgeBase):
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
             if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload', 'close', 'new', 'restart', 'update', 'update_now') or cmd.isdigit():
-                self._handle_command(cmd, user_id, chat_id)
+                self._handle_command(cmd, user_id, chat_id, text)
                 return
             # Everything else: forward as CLI slash command (e.g., /model, /skills, /compact)
             # Don't add prefix — send the raw slash command to the CLI
@@ -1704,8 +1705,8 @@ class TelegramBridge(BridgeBase):
             slot.write_fn("\r")
         threading.Thread(target=_send, daemon=True).start()
 
-    def _handle_command(self, cmd: str, user_id: int, chat_id: int):
-        """Handle slash commands."""
+    def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):
+        """Handle slash commands. `text` is the full message text (for argv parsing)."""
 
         if cmd == "list":
             lines = ["📋 Sessions:\n"]
@@ -1821,8 +1822,20 @@ class TelegramBridge(BridgeBase):
                 })
                 return
             def _do_close():
-                result = self._sfctl_call("close_session", {"sid": active_sid})
-                if result.get("success"):
+                ok = False
+                err = ""
+                # Direct callback (same-process) is more reliable than file IPC
+                if self._on_close_session:
+                    try:
+                        self._on_close_session(active_sid)
+                        ok = True
+                    except Exception as e:
+                        err = str(e)
+                else:
+                    result = self._sfctl_call("close_session", {"sid": active_sid})
+                    ok = result.get("success", False)
+                    err = result.get("message", "")
+                if ok:
                     new_sid = self.get_active_sid(user_id)
                     new_label = self.slots[new_sid].label if new_sid and new_sid in self.slots else "none"
                     tg_api(self.config.bot_token, "sendMessage", {
@@ -1832,7 +1845,7 @@ class TelegramBridge(BridgeBase):
                 else:
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
-                        "text": f"❌ {result.get('message', 'Close failed')}",
+                        "text": f"❌ Close failed: {err or 'unknown error'}",
                     })
             threading.Thread(target=_do_close, daemon=True).start()
 
@@ -1841,11 +1854,24 @@ class TelegramBridge(BridgeBase):
             parts = text.split(maxsplit=1) if text else []
             preset_cmd = parts[1] if len(parts) > 1 else "claude"
             def _do_new():
-                result = self._sfctl_call("new_session", {"cmd": preset_cmd})
-                if result.get("success"):
-                    new_sid = result.get("details", {}).get("sid", "?")
+                new_sid = ""
+                err = ""
+                # Direct callback (same-process) is more reliable than file IPC
+                if self._on_new_session:
+                    try:
+                        new_sid = self._on_new_session(preset_cmd)
+                    except Exception as e:
+                        err = str(e)
+                else:
+                    result = self._sfctl_call("new_session", {"cmd": preset_cmd})
+                    if result.get("success"):
+                        new_sid = result.get("details", {}).get("sid", "")
+                    else:
+                        err = result.get("message", "")
+                if new_sid:
                     # Auto-switch user to new session
                     self._user_active[user_id] = new_sid
+                    self._default_active_sid = new_sid
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
                         "text": f"✚ Created new session: {preset_cmd}\nSwitched to it. Use /list to see all.",
@@ -1853,7 +1879,7 @@ class TelegramBridge(BridgeBase):
                 else:
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
-                        "text": f"❌ {result.get('message', 'Create failed')}",
+                        "text": f"❌ Create failed: {err or 'unknown error'}",
                     })
             threading.Thread(target=_do_new, daemon=True).start()
 
