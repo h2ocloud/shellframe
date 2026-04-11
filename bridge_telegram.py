@@ -422,6 +422,9 @@ class TelegramBridge(BridgeBase):
             {"command": "pause", "description": "Pause bridge (stop forwarding)"},
             {"command": "resume", "description": "Resume bridge"},
             {"command": "reload", "description": "Hot-reload bridge code"},
+            {"command": "restart", "description": "Full app restart (sessions preserved)"},
+            {"command": "update", "description": "Check for ShellFrame updates"},
+            {"command": "update_now", "description": "Pull updates + restart if needed"},
             {"command": "new", "description": "New session (default: claude)"},
             {"command": "close", "description": "Close current session"},
         ]
