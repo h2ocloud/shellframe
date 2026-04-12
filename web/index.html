@@ -1415,15 +1415,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('rename-ok').addEventListener('click', () => finish(true));
     document.getElementById('rename-cancel').addEventListener('click', () => finish(false));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
+    // Safari/WKWebView IME quirk: compositionend fires BEFORE the keydown,
+    // so isComposing is already false on the Enter that confirms the candidate.
+    // Workaround: track a brief "just composed" window.
+    let _justComposed = false;
+    input.addEventListener('compositionend', () => {
+      _justComposed = true;
+      setTimeout(() => { _justComposed = false; }, 150);
+    });
     input.addEventListener('keydown', (e) => {
-      // Skip if IME is composing — Enter during composition confirms the
-      // candidate, not the rename. isComposing is true for the "confirm
-      // candidate" Enter and false for the "submit form" Enter.
-      if (e.isComposing) return;
+      if (e.isComposing || _justComposed || e.keyCode === 229) return;
       if (e.key === 'Enter' || e.key === 'Escape') {
-        // Stop the keystroke from leaking to the document / xterm textarea
-        // after we close the modal. Without this, Esc → Claude interrupt
-        // and Enter → blank line submit in the underlying CLI.
         e.preventDefault();
         e.stopPropagation();
         if (e.key === 'Enter') finish(true);
