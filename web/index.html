@@ -1083,7 +1083,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // ── Session management ──
   async function openSession(cmd, label) {
     const pane = document.createElement('div');
-    pane.className = 'term-pane';
+    // Make pane visible BEFORE term.open() — xterm.js initializes its
+    // canvas and input handlers against the element's dimensions. If the
+    // pane is display:none (the default for .term-pane), the canvas is
+    // 0x0 and keystrokes become invisible until a manual reload.
+    pane.className = 'term-pane active';
+    // Hide any previously active pane
+    if (activeId && sessions[activeId]) sessions[activeId].pane.classList.remove('active');
     $wrap.appendChild(pane);
 
     const term = new Terminal({
@@ -3039,18 +3045,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (activeId) closeTab(activeId);
     }
     // Ctrl+Tab / Cmd+] → next tab, Ctrl+Shift+Tab / Cmd+[ → prev tab
+    // When bridge is active, only cycle through bridged sessions (skip unbridged
+    // ones so Cmd+] goes 1→2→3 not 1→TG-off→2).
     if (e.ctrlKey && e.key === 'Tab') {
       e.preventDefault();
-      if (sessionOrder.length < 2) return;
-      const idx = sessionOrder.indexOf(activeId);
-      switchTab(sessionOrder[(idx + (e.shiftKey ? -1 : 1) + sessionOrder.length) % sessionOrder.length]);
+      const order = (bridgeState && bridgeState.active)
+        ? sessionOrder.filter(s => sessions[s]?.bridgeEnabled !== false)
+        : sessionOrder;
+      if (order.length < 2) return;
+      const idx = order.indexOf(activeId);
+      const next = (idx + (e.shiftKey ? -1 : 1) + order.length) % order.length;
+      switchTab(order[next]);
     }
     if (e.metaKey && !e.ctrlKey && (e.key === ']' || e.key === '[')) {
       e.preventDefault();
-      if (sessionOrder.length < 2) return;
-      const idx = sessionOrder.indexOf(activeId);
+      const order = (bridgeState && bridgeState.active)
+        ? sessionOrder.filter(s => sessions[s]?.bridgeEnabled !== false)
+        : sessionOrder;
+      if (order.length < 2) return;
+      const idx = order.indexOf(activeId);
       const dir = e.key === ']' ? 1 : -1;
-      switchTab(sessionOrder[(idx + dir + sessionOrder.length) % sessionOrder.length]);
+      switchTab(order[(idx + dir + order.length) % order.length]);
     }
     // Ctrl+Shift+D → debug: show xterm.js buffer state
     if (e.ctrlKey && e.shiftKey && e.key === 'D') {
