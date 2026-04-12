@@ -1411,6 +1411,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('rename-cancel').addEventListener('click', () => finish(false));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
     input.addEventListener('keydown', (e) => {
+      // Skip if IME is composing — Enter during composition confirms the
+      // candidate, not the rename. isComposing is true for the "confirm
+      // candidate" Enter and false for the "submit form" Enter.
+      if (e.isComposing) return;
       if (e.key === 'Enter' || e.key === 'Escape') {
         // Stop the keystroke from leaking to the document / xterm textarea
         // after we close the modal. Without this, Esc → Claude interrupt
