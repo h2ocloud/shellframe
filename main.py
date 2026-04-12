@@ -90,15 +90,24 @@ TMP_DIR = Path("/tmp") if not IS_WIN else Path(_tempfile.gettempdir())
 DEBUG_LOG = str(TMP_DIR / "shellframe_debug.log")
 
 
+_LOG_MAX_BYTES = 1 * 1024 * 1024  # 1MB — auto-truncate logs to prevent unbounded growth
+
 def _dlog(category: str, msg: str):
     """Append a timestamped line to the debug log. Best-effort, never raises.
-    Used to capture session lifecycle, PTY writes, tmux subprocess calls,
-    scroll history operations, etc. — so we can pinpoint what interrupted a
-    session after the fact."""
+    Auto-truncates when file exceeds _LOG_MAX_BYTES (keeps last half)."""
     try:
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         with open(DEBUG_LOG, 'a') as f:
             f.write(f"{ts} [{category}] {msg}\n")
+        # Lazy size check (not every call — amortized via file size)
+        try:
+            if os.path.getsize(DEBUG_LOG) > _LOG_MAX_BYTES:
+                with open(DEBUG_LOG, 'r') as f:
+                    content = f.read()
+                with open(DEBUG_LOG, 'w') as f:
+                    f.write(content[len(content) // 2:])
+        except Exception:
+            pass
     except Exception:
         pass
 

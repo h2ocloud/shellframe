@@ -22,6 +22,26 @@ from dataclasses import dataclass, field
 _IS_WIN = _sys.platform == "win32"
 _TMP_DIR = tempfile.gettempdir() if _IS_WIN else "/tmp"
 _LOG_FILE = _os.path.join(_TMP_DIR, "shellframe_bridge.log")
+_LOG_MAX = 1 * 1024 * 1024  # 1MB cap — auto-truncate to prevent unbounded growth
+_log_write_count = 0
+
+def _blog(msg: str):
+    """Append to bridge log with auto-truncation. Best-effort."""
+    global _log_write_count
+    try:
+        _blog(msg if msg.endswith('\n') else msg + '\n')
+        _log_write_count += 1
+        if _log_write_count % 200 == 0:  # check size every 200 writes
+            try:
+                if _os.path.getsize(_LOG_FILE) > _LOG_MAX:
+                    with open(_LOG_FILE, 'r') as f:
+                        content = f.read()
+                    with open(_LOG_FILE, 'w') as f:
+                        f.write(content[len(content) // 2:])
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 import pyte
 
@@ -258,7 +278,8 @@ class SessionSlot:
         self.stall_warned = False
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
-        self.screen = pyte.HistoryScreen(200, 50, history=10000)
+        # Capped at 3000 lines (~180MB worst case per session) to prevent memory bloat
+        self.screen = pyte.HistoryScreen(200, 50, history=3000)
         self.stream = pyte.Stream(self.screen)
         self._history_offset = 0  # tracks processed history lines
         self.sent_responses = {"Understood.", "Understood"}  # pre-filter system acks
@@ -999,15 +1020,13 @@ class TelegramBridge(BridgeBase):
                     # (the _handle_update path sets it fresh each time).
 
                 # Debug log
-                with open(_LOG_FILE, 'a') as f:
-                    f.write(f"flush {sid}: new_lines={len(new_lines)} "
-                            f"users={dict(self._user_active)} has_msg={slot.has_user_msg}\n")
-                    for l in new_lines[:5]:
-                        f.write(f"  [{l}]\n")
-                    if not new_lines:
-                        # Log screen content for debugging
-                        screen_lines = [l.rstrip() for l in slot.screen.display if l.rstrip()]
-                        f.write(f"  screen({len(screen_lines)}): {[l[:60] for l in screen_lines[-5:]]}\n")
+                log_msg = f"flush {sid}: new_lines={len(new_lines)} users={dict(self._user_active)} has_msg={slot.has_user_msg}\n"
+                for l in new_lines[:5]:
+                    log_msg += f"  [{l}]\n"
+                if not new_lines:
+                    screen_lines = [l.rstrip() for l in slot.screen.display if l.rstrip()]
+                    log_msg += f"  screen({len(screen_lines)}): {[l[:60] for l in screen_lines[-5:]]}\n"
+                _blog(log_msg)
 
                 if not new_lines:
                     continue
@@ -1123,8 +1142,7 @@ class TelegramBridge(BridgeBase):
             with urllib.request.urlopen(req, timeout=60) as resp:
                 resp.read()
         except Exception as e:
-            with open(_LOG_FILE, 'a') as f:
-                f.write(f"_send_tg_file error: {file_path} -> {e}\n")
+            _blog(f"_send_tg_file error: {file_path} -> {e}\n")
 
     # ── TG Polling ──
     # Offset persistence — survives full app restarts so /restart and
@@ -1173,8 +1191,7 @@ class TelegramBridge(BridgeBase):
                         text = (msg.get("text") or "").strip().lower()
                         cmd = text.split()[0] if text else ""
                         if cmd in ("/restart", "/update_now", "/reload"):
-                            with open(_LOG_FILE, 'a') as _f:
-                                _f.write(f"  startup safety: skipping {cmd}\n")
+                            _blog(f"  startup safety: skipping {cmd}\n")
                             continue
                     self._handle_update(update)
                 first_batch = False
@@ -1310,15 +1327,13 @@ class TelegramBridge(BridgeBase):
         binary = self._stt_local_binary()
         model = self._stt_local_model_path()
         if not binary or not model:
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  local STT skipped: binary={binary!r} model={model!r}\n")
+            _blog(f"  local STT skipped: binary={binary!r} model={model!r}\n")
             return ""
         try:
             # Convert ogg/opus to 16kHz mono WAV via ffmpeg (whisper.cpp wants WAV)
             ffmpeg = shutil.which("ffmpeg")
             if not ffmpeg:
-                with open(_LOG_FILE, 'a') as _f:
-                    _f.write(f"  local STT: ffmpeg not found\n")
+                _blog(f"  local STT: ffmpeg not found\n")
                 return ""
             wav_path = audio_path.rsplit(".", 1)[0] + ".wav"
             r = subprocess.run(
@@ -1326,8 +1341,7 @@ class TelegramBridge(BridgeBase):
                 capture_output=True, timeout=60,
             )
             if r.returncode != 0 or not _Path(wav_path).exists():
-                with open(_LOG_FILE, 'a') as _f:
-                    _f.write(f"  ffmpeg convert failed: {r.stderr[:200]}\n")
+                _blog(f"  ffmpeg convert failed: {r.stderr[:200]}\n")
                 return ""
 
             # Run whisper-cli — output plain text to stdout
@@ -1355,12 +1369,10 @@ class TelegramBridge(BridgeBase):
                 _Path(wav_path).unlink()
             except Exception:
                 pass
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  local STT transcribed: {len(text)} chars\n")
+            _blog(f"  local STT transcribed: {len(text)} chars\n")
             return text
         except Exception as e:
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  local STT failed: {e}\n")
+            _blog(f"  local STT failed: {e}\n")
             return ""
 
     def _transcribe_plugin(self, audio_path: str) -> str:
@@ -1377,16 +1389,13 @@ class TelegramBridge(BridgeBase):
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             if not hasattr(mod, "transcribe"):
-                with open(_LOG_FILE, 'a') as _f:
-                    _f.write(f"  STT plugin missing transcribe(): {self.PLUGIN_FILE}\n")
+                _blog(f"  STT plugin missing transcribe(): {self.PLUGIN_FILE}\n")
                 return ""
             text = (mod.transcribe(audio_path) or "").strip()
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  STT plugin transcribed: {len(text)} chars\n")
+            _blog(f"  STT plugin transcribed: {len(text)} chars\n")
             return text
         except Exception as e:
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  STT plugin failed: {e}\n")
+            _blog(f"  STT plugin failed: {e}\n")
             return ""
 
     def _transcribe_remote(self, audio_path: str, url: str = "") -> str:
@@ -1405,8 +1414,7 @@ class TelegramBridge(BridgeBase):
             }] + chain
 
         if not chain:
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  remote STT: no providers configured\n")
+            _blog(f"  remote STT: no providers configured\n")
             return ""
 
         import uuid, mimetypes, urllib.parse
@@ -1444,18 +1452,15 @@ class TelegramBridge(BridgeBase):
                     if result.get(k):
                         text = str(result[k]).strip()
                         break
-                with open(_LOG_FILE, 'a') as _f:
-                    _f.write(f"  remote STT [{name}] transcribed: {len(text)} chars\n")
+                _blog(f"  remote STT [{name}] transcribed: {len(text)} chars\n")
                 if text:
                     return text
                 last_err = f"{name}: empty response"
             except Exception as e:
                 last_err = f"{name}: {e}"
-                with open(_LOG_FILE, 'a') as _f:
-                    _f.write(f"  remote STT [{name}] failed: {e}\n")
+                _blog(f"  remote STT [{name}] failed: {e}\n")
                 continue
-        with open(_LOG_FILE, 'a') as _f:
-            _f.write(f"  all remote STT providers failed; last={last_err}\n")
+        _blog(f"  all remote STT providers failed; last={last_err}\n")
         return ""
 
     def _transcribe_voice(self, audio_path: str) -> str:
@@ -1535,8 +1540,7 @@ class TelegramBridge(BridgeBase):
         chat_id = message.get("chat", {}).get("id", 0)
         message_id = message.get("message_id", 0)
 
-        with open(_LOG_FILE, 'a') as _f:
-            _f.write(f"_handle_callback_query: data={data!r} user={user_id}\n")
+        _blog(f"_handle_callback_query: data={data!r} user={user_id}\n")
 
         # Whitelist check
         if self.config.allowed_users and user_id not in self.config.allowed_users:
@@ -1629,14 +1633,12 @@ class TelegramBridge(BridgeBase):
         has_doc = bool(msg.get("document"))
         has_voice = bool(msg.get("voice"))       # TG voice note (ogg/opus)
         has_audio = bool(msg.get("audio"))       # TG audio file
-        with open(_LOG_FILE, 'a') as _f:
-            _f.write(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} doc={has_doc} voice={has_voice} audio={has_audio}\n")
+        _blog(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} doc={has_doc} voice={has_voice} audio={has_audio}\n")
         if has_photo:
             # TG sends multiple sizes; pick the largest (last)
             photo = msg["photo"][-1]
             path = self._download_tg_file(photo["file_id"], ".png")
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  photo download: file_id={photo['file_id']} path={path!r}\n")
+            _blog(f"  photo download: file_id={photo['file_id']} path={path!r}\n")
             if path:
                 file_paths.append(path)
         if has_doc:
@@ -1644,8 +1646,7 @@ class TelegramBridge(BridgeBase):
             fname = doc.get("file_name", "file")
             ext = _Path(fname).suffix or ".bin"
             path = self._download_tg_file(doc["file_id"], ext)
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  doc download: fname={fname} path={path!r}\n")
+            _blog(f"  doc download: fname={fname} path={path!r}\n")
             if path:
                 file_paths.append(path)
 
@@ -1654,8 +1655,7 @@ class TelegramBridge(BridgeBase):
             media = msg.get("voice") or msg.get("audio")
             ext = ".oga" if has_voice else (_Path(media.get("file_name", "")).suffix or ".mp3")
             audio_path = self._download_tg_file(media["file_id"], ext)
-            with open(_LOG_FILE, 'a') as _f:
-                _f.write(f"  voice download: path={audio_path!r}\n")
+            _blog(f"  voice download: path={audio_path!r}\n")
             if audio_path:
                 # Acknowledge receipt immediately so user knows we're processing
                 tg_api(self.config.bot_token, "sendMessage", {

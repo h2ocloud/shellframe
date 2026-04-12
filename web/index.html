@@ -1239,6 +1239,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = sessions[sid];
     if (!s) return;
     await pywebview.api.close_session(sid);
+    // Dispose xterm.js instance to free WebGL contexts, buffers, addons
+    try { s.term.dispose(); } catch(e) {}
     s.pane.remove();
     delete sessions[sid];
     sessionOrder = sessionOrder.filter(id => id !== sid);
@@ -2468,7 +2470,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       for (const sid of localSids) {
         if (!backendSids.has(sid)) {
           const s = sessions[sid];
-          if (s && s.pane) s.pane.remove();
+          if (s) { try { s.term.dispose(); } catch(e) {} if (s.pane) s.pane.remove(); }
           delete sessions[sid];
           sessionOrder = sessionOrder.filter(id => id !== sid);
           if (activeId === sid) activeId = null;

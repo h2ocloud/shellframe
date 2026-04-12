@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.9.3 (2026-04-12)
+
+### Fixes
+- **Memory leak prevention: xterm.js `term.dispose()`** — Closing a tab removed the DOM pane but didn't dispose the xterm.js Terminal instance, leaking WebGL contexts, buffers, and addon state. Now calls `term.dispose()` in both `closeTab` and `syncSessionsFromBackend`.
+- **Log file auto-truncation** — Debug log (`shellframe_debug.log`) and bridge log (`shellframe_bridge.log`) now auto-truncate at 1MB (keeps the last half). Previously grew unbounded.
+- **pyte history buffer capped** — Bridge's per-session pyte HistoryScreen reduced from 10,000 to 3,000 lines. At 6 sessions with full history, this cuts worst-case memory from ~960MB to ~288MB.
+- **Bridge log refactored** — All 21 direct `open(_LOG_FILE, 'a')` calls replaced with `_blog()` helper that handles the auto-truncation centrally.
+
+### 修正
+- **記憶體洩漏防治：xterm.js `term.dispose()`** — 關分頁時只移除了 DOM pane 但沒 dispose xterm Terminal 實例，WebGL context、buffer、addon 都會洩漏。現在 `closeTab` 和 `syncSessionsFromBackend` 都會呼叫 `term.dispose()`。
+- **Log 自動截斷** — debug log 和 bridge log 超過 1MB 自動砍半。之前無上限持續長大。
+- **pyte 歷史 buffer 封頂** — Bridge 的 per-session pyte HistoryScreen 從 10,000 行降到 3,000 行。6 個 session 全跑滿時記憶體從 ~960MB 降到 ~288MB。
+- **Bridge log 重構** — 21 處直接 `open(_LOG_FILE)` 改用 `_blog()` 集中處理截斷邏輯。
+
 ## v0.9.2 (2026-04-12)
 
 ### New Features
