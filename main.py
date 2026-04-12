@@ -321,9 +321,11 @@ class Session:
         self.alive = False
 
     def write(self, data: str):
-        # Truncate + escape for log so multi-line / control bytes are visible
-        preview = data[:80].replace('\r', '\\r').replace('\n', '\\n').replace('\x1b', '\\e')
-        _dlog("write", f"sid={self.sid} len={len(data)} preview={preview!r}")
+        # Only log multi-char writes (init prompt, paste) — single keystrokes
+        # are too noisy and the file open/close adds measurable latency.
+        if len(data) > 2:
+            preview = data[:80].replace('\r', '\\r').replace('\n', '\\n').replace('\x1b', '\\e')
+            _dlog("write", f"sid={self.sid} len={len(data)} preview={preview!r}")
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
             try:
                 self._winpty.write(data)

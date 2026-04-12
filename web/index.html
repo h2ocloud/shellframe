@@ -1044,6 +1044,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (data === lastSent && now - lastTime < 400) return;
           lastSent = data; lastTime = now;
         }
+        // Enter / single control chars → send immediately (skip microbatch).
+        // The setTimeout(0) microbatch helps for rapid multi-char input
+        // (IME, paste bursts) but adds a full event-loop tick + possible
+        // WKWebView scheduling delay for every keystroke. Enter is a
+        // discrete action that should fire instantly.
+        if (data === '\r' || data === '\n' || data.length === 1) {
+          if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+          pywebview.api.write_input(sid, inputBuf + data);
+          inputBuf = '';
+          return;
+        }
         inputBuf += data;
         if (!inputTimer) {
           inputTimer = setTimeout(() => {
@@ -1130,6 +1141,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
           if (data === lastSent && now - lastTime < 400) return;
           lastSent = data; lastTime = now;
+        }
+        if (data === '\r' || data === '\n' || data.length === 1) {
+          if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+          pywebview.api.write_input(sid, inputBuf + data);
+          inputBuf = '';
+          return;
         }
         inputBuf += data;
         if (!inputTimer) {
