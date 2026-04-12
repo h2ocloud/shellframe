@@ -383,7 +383,8 @@
   }
   .sb-divider.drag-over { color: #7aa2f7; background: rgba(122,162,247,.06); border-radius: 4px; }
   .sb-divider.drag-over::before, .sb-divider.drag-over::after { background: #7aa2f7; }
-  .sb-item.disabled { opacity: .45; }
+  .sb-item.unbridged { opacity: .85; } /* not grayed out — still fully functional, just not TG-bridged */
+  .sb-divider { cursor: help; }
   .sb-item { cursor: grab; -webkit-user-select: none; user-select: none; }
   .sb-item:active { cursor: grabbing; }
   .sb-footer-btn {
@@ -1338,21 +1339,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const divider = document.createElement('div');
       divider.className = 'sb-divider';
       divider.dataset.section = 'divider';
-      divider.textContent = 'TG off';
+      divider.textContent = '不由 ShellFrame 橋接';
+      divider.title = '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 Claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。';
       container.appendChild(divider);
 
       disabledSids.forEach(sid => {
         const s = sessions[sid];
         if (!s) return;
         const el = document.createElement('div');
-        el.className = 'sb-item disabled' + (sid === activeId ? ' active' : '');
+        el.className = 'sb-item unbridged' + (sid === activeId ? ' active' : '');
         el.dataset.sid = sid;
         el.dataset.section = 'off';
         el.innerHTML =
           `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
-          `<span style="opacity:.2;font-size:10px;min-width:14px">·</span>` +
+          `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
-          `<span class="sb-tg" style="opacity:.3">TG</span>`;
+          `<span class="sb-tg" style="opacity:.35;font-size:9px">自管</span>`;
         container.appendChild(el);
       });
 
@@ -1484,21 +1486,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const startY = e.clientY;
     const container = document.getElementById('sidebar-sessions');
 
+    let _lastHighlight = null;
     function onMove(ev) {
       if (!moved && Math.abs(ev.clientY - startY) < 5) return;
       if (!moved) ev.preventDefault();
       moved = true;
       _sbDragging = true;
       item.style.opacity = '.3';
-      // Highlight drop target
-      container.querySelectorAll('.sb-item, .sb-divider, [data-section="off"]').forEach(el => {
-        el.style.background = '';
-      });
+      // Highlight drop target (track last to avoid clearing ALL every frame)
       const target = document.elementFromPoint(ev.clientX, ev.clientY);
-      if (!target) return;
-      const dropItem = target.closest('.sb-item') || target.closest('.sb-divider') || target.closest('[data-section="off"]');
-      if (dropItem && dropItem !== item) {
-        dropItem.style.background = dropItem.classList?.contains('sb-divider') ? 'rgba(122,162,247,.1)' : '#292e42';
+      const dropItem = target ? (target.closest('.sb-item') || target.closest('.sb-divider') || target.closest('[data-section="off"]')) : null;
+      if (dropItem !== _lastHighlight) {
+        if (_lastHighlight) _lastHighlight.style.background = '';
+        _lastHighlight = (dropItem && dropItem !== item) ? dropItem : null;
+        if (_lastHighlight) {
+          _lastHighlight.style.background = _lastHighlight.classList?.contains('sb-divider') ? 'rgba(122,162,247,.1)' : '#292e42';
+        }
       }
     }
 
@@ -1507,9 +1510,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       document.removeEventListener('mouseup', onUp);
       _sbDragging = false;
       item.style.opacity = '';
-      container.querySelectorAll('.sb-item, .sb-divider, [data-section="off"]').forEach(el => {
-        el.style.background = '';
-      });
+      if (_lastHighlight) { _lastHighlight.style.background = ''; _lastHighlight = null; }
       if (!moved) return;
       const target = document.elementFromPoint(ev.clientX, ev.clientY);
       if (!target) return;
