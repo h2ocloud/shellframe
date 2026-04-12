@@ -595,6 +595,21 @@ class Api:
         save_config(cfg)
         return json.dumps(cfg)
 
+    def reorder_presets(self, order_json: str) -> str:
+        """Reorder presets by name list. E.g. ["Bash","Claude Code","Codex"]."""
+        cfg = load_config()
+        order = json.loads(order_json) if order_json else []
+        by_name = {p["name"]: p for p in cfg.get("presets", [])}
+        reordered = [by_name[n] for n in order if n in by_name]
+        # Append any presets not in the order list (safety)
+        seen = set(order)
+        for p in cfg.get("presets", []):
+            if p["name"] not in seen:
+                reordered.append(p)
+        cfg["presets"] = reordered
+        save_config(cfg)
+        return json.dumps(cfg)
+
     def list_sessions(self) -> str:
         """Return list of active sessions (for reconnect after page reload)."""
         result = []

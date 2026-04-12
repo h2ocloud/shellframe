@@ -261,7 +261,12 @@
   .kbd { background: #24283b; border: 1px solid #3b4261; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: inherit; color: #a9b1d6; }
 
   /* ── Settings modal ── */
-  .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; }
+  .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; transition: background .15s; }
+  .settings-preset.dragging { opacity: .4; }
+  .settings-preset.drag-over { border-top: 2px solid #7aa2f7; margin-top: -2px; }
+  .sp-grip { cursor: grab; color: #3b4261; font-size: 14px; padding: 0 2px; user-select: none; line-height: 1; }
+  .sp-grip:hover { color: #7aa2f7; }
+  .sp-grip:active { cursor: grabbing; }
   .settings-preset input { background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; padding: 4px 6px; color: #c0caf5; font-size: 12px; outline: none; }
   .settings-preset input:focus { border-color: #7aa2f7; }
   .settings-preset .sp-icon {
@@ -1876,7 +1881,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
 
   // ── Modal ──
-  document.getElementById('btn-new-tab').addEventListener('click', () => { $modal.classList.add('open'); $customCmd.focus(); });
+  document.getElementById('btn-new-tab').addEventListener('click', () => { renderPresets(); $modal.classList.add('open'); $customCmd.focus(); });
   document.getElementById('btn-cancel-modal').addEventListener('click', closeModal);
   $modal.addEventListener('click', (e) => { if (e.target === $modal) closeModal(); });
 
@@ -2224,15 +2229,52 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function renderSettingsPresets() {
     const container = document.getElementById('settings-presets');
     container.innerHTML = '';
+    let _dragIdx = -1;
     (config.presets || []).forEach((p, i) => {
       const row = document.createElement('div');
       row.className = 'settings-preset';
+      row.draggable = true;
+      row.dataset.idx = i;
       row.innerHTML = `
+        <span class="sp-grip" title="Drag to reorder">☰</span>
         <button class="sp-icon emoji-btn" data-field="icon" data-idx="${i}">${p.icon || '▶'}</button>
         <input class="sp-name" value="${esc(p.name)}" data-field="name" data-idx="${i}"/>
         <input class="sp-cmd" value="${esc(p.cmd)}" data-field="cmd" data-idx="${i}"/>
         <button class="sp-del" data-idx="${i}">&times;</button>
       `;
+      // Drag reorder
+      row.addEventListener('dragstart', (e) => {
+        _dragIdx = i;
+        row.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('drag-over'));
+        _dragIdx = -1;
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('drag-over'));
+        if (parseInt(row.dataset.idx) !== _dragIdx) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const toIdx = parseInt(row.dataset.idx);
+        if (_dragIdx < 0 || _dragIdx === toIdx) return;
+        // Reorder in-memory
+        const arr = [...(config.presets || [])];
+        const [moved] = arr.splice(_dragIdx, 1);
+        arr.splice(toIdx, 0, moved);
+        // Save new order to backend
+        const order = arr.map(p => p.name);
+        const raw = await pywebview.api.reorder_presets(JSON.stringify(order));
+        config = JSON.parse(raw);
+        renderSettingsPresets();
+      });
+
       // Track dirty state per row
       let dirty = false;
       const saveBtn = document.createElement('button');
@@ -2256,7 +2298,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         dirty = false;
         saveBtn.style.display = 'none';
         saveBtn.textContent = '✓';
-        // Flash green on the row
         row.style.background = 'rgba(158,206,106,.1)';
         setTimeout(() => row.style.background = '', 500);
       });
@@ -2265,7 +2306,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         config = JSON.parse(raw);
         renderSettingsPresets();
       });
-      // Insert save button before delete
       row.querySelector('.sp-del').before(saveBtn);
       container.appendChild(row);
     });
@@ -2880,6 +2920,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Cmd/Ctrl+T → new tab
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
       e.preventDefault();
+      renderPresets();
       $modal.classList.add('open');
       $customCmd.focus();
     }
