@@ -83,7 +83,11 @@ def save_config(cfg):
 
 TMUX_PREFIX = "sf_"  # tmux session name prefix
 
-DEBUG_LOG = "/tmp/shellframe_debug.log"
+# Cross-platform temp dir — keep /tmp on Unix for continuity with existing
+# installs, fall back to %TEMP% on Windows
+import tempfile as _tempfile
+TMP_DIR = Path("/tmp") if not IS_WIN else Path(_tempfile.gettempdir())
+DEBUG_LOG = str(TMP_DIR / "shellframe_debug.log")
 
 
 def _dlog(category: str, msg: str):
@@ -428,35 +432,86 @@ class Api:
         self._output_event = threading.Event()   # signalled by reader threads
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
 
+    def _save_soft_session(self, sid: str, cmd: str):
+        """Persist a session entry to config.session_list. Used as soft
+        persistence on Windows (no tmux) — startup will recreate these as
+        fresh PTYs. No-op on systems with tmux since tmux already persists."""
+        if not IS_WIN and _has_tmux():
+            return
+        cfg = load_config()
+        sessions = cfg.get("session_list", [])
+        sessions = [s for s in sessions if s.get("sid") != sid]  # dedup
+        sessions.append({"sid": sid, "cmd": cmd})
+        cfg["session_list"] = sessions
+        save_config(cfg)
+
+    def _drop_soft_session(self, sid: str):
+        """Remove a session from soft-persistence list."""
+        if not IS_WIN and _has_tmux():
+            return
+        cfg = load_config()
+        sessions = cfg.get("session_list", [])
+        new_list = [s for s in sessions if s.get("sid") != sid]
+        if len(new_list) != len(sessions):
+            cfg["session_list"] = new_list
+            save_config(cfg)
+
     def restore_tmux_sessions(self, cols: int = 80, rows: int = 24) -> str:
-        """Detect orphaned sf_* tmux sessions and reattach them.
-        Called from frontend on startup before list_sessions."""
+        """Restore orphaned sessions on startup.
+
+        Two paths:
+          - tmux available: detect sf_* tmux sessions and reattach (Linux/macOS)
+          - no tmux: read config.session_list and recreate as fresh PTYs.
+            This is "soft persistence" — labels and command list are kept,
+            but scrollback is gone. Used on Windows.
+        """
         _dlog("lifecycle", f"restore_tmux_sessions called cols={cols} rows={rows}")
-        if IS_WIN or not _has_tmux():
-            return json.dumps([])
-        existing = _list_tmux_sessions()
-        _dlog("lifecycle", f"  found tmux sessions: {[e['name'] for e in existing]}")
         cfg = load_config()
         saved_labels = cfg.get("session_labels", {})
         restored = []
-        for info in existing:
-            tmux_name = info["name"]
-            cmd = info["cmd"] or "bash"
-            # Extract sid from tmux name: sf_s1 → s1
-            sid = tmux_name[len(TMUX_PREFIX):]
-            if sid in self.sessions:
-                continue  # already attached
-            self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
-            session = Session(sid, cmd, cols, rows,
-                              on_data=self._output_event.set,
-                              tmux_name=tmux_name)
-            self.sessions[sid] = session
-            session._bridge_enabled = True
-            session._init_pending = False
-            # Restore custom label
-            if sid in saved_labels:
-                session._custom_label = saved_labels[sid]
-            restored.append({"sid": sid, "cmd": cmd})
+
+        if not IS_WIN and _has_tmux():
+            existing = _list_tmux_sessions()
+            _dlog("lifecycle", f"  found tmux sessions: {[e['name'] for e in existing]}")
+            for info in existing:
+                tmux_name = info["name"]
+                cmd = info["cmd"] or "bash"
+                # Extract sid from tmux name: sf_s1 → s1
+                sid = tmux_name[len(TMUX_PREFIX):]
+                if sid in self.sessions:
+                    continue  # already attached
+                self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
+                session = Session(sid, cmd, cols, rows,
+                                  on_data=self._output_event.set,
+                                  tmux_name=tmux_name)
+                self.sessions[sid] = session
+                session._bridge_enabled = True
+                session._init_pending = False
+                # Restore custom label
+                if sid in saved_labels:
+                    session._custom_label = saved_labels[sid]
+                restored.append({"sid": sid, "cmd": cmd})
+            return json.dumps(restored)
+
+        # Soft-persistence path (Windows / no tmux): recreate sessions fresh
+        soft_list = cfg.get("session_list", [])
+        _dlog("lifecycle", f"  soft restore from config: {[s.get('sid') for s in soft_list]}")
+        for entry in soft_list:
+            sid = entry.get("sid", "")
+            cmd = entry.get("cmd", "")
+            if not sid or not cmd or sid in self.sessions:
+                continue
+            try:
+                self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
+                session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
+                self.sessions[sid] = session
+                session._bridge_enabled = True
+                session._init_pending = False
+                if sid in saved_labels:
+                    session._custom_label = saved_labels[sid]
+                restored.append({"sid": sid, "cmd": cmd})
+            except Exception as e:
+                _dlog("lifecycle", f"  soft restore failed for {sid}: {e}")
         return json.dumps(restored)
 
     def _start_output_pusher(self):
@@ -555,6 +610,9 @@ class Api:
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
         self.sessions[sid] = session
         session._bridge_enabled = True
+        # Soft persistence (Windows / no-tmux fallback): record this session
+        # so the next startup can recreate it
+        self._save_soft_session(sid, cmd)
         # Auto-register with bridge
         if self.bridge:
             label = cmd.split()[0] if cmd else sid
@@ -624,6 +682,8 @@ class Api:
                 del labels[sid]
                 cfg["session_labels"] = labels
                 save_config(cfg)
+            # Drop from soft-persistence list (Windows / no-tmux)
+            self._drop_soft_session(sid)
 
     # Patterns in CLI output that indicate the AI tool is ready for conversation
     # (not in login/setup/auth flow). Checked after stripping ANSI escapes.
@@ -792,11 +852,50 @@ class Api:
         except Exception:
             return json.dumps({"sid": ""})
 
-    def copy_text(self, text: str) -> str:
-        """Copy text to system clipboard."""
+    def open_local_file(self, path: str) -> str:
+        """Open a file (or directory) in the OS default app.
+        Used by the terminal Ctrl+Click handler."""
         try:
-            p = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
-            p.communicate(text.encode('utf-8'))
+            if not path:
+                return json.dumps({"success": False, "message": "empty path"})
+            # Resolve relative paths against the active session's CWD if known
+            p = Path(path).expanduser()
+            if not p.is_absolute():
+                # Try resolving relative to user's home — not perfect but
+                # avoids accidentally opening files in shellframe's cwd
+                p = Path.home() / p
+            if not p.exists():
+                return json.dumps({"success": False, "message": f"not found: {p}"})
+            if IS_WIN:
+                os.startfile(str(p))  # type: ignore[attr-defined]
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["/usr/bin/open", str(p)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(["xdg-open", str(p)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return json.dumps({"success": True, "path": str(p)})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def copy_text(self, text: str) -> str:
+        """Copy text to system clipboard. macOS uses pbcopy, Windows uses
+        clip.exe (UTF-16LE BOM expected for Unicode), Linux tries xclip/wl-copy."""
+        try:
+            if IS_WIN:
+                # clip.exe accepts UTF-16LE; encode with BOM for safety
+                p = subprocess.Popen(['clip'], stdin=subprocess.PIPE)
+                p.communicate(text.encode('utf-16le'))
+            else:
+                # macOS: pbcopy. Linux fallback: try xclip then wl-copy.
+                tool = 'pbcopy' if shutil.which('pbcopy') else (
+                    'xclip' if shutil.which('xclip') else (
+                        'wl-copy' if shutil.which('wl-copy') else None))
+                if not tool:
+                    return 'ERROR: no clipboard tool found'
+                args = [tool, '-selection', 'clipboard'] if tool == 'xclip' else [tool]
+                p = subprocess.Popen(args, stdin=subprocess.PIPE)
+                p.communicate(text.encode('utf-8'))
             return 'ok'
         except Exception as e:
             return f'ERROR: {e}'
@@ -804,8 +903,24 @@ class Api:
     def paste_text(self) -> str:
         """Read text from system clipboard."""
         try:
-            result = subprocess.run(['pbpaste'], capture_output=True, text=True, timeout=3)
-            return result.stdout
+            if IS_WIN:
+                # PowerShell Get-Clipboard handles Unicode properly
+                result = subprocess.run(
+                    ['powershell', '-NoProfile', '-Command', 'Get-Clipboard -Raw'],
+                    capture_output=True, text=True, timeout=3
+                )
+                # PowerShell adds a trailing newline; strip just one
+                out = result.stdout
+                return out.rstrip('\r\n') if out else ''
+            else:
+                tool = 'pbpaste' if shutil.which('pbpaste') else (
+                    'xclip' if shutil.which('xclip') else (
+                        'wl-paste' if shutil.which('wl-paste') else None))
+                if not tool:
+                    return ''
+                args = [tool, '-selection', 'clipboard', '-o'] if tool == 'xclip' else [tool]
+                result = subprocess.run(args, capture_output=True, text=True, timeout=3)
+                return result.stdout
         except Exception as e:
             return ''
 
@@ -980,15 +1095,68 @@ class Api:
         """Restart the app — spawns a new instance and exits the current one.
         tmux-backed sessions persist; the new instance reattaches on startup.
 
-        On macOS we use `open -n -a` so launchd treats the new instance as
-        fully detached (avoids parent-child / window-server issues that can
-        prevent the new window from appearing)."""
+        Strategies (tried in order):
+          macOS:   `open -n -a ShellFrame.app` → launcher script → python relaunch
+          Windows: shellframe.bat in install dir → pythonw.exe main.py
+          Linux:   launcher script → python relaunch
+        """
         try:
             spawned = False
             err_msgs = []
 
-            # Strategy 1: macOS `open -n -a` against the .app bundle
-            if not IS_WIN:
+            if IS_WIN:
+                # Strategy W1: shellframe.bat from install dir / user's local bin
+                bat_candidates = [
+                    APP_DIR / "ShellFrame.bat",
+                    Path.home() / ".local" / "bin" / "shellframe.bat",
+                ]
+                bat_path = None
+                for c in bat_candidates:
+                    try:
+                        if c.exists():
+                            bat_path = c
+                            break
+                    except Exception:
+                        pass
+                if bat_path:
+                    try:
+                        DETACHED_PROCESS = 0x00000008
+                        CREATE_NEW_PROCESS_GROUP = 0x00000200
+                        subprocess.Popen(
+                            ["cmd", "/c", "start", "", str(bat_path)],
+                            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            close_fds=True,
+                        )
+                        spawned = True
+                    except Exception as e:
+                        err_msgs.append(f"shellframe.bat failed: {e}")
+
+                # Strategy W2: pythonw.exe main.py (windowless Python)
+                if not spawned:
+                    try:
+                        # Try pythonw.exe (no console) first, fall back to python.exe
+                        py_exe = sys.executable
+                        if py_exe.endswith("python.exe"):
+                            pyw = py_exe[:-10] + "pythonw.exe"
+                            if Path(pyw).exists():
+                                py_exe = pyw
+                        DETACHED_PROCESS = 0x00000008
+                        CREATE_NEW_PROCESS_GROUP = 0x00000200
+                        subprocess.Popen(
+                            [py_exe, str(APP_DIR / "main.py")],
+                            cwd=str(APP_DIR),
+                            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            close_fds=True,
+                        )
+                        spawned = True
+                    except Exception as e:
+                        err_msgs.append(f"pythonw relaunch failed: {e}")
+            else:
+                # Strategy 1: macOS `open -n -a` against the .app bundle
                 # Find the .app bundle (resolve symlinks)
                 candidates = [
                     APP_DIR / "ShellFrame.app",
@@ -1014,34 +1182,34 @@ class Api:
                     except Exception as e:
                         err_msgs.append(f"open -n -a failed: {e}")
 
-            # Strategy 2: launcher script directly
-            if not spawned:
-                launcher = APP_DIR / "ShellFrame.app" / "Contents" / "MacOS" / "shellframe"
-                if launcher.exists():
+                # Strategy 2: launcher script directly (macOS .app bundle internal)
+                if not spawned:
+                    launcher = APP_DIR / "ShellFrame.app" / "Contents" / "MacOS" / "shellframe"
+                    if launcher.exists():
+                        try:
+                            subprocess.Popen(
+                                [str(launcher)],
+                                start_new_session=True,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                            spawned = True
+                        except Exception as e:
+                            err_msgs.append(f"launcher failed: {e}")
+
+                # Strategy 3: relaunch via current Python
+                if not spawned:
                     try:
                         subprocess.Popen(
-                            [str(launcher)],
+                            [sys.executable, str(APP_DIR / "main.py")],
+                            cwd=str(APP_DIR),
                             start_new_session=True,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                         )
                         spawned = True
                     except Exception as e:
-                        err_msgs.append(f"launcher failed: {e}")
-
-            # Strategy 3: relaunch via current Python
-            if not spawned:
-                try:
-                    subprocess.Popen(
-                        [sys.executable, str(APP_DIR / "main.py")],
-                        cwd=str(APP_DIR),
-                        start_new_session=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    spawned = True
-                except Exception as e:
-                    err_msgs.append(f"python relaunch failed: {e}")
+                        err_msgs.append(f"python relaunch failed: {e}")
 
             if not spawned:
                 return json.dumps({"success": False, "message": "; ".join(err_msgs) or "no spawn method worked"})
@@ -1175,22 +1343,71 @@ class Api:
         return json.dumps((cfg.get("bridge", {}) or {}).get("stt_providers") or [])
 
     def stt_install_local(self) -> str:
-        """Install whisper-cpp via Homebrew + download base model.
-        Returns progress as JSON. Runs synchronously (blocks until done)."""
+        """Install whisper.cpp + download base model.
+
+        Picks the right package manager per platform:
+          macOS:   brew install whisper-cpp
+          Windows: winget install ggerganov.whisper-cpp (or choco)
+          Linux:   apt / dnf hint (no auto-install — too varied)
+
+        Always downloads the GGML base model to LOCAL_MODEL_DIR regardless
+        of platform."""
         try:
             steps = []
-            # Step 1: ensure brew exists
-            brew = shutil.which("brew")
-            if not brew:
-                return json.dumps({"success": False, "message": "Homebrew not found. Install from https://brew.sh first."})
 
-            # Step 2: brew install whisper-cpp
-            r = subprocess.run([brew, "install", "whisper-cpp"], capture_output=True, text=True, timeout=600)
-            steps.append({"step": "brew install whisper-cpp", "rc": r.returncode, "out": r.stdout[-500:], "err": r.stderr[-500:]})
-            if r.returncode != 0 and "already installed" not in (r.stderr + r.stdout).lower():
-                return json.dumps({"success": False, "message": f"brew install failed: {r.stderr[-300:]}", "steps": steps})
+            if IS_WIN:
+                # Windows: try winget first, then chocolatey
+                winget = shutil.which("winget")
+                choco = shutil.which("choco")
+                installed = False
+                if winget:
+                    r = subprocess.run(
+                        [winget, "install", "--id", "ggerganov.whisper.cpp",
+                         "--accept-source-agreements", "--accept-package-agreements",
+                         "--silent"],
+                        capture_output=True, text=True, timeout=600,
+                    )
+                    steps.append({"step": "winget install whisper.cpp", "rc": r.returncode,
+                                  "out": r.stdout[-500:], "err": r.stderr[-500:]})
+                    if r.returncode == 0 or "already installed" in (r.stdout + r.stderr).lower():
+                        installed = True
+                if not installed and choco:
+                    r = subprocess.run(
+                        [choco, "install", "whisper-cpp", "-y"],
+                        capture_output=True, text=True, timeout=600,
+                    )
+                    steps.append({"step": "choco install whisper-cpp", "rc": r.returncode,
+                                  "out": r.stdout[-500:], "err": r.stderr[-500:]})
+                    if r.returncode == 0 or "already installed" in (r.stdout + r.stderr).lower():
+                        installed = True
+                if not installed:
+                    return json.dumps({
+                        "success": False,
+                        "message": "No winget or chocolatey found. Install whisper.cpp manually from https://github.com/ggml-org/whisper.cpp/releases and add it to PATH.",
+                        "steps": steps,
+                    })
+            else:
+                # macOS / Linux: prefer Homebrew
+                brew = shutil.which("brew")
+                if not brew:
+                    hint = ""
+                    if shutil.which("apt"):
+                        hint = " (or try `sudo apt install whisper-cpp` if your distro packages it)"
+                    return json.dumps({
+                        "success": False,
+                        "message": f"Homebrew not found. Install from https://brew.sh first.{hint}",
+                    })
+                r = subprocess.run([brew, "install", "whisper-cpp"], capture_output=True, text=True, timeout=600)
+                steps.append({"step": "brew install whisper-cpp", "rc": r.returncode,
+                              "out": r.stdout[-500:], "err": r.stderr[-500:]})
+                if r.returncode != 0 and "already installed" not in (r.stderr + r.stdout).lower():
+                    return json.dumps({
+                        "success": False,
+                        "message": f"brew install failed: {r.stderr[-300:]}",
+                        "steps": steps,
+                    })
 
-            # Step 3: download model if not present
+            # Download model (cross-platform via urllib.request)
             model_dir = TelegramBridge.LOCAL_MODEL_DIR
             model_dir.mkdir(parents=True, exist_ok=True)
             model_path = model_dir / TelegramBridge.LOCAL_MODEL_NAME
@@ -1383,8 +1600,8 @@ class Api:
 
     # ── Remote control (sfctl) ──
 
-    _CMD_FILE = "/tmp/shellframe_cmd.json"
-    _RESULT_FILE = "/tmp/shellframe_result.json"
+    _CMD_FILE = str(TMP_DIR / "shellframe_cmd.json")
+    _RESULT_FILE = str(TMP_DIR / "shellframe_result.json")
 
     def _start_command_watcher(self):
         """Watch for commands from sfctl CLI (file-based IPC)."""

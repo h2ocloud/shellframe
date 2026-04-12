@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.9.0 (2026-04-12)
+
+### New Features
+- **Ctrl+Click to open file paths** — Local file paths in terminal output (Unix `/foo/bar`, Windows `C:\foo\bar`, `~/foo`, `./relative`) are now clickable. Ctrl+Click (Cmd+Click on macOS) opens them in the OS default app via `os.startfile` / `open` / `xdg-open`. URL schemes like `https://` are excluded by lookbehind.
+- **Cross-platform `tempfile.gettempdir()` for IPC + logs** — On Windows, `_CMD_FILE`, `_RESULT_FILE`, and `_LOG_FILE` now live in `%TEMP%` instead of the hardcoded `/tmp` path that didn't exist. macOS/Linux still use `/tmp` for backward compat with existing installs.
+- **Windows clipboard support** — `copy_text` and `paste_text` now use `clip.exe` (UTF-16LE) and PowerShell `Get-Clipboard -Raw` on Windows, plus xclip/wl-copy fallback on Linux. Was macOS-only (pbcopy/pbpaste).
+- **Windows-aware `restart_app`** — TG `/restart` and the manual restart button now spawn `cmd /c start shellframe.bat` (detached) on Windows, with `pythonw.exe main.py` as a second fallback. The macOS path (`open -n -a ShellFrame.app`) still wins on macOS.
+- **Windows-aware STT install** — The "安裝本地 STT" button now picks the right package manager: Homebrew on macOS, `winget install ggerganov.whisper.cpp` then chocolatey on Windows. Model download is shared (urllib).
+- **Windows soft session persistence** — On platforms without tmux, ShellFrame writes the open session list (`{sid, cmd}`) to `config.session_list` whenever sessions are created/closed, and recreates them as fresh PTYs on next launch. UX-equivalent to "where I left off" but without scrollback. tmux platforms are unaffected.
+- **`WINDOWS.md`** — New top-level doc covering install, requirements, what works, known limitations, file locations, and troubleshooting on Windows.
+
+### Fixes
+- **Self-restart loop on Windows** — Same `_save_offset()` race fix as v0.7.2 now applies cross-platform via the new tmp dir path.
+- **`_tmux_capture` early return on Windows** — Returns immediately if `IS_WIN` or `tmux` not on PATH instead of letting `subprocess` raise `FileNotFoundError` repeatedly. The pyte fallback path was already wired up but now skips the noise.
+
+### 新功能
+- **Ctrl+Click 開啟檔案路徑** — 終端機輸出裡的本地檔案路徑（Unix `/foo/bar`、Windows `C:\foo\bar`、`~/foo`、`./relative`）現在可以點選。Ctrl+Click（macOS 是 Cmd+Click）會用 OS 預設程式開啟（macOS 的 `open` / Windows 的 `os.startfile` / Linux 的 `xdg-open`）。URL scheme 如 `https://` 會被 lookbehind 排除。
+- **跨平台暫存目錄** — Windows 上 IPC 和 log 改用 `%TEMP%`，不再硬寫死 `/tmp`（Windows 沒這路徑）。macOS / Linux 維持 `/tmp` 維持向下相容。
+- **Windows 剪貼簿** — `copy_text` / `paste_text` 在 Windows 改用 `clip.exe` 和 PowerShell `Get-Clipboard -Raw`，Linux 加 xclip/wl-copy fallback。原本只支援 macOS。
+- **Windows `restart_app`** — TG `/restart` 和手動重啟按鈕在 Windows 會用 `cmd /c start shellframe.bat`（detached）；fallback 是 `pythonw.exe main.py`。macOS 維持 `open -n -a`。
+- **Windows STT 安裝** — 「安裝本地 STT」按鈕在 Windows 用 `winget install ggerganov.whisper.cpp`，沒 winget 才試 chocolatey。模型下載走 urllib 跨平台共用。
+- **Windows session 軟性持久化** — 沒 tmux 的平台會把 session 列表寫到 `config.session_list`，下次啟動時重建為全新 PTY。功能上等於「打開時恢復我上次的 tab」，但拿不回 scrollback。tmux 平台不受影響。
+- **`WINDOWS.md`** — 新的頂層文件，說明 Windows 安裝、需求、可用功能、已知限制、檔案位置、疑難排解。
+
+### 修正
+- **Windows 自重啟迴圈** — v0.7.2 的 `_save_offset()` 修法現在跨平台都生效。
+- **`_tmux_capture` 在 Windows 早退** — 偵測到 `IS_WIN` 或 PATH 上沒 `tmux` 就直接回空字串，不會讓 subprocess 一直 raise `FileNotFoundError`。pyte fallback 路徑早就接好了，現在只是不再有干擾 log。
+
 ## v0.8.0 (2026-04-11)
 
 ### Breaking — STT is now plugin-driven

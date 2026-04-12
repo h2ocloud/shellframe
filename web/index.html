@@ -937,6 +937,52 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   }
 
+  // ── File path link provider ──
+  // Matches Unix absolute paths (/foo/bar/baz.txt), Windows paths
+  // (C:\foo\... and C:/foo/...), tilde paths (~/foo), and ./relative paths.
+  // The (?<![A-Za-z:/]) lookbehind prevents matching inside http://, file://
+  // and similar URL schemes. Trailing punctuation is stripped per match.
+  // Ctrl+Click → Python open_local_file → OS default app.
+  const FILE_PATH_RE = /(?<![A-Za-z:\/])(?:[A-Za-z]:[\\\/](?:[^\s"'<>|?*\r\n]+[\\\/]?)+|~\/[^\s"'<>|?*\r\n:]+|\/[^\s"'<>|?*\r\n:\/]+(?:\/[^\s"'<>|?*\r\n:]+)*|\.{1,2}\/[^\s"'<>|?*\r\n:]+)/g;
+
+  function attachFileLinkProvider(term) {
+    if (!term.registerLinkProvider) return; // older xterm.js
+    term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const buf = term.buffer.active;
+        const line = buf.getLine(bufferLineNumber - 1);
+        if (!line) { callback(undefined); return; }
+        const text = line.translateToString(true);
+        const links = [];
+        let m;
+        FILE_PATH_RE.lastIndex = 0;
+        while ((m = FILE_PATH_RE.exec(text)) !== null) {
+          let raw = m[0];
+          // Trim trailing punctuation that's almost never part of a filename
+          raw = raw.replace(/[.,;:!?)>\]}'"]+$/, '');
+          if (raw.length < 2) continue;
+          const start = m.index + 1; // xterm.js columns are 1-indexed
+          links.push({
+            range: {
+              start: { x: start, y: bufferLineNumber },
+              end: { x: start + raw.length - 1, y: bufferLineNumber },
+            },
+            text: raw,
+            activate(event, uri) {
+              // Only open on Ctrl+Click (Win/Linux) or Cmd+Click (macOS).
+              // Plain click should still allow text selection.
+              if (event && !(event.ctrlKey || event.metaKey)) return;
+              pywebview.api.open_local_file(uri).catch(() => {});
+            },
+            hover(_event, _uri) {},
+            leave() {},
+          });
+        }
+        callback(links.length ? links : undefined);
+      },
+    });
+  }
+
   // ── Session management ──
   async function openSession(cmd, label) {
     const pane = document.createElement('div');
@@ -956,6 +1002,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.unicode.activeVersion = '11';
     term.open(pane);
     fitAddon.fit();
+    attachFileLinkProvider(term);
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
     sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
@@ -1041,6 +1088,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.unicode.activeVersion = '11';
     term.open(pane);
     fitAddon.fit();
+    attachFileLinkProvider(term);
 
     const label = cmd.split(/\s/)[0];
     sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };

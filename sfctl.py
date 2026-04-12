@@ -12,10 +12,14 @@ Usage:
 import json
 import os
 import sys
+import tempfile
 import time
 
-CMD_FILE = "/tmp/shellframe_cmd.json"
-RESULT_FILE = "/tmp/shellframe_result.json"
+# Cross-platform temp dir — must match main.py + bridge_telegram.py
+# Keep /tmp on Unix for backward compat, %TEMP% on Windows
+_TMP = tempfile.gettempdir() if sys.platform == "win32" else "/tmp"
+CMD_FILE = os.path.join(_TMP, "shellframe_cmd.json")
+RESULT_FILE = os.path.join(_TMP, "shellframe_result.json")
 
 COMMANDS = {
     "reload": "Hot-reload bridge_telegram module (pick up code changes)",

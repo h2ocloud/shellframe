@@ -5,14 +5,23 @@ Zero external dependencies (uses urllib).
 """
 
 import json
+import os as _os
 import re
 import shutil
 import subprocess
+import sys as _sys
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+
+# Cross-platform temp dir — keep /tmp on Unix for continuity with existing
+# installs, fall back to %TEMP% on Windows
+_IS_WIN = _sys.platform == "win32"
+_TMP_DIR = tempfile.gettempdir() if _IS_WIN else "/tmp"
+_LOG_FILE = _os.path.join(_TMP_DIR, "shellframe_bridge.log")
 
 import pyte
 
@@ -286,8 +295,8 @@ class TelegramBridge(BridgeBase):
 
     # ── IPC with main.py (via sfctl file mechanism) ──
 
-    _CMD_FILE = "/tmp/shellframe_cmd.json"
-    _RESULT_FILE = "/tmp/shellframe_result.json"
+    _CMD_FILE = _os.path.join(_TMP_DIR, "shellframe_cmd.json")
+    _RESULT_FILE = _os.path.join(_TMP_DIR, "shellframe_result.json")
 
     def _sfctl_call(self, cmd: str, args: dict = None, timeout: float = 5.0) -> dict:
         """Send a command to main.py via sfctl IPC and wait for result."""
@@ -779,7 +788,11 @@ class TelegramBridge(BridgeBase):
     @staticmethod
     def _tmux_capture(sid: str, history_lines: int = 3000) -> str:
         """Capture a tmux pane's rendered scrollback as plain text. Returns ''
-        if tmux unavailable or session missing. Uses sf_<sid> naming convention."""
+        if tmux unavailable or session missing. Uses sf_<sid> naming convention.
+        On Windows tmux doesn't exist — return immediately so the caller falls
+        back to pyte parsing."""
+        if _IS_WIN or not shutil.which("tmux"):
+            return ""
         try:
             r = subprocess.run(
                 ["tmux", "capture-pane", "-p", "-J",
@@ -986,7 +999,7 @@ class TelegramBridge(BridgeBase):
                     # (the _handle_update path sets it fresh each time).
 
                 # Debug log
-                with open('/tmp/shellframe_bridge.log', 'a') as f:
+                with open(_LOG_FILE, 'a') as f:
                     f.write(f"flush {sid}: new_lines={len(new_lines)} "
                             f"users={dict(self._user_active)} has_msg={slot.has_user_msg}\n")
                     for l in new_lines[:5]:
@@ -1110,7 +1123,7 @@ class TelegramBridge(BridgeBase):
             with urllib.request.urlopen(req, timeout=60) as resp:
                 resp.read()
         except Exception as e:
-            with open('/tmp/shellframe_bridge.log', 'a') as f:
+            with open(_LOG_FILE, 'a') as f:
                 f.write(f"_send_tg_file error: {file_path} -> {e}\n")
 
     # ── TG Polling ──
@@ -1160,7 +1173,7 @@ class TelegramBridge(BridgeBase):
                         text = (msg.get("text") or "").strip().lower()
                         cmd = text.split()[0] if text else ""
                         if cmd in ("/restart", "/update_now", "/reload"):
-                            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                            with open(_LOG_FILE, 'a') as _f:
                                 _f.write(f"  startup safety: skipping {cmd}\n")
                             continue
                     self._handle_update(update)
@@ -1297,14 +1310,14 @@ class TelegramBridge(BridgeBase):
         binary = self._stt_local_binary()
         model = self._stt_local_model_path()
         if not binary or not model:
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  local STT skipped: binary={binary!r} model={model!r}\n")
             return ""
         try:
             # Convert ogg/opus to 16kHz mono WAV via ffmpeg (whisper.cpp wants WAV)
             ffmpeg = shutil.which("ffmpeg")
             if not ffmpeg:
-                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                with open(_LOG_FILE, 'a') as _f:
                     _f.write(f"  local STT: ffmpeg not found\n")
                 return ""
             wav_path = audio_path.rsplit(".", 1)[0] + ".wav"
@@ -1313,7 +1326,7 @@ class TelegramBridge(BridgeBase):
                 capture_output=True, timeout=60,
             )
             if r.returncode != 0 or not _Path(wav_path).exists():
-                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                with open(_LOG_FILE, 'a') as _f:
                     _f.write(f"  ffmpeg convert failed: {r.stderr[:200]}\n")
                 return ""
 
@@ -1342,11 +1355,11 @@ class TelegramBridge(BridgeBase):
                 _Path(wav_path).unlink()
             except Exception:
                 pass
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  local STT transcribed: {len(text)} chars\n")
             return text
         except Exception as e:
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  local STT failed: {e}\n")
             return ""
 
@@ -1364,15 +1377,15 @@ class TelegramBridge(BridgeBase):
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             if not hasattr(mod, "transcribe"):
-                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                with open(_LOG_FILE, 'a') as _f:
                     _f.write(f"  STT plugin missing transcribe(): {self.PLUGIN_FILE}\n")
                 return ""
             text = (mod.transcribe(audio_path) or "").strip()
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  STT plugin transcribed: {len(text)} chars\n")
             return text
         except Exception as e:
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  STT plugin failed: {e}\n")
             return ""
 
@@ -1392,7 +1405,7 @@ class TelegramBridge(BridgeBase):
             }] + chain
 
         if not chain:
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  remote STT: no providers configured\n")
             return ""
 
@@ -1431,17 +1444,17 @@ class TelegramBridge(BridgeBase):
                     if result.get(k):
                         text = str(result[k]).strip()
                         break
-                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                with open(_LOG_FILE, 'a') as _f:
                     _f.write(f"  remote STT [{name}] transcribed: {len(text)} chars\n")
                 if text:
                     return text
                 last_err = f"{name}: empty response"
             except Exception as e:
                 last_err = f"{name}: {e}"
-                with open('/tmp/shellframe_bridge.log', 'a') as _f:
+                with open(_LOG_FILE, 'a') as _f:
                     _f.write(f"  remote STT [{name}] failed: {e}\n")
                 continue
-        with open('/tmp/shellframe_bridge.log', 'a') as _f:
+        with open(_LOG_FILE, 'a') as _f:
             _f.write(f"  all remote STT providers failed; last={last_err}\n")
         return ""
 
@@ -1522,7 +1535,7 @@ class TelegramBridge(BridgeBase):
         chat_id = message.get("chat", {}).get("id", 0)
         message_id = message.get("message_id", 0)
 
-        with open('/tmp/shellframe_bridge.log', 'a') as _f:
+        with open(_LOG_FILE, 'a') as _f:
             _f.write(f"_handle_callback_query: data={data!r} user={user_id}\n")
 
         # Whitelist check
@@ -1616,13 +1629,13 @@ class TelegramBridge(BridgeBase):
         has_doc = bool(msg.get("document"))
         has_voice = bool(msg.get("voice"))       # TG voice note (ogg/opus)
         has_audio = bool(msg.get("audio"))       # TG audio file
-        with open('/tmp/shellframe_bridge.log', 'a') as _f:
+        with open(_LOG_FILE, 'a') as _f:
             _f.write(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} doc={has_doc} voice={has_voice} audio={has_audio}\n")
         if has_photo:
             # TG sends multiple sizes; pick the largest (last)
             photo = msg["photo"][-1]
             path = self._download_tg_file(photo["file_id"], ".png")
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  photo download: file_id={photo['file_id']} path={path!r}\n")
             if path:
                 file_paths.append(path)
@@ -1631,7 +1644,7 @@ class TelegramBridge(BridgeBase):
             fname = doc.get("file_name", "file")
             ext = _Path(fname).suffix or ".bin"
             path = self._download_tg_file(doc["file_id"], ext)
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  doc download: fname={fname} path={path!r}\n")
             if path:
                 file_paths.append(path)
@@ -1641,7 +1654,7 @@ class TelegramBridge(BridgeBase):
             media = msg.get("voice") or msg.get("audio")
             ext = ".oga" if has_voice else (_Path(media.get("file_name", "")).suffix or ".mp3")
             audio_path = self._download_tg_file(media["file_id"], ext)
-            with open('/tmp/shellframe_bridge.log', 'a') as _f:
+            with open(_LOG_FILE, 'a') as _f:
                 _f.write(f"  voice download: path={audio_path!r}\n")
             if audio_path:
                 # Acknowledge receipt immediately so user knows we're processing
