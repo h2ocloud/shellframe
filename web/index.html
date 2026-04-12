@@ -506,6 +506,13 @@
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto Update</label>
           <button class="toggle-switch on" id="setting-autoupdate"></button>
         </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="shiftEnterLabel">Shift+Enter = newline</label>
+          <button class="toggle-switch on" id="setting-shift-enter"></button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
+        💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
       </div>
 
       <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
@@ -639,6 +646,7 @@
         <span class="kbd">Ctrl+Tab</span><span>Next tab</span>
         <span class="kbd">Cmd+]</span> / <span class="kbd">Cmd+[</span><span>Next / Prev tab</span>
         <span class="kbd">Cmd+V</span><span>Paste image</span>
+        <span class="kbd">Shift+Enter</span><span data-i18n="shiftEnterShortcut">Newline (no submit)</span>
         <span class="kbd">Cmd+,</span><span>Settings</span>
       </div>
     </div>
@@ -785,6 +793,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fileAttached: 'File attached',
       dropToAttach: 'Drop file to attach',
       processExited: '[process exited]',
+      shiftEnterLabel: 'Shift+Enter = newline',
+      shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
+      shiftEnterShortcut: 'Newline (no submit)',
       tgUnbridgedDivider: 'Not bridged by ShellFrame',
       tgUnbridgedTooltip: 'Sessions below are not monitored by ShellFrame\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
       tgSelfManaged: 'own',
@@ -829,6 +840,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fileAttached: '已附加檔案',
       dropToAttach: '放開以附加檔案',
       processExited: '[程序已結束]',
+      shiftEnterLabel: 'Shift+Enter 換行',
+      shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
+      shiftEnterShortcut: '換行（不送出）',
       tgUnbridgedDivider: '不由 ShellFrame 橋接',
       tgUnbridgedTooltip: '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
       tgSelfManaged: '自管',
@@ -885,6 +899,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     lang = s.language || (/^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en');
     currentFontSize = s.fontSize || 14;
     autoUpdateEnabled = s.autoUpdate !== false; // default true
+    shiftEnterNewline = s.shiftEnterNewline !== false; // default true
     // Apply UI scale (interface size)
     const uiScale = s.uiScale || 1;
     document.documentElement.style.setProperty('--ui-scale', uiScale);
@@ -1571,13 +1586,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
 
-  // ── Attach: intercept Enter before xterm to inject file paths ──
+  // ── Attach: intercept Enter/Shift+Enter before xterm ──
+  let shiftEnterNewline = true; // default on; toggled in Settings
   function setupAttachKeyHandler(sid, term) {
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
       // Esc in plain terminal → send Ctrl+U to kill current line
       if (ev.key === 'Escape' && !isAiSession(sid)) {
         pywebview.api.write_input(sid, '\x15'); // Ctrl+U = line kill
+        return false;
+      }
+      // Shift+Enter → newline without submit (for AI sessions)
+      // Sends \n instead of \r; Claude Code / Codex treat \n as line break.
+      if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey && shiftEnterNewline) {
+        ev.preventDefault();
+        pywebview.api.write_input(sid, '\n');
         return false;
       }
       if (ev.key !== 'Enter' || ev.ctrlKey || ev.metaKey || ev.altKey) return true;
@@ -1948,6 +1971,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('fontsize-val').textContent = currentFontSize;
     document.getElementById('setting-lang').value = lang;
     $autoUpdateToggle.classList.toggle('on', autoUpdateEnabled);
+    document.getElementById('setting-shift-enter').classList.toggle('on', shiftEnterNewline);
     // Sync UI scale buttons
     const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
     document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => {
@@ -2184,6 +2208,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     autoUpdateEnabled = this.classList.contains('on');
     config.settings = config.settings || {};
     config.settings.autoUpdate = autoUpdateEnabled;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  });
+
+  // Shift+Enter toggle
+  document.getElementById('setting-shift-enter').addEventListener('click', async function() {
+    this.classList.toggle('on');
+    shiftEnterNewline = this.classList.contains('on');
+    config.settings = config.settings || {};
+    config.settings.shiftEnterNewline = shiftEnterNewline;
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   });
 

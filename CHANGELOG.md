@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.9.2 (2026-04-12)
+
+### New Features
+- **Shift+Enter = newline** — Press `Shift+Enter` to insert a new line without submitting the message. Works in Claude Code, Codex, and other AI CLIs. Toggle in Settings → General. Sends `\n` instead of `\r`.
+- **Hardened `.gitignore`** — `.claude/`, personal draft files, `.env`, `config.json`, and runtime artifacts are now gitignored to prevent accidental commit of private data to the public repo.
+
+### Fixes
+- **GitHub Releases created** — Tags v0.4.0 through v0.9.1 now have proper GitHub Release objects with bilingual release notes. Previously only tags existed with no Release page.
+
+### 新功能
+- **Shift+Enter 換行不送出** — 按 `Shift+Enter` 可以插入換行但不送出訊息。支援 Claude Code、Codex 等 AI CLI。在設定 → 一般可以開關。送 `\n` 而非 `\r`。
+- **強化 `.gitignore`** — `.claude/`、個人草稿、`.env`、`config.json` 和 runtime 產物全部加入 gitignore，防止私人資料被推到公開 repo。
+
+### 修正
+- **GitHub Releases 補建** — v0.4.0 到 v0.9.1 的 tag 都補建了 GitHub Release，附完整雙語 release notes。之前只有 tag 沒有 Release 頁面。
+
 ## v0.9.1 (2026-04-12)
 
 ### New Features
