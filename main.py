@@ -479,6 +479,7 @@ class Api:
         _dlog("lifecycle", f"restore_tmux_sessions called cols={cols} rows={rows}")
         cfg = load_config()
         saved_labels = cfg.get("session_labels", {})
+        bridge_disabled = set(cfg.get("bridge_disabled_sessions", []))
         restored = []
 
         if not IS_WIN and _has_tmux():
@@ -496,7 +497,8 @@ class Api:
                                   on_data=self._output_event.set,
                                   tmux_name=tmux_name)
                 self.sessions[sid] = session
-                session._bridge_enabled = True
+                # Restore bridge enabled/disabled state from config
+                session._bridge_enabled = sid not in bridge_disabled
                 session._init_pending = False
                 # Restore custom label
                 if sid in saved_labels:
@@ -516,7 +518,7 @@ class Api:
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
                 session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
                 self.sessions[sid] = session
-                session._bridge_enabled = True
+                session._bridge_enabled = sid not in bridge_disabled
                 session._init_pending = False
                 if sid in saved_labels:
                     session._custom_label = saved_labels[sid]
@@ -1483,7 +1485,7 @@ class Api:
         return json.dumps({"exists": True, **self.bridge.get_status()})
 
     def set_session_bridge(self, sid: str, enabled: bool) -> str:
-        """Enable/disable TG bridge for a specific session."""
+        """Enable/disable TG bridge for a specific session. Persists to config."""
         s = self.sessions.get(sid)
         if not s:
             return json.dumps({"success": False})
@@ -1499,6 +1501,15 @@ class Api:
             else:
                 self.bridge.unregister_session(sid)
             self.bridge.refresh_commands()
+        # Persist bridge-disabled sessions so they survive restart
+        cfg = load_config()
+        disabled = set(cfg.get("bridge_disabled_sessions", []))
+        if enabled:
+            disabled.discard(sid)
+        else:
+            disabled.add(sid)
+        cfg["bridge_disabled_sessions"] = sorted(disabled)
+        save_config(cfg)
         return json.dumps({"success": True, "enabled": enabled})
 
     def reorder_sessions(self, order_json: str) -> str:
