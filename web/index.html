@@ -262,8 +262,8 @@
 
   /* ── Settings modal ── */
   .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; transition: background .15s; }
-  .settings-preset.dragging { opacity: .4; }
-  .settings-preset.drag-over { border-top: 2px solid #7aa2f7; margin-top: -2px; }
+  .settings-preset.sp-dragging { opacity: .35; }
+  .settings-preset.sp-drag-over { background: #292e42; box-shadow: 0 -2px 0 #7aa2f7 inset; }
   .sp-grip { cursor: grab; color: #3b4261; font-size: 14px; padding: 0 2px; user-select: none; line-height: 1; }
   .sp-grip:hover { color: #7aa2f7; }
   .sp-grip:active { cursor: grabbing; }
@@ -2229,11 +2229,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function renderSettingsPresets() {
     const container = document.getElementById('settings-presets');
     container.innerHTML = '';
-    let _dragIdx = -1;
     (config.presets || []).forEach((p, i) => {
       const row = document.createElement('div');
       row.className = 'settings-preset';
-      row.draggable = true;
       row.dataset.idx = i;
       row.innerHTML = `
         <span class="sp-grip" title="Drag to reorder">☰</span>
@@ -2242,37 +2240,45 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <input class="sp-cmd" value="${esc(p.cmd)}" data-field="cmd" data-idx="${i}"/>
         <button class="sp-del" data-idx="${i}">&times;</button>
       `;
-      // Drag reorder
-      row.addEventListener('dragstart', (e) => {
-        _dragIdx = i;
-        row.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      row.addEventListener('dragend', () => {
-        row.classList.remove('dragging');
-        container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('drag-over'));
-        _dragIdx = -1;
-      });
-      row.addEventListener('dragover', (e) => {
+      // Mouse-based drag reorder (HTML5 drag/drop unreliable in WKWebView)
+      const grip = row.querySelector('.sp-grip');
+      grip.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('drag-over'));
-        if (parseInt(row.dataset.idx) !== _dragIdx) row.classList.add('drag-over');
-      });
-      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-      row.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        row.classList.remove('drag-over');
-        const toIdx = parseInt(row.dataset.idx);
-        if (_dragIdx < 0 || _dragIdx === toIdx) return;
-        // Reorder in-memory
-        const arr = [...(config.presets || [])];
-        const [moved] = arr.splice(_dragIdx, 1);
-        arr.splice(toIdx, 0, moved);
-        // Save new order to backend
-        const order = arr.map(p => p.name);
-        const raw = await pywebview.api.reorder_presets(JSON.stringify(order));
-        config = JSON.parse(raw);
-        renderSettingsPresets();
+        const fromIdx = i;
+        let moved = false;
+        row.classList.add('sp-dragging');
+
+        function onMove(ev) {
+          if (!moved && Math.abs(ev.clientY - e.clientY) < 4) return;
+          moved = true;
+          container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('sp-drag-over'));
+          const target = document.elementFromPoint(ev.clientX, ev.clientY);
+          const targetRow = target?.closest('.settings-preset');
+          if (targetRow && targetRow !== row) targetRow.classList.add('sp-drag-over');
+        }
+        function onUp(ev) {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          row.classList.remove('sp-dragging');
+          container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('sp-drag-over'));
+          if (!moved) return;
+          const target = document.elementFromPoint(ev.clientX, ev.clientY);
+          const targetRow = target?.closest('.settings-preset');
+          if (!targetRow || targetRow === row) return;
+          const toIdx = parseInt(targetRow.dataset.idx);
+          if (isNaN(toIdx) || fromIdx === toIdx) return;
+          // Reorder + persist
+          const arr = [...(config.presets || [])];
+          const [item] = arr.splice(fromIdx, 1);
+          arr.splice(toIdx, 0, item);
+          const order = arr.map(pp => pp.name);
+          pywebview.api.reorder_presets(JSON.stringify(order)).then(raw => {
+            config = JSON.parse(raw);
+            renderSettingsPresets();
+          });
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
       });
 
       // Track dirty state per row
