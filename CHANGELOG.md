@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.10.0 (2026-04-12)
+
+### New Features
+- **Selection auto-scroll** — Drag to select text near the top/bottom edge of the terminal and the viewport scrolls automatically to extend the selection. 30px edge zone, 3 lines per 80ms tick.
+
+### Fixes
+- **Invisible typing on new session** — `term.open()` was called while the pane had `display: none`, causing xterm.js to initialize with a 0×0 canvas. Keystrokes were sent to the PTY but not rendered. Fix: make the pane visible (`active` class) before calling `term.open()`.
+- **Cmd+] jumped to unbridged tabs** — Keyboard shortcut cycling included unbridged sessions (e.g., "claude TG") mixed between numbered tabs. Now skips unbridged sessions when bridge is active; they're still reachable by click.
+- **Bridge-disabled sessions reset on restart** — `_bridge_enabled` was only stored in memory. On restart all sessions defaulted back to enabled. Now persists disabled session IDs to `config.bridge_disabled_sessions`.
+
+### 新功能
+- **選取自動滾動** — 拖拉選取文字到終端機邊緣時 viewport 會自動滾動延伸選取範圍。30px 邊緣區，每 80ms 滾 3 行。
+
+### 修正
+- **新 session 打字看不到** — `term.open()` 在 `display: none` 的 pane 上執行，xterm.js canvas 初始化為 0×0，按鍵有送到 PTY 但畫面沒渲染。修法：在 `term.open()` 之前先讓 pane visible。
+- **Cmd+] 跳到 unbridged tab** — 鍵盤切換包含了 unbridged session（如 "claude TG"）夾在有編號的 tab 之間。改成 bridge 啟用時只在 bridged sessions 之間切。
+- **Bridge-disabled session 重啟後重置** — `_bridge_enabled` 只存在記憶體，重啟後全部回到 enabled。改為持久化到 `config.bridge_disabled_sessions`。
+
 ## v0.9.3 (2026-04-12)
 
 ### Fixes
