@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.9.1 (2026-04-12)
+
+### New Features
+- **Preset drag reorder** — Settings presets now have a ☰ grip handle. Drag to reorder; saved to config immediately. Uses mouse-based drag (HTML5 drag/drop is unreliable in WKWebView).
+- **Auto-detect OS language** — First-time users get `zh-TW` on Chinese systems, `en` on everything else. Saved preference still overrides.
+- **PR/issue review workflow** — `.github/REVIEW_WORKFLOW.md` added as the playbook for incoming PRs and issues. Used by the daily Claude Code review agent.
+
+### Fixes
+- **Enter key latency** — Single keystrokes (including Enter) now bypass the `setTimeout(0)` microbatch and send immediately to the PTY. Debug log file I/O also skipped for single-char writes.
+- **File path underline misaligned with CJK text** — Wide characters (中文) before a path shifted the link underline left. Fixed by building a char-to-column map using `getCell().getWidth()`.
+- **Rename modal: IME Enter submitted prematurely** — Safari/WKWebView fires `compositionend` before `keydown`, so `isComposing` was already `false`. Added `_justComposed` 150ms guard + `keyCode === 229` fallback.
+- **New-tab modal showed stale presets** — Presets added in Settings didn't appear until page reload. Now calls `renderPresets()` every time the modal opens.
+- **Sidebar "TG off" section UX** — Sessions below the divider are no longer grayed out (they're functional, just not TG-bridged). Divider text and tooltip explain the purpose. Badge changed from "TG" to "own"/"自管". Drag highlight optimized from O(N) querySelectorAll to O(1) single-element tracking.
+- **Sidebar divider + badge i18n** — All sidebar text now uses `t()` for proper English/Chinese switching.
+
+### 新功能
+- **Preset 拖拉排序** — 設定裡的 preset 列表有 ☰ 把手，拖拉排序後自動存檔。使用 mouse-based drag（WKWebView 不支援 HTML5 drag/drop）。
+- **自動偵測 OS 語言** — 第一次啟動的使用者，中文系統預設 `zh-TW`，其他一律 `en`。手動選過的語言優先。
+- **PR/issue 審查流程** — 新增 `.github/REVIEW_WORKFLOW.md` 作為 PR 和 issue 的審查 checklist，給 daily Claude Code review agent 使用。
+
+### 修正
+- **Enter 鍵延遲** — 單一按鍵（含 Enter）不再經過 `setTimeout(0)` microbatch，直接送到 PTY。debug log 也不再對單字元寫入做檔案 I/O。
+- **檔案路徑底線在中文後偏移** — 寬字元佔 2 columns 但 `translateToString` 只回 1 字元，用 `getCell().getWidth()` 建 char→column 映射修正。
+- **改名 modal IME Enter 提前送出** — Safari 的 `compositionend` 在 `keydown` 之前 fire，加了 `_justComposed` 150ms 保護 + `keyCode === 229` fallback。
+- **新增 tab 的 preset 列表沒更新** — 在 Settings 新增的 preset 要 reload 才出現。改成每次開 modal 都 `renderPresets()`。
+- **側邊欄「TG off」區 UX** — 不再灰掉（這些 session 能正常用，只是不走 ShellFrame TG bridge）。divider 文字 + tooltip 說明用途。badge 從 "TG" 改成 "own" / "自管"。拖拉高亮從 O(N) 優化到 O(1)。
+- **側邊欄 divider + badge 雙語** — 所有側邊欄文字改用 `t()` 走 i18n 系統。
+
 ## v0.9.0 (2026-04-12)
 
 ### New Features
