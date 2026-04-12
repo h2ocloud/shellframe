@@ -1,134 +1,171 @@
 # ShellFrame
 
-Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.
+Multi-tab GUI terminal wrapper for AI coding assistants. Wraps any CLI tool (Claude Code, Codex, Aider, etc.) with image paste, Telegram bridge, session persistence, and more.
 
 ## Why
 
-Terminal-based AI coding assistants (Claude Code, Codex, etc.) don't support pasting images from the clipboard. ShellFrame wraps them in a native GUI window that intercepts `Cmd+V` / `Ctrl+V`, saves the image, and auto-injects the file path into your session — giving you screenshot-to-AI in one paste.
+Terminal-based AI assistants can't receive screenshots from your clipboard. ShellFrame wraps them in a native GUI window that intercepts `Cmd+V`, saves the image, and injects the file path — screenshot-to-AI in one paste. Over time it grew into a full multi-agent control panel.
 
 ## Features
 
-- **Image paste** — `Cmd+V` a screenshot, it shows inline preview and auto-attaches on Enter
-- **Multi-tab** — Run multiple CLI sessions side by side
-- **Presets** — Save frequently used commands (e.g., `claude`, `codex`, `claude --channels ...`)
-- **Cross-platform** — Mac (WKWebView), Windows (Edge WebView2), Linux (GTK WebView)
-- **Lightweight** — Native OS WebView, not Electron. ~200 lines Python + ~400 lines HTML/JS
-- **Auto-update** — Checks for new versions on startup, one-click update
+| Feature | Description |
+|---|---|
+| **Image/file paste** | `Cmd+V` screenshots, Finder files, or drag & drop. Preview bar + auto-attach on Enter. |
+| **Multi-tab** | Multiple CLI sessions side by side. Named tabs, drag reorder. |
+| **tmux persistence** | Sessions run inside tmux. Close ShellFrame → reopen → all tabs and scrollback survive. |
+| **Telegram bridge** | One TG bot routes across all sessions. `/list`, `/1 /2` to switch, voice messages (STT), file/photo forwarding. |
+| **AI busy indicator** | Pulsing orange dot when a session is actively working. Pink dot when waiting on a permission dialog. |
+| **Session rename** | Double-click tab or sidebar to name sessions. Syncs to TG `/list`. |
+| **Ctrl+Click file paths** | Click local file paths in terminal output to open in default app. |
+| **Right-click copy/paste** | Windows CMD-style: select → right-click = copy; no selection → right-click = paste. |
+| **Presets** | Saved commands with emoji icons. Drag to reorder. |
+| **Settings tabs** | General (font, UI scale S/M/L, language) and Telegram Bridge (connection, STT providers). |
+| **Two-tier reload** | UI changes → hot reload. Python changes → full restart with session preservation notice. |
+| **Cross-platform** | macOS (WKWebView), Windows (Edge WebView2), Linux (GTK WebView). |
+| **Auto-update** | Startup check + one-click update. TG `/update` and `/update_now` for remote management. |
+| **i18n** | English + 繁體中文. Auto-detects OS language. |
 
 ## Install
 
-### One-line install (Mac / Linux)
+### macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
 ```
 
-### Manual install
+### Windows
 
-```bash
-git clone https://github.com/h2ocloud/shellframe.git ~/.local/apps/shellframe
-cd ~/.local/apps/shellframe
-python3 -m venv .venv
-.venv/bin/pip install pywebview
+```powershell
+irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
 ```
 
 ### Requirements
 
-- Python 3.9+
-- `pywebview` (auto-installed)
-- macOS 12+ / Windows 10+ / Linux with GTK3
+- **Python 3.9+**
+- **tmux** — for session persistence (macOS: `brew install tmux`; Linux: `apt install tmux`; Windows: not needed, uses soft persistence)
+- **pywebview** + **pyte** — auto-installed via `requirements.txt`
+- **pywinpty** (Windows only) — auto-installed, provides ConPTY for TUI apps
 
 ## Usage
 
 ### Launch
 
 ```bash
-# GUI with session picker
-shellframe
-
-# Or on Mac — Spotlight search "ShellFrame"
+shellframe            # GUI with session picker
+# Or on Mac — Spotlight/Launchpad search "ShellFrame"
 ```
-
-### Workflow: Paste screenshot to AI
-
-1. Take a screenshot (`Cmd+Shift+4` on Mac, `Win+Shift+S` on Windows)
-2. In ShellFrame, press `Cmd+V` — image preview appears above the terminal
-3. Type your question and press `Enter` — the image file path is auto-appended
-4. The AI tool reads the image and responds
 
 ### Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
-| `Cmd+T` / `Ctrl+T` | New tab |
-| `Cmd+W` / `Ctrl+W` | Close tab |
+| `Cmd+T` | New tab |
+| `Cmd+W` | Close tab |
 | `Ctrl+Tab` | Next tab |
-| `Ctrl+Shift+Tab` | Previous tab |
-| `Cmd+V` | Paste image from clipboard |
-| `Cmd+,` / `Ctrl+,` | Settings |
-| `Escape` | Close modal |
+| `Cmd+]` / `Cmd+[` | Next / prev tab |
+| `Cmd+V` | Paste image/file |
+| `Cmd+,` | Settings |
+| `Ctrl+Click` / `Cmd+Click` | Open file path in default app |
+| Right-click (with selection) | Copy |
+| Right-click (no selection) | Paste |
+| `Esc` (plain terminal) | Clear input line |
+| Double-click tab | Rename session |
 
-### Settings
+### Telegram Bridge
 
-Click the gear icon (⚙) in the tab bar or press `Cmd+,` to manage presets. Each preset has:
+1. Open Settings → Telegram Bridge
+2. Paste your bot token, set allowed user IDs
+3. Click Connect
 
-- **Icon** — emoji or character
-- **Name** — display label
-- **Command** — the CLI command to run (supports arguments)
+TG commands:
+| Command | Action |
+|---|---|
+| `/list` | List all sessions with last response preview |
+| `/1` `/2` `/3`... | Switch to session N |
+| `/new` | Create new session (shows preset picker) |
+| `/close` | Close current session |
+| `/pause` / `/resume` | Pause/resume bridge |
+| `/reload` | Hot-reload bridge code |
+| `/restart` | Full app restart (sessions preserved) |
+| `/update` | Check for updates |
+| `/update_now` | Pull + restart if needed |
+| `/status` | Show bridge status |
 
-Presets are saved to `~/.config/shellframe/config.json`.
+Voice messages are transcribed via configurable STT providers (Settings → TG Bridge → 🎙 STT).
 
-### Example presets
+### STT (Voice Transcription)
 
-```json
-{
-  "presets": [
-    {"name": "Claude Code", "cmd": "claude", "icon": "✨"},
-    {"name": "Claude + Telegram", "cmd": "claude --channels plugin:telegram@claude-plugins-official", "icon": "📱"},
-    {"name": "Codex", "cmd": "codex", "icon": "⚡"},
-    {"name": "Bash", "cmd": "bash", "icon": "▶"}
-  ]
-}
-```
+Supports a pluggable provider chain:
+- **Local**: whisper.cpp via `whisper-cli` (install from Settings)
+- **Remote**: any whisper-compatible HTTP server (configure in Settings)
+- **Plugin**: custom Python at `~/.config/shellframe/stt_plugin.py`
+
+Backend modes: `auto` (plugin → local → remote) / `local` / `remote` / `plugin` / `off`.
 
 ## Architecture
 
 ```
 shellframe/
-├── main.py              # Python backend: multi-session PTY + pywebview bridge
-├── web/index.html       # Frontend: xterm.js terminal + tabs + image paste + modals
-├── ShellFrame.app/      # macOS .app bundle (Spotlight/Launchpad)
-├── install.sh           # One-line installer
-├── requirements.txt     # Python dependencies
-├── run.sh / run.bat     # Platform launchers
-└── icon.png             # App icon
+├── main.py                 # Python: multi-session PTY + pywebview + tmux + bridge API
+├── bridge_telegram.py      # TG bot: multi-session routing, STT, menu prompts
+├── bridge_base.py          # Base class for bridges
+├── web/index.html          # Frontend: xterm.js + tabs + sidebar + modals + i18n
+├── sfctl.py                # CLI remote control (file-based IPC)
+├── filters.json            # Dynamic output filter rules for TG bridge
+├── INIT_PROMPT.md          # Auto-injected context for AI CLI sessions
+├── ShellFrame.app/         # macOS .app bundle
+├── install.sh              # macOS/Linux installer
+├── install.ps1             # Windows installer
+├── requirements.txt        # Python: pywebview, pyte, pywinpty (Windows)
+├── version.json            # Version tracking for auto-update
+├── CHANGELOG.md            # Release history (bilingual)
+├── WINDOWS.md              # Windows-specific docs
+└── .github/
+    └── REVIEW_WORKFLOW.md  # PR/issue triage playbook
 ```
 
 ### Tech stack
 
 | Component | Technology |
 |---|---|
-| GUI window | pywebview (native OS WebView) |
-| Terminal rendering | xterm.js |
-| PTY management | Python `pty` (Unix) / `subprocess` (Windows) |
-| Image handling | Web Clipboard API → base64 → PNG file |
+| GUI window | pywebview (native OS WebView — not Electron) |
+| Terminal | xterm.js 5.5 + fit/web-links/unicode11 addons |
+| PTY | `pty.fork()` + tmux (Unix) / pywinpty ConPTY (Windows) |
+| TG bridge | urllib (stdlib, zero external deps) + pyte virtual terminal |
+| STT | whisper.cpp (local) / HTTP providers (remote) / plugin file |
 | Config | JSON (`~/.config/shellframe/config.json`) |
+| IPC | File-based (`sfctl`) for in-session remote control |
 
-### How image paste works
+### Session persistence
 
-1. Web Clipboard API intercepts `paste` event, detects `image/*` MIME type
-2. Image is read as base64 data URL via `FileReader`
-3. Python backend decodes and saves to `~/.claude/tmp/clipboard_YYYYMMDD_HHMMSS.png`
-4. Path is shown in preview bar; on Enter, path is appended to terminal input
-5. Old images (>1 hour) are auto-purged
+**macOS/Linux**: Every PTY runs inside a tmux session (`sf_s1`, `sf_s2`...). Close ShellFrame → tmux sessions survive. Next launch → automatic reattach with full scrollback.
+
+**Windows**: No tmux. ShellFrame uses "soft persistence" — saves the session list to config, recreates fresh PTYs on next launch. Same tabs and labels, but scrollback is lost. See [WINDOWS.md](WINDOWS.md).
+
+## File locations
+
+| Purpose | macOS/Linux | Windows |
+|---|---|---|
+| Source + venv | `~/.local/apps/shellframe` | `%USERPROFILE%\.local\apps\shellframe` |
+| Config | `~/.config/shellframe/config.json` | `%USERPROFILE%\.config\shellframe\config.json` |
+| STT plugin | `~/.config/shellframe/stt_plugin.py` | same |
+| Whisper model | `~/.local/share/shellframe/whisper-models/` | same |
+| Temp (logs, IPC) | `/tmp/shellframe_*.log` | `%TEMP%\shellframe_*.log` |
+| TG offset | `~/.config/shellframe/tg_offset.json` | same |
 
 ## Update
 
-ShellFrame checks for updates on startup. You can also update manually:
+ShellFrame checks for updates on startup. Manual:
 
 ```bash
 cd ~/.local/apps/shellframe && git pull
 ```
+
+Or from Telegram: `/update_now`
+
+## Contributing
+
+See [.github/REVIEW_WORKFLOW.md](.github/REVIEW_WORKFLOW.md) for the PR/issue review process.
 
 ## Author
 
