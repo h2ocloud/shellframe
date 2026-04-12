@@ -785,6 +785,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fileAttached: 'File attached',
       dropToAttach: 'Drop file to attach',
       processExited: '[process exited]',
+      tgUnbridgedDivider: 'Not bridged by ShellFrame',
+      tgUnbridgedTooltip: 'Sessions below are not monitored by ShellFrame\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
+      tgSelfManaged: 'own',
     },
     'zh-TW': {
       newSession: '新增工作階段',
@@ -826,10 +829,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fileAttached: '已附加檔案',
       dropToAttach: '放開以附加檔案',
       processExited: '[程序已結束]',
+      tgUnbridgedDivider: '不由 ShellFrame 橋接',
+      tgUnbridgedTooltip: '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
+      tgSelfManaged: '自管',
     }
   };
 
-  let lang = 'en';
+  // Default language: detect from OS locale. Chinese → zh-TW, everything else → en.
+  let lang = /^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en';
   function t(key) { return (I18N[lang] || I18N.en)[key] || I18N.en[key] || key; }
 
   // State
@@ -875,7 +882,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     config = JSON.parse(raw);
     // Apply settings
     const s = config.settings || {};
-    lang = s.language || 'en';
+    lang = s.language || (/^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en');
     currentFontSize = s.fontSize || 14;
     autoUpdateEnabled = s.autoUpdate !== false; // default true
     // Apply UI scale (interface size)
@@ -1339,8 +1346,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const divider = document.createElement('div');
       divider.className = 'sb-divider';
       divider.dataset.section = 'divider';
-      divider.textContent = '不由 ShellFrame 橋接';
-      divider.title = '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 Claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。';
+      divider.textContent = t('tgUnbridgedDivider');
+      divider.title = t('tgUnbridgedTooltip');
       container.appendChild(divider);
 
       disabledSids.forEach(sid => {
@@ -1354,7 +1361,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
-          `<span class="sb-tg" style="opacity:.35;font-size:9px">自管</span>`;
+          `<span class="sb-tg" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
         container.appendChild(el);
       });
 
