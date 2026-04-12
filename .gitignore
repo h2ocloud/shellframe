@@ -1,7 +1,38 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+
+# macOS
 .DS_Store
+
+# Build artifacts
 build/
 dist/
 ShellFrame.app/Contents/MacOS/shellframe.bak.bin
+
+# Claude Code local project memory (per-user, not for repo)
+.claude/
+
+# Personal / draft files that may appear in the working directory
+# These are Howard's local notes — NEVER commit to public repo.
+*.draft.md
+medium-draft-*.md
+.handoff_sidebar.md
+.handoff*.md
+
+# Secrets / credentials (should never exist here, but just in case)
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+token.json
+
+# Config is per-user, not tracked
+config.json
+
+# Temp / IPC files
+shellframe_*.log
+shellframe_*.json
+*.sqlite
