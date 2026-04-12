@@ -953,24 +953,37 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const line = buf.getLine(bufferLineNumber - 1);
         if (!line) { callback(undefined); return; }
         const text = line.translateToString(true);
+
+        // Build a char-index → column-index map. CJK/wide chars take 2
+        // columns but are 1 JS character in translateToString(true).
+        // Without this, every wide char before a path shifts the
+        // underline to the left by 1 column.
+        const charToCol = [];  // charToCol[charIdx] = first column of that char
+        let col = 0;
+        for (let ci = 0; ci < text.length; ci++) {
+          charToCol.push(col);
+          // Check the cell at this column for its display width
+          const cell = line.getCell(col);
+          col += (cell && cell.getWidth() > 1) ? 2 : 1;
+        }
+        charToCol.push(col); // sentinel for end-of-string
+
         const links = [];
         let m;
         FILE_PATH_RE.lastIndex = 0;
         while ((m = FILE_PATH_RE.exec(text)) !== null) {
           let raw = m[0];
-          // Trim trailing punctuation that's almost never part of a filename
           raw = raw.replace(/[.,;:!?)>\]}'"]+$/, '');
           if (raw.length < 2) continue;
-          const start = m.index + 1; // xterm.js columns are 1-indexed
+          const startCol = charToCol[m.index] + 1;  // xterm columns are 1-indexed
+          const endCol = charToCol[m.index + raw.length] || (startCol + raw.length - 1);
           links.push({
             range: {
-              start: { x: start, y: bufferLineNumber },
-              end: { x: start + raw.length - 1, y: bufferLineNumber },
+              start: { x: startCol, y: bufferLineNumber },
+              end: { x: endCol, y: bufferLineNumber },
             },
             text: raw,
             activate(event, uri) {
-              // Only open on Ctrl+Click (Win/Linux) or Cmd+Click (macOS).
-              // Plain click should still allow text selection.
               if (event && !(event.ctrlKey || event.metaKey)) return;
               pywebview.api.open_local_file(uri).catch(() => {});
             },
