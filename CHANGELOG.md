@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.1 (2026-04-13)
+
+### Fixes
+- **Drag & drop non-image files broken** — `file.path` is an Electron-only property; WKWebView's File API only exposes `file.name` (no directory). Non-image files dragged into ShellFrame got just the filename, not the full path. Fix: read file content via FileReader → save to `~/.claude/tmp/` via `save_file_from_clipboard` → use the saved full path. Also supports dropping multiple files in one gesture.
+
+### 修正
+- **拖放非圖片檔案路徑遺失** — `file.path` 只有 Electron 才有，WKWebView 的 File API 只提供 `file.name`（沒有目錄路徑）。非圖片檔案拖入 ShellFrame 只拿到檔名。修法：用 FileReader 讀內容 → 存到 `~/.claude/tmp/` → 使用完整路徑。同時支援一次拖放多個檔案。
+
 ## v0.10.0 (2026-04-12)
 
 ### New Features

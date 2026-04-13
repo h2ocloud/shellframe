@@ -1932,20 +1932,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
-      const file = files[0];
-      // For images, show preview
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const path = await pywebview.api.save_image(reader.result);
-          attachFile(path, reader.result);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        // Non-image file: get path from drop data
-        // pywebview file drops include path in name
-        const path = file.path || file.name;
-        attachFile(path, null);
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          // Image: read as data URL for preview + save
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const path = await pywebview.api.save_image(reader.result);
+            if (isAiSession(activeId)) { attachFile(path, reader.result); }
+            else { await pywebview.api.write_input(activeId, path); }
+          };
+          reader.readAsDataURL(file);
+        } else {
+          // Non-image: WKWebView doesn't expose file.path (Electron-only).
+          // Read content via FileReader → save to ~/.claude/tmp/ → use saved path.
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const path = await pywebview.api.save_file_from_clipboard(reader.result, file.name || 'file');
+            if (path && !path.startsWith('ERROR')) {
+              if (isAiSession(activeId)) { attachFile(path, null); }
+              else { await pywebview.api.write_input(activeId, path); }
+            }
+          };
+          reader.readAsDataURL(file);
+        }
       }
       return;
     }
