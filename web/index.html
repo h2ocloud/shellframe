@@ -3130,27 +3130,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (activeId) closeTab(activeId);
     }
     // Ctrl+Tab / Cmd+] → next tab, Ctrl+Shift+Tab / Cmd+[ → prev tab
-    // When bridge is active, only cycle through bridged sessions (skip unbridged
-    // ones so Cmd+] goes 1→2→3 not 1→TG-off→2).
+    // Cycles through ALL sessions including unbridged ones.
     if (e.ctrlKey && e.key === 'Tab') {
       e.preventDefault();
-      const order = (bridgeState && bridgeState.active)
-        ? sessionOrder.filter(s => sessions[s]?.bridgeEnabled !== false)
-        : sessionOrder;
-      if (order.length < 2) return;
-      const idx = order.indexOf(activeId);
-      const next = (idx + (e.shiftKey ? -1 : 1) + order.length) % order.length;
-      switchTab(order[next]);
+      if (sessionOrder.length < 2) return;
+      const idx = sessionOrder.indexOf(activeId);
+      const next = (idx + (e.shiftKey ? -1 : 1) + sessionOrder.length) % sessionOrder.length;
+      switchTab(sessionOrder[next]);
     }
     if (e.metaKey && !e.ctrlKey && (e.key === ']' || e.key === '[')) {
       e.preventDefault();
-      const order = (bridgeState && bridgeState.active)
-        ? sessionOrder.filter(s => sessions[s]?.bridgeEnabled !== false)
-        : sessionOrder;
-      if (order.length < 2) return;
-      const idx = order.indexOf(activeId);
+      if (sessionOrder.length < 2) return;
+      const idx = sessionOrder.indexOf(activeId);
       const dir = e.key === ']' ? 1 : -1;
-      switchTab(order[(idx + dir + order.length) % order.length]);
+      switchTab(sessionOrder[(idx + dir + sessionOrder.length) % sessionOrder.length]);
     }
     // Ctrl+Shift+D → debug: show xterm.js buffer state
     if (e.ctrlKey && e.shiftKey && e.key === 'D') {
