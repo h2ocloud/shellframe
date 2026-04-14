@@ -109,10 +109,18 @@ if [ "$(uname)" = "Darwin" ]; then
   rm -rf "$APP_DEST"
   cp -R "$INSTALL_DIR/ShellFrame.app" "$APP_DEST"
 
+  # Stamp Info.plist with current version from version.json
+  CURRENT_VER=$(python3 -c "import json; print(json.load(open('$INSTALL_DIR/version.json'))['version'])" 2>/dev/null || echo "0.0.0")
+  PLIST="$APP_DEST/Contents/Info.plist"
+  if [ -f "$PLIST" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $CURRENT_VER" "$PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CURRENT_VER" "$PLIST" 2>/dev/null || true
+  fi
+
   # Clean up old ~/Applications copy if we migrated to /Applications
   [ "$APP_DEST" = "/Applications/ShellFrame.app" ] && rm -rf "${HOME}/Applications/ShellFrame.app" 2>/dev/null
 
-  # Ad-hoc code sign (unsigned apps may be hidden by Gatekeeper in Finder)
+  # Ad-hoc code sign (unsigned apps may be cleared by Gatekeeper)
   codesign --force --deep --sign - "$APP_DEST" 2>/dev/null || true
 
   # Register with Launch Services for Spotlight indexing

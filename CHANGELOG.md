@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.2 (2026-04-14)
+
+### Fixes
+- **Full upgrade on update** — `do_update()` now runs pip install + refreshes .app bundle after git pull (previously only did git pull, leaving stale venv and .app). Users upgrading from v0.3.0 had missing APIs and no app icon because these steps were skipped.
+- **Startup self-heal** — On launch, if key packages (pyte) are missing, auto-runs `pip install -r requirements.txt`. Catches users who upgraded via `git pull` without re-running install.sh.
+- **Info.plist version stamp** — install.sh now writes the current version from version.json into the .app bundle's Info.plist (was hardcoded to v0.1.0 forever).
+- **Ctrl+Click paths with spaces** — Two-pass regex: quoted paths (`"..."`, `'...'`, `` `...` ``) match fully including spaces; unquoted paths support backslash-escaped spaces (`path\ with\ spaces`).
+
+### 修正
+- **完整升級流程** — `do_update()` 在 git pull 之後會跑 pip install + 重新複製 .app bundle（之前只做 git pull，venv 和 .app 都是舊的）。從 v0.3.0 升級的使用者因為缺了這些步驟，拖放功能和 app icon 都壞了。
+- **啟動自我修復** — 啟動時如果偵測到 pyte 沒裝，自動跑 `pip install -r requirements.txt`。讓只跑 `git pull` 沒跑 install.sh 的使用者也能正常啟動。
+- **Info.plist 版號同步** — install.sh 會把 version.json 的版號寫進 .app 的 Info.plist（之前永遠是 v0.1.0）。
+- **Ctrl+Click 有空格的路徑** — 兩階段 regex：引號包住的路徑完整匹配（含空格）；裸路徑支援反斜線 escape 空格。
+
 ## v0.10.1 (2026-04-13)
 
 ### Fixes

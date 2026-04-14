@@ -1066,7 +1066,13 @@ class Api:
         })
 
     def do_update(self) -> str:
-        """Pull latest from git. Sessions stay alive — frontend reloads to pick up changes.
+        """Full upgrade: git pull + pip install + .app bundle refresh.
+
+        Goes beyond just `git pull` to cover what install.sh does:
+          1. git pull --ff-only
+          2. pip install -r requirements.txt (if requirements.txt changed
+             or .venv looks stale)
+          3. Copy .app bundle to ~/Applications or /Applications (macOS)
 
         Detects which files changed:
           - web/* only        → UI hot-reload sufficient
@@ -1093,6 +1099,7 @@ class Api:
                 # Determine what changed
                 changed_files = []
                 needs_restart = False
+                post_steps = []
                 if old_head:
                     diff = subprocess.run(
                         ["git", "diff", "--name-only", old_head, "HEAD"],
@@ -1105,6 +1112,49 @@ class Api:
                         for f in changed_files
                     )
 
+                # Post-pull step 1: pip install if requirements.txt changed
+                # or if .venv looks stale (missing key packages)
+                venv_pip = APP_DIR / ".venv" / ("Scripts" if IS_WIN else "bin") / "pip"
+                req_changed = 'requirements.txt' in changed_files
+                if req_changed or not venv_pip.exists():
+                    pip_exe = str(venv_pip) if venv_pip.exists() else "pip"
+                    try:
+                        r = subprocess.run(
+                            [pip_exe, "install", "-q", "-r", str(APP_DIR / "requirements.txt")],
+                            cwd=str(APP_DIR),
+                            capture_output=True, text=True, timeout=120
+                        )
+                        post_steps.append(f"pip install: {'ok' if r.returncode == 0 else r.stderr[-100:]}")
+                    except Exception as e:
+                        post_steps.append(f"pip install failed: {e}")
+
+                # Post-pull step 2: refresh .app bundle (macOS only)
+                if not IS_WIN:
+                    src_app = APP_DIR / "ShellFrame.app"
+                    if src_app.exists():
+                        # Try ~/Applications first, then /Applications
+                        for dest_dir in [Path.home() / "Applications", Path("/Applications")]:
+                            dest = dest_dir / "ShellFrame.app"
+                            try:
+                                if dest.exists() or dest_dir.exists():
+                                    subprocess.run(
+                                        ["rm", "-rf", str(dest)],
+                                        capture_output=True, timeout=10
+                                    )
+                                    subprocess.run(
+                                        ["cp", "-R", str(src_app), str(dest)],
+                                        capture_output=True, timeout=10
+                                    )
+                                    # Re-sign so macOS doesn't complain
+                                    subprocess.run(
+                                        ["codesign", "--force", "--deep", "--sign", "-", str(dest)],
+                                        capture_output=True, timeout=30
+                                    )
+                                    post_steps.append(f".app copied to {dest}")
+                                    break
+                            except Exception as e:
+                                post_steps.append(f".app copy to {dest} failed: {e}")
+
                 has_sessions = len(self.sessions) > 0
                 return json.dumps({
                     "success": True,
@@ -1113,6 +1163,7 @@ class Api:
                     "can_hot_reload": has_sessions,
                     "needs_restart": needs_restart,
                     "changed_files": changed_files,
+                    "post_steps": post_steps,
                 })
             else:
                 return json.dumps({"success": False, "message": result.stderr.strip()})
@@ -1766,7 +1817,25 @@ class Api:
         threading.Timer(1.5, lambda: os._exit(0)).start()
 
 
+def _self_heal_venv():
+    """Auto-detect and fix stale venv on startup.
+    If key packages (pyte, pywebview) are missing, re-run pip install.
+    This catches users who upgraded via `git pull` without re-running install.sh."""
+    try:
+        import pyte  # noqa: F401
+    except ImportError:
+        print("[shellframe] pyte not found — running pip install...")
+        venv_pip = APP_DIR / ".venv" / ("Scripts" if IS_WIN else "bin") / "pip"
+        pip_exe = str(venv_pip) if venv_pip.exists() else "pip"
+        subprocess.run(
+            [pip_exe, "install", "-q", "-r", str(APP_DIR / "requirements.txt")],
+            cwd=str(APP_DIR), timeout=120
+        )
+        print("[shellframe] pip install done — please restart ShellFrame.")
+
+
 def main():
+    _self_heal_venv()
     api = Api()
     html_path = Path(__file__).parent / "web" / "index.html"
 
