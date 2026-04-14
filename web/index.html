@@ -861,10 +861,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let currentFontSize = 14;
 
   // Output push receiver — called from Python via evaluate_js (no polling needed)
-  // xterm.js natively preserves viewport position when the user has scrolled
-  // up (baseY advances but viewportY stays put). A custom scrollToLine here
-  // fights that built-in behaviour and is why dragging the scrollbar didn't
-  // actually show old content — each new PTY push snapped back. Just write.
+  //
+  // Scroll preservation: when the user has scrolled up to read earlier content,
+  // we anchor to "N lines from the bottom" so new output doesn't yank the
+  // viewport. Claude Code's TUI uses cursor-positioning that can reset the
+  // viewport even though xterm.js "natively preserves" it for simple line output.
+  //
+  // _programmaticScroll flag prevents the onScroll handler from re-setting
+  // _userScrolledUp during our own scrollToLine call (which was the cause of
+  // the old "snapped back" bug).
+  let _programmaticScroll = false;
   window._pushOutput = function(sid, data) {
     const s = sessions[sid];
     if (!s) return;
@@ -873,7 +879,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!s._pushTimes) s._pushTimes = [];
     s._pushTimes.push(now);
     if (s._pushTimes.length > 30) s._pushTimes.shift();
-    s.term.write(data);
+
+    if (s._userScrolledUp) {
+      const buf = s.term.buffer.active;
+      const offsetFromBottom = buf.baseY - buf.viewportY;
+      s.term.write(data, () => {
+        const nb = s.term.buffer.active;
+        const target = Math.max(0, nb.baseY - offsetFromBottom);
+        if (nb.viewportY !== target) {
+          _programmaticScroll = true;
+          s.term.scrollToLine(target);
+          // Reset flag on next frame so user scrolls aren't suppressed
+          requestAnimationFrame(() => { _programmaticScroll = false; });
+        }
+      });
+    } else {
+      s.term.write(data);
+    }
   };
 
   const $tabs = document.getElementById('tabs');
@@ -1142,6 +1164,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     setupAttachKeyHandler(sid, term);
     // Track user scroll: scrolled up = true, any keystroke resets to false (follows output)
     term.onScroll(() => {
+      if (_programmaticScroll) return; // don't reset during our own scrollToLine
       const buf = term.buffer.active;
       sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
     });
@@ -1239,6 +1262,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     setupAttachKeyHandler(sid, term);
     term.onScroll(() => {
+      if (_programmaticScroll) return; // don't reset during our own scrollToLine
       const buf = term.buffer.active;
       sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
     });
