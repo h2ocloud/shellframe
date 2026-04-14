@@ -981,8 +981,32 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _fitTimers[sid] = null;
       const s = sessions[sid];
       if (!s) return;
+      // Prevent "flash to top then snap back" on large buffers:
+      // fit() changes terminal dimensions → xterm re-renders → viewport can
+      // jump to an intermediate position before scrollToBottom corrects it.
+      // Fix: save viewport state, hide canvas during reflow, restore after.
+      const buf = s.term.buffer.active;
+      const wasScrolledUp = s._userScrolledUp;
+      const offsetFromBottom = buf.baseY - buf.viewportY;
+
+      // Briefly suppress paint so the intermediate state isn't visible
+      const screen = s.pane.querySelector('.xterm-screen');
+      if (screen) screen.style.visibility = 'hidden';
+
       s.fitAddon.fit();
-      if (!s._userScrolledUp) s.term.scrollToBottom();
+
+      if (!wasScrolledUp) {
+        s.term.scrollToBottom();
+      } else {
+        const target = Math.max(0, s.term.buffer.active.baseY - offsetFromBottom);
+        _programmaticScroll = true;
+        s.term.scrollToLine(target);
+        requestAnimationFrame(() => { _programmaticScroll = false; });
+      }
+
+      // Restore paint on next frame (after scroll position is settled)
+      requestAnimationFrame(() => { if (screen) screen.style.visibility = ''; });
+
       pywebview.api.resize(sid, s.term.cols, s.term.rows);
     });
   }
