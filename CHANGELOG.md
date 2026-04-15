@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.10 (2026-04-15)
+
+### Fixes
+- **Surface Telegram 409 Conflict loudly** — if another process is polling the same bot token (same token on a second machine / old instance not killed / colleague running the same bot), Telegram returns HTTP 409 and rotates which poller gets each update. Before, `_poll_loop` silently retried every 5s and the bridge status stayed "connected" even though messages were being eaten by the other poller. Now detect 409, emit an error status with `conflict: True`, notify allowed users via TG, and back off to 30s retry so we don't spam Telegram with conflicting requests.
+
+### 修正
+- **TG 409 Conflict 明確報警** — 同一個 bot token 被多個 process polling（同 token 跑在兩台機器、舊 instance 沒關乾淨、同事測試用了同一個 bot）時，Telegram 回 HTTP 409，訊息會被其他 poller 截走。舊版 `_poll_loop` 每 5 秒靜默重試、狀態還顯示 "connected"，使用者只覺得「TG 都沒反應」。現在偵測到 409 會 emit error status（含 `conflict: True`）、透過 TG 通知 allowed users、並 back off 到 30 秒避免互相干擾。
+
 ## v0.10.9 (2026-04-15)
 
 ### Fixes

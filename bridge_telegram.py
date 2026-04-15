@@ -1176,6 +1176,7 @@ class TelegramBridge(BridgeBase):
             self._offset = self._load_offset()
         first_batch = True
         self._last_poll_tick = time.time()
+        conflict_warned = False
         while self.active and not self._stop_event.is_set():
             try:
                 result = tg_api(self.config.bot_token, "getUpdates", {
@@ -1186,8 +1187,38 @@ class TelegramBridge(BridgeBase):
                 # Mark liveness regardless of ok — we at least got a network round-trip
                 self._last_poll_tick = time.time()
                 if not result.get("ok"):
+                    desc = str(result.get("description", ""))
+                    # HTTP 409: another getUpdates poller is running — same bot
+                    # token on another machine. Surface it loudly so the user
+                    # knows their messages are being eaten by the other poller.
+                    if "409" in desc or "Conflict" in desc:
+                        if not conflict_warned:
+                            _blog(f"[poll] 409 Conflict — another poller has the bot: {desc}\n")
+                            self._emit_status({
+                                "state": "error",
+                                "message": "Another process is polling this bot. Stop the other shellframe/bot instance or use a different token.",
+                                "conflict": True,
+                            })
+                            # Notify allowed users via TG (best-effort — may be
+                            # intercepted by the other instance, but try anyway)
+                            for uid in (self.config.allowed_users or []):
+                                try:
+                                    tg_api(self.config.bot_token, "sendMessage", {
+                                        "chat_id": self._user_chat.get(uid, uid),
+                                        "text": "⚠️ Bot conflict: another ShellFrame/bot is polling this token. Messages will be flaky until the other instance stops.",
+                                    })
+                                except Exception:
+                                    pass
+                            conflict_warned = True
+                        time.sleep(30)  # back off — don't spam Telegram with conflicting requests
+                        continue
                     time.sleep(5)
                     continue
+                if conflict_warned:
+                    # Recovered — other poller stopped
+                    _blog("[poll] conflict cleared\n")
+                    self._emit_status({"state": "connected", "bot": self.bot_info.get("username", "")})
+                    conflict_warned = False
                 updates = result.get("result", [])
                 for update in updates:
                     self._offset = update["update_id"] + 1
