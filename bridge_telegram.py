@@ -454,6 +454,7 @@ class TelegramBridge(BridgeBase):
     def _set_bot_commands(self):
         """Register slash commands with Telegram."""
         commands = [
+            {"command": "help", "description": "Show all available commands"},
             {"command": "list", "description": "List all sessions"},
             {"command": "status", "description": "Show current session & bridge status"},
             {"command": "pause", "description": "Pause bridge (stop forwarding)"},
@@ -1151,22 +1152,60 @@ class TelegramBridge(BridgeBase):
             _blog(f"_send_tg_file error: {file_path} -> {e}\n")
 
     # ── TG Polling ──
-    # Offset persistence — survives full app restarts so /restart and
-    # /update_now don't re-process themselves on the new instance.
+    # Persistent state — survives full app restarts.
+    # Holds: the getUpdates offset (so /restart doesn't re-process itself) AND
+    # per-user active-session routing (_user_active) so TG users return to the
+    # same session after restart instead of defaulting to _slot_order[0].
     _OFFSET_FILE = _Path.home() / ".config" / "shellframe" / "tg_offset.json"
 
     @classmethod
-    def _load_offset(cls) -> int:
+    def _load_persisted(cls) -> dict:
         try:
-            data = json.loads(cls._OFFSET_FILE.read_text(encoding='utf-8'))
-            return int(data.get("offset", 0))
+            return json.loads(cls._OFFSET_FILE.read_text(encoding='utf-8'))
         except Exception:
-            return 0
+            return {}
+
+    @classmethod
+    def _load_offset(cls) -> int:
+        return int(cls._load_persisted().get("offset", 0) or 0)
 
     def _save_offset(self):
+        """Persist offset + user routing state. Called on every update handled
+        and also from mutation sites (via _save_state)."""
+        self._save_state()
+
+    def _save_state(self):
         try:
             self._OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
-            self._OFFSET_FILE.write_text(json.dumps({"offset": self._offset}), encoding='utf-8')
+            # int keys need str conversion for JSON
+            data = {
+                "offset": self._offset,
+                "user_active": {str(uid): sid for uid, sid in self._user_active.items()},
+                "default_active_sid": getattr(self, '_default_active_sid', None),
+            }
+            self._OFFSET_FILE.write_text(
+                json.dumps(data, ensure_ascii=False),
+                encoding='utf-8',
+            )
+        except Exception:
+            pass
+
+    def _restore_user_routing(self):
+        """Called from _poll_loop entry once slots are registered. Restores
+        user_active mapping from disk, filtering out sids that no longer exist."""
+        try:
+            data = self._load_persisted()
+            saved = data.get("user_active", {}) or {}
+            for uid_str, sid in saved.items():
+                try:
+                    uid = int(uid_str)
+                except (TypeError, ValueError):
+                    continue
+                if sid in self.slots and uid not in self._user_active:
+                    self._user_active[uid] = sid
+            saved_default = data.get("default_active_sid")
+            if saved_default and saved_default in self.slots and not getattr(self, '_default_active_sid', None):
+                self._default_active_sid = saved_default
         except Exception:
             pass
 
@@ -1243,7 +1282,7 @@ class TelegramBridge(BridgeBase):
         network round-trip), the poll thread is wedged — trigger a hot-reload to
         reset it so /reload and /restart from TG keep working even after a bad
         network blip or system sleep."""
-        STALL_THRESHOLD = 120.0
+        STALL_THRESHOLD = 60.0  # halved from 120s so /reload recovers within ~1 min of poll wedge
         while self.active and not self._stop_event.is_set():
             # Check every 30s — cheap, never itself hangs
             for _ in range(30):
@@ -1791,7 +1830,20 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'reload', 'close', 'new', 'restart', 'update', 'update_now') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now') or cmd.isdigit():
+                # Instant visual ACK — react with 👀 so user sees the bot
+                # received the command even before any sendMessage goes out.
+                # Non-blocking: reaction failures don't block command dispatch.
+                message_id = msg.get("message_id")
+                if message_id:
+                    threading.Thread(
+                        target=lambda: tg_api(self.config.bot_token, "setMessageReaction", {
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "reaction": [{"type": "emoji", "emoji": "👀"}],
+                        }),
+                        daemon=True,
+                    ).start()
                 self._handle_command(cmd, user_id, chat_id, text)
                 return
             # Everything else: forward as CLI slash command (e.g., /model, /skills, /compact)
@@ -2186,10 +2238,27 @@ class TelegramBridge(BridgeBase):
                     })
             threading.Thread(target=_do_update_now, daemon=True).start()
 
-        elif cmd == "start":
+        elif cmd in ("start", "help"):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
-                "text": f"ShellFrame Bridge\n\n/list — list sessions\n/new [cmd] — new session (default: claude)\n/close — close current session\n/1, /2, ... — switch session\n/pause — pause bridge\n/resume — resume\n/reload — hot-reload bridge code\n/restart — full app restart (sessions preserved)\n/update — check for updates\n/update_now — pull + restart if needed\n/status — show status",
+                "text": (
+                    "ShellFrame Bridge\n\n"
+                    "Sessions:\n"
+                    "  /list — list sessions (with last-response preview)\n"
+                    "  /new [cmd] — new session (default: claude)\n"
+                    "  /close — close current session\n"
+                    "  /1, /2, … — switch session\n\n"
+                    "Bridge control:\n"
+                    "  /pause — pause bridge (bot ignores non-slash messages)\n"
+                    "  /resume — resume\n"
+                    "  /status — show bridge + active session state\n\n"
+                    "App control:\n"
+                    "  /reload — hot-reload bridge code (picks up bridge_telegram.py changes)\n"
+                    "  /restart — full app restart (sessions persist via tmux)\n"
+                    "  /update — check for updates (shows local vs remote version)\n"
+                    "  /update_now — pull + restart if needed\n\n"
+                    "Any other /slashcommand is forwarded to the active session as raw CLI input."
+                ),
             })
 
         else:

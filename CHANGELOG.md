@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.11 (2026-04-16)
+
+### Fixes
+- **Slash commands now give instant visible ACK** — every recognized bridge command (`/reload`, `/restart`, `/update`, `/list`, …) now reacts with 👀 on the user's message the moment it's dispatched, before any processing. User sees confirmation even if the command takes a while or subsequent `sendMessage` calls are delayed.
+- **`/help` added** (alias for `/start`) — full command cheat sheet. Registered in BotFather command menu so it shows up in the TG client's slash-menu. `/start` response rewritten to be more structured (sessions / bridge control / app control / forward-to-CLI).
+- **Watchdog stall threshold halved** — 120s → 60s. If the poll loop wedges (e.g. mid-bot-conflict, bad wake from sleep), `/reload` is reachable ~2x faster.
+
+### 修正
+- **Slash 指令立刻有視覺回饋** — 所有認得的 bridge 指令（`/reload`、`/restart`、`/update`、`/list` 等）一進來就立刻對原訊息加 👀 reaction，在任何處理開始之前。使用者不會再有「沒反應」的錯覺，就算後續 sendMessage 慢也看得到「收到了」。
+- **加 `/help`** — `/start` 的 alias，完整指令清單。有登記到 BotFather 命令選單，TG client 的 slash menu 直接看得到。`/start` 訊息也重寫得更有結構（sessions / bridge control / app control / forward-to-CLI）。
+- **Watchdog stall 門檻砍半** — 120s → 60s。polling 卡死時（例如 bot 衝突中、sleep 醒來 socket 掉），`/reload` 大約 1 分鐘內就能再通，而不是 2 分鐘。
+
 ## v0.10.10 (2026-04-15)
 
 ### Fixes
