@@ -653,7 +653,18 @@ class Api:
 
         # Mark session for init prompt — only for AI CLI tools, not shells/editors/etc.
         session._init_pending = self._should_inject_init(cmd)
+        # Nudge the UI to reconcile immediately (don't wait for 1.5s bridge poll).
+        # Covers sessions created via TG /new, sfctl, or any non-UI path.
+        self._notify_ui_sessions_changed()
         return sid
+
+    def _notify_ui_sessions_changed(self):
+        """Ping the web UI to re-sync session list. Safe no-op if window not ready."""
+        try:
+            if self._window:
+                self._window.evaluate_js('window._syncSessionsFromBackend && window._syncSessionsFromBackend()')
+        except Exception:
+            pass
 
     def _should_inject_init(self, cmd: str) -> bool:
         """Decide whether a session command should receive the init prompt.
@@ -712,6 +723,7 @@ class Api:
                 save_config(cfg)
             # Drop from soft-persistence list (Windows / no-tmux)
             self._drop_soft_session(sid)
+        self._notify_ui_sessions_changed()
 
     # Patterns in CLI output that indicate the AI tool is ready for conversation
     # (not in login/setup/auth flow). Checked after stripping ANSI escapes.

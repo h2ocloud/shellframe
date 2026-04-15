@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.4 (2026-04-15)
+
+### Fixes
+- **New sessions sometimes needed UI reload to appear** — UI learned about non-UI session changes (TG `/new`, sfctl) only via the 1.5s bridge-status poll, which could miss on slower machines or when the bridge polling hiccuped. Now `new_session()` / `close_session()` push directly to the window via `evaluate_js` so the UI reconciles immediately.
+
+### 修正
+- **新 session 有時要 reload UI 才看得到** — UI 原本只靠 1.5s 一次的 bridge status polling 來偵測非 UI 建立的 session（TG `/new`、sfctl），在慢機或 polling 卡到時會漏掉。改為 `new_session()` / `close_session()` 主動 `evaluate_js` 通知 UI 立即 reconcile。
+
 ## v0.10.3 (2026-04-15)
 
 ### Fixes

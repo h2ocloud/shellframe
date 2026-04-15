@@ -2654,6 +2654,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       return false;
     }
   }
+  // Expose for Python to nudge after non-UI session changes (TG /new, sfctl, etc.)
+  window._syncSessionsFromBackend = syncSessionsFromBackend;
 
   // Poll bridge status periodically
   setInterval(async () => {
