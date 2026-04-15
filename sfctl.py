@@ -23,6 +23,7 @@ RESULT_FILE = os.path.join(_TMP, "shellframe_result.json")
 
 COMMANDS = {
     "reload": "Hot-reload bridge_telegram module (pick up code changes)",
+    "restart": "Full app restart (picks up main.py changes, reattaches tmux sessions)",
     "status": "Show bridge status (connected, paused, sessions)",
 }
 

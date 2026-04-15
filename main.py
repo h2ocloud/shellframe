@@ -1904,6 +1904,18 @@ class Api:
             except Exception as e:
                 return {"success": False, "message": f"Failed: {e}"}
 
+        elif cmd == "restart":
+            try:
+                result_json = self.restart_app()
+                result = json.loads(result_json) if isinstance(result_json, str) else result_json
+                return {
+                    "success": result.get("success", False),
+                    "message": result.get("message", "Restart triggered"),
+                    "details": {k: v for k, v in result.items() if k not in ("success", "message")},
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Restart failed: {e}"}
+
         elif cmd == "reload":
             try:
                 result_json = self.hot_reload_bridge()

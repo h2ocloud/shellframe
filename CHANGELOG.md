@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.9 (2026-04-15)
+
+### Fixes
+- **Bridge polling watchdog** — if the TG poll loop goes >120s without a network round-trip (hung DNS, stuck socket, long sleep + wake hiccup), a watchdog thread now auto-triggers `hot_reload_bridge()` to rebuild the polling. Prevents "TG completely silent, even `/reload` doesn't work" situations.
+- **`sfctl restart`** — added alongside existing `sfctl reload` / `status`. Lets Howard (or any user with terminal access) force a full app restart even when TG is totally wedged. `sfctl` IPC uses file-based command passing through `_start_command_watcher`, so it works independent of bridge polling state.
+
+### 修正
+- **TG polling watchdog** — TG poll loop 超過 120 秒沒任何 network round-trip（DNS 卡死、socket hang、長 sleep 醒來斷線），watchdog thread 會自動觸發 `hot_reload_bridge()` 重建 polling。避免「TG 完全沒反應、連 `/reload` 都沒用」的情境。
+- **`sfctl restart`** — 新增，跟既有的 `sfctl reload` / `status` 並列。在 TG 完全死掉時還能從 terminal 強制完整重啟（`sfctl` 走 file IPC，跟 bridge polling 狀態無關）。
+
 ## v0.10.8 (2026-04-15)
 
 ### Fixes

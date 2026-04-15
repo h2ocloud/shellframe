@@ -307,6 +307,8 @@ class TelegramBridge(BridgeBase):
         self._on_consume_init = on_consume_init  # callback(sid) -> str, init prompt if ready
         self._offset = 0
         self._flush_thread = None
+        self._watchdog_thread = None
+        self._last_poll_tick = 0.0
 
         # Multi-session state
         self.slots = {}            # sid -> SessionSlot
@@ -428,6 +430,9 @@ class TelegramBridge(BridgeBase):
 
         self._flush_thread = threading.Thread(target=self._flush_loop, daemon=True)
         self._flush_thread.start()
+
+        self._watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+        self._watchdog_thread.start()
 
         self._emit_status({"state": "connected", "bot": self.bot_info.get("username", "")})
 
@@ -1170,6 +1175,7 @@ class TelegramBridge(BridgeBase):
         if self._offset == 0:
             self._offset = self._load_offset()
         first_batch = True
+        self._last_poll_tick = time.time()
         while self.active and not self._stop_event.is_set():
             try:
                 result = tg_api(self.config.bot_token, "getUpdates", {
@@ -1177,6 +1183,8 @@ class TelegramBridge(BridgeBase):
                     "timeout": 30,
                     "allowed_updates": ["message", "callback_query"],
                 })
+                # Mark liveness regardless of ok — we at least got a network round-trip
+                self._last_poll_tick = time.time()
                 if not result.get("ok"):
                     time.sleep(5)
                     continue
@@ -1198,6 +1206,31 @@ class TelegramBridge(BridgeBase):
                 first_batch = False
             except Exception:
                 time.sleep(5)
+
+    def _watchdog_loop(self):
+        """Monitor poll liveness. If `_last_poll_tick` goes stale (>120s with no
+        network round-trip), the poll thread is wedged — trigger a hot-reload to
+        reset it so /reload and /restart from TG keep working even after a bad
+        network blip or system sleep."""
+        STALL_THRESHOLD = 120.0
+        while self.active and not self._stop_event.is_set():
+            # Check every 30s — cheap, never itself hangs
+            for _ in range(30):
+                if self._stop_event.is_set() or not self.active:
+                    return
+                time.sleep(1)
+            try:
+                age = time.time() - getattr(self, '_last_poll_tick', time.time())
+                if age > STALL_THRESHOLD:
+                    _blog(f"[watchdog] poll stalled {age:.0f}s — triggering self-reload\n")
+                    if self._on_reload:
+                        # Run in a new thread so watchdog doesn't block
+                        threading.Thread(target=self._on_reload, daemon=True).start()
+                        # After triggering reload, stop this watchdog — the new
+                        # bridge instance spawns its own watchdog.
+                        return
+            except Exception as e:
+                _blog(f"[watchdog] exception: {e}\n")
 
     # ── STT (Speech-to-Text) ──
     # Pluggable provider chain. Two built-in backends:
