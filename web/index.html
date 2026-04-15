@@ -1153,6 +1153,116 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         callback(links.length ? links : undefined);
       },
     });
+
+    // Second provider: multi-line URL stitching.
+    // WebLinksAddon only looks at one buffer row, so CLI tools that hard-wrap
+    // their output (Claude Code, cat, etc.) break Ctrl+Click on long URLs.
+    // We detect runs of full-width lines ending in URL-safe chars and stitch
+    // them together to recover the full URL.
+    const URL_CHAR_RE = /[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]/;
+    const URL_RE_STITCH = /https?:\/\/[^\s"'<>()\[\]{}]+/g;
+    term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const buf = term.buffer.active;
+        const cols = term.cols;
+        const y0 = bufferLineNumber - 1; // xterm gives 1-indexed
+        const cur = buf.getLine(y0);
+        if (!cur) { callback(undefined); return; }
+
+        // Walk backward / forward collecting full-width lines that end on
+        // URL-safe chars (heuristic for hard-wrapped continuous text).
+        function isWrapContinuation(line) {
+          const t = line.translateToString(false);
+          if (t.length < cols) return false;
+          const last = t[t.length - 1];
+          return !!(last && URL_CHAR_RE.test(last));
+        }
+        let start = y0;
+        while (start > 0) {
+          const prev = buf.getLine(start - 1);
+          if (!prev || !isWrapContinuation(prev)) break;
+          start--;
+        }
+        let end = y0;
+        while (isWrapContinuation(buf.getLine(end))) {
+          const nxt = buf.getLine(end + 1);
+          if (!nxt) break;
+          end++;
+        }
+        if (start === end) { callback(undefined); return; }
+
+        // Stitch text, track per-line lengths for offset math
+        let combined = '';
+        const lineLens = [];
+        for (let i = start; i <= end; i++) {
+          const t = buf.getLine(i).translateToString(i === end);
+          lineLens.push(t.length);
+          combined += t;
+        }
+
+        // Current line's offset within combined text
+        let curOffset = 0;
+        for (let i = 0; i < y0 - start; i++) curOffset += lineLens[i];
+        const curLen = lineLens[y0 - start];
+
+        const links = [];
+        let m;
+        URL_RE_STITCH.lastIndex = 0;
+        while ((m = URL_RE_STITCH.exec(combined)) !== null) {
+          const urlStart = m.index;
+          let urlEnd = urlStart + m[0].length;
+          while (urlEnd > urlStart && /[.,;:!?)]/.test(combined[urlEnd - 1])) urlEnd--;
+          if (urlEnd - urlStart < 8) continue;
+
+          // Must overlap current line
+          const hitStart = Math.max(urlStart, curOffset);
+          const hitEnd = Math.min(urlEnd, curOffset + curLen);
+          if (hitStart >= hitEnd) continue;
+
+          // Skip single-line URLs — WebLinksAddon already handles those
+          if (urlStart >= curOffset && urlEnd <= curOffset + curLen) continue;
+
+          const fullUrl = combined.slice(urlStart, urlEnd);
+          // URLs are ASCII, so char→col is 1:1 within the URL range.
+          // Surrounding wide chars could shift the start col; rebuild charToCol
+          // for this line to be safe.
+          const lineText = buf.getLine(y0).translateToString(false);
+          const charToCol = [];
+          let col = 0;
+          const lineObj = buf.getLine(y0);
+          for (let ci = 0; ci < lineText.length; ci++) {
+            charToCol.push(col);
+            const cell = lineObj.getCell(col);
+            col += (cell && cell.getWidth() > 1) ? 2 : 1;
+          }
+          charToCol.push(col);
+
+          const relStartChar = hitStart - curOffset;
+          const relEndChar = hitEnd - curOffset;
+          const xStart = (charToCol[relStartChar] || 0) + 1;
+          const xEnd = charToCol[relEndChar] || (xStart + (relEndChar - relStartChar) - 1);
+
+          links.push({
+            range: {
+              start: { x: xStart, y: bufferLineNumber },
+              end: { x: xEnd, y: bufferLineNumber },
+            },
+            text: fullUrl,
+            activate(event) {
+              if (event && !(event.ctrlKey || event.metaKey)) return;
+              try {
+                pywebview.api.open_url(fullUrl).catch(() => window.open(fullUrl, '_blank'));
+              } catch (_) {
+                window.open(fullUrl, '_blank');
+              }
+            },
+            hover() {}, leave() {},
+          });
+        }
+
+        callback(links.length ? links : undefined);
+      },
+    });
   }
 
   // ── Session management ──

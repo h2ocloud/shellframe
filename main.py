@@ -938,6 +938,25 @@ class Api:
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
 
+    def open_url(self, url: str) -> str:
+        """Open an http(s) URL in the OS default browser.
+        Used by the terminal Ctrl+Click handler for hard-wrapped URLs that
+        WebLinksAddon can't stitch across buffer lines."""
+        try:
+            if not url or not url.lower().startswith(("http://", "https://")):
+                return json.dumps({"success": False, "message": "not an http url"})
+            if IS_WIN:
+                os.startfile(url)  # type: ignore[attr-defined]
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["/usr/bin/open", url],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(["xdg-open", url],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return json.dumps({"success": True})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
     def copy_text(self, text: str) -> str:
         """Copy text to system clipboard. macOS uses pbcopy, Windows uses
         clip.exe (UTF-16LE BOM expected for Unicode), Linux tries xclip/wl-copy."""

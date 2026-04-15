@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.7 (2026-04-15)
+
+### Fixes
+- **Ctrl+Click on hard-wrapped URLs** — WebLinksAddon only scans one buffer row, so CLI tools like Claude Code that hard-wrap long URLs across multiple lines broke Ctrl+Click. New link provider walks adjacent full-width lines ending on URL-safe chars, stitches them, and registers per-row link ranges that activate with the reconstructed full URL. Added `Api.open_url()` in Python for http(s) — `open_local_file` can't handle URLs because it checks `p.exists()`.
+
+### 修正
+- **Ctrl+Click 斷行的 URL** — WebLinksAddon 只看單一 buffer row，所以 Claude Code 之類會硬換行的 CLI 把長 URL 斷到兩行後 Ctrl+Click 失靈。新增 link provider：往前後掃連續滿行且結尾是 URL 字元的行，拼回完整 URL 再分別在每一行註冊 link。Python 端新加 `Api.open_url()` 處理 http(s)（原本的 `open_local_file` 會因為 `p.exists()` 判斷失敗）。
+
 ## v0.10.6 (2026-04-15)
 
 ### Fixes
