@@ -1098,18 +1098,24 @@ class Api:
         })
 
     def do_update(self) -> str:
-        """Full upgrade: git pull + pip install + .app bundle refresh.
+        """Full upgrade with defensive fallbacks so a half-bad state doesn't brick the install.
 
-        Goes beyond just `git pull` to cover what install.sh does:
-          1. git pull --ff-only
-          2. pip install -r requirements.txt (if requirements.txt changed
-             or .venv looks stale)
-          3. Copy .app bundle to ~/Applications or /Applications (macOS)
+        Steps (each with its own recovery):
+          1. Auto-stash dirty working tree (so local edits never block pull).
+          2. `git pull --ff-only` → on failure, `git fetch && git reset --hard origin/main`
+             (force-sync to remote; the stash in step 1 preserves user work).
+          3. `python -m pip install -r requirements.txt` → on failure, recreate
+             `.venv` from scratch and retry once.
+          4. Refresh `.app` bundle (macOS). Never touches the source .app in
+             APP_DIR, so if copy fails the user can still launch via CLI.
 
-        Detects which files changed:
-          - web/* only        → UI hot-reload sufficient
-          - main.py / *.py    → needs full app restart
+        Recovery hint (always returned on total failure):
+          curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
         """
+        post_steps = []
+        RECOVERY_CMD = ("curl -fsSL "
+                        "https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh "
+                        "| bash")
         try:
             old_head = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
@@ -1117,90 +1123,145 @@ class Api:
                 capture_output=True, text=True, timeout=10
             ).stdout.strip()
 
-            result = subprocess.run(
+            # ── Step 1: auto-stash dirty tree ────────────────────────
+            try:
+                status = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=str(APP_DIR),
+                    capture_output=True, text=True, timeout=10
+                )
+                if status.stdout.strip():
+                    stash_tag = f"shellframe-auto-{int(time.time())}"
+                    stash = subprocess.run(
+                        ["git", "stash", "push", "-u", "-m", stash_tag],
+                        cwd=str(APP_DIR),
+                        capture_output=True, text=True, timeout=15
+                    )
+                    if stash.returncode == 0:
+                        post_steps.append(f"stashed local changes ({stash_tag})")
+                    else:
+                        post_steps.append(f"stash skipped: {stash.stderr.strip()[:80]}")
+            except Exception as e:
+                post_steps.append(f"stash check failed: {e}")
+
+            # ── Step 2: pull with fallback to force-sync ─────────────
+            pull_out = ""
+            pull = subprocess.run(
                 ["git", "pull", "--ff-only"],
                 cwd=str(APP_DIR),
-                capture_output=True, text=True, timeout=30
+                capture_output=True, text=True, timeout=45
             )
-            if result.returncode == 0:
-                try:
-                    new_ver = json.loads(VERSION_FILE.read_text(encoding='utf-8'))["version"]
-                except:
-                    new_ver = "unknown"
-
-                # Determine what changed
-                changed_files = []
-                needs_restart = False
-                post_steps = []
-                if old_head:
-                    diff = subprocess.run(
-                        ["git", "diff", "--name-only", old_head, "HEAD"],
-                        cwd=str(APP_DIR),
-                        capture_output=True, text=True, timeout=10
-                    )
-                    changed_files = [f for f in diff.stdout.strip().split('\n') if f]
-                    needs_restart = any(
-                        f.endswith('.py') or f == 'requirements.txt' or f == 'filters.json'
-                        for f in changed_files
-                    )
-
-                # Post-pull step 1: pip install if requirements.txt changed
-                # or if .venv looks stale (missing key packages)
-                venv_pip = APP_DIR / ".venv" / ("Scripts" if IS_WIN else "bin") / "pip"
-                req_changed = 'requirements.txt' in changed_files
-                if req_changed or not venv_pip.exists():
-                    pip_exe = str(venv_pip) if venv_pip.exists() else "pip"
-                    try:
-                        r = subprocess.run(
-                            [pip_exe, "install", "-q", "-r", str(APP_DIR / "requirements.txt")],
-                            cwd=str(APP_DIR),
-                            capture_output=True, text=True, timeout=120
-                        )
-                        post_steps.append(f"pip install: {'ok' if r.returncode == 0 else r.stderr[-100:]}")
-                    except Exception as e:
-                        post_steps.append(f"pip install failed: {e}")
-
-                # Post-pull step 2: refresh .app bundle (macOS only)
-                if not IS_WIN:
-                    src_app = APP_DIR / "ShellFrame.app"
-                    if src_app.exists():
-                        # Try ~/Applications first, then /Applications
-                        for dest_dir in [Path.home() / "Applications", Path("/Applications")]:
-                            dest = dest_dir / "ShellFrame.app"
-                            try:
-                                if dest.exists() or dest_dir.exists():
-                                    subprocess.run(
-                                        ["rm", "-rf", str(dest)],
-                                        capture_output=True, timeout=10
-                                    )
-                                    subprocess.run(
-                                        ["cp", "-R", str(src_app), str(dest)],
-                                        capture_output=True, timeout=10
-                                    )
-                                    # Re-sign so macOS doesn't complain
-                                    subprocess.run(
-                                        ["codesign", "--force", "--deep", "--sign", "-", str(dest)],
-                                        capture_output=True, timeout=30
-                                    )
-                                    post_steps.append(f".app copied to {dest}")
-                                    break
-                            except Exception as e:
-                                post_steps.append(f".app copy to {dest} failed: {e}")
-
-                has_sessions = len(self.sessions) > 0
-                return json.dumps({
-                    "success": True,
-                    "message": result.stdout.strip(),
-                    "version": new_ver,
-                    "can_hot_reload": has_sessions,
-                    "needs_restart": needs_restart,
-                    "changed_files": changed_files,
-                    "post_steps": post_steps,
-                })
+            if pull.returncode == 0:
+                pull_out = pull.stdout.strip()
             else:
-                return json.dumps({"success": False, "message": result.stderr.strip()})
+                post_steps.append(f"ff-only pull failed: {pull.stderr.strip()[:100]} — falling back to force-sync")
+                fetch = subprocess.run(
+                    ["git", "fetch", "origin", "main"],
+                    cwd=str(APP_DIR),
+                    capture_output=True, text=True, timeout=45
+                )
+                if fetch.returncode != 0:
+                    return json.dumps({
+                        "success": False,
+                        "message": f"git fetch failed: {fetch.stderr.strip()[-200:]}",
+                        "post_steps": post_steps,
+                        "recovery": RECOVERY_CMD,
+                    })
+                reset = subprocess.run(
+                    ["git", "reset", "--hard", "origin/main"],
+                    cwd=str(APP_DIR),
+                    capture_output=True, text=True, timeout=15
+                )
+                if reset.returncode != 0:
+                    return json.dumps({
+                        "success": False,
+                        "message": f"git reset failed: {reset.stderr.strip()[-200:]}",
+                        "post_steps": post_steps,
+                        "recovery": RECOVERY_CMD,
+                    })
+                post_steps.append("force-synced to origin/main")
+                pull_out = reset.stdout.strip()
+
+            try:
+                new_ver = json.loads(VERSION_FILE.read_text(encoding='utf-8'))["version"]
+            except Exception:
+                new_ver = "unknown"
+
+            # Determine what changed
+            changed_files = []
+            needs_restart = False
+            if old_head:
+                diff = subprocess.run(
+                    ["git", "diff", "--name-only", old_head, "HEAD"],
+                    cwd=str(APP_DIR),
+                    capture_output=True, text=True, timeout=10
+                )
+                changed_files = [f for f in diff.stdout.strip().split('\n') if f]
+                needs_restart = any(
+                    f.endswith('.py') or f == 'requirements.txt' or f == 'filters.json'
+                    for f in changed_files
+                )
+
+            # ── Step 3: pip install with venv-recreate fallback ─────
+            req_changed = 'requirements.txt' in changed_files
+            venv_dir = APP_DIR / ".venv"
+            req_file = str(APP_DIR / "requirements.txt")
+            if req_changed or not _venv_has_pip(venv_dir):
+                pip_ok, pip_msg = _pip_install_robust(venv_dir, req_file)
+                post_steps.append(f"pip install: {pip_msg}")
+                if not pip_ok:
+                    post_steps.append("venv may be broken — try recovery command")
+                    return json.dumps({
+                        "success": False,
+                        "message": f"pip install failed: {pip_msg}",
+                        "version": new_ver,
+                        "post_steps": post_steps,
+                        "recovery": RECOVERY_CMD,
+                    })
+
+            # ── Step 4: refresh .app bundle (macOS only) ────────────
+            if not IS_WIN:
+                src_app = APP_DIR / "ShellFrame.app"
+                if src_app.exists():
+                    for dest_dir in [Path.home() / "Applications", Path("/Applications")]:
+                        dest = dest_dir / "ShellFrame.app"
+                        try:
+                            if dest.exists() or dest_dir.exists():
+                                subprocess.run(
+                                    ["rm", "-rf", str(dest)],
+                                    capture_output=True, timeout=10
+                                )
+                                subprocess.run(
+                                    ["cp", "-R", str(src_app), str(dest)],
+                                    capture_output=True, timeout=10
+                                )
+                                subprocess.run(
+                                    ["codesign", "--force", "--deep", "--sign", "-", str(dest)],
+                                    capture_output=True, timeout=30
+                                )
+                                post_steps.append(f".app copied to {dest}")
+                                break
+                        except Exception as e:
+                            post_steps.append(f".app copy to {dest} failed: {e}")
+                            # Non-fatal — src .app in APP_DIR is still usable
+
+            has_sessions = len(self.sessions) > 0
+            return json.dumps({
+                "success": True,
+                "message": pull_out,
+                "version": new_ver,
+                "can_hot_reload": has_sessions,
+                "needs_restart": needs_restart,
+                "changed_files": changed_files,
+                "post_steps": post_steps,
+            })
         except Exception as e:
-            return json.dumps({"success": False, "message": str(e)})
+            return json.dumps({
+                "success": False,
+                "message": str(e),
+                "post_steps": post_steps,
+                "recovery": RECOVERY_CMD,
+            })
 
     def restart_app(self) -> str:
         """Restart the app — spawns a new instance and exits the current one.
@@ -1865,21 +1926,95 @@ class Api:
         threading.Timer(1.5, lambda: os._exit(0)).start()
 
 
+def _venv_python(venv_dir: Path) -> str:
+    """Return absolute path to venv's python, or sys.executable if venv missing."""
+    if IS_WIN:
+        candidates = [venv_dir / "Scripts" / "python.exe", venv_dir / "Scripts" / "python"]
+    else:
+        candidates = [venv_dir / "bin" / "python3", venv_dir / "bin" / "python"]
+    for c in candidates:
+        try:
+            if c.exists():
+                return str(c)
+        except Exception:
+            pass
+    return sys.executable
+
+
+def _venv_has_pip(venv_dir: Path) -> bool:
+    """True if venv has a working python + pip module."""
+    py = _venv_python(venv_dir)
+    try:
+        r = subprocess.run(
+            [py, "-m", "pip", "--version"],
+            capture_output=True, text=True, timeout=10
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _pip_install_robust(venv_dir: Path, req_file: str):
+    """Install requirements into venv. Returns (ok: bool, message: str).
+    Falls back to recreating the venv from scratch if the first install fails."""
+    def _run_pip(py: str):
+        return subprocess.run(
+            [py, "-m", "pip", "install", "-q", "-r", req_file],
+            cwd=str(APP_DIR),
+            capture_output=True, text=True, timeout=180
+        )
+
+    # Attempt 1: existing venv (or system python if no venv)
+    py = _venv_python(venv_dir)
+    try:
+        r = _run_pip(py)
+        if r.returncode == 0:
+            return True, "ok"
+        first_err = r.stderr.strip()[-200:] or r.stdout.strip()[-200:]
+    except Exception as e:
+        first_err = str(e)
+
+    # Attempt 2: recreate venv and retry
+    try:
+        if venv_dir.exists():
+            shutil.rmtree(str(venv_dir), ignore_errors=True)
+        r = subprocess.run(
+            [sys.executable, "-m", "venv", str(venv_dir)],
+            capture_output=True, text=True, timeout=60
+        )
+        if r.returncode != 0:
+            return False, f"venv recreate failed: {r.stderr.strip()[-200:]} | first: {first_err}"
+        py = _venv_python(venv_dir)
+        r = _run_pip(py)
+        if r.returncode == 0:
+            return True, "ok (after venv recreate)"
+        return False, f"retry failed: {r.stderr.strip()[-200:]} | first: {first_err}"
+    except Exception as e:
+        return False, f"recreate exception: {e} | first: {first_err}"
+
+
 def _self_heal_venv():
     """Auto-detect and fix stale venv on startup.
-    If key packages (pyte, pywebview) are missing, re-run pip install.
-    This catches users who upgraded via `git pull` without re-running install.sh."""
-    try:
-        import pyte  # noqa: F401
-    except ImportError:
-        print("[shellframe] pyte not found — running pip install...")
-        venv_pip = APP_DIR / ".venv" / ("Scripts" if IS_WIN else "bin") / "pip"
-        pip_exe = str(venv_pip) if venv_pip.exists() else "pip"
-        subprocess.run(
-            [pip_exe, "install", "-q", "-r", str(APP_DIR / "requirements.txt")],
-            cwd=str(APP_DIR), timeout=120
-        )
-        print("[shellframe] pip install done — please restart ShellFrame.")
+    If key packages are missing, re-run pip install; if that fails, recreate venv."""
+    missing = []
+    for mod in ("pyte", "webview"):
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+    if not missing:
+        return
+
+    print(f"[shellframe] missing modules {missing} — running pip install...")
+    venv_dir = APP_DIR / ".venv"
+    req_file = str(APP_DIR / "requirements.txt")
+    ok, msg = _pip_install_robust(venv_dir, req_file)
+    if ok:
+        print(f"[shellframe] pip install {msg} — please restart ShellFrame.")
+    else:
+        print(f"[shellframe] self-heal failed ({msg}).")
+        print("[shellframe] Recover with:")
+        print("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash")
 
 
 def main():
@@ -1913,5 +2048,37 @@ def main():
     os._exit(0)
 
 
+def _write_crash_log(exc: BaseException):
+    """Dump traceback + recovery hint so users can diagnose startup failures.
+    Windows under pythonw has no console, so printing isn't enough."""
+    try:
+        import traceback as _tb
+        crash_file = Path.home() / ".shellframe-crash.log"
+        with open(crash_file, "w", encoding="utf-8") as f:
+            f.write(f"shellframe startup crash at {datetime.now().isoformat()}\n")
+            f.write(f"python: {sys.executable}\n")
+            f.write(f"cwd: {os.getcwd()}\n\n")
+            _tb.print_exception(type(exc), exc, exc.__traceback__, file=f)
+            f.write("\n\nRecover with:\n")
+            f.write("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash\n")
+        print(f"[shellframe] crash log written to {crash_file}", file=sys.stderr)
+        # macOS: surface a dialog so Howard's colleagues see the recovery command
+        if sys.platform == "darwin":
+            try:
+                subprocess.run([
+                    "osascript", "-e",
+                    'display dialog "ShellFrame failed to start.\n\nRecover by running in Terminal:\n\ncurl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash\n\nDetails: ~/.shellframe-crash.log" '
+                    'with title "ShellFrame" buttons {"OK"} default button 1'
+                ], capture_output=True, timeout=30)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException as e:
+        _write_crash_log(e)
+        raise

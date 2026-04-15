@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.5 (2026-04-15)
+
+### Fixes
+- **`/update` no longer bricks on dirty tree or divergent HEAD** — `do_update` now auto-stashes local changes before pulling and, if `git pull --ff-only` fails, falls back to `git fetch && git reset --hard origin/main` so users never get stuck on an old version with no way forward.
+- **`pip install` now recoverable** — use `python -m pip` (portable across Win/Mac venv layouts) and if install fails, recreate `.venv` from scratch and retry once. Same hardening in `_self_heal_venv` at startup.
+- **Startup crash now surfaces recovery hint** — top-level try/except in `main()` writes `~/.shellframe-crash.log` and, on macOS, pops an `osascript` dialog with the install.sh one-liner. Windows under pythonw previously swallowed crashes silently.
+- **Update errors return a recovery field** — `do_update` result now includes `recovery` with the install.sh one-liner on any failure path, so the UI can show users a concrete next step.
+
+### 修正
+- **`/update` 再也不會把髒樹或 diverge 的 HEAD 搞死** — `do_update` 先 auto-stash 本地改動，`git pull --ff-only` 若失敗自動 fallback 到 `git fetch && git reset --hard origin/main`，使用者不會卡在舊版走不下去。
+- **`pip install` 可救援** — 改用 `python -m pip`（Win/Mac venv 結構通用），失敗時砍掉 `.venv` 重建再試一次。startup 的 `_self_heal_venv` 也上同一套邏輯。
+- **啟動當掉會吐救援指令** — `main()` 外層 try/except 會把 traceback 寫到 `~/.shellframe-crash.log`，macOS 還會跳 `osascript` dialog 顯示 install.sh 一行救命指令。Windows 的 pythonw 原本會靜默吞掉 crash。
+- **更新失敗會回 recovery 欄位** — `do_update` 任何失敗路徑現在都會帶 `recovery` 欄位附上 install.sh 一行指令，UI 可直接顯示給使用者。
+
 ## v0.10.4 (2026-04-15)
 
 ### Fixes
