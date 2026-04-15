@@ -57,13 +57,34 @@ fi
 install_if_missing tmux tmux tmux tmux
 
 # ── 2. Clone or update ──────────────────────────────────────
+REPO_URL="https://github.com/h2ocloud/shellframe.git"
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "Updating existing installation..."
-  cd "$INSTALL_DIR" && git pull --ff-only
+  cd "$INSTALL_DIR"
+  # Auto-stash local changes so pull never blocks
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    git stash push -u -m "install.sh-auto-$(date +%s)" >/dev/null 2>&1 || true
+  fi
+  # Try ff-only pull, fall back to force-sync if history diverged
+  if ! git pull --ff-only 2>/dev/null; then
+    echo "  ff-only pull failed — force-syncing to origin/main"
+    git fetch origin main && git reset --hard origin/main
+  fi
+elif [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
+  # Directory exists with files but no .git — user downloaded a zip or cp'd files.
+  # Convert into a git clone in-place: init, add remote, fetch, reset --hard.
+  echo "Upgrading non-git install at $INSTALL_DIR to a git clone..."
+  cd "$INSTALL_DIR"
+  git init -q
+  git remote add origin "$REPO_URL" 2>/dev/null || git remote set-url origin "$REPO_URL"
+  git fetch --depth=1 origin main
+  # Preserve user's .venv and any non-tracked files by stashing untracked first
+  git stash push -u -m "install.sh-pre-reinit-$(date +%s)" >/dev/null 2>&1 || true
+  git reset --hard origin/main
 else
   echo "Cloning repository..."
   mkdir -p "$(dirname "$INSTALL_DIR")"
-  git clone https://github.com/h2ocloud/shellframe.git "$INSTALL_DIR"
+  git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
 cd "$INSTALL_DIR"

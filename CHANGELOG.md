@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.6 (2026-04-15)
+
+### Fixes
+- **`/update` failed with "fatal: not a git repository" for zip-based installs** — users who extracted a zip (no `.git` dir) couldn't update at all. `do_update` now pre-checks for `.git` and, if missing, auto-runs `install.sh` via curl|bash; install.sh in turn converts a non-git install dir into a git clone in-place (`git init` + add remote + `git reset --hard origin/main`). Also hardened install.sh's existing git update path with auto-stash + force-sync fallback to match `do_update`.
+
+### 修正
+- **zip 安裝的使用者 `/update` 會爆 "fatal: not a git repository"** — 沒 `.git` 的目錄根本無法更新。`do_update` 現在會先檢查 `.git`，沒有就自動 curl|bash 跑 `install.sh`；install.sh 本身也升級了：偵測到目錄有檔案但沒 `.git`，會 `git init` + `fetch` + `reset --hard` 原地轉成 git clone。install.sh 原本的更新路徑也補上 auto-stash + force-sync fallback，跟 `do_update` 行為對齊。
+
 ## v0.10.5 (2026-04-15)
 
 ### Fixes

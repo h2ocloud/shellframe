@@ -1117,6 +1117,35 @@ class Api:
                         "https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh "
                         "| bash")
         try:
+            # Pre-check: APP_DIR must be a git repo for `git pull` to work.
+            # Users who installed via zip/download have no .git — auto-fallback
+            # to install.sh (which converts a non-git dir into a git clone).
+            if not (APP_DIR / ".git").exists():
+                post_steps.append(".git missing — running install.sh to re-initialize")
+                ok, msg = _run_install_sh()
+                if ok:
+                    try:
+                        new_ver = json.loads(VERSION_FILE.read_text(encoding='utf-8'))["version"]
+                    except Exception:
+                        new_ver = "unknown"
+                    post_steps.append(f"install.sh: {msg}")
+                    return json.dumps({
+                        "success": True,
+                        "message": "Reinitialized via install.sh",
+                        "version": new_ver,
+                        "can_hot_reload": False,
+                        "needs_restart": True,
+                        "changed_files": [],
+                        "post_steps": post_steps,
+                    })
+                else:
+                    return json.dumps({
+                        "success": False,
+                        "message": f"install.sh failed: {msg}",
+                        "post_steps": post_steps,
+                        "recovery": RECOVERY_CMD,
+                    })
+
             old_head = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
                 cwd=str(APP_DIR),
@@ -1991,6 +2020,36 @@ def _pip_install_robust(venv_dir: Path, req_file: str):
         return False, f"retry failed: {r.stderr.strip()[-200:]} | first: {first_err}"
     except Exception as e:
         return False, f"recreate exception: {e} | first: {first_err}"
+
+
+def _run_install_sh():
+    """Run install.sh via curl|bash to re-initialize a broken install in place.
+    Returns (ok: bool, message: str). Windows: return (False, reason) — install.ps1
+    would need equivalent handling there."""
+    if IS_WIN:
+        return False, "install.sh fallback not supported on Windows — run install.ps1 manually"
+    try:
+        # curl | bash: self-contained bootstrap. install.sh handles both the
+        # "dir exists but no .git" case (git init + fetch + reset) and the
+        # "fresh machine" case. Uses the same URL the user would curl by hand.
+        cmd = (
+            "curl -fsSL "
+            "https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh "
+            "| bash"
+        )
+        r = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True, text=True, timeout=600
+        )
+        if r.returncode == 0:
+            # Last line of install.sh output usually has the version summary
+            summary = r.stdout.strip().split('\n')[-1] if r.stdout.strip() else "ok"
+            return True, summary[:200]
+        return False, (r.stderr.strip()[-300:] or r.stdout.strip()[-300:] or f"exit {r.returncode}")
+    except subprocess.TimeoutExpired:
+        return False, "install.sh timed out (>10min)"
+    except Exception as e:
+        return False, str(e)
 
 
 def _self_heal_venv():
