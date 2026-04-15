@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.8 (2026-04-15)
+
+### Fixes
+- **Bridge stalled when display slept** — macOS App Nap throttled the Python process to ~1 tick/minute once the screen turned off or the window was backgrounded, so TG polling and PTY readers effectively froze. Now opt out via `NSProcessInfo.beginActivityWithOptions_reason_` with `NSActivityUserInitiated | NSActivityLatencyCritical` at startup. Lid-close full system sleep still sleeps the Mac (that's intentional) — Telegram holds messages 24h and redelivers on wake.
+
+### 修正
+- **螢幕關掉 bridge 就停擺** — macOS App Nap 把 Python process 節流到約每分鐘才跑一次，TG polling 跟 PTY reader 實質都凍住。啟動時透過 `NSProcessInfo.beginActivityWithOptions_reason_` 以 `NSActivityUserInitiated | NSActivityLatencyCritical` 退出 App Nap。闔蓋整機 sleep 還是會睡（這是該睡的），但 Telegram 保留訊息 24 小時、醒來會重送。
+
 ## v0.10.7 (2026-04-15)
 
 ### Fixes

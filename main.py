@@ -2095,8 +2095,38 @@ def _self_heal_venv():
         print("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash")
 
 
+_nap_activity = None  # module-global so NSProcessInfo doesn't GC the activity token
+
+
+def _prevent_app_nap():
+    """Opt out of macOS App Nap so the TG bridge and PTY readers keep running
+    when the display sleeps or the app is backgrounded. Without this, macOS
+    throttles us to ~1 tick/minute and Telegram messages stall.
+
+    We DON'T use NSActivityIdleSystemSleepDisabled — lid-close should still
+    put the Mac to sleep. Telegram holds messages for 24h so they re-deliver
+    on wake. We only want to stop App Nap (display-off throttling).
+    """
+    global _nap_activity
+    if platform.system() != "Darwin":
+        return
+    try:
+        from Foundation import NSProcessInfo
+        # NSActivityUserInitiated = 0x00FFFFFF  (high-priority user work)
+        # NSActivityLatencyCritical = 0xFF00000000  (timing-sensitive; e.g. audio/IO)
+        NSActivityUserInitiated = 0x00FFFFFF
+        NSActivityLatencyCritical = 0xFF00000000
+        _nap_activity = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
+            NSActivityUserInitiated | NSActivityLatencyCritical,
+            "shellframe: keep TG bridge + PTY readers alive when display sleeps",
+        )
+    except Exception as e:
+        print(f"[shellframe] App Nap opt-out failed (non-fatal): {e}")
+
+
 def main():
     _self_heal_venv()
+    _prevent_app_nap()
     api = Api()
     html_path = Path(__file__).parent / "web" / "index.html"
 
