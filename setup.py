@@ -1,8 +1,18 @@
 """
 py2app setup for ShellFrame.
 Usage: python setup.py py2app
+
+Note: the canonical install path is install.sh (copies ShellFrame.app + patches
+plist from version.json). This file is kept for developers who want a
+from-scratch py2app build; version is read dynamically from version.json.
 """
+import json
+import pathlib
 from setuptools import setup
+
+_VERSION = json.loads(
+    pathlib.Path(__file__).with_name('version.json').read_text()
+)['version']
 
 APP = ['main.py']
 DATA_FILES = [
@@ -16,8 +26,8 @@ OPTIONS = {
         'CFBundleName': 'ShellFrame',
         'CFBundleDisplayName': 'ShellFrame',
         'CFBundleIdentifier': 'com.h2ocloud.shellframe',
-        'CFBundleVersion': '0.2.5',
-        'CFBundleShortVersionString': '0.2.5',
+        'CFBundleVersion': _VERSION,
+        'CFBundleShortVersionString': _VERSION,
         'LSMinimumSystemVersion': '12.0',
         'NSHighResolutionCapable': True,
         'LSUIElement': False,

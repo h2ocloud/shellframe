@@ -670,7 +670,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     </div>
 
     <div class="modal-footer" style="gap:8px">
-      <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
+      <a href="https://github.com/h2ocloud/shellframe" target="_blank" style="font-size:10px;color:#3b4261;text-decoration:none">github.com/h2ocloud/shellframe</a>
+      <button class="btn btn-ghost" id="btn-report-issue" style="white-space:nowrap">Report Issue</button>
       <button class="btn btn-ghost" id="btn-close-about" style="white-space:nowrap">Close</button>
     </div>
   </div>
@@ -2802,6 +2803,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch(e) {}
   });
   document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
+  document.getElementById('btn-report-issue').addEventListener('click', () => {
+    const ver = document.getElementById('about-version').textContent || '';
+    const platform = navigator.platform || '';
+    const title = encodeURIComponent(`[${ver}] `);
+    const body = encodeURIComponent(`**Version:** ${ver}\n**Platform:** ${platform}\n\n**What happened:**\n\n\n**Steps to reproduce:**\n1. \n\n**Expected vs actual:**\n`);
+    window.open(`https://github.com/h2ocloud/shellframe/issues/new?title=${title}&body=${body}`, '_blank');
+  });
   document.getElementById('btn-check-update').addEventListener('click', async () => {
     const btn = document.getElementById('btn-check-update');
     const result = document.getElementById('check-update-result');

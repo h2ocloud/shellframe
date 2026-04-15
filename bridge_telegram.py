@@ -34,9 +34,9 @@ def _blog(msg: str):
         if _log_write_count % 200 == 0:  # check size every 200 writes
             try:
                 if _os.path.getsize(_LOG_FILE) > _LOG_MAX:
-                    with open(_LOG_FILE, 'r') as f:
+                    with open(_LOG_FILE, 'r', encoding='utf-8') as f:
                         content = f.read()
-                    with open(_LOG_FILE, 'w') as f:
+                    with open(_LOG_FILE, 'w', encoding='utf-8') as f:
                         f.write(content[len(content) // 2:])
             except Exception:
                 pass
@@ -67,7 +67,7 @@ def _load_filters():
 
     # Try local file
     try:
-        with open(_FILTERS_FILE) as f:
+        with open(_FILTERS_FILE, encoding='utf-8') as f:
             _filters_cache = json.load(f)
     except:
         _filters_cache = {}
@@ -81,7 +81,7 @@ def _load_filters():
                 remote = json.loads(resp.read().decode())
             if remote.get("version", 0) > _filters_cache.get("version", 0):
                 _filters_cache = remote
-                with open(_FILTERS_FILE, 'w') as f:
+                with open(_FILTERS_FILE, 'w', encoding='utf-8') as f:
                     json.dump(remote, f, indent=2, ensure_ascii=False)
         except:
             pass
@@ -232,7 +232,7 @@ _INIT_PROMPT_FILE = _Path(__file__).parent / "INIT_PROMPT.md"
 def load_init_prompt() -> str:
     """Load initial prompt from INIT_PROMPT.md. Always reads fresh from disk."""
     try:
-        return _INIT_PROMPT_FILE.read_text().strip()
+        return _INIT_PROMPT_FILE.read_text(encoding='utf-8').strip()
     except Exception:
         return (
             "You are running inside ShellFrame with a Telegram bridge. "
@@ -293,7 +293,7 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None, on_consume_init=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
@@ -304,6 +304,7 @@ class TelegramBridge(BridgeBase):
         self._on_restart = on_restart  # callback for full app restart from TG
         self._on_check_update = on_check_update  # callback for update check from TG
         self._on_new_session = on_new_session  # callback(cmd) -> sid, create new session
+        self._on_consume_init = on_consume_init  # callback(sid) -> str, init prompt if ready
         self._offset = 0
         self._flush_thread = None
 
@@ -328,15 +329,15 @@ class TelegramBridge(BridgeBase):
         except OSError:
             pass
         # Write command
-        with open(self._CMD_FILE, 'w') as f:
-            json.dump({"cmd": cmd, "args": args or {}, "ts": time.time()}, f)
+        with open(self._CMD_FILE, 'w', encoding='utf-8') as f:
+            json.dump({"cmd": cmd, "args": args or {}, "ts": time.time()}, f, ensure_ascii=False)
         # Wait for result
         deadline = time.time() + timeout
         while time.time() < deadline:
             time.sleep(0.2)
             if _os.path.exists(self._RESULT_FILE):
                 try:
-                    with open(self._RESULT_FILE) as f:
+                    with open(self._RESULT_FILE, encoding='utf-8') as f:
                         result = json.load(f)
                     _os.unlink(self._RESULT_FILE)
                     return result
@@ -1152,7 +1153,7 @@ class TelegramBridge(BridgeBase):
     @classmethod
     def _load_offset(cls) -> int:
         try:
-            data = json.loads(cls._OFFSET_FILE.read_text())
+            data = json.loads(cls._OFFSET_FILE.read_text(encoding='utf-8'))
             return int(data.get("offset", 0))
         except Exception:
             return 0
@@ -1160,7 +1161,7 @@ class TelegramBridge(BridgeBase):
     def _save_offset(self):
         try:
             self._OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
-            self._OFFSET_FILE.write_text(json.dumps({"offset": self._offset}))
+            self._OFFSET_FILE.write_text(json.dumps({"offset": self._offset}), encoding='utf-8')
         except Exception:
             pass
 
@@ -1805,9 +1806,24 @@ class TelegramBridge(BridgeBase):
         slot.last_write_ts = time.time()
         slot.stall_warned = False
 
+        # Inject init prompt if CLI just became ready (first user message path).
+        # Mirrors write_input's web-UI injection so TG-created AI sessions get
+        # the same system prompt.
+        init_prompt = ""
+        if self._on_consume_init:
+            try:
+                init_prompt = self._on_consume_init(active_sid) or ""
+            except Exception:
+                init_prompt = ""
+        if init_prompt:
+            slot.sent_texts.append(init_prompt)
+            payload = init_prompt + "\n\n---\nUser's first message: " + forwarded
+        else:
+            payload = forwarded
+
         # Write text first, then Enter after a brief delay
         def _send():
-            slot.write_fn(forwarded)
+            slot.write_fn(payload)
             time.sleep(0.3)
             slot.write_fn("\r")
         threading.Thread(target=_send, daemon=True).start()

@@ -71,14 +71,14 @@ DEFAULT_CONFIG = {
 def load_config():
     if CONFIG_FILE.exists():
         try:
-            return json.loads(CONFIG_FILE.read_text())
+            return json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
         except:
             pass
     return DEFAULT_CONFIG.copy()
 
 
 def save_config(cfg):
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding='utf-8')
 
 
 TMUX_PREFIX = "sf_"  # tmux session name prefix
@@ -97,14 +97,14 @@ def _dlog(category: str, msg: str):
     Auto-truncates when file exceeds _LOG_MAX_BYTES (keeps last half)."""
     try:
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        with open(DEBUG_LOG, 'a') as f:
+        with open(DEBUG_LOG, 'a', encoding='utf-8') as f:
             f.write(f"{ts} [{category}] {msg}\n")
         # Lazy size check (not every call — amortized via file size)
         try:
             if os.path.getsize(DEBUG_LOG) > _LOG_MAX_BYTES:
-                with open(DEBUG_LOG, 'r') as f:
+                with open(DEBUG_LOG, 'r', encoding='utf-8') as f:
                     content = f.read()
-                with open(DEBUG_LOG, 'w') as f:
+                with open(DEBUG_LOG, 'w', encoding='utf-8') as f:
                     f.write(content[len(content) // 2:])
         except Exception:
             pass
@@ -754,6 +754,26 @@ class Api:
             # Not ready yet (login/auth flow) — pass through, keep _init_pending
         s.write(data)
 
+    def consume_init_prompt_if_ready(self, sid: str) -> str:
+        """If session has pending init prompt AND CLI looks ready, consume and return it.
+        Used by TG bridge to inject init prompt on the first forwarded message
+        (web UI path does this inline in write_input). Returns "" if not ready
+        or no init pending, leaving state untouched so next message retries."""
+        s = self.sessions.get(sid)
+        if not s or not getattr(s, '_init_pending', False):
+            return ""
+        with s.lock:
+            tail = bytes(s._recent).decode('utf-8', errors='replace')
+        clean = self._ANSI_RE.sub('', tail) if tail else ""
+        if not self._AI_READY_RE.search(clean):
+            return ""
+        prompt = self._get_init_prompt()
+        if not prompt:
+            s._init_pending = False
+            return ""
+        s._init_pending = False
+        return prompt
+
     def read_output(self, sid: str) -> str:
         """Read buffered output. Used only during reconnect — normal output is pushed."""
         s = self.sessions.get(sid)
@@ -1029,7 +1049,7 @@ class Api:
     def get_version(self) -> str:
         """Return current local version info."""
         try:
-            return VERSION_FILE.read_text()
+            return VERSION_FILE.read_text(encoding='utf-8')
         except:
             return json.dumps({"version": "unknown", "channel": "main"})
 
@@ -1037,14 +1057,14 @@ class Api:
         """Return changelog content."""
         changelog = APP_DIR / "CHANGELOG.md"
         try:
-            return changelog.read_text()
+            return changelog.read_text(encoding='utf-8')
         except:
             return ""
 
     def check_update(self) -> str:
         """Check GitHub for latest version. Returns JSON with local, remote, update_available."""
         try:
-            local = json.loads(VERSION_FILE.read_text()) if VERSION_FILE.exists() else {"version": "0.0.0"}
+            local = json.loads(VERSION_FILE.read_text(encoding='utf-8')) if VERSION_FILE.exists() else {"version": "0.0.0"}
         except:
             local = {"version": "0.0.0"}
 
@@ -1092,7 +1112,7 @@ class Api:
             )
             if result.returncode == 0:
                 try:
-                    new_ver = json.loads(VERSION_FILE.read_text())["version"]
+                    new_ver = json.loads(VERSION_FILE.read_text(encoding='utf-8'))["version"]
                 except:
                     new_ver = "unknown"
 
@@ -1336,6 +1356,7 @@ class Api:
             on_restart=self.restart_app,
             on_check_update=self.check_update,
             on_new_session=lambda c: self.new_session(c, 200, 50),
+            on_consume_init=self.consume_init_prompt_if_ready,
         )
 
         # Register existing sessions (skip bridge-disabled ones)
@@ -1600,14 +1621,20 @@ class Api:
         Preserves PTY sessions — only restarts the TG bridge with new code."""
         global bridge_telegram, TelegramBridge, TelegramBridgeConfig
         try:
-            # Save current bridge config
+            # Save current bridge config + user routing state
             old_config = None
             was_active = False
             saved_offset = 0
+            saved_user_active = {}
+            saved_user_chat = {}
+            saved_default_active = None
             if self.bridge:
                 was_active = self.bridge.active
                 old_config = self.bridge.config
                 saved_offset = self.bridge._offset
+                saved_user_active = dict(getattr(self.bridge, '_user_active', {}) or {})
+                saved_user_chat = dict(getattr(self.bridge, '_user_chat', {}) or {})
+                saved_default_active = getattr(self.bridge, '_default_active_sid', None)
                 self.bridge.stop()
 
             # Reload the module
@@ -1627,6 +1654,7 @@ class Api:
                     on_restart=self.restart_app,
                     on_check_update=self.check_update,
                     on_new_session=lambda c: self.new_session(c, 200, 50),
+                    on_consume_init=self.consume_init_prompt_if_ready,
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
@@ -1639,6 +1667,14 @@ class Api:
                         lambda text, _s=s: _s.write(text),
                         peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                     )
+                # Restore user routing state — filter out sids that disappeared
+                self.bridge._user_active = {
+                    uid: sid for uid, sid in saved_user_active.items()
+                    if sid in self.bridge.slots
+                }
+                self.bridge._user_chat = saved_user_chat
+                if saved_default_active and saved_default_active in self.bridge.slots:
+                    self.bridge._default_active_sid = saved_default_active
                 self.bridge.start()
                 return json.dumps({"success": True, "message": "Bridge reloaded and restarted", **self.bridge.get_status()})
             else:
@@ -1699,7 +1735,7 @@ class Api:
                 if not os.path.exists(self._CMD_FILE):
                     continue
                 try:
-                    with open(self._CMD_FILE) as f:
+                    with open(self._CMD_FILE, encoding='utf-8') as f:
                         cmd_data = json.load(f)
                     os.unlink(self._CMD_FILE)
                 except (json.JSONDecodeError, IOError, OSError):
@@ -1714,8 +1750,8 @@ class Api:
                 result = self._execute_sfctl(cmd, args)
 
                 try:
-                    with open(self._RESULT_FILE, "w") as f:
-                        json.dump(result, f)
+                    with open(self._RESULT_FILE, "w", encoding='utf-8') as f:
+                        json.dump(result, f, ensure_ascii=False)
                 except IOError:
                     pass
         threading.Thread(target=watcher, daemon=True).start()

@@ -41,7 +41,7 @@ irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
 
 ### Requirements
 
-- **Python 3.9+**
+- **Python 3.12+** (3.9+ should work; 3.12 is what install.sh pins and tests against)
 - **tmux** — for session persistence (macOS: `brew install tmux`; Linux: `apt install tmux`; Windows: not needed, uses soft persistence)
 - **pywebview** + **pyte** — auto-installed via `requirements.txt`
 - **pywinpty** (Windows only) — auto-installed, provides ConPTY for TUI apps

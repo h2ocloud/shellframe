@@ -46,15 +46,15 @@ def main():
         os.unlink(RESULT_FILE)
 
     # Write command
-    with open(CMD_FILE, "w") as f:
-        json.dump({"cmd": cmd, "ts": time.time()}, f)
+    with open(CMD_FILE, "w", encoding='utf-8') as f:
+        json.dump({"cmd": cmd, "ts": time.time()}, f, ensure_ascii=False)
 
     # Wait for result (timeout 15s)
     for _ in range(150):
         time.sleep(0.1)
         if os.path.exists(RESULT_FILE):
             try:
-                with open(RESULT_FILE) as f:
+                with open(RESULT_FILE, encoding='utf-8') as f:
                     result = json.load(f)
                 os.unlink(RESULT_FILE)
             except (json.JSONDecodeError, IOError):

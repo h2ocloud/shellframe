@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.10.3 (2026-04-15)
+
+### Fixes
+- **Windows `cp950` UnicodeEncodeError on session add** — `save_config` used `pathlib.write_text()` without `encoding=`, so zh-TW Windows hit the `cp950` codec which can't encode preset icons like `▶`. Every `open()`/`read_text()`/`write_text()` for config/log/IPC/filter files now forces `encoding='utf-8'`.
+- **TG `/reload` silenced replies** — `hot_reload_bridge()` rebuilt `TelegramBridge` without restoring `_user_active` / `_user_chat` / `_default_active_sid`, so the flush loop had no chat_ids to send AI responses back to. Now snapshots user routing state before stop and restores it (filtering out sids that disappeared).
+- **TG-created AI sessions missed init prompt** — Init prompt injection lived in `write_input()` (web UI path only); TG `slot.write_fn` bypassed it, so sessions started via TG `/new` didn't know about the bridge. New `consume_init_prompt_if_ready()` helper exposed to the bridge via `on_consume_init`; `_handle_message` injects on the first forwarded message once CLI is ready.
+- **setup.py version hardcoded to 0.2.5** — py2app plist stamped the wrong version. Now reads `version.json` at build time.
+
+### New Features
+- **Report Issue button in About modal** — Opens pre-filled GitHub issue with current version + platform.
+
+### 修正
+- **Windows 新增 session 炸 `cp950` 錯誤** — `save_config` 寫檔沒指定 `encoding=`，繁中 Windows 走 `cp950` 編不動 preset icon `▶`。所有 config / log / IPC / filter 檔的 open/read/write 一律 `encoding='utf-8'`。
+- **TG `/reload` 後沒有回覆** — `hot_reload_bridge()` 重建 bridge 時沒還原 `_user_active` / `_user_chat` / `_default_active_sid`，flush loop 找不到 chat_id 送不出 AI 回覆。現在 stop 前先 snapshot、start 前還原（並過濾已消失的 sid）。
+- **TG 建的 AI session 缺 init prompt** — init 注入只在 web UI 的 `write_input()`；TG 的 `slot.write_fn` 直接 bypass，導致 TG `/new` 開的 claude session 不知道 bridge 存在。新增 `consume_init_prompt_if_ready()` 經 `on_consume_init` 曝給 bridge，首封訊息在 CLI ready 時注入。
+- **setup.py 版號寫死 0.2.5** — py2app 產出的 plist 版號錯誤。改為 build 時讀 `version.json`。
+
+### 新功能
+- **About modal 加 Report Issue 按鈕** — 直接開 GitHub issue，預填版本與平台。
+
 ## v0.10.2 (2026-04-14)
 
 ### Fixes
