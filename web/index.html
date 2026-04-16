@@ -1469,6 +1469,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   function switchTab(sid) {
+    // Close any open scroll-history overlay — it belongs to no specific tab
+    try { if (typeof ScrollHistory !== 'undefined') ScrollHistory.close(); } catch(_) {}
     if (activeId && sessions[activeId]) {
       sessions[activeId].pane.classList.remove('active');
     }
@@ -1876,33 +1878,36 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // prefix-duplicate runs server-side (longest wins), and show the cleaned
   // text in a native overlay modal. User can select + copy; Esc or click
   // backdrop to close. Copy-mode avoided entirely.
-  function setupScrollHistory(sid, pane) {
-    let _loading = false;
-    let _overlayOpen = false;
+  // Global singleton — one scroll-history overlay at a time, attached to
+  // document.body (not to a pane). Keeps lifecycle independent of tab
+  // switches and session panes being hidden.
+  const ScrollHistory = (function() {
+    let overlay = null;
+    let onKey = null;
 
-    function closeOverlay() {
-      const overlay = pane.querySelector('.scroll-history-overlay');
+    function close() {
       if (!overlay) return;
+      if (onKey) {
+        document.removeEventListener('keydown', onKey, true);
+        onKey = null;
+      }
       overlay.remove();
-      _overlayOpen = false;
-      // Hand focus back to xterm — otherwise keystrokes go to document.body
-      // and the pane feels "dead" until user switches tabs.
-      const s = sessions[sid];
-      if (s && s.term) {
-        try { s.term.focus(); } catch (_) {}
+      overlay = null;
+      // Focus the currently active xterm
+      if (typeof activeId !== 'undefined' && activeId && sessions[activeId]) {
+        try { sessions[activeId].term.focus(); } catch (_) {}
       }
     }
 
-    function showOverlay(text) {
-      // Always build fresh — avoids stale listeners / display:none pitfalls
-      const existing = pane.querySelector('.scroll-history-overlay');
-      if (existing) existing.remove();
+    function isOpen() { return !!overlay; }
 
-      const overlay = document.createElement('div');
+    function show(text) {
+      close(); // clear any previous instance fully
+      overlay = document.createElement('div');
       overlay.className = 'scroll-history-overlay';
       overlay.tabIndex = -1;
-      overlay.style.cssText = 'position:absolute;inset:0;background:#1a1b26f2;' +
-        'z-index:30;display:flex;flex-direction:column;';
+      overlay.style.cssText = 'position:fixed;inset:0;background:#1a1b26f2;' +
+        'z-index:2000;display:flex;flex-direction:column;';
 
       const header = document.createElement('div');
       header.style.cssText = 'padding:6px 14px;border-bottom:1px solid #3b4261;' +
@@ -1913,7 +1918,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       closeBtn.textContent = 'Close';
       closeBtn.style.cssText = 'background:none;border:1px solid #3b4261;color:#a9b1d6;' +
         'padding:2px 10px;border-radius:4px;cursor:pointer;font-size:11px';
-      closeBtn.addEventListener('click', closeOverlay);
+      closeBtn.addEventListener('click', close);
       header.appendChild(hint);
       header.appendChild(closeBtn);
 
@@ -1927,38 +1932,32 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       overlay.appendChild(header);
       overlay.appendChild(body);
 
-      // Backdrop click (outside the scroll area)
       overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeOverlay();
+        if (e.target === overlay) close();
       });
 
-      // Esc handler — one-shot, scoped to this overlay
-      const onKey = (e) => {
+      onKey = (e) => {
         if (e.key === 'Escape') {
           e.stopPropagation();
           e.preventDefault();
-          document.removeEventListener('keydown', onKey, true);
-          closeOverlay();
+          close();
         }
       };
       document.addEventListener('keydown', onKey, true);
-      // Also remove listener if overlay gets torn down another way
-      overlay.addEventListener('DOMNodeRemovedFromDocument', () => {
-        document.removeEventListener('keydown', onKey, true);
-      });
 
-      pane.appendChild(overlay);
-      _overlayOpen = true;
-      // Focus overlay so wheel scrolls overlay content, not xterm underneath
-      overlay.focus();
+      document.body.appendChild(overlay);
       body.scrollTop = body.scrollHeight;
     }
 
+    return { show, close, isOpen };
+  })();
+
+  function setupScrollHistory(sid, pane) {
+    let _loading = false;
     pane.addEventListener('wheel', (e) => {
       const s = sessions[sid];
       if (!s) return;
-      // If overlay is open, let the overlay (or its pre body) handle scroll natively
-      if (_overlayOpen) return;
+      if (ScrollHistory.isOpen()) return; // overlay handles its own scroll natively
       const direction = e.deltaY < 0 ? 'up' : 'down';
       if (direction !== 'up') return;
       const buf = s.term.buffer.active;
@@ -1969,7 +1968,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         _loading = false;
         try {
           const result = JSON.parse(res);
-          if (result.success) showOverlay(result.text);
+          if (result.success) ScrollHistory.show(result.text);
         } catch (err) { /* ignore */ }
       }).catch(() => { _loading = false; });
     }, { passive: true });

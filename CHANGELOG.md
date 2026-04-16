@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.2 (2026-04-16)
+
+### Fixes
+- **Scroll-history overlay survived tab switches** — v0.11.1 attached the overlay to the session pane, so switching tabs only hid the pane (and overlay with it) via CSS; switching back re-revealed the overlay. Moved overlay to a global `ScrollHistory` singleton attached to `document.body` with `position:fixed`, and `switchTab()` now calls `ScrollHistory.close()` so tab switches always recover into a clean state.
+
+### 修正
+- **上滾 overlay 切 tab 也活著** — v0.11.1 把 overlay 掛在 session pane 裡，切 tab 只是 CSS `display:none` 把整個 pane 連 overlay 一起藏起來，切回來又露出。改成全域 `ScrollHistory` 單例、掛 `document.body` 用 `position:fixed`，`switchTab()` 會主動呼叫 `ScrollHistory.close()`，切 tab 一定乾淨。
+
 ## v0.11.1 (2026-04-16)
 
 ### Fixes
