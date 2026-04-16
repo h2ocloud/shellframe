@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.1 (2026-04-16)
+
+### Fixes
+- **Scroll history overlay left the terminal unresponsive after closing** — v0.11.0's overlay closed with `display:none`, but focus never went back to xterm.js, so keystrokes landed on `document.body` and the pane felt dead until the user switched tabs. Now closing the overlay calls `term.focus()`, the overlay is fully `.remove()`d each time (no stale listeners), wheel events while open go to overlay instead of triggering a re-open, and Esc uses a one-shot capture listener scoped to the current overlay.
+
+### 修正
+- **向上滾 overlay 關掉後終端機變死** — v0.11.0 overlay 關掉用的是 `display:none`，但 focus 沒回到 xterm.js，按鍵全掉到 `document.body`，要切 tab 才會恢復。改為：關 overlay 時主動 `term.focus()`、overlay 每次真的 `.remove()`（不留殘留 listener）、overlay 開著時滾輪只作用在 overlay 自己、Esc 綁成一次性 capture listener 跟當次 overlay 綁死。
+
 ## v0.11.0 (2026-04-16)
 
 ### New Features

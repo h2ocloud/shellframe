@@ -1878,51 +1878,88 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // backdrop to close. Copy-mode avoided entirely.
   function setupScrollHistory(sid, pane) {
     let _loading = false;
+    let _overlayOpen = false;
+
+    function closeOverlay() {
+      const overlay = pane.querySelector('.scroll-history-overlay');
+      if (!overlay) return;
+      overlay.remove();
+      _overlayOpen = false;
+      // Hand focus back to xterm — otherwise keystrokes go to document.body
+      // and the pane feels "dead" until user switches tabs.
+      const s = sessions[sid];
+      if (s && s.term) {
+        try { s.term.focus(); } catch (_) {}
+      }
+    }
 
     function showOverlay(text) {
-      // Build once, reuse per-pane
-      let overlay = pane.querySelector('.scroll-history-overlay');
-      if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.className = 'scroll-history-overlay';
-        overlay.style.cssText = 'position:absolute;inset:0;background:#1a1b26f2;' +
-          'z-index:30;display:flex;flex-direction:column;';
-        const header = document.createElement('div');
-        header.style.cssText = 'padding:6px 14px;border-bottom:1px solid #3b4261;' +
-          'color:#7aa2f7;font-size:12px;display:flex;justify-content:space-between;align-items:center';
-        header.innerHTML = '<span>📜 Scroll history (deduped). Esc / click backdrop to close.</span>' +
-          '<button style="background:none;border:1px solid #3b4261;color:#a9b1d6;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:11px">Close</button>';
-        const body = document.createElement('pre');
-        body.className = 'scroll-history-body';
-        body.style.cssText = 'flex:1;margin:0;padding:10px 14px;overflow:auto;' +
-          'white-space:pre-wrap;word-break:break-word;user-select:text;' +
-          'font-family:inherit;font-size:12px;color:#c0caf5;line-height:1.4';
-        overlay.appendChild(header);
-        overlay.appendChild(body);
-        pane.appendChild(overlay);
-        const close = () => { overlay.style.display = 'none'; };
-        header.querySelector('button').addEventListener('click', close);
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-        // Esc to close (scoped to when overlay is visible)
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && overlay.style.display !== 'none') {
-            close();
-            e.stopPropagation();
-          }
-        });
-      }
-      const body = overlay.querySelector('.scroll-history-body');
+      // Always build fresh — avoids stale listeners / display:none pitfalls
+      const existing = pane.querySelector('.scroll-history-overlay');
+      if (existing) existing.remove();
+
+      const overlay = document.createElement('div');
+      overlay.className = 'scroll-history-overlay';
+      overlay.tabIndex = -1;
+      overlay.style.cssText = 'position:absolute;inset:0;background:#1a1b26f2;' +
+        'z-index:30;display:flex;flex-direction:column;';
+
+      const header = document.createElement('div');
+      header.style.cssText = 'padding:6px 14px;border-bottom:1px solid #3b4261;' +
+        'color:#7aa2f7;font-size:12px;display:flex;justify-content:space-between;align-items:center';
+      const hint = document.createElement('span');
+      hint.textContent = '📜 Scroll history (deduped). Esc / click backdrop to close.';
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = 'Close';
+      closeBtn.style.cssText = 'background:none;border:1px solid #3b4261;color:#a9b1d6;' +
+        'padding:2px 10px;border-radius:4px;cursor:pointer;font-size:11px';
+      closeBtn.addEventListener('click', closeOverlay);
+      header.appendChild(hint);
+      header.appendChild(closeBtn);
+
+      const body = document.createElement('pre');
+      body.className = 'scroll-history-body';
+      body.style.cssText = 'flex:1;margin:0;padding:10px 14px;overflow:auto;' +
+        'white-space:pre-wrap;word-break:break-word;user-select:text;' +
+        'font-family:inherit;font-size:12px;color:#c0caf5;line-height:1.4';
       body.textContent = text || '(no history)';
-      overlay.style.display = 'flex';
-      // Scroll to bottom so user starts at the most recent content
+
+      overlay.appendChild(header);
+      overlay.appendChild(body);
+
+      // Backdrop click (outside the scroll area)
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeOverlay();
+      });
+
+      // Esc handler — one-shot, scoped to this overlay
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          e.preventDefault();
+          document.removeEventListener('keydown', onKey, true);
+          closeOverlay();
+        }
+      };
+      document.addEventListener('keydown', onKey, true);
+      // Also remove listener if overlay gets torn down another way
+      overlay.addEventListener('DOMNodeRemovedFromDocument', () => {
+        document.removeEventListener('keydown', onKey, true);
+      });
+
+      pane.appendChild(overlay);
+      _overlayOpen = true;
+      // Focus overlay so wheel scrolls overlay content, not xterm underneath
+      overlay.focus();
       body.scrollTop = body.scrollHeight;
     }
 
     pane.addEventListener('wheel', (e) => {
       const s = sessions[sid];
       if (!s) return;
+      // If overlay is open, let the overlay (or its pre body) handle scroll natively
+      if (_overlayOpen) return;
       const direction = e.deltaY < 0 ? 'up' : 'down';
-      // Only intervene on scroll-up at the top of xterm's own scrollback
       if (direction !== 'up') return;
       const buf = s.term.buffer.active;
       if (buf.viewportY > 0) return; // xterm has its own scrollback, let it handle
