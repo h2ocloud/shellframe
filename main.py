@@ -14,6 +14,7 @@ import importlib
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import signal
@@ -803,7 +804,9 @@ class Api:
         if s:
             s.resize(cols, rows)
 
-    def get_clean_history(self, sid: str, max_lines: int = 10000) -> str:
+    _ANSI_STRIP_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+
+    def get_clean_history(self, sid: str, max_lines: int = 10000, ansi: bool = True) -> str:
         """Return tmux pane history with prefix-duplicate lines collapsed.
 
         Streaming TUI apps (Claude Code, Codex) flush incomplete lines as they
@@ -812,35 +815,43 @@ class Api:
         truncations. This method captures the full pane buffer, then for each
         run of consecutive lines where line[i+1].startswith(line[i]), keeps
         only the longest (final) version.
+
+        When ansi=True (default), captures with `tmux capture-pane -e` so ANSI
+        color/style escapes are preserved — the UI can feed the result directly
+        into an xterm.js instance and get the original terminal styling back.
+        Dedup still compares on stripped text so the colored line wins.
         """
         s = self.sessions.get(sid)
         if not s or not getattr(s, '_tmux_name', None):
             return json.dumps({"success": False, "reason": "no tmux", "text": ""})
         try:
-            r = subprocess.run(
-                ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name,
-                 "-S", f"-{max_lines}"],
-                capture_output=True, text=True, timeout=5
-            )
+            cmd = ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name,
+                   "-S", f"-{max_lines}"]
+            if ansi:
+                cmd.append("-e")
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             if r.returncode != 0:
                 return json.dumps({"success": False, "reason": r.stderr[-200:], "text": ""})
             raw_lines = r.stdout.split("\n")
-            cleaned = []
+            cleaned = []  # list of (stripped_for_compare, original_for_output)
             for line in raw_lines:
-                stripped = line.rstrip()
+                original = line.rstrip()
+                stripped = self._ANSI_STRIP_RE.sub('', original).rstrip() if ansi else original
                 if cleaned:
-                    prev = cleaned[-1]
-                    # If current line is a strict prefix of previous, skip
-                    # (streaming went backwards — rare)
-                    if prev.startswith(stripped) and stripped != prev:
+                    prev_stripped, _ = cleaned[-1]
+                    # Current is strict prefix of previous → skip (rare)
+                    if prev_stripped.startswith(stripped) and stripped != prev_stripped:
                         continue
-                    # If previous is a strict prefix of current, replace it
-                    # (streaming extended the line — common case)
-                    if stripped.startswith(prev) and stripped != prev:
-                        cleaned[-1] = stripped
+                    # Previous is strict prefix of current → replace with longer
+                    if stripped.startswith(prev_stripped) and stripped != prev_stripped:
+                        cleaned[-1] = (stripped, original)
                         continue
-                cleaned.append(stripped)
-            return json.dumps({"success": True, "text": "\n".join(cleaned)})
+                cleaned.append((stripped, original))
+            return json.dumps({
+                "success": True,
+                "text": "\n".join(orig for _, orig in cleaned),
+                "ansi": ansi,
+            })
         except Exception as e:
             return json.dumps({"success": False, "reason": str(e), "text": ""})
 

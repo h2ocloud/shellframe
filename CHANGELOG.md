@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.3 (2026-04-16)
+
+### Fixes
+- **Scroll history overlay now renders as a real terminal, not a plain `<pre>`** — the v0.11.0–v0.11.2 dedupe overlay lost all ANSI colors, used the wrong font, and generally looked like a text modal instead of "looking at scrollback". Now the overlay embeds a second xterm.js instance with the same theme, font family, and unicode/fit addons as live sessions; `get_clean_history` captures with `tmux capture-pane -e` so ANSI escapes survive and are rendered by the history terminal. Dedup still works because comparison strips ANSI first. The history terminal is read-only (`disableStdin: true`) and scrollback is sized to the content.
+
+### 修正
+- **上滾 overlay 改用真正的 xterm.js 渲染** — v0.11.0–v0.11.2 用 `<pre>` 顯示，丟了 ANSI 顏色、字體也錯，看起來像文字 modal 不是「看 scrollback」。現在 overlay 內嵌第二個 xterm.js 實例，主題、字體、fit/unicode addon 都跟 live session 一致；`get_clean_history` 改用 `tmux capture-pane -e` 保留 ANSI escape，history terminal 原生渲染。dedup 照舊（比對前先 strip ANSI）。History terminal 是唯讀（`disableStdin: true`），scrollback 會根據內容自動放大。
+
 ## v0.11.2 (2026-04-16)
 
 ### Fixes

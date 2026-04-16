@@ -1878,11 +1878,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // prefix-duplicate runs server-side (longest wins), and show the cleaned
   // text in a native overlay modal. User can select + copy; Esc or click
   // backdrop to close. Copy-mode avoided entirely.
-  // Global singleton — one scroll-history overlay at a time, attached to
-  // document.body (not to a pane). Keeps lifecycle independent of tab
-  // switches and session panes being hidden.
+  // Global singleton — scroll-history view rendered into a real xterm.js
+  // instance so ANSI colors / fonts / layout all match the live terminal.
+  // Attached to document.body with position:fixed; lifecycle independent of
+  // session panes + tab switches.
   const ScrollHistory = (function() {
     let overlay = null;
+    let histTerm = null;
     let onKey = null;
 
     function close() {
@@ -1891,9 +1893,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         document.removeEventListener('keydown', onKey, true);
         onKey = null;
       }
+      if (histTerm) {
+        try { histTerm.dispose(); } catch (_) {}
+        histTerm = null;
+      }
       overlay.remove();
       overlay = null;
-      // Focus the currently active xterm
       if (typeof activeId !== 'undefined' && activeId && sessions[activeId]) {
         try { sessions[activeId].term.focus(); } catch (_) {}
       }
@@ -1901,36 +1906,36 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     function isOpen() { return !!overlay; }
 
-    function show(text) {
-      close(); // clear any previous instance fully
+    function show(text, opts) {
+      close();
+      const fontSize = (opts && opts.fontSize) || currentFontSize || 13;
       overlay = document.createElement('div');
       overlay.className = 'scroll-history-overlay';
       overlay.tabIndex = -1;
-      overlay.style.cssText = 'position:fixed;inset:0;background:#1a1b26f2;' +
+      overlay.style.cssText = 'position:fixed;inset:0;background:#1a1b26;' +
         'z-index:2000;display:flex;flex-direction:column;';
 
+      // Slim header matches shellframe's tab-bar look
       const header = document.createElement('div');
       header.style.cssText = 'padding:6px 14px;border-bottom:1px solid #3b4261;' +
-        'color:#7aa2f7;font-size:12px;display:flex;justify-content:space-between;align-items:center';
+        'background:#16161e;color:#7aa2f7;font-size:11px;' +
+        'display:flex;justify-content:space-between;align-items:center;flex:0 0 auto';
       const hint = document.createElement('span');
-      hint.textContent = '📜 Scroll history (deduped). Esc / click backdrop to close.';
+      hint.textContent = '📜 Scroll history (deduped) — scroll to browse • Esc to close';
       const closeBtn = document.createElement('button');
-      closeBtn.textContent = 'Close';
+      closeBtn.textContent = '✕';
       closeBtn.style.cssText = 'background:none;border:1px solid #3b4261;color:#a9b1d6;' +
-        'padding:2px 10px;border-radius:4px;cursor:pointer;font-size:11px';
+        'padding:1px 9px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1';
       closeBtn.addEventListener('click', close);
       header.appendChild(hint);
       header.appendChild(closeBtn);
 
-      const body = document.createElement('pre');
-      body.className = 'scroll-history-body';
-      body.style.cssText = 'flex:1;margin:0;padding:10px 14px;overflow:auto;' +
-        'white-space:pre-wrap;word-break:break-word;user-select:text;' +
-        'font-family:inherit;font-size:12px;color:#c0caf5;line-height:1.4';
-      body.textContent = text || '(no history)';
+      // xterm host — fills remaining overlay space
+      const host = document.createElement('div');
+      host.style.cssText = 'flex:1;min-height:0;position:relative;padding:6px 10px';
 
       overlay.appendChild(header);
-      overlay.appendChild(body);
+      overlay.appendChild(host);
 
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) close();
@@ -1946,7 +1951,44 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       document.addEventListener('keydown', onKey, true);
 
       document.body.appendChild(overlay);
-      body.scrollTop = body.scrollHeight;
+
+      // Build xterm history viewer — same theme/font as live sessions, so it
+      // feels native (not like a text modal).
+      histTerm = new Terminal({
+        fontSize,
+        fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
+        theme: THEME,
+        cursorBlink: false,
+        cursorStyle: 'block',
+        scrollback: Math.max(10000, (text || '').split('\n').length + 200),
+        allowProposedApi: true,
+        disableStdin: true,  // read-only view
+        convertEol: true,    // treat lone \n as CRLF so lines render correctly
+      });
+      const fit = new FitAddon.FitAddon();
+      histTerm.loadAddon(fit);
+      histTerm.open(host);
+      try { fit.fit(); } catch (_) {}
+
+      // Write all lines, then scroll to bottom so user starts at the tail
+      histTerm.write(text || '(no history)', () => {
+        try { histTerm.scrollToBottom(); } catch (_) {}
+      });
+
+      // Re-fit on window resize (overlay is position:fixed)
+      const onResize = () => { try { fit.fit(); } catch (_) {} };
+      window.addEventListener('resize', onResize);
+      // Cleanup resize listener on close
+      const origClose = close;
+      // shadowed close closure can't easily be modified; use a MutationObserver
+      // to detect removal and tear down the resize listener
+      const mo = new MutationObserver(() => {
+        if (!document.body.contains(overlay)) {
+          window.removeEventListener('resize', onResize);
+          mo.disconnect();
+        }
+      });
+      mo.observe(document.body, { childList: true, subtree: false });
     }
 
     return { show, close, isOpen };
