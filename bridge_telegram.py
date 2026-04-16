@@ -454,6 +454,7 @@ class TelegramBridge(BridgeBase):
     def _set_bot_commands(self):
         """Register slash commands with Telegram."""
         commands = [
+            {"command": "fetch", "description": "Fetch latest AI reply & pin it"},
             {"command": "help", "description": "Show all available commands"},
             {"command": "list", "description": "List sessions + bridge state"},
             {"command": "pause", "description": "Pause bridge (stop forwarding)"},
@@ -1928,7 +1929,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
