@@ -1879,19 +1879,32 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // text in a native overlay modal. User can select + copy; Esc or click
   // backdrop to close. Copy-mode avoided entirely.
   // Global singleton — scroll-history view rendered into a real xterm.js
-  // instance so ANSI colors / fonts / layout all match the live terminal.
-  // Attached to document.body with position:fixed; lifecycle independent of
-  // session panes + tab switches.
+  // instance. Mounted inside #terminal-wrap so the sidebar is never covered.
+  // Auto-closes on: Esc, ✕ button, backdrop click, scroll-to-bottom (user
+  // caught up), or any keystroke that isn't a scroll-navigation key
+  // (treated as "user wants to type in the live input, give focus back").
   const ScrollHistory = (function() {
     let overlay = null;
     let histTerm = null;
     let onKey = null;
+    let onResize = null;
+    let boundSid = null;
 
-    function close() {
+    const NAV_KEYS = new Set([
+      'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End',
+      'Shift', 'Control', 'Alt', 'Meta',
+    ]);
+
+    function close(opts) {
       if (!overlay) return;
+      const forwardKey = opts && opts.forwardKey;
       if (onKey) {
         document.removeEventListener('keydown', onKey, true);
         onKey = null;
+      }
+      if (onResize) {
+        window.removeEventListener('resize', onResize);
+        onResize = null;
       }
       if (histTerm) {
         try { histTerm.dispose(); } catch (_) {}
@@ -1899,61 +1912,60 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
       overlay.remove();
       overlay = null;
+      const targetSid = boundSid;
+      boundSid = null;
+      // Return focus + forward any typed character so typing feels continuous
       if (typeof activeId !== 'undefined' && activeId && sessions[activeId]) {
-        try { sessions[activeId].term.focus(); } catch (_) {}
+        const s = sessions[activeId];
+        try { s.term.focus(); } catch (_) {}
+        if (forwardKey && targetSid === activeId) {
+          // Send the character the user just pressed so they don't lose it
+          try {
+            pywebview.api.write_input(activeId, forwardKey);
+          } catch (_) {}
+        }
       }
     }
 
     function isOpen() { return !!overlay; }
 
-    function show(text, opts) {
+    function show(text, sid, opts) {
       close();
+      boundSid = sid || activeId;
       const fontSize = (opts && opts.fontSize) || currentFontSize || 13;
+
+      // Mount inside #terminal-wrap — NOT document.body — so the sidebar
+      // stays fully visible and interactive behind the overlay.
+      const host = document.getElementById('terminal-wrap');
+      if (!host) return;
+
       overlay = document.createElement('div');
       overlay.className = 'scroll-history-overlay';
       overlay.tabIndex = -1;
-      overlay.style.cssText = 'position:fixed;inset:0;background:#1a1b26;' +
-        'z-index:2000;display:flex;flex-direction:column;';
+      overlay.style.cssText = 'position:absolute;inset:0;background:#1a1b26;' +
+        'z-index:40;display:flex;flex-direction:column;';
 
-      // Slim header matches shellframe's tab-bar look
       const header = document.createElement('div');
       header.style.cssText = 'padding:6px 14px;border-bottom:1px solid #3b4261;' +
         'background:#16161e;color:#7aa2f7;font-size:11px;' +
         'display:flex;justify-content:space-between;align-items:center;flex:0 0 auto';
       const hint = document.createElement('span');
-      hint.textContent = '📜 Scroll history (deduped) — scroll to browse • Esc to close';
+      hint.textContent = '📜 History (deduped) — scroll to bottom, type, or Esc to return';
       const closeBtn = document.createElement('button');
       closeBtn.textContent = '✕';
       closeBtn.style.cssText = 'background:none;border:1px solid #3b4261;color:#a9b1d6;' +
         'padding:1px 9px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1';
-      closeBtn.addEventListener('click', close);
+      closeBtn.addEventListener('click', () => close());
       header.appendChild(hint);
       header.appendChild(closeBtn);
 
-      // xterm host — fills remaining overlay space
-      const host = document.createElement('div');
-      host.style.cssText = 'flex:1;min-height:0;position:relative;padding:6px 10px';
+      const termHost = document.createElement('div');
+      termHost.style.cssText = 'flex:1;min-height:0;position:relative;padding:6px 10px';
 
       overlay.appendChild(header);
-      overlay.appendChild(host);
+      overlay.appendChild(termHost);
+      host.appendChild(overlay);
 
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) close();
-      });
-
-      onKey = (e) => {
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          e.preventDefault();
-          close();
-        }
-      };
-      document.addEventListener('keydown', onKey, true);
-
-      document.body.appendChild(overlay);
-
-      // Build xterm history viewer — same theme/font as live sessions, so it
-      // feels native (not like a text modal).
       histTerm = new Terminal({
         fontSize,
         fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
@@ -1962,33 +1974,72 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         cursorStyle: 'block',
         scrollback: Math.max(10000, (text || '').split('\n').length + 200),
         allowProposedApi: true,
-        disableStdin: true,  // read-only view
-        convertEol: true,    // treat lone \n as CRLF so lines render correctly
+        disableStdin: true,
+        convertEol: true,
       });
       const fit = new FitAddon.FitAddon();
       histTerm.loadAddon(fit);
-      histTerm.open(host);
+      histTerm.open(termHost);
       try { fit.fit(); } catch (_) {}
 
-      // Write all lines, then scroll to bottom so user starts at the tail
       histTerm.write(text || '(no history)', () => {
         try { histTerm.scrollToBottom(); } catch (_) {}
       });
 
-      // Re-fit on window resize (overlay is position:fixed)
-      const onResize = () => { try { fit.fit(); } catch (_) {} };
-      window.addEventListener('resize', onResize);
-      // Cleanup resize listener on close
-      const origClose = close;
-      // shadowed close closure can't easily be modified; use a MutationObserver
-      // to detect removal and tear down the resize listener
-      const mo = new MutationObserver(() => {
-        if (!document.body.contains(overlay)) {
-          window.removeEventListener('resize', onResize);
-          mo.disconnect();
+      // Auto-close when user scrolls all the way to bottom (caught up with
+      // history → wants to return to live view).
+      let bottomTouchCount = 0;
+      histTerm.onScroll((newY) => {
+        const buf = histTerm.buffer.active;
+        const maxY = buf.baseY;
+        if (newY >= maxY) {
+          // Require 2 bottom-touches so the initial scrollToBottom above
+          // doesn't count (it fires before user has seen anything).
+          bottomTouchCount++;
+          if (bottomTouchCount >= 2) close();
+        } else {
+          bottomTouchCount = Math.max(0, bottomTouchCount - 1);
         }
       });
-      mo.observe(document.body, { childList: true, subtree: false });
+
+      // Also auto-close when wheel goes beyond the bottom (user keeps
+      // scrolling down at the tail — stronger signal than scroll position).
+      termHost.addEventListener('wheel', (e) => {
+        if (!histTerm) return;
+        const buf = histTerm.buffer.active;
+        if (e.deltaY > 0 && buf.viewportY >= buf.baseY) {
+          close();
+        }
+      }, { passive: true });
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close();
+      });
+
+      // Keystroke handler. Navigation/modifier keys → let xterm history scroll.
+      // Anything else → user wants to type in live input; close and forward
+      // the character so the keystroke isn't lost.
+      onKey = (e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          e.preventDefault();
+          close();
+          return;
+        }
+        if (NAV_KEYS.has(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+        // Only forward single printable chars / common editing keys
+        const forward = e.key.length === 1 ? e.key :
+          (e.key === 'Enter' ? '\r' : e.key === 'Backspace' ? '\x7f' : null);
+        if (forward) {
+          e.stopPropagation();
+          e.preventDefault();
+          close({ forwardKey: forward });
+        }
+      };
+      document.addEventListener('keydown', onKey, true);
+
+      onResize = () => { try { fit.fit(); } catch (_) {} };
+      window.addEventListener('resize', onResize);
     }
 
     return { show, close, isOpen };
@@ -2010,7 +2061,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         _loading = false;
         try {
           const result = JSON.parse(res);
-          if (result.success) ScrollHistory.show(result.text);
+          if (result.success) ScrollHistory.show(result.text, sid);
         } catch (err) { /* ignore */ }
       }).catch(() => { _loading = false; });
     }, { passive: true });

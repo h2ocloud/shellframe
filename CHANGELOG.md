@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.11.4 (2026-04-16)
+
+### Fixes
+- **Scroll history overlay no longer covers the sidebar** — moved from `document.body` with `position:fixed` to inside `#terminal-wrap` with `position:absolute`, so whatever sidebar state the user had (open/collapsed) stays visible and interactive behind the overlay.
+- **Auto-close on scroll-to-bottom** — once you scroll back down to the tail of history, the overlay closes and live view returns. Two bottom-touches required so the initial `scrollToBottom` on open doesn't auto-close.
+- **Auto-close on typing** — any non-navigation keystroke (printable char / Enter / Backspace) closes the overlay and forwards that keystroke to the live session, so typing feels continuous instead of "dead key, then have to dismiss, then retype". Arrow keys / PageUp/Down / modifiers still scroll the history terminal.
+
+### 修正
+- **上滾 overlay 不會再蓋到側欄** — 從 `document.body` `position:fixed` 搬到 `#terminal-wrap` 裡面 `position:absolute`，你原本開著的側欄就不會被遮。
+- **滑到底自動關** — 滾到 history 最底自動關閉、回到 live view。需要「兩次觸底」才會關，所以開 overlay 時的初始 scrollToBottom 不會誤觸。
+- **打字自動關** — 任何非導航按鍵（可見字元 / Enter / Backspace）都會關 overlay 並把那個按鍵轉送到 live session，打字不會斷。方向鍵 / PageUp/Down / 修飾鍵還是走 history terminal 的捲動。
+
 ## v0.11.3 (2026-04-16)
 
 ### Fixes
