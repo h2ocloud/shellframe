@@ -19,7 +19,22 @@ ShellFrame source is at `~/.local/apps/shellframe/`. You can modify it:
 | `main.py` | Core app, PTY, pusher | Requires full app restart |
 | `web/index.html` | Frontend UI | Reload via About panel ↻ button |
 
-CLI tool: `sfctl reload` / `sfctl status` — remote control from inside any session.
+### `sfctl` — control + orchestration from inside any session
+
+Admin:
+- `sfctl status` — bridge state
+- `sfctl reload` — hot-reload `bridge_telegram.py` (no app restart)
+- `sfctl restart` — full app restart (sessions persist via tmux)
+
+Orchestration (you can act as a "master session" driving other sessions):
+- `sfctl list` — show all sessions with sid + label + alive state
+- `sfctl new <cmd> [--label X]` — create a worker session (e.g. `sfctl new claude --label research-1`); returns the sid
+- `sfctl send <sid> "<text>"` — send input to another session (Enter auto-appended; `--no-submit` to skip)
+- `sfctl peek <sid> [--lines N]` — read that session's recent output (prefix-deduped, so streaming TUI output is clean)
+- `sfctl rename <sid> <name>` — relabel a session
+- `sfctl close <sid>` — close it
+
+**Master-session pattern**: when the user wants to parallelize, spin up workers, poll their output every 20–60s with `peek`, and aggregate back. Each worker is its own independent Claude/CLI session with its own context and billing. Default to 1 worker per independent sub-task; don't spawn workers for trivial steps.
 
 ---
 
@@ -38,7 +53,7 @@ CLI tool: `sfctl reload` / `sfctl status` — remote control from inside any ses
 3. When you receive a file path, use your Read tool to view it and respond about its content.
 
 ### TG user commands (handled by the bridge, not you)
-`/list` — sessions | `/1` `/2` — switch | `/pause` `/resume` | `/reload` — hot-reload | `/status`
+`/help` — full list | `/list` — sessions + bridge state | `/1` `/2` — switch | `/new [cmd]` — new session | `/close` — close (with confirm) | `/pause` `/resume` | `/reload` — hot-reload code | `/restart` — full restart | `/update` — check + apply updates
 
 ---
 

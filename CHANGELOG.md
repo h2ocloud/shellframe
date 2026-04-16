@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.11.6 (2026-04-16)
+
+### New Features
+- **INIT_PROMPT.md now teaches sessions about `sfctl` orchestration** — every new AI CLI session that gets the init prompt is told about the 6 orchestration verbs (`list`, `new`, `send`, `peek`, `rename`, `close`) and the master-session pattern (decompose → spin up workers → poll → aggregate → cleanup). No user-side prompting needed; Claude knows from session start.
+- **Updated TG command cheatsheet in INIT_PROMPT** — reflects the audited command set (`/help`, merged `/update`, `/close` with confirm).
+
+### 新功能
+- **INIT_PROMPT.md 補上 sfctl orchestration 教學** — 每個新 AI CLI session 拿到 init prompt 時就會被告知 6 個 orchestration verb（`list` / `new` / `send` / `peek` / `rename` / `close`）跟 master-session 工作流（拆任務 → 開 worker → poll → 整合 → 收尾）。使用者不用每次自己講，Claude 開場就知道。
+- **TG 指令表同步更新**（`/help`、合併的 `/update`、有 confirm 的 `/close`）。
+
 ## v0.11.5 (2026-04-16)
 
 ### Fixes
