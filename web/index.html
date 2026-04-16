@@ -1866,84 +1866,76 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   }
 
-  // ── Scroll history via tmux copy-mode ──
+  // ── Scroll history overlay ──
   // xterm.js scrollback is always 0 for TUI apps that redraw in-place.
-  // When user scrolls up at the top, enter tmux copy-mode and forward
-  // all subsequent wheel events to tmux as Up/Down key sequences.
-  // User exits copy-mode by pressing 'q' (handled by tmux natively).
+  // tmux's native scrollback has the full history BUT it also captures every
+  // streaming frame (Claude Code's partial writes), so copy-mode showed the
+  // same line repeated with progressive truncations.
+  //
+  // Instead we snapshot the pane via `tmux capture-pane -p -J`, collapse
+  // prefix-duplicate runs server-side (longest wins), and show the cleaned
+  // text in a native overlay modal. User can select + copy; Esc or click
+  // backdrop to close. Copy-mode avoided entirely.
   function setupScrollHistory(sid, pane) {
-    let _inCopyMode = false;
-    let _throttle = null;
-    let _toastEl = null;
+    let _loading = false;
 
-    function showToast() {
-      if (_toastEl) return;
-      _toastEl = document.createElement('div');
-      _toastEl.textContent = '📜 Scroll history — press q to exit';
-      _toastEl.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);' +
-        'background:#1f2335;color:#7aa2f7;padding:4px 14px;border-radius:6px;font-size:12px;' +
-        'z-index:20;border:1px solid #3b4261;pointer-events:none;opacity:0.95';
-      pane.appendChild(_toastEl);
-    }
-    function hideToast() {
-      if (_toastEl) { _toastEl.remove(); _toastEl = null; }
+    function showOverlay(text) {
+      // Build once, reuse per-pane
+      let overlay = pane.querySelector('.scroll-history-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'scroll-history-overlay';
+        overlay.style.cssText = 'position:absolute;inset:0;background:#1a1b26f2;' +
+          'z-index:30;display:flex;flex-direction:column;';
+        const header = document.createElement('div');
+        header.style.cssText = 'padding:6px 14px;border-bottom:1px solid #3b4261;' +
+          'color:#7aa2f7;font-size:12px;display:flex;justify-content:space-between;align-items:center';
+        header.innerHTML = '<span>📜 Scroll history (deduped). Esc / click backdrop to close.</span>' +
+          '<button style="background:none;border:1px solid #3b4261;color:#a9b1d6;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:11px">Close</button>';
+        const body = document.createElement('pre');
+        body.className = 'scroll-history-body';
+        body.style.cssText = 'flex:1;margin:0;padding:10px 14px;overflow:auto;' +
+          'white-space:pre-wrap;word-break:break-word;user-select:text;' +
+          'font-family:inherit;font-size:12px;color:#c0caf5;line-height:1.4';
+        overlay.appendChild(header);
+        overlay.appendChild(body);
+        pane.appendChild(overlay);
+        const close = () => { overlay.style.display = 'none'; };
+        header.querySelector('button').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        // Esc to close (scoped to when overlay is visible)
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && overlay.style.display !== 'none') {
+            close();
+            e.stopPropagation();
+          }
+        });
+      }
+      const body = overlay.querySelector('.scroll-history-body');
+      body.textContent = text || '(no history)';
+      overlay.style.display = 'flex';
+      // Scroll to bottom so user starts at the most recent content
+      body.scrollTop = body.scrollHeight;
     }
 
     pane.addEventListener('wheel', (e) => {
       const s = sessions[sid];
       if (!s) return;
-
       const direction = e.deltaY < 0 ? 'up' : 'down';
+      // Only intervene on scroll-up at the top of xterm's own scrollback
+      if (direction !== 'up') return;
       const buf = s.term.buffer.active;
-
-      // If NOT in copy-mode and xterm.js has scrollback, let xterm handle
-      if (!_inCopyMode && direction === 'up' && buf.viewportY > 0) return;
-      // If NOT in copy-mode and scrolling down, nothing to do
-      if (!_inCopyMode && direction === 'down') return;
-
-      // Throttle API calls (100ms between calls to avoid flooding)
-      if (_throttle) return;
-      _throttle = setTimeout(() => { _throttle = null; }, 100);
-
-      const lines = Math.max(1, Math.min(Math.ceil(Math.abs(e.deltaY) / 25), 8));
-
-      pywebview.api.scroll_history(sid, direction, lines).then(res => {
+      if (buf.viewportY > 0) return; // xterm has its own scrollback, let it handle
+      if (_loading) return;
+      _loading = true;
+      pywebview.api.get_clean_history(sid).then(res => {
+        _loading = false;
         try {
           const result = JSON.parse(res);
-          const wasIn = _inCopyMode;
-          _inCopyMode = result.inCopyMode;
-
-          if (_inCopyMode && !wasIn) showToast();
-          if (!_inCopyMode && wasIn) {
-            hideToast();
-            // Clear stale copy-mode output from xterm.js scrollback
-            setTimeout(() => { if (s.term) s.term.scrollToBottom(); }, 300);
-          }
-        } catch(err) { /* ignore parse errors */ }
-      });
+          if (result.success) showOverlay(result.text);
+        } catch (err) { /* ignore */ }
+      }).catch(() => { _loading = false; });
     }, { passive: true });
-
-    // Reset copy-mode flag when user types (e.g., 'q' to exit copy-mode)
-    const s = sessions[sid];
-    if (s && s.term) {
-      s.term.onData(() => {
-        if (_inCopyMode) {
-          // User typed something → tmux will likely exit copy-mode
-          setTimeout(() => {
-            pywebview.api.scroll_history(sid, 'down', 0).then(res => {
-              try {
-                const result = JSON.parse(res);
-                _inCopyMode = result.inCopyMode;
-                if (!_inCopyMode) {
-                  hideToast();
-                  setTimeout(() => { if (s.term) s.term.scrollToBottom(); }, 300);
-                }
-              } catch(err) {}
-            });
-          }, 200);
-        }
-      });
-    }
   }
 
   // ── Image / file attach ──

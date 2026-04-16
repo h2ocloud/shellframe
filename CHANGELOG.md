@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.0 (2026-04-16)
+
+### New Features
+- **Master-session orchestration via `sfctl`** — `sfctl` now exposes verbs for driving other ShellFrame sessions from inside one: `sfctl new <cmd> [--label X]`, `sfctl send <sid> "<text>"`, `sfctl peek <sid> [--lines N]`, `sfctl rename <sid> <name>`, `sfctl list`, `sfctl close <sid>`. Enables "master Claude session dispatches work to worker sessions and polls results" pattern without touching tmux directly. `sfctl peek` uses the same prefix-dedup logic as the scroll overlay, so output is clean even for streaming TUI apps.
+
+### Fixes
+- **Scroll-up no longer shows duplicated streaming frames** — tmux copy-mode was capturing every intermediate frame of Claude Code's streaming (partial lines like `1. 想一下...` → `1. 想一下你...` → `1. 想一下你哪...`), making scrollback look like the same line pasted 20 times. Scroll-up at the xterm top now snapshots the pane via `tmux capture-pane -p -J`, collapses consecutive prefix-duplicate lines (longest wins), and shows the cleaned text in a native overlay modal. Select + copy supported; Esc or click-backdrop to close. Copy-mode avoided entirely.
+
+### 新功能
+- **Master session orchestration 透過 `sfctl`** — `sfctl` 新增一組 verb 讓你從某個 session 裡指揮其他 session：`sfctl new <cmd> [--label X]`、`sfctl send <sid> "<text>"`、`sfctl peek <sid> [--lines N]`、`sfctl rename <sid> <name>`、`sfctl list`、`sfctl close <sid>`。讓「master Claude session 指派工作給 worker session、再 poll 結果」的流程不用直接碰 tmux。`sfctl peek` 套用跟 scroll overlay 同一套 prefix-dedup，streaming TUI 輸出也乾淨。
+
+### 修正
+- **向上滾不會再看到重複的 streaming frame** — tmux copy-mode 會 capture Claude Code streaming 的每個中間狀態（`1. 想一下...` → `1. 想一下你...` → `1. 想一下你哪...`），所以滾上去是一堆幾乎一樣的行。改用：滾到 xterm 頂端時，`tmux capture-pane -p -J` 抓 pane snapshot，連續 prefix-duplicate 行壓縮成最長的那行，用 native overlay modal 顯示。支援選取複製；Esc 或點背景關閉。完全繞過 copy-mode。
+
 ## v0.10.12 (2026-04-16)
 
 ### Changes

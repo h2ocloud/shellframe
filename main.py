@@ -803,6 +803,47 @@ class Api:
         if s:
             s.resize(cols, rows)
 
+    def get_clean_history(self, sid: str, max_lines: int = 10000) -> str:
+        """Return tmux pane history with prefix-duplicate lines collapsed.
+
+        Streaming TUI apps (Claude Code, Codex) flush incomplete lines as they
+        generate tokens. tmux captures every intermediate frame into scrollback,
+        so scrolling up shows the same line repeated with progressively longer
+        truncations. This method captures the full pane buffer, then for each
+        run of consecutive lines where line[i+1].startswith(line[i]), keeps
+        only the longest (final) version.
+        """
+        s = self.sessions.get(sid)
+        if not s or not getattr(s, '_tmux_name', None):
+            return json.dumps({"success": False, "reason": "no tmux", "text": ""})
+        try:
+            r = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name,
+                 "-S", f"-{max_lines}"],
+                capture_output=True, text=True, timeout=5
+            )
+            if r.returncode != 0:
+                return json.dumps({"success": False, "reason": r.stderr[-200:], "text": ""})
+            raw_lines = r.stdout.split("\n")
+            cleaned = []
+            for line in raw_lines:
+                stripped = line.rstrip()
+                if cleaned:
+                    prev = cleaned[-1]
+                    # If current line is a strict prefix of previous, skip
+                    # (streaming went backwards — rare)
+                    if prev.startswith(stripped) and stripped != prev:
+                        continue
+                    # If previous is a strict prefix of current, replace it
+                    # (streaming extended the line — common case)
+                    if stripped.startswith(prev) and stripped != prev:
+                        cleaned[-1] = stripped
+                        continue
+                cleaned.append(stripped)
+            return json.dumps({"success": True, "text": "\n".join(cleaned)})
+        except Exception as e:
+            return json.dumps({"success": False, "reason": str(e), "text": ""})
+
     def enter_scroll_history(self, sid: str) -> str:
         """Enter tmux copy-mode for scrollable history.
         xterm.js scrollback is always empty for TUI apps (Claude/Codex) that
@@ -1950,6 +1991,79 @@ class Api:
                     "paused": status.get("paused", False),
                 }
             }
+
+        elif cmd == "list":
+            # List all sessions with sid + label + alive state
+            sessions_info = []
+            for sid, s in self.sessions.items():
+                sessions_info.append({
+                    "sid": sid,
+                    "label": getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid),
+                    "cmd": s.cmd,
+                    "alive": s.alive,
+                    "bridge_enabled": getattr(s, '_bridge_enabled', True),
+                })
+            return {
+                "success": True,
+                "message": f"{len(sessions_info)} sessions",
+                "details": {"sessions": sessions_info},
+            }
+
+        elif cmd == "send":
+            try:
+                sid = args.get("sid", "")
+                text = args.get("text", "")
+                submit = args.get("submit", True)
+                if not sid:
+                    return {"success": False, "message": "No sid provided"}
+                s = self.sessions.get(sid)
+                if not s:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                s.write(text)
+                if submit:
+                    time.sleep(0.05)
+                    s.write("\r")
+                return {"success": True, "message": f"Sent {len(text)} chars to {sid}"}
+            except Exception as e:
+                return {"success": False, "message": f"Send failed: {e}"}
+
+        elif cmd == "peek":
+            try:
+                sid = args.get("sid", "")
+                max_lines = int(args.get("lines", 200))
+                if not sid:
+                    return {"success": False, "message": "No sid provided"}
+                if sid not in self.sessions:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                raw = self.get_clean_history(sid, max_lines=max_lines)
+                result = json.loads(raw) if isinstance(raw, str) else raw
+                if not result.get("success"):
+                    return {"success": False, "message": result.get("reason", "peek failed")}
+                text = result.get("text", "")
+                # Keep only the last max_lines non-empty lines for master orchestration use
+                lines = [l for l in text.split("\n") if l.strip()]
+                tail = "\n".join(lines[-max_lines:])
+                return {
+                    "success": True,
+                    "message": f"{len(lines)} lines",
+                    "details": {"text": tail},
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Peek failed: {e}"}
+
+        elif cmd == "rename":
+            try:
+                sid = args.get("sid", "")
+                name = args.get("name", "")
+                if not sid or not name:
+                    return {"success": False, "message": "sid and name required"}
+                result_json = self.rename_session(sid, name)
+                result = json.loads(result_json) if isinstance(result_json, str) else result_json
+                if result.get("success"):
+                    return {"success": True, "message": f"Renamed {sid} to {name}"}
+                return {"success": False, "message": "Rename failed"}
+            except Exception as e:
+                return {"success": False, "message": f"Rename failed: {e}"}
 
         elif cmd == "do_update":
             try:
