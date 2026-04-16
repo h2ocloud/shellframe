@@ -455,16 +455,14 @@ class TelegramBridge(BridgeBase):
         """Register slash commands with Telegram."""
         commands = [
             {"command": "help", "description": "Show all available commands"},
-            {"command": "list", "description": "List all sessions"},
-            {"command": "status", "description": "Show current session & bridge status"},
+            {"command": "list", "description": "List sessions + bridge state"},
             {"command": "pause", "description": "Pause bridge (stop forwarding)"},
             {"command": "resume", "description": "Resume bridge"},
             {"command": "reload", "description": "Hot-reload bridge code"},
             {"command": "restart", "description": "Full app restart (sessions preserved)"},
-            {"command": "update", "description": "Check for ShellFrame updates"},
-            {"command": "update_now", "description": "Pull updates + restart if needed"},
+            {"command": "update", "description": "Check & apply ShellFrame updates"},
             {"command": "new", "description": "New session (default: claude)"},
-            {"command": "close", "description": "Close current session"},
+            {"command": "close", "description": "Close current session (with confirm)"},
         ]
         # Add numbered commands for quick switching
         with self._slots_lock:
@@ -1711,6 +1709,106 @@ class TelegramBridge(BridgeBase):
             threading.Thread(target=_do_create, daemon=True).start()
             return
 
+        if data.startswith("close:"):
+            parts = data.split(":", 2)
+            choice = parts[1] if len(parts) > 1 else ""
+            if choice == "no":
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "✕ 取消",
+                })
+                return
+            if choice == "yes":
+                target_sid = parts[2] if len(parts) > 2 else self.get_active_sid(user_id)
+                if not target_sid or target_sid not in self.slots:
+                    tg_api(self.config.bot_token, "editMessageText", {
+                        "chat_id": chat_id, "message_id": message_id,
+                        "text": "Session already gone.",
+                    })
+                    return
+                label = self.slots[target_sid].label
+                def _do_close():
+                    ok = False
+                    err = ""
+                    if self._on_close_session:
+                        try:
+                            self._on_close_session(target_sid)
+                            ok = True
+                        except Exception as e:
+                            err = str(e)
+                    else:
+                        result = self._sfctl_call("close_session", {"sid": target_sid})
+                        ok = result.get("success", False)
+                        err = result.get("message", "")
+                    if ok:
+                        new_sid = self.get_active_sid(user_id)
+                        new_label = self.slots[new_sid].label if new_sid and new_sid in self.slots else "none"
+                        tg_api(self.config.bot_token, "editMessageText", {
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": f"✕ Closed {label}\nSwitched to {new_label}",
+                        })
+                    else:
+                        tg_api(self.config.bot_token, "editMessageText", {
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": f"❌ Close failed: {err or 'unknown error'}",
+                        })
+                threading.Thread(target=_do_close, daemon=True).start()
+                return
+
+        if data.startswith("update:"):
+            choice = data[7:]
+            if choice == "no":
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "✕ 取消",
+                })
+                return
+            if choice == "now":
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "⬇️ 拉取更新中…",
+                })
+                self._user_chat[user_id] = chat_id
+                self._apply_update(chat_id)
+                return
+
+    def _apply_update(self, chat_id: int):
+        """Pull + restart if needed. Shared by /update inline button and the
+        back-compat /update_now command."""
+        if not self._on_restart or not self._on_check_update:
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": "Update not available.",
+            })
+            return
+        def _do():
+            try:
+                result = self._sfctl_call("do_update", {})
+                if not result.get("success"):
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"❌ {result.get('message', 'Update failed')}",
+                    })
+                    return
+                details = result.get("details", {})
+                new_ver = details.get("version", "?")
+                needs_restart = details.get("needs_restart", False)
+                if needs_restart:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"✅ 拉到 v{new_ver} — 觸發重啟（session 會保留）",
+                    })
+                    self._on_restart()
+                else:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"✅ 拉到 v{new_ver} — 純 UI 改動，下次 reload 即可",
+                    })
+            except Exception as e:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": f"❌ Update failed: {e}",
+                })
+        threading.Thread(target=_do, daemon=True).start()
+
     def _handle_update(self, update: dict):
         # Inline keyboard button taps come as callback_query, not message
         cq = update.get("callback_query")
@@ -1947,11 +2045,14 @@ class TelegramBridge(BridgeBase):
     def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):
         """Handle slash commands. `text` is the full message text (for argv parsing)."""
 
-        if cmd == "list":
-            lines = ["📋 Sessions:\n"]
+        if cmd in ("list", "status"):
+            # /status is folded into /list — show bridge state header + sessions.
+            state = "paused ⏸" if self.paused else "connected ●"
+            bot = self.bot_info.get("username", "?")
             active_sid = self.get_active_sid(user_id)
             with self._slots_lock:
                 slots_snapshot = [(sid, self.slots[sid]) for sid in self._slot_order]
+            lines = [f"📋 ShellFrame — {state} @ @{bot}", ""]
             for sid, slot in slots_snapshot:
                 marker = " ◀ active" if sid == active_sid else ""
                 lines.append(f"\n/{slot.index}  {slot.label}{marker}")
@@ -1969,17 +2070,6 @@ class TelegramBridge(BridgeBase):
                 lines.append("  (no sessions)")
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": "\n".join(lines),
-            })
-
-        elif cmd == "status":
-            active_sid = self.get_active_sid(user_id)
-            slot = self.slots.get(active_sid)
-            state = "paused ⏸" if self.paused else "connected ●"
-            label = slot.label if slot else "none"
-            total = len(self.slots)
-            tg_api(self.config.bot_token, "sendMessage", {
-                "chat_id": chat_id,
-                "text": f"Bridge: {state}\nBot: @{self.bot_info.get('username', '?')}\nActive: {label}\nSessions: {total}",
             })
 
         elif cmd == "pause":
@@ -2060,33 +2150,15 @@ class TelegramBridge(BridgeBase):
                     "chat_id": chat_id, "text": "Can't close the last session.",
                 })
                 return
-            def _do_close():
-                ok = False
-                err = ""
-                # Direct callback (same-process) is more reliable than file IPC
-                if self._on_close_session:
-                    try:
-                        self._on_close_session(active_sid)
-                        ok = True
-                    except Exception as e:
-                        err = str(e)
-                else:
-                    result = self._sfctl_call("close_session", {"sid": active_sid})
-                    ok = result.get("success", False)
-                    err = result.get("message", "")
-                if ok:
-                    new_sid = self.get_active_sid(user_id)
-                    new_label = self.slots[new_sid].label if new_sid and new_sid in self.slots else "none"
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"✕ Closed {label}\nSwitched to {new_label}",
-                    })
-                else:
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"❌ Close failed: {err or 'unknown error'}",
-                    })
-            threading.Thread(target=_do_close, daemon=True).start()
+            # Confirm first — close is destructive (kills the PTY + tmux session).
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": f"Close {label} ({active_sid})?\nThis kills the session — any unsaved CLI state is lost.",
+                "reply_markup": {"inline_keyboard": [[
+                    {"text": "✕ Close", "callback_data": f"close:yes:{active_sid}"},
+                    {"text": "Cancel", "callback_data": "close:no"},
+                ]]},
+            })
 
         elif cmd == "new":
             # Parse args from message text
@@ -2170,11 +2242,17 @@ class TelegramBridge(BridgeBase):
                     })
             threading.Thread(target=_do_restart, daemon=True).start()
 
-        elif cmd == "update":
+        elif cmd in ("update", "update_now"):
+            # /update_now is kept as a back-compat alias — it still goes straight
+            # to the pull+apply path without the confirm step.
             if not self._on_check_update:
                 tg_api(self.config.bot_token, "sendMessage", {
                     "chat_id": chat_id, "text": "Update check not available.",
                 })
+                return
+            if cmd == "update_now":
+                # Skip the check step — go straight to apply (old behaviour)
+                self._apply_update(chat_id)
                 return
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": "🔍 檢查更新中…",
@@ -2187,56 +2265,23 @@ class TelegramBridge(BridgeBase):
                     local = info.get("local", "?")
                     remote = info.get("remote", "?")
                     if info.get("update_available"):
-                        msg = f"⬆️ 有新版本\n本地: v{local}\n遠端: v{remote}\n\n回 /update_now 套用"
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"⬆️ 有新版本\n本地: v{local}\n遠端: v{remote}",
+                            "reply_markup": {"inline_keyboard": [[
+                                {"text": "⬇️ Update Now", "callback_data": "update:now"},
+                                {"text": "Cancel", "callback_data": "update:no"},
+                            ]]},
+                        })
                     else:
-                        msg = f"✅ 已是最新版 (v{local})"
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id, "text": msg,
-                    })
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id, "text": f"✅ 已是最新版 (v{local})",
+                        })
                 except Exception as e:
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id, "text": f"❌ Update check failed: {e}",
                     })
             threading.Thread(target=_do_update, daemon=True).start()
-
-        elif cmd == "update_now":
-            if not self._on_restart or not self._on_check_update:
-                tg_api(self.config.bot_token, "sendMessage", {
-                    "chat_id": chat_id, "text": "Update not available.",
-                })
-                return
-            tg_api(self.config.bot_token, "sendMessage", {
-                "chat_id": chat_id, "text": "⬇️ 拉取更新中…",
-            })
-            def _do_update_now():
-                try:
-                    # Run git pull via the shared do_update mechanism
-                    result = self._sfctl_call("do_update", {})
-                    if not result.get("success"):
-                        tg_api(self.config.bot_token, "sendMessage", {
-                            "chat_id": chat_id,
-                            "text": f"❌ {result.get('message', 'Update failed')}",
-                        })
-                        return
-                    details = result.get("details", {})
-                    new_ver = details.get("version", "?")
-                    needs_restart = details.get("needs_restart", False)
-                    if needs_restart:
-                        tg_api(self.config.bot_token, "sendMessage", {
-                            "chat_id": chat_id,
-                            "text": f"✅ 拉到 v{new_ver} — 觸發重啟（session 會保留）",
-                        })
-                        self._on_restart()
-                    else:
-                        tg_api(self.config.bot_token, "sendMessage", {
-                            "chat_id": chat_id,
-                            "text": f"✅ 拉到 v{new_ver} — 純 UI 改動，下次 reload 即可",
-                        })
-                except Exception as e:
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id, "text": f"❌ Update failed: {e}",
-                    })
-            threading.Thread(target=_do_update_now, daemon=True).start()
 
         elif cmd in ("start", "help"):
             tg_api(self.config.bot_token, "sendMessage", {
@@ -2244,19 +2289,17 @@ class TelegramBridge(BridgeBase):
                 "text": (
                     "ShellFrame Bridge\n\n"
                     "Sessions:\n"
-                    "  /list — list sessions (with last-response preview)\n"
+                    "  /list — sessions + bridge state (with last-response preview)\n"
                     "  /new [cmd] — new session (default: claude)\n"
-                    "  /close — close current session\n"
+                    "  /close — close current session (with confirm)\n"
                     "  /1, /2, … — switch session\n\n"
                     "Bridge control:\n"
                     "  /pause — pause bridge (bot ignores non-slash messages)\n"
-                    "  /resume — resume\n"
-                    "  /status — show bridge + active session state\n\n"
+                    "  /resume — resume\n\n"
                     "App control:\n"
                     "  /reload — hot-reload bridge code (picks up bridge_telegram.py changes)\n"
                     "  /restart — full app restart (sessions persist via tmux)\n"
-                    "  /update — check for updates (shows local vs remote version)\n"
-                    "  /update_now — pull + restart if needed\n\n"
+                    "  /update — check for updates; inline button to apply\n\n"
                     "Any other /slashcommand is forwarded to the active session as raw CLI input."
                 ),
             })

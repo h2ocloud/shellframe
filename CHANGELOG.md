@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.12 (2026-04-16)
+
+### Changes
+- **Slash command audit — 11 → 9 commands**:
+  - `/status` folded into `/list` — `/list` output now starts with a bridge state header (`connected ● @ @bot`). `/status` still works as an alias but is no longer in the BotFather menu.
+  - `/update_now` collapsed into `/update` — `/update` now shows an inline keyboard with "⬇️ Update Now" / "Cancel" buttons when a new version is available. `/update_now` still works as a back-compat alias that skips the check step.
+  - `/close` now requires inline-keyboard confirmation — accidental `/close` in the middle of a chat no longer instantly kills the active session.
+
+### 變更
+- **Slash 指令精簡 — 11 → 9 個**：
+  - `/status` 合併到 `/list` — `/list` 開頭多了一行 bridge state header（`connected ● @ @bot`）。`/status` 還是通的（alias），但不再出現在 BotFather 選單。
+  - `/update_now` 合併到 `/update` — 檢查到有新版時直接吐出 inline keyboard「⬇️ Update Now / Cancel」兩顆按鈕，一次點到位。`/update_now` 保留當 alias（直接套用、跳過檢查）。
+  - `/close` 現在要 inline confirm — 聊天聊一半不小心 `/close` 不會再瞬殺 active session。
+
 ## v0.10.11 (2026-04-16)
 
 ### Fixes
