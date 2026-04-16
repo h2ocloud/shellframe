@@ -1982,34 +1982,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       histTerm.open(termHost);
       try { fit.fit(); } catch (_) {}
 
+      // Write all content, then scroll to bottom. Only AFTER this settles
+      // do we start watching for user-driven "scroll to bottom to close".
+      let userInteracted = false;
       histTerm.write(text || '(no history)', () => {
         try { histTerm.scrollToBottom(); } catch (_) {}
       });
 
-      // Auto-close when user scrolls all the way to bottom (caught up with
-      // history → wants to return to live view).
-      let bottomTouchCount = 0;
-      histTerm.onScroll((newY) => {
-        const buf = histTerm.buffer.active;
-        const maxY = buf.baseY;
-        if (newY >= maxY) {
-          // Require 2 bottom-touches so the initial scrollToBottom above
-          // doesn't count (it fires before user has seen anything).
-          bottomTouchCount++;
-          if (bottomTouchCount >= 2) close();
-        } else {
-          bottomTouchCount = Math.max(0, bottomTouchCount - 1);
-        }
-      });
-
-      // Also auto-close when wheel goes beyond the bottom (user keeps
-      // scrolling down at the tail — stronger signal than scroll position).
+      // Mark user interaction on wheel / key nav. Only then does
+      // "scroll-to-bottom" count as an auto-close signal — this prevents the
+      // initial bulk write + scrollToBottom from dismissing the overlay
+      // immediately (xterm fires onScroll per written line).
       termHost.addEventListener('wheel', (e) => {
         if (!histTerm) return;
+        userInteracted = true;
         const buf = histTerm.buffer.active;
-        if (e.deltaY > 0 && buf.viewportY >= buf.baseY) {
-          close();
-        }
+        // Wheel DOWN past the last line → user reached the live tail, close.
+        if (e.deltaY > 0 && buf.viewportY >= buf.baseY) close();
       }, { passive: true });
 
       overlay.addEventListener('click', (e) => {

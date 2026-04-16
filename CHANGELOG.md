@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.5 (2026-04-16)
+
+### Fixes
+- **Scroll history overlay flashed and vanished** — v0.11.4's auto-close-on-bottom logic fired immediately on overlay open: `term.write(text)` emits `onScroll` per line while the content streams in, so the overlay hit its 2-bottom-touch threshold before the user even saw it. Removed the `onScroll` watcher entirely; the wheel-past-bottom handler now suffices and only fires on real user input (after content is already drawn).
+
+### 修正
+- **向上滑 overlay 只閃一下就消失** — v0.11.4 的 auto-close-on-bottom 在 overlay 打開瞬間就觸發：`term.write(text)` 每寫一行都會 `onScroll`，內容還在進來時已經累積過 2 次觸底門檻，使用者根本看不到。把 `onScroll` 監聽拔掉，只保留 wheel 往下滾超過 tail 的自動關，這只會在使用者真的操作時才觸發。
+
 ## v0.11.4 (2026-04-16)
 
 ### Fixes
