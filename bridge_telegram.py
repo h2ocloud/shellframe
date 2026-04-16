@@ -2283,6 +2283,37 @@ class TelegramBridge(BridgeBase):
                     })
             threading.Thread(target=_do_update, daemon=True).start()
 
+        elif cmd == "fetch":
+            active_sid = self.get_active_sid(user_id)
+            if not active_sid or active_sid not in self.slots:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "No active session.",
+                })
+                return
+            slot = self.slots[active_sid]
+            reply_text = self._peek_last_response(slot)
+            if not reply_text:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "No AI reply found in current session.",
+                })
+                return
+            # Truncate if needed (TG max message = 4096 chars)
+            if len(reply_text) > 4000:
+                reply_text = reply_text[:4000] + "\n…(truncated)"
+            header = f"📌 {slot.label} (/{slot.index})"
+            msg_text = f"{header}\n\n{reply_text}"
+            resp = tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": msg_text,
+            })
+            # Pin the message
+            if resp and resp.get("ok"):
+                msg_id = resp["result"]["message_id"]
+                tg_api(self.config.bot_token, "pinChatMessage", {
+                    "chat_id": chat_id,
+                    "message_id": msg_id,
+                    "disable_notification": True,
+                })
+
         elif cmd in ("start", "help"):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
@@ -2290,6 +2321,7 @@ class TelegramBridge(BridgeBase):
                     "ShellFrame Bridge\n\n"
                     "Sessions:\n"
                     "  /list — sessions + bridge state (with last-response preview)\n"
+                    "  /fetch — fetch latest AI reply & pin it\n"
                     "  /new [cmd] — new session (default: claude)\n"
                     "  /close — close current session (with confirm)\n"
                     "  /1, /2, … — switch session\n\n"

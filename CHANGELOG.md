@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.7 (2026-04-17)
+
+### New Features
+- **`/fetch` TG command** — fetches the latest AI reply from the active session and sends it as a pinned message in your Telegram chat. Quick way to grab the most recent response without scrolling.
+
+### 新功能
+- **`/fetch` TG 指令** — 從目前 active session 擷取最新 AI 回覆，傳到 Telegram 並自動置頂。不用滑螢幕就能看到最新回覆。
+
 ## v0.11.6 (2026-04-16)
 
 ### New Features
