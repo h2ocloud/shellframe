@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.9 (2026-04-17)
+
+### Fixes
+- **Pasted image paths no longer appear as typed text in Claude Code / Codex** — `attachFile` wrote file paths to the PTY with a direct `write_input`, so Claude Code saw typed characters and couldn't compress the attachment into `[image #N]`. Now wrapped with bracketed-paste escapes (`\x1b[200~` … `\x1b[201~`) so AI CLIs detect the paste and show their short `[image #N]` / `[Pasted text #N +Y lines]` previews. Plain (non-AI) sessions still get the raw path unchanged.
+
+### 修正
+- **貼圖檔名不再以「打字輸入」顯示在 Claude Code / Codex 裡** — `attachFile` 原本用 `write_input` 直接把路徑送進 PTY，AI CLI 看到的是一串字元而不是 paste，沒辦法壓成 `[image #N]` 附件預覽。現在 wrap 成 bracketed-paste 跳脫（`\x1b[200~` … `\x1b[201~`），AI CLI 能正確識別是 paste，顯示 `[image #N]` / `[Pasted text #N +Y lines]` 這種短標籤。純 terminal（非 AI）session 的貼入路徑維持原樣不包。
+
 ## v0.11.8 (2026-04-17)
 
 ### New Features

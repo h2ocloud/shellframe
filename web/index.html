@@ -2132,8 +2132,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!s.attachments.some(a => a.path === path)) {
       s.attachCounter = (s.attachCounter || 0) + 1;
       s.attachments.push({ path, dataUrl: dataUrl || null, tag: s.attachCounter });
-      // Write path directly into terminal input so Enter just works
-      pywebview.api.write_input(activeId, ' ' + path);
+      // Wrap the path in bracketed-paste escapes so AI CLIs (Claude Code,
+      // Codex, etc.) recognise it as a paste event instead of typed input.
+      // Claude Code uses this to compress attachments into "[image #N]" /
+      // "[Pasted text #N +Y lines]" previews. Without the wrapping the
+      // path shows as raw text.
+      const BP_START = '\x1b[200~';
+      const BP_END = '\x1b[201~';
+      pywebview.api.write_input(activeId, ' ' + BP_START + path + BP_END);
     }
     updateImageBar();
   }
