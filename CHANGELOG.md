@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.10 (2026-04-17)
+
+### Fixes
+- **`_blog` was a silent no-op (recursion bug since v0.9.3)** — bridge log (`/tmp/shellframe_bridge.log`) stopped updating on 2026-04-12 because `_blog` was calling itself recursively instead of opening the file. Every log write raised `RecursionError` and was swallowed by the outer `try/except`. Debugging stall / restore / echo issues was blind. Fixed to actually append to the log file.
+
+### 修正
+- **`_blog` 5 天前就徹底沒作用（v0.9.3 引入的遞迴 bug）** — `/tmp/shellframe_bridge.log` 自 2026-04-12 起就停在同一份內容。原因是 `_blog` 內部呼叫的是自己而不是開檔寫入，每次進去立刻 `RecursionError`、被外層 `try/except` 吃掉。debug stall / restore / echo 時看 log 一片靜音，完全沒線索。改成真的 append 到 log file。
+
 ## v0.11.9 (2026-04-17)
 
 ### Fixes

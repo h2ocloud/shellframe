@@ -29,7 +29,10 @@ def _blog(msg: str):
     """Append to bridge log with auto-truncation. Best-effort."""
     global _log_write_count
     try:
-        _blog(msg if msg.endswith('\n') else msg + '\n')
+        if not msg.endswith('\n'):
+            msg = msg + '\n'
+        with open(_LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(msg)
         _log_write_count += 1
         if _log_write_count % 200 == 0:  # check size every 200 writes
             try:
