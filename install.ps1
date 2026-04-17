@@ -92,3 +92,7 @@ Write-Host "  CLI:       shellframe"
 Write-Host "  Control:   sfctl"
 Write-Host "  Path:      $InstallDir"
 Write-Host ""
+Write-Host "  Run ``sfctl permissions`` once to pre-add Windows Defender" -ForegroundColor Yellow
+Write-Host "  Firewall rules for the bundled Python — avoids the one-time" -ForegroundColor Yellow
+Write-Host "  'Allow network access' popup on first launch." -ForegroundColor Yellow
+Write-Host ""

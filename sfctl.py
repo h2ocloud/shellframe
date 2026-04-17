@@ -19,6 +19,8 @@ Usage:
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -78,6 +80,167 @@ def _print_result(result: dict, verbose: bool = True):
     sys.exit(0 if success else 1)
 
 
+def _prompt(msg: str, default: str = "") -> str:
+    """Read a line from the user; return default if stdin isn't a TTY or EOF."""
+    try:
+        if not sys.stdin.isatty():
+            return default
+        return input(msg)
+    except EOFError:
+        return default
+
+
+def _cmd_permissions(args):
+    """Pre-grant OS-level permissions so CLIs under shellframe stop hitting
+    blocking dialogs. macOS walks the Privacy panes + optional ALF whitelist;
+    Windows adds Defender Firewall inbound rules for the bundled Python."""
+    if sys.platform == "darwin":
+        _permissions_macos(args)
+    elif sys.platform == "win32":
+        _permissions_windows(args)
+    else:
+        print("Linux / other: no per-app permission panes to configure.")
+        print("(Firewall rules — if needed — are handled by your distro.)")
+    sys.exit(0)
+
+
+# ── macOS ───────────────────────────────────────────────────────────────────
+_MAC_PANES = [
+    ("Files & Folders",  "Privacy_FilesAndFolders",
+     "Enable your terminal app (Terminal / iTerm / Ghostty) for Downloads, "
+     "Documents, Desktop — stops the 'X would like to access' popups."),
+    ("Accessibility",    "Privacy_Accessibility",
+     "Enable your terminal if tools under it use AppleScript / key events."),
+    ("Automation",       "Privacy_Automation",
+     "Review the nested list — the first `tell application \"X\"` caused "
+     "it. Leave it checked."),
+    ("Screen Recording", "Privacy_ScreenCapture",
+     "Enable your terminal if any tool takes screenshots / uses vision."),
+    ("Full Disk Access", "Privacy_AllFiles",
+     "Optional — enable if workflows touch ~/Library, iCloud, or system "
+     "paths."),
+]
+
+
+def _permissions_macos(args):
+    do_panes = not args.firewall
+    do_fw = not args.panes
+
+    if do_panes:
+        print("macOS Privacy panes — opening one by one.")
+        print("Drag your terminal app (or click + to add it) in each pane "
+              "that applies to you, then return here.\n")
+        for name, key, hint in _MAC_PANES:
+            url = f"x-apple.systempreferences:com.apple.preference.security?{key}"
+            print(f"── {name} ──")
+            print(f"   {hint}")
+            subprocess.run(["open", url], capture_output=True)
+            ans = _prompt("   Press Enter for next pane (or q+Enter to stop): ",
+                          default="")
+            if ans.strip().lower() == "q":
+                break
+            print()
+
+    if do_fw:
+        sf = "/usr/libexec/ApplicationFirewall/socketfilterfw"
+        if not os.path.exists(sf):
+            print("ALF binary missing — skipping firewall whitelist.")
+            return
+        targets = _firewall_targets_macos()
+        if not targets:
+            print("No firewall targets detected (shellframe venv not found).")
+            return
+        print("\nFirewall (ALF) whitelist — silences 'accept incoming "
+              "connections' popups.")
+        print("Will run (needs sudo once):")
+        for t in targets:
+            print(f"  sudo {sf} --add {t}")
+            print(f"  sudo {sf} --unblockapp {t}")
+        if args.yes or _prompt("Apply now? [y/N] ", default="n").strip().lower() == "y":
+            for t in targets:
+                subprocess.run(["sudo", sf, "--add", t])
+                subprocess.run(["sudo", sf, "--unblockapp", t])
+            print("Firewall whitelist applied.")
+        else:
+            print("Skipped. Re-run `sfctl permissions --firewall` when ready.")
+
+
+def _firewall_targets_macos() -> list:
+    install = os.path.expanduser("~/.local/apps/shellframe")
+    py = os.path.join(install, ".venv/bin/python3")
+    targets = []
+    if os.path.exists(py):
+        try:
+            targets.append(os.path.realpath(py))
+        except OSError:
+            targets.append(py)
+    bun = shutil.which("bun")
+    if bun:
+        try:
+            targets.append(os.path.realpath(bun))
+        except OSError:
+            targets.append(bun)
+    # de-dup while preserving order
+    seen = set()
+    out = []
+    for t in targets:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+# ── Windows ─────────────────────────────────────────────────────────────────
+def _permissions_windows(args):
+    # Windows has no TCC analogue — only Defender Firewall nags when a
+    # listening socket opens. Pre-adding inbound allow rules silences it.
+    install = os.path.join(os.environ.get("USERPROFILE", ""),
+                           ".local", "apps", "shellframe")
+    scripts = os.path.join(install, ".venv", "Scripts")
+    candidates = [
+        os.path.join(scripts, "python.exe"),
+        os.path.join(scripts, "pythonw.exe"),
+    ]
+    targets = [p for p in candidates if os.path.exists(p)]
+    if not targets:
+        print(f"No venv Python found under {scripts}. Run install.ps1 first.")
+        return
+
+    print("Windows Defender Firewall rules — stops the one-time 'Allow "
+          "network access' popup when shellframe starts.")
+    print("Will add inbound allow rules for:")
+    for t in targets:
+        print(f"  {t}")
+
+    if not args.yes:
+        ans = _prompt("Apply now? (UAC prompt will appear) [y/N] ", default="n")
+        if ans.strip().lower() != "y":
+            print("Skipped. Re-run `sfctl permissions` when ready.")
+            return
+
+    # Build one elevated PowerShell call that adds all rules. Quoting is
+    # escaped for cmd → powershell → netsh.
+    cmds = []
+    for path in targets:
+        name = f"ShellFrame ({os.path.basename(path)})"
+        cmds.append(
+            f'netsh advfirewall firewall add rule name="{name}" dir=in '
+            f'action=allow program="{path}" enable=yes profile=any'
+        )
+    joined = " & ".join(cmds)
+    ps = (
+        f"Start-Process cmd -Verb RunAs -Wait -ArgumentList "
+        f"'/c {joined}'"
+    )
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=False)
+        print("Firewall rules applied (if UAC accepted).")
+    except FileNotFoundError:
+        print("PowerShell not found — run the netsh commands manually:")
+        for c in cmds:
+            print(f"  {c}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="sfctl",
@@ -114,6 +277,18 @@ def main():
     p_close = sub.add_parser("close", help="Close a session")
     p_close.add_argument("sid", help="Session id")
 
+    p_perm = sub.add_parser(
+        "permissions",
+        help="Pre-grant OS permissions (macOS Privacy panes + firewall; "
+             "Windows Defender Firewall rules)",
+    )
+    p_perm.add_argument("--panes", action="store_true",
+                        help="macOS only: open Privacy panes, skip firewall")
+    p_perm.add_argument("--firewall", action="store_true",
+                        help="Firewall whitelist only, skip Privacy panes")
+    p_perm.add_argument("--yes", action="store_true",
+                        help="Skip confirmation prompts (still needs sudo/UAC)")
+
     if len(sys.argv) < 2:
         parser.print_help()
         sys.exit(0)
@@ -146,6 +321,8 @@ def main():
         _print_result(_rpc("rename", {"sid": args.sid, "name": args.name}))
     elif args.cmd == "close":
         _print_result(_rpc("close_session", {"sid": args.sid}))
+    elif args.cmd == "permissions":
+        _cmd_permissions(args)
     else:
         parser.print_help()
         sys.exit(1)

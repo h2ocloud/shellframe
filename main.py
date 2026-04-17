@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -806,6 +807,20 @@ class Api:
 
     _ANSI_STRIP_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
 
+    @staticmethod
+    def _visual_width(s: str) -> int:
+        """Approx terminal cell width. CJK/fullwidth count 2, control 0,
+        everything else 1. Used for dedup thresholds so CJK lines (4 chars
+        = 8 cells) aren't mis-treated as 'too short to dedup'."""
+        w = 0
+        for ch in s:
+            o = ord(ch)
+            if o < 0x20 or o == 0x7f:
+                continue
+            ea = unicodedata.east_asian_width(ch)
+            w += 2 if ea in ("W", "F") else 1
+        return w
+
     def get_clean_history(self, sid: str, max_lines: int = 10000, ansi: bool = True) -> str:
         """Return tmux pane history with prefix-duplicate lines collapsed.
 
@@ -847,9 +862,34 @@ class Api:
                         cleaned[-1] = (stripped, original)
                         continue
                 cleaned.append((stripped, original))
+
+            # Pass 2: drop non-consecutive repeats. Claude Code redraws the
+            # visible region between streaming chunks, and tmux writes each
+            # redraw into scrollback. The prefix pass above misses this when
+            # the repeats are separated by spinner / status lines, or when
+            # two redraw frames are byte-identical (neither is a strict
+            # prefix of the other, so both are kept).
+            #
+            # Rule: if a line's stripped content has been emitted before and
+            # is "distinctive enough" (visual width >= DEDUP_MIN_WIDTH), skip
+            # it. Width — not codepoint count — matters here: "交付成果"
+            # is 4 codepoints but 8 cells wide, and repeats of it absolutely
+            # need collapsing. Short lines (blanks, "> ", prompts, dividers
+            # "─────", wrap-fragments like "bjc") can legitimately recur and
+            # are left alone.
+            DEDUP_MIN_WIDTH = 8
+            seen = set()
+            final = []
+            for stripped, original in cleaned:
+                s_key = stripped.strip()
+                if self._visual_width(s_key) >= DEDUP_MIN_WIDTH:
+                    if s_key in seen:
+                        continue
+                    seen.add(s_key)
+                final.append((stripped, original))
             return json.dumps({
                 "success": True,
-                "text": "\n".join(orig for _, orig in cleaned),
+                "text": "\n".join(orig for _, orig in final),
                 "ansi": ansi,
             })
         except Exception as e:
@@ -2261,6 +2301,43 @@ def _prevent_app_nap():
         print(f"[shellframe] App Nap opt-out failed (non-fatal): {e}")
 
 
+def _coords_on_attached_screen(x: int, y: int, w: int, h: int) -> bool:
+    """Return True if the window rect's centre lands on an attached display.
+
+    pywebview's cocoa backend crashes during startup when the initial
+    position has no hosting screen (external monitor unplugged, saved
+    coords stale, etc.) — windowDidMove_ calls window.screen() which
+    returns None, then .frame() blows up. We pre-validate via NSScreen
+    and drop the coords if they're off-screen.
+
+    On non-macOS platforms we don't currently detect this — return True
+    so nothing is dropped. Linux/Windows pywebview backends have
+    different (usually safer) fallback behaviour.
+    """
+    if sys.platform != "darwin":
+        return True
+    try:
+        from AppKit import NSScreen
+    except Exception:
+        return True
+    screens = list(NSScreen.screens() or [])
+    if not screens:
+        return False
+    primary_h = float(screens[0].frame().size.height)
+    cx = x + w / 2.0
+    cy_pywebview = y + h / 2.0
+    cy_cocoa = primary_h - cy_pywebview  # convert to Cocoa bottom-up Y
+    for s in screens:
+        f = s.frame()
+        x_min = float(f.origin.x)
+        x_max = x_min + float(f.size.width)
+        y_min = float(f.origin.y)
+        y_max = y_min + float(f.size.height)
+        if x_min <= cx <= x_max and y_min <= cy_cocoa <= y_max:
+            return True
+    return False
+
+
 def main():
     _self_heal_venv()
     _prevent_app_nap()
@@ -2272,19 +2349,128 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: (api.cleanup_all(), os._exit(0)))
     signal.signal(signal.SIGTERM, lambda *_: (api.cleanup_all(), os._exit(0)))
 
-    window = webview.create_window(
-        "shellframe",
+    # Restore window geometry from last close. Absolute x/y preserves the
+    # user's monitor on multi-display setups, as long as that monitor is
+    # still attached. Pre-validate against currently-attached screens
+    # because pywebview's cocoa backend crashes at startup when the initial
+    # point lands off-screen: windowDidMove_ callback calls
+    # self.window.screen() which returns None (no screen there), then
+    # .frame() on None raises AttributeError before we ever get a chance
+    # to recover. Must happen BEFORE webview.create_window.
+    win_cfg = load_config().get("window", {}) or {}
+    create_kwargs = dict(
+        title="shellframe",
         url=str(html_path),
         js_api=api,
-        width=1000,
-        height=720,
+        width=int(win_cfg.get("width") or 1000),
+        height=int(win_cfg.get("height") or 720),
         min_size=(640, 400),
         text_select=True,
         background_color="#1a1b26",
     )
+    saved_x, saved_y = win_cfg.get("x"), win_cfg.get("y")
+    if isinstance(saved_x, (int, float)) and isinstance(saved_y, (int, float)):
+        if _coords_on_attached_screen(
+            int(saved_x), int(saved_y),
+            create_kwargs["width"], create_kwargs["height"],
+        ):
+            create_kwargs["x"] = int(saved_x)
+            create_kwargs["y"] = int(saved_y)
+        else:
+            # Saved screen is gone (external display unplugged). Drop x/y
+            # so pywebview centers on the primary display, and scrub the
+            # stale coords from config so we don't stash them back on the
+            # first move event.
+            try:
+                cfg_now = load_config()
+                win = cfg_now.get("window", {}) or {}
+                win.pop("x", None)
+                win.pop("y", None)
+                cfg_now["window"] = win
+                save_config(cfg_now)
+            except Exception:
+                pass
+            print(f"[shellframe] saved window position ({saved_x},{saved_y}) "
+                  f"is off-screen — centering on primary.", file=sys.stderr)
+
+    try:
+        window = webview.create_window(**create_kwargs)
+    except Exception as e:
+        # Defensive second layer: if something else in create_window
+        # tripped on the x/y pair (pywebview version skew, unusual screen
+        # layout, etc.), retry without the position hint.
+        print(f"[shellframe] create_window with saved geometry failed: {e} "
+              f"— retrying centered.", file=sys.stderr)
+        create_kwargs.pop("x", None)
+        create_kwargs.pop("y", None)
+        window = webview.create_window(**create_kwargs)
     api._window = window
+
+    # Persist geometry on move/resize, debounced so rapid drag events don't
+    # hammer the config file. Also saves once on close as a safety net.
+    _geom_state = {
+        "x": create_kwargs.get("x"),
+        "y": create_kwargs.get("y"),
+        "width": create_kwargs["width"],
+        "height": create_kwargs["height"],
+        "timer": None,
+    }
+    _geom_lock = threading.Lock()
+
+    def _flush_geom():
+        try:
+            cfg = load_config()
+            cfg["window"] = {
+                "x": _geom_state["x"],
+                "y": _geom_state["y"],
+                "width": _geom_state["width"],
+                "height": _geom_state["height"],
+            }
+            save_config(cfg)
+        except Exception:
+            pass
+
+    def _schedule_flush():
+        with _geom_lock:
+            t = _geom_state.get("timer")
+            if t:
+                t.cancel()
+            nt = threading.Timer(0.8, _flush_geom)
+            nt.daemon = True
+            _geom_state["timer"] = nt
+            nt.start()
+
+    def _on_moved(x, y):
+        _geom_state["x"] = int(x)
+        _geom_state["y"] = int(y)
+        _schedule_flush()
+
+    def _on_resized(w, h):
+        _geom_state["width"] = int(w)
+        _geom_state["height"] = int(h)
+        _schedule_flush()
+
+    try:
+        window.events.moved += _on_moved
+    except Exception:
+        pass
+    try:
+        window.events.resized += _on_resized
+    except Exception:
+        pass
+
+    def _on_closed_save_and_cleanup():
+        # Cancel pending debounce + flush synchronously so the close actually
+        # captures the last known geometry before the process exits.
+        with _geom_lock:
+            t = _geom_state.get("timer")
+            if t:
+                t.cancel()
+        _flush_geom()
+        api.cleanup_and_exit()
+
     window.events.loaded += lambda: api._start_output_pusher()
-    window.events.closed += api.cleanup_and_exit
+    window.events.closed += _on_closed_save_and_cleanup
     api._start_command_watcher()
     webview.start(debug=("--debug" in sys.argv))
 

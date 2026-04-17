@@ -228,18 +228,88 @@ def tg_api(token: str, method: str, data=None) -> dict:
 
 _INIT_PROMPT_FILE = _Path(__file__).parent / "INIT_PROMPT.md"
 
+# Built-in defaults for the two user-editable prompts. Users override via
+# Settings UI; values persist in ~/.config/shellframe/config.json under
+# settings.{ui_prompt, tg_prompt}. A MISSING key falls through to these
+# defaults; an EMPTY string means the user explicitly turned it off.
+DEFAULT_UI_PROMPT = (
+    "You are running inside ShellFrame — a tabbed GUI terminal "
+    "(pywebview + xterm.js + PTY via tmux). Source lives at "
+    "`~/.local/apps/shellframe/`; you can edit it directly when the user "
+    "asks for a feature / fix / tune.\n\n"
+    "Apply changes with:\n"
+    "  • `sfctl reload` — hot-reload bridge_telegram.py / filters.json\n"
+    "  • `sfctl restart` — full restart for main.py / web/index.html / "
+    "sfctl.py (tmux sessions survive)\n"
+    "Bump `version.json` + CHANGELOG.md for anything user-visible.\n\n"
+    "Orchestration from this session via `sfctl`:\n"
+    "  • `sfctl list` / `sfctl new <cmd>` / `sfctl send <sid> \"<text>\"`\n"
+    "  • `sfctl peek <sid>` / `sfctl rename <sid> <name>` / `sfctl close <sid>`\n"
+    "Master-session pattern: for parallelizable tasks, spawn workers with "
+    "`sfctl new`, dispatch with `sfctl send`, poll every 20–60s with "
+    "`sfctl peek`, aggregate results, then `sfctl close`.\n\n"
+    "Files pasted via Cmd+V save to `~/.claude/tmp/` and the path is "
+    "appended to your input — you can Read them directly.\n\n"
+    "Acknowledge briefly and wait for the user's first message."
+)
 
-def load_init_prompt() -> str:
-    """Load initial prompt from INIT_PROMPT.md. Always reads fresh from disk."""
+DEFAULT_TG_PROMPT = (
+    "[TG] Replying to Telegram mobile — keep responses short and "
+    "skimmable: bullets > paragraphs, fence code blocks, no tables (TG "
+    "can't render them), no ASCII-art dividers. Long reply → lead with a "
+    "one-line takeaway the user can stop at.\n\n"
+    "You can self-modify shellframe at `~/.local/apps/shellframe/` when "
+    "asked. Apply changes with:\n"
+    "  • `sfctl reload` — hot-reload bridge_telegram.py / filters.json\n"
+    "  • `sfctl restart` — full restart for main.py / web/index.html / "
+    "sfctl.py (tmux sessions survive)\n"
+    "Straightforward asks — just edit + reload, don't ask permission. "
+    "Bump `version.json` + CHANGELOG.md for anything user-visible."
+)
+
+
+def _read_settings() -> dict:
+    """Read ~/.config/shellframe/config.json settings dict. Empty on failure."""
+    try:
+        cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
+        if cfg_file.exists():
+            return (json.loads(cfg_file.read_text(encoding='utf-8'))
+                    .get("settings", {}) or {})
+    except Exception:
+        pass
+    return {}
+
+
+def get_ui_prompt() -> str:
+    """UI-side session init prompt. User config > INIT_PROMPT.md > built-in."""
+    settings = _read_settings()
+    if "ui_prompt" in settings:
+        return (settings.get("ui_prompt") or "").strip()
+    disk = _load_init_prompt_raw()
+    return disk or DEFAULT_UI_PROMPT
+
+
+def get_tg_prompt() -> str:
+    """TG per-turn preamble. User config > built-in. Empty string = user off."""
+    settings = _read_settings()
+    if "tg_prompt" in settings:
+        return (settings.get("tg_prompt") or "").strip()
+    return DEFAULT_TG_PROMPT
+
+
+def _load_init_prompt_raw() -> str:
+    """Raw INIT_PROMPT.md read. Kept for migration / backward compat until
+    all callers switch to get_ui_prompt(). Empty on failure."""
     try:
         return _INIT_PROMPT_FILE.read_text(encoding='utf-8').strip()
     except Exception:
-        return (
-            "You are running inside ShellFrame with a Telegram bridge. "
-            "User messages appear as 'username: message'. Reply as plain text only. "
-            "Run `sfctl reload` after modifying bridge code. "
-            "Acknowledge briefly and wait for the user's first message."
-        )
+        return ""
+
+
+def load_init_prompt() -> str:
+    """Back-compat alias. Returns the resolved UI prompt (config > disk >
+    built-in default) so existing callers keep working without edits."""
+    return get_ui_prompt()
 
 
 @dataclass
@@ -510,16 +580,63 @@ class TelegramBridge(BridgeBase):
                     "action": "typing",
                 })
 
+    # Process owners of on-screen windows that indicate a modal / permission
+    # dialog is blocking foreground work. Checked before firing stall warnings
+    # so we don't cry wolf on long-running AI tasks.
+    _POPUP_OWNERS = frozenset({
+        "UserNotificationCenter",   # TCC permission dialogs (Sonoma+)
+        "CoreServicesUIAgent",      # quarantine / "are you sure you want to open" / auth
+        "SecurityAgent",            # admin password / keychain prompts
+        "loginwindow",              # some password prompts
+        "universalAccessAuthWarn",  # Accessibility prompts
+    })
+
+    def _detect_blocking_popup(self):
+        """Return owner name of a visible system popup, or None.
+
+        Uses CGWindowListCopyWindowInfo (no Accessibility/Screen Recording
+        permission required for owner names). Returns None on non-macOS or
+        if Quartz is unavailable so callers fall back to silence, not noise.
+        """
+        if _sys.platform != "darwin":
+            return None
+        try:
+            from Quartz import (
+                CGWindowListCopyWindowInfo,
+                kCGWindowListOptionOnScreenOnly,
+                kCGNullWindowID,
+            )
+        except Exception:
+            return None
+        try:
+            wins = CGWindowListCopyWindowInfo(
+                kCGWindowListOptionOnScreenOnly, kCGNullWindowID,
+            ) or []
+        except Exception:
+            return None
+        for w in wins:
+            owner = w.get("kCGWindowOwnerName", "")
+            if owner in self._POPUP_OWNERS:
+                return owner
+        return None
+
     def _warn_stalled(self, sid: str, age_s: int):
-        """Notify user that a session hasn't responded — usually a macOS
-        permission dialog blocking the CLI in the background."""
+        """Notify user that a session hasn't responded — but only when we
+        can actually see a blocking popup. A plain long-running task should
+        not trigger noise."""
         slot = self.slots.get(sid)
         if not slot:
             return
         label = slot.label or sid
+
+        popup_owner = self._detect_blocking_popup()
+        if not popup_owner:
+            _blog(f"[stall] {label} no reply ~{age_s}s — no popup detected, staying silent\n")
+            return
+
         msg = (f"⚠️ [{label}] no reply for ~{age_s}s\n"
-               f"Likely a macOS permission popup blocking the CLI in the "
-               f"background. Bring shellframe to the front and check.")
+               f"macOS popup detected ({popup_owner}) — bring shellframe to "
+               f"the front and dismiss it.")
 
         # 1) TG warning to users who have this session active (or any user if
         #    it's the default-active slot)
@@ -539,7 +656,7 @@ class TelegramBridge(BridgeBase):
         try:
             import subprocess as _sp
             note = (f'display notification "Session {label} stalled — '
-                    f'check for a permission popup" '
+                    f'{popup_owner} popup is blocking" '
                     f'with title "shellframe" sound name "Ping"')
             _sp.run(["osascript", "-e", note],
                     capture_output=True, timeout=3)
@@ -575,6 +692,10 @@ class TelegramBridge(BridgeBase):
 
     # Responses that are system-prompt acks, not real replies
     _FILTERED_RESPONSES = {"Understood.", "Understood"}
+
+    # Per-turn TG preamble is loaded dynamically from config via
+    # get_tg_prompt() — users edit it in Settings → TG Bridge → Per-turn
+    # preamble. See module-level DEFAULT_TG_PROMPT for the built-in text.
 
     # All 48 spinner verbs from Claude Code source (Spinner.tsx)
     _SPINNER_VERBS = {
@@ -1195,6 +1316,11 @@ class TelegramBridge(BridgeBase):
         try:
             data = self._load_persisted()
             saved = data.get("user_active", {}) or {}
+            saved_default = data.get("default_active_sid")
+            slot_keys = list(self.slots.keys())
+            _blog(f"[restore] slots={slot_keys} saved_user_active={saved} "
+                  f"saved_default={saved_default!r}\n")
+            restored = {}
             for uid_str, sid in saved.items():
                 try:
                     uid = int(uid_str)
@@ -1202,16 +1328,22 @@ class TelegramBridge(BridgeBase):
                     continue
                 if sid in self.slots and uid not in self._user_active:
                     self._user_active[uid] = sid
-            saved_default = data.get("default_active_sid")
+                    restored[uid] = sid
             if saved_default and saved_default in self.slots and not getattr(self, '_default_active_sid', None):
                 self._default_active_sid = saved_default
-        except Exception:
-            pass
+            _blog(f"[restore] applied restored={restored} "
+                  f"default={getattr(self, '_default_active_sid', None)!r}\n")
+        except Exception as e:
+            _blog(f"[restore] FAILED: {e}\n")
 
     def _poll_loop(self):
         # Restore offset from disk on first run (handles full app restart)
         if self._offset == 0:
             self._offset = self._load_offset()
+        # Restore per-user active-session routing from disk. Without this call
+        # full restarts fall through to _slot_order[0] and TG users always end
+        # up on the first session regardless of where they were.
+        self._restore_user_routing()
         first_batch = True
         self._last_poll_tick = time.time()
         conflict_warned = False
@@ -1260,7 +1392,13 @@ class TelegramBridge(BridgeBase):
                 updates = result.get("result", [])
                 for update in updates:
                     self._offset = update["update_id"] + 1
-                    self._save_offset()  # persist BEFORE handling so restart can't re-process
+                    # Save BEFORE handling so a mid-update restart can't
+                    # re-process the same message. We save AGAIN after
+                    # handling so any /N switch / auto-track of _user_active
+                    # is flushed to disk promptly (previously it only
+                    # persisted on the NEXT poll iteration → up to 30s of
+                    # stale state if the user restarted right after switching).
+                    self._save_offset()
                     # Safety net: on the very first poll batch after startup,
                     # skip self-restart commands. Prevents infinite restart loops
                     # when the previous instance died before saving the offset.
@@ -1272,6 +1410,10 @@ class TelegramBridge(BridgeBase):
                             _blog(f"  startup safety: skipping {cmd}\n")
                             continue
                     self._handle_update(update)
+                    # Save AGAIN post-handle so /N switches, auto-track, and
+                    # first-message routing land on disk immediately instead
+                    # of waiting up to 30s for the next getUpdates cycle.
+                    self._save_offset()
                 first_batch = False
             except Exception:
                 time.sleep(5)
@@ -1970,6 +2112,7 @@ class TelegramBridge(BridgeBase):
         # Build the message to forward
         # Append file paths so the CLI tool can read them
         parts = []
+        wrap_with_preamble = False
         if text:
             is_cli_cmd = text.startswith("/")
             # If session has a pending menu and user replied with just a digit,
@@ -1986,8 +2129,10 @@ class TelegramBridge(BridgeBase):
                 slot.pending_menu = False
             elif self.config.prefix_enabled:
                 parts.append(f"{username}: {text}")
+                wrap_with_preamble = True
             else:
                 parts.append(text)
+                wrap_with_preamble = True
         for fp in file_paths:
             parts.append(fp)
         forwarded = " ".join(parts)
@@ -2033,6 +2178,15 @@ class TelegramBridge(BridgeBase):
         if init_prompt:
             slot.sent_texts.append(init_prompt)
             payload = init_prompt + "\n\n---\nUser's first message: " + forwarded
+        elif wrap_with_preamble:
+            preamble = get_tg_prompt()
+            if preamble:
+                # Record preamble in sent_texts so echo-filter + prefix-strip
+                # continue to work normally on the real `forwarded` text.
+                slot.sent_texts.append(preamble)
+                payload = preamble + "\n\n" + forwarded
+            else:
+                payload = forwarded
         else:
             payload = forwarded
 

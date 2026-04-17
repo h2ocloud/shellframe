@@ -515,6 +515,15 @@
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
       </div>
 
+      <!-- Session init prompt (sent once when an AI CLI tool becomes ready) -->
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Session prompt</label>
+        <textarea id="setting-ui-prompt" style="width:100%;min-height:90px;font-size:11px;font-family:monospace;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:6px;resize:vertical" placeholder="Shown to the AI once at session start. Empty = use shellframe default."></textarea>
+        <div style="font-size:10px;color:#565f89;margin-top:4px;line-height:1.4">
+          Injected into new AI sessions (Claude Code, Codex…) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.
+        </div>
+      </div>
+
       <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
       <div id="settings-presets"></div>
       <div class="settings-add">
@@ -548,6 +557,13 @@
         <div class="bridge-field" style="align-items:flex-start">
           <label>System Prompt</label>
           <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
+        </div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label>Per-turn preamble</label>
+          <textarea id="setting-tg-prompt" style="font-size:11px" placeholder="Prepended to every TG message sent to the AI. Leave empty to turn off."></textarea>
+        </div>
+        <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4">
+          Every non-command TG message is wrapped with this preamble before hitting the AI. Anthropic caches unchanged prefixes — cost is near-zero after first use. Good place for persona / response-style rules. Empty = off.
         </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-primary" id="btn-settings-bridge-connect">Connect</button>
@@ -1267,6 +1283,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── Session management ──
   async function openSession(cmd, label) {
+    // Block syncSessionsFromBackend until this function's `sessions[sid] = ...`
+    // claim lands. Without this, the notify fired inside new_session (main.py
+    // line 660) would race with our await and spawn a duplicate pane.
+    _uiCreatingSession++;
+    try {
     const pane = document.createElement('div');
     // Make pane visible BEFORE term.open() — xterm.js initializes its
     // canvas and input handlers against the element's dimensions. If the
@@ -1368,6 +1389,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     switchTab(sid);
     renderTabs();
+    } finally {
+      _uiCreatingSession--;
+    }
   }
 
   // Reconnect to an existing PTY session after page reload (hot update)
@@ -1836,7 +1860,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-sidebar').addEventListener('click', () => {
     const sb = document.getElementById('sidebar');
     sb.classList.toggle('collapsed');
-    localStorage.setItem('sf_sidebar', sb.classList.contains('collapsed') ? '0' : '1');
+    const open = !sb.classList.contains('collapsed');
+    // Persist to config (survives full restart + is reliable — WKWebView's
+    // localStorage has historically been flaky across app restarts).
+    // Mirror to localStorage too, as a fast-path for the next page load
+    // before async config read completes.
+    try { localStorage.setItem('sf_sidebar', open ? '1' : '0'); } catch (_) {}
+    config.settings = config.settings || {};
+    if (config.settings.sidebar_open !== open) {
+      config.settings.sidebar_open = open;
+      pywebview.api.save_settings(JSON.stringify(config.settings));
+    }
     // Refit terminal after sidebar transition
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
@@ -2349,7 +2383,34 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => {
       b.classList.toggle('active', Math.abs(parseFloat(b.dataset.scale) - cur) < 0.01);
     });
+    // Load editable prompts (UI session + TG per-turn). Empty textarea means
+    // "fall through to built-in default"; see bridge_telegram.get_ui_prompt /
+    // get_tg_prompt for resolution order.
+    const s = config.settings || {};
+    document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
+    document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
     syncSettingsBridge();
+  });
+
+  // Persist prompt textareas on blur so users don't need a save button.
+  // Skip no-op blurs: if the value hasn't changed, don't touch config. And
+  // if the key was never set AND the textarea is still empty, don't write
+  // "" — that would look like "user explicitly turned it off" to the
+  // Python side and suppress the built-in default prompt.
+  async function _savePromptField(key, el) {
+    const cur = config.settings ? config.settings[key] : undefined;
+    const next = el.value;
+    if (next === cur) return;
+    if (next === '' && cur === undefined) return;
+    config.settings = config.settings || {};
+    config.settings[key] = next;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  }
+  document.getElementById('setting-ui-prompt').addEventListener('blur', (e) => {
+    _savePromptField('ui_prompt', e.target);
+  });
+  document.getElementById('setting-tg-prompt').addEventListener('blur', (e) => {
+    _savePromptField('tg_prompt', e.target);
   });
 
   // UI scale buttons
@@ -2825,10 +2886,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
+  // Guard: true while a UI-originated openSession is mid-await on
+  // pywebview.api.new_session(). main.py fires _notify_ui_sessions_changed
+  // from inside new_session BEFORE returning the sid — which runs
+  // syncSessionsFromBackend while openSession is still waiting to register
+  // the session locally. Without this guard, sync sees the new backend sid
+  // as "missing from frontend" and spawns a duplicate hidden-pane term via
+  // reconnectSession — input gets split between two terms for the same sid
+  // and the user can't type. Flag blocks sync for the ~100ms window; any
+  // genuinely-external session creation is picked up on the next interval
+  // poll (line 2881) or when the flag drops.
+  let _uiCreatingSession = 0;
+
   // Reconcile frontend session list with backend (catches sessions
   // created/closed via TG /new /close, sfctl, or any non-UI path).
   // Returns true if anything changed.
   async function syncSessionsFromBackend() {
+    if (_uiCreatingSession > 0) return false;
     try {
       const raw = await pywebview.api.list_sessions();
       const backend = JSON.parse(raw);
@@ -3551,8 +3625,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await waitApi();
     await loadConfig();
 
-    // Restore sidebar state
-    if (localStorage.getItem('sf_sidebar') === '1') {
+    // Restore sidebar state. Prefer config (authoritative, survives WKWebView
+    // localStorage resets); fall back to localStorage for pre-v0.11.9 users
+    // whose config doesn't yet have the key.
+    const sbCfg = (config && config.settings) ? config.settings.sidebar_open : undefined;
+    const sbOpen = (sbCfg !== undefined)
+      ? !!sbCfg
+      : (localStorage.getItem('sf_sidebar') === '1');
+    if (sbOpen) {
       document.getElementById('sidebar').classList.remove('collapsed');
     }
 

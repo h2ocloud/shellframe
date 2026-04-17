@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.11.8 (2026-04-17)
+
+### New Features
+- **Window geometry persists across restart** — x/y/width/height are saved on move/resize (debounced) and on close, restored on launch. Absolute coords preserve the monitor on multi-display setups. Falls back to centered default if the saved position is no longer on any screen.
+- **Sidebar state moved to config** — sidebar open/closed now persists in `config.settings.sidebar_open` instead of WKWebView localStorage (which was flaky across restarts). localStorage kept as fast-path / backward-compat fallback.
+- **UI-editable session prompts** — both the one-shot UI session prompt (new AI sessions) and the per-turn TG preamble are now edited in Settings → General / Telegram Bridge. Empty textarea falls back to built-in defaults; explicit empty string turns TG preamble off. Anthropic prompt-caching makes per-turn injection effectively free after first turn, so feel free to make the preamble long.
+- **Per-turn TG preamble** — every non-command TG message is now wrapped with a short mobile-format reminder before reaching the AI. Keeps replies skimmable over a long conversation (init-prompt drift was real). Defaults emphasise bullets, fenced code blocks, no tables / ASCII-art, and now also remind the AI that it can self-modify shellframe source + how to reload.
+- **`sfctl permissions`** — new subcommand. macOS: opens Privacy panes (Files & Folders, Accessibility, Automation, Screen Recording, Full Disk Access) and optionally whitelists python / bun in ALF so "accept incoming connections" popups stop. Windows: adds Defender Firewall inbound allow rules for the bundled Python. `install.sh` / `install.ps1` print a hint to run it once post-install.
+
+### Fixes
+- **Startup crash when saved window position is off-screen** — pywebview's cocoa backend calls `window.screen()` in `windowDidMove_` during init and crashes with `AttributeError: 'NoneType' object has no attribute 'frame'` if no display hosts the initial point (e.g. after unplugging an external monitor). ShellFrame now pre-validates the saved x/y against `NSScreen.screens()` before passing them to `create_window`, drops stale coords from `config.json`, and falls back to centered. A defensive `try/except` around `create_window` itself provides a second retry without coords if anything slips past.
+- **New-session race — couldn't type, tabs "stuck on latest session"** — `new_session` in main.py pings `_syncSessionsFromBackend` *before* returning, which ran while `openSession` was still awaiting the sid. Sync saw "backend has sid, frontend doesn't" and spawned a duplicate hidden-pane term via `reconnectSession`. Result: two terms for the same sid split the input. Fixed with `_uiCreatingSession` counter that blocks sync during the await window; externally-created sessions still get picked up on the next interval poll.
+- **Restart always switched TG user to first session** — `_restore_user_routing()` existed but was never called. `_poll_loop` now invokes it on startup, so `_user_active` survives full app restarts (not just `sfctl reload`).
+- **Stall warning fired on every long-running task** — the "no reply for 60s — macOS popup" warning used to fire any time the AI was just thinking. Now `_detect_blocking_popup()` checks `CGWindowListCopyWindowInfo` for real permission / auth dialog owners (`UserNotificationCenter`, `CoreServicesUIAgent`, `SecurityAgent`, etc.) and only fires TG / notification when one is actually visible. No popup → silent log-only.
+- **Scroll-history overlay repeated CJK blocks 2–3×** — consecutive-prefix dedup couldn't collapse exact-duplicate redraw frames interleaved with spinner/status lines. Added second-pass visual-width dedup (CJK chars count 2 cells, threshold 8) so 4+ Chinese char lines get collapsed while short artifacts / dividers stay.
+
+### 新功能
+- **視窗位置跨 restart 保留** — x/y/寬/高 在拖拉/縮放時 debounce 存檔，關閉時再存一次，下次開啟讀回來。絕對座標保留你本來所在的螢幕（多螢幕設定仍在的前提下）。座標飄到螢幕外 → fallback 中央預設。
+- **側欄狀態搬進 config** — 側欄開合狀態改存 `config.settings.sidebar_open`，不再只靠 WKWebView localStorage（WKWebView 在 app 重啟時常洗掉 localStorage）。仍寫一份到 localStorage 做 fast-path / 舊版相容。
+- **UI 可編輯的 session prompt** — UI session 的一次性 init prompt 跟 TG 的 per-turn preamble 都搬到 Settings → General / Telegram Bridge 面板可編輯。空白就走內建預設；TG preamble 存成 `""` 代表關閉。Anthropic prompt cache 會把不變 prefix cache 住，per-turn 成本趨近於 0，放心寫長。
+- **TG per-turn preamble** — 非指令的 TG 訊息會被前置一段 mobile-format 提醒再丟給 AI，解決長對話下 init prompt 漂移造成 AI 回覆越來越冗長、愛用 table / ASCII art 的問題。預設強調 bullets、fenced code、無表格，也會提醒 AI 可以自己改 shellframe source + 怎麼 reload。
+- **`sfctl permissions`** — macOS 一鍵開 Privacy 各面板 + ALF 防火牆白名單 python/bun；Windows 幫 bundled Python 加 Defender 防火牆 inbound allow rule。`install.sh` / `install.ps1` 收尾會提示跑一次。
+
+### 修正
+- **儲存的視窗位置不在任何螢幕上時開不起來** — pywebview cocoa backend 啟動時會呼叫 `window.screen()`，若沒螢幕就 `None.frame()` 崩潰（外接螢幕拔掉、多螢幕設定改過等常見情境）。ShellFrame 現在在丟 x/y 給 `create_window` 之前，先用 `NSScreen.screens()` 驗證座標落在某台螢幕上；不在就從 `config.json` 刪掉、fallback 置中。另外 `create_window` 外包一層 try/except，真的還擋不住的話 retry 一次不帶座標。
+- **開新 session 打不出字、切 tab 卡在最新的那個** — `main.py:new_session` 在 return 之前就通知 UI 同步，結果 `openSession` 還在 await 時 `syncSessionsFromBackend` 已經跑完、看到「backend 有、frontend 沒」就用 `reconnectSession` 造了一個 hidden 0x0 canvas 的重複 pane。同一個 sid 兩個 term 搶輸入。加 `_uiCreatingSession` counter 封住 await 窗口，外部 sfctl/TG 建的 session 下一輪 interval poll 還是會接。
+- **Restart 後 TG 一律切到第一個 session** — `_restore_user_routing()` 有寫但從頭沒被 call 過。改成在 `_poll_loop` 開頭呼叫，full restart 也能保留 `_user_active`。
+- **長任務就被誤判彈窗** — 以前 60s 沒回就警告「macOS popup 擋住」，AI 只是在想事情也會觸發。現在用 `CGWindowListCopyWindowInfo` 真的掃 `UserNotificationCenter` / `CoreServicesUIAgent` / `SecurityAgent` 等 popup owner，看到才發 TG；沒看到只寫 log。
+- **上滑 scroll history 整塊中文行重複 2-3 次** — 連續 prefix dedup 抓不到被 spinner / status 打斷的「完全相同 redraw frame」。加第二輪 visual-width dedup（CJK 算 2 cells，門檻 8 cells），4 字以上中文行被摺掉，短分隔符 / 碎片保留。
+
 ## v0.11.7 (2026-04-17)
 
 ### New Features

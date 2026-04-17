@@ -171,3 +171,8 @@ echo "  Launch:    shellframe"
 echo "  Spotlight: search \"ShellFrame\""
 echo "  Launchpad: look for ShellFrame icon"
 echo ""
+if [ "$(uname)" = "Darwin" ]; then
+  echo "  ⚙️  Run \`sfctl permissions\` once to pre-grant macOS Privacy +"
+  echo "      firewall access — avoids the 'permission popup' stalls."
+  echo ""
+fi
