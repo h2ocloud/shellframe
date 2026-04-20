@@ -821,6 +821,19 @@ class Api:
             w += 2 if ea in ("W", "F") else 1
         return w
 
+    @staticmethod
+    def _cjk_cells(s: str) -> int:
+        """Count visual cells contributed by CJK/fullwidth chars only. Used
+        to gate the non-consecutive dedup pass: we only want to collapse
+        duplicates that look like Claude Code's streaming CJK redraw, NOT
+        legitimate repeats in source code (`return null;` appearing three
+        times should stay three times)."""
+        cells = 0
+        for ch in s:
+            if unicodedata.east_asian_width(ch) in ("W", "F"):
+                cells += 2
+        return cells
+
     def get_clean_history(self, sid: str, max_lines: int = 10000, ansi: bool = True) -> str:
         """Return tmux pane history with prefix-duplicate lines collapsed.
 
@@ -868,26 +881,24 @@ class Api:
                         continue
                 cleaned.append((stripped, original))
 
-            # Pass 2: drop non-consecutive repeats. Claude Code redraws the
-            # visible region between streaming chunks, and tmux writes each
-            # redraw into scrollback. The prefix pass above misses this when
-            # the repeats are separated by spinner / status lines, or when
-            # two redraw frames are byte-identical (neither is a strict
-            # prefix of the other, so both are kept).
+            # Pass 2: drop non-consecutive CJK-prose repeats. Claude Code
+            # redraws CJK reply blocks between streaming chunks and tmux
+            # records each redraw frame, so the same 交付成果 / 敘事結構 /
+            # … block can appear 2-3× with spinner/status lines between.
+            # Those are legit duplicates to collapse.
             #
-            # Rule: if a line's stripped content has been emitted before and
-            # is "distinctive enough" (visual width >= DEDUP_MIN_WIDTH), skip
-            # it. Width — not codepoint count — matters here: "交付成果"
-            # is 4 codepoints but 8 cells wide, and repeats of it absolutely
-            # need collapsing. Short lines (blanks, "> ", prompts, dividers
-            # "─────", wrap-fragments like "bjc") can legitimately recur and
-            # are left alone.
+            # But source code legitimately repeats — `return null;`, `}`,
+            # `if (x) {` — and we MUST keep every occurrence or the overlay
+            # drops lines and looks corrupted. Gate: only dedup lines where
+            # CJK chars dominate (≥ half the visible width). ASCII code is
+            # completely exempt.
             DEDUP_MIN_WIDTH = 8
             seen = set()
             final = []
             for stripped, original in cleaned:
                 s_key = stripped.strip()
-                if self._visual_width(s_key) >= DEDUP_MIN_WIDTH:
+                vw = self._visual_width(s_key)
+                if vw >= DEDUP_MIN_WIDTH and self._cjk_cells(s_key) * 2 >= vw:
                     if s_key in seen:
                         continue
                     seen.add(s_key)

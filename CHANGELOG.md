@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.16 (2026-04-20)
+
+### Fixes
+- **Scroll-history overlay no longer eats legitimate code-line duplicates** — v0.11.8's non-consecutive dedup pass also collapsed ASCII lines wider than 8 cells, so real code with repeated `return null;` / `}` / `if (x) {` lost those repeats and rendered as a torn-up mess. Gate now requires the line to be CJK-dominant (≥ half its visual width from fullwidth chars) before it's a dedup candidate. Chinese prose redraw frames still get folded; ASCII source code passes through untouched.
+
+### 修正
+- **歷史卷動 overlay 不再把 code 裡的重複行吃掉** — v0.11.8 加的跨行 dedup 對 >= 8 cells 的 ASCII 也會觸發，結果像 `return null;` / `}` / `if (x) {` 這種 code 合法重複的行被誤砍，overlay 看起來缺一塊一塊。門檻多加一條：**只有 CJK 字元佔視覺寬度過半**的行才進 dedup set。中文 redraw frame 照舊會被摺掉，ASCII 程式碼保留原樣。
+
 ## v0.11.15 (2026-04-20)
 
 ### Fixes
