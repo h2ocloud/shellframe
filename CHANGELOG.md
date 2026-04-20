@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.13 (2026-04-20)
+
+### Fixes
+- **`/restart` sometimes failed to spawn a new instance on macOS** — `restart_app` ran `open -n -a <path>` first, which resolves against the bundle ID (`com.h2ocloud.shellframe`) rather than the path. If LaunchServices had the bundle registered elsewhere (stale iCloud copy, old `/Applications` version, `~/Downloads` leftover), `open` routed there and the launch silently no-op'd, forcing the user to click the Dock / Launchpad icon manually. Now executes the canonical `APP_DIR/ShellFrame.app/Contents/MacOS/shellframe` launcher directly as primary strategy; `open -n -a` kept only as fallback.
+
+### 修正
+- **`/restart` 在 macOS 偶爾跑不起新 instance** — `restart_app` 以前優先用 `open -n -a <path>`，但 `open` 會用 bundle ID (`com.h2ocloud.shellframe`) 查 LaunchServices，若 bundle 被註冊到別份（iCloud 同步的舊副本、舊 `/Applications` 版本、`~/Downloads/` 殘檔），`open` 會去開那邊 → 當前 process 退出後沒新 instance 冒出來，使用者只能去 Dock / Launchpad 手動點。現在直接 exec `APP_DIR/ShellFrame.app/Contents/MacOS/shellframe` launcher，`open -n -a` 降為備援。
+
 ## v0.11.12 (2026-04-19)
 
 ### Fixes

@@ -1478,46 +1478,53 @@ class Api:
                     except Exception as e:
                         err_msgs.append(f"pythonw relaunch failed: {e}")
             else:
-                # Strategy 1: macOS `open -n -a` against the .app bundle
-                # Find the .app bundle (resolve symlinks)
-                candidates = [
-                    APP_DIR / "ShellFrame.app",
-                    Path("/Applications/ShellFrame.app"),
-                    Path.home() / "Applications" / "ShellFrame.app",
-                ]
-                app_path = None
-                for c in candidates:
-                    try:
-                        if c.exists():
-                            app_path = c.resolve()
-                            break
-                    except Exception:
-                        pass
-                if app_path:
+                # Strategy 1: launcher script directly — skips LaunchServices
+                # entirely. `open -n -a` resolves against the bundle ID
+                # `com.h2ocloud.shellframe`, so if LaunchServices has the
+                # bundle registered to a stale copy (old iCloud / Downloads /
+                # Trash path), `open` routes there instead of APP_DIR. Bypass
+                # by executing the launcher binary directly against the
+                # canonical install.
+                launcher = APP_DIR / "ShellFrame.app" / "Contents" / "MacOS" / "shellframe"
+                if launcher.exists():
                     try:
                         subprocess.Popen(
-                            ["/usr/bin/open", "-n", "-a", str(app_path)],
+                            [str(launcher)],
+                            start_new_session=True,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                         )
                         spawned = True
                     except Exception as e:
-                        err_msgs.append(f"open -n -a failed: {e}")
+                        err_msgs.append(f"launcher failed: {e}")
 
-                # Strategy 2: launcher script directly (macOS .app bundle internal)
+                # Strategy 2: `open -n -a` against an explicit .app path
+                # (LaunchServices may still redirect to a bundle-id-matching
+                # copy elsewhere — this is why Strategy 1 is primary).
                 if not spawned:
-                    launcher = APP_DIR / "ShellFrame.app" / "Contents" / "MacOS" / "shellframe"
-                    if launcher.exists():
+                    candidates = [
+                        APP_DIR / "ShellFrame.app",
+                        Path("/Applications/ShellFrame.app"),
+                        Path.home() / "Applications" / "ShellFrame.app",
+                    ]
+                    app_path = None
+                    for c in candidates:
+                        try:
+                            if c.exists():
+                                app_path = c.resolve()
+                                break
+                        except Exception:
+                            pass
+                    if app_path:
                         try:
                             subprocess.Popen(
-                                [str(launcher)],
-                                start_new_session=True,
+                                ["/usr/bin/open", "-n", "-a", str(app_path)],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL,
                             )
                             spawned = True
                         except Exception as e:
-                            err_msgs.append(f"launcher failed: {e}")
+                            err_msgs.append(f"open -n -a failed: {e}")
 
                 # Strategy 3: relaunch via current Python
                 if not spawned:
