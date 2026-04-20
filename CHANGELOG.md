@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.15 (2026-04-20)
+
+### Fixes
+- **Drag-and-drop files now attach with their real absolute path** — drop handler used to go straight to `FileReader → save_file_from_clipboard → ~/.claude/tmp/…` copy path. WKWebView's `File` objects occasionally hand back a 0-byte blob or silently stall the FileReader, which manifested as "dragged a file, nothing happened". Now reads `text/uri-list` / `public.file-url` / `text/plain` off `dataTransfer` FIRST — for Finder-originated drops this gives a proper `file:///…` URL that we decode into the original absolute path and attach directly (no tmp copy, no FileReader round-trip). Blob-based FileReader path kept as fallback for in-memory drags from browsers.
+
+### 修正
+- **拖曳檔案現在會顯示真實絕對路徑** — 以前 drop handler 一律走 `FileReader → save_file_from_clipboard → ~/.claude/tmp/…` 這條複製路徑。WKWebView 的 `File` 物件拖 Finder 檔時偶爾會回傳 0 byte 或 FileReader 永遠不觸發 onload，導致「拖進去沒反應」。現在優先從 `dataTransfer` 抓 `text/uri-list` / `public.file-url` / `text/plain` —— Finder 拖曳會給完整 `file:///...` URL，解碼成原始絕對路徑直接 attach，不用複製檔、不用經過 FileReader。Blob / FileReader 路徑保留作為瀏覽器內拖的 fallback。
+
 ## v0.11.14 (2026-04-20)
 
 ### New Features

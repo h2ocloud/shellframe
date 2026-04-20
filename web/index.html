@@ -2435,21 +2435,57 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     if (!activeId || !sessions[activeId]) return;
 
-    const files = e.dataTransfer?.files;
+    // Try to pull absolute file paths straight from the drag payload FIRST.
+    // Finder / most macOS apps populate text/uri-list (and/or text/plain) with
+    // file:///... URLs. Using these skips FileReader + the tmp-file round-trip
+    // entirely, so the attach is instant and preserves the original path (the
+    // AI CLI reads the real file, not a copy). FileReader path is kept as
+    // fallback for webapps that only expose in-memory blobs.
+    const dt = e.dataTransfer;
+    const readTypes = (dt && dt.types) ? Array.from(dt.types) : [];
+    const urlPaths = [];
+    for (const typ of ['text/uri-list', 'public.file-url', 'text/plain']) {
+      if (!readTypes.includes(typ)) continue;
+      const raw = dt.getData(typ) || '';
+      for (const line of raw.split(/\r?\n/)) {
+        const s = line.trim();
+        if (!s || s.startsWith('#')) continue;
+        if (s.startsWith('file://')) {
+          try { urlPaths.push(decodeURIComponent(s.slice(7))); } catch(_) {}
+        } else if (s.startsWith('/') && !urlPaths.includes(s)) {
+          urlPaths.push(s);  // bare absolute path in text/plain
+        }
+      }
+      if (urlPaths.length) break;
+    }
+    if (urlPaths.length > 0) {
+      const ai = isAiSession(activeId);
+      if (ai) {
+        for (const p of urlPaths) attachFile(p, null);
+      } else {
+        await pywebview.api.write_input(activeId, urlPaths.join(' '));
+      }
+      return;
+    }
+
+    // Blob fallback — WKWebView gives File objects for dragged content from
+    // browsers / apps that hold the blob in memory. file.path is undefined in
+    // WKWebView (Electron-only), so we read the bytes and save a copy under
+    // ~/.claude/tmp/.
+    const files = dt && dt.files;
     if (files && files.length > 0) {
       for (const file of files) {
         if (file.type.startsWith('image/')) {
-          // Image: read as data URL for preview + save
           const reader = new FileReader();
           reader.onload = async () => {
             const path = await pywebview.api.save_image(reader.result);
-            if (isAiSession(activeId)) { attachFile(path, reader.result); }
-            else { await pywebview.api.write_input(activeId, path); }
+            if (path && !path.startsWith('ERROR')) {
+              if (isAiSession(activeId)) { attachFile(path, reader.result); }
+              else { await pywebview.api.write_input(activeId, path); }
+            }
           };
           reader.readAsDataURL(file);
         } else {
-          // Non-image: WKWebView doesn't expose file.path (Electron-only).
-          // Read content via FileReader → save to ~/.claude/tmp/ → use saved path.
           const reader = new FileReader();
           reader.onload = async () => {
             const path = await pywebview.api.save_file_from_clipboard(reader.result, file.name || 'file');
@@ -2462,12 +2498,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
       }
       return;
-    }
-
-    // URL/text drop — try to get file path from text
-    const text = e.dataTransfer?.getData('text/plain');
-    if (text && text.trim()) {
-      attachFile(text.trim(), null);
     }
   });
 
