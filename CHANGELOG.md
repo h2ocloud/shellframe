@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.18 (2026-04-20)
+
+### Fixes
+- **First reply after `sfctl reload` leaked preamble echo back to TG** — hot-reload rebuilt each `SessionSlot` from scratch so `sent_texts` / `sent_responses` started empty. The echo filter had nothing to compare against, so the AI's first response (which typically contains a preamble fragment because reload happens mid-thinking) got forwarded unchanged. `hot_reload_bridge` now snapshots `sent_texts`, `sent_responses`, and `pending_menu` per slot before `stop()` and restores them after `register_session()` rebuilds the slots. Any v0.11.17 echo-filter improvement now actually has history to work against.
+
+### 修正
+- **`sfctl reload` 後第一則回覆會把 preamble 整段回送到 TG** — hot-reload 把每個 `SessionSlot` 重建成空的，`sent_texts` / `sent_responses` 全空。echo filter 沒東西可比 → AI 第一則回覆（通常是 reload 發生在思考中途、reply 含 preamble 片段）就原汁原味傳回去。現在 `hot_reload_bridge` 在 `stop()` 之前 snapshot 每個 slot 的 `sent_texts` / `sent_responses` / `pending_menu`，`register_session()` 重建後還原。v0.11.17 的 30-char sliding window 終於有東西可以比對。
+
 ## v0.11.17 (2026-04-20)
 
 ### Fixes

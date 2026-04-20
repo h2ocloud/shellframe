@@ -1869,6 +1869,7 @@ class Api:
             saved_user_active = {}
             saved_user_chat = {}
             saved_default_active = None
+            saved_slot_state = {}  # sid -> {sent_texts, sent_responses, pending_menu}
             if self.bridge:
                 was_active = self.bridge.active
                 old_config = self.bridge.config
@@ -1876,6 +1877,19 @@ class Api:
                 saved_user_active = dict(getattr(self.bridge, '_user_active', {}) or {})
                 saved_user_chat = dict(getattr(self.bridge, '_user_chat', {}) or {})
                 saved_default_active = getattr(self.bridge, '_default_active_sid', None)
+                # Snapshot per-slot state the echo filter / prefix-strip path
+                # rely on. Without this, /reload wipes sent_texts + sent_responses
+                # and the first few AI replies after reload leak back to TG as
+                # echo because the filter has no recent-sent history to compare.
+                for sid, slot in (getattr(self.bridge, 'slots', {}) or {}).items():
+                    try:
+                        saved_slot_state[sid] = {
+                            'sent_texts': list(getattr(slot, 'sent_texts', []) or []),
+                            'sent_responses': set(getattr(slot, 'sent_responses', set()) or []),
+                            'pending_menu': bool(getattr(slot, 'pending_menu', False)),
+                        }
+                    except Exception:
+                        pass
                 self.bridge.stop()
 
             # Reload the module
@@ -1916,6 +1930,16 @@ class Api:
                 self.bridge._user_chat = saved_user_chat
                 if saved_default_active and saved_default_active in self.bridge.slots:
                     self.bridge._default_active_sid = saved_default_active
+                # Restore per-slot echo-filter state so the first few replies
+                # after /reload don't leak preamble + user-message echo back
+                # to TG (filter has nothing to compare against otherwise).
+                for sid, snap in saved_slot_state.items():
+                    slot = self.bridge.slots.get(sid)
+                    if not slot:
+                        continue
+                    slot.sent_texts = list(snap.get('sent_texts', []))
+                    slot.sent_responses = set(snap.get('sent_responses', set()))
+                    slot.pending_menu = bool(snap.get('pending_menu', False))
                 self.bridge.start()
                 return json.dumps({"success": True, "message": "Bridge reloaded and restarted", **self.bridge.get_status()})
             else:
