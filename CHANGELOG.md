@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.19 (2026-04-20)
+
+### Fixes
+- **Startup crash on multi-monitor Macs fixed** — pywebview's cocoa `windowDidMove_` callback does `i.window.screen().frame()`. During the initial move-to-saved-coords on a multi-display setup, the window can be transiently off every attached display, at which point `screen()` returns `None` and `.frame()` raises `AttributeError` before the UI ever paints. Our own pre-validator (checks the saved centre lands on an attached display) was passing, but the pywebview-internal transient still crashed. Added a defensive monkey-patch that wraps pywebview's `windowDidMove_` to no-op when `screen()` is None — the window still lands at its final position, we just skip the bogus mid-move event. Saved `(-102, -756)` from an unplugged portrait display was the trigger on Howard's setup; config's stale x/y were also scrubbed so the next launch centres cleanly.
+
+### 修正
+- **多螢幕 Mac 啟動就 crash 的問題修掉** — pywebview cocoa 後端的 `windowDidMove_` 在裡頭跑 `i.window.screen().frame()`。多螢幕環境第一次把視窗移到上次存的座標時，視窗會有一瞬間落在任何一塊螢幕之外，這時 `screen()` 回 `None`、`.frame()` 直接丟 `AttributeError`，UI 還沒畫就整個 app 死。我們自己的前置驗證（檢查中心是否在任一螢幕上）有過，但 pywebview 內部那個瞬間 transient 還是會中。加了一層 monkey-patch 包住 pywebview 的 `windowDidMove_`，`screen()` 是 None 就直接 no-op — 視窗最終還是會落在該在的位置，我們只是跳過那個假的中間事件。這次觸發源是當初直式螢幕拔掉後留下的 `(-102, -756)`，config 順手清掉，下次開會回到置中。
+
 ## v0.11.18 (2026-04-20)
 
 ### Fixes

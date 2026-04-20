@@ -2390,9 +2390,43 @@ def _coords_on_attached_screen(x: int, y: int, w: int, h: int) -> bool:
     return False
 
 
+def _patch_pywebview_cocoa_none_screen():
+    """Neuter pywebview's cocoa `windowDidMove_` crash.
+
+    On macOS, pywebview's BrowserView.windowDidMove_ does
+    `i.window.screen().frame()` — if the window is transiently off every
+    attached display (which happens during the initial move-to-saved-coords
+    on multi-monitor setups, even when our pre-validator says the final
+    centre is on-screen), screen() returns None and .frame() raises
+    AttributeError, taking the whole app down before the UI ever paints.
+    Wrap the callback to treat None as a no-op; the window still ends up
+    at its final position, we just skip the spurious mid-move event.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        from webview.platforms import cocoa as _cocoa
+        orig = getattr(_cocoa.BrowserView, "windowDidMove_", None)
+        if orig is None or getattr(orig, "_sf_patched", False):
+            return
+        def safe_windowDidMove_(self, notification):
+            try:
+                w = getattr(self, "window", None)
+                if w is None or w.screen() is None:
+                    return
+                return orig(self, notification)
+            except AttributeError:
+                return
+        safe_windowDidMove_._sf_patched = True
+        _cocoa.BrowserView.windowDidMove_ = safe_windowDidMove_
+    except Exception as e:
+        print(f"[shellframe] cocoa patch skipped: {e}", file=sys.stderr)
+
+
 def main():
     _self_heal_venv()
     _prevent_app_nap()
+    _patch_pywebview_cocoa_none_screen()
     api = Api()
     html_path = Path(__file__).parent / "web" / "index.html"
 
