@@ -850,6 +850,11 @@ class Api:
             raw_lines = r.stdout.split("\n")
             cleaned = []  # list of (stripped_for_compare, original_for_output)
             for line in raw_lines:
+                # Strip bare CR — they survive tmux capture for some TUIs and
+                # cause xterm.js (with convertEol: true) to jump to col 0 and
+                # overwrite earlier chars, leaving only the line tail visible.
+                # Replace with nothing; the `\n` split already handled row breaks.
+                line = line.replace("\r", "")
                 original = line.rstrip()
                 stripped = self._ANSI_STRIP_RE.sub('', original).rstrip() if ansi else original
                 if cleaned:
@@ -887,9 +892,14 @@ class Api:
                         continue
                     seen.add(s_key)
                 final.append((stripped, original))
+            # Append SGR reset to each line so an unclosed \x1b[...m on one
+            # line can't bleed background/foreground colors into subsequent
+            # lines when rendered in xterm.js (manifested as a giant red /
+            # dark-bg rectangle across several rows in the overlay).
+            reset = "\x1b[0m" if ansi else ""
             return json.dumps({
                 "success": True,
-                "text": "\n".join(orig for _, orig in final),
+                "text": "\n".join(orig + reset for _, orig in final),
                 "ansi": ansi,
             })
         except Exception as e:

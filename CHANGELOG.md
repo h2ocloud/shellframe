@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.11.11 (2026-04-19)
+
+### Fixes
+- **First Enter after Chinese IME / image paste no longer gets swallowed** — two separate races collapsed into one user-visible bug:
+  1. On WKWebView, the IME `compositionend` event sometimes fires *after* the commit-Enter keydown has already reached xterm's `onData`. The blanket `if (composing) return;` guard dropped that Enter, so the user had to press Enter twice after typing Chinese. Guard now lets `\r` / `\n` / single control chars through while still dropping IME pre-edit text.
+  2. Clipboard image paste is async (FileReader → `save_image` IPC → `attachFile` writes bracketed paste). If Enter arrived while that chain was still running, it raced ahead of the attachment and submitted the prior text with no image. Added a `pastePending` counter; Enter presses during an in-flight paste now wait on `pasteDone` before being written to the PTY.
+- **Scroll-history overlay no longer shows garbage** — two capture issues causing the recent fragmented / red-rectangle artifact:
+  1. Bare `\r` chars that survived `tmux capture-pane -J` caused xterm.js (with `convertEol: true`) to jump back to column 0 mid-line and let the next line's content overwrite the earlier text, leaving only line tails visible (e.g. `"    112 -)"` replacing `"    109  async def setup(..."`). Now stripped in Python.
+  2. Unclosed `\x1b[41m` (or any SGR) bled its background across every subsequent row until a reset happened, producing the dark-red rectangle across the overlay. Each dedup'd line now gets a `\x1b[0m` reset appended.
+
+### 修正
+- **打中文/貼圖後按 Enter 第一次沒反應** — 兩個 race 合成同一個現象：
+  1. WKWebView 上 `compositionend` 有時比 Enter keydown 晚一拍送到 xterm 的 `onData`，`if (composing) return;` 把那個 Enter 吃掉，使用者得按兩次。改成只擋 IME 組字中的多字元輸入，Enter / 控制字元一律放行。
+  2. 貼圖是非同步流程（FileReader → `save_image` IPC → `attachFile` 寫 bracketed paste）。Enter 若在這段期間被打進來，會比附件先到 PTY，變成送出一則沒附圖的訊息。加了 `pastePending` 計數；paste 進行中的 Enter 會等 `pasteDone` resolve 後才寫進 PTY。
+- **歷史卷動 overlay 不再出現亂碼與紅色方塊** — 兩個 capture 層面的問題:
+  1. `tmux capture-pane -J` 輸出中殘留的裸 `\r` 會讓 xterm.js（`convertEol: true`）把游標拉回第 0 欄，被下一行內容覆寫，結果只剩行尾（像是「112 -)」蓋過「109 async def setup(...」）。Python 端直接移掉裸 `\r`。
+  2. 有 SGR 跳脫（例如 `\x1b[41m`）沒收尾時，背景色會一路洩到後續每一行，渲染成那塊暗紅方塊。dedup 後每行尾端補上 `\x1b[0m` reset。
+
 ## v0.11.10 (2026-04-17)
 
 ### Fixes

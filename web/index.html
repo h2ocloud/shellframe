@@ -791,10 +791,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       usage: 'Usage',
       usageItems: [
         'Click <code>+</code> or press <span class="kbd">Cmd+T</span> to open a new session',
-        'Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal',
-        'Drag & drop files into window to attach',
-        'Press <span class="kbd">Enter</span> to send with file path auto-attached',
-        '<span class="kbd">Cmd+W</span> close tab, <span class="kbd">Ctrl+Tab</span> switch tabs',
+        'Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal (supports multiple images at once)',
+        'Drag & drop files or screenshots into window to attach',
+        'Press <span class="kbd">Enter</span> to send; <span class="kbd">Shift+Enter</span> inserts a newline without sending (useful for multi-line prompts)',
+        'Select text and <b>right-click</b> to copy; right-click with no selection to paste (Windows CMD style)',
+        'Scroll up at the top of a tab to open a deduped history overlay — scroll to the bottom, press Esc, or type to return',
+        '<span class="kbd">Cmd+W</span> close tab · <span class="kbd">Ctrl+Tab</span> or <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> switch tabs',
+        'Open Settings (<span class="kbd">Cmd+,</span>) to manage presets, Telegram bridge, and session prompt',
       ],
       shortcuts: 'Keyboard Shortcuts',
       author: 'Author',
@@ -837,11 +840,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
       usage: '使用方式',
       usageItems: [
-        '點 <code>+</code> 或按 <span class="kbd">Cmd+T</span> 開啟新工作階段',
-        '用 <span class="kbd">Cmd+V</span> 貼上截圖 — 預覽會出現在終端機上方',
-        '拖拉檔案到視窗中即可附加',
-        '按 <span class="kbd">Enter</span> 送出時自動附加檔案路徑',
-        '<span class="kbd">Cmd+W</span> 關閉分頁，<span class="kbd">Ctrl+Tab</span> 切換分頁',
+        '點 <code>+</code> 或按 <span class="kbd">Cmd+T</span> 開新工作階段',
+        '<span class="kbd">Cmd+V</span> 直接貼上截圖 — 預覽會出現在終端機上方（可一次貼多張）',
+        '拖拉檔案 / 截圖進視窗即可附加',
+        '<span class="kbd">Enter</span> 送出；<span class="kbd">Shift+Enter</span> 換行但不送出（寫多行 prompt 超好用）',
+        '反白文字後<b>按右鍵</b>即可複製；沒選字時按右鍵=貼上（Windows CMD 風格）',
+        '分頁頂端往上滾會自動打開去重後的歷史 overlay — 滾到底、按 Esc 或開始打字就關閉',
+        '<span class="kbd">Cmd+W</span> 關分頁 · <span class="kbd">Ctrl+Tab</span> 或 <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> 切分頁',
+        '<span class="kbd">Cmd+,</span> 開 Settings 管理 presets、Telegram bridge 和 session prompt',
       ],
       shortcuts: '鍵盤快捷鍵',
       author: '作者',
@@ -876,6 +882,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let activeId = null;
   let config = null;
   let currentFontSize = 14;
+  // Paste-in-flight coordination: image/file paste runs async (FileReader +
+  // save_image IPC). During that window the term.onData Enter handler must
+  // park and wait, otherwise Enter submits an empty message before the
+  // bracketed-paste block lands in the PTY.
+  let pastePending = 0;
+  let pasteDone = Promise.resolve();
 
   // Output push receiver — called from Python via evaluate_js (no polling needed)
   //
@@ -1334,7 +1346,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         textarea.addEventListener('compositionend', () => { composing = false; });
       }
       term.onData(data => {
-        if (composing) return;
+        // IME race: on WKWebView, compositionend sometimes fires AFTER the
+        // IME-commit Enter keydown is already dispatched to onData. If we
+        // blanket-swallow input while `composing` is true, the first Enter
+        // after Chinese input is lost — user has to press Enter twice. Only
+        // drop IME pre-edit text (multi-char non-ASCII), always let Enter /
+        // control chars through.
+        if (composing && !(data === '\r' || data === '\n') &&
+            !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
+          return;
+        }
         // Reset scroll lock on Enter (user submitted input)
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
@@ -1347,8 +1368,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // (IME, paste bursts) but adds a full event-loop tick + possible
         // WKWebView scheduling delay for every keystroke. Enter is a
         // discrete action that should fire instantly.
+        // Enter after an async paste (image/file) must wait for the paste
+        // to finish writing into the PTY — otherwise Enter races ahead and
+        // submits an empty message before the bracketed-paste block lands.
         if (data === '\r' || data === '\n' || data.length === 1) {
           if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+          if ((data === '\r' || data === '\n') && pastePending > 0) {
+            const wait = pastePending;
+            pasteDone.then(() => {
+              if (wait === pastePending || pastePending === 0) {
+                pywebview.api.write_input(sid, inputBuf + data);
+                inputBuf = '';
+              }
+            });
+            return;
+          }
           pywebview.api.write_input(sid, inputBuf + data);
           inputBuf = '';
           return;
@@ -1438,7 +1472,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         textarea.addEventListener('compositionend', () => { composing = false; });
       }
       term.onData(data => {
-        if (composing) return;
+        // Same IME-race guard as createSession: compositionend can fire after
+        // Enter reaches onData on WKWebView.
+        if (composing && !(data === '\r' || data === '\n') &&
+            !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
+          return;
+        }
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
@@ -1447,6 +1486,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
         if (data === '\r' || data === '\n' || data.length === 1) {
           if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+          if ((data === '\r' || data === '\n') && pastePending > 0) {
+            const wait = pastePending;
+            pasteDone.then(() => {
+              if (wait === pastePending || pastePending === 0) {
+                pywebview.api.write_input(sid, inputBuf + data);
+                inputBuf = '';
+              }
+            });
+            return;
+          }
           pywebview.api.write_input(sid, inputBuf + data);
           inputBuf = '';
           return;
@@ -2167,6 +2216,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     const ai = isAiSession(activeId);
 
+    // Mark this paste as in-flight. Enter presses that arrive during the
+    // async blob→file→write chain below are deferred until we finish, so
+    // the user's submit happens AFTER the attachment lands in the PTY.
+    pastePending++;
+    let _pasteResolve;
+    const _prevDone = pasteDone;
+    pasteDone = new Promise(r => { _pasteResolve = r; });
+    const _finish = () => {
+      pastePending = Math.max(0, pastePending - 1);
+      _pasteResolve();
+    };
+    // Chain any pending paste before starting this one, so order is preserved.
+    await _prevDone;
+
     // Helper: read a blob to DataURL as a Promise so we can process multiple
     // clipboard items in parallel instead of returning after the first one.
     const readDataUrl = (blob) => new Promise((resolve, reject) => {
@@ -2184,60 +2247,64 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (b) imageBlobs.push(b);
       }
     }
-    if (imageBlobs.length > 0) {
-      e.stopPropagation();
-      e.preventDefault();
-      // Save each one sequentially (attachFile needs to write paths in order
-      // so the #N tags line up with what appears in the terminal)
-      for (const blob of imageBlobs) {
-        const dataUrl = await readDataUrl(blob);
-        const path = await pywebview.api.save_image(dataUrl);
-        if (ai) { attachFile(path, dataUrl); }
-        else { await pywebview.api.write_input(activeId, path); }
-      }
-      return;
-    }
-
-    // 2. Collect ALL file blobs (non-image files pasted from some apps)
-    const fileBlobs = [];
-    for (const item of items) {
-      if (item.kind === 'file') {
-        const b = item.getAsFile();
-        if (b) fileBlobs.push(b);
-      }
-    }
-    if (fileBlobs.length > 0) {
-      e.stopPropagation();
-      e.preventDefault();
-      for (const blob of fileBlobs) {
-        const dataUrl = await readDataUrl(blob);
-        const path = await pywebview.api.save_file_from_clipboard(dataUrl, blob.name || 'file');
-        if (!path.startsWith('ERROR')) {
-          if (ai) { attachFile(path, null); }
-          else { await pywebview.api.write_input(activeId, path); }
-        }
-      }
-      return;
-    }
-
-    // 3. Check system clipboard for Finder-copied files (macOS/Windows)
-    //    Browser clipboard API can't access file paths, so ask Python backend
     try {
-      const raw = await pywebview.api.get_clipboard_files();
-      const paths = JSON.parse(raw);
-      if (paths.length > 0) {
+      if (imageBlobs.length > 0) {
         e.stopPropagation();
         e.preventDefault();
-        if (ai) {
-          for (const filePath of paths) attachFile(filePath, null);
-        } else {
-          await pywebview.api.write_input(activeId, paths.join(' '));
+        // Save each one sequentially (attachFile needs to write paths in order
+        // so the #N tags line up with what appears in the terminal)
+        for (const blob of imageBlobs) {
+          const dataUrl = await readDataUrl(blob);
+          const path = await pywebview.api.save_image(dataUrl);
+          if (ai) { attachFile(path, dataUrl); }
+          else { await pywebview.api.write_input(activeId, path); }
         }
         return;
       }
-    } catch(e2) {}
 
-    // Not an image/file paste — let it through to xterm.js for normal text paste
+      // 2. Collect ALL file blobs (non-image files pasted from some apps)
+      const fileBlobs = [];
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const b = item.getAsFile();
+          if (b) fileBlobs.push(b);
+        }
+      }
+      if (fileBlobs.length > 0) {
+        e.stopPropagation();
+        e.preventDefault();
+        for (const blob of fileBlobs) {
+          const dataUrl = await readDataUrl(blob);
+          const path = await pywebview.api.save_file_from_clipboard(dataUrl, blob.name || 'file');
+          if (!path.startsWith('ERROR')) {
+            if (ai) { attachFile(path, null); }
+            else { await pywebview.api.write_input(activeId, path); }
+          }
+        }
+        return;
+      }
+
+      // 3. Check system clipboard for Finder-copied files (macOS/Windows)
+      //    Browser clipboard API can't access file paths, so ask Python backend
+      try {
+        const raw = await pywebview.api.get_clipboard_files();
+        const paths = JSON.parse(raw);
+        if (paths.length > 0) {
+          e.stopPropagation();
+          e.preventDefault();
+          if (ai) {
+            for (const filePath of paths) attachFile(filePath, null);
+          } else {
+            await pywebview.api.write_input(activeId, paths.join(' '));
+          }
+          return;
+        }
+      } catch(e2) {}
+
+      // Not an image/file paste — let it through to xterm.js for normal text paste
+    } finally {
+      _finish();
+    }
   }, true);  // ← capture phase
 
   // Drag & drop files (skip internal tab/sidebar reorder drags)
