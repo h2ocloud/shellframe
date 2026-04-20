@@ -877,14 +877,35 @@ class TelegramBridge(BridgeBase):
             if already_sent:
                 continue
 
-            # Skip echo of sent text
+            # Skip echo of sent text. Three detection modes:
+            #   1. reply is entirely nested inside a sent text (nr in ns)
+            #   2. sent text starts the reply (ns[:25] in nr) — catches the
+            #      "Howard: xxx" prefix echo
+            #   3. reply contains a long contiguous chunk from a sent text
+            #      (>= ECHO_CHUNK_MIN chars) — catches preamble drift where
+            #      the AI emits "...sfctl restart — full restart for main.py
+            #      / web/index.html..." in the middle of its reply. Mode 1/2
+            #      miss this because the reply is larger than any single sent
+            #      text and doesn't start at the preamble's first 25 chars.
+            ECHO_CHUNK_MIN = 30
             is_echo = False
             nr = text.replace(' ', '').replace('\n', '').lower()
             for sent in slot.sent_texts:
                 ns = sent.replace(' ', '').lower()
-                if len(nr) > 3 and (nr in ns or ns[:25] in nr):
+                if not ns or len(nr) <= 3:
+                    continue
+                if nr in ns or ns[:25] in nr:
                     is_echo = True
                     break
+                # Sliding-window substring match for longer sent texts.
+                if len(ns) >= ECHO_CHUNK_MIN:
+                    step = 5
+                    for i in range(0, len(ns) - ECHO_CHUNK_MIN + 1, step):
+                        if ns[i:i + ECHO_CHUNK_MIN] in nr:
+                            is_echo = True
+                            break
+                    if is_echo:
+                        break
             if is_echo:
                 continue
 
@@ -2176,8 +2197,13 @@ class TelegramBridge(BridgeBase):
         # Track what we send so we can filter echo from output
         slot.sent_texts.append(forwarded)
         # Keep only last 10 sent texts
-        if len(slot.sent_texts) > 10:
-            slot.sent_texts = slot.sent_texts[-10:]
+        # Cap sent_texts at 30 (was 10). Each user msg appends up to 2
+        # entries (the forwarded text AND the TG preamble wrap), so at cap
+        # 10 the history covered only ~5 user turns — on a chatty session
+        # the AI could echo a preamble fragment long after that preamble
+        # rotated out of sent_texts, and the echo filter missed it.
+        if len(slot.sent_texts) > 30:
+            slot.sent_texts = slot.sent_texts[-30:]
 
         # Mark the start of a write → reply watch cycle for stall detection
         slot.last_write_ts = time.time()

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.11.17 (2026-04-20)
+
+### Fixes
+- **Preamble / user-message echo leaked back to TG** — echo filter only caught full nesting (`nr in ns`) or 25-char prefix match. When the AI emitted a mid-preamble fragment ("sfctl restart — full restart for main.py / web/index.html…") plus the user's original message and tacked on new text, neither rule fired and the whole thing got forwarded back. Added a 30-char sliding-window substring check against each sent text — any 30-char run copied out of preamble / forwarded is now treated as echo.
+- **sent_texts cap was too small** — stored only last 10 entries, but per-turn preamble injection means each user message consumes 2 slots, so echo history only covered ~5 turns. Bumped to 30 so the filter still has the preamble + forwarded text in hand when the AI response straggles in later.
+
+### 修正
+- **Preamble / 用戶訊息被 echo 回 TG** — 舊 echo filter 只抓「reply 整個被 sent 包住」或「sent 前 25 字出現在 reply 開頭」。AI 如果吐出 preamble **中段** + 用戶原訊息 + 額外內容，兩種規則都沒命中，整段又被轉回 TG。現在加一條：對每個 sent_text 跑 30-char sliding window，任何 30 字連續片段被 AI reply 覆蓋就判 echo。
+- **sent_texts 容量太小** — 本來只存最後 10 筆，但 per-turn 要塞 preamble 跟 forwarded 各一筆，等於只記得 5 個對話 turn 的 echo 來源。拉到 30，AI reply 晚到也還抓得到。
+
 ## v0.11.16 (2026-04-20)
 
 ### Fixes
