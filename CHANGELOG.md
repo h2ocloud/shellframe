@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.14 (2026-04-20)
+
+### New Features
+- **Large paste confirm — Esc to cancel before the text hits the AI** — any plain-text paste ≥ 1,000 chars or ≥ 10 lines now pauses on a yellow confirm bar ("Enter 送出 · Esc 取消") instead of dumping straight into the PTY. Prevents the "pasted the wrong clipboard into Claude and it auto-submitted" regret. Small pastes still flow through xterm.js normally. Image / file pastes unchanged.
+
+### 新功能
+- **長文字 paste 前置確認 — Esc 取消、Enter 送出** — 貼上 ≥ 1000 字或 ≥ 10 行的純文字會先停在黃色確認 bar，不會直接灌進 PTY。按 Esc 取消、Enter 才送（包 bracketed paste）。避免「貼錯剪貼簿、AI 直接送出」這種慘案。小段 paste 照舊穿過；圖片/檔案 paste 行為不變。
+
 ## v0.11.13 (2026-04-20)
 
 ### Fixes

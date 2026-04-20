@@ -86,6 +86,23 @@
   .attach-chip .chip-thumb { height: 20px; max-width: 36px; border-radius: 2px; object-fit: cover; }
   .attach-chip .chip-close { cursor: pointer; opacity: .4; margin-left: 2px; font-size: 13px; }
   .attach-chip .chip-close:hover { opacity: 1; color: #f7768e; }
+  #paste-confirm-bar {
+    display: none; align-items: center; gap: 10px;
+    padding: 6px 12px;
+    background: #3d2c1a; border-top: 1px solid #e0af68;
+    color: #e0af68; font-size: 12px; flex-shrink: 0;
+  }
+  #paste-confirm-bar .pc-hint { flex: 1; }
+  #paste-confirm-bar kbd {
+    font-family: inherit; font-size: 11px; padding: 1px 6px;
+    background: #1a1b26; border: 1px solid #e0af68; border-radius: 3px;
+    color: #e0af68;
+  }
+  #paste-confirm-bar .pc-preview {
+    font-family: monospace; color: #c0caf5; opacity: .7;
+    max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   #image-bar .close-img {
     color: #565f89; cursor: pointer; font-size: 14px; padding: 2px 6px;
     border: none; background: none; border-radius: 3px;
@@ -423,6 +440,16 @@
 <div id="image-bar">
   <div id="attach-chips"></div>
   <button class="close-img" id="close-preview" title="Remove all">&times;</button>
+</div>
+
+<!-- Large-paste confirm bar -->
+<div id="paste-confirm-bar">
+  <span>📋</span>
+  <span class="pc-hint">
+    Large paste — <b id="pc-stats"></b>.
+    <kbd>Enter</kbd> 送出 · <kbd>Esc</kbd> 取消
+  </span>
+  <span class="pc-preview" id="pc-preview"></span>
 </div>
 
 <!-- Drop overlay -->
@@ -2202,6 +2229,61 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return tokens.some(t => AI_CLI_TOOLS.has(t.split('/').pop().replace(/\.\w+$/, '')));
   }
 
+  // Large plain-text paste gating. Anything >= PASTE_CONFIRM_CHARS or
+  // PASTE_CONFIRM_LINES is parked in pendingPasteText until the user presses
+  // Enter (send as bracketed paste) or Esc (discard). Saves regret when you
+  // grab the wrong clipboard and hit Cmd+V into an AI that auto-submits.
+  const PASTE_CONFIRM_CHARS = 1000;
+  const PASTE_CONFIRM_LINES = 10;
+  let pendingPasteText = null;
+  let pendingPasteSid = null;
+
+  function _armPasteConfirm(text, sid) {
+    pendingPasteText = text;
+    pendingPasteSid = sid;
+    const bar = document.getElementById('paste-confirm-bar');
+    const stats = document.getElementById('pc-stats');
+    const preview = document.getElementById('pc-preview');
+    const lines = text.split('\n').length;
+    stats.textContent = `${text.length.toLocaleString()} chars · ${lines} lines`;
+    const firstLine = (text.split('\n')[0] || '').slice(0, 120);
+    preview.textContent = firstLine ? `"${firstLine}"` : '';
+    bar.style.display = 'flex';
+  }
+
+  function _clearPasteConfirm() {
+    pendingPasteText = null;
+    pendingPasteSid = null;
+    const bar = document.getElementById('paste-confirm-bar');
+    if (bar) bar.style.display = 'none';
+  }
+
+  // Global handler (capture phase, before xterm swallows keys). Only active
+  // while a paste is armed; otherwise returns immediately so normal input
+  // is untouched.
+  document.addEventListener('keydown', (e) => {
+    if (!pendingPasteText) return;
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      _clearPasteConfirm();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.stopPropagation();
+      e.preventDefault();
+      const text = pendingPasteText;
+      const sid = pendingPasteSid;
+      _clearPasteConfirm();
+      if (sid && sessions[sid]) {
+        pywebview.api.write_input(sid, '\x1b[200~' + text + '\x1b[201~');
+      }
+    }
+    // Other keys pass through — user can cancel by retyping; but we keep
+    // the bar visible so they see the paste is still armed. The bar itself
+    // doesn't block input; xterm behind it still receives keys.
+  }, true);
+
   // Clipboard paste — images, files copied from Finder, or generic file blobs
   // Use CAPTURE phase because xterm.js calls stopPropagation() in its paste handler
   document.addEventListener('paste', async (e) => {
@@ -2211,8 +2293,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (el && el.tagName === 'INPUT') return;
     if (el && el.tagName === 'TEXTAREA' && !el.classList.contains('xterm-helper-textarea')) return;
 
+    // Large-text-paste gate: if the clipboard is just plain text (no image/
+    // file blobs) and it's big enough to regret, hold it in pendingPasteText
+    // and show the confirm bar. Enter sends, Esc discards. This runs BEFORE
+    // the image/file collection below so a huge text paste doesn't race past.
     const items = e.clipboardData?.items;
     if (!items) return;
+
+    const hasBlob = Array.from(items).some(it => it.kind === 'file');
+    if (!hasBlob) {
+      const text = e.clipboardData.getData('text/plain') || '';
+      const lines = text ? text.split('\n').length : 0;
+      if (text.length >= PASTE_CONFIRM_CHARS || lines >= PASTE_CONFIRM_LINES) {
+        e.stopPropagation();
+        e.preventDefault();
+        _armPasteConfirm(text, activeId);
+        return;
+      }
+      // Otherwise fall through to xterm.js for normal paste (bracketed
+      // paste escapes are added by xterm when enabled by the PTY).
+      return;
+    }
 
     const ai = isAiSession(activeId);
 
