@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.12 (2026-04-19)
+
+### Fixes
+- **Local STT no longer fails when the model is already present under `~/.cache/whisper-models/`** — `_stt_local_model_path` only checked `~/.local/share/shellframe/whisper-models/ggml-base.bin`, so users who already had whisper.cpp models from yt-notion / brew saw local STT reported as missing and were asked to re-download the same ~141MB file. Added fallbacks to `~/.cache/whisper-models/ggml-base.bin` and `/opt/homebrew/share/whisper-cpp/ggml-base.bin`.
+
+### 修正
+- **本地 STT 不再因「模型檔不在 shellframe 專屬路徑」就被判斷為缺模型** — 原本 `_stt_local_model_path` 只看 `~/.local/share/shellframe/whisper-models/ggml-base.bin`，但使用者若為了 yt-notion / brew 已經把模型放在 `~/.cache/whisper-models/`，shellframe 完全看不到，還會要你再下一份 ~141MB 的重複檔。現在會依序回退到 `~/.cache/whisper-models/ggml-base.bin` 與 `/opt/homebrew/share/whisper-cpp/ggml-base.bin`。
+
 ## v0.11.11 (2026-04-19)
 
 ### Fixes

@@ -1471,6 +1471,13 @@ class TelegramBridge(BridgeBase):
     LOCAL_MODEL_DIR = _Path.home() / ".local" / "share" / "shellframe" / "whisper-models"
     LOCAL_MODEL_NAME = "ggml-base.bin"  # ~150MB, decent quality, fast on Apple Silicon
     LOCAL_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+    # Secondary search paths. Users who've already set up whisper.cpp for other
+    # tools (yt-notion, manual transcribing) usually keep the model under
+    # ~/.cache/whisper-models — reuse it instead of forcing a second download.
+    LOCAL_MODEL_FALLBACKS = (
+        _Path.home() / ".cache" / "whisper-models" / "ggml-base.bin",
+        _Path("/opt/homebrew/share/whisper-cpp/ggml-base.bin"),
+    )
     PLUGIN_FILE = _Path.home() / ".config" / "shellframe" / "stt_plugin.py"
 
     @classmethod
@@ -1507,9 +1514,16 @@ class TelegramBridge(BridgeBase):
 
     @classmethod
     def _stt_local_model_path(cls):
-        """Return path to local whisper model if downloaded, else ''."""
-        p = cls.LOCAL_MODEL_DIR / cls.LOCAL_MODEL_NAME
-        return str(p) if p.exists() else ""
+        """Return path to local whisper model. Checks the shellframe-owned dir
+        first, then common shared locations (yt-notion / brew / etc.), so a
+        pre-existing download isn't redundantly duplicated."""
+        primary = cls.LOCAL_MODEL_DIR / cls.LOCAL_MODEL_NAME
+        if primary.exists():
+            return str(primary)
+        for fb in cls.LOCAL_MODEL_FALLBACKS:
+            if fb.exists():
+                return str(fb)
+        return ""
 
     @classmethod
     def stt_status(cls, remote_url: str = "") -> dict:
