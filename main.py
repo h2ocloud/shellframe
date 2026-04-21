@@ -2435,14 +2435,18 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: (api.cleanup_all(), os._exit(0)))
     signal.signal(signal.SIGTERM, lambda *_: (api.cleanup_all(), os._exit(0)))
 
-    # Restore window geometry from last close. Absolute x/y preserves the
-    # user's monitor on multi-display setups, as long as that monitor is
-    # still attached. Pre-validate against currently-attached screens
-    # because pywebview's cocoa backend crashes at startup when the initial
-    # point lands off-screen: windowDidMove_ callback calls
-    # self.window.screen() which returns None (no screen there), then
-    # .frame() on None raises AttributeError before we ever get a chance
-    # to recover. Must happen BEFORE webview.create_window.
+    # Restore window geometry from last close. Pass ONLY width/height to
+    # create_window; x/y is applied AFTER the window exists (via
+    # window.move in the loaded handler), not as the initial position.
+    #
+    # Reason: pywebview's cocoa backend crashes during the initial move-to-
+    # saved-coords if the moving window is transiently off-screen. Its
+    # windowDidMove_ callback calls self.window.screen().frame(); when
+    # screen() is None, .frame() raises AttributeError BEFORE any Python
+    # try/except or monkey-patch can help (PyObjC method tables bind at
+    # class creation, so replacing BrowserView.windowDidMove_ in Python
+    # doesn't affect the ObjC dispatch). Letting the window spawn centered
+    # first, then moving it after shown, avoids that entire failure mode.
     win_cfg = load_config().get("window", {}) or {}
     create_kwargs = dict(
         title="shellframe",
@@ -2455,18 +2459,16 @@ def main():
         background_color="#1a1b26",
     )
     saved_x, saved_y = win_cfg.get("x"), win_cfg.get("y")
+    pending_move = None
     if isinstance(saved_x, (int, float)) and isinstance(saved_y, (int, float)):
         if _coords_on_attached_screen(
             int(saved_x), int(saved_y),
             create_kwargs["width"], create_kwargs["height"],
         ):
-            create_kwargs["x"] = int(saved_x)
-            create_kwargs["y"] = int(saved_y)
+            pending_move = (int(saved_x), int(saved_y))
         else:
-            # Saved screen is gone (external display unplugged). Drop x/y
-            # so pywebview centers on the primary display, and scrub the
-            # stale coords from config so we don't stash them back on the
-            # first move event.
+            # Saved screen is gone — scrub so we don't stash stale coords
+            # back on the first move event.
             try:
                 cfg_now = load_config()
                 win = cfg_now.get("window", {}) or {}
@@ -2479,24 +2481,14 @@ def main():
             print(f"[shellframe] saved window position ({saved_x},{saved_y}) "
                   f"is off-screen — centering on primary.", file=sys.stderr)
 
-    try:
-        window = webview.create_window(**create_kwargs)
-    except Exception as e:
-        # Defensive second layer: if something else in create_window
-        # tripped on the x/y pair (pywebview version skew, unusual screen
-        # layout, etc.), retry without the position hint.
-        print(f"[shellframe] create_window with saved geometry failed: {e} "
-              f"— retrying centered.", file=sys.stderr)
-        create_kwargs.pop("x", None)
-        create_kwargs.pop("y", None)
-        window = webview.create_window(**create_kwargs)
+    window = webview.create_window(**create_kwargs)
     api._window = window
 
     # Persist geometry on move/resize, debounced so rapid drag events don't
     # hammer the config file. Also saves once on close as a safety net.
     _geom_state = {
-        "x": create_kwargs.get("x"),
-        "y": create_kwargs.get("y"),
+        "x": pending_move[0] if pending_move else None,
+        "y": pending_move[1] if pending_move else None,
         "width": create_kwargs["width"],
         "height": create_kwargs["height"],
         "timer": None,
@@ -2555,7 +2547,20 @@ def main():
         _flush_geom()
         api.cleanup_and_exit()
 
-    window.events.loaded += lambda: api._start_output_pusher()
+    def _on_loaded():
+        # Apply the saved x/y AFTER the window has been shown centered.
+        # By this point cocoa has a valid screen() for the window, so
+        # windowDidMove_ callbacks triggered by .move() won't hit the
+        # None-screen crash path.
+        if pending_move is not None:
+            try:
+                window.move(pending_move[0], pending_move[1])
+            except Exception as e:
+                print(f"[shellframe] post-show move to {pending_move} "
+                      f"failed: {e}", file=sys.stderr)
+        api._start_output_pusher()
+
+    window.events.loaded += _on_loaded
     window.events.closed += _on_closed_save_and_cleanup
     api._start_command_watcher()
     webview.start(debug=("--debug" in sys.argv))

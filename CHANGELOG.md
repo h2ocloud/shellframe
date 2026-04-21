@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.23 (2026-04-21)
+
+### Fixes
+- **Startup crash on saved x/y (third recurrence) — real fix this time** — v0.11.19's monkey-patch of `BrowserView.windowDidMove_` was ineffective because PyObjC binds method tables at class creation, so replacing the Python attribute didn't change ObjC dispatch. Cocoa still called the original IMP and crashed on `None.frame()`. Dropped passing x/y to `create_window` entirely; window now spawns centered, then moves to the saved position in the `loaded` event handler via `window.move(x, y)` — at that point cocoa has a valid `screen()` for the window and the move doesn't crash.
+
+### 修正
+- **存的 x/y 害第三次啟動 crash — 這次真的修了** — v0.11.19 的 `BrowserView.windowDidMove_` monkey-patch 其實沒生效：PyObjC 在 class 建立時就把 method table 綁死，在 Python 層換 attribute 完全影響不了 ObjC dispatch，cocoa 仍呼叫原本的 IMP、在 `None.frame()` 炸掉。拿掉 `create_window` 的 x/y 參數，視窗先**中央生成**，再在 `loaded` 事件裡用 `window.move(x, y)` 搬到存的位置；這時 cocoa 已經有合法的 `screen()`，搬動不會 crash。
+
 ## v0.11.22 (2026-04-21)
 
 ### Fixes
