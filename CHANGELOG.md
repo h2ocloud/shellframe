@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.11.20 (2026-04-21)
+
+### Fixes
+- **TG typing indicator went quiet during long AI replies** — `_send_typing` was only called inside the `idle < 3.0` branch of `_flush_loop`, so when the AI went silent for more than 3s (thinking / tool call / long generation) the indicator blanked out. Now fires on every 0.5s flush tick while `awaiting_response` is True, regardless of current output state, so TG's 5s auto-clear never wins. Also fires before the first PTY chunk so the "..." bubble shows up the moment the user submits.
+- **`_user_chat` not persisted across full restart** — typing indicator + flush forwarding both need uid → chat_id mapping. Previously only stored in memory, so after `sfctl restart` the indicator was silently no-op'd until the user sent another message. Added to the `tg_offset.json` save/restore cycle alongside `_user_active`.
+
+### 修正
+- **TG 正在輸入動畫在 AI 回應中段斷掉** — `_send_typing` 原本只在 `idle < 3.0` 分支裡呼叫，AI 沉默超過 3 秒（思考 / tool call / 長回覆）typing 就消失。現在每 0.5s flush 都會打一次，只要 `awaiting_response` 還是 True 就持續刷新，TG 5s 自動清除追不上。也會在第一塊 PTY 輸出前就開始打，使用者按送出瞬間就看得到動畫。
+- **`_user_chat` 沒跨重啟保存** — typing indicator 跟 flush forward 都靠 uid → chat_id 對照表。以前只放記憶體，`sfctl restart` 後完全沒了，直到使用者再送訊息才恢復（期間 typing 靜音）。現在跟 `_user_active` 一起寫進 `tg_offset.json`。
+
 ## v0.11.19 (2026-04-20)
 
 ### Fixes

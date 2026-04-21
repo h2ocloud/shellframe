@@ -1128,6 +1128,17 @@ class TelegramBridge(BridgeBase):
                     continue
 
                 with slot.output_lock:
+                    # Refresh the TG typing indicator on every tick while the
+                    # session is waiting on a reply. TG auto-clears the bubble
+                    # after ~5s, so we MUST refresh at least that often; the
+                    # old code only refreshed inside the `idle < 3.0` branch,
+                    # which meant long silent "thinking" stretches blanked the
+                    # indicator even though the reply was still pending. Runs
+                    # regardless of last_output_time so typing also shows in
+                    # the pre-first-chunk window right after user submit.
+                    if slot.awaiting_response:
+                        self._send_typing(sid)
+
                     if slot.last_output_time == 0:
                         continue
                     if not slot.has_user_msg:
@@ -1147,12 +1158,6 @@ class TelegramBridge(BridgeBase):
                     # Wait for 3s idle OR 120s total before extracting
                     # Claude can take 2+ minutes for long responses
                     if idle < 3.0 and total < 120.0:
-                        # Only animate typing while we're actually waiting on a
-                        # fresh user message — Claude's TUI status bar refreshes
-                        # otherwise keep last_output_time hot forever and the
-                        # typing indicator would never stop.
-                        if slot.awaiting_response:
-                            self._send_typing(sid)
                         continue
 
                     # Extract new text via screen diff (only final changes)
@@ -1325,6 +1330,7 @@ class TelegramBridge(BridgeBase):
             data = {
                 "offset": self._offset,
                 "user_active": {str(uid): sid for uid, sid in self._user_active.items()},
+                "user_chat": {str(uid): cid for uid, cid in self._user_chat.items()},
                 "default_active_sid": getattr(self, '_default_active_sid', None),
             }
             self._OFFSET_FILE.write_text(
@@ -1336,14 +1342,16 @@ class TelegramBridge(BridgeBase):
 
     def _restore_user_routing(self):
         """Called from _poll_loop entry once slots are registered. Restores
-        user_active mapping from disk, filtering out sids that no longer exist."""
+        user_active + user_chat mappings from disk, filtering out sids that
+        no longer exist."""
         try:
             data = self._load_persisted()
             saved = data.get("user_active", {}) or {}
+            saved_chat = data.get("user_chat", {}) or {}
             saved_default = data.get("default_active_sid")
             slot_keys = list(self.slots.keys())
             _blog(f"[restore] slots={slot_keys} saved_user_active={saved} "
-                  f"saved_default={saved_default!r}\n")
+                  f"saved_chat={saved_chat} saved_default={saved_default!r}\n")
             restored = {}
             for uid_str, sid in saved.items():
                 try:
@@ -1353,9 +1361,20 @@ class TelegramBridge(BridgeBase):
                 if sid in self.slots and uid not in self._user_active:
                     self._user_active[uid] = sid
                     restored[uid] = sid
+            # Restore user_chat independently — TG typing indicator + flush
+            # forwarding both need uid → chat_id mapping available before the
+            # user sends their first post-restart message (otherwise typing is
+            # silently no-op'd while the AI still mid-reply on a long task).
+            for uid_str, cid in saved_chat.items():
+                try:
+                    uid = int(uid_str)
+                except (TypeError, ValueError):
+                    continue
+                if uid not in self._user_chat and cid:
+                    self._user_chat[uid] = cid
             if saved_default and saved_default in self.slots and not getattr(self, '_default_active_sid', None):
                 self._default_active_sid = saved_default
-            _blog(f"[restore] applied restored={restored} "
+            _blog(f"[restore] applied restored={restored} user_chat={dict(self._user_chat)} "
                   f"default={getattr(self, '_default_active_sid', None)!r}\n")
         except Exception as e:
             _blog(f"[restore] FAILED: {e}\n")
