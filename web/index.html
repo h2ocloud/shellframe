@@ -2069,12 +2069,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       header.appendChild(hint);
       header.appendChild(closeBtn);
 
+      // Wrapper allows horizontal scroll when histTerm is wider than the
+      // overlay pane. termHost is the actual xterm mount — we size it to
+      // match the source session's cols so content captured at e.g. 140
+      // cols doesn't get clipped on a 100-col overlay (tables lose their
+      // right half that way — Howard's screenshot of /Prod/FundSelectList
+      // + 說明 column cut at the table edge).
+      const termScroll = document.createElement('div');
+      termScroll.style.cssText = 'flex:1;min-height:0;position:relative;overflow-x:auto;overflow-y:hidden';
       const termHost = document.createElement('div');
-      termHost.style.cssText = 'flex:1;min-height:0;position:relative;padding:6px 10px';
+      termHost.style.cssText = 'position:relative;padding:6px 10px;height:100%';
 
       overlay.appendChild(header);
-      overlay.appendChild(termHost);
+      termScroll.appendChild(termHost);
+      overlay.appendChild(termScroll);
       host.appendChild(overlay);
+
+      // Use the LIVE session's cols (the tmux pane width at capture time) so
+      // xterm doesn't re-wrap / clip. Fallback to fit-based cols if no
+      // source session is bound (shouldn't happen, but safe).
+      const srcSess = (boundSid && sessions[boundSid]) ? sessions[boundSid] : null;
+      const srcCols = (srcSess && srcSess.term && srcSess.term.cols) || 120;
 
       histTerm = new Terminal({
         fontSize,
@@ -2086,11 +2101,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         allowProposedApi: true,
         disableStdin: true,
         convertEol: true,
+        cols: srcCols,
+        rows: 40,
       });
       const fit = new FitAddon.FitAddon();
       histTerm.loadAddon(fit);
       histTerm.open(termHost);
-      try { fit.fit(); } catch (_) {}
+      // Fit only the ROWS dimension to the overlay height — keep cols
+      // pinned at srcCols so the capture renders at its original width.
+      try {
+        fit.fit();
+        if (histTerm.cols !== srcCols) histTerm.resize(srcCols, histTerm.rows);
+      } catch (_) {}
 
       // Write all content, then scroll to bottom. Only AFTER this settles
       // do we start watching for user-driven "scroll to bottom to close".

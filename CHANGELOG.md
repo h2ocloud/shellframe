@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.22 (2026-04-21)
+
+### Fixes
+- **Scroll-history overlay clipped the right half of wide content** — overlay xterm used `fit.fit()` to size cols to the container width. When the live session's tmux pane was wider (e.g. 140 cols rendering a table), capturing at 140 into a 100-col overlay made xterm re-wrap / clip and the right half of every line vanished. Now the overlay pins cols to the LIVE session's current cols and wraps the xterm mount in a horizontal scroll container, so tables, code, and wrap-sensitive output render at their original width (horizontal scroll kicks in when the session was wider than the overlay).
+
+### 修正
+- **上滾 overlay 會把寬內容右半截掉** — overlay 的 xterm 用 `fit.fit()` 把 cols 縮到 overlay 容器寬度。live session 的 tmux pane 若更寬（例如 140 cols 渲染表格），140 col 內容丟進 100 col overlay 會被 xterm 重 wrap / 截斷，右半行就消失（Howard 看到的 `/Prod/FundSelectList | 說明` 表格右邊切掉）。現在 overlay 把 cols 鎖定成 **live session 當下的 cols**，xterm mount 外層加水平 scroll 容器，表格 / code / 對寬度敏感的輸出都能保留原本寬度，overlay 比 session 窄時自動出水平 scrollbar。
+
 ## v0.11.21 (2026-04-21)
 
 ### Fixes
