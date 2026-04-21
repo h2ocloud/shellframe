@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.24 (2026-04-21)
+
+### Fixes
+- **Enter-after-paste focus fix (take 2) — multi-shot refocus + direct textarea target** — v0.11.21's single `setTimeout(0)` + `term.focus()` still lost the focus race on WKWebView: the browser does its own post-paste focus ping-pong for a few hundred ms after the paste event settles, and our one-shot refocus landed before that finished, so the textarea ended up blurred by the time the user hit Enter. Now fires four times (immediate, 0ms, 50ms, 200ms) and directly calls `.focus()` on the `xterm-helper-textarea` DOM node in addition to `term.focus()` so the event handler gate (`customKeyEventHandler` only runs while the textarea is the active element) actually sees focus land.
+
+### 修正
+- **貼圖後 Enter 第一次還是沒反應（第二次修法）** — v0.11.21 單一 `setTimeout(0)` + `term.focus()` 還是跟 WKWebView 的 focus 搶輸：browser 自己 paste event 後會持續 ping-pong focus 數百毫秒，我們只搶一次剛好落在它之前，之後 textarea 又被它 blur 掉，Enter 當然收不到。改成連發 4 次（立即 / 0ms / 50ms / 200ms），而且除了 `term.focus()` 之外，也直接對 DOM `xterm-helper-textarea` 下 `.focus()`，確保 xterm 的 `customKeyEventHandler` 真的看到 textarea 是 active element。
+
 ## v0.11.23 (2026-04-21)
 
 ### Fixes

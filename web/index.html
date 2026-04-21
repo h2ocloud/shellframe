@@ -2240,14 +2240,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       pywebview.api.write_input(activeId, ' ' + BP_START + path + BP_END);
     }
     updateImageBar();
-    // Paste / drop / clipboard-read transitions can leave DOM focus on
-    // body / image-bar / drop-overlay instead of the xterm helper
-    // textarea. xterm's customKeyEventHandler only fires while the
-    // textarea is focused, so an Enter right after paste got swallowed
-    // and the user had to click back into the terminal first. Pull focus
-    // back eagerly; setTimeout 0 lets the browser finish its own post-
-    // paste focus ping-pong before we win it back.
-    setTimeout(() => { try { s.term.focus(); } catch(_) {} }, 0);
+    _refocusActive();
   }
 
   // ── Detect AI vs plain terminal sessions ──
@@ -2535,16 +2528,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     _refocusActive();
   });
 
-  // Pull focus back to the active session's xterm textarea. Used after any
-  // paste / drop flow — browser focus rules move focus off the textarea to
-  // the body / drop-overlay mid-operation, and xterm's custom key handler
-  // (which owns Enter submission) only fires while the textarea is focused.
+  // Pull focus back to the active session's xterm textarea. Paste / drop
+  // flows drop focus onto body / image-bar / drop-overlay, and on WKWebView
+  // the browser does its own focus ping-pong asynchronously for a few
+  // hundred ms after the paste event settles. A single setTimeout(0)
+  // loses that race. Fire multiple times:
+  //  - immediately (might take if nothing else is fighting us)
+  //  - after microtask queue drains (timeout 0)
+  //  - 50ms / 200ms later to beat WKWebView's post-paste focus logic
+  // Also hit the textarea directly rather than only via xterm.focus(), so
+  // DOM focus lands on the element xterm's customKeyEventHandler filters on.
   function _refocusActive() {
-    setTimeout(() => {
-      if (activeId && sessions[activeId]) {
-        try { sessions[activeId].term.focus(); } catch(_) {}
-      }
-    }, 0);
+    const go = () => {
+      if (!activeId || !sessions[activeId]) return;
+      const s = sessions[activeId];
+      try { s.term.focus(); } catch(_) {}
+      try {
+        const ta = s.pane && s.pane.querySelector('textarea.xterm-helper-textarea');
+        if (ta) ta.focus();
+      } catch(_) {}
+    };
+    go();
+    setTimeout(go, 0);
+    setTimeout(go, 50);
+    setTimeout(go, 200);
   }
 
   document.getElementById('close-preview').addEventListener('click', () => {
