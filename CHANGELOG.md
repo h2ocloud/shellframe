@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.21 (2026-04-21)
+
+### Fixes
+- **Enter after image/file paste was swallowed — had to click the terminal first** — browser paste/drop flows land focus on body / image-bar / drop-overlay, not on xterm's helper textarea. xterm's `customKeyEventHandler` (which owns Enter-submit logic in AI sessions) only fires while the textarea is focused, so the first Enter after paste did nothing. `attachFile`, the document-level paste handler, and the drop handler all now call a common `_refocusActive()` that pulls focus back to the active session's textarea (setTimeout 0 so it runs after the browser's own post-paste focus ping-pong).
+
+### 修正
+- **貼圖/檔案後第一次 Enter 送不出去，要重新點對話才行** — 瀏覽器 paste / drop 流程結束後，focus 會留在 body / image-bar / drop-overlay，沒回到 xterm 的 helper textarea。AI session 的 Enter 送出邏輯走 xterm `customKeyEventHandler`，textarea 沒 focus 就完全收不到。`attachFile` / document paste handler / drop handler 三條路都呼叫同一個 `_refocusActive()`，把 focus 拉回當前 session 的 textarea（setTimeout 0 讓瀏覽器先跑完自己的 focus ping-pong 再被我們搶回來）。
+
 ## v0.11.20 (2026-04-21)
 
 ### Fixes

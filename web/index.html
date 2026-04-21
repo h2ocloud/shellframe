@@ -2218,6 +2218,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       pywebview.api.write_input(activeId, ' ' + BP_START + path + BP_END);
     }
     updateImageBar();
+    // Paste / drop / clipboard-read transitions can leave DOM focus on
+    // body / image-bar / drop-overlay instead of the xterm helper
+    // textarea. xterm's customKeyEventHandler only fires while the
+    // textarea is focused, so an Enter right after paste got swallowed
+    // and the user had to click back into the terminal first. Pull focus
+    // back eagerly; setTimeout 0 lets the browser finish its own post-
+    // paste focus ping-pong before we win it back.
+    setTimeout(() => { try { s.term.focus(); } catch(_) {} }, 0);
   }
 
   // ── Detect AI vs plain terminal sessions ──
@@ -2405,6 +2413,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // Not an image/file paste — let it through to xterm.js for normal text paste
     } finally {
       _finish();
+      if (typeof _refocusActive === 'function') _refocusActive();
     }
   }, true);  // ← capture phase
 
@@ -2493,13 +2502,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
               if (isAiSession(activeId)) { attachFile(path, null); }
               else { await pywebview.api.write_input(activeId, path); }
             }
+            _refocusActive();
           };
           reader.readAsDataURL(file);
         }
       }
+      _refocusActive();
       return;
     }
+    _refocusActive();
   });
+
+  // Pull focus back to the active session's xterm textarea. Used after any
+  // paste / drop flow — browser focus rules move focus off the textarea to
+  // the body / drop-overlay mid-operation, and xterm's custom key handler
+  // (which owns Enter submission) only fires while the textarea is focused.
+  function _refocusActive() {
+    setTimeout(() => {
+      if (activeId && sessions[activeId]) {
+        try { sessions[activeId].term.focus(); } catch(_) {}
+      }
+    }, 0);
+  }
 
   document.getElementById('close-preview').addEventListener('click', () => {
     if (activeId && sessions[activeId]) {
