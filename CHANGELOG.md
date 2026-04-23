@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.25 (2026-04-23)
+
+### Fixes
+- **Scroll-history overlay still swallowed mixed-CJK report labels** — v0.11.16's CJK-dominance gate (≥ 50% fullwidth) was lenient enough to catch headings like `PM 卡改善 (Mentor Bridge 命題有效)` and bank lists `彰銀/新新併/華南/台壽` when they legitimately repeated in a long audit report. Tightened to ≥ 90%: only near-pure-CJK prose (streaming redraw noise is 100% CJK anyway) still triggers dedup; any line with ASCII, digits, slashes, or brackets is preserved in full.
+
+### 修正
+- **上滾 overlay 還是會把「含 ASCII 的中文 heading」吃掉** — v0.11.16 的 CJK 門檻是 ≥ 50% 全形字元，不夠嚴，像 `PM 卡改善 (Mentor Bridge 命題有效)`、銀行列表 `彰銀/新新併/華南/台壽` 這類在長 audit report 裡合法重複的行會被誤砍。改成 ≥ 90%：只有**幾乎純中文**的行（streaming redraw noise 本來就 100% CJK）才進 dedup，任何帶 ASCII / 數字 / 斜線 / 括號的行完整保留。
+
 ## v0.11.24 (2026-04-21)
 
 ### Fixes

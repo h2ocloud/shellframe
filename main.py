@@ -887,18 +887,22 @@ class Api:
             # … block can appear 2-3× with spinner/status lines between.
             # Those are legit duplicates to collapse.
             #
-            # But source code legitimately repeats — `return null;`, `}`,
-            # `if (x) {` — and we MUST keep every occurrence or the overlay
-            # drops lines and looks corrupted. Gate: only dedup lines where
-            # CJK chars dominate (≥ half the visible width). ASCII code is
-            # completely exempt.
+            # Gate: line must be ALMOST-PURE CJK (≥ 90% of visible width
+            # from fullwidth chars). v0.11.16 used ≥ 50% which dropped
+            # legit mixed lines like "PM 卡改善 (Mentor Bridge 命題有效)"
+            # or slash-separated bank lists "彰銀/新新併/華南/台壽" when
+            # the AI repeated the same label in a long audit report —
+            # Howard caught it in the scroll-history overlay comparing
+            # live vs. overlay snapshots. 90% keeps pure-CJK streaming
+            # redraw noise collapsed while preserving every mixed-content
+            # heading, path, or label.
             DEDUP_MIN_WIDTH = 8
             seen = set()
             final = []
             for stripped, original in cleaned:
                 s_key = stripped.strip()
                 vw = self._visual_width(s_key)
-                if vw >= DEDUP_MIN_WIDTH and self._cjk_cells(s_key) * 2 >= vw:
+                if vw >= DEDUP_MIN_WIDTH and self._cjk_cells(s_key) >= vw * 0.9:
                     if s_key in seen:
                         continue
                     seen.add(s_key)
