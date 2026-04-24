@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.29 (2026-04-24)
+
+### New Features
+- **macOS notification when an AI session finishes while shellframe is hidden** — bridge now posts a native banner ("ShellFrame · <session label> · AI reply ready") the moment a session finishes delivering a reply AND `NSApp.isActive()` reports the app isn't in the foreground (minimised, Cmd+H'd, or behind another app). Click the banner and macOS activates the shellframe bundle, bringing you straight back to the waiting session. Per-slot 30s cooldown so multi-chunk extractions don't stack. Toggle in Settings → General → Completion notifications (default on). macOS only.
+
+### Fixes
+- **`/restart` spawned the new instance as bare Python, not a proper .app — two Dock icons, wrong name/icon** — v0.11.13 worked around a stale LaunchServices bundle-id registration by exec'ing `APP_DIR/ShellFrame.app/Contents/MacOS/shellframe` directly. That bypassed bundle wrapping, so the child process showed up as a generic Python icon and the user couldn't tell which Dock entry was shellframe. Switched to `/usr/bin/open -n <absolute .app path>` as Strategy 1 — gives the new process full bundle context (right name, right icon, Cmd-Tab shows "ShellFrame") while still avoiding the bundle-id resolution that was the original v0.11.13 target. `-n -a` kept as Strategy 2 fallback.
+
+### 新功能
+- **macOS 通知 — shellframe 在背景時 AI 完成作業會彈右上角 banner** — bridge 抽到一則 AI 回覆時，如果 `NSApp.isActive()` 顯示 shellframe 不在前景（縮小、Cmd+H、被其他 app 蓋掉），就送 macOS 原生通知「ShellFrame · <session 標籤> · AI reply ready」。點通知 macOS 會把 shellframe 拉回前景，直接回到等你的 session。每個 slot 30 秒 cooldown 避免 multi-chunk 連發。Settings → General → Completion notifications 可關（預設開）。目前只支援 macOS。
+
+### 修正
+- **`/restart` 開出來的 app 是純 Python、不是 ShellFrame icon** — v0.11.13 為了繞過過期的 LaunchServices 註冊，直接 exec `APP_DIR/ShellFrame.app/Contents/MacOS/shellframe`；這條路繞過 bundle wrapping，新 process 被 macOS 當成 Python，Dock 出現兩個 icon（原本你點的 ShellFrame + 新的 Python）讓人困惑。改用 `/usr/bin/open -n <絕對 .app 路徑>` 作為 Strategy 1 —— 保留完整 bundle 身份（正確名字、icon、Cmd-Tab 顯示 "ShellFrame"），又避開 bundle-id 解析那條舊路徑踩雷。`-n -a` 降為 Strategy 2 fallback。
+
 ## v0.11.28 (2026-04-24)
 
 ### Fixes

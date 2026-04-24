@@ -557,6 +557,13 @@
             </span>
           </div>
         </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Completion notifications</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-complete-notify"></button>
+            <span style="font-size:11px;color:#565f89">AI 回覆完成且 shellframe 不在前景時通知</span>
+          </div>
+        </div>
       </div>
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
@@ -2678,8 +2685,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-global-hotkey').classList.toggle(
       'on', s.global_hotkey_enabled !== false,
     );
+    // Completion notifications — default on
+    document.getElementById('setting-complete-notify').classList.toggle(
+      'on', s.completion_notifications !== false,
+    );
     syncSettingsBridge();
   });
+
+  document.getElementById('setting-complete-notify')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.completion_notifications = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
 
   // Global hotkey toggle — saves immediately; main.py re-registers the
   // NSEvent monitor on next save_settings call so no restart needed.

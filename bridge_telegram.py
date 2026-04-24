@@ -353,6 +353,9 @@ class SessionSlot:
         # slot. Used as cooldown so we don't spam the command while context
         # is still settling after a previous compact.
         self.last_compact_ts = 0.0
+        # Completion notification: last time we posted a macOS banner for
+        # this slot's AI reply. Cooldown prevents multi-chunk spam.
+        self.last_notify_ts = 0.0
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
         # Capped at 3000 lines (~180MB worst case per session) to prevent memory bloat
@@ -577,6 +580,53 @@ class TelegramBridge(BridgeBase):
             self._set_bot_commands()
 
     # ── Output capture (PTY → TG) ──
+
+    # Cooldown so multi-chunk extractions don't stack notifications.
+    _COMPLETE_NOTIFY_COOLDOWN = 30.0
+
+    def _maybe_notify_completion(self, slot):
+        """Post a macOS banner when an AI session finishes a reply AND
+        shellframe isn't in the foreground. Lets the user walk away (⌘H /
+        ⌃⌥Space hidden) and come back when work's done.
+
+        macOS only. Gated by settings.completion_notifications (default on).
+        Click handler: osascript-originated banners reliably activate the
+        sender .app bundle on click, so tapping it raises shellframe.
+        """
+        if _sys.platform != "darwin":
+            return
+        settings = _read_settings()
+        if not settings.get("completion_notifications", True):
+            return
+        now = time.time()
+        if now - getattr(slot, "last_notify_ts", 0.0) < self._COMPLETE_NOTIFY_COOLDOWN:
+            return
+        # Skip when shellframe has user attention. isActive() is the simple
+        # "app is frontmost + not hidden" check.
+        try:
+            from AppKit import NSApp
+            if NSApp is not None and NSApp.isActive():
+                return
+        except Exception:
+            pass
+        slot.last_notify_ts = now
+        label = (slot.label or slot.sid or "session").replace('"', "'")
+        try:
+            import subprocess as _sp
+            # Keep the script simple — escaping anything beyond quotes in
+            # osascript strings is fragile. Fixed copy.
+            script = (
+                f'display notification "AI reply ready — click to view" '
+                f'with title "ShellFrame" '
+                f'subtitle "{label}" '
+                f'sound name "Glass"'
+            )
+            _sp.Popen(
+                ["osascript", "-e", script],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+        except Exception as e:
+            _blog(f"[notify] failed: {e}\n")
 
     def _maybe_auto_compact(self, slot):
         """If this slot is a Claude Code session running low on context,
@@ -1254,10 +1304,20 @@ class TelegramBridge(BridgeBase):
                     slot.first_output_time = 0
                     # Response extracted → close the stall-watch window
                     if new_lines:
+                        was_awaiting = slot.awaiting_response
                         slot.last_write_ts = 0.0
                         slot.stall_warned = False
                         slot.awaiting_response = False  # response delivered, stop typing
                         slot.last_extraction_ts = now
+                        # Notify user if shellframe isn't in front. Only fire
+                        # when the slot was actively awaiting a response —
+                        # otherwise late-arriving background output (status
+                        # bar refreshes, scrollback tail) would trigger.
+                        if was_awaiting:
+                            try:
+                                self._maybe_notify_completion(slot)
+                            except Exception as e:
+                                _blog(f"[notify] scheduling failed: {e}\n")
                     # Keep has_user_msg=True so subsequent responses still get
                     # forwarded.  It resets only when a NEW user message arrives
                     # (the _handle_update path sets it fresh each time).
