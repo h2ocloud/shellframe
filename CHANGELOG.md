@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.26 (2026-04-24)
+
+### New Features
+- **Auto `/compact` for Claude Code when context is running out** — bridge's flush loop now watches for Claude's status-bar token gauge (`<model> … <N>% left`) in each slot's rendered screen. When `N` drops to the configured threshold (default 15%) and the slot is idle (no in-flight response, ≥ 2s of PTY silence, cooldown ≥ 90s since the last auto-compact), it writes `/compact\r` into the PTY so Claude summarises context and frees tokens without the user having to notice. Settings → General adds a toggle + threshold input (3–50%); flip off to disable. Strictly Claude-only — detection binds to the model name in the status bar (`sonnet` / `opus` / `haiku` / `claude-…`), so Codex / plain shells are never triggered.
+
+### 新功能
+- **Claude Code 快沒 token 時自動 `/compact`** — bridge 的 flush loop 每 0.5s 掃每個 slot 渲染後的畫面，找 Claude 的 status bar「`<model> … <N>% left`」。`N` 跌破設定門檻（預設 15%）且 slot idle（沒在回應、PTY 2 秒沒輸出、距上次自動 compact 至少 90s）就把 `/compact\r` 寫進 PTY，Claude 自動做 context summarise 騰 token，不用使用者自己盯。Settings → General 新增開關 + 門檻（3-50%）；關掉即停。**只對 Claude 生效** —— 偵測綁在 status bar 的 model 名（`sonnet` / `opus` / `haiku` / `claude-…`），Codex / bash / 其他 CLI 完全不會被誤觸。
+
 ## v0.11.25 (2026-04-23)
 
 ### Fixes

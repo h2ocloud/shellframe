@@ -537,6 +537,16 @@
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="shiftEnterLabel">Shift+Enter = newline</label>
           <button class="toggle-switch on" id="setting-shift-enter"></button>
         </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto /compact (Claude)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-auto-compact"></button>
+            <span style="font-size:11px;color:#565f89">≤</span>
+            <input type="number" id="setting-auto-compact-threshold" min="3" max="50" step="1" value="15"
+                   style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
+            <span style="font-size:11px;color:#565f89">% left</span>
+          </div>
+        </div>
       </div>
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
@@ -2646,8 +2656,38 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = config.settings || {};
     document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
     document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
+    // Auto /compact (Claude) — default on; threshold default 15 (%)
+    document.getElementById('setting-auto-compact').classList.toggle(
+      'on', s.claude_auto_compact !== false,
+    );
+    document.getElementById('setting-auto-compact-threshold').value =
+      Number(s.claude_auto_compact_threshold) > 0
+        ? s.claude_auto_compact_threshold
+        : 15;
     syncSettingsBridge();
   });
+
+  // Auto /compact toggle + threshold — saves immediately so the bridge's
+  // flush-loop gate picks it up on the next 0.5s tick.
+  async function _saveAutoCompact() {
+    const on = document.getElementById('setting-auto-compact')
+      .classList.contains('on');
+    let th = parseInt(document.getElementById(
+      'setting-auto-compact-threshold').value, 10);
+    if (!Number.isFinite(th) || th < 3) th = 15;
+    if (th > 50) th = 50;
+    config.settings = config.settings || {};
+    config.settings.claude_auto_compact = on;
+    config.settings.claude_auto_compact_threshold = th;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  }
+  document.getElementById('setting-auto-compact')
+    .addEventListener('click', function() {
+      this.classList.toggle('on');
+      _saveAutoCompact();
+    });
+  document.getElementById('setting-auto-compact-threshold')
+    .addEventListener('change', _saveAutoCompact);
 
   // Persist prompt textareas on blur so users don't need a save button.
   // Skip no-op blurs: if the value hasn't changed, don't touch config. And

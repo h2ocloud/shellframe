@@ -349,6 +349,10 @@ class SessionSlot:
         self.last_write_ts = 0.0        # time of last TG → PTY write
         self.last_chunk_ts = 0.0        # time of last PTY chunk (NOT reset by extraction)
         self.stall_warned = False
+        # Claude Code auto-compact: last time we auto-fired /compact on this
+        # slot. Used as cooldown so we don't spam the command while context
+        # is still settling after a previous compact.
+        self.last_compact_ts = 0.0
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
         # Capped at 3000 lines (~180MB worst case per session) to prevent memory bloat
@@ -574,6 +578,61 @@ class TelegramBridge(BridgeBase):
 
     # ── Output capture (PTY → TG) ──
 
+    def _maybe_auto_compact(self, slot):
+        """If this slot is a Claude Code session running low on context,
+        auto-send `/compact` to summarise + free tokens. Gated behind
+        settings.claude_auto_compact (default on) and a user-tunable
+        percent threshold (default 15).
+
+        Detection: matches the Claude status bar's "<model> … <N>% left"
+        line in pyte screen's last rows. The model name in the same line
+        (sonnet / opus / haiku / claude-…) is our signal that this is
+        actually Claude Code and not some other CLI. We fire only while
+        the slot is idle (no in-flight response, no recent PTY chunk),
+        and obey a cooldown so post-compact settling doesn't re-trigger.
+        """
+        settings = _read_settings()
+        if not settings.get('claude_auto_compact', True):
+            return
+        try:
+            threshold = int(settings.get(
+                'claude_auto_compact_threshold',
+                self._AUTO_COMPACT_DEFAULT_THRESHOLD,
+            ))
+        except (TypeError, ValueError):
+            threshold = self._AUTO_COMPACT_DEFAULT_THRESHOLD
+        now = time.time()
+        if now - getattr(slot, 'last_compact_ts', 0.0) < self._AUTO_COMPACT_COOLDOWN:
+            return
+        # Don't step on an in-flight response — /compact would land as the
+        # user's next message. Also require 2s of PTY silence so we're sure
+        # the TUI is at an input prompt, not mid-render.
+        if slot.awaiting_response:
+            return
+        if slot.last_chunk_ts > 0 and now - slot.last_chunk_ts < 2.0:
+            return
+        # Scan the last few rendered rows (status bar lives at the bottom)
+        try:
+            tail = '\n'.join(slot.screen.display[-8:])
+        except Exception:
+            return
+        m = self._CLAUDE_TOKEN_RE.search(tail)
+        if not m:
+            return
+        try:
+            pct_left = int(m.group(1))
+        except (TypeError, ValueError):
+            return
+        if pct_left > threshold:
+            return
+        _blog(f"[auto-compact] sid={slot.sid} label={slot.label!r} "
+              f"pct_left={pct_left} threshold={threshold} — sending /compact\n")
+        slot.last_compact_ts = now
+        try:
+            slot.write_fn('/compact\r')
+        except Exception as e:
+            _blog(f"[auto-compact] write failed: {e}\n")
+
     def _send_typing(self, sid: str):
         """Send typing indicator to users watching this session."""
         for uid, active_sid in list(self._user_active.items()):
@@ -699,6 +758,22 @@ class TelegramBridge(BridgeBase):
     # Per-turn TG preamble is loaded dynamically from config via
     # get_tg_prompt() — users edit it in Settings → TG Bridge → Per-turn
     # preamble. See module-level DEFAULT_TG_PROMPT for the built-in text.
+
+    # Claude Code status-bar token gauge:
+    #   Sonnet 4.6 (1M context) · Claude Max · 12% left
+    #   Opus 4.7 … · 6% left
+    #   claude-3-5-sonnet … · 4% left
+    # We don't bind to colour / unicode bullets so the bar's many cosmetic
+    # variations (different plans, 1M vs 200k context, different models)
+    # all fall under one capture.
+    _CLAUDE_TOKEN_RE = re.compile(
+        r'(?:sonnet|opus|haiku|claude[-\s])[^%\n]{0,160}?(\d+)\s*%\s*left',
+        re.IGNORECASE,
+    )
+    # Default threshold + cooldown for Auto /compact (overridable via
+    # config.settings.claude_auto_compact_threshold).
+    _AUTO_COMPACT_DEFAULT_THRESHOLD = 15  # %
+    _AUTO_COMPACT_COOLDOWN = 90.0         # seconds
 
     # All 48 spinner verbs from Claude Code source (Spinner.tsx)
     _SPINNER_VERBS = {
@@ -1121,6 +1196,18 @@ class TelegramBridge(BridgeBase):
                         args=(sid, int(write_age)),
                         daemon=True,
                     ).start()
+
+            # Claude auto-compact check — runs outside output_lock so the
+            # scan doesn't contend with feed_output. Cheap: one regex on the
+            # last ~8 rendered lines per slot per 0.5s tick.
+            for sid in sids:
+                slot = self.slots.get(sid)
+                if not slot:
+                    continue
+                try:
+                    self._maybe_auto_compact(slot)
+                except Exception as e:
+                    _blog(f"[auto-compact] {sid} check failed: {e}\n")
 
             for sid in sids:
                 slot = self.slots.get(sid)
