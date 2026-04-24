@@ -2494,11 +2494,41 @@ def _register_global_hotkey():
 
     def _toggle_visibility():
         try:
-            if NSApp is not None and NSApp.isActive():
+            is_active = bool(NSApp and NSApp.isActive())
+            is_hidden = bool(NSApp and NSApp.isHidden())
+            print(f"[shellframe] hotkey toggle: active={is_active} hidden={is_hidden}",
+                  file=sys.stderr)
+            if is_active and not is_hidden:
                 NSApp.hide_(None)
-            else:
-                app = NSRunningApplication.currentApplication()
-                app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+                return
+            # Summon path. After `NSApp.hide_(None)` the app is in hidden
+            # state AND not active; both need reversing. unhide alone
+            # doesn't bring the window forward; activate alone from a
+            # background callback is often ignored by macOS. Combine, and
+            # fall back to `open -b` which is the one path that always
+            # works regardless of activation context / permissions.
+            if NSApp is not None:
+                try:
+                    NSApp.unhide_(None)
+                except Exception:
+                    pass
+            try:
+                NSRunningApplication.currentApplication().activateWithOptions_(
+                    NSApplicationActivateIgnoringOtherApps
+                )
+            except Exception:
+                pass
+            # Belt-and-braces: launch-services "open" against our bundle id
+            # reliably raises the app from any state (hidden, minimised,
+            # background) and doesn't need Accessibility / Automation perms.
+            try:
+                import subprocess as _sp
+                _sp.Popen(
+                    ["/usr/bin/open", "-b", "com.h2ocloud.shellframe"],
+                    stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                )
+            except Exception:
+                pass
         except Exception as e:
             print(f"[shellframe] hotkey toggle failed: {e}", file=sys.stderr)
 

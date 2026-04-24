@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.28 (2026-04-24)
+
+### Fixes
+- **`⌃⌥Space` hid shellframe but couldn't bring it back** — after `NSApp.hide_(None)` the app is both *hidden* AND *not active*; `activateWithOptions_` alone doesn't reliably reverse that from a background event callback. Summon path now: `unhide_` → `activateWithOptions_` → `/usr/bin/open -b com.h2ocloud.shellframe` as a belt-and-braces fallback (works regardless of Accessibility / Automation state). Also prints an `active=/hidden=` diagnostic on each toggle so it's easy to see which branch fired.
+
+### 修正
+- **`⌃⌥Space` 可以隱藏但叫不回來** — `NSApp.hide_(None)` 之後 app 同時是 **hidden** 且 **非 active**；光 `activateWithOptions_` 從背景 callback 呼叫常常被 macOS 無視。喚回流程改成：`unhide_` → `activateWithOptions_` → 再保險 `/usr/bin/open -b com.h2ocloud.shellframe`（任何狀態、任何權限組合都能把 app 拉回前景）。另外在每次 toggle 印出 `active=/hidden=` 診斷 log，方便看是走哪條路。
+
 ## v0.11.27 (2026-04-24)
 
 ### New Features
