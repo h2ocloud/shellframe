@@ -2202,6 +2202,14 @@ class Api:
             return {"success": False, "message": f"Unknown command: {cmd}"}
 
     def cleanup_all(self):
+        # Tear down the global hotkey FIRST so a trailing ⌃⌥Space during
+        # shutdown can't kick `open -b com.h2ocloud.shellframe` and race
+        # the incoming second instance against our still-running TG
+        # bridge (→ 409 Conflict on the bot token).
+        try:
+            _unregister_global_hotkey()
+        except Exception:
+            pass
         if self.bridge:
             self.bridge.stop()
             self.bridge = None
@@ -2440,6 +2448,77 @@ def _patch_pywebview_cocoa_none_screen():
 _global_hotkey_monitors = []
 
 
+def _unregister_global_hotkey():
+    """Pull down any live NSEvent monitors. Safe to call repeatedly and
+    during shutdown — if AppKit isn't importable we just clear the list."""
+    global _global_hotkey_monitors
+    try:
+        from AppKit import NSEvent
+        for _m in _global_hotkey_monitors:
+            try:
+                NSEvent.removeMonitor_(_m)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    _global_hotkey_monitors = []
+
+
+def _ensure_single_instance():
+    """Before we spin up pywebview / tmux / bridge, check whether another
+    shellframe is already running and — if so — activate it and exit.
+
+    Why this exists: Howard saw "hotkey rapidly toggle → two instances"
+    where the old instance was still shutting down (TG bridge still
+    polling) while a new one booted from `open` / Dock click. Two
+    concurrent TG bridges on the same bot token instantly 409-conflict
+    each other. Launching a second copy is never what the user wants
+    for a single-window GUI — always resolve to the existing instance.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        from AppKit import (
+            NSRunningApplication,
+            NSApplicationActivateIgnoringOtherApps,
+        )
+    except Exception:
+        return
+    my_pid = os.getpid()
+    try:
+        apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(
+            "com.h2ocloud.shellframe"
+        )
+    except Exception:
+        return
+    others = [
+        a for a in (apps or [])
+        if a.processIdentifier() != my_pid and not a.isTerminated()
+    ]
+    if not others:
+        return
+    other = others[0]
+    print(f"[shellframe] another instance (pid={other.processIdentifier()}) "
+          f"is already running — activating it and exiting this one",
+          file=sys.stderr)
+    try:
+        other.unhide()
+    except Exception:
+        pass
+    try:
+        other.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+    except Exception:
+        pass
+    try:
+        subprocess.Popen(
+            ["/usr/bin/open", "-b", "com.h2ocloud.shellframe"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+    os._exit(0)
+
+
 def _register_global_hotkey():
     """Ctrl+Option+Space: show shellframe if hidden, hide it if active.
 
@@ -2451,20 +2530,10 @@ def _register_global_hotkey():
 
     Settings.global_hotkey_enabled (default True) gates registration.
     """
-    global _global_hotkey_monitors
     if sys.platform != "darwin":
         return
     # Tear down any prior registration (e.g. re-register after settings flip)
-    try:
-        from AppKit import NSEvent as _NSEvent
-        for _m in _global_hotkey_monitors:
-            try:
-                _NSEvent.removeMonitor_(_m)
-            except Exception:
-                pass
-        _global_hotkey_monitors = []
-    except Exception:
-        pass
+    _unregister_global_hotkey()
 
     settings = (load_config().get("settings", {}) or {})
     if not settings.get("global_hotkey_enabled", True):
@@ -2601,6 +2670,12 @@ def _register_global_hotkey():
 
 def main():
     _self_heal_venv()
+    # Guard before we allocate anything expensive — if another shellframe
+    # is already running, activate it and exit this process. Prevents
+    # double-instance TG bridge 409 conflicts when Howard rapidly toggles
+    # via hotkey / Dock click while the previous instance is still winding
+    # down.
+    _ensure_single_instance()
     _prevent_app_nap()
     _patch_pywebview_cocoa_none_screen()
     api = Api()
