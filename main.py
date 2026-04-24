@@ -2744,14 +2744,23 @@ def main():
         try:
             if sys.platform == "darwin":
                 from AppKit import NSApp
+                from Foundation import NSOperationQueue
                 MOVE_TO_ACTIVE_SPACE = 1 << 1  # NSWindowCollectionBehaviorMoveToActiveSpace
-                for w in NSApp.windows():
-                    try:
-                        w.setCollectionBehavior_(
-                            w.collectionBehavior() | MOVE_TO_ACTIVE_SPACE
-                        )
-                    except Exception:
-                        pass
+                # macOS 26+ enforces main-thread-only NSWindow mutation and
+                # SIGTRAPs otherwise. _on_loaded fires on pywebview's event
+                # thread, so dispatch the setCollectionBehavior loop back
+                # onto the main queue.
+                def _apply_collection_behavior():
+                    for w in NSApp.windows():
+                        try:
+                            w.setCollectionBehavior_(
+                                w.collectionBehavior() | MOVE_TO_ACTIVE_SPACE
+                            )
+                        except Exception:
+                            pass
+                NSOperationQueue.mainQueue().addOperationWithBlock_(
+                    _apply_collection_behavior
+                )
         except Exception as e:
             print(f"[shellframe] setCollectionBehavior failed: {e}",
                   file=sys.stderr)

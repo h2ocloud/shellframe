@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.31 (2026-04-24)
+
+### Fixes
+- **SIGTRAP on launch under macOS 26 — shellframe died silently before the window appeared** — v0.11.30 added `setCollectionBehavior_()` on every `NSApp.windows()` entry inside `_on_loaded`, which pywebview fires on its event-dispatcher thread. macOS 26 (Tahoe) tightened the AppKit main-thread-only rule from "undefined behaviour" to hard `EXC_BREAKPOINT` / SIGTRAP, so any user on 26+ who upgraded to v0.11.30 hit an immediate crash with no Python traceback (ObjC-level abort bypasses `try/except` and `_write_crash_log`, so `~/.shellframe-crash.log` stayed empty — the silent-failure mode). Fixed by wrapping the `setCollectionBehavior_` loop in a block and dispatching it to `NSOperationQueue.mainQueue()` so mutation happens on the main thread regardless of which thread `_on_loaded` fires on.
+
+### 修正
+- **macOS 26 上 v0.11.30 的 `⌃⌥Space` 新功能讓 shellframe 一啟動就 SIGTRAP、視窗完全沒出來** — v0.11.30 在 `_on_loaded` 裡對所有 `NSApp.windows()` 呼叫 `setCollectionBehavior_()`，但 pywebview 的 loaded event 是在背景 thread 觸發的。macOS 26 (Tahoe) 把 AppKit 「NSWindow mutation 只能在主執行緒」的規則從「未定義行為」升級成硬性 `EXC_BREAKPOINT` / SIGTRAP，所以已經升級到 26 的使用者升到 v0.11.30 後會一啟動就死；而且因為 crash 發生在 ObjC 層，Python 的 `try/except` 跟 `_write_crash_log` 都攔不到，`~/.shellframe-crash.log` 是空的（沉默失敗模式，最難 debug 的那種）。修法是把 `setCollectionBehavior_` 迴圈包進 block 再用 `NSOperationQueue.mainQueue()` 派回主執行緒，這樣不論 `_on_loaded` 跑在哪個 thread，mutation 都在 main thread 上執行。
+
 ## v0.11.30 (2026-04-24)
 
 ### New Features
