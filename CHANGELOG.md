@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.32 (2026-04-24)
+
+### Fixes
+- **Auto /compact threshold spinner was unreadable on dark background** — WebKit draws `<input type="number">` spinner arrows in a near-black default that disappears on the `#1a1b26` field. Added a `sf-bright-spin` class that sets `color-scheme: dark` + `accent-color` and runs `filter: invert(1) brightness(1.5)` on the native spinner pseudo-elements so up/down arrows render as bright light-grey.
+
+### 修正
+- **Auto /compact 門檻的上下箭頭在深色底看不見** — WebKit 預設的 number input spinner 是近黑色，跟 `#1a1b26` 底幾乎重疊。加了 `sf-bright-spin` CSS class：`color-scheme: dark` + `accent-color` 讓 WebKit 挑 dark-theme 的箭頭，再疊一層 `filter: invert(1) brightness(1.5)` 把 spinner 亮到淺灰，一眼就看得到。
+
 ## v0.11.31 (2026-04-24)
 
 ### Fixes

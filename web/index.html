@@ -423,6 +423,19 @@
   .code-copy-btn.visible { opacity: 1; }
   .code-copy-btn:hover { background: #3b4261; }
   .code-copy-btn.copied { color: #9ece6a; }
+  /* Number-input spinner buttons on dark backgrounds — WebKit renders
+     the default spinner as a very dark grey that's invisible on our
+     #1a1b26 input fill. `color-scheme: dark` + `accent-color` plus a
+     brightness filter lift them to a visible light grey. */
+  input[type="number"].sf-bright-spin {
+    color-scheme: dark;
+    accent-color: #7aa2f7;
+  }
+  input[type="number"].sf-bright-spin::-webkit-inner-spin-button,
+  input[type="number"].sf-bright-spin::-webkit-outer-spin-button {
+    opacity: 1;
+    filter: invert(1) brightness(1.5);
+  }
 </style>
 </head>
 <body>
@@ -542,7 +555,7 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-auto-compact"></button>
             <span style="font-size:11px;color:#565f89">≤</span>
-            <input type="number" id="setting-auto-compact-threshold" min="3" max="50" step="1" value="15"
+            <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
                    style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
             <span style="font-size:11px;color:#565f89">% left</span>
           </div>
