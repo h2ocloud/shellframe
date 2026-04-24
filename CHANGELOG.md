@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.27 (2026-04-24)
+
+### New Features
+- **Global hotkey `⌃⌥Space` — show / hide shellframe from anywhere** — press Ctrl+Option+Space from any app to bring shellframe forward; press again while shellframe is active to hide it (equivalent to Cmd+H). Implemented via `NSEvent.addGlobalMonitorForEventsMatchingMask` + a local monitor, so it also fires cleanly when shellframe itself has focus. Toggle on/off in Settings → General → Global hotkey; change takes effect immediately (no restart). macOS only for now. Requires Accessibility permission for the global path; users who've run `sfctl permissions` already have it.
+
+### 新功能
+- **全域快捷鍵 `⌃⌥Space` — 隨時喚出 / 收起 shellframe** — 在任何 app 裡按 Ctrl+Option+Space 把 shellframe 叫到前景；shellframe 已在前景再按一次收起（等同 Cmd+H）。用 `NSEvent.addGlobalMonitorForEventsMatchingMask` + local monitor 實作，shellframe 自己有 focus 時也能正常觸發。Settings → General → Global hotkey 可關，改設定立即生效不用重開。目前只支援 macOS。全域監聽需要 Accessibility 權限；跑過 `sfctl permissions` 的人已經有。
+
 ## v0.11.26 (2026-04-24)
 
 ### New Features

@@ -598,8 +598,17 @@ class Api:
 
     def save_settings(self, settings_json: str) -> str:
         cfg = load_config()
+        old_hotkey = (cfg.get("settings", {}) or {}).get("global_hotkey_enabled", True)
         cfg["settings"] = json.loads(settings_json)
         save_config(cfg)
+        # Re-register the global hotkey if the toggle changed, so users
+        # don't need to restart for the setting to take effect.
+        new_hotkey = cfg["settings"].get("global_hotkey_enabled", True)
+        if old_hotkey != new_hotkey:
+            try:
+                _register_global_hotkey()
+            except Exception:
+                pass
         return json.dumps(cfg)
 
     def delete_preset(self, name: str) -> str:
@@ -2427,6 +2436,114 @@ def _patch_pywebview_cocoa_none_screen():
         print(f"[shellframe] cocoa patch skipped: {e}", file=sys.stderr)
 
 
+_global_hotkey_monitors = []
+
+
+def _register_global_hotkey():
+    """Ctrl+Option+Space: show shellframe if hidden, hide it if active.
+
+    macOS only for now (uses NSEvent.addGlobalMonitor / addLocalMonitor).
+    Global monitor requires Accessibility permission — users who've run
+    `sfctl permissions` have it. Without permission the hotkey silently
+    no-ops (key still works inside shellframe itself via the local
+    monitor, which doesn't need Accessibility).
+
+    Settings.global_hotkey_enabled (default True) gates registration.
+    """
+    global _global_hotkey_monitors
+    if sys.platform != "darwin":
+        return
+    # Tear down any prior registration (e.g. re-register after settings flip)
+    try:
+        from AppKit import NSEvent as _NSEvent
+        for _m in _global_hotkey_monitors:
+            try:
+                _NSEvent.removeMonitor_(_m)
+            except Exception:
+                pass
+        _global_hotkey_monitors = []
+    except Exception:
+        pass
+
+    settings = (load_config().get("settings", {}) or {})
+    if not settings.get("global_hotkey_enabled", True):
+        return
+
+    try:
+        from AppKit import (
+            NSEvent,
+            NSApp,
+            NSRunningApplication,
+            NSApplicationActivateIgnoringOtherApps,
+        )
+    except Exception as e:
+        print(f"[shellframe] global hotkey skipped (AppKit): {e}", file=sys.stderr)
+        return
+
+    NSEventMaskKeyDown = 1 << 10  # NSEventMaskKeyDown
+    # Modifier flag bits (from NSEvent.h)
+    MOD_SHIFT = 1 << 17
+    MOD_CONTROL = 1 << 18
+    MOD_OPTION = 1 << 19
+    MOD_COMMAND = 1 << 20
+    MOD_MASK = MOD_SHIFT | MOD_CONTROL | MOD_OPTION | MOD_COMMAND
+    NEED = MOD_CONTROL | MOD_OPTION
+    FORBIDDEN = MOD_COMMAND | MOD_SHIFT
+
+    SPACE_KEYCODE = 49  # kVK_Space
+
+    def _toggle_visibility():
+        try:
+            if NSApp is not None and NSApp.isActive():
+                NSApp.hide_(None)
+            else:
+                app = NSRunningApplication.currentApplication()
+                app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+        except Exception as e:
+            print(f"[shellframe] hotkey toggle failed: {e}", file=sys.stderr)
+
+    def _matches(event) -> bool:
+        try:
+            if event.keyCode() != SPACE_KEYCODE:
+                return False
+            mods = int(event.modifierFlags()) & MOD_MASK
+            if (mods & NEED) != NEED:
+                return False
+            if mods & FORBIDDEN:
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _global_handler(event):
+        # Other apps have focus; global monitor can only observe, can't
+        # swallow. We still react (toggle our app forward).
+        if _matches(event):
+            _toggle_visibility()
+
+    def _local_handler(event):
+        # Shellframe itself has focus; swallow the event so xterm doesn't
+        # see Ctrl+⌥+Space.
+        if _matches(event):
+            _toggle_visibility()
+            return None
+        return event
+
+    try:
+        m1 = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+            NSEventMaskKeyDown, _global_handler,
+        )
+        m2 = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            NSEventMaskKeyDown, _local_handler,
+        )
+        if m1 is not None:
+            _global_hotkey_monitors.append(m1)
+        if m2 is not None:
+            _global_hotkey_monitors.append(m2)
+    except Exception as e:
+        print(f"[shellframe] hotkey register failed: {e}", file=sys.stderr)
+
+
 def main():
     _self_heal_venv()
     _prevent_app_nap()
@@ -2566,6 +2683,11 @@ def main():
 
     window.events.loaded += _on_loaded
     window.events.closed += _on_closed_save_and_cleanup
+
+    # Global hotkey Ctrl+⌥+Space — register after window exists so NSApp
+    # has been spun up by pywebview. Settings-gated; flip off in Settings
+    # → General and call api.reload_global_hotkey() to take effect.
+    _register_global_hotkey()
     api._start_command_watcher()
     webview.start(debug=("--debug" in sys.argv))
 

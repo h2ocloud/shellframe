@@ -547,6 +547,16 @@
             <span style="font-size:11px;color:#565f89">% left</span>
           </div>
         </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Global hotkey</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-global-hotkey"></button>
+            <span style="font-size:11px;color:#565f89">
+              <kbd style="font-family:inherit;font-size:10px;padding:1px 4px;background:#1a1b26;border:1px solid #3b4261;border-radius:3px;color:#c0caf5">⌃⌥Space</kbd>
+              show/hide
+            </span>
+          </div>
+        </div>
       </div>
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
@@ -2664,8 +2674,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       Number(s.claude_auto_compact_threshold) > 0
         ? s.claude_auto_compact_threshold
         : 15;
+    // Global hotkey (⌃⌥Space) — default on
+    document.getElementById('setting-global-hotkey').classList.toggle(
+      'on', s.global_hotkey_enabled !== false,
+    );
     syncSettingsBridge();
   });
+
+  // Global hotkey toggle — saves immediately; main.py re-registers the
+  // NSEvent monitor on next save_settings call so no restart needed.
+  document.getElementById('setting-global-hotkey')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      const on = this.classList.contains('on');
+      config.settings = config.settings || {};
+      config.settings.global_hotkey_enabled = on;
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
 
   // Auto /compact toggle + threshold — saves immediately so the bridge's
   // flush-loop gate picks it up on the next 0.5s tick.
