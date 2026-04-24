@@ -2493,21 +2493,48 @@ def _register_global_hotkey():
 
     SPACE_KEYCODE = 49  # kVK_Space
 
+    def _is_on_current_space() -> bool:
+        """True iff a shellframe window is visible in the user's CURRENT
+        macOS space. Uses Quartz's on-screen window list, which only
+        enumerates windows on the active space — windows on other spaces
+        are absent regardless of their app's activation state."""
+        try:
+            from Quartz import (
+                CGWindowListCopyWindowInfo,
+                kCGWindowListOptionOnScreenOnly,
+                kCGNullWindowID,
+            )
+            wins = CGWindowListCopyWindowInfo(
+                kCGWindowListOptionOnScreenOnly, kCGNullWindowID,
+            ) or []
+            pid = os.getpid()
+            for w in wins:
+                if w.get("kCGWindowOwnerPID") == pid:
+                    return True
+        except Exception:
+            pass
+        return False
+
     def _toggle_visibility():
         try:
             is_active = bool(NSApp and NSApp.isActive())
             is_hidden = bool(NSApp and NSApp.isHidden())
-            print(f"[shellframe] hotkey toggle: active={is_active} hidden={is_hidden}",
+            on_space = _is_on_current_space()
+            print(f"[shellframe] hotkey toggle: active={is_active} "
+                  f"hidden={is_hidden} on_current_space={on_space}",
                   file=sys.stderr)
-            if is_active and not is_hidden:
+            # Only treat as "hide" when shellframe is visible in THIS space
+            # AND focused. Howard uses macOS Spaces heavily — if the window
+            # is on another space, activating should pull it to the current
+            # space (via NSWindowCollectionBehaviorMoveToActiveSpace set at
+            # load time), not yank the user across spaces.
+            if on_space and is_active and not is_hidden:
                 NSApp.hide_(None)
                 return
-            # Summon path. After `NSApp.hide_(None)` the app is in hidden
-            # state AND not active; both need reversing. unhide alone
-            # doesn't bring the window forward; activate alone from a
-            # background callback is often ignored by macOS. Combine, and
-            # fall back to `open -b` which is the one path that always
-            # works regardless of activation context / permissions.
+            # Summon path. After `NSApp.hide_(None)` the app is both hidden
+            # and inactive; unhide alone doesn't bring the window forward.
+            # Combine unhide + activate, plus `open -b` as a belt-and-braces
+            # fallback (works regardless of activation context / perms).
             if NSApp is not None:
                 try:
                     NSApp.unhide_(None)
@@ -2519,9 +2546,6 @@ def _register_global_hotkey():
                 )
             except Exception:
                 pass
-            # Belt-and-braces: launch-services "open" against our bundle id
-            # reliably raises the app from any state (hidden, minimised,
-            # background) and doesn't need Accessibility / Automation perms.
             try:
                 import subprocess as _sp
                 _sp.Popen(
@@ -2710,6 +2734,27 @@ def main():
             except Exception as e:
                 print(f"[shellframe] post-show move to {pending_move} "
                       f"failed: {e}", file=sys.stderr)
+        # Spaces-aware activation: tag each NSWindow with
+        # MoveToActiveSpace so that when the global hotkey activates the
+        # app, the window moves to the user's CURRENT space instead of
+        # warping the user to whichever space the window happened to be
+        # on. Howard uses Mission Control heavily — the default behaviour
+        # (space-switch to window) breaks flow; "window comes to me"
+        # matches his ask ("隨傳隨到").
+        try:
+            if sys.platform == "darwin":
+                from AppKit import NSApp
+                MOVE_TO_ACTIVE_SPACE = 1 << 1  # NSWindowCollectionBehaviorMoveToActiveSpace
+                for w in NSApp.windows():
+                    try:
+                        w.setCollectionBehavior_(
+                            w.collectionBehavior() | MOVE_TO_ACTIVE_SPACE
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[shellframe] setCollectionBehavior failed: {e}",
+                  file=sys.stderr)
         api._start_output_pusher()
 
     window.events.loaded += _on_loaded

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.30 (2026-04-24)
+
+### New Features
+- **Spaces-aware `⌃⌥Space` — window always comes to YOU, not you to window** — on macOS each window lives in a specific Space; the default `activateIgnoringOtherApps` jumps the user's viewport to wherever shellframe's window happens to live, which breaks flow for heavy Mission Control users. Now shellframe's NSWindows are tagged with `NSWindowCollectionBehaviorMoveToActiveSpace`, so hotkey activation pulls the window into the user's current space instead. The hide/show decision also factors in the current space: if shellframe is NOT visible in the space you're on, the hotkey treats it as "hidden" and summons it; only when the window is visibly present in your current space AND focused does it hide. Visible-on-current-space detection uses Quartz's on-screen window list filtered by our PID.
+
+### 新功能
+- **`⌃⌥Space` 支援虛擬桌面 — 視窗跟著你跑，不是你跟著視窗跑** — macOS 每個視窗屬於某個 Space；`activateIgnoringOtherApps` 預設會把使用者的視角切到視窗所在的 Space，對大量用 Mission Control 的人（Howard）流程會被打斷。現在 shellframe 的 NSWindow 加上 `NSWindowCollectionBehaviorMoveToActiveSpace`，熱鍵 activate 時視窗會跑到「你當下這個 Space」。隱藏 / 喚出的判斷也加進 current-space 檢查：當下 Space **看不到** shellframe → 視為隱藏，熱鍵把它叫到眼前；當下 Space **看得到** 且有 focus → 才真的 hide。用 Quartz on-screen window list 過濾自己 PID 判斷「當下 Space 是否有我的視窗」。
+
 ## v0.11.29 (2026-04-24)
 
 ### New Features
