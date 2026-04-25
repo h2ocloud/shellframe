@@ -41,6 +41,14 @@ $launcherMain = @"
 "@
 Set-Content -Path "$BinDir\shellframe.bat" -Value $launcherMain
 
+# shellframe — GUI launcher (no console window)
+$vbsLauncher = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.CurrentDirectory = "$InstallDir"
+WshShell.Run """$InstallDir\.venv\Scripts\pythonw.exe"" ""$InstallDir\main.py""", 0, False
+"@
+Set-Content -Path "$BinDir\shellframe.vbs" -Value $vbsLauncher
+
 # sfctl — remote control for AI agents (absolute paths)
 $launcherSfctl = @"
 @echo off
@@ -60,19 +68,19 @@ if ($userPath -split ";" | Where-Object { $_ -eq $BinDir }) {
     Write-Host "  Added $BinDir to user PATH" -ForegroundColor Yellow
 }
 
-# Desktop shortcut
+# Desktop shortcut (standalone GUI, no terminal window)
 try {
     $desktopPath = [Environment]::GetFolderPath("Desktop")
     $shortcutPath = "$desktopPath\ShellFrame.lnk"
-    if (-not (Test-Path $shortcutPath)) {
-        $shell = New-Object -ComObject WScript.Shell
-        $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = "$BinDir\shellframe.bat"
-        $shortcut.WorkingDirectory = $InstallDir
-        $shortcut.Description = "ShellFrame"
-        $shortcut.Save()
-        Write-Host "  Desktop shortcut created" -ForegroundColor Yellow
-    }
+    # Always recreate to pick up icon and VBS launcher changes
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = "$BinDir\shellframe.vbs"
+    $shortcut.WorkingDirectory = $InstallDir
+    $shortcut.Description = "ShellFrame"
+    $shortcut.IconLocation = "$InstallDir\icon.ico"
+    $shortcut.Save()
+    Write-Host "  Desktop shortcut created (with icon)" -ForegroundColor Yellow
 } catch {
     Write-Host "  (Skipped desktop shortcut: $_)" -ForegroundColor DarkGray
 }
