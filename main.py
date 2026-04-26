@@ -61,6 +61,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "presets": [
+        {"name": "PowerShell", "cmd": "powershell", "icon": "\u25b6"} if IS_WIN else
         {"name": "Bash", "cmd": "bash", "icon": "\u25b6"},
     ],
     "settings": {
@@ -251,7 +252,7 @@ class Session:
     def _start_win(self, cols, rows):
         args = shlex.split(self.cmd)
         exe = shutil.which(args[0])
-        cmd_args = [exe] + args[1:] if exe else ["cmd.exe", "/c", self.cmd]
+        cmd_args = [exe] + args[1:] if exe else ["powershell", "-NoProfile", "-Command", self.cmd]
 
         # Try pywinpty for full ConPTY support (colors, TUI)
         try:
