@@ -61,8 +61,17 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "presets": [
+        # Shell first so the "+" menu has a sensible default for any user.
         {"name": "PowerShell", "cmd": "powershell", "icon": "\u25b6"} if IS_WIN else
         {"name": "Bash", "cmd": "bash", "icon": "\u25b6"},
+        # AI CLIs ship as defaults — most shellframe users come for these.
+        # `cmd` is the bare command name; the user just needs `claude` / `codex`
+        # on PATH (Anthropic / OpenAI install scripts put them in ~/.local/bin
+        # or /usr/local/bin). Missing binary surfaces as "command not found"
+        # in the new session, which is clear enough — no need to gate on a
+        # which-check at config-build time.
+        {"name": "Claude", "cmd": "claude", "icon": "\U0001F680"},   # 🚀
+        {"name": "Codex",  "cmd": "codex",  "icon": "\U0001F916"},   # 🤖
     ],
     "settings": {
         "fontSize": 14,
@@ -71,12 +80,37 @@ DEFAULT_CONFIG = {
 }
 
 
+_DEFAULT_AI_PRESETS = [
+    {"name": "Claude", "cmd": "claude", "icon": "\U0001F680"},
+    {"name": "Codex",  "cmd": "codex",  "icon": "\U0001F916"},
+]
+
+
 def load_config():
     if CONFIG_FILE.exists():
         try:
-            return json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
-        except:
-            pass
+            cfg = json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
+        except Exception:
+            return DEFAULT_CONFIG.copy()
+        # One-shot migration for installs that predate the AI-CLI defaults:
+        # if neither Claude nor Codex appears in the user's preset list,
+        # append them so the "+" menu offers them out of the box. Users who
+        # explicitly removed either preset before this migration ran will
+        # get them back once — that's acceptable; deleting them again is
+        # one click and the flag below blocks future re-adds.
+        if not cfg.get("_default_ai_presets_migrated"):
+            existing_cmds = {
+                (p.get("cmd") or "").strip() for p in cfg.get("presets", []) or []
+            }
+            for preset in _DEFAULT_AI_PRESETS:
+                if preset["cmd"] not in existing_cmds:
+                    cfg.setdefault("presets", []).append(dict(preset))
+            cfg["_default_ai_presets_migrated"] = True
+            try:
+                save_config(cfg)
+            except Exception:
+                pass
+        return cfg
     return DEFAULT_CONFIG.copy()
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.33 (2026-04-27)
+
+### New Features
+- **Claude + Codex are now built-in presets** — fresh installs see Claude (🚀 `claude`) and Codex (🤖 `codex`) in the "+" new-tab menu out of the box, no manual preset setup. Existing installs migrate one-shot on next launch: if neither preset is already present, both are appended; a `_default_ai_presets_migrated` flag in `config.json` makes the migration idempotent so users who explicitly delete one don't get it back next launch. Bash / PowerShell stays as the first preset for non-AI shell access.
+
+### 新功能
+- **Claude / Codex 變成預設 preset** — 新安裝開 shellframe 第一次按 "+" 就看到 Claude（🚀 `claude`）跟 Codex（🤖 `codex`），不用手動加 preset。已安裝的使用者下次啟動會做一次 migration：若兩個都不在 preset list 就附加上去，`config.json` 寫一個 `_default_ai_presets_migrated` 旗標確保只跑一次，使用者後來刪掉不會被自動加回來。Bash / PowerShell 仍排第一作為純 shell 用途。
+
 ## v0.11.32 (2026-04-24)
 
 ### Fixes
