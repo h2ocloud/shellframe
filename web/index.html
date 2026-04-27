@@ -3868,12 +3868,88 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       term.clearSelection();
       _pendingSel = '';
     } else {
-      try {
-        const text = await pywebview.api.paste_text();
-        if (text) await pywebview.api.write_input(activeId, text);
-      } catch(err) {}
+      // Right-click paste mirrors Cmd+V: image / file in clipboard goes
+      // through the attach pipeline, not raw text. The browser's
+      // synthetic ClipboardEvent only fires for keyboard / menu paste,
+      // so we drive the same machinery here ourselves.
+      _rightClickPaste();
     }
   });
+
+  async function _rightClickPaste() {
+    if (!activeId || !sessions[activeId]) return;
+    const ai = isAiSession(activeId);
+
+    // 1) Try the async Clipboard API for image (and file) blobs. Same
+    //    surface Cmd+V uses internally — gives us actual binary data,
+    //    not just `pbpaste`'s text projection.
+    if (navigator.clipboard && navigator.clipboard.read) {
+      try {
+        const items = await navigator.clipboard.read();
+        let handled = false;
+        for (const item of items) {
+          for (const type of item.types || []) {
+            if (!type.startsWith('image/')) continue;
+            const blob = await item.getType(type);
+            const dataUrl = await new Promise((res, rej) => {
+              const fr = new FileReader();
+              fr.onload = () => res(fr.result);
+              fr.onerror = () => rej(fr.error);
+              fr.readAsDataURL(blob);
+            });
+            const path = await pywebview.api.save_image(dataUrl);
+            if (path && !path.startsWith('ERROR')) {
+              if (ai) attachFile(path, dataUrl);
+              else await pywebview.api.write_input(activeId, path);
+              handled = true;
+            }
+          }
+        }
+        if (handled) {
+          _refocusActive();
+          return;
+        }
+      } catch (_) {
+        // Permission / not supported — fall through.
+      }
+    }
+
+    // 2) Finder-copied files: macOS / Windows clipboard holds a path list
+    //    that the browser API can't see. Python backend reads it via
+    //    pbpaste / PowerShell.
+    try {
+      const raw = await pywebview.api.get_clipboard_files();
+      const paths = JSON.parse(raw || '[]');
+      if (paths && paths.length) {
+        if (ai) {
+          for (const p of paths) attachFile(p, null);
+        } else {
+          await pywebview.api.write_input(activeId, paths.join(' '));
+        }
+        _refocusActive();
+        return;
+      }
+    } catch (_) {}
+
+    // 3) Plain text fallback. Reuse the same large-paste confirm gate as
+    //    Cmd+V so a fat-fingered right-click can't auto-submit a giant
+    //    blob into Claude.
+    try {
+      const text = await pywebview.api.paste_text();
+      if (!text || text.startsWith('ERROR')) return;
+      const lines = text.split('\n').length;
+      if (text.length >= PASTE_CONFIRM_CHARS || lines >= PASTE_CONFIRM_LINES) {
+        _armPasteConfirm(text, activeId);
+        _refocusActive();
+        return;
+      }
+      // Wrap in bracketed-paste so AI CLIs see it as a paste event
+      // (matches the keyboard-paste path xterm.js takes when bracketed
+      // paste mode is enabled by the PTY).
+      await pywebview.api.write_input(activeId, '\x1b[200~' + text + '\x1b[201~');
+      _refocusActive();
+    } catch (_) {}
+  }
 
   // ── Code block copy button ──
   {

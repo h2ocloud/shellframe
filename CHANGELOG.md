@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.34 (2026-04-27)
+
+### New Features
+- **Right-click paste now handles images / files like Cmd+V** — the right-click "no selection → paste" branch used to call `paste_text()` which only sees `pbpaste`'s text projection of the clipboard, so images / Finder-copied files just dropped through. Right-click paste now drives the same intake pipeline as keyboard paste: tries `navigator.clipboard.read()` for image blobs first (saves to `~/.claude/tmp/` and attaches), falls back to `get_clipboard_files()` for Finder-copied files, then plain text last. The text path also goes through the large-paste confirm gate (≥ 1000 chars or ≥ 10 lines → Esc to cancel) and bracketed-paste wrapping, matching Cmd+V behaviour exactly.
+
+### 新功能
+- **右鍵貼上現在跟 Cmd+V 一樣會處理圖片 / 檔案** — 之前右鍵 paste 走 `paste_text()` 只拿純文字，剪貼簿裡的圖片或 Finder 複製的檔案直接掉。改成跟鍵盤 Cmd+V 同一條路：先試 `navigator.clipboard.read()` 抓圖片 blob → 存到 `~/.claude/tmp/` 並 attach；其次試 `get_clipboard_files()` 抓 Finder 路徑；最後才走純文字。文字路徑也走長 paste 確認 bar（≥ 1000 字或 ≥ 10 行 → Esc 取消）+ bracketed-paste wrapping，跟 Cmd+V 行為完全一致。
+
 ## v0.11.33 (2026-04-27)
 
 ### New Features
