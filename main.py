@@ -120,6 +120,20 @@ def save_config(cfg):
 
 TMUX_PREFIX = "sf_"  # tmux session name prefix
 
+
+def _session_cwd() -> str:
+    """Working directory we hand to spawned PTY sessions (claude / codex /
+    bash / etc.). We *don't* want them inheriting shellframe's install
+    dir as their cwd — that's the host chrome, not where the user
+    actually wants to work. Defaults to $HOME so AI CLIs and shells start
+    in a neutral place; the init prompt still tells the AI that
+    shellframe source lives at ~/.local/apps/shellframe/ if it's asked
+    to self-modify."""
+    try:
+        return os.path.expanduser("~") or "/"
+    except Exception:
+        return "/"
+
 # Cross-platform temp dir — keep /tmp on Unix for continuity with existing
 # installs, fall back to %TEMP% on Windows
 import tempfile as _tempfile
@@ -221,11 +235,21 @@ class Session:
             self._tmux_name = f"{TMUX_PREFIX}{self.sid}"
 
         if not _tmux_session_exists(self._tmux_name):
-            # Create new tmux session (detached) running the command
+            # Create new tmux session (detached) running the command. We
+            # explicitly pass `-c $HOME` so the spawned shell / AI CLI
+            # starts in the user's home directory, not in shellframe's
+            # install dir (which is just the chrome that hosts them).
+            # That way `claude`, `codex`, bash etc. behave the same as if
+            # the user opened them from a fresh Terminal — relative paths
+            # mean what the user expects, and AI agents that run `pwd`
+            # don't think the user wants to work on shellframe internals.
+            # The init-prompt still tells the AI "shellframe source lives
+            # at ~/.local/apps/shellframe/" if it's asked to self-modify.
             subprocess.run([
                 "tmux", "new-session", "-d",
                 "-s", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
+                "-c", _session_cwd(),
                 self.cmd,
             ], capture_output=True, timeout=5)
             # Store original command in tmux environment for recovery
@@ -269,6 +293,13 @@ class Session:
             env["TERM"] = "xterm-256color"
             env["COLORTERM"] = "truecolor"
             env.setdefault("LANG", "en_US.UTF-8")
+            # chdir to the user's home before exec so the spawned process
+            # doesn't inherit shellframe's install dir as its cwd. See
+            # _start_tmux for the full rationale.
+            try:
+                os.chdir(_session_cwd())
+            except Exception:
+                pass
 
             if exe:
                 os.execve(exe, args, env)
@@ -295,6 +326,7 @@ class Session:
                 cmd_args,
                 dimensions=(rows, cols),
                 env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"},
+                cwd=_session_cwd(),
             )
             self._use_winpty = True
             threading.Thread(target=self._reader_winpty, daemon=True).start()
@@ -309,6 +341,7 @@ class Session:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            cwd=_session_cwd(),
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             env={**os.environ, "TERM": "xterm-256color"},
         )

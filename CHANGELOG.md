@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.36 (2026-04-28)
+
+### Fixes
+- **Spawned sessions no longer inherit shellframe's install dir as cwd** — `claude`, `codex`, bash, etc. used to open in `~/.local/apps/shellframe/` because the launcher script `cd`'s there before exec'ing main.py and child PTYs inherited that cwd. Confusing — agents asked to "fix this bug" would default to working on shellframe internals, and shells dropped you in a directory you don't own. Now every PTY (tmux `new-session -c $HOME`, plain Unix pty.fork → `os.chdir`, Windows pywinpty / Popen `cwd=`) starts at `$HOME`. The init prompt still names `~/.local/apps/shellframe/` as the location for self-modification, so AI agents can still find shellframe source when explicitly asked to tune it.
+
+### 修正
+- **新 session 不再開在 shellframe 的安裝目錄** — `claude` / `codex` / bash 之前都繼承 shellframe launcher `cd $DIR` 之後的 cwd，全都從 `~/.local/apps/shellframe/` 開起，agent 被問「fix 一下這個 bug」會誤以為要去動 shellframe 本體；純 shell 也是落在使用者根本不擁有的目錄。改成所有 PTY（tmux `new-session -c $HOME`、Unix `pty.fork` 後 `os.chdir`、Windows pywinpty / Popen `cwd=`）一律從 `$HOME` 起跑。Init prompt 仍保留 `~/.local/apps/shellframe/` 路徑指引，使用者要 agent 改 shellframe 本體還是知道去哪。
+
 ## v0.11.35 (2026-04-28)
 
 ### Fixes
