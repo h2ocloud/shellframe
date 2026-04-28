@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.35 (2026-04-28)
+
+### Fixes
+- **Focus-stealing guard during paste — stop losing the textarea on big / image pastes** — v0.11.24's "fire 4 setTimeouts up to 200ms" approach was fine for keyboard text paste but lost the race for heavier flows: multiple images, large text, or any chain that hits FileReader → `save_image` IPC → `write_input` settles well over a second after the paste event, and WKWebView keeps re-blurring the helper textarea throughout. Result: "pasted, can't type, can't Enter, have to click back into the terminal." Replaced the fixed schedule with a 3-second guard that checks `document.activeElement` every 80ms and pulls focus back when it's parked on `body` / `image-bar` / `drop-overlay` / `paste-confirm-bar`. User-initiated focus on real inputs / modals is left alone (the guard recognises stealable vs. user-driven targets), and the guard self-stops after 3 stable ticks on the textarea so it doesn't run forever.
+
+### 修正
+- **大段 paste / 貼圖時 focus 一直被搶走，沒辦法直接打字 / Enter 送出** — v0.11.24 那版「200ms 內連發 4 個 setTimeout」對純文字 paste 還行，但碰到多張圖、大段文字、或 FileReader → `save_image` IPC → `write_input` 這條長鏈會落在 1 秒之後才穩定，期間 WKWebView 會反覆 blur helper textarea，使用者就遇到「貼完打不出字、Enter 沒反應、要再點一下對話才能繼續」。改成 3 秒 focus guard：每 80ms 檢查 `document.activeElement`，若卡在 body / image-bar / drop-overlay / paste-confirm-bar 就拉回 textarea；使用者主動 focus 真的 input / modal 不會被搶；連續 3 tick 看到 textarea focused 就自動停，最多 3 秒。
+
 ## v0.11.34 (2026-04-27)
 
 ### New Features

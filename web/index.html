@@ -2568,30 +2568,78 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     _refocusActive();
   });
 
-  // Pull focus back to the active session's xterm textarea. Paste / drop
-  // flows drop focus onto body / image-bar / drop-overlay, and on WKWebView
-  // the browser does its own focus ping-pong asynchronously for a few
-  // hundred ms after the paste event settles. A single setTimeout(0)
-  // loses that race. Fire multiple times:
-  //  - immediately (might take if nothing else is fighting us)
-  //  - after microtask queue drains (timeout 0)
-  //  - 50ms / 200ms later to beat WKWebView's post-paste focus logic
-  // Also hit the textarea directly rather than only via xterm.focus(), so
-  // DOM focus lands on the element xterm's customKeyEventHandler filters on.
+  // Pull focus back to the active session's xterm textarea after a paste /
+  // drop flow. Big or async paste pipelines (multiple images, FileReader →
+  // save_image IPC → write_input) take well over a second to settle, and
+  // WKWebView keeps re-blurring the helper textarea during that window.
+  // The old "fire 4 setTimeouts up to 200ms" approach lost the race for
+  // anything heavier than a small text paste — Howard saw "can't even
+  // type after pasting a chunk of text or images".
+  //
+  // New strategy: spin a guard for up to 3 seconds. Every 80ms we check
+  // document.activeElement; if it's not our xterm textarea AND the focus
+  // hasn't been claimed by a real user-initiated input/button (i.e. it's
+  // sitting on body / one of our floating bars), we yank it back. Stop
+  // once the textarea has been the active element for 3 ticks in a row,
+  // or after the 3s cap. Refusing to steal when activeElement is in a
+  // modal / settings input / xterm internal element keeps the guard from
+  // fighting legitimate user clicks.
+  let _refocusGuardId = null;
+  let _refocusHardCapId = null;
+
+  function _isStealableFocus(el) {
+    if (!el || el === document.body || el === document.documentElement) return true;
+    if (typeof el.closest !== 'function') return true;
+    if (el.closest('#image-bar')) return true;
+    if (el.closest('#drop-overlay')) return true;
+    if (el.closest('#paste-confirm-bar')) return true;
+    return false;
+  }
+
   function _refocusActive() {
-    const go = () => {
-      if (!activeId || !sessions[activeId]) return;
+    if (_refocusGuardId) {
+      clearInterval(_refocusGuardId);
+      _refocusGuardId = null;
+    }
+    if (_refocusHardCapId) {
+      clearTimeout(_refocusHardCapId);
+      _refocusHardCapId = null;
+    }
+    const grab = () => {
+      if (!activeId || !sessions[activeId]) return true;  // nothing to do
       const s = sessions[activeId];
+      const ta = s.pane && s.pane.querySelector('textarea.xterm-helper-textarea');
+      if (!ta) return true;
+      const ae = document.activeElement;
+      if (ae === ta) return true;
+      // User clicked into a real form control or modal — back off so we
+      // don't fight them. Only pull focus back when activeElement looks
+      // like post-paste churn (body / our own floating bars).
+      if (!_isStealableFocus(ae)) return true;
+      try { ta.focus(); } catch(_) {}
       try { s.term.focus(); } catch(_) {}
-      try {
-        const ta = s.pane && s.pane.querySelector('textarea.xterm-helper-textarea');
-        if (ta) ta.focus();
-      } catch(_) {}
+      return false;
     };
-    go();
-    setTimeout(go, 0);
-    setTimeout(go, 50);
-    setTimeout(go, 200);
+    grab();
+    let stableTicks = 0;
+    _refocusGuardId = setInterval(() => {
+      if (grab()) {
+        stableTicks++;
+        if (stableTicks >= 3) {
+          clearInterval(_refocusGuardId);
+          _refocusGuardId = null;
+        }
+      } else {
+        stableTicks = 0;
+      }
+    }, 80);
+    _refocusHardCapId = setTimeout(() => {
+      if (_refocusGuardId) {
+        clearInterval(_refocusGuardId);
+        _refocusGuardId = null;
+      }
+      _refocusHardCapId = null;
+    }, 3000);
   }
 
   document.getElementById('close-preview').addEventListener('click', () => {
