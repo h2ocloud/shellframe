@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.37 (2026-04-28)
+
+### Fixes
+- **Scroll-history overlay still showed 4× duplicate rows on tables / audit logs** — v0.11.25's CJK ≥ 90% gate only collapsed pure-Chinese streaming redraw. It missed mixed-content rows that ALSO get redrawn during streaming, like Howard's "4/2 | Warren 寄 V1.5.1 部版資訊" appearing 4× in a row. Added a second gate: any line ≥ 12 cells wide that occurs ≥ 3 times in the capture is collapsed to its first occurrence (count threshold = 3, not 2, so legitimate two-time repeats — `return null;` twice, two adjacent table rows that genuinely share a date — are preserved).
+
+### 修正
+- **上滾 history 表格 / audit log 還是會出現 4× 重複** — v0.11.25 的 CJK ≥ 90% 規則只抓純中文 streaming redraw。Howard 截圖中混合內容（例如 `4/2 | Warren 寄 V1.5.1 部版資訊` 連續 4 次）逃過閘門，照樣多次寫入 scrollback。新增第二條閘門：任何 ≥ 12 cells 寬的行在這份 capture 出現 ≥ 3 次 → 只保留第一次。閾值用 3 不是 2，避免誤砍合法的兩次重複（同一段 code 出現兩次 `return null;`、相鄰兩列 table 同一天日期都保留）。
+
 ## v0.11.36 (2026-04-28)
 
 ### Fixes

@@ -958,28 +958,49 @@ class Api:
                         continue
                 cleaned.append((stripped, original))
 
-            # Pass 2: drop non-consecutive CJK-prose repeats. Claude Code
-            # redraws CJK reply blocks between streaming chunks and tmux
-            # records each redraw frame, so the same 交付成果 / 敘事結構 /
-            # … block can appear 2-3× with spinner/status lines between.
-            # Those are legit duplicates to collapse.
+            # Pass 2: collapse repeats. Two regimes that need different
+            # gates because tmux scrollback mixes both kinds of duplicate:
             #
-            # Gate: line must be ALMOST-PURE CJK (≥ 90% of visible width
-            # from fullwidth chars). v0.11.16 used ≥ 50% which dropped
-            # legit mixed lines like "PM 卡改善 (Mentor Bridge 命題有效)"
-            # or slash-separated bank lists "彰銀/新新併/華南/台壽" when
-            # the AI repeated the same label in a long audit report —
-            # Howard caught it in the scroll-history overlay comparing
-            # live vs. overlay snapshots. 90% keeps pure-CJK streaming
-            # redraw noise collapsed while preserving every mixed-content
-            # heading, path, or label.
+            # (a) Pure-CJK streaming redraw — Claude's reply rewrites the
+            #     same 交付成果 / 敘事結構 block 5-10× while tokens stream;
+            #     tmux records every frame.
+            # (b) Mid-row redraw of a generic line — the same row gets
+            #     re-emitted 3+ times in mixed CJK/ASCII content (tables
+            #     where every cell is the same date label, audit reports
+            #     where a single event line gets re-rendered after each
+            #     status-bar refresh, etc.). Howard's screenshot:
+            #     "Warren 寄 V1.5.1 部版資訊" appears 4× in a row.
+            #
+            # Two gates so we collapse both without nuking legit user
+            # repeats (`return null;` appearing twice in code, two
+            # adjacent table rows that genuinely share a date):
+            #
+            # Gate A: ≥ 90% CJK-cells AND ≥ MIN_WIDTH wide → dedup on
+            #          first occurrence (single-frame redraw collapse).
+            # Gate B: any line wide enough to be distinctive AND seen
+            #          ≥ 3 times in this capture → keep only the FIRST.
+            #          Threshold 3 (not 2) preserves natural-looking
+            #          two-occurrence repeats.
+            from collections import Counter
             DEDUP_MIN_WIDTH = 8
+            REPEAT_GATE_MIN_WIDTH = 12
+            REPEAT_GATE_THRESHOLD = 3
+            counts = Counter()
+            for stripped, _ in cleaned:
+                s_key = stripped.strip()
+                if self._visual_width(s_key) >= REPEAT_GATE_MIN_WIDTH:
+                    counts[s_key] += 1
             seen = set()
             final = []
             for stripped, original in cleaned:
                 s_key = stripped.strip()
                 vw = self._visual_width(s_key)
                 if vw >= DEDUP_MIN_WIDTH and self._cjk_cells(s_key) >= vw * 0.9:
+                    if s_key in seen:
+                        continue
+                    seen.add(s_key)
+                elif (vw >= REPEAT_GATE_MIN_WIDTH
+                      and counts[s_key] >= REPEAT_GATE_THRESHOLD):
                     if s_key in seen:
                         continue
                     seen.add(s_key)
