@@ -2655,6 +2655,58 @@ def _unregister_global_hotkey():
 _PID_FILE = TMP_DIR / "shellframe.pid"
 
 
+def _move_windows_to_mouse_screen():
+    """Move every shellframe NSWindow to the screen where the cursor
+    currently sits, centred on that screen. Must be called on the main
+    thread — caller wraps in NSOperationQueue.mainQueue() if invoked
+    from a non-main context (signal handler etc.).
+
+    Howard's ask: "滑鼠到哪邊，調用快捷鍵就要啟動在那個視窗" — when
+    the user fires the global hotkey, the window should appear on
+    whichever monitor the cursor is on, not wherever the window
+    happened to be sitting before. NSWindowCollectionBehaviorMoveToActiveSpace
+    handles the Spaces axis; this fills in the multi-monitor axis.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        from AppKit import NSScreen, NSEvent, NSApp
+    except Exception:
+        return
+    if NSApp is None:
+        return
+    try:
+        mouse = NSEvent.mouseLocation()
+    except Exception:
+        return
+    target = None
+    try:
+        for s in NSScreen.screens() or []:
+            f = s.frame()
+            if (f.origin.x <= mouse.x < f.origin.x + f.size.width and
+                f.origin.y <= mouse.y < f.origin.y + f.size.height):
+                target = s
+                break
+    except Exception:
+        return
+    if target is None:
+        return
+    try:
+        tf = target.frame()
+    except Exception:
+        return
+    for w in (NSApp.windows() or []):
+        try:
+            if w.screen() is target:
+                continue
+            wf = w.frame()
+            new_x = tf.origin.x + (tf.size.width - wf.size.width) / 2.0
+            new_y = tf.origin.y + (tf.size.height - wf.size.height) / 2.0
+            w.setFrameOrigin_((new_x, new_y))
+        except Exception:
+            continue
+
+
 def _summon_self_main_thread():
     """Bring this process's shellframe window to the front. Safe to call
     from a signal handler thread — dispatches the AppKit work onto the
@@ -2669,6 +2721,12 @@ def _summon_self_main_thread():
     except Exception:
         return
     def _do():
+        # Move to mouse-pointer screen FIRST so the activation in the
+        # next step lands the user on the right display + space.
+        try:
+            _move_windows_to_mouse_screen()
+        except Exception as e:
+            print(f"[shellframe] move-to-mouse-screen failed: {e}", file=sys.stderr)
         try:
             if NSApp is not None:
                 try: NSApp.unhide_(None)
@@ -2863,6 +2921,13 @@ def _register_global_hotkey():
             # and inactive; unhide alone doesn't bring the window forward.
             # Combine unhide + activate, plus `open -b` as a belt-and-braces
             # fallback (works regardless of activation context / perms).
+            # Also pull the window onto the screen the cursor is on, so the
+            # hotkey summons into the user's current display rather than
+            # wherever the window happened to last live.
+            try:
+                _move_windows_to_mouse_screen()
+            except Exception as e:
+                print(f"[shellframe] move-to-mouse-screen failed: {e}", file=sys.stderr)
             if NSApp is not None:
                 try:
                     NSApp.unhide_(None)

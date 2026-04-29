@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.44 (2026-04-29)
+
+### New Features
+- **Global hotkey summons shellframe to the cursor's monitor** — `⌃⌥Space` used to bring the window forward on whichever display it last lived on, regardless of where the user's mouse pointer was. With multiple monitors that meant the user often had to hop displays to find it. Now the hotkey first reads `NSEvent.mouseLocation()`, finds the matching `NSScreen`, and re-centres every shellframe NSWindow on that screen before activate fires. The MoveToActiveSpace flag still handles Spaces, so the combined effect is "wherever you are physically AND virtually, that's where the window appears." Both summon paths covered: in-process hotkey toggle (`_toggle_visibility`) and signal-driven duplicate-launch summon (`_summon_self_main_thread`).
+
+### 新功能
+- **熱鍵把 shellframe 叫到滑鼠所在那塊螢幕** — `⌃⌥Space` 之前是視窗在哪就在那邊冒出來，多螢幕設定下要自己跳螢幕找它。現在熱鍵先讀 `NSEvent.mouseLocation()` 找出滑鼠在哪個 `NSScreen`，把所有 shellframe NSWindow 重新置中到那塊螢幕上之後才 activate。MoveToActiveSpace 還是負責 Space 軸，加總起來就是「人在哪、視窗在哪」。兩條 summon 路徑都套：in-process 熱鍵切換（`_toggle_visibility`）跟信號觸發的重複啟動 summon（`_summon_self_main_thread`）。
+
 ## v0.11.43 (2026-04-29)
 
 ### Fixes
