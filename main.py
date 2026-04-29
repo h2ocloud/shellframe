@@ -934,9 +934,18 @@ class Api:
                     out.append(''.join(getattr(c, 'data', ' ') or ' ' for c in row).rstrip())
                 except Exception:
                     pass
-        # Drop trailing blank rows (pyte pads display to its rows count)
+        # Drop trailing blank rows (pyte pads display to its rows count).
         while out and not out[-1]:
             out.pop()
+        # Drop LEADING blank rows. pyte pre-allocates a 50-row grid the
+        # moment the screen is created, so when the bridge starts feeding
+        # mid-conversation the display's top half can be all blanks
+        # (cursor lives near the bottom). Without this trim the overlay
+        # opens to a wall of empty space — Howard saw "上面不見了 / 整段
+        #空白才出現條目". Internal blank lines (between paragraphs) are
+        # preserved; only the top contiguous run is dropped.
+        while out and not out[0]:
+            out.pop(0)
         return '\n'.join(out)
 
     @staticmethod

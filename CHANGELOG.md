@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.11.39 (2026-04-29)
+
+### Fixes
+- **Scroll-history overlay opened with a wall of empty space at the top** — pyte pre-allocates a fixed 50-row grid the moment a screen is created, and when the bridge starts feeding mid-conversation the cursor sits near the bottom while the upper half stays blank. v0.11.38 only trimmed trailing blanks; the leading run carried into the overlay as a tall empty block before the first real line. Added a leading-blank trim so the overlay opens straight on content. Internal blank lines (between paragraphs) are preserved.
+- **Enter still got eaten right after pasting** — v0.11.35's focus guard yanks the textarea back within 80ms, but if the user presses Enter in the first frame BEFORE the guard has won, the keydown lands on body / image-bar / drop-overlay and never reaches xterm. Added a document-level keydown intercept that runs only while the guard is active: if Enter fires while focus is in any "stealable" zone, we forward `\r` to the active session ourselves and pull focus. So even on the worst-case post-paste race, the first Enter submits.
+
+### 修正
+- **上滾 overlay 開頭一大段空白** — pyte 一建好 screen 就先 pre-allocate 一個 50 行的固定 grid，bridge 中途接手 feed 的時候 cursor 落在底部，上半 grid 全是空 row。v0.11.38 只 trim 尾端空白，**前面那段空白照舊跑進 overlay**。新增頭端空白 trim，overlay 一開就直接看到內容。段落之間的合法空行保留。
+- **貼圖完打 Enter 還是會被吃** — v0.11.35 的 focus guard 80ms 內會把 textarea 拉回，但若使用者在 guard 搶到 focus **之前**就按 Enter，那個 keydown 落在 body / image-bar / drop-overlay 直接被吞，xterm 根本沒收到。新增 document keydown 攔截器，只在 guard 啟動期間生效：Enter 若打在 stealable 範圍（body / 我們自己的浮動 bar），直接幫你 forward `\r` 到 active session 並把 focus 拉回。Worst-case 賽跑下第一個 Enter 也保證送出。
+
 ## v0.11.38 (2026-04-29)
 
 ### Fixes

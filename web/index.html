@@ -2586,6 +2586,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // fighting legitimate user clicks.
   let _refocusGuardId = null;
   let _refocusHardCapId = null;
+  let _pasteEnterListenerAttached = false;
 
   function _isStealableFocus(el) {
     if (!el || el === document.body || el === document.documentElement) return true;
@@ -2596,7 +2597,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return false;
   }
 
+  // Belt-and-braces: while a focus guard is active, intercept Enter at
+  // document level. If the user hits Enter before our guard has won
+  // focus back to the xterm textarea (very common right after a paste —
+  // WKWebView does its own focus dance for hundreds of ms), the keydown
+  // would otherwise hit body / image-bar and be swallowed. Steal it,
+  // forward `\r` to the active session ourselves, and pull focus.
+  function _ensurePasteEnterListener() {
+    if (_pasteEnterListenerAttached) return;
+    _pasteEnterListenerAttached = true;
+    document.addEventListener('keydown', (e) => {
+      if (_refocusGuardId === null) return;
+      if (e.key !== 'Enter') return;
+      if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!activeId || !sessions[activeId]) return;
+      const ta = sessions[activeId].pane &&
+                 sessions[activeId].pane.querySelector('textarea.xterm-helper-textarea');
+      if (document.activeElement === ta) return; // xterm will handle
+      if (!_isStealableFocus(document.activeElement)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try { pywebview.api.write_input(activeId, '\r'); } catch (_) {}
+      try { ta && ta.focus(); } catch (_) {}
+    }, true);
+  }
+
   function _refocusActive() {
+    _ensurePasteEnterListener();
     if (_refocusGuardId) {
       clearInterval(_refocusGuardId);
       _refocusGuardId = null;
