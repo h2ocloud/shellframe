@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.40 (2026-04-29)
+
+### Fixes
+- **Scroll-history overlay had nothing to scroll back into after pyte switch** — v0.11.38 made pyte's `HistoryScreen` the primary source for the overlay. pyte only knows about bytes the bridge has fed it since startup, which on short conversations (or sessions that were running before the bridge was launched) is a few dozen lines — already smaller than the overlay viewport, so "往上滑" did literally nothing. Reverted priority: tmux `capture-pane` is primary again with the v0.11.37 dedup heuristics (consecutive prefix → CJK ≥ 90% → ≥ 3 occurrences) doing their best to collapse streaming-redraw noise. pyte stays as a Windows / no-tmux fallback. Yes, the heuristics still miss the occasional table edge case — but a stable approximation of the full backlog beats a clean rendering of 30 lines you can't move past.
+
+### 修正
+- **改用 pyte 後上滾根本沒得滾** — v0.11.38 把 pyte `HistoryScreen` 當 overlay 主要資料源，但 pyte 只記得 bridge 啟動之後 feed 的 bytes，短對話或 bridge 啟動之前的 session 內容只有幾十行，比 overlay 本身還短，「往上滑完全不會動」就是這個。優先順序改回來：tmux `capture-pane` 還是主，仍套 v0.11.37 的 dedup（連續 prefix → CJK ≥ 90% → 出現 ≥ 3 次）盡力處理 streaming-redraw 噪音。pyte 降為 Windows / 沒 tmux 時的 fallback。Heuristics 偶爾會漏掉某種表格邊角，但「能滾整個 backlog 大致正確」勝過「30 行內容很乾淨但完全滾不動」。
+
 ## v0.11.39 (2026-04-29)
 
 ### Fixes

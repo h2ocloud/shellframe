@@ -965,44 +965,23 @@ class Api:
         """Return scroll-back history for the overlay, with streaming
         redraw noise collapsed.
 
-        Strategy: prefer the bridge's pyte HistoryScreen — pyte is a real
-        terminal emulator that consumes raw PTY bytes and exposes the
-        FINAL rendered state of every cursor-positioned write. Streaming
-        TUIs like Claude Code redraw the same region many times per
-        token, but pyte only ever holds the latest version, so the
-        history is naturally dedup'd at the source. No regex / line-level
-        heuristic gets to be wrong about whether a line is a redraw frame
-        or a legit repeat — the answer is "neither, it's just the
-        rendered screen".
-        Trade-off: pyte stores pre-styled chars, so we lose ANSI colour
-        in the overlay. Howard's repeated complaints ("跑版" / corrupted
-        layout) outweigh the styling loss; correctness > prettiness.
+        Strategy (revised — v0.11.40): tmux capture-pane is PRIMARY
+        because pyte's HistoryScreen only knows about bytes the bridge
+        has fed it, which means short conversations or sessions that
+        existed before the bridge started have almost nothing to scroll
+        through ("往上滑完全不會動"). tmux's pane scrollback always has
+        the full visible history. We pay for that with streaming redraw
+        noise, which the dedup heuristics below collapse aggressively.
 
-        Fallback to `tmux capture-pane` when the bridge isn't running for
-        this session (no slot, no pyte buffer). The fallback path keeps
-        the dedup heuristics so it still beats raw tmux scrollback.
+        pyte path is kept as a fallback when tmux isn't available
+        (Windows / no-tmux build), and as a colour-free safety net for
+        weird captures where tmux returns nothing.
         """
-        # ── Pyte path (preferred) ────────────────────────────────────
-        if self.bridge:
-            try:
-                slot = self.bridge.slots.get(sid)
-            except Exception:
-                slot = None
-            if slot is not None and getattr(slot, "screen", None) is not None:
-                try:
-                    text = self._pyte_history_text(slot)
-                except Exception:
-                    text = ""
-                if text and text.strip():
-                    return json.dumps({
-                        "success": True,
-                        "text": text,
-                        "ansi": False,  # pyte path is plain rendered text
-                    })
-
         s = self.sessions.get(sid)
         if not s or not getattr(s, '_tmux_name', None):
-            return json.dumps({"success": False, "reason": "no tmux", "text": ""})
+            # tmux unavailable — fall back to pyte if the bridge has a slot
+            # for this session. Better than nothing on Windows / no-tmux.
+            return self._pyte_fallback_response(sid)
         try:
             cmd = ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name,
                    "-S", f"-{max_lines}"]
@@ -1091,6 +1070,25 @@ class Api:
             })
         except Exception as e:
             return json.dumps({"success": False, "reason": str(e), "text": ""})
+
+    def _pyte_fallback_response(self, sid: str) -> str:
+        """Build a get_clean_history response from the bridge's pyte slot
+        (no ANSI). Used when tmux capture isn't available."""
+        if not self.bridge:
+            return json.dumps({"success": False, "reason": "no tmux", "text": ""})
+        try:
+            slot = self.bridge.slots.get(sid)
+        except Exception:
+            slot = None
+        if slot is None or getattr(slot, "screen", None) is None:
+            return json.dumps({"success": False, "reason": "no tmux", "text": ""})
+        try:
+            text = self._pyte_history_text(slot)
+        except Exception:
+            text = ""
+        if text and text.strip():
+            return json.dumps({"success": True, "text": text, "ansi": False})
+        return json.dumps({"success": False, "reason": "no history", "text": ""})
 
     def enter_scroll_history(self, sid: str) -> str:
         """Enter tmux copy-mode for scrollable history.
