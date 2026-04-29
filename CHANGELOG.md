@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.41 (2026-04-29)
+
+### Fixes
+- **Duplicate-instance guard never actually triggered → still got two shellframes after summon** — v0.11.31's `_ensure_single_instance` looked up `runningApplicationsWithBundleIdentifier_("com.h2ocloud.shellframe")`. But the launcher exec's `python main.py` directly, so the kernel sees the process as Python.app — bundle id `org.python.python`, not `com.h2ocloud.shellframe`. The lookup never matched the running instance, the guard never fired, and Howard kept seeing two-instance TG 409 conflicts whenever a click / hotkey path raced against a still-shutting-down instance. Replaced with a PID-file approach: each instance writes `/tmp/shellframe.pid` on startup and registers a `SIGUSR1` handler that brings the window forward; a duplicate launch reads the file, probes the PID with `kill(pid, 0)`, and — if alive — signals the existing instance instead of booting itself, then `os._exit(0)`. Stale PID files (last shutdown crashed) are detected by the liveness probe and overwritten cleanly.
+
+### 修正
+- **單一 instance 防護根本沒觸發 → 仍會多開** — v0.11.31 的 `_ensure_single_instance` 用 `runningApplicationsWithBundleIdentifier_("com.h2ocloud.shellframe")` 找重複，但 launcher 直接 exec `python main.py`，kernel 看到的是 Python.app（bundle id `org.python.python`），**不會匹配 `com.h2ocloud.shellframe`**。lookup 永遠空，guard 從來沒生效，所以 hotkey 喚出時若新 instance 跟舊 instance 重疊，TG 409 衝突就發生。改成 PID-file：每個 instance 啟動時寫 `/tmp/shellframe.pid` + 註冊 `SIGUSR1` handler（收到就把視窗叫到前景）；新 launch 讀 PID file → `kill(pid, 0)` 探活 → 若活著就 signal 那個 PID 來前景 + `os._exit(0)` 不啟動。Stale PID file（上次 crash 留下）被探活步驟識別出來覆蓋掉，不會卡死。
+
 ## v0.11.40 (2026-04-29)
 
 ### Fixes

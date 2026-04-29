@@ -10,6 +10,7 @@ Windows: Edge WebView2 + subprocess
 import atexit
 import base64
 import codecs
+import errno
 import importlib
 import json
 import os
@@ -2625,51 +2626,122 @@ def _unregister_global_hotkey():
     _global_hotkey_monitors = []
 
 
-def _ensure_single_instance():
-    """Before we spin up pywebview / tmux / bridge, check whether another
-    shellframe is already running and — if so — activate it and exit.
+_PID_FILE = TMP_DIR / "shellframe.pid"
 
-    Why this exists: Howard saw "hotkey rapidly toggle → two instances"
-    where the old instance was still shutting down (TG bridge still
-    polling) while a new one booted from `open` / Dock click. Two
-    concurrent TG bridges on the same bot token instantly 409-conflict
-    each other. Launching a second copy is never what the user wants
-    for a single-window GUI — always resolve to the existing instance.
-    """
+
+def _summon_self_main_thread():
+    """Bring this process's shellframe window to the front. Safe to call
+    from a signal handler thread — dispatches the AppKit work onto the
+    main queue."""
     if sys.platform != "darwin":
         return
     try:
         from AppKit import (
-            NSRunningApplication,
-            NSApplicationActivateIgnoringOtherApps,
+            NSOperationQueue, NSApp,
+            NSRunningApplication, NSApplicationActivateIgnoringOtherApps,
         )
     except Exception:
         return
-    my_pid = os.getpid()
+    def _do():
+        try:
+            if NSApp is not None:
+                try: NSApp.unhide_(None)
+                except Exception: pass
+            NSRunningApplication.currentApplication().activateWithOptions_(
+                NSApplicationActivateIgnoringOtherApps
+            )
+        except Exception as e:
+            print(f"[shellframe] summon failed: {e}", file=sys.stderr)
     try:
-        apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(
-            "com.h2ocloud.shellframe"
-        )
+        NSOperationQueue.mainQueue().addOperationWithBlock_(_do)
+    except Exception:
+        pass
+
+
+def _on_summon_signal(signum, frame):
+    """SIGUSR1 from a duplicate-launch attempt — bring this instance to
+    the foreground instead of letting the new copy boot."""
+    try:
+        print("[shellframe] received summon signal, bringing window forward",
+              file=sys.stderr)
+        _summon_self_main_thread()
+    except Exception:
+        pass
+
+
+def _release_pid_file():
+    try:
+        if _PID_FILE.exists():
+            try:
+                pid = int(_PID_FILE.read_text().strip())
+            except Exception:
+                pid = -1
+            if pid == os.getpid():
+                _PID_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _claim_pid_file():
+    try:
+        _PID_FILE.write_text(str(os.getpid()))
     except Exception:
         return
-    others = [
-        a for a in (apps or [])
-        if a.processIdentifier() != my_pid and not a.isTerminated()
-    ]
-    if not others:
+    atexit.register(_release_pid_file)
+    if sys.platform != "win32":
+        try:
+            signal.signal(signal.SIGUSR1, _on_summon_signal)
+        except Exception:
+            pass
+
+
+def _ensure_single_instance():
+    """Before allocating anything, check whether another shellframe is
+    already running. If so, signal it to come forward and exit this
+    process. Otherwise claim the PID file so the *next* duplicate
+    launch can find us.
+
+    Why PID file (not NSRunningApplication.bundleIdentifier): on macOS
+    the launcher execs `python main.py` so the kernel-reported bundle
+    is `org.python.python` (or whatever Python's framework uses), NOT
+    `com.h2ocloud.shellframe`. The previous bundle-id lookup never
+    matched our own process, never blocked duplicate launches, and
+    Howard kept seeing two-instance TG 409 conflicts. PID file +
+    SIGUSR1 sidesteps the bundle-id resolution entirely.
+    """
+    if sys.platform == "win32":
+        return  # TODO: Windows duplicate guard
+    old_pid = 0
+    if _PID_FILE.exists():
+        try:
+            old_pid = int(_PID_FILE.read_text().strip())
+        except Exception:
+            old_pid = 0
+    if old_pid <= 0 or old_pid == os.getpid():
+        _claim_pid_file()
         return
-    other = others[0]
-    print(f"[shellframe] another instance (pid={other.processIdentifier()}) "
-          f"is already running — activating it and exiting this one",
+    # Probe liveness — kill(pid, 0) doesn't kill, just reports whether
+    # the pid exists. ESRCH = no such process (stale file).
+    alive = False
+    try:
+        os.kill(old_pid, 0)
+        alive = True
+    except OSError as e:
+        if e.errno != errno.ESRCH:
+            # EPERM — process exists but we can't signal it; still alive
+            alive = True
+    if not alive:
+        _claim_pid_file()
+        return
+    print(f"[shellframe] another instance (pid={old_pid}) already running — "
+          f"signalling it to come forward and exiting this one",
           file=sys.stderr)
     try:
-        other.unhide()
-    except Exception:
+        os.kill(old_pid, signal.SIGUSR1)
+    except OSError:
         pass
-    try:
-        other.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
-    except Exception:
-        pass
+    # Belt-and-braces — `open -b` works if LaunchServices has the bundle
+    # registered, harmless if not.
     try:
         subprocess.Popen(
             ["/usr/bin/open", "-b", "com.h2ocloud.shellframe"],
