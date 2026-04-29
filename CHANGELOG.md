@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.11.43 (2026-04-29)
+
+### Fixes
+- **Scroll-history overlay still ate numbered outline items + same heading repeated** — two related dedup mistakes Howard caught in a slide-naming outline:
+  - "英文短句、有電影感" (a section heading) appeared **twice** because the dedup key was the raw stripped line — residual ANSI bytes / different leading whitespace between the two captures made them compare unequal. Tightened the ANSI strip regex (now also catches OSC hyperlinks, charset designates, and CSI sequences ending in `~`/`?`/`>`) and normalised whitespace runs to a single space when computing the dedup key, so visually-identical lines really do collide.
+  - Short numbered subtitles like "3. Year One" (vw 12–14) used to fall under the ≥3-occurrence gate when several similar outline blocks existed in the buffer, and got collapsed away. Raised that gate's minimum width from 12 to 20 cells — wide redraw rows (audit logs, sentences) still get folded; short bullets / numbered headings always pass through.
+
+### 修正
+- **上滾 overlay 還是會吃掉編號列點 + 同一行 heading 重複出現** — 兩個 dedup 邏輯破口，Howard 在簡報命名 outline 截圖抓到：
+  - 「英文短句、有電影感」（章節標題）出現**兩次**：dedup key 用 raw stripped line，但兩次 capture 殘留的 ANSI bytes / 縮排不同，比對不相等就漏抓。新 ANSI 規則加抓 OSC 超連結、charset designates、CSI 收尾 `~`/`?`/`>`；dedup key 也把空白合併成單空格，視覺相同的行才真的命中 set。
+  - 「3. Year One」這種短編號副標（寬度 12-14）在 outline 多塊類似結構時會落到 ≥3 重複規則被砍。`REPEAT_GATE_MIN_WIDTH` 從 12 拉到 20，長 row（audit / 完整句子）照樣摺，短 bullet / 編號標題不再被誤殺。
+
 ## v0.11.42 (2026-04-29)
 
 ### Fixes

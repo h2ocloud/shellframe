@@ -883,7 +883,19 @@ class Api:
         if s:
             s.resize(cols, rows)
 
-    _ANSI_STRIP_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+    # Catches more than just the basic CSI form so dedup keys really do
+    # ignore styling. Old regex only matched `ESC [ digits;... letter`,
+    # which left OSC hyperlinks (ESC ] ... BEL/ST), charset designates,
+    # and CSI sequences ending in `~` / `?` / `>` in the "stripped"
+    # string. Two visually-identical lines with different residual
+    # escapes ended up as different dedup keys → duplicate survived.
+    _ANSI_STRIP_RE = re.compile(
+        r'\x1b\[[0-9;?!<>=]*[@-~]'         # CSI with any final byte
+        r'|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)'  # OSC … BEL or ST
+        r'|\x1b[()][A-Z0-9]'                # designate G0/G1
+        r'|\x1b[=>78cN]'                    # short single-char escapes
+    )
+    _NORM_WHITESPACE_RE = re.compile(r'\s+')
 
     @staticmethod
     def _visual_width(s: str) -> int:
@@ -1037,27 +1049,41 @@ class Api:
             #          two-occurrence repeats.
             from collections import Counter
             DEDUP_MIN_WIDTH = 8
-            REPEAT_GATE_MIN_WIDTH = 12
-            REPEAT_GATE_THRESHOLD = 3
+            REPEAT_GATE_MIN_WIDTH = 20      # raised from 12 — short
+            REPEAT_GATE_THRESHOLD = 3        # numbered subtitles like
+            # "3. Year One" (vw 12-14) and short Chinese sub-headings
+            # like "雙語混搭" / "中文動詞句、有立場" used to land on this
+            # gate when they appeared in three nearby outline blocks
+            # ("英文短句、有電影感", "中文動詞句、有立場", repeated for
+            # each section). Howard saw the "1." / "2." entries vanish
+            # from his outline. Keep the gate tight to long redraw
+            # strings (audit rows, full sentences); short headings now
+            # always pass through.
+            #
+            # Dedup key is the ANSI-stripped line with whitespace runs
+            # collapsed to a single space, so two captures that differ
+            # only in indentation / residual escape bytes still compare
+            # equal.
+            def _key(s_stripped):
+                return self._NORM_WHITESPACE_RE.sub(' ', s_stripped).strip()
             counts = Counter()
             for stripped, _ in cleaned:
-                s_key = stripped.strip()
-                if self._visual_width(s_key) >= REPEAT_GATE_MIN_WIDTH:
-                    counts[s_key] += 1
+                if self._visual_width(stripped.strip()) >= REPEAT_GATE_MIN_WIDTH:
+                    counts[_key(stripped)] += 1
             seen = set()
             final = []
             for stripped, original in cleaned:
-                s_key = stripped.strip()
-                vw = self._visual_width(s_key)
-                if vw >= DEDUP_MIN_WIDTH and self._cjk_cells(s_key) >= vw * 0.9:
-                    if s_key in seen:
+                k = _key(stripped)
+                vw = self._visual_width(stripped.strip())
+                if vw >= DEDUP_MIN_WIDTH and self._cjk_cells(stripped.strip()) >= vw * 0.9:
+                    if k in seen:
                         continue
-                    seen.add(s_key)
+                    seen.add(k)
                 elif (vw >= REPEAT_GATE_MIN_WIDTH
-                      and counts[s_key] >= REPEAT_GATE_THRESHOLD):
-                    if s_key in seen:
+                      and counts[k] >= REPEAT_GATE_THRESHOLD):
+                    if k in seen:
                         continue
-                    seen.add(s_key)
+                    seen.add(k)
                 final.append((stripped, original))
             # Append SGR reset to each line so an unclosed \x1b[...m on one
             # line can't bleed background/foreground colors into subsequent
