@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.46 (2026-04-29)
+
+### Fixes
+- **Enter died after applying a large paste through the confirm bar** — flow that was broken: paste big text → confirm bar opens → Enter (apply) → bracketed paste lands in PTY → Claude Code compresses it to "[Pasted text #N]" → user presses Enter to submit → nothing happens. The confirm bar's Enter handler hid the bar but never restored focus to the xterm textarea, and the original paste event's focus guard had already expired by the time the bar opened. Now the apply path immediately force-focuses the textarea AND re-arms `_refocusActive()` (3-second guard + Enter-forwarder), so the post-apply Enter actually submits. Esc cancel does the same so the user can keep typing without clicking back into the terminal.
+
+### 修正
+- **大文案經 confirm bar 套用後，下一個 Enter 失效** — 重現流程：貼大文案 → confirm bar 出現 → Enter 套用 → bracketed paste 進 PTY → Claude Code 壓成「[Pasted text #N]」→ 想再按 Enter 送出 → 沒反應。confirm bar 的 Enter handler 把 bar 隱藏了，但**沒把 focus 拉回 xterm textarea**；原本 paste event 啟動的 focus guard 也早就到期。現在套用路徑會強制把 focus 推回 textarea，並**重新 arm `_refocusActive()`**（3 秒 guard + Enter forwarder），第二個 Enter 真的會送出。Esc 取消也一樣補 refocus，user 不用再點對話框就能繼續打字。
+
 ## v0.11.45 (2026-04-29)
 
 ### Fixes

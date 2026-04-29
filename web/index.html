@@ -2339,6 +2339,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       e.stopPropagation();
       e.preventDefault();
       _clearPasteConfirm();
+      // Without re-arming focus, the textarea can be left blurred after
+      // the bar disappears, so the next user keystroke goes nowhere.
+      _refocusActive();
       return;
     }
     if (e.key === 'Enter') {
@@ -2350,6 +2353,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (sid && sessions[sid]) {
         pywebview.api.write_input(sid, '\x1b[200~' + text + '\x1b[201~');
       }
+      // After the apply, Claude Code shows the "[Pasted text #N]" chip
+      // and the user typically presses Enter again to submit. The bar
+      // hide can leave focus on body, and v0.11.35's focus guard from
+      // the original paste event has already expired by now. Re-arm
+      // both: hard-force focus to the xterm textarea AND restart the
+      // 3-second guard (which also re-attaches the Enter-forwarder
+      // listener), so the post-apply submit Enter actually lands.
+      if (activeId && sessions[activeId]) {
+        try {
+          const s = sessions[activeId];
+          const ta = s.pane && s.pane.querySelector('textarea.xterm-helper-textarea');
+          if (ta) ta.focus();
+          try { s.term.focus(); } catch (_) {}
+        } catch (_) {}
+      }
+      _refocusActive();
     }
     // Other keys pass through — user can cancel by retyping; but we keep
     // the bar visible so they see the paste is still armed. The bar itself
