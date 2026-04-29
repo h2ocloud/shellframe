@@ -1396,6 +1396,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
     sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
+    // Persist the preset's display name so it survives restart. Without
+    // this the `label` is only kept in the in-memory `sessions[sid]`
+    // map; on next launch restore_tmux_sessions reads from the
+    // `session_labels` config dict and falls back to cmd basename, so
+    // "Claude" / "Codex" / "Garden cms" would silently revert. Fire and
+    // forget — UI doesn't need to wait on the rename round-trip.
+    if (label) {
+      try { pywebview.api.rename_session(sid, label).catch(() => {}); } catch (_) {}
+    }
     setupAttachKeyHandler(sid, term);
     // Track user scroll: scrolled up = true, any keystroke resets to false (follows output)
     term.onScroll(() => {

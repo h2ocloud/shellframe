@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.42 (2026-04-29)
+
+### Fixes
+- **Preset's nickname disappeared after restart** — when a user opened a session via the "+ New" preset menu, the preset's display name (Claude / Codex / Garden cms / etc.) was only set on the frontend `sessions[sid].label`. It never reached `Session._custom_label` and was never persisted to `config.session_labels`. On next launch `restore_tmux_sessions` had no entry for that sid in the labels dict, so it fell back to the bare cmd name. Manually-renamed sessions worked because `rename_session()` already writes both. UI's `openSession` now fires `pywebview.api.rename_session(sid, label)` after creating the session, so preset nicknames survive restart on equal footing.
+
+### 修正
+- **從「+」預設 preset 開的 session，nickname 重啟就不見** — UI 端 `openSession` 把 preset.name（例如 Claude / Codex / Garden cms）放進 frontend 的 `sessions[sid].label`，但**沒寫進 `Session._custom_label`、也沒存進 `config.session_labels`**，下次 restart 從 config 讀 label 對照就找不到，fallback 變成原始 cmd 名。手動 rename 過的 session 沒事是因為 `rename_session()` 一條龍存好。修法：UI `openSession` 拿到 sid 後立刻 call 一次 `rename_session(sid, label)`，跟手動命名走同一條持久化路徑，重啟後 preset 名字保留。
+
 ## v0.11.41 (2026-04-29)
 
 ### Fixes
