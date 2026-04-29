@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.45 (2026-04-29)
+
+### Fixes
+- **Window kept popping to the front without the hotkey** — three layered guards added to suppress spurious activations from background sources we couldn't fully attribute (LaunchServices launch attempts, Dock animation, paste-driven NSWorkspace events…):
+  - **Removed `open -b com.h2ocloud.shellframe` belt-and-braces** from both `_ensure_single_instance` and `_toggle_visibility`. The LaunchServices `open -b` form treats this as a relaunch intent that can come back round to spawn another shellframe → re-enters `_ensure_single_instance` → re-sends SIGUSR1 → re-activates… SIGUSR1 alone is the canonical wake path; if it fails to land, we'd rather drop one summon than risk a feedback loop.
+  - **Rate-limit on summon paths** — both `_summon_self_main_thread` (SIGUSR1 handler) and `_toggle_visibility`'s summon branch share `_last_summon_ts` with a 2-second floor. A real user press fires once anyway; runaway sources are throttled to one activation per 2s.
+  - **Skip activate when already active** — `_summon_self_main_thread` now no-ops if `NSApp.isActive() && !isHidden()`. A background SIGUSR1 while the user already sees the window won't repaint or warp it.
+
+### 修正
+- **沒按熱鍵視窗也一直跳出來蓋板** — 三層防護一起加，截斷各種背景來源（LaunchServices 重啟意圖、Dock 動畫、paste 觸發的 NSWorkspace 事件…）造成的非預期 activate：
+  - **移除 `_ensure_single_instance` 跟 `_toggle_visibility` 兩處的 `open -b com.h2ocloud.shellframe` 保險**。`open -b` 對 LaunchServices 是一個「重啟意圖」，可能繞回去 spawn 另一個 shellframe → 進入 `_ensure_single_instance` → 再送 SIGUSR1 → 再 activate… 反饋循環。SIGUSR1 自己是夠用的喚醒路徑；它若沒到，寧可漏掉一次 summon 也不要踩 loop。
+  - **summon 加 rate-limit** — `_summon_self_main_thread`（SIGUSR1）跟 `_toggle_visibility` summon 共用 `_last_summon_ts`，2 秒內第二次 summon 會被擋。真正的使用者按鍵只觸發一次，所以無感；失控來源會被節流。
+  - **已在前景就跳過 activate** — `_summon_self_main_thread` 進入時若 `NSApp.isActive() && !isHidden()` 直接 return，不會再做 move 或 activate。背景 SIGUSR1 在使用者已經看到視窗時完全靜音。
+
 ## v0.11.44 (2026-04-29)
 
 ### New Features

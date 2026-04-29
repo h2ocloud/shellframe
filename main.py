@@ -2707,12 +2707,32 @@ def _move_windows_to_mouse_screen():
             continue
 
 
+_last_summon_ts = 0.0
+_SUMMON_MIN_INTERVAL = 2.0   # seconds — see _summon_self_main_thread
+
+
 def _summon_self_main_thread():
     """Bring this process's shellframe window to the front. Safe to call
     from a signal handler thread — dispatches the AppKit work onto the
-    main queue."""
+    main queue.
+
+    Rate-limited: if the last summon fired within the last
+    `_SUMMON_MIN_INTERVAL` seconds, skip. macOS / LaunchServices can
+    end up looping launch attempts in some background scenarios
+    (Dock animation, paste-driven app activation, NSWorkspace events
+    that fire `open -b` which re-enters _ensure_single_instance which
+    re-sends SIGUSR1, …). Without throttling Howard saw the window
+    "keep popping to the front without me pressing the hotkey". A
+    legitimate user click resolves to a single summon; a runaway loop
+    only paints once.
+    """
+    global _last_summon_ts
     if sys.platform != "darwin":
         return
+    now = time.time()
+    if now - _last_summon_ts < _SUMMON_MIN_INTERVAL:
+        return
+    _last_summon_ts = now
     try:
         from AppKit import (
             NSOperationQueue, NSApp,
@@ -2721,8 +2741,15 @@ def _summon_self_main_thread():
     except Exception:
         return
     def _do():
-        # Move to mouse-pointer screen FIRST so the activation in the
-        # next step lands the user on the right display + space.
+        # If we're already foreground + visible, do nothing. No need to
+        # repaint or warp the window; a background SIGUSR1 from a
+        # spurious launch-attempt should be a quiet no-op when the user
+        # already sees us.
+        try:
+            if NSApp is not None and NSApp.isActive() and not NSApp.isHidden():
+                return
+        except Exception:
+            pass
         try:
             _move_windows_to_mouse_screen()
         except Exception as e:
@@ -2824,15 +2851,13 @@ def _ensure_single_instance():
         os.kill(old_pid, signal.SIGUSR1)
     except OSError:
         pass
-    # Belt-and-braces — `open -b` works if LaunchServices has the bundle
-    # registered, harmless if not.
-    try:
-        subprocess.Popen(
-            ["/usr/bin/open", "-b", "com.h2ocloud.shellframe"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        pass
+    # NOTE: removed the `open -b com.h2ocloud.shellframe` belt-and-braces.
+    # macOS LaunchServices treats that as a relaunch-intent which can
+    # come back round to spawn another shellframe, which re-enters this
+    # function, which re-sends SIGUSR1, which re-activates… → window
+    # "keeps popping to the front without me pressing the hotkey".
+    # SIGUSR1 alone is the canonical wake path; if it doesn't reach,
+    # the duplicate-launch loses but no loop is triggered.
     os._exit(0)
 
 
@@ -2917,13 +2942,16 @@ def _register_global_hotkey():
             if on_space and is_active and not is_hidden:
                 NSApp.hide_(None)
                 return
-            # Summon path. After `NSApp.hide_(None)` the app is both hidden
-            # and inactive; unhide alone doesn't bring the window forward.
-            # Combine unhide + activate, plus `open -b` as a belt-and-braces
-            # fallback (works regardless of activation context / perms).
-            # Also pull the window onto the screen the cursor is on, so the
-            # hotkey summons into the user's current display rather than
-            # wherever the window happened to last live.
+            # Summon path. Rate-limited via the shared _last_summon_ts so a
+            # background event loop (notification reopen, paste-driven
+            # activate, runaway LaunchServices launch) can't repeatedly
+            # yank the window forward. A real user press only fires this
+            # branch once anyway; spurious sources are throttled.
+            global _last_summon_ts
+            now_ts = time.time()
+            if now_ts - _last_summon_ts < _SUMMON_MIN_INTERVAL:
+                return
+            _last_summon_ts = now_ts
             try:
                 _move_windows_to_mouse_screen()
             except Exception as e:
@@ -2939,14 +2967,12 @@ def _register_global_hotkey():
                 )
             except Exception:
                 pass
-            try:
-                import subprocess as _sp
-                _sp.Popen(
-                    ["/usr/bin/open", "-b", "com.h2ocloud.shellframe"],
-                    stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-                )
-            except Exception:
-                pass
+            # NOTE: removed `open -b com.h2ocloud.shellframe` belt-and-braces
+            # from this branch too. `unhide_` + `activateWithOptions_` is
+            # enough for the in-process hotkey path; the LaunchServices
+            # `open -b` form was the suspected feedback source for "window
+            # keeps popping". If the unhide+activate combo somehow fails,
+            # we'd rather drop one summon than risk looping.
         except Exception as e:
             print(f"[shellframe] hotkey toggle failed: {e}", file=sys.stderr)
 
