@@ -899,6 +899,47 @@ class Api:
         return w
 
     @staticmethod
+    def _pyte_history_text(slot) -> str:
+        """Render a bridge slot's pyte buffer as plain text — scrollback
+        history followed by the current visible screen. Stripped of
+        trailing whitespace per row, no ANSI styling.
+
+        pyte.HistoryScreen exposes:
+          - screen.history.top   deque of tuple-of-Char (older rows)
+          - screen.history.bottom deque (after-current rows; usually empty)
+          - screen.display       list[str] of currently rendered rows
+
+        Raises nothing — caller falls back to tmux on any failure.
+        """
+        out = []
+        try:
+            top = slot.screen.history.top
+        except Exception:
+            top = []
+        for row in top:
+            try:
+                text = ''.join(getattr(c, 'data', ' ') or ' ' for c in row)
+                out.append(text.rstrip())
+            except Exception:
+                continue
+        try:
+            display = slot.screen.display
+        except Exception:
+            display = []
+        for row in display:
+            if isinstance(row, str):
+                out.append(row.rstrip())
+            else:
+                try:
+                    out.append(''.join(getattr(c, 'data', ' ') or ' ' for c in row).rstrip())
+                except Exception:
+                    pass
+        # Drop trailing blank rows (pyte pads display to its rows count)
+        while out and not out[-1]:
+            out.pop()
+        return '\n'.join(out)
+
+    @staticmethod
     def _cjk_cells(s: str) -> int:
         """Count visual cells contributed by CJK/fullwidth chars only. Used
         to gate the non-consecutive dedup pass: we only want to collapse
@@ -912,20 +953,44 @@ class Api:
         return cells
 
     def get_clean_history(self, sid: str, max_lines: int = 10000, ansi: bool = True) -> str:
-        """Return tmux pane history with prefix-duplicate lines collapsed.
+        """Return scroll-back history for the overlay, with streaming
+        redraw noise collapsed.
 
-        Streaming TUI apps (Claude Code, Codex) flush incomplete lines as they
-        generate tokens. tmux captures every intermediate frame into scrollback,
-        so scrolling up shows the same line repeated with progressively longer
-        truncations. This method captures the full pane buffer, then for each
-        run of consecutive lines where line[i+1].startswith(line[i]), keeps
-        only the longest (final) version.
+        Strategy: prefer the bridge's pyte HistoryScreen — pyte is a real
+        terminal emulator that consumes raw PTY bytes and exposes the
+        FINAL rendered state of every cursor-positioned write. Streaming
+        TUIs like Claude Code redraw the same region many times per
+        token, but pyte only ever holds the latest version, so the
+        history is naturally dedup'd at the source. No regex / line-level
+        heuristic gets to be wrong about whether a line is a redraw frame
+        or a legit repeat — the answer is "neither, it's just the
+        rendered screen".
+        Trade-off: pyte stores pre-styled chars, so we lose ANSI colour
+        in the overlay. Howard's repeated complaints ("跑版" / corrupted
+        layout) outweigh the styling loss; correctness > prettiness.
 
-        When ansi=True (default), captures with `tmux capture-pane -e` so ANSI
-        color/style escapes are preserved — the UI can feed the result directly
-        into an xterm.js instance and get the original terminal styling back.
-        Dedup still compares on stripped text so the colored line wins.
+        Fallback to `tmux capture-pane` when the bridge isn't running for
+        this session (no slot, no pyte buffer). The fallback path keeps
+        the dedup heuristics so it still beats raw tmux scrollback.
         """
+        # ── Pyte path (preferred) ────────────────────────────────────
+        if self.bridge:
+            try:
+                slot = self.bridge.slots.get(sid)
+            except Exception:
+                slot = None
+            if slot is not None and getattr(slot, "screen", None) is not None:
+                try:
+                    text = self._pyte_history_text(slot)
+                except Exception:
+                    text = ""
+                if text and text.strip():
+                    return json.dumps({
+                        "success": True,
+                        "text": text,
+                        "ansi": False,  # pyte path is plain rendered text
+                    })
+
         s = self.sessions.get(sid)
         if not s or not getattr(s, '_tmux_name', None):
             return json.dumps({"success": False, "reason": "no tmux", "text": ""})

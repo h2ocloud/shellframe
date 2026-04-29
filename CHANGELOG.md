@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.38 (2026-04-29)
+
+### Fixes
+- **Scroll-history overlay rebuilt on top of pyte instead of tmux scrollback** — every layered dedup heuristic on top of `tmux capture-pane` (consecutive prefix → CJK 90% → ≥3 occurrences) kept missing a new edge case in real captures: tables losing rows, mixed-content blocks repeated 4×, redraw frames intercut between unrelated conversation segments. Fundamental cause: tmux records every cursor-positioned redraw in scrollback, so a streaming TUI bleeds dozens of intermediate frames into the buffer that no line-level dedup can reliably untangle. Switched the overlay's primary source to the bridge's pyte `HistoryScreen`. pyte is a real terminal emulator — it consumes raw PTY bytes and exposes only the FINAL rendered state of every cell, so streaming redraws never leave duplicate lines for us to fight in the first place. Trade-off: pyte stores pre-styled chars, so the overlay loses ANSI colour. Correctness > prettiness for scroll-back, especially after the repeat reports of "跑版". tmux path is kept as a fallback for sessions where the bridge isn't running (still goes through the dedup heuristics).
+
+### 修正
+- **上滾 overlay 改用 pyte 渲染後的畫面，徹底繞過 tmux scrollback 的 redraw 噪音** — 試了一堆 dedup（連續 prefix → CJK 90% → 出現 ≥3 次）都還是有 edge case：表格少行、混合內容重複 4 次、不同對話段相鄰串在一起。根本原因：tmux 把每個 cursor-positioned redraw 都記進 scrollback，streaming TUI 會把幾十個中間 frame 灌進去，line-level dedup 怎麼修都漏一塊。改成 overlay 主要 source 走 bridge 的 pyte `HistoryScreen` —— pyte 是真正的 terminal emulator，吃原始 PTY bytes 後只暴露**最終渲染後**的每個 cell，streaming redraw 在那層就被吃掉了，根本沒有重複行可以給我們處理。代價：pyte 存的是去除樣式後的字符，overlay 失去 ANSI 色彩。考量你已經多次抱怨「跑版」，正確性優先於配色。tmux fallback 保留給 bridge 沒跑的 session（仍走 dedup heuristics）。
+
 ## v0.11.37 (2026-04-28)
 
 ### Fixes
