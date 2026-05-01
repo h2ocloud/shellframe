@@ -2697,6 +2697,8 @@ def _move_windows_to_mouse_screen():
         return
     for w in (NSApp.windows() or []):
         try:
+            if not w.isVisible():
+                continue
             if w.screen() is target:
                 continue
             wf = w.frame()
@@ -2942,16 +2944,14 @@ def _register_global_hotkey():
             if on_space and is_active and not is_hidden:
                 NSApp.hide_(None)
                 return
-            # Summon path. Rate-limited via the shared _last_summon_ts so a
-            # background event loop (notification reopen, paste-driven
-            # activate, runaway LaunchServices launch) can't repeatedly
-            # yank the window forward. A real user press only fires this
-            # branch once anyway; spurious sources are throttled.
+            # Summon path. NOT rate-limited — this branch only runs from a
+            # real user keypress (NSEvent local/global monitor), and Howard
+            # legitimately toggles hide→summon faster than the 2s floor.
+            # The SIGUSR1 / LaunchServices feedback loop the throttle was
+            # meant to break lives in _summon_self_main_thread, which has
+            # its own _last_summon_ts gate.
             global _last_summon_ts
-            now_ts = time.time()
-            if now_ts - _last_summon_ts < _SUMMON_MIN_INTERVAL:
-                return
-            _last_summon_ts = now_ts
+            _last_summon_ts = time.time()
             try:
                 _move_windows_to_mouse_screen()
             except Exception as e:
@@ -2978,6 +2978,8 @@ def _register_global_hotkey():
 
     def _matches(event) -> bool:
         try:
+            if event.isARepeat():
+                return False
             if event.keyCode() != SPACE_KEYCODE:
                 return False
             mods = int(event.modifierFlags()) & MOD_MASK

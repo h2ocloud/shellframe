@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.47 (2026-05-01)
+
+### Fixes
+- **Hotkey instability — three independent bugs in the global ⌃⌥Space path**:
+  - **Rate-limit ate legitimate user presses**: `_toggle_visibility`'s summon branch shared the 2-second `_last_summon_ts` floor with the SIGUSR1 path. The hide branch never reset that timestamp, so the common flow "summon → use → hide → resummon" within 2s silently dropped the second press — hotkey looked dead. Removed the throttle from the user-keypress path; the SIGUSR1 / LaunchServices feedback loop the throttle was meant to break is still gated inside `_summon_self_main_thread`, where spurious sources actually originate.
+  - **Key repeat triggered toggle storms**: `_matches()` didn't filter `event.isARepeat()`, so holding ⌃⌥Space for a fraction of a second produced multiple KeyDowns and the window flickered hide↔summon, ending in whichever state the last repeat left. Added `if event.isARepeat(): return False`.
+  - **`_move_windows_to_mouse_screen` warped invisible helper windows**: it iterated `NSApp.windows()` blindly, including pywebview's hidden panels/utility windows, calling `setFrameOrigin_` on them. Filter `w.isVisible()` first.
+
+### 修正
+- **快捷鍵不穩 — `⌃⌥Space` 路徑上三個獨立 bug**:
+  - **Rate-limit 把使用者按鍵吃掉**: `_toggle_visibility` summon 分支跟 SIGUSR1 路徑共用 2 秒節流，而 hide 分支不會重置 `_last_summon_ts`。最常見情境「summon → 用一下 → hide → 馬上再 summon」在 2 秒內第二下被默默丟掉，看起來像快捷鍵壞了。把使用者按鍵這條的節流拿掉；原本要擋的 SIGUSR1 / LaunchServices 反饋迴圈在 `_summon_self_main_thread` 自己還有節流。
+  - **Key repeat 連發造成 toggle 抖動**: `_matches()` 沒過 `event.isARepeat()`，輕輕按住 ⌃⌥Space 就會連發多個 KeyDown，視窗在 hide↔summon 之間翻轉，最終狀態看心情。加上 `if event.isARepeat(): return False`。
+  - **`_move_windows_to_mouse_screen` 連隱藏視窗也搬**: 直接掃 `NSApp.windows()` 全集，包括 pywebview 自己的 hidden panel，會對它們呼叫 `setFrameOrigin_`。先濾掉 `w.isVisible() == False`。
+
 ## v0.11.46 (2026-04-29)
 
 ### Fixes
