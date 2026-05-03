@@ -34,6 +34,26 @@
   .tab .close-tab:hover { color: #f7768e; background: #292e42; }
   .tab[draggable] { cursor: grab; }
   .tab[draggable]:active { cursor: grabbing; }
+  .busy-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: transparent; flex-shrink: 0;
+    transition: background .3s, box-shadow .3s;
+  }
+  .busy-dot.on {
+    background: #e0af68;
+    box-shadow: 0 0 6px #e0af68, 0 0 2px #e0af68;
+    animation: busy-pulse 1.1s ease-in-out infinite;
+  }
+  /* Attention state — waiting on user input (permission dialog, menu prompt) */
+  .busy-dot.on.attention {
+    background: #f7768e;
+    box-shadow: 0 0 6px #f7768e, 0 0 2px #f7768e;
+    animation: busy-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes busy-pulse {
+    0%, 100% { opacity: .55; }
+    50%      { opacity: 1; }
+  }
   #btn-new-tab, .tab-action {
     padding: 4px 10px; margin-left: 2px; background: none; border: 1px solid #292e42;
     color: #565f89; border-radius: 6px; cursor: pointer; font-size: 16px;
@@ -49,7 +69,14 @@
     padding: 4px 8px; background: #1f2335; border-bottom: 1px solid #292e42;
     flex-shrink: 0; flex-wrap: wrap;
   }
-  #attach-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+  #attach-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; align-items: center; }
+  .attach-summary {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 8px; font-size: 11px; font-weight: 600;
+    color: #7aa2f7; background: #1a1b26;
+    border: 1px solid #3b4261; border-radius: 4px;
+    margin-right: 4px;
+  }
   .attach-chip {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 2px 8px; background: #292e42; border-radius: 4px;
@@ -59,6 +86,23 @@
   .attach-chip .chip-thumb { height: 20px; max-width: 36px; border-radius: 2px; object-fit: cover; }
   .attach-chip .chip-close { cursor: pointer; opacity: .4; margin-left: 2px; font-size: 13px; }
   .attach-chip .chip-close:hover { opacity: 1; color: #f7768e; }
+  #paste-confirm-bar {
+    display: none; align-items: center; gap: 10px;
+    padding: 6px 12px;
+    background: #3d2c1a; border-top: 1px solid #e0af68;
+    color: #e0af68; font-size: 12px; flex-shrink: 0;
+  }
+  #paste-confirm-bar .pc-hint { flex: 1; }
+  #paste-confirm-bar kbd {
+    font-family: inherit; font-size: 11px; padding: 1px 6px;
+    background: #1a1b26; border: 1px solid #e0af68; border-radius: 3px;
+    color: #e0af68;
+  }
+  #paste-confirm-bar .pc-preview {
+    font-family: monospace; color: #c0caf5; opacity: .7;
+    max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   #image-bar .close-img {
     color: #565f89; cursor: pointer; font-size: 14px; padding: 2px 6px;
     border: none; background: none; border-radius: 3px;
@@ -67,10 +111,53 @@
 
   /* ── Terminal area ── */
   #terminal-wrap { flex: 1; position: relative; }
+
+  /* ── UI scale (interface size: small / medium / large) ──
+     Applies CSS zoom to chrome elements only — terminal-wrap is exempt
+     so xterm.js stays controlled by its own font size. */
+  #sidebar, #tab-bar, #image-bar, .modal-overlay {
+    zoom: var(--ui-scale, 1);
+  }
+  /* UI scale button group */
+  .ui-scale-btn {
+    flex: 1; padding: 4px 8px; font-size: 12px;
+    background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px;
+    color: #565f89; cursor: pointer; transition: all .15s;
+  }
+  .ui-scale-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
+  .ui-scale-btn.active { color: #7aa2f7; border-color: #7aa2f7; background: rgba(122,162,247,.1); }
   .term-pane { position: absolute; inset: 0; display: none; overflow: hidden; }
   .term-pane.active { display: block; }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
+  /* Force xterm scrollbar always visible. WKWebView's default overlay
+     scrollbar hides itself — `-webkit-appearance: none` is what opts out
+     of the native overlay and lets our custom ::-webkit-scrollbar rules
+     actually render as a permanent draggable bar. */
+  .xterm .xterm-viewport {
+    scrollbar-width: thin !important;
+    scrollbar-color: #565f89 transparent !important;
+    overflow-y: scroll !important;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar {
+    -webkit-appearance: none !important;
+    width: 12px !important;
+    background: rgba(36, 40, 59, 0.5) !important;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background-color: #565f89 !important;
+    border-radius: 6px !important;
+    min-height: 40px !important;
+    border: 2px solid transparent !important;
+    background-clip: padding-box !important;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background-color: #7aa2f7 !important;
+    background-clip: padding-box !important;
+  }
 
   body { display: flex; flex-direction: column; }
 
@@ -191,7 +278,12 @@
   .kbd { background: #24283b; border: 1px solid #3b4261; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: inherit; color: #a9b1d6; }
 
   /* ── Settings modal ── */
-  .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; }
+  .settings-preset { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #24283b; border-radius: 6px; margin-bottom: 6px; transition: background .15s; }
+  .settings-preset.sp-dragging { opacity: .35; }
+  .settings-preset.sp-drag-over { background: #292e42; box-shadow: 0 -2px 0 #7aa2f7 inset; }
+  .sp-grip { cursor: grab; color: #3b4261; font-size: 14px; padding: 0 2px; user-select: none; line-height: 1; }
+  .sp-grip:hover { color: #7aa2f7; }
+  .sp-grip:active { cursor: grabbing; }
   .settings-preset input { background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; padding: 4px 6px; color: #c0caf5; font-size: 12px; outline: none; }
   .settings-preset input:focus { border-color: #7aa2f7; }
   .settings-preset .sp-icon {
@@ -225,6 +317,7 @@
     padding: 2px 8px; margin-left: 4px; border-radius: 4px; cursor: pointer;
     font-size: 11px; border: 1px solid #3b4261; background: none; color: #565f89;
     -webkit-app-region: no-drag; transition: all .15s;
+    white-space: nowrap; flex-shrink: 0;
   }
   .bridge-toggle:hover { border-color: #7aa2f7; color: #7aa2f7; }
   .bridge-toggle.active { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.1); }
@@ -307,7 +400,8 @@
   }
   .sb-divider.drag-over { color: #7aa2f7; background: rgba(122,162,247,.06); border-radius: 4px; }
   .sb-divider.drag-over::before, .sb-divider.drag-over::after { background: #7aa2f7; }
-  .sb-item.disabled { opacity: .45; }
+  .sb-item.unbridged { opacity: .85; } /* not grayed out — still fully functional, just not TG-bridged */
+  .sb-divider { cursor: help; }
   .sb-item { cursor: grab; -webkit-user-select: none; user-select: none; }
   .sb-item:active { cursor: grabbing; }
   .sb-footer-btn {
@@ -329,6 +423,19 @@
   .code-copy-btn.visible { opacity: 1; }
   .code-copy-btn:hover { background: #3b4261; }
   .code-copy-btn.copied { color: #9ece6a; }
+  /* Number-input spinner buttons on dark backgrounds — WebKit renders
+     the default spinner as a very dark grey that's invisible on our
+     #1a1b26 input fill. `color-scheme: dark` + `accent-color` plus a
+     brightness filter lift them to a visible light grey. */
+  input[type="number"].sf-bright-spin {
+    color-scheme: dark;
+    accent-color: #7aa2f7;
+  }
+  input[type="number"].sf-bright-spin::-webkit-inner-spin-button,
+  input[type="number"].sf-bright-spin::-webkit-outer-spin-button {
+    opacity: 1;
+    filter: invert(1) brightness(1.5);
+  }
 </style>
 </head>
 <body>
@@ -346,6 +453,16 @@
 <div id="image-bar">
   <div id="attach-chips"></div>
   <button class="close-img" id="close-preview" title="Remove all">&times;</button>
+</div>
+
+<!-- Large-paste confirm bar -->
+<div id="paste-confirm-bar">
+  <span>📋</span>
+  <span class="pc-hint">
+    Large paste — <b id="pc-stats"></b>.
+    <kbd>Enter</kbd> 送出 · <kbd>Esc</kbd> 取消
+  </span>
+  <span class="pc-preview" id="pc-preview"></span>
 </div>
 
 <!-- Drop overlay -->
@@ -395,19 +512,28 @@
   <div class="modal" style="width:500px">
     <h2 data-i18n="settings">Settings</h2>
 
-    <div class="settings-tabs">
+    <div class="settings-tabs" id="settings-tabs-bar">
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
       <button class="settings-tab" data-tab="bridge">Telegram Bridge</button>
+      <!-- plugin tabs injected here at runtime -->
     </div>
 
     <!-- Tab: General -->
     <div class="settings-tab-panel active" id="settings-panel-general">
-      <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:#24283b;border-radius:8px">
-        <div style="flex:1">
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Font size</label>
+      <div style="display:flex;gap:16px;margin-bottom:10px;padding:12px;background:#24283b;border-radius:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Terminal font</label>
           <div style="display:flex;align-items:center;gap:8px">
             <input type="range" id="setting-fontsize" min="10" max="24" value="14" style="flex:1;accent-color:#7aa2f7"/>
             <span id="fontsize-val" style="font-size:12px;color:#c0caf5;min-width:24px;text-align:center">14</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="uiScale">Interface size</label>
+          <div style="display:flex;gap:4px" id="setting-uiscale">
+            <button class="ui-scale-btn" data-scale="0.85">S</button>
+            <button class="ui-scale-btn active" data-scale="1">M</button>
+            <button class="ui-scale-btn" data-scale="1.18">L</button>
           </div>
         </div>
         <div>
@@ -420,6 +546,49 @@
         <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto Update</label>
           <button class="toggle-switch on" id="setting-autoupdate"></button>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="shiftEnterLabel">Shift+Enter = newline</label>
+          <button class="toggle-switch on" id="setting-shift-enter"></button>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto /compact (Claude)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-auto-compact"></button>
+            <span style="font-size:11px;color:#565f89">≤</span>
+            <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
+                   style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
+            <span style="font-size:11px;color:#565f89">% left</span>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Global hotkey</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-global-hotkey"></button>
+            <span style="font-size:11px;color:#565f89">
+              <kbd style="font-family:inherit;font-size:10px;padding:1px 4px;background:#1a1b26;border:1px solid #3b4261;border-radius:3px;color:#c0caf5">⌃⌥Space</kbd>
+              show/hide
+            </span>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Completion notifications</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-complete-notify"></button>
+            <span style="font-size:11px;color:#565f89">AI 回覆完成且 shellframe 不在前景時通知</span>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
+        💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
+      </div>
+
+      <!-- Session init prompt (sent once when an AI CLI tool becomes ready) -->
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Session prompt</label>
+        <textarea id="setting-ui-prompt" style="width:100%;min-height:90px;font-size:11px;font-family:monospace;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:6px;resize:vertical" placeholder="Shown to the AI once at session start. Empty = use shellframe default."></textarea>
+        <div style="font-size:10px;color:#565f89;margin-top:4px;line-height:1.4">
+          Injected into new AI sessions (Claude Code, Codex…) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.
         </div>
       </div>
 
@@ -457,9 +626,52 @@
           <label>System Prompt</label>
           <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
         </div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label>Per-turn preamble</label>
+          <textarea id="setting-tg-prompt" style="font-size:11px" placeholder="Prepended to every TG message sent to the AI. Leave empty to turn off."></textarea>
+        </div>
+        <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4">
+          Every non-command TG message is wrapped with this preamble before hitting the AI. Anthropic caches unchanged prefixes — cost is near-zero after first use. Good place for persona / response-style rules. Empty = off.
+        </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-primary" id="btn-settings-bridge-connect">Connect</button>
           <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none">Disconnect</button>
+        </div>
+      </div>
+
+      <!-- STT (voice transcription) -->
+      <div class="bridge-setup" style="margin-top:10px">
+        <h4 style="display:flex;align-items:center;justify-content:space-between">
+          <span>🎙 語音轉錄 (STT)</span>
+          <span id="stt-status-pill" style="font-size:11px;color:#565f89"></span>
+        </h4>
+        <div class="bridge-field">
+          <label>Backend</label>
+          <select id="stt-backend" style="flex:1">
+            <option value="auto">Auto (plugin → 本地 → 遠端)</option>
+            <option value="plugin">Plugin only</option>
+            <option value="local">Local (whisper.cpp)</option>
+            <option value="remote">Remote chain only</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label>Providers</label>
+          <textarea id="stt-providers" style="font-size:11px;font-family:monospace;min-height:90px"
+            placeholder='[
+  {"name":"home", "url":"http://host:8787/stt", "field":"file", "query":{"language":"zh"}},
+  {"name":"backup", "url":"http://other:8765/transcribe", "field":"audio"}
+]'></textarea>
+        </div>
+        <div id="stt-detail" style="font-size:11px;color:#787c99;margin-top:6px;line-height:1.5"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="btn-stt-refresh">↻ 檢查</button>
+          <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
+          <button class="btn btn-primary" id="btn-stt-save">儲存</button>
+        </div>
+        <div style="font-size:10px;color:#565f89;margin-top:6px;line-height:1.4">
+          Plugin: drop a Python file at <code>~/.config/shellframe/stt_plugin.py</code>
+          exporting <code>transcribe(audio_path) → str</code> for custom STT logic.
         </div>
       </div>
     </div>
@@ -518,6 +730,7 @@
         <span class="kbd">Ctrl+Tab</span><span>Next tab</span>
         <span class="kbd">Cmd+]</span> / <span class="kbd">Cmd+[</span><span>Next / Prev tab</span>
         <span class="kbd">Cmd+V</span><span>Paste image</span>
+        <span class="kbd">Shift+Enter</span><span data-i18n="shiftEnterShortcut">Newline (no submit)</span>
         <span class="kbd">Cmd+,</span><span>Settings</span>
       </div>
     </div>
@@ -541,7 +754,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     </div>
 
     <div class="modal-footer" style="gap:8px">
-      <div style="font-size:10px;color:#3b4261">github.com/h2ocloud/shellframe</div>
+      <a href="https://github.com/h2ocloud/shellframe" target="_blank" style="font-size:10px;color:#3b4261;text-decoration:none">github.com/h2ocloud/shellframe</a>
+      <button class="btn btn-ghost" id="btn-report-issue" style="white-space:nowrap">Report Issue</button>
       <button class="btn btn-ghost" id="btn-close-about" style="white-space:nowrap">Close</button>
     </div>
   </div>
@@ -637,17 +851,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       settingsGeneral: 'General',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
       addPreset: 'Add',
-      fontSize: 'Font size',
+      fontSize: 'Terminal font',
+      uiScale: 'Interface size',
       language: 'Language',
       about: 'About',
       aboutDesc: 'Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.',
       usage: 'Usage',
       usageItems: [
         'Click <code>+</code> or press <span class="kbd">Cmd+T</span> to open a new session',
-        'Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal',
-        'Drag & drop files into window to attach',
-        'Press <span class="kbd">Enter</span> to send with file path auto-attached',
-        '<span class="kbd">Cmd+W</span> close tab, <span class="kbd">Ctrl+Tab</span> switch tabs',
+        'Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal (supports multiple images at once)',
+        'Drag & drop files or screenshots into window to attach',
+        'Press <span class="kbd">Enter</span> to send; <span class="kbd">Shift+Enter</span> inserts a newline without sending (useful for multi-line prompts)',
+        'Select text and <b>right-click</b> to copy; right-click with no selection to paste (Windows CMD style)',
+        'Scroll up at the top of a tab to open a deduped history overlay — scroll to the bottom, press Esc, or type to return',
+        '<span class="kbd">Cmd+W</span> close tab · <span class="kbd">Ctrl+Tab</span> or <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> switch tabs',
+        'Open Settings (<span class="kbd">Cmd+,</span>) to manage presets, Telegram bridge, and session prompt',
       ],
       shortcuts: 'Keyboard Shortcuts',
       author: 'Author',
@@ -663,6 +881,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fileAttached: 'File attached',
       dropToAttach: 'Drop file to attach',
       processExited: '[process exited]',
+      shiftEnterLabel: 'Shift+Enter = newline',
+      shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
+      shiftEnterShortcut: 'Newline (no submit)',
+      tgUnbridgedDivider: 'Not bridged by ShellFrame',
+      tgUnbridgedTooltip: 'Sessions below are not monitored by ShellFrame\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
+      tgSelfManaged: 'own',
     },
     'zh-TW': {
       newSession: '新增工作階段',
@@ -677,17 +901,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       settingsGeneral: '一般',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
       addPreset: '新增',
-      fontSize: '字型大小',
+      fontSize: '終端字型',
+      uiScale: '介面大小',
       language: '語言',
       about: '關於',
       aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
       usage: '使用方式',
       usageItems: [
-        '點 <code>+</code> 或按 <span class="kbd">Cmd+T</span> 開啟新工作階段',
-        '用 <span class="kbd">Cmd+V</span> 貼上截圖 — 預覽會出現在終端機上方',
-        '拖拉檔案到視窗中即可附加',
-        '按 <span class="kbd">Enter</span> 送出時自動附加檔案路徑',
-        '<span class="kbd">Cmd+W</span> 關閉分頁，<span class="kbd">Ctrl+Tab</span> 切換分頁',
+        '點 <code>+</code> 或按 <span class="kbd">Cmd+T</span> 開新工作階段',
+        '<span class="kbd">Cmd+V</span> 直接貼上截圖 — 預覽會出現在終端機上方（可一次貼多張）',
+        '拖拉檔案 / 截圖進視窗即可附加',
+        '<span class="kbd">Enter</span> 送出；<span class="kbd">Shift+Enter</span> 換行但不送出（寫多行 prompt 超好用）',
+        '反白文字後<b>按右鍵</b>即可複製；沒選字時按右鍵=貼上（Windows CMD 風格）',
+        '分頁頂端往上滾會自動打開去重後的歷史 overlay — 滾到底、按 Esc 或開始打字就關閉',
+        '<span class="kbd">Cmd+W</span> 關分頁 · <span class="kbd">Ctrl+Tab</span> 或 <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> 切分頁',
+        '<span class="kbd">Cmd+,</span> 開 Settings 管理 presets、Telegram bridge 和 session prompt',
       ],
       shortcuts: '鍵盤快捷鍵',
       author: '作者',
@@ -703,10 +931,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fileAttached: '已附加檔案',
       dropToAttach: '放開以附加檔案',
       processExited: '[程序已結束]',
+      shiftEnterLabel: 'Shift+Enter 換行',
+      shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
+      shiftEnterShortcut: '換行（不送出）',
+      tgUnbridgedDivider: '不由 ShellFrame 橋接',
+      tgUnbridgedTooltip: '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
+      tgSelfManaged: '自管',
     }
   };
 
-  let lang = 'en';
+  // Default language: detect from OS locale. Chinese → zh-TW, everything else → en.
+  let lang = /^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en';
   function t(key) { return (I18N[lang] || I18N.en)[key] || I18N.en[key] || key; }
 
   // State
@@ -715,15 +950,46 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let activeId = null;
   let config = null;
   let currentFontSize = 14;
+  // Paste-in-flight coordination: image/file paste runs async (FileReader +
+  // save_image IPC). During that window the term.onData Enter handler must
+  // park and wait, otherwise Enter submits an empty message before the
+  // bracketed-paste block lands in the PTY.
+  let pastePending = 0;
+  let pasteDone = Promise.resolve();
 
   // Output push receiver — called from Python via evaluate_js (no polling needed)
+  //
+  // Scroll preservation: when the user has scrolled up to read earlier content,
+  // we anchor to "N lines from the bottom" so new output doesn't yank the
+  // viewport. Claude Code's TUI uses cursor-positioning that can reset the
+  // viewport even though xterm.js "natively preserves" it for simple line output.
+  //
+  // _programmaticScroll flag prevents the onScroll handler from re-setting
+  // _userScrolledUp during our own scrollToLine call (which was the cause of
+  // the old "snapped back" bug).
+  let _programmaticScroll = false;
   window._pushOutput = function(sid, data) {
     const s = sessions[sid];
     if (!s) return;
+    const now = Date.now();
+    s._lastOutputTs = now;
+    if (!s._pushTimes) s._pushTimes = [];
+    s._pushTimes.push(now);
+    if (s._pushTimes.length > 30) s._pushTimes.shift();
+
     if (s._userScrolledUp) {
-      // Preserve scroll position while writing new data
-      const vp = s.term.buffer.active.viewportY;
-      s.term.write(data, () => { s.term.scrollToLine(vp); });
+      const buf = s.term.buffer.active;
+      const offsetFromBottom = buf.baseY - buf.viewportY;
+      s.term.write(data, () => {
+        const nb = s.term.buffer.active;
+        const target = Math.max(0, nb.baseY - offsetFromBottom);
+        if (nb.viewportY !== target) {
+          _programmaticScroll = true;
+          s.term.scrollToLine(target);
+          // Reset flag on next frame so user scrolls aren't suppressed
+          requestAnimationFrame(() => { _programmaticScroll = false; });
+        }
+      });
     } else {
       s.term.write(data);
     }
@@ -749,9 +1015,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     config = JSON.parse(raw);
     // Apply settings
     const s = config.settings || {};
-    lang = s.language || 'en';
+    lang = s.language || (/^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en');
     currentFontSize = s.fontSize || 14;
     autoUpdateEnabled = s.autoUpdate !== false; // default true
+    shiftEnterNewline = s.shiftEnterNewline !== false; // default true
+    // Apply UI scale (interface size)
+    const uiScale = s.uiScale || 1;
+    document.documentElement.style.setProperty('--ui-scale', uiScale);
     renderPresets();
     applyI18n();
   }
@@ -808,16 +1078,304 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _fitTimers[sid] = null;
       const s = sessions[sid];
       if (!s) return;
+      // Prevent "flash to top then snap back" on large buffers:
+      // fit() changes terminal dimensions → xterm re-renders → viewport can
+      // jump to an intermediate position before scrollToBottom corrects it.
+      // Fix: save viewport state, hide canvas during reflow, restore after.
+      const buf = s.term.buffer.active;
+      const wasScrolledUp = s._userScrolledUp;
+      const offsetFromBottom = buf.baseY - buf.viewportY;
+
+      // Briefly suppress paint so the intermediate state isn't visible
+      const screen = s.pane.querySelector('.xterm-screen');
+      if (screen) screen.style.visibility = 'hidden';
+
       s.fitAddon.fit();
-      if (!s._userScrolledUp) s.term.scrollToBottom();
+
+      if (!wasScrolledUp) {
+        s.term.scrollToBottom();
+      } else {
+        const target = Math.max(0, s.term.buffer.active.baseY - offsetFromBottom);
+        _programmaticScroll = true;
+        s.term.scrollToLine(target);
+        requestAnimationFrame(() => { _programmaticScroll = false; });
+      }
+
+      // Restore paint on next frame (after scroll position is settled)
+      requestAnimationFrame(() => { if (screen) screen.style.visibility = ''; });
+
       pywebview.api.resize(sid, s.term.cols, s.term.rows);
+    });
+  }
+
+  // ── Selection auto-scroll ──
+  // When user drags to select text and moves mouse near the top/bottom edge
+  // of the terminal, auto-scroll the viewport to extend the selection.
+  // xterm.js's built-in auto-scroll is unreliable in WKWebView.
+  function attachSelectionAutoScroll(term, pane) {
+    let _selScrollTimer = null;
+    let _selecting = false;
+    const EDGE_PX = 30;     // edge zone in pixels
+    const SCROLL_SPEED = 3; // lines per tick
+    const TICK_MS = 80;     // scroll interval
+
+    pane.addEventListener('mousedown', (e) => {
+      // Only start tracking on left-click inside xterm screen area
+      if (e.button !== 0) return;
+      _selecting = true;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!_selecting) return;
+      const rect = pane.getBoundingClientRect();
+      const y = e.clientY;
+
+      // Near top edge → scroll up
+      if (y < rect.top + EDGE_PX && y >= rect.top - 20) {
+        if (!_selScrollTimer) {
+          _selScrollTimer = setInterval(() => {
+            term.scrollLines(-SCROLL_SPEED);
+          }, TICK_MS);
+        }
+        return;
+      }
+      // Near bottom edge → scroll down
+      if (y > rect.bottom - EDGE_PX && y <= rect.bottom + 20) {
+        if (!_selScrollTimer) {
+          _selScrollTimer = setInterval(() => {
+            term.scrollLines(SCROLL_SPEED);
+          }, TICK_MS);
+        }
+        return;
+      }
+      // Not at edge → stop scrolling
+      if (_selScrollTimer) {
+        clearInterval(_selScrollTimer);
+        _selScrollTimer = null;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      _selecting = false;
+      if (_selScrollTimer) {
+        clearInterval(_selScrollTimer);
+        _selScrollTimer = null;
+      }
+    });
+  }
+
+  // ── File path link provider ──
+  // Two-pass matching:
+  //   1. Quoted paths ("...", '...', `...`) — supports spaces in paths
+  //   2. Unquoted paths — no spaces (ambiguous), but handles backslash-escaped spaces
+  // Ctrl+Click → Python open_local_file → OS default app.
+  const PATH_PREFIX = String.raw`(?:[A-Za-z]:[\\\/]|~\/|\.{0,2}\/)`;
+  // Pass 1: paths inside quotes (handles spaces, "Application Support" etc.)
+  const QUOTED_PATH_RE = new RegExp(
+    `"(${PATH_PREFIX}[^"\\r\\n]+)"|'(${PATH_PREFIX}[^'\\r\\n]+)'|\`(${PATH_PREFIX}[^\`\\r\\n]+)\``,
+    'g'
+  );
+  // Pass 2: unquoted paths (no spaces; backslash-escaped spaces OK)
+  const BARE_PATH_RE = /(?<![A-Za-z:\/])(?:[A-Za-z]:[\\\/](?:(?:[^\s"'<>|?*\r\n]|\\ )+[\\\/]?)+|~\/(?:(?:[^\s"'<>|?*\r\n:]|\\ )+)|\/(?:(?:[^\s"'<>|?*\r\n:\/]|\\ )+)(?:\/(?:(?:[^\s"'<>|?*\r\n:]|\\ )+))*|\.{1,2}\/(?:(?:[^\s"'<>|?*\r\n:]|\\ )+))/g;
+
+  function attachFileLinkProvider(term) {
+    if (!term.registerLinkProvider) return; // older xterm.js
+    term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const buf = term.buffer.active;
+        const line = buf.getLine(bufferLineNumber - 1);
+        if (!line) { callback(undefined); return; }
+        const text = line.translateToString(true);
+
+        // Build a char-index → column-index map. CJK/wide chars take 2
+        // columns but are 1 JS character in translateToString(true).
+        // Without this, every wide char before a path shifts the
+        // underline to the left by 1 column.
+        const charToCol = [];  // charToCol[charIdx] = first column of that char
+        let col = 0;
+        for (let ci = 0; ci < text.length; ci++) {
+          charToCol.push(col);
+          // Check the cell at this column for its display width
+          const cell = line.getCell(col);
+          col += (cell && cell.getWidth() > 1) ? 2 : 1;
+        }
+        charToCol.push(col); // sentinel for end-of-string
+
+        const links = [];
+        const seen = new Set(); // avoid duplicate ranges
+
+        // Helper to add a link
+        function addLink(matchIdx, raw) {
+          raw = raw.replace(/[.,;:!?)>\]}'"`]+$/, '');
+          // Strip backslash-escapes for the actual path we open
+          const cleanPath = raw.replace(/\\ /g, ' ');
+          if (cleanPath.length < 2) return;
+          const key = `${matchIdx}:${raw.length}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          const startCol = charToCol[matchIdx] + 1;
+          const endCol = charToCol[matchIdx + raw.length] || (startCol + raw.length - 1);
+          links.push({
+            range: {
+              start: { x: startCol, y: bufferLineNumber },
+              end: { x: endCol, y: bufferLineNumber },
+            },
+            text: cleanPath,
+            activate(event, uri) {
+              if (event && !(event.ctrlKey || event.metaKey)) return;
+              pywebview.api.open_local_file(uri).catch(() => {});
+            },
+            hover(_event, _uri) {},
+            leave() {},
+          });
+        }
+
+        // Pass 1: quoted paths (supports spaces)
+        let m;
+        QUOTED_PATH_RE.lastIndex = 0;
+        while ((m = QUOTED_PATH_RE.exec(text)) !== null) {
+          const path = m[1] || m[2] || m[3];
+          if (!path) continue;
+          // +1 to skip the opening quote char
+          addLink(m.index + 1, path);
+        }
+
+        // Pass 2: unquoted bare paths (no spaces, backslash-escaped OK)
+        BARE_PATH_RE.lastIndex = 0;
+        while ((m = BARE_PATH_RE.exec(text)) !== null) {
+          addLink(m.index, m[0]);
+        }
+
+        callback(links.length ? links : undefined);
+      },
+    });
+
+    // Second provider: multi-line URL stitching.
+    // WebLinksAddon only looks at one buffer row, so CLI tools that hard-wrap
+    // their output (Claude Code, cat, etc.) break Ctrl+Click on long URLs.
+    // We detect runs of full-width lines ending in URL-safe chars and stitch
+    // them together to recover the full URL.
+    const URL_CHAR_RE = /[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]/;
+    const URL_RE_STITCH = /https?:\/\/[^\s"'<>()\[\]{}]+/g;
+    term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const buf = term.buffer.active;
+        const cols = term.cols;
+        const y0 = bufferLineNumber - 1; // xterm gives 1-indexed
+        const cur = buf.getLine(y0);
+        if (!cur) { callback(undefined); return; }
+
+        // Walk backward / forward collecting full-width lines that end on
+        // URL-safe chars (heuristic for hard-wrapped continuous text).
+        function isWrapContinuation(line) {
+          const t = line.translateToString(false);
+          if (t.length < cols) return false;
+          const last = t[t.length - 1];
+          return !!(last && URL_CHAR_RE.test(last));
+        }
+        let start = y0;
+        while (start > 0) {
+          const prev = buf.getLine(start - 1);
+          if (!prev || !isWrapContinuation(prev)) break;
+          start--;
+        }
+        let end = y0;
+        while (isWrapContinuation(buf.getLine(end))) {
+          const nxt = buf.getLine(end + 1);
+          if (!nxt) break;
+          end++;
+        }
+        if (start === end) { callback(undefined); return; }
+
+        // Stitch text, track per-line lengths for offset math
+        let combined = '';
+        const lineLens = [];
+        for (let i = start; i <= end; i++) {
+          const t = buf.getLine(i).translateToString(i === end);
+          lineLens.push(t.length);
+          combined += t;
+        }
+
+        // Current line's offset within combined text
+        let curOffset = 0;
+        for (let i = 0; i < y0 - start; i++) curOffset += lineLens[i];
+        const curLen = lineLens[y0 - start];
+
+        const links = [];
+        let m;
+        URL_RE_STITCH.lastIndex = 0;
+        while ((m = URL_RE_STITCH.exec(combined)) !== null) {
+          const urlStart = m.index;
+          let urlEnd = urlStart + m[0].length;
+          while (urlEnd > urlStart && /[.,;:!?)]/.test(combined[urlEnd - 1])) urlEnd--;
+          if (urlEnd - urlStart < 8) continue;
+
+          // Must overlap current line
+          const hitStart = Math.max(urlStart, curOffset);
+          const hitEnd = Math.min(urlEnd, curOffset + curLen);
+          if (hitStart >= hitEnd) continue;
+
+          // Skip single-line URLs — WebLinksAddon already handles those
+          if (urlStart >= curOffset && urlEnd <= curOffset + curLen) continue;
+
+          const fullUrl = combined.slice(urlStart, urlEnd);
+          // URLs are ASCII, so char→col is 1:1 within the URL range.
+          // Surrounding wide chars could shift the start col; rebuild charToCol
+          // for this line to be safe.
+          const lineText = buf.getLine(y0).translateToString(false);
+          const charToCol = [];
+          let col = 0;
+          const lineObj = buf.getLine(y0);
+          for (let ci = 0; ci < lineText.length; ci++) {
+            charToCol.push(col);
+            const cell = lineObj.getCell(col);
+            col += (cell && cell.getWidth() > 1) ? 2 : 1;
+          }
+          charToCol.push(col);
+
+          const relStartChar = hitStart - curOffset;
+          const relEndChar = hitEnd - curOffset;
+          const xStart = (charToCol[relStartChar] || 0) + 1;
+          const xEnd = charToCol[relEndChar] || (xStart + (relEndChar - relStartChar) - 1);
+
+          links.push({
+            range: {
+              start: { x: xStart, y: bufferLineNumber },
+              end: { x: xEnd, y: bufferLineNumber },
+            },
+            text: fullUrl,
+            activate(event) {
+              if (event && !(event.ctrlKey || event.metaKey)) return;
+              try {
+                pywebview.api.open_url(fullUrl).catch(() => window.open(fullUrl, '_blank'));
+              } catch (_) {
+                window.open(fullUrl, '_blank');
+              }
+            },
+            hover() {}, leave() {},
+          });
+        }
+
+        callback(links.length ? links : undefined);
+      },
     });
   }
 
   // ── Session management ──
   async function openSession(cmd, label) {
+    // Block syncSessionsFromBackend until this function's `sessions[sid] = ...`
+    // claim lands. Without this, the notify fired inside new_session (main.py
+    // line 660) would race with our await and spawn a duplicate pane.
+    _uiCreatingSession++;
+    try {
     const pane = document.createElement('div');
-    pane.className = 'term-pane';
+    // Make pane visible BEFORE term.open() — xterm.js initializes its
+    // canvas and input handlers against the element's dimensions. If the
+    // pane is display:none (the default for .term-pane), the canvas is
+    // 0x0 and keystrokes become invisible until a manual reload.
+    pane.className = 'term-pane active';
+    // Hide any previously active pane
+    if (activeId && sessions[activeId]) sessions[activeId].pane.classList.remove('active');
     $wrap.appendChild(pane);
 
     const term = new Terminal({
@@ -833,13 +1391,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.unicode.activeVersion = '11';
     term.open(pane);
     fitAddon.fit();
+    attachFileLinkProvider(term);
+    attachSelectionAutoScroll(term, pane);
 
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
+    // Persist the preset's display name so it survives restart. Without
+    // this the `label` is only kept in the in-memory `sessions[sid]`
+    // map; on next launch restore_tmux_sessions reads from the
+    // `session_labels` config dict and falls back to cmd basename, so
+    // "Claude" / "Codex" / "Garden cms" would silently revert. Fire and
+    // forget — UI doesn't need to wait on the rename round-trip.
+    if (label) {
+      try { pywebview.api.rename_session(sid, label).catch(() => {}); } catch (_) {}
+    }
     setupAttachKeyHandler(sid, term);
     // Track user scroll: scrolled up = true, any keystroke resets to false (follows output)
     term.onScroll(() => {
+      if (_programmaticScroll) return; // don't reset during our own scrollToLine
       const buf = term.buffer.active;
       sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
     });
@@ -853,13 +1423,46 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         textarea.addEventListener('compositionend', () => { composing = false; });
       }
       term.onData(data => {
-        if (composing) return;
+        // IME race: on WKWebView, compositionend sometimes fires AFTER the
+        // IME-commit Enter keydown is already dispatched to onData. If we
+        // blanket-swallow input while `composing` is true, the first Enter
+        // after Chinese input is lost — user has to press Enter twice. Only
+        // drop IME pre-edit text (multi-char non-ASCII), always let Enter /
+        // control chars through.
+        if (composing && !(data === '\r' || data === '\n') &&
+            !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
+          return;
+        }
         // Reset scroll lock on Enter (user submitted input)
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
           if (data === lastSent && now - lastTime < 400) return;
           lastSent = data; lastTime = now;
+        }
+        // Enter / single control chars → send immediately (skip microbatch).
+        // The setTimeout(0) microbatch helps for rapid multi-char input
+        // (IME, paste bursts) but adds a full event-loop tick + possible
+        // WKWebView scheduling delay for every keystroke. Enter is a
+        // discrete action that should fire instantly.
+        // Enter after an async paste (image/file) must wait for the paste
+        // to finish writing into the PTY — otherwise Enter races ahead and
+        // submits an empty message before the bracketed-paste block lands.
+        if (data === '\r' || data === '\n' || data.length === 1) {
+          if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+          if ((data === '\r' || data === '\n') && pastePending > 0) {
+            const wait = pastePending;
+            pasteDone.then(() => {
+              if (wait === pastePending || pastePending === 0) {
+                pywebview.api.write_input(sid, inputBuf + data);
+                inputBuf = '';
+              }
+            });
+            return;
+          }
+          pywebview.api.write_input(sid, inputBuf + data);
+          inputBuf = '';
+          return;
         }
         inputBuf += data;
         if (!inputTimer) {
@@ -874,6 +1477,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Resize
     const ro = new ResizeObserver(() => { if (activeId === sid) fitTerm(sid); });
     ro.observe(pane);
+
+    // Scroll-up → tmux history: xterm.js scrollback is always empty for TUI
+    // apps (Claude/Codex use cursor positioning, not line-feeds). When user
+    // scrolls up at the top of the empty buffer, enter tmux copy-mode so
+    // they can browse the real scrollback stored in tmux's pane buffer.
+    setupScrollHistory(sid, pane);
 
     // Process alive check (output is pushed from Python, no polling needed)
     (async function aliveLoop() {
@@ -891,6 +1500,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     switchTab(sid);
     renderTabs();
+    } finally {
+      _uiCreatingSession--;
+    }
   }
 
   // Reconnect to an existing PTY session after page reload (hot update)
@@ -912,12 +1524,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.unicode.activeVersion = '11';
     term.open(pane);
     fitAddon.fit();
+    attachFileLinkProvider(term);
+    attachSelectionAutoScroll(term, pane);
 
     const label = cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     setupAttachKeyHandler(sid, term);
     term.onScroll(() => {
+      if (_programmaticScroll) return; // don't reset during our own scrollToLine
       const buf = term.buffer.active;
       sessions[sid]._userScrolledUp = buf.viewportY < buf.baseY;
     });
@@ -934,12 +1549,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         textarea.addEventListener('compositionend', () => { composing = false; });
       }
       term.onData(data => {
-        if (composing) return;
+        // Same IME-race guard as createSession: compositionend can fire after
+        // Enter reaches onData on WKWebView.
+        if (composing && !(data === '\r' || data === '\n') &&
+            !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
+          return;
+        }
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
           if (data === lastSent && now - lastTime < 400) return;
           lastSent = data; lastTime = now;
+        }
+        if (data === '\r' || data === '\n' || data.length === 1) {
+          if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+          if ((data === '\r' || data === '\n') && pastePending > 0) {
+            const wait = pastePending;
+            pasteDone.then(() => {
+              if (wait === pastePending || pastePending === 0) {
+                pywebview.api.write_input(sid, inputBuf + data);
+                inputBuf = '';
+              }
+            });
+            return;
+          }
+          pywebview.api.write_input(sid, inputBuf + data);
+          inputBuf = '';
+          return;
         }
         inputBuf += data;
         if (!inputTimer) {
@@ -953,6 +1589,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     const ro = new ResizeObserver(() => { if (activeId === sid) fitTerm(sid); });
     ro.observe(pane);
+
+    setupScrollHistory(sid, pane);
 
     // Process alive check (output is pushed from Python)
     (async function aliveLoop() {
@@ -971,15 +1609,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     renderTabs();
   }
 
+  let _saveActiveTabTimer = null;
+  function persistActiveTab(sid) {
+    // Debounced save to Python config (durable, survives WKWebView storage clears)
+    if (_saveActiveTabTimer) clearTimeout(_saveActiveTabTimer);
+    _saveActiveTabTimer = setTimeout(() => {
+      try { pywebview.api.set_active_tab(sid); } catch(e) {}
+    }, 500);
+  }
+
   function switchTab(sid) {
+    // Close any open scroll-history overlay — it belongs to no specific tab
+    try { if (typeof ScrollHistory !== 'undefined') ScrollHistory.close(); } catch(_) {}
     if (activeId && sessions[activeId]) {
       sessions[activeId].pane.classList.remove('active');
     }
     activeId = sid;
     localStorage.setItem('sf_active_tab', sid);
+    persistActiveTab(sid);
     if (sessions[sid]) {
       sessions[sid].pane.classList.add('active');
-      sessions[sid]._userScrolledUp = false;
+      // Preserve user's scroll position on tab switch — don't force-bottom.
+      // _userScrolledUp stays as-is so fitTerm respects current position.
       fitTerm(sid);
       sessions[sid].term.focus();
     }
@@ -991,6 +1642,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = sessions[sid];
     if (!s) return;
     await pywebview.api.close_session(sid);
+    // Dispose xterm.js instance to free WebGL contexts, buffers, addons
+    try { s.term.dispose(); } catch(e) {}
     s.pane.remove();
     delete sessions[sid];
     sessionOrder = sessionOrder.filter(id => id !== sid);
@@ -1030,6 +1683,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const numLabel = tgNum ? tgNum : '·';
       const numOpacity = tgNum ? '.45' : '.2';
       tab.innerHTML = `
+        <span class="busy-dot${s._busy ? ' on' : ''}"></span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(s.label)}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
@@ -1101,6 +1755,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.dataset.sid = sid;
       el.dataset.section = 'on';
       el.innerHTML =
+        `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
         (hasBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         (hasBridge ? `<span class="sb-tg on${isActiveTg ? ' active-tg' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '');
@@ -1111,20 +1766,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const divider = document.createElement('div');
       divider.className = 'sb-divider';
       divider.dataset.section = 'divider';
-      divider.textContent = 'TG off';
+      divider.textContent = t('tgUnbridgedDivider');
+      divider.title = t('tgUnbridgedTooltip');
       container.appendChild(divider);
 
       disabledSids.forEach(sid => {
         const s = sessions[sid];
         if (!s) return;
         const el = document.createElement('div');
-        el.className = 'sb-item disabled' + (sid === activeId ? ' active' : '');
+        el.className = 'sb-item unbridged' + (sid === activeId ? ' active' : '');
         el.dataset.sid = sid;
         el.dataset.section = 'off';
         el.innerHTML =
-          `<span style="opacity:.2;font-size:10px;min-width:14px">·</span>` +
+          `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
+          `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
-          `<span class="sb-tg" style="opacity:.3">TG</span>`;
+          `<span class="sb-tg" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
         container.appendChild(el);
       });
 
@@ -1175,14 +1832,34 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           pywebview.api.rename_session(sid, val).catch(() => {});
         }
       }
-      if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+      // Defer the term.focus() to the next tick so the keydown event that
+      // triggered finish() is fully processed FIRST. Otherwise the same
+      // keystroke (Escape / Enter) bubbles into the now-focused xterm
+      // helper textarea and gets sent to the CLI as raw input, which
+      // Claude interprets as "interrupt" (Esc) or "submit" (Enter).
+      setTimeout(() => {
+        if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+      }, 0);
     }
     document.getElementById('rename-ok').addEventListener('click', () => finish(true));
     document.getElementById('rename-cancel').addEventListener('click', () => finish(false));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
+    // Safari/WKWebView IME quirk: compositionend fires BEFORE the keydown,
+    // so isComposing is already false on the Enter that confirms the candidate.
+    // Workaround: track a brief "just composed" window.
+    let _justComposed = false;
+    input.addEventListener('compositionend', () => {
+      _justComposed = true;
+      setTimeout(() => { _justComposed = false; }, 150);
+    });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') finish(true);
-      if (e.key === 'Escape') finish(false);
+      if (e.isComposing || _justComposed || e.keyCode === 229) return;
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Enter') finish(true);
+        else finish(false);
+      }
     });
   }
 
@@ -1236,21 +1913,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const startY = e.clientY;
     const container = document.getElementById('sidebar-sessions');
 
+    let _lastHighlight = null;
     function onMove(ev) {
       if (!moved && Math.abs(ev.clientY - startY) < 5) return;
       if (!moved) ev.preventDefault();
       moved = true;
       _sbDragging = true;
       item.style.opacity = '.3';
-      // Highlight drop target
-      container.querySelectorAll('.sb-item, .sb-divider, [data-section="off"]').forEach(el => {
-        el.style.background = '';
-      });
+      // Highlight drop target (track last to avoid clearing ALL every frame)
       const target = document.elementFromPoint(ev.clientX, ev.clientY);
-      if (!target) return;
-      const dropItem = target.closest('.sb-item') || target.closest('.sb-divider') || target.closest('[data-section="off"]');
-      if (dropItem && dropItem !== item) {
-        dropItem.style.background = dropItem.classList?.contains('sb-divider') ? 'rgba(122,162,247,.1)' : '#292e42';
+      const dropItem = target ? (target.closest('.sb-item') || target.closest('.sb-divider') || target.closest('[data-section="off"]')) : null;
+      if (dropItem !== _lastHighlight) {
+        if (_lastHighlight) _lastHighlight.style.background = '';
+        _lastHighlight = (dropItem && dropItem !== item) ? dropItem : null;
+        if (_lastHighlight) {
+          _lastHighlight.style.background = _lastHighlight.classList?.contains('sb-divider') ? 'rgba(122,162,247,.1)' : '#292e42';
+        }
       }
     }
 
@@ -1259,9 +1937,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       document.removeEventListener('mouseup', onUp);
       _sbDragging = false;
       item.style.opacity = '';
-      container.querySelectorAll('.sb-item, .sb-divider, [data-section="off"]').forEach(el => {
-        el.style.background = '';
-      });
+      if (_lastHighlight) { _lastHighlight.style.background = ''; _lastHighlight = null; }
       if (!moved) return;
       const target = document.elementFromPoint(ev.clientX, ev.clientY);
       if (!target) return;
@@ -1310,18 +1986,36 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-sidebar').addEventListener('click', () => {
     const sb = document.getElementById('sidebar');
     sb.classList.toggle('collapsed');
-    localStorage.setItem('sf_sidebar', sb.classList.contains('collapsed') ? '0' : '1');
+    const open = !sb.classList.contains('collapsed');
+    // Persist to config (survives full restart + is reliable — WKWebView's
+    // localStorage has historically been flaky across app restarts).
+    // Mirror to localStorage too, as a fast-path for the next page load
+    // before async config read completes.
+    try { localStorage.setItem('sf_sidebar', open ? '1' : '0'); } catch (_) {}
+    config.settings = config.settings || {};
+    if (config.settings.sidebar_open !== open) {
+      config.settings.sidebar_open = open;
+      pywebview.api.save_settings(JSON.stringify(config.settings));
+    }
     // Refit terminal after sidebar transition
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
 
-  // ── Attach: intercept Enter before xterm to inject file paths ──
+  // ── Attach: intercept Enter/Shift+Enter before xterm ──
+  let shiftEnterNewline = true; // default on; toggled in Settings
   function setupAttachKeyHandler(sid, term) {
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
       // Esc in plain terminal → send Ctrl+U to kill current line
       if (ev.key === 'Escape' && !isAiSession(sid)) {
         pywebview.api.write_input(sid, '\x15'); // Ctrl+U = line kill
+        return false;
+      }
+      // Shift+Enter → newline without submit (for AI sessions)
+      // Sends \n instead of \r; Claude Code / Codex treat \n as line break.
+      if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey && shiftEnterNewline) {
+        ev.preventDefault();
+        pywebview.api.write_input(sid, '\n');
         return false;
       }
       if (ev.key !== 'Enter' || ev.ctrlKey || ev.metaKey || ev.altKey) return true;
@@ -1332,6 +2026,216 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       updateImageBar();
       return true; // let Enter through normally
     });
+  }
+
+  // ── Scroll history overlay ──
+  // xterm.js scrollback is always 0 for TUI apps that redraw in-place.
+  // tmux's native scrollback has the full history BUT it also captures every
+  // streaming frame (Claude Code's partial writes), so copy-mode showed the
+  // same line repeated with progressive truncations.
+  //
+  // Instead we snapshot the pane via `tmux capture-pane -p -J`, collapse
+  // prefix-duplicate runs server-side (longest wins), and show the cleaned
+  // text in a native overlay modal. User can select + copy; Esc or click
+  // backdrop to close. Copy-mode avoided entirely.
+  // Global singleton — scroll-history view rendered into a real xterm.js
+  // instance. Mounted inside #terminal-wrap so the sidebar is never covered.
+  // Auto-closes on: Esc, ✕ button, backdrop click, scroll-to-bottom (user
+  // caught up), or any keystroke that isn't a scroll-navigation key
+  // (treated as "user wants to type in the live input, give focus back").
+  const ScrollHistory = (function() {
+    let overlay = null;
+    let histTerm = null;
+    let onKey = null;
+    let onResize = null;
+    let boundSid = null;
+
+    const NAV_KEYS = new Set([
+      'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End',
+      'Shift', 'Control', 'Alt', 'Meta',
+    ]);
+
+    function close(opts) {
+      if (!overlay) return;
+      const forwardKey = opts && opts.forwardKey;
+      if (onKey) {
+        document.removeEventListener('keydown', onKey, true);
+        onKey = null;
+      }
+      if (onResize) {
+        window.removeEventListener('resize', onResize);
+        onResize = null;
+      }
+      if (histTerm) {
+        try { histTerm.dispose(); } catch (_) {}
+        histTerm = null;
+      }
+      overlay.remove();
+      overlay = null;
+      const targetSid = boundSid;
+      boundSid = null;
+      // Return focus + forward any typed character so typing feels continuous
+      if (typeof activeId !== 'undefined' && activeId && sessions[activeId]) {
+        const s = sessions[activeId];
+        try { s.term.focus(); } catch (_) {}
+        if (forwardKey && targetSid === activeId) {
+          // Send the character the user just pressed so they don't lose it
+          try {
+            pywebview.api.write_input(activeId, forwardKey);
+          } catch (_) {}
+        }
+      }
+    }
+
+    function isOpen() { return !!overlay; }
+
+    function show(text, sid, opts) {
+      close();
+      boundSid = sid || activeId;
+      const fontSize = (opts && opts.fontSize) || currentFontSize || 13;
+
+      // Mount inside #terminal-wrap — NOT document.body — so the sidebar
+      // stays fully visible and interactive behind the overlay.
+      const host = document.getElementById('terminal-wrap');
+      if (!host) return;
+
+      overlay = document.createElement('div');
+      overlay.className = 'scroll-history-overlay';
+      overlay.tabIndex = -1;
+      overlay.style.cssText = 'position:absolute;inset:0;background:#1a1b26;' +
+        'z-index:40;display:flex;flex-direction:column;';
+
+      const header = document.createElement('div');
+      header.style.cssText = 'padding:6px 14px;border-bottom:1px solid #3b4261;' +
+        'background:#16161e;color:#7aa2f7;font-size:11px;' +
+        'display:flex;justify-content:space-between;align-items:center;flex:0 0 auto';
+      const hint = document.createElement('span');
+      hint.textContent = '📜 History (deduped) — scroll to bottom, type, or Esc to return';
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText = 'background:none;border:1px solid #3b4261;color:#a9b1d6;' +
+        'padding:1px 9px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1';
+      closeBtn.addEventListener('click', () => close());
+      header.appendChild(hint);
+      header.appendChild(closeBtn);
+
+      // Wrapper allows horizontal scroll when histTerm is wider than the
+      // overlay pane. termHost is the actual xterm mount — we size it to
+      // match the source session's cols so content captured at e.g. 140
+      // cols doesn't get clipped on a 100-col overlay (tables lose their
+      // right half that way — Howard's screenshot of /Prod/FundSelectList
+      // + 說明 column cut at the table edge).
+      const termScroll = document.createElement('div');
+      termScroll.style.cssText = 'flex:1;min-height:0;position:relative;overflow-x:auto;overflow-y:hidden';
+      const termHost = document.createElement('div');
+      termHost.style.cssText = 'position:relative;padding:6px 10px;height:100%';
+
+      overlay.appendChild(header);
+      termScroll.appendChild(termHost);
+      overlay.appendChild(termScroll);
+      host.appendChild(overlay);
+
+      // Use the LIVE session's cols (the tmux pane width at capture time) so
+      // xterm doesn't re-wrap / clip. Fallback to fit-based cols if no
+      // source session is bound (shouldn't happen, but safe).
+      const srcSess = (boundSid && sessions[boundSid]) ? sessions[boundSid] : null;
+      const srcCols = (srcSess && srcSess.term && srcSess.term.cols) || 120;
+
+      histTerm = new Terminal({
+        fontSize,
+        fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
+        theme: THEME,
+        cursorBlink: false,
+        cursorStyle: 'block',
+        scrollback: Math.max(10000, (text || '').split('\n').length + 200),
+        allowProposedApi: true,
+        disableStdin: true,
+        convertEol: true,
+        cols: srcCols,
+        rows: 40,
+      });
+      const fit = new FitAddon.FitAddon();
+      histTerm.loadAddon(fit);
+      histTerm.open(termHost);
+      // Fit only the ROWS dimension to the overlay height — keep cols
+      // pinned at srcCols so the capture renders at its original width.
+      try {
+        fit.fit();
+        if (histTerm.cols !== srcCols) histTerm.resize(srcCols, histTerm.rows);
+      } catch (_) {}
+
+      // Write all content, then scroll to bottom. Only AFTER this settles
+      // do we start watching for user-driven "scroll to bottom to close".
+      let userInteracted = false;
+      histTerm.write(text || '(no history)', () => {
+        try { histTerm.scrollToBottom(); } catch (_) {}
+      });
+
+      // Mark user interaction on wheel / key nav. Only then does
+      // "scroll-to-bottom" count as an auto-close signal — this prevents the
+      // initial bulk write + scrollToBottom from dismissing the overlay
+      // immediately (xterm fires onScroll per written line).
+      termHost.addEventListener('wheel', (e) => {
+        if (!histTerm) return;
+        userInteracted = true;
+        const buf = histTerm.buffer.active;
+        // Wheel DOWN past the last line → user reached the live tail, close.
+        if (e.deltaY > 0 && buf.viewportY >= buf.baseY) close();
+      }, { passive: true });
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close();
+      });
+
+      // Keystroke handler. Navigation/modifier keys → let xterm history scroll.
+      // Anything else → user wants to type in live input; close and forward
+      // the character so the keystroke isn't lost.
+      onKey = (e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          e.preventDefault();
+          close();
+          return;
+        }
+        if (NAV_KEYS.has(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+        // Only forward single printable chars / common editing keys
+        const forward = e.key.length === 1 ? e.key :
+          (e.key === 'Enter' ? '\r' : e.key === 'Backspace' ? '\x7f' : null);
+        if (forward) {
+          e.stopPropagation();
+          e.preventDefault();
+          close({ forwardKey: forward });
+        }
+      };
+      document.addEventListener('keydown', onKey, true);
+
+      onResize = () => { try { fit.fit(); } catch (_) {} };
+      window.addEventListener('resize', onResize);
+    }
+
+    return { show, close, isOpen };
+  })();
+
+  function setupScrollHistory(sid, pane) {
+    let _loading = false;
+    pane.addEventListener('wheel', (e) => {
+      const s = sessions[sid];
+      if (!s) return;
+      if (ScrollHistory.isOpen()) return; // overlay handles its own scroll natively
+      const direction = e.deltaY < 0 ? 'up' : 'down';
+      if (direction !== 'up') return;
+      const buf = s.term.buffer.active;
+      if (buf.viewportY > 0) return; // xterm has its own scrollback, let it handle
+      if (_loading) return;
+      _loading = true;
+      pywebview.api.get_clean_history(sid).then(res => {
+        _loading = false;
+        try {
+          const result = JSON.parse(res);
+          if (result.success) ScrollHistory.show(result.text, sid);
+        } catch (err) { /* ignore */ }
+      }).catch(() => { _loading = false; });
+    }, { passive: true });
   }
 
   // ── Image / file attach ──
@@ -1345,13 +2249,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const bar = document.getElementById('image-bar');
     const chips = document.getElementById('attach-chips');
     if (s && s.attachments.length > 0) {
-      chips.innerHTML = s.attachments.map((a, i) => {
+      const total = s.attachments.length;
+      const imgCount = s.attachments.filter(a =>
+        a.dataUrl || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path)).length;
+      const fileCount = total - imgCount;
+      // Count summary: "📷 4 images" / "📎 2 files" / "📷 3 📎 1"
+      let summary = '';
+      if (imgCount && fileCount) summary = `📷 ${imgCount} 📎 ${fileCount}`;
+      else if (imgCount) summary = `📷 ${imgCount} image${imgCount > 1 ? 's' : ''}`;
+      else summary = `📎 ${fileCount} file${fileCount > 1 ? 's' : ''}`;
+      const summaryHtml = `<span class="attach-summary">${summary}</span>`;
+      const chipsHtml = s.attachments.map((a, i) => {
         const isImg = a.dataUrl || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path);
         const icon = isImg ? '📷' : '📎';
         const name = shortPath(a.path);
         const thumb = a.dataUrl ? `<img src="${a.dataUrl}" class="chip-thumb"/>` : '';
         return `<span class="attach-chip" title="${esc(a.path)}">${thumb}${icon} <b>#${a.tag}</b> ${esc(name)} <span class="chip-close" data-idx="${i}">&times;</span></span>`;
       }).join('');
+      chips.innerHTML = summaryHtml + chipsHtml;
       bar.style.display = 'flex';
     } else {
       bar.style.display = 'none';
@@ -1365,10 +2280,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!s.attachments.some(a => a.path === path)) {
       s.attachCounter = (s.attachCounter || 0) + 1;
       s.attachments.push({ path, dataUrl: dataUrl || null, tag: s.attachCounter });
-      // Write path directly into terminal input so Enter just works
-      pywebview.api.write_input(activeId, ' ' + path);
+      // Wrap the path in bracketed-paste escapes so AI CLIs (Claude Code,
+      // Codex, etc.) recognise it as a paste event instead of typed input.
+      // Claude Code uses this to compress attachments into "[image #N]" /
+      // "[Pasted text #N +Y lines]" previews. Without the wrapping the
+      // path shows as raw text.
+      const BP_START = '\x1b[200~';
+      const BP_END = '\x1b[201~';
+      pywebview.api.write_input(activeId, ' ' + BP_START + path + BP_END);
     }
     updateImageBar();
+    _refocusActive();
   }
 
   // ── Detect AI vs plain terminal sessions ──
@@ -1380,6 +2302,80 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return tokens.some(t => AI_CLI_TOOLS.has(t.split('/').pop().replace(/\.\w+$/, '')));
   }
 
+  // Large plain-text paste gating. Anything >= PASTE_CONFIRM_CHARS or
+  // PASTE_CONFIRM_LINES is parked in pendingPasteText until the user presses
+  // Enter (send as bracketed paste) or Esc (discard). Saves regret when you
+  // grab the wrong clipboard and hit Cmd+V into an AI that auto-submits.
+  const PASTE_CONFIRM_CHARS = 1000;
+  const PASTE_CONFIRM_LINES = 10;
+  let pendingPasteText = null;
+  let pendingPasteSid = null;
+
+  function _armPasteConfirm(text, sid) {
+    pendingPasteText = text;
+    pendingPasteSid = sid;
+    const bar = document.getElementById('paste-confirm-bar');
+    const stats = document.getElementById('pc-stats');
+    const preview = document.getElementById('pc-preview');
+    const lines = text.split('\n').length;
+    stats.textContent = `${text.length.toLocaleString()} chars · ${lines} lines`;
+    const firstLine = (text.split('\n')[0] || '').slice(0, 120);
+    preview.textContent = firstLine ? `"${firstLine}"` : '';
+    bar.style.display = 'flex';
+  }
+
+  function _clearPasteConfirm() {
+    pendingPasteText = null;
+    pendingPasteSid = null;
+    const bar = document.getElementById('paste-confirm-bar');
+    if (bar) bar.style.display = 'none';
+  }
+
+  // Global handler (capture phase, before xterm swallows keys). Only active
+  // while a paste is armed; otherwise returns immediately so normal input
+  // is untouched.
+  document.addEventListener('keydown', (e) => {
+    if (!pendingPasteText) return;
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      _clearPasteConfirm();
+      // Without re-arming focus, the textarea can be left blurred after
+      // the bar disappears, so the next user keystroke goes nowhere.
+      _refocusActive();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.stopPropagation();
+      e.preventDefault();
+      const text = pendingPasteText;
+      const sid = pendingPasteSid;
+      _clearPasteConfirm();
+      if (sid && sessions[sid]) {
+        pywebview.api.write_input(sid, '\x1b[200~' + text + '\x1b[201~');
+      }
+      // After the apply, Claude Code shows the "[Pasted text #N]" chip
+      // and the user typically presses Enter again to submit. The bar
+      // hide can leave focus on body, and v0.11.35's focus guard from
+      // the original paste event has already expired by now. Re-arm
+      // both: hard-force focus to the xterm textarea AND restart the
+      // 3-second guard (which also re-attaches the Enter-forwarder
+      // listener), so the post-apply submit Enter actually lands.
+      if (activeId && sessions[activeId]) {
+        try {
+          const s = sessions[activeId];
+          const ta = s.pane && s.pane.querySelector('textarea.xterm-helper-textarea');
+          if (ta) ta.focus();
+          try { s.term.focus(); } catch (_) {}
+        } catch (_) {}
+      }
+      _refocusActive();
+    }
+    // Other keys pass through — user can cancel by retyping; but we keep
+    // the bar visible so they see the paste is still armed. The bar itself
+    // doesn't block input; xterm behind it still receives keys.
+  }, true);
+
   // Clipboard paste — images, files copied from Finder, or generic file blobs
   // Use CAPTURE phase because xterm.js calls stopPropagation() in its paste handler
   document.addEventListener('paste', async (e) => {
@@ -1389,66 +2385,120 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (el && el.tagName === 'INPUT') return;
     if (el && el.tagName === 'TEXTAREA' && !el.classList.contains('xterm-helper-textarea')) return;
 
+    // Large-text-paste gate: if the clipboard is just plain text (no image/
+    // file blobs) and it's big enough to regret, hold it in pendingPasteText
+    // and show the confirm bar. Enter sends, Esc discards. This runs BEFORE
+    // the image/file collection below so a huge text paste doesn't race past.
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    const ai = isAiSession(activeId);
-
-    // 1. Check for image data
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
+    const hasBlob = Array.from(items).some(it => it.kind === 'file');
+    if (!hasBlob) {
+      const text = e.clipboardData.getData('text/plain') || '';
+      const lines = text ? text.split('\n').length : 0;
+      if (text.length >= PASTE_CONFIRM_CHARS || lines >= PASTE_CONFIRM_LINES) {
         e.stopPropagation();
         e.preventDefault();
-        const blob = item.getAsFile();
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const dataUrl = reader.result;
+        _armPasteConfirm(text, activeId);
+        return;
+      }
+      // Otherwise fall through to xterm.js for normal paste (bracketed
+      // paste escapes are added by xterm when enabled by the PTY).
+      return;
+    }
+
+    const ai = isAiSession(activeId);
+
+    // Mark this paste as in-flight. Enter presses that arrive during the
+    // async blob→file→write chain below are deferred until we finish, so
+    // the user's submit happens AFTER the attachment lands in the PTY.
+    pastePending++;
+    let _pasteResolve;
+    const _prevDone = pasteDone;
+    pasteDone = new Promise(r => { _pasteResolve = r; });
+    const _finish = () => {
+      pastePending = Math.max(0, pastePending - 1);
+      _pasteResolve();
+    };
+    // Chain any pending paste before starting this one, so order is preserved.
+    await _prevDone;
+
+    // Helper: read a blob to DataURL as a Promise so we can process multiple
+    // clipboard items in parallel instead of returning after the first one.
+    const readDataUrl = (blob) => new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    });
+
+    // 1. Collect ALL image items (clipboard can hold multiple screenshots)
+    const imageBlobs = [];
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const b = item.getAsFile();
+        if (b) imageBlobs.push(b);
+      }
+    }
+    try {
+      if (imageBlobs.length > 0) {
+        e.stopPropagation();
+        e.preventDefault();
+        // Save each one sequentially (attachFile needs to write paths in order
+        // so the #N tags line up with what appears in the terminal)
+        for (const blob of imageBlobs) {
+          const dataUrl = await readDataUrl(blob);
           const path = await pywebview.api.save_image(dataUrl);
           if (ai) { attachFile(path, dataUrl); }
           else { await pywebview.api.write_input(activeId, path); }
-        };
-        reader.readAsDataURL(blob);
+        }
         return;
       }
-    }
 
-    // 2. Check for file blobs (non-image files pasted from some apps)
-    for (const item of items) {
-      if (item.kind === 'file') {
+      // 2. Collect ALL file blobs (non-image files pasted from some apps)
+      const fileBlobs = [];
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const b = item.getAsFile();
+          if (b) fileBlobs.push(b);
+        }
+      }
+      if (fileBlobs.length > 0) {
         e.stopPropagation();
         e.preventDefault();
-        const blob = item.getAsFile();
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const path = await pywebview.api.save_file_from_clipboard(reader.result, blob.name || 'file');
+        for (const blob of fileBlobs) {
+          const dataUrl = await readDataUrl(blob);
+          const path = await pywebview.api.save_file_from_clipboard(dataUrl, blob.name || 'file');
           if (!path.startsWith('ERROR')) {
             if (ai) { attachFile(path, null); }
             else { await pywebview.api.write_input(activeId, path); }
           }
-        };
-        reader.readAsDataURL(blob);
-        return;
-      }
-    }
-
-    // 3. Check system clipboard for Finder-copied files (macOS/Windows)
-    //    Browser clipboard API can't access file paths, so ask Python backend
-    try {
-      const raw = await pywebview.api.get_clipboard_files();
-      const paths = JSON.parse(raw);
-      if (paths.length > 0) {
-        e.stopPropagation();
-        e.preventDefault();
-        if (ai) {
-          for (const filePath of paths) attachFile(filePath, null);
-        } else {
-          await pywebview.api.write_input(activeId, paths.join(' '));
         }
         return;
       }
-    } catch(e2) {}
 
-    // Not an image/file paste — let it through to xterm.js for normal text paste
+      // 3. Check system clipboard for Finder-copied files (macOS/Windows)
+      //    Browser clipboard API can't access file paths, so ask Python backend
+      try {
+        const raw = await pywebview.api.get_clipboard_files();
+        const paths = JSON.parse(raw);
+        if (paths.length > 0) {
+          e.stopPropagation();
+          e.preventDefault();
+          if (ai) {
+            for (const filePath of paths) attachFile(filePath, null);
+          } else {
+            await pywebview.api.write_input(activeId, paths.join(' '));
+          }
+          return;
+        }
+      } catch(e2) {}
+
+      // Not an image/file paste — let it through to xterm.js for normal text paste
+    } finally {
+      _finish();
+      if (typeof _refocusActive === 'function') _refocusActive();
+    }
   }, true);  // ← capture phase
 
   // Drag & drop files (skip internal tab/sidebar reorder drags)
@@ -1478,32 +2528,175 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     if (!activeId || !sessions[activeId]) return;
 
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      // For images, show preview
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const path = await pywebview.api.save_image(reader.result);
-          attachFile(path, reader.result);
-        };
-        reader.readAsDataURL(file);
+    // Try to pull absolute file paths straight from the drag payload FIRST.
+    // Finder / most macOS apps populate text/uri-list (and/or text/plain) with
+    // file:///... URLs. Using these skips FileReader + the tmp-file round-trip
+    // entirely, so the attach is instant and preserves the original path (the
+    // AI CLI reads the real file, not a copy). FileReader path is kept as
+    // fallback for webapps that only expose in-memory blobs.
+    const dt = e.dataTransfer;
+    const readTypes = (dt && dt.types) ? Array.from(dt.types) : [];
+    const urlPaths = [];
+    for (const typ of ['text/uri-list', 'public.file-url', 'text/plain']) {
+      if (!readTypes.includes(typ)) continue;
+      const raw = dt.getData(typ) || '';
+      for (const line of raw.split(/\r?\n/)) {
+        const s = line.trim();
+        if (!s || s.startsWith('#')) continue;
+        if (s.startsWith('file://')) {
+          try { urlPaths.push(decodeURIComponent(s.slice(7))); } catch(_) {}
+        } else if (s.startsWith('/') && !urlPaths.includes(s)) {
+          urlPaths.push(s);  // bare absolute path in text/plain
+        }
+      }
+      if (urlPaths.length) break;
+    }
+    if (urlPaths.length > 0) {
+      const ai = isAiSession(activeId);
+      if (ai) {
+        for (const p of urlPaths) attachFile(p, null);
       } else {
-        // Non-image file: get path from drop data
-        // pywebview file drops include path in name
-        const path = file.path || file.name;
-        attachFile(path, null);
+        await pywebview.api.write_input(activeId, urlPaths.join(' '));
       }
       return;
     }
 
-    // URL/text drop — try to get file path from text
-    const text = e.dataTransfer?.getData('text/plain');
-    if (text && text.trim()) {
-      attachFile(text.trim(), null);
+    // Blob fallback — WKWebView gives File objects for dragged content from
+    // browsers / apps that hold the blob in memory. file.path is undefined in
+    // WKWebView (Electron-only), so we read the bytes and save a copy under
+    // ~/.claude/tmp/.
+    const files = dt && dt.files;
+    if (files && files.length > 0) {
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const path = await pywebview.api.save_image(reader.result);
+            if (path && !path.startsWith('ERROR')) {
+              if (isAiSession(activeId)) { attachFile(path, reader.result); }
+              else { await pywebview.api.write_input(activeId, path); }
+            }
+          };
+          reader.readAsDataURL(file);
+        } else {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const path = await pywebview.api.save_file_from_clipboard(reader.result, file.name || 'file');
+            if (path && !path.startsWith('ERROR')) {
+              if (isAiSession(activeId)) { attachFile(path, null); }
+              else { await pywebview.api.write_input(activeId, path); }
+            }
+            _refocusActive();
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+      _refocusActive();
+      return;
     }
+    _refocusActive();
   });
+
+  // Pull focus back to the active session's xterm textarea after a paste /
+  // drop flow. Big or async paste pipelines (multiple images, FileReader →
+  // save_image IPC → write_input) take well over a second to settle, and
+  // WKWebView keeps re-blurring the helper textarea during that window.
+  // The old "fire 4 setTimeouts up to 200ms" approach lost the race for
+  // anything heavier than a small text paste — Howard saw "can't even
+  // type after pasting a chunk of text or images".
+  //
+  // New strategy: spin a guard for up to 3 seconds. Every 80ms we check
+  // document.activeElement; if it's not our xterm textarea AND the focus
+  // hasn't been claimed by a real user-initiated input/button (i.e. it's
+  // sitting on body / one of our floating bars), we yank it back. Stop
+  // once the textarea has been the active element for 3 ticks in a row,
+  // or after the 3s cap. Refusing to steal when activeElement is in a
+  // modal / settings input / xterm internal element keeps the guard from
+  // fighting legitimate user clicks.
+  let _refocusGuardId = null;
+  let _refocusHardCapId = null;
+  let _pasteEnterListenerAttached = false;
+
+  function _isStealableFocus(el) {
+    if (!el || el === document.body || el === document.documentElement) return true;
+    if (typeof el.closest !== 'function') return true;
+    if (el.closest('#image-bar')) return true;
+    if (el.closest('#drop-overlay')) return true;
+    if (el.closest('#paste-confirm-bar')) return true;
+    return false;
+  }
+
+  // Belt-and-braces: while a focus guard is active, intercept Enter at
+  // document level. If the user hits Enter before our guard has won
+  // focus back to the xterm textarea (very common right after a paste —
+  // WKWebView does its own focus dance for hundreds of ms), the keydown
+  // would otherwise hit body / image-bar and be swallowed. Steal it,
+  // forward `\r` to the active session ourselves, and pull focus.
+  function _ensurePasteEnterListener() {
+    if (_pasteEnterListenerAttached) return;
+    _pasteEnterListenerAttached = true;
+    document.addEventListener('keydown', (e) => {
+      if (_refocusGuardId === null) return;
+      if (e.key !== 'Enter') return;
+      if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!activeId || !sessions[activeId]) return;
+      const ta = sessions[activeId].pane &&
+                 sessions[activeId].pane.querySelector('textarea.xterm-helper-textarea');
+      if (document.activeElement === ta) return; // xterm will handle
+      if (!_isStealableFocus(document.activeElement)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try { pywebview.api.write_input(activeId, '\r'); } catch (_) {}
+      try { ta && ta.focus(); } catch (_) {}
+    }, true);
+  }
+
+  function _refocusActive() {
+    _ensurePasteEnterListener();
+    if (_refocusGuardId) {
+      clearInterval(_refocusGuardId);
+      _refocusGuardId = null;
+    }
+    if (_refocusHardCapId) {
+      clearTimeout(_refocusHardCapId);
+      _refocusHardCapId = null;
+    }
+    const grab = () => {
+      if (!activeId || !sessions[activeId]) return true;  // nothing to do
+      const s = sessions[activeId];
+      const ta = s.pane && s.pane.querySelector('textarea.xterm-helper-textarea');
+      if (!ta) return true;
+      const ae = document.activeElement;
+      if (ae === ta) return true;
+      // User clicked into a real form control or modal — back off so we
+      // don't fight them. Only pull focus back when activeElement looks
+      // like post-paste churn (body / our own floating bars).
+      if (!_isStealableFocus(ae)) return true;
+      try { ta.focus(); } catch(_) {}
+      try { s.term.focus(); } catch(_) {}
+      return false;
+    };
+    grab();
+    let stableTicks = 0;
+    _refocusGuardId = setInterval(() => {
+      if (grab()) {
+        stableTicks++;
+        if (stableTicks >= 3) {
+          clearInterval(_refocusGuardId);
+          _refocusGuardId = null;
+        }
+      } else {
+        stableTicks = 0;
+      }
+    }, 80);
+    _refocusHardCapId = setTimeout(() => {
+      if (_refocusGuardId) {
+        clearInterval(_refocusGuardId);
+        _refocusGuardId = null;
+      }
+      _refocusHardCapId = null;
+    }, 3000);
+  }
 
   document.getElementById('close-preview').addEventListener('click', () => {
     if (activeId && sessions[activeId]) {
@@ -1528,7 +2721,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
 
   // ── Modal ──
-  document.getElementById('btn-new-tab').addEventListener('click', () => { $modal.classList.add('open'); $customCmd.focus(); });
+  document.getElementById('btn-new-tab').addEventListener('click', () => { renderPresets(); $modal.classList.add('open'); $customCmd.focus(); });
   document.getElementById('btn-cancel-modal').addEventListener('click', closeModal);
   $modal.addEventListener('click', (e) => { if (e.target === $modal) closeModal(); });
 
@@ -1585,7 +2778,111 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('fontsize-val').textContent = currentFontSize;
     document.getElementById('setting-lang').value = lang;
     $autoUpdateToggle.classList.toggle('on', autoUpdateEnabled);
+    document.getElementById('setting-shift-enter').classList.toggle('on', shiftEnterNewline);
+    // Sync UI scale buttons
+    const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
+    document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => {
+      b.classList.toggle('active', Math.abs(parseFloat(b.dataset.scale) - cur) < 0.01);
+    });
+    // Load editable prompts (UI session + TG per-turn). Empty textarea means
+    // "fall through to built-in default"; see bridge_telegram.get_ui_prompt /
+    // get_tg_prompt for resolution order.
+    const s = config.settings || {};
+    document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
+    document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
+    // Auto /compact (Claude) — default on; threshold default 15 (%)
+    document.getElementById('setting-auto-compact').classList.toggle(
+      'on', s.claude_auto_compact !== false,
+    );
+    document.getElementById('setting-auto-compact-threshold').value =
+      Number(s.claude_auto_compact_threshold) > 0
+        ? s.claude_auto_compact_threshold
+        : 15;
+    // Global hotkey (⌃⌥Space) — default on
+    document.getElementById('setting-global-hotkey').classList.toggle(
+      'on', s.global_hotkey_enabled !== false,
+    );
+    // Completion notifications — default on
+    document.getElementById('setting-complete-notify').classList.toggle(
+      'on', s.completion_notifications !== false,
+    );
     syncSettingsBridge();
+  });
+
+  document.getElementById('setting-complete-notify')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.completion_notifications = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
+
+  // Global hotkey toggle — saves immediately; main.py re-registers the
+  // NSEvent monitor on next save_settings call so no restart needed.
+  document.getElementById('setting-global-hotkey')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      const on = this.classList.contains('on');
+      config.settings = config.settings || {};
+      config.settings.global_hotkey_enabled = on;
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
+
+  // Auto /compact toggle + threshold — saves immediately so the bridge's
+  // flush-loop gate picks it up on the next 0.5s tick.
+  async function _saveAutoCompact() {
+    const on = document.getElementById('setting-auto-compact')
+      .classList.contains('on');
+    let th = parseInt(document.getElementById(
+      'setting-auto-compact-threshold').value, 10);
+    if (!Number.isFinite(th) || th < 3) th = 15;
+    if (th > 50) th = 50;
+    config.settings = config.settings || {};
+    config.settings.claude_auto_compact = on;
+    config.settings.claude_auto_compact_threshold = th;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  }
+  document.getElementById('setting-auto-compact')
+    .addEventListener('click', function() {
+      this.classList.toggle('on');
+      _saveAutoCompact();
+    });
+  document.getElementById('setting-auto-compact-threshold')
+    .addEventListener('change', _saveAutoCompact);
+
+  // Persist prompt textareas on blur so users don't need a save button.
+  // Skip no-op blurs: if the value hasn't changed, don't touch config. And
+  // if the key was never set AND the textarea is still empty, don't write
+  // "" — that would look like "user explicitly turned it off" to the
+  // Python side and suppress the built-in default prompt.
+  async function _savePromptField(key, el) {
+    const cur = config.settings ? config.settings[key] : undefined;
+    const next = el.value;
+    if (next === cur) return;
+    if (next === '' && cur === undefined) return;
+    config.settings = config.settings || {};
+    config.settings[key] = next;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  }
+  document.getElementById('setting-ui-prompt').addEventListener('blur', (e) => {
+    _savePromptField('ui_prompt', e.target);
+  });
+  document.getElementById('setting-tg-prompt').addEventListener('blur', (e) => {
+    _savePromptField('tg_prompt', e.target);
+  });
+
+  // UI scale buttons
+  document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const scale = parseFloat(btn.dataset.scale);
+      document.documentElement.style.setProperty('--ui-scale', scale);
+      document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Persist
+      config.settings = config.settings || {};
+      config.settings.uiScale = scale;
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
   });
 
   // Settings bridge section
@@ -1630,7 +2927,122 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       connectBtn.style.display = 'inline-block';
       disconnectBtn.style.display = 'none';
     }
+    // Sync STT panel
+    syncSttPanel();
   }
+
+  // ── STT settings ──
+  async function syncSttPanel() {
+    try {
+      const raw = await pywebview.api.stt_status();
+      const status = JSON.parse(raw);
+      const pill = document.getElementById('stt-status-pill');
+      const detail = document.getElementById('stt-detail');
+      const backendSel = document.getElementById('stt-backend');
+      const providersTxt = document.getElementById('stt-providers');
+
+      backendSel.value = status.backend || 'auto';
+      // Pretty-print configured providers (read from main.py via stt_get_providers)
+      try {
+        const provRaw = await pywebview.api.stt_get_providers();
+        const providers = JSON.parse(provRaw);
+        if (providers && providers.length > 0) {
+          providersTxt.value = JSON.stringify(providers, null, 2);
+        }
+      } catch(e) {}
+
+      const local = status.local || {};
+      const plugin = status.plugin || {};
+      const remote = status.remote || {};
+      const localOk = local.ready;
+      const pluginOk = plugin.ready;
+      const remoteOk = remote.ready;
+
+      // Pill summary
+      const ready = [];
+      if (pluginOk) ready.push('Plugin');
+      if (localOk) ready.push('Local');
+      if (remoteOk) ready.push(remote.active || 'Remote');
+      if (ready.length > 0) {
+        pill.textContent = '● ' + ready.join(' + ');
+        pill.style.color = '#9ece6a';
+      } else {
+        pill.textContent = '✗ No STT available';
+        pill.style.color = '#f7768e';
+      }
+
+      // Detail rows
+      const lines = [];
+      lines.push(`<div>Plugin: ${pluginOk ? '✓ ' + plugin.path : '✗ (no ' + plugin.path + ')'}</div>`);
+      lines.push(`<div>Local: ${localOk ? '✓ ' + (local.binary ? local.binary.split('/').pop() : '') : '✗ not installed'}</div>`);
+      if (local.binary && !local.model) {
+        lines.push(`<div style="color:#e0af68">  ⚠ binary 已裝但缺少模型 — 點「安裝本地 STT」會自動下載</div>`);
+      }
+      const eps = remote.endpoints || [];
+      if (eps.length === 0) {
+        lines.push(`<div>Remote: ✗ no providers configured</div>`);
+      } else {
+        for (const ep of eps) {
+          const dot = ep.ready ? '✓' : '✗';
+          const err = ep.error ? ` <span style="color:#f7768e">(${ep.error.substring(0, 40)})</span>` : '';
+          lines.push(`<div>  ${dot} ${ep.name}${err}</div>`);
+        }
+      }
+      detail.innerHTML = lines.join('');
+    } catch(e) {
+      document.getElementById('stt-detail').textContent = 'Error: ' + e;
+    }
+  }
+
+  document.getElementById('btn-stt-refresh').addEventListener('click', syncSttPanel);
+
+  document.getElementById('btn-stt-save').addEventListener('click', async () => {
+    const backend = document.getElementById('stt-backend').value;
+    const providersStr = document.getElementById('stt-providers').value.trim();
+    const btn = document.getElementById('btn-stt-save');
+    // Validate JSON
+    let providers = [];
+    if (providersStr) {
+      try {
+        providers = JSON.parse(providersStr);
+        if (!Array.isArray(providers)) throw new Error('must be a JSON array');
+      } catch(e) {
+        btn.textContent = 'JSON 錯誤';
+        setTimeout(() => { btn.textContent = '儲存'; }, 1500);
+        return;
+      }
+    }
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      await pywebview.api.stt_save_settings(backend, JSON.stringify(providers));
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = '儲存'; btn.disabled = false; }, 800);
+      syncSttPanel();
+    } catch(e) {
+      btn.textContent = '失敗';
+      setTimeout(() => { btn.textContent = '儲存'; btn.disabled = false; }, 1500);
+    }
+  });
+
+  document.getElementById('btn-stt-install').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-stt-install');
+    btn.disabled = true;
+    btn.textContent = '安裝中… (可能要幾分鐘)';
+    try {
+      const raw = await pywebview.api.stt_install_local();
+      const result = JSON.parse(raw);
+      if (result.success) {
+        btn.textContent = '✓ 已安裝';
+        syncSttPanel();
+      } else {
+        btn.textContent = '✗ ' + (result.message || 'failed').substring(0, 30);
+      }
+    } catch(e) {
+      btn.textContent = '✗ Error';
+    }
+    setTimeout(() => { btn.textContent = '安裝本地 STT'; btn.disabled = false; }, 3000);
+  });
 
   document.getElementById('btn-settings-bridge-connect').addEventListener('click', async () => {
     const token = document.getElementById('settings-bridge-token').value.trim();
@@ -1690,6 +3102,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   });
 
+  // Shift+Enter toggle
+  document.getElementById('setting-shift-enter').addEventListener('click', async function() {
+    this.classList.toggle('on');
+    shiftEnterNewline = this.classList.contains('on');
+    config.settings = config.settings || {};
+    config.settings.shiftEnterNewline = shiftEnterNewline;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  });
+
   // Language select
   document.getElementById('setting-lang').addEventListener('change', async (e) => {
     lang = e.target.value;
@@ -1745,12 +3166,55 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     (config.presets || []).forEach((p, i) => {
       const row = document.createElement('div');
       row.className = 'settings-preset';
+      row.dataset.idx = i;
       row.innerHTML = `
+        <span class="sp-grip" title="Drag to reorder">☰</span>
         <button class="sp-icon emoji-btn" data-field="icon" data-idx="${i}">${p.icon || '▶'}</button>
         <input class="sp-name" value="${esc(p.name)}" data-field="name" data-idx="${i}"/>
         <input class="sp-cmd" value="${esc(p.cmd)}" data-field="cmd" data-idx="${i}"/>
         <button class="sp-del" data-idx="${i}">&times;</button>
       `;
+      // Mouse-based drag reorder (HTML5 drag/drop unreliable in WKWebView)
+      const grip = row.querySelector('.sp-grip');
+      grip.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const fromIdx = i;
+        let moved = false;
+        row.classList.add('sp-dragging');
+
+        function onMove(ev) {
+          if (!moved && Math.abs(ev.clientY - e.clientY) < 4) return;
+          moved = true;
+          container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('sp-drag-over'));
+          const target = document.elementFromPoint(ev.clientX, ev.clientY);
+          const targetRow = target?.closest('.settings-preset');
+          if (targetRow && targetRow !== row) targetRow.classList.add('sp-drag-over');
+        }
+        function onUp(ev) {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          row.classList.remove('sp-dragging');
+          container.querySelectorAll('.settings-preset').forEach(r => r.classList.remove('sp-drag-over'));
+          if (!moved) return;
+          const target = document.elementFromPoint(ev.clientX, ev.clientY);
+          const targetRow = target?.closest('.settings-preset');
+          if (!targetRow || targetRow === row) return;
+          const toIdx = parseInt(targetRow.dataset.idx);
+          if (isNaN(toIdx) || fromIdx === toIdx) return;
+          // Reorder + persist
+          const arr = [...(config.presets || [])];
+          const [item] = arr.splice(fromIdx, 1);
+          arr.splice(toIdx, 0, item);
+          const order = arr.map(pp => pp.name);
+          pywebview.api.reorder_presets(JSON.stringify(order)).then(raw => {
+            config = JSON.parse(raw);
+            renderSettingsPresets();
+          });
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+
       // Track dirty state per row
       let dirty = false;
       const saveBtn = document.createElement('button');
@@ -1774,7 +3238,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         dirty = false;
         saveBtn.style.display = 'none';
         saveBtn.textContent = '✓';
-        // Flash green on the row
         row.style.background = 'rgba(158,206,106,.1)';
         setTimeout(() => row.style.background = '', 500);
       });
@@ -1783,7 +3246,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         config = JSON.parse(raw);
         renderSettingsPresets();
       });
-      // Insert save button before delete
       row.querySelector('.sp-del').before(saveBtn);
       container.appendChild(row);
     });
@@ -1882,6 +3344,71 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
+  // Guard: true while a UI-originated openSession is mid-await on
+  // pywebview.api.new_session(). main.py fires _notify_ui_sessions_changed
+  // from inside new_session BEFORE returning the sid — which runs
+  // syncSessionsFromBackend while openSession is still waiting to register
+  // the session locally. Without this guard, sync sees the new backend sid
+  // as "missing from frontend" and spawns a duplicate hidden-pane term via
+  // reconnectSession — input gets split between two terms for the same sid
+  // and the user can't type. Flag blocks sync for the ~100ms window; any
+  // genuinely-external session creation is picked up on the next interval
+  // poll (line 2881) or when the flag drops.
+  let _uiCreatingSession = 0;
+
+  // Reconcile frontend session list with backend (catches sessions
+  // created/closed via TG /new /close, sfctl, or any non-UI path).
+  // Returns true if anything changed.
+  async function syncSessionsFromBackend() {
+    if (_uiCreatingSession > 0) return false;
+    try {
+      const raw = await pywebview.api.list_sessions();
+      const backend = JSON.parse(raw);
+      const backendSids = new Set(backend.map(s => s.sid));
+      const localSids = new Set(Object.keys(sessions));
+      let changed = false;
+
+      // Remove sessions that no longer exist in backend (closed via TG)
+      for (const sid of localSids) {
+        if (!backendSids.has(sid)) {
+          const s = sessions[sid];
+          if (s) { try { s.term.dispose(); } catch(e) {} if (s.pane) s.pane.remove(); }
+          delete sessions[sid];
+          sessionOrder = sessionOrder.filter(id => id !== sid);
+          if (activeId === sid) activeId = null;
+          changed = true;
+        }
+      }
+
+      // Attach to sessions that exist in backend but not in frontend
+      // (created via TG /new). Use reconnectSession — it spawns the term,
+      // applies custom label, hooks up the input pipe, etc.
+      for (const s of backend) {
+        if (!localSids.has(s.sid)) {
+          await reconnectSession(s.sid, s.cmd);
+          if (sessions[s.sid]) {
+            sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
+            if (s.label) sessions[s.sid].label = s.label;
+          }
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        // Pick a reasonable active tab if we lost ours
+        if (!activeId && sessionOrder.length > 0) {
+          switchTab(sessionOrder[0]);
+        }
+        renderTabs();
+      }
+      return changed;
+    } catch(e) {
+      return false;
+    }
+  }
+  // Expose for Python to nudge after non-UI session changes (TG /new, sfctl, etc.)
+  window._syncSessionsFromBackend = syncSessionsFromBackend;
+
   // Poll bridge status periodically
   setInterval(async () => {
     try {
@@ -1890,13 +3417,119 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (result.exists) {
         const prev = bridgeState;
         bridgeState = result;
+        // If session count changed, reconcile the actual list (catches
+        // sessions created/closed via TG that the frontend doesn't know about)
+        if (!prev || prev.sessions !== result.sessions) {
+          await syncSessionsFromBackend();
+        }
         if (!prev || prev.paused !== result.paused || prev.sessions !== result.sessions || prev.active_sid !== result.active_sid) {
           updateBridgeButton();
           renderTabs();
         }
       }
     } catch(e) {}
-  }, 3000);
+  }, 1500);
+
+  // ── Busy indicator tick ──
+  // Two complementary detection paths:
+  //
+  //   A. Push-rate (already there) — catches active streaming output:
+  //      Last push within 1200ms AND ≥2 pushes in last 3000ms with spread ≥600ms.
+  //
+  //   B. Screen content scan — catches states where Claude is "not idle"
+  //      but no output is streaming right now. Looks for markers in the
+  //      visible terminal buffer:
+  //        • "esc to interrupt" / "Working ("       → spinner / running tool
+  //        • "Task(" with adjacent "Running"        → subagent active
+  //        • "❯ 1." pattern                          → waiting on permission
+  //        • Single-line "✻/✢/✳/⏺ Verb..."         → spinner verb line
+  //
+  //   The dot lights up if EITHER path indicates activity.
+  const BUSY_RECENT_MS = 1200;
+  const BUSY_WINDOW_MS = 3000;
+  const BUSY_MIN_PUSHES = 2;
+  const BUSY_MIN_SPREAD_MS = 600;
+
+  // Markers that mean "Claude is doing something" — must be unambiguous
+  // signals of CURRENT activity (avoid persistent status bar text).
+  const ACTIVITY_MARKERS = [
+    /esc to interrupt/i,         // active spinner only
+    /Working\s*\(\d+s/,           // "Working (15s ..." — explicit timer
+    /\bTask\([^)]*\)\s*\n.*Running/m,  // Task( ... ) followed by Running
+    /Running…/,
+    /↑\s*\d+\s*tokens/,          // Claude active token counter
+    /\(\d+s\s*[·•]\s*esc/i,       // "(15s · esc to interrupt)"
+  ];
+  // Permission / menu prompt markers (waiting for user input)
+  const ATTENTION_MARKERS = [
+    /❯\s*\d+\.\s/,
+    /Esc to cancel/i,
+  ];
+
+  function scanTerminalActivity(s) {
+    // Only scan the BOTTOM rows of the *current viewport* — not scrollback.
+    // Activity markers (spinners, "esc to interrupt", "Working (Xs") all
+    // appear at the bottom of Claude's UI, not in past history.
+    if (!s.term || !s.term.buffer || !s.term.buffer.active) return { active: false, attention: false };
+    const buf = s.term.buffer.active;
+    const rows = s.term.rows || 24;
+    // Bottom of viewport = baseY + rows. Scan last 12 rows of viewport only.
+    const bottom = buf.baseY + rows;
+    const startRow = Math.max(buf.baseY, bottom - 12);
+    let txt = '';
+    for (let r = startRow; r < bottom; r++) {
+      const line = buf.getLine(r);
+      if (line) txt += line.translateToString(true) + '\n';
+    }
+    let active = false, attention = false;
+    for (const re of ACTIVITY_MARKERS) {
+      if (re.test(txt)) { active = true; break; }
+    }
+    for (const re of ATTENTION_MARKERS) {
+      if (re.test(txt)) { attention = true; break; }
+    }
+    return { active, attention };
+  }
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const sid of Object.keys(sessions)) {
+      const s = sessions[sid];
+      if (!s) continue;
+
+      // Path A: push-rate
+      let isBusy = false;
+      if (s._lastOutputTs && now - s._lastOutputTs < BUSY_RECENT_MS && s._pushTimes) {
+        const recent = s._pushTimes.filter(t => now - t < BUSY_WINDOW_MS);
+        if (recent.length >= BUSY_MIN_PUSHES) {
+          const spread = recent[recent.length - 1] - recent[0];
+          isBusy = spread >= BUSY_MIN_SPREAD_MS;
+        }
+      }
+
+      // Path B: screen content scan (also catches "needs attention")
+      let isAttention = false;
+      if (!isBusy || !s._wasBusy) {
+        const scan = scanTerminalActivity(s);
+        if (scan.active) isBusy = true;
+        if (scan.attention) isAttention = true;
+      }
+      s._wasBusy = isBusy;
+
+      // The dot toggles on for either active or attention state
+      const dotOn = isBusy || isAttention;
+      // Style: orange = active, yellow = attention (waiting on input)
+      const dotClass = isAttention && !isBusy ? 'on attention' : (dotOn ? 'on' : '');
+
+      if (s._busy === dotOn && s._dotClass === dotClass) continue;
+      s._busy = dotOn;
+      s._dotClass = dotClass;
+      const tabDot = $tabs.querySelector(`.tab[data-sid="${sid}"] .busy-dot`);
+      if (tabDot) tabDot.className = 'busy-dot ' + dotClass;
+      const sbDot = document.querySelector(`#sidebar-sessions [data-sid="${sid}"] .busy-dot`);
+      if (sbDot) sbDot.className = 'busy-dot ' + dotClass;
+    }
+  }, 400);
 
   // ── About modal + update check ──
   const $modalAbout = document.getElementById('modal-about');
@@ -1924,6 +3557,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch(e) {}
   });
   document.getElementById('btn-close-about').addEventListener('click', () => $modalAbout.classList.remove('open'));
+  document.getElementById('btn-report-issue').addEventListener('click', () => {
+    const ver = document.getElementById('about-version').textContent || '';
+    const platform = navigator.platform || '';
+    const title = encodeURIComponent(`[${ver}] `);
+    const body = encodeURIComponent(`**Version:** ${ver}\n**Platform:** ${platform}\n\n**What happened:**\n\n\n**Steps to reproduce:**\n1. \n\n**Expected vs actual:**\n`);
+    window.open(`https://github.com/h2ocloud/shellframe/issues/new?title=${title}&body=${body}`, '_blank');
+  });
   document.getElementById('btn-check-update').addEventListener('click', async () => {
     const btn = document.getElementById('btn-check-update');
     const result = document.getElementById('check-update-result');
@@ -1952,7 +3592,39 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Also refresh the header status
     checkForUpdate();
   });
-  document.getElementById('btn-reload-ui').addEventListener('click', () => location.reload());
+  // Manual reload — offer choice between UI reload and full restart
+  document.getElementById('btn-reload-ui').addEventListener('click', () => {
+    const isZh = lang === 'zh-TW';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '400';
+    overlay.innerHTML = `
+      <div class="modal" style="width:340px;padding:18px">
+        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '重新載入' : 'Reload'}</h2>
+        <div style="font-size:11px;color:#787c99;text-align:center;margin-bottom:14px">
+          ${isZh ? '選擇重新載入方式' : 'Choose how to reload'}
+        </div>
+        <button class="btn btn-ghost" id="reload-ui" style="width:100%;text-align:left;padding:10px 12px;margin-bottom:6px">
+          <div style="font-size:12px;color:#c0caf5;font-weight:500">↻ ${isZh ? '重載 UI' : 'Reload UI'}</div>
+          <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '只重整前端，最快' : 'Frontend only, fastest'}</div>
+        </button>
+        <button class="btn btn-ghost" id="reload-restart" style="width:100%;text-align:left;padding:10px 12px">
+          <div style="font-size:12px;color:#c0caf5;font-weight:500">⟲ ${isZh ? '重啟 ShellFrame' : 'Restart ShellFrame'}</div>
+          <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '套用 Python / 核心改動，session 會保留' : 'Apply Python/core changes, sessions preserved'}</div>
+        </button>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-ghost" id="reload-cancel" style="font-size:11px">${isZh ? '取消' : 'Cancel'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.getElementById('reload-cancel').addEventListener('click', () => overlay.remove());
+    document.getElementById('reload-ui').addEventListener('click', () => { overlay.remove(); location.reload(); });
+    document.getElementById('reload-restart').addEventListener('click', () => {
+      overlay.remove();
+      confirmRestart(null, false);
+    });
+  });
   $modalAbout.addEventListener('click', (e) => { if (e.target === $modalAbout) $modalAbout.classList.remove('open'); });
 
   async function checkForUpdate() {
@@ -2118,7 +3790,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (result.success) {
       $modalUpdate.classList.remove('open');
       localStorage.setItem('shellframe_last_version', '__updating__');
-      if (result.can_hot_reload) {
+      if (result.needs_restart) {
+        // Core file changed → need full app restart
+        confirmRestart(result.version, true);
+      } else if (result.can_hot_reload) {
         setTimeout(() => location.reload(), 500);
       } else {
         showReleaseNotes(result.version);
@@ -2128,6 +3803,42 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       document.getElementById('btn-update-now').disabled = false;
     }
   });
+
+  // ── Restart confirmation modal ──
+  function confirmRestart(version, fromUpdate) {
+    const isZh = lang === 'zh-TW';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '400';
+    overlay.innerHTML = `
+      <div class="modal" style="width:380px;padding:20px">
+        <div style="text-align:center;font-size:32px;color:#7aa2f7;font-family:monospace;margin-bottom:8px">↻</div>
+        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '需要重啟 ShellFrame' : 'Restart Required'}</h2>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin-bottom:6px">
+          ${version ? `<div style="color:#9ece6a;margin-bottom:6px">v${version}</div>` : ''}
+          ${isZh
+            ? '此次更新包含核心程式碼改動，需要重啟 ShellFrame 才能生效。'
+            : 'This update changes core code. ShellFrame needs to restart.'}
+        </div>
+        <div style="font-size:11px;color:#9ece6a;background:rgba(158,206,106,.08);border-left:2px solid #9ece6a;padding:8px 10px;margin:10px 0;border-radius:3px">
+          ${isZh
+            ? '✓ 你的 session 會被保留 — 重啟後 tmux 會自動 reattach，對話從原本的位置繼續。'
+            : '✓ Your sessions will be preserved — tmux reattaches automatically after restart.'}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" id="restart-later">${isZh ? '稍後' : 'Later'}</button>
+          <button class="btn btn-primary" id="restart-now">${isZh ? '立即重啟' : 'Restart Now'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('restart-later').addEventListener('click', () => overlay.remove());
+    document.getElementById('restart-now').addEventListener('click', async () => {
+      document.getElementById('restart-now').disabled = true;
+      document.getElementById('restart-now').textContent = isZh ? '重啟中...' : 'Restarting...';
+      await pywebview.api.restart_app();
+      // The current process will exit; new window will appear shortly
+    });
+  }
 
   async function showReleaseNotes(version) {
     document.getElementById('release-title').textContent =
@@ -2171,6 +3882,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Cmd/Ctrl+T → new tab
     if ((e.metaKey || e.ctrlKey) && e.key === 't') {
       e.preventDefault();
+      renderPresets();
       $modal.classList.add('open');
       $customCmd.focus();
     }
@@ -2180,11 +3892,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (activeId) closeTab(activeId);
     }
     // Ctrl+Tab / Cmd+] → next tab, Ctrl+Shift+Tab / Cmd+[ → prev tab
+    // Cycles through ALL sessions including unbridged ones.
     if (e.ctrlKey && e.key === 'Tab') {
       e.preventDefault();
       if (sessionOrder.length < 2) return;
       const idx = sessionOrder.indexOf(activeId);
-      switchTab(sessionOrder[(idx + (e.shiftKey ? -1 : 1) + sessionOrder.length) % sessionOrder.length]);
+      const next = (idx + (e.shiftKey ? -1 : 1) + sessionOrder.length) % sessionOrder.length;
+      switchTab(sessionOrder[next]);
     }
     if (e.metaKey && !e.ctrlKey && (e.key === ']' || e.key === '[')) {
       e.preventDefault();
@@ -2192,6 +3906,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const idx = sessionOrder.indexOf(activeId);
       const dir = e.key === ']' ? 1 : -1;
       switchTab(sessionOrder[(idx + dir + sessionOrder.length) % sessionOrder.length]);
+    }
+    // Ctrl+Shift+D → debug: show xterm.js buffer state
+    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      e.preventDefault();
+      if (activeId && sessions[activeId]) {
+        const t = sessions[activeId].term;
+        const b = t.buffer.active;
+        alert(
+          `xterm.js buffer debug (${activeId}):\n` +
+          `  rows (visible): ${t.rows}\n` +
+          `  scrollback setting: ${t.options.scrollback}\n` +
+          `  buffer.length (total lines): ${b.length}\n` +
+          `  buffer.baseY (scroll-bottom line): ${b.baseY}\n` +
+          `  buffer.viewportY (viewport top line): ${b.viewportY}\n` +
+          `  scrollable lines: ${b.baseY}\n` +
+          `  _userScrolledUp: ${sessions[activeId]._userScrolledUp}`
+        );
+      }
     }
     // Cmd/Ctrl+, → settings
     if ((e.metaKey || e.ctrlKey) && e.key === ',') {
@@ -2201,8 +3933,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     // Escape → close any modal
     if (e.key === 'Escape') {
-      $modalSettings.classList.remove('open');
-      $modalAbout.classList.remove('open');
+      // Only consume Escape if a modal was actually open — otherwise let
+      // the keystroke fall through to xterm (Claude treats it as interrupt
+      // signal, which is the expected behaviour when no modal is up).
+      const closedSomething =
+        $modalSettings.classList.contains('open') ||
+        $modalAbout.classList.contains('open') ||
+        $modal.classList.contains('open');
+      if (closedSomething) {
+        $modalSettings.classList.remove('open');
+        $modalAbout.classList.remove('open');
+        $modal.classList.remove('open');
+        e.preventDefault();
+        e.stopPropagation();
+        // Defer focus restoration so the consumed keystroke doesn't bubble
+        // back into the now-focused xterm helper textarea.
+        setTimeout(() => {
+          if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+        }, 0);
+      }
     }
   });
 
@@ -2223,12 +3972,88 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       term.clearSelection();
       _pendingSel = '';
     } else {
-      try {
-        const text = await pywebview.api.paste_text();
-        if (text) await pywebview.api.write_input(activeId, text);
-      } catch(err) {}
+      // Right-click paste mirrors Cmd+V: image / file in clipboard goes
+      // through the attach pipeline, not raw text. The browser's
+      // synthetic ClipboardEvent only fires for keyboard / menu paste,
+      // so we drive the same machinery here ourselves.
+      _rightClickPaste();
     }
   });
+
+  async function _rightClickPaste() {
+    if (!activeId || !sessions[activeId]) return;
+    const ai = isAiSession(activeId);
+
+    // 1) Try the async Clipboard API for image (and file) blobs. Same
+    //    surface Cmd+V uses internally — gives us actual binary data,
+    //    not just `pbpaste`'s text projection.
+    if (navigator.clipboard && navigator.clipboard.read) {
+      try {
+        const items = await navigator.clipboard.read();
+        let handled = false;
+        for (const item of items) {
+          for (const type of item.types || []) {
+            if (!type.startsWith('image/')) continue;
+            const blob = await item.getType(type);
+            const dataUrl = await new Promise((res, rej) => {
+              const fr = new FileReader();
+              fr.onload = () => res(fr.result);
+              fr.onerror = () => rej(fr.error);
+              fr.readAsDataURL(blob);
+            });
+            const path = await pywebview.api.save_image(dataUrl);
+            if (path && !path.startsWith('ERROR')) {
+              if (ai) attachFile(path, dataUrl);
+              else await pywebview.api.write_input(activeId, path);
+              handled = true;
+            }
+          }
+        }
+        if (handled) {
+          _refocusActive();
+          return;
+        }
+      } catch (_) {
+        // Permission / not supported — fall through.
+      }
+    }
+
+    // 2) Finder-copied files: macOS / Windows clipboard holds a path list
+    //    that the browser API can't see. Python backend reads it via
+    //    pbpaste / PowerShell.
+    try {
+      const raw = await pywebview.api.get_clipboard_files();
+      const paths = JSON.parse(raw || '[]');
+      if (paths && paths.length) {
+        if (ai) {
+          for (const p of paths) attachFile(p, null);
+        } else {
+          await pywebview.api.write_input(activeId, paths.join(' '));
+        }
+        _refocusActive();
+        return;
+      }
+    } catch (_) {}
+
+    // 3) Plain text fallback. Reuse the same large-paste confirm gate as
+    //    Cmd+V so a fat-fingered right-click can't auto-submit a giant
+    //    blob into Claude.
+    try {
+      const text = await pywebview.api.paste_text();
+      if (!text || text.startsWith('ERROR')) return;
+      const lines = text.split('\n').length;
+      if (text.length >= PASTE_CONFIRM_CHARS || lines >= PASTE_CONFIRM_LINES) {
+        _armPasteConfirm(text, activeId);
+        _refocusActive();
+        return;
+      }
+      // Wrap in bracketed-paste so AI CLIs see it as a paste event
+      // (matches the keyboard-paste path xterm.js takes when bracketed
+      // paste mode is enabled by the PTY).
+      await pywebview.api.write_input(activeId, '\x1b[200~' + text + '\x1b[201~');
+      _refocusActive();
+    } catch (_) {}
+  }
 
   // ── Code block copy button ──
   {
@@ -2334,8 +4159,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await waitApi();
     await loadConfig();
 
-    // Restore sidebar state
-    if (localStorage.getItem('sf_sidebar') === '1') {
+    // Restore sidebar state. Prefer config (authoritative, survives WKWebView
+    // localStorage resets); fall back to localStorage for pre-v0.11.9 users
+    // whose config doesn't yet have the key.
+    const sbCfg = (config && config.settings) ? config.settings.sidebar_open : undefined;
+    const sbOpen = (sbCfg !== undefined)
+      ? !!sbCfg
+      : (localStorage.getItem('sf_sidebar') === '1');
+    if (sbOpen) {
       document.getElementById('sidebar').classList.remove('collapsed');
     }
 
@@ -2377,10 +4208,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
         } catch(e) {}
         renderTabs();
-        // Restore last active tab, fallback to first
-        const lastActive = localStorage.getItem('sf_active_tab');
+        // Restore last active tab. Prefer Python-persisted value (survives
+        // WKWebView storage clears) → fallback to localStorage → fallback first.
+        let lastActive = '';
+        try {
+          const raw = await pywebview.api.get_active_tab();
+          const data = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+          lastActive = (data && data.sid) || '';
+        } catch(e) {}
+        if (!lastActive || !sessions[lastActive]) {
+          lastActive = localStorage.getItem('sf_active_tab') || '';
+        }
         const restoreSid = (lastActive && sessions[lastActive]) ? lastActive : existing[0].sid;
         switchTab(restoreSid);
+        // Defensive double-apply: some renders during async restore can race
+        // with the initial switchTab. Re-apply on next frame to make sure
+        // the tab highlight + visible pane both end up on restoreSid.
+        requestAnimationFrame(() => {
+          if (activeId !== restoreSid && sessions[restoreSid]) {
+            switchTab(restoreSid);
+          } else {
+            // Even if activeId is correct, force one more renderTabs in case
+            // a stale render painted the wrong tab as active.
+            renderTabs();
+          }
+        });
         // Still check for updates after reconnect
         await startupUpdateCheck();
         return;
@@ -2396,7 +4248,125 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     // If update modal is shown, launcher opens after skip/update via callback
   }
+
+  // Final save of active tab on window close — flush the debounced timer
+  // and write synchronously so the next launch always restores correctly.
+  window.addEventListener('beforeunload', () => {
+    if (activeId) {
+      try { pywebview.api.set_active_tab(activeId); } catch(e) {}
+    }
+  });
+
   init();
+})();
+</script>
+
+<!-- ── Plugin loader (v1) ───────────────────────────────────────────────
+     Asks Python `Api.list_plugin_panels()` for every loaded plugin's
+     html/styles/sidebar_js, injects:
+       - <style> blocks
+       - a Settings tab + panel
+       - a per-session sidebar badge (refreshed when sessions list re-renders)
+     Waits for pywebviewready since the JS<->Py bridge isn't bound at parse.
+     -->
+<script>
+(function () {
+  function bootPlugins() { (async () => {
+  if (!window.pywebview || !pywebview.api || !pywebview.api.list_plugin_panels) {
+    console.warn("[plugins] pywebview.api.list_plugin_panels not available — bridge not exposed?");
+    return;
+  }
+
+  let panels;
+  try {
+    panels = JSON.parse(await pywebview.api.list_plugin_panels());
+  } catch (e) {
+    console.warn("[plugins] list_plugin_panels failed", e);
+    return;
+  }
+  if (!Array.isArray(panels) || panels.length === 0) return;
+
+  const tabsBar = document.getElementById("settings-tabs-bar");
+  const modalBody = tabsBar?.parentElement;
+  if (!tabsBar || !modalBody) return;
+
+  for (const p of panels) {
+    if (p.styles) {
+      const st = document.createElement("style");
+      st.dataset.plugin = p.name;
+      st.textContent = p.styles;
+      document.head.appendChild(st);
+    }
+    if (p.html) {
+      const tab = document.createElement("button");
+      tab.className = "settings-tab";
+      tab.dataset.tab = `plugin-${p.name}`;
+      tab.textContent = p.name;
+      tab.title = p.description || p.name;
+      tabsBar.appendChild(tab);
+
+      const panel = document.createElement("div");
+      panel.className = "settings-tab-panel";
+      panel.id = `settings-panel-plugin-${p.name}`;
+      panel.innerHTML = p.html;
+      modalBody.appendChild(panel);
+
+      // Refresh dynamic state each time this tab is opened.
+      tab.addEventListener("click", async () => {
+        try {
+          const fresh = JSON.parse(await pywebview.api.list_plugin_panels());
+          const me = fresh.find(x => x.name === p.name);
+          if (me?.html) panel.innerHTML = me.html;
+        } catch {}
+      });
+    }
+  }
+
+  // Wire the same tab-switch behaviour the built-in tabs use.
+  tabsBar.querySelectorAll(".settings-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      tabsBar.querySelectorAll(".settings-tab").forEach(b => b.classList.remove("active"));
+      modalBody.querySelectorAll(".settings-tab-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      const target = btn.dataset.tab;
+      const panelId = target === "general" ? "settings-panel-general"
+                    : target === "bridge"  ? "settings-panel-bridge"
+                    : `settings-panel-${target}`;
+      document.getElementById(panelId)?.classList.add("active");
+    });
+  });
+
+  // ── Sidebar badges ──
+  // Append plugin-provided HTML to each `.sb-item` after sidebar renders.
+  // The session list re-renders on every state change, so observe + repaint.
+  const sidebar = document.querySelector(".sb-list, #sidebar-list, .sidebar-sessions") || document.body;
+  const renderBadges = async () => {
+    const items = document.querySelectorAll(".sb-item[data-sid]");
+    for (const el of items) {
+      if (el.dataset.pluginBadgesPainted === el.dataset.sid) continue;
+      try {
+        const html = await pywebview.api.plugin_sidebar_badges(el.dataset.sid);
+        if (html) {
+          // Remove any previous plugin badges before re-inject (idempotent).
+          el.querySelectorAll(".sf-plugin-badges").forEach(n => n.remove());
+          const wrap = document.createElement("span");
+          wrap.className = "sf-plugin-badges";
+          wrap.style.marginLeft = "4px";
+          wrap.innerHTML = html;
+          el.appendChild(wrap);
+        }
+        el.dataset.pluginBadgesPainted = el.dataset.sid;
+      } catch {}
+    }
+  };
+  const obs = new MutationObserver(() => { renderBadges(); });
+  obs.observe(sidebar, { childList: true, subtree: true });
+  renderBadges();
+
+  console.log(`[plugins] loaded ${panels.length} panel(s):`, panels.map(p => p.name));
+  })(); }
+  if (window.pywebview && pywebview.api && pywebview.api.list_plugin_panels) bootPlugins();
+  else window.addEventListener("pywebviewready", bootPlugins);
 })();
 </script>
 </body>
