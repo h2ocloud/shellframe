@@ -105,6 +105,11 @@ cat > "$BIN_DIR/shellframe" << 'LAUNCHER'
 #!/bin/bash
 if [ -f "$HOME/.zprofile" ]; then source "$HOME/.zprofile" 2>/dev/null; fi
 if [ -f "$HOME/.zshrc" ]; then source "$HOME/.zshrc" 2>/dev/null; fi
+# Force arm64 on Apple Silicon so the python child doesn't inherit a
+# Rosetta parent shell — see ShellFrame.app launcher for full rationale.
+if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+  exec arch -arm64 ~/.local/apps/shellframe/.venv/bin/python ~/.local/apps/shellframe/main.py "$@"
+fi
 exec ~/.local/apps/shellframe/.venv/bin/python ~/.local/apps/shellframe/main.py "$@"
 LAUNCHER
 chmod +x "$BIN_DIR/shellframe"

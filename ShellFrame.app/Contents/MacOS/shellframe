@@ -23,4 +23,13 @@ else
   cd "$DIR"
 fi
 
+# Force arm64 on Apple Silicon. Without this, if the parent shell happens
+# to be Rosetta-translated (Howard's setup) the child python inherits
+# x86_64, which gives it bundle id `com.apple.python3` instead of
+# com.h2ocloud.shellframe. TCC then refuses NSEvent global monitor
+# (Accessibility permission is bound to the .app's identity), so the
+# ⌃⌥Space hotkey silently no-ops when shellframe is in the background.
+if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+  exec arch -arm64 .venv/bin/python main.py "$@"
+fi
 exec .venv/bin/python main.py "$@"

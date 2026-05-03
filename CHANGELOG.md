@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.48 (2026-05-03)
+
+### Fixes
+- **Global hotkey silently dead when launched from a Rosetta-translated parent shell** — root cause was identity-leak via process arch inheritance, not anything in the hotkey code itself. Howard's interactive shell runs x86_64 under Rosetta; when the `ShellFrame.app` bash launcher exec'd `.venv/bin/python` it inherited that arch, so the live process ran as **x86_64** with kernel-reported bundle id `com.apple.python3` (not `com.h2ocloud.shellframe`). TCC scopes Accessibility permission per code identity → `NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` returns nil → `⌃⌥Space` only worked when ShellFrame was already foreground (local monitor doesn't need Accessibility), and "summon from background" silently no-op'd. Symptom: 「快捷鍵叫不出來」. Fix: all three launchers (`ShellFrame.app/Contents/MacOS/shellframe`, `run.sh`, the `~/.local/bin/shellframe` written by `install.sh`) now detect Apple Silicon via `sysctl hw.optional.arm64` and prepend `arch -arm64` to the python exec, breaking inheritance and stabilising the TCC subject as the .app bundle.
+
+### 修正
+- **從 Rosetta shell 啟動時 ⌃⌥Space 全域熱鍵默默失效** — 根因是 process arch 繼承造成 TCC 身份漂移，hotkey code 本身沒問題。Howard 的互動 shell 跑在 Rosetta（x86_64），`ShellFrame.app` 的 bash launcher exec `.venv/bin/python` 時 arch 繼承過去，結果整個 process 以 **x86_64** 執行，kernel 看到的 bundle id 變成 `com.apple.python3` 而不是 `com.h2ocloud.shellframe`。TCC 的 Accessibility 權限按 code identity 綁定 → `NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` 直接 return nil → `⌃⌥Space` 只有在 ShellFrame 已經在前景時還能動（local monitor 不需 Accessibility），背景叫回視窗就完全沒反應。對應症狀：「快捷鍵叫不出來」。修法：三個 launcher（`ShellFrame.app/Contents/MacOS/shellframe`、`run.sh`、`install.sh` 寫到 `~/.local/bin/shellframe` 的那份）統統用 `sysctl hw.optional.arm64` 偵測 Apple Silicon，命中就 `exec arch -arm64 .venv/bin/python …`，斷掉 arch 繼承鏈，讓 TCC subject 穩定回到 .app bundle。
+
 ## v0.11.47 (2026-05-01)
 
 ### Fixes

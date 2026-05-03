@@ -10,4 +10,7 @@ if [ ! -d ".venv" ]; then
   echo "Done!"
 fi
 
+if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+  exec arch -arm64 .venv/bin/python main.py "$@"
+fi
 exec .venv/bin/python main.py "$@"
