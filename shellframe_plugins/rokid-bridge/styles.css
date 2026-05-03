@@ -1,0 +1,13 @@
+/* sidebar badge — dim by default, neon green when active. */
+.sb-rokid {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.18;
+  transition: opacity .12s, color .12s;
+}
+.sb-rokid.active {
+  opacity: 1;
+  color: #9ece6a;
+  text-shadow: 0 0 6px rgba(158,206,106,.55);
+}

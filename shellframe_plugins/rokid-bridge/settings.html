@@ -1,0 +1,31 @@
+<div class="rokid-panel">
+  <h3 style="margin:0 0 12px 0;color:#7aa2f7;">Rokid Bridge</h3>
+
+  <div class="row" style="margin-bottom:10px;">
+    <span style="color:#9aa5ce;">當前注入目標：</span>
+    <code style="color:#bb9af7;">{{TARGET_SID}}</code>
+  </div>
+
+  <div class="row" style="margin-bottom:8px;">
+    <span style="color:#9aa5ce;">Listener：</span>
+    <code style="color:#9ece6a;">{{LISTENER_STATUS}}</code>
+    <span style="margin-left:14px;color:#9aa5ce;">Bluetooth helper：</span>
+    <code style="color:#9ece6a;">{{BT_STATUS}}</code>
+  </div>
+
+  <hr style="border:none;border-top:1px solid #3b4261;margin:14px 0;">
+
+  <div style="font-size:12px;color:#a9b1d6;line-height:1.6;">
+    <p style="margin:0 0 6px 0;">
+      眼鏡的拍照／錄音／live 模式會自動進入<strong>當前 UI tab</strong>對應的 session（即 last_active_tab）。
+      切換 tab 即切換目標，無需另外操作。
+    </p>
+    <p style="margin:0 0 6px 0;">
+      眼鏡 HUD 只接受 ≤80 字 ×3 行的卡片內容。Stop hook
+      會自動把 Claude 回覆的最後 220 字推到 HUD。
+    </p>
+    <p style="margin:8px 0 0 0;color:#7aa2f7;">
+      源碼：<a href="https://github.com/h2ocloud/RokidBridge" target="_blank" style="color:#7aa2f7;">github.com/h2ocloud/RokidBridge</a>
+    </p>
+  </div>
+</div>
