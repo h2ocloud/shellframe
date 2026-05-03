@@ -515,7 +515,22 @@
     <div class="settings-tabs" id="settings-tabs-bar">
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
       <button class="settings-tab" data-tab="bridge">Telegram Bridge</button>
+      <button class="settings-tab" data-tab="marketplace" title="Browse + install plugins">🧩 Plugins</button>
       <!-- plugin tabs injected here at runtime -->
+    </div>
+
+    <!-- Tab: Marketplace -->
+    <div class="settings-tab-panel" id="settings-panel-marketplace">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0;color:#7aa2f7">Plugins</h3>
+        <button id="mk-refresh" style="background:#414868;color:#c0caf5;border:none;border-radius:4px;padding:4px 10px;cursor:pointer">Refresh</button>
+      </div>
+      <div id="mk-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div style="font-size:11px;color:#565f89;margin-top:14px">
+        New entries can be added by editing
+        <code>shellframe_plugins/_marketplace.json</code>.
+        Installed plugins live under <code>shellframe_plugins/&lt;name&gt;/</code>.
+      </div>
     </div>
 
     <!-- Tab: General -->
@@ -4364,6 +4379,68 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   renderBadges();
 
   console.log(`[plugins] loaded ${panels.length} panel(s):`, panels.map(p => p.name));
+
+  // ── Marketplace tab ──
+  async function renderMarketplace() {
+    const listEl = document.getElementById("mk-list");
+    if (!listEl) return;
+    listEl.innerHTML = '<div style="color:#565f89;font-size:11px">loading…</div>';
+    try {
+      const raw = await pywebview.api.marketplace_list();
+      const data = JSON.parse(raw);
+      const items = data.plugins || [];
+      if (items.length === 0) {
+        listEl.innerHTML = '<div style="color:#565f89;font-size:11px">no plugins listed</div>';
+        return;
+      }
+      listEl.innerHTML = "";
+      for (const p of items) {
+        const card = document.createElement("div");
+        card.style.cssText =
+          "background:#24283b;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px";
+        const left = document.createElement("div");
+        left.style.flex = "1";
+        left.innerHTML =
+          `<div style="font-weight:600;color:#c0caf5">${p.name} <span style="color:#565f89;font-size:11px;font-weight:normal">v${p.version || "?"}</span></div>` +
+          `<div style="font-size:11px;color:#9aa5ce;margin-top:2px">${p.description || ""}</div>` +
+          (p.repo_url ? `<a href="${p.repo_url}" target="_blank" style="font-size:10px;color:#7aa2f7;text-decoration:none">${p.repo_url}</a>` : "");
+        const right = document.createElement("div");
+        if (p.installed) {
+          const btn = document.createElement("button");
+          btn.textContent = "Uninstall";
+          btn.style.cssText = "background:#3b3a4a;color:#f7768e;border:none;border-radius:4px;padding:6px 12px;cursor:pointer";
+          btn.onclick = async () => {
+            if (!confirm(`Remove plugin "${p.name}"?`)) return;
+            btn.disabled = true; btn.textContent = "removing…";
+            const r = JSON.parse(await pywebview.api.marketplace_uninstall(p.name));
+            alert(r.message || (r.ok ? "removed" : "failed"));
+            renderMarketplace();
+          };
+          right.appendChild(btn);
+        } else {
+          const btn = document.createElement("button");
+          btn.textContent = "Install";
+          btn.style.cssText = "background:#7aa2f7;color:#1a1b26;border:none;border-radius:4px;padding:6px 12px;font-weight:600;cursor:pointer";
+          btn.onclick = async () => {
+            btn.disabled = true; btn.textContent = "cloning…";
+            const r = JSON.parse(await pywebview.api.marketplace_install(p.name, p.repo_url));
+            alert(r.message || (r.ok ? "installed" : "failed"));
+            renderMarketplace();
+          };
+          right.appendChild(btn);
+        }
+        card.appendChild(left);
+        card.appendChild(right);
+        listEl.appendChild(card);
+      }
+    } catch (e) {
+      listEl.innerHTML = `<div style="color:#f7768e">${e}</div>`;
+    }
+  }
+  document.getElementById("mk-refresh")?.addEventListener("click", renderMarketplace);
+  // Render once on load + when the tab is opened.
+  document.querySelector('[data-tab="marketplace"]')?.addEventListener("click", renderMarketplace);
+  renderMarketplace();
   })(); }
   if (window.pywebview && pywebview.api && pywebview.api.list_plugin_panels) bootPlugins();
   else window.addEventListener("pywebviewready", bootPlugins);

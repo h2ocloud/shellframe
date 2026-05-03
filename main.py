@@ -760,6 +760,78 @@ class Api:
         except Exception:
             return ""
 
+    # ── Marketplace ──
+    # Lists what's installable + does git clone install / uninstall.
+
+    def marketplace_list(self) -> str:
+        """Read shellframe_plugins/_marketplace.json (curated list) and merge
+        with currently-installed plugins to flag installed/version-skew."""
+        try:
+            mk_path = Path(__file__).parent / "shellframe_plugins" / "_marketplace.json"
+            data = json.loads(mk_path.read_text(encoding="utf-8")) if mk_path.exists() else {"plugins": []}
+            installed = {p.manifest.name: p.manifest.version
+                         for p in (self._plugins.plugins if self._plugins else [])}
+            for p in data.get("plugins", []):
+                p["installed"] = p["name"] in installed
+                p["installed_version"] = installed.get(p["name"], "")
+            return json.dumps(data, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e), "plugins": []})
+
+    def marketplace_install(self, name: str, repo_url: str) -> str:
+        """git clone <repo_url> shellframe_plugins/<name>. Returns JSON
+        {ok, message}. Caller should reload after success."""
+        import subprocess as _sub
+        target = Path(__file__).parent / "shellframe_plugins" / name
+        if target.exists():
+            return json.dumps({"ok": False, "message": f"{name} already installed"})
+        try:
+            _sub.check_output(
+                ["git", "clone", "--depth", "1", repo_url, str(target)],
+                stderr=_sub.STDOUT, timeout=60,
+            )
+            self._plugins_reload()
+            return json.dumps({"ok": True, "message": f"installed {name}"})
+        except _sub.CalledProcessError as e:
+            return json.dumps({"ok": False, "message": e.output.decode("utf-8", errors="replace")[-400:]})
+        except Exception as e:
+            return json.dumps({"ok": False, "message": str(e)})
+
+    def marketplace_uninstall(self, name: str) -> str:
+        target = Path(__file__).parent / "shellframe_plugins" / name
+        if not target.exists() or not target.is_dir():
+            return json.dumps({"ok": False, "message": f"{name} not installed"})
+        try:
+            shutil.rmtree(target)
+            self._plugins_reload()
+            return json.dumps({"ok": True, "message": f"removed {name}"})
+        except Exception as e:
+            return json.dumps({"ok": False, "message": str(e)})
+
+    def _plugins_reload(self):
+        """Re-scan plugin dir without restarting the app."""
+        try:
+            import plugin_sdk, importlib
+            importlib.reload(plugin_sdk)
+            api = plugin_sdk.PluginHostAPI(
+                get_active_sid=lambda: load_config().get("last_active_tab", ""),
+                list_sessions=lambda: [
+                    {"sid": s, "label": getattr(self.sessions[s], "_custom_label", None) or s}
+                    for s in self.sessions if self.sessions[s].alive
+                ],
+                send_to_session=lambda sid, text: (
+                    self.sessions[sid].write(text) if sid in self.sessions else None
+                ),
+                config_dir=Path.home() / ".config" / "shellframe",
+            )
+            self._plugins = plugin_sdk.PluginRegistry(
+                Path(__file__).parent / "shellframe_plugins", api
+            )
+            self._plugins.load_all()
+            _dlog("plugins", f"reloaded; {len(self._plugins.plugins)} plugin(s)")
+        except Exception as e:
+            _dlog("plugins", f"reload failed: {e!r}")
+
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
         self._counter += 1
         sid = f"s{self._counter}"

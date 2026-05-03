@@ -1,0 +1,15 @@
+{
+  "$schema": "v1",
+  "description": "Curated list of installable ShellFrame plugins. Add an entry per plugin you publish; the marketplace UI fetches this file (or a remote variant) and offers one-click install via git clone.",
+  "plugins": [
+    {
+      "name": "rokid-bridge",
+      "description": "Rokid Glasses session bridge — capture/mic from glasses inject as ShellFrame prompts; replies push back to HUD.",
+      "author": "Howard Wu",
+      "repo_url": "https://github.com/h2ocloud/RokidBridge",
+      "install_path": "shellframe_plugins/rokid-bridge",
+      "version": "0.16.0",
+      "tags": ["hardware", "bridge", "ar"]
+    }
+  ]
+}
