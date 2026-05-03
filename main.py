@@ -760,6 +760,20 @@ class Api:
         except Exception:
             return ""
 
+    def plugin_action(self, plugin_name: str, action: str, args_json: str = "{}") -> str:
+        """Call a plugin's action handler from a settings panel button."""
+        if not self._plugins:
+            return json.dumps({"ok": False, "message": "plugin registry not loaded"})
+        try:
+            args = json.loads(args_json) if args_json else {}
+        except Exception:
+            args = {}
+        try:
+            res = self._plugins.dispatch_action(plugin_name, action, args)
+            return json.dumps(res, ensure_ascii=False, default=str)
+        except Exception as e:
+            return json.dumps({"ok": False, "message": str(e)})
+
     # ── Marketplace ──
     # Lists what's installable + does git clone install / uninstall.
 

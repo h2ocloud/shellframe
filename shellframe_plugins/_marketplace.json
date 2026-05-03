@@ -4,12 +4,13 @@
   "plugins": [
     {
       "name": "rokid-bridge",
-      "description": "Rokid Glasses session bridge — capture/mic from glasses inject as ShellFrame prompts; replies push back to HUD.",
+      "description": "Rokid Glasses session bridge — capture/mic from glasses inject as ShellFrame prompts; replies push back to HUD. Plugin metadata lives at repo root; clone targets shellframe_plugins/rokid-bridge/.",
       "author": "Howard Wu",
       "repo_url": "https://github.com/h2ocloud/RokidBridge",
       "install_path": "shellframe_plugins/rokid-bridge",
-      "version": "0.16.0",
-      "tags": ["hardware", "bridge", "ar"]
+      "version": "0.17.0",
+      "tags": ["hardware", "bridge", "ar"],
+      "extra_setup": "After install, run `./mac/install.sh` inside the cloned dir to register the listener LaunchAgent + Stop hook."
     }
   ]
 }
