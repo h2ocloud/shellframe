@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.11.49 (2026-05-03)
+
+### Fixes
+- **Global hotkey still dead after v0.11.48 — second TCC identity leak via Apple's Python framework** — forcing `arch -arm64` in the launcher (v0.11.48) flipped the live process arch to ARM64 but `lsappinfo` still reported `bundleID="com.apple.python3"` instead of `com.h2ocloud.shellframe`. Root cause: Apple's bundled Python (Xcode CLT, `/usr/bin/python3`, `/Library/Frameworks/Python.framework`) self-rewraps at runtime into `Python.app` to grant itself a GUI/Dock identity. Once the kernel knows the executable image lives inside `Python.app/Contents/MacOS/Python`, LaunchServices binds the process to `com.apple.python3` regardless of who exec'd it — TCC then refuses Accessibility (which was granted to `com.h2ocloud.shellframe`) and `NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` returns nil. Symptom: ⌃⌥Space could hide a foregrounded ShellFrame (local monitor needs no Accessibility) but couldn't summon it from the background.
+
+  Homebrew's Python ships as a plain framework binary that does NOT self-wrap, so when the .app launcher exec's it the python process inherits ShellFrame.app's bundle identity from LaunchServices and TCC behaves correctly.
+
+  Fixes layered into `install.sh` and `run.sh` so this doesn't keep biting on cross-device installs:
+  - **`install.sh`** explicitly picks `/opt/homebrew/bin/python3` (or `/usr/local/bin/python3` on Intel) and rejects any candidate that resolves under `/Xcode.app/`, `/usr/bin/python3`, or `/Library/Frameworks/Python.framework/`. If no non-Apple python is present it `brew install`s `python@3.14`.
+  - **Auto-rebuilds existing `.venv`** if `.venv/bin/python` resolves into Apple's Python — the broken venv is moved aside as `.venv.applepython-bak.<ts>`.
+  - **`run.sh`** uses the same selection logic so manual `bash run.sh` paths don't recreate the bad venv.
+
+### 修正
+- **v0.11.48 之後熱鍵還是死的 — Apple Python framework 又是另一層 TCC 身份漏 leak** — 上一版強制 `arch -arm64` 把 process 換成 ARM64，但 `lsappinfo` 報的 `bundleID` 仍是 `com.apple.python3`，不是 `com.h2ocloud.shellframe`。根因：Apple 自帶的 Python（Xcode CLT、`/usr/bin/python3`、`/Library/Frameworks/Python.framework`）在啟動時**會把自己重新 wrap 成 `Python.app`** 以取得 GUI/Dock 身份。一旦 kernel 看到 executable image 位於 `Python.app/Contents/MacOS/Python`，LaunchServices 就把 process 綁定為 `com.apple.python3`，不管誰 exec 它 — TCC 給 `com.h2ocloud.shellframe` 的 Accessibility 對它無效，`NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` 直接回 nil。症狀：⌃⌥Space 可以把前景的 ShellFrame 隱藏（local monitor 不需 Accessibility）但背景叫不回來。
+
+  Homebrew 的 Python 是純 framework binary，不做 self-wrap，所以從 .app launcher exec 它時 process 會繼承 ShellFrame.app 的 bundle identity，TCC 行為正常。
+
+  修法寫進 `install.sh` 跟 `run.sh`，讓跨裝置安裝時不會再踩同個雷：
+  - **`install.sh`** 明確選 `/opt/homebrew/bin/python3`（Intel 上是 `/usr/local/bin/python3`），剔除任何解析到 `/Xcode.app/`、`/usr/bin/python3`、`/Library/Frameworks/Python.framework/` 的候選。本機沒有非 Apple python 就 `brew install python@3.14`。
+  - **既存 `.venv` 偵測自動重建**：若 `.venv/bin/python` 解析到 Apple Python，舊 venv 改名 `.venv.applepython-bak.<ts>` 後重建。
+  - **`run.sh`** 用同一份選擇邏輯，避免手動 `bash run.sh` 又把壞 venv 建回來。
+
 ## v0.11.48 (2026-05-03)
 
 ### Fixes

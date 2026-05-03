@@ -90,9 +90,54 @@ fi
 cd "$INSTALL_DIR"
 
 # ── 3. Python venv + pip dependencies ───────────────────────
+# On macOS we MUST avoid Apple's bundled Python (Xcode CLT, /usr/bin/python3,
+# /Library/Frameworks/Python.framework). At runtime that interpreter rewraps
+# itself into Python.app, so the live process registers with LaunchServices
+# as bundleID com.apple.python3 instead of com.h2ocloud.shellframe — TCC
+# scopes Accessibility per code identity, so NSEvent.addGlobalMonitor
+# silently returns nil and the ⌃⌥Space hotkey dies in the background.
+# Homebrew's python ships as a plain framework binary that doesn't self-wrap,
+# so the python process inherits ShellFrame.app's bundle identity from the
+# .app launcher and TCC behaves.
+PYTHON_FOR_VENV=""
+if [ "$(uname)" = "Darwin" ]; then
+  for candidate in \
+      /opt/homebrew/bin/python3 \
+      /usr/local/bin/python3 ; do
+    if [ -x "$candidate" ]; then
+      real="$(readlink -f "$candidate" 2>/dev/null || /usr/bin/python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$candidate")"
+      case "$real" in
+        */Xcode.app/*|/usr/bin/python3|/Library/Frameworks/Python.framework/*) continue ;;
+      esac
+      PYTHON_FOR_VENV="$candidate"
+      break
+    fi
+  done
+  if [ -z "$PYTHON_FOR_VENV" ]; then
+    echo "Warning: no non-Apple python3 found. Installing Homebrew python..."
+    install_if_missing python3.14 python@3.14 || true
+    if [ -x /opt/homebrew/bin/python3 ]; then
+      PYTHON_FOR_VENV=/opt/homebrew/bin/python3
+    fi
+  fi
+fi
+[ -z "$PYTHON_FOR_VENV" ] && PYTHON_FOR_VENV="python3"
+
+# If an existing .venv was built against Apple's Python (the Xcode/Framework
+# self-wrapping kind), rebuild it so the global hotkey actually works.
+if [ -d ".venv" ] && [ "$(uname)" = "Darwin" ]; then
+  current_real="$(.venv/bin/python -c 'import os,sys;print(os.path.realpath(sys.executable))' 2>/dev/null || true)"
+  case "$current_real" in
+    */Xcode.app/*|/Library/Frameworks/Python.framework/*|/System/Library/Frameworks/Python.framework/*)
+      echo "Existing .venv was built against Apple Python — rebuilding for TCC sanity..."
+      mv .venv ".venv.applepython-bak.$(date +%s)" 2>/dev/null || rm -rf .venv
+      ;;
+  esac
+fi
+
 if [ ! -d ".venv" ]; then
-  echo "Creating virtual environment..."
-  python3 -m venv .venv
+  echo "Creating virtual environment with $PYTHON_FOR_VENV..."
+  "$PYTHON_FOR_VENV" -m venv .venv
 fi
 echo "Installing Python dependencies..."
 .venv/bin/pip install -q -r requirements.txt
