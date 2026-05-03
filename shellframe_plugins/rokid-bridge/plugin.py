@@ -58,8 +58,8 @@ class Plugin(SFPlugin):
 
     def sidebar_badge(self, sid: str) -> str:
         if sid == _current_target_sid():
-            return '<span class="sb-rokid active" title="Rokid Glasses → this session">👁</span>'
-        return '<span class="sb-rokid" title="not the active Rokid target">👁</span>'
+            return '<span class="sb-rokid active" title="Rokid Glasses → this session">👓</span>'
+        return '<span class="sb-rokid" title="not the active Rokid target">👓</span>'
 
     def settings_panel(self) -> str:
         # Render dynamic state into the static HTML template at request time.

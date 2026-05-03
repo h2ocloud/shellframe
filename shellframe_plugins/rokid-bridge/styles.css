@@ -1,9 +1,13 @@
-/* sidebar badge — dim by default, neon green when active. */
+/* sidebar badge — dim by default, neon green when active.
+   cursor:pointer so it matches the TG badge's affordance even though
+   tap is no-op for now (target follows UI tab automatically). */
 .sb-rokid {
   display: inline-block;
   margin-left: 6px;
   font-size: 11px;
   opacity: 0.18;
+  cursor: pointer;
+  user-select: none;
   transition: opacity .12s, color .12s;
 }
 .sb-rokid.active {
@@ -11,3 +15,4 @@
   color: #9ece6a;
   text-shadow: 0 0 6px rgba(158,206,106,.55);
 }
+.sb-rokid:hover { opacity: 0.85; }
