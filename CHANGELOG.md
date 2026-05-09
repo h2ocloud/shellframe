@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.50 (2026-05-09)
+
+### Fixes
+- **TG bridge spammed false "macOS popup detected (loginwindow)" stall warnings** — Howard reported polling looked unstable, but the polling loop was healthy; the noise came from `_detect_blocking_popup()`. `_POPUP_OWNERS` listed `loginwindow`, which is always running and frequently owns on-screen system-management windows during normal operation (sleep/wake transitions, screen-lock manager, Touch ID prep). Any long Claude response (>25s silent) tripped `_warn_stalled` → `CGWindowListCopyWindowInfo` matched a loginwindow-owned window → user got a TG warning telling them to dismiss a popup that wasn't there. Removed `loginwindow` from the popup-owner set; the remaining owners (`UserNotificationCenter`, `CoreServicesUIAgent`, `SecurityAgent`, `universalAccessAuthWarn`) all spawn on-demand for real auth/permission dialogs. If the Mac is genuinely lock-screened, ShellFrame can't be brought to front anyway, so detecting it had no upside.
+
+### 修正
+- **TG bridge 一直噴假的「macOS popup detected (loginwindow)」stall 警告** — Howard 以為 polling 不穩，但 poll loop 本身健康；噪音是 `_detect_blocking_popup()` 出來的。`_POPUP_OWNERS` 把 `loginwindow` 列為「擋路 popup owner」，但 loginwindow 是 macOS 永遠在跑的 process，正常使用中常持有 on-screen 系統管理 window（睡眠/喚醒切換、鎖螢幕管理、Touch ID prep）。Claude 任何 >25s 沒輸出的長思考 → `_warn_stalled` 觸發 → `CGWindowListCopyWindowInfo` 命中 loginwindow → user 收到「快去關掉不存在的 popup」TG 警告。把 `loginwindow` 從 popup owner 名單移除，留下的（`UserNotificationCenter` / `CoreServicesUIAgent` / `SecurityAgent` / `universalAccessAuthWarn`）都是按需 spawn 的真權限/認證 dialog。Mac 真的被鎖了 ShellFrame 也召不回前景，偵測它沒意義。
+
 ## v0.11.49 (2026-05-03)
 
 ### Fixes

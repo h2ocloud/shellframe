@@ -699,8 +699,14 @@ class TelegramBridge(BridgeBase):
         "UserNotificationCenter",   # TCC permission dialogs (Sonoma+)
         "CoreServicesUIAgent",      # quarantine / "are you sure you want to open" / auth
         "SecurityAgent",            # admin password / keychain prompts
-        "loginwindow",              # some password prompts
         "universalAccessAuthWarn",  # Accessibility prompts
+        # loginwindow deliberately excluded: it's always running and frequently
+        # owns transparent/system-management windows during normal operation
+        # (sleep/wake transitions, screen-lock manager, Touch ID prep), so
+        # CGWindowList kCGWindowListOptionOnScreenOnly matches it during any
+        # long Claude response → false "popup detected (loginwindow)" alarm
+        # whenever the model thinks for >25s. Real lock-screen blocking can't
+        # be dismissed remotely anyway, so detecting it has no upside.
     })
 
     def _detect_blocking_popup(self):
