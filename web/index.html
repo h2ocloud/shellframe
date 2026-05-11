@@ -2634,19 +2634,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return false;
   }
 
-  // Belt-and-braces: while a focus guard is active, intercept Enter at
-  // document level. If the user hits Enter before our guard has won
-  // focus back to the xterm textarea (very common right after a paste —
-  // WKWebView does its own focus dance for hundreds of ms), the keydown
-  // would otherwise hit body / image-bar and be swallowed. Steal it,
-  // forward `\r` to the active session ourselves, and pull focus.
-  function _ensurePasteEnterListener() {
+  // Always-on Enter safety net. If Enter hits a "stealable" target
+  // (body / image-bar / drop-overlay / paste-confirm-bar) with no real
+  // form control or modal claiming focus, forward `\r` to the active
+  // session and pull focus back. Originally gated on the refocus guard
+  // being active, but the refocus guard auto-clears after 240ms of
+  // stable focus — so paste-then-type-Chinese-then-Enter-confirm-IME-
+  // then-Enter scenarios fell through: between "confirm IME" and
+  // "submit", WKWebView blurs the textarea, the second Enter lands on
+  // body, but the guard is long gone and the listener no-ops. Removing
+  // the guard gate makes this a permanent safety net. Other guards
+  // (Enter only, no modifiers, IME-commit Enter skipped, real form
+  // controls untouched via _isStealableFocus) keep it from misfiring.
+  function _ensureStealEnterListener() {
     if (_pasteEnterListenerAttached) return;
     _pasteEnterListenerAttached = true;
     document.addEventListener('keydown', (e) => {
-      if (_refocusGuardId === null) return;
       if (e.key !== 'Enter') return;
       if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      // IME-commit Enter (selecting a candidate) — let it commit
+      // naturally without stealing; the user's next Enter is the real
+      // submit. WKWebView keeps isComposing accurate on keydown; the
+      // 229 keyCode is the legacy/Safari fallback.
+      if (e.isComposing || e.keyCode === 229) return;
       if (!activeId || !sessions[activeId]) return;
       const ta = sessions[activeId].pane &&
                  sessions[activeId].pane.querySelector('textarea.xterm-helper-textarea');
@@ -2660,7 +2670,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   function _refocusActive() {
-    _ensurePasteEnterListener();
+    _ensureStealEnterListener();
     if (_refocusGuardId) {
       clearInterval(_refocusGuardId);
       _refocusGuardId = null;
@@ -4184,6 +4194,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function init() {
     await waitApi();
     await loadConfig();
+    // Attach the Enter safety net immediately so it's live before any paste —
+    // covers focus-drift cases that don't go through _refocusActive (e.g.
+    // WKWebView blurring the textarea after an IME-commit Enter).
+    _ensureStealEnterListener();
 
     // Restore sidebar state. Prefer config (authoritative, survives WKWebView
     // localStorage resets); fall back to localStorage for pre-v0.11.9 users

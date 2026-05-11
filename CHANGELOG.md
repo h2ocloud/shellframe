@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.53 (2026-05-11)
+
+### Fixes
+- **Enter silently lost after `paste image → type Chinese → Enter to confirm IME candidate → Enter to submit`** — Howard reported the second Enter wouldn't submit. Root cause: the document-level Enter safety net (`_ensurePasteEnterListener`) was gated on `_refocusGuardId !== null`, but the refocus guard auto-clears after 240ms of stable focus. So once the user spent time typing Chinese, the guard was long gone. When IME confirmation fires, WKWebView briefly blurs the xterm helper textarea — and the next Enter lands on body / image-bar with no listener to catch it. Made the safety net always-on (renamed `_ensureStealEnterListener`, attached at init); added `e.isComposing || keyCode === 229` guard so IME-commit Enter isn't intercepted (it must reach the IME naturally to commit the candidate). All other guards stay (Enter only, no modifiers, `_isStealableFocus` skips real form controls / xterm textarea), so normal typing is untouched.
+
+### 修正
+- **「貼圖 → 打中文 → Enter 確認選字 → Enter 送出」第二個 Enter 默默丟失** — Howard 回報送不出去。根因：document-level 的 Enter 兜底 listener（`_ensurePasteEnterListener`）被 `_refocusGuardId !== null` 守住，但 refocus guard 在 focus 穩定 240ms 後就自動清掉。使用者打中文這段時間 guard 早就 null 了，IME 確認選字時 WKWebView 短暫 blur xterm helper textarea，下一個 Enter 落到 body / image-bar 又沒 listener 接 → 靜默丟失。把兜底 listener 改成 always-on（更名 `_ensureStealEnterListener`、init 時掛上）；新增 `e.isComposing || keyCode === 229` 守衛，IME-commit Enter 不偷（要讓它自然送到 IME 完成候選確認）。其他守衛保留（只接 Enter、不接修飾鍵、`_isStealableFocus` 跳過真表單與 xterm textarea），正常打字不受影響。
+
 ## v0.11.52 (2026-05-11)
 
 ### Fixes
