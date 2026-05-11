@@ -4026,6 +4026,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
     }
 
+    // 1b) macOS WKWebView fallback: navigator.clipboard.read() often can't
+    //     see image blobs even when the clipboard has one (permission gating
+    //     + incomplete MIME exposure in WKWebView). Backend reads NSPasteboard
+    //     directly via PyObjC, handling both PNG and TIFF-on-pasteboard
+    //     (macOS screenshots land as TIFF, not PNG).
+    try {
+      const dataUrl = await pywebview.api.read_clipboard_image();
+      if (dataUrl && dataUrl.startsWith('data:image/')) {
+        const path = await pywebview.api.save_image(dataUrl);
+        if (path && !path.startsWith('ERROR')) {
+          if (ai) attachFile(path, dataUrl);
+          else await pywebview.api.write_input(activeId, path);
+          _refocusActive();
+          return;
+        }
+      }
+    } catch (_) {}
+
     // 2) Finder-copied files: macOS / Windows clipboard holds a path list
     //    that the browser API can't see. Python backend reads it via
     //    pbpaste / PowerShell.

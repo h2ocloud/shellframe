@@ -86,6 +86,19 @@ _DEFAULT_AI_PRESETS = [
     {"name": "Codex",  "cmd": "codex",  "icon": "\U0001F916"},
 ]
 
+_DASH_RE = re.compile(r'(^|\s)[—–](?=\S)')
+
+
+def _normalize_dashes(cmd: str) -> str:
+    """Smart-substitution autocorrect: macOS turns ``--`` into ``—`` (em-dash)
+    or ``–`` (en-dash) in some editable text contexts. CLI flag parsers don't
+    understand em/en-dash, so a token starting with one is virtually always a
+    typo for ``--``. Normalize at command boundaries.
+    """
+    if not cmd:
+        return cmd
+    return _DASH_RE.sub(lambda m: m.group(1) + '--', cmd)
+
 
 def load_config():
     if CONFIG_FILE.exists():
@@ -111,6 +124,21 @@ def load_config():
                 save_config(cfg)
             except Exception:
                 pass
+        # One-shot migration: fix em/en-dash typos introduced by macOS smart
+        # substitution (e.g. "codex —full-auto" → "codex --full-auto").
+        if not cfg.get("_dash_normalized_v1"):
+            changed = False
+            for p in cfg.get("presets", []):
+                normalized = _normalize_dashes(p.get("cmd") or "")
+                if normalized != p.get("cmd"):
+                    p["cmd"] = normalized
+                    changed = True
+            cfg["_dash_normalized_v1"] = True
+            if changed:
+                try:
+                    save_config(cfg)
+                except Exception:
+                    pass
         return cfg
     return DEFAULT_CONFIG.copy()
 
@@ -653,6 +681,7 @@ class Api:
         return json.dumps(None)
 
     def save_preset(self, name: str, cmd: str, icon: str) -> str:
+        cmd = _normalize_dashes(cmd)
         cfg = load_config()
         # Update existing or add new
         for p in cfg["presets"]:
@@ -712,6 +741,7 @@ class Api:
         return json.dumps(result)
 
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
+        cmd = _normalize_dashes(cmd)
         self._counter += 1
         sid = f"s{self._counter}"
         _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows}")
@@ -1390,6 +1420,50 @@ class Api:
             return str(path)
         except Exception as e:
             return f"ERROR: {e}"
+
+    def read_clipboard_image(self) -> str:
+        """Read an image from the system clipboard. Returns a data URL
+        (data:image/png;base64,...) or '' if no image present.
+
+        WKWebView's navigator.clipboard.read() is unreliable on macOS for
+        image blobs (permission gating and incomplete MIME exposure), so the
+        UI falls back here. We read NSPasteboard directly via PyObjC: try
+        PNG first, fall back to TIFF and re-encode through NSBitmapImageRep
+        if the source is e.g. a screenshot (TIFF on the pasteboard).
+        """
+        if IS_WIN:
+            # TODO: Windows path via PIL.ImageGrab if PIL is available
+            return ''
+        if platform.system() != 'Darwin':
+            return ''
+        try:
+            from AppKit import (
+                NSPasteboard,
+                NSPasteboardTypePNG,
+                NSPasteboardTypeTIFF,
+                NSBitmapImageRep,
+            )
+            pb = NSPasteboard.generalPasteboard()
+            data = pb.dataForType_(NSPasteboardTypePNG)
+            if data is None:
+                tiff = pb.dataForType_(NSPasteboardTypeTIFF)
+                if tiff is None:
+                    return ''
+                rep = NSBitmapImageRep.imageRepWithData_(tiff)
+                if rep is None:
+                    return ''
+                # NSBitmapImageFileTypePNG = 4
+                data = rep.representationUsingType_properties_(4, None)
+                if data is None:
+                    return ''
+            raw = bytes(data)
+            return 'data:image/png;base64,' + base64.b64encode(raw).decode('ascii')
+        except Exception as e:
+            try:
+                _dlog('clipboard', f'read_clipboard_image failed: {e}')
+            except Exception:
+                pass
+            return ''
 
     def get_version(self) -> str:
         """Return current local version info."""

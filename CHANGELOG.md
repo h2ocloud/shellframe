@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.11.52 (2026-05-11)
+
+### Fixes
+- **Codex preset silently launched without `--full-auto` because macOS smart-substitution turned `--` into `—`** — Howard's saved Codex preset had `"cmd": "codex —full-auto"` (em-dash, U+2014). `shlex.split` preserved the em-dash, codex didn't recognize it as a flag, and the token landed in the prompt textarea as a queued user message instead of activating full-auto mode. Added `_normalize_dashes()` — collapses em-dash / en-dash at token boundaries back to `--`. Applied at three points: (1) `save_preset` so new presets typed in the UI get corrected on save, (2) `new_session` so existing dirty configs auto-correct on spawn, (3) a one-shot `_dash_normalized_v1` migration in `load_config` that rewrites all stored presets the first time the new version loads. Howard's live config was migrated to `codex --full-auto`.
+- **Right-click paste of a clipboard image (e.g. `⌃⇧⌘4` screenshot) silently did nothing** — `_rightClickPaste()` relied on `navigator.clipboard.read()`, but WKWebView gates clipboard reads behind permission AND doesn't expose `image/*` MIME types reliably, so the try/catch swallowed the failure with no user feedback. Added backend `read_clipboard_image()` that reads NSPasteboard directly via PyObjC — prefers `NSPasteboardTypePNG`, falls back to `NSPasteboardTypeTIFF` and re-encodes through `NSBitmapImageRep` (macOS screenshots land on the pasteboard as TIFF, not PNG). UI now falls back to this backend when the browser API yields nothing. Cmd+V was already fine — its `e.clipboardData.items` comes from a trusted user gesture and exposes images correctly; only right-click was broken.
+
+### 修正
+- **Codex preset 默默啟動但 `--full-auto` 沒生效，因為 macOS 智慧型替換把 `--` 換成 `—`** — Howard 存的 Codex preset cmd 是 `codex —full-auto`（em-dash, U+2014），`shlex.split` 保留 em-dash、codex 不認得它是 flag、整個 token 變成排隊送進 prompt 的 user message，full-auto 模式根本沒被啟動。新增 `_normalize_dashes()` — 把 token 邊界的 em-dash / en-dash 還原成 `--`。三個地方套用：(1) `save_preset` 寫入時、(2) `new_session` 啟動時（既存髒 config 自動修）、(3) `load_config` 一次性 `_dash_normalized_v1` migration（首次跑新版會掃過所有 preset）。Howard 的 live config 已被遷移成 `codex --full-auto`。
+- **右鍵貼上剪貼簿圖片（例如 `⌃⇧⌘4` 截圖）默默無反應** — `_rightClickPaste()` 仰賴 `navigator.clipboard.read()`，但 WKWebView 對 clipboard 讀取有 permission gate 且不會穩定暴露 `image/*` MIME，try/catch 把錯誤吞掉、使用者完全沒回饋。新增後端 `read_clipboard_image()` 直接走 PyObjC 讀 NSPasteboard — 優先抓 `NSPasteboardTypePNG`、抓不到再 fallback `NSPasteboardTypeTIFF` 經 `NSBitmapImageRep` 重編碼成 PNG（macOS 截圖在 pasteboard 上是 TIFF 不是 PNG）。前端在 browser API 拿空時 fallback 到這條後端路徑。Cmd+V 不受影響 —— 它的 `e.clipboardData.items` 來自 trusted user gesture、image blob 直接可拿，問題只在右鍵。
+
 ## v0.11.51 (2026-05-11)
 
 ### Changes
