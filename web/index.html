@@ -2005,8 +2005,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function setupAttachKeyHandler(sid, term) {
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
-      // Esc in plain terminal → send Ctrl+U to kill current line
-      if (ev.key === 'Escape' && !isAiSession(sid)) {
+      // Esc in plain terminal (or Codex) → send Ctrl+U to kill current line.
+      // Codex's native Esc cancels the agent run; user prefers Esc to clear
+      // the composer like a regular shell, so we intercept it here.
+      if (ev.key === 'Escape' && (!isAiSession(sid) || isCodexSession(sid))) {
         pywebview.api.write_input(sid, '\x15'); // Ctrl+U = line kill
         return false;
       }
@@ -2299,6 +2301,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!s) return false;
     const tokens = s.cmd.split(/\s+/);
     return tokens.some(t => AI_CLI_TOOLS.has(t.split('/').pop().replace(/\.\w+$/, '')));
+  }
+  // Codex's Esc default cancels the agent; user wants Esc to clear the
+  // composer instead (matching plain-terminal Ctrl+U semantics).
+  function isCodexSession(sid) {
+    const s = sessions[sid];
+    if (!s) return false;
+    return s.cmd.split(/\s+/).some(t => t.split('/').pop().replace(/\.\w+$/, '') === 'codex');
   }
 
   // Large plain-text paste gating. Anything >= PASTE_CONFIRM_CHARS or

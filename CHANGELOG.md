@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.51 (2026-05-11)
+
+### Changes
+- **Esc in Codex sessions now clears the composer instead of cancelling the agent** — Codex's native Esc cancels the current run, but the muscle memory most users want is "wipe the half-typed prompt." Codex is now treated like a plain terminal for the Esc keybind: ShellFrame intercepts Esc and writes `Ctrl+U` (line-kill), which Codex's textarea reads as "clear input." Other AI CLIs (Claude, aider, gemini, ...) keep their native Esc behavior.
+
+### 變更
+- **Codex session 的 Esc 改成清空輸入框，不再取消 agent** — Codex 原生 Esc 會中斷目前的執行，但大多數人按 Esc 是想清掉「打到一半的提示詞」。現在 ShellFrame 把 Codex 視為一般 terminal 攔截 Esc，改送 `Ctrl+U`（line-kill），Codex 的輸入區會清空。其他 AI CLI（Claude、aider、gemini…）維持原生 Esc 行為。
+
 ## v0.11.50 (2026-05-09)
 
 ### Fixes
