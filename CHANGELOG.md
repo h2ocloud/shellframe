@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.54 (2026-05-13)
+
+### Fixes
+- **Scroll-up history overlay showed the wrong frame's context — Howard saw user-message followed by Claude Code splash banner instead of the actual reply** — `Api.get_clean_history()`'s two dedup gates (CJK-heavy + ≥3× generic-line repeat) kept the FIRST occurrence of each duplicated line. Claude Code's TUI re-renders the whole viewport on every state change (splash → conversation, scroll-up, every stream tick), so tmux captures the SAME line in multiple frames with different surrounding context. For Howard's `sf_s20`, the user's prompt `❯ 我有傳訊息了 你可以去log 看一下...` appeared at line 795 (frame T1: followed by Claude Code v2.1.112 splash + Write tool call) AND at line 1858 (frame T2: followed by the real Bash(ssh) log query and `⏺ Log 證據（你訊息進來了 ✓）`). Keep-first deduper picked T1 — the overlay showed the splash-banner version and dropped the canonical T2 reply, hence the "scroll up doesn't connect to the live view" complaint Howard's been raising for releases. Switched both gates to keep-LAST: precompute `last_idx[key]` over the cleaned list, emit each line only at its last index. The most-recent frame is the canonical one (final stream tick, post-redraw state); earlier instances are partial / mis-contextualized. Prefix-collapse pass (Pass 1) unchanged — it already keeps the longest of consecutive prefix-duplicates.
+
+### 修正
+- **往上滾的歷史 overlay 抓到錯誤 frame 的 context — Howard 看到的是 user 訊息接 Claude Code 啟動 banner，而不是真實的回覆** — `Api.get_clean_history()` 的兩個 dedup gate（CJK-heavy 行、≥3× 重複行）原本保留**第一次**出現。Claude Code 的 TUI 每次狀態變化都會整個 viewport 重繪（splash → 對話、scroll up、每個 stream tick），tmux 把每個 frame 都記下來、同一行會在多個 frame 出現但 context 不同。Howard 的 `sf_s20`：`❯ 我有傳訊息了 你可以去log 看一下...` 同時出現在 line 795（T1 frame：後接 Claude Code v2.1.112 啟動 banner + Write 工具呼叫）跟 line 1858（T2 frame：後接真實的 Bash(ssh) log 查詢 + `⏺ Log 證據（你訊息進來了 ✓）`）。keep-first 選了 T1 → overlay 顯示 splash banner 版本、把正確的 T2 回覆丟掉，所以滾上去「銜接不上」。改成 keep-LAST：先建 `last_idx[key]` map，最後一次出現的 index 才 emit。最新 frame 是最終狀態（stream 結束、重繪完）；早期 instance 通常是 partial 或 context 不對的快照。Pass 1 prefix-collapse 不動（已經正確保留兩個連續 prefix-dup 中較長的那個）。
+
 ## v0.11.53 (2026-05-11)
 
 ### Fixes

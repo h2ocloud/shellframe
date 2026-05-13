@@ -1071,12 +1071,21 @@ class Api:
             # repeats (`return null;` appearing twice in code, two
             # adjacent table rows that genuinely share a date):
             #
-            # Gate A: ≥ 90% CJK-cells AND ≥ MIN_WIDTH wide → dedup on
-            #          first occurrence (single-frame redraw collapse).
+            # Gate A: ≥ 90% CJK-cells AND ≥ MIN_WIDTH wide → dedup,
+            #          keeping the LAST occurrence.
             # Gate B: any line wide enough to be distinctive AND seen
-            #          ≥ 3 times in this capture → keep only the FIRST.
+            #          ≥ 3 times in this capture → keep only the LAST.
             #          Threshold 3 (not 2) preserves natural-looking
             #          two-occurrence repeats.
+            #
+            # WHY keep LAST, not FIRST: in streaming/TUI-redraw contexts
+            # the most recent rendering is the canonical one — earlier
+            # instances are usually partial frames or context-mismatched
+            # snapshots.  Classic failure: a user message captured during
+            # the Claude Code splash banner (T1) and again after the real
+            # reply starts streaming (T2).  Keep-first kept T1, so
+            # scrolling up showed the user message followed by splash
+            # banner content instead of the actual Claude reply.
             from collections import Counter
             DEDUP_MIN_WIDTH = 8
             REPEAT_GATE_MIN_WIDTH = 20      # raised from 12 — short
@@ -1100,20 +1109,31 @@ class Api:
             for stripped, _ in cleaned:
                 if self._visual_width(stripped.strip()) >= REPEAT_GATE_MIN_WIDTH:
                     counts[_key(stripped)] += 1
-            seen = set()
-            final = []
-            for stripped, original in cleaned:
+            # Precompute the LAST index for each gated key so the final
+            # loop can emit exactly one copy — the last (most canonical).
+            last_idx_cjk = {}
+            last_idx_rep = {}
+            for i, (stripped, _) in enumerate(cleaned):
                 k = _key(stripped)
                 vw = self._visual_width(stripped.strip())
-                if vw >= DEDUP_MIN_WIDTH and self._cjk_cells(stripped.strip()) >= vw * 0.9:
-                    if k in seen:
+                is_cjk = (vw >= DEDUP_MIN_WIDTH
+                          and self._cjk_cells(stripped.strip()) >= vw * 0.9)
+                if is_cjk:
+                    last_idx_cjk[k] = i
+                elif vw >= REPEAT_GATE_MIN_WIDTH and counts[k] >= REPEAT_GATE_THRESHOLD:
+                    last_idx_rep[k] = i
+            final = []
+            for i, (stripped, original) in enumerate(cleaned):
+                k = _key(stripped)
+                vw = self._visual_width(stripped.strip())
+                is_cjk = (vw >= DEDUP_MIN_WIDTH
+                          and self._cjk_cells(stripped.strip()) >= vw * 0.9)
+                if is_cjk:
+                    if last_idx_cjk.get(k) != i:
                         continue
-                    seen.add(k)
-                elif (vw >= REPEAT_GATE_MIN_WIDTH
-                      and counts[k] >= REPEAT_GATE_THRESHOLD):
-                    if k in seen:
+                elif vw >= REPEAT_GATE_MIN_WIDTH and counts[k] >= REPEAT_GATE_THRESHOLD:
+                    if last_idx_rep.get(k) != i:
                         continue
-                    seen.add(k)
                 final.append((stripped, original))
             # Append SGR reset to each line so an unclosed \x1b[...m on one
             # line can't bleed background/foreground colors into subsequent
