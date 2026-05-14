@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.56 (2026-05-14)
+
+### Fixes
+- **Multi-image paste only attached the LAST image — Howard saw a single chip when pasting 3** — `save_image()` / `save_file_from_clipboard()` built filenames at second precision (`%Y%m%d_%H%M%S`). The Cmd+V handler's image loop runs each `save_image` call back-to-back; three images pasted in the same second got identical filenames, each rewrote the previous on disk, and `save_image` returned the same path three times. The JS `attachFile()` dedup (`s.attachments.some(a => a.path === path)`) then collapsed the three identical paths into one chip → only one `[image #N]` reached Claude / Codex. Bumped to microsecond precision (`%Y%m%d_%H%M%S_%f`); verified 5 back-to-back calls now produce 5 distinct filenames. No other change — the iteration / chip-rendering / PTY-write logic was always correct; the collision was the only thing dropping images on the floor.
+
+### 修正
+- **多張圖片貼上實際只附第一張 — Howard 看到只有一個 chip 以為其他沒貼進去** — `save_image()` 與 `save_file_from_clipboard()` 用秒精度的時間戳當檔名（`%Y%m%d_%H%M%S`）。Cmd+V 的 image loop 對每張 blob 連續呼叫 `save_image`，同一秒內三張圖會拿到一樣的檔名，磁碟上後者覆蓋前者、`save_image` 三次都回傳同一個 path。JS 端 `attachFile()` 的 dedup（`s.attachments.some(a => a.path === path)`）就把三個一樣的 path 縮成一個 chip → 只送一個 `[image #N]` 給 Claude / Codex 看。改用微秒精度（`%Y%m%d_%H%M%S_%f`）；實測五次 back-to-back 拿到五個不同檔名。其他邏輯（iteration、chip 渲染、寫入 PTY）原本就對，只有檔名碰撞這一處在丟圖。
+
 ## v0.11.55 (2026-05-14)
 
 ### Changes

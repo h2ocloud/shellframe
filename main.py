@@ -1412,7 +1412,12 @@ class Api:
         try:
             _, encoded = data_url.split(",", 1)
             file_data = base64.b64decode(encoded)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Microsecond precision (`%f` = 6 digits) so multi-file pastes
+            # within the same second get distinct paths; without this, every
+            # blob written in the same second overwrote the previous one and
+            # the JS attachFile dedup (matching on path equality) collapsed
+            # the chips down to one — user thought only one file attached.
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             # Preserve original extension
             ext = Path(filename).suffix or '.bin'
             safe_name = Path(filename).stem[:50]
@@ -1426,7 +1431,9 @@ class Api:
         try:
             _, encoded = data_url.split(",", 1)
             img_data = base64.b64decode(encoded)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # See save_file_from_clipboard for the multi-paste collision
+            # rationale — same fix here.
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             path = CLAUDE_TMP / f"clipboard_{ts}.png"
             path.write_bytes(img_data)
 
