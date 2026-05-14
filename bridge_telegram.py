@@ -532,14 +532,16 @@ class TelegramBridge(BridgeBase):
         self._emit_status({"state": "stopped"})
 
     def _set_bot_commands(self):
-        """Register slash commands with Telegram."""
+        """Register slash commands with Telegram.
+
+        Menu trimmed (v0.11.55): /help, /pause, /resume, /reload removed from
+        the visible menu — Howard reported they cluttered the picker without
+        being used. Their handlers stay (typed by hand or from old shortcuts
+        they still respond), they just aren't suggested.
+        """
         commands = [
             {"command": "fetch", "description": "Fetch latest AI reply & pin it"},
-            {"command": "help", "description": "Show all available commands"},
             {"command": "list", "description": "List sessions + bridge state"},
-            {"command": "pause", "description": "Pause bridge (stop forwarding)"},
-            {"command": "resume", "description": "Resume bridge"},
-            {"command": "reload", "description": "Hot-reload bridge code"},
             {"command": "restart", "description": "Full app restart (sessions preserved)"},
             {"command": "update", "description": "Check & apply ShellFrame updates"},
             {"command": "new", "description": "New session (default: claude)"},

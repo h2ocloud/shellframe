@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.55 (2026-05-14)
+
+### Changes
+- **Trim Telegram bot slash-command menu — drop `/help`, `/pause`, `/resume`, `/reload`** — Howard reported the picker had too many entries that he never used. Removed those four from `_set_bot_commands()`'s registered list so the TG client's command menu only shows the ones he actually uses (`/fetch`, `/list`, `/restart`, `/update`, `/new`, `/close`, plus the numbered `/1` `/2` ... session switchers). Handlers stay in place — typing the commands by hand still works, they just aren't suggested.
+
+### 變更
+- **精簡 Telegram bot 的 slash 選單 — 拿掉 `/help`、`/pause`、`/resume`、`/reload`** — Howard 回報選單太雜、這四個用不到。從 `_set_bot_commands()` 註冊清單移除，TG 選單只剩會用的（`/fetch`、`/list`、`/restart`、`/update`、`/new`、`/close`，加上 `/1` `/2` ... session 切換）。Handler 還在 — 手動打還能跑，只是不會主動推薦。
+
 ## v0.11.54 (2026-05-13)
 
 ### Fixes
