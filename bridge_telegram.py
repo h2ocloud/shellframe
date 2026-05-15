@@ -534,20 +534,17 @@ class TelegramBridge(BridgeBase):
     def _set_bot_commands(self):
         """Register slash commands with Telegram.
 
+        Order: numbered session switchers FIRST (v0.11.57 — Howard mostly
+        opens the picker to swap sessions, so /1 /2 ... should be the
+        thumb-reachable top of the menu). Generic ops follow.
+
         Menu trimmed (v0.11.55): /help, /pause, /resume, /reload removed from
         the visible menu — Howard reported they cluttered the picker without
         being used. Their handlers stay (typed by hand or from old shortcuts
         they still respond), they just aren't suggested.
         """
-        commands = [
-            {"command": "fetch", "description": "Fetch latest AI reply & pin it"},
-            {"command": "list", "description": "List sessions + bridge state"},
-            {"command": "restart", "description": "Full app restart (sessions preserved)"},
-            {"command": "update", "description": "Check & apply ShellFrame updates"},
-            {"command": "new", "description": "New session (default: claude)"},
-            {"command": "close", "description": "Close current session (with confirm)"},
-        ]
-        # Add numbered commands for quick switching
+        commands = []
+        # Numbered session switchers FIRST — most-used action on mobile TG
         with self._slots_lock:
             for sid in self._slot_order:
                 slot = self.slots[sid]
@@ -555,6 +552,15 @@ class TelegramBridge(BridgeBase):
                     "command": str(slot.index),
                     "description": f"Switch to {slot.label}",
                 })
+        # Generic ops after the session list
+        commands.extend([
+            {"command": "fetch", "description": "Fetch latest AI reply & pin it"},
+            {"command": "list", "description": "List sessions + bridge state"},
+            {"command": "restart", "description": "Full app restart (sessions preserved)"},
+            {"command": "update", "description": "Check & apply ShellFrame updates"},
+            {"command": "new", "description": "New session (default: claude)"},
+            {"command": "close", "description": "Close current session (with confirm)"},
+        ])
         # The claude-plugins-official telegram plugin shares this bot token
         # and continuously overwrites the all_private_chats scope with its
         # own /start /help /status commands. We can't win that race at the
@@ -1330,16 +1336,17 @@ class TelegramBridge(BridgeBase):
                     # forwarded.  It resets only when a NEW user message arrives
                     # (the _handle_update path sets it fresh each time).
 
-                # Debug log
-                log_msg = f"flush {sid}: new_lines={len(new_lines)} users={dict(self._user_active)} has_msg={slot.has_user_msg}\n"
-                for l in new_lines[:5]:
-                    log_msg += f"  [{l}]\n"
-                if not new_lines:
-                    screen_lines = [l.rstrip() for l in slot.screen.display if l.rstrip()]
-                    log_msg += f"  screen({len(screen_lines)}): {[l[:60] for l in screen_lines[-5:]]}\n"
-                _blog(log_msg)
-
-                if not new_lines:
+                # Debug log — only when there's actually output to forward.
+                # Previously dumped the full screen on every empty flush so the
+                # 1MB log cap rotated every few minutes and real signals (poll
+                # exceptions, conflicts, watchdog hits) got buried.
+                if new_lines:
+                    log_msg = (f"flush {sid}: new_lines={len(new_lines)} "
+                               f"users={dict(self._user_active)} has_msg={slot.has_user_msg}\n")
+                    for l in new_lines[:5]:
+                        log_msg += f"  [{l}]\n"
+                    _blog(log_msg)
+                else:
                     continue
 
                 clean = '\n'.join(new_lines)
@@ -1545,6 +1552,12 @@ class TelegramBridge(BridgeBase):
         first_batch = True
         self._last_poll_tick = time.time()
         conflict_warned = False
+        # Exponential backoff on exception path so the bridge recovers
+        # quickly from transient wifi blips / TLS resets / sleep-wake events
+        # instead of always waiting fixed 5s.
+        backoff = 1.0
+        BACKOFF_MAX = 15.0
+        consecutive_errors = 0
         while self.active and not self._stop_event.is_set():
             try:
                 result = tg_api(self.config.bot_token, "getUpdates", {
@@ -1613,8 +1626,22 @@ class TelegramBridge(BridgeBase):
                     # of waiting up to 30s for the next getUpdates cycle.
                     self._save_offset()
                 first_batch = False
-            except Exception:
-                time.sleep(5)
+                # Successful round-trip — reset backoff if we'd been failing.
+                if consecutive_errors:
+                    _blog(f"[poll] recovered after {consecutive_errors} consecutive errors\n")
+                    consecutive_errors = 0
+                    backoff = 1.0
+            except Exception as e:
+                consecutive_errors += 1
+                # Log every failure (was silent before — Howard reported
+                # "feels unstable" with no log evidence to investigate).
+                # Coalesce noisy repeats: log first 3 verbosely, then every
+                # 10th, to avoid drowning the log if the network's truly down.
+                if consecutive_errors <= 3 or consecutive_errors % 10 == 0:
+                    _blog(f"[poll] exception #{consecutive_errors} "
+                          f"({type(e).__name__}): {e} — sleeping {backoff:.1f}s\n")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, BACKOFF_MAX)
 
     def _watchdog_loop(self):
         """Monitor poll liveness. If `_last_poll_tick` goes stale (>120s with no

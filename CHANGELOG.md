@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.57 (2026-05-15)
+
+### Fixes
+- **TG long-poll felt unstable but the log was useless for diagnosing it** — `_poll_loop`'s exception handler was `except Exception: time.sleep(5)` with zero logging. Any wifi blip / TLS reset / sleep-wake event silently produced 5+ seconds of dead bridge time and left no trace. Worse, the per-flush debug path dumped the full screen on every empty poll across 8 sessions, so the 1MB log cap rotated every few minutes and real signals got buried. Fix: log exceptions with type+message (first 3 verbosely, then every 10th to coalesce sustained outages); exponential backoff 1→2→4→8→15s instead of fixed 5s so transient blips recover ~3× faster; emit a `[poll] recovered after N consecutive errors` line on the comeback. Empty-flush log entries dropped — only log when there's actual content to forward.
+
+### Changes
+- **TG slash menu now puts `/1`, `/2`, ... session switchers BEFORE the generic ops** — Howard reported the picker is mostly used to swap sessions on mobile; bumped numbered switchers to the top so they're thumb-reachable. Generic ops (`/fetch`, `/list`, `/restart`, `/update`, `/new`, `/close`) move below.
+
+### 修正
+- **TG long-poll 感覺不穩但 log 完全沒線索** — `_poll_loop` 的 exception 處理是 `except Exception: time.sleep(5)`，完全沒 log。任何 wifi 抖動／TLS reset／sleep-wake 都靜默吞掉 5+ 秒、毫無痕跡。更糟的是每次 flush 對 8 個 session 都 dump 整個 screen，1MB log 上限每幾分鐘就 rotate 一次、真實訊號全被淹沒。修法：exception 路徑 log 出 type+message（前 3 次完整、之後每 10 次一筆避免風暴），改成指數 backoff 1→2→4→8→15s 取代固定 5s，連續錯誤後復原時 emit `[poll] recovered after N consecutive errors`。空 flush 不再寫 log，只在有實際內容要 forward 時寫。
+
+### 變更
+- **TG slash 選單把 `/1`、`/2`、... session 切換放最前面** — Howard 回報手機開選單主要是切 session；把數字命令往前推到拇指可達範圍。其他通用命令（`/fetch`、`/list`、`/restart`、`/update`、`/new`、`/close`）移到後面。
+
 ## v0.11.56 (2026-05-14)
 
 ### Fixes
