@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.58 (2026-05-15)
+
+### Fixes
+- **Multi-file paste from Finder still dropped — Howard's repro: 2 PDFs → only 1 reached Claude, with 0-byte clipboard_*.pdf files on disk** — the Cmd+V handler's order of operations was wrong. v0.11.56 fixed filename collisions but the real Finder-paste path was being misrouted: `clipboardData.items` reports kind='file' for Finder-copied items, BUT WKWebView doesn't materialize NSPasteboard file URLs into byte data, so `item.getAsFile()` returns 0-byte stub blobs. The in-browser fileBlobs branch happily wrote those empty data URLs to disk and returned, never reaching the osascript-backed `get_clipboard_files()` fallback that would have found the real file paths. Swapped branch order: osascript path now comes FIRST for non-image files; in-browser fileBlobs is the fallback and now skips `blob.size === 0` blobs so any leftover Finder stubs are ignored.
+
+### Changes
+- **`/fetch` no longer pins the reply** — Howard: pinned banner in chat is noisy and rarely useful. Message is still sent normally; user scrolls if they need to find it. Updated slash-menu description and `/help` text accordingly.
+
+### 修正
+- **Finder 多檔複製貼上還是只有一張進 Claude — Howard 實測：2 個 PDF 變成 0 bytes 落地、只有一個進 Claude** — Cmd+V 路徑的分支順序錯了。v0.11.56 修好檔名碰撞，但 Finder 複製的真實路徑被誤導：`clipboardData.items` 對 Finder 複製的檔案會回 kind='file'，但 WKWebView 不會把 NSPasteboard 的 file URL materialize 成 byte data，`item.getAsFile()` 拿到的是 0-byte stub blob。in-browser fileBlobs branch 把空的 data URL 寫到磁碟然後 return，永遠走不到 `get_clipboard_files()` (osascript) 那條真正能拿到 file path 的 fallback。把 branch 順序交換：osascript 路徑放最前面（非圖片時走得到），in-browser fileBlobs 降為 fallback 且加 `blob.size === 0` 過濾，殘留的 Finder stub blob 直接忽略。
+
+### 變更
+- **`/fetch` 不再 pin 訊息** — Howard 回報置頂訊息很吵、用處不大。訊息照常送出，要找的話自己往上滾。同步更新 slash 選單敘述跟 `/help` 文字。
+
 ## v0.11.57 (2026-05-15)
 
 ### Fixes

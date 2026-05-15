@@ -554,7 +554,7 @@ class TelegramBridge(BridgeBase):
                 })
         # Generic ops after the session list
         commands.extend([
-            {"command": "fetch", "description": "Fetch latest AI reply & pin it"},
+            {"command": "fetch", "description": "Fetch latest AI reply"},
             {"command": "list", "description": "List sessions + bridge state"},
             {"command": "restart", "description": "Full app restart (sessions preserved)"},
             {"command": "update", "description": "Check & apply ShellFrame updates"},
@@ -2701,17 +2701,12 @@ class TelegramBridge(BridgeBase):
                 reply_text = reply_text[:4000] + "\n…(truncated)"
             header = f"📌 {slot.label} (/{slot.index})"
             msg_text = f"{header}\n\n{reply_text}"
-            resp = tg_api(self.config.bot_token, "sendMessage", {
+            # Don't pin (Howard v0.11.58: the pinned banner in chat is noisy
+            # and rarely useful — the message itself is enough; user scrolls
+            # if they need to find it).
+            tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": msg_text,
             })
-            # Pin the message
-            if resp and resp.get("ok"):
-                msg_id = resp["result"]["message_id"]
-                tg_api(self.config.bot_token, "pinChatMessage", {
-                    "chat_id": chat_id,
-                    "message_id": msg_id,
-                    "disable_notification": True,
-                })
 
         elif cmd in ("start", "help"):
             tg_api(self.config.bot_token, "sendMessage", {
@@ -2720,7 +2715,7 @@ class TelegramBridge(BridgeBase):
                     "ShellFrame Bridge\n\n"
                     "Sessions:\n"
                     "  /list — sessions + bridge state (with last-response preview)\n"
-                    "  /fetch — fetch latest AI reply & pin it\n"
+                    "  /fetch — fetch latest AI reply\n"
                     "  /new [cmd] — new session (default: claude)\n"
                     "  /close — close current session (with confirm)\n"
                     "  /1, /2, … — switch session\n\n"

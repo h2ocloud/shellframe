@@ -2463,12 +2463,41 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         return;
       }
 
-      // 2. Collect ALL file blobs (non-image files pasted from some apps)
+      // 2. Finder-copied files (multi-select Cmd+C in Finder, Cmd+V here).
+      //    Must come BEFORE the in-browser fileBlobs branch because Finder
+      //    populates `clipboardData.items` with kind='file' stubs whose
+      //    blob.size is 0 — WKWebView doesn't materialize NSPasteboard
+      //    file URLs into actual bytes for browser-side reads. v0.11.56
+      //    Howard repro: copied 2 PDFs in Finder, paste produced two
+      //    0-byte clipboard_*.pdf files because fileBlobs branch
+      //    happily wrote the empty data URLs. The osascript-backed
+      //    backend reads the real file paths off NSPasteboard and we
+      //    just hand those paths to attachFile.
+      try {
+        const raw = await pywebview.api.get_clipboard_files();
+        const paths = JSON.parse(raw);
+        if (paths.length > 0) {
+          e.stopPropagation();
+          e.preventDefault();
+          if (ai) {
+            for (const filePath of paths) attachFile(filePath, null);
+          } else {
+            await pywebview.api.write_input(activeId, paths.join(' '));
+          }
+          return;
+        }
+      } catch(e2) {}
+
+      // 3. In-browser file blobs (e.g. file dragged from a web app onto the
+      //    clipboard via a custom JS paste flow, or a non-Finder native
+      //    app that DOES materialize the bytes). Skip size=0 — those are
+      //    Finder placeholder stubs the osascript branch above should
+      //    have already handled.
       const fileBlobs = [];
       for (const item of items) {
         if (item.kind === 'file') {
           const b = item.getAsFile();
-          if (b) fileBlobs.push(b);
+          if (b && b.size > 0) fileBlobs.push(b);
         }
       }
       if (fileBlobs.length > 0) {
@@ -2484,23 +2513,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
         return;
       }
-
-      // 3. Check system clipboard for Finder-copied files (macOS/Windows)
-      //    Browser clipboard API can't access file paths, so ask Python backend
-      try {
-        const raw = await pywebview.api.get_clipboard_files();
-        const paths = JSON.parse(raw);
-        if (paths.length > 0) {
-          e.stopPropagation();
-          e.preventDefault();
-          if (ai) {
-            for (const filePath of paths) attachFile(filePath, null);
-          } else {
-            await pywebview.api.write_input(activeId, paths.join(' '));
-          }
-          return;
-        }
-      } catch(e2) {}
 
       // Not an image/file paste — let it through to xterm.js for normal text paste
     } finally {
