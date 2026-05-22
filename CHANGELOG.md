@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.11.61 (2026-05-22)
+
+### Adds
+- **`sfctl history-audit` — self-check tool so I can diagnose "上滾看到不對的歷史" instead of guessing** — Howard's complaint after v0.11.60 didn't fix it: "你自己這個對話就是壞的, 你能不能設計一個自檢的機制, 你可以自己上滾複製文字然後比對". This is exactly that. Bridge now stashes every extracted AI reply on the slot (`last_extracted_text` + 5-deep `recent_extractions` rolling window). New `history_audit(sid)` API gathers four parallel snapshots — (1) `last_extracted` ground truth, (2) `tmux_cleaned` (what the overlay returns), (3) `tmux_raw` (pre-dedup capture-pane), (4) `pyte_history` (independent source) — normalises them, computes `missing_from_overlay` (reply lines absent from overlay = the actual bug class) and `noise_in_overlay` (overlay lines that match neither raw bytes nor reply = dedup residue / cross-tab bleed), dumps everything to `~/.config/shellframe/diag/history-audit_<sid>_<ts>.txt`, and returns a one-line verdict. `sfctl history-audit [sid]` is the CLI entry — defaults to first session. Workflow: reproduce the bad scroll-up, run `sfctl history-audit`, share the dump path, and the next debug pass has measured evidence instead of theories.
+
+### Fixes
+- **New Codex sessions sometimes required a UI reload before the conversation appeared** — root cause was a race between backend session creation/output and frontend attachment. `new_session()` can push output and notify `syncSessionsFromBackend` before `openSession()` has registered the returned sid locally; the existing duplicate-pane guard correctly blocked that sync, but if the notify was the only one the frontend saw, the new Codex tab stayed invisible until reload. Fix: `_pushOutput` now buffers output for unknown sids and flushes it once `openSession`/`reconnectSession` attaches the xterm, guarded sync calls are replayed after `_uiCreatingSession` drops, and a 1.5s reconciliation safety net catches non-UI creations from TG or `sfctl`.
+
+### 新增
+- **`sfctl history-audit` 自檢工具，讓我能用「實際比對」而不是「猜」來修上滾顯示錯誤的問題** — Howard 在 v0.11.60 沒修好後直接點破：「你自己這個對話就是壞的，你能不能設計一個自檢的機制，你可以自己上滾複製文字然後比對」。就是這個。bridge 把每次提取的 AI 回應存到 slot 上（`last_extracted_text` + 5 筆 rolling window）。新 API `history_audit(sid)` 同時抓四份快照：(1) `last_extracted`（reply 真實內容）、(2) `tmux_cleaned`（overlay 看到的）、(3) `tmux_raw`（去 dedup 前的 capture-pane）、(4) `pyte_history`（獨立來源），正規化後算出 `missing_from_overlay`（reply 有但 overlay 沒有的行 = 真正的 bug class）跟 `noise_in_overlay`（overlay 有但 raw bytes / reply 都對不上的行 = dedup 殘骸或 cross-tab 串味），完整快照存到 `~/.config/shellframe/diag/history-audit_<sid>_<ts>.txt`，回傳一行 verdict。CLI：`sfctl history-audit [sid]`，預設第一個 session。流程：重現上滾爆掉的狀況 → `sfctl history-audit` → 把 dump 路徑丟給我，下一次 debug 就有實證可看。
+
+### 修正
+- **新增 Codex session 有時要重載 UI 才看得到對話** — 根因是 backend 建 session / 推 output 跟 frontend attach terminal 之間有 race。`new_session()` 可能在 `openSession()` 還沒把回傳 sid 寫進本地 `sessions` 前就推 output、通知 `syncSessionsFromBackend`；既有 duplicate-pane guard 會正確擋掉這次 sync，但如果這是 frontend 唯一收到的通知，新 Codex tab 就會隱形直到 reload。修法：`_pushOutput` 對未知 sid 先暫存，等 `openSession` / `reconnectSession` attach xterm 後 flush；guard 擋過的 sync 在 `_uiCreatingSession` 歸零後補跑；另外加 1.5s 低成本 reconcile，補住 TG / `sfctl` 這種非 UI 建立 session 的通知漏失。
+
+## v0.11.60 (2026-05-21)
+
+### Fixes
+- **Scrolling up after a long single AI reply showed the WRONG history — Howard's exact words: "我單次拿到的回應超過一個畫面 我上滾一定是看到不對的歷史"** — root cause was the scroll-history overlay always reading from `tmux capture-pane`, even when the pane was in the alternate-screen buffer. Claude Code / Codex / vim all enter alt-screen on startup via `\x1b[?1049h`; in that mode tmux's scrollback contains the NORMAL-screen history (whatever was on the terminal BEFORE the TUI took over), NOT the rows that just scrolled out of the alt-screen viewport during the current long reply. So the overlay dutifully returned the previous shell prompt / unrelated session contents — looked like the dedup was broken, but it was a buffer-mismatch problem we'd never noticed because earlier symptoms ("往上滑完全不會動") had pushed us to make tmux primary in v0.11.40. Fix: `get_clean_history` now probes `#{alternate_on}` first. In alt-screen mode it serves from pyte's HistoryScreen (the bridge feeds every PTY byte through pyte, including alt-screen line-feeds, so its `history.top` deque actually has the recent reply text). Outside alt-screen tmux remains primary — its 10000-row scrollback dwarfs pyte's 3000-row cap and carries colour. Response gains a `source` field surfaced in the overlay header so future "wrong history" reports tell us which buffer to investigate.
+
+### 修正
+- **單次 AI 回應超過一個畫面後上滾看到的是「不對的歷史」** — 根因是 scroll-history overlay 一律用 `tmux capture-pane`，沒有偵測 pane 是不是在 alternate-screen buffer。Claude Code / Codex / vim 啟動時都會切到 alt-screen（`\x1b[?1049h`）；在那個模式下 tmux 的 scrollback 是 alt-screen **進入前**的 normal-screen 歷史，**不是**當前長 reply 滾出視窗的內容。所以 overlay 老老實實回傳「之前 shell prompt / 上一段對話」 — 看起來像 dedup 壞掉，其實是 buffer 拿錯了。先前 v0.11.40 為了修「往上滑完全不會動」把 tmux 改成 primary，當時沒考慮到 alt-screen case。修法：`get_clean_history` 先用 `#{alternate_on}` 偵測；alt-screen 時改吃 pyte 的 HistoryScreen（bridge 把每個 PTY byte 都餵給 pyte，alt-screen 的 line-feed 也會推進 `history.top`，所以那裡才是當前 reply 真正的上半段）。非 alt-screen 維持 tmux（10000 行容量比 pyte 3000 行大、有顏色）。回傳多帶 `source` 欄位顯示在 overlay header 上，下次再看到不對直接看標籤就知道是哪邊出問題。
+
+## v0.11.59 (2026-05-21)
+
+### Fixes
+- **TG typing indicator felt unstable — bubble kept blanking out mid-reply even though Claude was clearly still working** — root cause was `_send_typing` being called *inside* `slot.output_lock` on every 0.5s flush tick, with `tg_api`'s default 35s urlopen timeout. Any slow `sendChatAction` round-trip held the lock long enough to backpressure `feed_output` (PTY ingest takes the same lock), which then delayed the next typing refresh past TG's 5s auto-clear → bubble disappears, user thinks the bridge is dead. Compounded by zero throttle (10× more API calls than needed for a 5s-TTL indicator) and sequential per-uid sends that stacked latency across multiple watchers. Fix: `_send_typing` moved out of `output_lock`; internal 4s throttle keyed off `slot.last_typing_ts`; each recipient gets its own fire-and-forget thread with a 3s timeout so a single slow chat can't cascade. `tg_api` now accepts an optional `timeout=` kwarg — long-poll `getUpdates` still uses 35s, fire-and-forget calls pass 3.
+
+### 修正
+- **TG typing 動畫飄忽不定，Claude 還在打字氣泡卻已消失** — 根因是 `_send_typing` 被擺在 `slot.output_lock` 內、每 0.5s flush tick 都同步呼叫，而 `tg_api` 預設 urlopen timeout 35s。`sendChatAction` 一慢就把 lock 壓住，`feed_output`（PTY 進來也要拿同一把鎖）跟著卡 → 下一次 typing 來不及刷 → TG 5s 後氣泡消失 → 看起來像 bridge 死了。再加上完全沒節流（5s TTL 的指示器被 0.5s 打一次，10× 浪費），多個 watcher 又是序列送 → latency 疊起來。修法：`_send_typing` 抽出 `output_lock`；slot 內建 4s 節流（`last_typing_ts`）；每個收件人各自開背景 thread + 3s timeout，單一慢 chat 不會拖累其他人。`tg_api` 加上 `timeout=` 參數，長輪詢 `getUpdates` 仍走 35s，fire-and-forget 一律 3s。
+
 ## v0.11.58 (2026-05-15)
 
 ### Fixes

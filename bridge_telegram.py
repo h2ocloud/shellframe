@@ -212,7 +212,11 @@ def strip_ansi(text, sent_texts=None):
 
 
 
-def tg_api(token: str, method: str, data=None) -> dict:
+def tg_api(token: str, method: str, data=None, timeout: float = 35) -> dict:
+    """Telegram Bot API call. Default timeout=35s suits long-poll getUpdates
+    (server-side wait=30 + slack). Fire-and-forget calls (sendChatAction,
+    completion pings) should pass timeout=3 — a long timeout on a stuck
+    socket otherwise backpressures whatever loop dispatched the call."""
     url = f"https://api.telegram.org/bot{token}/{method}"
     if data:
         payload = json.dumps(data).encode()
@@ -220,7 +224,7 @@ def tg_api(token: str, method: str, data=None) -> dict:
     else:
         req = urllib.request.Request(url)
     try:
-        with urllib.request.urlopen(req, timeout=35) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         body = e.read().decode() if e.fp else ""
@@ -343,6 +347,19 @@ class SessionSlot:
         self.pending_menu = False  # True if last extract found a menu prompt
         self.awaiting_response = False  # True between user msg and first AI response extraction
         self.last_extraction_ts = 0.0   # time of last successful response extraction
+        # Throttle for sendChatAction. TG keeps the typing bubble alive ~5s,
+        # so 4s pacing keeps it visible without burning 10× the API calls the
+        # old 0.5s flush-tick rhythm produced.
+        self.last_typing_ts = 0.0
+        # Last AI reply we extracted + sent. Kept so `sfctl history-audit`
+        # can diff "what we believe the reply was" vs "what get_clean_history
+        # returns to the scroll-up overlay" — the previous fix-by-guesswork
+        # cycle (v0.11.60) was wrong precisely because we never measured.
+        self.last_extracted_text = ""
+        # Rolling window of recent extractions (newest last). Cap small —
+        # this is for audit/debug only, not a transcript. Each entry:
+        # (ts: float, text: str).
+        self.recent_extractions = []
         # Stall detection: warn when we wrote to the session but got no
         # meaningful output for ~15s. Common cause: macOS TCC permission
         # dialog blocking the CLI in the background.
@@ -692,13 +709,34 @@ class TelegramBridge(BridgeBase):
             _blog(f"[auto-compact] write failed: {e}\n")
 
     def _send_typing(self, sid: str):
-        """Send typing indicator to users watching this session."""
+        """Send typing indicator to users watching this session.
+
+        Throttled to 4s per slot (TG auto-clears the bubble at ~5s; the old
+        unthrottled 0.5s flush-tick rhythm sent 10× the calls needed). Each
+        recipient gets its own thread with a short 3s timeout so one slow
+        chat can't stack latency onto the rest, and so the caller (flush
+        loop / feed_output) never blocks waiting on TG."""
+        slot = self.slots.get(sid)
+        if not slot:
+            return
+        now = time.time()
+        if now - slot.last_typing_ts < 4.0:
+            return
+        slot.last_typing_ts = now
+        token = self.config.bot_token
         for uid, active_sid in list(self._user_active.items()):
-            if active_sid == sid and uid in self._user_chat:
-                tg_api(self.config.bot_token, "sendChatAction", {
-                    "chat_id": self._user_chat[uid],
-                    "action": "typing",
-                })
+            if active_sid != sid:
+                continue
+            chat_id = self._user_chat.get(uid)
+            if not chat_id:
+                continue
+            threading.Thread(
+                target=tg_api,
+                args=(token, "sendChatAction",
+                      {"chat_id": chat_id, "action": "typing"}),
+                kwargs={"timeout": 3},
+                daemon=True,
+            ).start()
 
     # Process owners of on-screen windows that indicate a modal / permission
     # dialog is blocking foreground work. Checked before firing stall warnings
@@ -1278,18 +1316,17 @@ class TelegramBridge(BridgeBase):
                 if not slot:
                     continue
 
-                with slot.output_lock:
-                    # Refresh the TG typing indicator on every tick while the
-                    # session is waiting on a reply. TG auto-clears the bubble
-                    # after ~5s, so we MUST refresh at least that often; the
-                    # old code only refreshed inside the `idle < 3.0` branch,
-                    # which meant long silent "thinking" stretches blanked the
-                    # indicator even though the reply was still pending. Runs
-                    # regardless of last_output_time so typing also shows in
-                    # the pre-first-chunk window right after user submit.
-                    if slot.awaiting_response:
-                        self._send_typing(sid)
+                # Refresh the TG typing indicator while the session is waiting
+                # on a reply. Kept OUT of `slot.output_lock` so a slow/wedged
+                # sendChatAction can never backpressure `feed_output` (PTY
+                # ingest also takes that lock — sharing it with a 3-35s HTTPS
+                # call was the actual root cause of "typing feels unstable").
+                # `_send_typing` itself throttles to 4s and fires per-uid in
+                # background threads, so this call returns ~immediately.
+                if slot.awaiting_response:
+                    self._send_typing(sid)
 
+                with slot.output_lock:
                     if slot.last_output_time == 0:
                         continue
                     if not slot.has_user_msg:
@@ -1323,6 +1360,15 @@ class TelegramBridge(BridgeBase):
                         slot.stall_warned = False
                         slot.awaiting_response = False  # response delivered, stop typing
                         slot.last_extraction_ts = now
+                        # Stash the extracted text for `sfctl history-audit`.
+                        # This is the ground-truth "what the AI actually said"
+                        # — anything Howard sees in scroll-up that contradicts
+                        # this is a buffer-fidelity bug we can now measure.
+                        extracted = '\n'.join(new_lines)
+                        slot.last_extracted_text = extracted
+                        slot.recent_extractions.append((now, extracted))
+                        if len(slot.recent_extractions) > 5:
+                            slot.recent_extractions = slot.recent_extractions[-5:]
                         # Notify user if shellframe isn't in front. Only fire
                         # when the slot was actively awaiting a response —
                         # otherwise late-arriving background output (status

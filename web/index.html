@@ -967,9 +967,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // _userScrolledUp during our own scrollToLine call (which was the cause of
   // the old "snapped back" bug).
   let _programmaticScroll = false;
+  const _pendingOutputBySid = {};
+  const PENDING_OUTPUT_CAP = 2 * 1024 * 1024;
+
+  function flushPendingOutput(sid) {
+    const queued = _pendingOutputBySid[sid];
+    if (!queued) return;
+    delete _pendingOutputBySid[sid];
+    window._pushOutput(sid, queued);
+  }
+
   window._pushOutput = function(sid, data) {
     const s = sessions[sid];
-    if (!s) return;
+    if (!s) {
+      const next = (_pendingOutputBySid[sid] || '') + data;
+      _pendingOutputBySid[sid] = next.length > PENDING_OUTPUT_CAP
+        ? next.slice(next.length - PENDING_OUTPUT_CAP)
+        : next;
+      return;
+    }
     const now = Date.now();
     s._lastOutputTs = now;
     if (!s._pushTimes) s._pushTimes = [];
@@ -1396,6 +1412,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
     sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
+    flushPendingOutput(sid);
     // Persist the preset's display name so it survives restart. Without
     // this the `label` is only kept in the in-memory `sessions[sid]`
     // map; on next launch restore_tmux_sessions reads from the
@@ -1501,6 +1518,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     renderTabs();
     } finally {
       _uiCreatingSession--;
+      if (_uiCreatingSession === 0 && _syncDeferred) {
+        _syncDeferred = false;
+        setTimeout(() => { syncSessionsFromBackend(); }, 0);
+      }
     }
   }
 
@@ -1529,6 +1550,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const label = cmd.split(/\s/)[0];
     sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
+    flushPendingOutput(sid);
     setupAttachKeyHandler(sid, term);
     term.onScroll(() => {
       if (_programmaticScroll) return; // don't reset during our own scrollToLine
@@ -2094,6 +2116,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       close();
       boundSid = sid || activeId;
       const fontSize = (opts && opts.fontSize) || currentFontSize || 13;
+      const source = (opts && opts.source) || '';
 
       // Mount inside #terminal-wrap — NOT document.body — so the sidebar
       // stays fully visible and interactive behind the overlay.
@@ -2111,7 +2134,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         'background:#16161e;color:#7aa2f7;font-size:11px;' +
         'display:flex;justify-content:space-between;align-items:center;flex:0 0 auto';
       const hint = document.createElement('span');
-      hint.textContent = '📜 History (deduped) — scroll to bottom, type, or Esc to return';
+      // Surface the capture source — `pyte (alt-screen)` means we pulled
+      // from pyte because the TUI is in alt-screen mode (Claude/Codex);
+      // `tmux (normal)` means the pane was on the normal screen so
+      // tmux's scrollback is authoritative. If Howard ever sees the
+      // wrong content again, the label tells us which buffer lied.
+      const sourceTag = source ? ` · source: ${source}` : '';
+      hint.textContent = '📜 History (deduped) — scroll to bottom, type, or Esc to return' + sourceTag;
       const closeBtn = document.createElement('button');
       closeBtn.textContent = '✕';
       closeBtn.style.cssText = 'background:none;border:1px solid #3b4261;color:#a9b1d6;' +
@@ -2233,7 +2262,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         _loading = false;
         try {
           const result = JSON.parse(res);
-          if (result.success) ScrollHistory.show(result.text, sid);
+          if (result.success) ScrollHistory.show(result.text, sid, { source: result.source });
         } catch (err) { /* ignore */ }
       }).catch(() => { _loading = false; });
     }, { passive: true });
@@ -3382,15 +3411,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // as "missing from frontend" and spawns a duplicate hidden-pane term via
   // reconnectSession — input gets split between two terms for the same sid
   // and the user can't type. Flag blocks sync for the ~100ms window; any
-  // genuinely-external session creation is picked up on the next interval
-  // poll (line 2881) or when the flag drops.
+  // genuinely-external session creation is picked up as soon as the guard
+  // drops.
   let _uiCreatingSession = 0;
+  let _syncDeferred = false;
 
   // Reconcile frontend session list with backend (catches sessions
   // created/closed via TG /new /close, sfctl, or any non-UI path).
   // Returns true if anything changed.
   async function syncSessionsFromBackend() {
-    if (_uiCreatingSession > 0) return false;
+    if (_uiCreatingSession > 0) {
+      _syncDeferred = true;
+      return false;
+    }
     try {
       const raw = await pywebview.api.list_sessions();
       const backend = JSON.parse(raw);
@@ -3438,6 +3471,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
   // Expose for Python to nudge after non-UI session changes (TG /new, sfctl, etc.)
   window._syncSessionsFromBackend = syncSessionsFromBackend;
+
+  // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
+  // missed while the WebView is busy or while Python creates a session from a
+  // background command watcher thread, so keep reconciliation periodic too.
+  setInterval(() => { syncSessionsFromBackend(); }, 1500);
 
   // Poll bridge status periodically
   setInterval(async () => {

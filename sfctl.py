@@ -277,6 +277,14 @@ def main():
     p_close = sub.add_parser("close", help="Close a session")
     p_close.add_argument("sid", help="Session id")
 
+    p_audit = sub.add_parser(
+        "history-audit",
+        help="Self-check: diff last AI reply vs scroll-up overlay content. "
+             "Dumps full snapshot to ~/.config/shellframe/diag/ for offline analysis.",
+    )
+    p_audit.add_argument("sid", nargs="?", default="",
+                         help="Session id (default: first session)")
+
     p_perm = sub.add_parser(
         "permissions",
         help="Pre-grant OS permissions (macOS Privacy panes + firewall; "
@@ -321,6 +329,8 @@ def main():
         _print_result(_rpc("rename", {"sid": args.sid, "name": args.name}))
     elif args.cmd == "close":
         _print_result(_rpc("close_session", {"sid": args.sid}))
+    elif args.cmd == "history-audit":
+        _print_result(_rpc("history_audit", {"sid": args.sid}, timeout=20))
     elif args.cmd == "permissions":
         _cmd_permissions(args)
     else:

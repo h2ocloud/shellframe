@@ -1008,23 +1008,65 @@ class Api:
         """Return scroll-back history for the overlay, with streaming
         redraw noise collapsed.
 
-        Strategy (revised — v0.11.40): tmux capture-pane is PRIMARY
-        because pyte's HistoryScreen only knows about bytes the bridge
-        has fed it, which means short conversations or sessions that
-        existed before the bridge started have almost nothing to scroll
-        through ("往上滑完全不會動"). tmux's pane scrollback always has
-        the full visible history. We pay for that with streaming redraw
-        noise, which the dedup heuristics below collapse aggressively.
+        Strategy (v0.11.60 — fixed "上滾看到不對的歷史"):
 
-        pyte path is kept as a fallback when tmux isn't available
-        (Windows / no-tmux build), and as a colour-free safety net for
-        weird captures where tmux returns nothing.
+        Claude Code / Codex / vim all enter the ALTERNATE screen buffer
+        via `\\x1b[?1049h` when they start their TUI. In alt-screen mode,
+        `tmux capture-pane -S -N` returns the NORMAL-screen scrollback —
+        i.e. whatever was on the terminal BEFORE the alt-screen was
+        entered, NOT the rows that just scrolled out of the alt-screen
+        viewport during the current long reply. So when a user's single
+        reply ran longer than one screen and they scrolled up to read the
+        beginning, the overlay would dutifully show the previous shell
+        prompt / unrelated history — Howard's exact complaint.
+
+        Fix: detect alt-screen via `#{alternate_on}` and switch source.
+        pyte's HistoryScreen, fed by the bridge directly from PTY bytes,
+        IS aware of alt-screen line-feeds (its `history.top` deque accrues
+        rows regardless of which buffer is active), so it has the actual
+        recent reply content. Outside alt-screen mode tmux is still
+        primary — pyte's 3000-row cap is smaller and it doesn't carry
+        styling.
         """
         s = self.sessions.get(sid)
         if not s or not getattr(s, '_tmux_name', None):
             # tmux unavailable — fall back to pyte if the bridge has a slot
             # for this session. Better than nothing on Windows / no-tmux.
             return self._pyte_fallback_response(sid)
+
+        # Probe alt-screen state. Cheap: a single `display-message`. If it
+        # fails (shouldn't, since we just verified _tmux_name) we proceed
+        # as if normal-screen — tmux capture is the safe default.
+        in_alt_screen = False
+        try:
+            r_alt = subprocess.run(
+                ["tmux", "display-message", "-p", "-t", s._tmux_name,
+                 "#{alternate_on}"],
+                capture_output=True, text=True, timeout=2,
+            )
+            in_alt_screen = (r_alt.stdout.strip() == "1")
+        except Exception:
+            pass
+
+        if in_alt_screen and self.bridge is not None:
+            try:
+                slot = self.bridge.slots.get(sid)
+            except Exception:
+                slot = None
+            if slot is not None and getattr(slot, 'screen', None) is not None:
+                try:
+                    text = self._pyte_history_text(slot)
+                except Exception:
+                    text = ""
+                if text and len(text) > 64:
+                    return json.dumps({
+                        "success": True,
+                        "text": text,
+                        "ansi": False,
+                        "source": "pyte (alt-screen)",
+                    })
+                # pyte empty/too-short → fall through to tmux. Better than
+                # blocking the overlay with "no history".
         try:
             cmd = ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name,
                    "-S", f"-{max_lines}"]
@@ -1144,9 +1186,211 @@ class Api:
                 "success": True,
                 "text": "\n".join(orig + reset for _, orig in final),
                 "ansi": ansi,
+                "source": f"tmux ({'normal' if not in_alt_screen else 'alt-fallback'})",
             })
         except Exception as e:
             return json.dumps({"success": False, "reason": str(e), "text": ""})
+
+    def history_audit(self, sid: str) -> str:
+        """Self-check for "上滾看到不對的歷史" bugs.
+
+        Compares four snapshots of the same session at the moment of
+        capture and writes the full set to disk so a follow-up Claude
+        invocation can reason about the discrepancy WITHOUT having to
+        guess what the user sees:
+
+          1. `last_extracted` — the AI reply we already sent to TG.
+             Ground truth: this is the text the bridge believes the AI
+             produced, derived from pyte's screen-diff extractor.
+          2. `tmux_cleaned` — what `get_clean_history` returns to the
+             scroll-up overlay (post-dedup).
+          3. `tmux_raw` — pre-dedup tmux capture-pane, ansi-stripped.
+             If something is missing from `tmux_cleaned` but present
+             here, the dedup logic is at fault.
+          4. `pyte_history` — pyte's own `history.top` rendered as text.
+             Independent source — if `tmux_raw` and `pyte_history`
+             disagree, the discrepancy points at tmux / pyte fidelity
+             rather than dedup.
+
+        Returns a JSON dict containing:
+          - `summary`: counts + verdict + path to the on-disk dump
+          - `missing_from_overlay`: reply lines that don't appear in the
+            tmux_cleaned text (these are exactly the "上滾找不到 reply 上半段"
+            cases Howard reported).
+          - `noise_in_overlay`: overlay lines that don't appear in
+            tmux_raw OR last_extracted — these are spurious entries the
+            dedup pass left behind.
+        """
+        import re as _re
+
+        s = self.sessions.get(sid)
+        if not s:
+            return json.dumps({"success": False, "message": f"no such session: {sid}"})
+
+        # 1. last_extracted from bridge slot
+        last_extracted = ""
+        last_extracted_ts = 0.0
+        if self.bridge is not None:
+            try:
+                slot = self.bridge.slots.get(sid)
+            except Exception:
+                slot = None
+            if slot is not None:
+                last_extracted = getattr(slot, "last_extracted_text", "") or ""
+                last_extracted_ts = getattr(slot, "last_extraction_ts", 0.0) or 0.0
+
+        # 2. tmux cleaned (what overlay shows)
+        tmux_cleaned = ""
+        tmux_cleaned_src = ""
+        try:
+            raw = self.get_clean_history(sid, max_lines=10000, ansi=False)
+            r = json.loads(raw) if isinstance(raw, str) else raw
+            if r.get("success"):
+                tmux_cleaned = r.get("text", "") or ""
+                tmux_cleaned_src = r.get("source", "")
+        except Exception as e:
+            tmux_cleaned_src = f"error: {e}"
+
+        # 3. tmux raw — bypass dedup so we can isolate where bytes go missing
+        tmux_raw = ""
+        if getattr(s, "_tmux_name", None):
+            try:
+                r_raw = subprocess.run(
+                    ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name,
+                     "-S", "-10000"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r_raw.returncode == 0:
+                    tmux_raw = self._ANSI_STRIP_RE.sub('', r_raw.stdout)
+            except Exception:
+                pass
+
+        # 4. pyte history (independent path)
+        pyte_text = ""
+        if self.bridge is not None:
+            try:
+                slot = self.bridge.slots.get(sid)
+            except Exception:
+                slot = None
+            if slot is not None and getattr(slot, "screen", None) is not None:
+                try:
+                    pyte_text = self._pyte_history_text(slot)
+                except Exception:
+                    pass
+
+        # Normalise for comparison — collapse whitespace runs, drop empty.
+        def _norm_lines(text):
+            out = []
+            for line in (text or "").splitlines():
+                norm = _re.sub(r"\s+", " ", line).strip()
+                if norm:
+                    out.append(norm)
+            return out
+
+        reply_lines = _norm_lines(last_extracted)
+        overlay_lines = _norm_lines(tmux_cleaned)
+        raw_lines = _norm_lines(tmux_raw)
+
+        overlay_set = set(overlay_lines)
+        raw_set = set(raw_lines)
+        reply_set = set(reply_lines)
+
+        # Missing: lines in last_extracted not present anywhere in overlay.
+        # We accept partial containment (reply line is a substring of an
+        # overlay line) so wrapped/reflowed rows don't false-flag.
+        def _present_anywhere(line, bucket):
+            if line in bucket:
+                return True
+            for cand in bucket:
+                if line and (line in cand or cand in line) and len(line) > 6:
+                    return True
+            return False
+
+        missing_from_overlay = [
+            l for l in reply_lines
+            if not _present_anywhere(l, overlay_set)
+        ]
+        # Noise: overlay lines that don't trace back to reply OR raw tmux
+        # bytes. Anything not in raw_set is definitely not from the live
+        # session — likely cross-tab bleed or stale capture state.
+        noise_in_overlay = [
+            l for l in overlay_lines
+            if not _present_anywhere(l, raw_set) and not _present_anywhere(l, reply_set)
+        ]
+
+        # Dump everything to disk so a later debugging pass can re-analyse
+        # without re-running the user's session. Filename embeds sid + ts
+        # so successive audits are kept side-by-side instead of overwriting.
+        diag_dir = Path.home() / ".config" / "shellframe" / "diag"
+        try:
+            diag_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        ts_tag = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+        dump_path = diag_dir / f"history-audit_{sid}_{ts_tag}.txt"
+        try:
+            with open(dump_path, "w", encoding="utf-8") as f:
+                f.write(f"# history_audit  sid={sid}  ts={ts_tag}\n")
+                f.write(f"# tmux_cleaned source: {tmux_cleaned_src}\n")
+                f.write(f"# last_extracted_ts: {last_extracted_ts}\n")
+                f.write(f"# counts: reply={len(reply_lines)} "
+                        f"overlay={len(overlay_lines)} raw={len(raw_lines)} "
+                        f"pyte_chars={len(pyte_text)}\n")
+                f.write(f"# missing_from_overlay={len(missing_from_overlay)} "
+                        f"noise_in_overlay={len(noise_in_overlay)}\n\n")
+                f.write("===== LAST_EXTRACTED (reply ground-truth) =====\n")
+                f.write(last_extracted + "\n\n")
+                f.write("===== TMUX_CLEANED (overlay returns this) =====\n")
+                f.write(tmux_cleaned + "\n\n")
+                f.write("===== TMUX_RAW (pre-dedup) =====\n")
+                f.write(tmux_raw + "\n\n")
+                f.write("===== PYTE_HISTORY =====\n")
+                f.write(pyte_text + "\n\n")
+                f.write("===== MISSING_FROM_OVERLAY (reply lines not found in overlay) =====\n")
+                for l in missing_from_overlay:
+                    f.write("  - " + l + "\n")
+                f.write("\n===== NOISE_IN_OVERLAY (overlay lines not in raw OR reply) =====\n")
+                for l in noise_in_overlay:
+                    f.write("  - " + l + "\n")
+        except Exception as e:
+            return json.dumps({"success": False, "message": f"dump failed: {e}"})
+
+        verdict_parts = []
+        if missing_from_overlay:
+            verdict_parts.append(
+                f"BUG: {len(missing_from_overlay)} reply line(s) not found in "
+                f"scroll-up overlay — '上滾找不到 reply' confirmed."
+            )
+        if noise_in_overlay:
+            verdict_parts.append(
+                f"BUG: {len(noise_in_overlay)} overlay line(s) match neither raw tmux "
+                f"nor reply — spurious content surfacing."
+            )
+        if not verdict_parts:
+            if not last_extracted:
+                verdict_parts.append(
+                    "Inconclusive — no extracted reply on slot yet. "
+                    "Send a message, wait for AI reply to land, then re-run."
+                )
+            else:
+                verdict_parts.append("Overlay is consistent with reply + raw bytes.")
+
+        return json.dumps({
+            "success": True,
+            "message": " ".join(verdict_parts),
+            "details": {
+                "dump_path": str(dump_path),
+                "tmux_source": tmux_cleaned_src,
+                "reply_lines": len(reply_lines),
+                "overlay_lines": len(overlay_lines),
+                "raw_lines": len(raw_lines),
+                "pyte_chars": len(pyte_text),
+                "missing_count": len(missing_from_overlay),
+                "noise_count": len(noise_in_overlay),
+                "missing_sample": missing_from_overlay[:5],
+                "noise_sample": noise_in_overlay[:5],
+            },
+        })
 
     def _pyte_fallback_response(self, sid: str) -> str:
         """Build a get_clean_history response from the bridge's pyte slot
@@ -1164,7 +1408,10 @@ class Api:
         except Exception:
             text = ""
         if text and text.strip():
-            return json.dumps({"success": True, "text": text, "ansi": False})
+            return json.dumps({
+                "success": True, "text": text, "ansi": False,
+                "source": "pyte (no-tmux)",
+            })
         return json.dumps({"success": False, "reason": "no history", "text": ""})
 
     def enter_scroll_history(self, sid: str) -> str:
@@ -2470,6 +2717,21 @@ class Api:
                 return {"success": False, "message": "Rename failed"}
             except Exception as e:
                 return {"success": False, "message": f"Rename failed: {e}"}
+
+        elif cmd == "history_audit":
+            try:
+                sid = args.get("sid", "")
+                if not sid:
+                    if self.bridge and self.bridge.slots:
+                        sid = next(iter(self.bridge.slots))
+                    elif self.sessions:
+                        sid = next(iter(self.sessions))
+                if not sid:
+                    return {"success": False, "message": "no sessions"}
+                raw = self.history_audit(sid)
+                return json.loads(raw) if isinstance(raw, str) else raw
+            except Exception as e:
+                return {"success": False, "message": f"history_audit failed: {e}"}
 
         elif cmd == "do_update":
             try:
