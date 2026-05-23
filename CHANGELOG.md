@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.63 (2026-05-23)
+
+### Fixes
+- **False Telegram "Bot conflict" warnings after `sfctl reload`** — hot-reload stops the old bridge and immediately starts the new one. The old poll thread can still be inside Telegram's 30s `getUpdates` long-poll; when the new poller starts, Telegram terminates the old request with HTTP 409. The stopped old thread then interpreted that expected shutdown race as a real external conflict and pushed a scary warning to TG. Fix: after every `getUpdates` return, the poll loop checks `stop_event`/`active` before processing the result, and `stop()` briefly joins the poll thread to shrink the overlap window.
+
+### 修正
+- **`sfctl reload` 後誤報 Telegram「Bot conflict」** — hot-reload 會停舊 bridge 並立刻啟新 bridge；舊 poll thread 可能還卡在 Telegram 30 秒 `getUpdates` long-poll。新 poller 一啟動，Telegram 會用 HTTP 409 結束舊 request。已經 stop 的舊 thread 卻把這個正常 shutdown race 當成外部 poller 衝突，推一則嚇人的警告到 TG。修法：每次 `getUpdates` 回來後先檢查 `stop_event` / `active`，已停止就直接退出；`stop()` 也短暫 join poll thread，縮短重疊窗口。
+
 ## v0.11.62 (2026-05-23)
 
 ### Fixes

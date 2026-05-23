@@ -546,6 +546,8 @@ class TelegramBridge(BridgeBase):
         self.active = False
         self._stop_event.set()
         self.connected = False
+        if self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=2.0)
         self._emit_status({"state": "stopped"})
 
     def _set_bot_commands(self):
@@ -1658,6 +1660,8 @@ class TelegramBridge(BridgeBase):
                     "timeout": 30,
                     "allowed_updates": ["message", "callback_query"],
                 })
+                if self._stop_event.is_set() or not self.active:
+                    break
                 # Mark liveness regardless of ok — we at least got a network round-trip
                 self._last_poll_tick = time.time()
                 if not result.get("ok"):
