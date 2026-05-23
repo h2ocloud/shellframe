@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.62 (2026-05-23)
+
+### Fixes
+- **TG bridge could treat ShellFrame's own TG preamble bullets as Codex replies** — Codex renders long prompts as a first `› ...` line plus indented continuation lines. ShellFrame's TG preamble contains bullet items (`• sfctl reload`, `• sfctl restart`), and `_extract_new_text()` stripped indentation before checking `AI_MARKERS`, so those prompt bullets were misread as assistant output. The result was noisy Telegram replies containing `Straightforward asks...`, `Bash(...)`, `Noodling`, `auto mode on`, and other TUI/tool status. Fix: only accept `•` / `⏺` as AI markers when they start at column 0, and drop known ShellFrame preamble/tool/status lines from fallback previews.
+
+### 修正
+- **TG bridge 會把 ShellFrame 自己的 TG preamble bullet 誤判成 Codex 回覆** — Codex 長 prompt 會渲染成第一行 `› ...` 加上縮排 continuation。ShellFrame 的 TG preamble 裡剛好有 bullet（`• sfctl reload`、`• sfctl restart`），而 `_extract_new_text()` 先 strip 縮排再判斷 `AI_MARKERS`，所以 prompt 裡的 bullet 被當成 assistant reply 起點。結果 TG 會送出 `Straightforward asks...`、`Bash(...)`、`Noodling`、`auto mode on` 等雜訊。修法：只有第 0 欄的 `•` / `⏺` 才算 AI marker，並在 fallback preview 補濾 ShellFrame preamble / tool / status 行。
+
 ## v0.11.61 (2026-05-22)
 
 ### Adds

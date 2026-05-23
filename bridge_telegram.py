@@ -910,6 +910,53 @@ class TelegramBridge(BridgeBase):
             return True
         return False
 
+    @staticmethod
+    def _ai_marker_prefix(line: str) -> str:
+        """Return the AI marker only when it starts at column 0.
+
+        Codex echoes TG prompts as a wrapped terminal prompt. Continuation
+        lines are indented, so bullet-list items from ShellFrame's TG
+        preamble look like "  • `sfctl reload` ..." after rendering. If we
+        strip indentation before marker detection, those prompt bullets are
+        misread as assistant replies and the bridge forwards the preamble
+        plus tool/status noise back to Telegram.
+        """
+        if line != line.lstrip():
+            return ""
+        for marker in TelegramBridge.AI_MARKERS:
+            if line.startswith(marker):
+                return marker
+        return ""
+
+    @staticmethod
+    def _is_bridge_noise_line(text: str) -> bool:
+        """Drop ShellFrame/TG prompt echoes and Codex TUI status/tool lines."""
+        s = (text or "").strip()
+        if not s:
+            return True
+        lower = s.lower()
+        if (
+            lower.startswith("[tg] replying to telegram mobile")
+            or lower.startswith("you can self-modify shellframe")
+            or lower.startswith("asked. apply changes with:")
+            or lower.startswith("straightforward asks")
+            or lower.startswith("bump `version.json`")
+            or "hot-reload bridge_telegram.py" in lower
+            or "full restart for main.py" in lower
+        ):
+            return True
+        if re.match(r'^[A-Z][\w\s]*\(.+\)$', s):
+            return True
+        if re.match(r'^(?:\.\.\. )?\+\d+\s+lines?\s+\(ctrl[+ ]o to expand\)', lower):
+            return True
+        if re.search(r'\b(?:auto mode on|esc to interrupt|shift\+tab to cycle)\b', lower):
+            return True
+        if re.search(r'\b(?:thought|thinking) for \d+s\b', lower):
+            return True
+        if s.startswith(('└', '╰', '⎿')):
+            return True
+        return False
+
     def _extract_new_text(self, slot):
         """Scan screen + scrollback history for AI responses not yet sent.
 
@@ -941,7 +988,6 @@ class TelegramBridge(BridgeBase):
 
         for line in all_lines:
             stripped = line.rstrip().strip()
-            raw_lstripped = line.lstrip()
 
             # Skip spinner/status lines (6 spinner chars from Claude Code source)
             if any(stripped.startswith(s) for s in ('✻ ', '✢ ', '✳ ', '∗ ', '✽ ', '· ')):
@@ -966,14 +1012,13 @@ class TelegramBridge(BridgeBase):
 
             # Check for AI response marker — starts a new block
             marker_hit = False
-            for marker in self.AI_MARKERS:
-                if stripped.startswith(marker):
-                    # If we were already collecting, save that block first
-                    if current_block is not None:
-                        blocks.append(current_block)
-                    current_block = [stripped[len(marker):].strip()]
-                    marker_hit = True
-                    break
+            marker = self._ai_marker_prefix(line.rstrip())
+            if marker:
+                # If we were already collecting, save that block first
+                if current_block is not None:
+                    blocks.append(current_block)
+                current_block = [stripped[len(marker):].strip()]
+                marker_hit = True
 
             if marker_hit:
                 continue
@@ -1001,6 +1046,7 @@ class TelegramBridge(BridgeBase):
             # Remove decoration lines and tool result lines within block
             block_lines = [l for l in block_lines if not (
                 (l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)) or
+                self._is_bridge_noise_line(l) or
                 l.strip().startswith('⎿') or
                 l.strip().startswith('Sources:') or
                 l.strip().startswith('- http')
@@ -1193,13 +1239,12 @@ class TelegramBridge(BridgeBase):
 
             # Check all AI markers
             marker_hit = False
-            for marker in self.AI_MARKERS:
-                if stripped.startswith(marker):
-                    if current_block is not None:
-                        blocks.append(current_block)
-                    current_block = [stripped[len(marker):].strip()]
-                    marker_hit = True
-                    break
+            marker = self._ai_marker_prefix(line.rstrip())
+            if marker:
+                if current_block is not None:
+                    blocks.append(current_block)
+                current_block = [stripped[len(marker):].strip()]
+                marker_hit = True
             if not marker_hit and current_block is not None:
                 current_block.append(stripped)
 
@@ -1214,7 +1259,8 @@ class TelegramBridge(BridgeBase):
             while last and not last[0]:
                 last.pop(0)
             last = [l for l in last if not (
-                l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)
+                (l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)) or
+                self._is_bridge_noise_line(l)
             )]
             text = '\n'.join(last).strip()
             if text and text not in self._FILTERED_RESPONSES and not self._is_tool_call(last[0].strip() if last else ""):
@@ -1251,6 +1297,8 @@ class TelegramBridge(BridgeBase):
             first_word = stripped.split('…')[0].split('(')[0].split(' ')[0].rstrip('.')
             if first_word in self._SPINNER_VERBS:
                 continue
+            if self._is_bridge_noise_line(stripped):
+                continue
             # Skip prompt-only lines (› / ❯ alone)
             if stripped in ('›', '❯', '> ', '>'):
                 continue
@@ -1258,10 +1306,9 @@ class TelegramBridge(BridgeBase):
             if stripped.startswith(('? for shortcuts', 'esc to ', '⏵⏵ accept')):
                 continue
             # Drop AI markers (• / ⏺) prefix and › prompt prefix to clean output
-            for marker in self.AI_MARKERS:
-                if stripped.startswith(marker):
-                    stripped = stripped[len(marker):].strip()
-                    break
+            marker = self._ai_marker_prefix(line.rstrip())
+            if marker:
+                stripped = stripped[len(marker):].strip()
             if stripped.startswith('› '):
                 stripped = stripped[2:]
             elif stripped.startswith('❯ '):
