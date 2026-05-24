@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.11.67 (2026-05-24)
+
+### Fixes
+- **Telegram approval menus for CLI action prompts** — when Claude/Codex shows a numbered approval / action-required prompt, ShellFrame now sends it to Telegram as inline buttons. Tapping a button writes the selected number back into the correct session, so Howard can resolve approvals from mobile without typing raw digits.
+- **Red pending-decision dot survives UI re-render** — tabs and sidebar now preserve the `attention` dot class during render, and the screen scanner detects Codex `Action Required` / `Would you like to run...` prompts in addition to Claude-style `❯ 1.` menus.
+- **Codex preset path is absolute** — the built-in Codex preset now uses ShellFrame's absolute `bin/sf-codex` path instead of a literal `~`, and existing saved presets / session manifests are normalized on startup.
+- **Codex launch flags no longer conflict** — the preset no longer combines `--dangerously-bypass-approvals-and-sandbox` with `-a never`, which newer Codex rejects before the TUI can start.
+- **Failed tmux creates no longer leave fake tabs** — if tmux cannot create the backend session, ShellFrame logs the real error and the web UI removes the temporary pane instead of persisting a dead tab.
+
+### 修正
+- **TG 顯示 CLI 待決策選單** — Claude/Codex 出現 numbered approval / action-required prompt 時，ShellFrame 會把它轉成 Telegram inline buttons。手機點按鈕就會把對應數字送回正確 session，不用手打 `1/2/3`。
+- **紅色待決策點不再被 UI 重繪吃掉** — tab/sidebar render 會保留 `attention` class；screen scanner 也補上 Codex 的 `Action Required` / `Would you like to run...` 偵測。
+- **Codex preset 改用絕對路徑** — 內建 Codex preset 不再把 literal `~` 丟給 tmux，既有 saved preset / session manifest 會在啟動時自動修正。
+- **Codex 啟動參數不再互斥** — preset 不再同時放 `--dangerously-bypass-approvals-and-sandbox` 和 `-a never`，新版 Codex 會直接拒絕這種組合、導致 TUI 還沒啟動就退出。
+- **tmux 建立失敗不再留下假 tab** — backend session 建不起來時會記錄真實錯誤，web UI 也會移除暫時 pane，不再把死掉的 tab 寫進設定。
+
 ## v0.11.66 (2026-05-24)
 
 ### Fixes

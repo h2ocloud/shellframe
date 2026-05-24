@@ -1409,7 +1409,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     attachFileLinkProvider(term);
     attachSelectionAutoScroll(term, pane);
 
-    const sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
+    let sid = '';
+    try {
+      sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
+    } catch (e) {
+      const detail = e && (e.message || String(e)) || 'unknown error';
+      term.write(`\r\n\x1b[31m[failed to create session]\x1b[0m ${detail}\r\n`);
+      setTimeout(() => {
+        pane.remove();
+        if (activeId && sessions[activeId]) sessions[activeId].pane.classList.add('active');
+      }, 3500);
+      return;
+    }
+    if (!sid) {
+      term.write('\r\n\x1b[31m[failed to create session]\x1b[0m backend returned no session id\r\n');
+      setTimeout(() => {
+        pane.remove();
+        if (activeId && sessions[activeId]) sessions[activeId].pane.classList.add('active');
+      }, 3500);
+      return;
+    }
     sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
@@ -1704,7 +1723,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const numLabel = tgNum ? tgNum : '·';
       const numOpacity = tgNum ? '.45' : '.2';
       tab.innerHTML = `
-        <span class="busy-dot${s._busy ? ' on' : ''}"></span>
+        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(s.label)}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
@@ -1776,7 +1795,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.dataset.sid = sid;
       el.dataset.section = 'on';
       el.innerHTML =
-        `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
+        `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
         (hasBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         (hasBridge ? `<span class="sb-tg on${isActiveTg ? ' active-tg' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '');
@@ -1799,7 +1818,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         el.dataset.sid = sid;
         el.dataset.section = 'off';
         el.innerHTML =
-          `<span class="busy-dot${s._busy ? ' on' : ''}"></span>` +
+          `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
           `<span class="sb-tg" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
@@ -3531,6 +3550,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Permission / menu prompt markers (waiting for user input)
   const ATTENTION_MARKERS = [
     /❯\s*\d+\.\s/,
+    /(?:^|\n)\s*\d+\.\s+(?:Yes|No|Allow|Cancel|Proceed|Run|Deny|Approve)/i,
+    /Action Required/i,
+    /Would you like to run/i,
+    /Do you want to (?:allow|run|proceed)/i,
+    /approval required/i,
     /Esc to cancel/i,
   ];
 

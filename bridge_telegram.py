@@ -345,6 +345,7 @@ class SessionSlot:
         self.sent_texts = []
         self.has_user_msg = False
         self.pending_menu = False  # True if last extract found a menu prompt
+        self.pending_menu_options = []  # [{"num": "1", "text": "..."}]
         self.awaiting_response = False  # True between user msg and first AI response extraction
         self.last_extraction_ts = 0.0   # time of last successful response extraction
         # Throttle for sendChatAction. TG keeps the typing bubble alive ~5s,
@@ -1153,33 +1154,45 @@ class TelegramBridge(BridgeBase):
                 new_texts.append(menu)
         else:
             slot.pending_menu = False
+            slot.pending_menu_options = []
 
         return new_texts
 
     def _detect_menu_prompt(self, slot) -> str:
         """Detect a numbered menu prompt waiting for user input.
         Returns formatted menu string or empty if none found."""
-        # Scan current screen for consecutive "N. xxx" lines (with optional ❯ cursor)
-        # Cursor ❯ may be on any line, not just the first
+        # Scan current screen for consecutive "N. xxx" lines (with optional ❯ cursor).
+        # Cursor ❯ may be on any line, not just the first. Codex/Claude both
+        # use this shape for approval / action-required prompts.
         lines = [l.rstrip() for l in slot.screen.display]
+        screen_text = "\n".join(lines)
         menu_lines = []
+        menu_options = []
         for line in lines:
             # Strip leading ❯/› cursor markers and whitespace
             stripped = line.lstrip().lstrip('❯›').lstrip()
             # Match "N. xxx" or "N) xxx"
             m = re.match(r'^(\d+)[\.\)]\s+(.+)$', stripped)
             if m:
-                menu_lines.append(f"{m.group(1)}. {m.group(2)}")
+                num, label = m.group(1), m.group(2).strip()
+                menu_lines.append(f"{num}. {label}")
+                menu_options.append({"num": num, "text": label})
             elif menu_lines:
                 # Hit end markers — stop collecting
                 if 'Esc to cancel' in line or 'Tab to' in line or not line.strip():
                     if len(menu_lines) >= 2:
                         break
                 # Non-menu line in middle — reset (false positive)
-                if line.strip() and not re.search(r'esc|cancel|tab', line, re.I):
+                if line.strip() and not re.search(r'esc|cancel|tab|enter', line, re.I):
                     menu_lines = []
+                    menu_options = []
         if len(menu_lines) >= 2:
-            return "❓ Choose an option:\n" + "\n".join(menu_lines) + "\n\nReply with the number (1, 2, ...)"
+            slot.pending_menu_options = menu_options
+            is_action = re.search(r'Action Required|Would you like|Do you want|approval|approve|permission',
+                                  screen_text, re.I)
+            title = "待決策：請選一個動作" if is_action else "請選一個選項"
+            return f"❓ {title}\n" + "\n".join(menu_lines)
+        slot.pending_menu_options = []
         return ""
 
     @staticmethod
@@ -1445,6 +1458,12 @@ class TelegramBridge(BridgeBase):
                     continue
 
                 clean = '\n'.join(new_lines)
+                is_menu_prompt = bool(
+                    slot.pending_menu
+                    and new_lines
+                    and len(new_lines) == 1
+                    and new_lines[0].startswith("❓ ")
+                )
 
                 # Detect file paths in response for TG file sending
                 file_paths = self._extract_file_paths(clean)
@@ -1468,13 +1487,47 @@ class TelegramBridge(BridgeBase):
                             target_chats.add(chat_id)
 
                 for chat_id in target_chats:
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id,
-                        "text": msg,
-                    })
+                    if is_menu_prompt:
+                        self._send_choice_menu(chat_id, slot, msg)
+                    else:
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": msg,
+                        })
                     # Send detected files as documents
                     for fp in file_paths:
                         self._send_tg_file(chat_id, fp)
+
+    def _send_choice_menu(self, chat_id: int, slot, text: str):
+        """Send a detected CLI approval/menu prompt as Telegram inline buttons."""
+        options = list(getattr(slot, 'pending_menu_options', []) or [])
+        if not options:
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": text + "\n\n回覆數字也可以。",
+            })
+            return
+        keyboard = []
+        row = []
+        for opt in options[:9]:
+            num = str(opt.get("num", "")).strip()
+            label = str(opt.get("text", "")).strip()
+            if not num:
+                continue
+            btn_text = f"{num}. {label}"
+            if len(btn_text) > 48:
+                btn_text = btn_text[:45] + "..."
+            row.append({"text": btn_text, "callback_data": f"choice:{slot.sid}:{num}"})
+            if len(row) == 1:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        tg_api(self.config.bot_token, "sendMessage", {
+            "chat_id": chat_id,
+            "text": text,
+            "reply_markup": {"inline_keyboard": keyboard},
+        })
 
     # ── File detection & sending ──
 
@@ -2250,6 +2303,43 @@ class TelegramBridge(BridgeBase):
                 self._user_chat[user_id] = chat_id
                 self._apply_update(chat_id)
                 return
+
+        if data.startswith("choice:"):
+            parts = data.split(":", 2)
+            if len(parts) < 3:
+                return
+            sid, choice = parts[1], parts[2]
+            slot = self.slots.get(sid)
+            if not slot:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "Session already gone.",
+                })
+                return
+            self._user_chat[user_id] = chat_id
+            self._user_active[user_id] = sid
+            self._default_active_sid = sid
+            slot.pending_menu = False
+            slot.pending_menu_options = []
+            try:
+                slot.write_fn(f"{choice}\r")
+                slot.has_user_msg = True
+                slot.awaiting_response = True
+                slot.last_write_ts = time.time()
+                slot.stall_warned = False
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": f"已送出選項 {choice} → [{slot.label}]",
+                })
+            except Exception as e:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": f"❌ Send failed: {e}",
+                })
+            self._save_state()
+            return
 
     def _apply_update(self, chat_id: int):
         """Pull + restart if needed. Shared by /update inline button and the

@@ -55,6 +55,10 @@ AI_CLI_TOOLS = {"claude", "codex", "sf-codex", "aider", "cursor", "copilot", "go
 APP_DIR = Path(__file__).parent
 VERSION_FILE = APP_DIR / "version.json"
 REPO_URL = "https://raw.githubusercontent.com/h2ocloud/shellframe/main/version.json"
+SHELLFRAME_CODEX_CMD = (
+    f"{APP_DIR / 'bin' / 'sf-codex'} "
+    "--dangerously-bypass-approvals-and-sandbox --search --no-alt-screen"
+)
 
 CONFIG_DIR = Path.home() / ".config" / "shellframe"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -72,7 +76,7 @@ DEFAULT_CONFIG = {
         # in the new session, which is clear enough — no need to gate on a
         # which-check at config-build time.
         {"name": "Claude", "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions", "icon": "\U0001F680"},   # 🚀
-        {"name": "Codex",  "cmd": "~/.local/apps/shellframe/bin/sf-codex --dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen",  "icon": "\U0001F916"},   # 🤖
+        {"name": "Codex",  "cmd": SHELLFRAME_CODEX_CMD,  "icon": "\U0001F916"},   # 🤖
     ],
     "settings": {
         "fontSize": 14,
@@ -83,12 +87,12 @@ DEFAULT_CONFIG = {
 
 _DEFAULT_AI_PRESETS = [
     {"name": "Claude", "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions", "icon": "\U0001F680"},
-    {"name": "Codex",  "cmd": "~/.local/apps/shellframe/bin/sf-codex --dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen",  "icon": "\U0001F916"},
+    {"name": "Codex",  "cmd": SHELLFRAME_CODEX_CMD,  "icon": "\U0001F916"},
 ]
 
 _AUTONOMOUS_PRESET_CMDS = {
     "claude": "claude --permission-mode bypassPermissions --dangerously-skip-permissions",
-    "codex": "~/.local/apps/shellframe/bin/sf-codex --dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen",
+    "codex": SHELLFRAME_CODEX_CMD,
 }
 
 
@@ -96,6 +100,22 @@ def _autonomous_cmd(cmd: str) -> str:
     """Upgrade old bare AI commands to ShellFrame's low-friction launchers."""
     stripped = (cmd or "").strip()
     return _AUTONOMOUS_PRESET_CMDS.get(stripped, cmd)
+
+
+def _canonical_cmd(cmd: str) -> str:
+    cmd = _normalize_dashes(cmd or "")
+    old_codex = "~/.local/apps/shellframe/bin/sf-codex"
+    home_codex = str(Path.home() / ".local" / "apps" / "shellframe" / "bin" / "sf-codex")
+    app_codex = str(APP_DIR / "bin" / "sf-codex")
+    if cmd.startswith(old_codex):
+        cmd = app_codex + cmd[len(old_codex):]
+    if cmd.startswith(home_codex) and home_codex != app_codex:
+        cmd = app_codex + cmd[len(home_codex):]
+    if cmd.startswith(app_codex) and "--dangerously-bypass-approvals-and-sandbox" in cmd:
+        cmd = re.sub(r"\s+-a\s+never(?=\s|$)", "", cmd)
+        cmd = re.sub(r"\s+--ask-for-approval(?:=|\s+)never(?=\s|$)", "", cmd)
+        return cmd
+    return _autonomous_cmd(cmd)
 
 _DASH_RE = re.compile(r'(^|\s)[—–](?=\S)')
 
@@ -157,12 +177,12 @@ def load_config():
         if not cfg.get("_autonomous_ai_presets_v1"):
             changed = False
             for p in cfg.get("presets", []) or []:
-                upgraded = _autonomous_cmd(p.get("cmd") or "")
+                upgraded = _canonical_cmd(p.get("cmd") or "")
                 if upgraded != p.get("cmd"):
                     p["cmd"] = upgraded
                     changed = True
             for entry in (cfg.get("session_manifest") or []):
-                upgraded = _autonomous_cmd(entry.get("cmd") or "")
+                upgraded = _canonical_cmd(entry.get("cmd") or "")
                 if upgraded != entry.get("cmd"):
                     entry["cmd"] = upgraded
                     changed = True
@@ -172,6 +192,24 @@ def load_config():
                     save_config(cfg)
                 except Exception:
                     pass
+        # Ongoing cleanup for installs that already passed the one-shot
+        # migration while the Codex preset still used a literal "~" path.
+        changed = False
+        for p in cfg.get("presets", []) or []:
+            upgraded = _canonical_cmd(p.get("cmd") or "")
+            if upgraded != p.get("cmd"):
+                p["cmd"] = upgraded
+                changed = True
+        for entry in (cfg.get("session_manifest") or []):
+            upgraded = _canonical_cmd(entry.get("cmd") or "")
+            if upgraded != entry.get("cmd"):
+                entry["cmd"] = upgraded
+                changed = True
+        if changed:
+            try:
+                save_config(cfg)
+            except Exception:
+                pass
         return cfg
     return DEFAULT_CONFIG.copy()
 
@@ -371,13 +409,18 @@ class Session:
             # don't think the user wants to work on shellframe internals.
             # The init-prompt still tells the AI "shellframe source lives
             # at ~/.local/apps/shellframe/" if it's asked to self-modify.
-            subprocess.run([
+            result = subprocess.run([
                 "tmux", "new-session", "-d",
                 "-s", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
                 "-c", _session_cwd(),
                 self.cmd,
             ], capture_output=True, timeout=5)
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or b"").decode("utf-8", errors="replace").strip()
+                _dlog("lifecycle", f"tmux new-session failed name={self._tmux_name} cmd={self.cmd!r} error={detail!r}")
+                self.alive = False
+                raise RuntimeError(f"tmux failed to create session {self._tmux_name}: {detail or 'unknown error'}")
             # Store original command in tmux environment for recovery
             subprocess.run([
                 "tmux", "set-environment", "-t", self._tmux_name,
@@ -708,7 +751,7 @@ class Api:
                     disabled.discard(sid)
                 entry = {
                     "sid": sid,
-                    "cmd": _autonomous_cmd(s.cmd),
+                    "cmd": _canonical_cmd(s.cmd),
                     "tmux_name": getattr(s, '_tmux_name', None) or "",
                     "bridge_enabled": bool(bridge_enabled),
                     "order": idx,
@@ -784,7 +827,7 @@ class Api:
                 tmux_name = info["name"]
                 sid = self._resolve_tmux_sid(info, cfg)
                 entry = manifest_by_sid.get(sid) or manifest_by_tmux.get(tmux_name) or {}
-                cmd = _autonomous_cmd(info["cmd"] or entry.get("cmd") or "bash")
+                cmd = _canonical_cmd(info["cmd"] or entry.get("cmd") or "bash")
                 if sid in self.sessions:
                     continue  # already attached
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
@@ -812,7 +855,7 @@ class Api:
         soft_list = sorted(soft_list, key=lambda e: order_index.get(str(e.get("sid")), e.get("order", 9999)))
         for entry in soft_list:
             sid = entry.get("sid", "")
-            cmd = _autonomous_cmd(entry.get("cmd", ""))
+            cmd = _canonical_cmd(entry.get("cmd", ""))
             if not sid or not cmd or sid in self.sessions:
                 continue
             try:
@@ -950,7 +993,7 @@ class Api:
         return json.dumps(result)
 
     def new_session(self, cmd: str, cols: int, rows: int) -> str:
-        cmd = _normalize_dashes(cmd)
+        cmd = _canonical_cmd(cmd)
         self._counter += 1
         sid = f"s{self._counter}"
         _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows}")
@@ -2681,6 +2724,7 @@ class Api:
                             'sent_texts': list(getattr(slot, 'sent_texts', []) or []),
                             'sent_responses': set(getattr(slot, 'sent_responses', set()) or []),
                             'pending_menu': bool(getattr(slot, 'pending_menu', False)),
+                            'pending_menu_options': list(getattr(slot, 'pending_menu_options', []) or []),
                         }
                     except Exception:
                         pass
@@ -2734,6 +2778,7 @@ class Api:
                     slot.sent_texts = list(snap.get('sent_texts', []))
                     slot.sent_responses = set(snap.get('sent_responses', set()))
                     slot.pending_menu = bool(snap.get('pending_menu', False))
+                    slot.pending_menu_options = list(snap.get('pending_menu_options', []))
                 self.bridge.start()
                 return json.dumps({"success": True, "message": "Bridge reloaded and restarted", **self.bridge.get_status()})
             else:
@@ -2790,30 +2835,52 @@ class Api:
     def _start_command_watcher(self):
         """Watch for commands from sfctl CLI (file-based IPC)."""
         def watcher():
+            _dlog("sfctl", f"watcher started cmd_file={self._CMD_FILE}")
             while True:
-                time.sleep(0.5)
-                if not os.path.exists(self._CMD_FILE):
-                    continue
                 try:
-                    with open(self._CMD_FILE, encoding='utf-8') as f:
-                        cmd_data = json.load(f)
-                    os.unlink(self._CMD_FILE)
-                except (json.JSONDecodeError, IOError, OSError):
-                    continue
+                    time.sleep(0.5)
+                    if not os.path.exists(self._CMD_FILE):
+                        continue
+                    try:
+                        with open(self._CMD_FILE, encoding='utf-8') as f:
+                            cmd_data = json.load(f)
+                        os.unlink(self._CMD_FILE)
+                    except (json.JSONDecodeError, IOError, OSError) as e:
+                        _dlog("sfctl", f"failed reading cmd: {e}")
+                        continue
 
-                # Ignore stale commands (older than 30s)
-                if time.time() - cmd_data.get("ts", 0) > 30:
-                    continue
+                    # Ignore stale commands (older than 30s)
+                    if time.time() - cmd_data.get("ts", 0) > 30:
+                        _dlog("sfctl", f"ignored stale cmd={cmd_data.get('cmd')!r}")
+                        continue
 
-                cmd = cmd_data.get("cmd", "")
-                args = cmd_data.get("args", {})
-                result = self._execute_sfctl(cmd, args)
+                    cmd = cmd_data.get("cmd", "")
+                    args = cmd_data.get("args", {})
+                    _dlog("sfctl", f"exec cmd={cmd!r}")
+                    try:
+                        result = self._execute_sfctl(cmd, args)
+                    except Exception as e:
+                        import traceback
+                        _dlog("sfctl", f"execute crashed cmd={cmd!r}: {e}\n{traceback.format_exc()}")
+                        result = {"success": False, "message": f"sfctl crashed: {e}"}
 
-                try:
-                    with open(self._RESULT_FILE, "w", encoding='utf-8') as f:
-                        json.dump(result, f, ensure_ascii=False)
-                except IOError:
-                    pass
+                    try:
+                        tmp = self._RESULT_FILE + ".tmp"
+                        with open(tmp, "w", encoding='utf-8') as f:
+                            json.dump(result, f, ensure_ascii=False)
+                            f.flush()
+                            try:
+                                os.fsync(f.fileno())
+                            except OSError:
+                                pass
+                        os.replace(tmp, self._RESULT_FILE)
+                    except IOError as e:
+                        _dlog("sfctl", f"failed writing result: {e}")
+                except Exception as e:
+                    # Never let the remote-control thread die; TG recovery
+                    # depends on sfctl staying alive after bad edge cases.
+                    import traceback
+                    _dlog("sfctl", f"watcher loop crashed: {e}\n{traceback.format_exc()}")
         threading.Thread(target=watcher, daemon=True).start()
 
     def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
