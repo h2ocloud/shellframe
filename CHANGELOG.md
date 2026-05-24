@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.11.66 (2026-05-24)
+
+### Fixes
+- **Autonomous Claude/Codex presets** — stock AI presets now launch in low-friction execution mode. Claude uses `--permission-mode bypassPermissions --dangerously-skip-permissions`; Codex uses ShellFrame's `bin/sf-codex` wrapper with `--dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen`. Existing bare `claude` / `codex` presets are migrated once.
+- **Codex launcher wrapper** — added `bin/sf-codex` to prefer the native arm64 Codex binary when the Node wrapper is running under Rosetta/x64 and cannot find the matching optional dependency. Fresh Codex tabs should no longer die with `Missing optional dependency @openai/codex-darwin-x64`.
+- **TG restore no longer erases saved prompt** — auto-reconnect still skips sending the initial prompt, but keeps the saved `bridge.initial_prompt` in config instead of overwriting it with an empty string.
+
+### 修正
+- **Claude/Codex 預設改成自動執行模式** — 內建 AI presets 會用少確認的啟動參數。Claude 使用 `--permission-mode bypassPermissions --dangerously-skip-permissions`；Codex 使用 ShellFrame 的 `bin/sf-codex` wrapper 並加上 `--dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen`。既有裸 `claude` / `codex` preset 會自動遷移一次。
+- **Codex launcher wrapper** — 新增 `bin/sf-codex`，當 Node wrapper 在 Rosetta/x64 下跑、但只裝了 arm64 optional dependency 時，優先走原生 arm64 Codex binary。新開 Codex tab 不應再因 `Missing optional dependency @openai/codex-darwin-x64` 掛掉。
+- **TG restore 不再清空 prompt 設定** — 自動重連仍然不會重送 initial prompt，但會保留 `bridge.initial_prompt`，不再把 config 覆寫成空字串。
+
+## v0.11.65 (2026-05-24)
+
+### Fixes
+- **Reboot-safe ShellFrame session manifest + Telegram restore** — sessions now write a durable `session_manifest` / `session_order` into `~/.config/shellframe/config.json` on create, rename, reorder, bridge toggle, and bridge start. On a full machine reboot, when tmux has no surviving sessions, ShellFrame recreates the same tabs from disk instead of opening empty. tmux sessions also store stable `SF_SID`, so readable tmux auto-slugs no longer change tab identity after restart. The Telegram bridge now auto-restores from saved config even when no session has been restored yet.
+- **Atomic config writes** — `config.json` is written through a temp file, fsynced, then atomically replaced to reduce half-written config risk during reboot or crash.
+
+### 修正
+- **ShellFrame session manifest + Telegram 重開機恢復** — 建立、命名、排序、bridge 開關、bridge 啟動時，都會把 `session_manifest` / `session_order` 寫進 `~/.config/shellframe/config.json`。完整重開機後如果 tmux session 已不存在，ShellFrame 會從硬碟設定重建同樣 tabs，不會直接空掉。tmux 內也會保存穩定 `SF_SID`，所以可讀的 tmux auto-slug 不會再讓 tab identity 於重啟後跑掉。Telegram bridge 現在即使尚未恢復任何 session，也會從保存設定自動重連。
+- **設定檔 atomic write** — `config.json` 改成先寫 temp file、fsync，再 atomic replace，降低重開機或 crash 時半寫入設定的風險。
+
+## v0.11.64 (2026-05-23)
+
+### Features
+- **Auto-slug tmux session names** — on the first Enter in a new session, a background thread calls `claude --model claude-haiku-4-5 --print` to summarise the prompt into a 3-5 word slug, then renames the tmux session from `sf_sNN` to `sf_<slug>` (e.g. `sf_fix-ng0203-white-scr`) and syncs the bridge label. Falls back silently to `sf_sNN` if haiku is unavailable or times out. Collision-safe: appends `-2`, `-3`, ... when a session with the same slug already exists.
+
+### 功能
+- **tmux session 自動命名** — 新 session 第一個 Enter 觸發背景執行 `claude --model claude-haiku-4-5 --print`，把 prompt 摘成 3-5 字 slug，然後把 tmux session 從 `sf_sNN` 改名為 `sf_<slug>`（例如 `sf_fix-ng0203-white-scr`）並同步更新 bridge label。haiku 無法呼叫或超時時靜默 fallback，維持原 `sf_sNN`。同名衝突自動補 `-2`、`-3` 尾巴。
+
 ## v0.11.63 (2026-05-23)
 
 ### Fixes

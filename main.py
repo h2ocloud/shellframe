@@ -50,7 +50,7 @@ CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
 
 # AI CLI tools that should receive the init prompt.
 # Matched against the base command name (last path component, no extension).
-AI_CLI_TOOLS = {"claude", "codex", "aider", "cursor", "copilot", "goose", "gemini"}
+AI_CLI_TOOLS = {"claude", "codex", "sf-codex", "aider", "cursor", "copilot", "goose", "gemini"}
 
 APP_DIR = Path(__file__).parent
 VERSION_FILE = APP_DIR / "version.json"
@@ -71,8 +71,8 @@ DEFAULT_CONFIG = {
         # or /usr/local/bin). Missing binary surfaces as "command not found"
         # in the new session, which is clear enough — no need to gate on a
         # which-check at config-build time.
-        {"name": "Claude", "cmd": "claude", "icon": "\U0001F680"},   # 🚀
-        {"name": "Codex",  "cmd": "codex",  "icon": "\U0001F916"},   # 🤖
+        {"name": "Claude", "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions", "icon": "\U0001F680"},   # 🚀
+        {"name": "Codex",  "cmd": "~/.local/apps/shellframe/bin/sf-codex --dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen",  "icon": "\U0001F916"},   # 🤖
     ],
     "settings": {
         "fontSize": 14,
@@ -82,9 +82,20 @@ DEFAULT_CONFIG = {
 
 
 _DEFAULT_AI_PRESETS = [
-    {"name": "Claude", "cmd": "claude", "icon": "\U0001F680"},
-    {"name": "Codex",  "cmd": "codex",  "icon": "\U0001F916"},
+    {"name": "Claude", "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions", "icon": "\U0001F680"},
+    {"name": "Codex",  "cmd": "~/.local/apps/shellframe/bin/sf-codex --dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen",  "icon": "\U0001F916"},
 ]
+
+_AUTONOMOUS_PRESET_CMDS = {
+    "claude": "claude --permission-mode bypassPermissions --dangerously-skip-permissions",
+    "codex": "~/.local/apps/shellframe/bin/sf-codex --dangerously-bypass-approvals-and-sandbox -a never --search --no-alt-screen",
+}
+
+
+def _autonomous_cmd(cmd: str) -> str:
+    """Upgrade old bare AI commands to ShellFrame's low-friction launchers."""
+    stripped = (cmd or "").strip()
+    return _AUTONOMOUS_PRESET_CMDS.get(stripped, cmd)
 
 _DASH_RE = re.compile(r'(^|\s)[—–](?=\S)')
 
@@ -139,15 +150,94 @@ def load_config():
                     save_config(cfg)
                 except Exception:
                     pass
+        # One-shot migration: Howard uses ShellFrame through Telegram and
+        # wants the agents to execute instead of repeatedly asking for tool
+        # approvals. Upgrade the stock Claude/Codex presets only when they
+        # are still the old bare commands.
+        if not cfg.get("_autonomous_ai_presets_v1"):
+            changed = False
+            for p in cfg.get("presets", []) or []:
+                upgraded = _autonomous_cmd(p.get("cmd") or "")
+                if upgraded != p.get("cmd"):
+                    p["cmd"] = upgraded
+                    changed = True
+            for entry in (cfg.get("session_manifest") or []):
+                upgraded = _autonomous_cmd(entry.get("cmd") or "")
+                if upgraded != entry.get("cmd"):
+                    entry["cmd"] = upgraded
+                    changed = True
+            cfg["_autonomous_ai_presets_v1"] = True
+            if changed:
+                try:
+                    save_config(cfg)
+                except Exception:
+                    pass
         return cfg
     return DEFAULT_CONFIG.copy()
 
 
 def save_config(cfg):
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding='utf-8')
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = CONFIG_FILE.with_suffix(".json.tmp")
+    data = json.dumps(cfg, indent=2, ensure_ascii=False)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(data)
+        f.write("\n")
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+    os.replace(tmp, CONFIG_FILE)
 
 
 TMUX_PREFIX = "sf_"  # tmux session name prefix
+
+_SLUG_STRIP_RE = re.compile(r'[^\w\s-]')
+_SLUG_COLLAPSE_RE = re.compile(r'[\s_]+')
+
+
+def _slugify(text: str, max_len: int = 22) -> str:
+    """Convert arbitrary text to a tmux-safe slug (lowercase, hyphens, ≤ max_len chars)."""
+    text = unicodedata.normalize('NFKD', text)
+    text = text.encode('ascii', errors='ignore').decode()
+    text = _SLUG_STRIP_RE.sub('', text).lower()
+    text = _SLUG_COLLAPSE_RE.sub('-', text).strip('-')
+    return text[:max_len].rstrip('-') or 'sf'
+
+
+def _unique_tmux_name(base: str) -> str:
+    """Return base if no tmux session exists with that name, else base-2, base-3, ..."""
+    name = base
+    i = 2
+    while _tmux_session_exists(name):
+        suffix = f"-{i}"
+        name = base[:22 - len(suffix)] + suffix
+        i += 1
+    return name
+
+
+def _haiku_slug(prompt: str) -> str:
+    """Call claude --model haiku to produce a 3-5 word slug for the prompt.
+    Returns empty string on any failure so callers fall back to sf_sNN."""
+    try:
+        claude_bin = shutil.which("claude")
+        if not claude_bin:
+            return ""
+        meta_prompt = (
+            f'Reply with ONLY a 3-5 word lowercase hyphenated slug (no punctuation, '
+            f'no quotes) summarising this task: "{prompt[:200]}"'
+        )
+        r = subprocess.run(
+            [claude_bin, "--model", "claude-haiku-4-5", "--print", meta_prompt],
+            capture_output=True, text=True, timeout=8,
+        )
+        raw = r.stdout.strip().splitlines()
+        candidate = next((l.strip() for l in reversed(raw) if l.strip()), "")
+        slug = _slugify(candidate)
+        return slug if len(slug) >= 3 else ""
+    except Exception:
+        return ""
 
 
 def _session_cwd() -> str:
@@ -203,7 +293,7 @@ def _tmux_session_exists(name: str) -> bool:
     return r.returncode == 0
 
 def _list_tmux_sessions() -> list[dict]:
-    """List all sf_* tmux sessions. Returns [{name, cmd}]."""
+    """List all sf_* tmux sessions. Returns [{name, cmd, sid}]."""
     try:
         r = subprocess.run(
             ["tmux", "list-sessions", "-F", "#{session_name}"],
@@ -222,7 +312,13 @@ def _list_tmux_sessions() -> list[dict]:
             cmd = ""
             if cr.returncode == 0 and "=" in cr.stdout:
                 cmd = cr.stdout.strip().split("=", 1)[1]
-            result.append({"name": name, "cmd": cmd})
+            sr = subprocess.run(
+                ["tmux", "show-environment", "-t", name, "SF_SID"],
+                capture_output=True, text=True, timeout=3)
+            sid = ""
+            if sr.returncode == 0 and "=" in sr.stdout:
+                sid = sr.stdout.strip().split("=", 1)[1]
+            result.append({"name": name, "cmd": cmd, "sid": sid})
         return result
     except Exception:
         return []
@@ -241,6 +337,7 @@ class Session:
         self.child_pid = None
         self.win_proc = None
         self.alive = True
+        self._slug_pending = True   # True until first user Enter triggers tmux auto-rename
         self._recent = bytearray()  # ring buffer for peeking (last 1KB), not consumed by read()
         self._on_data = on_data     # callback to signal new data (e.g. threading.Event.set)
         self._tmux_name = tmux_name  # tmux session name (None = no tmux)
@@ -292,6 +389,17 @@ class Session:
                 "tmux", "resize-window", "-t", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
             ], capture_output=True, timeout=3)
+
+        # Store stable metadata on both new and existing sessions. tmux names
+        # can be renamed for readability; SF_SID is the durable tab identity.
+        subprocess.run([
+            "tmux", "set-environment", "-t", self._tmux_name,
+            "SF_SID", self.sid,
+        ], capture_output=True, timeout=3)
+        subprocess.run([
+            "tmux", "set-environment", "-t", self._tmux_name,
+            "SF_CMD", self.cmd,
+        ], capture_output=True, timeout=3)
 
         # Attach via PTY fork — child runs `tmux attach`, parent reads master_fd
         self.child_pid, self.master_fd = pty.fork()
@@ -566,6 +674,84 @@ class Api:
             cfg["session_list"] = new_list
             save_config(cfg)
 
+    def _ordered_sids(self, cfg: dict | None = None, preferred_order: list[str] | None = None) -> list[str]:
+        """Return current session ids in durable UI order."""
+        cfg = cfg or load_config()
+        raw_order = preferred_order or cfg.get("session_order") or []
+        ordered = [sid for sid in raw_order if sid in self.sessions]
+        ordered.extend([sid for sid in self.sessions if sid not in ordered])
+        return ordered
+
+    def _persist_session_manifest(self, preferred_order: list[str] | None = None):
+        """Persist all open tabs, labels, order, tmux names, and bridge state.
+
+        tmux keeps processes alive across app restarts, but not across a full
+        machine reboot. This manifest is the disk-backed fallback: after reboot
+        ShellFrame can recreate the same tabs and reconnect Telegram even when
+        tmux has no surviving sessions.
+        """
+        try:
+            cfg = load_config()
+            labels = cfg.get("session_labels", {}) or {}
+            disabled = set(cfg.get("bridge_disabled_sessions", []) or [])
+            order = self._ordered_sids(cfg, preferred_order)
+            manifest = []
+            for idx, sid in enumerate(order):
+                s = self.sessions.get(sid)
+                if not s:
+                    continue
+                label = getattr(s, '_custom_label', None) or labels.get(sid)
+                bridge_enabled = getattr(s, '_bridge_enabled', True)
+                if not bridge_enabled:
+                    disabled.add(sid)
+                else:
+                    disabled.discard(sid)
+                entry = {
+                    "sid": sid,
+                    "cmd": _autonomous_cmd(s.cmd),
+                    "tmux_name": getattr(s, '_tmux_name', None) or "",
+                    "bridge_enabled": bool(bridge_enabled),
+                    "order": idx,
+                    "updated_at": int(time.time()),
+                }
+                if label:
+                    entry["label"] = label
+                    labels[sid] = label
+                manifest.append(entry)
+            cfg["session_manifest"] = manifest
+            cfg["session_order"] = [e["sid"] for e in manifest]
+            cfg["session_labels"] = labels
+            cfg["bridge_disabled_sessions"] = sorted(disabled)
+            save_config(cfg)
+        except Exception as e:
+            _dlog("lifecycle", f"persist manifest failed: {e}")
+
+    @staticmethod
+    def _manifest_entries(cfg: dict) -> list[dict]:
+        manifest = cfg.get("session_manifest") or []
+        if manifest:
+            return [e for e in manifest if e.get("sid") and e.get("cmd")]
+        # Backward compatibility with the old Windows/no-tmux soft list.
+        return [e for e in (cfg.get("session_list") or []) if e.get("sid") and e.get("cmd")]
+
+    @staticmethod
+    def _resolve_tmux_sid(info: dict, cfg: dict) -> str:
+        """Resolve stable sid for a tmux session whose display name may change."""
+        if info.get("sid"):
+            return str(info["sid"])
+        name = info.get("name", "")
+        suffix = name[len(TMUX_PREFIX):] if name.startswith(TMUX_PREFIX) else name
+        if re.fullmatch(r"s\d+", suffix or ""):
+            return suffix
+        for entry in Api._manifest_entries(cfg):
+            if entry.get("tmux_name") == name:
+                return str(entry.get("sid"))
+        saved_labels = cfg.get("session_labels", {}) or {}
+        for sid, label in saved_labels.items():
+            if _slugify(str(label)) == suffix:
+                return str(sid)
+        return suffix or name
+
     def restore_tmux_sessions(self, cols: int = 80, rows: int = 24) -> str:
         """Restore orphaned sessions on startup.
 
@@ -579,16 +765,26 @@ class Api:
         cfg = load_config()
         saved_labels = cfg.get("session_labels", {})
         bridge_disabled = set(cfg.get("bridge_disabled_sessions", []))
+        manifest = self._manifest_entries(cfg)
+        manifest_by_sid = {str(e.get("sid")): e for e in manifest}
+        manifest_by_tmux = {str(e.get("tmux_name")): e for e in manifest if e.get("tmux_name")}
+        saved_order = cfg.get("session_order") or [str(e.get("sid")) for e in sorted(manifest, key=lambda x: x.get("order", 9999))]
+        order_index = {sid: i for i, sid in enumerate(saved_order)}
         restored = []
 
         if not IS_WIN and _has_tmux():
             existing = _list_tmux_sessions()
             _dlog("lifecycle", f"  found tmux sessions: {[e['name'] for e in existing]}")
+            if existing:
+                existing = sorted(
+                    existing,
+                    key=lambda info: order_index.get(self._resolve_tmux_sid(info, cfg), 9999),
+                )
             for info in existing:
                 tmux_name = info["name"]
-                cmd = info["cmd"] or "bash"
-                # Extract sid from tmux name: sf_s1 → s1
-                sid = tmux_name[len(TMUX_PREFIX):]
+                sid = self._resolve_tmux_sid(info, cfg)
+                entry = manifest_by_sid.get(sid) or manifest_by_tmux.get(tmux_name) or {}
+                cmd = _autonomous_cmd(info["cmd"] or entry.get("cmd") or "bash")
                 if sid in self.sessions:
                     continue  # already attached
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
@@ -597,33 +793,46 @@ class Api:
                                   tmux_name=tmux_name)
                 self.sessions[sid] = session
                 # Restore bridge enabled/disabled state from config
-                session._bridge_enabled = sid not in bridge_disabled
+                session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._init_pending = False
+                session._slug_pending = False
                 # Restore custom label
-                if sid in saved_labels:
-                    session._custom_label = saved_labels[sid]
+                label = entry.get("label") or saved_labels.get(sid)
+                if label:
+                    session._custom_label = label
                 restored.append({"sid": sid, "cmd": cmd})
-            return json.dumps(restored)
+            if existing:
+                self._persist_session_manifest(saved_order)
+                return json.dumps(restored)
 
-        # Soft-persistence path (Windows / no tmux): recreate sessions fresh
-        soft_list = cfg.get("session_list", [])
+        # Disk-backed fallback: recreate tabs fresh after a machine reboot
+        # (tmux server gone) or on Windows/no-tmux systems.
+        soft_list = manifest
         _dlog("lifecycle", f"  soft restore from config: {[s.get('sid') for s in soft_list]}")
+        soft_list = sorted(soft_list, key=lambda e: order_index.get(str(e.get("sid")), e.get("order", 9999)))
         for entry in soft_list:
             sid = entry.get("sid", "")
-            cmd = entry.get("cmd", "")
+            cmd = _autonomous_cmd(entry.get("cmd", ""))
             if not sid or not cmd or sid in self.sessions:
                 continue
             try:
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
-                session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
+                tmux_name = entry.get("tmux_name") or None
+                session = Session(sid, cmd, cols, rows,
+                                  on_data=self._output_event.set,
+                                  tmux_name=tmux_name)
                 self.sessions[sid] = session
-                session._bridge_enabled = sid not in bridge_disabled
+                session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._init_pending = False
-                if sid in saved_labels:
-                    session._custom_label = saved_labels[sid]
+                session._slug_pending = False
+                label = entry.get("label") or saved_labels.get(sid)
+                if label:
+                    session._custom_label = label
                 restored.append({"sid": sid, "cmd": cmd})
             except Exception as e:
                 _dlog("lifecycle", f"  soft restore failed for {sid}: {e}")
+        if restored:
+            self._persist_session_manifest(saved_order)
         return json.dumps(restored)
 
     def _start_output_pusher(self):
@@ -751,6 +960,7 @@ class Api:
         # Soft persistence (Windows / no-tmux fallback): record this session
         # so the next startup can recreate it
         self._save_soft_session(sid, cmd)
+        self._persist_session_manifest()
         # Auto-register with bridge
         if self.bridge:
             label = cmd.split()[0] if cmd else sid
@@ -833,6 +1043,7 @@ class Api:
                 save_config(cfg)
             # Drop from soft-persistence list (Windows / no-tmux)
             self._drop_soft_session(sid)
+            self._persist_session_manifest()
         self._notify_ui_sessions_changed()
 
     # Patterns in CLI output that indicate the AI tool is ready for conversation
@@ -852,6 +1063,33 @@ class Api:
         s = self.sessions.get(sid)
         if not s:
             return
+        # Auto-slug: on first user Enter, rename tmux session to a haiku-derived slug.
+        # Runs in background so it never blocks the keystroke path. Only fires once
+        # (_slug_pending) and only when the session has a default sf_sNN tmux name.
+        if (getattr(s, '_slug_pending', False)
+                and '\r' in data
+                and getattr(s, '_tmux_name', None)
+                and s._tmux_name.startswith(TMUX_PREFIX)):
+            s._slug_pending = False
+            user_text = data.rstrip('\r\n').strip()
+            if user_text:
+                def _do_slug(sid=sid, s=s, text=user_text):
+                    slug = _haiku_slug(text)
+                    if not slug:
+                        return
+                    new_name = _unique_tmux_name(f"{TMUX_PREFIX}{slug}")
+                    old_name = s._tmux_name
+                    r = subprocess.run(
+                        ["tmux", "rename-session", "-t", old_name, new_name],
+                        capture_output=True, timeout=3,
+                    )
+                    if r.returncode == 0:
+                        s._tmux_name = new_name
+                        display_name = slug.replace('-', ' ')
+                        self.rename_session(sid, display_name)
+                        self._persist_session_manifest()
+                        _dlog("slug", f"tmux rename {old_name!r} → {new_name!r}")
+                threading.Thread(target=_do_slug, daemon=True).start()
         # IME dedup is handled in JS (compositionstart/end + time window)
         # On user Enter, check if we should inject init prompt
         if getattr(s, '_init_pending', False) and '\r' in data:
@@ -2182,15 +2420,19 @@ class Api:
         # Persist bridge config (preserve existing STT settings)
         cfg = load_config()
         prev_bridge = cfg.get("bridge", {})
+        persisted_initial_prompt = initial_prompt
+        if not persisted_initial_prompt and prev_bridge.get("initial_prompt"):
+            persisted_initial_prompt = prev_bridge.get("initial_prompt", "")
         cfg["bridge"] = {
             "bot_token": bot_token,
             "allowed_users": [int(u) for u in allowed],
             "prefix_enabled": prefix_enabled,
-            "initial_prompt": initial_prompt,
+            "initial_prompt": persisted_initial_prompt,
             "stt_backend": prev_bridge.get("stt_backend", "auto"),
             "stt_providers": prev_bridge.get("stt_providers", []),
         }
         save_config(cfg)
+        self._persist_session_manifest()
 
         return json.dumps({"success": self.bridge.connected, **self.bridge.get_status()})
 
@@ -2373,6 +2615,7 @@ class Api:
             disabled.add(sid)
         cfg["bridge_disabled_sessions"] = sorted(disabled)
         save_config(cfg)
+        self._persist_session_manifest()
         return json.dumps({"success": True, "enabled": enabled})
 
     def reorder_sessions(self, order_json: str) -> str:
@@ -2381,6 +2624,7 @@ class Api:
         if self.bridge:
             self.bridge.reorder_slots(order)
             self.bridge.refresh_commands()
+        self._persist_session_manifest(order)
         return json.dumps({"success": True})
 
     def switch_bridge_session(self, sid: str) -> str:
@@ -2529,6 +2773,7 @@ class Api:
         labels[sid] = name
         cfg["session_labels"] = labels
         save_config(cfg)
+        self._persist_session_manifest()
         return json.dumps({"success": True})
 
     def bridge_unregister_session(self, sid: str):

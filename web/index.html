@@ -4241,6 +4241,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // ── Init ──
+  async function restoreSavedBridge() {
+    try {
+      const bs = JSON.parse(await pywebview.api.get_bridge_status());
+      if (bs.exists && bs.active) {
+        bridgeState = bs; updateBridgeButton(); syncBridgeOrder();
+        return true;
+      }
+      const saved = JSON.parse(await pywebview.api.get_saved_bridge());
+      if (saved && saved.bot_token) {
+        const raw = await pywebview.api.start_bridge(
+          saved.bot_token,
+          JSON.stringify(saved.allowed_users || []),
+          saved.prefix_enabled !== false,
+          ''  // skip initial_prompt on restore
+        );
+        const result = JSON.parse(raw);
+        if (result.success) {
+          bridgeState = result; updateBridgeButton(); syncBridgeOrder();
+          return true;
+        }
+      }
+    } catch(e) {}
+    return false;
+  }
+
   async function init() {
     await waitApi();
     await loadConfig();
@@ -4276,27 +4301,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
         }
         // Auto-restore TG bridge if config was saved
-        try {
-          const bs = JSON.parse(await pywebview.api.get_bridge_status());
-          if (bs.exists && bs.active) {
-            bridgeState = bs; updateBridgeButton(); syncBridgeOrder();
-          } else {
-            // Bridge not running — try auto-start from saved config
-            const saved = JSON.parse(await pywebview.api.get_saved_bridge());
-            if (saved && saved.bot_token) {
-              const raw = await pywebview.api.start_bridge(
-                saved.bot_token,
-                JSON.stringify(saved.allowed_users || []),
-                saved.prefix_enabled !== false,
-                ''  // skip initial_prompt on restore
-              );
-              const result = JSON.parse(raw);
-              if (result.success) {
-                bridgeState = result; updateBridgeButton(); syncBridgeOrder();
-              }
-            }
-          }
-        } catch(e) {}
+        await restoreSavedBridge();
         renderTabs();
         // Restore last active tab. Prefer Python-persisted value (survives
         // WKWebView storage clears) → fallback to localStorage → fallback first.
@@ -4330,6 +4335,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch(e) {}
 
     // Check for updates FIRST, then show launcher
+    await restoreSavedBridge();
     const hasUpdate = await startupUpdateCheck();
     if (!hasUpdate) {
       // No update modal shown — show launcher
