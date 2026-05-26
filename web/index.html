@@ -2303,7 +2303,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // (treated as "user wants to type in the live input, give focus back").
   const ScrollHistory = (function() {
     let overlay = null;
-    let histTerm = null;
+    let historyBox = null;
     let onKey = null;
     let onResize = null;
     let boundSid = null;
@@ -2324,10 +2324,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         window.removeEventListener('resize', onResize);
         onResize = null;
       }
-      if (histTerm) {
-        try { histTerm.dispose(); } catch (_) {}
-        histTerm = null;
-      }
+      historyBox = null;
       overlay.remove();
       overlay = null;
       const targetSid = boundSid;
@@ -2384,68 +2381,46 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       header.appendChild(hint);
       header.appendChild(closeBtn);
 
-      // Wrapper allows horizontal scroll when histTerm is wider than the
-      // overlay pane. termHost is the actual xterm mount — we size it to
-      // match the source session's cols so content captured at e.g. 140
-      // cols doesn't get clipped on a 100-col overlay (tables lose their
-      // right half that way — Howard's screenshot of /Prod/FundSelectList
-      // + 說明 column cut at the table edge).
+      // Use native scrolling instead of a second xterm instance. WKWebView
+      // can lose wheel/viewport state inside nested xterms, which made
+      // scroll-up history appear blank or unscrollable. A <pre> keeps the
+      // capture selectable, horizontally scrollable, and predictable.
       const termScroll = document.createElement('div');
-      termScroll.style.cssText = 'flex:1;min-height:0;position:relative;overflow-x:auto;overflow-y:hidden';
-      const termHost = document.createElement('div');
-      termHost.style.cssText = 'position:relative;padding:6px 10px;height:100%';
+      termScroll.style.cssText = 'flex:1;min-height:0;position:relative;overflow:auto';
+      historyBox = document.createElement('pre');
+      historyBox.style.cssText = [
+        'box-sizing:border-box',
+        'min-height:100%',
+        'margin:0',
+        'padding:10px 14px 18px',
+        `font:${fontSize}px "MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace`,
+        'line-height:1.35',
+        'white-space:pre',
+        'tab-size:4',
+        'color:#c0caf5',
+        'background:#1a1b26',
+        'user-select:text',
+      ].join(';');
+      historyBox.textContent = text || '(no history)';
 
       overlay.appendChild(header);
-      termScroll.appendChild(termHost);
+      termScroll.appendChild(historyBox);
       overlay.appendChild(termScroll);
       host.appendChild(overlay);
 
-      // Use the LIVE session's cols (the tmux pane width at capture time) so
-      // xterm doesn't re-wrap / clip. Fallback to fit-based cols if no
-      // source session is bound (shouldn't happen, but safe).
-      const srcSess = (boundSid && sessions[boundSid]) ? sessions[boundSid] : null;
-      const srcCols = (srcSess && srcSess.term && srcSess.term.cols) || 120;
-
-      histTerm = new Terminal({
-        fontSize,
-        fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
-        theme: THEME,
-        cursorBlink: false,
-        cursorStyle: 'block',
-        scrollback: Math.max(10000, (text || '').split('\n').length + 200),
-        allowProposedApi: true,
-        disableStdin: true,
-        convertEol: true,
-        cols: srcCols,
-        rows: 40,
-      });
-      const fit = new FitAddon.FitAddon();
-      histTerm.loadAddon(fit);
-      histTerm.open(termHost);
-      // Fit only the ROWS dimension to the overlay height — keep cols
-      // pinned at srcCols so the capture renders at its original width.
-      try {
-        fit.fit();
-        if (histTerm.cols !== srcCols) histTerm.resize(srcCols, histTerm.rows);
-      } catch (_) {}
-
-      // Write all content, then scroll to bottom. Only AFTER this settles
-      // do we start watching for user-driven "scroll to bottom to close".
-      let userInteracted = false;
-      histTerm.write(text || '(no history)', () => {
-        try { histTerm.scrollToBottom(); } catch (_) {}
+      requestAnimationFrame(() => {
+        try { termScroll.scrollTop = termScroll.scrollHeight; } catch (_) {}
       });
 
       // Mark user interaction on wheel / key nav. Only then does
       // "scroll-to-bottom" count as an auto-close signal — this prevents the
       // initial bulk write + scrollToBottom from dismissing the overlay
       // immediately (xterm fires onScroll per written line).
-      termHost.addEventListener('wheel', (e) => {
-        if (!histTerm) return;
-        userInteracted = true;
-        const buf = histTerm.buffer.active;
+      termScroll.addEventListener('wheel', (e) => {
+        if (!historyBox) return;
+        const atBottom = termScroll.scrollTop + termScroll.clientHeight >= termScroll.scrollHeight - 2;
         // Wheel DOWN past the last line → user reached the live tail, close.
-        if (e.deltaY > 0 && buf.viewportY >= buf.baseY) close();
+        if (e.deltaY > 0 && atBottom) close();
       }, { passive: true });
 
       overlay.addEventListener('click', (e) => {
@@ -2462,7 +2437,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           close();
           return;
         }
-        if (NAV_KEYS.has(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (historyBox && NAV_KEYS.has(e.key)) {
+          if (e.key === 'PageUp') {
+            e.preventDefault();
+            termScroll.scrollTop -= termScroll.clientHeight * 0.9;
+          } else if (e.key === 'PageDown') {
+            e.preventDefault();
+            termScroll.scrollTop += termScroll.clientHeight * 0.9;
+          } else if (e.key === 'Home') {
+            e.preventDefault();
+            termScroll.scrollTop = 0;
+          } else if (e.key === 'End') {
+            e.preventDefault();
+            termScroll.scrollTop = termScroll.scrollHeight;
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            termScroll.scrollTop -= 32;
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            termScroll.scrollTop += 32;
+          }
+          return;
+        }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
         // Only forward single printable chars / common editing keys
         const forward = e.key.length === 1 ? e.key :
           (e.key === 'Enter' ? '\r' : e.key === 'Backspace' ? '\x7f' : null);
@@ -2474,7 +2471,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       };
       document.addEventListener('keydown', onKey, true);
 
-      onResize = () => { try { fit.fit(); } catch (_) {} };
+      onResize = () => {};
       window.addEventListener('resize', onResize);
     }
 
@@ -2493,7 +2490,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (buf.viewportY > 0) return; // xterm has its own scrollback, let it handle
       if (_loading) return;
       _loading = true;
-      pywebview.api.get_clean_history(sid).then(res => {
+      pywebview.api.get_clean_history(sid, 10000, false).then(res => {
         _loading = false;
         try {
           const result = JSON.parse(res);
