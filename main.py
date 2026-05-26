@@ -330,12 +330,26 @@ def _session_cwd() -> str:
 
 def _session_env() -> dict:
     env = dict(os.environ)
-    path_parts = [str(APP_DIR / "bin")]
+    path_parts = [
+        str(APP_DIR / "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        str(Path.home() / ".local" / "bin"),
+        str(Path.home() / ".bun" / "bin"),
+    ]
     existing = env.get("PATH", "")
     if existing:
         path_parts.append(existing)
-    env["PATH"] = os.pathsep.join(path_parts)
+    seen = set()
+    env["PATH"] = os.pathsep.join(
+        p for p in os.pathsep.join(path_parts).split(os.pathsep)
+        if p and not (p in seen or seen.add(p))
+    )
     return env
+
+# macOS GUI launches often get a minimal PATH. Normalize the parent process
+# PATH once so all later subprocess calls can find Homebrew/user binaries.
+os.environ["PATH"] = _session_env()["PATH"]
 
 
 def _apply_macos_app_identity():
@@ -427,21 +441,34 @@ def _dlog(category: str, msg: str):
 
 def _has_tmux() -> bool:
     """Check if tmux is available on PATH."""
-    return shutil.which("tmux") is not None
+    return _tmux_bin() is not None
+
+def _tmux_bin() -> str | None:
+    """Find tmux even when macOS launches the .app with a minimal PATH."""
+    path = _session_env().get("PATH", "")
+    return shutil.which("tmux", path=path)
 
 def _tmux_session_exists(name: str) -> bool:
     """Check if a tmux session with the given name exists."""
-    r = subprocess.run(["tmux", "has-session", "-t", name],
+    tmux = _tmux_bin()
+    if not tmux:
+        return False
+    r = subprocess.run([tmux, "has-session", "-t", name],
                        capture_output=True, timeout=3)
     return r.returncode == 0
 
 def _list_tmux_sessions() -> list[dict]:
     """List all sf_* tmux sessions. Returns [{name, cmd, sid}]."""
     try:
+        tmux = _tmux_bin()
+        if not tmux:
+            _dlog("lifecycle", "  tmux binary not found")
+            return []
         r = subprocess.run(
-            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            [tmux, "list-sessions", "-F", "#{session_name}"],
             capture_output=True, text=True, timeout=3)
         if r.returncode != 0:
+            _dlog("lifecycle", f"  tmux list-sessions failed rc={r.returncode} err={r.stderr.strip()!r}")
             return []
         result = []
         for line in r.stdout.strip().split("\n"):
@@ -450,13 +477,13 @@ def _list_tmux_sessions() -> list[dict]:
                 continue
             # Get the original command from tmux env
             cr = subprocess.run(
-                ["tmux", "show-environment", "-t", name, "SF_CMD"],
+                [tmux, "show-environment", "-t", name, "SF_CMD"],
                 capture_output=True, text=True, timeout=3)
             cmd = ""
             if cr.returncode == 0 and "=" in cr.stdout:
                 cmd = cr.stdout.strip().split("=", 1)[1]
             sr = subprocess.run(
-                ["tmux", "show-environment", "-t", name, "SF_SID"],
+                [tmux, "show-environment", "-t", name, "SF_SID"],
                 capture_output=True, text=True, timeout=3)
             sid = ""
             if sr.returncode == 0 and "=" in sr.stdout:
