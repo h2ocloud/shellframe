@@ -84,6 +84,17 @@ DEFAULT_CONFIG = {
     "settings": {
         "fontSize": 14,
         "language": "en"
+    },
+    "idle_reaper": {
+        "enabled": False,
+        "review_sec": 300,
+        "idle_sec": 1800,
+        "summary_grace_sec": 120,
+        "keep_labels": ["main", "Main", "LINE-Gateway"],
+        "keep_sids": [],
+        "keep_first_session": False,
+        "close_ai_only": True,
+        "summary_dir": str(CONFIG_DIR / "session_summaries")
     }
 }
 
@@ -319,12 +330,26 @@ def _session_cwd() -> str:
 
 def _session_env() -> dict:
     env = dict(os.environ)
-    path_parts = [str(APP_DIR / "bin")]
+    path_parts = [
+        str(APP_DIR / "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        str(Path.home() / ".local" / "bin"),
+        str(Path.home() / ".bun" / "bin"),
+    ]
     existing = env.get("PATH", "")
     if existing:
         path_parts.append(existing)
-    env["PATH"] = os.pathsep.join(path_parts)
+    seen = set()
+    env["PATH"] = os.pathsep.join(
+        p for p in os.pathsep.join(path_parts).split(os.pathsep)
+        if p and not (p in seen or seen.add(p))
+    )
     return env
+
+# macOS GUI launches often get a minimal PATH. Normalize the parent process
+# PATH once so all later subprocess calls can find Homebrew/user binaries.
+os.environ["PATH"] = _session_env()["PATH"]
 
 
 def _apply_macos_app_identity():
@@ -416,21 +441,34 @@ def _dlog(category: str, msg: str):
 
 def _has_tmux() -> bool:
     """Check if tmux is available on PATH."""
-    return shutil.which("tmux") is not None
+    return _tmux_bin() is not None
+
+def _tmux_bin() -> str | None:
+    """Find tmux even when macOS launches the .app with a minimal PATH."""
+    path = _session_env().get("PATH", "")
+    return shutil.which("tmux", path=path)
 
 def _tmux_session_exists(name: str) -> bool:
     """Check if a tmux session with the given name exists."""
-    r = subprocess.run(["tmux", "has-session", "-t", name],
+    tmux = _tmux_bin()
+    if not tmux:
+        return False
+    r = subprocess.run([tmux, "has-session", "-t", name],
                        capture_output=True, timeout=3)
     return r.returncode == 0
 
 def _list_tmux_sessions() -> list[dict]:
     """List all sf_* tmux sessions. Returns [{name, cmd, sid}]."""
     try:
+        tmux = _tmux_bin()
+        if not tmux:
+            _dlog("lifecycle", "  tmux binary not found")
+            return []
         r = subprocess.run(
-            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            [tmux, "list-sessions", "-F", "#{session_name}"],
             capture_output=True, text=True, timeout=3)
         if r.returncode != 0:
+            _dlog("lifecycle", f"  tmux list-sessions failed rc={r.returncode} err={r.stderr.strip()!r}")
             return []
         result = []
         for line in r.stdout.strip().split("\n"):
@@ -439,13 +477,13 @@ def _list_tmux_sessions() -> list[dict]:
                 continue
             # Get the original command from tmux env
             cr = subprocess.run(
-                ["tmux", "show-environment", "-t", name, "SF_CMD"],
+                [tmux, "show-environment", "-t", name, "SF_CMD"],
                 capture_output=True, text=True, timeout=3)
             cmd = ""
             if cr.returncode == 0 and "=" in cr.stdout:
                 cmd = cr.stdout.strip().split("=", 1)[1]
             sr = subprocess.run(
-                ["tmux", "show-environment", "-t", name, "SF_SID"],
+                [tmux, "show-environment", "-t", name, "SF_SID"],
                 capture_output=True, text=True, timeout=3)
             sid = ""
             if sr.returncode == 0 and "=" in sr.stdout:
@@ -470,6 +508,12 @@ class Session:
         self.child_pid = None
         self.win_proc = None
         self.alive = True
+        now = time.time()
+        self._last_activity_time = now
+        self._idle_reap_state = ""
+        self._idle_summary_requested_at = 0.0
+        self._idle_close_after = 0.0
+        self._idle_summary_path = ""
         self._slug_pending = True   # True until first user Enter triggers tmux auto-rename
         self._recent = bytearray()  # ring buffer for peeking/startup checks (last 8KB), not consumed by read()
         self._on_data = on_data     # callback to signal new data (e.g. threading.Event.set)
@@ -640,6 +684,7 @@ class Session:
                         self._recent.extend(data)
                         if len(self._recent) > 8192:
                             self._recent = self._recent[-8192:]
+                        self._last_activity_time = time.time()
                     if self._on_data:
                         self._on_data()
             except (OSError, ValueError):
@@ -654,6 +699,7 @@ class Session:
                 if data:
                     with self.lock:
                         self.buffer.extend(data.encode("utf-8", errors="replace") if isinstance(data, str) else data)
+                        self._last_activity_time = time.time()
                     if self._on_data:
                         self._on_data()
                 else:
@@ -670,6 +716,7 @@ class Session:
                 if data:
                     with self.lock:
                         self.buffer.extend(data)
+                        self._last_activity_time = time.time()
                     if self._on_data:
                         self._on_data()
                 else:
@@ -684,6 +731,8 @@ class Session:
         if len(data) > 2:
             preview = data[:80].replace('\r', '\\r').replace('\n', '\\n').replace('\x1b', '\\e')
             _dlog("write", f"sid={self.sid} len={len(data)} preview={preview!r}")
+        if data:
+            self._last_activity_time = time.time()
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
             try:
                 self._winpty.write(data)
@@ -793,7 +842,9 @@ class Api:
         self._output_event = threading.Event()   # signalled by reader threads
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
         self._plugins = None
+        self._idle_reaper_started = False
         self._plugins_reload()
+        self._start_idle_reaper()
 
     def _save_soft_session(self, sid: str, cmd: str):
         """Persist a session entry to config.session_list. Used as soft
@@ -870,6 +921,160 @@ class Api:
             save_config(cfg)
         except Exception as e:
             _dlog("lifecycle", f"persist manifest failed: {e}")
+
+    @staticmethod
+    def _idle_reaper_config(cfg: dict | None = None) -> dict:
+        cfg = cfg or load_config()
+        raw = cfg.get("idle_reaper") or {}
+        default = DEFAULT_CONFIG.get("idle_reaper", {})
+        merged = {**default, **raw}
+        try:
+            merged["review_sec"] = max(5.0, float(merged.get("review_sec", 300)))
+        except (TypeError, ValueError):
+            merged["review_sec"] = 300.0
+        try:
+            merged["idle_sec"] = max(30.0, float(merged.get("idle_sec", 1800)))
+        except (TypeError, ValueError):
+            merged["idle_sec"] = 1800.0
+        try:
+            merged["summary_grace_sec"] = max(10.0, float(merged.get("summary_grace_sec", 120)))
+        except (TypeError, ValueError):
+            merged["summary_grace_sec"] = 120.0
+        merged["keep_labels"] = [str(x).strip() for x in (merged.get("keep_labels") or []) if str(x).strip()]
+        merged["keep_sids"] = [str(x).strip() for x in (merged.get("keep_sids") or []) if str(x).strip()]
+        return merged
+
+    @staticmethod
+    def _session_is_ai(cmd: str) -> bool:
+        try:
+            tokens = shlex.split(cmd or "")
+        except ValueError:
+            tokens = []
+        for token in tokens:
+            base = Path(token).stem
+            if base in AI_CLI_TOOLS:
+                return True
+        return False
+
+    def _main_session_sid(self, cfg: dict, idle_cfg: dict) -> str:
+        explicit = str(idle_cfg.get("main_sid") or "").strip()
+        if explicit in self.sessions:
+            return explicit
+        ordered = self._ordered_sids(cfg)
+        return ordered[0] if ordered else ""
+
+    def _should_keep_session(self, sid: str, s: Session, cfg: dict, idle_cfg: dict) -> bool:
+        if sid in set(idle_cfg.get("keep_sids") or []):
+            return True
+        label = (getattr(s, "_custom_label", None) or "").strip()
+        keep_labels = {x.casefold() for x in (idle_cfg.get("keep_labels") or [])}
+        if label.casefold() in keep_labels:
+            return True
+        if idle_cfg.get("keep_first_session") and sid == self._main_session_sid(cfg, idle_cfg):
+            return True
+        return False
+
+    def _bridge_session_busy(self, sid: str) -> bool:
+        for bridge in (self.bridge, self.line_bridge):
+            if not bridge:
+                continue
+            try:
+                slot = bridge.slots.get(sid)
+            except Exception:
+                slot = None
+            if slot and (
+                getattr(slot, "awaiting_response", False)
+                or getattr(slot, "expect_marker", False)
+                or getattr(slot, "pending_target_id", "")
+            ):
+                return True
+        return False
+
+    def _idle_summary_prompt(self, label: str, idle_sec: int) -> str:
+        return (
+            "ShellFrame 閒置排程即將關閉這個 session。\n"
+            f"Session：{label or 'unnamed'}\n"
+            f"閒置秒數：約 {idle_sec}\n\n"
+            "請在關閉前輸出一份簡短總結與複盤，使用繁體中文。\n"
+            "請包含：\n"
+            "1. 這個 session 完成了什麼。\n"
+            "2. 尚未完成事項或風險。\n"
+            "3. 是否建議沉澱為 skill、memory 或 none，並說明原因。\n"
+            "請不要執行外部可見或破壞性操作。\n"
+        )
+
+    def _capture_session_summary(self, sid: str, s: Session, idle_cfg: dict) -> str:
+        summary_dir = Path(str(idle_cfg.get("summary_dir") or (CONFIG_DIR / "session_summaries"))).expanduser()
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = summary_dir / f"{stamp}_{sid}.txt"
+        label = getattr(s, "_custom_label", None) or sid
+        text = ""
+        if getattr(s, "_tmux_name", None):
+            try:
+                r = subprocess.run(
+                    ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name, "-S", "-200"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if r.returncode == 0:
+                    text = r.stdout
+            except Exception as e:
+                text = f"(capture failed: {e})"
+        if not text:
+            with s.lock:
+                text = bytes(s._recent).decode("utf-8", errors="replace")
+        path.write_text(
+            f"sid: {sid}\nlabel: {label}\ncmd: {s.cmd}\nclosed_at: {datetime.now().isoformat()}\n\n{text}",
+            encoding="utf-8",
+        )
+        s._idle_summary_path = str(path)
+        return str(path)
+
+    def _start_idle_reaper(self):
+        if self._idle_reaper_started:
+            return
+        self._idle_reaper_started = True
+
+        def _loop():
+            while True:
+                cfg = load_config()
+                idle_cfg = self._idle_reaper_config(cfg)
+                review_sec = idle_cfg.get("review_sec", 300.0)
+                if not idle_cfg.get("enabled", False):
+                    time.sleep(review_sec)
+                    continue
+                now = time.time()
+                for sid, s in list(self.sessions.items()):
+                    if not getattr(s, "alive", False):
+                        continue
+                    if self._should_keep_session(sid, s, cfg, idle_cfg):
+                        continue
+                    if idle_cfg.get("close_ai_only", True) and not self._session_is_ai(s.cmd):
+                        continue
+                    if self._bridge_session_busy(sid):
+                        continue
+                    state = getattr(s, "_idle_reap_state", "")
+                    if state == "summarizing":
+                        if now >= getattr(s, "_idle_close_after", 0):
+                            try:
+                                summary_path = self._capture_session_summary(sid, s, idle_cfg)
+                                _dlog("idle", f"closing sid={sid} summary={summary_path}")
+                                self.close_session(sid)
+                            except Exception as e:
+                                _dlog("idle", f"close failed sid={sid}: {e}")
+                        continue
+                    idle_for = now - getattr(s, "_last_activity_time", now)
+                    if idle_for < idle_cfg.get("idle_sec", 1800.0):
+                        continue
+                    label = getattr(s, "_custom_label", None) or sid
+                    s._idle_reap_state = "summarizing"
+                    s._idle_summary_requested_at = now
+                    s._idle_close_after = now + idle_cfg.get("summary_grace_sec", 120.0)
+                    _dlog("idle", f"summary request sid={sid} idle_sec={int(idle_for)}")
+                    s.write(self._idle_summary_prompt(label, int(idle_for)) + "\r")
+                time.sleep(review_sec)
+
+        threading.Thread(target=_loop, daemon=True).start()
 
     @staticmethod
     def _manifest_entries(cfg: dict) -> list[dict]:
@@ -1229,6 +1434,7 @@ class Api:
     _ANSI_RE = _re.compile(r'\x1b\[[^A-Za-z]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b.|\x07')
     _AI_READY_RE = _re.compile(
         r'[>›]\s*$'           # Claude Code / Codex input prompt
+        r'|^\s*[>›]\s+\S'     # Codex placeholder on the input line
         r'|^\s*Tip:'           # Codex tip line (shown after ready)
         r'|model:\s+\S'        # Codex model info box
         r'|claude\.ai'         # Claude Code welcome
@@ -1312,6 +1518,11 @@ class Api:
             return
         if data:
             s._startup_trust_pending = False
+            s._last_activity_time = time.time()
+            if getattr(s, "_idle_reap_state", ""):
+                s._idle_reap_state = ""
+                s._idle_summary_requested_at = 0.0
+                s._idle_close_after = 0.0
         # Auto-slug: on first user Enter, rename tmux session to a haiku-derived slug.
         # Runs in background so it never blocks the keystroke path. Only fires once
         # (_slug_pending) and only when the session has a default sf_sNN tmux name.
@@ -1382,6 +1593,31 @@ class Api:
             return ""
         s._init_pending = False
         return prompt
+
+    def is_session_ready_for_bridge(self, sid: str) -> bool:
+        """Return True when a bridged AI tab is ready to receive pasted input."""
+        s = self.sessions.get(sid)
+        if not s or not getattr(s, "alive", False):
+            return False
+        self._auto_accept_startup_trust_prompt(sid, s)
+        parts = []
+        with s.lock:
+            recent = bytes(s._recent).decode('utf-8', errors='replace')
+        if recent:
+            parts.append(recent)
+        tmux_name = getattr(s, '_tmux_name', None)
+        if tmux_name:
+            try:
+                r = subprocess.run(
+                    ["tmux", "capture-pane", "-p", "-J", "-t", tmux_name, "-S", "-80"],
+                    capture_output=True, text=True, timeout=1,
+                )
+                if r.returncode == 0 and r.stdout:
+                    parts.append(r.stdout)
+            except Exception:
+                pass
+        clean = self._ANSI_RE.sub('', "\n".join(parts)) if parts else ""
+        return bool(self._AI_READY_RE.search(clean))
 
     def read_output(self, sid: str) -> str:
         """Read buffered output. Used only during reconnect — normal output is pushed."""
@@ -1535,11 +1771,17 @@ class Api:
         except Exception:
             pass
 
-        if in_alt_screen and self.bridge is not None:
-            try:
-                slot = self.bridge.slots.get(sid)
-            except Exception:
-                slot = None
+        if in_alt_screen:
+            slot = None
+            for candidate_bridge in (self.bridge, self.line_bridge):
+                if candidate_bridge is None:
+                    continue
+                try:
+                    slot = candidate_bridge.slots.get(sid)
+                except Exception:
+                    slot = None
+                if slot is not None:
+                    break
             if slot is not None and getattr(slot, 'screen', None) is not None:
                 try:
                     text = self._pyte_history_text(slot)
@@ -3072,6 +3314,9 @@ class Api:
                 on_new_session=lambda c: self.new_session(c, 200, 50),
                 on_close_session=self.close_session,
                 on_consume_init=self.consume_init_prompt_if_ready,
+                on_rename_session=self.rename_session,
+                on_session_ready=self.is_session_ready_for_bridge,
+                gateway_worker_cmd=SHELLFRAME_CODEX_CMD,
             )
             for sid, s in self.sessions.items():
                 if not getattr(s, '_bridge_enabled', True):
