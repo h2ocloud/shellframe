@@ -226,7 +226,6 @@ class LineBridge(BridgeBase):
         self._server = None
         self._server_thread = None
         self._flush_thread = None
-        self._idle_thread = None
         self._stop_event = threading.Event()
         self._bot_info = {}
         self._outbox = []
@@ -243,21 +242,6 @@ class LineBridge(BridgeBase):
             or (gateway_worker_cmd or "").strip()
             or "codex"
         )
-        self._idle_review_sec = self._env_float("SHELLFRAME_LINE_IDLE_REVIEW_SEC", 300.0)
-        self._idle_close_sec = self._env_float("SHELLFRAME_LINE_IDLE_CLOSE_SEC", 1800.0)
-        keep_raw = _os.environ.get("SHELLFRAME_LINE_IDLE_KEEP_LABELS", "LINE-Gateway,main,Main").strip()
-        self._idle_keep_labels = {part.strip().casefold() for part in keep_raw.split(",") if part.strip()}
-        self._idle_managed_only = _os.environ.get("SHELLFRAME_LINE_IDLE_MANAGED_ONLY", "1").strip() not in ("0", "false", "False")
-        self._idle_closing = set()
-
-    @staticmethod
-    def _env_float(name: str, default: float) -> float:
-        try:
-            value = float(_os.environ.get(name, "") or default)
-        except (TypeError, ValueError):
-            value = default
-        return max(1.0, value)
-
     def register_session(self, sid: str, label: str, write_fn, peek_fn=None):
         with self._slots_lock:
             if sid in self.slots:
@@ -270,7 +254,6 @@ class LineBridge(BridgeBase):
     def unregister_session(self, sid: str):
         with self._slots_lock:
             self.slots.pop(sid, None)
-            self._idle_closing.discard(sid)
             if sid in self._slot_order:
                 self._slot_order.remove(sid)
             for i, slot_sid in enumerate(self._slot_order):
@@ -329,8 +312,6 @@ class LineBridge(BridgeBase):
         self._server_thread.start()
         self._flush_thread = threading.Thread(target=self._flush_loop, daemon=True)
         self._flush_thread.start()
-        self._idle_thread = threading.Thread(target=self._idle_reap_loop, daemon=True)
-        self._idle_thread.start()
         self._emit_status({"state": "connected", "bot": self._bot_info.get("displayName", "")})
 
     def stop(self):
@@ -947,36 +928,3 @@ class LineBridge(BridgeBase):
                             self._push_text(target_id, msg)
             except Exception as e:
                 _llog(f"line flush loop error: {type(e).__name__}: {e}")
-
-    def _idle_reap_loop(self):
-        while self.active and not self._stop_event.is_set():
-            self._stop_event.wait(self._idle_review_sec)
-            if self._stop_event.is_set() or self.paused or not self._on_close_session:
-                continue
-            now = time.time()
-            close_sids = []
-            with self._slots_lock:
-                for sid, slot in list(self.slots.items()):
-                    label = (slot.label or "").strip()
-                    label_key = label.casefold()
-                    if label_key in self._idle_keep_labels:
-                        continue
-                    if sid in self._idle_closing:
-                        continue
-                    if self._idle_managed_only and not label_key.startswith("line-"):
-                        continue
-                    if slot.awaiting_response or slot.expect_marker or slot.pending_target_id:
-                        continue
-                    last_activity = slot.last_activity_time or slot.last_input_time or now
-                    if now - last_activity < self._idle_close_sec:
-                        continue
-                    self._idle_closing.add(sid)
-                    close_sids.append((sid, label, int(now - last_activity)))
-            for sid, label, idle_sec in close_sids:
-                try:
-                    _llog(f"line idle reaper closing sid={sid} label={label!r} idle_sec={idle_sec}")
-                    self._on_close_session(sid)
-                except Exception as e:
-                    with self._slots_lock:
-                        self._idle_closing.discard(sid)
-                    _llog(f"line idle reaper close failed sid={sid}: {type(e).__name__}: {e}")
