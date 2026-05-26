@@ -13,6 +13,7 @@ import sys as _sys
 import tempfile
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -183,6 +184,22 @@ def strip_ansi(text, sent_texts=None):
             continue
         if len(stripped) > 2 and all(ch in c["decoration_chars"] for ch in stripped):
             continue
+        if re.search(r'\[sf_[^\]]+\].*\[[0-9]+,[0-9]+\].*"[^"]+"', stripped):
+            continue
+        if re.match(r'^\[[^\]]+\]\s+\[sf_[^\]]+\]\s+\d+:', stripped):
+            continue
+        if re.match(r'^\[[0-9]+,[0-9]+\]\s+"[^"]+"\s+\d{1,2}:\d{2}\b', stripped):
+            continue
+        if re.match(r'^\[[^\]]+\]\s+Ran\s+', stripped):
+            continue
+        if stripped.startswith(("Ran ", "Bash(", "Read ", "Search ", "Explored ", "Edited ", "Write ", "Update ")):
+            continue
+        if re.match(r'^[-+]\s*(ssh|scp|curl|tmux|cd|mvn|git|python|sleep)\b', stripped):
+            continue
+        if re.search(r'\b(max_output_tokens|yield_time_ms|session_id|exec_command|write_stdin)\b', stripped):
+            continue
+        if re.search(r'\.\.\. \+\d+ lines\b|\(ctrl \+ t to view transcript\)|gpt-[\w.-]+ high', stripped):
+            continue
         if stripped.startswith('› '):
             stripped = stripped[2:]
         elif stripped.startswith('• '):
@@ -209,6 +226,29 @@ def strip_ansi(text, sent_texts=None):
 
         lines.append(stripped)
     return '\n'.join(lines)
+
+
+def clean_mobile_marker_response(text: str) -> str:
+    """Light cleanup for text already isolated by a mobile reply marker."""
+    lines = []
+    previous = None
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^\[(TG|LINE)[^\]]*\]:", stripped):
+            continue
+        if stripped.startswith(("Ran ", "Bash(", "Read ", "Search ", "Explored ", "Edited ", "Write ", "Update ")):
+            continue
+        if re.match(r'^[-+]\s*(ssh|scp|curl|tmux|cd|mvn|git|python|sleep)\b', stripped):
+            continue
+        if re.search(r'\b(max_output_tokens|yield_time_ms|session_id|exec_command|write_stdin)\b', stripped):
+            continue
+        if stripped == previous:
+            continue
+        lines.append(stripped)
+        previous = stripped
+    return "\n".join(lines).strip()
 
 
 
@@ -347,6 +387,10 @@ class SessionSlot:
         self.pending_menu = False  # True if last extract found a menu prompt
         self.pending_menu_options = []  # [{"num": "1", "text": "..."}]
         self.awaiting_response = False  # True between user msg and first AI response extraction
+        self.pending_raw = ""
+        self.expect_marker = False
+        self.reply_start_marker = ""
+        self.reply_end_marker = ""
         self.last_extraction_ts = 0.0   # time of last successful response extraction
         # Throttle for sendChatAction. TG keeps the typing bubble alive ~5s,
         # so 4s pacing keeps it visible without burning 10× the API calls the
@@ -844,6 +888,9 @@ class TelegramBridge(BridgeBase):
                 slot.stream.feed(raw_text)
             except Exception:
                 pass
+            slot.pending_raw += raw_text
+            if len(slot.pending_raw) > 120000:
+                slot.pending_raw = slot.pending_raw[-120000:]
             now_ts = time.time()
             slot.last_output_time = now_ts
             slot.last_chunk_ts = now_ts  # for stall detection (not reset by flush)
@@ -1158,6 +1205,26 @@ class TelegramBridge(BridgeBase):
 
         return new_texts
 
+    def _extract_marked_mobile_reply(self, slot) -> str:
+        """Extract the unique mobile reply marker from raw PTY output."""
+        if not slot.expect_marker or not slot.reply_start_marker or not slot.reply_end_marker:
+            return ""
+        raw = slot.pending_raw
+        if slot.peek_fn:
+            try:
+                raw += "\n" + (slot.peek_fn() or "")
+            except Exception:
+                pass
+        clean_raw = strip_ansi(raw, sent_texts=[])
+        start = clean_raw.rfind(slot.reply_start_marker)
+        if start < 0:
+            return ""
+        end = clean_raw.find(slot.reply_end_marker, start + len(slot.reply_start_marker))
+        if end < 0:
+            return ""
+        marked = clean_raw[start + len(slot.reply_start_marker):end].strip()
+        return clean_mobile_marker_response(marked)
+
     def _detect_menu_prompt(self, slot) -> str:
         """Detect a numbered menu prompt waiting for user input.
         Returns formatted menu string or empty if none found."""
@@ -1410,8 +1477,26 @@ class TelegramBridge(BridgeBase):
                     if idle < 3.0 and total < 120.0:
                         continue
 
-                    # Extract new text via screen diff (only final changes)
-                    new_lines = self._extract_new_text(slot)
+                    if slot.expect_marker:
+                        marked_reply = self._extract_marked_mobile_reply(slot)
+                        if not marked_reply:
+                            slot.last_output_time = now
+                            continue
+                        # Drain pyte history so the same screen repaint is not
+                        # re-extracted on a later mobile turn.
+                        try:
+                            self._extract_new_text(slot)
+                        except Exception:
+                            pass
+                        new_lines = [marked_reply]
+                        slot.sent_responses.add(marked_reply)
+                        slot.pending_raw = ""
+                        slot.expect_marker = False
+                        slot.reply_start_marker = ""
+                        slot.reply_end_marker = ""
+                    else:
+                        # Extract new text via screen diff (only final changes)
+                        new_lines = self._extract_new_text(slot)
                     slot.sent_texts.clear()
                     slot.last_output_time = 0
                     slot.first_output_time = 0
@@ -2580,6 +2665,7 @@ class TelegramBridge(BridgeBase):
         if not slot.has_user_msg:
             with slot.output_lock:
                 slot.output_buf = ""
+                slot.pending_raw = ""
         slot.has_user_msg = True
         slot.awaiting_response = True  # arm typing indicator + flush extraction
         # Track what we send so we can filter echo from output
@@ -2620,6 +2706,27 @@ class TelegramBridge(BridgeBase):
                 payload = forwarded
         else:
             payload = forwarded
+
+        if wrap_with_preamble:
+            marker_token = f"TG_REPLY_{uuid.uuid4().hex[:8]}"
+            start_marker = f"[[{marker_token}]]"
+            end_marker = f"[[/{marker_token}]]"
+            marker_prompt = (
+                f"最終要回 Telegram 的文字請放在 {start_marker} 和 {end_marker} 之間。"
+                "標記外可以思考或操作，但手機只會收到標記內文字。"
+            )
+            if init_prompt:
+                payload = init_prompt + "\n\n" + marker_prompt + "\n\n---\nUser's first message: " + forwarded
+            else:
+                payload = marker_prompt + "\n\n" + payload
+            slot.sent_texts.append(marker_prompt)
+            slot.expect_marker = True
+            slot.reply_start_marker = start_marker
+            slot.reply_end_marker = end_marker
+        else:
+            slot.expect_marker = False
+            slot.reply_start_marker = ""
+            slot.reply_end_marker = ""
 
         # Write text first, then Enter after a brief delay
         def _send():

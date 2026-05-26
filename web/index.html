@@ -383,14 +383,15 @@
   .sb-item:hover { background: #1f2335; }
   .sb-item.active { background: #1f2335; color: #c0caf5; border-left-color: #7aa2f7; }
   .sb-item .sb-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-  .sb-tg {
+  .sb-bridge {
     font-size: 9px; padding: 1px 5px; border-radius: 3px; line-height: 1.3;
     border: 1px solid #3b4261; background: none; color: #565f89;
     cursor: pointer; transition: all .15s; white-space: nowrap;
   }
-  .sb-tg:hover { border-color: #7aa2f7; color: #7aa2f7; }
-  .sb-tg.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
-  .sb-tg.active-tg { border-color: #7aa2f7; color: #7aa2f7; background: rgba(122,162,247,.1); }
+  .sb-bridge:hover { border-color: #7aa2f7; color: #7aa2f7; }
+  .sb-bridge.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
+  .sb-bridge.active-bridge { border-color: #7aa2f7; color: #7aa2f7; background: rgba(122,162,247,.1); }
+  .sb-line { margin-left: -4px; }
   .sb-divider {
     display: flex; align-items: center; gap: 6px; padding: 8px 12px;
     font-size: 9px; color: #3b4261; user-select: none; min-height: 28px;
@@ -446,7 +447,7 @@
   <div id="tabs"></div>
   <button id="btn-new-tab" title="New tab (Cmd+T)">+</button>
   <div class="tab-spacer"></div>
-  <button class="bridge-toggle" id="btn-bridge" title="Telegram Bridge" style="display:none">TG</button>
+  <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
 <!-- Attachment chips -->
@@ -509,12 +510,23 @@
 
 <!-- Settings modal -->
 <div class="modal-overlay" id="modal-settings">
-  <div class="modal" style="width:500px">
+  <div class="modal" style="width:560px">
     <h2 data-i18n="settings">Settings</h2>
 
-    <div class="settings-tabs">
+    <div class="settings-tabs" id="settings-tabs-bar">
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
-      <button class="settings-tab" data-tab="bridge">Telegram Bridge</button>
+      <button class="settings-tab" data-tab="bridge" data-i18n="settingsTelegram">Telegram Bridge</button>
+      <button class="settings-tab" data-tab="line" data-i18n="settingsLine">LINE</button>
+      <button class="settings-tab" data-tab="marketplace" title="Browse and install plugins">🧩 Plugins</button>
+    </div>
+
+    <!-- Tab: Plugin marketplace -->
+    <div class="settings-tab-panel" id="settings-panel-marketplace">
+      <div style="font-size:12px;color:#a9b1d6;margin-bottom:10px;line-height:1.55">
+        Install optional ShellFrame plugins. Installed plugins live in
+        <code>shellframe_plugins/&lt;name&gt;/</code>.
+      </div>
+      <div id="settings-marketplace-list" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
 
     <!-- Tab: General -->
@@ -605,36 +617,36 @@
     <div class="settings-tab-panel" id="settings-panel-bridge">
       <div class="bridge-setup">
         <h4 style="display:flex;align-items:center;justify-content:space-between">
-          <span>Telegram Bridge</span>
+          <span data-i18n="settingsTelegram">Telegram Bridge</span>
           <span id="settings-bridge-status" style="font-size:11px;color:#565f89"></span>
         </h4>
         <div class="bridge-field">
-          <label>Bot Token</label>
+          <label data-i18n="tgBotToken">Bot Token</label>
           <input type="password" id="settings-bridge-token" placeholder="123456:ABC-DEF..."/>
         </div>
         <div class="bridge-field">
-          <label>Users</label>
-          <input type="text" id="settings-bridge-users" placeholder="User IDs (comma separated), empty = all"/>
+          <label data-i18n="tgUsers">Users</label>
+          <input type="text" id="settings-bridge-users" data-i18n-placeholder="tgUsersPlaceholder" placeholder="User IDs (comma separated), empty = all"/>
         </div>
         <div class="bridge-field">
-          <label>Prefix</label>
+          <label data-i18n="bridgePrefix">Prefix</label>
           <button class="toggle-switch on" id="settings-bridge-prefix"></button>
-          <span style="font-size:11px;color:#565f89">[TG @user]: message</span>
+          <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
         </div>
         <div class="bridge-field" style="align-items:flex-start">
-          <label>System Prompt</label>
+          <label data-i18n="bridgeSystemPrompt">System Prompt</label>
           <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
         </div>
         <div class="bridge-field" style="align-items:flex-start">
-          <label>Per-turn preamble</label>
-          <textarea id="setting-tg-prompt" style="font-size:11px" placeholder="Prepended to every TG message sent to the AI. Leave empty to turn off."></textarea>
+          <label data-i18n="tgPerTurnPreamble">Per-turn preamble</label>
+          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPreamblePlaceholder" placeholder="Prepended to every TG message sent to the AI. Leave empty to turn off."></textarea>
         </div>
-        <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4">
+        <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4" data-i18n="tgPreambleHelp">
           Every non-command TG message is wrapped with this preamble before hitting the AI. Anthropic caches unchanged prefixes — cost is near-zero after first use. Good place for persona / response-style rules. Empty = off.
         </div>
         <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-primary" id="btn-settings-bridge-connect">Connect</button>
-          <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none">Disconnect</button>
+          <button class="btn btn-primary" id="btn-settings-bridge-connect" data-i18n="connect">Connect</button>
+          <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
       </div>
 
@@ -671,6 +683,77 @@
         <div style="font-size:10px;color:#565f89;margin-top:6px;line-height:1.4">
           Plugin: drop a Python file at <code>~/.config/shellframe/stt_plugin.py</code>
           exporting <code>transcribe(audio_path) → str</code> for custom STT logic.
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: LINE Bridge -->
+    <div class="settings-tab-panel" id="settings-panel-line">
+      <div class="bridge-setup">
+        <h4 style="display:flex;align-items:center;justify-content:space-between">
+          <span data-i18n="lineBridgePlugin">LINE Bridge Plugin</span>
+          <span id="settings-line-status" style="font-size:11px;color:#565f89"></span>
+        </h4>
+        <div class="bridge-field">
+          <label data-i18n="lineAccessToken">Access token</label>
+          <input type="password" id="settings-line-token" data-i18n-placeholder="lineAccessTokenPlaceholder" placeholder="LINE channel access token"/>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="lineSecret">Secret</label>
+          <input type="password" id="settings-line-secret" data-i18n-placeholder="lineSecretPlaceholder" placeholder="LINE channel secret"/>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="lineAllowedIds">Allowed IDs</label>
+          <input type="text" id="settings-line-users" data-i18n-placeholder="lineAllowedIdsPlaceholder" placeholder="LINE userId/groupId, comma separated; empty = allow all"/>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="lineDeliveryMode">Reply mode</label>
+          <select id="settings-line-mode" style="flex:1">
+            <option value="poll" data-i18n="lineModePoll">Forward + poll outbox</option>
+            <option value="push" data-i18n="lineModePush">Direct LINE Messaging API</option>
+          </select>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="lineLocalServer">Local server</label>
+          <input type="number" id="settings-line-port" value="8787" min="1024" max="65535" style="width:90px;flex:0 0 auto"/>
+          <input type="text" id="settings-line-path" value="/line/webhook" style="font-family:monospace"/>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="linePollPath">Poll path</label>
+          <input type="text" id="settings-line-poll-path" value="/line/poll" style="font-family:monospace"/>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="linePublicUrl">Public URL</label>
+          <input type="text" id="settings-line-public-url" data-i18n-placeholder="linePublicUrlPlaceholder" placeholder="https://your-tunnel.example.com/line/webhook"/>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="lineForwardSecret">Forward key</label>
+          <input type="password" id="settings-line-forward-secret" data-i18n-placeholder="lineForwardSecretPlaceholder" placeholder="Optional shared key for company webhook"/>
+        </div>
+        <div class="bridge-field">
+          <label data-i18n="bridgePrefix">Prefix</label>
+          <button class="toggle-switch on" id="settings-line-prefix"></button>
+          <span style="font-size:11px;color:#565f89" data-i18n="linePrefixHint">[LINE userId]: message</span>
+        </div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label data-i18n="linePerTurnPreamble">Wrapper prompt</label>
+          <textarea id="setting-line-prompt" style="font-size:11px" data-i18n-placeholder="linePreamblePlaceholder" placeholder="Prepended to every LINE message sent to the AI. Leave empty to turn off."></textarea>
+        </div>
+        <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4" data-i18n="linePreambleHelp">
+          Every non-command LINE message is wrapped with this prompt so agents reply in a LINE-friendly format. Empty = off.
+        </div>
+        <div id="settings-line-help" style="font-size:11px;color:#787c99;line-height:1.55;background:#1f2335;border:1px solid #2f354d;border-radius:6px;padding:10px;margin-top:8px">
+          <div><b data-i18n="lineSetupTitle">Setup</b></div>
+          <div data-i18n="lineSetupStep1">1. Company webhook forwards LINE events to the local endpoint below.</div>
+          <div data-i18n="lineSetupStep2">2. In Forward + poll mode, your webhook polls the poll endpoint for responses.</div>
+          <div data-i18n="lineSetupStep3">3. Direct mode still supports LINE signature verification and Messaging API push/reply.</div>
+          <div><span data-i18n="lineSetupStep4Prefix">4. Local endpoint:</span> <code id="settings-line-local-url">http://127.0.0.1:8787/line/webhook</code></div>
+          <div><span data-i18n="lineSetupPollPrefix">5. Poll endpoint:</span> <code id="settings-line-poll-url">http://127.0.0.1:8787/line/poll</code></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="btn-settings-line-connect" data-i18n="lineConnect">Connect LINE</button>
+          <button class="btn btn-ghost" id="btn-settings-line-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
+          <button class="btn btn-ghost" id="btn-settings-line-copy-url" data-i18n="lineCopyUrl">Copy local URL</button>
         </div>
       </div>
     </div>
@@ -792,29 +875,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <!-- Bridge config modal -->
 <div class="modal-overlay" id="modal-bridge">
   <div class="modal" style="width:480px">
-    <h2>Telegram Bridge</h2>
+    <h2 data-i18n="settingsTelegram">Telegram Bridge</h2>
     <div class="bridge-setup">
       <div class="bridge-field">
-        <label>Bot Token</label>
+        <label data-i18n="tgBotToken">Bot Token</label>
         <input type="password" id="bridge-token" placeholder="123456:ABC-DEF..."/>
       </div>
       <div class="bridge-field">
-        <label>Allowed Users</label>
-        <input type="text" id="bridge-users" placeholder="User IDs (comma separated), empty = allow all"/>
+        <label data-i18n="tgAllowedUsers">Allowed Users</label>
+        <input type="text" id="bridge-users" data-i18n-placeholder="tgAllowedUsersPlaceholder" placeholder="User IDs (comma separated), empty = allow all"/>
       </div>
       <div class="bridge-field">
-        <label>Prefix</label>
+        <label data-i18n="bridgePrefix">Prefix</label>
         <button class="toggle-switch on" id="bridge-prefix-toggle"></button>
-        <span style="font-size:11px;color:#565f89">[TG @user]: message</span>
+        <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
       </div>
       <div class="bridge-field" style="align-items:flex-start">
-        <label>System Prompt</label>
+        <label data-i18n="bridgeSystemPrompt">System Prompt</label>
         <textarea id="bridge-prompt">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
       </div>
     </div>
     <div class="modal-footer" style="margin-top:14px">
-      <button class="btn btn-ghost" id="btn-bridge-cancel">Cancel</button>
-      <button class="btn btn-primary" id="btn-bridge-start">Connect</button>
+      <button class="btn btn-ghost" id="btn-bridge-cancel" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="btn-bridge-start" data-i18n="connect">Connect</button>
     </div>
   </div>
 </div>
@@ -848,6 +931,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       close: 'Close',
       settings: 'Settings',
       settingsGeneral: 'General',
+      settingsTelegram: 'Telegram Bridge',
+      settingsLine: 'LINE',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
       addPreset: 'Add',
       fontSize: 'Terminal font',
@@ -886,6 +971,56 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgUnbridgedDivider: 'Not bridged by ShellFrame',
       tgUnbridgedTooltip: 'Sessions below are not monitored by ShellFrame\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
       tgSelfManaged: 'own',
+      tgBotToken: 'Bot Token',
+      tgUsers: 'Users',
+      tgUsersPlaceholder: 'User IDs (comma separated), empty = all',
+      tgAllowedUsers: 'Allowed Users',
+      tgAllowedUsersPlaceholder: 'User IDs (comma separated), empty = allow all',
+      bridgePrefix: 'Prefix',
+      tgPrefixHint: '[TG @user]: message',
+      bridgeSystemPrompt: 'System Prompt',
+      tgPerTurnPreamble: 'Per-turn preamble',
+      tgPreamblePlaceholder: 'Prepended to every TG message sent to the AI. Leave empty to turn off.',
+      tgPreambleHelp: 'Every non-command TG message is wrapped with this preamble before hitting the AI. Anthropic caches unchanged prefixes — cost is near-zero after first use. Good place for persona / response-style rules. Empty = off.',
+      connect: 'Connect',
+      disconnect: 'Disconnect',
+      connected: 'Connected',
+      paused: 'Paused',
+      notConnected: 'Not connected',
+      copied: 'Copied',
+      tgMissingToken: 'Bot Token required',
+      connectionFailed: 'Connection failed',
+      lineBridgePlugin: 'LINE Bridge Plugin',
+      lineAccessToken: 'Access token',
+      lineAccessTokenPlaceholder: 'LINE channel access token',
+      lineSecret: 'Secret',
+      lineSecretPlaceholder: 'LINE channel secret',
+      lineAllowedIds: 'Allowed IDs',
+      lineAllowedIdsPlaceholder: 'LINE userId/groupId, comma separated; empty = allow all',
+      lineDeliveryMode: 'Reply mode',
+      lineModePoll: 'Forward + poll outbox',
+      lineModePush: 'Direct LINE Messaging API',
+      lineLocalServer: 'Local server',
+      linePollPath: 'Poll path',
+      linePublicUrl: 'Public URL',
+      linePublicUrlPlaceholder: 'https://your-tunnel.example.com/line/webhook',
+      lineForwardSecret: 'Forward key',
+      lineForwardSecretPlaceholder: 'Optional shared key for company webhook',
+      linePrefixHint: '[LINE userId]: message',
+      linePerTurnPreamble: 'Wrapper prompt',
+      linePreamblePlaceholder: 'Prepended to every LINE message sent to the AI. Leave empty to turn off.',
+      linePreambleHelp: 'Every non-command LINE message is wrapped with this prompt so agents reply in a LINE-friendly format. Empty = off.',
+      lineSetupTitle: 'Setup',
+      lineSetupStep1: '1. Company webhook forwards LINE events to the local endpoint below.',
+      lineSetupStep2: '2. In Forward + poll mode, your webhook polls the poll endpoint for responses.',
+      lineSetupStep3: '3. Direct mode still supports LINE signature verification and Messaging API push/reply.',
+      lineSetupStep4Prefix: '4. Local endpoint:',
+      lineSetupPollPrefix: '5. Poll endpoint:',
+      lineConnect: 'Connect LINE',
+      lineCopyUrl: 'Copy local URL',
+      lineMissingCredentials: 'Direct mode requires LINE access token and channel secret',
+      lineStarted: 'LINE bridge started. Local webhook: ',
+      lineFailed: 'LINE connection failed',
     },
     'zh-TW': {
       newSession: '新增工作階段',
@@ -898,6 +1033,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       close: '關閉',
       settings: '設定',
       settingsGeneral: '一般',
+      settingsTelegram: 'Telegram 橋接',
+      settingsLine: 'LINE',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
       addPreset: '新增',
       fontSize: '終端字型',
@@ -936,6 +1073,56 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgUnbridgedDivider: '不由 ShellFrame 橋接',
       tgUnbridgedTooltip: '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
       tgSelfManaged: '自管',
+      tgBotToken: 'Bot Token',
+      tgUsers: '使用者',
+      tgUsersPlaceholder: 'User ID（逗號分隔）；留空代表全部允許',
+      tgAllowedUsers: '允許的使用者',
+      tgAllowedUsersPlaceholder: 'User ID（逗號分隔）；留空代表全部允許',
+      bridgePrefix: '前綴',
+      tgPrefixHint: '[TG @使用者]: 訊息',
+      bridgeSystemPrompt: '系統提示',
+      tgPerTurnPreamble: '每則訊息前綴提示',
+      tgPreamblePlaceholder: '送進 AI 前加在每則 TG 訊息前。留空代表關閉。',
+      tgPreambleHelp: '每則非指令 TG 訊息送進 AI 前，會先包上這段提示。Anthropic 會快取不變前綴，第一次之後成本很低。適合放 persona / 回覆風格規則；留空代表關閉。',
+      connect: '連線',
+      disconnect: '斷線',
+      connected: '已連線',
+      paused: '已暫停',
+      notConnected: '未連線',
+      copied: '已複製',
+      tgMissingToken: '請輸入 Bot Token',
+      connectionFailed: '連線失敗',
+      lineBridgePlugin: 'LINE 橋接外掛',
+      lineAccessToken: 'Access token',
+      lineAccessTokenPlaceholder: 'LINE channel access token',
+      lineSecret: 'Secret',
+      lineSecretPlaceholder: 'LINE channel secret',
+      lineAllowedIds: '允許的 ID',
+      lineAllowedIdsPlaceholder: 'LINE userId/groupId，逗號分隔；留空代表全部允許',
+      lineDeliveryMode: '回覆模式',
+      lineModePoll: 'Forward + poll outbox',
+      lineModePush: '直連 LINE Messaging API',
+      lineLocalServer: '本機服務',
+      linePollPath: 'Poll 路徑',
+      linePublicUrl: '公開 URL',
+      linePublicUrlPlaceholder: 'https://你的-tunnel.example.com/line/webhook',
+      lineForwardSecret: 'Forward key',
+      lineForwardSecretPlaceholder: '公司 webhook 可選的 shared key',
+      linePrefixHint: '[LINE userId]: 訊息',
+      linePerTurnPreamble: '包裝提示',
+      linePreamblePlaceholder: '送進 AI 前加在每則 LINE 訊息前。留空代表關閉。',
+      linePreambleHelp: '每則非指令 LINE 訊息送進 AI 前，會先包上這段提示，讓 agent 用適合 LINE 的格式回覆；留空代表關閉。',
+      lineSetupTitle: '設定步驟',
+      lineSetupStep1: '1. 公司既有 webhook 把 LINE event forward 到下方本機 endpoint。',
+      lineSetupStep2: '2. Forward + poll 模式下，公司 webhook 再 poll 回覆 endpoint 取回 agent 回覆。',
+      lineSetupStep3: '3. 直連模式仍支援 LINE signature 驗證與 Messaging API push/reply。',
+      lineSetupStep4Prefix: '4. 本機 endpoint：',
+      lineSetupPollPrefix: '5. Poll endpoint：',
+      lineConnect: '連線 LINE',
+      lineCopyUrl: '複製 URL',
+      lineMissingCredentials: '直連模式需要 LINE access token 和 channel secret',
+      lineStarted: 'LINE bridge 已啟動。本機 webhook: ',
+      lineFailed: 'LINE 連線失敗',
     }
   };
 
@@ -1047,6 +1234,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const key = el.dataset.i18n;
       if (el.tagName === 'INPUT') el.placeholder = t(key);
       else el.innerHTML = t(key);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+      el.placeholder = t(el.dataset.i18nPlaceholder);
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      el.title = t(el.dataset.i18nTitle);
     });
     // Update about usage list
     const usageList = document.getElementById('about-usage-list');
@@ -1545,7 +1738,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // Reconnect to an existing PTY session after page reload (hot update)
-  async function reconnectSession(sid, cmd) {
+  async function reconnectSession(sid, cmd, customLabel = null) {
     const pane = document.createElement('div');
     pane.className = 'term-pane';
     $wrap.appendChild(pane);
@@ -1566,7 +1759,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     attachFileLinkProvider(term);
     attachSelectionAutoScroll(term, pane);
 
-    const label = cmd.split(/\s/)[0];
+    const label = customLabel || cmd.split(/\s/)[0];
     sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
@@ -1676,6 +1869,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     renderTabs();
     updateImageBar();
+    try {
+      if (window.refreshPluginBadges) setTimeout(() => window.refreshPluginBadges(true), 650);
+    } catch (_) {}
   }
 
   async function closeTab(sid) {
@@ -1779,9 +1975,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!container) return;
     container.innerHTML = '';
     const hasBridge = bridgeState && bridgeState.active;
+    const hasLineBridge = lineBridgeState && lineBridgeState.active;
+    const hasAnyBridge = hasBridge || hasLineBridge;
     const enabledSids = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled !== false);
     const disabledSids = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled === false);
     const activeTgSid = bridgeState?.active_sid || (enabledSids[0] || '');
+    const activeLineSid = lineBridgeState?.active_sid || (enabledSids[0] || '');
 
     let tgIdx = 0;
 
@@ -1790,19 +1989,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!s) return;
       tgIdx++;
       const isActiveTg = hasBridge && sid === activeTgSid;
+      const isActiveLine = hasLineBridge && sid === activeLineSid;
       const el = document.createElement('div');
       el.className = 'sb-item' + (sid === activeId ? ' active' : '');
       el.dataset.sid = sid;
       el.dataset.section = 'on';
       el.innerHTML =
         `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
-        (hasBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
+        (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
-        (hasBridge ? `<span class="sb-tg on${isActiveTg ? ' active-tg' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '');
+        (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
+        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '');
       container.appendChild(el);
     });
 
-    if (hasBridge) {
+    if (hasAnyBridge) {
       const divider = document.createElement('div');
       divider.className = 'sb-divider';
       divider.dataset.section = 'divider';
@@ -1821,7 +2022,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
-          `<span class="sb-tg" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
+          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
         container.appendChild(el);
       });
 
@@ -1915,6 +2116,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (bridgeState) bridgeState.active_sid = sid;
         renderSidebar();
       }).catch(err => console.warn('switch error:', err));
+      return;
+    }
+    const lineAction = e.target.closest('[data-action="switch-line"]');
+    if (lineAction) {
+      e.preventDefault();
+      e.stopPropagation();
+      const sid = lineAction.dataset.sid;
+      pywebview.api.switch_line_bridge_session(sid).then((raw) => {
+        if (lineBridgeState) lineBridgeState.active_sid = sid;
+        renderSidebar();
+      }).catch(err => console.warn('switch line error:', err));
       return;
     }
     // Session click → switch tab
@@ -2018,6 +2230,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       try {
         const bs = JSON.parse(await pywebview.api.get_bridge_status());
         if (bs.exists) bridgeState = bs;
+      } catch(e) {}
+      try {
+        const ls = JSON.parse(await pywebview.api.get_line_bridge_status());
+        lineBridgeState = (ls.exists && ls.active) ? ls : null;
       } catch(e) {}
       renderTabs();
     }
@@ -2868,6 +3084,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = config.settings || {};
     document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
     document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
+    document.getElementById('setting-line-prompt').value = s.line_prompt ?? '';
     // Auto /compact (Claude) — default on; threshold default 15 (%)
     document.getElementById('setting-auto-compact').classList.toggle(
       'on', s.claude_auto_compact !== false,
@@ -2885,6 +3102,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       'on', s.completion_notifications !== false,
     );
     syncSettingsBridge();
+    syncSettingsLineBridge();
   });
 
   document.getElementById('setting-complete-notify')
@@ -2948,6 +3166,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('setting-tg-prompt').addEventListener('blur', (e) => {
     _savePromptField('tg_prompt', e.target);
   });
+  document.getElementById('setting-line-prompt').addEventListener('blur', (e) => {
+    _savePromptField('line_prompt', e.target);
+  });
 
   // UI scale buttons
   document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(btn => {
@@ -2965,6 +3186,90 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // Settings bridge section
   document.getElementById('settings-bridge-prefix').addEventListener('click', function() { this.classList.toggle('on'); });
+  document.getElementById('settings-line-prefix').addEventListener('click', function() { this.classList.toggle('on'); });
+
+  function lineLocalWebhookUrl() {
+    const port = document.getElementById('settings-line-port').value || '8787';
+    let path = document.getElementById('settings-line-path').value || '/line/webhook';
+    if (!path.startsWith('/')) path = '/' + path;
+    return `http://127.0.0.1:${port}${path}`;
+  }
+
+  function lineLocalPollUrl() {
+    const port = document.getElementById('settings-line-port').value || '8787';
+    let path = document.getElementById('settings-line-poll-path').value || '/line/poll';
+    if (!path.startsWith('/')) path = '/' + path;
+    return `http://127.0.0.1:${port}${path}`;
+  }
+
+  function updateLineLocalUrlHint() {
+    const el = document.getElementById('settings-line-local-url');
+    if (el) el.textContent = lineLocalWebhookUrl();
+    const poll = document.getElementById('settings-line-poll-url');
+    if (poll) poll.textContent = lineLocalPollUrl();
+  }
+  document.getElementById('settings-line-port').addEventListener('input', updateLineLocalUrlHint);
+  document.getElementById('settings-line-path').addEventListener('input', updateLineLocalUrlHint);
+  document.getElementById('settings-line-poll-path').addEventListener('input', updateLineLocalUrlHint);
+
+  async function syncSettingsLineBridge() {
+    const statusEl = document.getElementById('settings-line-status');
+    const connectBtn = document.getElementById('btn-settings-line-connect');
+    const disconnectBtn = document.getElementById('btn-settings-line-disconnect');
+
+    try {
+      const saved = JSON.parse(await pywebview.api.get_saved_line_bridge());
+      if (saved) {
+        const tokenEl = document.getElementById('settings-line-token');
+        const secretEl = document.getElementById('settings-line-secret');
+        const usersEl = document.getElementById('settings-line-users');
+        const modeEl = document.getElementById('settings-line-mode');
+        const portEl = document.getElementById('settings-line-port');
+        const pathEl = document.getElementById('settings-line-path');
+        const pollPathEl = document.getElementById('settings-line-poll-path');
+        const publicEl = document.getElementById('settings-line-public-url');
+        const forwardSecretEl = document.getElementById('settings-line-forward-secret');
+        const prefixEl = document.getElementById('settings-line-prefix');
+        if (!tokenEl.value) tokenEl.value = saved.channel_access_token || '';
+        if (!secretEl.value) secretEl.value = saved.channel_secret || '';
+        if (!usersEl.value) usersEl.value = (saved.allowed_users || []).join(', ');
+        modeEl.value = saved.delivery_mode || 'poll';
+        if (saved.webhook_port) portEl.value = saved.webhook_port;
+        if (saved.webhook_path) pathEl.value = saved.webhook_path;
+        if (saved.poll_path) pollPathEl.value = saved.poll_path;
+        if (!publicEl.value) publicEl.value = saved.public_webhook_url || '';
+        if (!forwardSecretEl.value) forwardSecretEl.value = saved.forward_secret || '';
+        prefixEl.classList.toggle('on', saved.prefix_enabled !== false);
+      }
+    } catch(e) {}
+    updateLineLocalUrlHint();
+
+    try {
+      const raw = await pywebview.api.get_line_bridge_status();
+      const result = JSON.parse(raw);
+      if (result.exists && result.active) {
+        lineBridgeState = result;
+        statusEl.textContent = result.paused ? `⏸ ${t('paused')}` : `● ${t('connected')} (${result.delivery_mode || 'line'})`;
+        statusEl.style.color = result.paused ? '#e0af68' : '#9ece6a';
+        connectBtn.style.display = 'none';
+        disconnectBtn.style.display = 'inline-block';
+        renderTabs();
+      } else {
+        lineBridgeState = null;
+        statusEl.textContent = t('notConnected');
+        statusEl.style.color = '#565f89';
+        connectBtn.style.display = 'inline-block';
+        disconnectBtn.style.display = 'none';
+        renderTabs();
+      }
+    } catch(e) {
+      lineBridgeState = null;
+      statusEl.textContent = '';
+      connectBtn.style.display = 'inline-block';
+      disconnectBtn.style.display = 'none';
+      renderTabs();
+    }
+  }
 
   async function syncSettingsBridge() {
     const statusEl = document.getElementById('settings-bridge-status');
@@ -2990,12 +3295,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const raw = await pywebview.api.get_bridge_status();
       const result = JSON.parse(raw);
       if (result.exists && result.active) {
-        statusEl.textContent = result.paused ? '⏸ Paused' : `● Connected (@${result.bot})`;
+        statusEl.textContent = result.paused ? `⏸ ${t('paused')}` : `● ${t('connected')} (@${result.bot})`;
         statusEl.style.color = result.paused ? '#e0af68' : '#9ece6a';
         connectBtn.style.display = 'none';
         disconnectBtn.style.display = 'inline-block';
       } else {
-        statusEl.textContent = 'Not connected';
+        statusEl.textContent = t('notConnected');
         statusEl.style.color = '#565f89';
         connectBtn.style.display = 'inline-block';
         disconnectBtn.style.display = 'none';
@@ -3124,7 +3429,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   document.getElementById('btn-settings-bridge-connect').addEventListener('click', async () => {
     const token = document.getElementById('settings-bridge-token').value.trim();
-    if (!token) { alert(lang === 'zh-TW' ? '請輸入 Bot Token' : 'Bot Token required'); return; }
+    if (!token) { alert(t('tgMissingToken')); return; }
 
     const usersStr = document.getElementById('settings-bridge-users').value.trim();
     const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -3140,7 +3445,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       renderTabs();
       syncSettingsBridge();
     } else {
-      alert(result.message || 'Connection failed');
+      alert(result.message || t('connectionFailed'));
     }
   });
 
@@ -3150,6 +3455,54 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     updateBridgeButton();
     renderTabs();
     syncSettingsBridge();
+  });
+
+  document.getElementById('btn-settings-line-connect').addEventListener('click', async () => {
+    const token = document.getElementById('settings-line-token').value.trim();
+    const secret = document.getElementById('settings-line-secret').value.trim();
+    const mode = document.getElementById('settings-line-mode').value || 'poll';
+    if (mode === 'push' && (!token || !secret)) {
+      alert(t('lineMissingCredentials'));
+      return;
+    }
+    const usersStr = document.getElementById('settings-line-users').value.trim();
+    const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const prefix = document.getElementById('settings-line-prefix').classList.contains('on');
+    const port = parseInt(document.getElementById('settings-line-port').value, 10) || 8787;
+    const path = document.getElementById('settings-line-path').value.trim() || '/line/webhook';
+    const pollPath = document.getElementById('settings-line-poll-path').value.trim() || '/line/poll';
+    const publicUrl = document.getElementById('settings-line-public-url').value.trim();
+    const forwardSecret = document.getElementById('settings-line-forward-secret').value.trim();
+    const raw = await pywebview.api.start_line_bridge(
+      token, secret, JSON.stringify(users), prefix, port, path, publicUrl, mode, pollPath, forwardSecret
+    );
+    const result = JSON.parse(raw);
+    if (result.success !== false) {
+      lineBridgeState = result;
+      syncSettingsLineBridge();
+      renderTabs();
+      alert(t('lineStarted') + (result.webhook_url || lineLocalWebhookUrl()));
+    } else {
+      alert(result.message || t('lineFailed'));
+    }
+  });
+
+  document.getElementById('btn-settings-line-disconnect').addEventListener('click', async () => {
+    await pywebview.api.stop_line_bridge();
+    lineBridgeState = null;
+    syncSettingsLineBridge();
+    renderTabs();
+  });
+
+  document.getElementById('btn-settings-line-copy-url').addEventListener('click', async () => {
+    const publicUrl = document.getElementById('settings-line-public-url').value.trim();
+    const url = publicUrl || lineLocalWebhookUrl();
+    try {
+      await pywebview.api.copy_text(url);
+      const btn = document.getElementById('btn-settings-line-copy-url');
+      btn.textContent = t('copied');
+      setTimeout(() => { btn.textContent = t('lineCopyUrl'); }, 900);
+    } catch(e) {}
   });
 
   // Font size slider
@@ -3346,6 +3699,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   const $btnBridge = document.getElementById('btn-bridge');
   const $modalBridge = document.getElementById('modal-bridge');
   let bridgeState = null; // global bridge status
+  let lineBridgeState = null; // LINE bridge plugin status
 
   function updateBridgeButton() {
     $btnBridge.style.display = 'inline-block';
@@ -3354,12 +3708,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const count = bridgeState.sessions || 0;
       $btnBridge.textContent = 'TG' + (bridgeState.paused ? ' ⏸' : ` ● ${count}`);
       $btnBridge.title = bridgeState.bot
-        ? `@${bridgeState.bot} — ${count} sessions` + (bridgeState.paused ? ' (paused)' : '')
-        : 'Telegram Bridge';
+        ? `@${bridgeState.bot} — ${count} sessions` + (bridgeState.paused ? ` (${t('paused')})` : '')
+        : t('settingsTelegram');
     } else {
       $btnBridge.className = 'bridge-toggle';
       $btnBridge.textContent = 'TG';
-      $btnBridge.title = 'Click to set up Telegram Bridge';
+      $btnBridge.title = t('settingsTelegram');
     }
   }
 
@@ -3467,12 +3821,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // applies custom label, hooks up the input pipe, etc.
       for (const s of backend) {
         if (!localSids.has(s.sid)) {
-          await reconnectSession(s.sid, s.cmd);
+          await reconnectSession(s.sid, s.cmd, s.label || null);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
-            if (s.label) sessions[s.sid].label = s.label;
           }
           changed = true;
+        } else if (sessions[s.sid]) {
+          const nextLabel = s.label || sessions[s.sid].cmd.split(/\s/)[0];
+          const nextBridgeEnabled = s.bridge_enabled !== false;
+          if (sessions[s.sid].label !== nextLabel) {
+            sessions[s.sid].label = nextLabel;
+            changed = true;
+          }
+          if (sessions[s.sid].bridgeEnabled !== nextBridgeEnabled) {
+            sessions[s.sid].bridgeEnabled = nextBridgeEnabled;
+            changed = true;
+          }
         }
       }
 
@@ -3786,7 +4150,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
         } catch(e) {}
 
-        if (result.can_hot_reload) {
+        if (result.needs_restart) {
+          $updateStatus.textContent = `v${result.version} — restart required`;
+          confirmRestart(result.version, true);
+        } else if (result.can_hot_reload) {
           $updateStatus.textContent = `v${result.version} — reloading...`;
           setTimeout(() => location.reload(), 1500);
         } else {
@@ -3927,7 +4294,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('restart-now').addEventListener('click', async () => {
       document.getElementById('restart-now').disabled = true;
       document.getElementById('restart-now').textContent = isZh ? '重啟中...' : 'Restarting...';
-      await pywebview.api.restart_app();
+      const raw = await pywebview.api.restart_app();
+      try {
+        const result = JSON.parse(raw);
+        if (result && result.success === false) {
+          document.getElementById('restart-now').disabled = false;
+          document.getElementById('restart-now').textContent = isZh ? '無法安全重啟' : 'Restart blocked';
+          const msg = document.createElement('div');
+          msg.style.cssText = 'font-size:11px;color:#f7768e;background:rgba(247,118,142,.08);border-left:2px solid #f7768e;padding:8px 10px;margin-top:10px;border-radius:3px;line-height:1.45';
+          msg.textContent = result.message || (isZh ? '重啟被阻止，避免關閉 live sessions。' : 'Restart blocked to avoid closing live sessions.');
+          document.getElementById('restart-now').parentNode.parentNode.insertBefore(msg, document.getElementById('restart-now').parentNode);
+        }
+      } catch(e) {}
       // The current process will exit; new window will appear shortly
     });
   }
@@ -3956,13 +4334,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const info = JSON.parse(raw);
       if (info.update_available && !document.getElementById('update-banner-btn')) {
         // Pull silently
-        await pywebview.api.do_update();
+        const upd = JSON.parse(await pywebview.api.do_update());
         // Show "Reload to update" banner in tab bar
         const banner = document.createElement('span');
         banner.className = 'update-banner';
         banner.id = 'update-banner-btn';
-        banner.textContent = lang === 'zh-TW' ? `v${info.remote} 重載以更新` : `v${info.remote} Reload to update`;
-        banner.addEventListener('click', () => location.reload());
+        const needsRestart = upd && upd.needs_restart;
+        banner.textContent = needsRestart
+          ? (lang === 'zh-TW' ? `v${info.remote} 重啟以更新` : `v${info.remote} Restart to update`)
+          : (lang === 'zh-TW' ? `v${info.remote} 重載以更新` : `v${info.remote} Reload to update`);
+        banner.addEventListener('click', () => {
+          if (needsRestart) confirmRestart(upd.version || info.remote, true);
+          else location.reload();
+        });
         const spacer = document.querySelector('.tab-spacer');
         spacer.parentNode.insertBefore(banner, spacer.nextSibling);
       }
@@ -4255,7 +4639,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     $copyBtn.addEventListener('click', async () => {
       if (!_block) return;
       await pywebview.api.copy_text(_block.text);
-      $copyBtn.textContent = 'Copied!';
+      $copyBtn.textContent = t('copied');
       $copyBtn.classList.add('copied');
       setTimeout(() => {
         $copyBtn.classList.remove('visible');
@@ -4290,6 +4674,39 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return false;
   }
 
+  async function restoreSavedLineBridge() {
+    try {
+      const ls = JSON.parse(await pywebview.api.get_line_bridge_status());
+      if (ls.exists && ls.active) {
+        lineBridgeState = ls;
+        renderTabs();
+        return true;
+      }
+      const saved = JSON.parse(await pywebview.api.get_saved_line_bridge());
+      if (saved && ((saved.delivery_mode || 'push') === 'poll' || (saved.channel_access_token && saved.channel_secret))) {
+        const raw = await pywebview.api.start_line_bridge(
+          saved.channel_access_token,
+          saved.channel_secret,
+          JSON.stringify(saved.allowed_users || []),
+          saved.prefix_enabled !== false,
+          saved.webhook_port || 8787,
+          saved.webhook_path || '/line/webhook',
+          saved.public_webhook_url || '',
+          saved.delivery_mode || 'poll',
+          saved.poll_path || '/line/poll',
+          saved.forward_secret || ''
+        );
+        const result = JSON.parse(raw);
+        if (result.success) {
+          lineBridgeState = result;
+          renderTabs();
+          return true;
+        }
+      }
+    } catch(e) {}
+    return false;
+  }
+
   async function init() {
     await waitApi();
     await loadConfig();
@@ -4316,16 +4733,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (existing.length > 0) {
         const lsLabels = JSON.parse(localStorage.getItem('sf_labels') || '{}');
         for (const s of existing) {
-          await reconnectSession(s.sid, s.cmd);
+          const customLabel = s.label || lsLabels[s.sid] || null;
+          await reconnectSession(s.sid, s.cmd, customLabel);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
-            // Restore label: API > localStorage > default
-            const customLabel = s.label || lsLabels[s.sid];
-            if (customLabel) sessions[s.sid].label = customLabel;
           }
         }
-        // Auto-restore TG bridge if config was saved
+        // Auto-restore chat bridges if config was saved
         await restoreSavedBridge();
+        await restoreSavedLineBridge();
         renderTabs();
         // Restore last active tab. Prefer Python-persisted value (survives
         // WKWebView storage clears) → fallback to localStorage → fallback first.
@@ -4360,6 +4776,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     // Check for updates FIRST, then show launcher
     await restoreSavedBridge();
+    await restoreSavedLineBridge();
     const hasUpdate = await startupUpdateCheck();
     if (!hasUpdate) {
       // No update modal shown — show launcher
@@ -4377,7 +4794,182 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
+  // ── Plugin panels / marketplace (best-effort; never blocks ShellFrame) ──
+  async function initPlugins() {
+    try { await waitApi(); } catch (e) { return; }
+    if (!window.pywebview || !pywebview.api || !pywebview.api.list_plugin_panels) return;
+    let panels = [];
+    try {
+      const raw = await pywebview.api.list_plugin_panels();
+      panels = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+    } catch (e) {
+      console.warn('[plugins] list_plugin_panels failed', e);
+      return;
+    }
+    if (!Array.isArray(panels)) panels = [];
+
+    const tabsBar = document.getElementById('settings-tabs-bar');
+    const modal = document.querySelector('#modal-settings .modal');
+    if (!tabsBar || !modal) return;
+
+    panels.forEach(p => {
+      if (!p || !p.name) return;
+      if (p.styles && !document.querySelector(`style[data-plugin="${p.name}"]`)) {
+        const style = document.createElement('style');
+        style.dataset.plugin = p.name;
+        style.textContent = p.styles;
+        document.head.appendChild(style);
+      }
+      if (p.sidebar_js && !document.querySelector(`script[data-plugin-sidebar="${p.name}"]`)) {
+        const script = document.createElement('script');
+        script.dataset.pluginSidebar = p.name;
+        script.textContent = `
+          ;(function(){
+            try {
+              const pluginName = ${JSON.stringify(p.name)};
+              ${p.sidebar_js}
+            } catch (e) {
+              console.warn('[plugins] sidebar_js failed for ${String(p.name).replace(/'/g, "\\'")}', e);
+            }
+          })();
+        `;
+        document.body.appendChild(script);
+      }
+      const tabName = `plugin-${p.name}`;
+      if (!tabsBar.querySelector(`[data-tab="${tabName}"]`)) {
+        const tab = document.createElement('button');
+        tab.className = 'settings-tab';
+        tab.dataset.tab = tabName;
+        tab.textContent = p.name;
+        tab.title = p.description || p.name;
+        tabsBar.appendChild(tab);
+      }
+      const panelId = `settings-panel-${tabName}`;
+      if (!document.getElementById(panelId)) {
+        const panel = document.createElement('div');
+        panel.className = 'settings-tab-panel';
+        panel.id = panelId;
+        panel.dataset.pluginName = p.name;
+        panel.innerHTML = p.html || `<div style="color:#565f89">No settings for ${esc(p.name)}</div>`;
+        modal.insertBefore(panel, modal.querySelector('.modal-actions'));
+      }
+    });
+
+    modal.addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('[data-sf-plugin-action]');
+      if (!btn || btn.dataset.pluginActionBound === '1') return;
+      ev.preventDefault();
+      const panel = btn.closest('.settings-tab-panel[data-plugin-name]');
+      const pluginName = btn.dataset.sfPluginName || panel?.dataset.pluginName || '';
+      const action = btn.dataset.sfPluginAction || '';
+      if (!pluginName || !action || !pywebview.api.plugin_action) return;
+      const args = {};
+      (panel || document).querySelectorAll('[data-sf-plugin-arg]').forEach(input => {
+        const key = input.dataset.sfPluginArg;
+        if (!key) return;
+        args[key] = input.type === 'checkbox' ? input.checked : input.value;
+      });
+      btn.disabled = true;
+      try {
+        const raw = await pywebview.api.plugin_action(pluginName, action, JSON.stringify(args));
+        const res = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw;
+        alert(res.message || (res.ok ? 'OK' : 'Failed'));
+        await refreshPluginBadges(true);
+      } catch (e) {
+        alert(String(e));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Newly injected tab buttons need the same switching behavior as built-ins.
+    tabsBar.querySelectorAll('.settings-tab').forEach(tab => {
+      if (tab.dataset.pluginBound) return;
+      tab.dataset.pluginBound = '1';
+      tab.addEventListener('click', () => {
+        tabsBar.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('#modal-settings .settings-tab-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const target = document.getElementById('settings-panel-' + tab.dataset.tab);
+        if (target) target.classList.add('active');
+      });
+    });
+
+    const paintBadges = async (force = false) => {
+      if (!pywebview.api.plugin_sidebar_badges) return;
+      const rows = document.querySelectorAll('#sidebar-sessions .sb-item[data-sid]');
+      for (const row of rows) {
+        const sid = row.dataset.sid;
+        if (!sid || (!force && row.dataset.pluginBadgesPainted === sid)) continue;
+        try {
+          const html = await pywebview.api.plugin_sidebar_badges(sid);
+          row.querySelectorAll('.sf-plugin-badges').forEach(n => n.remove());
+          if (html) {
+            const wrap = document.createElement('span');
+            wrap.className = 'sf-plugin-badges';
+            wrap.innerHTML = html;
+            row.appendChild(wrap);
+          }
+          row.dataset.pluginBadgesPainted = sid;
+        } catch (e) {}
+      }
+    };
+    window.refreshPluginBadges = paintBadges;
+    await paintBadges();
+    const sidebar = document.getElementById('sidebar-sessions');
+    if (sidebar) {
+      new MutationObserver(() => paintBadges()).observe(sidebar, {childList: true, subtree: true});
+    }
+  }
+
+  async function renderMarketplace() {
+    const list = document.getElementById('settings-marketplace-list');
+    if (!list || !pywebview.api.marketplace_list) return;
+    list.innerHTML = '<div style="color:#565f89;font-size:12px">Loading...</div>';
+    try {
+      const data = JSON.parse(await pywebview.api.marketplace_list());
+      const items = data.plugins || [];
+      if (!items.length) {
+        list.innerHTML = '<div style="color:#565f89;font-size:12px">No plugins listed.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      items.forEach(p => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #3b4261;border-radius:8px;background:#1f2335';
+        row.innerHTML = `
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:#c0caf5">${esc(p.name || '')} <span style="color:#565f89;font-size:11px">${esc(p.version || '')}</span></div>
+            <div style="font-size:12px;color:#a9b1d6">${esc(p.description || '')}</div>
+          </div>
+          <button class="btn btn-ghost" data-plugin-action="${p.installed ? 'uninstall' : 'install'}">${p.installed ? 'Uninstall' : 'Install'}</button>`;
+        const btn = row.querySelector('button');
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            const raw = p.installed
+              ? await pywebview.api.marketplace_uninstall(p.name)
+              : await pywebview.api.marketplace_install(p.name, p.repo_url);
+            const res = JSON.parse(raw);
+            alert(res.message || (res.ok ? 'OK' : 'Failed'));
+            await renderMarketplace();
+          } catch (e) {
+            alert(String(e));
+          } finally {
+            btn.disabled = false;
+          }
+        });
+        list.appendChild(row);
+      });
+    } catch (e) {
+      list.innerHTML = `<div style="color:#f7768e;font-size:12px">${esc(String(e))}</div>`;
+    }
+  }
+
+  document.querySelector('[data-tab="marketplace"]')?.addEventListener('click', renderMarketplace);
+
   init();
+  initPlugins();
 })();
 </script>
 </body>

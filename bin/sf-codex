@@ -6,14 +6,30 @@ set -euo pipefail
 # Prefer the native packaged binary when it exists, then fall back to codex on
 # PATH.
 
-ROOT="${HOME}/.local/apps/shellframe"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-candidates=(
-  "${HOME}/.nvm/versions/node/v22.22.2/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
-  "/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
-  "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
-  "${ROOT}/.codex/bin/codex"
-)
+candidates=()
+
+if [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then
+  vendor_rel="@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
+
+  nvm_root="${NVM_DIR:-${HOME}/.nvm}/versions/node"
+  for node_dir in "${nvm_root}"/*; do
+    candidates+=("${node_dir}/lib/node_modules/${vendor_rel}")
+  done
+
+  if npm_root="$(npm root -g 2>/dev/null)"; then
+    candidates+=("${npm_root}/${vendor_rel}")
+  fi
+
+  candidates+=(
+    "/opt/homebrew/lib/node_modules/${vendor_rel}"
+    "/usr/local/lib/node_modules/${vendor_rel}"
+  )
+fi
+
+candidates+=("${APP_ROOT}/.codex/bin/codex")
 
 for bin in "${candidates[@]}"; do
   if [[ -x "$bin" ]]; then

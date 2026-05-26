@@ -18,7 +18,21 @@ if [ ! -d ".venv" ]; then
   echo "Done!"
 fi
 
-if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null)" == "1" ]]; then
-  exec arch -arm64 .venv/bin/python main.py "$@"
+PY_LAUNCHER=".venv/bin/python"
+if [ "$(uname)" = "Darwin" ]; then
+  REAL_PY="$("$PY_LAUNCHER" -c 'import os,sys; print(os.path.realpath(sys.executable))' 2>/dev/null || true)"
+  case "$REAL_PY" in
+    */Frameworks/Python.framework/Versions/*/bin/python*)
+      PY_APP="${REAL_PY%/bin/python*}/Resources/Python.app/Contents/MacOS/Python"
+      if [ -x "$PY_APP" ]; then
+        ln -sf "$PY_APP" ".venv/bin/ShellFrame"
+        PY_LAUNCHER=".venv/bin/ShellFrame"
+      fi
+      ;;
+  esac
 fi
-exec .venv/bin/python main.py "$@"
+
+if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+  exec arch -arm64 "$PY_LAUNCHER" main.py "$@"
+fi
+exec "$PY_LAUNCHER" main.py "$@"

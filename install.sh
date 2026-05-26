@@ -71,16 +71,15 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     git fetch origin main && git reset --hard origin/main
   fi
 elif [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-  # Directory exists with files but no .git — user downloaded a zip or cp'd files.
-  # Convert into a git clone in-place: init, add remote, fetch, reset --hard.
-  echo "Upgrading non-git install at $INSTALL_DIR to a git clone..."
-  cd "$INSTALL_DIR"
-  git init -q
-  git remote add origin "$REPO_URL" 2>/dev/null || git remote set-url origin "$REPO_URL"
-  git fetch --depth=1 origin main
-  # Preserve user's .venv and any non-tracked files by stashing untracked first
-  git stash push -u -m "install.sh-pre-reinit-$(date +%s)" >/dev/null 2>&1 || true
-  git reset --hard origin/main
+  # Directory exists with files but no .git — user downloaded a zip or copied a
+  # previous agent-built tree. Do not `git init` in place: untracked app bundles,
+  # generated launchers, and stale scripts survive reset and produce mixed
+  # installs. Keep a timestamped backup, then clone a clean tree.
+  BACKUP_DIR="${INSTALL_DIR}.non-git-backup.$(date +%Y%m%d%H%M%S)"
+  echo "Backing up non-git install to $BACKUP_DIR"
+  mv "$INSTALL_DIR" "$BACKUP_DIR"
+  echo "Cloning repository..."
+  git clone "$REPO_URL" "$INSTALL_DIR"
 else
   echo "Cloning repository..."
   mkdir -p "$(dirname "$INSTALL_DIR")"
@@ -150,12 +149,26 @@ cat > "$BIN_DIR/shellframe" << 'LAUNCHER'
 #!/bin/bash
 if [ -f "$HOME/.zprofile" ]; then source "$HOME/.zprofile" 2>/dev/null; fi
 if [ -f "$HOME/.zshrc" ]; then source "$HOME/.zshrc" 2>/dev/null; fi
+cd ~/.local/apps/shellframe
+PY_LAUNCHER=".venv/bin/python"
+if [ "$(uname)" = "Darwin" ]; then
+  REAL_PY="$("$PY_LAUNCHER" -c 'import os,sys; print(os.path.realpath(sys.executable))' 2>/dev/null || true)"
+  case "$REAL_PY" in
+    */Frameworks/Python.framework/Versions/*/bin/python*)
+      PY_APP="${REAL_PY%/bin/python*}/Resources/Python.app/Contents/MacOS/Python"
+      if [ -x "$PY_APP" ]; then
+        ln -sf "$PY_APP" ".venv/bin/ShellFrame"
+        PY_LAUNCHER=".venv/bin/ShellFrame"
+      fi
+      ;;
+  esac
+fi
 # Force arm64 on Apple Silicon so the python child doesn't inherit a
 # Rosetta parent shell — see ShellFrame.app launcher for full rationale.
 if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null)" == "1" ]]; then
-  exec arch -arm64 ~/.local/apps/shellframe/.venv/bin/python ~/.local/apps/shellframe/main.py "$@"
+  exec arch -arm64 "$PY_LAUNCHER" main.py "$@"
 fi
-exec ~/.local/apps/shellframe/.venv/bin/python ~/.local/apps/shellframe/main.py "$@"
+exec "$PY_LAUNCHER" main.py "$@"
 LAUNCHER
 chmod +x "$BIN_DIR/shellframe"
 
@@ -180,6 +193,33 @@ if [ "$(uname)" = "Darwin" ]; then
   rm -rf "$APP_DEST"
   cp -R "$INSTALL_DIR/ShellFrame.app" "$APP_DEST"
 
+  mkdir -p "$APP_DEST/Contents/Resources"
+
+  # The app template historically kept the shell payload at
+  # Contents/MacOS/shellframe. For LaunchServices/Dock identity, the executable
+  # must be a real Mach-O process that stays alive while Python runs as a child.
+  if [ ! -f "$APP_DEST/Contents/Resources/shellframe.sh" ]; then
+    cp "$INSTALL_DIR/ShellFrame.app/Contents/MacOS/shellframe" "$APP_DEST/Contents/Resources/shellframe.sh"
+  fi
+  if [ -f "$APP_DEST/Contents/MacOS/shellframe.sh" ]; then
+    mv "$APP_DEST/Contents/MacOS/shellframe.sh" "$APP_DEST/Contents/Resources/shellframe.sh"
+  fi
+  if [ -f "$INSTALL_DIR/scripts/macos_app_launcher.c" ] && command -v clang >/dev/null 2>&1; then
+    LAUNCHER_ARCH_FLAGS=()
+    case "$(uname -m)" in
+      arm64) LAUNCHER_ARCH_FLAGS=(-arch arm64) ;;
+      x86_64) LAUNCHER_ARCH_FLAGS=(-arch x86_64) ;;
+    esac
+    clang "${LAUNCHER_ARCH_FLAGS[@]}" -mmacosx-version-min=12.0 \
+      "$INSTALL_DIR/scripts/macos_app_launcher.c" \
+      -o "$APP_DEST/Contents/MacOS/shellframe"
+  else
+    echo "  Warning: clang not found; ShellFrame.app will use the shell launcher fallback."
+  fi
+  chmod 755 "$APP_DEST/Contents/MacOS/shellframe" 2>/dev/null || true
+  chmod 644 "$APP_DEST/Contents/Resources/shellframe.sh" 2>/dev/null || true
+  xattr -cr "$APP_DEST" 2>/dev/null || true
+
   # Stamp Info.plist with current version from version.json
   CURRENT_VER=$(python3 -c "import json; print(json.load(open('$INSTALL_DIR/version.json'))['version'])" 2>/dev/null || echo "0.0.0")
   PLIST="$APP_DEST/Contents/Info.plist"
@@ -191,11 +231,63 @@ if [ "$(uname)" = "Darwin" ]; then
   # Clean up old ~/Applications copy if we migrated to /Applications
   [ "$APP_DEST" = "/Applications/ShellFrame.app" ] && rm -rf "${HOME}/Applications/ShellFrame.app" 2>/dev/null
 
-  # Ad-hoc code sign (unsigned apps may be cleared by Gatekeeper)
-  codesign --force --deep --sign - "$APP_DEST" 2>/dev/null || true
+  # Ad-hoc code sign. Avoid --deep: it can stamp shell payloads as nested code
+  # and leave LaunchServices with a broken bundle cache.
+  codesign --force --sign - "$APP_DEST/Contents/MacOS/shellframe" 2>/dev/null || true
+  codesign --force --sign - "$APP_DEST" 2>/dev/null || true
 
-  # Register with Launch Services for Spotlight indexing
-  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST" 2>/dev/null || true
+  # Register with Launch Services for Spotlight indexing, and clear stale
+  # ShellFrame registrations that commonly survive failed installs.
+  LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  "$LSREGISTER" -u "${HOME}/.Trash/ShellFrame.app" 2>/dev/null || true
+  "$LSREGISTER" -u "/Applications/ShellFrame.app" 2>/dev/null || true
+  "$LSREGISTER" -u "${HOME}/Applications/ShellFrame.app" 2>/dev/null || true
+  "$LSREGISTER" -f "$APP_DEST" 2>/dev/null || true
+
+  # Keep ShellFrame pinned in Dock by default. This is idempotent and can be
+  # skipped for scripted installs with SHELLFRAME_SKIP_DOCK=1.
+  if [ "${SHELLFRAME_SKIP_DOCK:-0}" != "1" ]; then
+    APP_DEST="$APP_DEST" python3 - <<'PY' 2>/dev/null || true
+import os
+import pathlib
+import plistlib
+import time
+
+app = pathlib.Path(os.environ["APP_DEST"])
+plist = pathlib.Path.home() / "Library/Preferences/com.apple.dock.plist"
+if plist.exists():
+    data = plistlib.loads(plist.read_bytes())
+else:
+    data = {}
+
+url = app.as_uri() + "/"
+apps = data.get("persistent-apps", [])
+filtered = []
+for item in apps:
+    tile = item.get("tile-data", {})
+    label = tile.get("file-label")
+    item_url = (tile.get("file-data") or {}).get("_CFURLString")
+    bundle_id = tile.get("bundle-identifier")
+    if label == "ShellFrame" or bundle_id == "com.h2ocloud.shellframe" or (item_url and "ShellFrame.app" in item_url):
+        continue
+    filtered.append(item)
+
+entry = {
+    "tile-data": {
+        "bundle-identifier": "com.h2ocloud.shellframe",
+        "dock-extra": 0,
+        "file-data": {"_CFURLString": url, "_CFURLStringType": 15},
+        "file-label": "ShellFrame",
+        "file-mod-date": int(time.time()),
+        "file-type": 41,
+    },
+    "tile-type": "file-tile",
+}
+data["persistent-apps"] = [entry] + filtered
+plist.write_bytes(plistlib.dumps(data, sort_keys=False))
+PY
+    killall Dock 2>/dev/null || true
+  fi
 
   echo "  App: $APP_DEST"
 fi

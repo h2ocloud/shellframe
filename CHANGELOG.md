@@ -1,5 +1,269 @@
 # Changelog
 
+## v0.11.98 (2026-05-26)
+
+### Features
+- **Plugin system PR integrated onto current ShellFrame** — adds the `shellframe_plugins/` loader, settings-panel injection, sidebar badges, plugin marketplace metadata, and the Rokid Bridge plugin without reverting the newer LINE/TG/session work on main.
+
+### 功能
+- **整合 plugin system PR 到目前 ShellFrame** — 新增 `shellframe_plugins/` 載入器、設定面板注入、側邊欄 badge、plugin marketplace metadata，以及 Rokid Bridge plugin，同時保留目前 main 上較新的 LINE/TG/session 改動。
+
+## v0.11.97 (2026-05-26)
+
+### Fixes
+- **LINE poll mode returns ShellFrame-tab replies** — LINE responses extracted from active ShellFrame tabs now enqueue into `/line/poll` instead of trying the direct LINE push API. Normal poll-mode messages also stop emitting the noisy `Sent to ...` ack before the real agent reply.
+
+### 修正
+- **LINE poll mode 會回傳 ShellFrame tab 的回覆** — 從目前 ShellFrame tab 擷取出的 LINE 回覆現在會放進 `/line/poll` outbox，不再誤走直連 LINE push API。一般 poll-mode 訊息也不再先送出干擾閱讀的 `Sent to ...` ack。
+
+## v0.11.96 (2026-05-26)
+
+### Fixes
+- **Telegram mobile uses ShellFrame-tab reply markers** — Telegram-originated normal messages still go into the selected ShellFrame tab, but now include a per-turn reply marker and the bridge returns only the marked final text. This keeps the live tab context while avoiding Codex tool-log polling noise.
+
+### 修正
+- **Telegram 手機橋接改用 ShellFrame tab 內回覆標記** — Telegram 來源的一般訊息仍會送進目前選到的 ShellFrame tab，但每回合會加唯一回覆標記，bridge 只回傳標記內的最終文字。這保留 live tab context，同時避開 Codex 工具 log polling 噪音。
+
+## v0.11.95 (2026-05-26)
+
+### Fixes
+- **Mobile bridge keeps the selected Codex session** — Telegram and LINE messages now go back through the active ShellFrame tab instead of spawning a separate `codex exec --json` runner, preserving the live Hermes/session context.
+
+### 修正
+- **手機 bridge 保留目前選到的 Codex session** — Telegram 與 LINE 訊息現在會送回 ShellFrame 目前的 tab，不再另外啟動 `codex exec --json`，避免取代 Hermes / 原本的 session context。
+
+## v0.11.94 (2026-05-25)
+
+### Fixes
+- **Codex mobile replies use JSONL instead of TUI polling** — Telegram and LINE messages routed to Codex/CDX tabs now run through `codex exec --json` and return only final `agent_message` text, preventing tool logs and terminal redraws from being sent back to mobile chats.
+
+### 修正
+- **Codex 手機回覆改走 JSONL，不再 poll TUI** — Telegram 與 LINE 傳到 Codex/CDX tab 的一般訊息現在會走 `codex exec --json`，只回傳最終 `agent_message`，避免工具 log 與終端重繪一起送回手機聊天室。
+
+## v0.11.93 (2026-05-25)
+
+### Fixes
+- **Mobile bridges suppress Codex tool-log noise** — Telegram and LINE cleanup now drop common command/tool transcript lines (`Ran ...`, `curl`, `tmux`, `... +N lines`, token/tool metadata) so polling replies are more readable.
+
+### 修正
+- **手機 bridge 會壓掉 Codex 工具輸出雜訊** — Telegram 與 LINE cleanup 現在會丟掉常見 command/tool transcript 行（`Ran ...`、`curl`、`tmux`、`... +N lines`、工具 metadata），讓 polling 回覆更可讀。
+
+## v0.11.92 (2026-05-25)
+
+### Fixes
+- **LINE marker detection strips terminal control sequences first** — unique LINE reply markers are now searched in cleaned terminal text, fixing missed markers when Codex redraw output includes control bytes.
+
+### 修正
+- **LINE marker 偵測會先移除終端控制序列** — 唯一 LINE 回覆標記現在會在清理後的終端文字中搜尋，修正 Codex 重繪輸出含控制 bytes 時抓不到 marker 的情況。
+
+## v0.11.91 (2026-05-25)
+
+### Fixes
+- **LINE poll checks recent terminal state for reply markers** — when waiting for a marked LINE response, the bridge now combines pending output with the session peek buffer before deciding whether a reply is ready.
+
+### 修正
+- **LINE polling 會檢查近期終端狀態中的回覆標記** — 等待 LINE 標記回覆時，bridge 現在會把 pending output 與 session peek buffer 合併檢查，再判斷是否可以回傳。
+
+## v0.11.90 (2026-05-25)
+
+### Fixes
+- **LINE accepts isolated unique reply markers** — the bridge now extracts a response when only the agent's unique marker pair appears in the latest output chunk, while still ignoring prompt self-matches.
+
+### 修正
+- **LINE 可接受獨立出現的唯一回覆標記** — bridge 現在會在最新輸出片段只有 agent 的唯一 marker pair 時正確擷取回覆，同時仍忽略 prompt 自己造成的誤命中。
+
+## v0.11.89 (2026-05-25)
+
+### Fixes
+- **LINE marker wait no longer falls back to stale redraws** — the bridge now waits for a second start marker and a following end marker from the agent response instead of timing out into old terminal content.
+
+### 修正
+- **LINE marker 等待不再 fallback 到舊畫面** — bridge 現在會等待 agent 回覆中的第二個起始 marker 與後續結尾 marker，不再逾時後把舊終端內容送回 LINE。
+
+## v0.11.88 (2026-05-25)
+
+### Fixes
+- **LINE final-reply markers are per message** — the bridge now generates a unique reply marker for each LINE message and waits for the second occurrence, so the prompt's own marker text cannot be mistaken for the agent's answer.
+
+### 修正
+- **LINE 最終回覆標記改為每則唯一** — bridge 現在每則 LINE 訊息產生唯一 reply marker，並等待第二次出現，避免 prompt 裡的標記文字被誤判成 agent 回覆。
+
+## v0.11.87 (2026-05-25)
+
+### Fixes
+- **LINE marker prompt no longer self-matches** — the bridge now describes the final-reply marker without embedding the literal marker pair in the prompt, and waits for both marker sides before returning a reply.
+
+### 修正
+- **LINE marker prompt 不再自己命中** — bridge 現在用文字描述最終回覆標記，不在 prompt 內放入完整 literal marker pair，並且會等開頭與結尾標記都出現才回傳。
+
+## v0.11.86 (2026-05-25)
+
+### Fixes
+- **LINE waits for a marked final reply** — per-turn LINE prompts now ask agents to wrap the mobile reply in `>>> ... <<<`, and the bridge waits for that marker before polling returns. This avoids sending stale screen redraws while Codex is still composing.
+
+### 修正
+- **LINE 會等待標記後的最終回覆** — 每則 LINE prompt 現在會要求 agent 用 `>>> ... <<<` 包住手機端回覆，bridge 會等到標記出現才讓 poll 回傳，避免 Codex 還在產生時先送出舊畫面重繪。
+
+## v0.11.85 (2026-05-25)
+
+### Fixes
+- **LINE replies suppress prompt/input echoes** — LINE bridge cleanup now removes repeated LINE wrapper prompts, `[LINE ...]` input echoes, and common Codex suggestion placeholders from mobile replies.
+
+### 修正
+- **LINE 回覆會壓掉 prompt / input 回聲** — LINE bridge cleanup 現在會移除重複的 LINE wrapper prompt、`[LINE ...]` 輸入回聲，以及常見 Codex 建議 placeholder，避免手機端收到舊畫面殘影。
+
+## v0.11.84 (2026-05-25)
+
+### Fixes
+- **LINE messages submit in full-screen TUIs** — the LINE bridge now writes the message body and Enter as separate keystrokes, fixing cases where Codex showed the LINE text in its input box but did not send it.
+
+### 修正
+- **LINE 訊息會在全螢幕 TUI 中真正送出** — LINE bridge 現在會分開送訊息本文與 Enter，修正 Codex 只把 LINE 文字顯示在輸入框、但沒有送出的情況。
+
+## v0.11.83 (2026-05-25)
+
+### Fixes
+- **LINE/TG reply extraction ignores tmux status bars** — bridge filtering now drops tmux status-line fragments such as `[sf_s1] 0:... [0,0] "host" ...`, preventing mobile replies from showing terminal chrome instead of an agent response.
+
+### 修正
+- **LINE/TG 回覆擷取會忽略 tmux 狀態列** — bridge filter 現在會丟掉像 `[sf_s1] 0:... [0,0] "host" ...` 這類 tmux status-line 片段，避免手機端收到終端機狀態列而不是 agent 回覆。
+
+## v0.11.82 (2026-05-25)
+
+### Fixes
+- **Codex preset is platform-specific again** — Windows defaults and migrations now use `codex ...` instead of the Unix-only `sf-codex` wrapper. macOS/Linux still use `sf-codex ...` so Rosetta/native-binary handling remains available there.
+- **Codex command cleanup preserves existing arguments** — migration now replaces only the first executable token when converting old absolute `sf-codex` paths, leaving the rest of the command untouched instead of rebuilding it with POSIX quoting.
+
+### 修正
+- **Codex preset 恢復依平台決定** — Windows 的預設值與 migration 現在會使用 `codex ...`，不再使用 Unix-only 的 `sf-codex` wrapper。macOS/Linux 仍使用 `sf-codex ...`，保留 Rosetta/native binary 的處理。
+- **Codex 指令清理會保留既有參數** — migration 轉換舊的絕對 `sf-codex` 路徑時，只替換第一個 executable token，後面的指令參數原樣保留，不再用 POSIX quoting 重組。
+
+## v0.11.81 (2026-05-25)
+
+### Fixes
+- **macOS installer now repairs non-git installs cleanly** — installs that were copied from zip files or agent-built folders are backed up and replaced with a clean clone instead of being converted in place, avoiding mixed app bundles, stale launchers, and untracked files that survive reset.
+- **ShellFrame.app keeps its Dock identity while Python runs** — the installer now compiles a small Mach-O launcher that stays alive as the ShellFrame app process and spawns the Python UI as a child, so Dock/menu bar identity no longer collapses into Python.
+- **Dock pinning is idempotent** — macOS installs now clear stale LaunchServices registrations, re-register the active app, and keep a single ShellFrame Dock item unless `SHELLFRAME_SKIP_DOCK=1` is set.
+- **macOS restart now prefers the installed app bundle** — `sfctl restart` reopens `~/Applications/ShellFrame.app` or `/Applications/ShellFrame.app` before falling back to the source-tree template, preventing restarts from losing the fixed Dock identity.
+
+### 修正
+- **macOS installer 會乾淨修復非 git 安裝** — zip 複製或 agent 手工建立的安裝目錄會先備份再重新 clone，不再原地轉 git，避免混到舊 app bundle、舊 launcher 與 reset 後仍殘留的 untracked files。
+- **ShellFrame.app 會保留 Dock 身份並把 Python 當子程序跑** — installer 現在會編譯一個常駐的 Mach-O launcher，ShellFrame app process 不會被 `exec` 成 Python，Dock/menu bar identity 不再掉成 Python。
+- **Dock 固定可重複執行** — macOS 安裝會清掉舊 LaunchServices 註冊、重新註冊目前 app，並維持單一 ShellFrame Dock 項目；可用 `SHELLFRAME_SKIP_DOCK=1` 跳過。
+- **macOS restart 會優先使用已安裝的 app bundle** — `sfctl restart` 會先重開 `~/Applications/ShellFrame.app` 或 `/Applications/ShellFrame.app`，再 fallback 到 source tree template，避免重啟後又失去已修好的 Dock identity。
+
+## v0.11.80 (2026-05-25)
+
+### Features
+- **LINE bridge supports company webhook forward + poll** — LINE can now run without direct LINE credentials by accepting forwarded webhook payloads and queueing agent replies for an upstream service to poll from `/line/poll`. Direct LINE Messaging API push/reply mode remains available.
+- **LINE gets its own per-turn wrapper prompt** — Settings → LINE now has a wrapper prompt textarea so every LINE-originated message can tell the agent to reply in LINE-friendly plain text.
+- **Sidebar shows separate TG and LINE routing badges** — TG and LINE badges now render side by side; green means connected and blue means that platform currently routes to that session.
+
+### 功能
+- **LINE bridge 支援公司 webhook forward + poll** — LINE 現在可以不直連 LINE credentials，改由公司既有 webhook forward event 進 ShellFrame，再讓上游從 `/line/poll` polling agent 回覆。原本直連 LINE Messaging API push/reply 模式仍保留。
+- **LINE 有自己的每則訊息 wrapper prompt** — Settings → LINE 新增 wrapper prompt textarea，每則 LINE 來源訊息都能先提示 agent 用適合 LINE 的純文字格式回覆。
+- **Sidebar 分開顯示 TG / LINE routing badge** — TG 與 LINE badge 現在會並排顯示；綠色代表已連線，藍色代表該平台目前指向該 session。
+
+## v0.11.79 (2026-05-25)
+
+### Fixes
+- **macOS launchers avoid the Python Dock name** — the `.app`, `run.sh`, and installed `shellframe` launcher now create a venv-local `ShellFrame` symlink to the framework `Python.app` executable and run that symlink. Python still uses ShellFrame's venv, but macOS derives the visible application process name from `ShellFrame` instead of `Python`.
+
+### 修正
+- **macOS launcher 避免 Dock 顯示 Python** — `.app`、`run.sh`、install 產生的 `shellframe` launcher 現在會建立 venv-local 的 `ShellFrame` symlink 指到 framework `Python.app` executable，並執行這個 symlink。Python 仍會使用 ShellFrame 的 venv，但 macOS 可見 application process 名稱會取自 `ShellFrame`，不再是 `Python`。
+
+## v0.11.78 (2026-05-25)
+
+### Fixes
+- **Python framework bundle metadata is patched before Cocoa startup** — ShellFrame now overrides the runtime main bundle name, display name, identifier, and icon metadata before pywebview creates the Cocoa app. This covers Homebrew framework Python cases where the visible application process would otherwise remain labelled `Python` even after opening `ShellFrame.app`.
+
+### 修正
+- **Cocoa 啟動前會修正 Python framework bundle metadata** — ShellFrame 現在會在 pywebview 建立 Cocoa app 前覆寫 runtime main bundle 的 name、display name、identifier 與 icon metadata。這補上 Homebrew framework Python 即使用 `ShellFrame.app` 開啟，可見 application process 仍顯示為 `Python` 的情況。
+
+## v0.11.77 (2026-05-25)
+
+### Fixes
+- **Dock identity is forced back to ShellFrame on macOS** — startup now sets the AppKit process name to `ShellFrame` and applies the bundled `shellframe.icns` as the application icon, so Homebrew/Python framework launches do not leave the visible app labelled as Python.
+
+### 修正
+- **macOS Dock 身份會主動設回 ShellFrame** — 啟動時會把 AppKit process name 設成 `ShellFrame`，並套用 bundle 內的 `shellframe.icns`，避免 Homebrew/Python framework 啟動後可見 app 顯示成 Python。
+
+## v0.11.76 (2026-05-25)
+
+### Fixes
+- **macOS restart preserves the ShellFrame app identity** — restart no longer uses in-place `execv()` on macOS, which caused Dock/Cmd-Tab to show a separate Python icon. It now schedules a small external relauncher that waits for the old PID to exit, then opens `ShellFrame.app` via LaunchServices so the app icon and bundle identity stay correct.
+
+### 修正
+- **macOS restart 會保留 ShellFrame app 身份** — restart 不再於 macOS 使用 in-place `execv()`，避免 Dock/Cmd-Tab 變成另一個 Python icon。現在會排一個外部 relauncher，等舊 PID 退出後透過 LaunchServices 開 `ShellFrame.app`，讓 icon 與 bundle identity 維持正確。
+
+## v0.11.75 (2026-05-25)
+
+### Fixes
+- **Codex preset no longer persists install-specific paths** — built-in and migrated Codex presets now store `sf-codex ...` instead of an absolute ShellFrame install path. ShellFrame prepends its own `bin/` to the session PATH at launch time, so the wrapper resolves locally without writing another user's filesystem path into `config.json` or the session manifest.
+- **Codex wrapper no longer hardcodes one nvm Node version** — `bin/sf-codex` now discovers global npm/nvm installs dynamically before falling back to `codex` on PATH.
+
+### 修正
+- **Codex preset 不再持久化特定安裝路徑** — 內建與 migration 後的 Codex preset 會存成 `sf-codex ...`，不再存 ShellFrame 安裝目錄的絕對路徑。ShellFrame 啟動 session 時會把自己的 `bin/` 加進 PATH，所以 wrapper 可在本機解析，不會把某個使用者的 filesystem path 寫進 `config.json` 或 session manifest。
+- **Codex wrapper 不再寫死單一 nvm Node 版本** — `bin/sf-codex` 會動態搜尋 global npm/nvm 安裝，再 fallback 到 PATH 上的 `codex`。
+
+## v0.11.74 (2026-05-25)
+
+### Fixes
+- **Telegram / LINE settings now follow the UI language** — bridge setup labels, placeholders, help text, status text, and buttons now use ShellFrame's i18n table, so switching Settings language updates the Telegram and LINE configuration panels instead of leaving them in English.
+
+### 修正
+- **Telegram / LINE 設定頁會跟著介面語言切換** — bridge 設定的 label、placeholder、說明文字、狀態文字與按鈕已接到 ShellFrame i18n table，切換 Settings 語言時 Telegram / LINE 設定頁不再固定顯示英文。
+
+## v0.11.73 (2026-05-25)
+
+### Fixes
+- **Update prompts now respect restart level consistently** — manual About updates, startup updates, and periodic update banners now all check `needs_restart` before considering a UI reload. Python/core updates show a restart prompt; frontend-only updates can still reload the UI.
+- **Windows restart no longer silently kills live sessions** — on Windows, ShellFrame cannot preserve live PTY contents across a process restart because there is no tmux-backed detach/reattach. `restart_app()` now blocks when live sessions exist and reports why, preventing update flows from terminating active agent sessions and recreating only empty fresh commands.
+
+### 修正
+- **更新提示現在一致依重啟等級處理** — About 手動更新、啟動更新、週期更新 banner 都會先看 `needs_restart`，再決定是否可只 reload UI。Python/core 更新會提示重啟；純前端更新仍可只重載 UI。
+- **Windows restart 不再默默殺掉 live sessions** — Windows 沒有 tmux detach/reattach，process restart 無法保留 live PTY 內容。現在 Windows 有 live sessions 時 `restart_app()` 會阻止重啟並說明原因，避免更新流程把正在跑的 agent session 關掉後只重建空的新命令。
+
+## v0.11.72 (2026-05-25)
+
+### Fixes
+- **`sfctl restart` now restarts in-place on macOS/Linux** — instead of relying on LaunchServices to create a second app instance, restart now returns the RPC response, detaches from tmux, and `execv()` replaces the current Python process with a fresh `main.py`. This removes the failure mode where ShellFrame closed itself and never came back unless reopened manually.
+
+### 修正
+- **`sfctl restart` 在 macOS/Linux 改為原地重啟** — restart 現在會先回傳 RPC、detach tmux，然後用 `execv()` 把目前 Python process 直接替換成新的 `main.py`，不再依賴 LaunchServices 另外建立第二個 app instance。這移除 ShellFrame 自己關掉後沒有回來、必須手動打開的失敗模式。
+
+## v0.11.71 (2026-05-25)
+
+### Fixes
+- **Restart now has a verified fallback relaunch** — `sfctl restart` still prefers reopening the ShellFrame `.app`, but now schedules a short watchdog that starts `main.py` directly if LaunchServices accepts `open -n` without actually creating a new ShellFrame process. This prevents the app from closing itself and staying down until it is manually opened again.
+
+### 修正
+- **restart 現在有確認式 fallback relaunch** — `sfctl restart` 仍優先重開 ShellFrame `.app`，但會同時排一個短 watchdog；若 LaunchServices 接受 `open -n` 卻沒有真的建立新的 ShellFrame process，就直接啟動 `main.py`。避免 app 自己關掉後沒有成功重開、必須手動再開一次。
+
+## v0.11.70 (2026-05-25)
+
+### Features
+- **LINE bridge plugin** — ShellFrame now has a separate `bridge_line.py` plugin that starts a local LINE webhook server, verifies LINE signatures, routes text messages into ShellFrame sessions, and pushes AI replies back through the LINE Messaging API. Settings now includes a LINE tab for Channel access token, Channel secret, allowed LINE user/group IDs, local webhook port/path, public webhook URL, and setup guidance for LINE Developers.
+
+### 功能
+- **LINE bridge 外掛** — ShellFrame 新增獨立 `bridge_line.py` plugin，可啟動本機 LINE webhook server、驗證 LINE 簽章、把文字訊息送進 ShellFrame session，並透過 LINE Messaging API 推送 AI 回覆。Settings 現在有 LINE 頁籤，可填 Channel access token、Channel secret、允許的 LINE user/group ID、本機 webhook port/path、公開 webhook URL，並提供 LINE Developers 設定引導。
+
+## v0.11.69 (2026-05-25)
+
+### Fixes
+- **Claude/Codex startup trust prompts are auto-accepted in trusted cwd only** — new AI agent tabs launched from ShellFrame now watch startup output and tmux pane history for Claude Code's `Quick safety check` / `Is this a project you trust` prompt and confirm the selected trust option when the launch cwd is the trusted home directory (`/Users/neux`). The handler is startup-only, command-scoped to Claude/Codex, deadline-limited, and disabled as soon as real user input is sent so normal task approval prompts are not answered automatically.
+
+### 修正
+- **Claude/Codex 啟動 trust prompt 只在可信 cwd 自動確認** — ShellFrame 新開 AI agent tab 後，會從啟動輸出與 tmux pane history 偵測 Claude Code 的 `Quick safety check` / `Is this a project you trust` prompt；只有啟動 cwd 是可信 home 目錄（`/Users/neux`）時才確認目前選取的 trust 選項。此處理限定啟動期、限定 Claude/Codex 指令、有時間窗，且一旦使用者真的送出輸入就停用，避免自動回答一般任務 approval prompt。
+
+## v0.11.68 (2026-05-24)
+
+### Fixes
+- **Backend renames now repaint existing tabs/sidebar immediately** — `sfctl rename` and other non-UI rename paths already persisted labels in `config.json`, but the live web UI only applied labels while attaching brand-new sessions. Existing visible sessions kept showing command basenames like `claude`, `Codex`, or the full Codex wrapper path until a full reload happened. `syncSessionsFromBackend()` now reconciles label and bridge state for already-attached sessions, and `reconnectSession()` accepts the backend label before first render so restored tabs never flash the wrong names.
+
+### 修正
+- **後端 rename 會即時重畫既有 tab/sidebar** — `sfctl rename` 等非 UI rename 路徑其實已經把 label 寫進 `config.json`，但前端只在新 session attach 時套用 label；已經顯示中的 session 仍會停在 `claude`、`Codex` 或 Codex wrapper 路徑，直到完整重載。現在 `syncSessionsFromBackend()` 會同步既有 session 的 label / bridge 狀態，`reconnectSession()` 也會在第一次 render 前吃後端 label，重啟恢復時不再先畫錯名字。
+
 ## v0.11.67 (2026-05-24)
 
 ### Fixes

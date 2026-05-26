@@ -34,7 +34,9 @@ import webview
 # Add app dir to path for bridge imports
 sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
+import bridge_line
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
+from bridge_line import LineBridge, LineBridgeConfig
 
 IS_WIN = platform.system() == "Windows"
 
@@ -51,14 +53,15 @@ CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
 # AI CLI tools that should receive the init prompt.
 # Matched against the base command name (last path component, no extension).
 AI_CLI_TOOLS = {"claude", "codex", "sf-codex", "aider", "cursor", "copilot", "goose", "gemini"}
+STARTUP_TRUST_AI_TOOLS = {"claude", "codex", "sf-codex"}
+TRUSTED_STARTUP_CWDS = {str(Path.home()), str(Path.home().resolve())}
 
 APP_DIR = Path(__file__).parent
 VERSION_FILE = APP_DIR / "version.json"
 REPO_URL = "https://raw.githubusercontent.com/h2ocloud/shellframe/main/version.json"
-SHELLFRAME_CODEX_CMD = (
-    f"{APP_DIR / 'bin' / 'sf-codex'} "
-    "--dangerously-bypass-approvals-and-sandbox --search --no-alt-screen"
-)
+CODEX_AUTONOMOUS_FLAGS = "--dangerously-bypass-approvals-and-sandbox --search --no-alt-screen"
+CODEX_LAUNCHER = "codex" if IS_WIN else "sf-codex"
+SHELLFRAME_CODEX_CMD = f"{CODEX_LAUNCHER} {CODEX_AUTONOMOUS_FLAGS}"
 
 CONFIG_DIR = Path.home() / ".config" / "shellframe"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,16 +105,38 @@ def _autonomous_cmd(cmd: str) -> str:
     return _AUTONOMOUS_PRESET_CMDS.get(stripped, cmd)
 
 
+def _replace_first_command(cmd: str, replacement: str) -> str:
+    leading_len = len(cmd) - len(cmd.lstrip())
+    leading = cmd[:leading_len]
+    rest = cmd[leading_len:]
+    if not rest:
+        return replacement
+    if rest[0] in {'"', "'"}:
+        quote = rest[0]
+        end = rest.find(quote, 1)
+        if end != -1:
+            return leading + replacement + rest[end + 1:]
+    parts = rest.split(None, 1)
+    suffix = f" {parts[1]}" if len(parts) > 1 else ""
+    return leading + replacement + suffix
+
+
 def _canonical_cmd(cmd: str) -> str:
     cmd = _normalize_dashes(cmd or "")
-    old_codex = "~/.local/apps/shellframe/bin/sf-codex"
-    home_codex = str(Path.home() / ".local" / "apps" / "shellframe" / "bin" / "sf-codex")
-    app_codex = str(APP_DIR / "bin" / "sf-codex")
-    if cmd.startswith(old_codex):
-        cmd = app_codex + cmd[len(old_codex):]
-    if cmd.startswith(home_codex) and home_codex != app_codex:
-        cmd = app_codex + cmd[len(home_codex):]
-    if cmd.startswith(app_codex) and "--dangerously-bypass-approvals-and-sandbox" in cmd:
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        tokens = []
+    if tokens:
+        first = tokens[0]
+        first_name = first.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if first_name in {"sf-codex", "sf-codex.cmd", "sf-codex.bat", "sf-codex.exe"}:
+            cmd = _replace_first_command(cmd, CODEX_LAUNCHER)
+    codex_names = {
+        "codex", "codex.cmd", "codex.bat", "codex.exe",
+        "sf-codex", "sf-codex.cmd", "sf-codex.bat", "sf-codex.exe",
+    }
+    if tokens and first_name in codex_names and "--dangerously-bypass-approvals-and-sandbox" in cmd:
         cmd = re.sub(r"\s+-a\s+never(?=\s|$)", "", cmd)
         cmd = re.sub(r"\s+--ask-for-approval(?:=|\s+)never(?=\s|$)", "", cmd)
         return cmd
@@ -291,6 +316,75 @@ def _session_cwd() -> str:
     except Exception:
         return "/"
 
+
+def _session_env() -> dict:
+    env = dict(os.environ)
+    path_parts = [str(APP_DIR / "bin")]
+    existing = env.get("PATH", "")
+    if existing:
+        path_parts.append(existing)
+    env["PATH"] = os.pathsep.join(path_parts)
+    return env
+
+
+def _apply_macos_app_identity():
+    if sys.platform != "darwin":
+        return
+    icon_candidates = [
+        APP_DIR / "ShellFrame.app" / "Contents" / "Resources" / "shellframe.icns",
+        Path.home() / "Applications" / "ShellFrame.app" / "Contents" / "Resources" / "shellframe.icns",
+        Path("/Applications/ShellFrame.app/Contents/Resources/shellframe.icns"),
+    ]
+    icon_path = next((p for p in icon_candidates if p.exists()), None)
+    try:
+        from Foundation import NSBundle
+        info = NSBundle.mainBundle().infoDictionary()
+        info["CFBundleName"] = "ShellFrame"
+        info["CFBundleDisplayName"] = "ShellFrame"
+        info["CFBundleIdentifier"] = "com.h2ocloud.shellframe"
+        if icon_path is not None:
+            info["CFBundleIconFile"] = str(icon_path)
+    except Exception as e:
+        _dlog("identity", f"set bundle info failed: {e}")
+    try:
+        from Foundation import NSProcessInfo
+        NSProcessInfo.processInfo().setProcessName_("ShellFrame")
+    except Exception as e:
+        _dlog("identity", f"set process name failed: {e}")
+    try:
+        from AppKit import (
+            NSApplication,
+            NSApplicationActivationPolicyRegular,
+            NSImage,
+        )
+        app = NSApplication.sharedApplication()
+        try:
+            app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+        except Exception:
+            pass
+        if icon_path is not None:
+            img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+            if img is not None:
+                app.setApplicationIconImage_(img)
+    except Exception as e:
+        _dlog("identity", f"set app icon failed: {e}")
+
+
+def _cmd_uses_startup_trust_agent(cmd: str) -> bool:
+    tokens = shlex.split(cmd) if cmd else []
+    for token in tokens:
+        if Path(token).stem in STARTUP_TRUST_AI_TOOLS:
+            return True
+    return False
+
+
+def _should_auto_accept_startup_trust(cmd: str, cwd: str) -> bool:
+    try:
+        trusted = str(Path(cwd).resolve()) in TRUSTED_STARTUP_CWDS
+    except Exception:
+        trusted = cwd in TRUSTED_STARTUP_CWDS
+    return trusted and _cmd_uses_startup_trust_agent(cmd)
+
 # Cross-platform temp dir — keep /tmp on Unix for continuity with existing
 # installs, fall back to %TEMP% on Windows
 import tempfile as _tempfile
@@ -369,6 +463,7 @@ class Session:
                  on_data=None, tmux_name: str = None):
         self.sid = sid
         self.cmd = cmd
+        self.cwd = _session_cwd()
         self.buffer = bytearray()
         self.lock = threading.Lock()
         self.master_fd = None
@@ -376,9 +471,12 @@ class Session:
         self.win_proc = None
         self.alive = True
         self._slug_pending = True   # True until first user Enter triggers tmux auto-rename
-        self._recent = bytearray()  # ring buffer for peeking (last 1KB), not consumed by read()
+        self._recent = bytearray()  # ring buffer for peeking/startup checks (last 8KB), not consumed by read()
         self._on_data = on_data     # callback to signal new data (e.g. threading.Event.set)
         self._tmux_name = tmux_name  # tmux session name (None = no tmux)
+        self._startup_trust_pending = _should_auto_accept_startup_trust(cmd, self.cwd)
+        self._startup_trust_deadline = time.monotonic() + 45 if self._startup_trust_pending else 0
+        self._startup_trust_answered = False
         # Stateful UTF-8 decoder — carries incomplete multi-byte sequences
         # across read() calls so CJK / box-drawing chars never get split
         # into U+FFFD replacement characters (the "─���─" garble).
@@ -413,9 +511,9 @@ class Session:
                 "tmux", "new-session", "-d",
                 "-s", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
-                "-c", _session_cwd(),
+                "-c", self.cwd,
                 self.cmd,
-            ], capture_output=True, timeout=5)
+            ], capture_output=True, timeout=5, env=_session_env())
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or b"").decode("utf-8", errors="replace").strip()
                 _dlog("lifecycle", f"tmux new-session failed name={self._tmux_name} cmd={self.cmd!r} error={detail!r}")
@@ -425,13 +523,13 @@ class Session:
             subprocess.run([
                 "tmux", "set-environment", "-t", self._tmux_name,
                 "SF_CMD", self.cmd,
-            ], capture_output=True, timeout=3)
+            ], capture_output=True, timeout=3, env=_session_env())
         else:
             # Resize existing tmux session to match terminal
             subprocess.run([
                 "tmux", "resize-window", "-t", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
-            ], capture_output=True, timeout=3)
+            ], capture_output=True, timeout=3, env=_session_env())
 
         # Store stable metadata on both new and existing sessions. tmux names
         # can be renamed for readability; SF_SID is the durable tab identity.
@@ -447,11 +545,11 @@ class Session:
         # Attach via PTY fork — child runs `tmux attach`, parent reads master_fd
         self.child_pid, self.master_fd = pty.fork()
         if self.child_pid == 0:
-            env = os.environ.copy()
+            env = _session_env()
             env["TERM"] = "xterm-256color"
             env["COLORTERM"] = "truecolor"
             env.setdefault("LANG", "en_US.UTF-8")
-            tmux = shutil.which("tmux")
+            tmux = shutil.which("tmux", path=env.get("PATH"))
             os.execve(tmux, ["tmux", "attach-session", "-t", self._tmux_name], env)
         else:
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
@@ -464,12 +562,12 @@ class Session:
     def _start_unix(self, cols, rows):
         """Fallback: direct PTY fork (no tmux)."""
         args = shlex.split(self.cmd)
-        exe = shutil.which(args[0])
+        env = _session_env()
+        exe = shutil.which(args[0], path=env.get("PATH"))
 
         self.child_pid, self.master_fd = pty.fork()
 
         if self.child_pid == 0:
-            env = os.environ.copy()
             env["TERM"] = "xterm-256color"
             env["COLORTERM"] = "truecolor"
             env.setdefault("LANG", "en_US.UTF-8")
@@ -477,7 +575,7 @@ class Session:
             # doesn't inherit shellframe's install dir as its cwd. See
             # _start_tmux for the full rationale.
             try:
-                os.chdir(_session_cwd())
+                os.chdir(self.cwd)
             except Exception:
                 pass
 
@@ -496,7 +594,8 @@ class Session:
 
     def _start_win(self, cols, rows):
         args = shlex.split(self.cmd)
-        exe = shutil.which(args[0])
+        env = _session_env()
+        exe = shutil.which(args[0], path=env.get("PATH"))
         cmd_args = [exe] + args[1:] if exe else ["powershell", "-NoProfile", "-Command", self.cmd]
 
         # Try pywinpty for full ConPTY support (colors, TUI)
@@ -505,8 +604,8 @@ class Session:
             self._winpty = winpty.PtyProcess.spawn(
                 cmd_args,
                 dimensions=(rows, cols),
-                env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"},
-                cwd=_session_cwd(),
+                env={**env, "TERM": "xterm-256color", "COLORTERM": "truecolor"},
+                cwd=self.cwd,
             )
             self._use_winpty = True
             threading.Thread(target=self._reader_winpty, daemon=True).start()
@@ -521,9 +620,9 @@ class Session:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            cwd=_session_cwd(),
+            cwd=self.cwd,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-            env={**os.environ, "TERM": "xterm-256color"},
+            env={**env, "TERM": "xterm-256color"},
         )
         threading.Thread(target=self._reader_win, daemon=True).start()
 
@@ -539,8 +638,8 @@ class Session:
                     with self.lock:
                         self.buffer.extend(data)
                         self._recent.extend(data)
-                        if len(self._recent) > 1024:
-                            self._recent = self._recent[-1024:]
+                        if len(self._recent) > 8192:
+                            self._recent = self._recent[-8192:]
                     if self._on_data:
                         self._on_data()
             except (OSError, ValueError):
@@ -687,11 +786,14 @@ class Api:
     def __init__(self):
         self.sessions: dict[str, Session] = {}
         self.bridge: TelegramBridge = None  # single global bridge
+        self.line_bridge: LineBridge = None  # optional LINE bridge plugin
         self._counter = 0
         self._window = None
         self._pusher_started = False
         self._output_event = threading.Event()   # signalled by reader threads
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
+        self._plugins = None
+        self._plugins_reload()
 
     def _save_soft_session(self, sid: str, cmd: str):
         """Persist a session entry to config.session_list. Used as soft
@@ -838,6 +940,7 @@ class Api:
                 # Restore bridge enabled/disabled state from config
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._init_pending = False
+                session._startup_trust_pending = False
                 session._slug_pending = False
                 # Restore custom label
                 label = entry.get("label") or saved_labels.get(sid)
@@ -867,6 +970,7 @@ class Api:
                 self.sessions[sid] = session
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._init_pending = False
+                session._startup_trust_pending = False
                 session._slug_pending = False
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
@@ -893,7 +997,8 @@ class Api:
                 for sid, s in list(self.sessions.items()):
                     data = s.read()
                     if data:
-                        if self.bridge and getattr(s, '_bridge_enabled', True):
+                        self._auto_accept_startup_trust_prompt(sid, s)
+                        if (self.bridge or self.line_bridge) and getattr(s, '_bridge_enabled', True):
                             self._bridge_queue.put_nowait((sid, data))
                         pending[sid] = pending.get(sid, "") + data
                     chunk = pending.get(sid)
@@ -913,6 +1018,8 @@ class Api:
                 sid, data = self._bridge_queue.get()
                 if self.bridge:
                     self.bridge.feed_output(sid, data)
+                if self.line_bridge:
+                    self.line_bridge.feed_output(sid, data)
 
         threading.Thread(target=pusher, daemon=True).start()
         threading.Thread(target=bridge_feeder, daemon=True).start()
@@ -931,6 +1038,21 @@ class Api:
             masked["bot_token_masked"] = "..." + t[-6:] if len(t) > 6 else t
             return json.dumps(masked)
         return json.dumps(None)
+
+    def get_saved_line_bridge(self) -> str:
+        """Return saved LINE bridge config with secrets masked for display."""
+        cfg = load_config()
+        line_cfg = cfg.get("line_bridge")
+        if not line_cfg:
+            return json.dumps(None)
+        masked = line_cfg.copy()
+        token = masked.get("channel_access_token", "")
+        secret = masked.get("channel_secret", "")
+        forward_secret = masked.get("forward_secret", "")
+        masked["channel_access_token_masked"] = "..." + token[-6:] if len(token) > 6 else token
+        masked["channel_secret_masked"] = "..." + secret[-6:] if len(secret) > 6 else secret
+        masked["forward_secret_masked"] = "..." + forward_secret[-6:] if len(forward_secret) > 6 else forward_secret
+        return json.dumps(masked)
 
     def save_preset(self, name: str, cmd: str, icon: str) -> str:
         cmd = _normalize_dashes(cmd)
@@ -999,6 +1121,7 @@ class Api:
         _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows}")
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
         self.sessions[sid] = session
+        self._start_startup_trust_watcher(sid, session)
         session._bridge_enabled = True
         # Soft persistence (Windows / no-tmux fallback): record this session
         # so the next startup can recreate it
@@ -1013,11 +1136,19 @@ class Api:
                 peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
             )
             self.bridge.refresh_commands()
+        if self.line_bridge:
+            label = cmd.split()[0] if cmd else sid
+            self.line_bridge.register_session(
+                sid, label,
+                lambda text, _s=session: _s.write(text),
+                peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
+            )
 
         # Mark session for init prompt — only for AI CLI tools, not shells/editors/etc.
         session._init_pending = self._should_inject_init(cmd)
         # Nudge the UI to reconcile immediately (don't wait for 1.5s bridge poll).
         # Covers sessions created via TG /new, sfctl, or any non-UI path.
+        self._plugin_dispatch_session_open(sid, cmd.split()[0] if cmd else sid)
         self._notify_ui_sessions_changed()
         return sid
 
@@ -1074,8 +1205,11 @@ class Api:
         if self.bridge:
             self.bridge.unregister_session(sid)
             self.bridge.refresh_commands()
+        if self.line_bridge:
+            self.line_bridge.unregister_session(sid)
         s = self.sessions.pop(sid, None)
         if s:
+            self._plugin_dispatch_session_close(sid)
             s.kill()
             # Clean up persisted label
             cfg = load_config()
@@ -1101,11 +1235,83 @@ class Api:
         r'|What can I help'    # Common AI greeting
         , _re.MULTILINE
     )
+    _STARTUP_TRUST_RE = _re.compile(
+        r'(Quick safety check|Is this a project you trust|Do you trust (?:the )?(?:files|project|folder))'
+        r'[\s\S]{0,800}'
+        r'(?:1[.)]\s*)?Yes,\s*I\s*trust\s*this\s*folder',
+        _re.IGNORECASE,
+    )
+
+    def _start_startup_trust_watcher(self, sid: str, s: Session):
+        if not getattr(s, '_startup_trust_pending', False):
+            return
+
+        def _watch():
+            while getattr(s, 'alive', False) and getattr(s, '_startup_trust_pending', False):
+                self._auto_accept_startup_trust_prompt(sid, s)
+                if not getattr(s, '_startup_trust_pending', False):
+                    break
+                if time.monotonic() > getattr(s, '_startup_trust_deadline', 0):
+                    s._startup_trust_pending = False
+                    break
+                time.sleep(0.15)
+
+        threading.Thread(target=_watch, daemon=True).start()
+
+    def _startup_trust_tail(self, s: Session) -> str:
+        parts = []
+        with s.lock:
+            recent = bytes(s._recent).decode('utf-8', errors='replace')
+        if recent:
+            parts.append(recent)
+        tmux_name = getattr(s, '_tmux_name', None)
+        if tmux_name:
+            try:
+                r = subprocess.run(
+                    ["tmux", "capture-pane", "-p", "-J", "-t", tmux_name, "-S", "-80"],
+                    capture_output=True, text=True, timeout=1,
+                )
+                if r.returncode == 0 and r.stdout:
+                    parts.append(r.stdout)
+            except Exception:
+                pass
+        return "\n".join(parts)[-4000:]
+
+    def _auto_accept_startup_trust_prompt(self, sid: str, s: Session):
+        """Answer only known startup trust prompts for trusted AI cwd launches."""
+        if not getattr(s, '_startup_trust_pending', False):
+            return
+        if time.monotonic() > getattr(s, '_startup_trust_deadline', 0):
+            s._startup_trust_pending = False
+            return
+        if not _should_auto_accept_startup_trust(s.cmd, getattr(s, 'cwd', '')):
+            s._startup_trust_pending = False
+            return
+        tail = self._startup_trust_tail(s)
+        clean = self._ANSI_RE.sub('', tail) if tail else ""
+        clean = self._ANSI_STRIP_RE.sub('', clean) if clean else ""
+        if not self._STARTUP_TRUST_RE.search(clean):
+            return
+        s._startup_trust_pending = False
+        s._startup_trust_answered = True
+        _dlog("trust", f"auto-accepted startup trust prompt sid={sid} cwd={getattr(s, 'cwd', '')!r}")
+        if getattr(s, '_tmux_name', None):
+            try:
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", s._tmux_name, "Enter"],
+                    capture_output=True, timeout=1,
+                )
+                return
+            except Exception:
+                pass
+        s.write("\r")
 
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
         if not s:
             return
+        if data:
+            s._startup_trust_pending = False
         # Auto-slug: on first user Enter, rename tmux session to a haiku-derived slug.
         # Runs in background so it never blocks the keystroke path. Only fires once
         # (_slug_pending) and only when the session has a default sf_sNN tmux name.
@@ -1792,6 +1998,7 @@ class Api:
             cfg = load_config()
             cfg["last_active_tab"] = sid
             save_config(cfg)
+            self._plugin_dispatch_session_change(sid)
             return json.dumps({"success": True})
         except Exception as e:
             return json.dumps({"success": False, "reason": str(e)})
@@ -1803,6 +2010,141 @@ class Api:
             return json.dumps({"sid": cfg.get("last_active_tab", "") or ""})
         except Exception:
             return json.dumps({"sid": ""})
+
+    def _plugin_api(self):
+        import plugin_sdk
+        return plugin_sdk.PluginHostAPI(
+            get_active_sid=lambda: load_config().get("last_active_tab", "") or "",
+            list_sessions=lambda: [
+                {
+                    "sid": sid,
+                    "label": getattr(s, "_custom_label", None) or sid,
+                    "cmd": s.cmd,
+                    "alive": bool(s.alive),
+                }
+                for sid, s in self.sessions.items()
+                if s.alive
+            ],
+            send_to_session=lambda sid, text: (
+                self.sessions[sid].write(text) if sid in self.sessions else None
+            ),
+            config_dir=CONFIG_DIR,
+        )
+
+    def _plugins_reload(self):
+        """Re-scan shellframe_plugins without restarting the app."""
+        try:
+            import plugin_sdk
+            importlib.reload(plugin_sdk)
+            self._plugins = plugin_sdk.PluginRegistry(APP_DIR / "shellframe_plugins", self._plugin_api())
+            self._plugins.load_all()
+            _dlog("plugins", f"reloaded; {len(self._plugins.plugins)} plugin(s)")
+        except Exception as e:
+            self._plugins = None
+            _dlog("plugins", f"reload failed: {e!r}")
+
+    def _plugin_dispatch_session_open(self, sid: str, label: str):
+        try:
+            if self._plugins:
+                self._plugins.dispatch_session_open(sid, label)
+        except Exception as e:
+            _dlog("plugins", f"session_open failed: {e!r}")
+
+    def _plugin_dispatch_session_close(self, sid: str):
+        try:
+            if self._plugins:
+                self._plugins.dispatch_session_close(sid)
+        except Exception as e:
+            _dlog("plugins", f"session_close failed: {e!r}")
+
+    def _plugin_dispatch_session_change(self, sid: str):
+        try:
+            if self._plugins:
+                self._plugins.dispatch_session_change(sid)
+        except Exception as e:
+            _dlog("plugins", f"session_change failed: {e!r}")
+
+    def list_plugin_panels(self) -> str:
+        """Return plugin metadata + injected HTML/CSS/JS for settings tabs."""
+        if not self._plugins:
+            return "[]"
+        try:
+            return json.dumps(self._plugins.collect_settings_panels(), ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    def plugin_sidebar_badges(self, sid: str) -> str:
+        """Return concatenated HTML snippets rendered after a session label."""
+        if not self._plugins:
+            return ""
+        try:
+            return self._plugins.collect_sidebar_badges(sid)
+        except Exception:
+            return ""
+
+    def plugin_action(self, plugin_name: str, action: str, args_json: str = "{}") -> str:
+        if not self._plugins:
+            return json.dumps({"ok": False, "message": "plugin registry not loaded"})
+        try:
+            args = json.loads(args_json) if args_json else {}
+        except Exception:
+            args = {}
+        try:
+            result = self._plugins.dispatch_action(plugin_name, action, args)
+            return json.dumps(result, ensure_ascii=False, default=str)
+        except Exception as e:
+            return json.dumps({"ok": False, "message": str(e)}, ensure_ascii=False)
+
+    def marketplace_list(self) -> str:
+        """List curated plugins and mark installed versions."""
+        try:
+            mk_path = APP_DIR / "shellframe_plugins" / "_marketplace.json"
+            data = json.loads(mk_path.read_text(encoding="utf-8")) if mk_path.exists() else {"plugins": []}
+            installed = {
+                p.manifest.name: p.manifest.version
+                for p in (self._plugins.plugins if self._plugins else [])
+            }
+            for p in data.get("plugins", []):
+                p["installed"] = p.get("name") in installed
+                p["installed_version"] = installed.get(p.get("name"), "")
+            return json.dumps(data, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e), "plugins": []}, ensure_ascii=False)
+
+    def marketplace_install(self, name: str, repo_url: str) -> str:
+        """Install a plugin by cloning it into shellframe_plugins/<name>."""
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
+        if not safe_name or safe_name != name:
+            return json.dumps({"ok": False, "message": "invalid plugin name"})
+        target = APP_DIR / "shellframe_plugins" / safe_name
+        if target.exists():
+            return json.dumps({"ok": False, "message": f"{safe_name} already installed"})
+        try:
+            subprocess.check_output(
+                ["git", "clone", "--depth", "1", repo_url, str(target)],
+                stderr=subprocess.STDOUT,
+                timeout=60,
+            )
+            self._plugins_reload()
+            return json.dumps({"ok": True, "message": f"installed {safe_name}"})
+        except subprocess.CalledProcessError as e:
+            return json.dumps({"ok": False, "message": e.output.decode("utf-8", errors="replace")[-400:]})
+        except Exception as e:
+            return json.dumps({"ok": False, "message": str(e)})
+
+    def marketplace_uninstall(self, name: str) -> str:
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
+        if not safe_name or safe_name != name:
+            return json.dumps({"ok": False, "message": "invalid plugin name"})
+        target = APP_DIR / "shellframe_plugins" / safe_name
+        if not target.exists() or not target.is_dir():
+            return json.dumps({"ok": False, "message": f"{safe_name} not installed"})
+        try:
+            shutil.rmtree(target)
+            self._plugins_reload()
+            return json.dumps({"ok": True, "message": f"removed {safe_name}"})
+        except Exception as e:
+            return json.dumps({"ok": False, "message": str(e)})
 
     def open_local_file(self, path: str) -> str:
         """Open a file (or directory) in the OS default app.
@@ -2241,10 +2583,11 @@ class Api:
                 "success": True,
                 "message": pull_out,
                 "version": new_ver,
-                "can_hot_reload": has_sessions,
+                "can_hot_reload": has_sessions and not needs_restart,
                 "needs_restart": needs_restart,
                 "changed_files": changed_files,
                 "post_steps": post_steps,
+                "platform": platform.system(),
             })
         except Exception as e:
             return json.dumps({
@@ -2266,8 +2609,67 @@ class Api:
         try:
             spawned = False
             err_msgs = []
+            in_place_restart = False
+
+            def _find_macos_app_path():
+                candidates = [
+                    Path.home() / "Applications" / "ShellFrame.app",
+                    Path("/Applications/ShellFrame.app"),
+                    APP_DIR / "ShellFrame.app",
+                ]
+                for c in candidates:
+                    try:
+                        if c.exists():
+                            return c.resolve()
+                    except Exception:
+                        pass
+                return None
+
+            def _schedule_macos_app_relaunch(app_path: Path):
+                """Launch via the .app bundle after this PID exits.
+
+                Opening the bundle before the old process has quit can be a
+                no-op on some LaunchServices states. Replacing the process via
+                execv is reliable but loses the .app identity and shows up as
+                Python in Dock, so keep the handoff outside this process and
+                retry `open -n` after the old PID is gone.
+                """
+                pid = os.getpid()
+                app = shlex.quote(str(app_path))
+                log = shlex.quote(DEBUG_LOG)
+                script = (
+                    f"pid={pid}; app={app}; log={log}; "
+                    "i=0; "
+                    "while kill -0 \"$pid\" >/dev/null 2>&1 && [ $i -lt 80 ]; do "
+                    "  i=$((i+1)); sleep 0.1; "
+                    "done; "
+                    "for j in 1 2 3; do "
+                    "  if /usr/bin/open -n \"$app\" >/dev/null 2>&1; then "
+                    "    echo \"$(date +%H:%M:%S.%3N) [restart] relaunched app=$app\" >> \"$log\"; "
+                    "    exit 0; "
+                    "  fi; "
+                    "  sleep 1; "
+                    "done; "
+                    "echo \"$(date +%H:%M:%S.%3N) [restart] failed to relaunch app=$app\" >> \"$log\""
+                )
+                subprocess.Popen(
+                    ["/bin/sh", "-c", script],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
 
             if IS_WIN:
+                if self.sessions:
+                    return json.dumps({
+                        "success": False,
+                        "message": (
+                            "Windows restart would terminate live terminal sessions. "
+                            "Close or finish sessions first; update files are installed, "
+                            "but Python/core changes apply after a manual restart."
+                        ),
+                        "preserves_sessions": False,
+                    })
                 # Strategy W1: shellframe.bat from install dir / user's local bin
                 bat_candidates = [
                     APP_DIR / "ShellFrame.bat",
@@ -2319,6 +2721,39 @@ class Api:
                     except Exception as e:
                         err_msgs.append(f"pythonw relaunch failed: {e}")
             else:
+                if platform.system() == "Darwin":
+                    app_path = _find_macos_app_path()
+                    if app_path:
+                        try:
+                            _schedule_macos_app_relaunch(app_path)
+                            spawned = True
+                        except Exception as e:
+                            err_msgs.append(f".app relaunch schedule failed: {e}")
+                    else:
+                        err_msgs.append("ShellFrame.app not found")
+                else:
+                    # Linux/no-.app fallback: replace the current Python
+                    # process in-place after the RPC response has been written.
+                    try:
+                        def _exec_soon():
+                            time.sleep(0.8)
+                            try:
+                                self.cleanup_all()
+                            except Exception as e:
+                                _dlog("restart", f"cleanup before exec failed: {e}")
+                            try:
+                                os.chdir(str(APP_DIR))
+                            except Exception:
+                                pass
+                            _dlog("restart", f"exec in-place python={sys.executable!r}")
+                            os.execv(sys.executable, [sys.executable, str(APP_DIR / "main.py")])
+
+                        threading.Thread(target=_exec_soon, daemon=True).start()
+                        spawned = True
+                        in_place_restart = True
+                    except Exception as e:
+                        err_msgs.append(f"in-place exec schedule failed: {e}")
+
                 # Strategy 1: `open -n <absolute .app path>` — no `-a`, so
                 # LaunchServices doesn't route by bundle ID. Passing the
                 # path directly gives the spawned process full .app bundle
@@ -2330,26 +2765,10 @@ class Api:
                 # Howard saw two Dock entries during restart and couldn't
                 # tell which was shellframe. With `open -n <path>` the new
                 # instance inherits the clicked app's identity properly.
-                candidates = [
-                    APP_DIR / "ShellFrame.app",
-                    Path.home() / "Applications" / "ShellFrame.app",
-                    Path("/Applications/ShellFrame.app"),
-                ]
-                app_path = None
-                for c in candidates:
+                app_path = _find_macos_app_path()
+                if not spawned and app_path:
                     try:
-                        if c.exists():
-                            app_path = c.resolve()
-                            break
-                    except Exception:
-                        pass
-                if app_path:
-                    try:
-                        subprocess.Popen(
-                            ["/usr/bin/open", "-n", str(app_path)],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
+                        _schedule_macos_app_relaunch(app_path)
                         spawned = True
                     except Exception as e:
                         err_msgs.append(f"open -n <path> failed: {e}")
@@ -2357,7 +2776,7 @@ class Api:
                 # Strategy 2: `open -n -a` (resolves by bundle id via
                 # LaunchServices). Fallback if the direct-path form above
                 # isn't supported on this macOS build.
-                if not spawned and app_path:
+                if not spawned and app_path and platform.system() == "Darwin":
                     try:
                         subprocess.Popen(
                             ["/usr/bin/open", "-n", "-a", str(app_path)],
@@ -2369,7 +2788,7 @@ class Api:
                         err_msgs.append(f"open -n -a failed: {e}")
 
                 # Strategy 3: relaunch via current Python
-                if not spawned:
+                if not spawned and platform.system() != "Darwin":
                     try:
                         subprocess.Popen(
                             [sys.executable, str(APP_DIR / "main.py")],
@@ -2385,15 +2804,16 @@ class Api:
             if not spawned:
                 return json.dumps({"success": False, "message": "; ".join(err_msgs) or "no spawn method worked"})
 
-            # Schedule exit so the response can return cleanly first
-            def _exit_soon():
-                time.sleep(0.8)
-                try:
-                    self.cleanup_all()  # detaches from tmux without killing
-                except Exception:
-                    pass
-                os._exit(0)
-            threading.Thread(target=_exit_soon, daemon=True).start()
+            if not in_place_restart:
+                # Schedule exit so the response can return cleanly first
+                def _exit_soon():
+                    time.sleep(0.8)
+                    try:
+                        self.cleanup_all()  # detaches from tmux without killing
+                    except Exception:
+                        pass
+                    os._exit(0)
+                threading.Thread(target=_exit_soon, daemon=True).start()
             return json.dumps({"success": True})
         except Exception as e:
             import traceback
@@ -2620,6 +3040,89 @@ class Api:
             return json.dumps({"success": True})
         return json.dumps({"success": False, "message": "No bridge running"})
 
+    # ── LINE bridge plugin ──
+    def start_line_bridge(self, channel_access_token: str, channel_secret: str,
+                          allowed_users_json: str, prefix_enabled: bool,
+                          webhook_port: int, webhook_path: str,
+                          public_webhook_url: str, delivery_mode: str = "push",
+                          poll_path: str = "/line/poll",
+                          forward_secret: str = "") -> str:
+        """Start the LINE bridge plugin and persist its config."""
+        if self.line_bridge:
+            self.line_bridge.stop()
+            self.line_bridge = None
+        try:
+            allowed = json.loads(allowed_users_json) if allowed_users_json else []
+            allowed = [str(u).strip() for u in allowed if str(u).strip()]
+            config = LineBridgeConfig(
+                channel_access_token=channel_access_token,
+                channel_secret=channel_secret,
+                allowed_users=allowed,
+                prefix_enabled=bool(prefix_enabled),
+                webhook_port=int(webhook_port or 8787),
+                webhook_path=webhook_path or "/line/webhook",
+                public_webhook_url=public_webhook_url or "",
+                delivery_mode=delivery_mode or "push",
+                poll_path=poll_path or "/line/poll",
+                forward_secret=forward_secret or "",
+            )
+            self.line_bridge = LineBridge(
+                bridge_id="line",
+                config=config,
+                on_new_session=lambda c: self.new_session(c, 200, 50),
+                on_close_session=self.close_session,
+                on_consume_init=self.consume_init_prompt_if_ready,
+            )
+            for sid, s in self.sessions.items():
+                if not getattr(s, '_bridge_enabled', True):
+                    continue
+                label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
+                self.line_bridge.register_session(
+                    sid, label,
+                    lambda text, _s=s: _s.write(text),
+                    peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                )
+            self.line_bridge.start()
+            status = self.line_bridge.get_status()
+            if not self.line_bridge.connected:
+                message = status.get("message") or "LINE bridge failed to start"
+                self.line_bridge = None
+                return json.dumps({"success": False, "message": message, **status})
+
+            cfg = load_config()
+            cfg["line_bridge"] = {
+                "channel_access_token": channel_access_token,
+                "channel_secret": channel_secret,
+                "allowed_users": allowed,
+                "prefix_enabled": bool(prefix_enabled),
+                "webhook_port": config.webhook_port,
+                "webhook_path": config.webhook_path,
+                "public_webhook_url": public_webhook_url or "",
+                "delivery_mode": config.delivery_mode,
+                "poll_path": config.poll_path,
+                "forward_secret": forward_secret or "",
+            }
+            save_config(cfg)
+            return json.dumps({"success": True, "exists": True, **status})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return json.dumps({"success": False, "message": str(e)})
+
+    def stop_line_bridge(self) -> str:
+        if self.line_bridge:
+            self.line_bridge.stop()
+            self.line_bridge = None
+        cfg = load_config()
+        cfg.pop("line_bridge", None)
+        save_config(cfg)
+        return json.dumps({"success": True})
+
+    def get_line_bridge_status(self) -> str:
+        if not self.line_bridge:
+            return json.dumps({"exists": False})
+        return json.dumps({"exists": True, **self.line_bridge.get_status()})
+
     def toggle_bridge(self) -> str:
         """Toggle pause/resume."""
         if not self.bridge:
@@ -2649,6 +3152,16 @@ class Api:
             else:
                 self.bridge.unregister_session(sid)
             self.bridge.refresh_commands()
+        if self.line_bridge:
+            if enabled:
+                label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
+                self.line_bridge.register_session(
+                    sid, label,
+                    lambda text, _s=s: _s.write(text),
+                    peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                )
+            else:
+                self.line_bridge.unregister_session(sid)
         # Persist bridge-disabled sessions so they survive restart
         cfg = load_config()
         disabled = set(cfg.get("bridge_disabled_sessions", []))
@@ -2667,6 +3180,8 @@ class Api:
         if self.bridge:
             self.bridge.reorder_slots(order)
             self.bridge.refresh_commands()
+        if self.line_bridge:
+            self.line_bridge.reorder_slots(order)
         self._persist_session_manifest(order)
         return json.dumps({"success": True})
 
@@ -2676,6 +3191,16 @@ class Api:
             return json.dumps({"success": False, "message": "No bridge"})
         try:
             self.bridge.switch_active_session(sid)
+            return json.dumps({"success": True, "active_sid": sid})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def switch_line_bridge_session(self, sid: str) -> str:
+        """Switch LINE bridge active session for forwarded / polled chats."""
+        if not self.line_bridge:
+            return json.dumps({"success": False, "message": "No LINE bridge"})
+        try:
+            self.line_bridge.switch_active_session(sid)
             return json.dumps({"success": True, "active_sid": sid})
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
@@ -2812,6 +3337,8 @@ class Api:
         if self.bridge and sid in self.bridge.slots:
             self.bridge.slots[sid].label = name
             self.bridge.refresh_commands()
+        if self.line_bridge and sid in self.line_bridge.slots:
+            self.line_bridge.slots[sid].label = name
         # Persist
         cfg = load_config()
         labels = cfg.get("session_labels", {})
@@ -2826,6 +3353,8 @@ class Api:
         if self.bridge:
             self.bridge.unregister_session(sid)
             self.bridge.refresh_commands()
+        if self.line_bridge:
+            self.line_bridge.unregister_session(sid)
 
     # ── Remote control (sfctl) ──
 
@@ -2984,6 +3513,7 @@ class Api:
                 s = self.sessions.get(sid)
                 if not s:
                     return {"success": False, "message": f"No such session: {sid}"}
+                s._startup_trust_pending = False
                 s.write(text)
                 if submit:
                     time.sleep(0.05)
@@ -3076,6 +3606,9 @@ class Api:
         if self.bridge:
             self.bridge.stop()
             self.bridge = None
+        if self.line_bridge:
+            self.line_bridge.stop()
+            self.line_bridge = None
         for s in list(self.sessions.values()):
             # Detach only — tmux sessions stay alive for reattach on restart
             s.kill(kill_tmux=False)
@@ -3704,6 +4237,7 @@ def main():
     # down.
     _ensure_single_instance()
     _prevent_app_nap()
+    _apply_macos_app_identity()
     _patch_pywebview_cocoa_none_screen()
     api = Api()
     html_path = Path(__file__).parent / "web" / "index.html"
@@ -3826,6 +4360,7 @@ def main():
         api.cleanup_and_exit()
 
     def _on_loaded():
+        _apply_macos_app_identity()
         # Apply the saved x/y AFTER the window has been shown centered.
         # By this point cocoa has a valid screen() for the window, so
         # windowDidMove_ callbacks triggered by .move() won't hit the

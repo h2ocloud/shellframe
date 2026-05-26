@@ -1,0 +1,7 @@
+{
+  "name": "rokid-bridge",
+  "version": "0.16.0",
+  "description": "Rokid Glasses bridge — capture/mic from glasses inject as ShellFrame prompts; Claude replies push back to HUD.",
+  "repo_url": "https://github.com/h2ocloud/RokidBridge",
+  "capabilities": ["sidebar_badge", "settings_panel"]
+}

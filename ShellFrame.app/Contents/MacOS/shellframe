@@ -23,6 +23,20 @@ else
   cd "$DIR"
 fi
 
+PY_LAUNCHER=".venv/bin/python"
+if [ "$(uname)" = "Darwin" ]; then
+  REAL_PY="$("$PY_LAUNCHER" -c 'import os,sys; print(os.path.realpath(sys.executable))' 2>/dev/null || true)"
+  case "$REAL_PY" in
+    */Frameworks/Python.framework/Versions/*/bin/python*)
+      PY_APP="${REAL_PY%/bin/python*}/Resources/Python.app/Contents/MacOS/Python"
+      if [ -x "$PY_APP" ]; then
+        ln -sf "$PY_APP" ".venv/bin/ShellFrame"
+        PY_LAUNCHER=".venv/bin/ShellFrame"
+      fi
+      ;;
+  esac
+fi
+
 # Force arm64 on Apple Silicon. Without this, if the parent shell happens
 # to be Rosetta-translated (Howard's setup) the child python inherits
 # x86_64, which gives it bundle id `com.apple.python3` instead of
@@ -30,6 +44,6 @@ fi
 # (Accessibility permission is bound to the .app's identity), so the
 # ⌃⌥Space hotkey silently no-ops when shellframe is in the background.
 if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null)" == "1" ]]; then
-  exec arch -arm64 .venv/bin/python main.py "$@"
+  exec arch -arm64 "$PY_LAUNCHER" main.py "$@"
 fi
-exec .venv/bin/python main.py "$@"
+exec "$PY_LAUNCHER" main.py "$@"
