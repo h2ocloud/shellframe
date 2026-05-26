@@ -1383,6 +1383,31 @@ class Api:
         s._init_pending = False
         return prompt
 
+    def is_session_ready_for_bridge(self, sid: str) -> bool:
+        """Return True when a bridged AI tab is ready to receive pasted input."""
+        s = self.sessions.get(sid)
+        if not s or not getattr(s, "alive", False):
+            return False
+        self._auto_accept_startup_trust_prompt(sid, s)
+        parts = []
+        with s.lock:
+            recent = bytes(s._recent).decode('utf-8', errors='replace')
+        if recent:
+            parts.append(recent)
+        tmux_name = getattr(s, '_tmux_name', None)
+        if tmux_name:
+            try:
+                r = subprocess.run(
+                    ["tmux", "capture-pane", "-p", "-J", "-t", tmux_name, "-S", "-80"],
+                    capture_output=True, text=True, timeout=1,
+                )
+                if r.returncode == 0 and r.stdout:
+                    parts.append(r.stdout)
+            except Exception:
+                pass
+        clean = self._ANSI_RE.sub('', "\n".join(parts)) if parts else ""
+        return bool(self._AI_READY_RE.search(clean))
+
     def read_output(self, sid: str) -> str:
         """Read buffered output. Used only during reconnect — normal output is pushed."""
         s = self.sessions.get(sid)
@@ -1535,11 +1560,17 @@ class Api:
         except Exception:
             pass
 
-        if in_alt_screen and self.bridge is not None:
-            try:
-                slot = self.bridge.slots.get(sid)
-            except Exception:
-                slot = None
+        if in_alt_screen:
+            slot = None
+            for candidate_bridge in (self.bridge, self.line_bridge):
+                if candidate_bridge is None:
+                    continue
+                try:
+                    slot = candidate_bridge.slots.get(sid)
+                except Exception:
+                    slot = None
+                if slot is not None:
+                    break
             if slot is not None and getattr(slot, 'screen', None) is not None:
                 try:
                     text = self._pyte_history_text(slot)
@@ -3072,6 +3103,9 @@ class Api:
                 on_new_session=lambda c: self.new_session(c, 200, 50),
                 on_close_session=self.close_session,
                 on_consume_init=self.consume_init_prompt_if_ready,
+                on_rename_session=self.rename_session,
+                on_session_ready=self.is_session_ready_for_bridge,
+                gateway_worker_cmd=SHELLFRAME_CODEX_CMD,
             )
             for sid, s in self.sessions.items():
                 if not getattr(s, '_bridge_enabled', True):

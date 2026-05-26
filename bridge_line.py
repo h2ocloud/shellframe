@@ -39,6 +39,27 @@ DEFAULT_LINE_PROMPT = (
     "make each reply self-contained."
 )
 
+LINE_GATEWAY_ROUTES = (
+    ("LINE-KGI", (
+        "凱基", "kgi", "sit", "uat", "qa",
+    )),
+    ("LINE-Reminder", (
+        "提醒", "打卡", "remind", "reminder", "鬧鐘", "排程", "停止", "關掉", "關閉",
+    )),
+    ("LINE-Ops", (
+        "line", "webhook", "toolhub", "openclaw", "hermes", "水位", "api",
+        "token", "credential", "npm", "gmail", "sql", "資料庫",
+    )),
+    ("LINE-Dev", (
+        "shellframe", "gateway", "派工", "更名", "code", "repo", "git", "github",
+        "pr", "ci", "bug", "測試", "修", "部署", "程式",
+    )),
+)
+
+GENERIC_SESSION_LABELS = {
+    "bash", "zsh", "sh", "claude", "codex", "sf-codex", "python", "python3",
+}
+
 
 def _llog(msg: str):
     try:
@@ -120,6 +141,7 @@ def clean_line_response(text: str) -> str:
     )
     lines = []
     previous = None
+    seen = set()
     for line in (text or "").splitlines():
         stripped = line.strip()
         if not stripped:
@@ -144,9 +166,26 @@ def clean_line_response(text: str) -> str:
             continue
         if stripped == previous:
             continue
+        normalized = re.sub(r"\s+", " ", stripped)
+        if len(normalized) >= 12 and normalized in seen:
+            continue
+        seen.add(normalized)
         lines.append(stripped)
         previous = stripped
     return "\n".join(lines).strip()
+
+
+def _extract_marked_reply(raw_text: str, start_marker: str, end_marker: str) -> str:
+    if not raw_text or not start_marker or not end_marker:
+        return ""
+    raw_for_marker = strip_ansi(raw_text, sent_texts=[])
+    start_idx = raw_for_marker.rfind(start_marker)
+    if start_idx < 0:
+        return ""
+    end_idx = raw_for_marker.find(end_marker, start_idx + len(start_marker))
+    if end_idx < 0:
+        return ""
+    return raw_for_marker[start_idx + len(start_marker):end_idx]
 
 
 class LineSessionSlot:
@@ -166,13 +205,17 @@ class LineSessionSlot:
         self.expect_marker = False
         self.reply_start_marker = ""
         self.reply_end_marker = ""
+        self.pending_user_id = ""
+        self.pending_target_id = ""
 
 
 class LineBridge(BridgeBase):
     PLATFORM = "line"
 
     def __init__(self, bridge_id: str, config: LineBridgeConfig, on_status_change=None,
-                 on_new_session=None, on_close_session=None, on_consume_init=None):
+                 on_new_session=None, on_close_session=None, on_consume_init=None,
+                 on_rename_session=None, on_session_ready=None,
+                 gateway_worker_cmd: str = ""):
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.slots = {}
         self._slot_order = []
@@ -191,6 +234,13 @@ class LineBridge(BridgeBase):
         self._on_new_session = on_new_session
         self._on_close_session = on_close_session
         self._on_consume_init = on_consume_init
+        self._on_rename_session = on_rename_session
+        self._on_session_ready = on_session_ready
+        self._gateway_worker_cmd = (
+            _os.environ.get("SHELLFRAME_LINE_WORKER_CMD", "").strip()
+            or (gateway_worker_cmd or "").strip()
+            or "codex"
+        )
 
     def register_session(self, sid: str, label: str, write_fn, peek_fn=None):
         with self._slots_lock:
@@ -519,17 +569,22 @@ class LineBridge(BridgeBase):
                 elif not bridge._forward_auth_ok(self.headers):
                     self._send_json(403, {"ok": False, "message": "bad forward key"})
                     return
+                poll_target_override = (
+                    self.headers.get("X-ShellFrame-Poll-Target")
+                    or self.headers.get("X-Poll-Target")
+                    or ""
+                ).strip()
                 try:
                     payload = json.loads(body.decode("utf-8"))
                 except Exception:
                     self._send_json(400, {"ok": False, "message": "bad json"})
                     return
-                bridge._handle_webhook(payload)
+                bridge._handle_webhook(payload, poll_target_override=poll_target_override)
                 self._send_json(200, {"ok": True})
 
         return Handler
 
-    def _handle_webhook(self, payload: dict):
+    def _handle_webhook(self, payload: dict, poll_target_override: str = ""):
         for event in self._iter_events(payload):
             if event.get("type") != "message":
                 continue
@@ -545,16 +600,19 @@ class LineBridge(BridgeBase):
                 continue
             source = event.get("source") or {}
             user_id = source.get("userId") or ""
-            target_id = source.get("groupId") or source.get("roomId") or user_id
+            real_target_id = source.get("groupId") or source.get("roomId") or user_id
+            target_id = real_target_id
+            if self.config.delivery_mode == "poll" and poll_target_override:
+                target_id = poll_target_override
             if not user_id:
-                user_id = target_id
-            if self.config.allowed_users and user_id not in self.config.allowed_users and target_id not in self.config.allowed_users:
+                user_id = real_target_id or target_id
+            if self.config.allowed_users and user_id not in self.config.allowed_users and real_target_id not in self.config.allowed_users:
                 self._reply_or_enqueue(event.get("replyToken", ""), target_id, "This LINE user/chat is not allowed for ShellFrame.")
                 continue
             if user_id:
                 self._last_user_id = user_id
                 self._user_active.setdefault(user_id, self._ui_active_sid or (self._slot_order[0] if self._slot_order else ""))
-                self._user_target[user_id] = target_id
+                self._user_target[user_id] = real_target_id
             self._handle_text(user_id, target_id, event.get("replyToken", ""), msg.get("text", ""))
 
     def _iter_events(self, payload: dict):
@@ -601,6 +659,74 @@ class LineBridge(BridgeBase):
             return self._ui_active_sid
         return self._slot_order[0] if self._slot_order else ""
 
+    def _route_label(self, text: str) -> str:
+        lowered = (text or "").casefold()
+        for label, keywords in LINE_GATEWAY_ROUTES:
+            if any(keyword.casefold() in lowered for keyword in keywords):
+                return label
+        return "LINE-Gateway"
+
+    @staticmethod
+    def _is_generic_label(label: str, sid: str) -> bool:
+        normalized = (label or "").strip().casefold()
+        if not normalized:
+            return True
+        if sid and normalized == sid.casefold():
+            return True
+        return normalized in GENERIC_SESSION_LABELS
+
+    def _rename_slot(self, sid: str, label: str):
+        slot = self.slots.get(sid)
+        if not slot or slot.label == label:
+            return
+        if self._on_rename_session:
+            try:
+                self._on_rename_session(sid, label)
+                return
+            except Exception as e:
+                _llog(f"line gateway rename failed sid={sid} label={label}: {e}")
+        slot.label = label
+
+    def _wait_for_slot(self, sid: str, timeout: float = 8.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            slot = self.slots.get(sid)
+            if slot:
+                return slot
+            time.sleep(0.1)
+        return self.slots.get(sid)
+
+    def _wait_for_ready(self, sid: str, timeout: float = 25.0) -> bool:
+        if not self._on_session_ready:
+            return True
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if self._on_session_ready(sid):
+                    return True
+            except Exception as e:
+                _llog(f"line gateway ready check failed sid={sid}: {e}")
+                return True
+            time.sleep(0.25)
+        return False
+
+    def _gateway_sid(self, user_id: str, label: str) -> str:
+        wanted = (label or "LINE-Gateway").casefold()
+        with self._slots_lock:
+            for sid in self._slot_order:
+                slot = self.slots.get(sid)
+                if slot and (slot.label or "").casefold() == wanted:
+                    return sid
+
+        if self._on_new_session:
+            try:
+                sid = self._on_new_session(self._gateway_worker_cmd)
+                if sid and self._wait_for_slot(sid):
+                    return sid
+            except Exception as e:
+                _llog(f"line gateway new session failed label={label}: {e}")
+        return self._active_sid(user_id)
+
     def _handle_text(self, user_id: str, target_id: str, reply_token: str, text: str):
         text = (text or "").strip()
         if not text:
@@ -641,10 +767,25 @@ class LineBridge(BridgeBase):
                 self._reply_or_enqueue(reply_token, target_id, f"Closed {sid}.")
             return
 
-        sid = self._active_sid(user_id)
+        route_label = self._route_label(text)
+        sid = self._gateway_sid(user_id, route_label)
         slot = self.slots.get(sid)
         if not slot:
             self._reply_or_enqueue(reply_token, target_id, "No ShellFrame session is available.")
+            return
+        if slot.awaiting_response:
+            self._reply_or_enqueue(reply_token, target_id, f"{slot.label} 還在處理上一則訊息，請稍後再送。")
+            return
+        self._rename_slot(sid, route_label)
+        slot = self.slots.get(sid) or slot
+        self._user_active[user_id] = sid
+        self._ui_active_sid = sid
+        if not self._wait_for_ready(sid):
+            self._reply_or_enqueue(
+                reply_token,
+                target_id,
+                f"{slot.label} 已建立，但 agent 尚未進入可輸入狀態；這次訊息未送出，請稍後重送。",
+            )
             return
         line_text = f"[LINE {user_id}]: {text}" if self.config.prefix_enabled else text
         init_prompt = ""
@@ -658,13 +799,17 @@ class LineBridge(BridgeBase):
         start_marker = f"[[{marker_token}]]"
         end_marker = f"[[/{marker_token}]]"
         marker_prompt = f"最終要回 LINE 的文字請放在 {start_marker} 和 {end_marker} 之間。"
+        gateway_prompt = (
+            f"ShellFrame gateway 已派工到 {slot.label}。"
+            "請只代表這個 tab 回覆這次 LINE 訊息；不要冒稱其他 agent，也不要回覆 marker 之外的文字。"
+        )
         if init_prompt:
-            payload = init_prompt + "\n\n" + marker_prompt + "\n\n---\nUser's first LINE message: " + line_text
+            payload = init_prompt + "\n\n" + gateway_prompt + "\n\n" + marker_prompt + "\n\n---\nUser's first LINE message: " + line_text
             slot.sent_texts.append(init_prompt)
         else:
             preamble = get_line_prompt()
             if preamble:
-                payload = preamble + "\n\n" + marker_prompt + "\n\n" + line_text
+                payload = preamble + "\n\n" + gateway_prompt + "\n\n" + marker_prompt + "\n\n" + line_text
                 slot.sent_texts.append(preamble)
         slot.sent_texts.append(line_text)
         if len(slot.sent_texts) > 30:
@@ -678,6 +823,8 @@ class LineBridge(BridgeBase):
         slot.expect_marker = True
         slot.reply_start_marker = start_marker
         slot.reply_end_marker = end_marker
+        slot.pending_user_id = user_id
+        slot.pending_target_id = target_id
         # Some full-screen TUIs treat a large paste ending with CR as text entry
         # only. Send Enter as a separate keystroke so LINE messages submit.
         slot.write_fn(payload)
@@ -728,28 +875,30 @@ class LineBridge(BridgeBase):
                     if now - slot.last_output_time < 2.5:
                         continue
                     raw = slot.pending
+                    screen_raw = ""
                     if slot.expect_marker and slot.peek_fn:
                         try:
-                            raw = raw + "\n" + (slot.peek_fn() or "")
+                            screen_raw = slot.peek_fn() or ""
                         except Exception:
                             pass
                     marked_raw = ""
                     if slot.expect_marker:
-                        raw_for_marker = strip_ansi(raw, sent_texts=[])
                         start_marker = slot.reply_start_marker
                         end_marker = slot.reply_end_marker
-                        start_idx = raw_for_marker.rfind(start_marker) if start_marker else -1
-                        end_idx = raw_for_marker.find(end_marker, start_idx + len(start_marker)) if end_marker and start_idx >= 0 else -1
-                        has_reply_marker = start_idx >= 0 and end_idx >= 0
+                        marked_raw = _extract_marked_reply(screen_raw, start_marker, end_marker)
+                        if not marked_raw:
+                            marked_raw = _extract_marked_reply(raw, start_marker, end_marker)
+                        has_reply_marker = bool(marked_raw)
                         if not has_reply_marker:
                             slot.last_output_time = now
                             continue
-                        if has_reply_marker:
-                            marked_raw = raw_for_marker[start_idx + len(start_marker):end_idx]
+                    target_id = slot.pending_target_id
                     slot.pending = ""
                     slot.last_output_time = 0
                     slot.awaiting_response = False
                     slot.expect_marker = False
+                    slot.pending_user_id = ""
+                    slot.pending_target_id = ""
                 clean = clean_line_response(marked_raw or strip_ansi(raw, sent_texts=slot.sent_texts))
                 if slot.reply_start_marker and clean in {"和", "and"}:
                     continue
@@ -758,14 +907,8 @@ class LineBridge(BridgeBase):
                     continue
                 prefix = f"[{slot.label}] " if len(self.slots) > 1 else ""
                 msg = prefix + clean.strip()
-                targets = {
-                    self._user_target.get(uid)
-                    for uid, active_sid in self._user_active.items()
-                    if active_sid == sid
-                }
-                for target in targets:
-                    if target:
-                        if self.config.delivery_mode == "poll":
-                            self._enqueue_outbox(target, msg)
-                        else:
-                            self._push_text(target, msg)
+                if target_id:
+                    if self.config.delivery_mode == "poll":
+                        self._enqueue_outbox(target_id, msg)
+                    else:
+                        self._push_text(target_id, msg)
