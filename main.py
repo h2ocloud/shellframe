@@ -1229,6 +1229,7 @@ class Api:
     _ANSI_RE = _re.compile(r'\x1b\[[^A-Za-z]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b.|\x07')
     _AI_READY_RE = _re.compile(
         r'[>›]\s*$'           # Claude Code / Codex input prompt
+        r'|^\s*[>›]\s+\S'     # Codex placeholder on the input line
         r'|^\s*Tip:'           # Codex tip line (shown after ready)
         r'|model:\s+\S'        # Codex model info box
         r'|claude\.ai'         # Claude Code welcome

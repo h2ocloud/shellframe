@@ -854,61 +854,75 @@ class LineBridge(BridgeBase):
 
     def _flush_loop(self):
         while self.active and not self._stop_event.is_set():
-            time.sleep(0.5)
-            if self.paused:
-                continue
-            with self._slots_lock:
-                sids = list(self._slot_order)
-            now = time.time()
-            for sid in sids:
-                slot = self.slots.get(sid)
-                if not slot:
+            try:
+                time.sleep(0.5)
+                if self.paused:
                     continue
-                with slot.output_lock:
-                    if not slot.pending:
+                with self._slots_lock:
+                    sids = list(self._slot_order)
+                now = time.time()
+                for sid in sids:
+                    slot = self.slots.get(sid)
+                    if not slot:
                         continue
-                    if not slot.has_user_msg:
-                        if now - slot.last_output_time >= 1.0:
-                            slot.pending = ""
-                            slot.last_output_time = 0
-                        continue
-                    if now - slot.last_output_time < 2.5:
-                        continue
-                    raw = slot.pending
-                    screen_raw = ""
-                    if slot.expect_marker and slot.peek_fn:
-                        try:
-                            screen_raw = slot.peek_fn() or ""
-                        except Exception:
-                            pass
-                    marked_raw = ""
-                    if slot.expect_marker:
-                        start_marker = slot.reply_start_marker
-                        end_marker = slot.reply_end_marker
-                        marked_raw = _extract_marked_reply(screen_raw, start_marker, end_marker)
-                        if not marked_raw:
-                            marked_raw = _extract_marked_reply(raw, start_marker, end_marker)
-                        has_reply_marker = bool(marked_raw)
-                        if not has_reply_marker:
-                            slot.last_output_time = now
+                    with slot.output_lock:
+                        if not slot.pending:
+                            if slot.expect_marker and slot.peek_fn:
+                                try:
+                                    screen_raw = slot.peek_fn() or ""
+                                except Exception:
+                                    screen_raw = ""
+                                if _extract_marked_reply(screen_raw, slot.reply_start_marker, slot.reply_end_marker):
+                                    slot.pending = screen_raw
+                                    slot.last_output_time = 0
+                                else:
+                                    continue
+                            else:
+                                continue
+                        if not slot.has_user_msg:
+                            if now - slot.last_output_time >= 1.0:
+                                slot.pending = ""
+                                slot.last_output_time = 0
                             continue
-                    target_id = slot.pending_target_id
-                    slot.pending = ""
-                    slot.last_output_time = 0
-                    slot.awaiting_response = False
-                    slot.expect_marker = False
-                    slot.pending_user_id = ""
-                    slot.pending_target_id = ""
-                clean = clean_line_response(marked_raw or strip_ansi(raw, sent_texts=slot.sent_texts))
-                if slot.reply_start_marker and clean in {"和", "and"}:
-                    continue
-                slot.sent_texts.clear()
-                if not clean.strip():
-                    continue
-                prefix = f"[{slot.label}] " if len(self.slots) > 1 else ""
-                msg = prefix + clean.strip()
-                if target_id:
-                    if self.config.delivery_mode == "poll":
-                        self._enqueue_outbox(target_id, msg)
-                    else:
-                        self._push_text(target_id, msg)
+                        if now - slot.last_output_time < 2.5:
+                            continue
+                        raw = slot.pending
+                        screen_raw = ""
+                        if slot.expect_marker and slot.peek_fn:
+                            try:
+                                screen_raw = slot.peek_fn() or ""
+                            except Exception:
+                                pass
+                        marked_raw = ""
+                        if slot.expect_marker:
+                            start_marker = slot.reply_start_marker
+                            end_marker = slot.reply_end_marker
+                            marked_raw = _extract_marked_reply(screen_raw, start_marker, end_marker)
+                            if not marked_raw:
+                                marked_raw = _extract_marked_reply(raw, start_marker, end_marker)
+                            has_reply_marker = bool(marked_raw)
+                            if not has_reply_marker:
+                                slot.last_output_time = now
+                                continue
+                        target_id = slot.pending_target_id
+                        slot.pending = ""
+                        slot.last_output_time = 0
+                        slot.awaiting_response = False
+                        slot.expect_marker = False
+                        slot.pending_user_id = ""
+                        slot.pending_target_id = ""
+                    clean = clean_line_response(marked_raw or strip_ansi(raw, sent_texts=slot.sent_texts))
+                    if slot.reply_start_marker and clean in {"和", "and"}:
+                        continue
+                    slot.sent_texts.clear()
+                    if not clean.strip():
+                        continue
+                    prefix = f"[{slot.label}] " if len(self.slots) > 1 else ""
+                    msg = prefix + clean.strip()
+                    if target_id:
+                        if self.config.delivery_mode == "poll":
+                            self._enqueue_outbox(target_id, msg)
+                        else:
+                            self._push_text(target_id, msg)
+            except Exception as e:
+                _llog(f"line flush loop error: {type(e).__name__}: {e}")
