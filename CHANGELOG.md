@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.12.0 (2026-05-26)
+
+### Features
+- **Dynamic LINE worker sessions from PR #2** — LINE messages now route through named gateway worker tabs such as `LINE-Gateway`, `LINE-Dev`, `LINE-Ops`, `LINE-KGI`, and `LINE-Reminder`, creating a worker tab on demand and reusing it by label instead of sending every LINE request through one active tab.
+- **Idle session reaper** — ShellFrame now has a configurable idle reaper that can ask inactive AI sessions to produce a final Traditional Chinese summary/reflection, capture recent terminal history to `~/.config/shellframe/session_summaries/`, and close the tab after a grace period while preserving protected main/gateway sessions.
+
+### 功能
+- **整合 PR #2 的動態 LINE worker sessions** — LINE 訊息現在會依內容派到 `LINE-Gateway`、`LINE-Dev`、`LINE-Ops`、`LINE-KGI`、`LINE-Reminder` 等具名 worker tab，需要時自動建立，之後依 label 重用，不再把所有 LINE 請求都塞到單一 active tab。
+- **Idle session reaper** — ShellFrame 新增可設定的閒置回收器，可要求閒置 AI session 先輸出繁中總結與反思，將近期 terminal history 存到 `~/.config/shellframe/session_summaries/`，再於 grace period 後關閉 tab，同時保留主 session / gateway session。
+
+## v0.11.99 (2026-05-26)
+
+### Fixes
+- **App refresh keeps the native macOS launcher** — update-time `.app` copying now recompiles the Mach-O ShellFrame launcher from `scripts/macos_app_launcher.c` instead of copying the shell script executable into `/Applications`. This prevents macOS TCC prompts from regressing to `python3.13 wants to access data from other apps` after updates.
+
+### 修正
+- **更新 `.app` 時會保留 macOS native launcher** — update 流程複製 `.app` 後，會重新從 `scripts/macos_app_launcher.c` 編譯 Mach-O ShellFrame launcher，不再把 shell script executable 複製進 `/Applications`。避免更新後 macOS TCC 權限提示又退回 `python3.13 想要取用其他 App 的資料`。
+
 ## v0.11.98 (2026-05-26)
 
 ### Features

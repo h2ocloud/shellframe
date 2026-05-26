@@ -395,6 +395,58 @@ def _apply_macos_app_identity():
         _dlog("identity", f"set app icon failed: {e}")
 
 
+def _refresh_macos_app_launcher(app_path: Path) -> tuple[bool, str]:
+    """Keep copied .app bundles from regressing to a shell-script executable.
+
+    The source template's shell launcher is convenient for development, but
+    LaunchServices/TCC identify shell/Python-launched GUI work as Python. The
+    installed app needs a real Mach-O executable that remains the visible app
+    process and spawns the shell/Python payload as a child.
+    """
+    try:
+        if platform.system() != "Darwin":
+            return True, "not macOS"
+        macos_dir = app_path / "Contents" / "MacOS"
+        resources_dir = app_path / "Contents" / "Resources"
+        launcher = macos_dir / "shellframe"
+        payload = resources_dir / "shellframe.sh"
+        resources_dir.mkdir(parents=True, exist_ok=True)
+        if not payload.exists() and launcher.exists():
+            shutil.copy2(launcher, payload)
+        old_payload = macos_dir / "shellframe.sh"
+        if old_payload.exists() and not payload.exists():
+            shutil.move(str(old_payload), str(payload))
+        c_file = APP_DIR / "scripts" / "macos_app_launcher.c"
+        clang = shutil.which("clang")
+        if not c_file.exists():
+            return False, "scripts/macos_app_launcher.c missing"
+        if not clang:
+            return False, "clang not found"
+        arch_flags = []
+        machine = platform.machine()
+        if machine in ("arm64", "x86_64"):
+            arch_flags = ["-arch", machine]
+        subprocess.run(
+            [clang, *arch_flags, "-mmacosx-version-min=12.0", str(c_file), "-o", str(launcher)],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        launcher.chmod(0o755)
+        try:
+            payload.chmod(0o644)
+        except Exception:
+            pass
+        subprocess.run(["xattr", "-cr", str(app_path)], capture_output=True, timeout=10)
+        subprocess.run(["codesign", "--force", "--sign", "-", str(app_path)], capture_output=True, timeout=30)
+        return True, "native launcher refreshed"
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or b"").decode("utf-8", errors="replace").strip()
+        return False, detail or str(e)
+    except Exception as e:
+        return False, str(e)
+
+
 def _cmd_uses_startup_trust_agent(cmd: str) -> bool:
     tokens = shlex.split(cmd) if cmd else []
     for token in tokens:
@@ -2810,10 +2862,8 @@ class Api:
                                     ["cp", "-R", str(src_app), str(dest)],
                                     capture_output=True, timeout=10
                                 )
-                                subprocess.run(
-                                    ["codesign", "--force", "--deep", "--sign", "-", str(dest)],
-                                    capture_output=True, timeout=30
-                                )
+                                ok, launcher_msg = _refresh_macos_app_launcher(dest)
+                                post_steps.append(f".app launcher: {launcher_msg}")
                                 post_steps.append(f".app copied to {dest}")
                                 break
                         except Exception as e:
