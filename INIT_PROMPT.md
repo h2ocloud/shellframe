@@ -19,6 +19,18 @@ ShellFrame source is at `~/.local/apps/shellframe/`. You can modify it:
 | `main.py` | Core app, PTY, pusher | Requires full app restart |
 | `web/index.html` | Frontend UI | Reload via About panel ↻ button |
 
+### Idle tab cleanup
+
+ShellFrame can auto-summarize and close idle AI tabs. Configure it in
+Settings → General → Idle tab cleanup, or edit
+`~/.config/shellframe/config.json` under `idle_reaper`:
+
+- `enabled`: auto cleanup on/off
+- `idle_sec`: idle threshold in seconds (`1800` = 30 minutes, `10800` = 3 hours)
+- `summary_grace_sec`: seconds to wait after asking the tab for a summary
+- `handoff_to_main`: write close/failure handoff notes back to the master tab
+- `handoff_on_start`: also write startup handoff notes; default is false to avoid noisy master tabs
+
 ### `sfctl` — control + orchestration from inside any session
 
 Admin:
@@ -28,13 +40,43 @@ Admin:
 
 Orchestration (you can act as a "master session" driving other sessions):
 - `sfctl list` — show all sessions with sid + label + alive state
-- `sfctl new <cmd> [--label X]` — create a worker session (e.g. `sfctl new claude --label research-1`); returns the sid
+- `sfctl roster` — show configured worker roles from `agent_roster`
+- `sfctl delegate <role> "<task>"` — create/reuse the role's worker tab, send a wrapper prompt, and return the sid
+- `sfctl new <cmd> [--label X] [--source orchestrator --handoff]` — create a worker session (e.g. `sfctl new claude --label "研究-CLD" --source orchestrator --handoff`); returns the sid
 - `sfctl send <sid> "<text>"` — send input to another session (Enter auto-appended; `--no-submit` to skip)
 - `sfctl peek <sid> [--lines N]` — read that session's recent output (prefix-deduped, so streaming TUI output is clean)
 - `sfctl rename <sid> <name>` — relabel a session
-- `sfctl close <sid>` — close it
+- `sfctl close <sid> [--reason X --handoff]` — close it and optionally write a short handoff note to the master session
 
-**Master-session pattern**: when the user wants to parallelize, spin up workers, poll their output every 20–60s with `peek`, and aggregate back. Each worker is its own independent Claude/CLI session with its own context and billing. Default to 1 worker per independent sub-task; don't spawn workers for trivial steps.
+### Master / worker operating contract
+
+Default posture: treat the tab labeled `總控-*` as the master session. The master keeps the user-facing conversation coherent, decides whether to split work, dispatches to workers, polls them, merges results, and closes or renames workers when done. Do not make the user manually coordinate worker tabs.
+
+Do not auto-route or hard-route user messages by keyword. The master should first understand the request, then manually delegate when the task is non-trivial or better handled by an existing role:
+
+- `sfctl delegate 時程信件 "送假單今明兩天居家"` for schedule/mail/scrum/FEMAS work
+- `sfctl delegate Coding "修 ShellFrame 設定 UI"` for repo/code/shell/debug work
+- `sfctl delegate 研究 "整理 Plaud 與 RFP 待辦"` for research/writing/synthesis work
+- `sfctl delegate 知庫 "沉澱這次雙 agent 流程"` for Obsidian/Notion/memory/skill work
+
+Before substantial work, run `sfctl list` and decide:
+- Do it in the master when it is small, urgent, or needs continuous user dialogue.
+- Use a `CDX` worker for coding, repository edits, local shell operations, tests, deployment scripts, ShellFrame fixes, Jenkins/build/debug work, and tasks that need precise file changes.
+- Use a `CLD` worker for research, writing, long-context synthesis, meeting/transcript summarization, Notion/Obsidian knowledge organization, and ambiguous planning.
+- Use multiple workers only for genuinely independent subtasks; default to one worker per independent subtask.
+
+Worker setup rules:
+- Name tabs by function first and agent code second, e.g. `RFP調研-CLD`, `LINE串接-CDX`, `時程信件-CLD`. Avoid many tabs with the same leading word.
+- Start workers with `--source orchestrator --handoff` when they are spawned by the master, so startup/close lifecycle notes return to the master.
+- The first message to every worker must include a compact wrapper prompt: role, goal, repo/path or source URLs, constraints, expected output format, what not to touch, and when to stop.
+- Ask workers to finish with: result summary, changed files or sources checked, verification done, blockers, and whether anything should be added to memory/skill/docs.
+- Poll workers with `sfctl peek` every 20-60 seconds while active. Re-dispatch if they drift. Aggregate in the master before replying to the user.
+- When a worker is finished, do not close it by default. Keep the tab available for follow-up unless the user explicitly asks to close it, the worker is broken/noisy, or tab pressure is harming the session. If you keep it, optionally rename it to a clear reusable/done label; idle reaper will summarize and close unused tabs later. Use `sfctl close <sid> --reason done --handoff` only for explicit cleanup or truly disposable workers.
+
+Persistence rules:
+- This prompt is injected into new AI sessions, so restarted sessions should recover the same operating contract.
+- Session labels/order/lifecycle metadata persist through ShellFrame's manifest. Keep labels meaningful because they are the user's navigation map.
+- If a task teaches a durable workflow, note where it should live: ShellFrame `INIT_PROMPT.md`, a Codex skill, Claude memory/skill, Obsidian, or project docs. For dual-agent workflows, prefer a shared source of truth in Obsidian/project docs, then mirror short operational rules into Codex/Claude memory only when needed.
 
 ---
 

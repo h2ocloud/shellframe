@@ -1,5 +1,101 @@
 # Changelog
 
+## v0.12.11 (2026-05-27)
+
+### Fixes
+- **macOS Dock identity now uses one canonical app bundle** — restart, `sfctl restart`, and update refresh now prefer `/Applications/ShellFrame.app` before the user-level `~/Applications` fallback, and update refresh removes the stale user-level copy after refreshing `/Applications`. This prevents Dock pins that point at one ShellFrame bundle from showing a second running icon from another bundle path.
+
+### 修正
+- **macOS Dock 身份收斂到單一 app bundle** — restart、`sfctl restart` 與 update refresh 現在優先使用 `/Applications/ShellFrame.app`，不存在時才退到 `~/Applications`；成功刷新 `/Applications` 後也會移除 stale 的使用者層級副本。避免 Dock 固定項指向一份 ShellFrame，但實際啟動另一份 bundle 時旁邊又多出第二個運行 icon。
+
+## v0.12.10 (2026-05-27)
+
+### Fixes
+- **General settings now fully follow the selected language** — idle tab cleanup controls, session prompt labels/help, and related General toggles now use the ShellFrame i18n table instead of hard-coded English. The cleanup save status also localizes after switching language.
+
+### 修正
+- **一般設定會完整跟著語言切換** — 閒置頁籤自動清理、工作階段提示標籤/說明，以及相關的一般設定開關現在都走 ShellFrame i18n 字典，不再硬寫英文。清理設定儲存狀態也會依語言顯示。
+
+## v0.12.9 (2026-05-27)
+
+### Fixes
+- **Worker lifecycle rule is now part of ShellFrame prompts** — the built-in init prompt, Telegram per-turn prompt, and README now tell every master agent to keep finished worker tabs by default for follow-up, relying on idle cleanup to summarize and close unused tabs later. This makes the behavior portable across new Codex/Claude sessions instead of depending on one agent's memory.
+
+### 修正
+- **Worker 生命週期規則納入 ShellFrame prompt** — 內建 init prompt、Telegram per-turn prompt 與 README 現在都要求總控預設保留已完成 worker tab 供後續追問，讓 idle cleanup 稍後自行摘要與關閉。這樣換 Codex/Claude 或重開 session 也會運作，不再依賴單一 agent 記憶。
+
+## v0.12.8 (2026-05-27)
+
+### Fixes
+- **Global hotkey no longer depends on Accessibility first** — macOS now registers `Ctrl+Option+Space` with Carbon `RegisterEventHotKey` before falling back to the old `NSEvent` global monitor. ShellFrame still keeps the local `NSEvent` monitor so the foreground app can swallow the shortcut, and debug logs now show whether Carbon or the fallback path is active.
+
+### 修正
+- **全域快捷鍵優先不再依賴 Accessibility** — macOS 現在會先用 Carbon `RegisterEventHotKey` 註冊 `Ctrl+Option+Space`，失敗才 fallback 到舊的 `NSEvent` global monitor。ShellFrame 前景時仍保留 local `NSEvent` monitor 來攔截快捷鍵，debug log 也會明確記錄 Carbon 或 fallback 路徑是否啟用。
+
+## v0.12.7 (2026-05-27)
+
+### Features
+- **Manual worker delegation via `sfctl delegate`** — ShellFrame now exposes an `agent_roster` config and a one-line delegation command that creates or reuses a role tab, applies the role label, sends a responsibility wrapper prompt, and returns the sid for `sfctl peek`. This keeps `總控-*` in charge without hard-routing user messages by keyword.
+- **Startup handoff notes are quiet by default** — lifecycle handoff still works for close/failure/done notes, but scheduled/delegated tab startup notes now require `idle_reaper.handoff_on_start: true`, reducing `[ShellFrame 交接]` noise in the master tab.
+
+### 功能
+- **新增 `sfctl delegate` 手動 worker 派工** — ShellFrame 新增 `agent_roster` 設定與一行派工指令，可建立或重用角色 tab、套用角色命名、送入職責 wrapper prompt，並回傳 sid 讓總控用 `sfctl peek` 回收進度。總控仍先理解需求，不做關鍵字硬路由。
+- **啟動交接預設靜音** — lifecycle handoff 仍保留 close/failure/done 回寫，但排程/派工開 tab 的啟動交接需明確設定 `idle_reaper.handoff_on_start: true` 才會寫入，避免總控被 `[ShellFrame 交接]` 洗版。
+
+## v0.12.6 (2026-05-27)
+
+### Features
+- **Settings UI for idle tab cleanup** — General settings now expose idle AI tab cleanup controls: enable/disable, idle time with minute/hour units, summary wait time, and handoff-to-master notes. The config migration also writes missing `idle_reaper` keys into `~/.config/shellframe/config.json`, so the setting is discoverable instead of living only as a code default.
+
+### Fixes
+- **sfctl IPC no longer wedges on concurrent commands** — `sfctl` now writes unique queued command files and unique result files instead of racing on one shared JSON file. The ShellFrame watcher also deletes malformed command files after logging them, so a partial write cannot block all future `sfctl` calls.
+
+### 功能
+- **Settings 可設定閒置頁籤自動關閉** — 一般設定新增 idle AI tab cleanup 介面，可開關自動清理、用分鐘/小時設定閒置時間、設定摘要等待時間，以及是否回寫總控交接。設定檔 migration 也會補齊 `idle_reaper` 缺漏欄位，避免功能只藏在程式預設值。
+
+### 修正
+- **sfctl IPC 不會因並行指令卡死** — `sfctl` 改用每個請求獨立的 queue command file 與 result file，不再搶寫同一個 JSON。ShellFrame watcher 讀到壞掉的 command file 也會記錄後刪除，避免半寫入檔案堵住所有後續 `sfctl`。
+
+## v0.12.5 (2026-05-26)
+
+### Features
+- **Default prompt now teaches master/worker orchestration** — new AI sessions now receive a persistent ShellFrame operating contract: keep `總控-*` as the coordinating session, choose `CDX` workers for coding/local operations and `CLD` workers for research/writing/knowledge work, label tabs by function first, dispatch with wrapper prompts, poll with `sfctl peek`, and close orchestrated workers with lifecycle handoff notes.
+
+### 功能
+- **預設 prompt 內建總控/worker 分派規則** — 新 AI session 現在會吃到持久化的 ShellFrame 操作契約：由 `總控-*` 維持使用者對話與派工，程式/本機操作用 `CDX`，研究/寫作/知識整理用 `CLD`，tab 命名採功能優先，派工時包 wrapper prompt，用 `sfctl peek` 回收進度，完成後以 lifecycle handoff 關閉。
+
+## v0.12.4 (2026-05-26)
+
+### Features
+- **Lifecycle handoff notes to the main session** — when the idle reaper closes a tab, ShellFrame now writes a short `[ShellFrame 交接]` note into the main/control session with the closed tab label, sid, reason, idle time, command, and captured summary path. Scheduled `sfctl new/close` flows can also opt in with `--handoff --source scheduler`, so automatically started or cleaned-up tabs leave a lightweight handoff trail instead of disappearing silently.
+
+### 功能
+- **頁籤生命週期會回寫總控交接** — idle reaper 關閉頁籤時，ShellFrame 會在總控 session 寫入簡短 `[ShellFrame 交接]`，包含被關閉 tab 的 label、sid、原因、閒置時間、指令與摘要檔路徑。排程透過 `sfctl new/close` 啟動或清理 tab 時，也可用 `--handoff --source scheduler` 主動留下交接紀錄，避免自動開關頁籤後總控不知道發生什麼事。
+
+## v0.12.3 (2026-05-26)
+
+### Fixes
+- **Idle reaper now uses input activity** — background terminal output and AI TUI redraws no longer reset idle timers. A session is considered active only when ShellFrame, Telegram, LINE, or `sfctl send` writes new input to it.
+
+### 修正
+- **Idle reaper 改用輸入活動判斷** — terminal 背景輸出與 AI TUI 重繪不再重置閒置計時。只有 ShellFrame、Telegram、LINE 或 `sfctl send` 寫入新 input 時，才會視為 session 有活動。
+
+## v0.12.2 (2026-05-26)
+
+### Fixes
+- **Idle reaper protects active TG/LINE bridge targets dynamically** — ShellFrame now keeps the sessions currently selected by Telegram or LINE bridge users, plus the configured main session. Switching a bridge back to main no longer keeps older gateway/worker tabs alive just because they are bridge-enabled.
+
+### 修正
+- **Idle reaper 動態保護 TG/LINE bridge 目前目標** — ShellFrame 現在只固定保留 TG 或 LINE bridge 使用者目前指向的 session，以及設定中的 main session。當 bridge 切回 main 後，舊的 gateway / worker tab 不會因為曾經 bridge-enabled 就一直被保留。
+
+## v0.12.1 (2026-05-26)
+
+### Features
+- **Idle reaper self-sediment option** — idle AI sessions can now be configured to append a concise reflection to a shared `Agent Reflections.md` file before ShellFrame captures the pane and closes the tab. The option is config-gated so other installs do not inherit a user-specific memory path.
+
+### 功能
+- **Idle reaper 可設定自動沉澱** — 閒置 AI session 現在可透過設定，在 ShellFrame 擷取 pane 並關閉 tab 前，先追加精簡反思到共用 `Agent Reflections.md`。此功能以 config 控制，避免其他安裝吃到使用者專屬的記憶路徑。
+
 ## v0.12.0 (2026-05-26)
 
 ### Features

@@ -8,6 +8,8 @@ results, rename for clarity, etc.
 Usage:
     sfctl status
     sfctl list
+    sfctl roster
+    sfctl delegate 時程信件 "送假單今明兩天居家"
     sfctl new claude [--label research-1]
     sfctl send s3 "研究這個主題"
     sfctl peek s3 [--lines 50]
@@ -19,7 +21,9 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -28,33 +32,56 @@ import time
 # Cross-platform temp dir — must match main.py + bridge_telegram.py
 _TMP = tempfile.gettempdir() if sys.platform == "win32" else "/tmp"
 CMD_FILE = os.path.join(_TMP, "shellframe_cmd.json")
+CMD_DIR = os.path.join(_TMP, "shellframe_cmds")
 RESULT_FILE = os.path.join(_TMP, "shellframe_result.json")
+PID_FILE = os.path.join(_TMP, "shellframe.pid")
 
 
 def _rpc(cmd: str, args: dict = None, timeout: float = 15.0):
     """Send cmd to main.py via file IPC. Returns result dict."""
-    if os.path.exists(RESULT_FILE):
+    request_id = f"{os.getpid()}-{int(time.time() * 1000)}"
+    result_file = os.path.join(_TMP, f"shellframe_result_{request_id}.json")
+    if os.path.exists(result_file):
         try:
-            os.unlink(RESULT_FILE)
+            os.unlink(result_file)
         except OSError:
             pass
-    payload = {"cmd": cmd, "args": args or {}, "ts": time.time()}
-    with open(CMD_FILE, "w", encoding="utf-8") as f:
+    payload = {
+        "cmd": cmd,
+        "args": args or {},
+        "ts": time.time(),
+        "request_id": request_id,
+        "result_file": result_file,
+    }
+    os.makedirs(CMD_DIR, exist_ok=True)
+    cmd_file = os.path.join(CMD_DIR, f"shellframe_cmd_{request_id}.json")
+    tmp_file = cmd_file + ".tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+    os.replace(tmp_file, cmd_file)
 
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(0.1)
-        if os.path.exists(RESULT_FILE):
+        if os.path.exists(result_file):
             try:
-                with open(RESULT_FILE, encoding="utf-8") as f:
+                with open(result_file, encoding="utf-8") as f:
                     result = json.load(f)
-                os.unlink(RESULT_FILE)
+                os.unlink(result_file)
                 return result
             except (json.JSONDecodeError, IOError):
                 continue
     try:
-        os.unlink(CMD_FILE)
+        os.unlink(cmd_file)
+    except OSError:
+        pass
+    try:
+        os.unlink(result_file)
     except OSError:
         pass
     return {"success": False, "message": "Timeout — ShellFrame not responding"}
@@ -74,10 +101,66 @@ def _print_result(result: dict, verbose: bool = True):
                 alive = "●" if s.get("alive") else "○"
                 bridge = "" if s.get("bridge_enabled", True) else " (unbridged)"
                 print(f"  {alive} {s.get('sid')}  {s.get('label')}{bridge}  — {s.get('cmd', '')[:60]}")
+        elif "roles" in d and isinstance(d["roles"], list):
+            for r in d["roles"]:
+                print(f"  {r.get('role')}  →  {r.get('label')}  [{r.get('agent_code')}]")
+                if r.get("responsibility"):
+                    print(f"      {r.get('responsibility')}")
         else:
             for k, v in d.items():
                 print(f"  {k}: {v}")
     sys.exit(0 if success else 1)
+
+
+def _canonical_macos_app_path() -> str:
+    candidates = [
+        "/Applications/ShellFrame.app",
+        os.path.expanduser("~/Applications/ShellFrame.app"),
+        os.path.expanduser("~/.local/apps/shellframe/ShellFrame.app"),
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return ""
+
+
+def _restart_macos_direct() -> dict:
+    """Restart through the canonical .app path without asking the currently
+    loaded app process to choose a bundle. This matters during upgrades from
+    older builds whose in-memory restart code still preferred ~/Applications."""
+    app_path = _canonical_macos_app_path()
+    if not app_path:
+        return {"success": False, "message": "ShellFrame.app not found"}
+    try:
+        with open(PID_FILE, encoding="utf-8") as f:
+            pid = int(f.read().strip())
+    except Exception:
+        return {"success": False, "message": "ShellFrame PID file not found"}
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return {"success": False, "message": f"ShellFrame pid {pid} is not running"}
+
+    app_q = shlex.quote(app_path)
+    script = (
+        f"pid={pid}; app={app_q}; "
+        "i=0; "
+        "while kill -0 \"$pid\" >/dev/null 2>&1 && [ $i -lt 80 ]; do "
+        "  i=$((i+1)); sleep 0.1; "
+        "done; "
+        "/usr/bin/open -n \"$app\" >/dev/null 2>&1"
+    )
+    subprocess.Popen(
+        ["/bin/sh", "-c", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    os.kill(pid, signal.SIGTERM)
+    return {
+        "success": True,
+        "message": f"Restarting ShellFrame via {app_path}",
+    }
 
 
 def _prompt(msg: str, default: str = "") -> str:
@@ -252,12 +335,21 @@ def main():
     sub.add_parser("reload", help="Hot-reload bridge_telegram module")
     sub.add_parser("restart", help="Full app restart (sessions preserved)")
     sub.add_parser("list", help="List all sessions with sid + label + alive state")
+    sub.add_parser("roster", help="List configured manual delegation roles")
+
+    p_delegate = sub.add_parser("delegate", help="Delegate a task to a configured worker role")
+    p_delegate.add_argument("role", help="Roster role or alias, e.g. 時程信件, Coding, 研究")
+    p_delegate.add_argument("task", help="Task text to send with the worker wrapper prompt")
 
     p_new = sub.add_parser("new", help="Create a new session")
     p_new.add_argument("command", nargs="?", default="claude",
                        help="Command to run (default: claude)")
     p_new.add_argument("--label", default=None,
                        help="Optional custom label (defaults to command name)")
+    p_new.add_argument("--source", default="sfctl",
+                       help="Lifecycle source label for handoff notes (e.g. scheduler)")
+    p_new.add_argument("--handoff", action="store_true",
+                       help="Write a short startup handoff note to the main session")
 
     p_send = sub.add_parser("send", help="Send text to a session (submits with Enter by default)")
     p_send.add_argument("sid", help="Session id (e.g. s3) — see `sfctl list`")
@@ -276,6 +368,10 @@ def main():
 
     p_close = sub.add_parser("close", help="Close a session")
     p_close.add_argument("sid", help="Session id")
+    p_close.add_argument("--reason", default="sfctl",
+                         help="Lifecycle reason for handoff notes")
+    p_close.add_argument("--handoff", action="store_true",
+                         help="Write a short close handoff note to the main session")
 
     p_audit = sub.add_parser(
         "history-audit",
@@ -308,11 +404,26 @@ def main():
     elif args.cmd == "reload":
         _print_result(_rpc("reload", timeout=20))
     elif args.cmd == "restart":
+        if sys.platform == "darwin":
+            _print_result(_restart_macos_direct())
         _print_result(_rpc("restart", timeout=30))
     elif args.cmd == "list":
         _print_result(_rpc("list"))
+    elif args.cmd == "roster":
+        _print_result(_rpc("roster"))
+    elif args.cmd == "delegate":
+        _print_result(_rpc("delegate", {
+            "role": args.role,
+            "task": args.task,
+        }, timeout=20))
     elif args.cmd == "new":
-        result = _rpc("new_session", {"cmd": args.command, "cols": 200, "rows": 50}, timeout=20)
+        result = _rpc("new_session", {
+            "cmd": args.command,
+            "cols": 200,
+            "rows": 50,
+            "source": args.source,
+            "handoff": args.handoff,
+        }, timeout=20)
         if result.get("success") and args.label:
             sid = result.get("details", {}).get("sid", "")
             if sid:
@@ -328,7 +439,11 @@ def main():
     elif args.cmd == "rename":
         _print_result(_rpc("rename", {"sid": args.sid, "name": args.name}))
     elif args.cmd == "close":
-        _print_result(_rpc("close_session", {"sid": args.sid}))
+        _print_result(_rpc("close_session", {
+            "sid": args.sid,
+            "reason": args.reason,
+            "handoff": args.handoff,
+        }))
     elif args.cmd == "history-audit":
         _print_result(_rpc("history_audit", {"sid": args.sid}, timeout=20))
     elif args.cmd == "permissions":

@@ -71,6 +71,54 @@ shellframe            # GUI with session picker
 | `Esc` (plain terminal) | Clear input line |
 | Double-click tab | Rename session |
 
+### Idle Tab Cleanup
+
+Open Settings → General → Idle tab cleanup to control ShellFrame's automatic
+AI tab cleanup.
+
+- **Idle after** controls how long an AI tab can sit without user input before
+  ShellFrame asks it for a short summary.
+- **Summary wait** controls how long ShellFrame waits after asking for that
+  summary before closing the tab.
+- **Write handoff to master** writes a short `[ShellFrame 交接]` note to the
+  master tab when an orchestrated or idle-cleaned tab is closed.
+
+The same values live in `~/.config/shellframe/config.json`:
+
+```json
+"idle_reaper": {
+  "enabled": true,
+  "idle_sec": 1800,
+  "summary_grace_sec": 120,
+  "handoff_to_main": true,
+  "handoff_on_start": false
+}
+```
+
+For example, change `idle_sec` from `1800` to `10800` for 3 hours.
+
+### Master / Worker Delegation
+
+ShellFrame can keep one user-facing `總控-*` tab and delegate real work to
+configured worker roles without hard-routing incoming messages.
+
+```bash
+sfctl roster
+sfctl delegate 時程信件 "送假單今明兩天居家"
+sfctl delegate Coding "修 ShellFrame 設定 UI"
+sfctl delegate 研究 "整理 Plaud 與 RFP 待辦"
+sfctl peek s6 --lines 80
+```
+
+Roles live in `~/.config/shellframe/config.json` under `agent_roster`. The
+delegate command creates or reuses the role's labeled tab, sends a wrapper
+prompt with that role's responsibility, and returns the sid for polling.
+
+Finished worker tabs are kept by default so the master can follow up in the
+same context. Do not close a worker just because its task is done; let idle tab
+cleanup summarize and remove unused workers later, unless the user explicitly
+asks to close it or the tab is broken/noisy.
+
 ### Telegram Bridge
 
 1. Open Settings → Telegram Bridge

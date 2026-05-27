@@ -555,7 +555,7 @@
           </select>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto Update</label>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoUpdate">Auto Update</label>
           <button class="toggle-switch on" id="setting-autoupdate"></button>
         </div>
         <div>
@@ -563,30 +563,30 @@
           <button class="toggle-switch on" id="setting-shift-enter"></button>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Auto /compact (Claude)</label>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoCompactClaude">Auto /compact (Claude)</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-auto-compact"></button>
             <span style="font-size:11px;color:#565f89">≤</span>
             <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
                    style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
-            <span style="font-size:11px;color:#565f89">% left</span>
+            <span style="font-size:11px;color:#565f89" data-i18n="percentLeft">% left</span>
           </div>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Global hotkey</label>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="globalHotkey">Global hotkey</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-global-hotkey"></button>
             <span style="font-size:11px;color:#565f89">
               <kbd style="font-family:inherit;font-size:10px;padding:1px 4px;background:#1a1b26;border:1px solid #3b4261;border-radius:3px;color:#c0caf5">⌃⌥Space</kbd>
-              show/hide
+              <span data-i18n="showHide">show/hide</span>
             </span>
           </div>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Completion notifications</label>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="completionNotifications">Completion notifications</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-complete-notify"></button>
-            <span style="font-size:11px;color:#565f89">AI 回覆完成且 shellframe 不在前景時通知</span>
+            <span style="font-size:11px;color:#565f89" data-i18n="completionNotificationsHint">Notify when an AI reply finishes while shellframe is not in the foreground</span>
           </div>
         </div>
       </div>
@@ -594,11 +594,48 @@
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
       </div>
 
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+          <div>
+            <div style="font-size:12px;color:#c0caf5;font-weight:700" data-i18n="idleCleanupTitle">Idle tab cleanup</div>
+            <div style="font-size:10px;color:#565f89;margin-top:2px" data-i18n="idleCleanupDesc">Automatically summarize and close idle AI tabs. Protected/main tabs are kept.</div>
+          </div>
+          <button class="toggle-switch" id="setting-idle-enabled"></button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div>
+            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="idleAfter">Idle after</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="setting-idle-value" class="sf-bright-spin" min="1" max="24" step="1" value="30"
+                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
+              <select id="setting-idle-unit" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none">
+                <option value="minutes" data-i18n="minutes">minutes</option>
+                <option value="hours" data-i18n="hours">hours</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="summaryWait">Summary wait</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" id="setting-idle-grace" class="sf-bright-spin" min="1" max="30" step="1" value="2"
+                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
+              <span style="font-size:11px;color:#565f89" data-i18n="minutes">minutes</span>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="writeHandoffToMaster">Write handoff to master</label>
+            <button class="toggle-switch on" id="setting-idle-handoff"></button>
+          </div>
+          <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
+          <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
+        </div>
+      </div>
+
       <!-- Session init prompt (sent once when an AI CLI tool becomes ready) -->
       <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">Session prompt</label>
+        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="sessionPrompt">Session prompt</label>
         <textarea id="setting-ui-prompt" style="width:100%;min-height:90px;font-size:11px;font-family:monospace;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:6px;resize:vertical" placeholder="Shown to the AI once at session start. Empty = use shellframe default."></textarea>
-        <div style="font-size:10px;color:#565f89;margin-top:4px;line-height:1.4">
+        <div style="font-size:10px;color:#565f89;margin-top:4px;line-height:1.4" data-i18n="sessionPromptHelp">
           Injected into new AI sessions (Claude Code, Codex…) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.
         </div>
       </div>
@@ -938,6 +975,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fontSize: 'Terminal font',
       uiScale: 'Interface size',
       language: 'Language',
+      autoUpdate: 'Auto Update',
+      autoCompactClaude: 'Auto /compact (Claude)',
+      percentLeft: '% left',
+      globalHotkey: 'Global hotkey',
+      showHide: 'show/hide',
+      completionNotifications: 'Completion notifications',
+      completionNotificationsHint: 'Notify when an AI reply finishes while shellframe is not in the foreground',
+      idleCleanupTitle: 'Idle tab cleanup',
+      idleCleanupDesc: 'Automatically summarize and close idle AI tabs. Protected/main tabs are kept.',
+      idleAfter: 'Idle after',
+      minutes: 'minutes',
+      hours: 'hours',
+      summaryWait: 'Summary wait',
+      writeHandoffToMaster: 'Write handoff to master',
+      saveCleanup: 'Save cleanup',
+      cleanupSaved: 'Saved',
+      sessionPrompt: 'Session prompt',
+      sessionPromptHelp: 'Injected into new AI sessions (Claude Code, Codex...) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.',
       about: 'About',
       aboutDesc: 'Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.',
       usage: 'Usage',
@@ -1040,6 +1095,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fontSize: '終端字型',
       uiScale: '介面大小',
       language: '語言',
+      autoUpdate: '自動更新',
+      autoCompactClaude: '自動 /compact（Claude）',
+      percentLeft: '% 剩餘',
+      globalHotkey: '全域快捷鍵',
+      showHide: '顯示/隱藏',
+      completionNotifications: '完成通知',
+      completionNotificationsHint: 'AI 回覆完成且 shellframe 不在前景時通知',
+      idleCleanupTitle: '閒置頁籤自動清理',
+      idleCleanupDesc: '自動摘要並關閉閒置 AI 頁籤。受保護頁籤與主頁籤會保留。',
+      idleAfter: '閒置超過',
+      minutes: '分鐘',
+      hours: '小時',
+      summaryWait: '摘要等待',
+      writeHandoffToMaster: '回寫交接給總控',
+      saveCleanup: '儲存清理設定',
+      cleanupSaved: '已儲存',
+      sessionPrompt: '工作階段提示',
+      sessionPromptHelp: '新 AI 工作階段（Claude Code、Codex...）收到第一則使用者訊息時會注入這段提示。留空會使用內建預設（說明 shellframe + sfctl）。修改會套用到儲存後開啟的新工作階段。',
       about: '關於',
       aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
       usage: '使用方式',
@@ -3098,6 +3171,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-complete-notify').classList.toggle(
       'on', s.completion_notifications !== false,
     );
+    syncIdleReaperSettings();
     syncSettingsBridge();
     syncSettingsLineBridge();
   });
@@ -3142,6 +3216,69 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   document.getElementById('setting-auto-compact-threshold')
     .addEventListener('change', _saveAutoCompact);
+
+  function _idleSecondsToFields(sec) {
+    sec = Number(sec) > 0 ? Number(sec) : 1800;
+    if (sec >= 3600 && sec % 3600 === 0) {
+      return { value: sec / 3600, unit: 'hours' };
+    }
+    return { value: Math.max(1, Math.round(sec / 60)), unit: 'minutes' };
+  }
+
+  function syncIdleReaperSettings() {
+    const idle = config.idle_reaper || {};
+    const fields = _idleSecondsToFields(idle.idle_sec);
+    document.getElementById('setting-idle-enabled')
+      .classList.toggle('on', idle.enabled === true);
+    document.getElementById('setting-idle-value').value = fields.value;
+    document.getElementById('setting-idle-unit').value = fields.unit;
+    document.getElementById('setting-idle-grace').value = Math.max(
+      1,
+      Math.round(Number(idle.summary_grace_sec || 120) / 60),
+    );
+    document.getElementById('setting-idle-handoff')
+      .classList.toggle('on', idle.handoff_to_main !== false);
+    document.getElementById('setting-idle-status').textContent = '';
+  }
+
+  async function saveIdleReaperSettings() {
+    const enabled = document.getElementById('setting-idle-enabled')
+      .classList.contains('on');
+    const handoff = document.getElementById('setting-idle-handoff')
+      .classList.contains('on');
+    let value = parseInt(document.getElementById('setting-idle-value').value, 10);
+    if (!Number.isFinite(value) || value < 1) value = 30;
+    const unit = document.getElementById('setting-idle-unit').value;
+    const idleSec = unit === 'hours' ? value * 3600 : value * 60;
+    let graceMin = parseInt(document.getElementById('setting-idle-grace').value, 10);
+    if (!Number.isFinite(graceMin) || graceMin < 1) graceMin = 2;
+    const payload = {
+      enabled,
+      idle_sec: idleSec,
+      summary_grace_sec: graceMin * 60,
+      handoff_to_main: handoff,
+    };
+    const result = await pywebview.api.save_idle_reaper(JSON.stringify(payload));
+    config = JSON.parse(result);
+    syncIdleReaperSettings();
+    const status = document.getElementById('setting-idle-status');
+    const savedText = t('cleanupSaved');
+    status.textContent = savedText;
+    setTimeout(() => {
+      if (status.textContent === savedText) status.textContent = '';
+    }, 1600);
+  }
+
+  document.getElementById('setting-idle-enabled')
+    .addEventListener('click', function() {
+      this.classList.toggle('on');
+    });
+  document.getElementById('setting-idle-handoff')
+    .addEventListener('click', function() {
+      this.classList.toggle('on');
+    });
+  document.getElementById('btn-save-idle-reaper')
+    .addEventListener('click', saveIdleReaperSettings);
 
   // Persist prompt textareas on blur so users don't need a save button.
   // Skip no-op blurs: if the value hasn't changed, don't touch config. And

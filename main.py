@@ -10,6 +10,8 @@ Windows: Edge WebView2 + subprocess
 import atexit
 import base64
 import codecs
+import ctypes
+import ctypes.util
 import errno
 import importlib
 import json
@@ -67,6 +69,66 @@ CONFIG_DIR = Path.home() / ".config" / "shellframe"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+DEFAULT_AGENT_ROSTER = {
+    "時程信件": {
+        "label": "時程信件-CLD",
+        "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions",
+        "agent_code": "CLD",
+        "responsibility": "信件、行程、Scrum 排卡、FEMAS 假單/居家辦公、會議追蹤、回信追蹤",
+        "handoff": True,
+    },
+    "Coding": {
+        "label": "Coding-CDX",
+        "cmd": SHELLFRAME_CODEX_CMD,
+        "agent_code": "CDX",
+        "responsibility": "程式、repo、測試、部署、ShellFrame、Jenkins、webhook/API 修正",
+        "handoff": True,
+    },
+    "研究": {
+        "label": "研究-CLD",
+        "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions",
+        "agent_code": "CLD",
+        "responsibility": "資料調研、文件整理、長文本分析、RFP/Notion/Plaud 初步彙整",
+        "handoff": True,
+    },
+    "知庫": {
+        "label": "知庫-CLD",
+        "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions",
+        "agent_code": "CLD",
+        "responsibility": "Obsidian/Notion 知識庫整理、memory/skill 沉澱建議",
+        "handoff": True,
+    },
+}
+
+AGENT_ROLE_ALIASES = {
+    "schedule": "時程信件",
+    "calendar": "時程信件",
+    "email": "時程信件",
+    "mail": "時程信件",
+    "scrum": "時程信件",
+    "femas": "時程信件",
+    "假單": "時程信件",
+    "居家": "時程信件",
+    "信件": "時程信件",
+    "時程": "時程信件",
+    "coding": "Coding",
+    "code": "Coding",
+    "repo": "Coding",
+    "shellframe": "Coding",
+    "sf": "Coding",
+    "jenkins": "Coding",
+    "webhook": "Coding",
+    "research": "研究",
+    "rfp": "研究",
+    "plaud": "研究",
+    "notion": "研究",
+    "調研": "研究",
+    "研究": "研究",
+    "knowledge": "知庫",
+    "obsidian": "知庫",
+    "知庫": "知庫",
+}
+
 DEFAULT_CONFIG = {
     "presets": [
         # Shell first so the "+" menu has a sensible default for any user.
@@ -90,13 +152,58 @@ DEFAULT_CONFIG = {
         "review_sec": 300,
         "idle_sec": 1800,
         "summary_grace_sec": 120,
-        "keep_labels": ["main", "Main", "LINE-Gateway"],
+        "keep_labels": ["main", "Main"],
         "keep_sids": [],
         "keep_first_session": False,
+        "keep_bridge_active": True,
         "close_ai_only": True,
-        "summary_dir": str(CONFIG_DIR / "session_summaries")
-    }
+        "summary_dir": str(CONFIG_DIR / "session_summaries"),
+        "self_sediment": False,
+        "reflection_file": "",
+        "handoff_to_main": True,
+        "handoff_on_start": False
+    },
+    "agent_roster": DEFAULT_AGENT_ROSTER
 }
+
+
+def _ensure_idle_reaper_defaults(cfg: dict) -> bool:
+    """Keep idle-reaper config self-documenting in config.json."""
+    defaults = DEFAULT_CONFIG.get("idle_reaper", {})
+    raw = cfg.get("idle_reaper")
+    if not isinstance(raw, dict):
+        raw = {}
+    changed = False
+    for key, value in defaults.items():
+        if key not in raw:
+            raw[key] = value
+            changed = True
+    if cfg.get("idle_reaper") is not raw:
+        cfg["idle_reaper"] = raw
+        changed = True
+    return changed
+
+
+def _ensure_agent_roster_defaults(cfg: dict) -> bool:
+    """Expose the manual delegation roster in config.json without hard routing."""
+    raw = cfg.get("agent_roster")
+    if not isinstance(raw, dict):
+        raw = {}
+    changed = False
+    for role, defaults in DEFAULT_AGENT_ROSTER.items():
+        existing = raw.get(role)
+        if not isinstance(existing, dict):
+            raw[role] = dict(defaults)
+            changed = True
+            continue
+        for key, value in defaults.items():
+            if key not in existing:
+                existing[key] = value
+                changed = True
+    if cfg.get("agent_roster") is not raw:
+        cfg["agent_roster"] = raw
+        changed = True
+    return changed
 
 
 _DEFAULT_AI_PRESETS = [
@@ -246,8 +353,21 @@ def load_config():
                 save_config(cfg)
             except Exception:
                 pass
+        cfg_defaults_changed = False
+        if _ensure_idle_reaper_defaults(cfg):
+            cfg_defaults_changed = True
+        if _ensure_agent_roster_defaults(cfg):
+            cfg_defaults_changed = True
+        if cfg_defaults_changed:
+            try:
+                save_config(cfg)
+            except Exception:
+                pass
         return cfg
-    return DEFAULT_CONFIG.copy()
+    cfg = DEFAULT_CONFIG.copy()
+    _ensure_idle_reaper_defaults(cfg)
+    _ensure_agent_roster_defaults(cfg)
+    return cfg
 
 
 def save_config(cfg):
@@ -562,6 +682,8 @@ class Session:
         self.alive = True
         now = time.time()
         self._last_activity_time = now
+        self._last_user_activity_time = now
+        self._last_output_activity_time = 0.0
         self._idle_reap_state = ""
         self._idle_summary_requested_at = 0.0
         self._idle_close_after = 0.0
@@ -736,7 +858,9 @@ class Session:
                         self._recent.extend(data)
                         if len(self._recent) > 8192:
                             self._recent = self._recent[-8192:]
-                        self._last_activity_time = time.time()
+                        now = time.time()
+                        self._last_activity_time = now
+                        self._last_output_activity_time = now
                     if self._on_data:
                         self._on_data()
             except (OSError, ValueError):
@@ -751,7 +875,9 @@ class Session:
                 if data:
                     with self.lock:
                         self.buffer.extend(data.encode("utf-8", errors="replace") if isinstance(data, str) else data)
-                        self._last_activity_time = time.time()
+                        now = time.time()
+                        self._last_activity_time = now
+                        self._last_output_activity_time = now
                     if self._on_data:
                         self._on_data()
                 else:
@@ -768,7 +894,9 @@ class Session:
                 if data:
                     with self.lock:
                         self.buffer.extend(data)
-                        self._last_activity_time = time.time()
+                        now = time.time()
+                        self._last_activity_time = now
+                        self._last_output_activity_time = now
                     if self._on_data:
                         self._on_data()
                 else:
@@ -777,14 +905,17 @@ class Session:
                 break
         self.alive = False
 
-    def write(self, data: str):
+    def write(self, data: str, user_activity: bool = True):
         # Only log multi-char writes (init prompt, paste) — single keystrokes
         # are too noisy and the file open/close adds measurable latency.
         if len(data) > 2:
             preview = data[:80].replace('\r', '\\r').replace('\n', '\\n').replace('\x1b', '\\e')
             _dlog("write", f"sid={self.sid} len={len(data)} preview={preview!r}")
         if data:
-            self._last_activity_time = time.time()
+            now = time.time()
+            self._last_activity_time = now
+            if user_activity:
+                self._last_user_activity_time = now
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
             try:
                 self._winpty.write(data)
@@ -962,6 +1093,11 @@ class Api:
                     "order": idx,
                     "updated_at": int(time.time()),
                 }
+                lifecycle_source = getattr(s, "_lifecycle_source", "") or ""
+                if lifecycle_source:
+                    entry["lifecycle_source"] = lifecycle_source
+                if getattr(s, "_lifecycle_handoff", False):
+                    entry["lifecycle_handoff"] = True
                 if label:
                     entry["label"] = label
                     labels[sid] = label
@@ -994,7 +1130,131 @@ class Api:
             merged["summary_grace_sec"] = 120.0
         merged["keep_labels"] = [str(x).strip() for x in (merged.get("keep_labels") or []) if str(x).strip()]
         merged["keep_sids"] = [str(x).strip() for x in (merged.get("keep_sids") or []) if str(x).strip()]
+        merged["reflection_file"] = str(merged.get("reflection_file") or "").strip()
         return merged
+
+    @staticmethod
+    def _agent_roster_config(cfg: dict | None = None) -> dict:
+        cfg = cfg or load_config()
+        raw = cfg.get("agent_roster") or {}
+        roster = {}
+        for role, entry in raw.items():
+            if not isinstance(entry, dict):
+                continue
+            clean = dict(entry)
+            clean["role"] = str(role)
+            clean["label"] = str(clean.get("label") or role).strip()
+            clean["cmd"] = _canonical_cmd(str(clean.get("cmd") or "claude").strip())
+            clean["agent_code"] = str(clean.get("agent_code") or "").strip()
+            clean["responsibility"] = str(clean.get("responsibility") or "").strip()
+            clean["handoff"] = bool(clean.get("handoff", True))
+            if clean["label"] and clean["cmd"]:
+                roster[str(role)] = clean
+        return roster
+
+    @staticmethod
+    def _resolve_agent_role(role: str, roster: dict) -> tuple[str | None, dict | None]:
+        wanted = str(role or "").strip()
+        if not wanted:
+            return None, None
+        if wanted in roster:
+            return wanted, roster[wanted]
+        alias = AGENT_ROLE_ALIASES.get(wanted.casefold()) or AGENT_ROLE_ALIASES.get(wanted)
+        if alias in roster:
+            return alias, roster[alias]
+        for key, entry in roster.items():
+            if wanted.casefold() == key.casefold():
+                return key, entry
+            label = str(entry.get("label") or "")
+            if wanted.casefold() == label.casefold():
+                return key, entry
+        for key, entry in roster.items():
+            label = str(entry.get("label") or "")
+            if wanted.casefold() in key.casefold() or wanted.casefold() in label.casefold():
+                return key, entry
+        return None, None
+
+    def _find_session_by_label(self, label: str) -> tuple[str, Session | None]:
+        wanted = str(label or "").strip()
+        if not wanted:
+            return "", None
+        for sid, session in self.sessions.items():
+            if not getattr(session, "alive", False):
+                continue
+            current = getattr(session, "_custom_label", None) or ""
+            if current == wanted:
+                return sid, session
+        for sid, session in self.sessions.items():
+            if not getattr(session, "alive", False):
+                continue
+            current = getattr(session, "_custom_label", None) or ""
+            if current.casefold() == wanted.casefold():
+                return sid, session
+        return "", None
+
+    @staticmethod
+    def _delegate_prompt(role: str, entry: dict, task: str) -> str:
+        label = entry.get("label") or role
+        responsibility = entry.get("responsibility") or "依總控派工處理指定任務"
+        return (
+            f"你是「{label}」worker。\n"
+            f"職責：{responsibility}\n\n"
+            "這是 ShellFrame 總控派工。請維持自己的職責邊界，不要主動接手其他 worker 的領域。\n\n"
+            "任務：\n"
+            f"{task.strip()}\n\n"
+            "工作規則：\n"
+            "- 先確認需要的上下文與現有狀態；避免重複建立、重複送出或覆蓋。\n"
+            "- 若是外部可見操作，只有在使用者文字已明確授權時才送出；否則先 dry-run 或回報需要確認。\n"
+            "- 若任務需要其他 worker，回報總控改派，不要自行擴張範圍。\n"
+            "- 完成後回覆：結果、驗證、變更/送出項目、阻塞、是否建議納入 memory/skill/docs。\n"
+        )
+
+    def delegate_task(self, role: str, task: str) -> dict:
+        task = str(task or "").strip()
+        if not task:
+            return {"success": False, "message": "task required"}
+        roster = self._agent_roster_config(load_config())
+        resolved_role, entry = self._resolve_agent_role(role, roster)
+        if not entry:
+            roles = ", ".join(roster.keys()) or "(empty)"
+            return {"success": False, "message": f"Unknown role: {role}. Available: {roles}"}
+
+        label = entry.get("label") or resolved_role
+        sid, session = self._find_session_by_label(label)
+        created = False
+        if not session:
+            sid = self.new_session(
+                entry.get("cmd", "claude"),
+                200,
+                50,
+                source="delegate",
+                handoff=bool(entry.get("handoff", True)),
+            )
+            renamed = json.loads(self.rename_session(sid, label))
+            if not renamed.get("success"):
+                return {"success": False, "message": f"Created {sid} but rename to {label} failed"}
+            session = self.sessions.get(sid)
+            created = True
+        if not session:
+            return {"success": False, "message": f"No session available for {label}"}
+
+        prompt = self._delegate_prompt(resolved_role, entry, task)
+        session._startup_trust_pending = False
+        session.write(prompt)
+        time.sleep(0.05)
+        session.write("\r")
+        return {
+            "success": True,
+            "message": f"Delegated to {label} ({sid})",
+            "details": {
+                "sid": sid,
+                "label": label,
+                "role": resolved_role,
+                "created": created,
+                "cmd": entry.get("cmd"),
+                "next": f"sfctl peek {sid} --lines 80",
+            },
+        }
 
     @staticmethod
     def _session_is_ai(cmd: str) -> bool:
@@ -1018,6 +1278,8 @@ class Api:
     def _should_keep_session(self, sid: str, s: Session, cfg: dict, idle_cfg: dict) -> bool:
         if sid in set(idle_cfg.get("keep_sids") or []):
             return True
+        if idle_cfg.get("keep_bridge_active", True) and sid in self._bridge_active_sids():
+            return True
         label = (getattr(s, "_custom_label", None) or "").strip()
         keep_labels = {x.casefold() for x in (idle_cfg.get("keep_labels") or [])}
         if label.casefold() in keep_labels:
@@ -1025,6 +1287,34 @@ class Api:
         if idle_cfg.get("keep_first_session") and sid == self._main_session_sid(cfg, idle_cfg):
             return True
         return False
+
+    def _bridge_active_sids(self) -> set[str]:
+        active: set[str] = set()
+        for bridge in (self.bridge, self.line_bridge):
+            if not bridge:
+                continue
+            slots = getattr(bridge, "slots", {}) or {}
+            for value in getattr(bridge, "_user_active", {}).values():
+                if value in slots:
+                    active.add(value)
+            default_sid = getattr(bridge, "_default_active_sid", "")
+            if default_sid in slots:
+                active.add(default_sid)
+            ui_sid = getattr(bridge, "_ui_active_sid", "")
+            if ui_sid in slots:
+                active.add(ui_sid)
+            try:
+                status_sid = bridge.get_primary_active_sid()
+            except AttributeError:
+                try:
+                    status_sid = bridge._status_active_sid()
+                except Exception:
+                    status_sid = ""
+            except Exception:
+                status_sid = ""
+            if status_sid in slots:
+                active.add(status_sid)
+        return active
 
     def _bridge_session_busy(self, sid: str) -> bool:
         for bridge in (self.bridge, self.line_bridge):
@@ -1042,7 +1332,18 @@ class Api:
                 return True
         return False
 
-    def _idle_summary_prompt(self, label: str, idle_sec: int) -> str:
+    def _idle_summary_prompt(self, label: str, idle_sec: int, idle_cfg: dict | None = None) -> str:
+        idle_cfg = idle_cfg or {}
+        reflection_file = str(idle_cfg.get("reflection_file") or "").strip()
+        sediment = ""
+        if idle_cfg.get("self_sediment") and reflection_file:
+            sediment = (
+                "\n沉澱要求：若這個 session 有值得保留的流程、偏好或專案長期事實，"
+                "請在輸出總結後，追加一段精簡反思到下列共用反思主檔：\n"
+                f"{reflection_file}\n"
+                "只寫 Agent Reflections.md；不要直接改 Agent Memory Hub 或私有 memory。"
+                "若不值得沉澱，請在總結中寫 none 並用一句話說明。\n"
+            )
         return (
             "ShellFrame 閒置排程即將關閉這個 session。\n"
             f"Session：{label or 'unnamed'}\n"
@@ -1052,7 +1353,8 @@ class Api:
             "1. 這個 session 完成了什麼。\n"
             "2. 尚未完成事項或風險。\n"
             "3. 是否建議沉澱為 skill、memory 或 none，並說明原因。\n"
-            "請不要執行外部可見或破壞性操作。\n"
+            f"{sediment}"
+            "除上述共用反思主檔追加外，請不要執行其他外部可見或破壞性操作。\n"
         )
 
     def _capture_session_summary(self, sid: str, s: Session, idle_cfg: dict) -> str:
@@ -1082,6 +1384,67 @@ class Api:
         s._idle_summary_path = str(path)
         return str(path)
 
+    def _session_label(self, sid: str, s: Session | None = None) -> str:
+        if s is not None:
+            label = getattr(s, "_custom_label", None)
+            if label:
+                return str(label)
+        try:
+            labels = load_config().get("session_labels", {}) or {}
+            label = labels.get(sid)
+            if label:
+                return str(label)
+        except Exception:
+            pass
+        return sid
+
+    def _handoff_target_sid(self, exclude_sids: set[str] | None = None) -> str:
+        exclude_sids = exclude_sids or set()
+        try:
+            cfg = load_config()
+            idle_cfg = self._idle_reaper_config(cfg)
+        except Exception:
+            cfg = {}
+            idle_cfg = {}
+        labels = cfg.get("session_labels", {}) or {}
+        ordered = self._ordered_sids(cfg)
+        preferred = []
+        main_sid = self._main_session_sid(cfg, idle_cfg)
+        if main_sid:
+            preferred.append(main_sid)
+        preferred.extend([
+            sid for sid, s in self.sessions.items()
+            if "總控" in (getattr(s, "_custom_label", None) or labels.get(sid, "") or "")
+        ])
+        preferred.extend(ordered)
+        preferred.extend(self.sessions.keys())
+        seen = set()
+        for sid in preferred:
+            if sid in seen or sid in exclude_sids:
+                continue
+            seen.add(sid)
+            s = self.sessions.get(sid)
+            if s and getattr(s, "alive", False):
+                return sid
+        return ""
+
+    def _write_lifecycle_handoff(self, title: str, bullets: list[str], exclude_sids: set[str] | None = None):
+        try:
+            idle_cfg = self._idle_reaper_config(load_config())
+            if idle_cfg.get("handoff_to_main") is False:
+                return
+            target_sid = self._handoff_target_sid(exclude_sids)
+            target = self.sessions.get(target_sid)
+            if not target:
+                return
+            lines = ["", "[ShellFrame 交接]", title]
+            lines.extend(f"- {b}" for b in bullets if b)
+            text = "\n".join(lines).rstrip() + "\n"
+            _dlog("handoff", f"target={target_sid} title={title!r} bullets={len(bullets)}")
+            target.write(text + "\r", user_activity=False)
+        except Exception as e:
+            _dlog("handoff", f"write failed: {e}")
+
     def _start_idle_reaper(self):
         if self._idle_reaper_started:
             return
@@ -1107,15 +1470,31 @@ class Api:
                         continue
                     state = getattr(s, "_idle_reap_state", "")
                     if state == "summarizing":
+                        if getattr(s, "_last_user_activity_time", 0) > getattr(s, "_idle_summary_requested_at", 0):
+                            s._idle_reap_state = ""
+                            s._idle_summary_requested_at = 0.0
+                            s._idle_close_after = 0.0
+                            _dlog("idle", f"cancel summary sid={sid} reason=user_input")
+                            continue
                         if now >= getattr(s, "_idle_close_after", 0):
                             try:
                                 summary_path = self._capture_session_summary(sid, s, idle_cfg)
                                 _dlog("idle", f"closing sid={sid} summary={summary_path}")
-                                self.close_session(sid)
+                                idle_seconds = int(now - getattr(
+                                    s, "_last_user_activity_time",
+                                    getattr(s, "_last_activity_time", now),
+                                ))
+                                self.close_session(
+                                    sid,
+                                    reason="idle_reaper",
+                                    handoff=True,
+                                    summary_path=summary_path,
+                                    idle_seconds=idle_seconds,
+                                )
                             except Exception as e:
                                 _dlog("idle", f"close failed sid={sid}: {e}")
                         continue
-                    idle_for = now - getattr(s, "_last_activity_time", now)
+                    idle_for = now - getattr(s, "_last_user_activity_time", getattr(s, "_last_activity_time", now))
                     if idle_for < idle_cfg.get("idle_sec", 1800.0):
                         continue
                     label = getattr(s, "_custom_label", None) or sid
@@ -1123,7 +1502,7 @@ class Api:
                     s._idle_summary_requested_at = now
                     s._idle_close_after = now + idle_cfg.get("summary_grace_sec", 120.0)
                     _dlog("idle", f"summary request sid={sid} idle_sec={int(idle_for)}")
-                    s.write(self._idle_summary_prompt(label, int(idle_for)) + "\r")
+                    s.write(self._idle_summary_prompt(label, int(idle_for), idle_cfg) + "\r", user_activity=False)
                 time.sleep(review_sec)
 
         threading.Thread(target=_loop, daemon=True).start()
@@ -1199,6 +1578,8 @@ class Api:
                 session._init_pending = False
                 session._startup_trust_pending = False
                 session._slug_pending = False
+                session._lifecycle_source = entry.get("lifecycle_source", "")
+                session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 # Restore custom label
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
@@ -1229,6 +1610,8 @@ class Api:
                 session._init_pending = False
                 session._startup_trust_pending = False
                 session._slug_pending = False
+                session._lifecycle_source = entry.get("lifecycle_source", "")
+                session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
                     session._custom_label = label
@@ -1340,6 +1723,38 @@ class Api:
                 pass
         return json.dumps(cfg)
 
+    def save_idle_reaper(self, idle_json: str) -> str:
+        cfg = load_config()
+        _ensure_idle_reaper_defaults(cfg)
+        current = cfg.get("idle_reaper", {}) or {}
+        incoming = json.loads(idle_json) if idle_json else {}
+
+        def _bool(key: str, default: bool) -> bool:
+            value = incoming.get(key, default)
+            return bool(value)
+
+        def _seconds(key: str, default: float, minimum: float) -> int:
+            try:
+                value = float(incoming.get(key, default))
+            except (TypeError, ValueError):
+                value = default
+            return int(max(minimum, value))
+
+        current["enabled"] = _bool("enabled", current.get("enabled", False))
+        current["idle_sec"] = _seconds("idle_sec", current.get("idle_sec", 1800), 30)
+        current["summary_grace_sec"] = _seconds(
+            "summary_grace_sec",
+            current.get("summary_grace_sec", 120),
+            10,
+        )
+        current["handoff_to_main"] = _bool(
+            "handoff_to_main",
+            current.get("handoff_to_main", True),
+        )
+        cfg["idle_reaper"] = current
+        save_config(cfg)
+        return json.dumps(cfg)
+
     def delete_preset(self, name: str) -> str:
         cfg = load_config()
         cfg["presets"] = [p for p in cfg["presets"] if p["name"] != name]
@@ -1371,12 +1786,14 @@ class Api:
                                "label": getattr(s, '_custom_label', None)})
         return json.dumps(result)
 
-    def new_session(self, cmd: str, cols: int, rows: int) -> str:
+    def new_session(self, cmd: str, cols: int, rows: int, source: str = "manual", handoff: bool = False) -> str:
         cmd = _canonical_cmd(cmd)
         self._counter += 1
         sid = f"s{self._counter}"
-        _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows}")
+        _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows} source={source!r}")
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
+        session._lifecycle_source = source or ""
+        session._lifecycle_handoff = bool(handoff or source in {"scheduler", "scheduled", "auto"})
         self.sessions[sid] = session
         self._start_startup_trust_watcher(sid, session)
         session._bridge_enabled = True
@@ -1407,6 +1824,18 @@ class Api:
         # Covers sessions created via TG /new, sfctl, or any non-UI path.
         self._plugin_dispatch_session_open(sid, cmd.split()[0] if cmd else sid)
         self._notify_ui_sessions_changed()
+        idle_cfg = self._idle_reaper_config(load_config())
+        if getattr(session, "_lifecycle_handoff", False) and idle_cfg.get("handoff_on_start", False):
+            label = getattr(session, "_custom_label", None) or (cmd.split()[0] if cmd else sid)
+            self._write_lifecycle_handoff(
+                "排程已啟動頁籤",
+                [
+                    f"{label} ({sid})",
+                    f"來源：{source or 'unknown'}",
+                    f"指令：{cmd}",
+                ],
+                exclude_sids={sid},
+            )
         return sid
 
     def _notify_ui_sessions_changed(self):
@@ -1456,8 +1885,20 @@ class Api:
                 prompt += "\n\nAcknowledge briefly and wait for the user's first message."
         return prompt
 
-    def close_session(self, sid: str):
-        _dlog("lifecycle", f"close_session sid={sid}")
+    def close_session(
+        self,
+        sid: str,
+        reason: str = "manual",
+        handoff: bool = False,
+        summary_path: str = "",
+        idle_seconds: int | None = None,
+    ):
+        _dlog("lifecycle", f"close_session sid={sid} reason={reason!r}")
+        s = self.sessions.get(sid)
+        label = self._session_label(sid, s)
+        cmd = s.cmd if s else ""
+        lifecycle_source = getattr(s, "_lifecycle_source", "") if s else ""
+        lifecycle_handoff = bool(getattr(s, "_lifecycle_handoff", False)) if s else False
         # Unregister from bridge
         if self.bridge:
             self.bridge.unregister_session(sid)
@@ -1479,6 +1920,19 @@ class Api:
             self._drop_soft_session(sid)
             self._persist_session_manifest()
         self._notify_ui_sessions_changed()
+        if s and (handoff or lifecycle_handoff):
+            bullets = [f"已關閉：{label} ({sid})"]
+            if lifecycle_source:
+                bullets.append(f"來源：{lifecycle_source}")
+            if reason:
+                bullets.append(f"原因：{reason}")
+            if idle_seconds is not None:
+                bullets.append(f"閒置：約 {idle_seconds} 秒")
+            if summary_path:
+                bullets.append(f"摘要檔：{summary_path}")
+            if cmd:
+                bullets.append(f"指令：{cmd}")
+            self._write_lifecycle_handoff("頁籤已關閉交接", bullets, exclude_sids={sid})
 
     # Patterns in CLI output that indicate the AI tool is ready for conversation
     # (not in login/setup/auth flow). Checked after stripping ANSI escapes.
@@ -1569,8 +2023,10 @@ class Api:
         if not s:
             return
         if data:
+            now = time.time()
             s._startup_trust_pending = False
-            s._last_activity_time = time.time()
+            s._last_activity_time = now
+            s._last_user_activity_time = now
             if getattr(s, "_idle_reap_state", ""):
                 s._idle_reap_state = ""
                 s._idle_summary_requested_at = 0.0
@@ -2850,7 +3306,7 @@ class Api:
             if not IS_WIN:
                 src_app = APP_DIR / "ShellFrame.app"
                 if src_app.exists():
-                    for dest_dir in [Path.home() / "Applications", Path("/Applications")]:
+                    for dest_dir in [Path("/Applications"), Path.home() / "Applications"]:
                         dest = dest_dir / "ShellFrame.app"
                         try:
                             if dest.exists() or dest_dir.exists():
@@ -2865,6 +3321,13 @@ class Api:
                                 ok, launcher_msg = _refresh_macos_app_launcher(dest)
                                 post_steps.append(f".app launcher: {launcher_msg}")
                                 post_steps.append(f".app copied to {dest}")
+                                if dest_dir == Path("/Applications"):
+                                    user_app = Path.home() / "Applications" / "ShellFrame.app"
+                                    subprocess.run(
+                                        ["rm", "-rf", str(user_app)],
+                                        capture_output=True, timeout=10
+                                    )
+                                    post_steps.append(f"removed stale app copy: {user_app}")
                                 break
                         except Exception as e:
                             post_steps.append(f".app copy to {dest} failed: {e}")
@@ -2905,8 +3368,8 @@ class Api:
 
             def _find_macos_app_path():
                 candidates = [
-                    Path.home() / "Applications" / "ShellFrame.app",
                     Path("/Applications/ShellFrame.app"),
+                    Path.home() / "Applications" / "ShellFrame.app",
                     APP_DIR / "ShellFrame.app",
                 ]
                 for c in candidates:
@@ -3654,52 +4117,73 @@ class Api:
     # ── Remote control (sfctl) ──
 
     _CMD_FILE = str(TMP_DIR / "shellframe_cmd.json")
+    _CMD_DIR = str(TMP_DIR / "shellframe_cmds")
     _RESULT_FILE = str(TMP_DIR / "shellframe_result.json")
 
     def _start_command_watcher(self):
         """Watch for commands from sfctl CLI (file-based IPC)."""
+        def _command_paths() -> list[Path]:
+            paths = []
+            legacy = Path(self._CMD_FILE)
+            if legacy.exists():
+                paths.append(legacy)
+            cmd_dir = Path(self._CMD_DIR)
+            try:
+                cmd_dir.mkdir(parents=True, exist_ok=True)
+                paths.extend(sorted(cmd_dir.glob("*.json")))
+            except OSError as e:
+                _dlog("sfctl", f"cmd dir unavailable: {e}")
+            return paths
+
         def watcher():
-            _dlog("sfctl", f"watcher started cmd_file={self._CMD_FILE}")
+            _dlog("sfctl", f"watcher started cmd_file={self._CMD_FILE} cmd_dir={self._CMD_DIR}")
             while True:
                 try:
                     time.sleep(0.5)
-                    if not os.path.exists(self._CMD_FILE):
+                    paths = _command_paths()
+                    if not paths:
                         continue
-                    try:
-                        with open(self._CMD_FILE, encoding='utf-8') as f:
-                            cmd_data = json.load(f)
-                        os.unlink(self._CMD_FILE)
-                    except (json.JSONDecodeError, IOError, OSError) as e:
-                        _dlog("sfctl", f"failed reading cmd: {e}")
-                        continue
-
-                    # Ignore stale commands (older than 30s)
-                    if time.time() - cmd_data.get("ts", 0) > 30:
-                        _dlog("sfctl", f"ignored stale cmd={cmd_data.get('cmd')!r}")
-                        continue
-
-                    cmd = cmd_data.get("cmd", "")
-                    args = cmd_data.get("args", {})
-                    _dlog("sfctl", f"exec cmd={cmd!r}")
-                    try:
-                        result = self._execute_sfctl(cmd, args)
-                    except Exception as e:
-                        import traceback
-                        _dlog("sfctl", f"execute crashed cmd={cmd!r}: {e}\n{traceback.format_exc()}")
-                        result = {"success": False, "message": f"sfctl crashed: {e}"}
-
-                    try:
-                        tmp = self._RESULT_FILE + ".tmp"
-                        with open(tmp, "w", encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False)
-                            f.flush()
+                    for path in paths:
+                        try:
+                            with open(path, encoding='utf-8') as f:
+                                cmd_data = json.load(f)
+                            path.unlink(missing_ok=True)
+                        except (json.JSONDecodeError, IOError, OSError) as e:
+                            _dlog("sfctl", f"failed reading cmd path={path}: {e}")
                             try:
-                                os.fsync(f.fileno())
+                                path.unlink(missing_ok=True)
                             except OSError:
                                 pass
-                        os.replace(tmp, self._RESULT_FILE)
-                    except IOError as e:
-                        _dlog("sfctl", f"failed writing result: {e}")
+                            continue
+
+                        # Ignore stale commands (older than 30s)
+                        if time.time() - cmd_data.get("ts", 0) > 30:
+                            _dlog("sfctl", f"ignored stale cmd={cmd_data.get('cmd')!r}")
+                            continue
+
+                        cmd = cmd_data.get("cmd", "")
+                        args = cmd_data.get("args", {})
+                        _dlog("sfctl", f"exec cmd={cmd!r}")
+                        try:
+                            result = self._execute_sfctl(cmd, args)
+                        except Exception as e:
+                            import traceback
+                            _dlog("sfctl", f"execute crashed cmd={cmd!r}: {e}\n{traceback.format_exc()}")
+                            result = {"success": False, "message": f"sfctl crashed: {e}"}
+
+                        try:
+                            result_file = str(cmd_data.get("result_file") or self._RESULT_FILE)
+                            tmp = result_file + ".tmp"
+                            with open(tmp, "w", encoding='utf-8') as f:
+                                json.dump(result, f, ensure_ascii=False)
+                                f.flush()
+                                try:
+                                    os.fsync(f.fileno())
+                                except OSError:
+                                    pass
+                            os.replace(tmp, result_file)
+                        except IOError as e:
+                            _dlog("sfctl", f"failed writing result: {e}")
                 except Exception as e:
                     # Never let the remote-control thread die; TG recovery
                     # depends on sfctl staying alive after bad edge cases.
@@ -3715,7 +4199,9 @@ class Api:
                 preset_cmd = args.get("cmd", "claude")
                 cols = args.get("cols", 200)
                 rows = args.get("rows", 50)
-                sid = self.new_session(preset_cmd, cols, rows)
+                source = args.get("source", "sfctl")
+                handoff = bool(args.get("handoff", False))
+                sid = self.new_session(preset_cmd, cols, rows, source=source, handoff=handoff)
                 return {
                     "success": True,
                     "message": f"Created session {sid}",
@@ -3729,7 +4215,12 @@ class Api:
                 sid = args.get("sid", "")
                 if not sid:
                     return {"success": False, "message": "No sid provided"}
-                self.close_session(sid)
+                self.close_session(
+                    sid,
+                    reason=args.get("reason", "sfctl"),
+                    handoff=bool(args.get("handoff", False)),
+                    summary_path=args.get("summary_path", "") or "",
+                )
                 return {"success": True, "message": f"Closed {sid}"}
             except Exception as e:
                 return {"success": False, "message": f"Failed: {e}"}
@@ -3797,6 +4288,29 @@ class Api:
                 "message": f"{len(sessions_info)} sessions",
                 "details": {"sessions": sessions_info},
             }
+
+        elif cmd == "roster":
+            roster = self._agent_roster_config(load_config())
+            roles = []
+            for role, entry in roster.items():
+                roles.append({
+                    "role": role,
+                    "label": entry.get("label", role),
+                    "agent_code": entry.get("agent_code", ""),
+                    "responsibility": entry.get("responsibility", ""),
+                    "cmd": entry.get("cmd", ""),
+                })
+            return {
+                "success": True,
+                "message": f"{len(roles)} roles",
+                "details": {"roles": roles},
+            }
+
+        elif cmd == "delegate":
+            try:
+                return self.delegate_task(args.get("role", ""), args.get("task", ""))
+            except Exception as e:
+                return {"success": False, "message": f"Delegate failed: {e}"}
 
         elif cmd == "send":
             try:
@@ -4137,12 +4651,28 @@ def _patch_pywebview_cocoa_none_screen():
 
 
 _global_hotkey_monitors = []
+_carbon_hotkey_lib = None
+_carbon_hotkey_ref = None
+_carbon_hotkey_handler_ref = None
+_carbon_hotkey_callback = None
 
 
 def _unregister_global_hotkey():
     """Pull down any live NSEvent monitors. Safe to call repeatedly and
     during shutdown — if AppKit isn't importable we just clear the list."""
     global _global_hotkey_monitors
+    global _carbon_hotkey_lib, _carbon_hotkey_ref, _carbon_hotkey_handler_ref
+    global _carbon_hotkey_callback
+    try:
+        if _carbon_hotkey_lib is not None and _carbon_hotkey_ref is not None:
+            _carbon_hotkey_lib.UnregisterEventHotKey(_carbon_hotkey_ref)
+        if _carbon_hotkey_lib is not None and _carbon_hotkey_handler_ref is not None:
+            _carbon_hotkey_lib.RemoveEventHandler(_carbon_hotkey_handler_ref)
+    except Exception as e:
+        _dlog("hotkey", f"carbon unregister failed: {e}")
+    _carbon_hotkey_ref = None
+    _carbon_hotkey_handler_ref = None
+    _carbon_hotkey_callback = None
     try:
         from AppKit import NSEvent
         for _m in _global_hotkey_monitors:
@@ -4153,6 +4683,121 @@ def _unregister_global_hotkey():
     except Exception:
         pass
     _global_hotkey_monitors = []
+
+
+class _CarbonEventHotKeyID(ctypes.Structure):
+    _fields_ = [
+        ("signature", ctypes.c_uint32),
+        ("id", ctypes.c_uint32),
+    ]
+
+
+class _CarbonEventTypeSpec(ctypes.Structure):
+    _fields_ = [
+        ("eventClass", ctypes.c_uint32),
+        ("eventKind", ctypes.c_uint32),
+    ]
+
+
+_CarbonEventHandler = ctypes.CFUNCTYPE(
+    ctypes.c_int32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
+)
+
+
+def _fourcc(value: str) -> int:
+    return int.from_bytes(value.encode("ascii"), "big")
+
+
+def _register_carbon_hotkey(on_press) -> tuple[bool, str]:
+    """Register Ctrl+Option+Space via Carbon so it does not require
+    Accessibility permission. Falls back to NSEvent global monitor on failure."""
+    global _carbon_hotkey_lib, _carbon_hotkey_ref, _carbon_hotkey_handler_ref
+    global _carbon_hotkey_callback
+    if sys.platform != "darwin":
+        return False, "not macOS"
+    try:
+        carbon_path = (
+            ctypes.util.find_library("Carbon")
+            or "/System/Library/Frameworks/Carbon.framework/Carbon"
+        )
+        carbon = ctypes.CDLL(carbon_path)
+
+        carbon.GetApplicationEventTarget.argtypes = []
+        carbon.GetApplicationEventTarget.restype = ctypes.c_void_p
+        carbon.InstallEventHandler.argtypes = [
+            ctypes.c_void_p,
+            _CarbonEventHandler,
+            ctypes.c_uint32,
+            ctypes.POINTER(_CarbonEventTypeSpec),
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        carbon.InstallEventHandler.restype = ctypes.c_int32
+        carbon.RemoveEventHandler.argtypes = [ctypes.c_void_p]
+        carbon.RemoveEventHandler.restype = ctypes.c_int32
+        carbon.RegisterEventHotKey.argtypes = [
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            _CarbonEventHotKeyID,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        carbon.RegisterEventHotKey.restype = ctypes.c_int32
+        carbon.UnregisterEventHotKey.argtypes = [ctypes.c_void_p]
+        carbon.UnregisterEventHotKey.restype = ctypes.c_int32
+
+        target = carbon.GetApplicationEventTarget()
+        if not target:
+            return False, "GetApplicationEventTarget returned null"
+
+        def _handler(_next_handler, _event, _user_data):
+            try:
+                from AppKit import NSOperationQueue
+                NSOperationQueue.mainQueue().addOperationWithBlock_(on_press)
+            except Exception:
+                try:
+                    on_press()
+                except Exception as e:
+                    _dlog("hotkey", f"carbon handler failed: {e}")
+            return 0
+
+        callback = _CarbonEventHandler(_handler)
+        event_types = (_CarbonEventTypeSpec * 1)(
+            _CarbonEventTypeSpec(_fourcc("keyb"), 5)  # kEventHotKeyPressed
+        )
+        handler_ref = ctypes.c_void_p()
+        status = carbon.InstallEventHandler(
+            target, callback, 1, event_types, None, ctypes.byref(handler_ref)
+        )
+        if status != 0:
+            return False, f"InstallEventHandler status={status}"
+
+        hotkey_ref = ctypes.c_void_p()
+        hotkey_id = _CarbonEventHotKeyID(_fourcc("ShFr"), 1)
+        # Carbon modifier bits: optionKey=1<<11, controlKey=1<<12.
+        status = carbon.RegisterEventHotKey(
+            49,  # kVK_Space
+            (1 << 11) | (1 << 12),
+            hotkey_id,
+            target,
+            0,
+            ctypes.byref(hotkey_ref),
+        )
+        if status != 0:
+            try:
+                carbon.RemoveEventHandler(handler_ref)
+            except Exception:
+                pass
+            return False, f"RegisterEventHotKey status={status}"
+
+        _carbon_hotkey_lib = carbon
+        _carbon_hotkey_callback = callback
+        _carbon_hotkey_handler_ref = handler_ref
+        _carbon_hotkey_ref = hotkey_ref
+        return True, "Carbon RegisterEventHotKey active"
+    except Exception as e:
+        return False, str(e)
 
 
 _PID_FILE = TMP_DIR / "shellframe.pid"
@@ -4431,6 +5076,8 @@ def _register_global_hotkey():
             pass
         return False
 
+    _last_hotkey_dispatch = 0.0
+
     def _toggle_visibility():
         try:
             is_active = bool(NSApp and NSApp.isActive())
@@ -4479,6 +5126,19 @@ def _register_global_hotkey():
         except Exception as e:
             print(f"[shellframe] hotkey toggle failed: {e}", file=sys.stderr)
 
+    def _fire_hotkey(source: str):
+        # Carbon hotkeys should consume the key event, but keep a tiny
+        # duplicate guard in case the NSEvent local monitor also observes it
+        # while ShellFrame is foreground.
+        nonlocal _last_hotkey_dispatch
+        now = time.time()
+        if now - _last_hotkey_dispatch < 0.12:
+            _dlog("hotkey", f"duplicate ignored source={source}")
+            return
+        _last_hotkey_dispatch = now
+        _dlog("hotkey", f"pressed source={source}")
+        _toggle_visibility()
+
     def _matches(event) -> bool:
         try:
             if event.isARepeat():
@@ -4498,20 +5158,34 @@ def _register_global_hotkey():
         # Other apps have focus; global monitor can only observe, can't
         # swallow. We still react (toggle our app forward).
         if _matches(event):
-            _toggle_visibility()
+            _fire_hotkey("nsevent-global")
 
     def _local_handler(event):
         # Shellframe itself has focus; swallow the event so xterm doesn't
         # see Ctrl+⌥+Space.
         if _matches(event):
-            _toggle_visibility()
+            _fire_hotkey("nsevent-local")
             return None
         return event
 
     try:
-        m1 = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-            NSEventMaskKeyDown, _global_handler,
+        carbon_ok, carbon_msg = _register_carbon_hotkey(
+            lambda: _fire_hotkey("carbon")
         )
+        _dlog("hotkey", f"carbon register ok={carbon_ok}: {carbon_msg}")
+        print(f"[shellframe] hotkey carbon register ok={carbon_ok}: "
+              f"{carbon_msg}", file=sys.stderr)
+        m1 = None
+        if not carbon_ok:
+            m1 = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskKeyDown, _global_handler,
+            )
+            if m1 is None:
+                _dlog("hotkey", "NSEvent global monitor returned nil")
+                print("[shellframe] hotkey fallback failed: NSEvent global "
+                      "monitor returned nil", file=sys.stderr)
+            else:
+                _dlog("hotkey", "NSEvent global monitor fallback active")
         m2 = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
             NSEventMaskKeyDown, _local_handler,
         )
