@@ -150,7 +150,8 @@ DEFAULT_CONFIG = {
     ],
     "settings": {
         "fontSize": 14,
-        "language": "en"
+        "language": "en",
+        "master_turn_preamble_enabled": True
     },
     "idle_reaper": {
         "enabled": False,
@@ -326,6 +327,11 @@ def _canonical_cmd(cmd: str) -> str:
     return _autonomous_cmd(cmd)
 
 _DASH_RE = re.compile(r'(^|\s)[—–](?=\S)')
+MASTER_TURN_PREAMBLE = (
+    "ShellFrame master turn reminder: first understand the user's request. "
+    "If the task is non-trivial, parallelizable, or better handled by a worker, "
+    "run `sfctl list` and consider `sfctl delegate`; do not hard-route by keywords."
+)
 
 
 def _normalize_dashes(cmd: str) -> str:
@@ -1476,6 +1482,37 @@ class Api:
             pass
         return sid
 
+    def _master_turn_preamble_enabled(self) -> bool:
+        try:
+            settings = load_config().get("settings", {}) or {}
+            return settings.get("master_turn_preamble_enabled", True) is not False
+        except Exception:
+            return True
+
+    def _is_master_session(self, sid: str, s: Session | None = None) -> bool:
+        label = self._session_label(sid, s).strip()
+        folded = label.casefold()
+        return (
+            label.startswith("總控")
+            or folded.startswith("master")
+            or folded.startswith("user-facing")
+            or "user-facing" in folded
+        )
+
+    def _should_prepend_master_turn_preamble(self, sid: str, s: Session, data: str) -> bool:
+        if "\r" not in (data or ""):
+            return False
+        if not (data or "").rstrip("\r\n").strip():
+            return False
+        return (
+            self._master_turn_preamble_enabled()
+            and self._is_master_session(sid, s)
+            and self._should_inject_init(getattr(s, "cmd", ""))
+        )
+
+    def _wrap_master_turn_input(self, user_text: str) -> str:
+        return f"{MASTER_TURN_PREAMBLE}\n\n---\nUser message: {user_text}"
+
     def _handoff_target_sid(self, exclude_sids: set[str] | None = None) -> str:
         exclude_sids = exclude_sids or set()
         try:
@@ -2227,6 +2264,10 @@ class Api:
                     s.write(combined)
                     return
             # Not ready yet (login/auth flow) — pass through, keep _init_pending
+        if self._should_prepend_master_turn_preamble(sid, s, data):
+            user_text = data.rstrip('\r\n')
+            s.write(self._wrap_master_turn_input(user_text) + "\r")
+            return
         s.write(data)
 
     def consume_init_prompt_if_ready(self, sid: str) -> str:

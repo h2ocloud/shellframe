@@ -589,6 +589,13 @@
             <span style="font-size:11px;color:#565f89" data-i18n="completionNotificationsHint">Notify when an AI reply finishes while shellframe is not in the foreground</span>
           </div>
         </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="masterTurnPreamble">Master turn reminder</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-master-preamble"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="masterTurnPreambleHint">Remind master tabs to consider delegation before each AI turn</span>
+          </div>
+        </div>
       </div>
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
@@ -982,6 +989,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: 'show/hide',
       completionNotifications: 'Completion notifications',
       completionNotificationsHint: 'Notify when an AI reply finishes while shellframe is not in the foreground',
+      masterTurnPreamble: 'Master turn reminder',
+      masterTurnPreambleHint: 'Remind master tabs to consider delegation before each AI turn',
       idleCleanupTitle: 'Idle tab cleanup',
       idleCleanupDesc: 'Automatically summarize and close idle AI tabs. Protected/main tabs are kept.',
       idleAfter: 'Idle after',
@@ -1102,6 +1111,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: '顯示/隱藏',
       completionNotifications: '完成通知',
       completionNotificationsHint: 'AI 回覆完成且 shellframe 不在前景時通知',
+      masterTurnPreamble: '總控每輪提醒',
+      masterTurnPreambleHint: '每次總控送出 AI 輸入前提醒先判斷是否派工',
       idleCleanupTitle: '閒置頁籤自動清理',
       idleCleanupDesc: '自動摘要並關閉閒置 AI 頁籤。受保護頁籤與主頁籤會保留。',
       idleAfter: '閒置超過',
@@ -3171,6 +3182,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-complete-notify').classList.toggle(
       'on', s.completion_notifications !== false,
     );
+    // Master turn preamble — default on
+    document.getElementById('setting-master-preamble').classList.toggle(
+      'on', s.master_turn_preamble_enabled !== false,
+    );
     syncIdleReaperSettings();
     syncSettingsBridge();
     syncSettingsLineBridge();
@@ -3181,6 +3196,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       this.classList.toggle('on');
       config.settings = config.settings || {};
       config.settings.completion_notifications = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
+
+  document.getElementById('setting-master-preamble')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.master_turn_preamble_enabled = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
     });
 

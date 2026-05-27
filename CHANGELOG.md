@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.12.17 (2026-05-27)
+
+### Features
+- **Master sessions get a per-turn orchestration reminder** — user-facing master tabs now prepend a short configurable preamble before each submitted AI turn, reminding the agent to understand the request first, run `sfctl list` for non-trivial or parallel work, consider `sfctl delegate`, and avoid hard keyword routing. Telegram-forwarded turns follow the same rule, and Settings → General now has a localized toggle for `settings.master_turn_preamble_enabled`.
+
+### 新增
+- **總控 session 每輪輸入會收到派工提醒** — user-facing master tab 現在每次送出 AI 輸入前會加上一段可由 config 關閉的短 preamble，提醒 agent 先理解需求，非 trivial 或可並行時跑 `sfctl list`、考慮 `sfctl delegate`，且禁止硬 keyword routing。Telegram 轉送輸入也套用同規則，Settings → General 也新增中英切換開關對應 `settings.master_turn_preamble_enabled`。
+
 ## v0.12.16 (2026-05-27)
 
 ### Features

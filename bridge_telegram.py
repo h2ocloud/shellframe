@@ -275,6 +275,11 @@ def tg_api(token: str, method: str, data=None, timeout: float = 35) -> dict:
 
 _INIT_PROMPT_FILE = _Path(__file__).parent / "INIT_PROMPT.md"
 _DEFAULT_USER_PROMPT_PATHS = ["~/.claude/CLAUDE.md"]
+_MASTER_TURN_PREAMBLE = (
+    "ShellFrame master turn reminder: first understand the user's request. "
+    "If the task is non-trivial, parallelizable, or better handled by a worker, "
+    "run `sfctl list` and consider `sfctl delegate`; do not hard-route by keywords."
+)
 
 # Built-in defaults for the two user-editable prompts. Users override via
 # Settings UI; values persist in ~/.config/shellframe/config.json under
@@ -371,6 +376,26 @@ def _read_config() -> dict:
 def _read_settings() -> dict:
     """Read ~/.config/shellframe/config.json settings dict. Empty on failure."""
     return (_read_config().get("settings", {}) or {})
+
+
+def master_turn_preamble_enabled() -> bool:
+    settings = _read_settings()
+    return settings.get("master_turn_preamble_enabled", True) is not False
+
+
+def is_master_label(label: str) -> bool:
+    text = str(label or "").strip()
+    folded = text.casefold()
+    return (
+        text.startswith("總控")
+        or folded.startswith("master")
+        or folded.startswith("user-facing")
+        or "user-facing" in folded
+    )
+
+
+def wrap_master_turn_input(user_text: str) -> str:
+    return f"{_MASTER_TURN_PREAMBLE}\n\n---\nUser message: {user_text}"
 
 
 def get_ui_prompt() -> str:
@@ -2787,6 +2812,14 @@ class TelegramBridge(BridgeBase):
                 payload = forwarded
         else:
             payload = forwarded
+
+        if not init_prompt and master_turn_preamble_enabled() and is_master_label(slot.label):
+            master_preamble = wrap_master_turn_input(forwarded)
+            slot.sent_texts.append(master_preamble)
+            if wrap_with_preamble and payload != forwarded:
+                payload = payload.rsplit(forwarded, 1)[0] + master_preamble
+            else:
+                payload = master_preamble
 
         if wrap_with_preamble:
             marker_token = f"TG_REPLY_{uuid.uuid4().hex[:8]}"
