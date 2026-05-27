@@ -274,6 +274,7 @@ def tg_api(token: str, method: str, data=None, timeout: float = 35) -> dict:
 
 
 _INIT_PROMPT_FILE = _Path(__file__).parent / "INIT_PROMPT.md"
+_DEFAULT_USER_PROMPT_PATHS = ["~/.claude/CLAUDE.md"]
 
 # Built-in defaults for the two user-editable prompts. Users override via
 # Settings UI; values persist in ~/.config/shellframe/config.json under
@@ -355,16 +356,21 @@ DEFAULT_TG_PROMPT = (
 )
 
 
-def _read_settings() -> dict:
-    """Read ~/.config/shellframe/config.json settings dict. Empty on failure."""
+def _read_config() -> dict:
+    """Read ~/.config/shellframe/config.json without importing main.py."""
     try:
         cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
         if cfg_file.exists():
-            return (json.loads(cfg_file.read_text(encoding='utf-8'))
-                    .get("settings", {}) or {})
+            cfg = json.loads(cfg_file.read_text(encoding='utf-8'))
+            return cfg if isinstance(cfg, dict) else {}
     except Exception:
         pass
     return {}
+
+
+def _read_settings() -> dict:
+    """Read ~/.config/shellframe/config.json settings dict. Empty on failure."""
+    return (_read_config().get("settings", {}) or {})
 
 
 def get_ui_prompt() -> str:
@@ -384,6 +390,41 @@ def get_tg_prompt() -> str:
     return DEFAULT_TG_PROMPT
 
 
+def get_user_prompt_paths() -> list[str]:
+    raw = _read_config().get("user_prompt_paths", _DEFAULT_USER_PROMPT_PATHS)
+    if not isinstance(raw, list):
+        return list(_DEFAULT_USER_PROMPT_PATHS)
+    return [str(p).strip() for p in raw if str(p or "").strip()]
+
+
+def load_user_instructions(max_chars: int | None = None) -> str:
+    chunks: list[str] = []
+    for raw_path in get_user_prompt_paths():
+        try:
+            path = _Path(raw_path).expanduser()
+            if not path.exists() or not path.is_file():
+                continue
+            text = path.read_text(encoding='utf-8').strip()
+            if text:
+                chunks.append(f"### {raw_path}\n{text}")
+        except Exception:
+            continue
+    combined = "\n\n".join(chunks).strip()
+    if max_chars is not None and max_chars > 0 and len(combined) > max_chars:
+        return combined[:max_chars].rstrip()
+    return combined
+
+
+def append_user_instructions(prompt: str, max_chars: int | None = None) -> str:
+    user_prompt = load_user_instructions(max_chars=max_chars)
+    if not user_prompt:
+        return (prompt or "").strip()
+    base = (prompt or "").strip()
+    if not base:
+        return f"## User Instructions\n\n{user_prompt}"
+    return f"{base}\n\n## User Instructions\n\n{user_prompt}"
+
+
 def _load_init_prompt_raw() -> str:
     """Raw INIT_PROMPT.md read. Kept for migration / backward compat until
     all callers switch to get_ui_prompt(). Empty on failure."""
@@ -396,7 +437,7 @@ def _load_init_prompt_raw() -> str:
 def load_init_prompt() -> str:
     """Back-compat alias. Returns the resolved UI prompt (config > disk >
     built-in default) so existing callers keep working without edits."""
-    return get_ui_prompt()
+    return append_user_instructions(get_ui_prompt())
 
 
 @dataclass

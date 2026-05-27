@@ -119,6 +119,15 @@ same context. Do not close a worker just because its task is done; let idle tab
 cleanup summarize and remove unused workers later, unless the user explicitly
 asks to close it or the tab is broken/noisy.
 
+Workers should return user-ready drafts, reports, lookup results, or operation
+conclusions immediately in a ready-to-forward form. The master can pass those
+results back to the user while other delegated work continues.
+
+Workers should search from known project paths. Avoid broad scans of `/Users`,
+`~/Library`, `~/Library/Mobile Documents`, Mail, Messages, Photos, or other
+macOS protected data folders because they can trigger privacy prompts for the
+ShellFrame Python process.
+
 ### Telegram Bridge
 
 1. Open Settings → Telegram Bridge

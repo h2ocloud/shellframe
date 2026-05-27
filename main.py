@@ -130,6 +130,7 @@ AGENT_ROLE_ALIASES = {
 }
 
 DEFAULT_CONFIG = {
+    "user_prompt_paths": ["~/.claude/CLAUDE.md"],
     "presets": [
         # Shell first so the "+" menu has a sensible default for any user.
         {"name": "PowerShell", "cmd": "powershell", "icon": "\u25b6"} if IS_WIN else
@@ -204,6 +205,14 @@ def _ensure_agent_roster_defaults(cfg: dict) -> bool:
         cfg["agent_roster"] = raw
         changed = True
     return changed
+
+
+def _ensure_user_prompt_paths_default(cfg: dict) -> bool:
+    raw = cfg.get("user_prompt_paths")
+    if isinstance(raw, list):
+        return False
+    cfg["user_prompt_paths"] = list(DEFAULT_CONFIG["user_prompt_paths"])
+    return True
 
 
 _DEFAULT_AI_PRESETS = [
@@ -358,6 +367,8 @@ def load_config():
             cfg_defaults_changed = True
         if _ensure_agent_roster_defaults(cfg):
             cfg_defaults_changed = True
+        if _ensure_user_prompt_paths_default(cfg):
+            cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
                 save_config(cfg)
@@ -367,6 +378,7 @@ def load_config():
     cfg = DEFAULT_CONFIG.copy()
     _ensure_idle_reaper_defaults(cfg)
     _ensure_agent_roster_defaults(cfg)
+    _ensure_user_prompt_paths_default(cfg)
     return cfg
 
 
@@ -1196,7 +1208,7 @@ class Api:
     def _delegate_prompt(role: str, entry: dict, task: str) -> str:
         label = entry.get("label") or role
         responsibility = entry.get("responsibility") or "依總控派工處理指定任務"
-        return (
+        prompt = (
             f"你是「{label}」worker。\n"
             f"職責：{responsibility}\n\n"
             "這是 ShellFrame 總控派工。請維持自己的職責邊界，不要主動接手其他 worker 的領域。\n\n"
@@ -1204,10 +1216,19 @@ class Api:
             f"{task.strip()}\n\n"
             "工作規則：\n"
             "- 先確認需要的上下文與現有狀態；避免重複建立、重複送出或覆蓋。\n"
+            "- 查檔案時先限定已知專案路徑；不要廣掃整個 /Users、~/Library、~/Library/Mobile Documents、Mail、Messages、Photos 等 macOS 受保護資料夾，避免觸發系統隱私權限彈窗。找不到路徑時先回報需要總控補上下文。\n"
             "- 若是外部可見操作，只有在使用者文字已明確授權時才送出；否則先 dry-run 或回報需要確認。\n"
             "- 若任務需要其他 worker，回報總控改派，不要自行擴張範圍。\n"
-            "- 完成後回覆：結果、驗證、變更/送出項目、阻塞、是否建議納入 memory/skill/docs。\n"
+            "- 若產出是可直接給使用者的草稿、報告、查詢結果或操作結論，先用「可直接轉貼」格式回覆，讓總控能立即轉交，不要等其他平行工作完成。\n"
+            "- 完成後回覆：可直接轉貼內容、結果、驗證、變更/送出項目、阻塞、是否建議納入 memory/skill/docs。\n"
         )
+        user_prompt = bridge_telegram.load_user_instructions(max_chars=2000)
+        if user_prompt:
+            prompt += (
+                "\n## User Instructions (excerpt)\n\n"
+                f"{user_prompt}\n"
+            )
+        return prompt
 
     def delegate_task(self, role: str, task: str) -> dict:
         task = str(task or "").strip()
@@ -1872,7 +1893,7 @@ class Api:
 
     def _get_init_prompt(self) -> str:
         """Load init prompt, strip TG section if bridge not active."""
-        prompt = bridge_telegram.load_init_prompt()
+        prompt = bridge_telegram.get_ui_prompt()
         if not prompt:
             return ""
         if not self.bridge or not self.bridge.active:
@@ -1881,6 +1902,7 @@ class Api:
             if idx > 0:
                 prompt = prompt[:idx].rstrip()
                 prompt += "\n\nAcknowledge briefly and wait for the user's first message."
+        prompt = bridge_telegram.append_user_instructions(prompt)
         return prompt
 
     def close_session(

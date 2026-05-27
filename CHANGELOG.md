@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.12.15 (2026-05-27)
+
+### Features
+- **Local user instructions are injected into new AI sessions** — ShellFrame config now supports `user_prompt_paths` with `~/.claude/CLAUDE.md` as the default. New AI sessions append existing user prompt files after the ShellFrame init prompt under `## User Instructions`, and delegated worker prompts include a 2000-character excerpt so workers inherit the user's language, style, and delegation preferences.
+
+### 新增
+- **本機使用者指令會注入新 AI session** — ShellFrame config 現在支援 `user_prompt_paths`，預設為 `~/.claude/CLAUDE.md`。新 AI session 會在 ShellFrame init prompt 後以 `## User Instructions` 追加存在的使用者 prompt；派工 worker prompt 也會附上前 2000 字元摘要，讓 worker 繼承使用者語言、風格與派工偏好。
+
+## v0.12.14 (2026-05-27)
+
+### Fixes
+- **Worker results can return before full aggregation** — delegation prompts and docs now tell workers to return user-ready drafts, reports, lookup results, and operation conclusions immediately in a ready-to-forward form, so the master can keep the conversation responsive while other parallel work continues.
+
+### 修正
+- **Worker 可先回可用成果，不必等總控完整統整** — 派工 prompt 與文件現在要求 worker 若產出可直接給使用者的草稿、報告、查詢結果或操作結論，要先用可轉貼格式回覆，讓總控能一邊回應使用者、一邊繼續等其他平行工作。
+
+## v0.12.13 (2026-05-27)
+
+### Fixes
+- **Worker file searches avoid macOS privacy prompts** — delegated worker prompts and the built-in ShellFrame init prompt now tell agents to search from known project roots and avoid broad scans of `/Users`, `~/Library`, iCloud Drive, Mail, Messages, Photos, and other protected folders. This prevents the ShellFrame Python process from repeatedly triggering macOS data-access popups during research tasks.
+
+### 修正
+- **Worker 查檔避免觸發 macOS 隱私權彈窗** — 派工 wrapper prompt 與 ShellFrame 內建 init prompt 現在會要求 agent 從已知專案根目錄查找，避免廣掃 `/Users`、`~/Library`、iCloud Drive、Mail、Messages、Photos 等受保護資料夾，降低研究任務時 ShellFrame Python process 反覆跳資料存取權限視窗的情況。
+
 ## v0.12.12 (2026-05-27)
 
 ### Fixes
