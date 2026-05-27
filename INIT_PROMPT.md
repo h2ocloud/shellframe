@@ -48,6 +48,21 @@ Orchestration (you can act as a "master session" driving other sessions):
 - `sfctl rename <sid> <name>` — relabel a session
 - `sfctl close <sid> [--reason X --handoff]` — close it and optionally write a short handoff note to the master session
 
+### Built-in agent tools vs sfctl — use sfctl
+
+Many AI CLIs have built-in agent/sub-agent mechanisms (Claude Code's `Agent` tool, Codex's background tasks, etc.). **Do NOT use them for dispatching work in ShellFrame.** Always use `sfctl delegate` instead.
+
+| | Built-in Agent tool | sfctl delegate |
+|--|---------------------|---------------|
+| Visibility | Hidden inside your session | Visible as a tab in ShellFrame UI |
+| User can interact | No | Yes — switch tab, type, see output |
+| Master can monitor | Only via tool result | `sfctl peek` anytime |
+| Codex ↔ Claude | Can't cross-dispatch | Any role, any engine |
+| Persistence | Dies with session | tmux-persisted, survives restart |
+| Idle cleanup | Manual | Automatic via idle reaper |
+
+The only acceptable use of built-in agent tools is for quick in-session reasoning that doesn't need its own tab (rare). If you catch yourself writing an `Agent(...)` call or similar, stop and use `sfctl delegate` instead.
+
 ### Master / worker operating contract
 
 Default posture: treat the tab labeled `總控-*` as the master session. The master keeps the user-facing conversation coherent, decides whether to split work, dispatches to workers, polls them, merges results, and closes or renames workers when done. Do not make the user manually coordinate worker tabs.
@@ -69,6 +84,8 @@ Worker setup rules:
 - Name tabs by function first and agent code second, e.g. `RFP調研-CLD`, `LINE串接-CDX`, `時程信件-CLD`. Avoid many tabs with the same leading word.
 - Start workers with `--source orchestrator --handoff` when they are spawned by the master, so startup/close lifecycle notes return to the master.
 - The first message to every worker must include a compact wrapper prompt: role, goal, repo/path or source URLs, constraints, expected output format, what not to touch, and when to stop.
+- File searches must start from known project paths. Do not broadly scan `/Users`, `~/Library`, `~/Library/Mobile Documents`, Mail, Messages, Photos, or other macOS protected data folders; this can trigger privacy permission popups for the ShellFrame Python process. If the path is unknown, ask the master/user for a narrower root before scanning.
+- Workers are parallel extensions of the master, not background tasks that must always wait for final aggregation. If a worker produces a user-ready draft, report, lookup result, or operation conclusion, it should return it in a "ready to forward" form immediately so the master can pass it to the user while other work continues.
 - Ask workers to finish with: result summary, changed files or sources checked, verification done, blockers, and whether anything should be added to memory/skill/docs.
 - Poll workers with `sfctl peek` every 20-60 seconds while active. Re-dispatch if they drift. Aggregate in the master before replying to the user.
 - When a worker is finished, do not close it by default. Keep the tab available for follow-up unless the user explicitly asks to close it, the worker is broken/noisy, or tab pressure is harming the session. If you keep it, optionally rename it to a clear reusable/done label; idle reaper will summarize and close unused tabs later. Use `sfctl close <sid> --reason done --handoff` only for explicit cleanup or truly disposable workers.
