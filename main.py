@@ -1240,9 +1240,7 @@ class Api:
 
         prompt = self._delegate_prompt(resolved_role, entry, task)
         session._startup_trust_pending = False
-        session.write(prompt)
-        time.sleep(0.05)
-        session.write("\r")
+        self._send_text_to_session(session, prompt, submit=True)
         return {
             "success": True,
             "message": f"Delegated to {label} ({sid})",
@@ -2017,6 +2015,74 @@ class Api:
             except Exception:
                 pass
         s.write("\r")
+
+    def _send_text_to_session(self, s: Session, text: str, submit: bool = False) -> bool:
+        """Send orchestrator text as a paste, then optionally press Enter.
+
+        Direct PTY writes are fine for keystrokes, but large AI prompts can leave
+        Claude/Codex in a paste/multiline state where the following CR is ignored
+        or treated as another line. tmux paste-buffer with bracketed paste gives
+        terminal apps one coherent paste event; Enter is sent only after that
+        paste has completed.
+        """
+        text = str(text or "")
+        if text:
+            now = time.time()
+            s._startup_trust_pending = False
+            s._last_activity_time = now
+            s._last_user_activity_time = now
+
+        tmux_name = getattr(s, "_tmux_name", None)
+        if not IS_WIN and tmux_name and shutil.which("tmux"):
+            buffer_name = f"shellframe-send-{s.sid}-{os.getpid()}-{int(time.time() * 1000)}"
+            pasted = False
+            try:
+                if text:
+                    loaded = subprocess.run(
+                        ["tmux", "load-buffer", "-b", buffer_name, "-"],
+                        input=text.encode("utf-8", errors="replace"),
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if loaded.returncode != 0:
+                        raise RuntimeError(loaded.stderr.decode("utf-8", errors="replace").strip())
+                    pasted_result = subprocess.run(
+                        ["tmux", "paste-buffer", "-d", "-p", "-r", "-b", buffer_name, "-t", tmux_name],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if pasted_result.returncode != 0:
+                        raise RuntimeError(pasted_result.stderr.decode("utf-8", errors="replace").strip())
+                    pasted = True
+                if submit:
+                    if text:
+                        time.sleep(min(0.5, max(0.08, len(text) / 50000.0)))
+                    entered = subprocess.run(
+                        ["tmux", "send-keys", "-t", tmux_name, "Enter"],
+                        capture_output=True,
+                        timeout=3,
+                    )
+                    if entered.returncode != 0:
+                        raise RuntimeError(entered.stderr.decode("utf-8", errors="replace").strip())
+                _dlog("send", f"tmux paste sid={s.sid} len={len(text)} submit={submit}")
+                return True
+            except Exception as e:
+                _dlog("send", f"tmux paste failed sid={s.sid} target={tmux_name!r}: {e}")
+                try:
+                    subprocess.run(["tmux", "delete-buffer", "-b", buffer_name], capture_output=True, timeout=1)
+                except Exception:
+                    pass
+                if pasted:
+                    if submit:
+                        s.write("\r")
+                    return False
+
+        if text:
+            s.write(text)
+        if submit:
+            time.sleep(0.05)
+            s.write("\r")
+        return False
 
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
@@ -4323,10 +4389,7 @@ class Api:
                 if not s:
                     return {"success": False, "message": f"No such session: {sid}"}
                 s._startup_trust_pending = False
-                s.write(text)
-                if submit:
-                    time.sleep(0.05)
-                    s.write("\r")
+                self._send_text_to_session(s, text, submit=submit)
                 return {"success": True, "message": f"Sent {len(text)} chars to {sid}"}
             except Exception as e:
                 return {"success": False, "message": f"Send failed: {e}"}

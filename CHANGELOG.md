@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.12.12 (2026-05-27)
+
+### Fixes
+- **`sfctl send` and `sfctl delegate` now submit large prompts reliably** — orchestrator dispatch now uses tmux paste buffers with bracketed paste for tmux-backed sessions, then sends Enter only after the paste completes. This avoids the previous direct PTY write path where large or multiline AI prompts could appear in the worker input box but fail to submit until Howard pressed Enter manually.
+
+### 修正
+- **`sfctl send` 與 `sfctl delegate` 現在能穩定送出大段 prompt** — 總控派工改用 tmux paste buffer 加 bracketed paste，貼上完成後才送 Enter。避免舊的 PTY raw write 在長文字或多行 AI prompt 時，文字已進入 worker 輸入框但沒有自動送出、需要 Howard 手動按 Enter 的問題。
+
 ## v0.12.11 (2026-05-27)
 
 ### Fixes
