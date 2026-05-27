@@ -5071,27 +5071,43 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       items.forEach(p => {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #3b4261;border-radius:8px;background:#1f2335';
+        const status = p.installed
+          ? (p.enabled ? 'Enabled' : 'Installed, disabled')
+          : (p.bundled ? 'Available' : 'Not installed');
         row.innerHTML = `
           <div style="flex:1;min-width:0">
-            <div style="font-weight:600;color:#c0caf5">${esc(p.name || '')} <span style="color:#565f89;font-size:11px">${esc(p.version || '')}</span></div>
+            <div style="font-weight:600;color:#c0caf5">${esc(p.name || '')} <span style="color:#565f89;font-size:11px">${esc(p.installed_version || p.version || '')}</span></div>
             <div style="font-size:12px;color:#a9b1d6">${esc(p.description || '')}</div>
+            <div style="font-size:11px;color:${p.enabled ? '#9ece6a' : '#565f89'};margin-top:4px">${esc(status)}</div>
           </div>
-          <button class="btn btn-ghost" data-plugin-action="${p.installed ? 'uninstall' : 'install'}">${p.installed ? 'Uninstall' : 'Install'}</button>`;
-        const btn = row.querySelector('button');
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          try {
-            const raw = p.installed
-              ? await pywebview.api.marketplace_uninstall(p.name)
-              : await pywebview.api.marketplace_install(p.name, p.repo_url);
-            const res = JSON.parse(raw);
-            alert(res.message || (res.ok ? 'OK' : 'Failed'));
-            await renderMarketplace();
-          } catch (e) {
-            alert(String(e));
-          } finally {
-            btn.disabled = false;
-          }
+          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            ${p.installed
+              ? `<button class="btn btn-ghost" data-plugin-action="${p.enabled ? 'disable' : 'enable'}">${p.enabled ? 'Disable' : 'Enable'}</button>
+                 <button class="btn btn-ghost" data-plugin-action="uninstall">Uninstall</button>`
+              : `<button class="btn btn-ghost" data-plugin-action="install">${p.bundled ? 'Install / Enable' : 'Install'}</button>`}
+          </div>`;
+        row.querySelectorAll('button[data-plugin-action]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+              const action = btn.dataset.pluginAction;
+              const raw = action === 'uninstall'
+                ? await pywebview.api.marketplace_uninstall(p.name)
+                : action === 'enable'
+                  ? await pywebview.api.marketplace_enable(p.name, true)
+                  : action === 'disable'
+                    ? await pywebview.api.marketplace_enable(p.name, false)
+                    : await pywebview.api.marketplace_install(p.name, p.repo_url);
+              const res = JSON.parse(raw);
+              alert(res.message || (res.ok ? 'OK' : 'Failed'));
+              if (res.ok) window.location.reload();
+              else await renderMarketplace();
+            } catch (e) {
+              alert(String(e));
+            } finally {
+              btn.disabled = false;
+            }
+          });
         });
         list.appendChild(row);
       });

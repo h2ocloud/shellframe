@@ -8,6 +8,7 @@
       "author": "Howard Wu",
       "repo_url": "https://github.com/h2ocloud/RokidBridge",
       "install_path": "shellframe_plugins/rokid-bridge",
+      "bundled": true,
       "version": "0.17.0",
       "tags": ["hardware", "bridge", "ar"],
       "extra_setup": "After install, run `./mac/install.sh` inside the cloned dir to register the listener LaunchAgent + Stop hook."

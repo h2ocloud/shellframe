@@ -131,6 +131,10 @@ AGENT_ROLE_ALIASES = {
 
 DEFAULT_CONFIG = {
     "user_prompt_paths": ["~/.claude/CLAUDE.md"],
+    "plugins": {
+        "installed": [],
+        "enabled": []
+    },
     "presets": [
         # Shell first so the "+" menu has a sensible default for any user.
         {"name": "PowerShell", "cmd": "powershell", "icon": "\u25b6"} if IS_WIN else
@@ -213,6 +217,58 @@ def _ensure_user_prompt_paths_default(cfg: dict) -> bool:
         return False
     cfg["user_prompt_paths"] = list(DEFAULT_CONFIG["user_prompt_paths"])
     return True
+
+
+def _plugins_config(cfg: dict) -> dict:
+    raw = cfg.get("plugins")
+    return raw if isinstance(raw, dict) else {}
+
+
+def _installed_plugin_dirs() -> list[str]:
+    root = APP_DIR / "shellframe_plugins"
+    if not root.exists():
+        return []
+    names = []
+    for sub in sorted(root.iterdir()):
+        if sub.is_dir() and (sub / "manifest.json").exists():
+            names.append(sub.name)
+    return names
+
+
+def _rokid_has_existing_setup() -> bool:
+    return (
+        (Path.home() / "Library" / "LaunchAgents" / "com.h2ocloud.rokid-bridge-listener.plist").exists()
+        or (Path.home() / ".claude" / "channels" / "rokid-bridge").exists()
+    )
+
+
+def _legacy_enabled_plugins_for_migration() -> list[str]:
+    names = []
+    for name in _installed_plugin_dirs():
+        if name == "rokid-bridge" and not _rokid_has_existing_setup():
+            continue
+        names.append(name)
+    return names
+
+
+def _ensure_plugins_defaults(cfg: dict) -> bool:
+    raw = cfg.get("plugins")
+    if not isinstance(raw, dict):
+        migrated = _legacy_enabled_plugins_for_migration()
+        cfg["plugins"] = {
+            "installed": migrated,
+            "enabled": migrated,
+        }
+        return True
+    changed = False
+    for key in ("installed", "enabled"):
+        if not isinstance(raw.get(key), list):
+            raw[key] = []
+            changed = True
+    if cfg.get("plugins") is not raw:
+        cfg["plugins"] = raw
+        changed = True
+    return changed
 
 
 _DEFAULT_AI_PRESETS = [
@@ -369,6 +425,8 @@ def load_config():
             cfg_defaults_changed = True
         if _ensure_user_prompt_paths_default(cfg):
             cfg_defaults_changed = True
+        if _ensure_plugins_defaults(cfg):
+            cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
                 save_config(cfg)
@@ -379,6 +437,7 @@ def load_config():
     _ensure_idle_reaper_defaults(cfg)
     _ensure_agent_roster_defaults(cfg)
     _ensure_user_prompt_paths_default(cfg)
+    _ensure_plugins_defaults(cfg)
     return cfg
 
 
@@ -2874,7 +2933,13 @@ class Api:
         try:
             import plugin_sdk
             importlib.reload(plugin_sdk)
-            self._plugins = plugin_sdk.PluginRegistry(APP_DIR / "shellframe_plugins", self._plugin_api())
+            cfg = load_config()
+            enabled = _plugins_config(cfg).get("enabled") or []
+            self._plugins = plugin_sdk.PluginRegistry(
+                APP_DIR / "shellframe_plugins",
+                self._plugin_api(),
+                enabled_plugins=[str(name) for name in enabled],
+            )
             self._plugins.load_all()
             _dlog("plugins", f"reloaded; {len(self._plugins.plugins)} plugin(s)")
         except Exception as e:
@@ -2938,16 +3003,57 @@ class Api:
         try:
             mk_path = APP_DIR / "shellframe_plugins" / "_marketplace.json"
             data = json.loads(mk_path.read_text(encoding="utf-8")) if mk_path.exists() else {"plugins": []}
+            cfg = load_config()
+            plugin_cfg = _plugins_config(cfg)
+            installed_cfg = set(plugin_cfg.get("installed") or [])
+            enabled_cfg = set(plugin_cfg.get("enabled") or [])
             installed = {
                 p.manifest.name: p.manifest.version
                 for p in (self._plugins.plugins if self._plugins else [])
             }
             for p in data.get("plugins", []):
-                p["installed"] = p.get("name") in installed
-                p["installed_version"] = installed.get(p.get("name"), "")
+                name = p.get("name")
+                target = APP_DIR / "shellframe_plugins" / re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
+                local_manifest = target / "manifest.json"
+                local_version = ""
+                if local_manifest.exists():
+                    try:
+                        local_version = json.loads(local_manifest.read_text(encoding="utf-8")).get("version", "")
+                    except Exception:
+                        local_version = ""
+                bundled = bool(p.get("bundled"))
+                p["installed"] = name in installed_cfg or (not bundled and local_manifest.exists())
+                p["enabled"] = name in enabled_cfg
+                p["installed_version"] = installed.get(name) or local_version
             return json.dumps(data, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"error": str(e), "plugins": []}, ensure_ascii=False)
+
+    def _marketplace_plugin_entry(self, name: str) -> dict:
+        mk_path = APP_DIR / "shellframe_plugins" / "_marketplace.json"
+        data = json.loads(mk_path.read_text(encoding="utf-8")) if mk_path.exists() else {"plugins": []}
+        for p in data.get("plugins", []):
+            if p.get("name") == name:
+                return p
+        return {}
+
+    def _set_plugin_installed_enabled(self, name: str, installed: bool | None = None, enabled: bool | None = None) -> dict:
+        cfg = load_config()
+        _ensure_plugins_defaults(cfg)
+        plugin_cfg = _plugins_config(cfg)
+        installed_set = {str(v) for v in (plugin_cfg.get("installed") or [])}
+        enabled_set = {str(v) for v in (plugin_cfg.get("enabled") or [])}
+        if installed is not None:
+            (installed_set.add if installed else installed_set.discard)(name)
+        if enabled is not None:
+            (enabled_set.add if enabled else enabled_set.discard)(name)
+        if enabled is True:
+            installed_set.add(name)
+        plugin_cfg["installed"] = sorted(installed_set)
+        plugin_cfg["enabled"] = sorted(enabled_set)
+        cfg["plugins"] = plugin_cfg
+        save_config(cfg)
+        return cfg
 
     def marketplace_install(self, name: str, repo_url: str) -> str:
         """Install a plugin by cloning it into shellframe_plugins/<name>."""
@@ -2956,13 +3062,18 @@ class Api:
             return json.dumps({"ok": False, "message": "invalid plugin name"})
         target = APP_DIR / "shellframe_plugins" / safe_name
         if target.exists():
-            return json.dumps({"ok": False, "message": f"{safe_name} already installed"})
+            if not (target / "manifest.json").exists():
+                return json.dumps({"ok": False, "message": f"{safe_name} already exists but is not a plugin"})
+            self._set_plugin_installed_enabled(safe_name, installed=True, enabled=True)
+            self._plugins_reload()
+            return json.dumps({"ok": True, "message": f"enabled {safe_name}"})
         try:
             subprocess.check_output(
                 ["git", "clone", "--depth", "1", repo_url, str(target)],
                 stderr=subprocess.STDOUT,
                 timeout=60,
             )
+            self._set_plugin_installed_enabled(safe_name, installed=True, enabled=True)
             self._plugins_reload()
             return json.dumps({"ok": True, "message": f"installed {safe_name}"})
         except subprocess.CalledProcessError as e:
@@ -2970,15 +3081,30 @@ class Api:
         except Exception as e:
             return json.dumps({"ok": False, "message": str(e)})
 
+    def marketplace_enable(self, name: str, enabled: bool) -> str:
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
+        if not safe_name or safe_name != name:
+            return json.dumps({"ok": False, "message": "invalid plugin name"})
+        target = APP_DIR / "shellframe_plugins" / safe_name
+        if not target.exists() or not (target / "manifest.json").exists():
+            return json.dumps({"ok": False, "message": f"{safe_name} not installed"})
+        self._set_plugin_installed_enabled(safe_name, installed=True, enabled=bool(enabled))
+        self._plugins_reload()
+        return json.dumps({"ok": True, "message": f"{'enabled' if enabled else 'disabled'} {safe_name}"})
+
     def marketplace_uninstall(self, name: str) -> str:
         safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
         if not safe_name or safe_name != name:
             return json.dumps({"ok": False, "message": "invalid plugin name"})
         target = APP_DIR / "shellframe_plugins" / safe_name
-        if not target.exists() or not target.is_dir():
+        entry = self._marketplace_plugin_entry(safe_name)
+        bundled = bool(entry.get("bundled"))
+        if not bundled and (not target.exists() or not target.is_dir()):
             return json.dumps({"ok": False, "message": f"{safe_name} not installed"})
         try:
-            shutil.rmtree(target)
+            self._set_plugin_installed_enabled(safe_name, installed=False, enabled=False)
+            if target.exists() and target.is_dir() and not bundled:
+                shutil.rmtree(target)
             self._plugins_reload()
             return json.dumps({"ok": True, "message": f"removed {safe_name}"})
         except Exception as e:

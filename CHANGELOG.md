@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.12.16 (2026-05-27)
+
+### Features
+- **Rokid Bridge is no longer enabled by default** — ShellFrame now gates plugins through `plugins.installed` and `plugins.enabled` config lists. Bundled marketplace entries stay available, but Rokid only loads after the user installs/enables it; existing Rokid setups with a LaunchAgent or channel directory are migrated as enabled.
+
+### 新增
+- **Rokid Bridge 不再預設啟用** — ShellFrame 現在以 `plugins.installed` 與 `plugins.enabled` config 清單控制 plugin。Marketplace 仍會列出 bundled plugin，但 Rokid 必須由使用者安裝/啟用後才載入；已有 LaunchAgent 或 channel 目錄的既有 Rokid 設定會自動遷移為啟用。
+
 ## v0.12.15 (2026-05-27)
 
 ### Features

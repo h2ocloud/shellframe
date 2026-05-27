@@ -96,9 +96,10 @@ class PluginRegistry:
     """Loads plugins, dispatches hooks. The host (main.py) holds one
     instance and calls dispatch_*() at the appropriate sites."""
 
-    def __init__(self, plugin_dir: Path, api: PluginHostAPI):
+    def __init__(self, plugin_dir: Path, api: PluginHostAPI, enabled_plugins: list[str] | None = None):
         self.plugin_dir = plugin_dir
         self.api = api
+        self.enabled_plugins = set(enabled_plugins or [])
         self.plugins: list[SFPlugin] = []
 
     def load_all(self) -> None:
@@ -106,6 +107,8 @@ class PluginRegistry:
             return
         for sub in sorted(self.plugin_dir.iterdir()):
             if not sub.is_dir():
+                continue
+            if sub.name not in self.enabled_plugins:
                 continue
             try:
                 self._load_one(sub)
