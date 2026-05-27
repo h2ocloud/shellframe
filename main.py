@@ -98,6 +98,13 @@ DEFAULT_AGENT_ROSTER = {
         "responsibility": "Obsidian/Notion 知識庫整理、memory/skill 沉澱建議",
         "handoff": True,
     },
+    "規格站": {
+        "label": "規格站-CDX",
+        "cmd": SHELLFRAME_CODEX_CMD,
+        "agent_code": "CDX",
+        "responsibility": "Garden CMS 規格站維護：specData.ts 資料補充、Vue UI 改造、build/deploy 到 ToolHub",
+        "handoff": True,
+    },
 }
 
 AGENT_ROLE_ALIASES = {
@@ -127,6 +134,11 @@ AGENT_ROLE_ALIASES = {
     "knowledge": "知庫",
     "obsidian": "知庫",
     "知庫": "知庫",
+    "spec": "規格站",
+    "spec-site": "規格站",
+    "garden": "規格站",
+    "garden-cms": "規格站",
+    "規格站": "規格站",
 }
 
 DEFAULT_CONFIG = {

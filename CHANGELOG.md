@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.12.18 (2026-05-27)
+
+### Fixes
+- **Spec-site delegation is part of the default roster** — new ShellFrame configs now include the `規格站` role by default, mapped to `規格站-CDX` with the shared Codex launcher command, and role aliases such as `spec`, `garden`, and `garden-cms` resolve to it.
+
+### 修正
+- **規格站派工納入預設 roster** — 新 ShellFrame config 現在會預設包含 `規格站` 角色，對應 `規格站-CDX` 並使用共用 Codex launcher command；`spec`、`garden`、`garden-cms` 等 alias 也會解析到此角色。
+
 ## v0.12.17 (2026-05-27)
 
 ### Features
