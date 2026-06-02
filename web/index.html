@@ -50,6 +50,31 @@
     box-shadow: 0 0 6px #f7768e, 0 0 2px #f7768e;
     animation: busy-pulse 1.6s ease-in-out infinite;
   }
+  /* ── Explicit agent signal lights (override heuristic) — 4 distinct hues ── */
+  /* 🔵 WORKING — blue, steady pulse: the agent is actively running this task */
+  .busy-dot.sig-working {
+    background: #7aa2f7;
+    box-shadow: 0 0 6px #7aa2f7, 0 0 2px #7aa2f7;
+    animation: busy-pulse 1.0s ease-in-out infinite;
+  }
+  /* 🟢 DONE — green, solid (no pulse): task finished, reclaimable */
+  .busy-dot.sig-done {
+    background: #9ece6a;
+    box-shadow: 0 0 7px #9ece6a, 0 0 3px #9ece6a;
+    opacity: 1;
+  }
+  /* 🔴 DECISION — red, urgent fast pulse: needs Howard / master decision */
+  .busy-dot.sig-decision {
+    background: #f7768e;
+    box-shadow: 0 0 7px #f7768e, 0 0 3px #f7768e;
+    animation: busy-pulse .7s ease-in-out infinite;
+  }
+  /* 🟡 STUCK — orange, slow pulse: blocked / waiting on external condition */
+  .busy-dot.sig-stuck {
+    background: #ff9e64;
+    box-shadow: 0 0 7px #ff9e64, 0 0 3px #ff9e64;
+    animation: busy-pulse 1.9s ease-in-out infinite;
+  }
   @keyframes busy-pulse {
     0%, 100% { opacity: .55; }
     50%      { opacity: 1; }
@@ -4150,6 +4175,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     /↑\s*\d+\s*tokens/,          // Claude active token counter
     /\(\d+s\s*[·•]\s*esc/i,       // "(15s · esc to interrupt)"
   ];
+  // Explicit agent signal markers — the worker prints one of these on its own
+  // line to set this tab's light. Stateful: the last seen marker wins and
+  // persists until the agent emits a new one (so a marker that scrolls out of
+  // the viewport doesn't drop the colour back to the heuristic).
+  // Matches a line that is ONLY the marker (tolerates leading bullet/cursor
+  // glyphs Claude/Codex prepend), so the instruction text — which mentions the
+  // markers inline inside prose — never false-triggers.
+  const SIGNAL_RE = /^[\s>❯›⏺•*\-]*\[\[SF:(WORKING|GREEN|RED|YELLOW)(?::[^\]]*)?\]\]\s*$/;
+  const SIGNAL_DOT_CLASS = {
+    WORKING: 'sig-working', GREEN: 'sig-done', RED: 'sig-decision', YELLOW: 'sig-stuck',
+  };
   // Permission / menu prompt markers (waiting for user input)
   const ATTENTION_MARKERS = [
     /❯\s*\d+\.\s/,
@@ -4165,7 +4201,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Only scan the BOTTOM rows of the *current viewport* — not scrollback.
     // Activity markers (spinners, "esc to interrupt", "Working (Xs") all
     // appear at the bottom of Claude's UI, not in past history.
-    if (!s.term || !s.term.buffer || !s.term.buffer.active) return { active: false, attention: false };
+    if (!s.term || !s.term.buffer || !s.term.buffer.active) return { active: false, attention: false, signal: null };
     const buf = s.term.buffer.active;
     const rows = s.term.rows || 24;
     // Bottom of viewport = baseY + rows. Scan last 12 rows of viewport only.
@@ -4176,6 +4212,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const line = buf.getLine(r);
       if (line) txt += line.translateToString(true) + '\n';
     }
+    // Signal markers are line-anchored and can scroll fast, so scan a wider
+    // window (last 60 viewport rows) and take the LAST match — WORKING is
+    // printed at turn start, GREEN/RED/YELLOW at turn end (later on screen).
+    let signal = null;
+    const sigStart = Math.max(buf.baseY, bottom - 60);
+    for (let r = sigStart; r < bottom; r++) {
+      const line = buf.getLine(r);
+      if (!line) continue;
+      const m = SIGNAL_RE.exec(line.translateToString(true));
+      if (m) signal = m[1];
+    }
     let active = false, attention = false;
     for (const re of ACTIVITY_MARKERS) {
       if (re.test(txt)) { active = true; break; }
@@ -4183,7 +4230,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     for (const re of ATTENTION_MARKERS) {
       if (re.test(txt)) { attention = true; break; }
     }
-    return { active, attention };
+    return { active, attention, signal };
   }
 
   setInterval(() => {
@@ -4202,19 +4249,36 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
       }
 
-      // Path B: screen content scan (also catches "needs attention")
+      // Path B: screen content scan (also catches "needs attention" + signal)
       let isAttention = false;
+      // Always scan for explicit signal markers (cheap, line-anchored) so the
+      // light tracks the agent's self-declared state even while it's "busy".
+      const scan = scanTerminalActivity(s);
+      if (scan.signal) s._signal = scan.signal;  // remember the latest explicit marker
       if (!isBusy || !s._wasBusy) {
-        const scan = scanTerminalActivity(s);
         if (scan.active) isBusy = true;
         if (scan.attention) isAttention = true;
       }
       s._wasBusy = isBusy;
 
+      // A resting signal (done/decision/stuck) goes STALE the moment the agent
+      // picks the task back up: it's "working now", not finished. Clear it so a
+      // 🟢 from a prior turn can't linger over a tab that's actively running.
+      if (isBusy && s._signal && s._signal !== 'WORKING') s._signal = null;
+
       // The dot toggles on for either active or attention state
       const dotOn = isBusy || isAttention;
-      // Style: orange = active, yellow = attention (waiting on input)
-      const dotClass = isAttention && !isBusy ? 'on attention' : (dotOn ? 'on' : '');
+      // Priority: 🔵 working (heuristic activity OR explicit WORKING) — a running
+      // tab is ALWAYS blue. A resting explicit signal (green/red/orange) shows
+      // only while the tab is idle. Otherwise fall back to the heuristic.
+      let dotClass;
+      if (isBusy) {
+        dotClass = 'sig-working';
+      } else if (s._signal && SIGNAL_DOT_CLASS[s._signal]) {
+        dotClass = SIGNAL_DOT_CLASS[s._signal];
+      } else {
+        dotClass = isAttention ? 'on attention' : '';
+      }
 
       if (s._busy === dotOn && s._dotClass === dotClass) continue;
       s._busy = dotOn;

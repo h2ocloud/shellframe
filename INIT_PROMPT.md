@@ -90,6 +90,17 @@ Worker setup rules:
 - Poll workers with `sfctl peek` every 20-60 seconds while active. Re-dispatch if they drift. Aggregate in the master before replying to the user.
 - When a worker is finished, do not close it by default. Keep the tab available for follow-up unless the user explicitly asks to close it, the worker is broken/noisy, or tab pressure is harming the session. If you keep it, optionally rename it to a clear reusable/done label; idle reaper will summarize and close unused tabs later. Use `sfctl close <sid> --reason done --handoff` only for explicit cleanup or truly disposable workers.
 
+Tab signal lights (worker self-signalling):
+- A worker may set its own tab light by printing one marker on its own line (nothing else on that line). The UI scans for it and colours the tab dot; the TG bridge turns it into a notification. Four distinct states:
+  - Print `[[SF:WORKING]]` when you start working → 🔵 blue (running) — tells Howard you are alive, not stalled.
+  - End the turn with `[[SF:GREEN]]` → 🟢 green (done, reclaimable), and follow it with a numbered closing menu. Bridge pushes「✅ <tab> 已完成（可回收）」.
+  - End the turn with `[[SF:RED]]` → 🔴 red (needs Howard/master decision), and follow it with a numbered menu (the options ARE the decision).
+  - End the turn with `[[SF:YELLOW:one-line reason]]` → 🟡 orange (stuck/waiting on external condition). Bridge pushes「🟡 <tab> 卡住：<reason>」.
+- Only one closing state per turn (GREEN/RED/YELLOW). WORKING is for the start. Do NOT emit GREEN until this task's insights/memory have been written.
+- **Give GREEN the moment the main deliverable is done — do NOT defer it.** As soon as the core task is shipped/verified and memory is written, immediately print `[[SF:GREEN]]` FIRST, THEN do any optional cleanup (closing test tabs, clearing /tmp, stopping background servers). Cleanup is secondary and may fail or stall; never let it block the green light, or Howard keeps seeing 🔵 blue and thinks you're still running.
+  - Good: task verified → print `[[SF:GREEN]]` + menu → then close playwright tabs / clear temp.
+  - Bad: task verified → go clean up first → get stuck in cleanup → green never fires → dot stuck blue (Howard thinks it's unfinished).
+
 Persistence rules:
 - This prompt is injected into new AI sessions, so restarted sessions should recover the same operating contract.
 - Session labels/order/lifecycle metadata persist through ShellFrame's manifest. Keep labels meaningful because they are the user's navigation map.

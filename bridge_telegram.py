@@ -516,6 +516,7 @@ class SessionSlot:
         self.has_user_msg = False
         self.pending_menu = False  # True if last extract found a menu prompt
         self.pending_menu_options = []  # [{"num": "1", "text": "..."}]
+        self.last_signal = ""  # last [[SF:...]] state we already pushed (dedup)
         self.awaiting_response = False  # True between user msg and first AI response extraction
         self.pending_raw = ""
         self.expect_marker = False
@@ -829,6 +830,43 @@ class TelegramBridge(BridgeBase):
             )
         except Exception as e:
             _blog(f"[notify] failed: {e}\n")
+
+    def _signal_desktop_notify(self, slot, state: str, reason: str = ""):
+        """Post a macOS banner for an explicit agent signal (GREEN/RED/YELLOW)
+        so Howard doesn't have to watch Telegram — the desktop pops『做完了／
+        要我決策／卡住』. Reuses the osascript path from _maybe_notify_completion;
+        unlike completion banners this fires even when ShellFrame is frontmost
+        (Howard may be on a different tab) but still respects the
+        completion_notifications toggle. Called once per state transition
+        (caller dedups via slot.last_signal). macOS only."""
+        if _sys.platform != "darwin":
+            return
+        settings = _read_settings()
+        if not settings.get("completion_notifications", True):
+            return
+        label = (slot.label or slot.sid or "session").replace('"', "'")
+        reason = (reason or "").replace('"', "'")
+        if state == "GREEN":
+            title, body = f"✅ {label} 完成", "任務完成，可回收"
+        elif state == "RED":
+            title, body = f"🔴 {label} 需要你決策", "點開選單做決定"
+        elif state == "YELLOW":
+            title, body = f"🟡 {label} 卡住", (reason or "等待外部條件")
+        else:
+            return
+        try:
+            import subprocess as _sp
+            script = (
+                f'display notification "{body}" '
+                f'with title "{title}" '
+                f'sound name "Glass"'
+            )
+            _sp.Popen(
+                ["osascript", "-e", script],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+        except Exception as e:
+            _blog(f"[signal-notify] failed: {e}\n")
 
     def _maybe_auto_compact(self, slot):
         """If this slot is a Claude Code session running low on context,
@@ -1407,6 +1445,68 @@ class TelegramBridge(BridgeBase):
         marked = clean_raw[start + len(slot.reply_start_marker):end].strip()
         return clean_mobile_marker_response(marked)
 
+    # Explicit agent signal marker — a worker prints one of these on its own
+    # line to declare this tab's state. Tolerates leading bullet/cursor glyphs
+    # (⏺ ❯ › • * -) that Claude/Codex prepend to the first line of a reply.
+    # Line-anchored so the wrapper instructions (which mention the markers
+    # inline inside prose) never match.
+    _SIGNAL_RE = re.compile(
+        r'^[\s>❯›⏺•*\-]*\[\[\s*SF\s*:\s*(WORKING|GREEN|RED|YELLOW)\s*'
+        r'(?::\s*([^\]]*?))?\s*\]\]\s*$',
+        re.IGNORECASE)
+
+    def _detect_and_fire_signal(self, slot, new_lines):
+        """Detect a [[SF:STATE]] transition in freshly extracted lines and,
+        once per transition, fire its notifications: a macOS desktop banner
+        (GREEN/RED/YELLOW) and — for GREEN/YELLOW — a Telegram banner broadcast
+        to every known chat. RED's TG side is the existing numbered-menu push.
+
+        Broadcasts rather than routing by active tab because a master-delegated
+        worker has no active-chat mapping (has_user_msg stays False) — yet its
+        「done / stuck」signal is exactly what Howard wants pushed proactively.
+        Returns new_lines with the raw marker line(s) stripped out."""
+        sig_state, sig_reason, kept = self._detect_signal_in_lines(new_lines)
+        if sig_state and sig_state != getattr(slot, "last_signal", ""):
+            slot.last_signal = sig_state
+            _blog(f"[signal] {slot.sid} state={sig_state} reason={sig_reason!r}\n")
+            try:
+                self._signal_desktop_notify(slot, sig_state, sig_reason)
+            except Exception as e:
+                _blog(f"[signal-notify] {slot.sid} failed: {e}\n")
+            banner = ""
+            if sig_state == "GREEN":
+                banner = f"✅ {slot.label} 已完成（可回收）"
+            elif sig_state == "YELLOW":
+                banner = (f"🟡 {slot.label} 卡住"
+                          + (f"：{sig_reason}" if sig_reason else ""))
+            if banner:
+                for chat_id in set(self._user_chat.values()):
+                    try:
+                        r = tg_api(self.config.bot_token, "sendMessage",
+                                   {"chat_id": chat_id, "text": banner})
+                        _blog(f"[signal-tg] {slot.sid} {sig_state} "
+                              f"chat={chat_id} ok={r.get('ok')}\n")
+                    except Exception as e:
+                        _blog(f"[signal-tg] {slot.sid} failed: {e}\n")
+        return kept
+
+    def _detect_signal_in_lines(self, lines):
+        """Scan a list of freshly extracted output lines for [[SF:STATE]] /
+        [[SF:STATE:reason]] markers. Returns (state_upper, reason, kept_lines)
+        where kept_lines is the input with all marker-only lines removed (so the
+        raw marker is never forwarded to TG as noise). The LAST marker wins —
+        WORKING is printed at turn start, GREEN/RED/YELLOW at turn end."""
+        state, reason = "", ""
+        kept = []
+        for line in lines:
+            m = self._SIGNAL_RE.match(line)
+            if m:
+                state = m.group(1).upper()
+                reason = (m.group(2) or "").strip()
+            else:
+                kept.append(line)
+        return state, reason, kept
+
     def _detect_menu_prompt(self, slot) -> str:
         """Detect a numbered menu prompt waiting for user input.
         Returns formatted menu string or empty if none found."""
@@ -1644,10 +1744,18 @@ class TelegramBridge(BridgeBase):
                         # Drain old content so it won't be re-extracted later
                         # when a TG message arrives. This advances _history_offset
                         # and marks existing AI blocks as "sent".
+                        # Master-delegated workers live here (Howard never DM'd
+                        # the tab), so this is the ONLY place their [[SF:...]]
+                        # signals can be caught — run signal detection on the
+                        # drained lines so done/stuck/decision still notifies.
                         now = time.time()
                         idle = now - slot.last_output_time
                         if idle >= 1.0:
-                            self._extract_new_text(slot)
+                            drained = self._extract_new_text(slot)
+                            try:
+                                self._detect_and_fire_signal(slot, drained)
+                            except Exception as e:
+                                _blog(f"[signal] {sid} drain-detect failed: {e}\n")
                             slot.last_output_time = 0
                             slot.first_output_time = 0
                         continue
@@ -1731,6 +1839,12 @@ class TelegramBridge(BridgeBase):
                         log_msg += f"  [{l}]\n"
                     _blog(log_msg)
                 else:
+                    continue
+
+                # Fire desktop + TG banner on a [[SF:STATE]] transition and strip
+                # the raw marker out of the forwarded text.
+                new_lines = self._detect_and_fire_signal(slot, new_lines)
+                if not new_lines:
                     continue
 
                 clean = '\n'.join(new_lines)
