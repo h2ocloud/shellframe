@@ -343,6 +343,7 @@
   }
   .bridge-field input:focus, .bridge-field textarea:focus { border-color: #7aa2f7; }
   .bridge-field textarea { min-height: 50px; resize: vertical; }
+  .bridge-help { font-size: 10px; color: #565f89; line-height: 1.4; margin: -4px 0 8px 92px; }
   .toggle-switch {
     width: 36px; height: 20px; border-radius: 10px; background: #3b4261;
     cursor: pointer; position: relative; border: none; transition: background .2s;
@@ -597,6 +598,20 @@
           </div>
         </div>
       </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="delegationTitle">Delegation</div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label data-i18n="masterPreambleTextLabel">自訂派工提示文字</label>
+          <textarea id="setting-master-turn-preamble" rows="6" style="font-size:11px" data-i18n-placeholder="masterPreambleTextPlaceholder" placeholder="[ShellFrame — Master Delegation Protocol]&#10;Before responding, evaluate whether this task should be delegated:&#10;1. Understand the user's intent — what outcome do they actually need?&#10;2. Check available workers: `sfctl list`&#10;3. Delegate when the task is: non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.&#10;4. Handle directly only if: it's a quick answer, a clarification, or coordination that requires master context.&#10;5. To delegate: `sfctl delegate <Role> &quot;<task description>&quot;`&#10;Do NOT hard-route by keywords. Prefer delegation over doing everything yourself."></textarea>
+        </div>
+        <div class="bridge-help" data-i18n="masterPreambleTextHelp">留空使用內建預設</div>
+        <div class="bridge-field">
+          <label data-i18n="autoDelegateLabel">自動派工（實驗性）</label>
+          <button class="toggle-switch" id="setting-auto-delegate"></button>
+        </div>
+        <div class="bridge-help" data-i18n="autoDelegateHelp">啟用後，總控自動將研究/分析/排查任務 delegate 給 worker。預設關閉。</div>
+      </div>
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
       </div>
@@ -681,17 +696,24 @@
           <label data-i18n="bridgeSystemPrompt">System Prompt</label>
           <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
         </div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="tgPerTurnPreamble">Per-turn preamble</label>
-          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPreamblePlaceholder" placeholder="Prepended to every TG message sent to the AI. Leave empty to turn off."></textarea>
-        </div>
-        <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4" data-i18n="tgPreambleHelp">
-          Every non-command TG message is wrapped with this preamble before hitting the AI. Anthropic caches unchanged prefixes — cost is near-zero after first use. Good place for persona / response-style rules. Empty = off.
-        </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-primary" id="btn-settings-bridge-connect" data-i18n="connect">Connect</button>
           <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
+      </div>
+
+      <div class="bridge-setup" style="margin-top:10px">
+        <h4 data-i18n="tgAdvancedTitle">Telegram Bridge 進階</h4>
+        <div class="bridge-field">
+          <label data-i18n="showTgWrapperLabel">顯示 TG Wrapper 標記</label>
+          <button class="toggle-switch on" id="setting-show-tg-wrapper"></button>
+        </div>
+        <div class="bridge-help" data-i18n="showTgWrapperHelp">TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴</div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label data-i18n="tgPromptLabel">自訂 TG Prompt</label>
+          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPromptPlaceholder" placeholder="[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c"></textarea>
+        </div>
+        <div class="bridge-help" data-i18n="tgPromptHelp">每輪 TG 訊息的格式/協作提示。留空使用內建預設</div>
       </div>
 
       <!-- STT (voice transcription) -->
@@ -1044,8 +1066,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgPrefixHint: '[TG @user]: message',
       bridgeSystemPrompt: 'System Prompt',
       tgPerTurnPreamble: 'Per-turn preamble',
-      tgPreamblePlaceholder: 'Prepended to every TG message sent to the AI. Leave empty to turn off.',
-      tgPreambleHelp: 'Every non-command TG message is wrapped with this preamble before hitting the AI. Anthropic caches unchanged prefixes — cost is near-zero after first use. Good place for persona / response-style rules. Empty = off.',
+      tgPreamblePlaceholder: 'Prepended to every TG message sent to the AI. Leave empty to use the built-in default.',
+      tgPreambleHelp: 'Every non-command TG message is wrapped with this preamble before hitting the AI. Leave empty to use the built-in default.',
+      delegationTitle: 'Delegation',
+      tgAdvancedTitle: 'Telegram Bridge Advanced',
+      showTgWrapperLabel: 'Show TG Wrapper tag',
+      showTgWrapperHelp: 'Show the [SF-TG wrapper] prefix when TG messages are injected into the local terminal',
+      masterPreambleEnabledLabel: 'Enable delegation prompt',
+      masterPreambleEnabledHelp: 'Inject the master turn preamble on every TG message to remind the AI to use sfctl delegate',
+      masterPreambleTextLabel: 'Custom delegation prompt',
+      masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
+      masterPreambleTextHelp: 'Leave empty to use the built-in default',
+      tgPromptLabel: 'Custom TG Prompt',
+      tgPromptPlaceholder: "[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c",
+      tgPromptHelp: 'Formatting and collaboration prompt for each TG message. Leave empty to use the built-in default',
+      autoDelegateLabel: 'Auto delegate (experimental)',
+      autoDelegateHelp: 'When enabled, the master automatically delegates research, analysis, and debugging tasks to workers. Default is off.',
       connect: 'Connect',
       disconnect: 'Disconnect',
       connected: 'Connected',
@@ -1166,8 +1202,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgPrefixHint: '[TG @使用者]: 訊息',
       bridgeSystemPrompt: '系統提示',
       tgPerTurnPreamble: '每則訊息前綴提示',
-      tgPreamblePlaceholder: '送進 AI 前加在每則 TG 訊息前。留空代表關閉。',
-      tgPreambleHelp: '每則非指令 TG 訊息送進 AI 前，會先包上這段提示。Anthropic 會快取不變前綴，第一次之後成本很低。適合放 persona / 回覆風格規則；留空代表關閉。',
+      tgPreamblePlaceholder: '送進 AI 前加在每則 TG 訊息前。留空使用內建預設。',
+      tgPreambleHelp: '每則非指令 TG 訊息送進 AI 前，會先包上這段提示。留空使用內建預設。',
+      delegationTitle: '派工設定',
+      tgAdvancedTitle: 'Telegram Bridge 進階',
+      showTgWrapperLabel: '顯示 TG Wrapper 標記',
+      showTgWrapperHelp: 'TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴',
+      masterPreambleEnabledLabel: '啟用派工提示',
+      masterPreambleEnabledHelp: '每輪 TG 訊息注入 master turn preamble（提醒 AI 使用 sfctl delegate）',
+      masterPreambleTextLabel: '自訂派工提示文字',
+      masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
+      masterPreambleTextHelp: '留空使用內建預設',
+      tgPromptLabel: '自訂 TG Prompt',
+      tgPromptPlaceholder: "[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c",
+      tgPromptHelp: '每輪 TG 訊息的格式/協作提示。留空使用內建預設',
+      autoDelegateLabel: '自動派工（實驗性）',
+      autoDelegateHelp: '啟用後，總控自動將研究/分析/排查任務 delegate 給 worker。預設關閉。',
       connect: '連線',
       disconnect: '斷線',
       connected: '已連線',
@@ -1731,8 +1781,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       let inputBuf = '', inputTimer = null;
       const textarea = pane.querySelector('textarea.xterm-helper-textarea');
       if (textarea) {
-        textarea.addEventListener('compositionstart', () => { composing = true; });
-        textarea.addEventListener('compositionend', () => { composing = false; });
+        textarea.addEventListener('compositionstart', () => { composing = true; _imeComposing = true; });
+        textarea.addEventListener('compositionend', () => { composing = false; _imeComposing = false; });
       }
       term.onData(data => {
         // IME race: on WKWebView, compositionend sometimes fires AFTER the
@@ -1862,8 +1912,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       let inputBuf = '', inputTimer = null;
       const textarea = pane.querySelector('textarea.xterm-helper-textarea');
       if (textarea) {
-        textarea.addEventListener('compositionstart', () => { composing = true; });
-        textarea.addEventListener('compositionend', () => { composing = false; });
+        textarea.addEventListener('compositionstart', () => { composing = true; _imeComposing = true; });
+        textarea.addEventListener('compositionend', () => { composing = false; _imeComposing = false; });
       }
       term.onData(data => {
         // Same IME-race guard as createSession: compositionend can fire after
@@ -2978,6 +3028,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // or after the 3s cap. Refusing to steal when activeElement is in a
   // modal / settings input / xterm internal element keeps the guard from
   // fighting legitimate user clicks.
+  let _imeComposing = false;
   let _refocusGuardId = null;
   let _refocusHardCapId = null;
   let _pasteEnterListenerAttached = false;
@@ -3037,6 +3088,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _refocusHardCapId = null;
     }
     const grab = () => {
+      if (_imeComposing) return true;
       if (!activeId || !sessions[activeId]) return true;  // nothing to do
       const s = sessions[activeId];
       const ta = s.pane && s.pane.querySelector('textarea.xterm-helper-textarea');
@@ -3159,12 +3211,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => {
       b.classList.toggle('active', Math.abs(parseFloat(b.dataset.scale) - cur) < 0.01);
     });
-    // Load editable prompts (UI session + TG per-turn). Empty textarea means
-    // "fall through to built-in default"; see bridge_telegram.get_ui_prompt /
-    // get_tg_prompt for resolution order.
+    // Load editable prompts. Empty textarea means "use built-in default";
+    // see bridge_telegram prompt helpers for resolution order.
     const s = config.settings || {};
     document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
     document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
+    document.getElementById('setting-master-turn-preamble').value = s.master_turn_preamble ?? '';
     document.getElementById('setting-line-prompt').value = s.line_prompt ?? '';
     // Auto /compact (Claude) — default on; threshold default 15 (%)
     document.getElementById('setting-auto-compact').classList.toggle(
@@ -3183,8 +3235,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       'on', s.completion_notifications !== false,
     );
     // Master turn preamble — default on
-    document.getElementById('setting-master-preamble').classList.toggle(
-      'on', s.master_turn_preamble_enabled !== false,
+    setMasterPreambleToggleState(s.master_turn_preamble_enabled !== false);
+    document.getElementById('setting-show-tg-wrapper').classList.toggle(
+      'on', s.show_tg_wrapper !== false,
+    );
+    document.getElementById('setting-auto-delegate').classList.toggle(
+      'on', s.auto_delegate_enabled === true,
     );
     syncIdleReaperSettings();
     syncSettingsBridge();
@@ -3199,11 +3255,35 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       await pywebview.api.save_settings(JSON.stringify(config.settings));
     });
 
+  function setMasterPreambleToggleState(on) {
+    document.getElementById('setting-master-preamble').classList.toggle('on', on);
+  }
+
+  async function saveMasterPreambleEnabled(on) {
+    setMasterPreambleToggleState(on);
+    config.settings = config.settings || {};
+    config.settings.master_turn_preamble_enabled = on;
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+  }
+
   document.getElementById('setting-master-preamble')
+    .addEventListener('click', async function() {
+      await saveMasterPreambleEnabled(!this.classList.contains('on'));
+    });
+
+  document.getElementById('setting-show-tg-wrapper')
     .addEventListener('click', async function() {
       this.classList.toggle('on');
       config.settings = config.settings || {};
-      config.settings.master_turn_preamble_enabled = this.classList.contains('on');
+      config.settings.show_tg_wrapper = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
+
+  document.getElementById('setting-auto-delegate')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.auto_delegate_enabled = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
     });
 
@@ -3306,8 +3386,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Persist prompt textareas on blur so users don't need a save button.
   // Skip no-op blurs: if the value hasn't changed, don't touch config. And
   // if the key was never set AND the textarea is still empty, don't write
-  // "" — that would look like "user explicitly turned it off" to the
-  // Python side and suppress the built-in default prompt.
+  // "" — missing and empty both resolve to the built-in default.
   async function _savePromptField(key, el) {
     const cur = config.settings ? config.settings[key] : undefined;
     const next = el.value;
@@ -3322,6 +3401,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   document.getElementById('setting-tg-prompt').addEventListener('blur', (e) => {
     _savePromptField('tg_prompt', e.target);
+  });
+  document.getElementById('setting-master-turn-preamble').addEventListener('blur', (e) => {
+    _savePromptField('master_turn_preamble', e.target);
   });
   document.getElementById('setting-line-prompt').addEventListener('blur', (e) => {
     _savePromptField('line_prompt', e.target);
@@ -4942,6 +5024,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     // If update modal is shown, launcher opens after skip/update via callback
   }
+
+  // Re-focus xterm textarea when window regains focus (e.g. Cmd+Tab back).
+  // Delayed so the system can settle focus naturally first; skipped
+  // entirely during IME composition to avoid resetting 注音 state.
+  window.addEventListener('focus', () => {
+    setTimeout(() => {
+      if (_imeComposing) return;
+      if (!activeId || !sessions[activeId]) return;
+      const ta = sessions[activeId].pane &&
+                 sessions[activeId].pane.querySelector('textarea.xterm-helper-textarea');
+      if (ta && document.activeElement !== ta) {
+        try { ta.focus(); } catch(_) {}
+      }
+    }, 150);
+  });
 
   // Final save of active tab on window close — flush the debounced timer
   // and write synchronously so the next launch always restores correctly.

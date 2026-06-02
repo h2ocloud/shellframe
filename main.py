@@ -1523,7 +1523,39 @@ class Api:
         )
 
     def _wrap_master_turn_input(self, user_text: str) -> str:
-        return f"{MASTER_TURN_PREAMBLE}\n\n---\nUser message: {user_text}"
+        preamble = MASTER_TURN_PREAMBLE
+        if self.bridge:
+            try:
+                from bridge_telegram import get_master_turn_preamble
+                preamble = get_master_turn_preamble()
+            except Exception:
+                pass
+        show_tag = True
+        if self.bridge:
+            try:
+                from bridge_telegram import show_tg_wrapper
+                show_tag = show_tg_wrapper()
+            except Exception:
+                pass
+        tag = "[SF delegation prompt ↓]\n" if show_tag else ""
+        return f"{tag}{preamble}\n\n---\nUser message: {user_text}"
+
+    def _arm_awaiting_response(self, sid: str, data: str):
+        """Tell the bridge this session is awaiting an AI response so
+        completion notifications fire for local (non-TG) input too."""
+        if "\r" not in (data or ""):
+            return
+        if not (data or "").rstrip("\r\n").strip():
+            return
+        s = self.sessions.get(sid)
+        if not s or not self._should_inject_init(getattr(s, "cmd", "")):
+            return
+        if self.bridge:
+            slot = self.bridge.slots.get(sid)
+            if slot:
+                slot.awaiting_response = True
+                slot.last_write_ts = time.time()
+                slot.stall_warned = False
 
     def _handoff_target_sid(self, exclude_sids: set[str] | None = None) -> str:
         exclude_sids = exclude_sids or set()
@@ -1564,13 +1596,45 @@ class Api:
             target = self.sessions.get(target_sid)
             if not target:
                 return
-            lines = ["", "[ShellFrame 交接]", title]
+            lines = ["[ShellFrame 交接]", title]
             lines.extend(f"- {b}" for b in bullets if b)
             text = "\n".join(lines).rstrip() + "\n"
             _dlog("handoff", f"target={target_sid} title={title!r} bullets={len(bullets)}")
-            target.write(text + "\r", user_activity=False)
+            # Only inject into terminal when bridge is NOT active (local-only mode).
+            # When TG bridge is running, _bridge_send_handoff already delivers the
+            # notification; injecting multi-line text into the PTY input causes it to
+            # pile up in the user's input box without being submitted.
+            bridge_active = bool(self.bridge and getattr(self.bridge, "active", False))
+            if not bridge_active:
+                compact = " | ".join(line for line in lines if line.strip())
+                target.write(compact + "\r", user_activity=False)
+            self._bridge_send_handoff(text)
         except Exception as e:
             _dlog("handoff", f"write failed: {e}")
+
+    def _bridge_send_handoff(self, text: str):
+        """Send lifecycle handoff message via Telegram bridge."""
+        try:
+            bridge = self.bridge
+            if not bridge or not getattr(bridge, "active", False):
+                return
+            token = bridge.config.bot_token
+            if not token:
+                return
+            chat_ids = set((bridge._user_chat or {}).values())
+            if not chat_ids:
+                chat_ids = set(bridge.config.allowed_users or [])
+            if not chat_ids:
+                return
+            from bridge_telegram import tg_api
+            for chat_id in chat_ids:
+                tg_api(token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": text.strip(),
+                }, timeout=5)
+            _dlog("handoff", f"TG handoff sent to {len(chat_ids)} chats")
+        except Exception as e:
+            _dlog("handoff", f"TG send failed: {e}")
 
     def _start_idle_reaper(self):
         if self._idle_reaper_started:
@@ -2276,11 +2340,15 @@ class Api:
                     s.write(combined)
                     return
             # Not ready yet (login/auth flow) — pass through, keep _init_pending
-        if self._should_prepend_master_turn_preamble(sid, s, data):
+        should = self._should_prepend_master_turn_preamble(sid, s, data)
+        _dlog("preamble", f"sid={sid} should={should} label={self._session_label(sid, s)!r} is_master={self._is_master_session(sid, s)} inject_init={self._should_inject_init(getattr(s, 'cmd', ''))} enabled={self._master_turn_preamble_enabled()} data={data!r:.60}")
+        if should:
             user_text = data.rstrip('\r\n')
             s.write(self._wrap_master_turn_input(user_text) + "\r")
+            self._arm_awaiting_response(sid, data)
             return
         s.write(data)
+        self._arm_awaiting_response(sid, data)
 
     def consume_init_prompt_if_ready(self, sid: str) -> str:
         """If session has pending init prompt AND CLI looks ready, consume and return it.

@@ -276,15 +276,24 @@ def tg_api(token: str, method: str, data=None, timeout: float = 35) -> dict:
 _INIT_PROMPT_FILE = _Path(__file__).parent / "INIT_PROMPT.md"
 _DEFAULT_USER_PROMPT_PATHS = ["~/.claude/CLAUDE.md"]
 _MASTER_TURN_PREAMBLE = (
-    "ShellFrame master turn reminder: first understand the user's request. "
-    "If the task is non-trivial, parallelizable, or better handled by a worker, "
-    "run `sfctl list` and consider `sfctl delegate`; do not hard-route by keywords."
+    "[ShellFrame — Master Delegation Protocol]\n"
+    "Before responding, evaluate whether this task should be delegated:\n"
+    "1. Understand the user's intent — what outcome do they actually need?\n"
+    "2. Check available workers: `sfctl list`\n"
+    "3. Delegate when the task is: non-trivial, parallelizable, research-heavy, "
+    "or better suited to a specialist worker (Coding, 研究, 規格站, etc.).\n"
+    "4. Handle directly only if: it's a quick answer, a clarification, "
+    "or coordination that requires master context.\n"
+    "5. To delegate: `sfctl delegate <Role> \"<task description>\"`\n"
+    "Do NOT hard-route by keywords. Use judgment based on complexity and context. "
+    "Prefer delegation over doing everything yourself — the user expects "
+    "the master to orchestrate, not to be a single-threaded worker."
 )
 
 # Built-in defaults for the two user-editable prompts. Users override via
 # Settings UI; values persist in ~/.config/shellframe/config.json under
-# settings.{ui_prompt, tg_prompt}. A MISSING key falls through to these
-# defaults; an EMPTY string means the user explicitly turned it off.
+# settings.{ui_prompt, tg_prompt}. Missing or empty values fall through to
+# these defaults.
 DEFAULT_UI_PROMPT = (
     "You are running inside ShellFrame — a tabbed GUI terminal "
     "(pywebview + xterm.js + PTY via tmux). Source lives at "
@@ -383,6 +392,19 @@ def master_turn_preamble_enabled() -> bool:
     return settings.get("master_turn_preamble_enabled", True) is not False
 
 
+def get_master_turn_preamble() -> str:
+    settings = _read_settings()
+    custom = settings.get("master_turn_preamble")
+    if isinstance(custom, str) and custom.strip():
+        return custom.strip()
+    return _MASTER_TURN_PREAMBLE
+
+
+def show_tg_wrapper() -> bool:
+    settings = _read_settings()
+    return settings.get("show_tg_wrapper", True) is not False
+
+
 def is_master_label(label: str) -> bool:
     text = str(label or "").strip()
     folded = text.casefold()
@@ -395,7 +417,8 @@ def is_master_label(label: str) -> bool:
 
 
 def wrap_master_turn_input(user_text: str) -> str:
-    return f"{_MASTER_TURN_PREAMBLE}\n\n---\nUser message: {user_text}"
+    preamble = get_master_turn_preamble()
+    return f"{preamble}\n\n---\nUser message: {user_text}"
 
 
 def get_ui_prompt() -> str:
@@ -408,10 +431,11 @@ def get_ui_prompt() -> str:
 
 
 def get_tg_prompt() -> str:
-    """TG per-turn preamble. User config > built-in. Empty string = user off."""
+    """TG per-turn preamble. User config > built-in. Empty string = built-in."""
     settings = _read_settings()
-    if "tg_prompt" in settings:
-        return (settings.get("tg_prompt") or "").strip()
+    custom = settings.get("tg_prompt")
+    if isinstance(custom, str) and custom.strip():
+        return custom.strip()
     return DEFAULT_TG_PROMPT
 
 
@@ -1111,6 +1135,15 @@ class TelegramBridge(BridgeBase):
             return True
         if s.startswith(('└', '╰', '⎿')):
             return True
+        # Claude Code session-end UI: "✻ Cooked for Xs", "─ Worked for Xs"
+        if re.match(r'^[✻\*─\-]{1,2}\s*(cooked|worked|sautéed|churned|waddling|baking)\b', lower):
+            return True
+        # Claude Code rating prompt: "How is Claude doing this session?"
+        if 'how is claude doing this session' in lower:
+            return True
+        # Rating options line: "1: Bad    2: Fine    3: Good    0: Dismiss"
+        if re.match(r'^\d+:\s*\w+', s) and re.search(r'\d+:\s*(?:bad|fine|good|dismiss)', lower):
+            return True
         return False
 
     def _extract_new_text(self, slot):
@@ -1322,6 +1355,49 @@ class TelegramBridge(BridgeBase):
             except Exception:
                 pass
         clean_raw = strip_ansi(raw, sent_texts=[])
+        # 移除 wrapper 注入的指示文字裡那組「範例 marker」——它與真實標記同字串、
+        # 中間夾「 和 」，會污染 rfind，曾導致只截出指示中的「和」字。真實回應內文
+        # 不會是「start 和 end」這個 pattern，所以精準移除不會傷到正常回應。
+        if slot.reply_start_marker and slot.reply_end_marker:
+            clean_raw = clean_raw.replace(
+                f"{slot.reply_start_marker} 和 {slot.reply_end_marker}", " ")
+        start = clean_raw.rfind(slot.reply_start_marker)
+        if start < 0:
+            return ""
+        end = clean_raw.find(slot.reply_end_marker, start + len(slot.reply_start_marker))
+        if end < 0:
+            return ""
+        tail = clean_raw[end + len(slot.reply_end_marker):]
+        if tail.strip():
+            tail_lines = [l.strip() for l in tail.splitlines() if l.strip()]
+            if any(
+                not self._is_bridge_noise_line(line)
+                and line not in self.PROMPT_MARKERS
+                and line not in ('›', '❯', '>', '•', '⏺')
+                for line in tail_lines
+            ):
+                return ""
+        marked = clean_raw[start + len(slot.reply_start_marker):end].strip()
+        return clean_mobile_marker_response(marked)
+
+    def _extract_marked_mobile_reply_force(self, slot) -> str:
+        """Force-extract marker reply, ignoring tail content check.
+        Used as fallback after 30s when tail guard keeps blocking."""
+        if not slot.expect_marker or not slot.reply_start_marker or not slot.reply_end_marker:
+            return ""
+        raw = slot.pending_raw
+        if slot.peek_fn:
+            try:
+                raw += "\n" + (slot.peek_fn() or "")
+            except Exception:
+                pass
+        clean_raw = strip_ansi(raw, sent_texts=[])
+        # 移除 wrapper 注入的指示文字裡那組「範例 marker」——它與真實標記同字串、
+        # 中間夾「 和 」，會污染 rfind，曾導致只截出指示中的「和」字。真實回應內文
+        # 不會是「start 和 end」這個 pattern，所以精準移除不會傷到正常回應。
+        if slot.reply_start_marker and slot.reply_end_marker:
+            clean_raw = clean_raw.replace(
+                f"{slot.reply_start_marker} 和 {slot.reply_end_marker}", " ")
         start = clean_raw.rfind(slot.reply_start_marker)
         if start < 0:
             return ""
@@ -1586,6 +1662,14 @@ class TelegramBridge(BridgeBase):
                     if slot.expect_marker:
                         marked_reply = self._extract_marked_mobile_reply(slot)
                         if not marked_reply:
+                            # Don't reset timer forever — after 30s force-extract
+                            # by stripping tail guard (avoids permanent block when
+                            # rating prompt or other noise confuses the tail check).
+                            if total < 30.0:
+                                slot.last_output_time = now
+                                continue
+                            marked_reply = self._extract_marked_mobile_reply_force(slot)
+                        if not marked_reply:
                             slot.last_output_time = now
                             continue
                         # Drain pyte history so the same screen repaint is not
@@ -1600,6 +1684,7 @@ class TelegramBridge(BridgeBase):
                         slot.expect_marker = False
                         slot.reply_start_marker = ""
                         slot.reply_end_marker = ""
+                        slot.has_user_msg = False
                     else:
                         # Extract new text via screen diff (only final changes)
                         new_lines = self._extract_new_text(slot)
@@ -2842,9 +2927,20 @@ class TelegramBridge(BridgeBase):
             slot.reply_start_marker = ""
             slot.reply_end_marker = ""
 
-        # Write text first, then Enter after a brief delay
+        # Write text first, then Enter after a brief delay.
+        # When show_tg_wrapper is on, prefix with a visible tag so the
+        # local terminal operator can see that a wrapper was injected.
+        show_wrapper = show_tg_wrapper()
+        visible_payload = payload
+        if wrap_with_preamble and show_wrapper and payload != forwarded:
+            tag = "[SF-TG wrapper]"
+            visible_payload = f"{tag}\n{payload}"
+            slot.sent_texts.append(tag)
+        elif wrap_with_preamble and not show_wrapper:
+            visible_payload = payload
+
         def _send():
-            slot.write_fn(payload)
+            slot.write_fn(visible_payload)
             time.sleep(0.3)
             slot.write_fn("\r")
         threading.Thread(target=_send, daemon=True).start()

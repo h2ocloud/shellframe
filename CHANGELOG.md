@@ -1,5 +1,78 @@
 # Changelog
 
+## v0.13.3 (2026-06-02)
+
+### Fixes
+- **注音 (IME) composition no longer reset by the refocus guard** — the window-focus refocus guard and the periodic focus-steal `grab()` used to call `ta.focus()` mid-composition, wiping the in-progress 注音 buffer on WKWebView. Both now early-return while `_imeComposing` is true (set on `compositionstart`/`compositionend`), so Chinese input survives Cmd+Tab and refocus events.
+- **TG marker replies no longer blocked forever by Claude Code's session-end / rating UI** — the tail guard treated `✻ Cooked for Xs` / `─ Worked for Xs`, the `How is Claude doing this session?` rating prompt, and its `1: Bad  2: Fine ...` options line as "meaningful output after the marker", so it kept deferring the send indefinitely. These lines are now recognised as bridge noise, and a 30s fallback (`_extract_marked_mobile_reply_force`) force-extracts the reply if the tail guard is still blocking, so replies always reach mobile.
+
+### 修正
+- **注音輸入不再被 refocus guard 打斷** — 視窗 refocus 與週期性搶 focus 的 `grab()` 過去會在組字中途呼叫 `ta.focus()`，在 WKWebView 上清掉正在輸入的注音。兩者現在於 `_imeComposing`（由 `compositionstart`/`compositionend` 設定）為 true 時提早返回，Cmd+Tab 或視窗 refocus 都不會吃掉中文輸入。
+- **TG 標記回覆不再被 Claude Code 結束/評分畫面永久擋住** — tail guard 過去把 `✻ Cooked for Xs`／`─ Worked for Xs`、`How is Claude doing this session?` 評分提示與 `1: Bad  2: Fine ...` 選項列當成「marker 後還有正常輸出」，導致一直延後送出。現在這些列被視為 bridge 噪音，並加上 30s fallback（`_extract_marked_mobile_reply_force`）：tail guard 卡超過 30s 就強制截取回覆，確保訊息一定送達手機。
+
+## v0.13.2 (2026-06-01)
+
+### Fixes
+- **Marked TG replies no longer collapse to the word「和」** — the wrapper-injected instruction `…請放在 [[TG_REPLY_xxx]] 和 [[/TG_REPLY_xxx]] 之間` contains an example marker pair using the *same* token as the real reply markers. When the real reply markers got fragmented by TUI repaint, `rfind` matched the instruction's pair instead and extracted only the「和」between them. The extractor now strips that instruction pair (`start 和 end`) before locating the real reply.
+
+### 修正
+- **TG 標記回覆不再被截成「和」一個字** — wrapper 注入的指示文字 `…請放在 [[TG_REPLY_xxx]] 和 [[/TG_REPLY_xxx]] 之間` 裡的範例 marker 與真實標記同字串；當真實標記被終端重繪打斷時，`rfind` 會誤中指示裡那組、只截出中間的「和」。截取前先移除指示那組（`start 和 end`），再定位真實回覆。
+
+## v0.13.1 (2026-05-29)
+
+### Fixes
+- **Telegram replies now wait for the marker tail to settle** — the bridge no longer sends a marked TG reply as soon as it sees `[[TG_REPLY_...]] ... [[/...]]` if there is still meaningful output after the closing marker. This avoids half-finished messages reaching mobile when the CLI keeps writing after the marker.
+
+### 修正
+- **Telegram 回覆會等 marker 尾端穩定後再送出** — bridge 不會在看到 `[[TG_REPLY_...]] ... [[/...]]` 就立刻送出；如果關閉 marker 後面還有正常輸出，會先等，避免 CLI 還在輸出時手機就收到半截訊息。
+
+## v0.13.0 (2026-05-28)
+
+### Features
+- **Settings architecture cleanup** — Delegation settings (auto-delegate toggle, custom preamble textarea) moved from Telegram tab to General tab. Delegation is a master behavior, not TG-specific.
+- **Completion notifications for local sessions** — `_arm_awaiting_response()` now fires on local Enter keystrokes in AI sessions, so macOS notifications work regardless of whether input came from Telegram or the local terminal.
+- **Improved Master Delegation Protocol** — Default preamble rewritten as a structured 5-step evaluation (understand intent → check workers → delegate criteria → handle-directly criteria → delegate syntax).
+- **Versioning policy** — Added to README.md: MINOR for features, PATCH for fixes.
+
+### 新增
+- **設定架構整理** — 派工設定（自動派工 toggle、自訂派工提示 textarea）從 Telegram 分頁搬到「一般」。派工是總控行為，不是 TG 專屬。
+- **本地操作完成通知** — 本地鍵入 Enter 也會 arm bridge slot，macOS 通知不再只限 TG 來源訊息。
+- **改進 Master Delegation Protocol** — 預設 preamble 改為結構化 5 步判斷流程。
+- **版號規則** — 寫入 README.md：MINOR = 新功能，PATCH = 修 bug。
+
+## v0.12.21 (2026-05-28)
+
+### Features
+- **Telegram Bridge advanced settings UI** — Settings → Telegram Bridge now exposes `show_tg_wrapper`, `master_turn_preamble_enabled`, `master_turn_preamble`, `tg_prompt`, and experimental `auto_delegate_enabled`, all persisted under `settings` in `~/.config/shellframe/config.json`.
+- **Empty TG prompt fields use built-in defaults** — clearing `master_turn_preamble` or `tg_prompt` now falls back to ShellFrame's built-in prompt instead of disabling it.
+
+### 新增
+- **Telegram Bridge 進階設定 UI** — Settings → Telegram Bridge 現在可設定 `show_tg_wrapper`、`master_turn_preamble_enabled`、`master_turn_preamble`、`tg_prompt` 與實驗性的 `auto_delegate_enabled`，並寫入 `~/.config/shellframe/config.json` 的 `settings`。
+- **TG prompt 留空使用內建預設** — 清空 `master_turn_preamble` 或 `tg_prompt` 會回到 ShellFrame 內建提示，不再代表關閉。
+
+## v0.12.20 (2026-05-28)
+
+### Features
+- **`show_tg_wrapper` setting** — when `true` (default), TG messages injected into the local terminal are prefixed with `[SF-TG wrapper]` so the operator can see that a wrapper prompt was injected. Set to `false` to hide the tag.
+- **`master_turn_preamble` setting** — customizable text for the per-turn master delegation prompt. Falls back to the built-in default when not set. Use this to tune delegation aggressiveness.
+- **`tg_prompt` setting** — already existed, now documented: override the per-turn TG formatting/coordination prompt. Empty string disables it.
+
+### Fixes
+- **Local terminal output no longer forwarded to Telegram** — after a TG_REPLY marked response is extracted and sent, `has_user_msg` is reset to `False`. Subsequent local-only terminal activity is no longer flushed to TG, preventing noisy echo when the user switches to local operation.
+
+### 修正與新增
+- **`show_tg_wrapper` 設定** — 預設開啟，TG 訊息注入本地終端時會加上 `[SF-TG wrapper]` 前綴標記。設 `false` 可隱藏。
+- **`master_turn_preamble` 設定** — 可自訂每輪派工提示文字，不設就用內建預設值。
+- **本地操作不再轉發 TG** — TG_REPLY 送出後 `has_user_msg` 重設，避免本地噪音。
+
+## v0.12.19 (2026-05-28)
+
+### Fixes
+- **Idle reaper handoff messages now sent via Telegram** — when `keep_bridge_active` is true, lifecycle handoff messages (session closed notifications) are also sent to all connected Telegram users, so the operator doesn't have to watch the terminal to see handoffs.
+
+### 修正
+- **Idle reaper 交接訊息同步送 Telegram** — 當 `keep_bridge_active` 為 true 時，session 關閉的交接通知除了注入總控 terminal 外，也會同步推送到所有已連線的 Telegram 使用者，不需要手動轉貼。
+
 ## v0.12.18 (2026-05-27)
 
 ### Fixes

@@ -193,6 +193,19 @@ shellframe/
 | Config | JSON (`~/.config/shellframe/config.json`) |
 | IPC | File-based (`sfctl`) for in-session remote control |
 
+### Versioning
+
+Format: `MAJOR.MINOR.PATCH` (e.g. `0.13.0`)
+
+| Bump | When | Example |
+|---|---|---|
+| **MINOR** (`0.X.0`) | New feature, new Settings UI section, new bridge capability, architectural change | 0.12 → 0.13 |
+| **PATCH** (`0.0.X`) | Bug fix, copy/style tweak, existing feature refinement | 0.13.0 → 0.13.1 |
+
+- Always bump `version.json` **and** add a CHANGELOG entry (bilingual EN + ZH-TW).
+- Multiple patches within one session can share a single version bump.
+- MAJOR stays at `0` until a stable public release.
+
 ### Session persistence
 
 **macOS/Linux**: Every PTY runs inside a tmux session (`sf_s1`, `sf_s2`...). Close ShellFrame → tmux sessions survive. Next launch → automatic reattach with full scrollback.
