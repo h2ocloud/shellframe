@@ -287,7 +287,11 @@ _MASTER_TURN_PREAMBLE = (
     "5. To delegate: `sfctl delegate <Role> \"<task description>\"`\n"
     "Do NOT hard-route by keywords. Use judgment based on complexity and context. "
     "Prefer delegation over doing everything yourself — the user expects "
-    "the master to orchestrate, not to be a single-threaded worker."
+    "the master to orchestrate, not to be a single-threaded worker.\n"
+    "When reporting to the user, always refer to a worker by its tab label "
+    "(e.g.「點裝備優化」), never by sid (e.g. s48) — sid is only for your own "
+    "sfctl calls. If a handoff/report or sfctl output gives you only a sid, run "
+    "`sfctl list` to map it to the tab label before relaying it."
 )
 
 # Built-in defaults for the two user-editable prompts. Users override via

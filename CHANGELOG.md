@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.13.5 (2026-06-02)
+
+### Changes
+- **Restored「report to the user by tab label, not sid」to both master preambles** — the v0.13.3 refactor rewrote `bridge_telegram.py._MASTER_TURN_PREAMBLE` (into the 5-step delegation flow) and `main.py.MASTER_TURN_PREAMBLE`, and in doing so dropped the v0.12.25 rule that tells the master to refer to workers by their human-readable tab label (e.g.「點裝備優化」) rather than sid (e.g. s48) when reporting to Howard. Re-appended to both: sid is only for the master's own sfctl calls; if a handoff/report or sfctl output gives only a sid, run `sfctl list` to map it to the tab label before relaying.
+
+### 變更
+- **兩份 master preamble 補回「對使用者用 tab 名稱、不用 sid」規則** — v0.13.3 重構改寫了 `bridge_telegram.py._MASTER_TURN_PREAMBLE`（成 5 步派工流程）與 `main.py.MASTER_TURN_PREAMBLE`，過程中掉了 v0.12.25 那條「總控回報給 Howard 一律用人類可讀 tab 名稱（如「點裝備優化」）、不要用 sid（如 s48）」規則。兩份都補回：sid 只用於總控自己呼叫 sfctl；若交接/回報或 sfctl 輸出只給 sid，先 `sfctl list` 對照翻成 tab 名再轉述。
+
 ## v0.13.4 (2026-06-02)
 
 ### Changes

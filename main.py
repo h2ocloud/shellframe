@@ -342,7 +342,11 @@ _DASH_RE = re.compile(r'(^|\s)[—–](?=\S)')
 MASTER_TURN_PREAMBLE = (
     "ShellFrame master turn reminder: first understand the user's request. "
     "If the task is non-trivial, parallelizable, or better handled by a worker, "
-    "run `sfctl list` and consider `sfctl delegate`; do not hard-route by keywords."
+    "run `sfctl list` and consider `sfctl delegate`; do not hard-route by keywords. "
+    "When reporting to the user, always refer to a worker by its tab label "
+    "(e.g.「點裝備優化」), never by sid (e.g. s48) — sid is only for your own "
+    "sfctl calls. If a handoff/report or sfctl output gives only a sid, run "
+    "`sfctl list` to map it to the tab label before relaying it."
 )
 
 
