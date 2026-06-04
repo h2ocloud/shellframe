@@ -1846,6 +1846,7 @@ class Api:
             return
         self._pusher_started = True
         pending = {}  # sid -> str
+        MAX_PUSH_CHARS = 65536  # 單次推 webview 的字元上限，防爆量輸出(大檔/base64/長log)一次 evaluate_js 灌爆主執行緒凍住 UI
 
         def pusher():
             while True:
@@ -1860,6 +1861,13 @@ class Api:
                         pending[sid] = pending.get(sid, "") + data
                     chunk = pending.get(sid)
                     if chunk and self._window:
+                        # 防 webview 被爆量輸出灌爆主執行緒：單次推送超過上限只送尾端，
+                        # 從換行邊界切避免截斷 ANSI escape，前面標一行說明略過量。
+                        if len(chunk) > MAX_PUSH_CHARS:
+                            dropped = len(chunk) - MAX_PUSH_CHARS
+                            cut = chunk.find("\n", dropped)
+                            chunk = chunk[cut + 1:] if cut != -1 else chunk[-MAX_PUSH_CHARS:]
+                            chunk = f"\x1b[2m…[已略過 {dropped} 字元的大量輸出]…\x1b[0m\r\n" + chunk
                         escaped = json.dumps(chunk)
                         try:
                             self._window.evaluate_js(f'_pushOutput("{sid}",{escaped})')

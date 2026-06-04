@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.13.6 (2026-06-04)
+
+### 變更
+- **修 UI 凍住：webview 推送加單次字元上限（防爆量輸出灌爆主執行緒）** — `main.py._start_output_pusher` 的 `pusher()` 原本把每個 session 累積的 `pending[sid]` 整包 `json.dumps` 後一次 `evaluate_js('_pushOutput…')`。當 worker 爆量輸出（cat 大檔/base64 字體/長 log，可達數 MB）時，單次 evaluate_js 要在主執行緒序列化超大 CFString（sample 抓到卡在 `WKWebView evaluateJavaScript` + `CFStringGetBytes`），WebKit 主執行緒被灌爆 → 整個 UI 凍住（main CPU 卡 15%、webview render thread 0%）。修法：單次推送超過 `MAX_PUSH_CHARS`(65536) 只送尾端，從換行邊界切避免截斷 ANSI escape，並標一行「已略過 N 字元」。前端對未註冊 session 已有 `PENDING_OUTPUT_CAP`，此補的是已註冊 session 的後端推送缺口。tmux session 不受影響。
+
 ## v0.13.5 (2026-06-02)
 
 ### Changes
