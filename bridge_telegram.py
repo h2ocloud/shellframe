@@ -514,6 +514,10 @@ class SessionSlot:
         self.peek_fn = peek_fn  # returns recent PTY bytes (last ~1KB ring buffer)
         self.index = index
         self.output_lock = threading.Lock()
+        # Serializes PTY input writes so concurrent sends (a paste TG split
+        # into several messages, or rapid back-to-back messages) can't
+        # interleave into one mangled input buffer.
+        self.write_lock = threading.Lock()
         self.last_output_time = 0
         self.first_output_time = 0
         self.sent_texts = []
@@ -3058,9 +3062,37 @@ class TelegramBridge(BridgeBase):
             visible_payload = payload
 
         def _send():
-            slot.write_fn(visible_payload)
-            time.sleep(0.3)
-            slot.write_fn("\r")
+            # Serialize all PTY writes for this slot. Without this, a paste
+            # that Telegram splits into several messages — or two rapid
+            # messages — spawn concurrent _send threads whose write+Enter
+            # interleave into one mangled buffer (malformed input / tool calls).
+            with slot.write_lock:
+                # Busy guard: writing + Enter while Claude Code is mid-turn
+                # makes it abort the in-flight turn with "[Request interrupted]"
+                # and submit a mixed/empty buffer (this is the「貼文字變
+                # preamble / User message: [Request interrupted]」bug). Wait
+                # for the CLI to return to idle (no "esc to interrupt" footer)
+                # before injecting. Bounded so a wedged session can't block forever.
+                deadline = time.time() + 120.0
+                while time.time() < deadline:
+                    try:
+                        recent = slot.peek_fn() if slot.peek_fn else ""
+                    except Exception:
+                        recent = ""
+                    if not re.search(r'esc to interrupt', recent or "", re.I):
+                        break
+                    time.sleep(0.5)
+                # Clear residue left in the input box (aborted turn, dismissed
+                # rating prompt, half-typed text) so the payload isn't appended
+                # to stale content.
+                slot.write_fn("\x15")  # Ctrl-U: kill input line
+                time.sleep(0.05)
+                # Bracketed paste: ingest the (often multi-line) payload
+                # atomically so embedded newlines don't prematurely submit
+                # partial input.
+                slot.write_fn("\x1b[200~" + visible_payload + "\x1b[201~")
+                time.sleep(0.3)
+                slot.write_fn("\r")
         threading.Thread(target=_send, daemon=True).start()
 
     def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):
