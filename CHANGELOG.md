@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.13.8 (2026-06-06)
+
+### Fixes
+- **INIT_PROMPT no longer injected into the middle of the first user message (web UI path)** — when a worker/AI tab received its first message by typing or pasting in the GUI, the session INIT_PROMPT could land *after* (i.e. in the middle of) the user's text instead of in front of it. Root cause is in `main.py.write_input`: xterm.js delivers a message's text and the Enter that submits it as **separate** `write_input` calls (each keystroke / paste flushes on its own; Enter arrives as a bare `\r`). The injection was gated on `'\r' in data`, so it only fired on that trailing bare Enter — by which point the user's text had already been written to the PTY — and then appended the prompt with an empty `user_text` (`prompt + "\n\n---\nUser's first message: " + "" + "\r"`), so the order on the wire became `<user text><INIT_PROMPT>`. Fix: added `Api._is_user_content()` (printable text / bracketed paste = content; bare Enter / control keys / arrow & F-key escape sequences = not content) and moved injection to fire on the **first content-bearing chunk**, prepending the prompt before that chunk so INIT_PROMPT is always first and the user's text (and its later bare `\r`) flow after. Works for split keystrokes, single combined writes, bracketed paste, and IME multi-char input; still no-ops while the CLI is on a login/auth screen (stays pending). The delegate (`_send_text_to_session`, tmux paste-buffer) and Telegram (`bridge_telegram` consume/concat) paths already ordered the prompt first and are unchanged. Requires `sfctl restart` (main.py change) to take effect.
+
+### 修正
+- **INIT_PROMPT 不再被注入到第一則使用者訊息中間（web UI 路徑）** — 在 GUI 用打字或貼上送 worker/AI 分頁的第一則訊息時，session 的 INIT_PROMPT 會落在使用者文字**之後**（即訊息中間），而非最前面。根因在 `main.py.write_input`：xterm.js 把「訊息文字」與送出的 Enter 拆成**不同的** `write_input` 呼叫（每個按鍵／貼上各自 flush，Enter 單獨送 bare `\r`）。原本注入用 `'\r' in data` 當條件，只在那個尾端 bare Enter 觸發——此時使用者文字早已寫進 PTY——然後用空的 `user_text` 把 prompt 接在後面（`prompt + "\n\n---\nUser's first message: " + "" + "\r"`），wire 上順序變成 `<使用者文字><INIT_PROMPT>`。修法：新增 `Api._is_user_content()`（可印字元／bracketed paste＝內容；bare Enter／控制鍵／方向鍵・功能鍵 escape sequence＝非內容），把注入改成在**第一個帶內容的 chunk** 觸發，prompt 前置於該 chunk，使 INIT_PROMPT 永遠在最前面、使用者文字（及之後的 bare `\r`）接在後面。涵蓋拆鍵打字、單次合併寫入、bracketed paste、IME 多字輸入；CLI 還在登入／驗證畫面時仍不注入（維持 pending）。delegate（`_send_text_to_session`，tmux paste-buffer）與 Telegram（`bridge_telegram` consume／concat）路徑本就 prompt 在前，未更動。需 `sfctl restart`（改到 main.py）才生效。
+
 ## v0.13.6 (2026-06-04)
 
 ### 變更

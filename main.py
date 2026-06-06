@@ -2312,6 +2312,22 @@ class Api:
             s.write("\r")
         return False
 
+    @staticmethod
+    def _is_user_content(data: str) -> bool:
+        """True when this PTY-input chunk carries real typed/pasted text, as
+        opposed to a bare Enter, a control key, or an escape sequence (arrow /
+        function keys). xterm delivers a message's text and the Enter that
+        submits it in separate write_input calls, so init-prompt injection must
+        key off the first content chunk rather than the trailing '\\r'."""
+        d = data or ""
+        if not d:
+            return False
+        if '\x1b[200~' in d:          # bracketed paste always carries content
+            return True
+        if d.startswith('\x1b'):      # escape seq (arrows, F-keys) — not content
+            return False
+        return any(ch >= ' ' for ch in d)  # any printable (non-C0) char
+
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
         if not s:
@@ -2353,15 +2369,25 @@ class Api:
                         _dlog("slug", f"tmux rename {old_name!r} → {new_name!r}")
                 threading.Thread(target=_do_slug, daemon=True).start()
         # IME dedup is handled in JS (compositionstart/end + time window)
-        # On user Enter, check if we should inject init prompt
-        if getattr(s, '_init_pending', False) and '\r' in data:
+        # On the first user *content*, inject the init prompt BEFORE the message.
+        #
+        # xterm.js delivers the message text and the Enter that submits it in
+        # SEPARATE write_input calls — each typed key / paste flushes on its own
+        # and Enter arrives as a bare '\r'. The old guard `'\r' in data` fired
+        # only on that bare Enter, by which point the user's text had already
+        # been written to the PTY; the prompt was then appended after it (with an
+        # empty user_text), landing INIT_PROMPT in the middle / after the user
+        # message. Trigger instead on the first content-bearing chunk and prepend
+        # the prompt to it, so INIT_PROMPT is always first and the user's text
+        # (and its later bare '\r') flow naturally after.
+        if getattr(s, '_init_pending', False) and self._is_user_content(data):
             # Check if CLI output looks like an AI tool ready for conversation
             # (not a login screen, auth flow, or shell prompt)
             with s.lock:
                 tail = bytes(s._recent).decode('utf-8', errors='replace')
             clean = self._ANSI_RE.sub('', tail) if tail else ""
             if self._AI_READY_RE.search(clean):
-                # AI tool is ready — inject init prompt with this message
+                # AI tool is ready — inject init prompt ahead of this chunk.
                 s._init_pending = False
                 prompt = self._get_init_prompt()
                 if prompt:
@@ -2369,9 +2395,8 @@ class Api:
                         slot = self.bridge.slots.get(sid)
                         if slot:
                             slot.sent_texts.append(prompt)
-                    user_text = data.rstrip('\r\n')
-                    combined = prompt + "\n\n---\nUser's first message: " + user_text + "\r"
-                    s.write(combined)
+                    s.write(prompt + "\n\n---\nUser's first message: " + data)
+                    self._arm_awaiting_response(sid, data)
                     return
             # Not ready yet (login/auth flow) — pass through, keep _init_pending
         should = self._should_prepend_master_turn_preamble(sid, s, data)
