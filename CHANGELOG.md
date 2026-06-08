@@ -1,6 +1,9 @@
 # Changelog
 
-## v0.13.8 (2026-06-06)
+## v0.13.9 (2026-06-07)
+
+### Fixes
+- **遺漏回覆 bug：`[[TG_REPLY]]` 後接 tool 輸出時 reply 被靜默吞掉** — `_extract_marked_mobile_reply` 的 tail guard 原本只要 end marker 後還有任何「非雜訊」內容就 `return ""`（視為沒抓到、繼續等），要等 30s 後 `_force` 版才忽略 tail 強抽。但總控分頁的常見模式是「先輸出 `[[TG_REPLY]]…[[/TG_REPLY]]`、再跑 Bash/Read 等工具」，那些工具的指令與輸出落在 marker 之後就被當成 tail 內容，於是 reply 被擋住；若該 turn 在 30s 內結束 idle、slot 狀態又被下一則 user 訊息重置，這則 reply 就永久遺漏。修法：tail guard 改成**只在 tail 還含另一組 `reply_start_marker`（代表後面有更新的回應）時才放棄**；end marker 已閉合即視為回應完整，後續純 tool 輸出/操作/雜訊不再擋住送出。`reload` 即生效。
 
 ### Fixes
 - **INIT_PROMPT no longer injected into the middle of the first user message (web UI path)** — when a worker/AI tab received its first message by typing or pasting in the GUI, the session INIT_PROMPT could land *after* (i.e. in the middle of) the user's text instead of in front of it. Root cause is in `main.py.write_input`: xterm.js delivers a message's text and the Enter that submits it as **separate** `write_input` calls (each keystroke / paste flushes on its own; Enter arrives as a bare `\r`). The injection was gated on `'\r' in data`, so it only fired on that trailing bare Enter — by which point the user's text had already been written to the PTY — and then appended the prompt with an empty `user_text` (`prompt + "\n\n---\nUser's first message: " + "" + "\r"`), so the order on the wire became `<user text><INIT_PROMPT>`. Fix: added `Api._is_user_content()` (printable text / bracketed paste = content; bare Enter / control keys / arrow & F-key escape sequences = not content) and moved injection to fire on the **first content-bearing chunk**, prepending the prompt before that chunk so INIT_PROMPT is always first and the user's text (and its later bare `\r`) flow after. Works for split keystrokes, single combined writes, bracketed paste, and IME multi-char input; still no-ops while the CLI is on a login/auth screen (stays pending). The delegate (`_send_text_to_session`, tmux paste-buffer) and Telegram (`bridge_telegram` consume/concat) paths already ordered the prompt first and are unchanged. Requires `sfctl restart` (main.py change) to take effect.

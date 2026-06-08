@@ -1414,15 +1414,12 @@ class TelegramBridge(BridgeBase):
         if end < 0:
             return ""
         tail = clean_raw[end + len(slot.reply_end_marker):]
-        if tail.strip():
-            tail_lines = [l.strip() for l in tail.splitlines() if l.strip()]
-            if any(
-                not self._is_bridge_noise_line(line)
-                and line not in self.PROMPT_MARKERS
-                and line not in ('›', '❯', '>', '•', '⏺')
-                for line in tail_lines
-            ):
-                return ""
+        # 只有當 tail 還含「另一組 start marker」（代表後面有更新、更完整的回應）才放棄
+        # 這次抓取去等新的。純 tool 輸出 / 後續操作 / 雜訊不該擋住已被 end marker 閉合
+        # 的 reply——否則「[[TG_REPLY]] 在前、Bash/Read 等工具輸出在後」這個常見情況會
+        # 讓 reply 被靜默吞掉、造成遺漏回覆（end marker 已閉合即代表回應完整）。
+        if slot.reply_start_marker in tail:
+            return ""
         marked = clean_raw[start + len(slot.reply_start_marker):end].strip()
         return clean_mobile_marker_response(marked)
 
