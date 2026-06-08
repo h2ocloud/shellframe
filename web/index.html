@@ -140,7 +140,7 @@
   /* ── UI scale (interface size: small / medium / large) ──
      Applies CSS zoom to chrome elements only — terminal-wrap is exempt
      so xterm.js stays controlled by its own font size. */
-  #sidebar, #tab-bar, #image-bar, .modal-overlay {
+  #sidebar, #board-panel, #tab-bar, #image-bar, .modal-overlay {
     zoom: var(--ui-scale, 1);
   }
   /* UI scale button group */
@@ -384,11 +384,20 @@
   /* ── Sidebar ── */
   #app-body { flex: 1; display: flex; min-height: 0; }
   #sidebar {
-    width: 220px; background: #16161e; border-right: 1px solid #292e42;
+    width: var(--sidebar-w, 220px); background: #16161e; border-right: 1px solid #292e42;
     display: flex; flex-direction: column; flex-shrink: 0;
     transition: width .15s ease; overflow: hidden;
   }
   #sidebar.collapsed { width: 0; border-right-color: transparent; }
+  /* Drag handles between panels and the terminal (resizable split). */
+  .panel-resizer {
+    flex: 0 0 5px; width: 5px; cursor: col-resize; background: transparent;
+    transition: background .1s; align-self: stretch;
+  }
+  .panel-resizer:hover { background: #292e42; }
+  .panel-resizer.dragging { background: #7aa2f7; }
+  /* No transition during an active drag so the panel tracks the cursor. */
+  #sidebar.resizing, #board-panel.resizing { transition: none; }
   .sb-section-title {
     font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
     color: #565f89; padding: 10px 12px 6px; user-select: none; white-space: nowrap;
@@ -439,6 +448,55 @@
   }
   .sb-footer-btn:hover { background: #1f2335; color: #a9b1d6; }
 
+  /* ── Task board panel (experimental, right side — mirrors #sidebar) ── */
+  #board-panel {
+    width: var(--board-w, 280px); background: #16161e; border-left: 1px solid #292e42;
+    display: flex; flex-direction: column; flex-shrink: 0;
+    transition: width .15s ease; overflow: hidden;
+  }
+  #board-panel.collapsed { width: 0; border-left-color: transparent; }
+  #board-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px 6px; user-select: none;
+  }
+  #board-header .bp-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #565f89;
+  }
+  #board-add-btn {
+    background: none; border: 1px solid #3b4261; color: #7aa2f7;
+    border-radius: 4px; font-size: 11px; cursor: pointer; padding: 1px 7px; line-height: 1.4;
+  }
+  #board-add-btn:hover { border-color: #7aa2f7; background: rgba(122,162,247,.1); }
+  #board-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 8px; }
+  #board-list::-webkit-scrollbar { width: 4px; }
+  #board-list::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 2px; }
+  #board-empty { color: #565f89; font-size: 11px; padding: 12px; text-align: center; }
+  .bp-card {
+    background: #1a1b26; border: 1px solid #292e42; border-left: 3px solid #3b4261;
+    border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 12px;
+  }
+  .bp-card.st-in_progress { border-left-color: #7aa2f7; }
+  .bp-card.st-assigned { border-left-color: #e0af68; }
+  .bp-card.st-todo { border-left-color: #565f89; }
+  .bp-card.st-done { border-left-color: #9ece6a; opacity: .55; }
+  .bp-card .bp-card-title { color: #c0caf5; line-height: 1.35; word-break: break-word; }
+  .bp-card.st-done .bp-card-title { text-decoration: line-through; }
+  .bp-card-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; align-items: center; }
+  .bp-chip {
+    font-size: 9px; padding: 1px 6px; border-radius: 3px; line-height: 1.4;
+    border: 1px solid #3b4261; color: #787c99; white-space: nowrap;
+  }
+  .bp-chip.assignee { color: #bb9af7; border-color: #3b4261; }
+  .bp-chip.unassigned { color: #565f89; }
+  .bp-chip.diff-easy { color: #9ece6a; }
+  .bp-chip.diff-medium { color: #e0af68; }
+  .bp-chip.diff-hard { color: #f7768e; }
+  .bp-chip.status { color: #7dcfff; }
+  .bp-card-actions { margin-left: auto; display: flex; gap: 4px; }
+  .bp-act { background: none; border: none; color: #565f89; cursor: pointer; font-size: 11px; padding: 0 2px; }
+  .bp-act:hover { color: #c0caf5; }
+  .bp-notes { color: #787c99; font-size: 10px; margin-top: 4px; line-height: 1.35; word-break: break-word; }
+
   /* ── Code block copy button ── */
   .code-copy-btn {
     position: fixed; z-index: 100; display: none;
@@ -473,6 +531,7 @@
   <div id="tabs"></div>
   <button id="btn-new-tab" title="New tab (Cmd+T)">+</button>
   <div class="tab-spacer"></div>
+  <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Task board" style="font-size:14px;display:none">📋</button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
@@ -510,7 +569,16 @@
       <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
     </div>
   </div>
+  <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
   <div id="terminal-wrap"></div>
+  <div class="panel-resizer" id="board-resizer" title="拖曳調整寬度"></div>
+  <div id="board-panel" class="collapsed">
+    <div id="board-header">
+      <span class="bp-title" data-i18n="boardPanelTitle">Task Board</span>
+      <button id="board-add-btn" data-i18n-title="boardAddTitle" data-i18n="boardAdd" title="Add task">+ Task</button>
+    </div>
+    <div id="board-list"><div id="board-empty" data-i18n="boardEmpty">No tasks yet</div></div>
+  </div>
 </div>
 
 <!-- New tab modal -->
@@ -620,6 +688,13 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-master-preamble"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="masterTurnPreambleHint">Remind master tabs to consider delegation before each AI turn</span>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="experimentalBoardLabel">Task board / exchange (experimental)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch" id="setting-experimental-board"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="experimentalBoardHint">Right-side panel of task cards; agents can claim/update via [[SF:TASK:...]] markers. Off by default.</span>
           </div>
         </div>
       </div>
@@ -1146,6 +1221,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lineMissingCredentials: 'Direct mode requires LINE access token and channel secret',
       lineStarted: 'LINE bridge started. Local webhook: ',
       lineFailed: 'LINE connection failed',
+      boardBtnTitle: 'Task board (experimental)',
+      boardPanelTitle: 'Task Board · Exchange',
+      boardAdd: '+ Task',
+      boardAddTitle: 'Add task',
+      boardEmpty: 'No tasks yet',
+      boardMarkDone: 'Mark done',
+      boardRemove: 'Remove',
+      boardPromptTitle: 'Task title:',
+      boardPromptDifficulty: 'Difficulty (easy / medium / hard):',
+      boardStTodo: 'todo',
+      boardStAssigned: 'assigned',
+      boardStInProgress: 'in progress',
+      boardStDone: 'done',
+      boardUnassigned: 'unassigned',
+      experimentalBoardLabel: 'Task board / exchange (experimental)',
+      experimentalBoardHint: 'Right-side panel of task cards; agents can claim/update via [[SF:TASK:...]] markers. Off by default.',
+      releaseNotesTitle: "What's new",
+      releaseNotesGotIt: 'Got it',
     },
     'zh-TW': {
       newSession: '新增工作階段',
@@ -1282,6 +1375,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lineMissingCredentials: '直連模式需要 LINE access token 和 channel secret',
       lineStarted: 'LINE bridge 已啟動。本機 webhook: ',
       lineFailed: 'LINE 連線失敗',
+      boardBtnTitle: '任務看板（實驗性）',
+      boardPanelTitle: '任務看板 · 交換區',
+      boardAdd: '+ 任務',
+      boardAddTitle: '新增任務',
+      boardEmpty: '尚無任務',
+      boardMarkDone: '標記完成',
+      boardRemove: '刪除',
+      boardPromptTitle: '任務標題：',
+      boardPromptDifficulty: '難度（easy / medium / hard）：',
+      boardStTodo: '待辦',
+      boardStAssigned: '已認領',
+      boardStInProgress: '進行中',
+      boardStDone: '完成',
+      boardUnassigned: '未指派',
+      experimentalBoardLabel: '任務看板 / 交換區（實驗性）',
+      experimentalBoardHint: '右側看板顯示任務卡片，agent 可用 [[SF:TASK:...]] marker 認領/更新。預設關閉。',
+      releaseNotesTitle: '本次更新',
+      releaseNotesGotIt: '知道了',
     }
   };
 
@@ -1383,6 +1494,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Apply UI scale (interface size)
     const uiScale = s.uiScale || 1;
     document.documentElement.style.setProperty('--ui-scale', uiScale);
+    // Apply persisted resizable-panel widths
+    if (s.sidebar_width) document.getElementById('sidebar').style.setProperty('--sidebar-w', s.sidebar_width + 'px');
+    if (s.board_width) document.getElementById('board-panel').style.setProperty('--board-w', s.board_width + 'px');
     renderPresets();
     applyI18n();
   }
@@ -2412,9 +2526,155 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings.sidebar_open = open;
       pywebview.api.save_settings(JSON.stringify(config.settings));
     }
+    updateResizerVisibility();
     // Refit terminal after sidebar transition
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
+
+  // ── Task board panel (experimental) ──
+  const boardEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let _boardEnabled = false;
+
+  function renderBoard(tasks) {
+    const list = document.getElementById('board-list');
+    if (!list) return;
+    if (!tasks || !tasks.length) {
+      list.innerHTML = `<div id="board-empty">${boardEsc(t('boardEmpty'))}</div>`;
+      return;
+    }
+    const statusLabel = {
+      todo: t('boardStTodo'), assigned: t('boardStAssigned'),
+      in_progress: t('boardStInProgress'), done: t('boardStDone'),
+    };
+    list.innerHTML = tasks.map(task => {
+      const st = task.status || 'todo';
+      const diff = task.difficulty || 'medium';
+      const assignee = task.assignee || 'unassigned';
+      const isUn = assignee === 'unassigned';
+      const assigneeLabel = isUn ? t('boardUnassigned') : assignee;
+      const notes = task.notes ? `<div class="bp-notes">${boardEsc(task.notes)}</div>` : '';
+      const doneBtn = st === 'done' ? '' : `<button class="bp-act" data-act="done" data-id="${boardEsc(task.id)}" title="${boardEsc(t('boardMarkDone'))}">✓</button>`;
+      return `<div class="bp-card st-${boardEsc(st)}">
+        <div class="bp-card-title">${boardEsc(task.title)}</div>
+        ${notes}
+        <div class="bp-card-meta">
+          <span class="bp-chip assignee ${isUn ? 'unassigned' : ''}">${boardEsc(assigneeLabel)}</span>
+          <span class="bp-chip status">${boardEsc(statusLabel[st] || st)}</span>
+          <span class="bp-chip diff-${boardEsc(diff)}">${boardEsc(diff)}</span>
+          <span class="bp-card-actions">
+            ${doneBtn}
+            <button class="bp-act" data-act="remove" data-id="${boardEsc(task.id)}" title="${boardEsc(t('boardRemove'))}">✕</button>
+          </span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function refreshBoard() {
+    if (!window.pywebview || !pywebview.api || !pywebview.api.board_list) return;
+    try {
+      const res = JSON.parse(await pywebview.api.board_list());
+      _boardEnabled = !!res.enabled;
+      const btn = document.getElementById('btn-board');
+      const panel = document.getElementById('board-panel');
+      if (btn) btn.style.display = _boardEnabled ? '' : 'none';
+      if (!_boardEnabled && panel && !panel.classList.contains('collapsed')) {
+        panel.classList.add('collapsed');
+      }
+      if (_boardEnabled) renderBoard(res.tasks || []);
+      updateResizerVisibility();
+    } catch (_) {}
+  }
+
+  document.getElementById('btn-board').addEventListener('click', () => {
+    const panel = document.getElementById('board-panel');
+    panel.classList.toggle('collapsed');
+    if (!panel.classList.contains('collapsed')) refreshBoard();
+    updateResizerVisibility();
+    setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
+  });
+
+  // A resizer is only meaningful while its panel is expanded.
+  function updateResizerVisibility() {
+    const sb = document.getElementById('sidebar');
+    const bp = document.getElementById('board-panel');
+    document.getElementById('sidebar-resizer').style.display =
+      sb.classList.contains('collapsed') ? 'none' : '';
+    document.getElementById('board-resizer').style.display =
+      bp.classList.contains('collapsed') ? 'none' : '';
+  }
+
+  // Generic drag-to-resize for a side panel; persists the width to config.
+  function setupResizer(resizerId, panelId, widthVar, cfgKey, side, minW, maxW) {
+    const resizer = document.getElementById(resizerId);
+    const panel = document.getElementById(panelId);
+    resizer.addEventListener('mousedown', (e) => {
+      if (panel.classList.contains('collapsed')) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = parseFloat(getComputedStyle(panel).width) || minW;
+      const scale = parseFloat(getComputedStyle(document.documentElement)
+        .getPropertyValue('--ui-scale')) || 1;
+      resizer.classList.add('dragging');
+      panel.classList.add('resizing');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      let raf = 0, lastW = startW;
+      const onMove = (ev) => {
+        const dx = (ev.clientX - startX) / scale;
+        lastW = Math.max(minW, Math.min(maxW, side === 'left' ? startW + dx : startW - dx));
+        panel.style.setProperty(widthVar, lastW + 'px');
+        if (!raf) raf = requestAnimationFrame(() => {
+          raf = 0;
+          if (activeId) fitTerm(activeId);
+        });
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        resizer.classList.remove('dragging');
+        panel.classList.remove('resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        config.settings = config.settings || {};
+        config.settings[cfgKey] = Math.round(lastW);
+        try { pywebview.api.save_settings(JSON.stringify(config.settings)); } catch (_) {}
+        if (activeId) fitTerm(activeId);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  setupResizer('sidebar-resizer', 'sidebar', '--sidebar-w', 'sidebar_width', 'left', 140, 480);
+  setupResizer('board-resizer', 'board-panel', '--board-w', 'board_width', 'right', 180, 560);
+  updateResizerVisibility();
+
+  document.getElementById('board-add-btn').addEventListener('click', async () => {
+    const title = prompt(t('boardPromptTitle'));
+    if (!title || !title.trim()) return;
+    const difficulty = (prompt(t('boardPromptDifficulty'), 'medium') || 'medium').trim();
+    try {
+      await pywebview.api.board_add(title.trim(), 'unassigned', 'todo', difficulty, '');
+    } catch (_) {}
+    refreshBoard();
+  });
+
+  document.getElementById('board-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('.bp-act');
+    if (!b) return;
+    const id = b.getAttribute('data-id');
+    const act = b.getAttribute('data-act');
+    try {
+      if (act === 'done') await pywebview.api.board_update(id, JSON.stringify({ status: 'done' }));
+      else if (act === 'remove') await pywebview.api.board_remove(id);
+    } catch (_) {}
+    refreshBoard();
+  });
+
+  setInterval(refreshBoard, 2500);
+  refreshBoard();
 
   // ── Attach: intercept Enter/Shift+Enter before xterm ──
   let shiftEnterNewline = true; // default on; toggled in Settings
@@ -3267,6 +3527,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-auto-delegate').classList.toggle(
       'on', s.auto_delegate_enabled === true,
     );
+    document.getElementById('setting-experimental-board').classList.toggle(
+      'on', s.experimental_board === true,
+    );
     syncIdleReaperSettings();
     syncSettingsBridge();
     syncSettingsLineBridge();
@@ -3302,6 +3565,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings = config.settings || {};
       config.settings.show_tg_wrapper = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
+
+  document.getElementById('setting-experimental-board')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.experimental_board = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+      refreshBoard();
     });
 
   document.getElementById('setting-auto-delegate')
@@ -4494,13 +4766,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const raw = await pywebview.api.check_update();
       const info = JSON.parse(raw);
 
-      // Check if we just updated (version changed from last session)
-      const lastVer = localStorage.getItem('shellframe_last_version');
-      if (lastVer && lastVer !== info.local && lastVer !== '__updating__') {
-        localStorage.setItem('shellframe_last_version', info.local);
-        showReleaseNotes(info.local);
-        return true;
-      }
+      // Version-change "what's new" popup is handled separately by
+      // checkReleaseNotesOnVersionChange() (config-backed, network-independent).
       localStorage.setItem('shellframe_last_version', info.local);
 
       // Skip update check if auto-update is disabled in settings
@@ -4613,9 +4880,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   }
 
-  async function showReleaseNotes(version) {
-    document.getElementById('release-title').textContent =
-      lang === 'zh-TW' ? `已更新至 v${version}` : `Updated to v${version}`;
+  async function showReleaseNotes(version, opts) {
+    opts = opts || {};
+    document.getElementById('release-title').textContent = opts.whatsNew
+      ? `${t('releaseNotesTitle')} · v${version}`
+      : (lang === 'zh-TW' ? `已更新至 v${version}` : `Updated to v${version}`);
+    document.querySelector('#modal-release .modal > div:first-child > div:first-child').textContent =
+      opts.whatsNew ? '✨' : '✓';
+    document.getElementById('btn-release-ok').textContent = t('releaseNotesGotIt');
     try {
       const changelog = await pywebview.api.get_changelog();
       const sections = changelog.split(/^## /m).filter(Boolean);
@@ -4625,6 +4897,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       $rl.innerHTML = renderChangelog('## ' + section.substring(0, 2000));
     } catch(e) {}
     $modalRelease.classList.add('open');
+  }
+
+  // Startup "what's new" popup, config-backed (localStorage is flaky across
+  // app restarts — config.json persists reliably, like sidebar_open). Pops
+  // once per version change, then records the seen version so the same
+  // version never re-pops. Network-independent (reads local version + CHANGELOG).
+  async function checkReleaseNotesOnVersionChange() {
+    try {
+      const ver = JSON.parse(await pywebview.api.get_version()).version || '';
+      if (!ver || ver === 'unknown') return false;
+      config.settings = config.settings || {};
+      const seen = config.settings.release_seen_version;
+      if (seen === ver) return false;
+      config.settings.release_seen_version = ver;
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+      await showReleaseNotes(ver, { whatsNew: true });
+      return true;
+    } catch(e) { return false; }
   }
 
   document.getElementById('btn-release-ok').addEventListener('click', () => $modalRelease.classList.remove('open'));
@@ -5028,6 +5318,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (sbOpen) {
       document.getElementById('sidebar').classList.remove('collapsed');
     }
+    updateResizerVisibility();
 
     // Restore tmux sessions from previous run, then check for hot-reload sessions
     try { await pywebview.api.restore_tmux_sessions(80, 24); } catch(e) {}
@@ -5072,6 +5363,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
         });
         // Still check for updates after reconnect
+        await checkReleaseNotesOnVersionChange();
         await startupUpdateCheck();
         return;
       }
@@ -5080,9 +5372,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Check for updates FIRST, then show launcher
     await restoreSavedBridge();
     await restoreSavedLineBridge();
+    const shownNotes = await checkReleaseNotesOnVersionChange();
     const hasUpdate = await startupUpdateCheck();
-    if (!hasUpdate) {
-      // No update modal shown — show launcher
+    if (!hasUpdate && !shownNotes) {
+      // No update / release-notes modal shown — show launcher
       $modal.classList.add('open');
       $customCmd.focus();
     }

@@ -561,6 +561,26 @@ def main():
     p_audit.add_argument("sid", nargs="?", default="",
                          help="Session id (default: first session)")
 
+    sub.add_parser("board-list", help="List task board (交換區) tasks")
+
+    p_badd = sub.add_parser("board-add", help="Add a task to the board")
+    p_badd.add_argument("title", help="Task title")
+    p_badd.add_argument("--assignee", default="unassigned", help="Agent tab label, default unassigned")
+    p_badd.add_argument("--status", default="todo", choices=["todo", "assigned", "in_progress", "done"])
+    p_badd.add_argument("--difficulty", default="medium", choices=["easy", "medium", "hard"])
+    p_badd.add_argument("--notes", default="", help="Free-text notes")
+
+    p_bupd = sub.add_parser("board-update", help="Update a task by id")
+    p_bupd.add_argument("id", help="Task id")
+    p_bupd.add_argument("--title", default=None)
+    p_bupd.add_argument("--assignee", default=None)
+    p_bupd.add_argument("--status", default=None, choices=["todo", "assigned", "in_progress", "done"])
+    p_bupd.add_argument("--difficulty", default=None, choices=["easy", "medium", "hard"])
+    p_bupd.add_argument("--notes", default=None)
+
+    p_brm = sub.add_parser("board-remove", help="Remove a task by id")
+    p_brm.add_argument("id", help="Task id")
+
     p_perm = sub.add_parser(
         "permissions",
         help="Pre-grant OS permissions (macOS Privacy panes + firewall; "
@@ -635,6 +655,22 @@ def main():
         }))
     elif args.cmd == "history-audit":
         _print_result(_rpc("history_audit", {"sid": args.sid}, timeout=20))
+    elif args.cmd == "board-list":
+        _print_result(_rpc("board_list"))
+    elif args.cmd == "board-add":
+        _print_result(_rpc("board_add", {
+            "title": args.title, "assignee": args.assignee,
+            "status": args.status, "difficulty": args.difficulty, "notes": args.notes,
+        }))
+    elif args.cmd == "board-update":
+        upd = {"id": args.id}
+        for k in ("title", "assignee", "status", "difficulty", "notes"):
+            v = getattr(args, k)
+            if v is not None:
+                upd[k] = v
+        _print_result(_rpc("board_update", upd))
+    elif args.cmd == "board-remove":
+        _print_result(_rpc("board_remove", {"id": args.id}))
     elif args.cmd == "permissions":
         _cmd_permissions(args)
     else:

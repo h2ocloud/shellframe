@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.14.1 (2026-06-08)
+
+### Features
+- **交換區面板字級對齊 + 完整 i18n** — 任務看板面板改納入既有 `zoom: var(--ui-scale)` 縮放群組（原本漏掉，UI scale 調整時看板不跟著縮放），字級沿用 sidebar 級距（標題 10px／卡片 12px／chip 9px）。所有看板 UI 文字（按鈕 title、面板標題、空狀態、狀態/難度標籤、新增 prompt、設定開關標籤）改走既有 `I18N` + `t()` 機制，en／zh-TW 兩語系皆補齊，不再寫死中文。
+- **啟動「本次更新」彈窗** — app 啟動偵測 version 變化即彈出本次 CHANGELOG 最新版段落，看過後把版本記入 `config.settings.release_seen_version`（config 持久化，取代原本跨重啟不穩的 localStorage 機制），同版不再跳；以後每次 bump version + restart 都會跳一次。新增 `main.py` Api `get_latest_release_notes()`，前端複用既有 `#modal-release` + `renderChangelog`，network-independent。
+- **兩側面板寬度可拖拉調整（resizable split）** — sidebar↔主區、交換區↔主區之間新增可拖曳 divider，即時改變寬度並 persist 到 `config.settings.sidebar_width`／`board_width`（下次開維持）。寬度改由 CSS 變數 `--sidebar-w`／`--board-w` 驅動，`.collapsed` 仍強制 0；拖曳時即時 refit 終端機（rAF throttle），面板收合時自動隱藏對應 divider。
+- 需 `sfctl restart`（改到 main.py）才完全生效。
+
+## v0.14.0 (2026-06-08)
+
+### Features
+- **交換區 / 任務看板（實驗性）** — 新增可開關的實驗功能：右側可展開／收合面板顯示任務卡片（title／assignee／status／難度，未結案優先排序），agent 可透過 harness inject 用 `[[SF:TASK:...]]` marker 自己維護 todo／認領。架構：
+  - 新增 `board.py` 共用 store（仿 `main.save_config` 的 atomic write + lock），狀態存 `~/.local/state/shellframe/board.json`；task 欄位 id／title／assignee／status(todo/assigned/in_progress/done)／difficulty(easy/medium/hard)／created_at／updated_at／notes。
+  - `main.py`：新增 Api 方法 `board_list/board_add/board_update/board_remove`（前端 polling 用）＋ sfctl `_execute_sfctl` elif 串同名指令（agent/remote 用）；`DEFAULT_CONFIG.settings.experimental_board`（預設 False）。
+  - `bridge_telegram.py`：仿 `_SIGNAL_RE` 新增 `_BOARD_RE` 與 `_detect_and_apply_board`，在既有兩處 signal 偵測點攔截 agent 輸出的看板 marker（add/claim/update/done/remove），寫入 board 後把 marker 行從轉發文字剝除；受實驗 flag 守門，關閉時為 no-op。
+  - `web/index.html`：右側 `#board-panel`（仿 `#sidebar`，📋 鈕展開／收合）＋ 每 2.5s polling `board_list`；Settings → General 新增「任務看板／交換區（實驗性）」toggle。
+  - marker 格式：`[[SF:TASK:add|title=接 webhook 線|difficulty=medium|notes=...]]`、`[[SF:TASK:claim|id=ab12cd34]]`（認領→assignee=分頁 label、in_progress）、`[[SF:TASK:update|id=ab12cd34|status=done]]`、`[[SF:TASK:done|id=ab12cd34]]`、`[[SF:TASK:remove|id=ab12cd34]]`。
+  - 需 `sfctl restart`（改到 main.py / bridge）才生效。
+
 ## v0.13.9 (2026-06-07)
 
 ### Fixes

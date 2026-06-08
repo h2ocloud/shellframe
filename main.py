@@ -37,6 +37,7 @@ import webview
 sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
 import bridge_line
+import board
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
 from bridge_line import LineBridge, LineBridgeConfig
 
@@ -163,7 +164,8 @@ DEFAULT_CONFIG = {
     "settings": {
         "fontSize": 14,
         "language": "en",
-        "master_turn_preamble_enabled": True
+        "master_turn_preamble_enabled": True,
+        "experimental_board": False
     },
     "idle_reaper": {
         "enabled": False,
@@ -1892,6 +1894,37 @@ class Api:
     def get_config(self) -> str:
         return json.dumps(load_config())
 
+    @staticmethod
+    def _board_enabled() -> bool:
+        return bool((load_config().get("settings", {}) or {}).get("experimental_board", False))
+
+    def board_list(self) -> str:
+        """Return {enabled, tasks} for the experimental task board."""
+        return json.dumps({"enabled": self._board_enabled(), "tasks": board.list_tasks()})
+
+    def board_add(self, title: str, assignee: str = "unassigned",
+                  status: str = "todo", difficulty: str = "medium", notes: str = "") -> str:
+        try:
+            task = board.add_task(title, assignee=assignee, status=status,
+                                  difficulty=difficulty, notes=notes)
+            return json.dumps({"success": True, "task": task})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def board_update(self, task_id: str, fields_json: str = "{}") -> str:
+        try:
+            fields = json.loads(fields_json) if fields_json else {}
+            task = board.update_task(task_id, **fields)
+            if task is None:
+                return json.dumps({"success": False, "message": "task not found"})
+            return json.dumps({"success": True, "task": task})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def board_remove(self, task_id: str) -> str:
+        ok = board.remove_task(task_id)
+        return json.dumps({"success": ok})
+
     def get_saved_bridge(self) -> str:
         """Return saved bridge config (for restoring on startup)."""
         cfg = load_config()
@@ -3521,6 +3554,35 @@ class Api:
         except:
             return ""
 
+    def get_latest_release_notes(self) -> str:
+        """Return the current version + the top (latest) CHANGELOG section as
+        markdown, for the startup 'what's new' popup. Body is just the first
+        '## ...' block so we don't ship the whole 240KB changelog to JS."""
+        try:
+            version = json.loads(VERSION_FILE.read_text(encoding='utf-8')).get("version", "")
+        except Exception:
+            version = ""
+        body, heading = "", ""
+        try:
+            text = (APP_DIR / "CHANGELOG.md").read_text(encoding='utf-8')
+            lines = text.splitlines()
+            start = None
+            for i, ln in enumerate(lines):
+                if ln.startswith("## "):
+                    start = i
+                    break
+            if start is not None:
+                heading = lines[start][3:].strip()
+                section = []
+                for ln in lines[start + 1:]:
+                    if ln.startswith("## "):
+                        break
+                    section.append(ln)
+                body = "\n".join(section).strip()
+        except Exception:
+            pass
+        return json.dumps({"version": version, "heading": heading, "body": body})
+
     def check_update(self) -> str:
         """Check GitHub for latest version. Returns JSON with local, remote, update_available."""
         try:
@@ -4790,6 +4852,42 @@ class Api:
                 }
             except Exception as e:
                 return {"success": False, "message": f"Update failed: {e}"}
+
+        elif cmd == "board_list":
+            tasks = board.list_tasks()
+            return {
+                "success": True,
+                "message": f"{len(tasks)} tasks",
+                "details": {"enabled": self._board_enabled(), "tasks": tasks},
+            }
+
+        elif cmd == "board_add":
+            try:
+                task = board.add_task(
+                    args.get("title", ""),
+                    assignee=args.get("assignee", "unassigned"),
+                    status=args.get("status", "todo"),
+                    difficulty=args.get("difficulty", "medium"),
+                    notes=args.get("notes", ""),
+                )
+                return {"success": True, "message": f"Added {task['id']}", "details": {"task": task}}
+            except Exception as e:
+                return {"success": False, "message": f"board_add failed: {e}"}
+
+        elif cmd == "board_update":
+            try:
+                task_id = args.get("id", "")
+                fields = {k: args[k] for k in ("title", "assignee", "status", "difficulty", "notes") if k in args}
+                task = board.update_task(task_id, **fields)
+                if task is None:
+                    return {"success": False, "message": f"No such task: {task_id}"}
+                return {"success": True, "message": f"Updated {task_id}", "details": {"task": task}}
+            except Exception as e:
+                return {"success": False, "message": f"board_update failed: {e}"}
+
+        elif cmd == "board_remove":
+            ok = board.remove_task(args.get("id", ""))
+            return {"success": ok, "message": "Removed" if ok else "No such task"}
 
         else:
             return {"success": False, "message": f"Unknown command: {cmd}"}
