@@ -75,26 +75,49 @@
     box-shadow: 0 0 7px #ff9e64, 0 0 3px #ff9e64;
     animation: busy-pulse 1.9s ease-in-out infinite;
   }
-  /* ── Auto-detected agent activity (right sidebar detail layer) ── */
-  #sb-status-overview {
-    font-size: 10px; color: #565f89; padding: 2px 10px 6px;
-    letter-spacing: .3px; min-height: 14px; user-select: none;
+  /* ── Auto-detected agent activity (RIGHT panel detail layer) ── */
+  #agent-activity {
+    border-bottom: 1px solid #1f2335; padding: 8px 10px 10px;
+    flex-shrink: 0; max-height: 45%; overflow-y: auto;
   }
-  #sb-status-overview .ov-working { color: #7aa2f7; }
-  #sb-status-overview .ov-decision { color: #f7768e; font-weight: 600; }
-  #sb-status-overview .ov-stuck { color: #ff9e64; }
-  #sb-status-overview .ov-done { color: #9ece6a; }
-  .sb-item { flex-wrap: wrap; }
-  .sb-activity {
-    flex-basis: 100%; font-size: 10px; color: #565f89;
-    padding: 1px 0 1px 16px; margin-top: -1px;
+  #aa-header {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;
+  }
+  #aa-header .aa-title {
+    font-size: 11px; font-weight: 600; color: #7aa2f7; letter-spacing: .4px;
+  }
+  #aa-overview { font-size: 10px; color: #565f89; letter-spacing: .3px; }
+  #aa-overview .ov-working { color: #7aa2f7; }
+  #aa-overview .ov-decision { color: #f7768e; font-weight: 600; }
+  #aa-overview .ov-stuck { color: #ff9e64; }
+  #aa-overview .ov-done { color: #9ece6a; }
+  .aa-row {
+    display: flex; align-items: center; gap: 6px; padding: 3px 0;
+    border-left: 2px solid transparent; padding-left: 6px;
+  }
+  .aa-row .aa-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    background: #3b4261;
+  }
+  .aa-row.st-working .aa-dot { background: #7aa2f7; box-shadow: 0 0 5px #7aa2f7; }
+  .aa-row.st-decision .aa-dot { background: #f7768e; box-shadow: 0 0 5px #f7768e; }
+  .aa-row.st-stuck .aa-dot { background: #ff9e64; box-shadow: 0 0 5px #ff9e64; }
+  .aa-row.st-done .aa-dot { background: #9ece6a; }
+  .aa-label {
+    font-size: 11px; color: #c0caf5; flex-shrink: 0; max-width: 38%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    opacity: .85;
   }
-  .sb-activity.st-decision { color: #f7768e; opacity: 1; }
-  .sb-activity.st-stuck { color: #ff9e64; opacity: 1; }
-  .sb-activity.st-done { opacity: .45; }
-  .sb-activity:empty { display: none; }
+  .aa-act {
+    font-size: 10px; color: #565f89; flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .aa-row.st-decision .aa-act { color: #f7768e; }
+  .aa-row.st-stuck .aa-act { color: #ff9e64; }
+  .aa-row.st-done .aa-act { opacity: .5; }
+  #aa-list:empty::after {
+    content: 'No active agents detected'; color: #3b4261; font-size: 10px;
+    display: block; padding: 2px 6px;
+  }
   @keyframes busy-pulse {
     0%, 100% { opacity: .55; }
     50%      { opacity: 1; }
@@ -583,7 +606,6 @@
 <div id="app-body">
   <div id="sidebar" class="collapsed">
     <div class="sb-section-title">Sessions</div>
-    <div id="sb-status-overview"></div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
       <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
@@ -594,6 +616,13 @@
   <div id="terminal-wrap"></div>
   <div class="panel-resizer" id="board-resizer" title="拖曳調整寬度"></div>
   <div id="board-panel" class="collapsed">
+    <div id="agent-activity">
+      <div id="aa-header">
+        <span class="aa-title">Agents</span>
+        <span id="aa-overview"></span>
+      </div>
+      <div id="aa-list"></div>
+    </div>
     <div id="board-header">
       <span class="bp-title" data-i18n="boardPanelTitle">Task Board</span>
       <button id="board-add-btn" data-i18n-title="boardAddTitle" data-i18n="boardAdd" title="Add task">+ Task</button>
@@ -2293,8 +2322,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
-        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
-        `<span class="sb-activity st-${(s._serverStatus && s._serverStatus.state) || ''}">${esc((s._serverStatus && s._serverStatus.summary) || '')}</span>`;
+        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '');
       container.appendChild(el);
     });
 
@@ -2317,8 +2345,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
-          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
-          `<span class="sb-activity st-${(s._serverStatus && s._serverStatus.state) || ''}">${esc((s._serverStatus && s._serverStatus.summary) || '')}</span>`;
+          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
         container.appendChild(el);
       });
 
@@ -4610,6 +4637,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // on the session so the 400ms dot loop uses it (s._serverDot), and we patch
   // the per-tab activity line + the top overview counts directly.
   const ACT_DECAY_MS = 4000;  // drop a stale server verdict if pushes stop
+  const AA_ORDER = { decision: 0, stuck: 1, working: 2, done: 3 };
   window.__sfAgentStatus = function (payload) {
     try {
       if (!payload || typeof payload !== 'object') return;
@@ -4620,23 +4648,35 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const st = payload[sid] || {};
         s._serverStatus = st;
         s._serverStatusTs = now;
-        // 'unknown'/'idle' carry no dot — let the heuristic take over.
+        // 'unknown'/'idle' carry no dot — let the per-tab browser heuristic
+        // drive the left light (accurate for unmapped tabs).
         s._serverDot = (st.dot && st.state && st.state !== 'unknown') ? st.dot : '';
-        const line = document.querySelector(
-          `#sidebar-sessions [data-sid="${sid}"] .sb-activity`);
-        if (line) {
-          line.className = 'sb-activity st-' + (st.state || '');
-          line.textContent = st.summary || '';
-        }
       }
-      // Top overview: count states across all sessions.
+      // Build the RIGHT-side agent detail list (left sidebar keeps dots only).
+      // Only sessions with a confident detected state appear here.
+      const rows = [];
       const c = { working: 0, decision: 0, done: 0, stuck: 0 };
       for (const sid of Object.keys(sessions)) {
-        const st = sessions[sid] && sessions[sid]._serverStatus;
-        const fresh = sessions[sid] && (now - (sessions[sid]._serverStatusTs || 0) < 60000);
-        if (st && fresh && c[st.state] !== undefined) c[st.state]++;
+        const s = sessions[sid];
+        if (!s) continue;
+        const fresh = (now - (s._serverStatusTs || 0)) < 60000;
+        const st = s._serverStatus;
+        if (!st || !fresh || !(st.state in AA_ORDER)) continue;
+        c[st.state]++;
+        rows.push({ sid, label: s.label || sid, state: st.state, summary: st.summary || '' });
       }
-      const ov = document.getElementById('sb-status-overview');
+      rows.sort((a, b) => (AA_ORDER[a.state] - AA_ORDER[b.state]) ||
+                          String(a.label).localeCompare(String(b.label)));
+      const list = document.getElementById('aa-list');
+      if (list) {
+        list.innerHTML = rows.map(r =>
+          `<div class="aa-row st-${r.state}" data-sid="${r.sid}">` +
+          `<span class="aa-dot"></span>` +
+          `<span class="aa-label">${esc(r.label)}</span>` +
+          `<span class="aa-act">${esc(r.summary)}</span>` +
+          `</div>`).join('');
+      }
+      const ov = document.getElementById('aa-overview');
       if (ov) {
         const parts = [];
         if (c.working) parts.push(`<span class="ov-working">▶ ${c.working} working</span>`);

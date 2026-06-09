@@ -144,14 +144,20 @@ def resolve_transcript(worker: dict):
             # fallback：整棵 sessions 樹取最新 mtime
             return _newest_jsonl(os.path.join(CODEX_SESSIONS, "*/*/*/rollout-*.jsonl"))
         if kind == "claude":
+            # ONLY map when we have a confident, deterministic id (P3 spawn with
+            # --session-id). The newest-mtime guess is deliberately NOT used as a
+            # fallback: tabs sharing the $HOME slug would all resolve to whichever
+            # transcript was written last, so every idle tab would inherit the one
+            # active session's state and falsely show "working". When unmapped we
+            # return None → status 'unknown' → the browser per-tab heuristic (which
+            # reads each tab's own terminal) drives the dot, which is accurate.
             sid = worker.get("session_id")
-            slug = _cwd_slug(worker.get("cwd", "~"))
-            if sid:  # P3：spawn 帶 --session-id → 確定性對應
+            if sid:
+                slug = _cwd_slug(worker.get("cwd", "~"))
                 p = os.path.join(CLAUDE_PROJECTS, slug, f"{sid}.jsonl")
                 if os.path.exists(p):
                     return p
-            # fallback：該 slug 目錄取最新 mtime
-            return _newest_jsonl(os.path.join(CLAUDE_PROJECTS, slug, "*.jsonl"))
+            return None
     except Exception:
         return None
     return None
