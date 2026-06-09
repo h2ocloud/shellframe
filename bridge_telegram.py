@@ -4,6 +4,7 @@ Routes one TG bot across multiple PTY sessions with slash-command switching.
 Zero external dependencies (uses urllib).
 """
 
+import itertools
 import json
 import os as _os
 import re
@@ -612,8 +613,8 @@ class SessionSlot:
         self.last_notify_ts = 0.0
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
-        # Capped at 3000 lines (~180MB worst case per session) to prevent memory bloat
-        self.screen = pyte.HistoryScreen(200, 50, history=3000)
+        # history 由 3000 降至 800：兼顧長回應擷取與 per-tab 記憶體/掃描成本（撐 10+ tab）
+        self.screen = pyte.HistoryScreen(200, 50, history=800)
         self.stream = pyte.Stream(self.screen)
         self._history_offset = 0  # tracks processed history lines
         self.sent_responses = {"Understood.", "Understood"}  # pre-filter system acks
@@ -1258,13 +1259,19 @@ class TelegramBridge(BridgeBase):
         all_lines = []
 
         # History lines that scrolled off the top (pyte.HistoryScreen)
-        # Each history line is a StaticDefaultDict mapping col -> Char
-        history = list(slot.screen.history.top)
-        cols = slot.screen.columns
-        for hist_line in history[slot._history_offset:]:
-            text = "".join(hist_line[col].data for col in range(cols)).rstrip()
-            all_lines.append(text)
-        slot._history_offset = len(history)
+        # Each history line is a StaticDefaultDict mapping col -> Char.
+        # 只在「真的有新 history 行」時才走訪（用 islice 取 tail，不再每次把整個
+        # deque materialize 成 list）；多數 tick 螢幕內滾動、history 沒增長 → 直接跳過。
+        htop = slot.screen.history.top
+        hlen = len(htop)
+        if slot._history_offset > hlen:
+            slot._history_offset = 0  # history 被 deque maxlen 截斷 → 重置
+        if slot._history_offset < hlen:
+            cols = slot.screen.columns
+            for hist_line in itertools.islice(htop, slot._history_offset, hlen):
+                text = "".join(hist_line[col].data for col in range(cols)).rstrip()
+                all_lines.append(text)
+            slot._history_offset = hlen
 
         # Current screen display
         for line in slot.screen.display:
@@ -1835,39 +1842,47 @@ class TelegramBridge(BridgeBase):
 
     def _flush_loop(self):
         """Extract new text from virtual terminal and send to TG."""
+        tick = 0
         while self.active and not self._stop_event.is_set():
             time.sleep(0.5)
+            tick += 1
+            # idle-floor 優化：stall 偵測 + auto-compact 這兩個「每 slot 都要掃」的
+            # 週期檢查不需 0.5s 一次，降到每 2s（每 4 個 tick）跑一次，砍掉 10+ idle
+            # tab 的 CPU floor。輸出 drain（下方）仍維持 0.5s、且對 idle slot 本就 continue。
+            slow_tick = (tick % 4 == 0)
             with self._slots_lock:
                 sids = list(self._slot_order)
 
             # Stall detection runs first, outside the output_lock path below,
             # because a truly stalled slot has no output activity to flush.
-            now_stall = time.time()
-            for sid in sids:
-                slot = self.slots.get(sid)
-                if not slot or slot.stall_warned or slot.last_write_ts <= 0:
-                    continue
-                write_age = now_stall - slot.last_write_ts
-                silence = now_stall - slot.last_chunk_ts if slot.last_chunk_ts > 0 else write_age
-                if write_age > self.STALL_WRITE_MIN_AGE and silence > self.STALL_SILENCE_MIN:
-                    slot.stall_warned = True
-                    threading.Thread(
-                        target=self._warn_stalled,
-                        args=(sid, int(write_age)),
-                        daemon=True,
-                    ).start()
+            if slow_tick:
+                now_stall = time.time()
+                for sid in sids:
+                    slot = self.slots.get(sid)
+                    if not slot or slot.stall_warned or slot.last_write_ts <= 0:
+                        continue
+                    write_age = now_stall - slot.last_write_ts
+                    silence = now_stall - slot.last_chunk_ts if slot.last_chunk_ts > 0 else write_age
+                    if write_age > self.STALL_WRITE_MIN_AGE and silence > self.STALL_SILENCE_MIN:
+                        slot.stall_warned = True
+                        threading.Thread(
+                            target=self._warn_stalled,
+                            args=(sid, int(write_age)),
+                            daemon=True,
+                        ).start()
 
             # Claude auto-compact check — runs outside output_lock so the
-            # scan doesn't contend with feed_output. Cheap: one regex on the
-            # last ~8 rendered lines per slot per 0.5s tick.
-            for sid in sids:
-                slot = self.slots.get(sid)
-                if not slot:
-                    continue
-                try:
-                    self._maybe_auto_compact(slot)
-                except Exception as e:
-                    _blog(f"[auto-compact] {sid} check failed: {e}\n")
+            # scan doesn't contend with feed_output. 一個 regex 掃最後 ~8 行 /slot，
+            # 降到每 2s 一次（auto-compact 屬慢變化、不需 0.5s 偵測）。
+            if slow_tick:
+                for sid in sids:
+                    slot = self.slots.get(sid)
+                    if not slot:
+                        continue
+                    try:
+                        self._maybe_auto_compact(slot)
+                    except Exception as e:
+                        _blog(f"[auto-compact] {sid} check failed: {e}\n")
 
             for sid in sids:
                 slot = self.slots.get(sid)

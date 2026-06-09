@@ -940,10 +940,15 @@ class Session:
         threading.Thread(target=self._reader_win, daemon=True).start()
 
     def _reader_unix(self):
+        _last_data = time.time()
         while self.alive and self.master_fd is not None:
             try:
-                r, _, _ = select.select([self.master_fd], [], [], 0.05)
+                # idle 退避：近 2s 有輸出用 0.05s（低延遲），閒置則 0.3s，砍掉 idle tab
+                # 的空轉喚醒（select 一有資料即返回，不影響輸出延遲）。
+                _timeout = 0.05 if (time.time() - _last_data) < 2.0 else 0.3
+                r, _, _ = select.select([self.master_fd], [], [], _timeout)
                 if r:
+                    _last_data = time.time()
                     data = os.read(self.master_fd, 16384)
                     if not data:
                         self.alive = False
@@ -1117,6 +1122,7 @@ class Api:
         self._counter = 0
         self._window = None
         self._pusher_started = False
+        self._active_sid = ""                     # 當前顯示 tab；背景 tab 的 webview push 節流用
         self._output_event = threading.Event()   # signalled by reader threads
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
         self._plugins = None
@@ -1848,12 +1854,17 @@ class Api:
             return
         self._pusher_started = True
         pending = {}  # sid -> str
+        bg_last_push = {}  # sid -> 上次 push 時間（背景 tab 節流用）
+        BG_PUSH_INTERVAL = 0.25  # 背景(非當前顯示)tab 最多 4Hz push webview；當前 tab 全速
         MAX_PUSH_CHARS = 65536  # 單次推 webview 的字元上限，防爆量輸出(大檔/base64/長log)一次 evaluate_js 灌爆主執行緒凍住 UI
 
         def pusher():
             while True:
                 self._output_event.clear()
                 pushed = False
+                throttled = False  # 有背景 tab 的 pending 還沒到節流窗口
+                now = time.time()
+                active = self._active_sid
                 for sid, s in list(self.sessions.items()):
                     data = s.read()
                     if data:
@@ -1863,6 +1874,13 @@ class Api:
                         pending[sid] = pending.get(sid, "") + data
                     chunk = pending.get(sid)
                     if chunk and self._window:
+                        # 背景 tab(非當前顯示)節流：未到 4Hz 窗口就先留著 pending 不 push，
+                        # 切回該 tab 時 set_active_tab 會喚醒立刻刷出 → 不掉字、不卡主緒。
+                        # active 為空(尚未設定)時視同全速，退化為原行為。
+                        is_active = (not active) or (sid == active)
+                        if not is_active and (now - bg_last_push.get(sid, 0.0)) < BG_PUSH_INTERVAL:
+                            throttled = True
+                            continue
                         # 防 webview 被爆量輸出灌爆主執行緒：單次推送超過上限只送尾端，
                         # 從換行邊界切避免截斷 ANSI escape，前面標一行說明略過量。
                         if len(chunk) > MAX_PUSH_CHARS:
@@ -1874,11 +1892,13 @@ class Api:
                         try:
                             self._window.evaluate_js(f'_pushOutput("{sid}",{escaped})')
                             pending.pop(sid, None)
+                            bg_last_push[sid] = now
                             pushed = True
                         except Exception:
                             pass
-                # Event-driven: wake instantly on new data, idle-back-off otherwise
-                self._output_event.wait(0.001 if pushed else 0.015)
+                # Event-driven: wake instantly on new data；有節流中的背景 pending 時
+                # 用 0.1s 醒來把它在下個 4Hz 窗口刷出；全閒置則 0.015s。
+                self._output_event.wait(0.001 if pushed else (0.1 if throttled else 0.015))
 
         def bridge_feeder():
             while True:
@@ -3105,6 +3125,12 @@ class Api:
         WKWebView can be cleared unpredictably across launches; this is the
         durable backup."""
         try:
+            self._active_sid = sid
+            # 立刻喚醒 pusher，讓切過去的 tab 把累積的背景 buffer 馬上刷出（不掉字）
+            try:
+                self._output_event.set()
+            except Exception:
+                pass
             cfg = load_config()
             cfg["last_active_tab"] = sid
             save_config(cfg)

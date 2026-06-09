@@ -1,6 +1,17 @@
 # Changelog
 
-## v0.14.2 (2026-06-09)
+## v0.14.3 (2026-06-09)
+
+### Performance — per-tab CPU 優化（撐 10+ tab）
+背景：5-7 tab 時 main.py 吃 ~52% CPU，收 2 tab→22.8%，證明是 per-tab 處理成本。本版砍 idle floor + 背景 tab webview push 節流。實測 5 tab idle：**4.4% → 2.8%（floor 降 ~36%）**；背景串流 tab 輸出零丟失（60 行 in→61 行 out）。
+
+- **idle reader select 退避**（`main.py._reader_unix`）：近 2s 無輸出的 PTY，`select` timeout 由 0.05s 拉到 0.3s（有資料即返回、不影響延遲），砍 idle tab 空轉喚醒 ~6×。
+- **bridge 週期掃描降頻**（`bridge_telegram._flush_loop`）：stall 偵測 + auto-compact 這兩個「每 slot 都掃」的檢查由每 0.5s 改每 2s（tick%4），輸出 drain 仍 0.5s。砍 idle floor。
+- **history 擷取不再每次 materialize 整個 deque**（`_extract_new_text`）：改用 `itertools.islice` 只走訪新增的 history 行，且螢幕內滾動（history 沒增長）時直接跳過。
+- **pyte HistoryScreen history 3000 → 800 行**：降 per-tab 記憶體與 history 掃描成本（長回應擷取仍足夠）。
+- **背景 tab webview push 節流**（`main.py` pusher + `_active_sid`）：只有「當前顯示 tab」全速 push 到 webview；背景(非顯示)tab 的輸出合併、最多 4Hz push。pending 永不丟棄，`set_active_tab` 切換時立即刷出 → 不掉字。砍多背景 tab 串流時的主執行緒負載。
+
+需 restart 生效（已驗證 5 個 tmux tab 重連、切換/輸出/串流正常、bridge 連線、零丟字）。
 
 ### Fixes
 - **TG 回覆截斷修正 — 長訊息改分多則送出** — 原本 `>4000` 字直接 `msg[:4000] + "...(truncated)"` 截斷遺失內容；改為 `split_for_telegram()` 依行邊界切成 ≤3900 字多則依序送出（Telegram 單則上限 4096，保留 label 前綴餘裕），單行超長則硬切，絕不丟內容。
