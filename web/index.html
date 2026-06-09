@@ -3113,8 +3113,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         _armPasteConfirm(text, activeId);
         return;
       }
-      // Otherwise fall through to xterm.js for normal paste (bracketed
-      // paste escapes are added by xterm when enabled by the PTY).
+      // Multi-line paste below the confirm threshold (2–9 lines, < 1000 chars):
+      // must NOT fall through to xterm. xterm only wraps a paste in bracketed-
+      // paste escapes when the app has enabled DECSET 2004 — when it hasn't,
+      // the embedded "\n"s reach the AI/shell as line-by-line Enters and the
+      // paste auto-submits (the bug: pasting a few lines fires them off). Write
+      // it ourselves, always wrapped in bracketed paste, so it lands as one
+      // editable block with no auto-submit. (Claude/Codex/bash readline all
+      // honour bracketed paste.)
+      if (lines >= 2 && text) {
+        e.stopPropagation();
+        e.preventDefault();
+        pywebview.api.write_input(activeId, '\x1b[200~' + text + '\x1b[201~');
+        return;
+      }
+      // Single-line small paste — safe to fall through to xterm.
       return;
     }
 
