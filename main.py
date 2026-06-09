@@ -27,6 +27,7 @@ import threading
 import time
 import unicodedata
 import urllib.request
+import uuid
 from datetime import datetime
 from pathlib import Path
 from queue import SimpleQueue
@@ -543,6 +544,38 @@ def _session_cwd() -> str:
         return "/"
 
 
+def _maybe_claude_session_id(cmd: str):
+    """For a `claude` launch command, inject `--session-id <uuid>` so the tab
+    can be deterministically mapped to its transcript file
+    (~/.claude/projects/<slug>/<uuid>.jsonl). Skips codex/other commands and
+    any command that already resumes a session. Returns (new_cmd, session_id)
+    or (cmd, None) when not applicable."""
+    try:
+        low = f" {cmd.lower()} "
+        if "claude" not in low:
+            return cmd, None
+        if ("--session-id" in low or "--resume" in low or "--continue" in low
+                or " -r " in low or " -c " in low):
+            return cmd, None
+        new_id = str(uuid.uuid4())
+        return f"{cmd} --session-id {new_id}", new_id
+    except Exception:
+        return cmd, None
+
+
+def _tmux_get_env(tmux_name: str, key: str):
+    """Read a tmux session environment variable (returns '' if unset/error)."""
+    try:
+        tmux = shutil.which("tmux")
+        r = subprocess.run([tmux, "show-environment", "-t", tmux_name, key],
+                           capture_output=True, text=True, timeout=3)
+        if r.returncode == 0 and "=" in r.stdout:
+            return r.stdout.strip().split("=", 1)[1]
+    except Exception:
+        pass
+    return ""
+
+
 def _session_env() -> dict:
     env = dict(os.environ)
     path_parts = [
@@ -768,6 +801,10 @@ class Session:
                  on_data=None, tmux_name: str = None):
         self.sid = sid
         self.cmd = cmd
+        # Transcript correlation: claude tabs get a stable --session-id so the
+        # auto status detector can find their JSONL. None for codex/other (codex
+        # is mapped via lsof) and for reattached sessions (recovered from tmux env).
+        self.cmd, self.session_id = _maybe_claude_session_id(self.cmd)
         self.cwd = _session_cwd()
         self.buffer = bytearray()
         self.lock = threading.Lock()
@@ -837,7 +874,17 @@ class Session:
                 "tmux", "set-environment", "-t", self._tmux_name,
                 "SF_CMD", self.cmd,
             ], capture_output=True, timeout=3, env=_session_env())
+            # Persist the claude --session-id so reattach/restart can recover
+            # the transcript correlation without guessing.
+            if self.session_id:
+                subprocess.run([
+                    "tmux", "set-environment", "-t", self._tmux_name,
+                    "SF_SESSION_ID", self.session_id,
+                ], capture_output=True, timeout=3, env=_session_env())
         else:
+            # Existing session: the freshly generated session_id is wrong (the
+            # running claude already chose one at creation). Recover the real one.
+            self.session_id = _tmux_get_env(self._tmux_name, "SF_SESSION_ID") or None
             # Resize existing tmux session to match terminal
             subprocess.run([
                 "tmux", "resize-window", "-t", self._tmux_name,
