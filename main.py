@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
 import bridge_line
 import board
+import agent_status
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
 from bridge_line import LineBridge, LineBridgeConfig
 
@@ -1169,6 +1170,8 @@ class Api:
         self._counter = 0
         self._window = None
         self._pusher_started = False
+        self._status_started = False
+        self._status_tracker = agent_status.StatusTracker()
         self._active_sid = ""                     # 當前顯示 tab；背景 tab 的 webview push 節流用
         self._output_event = threading.Event()   # signalled by reader threads
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
@@ -1957,6 +1960,64 @@ class Api:
 
         threading.Thread(target=pusher, daemon=True).start()
         threading.Thread(target=bridge_feeder, daemon=True).start()
+
+    @staticmethod
+    def _auto_status_enabled() -> bool:
+        # Feature flag — default ON; set settings.auto_status_detect=false to
+        # disable and fall back to the browser-side heuristic + [[SF:]] markers.
+        try:
+            settings = load_config().get("settings", {}) or {}
+            return settings.get("auto_status_detect", True) is not False
+        except Exception:
+            return True
+
+    def _start_status_monitor(self):
+        """Background thread: every ~600ms compute each tab's agent status from
+        its transcript/rollout log (+ screen wording) and push to the webview.
+        Fully isolated from the PTY/output path — any failure just yields
+        'unknown' and the browser heuristic keeps working."""
+        if self._status_started:
+            return
+        self._status_started = True
+
+        def monitor():
+            while True:
+                try:
+                    if not self._auto_status_enabled() or not self._window:
+                        time.sleep(1.0)
+                        continue
+                    out = {}
+                    for sid, s in list(self.sessions.items()):
+                        try:
+                            worker = {
+                                "cmd": getattr(s, "cmd", ""),
+                                "cwd": getattr(s, "cwd", "~"),
+                                "tmux_name": getattr(s, "_tmux_name", None),
+                                "session_id": getattr(s, "session_id", None),
+                            }
+                            screen_tail = bytes(getattr(s, "_recent", b"")).decode(
+                                "utf-8", errors="replace")[-4000:]
+                            st = self._status_tracker.status_for(
+                                sid, worker, screen_tail=screen_tail)
+                            out[sid] = {"state": st.get("state"),
+                                        "dot": st.get("dot"),
+                                        "summary": st.get("summary"),
+                                        "activity": st.get("activity") or {}}
+                        except Exception:
+                            out[sid] = {"state": "unknown", "dot": "",
+                                        "summary": "", "activity": {}}
+                    if out and self._window:
+                        payload = json.dumps(out)
+                        try:
+                            self._window.evaluate_js(
+                                f'window.__sfAgentStatus && window.__sfAgentStatus({payload})')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                time.sleep(0.6)
+
+        threading.Thread(target=monitor, daemon=True).start()
 
     def get_config(self) -> str:
         return json.dumps(load_config())
@@ -5933,6 +5994,7 @@ def main():
             print(f"[shellframe] setCollectionBehavior failed: {e}",
                   file=sys.stderr)
         api._start_output_pusher()
+        api._start_status_monitor()
 
     window.events.loaded += _on_loaded
     window.events.closed += _on_closed_save_and_cleanup
