@@ -4638,6 +4638,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // the per-tab activity line + the top overview counts directly.
   const ACT_DECAY_MS = 4000;  // drop a stale server verdict if pushes stop
   const AA_ORDER = { decision: 0, stuck: 1, working: 2, done: 3 };
+  // Server payload only STORES detail; it does not decide which tabs appear.
   window.__sfAgentStatus = function (payload) {
     try {
       if (!payload || typeof payload !== 'object') return;
@@ -4648,35 +4649,52 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const st = payload[sid] || {};
         s._serverStatus = st;
         s._serverStatusTs = now;
-        // 'unknown'/'idle' carry no dot — let the per-tab browser heuristic
-        // drive the left light (accurate for unmapped tabs).
+        // 'unknown' → no server dot; the per-tab browser heuristic drives the
+        // left light AND the right panel state (accurate for unmapped tabs).
         s._serverDot = (st.dot && st.state && st.state !== 'unknown') ? st.dot : '';
       }
-      // Build the RIGHT-side agent detail list (left sidebar keeps dots only).
-      // Only sessions with a confident detected state appear here.
+    } catch (e) { /* never let status break the UI */ }
+  };
+
+  // Right-side Agents panel — mirrors each tab's EFFECTIVE light state (the
+  // same s._dotClass the left dots show: heuristic for unmapped claude tabs,
+  // server-detected for codex / session-id'd claude). Server detail (current
+  // tool/file) is overlaid as the activity text when a confident mapping
+  // exists. This way every actually-working agent shows up, accurately.
+  const DOT_TO_STATE = {
+    'sig-working': 'working', 'on': 'working',
+    'sig-decision': 'decision', 'on attention': 'decision',
+    'sig-stuck': 'stuck', 'sig-done': 'done',
+  };
+  function renderAgentsPanel() {
+    try {
+      const list = document.getElementById('aa-list');
+      const ov = document.getElementById('aa-overview');
+      if (!list && !ov) return;
+      const now = Date.now();
       const rows = [];
       const c = { working: 0, decision: 0, done: 0, stuck: 0 };
-      for (const sid of Object.keys(sessions)) {
+      const order = (sessionOrder && sessionOrder.length) ? sessionOrder : Object.keys(sessions);
+      for (const sid of order) {
         const s = sessions[sid];
         if (!s) continue;
-        const fresh = (now - (s._serverStatusTs || 0)) < 60000;
-        const st = s._serverStatus;
-        if (!st || !fresh || !(st.state in AA_ORDER)) continue;
-        c[st.state]++;
-        rows.push({ sid, label: s.label || sid, state: st.state, summary: st.summary || '' });
+        const state = DOT_TO_STATE[s._dotClass || ''] || '';
+        if (!(state in AA_ORDER)) continue;   // skip idle tabs
+        c[state]++;
+        const ss = s._serverStatus;
+        const fresh = ss && (now - (s._serverStatusTs || 0) < 60000) && ss.state === state;
+        rows.push({ sid, label: s.label || sid, state, act: fresh ? (ss.summary || '') : '' });
       }
       rows.sort((a, b) => (AA_ORDER[a.state] - AA_ORDER[b.state]) ||
                           String(a.label).localeCompare(String(b.label)));
-      const list = document.getElementById('aa-list');
       if (list) {
         list.innerHTML = rows.map(r =>
           `<div class="aa-row st-${r.state}" data-sid="${r.sid}">` +
           `<span class="aa-dot"></span>` +
           `<span class="aa-label">${esc(r.label)}</span>` +
-          `<span class="aa-act">${esc(r.summary)}</span>` +
+          `<span class="aa-act">${esc(r.act)}</span>` +
           `</div>`).join('');
       }
-      const ov = document.getElementById('aa-overview');
       if (ov) {
         const parts = [];
         if (c.working) parts.push(`<span class="ov-working">▶ ${c.working} working</span>`);
@@ -4686,7 +4704,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         ov.innerHTML = parts.join(' · ');
       }
     } catch (e) { /* never let status break the UI */ }
-  };
+  }
+  setInterval(renderAgentsPanel, 500);
+  // Click an agent row to jump to that tab.
+  document.getElementById('aa-list')?.addEventListener('click', (e) => {
+    const row = e.target.closest('.aa-row');
+    if (row && row.dataset.sid) switchTab(row.dataset.sid);
+  });
   // Decay: if the server stops pushing (feature off / crash), drop stale dots
   // so the browser heuristic resumes cleanly.
   setInterval(() => {
