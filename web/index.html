@@ -498,6 +498,38 @@
   .bp-act:hover { color: #c0caf5; }
   .bp-notes { color: #787c99; font-size: 10px; margin-top: 4px; line-height: 1.35; word-break: break-word; }
 
+  /* ── Live agent activity feed (right panel) ── */
+  #feed-overview { font-size: 10px; color: #565f89; letter-spacing: .3px; margin-left: auto; }
+  #feed-overview .ov-working { color: #7aa2f7; }
+  #feed-overview .ov-decision { color: #f7768e; font-weight: 600; }
+  #feed-overview .ov-stuck { color: #ff9e64; }
+  .feed-row {
+    display: flex; align-items: flex-start; gap: 7px; padding: 7px 4px;
+    border-bottom: 1px solid #1a1b26; border-left: 2px solid transparent;
+    padding-left: 8px; transition: opacity .6s;
+  }
+  .feed-row.st-working { border-left-color: #7aa2f7; }
+  .feed-row.st-decision { border-left-color: #f7768e; }
+  .feed-row.st-stuck { border-left-color: #ff9e64; }
+  .feed-row.st-done { border-left-color: #9ece6a; opacity: .4; }
+  .feed-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px;
+    background: #3b4261;
+  }
+  .feed-row.st-working .feed-dot { background: #7aa2f7; box-shadow: 0 0 6px #7aa2f7; animation: busy-pulse 1.1s ease-in-out infinite; }
+  .feed-row.st-decision .feed-dot { background: #f7768e; box-shadow: 0 0 6px #f7768e; animation: busy-pulse .7s ease-in-out infinite; }
+  .feed-row.st-stuck .feed-dot { background: #ff9e64; box-shadow: 0 0 6px #ff9e64; }
+  .feed-row.st-done .feed-dot { background: #9ece6a; }
+  .feed-body { flex: 1; min-width: 0; }
+  .feed-label { font-size: 11px; color: #c0caf5; font-weight: 500; }
+  .feed-row.st-done .feed-label { color: #787c99; }
+  .feed-act {
+    font-size: 10px; color: #787c99; margin-top: 2px; line-height: 1.3;
+    word-break: break-word;
+  }
+  .feed-row.st-working .feed-act { color: #9aa5ce; }
+  .feed-empty { color: #3b4261; font-size: 11px; text-align: center; padding: 16px 8px; }
+
   /* ── Code block copy button ── */
   .code-copy-btn {
     position: fixed; z-index: 100; display: none;
@@ -575,10 +607,10 @@
   <div class="panel-resizer" id="board-resizer" title="拖曳調整寬度"></div>
   <div id="board-panel" class="collapsed">
     <div id="board-header">
-      <span class="bp-title" data-i18n="boardPanelTitle">Task Board</span>
-      <button id="board-add-btn" data-i18n-title="boardAddTitle" data-i18n="boardAdd" title="Add task">+ Task</button>
+      <span class="bp-title">Agents · 即時動態</span>
+      <span id="feed-overview"></span>
     </div>
-    <div id="board-list"><div id="board-empty" data-i18n="boardEmpty">No tasks yet</div></div>
+    <div id="board-list"></div>
   </div>
 </div>
 
@@ -2572,21 +2604,72 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }).join('');
   }
 
-  async function refreshBoard() {
-    if (!window.pywebview || !pywebview.api || !pywebview.api.board_list) return;
+  // The right panel is now the live Agents activity feed (auto-generated from
+  // detection), not the manual task board. Always available; renders from the
+  // per-tab detected status pushed by the server.
+  function refreshBoard() {
     try {
-      const res = JSON.parse(await pywebview.api.board_list());
-      _boardEnabled = !!res.enabled;
       const btn = document.getElementById('btn-board');
-      const panel = document.getElementById('board-panel');
-      if (btn) btn.style.display = _boardEnabled ? '' : 'none';
-      if (!_boardEnabled && panel && !panel.classList.contains('collapsed')) {
-        panel.classList.add('collapsed');
-      }
-      if (_boardEnabled) renderBoard(res.tasks || []);
+      if (btn) btn.style.display = '';
+      renderFeed();
       updateResizerVisibility();
     } catch (_) {}
   }
+
+  // Live agent feed: one row per agent that is doing something right now
+  // (working / decision / stuck), plus recently-finished ones that fade out
+  // after DONE_TTL. Pure reflection of detected state — no manual cards, no
+  // owner matching, no agent self-report.
+  const FEED_RANK = { decision: 0, stuck: 1, working: 2, done: 3 };
+  const DONE_TTL_MS = 60000;
+  function renderFeed() {
+    try {
+      const list = document.getElementById('board-list');
+      if (!list) return;
+      const now = Date.now();
+      const rows = [];
+      const c = { working: 0, decision: 0, stuck: 0 };
+      const order = (typeof sessionOrder !== 'undefined' && sessionOrder.length)
+        ? sessionOrder : Object.keys(sessions);
+      for (const sid of order) {
+        const s = sessions[sid];
+        if (!s) continue;
+        const ss = s._serverStatus;
+        const fresh = ss && (now - (s._serverStatusTs || 0) < 60000);
+        let state = fresh ? ss.state : '';
+        if (!(state in FEED_RANK)) state = '';
+        if (state === 'done') {
+          if (!s._doneSince) s._doneSince = now;
+          if (now - s._doneSince > DONE_TTL_MS) continue;   // aged out
+        } else {
+          s._doneSince = 0;
+        }
+        if (!state) continue;
+        if (c[state] !== undefined) c[state]++;
+        const act = (state !== 'done' && ss && ss.summary && ss.summary !== state)
+          ? ss.summary : '';
+        rows.push({ sid, label: s.label || sid, state, act });
+      }
+      rows.sort((a, b) => (FEED_RANK[a.state] - FEED_RANK[b.state]) ||
+                          String(a.label).localeCompare(String(b.label)));
+      list.innerHTML = rows.length ? rows.map(r =>
+        `<div class="feed-row st-${r.state}" data-sid="${r.sid}">` +
+        `<span class="feed-dot"></span>` +
+        `<div class="feed-body"><div class="feed-label">${esc(r.label)}</div>` +
+        (r.act ? `<div class="feed-act">${esc(r.act)}</div>` : '') +
+        `</div></div>`).join('')
+        : `<div class="feed-empty">沒有偵測到 agent 活動</div>`;
+      const ov = document.getElementById('feed-overview');
+      if (ov) {
+        const parts = [];
+        if (c.working) parts.push(`<span class="ov-working">▶ ${c.working}</span>`);
+        if (c.decision) parts.push(`<span class="ov-decision">◆ ${c.decision}</span>`);
+        if (c.stuck) parts.push(`<span class="ov-stuck">▲ ${c.stuck}</span>`);
+        ov.innerHTML = parts.join(' · ');
+      }
+    } catch (e) { /* never let the feed break the UI */ }
+  }
+  setInterval(renderFeed, 700);
 
   document.getElementById('btn-board').addEventListener('click', () => {
     const panel = document.getElementById('board-panel');
@@ -2652,26 +2735,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   setupResizer('board-resizer', 'board-panel', '--board-w', 'board_width', 'right', 180, 560);
   updateResizerVisibility();
 
-  document.getElementById('board-add-btn').addEventListener('click', async () => {
-    const title = prompt(t('boardPromptTitle'));
-    if (!title || !title.trim()) return;
-    const difficulty = (prompt(t('boardPromptDifficulty'), 'medium') || 'medium').trim();
-    try {
-      await pywebview.api.board_add(title.trim(), 'unassigned', 'todo', difficulty, '');
-    } catch (_) {}
-    refreshBoard();
-  });
-
-  document.getElementById('board-list').addEventListener('click', async (e) => {
-    const b = e.target.closest('.bp-act');
-    if (!b) return;
-    const id = b.getAttribute('data-id');
-    const act = b.getAttribute('data-act');
-    try {
-      if (act === 'done') await pywebview.api.board_update(id, JSON.stringify({ status: 'done' }));
-      else if (act === 'remove') await pywebview.api.board_remove(id);
-    } catch (_) {}
-    refreshBoard();
+  // Click an agent feed row to jump to that tab.
+  document.getElementById('board-list')?.addEventListener('click', (e) => {
+    const row = e.target.closest('.feed-row');
+    if (row && row.dataset.sid) switchTab(row.dataset.sid);
   });
 
   setInterval(refreshBoard, 2500);

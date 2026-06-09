@@ -113,6 +113,38 @@ def _lsof_open_jsonl(pids, name_contains: str):
     return None
 
 
+def _proc_start_epoch(pid):
+    """Process start time as epoch seconds (macOS `ps -o lstart`)."""
+    try:
+        r = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)],
+                           capture_output=True, text=True, timeout=2)
+        s = r.stdout.strip()
+        if not s:
+            return None
+        from datetime import datetime
+        return datetime.strptime(s, "%a %b %d %H:%M:%S %Y").timestamp()
+    except Exception:
+        return None
+
+
+def _nearest_birth_jsonl(pattern: str, target_epoch: float, max_delta=900):
+    """The transcript whose file birth time is closest to target_epoch (a tab's
+    claude process start). Each claude session creates its .jsonl at launch, so
+    matching process-start↔file-birth maps each tab to its OWN transcript even
+    when many share the $HOME slug — unlike newest-mtime, which converges on the
+    one currently-active file. Returns None if nothing is within max_delta."""
+    best, best_d = None, max_delta
+    for f in glob.glob(pattern):
+        try:
+            b = os.stat(f).st_birthtime
+        except (OSError, AttributeError):
+            continue
+        d = abs(b - target_epoch)
+        if d < best_d:
+            best, best_d = f, d
+    return best
+
+
 def _newest_jsonl(pattern: str, within_s=3600):
     cutoff = time.time() - within_s
     best, best_m = None, 0.0
@@ -151,12 +183,21 @@ def resolve_transcript(worker: dict):
             # active session's state and falsely show "working". When unmapped we
             # return None → status 'unknown' → the browser per-tab heuristic (which
             # reads each tab's own terminal) drives the dot, which is accurate.
+            slug = _cwd_slug(worker.get("cwd", "~"))
             sid = worker.get("session_id")
-            if sid:
-                slug = _cwd_slug(worker.get("cwd", "~"))
+            if sid:  # P3: deterministic mapping for newly spawned tabs
                 p = os.path.join(CLAUDE_PROJECTS, slug, f"{sid}.jsonl")
                 if os.path.exists(p):
                     return p
+            # Existing tabs (spawned before --session-id): map by matching the
+            # tab's claude process start time to the nearest transcript birth
+            # time. Distinct per tab, so no false "all show the active one".
+            pane = _tmux_pane_pid(worker.get("tmux_name"))
+            if pane:
+                start = _proc_start_epoch(pane)
+                if start:
+                    return _nearest_birth_jsonl(
+                        os.path.join(CLAUDE_PROJECTS, slug, "*.jsonl"), start)
             return None
     except Exception:
         return None
