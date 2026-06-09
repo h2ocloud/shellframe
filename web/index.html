@@ -75,6 +75,26 @@
     box-shadow: 0 0 7px #ff9e64, 0 0 3px #ff9e64;
     animation: busy-pulse 1.9s ease-in-out infinite;
   }
+  /* ── Auto-detected agent activity (right sidebar detail layer) ── */
+  #sb-status-overview {
+    font-size: 10px; color: #565f89; padding: 2px 10px 6px;
+    letter-spacing: .3px; min-height: 14px; user-select: none;
+  }
+  #sb-status-overview .ov-working { color: #7aa2f7; }
+  #sb-status-overview .ov-decision { color: #f7768e; font-weight: 600; }
+  #sb-status-overview .ov-stuck { color: #ff9e64; }
+  #sb-status-overview .ov-done { color: #9ece6a; }
+  .sb-item { flex-wrap: wrap; }
+  .sb-activity {
+    flex-basis: 100%; font-size: 10px; color: #565f89;
+    padding: 1px 0 1px 16px; margin-top: -1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: .85;
+  }
+  .sb-activity.st-decision { color: #f7768e; opacity: 1; }
+  .sb-activity.st-stuck { color: #ff9e64; opacity: 1; }
+  .sb-activity.st-done { opacity: .45; }
+  .sb-activity:empty { display: none; }
   @keyframes busy-pulse {
     0%, 100% { opacity: .55; }
     50%      { opacity: 1; }
@@ -563,6 +583,7 @@
 <div id="app-body">
   <div id="sidebar" class="collapsed">
     <div class="sb-section-title">Sessions</div>
+    <div id="sb-status-overview"></div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
       <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
@@ -2272,7 +2293,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
-        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '');
+        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
+        `<span class="sb-activity st-${(s._serverStatus && s._serverStatus.state) || ''}">${esc((s._serverStatus && s._serverStatus.summary) || '')}</span>`;
       container.appendChild(el);
     });
 
@@ -2295,7 +2317,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
-          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
+          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
+          `<span class="sb-activity st-${(s._serverStatus && s._serverStatus.state) || ''}">${esc((s._serverStatus && s._serverStatus.summary) || '')}</span>`;
         container.appendChild(el);
       });
 
@@ -4543,9 +4566,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // Priority: 🔵 working (heuristic activity OR explicit WORKING) — a running
       // tab is ALWAYS blue. A resting explicit signal (green/red/orange) shows
       // only while the tab is idle. Otherwise fall back to the heuristic.
+      // Priority: instant browser spinner (isBusy) → blue. Then the
+      // SERVER auto-detected state (transcript/rollout, authoritative for the
+      // resting semantic state). Then the legacy self-reported [[SF:]] marker
+      // (demoted to fallback in P5). Then the attention heuristic.
       let dotClass;
       if (isBusy) {
         dotClass = 'sig-working';
+      } else if (s._serverDot) {
+        dotClass = s._serverDot;
       } else if (s._signal && SIGNAL_DOT_CLASS[s._signal]) {
         dotClass = SIGNAL_DOT_CLASS[s._signal];
       } else {
@@ -4561,6 +4590,61 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (sbDot) sbDot.className = 'busy-dot ' + dotClass;
     }
   }, 400);
+
+  // ── Auto-detected agent status from the server (P2) ──
+  // payload: { sid: { state, dot, summary, activity } }
+  // The server tails each tab's transcript/rollout log; we store its verdict
+  // on the session so the 400ms dot loop uses it (s._serverDot), and we patch
+  // the per-tab activity line + the top overview counts directly.
+  const ACT_DECAY_MS = 4000;  // drop a stale server verdict if pushes stop
+  window.__sfAgentStatus = function (payload) {
+    try {
+      if (!payload || typeof payload !== 'object') return;
+      const now = Date.now();
+      for (const sid of Object.keys(payload)) {
+        const s = sessions[sid];
+        if (!s) continue;
+        const st = payload[sid] || {};
+        s._serverStatus = st;
+        s._serverStatusTs = now;
+        // 'unknown'/'idle' carry no dot — let the heuristic take over.
+        s._serverDot = (st.dot && st.state && st.state !== 'unknown') ? st.dot : '';
+        const line = document.querySelector(
+          `#sidebar-sessions [data-sid="${sid}"] .sb-activity`);
+        if (line) {
+          line.className = 'sb-activity st-' + (st.state || '');
+          line.textContent = st.summary || '';
+        }
+      }
+      // Top overview: count states across all sessions.
+      const c = { working: 0, decision: 0, done: 0, stuck: 0 };
+      for (const sid of Object.keys(sessions)) {
+        const st = sessions[sid] && sessions[sid]._serverStatus;
+        const fresh = sessions[sid] && (now - (sessions[sid]._serverStatusTs || 0) < 60000);
+        if (st && fresh && c[st.state] !== undefined) c[st.state]++;
+      }
+      const ov = document.getElementById('sb-status-overview');
+      if (ov) {
+        const parts = [];
+        if (c.working) parts.push(`<span class="ov-working">▶ ${c.working} working</span>`);
+        if (c.decision) parts.push(`<span class="ov-decision">◆ ${c.decision} decision</span>`);
+        if (c.stuck) parts.push(`<span class="ov-stuck">▲ ${c.stuck} stuck</span>`);
+        if (c.done) parts.push(`<span class="ov-done">✓ ${c.done} done</span>`);
+        ov.innerHTML = parts.join(' · ');
+      }
+    } catch (e) { /* never let status break the UI */ }
+  };
+  // Decay: if the server stops pushing (feature off / crash), drop stale dots
+  // so the browser heuristic resumes cleanly.
+  setInterval(() => {
+    const now = Date.now();
+    for (const sid of Object.keys(sessions)) {
+      const s = sessions[sid];
+      if (s && s._serverDot && (now - (s._serverStatusTs || 0)) > ACT_DECAY_MS) {
+        s._serverDot = '';
+      }
+    }
+  }, 2000);
 
   // ── About modal + update check ──
   const $modalAbout = document.getElementById('modal-about');
