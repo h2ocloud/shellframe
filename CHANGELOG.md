@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.14.2 (2026-06-09)
+
+### Fixes
+- **TG 回覆截斷修正 — 長訊息改分多則送出** — 原本 `>4000` 字直接 `msg[:4000] + "...(truncated)"` 截斷遺失內容；改為 `split_for_telegram()` 依行邊界切成 ≤3900 字多則依序送出（Telegram 單則上限 4096，保留 label 前綴餘裕），單行超長則硬切，絕不丟內容。
+- **TG 回覆洩漏內部 TUI 修正 — marker 區間夾帶評分提示/重繪重複** — 症狀：手機收到回覆尾巴帶「How is Claude doing this session? / 1: Bad 2: Fine 3: Good 0: Dismiss」評分提示與重複內容。根因：Claude Code 回覆完成後重繪終端，評分提示與重繪的重複文字被線性化 PTY 串流吃進 `[[TG_REPLY]]` start/end marker 之間。修法：`clean_mobile_marker_response()`（marker 抽取唯一收斂點，正常/force 兩路徑共用）新增 `_TUI_SENTINEL_RE` 高信心 TUI 哨兵偵測，一旦命中（評分提示、選項列、`Cooked/Worked for Xs`、`esc to interrupt`）即就地截斷整段尾巴。正常回應不含這些字串故零誤傷。marker 存在時本就只走 marker 抽取、不 fallback 抓原始終端畫面（既有設計），此修進一步硬化 marker 內容。
+- 純 `bridge_telegram.py` 改動，`sfctl reload` 即生效（免 restart）。
+
 ## v0.14.1 (2026-06-08)
 
 ### Features

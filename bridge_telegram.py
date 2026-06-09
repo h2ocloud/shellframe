@@ -233,14 +233,34 @@ def strip_ansi(text, sent_texts=None):
     return '\n'.join(lines)
 
 
+# 高信心 Claude Code / Codex TUI 哨兵：一旦在 marker 區間內出現這些行，代表後面
+# 全是終端重繪殘影、評分提示或重複內容（串流抓取把結尾 UI 吃進 start/end 之間）。
+# 正常回應絕不會含這些字串，故就地截斷整段尾巴最安全。
+_TUI_SENTINEL_RE = re.compile(
+    r'(?:how is claude doing this session)'
+    r'|(?:\b\d\s*:\s*(?:bad|fine|good|dismiss)\b.*\b\d\s*:\s*(?:bad|fine|good|dismiss)\b)'
+    r'|(?:^\s*\d\s*:\s*(?:bad|fine|good|dismiss)\s*$)'
+    r'|(?:\besc to interrupt\b)'
+    r'|(?:^[✻✢✳∗✽·●⏺•*─\-]{0,2}\s*(?:cooked|worked|saut[eé]ed|churned|baking|brewing|simmering|forging)\s+for\s+\d)',
+    re.IGNORECASE)
+
+
 def clean_mobile_marker_response(text: str) -> str:
-    """Light cleanup for text already isolated by a mobile reply marker."""
+    """Light cleanup for text already isolated by a mobile reply marker.
+
+    Also hard-truncates at the first Claude Code/Codex TUI sentinel line: when
+    the terminal repaints after the reply, the rating prompt + duplicated reply
+    text can land between the [[TG_REPLY]] start/end markers in the linearized
+    PTY stream. Cutting there removes the leak (and the trailing repaint dup).
+    """
     lines = []
     previous = None
     for line in (text or "").splitlines():
         stripped = line.strip()
         if not stripped:
             continue
+        if _TUI_SENTINEL_RE.search(stripped):
+            break
         if re.match(r"^\[(TG|LINE)[^\]]*\]:", stripped):
             continue
         if stripped.startswith(("Ran ", "Bash(", "Read ", "Search ", "Explored ", "Edited ", "Write ", "Update ")):
@@ -255,6 +275,33 @@ def clean_mobile_marker_response(text: str) -> str:
         previous = stripped
     return "\n".join(lines).strip()
 
+
+
+def split_for_telegram(text: str, limit: int = 3900) -> list:
+    """Split text into <=limit-char chunks at line boundaries so long replies
+    are sent as multiple Telegram messages instead of being truncated.
+
+    Telegram's hard cap is 4096 chars/message; 3900 leaves headroom for the
+    session-label prefix. A single oversized line is hard-split as a last
+    resort. Never drops content.
+    """
+    text = text or ""
+    if len(text) <= limit:
+        return [text]
+    chunks, buf = [], ""
+    for line in text.split("\n"):
+        while len(line) > limit:
+            if buf:
+                chunks.append(buf); buf = ""
+            chunks.append(line[:limit]); line = line[limit:]
+        piece = ("\n" + line) if buf else line
+        if len(buf) + len(piece) > limit:
+            chunks.append(buf); buf = line
+        else:
+            buf += piece
+    if buf:
+        chunks.append(buf)
+    return chunks
 
 
 def tg_api(token: str, method: str, data=None, timeout: float = 35) -> dict:
@@ -535,6 +582,7 @@ class SessionSlot:
         self.expect_marker = False
         self.reply_start_marker = ""
         self.reply_end_marker = ""
+        self.marker_prompt = ""         # injected wrapper instruction (to exclude its echo)
         self.last_extraction_ts = 0.0   # time of last successful response extraction
         # Throttle for sendChatAction. TG keeps the typing bubble alive ~5s,
         # so 4s pacing keeps it visible without burning 10× the API calls the
@@ -1395,10 +1443,38 @@ class TelegramBridge(BridgeBase):
 
         return new_texts
 
-    def _extract_marked_mobile_reply(self, slot) -> str:
-        """Extract the unique mobile reply marker from raw PTY output."""
+    @staticmethod
+    def _marker_spans(clean_raw: str, start_m: str, end_m: str):
+        """Return [(start_idx, end_idx, inner_text)] for every start→end pair in
+        order. A trailing start with no matching end yields end_idx=-1 (an
+        in-progress reply still streaming)."""
+        spans = []
+        i = 0
+        n = len(start_m)
+        while True:
+            s = clean_raw.find(start_m, i)
+            if s < 0:
+                break
+            e = clean_raw.find(end_m, s + n)
+            if e < 0:
+                spans.append((s, -1, ""))
+                break
+            spans.append((s, e, clean_raw[s + n:e]))
+            i = e + len(end_m)
+        return spans
+
+    def _pick_marker_reply(self, slot, allow_inprogress: bool):
+        """Choose the real marked reply from the raw PTY buffer, robust across
+        streaming repaints and the wrapper instruction's own echoed example.
+
+        Collects ALL [[start]]…[[end]] pairs, drops any whose content is part of
+        the injected instruction text (the echoed "{start} 和 {end}" example that
+        used to leak as a bare 「和」), and returns the LAST complete real reply.
+        Returns (reply, has_open) where has_open means a newer reply is still
+        streaming (unclosed start) — callers wait for it unless forcing.
+        """
         if not slot.expect_marker or not slot.reply_start_marker or not slot.reply_end_marker:
-            return ""
+            return "", False
         raw = slot.pending_raw
         if slot.peek_fn:
             try:
@@ -1406,54 +1482,41 @@ class TelegramBridge(BridgeBase):
             except Exception:
                 pass
         clean_raw = strip_ansi(raw, sent_texts=[])
-        # 移除 wrapper 注入的指示文字裡那組「範例 marker」——它與真實標記同字串、
-        # 中間夾「 和 」，會污染 rfind，曾導致只截出指示中的「和」字。真實回應內文
-        # 不會是「start 和 end」這個 pattern，所以精準移除不會傷到正常回應。
-        if slot.reply_start_marker and slot.reply_end_marker:
-            clean_raw = clean_raw.replace(
-                f"{slot.reply_start_marker} 和 {slot.reply_end_marker}", " ")
-        start = clean_raw.rfind(slot.reply_start_marker)
-        if start < 0:
+        spans = self._marker_spans(
+            clean_raw, slot.reply_start_marker, slot.reply_end_marker)
+        has_open = any(e < 0 for _, e, _ in spans)
+        instr_n = (getattr(slot, "marker_prompt", "") or "").replace(" ", "")
+        candidates = []
+        for _, e, inner in spans:
+            if e < 0:
+                continue
+            cleaned = clean_mobile_marker_response(inner)
+            if not cleaned:
+                continue
+            # Drop the wrapper-instruction echo: its inner span is part of the
+            # instruction prose (e.g. bare 「和」). Real replies are never a
+            # substring of the instruction we injected.
+            if instr_n and cleaned.replace(" ", "") in instr_n:
+                continue
+            candidates.append(cleaned)
+        if not candidates:
+            return "", has_open
+        return candidates[-1], has_open
+
+    def _extract_marked_mobile_reply(self, slot) -> str:
+        """Extract the marked mobile reply; wait if a newer reply is streaming."""
+        reply, has_open = self._pick_marker_reply(slot, allow_inprogress=False)
+        # A newer reply is still streaming (unclosed start) → wait for it so we
+        # forward the complete version, not a half-painted one.
+        if has_open:
             return ""
-        end = clean_raw.find(slot.reply_end_marker, start + len(slot.reply_start_marker))
-        if end < 0:
-            return ""
-        tail = clean_raw[end + len(slot.reply_end_marker):]
-        # 只有當 tail 還含「另一組 start marker」（代表後面有更新、更完整的回應）才放棄
-        # 這次抓取去等新的。純 tool 輸出 / 後續操作 / 雜訊不該擋住已被 end marker 閉合
-        # 的 reply——否則「[[TG_REPLY]] 在前、Bash/Read 等工具輸出在後」這個常見情況會
-        # 讓 reply 被靜默吞掉、造成遺漏回覆（end marker 已閉合即代表回應完整）。
-        if slot.reply_start_marker in tail:
-            return ""
-        marked = clean_raw[start + len(slot.reply_start_marker):end].strip()
-        return clean_mobile_marker_response(marked)
+        return reply
 
     def _extract_marked_mobile_reply_force(self, slot) -> str:
-        """Force-extract marker reply, ignoring tail content check.
-        Used as fallback after 30s when tail guard keeps blocking."""
-        if not slot.expect_marker or not slot.reply_start_marker or not slot.reply_end_marker:
-            return ""
-        raw = slot.pending_raw
-        if slot.peek_fn:
-            try:
-                raw += "\n" + (slot.peek_fn() or "")
-            except Exception:
-                pass
-        clean_raw = strip_ansi(raw, sent_texts=[])
-        # 移除 wrapper 注入的指示文字裡那組「範例 marker」——它與真實標記同字串、
-        # 中間夾「 和 」，會污染 rfind，曾導致只截出指示中的「和」字。真實回應內文
-        # 不會是「start 和 end」這個 pattern，所以精準移除不會傷到正常回應。
-        if slot.reply_start_marker and slot.reply_end_marker:
-            clean_raw = clean_raw.replace(
-                f"{slot.reply_start_marker} 和 {slot.reply_end_marker}", " ")
-        start = clean_raw.rfind(slot.reply_start_marker)
-        if start < 0:
-            return ""
-        end = clean_raw.find(slot.reply_end_marker, start + len(slot.reply_start_marker))
-        if end < 0:
-            return ""
-        marked = clean_raw[start + len(slot.reply_start_marker):end].strip()
-        return clean_mobile_marker_response(marked)
+        """Force-extract the last complete marked reply, ignoring the
+        still-streaming guard. Used as fallback after 30s."""
+        reply, _ = self._pick_marker_reply(slot, allow_inprogress=True)
+        return reply
 
     # Explicit agent signal marker — a worker prints one of these on its own
     # line to declare this tab's state. Tolerates leading bullet/cursor glyphs
@@ -1877,6 +1940,7 @@ class TelegramBridge(BridgeBase):
                         slot.expect_marker = False
                         slot.reply_start_marker = ""
                         slot.reply_end_marker = ""
+                        slot.marker_prompt = ""
                         slot.has_user_msg = False
                     else:
                         # Extract new text via screen diff (only final changes)
@@ -1949,8 +2013,9 @@ class TelegramBridge(BridgeBase):
                 prefix = f"[{slot.label}] " if len(self.slots) > 1 else ""
                 msg = prefix + clean
 
-                if len(msg) > 4000:
-                    msg = msg[:4000] + "\n...(truncated)"
+                # Long replies are split into multiple TG messages (≤4096 cap),
+                # never truncated. Menu prompts stay single (kept short by design).
+                msg_parts = [msg] if is_menu_prompt else split_for_telegram(msg)
 
                 # Collect target chat_ids
                 target_chats = set()
@@ -1967,10 +2032,11 @@ class TelegramBridge(BridgeBase):
                     if is_menu_prompt:
                         self._send_choice_menu(chat_id, slot, msg)
                     else:
-                        tg_api(self.config.bot_token, "sendMessage", {
-                            "chat_id": chat_id,
-                            "text": msg,
-                        })
+                        for part in msg_parts:
+                            tg_api(self.config.bot_token, "sendMessage", {
+                                "chat_id": chat_id,
+                                "text": part,
+                            })
                     # Send detected files as documents
                     for fp in file_paths:
                         self._send_tg_file(chat_id, fp)
@@ -3123,10 +3189,12 @@ class TelegramBridge(BridgeBase):
             slot.expect_marker = True
             slot.reply_start_marker = start_marker
             slot.reply_end_marker = end_marker
+            slot.marker_prompt = marker_prompt
         else:
             slot.expect_marker = False
             slot.reply_start_marker = ""
             slot.reply_end_marker = ""
+            slot.marker_prompt = ""
 
         # Write text first, then Enter after a brief delay.
         # When show_tg_wrapper is on, prefix with a visible tag so the
