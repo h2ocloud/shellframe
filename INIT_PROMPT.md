@@ -90,16 +90,12 @@ Worker setup rules:
 - Poll workers with `sfctl peek` every 20-60 seconds while active. Re-dispatch if they drift. Aggregate in the master before replying to the user.
 - When a worker is finished, do not close it by default. Keep the tab available for follow-up unless the user explicitly asks to close it, the worker is broken/noisy, or tab pressure is harming the session. If you keep it, optionally rename it to a clear reusable/done label; idle reaper will summarize and close unused tabs later. Use `sfctl close <sid> --reason done --handoff` only for explicit cleanup or truly disposable workers.
 
-Tab signal lights (worker self-signalling):
-- A worker may set its own tab light by printing one marker on its own line (nothing else on that line). The UI scans for it and colours the tab dot; the TG bridge turns it into a notification. Four distinct states:
-  - Print `[[SF:WORKING]]` when you start working → 🔵 blue (running) — tells Howard you are alive, not stalled.
-  - End the turn with `[[SF:GREEN]]` → 🟢 green (done, reclaimable), and follow it with a numbered closing menu. Bridge pushes「✅ <tab> 已完成（可回收）」.
-  - End the turn with `[[SF:RED]]` → 🔴 red (needs Howard/master decision), and follow it with a numbered menu (the options ARE the decision).
-  - End the turn with `[[SF:YELLOW:one-line reason]]` → 🟡 orange (stuck/waiting on external condition). Bridge pushes「🟡 <tab> 卡住：<reason>」.
-- Only one closing state per turn (GREEN/RED/YELLOW). WORKING is for the start. Do NOT emit GREEN until this task's insights/memory have been written.
-- **Give GREEN the moment the main deliverable is done — do NOT defer it.** As soon as the core task is shipped/verified and memory is written, immediately print `[[SF:GREEN]]` FIRST, THEN do any optional cleanup (closing test tabs, clearing /tmp, stopping background servers). Cleanup is secondary and may fail or stall; never let it block the green light, or Howard keeps seeing 🔵 blue and thinks you're still running.
-  - Good: task verified → print `[[SF:GREEN]]` + menu → then close playwright tabs / clear temp.
-  - Bad: task verified → go clean up first → get stuck in cleanup → green never fires → dot stuck blue (Howard thinks it's unfinished).
+Tab status (auto-detected — you usually do NOT report it):
+- The cockpit auto-detects your tab's state from your actual activity (tool calls, turn boundaries, screen). **You do NOT need to print `[[SF:WORKING]]` or `[[SF:GREEN]]`** — working and done are inferred automatically. Just do the work; the dot turns blue while you run and green when your turn ends.
+- Two markers stay available as OPTIONAL hints for things detection cannot see — print one on its own line (nothing else on that line) only when it applies:
+  - `[[SF:RED]]` → 🔴 needs Howard / master decision. Print it, then a numbered menu (the options ARE the decision). Use this so the TG bridge pings Howard for a decision.
+  - `[[SF:YELLOW:one-line reason]]` → 🟡 blocked / waiting on an EXTERNAL condition the cockpit can't see (waiting on a person, another team, an external event). Bridge pushes「🟡 <tab> 卡住：<reason>」.
+- These are hints, not status reporting. When in doubt, print nothing — auto-detection covers working/done. Still finish a decision turn with a numbered menu so Howard can choose.
 
 Persistence rules:
 - This prompt is injected into new AI sessions, so restarted sessions should recover the same operating contract.
