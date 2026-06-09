@@ -76,6 +76,25 @@
     animation: busy-pulse 1.9s ease-in-out infinite;
   }
   /* ── Auto-detected agent status reflected on task-board cards ── */
+  /* live owner state overrides the card's left band colour */
+  .bp-card.live-working { border-left-color: #7aa2f7; }
+  .bp-card.live-decision { border-left-color: #f7768e; }
+  .bp-card.live-stuck { border-left-color: #ff9e64; }
+  .bp-card.live-working.st-done, .bp-card.live-decision.st-done,
+  .bp-card.live-stuck.st-done { opacity: 1; }
+  .bp-card.live-working .bp-card-title,
+  .bp-card.live-stuck .bp-card-title { text-decoration: none; }
+  .bp-chip.live { display: none; }
+  .bp-chip.live.on { display: inline-block; }
+  .bp-chip.live.st-working { color: #7aa2f7; border-color: #7aa2f7; }
+  .bp-chip.live.st-decision { color: #f7768e; border-color: #f7768e; }
+  .bp-chip.live.st-stuck { color: #ff9e64; border-color: #ff9e64; }
+  .bp-chip.live.st-done { color: #9ece6a; border-color: #3b4261; }
+  .bp-live-act {
+    font-size: 10px; color: #7aa2f7; margin-top: 5px; padding-left: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bp-live-act:empty { display: none; }
   @keyframes busy-pulse {
     0%, 100% { opacity: .55; }
     50%      { opacity: 1; }
@@ -2537,6 +2556,64 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let _boardEnabled = false;
 
+  // Map a tab's effective light state (s._dotClass — heuristic for unmapped
+  // claude, server-detected for codex / session-id claude) to a board state.
+  const DOT_TO_STATE = {
+    'sig-working': 'working', 'on': 'working',
+    'sig-decision': 'decision', 'on attention': 'decision',
+    'sig-stuck': 'stuck', 'sig-done': 'done',
+  };
+  const LIVE_LABEL = {
+    working: '● working', decision: '◆ decision',
+    stuck: '▲ stuck', done: '✓ done',
+  };
+  function _agentStateByLabel() {
+    const now = Date.now();
+    const m = {};
+    for (const sid of Object.keys(sessions)) {
+      const s = sessions[sid];
+      if (!s || !s.label) continue;
+      const state = DOT_TO_STATE[s._dotClass || ''] || '';
+      if (!state) continue;                       // idle tab → no live state
+      const ss = s._serverStatus;
+      const fresh = ss && (now - (s._serverStatusTs || 0) < 60000) && ss.state === state;
+      if (!(s.label in m)) m[s.label] = { state, act: fresh ? (ss.summary || '') : '' };
+    }
+    return m;
+  }
+  // Patch the board cards in place with their owner agent's live status,
+  // without re-fetching board data. Runs on a timer + after each renderBoard.
+  function updateBoardLiveStatus() {
+    try {
+      const cards = document.querySelectorAll('#board-list .bp-card');
+      if (!cards.length) return;
+      const map = _agentStateByLabel();
+      cards.forEach(card => {
+        const a = card.dataset.assignee;
+        const info = (a && a !== 'unassigned') ? map[a] : null;
+        const liveChip = card.querySelector('.bp-chip.live');
+        const statusChip = card.querySelector('.bp-chip.status');
+        const actLine = card.querySelector('.bp-live-act');
+        card.classList.remove('live-working', 'live-decision', 'live-stuck', 'live-done');
+        if (info && info.state) {
+          card.classList.add('live-' + info.state);
+          if (liveChip) {
+            liveChip.className = 'bp-chip live on st-' + info.state;
+            liveChip.textContent = LIVE_LABEL[info.state] || info.state;
+          }
+          if (statusChip) statusChip.style.display = 'none';   // live supersedes manual
+          if (actLine) actLine.textContent =
+            (info.state === 'working' && info.act) ? ('⏺ ' + info.act) : '';
+        } else {
+          if (liveChip) { liveChip.className = 'bp-chip live'; liveChip.textContent = ''; }
+          if (statusChip) statusChip.style.display = '';
+          if (actLine) actLine.textContent = '';
+        }
+      });
+    } catch (e) { /* never let live status break the board */ }
+  }
+  setInterval(updateBoardLiveStatus, 600);
+
   function renderBoard(tasks) {
     const list = document.getElementById('board-list');
     if (!list) return;
@@ -2556,11 +2633,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const assigneeLabel = isUn ? t('boardUnassigned') : assignee;
       const notes = task.notes ? `<div class="bp-notes">${boardEsc(task.notes)}</div>` : '';
       const doneBtn = st === 'done' ? '' : `<button class="bp-act" data-act="done" data-id="${boardEsc(task.id)}" title="${boardEsc(t('boardMarkDone'))}">✓</button>`;
-      return `<div class="bp-card st-${boardEsc(st)}">
+      return `<div class="bp-card st-${boardEsc(st)}" data-assignee="${boardEsc(assignee)}">
         <div class="bp-card-title">${boardEsc(task.title)}</div>
         ${notes}
+        <div class="bp-live-act"></div>
         <div class="bp-card-meta">
           <span class="bp-chip assignee ${isUn ? 'unassigned' : ''}">${boardEsc(assigneeLabel)}</span>
+          <span class="bp-chip live"></span>
           <span class="bp-chip status">${boardEsc(statusLabel[st] || st)}</span>
           <span class="bp-chip diff-${boardEsc(diff)}">${boardEsc(diff)}</span>
           <span class="bp-card-actions">
@@ -2570,6 +2649,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         </div>
       </div>`;
     }).join('');
+    updateBoardLiveStatus();
   }
 
   async function refreshBoard() {
