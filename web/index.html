@@ -75,49 +75,7 @@
     box-shadow: 0 0 7px #ff9e64, 0 0 3px #ff9e64;
     animation: busy-pulse 1.9s ease-in-out infinite;
   }
-  /* ── Auto-detected agent activity (RIGHT panel detail layer) ── */
-  #agent-activity {
-    border-bottom: 1px solid #1f2335; padding: 8px 10px 10px;
-    flex-shrink: 0; max-height: 45%; overflow-y: auto;
-  }
-  #aa-header {
-    display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;
-  }
-  #aa-header .aa-title {
-    font-size: 11px; font-weight: 600; color: #7aa2f7; letter-spacing: .4px;
-  }
-  #aa-overview { font-size: 10px; color: #565f89; letter-spacing: .3px; }
-  #aa-overview .ov-working { color: #7aa2f7; }
-  #aa-overview .ov-decision { color: #f7768e; font-weight: 600; }
-  #aa-overview .ov-stuck { color: #ff9e64; }
-  #aa-overview .ov-done { color: #9ece6a; }
-  .aa-row {
-    display: flex; align-items: center; gap: 6px; padding: 3px 0;
-    border-left: 2px solid transparent; padding-left: 6px;
-  }
-  .aa-row .aa-dot {
-    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-    background: #3b4261;
-  }
-  .aa-row.st-working .aa-dot { background: #7aa2f7; box-shadow: 0 0 5px #7aa2f7; }
-  .aa-row.st-decision .aa-dot { background: #f7768e; box-shadow: 0 0 5px #f7768e; }
-  .aa-row.st-stuck .aa-dot { background: #ff9e64; box-shadow: 0 0 5px #ff9e64; }
-  .aa-row.st-done .aa-dot { background: #9ece6a; }
-  .aa-label {
-    font-size: 11px; color: #c0caf5; flex-shrink: 0; max-width: 38%;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .aa-act {
-    font-size: 10px; color: #565f89; flex: 1;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .aa-row.st-decision .aa-act { color: #f7768e; }
-  .aa-row.st-stuck .aa-act { color: #ff9e64; }
-  .aa-row.st-done .aa-act { opacity: .5; }
-  #aa-list:empty::after {
-    content: 'No active agents detected'; color: #3b4261; font-size: 10px;
-    display: block; padding: 2px 6px;
-  }
+  /* ── Auto-detected agent status reflected on task-board cards ── */
   @keyframes busy-pulse {
     0%, 100% { opacity: .55; }
     50%      { opacity: 1; }
@@ -616,13 +574,6 @@
   <div id="terminal-wrap"></div>
   <div class="panel-resizer" id="board-resizer" title="拖曳調整寬度"></div>
   <div id="board-panel" class="collapsed">
-    <div id="agent-activity">
-      <div id="aa-header">
-        <span class="aa-title">Agents</span>
-        <span id="aa-overview"></span>
-      </div>
-      <div id="aa-list"></div>
-    </div>
     <div id="board-header">
       <span class="bp-title" data-i18n="boardPanelTitle">Task Board</span>
       <button id="board-add-btn" data-i18n-title="boardAddTitle" data-i18n="boardAdd" title="Add task">+ Task</button>
@@ -4656,61 +4607,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch (e) { /* never let status break the UI */ }
   };
 
-  // Right-side Agents panel — mirrors each tab's EFFECTIVE light state (the
-  // same s._dotClass the left dots show: heuristic for unmapped claude tabs,
-  // server-detected for codex / session-id'd claude). Server detail (current
-  // tool/file) is overlaid as the activity text when a confident mapping
-  // exists. This way every actually-working agent shows up, accurately.
-  const DOT_TO_STATE = {
-    'sig-working': 'working', 'on': 'working',
-    'sig-decision': 'decision', 'on attention': 'decision',
-    'sig-stuck': 'stuck', 'sig-done': 'done',
-  };
-  function renderAgentsPanel() {
-    try {
-      const list = document.getElementById('aa-list');
-      const ov = document.getElementById('aa-overview');
-      if (!list && !ov) return;
-      const now = Date.now();
-      const rows = [];
-      const c = { working: 0, decision: 0, done: 0, stuck: 0 };
-      const order = (sessionOrder && sessionOrder.length) ? sessionOrder : Object.keys(sessions);
-      for (const sid of order) {
-        const s = sessions[sid];
-        if (!s) continue;
-        const state = DOT_TO_STATE[s._dotClass || ''] || '';
-        if (!(state in AA_ORDER)) continue;   // skip idle tabs
-        c[state]++;
-        const ss = s._serverStatus;
-        const fresh = ss && (now - (s._serverStatusTs || 0) < 60000) && ss.state === state;
-        rows.push({ sid, label: s.label || sid, state, act: fresh ? (ss.summary || '') : '' });
-      }
-      rows.sort((a, b) => (AA_ORDER[a.state] - AA_ORDER[b.state]) ||
-                          String(a.label).localeCompare(String(b.label)));
-      if (list) {
-        list.innerHTML = rows.map(r =>
-          `<div class="aa-row st-${r.state}" data-sid="${r.sid}">` +
-          `<span class="aa-dot"></span>` +
-          `<span class="aa-label">${esc(r.label)}</span>` +
-          `<span class="aa-act">${esc(r.act)}</span>` +
-          `</div>`).join('');
-      }
-      if (ov) {
-        const parts = [];
-        if (c.working) parts.push(`<span class="ov-working">▶ ${c.working} working</span>`);
-        if (c.decision) parts.push(`<span class="ov-decision">◆ ${c.decision} decision</span>`);
-        if (c.stuck) parts.push(`<span class="ov-stuck">▲ ${c.stuck} stuck</span>`);
-        if (c.done) parts.push(`<span class="ov-done">✓ ${c.done} done</span>`);
-        ov.innerHTML = parts.join(' · ');
-      }
-    } catch (e) { /* never let status break the UI */ }
-  }
-  setInterval(renderAgentsPanel, 500);
-  // Click an agent row to jump to that tab.
-  document.getElementById('aa-list')?.addEventListener('click', (e) => {
-    const row = e.target.closest('.aa-row');
-    if (row && row.dataset.sid) switchTab(row.dataset.sid);
-  });
   // Decay: if the server stops pushing (feature off / crash), drop stale dots
   // so the browser heuristic resumes cleanly.
   setInterval(() => {
