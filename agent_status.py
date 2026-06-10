@@ -422,7 +422,7 @@ def compute_state(events, now=None, screen_tail=""):
                     "verb": VERB.get(last_tool.get("tool"), last_tool.get("tool") or "Working"),
                     "target": last_tool.get("target") or ""}
 
-    if last["kind"] == "decision_req" or menu:
+    if last["kind"] == "decision_req" or (menu and not spinner):
         return "decision", activity, "decision_req/menu"
     if last["kind"] == "error":
         return "stuck", activity, "error event"
@@ -436,10 +436,16 @@ def compute_state(events, now=None, screen_tail=""):
         return "working", activity, "tool running"
     if age is None or age < WORKING_FRESH_S:
         return "working", activity, "fresh event"
-    # Stuck only when the turn never ended AND nothing has happened for a long
-    # time (no error, no spinner, no pending tool) — a genuine stall.
+    # Turn not formally ended but the last word was plain assistant text and
+    # nothing is pending — that's a finished reply. Claude Code often ends a
+    # turn without an end_turn record, so treating this as stuck produced
+    # false 卡住 on every idle tab.
+    if last["kind"] == "assistant_text":
+        return "done", {}, "trailing text (informal end)"
+    # Genuine stalls: a user message the agent never started answering, or a
+    # tool result followed by nothing for a long time.
     if age > STUCK_IDLE_S:
-        return "stuck", activity, f"idle {int(age)}s"
+        return "stuck", activity, f"no progress {int(age)}s"
     return "working", activity, "between events"
 
 
@@ -452,6 +458,7 @@ class StatusTracker:
         self._path_cache = {}   # sid -> (transcript_path, resolved_at)
         self._last = {}         # sid -> (state, since_ts)
         self._pending = {}      # sid -> (candidate_state, first_seen_ts)
+        self._detail = {}       # sid -> (action, task, narration) 最近非空值（穩定呈現）
 
     def _resolve_cached(self, sid, worker, now):
         path, at = self._path_cache.get(sid, (None, 0))
@@ -464,20 +471,18 @@ class StatusTracker:
         return path
 
     def _debounce(self, sid, state, now):
-        """working↔done 需穩定 DONE_QUIET_S；decision/stuck 立即生效。"""
+        """狀態翻轉去抖：decision/stuck 需穩定 ~1.2s（防畫面瞬閃誤觸），
+        其餘需 DONE_QUIET_S。回傳生效狀態。"""
         prev, since = self._last.get(sid, (None, now))
         if state == prev:
             self._pending.pop(sid, None)
             return state
-        if state in ("decision", "stuck"):
-            self._last[sid] = (state, now)
-            self._pending.pop(sid, None)
-            return state
+        hold = 1.2 if state in ("decision", "stuck") else DONE_QUIET_S
         cand, first = self._pending.get(sid, (state, now))
         if cand != state:
             self._pending[sid] = (state, now)
             return prev or state
-        if (now - first) >= DONE_QUIET_S or prev is None:
+        if (now - first) >= hold or prev is None:
             self._last[sid] = (state, now)
             self._pending.pop(sid, None)
             return state
@@ -498,10 +503,15 @@ class StatusTracker:
             state, act, why = compute_state(evs, now=now, screen_tail=screen_tail)
             state = self._debounce(sid, state, now)
             action, task, narration = _detail(evs)
+            # 穩定呈現：事件間隙抓不到細節時沿用上一次的非空值，卡片不閃空
+            pa, pt, pn = self._detail.get(sid, ("", "", ""))
+            action, task, narration = action or pa, task or pt, narration or pn
+            self._detail[sid] = (action, task, narration)
             summary = action or narration or state
+            _, since = self._last.get(sid, (state, now))
             return {"state": state, "dot": DOT.get(state, ""), "activity": act,
                     "summary": summary, "action": action, "narration": narration,
-                    "task": task, "why": why,
+                    "task": task, "elapsed": int(now - since), "why": why,
                     "transcript": os.path.basename(path), "fmt": fmt}
         except Exception as e:
             return {"state": "unknown", "dot": "", "activity": {},

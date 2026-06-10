@@ -538,6 +538,7 @@
     font-size: 10px; color: #565f89; margin-top: 3px; line-height: 1.3;
     word-break: break-word; font-style: italic;
   }
+  .feed-dur { font-size: 9px; color: #565f89; float: right; margin-top: 1px; }
   .feed-empty { color: #3b4261; font-size: 11px; text-align: center; padding: 16px 8px; }
 
   /* ── Code block copy button ── */
@@ -2653,7 +2654,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const act = (ss && ss.summary && ss.summary !== state) ? ss.summary : '';
         let task = (ss && ss.task) ? ss.task : '';
         if (task && (task === act || task.startsWith('[Image'))) task = '';
-        rows.push({ sid, label: s.label || sid, state, act, task });
+        const el = (ss && ss.elapsed) || 0;
+        const dur = el >= 5 ? (el >= 60 ? Math.floor(el / 60) + 'm' : el + 's') : '';
+        rows.push({ sid, label: s.label || sid, state, act, task, dur });
       }
       rows.sort((a, b) => (FEED_RANK[a.state] - FEED_RANK[b.state]) ||
                           String(a.label).localeCompare(String(b.label)));
@@ -2664,6 +2667,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         `<div class="feed-body">` +
         `<div class="feed-label">${esc(r.label)}` +
         (STATE_TAG[r.state] ? `<span class="feed-tag">${STATE_TAG[r.state]}</span>` : '') +
+        (r.dur ? `<span class="feed-dur">${r.dur}</span>` : '') +
         `</div>` +
         (r.act ? `<div class="feed-act">⏺ ${esc(r.act)}</div>` : '') +
         (r.task ? `<div class="feed-task">${esc(r.task)}</div>` : '') +

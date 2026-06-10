@@ -1989,14 +1989,32 @@ class Api:
                                 "tmux_name": getattr(s, "_tmux_name", None),
                                 "session_id": getattr(s, "session_id", None),
                             }
-                            screen_tail = bytes(getattr(s, "_recent", b"")).decode(
-                                "utf-8", errors="replace")[-4000:]
+                            # Screen wording must come from the CURRENT rendered
+                            # screen. The _recent ring buffer is a byte-stream
+                            # history — a /model or feedback menu that scrolled
+                            # away stays in it and false-triggers "decision".
+                            screen_tail = ""
+                            tn = getattr(s, "_tmux_name", None)
+                            if tn:
+                                try:
+                                    r = subprocess.run(
+                                        ["tmux", "capture-pane", "-t", tn, "-p"],
+                                        capture_output=True, text=True, timeout=2)
+                                    if r.returncode == 0:
+                                        screen_tail = "\n".join(
+                                            r.stdout.rstrip().splitlines()[-20:])
+                                except Exception:
+                                    pass
+                            if not screen_tail:
+                                screen_tail = bytes(getattr(s, "_recent", b"")).decode(
+                                    "utf-8", errors="replace")[-4000:]
                             st = self._status_tracker.status_for(
                                 sid, worker, screen_tail=screen_tail)
                             out[sid] = {"state": st.get("state"),
                                         "dot": st.get("dot"),
                                         "summary": st.get("summary"),
                                         "task": st.get("task", ""),
+                                        "elapsed": st.get("elapsed", 0),
                                         "activity": st.get("activity") or {}}
                         except Exception:
                             out[sid] = {"state": "unknown", "dot": "",
