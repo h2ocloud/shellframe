@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.15.3 (2026-06-10)
+
+### Fixes
+- **Agent 狀態：正在思考的 tab 不再被誤判「等決策」** — ToolHub tab 正在 `Spinning… thinking with xhigh effort (2m · esc to interrupt)`（真的在跑），卻顯示「等決策」。根因：`compute_state` 的 `decision_req`（transcript 最後一筆）判斷排在 spinner 之前且無守門；extended thinking 期間 transcript 還沒寫入批准後的新事件，最後一筆停在舊的 `decision_req` → 蓋過畫面實況。
+  - 修法：把 **`esc to interrupt`** 提為最優先判斷——這是 Claude Code「正在跑」的唯一鐵證（工具執行／串流／思考時才顯示；決策提示只會顯示 `esc to cancel`，絕不顯示 interrupt）。畫面有它就一律 working，蓋過 transcript 的 stale `decision_req` 或未 flush 的 thinking。
+  - decision 分支維持原判斷（含 `↑` 等寬鬆 spinner 字元的真實決策選單不受影響，已加回歸測試）。
+- 需 restart 生效（改到 agent_status.py）。
+
 ## v0.15.2 (2026-06-10)
 
 ### Fixes

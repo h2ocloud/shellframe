@@ -422,6 +422,15 @@ def compute_state(events, now=None, screen_tail=""):
     scr = screen_tail or ""
     spinner = any(x in scr for x in SPINNER_RE)
     menu = any(x in scr for x in MENU_RE)
+    # "esc to interrupt" is the one unambiguous proof of LIVE work — Claude
+    # Code shows it only while a turn is actively running (tool exec, token
+    # streaming, extended thinking). A permission/decision prompt never
+    # shows it (it footers "esc to cancel"). So it overrides everything,
+    # including a transcript whose last record is a stale decision_req or an
+    # un-flushed thinking block. Without this, a tab "Spinning… thinking
+    # with xhigh effort (2m · esc to interrupt)" was mislabelled 等決策
+    # because the transcript hadn't logged the post-approval events yet.
+    actively_working = "esc to interrupt" in scr
 
     activity = {}
     if last_tool:
@@ -429,6 +438,8 @@ def compute_state(events, now=None, screen_tail=""):
                     "verb": VERB.get(last_tool.get("tool"), last_tool.get("tool") or "Working"),
                     "target": last_tool.get("target") or ""}
 
+    if actively_working:
+        return "working", activity, "interruptible (live screen)"
     if last["kind"] == "decision_req" or (menu and not spinner):
         return "decision", activity, "decision_req/menu"
     if last["kind"] == "error":
