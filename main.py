@@ -2855,6 +2855,73 @@ class Api:
             out.pop(0)
         return '\n'.join(rendered for _, rendered in out)
 
+    _NORM_NOSPACE_RE = re.compile(r'\s+')
+
+    @classmethod
+    def _collapse_redraw_frames(cls, lines, win: int = 100, min_drop: int = 15,
+                                max_iter: int = 12):
+        """Drop terminal-resize redraw frames from a tmux capture.
+
+        A TUI re-rendering streaming content at a new width leaves several
+        wrap-variants of the same logical block in tmux scrollback. They
+        share an identical *character* stream (whitespace removed) but wrap
+        at different points, defeating line-level dedup.
+
+        Detection is anchor-based and wrap-invariant: normalize each line
+        (strip ANSI + remove ALL whitespace), concatenate into one stream,
+        and look for a `win`-char window that starts at one line boundary
+        and recurs at a LATER line boundary. Each redraw frame restarts its
+        blocks on fresh lines, so the recurrence marks a redraw boundary.
+        Keep everything before the FIRST occurrence and everything from the
+        LAST occurrence onward; the dropped middle is stale partial frames
+        (the final frame is the current-width, most-complete render).
+
+        Guards against nuking legitimate repeats:
+          • win=100 normalized chars ≈ a full line of code/CJK — an
+            accidental 100-char recurrence at a line start is vanishingly
+            unlikely (a genuine repeated long command is the only realistic
+            case, and keeping its last copy is still correct).
+          • min_drop: only collapse when ≥15 lines sit between the first and
+            last occurrence, so short echoes are never touched.
+        Runs in O(lines) per pass via a line-start window index.
+        """
+        def _norm(s):
+            return cls._NORM_NOSPACE_RE.sub('', cls._ANSI_STRIP_RE.sub('', s))
+
+        for _ in range(max_iter):
+            sigs = [_norm(l) for l in lines]
+            starts = []
+            off = 0
+            for ns in sigs:
+                starts.append(off)
+                off += len(ns)
+            total = off
+            if total < win * 2:
+                break
+            N = ''.join(sigs)
+            from collections import defaultdict
+            idx = defaultdict(list)
+            for li, (st, ns) in enumerate(zip(starts, sigs)):
+                if len(ns) < 8 or st + win > total:
+                    continue
+                idx[N[st:st + win]].append(li)
+            changed = False
+            for li, (st, ns) in enumerate(zip(starts, sigs)):
+                if len(ns) < 8 or st + win > total:
+                    continue
+                occ = idx.get(N[st:st + win])
+                if not occ or occ[-1] <= li:
+                    continue
+                l_last = occ[-1]
+                if l_last - li < min_drop:
+                    continue
+                lines = lines[:li] + lines[l_last:]
+                changed = True
+                break
+            if not changed:
+                break
+        return lines
+
     @staticmethod
     def _cjk_cells(s: str) -> int:
         """Count visual cells contributed by CJK/fullwidth chars only. Used
@@ -2950,6 +3017,15 @@ class Api:
             if r.returncode != 0:
                 return json.dumps({"success": False, "reason": r.stderr[-200:], "text": ""})
             raw_lines = r.stdout.split("\n")
+            # Collapse terminal-resize redraw frames FIRST. When the window
+            # is resized mid-stream (panel toggled, font changed, etc.) the
+            # TUI re-renders the streaming block at the new width; tmux
+            # scrollback keeps every wrap-variant. They share an identical
+            # character stream but split at different points, so the
+            # line-level dedup below can't see them. This wrap-invariant
+            # pass drops the stale partial frames, keeping the last (current
+            # width) render — Howard's "上滾看到同段落重複 N 次、樣式錯亂".
+            raw_lines = self._collapse_redraw_frames(raw_lines)
             cleaned = []  # list of (stripped_for_compare, original_for_output)
             for line in raw_lines:
                 # Strip bare CR — they survive tmux capture for some TUIs and
