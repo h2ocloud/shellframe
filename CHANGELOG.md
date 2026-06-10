@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.15.4 (2026-06-10)
+
+### Fixes
+- **Agent 狀態：新開的 tab 不再「當沒看到」** — 新 tab 正在跑卻不出現在右側即時動態。根因：`status_for` 在 transcript 解析不到時直接回 `unknown`（feed 只顯示 working/decision/stuck，unknown 被濾掉），而 Claude 的 `<uuid>.jsonl` 要等寫入第一筆才存在 → 新 tab 空窗期即使畫面在跑也被當沒看到。
+  - 修法：transcript 不存在／讀取失敗時，改用**純畫面判斷**（`compute_state([])`）而非直接 unknown。畫面訊號（`esc to interrupt` / 決策選單 / 輸入提示 / spinner）抽成 `_screen_signals()`，在無 transcript 事件時也能判斷 → 新 tab 一有動作就即時偵測、立刻進 feed。
+  - 一併讓 `esc to interrupt`、決策、閒置提示等畫面訊號在「有/無 transcript」兩條路徑行為一致。
+  - 已加新 tab（working/idle/decision/blank/spinner）＋既有 event-based 共 11 案驗證，含新 tab 無 transcript 檔的 `status_for` 整合測試。
+- 需 restart 生效（改到 agent_status.py）。
+
 ## v0.15.3 (2026-06-10)
 
 ### Fixes

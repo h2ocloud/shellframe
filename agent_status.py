@@ -404,42 +404,72 @@ SPINNER_RE = ("esc to interrupt", "Working (", "Running…", "↑")
 MENU_RE = ("❯ 1.", "Do you want", "Would you like to run", "1. Yes", "Esc to cancel")
 
 
+def _screen_signals(scr):
+    """Wording-based signals from the live rendered screen. Computed up front
+    so they work even with NO transcript events (brand-new tab whose
+    <uuid>.jsonl isn't written yet)."""
+    tail_lines = scr.splitlines()[-8:]
+    return {
+        "spinner": any(x in scr for x in SPINNER_RE),
+        "menu": any(x in scr for x in MENU_RE),
+        # "esc to interrupt" is the one unambiguous proof of LIVE work — Claude
+        # Code shows it only while a turn is actively running (tool exec, token
+        # streaming, extended thinking). A permission/decision prompt never
+        # shows it (it footers "esc to cancel").
+        "actively_working": "esc to interrupt" in scr,
+        # editable input prompt in the bottom input region (❯ / ›, with or
+        # without a typed draft after it) → TUI is waiting for the user.
+        "has_input_prompt": any(l.lstrip()[:1] in ("❯", "›") for l in tail_lines),
+        "rating": "How is Claude doing this session" in scr,
+    }
+
+
 def compute_state(events, now=None, screen_tail=""):
     now = now or time.time()
-    if not events:
-        return "idle", {}, "no events"
-    last = events[-1]
-    last_ts = last.get("ts")
-    last_tool = None
-    for e in reversed(events):
-        if e["kind"] == "tool_call":
-            last_tool = e
-            break
-        if e["kind"] in ("turn_end", "user_msg"):
-            break
-    pending_tool = last if last["kind"] == "tool_call" else None
-    age = (now - last_ts) if last_ts else None
     scr = screen_tail or ""
-    spinner = any(x in scr for x in SPINNER_RE)
-    menu = any(x in scr for x in MENU_RE)
-    # "esc to interrupt" is the one unambiguous proof of LIVE work — Claude
-    # Code shows it only while a turn is actively running (tool exec, token
-    # streaming, extended thinking). A permission/decision prompt never
-    # shows it (it footers "esc to cancel"). So it overrides everything,
-    # including a transcript whose last record is a stale decision_req or an
-    # un-flushed thinking block. Without this, a tab "Spinning… thinking
-    # with xhigh effort (2m · esc to interrupt)" was mislabelled 等決策
-    # because the transcript hadn't logged the post-approval events yet.
-    actively_working = "esc to interrupt" in scr
+    sig = _screen_signals(scr)
+    spinner = sig["spinner"]
+    menu = sig["menu"]
+    actively_working = sig["actively_working"]
+    has_input_prompt = sig["has_input_prompt"]
 
+    # The live screen is ground truth and works BEFORE any transcript exists.
+    # esc-to-interrupt overrides everything (incl. a stale decision_req or an
+    # un-flushed thinking block in the transcript).
     activity = {}
-    if last_tool:
-        activity = {"tool": last_tool.get("tool"),
-                    "verb": VERB.get(last_tool.get("tool"), last_tool.get("tool") or "Working"),
-                    "target": last_tool.get("target") or ""}
+    if events:
+        last_tool = None
+        for e in reversed(events):
+            if e["kind"] == "tool_call":
+                last_tool = e
+                break
+            if e["kind"] in ("turn_end", "user_msg"):
+                break
+        if last_tool:
+            activity = {"tool": last_tool.get("tool"),
+                        "verb": VERB.get(last_tool.get("tool"), last_tool.get("tool") or "Working"),
+                        "target": last_tool.get("target") or ""}
 
     if actively_working:
         return "working", activity, "interruptible (live screen)"
+
+    # No transcript events (or none yet) → drive purely from the screen so a
+    # freshly spawned tab that's actually working still shows up instead of
+    # vanishing as 'unknown'. Howard: 新增的 tab 被當沒看到.
+    if not events:
+        if menu and not spinner:
+            return "decision", {}, "menu (screen only)"
+        if has_input_prompt or sig["rating"]:
+            return "done", {}, "idle prompt (screen only)"
+        if spinner:
+            return "working", {}, "spinner (screen only)"
+        return "idle", {}, "no events"
+
+    last = events[-1]
+    last_ts = last.get("ts")
+    pending_tool = last if last["kind"] == "tool_call" else None
+    age = (now - last_ts) if last_ts else None
+
     if last["kind"] == "decision_req" or (menu and not spinner):
         return "decision", activity, "decision_req/menu"
     if last["kind"] == "error":
@@ -448,16 +478,7 @@ def compute_state(events, now=None, screen_tail=""):
         return "done", {}, "turn_end"
     if spinner:
         return "working", activity, "screen spinner"
-    # 畫面顯示「可編輯輸入提示」（input 區行首是 ❯ / ›）且無 spinner →
-    # TUI 在等使用者輸入 = 閒置。Claude Code 只在等輸入時才顯示可編輯
-    # 提示；真的在跑時底部是 spinner + "esc to interrupt"（已被上面的
-    # spinner gate 攔下）。所以走到這裡代表沒在跑。舊版只認「單獨一個
-    # ❯」，但使用者打了草稿（❯ 回收此 tab）或畫面停在評分提示時就配不
-    # 到 → 整個 idle tab 被誤判 working。只掃畫面底部 input 區（最後 8
-    # 行），避免顯示內容裡的 ❯ 誤觸。
-    tail_lines = scr.splitlines()[-8:]
-    has_input_prompt = any(l.lstrip()[:1] in ("❯", "›") for l in tail_lines)
-    if has_input_prompt or "How is Claude doing this session" in scr:
+    if has_input_prompt or sig["rating"]:
         return "done", {}, "idle prompt"
     # A pending tool call means a tool is RUNNING — long commands (ssh, builds,
     # MCP calls) are normal and must read as working, not stuck. BUT only while
@@ -529,13 +550,30 @@ class StatusTracker:
         now = now or time.time()
         try:
             path = self._resolve_cached(sid, worker, now)
-            if not path:
-                return {"state": "unknown", "dot": "", "activity": {},
-                        "summary": "", "why": "no transcript", "transcript": None}
+            if not path or not os.path.exists(path):
+                # No transcript yet (brand-new tab, file not written) — fall
+                # back to a screen-only read so an actively-working new tab is
+                # detected immediately instead of showing 'unknown' and being
+                # hidden from the feed. compute_state([]) uses the screen
+                # signals (esc-to-interrupt / menu / prompt).
+                state, act, why = compute_state([], now=now, screen_tail=screen_tail)
+                state = self._debounce(sid, state, now)
+                _, since = self._last.get(sid, (state, now))
+                return {"state": state, "dot": DOT.get(state, ""), "activity": act,
+                        "summary": (act.get("verb") if act else "") or state,
+                        "action": "", "narration": "", "task": "",
+                        "elapsed": int(now - since), "why": "screen-only: " + why,
+                        "transcript": None}
             fmt, evs, err = _read_tail_events(path)
             if err:
-                return {"state": "unknown", "dot": "", "activity": {},
-                        "summary": "", "why": err, "transcript": path}
+                state, act, why = compute_state([], now=now, screen_tail=screen_tail)
+                state = self._debounce(sid, state, now)
+                _, since = self._last.get(sid, (state, now))
+                return {"state": state, "dot": DOT.get(state, ""), "activity": act,
+                        "summary": (act.get("verb") if act else "") or state,
+                        "action": "", "narration": "", "task": "",
+                        "elapsed": int(now - since), "why": "screen-only(" + err + ")",
+                        "transcript": path}
             state, act, why = compute_state(evs, now=now, screen_tail=screen_tail)
             state = self._debounce(sid, state, now)
             action, task, narration = _detail(evs)
