@@ -364,16 +364,33 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300):
 
 # ────────────────────────── 狀態機 ──────────────────────────
 
-def _latest_task(evs):
-    """The most recent user instruction — the 'what this agent is on' line."""
+def _detail(evs):
+    """Rich display detail, scanning the WHOLE tail (not just the current turn)
+    so a working agent almost always shows a concrete action + task:
+      action    most recent tool call  ("Editing main.py")
+      task      most recent real user instruction (what it's on)
+      narration most recent assistant text line (what it just said)
+    """
+    action = task = narration = ""
     for e in reversed(evs):
-        if e.get("kind") == "user_msg" and e.get("text"):
+        k = e.get("kind")
+        if not action and k == "tool_call":
+            verb = VERB.get(e.get("tool"), e.get("tool") or "")
+            action = f"{verb} {e.get('target', '')}".strip()
+        elif not narration and k == "assistant_text" and e.get("text"):
+            line = e["text"].strip().splitlines()[0].strip() if e["text"].strip() else ""
+            if line:
+                narration = line[:90]
+        elif not task and k == "user_msg" and e.get("text"):
             for line in e["text"].splitlines():
                 line = line.strip()
-                # skip noise-only lines (markers, separators)
-                if line and not line.startswith(("---", "[[SF:", "<")):
-                    return line[:90]
-    return ""
+                if (line and not line.startswith(("---", "[[SF:", "<", "[Image"))
+                        and "system-reminder" not in line):
+                    task = line[:90]
+                    break
+        if action and task and narration:
+            break
+    return action, task, narration
 
 
 SPINNER_RE = ("esc to interrupt", "Working (", "Running…", "↑")
@@ -480,12 +497,12 @@ class StatusTracker:
                         "summary": "", "why": err, "transcript": path}
             state, act, why = compute_state(evs, now=now, screen_tail=screen_tail)
             state = self._debounce(sid, state, now)
-            summary = state
-            if act:
-                summary = f"{act.get('verb','')} {act.get('target','')}".strip()
+            action, task, narration = _detail(evs)
+            summary = action or narration or state
             return {"state": state, "dot": DOT.get(state, ""), "activity": act,
-                    "summary": summary, "task": _latest_task(evs),
-                    "why": why, "transcript": os.path.basename(path), "fmt": fmt}
+                    "summary": summary, "action": action, "narration": narration,
+                    "task": task, "why": why,
+                    "transcript": os.path.basename(path), "fmt": fmt}
         except Exception as e:
             return {"state": "unknown", "dot": "", "activity": {},
                     "summary": "", "why": f"exc:{e}", "transcript": None}

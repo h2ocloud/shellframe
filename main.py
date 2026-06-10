@@ -1996,6 +1996,7 @@ class Api:
                             out[sid] = {"state": st.get("state"),
                                         "dot": st.get("dot"),
                                         "summary": st.get("summary"),
+                                        "task": st.get("task", ""),
                                         "activity": st.get("activity") or {}}
                         except Exception:
                             out[sid] = {"state": "unknown", "dot": "",
