@@ -2802,6 +2802,118 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Auto-closes on: Esc, ✕ button, backdrop click, scroll-to-bottom (user
   // caught up), or any keystroke that isn't a scroll-navigation key
   // (treated as "user wants to type in the live input, give focus back").
+  // ANSI SGR → HTML for the history overlay. The v0.11.3 approach rendered
+  // history in a nested xterm.js — styled, but cols-clipped (tables lost
+  // their right half) and WKWebView lost wheel state (blank/unscrollable).
+  // The <pre> rewrite fixed scrolling + truncation but dropped all color.
+  // This converter gives both: tmux `capture-pane -e` SGR codes become
+  // inline-styled <span>s inside the <pre>, so long lines still overflow
+  // into native horizontal scroll instead of being re-wrapped or clipped.
+  // Non-SGR escapes (OSC, cursor movement) are stripped. Text is HTML-
+  // escaped before insertion — terminal output is untrusted.
+  const ansiToHtml = (function() {
+    const BASE16 = [
+      THEME.black, THEME.red, THEME.green, THEME.yellow,
+      THEME.blue, THEME.magenta, THEME.cyan, THEME.white,
+      THEME.brightBlack, THEME.brightRed, THEME.brightGreen, THEME.brightYellow,
+      THEME.brightBlue, THEME.brightMagenta, THEME.brightCyan, THEME.brightWhite,
+    ];
+    function color256(n) {
+      if (n < 16) return BASE16[n];
+      if (n < 232) {
+        const lv = [0, 95, 135, 175, 215, 255];
+        const i = n - 16;
+        return `rgb(${lv[(i / 36) | 0]},${lv[((i / 6) | 0) % 6]},${lv[i % 6]})`;
+      }
+      const g = 8 + (n - 232) * 10;
+      return `rgb(${g},${g},${g})`;
+    }
+    const escHtml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    return function(raw) {
+      const st = { fgIdx: null, fg: null, bg: null, bold: false, dim: false,
+                   italic: false, underline: false, inverse: false, strike: false };
+      const reset = () => { for (const k in st) st[k] = (k === 'fgIdx' || k === 'fg' || k === 'bg') ? null : false; };
+      const styleOf = () => {
+        let fg = st.fg;
+        // bold + base-8 color → bright variant, like xterm's classic mapping
+        if (st.fgIdx !== null) fg = BASE16[(st.bold && st.fgIdx < 8) ? st.fgIdx + 8 : st.fgIdx];
+        let bg = st.bg;
+        if (st.inverse) {
+          const t = fg || THEME.foreground;
+          fg = bg || THEME.background;
+          bg = t;
+        }
+        const css = [];
+        if (fg) css.push('color:' + fg);
+        if (bg) css.push('background:' + bg);
+        if (st.bold) css.push('font-weight:bold');
+        if (st.dim) css.push('opacity:.6');
+        if (st.italic) css.push('font-style:italic');
+        const deco = [];
+        if (st.underline) deco.push('underline');
+        if (st.strike) deco.push('line-through');
+        if (deco.length) css.push('text-decoration:' + deco.join(' '));
+        return css.join(';');
+      };
+      const applySgr = (params) => {
+        const p = params.length ? params : [0];
+        for (let i = 0; i < p.length; i++) {
+          const c = p[i];
+          if (c === 0) reset();
+          else if (c === 1) st.bold = true;
+          else if (c === 2) st.dim = true;
+          else if (c === 3) st.italic = true;
+          else if (c === 4) st.underline = true;
+          else if (c === 7) st.inverse = true;
+          else if (c === 9) st.strike = true;
+          else if (c === 22) { st.bold = false; st.dim = false; }
+          else if (c === 23) st.italic = false;
+          else if (c === 24) st.underline = false;
+          else if (c === 27) st.inverse = false;
+          else if (c === 29) st.strike = false;
+          else if (c >= 30 && c <= 37) { st.fgIdx = c - 30; st.fg = null; }
+          else if (c >= 90 && c <= 97) { st.fgIdx = c - 90 + 8; st.fg = null; }
+          else if (c === 39) { st.fgIdx = null; st.fg = null; }
+          else if (c >= 40 && c <= 47) st.bg = BASE16[c - 40];
+          else if (c >= 100 && c <= 107) st.bg = BASE16[c - 100 + 8];
+          else if (c === 49) st.bg = null;
+          else if (c === 38 || c === 48) {
+            const isFg = c === 38;
+            if (p[i + 1] === 5 && p[i + 2] !== undefined) {
+              const col = color256(p[i + 2] & 0xff);
+              if (isFg) { st.fg = col; st.fgIdx = null; } else st.bg = col;
+              i += 2;
+            } else if (p[i + 1] === 2 && p[i + 4] !== undefined) {
+              const col = `rgb(${p[i + 2] & 0xff},${p[i + 3] & 0xff},${p[i + 4] & 0xff})`;
+              if (isFg) { st.fg = col; st.fgIdx = null; } else st.bg = col;
+              i += 4;
+            }
+          }
+        }
+      };
+
+      let out = '';
+      let last = 0;
+      const emit = (text) => {
+        if (!text) return;
+        const css = styleOf();
+        out += css ? `<span style="${css}">${escHtml(text)}</span>` : escHtml(text);
+      };
+      // One pass over every escape sequence: SGR updates state, OSC and
+      // other CSI/two-byte escapes are dropped.
+      const re = /\x1b(?:\[([0-9;]*)([A-Za-z@`])|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[()#%][0-9A-Za-z]|[@-Z\\-_])/g;
+      let m;
+      while ((m = re.exec(raw)) !== null) {
+        emit(raw.slice(last, m.index));
+        last = re.lastIndex;
+        if (m[2] === 'm') applySgr(m[1].split(';').filter(x => x !== '').map(Number));
+      }
+      emit(raw.slice(last));
+      return out;
+    };
+  })();
+
   const ScrollHistory = (function() {
     let overlay = null;
     let historyBox = null;
@@ -2902,7 +3014,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         'background:#1a1b26',
         'user-select:text',
       ].join(';');
-      historyBox.textContent = text || '(no history)';
+      // ANSI captures (tmux -e) render as styled spans; plain captures
+      // (pyte alt-screen fallback) stay textContent — no escapes to parse.
+      if (opts && opts.ansi && text) {
+        historyBox.innerHTML = ansiToHtml(text);
+      } else {
+        historyBox.textContent = text || '(no history)';
+      }
 
       overlay.appendChild(header);
       termScroll.appendChild(historyBox);
@@ -2991,11 +3109,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (buf.viewportY > 0) return; // xterm has its own scrollback, let it handle
       if (_loading) return;
       _loading = true;
-      pywebview.api.get_clean_history(sid, 10000, false).then(res => {
+      pywebview.api.get_clean_history(sid, 10000, true).then(res => {
         _loading = false;
         try {
           const result = JSON.parse(res);
-          if (result.success) ScrollHistory.show(result.text, sid, { source: result.source });
+          if (result.success) ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi });
         } catch (err) { /* ignore */ }
       }).catch(() => { _loading = false; });
     }, { passive: true });
