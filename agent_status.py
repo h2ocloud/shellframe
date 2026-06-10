@@ -260,7 +260,14 @@ def _norm_claude(o):
         if isinstance(content, list) and any(
                 isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
             return {"kind": "tool_result", "ts": ts}
-        return {"kind": "user_msg", "ts": ts, "text": _content_text(content)}
+        text = _content_text(content)
+        # 本地 slash command（/model、/clear…）也會寫進 transcript 一筆 user
+        # 訊息，但 agent 不會回應它 → 不能當「未回應的指令」，否則閒置 tab
+        # 跑過 /model 就被誤判 stuck。直接忽略。
+        if ("<command-name>" in text or "<local-command-stdout>" in text
+                or "local-command-caveat" in text):
+            return None
+        return {"kind": "user_msg", "ts": ts, "text": text}
     if t == "assistant":
         sr = m.get("stop_reason")
         out = None
@@ -430,6 +437,10 @@ def compute_state(events, now=None, screen_tail=""):
         return "done", {}, "turn_end"
     if spinner:
         return "working", activity, "screen spinner"
+    # 畫面是空 prompt（❯ 自成一行）且無 spinner → TUI 在休息，絕不可能
+    # stuck/working；transcript 怎麼說都以畫面為準。
+    if any(l.strip() in ("❯", "›") for l in scr.splitlines()):
+        return "done", {}, "idle prompt"
     # A pending tool call means a tool is RUNNING — long commands (ssh, builds,
     # MCP calls) are normal and must read as working, not stuck.
     if pending_tool:
