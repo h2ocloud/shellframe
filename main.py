@@ -2673,44 +2673,176 @@ class Api:
             w += 2 if ea in ("W", "F") else 1
         return w
 
-    @staticmethod
-    def _pyte_history_text(slot) -> str:
-        """Render a bridge slot's pyte buffer as plain text — scrollback
-        history followed by the current visible screen. Stripped of
-        trailing whitespace per row, no ANSI styling.
+    # pyte stores Char colors as NAMES ("red", "brightblack" — including
+    # pyte's own "brown" for yellow and the upstream "bfightmagenta" typo)
+    # or bare hex ("ff8700") for 256/true-color. Map names back to SGR so
+    # the overlay can re-style pyte history the same way tmux -e does.
+    _PYTE_FG_SGR = {
+        'black': '30', 'red': '31', 'green': '32', 'brown': '33',
+        'blue': '34', 'magenta': '35', 'cyan': '36', 'white': '37',
+        'brightblack': '90', 'brightred': '91', 'brightgreen': '92',
+        'brightbrown': '93', 'brightblue': '94', 'brightmagenta': '95',
+        'brightcyan': '96', 'brightwhite': '97',
+    }
+    _PYTE_BG_SGR = {
+        'black': '40', 'red': '41', 'green': '42', 'brown': '43',
+        'blue': '44', 'magenta': '45', 'cyan': '46', 'white': '47',
+        'brightblack': '100', 'brightred': '101', 'brightgreen': '102',
+        'brightbrown': '103', 'brightblue': '104', 'brightmagenta': '105',
+        'bfightmagenta': '105', 'brightcyan': '106', 'brightwhite': '107',
+    }
+
+    @classmethod
+    def _pyte_char_sgr(cls, c):
+        """(sgr_params, paints_bg) for one pyte Char. sgr_params is ''
+        when the char is unstyled; paints_bg says whether a trailing
+        space in this style is visible (bg color / reverse video) and
+        therefore must survive rstrip."""
+        parts = []
+        paints = False
+        if getattr(c, 'bold', False):
+            parts.append('1')
+        if getattr(c, 'italics', False):
+            parts.append('3')
+        if getattr(c, 'underscore', False):
+            parts.append('4')
+        if getattr(c, 'reverse', False):
+            parts.append('7')
+            paints = True
+        if getattr(c, 'strikethrough', False):
+            parts.append('9')
+        fg = getattr(c, 'fg', 'default') or 'default'
+        if fg != 'default':
+            if fg in cls._PYTE_FG_SGR:
+                parts.append(cls._PYTE_FG_SGR[fg])
+            elif len(fg) == 6:
+                try:
+                    parts.append('38;2;%d;%d;%d' % (
+                        int(fg[0:2], 16), int(fg[2:4], 16), int(fg[4:6], 16)))
+                except ValueError:
+                    pass
+        bg = getattr(c, 'bg', 'default') or 'default'
+        if bg != 'default':
+            if bg in cls._PYTE_BG_SGR:
+                parts.append(cls._PYTE_BG_SGR[bg])
+                paints = True
+            elif len(bg) == 6:
+                try:
+                    parts.append('48;2;%d;%d;%d' % (
+                        int(bg[0:2], 16), int(bg[2:4], 16), int(bg[4:6], 16)))
+                    paints = True
+                except ValueError:
+                    pass
+        return ';'.join(parts), paints
+
+    @classmethod
+    def _pyte_row_text(cls, row, cols, ansi):
+        """Render one pyte buffer row (StaticDefaultDict col -> Char).
+
+        NOTE: a pyte history row is a DICT — iterating it yields int
+        column keys, not Chars. The old `for c in row` + getattr(c,
+        'data', ' ') therefore rendered every history row as pure
+        spaces, so the alt-screen pyte source always failed the length
+        gate and silently fell through to tmux (whose normal-screen
+        scrollback doesn't have the alt-screen content — the exact
+        "上滾看到不對的歷史" complaint). Index by column instead.
+        """
+        cells = []
+        for col in range(cols):
+            try:
+                c = row[col]
+            except Exception:
+                break
+            ch = getattr(c, 'data', ' ')
+            if ch == '':
+                # shadow cell of a wide (CJK) char — pyte stores data=""
+                # in the column after it; emitting ' ' here would inject
+                # a space inside every CJK word ("橘 色").
+                continue
+            if ch is None:
+                ch = ' '
+            if ansi:
+                sgr, paints = cls._pyte_char_sgr(c)
+            else:
+                sgr, paints = '', False
+            cells.append((sgr, paints, ch))
+        # rstrip, but keep trailing spaces that paint a visible background
+        while cells and cells[-1][2] == ' ' and not cells[-1][1]:
+            cells.pop()
+        out = []
+        cur = ''
+        for sgr, _, ch in cells:
+            if ansi and sgr != cur:
+                out.append('\x1b[0m' if not sgr else '\x1b[0;' + sgr + 'm')
+                cur = sgr
+            out.append(ch)
+        if cur:
+            out.append('\x1b[0m')
+        return ''.join(out)
+
+    @classmethod
+    def _pyte_history_text(cls, slot, ansi: bool = False) -> str:
+        """Render a bridge slot's pyte buffer as text — scrollback history
+        followed by the current visible screen. With ansi=True each row
+        carries SGR codes rebuilt from pyte Char attributes, so the
+        overlay shows the same colors tmux -e would give.
 
         pyte.HistoryScreen exposes:
-          - screen.history.top   deque of tuple-of-Char (older rows)
+          - screen.history.top   deque of {col: Char} rows (older rows)
           - screen.history.bottom deque (after-current rows; usually empty)
+          - screen.buffer        {row: {col: Char}} for the current screen
           - screen.display       list[str] of currently rendered rows
 
         Raises nothing — caller falls back to tmux on any failure.
         """
-        out = []
+        try:
+            cols = slot.screen.columns
+        except Exception:
+            cols = 200
+        out = []  # list of (plain_for_trim, rendered)
         try:
             top = slot.screen.history.top
         except Exception:
             top = []
         for row in top:
             try:
-                text = ''.join(getattr(c, 'data', ' ') or ' ' for c in row)
-                out.append(text.rstrip())
+                rendered = cls._pyte_row_text(row, cols, ansi)
             except Exception:
                 continue
-        try:
-            display = slot.screen.display
-        except Exception:
-            display = []
-        for row in display:
-            if isinstance(row, str):
-                out.append(row.rstrip())
-            else:
+            out.append((cls._ANSI_STRIP_RE.sub('', rendered) if ansi else rendered, rendered))
+        if ansi:
+            # screen.display is plain strings — restyle from screen.buffer
+            try:
+                buf = slot.screen.buffer
+                lines = slot.screen.lines
+            except Exception:
+                buf, lines = {}, 0
+            for y in range(lines):
+                row = buf.get(y) if hasattr(buf, 'get') else None
+                if row is None:
+                    out.append(('', ''))
+                    continue
                 try:
-                    out.append(''.join(getattr(c, 'data', ' ') or ' ' for c in row).rstrip())
+                    rendered = cls._pyte_row_text(row, cols, True)
                 except Exception:
-                    pass
+                    continue
+                out.append((cls._ANSI_STRIP_RE.sub('', rendered), rendered))
+        else:
+            try:
+                display = slot.screen.display
+            except Exception:
+                display = []
+            for row in display:
+                if isinstance(row, str):
+                    out.append((row.rstrip(), row.rstrip()))
+                else:
+                    try:
+                        rendered = cls._pyte_row_text(row, cols, False)
+                        out.append((rendered, rendered))
+                    except Exception:
+                        pass
         # Drop trailing blank rows (pyte pads display to its rows count).
-        while out and not out[-1]:
+        while out and not out[-1][0].strip():
             out.pop()
         # Drop LEADING blank rows. pyte pre-allocates a 50-row grid the
         # moment the screen is created, so when the bridge starts feeding
@@ -2719,9 +2851,9 @@ class Api:
         # opens to a wall of empty space — Howard saw "上面不見了 / 整段
         #空白才出現條目". Internal blank lines (between paragraphs) are
         # preserved; only the top contiguous run is dropped.
-        while out and not out[0]:
+        while out and not out[0][0].strip():
             out.pop(0)
-        return '\n'.join(out)
+        return '\n'.join(rendered for _, rendered in out)
 
     @staticmethod
     def _cjk_cells(s: str) -> int:
@@ -2757,14 +2889,15 @@ class Api:
         IS aware of alt-screen line-feeds (its `history.top` deque accrues
         rows regardless of which buffer is active), so it has the actual
         recent reply content. Outside alt-screen mode tmux is still
-        primary — pyte's 3000-row cap is smaller and it doesn't carry
-        styling.
+        primary — pyte's history cap is smaller. Both sources can now
+        carry ANSI styling (tmux via `-e`, pyte via Char-attribute
+        reconstruction) so the overlay renders colors either way.
         """
         s = self.sessions.get(sid)
         if not s or not getattr(s, '_tmux_name', None):
             # tmux unavailable — fall back to pyte if the bridge has a slot
             # for this session. Better than nothing on Windows / no-tmux.
-            return self._pyte_fallback_response(sid)
+            return self._pyte_fallback_response(sid, ansi=ansi)
 
         # Probe alt-screen state. Cheap: a single `display-message`. If it
         # fails (shouldn't, since we just verified _tmux_name) we proceed
@@ -2793,14 +2926,17 @@ class Api:
                     break
             if slot is not None and getattr(slot, 'screen', None) is not None:
                 try:
-                    text = self._pyte_history_text(slot)
+                    text = self._pyte_history_text(slot, ansi=ansi)
                 except Exception:
                     text = ""
-                if text and len(text) > 64:
+                # Length gate on the PLAIN text — SGR bytes would let a
+                # nearly-empty styled capture pass.
+                plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
+                if plain and len(plain) > 64:
                     return json.dumps({
                         "success": True,
                         "text": text,
-                        "ansi": False,
+                        "ansi": ansi,
                         "source": "pyte (alt-screen)",
                     })
                 # pyte empty/too-short → fall through to tmux. Better than
@@ -3130,9 +3266,9 @@ class Api:
             },
         })
 
-    def _pyte_fallback_response(self, sid: str) -> str:
-        """Build a get_clean_history response from the bridge's pyte slot
-        (no ANSI). Used when tmux capture isn't available."""
+    def _pyte_fallback_response(self, sid: str, ansi: bool = False) -> str:
+        """Build a get_clean_history response from the bridge's pyte slot.
+        Used when tmux capture isn't available."""
         if not self.bridge:
             return json.dumps({"success": False, "reason": "no tmux", "text": ""})
         try:
@@ -3142,12 +3278,12 @@ class Api:
         if slot is None or getattr(slot, "screen", None) is None:
             return json.dumps({"success": False, "reason": "no tmux", "text": ""})
         try:
-            text = self._pyte_history_text(slot)
+            text = self._pyte_history_text(slot, ansi=ansi)
         except Exception:
             text = ""
         if text and text.strip():
             return json.dumps({
-                "success": True, "text": text, "ansi": False,
+                "success": True, "text": text, "ansi": ansi,
                 "source": "pyte (no-tmux)",
             })
         return json.dumps({"success": False, "reason": "no history", "text": ""})
