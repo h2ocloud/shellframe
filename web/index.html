@@ -528,6 +528,16 @@
     word-break: break-word;
   }
   .feed-row.st-working .feed-act { color: #9aa5ce; }
+  .feed-tag {
+    font-size: 9px; margin-left: 6px; padding: 0 5px; border-radius: 6px;
+    vertical-align: middle; border: 1px solid currentColor;
+  }
+  .feed-row.st-decision .feed-tag { color: #f7768e; }
+  .feed-row.st-stuck .feed-tag { color: #ff9e64; }
+  .feed-task {
+    font-size: 10px; color: #565f89; margin-top: 3px; line-height: 1.3;
+    word-break: break-word; font-style: italic;
+  }
   .feed-empty { color: #3b4261; font-size: 11px; text-align: center; padding: 16px 8px; }
 
   /* ── Code block copy button ── */
@@ -2620,8 +2630,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // (working / decision / stuck), plus recently-finished ones that fade out
   // after DONE_TTL. Pure reflection of detected state — no manual cards, no
   // owner matching, no agent self-report.
-  const FEED_RANK = { decision: 0, stuck: 1, working: 2, done: 3 };
-  const DONE_TTL_MS = 60000;
+  // Only agents that are doing something now. 'done' is intentionally hidden
+  // (finished agents drop off immediately — no done clutter).
+  const FEED_RANK = { decision: 0, stuck: 1, working: 2 };
   function renderFeed() {
     try {
       const list = document.getElementById('board-list');
@@ -2636,29 +2647,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (!s) continue;
         const ss = s._serverStatus;
         const fresh = ss && (now - (s._serverStatusTs || 0) < 60000);
-        let state = fresh ? ss.state : '';
-        if (!(state in FEED_RANK)) state = '';
-        if (state === 'done') {
-          if (!s._doneSince) s._doneSince = now;
-          if (now - s._doneSince > DONE_TTL_MS) continue;   // aged out
-        } else {
-          s._doneSince = 0;
-        }
-        if (!state) continue;
-        if (c[state] !== undefined) c[state]++;
-        const act = (state !== 'done' && ss && ss.summary && ss.summary !== state)
-          ? ss.summary : '';
-        rows.push({ sid, label: s.label || sid, state, act });
+        const state = fresh ? ss.state : '';
+        if (!(state in FEED_RANK)) continue;       // skip done / idle / unknown
+        c[state]++;
+        const act = (ss && ss.summary && ss.summary !== state) ? ss.summary : '';
+        let task = (ss && ss.task) ? ss.task : '';
+        if (task && (task === act || task.startsWith('[Image'))) task = '';
+        rows.push({ sid, label: s.label || sid, state, act, task });
       }
       rows.sort((a, b) => (FEED_RANK[a.state] - FEED_RANK[b.state]) ||
                           String(a.label).localeCompare(String(b.label)));
+      const STATE_TAG = { working: '', decision: '等決策', stuck: '卡住' };
       list.innerHTML = rows.length ? rows.map(r =>
         `<div class="feed-row st-${r.state}" data-sid="${r.sid}">` +
         `<span class="feed-dot"></span>` +
-        `<div class="feed-body"><div class="feed-label">${esc(r.label)}</div>` +
-        (r.act ? `<div class="feed-act">${esc(r.act)}</div>` : '') +
+        `<div class="feed-body">` +
+        `<div class="feed-label">${esc(r.label)}` +
+        (STATE_TAG[r.state] ? `<span class="feed-tag">${STATE_TAG[r.state]}</span>` : '') +
+        `</div>` +
+        (r.act ? `<div class="feed-act">⏺ ${esc(r.act)}</div>` : '') +
+        (r.task ? `<div class="feed-task">${esc(r.task)}</div>` : '') +
         `</div></div>`).join('')
-        : `<div class="feed-empty">沒有偵測到 agent 活動</div>`;
+        : `<div class="feed-empty">沒有 agent 正在工作</div>`;
       const ov = document.getElementById('feed-overview');
       if (ov) {
         const parts = [];

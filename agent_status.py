@@ -26,8 +26,7 @@ import subprocess
 
 # ── 狀態機門檻（秒）──
 WORKING_FRESH_S = 8
-STUCK_TOOL_S = 90
-STUCK_IDLE_S = 45
+STUCK_IDLE_S = 180        # turn 未結束又超過 180s 全無事件(無 error/spinner/pending tool) → 真的卡住
 DONE_QUIET_S = 3
 
 DOT = {"working": "sig-working", "decision": "sig-decision",
@@ -237,6 +236,21 @@ def _epoch(v):
         return None
 
 
+def _content_text(content):
+    """Pull plain text out of a Claude message content (str or block list)."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for c in content:
+            if isinstance(c, dict) and c.get("type") == "text" and c.get("text"):
+                parts.append(c["text"])
+            elif isinstance(c, str):
+                parts.append(c)
+        return " ".join(parts).strip()
+    return ""
+
+
 def _norm_claude(o):
     t = o.get("type")
     ts = _parse_iso(o.get("timestamp"))
@@ -246,7 +260,7 @@ def _norm_claude(o):
         if isinstance(content, list) and any(
                 isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
             return {"kind": "tool_result", "ts": ts}
-        return {"kind": "user_msg", "ts": ts}
+        return {"kind": "user_msg", "ts": ts, "text": _content_text(content)}
     if t == "assistant":
         sr = m.get("stop_reason")
         out = None
@@ -260,7 +274,9 @@ def _norm_claude(o):
                 out = ev
         if sr == "end_turn":
             return {"kind": "turn_end", "ts": ts}
-        return out or {"kind": "assistant_text", "ts": ts}
+        if out:
+            return out
+        return {"kind": "assistant_text", "ts": ts, "text": _content_text(m.get("content"))}
     return None
 
 
@@ -348,6 +364,18 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300):
 
 # ────────────────────────── 狀態機 ──────────────────────────
 
+def _latest_task(evs):
+    """The most recent user instruction — the 'what this agent is on' line."""
+    for e in reversed(evs):
+        if e.get("kind") == "user_msg" and e.get("text"):
+            for line in e["text"].splitlines():
+                line = line.strip()
+                # skip noise-only lines (markers, separators)
+                if line and not line.startswith(("---", "[[SF:", "<")):
+                    return line[:90]
+    return ""
+
+
 SPINNER_RE = ("esc to interrupt", "Working (", "Running…", "↑")
 MENU_RE = ("❯ 1.", "Do you want", "Would you like to run", "1. Yes", "Esc to cancel")
 
@@ -385,10 +413,14 @@ def compute_state(events, now=None, screen_tail=""):
         return "done", {}, "turn_end"
     if spinner:
         return "working", activity, "screen spinner"
-    if pending_tool and age is not None and age > STUCK_TOOL_S and not spinner:
-        return "stuck", activity, f"tool pending {int(age)}s"
+    # A pending tool call means a tool is RUNNING — long commands (ssh, builds,
+    # MCP calls) are normal and must read as working, not stuck.
+    if pending_tool:
+        return "working", activity, "tool running"
     if age is None or age < WORKING_FRESH_S:
         return "working", activity, "fresh event"
+    # Stuck only when the turn never ended AND nothing has happened for a long
+    # time (no error, no spinner, no pending tool) — a genuine stall.
     if age > STUCK_IDLE_S:
         return "stuck", activity, f"idle {int(age)}s"
     return "working", activity, "between events"
@@ -452,8 +484,8 @@ class StatusTracker:
             if act:
                 summary = f"{act.get('verb','')} {act.get('target','')}".strip()
             return {"state": state, "dot": DOT.get(state, ""), "activity": act,
-                    "summary": summary, "why": why, "transcript": os.path.basename(path),
-                    "fmt": fmt}
+                    "summary": summary, "task": _latest_task(evs),
+                    "why": why, "transcript": os.path.basename(path), "fmt": fmt}
         except Exception as e:
             return {"state": "unknown", "dot": "", "activity": {},
                     "summary": "", "why": f"exc:{e}", "transcript": None}
