@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.15.2 (2026-06-10)
+
+### Fixes
+- **Agent 狀態：閒置 tab 不再被誤判「工作中」** — 多個早已收工的 tab（右側即時動態顯示「Running … 102m」）仍標工作中。抓 live 畫面 + transcript 診斷出兩個漏洞：
+  - **閒置提示偵測太窄**：`compute_state` 只認「單獨一個 `❯`」當閒置，但使用者打了草稿（`❯ 回收此 tab`）或畫面停在評分提示／自訂選單時就配不到 → 往下掉到 `pending_tool → working`。改為：**畫面底部 input 區行首是 `❯`／`›`（不論後面有無草稿）且無 `esc to interrupt` → 必定閒置**（Claude Code 只在等輸入時才顯示可編輯提示，真的在跑時是 spinner）；另把「How is Claude doing this session?」評分提示也認成 done。只掃最後 8 行避免顯示內容裡的 `❯` 誤觸。
+  - **pending tool 無 age 守門**：transcript 最後是 tool_call 而對應 tool_result 沒被解析到時，會永遠「working」。改為僅在「有 spinner 或 age < 180s」時才算 tool running；超過卡住閾值又無 spinner 的 pending tool 視為 done（tool 早已結束、result 只是不在解析窗內），不再永遠工作中、也不誤判 stuck。此 age 守門與 POC（已對真實 log 驗證）原設計一致，shipped 版漏掉，現補回。
+  - 已用真實閒置畫面（s33 評分提示+草稿、s35 自訂選單+草稿）＋ working/長指令/fresh/無畫面 等 7 案驗證。
+- 需 restart 生效（改到 agent_status.py）。
+
 ## v0.15.1 (2026-06-10)
 
 ### Fixes

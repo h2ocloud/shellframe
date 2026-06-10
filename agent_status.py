@@ -437,14 +437,28 @@ def compute_state(events, now=None, screen_tail=""):
         return "done", {}, "turn_end"
     if spinner:
         return "working", activity, "screen spinner"
-    # 畫面是空 prompt（❯ 自成一行）且無 spinner → TUI 在休息，絕不可能
-    # stuck/working；transcript 怎麼說都以畫面為準。
-    if any(l.strip() in ("❯", "›") for l in scr.splitlines()):
+    # 畫面顯示「可編輯輸入提示」（input 區行首是 ❯ / ›）且無 spinner →
+    # TUI 在等使用者輸入 = 閒置。Claude Code 只在等輸入時才顯示可編輯
+    # 提示；真的在跑時底部是 spinner + "esc to interrupt"（已被上面的
+    # spinner gate 攔下）。所以走到這裡代表沒在跑。舊版只認「單獨一個
+    # ❯」，但使用者打了草稿（❯ 回收此 tab）或畫面停在評分提示時就配不
+    # 到 → 整個 idle tab 被誤判 working。只掃畫面底部 input 區（最後 8
+    # 行），避免顯示內容裡的 ❯ 誤觸。
+    tail_lines = scr.splitlines()[-8:]
+    has_input_prompt = any(l.lstrip()[:1] in ("❯", "›") for l in tail_lines)
+    if has_input_prompt or "How is Claude doing this session" in scr:
         return "done", {}, "idle prompt"
     # A pending tool call means a tool is RUNNING — long commands (ssh, builds,
-    # MCP calls) are normal and must read as working, not stuck.
-    if pending_tool:
+    # MCP calls) are normal and must read as working, not stuck. BUT only while
+    # it's plausibly still running: a tool_call left pending for longer than the
+    # stuck threshold with no spinner on screen has almost certainly finished
+    # (its tool_result just isn't in our parsed tail) and the turn went idle —
+    # otherwise every such tab shows "working" for hours (Howard: 102m「Running
+    # open …」on a long-idle tab).
+    if pending_tool and (spinner or age is None or age < STUCK_IDLE_S):
         return "working", activity, "tool running"
+    if pending_tool:
+        return "done", {}, "stale pending tool"
     if age is None or age < WORKING_FRESH_S:
         return "working", activity, "fresh event"
     # Turn not formally ended but the last word was plain assistant text and
