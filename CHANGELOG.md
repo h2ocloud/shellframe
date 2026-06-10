@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.15.0 (2026-06-10)
+
+### Features
+- **Agent 狀態自動偵測（免 `[[SF:]]` 自我回報）** — 新增 `agent_status.py` 伺服端偵測器：tab → transcript 對應（注入 `claude --session-id` 做確定性關聯），status monitor 執行緒持續解析 transcript/rollout 推導 agent 真實狀態（working／waiting／stuck／done），推送到 webview 顯示 busy-dot + 動作詳情。`[[SF:]]` 自我回報降級為輔助訊號。含誤判防護：忽略本地 slash-command 記錄、idle-prompt 守門、長工具執行不誤判 stuck。
+- **右側面板改為即時 agent activity feed** — 每個 tab 的目前動作／任務詳情即時呈現（掃整段 tail 補齊 action/task detail），已完成項目自動隱藏；左側維持狀態圓點，詳情集中右側。
+
+### Fixes
+- **上滾歷史 overlay：樣式保留 + 不截斷（長年 bug 收斂）** — 之前二選一：巢狀 xterm 版有顏色但表格右半被裁掉（cols clipping）+ WKWebView 滾輪狀態遺失；`<pre>` 版捲動可靠、不截斷但顏色全丟。本版兩者兼得：
+  - 前端新增 `ansiToHtml` 轉換器，`<pre>` overlay 改收 `ansi=true`，tmux `capture-pane -e` 的 SGR 重建為 inline-styled `<span>`（16/256/truecolor、粗體/暗淡/斜體/底線/反白/刪除線；OSC 與非 SGR escape 剝除；內容先 HTML escape，終端輸出視為不可信）。長行維持原生橫向捲動，不重排不裁切。
+  - 後端修掉潛在 bug：pyte history row 是 dict（col→Char），舊碼 `for c in row` 迭代到的是 int key，整行渲染成空白 → alt-screen（Claude/Codex 執行中）的 pyte 來源永遠 fall through 到 tmux 的錯誤 buffer（「上滾看到不對的歷史」殘留原因之一）。改按 column 索引，並從 pyte Char 屬性重建 ANSI，Claude TUI 上滾也有完整樣式；CJK 寬字元影子格跳過（不再出現「橘 色」式插空格）、帶背景色的行尾空格保留。
+- **多行貼上誤自動送出修正（bracketed paste）** — 貼多行文字不再被逐行當 Enter 送出。
+- 需 restart 生效（改到 main.py / agent_status.py / web）。
+
 ## v0.14.3 (2026-06-09)
 
 ### Performance — per-tab CPU 優化（撐 10+ tab）
