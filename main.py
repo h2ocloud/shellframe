@@ -27,6 +27,7 @@ import threading
 import time
 import unicodedata
 import urllib.request
+import uuid
 from datetime import datetime
 from pathlib import Path
 from queue import SimpleQueue
@@ -38,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
 import bridge_line
 import board
+import agent_status
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
 from bridge_line import LineBridge, LineBridgeConfig
 
@@ -543,6 +545,38 @@ def _session_cwd() -> str:
         return "/"
 
 
+def _maybe_claude_session_id(cmd: str):
+    """For a `claude` launch command, inject `--session-id <uuid>` so the tab
+    can be deterministically mapped to its transcript file
+    (~/.claude/projects/<slug>/<uuid>.jsonl). Skips codex/other commands and
+    any command that already resumes a session. Returns (new_cmd, session_id)
+    or (cmd, None) when not applicable."""
+    try:
+        low = f" {cmd.lower()} "
+        if "claude" not in low:
+            return cmd, None
+        if ("--session-id" in low or "--resume" in low or "--continue" in low
+                or " -r " in low or " -c " in low):
+            return cmd, None
+        new_id = str(uuid.uuid4())
+        return f"{cmd} --session-id {new_id}", new_id
+    except Exception:
+        return cmd, None
+
+
+def _tmux_get_env(tmux_name: str, key: str):
+    """Read a tmux session environment variable (returns '' if unset/error)."""
+    try:
+        tmux = shutil.which("tmux")
+        r = subprocess.run([tmux, "show-environment", "-t", tmux_name, key],
+                           capture_output=True, text=True, timeout=3)
+        if r.returncode == 0 and "=" in r.stdout:
+            return r.stdout.strip().split("=", 1)[1]
+    except Exception:
+        pass
+    return ""
+
+
 def _session_env() -> dict:
     env = dict(os.environ)
     path_parts = [
@@ -768,6 +802,10 @@ class Session:
                  on_data=None, tmux_name: str = None):
         self.sid = sid
         self.cmd = cmd
+        # Transcript correlation: claude tabs get a stable --session-id so the
+        # auto status detector can find their JSONL. None for codex/other (codex
+        # is mapped via lsof) and for reattached sessions (recovered from tmux env).
+        self.cmd, self.session_id = _maybe_claude_session_id(self.cmd)
         self.cwd = _session_cwd()
         self.buffer = bytearray()
         self.lock = threading.Lock()
@@ -837,7 +875,17 @@ class Session:
                 "tmux", "set-environment", "-t", self._tmux_name,
                 "SF_CMD", self.cmd,
             ], capture_output=True, timeout=3, env=_session_env())
+            # Persist the claude --session-id so reattach/restart can recover
+            # the transcript correlation without guessing.
+            if self.session_id:
+                subprocess.run([
+                    "tmux", "set-environment", "-t", self._tmux_name,
+                    "SF_SESSION_ID", self.session_id,
+                ], capture_output=True, timeout=3, env=_session_env())
         else:
+            # Existing session: the freshly generated session_id is wrong (the
+            # running claude already chose one at creation). Recover the real one.
+            self.session_id = _tmux_get_env(self._tmux_name, "SF_SESSION_ID") or None
             # Resize existing tmux session to match terminal
             subprocess.run([
                 "tmux", "resize-window", "-t", self._tmux_name,
@@ -1122,6 +1170,8 @@ class Api:
         self._counter = 0
         self._window = None
         self._pusher_started = False
+        self._status_started = False
+        self._status_tracker = agent_status.StatusTracker()
         self._active_sid = ""                     # 當前顯示 tab；背景 tab 的 webview push 節流用
         self._output_event = threading.Event()   # signalled by reader threads
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
@@ -1310,19 +1360,13 @@ class Api:
             "- 若任務需要其他 worker，回報總控改派，不要自行擴張範圍。\n"
             "- 若產出是可直接給使用者的草稿、報告、查詢結果或操作結論，先用「可直接轉貼」格式回覆，讓總控能立即轉交，不要等其他平行工作完成。\n"
             "- 完成後回覆：可直接轉貼內容、結果、驗證、變更/送出項目、阻塞、是否建議納入 memory/skill/docs。\n"
-            "\n燈號信號（務必遵守，讓 Howard 一眼分辨此 tab 狀態）：\n"
-            "- 單獨成一行輸出下列標記即設定本 tab 燈號（標記要自成一行、前後不接其他文字）：\n"
-            "- 開始動工先輸出 `[[SF:WORKING]]` → 🔵藍（執行中），讓 Howard 知道你在跑、不是停住。\n"
-            "- 卡住／等外部條件（缺權限、缺資料、等他人）→ `[[SF:YELLOW:一句話原因]]` → 🟡黃，原因會直接推給 Howard。\n"
-            "- 需要 Howard／總控決策 → `[[SF:RED]]` → 🔴紅，並接編號選單（選項即決策內容）。\n"
-            "- 主要交付完成 → `[[SF:GREEN]]` → 🟢綠（可回收），並接編號選單。\n"
-            "\n【綠燈要『立刻先給』，不要拖到最後或忘記】：一旦『主要交付』已完成（已上線／驗證通過／"
-            "記憶已沉澱），就馬上先單獨輸出一行 `[[SF:GREEN]]` 點亮綠燈，『然後再去』做可選的收尾清理"
-            "（關測試分頁、清 /tmp 暫存、停背景 server 等）。清理是次要的、可能失敗或卡住，絕不能讓它擋住綠燈、"
-            "害 Howard 一直看到藍燈以為任務還在跑。\n"
-            "  正例：任務驗證通過 → 先印 `[[SF:GREEN]]` ＋編號選單 → 接著才關 playwright 分頁／清暫存。\n"
-            "  反例：驗證通過後先跑去關分頁清暫存，卡在清理步驟遲遲不印 GREEN，dot 一直停藍燈（Howard 誤以為沒做完）。\n"
-            "- 規則：WORKING 開頭亮一次；結束只給一個結束燈號（GREEN／RED／YELLOW 擇一）。\n"
+            "\n燈號（自動偵測，通常不需自報）：\n"
+            "- 本 tab 燈號由 ShellFrame 從你的『實際活動』自動判定（工具呼叫、回合起訖、畫面）：執行中自動亮 🔵、回合結束自動轉 🟢。"
+            "**不需要再印 `[[SF:WORKING]]` 或 `[[SF:GREEN]]`**，專心做事即可。\n"
+            "- 只有兩個『偵測看不出來』的狀態保留為可選提示（要用時自成一行、前後不接其他文字）：\n"
+            "  - 需要 Howard／總控決策 → `[[SF:RED]]` → 🔴紅，並接編號選單（選項即決策內容），讓 TG 把選項推給 Howard。\n"
+            "  - 卡在『外部條件』（等人回覆、等他隊、等外部事件等偵測看不到的）→ `[[SF:YELLOW:一句話原因]]` → 🟡黃，原因推給 Howard。\n"
+            "- 這兩個是提示不是狀態回報；不確定就不要印，working／done 由偵測涵蓋。決策回合仍要附編號選單供 Howard 選擇。\n"
             "\n收尾規則（務必遵守）：\n"
             "- 每次『完成任務』或『需要 Howard／總控決策』時，回合最後務必輸出一個編號選項選單（搭配上面 GREEN／RED 燈號），"
             "讓 ShellFrame 偵測為待決策、把選項以 TG 按鈕推給 Howard。不要只用純文字結尾後 idle。\n"
@@ -1910,6 +1954,83 @@ class Api:
 
         threading.Thread(target=pusher, daemon=True).start()
         threading.Thread(target=bridge_feeder, daemon=True).start()
+
+    @staticmethod
+    def _auto_status_enabled() -> bool:
+        # Feature flag — default ON; set settings.auto_status_detect=false to
+        # disable and fall back to the browser-side heuristic + [[SF:]] markers.
+        try:
+            settings = load_config().get("settings", {}) or {}
+            return settings.get("auto_status_detect", True) is not False
+        except Exception:
+            return True
+
+    def _start_status_monitor(self):
+        """Background thread: every ~600ms compute each tab's agent status from
+        its transcript/rollout log (+ screen wording) and push to the webview.
+        Fully isolated from the PTY/output path — any failure just yields
+        'unknown' and the browser heuristic keeps working."""
+        if self._status_started:
+            return
+        self._status_started = True
+
+        def monitor():
+            while True:
+                try:
+                    if not self._auto_status_enabled() or not self._window:
+                        time.sleep(1.0)
+                        continue
+                    out = {}
+                    for sid, s in list(self.sessions.items()):
+                        try:
+                            worker = {
+                                "cmd": getattr(s, "cmd", ""),
+                                "cwd": getattr(s, "cwd", "~"),
+                                "tmux_name": getattr(s, "_tmux_name", None),
+                                "session_id": getattr(s, "session_id", None),
+                            }
+                            # Screen wording must come from the CURRENT rendered
+                            # screen. The _recent ring buffer is a byte-stream
+                            # history — a /model or feedback menu that scrolled
+                            # away stays in it and false-triggers "decision".
+                            screen_tail = ""
+                            tn = getattr(s, "_tmux_name", None)
+                            if tn:
+                                try:
+                                    r = subprocess.run(
+                                        ["tmux", "capture-pane", "-t", tn, "-p"],
+                                        capture_output=True, text=True, timeout=2)
+                                    if r.returncode == 0:
+                                        screen_tail = "\n".join(
+                                            r.stdout.rstrip().splitlines()[-20:])
+                                except Exception:
+                                    pass
+                            if not screen_tail:
+                                screen_tail = bytes(getattr(s, "_recent", b"")).decode(
+                                    "utf-8", errors="replace")[-4000:]
+                            st = self._status_tracker.status_for(
+                                sid, worker, screen_tail=screen_tail)
+                            out[sid] = {"state": st.get("state"),
+                                        "dot": st.get("dot"),
+                                        "summary": st.get("summary"),
+                                        "task": st.get("task", ""),
+                                        "elapsed": st.get("elapsed", 0),
+                                        "activity": st.get("activity") or {}}
+                        except Exception:
+                            out[sid] = {"state": "unknown", "dot": "",
+                                        "summary": "", "activity": {}}
+                    if out and self._window:
+                        payload = json.dumps(out)
+                        try:
+                            self._window.evaluate_js(
+                                f'window.__sfAgentStatus && window.__sfAgentStatus({payload})')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                time.sleep(0.6)
+
+        threading.Thread(target=monitor, daemon=True).start()
 
     def get_config(self) -> str:
         return json.dumps(load_config())
@@ -5886,6 +6007,7 @@ def main():
             print(f"[shellframe] setCollectionBehavior failed: {e}",
                   file=sys.stderr)
         api._start_output_pusher()
+        api._start_status_monitor()
 
     window.events.loaded += _on_loaded
     window.events.closed += _on_closed_save_and_cleanup
