@@ -7,6 +7,14 @@
   - **派工自動接線**：`sfctl delegate` 的 task 內含 `#<tab-label>`（或 `#<sid>`）時，自動解析成現存 tab，並在 worker 的派工 prompt 附上明確互動指示——先 `sfctl peek <sid>` 看狀態、用 `sfctl send <sid>` 對話／交接、回報必須包含互動結果——以及 label→sid 對照。`delegate` 回傳 details 多了 `tagged_tabs`。
   - **總控 preamble**（main.py fallback 與 bridge_telegram 兩份）教總控：使用者訊息帶 #tag 時，派工 task 要原樣保留 tag，由 delegate 自動展開；自己處理就直接用 sfctl 跟該 tab 互動。web 貼上路徑的 master turn 另外即時附上 tag→sid 對照。
   - 解析規則：長 label 優先＋已匹配區段遮罩（`#研究-CLD` 不會誤觸到 `#研究`）、大小寫不敏感；派工對象自己被 tag 時不自我標註、也不會洩漏給前綴 label。
+
+### Fixes
+- **快捷鍵平台對應（Cmd ↔ Win Ctrl）＋ Ctrl+C 不再害死 session** — 同仁在 Windows 按 Ctrl+C 結果「分頁被關掉」（實際是 interrupt/誤觸把 CLI 弄死或 Ctrl+W 秒關）。整組重整：
+  - **macOS**：app 快捷鍵只認 Cmd（Cmd+T/W/,）；以前 `metaKey || ctrlKey` 連 bare Ctrl+T/W 都被劫走，現在還給終端機（Ctrl+W=刪字、Ctrl+T=transpose）。
+  - **Windows**：Cmd 完整對應到 Ctrl——Ctrl+T 開分頁、Ctrl+W 關分頁、Ctrl+, 設定；另收 Ctrl+Shift+T/W（Windows Terminal 慣例）與 Ctrl+PgDn/PgUp 切分頁。
+  - **Ctrl+C 永遠不是 app 快捷鍵**：Windows 上有反白→複製反白文字（不送 `\x03`，學 Windows Terminal）；沒反白→照常送中斷給終端機。macOS 複製走原生 Cmd+C，Ctrl+C 不動。
+  - **鍵盤關分頁一律先確認**（Enter 確認／Esc 取消的小 modal）——關分頁=殺 session，誤觸終端 chord 不可以直接毀掉跑到一半的 agent；tab 上的 × 按鈕維持單擊即關。
+  - README／app 內 About 快捷鍵說明同步改為雙平台對照。
 - 需 restart 生效（改到 main.py / web/index.html）。
 
 ## v0.15.4 (2026-06-10)
