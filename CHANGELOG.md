@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.16.1 (2026-06-11)
+
+### Features
+- **本機 HTTP API（選擇性開啟）** — 讓同機的外部 agent（例如 OpenClaw／龍蝦）透過 HTTP/JSON 驅動 ShellFrame，薄封裝既有的 `sfctl` 命令層（`_execute_sfctl`），能力與總控／TG bridge 相同。
+  - **預設關閉**，需在 `~/.config/shellframe/config.json` 的 `api_server` 區塊設 `enabled:true` 再 `sfctl restart`。
+  - **安全**：綁 loopback（預設 `127.0.0.1`）、IP 白名單（預設 `["127.0.0.1","::1"]`，支援 CIDR）、每個端點需 Bearer token（`Authorization` 或 `X-API-Token`）。token 空白時首次啟用自動生成並寫回 config；啟用但無 token = fail-closed（全部 401）。
+  - **端點**：`GET /sessions`、`POST /sessions`、`DELETE /sessions/{sid}`、`GET /sessions/{sid}/peek`、`POST /sessions/{sid}/send`、`POST /sessions/{sid}/rename`、`GET /status`、`GET /roster`、`POST /delegate`、`GET /events`。
+  - **雙向**：tab 觸發 `[[SF:RED]]`／`[[SF:YELLOW:reason]]` 信號時推入事件佇列，client 輪詢 `GET /events?since=<cursor>` 取得、決策後用 `POST /sessions/{sid}/send` 回填。事件為記憶體環狀緩衝（最後 500 筆，重啟清空）。
+  - **文件**：Swagger UI `GET /docs`、OpenAPI 3.0 `GET /openapi.json`；串接說明見 `docs/local-http-api.md`。
+  - 需 restart 生效。
+
 ## v0.16.0 (2026-06-11)
 
 ### Features

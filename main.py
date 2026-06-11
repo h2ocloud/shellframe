@@ -185,7 +185,17 @@ DEFAULT_CONFIG = {
         "handoff_to_main": True,
         "handoff_on_start": False
     },
-    "agent_roster": DEFAULT_AGENT_ROSTER
+    "agent_roster": DEFAULT_AGENT_ROSTER,
+    # Optional local HTTP API. Disabled by default. When enabled, exposes the
+    # sfctl command surface over loopback so a local agent (e.g. OpenClaw) can
+    # drive tabs. Loopback host + token + IP whitelist enforced. Swagger at /docs.
+    "api_server": {
+        "enabled": False,
+        "host": "127.0.0.1",
+        "port": 8765,
+        "token": "",                      # auto-generated on first enable if blank
+        "allowed_ips": ["127.0.0.1", "::1"]
+    }
 }
 
 
@@ -202,6 +212,24 @@ def _ensure_idle_reaper_defaults(cfg: dict) -> bool:
             changed = True
     if cfg.get("idle_reaper") is not raw:
         cfg["idle_reaper"] = raw
+        changed = True
+    return changed
+
+
+def _ensure_api_server_defaults(cfg: dict) -> bool:
+    """Surface the (default-off) local HTTP API block in config.json so users
+    can discover and flip it on. Never overrides an existing value."""
+    defaults = DEFAULT_CONFIG.get("api_server", {})
+    raw = cfg.get("api_server")
+    if not isinstance(raw, dict):
+        raw = {}
+    changed = False
+    for key, value in defaults.items():
+        if key not in raw:
+            raw[key] = value
+            changed = True
+    if cfg.get("api_server") is not raw:
+        cfg["api_server"] = raw
         changed = True
     return changed
 
@@ -457,6 +485,8 @@ def load_config():
         if _ensure_user_prompt_paths_default(cfg):
             cfg_defaults_changed = True
         if _ensure_plugins_defaults(cfg):
+            cfg_defaults_changed = True
+        if _ensure_api_server_defaults(cfg):
             cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
@@ -5078,6 +5108,50 @@ class Api:
                     _dlog("sfctl", f"watcher loop crashed: {e}\n{traceback.format_exc()}")
         threading.Thread(target=watcher, daemon=True).start()
 
+    def _start_api_server(self):
+        """Start the optional local HTTP API (opt-in via config api_server.enabled).
+
+        Loopback + token + IP whitelist. Wraps _execute_sfctl. A blank token is
+        auto-generated and persisted on first enable so the surface is never
+        unauthenticated. Failures (missing module, bind error) are non-fatal."""
+        try:
+            cfg = (load_config().get("api_server") or {})
+        except Exception:
+            cfg = {}
+        if not cfg.get("enabled"):
+            return
+        token = (cfg.get("token") or "").strip()
+        if not token:
+            import secrets
+            token = secrets.token_urlsafe(24)
+            try:
+                full = load_config()
+                full.setdefault("api_server", {})["token"] = token
+                save_config(full)
+            except Exception as e:
+                _dlog("api", f"failed persisting generated token: {e}")
+        try:
+            import api_server
+        except Exception as e:
+            _dlog("api", f"api_server import failed: {e}")
+            return
+        # Stamp the live event bus onto the bridge so signal transitions
+        # (RED/YELLOW/GREEN) surface to API clients via GET /events.
+        self.api_event_bus = api_server.EVENT_BUS
+        try:
+            ver = json.loads((Path(__file__).parent / "version.json").read_text()).get("version", "0")
+        except Exception:
+            ver = "0"
+        api_server.start(
+            self._execute_sfctl,
+            host=cfg.get("host", "127.0.0.1"),
+            port=cfg.get("port", 8765),
+            token=token,
+            allowed_ips=cfg.get("allowed_ips") or ["127.0.0.1", "::1"],
+            version=ver,
+            log=lambda m: _dlog("api", m),
+        )
+
     def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
         """Execute a sfctl command and return result dict."""
         args = args or {}
@@ -6301,6 +6375,7 @@ def main():
     # → General and call api.reload_global_hotkey() to take effect.
     _register_global_hotkey()
     api._start_command_watcher()
+    api._start_api_server()
     webview.start(debug=("--debug" in sys.argv))
 
     # If webview.start() returns but process is still alive, force exit

@@ -1554,6 +1554,18 @@ class TelegramBridge(BridgeBase):
         if sig_state and sig_state != getattr(slot, "last_signal", ""):
             slot.last_signal = sig_state
             _blog(f"[signal] {slot.sid} state={sig_state} reason={sig_reason!r}\n")
+            # Surface to local HTTP API clients (e.g. OpenClaw) so they can poll
+            # GET /events and respond. No-op when the API server is disabled.
+            try:
+                import api_server
+                api_server.EVENT_BUS.push(
+                    sid=slot.sid,
+                    label=getattr(slot, "label", slot.sid),
+                    state=sig_state,
+                    reason=sig_reason,
+                )
+            except Exception as e:
+                _blog(f"[signal-api] {slot.sid} failed: {e}\n")
             try:
                 self._signal_desktop_notify(slot, sig_state, sig_reason)
             except Exception as e:
