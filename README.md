@@ -57,19 +57,20 @@ shellframe            # GUI with session picker
 
 ### Keyboard shortcuts
 
-| Shortcut | Action |
-|---|---|
-| `Cmd+T` | New tab |
-| `Cmd+W` | Close tab |
-| `Ctrl+Tab` | Next tab |
-| `Cmd+]` / `Cmd+[` | Next / prev tab |
-| `Cmd+V` | Paste image/file |
-| `Cmd+,` | Settings |
-| `Ctrl+Click` / `Cmd+Click` | Open file path in default app |
-| Right-click (with selection) | Copy |
-| Right-click (no selection) | Paste |
-| `Esc` (plain terminal) | Clear input line |
-| Double-click tab | Rename session |
+| Action | macOS | Windows |
+|---|---|---|
+| New tab | `Cmd+T` | `Ctrl+T` / `Ctrl+Shift+T` |
+| Close tab (asks to confirm) | `Cmd+W` | `Ctrl+W` / `Ctrl+Shift+W` |
+| Next / prev tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Cmd+]` / `Cmd+[` | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+PgDn` / `Ctrl+PgUp` |
+| Paste image/file | `Cmd+V` | `Ctrl+V` |
+| Settings | `Cmd+,` | `Ctrl+,` |
+| Copy selection | `Cmd+C` | `Ctrl+C` (only with a selection — otherwise it interrupts, as in any terminal) |
+| Open file path in default app | `Cmd+Click` / `Ctrl+Click` | `Ctrl+Click` |
+| Copy / paste | Right-click (with / without selection) | Right-click (with / without selection) |
+| Clear input line (plain terminal) | `Esc` | `Esc` |
+| Rename session | Double-click tab | Double-click tab |
+
+Bare `Ctrl` chords that terminals rely on are not hijacked: on macOS app shortcuts live exclusively on `Cmd` (`Ctrl+W` stays delete-word, `Ctrl+T` transpose), and `Ctrl+C` is never an app shortcut — on Windows it copies only when text is selected. Closing a tab from the keyboard always shows a confirmation, so a mistyped chord can't kill a running session.
 
 ### Idle Tab Cleanup
 

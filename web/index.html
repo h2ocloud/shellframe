@@ -588,7 +588,7 @@
 <div id="tab-bar">
   <button class="tab-action" id="btn-sidebar" title="Toggle sidebar" style="font-size:14px">☰</button>
   <div id="tabs"></div>
-  <button id="btn-new-tab" title="New tab (Cmd+T)">+</button>
+  <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Task board" style="font-size:14px;display:none">📋</button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
@@ -1021,24 +1021,25 @@
     <div class="about-section">
       <h3 data-i18n="usage">Usage</h3>
       <ul id="about-usage-list">
-        <li>Click <code>+</code> or press <span class="kbd">Cmd+T</span> to open a new session</li>
-        <li>Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal</li>
+        <li>Click <code>+</code> or press <span class="kbd">Cmd/Ctrl+T</span> to open a new session</li>
+        <li>Paste screenshots with <span class="kbd">Cmd/Ctrl+V</span> — preview appears above terminal</li>
         <li>Drag & drop files into window to attach</li>
         <li>Press <span class="kbd">Enter</span> to send with file path auto-attached</li>
-        <li><span class="kbd">Cmd+W</span> close tab, <span class="kbd">Cmd+]</span>/<span class="kbd">[</span> switch tabs</li>
+        <li><span class="kbd">Cmd/Ctrl+W</span> close tab (confirms first), <span class="kbd">Ctrl+Tab</span> switch tabs</li>
       </ul>
     </div>
 
     <div class="about-section">
       <h3 data-i18n="shortcuts">Keyboard Shortcuts</h3>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:11px">
-        <span class="kbd">Cmd+T</span><span>New tab</span>
-        <span class="kbd">Cmd+W</span><span>Close tab</span>
+        <span class="kbd">Cmd/Ctrl+T</span><span>New tab</span>
+        <span class="kbd">Cmd/Ctrl+W</span><span>Close tab (confirms first)</span>
         <span class="kbd">Ctrl+Tab</span><span>Next tab</span>
-        <span class="kbd">Cmd+]</span> / <span class="kbd">Cmd+[</span><span>Next / Prev tab</span>
-        <span class="kbd">Cmd+V</span><span>Paste image</span>
+        <span class="kbd">Cmd+]/[</span> · <span class="kbd">Ctrl+PgDn/PgUp</span><span>Next / Prev tab (mac · win)</span>
+        <span class="kbd">Cmd/Ctrl+V</span><span>Paste image</span>
+        <span class="kbd">Ctrl+C</span><span>Copy selection (win; no selection = interrupt)</span>
         <span class="kbd">Shift+Enter</span><span data-i18n="shiftEnterShortcut">Newline (no submit)</span>
-        <span class="kbd">Cmd+,</span><span>Settings</span>
+        <span class="kbd">Cmd/Ctrl+,</span><span>Settings</span>
       </div>
     </div>
 
@@ -1187,14 +1188,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       aboutDesc: 'Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.',
       usage: 'Usage',
       usageItems: [
-        'Click <code>+</code> or press <span class="kbd">Cmd+T</span> to open a new session',
-        'Paste screenshots with <span class="kbd">Cmd+V</span> — preview appears above terminal (supports multiple images at once)',
+        'Click <code>+</code> or press <span class="kbd">Cmd/Ctrl+T</span> to open a new session',
+        'Paste screenshots with <span class="kbd">Cmd/Ctrl+V</span> — preview appears above terminal (supports multiple images at once)',
         'Drag & drop files or screenshots into window to attach',
         'Press <span class="kbd">Enter</span> to send; <span class="kbd">Shift+Enter</span> inserts a newline without sending (useful for multi-line prompts)',
-        'Select text and <b>right-click</b> to copy; right-click with no selection to paste (Windows CMD style)',
+        'Select text and <b>right-click</b> to copy; right-click with no selection to paste (Windows CMD style). On Windows <span class="kbd">Ctrl+C</span> also copies when text is selected — without a selection it interrupts, as in any terminal',
         'Scroll up at the top of a tab to open a deduped history overlay — scroll to the bottom, press Esc, or type to return',
-        '<span class="kbd">Cmd+W</span> close tab · <span class="kbd">Ctrl+Tab</span> or <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> switch tabs',
-        'Open Settings (<span class="kbd">Cmd+,</span>) to manage presets, Telegram bridge, and session prompt',
+        '<span class="kbd">Cmd/Ctrl+W</span> close tab (confirms first) · <span class="kbd">Ctrl+Tab</span>, <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> (mac) or <span class="kbd">Ctrl+PgDn</span>/<span class="kbd">PgUp</span> (win) switch tabs',
+        'Open Settings (<span class="kbd">Cmd/Ctrl+,</span>) to manage presets, Telegram bridge, and session prompt',
       ],
       shortcuts: 'Keyboard Shortcuts',
       author: 'Author',
@@ -1341,14 +1342,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
       usage: '使用方式',
       usageItems: [
-        '點 <code>+</code> 或按 <span class="kbd">Cmd+T</span> 開新工作階段',
-        '<span class="kbd">Cmd+V</span> 直接貼上截圖 — 預覽會出現在終端機上方（可一次貼多張）',
+        '點 <code>+</code> 或按 <span class="kbd">Cmd/Ctrl+T</span> 開新工作階段',
+        '<span class="kbd">Cmd/Ctrl+V</span> 直接貼上截圖 — 預覽會出現在終端機上方（可一次貼多張）',
         '拖拉檔案 / 截圖進視窗即可附加',
         '<span class="kbd">Enter</span> 送出；<span class="kbd">Shift+Enter</span> 換行但不送出（寫多行 prompt 超好用）',
-        '反白文字後<b>按右鍵</b>即可複製；沒選字時按右鍵=貼上（Windows CMD 風格）',
+        '反白文字後<b>按右鍵</b>即可複製；沒選字時按右鍵=貼上（Windows CMD 風格）。Windows 上有反白時 <span class="kbd">Ctrl+C</span> 也是複製——沒反白才是中斷，跟一般終端機一樣',
         '分頁頂端往上滾會自動打開去重後的歷史 overlay — 滾到底、按 Esc 或開始打字就關閉',
-        '<span class="kbd">Cmd+W</span> 關分頁 · <span class="kbd">Ctrl+Tab</span> 或 <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> 切分頁',
-        '<span class="kbd">Cmd+,</span> 開 Settings 管理 presets、Telegram bridge 和 session prompt',
+        '<span class="kbd">Cmd/Ctrl+W</span> 關分頁（會先確認）· <span class="kbd">Ctrl+Tab</span>、<span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span>（mac）或 <span class="kbd">Ctrl+PgDn</span>/<span class="kbd">PgUp</span>（win）切分頁',
+        '<span class="kbd">Cmd/Ctrl+,</span> 開 Settings 管理 presets、Telegram bridge 和 session prompt',
       ],
       shortcuts: '鍵盤快捷鍵',
       author: '作者',
@@ -1460,6 +1461,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function t(key) { return (I18N[lang] || I18N.en)[key] || I18N.en[key] || key; }
 
   // State
+  const IS_MAC = (navigator.platform || navigator.userAgent || '').toUpperCase().includes('MAC');
   let sessions = {};
   let sessionOrder = [];  // ordered sid list — drives tab numbering & TG /1 /2
   let activeId = null;
@@ -2783,6 +2785,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function setupAttachKeyHandler(sid, term) {
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
+      // Windows: Ctrl+C with an active selection copies it instead of sending
+      // the interrupt (\x03) — Windows Terminal behaviour. Users reaching for
+      // "copy" must not interrupt/kill the running CLI (a dead CLI looks like
+      // the tab being closed). With nothing selected Ctrl+C still interrupts.
+      // On macOS copy is Cmd+C (native), so Ctrl+C always stays the interrupt.
+      if (!IS_MAC && ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey &&
+          (ev.key === 'c' || ev.key === 'C') && term.hasSelection()) {
+        ev.preventDefault();
+        try { pywebview.api.copy_text(term.getSelection()); } catch(_) {}
+        term.clearSelection();
+        return false;
+      }
       // Esc in plain terminal (or Codex) → send Ctrl+U to kill current line.
       // Codex's native Esc cancels the agent run; user prefers Esc to clear
       // the composer like a regular shell, so we intercept it here.
@@ -5338,21 +5352,74 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch(e) {}
   }, 300000); // 5 min
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — platform-aware modifier mapping.
+  //   macOS:   Cmd+T / Cmd+W / Cmd+, / Cmd+]/[ — bare Ctrl combos stay with
+  //            the terminal (Ctrl+W = delete word, Ctrl+T = transpose, …).
+  //   Windows: Cmd maps to Ctrl (Ctrl+T / Ctrl+W / Ctrl+,), Shift variants
+  //            also accepted (Windows Terminal style); Ctrl+PgUp/PgDn cycles
+  //            tabs. Ctrl+C is NEVER an app shortcut — with a selection it
+  //            copies (see setupAttachKeyHandler), otherwise it reaches the
+  //            terminal as the interrupt key.
+  //   Closing a tab via shortcut always asks for confirmation — the session
+  //   gets killed, so a mistyped terminal chord must not destroy a running
+  //   agent (the tab's × button stays one-click: pointing at it is deliberate).
+  function appMod(e) { return IS_MAC ? (e.metaKey && !e.ctrlKey) : (e.ctrlKey && !e.metaKey); }
+
+  let _closeConfirmOpen = false;
+  function confirmCloseTab(sid) {
+    const s = sessions[sid];
+    if (!s || _closeConfirmOpen) return;
+    _closeConfirmOpen = true;
+    const isZh = lang === 'zh-TW';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '400';
+    overlay.innerHTML = `
+      <div class="modal" style="width:340px;padding:20px">
+        <h2 style="font-size:14px;margin-bottom:10px">${isZh ? '關閉分頁？' : 'Close tab?'}</h2>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
+          ${isZh ? `「${esc(s.label)}」的 session 會被終止。` : `This will terminate the “${esc(s.label)}” session.`}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" id="close-tab-cancel">${isZh ? '取消' : 'Cancel'}</button>
+          <button class="btn btn-primary" id="close-tab-confirm">${isZh ? '關閉' : 'Close'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = (close) => {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      _closeConfirmOpen = false;
+      if (close) { closeTab(sid); }
+      else { try { sessions[sid] && sessions[sid].term.focus(); } catch(_) {} }
+    };
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    overlay.querySelector('#close-tab-confirm').addEventListener('click', () => done(true));
+    overlay.querySelector('#close-tab-cancel').addEventListener('click', () => done(false));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+    // Focus the confirm button: keeps Enter away from the steal-Enter safety
+    // net (body counts as stealable focus and would forward \r to the PTY).
+    overlay.querySelector('#close-tab-confirm').focus();
+  }
+
   document.addEventListener('keydown', (e) => {
-    // Cmd/Ctrl+T → new tab
-    if ((e.metaKey || e.ctrlKey) && e.key === 't') {
+    // Cmd+T (mac) / Ctrl+T or Ctrl+Shift+T (win) → new tab
+    if (appMod(e) && (e.key === 't' || e.key === 'T')) {
       e.preventDefault();
       renderPresets();
       $modal.classList.add('open');
       $customCmd.focus();
     }
-    // Cmd/Ctrl+W → close tab
-    if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
+    // Cmd+W (mac) / Ctrl+W or Ctrl+Shift+W (win) → close tab (confirmed)
+    if (appMod(e) && (e.key === 'w' || e.key === 'W')) {
       e.preventDefault();
-      if (activeId) closeTab(activeId);
+      if (activeId) confirmCloseTab(activeId);
     }
-    // Ctrl+Tab / Cmd+] → next tab, Ctrl+Shift+Tab / Cmd+[ → prev tab
+    // Ctrl+Tab / Ctrl+Shift+Tab → next / prev tab (all platforms)
     // Cycles through ALL sessions including unbridged ones.
     if (e.ctrlKey && e.key === 'Tab') {
       e.preventDefault();
@@ -5361,6 +5428,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const next = (idx + (e.shiftKey ? -1 : 1) + sessionOrder.length) % sessionOrder.length;
       switchTab(sessionOrder[next]);
     }
+    // Ctrl+PgDn / Ctrl+PgUp → next / prev tab (Windows/browser convention)
+    if (e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
+      e.preventDefault();
+      if (sessionOrder.length < 2) return;
+      const idx = sessionOrder.indexOf(activeId);
+      const dir = e.key === 'PageDown' ? 1 : -1;
+      switchTab(sessionOrder[(idx + dir + sessionOrder.length) % sessionOrder.length]);
+    }
+    // Cmd+] / Cmd+[ → next / prev tab (mac)
     if (e.metaKey && !e.ctrlKey && (e.key === ']' || e.key === '[')) {
       e.preventDefault();
       if (sessionOrder.length < 2) return;
@@ -5386,8 +5462,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         );
       }
     }
-    // Cmd/Ctrl+, → settings
-    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+    // Cmd+, (mac) / Ctrl+, (win) → settings
+    if (appMod(e) && e.key === ',') {
       e.preventDefault();
       $modalSettings.classList.add('open');
       renderSettingsPresets();
