@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.16.0 (2026-06-11)
+
+### Features
+- **`#` tab tagging：派工時標註要互動的 tab** — 在任何 tab 輸入 `#` 跳出 tab 選單（↑↓ 選擇、Enter/Tab 插入、Esc 取消；可打字過濾，支援中文 label、含空白 label 與 sid），選定後自動補完 `#<tab名稱>`。選單錨在游標位置（xterm IME helper textarea），選擇時自動退格清掉已打的過濾字再插入完整 label。
+  - **派工自動接線**：`sfctl delegate` 的 task 內含 `#<tab-label>`（或 `#<sid>`）時，自動解析成現存 tab，並在 worker 的派工 prompt 附上明確互動指示——先 `sfctl peek <sid>` 看狀態、用 `sfctl send <sid>` 對話／交接、回報必須包含互動結果——以及 label→sid 對照。`delegate` 回傳 details 多了 `tagged_tabs`。
+  - **總控 preamble**（main.py fallback 與 bridge_telegram 兩份）教總控：使用者訊息帶 #tag 時，派工 task 要原樣保留 tag，由 delegate 自動展開；自己處理就直接用 sfctl 跟該 tab 互動。web 貼上路徑的 master turn 另外即時附上 tag→sid 對照。
+  - 解析規則：長 label 優先＋已匹配區段遮罩（`#研究-CLD` 不會誤觸到 `#研究`）、大小寫不敏感；派工對象自己被 tag 時不自我標註、也不會洩漏給前綴 label。
+- 需 restart 生效（改到 main.py / web/index.html）。
+
 ## v0.15.4 (2026-06-10)
 
 ### Fixes

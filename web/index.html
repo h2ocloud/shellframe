@@ -330,6 +330,21 @@
     display: flex; align-items: center; justify-content: center;
   }
   .emoji-picker span:hover { background: #3b4261; }
+  .tag-picker {
+    position: fixed; background: #24283b; border: 1px solid #3b4261; border-radius: 8px;
+    padding: 4px; display: none; z-index: 300; min-width: 200px; max-width: 320px;
+    max-height: 240px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,.4); font-size: 13px;
+  }
+  .tag-picker.open { display: block; }
+  .tag-picker .tp-item {
+    padding: 5px 10px; border-radius: 5px; cursor: pointer; color: #a9b1d6;
+    display: flex; gap: 10px; align-items: center; white-space: nowrap; overflow: hidden;
+  }
+  .tag-picker .tp-item .tp-label { color: #c0caf5; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .tag-picker .tp-item .tp-sid { color: #565f89; font-size: 11px; }
+  .tag-picker .tp-item.sel { background: #3b4261; }
+  .tag-picker .tp-item:hover { background: #2f3549; }
+  .tag-picker .tp-hint { padding: 4px 10px 3px; color: #565f89; font-size: 11px; border-top: 1px solid #292e42; margin-top: 3px; }
   .settings-preset .sp-name { width: 100px; }
   .settings-preset .sp-cmd { flex: 1; font-family: monospace; }
   .settings-preset .sp-del { color: #565f89; border: none; background: none; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 3px; }
@@ -1978,6 +1993,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
           return;
         }
+        // `#` tab-tag picker: navigation/selection keys are consumed here.
+        if (tagPickerOnData(sid, data)) return;
         // Reset scroll lock on Enter (user submitted input)
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
@@ -2105,6 +2122,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
           return;
         }
+        // `#` tab-tag picker: navigation/selection keys are consumed here.
+        if (tagPickerOnData(sid, data)) return;
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
@@ -2171,6 +2190,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function switchTab(sid) {
     // Close any open scroll-history overlay — it belongs to no specific tab
     try { if (typeof ScrollHistory !== 'undefined') ScrollHistory.close(); } catch(_) {}
+    try { tagPickerClose(); } catch(_) {}
     if (activeId && sessions[activeId]) {
       sessions[activeId].pane.classList.remove('active');
     }
@@ -4339,6 +4359,122 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       emojiPicker.classList.remove('open');
     }
   });
+
+  // ── # tab-tag picker ──
+  // Typing `#` in a terminal opens a dropdown of the other tabs; pick one to
+  // insert `#<tab-label>` into the input. Both term.onData handlers call
+  // tagPickerOnData() first — it returns true when the keystroke was consumed
+  // (navigation/selection) and must NOT be forwarded to the PTY.
+  const tagPickerEl = document.createElement('div');
+  tagPickerEl.className = 'tag-picker';
+  document.body.appendChild(tagPickerEl);
+  const tagPicker = { open: false, sid: null, filter: '', matches: [], sel: 0 };
+
+  function tagPickerClose() {
+    tagPicker.open = false; tagPicker.sid = null; tagPicker.filter = '';
+    tagPicker.matches = []; tagPicker.sel = 0;
+    tagPickerEl.classList.remove('open');
+  }
+
+  function tagPickerCandidates(sid) {
+    return sessionOrder
+      .filter(id => id !== sid && sessions[id])
+      .map(id => ({ sid: id, label: sessions[id].label || id }));
+  }
+
+  function tagPickerRefresh() {
+    const f = tagPicker.filter.toLowerCase();
+    tagPicker.matches = tagPickerCandidates(tagPicker.sid)
+      .filter(c => !f || c.label.toLowerCase().includes(f) || c.sid.toLowerCase().includes(f));
+    if (!tagPicker.matches.length) { tagPickerClose(); return; }
+    if (tagPicker.sel >= tagPicker.matches.length) tagPicker.sel = tagPicker.matches.length - 1;
+    tagPickerEl.innerHTML =
+      tagPicker.matches.map((c, i) =>
+        `<div class="tp-item${i === tagPicker.sel ? ' sel' : ''}" data-i="${i}">` +
+        `<span class="tp-label">${esc(c.label)}</span><span class="tp-sid">${esc(c.sid)}</span></div>`
+      ).join('') +
+      '<div class="tp-hint">↑↓ 選擇 · Enter 插入 · Esc 取消</div>';
+    const sel = tagPickerEl.querySelector('.tp-item.sel');
+    if (sel) sel.scrollIntoView({ block: 'nearest' });
+  }
+
+  function tagPickerPosition(sid) {
+    const s = sessions[sid];
+    if (!s) return;
+    // xterm keeps its IME helper textarea at the cursor cell — use it as the
+    // anchor so the dropdown opens right where `#` was typed.
+    const ta = s.pane.querySelector('textarea.xterm-helper-textarea');
+    const paneRect = s.pane.getBoundingClientRect();
+    let x = paneRect.left + 16, y = paneRect.bottom - 12, anchorTop = y;
+    const r = ta && ta.getBoundingClientRect();
+    if (r && (r.left || r.top)) { x = r.left; y = r.bottom + 6; anchorTop = r.top; }
+    const w = tagPickerEl.offsetWidth || 240, h = tagPickerEl.offsetHeight || 160;
+    if (x + w > innerWidth - 8) x = Math.max(8, innerWidth - w - 8);
+    if (y + h > innerHeight - 8) y = Math.max(8, anchorTop - h - 6);
+    tagPickerEl.style.left = x + 'px';
+    tagPickerEl.style.top = y + 'px';
+  }
+
+  function tagPickerSelect() {
+    const c = tagPicker.matches[tagPicker.sel];
+    if (!c) { tagPickerClose(); return; }
+    const sid = tagPicker.sid;
+    // The '#' and any filter chars are already in the PTY input — erase the
+    // filter (label may match by substring, not prefix) and write the full label.
+    const erase = '\x7f'.repeat([...tagPicker.filter].length);
+    tagPickerClose();
+    pywebview.api.write_input(sid, erase + c.label + ' ');
+  }
+
+  function tagPickerOnData(sid, data) {
+    if (!tagPicker.open) {
+      if (data === '#' && tagPickerCandidates(sid).length) {
+        tagPicker.open = true; tagPicker.sid = sid; tagPicker.filter = ''; tagPicker.sel = 0;
+        tagPickerRefresh();
+        if (tagPicker.open) { tagPickerEl.classList.add('open'); tagPickerPosition(sid); }
+      }
+      return false; // '#' itself still goes to the PTY
+    }
+    if (sid !== tagPicker.sid) { tagPickerClose(); return false; }
+    const n = tagPicker.matches.length;
+    if (data === '\x1b[A') { tagPicker.sel = (tagPicker.sel + n - 1) % n; tagPickerRefresh(); return true; }
+    if (data === '\x1b[B') { tagPicker.sel = (tagPicker.sel + 1) % n; tagPickerRefresh(); return true; }
+    if (data === '\r' || data === '\n' || data === '\t') { tagPickerSelect(); return true; }
+    if (data === '\x1b') { tagPickerClose(); return true; }
+    if (data === '\x7f' || data === '\b') {
+      if (!tagPicker.filter) { tagPickerClose(); return false; } // deleting the '#'
+      tagPicker.filter = [...tagPicker.filter].slice(0, -1).join('');
+      tagPickerRefresh();
+      return false; // forward so the terminal erases the char too
+    }
+    if (data === '#') { tagPicker.filter = ''; tagPicker.sel = 0; tagPickerRefresh(); return false; }
+    if (data.startsWith('\x1b') || (data.length === 1 && data.charCodeAt(0) < 0x20)) {
+      tagPickerClose();
+      return false;
+    }
+    // Printable char or IME-committed chunk → extend the filter. Long chunks
+    // are pastes, not filter input — close instead.
+    if (data.length <= 32 && !/[\x00-\x1f]/.test(data)) {
+      tagPicker.filter += data;
+      tagPicker.sel = 0;
+      tagPickerRefresh();
+      return false;
+    }
+    tagPickerClose();
+    return false;
+  }
+
+  // Keep terminal focus while clicking the picker.
+  tagPickerEl.addEventListener('mousedown', e => e.preventDefault());
+  tagPickerEl.addEventListener('click', e => {
+    const item = e.target.closest('.tp-item');
+    if (!item) return;
+    tagPicker.sel = +item.dataset.i;
+    tagPickerSelect();
+  });
+  document.addEventListener('mousedown', e => {
+    if (tagPicker.open && !tagPickerEl.contains(e.target)) tagPickerClose();
+  }, true);
 
   function renderSettingsPresets() {
     const container = document.getElementById('settings-presets');
