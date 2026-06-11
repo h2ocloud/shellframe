@@ -344,7 +344,12 @@ _MASTER_TURN_PREAMBLE = (
     "When reporting to the user, always refer to a worker by its tab label "
     "(e.g.「點裝備優化」), never by sid (e.g. s48) — sid is only for your own "
     "sfctl calls. If a handoff/report or sfctl output gives you only a sid, run "
-    "`sfctl list` to map it to the tab label before relaying it."
+    "`sfctl list` to map it to the tab label before relaying it.\n"
+    "If the user's message contains #<tab-label> tags (e.g. #研究-CLD), each tag "
+    "names an existing tab the task must interact with: keep those #tags verbatim "
+    "in the delegate task text — ShellFrame auto-resolves them and attaches "
+    "sfctl peek/send interaction instructions for the worker. If you handle the "
+    "task yourself instead, interact with the tagged tabs via sfctl directly."
 )
 
 # Built-in defaults for the two user-editable prompts. Users override via

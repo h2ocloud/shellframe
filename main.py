@@ -350,7 +350,12 @@ MASTER_TURN_PREAMBLE = (
     "When reporting to the user, always refer to a worker by its tab label "
     "(e.g.「點裝備優化」), never by sid (e.g. s48) — sid is only for your own "
     "sfctl calls. If a handoff/report or sfctl output gives only a sid, run "
-    "`sfctl list` to map it to the tab label before relaying it."
+    "`sfctl list` to map it to the tab label before relaying it. "
+    "If the user's message contains #<tab-label> tags (e.g. #研究-CLD), each tag "
+    "names an existing tab the task must interact with: keep those #tags verbatim "
+    "in the delegate task text — ShellFrame auto-resolves them and attaches "
+    "sfctl peek/send interaction instructions for the worker. If you handle the "
+    "task yourself instead, interact with the tagged tabs via sfctl directly."
 )
 
 
@@ -1343,8 +1348,53 @@ class Api:
                 return sid, session
         return "", None
 
+    def _extract_tab_tags(self, text: str, exclude_sid: str = "") -> list[dict]:
+        """Resolve ``#<tab-label>`` (or ``#<sid>``) tags in *text* to live sessions.
+
+        Longest labels match first and matched spans are masked so a label that
+        is a prefix of another (``#研究`` vs ``#研究-CLD``) can't double-fire.
+        Returns ``[{"label": ..., "sid": ...}, ...]`` in order of appearance.
+        """
+        text = str(text or "")
+        if "#" not in text:
+            return []
+        candidates = []
+        for sid, session in self.sessions.items():
+            if not getattr(session, "alive", False):
+                continue
+            label = self._session_label(sid, session)
+            needles = {label, sid} if label != sid else {sid}
+            for needle in needles:
+                if needle:
+                    candidates.append((needle, label, sid))
+        candidates.sort(key=lambda t: len(t[0]), reverse=True)
+        lowered = text.casefold()
+        consumed: list[tuple[int, int]] = []
+        seen: set[str] = set()
+        found = []
+        # The excluded session (the delegation target itself) still consumes its
+        # matched spans — otherwise a shorter label that is its prefix
+        # (#研究 in #研究-CLD) would false-positive on the leftover text.
+        for needle, label, sid in candidates:
+            target = ("#" + needle).casefold()
+            start = 0
+            while True:
+                pos = lowered.find(target, start)
+                if pos < 0:
+                    break
+                end = pos + len(target)
+                if sid not in seen and not any(pos < e and s < end for s, e in consumed):
+                    seen.add(sid)
+                    consumed.append((pos, end))
+                    if sid != exclude_sid:
+                        found.append({"label": label, "sid": sid, "pos": pos})
+                    break
+                start = pos + 1
+        found.sort(key=lambda d: d["pos"])
+        return [{"label": d["label"], "sid": d["sid"]} for d in found]
+
     @staticmethod
-    def _delegate_prompt(role: str, entry: dict, task: str) -> str:
+    def _delegate_prompt(role: str, entry: dict, task: str, tagged: list[dict] | None = None) -> str:
         label = entry.get("label") or role
         responsibility = entry.get("responsibility") or "依總控派工處理指定任務"
         prompt = (
@@ -1353,6 +1403,18 @@ class Api:
             "這是 ShellFrame 總控派工。請維持自己的職責邊界，不要主動接手其他 worker 的領域。\n\n"
             "任務：\n"
             f"{task.strip()}\n\n"
+        )
+        if tagged:
+            tag_lines = "\n".join(f"- #{t['label']} → sid {t['sid']}" for t in tagged)
+            prompt += (
+                "任務中用 # 標註了需要互動的 tab（其他 agent session）：\n"
+                f"{tag_lines}\n"
+                "與被標註 tab 互動是本任務的必要環節，不是可選項：\n"
+                "- 先 `sfctl peek <sid> --lines 60` 了解該 tab 目前狀態與上下文，再行動。\n"
+                "- 用 `sfctl send <sid> '<訊息>'` 對該 tab 的 agent 提問、下指令或交接；送出後再 peek 確認對方收到並回應，必要時等待或追問。\n"
+                "- 回報時務必包含與各標註 tab 的互動結果；提及 tab 用 label（#名稱），sid 只用在 sfctl 指令。\n\n"
+            )
+        prompt += (
             "工作規則：\n"
             "- 先確認需要的上下文與現有狀態；避免重複建立、重複送出或覆蓋。\n"
             "- 查檔案時先限定已知專案路徑；不要廣掃整個 /Users、~/Library、~/Library/Mobile Documents、Mail、Messages、Photos 等 macOS 受保護資料夾，避免觸發系統隱私權限彈窗。找不到路徑時先回報需要總控補上下文。\n"
@@ -1414,7 +1476,8 @@ class Api:
         if not session:
             return {"success": False, "message": f"No session available for {label}"}
 
-        prompt = self._delegate_prompt(resolved_role, entry, task)
+        tagged = self._extract_tab_tags(task, exclude_sid=sid)
+        prompt = self._delegate_prompt(resolved_role, entry, task, tagged=tagged)
         session._startup_trust_pending = False
         self._send_text_to_session(session, prompt, submit=True)
         return {
@@ -1426,6 +1489,7 @@ class Api:
                 "role": resolved_role,
                 "created": created,
                 "cmd": entry.get("cmd"),
+                "tagged_tabs": tagged,
                 "next": f"sfctl peek {sid} --lines 80",
             },
         }
@@ -1615,6 +1679,14 @@ class Api:
                 show_tag = show_tg_wrapper()
             except Exception:
                 pass
+        tagged = self._extract_tab_tags(user_text)
+        if tagged:
+            mapping = "、".join(f"#{t['label']}={t['sid']}" for t in tagged)
+            preamble += (
+                f"\n[SF tab tags] 本則訊息標註了 tab：{mapping}。"
+                "派工時請在 task 文字中原樣保留這些 #tag（delegate 會自動為 worker 附上互動指示）；"
+                "若由你直接處理，請自行用 sfctl peek/send 與這些 tab 互動。"
+            )
         tag = "[SF delegation prompt ↓]\n" if show_tag else ""
         return f"{tag}{preamble}\n\n---\nUser message: {user_text}"
 
