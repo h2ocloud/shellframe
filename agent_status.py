@@ -23,6 +23,7 @@ import os
 import glob
 import time
 import subprocess
+import re
 
 # ── 狀態機門檻（秒）──
 WORKING_FRESH_S = 8
@@ -237,13 +238,15 @@ def _epoch(v):
 
 
 def _content_text(content):
-    """Pull plain text out of a Claude message content (str or block list)."""
+    """Pull plain text out of a Claude/Codex message content (str or block list)."""
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
         parts = []
         for c in content:
             if isinstance(c, dict) and c.get("type") == "text" and c.get("text"):
+                parts.append(c["text"])
+            elif isinstance(c, dict) and c.get("type") == "output_text" and c.get("text"):
                 parts.append(c["text"])
             elif isinstance(c, str):
                 parts.append(c)
@@ -291,19 +294,26 @@ def _norm_codex(o):
     outer = o.get("type")
     p = o.get("payload") if isinstance(o.get("payload"), dict) else {}
     pt = p.get("type")
+    ts = _parse_iso(o.get("timestamp"))
     if outer == "event_msg":
         if pt in ("task_started", "turn_started", "user_message"):
-            return {"kind": "user_msg", "ts": _epoch(p.get("started_at"))}
+            return {"kind": "user_msg", "ts": _epoch(p.get("started_at")) or ts,
+                    "text": str(p.get("message", "") or "").strip()}
         if pt in ("task_complete", "turn_complete"):
-            return {"kind": "turn_end", "ts": _epoch(p.get("completed_at"))}
+            return {"kind": "turn_end", "ts": _epoch(p.get("completed_at")) or ts}
         if pt in ("exec_approval_request", "apply_patch_approval_request"):
             cmd = " ".join(p.get("command", []) or []) if p.get("command") else "patch"
-            return {"kind": "decision_req", "ts": None, "target": cmd[:40]}
+            return {"kind": "decision_req", "ts": ts, "target": cmd[:40]}
         if pt in ("error", "stream_error"):
-            return {"kind": "error", "ts": None, "text": str(p.get("message", ""))[:60]}
+            return {"kind": "error", "ts": ts, "text": str(p.get("message", ""))[:60]}
+        if pt == "agent_message":
+            return {"kind": "assistant_text", "ts": ts,
+                    "text": str(p.get("message", "") or "").strip()}
         if pt == "mcp_tool_call_begin":
-            return {"kind": "tool_call", "ts": None, "tool": "mcp",
+            return {"kind": "tool_call", "ts": ts, "tool": "mcp",
                     "target": str(p.get("invocation", ""))[:40]}
+        if pt in ("mcp_tool_call_end", "patch_apply_end"):
+            return {"kind": "tool_result", "ts": ts}
     if outer == "response_item":
         if pt == "function_call":
             name = p.get("name", "")
@@ -311,14 +321,24 @@ def _norm_codex(o):
                 args = json.loads(p.get("arguments") or "{}")
             except Exception:
                 args = {}
-            return {"kind": "tool_call", "ts": None, "tool": name,
+            return {"kind": "tool_call", "ts": ts, "tool": name,
                     "target": _target(name, args)}
-        if pt == "function_call_output":
-            return {"kind": "tool_result", "ts": None}
-        if pt in ("message", "reasoning"):
-            return {"kind": "assistant_text", "ts": None}
+        if pt in ("custom_tool_call", "tool_search_call"):
+            name = p.get("name") or ("tool_search" if pt == "tool_search_call" else "")
+            args = p.get("arguments") if isinstance(p.get("arguments"), dict) else {}
+            if not args and isinstance(p.get("input"), dict):
+                args = p.get("input")
+            return {"kind": "tool_call", "ts": ts, "tool": name,
+                    "target": _target(name, args)}
+        if pt in ("function_call_output", "custom_tool_call_output", "tool_search_output"):
+            return {"kind": "tool_result", "ts": ts}
+        if pt == "message":
+            return {"kind": "assistant_text", "ts": ts,
+                    "text": _content_text(p.get("content"))}
+        if pt == "reasoning":
+            return {"kind": "assistant_text", "ts": ts}
         if pt == "image_generation_call":
-            return {"kind": "tool_call", "ts": None, "tool": "image_generation_call", "target": ""}
+            return {"kind": "tool_call", "ts": ts, "tool": "image_generation_call", "target": ""}
     return None
 
 
@@ -401,7 +421,8 @@ def _detail(evs):
 
 
 SPINNER_RE = ("esc to interrupt", "Working (", "Running…", "↑")
-MENU_RE = ("❯ 1.", "Do you want", "Would you like to run", "1. Yes", "Esc to cancel")
+MENU_RE = ("❯ 1.", "› 1.", "Do you want", "Would you like to run",
+           "1. Yes", "Esc to cancel")
 
 
 def _screen_signals(scr):
@@ -409,6 +430,7 @@ def _screen_signals(scr):
     so they work even with NO transcript events (brand-new tab whose
     <uuid>.jsonl isn't written yet)."""
     tail_lines = scr.splitlines()[-8:]
+    bottom = "\n".join(tail_lines)
     return {
         "spinner": any(x in scr for x in SPINNER_RE),
         "menu": any(x in scr for x in MENU_RE),
@@ -420,6 +442,14 @@ def _screen_signals(scr):
         # editable input prompt in the bottom input region (❯ / ›, with or
         # without a typed draft after it) → TUI is waiting for the user.
         "has_input_prompt": any(l.lstrip()[:1] in ("❯", "›") for l in tail_lines),
+        # Codex idle prompt: an input box may show placeholder text such as
+        # "Improve documentation in @filename" with the model/cwd footer under
+        # it. It is not a running task unless the status line says "Working".
+        "codex_idle_prompt": (
+            "gpt-" in bottom
+            and "·" in bottom
+            and not re.search(r"\bWorking\s*\(", bottom)
+        ),
         "rating": "How is Claude doing this session" in scr,
     }
 
@@ -459,7 +489,7 @@ def compute_state(events, now=None, screen_tail=""):
     if not events:
         if menu and not spinner:
             return "decision", {}, "menu (screen only)"
-        if has_input_prompt or sig["rating"]:
+        if has_input_prompt or sig["codex_idle_prompt"] or sig["rating"]:
             return "done", {}, "idle prompt (screen only)"
         if spinner:
             return "working", {}, "spinner (screen only)"
@@ -478,7 +508,7 @@ def compute_state(events, now=None, screen_tail=""):
         return "done", {}, "turn_end"
     if spinner:
         return "working", activity, "screen spinner"
-    if has_input_prompt or sig["rating"]:
+    if has_input_prompt or sig["codex_idle_prompt"] or sig["rating"]:
         return "done", {}, "idle prompt"
     # A pending tool call means a tool is RUNNING — long commands (ssh, builds,
     # MCP calls) are normal and must read as working, not stuck. BUT only while
