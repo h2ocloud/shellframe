@@ -1212,6 +1212,7 @@ class Api:
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
         self._plugins = None
         self._idle_reaper_started = False
+        self._api_httpd = None        # Local HTTP API server handle (Settings hot-toggle)
         self._plugins_reload()
         self._start_idle_reaper()
 
@@ -5159,6 +5160,8 @@ class Api:
         Loopback + token + IP whitelist. Wraps _execute_sfctl. A blank token is
         auto-generated and persisted on first enable so the surface is never
         unauthenticated. Failures (missing module, bind error) are non-fatal."""
+        if getattr(self, "_api_httpd", None):
+            return  # already running (hot re-enable from Settings)
         try:
             cfg = (load_config().get("api_server") or {})
         except Exception:
@@ -5187,7 +5190,7 @@ class Api:
             ver = json.loads((Path(__file__).parent / "version.json").read_text()).get("version", "0")
         except Exception:
             ver = "0"
-        api_server.start(
+        httpd, _thread = api_server.start(
             self._execute_sfctl,
             host=cfg.get("host", "127.0.0.1"),
             port=cfg.get("port", 8765),
@@ -5196,6 +5199,47 @@ class Api:
             version=ver,
             log=lambda m: _dlog("api", m),
         )
+        self._api_httpd = httpd  # None on bind failure → info shows not running
+
+    def get_api_server_info(self) -> str:
+        """Settings UI: current Local HTTP API state."""
+        try:
+            cfg = (load_config().get("api_server") or {})
+        except Exception:
+            cfg = {}
+        host = cfg.get("host", "127.0.0.1")
+        port = cfg.get("port", 8765)
+        return json.dumps({
+            "enabled": bool(cfg.get("enabled")),
+            "host": host,
+            "port": port,
+            "token": cfg.get("token") or "",
+            "running": bool(getattr(self, "_api_httpd", None)),
+            "docs_url": f"http://{host}:{port}/docs",
+        })
+
+    def set_api_server_enabled(self, enabled: bool) -> str:
+        """Settings UI toggle — hot start/stop, no restart needed.
+        Enabling auto-generates and persists a token if blank (fail-closed
+        stays intact: _start_api_server never serves without a token)."""
+        try:
+            full = load_config()
+            full.setdefault("api_server", {})["enabled"] = bool(enabled)
+            save_config(full)
+        except Exception as e:
+            _dlog("api", f"failed saving api_server.enabled: {e}")
+        if enabled:
+            self._start_api_server()
+        else:
+            httpd = getattr(self, "_api_httpd", None)
+            self._api_httpd = None
+            if httpd:
+                try:
+                    httpd.shutdown()
+                    httpd.server_close()
+                except Exception as e:
+                    _dlog("api", f"api_server shutdown failed: {e}")
+        return self.get_api_server_info()
 
     def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
         """Execute a sfctl command and return result dict."""

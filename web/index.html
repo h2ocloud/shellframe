@@ -759,6 +759,17 @@
       </div>
 
       <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="apiServerTitle">Local HTTP API</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="toggle-switch" id="setting-api-server"></button>
+          <span id="api-server-status" style="font-size:11px;color:#565f89"></span>
+          <button class="btn btn-ghost" id="btn-api-docs" style="display:none" data-i18n="apiOpenDocs">API docs (Swagger)</button>
+          <button class="btn btn-ghost" id="btn-api-copy-token" style="display:none" data-i18n="apiCopyToken">Copy token</button>
+        </div>
+        <div class="bridge-help" style="margin-top:6px" data-i18n="apiServerHint">Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart.</div>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
         <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="delegationTitle">Delegation</div>
         <div class="bridge-field" style="align-items:flex-start">
           <label data-i18n="masterPreambleTextLabel">自訂派工提示文字</label>
@@ -1157,6 +1168,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       close: 'Close',
       settings: 'Settings',
       settingsGeneral: 'General',
+      apiServerTitle: 'Local HTTP API',
+      apiOpenDocs: 'API docs (Swagger)',
+      apiCopyToken: 'Copy token',
+      apiServerHint: 'Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart. Spec: docs/local-http-api.md',
       settingsTelegram: 'Telegram Bridge',
       settingsLine: 'LINE',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
@@ -1311,6 +1326,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       close: '關閉',
       settings: '設定',
       settingsGeneral: '一般',
+      apiServerTitle: '本機 HTTP API',
+      apiOpenDocs: 'API 文件 (Swagger)',
+      apiCopyToken: '複製 token',
+      apiServerHint: '給本機外部 agent（OpenClaw／龍蝦等）驅動 ShellFrame 的 HTTP/JSON 介面 — list/peek/send/delegate，Bearer token 驗證、只綁 127.0.0.1。開關即時生效不用重啟。規格見 docs/local-http-api.md',
       settingsTelegram: 'Telegram 橋接',
       settingsLine: 'LINE',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
@@ -3737,6 +3756,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-settings').addEventListener('click', () => {
     $modalSettings.classList.add('open');
     renderSettingsPresets();
+    refreshApiServer();
     // Sync controls
     document.getElementById('setting-fontsize').value = currentFontSize;
     document.getElementById('fontsize-val').textContent = currentFontSize;
@@ -4328,6 +4348,44 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     config.settings = config.settings || {};
     config.settings.shiftEnterNewline = shiftEnterNewline;
     await pywebview.api.save_settings(JSON.stringify(config.settings));
+  });
+
+  // ── Local HTTP API (Settings → General) ──
+  const $apiToggle = document.getElementById('setting-api-server');
+  const $apiStatus = document.getElementById('api-server-status');
+  const $apiDocsBtn = document.getElementById('btn-api-docs');
+  const $apiCopyBtn = document.getElementById('btn-api-copy-token');
+  let _apiInfo = null;
+  function renderApiServer(info) {
+    if (!info) return;
+    _apiInfo = info;
+    $apiToggle.classList.toggle('on', !!info.enabled);
+    const isZh = lang === 'zh-TW';
+    if (info.enabled && info.running) {
+      $apiStatus.innerHTML = `<span style="color:#9ece6a">●</span> http://${esc(info.host)}:${esc(String(info.port))}`;
+    } else if (info.enabled) {
+      $apiStatus.innerHTML = `<span style="color:#f7768e">●</span> ` +
+        (isZh ? '已啟用但未在執行（port 被占用？）' : 'enabled but not running (port in use?)');
+    } else {
+      $apiStatus.textContent = isZh ? '已停用' : 'disabled';
+    }
+    $apiDocsBtn.style.display = (info.enabled && info.running) ? '' : 'none';
+    $apiCopyBtn.style.display = (info.enabled && info.token) ? '' : 'none';
+  }
+  async function refreshApiServer() {
+    try { renderApiServer(JSON.parse(await pywebview.api.get_api_server_info())); } catch (_) {}
+  }
+  $apiToggle.addEventListener('click', async function() {
+    const want = !this.classList.contains('on');
+    try { renderApiServer(JSON.parse(await pywebview.api.set_api_server_enabled(want))); } catch (_) {}
+  });
+  $apiDocsBtn.addEventListener('click', () => { if (_apiInfo) pywebview.api.open_url(_apiInfo.docs_url); });
+  $apiCopyBtn.addEventListener('click', async function() {
+    if (!_apiInfo || !_apiInfo.token) return;
+    try { await pywebview.api.copy_text(_apiInfo.token); } catch (_) { return; }
+    const orig = this.textContent;
+    this.textContent = '✓';
+    setTimeout(() => { this.textContent = orig; }, 900);
   });
 
   // Language select
@@ -5472,6 +5530,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       e.preventDefault();
       $modalSettings.classList.add('open');
       renderSettingsPresets();
+      refreshApiServer();
     }
     // Escape → close any modal
     if (e.key === 'Escape') {

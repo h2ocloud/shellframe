@@ -9,7 +9,11 @@ It is a thin wrapper over the existing `sfctl` command dispatch
 
 ## Enable
 
-Disabled by default. Edit `~/.config/shellframe/config.json`:
+**Settings → General → Local HTTP API** — flip the toggle (effective immediately,
+no restart; the token is auto-generated on first enable and the panel has
+"Copy token" / "API docs (Swagger)" buttons).
+
+Or edit `~/.config/shellframe/config.json` by hand:
 
 ```json
 "api_server": {
