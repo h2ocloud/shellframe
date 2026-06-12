@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.17.0 (2026-06-12)
+
+### Features
+- **右側 AGENTS 狀態偵測改為事件驅動（Claude Code hooks），不再靠畫面猜** — 使用者實測左側兩個藍燈、右側 feed 只剩一個：舊管線（transcript glob + tmux 畫面 regex）本質是猜測。上網調研六個開源同類專案（claude-squad=SHA256 pane diff、agentapi=2s 畫面穩定窗、ccmanager=UI 字串 regex、vibe-kanban/crystal=放棄 TUI 走 stream-json、omnara=marker 缺席判閒置）結論：刮畫面注定 fragile，而 **Claude Code 自己的 hooks 給的是精確事件、卻沒有任何專案在用**。本版改吃 hooks：
+  - 新增 `sf_agent_hook.py`：掛在 `UserPromptSubmit / PreToolUse / Stop / Notification / StopFailure`（`async: true` 不阻塞、timeout 10s），經 sfctl file IPC fire-and-forget 回報；非 ShellFrame 的 Claude session（無 `SF_SID` env）秒退零成本。
+  - 狀態機：UserPromptSubmit/PreToolUse→🔵 working（含 tool 名）、Stop→🟢 done、Notification(permission_prompt)→🔴 等決策、idle_prompt→done、StopFailure→🟠 stuck。
+  - hook 狀態在 30 分內為權威，蓋過畫面/transcript 猜測（transcript 的 task/narration 細節仍保留）；過期或沒裝 hooks 自動回退原偵測（Codex、純 shell、啟用前開的 tab）。
+  - session 啟動注入 `SF_SID` env（tmux `-e`／pty／winpty 三路徑），hook 由此辨識 tab。
+  - Settings → General 新增「精準狀態偵測」開關：一鍵安裝/移除 `~/.claude/settings.json` hooks，surgical merge（不動使用者既有 hooks、移除只拔自己的）。
+- 注意：hooks 在 Claude 啟動時載入——**啟用後新開的 tab 才有精準狀態**，既有 tab 維持 fallback。
+- 驗證：狀態機/安裝器/腳本 35 案 + monitor 整合 4 案（hook 蓋過猜測、TTL 回退、保留 transcript 細節）+ 既有 27/7/7 全 PASS。
+
 ## v0.16.4 (2026-06-12)
 
 ### Features
