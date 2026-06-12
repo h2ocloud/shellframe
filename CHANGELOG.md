@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.16.4 (2026-06-12)
+
+### Features
+- **本機 HTTP API 補上 Settings UI 入口** — v0.16.1 的 API 之前只能手改 config.json 啟用。Settings → General 新增「本機 HTTP API」區塊：
+  - 啟用開關**即時生效不用重啟**（熱啟動/熱停止；後端補存 server handle，停用時 `shutdown()` 釋放 port）
+  - 狀態燈：🟢 顯示監聽位址、🔴 啟用但沒跑起來（port 被占用）、灰=停用
+  - 「複製 token」按鈕（首次啟用自動生成並寫回 config）、「API 文件 (Swagger)」按鈕直接開瀏覽器看規格
+  - docs/local-http-api.md 同步補 Settings 啟用方式
+- 驗證：熱開關 E2E 11 案（含真實 HTTP：/health 公開、Bearer 驗證、錯 token 401、雙重啟用防呆、停用釋放 port、重啟用復活）+ 既有三套測試全 PASS。
+
 ## v0.16.3 (2026-06-12)
 
 ### Performance
