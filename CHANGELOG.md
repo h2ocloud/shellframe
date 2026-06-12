@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.16.3 (2026-06-12)
+
+### Performance
+- **10 tab 掛機不再發燙** — 量測：10 tab 全閒置時主程序常駐 ~34% CPU。三個火源、三個修法：
+  - **狀態偵測 idle gating（最大宗）**：原本每 0.6s 對「每個」tab fork 一次 `tmux capture-pane`＋讀 256KB transcript 尾巴再 JSON parse（10 tab ≈ 每秒 17 個 subprocess + ~4MB/s 磁碟讀，全閒置照燒）。改為：tab 自上次計算後 PTY 沒有任何輸出就直接沿用快取、只更新 elapsed（工作中的 tab 一定會持續輸出 spinner/計時幀，所以無輸出＝狀態不可能變）；保底每 15s 全量重算一次，pending-tool age／debounce 這類靠牆鐘的轉換最多延遲 15s。閒置 tab 的偵測成本歸零，feed 即時性不變（有輸出立刻重算）。
+  - **狀態推送去重**：偵測結果除了 elapsed 以外沒變就不 `evaluate_js`（原本每 0.6s 無條件喚醒 WebView），elapsed 跳動改 5s 心跳推一次。
+  - **Pusher 閒置喚醒降頻**：output pusher 是事件驅動（reader 一有資料就 set event），閒置時的 wait 只是保險絲——從 0.015s 放寬到 0.5s（66 → 2 次/秒，每次醒來都要掃全部 session 的 lock）；串流中維持 5ms 排乾、背景節流窗維持 0.1s，輸出延遲無感。
+  - **右側 feed 跳過無效重繪**：`renderFeed` 每 700ms 無條件重建 innerHTML，改為 markup 沒變就跳過（閒置時的常態）。
+- 行為驗證：idle 不重算/單 tab 輸出只重算該 tab/心跳推送/elapsed 連續性 7 案、feed 重繪 3 案、既有 27+7 案全 PASS。
+- 需 restart 生效（改到 main.py / web/index.html）。
+
 ## v0.16.2 (2026-06-11)
 
 ### Fixes

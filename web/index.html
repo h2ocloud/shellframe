@@ -2683,7 +2683,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       rows.sort((a, b) => (FEED_RANK[a.state] - FEED_RANK[b.state]) ||
                           String(a.label).localeCompare(String(b.label)));
       const STATE_TAG = { working: '', decision: '等決策', stuck: '卡住' };
-      list.innerHTML = rows.length ? rows.map(r =>
+      const html = rows.length ? rows.map(r =>
         `<div class="feed-row st-${r.state}" data-sid="${r.sid}">` +
         `<span class="feed-dot"></span>` +
         `<div class="feed-body">` +
@@ -2695,13 +2695,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (r.task ? `<div class="feed-task">${esc(r.task)}</div>` : '') +
         `</div></div>`).join('')
         : `<div class="feed-empty">沒有 agent 正在工作</div>`;
+      // Rebuilding innerHTML 1.4×/s forces style/layout work even when nothing
+      // changed — skip when the rendered markup is identical (the common case
+      // for an idle fleet).
+      if (html !== renderFeed._html) { list.innerHTML = html; renderFeed._html = html; }
       const ov = document.getElementById('feed-overview');
       if (ov) {
         const parts = [];
         if (c.working) parts.push(`<span class="ov-working">▶ ${c.working}</span>`);
         if (c.decision) parts.push(`<span class="ov-decision">◆ ${c.decision}</span>`);
         if (c.stuck) parts.push(`<span class="ov-stuck">▲ ${c.stuck}</span>`);
-        ov.innerHTML = parts.join(' · ');
+        const ovHtml = parts.join(' · ');
+        if (ovHtml !== renderFeed._ovHtml) { ov.innerHTML = ovHtml; renderFeed._ovHtml = ovHtml; }
       }
     } catch (e) { /* never let the feed break the UI */ }
   }

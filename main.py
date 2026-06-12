@@ -2042,9 +2042,13 @@ class Api:
                             pushed = True
                         except Exception:
                             pass
-                # Event-driven: wake instantly on new data；有節流中的背景 pending 時
-                # 用 0.1s 醒來把它在下個 4Hz 窗口刷出；全閒置則 0.015s。
-                self._output_event.wait(0.001 if pushed else (0.1 if throttled else 0.015))
+                # Event-driven: reader threads set _output_event on every new
+                # chunk, so the idle wait is just a safety net — not a polling
+                # interval. 0.5s idle floor cuts the steady-state from 66 to 2
+                # wakes/s (each wake iterates every session under its lock).
+                # 串流中(剛 push 過)用 5ms 把殘餘 pending 排乾；有節流中的背景
+                # pending 用 0.1s 醒來等下個 4Hz 窗口。
+                self._output_event.wait(0.005 if pushed else (0.1 if throttled else 0.5))
 
         def bridge_feeder():
             while True:
@@ -2077,14 +2081,37 @@ class Api:
         self._status_started = True
 
         def monitor():
+            # Idle gating: a tab whose PTY printed nothing since the last pass
+            # cannot have changed state — transcript and screen only move when
+            # the program outputs, and working tabs always stream spinner/timer
+            # frames. Reuse the cached result and just tick `elapsed`. With 10
+            # idle tabs this removes ~17 tmux capture-pane forks plus ~17
+            # 256KB transcript tail-reads PER SECOND from the steady state.
+            # Wall-clock-dependent transitions (pending-tool age guard,
+            # debounce) still land within FORCE_REFRESH.
+            FORCE_REFRESH = 15.0   # full recompute at least this often per tab
+            PUSH_HEARTBEAT = 5.0   # elapsed-only changes push at most this often
+            cache = {}             # sid -> {out_ts, computed_at, since_ts, result}
+            last_push = {"key": None, "at": 0.0}
             while True:
                 try:
                     if not self._auto_status_enabled() or not self._window:
                         time.sleep(1.0)
                         continue
+                    now = time.time()
+                    for stale in [k for k in cache if k not in self.sessions]:
+                        cache.pop(stale, None)
                     out = {}
                     for sid, s in list(self.sessions.items()):
                         try:
+                            out_ts = getattr(s, "_last_output_activity_time", 0.0)
+                            c = cache.get(sid)
+                            if (c and c["out_ts"] == out_ts
+                                    and now - c["computed_at"] < FORCE_REFRESH):
+                                st_cached = dict(c["result"])
+                                st_cached["elapsed"] = int(now - c["since_ts"])
+                                out[sid] = st_cached
+                                continue
                             worker = {
                                 "cmd": getattr(s, "cmd", ""),
                                 "cwd": getattr(s, "cwd", "~"),
@@ -2112,22 +2139,40 @@ class Api:
                                     "utf-8", errors="replace")[-4000:]
                             st = self._status_tracker.status_for(
                                 sid, worker, screen_tail=screen_tail)
-                            out[sid] = {"state": st.get("state"),
-                                        "dot": st.get("dot"),
-                                        "summary": st.get("summary"),
-                                        "task": st.get("task", ""),
-                                        "elapsed": st.get("elapsed", 0),
-                                        "activity": st.get("activity") or {}}
+                            result = {"state": st.get("state"),
+                                      "dot": st.get("dot"),
+                                      "summary": st.get("summary"),
+                                      "task": st.get("task", ""),
+                                      "elapsed": st.get("elapsed", 0),
+                                      "activity": st.get("activity") or {}}
+                            out[sid] = result
+                            cache[sid] = {
+                                "out_ts": out_ts,
+                                "computed_at": now,
+                                "since_ts": now - result["elapsed"],
+                                "result": result,
+                            }
                         except Exception:
                             out[sid] = {"state": "unknown", "dot": "",
                                         "summary": "", "activity": {}}
+                            cache.pop(sid, None)
                     if out and self._window:
-                        payload = json.dumps(out)
-                        try:
-                            self._window.evaluate_js(
-                                f'window.__sfAgentStatus && window.__sfAgentStatus({payload})')
-                        except Exception:
-                            pass
+                        # Push only when something besides `elapsed` changed,
+                        # or on a slow heartbeat so elapsed keeps ticking —
+                        # idle fleets stop waking the webview 1.7×/s for
+                        # identical payloads.
+                        key = json.dumps(
+                            {k: {kk: vv for kk, vv in v.items() if kk != "elapsed"}
+                             for k, v in out.items()}, sort_keys=True)
+                        if key != last_push["key"] or now - last_push["at"] >= PUSH_HEARTBEAT:
+                            payload = json.dumps(out)
+                            try:
+                                self._window.evaluate_js(
+                                    f'window.__sfAgentStatus && window.__sfAgentStatus({payload})')
+                                last_push["key"] = key
+                                last_push["at"] = now
+                            except Exception:
+                                pass
                 except Exception:
                     pass
                 time.sleep(0.6)
