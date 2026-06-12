@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.16.2 (2026-06-11)
+
+### Fixes
+- **Agent 即時動態：Codex 支援補強，idle prompt 不再被當成工作中** — 右側 AGENTS feed 會把 Codex 畫面底部的 `› Improve documentation in @filename` / `gpt-* · cwd` idle input box 誤看成還在作動，或拿不到 Codex 的任務/敘述細節。本版把 Codex screen-only 判斷補齊：只要沒有 `Working (...)` / `esc to interrupt`，Codex input prompt 會判為 done/idle，不進右側 feed；有 `Working (... esc to interrupt)` 時仍優先判 working。
+- **Codex rollout parser 補齊新版事件** — `agent_status.py` 現在會解析 Codex `user_message` 文字作為 task、`agent_message` 作為 narration、`custom_tool_call` / `tool_search_call` 作為 tool action，並吃 top-level timestamp，避免只靠檔案 mtime 造成 elapsed/state 不準。右側 feed 對 Codex 會顯示「正在跑哪個 tool / 處理哪個使用者任務」，而不是空白或舊 tool。
+- **回歸測試** — 新增 `tests_agent_status.py`，覆蓋 Claude prompt idle、Codex prompt idle、Codex working override、Codex user/task/narration/action detail。已通過 `tests_agent_status.py` 與 `tests_tg_reply.py`。
+- 需 restart 生效（改到 `agent_status.py`）。
+
 ## v0.16.1 (2026-06-11)
 
 ### Features
