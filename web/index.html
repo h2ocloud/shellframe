@@ -770,6 +770,15 @@
       </div>
 
       <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="statusHooksTitle">Exact agent status (Claude Code hooks)</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="toggle-switch" id="setting-status-hooks"></button>
+          <span id="status-hooks-state" style="font-size:11px;color:#565f89"></span>
+        </div>
+        <div class="bridge-help" style="margin-top:6px" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
         <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="delegationTitle">Delegation</div>
         <div class="bridge-field" style="align-items:flex-start">
           <label data-i18n="masterPreambleTextLabel">自訂派工提示文字</label>
@@ -1172,6 +1181,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       apiOpenDocs: 'API docs (Swagger)',
       apiCopyToken: 'Copy token',
       apiServerHint: 'Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart. Spec: docs/local-http-api.md',
+      statusHooksTitle: 'Exact agent status (Claude Code hooks)',
+      statusHooksHint: 'Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to Claude tabs opened after enabling; others keep the heuristic fallback.',
       settingsTelegram: 'Telegram Bridge',
       settingsLine: 'LINE',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
@@ -1330,6 +1341,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       apiOpenDocs: 'API 文件 (Swagger)',
       apiCopyToken: '複製 token',
       apiServerHint: '給本機外部 agent（OpenClaw／龍蝦等）驅動 ShellFrame 的 HTTP/JSON 介面 — list/peek/send/delegate，Bearer token 驗證、只綁 127.0.0.1。開關即時生效不用重啟。規格見 docs/local-http-api.md',
+      statusHooksTitle: '精準狀態偵測（Claude Code hooks）',
+      statusHooksHint: '在 ~/.claude/settings.json 安裝輕量 async hooks，由 Claude 自己回報「工作中／回合結束／等待權限」——不再靠畫面猜。啟用後新開的 Claude tab 生效；其餘 tab 維持原本的畫面偵測 fallback。',
       settingsTelegram: 'Telegram 橋接',
       settingsLine: 'LINE',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
@@ -3757,6 +3770,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     $modalSettings.classList.add('open');
     renderSettingsPresets();
     refreshApiServer();
+    refreshStatusHooks();
     // Sync controls
     document.getElementById('setting-fontsize').value = currentFontSize;
     document.getElementById('fontsize-val').textContent = currentFontSize;
@@ -4380,6 +4394,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try { renderApiServer(JSON.parse(await pywebview.api.set_api_server_enabled(want))); } catch (_) {}
   });
   $apiDocsBtn.addEventListener('click', () => { if (_apiInfo) pywebview.api.open_url(_apiInfo.docs_url); });
+
+  // ── Exact agent status hooks (Settings → General) ──
+  const $hooksToggle = document.getElementById('setting-status-hooks');
+  const $hooksState = document.getElementById('status-hooks-state');
+  function renderStatusHooks(info) {
+    if (!info) return;
+    $hooksToggle.classList.toggle('on', !!info.installed);
+    const isZh = lang === 'zh-TW';
+    if (info.error) {
+      $hooksState.innerHTML = `<span style="color:#f7768e">●</span> ${esc(info.error)}`;
+    } else if (info.installed) {
+      $hooksState.innerHTML = `<span style="color:#9ece6a">●</span> ` +
+        (isZh ? '已安裝（新開的 Claude tab 生效）' : 'installed (new Claude tabs)');
+    } else {
+      $hooksState.textContent = isZh ? '未安裝' : 'not installed';
+    }
+  }
+  async function refreshStatusHooks() {
+    try { renderStatusHooks(JSON.parse(await pywebview.api.get_status_hooks_info())); } catch (_) {}
+  }
+  $hooksToggle.addEventListener('click', async function() {
+    const want = !this.classList.contains('on');
+    try { renderStatusHooks(JSON.parse(await pywebview.api.set_status_hooks_enabled(want))); } catch (_) {}
+  });
   $apiCopyBtn.addEventListener('click', async function() {
     if (!_apiInfo || !_apiInfo.token) return;
     try { await pywebview.api.copy_text(_apiInfo.token); } catch (_) { return; }
@@ -5531,6 +5569,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       $modalSettings.classList.add('open');
       renderSettingsPresets();
       refreshApiServer();
+      refreshStatusHooks();
     }
     // Escape → close any modal
     if (e.key === 'Escape') {

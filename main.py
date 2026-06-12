@@ -893,11 +893,15 @@ class Session:
             # don't think the user wants to work on shellframe internals.
             # The init-prompt still tells the AI "shellframe source lives
             # at ~/.local/apps/shellframe/" if it's asked to self-modify.
+            # -e SF_SID=…: the spawned CLI (and thus its Claude Code hooks,
+            # which inherit the process env) can identify which ShellFrame
+            # tab it belongs to. See sf_agent_hook.py.
             result = subprocess.run([
                 "tmux", "new-session", "-d",
                 "-s", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
                 "-c", self.cwd,
+                "-e", f"SF_SID={self.sid}",
                 self.cmd,
             ], capture_output=True, timeout=5, env=_session_env())
             if result.returncode != 0:
@@ -966,6 +970,7 @@ class Session:
         if self.child_pid == 0:
             env["TERM"] = "xterm-256color"
             env["COLORTERM"] = "truecolor"
+            env["SF_SID"] = self.sid
             env.setdefault("LANG", "en_US.UTF-8")
             # chdir to the user's home before exec so the spawned process
             # doesn't inherit shellframe's install dir as its cwd. See
@@ -1000,7 +1005,7 @@ class Session:
             self._winpty = winpty.PtyProcess.spawn(
                 cmd_args,
                 dimensions=(rows, cols),
-                env={**env, "TERM": "xterm-256color", "COLORTERM": "truecolor"},
+                env={**env, "TERM": "xterm-256color", "COLORTERM": "truecolor", "SF_SID": self.sid},
                 cwd=self.cwd,
             )
             self._use_winpty = True
@@ -1018,7 +1023,7 @@ class Session:
             stderr=subprocess.STDOUT,
             cwd=self.cwd,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-            env={**env, "TERM": "xterm-256color"},
+            env={**env, "TERM": "xterm-256color", "SF_SID": self.sid},
         )
         threading.Thread(target=self._reader_win, daemon=True).start()
 
@@ -1213,6 +1218,8 @@ class Api:
         self._plugins = None
         self._idle_reaper_started = False
         self._api_httpd = None        # Local HTTP API server handle (Settings hot-toggle)
+        self._hook_events = {}        # sid -> hook-driven state (see _on_agent_event)
+        self._status_cache = {}       # sid -> cached status result (idle gating)
         self._plugins_reload()
         self._start_idle_reaper()
 
@@ -2072,6 +2079,142 @@ class Api:
         except Exception:
             return True
 
+    # ── Hook-driven agent status (exact, event-based) ────────────────────
+    _HOOK_TTL = 1800.0   # hook state stays authoritative this long after the last event
+    _HOOK_EVENTS = ("UserPromptSubmit", "PreToolUse", "Stop", "Notification", "StopFailure")
+    _CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
+
+    @staticmethod
+    def _hook_state_for(event: str, notification_type: str = "", message: str = "") -> str | None:
+        """Map a Claude Code hook event to a feed state; None = no transition."""
+        if event in ("UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure"):
+            return "working"
+        if event == "Stop":
+            return "done"
+        if event == "StopFailure":
+            return "stuck"
+        if event == "SessionEnd":
+            return "done"
+        if event == "Notification":
+            blob = f"{notification_type} {message}".lower()
+            if "permission" in blob:
+                return "decision"
+            if "idle" in blob or "waiting for your input" in blob:
+                return "done"
+        return None
+
+    def _on_agent_event(self, args: dict) -> dict:
+        """sfctl cmd `agent_event` — fired by sf_agent_hook.py (fire-and-forget)."""
+        sid = str(args.get("sid") or "").strip()
+        if not sid:
+            return {"success": False, "message": "sid required"}
+        event = str(args.get("event") or "")
+        state = self._hook_state_for(
+            event,
+            str(args.get("notification_type") or ""),
+            str(args.get("message") or ""))
+        if not state:
+            return {"success": True, "message": f"ignored {event}"}
+        now = time.time()
+        prev = self._hook_events.get(sid)
+        since = prev["since"] if (prev and prev["state"] == state) else now
+        tool = str(args.get("tool_name") or "")
+        self._hook_events[sid] = {
+            "state": state, "ts": now, "since": since,
+            "tool": tool if state == "working" else "",
+            "event": event,
+        }
+        # Invalidate the gated cache so the next monitor pass (≤0.6s) refreshes
+        # transcript-side details alongside the new exact state.
+        self._status_cache.pop(sid, None)
+        _dlog("hookstat", f"sid={sid} {event} -> {state}")
+        return {"success": True, "message": f"{sid} -> {state}"}
+
+    @staticmethod
+    def _apply_hook_state(result: dict, hk: dict, now: float) -> dict:
+        """Overlay the hook-derived state on a heuristic result. Detail fields
+        (task/narration from the transcript) are kept — only the state verdict
+        and its dependents are replaced when they disagree."""
+        state = hk["state"]
+        if result.get("state") == state:
+            return result
+        out = dict(result)
+        out["state"] = state
+        out["dot"] = agent_status.DOT.get(state, "")
+        out["elapsed"] = int(now - hk.get("since", now))
+        if state == "working":
+            if hk.get("tool"):
+                out["summary"] = f"Running {hk['tool']}"
+        elif state == "decision":
+            out["summary"] = "等待權限決策"
+        elif state == "stuck":
+            out["summary"] = "回合異常結束"
+        return out
+
+    def _sf_hook_command(self) -> str:
+        return f'python3 "{APP_DIR / "sf_agent_hook.py"}"'
+
+    def get_status_hooks_info(self) -> str:
+        """Settings UI: are the ShellFrame status hooks installed in ~/.claude/settings.json?"""
+        installed = False
+        try:
+            p = self._CLAUDE_SETTINGS_PATH
+            cfg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+            hooks = cfg.get("hooks") or {}
+            installed = all(
+                any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
+                for ev in self._HOOK_EVENTS)
+        except Exception:
+            pass
+        return json.dumps({"installed": installed,
+                           "settings_path": str(self._CLAUDE_SETTINGS_PATH)})
+
+    def set_status_hooks_enabled(self, enabled: bool) -> str:
+        """Install/remove the status hook entries. Merge is surgical: only
+        groups whose command references sf_agent_hook.py are touched, every
+        other hook in the user's settings.json survives byte-for-byte."""
+        p = self._CLAUDE_SETTINGS_PATH
+        try:
+            cfg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+        except Exception as e:
+            return json.dumps({"installed": False, "error": f"settings.json unreadable: {e}"})
+        hooks = cfg.setdefault("hooks", {})
+        if enabled:
+            for ev in self._HOOK_EVENTS:
+                groups = hooks.setdefault(ev, [])
+                if any("sf_agent_hook.py" in json.dumps(g) for g in groups):
+                    continue
+                groups.append({"matcher": "", "hooks": [{
+                    "type": "command", "command": self._sf_hook_command(),
+                    "async": True, "timeout": 10}]})
+        else:
+            for ev in list(hooks.keys()):
+                kept = []
+                for g in hooks.get(ev) or []:
+                    inner = [h for h in (g.get("hooks") or [])
+                             if "sf_agent_hook.py" not in str(h.get("command", ""))]
+                    if inner or not g.get("hooks"):
+                        if g.get("hooks"):
+                            g = dict(g)
+                            g["hooks"] = inner
+                        kept.append(g)
+                if kept:
+                    hooks[ev] = kept
+                else:
+                    hooks.pop(ev, None)
+            if not hooks:
+                cfg.pop("hooks", None)
+            self._hook_events.clear()
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = str(p) + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, p)
+        except Exception as e:
+            return json.dumps({"installed": False, "error": f"write failed: {e}"})
+        return self.get_status_hooks_info()
+
     def _start_status_monitor(self):
         """Background thread: every ~600ms compute each tab's agent status from
         its transcript/rollout log (+ screen wording) and push to the webview.
@@ -2082,6 +2225,13 @@ class Api:
         self._status_started = True
 
         def monitor():
+            # (hook override below) Industry survey 2026-06: every OSS agent
+            # manager (claude-squad SHA256 pane diff, agentapi 2s screen
+            # stability, ccmanager UI-string regex) scrapes the screen and is
+            # fragile by design. Claude Code's own hooks emit the exact
+            # transitions instead — see _on_agent_event / sf_agent_hook.py.
+            # Heuristic detection below stays as the fallback (Codex, plain
+            # shells, hooks not installed, tabs opened before install).
             # Idle gating: a tab whose PTY printed nothing since the last pass
             # cannot have changed state — transcript and screen only move when
             # the program outputs, and working tabs always stream spinner/timer
@@ -2092,7 +2242,7 @@ class Api:
             # debounce) still land within FORCE_REFRESH.
             FORCE_REFRESH = 15.0   # full recompute at least this often per tab
             PUSH_HEARTBEAT = 5.0   # elapsed-only changes push at most this often
-            cache = {}             # sid -> {out_ts, computed_at, since_ts, result}
+            cache = self._status_cache  # sid -> {out_ts, computed_at, since_ts, result}
             last_push = {"key": None, "at": 0.0}
             while True:
                 try:
@@ -2102,6 +2252,8 @@ class Api:
                     now = time.time()
                     for stale in [k for k in cache if k not in self.sessions]:
                         cache.pop(stale, None)
+                    for stale in [k for k in self._hook_events if k not in self.sessions]:
+                        self._hook_events.pop(stale, None)
                     out = {}
                     for sid, s in list(self.sessions.items()):
                         try:
@@ -2109,50 +2261,55 @@ class Api:
                             c = cache.get(sid)
                             if (c and c["out_ts"] == out_ts
                                     and now - c["computed_at"] < FORCE_REFRESH):
-                                st_cached = dict(c["result"])
-                                st_cached["elapsed"] = int(now - c["since_ts"])
-                                out[sid] = st_cached
-                                continue
-                            worker = {
-                                "cmd": getattr(s, "cmd", ""),
-                                "cwd": getattr(s, "cwd", "~"),
-                                "tmux_name": getattr(s, "_tmux_name", None),
-                                "session_id": getattr(s, "session_id", None),
-                            }
-                            # Screen wording must come from the CURRENT rendered
-                            # screen. The _recent ring buffer is a byte-stream
-                            # history — a /model or feedback menu that scrolled
-                            # away stays in it and false-triggers "decision".
-                            screen_tail = ""
-                            tn = getattr(s, "_tmux_name", None)
-                            if tn:
-                                try:
-                                    r = subprocess.run(
-                                        ["tmux", "capture-pane", "-t", tn, "-p"],
-                                        capture_output=True, text=True, timeout=2)
-                                    if r.returncode == 0:
-                                        screen_tail = "\n".join(
-                                            r.stdout.rstrip().splitlines()[-20:])
-                                except Exception:
-                                    pass
-                            if not screen_tail:
-                                screen_tail = bytes(getattr(s, "_recent", b"")).decode(
-                                    "utf-8", errors="replace")[-4000:]
-                            st = self._status_tracker.status_for(
-                                sid, worker, screen_tail=screen_tail)
-                            result = {"state": st.get("state"),
-                                      "dot": st.get("dot"),
-                                      "summary": st.get("summary"),
-                                      "task": st.get("task", ""),
-                                      "elapsed": st.get("elapsed", 0),
-                                      "activity": st.get("activity") or {}}
+                                result = dict(c["result"])
+                                result["elapsed"] = int(now - c["since_ts"])
+                            else:
+                                worker = {
+                                    "cmd": getattr(s, "cmd", ""),
+                                    "cwd": getattr(s, "cwd", "~"),
+                                    "tmux_name": getattr(s, "_tmux_name", None),
+                                    "session_id": getattr(s, "session_id", None),
+                                }
+                                # Screen wording must come from the CURRENT rendered
+                                # screen. The _recent ring buffer is a byte-stream
+                                # history — a /model or feedback menu that scrolled
+                                # away stays in it and false-triggers "decision".
+                                screen_tail = ""
+                                tn = getattr(s, "_tmux_name", None)
+                                if tn:
+                                    try:
+                                        r = subprocess.run(
+                                            ["tmux", "capture-pane", "-t", tn, "-p"],
+                                            capture_output=True, text=True, timeout=2)
+                                        if r.returncode == 0:
+                                            screen_tail = "\n".join(
+                                                r.stdout.rstrip().splitlines()[-20:])
+                                    except Exception:
+                                        pass
+                                if not screen_tail:
+                                    screen_tail = bytes(getattr(s, "_recent", b"")).decode(
+                                        "utf-8", errors="replace")[-4000:]
+                                st = self._status_tracker.status_for(
+                                    sid, worker, screen_tail=screen_tail)
+                                result = {"state": st.get("state"),
+                                          "dot": st.get("dot"),
+                                          "summary": st.get("summary"),
+                                          "task": st.get("task", ""),
+                                          "elapsed": st.get("elapsed", 0),
+                                          "activity": st.get("activity") or {}}
+                                cache[sid] = {
+                                    "out_ts": out_ts,
+                                    "computed_at": now,
+                                    "since_ts": now - result["elapsed"],
+                                    "result": result,
+                                }
+                            # Hook events (Claude Code hooks → sf_agent_hook.py)
+                            # are exact turn/permission transitions — while
+                            # fresh they override the screen/transcript guess.
+                            hk = self._hook_events.get(sid)
+                            if hk and now - hk["ts"] <= self._HOOK_TTL:
+                                result = self._apply_hook_state(result, hk, now)
                             out[sid] = result
-                            cache[sid] = {
-                                "out_ts": out_ts,
-                                "computed_at": now,
-                                "since_ts": now - result["elapsed"],
-                                "result": result,
-                            }
                         except Exception:
                             out[sid] = {"state": "unknown", "dot": "",
                                         "summary": "", "activity": {}}
@@ -5361,6 +5518,12 @@ class Api:
                 return self.delegate_task(args.get("role", ""), args.get("task", ""))
             except Exception as e:
                 return {"success": False, "message": f"Delegate failed: {e}"}
+
+        elif cmd == "agent_event":
+            try:
+                return self._on_agent_event(args)
+            except Exception as e:
+                return {"success": False, "message": f"agent_event failed: {e}"}
 
         elif cmd == "send":
             try:
