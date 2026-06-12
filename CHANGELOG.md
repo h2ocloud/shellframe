@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.17.1 (2026-06-12)
+
+### Features
+- **單行 URL 終於可以 Cmd+Click（mac）/ Ctrl+Click（win）開啟** — WebLinksAddon 預設 activate 走 `window.open()`，在 pywebview（WKWebView / WebView2）裡會被靜默吃掉，看起來像連結但點了沒反應。改接 `pywebview.api.open_url` 由 OS 預設瀏覽器開啟，並比照檔案路徑／跨行 URL provider 加上 Cmd/Ctrl 修飾鍵 gate，純點擊仍維持游標定位／選字。
+- **側欄對話清單每列加 × 關閉鈕** — hover（或 active 項目）顯示，點擊走與 Cmd/Ctrl+W 相同的確認框後終止 session；側欄列又窄又密，誤點不能直接殺掉跑到一半的 agent。tab 太多時不用再回到上方 tab bar 找 × 。
+
 ## v0.17.0 (2026-06-12)
 
 ### Features

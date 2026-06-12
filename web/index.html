@@ -456,6 +456,13 @@
   .sb-divider { cursor: help; }
   .sb-item { cursor: grab; -webkit-user-select: none; user-select: none; }
   .sb-item:active { cursor: grabbing; }
+  /* visibility (not display) so the row layout doesn't shift on hover */
+  .sb-item .sb-close {
+    flex: none; visibility: hidden; width: 16px; height: 16px; line-height: 16px;
+    text-align: center; border-radius: 3px; font-size: 13px; color: #565f89; cursor: pointer;
+  }
+  .sb-item:hover .sb-close, .sb-item.active .sb-close { visibility: visible; }
+  .sb-item .sb-close:hover { color: #f7768e; background: #292e42; }
   .sb-footer-btn {
     display: flex; align-items: center; gap: 8px;
     padding: 6px 10px; background: none; border: none;
@@ -1752,6 +1759,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Pass 2: unquoted paths (no spaces; backslash-escaped spaces OK)
   const BARE_PATH_RE = /(?<![A-Za-z:\/])(?:[A-Za-z]:[\\\/](?:(?:[^\s"'<>|?*\r\n]|\\ )+[\\\/]?)+|~\/(?:(?:[^\s"'<>|?*\r\n:]|\\ )+)|\/(?:(?:[^\s"'<>|?*\r\n:\/]|\\ )+)(?:\/(?:(?:[^\s"'<>|?*\r\n:]|\\ )+))*|\.{1,2}\/(?:(?:[^\s"'<>|?*\r\n:]|\\ )+))/g;
 
+  // WebLinksAddon's default activate calls window.open(), which WKWebView /
+  // WebView2 silently drop inside pywebview — single-line URLs looked clickable
+  // but did nothing. Route through the Python bridge (OS default browser),
+  // gated on Cmd (mac) / Ctrl (win) like every other link provider so a plain
+  // click still just positions the cursor / selects text.
+  function activateUrlExternally(event, uri) {
+    if (event && !(event.ctrlKey || event.metaKey)) return;
+    try {
+      pywebview.api.open_url(uri).catch(() => {});
+    } catch (_) {}
+  }
+
   function attachFileLinkProvider(term) {
     if (!term.registerLinkProvider) return; // older xterm.js
     term.registerLinkProvider({
@@ -1959,7 +1978,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    term.loadAddon(new WebLinksAddon.WebLinksAddon(activateUrlExternally));
     const unicode11 = new Unicode11Addon.Unicode11Addon();
     term.loadAddon(unicode11);
     term.unicode.activeVersion = '11';
@@ -2118,7 +2137,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    term.loadAddon(new WebLinksAddon.WebLinksAddon(activateUrlExternally));
     const unicode11 = new Unicode11Addon.Unicode11Addon();
     term.loadAddon(unicode11);
     term.unicode.activeVersion = '11';
@@ -2370,7 +2389,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
-        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '');
+        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
+        `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
       container.appendChild(el);
     });
 
@@ -2393,7 +2413,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
-          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>`;
+          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
+          `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
         container.appendChild(el);
       });
 
@@ -2477,6 +2498,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // Event delegation for sidebar clicks
   document.getElementById('sidebar-sessions').addEventListener('click', (e) => {
+    // Close button → confirm + kill session (same path as Cmd/Ctrl+W; the
+    // sidebar rows are densely packed so a stray click must not nuke an agent)
+    const closeBtn = e.target.closest('[data-action="close"]');
+    if (closeBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      confirmCloseTab(closeBtn.dataset.sid);
+      return;
+    }
     // TG badge click → switch TG active session
     const tgAction = e.target.closest('[data-action="switch-tg"]');
     if (tgAction) {
