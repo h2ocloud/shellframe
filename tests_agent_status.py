@@ -56,6 +56,23 @@ ok("Codex idle prompt screen-only is done", state == "done", why)
 state, _, why = ag.compute_state([], screen_tail=codex_working)
 ok("Codex working status overrides prompt", state == "working", why)
 
+# A decision_req at the transcript tail must NOT pin 等決策 once the screen is
+# back at an idle input prompt (the question was answered/dismissed). Regression
+# for idle tabs stuck on 等決策 for their whole lifetime (3394m/979m).
+import time as _t
+_now = _t.time()
+_stale_decision = [
+    {"kind": "tool_call", "ts": _now - 200, "tool": "Bash", "target": "open report.html"},
+    {"kind": "decision_req", "ts": _now - 200},
+]
+state, _, why = ag.compute_state(_stale_decision, now=_now, screen_tail=claude_idle)
+ok("Stale decision_req + idle screen is done", state == "done", why)
+
+# But a live menu on screen IS a real pending decision.
+_menu_screen = "Which approach?\n❯ 1. Option A\n  2. Option B\n  Esc to cancel"
+state, _, why = ag.compute_state(_stale_decision, now=_now, screen_tail=_menu_screen)
+ok("decision_req + live menu is decision", state == "decision", why)
+
 codex_user = {
     "timestamp": "2026-06-11T14:00:00.000Z",
     "type": "event_msg",
@@ -109,5 +126,5 @@ ok("Codex detail includes action/task/narration",
    and narration.startswith("我會先"),
    repr((action, task, narration)))
 
-print(f"\n=== {7 - len(fails)}/7 groups PASS ===")
+print(f"\n=== {9 - len(fails)}/9 groups PASS ===")
 sys.exit(1 if fails else 0)

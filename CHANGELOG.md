@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.17.2 (2026-06-15)
+
+### Fixes
+- **燈號不再永遠卡「等決策」** — 狀態機只要 transcript 最後一筆是 `decision_req`（AskUserQuestion）就回 decision，**完全沒有 staleness 守門**（對照 pending tool 有 180s 守門）。結果問題被回答／放掉、實況螢幕早已回到 `❯` 輸入提示符的 idle tab 仍永遠顯示等決策，且 elapsed 一路累積到等於整個 tab 壽命（實測 3394m、979m 正好≈各自從創建到現在）。改為**實況螢幕優先於過期 transcript**：螢幕有 menu 且無 spinner→真的在等決策；螢幕是 idle 輸入提示符／評分框且無 menu→該問題已結束判 done（蓋過殘留的 decision_req）；螢幕讀不到才退回信任 transcript。加 2 條回歸測試（tests_agent_status 7→9 PASS）。
+- **總控 per-turn preamble 拿掉委派偏壓＋全套加反捏造 grounding** — 每則 TG 訊息到總控都前置 ~350 字「Prefer delegation over doing everything yourself / the user expects the master to orchestrate」，把使用者的真實短問句埋在大段編排協定下，逼 agent 過度開 worker、腦補從未實際 peek 的 worker 結果；且整套 inject prompt 沒有任何「先讀來源、不要捏造」的約束。`_MASTER_TURN_PREAMBLE` 從 ~350 砍到 ~90 字、移除委派偏壓改為「依任務判斷」，並加入 grounding（未經 Read／`sfctl peek` 不准陳述 email／檔案／指令輸出／worker 結果，不准猜金額日期人名）；`INIT_PROMPT.md` 新增「Grounding — do not fabricate」段涵蓋所有 worker，並把「立即回報草稿」修為「ready to forward = 已對真實來源驗證」。
+
 ## v0.17.1 (2026-06-12)
 
 ### Features

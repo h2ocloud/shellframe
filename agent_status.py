@@ -500,16 +500,27 @@ def compute_state(events, now=None, screen_tail=""):
     pending_tool = last if last["kind"] == "tool_call" else None
     age = (now - last_ts) if last_ts else None
 
-    if last["kind"] == "decision_req" or (menu and not spinner):
-        return "decision", activity, "decision_req/menu"
+    # The live screen is authoritative over a stale transcript verdict.
+    #  • a menu on screen (and no spinner) is a real, pending decision.
+    #  • an editable input prompt / rating prompt with NO menu means the TUI is
+    #    back to waiting for input → any decision_req still sitting at the tail
+    #    of the transcript was already answered or dismissed and must NOT pin
+    #    "等決策" forever (Howard: idle tabs stuck on 等決策 for 3394m/979m, i.e.
+    #    their whole lifetime, because decision_req had no staleness guard the
+    #    way pending_tool does).
+    if menu and not spinner:
+        return "decision", activity, "menu (screen)"
+    if not spinner and (has_input_prompt or sig["codex_idle_prompt"] or sig["rating"]):
+        return "done", {}, "idle prompt (overrides stale transcript)"
+    # No corroborating screen wording → trust the transcript's last event.
+    if last["kind"] == "decision_req":
+        return "decision", activity, "decision_req (transcript)"
     if last["kind"] == "error":
         return "stuck", activity, "error event"
     if last["kind"] == "turn_end":
         return "done", {}, "turn_end"
     if spinner:
         return "working", activity, "screen spinner"
-    if has_input_prompt or sig["codex_idle_prompt"] or sig["rating"]:
-        return "done", {}, "idle prompt"
     # A pending tool call means a tool is RUNNING — long commands (ssh, builds,
     # MCP calls) are normal and must read as working, not stuck. BUT only while
     # it's plausibly still running: a tool_call left pending for longer than the
