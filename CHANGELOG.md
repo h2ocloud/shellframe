@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.18.0 (2026-06-18)
+
+### Features
+- **上滑歷史改用 xterm 渲染，無縫瀏覽** — scroll-history overlay 從 `<pre>` 改成真正的 xterm.js 實例（與活畫面同一渲染器）。`<pre>` 靠字型 advance 排版、無法 grid 對齊中文，且行高與活畫面不同，所以上滑進歷史時字體會「變一下」、中文表格邊框會漂、永遠有「跳進另一個模式」感。改用 xterm 後：
+  - **字體／行高／中文寬完全一致**，中文表格用 Unicode11 grid 對齊不再漂；直接 `write` tmux 的 `-e` ANSI capture，連配色都還原（不再走自寫的 ansiToHtml）。
+  - **捲動走穩定的 `term.scrollLines()`**（不依賴 WKWebView 內建滾輪，避開舊 nested-xterm「空白／無法捲」的坑），滑到底再往下滑才關閉。
+  - **開啟近乎無縫**：overlay 幾何與活畫面像素對齊（left／top／寬高全等）、底部精準內縮一列讓 tmux 狀態列持續露出、提示列改浮層 2 秒自動淡出、先隱藏待捲到底再即時顯示（不閃頂、不淡入交疊）。
+  - **右鍵／Cmd+C 走 xterm 原生選取複製**，read-only 歷史不再誤判成貼上。
+  - alt-screen buffer（tmux attach）滾輪不再被 xterm 轉成游標鍵 → 上滑不再叫出上一個 prompt。
+
+### Fixes
+- **上滑只剩 banner、整段對話消失** — `_collapse_redraw_frames` 把分隔線 `────`、`⏺ Bash(...)` 工具標頭等常見重複元素，誤判為 resize redraw frame 的邊界，將「第一次出現」到「最後一次出現」之間（＝整段對話）全部刪掉（實測 734 行被砍到剩 12 行＝只剩 banner＋footer，其他 session 也普遍誤砍數百行）。改為刪除前先驗證「被刪區塊的正規化字元流確實緊接在 l_last 之後重現」才收合——真正的 resize wrap-variant 仍會收掉，常見 UI 重複元素與真實對話完整保留。
+
 ## v0.17.2 (2026-06-15)
 
 ### Fixes

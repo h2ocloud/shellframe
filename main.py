@@ -3220,6 +3220,20 @@ class Api:
                 l_last = occ[-1]
                 if l_last - li < min_drop:
                     continue
+                # Verify this is a real redraw frame, not two far-apart
+                # occurrences of a common UI element. A `────` separator
+                # (≥100 identical chars) or a repeated `⏺ Bash(...` tool
+                # header recurs at unrelated points; the bare anchor match
+                # then dropped EVERYTHING between the first and last
+                # occurrence — nuking the whole conversation and leaving just
+                # the banner (Howard: 上滾只剩 banner、沒對話). Only collapse
+                # when the dropped block's char stream actually re-appears
+                # immediately after l_last, i.e. the same frame really was
+                # re-rendered at a new width.
+                a = starts[li]
+                b = starts[l_last]
+                if not N[b:].startswith(N[a:b]):
+                    continue
                 lines = lines[:li] + lines[l_last:]
                 changed = True
                 break
