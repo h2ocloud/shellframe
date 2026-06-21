@@ -808,6 +808,7 @@ class TelegramBridge(BridgeBase):
         # Generic ops after the session list
         commands.extend([
             {"command": "fetch", "description": "Fetch latest AI reply"},
+            {"command": "usage", "description": "Current tab AI usage (水位)"},
             {"command": "list", "description": "List sessions + bridge state"},
             {"command": "restart", "description": "Full app restart (sessions preserved)"},
             {"command": "update", "description": "Check & apply ShellFrame updates"},
@@ -3063,7 +3064,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -3294,6 +3295,28 @@ class TelegramBridge(BridgeBase):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": "\n".join(lines),
             })
+
+        elif cmd in ("usage", "水位"):
+            # Per-tab AI usage water-level. Resolve the active session, then
+            # query main.py in a background thread (the codex/claude probe can
+            # take several seconds) so the poll loop never blocks. Result goes
+            # back to the TG user, never into the agent's conversation.
+            active_sid = self.get_active_sid(user_id)
+            if not active_sid or active_sid not in self.slots:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "No active session. Use /list to see available sessions.",
+                })
+                return
+
+            def _do_usage(sid=active_sid, chat_id=chat_id):
+                result = self._sfctl_call("usage", {"sid": sid}, timeout=30.0)
+                text = result.get("message") or "用量查詢失敗"
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": text,
+                })
+
+            threading.Thread(target=_do_usage, daemon=True).start()
 
         elif cmd == "pause":
             self.pause()

@@ -40,6 +40,7 @@ import bridge_telegram
 import bridge_line
 import board
 import agent_status
+import usage_probe
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
 from bridge_line import LineBridge, LineBridgeConfig
 
@@ -2944,6 +2945,21 @@ class Api:
         s = self.sessions.get(sid)
         return s.alive if s else False
 
+    def tab_usage(self, sid: str) -> str:
+        """Web /usage slash command: return this tab's AI usage water-level.
+
+        Detects claude/codex from the session's launch command and queries the
+        matching local usage script. Result is shown in the web UI, never sent
+        into the agent's conversation. Can take a few seconds (network/JSONRPC).
+        """
+        s = self.sessions.get(sid)
+        if not s:
+            return "此 tab 不存在或已關閉。"
+        try:
+            return usage_probe.probe(s.cmd)
+        except Exception as e:
+            return f"用量查詢失敗：{e}"
+
     def resize(self, sid: str, cols: int, rows: int):
         _dlog("resize", f"sid={sid} cols={cols} rows={rows}")
         s = self.sessions.get(sid)
@@ -5659,6 +5675,19 @@ class Api:
         elif cmd == "board_remove":
             ok = board.remove_task(args.get("id", ""))
             return {"success": ok, "message": "Removed" if ok else "No such task"}
+
+        elif cmd == "usage":
+            # Per-tab AI usage water-level. Detects claude/codex from the
+            # session's launch command and queries the matching local script.
+            sid = args.get("sid", "")
+            s = self.sessions.get(sid)
+            if not s:
+                return {"success": False, "message": "此 tab 不存在或已關閉。"}
+            try:
+                text = usage_probe.probe(s.cmd)
+                return {"success": True, "message": text}
+            except Exception as e:
+                return {"success": False, "message": f"用量查詢失敗：{e}"}
 
         else:
             return {"success": False, "message": f"Unknown command: {cmd}"}

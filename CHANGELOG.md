@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.19.0 (2026-06-21)
+
+### Features
+- **`/usage`（或 `/水位`）查當前 tab 的 AI 用量水位** — 在跑 claude 或 codex 的 tab 直接輸入 slash 指令，ShellFrame 本機查該 tab 對應 AI 的配額並回給使用者，**不送進 agent 對話、不污染 context**。
+  - 依 tab 啟動指令自動判斷是 claude 還是 codex（`usage_probe.detect_ai`）。
+  - 資料來源重用現成腳本：Claude 走 Keychain OAuth token → `api.anthropic.com/api/oauth/usage`（`claude-usage/scripts/fetch_oauth_usage.sh`，免開瀏覽器）；Codex 走 `codex app-server` JSONRPC `account/rateLimits/read`（`openai-codex-usage/scripts/codex_usage.py`）。
+  - 輸出格式：`AI 水位 <claude|codex>` ＋ `帳號 <email> · <方案>（企業·<org>｜個人）` ＋ `1. 5hr：N%｜重置 MM-DD HH:MM` ＋ `2. Week：N%｜重置 MM-DD HH:MM`。標出帳號與方案是為了一眼分清當前對話跑在企業（team）還是個人帳號上。
+  - 帳號來源對應 tab 實際用的憑證：Claude 讀 `~/.claude.json` oauthAccount（email/org）＋ Keychain `subscriptionType`（所有 claude tab 共用同一憑證）；Codex 解 `~/.codex/auth.json` access token JWT（email/`chatgpt_plan_type`，即 sf-codex 真正執行的帳號）。
+  - **Web 端**：在 onData keystroke 串流上追蹤目前輸入行，Enter 時若整行剛好是 `/usage`／`/水位` 就攔下不送 PTY，送 Ctrl+U 清掉 CLI composer 已 echo 的字，結果顯示在 overlay（點背景／Esc 關閉）。
+  - **TG 端**：併入 bridge-own 指令；背景執行緒查 main.py（codex/claude 查詢可能幾秒），結果以訊息回覆，不阻塞 polling。
+  - 邊界：非 claude/codex tab、查不到資料、腳本失敗都回友善訊息，不會讓 tab 崩潰。
+
 ## v0.18.0 (2026-06-18)
 
 ### Features

@@ -2055,6 +2055,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
         // `#` tab-tag picker: navigation/selection keys are consumed here.
         if (tagPickerOnData(sid, data)) return;
+        // ShellFrame-local slash command (/usage, /水位): handled here, not sent.
+        if (trackUsageLine(sid, data)) return;
         // Reset scroll lock on Enter (user submitted input)
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
@@ -2191,6 +2193,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
         // `#` tab-tag picker: navigation/selection keys are consumed here.
         if (tagPickerOnData(sid, data)) return;
+        // ShellFrame-local slash command (/usage, /水位): handled here, not sent.
+        if (trackUsageLine(sid, data)) return;
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
         const now = Date.now();
         if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
@@ -3367,6 +3371,67 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = sessions[sid];
     if (!s) return false;
     return s.cmd.split(/\s+/).some(t => t.split('/').pop().replace(/\.\w+$/, '') === 'codex');
+  }
+
+  // ── Per-tab AI usage (/usage, /水位) ──
+  // A slash command typed in a claude/codex tab that ShellFrame answers
+  // locally: the usage water-level is shown in an overlay and never forwarded
+  // to the agent (no context pollution). We track the current input line from
+  // the per-keystroke onData stream; on Enter, if it exactly matches the usage
+  // command, we swallow the Enter and query the backend instead.
+  const _usageLineBuf = {}; // sid -> chars typed since last Enter
+  function trackUsageLine(sid, data) {
+    const buf = _usageLineBuf;
+    if (data === '\r' || data === '\n') {
+      const line = (buf[sid] || '').trim();
+      buf[sid] = '';
+      if (line === '/usage' || line === '/水位') { runTabUsage(sid); return true; }
+      return false;
+    }
+    if (data === '\x15' || data === '\x03' || data === '\x1b') { buf[sid] = ''; return false; } // Ctrl+U / Ctrl+C / Esc
+    if (data === '\x7f' || data === '\b') { buf[sid] = (buf[sid] || '').slice(0, -1); return false; } // backspace
+    if (data && !/[\x00-\x1f]/.test(data)) { buf[sid] = (buf[sid] || '') + data; } // printable (ASCII or IME commit)
+    else { buf[sid] = ''; }
+    return false;
+  }
+  async function runTabUsage(sid) {
+    // Clear the text the CLI already echoed into its composer (chars were sent
+    // keystroke-by-keystroke before Enter; we can only undo via line-kill).
+    try { pywebview.api.write_input(sid, '\x15'); } catch (_) {}
+    showUsageModal('查詢用量中…');
+    try {
+      const txt = await pywebview.api.tab_usage(sid);
+      showUsageModal(txt || '用量查詢失敗');
+    } catch (e) {
+      showUsageModal('用量查詢失敗');
+    }
+  }
+  let _usageModalEl = null;
+  function hideUsageModal() { if (_usageModalEl) _usageModalEl.classList.remove('open'); }
+  function showUsageModal(text) {
+    if (!_usageModalEl) {
+      const ov = document.createElement('div');
+      ov.className = 'modal-overlay';
+      ov.style.zIndex = 400;
+      const box = document.createElement('div');
+      box.className = 'modal';
+      box.style.cssText = 'width:340px;max-width:90vw';
+      const pre = document.createElement('pre');
+      pre.id = 'usage-modal-pre';
+      pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.7';
+      box.appendChild(pre);
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+      ov.addEventListener('click', (e) => { if (e.target === ov) hideUsageModal(); });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && _usageModalEl && _usageModalEl.classList.contains('open')) {
+          e.stopPropagation(); hideUsageModal();
+        }
+      }, true);
+      _usageModalEl = ov;
+    }
+    _usageModalEl.querySelector('#usage-modal-pre').textContent = text;
+    _usageModalEl.classList.add('open');
   }
 
   // Large plain-text paste gating. Anything >= PASTE_CONFIRM_CHARS or
