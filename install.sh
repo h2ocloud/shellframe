@@ -10,18 +10,31 @@ BIN_DIR="${HOME}/.local/bin"
 echo "Installing ShellFrame..."
 
 # ── Helper ──────────────────────────────────────────────────
+# Ensure Homebrew exists on macOS; auto-install non-interactively if missing.
+ensure_homebrew() {
+  if command -v brew &>/dev/null; then return 0; fi
+  echo "  Homebrew not found — installing (non-interactive)..."
+  NONINTERACTIVE=1 /bin/bash -c \
+    "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+  # Surface brew in this session for both Apple Silicon and Intel prefixes
+  for brew_bin in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$brew_bin" ] && eval "$("$brew_bin" shellenv)" && break
+  done
+  if ! command -v brew &>/dev/null; then
+    echo "  Error: Homebrew install failed (it may need an interactive sudo password)."
+    echo "  Install it manually in a normal terminal, then re-run this installer:"
+    echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    exit 1
+  fi
+}
+
 install_if_missing() {
   local cmd="$1" pkg_brew="$2" pkg_apt="${3:-$2}" pkg_dnf="${4:-$2}"
   if command -v "$cmd" &>/dev/null; then return 0; fi
   echo "  Installing $cmd..."
   if [ "$(uname)" = "Darwin" ]; then
-    if command -v brew &>/dev/null; then
-      brew install -q "$pkg_brew"
-    else
-      echo "  Error: Homebrew is required. Install it first:"
-      echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-      exit 1
-    fi
+    ensure_homebrew
+    brew install -q "$pkg_brew"
   elif command -v apt-get &>/dev/null; then
     sudo apt-get update -q && sudo apt-get install -y -q $pkg_apt
   elif command -v dnf &>/dev/null; then

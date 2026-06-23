@@ -27,17 +27,25 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 
 ## Install
 
+**One URL, any device** — open **https://h2ocloud.github.io/shellframe/**. It detects your OS and shows the right command with a copy button. Re-running the same command later updates ShellFrame in place.
+
+Prefer to copy directly:
+
 ### macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
 ```
 
+The installer auto-installs Homebrew (if missing), Python 3.12, and tmux.
+
 ### Windows
 
 ```powershell
 irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
 ```
+
+Run in **PowerShell**. The installer auto-installs Git, Python, and the WebView2 runtime via `winget` when missing. If `iex` is blocked, first run `Set-ExecutionPolicy -Scope Process Bypass -Force`.
 
 ### Requirements
 

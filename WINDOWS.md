@@ -6,16 +6,28 @@ a couple of macOS-only conveniences have to settle for less. This page is the
 
 ## Install
 
+Easiest: open **https://h2ocloud.github.io/shellframe/** and copy the Windows
+command. Or run directly in **PowerShell**:
+
 ```powershell
 irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
 ```
 
+If `iex` is blocked by execution policy, first run
+`Set-ExecutionPolicy -Scope Process Bypass -Force` in the same window.
+
 The installer:
-1. Clones the repo to `%USERPROFILE%\.local\apps\shellframe`
-2. Creates a Python venv and installs `pywebview`, `pyte`, `pywinpty`
-3. Drops `shellframe.bat` and `sfctl.bat` into `%USERPROFILE%\.local\bin` and
+1. Auto-installs **Git**, **Python**, and the **WebView2 runtime** via `winget`
+   if they're missing (skips the Microsoft Store python stub)
+2. Clones the repo to `%USERPROFILE%\.local\apps\shellframe`
+3. Creates a Python venv and installs `pywebview`, `pyte`, `pywinpty`
+4. Drops `shellframe.bat` and `sfctl.bat` into `%USERPROFILE%\.local\bin` and
    adds it to your user PATH
-4. Creates a desktop shortcut
+5. Creates a desktop shortcut
+
+Re-running the command updates in place (auto-stashes local changes, falls back
+to a hard sync if history diverged). Open a **new** terminal afterward so the
+updated PATH takes effect.
 
 After install, run `shellframe` from any terminal or double-click the desktop
 shortcut.
