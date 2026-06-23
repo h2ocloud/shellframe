@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShellFrame — 安裝</title>
+<meta name="description" content="ShellFrame：AI coding 助手的多分頁 GUI 終端機。一個指令完成安裝與更新。">
+<style>
+  :root{
+    --bg:#0d1017; --panel:#151a23; --panel2:#1b2230; --line:#262e3d;
+    --fg:#e6e9ef; --dim:#9aa4b6; --accent:#ff8a3d; --accent2:#5ec8ff;
+    --ok:#5fd28a; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;line-height:1.6}
+  a{color:var(--accent2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:760px;margin:0 auto;padding:56px 22px 72px}
+  header{text-align:center;margin-bottom:34px}
+  .logo{font-size:40px;font-weight:800;letter-spacing:-.02em}
+  .logo .br{color:var(--accent)}
+  .tag{color:var(--dim);margin-top:8px;font-size:16px}
+  .os-detect{margin:30px 0 14px;text-align:center;color:var(--dim);font-size:14px}
+  .os-detect b{color:var(--fg)}
+  .tabs{display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  .tab{background:var(--panel);border:1px solid var(--line);color:var(--dim);
+    padding:9px 18px;border-radius:999px;cursor:pointer;font-size:14px;font-weight:600;
+    transition:.15s}
+  .tab:hover{color:var(--fg)}
+  .tab.active{background:var(--accent);border-color:var(--accent);color:#1a1205}
+  .cmdbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:18px 18px 16px;box-shadow:0 18px 50px -28px rgba(0,0,0,.8)}
+  .cmd-row{display:flex;align-items:stretch;gap:10px}
+  .cmd{flex:1;min-width:0;background:#0a0d13;border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;font-family:var(--mono);font-size:13.5px;color:#dfe6f1;
+    overflow-x:auto;white-space:nowrap}
+  .cmd .pr{color:var(--accent);user-select:none}
+  .copy{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+    border-radius:10px;padding:0 18px;cursor:pointer;font-weight:700;font-size:13.5px;
+    min-width:78px;transition:.15s}
+  .copy:hover{border-color:var(--accent2)}
+  .copy.done{background:var(--ok);border-color:var(--ok);color:#06210f}
+  .hint{margin-top:12px;color:var(--dim);font-size:13px;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+  .hint code{font-family:var(--mono);background:#0a0d13;border:1px solid var(--line);
+    padding:1px 6px;border-radius:6px;color:#cdd6e4;font-size:12px}
+  .update-note{margin:22px 0 0;background:var(--panel2);border:1px solid var(--line);
+    border-left:3px solid var(--accent);border-radius:10px;padding:13px 16px;color:var(--dim);font-size:14px}
+  .update-note b{color:var(--fg)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:30px}
+  @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 8px;font-size:14px;color:var(--accent2);font-weight:700;letter-spacing:.02em}
+  .card ul{margin:0;padding-left:18px;color:var(--dim);font-size:13.5px}
+  .card li{margin:5px 0}
+  details{margin-top:26px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:4px 18px}
+  details[open]{padding-bottom:14px}
+  summary{cursor:pointer;padding:14px 0;font-weight:700;font-size:15px;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"›";color:var(--accent);margin-right:10px;display:inline-block;transition:.15s}
+  details[open] summary::before{transform:rotate(90deg)}
+  .tb{font-size:13.5px;color:var(--dim)}
+  .tb b{color:var(--fg)}
+  .tb p{margin:10px 0}
+  .tb code{font-family:var(--mono);background:#0a0d13;border:1px solid var(--line);
+    padding:1px 6px;border-radius:6px;color:#cdd6e4;font-size:12px}
+  footer{text-align:center;margin-top:40px;color:var(--dim);font-size:13px}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">Shell<span class="br">Frame</span></div>
+    <div class="tag">AI coding 助手的多分頁 GUI 終端機 · 截圖貼上、Telegram 橋接、session 持久化</div>
+  </header>
+
+  <div class="os-detect">偵測到你的系統：<b id="os-name">…</b></div>
+
+  <div class="tabs">
+    <button class="tab" data-os="unix">macOS / Linux</button>
+    <button class="tab" data-os="win">Windows</button>
+  </div>
+
+  <div class="cmdbox">
+    <div class="cmd-row">
+      <div class="cmd" id="cmd"><span class="pr" id="prompt">$</span> <span id="cmd-text"></span></div>
+      <button class="copy" id="copy">複製</button>
+    </div>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <div class="update-note">
+    <b>更新方式</b>：重跑同一條指令即可自動更新到最新版（會原地 git pull / 重建）。
+    也可在 App 內按更新，或從 Telegram 送 <code>/update_now</code>。
+  </div>
+
+  <div class="grid">
+    <div class="card" id="req-unix">
+      <h3>需求 — macOS / Linux</h3>
+      <ul>
+        <li>git（macOS：缺會引導 <code>xcode-select --install</code>）</li>
+        <li>Python 3.12+（缺則自動以 Homebrew / apt 安裝）</li>
+        <li>tmux（session 持久化，安裝器自動裝）</li>
+        <li>其餘 pip 套件自動安裝</li>
+      </ul>
+    </div>
+    <div class="card hide" id="req-win">
+      <h3>需求 — Windows</h3>
+      <ul>
+        <li>Python 3.10+、git（缺則自動以 winget 安裝）</li>
+        <li>WebView2 Runtime（Win10/11 內建；安裝器會檢查）</li>
+        <li>pywinpty 等 pip 套件自動安裝</li>
+        <li>若 <code>iex</code> 被擋，見下方疑難排解</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>安裝後</h3>
+      <ul>
+        <li>啟動：終端機輸入 <code>shellframe</code></li>
+        <li>macOS：Spotlight / Launchpad 搜尋 ShellFrame</li>
+        <li>Windows：桌面捷徑或 <code>shellframe</code></li>
+        <li>AI 代理人控制：<code>sfctl</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <details id="tb-unix">
+    <summary>疑難排解 — macOS / Linux</summary>
+    <div class="tb">
+      <p><b>權限彈窗一直卡住</b>：裝完跑一次 <code>sfctl permissions</code>，預先授予隱私權限與防火牆，避免全域熱鍵失效。</p>
+      <p><b>git 不存在</b>（macOS）：先 <code>xcode-select --install</code> 裝好 Command Line Tools 再重跑。</p>
+      <p><b>沒有 Homebrew</b>：安裝器會自動嘗試安裝；若失敗，手動裝 <a href="https://brew.sh">brew</a> 後重跑。</p>
+      <p><b>App 開啟被 Gatekeeper 擋</b>：在「系統設定 → 隱私權與安全性」按一次「仍要打開」，或重跑安裝器（會重簽 ad-hoc 簽章）。</p>
+    </div>
+  </details>
+
+  <details id="tb-win" class="hide">
+    <summary>疑難排解 — Windows</summary>
+    <div class="tb">
+      <p><b><code>iex</code> 被執行原則擋住</b>：先在同一個 PowerShell 視窗執行
+      <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code>，再貼安裝指令。</p>
+      <p><b><code>python</code> 打開 Microsoft Store</b>：那是假殼。安裝器會用 winget 裝真正的 Python；若仍失敗，到 設定 → 應用程式 → 應用程式執行別名，關掉 python 的別名。</p>
+      <p><b>TUI 工具（Claude Code 等）顯示亂碼</b>：缺 pywinpty。執行
+      <code>%USERPROFILE%\.local\apps\shellframe\.venv\Scripts\pip install pywinpty</code> 後重啟。</p>
+      <p><b>視窗白畫面 / 開不起來</b>：缺 WebView2 Runtime，到
+      <a href="https://developer.microsoft.com/microsoft-edge/webview2/">Microsoft</a> 裝 Evergreen 版。</p>
+    </div>
+  </details>
+
+  <footer>
+    原始碼與說明文件：<a href="https://github.com/h2ocloud/shellframe" id="repo-link">github.com/h2ocloud/shellframe</a>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var REPO = "h2ocloud/shellframe";
+  var CMDS = {
+    unix: { prompt:"$",  text:"curl -fsSL https://raw.githubusercontent.com/"+REPO+"/main/install.sh | bash" },
+    win:  { prompt:"PS>", text:"irm https://raw.githubusercontent.com/"+REPO+"/main/install.ps1 | iex" }
+  };
+  var HINTS = {
+    unix: 'macOS 與 Linux 共用此指令。終端機（Terminal / iTerm）貼上即可。',
+    win:  '在 <b>PowerShell</b> 視窗執行（不是 cmd）。'
+  };
+
+  function detectOS(){
+    var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    var ua = navigator.userAgent || "";
+    if(/Win/i.test(p) || /Windows/i.test(ua)) return "win";
+    return "unix"; // mac + linux 共用 install.sh
+  }
+  function osLabel(){
+    var ua = navigator.userAgent || "", p = navigator.platform || "";
+    if(/Win/i.test(p)||/Windows/i.test(ua)) return "Windows";
+    if(/Mac/i.test(p)||/Mac OS X/i.test(ua)) return "macOS";
+    if(/Linux/i.test(p)||/Linux/i.test(ua)) return "Linux";
+    return "未知（預設顯示 macOS / Linux）";
+  }
+
+  var current = detectOS();
+  var elText = document.getElementById("cmd-text");
+  var elPrompt = document.getElementById("prompt");
+  var elHint = document.getElementById("hint");
+  var elCopy = document.getElementById("copy");
+
+  function render(os){
+    current = os;
+    elText.textContent = CMDS[os].text;
+    elPrompt.textContent = CMDS[os].prompt;
+    elHint.innerHTML = HINTS[os];
+    document.querySelectorAll(".tab").forEach(function(t){
+      t.classList.toggle("active", t.dataset.os === os);
+    });
+    document.getElementById("req-unix").classList.toggle("hide", os!=="unix");
+    document.getElementById("req-win").classList.toggle("hide", os!=="win");
+    document.getElementById("tb-unix").classList.toggle("hide", os!=="unix");
+    document.getElementById("tb-win").classList.toggle("hide", os!=="win");
+    elCopy.classList.remove("done"); elCopy.textContent="複製";
+  }
+
+  document.getElementById("os-name").textContent = osLabel();
+  document.querySelectorAll(".tab").forEach(function(t){
+    t.addEventListener("click", function(){ render(t.dataset.os); });
+  });
+
+  elCopy.addEventListener("click", function(){
+    var txt = CMDS[current].text;
+    var done = function(){ elCopy.classList.add("done"); elCopy.textContent="已複製";
+      setTimeout(function(){ elCopy.classList.remove("done"); elCopy.textContent="複製"; },1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done, function(){ fallback(txt); done(); });
+    } else { fallback(txt); done(); }
+  });
+  function fallback(txt){
+    var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta);
+    ta.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta);
+  }
+
+  document.getElementById("repo-link").href = "https://github.com/"+REPO;
+  render(current);
+})();
+</script>
+</body>
+</html>
