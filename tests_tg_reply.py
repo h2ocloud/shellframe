@@ -68,5 +68,10 @@ ok("long reply split (no truncate)",
 hp = bt.split_for_telegram("x" * 9000)
 ok("oversize single line hard-split", all(len(p) <= 3900 for p in hp) and "".join(hp) == "x" * 9000)
 
-print(f"\n=== {7 - len(fails)}/7 groups PASS ===")
+# 8) Terminal control fragments without ESC (e.g. "[0 q") do not leak to TG.
+r8 = bridge._extract_marked_mobile_reply(mkslot(
+    START + "Hi Huang [0 q [0 q\n第二行" + END))
+ok("strips bracketed control fragments", "[0 q" not in r8 and "Hi Huang" in r8, repr(r8))
+
+print(f"\n=== {8 - len(fails)}/8 groups PASS ===")
 sys.exit(1 if fails else 0)

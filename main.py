@@ -4200,8 +4200,47 @@ class Api:
         if the source is e.g. a screenshot (TIFF on the pasteboard).
         """
         if IS_WIN:
-            # TODO: Windows path via PIL.ImageGrab if PIL is available
-            return ''
+            try:
+                ps = r"""
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$img = [System.Windows.Forms.Clipboard]::GetImage()
+if ($null -eq $img) { exit 2 }
+$ms = New-Object System.IO.MemoryStream
+try {
+  $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+  [Convert]::ToBase64String($ms.ToArray())
+} finally {
+  $ms.Dispose()
+  $img.Dispose()
+}
+"""
+                r = subprocess.run(
+                    [
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-STA",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-Command",
+                        ps,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if r.returncode != 0:
+                    return ''
+                b64 = (r.stdout or '').strip()
+                if not b64:
+                    return ''
+                return 'data:image/png;base64,' + b64
+            except Exception as e:
+                try:
+                    _dlog('clipboard', f'windows read_clipboard_image failed: {e}')
+                except Exception:
+                    pass
+                return ''
         if platform.system() != 'Darwin':
             return ''
         try:
@@ -4758,6 +4797,8 @@ class Api:
 
         # Register existing sessions (skip bridge-disabled ones)
         for sid, s in self.sessions.items():
+            if not getattr(s, 'alive', False):
+                continue
             if not getattr(s, '_bridge_enabled', True):
                 continue
             label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
@@ -5185,6 +5226,8 @@ class Api:
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
                 for sid, s in self.sessions.items():
+                    if not getattr(s, 'alive', False):
+                        continue
                     if not getattr(s, '_bridge_enabled', True):
                         continue
                     label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
@@ -5227,7 +5270,7 @@ class Api:
         if not self.bridge:
             return
         s = self.sessions.get(sid)
-        if s:
+        if s and getattr(s, 'alive', False):
             self.bridge.register_session(
                 sid, label,
                 lambda text, _s=s: _s.write(text),

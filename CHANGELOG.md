@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.19.3 (2026-06-23)
+
+### Fixes
+- Telegram replies now strip residual terminal control fragments such as `[0 q` before sending marked mobile replies.
+- Telegram bridge now prunes slots that main.py reports as dead or bridge-disabled, so ghost sessions disappear from `/list` and routing.
+- ShellFrame only registers alive sessions when starting or hot-reloading the Telegram bridge.
+- Web terminal IME input no longer drops committed text solely because WKWebView still reports composition in progress.
+- `sfctl list` now uses ASCII status markers so Windows cp950 consoles do not crash on emoji output.
+
+## v0.19.2 (2026-06-23)
+
+### Fixes
+- Telegram-to-Codex sends now log the submit keystroke and retry with an LF fallback if Codex still shows the pasted-content chip after CR, preventing TG messages from getting pasted into the input box without being submitted.
+
+## v0.19.1 (2026-06-23)
+
+### Fixes
+- Windows clipboard image paste now falls back to the native system clipboard through STA PowerShell/WinForms when WebView2 cannot expose an image blob.
+
 ## v0.19.0 (2026-06-21)
 
 ### Features

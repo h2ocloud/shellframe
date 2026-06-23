@@ -2043,16 +2043,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         textarea.addEventListener('compositionend', () => { composing = false; _imeComposing = false; });
       }
       term.onData(data => {
-        // IME race: on WKWebView, compositionend sometimes fires AFTER the
-        // IME-commit Enter keydown is already dispatched to onData. If we
-        // blanket-swallow input while `composing` is true, the first Enter
-        // after Chinese input is lost — user has to press Enter twice. Only
-        // drop IME pre-edit text (multi-char non-ASCII), always let Enter /
-        // control chars through.
-        if (composing && !(data === '\r' || data === '\n') &&
-            !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
-          return;
-        }
+        // WKWebView can leave `composing` true while xterm already emits the
+        // committed text. Do not drop onData during composition; the short
+        // duplicate guard below handles repeated IME commits.
         // `#` tab-tag picker: navigation/selection keys are consumed here.
         if (tagPickerOnData(sid, data)) return;
         // ShellFrame-local slash command (/usage, /水位): handled here, not sent.
@@ -2185,12 +2178,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         textarea.addEventListener('compositionend', () => { composing = false; _imeComposing = false; });
       }
       term.onData(data => {
-        // Same IME-race guard as createSession: compositionend can fire after
-        // Enter reaches onData on WKWebView.
-        if (composing && !(data === '\r' || data === '\n') &&
-            !(data.length === 1 && data.charCodeAt(0) < 0x20)) {
-          return;
-        }
+        // Same IME-race guard as createSession: composition can lag behind
+        // committed onData on WKWebView, so never discard data solely because
+        // `composing` is still true.
         // `#` tab-tag picker: navigation/selection keys are consumed here.
         if (tagPickerOnData(sid, data)) return;
         // ShellFrame-local slash command (/usage, /水位): handled here, not sent.

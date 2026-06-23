@@ -95,7 +95,7 @@ def _rpc(cmd: str, args: dict = None, timeout: float = 15.0):
 def _print_result(result: dict, verbose: bool = True):
     success = result.get("success", False)
     message = result.get("message", "")
-    print(f"{'✅' if success else '❌'} {message}")
+    print(f"{'OK' if success else 'ERR'} {message}")
     if verbose and result.get("details"):
         d = result["details"]
         # Pretty-print text blobs directly, dict keys indented
@@ -103,12 +103,12 @@ def _print_result(result: dict, verbose: bool = True):
             print(d["text"])
         elif "sessions" in d and isinstance(d["sessions"], list):
             for s in d["sessions"]:
-                alive = "●" if s.get("alive") else "○"
+                alive = "*" if s.get("alive") else "-"
                 bridge = "" if s.get("bridge_enabled", True) else " (unbridged)"
-                print(f"  {alive} {s.get('sid')}  {s.get('label')}{bridge}  — {s.get('cmd', '')[:60]}")
+                print(f"  {alive} {s.get('sid')}  {s.get('label')}{bridge}  - {s.get('cmd', '')[:60]}")
         elif "roles" in d and isinstance(d["roles"], list):
             for r in d["roles"]:
-                print(f"  {r.get('role')}  →  {r.get('label')}  [{r.get('agent_code')}]")
+                print(f"  {r.get('role')}  ->  {r.get('label')}  [{r.get('agent_code')}]")
                 if r.get("responsibility"):
                     print(f"      {r.get('responsibility')}")
         else:
