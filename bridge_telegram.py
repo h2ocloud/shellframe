@@ -118,7 +118,7 @@ def _build_regex():
             r'|\x1b[()][A-Z0-9]'
             r'|\x1b[78=>NOMDEHc]'
             r'|\r|\x07|\x08'
-            r'|\[[\??\d;]+[A-Za-z]'
+            r'|\[\??[\d; ]+[A-Za-z]'
         , re.DOTALL),
         "spinner": re.compile(f'[{re.escape(spinner_chars)}]+'),
         "loading": re.compile(
@@ -647,6 +647,7 @@ class TelegramBridge(BridgeBase):
         self._user_active = {}     # user_id -> sid (current session per user)
         self._user_chat = {}       # user_id -> chat_id
         self._slots_lock = threading.Lock()
+        self._last_prune_ts = 0.0
 
     # ── IPC with main.py (via sfctl file mechanism) ──
 
@@ -696,20 +697,56 @@ class TelegramBridge(BridgeBase):
     def unregister_session(self, sid: str):
         """Remove a session from the bridge."""
         with self._slots_lock:
-            self.slots.pop(sid, None)
+            self._remove_slots_locked([sid])
+
+    def _remove_slots_locked(self, sids):
+        """Remove slots while self._slots_lock is held."""
+        removed = False
+        for sid in sids:
+            if sid in self.slots:
+                self.slots.pop(sid, None)
+                removed = True
             if sid in self._slot_order:
                 self._slot_order.remove(sid)
-            # Reindex
-            for i, s in enumerate(self._slot_order):
+                removed = True
+        if not removed:
+            return
+        for i, s in enumerate(self._slot_order):
+            if s in self.slots:
                 self.slots[s].index = i + 1
-            # Update users pointing to this session
-            for uid, active_sid in list(self._user_active.items()):
-                if active_sid == sid:
-                    # Switch to first available
-                    if self._slot_order:
-                        self._user_active[uid] = self._slot_order[0]
-                    else:
-                        del self._user_active[uid]
+        for uid, active_sid in list(self._user_active.items()):
+            if active_sid in self.slots:
+                continue
+            if self._slot_order:
+                self._user_active[uid] = self._slot_order[0]
+            else:
+                del self._user_active[uid]
+        default = getattr(self, '_default_active_sid', None)
+        if default and default not in self.slots:
+            self._default_active_sid = self._slot_order[0] if self._slot_order else ""
+
+    def _prune_stale_slots(self, force: bool = False):
+        """Drop bridge slots that main.py no longer considers alive/bridged."""
+        now = time.time()
+        if not force and now - self._last_prune_ts < 5.0:
+            return
+        self._last_prune_ts = now
+        result = self._sfctl_call("list", timeout=1.2)
+        if not result.get("success"):
+            return
+        sessions = ((result.get("details") or {}).get("sessions") or [])
+        live = {
+            s.get("sid") for s in sessions
+            if s.get("sid") and s.get("alive") and s.get("bridge_enabled", True)
+        }
+        known = {s.get("sid") for s in sessions if s.get("sid")}
+        with self._slots_lock:
+            stale = [
+                sid for sid in self._slot_order
+                if sid not in live and (sid in known or sessions)
+            ]
+            if stale:
+                self._remove_slots_locked(stale)
 
     def reorder_slots(self, ordered_sids: list):
         """Reorder session slots to match the given sid list. Reindexes /1, /2, etc."""
@@ -726,6 +763,7 @@ class TelegramBridge(BridgeBase):
 
     def get_active_sid(self, user_id: int) -> str:
         """Get the active session for a user. Defaults to UI-selected or first slot."""
+        self._prune_stale_slots()
         sid = self._user_active.get(user_id)
         if sid and sid in self.slots:
             return sid
@@ -1859,6 +1897,8 @@ class TelegramBridge(BridgeBase):
             # 週期檢查不需 0.5s 一次，降到每 2s（每 4 個 tick）跑一次，砍掉 10+ idle
             # tab 的 CPU floor。輸出 drain（下方）仍維持 0.5s、且對 idle slot 本就 continue。
             slow_tick = (tick % 4 == 0)
+            if slow_tick:
+                self._prune_stale_slots()
             with self._slots_lock:
                 sids = list(self._slot_order)
 
@@ -3263,7 +3303,22 @@ class TelegramBridge(BridgeBase):
                 # partial input.
                 slot.write_fn("\x1b[200~" + visible_payload + "\x1b[201~")
                 time.sleep(0.3)
+                _blog(f"[send] {slot.sid} submit CR len={len(visible_payload)}\n")
                 slot.write_fn("\r")
+                time.sleep(0.6)
+                try:
+                    recent_after_enter = slot.peek_fn() if slot.peek_fn else ""
+                except Exception:
+                    recent_after_enter = ""
+                # Codex can occasionally keep focus on its pasted-content chip
+                # after the first CR. If the chip is still visible and the CLI
+                # did not start a turn, send LF as a conservative fallback.
+                if (
+                    re.search(r'\[Pasted (?:Content|text)[^\]]*\]', recent_after_enter or "", re.I)
+                    and not re.search(r'esc to interrupt', recent_after_enter or "", re.I)
+                ):
+                    _blog(f"[send] {slot.sid} submit LF fallback after paste chip\n")
+                    slot.write_fn("\n")
         threading.Thread(target=_send, daemon=True).start()
 
     def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):
@@ -3271,6 +3326,7 @@ class TelegramBridge(BridgeBase):
 
         if cmd in ("list", "status"):
             # /status is folded into /list — show bridge state header + sessions.
+            self._prune_stale_slots(force=True)
             state = "paused ⏸" if self.paused else "connected ●"
             bot = self.bot_info.get("username", "?")
             active_sid = self.get_active_sid(user_id)
@@ -3587,6 +3643,7 @@ class TelegramBridge(BridgeBase):
 
     def get_primary_active_sid(self) -> str:
         """Return the active session sid for the primary (first) TG user."""
+        self._prune_stale_slots()
         if self._user_active:
             return next(iter(self._user_active.values()))
         default = getattr(self, '_default_active_sid', None)
