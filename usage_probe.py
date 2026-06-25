@@ -17,8 +17,18 @@ import json
 import os
 import subprocess
 import time
+import urllib.request
+import urllib.error
 from datetime import datetime
 
+# Primary source for Claude water-level: the OAuth usage API, called directly
+# with the local Keychain token (no browser, no external script). The old
+# openclaw script lives only on the openclaw host, so depending on it made
+# /usage fail on every other machine — see _fetch_claude.
+CLAUDE_USAGE_API = "https://api.anthropic.com/api/oauth/usage"
+_CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
+
+# Legacy fallback only (present on the openclaw host, absent elsewhere).
 CLAUDE_SCRIPT = os.path.expanduser(
     "~/.openclaw/workspace/skills/claude-usage/scripts/fetch_oauth_usage.sh"
 )
@@ -79,12 +89,26 @@ def _plan_label(plan, org=None) -> str:
     return f"{nice}（{tag}）"
 
 
-def _claude_account() -> str:
-    """'howardwu@neux.com.tw · Team（企業·Neux Com）' or '' if unavailable.
+def _claude_oauth() -> dict:
+    """Read the Claude Code OAuth blob from the macOS Keychain. {} on failure.
 
     All claude tabs on this machine share the same ~/.claude credentials, so
     this reflects whatever account the current claude tab is signed in as.
     """
+    try:
+        raw = subprocess.run(
+            ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if raw:
+            return json.loads(raw).get("claudeAiOauth") or {}
+    except Exception:
+        pass
+    return {}
+
+
+def _claude_account() -> str:
+    """'howardwu@neux.com.tw · Team（企業·Neux Com）' or '' if unavailable."""
     email = org = None
     try:
         cj = json.load(open(os.path.expanduser("~/.claude.json")))
@@ -93,16 +117,7 @@ def _claude_account() -> str:
         org = oa.get("organizationName")
     except Exception:
         pass
-    sub = None
-    try:
-        raw = subprocess.run(
-            ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.strip()
-        if raw:
-            sub = (json.loads(raw).get("claudeAiOauth") or {}).get("subscriptionType")
-    except Exception:
-        pass
+    sub = _claude_oauth().get("subscriptionType")
     plan = _plan_label(sub, org)
     parts = [p for p in (email, plan) if p]
     return " · ".join(parts)
@@ -130,7 +145,41 @@ def _codex_account(result_plan=None) -> str:
 
 
 def _fetch_claude():
-    """Return {'5hr': (pct, reset), 'week': (pct, reset)} or None."""
+    """Return {'5hr': (pct, reset), 'week': (pct, reset)} or None.
+
+    Primary path: call the OAuth usage API directly with the local Keychain
+    token — self-contained, works on any machine the user is signed in on. The
+    legacy openclaw script is tried only as a fallback (it exists solely on the
+    openclaw host), so /usage no longer dead-ends on machines without it.
+    """
+    token = _claude_oauth().get("accessToken")
+    if token:
+        try:
+            req = urllib.request.Request(CLAUDE_USAGE_API, headers={
+                "Authorization": f"Bearer {token}",
+                "anthropic-beta": _CLAUDE_OAUTH_BETA,
+                "anthropic-version": "2023-06-01",
+                "User-Agent": "shellframe-usage-probe",
+                "Accept": "application/json",
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+            out = {}
+            fh = data.get("five_hour") or {}
+            if fh.get("utilization") is not None:
+                out["5hr"] = (round(fh["utilization"]), _fmt_iso(fh.get("resets_at", "")))
+            sd = data.get("seven_day") or {}
+            if sd.get("utilization") is not None:
+                out["week"] = (round(sd["utilization"]), _fmt_iso(sd.get("resets_at", "")))
+            if out:
+                return out
+        except Exception:
+            pass  # fall through to legacy script
+    return _fetch_claude_script()
+
+
+def _fetch_claude_script():
+    """Legacy fallback: the openclaw fetch_oauth_usage.sh (absent off-host)."""
     if not os.path.exists(CLAUDE_SCRIPT):
         return None
     try:

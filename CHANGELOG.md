@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.19.5 (2026-06-25)
+
+### Fixes
+- `/usage` (`/水位`) now fetches Claude water-level by calling the OAuth usage API directly with the local Keychain token, instead of shelling out to `~/.openclaw/.../fetch_oauth_usage.sh`. That script only exists on the openclaw host, so on every other machine the Claude probe always returned「查不到資料」 even though the account/plan resolved. Parses `five_hour`/`seven_day` `utilization` + `resets_at`; the openclaw script is kept only as a legacy fallback. Codex path unchanged.
+
 ## v0.19.4 (2026-06-25)
 
 ### Changes
