@@ -13,8 +13,10 @@ message so a slash command can't crash a tab.
 """
 
 import base64
+import glob
 import json
 import os
+import sqlite3
 import subprocess
 import time
 import urllib.request
@@ -27,6 +29,11 @@ from datetime import datetime
 # /usage fail on every other machine — see _fetch_claude.
 CLAUDE_USAGE_API = "https://api.anthropic.com/api/oauth/usage"
 _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
+
+# Codex logs a `codex.rate_limits` event to its local SQLite log on every API
+# turn, so the latest snapshot is readable on disk — no app-server spawn (which
+# is heavy and dies under sandboxes), no billable call, no openclaw dependency.
+CODEX_LOG_GLOB = os.path.expanduser("~/.codex/logs_*.sqlite")
 
 # Legacy fallback only (present on the openclaw host, absent elsewhere).
 CLAUDE_SCRIPT = os.path.expanduser(
@@ -202,9 +209,87 @@ def _fetch_claude_script():
     return out or None
 
 
+def _extract_json(text, anchor):
+    """Pull the first brace-balanced JSON object starting at `anchor` out of a
+    log line. None if not found / not parseable."""
+    i = text.find(anchor)
+    if i < 0:
+        return None
+    depth = 0
+    for j in range(i, len(text)):
+        ch = text[j]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[i:j + 1])
+                except ValueError:
+                    return None
+    return None
+
+
+def _codex_ratelimits_snapshot():
+    """Latest `codex.rate_limits` event from codex's local SQLite log, or None.
+
+    Codex emits this on every API turn (see ~/.codex/logs_*.sqlite), so the most
+    recent row is the freshest known usage without any network/app-server call.
+    """
+    dbs = sorted(glob.glob(CODEX_LOG_GLOB), key=os.path.getmtime, reverse=True)
+    for db in dbs:
+        try:
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            try:
+                row = con.execute(
+                    "SELECT feedback_log_body FROM logs "
+                    "WHERE feedback_log_body LIKE '%codex.rate_limits%' "
+                    "ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            finally:
+                con.close()
+        except sqlite3.Error:
+            continue
+        if not row or not row[0]:
+            continue
+        obj = _extract_json(row[0], '{"type":"codex.rate_limits"')
+        if obj:
+            return obj
+    return None
+
+
 def _fetch_codex():
-    """Return {'5hr': (pct, reset), 'week': (pct, reset)} or None."""
+    """Return {'5hr': (pct, reset), 'week': (pct, reset), '_plan': ...} or None.
+
+    Primary: read the latest snapshot from codex's local log (self-contained).
+    Falls back to the legacy openclaw codex_usage module if it is present.
+    """
+    snap = _codex_ratelimits_snapshot()
+    if snap:
+        rl = snap.get("rate_limits") or {}
+        out = {}
+        primary = rl.get("primary") or {}
+        secondary = rl.get("secondary") or {}
+        if primary.get("used_percent") is not None:
+            out["5hr"] = (round(primary["used_percent"]), _fmt_epoch(primary.get("reset_at")))
+        if secondary.get("used_percent") is not None:
+            out["week"] = (round(secondary["used_percent"]), _fmt_epoch(secondary.get("reset_at")))
+        if out:
+            out["_plan"] = snap.get("plan_type")
+            # Snapshot time = reset_at - reset_after_seconds. The snapshot is only
+            # as fresh as codex's last API turn, so surface when it was taken.
+            ra, raf = primary.get("reset_at"), primary.get("reset_after_seconds")
+            if ra and raf is not None:
+                out["_ts"] = ra - raf
+            return out
+    return _fetch_codex_openclaw()
+
+
+def _fetch_codex_openclaw():
+    """Legacy fallback: openclaw codex_usage app-server reader (openclaw host)."""
     import sys
+    if not os.path.isdir(CODEX_SCRIPT_DIR):
+        return None
     if CODEX_SCRIPT_DIR not in sys.path:
         sys.path.insert(0, CODEX_SCRIPT_DIR)
     try:
@@ -257,4 +342,6 @@ def probe(cmd: str) -> str:
     if "week" in data:
         pct, reset = data["week"]
         lines.append(f"2. Week：{pct}%｜重置 {reset}")
+    if data.get("_ts"):
+        lines.append(f"快照 {_fmt_epoch(data['_ts'])}")
     return "\n".join(lines)
