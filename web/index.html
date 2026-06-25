@@ -598,6 +598,7 @@
   <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Task board" style="font-size:14px;display:none">📋</button>
+  <button class="tab-action" id="btn-usage" data-i18n-title="usageBtnTitle" title="AI 用量水位 (/usage)" style="font-size:14px">📊</button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
@@ -1315,6 +1316,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lineStarted: 'LINE bridge started. Local webhook: ',
       lineFailed: 'LINE connection failed',
       boardBtnTitle: 'Task board (experimental)',
+      usageBtnTitle: 'AI usage water-level (/usage)',
       boardPanelTitle: 'Task Board · Exchange',
       boardAdd: '+ Task',
       boardAddTitle: 'Add task',
@@ -1475,6 +1477,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lineStarted: 'LINE bridge 已啟動。本機 webhook: ',
       lineFailed: 'LINE 連線失敗',
       boardBtnTitle: '任務看板（實驗性）',
+      usageBtnTitle: 'AI 用量水位（/usage）',
       boardPanelTitle: '任務看板 · 交換區',
       boardAdd: '+ 任務',
       boardAddTitle: '新增任務',
@@ -2790,6 +2793,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
 
+  // Toolbar 📊 — show the active tab's AI usage water-level (same as /usage),
+  // without clearing the tab's composer.
+  document.getElementById('btn-usage').addEventListener('click', () => {
+    if (activeId) runTabUsage(activeId, false);
+    else showUsageModal('沒有作用中的分頁。');
+  });
+
   // A resizer is only meaningful while its panel is expanded.
   function updateResizerVisibility() {
     const sb = document.getElementById('sidebar');
@@ -3384,10 +3394,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     else { buf[sid] = ''; }
     return false;
   }
-  async function runTabUsage(sid) {
-    // Clear the text the CLI already echoed into its composer (chars were sent
-    // keystroke-by-keystroke before Enter; we can only undo via line-kill).
-    try { pywebview.api.write_input(sid, '\x15'); } catch (_) {}
+  async function runTabUsage(sid, clearComposer = true) {
+    // When triggered by typing `/usage`, clear the text the CLI already echoed
+    // into its composer (chars were sent keystroke-by-keystroke before Enter; we
+    // can only undo via line-kill). When triggered by the toolbar button there
+    // is nothing to undo, so skip it — otherwise we'd wipe the user's input line.
+    if (clearComposer) { try { pywebview.api.write_input(sid, '\x15'); } catch (_) {} }
     showUsageModal('查詢用量中…');
     try {
       const txt = await pywebview.api.tab_usage(sid);

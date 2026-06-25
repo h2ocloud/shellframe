@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.20.0 (2026-06-25)
+
+### Features
+- Toolbar 📊 button — one click shows the active tab's AI usage water-level in the same overlay as `/usage` (`/水位`), no typing. Works for any claude/codex tab; unlike the typed command it does not clear the tab's input composer. Lives in the tab bar next to the Telegram toggle.
+
 ## v0.19.5 (2026-06-25)
 
 ### Fixes
