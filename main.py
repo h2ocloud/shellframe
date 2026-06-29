@@ -168,7 +168,8 @@ DEFAULT_CONFIG = {
         "fontSize": 14,
         "language": "en",
         "master_turn_preamble_enabled": True,
-        "experimental_board": False
+        "experimental_board": False,
+        "experimental_loops": False
     },
     "idle_reaper": {
         "enabled": False,
@@ -2297,7 +2298,8 @@ class Api:
                                           "summary": st.get("summary"),
                                           "task": st.get("task", ""),
                                           "elapsed": st.get("elapsed", 0),
-                                          "activity": st.get("activity") or {}}
+                                          "activity": st.get("activity") or {},
+                                          "loop": st.get("loop")}
                                 cache[sid] = {
                                     "out_ts": out_ts,
                                     "computed_at": now,
@@ -2310,6 +2312,8 @@ class Api:
                             hk = self._hook_events.get(sid)
                             if hk and now - hk["ts"] <= self._HOOK_TTL:
                                 result = self._apply_hook_state(result, hk, now)
+                            # 排程面板用：標出被 scheduler/auto 啟動的頁籤
+                            result["lifecycle_source"] = getattr(s, "_lifecycle_source", "")
                             out[sid] = result
                         except Exception:
                             out[sid] = {"state": "unknown", "dot": "",
