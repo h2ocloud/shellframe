@@ -73,5 +73,28 @@ r8 = bridge._extract_marked_mobile_reply(mkslot(
     START + "Hi Huang [0 q [0 q\n第二行" + END))
 ok("strips bracketed control fragments", "[0 q" not in r8 and "Hi Huang" in r8, repr(r8))
 
-print(f"\n=== {8 - len(fails)}/8 groups PASS ===")
+# 9) Reply longer than the viewport: while streaming, the TUI scrolls and
+#    re-emits overlapping windows between the single start/end, so each line
+#    repeats. Output must collapse to the unique lines once, no footer leak.
+L = [f"第{i}段：要回覆給 Telegram 的內容說明。" for i in range(1, 7)]
+fr = lambda lo, hi: "\n".join(L[lo:hi])
+r9 = bridge._extract_marked_mobile_reply_force(mkslot(
+    START + "\n" + fr(0, 4) + "\n" + fr(1, 5) + "\n" + fr(2, 6) + "\n"
+    + fr(2, 6) + "\n" + END + "\n› Explain this codebase\n"))
+ok("scroll-repaint dup collapsed",
+   all(r9.count(x) == 1 for x in L) and all(x in r9 for x in L)
+   and "Explain this codebase" not in r9, repr(r9))
+
+# 10) Repeated complete blocks + composer footer leaked BETWEEN markers
+#     (nested fresh start inside an open block). Tightest pairing + dedup must
+#     yield a single clean copy with no footer / marker-token leak.
+ANS = "工作完成：worker 都在跑。\n要我建 watchdog 嗎？"
+r10 = bridge._extract_marked_mobile_reply_force(mkslot(
+    START + ANS + "\n› Explain this codebase\n" + START + ANS + "\n" + END
+    + "\n› Explain this codebase\n" + START + ANS + "\n" + END))
+ok("repeated blocks → one clean copy",
+   r10.count("要我建 watchdog 嗎") == 1 and "worker 都在跑" in r10
+   and "Explain this codebase" not in r10 and "TG_REPLY" not in r10, repr(r10))
+
+print(f"\n=== {10 - len(fails)}/10 groups PASS ===")
 sys.exit(1 if fails else 0)

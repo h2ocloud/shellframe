@@ -245,6 +245,10 @@ _TUI_SENTINEL_RE = re.compile(
     r'|(?:^[✻✢✳∗✽·●⏺•*─\-]{0,2}\s*(?:cooked|worked|saut[eé]ed|churned|baking|brewing|simmering|forging)\s+for\s+\d)',
     re.IGNORECASE)
 
+# Stray reply-marker tokens that can leak into a span when a TUI repaint nests
+# a fresh [[TG_REPLY_xxx]] inside an earlier still-open block.
+_REPLY_MARKER_TOKEN_RE = re.compile(r'\[\[/?TG_REPLY_[0-9a-fA-F]+\]\]')
+
 
 def clean_mobile_marker_response(text: str) -> str:
     """Light cleanup for text already isolated by a mobile reply marker.
@@ -255,9 +259,11 @@ def clean_mobile_marker_response(text: str) -> str:
     PTY stream. Cutting there removes the leak (and the trailing repaint dup).
     """
     lines = []
-    previous = None
+    seen = set()
     for line in (text or "").splitlines():
-        stripped = line.strip()
+        # Drop any residual reply-marker token that leaked into the span
+        # (nested repaints can carry a stray [[TG_REPLY_xxx]] / [[/TG_REPLY_xxx]]).
+        stripped = _REPLY_MARKER_TOKEN_RE.sub("", line).strip()
         if not stripped:
             continue
         if _TUI_SENTINEL_RE.search(stripped):
@@ -270,10 +276,14 @@ def clean_mobile_marker_response(text: str) -> str:
             continue
         if re.search(r'\b(max_output_tokens|yield_time_ms|session_id|exec_command|write_stdin)\b', stripped):
             continue
-        if stripped == previous:
+        # Global de-dup: a TUI repaints by re-emitting overlapping scroll
+        # windows, so the same line lands in the linearized PTY stream several
+        # times (non-consecutively). Keep only the first occurrence so a reply
+        # longer than the viewport isn't forwarded as a repeated blob.
+        if stripped in seen:
             continue
+        seen.add(stripped)
         lines.append(stripped)
-        previous = stripped
     return "\n".join(lines).strip()
 
 
@@ -1489,20 +1499,34 @@ class TelegramBridge(BridgeBase):
     def _marker_spans(clean_raw: str, start_m: str, end_m: str):
         """Return [(start_idx, end_idx, inner_text)] for every start→end pair in
         order. A trailing start with no matching end yields end_idx=-1 (an
-        in-progress reply still streaming)."""
+        in-progress reply still streaming).
+
+        Each end is paired with the NEAREST preceding start (tightest block),
+        not the first one seen. A TUI repaint can re-emit a fresh start marker
+        while an earlier block is still open in the linearized stream; greedy
+        first-start→end pairing would then swallow everything in between
+        (duplicate scroll frames, the composer footer). Pairing the last start
+        before each end keeps the span to the actual reply."""
         spans = []
         i = 0
         n = len(start_m)
+        m = len(end_m)
         while True:
-            s = clean_raw.find(start_m, i)
-            if s < 0:
-                break
-            e = clean_raw.find(end_m, s + n)
+            e = clean_raw.find(end_m, i)
             if e < 0:
-                spans.append((s, -1, ""))
+                # No more ends. A start after the last consumed end is an
+                # in-progress (still-streaming) reply.
+                s = clean_raw.find(start_m, i)
+                if s >= 0:
+                    spans.append((s, -1, ""))
                 break
+            s = clean_raw.rfind(start_m, i, e)
+            if s < 0:
+                # Stray end with no preceding start in range — skip past it.
+                i = e + m
+                continue
             spans.append((s, e, clean_raw[s + n:e]))
-            i = e + len(end_m)
+            i = e + m
         return spans
 
     def _pick_marker_reply(self, slot, allow_inprogress: bool):
@@ -2733,6 +2757,94 @@ class TelegramBridge(BridgeBase):
             return text
         return self._transcribe_remote(audio_path)
 
+    # ── Voice transcript refinement (Typeless-style) ──
+    # Raw STT output is spoken-language: filler words (嗯/那個/就是/這樣子),
+    # repetitions, missing punctuation, and recognition errors. Instead of
+    # forwarding that verbatim, run it through a local LLM that rewrites it into
+    # the clean text the user *meant* — same intent, no summarizing, no answers.
+    # Defaults to the LM Studio / Ollama OpenAI-compatible endpoint on :1234 so
+    # it's zero-cost and stays on-device; falls back to the raw transcript on
+    # any failure so a refine outage never drops the message.
+    _REFINE_DEFAULT_URL = "http://127.0.0.1:1234/v1/chat/completions"
+    _REFINE_SYS_CLEAN = (
+        "你是語音輸入整理器。使用者剛用語音講了一段話，這是語音轉文字(STT)的逐字稿，"
+        "可能有口語贅字(嗯、那個、就是、這樣子、然後)、重複、明顯的同音辨識錯字、缺標點、沒分段。"
+        "請輸出整理後的版本：修正明顯辨識錯誤、去除口語贅字與重複、補上標點與適當分行，"
+        "讓語意通順好讀。嚴格保留原意與所有具體資訊(數字、名稱、路徑、需求細節)，"
+        "不要摘要、不要刪減內容、不要加入使用者沒講的東西、不要回答或執行其中的問題。"
+        "只輸出整理後的文字本身，使用繁體中文，不要任何前言或解釋。"
+    )
+    _REFINE_SYS_SUMMARY = (
+        "你是語音輸入整理器。使用者剛用語音講了一段話(STT 逐字稿)。"
+        "先理解他的真實意圖，再輸出結構化的整理：用一句話點出重點，必要時用條列列出要點/需求/待辦。"
+        "修正辨識錯字、去除口語贅字。保留所有具體資訊，不要加入沒講的內容、不要回答問題。"
+        "只輸出整理後的文字，使用繁體中文，不要任何前言。"
+    )
+
+    def _refine_settings(self) -> dict:
+        s = _read_settings()
+        return {
+            "enabled": s.get("voice_refine", True) is not False,
+            "url": (s.get("voice_refine_url") or self._REFINE_DEFAULT_URL).rstrip("/"),
+            "model": s.get("voice_refine_model") or "",
+            "style": s.get("voice_refine_style") or "clean",
+        }
+
+    def _refine_pick_model(self, base_url: str) -> str:
+        """Ask the OpenAI-compatible endpoint for a usable chat model id
+        (skips embedding models). Returns '' if none/unreachable."""
+        try:
+            models_url = base_url.rsplit("/chat/completions", 1)[0] + "/models"
+            req = urllib.request.Request(models_url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+            for m in data.get("data", []):
+                mid = m.get("id", "")
+                if mid and "embed" not in mid.lower():
+                    return mid
+        except Exception:
+            pass
+        return ""
+
+    def _refine_transcript(self, text: str) -> str:
+        """Rewrite a raw STT transcript into clean intended text via a local
+        LLM. Returns the original text unchanged on disable or any failure."""
+        cfg = self._refine_settings()
+        if not cfg["enabled"] or not (text or "").strip():
+            return text
+        model = cfg["model"] or self._refine_pick_model(cfg["url"])
+        if not model:
+            _blog("  refine skipped: no chat model at endpoint\n")
+            return text
+        system = self._REFINE_SYS_SUMMARY if cfg["style"] == "summary" else self._REFINE_SYS_CLEAN
+        payload = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": text},
+            ],
+            "temperature": 0.2,
+            "stream": False,
+        }).encode()
+        try:
+            req = urllib.request.Request(
+                cfg["url"], data=payload,
+                headers={"Content-Type": "application/json"})
+            # 45s: a reasoning model (e.g. gpt-oss) cold-starts slowly on the
+            # first call; the voice flow already showed「轉錄整理中…」so the
+            # user is waiting. A timeout just falls back to the raw transcript.
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode())
+            refined = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+            # Some local models echo a stray code fence or quotes — peel them.
+            refined = re.sub(r'^```[\w]*\n?|\n?```$', '', refined).strip().strip('"').strip()
+            if refined:
+                _blog(f"  refine ok: {len(text)}→{len(refined)} chars via {model}\n")
+                return refined
+        except Exception as e:
+            _blog(f"  refine failed ({model}): {e}\n")
+        return text
+
     def _download_tg_file(self, file_id: str, ext: str = "") -> str:
         """Download a Telegram file by file_id, save to CLAUDE_TMP. Returns local path or ''."""
         try:
@@ -3036,21 +3148,30 @@ class TelegramBridge(BridgeBase):
             _blog(f"  voice download: path={audio_path!r}\n")
             if audio_path:
                 # Acknowledge receipt immediately so user knows we're processing
+                refine_on = self._refine_settings()["enabled"]
                 tg_api(self.config.bot_token, "sendMessage", {
                     "chat_id": chat_id,
-                    "text": "🎙 轉錄中…",
+                    "text": "🎙 轉錄整理中…" if refine_on else "🎙 轉錄中…",
                 })
                 transcribed = self._transcribe_voice(audio_path)
                 if transcribed:
-                    # Use transcribed text as the message text, append 🎙 prefix
+                    # Typeless-style: rewrite the raw STT into the clean text the
+                    # user meant before forwarding. Falls back to raw on failure.
+                    refined = self._refine_transcript(transcribed)
+                    # Use refined text as the message text, append 🎙 prefix
                     if text:
-                        text = text + " " + transcribed
+                        text = text + " " + refined
                     else:
-                        text = f"🎙 {transcribed}"
-                    # Confirm transcription to user
+                        text = f"🎙 {refined}"
+                    # Confirm to user: show the cleaned version; when it actually
+                    # changed, append the raw transcript so nothing feels hidden.
+                    confirm = f"✓ {refined[:400]}{'…' if len(refined) > 400 else ''}"
+                    if refined.strip() != transcribed.strip():
+                        raw_preview = transcribed[:200] + ('…' if len(transcribed) > 200 else '')
+                        confirm += f"\n\n🎙 原稿：{raw_preview}"
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
-                        "text": f"✓ {transcribed[:200]}{'…' if len(transcribed) > 200 else ''}",
+                        "text": confirm,
                     })
                 else:
                     # Build a helpful diagnostic so the user knows WHY it failed

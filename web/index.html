@@ -563,6 +563,73 @@
   .feed-dur { font-size: 9px; color: #565f89; float: right; margin-top: 1px; }
   .feed-empty { color: #3b4261; font-size: 11px; text-align: center; padding: 16px 8px; }
 
+  /* ── Loops / scheduled conversations panel (right) ── */
+  #feed-overview .ov-cron { color: #bb9af7; }
+  #feed-overview .ov-sched { color: #9ece6a; }
+  .loop-row {
+    display: flex; align-items: flex-start; gap: 7px; padding: 7px 4px;
+    border-bottom: 1px solid #1a1b26; border-left: 2px solid transparent;
+    padding-left: 8px; cursor: pointer;
+  }
+  .loop-row:hover { background: rgba(122,162,247,.06); }
+  .loop-row.k-loop { border-left-color: #7aa2f7; }
+  .loop-row.k-cron { border-left-color: #bb9af7; }
+  .loop-row.k-sched { border-left-color: #9ece6a; }
+  .loop-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px;
+    background: #3b4261;
+  }
+  .loop-row.k-loop .loop-dot { background: #7aa2f7; }
+  .loop-row.k-loop.st-running .loop-dot { box-shadow: 0 0 6px #7aa2f7; animation: busy-pulse 1.1s ease-in-out infinite; }
+  .loop-row.k-cron .loop-dot { background: #bb9af7; }
+  .loop-row.k-sched .loop-dot { background: #9ece6a; }
+  .loop-body { flex: 1; min-width: 0; }
+  .loop-label { font-size: 11px; color: #c0caf5; font-weight: 500; }
+  .loop-tag {
+    font-size: 9px; margin-left: 6px; padding: 0 5px; border-radius: 6px;
+    vertical-align: middle; border: 1px solid currentColor; color: #787c99;
+  }
+  .loop-row.k-loop .loop-tag { color: #7aa2f7; }
+  .loop-row.k-cron .loop-tag { color: #bb9af7; }
+  .loop-row.k-sched .loop-tag { color: #9ece6a; }
+  .loop-cd { font-size: 9px; color: #e0af68; float: right; margin-top: 1px; }
+  .loop-row.st-running .loop-cd { color: #7aa2f7; }
+  .loop-reason {
+    font-size: 10px; color: #787c99; margin-top: 3px; line-height: 1.3;
+    word-break: break-word;
+  }
+  .loop-meta { font-size: 9px; color: #565f89; margin-top: 2px; }
+  .loop-group {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+    color: #565f89; padding: 10px 4px 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .loop-group:first-child { padding-top: 4px; }
+  .loop-group-n { color: #7aa2f7; text-transform: none; }
+  .sched-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 4px;
+    border-bottom: 1px solid #1a1b26; border-left: 2px solid #9ece6a; padding-left: 8px;
+  }
+  .sched-row.off { border-left-color: #3b4261; }
+  .sched-num {
+    flex-shrink: 0; width: 15px; text-align: right; font-size: 10px;
+    color: #565f89; font-variant-numeric: tabular-nums;
+  }
+  .sched-edit {
+    flex-shrink: 0; background: none; border: 1px solid #3b4261; color: #7aa2f7;
+    border-radius: 4px; font-size: 10px; cursor: pointer; padding: 1px 7px; line-height: 1.5;
+  }
+  .sched-edit:hover { border-color: #7aa2f7; background: rgba(122,162,247,.1); }
+  .sched-info { flex: 1; min-width: 0; }
+  .sched-title { font-size: 11px; color: #c0caf5; font-weight: 500; }
+  .sched-row.off .sched-title { color: #787c99; }
+  .sched-freq { font-size: 9px; color: #e0af68; margin-left: 6px; font-weight: 400; }
+  .sched-row.off .sched-freq { color: #565f89; }
+  .sched-cmd {
+    font-size: 9px; color: #565f89; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sched-toggle { flex-shrink: 0; }
+
   /* ── Code block copy button ── */
   .code-copy-btn {
     position: fixed; z-index: 100; display: none;
@@ -597,7 +664,7 @@
   <div id="tabs"></div>
   <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
-  <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Task board" style="font-size:14px;display:none">📋</button>
+  <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
   <button class="tab-action" id="btn-usage" data-i18n-title="usageBtnTitle" title="AI 用量水位 (/usage)" style="font-size:14px">📊</button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
@@ -641,7 +708,7 @@
   <div class="panel-resizer" id="board-resizer" title="拖曳調整寬度"></div>
   <div id="board-panel" class="collapsed">
     <div id="board-header">
-      <span class="bp-title">Agents · 即時動態</span>
+      <span class="bp-title" data-i18n="loopsPanelTitle">Loops · 排程對話</span>
       <span id="feed-overview"></span>
     </div>
     <div id="board-list"></div>
@@ -762,6 +829,13 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch" id="setting-experimental-board"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="experimentalBoardHint">Right-side panel of task cards; agents can claim/update via [[SF:TASK:...]] markers. Off by default.</span>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="experimentalLoopsLabel">Loops panel — scheduled conversations (experimental)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch" id="setting-experimental-loops"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="experimentalLoopsHint">Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab. Off by default.</span>
           </div>
         </div>
       </div>
@@ -1315,7 +1389,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lineMissingCredentials: 'Direct mode requires LINE access token and channel secret',
       lineStarted: 'LINE bridge started. Local webhook: ',
       lineFailed: 'LINE connection failed',
-      boardBtnTitle: 'Task board (experimental)',
+      boardBtnTitle: 'Loops — scheduled conversations (experimental)',
+      loopsPanelTitle: 'Loops · Scheduled',
+      loopsEmpty: 'No scheduled conversations',
       usageBtnTitle: 'AI usage water-level (/usage)',
       boardPanelTitle: 'Task Board · Exchange',
       boardAdd: '+ Task',
@@ -1332,6 +1408,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       boardUnassigned: 'unassigned',
       experimentalBoardLabel: 'Task board / exchange (experimental)',
       experimentalBoardHint: 'Right-side panel of task cards; agents can claim/update via [[SF:TASK:...]] markers. Off by default.',
+      experimentalLoopsLabel: 'Loops panel — scheduled conversations (experimental)',
+      experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       releaseNotesTitle: "What's new",
       releaseNotesGotIt: 'Got it',
     },
@@ -1476,7 +1554,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lineMissingCredentials: '直連模式需要 LINE access token 和 channel secret',
       lineStarted: 'LINE bridge 已啟動。本機 webhook: ',
       lineFailed: 'LINE 連線失敗',
-      boardBtnTitle: '任務看板（實驗性）',
+      boardBtnTitle: 'Loops — 排程對話收納（實驗性）',
+      loopsPanelTitle: 'Loops · 排程對話',
+      loopsEmpty: '目前沒有排程中的對話',
       usageBtnTitle: 'AI 用量水位（/usage）',
       boardPanelTitle: '任務看板 · 交換區',
       boardAdd: '+ 任務',
@@ -1493,6 +1573,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       boardUnassigned: '未指派',
       experimentalBoardLabel: '任務看板 / 交換區（實驗性）',
       experimentalBoardHint: '右側看板顯示任務卡片，agent 可用 [[SF:TASK:...]] marker 認領/更新。預設關閉。',
+      experimentalLoopsLabel: 'Loops 排程對話面板（實驗性）',
+      experimentalLoopsHint: '右側面板收納「有排程的對話」：正在跑 /loop、建了 cron routine、或被 scheduler 啟動的頁籤——顯示下次喚醒倒數與各自在等什麼。預設關閉。',
       releaseNotesTitle: '本次更新',
       releaseNotesGotIt: '知道了',
     }
@@ -2710,80 +2792,165 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }).join('');
   }
 
-  // The right panel is now the live Agents activity feed (auto-generated from
-  // detection), not the manual task board. Always available; renders from the
-  // per-tab detected status pushed by the server.
+  // The right panel collects conversations that have an active schedule —
+  // a /loop (pending ScheduleWakeup), a cron routine, or a tab launched by a
+  // scheduler. Experimental: hidden unless settings.experimental_loops is on.
+  function loopsEnabled() {
+    return !!(config.settings && config.settings.experimental_loops);
+  }
   function refreshBoard() {
     try {
+      const on = loopsEnabled();
       const btn = document.getElementById('btn-board');
-      if (btn) btn.style.display = '';
-      renderFeed();
+      if (btn) btn.style.display = on ? '' : 'none';
+      const panel = document.getElementById('board-panel');
+      if (!on && panel) panel.classList.add('collapsed');
+      if (on) {
+        renderLoops();
+        if (panel && !panel.classList.contains('collapsed')) loadSchedules();
+      }
       updateResizerVisibility();
     } catch (_) {}
   }
 
-  // Live agent feed: one row per agent that is doing something right now
-  // (working / decision / stuck), plus recently-finished ones that fade out
-  // after DONE_TTL. Pure reflection of detected state — no manual cards, no
-  // owner matching, no agent self-report.
-  // Only agents that are doing something now. 'done' is intentionally hidden
-  // (finished agents drop off immediately — no done clutter).
-  const FEED_RANK = { decision: 0, stuck: 1, working: 2 };
-  function renderFeed() {
+  // Loops panel: one row per conversation with a detected schedule. Pure
+  // reflection of transcript markers (ScheduleWakeup / CronCreate) plus the
+  // tab's launch source — no manual cards, no agent self-report. A sleeping
+  // loop carries an absolute next-wake epoch (loop.next_ts, seconds) so the
+  // countdown ticks client-side without the server re-pushing every second.
+  const SCHED_SOURCES = { scheduler: 1, scheduled: 1, auto: 1 };
+  function fmtCountdown(ms) {
+    if (ms <= 0) return '即將喚醒';
+    const s = Math.round(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60);
+    return h + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
+  }
+
+  // Managed schedules = the user's own LaunchAgents (cron-like jobs). Fetched
+  // from the Python side; each can be flipped on/off (launchctl) right here.
+  let _schedules = [];
+  let _schedulesLoaded = false;
+  async function loadSchedules() {
+    if (!loopsEnabled() || !window.pywebview || !pywebview.api) return;
     try {
+      const r = JSON.parse(await pywebview.api.schedules_list());
+      _schedules = r.schedules || [];
+      _schedulesLoaded = true;
+      renderLoops();
+    } catch (_) {}
+  }
+  async function toggleSchedule(id) {
+    const it = _schedules.find(s => s.id === id);
+    if (!it) return;
+    const want = !it.enabled;
+    it.enabled = want; renderLoops();              // optimistic
+    try {
+      const r = JSON.parse(await pywebview.api.schedule_set_enabled(id, want));
+      if (!r || !r.success) { it.enabled = !want; renderLoops(); }
+    } catch (_) { it.enabled = !want; renderLoops(); }
+  }
+  // Edit shortcut: open an AI tab seeded with this schedule's paths, then
+  // focus it. The backend creates/sends; we wait for the tab to register.
+  async function editSchedule(id) {
+    let r;
+    try { r = JSON.parse(await pywebview.api.schedule_edit(id)); } catch (_) { return; }
+    if (!r || !r.success || !r.sid) return;
+    for (let i = 0; i < 25 && !sessions[r.sid]; i++) {
+      await new Promise(res => setTimeout(res, 100));
+    }
+    if (sessions[r.sid]) switchTab(r.sid);
+  }
+
+  function renderLoops() {
+    try {
+      if (!loopsEnabled()) return;
       const list = document.getElementById('board-list');
       if (!list) return;
       const now = Date.now();
+
+      // ── In-session loops (pending ScheduleWakeup) + scheduler-launched tabs ──
       const rows = [];
-      const c = { working: 0, decision: 0, stuck: 0 };
+      const c = { loop: 0, cron: 0, sched: 0 };
       const order = (typeof sessionOrder !== 'undefined' && sessionOrder.length)
         ? sessionOrder : Object.keys(sessions);
       for (const sid of order) {
         const s = sessions[sid];
         if (!s) continue;
-        const ss = s._serverStatus;
-        const fresh = ss && (now - (s._serverStatusTs || 0) < 60000);
-        const state = fresh ? ss.state : '';
-        if (!(state in FEED_RANK)) continue;       // skip done / idle / unknown
-        c[state]++;
-        const act = (ss && ss.summary && ss.summary !== state) ? ss.summary : '';
-        let task = (ss && ss.task) ? ss.task : '';
-        if (task && (task === act || task.startsWith('[Image'))) task = '';
-        const el = (ss && ss.elapsed) || 0;
-        const dur = el >= 5 ? (el >= 60 ? Math.floor(el / 60) + 'm' : el + 's') : '';
-        rows.push({ sid, label: s.label || sid, state, act, task, dur });
+        const ss = s._serverStatus || {};
+        const loop = ss.loop;
+        const srcSched = SCHED_SOURCES[ss.lifecycle_source];
+        if (!loop && !srcSched) continue;
+        let kind, status, reason = '', next_ts = null, rounds = 0;
+        if (loop) {
+          kind = loop.kind; status = loop.status; reason = loop.reason || '';
+          next_ts = loop.next_ts || null; rounds = loop.rounds || 0;
+        } else {
+          kind = 'sched'; status = 'tab';
+        }
+        c[kind]++;
+        rows.push({ sid, label: s.label || sid, kind, status, reason, next_ts, rounds });
       }
-      rows.sort((a, b) => (FEED_RANK[a.state] - FEED_RANK[b.state]) ||
-                          String(a.label).localeCompare(String(b.label)));
-      const STATE_TAG = { working: '', decision: '等決策', stuck: '卡住' };
-      const html = rows.length ? rows.map(r =>
-        `<div class="feed-row st-${r.state}" data-sid="${r.sid}">` +
-        `<span class="feed-dot"></span>` +
-        `<div class="feed-body">` +
-        `<div class="feed-label">${esc(r.label)}` +
-        (STATE_TAG[r.state] ? `<span class="feed-tag">${STATE_TAG[r.state]}</span>` : '') +
-        (r.dur ? `<span class="feed-dur">${r.dur}</span>` : '') +
-        `</div>` +
-        (r.act ? `<div class="feed-act">⏺ ${esc(r.act)}</div>` : '') +
-        (r.task ? `<div class="feed-task">${esc(r.task)}</div>` : '') +
-        `</div></div>`).join('')
-        : `<div class="feed-empty">沒有 agent 正在工作</div>`;
-      // Rebuilding innerHTML 1.4×/s forces style/layout work even when nothing
-      // changed — skip when the rendered markup is identical (the common case
-      // for an idle fleet).
-      if (html !== renderFeed._html) { list.innerHTML = html; renderFeed._html = html; }
+      const RANK = { running: 0, sleeping: 1, scheduled: 2, tab: 3 };
+      rows.sort((a, b) => (RANK[a.status] - RANK[b.status]) ||
+        ((a.next_ts || Infinity) - (b.next_ts || Infinity)) ||
+        String(a.label).localeCompare(String(b.label)));
+      const KIND_TAG = { loop: 'LOOP', cron: 'CRON', sched: '排程啟動' };
+      const loopHtml = rows.map(r => {
+        const cd = (r.kind === 'loop' && r.next_ts)
+          ? (r.status === 'running' ? '執行中' : '下次 ' + fmtCountdown(r.next_ts * 1000 - now))
+          : (r.kind === 'cron' ? '雲端排程' : '');
+        return `<div class="loop-row k-${r.kind} st-${r.status}" data-sid="${r.sid}">` +
+          `<span class="loop-dot"></span>` +
+          `<div class="loop-body">` +
+          `<div class="loop-label">${esc(r.label)}` +
+          `<span class="loop-tag">${KIND_TAG[r.kind]}</span>` +
+          (cd ? `<span class="loop-cd">${esc(cd)}</span>` : '') +
+          `</div>` +
+          (r.reason ? `<div class="loop-reason">${esc(r.reason)}</div>` : '') +
+          (r.kind === 'loop' && r.rounds ? `<div class="loop-meta">已跑 ${r.rounds} 輪</div>` : '') +
+          `</div></div>`;
+      }).join('');
+
+      // ── Managed schedules (LaunchAgents) ──
+      const onCount = _schedules.filter(s => s.enabled).length;
+      const schedHtml = _schedules.map((s, i) =>
+        `<div class="sched-row${s.enabled ? '' : ' off'}">` +
+          `<span class="sched-num">${i + 1}</span>` +
+          `<div class="sched-info">` +
+            `<div class="sched-title">${esc(s.title)}<span class="sched-freq">${esc(s.freq)}</span></div>` +
+            (s.cmd ? `<div class="sched-cmd" title="${esc(s.cmd)}">${esc(s.cmd)}</div>` : '') +
+          `</div>` +
+          `<button class="sched-edit" data-id="${esc(s.id)}" title="開分頁請 AI 調整這個排程">編輯</button>` +
+          `<button class="toggle-switch sched-toggle${s.enabled ? ' on' : ''}" ` +
+            `data-id="${esc(s.id)}" title="${s.enabled ? '點擊停用' : '點擊啟用'}"></button>` +
+        `</div>`).join('');
+
+      const html =
+        `<div class="loop-group">排程<span class="loop-group-n">${onCount}/${_schedules.length} 開</span></div>` +
+        (schedHtml || `<div class="feed-empty">${_schedulesLoaded ? '沒有偵測到排程' : '載入中…'}</div>`) +
+        `<div class="loop-group">進行中的 Loop${rows.length ? `<span class="loop-group-n">${rows.length}</span>` : ''}</div>` +
+        (loopHtml || `<div class="feed-empty">${esc(t('loopsEmpty'))}</div>`);
+
+      if (html !== renderLoops._html) { list.innerHTML = html; renderLoops._html = html; }
       const ov = document.getElementById('feed-overview');
       if (ov) {
         const parts = [];
-        if (c.working) parts.push(`<span class="ov-working">▶ ${c.working}</span>`);
-        if (c.decision) parts.push(`<span class="ov-decision">◆ ${c.decision}</span>`);
-        if (c.stuck) parts.push(`<span class="ov-stuck">▲ ${c.stuck}</span>`);
+        if (_schedules.length) parts.push(`<span class="ov-sched">⏰ ${onCount}/${_schedules.length}</span>`);
+        if (c.loop) parts.push(`<span class="ov-working">🔁 ${c.loop}</span>`);
         const ovHtml = parts.join(' · ');
-        if (ovHtml !== renderFeed._ovHtml) { ov.innerHTML = ovHtml; renderFeed._ovHtml = ovHtml; }
+        if (ovHtml !== renderLoops._ovHtml) { ov.innerHTML = ovHtml; renderLoops._ovHtml = ovHtml; }
       }
-    } catch (e) { /* never let the feed break the UI */ }
+    } catch (e) { /* never let the panel break the UI */ }
   }
-  setInterval(renderFeed, 700);
+  setInterval(renderLoops, 700);
+  // Refresh the LaunchAgent on/off state while the panel is open.
+  setInterval(() => {
+    const panel = document.getElementById('board-panel');
+    if (loopsEnabled() && panel && !panel.classList.contains('collapsed')) loadSchedules();
+  }, 5000);
 
   document.getElementById('btn-board').addEventListener('click', () => {
     const panel = document.getElementById('board-panel');
@@ -2856,9 +3023,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   setupResizer('board-resizer', 'board-panel', '--board-w', 'board_width', 'right', 180, 560);
   updateResizerVisibility();
 
-  // Click an agent feed row to jump to that tab.
+  // Schedule: edit button opens an AI tab; toggle flips on/off. Loop row jumps tab.
   document.getElementById('board-list')?.addEventListener('click', (e) => {
-    const row = e.target.closest('.feed-row');
+    const ed = e.target.closest('.sched-edit');
+    if (ed && ed.dataset.id) { editSchedule(ed.dataset.id); return; }
+    const tog = e.target.closest('.sched-toggle');
+    if (tog && tog.dataset.id) { toggleSchedule(tog.dataset.id); return; }
+    const row = e.target.closest('.loop-row');
     if (row && row.dataset.sid) switchTab(row.dataset.sid);
   });
 
@@ -3991,6 +4162,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-experimental-board').classList.toggle(
       'on', s.experimental_board === true,
     );
+    document.getElementById('setting-experimental-loops').classList.toggle(
+      'on', s.experimental_loops === true,
+    );
+    refreshBoard();
     syncIdleReaperSettings();
     syncSettingsBridge();
     syncSettingsLineBridge();
@@ -4033,6 +4208,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       this.classList.toggle('on');
       config.settings = config.settings || {};
       config.settings.experimental_board = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+      refreshBoard();
+    });
+
+  document.getElementById('setting-experimental-loops')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.experimental_loops = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
       refreshBoard();
     });

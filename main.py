@@ -17,6 +17,7 @@ import importlib
 import json
 import os
 import platform
+import plistlib
 import re
 import shlex
 import shutil
@@ -168,7 +169,8 @@ DEFAULT_CONFIG = {
         "fontSize": 14,
         "language": "en",
         "master_turn_preamble_enabled": True,
-        "experimental_board": False
+        "experimental_board": False,
+        "experimental_loops": False
     },
     "idle_reaper": {
         "enabled": False,
@@ -1796,7 +1798,10 @@ class Api:
             bridge_active = bool(self.bridge and getattr(self.bridge, "active", False))
             if not bridge_active:
                 compact = " | ".join(line for line in lines if line.strip())
-                target.write(compact + "\r", user_activity=False)
+                # 用 bracketed-paste + 分離 Enter 的可靠提交（_send_text_to_session），
+                # 取代 naive write(text+"\r")——後者在 TUI（總控 mid-turn / 輸入殘留）
+                # 會卡在輸入框沒送出（Howard 2026-06-27 實際踩到）。
+                self._send_text_to_session(target, compact, submit=True)
             self._bridge_send_handoff(text)
         except Exception as e:
             _dlog("handoff", f"write failed: {e}")
@@ -2297,7 +2302,8 @@ class Api:
                                           "summary": st.get("summary"),
                                           "task": st.get("task", ""),
                                           "elapsed": st.get("elapsed", 0),
-                                          "activity": st.get("activity") or {}}
+                                          "activity": st.get("activity") or {},
+                                          "loop": st.get("loop")}
                                 cache[sid] = {
                                     "out_ts": out_ts,
                                     "computed_at": now,
@@ -2310,6 +2316,8 @@ class Api:
                             hk = self._hook_events.get(sid)
                             if hk and now - hk["ts"] <= self._HOOK_TTL:
                                 result = self._apply_hook_state(result, hk, now)
+                            # 排程面板用：標出被 scheduler/auto 啟動的頁籤
+                            result["lifecycle_source"] = getattr(s, "_lifecycle_source", "")
                             out[sid] = result
                         except Exception:
                             out[sid] = {"state": "unknown", "dot": "",
@@ -2371,6 +2379,197 @@ class Api:
     def board_remove(self, task_id: str) -> str:
         ok = board.remove_task(task_id)
         return json.dumps({"success": ok})
+
+    # ── Scheduled jobs (LaunchAgents) for the Loops panel ──────────────
+    # Surfaces the user's own recurring jobs so the Loops panel can show each
+    # one's frequency and flip it on/off. Only the user's own label prefixes
+    # are listed/togglable — never arbitrary system agents.
+    _SCHED_PREFIXES = ("com.howard.", "com.neux.", "com.claude.", "com.h2ocloud.")
+    _SCHED_TITLES = {
+        "com.howard.scrum-morning": "Scrum 早排卡",
+        "com.howard.scrum-daily": "Scrum 日報推送",
+        "com.howard.scrum-evening": "Scrum 晚收尾",
+        "com.howard.plaud-trigger": "Plaud 觸發轉錄",
+        "com.howard.plaud-daily": "Plaud 每日摘要",
+        "com.neux.tech-digest": "科技日報",
+        "com.neux.tmux-groom": "tmux 整理",
+        "com.neux.femas.clockin": "FEMAS 上班打卡",
+        "com.neux.femas.clockout": "FEMAS 下班打卡",
+        "com.claude.telegram-channel": "Telegram Channel",
+        "com.h2ocloud.telegram-terminal-bot": "Telegram 終端 Bot",
+    }
+
+    @staticmethod
+    def _launch_agents_dir() -> Path:
+        return Path.home() / "Library" / "LaunchAgents"
+
+    @staticmethod
+    def _sched_freq(p: dict) -> str:
+        """Human-readable cadence from a LaunchAgent plist."""
+        if "StartInterval" in p:
+            s = int(p["StartInterval"])
+            if s >= 3600:
+                return f"每 {s // 3600}h"
+            if s >= 60:
+                return f"每 {s // 60}m"
+            return f"每 {s}s"
+        sci = p.get("StartCalendarInterval")
+        if sci:
+            items = sci if isinstance(sci, list) else [sci]
+            wd = ["日", "一", "二", "三", "四", "五", "六"]
+            out = []
+            for it in items:
+                h, m = it.get("Hour"), it.get("Minute")
+                t = (f"{h:02d}:{m:02d}" if h is not None and m is not None
+                     else (f":{m:02d}" if m is not None else ""))
+                pre = ""
+                if it.get("Weekday") is not None:
+                    pre = f"週{wd[it['Weekday'] % 7]} "
+                out.append((pre + t).strip())
+            return "每天 " + " · ".join(out)
+        if p.get("RunAtLoad"):
+            return "登入常駐"
+        return "—"
+
+    def _sched_disabled_set(self):
+        """Persistently-disabled labels from launchctl's override DB
+        (lines like `"label" => disabled`)."""
+        out = set()
+        try:
+            r = subprocess.run(
+                ["launchctl", "print-disabled", f"gui/{os.getuid()}"],
+                capture_output=True, text=True, timeout=5)
+            for ln in r.stdout.splitlines():
+                if "=> disabled" in ln and '"' in ln:
+                    out.add(ln.split('"')[1])
+        except Exception:
+            pass
+        return out
+
+    def schedules_list(self) -> str:
+        """List the user's own LaunchAgents: id, title, frequency, command,
+        enabled. Drives the Loops panel's schedule section."""
+        try:
+            disabled = self._sched_disabled_set()
+            items = []
+            for fp in sorted(self._launch_agents_dir().glob("*.plist")):
+                if not fp.stem.startswith(self._SCHED_PREFIXES):
+                    continue
+                try:
+                    with open(fp, "rb") as f:
+                        p = plistlib.load(f)
+                except Exception:
+                    continue
+                lbl = p.get("Label", fp.stem)
+                prog = p.get("ProgramArguments") or (
+                    [p["Program"]] if p.get("Program") else [])
+                items.append({
+                    "id": lbl,
+                    "title": self._SCHED_TITLES.get(lbl, lbl.split(".")[-1]),
+                    "freq": self._sched_freq(p),
+                    "cmd": " ".join(str(x) for x in prog),
+                    "enabled": (lbl not in disabled) and not p.get("Disabled", False),
+                })
+            return json.dumps({"schedules": items})
+        except Exception as e:
+            return json.dumps({"schedules": [], "error": str(e)})
+
+    def schedule_set_enabled(self, label: str, enabled) -> str:
+        """Flip a user LaunchAgent on/off via launchctl. Guarded: the label
+        must be one of the user's own agents that exists on disk."""
+        try:
+            if isinstance(enabled, str):
+                enabled = enabled.lower() in ("1", "true", "yes", "on")
+            fp = self._launch_agents_dir() / f"{label}.plist"
+            if not label.startswith(self._SCHED_PREFIXES) or not fp.exists():
+                return json.dumps({"success": False, "message": "unknown schedule"})
+            dom = f"gui/{os.getuid()}"
+            if enabled:
+                subprocess.run(["launchctl", "enable", f"{dom}/{label}"],
+                               capture_output=True, text=True, timeout=10)
+                subprocess.run(["launchctl", "bootstrap", dom, str(fp)],
+                               capture_output=True, text=True, timeout=10)
+            else:
+                subprocess.run(["launchctl", "bootout", f"{dom}/{label}"],
+                               capture_output=True, text=True, timeout=10)
+                subprocess.run(["launchctl", "disable", f"{dom}/{label}"],
+                               capture_output=True, text=True, timeout=10)
+            return json.dumps({"success": True, "enabled": bool(enabled)})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def _default_ai_cmd(self) -> str:
+        """The AI CLI the user is actually using — the most recently active
+        claude/codex session's command — so an edit tab matches their tool
+        instead of always defaulting to Claude. Falls back to a Claude preset."""
+        best, best_ts = None, -1.0
+        for s in self.sessions.values():
+            cmd = getattr(s, "cmd", "")
+            if not self._session_is_ai(cmd):
+                continue
+            ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
+            if ts >= best_ts:        # ties → later-created session (dict order) wins
+                best, best_ts = cmd, ts
+        if best:
+            return best
+        for pr in (load_config().get("presets") or []):
+            cmd = str(pr.get("cmd", "")).strip()
+            head = cmd.split(" ", 1)[0] if cmd else ""
+            if head == "claude" or head.endswith("/claude"):
+                return cmd
+        return "claude --permission-mode bypassPermissions --dangerously-skip-permissions"
+
+    @staticmethod
+    def _schedule_script_path(prog) -> str:
+        exts = (".sh", ".py", ".js", ".mjs", ".ts", ".exp", ".rb", ".zsh", ".bash")
+        for a in prog:
+            if str(a).endswith(exts):
+                return str(a)
+        return ""
+
+    def schedule_edit(self, label: str) -> str:
+        """Open (or focus) an AI tab seeded with this schedule's paths so the
+        user can immediately ask the AI to adjust it. Returns the tab sid."""
+        try:
+            fp = self._launch_agents_dir() / f"{label}.plist"
+            if not label.startswith(self._SCHED_PREFIXES) or not fp.exists():
+                return json.dumps({"success": False, "message": "unknown schedule"})
+            with open(fp, "rb") as f:
+                p = plistlib.load(f)
+            prog = p.get("ProgramArguments") or ([p["Program"]] if p.get("Program") else [])
+            script = self._schedule_script_path(prog)
+            title = self._SCHED_TITLES.get(label, label.split(".")[-1])
+            freq = self._sched_freq(p)
+            tab_label = f"編輯:{title}"
+            prompt = (
+                f"我想調整這個排程：{title}（{label}），目前頻率：{freq}。\n"
+                f"- LaunchAgent plist：{fp}\n"
+                + (f"- 執行腳本：{script}\n" if script else "")
+                + f"- 完整指令：{' '.join(str(x) for x in prog)}\n\n"
+                "請先讀上面的檔案，用幾句話跟我說它現在做什麼、什麼時候跑，然後等我說要改什麼。"
+                f"改完 plist 記得提醒我重新載入（launchctl bootout/bootstrap gui/{os.getuid()}）才生效。"
+            )
+            sid, session = self._find_session_by_label(tab_label)
+            created = False
+            if not session:
+                sid = self.new_session(self._default_ai_cmd(), 200, 50, source="manual")
+                self.rename_session(sid, tab_label)
+                session = self.sessions.get(sid)
+                created = True
+            if not session:
+                return json.dumps({"success": False, "message": "no session"})
+            session._startup_trust_pending = False
+            if created:
+                # Fresh tab: let the AI CLI finish booting before pasting.
+                threading.Timer(
+                    2.0,
+                    lambda s=session, t=prompt: self._send_text_to_session(s, t, submit=True),
+                ).start()
+            else:
+                self._send_text_to_session(session, prompt, submit=True)
+            return json.dumps({"success": True, "sid": sid, "created": created})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
 
     def get_saved_bridge(self) -> str:
         """Return saved bridge config (for restoring on startup)."""

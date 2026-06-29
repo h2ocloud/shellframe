@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "description": "Dynamic output filter rules for ShellFrame TG Bridge. Update this file to improve filtering without upgrading the client.",
   "ansi_patterns": [
     "\\u001b\\[[\\d;?]*[A-Za-z~]",
@@ -63,7 +63,8 @@
     "[>0q", "[>4m", "[<u",
     "checking for updates", "checking updates",
     "understood.", "summarize recent commits",
-    "switch models or reasoning"
+    "switch models or reasoning",
+    "explain this codebase"
   ],
   "skip_line_chars": "›•\\/⎿M",
   "decoration_chars": "─━═│║╭╮╰╯┌┐└┘ |-_"

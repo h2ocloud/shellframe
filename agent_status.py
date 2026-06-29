@@ -389,6 +389,93 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300):
     return fmt, evs, None
 
 
+# ────────────────────────── 排程／loop 偵測 ──────────────────────────
+# 一個對話「有排程」的訊號全部來自 transcript 裡的 harness tool_use：
+#   ScheduleWakeup → /loop（自我排程喚醒），帶 delaySeconds / reason
+#   CronCreate / CronDelete → 雲端 routine（設一次長期有效）
+# 純讀檔尾推斷，不靠 agent 自報，與狀態機完全解耦。
+_SCHED_TOOLS = ("ScheduleWakeup", "CronCreate", "CronDelete")
+# 上一次喚醒已觸發、但尚未排下一次的 loop 視為「執行中」的寬限；超過就當作
+# 已結束（避免被中斷／停掉的 loop 永遠掛在面板上）。
+LOOP_RUNNING_GRACE = 1800
+
+
+def _sched_blocks(o):
+    """從一筆 claude assistant 紀錄裡，yield 所有排程相關 tool_use 的
+    (name, input, ts)。一個 turn 可能同時呼叫別的工具，全部掃不只看最後一個。"""
+    if o.get("type") != "assistant":
+        return
+    m = o.get("message") if isinstance(o.get("message"), dict) else {}
+    ts = _parse_iso(o.get("timestamp"))
+    for c in (m.get("content") or []):
+        if (isinstance(c, dict) and c.get("type") == "tool_use"
+                and c.get("name") in _SCHED_TOOLS):
+            yield c.get("name"), (c.get("input") or {}), ts
+
+
+def detect_schedules(path, now, tail_bytes=262144, max_records=800):
+    """掃 claude transcript 檔尾，回傳該對話的 loop/cron 排程摘要，沒有則 None。
+        {kind: 'loop'|'cron', status: 'sleeping'|'running'|'scheduled',
+         next_ts: epoch|None, reason: str, rounds: int, crons: [...]}"""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > tail_bytes:
+                f.seek(size - tail_bytes)
+                f.readline()
+            raw = f.read()
+        with open(path, "r", errors="replace") as fh:
+            head = fh.readline()
+    except Exception:
+        return None
+    if _detect_format(head) != "claude":   # codex 沒有 ScheduleWakeup
+        return None
+    last_wake = None
+    wake_count = 0
+    crons = {}            # key -> {desc, schedule}
+    deleted = set()
+    for line in raw.decode("utf-8", errors="replace").splitlines()[-max_records:]:
+        try:
+            o = json.loads(line)
+        except Exception:
+            continue
+        for name, inp, ts in _sched_blocks(o):
+            if name == "ScheduleWakeup":
+                wake_count += 1
+                try:
+                    delay = float(inp.get("delaySeconds"))
+                except (TypeError, ValueError):
+                    delay = None
+                last_wake = {"ts": ts, "delay": delay,
+                             "reason": str(inp.get("reason") or "").strip()[:90]}
+            elif name == "CronCreate":
+                key = str(inp.get("name") or inp.get("schedule") or len(crons))
+                crons[key] = {
+                    "desc": str(inp.get("name") or inp.get("prompt")
+                                or "cron").strip()[:60],
+                    "schedule": str(inp.get("schedule")
+                                    or inp.get("cronExpression") or "").strip()[:40]}
+            elif name == "CronDelete":
+                deleted.add(str(inp.get("name") or inp.get("id")
+                                or inp.get("cronId") or ""))
+    active_crons = [v for k, v in crons.items() if k not in deleted]
+    loop = None
+    if last_wake and last_wake.get("ts") and last_wake.get("delay") is not None:
+        next_ts = last_wake["ts"] + last_wake["delay"]
+        if next_ts > now:
+            loop = {"kind": "loop", "status": "sleeping"}
+        elif (now - next_ts) < LOOP_RUNNING_GRACE:
+            loop = {"kind": "loop", "status": "running"}
+        if loop is not None:
+            loop.update(next_ts=next_ts, reason=last_wake["reason"], rounds=wake_count)
+    if loop is None and active_crons:
+        loop = {"kind": "cron", "status": "scheduled", "next_ts": None,
+                "reason": active_crons[0]["desc"], "rounds": 0}
+    if loop is not None:
+        loop["crons"] = active_crons
+    return loop
+
+
 # ────────────────────────── 狀態機 ──────────────────────────
 
 def _detail(evs):
@@ -604,7 +691,11 @@ class StatusTracker:
                         "summary": (act.get("verb") if act else "") or state,
                         "action": "", "narration": "", "task": "",
                         "elapsed": int(now - since), "why": "screen-only: " + why,
-                        "transcript": None}
+                        "transcript": None, "loop": None}
+            try:
+                loop = detect_schedules(path, now)
+            except Exception:
+                loop = None
             fmt, evs, err = _read_tail_events(path)
             if err:
                 state, act, why = compute_state([], now=now, screen_tail=screen_tail)
@@ -614,7 +705,7 @@ class StatusTracker:
                         "summary": (act.get("verb") if act else "") or state,
                         "action": "", "narration": "", "task": "",
                         "elapsed": int(now - since), "why": "screen-only(" + err + ")",
-                        "transcript": path}
+                        "transcript": path, "loop": loop}
             state, act, why = compute_state(evs, now=now, screen_tail=screen_tail)
             state = self._debounce(sid, state, now)
             action, task, narration = _detail(evs)
@@ -627,10 +718,10 @@ class StatusTracker:
             return {"state": state, "dot": DOT.get(state, ""), "activity": act,
                     "summary": summary, "action": action, "narration": narration,
                     "task": task, "elapsed": int(now - since), "why": why,
-                    "transcript": os.path.basename(path), "fmt": fmt}
+                    "transcript": os.path.basename(path), "fmt": fmt, "loop": loop}
         except Exception as e:
             return {"state": "unknown", "dot": "", "activity": {},
-                    "summary": "", "why": f"exc:{e}", "transcript": None}
+                    "summary": "", "why": f"exc:{e}", "transcript": None, "loop": None}
 
 
 # 模組自測：python3 agent_status.py
