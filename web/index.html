@@ -651,7 +651,6 @@
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
   <button id="usage-brief" title="AI 用量水位 — 點擊看細節" style="display:none"></button>
-  <button class="tab-action" id="btn-usage" data-i18n-title="usageBtnTitle" title="AI 用量水位 (/usage)" style="font-size:14px">📊</button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
@@ -1371,7 +1370,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       boardBtnTitle: 'Loops — scheduled conversations (experimental)',
       loopsPanelTitle: 'Loops · Scheduled',
       loopsEmpty: 'No scheduled conversations',
-      usageBtnTitle: 'AI usage water-level (/usage)',
       experimentalLoopsLabel: 'Loops panel — scheduled conversations (experimental)',
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       releaseNotesTitle: "What's new",
@@ -1521,7 +1519,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       boardBtnTitle: 'Loops — 排程對話收納（實驗性）',
       loopsPanelTitle: 'Loops · 排程對話',
       loopsEmpty: '目前沒有排程中的對話',
-      usageBtnTitle: 'AI 用量水位（/usage）',
       experimentalLoopsLabel: 'Loops 排程對話面板（實驗性）',
       experimentalLoopsHint: '右側面板收納「有排程的對話」：正在跑 /loop、建了 cron routine、或被 scheduler 啟動的頁籤——顯示下次喚醒倒數與各自在等什麼。預設關閉。',
       releaseNotesTitle: '本次更新',
@@ -2864,13 +2861,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!panel.classList.contains('collapsed')) refreshBoard();
     updateResizerVisibility();
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
-  });
-
-  // Toolbar 📊 — show the active tab's AI usage water-level (same as /usage),
-  // without clearing the tab's composer.
-  document.getElementById('btn-usage').addEventListener('click', () => {
-    if (activeId) runTabUsage(activeId, false);
-    else showUsageModal('沒有作用中的分頁。');
   });
 
   // ── Inline usage water-level pill ──
