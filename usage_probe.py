@@ -313,20 +313,46 @@ def _fetch_codex_openclaw():
     return out
 
 
+def probe_data(cmd: str) -> dict:
+    """Structured usage water-level for the inline top-bar indicator.
+
+    Same fetch path as probe(), but returns machine-readable fields the web UI
+    can render as a compact pill (used %, reset time) instead of a text block.
+    Percentages are *utilisation* (how much is used), matching the /usage modal.
+    """
+    ai = detect_ai(cmd)
+    if ai is None:
+        return {"ai": None, "error": "not_ai"}
+
+    data = _fetch_codex() if ai == "codex" else _fetch_claude()
+    account = (_codex_account(data.get("_plan") if data else None)
+               if ai == "codex" else _claude_account())
+
+    out = {"ai": ai, "account": account, "five_hr": None, "week": None,
+           "snapshot": None, "error": None}
+    if not data:
+        out["error"] = "no_data"
+        return out
+    if "5hr" in data:
+        pct, reset = data["5hr"]
+        out["five_hr"] = {"pct": pct, "reset": reset}
+    if "week" in data:
+        pct, reset = data["week"]
+        out["week"] = {"pct": pct, "reset": reset}
+    if data.get("_ts"):
+        out["snapshot"] = _fmt_epoch(data["_ts"])
+    return out
+
+
 def probe(cmd: str) -> str:
     """Detect provider from cmd, fetch usage, return a friendly text block."""
-    ai = detect_ai(cmd)
+    d = probe_data(cmd)
+    ai = d.get("ai")
     if ai is None:
         return "此 tab 不是 claude / codex，無法查用量。"
 
-    data = _fetch_codex() if ai == "codex" else _fetch_claude()
-
-    if ai == "codex":
-        account = _codex_account(data.get("_plan") if data else None)
-    else:
-        account = _claude_account()
-
-    if not data:
+    account = d.get("account")
+    if d.get("error") == "no_data":
         lines = [f"AI 水位 {ai}"]
         if account:
             lines.append(f"帳號 {account}")
@@ -336,12 +362,12 @@ def probe(cmd: str) -> str:
     lines = [f"AI 水位 {ai}"]
     if account:
         lines.append(f"帳號 {account}")
-    if "5hr" in data:
-        pct, reset = data["5hr"]
-        lines.append(f"1. 5hr：{pct}%｜重置 {reset}")
-    if "week" in data:
-        pct, reset = data["week"]
-        lines.append(f"2. Week：{pct}%｜重置 {reset}")
-    if data.get("_ts"):
-        lines.append(f"快照 {_fmt_epoch(data['_ts'])}")
+    if d.get("five_hr"):
+        fh = d["five_hr"]
+        lines.append(f"1. 5hr：{fh['pct']}%｜重置 {fh['reset']}")
+    if d.get("week"):
+        wk = d["week"]
+        lines.append(f"2. Week：{wk['pct']}%｜重置 {wk['reset']}")
+    if d.get("snapshot"):
+        lines.append(f"快照 {d['snapshot']}")
     return "\n".join(lines)

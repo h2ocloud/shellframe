@@ -89,6 +89,22 @@
   .tab-spacer { flex: 1; -webkit-app-region: drag; }
   .tab-action { font-size: 18px; padding: 4px 10px; }
 
+  /* Inline AI usage water-level pill (top-bar) */
+  #usage-brief {
+    -webkit-app-region: no-drag; cursor: pointer; margin-left: 2px;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 3px 9px; border: 1px solid #292e42; border-radius: 6px;
+    background: none; font-size: 11px; font-variant-numeric: tabular-nums;
+    color: #787c99; line-height: 1.4; white-space: nowrap;
+  }
+  #usage-brief:hover { background: #292e42; }
+  #usage-brief .ub-seg { color: #9aa5ce; }
+  #usage-brief .ub-k { color: #565f89; margin-right: 3px; }
+  #usage-brief .ub-v.lvl-ok { color: #9ece6a; }
+  #usage-brief .ub-v.lvl-warn { color: #e0af68; }
+  #usage-brief .ub-v.lvl-hot { color: #f7768e; }
+  #usage-brief.stale { opacity: .5; }
+
   /* ── Image preview ── */
   #image-bar {
     display: none; align-items: center; gap: 6px;
@@ -485,40 +501,9 @@
   #board-header .bp-title {
     font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #565f89;
   }
-  #board-add-btn {
-    background: none; border: 1px solid #3b4261; color: #7aa2f7;
-    border-radius: 4px; font-size: 11px; cursor: pointer; padding: 1px 7px; line-height: 1.4;
-  }
-  #board-add-btn:hover { border-color: #7aa2f7; background: rgba(122,162,247,.1); }
   #board-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 8px; }
   #board-list::-webkit-scrollbar { width: 4px; }
   #board-list::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 2px; }
-  #board-empty { color: #565f89; font-size: 11px; padding: 12px; text-align: center; }
-  .bp-card {
-    background: #1a1b26; border: 1px solid #292e42; border-left: 3px solid #3b4261;
-    border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 12px;
-  }
-  .bp-card.st-in_progress { border-left-color: #7aa2f7; }
-  .bp-card.st-assigned { border-left-color: #e0af68; }
-  .bp-card.st-todo { border-left-color: #565f89; }
-  .bp-card.st-done { border-left-color: #9ece6a; opacity: .55; }
-  .bp-card .bp-card-title { color: #c0caf5; line-height: 1.35; word-break: break-word; }
-  .bp-card.st-done .bp-card-title { text-decoration: line-through; }
-  .bp-card-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; align-items: center; }
-  .bp-chip {
-    font-size: 9px; padding: 1px 6px; border-radius: 3px; line-height: 1.4;
-    border: 1px solid #3b4261; color: #787c99; white-space: nowrap;
-  }
-  .bp-chip.assignee { color: #bb9af7; border-color: #3b4261; }
-  .bp-chip.unassigned { color: #565f89; }
-  .bp-chip.diff-easy { color: #9ece6a; }
-  .bp-chip.diff-medium { color: #e0af68; }
-  .bp-chip.diff-hard { color: #f7768e; }
-  .bp-chip.status { color: #7dcfff; }
-  .bp-card-actions { margin-left: auto; display: flex; gap: 4px; }
-  .bp-act { background: none; border: none; color: #565f89; cursor: pointer; font-size: 11px; padding: 0 2px; }
-  .bp-act:hover { color: #c0caf5; }
-  .bp-notes { color: #787c99; font-size: 10px; margin-top: 4px; line-height: 1.35; word-break: break-word; }
 
   /* ── Live agent activity feed (right panel) ── */
   #feed-overview { font-size: 10px; color: #565f89; letter-spacing: .3px; margin-left: auto; }
@@ -665,6 +650,7 @@
   <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
+  <button id="usage-brief" title="AI 用量水位 — 點擊看細節" style="display:none"></button>
   <button class="tab-action" id="btn-usage" data-i18n-title="usageBtnTitle" title="AI 用量水位 (/usage)" style="font-size:14px">📊</button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
@@ -822,13 +808,6 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-master-preamble"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="masterTurnPreambleHint">Remind master tabs to consider delegation before each AI turn</span>
-          </div>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="experimentalBoardLabel">Task board / exchange (experimental)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-experimental-board"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="experimentalBoardHint">Right-side panel of task cards; agents can claim/update via [[SF:TASK:...]] markers. Off by default.</span>
           </div>
         </div>
         <div>
@@ -1393,21 +1372,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       loopsPanelTitle: 'Loops · Scheduled',
       loopsEmpty: 'No scheduled conversations',
       usageBtnTitle: 'AI usage water-level (/usage)',
-      boardPanelTitle: 'Task Board · Exchange',
-      boardAdd: '+ Task',
-      boardAddTitle: 'Add task',
-      boardEmpty: 'No tasks yet',
-      boardMarkDone: 'Mark done',
-      boardRemove: 'Remove',
-      boardPromptTitle: 'Task title:',
-      boardPromptDifficulty: 'Difficulty (easy / medium / hard):',
-      boardStTodo: 'todo',
-      boardStAssigned: 'assigned',
-      boardStInProgress: 'in progress',
-      boardStDone: 'done',
-      boardUnassigned: 'unassigned',
-      experimentalBoardLabel: 'Task board / exchange (experimental)',
-      experimentalBoardHint: 'Right-side panel of task cards; agents can claim/update via [[SF:TASK:...]] markers. Off by default.',
       experimentalLoopsLabel: 'Loops panel — scheduled conversations (experimental)',
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       releaseNotesTitle: "What's new",
@@ -1558,21 +1522,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       loopsPanelTitle: 'Loops · 排程對話',
       loopsEmpty: '目前沒有排程中的對話',
       usageBtnTitle: 'AI 用量水位（/usage）',
-      boardPanelTitle: '任務看板 · 交換區',
-      boardAdd: '+ 任務',
-      boardAddTitle: '新增任務',
-      boardEmpty: '尚無任務',
-      boardMarkDone: '標記完成',
-      boardRemove: '刪除',
-      boardPromptTitle: '任務標題：',
-      boardPromptDifficulty: '難度（easy / medium / hard）：',
-      boardStTodo: '待辦',
-      boardStAssigned: '已認領',
-      boardStInProgress: '進行中',
-      boardStDone: '完成',
-      boardUnassigned: '未指派',
-      experimentalBoardLabel: '任務看板 / 交換區（實驗性）',
-      experimentalBoardHint: '右側看板顯示任務卡片，agent 可用 [[SF:TASK:...]] marker 認領/更新。預設關閉。',
       experimentalLoopsLabel: 'Loops 排程對話面板（實驗性）',
       experimentalLoopsHint: '右側面板收納「有排程的對話」：正在跑 /loop、建了 cron routine、或被 scheduler 啟動的頁籤——顯示下次喚醒倒數與各自在等什麼。預設關閉。',
       releaseNotesTitle: '本次更新',
@@ -2352,6 +2301,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     renderTabs();
     updateImageBar();
+    try { if (window.refreshUsageBrief) window.refreshUsageBrief(); } catch (_) {}
     try {
       if (window.refreshPluginBadges) setTimeout(() => window.refreshPluginBadges(true), 650);
     } catch (_) {}
@@ -2752,46 +2702,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
 
-  // ── Task board panel (experimental) ──
-  const boardEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  let _boardEnabled = false;
-
-  function renderBoard(tasks) {
-    const list = document.getElementById('board-list');
-    if (!list) return;
-    if (!tasks || !tasks.length) {
-      list.innerHTML = `<div id="board-empty">${boardEsc(t('boardEmpty'))}</div>`;
-      return;
-    }
-    const statusLabel = {
-      todo: t('boardStTodo'), assigned: t('boardStAssigned'),
-      in_progress: t('boardStInProgress'), done: t('boardStDone'),
-    };
-    list.innerHTML = tasks.map(task => {
-      const st = task.status || 'todo';
-      const diff = task.difficulty || 'medium';
-      const assignee = task.assignee || 'unassigned';
-      const isUn = assignee === 'unassigned';
-      const assigneeLabel = isUn ? t('boardUnassigned') : assignee;
-      const notes = task.notes ? `<div class="bp-notes">${boardEsc(task.notes)}</div>` : '';
-      const doneBtn = st === 'done' ? '' : `<button class="bp-act" data-act="done" data-id="${boardEsc(task.id)}" title="${boardEsc(t('boardMarkDone'))}">✓</button>`;
-      return `<div class="bp-card st-${boardEsc(st)}">
-        <div class="bp-card-title">${boardEsc(task.title)}</div>
-        ${notes}
-        <div class="bp-card-meta">
-          <span class="bp-chip assignee ${isUn ? 'unassigned' : ''}">${boardEsc(assigneeLabel)}</span>
-          <span class="bp-chip status">${boardEsc(statusLabel[st] || st)}</span>
-          <span class="bp-chip diff-${boardEsc(diff)}">${boardEsc(diff)}</span>
-          <span class="bp-card-actions">
-            ${doneBtn}
-            <button class="bp-act" data-act="remove" data-id="${boardEsc(task.id)}" title="${boardEsc(t('boardRemove'))}">✕</button>
-          </span>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
   // The right panel collects conversations that have an active schedule —
   // a /loop (pending ScheduleWakeup), a cron routine, or a tab launched by a
   // scheduler. Experimental: hidden unless settings.experimental_loops is on.
@@ -2962,6 +2872,51 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (activeId) runTabUsage(activeId, false);
     else showUsageModal('沒有作用中的分頁。');
   });
+
+  // ── Inline usage water-level pill ──
+  // Always-on top-bar indicator so the key numbers (5hr + weekly utilisation)
+  // are visible at a glance — no need to keep opening the modal. Follows the
+  // active tab's provider; polled every 5 min. Click opens the full modal.
+  function _usageLevel(pct) {                 // colour by how much is USED
+    if (pct >= 85) return 'lvl-hot';
+    if (pct >= 60) return 'lvl-warn';
+    return 'lvl-ok';
+  }
+  async function refreshUsageBrief() {
+    const el = document.getElementById('usage-brief');
+    if (!el) return;
+    try {
+      const raw = await pywebview.api.tab_usage_brief(activeId || '');
+      const d = JSON.parse(raw || '{}');
+      if (!d || d.ai == null || (d.error && d.error !== 'no_data')) {
+        el.style.display = 'none'; return;
+      }
+      if (d.error === 'no_data' || (!d.five_hr && !d.week)) {
+        el.style.display = 'none'; return;
+      }
+      const seg = (label, info) => info
+        ? `<span class="ub-seg"><span class="ub-k">${label}</span>` +
+          `<span class="ub-v ${_usageLevel(info.pct)}">${info.pct}%</span></span>`
+        : '';
+      el.innerHTML = [seg('5h', d.five_hr), seg('wk', d.week)].filter(Boolean).join('');
+      const tip = [];
+      if (d.account) tip.push(d.account);
+      if (d.five_hr) tip.push(`5hr 已用 ${d.five_hr.pct}%・重置 ${d.five_hr.reset}`);
+      if (d.week) tip.push(`本週已用 ${d.week.pct}%・重置 ${d.week.reset}`);
+      if (d.snapshot) tip.push(`快照 ${d.snapshot}`);
+      el.title = tip.join('\n') || 'AI 用量水位 — 點擊看細節';
+      el.classList.remove('stale');
+      el.style.display = '';
+    } catch (_) {
+      el.classList.add('stale');          // keep last reading, dim it
+    }
+  }
+  document.getElementById('usage-brief').addEventListener('click', () => {
+    if (activeId) runTabUsage(activeId, false);
+  });
+  window.refreshUsageBrief = refreshUsageBrief;
+  setInterval(refreshUsageBrief, 5 * 60 * 1000);
+  refreshUsageBrief();
 
   // A resizer is only meaningful while its panel is expanded.
   function updateResizerVisibility() {
@@ -4155,9 +4110,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-auto-delegate').classList.toggle(
       'on', s.auto_delegate_enabled === true,
     );
-    document.getElementById('setting-experimental-board').classList.toggle(
-      'on', s.experimental_board === true,
-    );
     document.getElementById('setting-experimental-loops').classList.toggle(
       'on', s.experimental_loops === true,
     );
@@ -4197,15 +4149,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings = config.settings || {};
       config.settings.show_tg_wrapper = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
-    });
-
-  document.getElementById('setting-experimental-board')
-    .addEventListener('click', async function() {
-      this.classList.toggle('on');
-      config.settings = config.settings || {};
-      config.settings.experimental_board = this.classList.contains('on');
-      await pywebview.api.save_settings(JSON.stringify(config.settings));
-      refreshBoard();
     });
 
   document.getElementById('setting-experimental-loops')

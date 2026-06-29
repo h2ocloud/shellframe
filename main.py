@@ -3125,6 +3125,22 @@ class Api:
         except Exception as e:
             return f"用量查詢失敗：{e}"
 
+    def tab_usage_brief(self, sid: str) -> str:
+        """Structured usage for the inline top-bar pill (polled ~every 5 min).
+
+        Follows the active tab: if it runs claude/codex, probe that provider;
+        otherwise fall back to claude (account-global, no tab needed) so the
+        indicator still shows something on non-AI tabs. Returns JSON.
+        """
+        s = self.sessions.get(sid)
+        cmd = (s.cmd if s else "") or ""
+        if usage_probe.detect_ai(cmd) is None:
+            cmd = "claude"
+        try:
+            return json.dumps(usage_probe.probe_data(cmd))
+        except Exception as e:
+            return json.dumps({"ai": None, "error": str(e)})
+
     def resize(self, sid: str, cols: int, rows: int):
         _dlog("resize", f"sid={sid} cols={cols} rows={rows}")
         s = self.sessions.get(sid)
