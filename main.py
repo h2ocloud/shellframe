@@ -17,6 +17,7 @@ import importlib
 import json
 import os
 import platform
+import plistlib
 import re
 import shlex
 import shutil
@@ -2375,6 +2376,124 @@ class Api:
     def board_remove(self, task_id: str) -> str:
         ok = board.remove_task(task_id)
         return json.dumps({"success": ok})
+
+    # ── Scheduled jobs (LaunchAgents) for the Loops panel ──────────────
+    # Surfaces the user's own recurring jobs so the Loops panel can show each
+    # one's frequency and flip it on/off. Only the user's own label prefixes
+    # are listed/togglable — never arbitrary system agents.
+    _SCHED_PREFIXES = ("com.howard.", "com.neux.", "com.claude.", "com.h2ocloud.")
+    _SCHED_TITLES = {
+        "com.howard.scrum-morning": "Scrum 早排卡",
+        "com.howard.scrum-daily": "Scrum 日報推送",
+        "com.howard.scrum-evening": "Scrum 晚收尾",
+        "com.howard.plaud-trigger": "Plaud 觸發轉錄",
+        "com.howard.plaud-daily": "Plaud 每日摘要",
+        "com.neux.tech-digest": "科技日報",
+        "com.neux.tmux-groom": "tmux 整理",
+        "com.neux.femas.clockin": "FEMAS 上班打卡",
+        "com.neux.femas.clockout": "FEMAS 下班打卡",
+        "com.claude.telegram-channel": "Telegram Channel",
+        "com.h2ocloud.telegram-terminal-bot": "Telegram 終端 Bot",
+    }
+
+    @staticmethod
+    def _launch_agents_dir() -> Path:
+        return Path.home() / "Library" / "LaunchAgents"
+
+    @staticmethod
+    def _sched_freq(p: dict) -> str:
+        """Human-readable cadence from a LaunchAgent plist."""
+        if "StartInterval" in p:
+            s = int(p["StartInterval"])
+            if s >= 3600:
+                return f"每 {s // 3600}h"
+            if s >= 60:
+                return f"每 {s // 60}m"
+            return f"每 {s}s"
+        sci = p.get("StartCalendarInterval")
+        if sci:
+            items = sci if isinstance(sci, list) else [sci]
+            wd = ["日", "一", "二", "三", "四", "五", "六"]
+            out = []
+            for it in items:
+                h, m = it.get("Hour"), it.get("Minute")
+                t = (f"{h:02d}:{m:02d}" if h is not None and m is not None
+                     else (f":{m:02d}" if m is not None else ""))
+                pre = ""
+                if it.get("Weekday") is not None:
+                    pre = f"週{wd[it['Weekday'] % 7]} "
+                out.append((pre + t).strip())
+            return "每天 " + " · ".join(out)
+        if p.get("RunAtLoad"):
+            return "登入常駐"
+        return "—"
+
+    def _sched_disabled_set(self):
+        """Persistently-disabled labels from launchctl's override DB
+        (lines like `"label" => disabled`)."""
+        out = set()
+        try:
+            r = subprocess.run(
+                ["launchctl", "print-disabled", f"gui/{os.getuid()}"],
+                capture_output=True, text=True, timeout=5)
+            for ln in r.stdout.splitlines():
+                if "=> disabled" in ln and '"' in ln:
+                    out.add(ln.split('"')[1])
+        except Exception:
+            pass
+        return out
+
+    def schedules_list(self) -> str:
+        """List the user's own LaunchAgents: id, title, frequency, command,
+        enabled. Drives the Loops panel's schedule section."""
+        try:
+            disabled = self._sched_disabled_set()
+            items = []
+            for fp in sorted(self._launch_agents_dir().glob("*.plist")):
+                if not fp.stem.startswith(self._SCHED_PREFIXES):
+                    continue
+                try:
+                    with open(fp, "rb") as f:
+                        p = plistlib.load(f)
+                except Exception:
+                    continue
+                lbl = p.get("Label", fp.stem)
+                prog = p.get("ProgramArguments") or (
+                    [p["Program"]] if p.get("Program") else [])
+                items.append({
+                    "id": lbl,
+                    "title": self._SCHED_TITLES.get(lbl, lbl.split(".")[-1]),
+                    "freq": self._sched_freq(p),
+                    "cmd": " ".join(str(x) for x in prog),
+                    "enabled": (lbl not in disabled) and not p.get("Disabled", False),
+                })
+            return json.dumps({"schedules": items})
+        except Exception as e:
+            return json.dumps({"schedules": [], "error": str(e)})
+
+    def schedule_set_enabled(self, label: str, enabled) -> str:
+        """Flip a user LaunchAgent on/off via launchctl. Guarded: the label
+        must be one of the user's own agents that exists on disk."""
+        try:
+            if isinstance(enabled, str):
+                enabled = enabled.lower() in ("1", "true", "yes", "on")
+            fp = self._launch_agents_dir() / f"{label}.plist"
+            if not label.startswith(self._SCHED_PREFIXES) or not fp.exists():
+                return json.dumps({"success": False, "message": "unknown schedule"})
+            dom = f"gui/{os.getuid()}"
+            if enabled:
+                subprocess.run(["launchctl", "enable", f"{dom}/{label}"],
+                               capture_output=True, text=True, timeout=10)
+                subprocess.run(["launchctl", "bootstrap", dom, str(fp)],
+                               capture_output=True, text=True, timeout=10)
+            else:
+                subprocess.run(["launchctl", "bootout", f"{dom}/{label}"],
+                               capture_output=True, text=True, timeout=10)
+                subprocess.run(["launchctl", "disable", f"{dom}/{label}"],
+                               capture_output=True, text=True, timeout=10)
+            return json.dumps({"success": True, "enabled": bool(enabled)})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
 
     def get_saved_bridge(self) -> str:
         """Return saved bridge config (for restoring on startup)."""

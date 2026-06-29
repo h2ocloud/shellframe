@@ -599,6 +599,27 @@
     word-break: break-word;
   }
   .loop-meta { font-size: 9px; color: #565f89; margin-top: 2px; }
+  .loop-group {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+    color: #565f89; padding: 10px 4px 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .loop-group:first-child { padding-top: 4px; }
+  .loop-group-n { color: #7aa2f7; text-transform: none; }
+  .sched-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 4px;
+    border-bottom: 1px solid #1a1b26; border-left: 2px solid #9ece6a; padding-left: 8px;
+  }
+  .sched-row.off { border-left-color: #3b4261; }
+  .sched-info { flex: 1; min-width: 0; }
+  .sched-title { font-size: 11px; color: #c0caf5; font-weight: 500; }
+  .sched-row.off .sched-title { color: #787c99; }
+  .sched-freq { font-size: 9px; color: #e0af68; margin-left: 6px; font-weight: 400; }
+  .sched-row.off .sched-freq { color: #565f89; }
+  .sched-cmd {
+    font-size: 9px; color: #565f89; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sched-toggle { flex-shrink: 0; }
 
   /* ── Code block copy button ── */
   .code-copy-btn {
@@ -2775,7 +2796,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (btn) btn.style.display = on ? '' : 'none';
       const panel = document.getElementById('board-panel');
       if (!on && panel) panel.classList.add('collapsed');
-      if (on) renderLoops();
+      if (on) {
+        renderLoops();
+        if (panel && !panel.classList.contains('collapsed')) loadSchedules();
+      }
       updateResizerVisibility();
     } catch (_) {}
   }
@@ -2795,12 +2819,39 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const h = Math.floor(m / 60);
     return h + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
   }
+
+  // Managed schedules = the user's own LaunchAgents (cron-like jobs). Fetched
+  // from the Python side; each can be flipped on/off (launchctl) right here.
+  let _schedules = [];
+  let _schedulesLoaded = false;
+  async function loadSchedules() {
+    if (!loopsEnabled() || !window.pywebview || !pywebview.api) return;
+    try {
+      const r = JSON.parse(await pywebview.api.schedules_list());
+      _schedules = r.schedules || [];
+      _schedulesLoaded = true;
+      renderLoops();
+    } catch (_) {}
+  }
+  async function toggleSchedule(id) {
+    const it = _schedules.find(s => s.id === id);
+    if (!it) return;
+    const want = !it.enabled;
+    it.enabled = want; renderLoops();              // optimistic
+    try {
+      const r = JSON.parse(await pywebview.api.schedule_set_enabled(id, want));
+      if (!r || !r.success) { it.enabled = !want; renderLoops(); }
+    } catch (_) { it.enabled = !want; renderLoops(); }
+  }
+
   function renderLoops() {
     try {
       if (!loopsEnabled()) return;
       const list = document.getElementById('board-list');
       if (!list) return;
       const now = Date.now();
+
+      // ── In-session loops (pending ScheduleWakeup) + scheduler-launched tabs ──
       const rows = [];
       const c = { loop: 0, cron: 0, sched: 0 };
       const order = (typeof sessionOrder !== 'undefined' && sessionOrder.length)
@@ -2827,7 +2878,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         ((a.next_ts || Infinity) - (b.next_ts || Infinity)) ||
         String(a.label).localeCompare(String(b.label)));
       const KIND_TAG = { loop: 'LOOP', cron: 'CRON', sched: '排程啟動' };
-      const html = rows.length ? rows.map(r => {
+      const loopHtml = rows.map(r => {
         const cd = (r.kind === 'loop' && r.next_ts)
           ? (r.status === 'running' ? '執行中' : '下次 ' + fmtCountdown(r.next_ts * 1000 - now))
           : (r.kind === 'cron' ? '雲端排程' : '');
@@ -2841,20 +2892,43 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           (r.reason ? `<div class="loop-reason">${esc(r.reason)}</div>` : '') +
           (r.kind === 'loop' && r.rounds ? `<div class="loop-meta">已跑 ${r.rounds} 輪</div>` : '') +
           `</div></div>`;
-      }).join('') : `<div class="feed-empty">${esc(t('loopsEmpty'))}</div>`;
+      }).join('');
+
+      // ── Managed schedules (LaunchAgents) ──
+      const onCount = _schedules.filter(s => s.enabled).length;
+      const schedHtml = _schedules.map(s =>
+        `<div class="sched-row${s.enabled ? '' : ' off'}">` +
+          `<div class="sched-info">` +
+            `<div class="sched-title">${esc(s.title)}<span class="sched-freq">${esc(s.freq)}</span></div>` +
+            (s.cmd ? `<div class="sched-cmd" title="${esc(s.cmd)}">${esc(s.cmd)}</div>` : '') +
+          `</div>` +
+          `<button class="toggle-switch sched-toggle${s.enabled ? ' on' : ''}" ` +
+            `data-id="${esc(s.id)}" title="${s.enabled ? '點擊停用' : '點擊啟用'}"></button>` +
+        `</div>`).join('');
+
+      const html =
+        `<div class="loop-group">排程<span class="loop-group-n">${onCount}/${_schedules.length} 開</span></div>` +
+        (schedHtml || `<div class="feed-empty">${_schedulesLoaded ? '沒有偵測到排程' : '載入中…'}</div>`) +
+        `<div class="loop-group">進行中的 Loop${rows.length ? `<span class="loop-group-n">${rows.length}</span>` : ''}</div>` +
+        (loopHtml || `<div class="feed-empty">${esc(t('loopsEmpty'))}</div>`);
+
       if (html !== renderLoops._html) { list.innerHTML = html; renderLoops._html = html; }
       const ov = document.getElementById('feed-overview');
       if (ov) {
         const parts = [];
+        if (_schedules.length) parts.push(`<span class="ov-sched">⏰ ${onCount}/${_schedules.length}</span>`);
         if (c.loop) parts.push(`<span class="ov-working">🔁 ${c.loop}</span>`);
-        if (c.cron) parts.push(`<span class="ov-cron">⏰ ${c.cron}</span>`);
-        if (c.sched) parts.push(`<span class="ov-sched">▶ ${c.sched}</span>`);
         const ovHtml = parts.join(' · ');
         if (ovHtml !== renderLoops._ovHtml) { ov.innerHTML = ovHtml; renderLoops._ovHtml = ovHtml; }
       }
     } catch (e) { /* never let the panel break the UI */ }
   }
   setInterval(renderLoops, 700);
+  // Refresh the LaunchAgent on/off state while the panel is open.
+  setInterval(() => {
+    const panel = document.getElementById('board-panel');
+    if (loopsEnabled() && panel && !panel.classList.contains('collapsed')) loadSchedules();
+  }, 5000);
 
   document.getElementById('btn-board').addEventListener('click', () => {
     const panel = document.getElementById('board-panel');
@@ -2927,9 +3001,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   setupResizer('board-resizer', 'board-panel', '--board-w', 'board_width', 'right', 180, 560);
   updateResizerVisibility();
 
-  // Click an agent feed row to jump to that tab.
+  // Click a schedule toggle to flip it on/off; click a loop row to jump tab.
   document.getElementById('board-list')?.addEventListener('click', (e) => {
-    const row = e.target.closest('.feed-row');
+    const tog = e.target.closest('.sched-toggle');
+    if (tog && tog.dataset.id) { toggleSchedule(tog.dataset.id); return; }
+    const row = e.target.closest('.loop-row');
     if (row && row.dataset.sid) switchTab(row.dataset.sid);
   });
 
