@@ -2498,27 +2498,6 @@ class Api:
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
 
-    def _default_ai_cmd(self) -> str:
-        """The AI CLI the user is actually using — the most recently active
-        claude/codex session's command — so an edit tab matches their tool
-        instead of always defaulting to Claude. Falls back to a Claude preset."""
-        best, best_ts = None, -1.0
-        for s in self.sessions.values():
-            cmd = getattr(s, "cmd", "")
-            if not self._session_is_ai(cmd):
-                continue
-            ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
-            if ts >= best_ts:        # ties → later-created session (dict order) wins
-                best, best_ts = cmd, ts
-        if best:
-            return best
-        for pr in (load_config().get("presets") or []):
-            cmd = str(pr.get("cmd", "")).strip()
-            head = cmd.split(" ", 1)[0] if cmd else ""
-            if head == "claude" or head.endswith("/claude"):
-                return cmd
-        return "claude --permission-mode bypassPermissions --dangerously-skip-permissions"
-
     @staticmethod
     def _schedule_script_path(prog) -> str:
         exts = (".sh", ".py", ".js", ".mjs", ".ts", ".exp", ".rb", ".zsh", ".bash")
@@ -2527,47 +2506,34 @@ class Api:
                 return str(a)
         return ""
 
-    def schedule_edit(self, label: str) -> str:
-        """Open (or focus) an AI tab seeded with this schedule's paths so the
-        user can immediately ask the AI to adjust it. Returns the tab sid."""
+    def schedule_prompt(self, label: str, sid: str = "") -> str:
+        """Collect a schedule's paths/command into a prompt and drop it into the
+        given session (the user's current tab) — no new tab. Pasted unsent so
+        the user can append their request and send it themselves."""
         try:
             fp = self._launch_agents_dir() / f"{label}.plist"
             if not label.startswith(self._SCHED_PREFIXES) or not fp.exists():
                 return json.dumps({"success": False, "message": "unknown schedule"})
+            session = self.sessions.get(sid)
+            if not session:
+                return json.dumps({"success": False, "message": "no active session"})
             with open(fp, "rb") as f:
                 p = plistlib.load(f)
             prog = p.get("ProgramArguments") or ([p["Program"]] if p.get("Program") else [])
             script = self._schedule_script_path(prog)
             title = self._SCHED_TITLES.get(label, label.split(".")[-1])
             freq = self._sched_freq(p)
-            tab_label = f"編輯:{title}"
             prompt = (
                 f"我想調整這個排程：{title}（{label}），目前頻率：{freq}。\n"
                 f"- LaunchAgent plist：{fp}\n"
                 + (f"- 執行腳本：{script}\n" if script else "")
                 + f"- 完整指令：{' '.join(str(x) for x in prog)}\n\n"
-                "請先讀上面的檔案，用幾句話跟我說它現在做什麼、什麼時候跑，然後等我說要改什麼。"
-                f"改完 plist 記得提醒我重新載入（launchctl bootout/bootstrap gui/{os.getuid()}）才生效。"
+                "請先讀上面的檔案，再依我接下來的要求調整；改完 plist 記得提醒我重新載入"
+                f"（launchctl bootout/bootstrap gui/{os.getuid()}）才生效。要調整的是："
             )
-            sid, session = self._find_session_by_label(tab_label)
-            created = False
-            if not session:
-                sid = self.new_session(self._default_ai_cmd(), 200, 50, source="manual")
-                self.rename_session(sid, tab_label)
-                session = self.sessions.get(sid)
-                created = True
-            if not session:
-                return json.dumps({"success": False, "message": "no session"})
             session._startup_trust_pending = False
-            if created:
-                # Fresh tab: let the AI CLI finish booting before pasting.
-                threading.Timer(
-                    2.0,
-                    lambda s=session, t=prompt: self._send_text_to_session(s, t, submit=True),
-                ).start()
-            else:
-                self._send_text_to_session(session, prompt, submit=True)
-            return json.dumps({"success": True, "sid": sid, "created": created})
+            self._send_text_to_session(session, prompt, submit=False)
+            return json.dumps({"success": True, "sid": sid})
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
 

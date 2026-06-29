@@ -2852,16 +2852,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!r || !r.success) { it.enabled = !want; renderLoops(); }
     } catch (_) { it.enabled = !want; renderLoops(); }
   }
-  // Edit shortcut: open an AI tab seeded with this schedule's paths, then
-  // focus it. The backend creates/sends; we wait for the tab to register.
+  // Edit shortcut: collect this schedule's paths/command into a prompt and
+  // drop it into the CURRENT tab's composer (no new tab), so the user can
+  // append what to change and ask the AI right where they are.
   async function editSchedule(id) {
-    let r;
-    try { r = JSON.parse(await pywebview.api.schedule_edit(id)); } catch (_) { return; }
-    if (!r || !r.success || !r.sid) return;
-    for (let i = 0; i < 25 && !sessions[r.sid]; i++) {
-      await new Promise(res => setTimeout(res, 100));
-    }
-    if (sessions[r.sid]) switchTab(r.sid);
+    if (!activeId) return;
+    try { await pywebview.api.schedule_prompt(id, activeId); } catch (_) {}
   }
 
   function renderLoops() {
@@ -2923,7 +2919,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             `<div class="sched-title">${esc(s.title)}<span class="sched-freq">${esc(s.freq)}</span></div>` +
             (s.cmd ? `<div class="sched-cmd" title="${esc(s.cmd)}">${esc(s.cmd)}</div>` : '') +
           `</div>` +
-          `<button class="sched-edit" data-id="${esc(s.id)}" title="開分頁請 AI 調整這個排程">編輯</button>` +
+          `<button class="sched-edit" data-id="${esc(s.id)}" title="把這個排程的資訊帶進目前對話，讓你直接請 AI 調整">編輯</button>` +
           `<button class="toggle-switch sched-toggle${s.enabled ? ' on' : ''}" ` +
             `data-id="${esc(s.id)}" title="${s.enabled ? '點擊停用' : '點擊啟用'}"></button>` +
         `</div>`).join('');
