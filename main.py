@@ -2496,7 +2496,19 @@ class Api:
             return json.dumps({"success": False, "message": str(e)})
 
     def _default_ai_cmd(self) -> str:
-        """The user's preferred Claude launch command (from presets)."""
+        """The AI CLI the user is actually using — the most recently active
+        claude/codex session's command — so an edit tab matches their tool
+        instead of always defaulting to Claude. Falls back to a Claude preset."""
+        best, best_ts = None, -1.0
+        for s in self.sessions.values():
+            cmd = getattr(s, "cmd", "")
+            if not self._session_is_ai(cmd):
+                continue
+            ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
+            if ts >= best_ts:        # ties → later-created session (dict order) wins
+                best, best_ts = cmd, ts
+        if best:
+            return best
         for pr in (load_config().get("presets") or []):
             cmd = str(pr.get("cmd", "")).strip()
             head = cmd.split(" ", 1)[0] if cmd else ""
