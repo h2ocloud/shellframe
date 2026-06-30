@@ -2883,9 +2883,38 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     el.classList.remove('stale');
     el.style.display = '';
   }
+  // Cadence: the water-level only moves when a turn runs, so probing on a tight
+  // timer mostly re-fetches an unchanged number. Drive it off conversation
+  // activity instead — refresh when the active tab starts a turn (new prompt)
+  // or finishes one — and keep a slow 15-min idle poll as the only fallback for
+  // when nothing is happening. Each refresh resets the idle countdown, so the
+  // poll only ever fires after a genuine quiet stretch.
+  const USAGE_IDLE_POLL_MS = 15 * 60 * 1000;  // fallback when no activity
+  const USAGE_EVENT_THROTTLE_MS = 15 * 1000;  // min gap between activity-driven refreshes
+  const USAGE_SETTLE_MS = 4 * 1000;           // wait for a finished turn to settle
+  let _usageLastRefreshTs = 0;
+  let _usageIdleTimer = null;
+  let _usageSettleTimer = null;
+  function _scheduleUsageIdlePoll() {
+    if (_usageIdleTimer) clearTimeout(_usageIdleTimer);
+    _usageIdleTimer = setTimeout(() => { refreshUsageBrief(); }, USAGE_IDLE_POLL_MS);
+  }
+  // New prompt / turn start: refresh soon, but swallow rapid back-and-forth.
+  function refreshUsageBriefThrottled() {
+    if (Date.now() - _usageLastRefreshTs < USAGE_EVENT_THROTTLE_MS) return;
+    refreshUsageBrief();
+  }
+  // Turn ended: wait a beat so the post-turn number lands, and coalesce a burst
+  // of short turns into a single trailing refresh.
+  function refreshUsageBriefAfterTurn() {
+    if (_usageSettleTimer) clearTimeout(_usageSettleTimer);
+    _usageSettleTimer = setTimeout(() => { refreshUsageBrief(); }, USAGE_SETTLE_MS);
+  }
   async function refreshUsageBrief() {
     const el = document.getElementById('usage-brief');
     if (!el) return;
+    _usageLastRefreshTs = Date.now();
+    _scheduleUsageIdlePoll();   // every refresh restarts the idle countdown
     try {
       const raw = await pywebview.api.tab_usage_brief(activeId || '');
       const d = JSON.parse(raw || '{}');
@@ -2929,8 +2958,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (activeId) runTabUsage(activeId, false);
   });
   window.refreshUsageBrief = refreshUsageBrief;
-  setInterval(refreshUsageBrief, 5 * 60 * 1000);
-  refreshUsageBrief();
+  window.refreshUsageBriefThrottled = refreshUsageBriefThrottled;
+  window.refreshUsageBriefAfterTurn = refreshUsageBriefAfterTurn;
+  refreshUsageBrief();   // initial read also arms the idle poll
 
   // A resizer is only meaningful while its panel is expanded.
   function updateResizerVisibility() {
@@ -5334,6 +5364,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         dotClass = isAttention ? 'on attention' : '';
       }
 
+      // Drive the usage pill off the active tab's busy transitions: idle→busy
+      // = new prompt/turn start (refresh soon), busy→idle = turn ended (refresh
+      // once it settles). See refreshUsageBrief cadence helpers.
+      if (sid === activeId && s._busy !== dotOn) {
+        try {
+          if (dotOn) refreshUsageBriefThrottled();
+          else refreshUsageBriefAfterTurn();
+        } catch (_) {}
+      }
       if (s._busy === dotOn && s._dotClass === dotClass) continue;
       s._busy = dotOn;
       s._dotClass = dotClass;
