@@ -151,14 +151,68 @@ def _codex_account(result_plan=None) -> str:
     return " · ".join(parts)
 
 
+# The OAuth usage API rate-limits aggressively (HTTP 429). Several callers share
+# this fetch (top-bar pill, /usage modal, event-driven refresh), so we cache the
+# last good reading and back off hard: reuse fresh data without any call, hit the
+# API at most once per retry window, and on failure serve the last good reading
+# flagged stale — the reset times stay useful even when a live refresh fails.
+_USAGE_CACHE_FILE = os.path.expanduser("~/.config/shellframe/usage_cache.json")
+_CLAUDE_OK_TTL = 45          # within this, reuse good data with no API call
+_CLAUDE_RETRY_MIN = 60       # min gap between live API attempts (rate-limit guard)
+_CLAUDE_DISK_MAX_AGE = 86400  # don't resurrect a reading older than a day on boot
+_claude_cache = None         # {"data": {...}|None, "ts": epoch, "last_try": epoch}
+
+
+def _claude_cache_state():
+    """Lazy-load the persistent cache so reset times survive an app restart."""
+    global _claude_cache
+    if _claude_cache is not None:
+        return _claude_cache
+    _claude_cache = {"data": None, "ts": 0, "last_try": 0}
+    try:
+        with open(_USAGE_CACHE_FILE) as f:
+            d = (json.load(f) or {}).get("claude") or {}
+        if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
+            _claude_cache["data"] = d["data"]
+            _claude_cache["ts"] = d.get("ts", 0)
+    except Exception:
+        pass
+    return _claude_cache
+
+
+def _save_claude_cache(c):
+    try:
+        os.makedirs(os.path.dirname(_USAGE_CACHE_FILE), exist_ok=True)
+        with open(_USAGE_CACHE_FILE, "w") as f:
+            json.dump({"claude": {"data": c["data"], "ts": c["ts"]}}, f)
+    except Exception:
+        pass
+
+
+def _claude_stale(c):
+    """Last good reading, tagged so callers know this refresh didn't land."""
+    s = dict(c["data"])
+    s["_stale"] = True
+    return s
+
+
 def _fetch_claude():
-    """Return {'5hr': (pct, reset), 'week': (pct, reset)} or None.
+    """Return {'5hr': (pct, reset), 'week': (pct, reset)[, '_stale': True]} or None.
 
     Primary path: call the OAuth usage API directly with the local Keychain
     token — self-contained, works on any machine the user is signed in on. The
     legacy openclaw script is tried only as a fallback (it exists solely on the
     openclaw host), so /usage no longer dead-ends on machines without it.
     """
+    now = time.time()
+    c = _claude_cache_state()
+    # Fresh good reading → reuse, no network (dedups bursts from multiple callers)
+    if c["data"] and now - c["ts"] < _CLAUDE_OK_TTL:
+        return dict(c["data"])
+    # Back off between attempts so a retry storm can't keep us rate-limited.
+    if now - c["last_try"] < _CLAUDE_RETRY_MIN:
+        return _claude_stale(c) if c["data"] else None
+    c["last_try"] = now
     token = _claude_oauth().get("accessToken")
     if token:
         try:
@@ -179,9 +233,14 @@ def _fetch_claude():
             if sd.get("utilization") is not None:
                 out["week"] = (round(sd["utilization"]), _fmt_iso(sd.get("resets_at", "")))
             if out:
+                c["data"] = out
+                c["ts"] = now
+                _save_claude_cache(c)
                 return out
         except Exception:
-            pass  # fall through to legacy script
+            pass  # rate-limited / network — serve stale below, then legacy script
+    if c["data"]:
+        return _claude_stale(c)
     return _fetch_claude_script()
 
 
@@ -329,10 +388,12 @@ def probe_data(cmd: str) -> dict:
                if ai == "codex" else _claude_account())
 
     out = {"ai": ai, "account": account, "five_hr": None, "week": None,
-           "snapshot": None, "error": None}
+           "snapshot": None, "error": None, "stale": False}
     if not data:
         out["error"] = "no_data"
         return out
+    if data.get("_stale"):
+        out["stale"] = True  # last good reading; this refresh failed (e.g. 429)
     if "5hr" in data:
         pct, reset = data["5hr"]
         out["five_hr"] = {"pct": pct, "reset": reset}
@@ -362,6 +423,8 @@ def probe(cmd: str) -> str:
     lines = [f"AI 水位 {ai}"]
     if account:
         lines.append(f"帳號 {account}")
+    if d.get("stale"):
+        lines.append("⚠ 本次更新失敗，顯示上次資料")
     if d.get("five_hr"):
         fh = d["five_hr"]
         lines.append(f"1. 5hr：{fh['pct']}%｜重置 {fh['reset']}")

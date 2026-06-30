@@ -2975,35 +2975,42 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const raw = await pywebview.api.tab_usage_brief(activeId || '');
       const d = JSON.parse(raw || '{}');
       const prov = (d && d.ai) || activeProv;
-      // Backend couldn't even fetch (exception / unexpected error).
-      if (!d || (d.error && d.error !== 'no_data')) {
+      const hasNums = !!(d && (d.five_hr || d.week));
+      // Hard error AND nothing to fall back on → ⚠ placeholder.
+      if (!d || ((d.error && d.error !== 'no_data') && !hasNums)) {
         _usageBriefPlaceholder(el, '用量 ⚠',
           `用量查詢失敗：${(d && d.error) || '未知錯誤'}\n點擊重試`);
         _commitUsageRender(prov, false);
         return;
       }
-      // Reached the provider but no water-level (not logged in / empty).
-      if (d.error === 'no_data' || (!d.five_hr && !d.week)) {
+      // Reached the provider but no water-level (not logged in / empty) and no
+      // cached reading to show.
+      if (!hasNums) {
         const who = d.ai || 'AI';
         _usageBriefPlaceholder(el, '用量 查不到',
           `查不到 ${who} 水位（請確認已登入 ${who}）\n點擊重試`);
         _commitUsageRender(prov, false);
         return;
       }
+      // We have numbers — fresh, or the last known reading if d.stale (this
+      // refresh failed, e.g. rate-limited). Show them either way; a stale pill
+      // is dimmed + ⚠-marked, since the reset times are still what you want.
       const seg = (label, info) => info
         ? `<span class="ub-seg"><span class="ub-k">${label}</span>` +
           `<span class="ub-v ${_usageLevel(info.pct)}">${info.pct}%</span></span>`
         : '';
-      el.innerHTML = [seg('5h', d.five_hr), seg('wk', d.week)].filter(Boolean).join('');
+      el.innerHTML = (d.stale ? '<span class="ub-seg ub-none">⚠</span>' : '') +
+        [seg('5h', d.five_hr), seg('wk', d.week)].filter(Boolean).join('');
       const tip = [];
+      if (d.stale) tip.push('⚠ 本次更新失敗，顯示上次資料');
       if (d.account) tip.push(d.account);
       if (d.five_hr) tip.push(`5hr 已用 ${d.five_hr.pct}%・重置 ${d.five_hr.reset}`);
       if (d.week) tip.push(`本週已用 ${d.week.pct}%・重置 ${d.week.reset}`);
       if (d.snapshot) tip.push(`快照 ${d.snapshot}`);
       el.title = tip.join('\n') || 'AI 用量水位 — 點擊看細節';
-      el.classList.remove('stale');
+      el.classList.toggle('stale', !!d.stale);
       el.style.display = '';
-      _commitUsageRender(prov, true);
+      _commitUsageRender(prov, !d.stale);
     } catch (_) {
       // JS/IPC error: dim the last good reading if we have one, else placeholder.
       const keptReal = el.innerHTML && !el.querySelector('.ub-none');
