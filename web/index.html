@@ -2918,24 +2918,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
     return isCodex ? 'codex' : 'claude';
   }
-  // Record what the pill is now showing so a same-provider tab switch is a no-op.
-  function _commitUsageRender(provider) {
+  // Record what the pill is now showing so a same-provider tab switch is a
+  // no-op. `ok` = we have a real reading (not 查不到/⚠); only good readings are
+  // worth reusing — a failed one should keep retrying.
+  function _commitUsageRender(provider, ok) {
     const el = document.getElementById('usage-brief');
     if (!el || !provider) return;
     _usageShownProvider = provider;
     _usageCache[provider] = {
       html: el.innerHTML, title: el.title,
-      stale: el.classList.contains('stale'), ts: Date.now(),
+      stale: el.classList.contains('stale'), ok: !!ok, ts: Date.now(),
     };
   }
-  // Tab switched: if the new tab maps to the provider already on screen, do
-  // nothing (claude→claude needs no re-query). Only on a provider change
-  // (claude↔codex) do we reuse a fresh cached reading, or probe if it's stale.
+  // Tab switched: claude→claude with a good reading already on screen needs no
+  // re-query. But a cached 查不到/⚠ must keep retrying (the point of looking it
+  // up is to fill it in, not leave it stuck). On a provider change (claude↔codex)
+  // reuse a fresh *good* cached reading, otherwise probe.
   function onActiveTabChangedForUsage() {
     const p = _usageProviderFor(activeId);
-    if (p === _usageShownProvider) return;
     const c = _usageCache[p];
-    if (c && Date.now() - c.ts < USAGE_CACHE_TTL_MS) {
+    if (p === _usageShownProvider) {
+      if (c && c.ok) return;        // good reading already shown → leave it
+      refreshUsageBrief();          // stuck on 查不到/⚠ → retry
+      return;
+    }
+    if (c && c.ok && Date.now() - c.ts < USAGE_CACHE_TTL_MS) {
       const el = document.getElementById('usage-brief');
       if (el) {
         el.innerHTML = c.html; el.title = c.title;
@@ -2972,7 +2979,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!d || (d.error && d.error !== 'no_data')) {
         _usageBriefPlaceholder(el, '用量 ⚠',
           `用量查詢失敗：${(d && d.error) || '未知錯誤'}\n點擊重試`);
-        _commitUsageRender(prov);
+        _commitUsageRender(prov, false);
         return;
       }
       // Reached the provider but no water-level (not logged in / empty).
@@ -2980,7 +2987,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const who = d.ai || 'AI';
         _usageBriefPlaceholder(el, '用量 查不到',
           `查不到 ${who} 水位（請確認已登入 ${who}）\n點擊重試`);
-        _commitUsageRender(prov);
+        _commitUsageRender(prov, false);
         return;
       }
       const seg = (label, info) => info
@@ -2996,16 +3003,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.title = tip.join('\n') || 'AI 用量水位 — 點擊看細節';
       el.classList.remove('stale');
       el.style.display = '';
-      _commitUsageRender(prov);
+      _commitUsageRender(prov, true);
     } catch (_) {
       // JS/IPC error: dim the last good reading if we have one, else placeholder.
-      if (el.innerHTML && !el.querySelector('.ub-none')) {
+      const keptReal = el.innerHTML && !el.querySelector('.ub-none');
+      if (keptReal) {
         el.classList.add('stale');
         el.style.display = '';
       } else {
         _usageBriefPlaceholder(el, '用量 ⚠', '用量查詢失敗，稍後自動重試\n點擊重試');
       }
-      _commitUsageRender(activeProv);
+      _commitUsageRender(activeProv, !!keptReal);
     }
   }
   document.getElementById('usage-brief').addEventListener('click', () => {
@@ -3625,6 +3633,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       const txt = await pywebview.api.tab_usage(sid);
       showUsageModal(txt || '用量查詢失敗');
+      // Opening the modal is an explicit "update now": re-probe the top-bar pill
+      // too, so it can't keep showing 查不到 while the modal already has numbers
+      // (the two use different endpoints — tab_usage vs tab_usage_brief).
+      if (sid === activeId) { try { refreshUsageBrief(); } catch (_) {} }
     } catch (e) {
       showUsageModal('用量查詢失敗');
     }
