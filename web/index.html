@@ -103,6 +103,7 @@
   #usage-brief .ub-v.lvl-ok { color: #9ece6a; }
   #usage-brief .ub-v.lvl-warn { color: #e0af68; }
   #usage-brief .ub-v.lvl-hot { color: #f7768e; }
+  #usage-brief .ub-none { color: #565f89; }
   #usage-brief.stale { opacity: .5; }
 
   /* ── Image preview ── */
@@ -2872,17 +2873,34 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (pct >= 60) return 'lvl-warn';
     return 'lvl-ok';
   }
+  // Render a muted placeholder instead of vanishing: a usage pill that
+  // disappears whenever a probe fails looks like a bug and loses its slot in
+  // the top bar. Keep the pill present, say "查不到", and stay clickable so the
+  // click → modal path can retry / show why.
+  function _usageBriefPlaceholder(el, text, tip) {
+    el.innerHTML = `<span class="ub-seg ub-none">${text}</span>`;
+    el.title = tip;
+    el.classList.remove('stale');
+    el.style.display = '';
+  }
   async function refreshUsageBrief() {
     const el = document.getElementById('usage-brief');
     if (!el) return;
     try {
       const raw = await pywebview.api.tab_usage_brief(activeId || '');
       const d = JSON.parse(raw || '{}');
-      if (!d || d.ai == null || (d.error && d.error !== 'no_data')) {
-        el.style.display = 'none'; return;
+      // Backend couldn't even fetch (exception / unexpected error).
+      if (!d || (d.error && d.error !== 'no_data')) {
+        _usageBriefPlaceholder(el, '用量 ⚠',
+          `用量查詢失敗：${(d && d.error) || '未知錯誤'}\n點擊重試`);
+        return;
       }
+      // Reached the provider but no water-level (not logged in / empty).
       if (d.error === 'no_data' || (!d.five_hr && !d.week)) {
-        el.style.display = 'none'; return;
+        const who = d.ai || 'AI';
+        _usageBriefPlaceholder(el, '用量 查不到',
+          `查不到 ${who} 水位（請確認已登入 ${who}）\n點擊重試`);
+        return;
       }
       const seg = (label, info) => info
         ? `<span class="ub-seg"><span class="ub-k">${label}</span>` +
@@ -2898,7 +2916,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.classList.remove('stale');
       el.style.display = '';
     } catch (_) {
-      el.classList.add('stale');          // keep last reading, dim it
+      // JS/IPC error: dim the last good reading if we have one, else placeholder.
+      if (el.innerHTML && !el.querySelector('.ub-none')) {
+        el.classList.add('stale');
+        el.style.display = '';
+      } else {
+        _usageBriefPlaceholder(el, '用量 ⚠', '用量查詢失敗，稍後自動重試\n點擊重試');
+      }
     }
   }
   document.getElementById('usage-brief').addEventListener('click', () => {
