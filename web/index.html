@@ -2299,7 +2299,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     renderTabs();
     updateImageBar();
-    try { if (window.refreshUsageBrief) window.refreshUsageBrief(); } catch (_) {}
+    // Same-provider switch reuses the on-screen reading; only claude↔codex
+    // (with a stale cache) re-probes. See onActiveTabChangedForUsage.
+    try { if (window.onActiveTabChangedForUsage) window.onActiveTabChangedForUsage(); } catch (_) {}
     try {
       if (window.refreshPluginBadges) setTimeout(() => window.refreshPluginBadges(true), 650);
     } catch (_) {}
@@ -2892,12 +2894,58 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   const USAGE_IDLE_POLL_MS = 15 * 60 * 1000;  // fallback when no activity
   const USAGE_EVENT_THROTTLE_MS = 15 * 1000;  // min gap between activity-driven refreshes
   const USAGE_SETTLE_MS = 4 * 1000;           // wait for a finished turn to settle
+  const USAGE_CACHE_TTL_MS = 2 * 60 * 1000;   // reuse a provider's reading this fresh on tab switch
   let _usageLastRefreshTs = 0;
   let _usageIdleTimer = null;
   let _usageSettleTimer = null;
+  // The pill follows ONE provider at a time (claude or codex). Cache each
+  // provider's last render so flipping tabs reuses it instead of re-probing.
+  const _usageCache = {};            // provider -> { html, title, stale, ts }
+  let _usageShownProvider = null;    // which provider the pill currently shows
   function _scheduleUsageIdlePoll() {
     if (_usageIdleTimer) clearTimeout(_usageIdleTimer);
     _usageIdleTimer = setTimeout(() => { refreshUsageBrief(); }, USAGE_IDLE_POLL_MS);
+  }
+  // Which provider's water-level a tab maps to. Mirrors the backend
+  // (usage_probe.detect_ai + tab_usage_brief's claude fallback): a codex tab →
+  // codex, everything else (claude tabs and non-AI tabs) → claude.
+  function _usageProviderFor(sid) {
+    const s = sessions[sid];
+    const cmd = (s && s.cmd) || '';
+    const isCodex = cmd.split(/\s+/).some(tok => {
+      const base = tok.split('/').pop().replace(/\.\w+$/, '');
+      return base === 'codex' || base === 'sf-codex';
+    });
+    return isCodex ? 'codex' : 'claude';
+  }
+  // Record what the pill is now showing so a same-provider tab switch is a no-op.
+  function _commitUsageRender(provider) {
+    const el = document.getElementById('usage-brief');
+    if (!el || !provider) return;
+    _usageShownProvider = provider;
+    _usageCache[provider] = {
+      html: el.innerHTML, title: el.title,
+      stale: el.classList.contains('stale'), ts: Date.now(),
+    };
+  }
+  // Tab switched: if the new tab maps to the provider already on screen, do
+  // nothing (claude→claude needs no re-query). Only on a provider change
+  // (claude↔codex) do we reuse a fresh cached reading, or probe if it's stale.
+  function onActiveTabChangedForUsage() {
+    const p = _usageProviderFor(activeId);
+    if (p === _usageShownProvider) return;
+    const c = _usageCache[p];
+    if (c && Date.now() - c.ts < USAGE_CACHE_TTL_MS) {
+      const el = document.getElementById('usage-brief');
+      if (el) {
+        el.innerHTML = c.html; el.title = c.title;
+        el.classList.toggle('stale', !!c.stale);
+        el.style.display = '';
+      }
+      _usageShownProvider = p;
+      return;
+    }
+    refreshUsageBrief();
   }
   // New prompt / turn start: refresh soon, but swallow rapid back-and-forth.
   function refreshUsageBriefThrottled() {
@@ -2915,13 +2963,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!el) return;
     _usageLastRefreshTs = Date.now();
     _scheduleUsageIdlePoll();   // every refresh restarts the idle countdown
+    const activeProv = _usageProviderFor(activeId);
     try {
       const raw = await pywebview.api.tab_usage_brief(activeId || '');
       const d = JSON.parse(raw || '{}');
+      const prov = (d && d.ai) || activeProv;
       // Backend couldn't even fetch (exception / unexpected error).
       if (!d || (d.error && d.error !== 'no_data')) {
         _usageBriefPlaceholder(el, '用量 ⚠',
           `用量查詢失敗：${(d && d.error) || '未知錯誤'}\n點擊重試`);
+        _commitUsageRender(prov);
         return;
       }
       // Reached the provider but no water-level (not logged in / empty).
@@ -2929,6 +2980,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const who = d.ai || 'AI';
         _usageBriefPlaceholder(el, '用量 查不到',
           `查不到 ${who} 水位（請確認已登入 ${who}）\n點擊重試`);
+        _commitUsageRender(prov);
         return;
       }
       const seg = (label, info) => info
@@ -2944,6 +2996,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.title = tip.join('\n') || 'AI 用量水位 — 點擊看細節';
       el.classList.remove('stale');
       el.style.display = '';
+      _commitUsageRender(prov);
     } catch (_) {
       // JS/IPC error: dim the last good reading if we have one, else placeholder.
       if (el.innerHTML && !el.querySelector('.ub-none')) {
@@ -2952,6 +3005,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       } else {
         _usageBriefPlaceholder(el, '用量 ⚠', '用量查詢失敗，稍後自動重試\n點擊重試');
       }
+      _commitUsageRender(activeProv);
     }
   }
   document.getElementById('usage-brief').addEventListener('click', () => {
@@ -2960,6 +3014,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   window.refreshUsageBrief = refreshUsageBrief;
   window.refreshUsageBriefThrottled = refreshUsageBriefThrottled;
   window.refreshUsageBriefAfterTurn = refreshUsageBriefAfterTurn;
+  window.onActiveTabChangedForUsage = onActiveTabChangedForUsage;
   refreshUsageBrief();   // initial read also arms the idle poll
 
   // A resizer is only meaningful while its panel is expanded.
