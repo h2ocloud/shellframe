@@ -36,9 +36,11 @@
   .tab[draggable]:active { cursor: grabbing; }
   .busy-dot {
     display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: transparent; flex-shrink: 0;
+    background: transparent; flex-shrink: 0; cursor: pointer; position: relative;
     transition: background .3s, box-shadow .3s;
   }
+  /* Transparent ring widens the click target without touching the 7px visual. */
+  .busy-dot::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
   .busy-dot.on {
     background: #e0af68;
     box-shadow: 0 0 6px #e0af68, 0 0 2px #e0af68;
@@ -2352,17 +2354,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const numLabel = tgNum ? tgNum : '·';
       const numOpacity = tgNum ? '.45' : '.2';
       tab.innerHTML = `
-        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>
+        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(s.label)}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
       `;
       tab.addEventListener('click', (e) => {
         if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
+        if (e.target.classList.contains('busy-dot')) { e.stopPropagation(); cycleManualDot(sid); return; }
         switchTab(sid);
       });
       tab.addEventListener('dblclick', (e) => {
-        if (e.target.classList.contains('close-tab')) return;
+        if (e.target.classList.contains('close-tab') || e.target.classList.contains('busy-dot')) return;
         renameSession(sid);
       });
       // Drag reorder
@@ -2428,7 +2431,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.dataset.sid = sid;
       el.dataset.section = 'on';
       el.innerHTML =
-        `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
+        `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>` +
         (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
@@ -2453,7 +2456,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         el.dataset.sid = sid;
         el.dataset.section = 'off';
         el.innerHTML =
-          `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>` +
+          `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
           `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
@@ -2541,6 +2544,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // Event delegation for sidebar clicks
   document.getElementById('sidebar-sessions').addEventListener('click', (e) => {
+    // Status dot → cycle its colour manually (stopImmediate so the rename
+    // double-click listener on this same element doesn't also fire).
+    if (e.target.classList.contains('busy-dot')) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const item = e.target.closest('.sb-item');
+      if (item && item.dataset.sid) cycleManualDot(item.dataset.sid);
+      return;
+    }
     // Close button → confirm + kill session (same path as Cmd/Ctrl+W; the
     // sidebar rows are densely packed so a stray click must not nuke an agent)
     const closeBtn = e.target.closest('[data-action="close"]');
@@ -2604,6 +2616,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const item = e.target.closest('.sb-item');
     if (!item || !item.dataset.sid) return;
     if (e.target.closest('[data-action]')) return;
+    if (e.target.classList.contains('busy-dot')) return;  // dot click ≠ drag
     const sid = item.dataset.sid;
     let moved = false;
     const startY = e.clientY;
@@ -5385,6 +5398,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return { active, attention, signal };
   }
 
+  // ── Manual dot override ──
+  // Click a tab/sidebar status dot to pin its colour. Useful when a finished
+  // conversation is wrongly stuck on blue and you don't want to send a message
+  // just to clear it. Cycles green→blue→orange→red→off. The pin holds until the
+  // tab produces new output (the next turn), then auto-detection takes back over.
+  const MANUAL_DOT_CYCLE = ['sig-done', 'sig-working', 'sig-stuck', 'sig-decision', ''];
+  const MANUAL_DOT_GRACE_MS = 1200;   // ignore output settling right after the click
+  function applyDotNow(sid, dotClass) {
+    const s = sessions[sid];
+    if (s) s._dotClass = dotClass;    // so a re-render keeps the pinned colour
+    const tabDot = $tabs.querySelector(`.tab[data-sid="${sid}"] .busy-dot`);
+    if (tabDot) tabDot.className = 'busy-dot ' + dotClass;
+    const sbDot = document.querySelector(`#sidebar-sessions [data-sid="${sid}"] .busy-dot`);
+    if (sbDot) sbDot.className = 'busy-dot ' + dotClass;
+  }
+  function cycleManualDot(sid) {
+    const s = sessions[sid];
+    if (!s) return;
+    const cur = (typeof s._manualDotIdx === 'number') ? s._manualDotIdx : -1;
+    const idx = (cur + 1) % MANUAL_DOT_CYCLE.length;
+    s._manualDotIdx = idx;
+    s._manualDot = MANUAL_DOT_CYCLE[idx];
+    s._manualDotTs = Date.now();
+    applyDotNow(sid, s._manualDot);
+  }
+  window.cycleManualDot = cycleManualDot;
+
   setInterval(() => {
     const now = Date.now();
     for (const sid of Object.keys(sessions)) {
@@ -5436,6 +5476,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         dotClass = SIGNAL_DOT_CLASS[s._signal];
       } else {
         dotClass = isAttention ? 'on attention' : '';
+      }
+
+      // Manual override (clicked dot) wins until the next real activity. New PTY
+      // output after the click means the conversation resumed → drop the pin and
+      // let auto-detection take back over ("下次對話自動接管").
+      if (s._manualDot != null) {
+        if (s._lastOutputTs && s._lastOutputTs > (s._manualDotTs || 0) + MANUAL_DOT_GRACE_MS) {
+          s._manualDot = null; s._manualDotTs = 0; s._manualDotIdx = -1;
+        } else {
+          dotClass = s._manualDot;
+        }
       }
 
       // Drive the usage pill off the active tab's busy transitions: idle→busy
