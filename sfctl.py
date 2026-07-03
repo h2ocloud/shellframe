@@ -354,7 +354,7 @@ def _tmux_fda_flow(args):
     else:
         print("建議：執行 `brew pin tmux` 固定版本，避免 brew upgrade 換 cdhash 讓授權失效。")
         if args.yes or _prompt("現在就 pin tmux？[y/N] ", default="n").strip().lower() == "y":
-            r = subprocess.run(["brew", "pin", "tmux"], capture_output=True, text=True)
+            r = subprocess.run(["brew", "pin", "tmux"], capture_output=True, text=True, timeout=30)
             print("已 pin tmux。" if r.returncode == 0 else f"pin 失敗：{r.stderr.strip()}")
 
     # Restarting the server is OPTIONAL and destructive — it kills every tab,
