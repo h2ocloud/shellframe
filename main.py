@@ -3532,6 +3532,14 @@ class Api:
                     text = self._pyte_history_text(slot, ansi=ansi)
                 except Exception:
                     text = ""
+                # Same cleaning pipeline as the tmux path. pyte's history.top
+                # accrues a copy of every full-viewport redraw (resize, panel
+                # toggle, the TUI re-rendering the conversation), so WITHOUT
+                # this the alt-screen source — the one every Claude/Codex tab
+                # actually uses — showed raw duplicate frames while all the
+                # dedup work only ever ran on the tmux branch.
+                if text:
+                    text = self._dedupe_history_lines(text.split("\n"), ansi)
                 # Length gate on the PLAIN text — SGR bytes would let a
                 # nearly-empty styled capture pass.
                 plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
@@ -3552,130 +3560,137 @@ class Api:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             if r.returncode != 0:
                 return json.dumps({"success": False, "reason": r.stderr[-200:], "text": ""})
-            raw_lines = r.stdout.split("\n")
-            # Collapse terminal-resize redraw frames FIRST. When the window
-            # is resized mid-stream (panel toggled, font changed, etc.) the
-            # TUI re-renders the streaming block at the new width; tmux
-            # scrollback keeps every wrap-variant. They share an identical
-            # character stream but split at different points, so the
-            # line-level dedup below can't see them. This wrap-invariant
-            # pass drops the stale partial frames, keeping the last (current
-            # width) render — Howard's "上滾看到同段落重複 N 次、樣式錯亂".
-            raw_lines = self._collapse_redraw_frames(raw_lines)
-            cleaned = []  # list of (stripped_for_compare, original_for_output)
-            for line in raw_lines:
-                # Strip bare CR — they survive tmux capture for some TUIs and
-                # cause xterm.js (with convertEol: true) to jump to col 0 and
-                # overwrite earlier chars, leaving only the line tail visible.
-                # Replace with nothing; the `\n` split already handled row breaks.
-                line = line.replace("\r", "")
-                original = line.rstrip()
-                stripped = self._ANSI_STRIP_RE.sub('', original).rstrip() if ansi else original
-                if cleaned:
-                    prev_stripped, _ = cleaned[-1]
-                    # Current is strict prefix of previous → skip (rare)
-                    if prev_stripped.startswith(stripped) and stripped != prev_stripped:
-                        continue
-                    # Previous is strict prefix of current → replace with longer
-                    if stripped.startswith(prev_stripped) and stripped != prev_stripped:
-                        cleaned[-1] = (stripped, original)
-                        continue
-                cleaned.append((stripped, original))
-
-            # Pass 2: collapse repeats. Two regimes that need different
-            # gates because tmux scrollback mixes both kinds of duplicate:
-            #
-            # (a) Pure-CJK streaming redraw — Claude's reply rewrites the
-            #     same 交付成果 / 敘事結構 block 5-10× while tokens stream;
-            #     tmux records every frame.
-            # (b) Mid-row redraw of a generic line — the same row gets
-            #     re-emitted 3+ times in mixed CJK/ASCII content (tables
-            #     where every cell is the same date label, audit reports
-            #     where a single event line gets re-rendered after each
-            #     status-bar refresh, etc.). Howard's screenshot:
-            #     "Warren 寄 V1.5.1 部版資訊" appears 4× in a row.
-            #
-            # Two gates so we collapse both without nuking legit user
-            # repeats (`return null;` appearing twice in code, two
-            # adjacent table rows that genuinely share a date):
-            #
-            # Gate A: ≥ 90% CJK-cells AND ≥ MIN_WIDTH wide → dedup,
-            #          keeping the LAST occurrence.
-            # Gate B: any line wide enough to be distinctive AND seen
-            #          ≥ 3 times in this capture → keep only the LAST.
-            #          Threshold 3 (not 2) preserves natural-looking
-            #          two-occurrence repeats.
-            #
-            # WHY keep LAST, not FIRST: in streaming/TUI-redraw contexts
-            # the most recent rendering is the canonical one — earlier
-            # instances are usually partial frames or context-mismatched
-            # snapshots.  Classic failure: a user message captured during
-            # the Claude Code splash banner (T1) and again after the real
-            # reply starts streaming (T2).  Keep-first kept T1, so
-            # scrolling up showed the user message followed by splash
-            # banner content instead of the actual Claude reply.
-            from collections import Counter
-            DEDUP_MIN_WIDTH = 8
-            REPEAT_GATE_MIN_WIDTH = 20      # raised from 12 — short
-            REPEAT_GATE_THRESHOLD = 3        # numbered subtitles like
-            # "3. Year One" (vw 12-14) and short Chinese sub-headings
-            # like "雙語混搭" / "中文動詞句、有立場" used to land on this
-            # gate when they appeared in three nearby outline blocks
-            # ("英文短句、有電影感", "中文動詞句、有立場", repeated for
-            # each section). Howard saw the "1." / "2." entries vanish
-            # from his outline. Keep the gate tight to long redraw
-            # strings (audit rows, full sentences); short headings now
-            # always pass through.
-            #
-            # Dedup key is the ANSI-stripped line with whitespace runs
-            # collapsed to a single space, so two captures that differ
-            # only in indentation / residual escape bytes still compare
-            # equal.
-            def _key(s_stripped):
-                return self._NORM_WHITESPACE_RE.sub(' ', s_stripped).strip()
-            counts = Counter()
-            for stripped, _ in cleaned:
-                if self._visual_width(stripped.strip()) >= REPEAT_GATE_MIN_WIDTH:
-                    counts[_key(stripped)] += 1
-            # Precompute the LAST index for each gated key so the final
-            # loop can emit exactly one copy — the last (most canonical).
-            last_idx_cjk = {}
-            last_idx_rep = {}
-            for i, (stripped, _) in enumerate(cleaned):
-                k = _key(stripped)
-                vw = self._visual_width(stripped.strip())
-                is_cjk = (vw >= DEDUP_MIN_WIDTH
-                          and self._cjk_cells(stripped.strip()) >= vw * 0.9)
-                if is_cjk:
-                    last_idx_cjk[k] = i
-                elif vw >= REPEAT_GATE_MIN_WIDTH and counts[k] >= REPEAT_GATE_THRESHOLD:
-                    last_idx_rep[k] = i
-            final = []
-            for i, (stripped, original) in enumerate(cleaned):
-                k = _key(stripped)
-                vw = self._visual_width(stripped.strip())
-                is_cjk = (vw >= DEDUP_MIN_WIDTH
-                          and self._cjk_cells(stripped.strip()) >= vw * 0.9)
-                if is_cjk:
-                    if last_idx_cjk.get(k) != i:
-                        continue
-                elif vw >= REPEAT_GATE_MIN_WIDTH and counts[k] >= REPEAT_GATE_THRESHOLD:
-                    if last_idx_rep.get(k) != i:
-                        continue
-                final.append((stripped, original))
-            # Append SGR reset to each line so an unclosed \x1b[...m on one
-            # line can't bleed background/foreground colors into subsequent
-            # lines when rendered in xterm.js (manifested as a giant red /
-            # dark-bg rectangle across several rows in the overlay).
-            reset = "\x1b[0m" if ansi else ""
+            text = self._dedupe_history_lines(r.stdout.split("\n"), ansi)
             return json.dumps({
                 "success": True,
-                "text": "\n".join(orig + reset for _, orig in final),
+                "text": text,
                 "ansi": ansi,
                 "source": f"tmux ({'normal' if not in_alt_screen else 'alt-fallback'})",
             })
         except Exception as e:
             return json.dumps({"success": False, "reason": str(e), "text": ""})
+
+    def _dedupe_history_lines(self, raw_lines, ansi: bool) -> str:
+        """Shared overlay-history cleaning pipeline — BOTH sources (tmux
+        capture and pyte reconstruction) must pass through here so every
+        dedup fix lands on both. Returns the joined text, each line closed
+        with an SGR reset when ansi=True."""
+        # Collapse terminal-resize redraw frames FIRST. When the window
+        # is resized mid-stream (panel toggled, font changed, etc.) the
+        # TUI re-renders the streaming block at the new width; the
+        # scrollback keeps every wrap-variant. They share an identical
+        # character stream but split at different points, so the
+        # line-level dedup below can't see them. This wrap-invariant
+        # pass drops the stale partial frames, keeping the last (current
+        # width) render — Howard's "上滾看到同段落重複 N 次、樣式錯亂".
+        raw_lines = self._collapse_redraw_frames(raw_lines)
+        cleaned = []  # list of (stripped_for_compare, original_for_output)
+        for line in raw_lines:
+            # Strip bare CR — they survive tmux capture for some TUIs and
+            # cause xterm.js (with convertEol: true) to jump to col 0 and
+            # overwrite earlier chars, leaving only the line tail visible.
+            # Replace with nothing; the `\n` split already handled row breaks.
+            line = line.replace("\r", "")
+            original = line.rstrip()
+            stripped = self._ANSI_STRIP_RE.sub('', original).rstrip() if ansi else original
+            if cleaned:
+                prev_stripped, _ = cleaned[-1]
+                # Current is strict prefix of previous → skip (rare)
+                if prev_stripped.startswith(stripped) and stripped != prev_stripped:
+                    continue
+                # Previous is strict prefix of current → replace with longer
+                if stripped.startswith(prev_stripped) and stripped != prev_stripped:
+                    cleaned[-1] = (stripped, original)
+                    continue
+            cleaned.append((stripped, original))
+
+        # Pass 2: collapse repeats. Two regimes that need different
+        # gates because tmux scrollback mixes both kinds of duplicate:
+        #
+        # (a) Pure-CJK streaming redraw — Claude's reply rewrites the
+        #     same 交付成果 / 敘事結構 block 5-10× while tokens stream;
+        #     tmux records every frame.
+        # (b) Mid-row redraw of a generic line — the same row gets
+        #     re-emitted 3+ times in mixed CJK/ASCII content (tables
+        #     where every cell is the same date label, audit reports
+        #     where a single event line gets re-rendered after each
+        #     status-bar refresh, etc.). Howard's screenshot:
+        #     "Warren 寄 V1.5.1 部版資訊" appears 4× in a row.
+        #
+        # Two gates so we collapse both without nuking legit user
+        # repeats (`return null;` appearing twice in code, two
+        # adjacent table rows that genuinely share a date):
+        #
+        # Gate A: ≥ 90% CJK-cells AND ≥ MIN_WIDTH wide → dedup,
+        #          keeping the LAST occurrence.
+        # Gate B: any line wide enough to be distinctive AND seen
+        #          ≥ 3 times in this capture → keep only the LAST.
+        #          Threshold 3 (not 2) preserves natural-looking
+        #          two-occurrence repeats.
+        #
+        # WHY keep LAST, not FIRST: in streaming/TUI-redraw contexts
+        # the most recent rendering is the canonical one — earlier
+        # instances are usually partial frames or context-mismatched
+        # snapshots.  Classic failure: a user message captured during
+        # the Claude Code splash banner (T1) and again after the real
+        # reply starts streaming (T2).  Keep-first kept T1, so
+        # scrolling up showed the user message followed by splash
+        # banner content instead of the actual Claude reply.
+        from collections import Counter
+        DEDUP_MIN_WIDTH = 8
+        REPEAT_GATE_MIN_WIDTH = 20      # raised from 12 — short
+        REPEAT_GATE_THRESHOLD = 3        # numbered subtitles like
+        # "3. Year One" (vw 12-14) and short Chinese sub-headings
+        # like "雙語混搭" / "中文動詞句、有立場" used to land on this
+        # gate when they appeared in three nearby outline blocks
+        # ("英文短句、有電影感", "中文動詞句、有立場", repeated for
+        # each section). Howard saw the "1." / "2." entries vanish
+        # from his outline. Keep the gate tight to long redraw
+        # strings (audit rows, full sentences); short headings now
+        # always pass through.
+        #
+        # Dedup key is the ANSI-stripped line with whitespace runs
+        # collapsed to a single space, so two captures that differ
+        # only in indentation / residual escape bytes still compare
+        # equal.
+        def _key(s_stripped):
+            return self._NORM_WHITESPACE_RE.sub(' ', s_stripped).strip()
+        counts = Counter()
+        for stripped, _ in cleaned:
+            if self._visual_width(stripped.strip()) >= REPEAT_GATE_MIN_WIDTH:
+                counts[_key(stripped)] += 1
+        # Precompute the LAST index for each gated key so the final
+        # loop can emit exactly one copy — the last (most canonical).
+        last_idx_cjk = {}
+        last_idx_rep = {}
+        for i, (stripped, _) in enumerate(cleaned):
+            k = _key(stripped)
+            vw = self._visual_width(stripped.strip())
+            is_cjk = (vw >= DEDUP_MIN_WIDTH
+                      and self._cjk_cells(stripped.strip()) >= vw * 0.9)
+            if is_cjk:
+                last_idx_cjk[k] = i
+            elif vw >= REPEAT_GATE_MIN_WIDTH and counts[k] >= REPEAT_GATE_THRESHOLD:
+                last_idx_rep[k] = i
+        final = []
+        for i, (stripped, original) in enumerate(cleaned):
+            k = _key(stripped)
+            vw = self._visual_width(stripped.strip())
+            is_cjk = (vw >= DEDUP_MIN_WIDTH
+                      and self._cjk_cells(stripped.strip()) >= vw * 0.9)
+            if is_cjk:
+                if last_idx_cjk.get(k) != i:
+                    continue
+            elif vw >= REPEAT_GATE_MIN_WIDTH and counts[k] >= REPEAT_GATE_THRESHOLD:
+                if last_idx_rep.get(k) != i:
+                    continue
+            final.append((stripped, original))
+        # Append SGR reset to each line so an unclosed \x1b[...m on one
+        # line can't bleed background/foreground colors into subsequent
+        # lines when rendered in xterm.js (manifested as a giant red /
+        # dark-bg rectangle across several rows in the overlay).
+        reset = "\x1b[0m" if ansi else ""
+        return "\n".join(orig + reset for _, orig in final)
 
     def history_audit(self, sid: str) -> str:
         """Self-check for "上滾看到不對的歷史" bugs.
@@ -3893,6 +3908,8 @@ class Api:
             text = self._pyte_history_text(slot, ansi=ansi)
         except Exception:
             text = ""
+        if text:
+            text = self._dedupe_history_lines(text.split("\n"), ansi)
         if text and text.strip():
             return json.dumps({
                 "success": True, "text": text, "ansi": ansi,
