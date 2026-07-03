@@ -425,7 +425,7 @@ def load_config():
             try:
                 save_config(cfg)
             except Exception:
-                pass
+                _swallow("load_config:428")
         # One-shot migration: fix em/en-dash typos introduced by macOS smart
         # substitution (e.g. "codex —full-auto" → "codex --full-auto").
         if not cfg.get("_dash_normalized_v1"):
@@ -440,7 +440,7 @@ def load_config():
                 try:
                     save_config(cfg)
                 except Exception:
-                    pass
+                    _swallow("load_config:443")
         # One-shot migration: Howard uses ShellFrame through Telegram and
         # wants the agents to execute instead of repeatedly asking for tool
         # approvals. Upgrade the stock Claude/Codex presets only when they
@@ -462,7 +462,7 @@ def load_config():
                 try:
                     save_config(cfg)
                 except Exception:
-                    pass
+                    _swallow("load_config:465")
         # Ongoing cleanup for installs that already passed the one-shot
         # migration while the Codex preset still used a literal "~" path.
         changed = False
@@ -480,7 +480,7 @@ def load_config():
             try:
                 save_config(cfg)
             except Exception:
-                pass
+                _swallow("load_config:483")
         cfg_defaults_changed = False
         if _ensure_idle_reaper_defaults(cfg):
             cfg_defaults_changed = True
@@ -496,7 +496,7 @@ def load_config():
             try:
                 save_config(cfg)
             except Exception:
-                pass
+                _swallow("load_config:499")
         return cfg
     cfg = DEFAULT_CONFIG.copy()
     _ensure_idle_reaper_defaults(cfg)
@@ -517,7 +517,7 @@ def save_config(cfg):
         try:
             os.fsync(f.fileno())
         except OSError:
-            pass
+            _swallow("save_config:520")
     os.replace(tmp, CONFIG_FILE)
 
 
@@ -612,7 +612,7 @@ def _tmux_get_env(tmux_name: str, key: str):
         if r.returncode == 0 and "=" in r.stdout:
             return r.stdout.strip().split("=", 1)[1]
     except Exception:
-        pass
+        _swallow("_tmux_get_env:615")
     return ""
 
 
@@ -674,7 +674,7 @@ def _apply_macos_app_identity():
         try:
             app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
         except Exception:
-            pass
+            _swallow("_apply_macos_app_identity:677")
         if icon_path is not None:
             img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
             if img is not None:
@@ -724,7 +724,7 @@ def _refresh_macos_app_launcher(app_path: Path) -> tuple[bool, str]:
         try:
             payload.chmod(0o644)
         except Exception:
-            pass
+            _swallow("_refresh_macos_app_launcher:727")
         subprocess.run(["xattr", "-cr", str(app_path)], capture_output=True, timeout=10)
         subprocess.run(["codesign", "--force", "--sign", "-", str(app_path)], capture_output=True, timeout=30)
         return True, "native launcher refreshed"
@@ -775,6 +775,19 @@ def _dlog(category: str, msg: str):
                     f.write(content[len(content) // 2:])
         except Exception:
             pass
+    except Exception:
+        pass
+
+
+def _swallow(context: str):
+    """Log-and-swallow for known-safe except paths. The TG poll loop taught
+    us that silent `except: pass` reads as "feels unstable, nothing in the
+    logs" — same failure, now with a breadcrumb. Call from inside an except
+    block; never raises."""
+    try:
+        import traceback
+        exc = traceback.format_exc(limit=2).strip().splitlines()
+        _dlog("swallow", f"{context}: {exc[-1] if exc else '?'}")
     except Exception:
         pass
 
@@ -960,7 +973,7 @@ class Session:
             try:
                 fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
             except OSError:
-                pass
+                _swallow("Session._start_tmux:976")
             threading.Thread(target=self._reader_unix, daemon=True).start()
 
     def _start_unix(self, cols, rows):
@@ -982,7 +995,7 @@ class Session:
             try:
                 os.chdir(self.cwd)
             except Exception:
-                pass
+                _swallow("Session._start_unix:998")
 
             if exe:
                 os.execve(exe, args, env)
@@ -994,7 +1007,7 @@ class Session:
             try:
                 fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
             except OSError:
-                pass
+                _swallow("Session._start_unix:1010")
             threading.Thread(target=self._reader_unix, daemon=True).start()
 
     def _start_win(self, cols, rows):
@@ -1112,7 +1125,7 @@ class Session:
             try:
                 self._winpty.write(data)
             except (EOFError, OSError):
-                pass
+                _swallow("Session.write:1128")
             return
         raw = data.encode("utf-8", errors="replace")
         if IS_WIN:
@@ -1121,13 +1134,13 @@ class Session:
                     self.win_proc.stdin.write(raw)
                     self.win_proc.stdin.flush()
                 except OSError:
-                    pass
+                    _swallow("Session.write:1137")
         else:
             if self.master_fd is not None:
                 try:
                     os.write(self.master_fd, raw)
                 except OSError:
-                    pass
+                    _swallow("Session.write:1143")
 
     def read(self) -> str:
         with self.lock:
@@ -1145,13 +1158,13 @@ class Session:
             try:
                 self._winpty.setwinsize(rows, cols)
             except (OSError, AttributeError):
-                pass
+                _swallow("Session.resize:1161")
         elif not IS_WIN and self.master_fd is not None:
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
             try:
                 fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
             except OSError:
-                pass
+                _swallow("Session.resize:1167")
             # Also resize the tmux window so it doesn't clip
             if self._tmux_name:
                 subprocess.run(
@@ -1167,7 +1180,7 @@ class Session:
                 try:
                     self._winpty.terminate()
                 except:
-                    pass
+                    _swallow("Session.kill:1183")
             elif self.win_proc:
                 self.win_proc.terminate()
         else:
@@ -1176,7 +1189,7 @@ class Session:
                 try:
                     os.close(self.master_fd)
                 except OSError:
-                    pass
+                    _swallow("Session.kill:1192")
                 self.master_fd = None
             if self._tmux_name and kill_tmux:
                 # Kill the tmux session (and the process inside it)
@@ -1187,7 +1200,7 @@ class Session:
                 try:
                     os.killpg(os.getpgid(self.child_pid), signal.SIGTERM)
                 except (OSError, ProcessLookupError):
-                    pass
+                    _swallow("Session.kill:1203")
                 threading.Timer(1.0, self._force_kill).start()
 
     def _force_kill(self):
@@ -1201,7 +1214,7 @@ class Session:
             try:
                 os.killpg(os.getpgid(self.child_pid), signal.SIGKILL)
             except (OSError, ProcessLookupError):
-                pass
+                _swallow("Session._force_kill:1217")
 
 
 class Api:
@@ -1675,7 +1688,7 @@ class Api:
             if label:
                 return str(label)
         except Exception:
-            pass
+            _swallow("Api._session_label:1691")
         return sid
 
     def _master_turn_preamble_enabled(self) -> bool:
@@ -1713,14 +1726,14 @@ class Api:
                 from bridge_telegram import get_master_turn_preamble
                 preamble = get_master_turn_preamble()
             except Exception:
-                pass
+                _swallow("Api._wrap_master_turn_input:1729")
         show_tag = True
         if self.bridge:
             try:
                 from bridge_telegram import show_tg_wrapper
                 show_tag = show_tg_wrapper()
             except Exception:
-                pass
+                _swallow("Api._wrap_master_turn_input:1736")
         tagged = self._extract_tab_tags(user_text)
         if tagged:
             mapping = "、".join(f"#{t['label']}={t['sid']}" for t in tagged)
@@ -2056,7 +2069,7 @@ class Api:
                             bg_last_push[sid] = now
                             pushed = True
                         except Exception:
-                            pass
+                            _swallow("_start_output_pusher.pusher:2072")
                 # Event-driven: reader threads set _output_event on every new
                 # chunk, so the idle wait is just a safety net — not a polling
                 # interval. 0.5s idle floor cuts the steady-state from 66 to 2
@@ -2172,7 +2185,7 @@ class Api:
                 any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
                 for ev in self._HOOK_EVENTS)
         except Exception:
-            pass
+            _swallow("Api.get_status_hooks_info:2188")
         return json.dumps({"installed": installed,
                            "settings_path": str(self._CLAUDE_SETTINGS_PATH)})
 
@@ -2292,7 +2305,7 @@ class Api:
                                             screen_tail = "\n".join(
                                                 r.stdout.rstrip().splitlines()[-20:])
                                     except Exception:
-                                        pass
+                                        _swallow("_start_status_monitor.monitor:2308")
                                 if not screen_tail:
                                     screen_tail = bytes(getattr(s, "_recent", b"")).decode(
                                         "utf-8", errors="replace")[-4000:]
@@ -2341,9 +2354,9 @@ class Api:
                                 last_push["key"] = key
                                 last_push["at"] = now
                             except Exception:
-                                pass
+                                _swallow("_start_status_monitor.monitor:2357")
                 except Exception:
-                    pass
+                    _swallow("_start_status_monitor.monitor:2359")
                 time.sleep(0.6)
 
         threading.Thread(target=monitor, daemon=True).start()
@@ -2450,7 +2463,7 @@ class Api:
                 except ValueError:
                     out[lbl] = (None, 0)
         except Exception:
-            pass
+            _swallow("Api._sched_loaded_map:2466")
         return out
 
     def schedules_list(self) -> str:
@@ -2610,7 +2623,7 @@ class Api:
             try:
                 _register_global_hotkey()
             except Exception:
-                pass
+                _swallow("Api.save_settings:2626")
         return json.dumps(cfg)
 
     def save_idle_reaper(self, idle_json: str) -> str:
@@ -2735,7 +2748,7 @@ class Api:
             if self._window:
                 self._window.evaluate_js('window._syncSessionsFromBackend && window._syncSessionsFromBackend()')
         except Exception:
-            pass
+            _swallow("Api._notify_ui_sessions_changed:2751")
 
     def _should_inject_init(self, cmd: str) -> bool:
         """Decide whether a session command should receive the init prompt.
@@ -2878,7 +2891,7 @@ class Api:
                 if r.returncode == 0 and r.stdout:
                     parts.append(r.stdout)
             except Exception:
-                pass
+                _swallow("Api._startup_trust_tail:2894")
         return "\n".join(parts)[-4000:]
 
     def _auto_accept_startup_trust_prompt(self, sid: str, s: Session):
@@ -2907,7 +2920,7 @@ class Api:
                 )
                 return
             except Exception:
-                pass
+                _swallow("Api._auto_accept_startup_trust_prompt:2923")
         s.write("\r")
 
     def _prepare_pane_for_input(self, s: Session) -> bool:
@@ -2929,7 +2942,7 @@ class Api:
                 _dlog("send", f"exited copy-mode before inject sid={s.sid}")
                 return True
         except Exception:
-            pass
+            _swallow("Api._prepare_pane_for_input:2945")
         return False
 
     def _send_text_to_session(self, s: Session, text: str, submit: bool = False) -> bool:
@@ -2987,7 +3000,7 @@ class Api:
                 try:
                     subprocess.run(["tmux", "delete-buffer", "-b", buffer_name], capture_output=True, timeout=1)
                 except Exception:
-                    pass
+                    _swallow("Api._send_text_to_session:3003")
                 if pasted:
                     if submit:
                         s.write("\r")
@@ -3138,7 +3151,7 @@ class Api:
                 if r.returncode == 0 and r.stdout:
                     parts.append(r.stdout)
             except Exception:
-                pass
+                _swallow("Api.is_session_ready_for_bridge:3154")
         clean = self._ANSI_RE.sub('', "\n".join(parts)) if parts else ""
         return bool(self._AI_READY_RE.search(clean))
 
@@ -3547,7 +3560,7 @@ class Api:
             )
             in_alt_screen = (r_alt.stdout.strip() == "1")
         except Exception:
-            pass
+            _swallow("Api.get_clean_history:3563")
 
         if in_alt_screen:
             slot = None
@@ -3797,7 +3810,7 @@ class Api:
                 if r_raw.returncode == 0:
                     tmux_raw = self._ANSI_STRIP_RE.sub('', r_raw.stdout)
             except Exception:
-                pass
+                _swallow("Api.history_audit:3813")
 
         # 4. pyte history (independent path)
         pyte_text = ""
@@ -3810,7 +3823,7 @@ class Api:
                 try:
                     pyte_text = self._pyte_history_text(slot)
                 except Exception:
-                    pass
+                    _swallow("Api.history_audit:3826")
 
         # Normalise for comparison — collapse whitespace runs, drop empty.
         def _norm_lines(text):
@@ -3870,7 +3883,7 @@ class Api:
         try:
             diag_dir.mkdir(parents=True, exist_ok=True)
         except Exception:
-            pass
+            _swallow("Api.history_audit:3886")
         ts_tag = time.strftime("%Y%m%d_%H%M%S", time.localtime())
         dump_path = diag_dir / f"history-audit_{sid}_{ts_tag}.txt"
         try:
@@ -4070,7 +4083,7 @@ class Api:
             try:
                 self._output_event.set()
             except Exception:
-                pass
+                _swallow("Api.set_active_tab:4086")
             cfg = load_config()
             cfg["last_active_tab"] = sid
             save_config(cfg)
@@ -4456,7 +4469,7 @@ class Api:
                     if f.stat().st_mtime < cutoff:
                         f.unlink()
                 except OSError:
-                    pass
+                    _swallow("Api.save_image:4472")
             return str(path)
         except Exception as e:
             return f"ERROR: {e}"
@@ -4511,7 +4524,7 @@ try {
                 try:
                     _dlog('clipboard', f'windows read_clipboard_image failed: {e}')
                 except Exception:
-                    pass
+                    _swallow("Api.read_clipboard_image:4527")
                 return ''
         if platform.system() != 'Darwin':
             return ''
@@ -4541,7 +4554,7 @@ try {
             try:
                 _dlog('clipboard', f'read_clipboard_image failed: {e}')
             except Exception:
-                pass
+                _swallow("Api.read_clipboard_image:4557")
             return ''
 
     def get_version(self) -> str:
@@ -4585,7 +4598,7 @@ try {
                     section.append(ln)
                 body = "\n".join(section).strip()
         except Exception:
-            pass
+            _swallow("Api.get_latest_release_notes:4601")
         return json.dumps({"version": version, "heading": heading, "body": body})
 
     def check_update(self) -> str:
@@ -4838,7 +4851,7 @@ try {
                         if c.exists():
                             return c.resolve()
                     except Exception:
-                        pass
+                        _swallow("restart_app._find_macos_app_path:4854")
                 return None
 
             def _schedule_macos_app_relaunch(app_path: Path):
@@ -4898,7 +4911,7 @@ try {
                             bat_path = c
                             break
                     except Exception:
-                        pass
+                        _swallow("Api.restart_app:4914")
                 if bat_path:
                     try:
                         DETACHED_PROCESS = 0x00000008
@@ -4960,7 +4973,7 @@ try {
                             try:
                                 os.chdir(str(APP_DIR))
                             except Exception:
-                                pass
+                                _swallow("restart_app._exec_soon:4976")
                             _dlog("restart", f"exec in-place python={sys.executable!r}")
                             os.execv(sys.executable, [sys.executable, str(APP_DIR / "main.py")])
 
@@ -5027,7 +5040,7 @@ try {
                     try:
                         self.cleanup_all()  # detaches from tmux without killing
                     except Exception:
-                        pass
+                        _swallow("restart_app._exit_soon:5043")
                     os._exit(0)
                 threading.Thread(target=_exit_soon, daemon=True).start()
             return json.dumps({"success": True})
@@ -5475,7 +5488,7 @@ try {
                             'pending_menu_options': list(getattr(slot, 'pending_menu_options', []) or []),
                         }
                     except Exception:
-                        pass
+                        _swallow("Api.hot_reload_bridge:5491")
                 self.bridge.stop()
 
             # Reload the module
@@ -5622,7 +5635,7 @@ try {
                             try:
                                 path.unlink(missing_ok=True)
                             except OSError:
-                                pass
+                                _swallow("_start_command_watcher.watcher:5638")
                             continue
 
                         # Ignore stale commands (older than 30s)
@@ -5649,7 +5662,7 @@ try {
                                 try:
                                     os.fsync(f.fileno())
                                 except OSError:
-                                    pass
+                                    _swallow("_start_command_watcher.watcher:5665")
                             os.replace(tmp, result_file)
                         except IOError as e:
                             _dlog("sfctl", f"failed writing result: {e}")
@@ -6019,7 +6032,7 @@ try {
         try:
             _unregister_global_hotkey()
         except Exception:
-            pass
+            _swallow("Api.cleanup_all:6035")
         if self.bridge:
             self.bridge.stop()
             self.bridge = None
@@ -6049,7 +6062,7 @@ def _venv_python(venv_dir: Path) -> str:
             if c.exists():
                 return str(c)
         except Exception:
-            pass
+            _swallow("_venv_python:6065")
     return sys.executable
 
 
@@ -6287,9 +6300,9 @@ def _unregister_global_hotkey():
             try:
                 NSEvent.removeMonitor_(_m)
             except Exception:
-                pass
+                _swallow("_unregister_global_hotkey:6303")
     except Exception:
-        pass
+        _swallow("_unregister_global_hotkey:6305")
     _global_hotkey_monitors = []
 
 
@@ -6396,7 +6409,7 @@ def _register_carbon_hotkey(on_press) -> tuple[bool, str]:
             try:
                 carbon.RemoveEventHandler(handler_ref)
             except Exception:
-                pass
+                _swallow("_register_carbon_hotkey:6412")
             return False, f"RegisterEventHotKey status={status}"
 
         _carbon_hotkey_lib = carbon
@@ -6507,7 +6520,7 @@ def _summon_self_main_thread():
             if NSApp is not None and NSApp.isActive() and not NSApp.isHidden():
                 return
         except Exception:
-            pass
+            _swallow("_summon_self_main_thread._do:6523")
         try:
             _move_windows_to_mouse_screen()
         except Exception as e:
@@ -6515,7 +6528,7 @@ def _summon_self_main_thread():
         try:
             if NSApp is not None:
                 try: NSApp.unhide_(None)
-                except Exception: pass
+                except Exception: _swallow("_summon_self_main_thread._do:6531")
             NSRunningApplication.currentApplication().activateWithOptions_(
                 NSApplicationActivateIgnoringOtherApps
             )
@@ -6524,7 +6537,7 @@ def _summon_self_main_thread():
     try:
         NSOperationQueue.mainQueue().addOperationWithBlock_(_do)
     except Exception:
-        pass
+        _swallow("_summon_self_main_thread:6540")
 
 
 def _on_summon_signal(signum, frame):
@@ -6535,7 +6548,7 @@ def _on_summon_signal(signum, frame):
               file=sys.stderr)
         _summon_self_main_thread()
     except Exception:
-        pass
+        _swallow("_on_summon_signal:6551")
 
 
 def _release_pid_file():
@@ -6548,7 +6561,7 @@ def _release_pid_file():
             if pid == os.getpid():
                 _PID_FILE.unlink(missing_ok=True)
     except Exception:
-        pass
+        _swallow("_release_pid_file:6564")
 
 
 def _claim_pid_file():
@@ -6561,7 +6574,7 @@ def _claim_pid_file():
         try:
             signal.signal(signal.SIGUSR1, _on_summon_signal)
         except Exception:
-            pass
+            _swallow("_claim_pid_file:6577")
 
 
 _WIN_MUTEX_HANDLE = None  # keep the mutex referenced for the process lifetime
@@ -6596,7 +6609,7 @@ def _ensure_single_instance_windows():
                 user32.ShowWindow(hwnd, SW_RESTORE)
                 user32.SetForegroundWindow(hwnd)
         except Exception:
-            pass
+            _swallow("_ensure_single_instance_windows:6612")
         os._exit(0)
     except OSError:
         # ctypes/kernel32 unavailable (exotic runtime) — degrade to no guard
@@ -6649,7 +6662,7 @@ def _ensure_single_instance():
     try:
         os.kill(old_pid, signal.SIGUSR1)
     except OSError:
-        pass
+        _swallow("_ensure_single_instance:6665")
     # NOTE: removed the `open -b com.h2ocloud.shellframe` belt-and-braces.
     # macOS LaunchServices treats that as a relaunch-intent which can
     # come back round to spawn another shellframe, which re-enters this
@@ -6722,7 +6735,7 @@ def _register_global_hotkey():
                 if w.get("kCGWindowOwnerPID") == pid:
                     return True
         except Exception:
-            pass
+            _swallow("_register_global_hotkey._is_on_current_space:6738")
         return False
 
     _last_hotkey_dispatch = 0.0
@@ -6759,13 +6772,13 @@ def _register_global_hotkey():
                 try:
                     NSApp.unhide_(None)
                 except Exception:
-                    pass
+                    _swallow("_register_global_hotkey._toggle_visibility:6775")
             try:
                 NSRunningApplication.currentApplication().activateWithOptions_(
                     NSApplicationActivateIgnoringOtherApps
                 )
             except Exception:
-                pass
+                _swallow("_register_global_hotkey._toggle_visibility:6781")
             # NOTE: removed `open -b com.h2ocloud.shellframe` belt-and-braces
             # from this branch too. `unhide_` + `activateWithOptions_` is
             # enough for the in-process hotkey path; the LaunchServices
@@ -6907,7 +6920,7 @@ def main():
                 cfg_now["window"] = win
                 save_config(cfg_now)
             except Exception:
-                pass
+                _swallow("main:6923")
             print(f"[shellframe] saved window position ({saved_x},{saved_y}) "
                   f"is off-screen — centering on primary.", file=sys.stderr)
 
@@ -6936,7 +6949,7 @@ def main():
             }
             save_config(cfg)
         except Exception:
-            pass
+            _swallow("main._flush_geom:6952")
 
     def _schedule_flush():
         with _geom_lock:
@@ -6961,11 +6974,11 @@ def main():
     try:
         window.events.moved += _on_moved
     except Exception:
-        pass
+        _swallow("main:6977")
     try:
         window.events.resized += _on_resized
     except Exception:
-        pass
+        _swallow("main:6981")
 
     def _on_closed_save_and_cleanup():
         # Cancel pending debounce + flush synchronously so the close actually
@@ -7012,7 +7025,7 @@ def main():
                                 w.collectionBehavior() | MOVE_TO_ACTIVE_SPACE
                             )
                         except Exception:
-                            pass
+                            _swallow("_on_loaded._apply_collection_behavior:7028")
                 NSOperationQueue.mainQueue().addOperationWithBlock_(
                     _apply_collection_behavior
                 )
@@ -7061,9 +7074,9 @@ def _write_crash_log(exc: BaseException):
                     'with title "ShellFrame" buttons {"OK"} default button 1'
                 ], capture_output=True, timeout=30)
             except Exception:
-                pass
+                _swallow("_write_crash_log:7077")
     except Exception:
-        pass
+        _swallow("_write_crash_log:7079")
 
 
 if __name__ == "__main__":
