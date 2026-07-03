@@ -566,11 +566,13 @@ class TelegramBridgeConfig(BridgeConfigBase):
 class SessionSlot:
     """One session registered with the bridge."""
 
-    def __init__(self, sid: str, label: str, write_fn, index: int, peek_fn=None):
+    def __init__(self, sid: str, label: str, write_fn, index: int, peek_fn=None,
+                 prepare_fn=None):
         self.sid = sid
         self.label = label
         self.write_fn = write_fn
         self.peek_fn = peek_fn  # returns recent PTY bytes (last ~1KB ring buffer)
+        self.prepare_fn = prepare_fn  # readies the pane for input (exits copy-mode)
         self.index = index
         self.output_lock = threading.Lock()
         # Serializes PTY input writes so concurrent sends (a paste TG split
@@ -691,7 +693,8 @@ class TelegramBridge(BridgeBase):
 
     # ── Session management ──
 
-    def register_session(self, sid: str, label: str, write_fn, peek_fn=None):
+    def register_session(self, sid: str, label: str, write_fn, peek_fn=None,
+                         prepare_fn=None):
         """Register a session tab with the bridge."""
         with self._slots_lock:
             if sid in self.slots:
@@ -699,9 +702,12 @@ class TelegramBridge(BridgeBase):
                 self.slots[sid].write_fn = write_fn
                 if peek_fn:
                     self.slots[sid].peek_fn = peek_fn
+                if prepare_fn:
+                    self.slots[sid].prepare_fn = prepare_fn
                 return
             idx = len(self._slot_order) + 1
-            self.slots[sid] = SessionSlot(sid, label, write_fn, idx, peek_fn=peek_fn)
+            self.slots[sid] = SessionSlot(sid, label, write_fn, idx,
+                                          peek_fn=peek_fn, prepare_fn=prepare_fn)
             self._slot_order.append(sid)
 
     def unregister_session(self, sid: str):
@@ -3399,6 +3405,17 @@ class TelegramBridge(BridgeBase):
             # messages — spawn concurrent _send threads whose write+Enter
             # interleave into one mangled buffer (malformed input / tool calls).
             with slot.write_lock:
+                # Ready the pane first: a session left in tmux copy-mode
+                # (scrolled-back terminal) swallows pasted bytes entirely —
+                # the exact "TG 敲了訊息但沒真的送進來" silent drop. The
+                # output stall-watchdog can't catch it either, because TUI
+                # spinner/clock redraws keep output flowing. prepare_fn
+                # (installed by main.py) exits copy-mode when detected.
+                if slot.prepare_fn:
+                    try:
+                        slot.prepare_fn()
+                    except Exception:
+                        pass
                 # Busy guard: writing + Enter while Claude Code is mid-turn
                 # makes it abort the in-flight turn with "[Request interrupted]"
                 # and submit a mixed/empty buffer (this is the「貼文字變
@@ -3414,33 +3431,103 @@ class TelegramBridge(BridgeBase):
                     if not re.search(r'esc to interrupt', recent or "", re.I):
                         break
                     time.sleep(0.5)
-                # Clear residue left in the input box (aborted turn, dismissed
-                # rating prompt, half-typed text) so the payload isn't appended
-                # to stale content.
-                slot.write_fn("\x15")  # Ctrl-U: kill input line
-                time.sleep(0.05)
-                # Bracketed paste: ingest the (often multi-line) payload
-                # atomically so embedded newlines don't prematurely submit
-                # partial input.
-                slot.write_fn("\x1b[200~" + visible_payload + "\x1b[201~")
-                time.sleep(0.3)
-                _blog(f"[send] {slot.sid} submit CR len={len(visible_payload)}\n")
-                slot.write_fn("\r")
-                time.sleep(0.6)
-                try:
-                    recent_after_enter = slot.peek_fn() if slot.peek_fn else ""
-                except Exception:
-                    recent_after_enter = ""
-                # Codex can occasionally keep focus on its pasted-content chip
-                # after the first CR. If the chip is still visible and the CLI
-                # did not start a turn, send LF as a conservative fallback.
-                if (
-                    re.search(r'\[Pasted (?:Content|text)[^\]]*\]', recent_after_enter or "", re.I)
-                    and not re.search(r'esc to interrupt', recent_after_enter or "", re.I)
-                ):
-                    _blog(f"[send] {slot.sid} submit LF fallback after paste chip\n")
-                    slot.write_fn("\n")
+
+                def _inject():
+                    # Clear residue left in the input box (aborted turn,
+                    # dismissed rating prompt, half-typed text) so the payload
+                    # isn't appended to stale content.
+                    slot.write_fn("\x15")  # Ctrl-U: kill input line
+                    time.sleep(0.05)
+                    # Bracketed paste: ingest the (often multi-line) payload
+                    # atomically so embedded newlines don't prematurely submit
+                    # partial input.
+                    slot.write_fn("\x1b[200~" + visible_payload + "\x1b[201~")
+                    time.sleep(0.3)
+                    _blog(f"[send] {slot.sid} submit CR len={len(visible_payload)}\n")
+                    slot.write_fn("\r")
+                    time.sleep(0.6)
+                    try:
+                        after = slot.peek_fn() if slot.peek_fn else ""
+                    except Exception:
+                        after = ""
+                    # Codex can occasionally keep focus on its pasted-content
+                    # chip after the first CR. If the chip is still visible and
+                    # the CLI did not start a turn, send LF as a conservative
+                    # fallback.
+                    if (
+                        re.search(r'\[Pasted (?:Content|text)[^\]]*\]', after or "", re.I)
+                        and not re.search(r'esc to interrupt', after or "", re.I)
+                    ):
+                        _blog(f"[send] {slot.sid} submit LF fallback after paste chip\n")
+                        slot.write_fn("\n")
+
+                _inject()
+                # ── Delivery verification + one retry (fallback 機制) ──
+                # Positive confirmation only: a turn-start footer or an
+                # extracted reply. If neither shows AND the payload tail is
+                # still sitting on screen (composer residue), the submit
+                # didn't land — recover the pane and retry once. Still stuck
+                # → tell the TG user instead of dropping silently.
+                delivered, residue = self._verify_injection(slot, visible_payload)
+                if not delivered and residue:
+                    _blog(f"[send] {slot.sid} delivery unconfirmed + residue → retry\n")
+                    if slot.prepare_fn:
+                        try:
+                            slot.prepare_fn()
+                        except Exception:
+                            pass
+                    _inject()
+                    delivered, residue = self._verify_injection(slot, visible_payload)
+                    if not delivered and residue:
+                        _blog(f"[send] {slot.sid} delivery FAILED after retry\n")
+                        try:
+                            tg_api(self.config.bot_token, "sendMessage", {
+                                "chat_id": chat_id,
+                                "text": (f"⚠ 訊息可能沒送進「{slot.label}」：重試 1 次後"
+                                         "仍未確認送出。原文還留在該分頁輸入框，"
+                                         f"可回 /{slot.index} 查看狀態或直接重發。"),
+                            })
+                        except Exception:
+                            pass
         threading.Thread(target=_send, daemon=True).start()
+
+    _INJECT_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07')
+
+    def _verify_injection(self, slot, payload, window=8.0):
+        """(delivered, residue) — 送達驗證。
+
+        delivered=True 只憑強訊號：turn 開始（esc to interrupt footer）或
+        bridge 已抽到新回覆（last_extraction_ts 前進）。
+        residue=True＝驗證窗結束時 payload 尾段仍掛在畫面上且無 turn 訊號
+        —— 幾乎確定沒送進去，可安全重試（重試前 Ctrl-U 會清掉殘文，不會
+        變成重複送出）。兩者皆 False＝不確定（極短回合／畫面已捲走）：
+        不重試、不吵人，交給既有 stall watchdog。
+
+        殘留取樣用 payload「最後一個非空行」而非跨行尾段——composer 摺疊
+        顯示時畫面上只有最後一行，跨行取樣會漏判。"""
+        tail = ""
+        for ln in reversed((payload or "").splitlines()):
+            ln_norm = re.sub(r"\s+", "", ln)
+            if len(ln_norm) >= 6:
+                tail = ln_norm[-24:]
+                break
+        if not tail:
+            tail = re.sub(r"\s+", "", payload or "")[-24:]
+        recent = ""
+        t0 = time.time()
+        while time.time() - t0 < window:
+            try:
+                recent = slot.peek_fn() if slot.peek_fn else ""
+            except Exception:
+                recent = ""
+            if re.search(r"esc to interrupt", recent or "", re.I):
+                return True, False
+            if getattr(slot, "last_extraction_ts", 0.0) > slot.last_write_ts:
+                return True, False
+            time.sleep(0.5)
+        plain = self._INJECT_ANSI_RE.sub('', recent or "")
+        residue = bool(tail) and tail in re.sub(r"\s+", "", plain)
+        return False, residue
 
     def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):
         """Handle slash commands. `text` is the full message text (for argv parsing)."""

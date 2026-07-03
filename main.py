@@ -2698,6 +2698,7 @@ class Api:
                 sid, label,
                 lambda text, _s=session: _s.write(text),
                 peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
+                prepare_fn=lambda _s=session: self._prepare_pane_for_input(_s),
             )
             self.bridge.refresh_commands()
         if self.line_bridge:
@@ -2908,6 +2909,28 @@ class Api:
             except Exception:
                 pass
         s.write("\r")
+
+    def _prepare_pane_for_input(self, s: Session) -> bool:
+        """Ready a session's pane to receive injected input (TG bridge
+        prepare_fn). A pane left in tmux copy-mode — scrolled-back terminal,
+        stray PageUp — consumes pasted bytes as copy-mode keystrokes, so a
+        bridged message vanishes without a trace. Exit the mode first.
+        Returns True when a recovery action was taken."""
+        tn = getattr(s, "_tmux_name", None)
+        if not tn or IS_WIN or not shutil.which("tmux"):
+            return False
+        try:
+            r = subprocess.run(
+                ["tmux", "display-message", "-p", "-t", tn, "#{pane_in_mode}"],
+                capture_output=True, text=True, timeout=2)
+            if r.stdout.strip() == "1":
+                subprocess.run(["tmux", "send-keys", "-t", tn, "-X", "cancel"],
+                               capture_output=True, timeout=2)
+                _dlog("send", f"exited copy-mode before inject sid={s.sid}")
+                return True
+        except Exception:
+            pass
+        return False
 
     def _send_text_to_session(self, s: Session, text: str, submit: bool = False) -> bool:
         """Send orchestrator text as a paste, then optionally press Enter.
@@ -5055,6 +5078,7 @@ try {
                 sid, label,
                 lambda text, _s=s: _s.write(text),
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
             )
 
         self.bridge.start()
@@ -5346,6 +5370,7 @@ try {
                     sid, label,
                     lambda text, _s=s: _s.write(text),
                     peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                    prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
                 )
             else:
                 self.bridge.unregister_session(sid)
@@ -5484,6 +5509,7 @@ try {
                         sid, label,
                         lambda text, _s=s: _s.write(text),
                         peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                        prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
                     )
                 # Restore user routing state — filter out sids that disappeared
                 self.bridge._user_active = {
@@ -5524,6 +5550,7 @@ try {
                 sid, label,
                 lambda text, _s=s: _s.write(text),
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
+                prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
             )
             self.bridge.refresh_commands()
 
