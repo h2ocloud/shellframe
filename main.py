@@ -404,6 +404,25 @@ def _normalize_dashes(cmd: str) -> str:
     return _DASH_RE.sub(lambda m: m.group(1) + '--', cmd)
 
 
+# In-process lock for config read-modify-write. 14+ threads (UI RPC, bridge
+# poll, geometry flush, session lifecycle) all do load→mutate→save; without
+# this the last writer silently clobbers the others' keys. Writers should
+# use update_config(); bare load/save stay for read-only or legacy sites.
+_CONFIG_LOCK = threading.RLock()
+
+
+def update_config(mutator):
+    """Atomic config read-modify-write: mutator(cfg) mutates the dict in
+    place (or returns a replacement). Returns the saved dict."""
+    with _CONFIG_LOCK:
+        cfg = load_config()
+        out = mutator(cfg)
+        if isinstance(out, dict):
+            cfg = out
+        save_config(cfg)
+        return cfg
+
+
 def load_config():
     if CONFIG_FILE.exists():
         try:
@@ -509,6 +528,11 @@ def load_config():
 
 
 def save_config(cfg):
+    with _CONFIG_LOCK:
+        return _save_config_locked(cfg)
+
+
+def _save_config_locked(cfg):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     tmp = CONFIG_FILE.with_suffix(".json.tmp")
     data = json.dumps(cfg, indent=2, ensure_ascii=False)
@@ -1213,23 +1237,22 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         fresh PTYs. No-op on systems with tmux since tmux already persists."""
         if not IS_WIN and _has_tmux():
             return
-        cfg = load_config()
-        sessions = cfg.get("session_list", [])
-        sessions = [s for s in sessions if s.get("sid") != sid]  # dedup
-        sessions.append({"sid": sid, "cmd": cmd})
-        cfg["session_list"] = sessions
-        save_config(cfg)
+        def _mut(cfg):
+            sessions = [s for s in cfg.get("session_list", []) if s.get("sid") != sid]
+            sessions.append({"sid": sid, "cmd": cmd})
+            cfg["session_list"] = sessions
+        update_config(_mut)
 
     def _drop_soft_session(self, sid: str):
         """Remove a session from soft-persistence list."""
         if not IS_WIN and _has_tmux():
             return
-        cfg = load_config()
-        sessions = cfg.get("session_list", [])
-        new_list = [s for s in sessions if s.get("sid") != sid]
-        if len(new_list) != len(sessions):
-            cfg["session_list"] = new_list
-            save_config(cfg)
+        def _mut(cfg):
+            sessions = cfg.get("session_list", [])
+            new_list = [s for s in sessions if s.get("sid") != sid]
+            if len(new_list) != len(sessions):
+                cfg["session_list"] = new_list
+        update_config(_mut)
 
     def _ordered_sids(self, cfg: dict | None = None, preferred_order: list[str] | None = None) -> list[str]:
         """Return current session ids in durable UI order."""
@@ -3032,9 +3055,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 self._output_event.set()
             except Exception:
                 _swallow("Api.set_active_tab:4086")
-            cfg = load_config()
-            cfg["last_active_tab"] = sid
-            save_config(cfg)
+            update_config(lambda cfg: cfg.__setitem__("last_active_tab", sid))
             self._plugin_dispatch_session_change(sid)
             return json.dumps({"success": True})
         except Exception as e:
@@ -5888,14 +5909,14 @@ def main():
 
     def _flush_geom():
         try:
-            cfg = load_config()
-            cfg["window"] = {
-                "x": _geom_state["x"],
-                "y": _geom_state["y"],
-                "width": _geom_state["width"],
-                "height": _geom_state["height"],
-            }
-            save_config(cfg)
+            def _mut(cfg):
+                cfg["window"] = {
+                    "x": _geom_state["x"],
+                    "y": _geom_state["y"],
+                    "width": _geom_state["width"],
+                    "height": _geom_state["height"],
+                }
+            update_config(_mut)
         except Exception:
             _swallow("main._flush_geom:6952")
 
