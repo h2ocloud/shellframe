@@ -3548,6 +3548,19 @@ class Api:
             # for this session. Better than nothing on Windows / no-tmux.
             return self._pyte_fallback_response(sid, ansi=ansi)
 
+        # AI tabs (claude/codex): the transcript JSONL is the source of
+        # truth for the conversation — no redraw frames, no wrap variants,
+        # nothing for dedup heuristics to fight. This sidesteps the whole
+        # terminal-frame-reconstruction class of bugs（十多輪「上滾重複/樣式
+        # 錯亂」的戰線）. Sparse/unmapped transcripts fall through to the
+        # terminal pipeline below; non-AI tabs never enter this path.
+        try:
+            resp = self._transcript_history_response(s, sid, ansi)
+            if resp:
+                return resp
+        except Exception:
+            _swallow(f"get_clean_history.transcript:{sid}")
+
         # Probe alt-screen state. Cheap: a single `display-message`. If it
         # fails (shouldn't, since we just verified _tmux_name) we proceed
         # as if normal-screen — tmux capture is the safe default.
@@ -3738,6 +3751,77 @@ class Api:
         reset = "\x1b[0m" if ansi else ""
         return "\n".join(orig + reset for _, orig in final)
 
+    _TRANSCRIPT_TAIL_BYTES = 2 * 1024 * 1024
+    _TRANSCRIPT_MAX_RECORDS = 3000
+
+    def _transcript_history_response(self, s: Session, sid: str, ansi: bool):
+        """Overlay text rendered from the session's transcript JSONL, or
+        None when this tab has no usable transcript (→ caller falls back to
+        the terminal pipeline). Fidelity note: events come from
+        agent_status's normalizer, which keeps user/assistant text and
+        tool-call one-liners; interleaved thinking is omitted by design."""
+        worker = {
+            "cmd": getattr(s, "cmd", ""),
+            "cwd": getattr(s, "cwd", "~"),
+            "tmux_name": getattr(s, "_tmux_name", None),
+            "session_id": getattr(s, "session_id", None),
+        }
+        if agent_status._worker_kind(worker["cmd"]) not in ("claude", "codex"):
+            return None
+        path = agent_status.resolve_transcript(worker)
+        if not path or not os.path.exists(path):
+            return None
+        fmt, evs, err = agent_status._read_tail_events(
+            path, tail_bytes=self._TRANSCRIPT_TAIL_BYTES,
+            max_records=self._TRANSCRIPT_MAX_RECORDS)
+        if err or not evs:
+            return None
+        text = self._render_transcript_overlay(evs, ansi)
+        plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
+        # Sparse transcript (fresh tab, a lone /command) reads worse than
+        # the terminal view — fall back below this floor.
+        if len(plain.strip()) < 400 or plain.count("\n") < 8:
+            return None
+        return json.dumps({
+            "success": True,
+            "text": text,
+            "ansi": ansi,
+            "source": f"transcript ({fmt})",
+        })
+
+    @staticmethod
+    def _render_transcript_overlay(evs, ansi: bool) -> str:
+        """Normalized transcript events → terminal-styled conversation text.
+        Styling mirrors the live TUI reading experience: user lines get a
+        bold-cyan ❯ prefix, tool calls are dim one-liners, decision
+        requests are yellow. Every styled line closes with SGR reset."""
+        B_CYAN = "\x1b[1;36m" if ansi else ""
+        DIM = "\x1b[2m" if ansi else ""
+        YEL = "\x1b[33m" if ansi else ""
+        RED = "\x1b[31m" if ansi else ""
+        R = "\x1b[0m" if ansi else ""
+        out = []
+        for ev in evs:
+            k = ev.get("kind")
+            if k == "user_msg" and (ev.get("text") or "").strip():
+                if out:
+                    out.append("")
+                for i, ln in enumerate(ev["text"].splitlines()):
+                    out.append((f"{B_CYAN}❯ {R}" if i == 0 else "  ") + ln + R)
+            elif k == "assistant_text" and (ev.get("text") or "").strip():
+                if out:
+                    out.append("")
+                out.extend(ln + R for ln in ev["text"].splitlines())
+            elif k == "tool_call":
+                tool = ev.get("tool") or "?"
+                tgt = ev.get("target") or ""
+                out.append(f"{DIM}⏺ {tool}({tgt}){R}")
+            elif k == "decision_req":
+                out.append(f"{YEL}⚠ 等待決策 {ev.get('target', '')}{R}")
+            elif k == "error" and ev.get("text"):
+                out.append(f"{RED}✖ {ev['text']}{R}")
+        return "\n".join(out)
+
     def history_audit(self, sid: str) -> str:
         """Self-check for "上滾看到不對的歷史" bugs.
 
@@ -3860,10 +3944,16 @@ class Api:
         # Noise: overlay lines that don't trace back to reply OR raw tmux
         # bytes. Anything not in raw_set is definitely not from the live
         # session — likely cross-tab bleed or stale capture state.
-        noise_in_overlay = [
-            l for l in overlay_lines
-            if not _present_anywhere(l, raw_set) and not _present_anywhere(l, reply_set)
-        ]
+        # N/A for the transcript source: its text legitimately reaches
+        # further back than tmux scrollback, so raw-containment would
+        # false-flag old conversation as noise.
+        if tmux_cleaned_src.startswith("transcript"):
+            noise_in_overlay = []
+        else:
+            noise_in_overlay = [
+                l for l in overlay_lines
+                if not _present_anywhere(l, raw_set) and not _present_anywhere(l, reply_set)
+            ]
 
         # Duplicates — the "上滾對話重複" bug class this audit previously
         # couldn't see (it only measured missing/noise). A normalized line
