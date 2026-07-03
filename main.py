@@ -2395,8 +2395,6 @@ class Api:
         "com.neux.tmux-groom": "tmux 整理",
         "com.neux.femas.clockin": "FEMAS 上班打卡",
         "com.neux.femas.clockout": "FEMAS 下班打卡",
-        "com.claude.telegram-channel": "Telegram Channel",
-        "com.h2ocloud.telegram-terminal-bot": "Telegram 終端 Bot",
     }
 
     @staticmethod
@@ -2431,26 +2429,37 @@ class Api:
             return "登入常駐"
         return "—"
 
-    def _sched_disabled_set(self):
-        """Persistently-disabled labels from launchctl's override DB
-        (lines like `"label" => disabled`)."""
-        out = set()
+    def _sched_loaded_map(self):
+        """Jobs actually bootstrapped in launchd, from `launchctl list`:
+        label -> (pid, last_exit). A plist that's on disk but not in here was
+        never loaded (or was booted out) — it will NOT fire, regardless of
+        what the plist says. This is the ground truth the panel shows."""
+        out = {}
         try:
-            r = subprocess.run(
-                ["launchctl", "print-disabled", f"gui/{os.getuid()}"],
-                capture_output=True, text=True, timeout=5)
+            r = subprocess.run(["launchctl", "list"],
+                               capture_output=True, text=True, timeout=5)
             for ln in r.stdout.splitlines():
-                if "=> disabled" in ln and '"' in ln:
-                    out.add(ln.split('"')[1])
+                parts = ln.split("\t")
+                if len(parts) != 3 or not parts[2].startswith(self._SCHED_PREFIXES):
+                    continue
+                pid, status, lbl = parts
+                try:
+                    out[lbl] = (None if pid == "-" else int(pid), int(status))
+                except ValueError:
+                    out[lbl] = (None, 0)
         except Exception:
             pass
         return out
 
     def schedules_list(self) -> str:
-        """List the user's own LaunchAgents: id, title, frequency, command,
-        enabled. Drives the Loops panel's schedule section."""
+        """List the user's own *timed* LaunchAgents: id, title, frequency,
+        command, enabled, last_exit. Drives the Loops panel's schedule section.
+        RunAtLoad/KeepAlive daemons with no timer (e.g. the Telegram channel
+        processes ShellFrame already tracks itself) are not schedules and are
+        excluded. `enabled` means the job is actually bootstrapped in launchd,
+        not merely present on disk."""
         try:
-            disabled = self._sched_disabled_set()
+            loaded = self._sched_loaded_map()
             items = []
             for fp in sorted(self._launch_agents_dir().glob("*.plist")):
                 if not fp.stem.startswith(self._SCHED_PREFIXES):
@@ -2460,15 +2469,20 @@ class Api:
                         p = plistlib.load(f)
                 except Exception:
                     continue
+                if "StartInterval" not in p and not p.get("StartCalendarInterval"):
+                    continue
                 lbl = p.get("Label", fp.stem)
                 prog = p.get("ProgramArguments") or (
                     [p["Program"]] if p.get("Program") else [])
+                pid, last_exit = loaded.get(lbl, (None, 0))
                 items.append({
                     "id": lbl,
                     "title": self._SCHED_TITLES.get(lbl, lbl.split(".")[-1]),
                     "freq": self._sched_freq(p),
                     "cmd": " ".join(str(x) for x in prog),
-                    "enabled": (lbl not in disabled) and not p.get("Disabled", False),
+                    "enabled": lbl in loaded,
+                    "running": pid is not None,
+                    "last_exit": last_exit,
                 })
             return json.dumps({"schedules": items})
         except Exception as e:
@@ -2494,7 +2508,11 @@ class Api:
                                capture_output=True, text=True, timeout=10)
                 subprocess.run(["launchctl", "disable", f"{dom}/{label}"],
                                capture_output=True, text=True, timeout=10)
-            return json.dumps({"success": True, "enabled": bool(enabled)})
+            # Report what launchd actually did, not what we asked for — a
+            # failed bootstrap (bad plist, path gone) must show as still-off.
+            actual = label in self._sched_loaded_map()
+            return json.dumps({"success": actual == bool(enabled),
+                               "enabled": actual})
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
 

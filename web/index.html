@@ -612,6 +612,7 @@
   .sched-row.off .sched-title { color: #787c99; }
   .sched-freq { font-size: 9px; color: #e0af68; margin-left: 6px; font-weight: 400; }
   .sched-row.off .sched-freq { color: #565f89; }
+  .sched-fail { font-size: 9px; color: #f7768e; margin-left: 6px; font-weight: 500; }
   .sched-cmd {
     font-size: 9px; color: #565f89; margin-top: 2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2772,7 +2773,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     it.enabled = want; renderLoops();              // optimistic
     try {
       const r = JSON.parse(await pywebview.api.schedule_set_enabled(id, want));
-      if (!r || !r.success) { it.enabled = !want; renderLoops(); }
+      // Settle on what launchd reports, not what we asked for.
+      it.enabled = (r && typeof r.enabled === 'boolean') ? r.enabled : !want;
+      if (it.enabled !== want) renderLoops();
     } catch (_) { it.enabled = !want; renderLoops(); }
   }
   // Edit shortcut: collect this schedule's paths/command into a prompt and
@@ -2839,7 +2842,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         `<div class="sched-row${s.enabled ? '' : ' off'}">` +
           `<span class="sched-num">${i + 1}</span>` +
           `<div class="sched-info">` +
-            `<div class="sched-title">${esc(s.title)}<span class="sched-freq">${esc(s.freq)}</span></div>` +
+            `<div class="sched-title">${esc(s.title)}<span class="sched-freq">${esc(s.freq)}</span>` +
+              (s.enabled && s.last_exit ? `<span class="sched-fail" title="上次執行失敗（exit ${s.last_exit}）">上次失敗</span>` : '') +
+            `</div>` +
             (s.cmd ? `<div class="sched-cmd" title="${esc(s.cmd)}">${esc(s.cmd)}</div>` : '') +
           `</div>` +
           `<button class="sched-edit" data-id="${esc(s.id)}" title="把這個排程的資訊帶進目前對話，讓你直接請 AI 調整">編輯</button>` +
