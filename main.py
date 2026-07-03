@@ -6506,6 +6506,46 @@ def _claim_pid_file():
             pass
 
 
+_WIN_MUTEX_HANDLE = None  # keep the mutex referenced for the process lifetime
+
+
+def _ensure_single_instance_windows():
+    """Windows duplicate guard — named mutex instead of the PID file.
+
+    A kernel mutex is auto-released when its owner dies, so there is no
+    stale-file case to probe. Same failure this prevents as on macOS: two
+    instances sharing one Telegram bot token → getUpdates 409 conflicts,
+    plus duplicated PTY sessions. If another instance already holds the
+    mutex, bring its window forward (best-effort, mirrors the SIGUSR1
+    summon path) and exit this process.
+    """
+    global _WIN_MUTEX_HANDLE
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateMutexW(None, False, "Local\\shellframe-single-instance")
+        ERROR_ALREADY_EXISTS = 183
+        if handle and kernel32.GetLastError() != ERROR_ALREADY_EXISTS:
+            _WIN_MUTEX_HANDLE = handle
+            return
+        print("[shellframe] another instance already running — "
+              "bringing it forward and exiting this one", file=sys.stderr)
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = user32.FindWindowW(None, "shellframe")
+            if hwnd:
+                SW_RESTORE = 9
+                user32.ShowWindow(hwnd, SW_RESTORE)
+                user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+        os._exit(0)
+    except OSError:
+        # ctypes/kernel32 unavailable (exotic runtime) — degrade to no guard
+        # rather than blocking startup.
+        return
+
+
 def _ensure_single_instance():
     """Before allocating anything, check whether another shellframe is
     already running. If so, signal it to come forward and exit this
@@ -6521,7 +6561,8 @@ def _ensure_single_instance():
     SIGUSR1 sidesteps the bundle-id resolution entirely.
     """
     if sys.platform == "win32":
-        return  # TODO: Windows duplicate guard
+        _ensure_single_instance_windows()
+        return
     old_pid = 0
     if _PID_FILE.exists():
         try:
