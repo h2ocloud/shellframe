@@ -3829,6 +3829,17 @@ class Api:
             if not _present_anywhere(l, raw_set) and not _present_anywhere(l, reply_set)
         ]
 
+        # Duplicates — the "上滾對話重複" bug class this audit previously
+        # couldn't see (it only measured missing/noise). A normalized line
+        # wide enough to be distinctive (visual width ≥ 20) should survive
+        # the dedup pipeline at most twice (legit echoes); ≥3 occurrences in
+        # the CLEANED overlay means a redraw frame slipped through.
+        from collections import Counter as _Counter
+        dup_counts = _Counter(
+            l for l in overlay_lines if self._visual_width(l) >= 20)
+        dup_in_overlay = [
+            f"{n}× {l}" for l, n in dup_counts.most_common() if n >= 3]
+
         # Dump everything to disk so a later debugging pass can re-analyse
         # without re-running the user's session. Filename embeds sid + ts
         # so successive audits are kept side-by-side instead of overwriting.
@@ -3863,6 +3874,9 @@ class Api:
                 f.write("\n===== NOISE_IN_OVERLAY (overlay lines not in raw OR reply) =====\n")
                 for l in noise_in_overlay:
                     f.write("  - " + l + "\n")
+                f.write("\n===== DUP_IN_OVERLAY (≥3× wide lines that survived dedup) =====\n")
+                for l in dup_in_overlay:
+                    f.write("  - " + l + "\n")
         except Exception as e:
             return json.dumps({"success": False, "message": f"dump failed: {e}"})
 
@@ -3876,6 +3890,11 @@ class Api:
             verdict_parts.append(
                 f"BUG: {len(noise_in_overlay)} overlay line(s) match neither raw tmux "
                 f"nor reply — spurious content surfacing."
+            )
+        if dup_in_overlay:
+            verdict_parts.append(
+                f"BUG: {len(dup_in_overlay)} distinct line(s) appear ≥3× in the "
+                f"cleaned overlay — redraw duplicates slipped through dedup."
             )
         if not verdict_parts:
             if not last_extracted:
@@ -3898,8 +3917,10 @@ class Api:
                 "pyte_chars": len(pyte_text),
                 "missing_count": len(missing_from_overlay),
                 "noise_count": len(noise_in_overlay),
+                "dup_count": len(dup_in_overlay),
                 "missing_sample": missing_from_overlay[:5],
                 "noise_sample": noise_in_overlay[:5],
+                "dup_sample": dup_in_overlay[:5],
             },
         })
 

@@ -1,0 +1,160 @@
+"""上滾歷史去重管線（_dedupe_history_lines）回歸測試。
+
+這條戰線從 v0.11.x 修到 v0.22.x 十多輪，每輪都踩到前一輪的反例——每個
+test case 對映 CHANGELOG 上一個真實踩過的坑。之後任何 heuristic 調整
+（gate 閾值、collapse 視窗、keep-first/last）先跑這份，全綠才算沒回歸。
+
+跑法：
+    .venv/bin/python tests_history_dedup.py
+    .venv/bin/python -m pytest tests_history_dedup.py
+（需要 .venv：main.py import webview）
+"""
+
+import importlib.util
+import os
+import re
+import sys
+
+sys.argv = ["tests_history_dedup"]
+_spec = importlib.util.spec_from_file_location(
+    "sfmain", os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py"))
+_m = importlib.util.module_from_spec(_spec)
+try:
+    _spec.loader.exec_module(_m)
+except SystemExit:
+    pass
+
+API = object.__new__(_m.Api)
+ANSI = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def dedupe(lines, ansi=False):
+    return API._dedupe_history_lines(list(lines), ansi)
+
+
+# ── 1. CJK 串流重繪：同一寬中文行連續 N 次 → 收 1（v0.11.8 起的主戰場） ──
+def test_cjk_stream_redraw_collapsed():
+    out = dedupe(["交付成果與敘事結構的完整段落內容重繪測試"] * 6 + ["尾行"])
+    assert out.count("敘事結構") == 1, out
+
+
+# ── 2. 程式碼合法重複 ×2 保留（v0.11.9「code 被吃掉」反例） ──
+def test_code_repeats_preserved():
+    lines = ["def foo():", "    return null;", "def bar():", "    return null;"]
+    out = dedupe(lines)
+    assert out.count("return null;") == 2, out
+
+
+# ── 3. 短編號副標 ×3 保留（v0.21.x「outline 的 1./2. 消失」反例） ──
+def test_short_numbered_headings_survive():
+    lines = []
+    for section in ("A", "B", "C"):
+        lines += [f"Section {section} 的完整說明段落，內容彼此都不相同以避免其他 gate",
+                  "3. Year One"]
+    out = dedupe(lines)
+    assert out.count("3. Year One") == 3, out
+
+
+# ── 4. resize wrap-variant frame 收合（v0.22 前的「同段落重複 N 次」根因） ──
+def test_resize_wrap_variants_collapsed():
+    # 同一字元流、不同斷行點的兩個 frame（逐行 dedup 看不見，需 collapse pass）。
+    # 每句帶序號使內容不自我重複，總長足以超過 min_drop=15 行。
+    para = "".join(f"第{i:02d}句：模擬視窗改寬後整段串流被重繪殘留的寬度變體副本內容"
+                   for i in range(24))
+    frame_a = [para[i:i + 30] for i in range(0, len(para), 30)]   # 寬 30 斷行
+    frame_b = [para[i:i + 42] for i in range(0, len(para), 42)]   # 寬 42 斷行
+    assert len(frame_a) >= 15, "測資自檢：frame 行數需 ≥ min_drop"
+    out = dedupe(frame_a + frame_b)
+    joined = re.sub(r"\s+", "", out)
+    # 內容只留一份（最後一個 frame），不是兩份拼在一起
+    assert joined.count("第05句") == 1, joined.count("第05句")
+    assert len(joined) <= len(para) + 60, (len(joined), len(para))
+
+
+# ── 5. 相距很遠的常見 UI 元素不觸發整段砍除（v0.2x「上滑只剩 banner」反例） ──
+def test_far_apart_ui_elements_not_nuked():
+    sep = "─" * 60
+    convo1 = [f"第一段對話第 {i} 行：各自獨特的內容避免其他 gate 誤收" for i in range(10)]
+    convo2 = [f"第二段對話第 {i} 行：same-same but different 的獨特內容" for i in range(10)]
+    lines = [sep] + convo1 + [sep] + convo2 + [sep]
+    out = dedupe(lines)
+    assert "第一段對話第 3 行" in out, "分隔線誤判成 redraw frame，整段對話被砍"
+    assert "第二段對話第 7 行" in out, out
+
+
+# ── 6. keep-LAST：user 訊息在 splash frame(T1) 與真回覆 frame(T2) 各出現一次，
+#      保留 T2 那份（v0.21.x「上滾銜接不上、只看到 banner 版本」反例） ──
+def test_keep_last_context():
+    user_msg = "❯ 我有傳訊息了你可以去看一下紀錄然後回報結果給我"
+    lines = ([user_msg]
+             + ["Claude Code v2.1.199 啟動畫面橫幅內容顯示中"]
+             + [f"啟動畫面雜項第 {i} 行的獨特內容" for i in range(5)]
+             + [user_msg]
+             + ["⏺ 真實回覆的第一行：查了紀錄，訊息有進來"])
+    out = dedupe(lines).split("\n")
+    idx = [i for i, l in enumerate(out) if user_msg in l]
+    assert len(idx) == 1, f"user 訊息應只剩一份，got {len(idx)}"
+    after = "\n".join(out[idx[0]:])
+    assert "真實回覆的第一行" in after, "保留的是 T1(splash) 版本而非 T2(真回覆) 版本"
+
+
+# ── 7. 裸 CR 清除（xterm.js convertEol 下 CR 會蓋掉整行只剩尾巴） ──
+def test_bare_cr_stripped():
+    out = dedupe(["前半段被蓋掉\r只剩尾巴"])
+    assert "\r" not in out
+
+
+# ── 8. ansi=True 逐行補 SGR reset（未閉合色碼滲染下一行） ──
+def test_ansi_reset_per_line():
+    out = dedupe(["\x1b[41m紅底未閉合的一行文字內容", "下一行不該被染色"], ansi=True)
+    for line in out.split("\n"):
+        if line:
+            assert line.endswith("\x1b[0m"), repr(line)
+
+
+# ── 9. 混合中英內容 ×4 收 1（v0.11.25「Warren 寄 V1.5.1 部版資訊 ×4」反例） ──
+def test_mixed_content_4x_collapsed():
+    lines = (["4/2 | Warren 寄 V1.5.1 部版資訊"] * 4
+             + ["其他獨特內容一", "其他獨特內容二"])
+    out = dedupe(lines)
+    assert out.count("V1.5.1 部版資訊") == 1, out
+
+
+# ── 10. 真實 capture 冒煙：拿最近一份 history-audit dump 的 RAW 段跑管線
+#       （dump 不在就跳過——固定資產化靠 audit 持續產出） ──
+def test_real_capture_smoke():
+    import glob
+    dumps = sorted(glob.glob(os.path.expanduser(
+        "~/.config/shellframe/diag/history-audit_*.txt")), key=os.path.getmtime)
+    if not dumps:
+        print("  (skip: 無 diag dump)")
+        return
+    text = open(dumps[-1], encoding="utf-8", errors="replace").read()
+    mraw = re.search(r"===== TMUX_RAW \(pre-dedup\) =====\n(.*?)\n=====", text, re.S)
+    if not mraw:
+        print("  (skip: dump 無 RAW 段)")
+        return
+    raw_lines = mraw.group(1).split("\n")
+    out = dedupe(raw_lines)
+    assert out is not None
+    # 去重後不可掉超過一半的獨特內容（防「整段被砍」級回歸）
+    uniq_in = {re.sub(r"\s+", " ", l).strip() for l in raw_lines if l.strip()}
+    uniq_out = {re.sub(r"\s+", " ", l).strip() for l in out.split("\n") if l.strip()}
+    kept = len(uniq_in & uniq_out) / max(1, len(uniq_in))
+    assert kept >= 0.5, f"真實 capture 去重後僅存留 {kept:.0%} 獨特行"
+
+
+if __name__ == "__main__":
+    import traceback
+    fails = 0
+    for name in sorted(list(globals())):
+        if name.startswith("test_") and callable(globals()[name]):
+            try:
+                globals()[name]()
+                print(f"PASS  {name}")
+            except Exception:
+                fails += 1
+                print(f"FAIL  {name}")
+                traceback.print_exc()
+    print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")
+    sys.exit(1 if fails else 0)
