@@ -170,7 +170,8 @@ DEFAULT_CONFIG = {
         "language": "en",
         "master_turn_preamble_enabled": True,
         "experimental_board": False,
-        "experimental_loops": False
+        "experimental_loops": False,
+        "show_model_badge": True
     },
     "idle_reaper": {
         "enabled": False,
@@ -2303,7 +2304,8 @@ class Api:
                                           "task": st.get("task", ""),
                                           "elapsed": st.get("elapsed", 0),
                                           "activity": st.get("activity") or {},
-                                          "loop": st.get("loop")}
+                                          "loop": st.get("loop"),
+                                          "model": st.get("model")}
                                 cache[sid] = {
                                     "out_ts": out_ts,
                                     "computed_at": now,

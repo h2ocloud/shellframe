@@ -453,6 +453,12 @@
   .sb-item:hover { background: #1f2335; }
   .sb-item.active { background: #1f2335; color: #c0caf5; border-left-color: #7aa2f7; }
   .sb-item .sb-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .sb-model {
+    flex-shrink: 0; font-size: 9px; color: #565f89; border: 1px solid #2a2e42;
+    border-radius: 4px; padding: 0 5px; line-height: 1.6; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .sb-item.active .sb-model { color: #7aa2f7; border-color: #3b4261; }
   .sb-bridge {
     font-size: 9px; padding: 1px 5px; border-radius: 3px; line-height: 1.3;
     border: 1px solid #3b4261; background: none; color: #565f89;
@@ -818,6 +824,13 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch" id="setting-experimental-loops"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="experimentalLoopsHint">Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab. Off by default.</span>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="modelBadgeLabel">Model badge on sessions</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-model-badge"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
           </div>
         </div>
       </div>
@@ -1376,6 +1389,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       loopsEmpty: 'No scheduled conversations',
       experimentalLoopsLabel: 'Loops panel — scheduled conversations (experimental)',
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
+      modelBadgeLabel: 'Model badge on sessions',
+      modelBadgeHint: "Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.",
       releaseNotesTitle: "What's new",
       releaseNotesGotIt: 'Got it',
     },
@@ -1525,6 +1540,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       loopsEmpty: '目前沒有排程中的對話',
       experimentalLoopsLabel: 'Loops 排程對話面板（實驗性）',
       experimentalLoopsHint: '右側面板收納「有排程的對話」：正在跑 /loop、建了 cron routine、或被 scheduler 啟動的頁籤——顯示下次喚醒倒數與各自在等什麼。預設關閉。',
+      modelBadgeLabel: 'Session 顯示模型標籤',
+      modelBadgeHint: '自動偵測每個分頁的模型與 thinking effort（Claude / Codex 都支援），顯示在左側 session 列。',
       releaseNotesTitle: '本次更新',
       releaseNotesGotIt: '知道了',
     }
@@ -2407,6 +2424,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // ── Sidebar (mouse-based drag — HTML5 drag unreliable in WKWebView) ──
   let _sbDragging = false;
 
+  // Model + thinking-effort badge for a session row. Auto-detected on the
+  // Python side (claude: transcript's latest assistant model + global
+  // effortLevel; codex: rollout turn_context) and pushed with agent status.
+  function showModelBadge() {
+    return !(config.settings && config.settings.show_model_badge === false);
+  }
+  function modelBadgeHtml(s) {
+    if (!showModelBadge()) return '';
+    const mi = (s._serverStatus || {}).model;
+    if (!mi || !mi.name) return '';
+    const txt = mi.name + (mi.effort ? ' · ' + mi.effort : '');
+    return `<span class="sb-model" title="自動偵測：模型與 thinking effort（${esc(mi.provider || '')}）">${esc(txt)}</span>`;
+  }
+
   function renderSidebar() {
     const container = document.getElementById('sidebar-sessions');
     if (!container) return;
@@ -2435,6 +2466,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>` +
         (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
+        modelBadgeHtml(s) +
         (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
         (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
@@ -2460,6 +2492,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>` +
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
+          modelBadgeHtml(s) +
           `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
           `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
         container.appendChild(el);
@@ -4249,6 +4282,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-experimental-loops').classList.toggle(
       'on', s.experimental_loops === true,
     );
+    document.getElementById('setting-model-badge').classList.toggle(
+      'on', s.show_model_badge !== false,
+    );
     refreshBoard();
     syncIdleReaperSettings();
     syncSettingsBridge();
@@ -4294,6 +4330,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings.experimental_loops = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
       refreshBoard();
+    });
+
+  document.getElementById('setting-model-badge')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.show_model_badge = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+      renderSidebar();
     });
 
   document.getElementById('setting-auto-delegate')
@@ -5525,6 +5570,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       if (!payload || typeof payload !== 'object') return;
       const now = Date.now();
+      let modelChanged = false;
       for (const sid of Object.keys(payload)) {
         const s = sessions[sid];
         if (!s) continue;
@@ -5534,7 +5580,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // 'unknown' → no server dot; the per-tab browser heuristic drives the
         // left light AND the right panel state (accurate for unmapped tabs).
         s._serverDot = (st.dot && st.state && st.state !== 'unknown') ? st.dot : '';
+        // Model/effort badge: re-render the sidebar only when the detected
+        // value actually changes (first detection, /model switch) — pushes
+        // arrive ~1.7×/s and a full re-render each time would fight drags.
+        const mi = st.model;
+        const sig = (mi && mi.name) ? `${mi.name}|${mi.effort || ''}` : '';
+        if (sig !== (s._modelSig || '')) { s._modelSig = sig; modelChanged = true; }
       }
+      if (modelChanged) renderSidebar();
     } catch (e) { /* never let status break the UI */ }
   };
 

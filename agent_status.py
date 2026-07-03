@@ -204,6 +204,146 @@ def resolve_transcript(worker: dict):
     return None
 
 
+# ────────────────────────── 模型 / thinking effort 偵測 ──────────────────────────
+# tab 目前跑什麼模型、thinking/reasoning effort 開多大。來源：
+#   claude: transcript 最新 assistant 記錄的 message.model（per-session 準確，
+#           /model 切換後下一則 assistant 就反映）；effort 讀全域
+#           ~/.claude/settings.json 的 effortLevel（/model 選單本來就存全域）。
+#   codex:  rollout 最新 turn_context 的 model/effort（per-session 準確）；
+#           沒 rollout 時退 ~/.codex/config.toml。
+# 全部走 stat/mtime 快取 —— status_for 每 ~500ms 呼叫，未變動時只有 stat 成本。
+
+CLAUDE_SETTINGS_JSON = os.path.expanduser("~/.claude/settings.json")
+CODEX_CONFIG_TOML = os.path.expanduser("~/.codex/config.toml")
+
+_model_file_cache = {}  # path -> ((mtime, size), parsed_value)
+
+
+def _cached_parse(path, parser):
+    """parser(path) 的 mtime+size 快取。檔案不存在/解析失敗回 None（也快取，
+    避免每 500ms 重試壞檔）。"""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = (st.st_mtime, st.st_size)
+    hit = _model_file_cache.get(path)
+    if hit and hit[0] == key:
+        return hit[1]
+    try:
+        val = parser(path)
+    except Exception:
+        val = None
+    _model_file_cache[path] = (key, val)
+    return val
+
+
+def _tail_lines(path, tail_bytes=262144):
+    """檔尾 raw lines（新→舊）。第一行可能被截斷，reversed 掃描時通常無妨。"""
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - tail_bytes))
+        data = f.read()
+    return list(reversed(data.decode("utf-8", errors="replace").splitlines()))
+
+
+def _pretty_model(mid: str) -> str:
+    """模型 id → 顯示名。claude-fable-5 → Fable 5、claude-opus-4-8 → Opus 4.8、
+    claude-haiku-4-5-20251001 → Haiku 4.5；gpt-* 首段大寫；其餘原樣。"""
+    if not mid:
+        return ""
+    mid = re.sub(r"\[1m\]$", "", mid.strip())
+    m = re.match(r"^claude-([a-z]+)-(\d+)(?:-(\d))?(?:-|$)", mid)
+    if m:
+        name = m.group(1).capitalize()
+        ver = m.group(2) + (f".{m.group(3)}" if m.group(3) else "")
+        return f"{name} {ver}"
+    if mid.lower().startswith("gpt"):
+        return "GPT" + mid[3:]
+    return mid
+
+
+def _parse_claude_transcript_model(path):
+    """transcript 最新 assistant 的 message.model（略過 <synthetic> 錯誤佔位）。"""
+    scanned = 0
+    for ln in _tail_lines(path):
+        if '"model"' not in ln:
+            continue
+        scanned += 1
+        if scanned > 400:
+            break
+        try:
+            o = json.loads(ln)
+        except Exception:
+            continue
+        model = ((o.get("message") or {}).get("model") or "").strip()
+        if model and not model.startswith("<"):
+            return model
+    return None
+
+
+def _parse_claude_settings(path):
+    with open(path, encoding="utf-8") as f:
+        cfg = json.load(f)
+    return {"model": (cfg.get("model") or "").strip() or None,
+            "effort": (cfg.get("effortLevel") or "").strip() or None}
+
+
+def _parse_codex_rollout(path):
+    """rollout 最新 turn_context 的 model/effort。"""
+    for ln in _tail_lines(path):
+        if '"turn_context"' not in ln:
+            continue
+        try:
+            o = json.loads(ln)
+        except Exception:
+            continue
+        p = o.get("payload") or o
+        model = (p.get("model") or "").strip()
+        if model:
+            return {"model": model, "effort": (p.get("effort") or "").strip() or None}
+    return None
+
+
+def _parse_codex_config(path):
+    model = effort = None
+    with open(path, encoding="utf-8") as f:
+        for ln in f:
+            m = re.match(r'\s*model\s*=\s*"([^"]+)"', ln)
+            if m:
+                model = m.group(1)
+            m = re.match(r'\s*model_reasoning_effort\s*=\s*"([^"]+)"', ln)
+            if m:
+                effort = m.group(1)
+    return {"model": model, "effort": effort} if model or effort else None
+
+
+def detect_model_info(worker: dict, transcript_path=None):
+    """tab 的 {name, effort, provider}；非 AI tab 或偵測不到回 None。永不拋。"""
+    try:
+        kind = _worker_kind(worker.get("cmd", ""))
+        if kind == "codex":
+            info = _cached_parse(transcript_path, _parse_codex_rollout) if transcript_path else None
+            info = info or _cached_parse(CODEX_CONFIG_TOML, _parse_codex_config)
+            if not info or not info.get("model"):
+                return None
+            return {"name": _pretty_model(info["model"]),
+                    "effort": info.get("effort") or "", "provider": "codex"}
+        if kind == "claude":
+            model = _cached_parse(transcript_path, _parse_claude_transcript_model) \
+                if transcript_path else None
+            glob_cfg = _cached_parse(CLAUDE_SETTINGS_JSON, _parse_claude_settings) or {}
+            model = model or glob_cfg.get("model")
+            if not model:
+                return None
+            return {"name": _pretty_model(model),
+                    "effort": glob_cfg.get("effort") or "", "provider": "claude"}
+    except Exception:
+        pass
+    return None
+
+
 # ────────────────────────── JSONL 解析（normalize）──────────────────────────
 
 def _target(tool, inp):
@@ -678,6 +818,7 @@ class StatusTracker:
         now = now or time.time()
         try:
             path = self._resolve_cached(sid, worker, now)
+            model = detect_model_info(worker, path if (path and os.path.exists(path)) else None)
             if not path or not os.path.exists(path):
                 # No transcript yet (brand-new tab, file not written) — fall
                 # back to a screen-only read so an actively-working new tab is
@@ -691,7 +832,7 @@ class StatusTracker:
                         "summary": (act.get("verb") if act else "") or state,
                         "action": "", "narration": "", "task": "",
                         "elapsed": int(now - since), "why": "screen-only: " + why,
-                        "transcript": None, "loop": None}
+                        "transcript": None, "loop": None, "model": model}
             try:
                 loop = detect_schedules(path, now)
             except Exception:
@@ -705,7 +846,7 @@ class StatusTracker:
                         "summary": (act.get("verb") if act else "") or state,
                         "action": "", "narration": "", "task": "",
                         "elapsed": int(now - since), "why": "screen-only(" + err + ")",
-                        "transcript": path, "loop": loop}
+                        "transcript": path, "loop": loop, "model": model}
             state, act, why = compute_state(evs, now=now, screen_tail=screen_tail)
             state = self._debounce(sid, state, now)
             action, task, narration = _detail(evs)
@@ -718,10 +859,12 @@ class StatusTracker:
             return {"state": state, "dot": DOT.get(state, ""), "activity": act,
                     "summary": summary, "action": action, "narration": narration,
                     "task": task, "elapsed": int(now - since), "why": why,
-                    "transcript": os.path.basename(path), "fmt": fmt, "loop": loop}
+                    "transcript": os.path.basename(path), "fmt": fmt, "loop": loop,
+                    "model": model}
         except Exception as e:
             return {"state": "unknown", "dot": "", "activity": {},
-                    "summary": "", "why": f"exc:{e}", "transcript": None, "loop": None}
+                    "summary": "", "why": f"exc:{e}", "transcript": None, "loop": None,
+                    "model": None}
 
 
 # 模組自測：python3 agent_status.py
