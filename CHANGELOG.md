@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.23.2 (2026-07-03)
+
+### Fixes
+- **上滾來源優先序反轉——終端來源為主，transcript 降為 fallback**（Howard 實測 v0.23.1 後定調：transcript 渲染整面工具行牆「越差越多」）：
+  - 上滾 overlay 回到 pyte/tmux 終端 frame 為主——本來就跟活畫面同一個樣子，重複問題已由 v0.23.0 的統一去重管線處理。實測發現 **Claude Code v2.1.x 已不用 alt-screen**（normal buffer 渲染），tmux scrollback 就是完整正確的歷史，深度 1,000+ 行、原樣 SGR。
+  - transcript 渲染只在終端來源拿不出內容時救場（典型：app 剛重啟、pyte 從零開始且 pane 在 alt-screen）。
+  - fallback 用的 transcript 渲染同步改善：**連續工具呼叫收合成一行摘要**（`⏺ Bash ×6、Edit ×2`，不再是 20 行工具牆）、`[Image: …]` 縮為 📎 圖片。
+  - 本次依「測過才發版」流程：六套測試全綠 → 重啟實測 live dump（來源/內容/重複數）→ 產出 overlay HTML 視覺預覽過目 → 才發版。
+
 ## v0.23.1 (2026-07-03)
 
 ### Fixes

@@ -157,6 +157,14 @@ def test_transcript_render_fidelity():
     ]
     text = API._render_transcript_overlay(evs, ansi=True)
     plain = ANSI.sub('', text)
+    # 連續工具呼叫收合成摘要（工具行牆是 v0.23.1 的主要噪音）
+    evs2 = ([{"kind": "tool_call", "tool": "Bash", "target": f"cmd {i}"} for i in range(6)]
+            + [{"kind": "tool_result"}] * 3
+            + [{"kind": "tool_call", "tool": "Edit", "target": "a.py"}] * 2
+            + [{"kind": "assistant_text", "text": "完成"}])
+    t2 = ANSI.sub('', API._render_transcript_overlay(evs2, ansi=True))
+    tool_lines = [l for l in t2.split("\n") if "⏺" in l]
+    assert len(tool_lines) == 1 and "Bash ×6" in t2 and "Edit ×2" in t2, t2
     # harness 雜訊不得直出，摺疊成摘要
     for bad in ("<task-notification>", "<usage>", "subagent_tokens", "<result>"):
         assert bad not in plain, plain

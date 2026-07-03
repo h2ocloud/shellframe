@@ -368,21 +368,23 @@ class HistoryApiMixin:
         s = self.sessions.get(sid)
         if not s or not getattr(s, '_tmux_name', None):
             # tmux unavailable — fall back to pyte if the bridge has a slot
-            # for this session. Better than nothing on Windows / no-tmux.
-            return self._pyte_fallback_response(sid, ansi=ansi)
+            # for this session; failing that, the transcript.
+            resp = self._pyte_fallback_response(sid, ansi=ansi)
+            try:
+                if not json.loads(resp).get("success"):
+                    t = self._transcript_history_response(s, sid, ansi) if s else None
+                    if t:
+                        return t
+            except Exception:
+                _swallow(f"get_clean_history.transcript:{sid}")
+            return resp
 
-        # AI tabs (claude/codex): the transcript JSONL is the source of
-        # truth for the conversation — no redraw frames, no wrap variants,
-        # nothing for dedup heuristics to fight. This sidesteps the whole
-        # terminal-frame-reconstruction class of bugs（十多輪「上滾重複/樣式
-        # 錯亂」的戰線）. Sparse/unmapped transcripts fall through to the
-        # terminal pipeline below; non-AI tabs never enter this path.
-        try:
-            resp = self._transcript_history_response(s, sid, ansi)
-            if resp:
-                return resp
-        except Exception:
-            _swallow(f"get_clean_history.transcript:{sid}")
+        # Source order (v0.23.2, Howard 實測後定調)：終端來源優先——那才是
+        # 「跟活畫面同一個樣子」（tmux -e 原樣 SGR / pyte 重建），重複問題已由
+        # 共用去重管線處理。transcript 渲染（markdown 近似＋工具行）跟 TUI
+        # 讀感差距大（v0.23.0 把它放第一位，Howard：「越差越多」），降級為
+        # fallback——只在 pyte 拿不出東西時救場（典型：app 剛重啟、bridge 的
+        # pyte 從零開始，而 alt-screen 下 tmux scrollback 又是錯的 buffer）。
 
         # Probe alt-screen state. Cheap: a single `display-message`. If it
         # fails (shouldn't, since we just verified _tmux_name) we proceed
@@ -432,8 +434,15 @@ class HistoryApiMixin:
                         "ansi": ansi,
                         "source": "pyte (alt-screen)",
                     })
-                # pyte empty/too-short → fall through to tmux. Better than
-                # blocking the overlay with "no history".
+                # pyte empty/too-short（app 剛重啟、bridge 沒跑）→ 先試
+                # transcript：alt-screen 下 tmux scrollback 是錯的 buffer
+                #（normal-screen 舊內容），transcript 反而是唯一正確來源。
+            try:
+                resp = self._transcript_history_response(s, sid, ansi)
+                if resp:
+                    return resp
+            except Exception:
+                _swallow(f"get_clean_history.transcript:{sid}")
         try:
             cmd = ["tmux", "capture-pane", "-p", "-J", "-t", s._tmux_name,
                    "-S", f"-{max_lines}"]
@@ -698,10 +707,35 @@ class HistoryApiMixin:
         RED = "\x1b[31m" if ansi else ""
         R = "\x1b[0m" if ansi else ""
         out = []
+        # 連續 tool_call 收合成一行摘要——一次修 bug 動輒 20+ 個工具呼叫，
+        # 逐行列出是工具行牆（Howard 截圖的主要噪音），TUI 讀感也不是那樣。
+        pending_tools = []
+
+        def _flush_tools():
+            if not pending_tools:
+                return
+            if len(pending_tools) <= 2:
+                for tool, tgt in pending_tools:
+                    out.append(f"{DIM}⏺ {tool}({tgt}){R}")
+            else:
+                from collections import Counter
+                counts = Counter(t for t, _ in pending_tools)
+                summary = "、".join(
+                    f"{t} ×{n}" if n > 1 else t for t, n in counts.most_common())
+                out.append(f"{DIM}⏺ {summary}{R}")
+            pending_tools.clear()
+
         for ev in evs:
             k = ev.get("kind")
+            if k == "tool_call":
+                pending_tools.append((ev.get("tool") or "?", ev.get("target") or ""))
+                continue
+            if k in ("tool_result", "turn_end"):
+                continue  # 不 flush：讓跨 result 的連續工具呼叫也能收合
+            _flush_tools()
             if k == "user_msg" and (ev.get("text") or "").strip():
                 text = cls._strip_harness_noise(ev["text"], DIM, R)
+                text = re.sub(r"\[Image[^\]]*\]", "📎 圖片", text)
                 if not text:
                     continue
                 if out:
@@ -712,14 +746,11 @@ class HistoryApiMixin:
                 if out:
                     out.append("")
                 out.extend(ln + R for ln in cls._md_ansi_lines(ev["text"], ansi))
-            elif k == "tool_call":
-                tool = ev.get("tool") or "?"
-                tgt = ev.get("target") or ""
-                out.append(f"{DIM}⏺ {tool}({tgt}){R}")
             elif k == "decision_req":
                 out.append(f"{YEL}⚠ 等待決策 {ev.get('target', '')}{R}")
             elif k == "error" and ev.get("text"):
                 out.append(f"{RED}✖ {ev['text']}{R}")
+        _flush_tools()
         return "\n".join(out)
 
     def history_audit(self, sid: str) -> str:
