@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.23.1 (2026-07-03)
+
+### Fixes
+- **上滾 transcript overlay「樣式跟活畫面不同」**（Howard 截圖回報）：
+  - **markdown 現在渲染成 ANSI**：`**粗體**`、行內 `code`、`#` 標題（粗體青色）、`-`/`1.` 列點記號上色、`>` 引用淡化、``` 圍欄 code 區塊、`---` 轉分隔線——不再原樣露出星號反引號，讀起來接近活畫面 TUI。
+  - **harness 雜訊不再直出**：transcript 裡 user 角色夾帶的 `<task-notification>…</task-notification>`（背景 agent 回報，含整包 result/usage XML）摺疊成一行 dim 摘要「⏺ <summary>（內容略）」、`<system-reminder>` 整段移除——活畫面 TUI 本來就不顯示這些，overlay 對齊。
+  - 回歸測試 +1（`test_transcript_render_fidelity`）。
+
 ## v0.23.0 (2026-07-03)
 
 一次完整復盤驅動的大版本：P0→P2 全清（Howard 核可的優化計畫），四套回歸測試全綠。

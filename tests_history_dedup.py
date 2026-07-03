@@ -144,6 +144,34 @@ def test_real_capture_smoke():
     assert kept >= 0.5, f"真實 capture 去重後僅存留 {kept:.0%} 獨特行"
 
 
+# ── 11. transcript overlay 渲染保真度（v0.23.1「scroll 樣式不同」回歸）──
+def test_transcript_render_fidelity():
+    evs = [
+        {"kind": "user_msg", "text":
+            "<task-notification>\n<summary>Agent X finished</summary>\n"
+            "<result>很長的內容</result>\n<usage><subagent_tokens>99</subagent_tokens></usage>\n"
+            "</task-notification>\n請繼續"},
+        {"kind": "assistant_text", "text":
+            "## 標題\n**重點**結論，行內 `code` 如下：\n- 第一點\n1. 第二點\n---"},
+        {"kind": "tool_call", "tool": "Edit", "target": "main.py"},
+    ]
+    text = API._render_transcript_overlay(evs, ansi=True)
+    plain = ANSI.sub('', text)
+    # harness 雜訊不得直出，摺疊成摘要
+    for bad in ("<task-notification>", "<usage>", "subagent_tokens", "<result>"):
+        assert bad not in plain, plain
+    assert "Agent X finished（內容略）" in plain
+    assert "請繼續" in plain
+    # markdown：** 與 ` 不得原樣露出；有 bold / 行內 code SGR；HR 轉線
+    assert "**" not in plain and "`" not in plain, plain
+    assert "\x1b[1m" in text and "\x1b[38;5;180m" in text
+    assert "─" * 10 in plain
+    # 樣式行皆閉合
+    for l in text.split("\n"):
+        if "\x1b[" in l:
+            assert l.endswith("\x1b[0m"), repr(l)
+
+
 if __name__ == "__main__":
     import traceback
     fails = 0

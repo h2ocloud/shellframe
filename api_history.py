@@ -624,12 +624,74 @@ class HistoryApiMixin:
             "source": f"transcript ({fmt})",
         })
 
-    @staticmethod
-    def _render_transcript_overlay(evs, ansi: bool) -> str:
+    # Harness 內部訊息（task-notification / system-reminder）以 user 角色寫進
+    # transcript，但活畫面的 TUI 從不原樣顯示它們——overlay 也不該（Howard
+    # 的「scroll 樣式不同」截圖裡整段 <usage>…</task-notification> 直出）。
+    _TASK_NOTIF_RE = re.compile(r"<task-notification>.*?</task-notification>", re.S)
+    _TASK_NOTIF_SUMMARY_RE = re.compile(r"<summary>(.*?)</summary>", re.S)
+    _SYS_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+
+    @classmethod
+    def _strip_harness_noise(cls, text: str, dim: str, reset: str) -> str:
+        """User-role 事件裡的 harness 雜訊 → 摺疊成一行 dim 摘要或移除。"""
+        def _notif(m):
+            sm = cls._TASK_NOTIF_SUMMARY_RE.search(m.group(0))
+            label = sm.group(1).strip() if sm else "背景任務通知"
+            return f"{dim}⏺ {label}（內容略）{reset}"
+        text = cls._TASK_NOTIF_RE.sub(_notif, text)
+        text = cls._SYS_REMINDER_RE.sub("", text)
+        return text.strip()
+
+    # Markdown → ANSI：讓 overlay 的 assistant 文字接近活畫面 TUI 的渲染
+    # （粗體、行內 code、標題、列點、引用、圍欄 code），而不是 `**` 反引號
+    # 原樣露出。近似即可，目標是「讀起來是同一個 app」。
+    _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+    _MD_CODE_RE = re.compile(r"`([^`\n]+)`")
+    _MD_HDR_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+    _MD_BULLET_RE = re.compile(r"^(\s*)([-*])\s+")
+    _MD_NUM_RE = re.compile(r"^(\s*)(\d{1,3}\.)\s+")
+    _MD_HR_RE = re.compile(r"^\s*(---+|\*\*\*+)\s*$")
+
+    @classmethod
+    def _md_ansi_lines(cls, text: str, ansi: bool):
+        if not ansi:
+            return text.splitlines()
+        BOLD, CYAN, DIM, R = "\x1b[1m", "\x1b[36m", "\x1b[2m", "\x1b[0m"
+        CODE = "\x1b[38;5;180m"
+        out = []
+        in_fence = False
+        for ln in text.splitlines():
+            if ln.lstrip().startswith("```"):
+                in_fence = not in_fence
+                out.append(f"{DIM}{ln}{R}")
+                continue
+            if in_fence:
+                out.append(f"\x1b[38;5;250m{ln}{R}")
+                continue
+            m = cls._MD_HDR_RE.match(ln)
+            if m:
+                out.append(f"{BOLD}{CYAN}{m.group(2)}{R}")
+                continue
+            if cls._MD_HR_RE.match(ln):
+                out.append(f"{DIM}{'─' * 40}{R}")
+                continue
+            if ln.lstrip().startswith(">"):
+                out.append(f"{DIM}{ln}{R}")
+                continue
+            ln = cls._MD_BULLET_RE.sub(f"\\1{CYAN}•{R} ", ln, count=1)
+            ln = cls._MD_NUM_RE.sub(f"\\1{CYAN}\\2{R} ", ln, count=1)
+            ln = cls._MD_BOLD_RE.sub(f"{BOLD}\\1\x1b[22m", ln)
+            ln = cls._MD_CODE_RE.sub(f"{CODE}\\1\x1b[39m", ln)
+            out.append(ln)
+        return out
+
+    @classmethod
+    def _render_transcript_overlay(cls, evs, ansi: bool) -> str:
         """Normalized transcript events → terminal-styled conversation text.
         Styling mirrors the live TUI reading experience: user lines get a
-        bold-cyan ❯ prefix, tool calls are dim one-liners, decision
-        requests are yellow. Every styled line closes with SGR reset."""
+        bold-cyan ❯ prefix, assistant markdown is rendered to ANSI, harness
+        noise is collapsed, tool calls are dim one-liners, decision requests
+        are yellow. Every styled line closes with SGR reset."""
         B_CYAN = "\x1b[1;36m" if ansi else ""
         DIM = "\x1b[2m" if ansi else ""
         YEL = "\x1b[33m" if ansi else ""
@@ -639,14 +701,17 @@ class HistoryApiMixin:
         for ev in evs:
             k = ev.get("kind")
             if k == "user_msg" and (ev.get("text") or "").strip():
+                text = cls._strip_harness_noise(ev["text"], DIM, R)
+                if not text:
+                    continue
                 if out:
                     out.append("")
-                for i, ln in enumerate(ev["text"].splitlines()):
+                for i, ln in enumerate(text.splitlines()):
                     out.append((f"{B_CYAN}❯ {R}" if i == 0 else "  ") + ln + R)
             elif k == "assistant_text" and (ev.get("text") or "").strip():
                 if out:
                     out.append("")
-                out.extend(ln + R for ln in ev["text"].splitlines())
+                out.extend(ln + R for ln in cls._md_ansi_lines(ev["text"], ansi))
             elif k == "tool_call":
                 tool = ev.get("tool") or "?"
                 tgt = ev.get("target") or ""
