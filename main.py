@@ -3211,7 +3211,7 @@ class Api:
         'blue': '44', 'magenta': '45', 'cyan': '46', 'white': '47',
         'brightblack': '100', 'brightred': '101', 'brightgreen': '102',
         'brightbrown': '103', 'brightblue': '104', 'brightmagenta': '105',
-        'bfightmagenta': '105', 'brightcyan': '106', 'brightwhite': '107',
+        'brightcyan': '106', 'brightwhite': '107',
     }
 
     @classmethod
@@ -3219,7 +3219,15 @@ class Api:
         """(sgr_params, paints_bg) for one pyte Char. sgr_params is ''
         when the char is unstyled; paints_bg says whether a trailing
         space in this style is visible (bg color / reverse video) and
-        therefore must survive rstrip."""
+        therefore must survive rstrip.
+
+        Fidelity vs tmux -e: everything pyte models is reconstructed
+        (bold/italics/underscore/blink/reverse/strikethrough, 16-color
+        names, 256/truecolor as hex). KNOWN GAP — dim (SGR 2): pyte
+        0.8.2's Char has no faint field, the attribute is dropped at
+        parse time, so dim text (Claude Code's muted grays) renders at
+        full brightness from the pyte source. Unfixable at this layer;
+        if a "亮度不對" report carries source=pyte, this is why."""
         parts = []
         paints = False
         if getattr(c, 'bold', False):
@@ -3228,6 +3236,8 @@ class Api:
             parts.append('3')
         if getattr(c, 'underscore', False):
             parts.append('4')
+        if getattr(c, 'blink', False):
+            parts.append('5')
         if getattr(c, 'reverse', False):
             parts.append('7')
             paints = True
