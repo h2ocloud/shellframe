@@ -2535,6 +2535,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 lambda text, _s=session: _s.write(text),
                 peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
                 prepare_fn=lambda _s=session: self._prepare_pane_for_input(_s),
+                cmd=cmd,
             )
             self.bridge.refresh_commands()
         if self.line_bridge:
@@ -4061,6 +4062,7 @@ try {
                 lambda text, _s=s: _s.write(text),
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                 prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
+                cmd=getattr(s, 'cmd', '') or '',
             )
 
         self.bridge.start()
@@ -4353,6 +4355,7 @@ try {
                     lambda text, _s=s: _s.write(text),
                     peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                     prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
+                    cmd=getattr(s, 'cmd', '') or '',
                 )
             else:
                 self.bridge.unregister_session(sid)
@@ -4492,6 +4495,7 @@ try {
                         lambda text, _s=s: _s.write(text),
                         peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                         prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
+                        cmd=getattr(s, 'cmd', '') or '',
                     )
                 # Restore user routing state — filter out sids that disappeared
                 self.bridge._user_active = {
@@ -4533,6 +4537,7 @@ try {
                 lambda text, _s=s: _s.write(text),
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                 prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
+                cmd=getattr(s, 'cmd', '') or '',
             )
             self.bridge.refresh_commands()
 
@@ -5562,10 +5567,13 @@ def _ensure_single_instance_windows():
     global _WIN_MUTEX_HANDLE
     try:
         import ctypes
-        kernel32 = ctypes.windll.kernel32
+        # use_last_error + get_last_error: windll.GetLastError() is
+        # documented-unreliable (ctypes' own calls can clobber it) — a
+        # misread here either disables the guard or kills the only instance.
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         handle = kernel32.CreateMutexW(None, False, "Local\\shellframe-single-instance")
         ERROR_ALREADY_EXISTS = 183
-        if handle and kernel32.GetLastError() != ERROR_ALREADY_EXISTS:
+        if handle and ctypes.get_last_error() != ERROR_ALREADY_EXISTS:
             _WIN_MUTEX_HANDLE = handle
             return
         print("[shellframe] another instance already running — "
@@ -5580,7 +5588,7 @@ def _ensure_single_instance_windows():
         except Exception:
             _swallow("_ensure_single_instance_windows:6612")
         os._exit(0)
-    except OSError:
+    except Exception:
         # ctypes/kernel32 unavailable (exotic runtime) — degrade to no guard
         # rather than blocking startup.
         return

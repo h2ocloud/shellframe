@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.23.0 (2026-07-03)
+
+一次完整復盤驅動的大版本：P0→P2 全清（Howard 核可的優化計畫），四套回歸測試全綠。
+
+### Features
+- **Session 列顯示模型＋thinking effort 徽章**：左側 session 列每個分頁自動偵測目前跑的模型與 effort（如 `Fable 5 · xhigh`、`GPT-5.5 · medium`），Claude（transcript 最新 assistant 的 model＋全域 effortLevel）與 Codex（rollout 最新 turn_context，退 config.toml）都支援；`/model` 切換後下一輪自動更新。stat/mtime 快取，500ms 輪詢無感。設定 → 「Session 顯示模型標籤」可關（預設開）。
+- **AI 分頁上滾歷史改讀 transcript（source of truth）**：Claude/Codex 分頁的上滾 overlay 直接從 session transcript 渲染對話（user ❯ 前綴、assistant 原文、tool 呼叫 dim 一行、決策黃字）——終端 redraw frame、resize wrap 變體、串流殘影**整類問題從根源消失**。稀疏 transcript（新分頁）自動 fallback 回終端管線；非 AI 分頁不走此路。overlay header 的 source 標籤會顯示 `transcript (claude/codex)`。
+- **TG 注入 fallback——終結「敲了訊息但沒真的送進來」**：
+  - 注入前先恢復 pane：session 停在 tmux copy-mode（捲動狀態）時貼上的字會被整段吞掉、而 TUI 的 spinner 重繪讓輸出 stall 偵測永遠不觸發——這就是靜默掉訊息的主因。現在注入前偵測 `pane_in_mode` 並自動退出。
+  - 注入後正向驗證送達（turn 開始 footer 或回覆已抽取）；驗證窗結束仍看到 payload 殘留在畫面 → 自動重試 1 次；再失敗 → **TG 直接通知你**哪個分頁沒送進去，不再無聲吞掉。
+- **Windows 單實例保護**：named mutex＋FindWindow 前景喚醒，補齊 macOS PID file 防護的 Windows 缺口（雙實例 = TG 409 衝突）。
+
+### Fixes
+- **上滾歷史「對話重複＋樣式不一致」根因修正**：
+  - pyte 路徑（alt-screen＝所有 AI 分頁走的那條）過去**完全沒有去重**——十多輪修的全是 tmux 路徑。現在兩條路共用同一條 `_dedupe_history_lines` 管線（redraw collapse＋prefix＋雙 gate），pyte 路徑也逐行補 SGR reset（顏色不再滲行）。
+  - pyte SGR 重建補 blink、清色表 typo；dim（SGR 2）為 pyte 資料層限制（Char 無此欄位），已文件化——source=pyte 時亮度偏亮屬已知。
+- sfctl `brew pin` 補 timeout。查核確認 main/bridge 全部 40 個 tmux subprocess 呼叫已有 timeout（早期復盤資訊過時）。
+- **發版前對抗性審查（subagent）抓到並修正 3 個 CONFIRMED bug**：
+  - TG 送達驗證誤判 delivered：extraction loop 抽到前一輪回覆會把 `last_write_ts` 歸零，任何舊 extraction 都讓驗證假通過。改跟「本次注入時間快照」比。
+  - shell 分頁誤觸重複注入：shell 會 echo 輸入，慢而安靜的指令（build/ssh）被殘留判定當成沒送進去 → 重試會把 payload 重貼進執行中程序的 stdin。verify/retry 改為只對 AI 分頁（claude/codex）啟用；失敗通知移出 write_lock（tg_api 卡 35s 不再堵住後續訊息）。
+  - `bfightmagenta` 不是我們的 typo 是 pyte 上游的（`BG_AIXTERM[105]` 真的拼錯），v0.23.0 rc 誤刪導致 SGR 105 背景消失——加回並註記。
+  - 另修 4 個審查疑點：模型偵測快取 key 加 parser 名防污染；Windows mutex 改 `use_last_error`（`windll.GetLastError()` 官方文件明列不可靠）；transcript 上滾對 codex 只信 lsof 命中路徑（全域最新 fallback 可能渲染到別分頁的對話）；前端 `config` 未載入時 badge 不炸。audit 的重複偵測對 transcript 來源停用（工具行 ×N 是真實事件，live 實測抓到假陽性）。
+  - 新增 `tests_tg_inject.py`（6 案例）鎖住上述誤判類回歸。
+
+### Tests（本版起有真正的回歸防線）
+- `tests_history_dedup.py`：上滾去重管線 10 案例，每個對映 CHANGELOG 上一輪真實踩過的坑（CJK 串流重繪、code 合法重複、短編號標題、resize wrap 變體、「只剩 banner」誤砍、keep-LAST、真實 capture 冒煙）。
+- `tests_usage_probe.py`：水位模組（十個版本救火零測試的熱點）7 案例，mock API 蓋 429/stale/退避/no_data/磁碟快取，離線可跑。
+- `history_audit` 新增重複偵測：≥3× 的寬行進 verdict（過去只驗 missing/noise，看不見「重複」這類 bug）。
+
+### Refactors
+- **Api God-class 分批拆解第一批**：上滾歷史域 → `api_history.py`（HistoryApiMixin）、排程面板域 → `api_schedules.py`（SchedulesApiMixin）、logging 原語 → `sf_log.py`；main.py 7,143 → ~6,000 行，行為不變。
+- **76 處 `except: pass` 升級為 `_swallow()`**：吞錯照吞，但寫 debug log 麵包屑（`[swallow] 函式:行號: 例外`）——「感覺不穩又查無日誌」時代結束。pyte 逐格熱路徑排除。
+- **config 讀改寫加鎖**：`_CONFIG_LOCK`＋`update_config(mutator)` 原子化，14 條 thread 併發 last-writer-wins 蓋設定的窗口收窄（視窗幾何/active tab/soft session 四熱站點已轉換；其餘站點漸進遷移）。
+- CHANGELOG 分檔：280KB → 主檔 16KB＋`CHANGELOG-archive.md`（v0.19.x 以前）。
+- board.py（無 UI 的任務看板後端）判定**保留**：其 `[[SF:TASK:]]` marker 處理兼任 TG 回覆的 marker 清除器，拆除會讓 marker 漏進手機，風險大於維護稅。
+
 ## v0.22.7 (2026-07-03)
 
 ### Fixes

@@ -221,20 +221,22 @@ _model_file_cache = {}  # path -> ((mtime, size), parsed_value)
 
 def _cached_parse(path, parser):
     """parser(path) 的 mtime+size 快取。檔案不存在/解析失敗回 None（也快取，
-    避免每 500ms 重試壞檔）。"""
+    避免每 500ms 重試壞檔）。快取 key 含 parser 名——同一 path 換 parser
+    不會拿到污染值（latent trap，生產路徑樹分離但不賭）。"""
     try:
         st = os.stat(path)
     except OSError:
         return None
+    ck = (path, parser.__name__)
     key = (st.st_mtime, st.st_size)
-    hit = _model_file_cache.get(path)
+    hit = _model_file_cache.get(ck)
     if hit and hit[0] == key:
         return hit[1]
     try:
         val = parser(path)
     except Exception:
         val = None
-    _model_file_cache[path] = (key, val)
+    _model_file_cache[ck] = (key, val)
     return val
 
 

@@ -65,6 +65,11 @@ class HistoryApiMixin:
         'blue': '44', 'magenta': '45', 'cyan': '46', 'white': '47',
         'brightblack': '100', 'brightred': '101', 'brightgreen': '102',
         'brightbrown': '103', 'brightblue': '104', 'brightmagenta': '105',
+        # NOT a typo of ours: pyte 0.8.2's graphics.BG_AIXTERM[105] really is
+        # the misspelled string 'bfightmagenta', so Char.bg carries it and the
+        # map must translate it. Removing this key (v0.23.0 rc) silently
+        # dropped SGR 105 backgrounds from the pyte source.
+        'bfightmagenta': '105',
         'brightcyan': '106', 'brightwhite': '107',
     }
 
@@ -585,11 +590,22 @@ class HistoryApiMixin:
             "tmux_name": getattr(s, "_tmux_name", None),
             "session_id": getattr(s, "session_id", None),
         }
-        if agent_status._worker_kind(worker["cmd"]) not in ("claude", "codex"):
+        kind = agent_status._worker_kind(worker["cmd"])
+        if kind not in ("claude", "codex"):
             return None
         path = agent_status.resolve_transcript(worker)
         if not path or not os.path.exists(path):
             return None
+        # Codex 的 resolve fallback 是「全域最新 rollout」——給狀態燈當近似
+        # 可以，拿來渲染上滾對話不行（會把別的分頁的對話端給使用者）。只信
+        # lsof 命中（該 pane 程序真的開著這個檔）的路徑。
+        if kind == "codex":
+            pane = agent_status._tmux_pane_pid(worker.get("tmux_name"))
+            hit = (agent_status._lsof_open_jsonl(
+                agent_status._pid_tree(pane), "/.codex/sessions/")
+                if pane else None)
+            if hit != path:
+                return None
         fmt, evs, err = agent_status._read_tail_events(
             path, tail_bytes=self._TRANSCRIPT_TAIL_BYTES,
             max_records=self._TRANSCRIPT_MAX_RECORDS)
@@ -779,11 +795,17 @@ class HistoryApiMixin:
         # wide enough to be distinctive (visual width ≥ 20) should survive
         # the dedup pipeline at most twice (legit echoes); ≥3 occurrences in
         # the CLEANED overlay means a redraw frame slipped through.
-        from collections import Counter as _Counter
-        dup_counts = _Counter(
-            l for l in overlay_lines if self._visual_width(l) >= 20)
-        dup_in_overlay = [
-            f"{n}× {l}" for l, n in dup_counts.most_common() if n >= 3]
+        # Terminal sources only: transcript-rendered overlays legitimately
+        # repeat tool one-liners（⏺ Edit(main.py) ×N＝真實事件）— live audit
+        # on s94 false-flagged 8 of them the first time this shipped.
+        if tmux_cleaned_src.startswith("transcript"):
+            dup_in_overlay = []
+        else:
+            from collections import Counter as _Counter
+            dup_counts = _Counter(
+                l for l in overlay_lines if self._visual_width(l) >= 20)
+            dup_in_overlay = [
+                f"{n}× {l}" for l, n in dup_counts.most_common() if n >= 3]
 
         # Dump everything to disk so a later debugging pass can re-analyse
         # without re-running the user's session. Filename embeds sid + ts

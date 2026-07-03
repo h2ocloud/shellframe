@@ -2428,7 +2428,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Python side (claude: transcript's latest assistant model + global
   // effortLevel; codex: rollout turn_context) and pushed with agent status.
   function showModelBadge() {
-    return !(config.settings && config.settings.show_model_badge === false);
+    return !(config && config.settings && config.settings.show_model_badge === false);
   }
   function modelBadgeHtml(s) {
     if (!showModelBadge()) return '';
