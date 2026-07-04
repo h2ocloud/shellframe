@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.24.0 (2026-07-04)
+
+### Features
+- **`/break` — TG 遠端中斷 AI**（Howard requested）：手機在目前分頁送 `/break`（或 `/stop`、`/esc`、`/interrupt`、`/中斷`、`/打斷`）即對該分頁送出 ESC，打斷 AI 正在跑的 turn（Claude Code / Codex 都吃 ESC）。
+  - 送 ESC 前先跑 `prepare_fn` 退出 tmux copy-mode，確保 ESC 落在 CLI 而非 copy-mode。
+  - 只送單一 ESC——Claude 連按兩次 ESC 會進歷史導覽而非中斷。
+  - 走 `write_lock` 序列化，不與其他注入交錯；`/help` 已補上說明。
+
 ## v0.23.2 (2026-07-03)
 
 ### Fixes

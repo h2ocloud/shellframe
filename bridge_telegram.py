@@ -3237,7 +3237,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -3817,6 +3817,40 @@ class TelegramBridge(BridgeBase):
                     })
             threading.Thread(target=_do_update, daemon=True).start()
 
+        elif cmd in ("break", "stop", "esc", "interrupt", "中斷", "打斷"):
+            # Remote interrupt — press ESC in the active tab to abort the AI's
+            # current turn. Claude Code / Codex both interrupt on ESC.
+            # prepare_fn first (exit copy-mode) so the ESC lands in the CLI,
+            # not on tmux's copy-mode. Single ESC only: a second ESC in Claude
+            # opens history navigation instead of interrupting.
+            active_sid = self.get_active_sid(user_id)
+            if not active_sid or active_sid not in self.slots:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "No active session.",
+                })
+                return
+            slot = self.slots[active_sid]
+
+            def _do_break(slot=slot, chat_id=chat_id):
+                try:
+                    with slot.write_lock:
+                        if slot.prepare_fn:
+                            try:
+                                slot.prepare_fn()
+                            except Exception:
+                                pass
+                        slot.write_fn("\x1b")
+                    _blog(f"[break] {slot.sid} sent ESC (interrupt)\n")
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"⎋ 已送 ESC 中斷「{slot.label}」（/{slot.index}）",
+                    })
+                except Exception as e:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": f"❌ 中斷失敗: {e}",
+                    })
+            threading.Thread(target=_do_break, daemon=True).start()
+
         elif cmd == "fetch":
             active_sid = self.get_active_sid(user_id)
             if not active_sid or active_sid not in self.slots:
@@ -3853,7 +3887,8 @@ class TelegramBridge(BridgeBase):
                     "  /fetch — fetch latest AI reply\n"
                     "  /new [cmd] — new session (default: claude)\n"
                     "  /close — close current session (with confirm)\n"
-                    "  /1, /2, … — switch session\n\n"
+                    "  /1, /2, … — switch session\n"
+                    "  /break — 中斷目前分頁 AI（送 ESC；alias /stop /中斷）\n\n"
                     "Bridge control:\n"
                     "  /pause — pause bridge (bot ignores non-slash messages)\n"
                     "  /resume — resume\n\n"
