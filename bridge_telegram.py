@@ -452,6 +452,28 @@ def _read_settings() -> dict:
     return (_read_config().get("settings", {}) or {})
 
 
+_SETTINGS_WRITE_LOCK = threading.Lock()
+
+
+def _update_settings(patch: dict) -> bool:
+    """Read-modify-write config.json settings with the given key/value patch.
+    Returns True on success. Used by TG /voice to switch refine model live."""
+    with _SETTINGS_WRITE_LOCK:
+        try:
+            cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
+            cfg = _read_config()
+            settings = cfg.get("settings") or {}
+            settings.update(patch)
+            cfg["settings"] = settings
+            cfg_file.parent.mkdir(parents=True, exist_ok=True)
+            cfg_file.write_text(
+                json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+            return True
+        except Exception as e:
+            _blog(f"  _update_settings failed: {e}\n")
+            return False
+
+
 def master_turn_preamble_enabled() -> bool:
     settings = _read_settings()
     return settings.get("master_turn_preamble_enabled", True) is not False
@@ -2786,8 +2808,8 @@ class TelegramBridge(BridgeBase):
     _REFINE_SYS_CLEAN = (
         "你是語音輸入整理器。使用者剛用語音講了一段話，這是語音轉文字(STT)的逐字稿，"
         "可能有口語贅字(嗯、那個、就是、這樣子、然後)、重複、明顯的同音辨識錯字、缺標點、沒分段。"
-        "請輸出整理後的版本：修正明顯辨識錯誤、去除口語贅字與重複、補上標點與適當分行，"
-        "讓語意通順好讀。嚴格保留原意與所有具體資訊(數字、名稱、路徑、需求細節)，"
+        "請輸出整理後的版本：修正明顯辨識錯誤、去除口語贅字與重複、補上完整標點符號"
+        "(，。、？！：「」)與適當分行，讓語意通順好讀。嚴格保留原意與所有具體資訊(數字、名稱、路徑、需求細節)，"
         "不要摘要、不要刪減內容、不要加入使用者沒講的東西、不要回答或執行其中的問題。"
         "只輸出整理後的文字本身，使用繁體中文，不要任何前言或解釋。"
     )
@@ -2817,7 +2839,10 @@ class TelegramBridge(BridgeBase):
                 data = json.loads(resp.read().decode())
             for m in data.get("data", []):
                 mid = m.get("id", "")
-                if mid and "embed" not in mid.lower():
+                low = mid.lower()
+                # Skip non-chat models: embeddings, OCR, and vision-only ids
+                # (e.g. deepseek-ocr) which can't do text refinement.
+                if mid and not any(x in low for x in ("embed", "ocr", "vision", "-vl", "rerank")):
                     return mid
         except Exception:
             pass
@@ -3290,7 +3315,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -3870,6 +3895,60 @@ class TelegramBridge(BridgeBase):
                     })
             threading.Thread(target=_do_update, daemon=True).start()
 
+        elif cmd in ("voice", "語音"):
+            # Voice refine control: show/switch the Typeless-style STT cleanup
+            # model. `/voice` shows status + available models at the endpoint;
+            # `/voice on|off` toggles; `/voice <model>` switches model.
+            parts = (text or "").split(maxsplit=1)
+            arg = parts[1].strip() if len(parts) > 1 else ""
+            cfg = self._refine_settings()
+            if arg.lower() in ("on", "開"):
+                _update_settings({"voice_refine": True})
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "🎙 語音整理：已開啟 ✅"})
+                return
+            if arg.lower() in ("off", "關"):
+                _update_settings({"voice_refine": False})
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "🎙 語音整理：已關閉（送原始逐字稿）"})
+                return
+            if arg:
+                # Treat any other arg as a model id to switch to
+                _update_settings({"voice_refine_model": arg})
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": f"🎙 語音整理模型 → {arg}"})
+                return
+            # No arg: show current config + list models at the endpoint
+            def _do_voice_status(cfg=cfg, chat_id=chat_id):
+                models = []
+                try:
+                    models_url = cfg["url"].rsplit("/chat/completions", 1)[0] + "/models"
+                    req = urllib.request.Request(models_url)
+                    with urllib.request.urlopen(req, timeout=6) as resp:
+                        data = json.loads(resp.read().decode())
+                    models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                except Exception:
+                    pass
+                cur = cfg["model"] or "(自動挑選)"
+                lines = [
+                    "🎙 語音整理設定",
+                    f"狀態：{'開 ✅' if cfg['enabled'] else '關'}",
+                    f"模型：{cur}",
+                    f"端點：{cfg['url']}",
+                    "",
+                ]
+                if models:
+                    lines.append("可用模型：")
+                    for m in models:
+                        lines.append(f"  {'▸' if m == cfg['model'] else '·'} {m}")
+                    lines.append("")
+                    lines.append("切換：/voice <模型名>　開關：/voice on|off")
+                else:
+                    lines.append("⚠ 端點連不到或沒模型")
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "\n".join(lines)})
+            threading.Thread(target=_do_voice_status, daemon=True).start()
+
         elif cmd in ("break", "stop", "esc", "interrupt", "中斷", "打斷"):
             # Remote interrupt — press ESC in the active tab to abort the AI's
             # current turn. Claude Code / Codex both interrupt on ESC.
@@ -3941,7 +4020,8 @@ class TelegramBridge(BridgeBase):
                     "  /new [cmd] — new session (default: claude)\n"
                     "  /close — close current session (with confirm)\n"
                     "  /1, /2, … — switch session\n"
-                    "  /break — 中斷目前分頁 AI（送 ESC；alias /stop /中斷）\n\n"
+                    "  /break — 中斷目前分頁 AI（送 ESC；alias /stop /中斷）\n"
+                    "  /voice — 語音整理設定/切模型（/voice <模型>、/voice on|off）\n\n"
                     "Bridge control:\n"
                     "  /pause — pause bridge (bot ignores non-slash messages)\n"
                     "  /resume — resume\n\n"

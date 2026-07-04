@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.26.0 (2026-07-05)
+
+### Features
+- **語音整理接 Spark AI 模型 + 可切模型**（Howard requested）：語音 Typeless 整理改指向 Spark（190）Ollama 的 `qwythos:9b`，補上完整中英文標點、去贅字、修辨識錯字。實測 warm ~1.8s、cold ~12s（Ollama keep-alive 後保持熱）。
+  - 新增 TG `/voice` 指令：`/voice` 看目前設定 + 端點可用模型清單、`/voice <模型>` 切模型、`/voice on|off` 開關整理。
+  - CLEAN prompt 強化標點指示（明列 `，。、？！：「」`）。
+  - 模型自動挑選跳過 OCR / vision / embed / rerank 模型（避免 deepseek-ocr 被誤選）。
+  - 端點/模型/開關持久化在 `config.json` settings（`voice_refine_url` / `voice_refine_model` / `voice_refine`）。
+
 ## v0.25.0 (2026-07-05)
 
 ### Features
