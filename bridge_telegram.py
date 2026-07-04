@@ -2787,6 +2787,16 @@ class TelegramBridge(BridgeBase):
             return self._transcribe_local(audio_path)
         if backend == "remote":
             return self._transcribe_remote(audio_path)
+        if backend == "remote_first":
+            # Prefer the (stronger) remote provider, fall back to on-device
+            # local whisper if the remote chain is unreachable/empty.
+            text = self._transcribe_plugin(audio_path)
+            if text:
+                return text
+            text = self._transcribe_remote(audio_path)
+            if text:
+                return text
+            return self._transcribe_local(audio_path)
         # auto: plugin → local → remote
         text = self._transcribe_plugin(audio_path)
         if text:

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.27.0 (2026-07-05)
+
+### Features
+- **STT 新增 `remote_first` 模式**（Howard requested：中英夾雜要更準）：先打遠端 STT provider，連不到才 fallback 回本機 whisper。用來把語音辨識導到 Spark（190）GPU 上的 **Qwen3-ASR-1.7B** server（:9700，含 s2twp 繁體轉換），中英夾雜辨識實測明顯優於 Mac 端 mlx-whisper（範例句 Spark/Whisper/Turbo 專有名詞全對，3.5s）。
+  - 對比：原本想部署 whisper-large-v3 到 Spark，但 GPU 已被 vLLM(64G)+Ollama(22G) 佔滿而 OOM；改用既有的 Qwen3-ASR server（本就更適合中文/code-switching），零額外 GPU 成本。
+  - 設定走 `config.bridge.stt_backend = "remote_first"` + `stt_providers`（Spark :9700，field `audio`，result key `text`）。
+
 ## v0.26.0 (2026-07-05)
 
 ### Features
