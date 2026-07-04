@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.25.0 (2026-07-05)
+
+### Features
+- **語音 Apply 閘門（Typeless 式）**（Howard requested）：TG 傳語音轉錄+refine 後**不再自動送出**，改先顯示整理後文字 + inline `✅ Apply / ✕ Cancel`。按 Apply 才把 prompt 送進 session，按 Cancel 就丟棄。
+  - STT 會糊，這道閘門讓你送出前先過目、避免錯字直接餵給 AI。
+  - 目標 session 在**按 Apply 當下**才解析，中途切分頁也 OK。
+  - Apply 走既有完整 forward pipeline（preamble 包裝、選單偵測、`_send` + 送達驗證），行為與手打訊息一致。
+  - 重啟後未處理的待送語音會失效並提示重錄（pending 存記憶體）。
+
 ## v0.24.0 (2026-07-04)
 
 ### Features

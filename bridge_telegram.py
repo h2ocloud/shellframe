@@ -664,6 +664,11 @@ class TelegramBridge(BridgeBase):
         self._slots_lock = threading.Lock()
         self._last_prune_ts = 0.0
 
+        # Voice Apply-gate: transcribed voice waits for an inline Apply tap
+        # before being forwarded to the session. token -> {text, user_id, chat_id}
+        self._pending_voice = {}
+        self._voice_seq = 0
+
     # ── IPC with main.py (via sfctl file mechanism) ──
 
     _CMD_FILE = _os.path.join(_TMP_DIR, "shellframe_cmd.json")
@@ -3035,6 +3040,41 @@ class TelegramBridge(BridgeBase):
                 self._apply_update(chat_id)
                 return
 
+        if data.startswith("vcancel:"):
+            token = data.split(":", 1)[1]
+            self._pending_voice.pop(token, None)
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id,
+                "text": "✕ 已取消（未送出）",
+            })
+            return
+
+        if data.startswith("vapply:"):
+            token = data.split(":", 1)[1]
+            pending = self._pending_voice.pop(token, None)
+            if not pending:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "⚠ 這則語音已失效（可能重啟過），請重錄。",
+                })
+                return
+            self._user_chat[user_id] = chat_id
+            preview = pending["text"][:120] + ('…' if len(pending["text"]) > 120 else '')
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id,
+                "text": f"✅ 已送出：{preview}",
+            })
+            # Reuse the full forward pipeline (preamble wrap, menu detect, _send
+            # + delivery verify) by replaying the parked text as a normal message.
+            synthetic = {"message": {
+                "text": pending["text"],
+                "from": {"id": pending["user_id"]},
+                "chat": {"id": pending["chat_id"]},
+            }}
+            threading.Thread(
+                target=self._handle_update, args=(synthetic,), daemon=True).start()
+            return
+
         if data.startswith("choice:"):
             parts = data.split(":", 2)
             if len(parts) < 3:
@@ -3172,19 +3212,32 @@ class TelegramBridge(BridgeBase):
                     refined = self._refine_transcript(transcribed)
                     # Use refined text as the message text, append 🎙 prefix
                     if text:
-                        text = text + " " + refined
+                        fwd_text = text + " " + refined
                     else:
-                        text = f"🎙 {refined}"
-                    # Confirm to user: show the cleaned version; when it actually
-                    # changed, append the raw transcript so nothing feels hidden.
-                    confirm = f"✓ {refined[:400]}{'…' if len(refined) > 400 else ''}"
+                        fwd_text = f"🎙 {refined}"
+                    # Apply-gate: STT is imperfect, so don't auto-submit. Park the
+                    # transcribed text and show inline Apply/Cancel — only forward
+                    # to the session when the user taps ✅ Apply. Target session is
+                    # resolved at Apply time so switching tabs meanwhile still works.
+                    self._voice_seq += 1
+                    token = str(self._voice_seq)
+                    self._pending_voice[token] = {
+                        "text": fwd_text, "user_id": user_id, "chat_id": chat_id,
+                    }
+                    body = f"🎙 {refined[:800]}{'…' if len(refined) > 800 else ''}"
                     if refined.strip() != transcribed.strip():
                         raw_preview = transcribed[:200] + ('…' if len(transcribed) > 200 else '')
-                        confirm += f"\n\n🎙 原稿：{raw_preview}"
+                        body += f"\n\n原稿：{raw_preview}"
+                    body += "\n\n送出到 session？"
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
-                        "text": confirm,
+                        "text": body,
+                        "reply_markup": {"inline_keyboard": [[
+                            {"text": "✅ Apply", "callback_data": f"vapply:{token}"},
+                            {"text": "✕ Cancel", "callback_data": f"vcancel:{token}"},
+                        ]]},
                     })
+                    return
                 else:
                     # Build a helpful diagnostic so the user knows WHY it failed
                     status = self.stt_status()
