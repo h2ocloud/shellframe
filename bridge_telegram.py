@@ -691,6 +691,70 @@ class TelegramBridge(BridgeBase):
         self._pending_voice = {}
         self._voice_seq = 0
 
+        # ── Perf instrumentation (item 0) ──
+        # Cumulative time/count per _flush_loop phase; a 60s summary line is
+        # written to the bridge log when settings.perf_debug is on. Left in
+        # permanently so future regressions can be re-measured with one flag.
+        self._perf = {}                 # name -> [total_seconds, call_count]
+        self._perf_enabled = False      # refreshed once per 60s window
+        self._perf_window_start = 0.0
+        self._perf_ticks = 0
+
+        # ── Adaptive tick wake (item 3) ──
+        # feed_output sets this Event so an idle (slow-tick) flush loop wakes
+        # immediately when new PTY output lands, instead of waiting out the
+        # widened sleep interval.
+        self._flush_wake = threading.Event()
+
+    # ── Perf instrumentation helpers ──
+
+    def _perf_t(self):
+        """Return a monotonic start stamp when perf_debug is on, else None."""
+        return time.monotonic() if self._perf_enabled else None
+
+    def _perf_end(self, name: str, t0):
+        """Accumulate elapsed time for phase `name` (no-op when t0 is None)."""
+        if t0 is None:
+            return
+        dt = time.monotonic() - t0
+        b = self._perf.get(name)
+        if b is None:
+            self._perf[name] = [dt, 1]
+        else:
+            b[0] += dt
+            b[1] += 1
+
+    def _perf_maybe_emit(self):
+        """Once per 60s: refresh the perf_debug flag and, if on, write a
+        summary line (per-phase total ms + call count + mean µs) to the log."""
+        now = time.monotonic()
+        if self._perf_window_start == 0.0:
+            self._perf_window_start = now
+            try:
+                self._perf_enabled = bool(_read_settings().get("perf_debug", False))
+            except Exception:
+                self._perf_enabled = False
+            return
+        if now - self._perf_window_start < 60.0:
+            return
+        window = now - self._perf_window_start
+        if self._perf_enabled and self._perf:
+            parts = []
+            for name, (tot, cnt) in sorted(
+                    self._perf.items(), key=lambda kv: kv[1][0], reverse=True):
+                mean_us = (tot / cnt * 1e6) if cnt else 0.0
+                parts.append(f"{name}={tot*1e3:.1f}ms/{cnt}x({mean_us:.0f}µs)")
+            _blog(f"[perf] window={window:.0f}s ticks={self._perf_ticks} slots={len(self.slots)} "
+                  + " ".join(parts) + "\n")
+        # Reset window + refresh flag for the next interval.
+        self._perf.clear()
+        self._perf_ticks = 0
+        self._perf_window_start = now
+        try:
+            self._perf_enabled = bool(_read_settings().get("perf_debug", False))
+        except Exception:
+            self._perf_enabled = False
+
     # ── IPC with main.py (via sfctl file mechanism) ──
 
     _CMD_FILE = _os.path.join(_TMP_DIR, "shellframe_cmd.json")
@@ -1048,10 +1112,13 @@ class TelegramBridge(BridgeBase):
         if slot.last_chunk_ts > 0 and now - slot.last_chunk_ts < 2.0:
             return
         # Scan the last few rendered rows (status bar lives at the bottom)
+        _t_disp = self._perf_t()
         try:
             tail = '\n'.join(slot.screen.display[-8:])
         except Exception:
             return
+        finally:
+            self._perf_end("screen_display", _t_disp)
         m = self._CLAUDE_TOKEN_RE.search(tail)
         if not m:
             return
@@ -1358,8 +1425,10 @@ class TelegramBridge(BridgeBase):
             slot._history_offset = hlen
 
         # Current screen display
+        _t_disp = self._perf_t()
         for line in slot.screen.display:
             all_lines.append(line.rstrip())
+        self._perf_end("screen_display", _t_disp)
 
         # Collect response blocks: list of list-of-lines
         blocks = []
@@ -1956,6 +2025,8 @@ class TelegramBridge(BridgeBase):
         while self.active and not self._stop_event.is_set():
             time.sleep(0.5)
             tick += 1
+            self._perf_ticks += 1
+            self._perf_maybe_emit()
             # idle-floor 優化：stall 偵測 + auto-compact 這兩個「每 slot 都要掃」的
             # 週期檢查不需 0.5s 一次，降到每 2s（每 4 個 tick）跑一次，砍掉 10+ idle
             # tab 的 CPU floor。輸出 drain（下方）仍維持 0.5s、且對 idle slot 本就 continue。
@@ -1968,6 +2039,7 @@ class TelegramBridge(BridgeBase):
             # Stall detection runs first, outside the output_lock path below,
             # because a truly stalled slot has no output activity to flush.
             if slow_tick:
+                _t_st = self._perf_t()
                 now_stall = time.time()
                 for sid in sids:
                     slot = self.slots.get(sid)
@@ -1982,11 +2054,13 @@ class TelegramBridge(BridgeBase):
                             args=(sid, int(write_age)),
                             daemon=True,
                         ).start()
+                self._perf_end("stall_detect", _t_st)
 
             # Claude auto-compact check — runs outside output_lock so the
             # scan doesn't contend with feed_output. 一個 regex 掃最後 ~8 行 /slot，
             # 降到每 2s 一次（auto-compact 屬慢變化、不需 0.5s 偵測）。
             if slow_tick:
+                _t_ac = self._perf_t()
                 for sid in sids:
                     slot = self.slots.get(sid)
                     if not slot:
@@ -1995,6 +2069,7 @@ class TelegramBridge(BridgeBase):
                         self._maybe_auto_compact(slot)
                     except Exception as e:
                         _blog(f"[auto-compact] {sid} check failed: {e}\n")
+                self._perf_end("auto_compact", _t_ac)
 
             for sid in sids:
                 slot = self.slots.get(sid)
@@ -2025,10 +2100,16 @@ class TelegramBridge(BridgeBase):
                         now = time.time()
                         idle = now - slot.last_output_time
                         if idle >= 1.0:
+                            _t_ex = self._perf_t()
                             drained = self._extract_new_text(slot)
+                            self._perf_end("extract_new_text", _t_ex)
                             try:
+                                _t_b = self._perf_t()
                                 drained = self._detect_and_apply_board(slot, drained)
+                                self._perf_end("detect_board", _t_b)
+                                _t_s = self._perf_t()
                                 self._detect_and_fire_signal(slot, drained)
+                                self._perf_end("detect_signal", _t_s)
                             except Exception as e:
                                 _blog(f"[signal] {sid} drain-detect failed: {e}\n")
                             slot.last_output_time = 0
@@ -2071,7 +2152,9 @@ class TelegramBridge(BridgeBase):
                         slot.has_user_msg = False
                     else:
                         # Extract new text via screen diff (only final changes)
+                        _t_ex = self._perf_t()
                         new_lines = self._extract_new_text(slot)
+                        self._perf_end("extract_new_text", _t_ex)
                     slot.sent_texts.clear()
                     slot.last_output_time = 0
                     slot.first_output_time = 0
@@ -2120,8 +2203,12 @@ class TelegramBridge(BridgeBase):
                 # Apply [[SF:TASK:...]] board markers, then fire desktop + TG
                 # banner on a [[SF:STATE]] transition; both strip their raw
                 # marker lines out of the forwarded text.
+                _t_b = self._perf_t()
                 new_lines = self._detect_and_apply_board(slot, new_lines)
+                self._perf_end("detect_board", _t_b)
+                _t_s = self._perf_t()
                 new_lines = self._detect_and_fire_signal(slot, new_lines)
+                self._perf_end("detect_signal", _t_s)
                 if not new_lines:
                     continue
 
