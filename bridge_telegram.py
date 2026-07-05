@@ -447,9 +447,24 @@ def _read_config() -> dict:
     return {}
 
 
+_SETTINGS_CACHE = {"ts": 0.0, "val": {}}
+_SETTINGS_CACHE_TTL = 1.0  # seconds
+
+
 def _read_settings() -> dict:
-    """Read ~/.config/shellframe/config.json settings dict. Empty on failure."""
-    return (_read_config().get("settings", {}) or {})
+    """Read ~/.config/shellframe/config.json settings dict. Empty on failure.
+
+    Cached for _SETTINGS_CACHE_TTL seconds: the flush loop calls this per slot
+    every 2s (auto-compact) plus the board check, so an uncached read meant
+    8+ file-open+JSON-parse cycles every couple seconds. A 1s TTL keeps UI
+    toggles feeling instant while removing that idle-floor I/O."""
+    now = time.monotonic()
+    if now - _SETTINGS_CACHE["ts"] < _SETTINGS_CACHE_TTL:
+        return _SETTINGS_CACHE["val"]
+    val = (_read_config().get("settings", {}) or {})
+    _SETTINGS_CACHE["ts"] = now
+    _SETTINGS_CACHE["val"] = val
+    return val
 
 
 _SETTINGS_WRITE_LOCK = threading.Lock()
@@ -468,6 +483,7 @@ def _update_settings(patch: dict) -> bool:
             cfg_file.parent.mkdir(parents=True, exist_ok=True)
             cfg_file.write_text(
                 json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+            _SETTINGS_CACHE["ts"] = 0.0  # invalidate so the write is seen at once
             return True
         except Exception as e:
             _blog(f"  _update_settings failed: {e}\n")
@@ -651,6 +667,22 @@ class SessionSlot:
         self.stream = pyte.Stream(self.screen)
         self._history_offset = 0  # tracks processed history lines
         self.sent_responses = {"Understood.", "Understood"}  # pre-filter system acks
+        # Dirty flag for the periodic slow-tick scan (auto-compact). Set by
+        # feed_output on every PTY chunk, cleared after a settled screen scan.
+        # The Claude token gauge only changes when the session produces output,
+        # so a slot with no new bytes needs no re-render — this lets idle slots
+        # skip the expensive pyte screen.display rebuild entirely. Starts True
+        # so the first scan runs.
+        self.scan_dirty = True
+        # screen.display cache. pyte's `display` is a property that re-renders
+        # every row (cols × rows string build) on each access — the measured
+        # flush-loop hotspot. We bump `_feed_gen` on every PTY chunk and cache
+        # the rendered rows against it, so multiple reads of an unchanged screen
+        # (auto-compact tail + extract in the same tick, repeated menu scans)
+        # pay the render once.
+        self._feed_gen = 0
+        self._display_cache = None
+        self._display_cache_gen = -1
 
 
 class TelegramBridge(BridgeBase):
@@ -1111,14 +1143,19 @@ class TelegramBridge(BridgeBase):
             return
         if slot.last_chunk_ts > 0 and now - slot.last_chunk_ts < 2.0:
             return
-        # Scan the last few rendered rows (status bar lives at the bottom)
+        # Scan the last few rendered rows (status bar lives at the bottom).
+        # Screen is settled here (guards above ensure no in-flight output), so
+        # this is a real scan — clear the dirty flag so we don't re-render an
+        # unchanged screen every 2s while the slot sits idle. feed_output
+        # re-arms it on the next PTY chunk.
         _t_disp = self._perf_t()
         try:
-            tail = '\n'.join(slot.screen.display[-8:])
+            tail = '\n'.join(self._slot_display(slot)[-8:])
         except Exception:
             return
         finally:
             self._perf_end("screen_display", _t_disp)
+        slot.scan_dirty = False
         m = self._CLAUDE_TOKEN_RE.search(tail)
         if not m:
             return
@@ -1275,10 +1312,29 @@ class TelegramBridge(BridgeBase):
             now_ts = time.time()
             slot.last_output_time = now_ts
             slot.last_chunk_ts = now_ts  # for stall detection (not reset by flush)
+            slot.scan_dirty = True       # new bytes → allow next slow-tick scan
+            slot._feed_gen += 1          # invalidate the cached screen.display
             if was_empty or slot.first_output_time == 0:
                 slot.first_output_time = now_ts
+        # Wake the flush loop if it widened its sleep while everything was idle
+        # (adaptive tick) so new output is picked up without waiting it out.
+        self._flush_wake.set()
         if was_empty and slot.awaiting_response:
             threading.Thread(target=self._send_typing, args=(sid,), daemon=True).start()
+
+    def _slot_display(self, slot):
+        """Return slot.screen.display (list of rendered rows), cached against
+        the slot's feed generation. Repeated reads of an unchanged screen skip
+        pyte's full re-render. Best-effort: a concurrent feed just misses the
+        cache, never corrupts (matches the existing lock-free display reads)."""
+        gen = slot._feed_gen
+        cache = slot._display_cache
+        if cache is not None and slot._display_cache_gen == gen:
+            return cache
+        disp = list(slot.screen.display)
+        slot._display_cache = disp
+        slot._display_cache_gen = gen
+        return disp
 
     # AI response markers used by CLI tools
     AI_MARKERS = ('• ', '⏺ ', '⏺')
@@ -1426,7 +1482,7 @@ class TelegramBridge(BridgeBase):
 
         # Current screen display
         _t_disp = self._perf_t()
-        for line in slot.screen.display:
+        for line in self._slot_display(slot):
             all_lines.append(line.rstrip())
         self._perf_end("screen_display", _t_disp)
 
@@ -1846,7 +1902,7 @@ class TelegramBridge(BridgeBase):
         # Scan current screen for consecutive "N. xxx" lines (with optional ❯ cursor).
         # Cursor ❯ may be on any line, not just the first. Codex/Claude both
         # use this shape for approval / action-required prompts.
-        lines = [l.rstrip() for l in slot.screen.display]
+        lines = [l.rstrip() for l in self._slot_display(slot)]
         screen_text = "\n".join(lines)
         menu_lines = []
         menu_options = []
@@ -2064,6 +2120,11 @@ class TelegramBridge(BridgeBase):
                 for sid in sids:
                     slot = self.slots.get(sid)
                     if not slot:
+                        continue
+                    # Dirty-flag gate: a slot with no new output since its last
+                    # settled scan can't have changed its token gauge — skip the
+                    # pyte screen.display rebuild entirely (the idle CPU floor).
+                    if not slot.scan_dirty:
                         continue
                     try:
                         self._maybe_auto_compact(slot)
