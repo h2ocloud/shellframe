@@ -2026,7 +2026,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const term = new Terminal({
       fontSize: currentFontSize,
       fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
-      theme: THEME, cursorBlink: true, scrollback: 10000, allowProposedApi: true
+      // cursorBlink off: a blinking cursor repaints the cursor cell ~2×/s
+      // forever, so an idle foreground window keeps driving WindowServer
+      // composites. Solid cursor stays fully visible. (perf item 5)
+      theme: THEME, cursorBlink: false, scrollback: 10000, allowProposedApi: true
     });
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
@@ -2187,7 +2190,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const term = new Terminal({
       fontSize: currentFontSize,
       fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
-      theme: THEME, cursorBlink: true, scrollback: 10000, allowProposedApi: true
+      // cursorBlink off: a blinking cursor repaints the cursor cell ~2×/s
+      // forever, so an idle foreground window keeps driving WindowServer
+      // composites. Solid cursor stays fully visible. (perf item 5)
+      theme: THEME, cursorBlink: false, scrollback: 10000, allowProposedApi: true
     });
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
@@ -2902,12 +2908,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
     } catch (e) { /* never let the panel break the UI */ }
   }
-  setInterval(renderLoops, 700);
+  // Skip periodic JS/DOM work while the window is hidden/occluded — nothing is
+  // visible to repaint, so a backgrounded ShellFrame should do zero periodic
+  // work. visibilitychange fires one immediate refresh on return. (perf item 5)
+  setInterval(() => { if (!document.hidden) renderLoops(); }, 700);
   // Refresh the LaunchAgent on/off state while the panel is open.
   setInterval(() => {
+    if (document.hidden) return;
     const panel = document.getElementById('board-panel');
     if (loopsEnabled() && panel && !panel.classList.contains('collapsed')) loadSchedules();
   }, 5000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) renderLoops();
+  });
 
   document.getElementById('btn-board').addEventListener('click', () => {
     const panel = document.getElementById('board-panel');
