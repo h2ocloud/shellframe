@@ -603,6 +603,28 @@ class TelegramBridgeConfig(BridgeConfigBase):
             self.initial_prompt = load_init_prompt()
 
 
+# ── Precompiled hot-path patterns (item 2) ──
+# These run per-line / per-block inside _flush_loop's extraction chain
+# (_is_bridge_noise_line, _is_tool_call, _extract_new_text, _detect_menu_prompt).
+# `re` caches compiled literals, but hoisting to module constants removes the
+# per-call pattern hash + cache lookup on the busy-output path where these fire
+# thousands of times per second over wide-char (CJK) terminal content.
+_NOISE_TOOLCALL_RE = re.compile(r'^[A-Z][\w\s]*\(.+\)$')
+_NOISE_LINES_EXPAND_RE = re.compile(r'^(?:\.\.\. )?\+\d+\s+lines?\s+\(ctrl[+ ]o to expand\)')
+_NOISE_MODE_RE = re.compile(r'\b(?:auto mode on|esc to interrupt|shift\+tab to cycle)\b')
+_NOISE_THOUGHT_RE = re.compile(r'\b(?:thought|thinking) for \d+s\b')
+_NOISE_SESSION_END_RE = re.compile(r'^[✻\*─\-]{1,2}\s*(cooked|worked|sautéed|churned|waddling|baking)\b')
+_NOISE_RATING_NUM_RE = re.compile(r'^\d+:\s*\w+')
+_NOISE_RATING_OPT_RE = re.compile(r'\d+:\s*(?:bad|fine|good|dismiss)')
+_TOOLCALL_PREFIX_RE = re.compile(r'^[A-Z][\w\s]*\(')
+_NUMBERED_ITEM_RE = re.compile(r'\d+\.?\s')
+_USERNAME_PREFIX_RE = re.compile(r'^(\w+):\s')
+_MENU_ITEM_RE = re.compile(r'^(\d+)[\.\)]\s+(.+)$')
+_MENU_END_RE = re.compile(r'esc|cancel|tab|enter', re.I)
+_MENU_ACTION_RE = re.compile(
+    r'Action Required|Would you like|Do you want|approval|approve|permission', re.I)
+
+
 class SessionSlot:
     """One session registered with the bridge."""
 
@@ -1387,7 +1409,7 @@ class TelegramBridge(BridgeBase):
         """Detect tool calls: ToolName(params) pattern."""
         # Pattern: starts with capitalized word(s) followed by (
         # e.g., "Web Search(...)", "Fetch(https://...)", "Read(/path/...)"
-        if re.match(r'^[A-Z][\w\s]*\(', text):
+        if _TOOLCALL_PREFIX_RE.match(text):
             return True
         # Codex style: "Searching the web", "Searched xxx"
         if text.startswith(('Searching ', 'Searched ')):
@@ -1432,24 +1454,24 @@ class TelegramBridge(BridgeBase):
             or "full restart for main.py" in lower
         ):
             return True
-        if re.match(r'^[A-Z][\w\s]*\(.+\)$', s):
+        if _NOISE_TOOLCALL_RE.match(s):
             return True
-        if re.match(r'^(?:\.\.\. )?\+\d+\s+lines?\s+\(ctrl[+ ]o to expand\)', lower):
+        if _NOISE_LINES_EXPAND_RE.match(lower):
             return True
-        if re.search(r'\b(?:auto mode on|esc to interrupt|shift\+tab to cycle)\b', lower):
+        if _NOISE_MODE_RE.search(lower):
             return True
-        if re.search(r'\b(?:thought|thinking) for \d+s\b', lower):
+        if _NOISE_THOUGHT_RE.search(lower):
             return True
         if s.startswith(('└', '╰', '⎿')):
             return True
         # Claude Code session-end UI: "✻ Cooked for Xs", "─ Worked for Xs"
-        if re.match(r'^[✻\*─\-]{1,2}\s*(cooked|worked|sautéed|churned|waddling|baking)\b', lower):
+        if _NOISE_SESSION_END_RE.match(lower):
             return True
         # Claude Code rating prompt: "How is Claude doing this session?"
         if 'how is claude doing this session' in lower:
             return True
         # Rating options line: "1: Bad    2: Fine    3: Good    0: Dismiss"
-        if re.match(r'^\d+:\s*\w+', s) and re.search(r'\d+:\s*(?:bad|fine|good|dismiss)', lower):
+        if _NOISE_RATING_NUM_RE.match(s) and _NOISE_RATING_OPT_RE.search(lower):
             return True
         return False
 
@@ -1505,7 +1527,7 @@ class TelegramBridge(BridgeBase):
             # But numbered menu items (› 1. xxx) should be included in the block
             if stripped.startswith(self.PROMPT_MARKERS):
                 after_prompt = stripped.lstrip('›❯ ')
-                if current_block is not None and re.match(r'\d+\.?\s', after_prompt):
+                if current_block is not None and _NUMBERED_ITEM_RE.match(after_prompt):
                     # This is a numbered menu item — include in current block
                     current_block.append(after_prompt)
                 else:
@@ -1569,7 +1591,7 @@ class TelegramBridge(BridgeBase):
             # Some AI tools mimic the input prefix format in their responses
             for sent in slot.sent_texts:
                 # Extract username prefix pattern from sent text (e.g., "Howard: ")
-                m = re.match(r'^(\w+):\s', sent)
+                m = _USERNAME_PREFIX_RE.match(sent)
                 if m:
                     prefix = m.group(0)  # "Howard: "
                     if text.startswith(prefix):
@@ -1910,7 +1932,7 @@ class TelegramBridge(BridgeBase):
             # Strip leading ❯/› cursor markers and whitespace
             stripped = line.lstrip().lstrip('❯›').lstrip()
             # Match "N. xxx" or "N) xxx"
-            m = re.match(r'^(\d+)[\.\)]\s+(.+)$', stripped)
+            m = _MENU_ITEM_RE.match(stripped)
             if m:
                 num, label = m.group(1), m.group(2).strip()
                 menu_lines.append(f"{num}. {label}")
@@ -1921,13 +1943,12 @@ class TelegramBridge(BridgeBase):
                     if len(menu_lines) >= 2:
                         break
                 # Non-menu line in middle — reset (false positive)
-                if line.strip() and not re.search(r'esc|cancel|tab|enter', line, re.I):
+                if line.strip() and not _MENU_END_RE.search(line):
                     menu_lines = []
                     menu_options = []
         if len(menu_lines) >= 2:
             slot.pending_menu_options = menu_options
-            is_action = re.search(r'Action Required|Would you like|Do you want|approval|approve|permission',
-                                  screen_text, re.I)
+            is_action = _MENU_ACTION_RE.search(screen_text)
             title = "待決策：請選一個動作" if is_action else "請選一個選項"
             return f"❓ {title}\n" + "\n".join(menu_lines)
         slot.pending_menu_options = []
@@ -2075,22 +2096,54 @@ class TelegramBridge(BridgeBase):
     STALL_WRITE_MIN_AGE = 15.0   # TG msg must be at least this old to consider stalling
     STALL_SILENCE_MIN = 10.0     # PTY must have been silent at least this long
 
+    # Adaptive flush cadence (item 3)
+    FLUSH_INTERVAL_BUSY = 0.5    # any slot has pending output / is awaiting
+    FLUSH_INTERVAL_IDLE = 2.0    # everything quiet — widen to cut idle wakeups
+    FLUSH_IDLE_TICKS = 6         # consecutive quiet ticks before widening (~3s)
+    STALL_PERIOD = 2.0           # stall-watch + prune cadence (wall clock)
+    COMPACT_PERIOD = 8.0         # auto-compact screen scan cadence (slow-moving %)
+
     def _flush_loop(self):
         """Extract new text from virtual terminal and send to TG."""
         tick = 0
+        idle_streak = 0
+        last_stall_mono = 0.0
+        last_compact_mono = 0.0
         while self.active and not self._stop_event.is_set():
-            time.sleep(0.5)
+            # Adaptive sleep. When quiet for a few ticks, widen to 2s but let
+            # feed_output's _flush_wake cut it short the instant new PTY output
+            # lands (no added latency). While busy, sleep the fixed 0.5s — we do
+            # NOT wait on the event there, or continuous output (which sets it
+            # every chunk) would spin the loop with no delay. Clear once per tick
+            # so a set during a busy sleep doesn't short-circuit the next idle wait.
+            if idle_streak >= self.FLUSH_IDLE_TICKS:
+                self._flush_wake.wait(timeout=self.FLUSH_INTERVAL_IDLE)
+            else:
+                time.sleep(self.FLUSH_INTERVAL_BUSY)
+            self._flush_wake.clear()
             tick += 1
             self._perf_ticks += 1
             self._perf_maybe_emit()
-            # idle-floor 優化：stall 偵測 + auto-compact 這兩個「每 slot 都要掃」的
-            # 週期檢查不需 0.5s 一次，降到每 2s（每 4 個 tick）跑一次，砍掉 10+ idle
-            # tab 的 CPU floor。輸出 drain（下方）仍維持 0.5s、且對 idle slot 本就 continue。
-            slow_tick = (tick % 4 == 0)
+            now_mono = time.monotonic()
+            # Stall-watch + prune run on a wall-clock cadence (independent of the
+            # now-variable sleep interval); auto-compact runs less often still —
+            # the token gauge is slow-moving, so an 8s scan is plenty and it's
+            # the sole remaining screen.display render on active tabs.
+            stall_tick = (now_mono - last_stall_mono) >= self.STALL_PERIOD
+            compact_tick = (now_mono - last_compact_mono) >= self.COMPACT_PERIOD
+            if stall_tick:
+                last_stall_mono = now_mono
+            if compact_tick:
+                last_compact_mono = now_mono
+            slow_tick = stall_tick  # stall + prune share the 2s cadence
             if slow_tick:
                 self._prune_stale_slots()
             with self._slots_lock:
                 sids = list(self._slot_order)
+            # Track whether anything needed attention this tick to drive the
+            # adaptive interval. A slot with pending output or an awaited reply
+            # counts as busy; all-quiet ticks accumulate toward widening.
+            tick_busy = False
 
             # Stall detection runs first, outside the output_lock path below,
             # because a truly stalled slot has no output activity to flush.
@@ -2114,8 +2167,9 @@ class TelegramBridge(BridgeBase):
 
             # Claude auto-compact check — runs outside output_lock so the
             # scan doesn't contend with feed_output. 一個 regex 掃最後 ~8 行 /slot，
-            # 降到每 2s 一次（auto-compact 屬慢變化、不需 0.5s 偵測）。
-            if slow_tick:
+            # 降到每 8s 一次（auto-compact 屬慢變化）＋dirty-flag 過濾，是活躍 tab
+            # 上唯一殘留的 screen.display render。
+            if compact_tick:
                 _t_ac = self._perf_t()
                 for sid in sids:
                     slot = self.slots.get(sid)
@@ -2146,10 +2200,12 @@ class TelegramBridge(BridgeBase):
                 # background threads, so this call returns ~immediately.
                 if slot.awaiting_response:
                     self._send_typing(sid)
+                    tick_busy = True
 
                 with slot.output_lock:
                     if slot.last_output_time == 0:
                         continue
+                    tick_busy = True  # pending output → stay on the fast cadence
                     if not slot.has_user_msg:
                         # Drain old content so it won't be re-extracted later
                         # when a TG message arrives. This advances _history_offset
@@ -2315,6 +2371,10 @@ class TelegramBridge(BridgeBase):
                     # Send detected files as documents
                     for fp in file_paths:
                         self._send_tg_file(chat_id, fp)
+
+            # Adaptive-cadence bookkeeping: grow the idle streak on fully-quiet
+            # ticks, reset the moment any slot needs attention.
+            idle_streak = 0 if tick_busy else (idle_streak + 1)
 
     def _send_choice_menu(self, chat_id: int, slot, text: str):
         """Send a detected CLI approval/menu prompt as Telegram inline buttons."""
