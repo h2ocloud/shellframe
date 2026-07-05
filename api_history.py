@@ -9,6 +9,7 @@ byte-identical，僅搬家。回歸測試：tests_history_dedup.py。
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import time
 import unicodedata
@@ -33,6 +34,10 @@ class HistoryApiMixin:
     )
 
     _NORM_WHITESPACE_RE = re.compile(r'\s+')
+
+    # tmux status-bar 行：`[sf_s69] 0:opencode.exe* [0,0] "OC | …" 10:44 05-Jul`
+    # 同 bridge_telegram 的 noise 樣式，overlay 兩個來源共用的過濾。
+    _TMUX_STATUS_RE = re.compile(r'^\s*\[sf_[^\]]+\]\s+\d+:\S+.*\[\d+,\d+\]')
 
     @staticmethod
     def _visual_width(s: str) -> int:
@@ -401,6 +406,17 @@ class HistoryApiMixin:
             _swallow("Api.get_clean_history:3563")
 
         if in_alt_screen:
+            # OpenCode 例外：其 TUI 原地重繪，pyte history 只有目前一屏
+            #（實測 25 行/1016 chars），terminal-first 會讓上滾「只剩一屏」。
+            # transcript（opencode.db）才有完整對話 → 對 opencode 分頁反轉
+            # 順序。claude/codex 維持 v0.23.2 terminal-first 不動。
+            if self._is_opencode_cmd(getattr(s, "cmd", "")):
+                try:
+                    resp = self._transcript_history_response(s, sid, ansi)
+                    if resp:
+                        return resp
+                except Exception:
+                    _swallow(f"get_clean_history.opencode:{sid}")
             slot = None
             for candidate_bridge in (self.bridge, self.line_bridge):
                 if candidate_bridge is None:
@@ -484,6 +500,12 @@ class HistoryApiMixin:
             line = line.replace("\r", "")
             original = line.rstrip()
             stripped = self._ANSI_STRIP_RE.sub('', original).rstrip() if ansi else original
+            # tmux status bar（綠條）不是對話內容——pyte/capture 都可能把它
+            # 收進 history（history-audit 對 s69 抓到 '[sf_s69] 0:opencode.exe*
+            # [0,0] "OC | …"' 直出 overlay）。活畫面的綠條由 live terminal 自己
+            # 顯示，overlay 一律濾掉。
+            if self._TMUX_STATUS_RE.search(stripped):
+                continue
             if cleaned:
                 prev_stripped, _ = cleaned[-1]
                 # Current is strict prefix of previous → skip (rare)
@@ -601,6 +623,11 @@ class HistoryApiMixin:
         }
         kind = agent_status._worker_kind(worker["cmd"])
         if kind not in ("claude", "codex"):
+            # OpenCode 分頁：TUI 原地重繪（Bubble Tea 式），捲出視窗的內容從
+            # 不進 terminal scrollback / pyte history —— transcript（其 SQLite
+            # session 庫）是唯一有完整對話的來源。
+            if self._is_opencode_cmd(worker["cmd"]):
+                return self._opencode_history_response(worker, ansi)
             return None
         path = agent_status.resolve_transcript(worker)
         if not path or not os.path.exists(path):
@@ -632,6 +659,157 @@ class HistoryApiMixin:
             "ansi": ansi,
             "source": f"transcript ({fmt})",
         })
+
+    # ── OpenCode transcript（SQLite）──
+    # opencode（SST，開源模型 harness）把對話存在
+    # ~/.local/share/opencode/opencode.db：session(title) → message(data:
+    # {role,...}) → part(data: {type:text|reasoning|tool|step-*}).
+    # session↔pane 的對應靠 pane title：opencode 會把 tmux pane title 設成
+    # "OC | <session.title>"，直接反查 title 即可（多個 opencode 分頁也各自
+    # 對到自己的 session）。
+
+    _OPENCODE_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+
+    @staticmethod
+    def _is_opencode_cmd(cmd: str) -> bool:
+        for tok in (cmd or "").split():
+            base = tok.split("/")[-1]
+            if "." in base:
+                base = base.rsplit(".", 1)[0]
+            if base == "opencode":
+                return True
+        return False
+
+    def _opencode_history_response(self, worker: dict, ansi: bool):
+        """Overlay text from opencode's SQLite session store, or None
+        （→ caller 落回 terminal 管線）. 事件 normalize 成與 claude/codex
+        相同的形狀後走同一個 _render_transcript_overlay —— 樣式即與一般
+        分頁一致。"""
+        try:
+            evs = self._opencode_events(worker)
+        except Exception:
+            _swallow("Api._opencode_history_response")
+            return None
+        if not evs:
+            return None
+        text = self._render_transcript_overlay(evs, ansi)
+        plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
+        # 同 claude/codex 的 sparse floor：太短的 transcript 讀感不如活畫面。
+        if len(plain.strip()) < 400 or plain.count("\n") < 8:
+            return None
+        return json.dumps({
+            "success": True,
+            "text": text,
+            "ansi": ansi,
+            "source": "transcript (opencode)",
+        })
+
+    def _opencode_events(self, worker: dict, max_messages: int = 300):
+        """讀 opencode.db，回傳 normalized 事件（同 agent_status._norm_* 形狀）。"""
+        db = self._OPENCODE_DB
+        if not db.exists():
+            return []
+        sid_row = None
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1.0)
+        try:
+            con.row_factory = sqlite3.Row
+            # 1) pane title → session。pane title 可能被 tmux 截斷，用前綴比對；
+            #    同名取最近更新的那個。
+            title = ""
+            tmux_name = worker.get("tmux_name")
+            if tmux_name:
+                try:
+                    r = subprocess.run(
+                        ["tmux", "display-message", "-p", "-t", tmux_name,
+                         "#{pane_title}"],
+                        capture_output=True, text=True, timeout=2)
+                    title = (r.stdout or "").strip()
+                except Exception:
+                    title = ""
+            if title.startswith("OC | "):
+                title = title[5:].strip()
+            if title:
+                sid_row = con.execute(
+                    "SELECT id FROM session WHERE title LIKE ? || '%' "
+                    "ORDER BY time_updated DESC LIMIT 1", (title,)).fetchone()
+            # 2) fallback：同 cwd 的最近 session（單一 opencode 分頁的常態）。
+            if sid_row is None:
+                cwd = os.path.expanduser(worker.get("cwd") or "~")
+                sid_row = con.execute(
+                    "SELECT id FROM session WHERE directory = ? "
+                    "ORDER BY time_updated DESC LIMIT 1", (cwd,)).fetchone()
+            if sid_row is None:
+                return []
+            ses_id = sid_row["id"]
+            # 只取最近 max_messages 則訊息（長 session 防整表掃）。
+            rows = con.execute(
+                "SELECT m.id AS mid, m.data AS mdata, m.time_created AS mts,"
+                "       p.data AS pdata "
+                "FROM (SELECT id, data, time_created FROM message "
+                "      WHERE session_id = ? "
+                "      ORDER BY time_created DESC, id DESC LIMIT ?) m "
+                "JOIN part p ON p.message_id = m.id "
+                "ORDER BY m.time_created ASC, m.id ASC, p.id ASC",
+                (ses_id, max_messages)).fetchall()
+        finally:
+            con.close()
+
+        evs = []
+        cur_mid = None
+        cur_role = ""
+        cur_ts = None
+        seen_texts = set()   # 同一則訊息內重複的 text part（實測會出現）只收一次
+
+        def _ev_text(role, ts, text):
+            text = (text or "").strip()
+            if not text:
+                return None
+            kind = "user_msg" if role == "user" else "assistant_text"
+            return {"kind": kind, "ts": ts, "text": text}
+
+        for row in rows:
+            if row["mid"] != cur_mid:
+                cur_mid = row["mid"]
+                seen_texts = set()
+                try:
+                    md = json.loads(row["mdata"])
+                except Exception:
+                    md = {}
+                cur_role = md.get("role") or ""
+                cur_ts = (row["mts"] or 0) / 1000.0 or None
+            try:
+                pd = json.loads(row["pdata"])
+            except Exception:
+                continue
+            pt = pd.get("type")
+            if pt == "text":
+                t = (pd.get("text") or "").strip()
+                if not t or t in seen_texts:
+                    continue
+                seen_texts.add(t)
+                ev = _ev_text(cur_role, cur_ts, t)
+                if ev:
+                    evs.append(ev)
+            elif pt == "tool":
+                inp = (pd.get("state") or {}).get("input") or {}
+                target = ""
+                for k in ("filePath", "url", "command", "pattern", "path"):
+                    v = inp.get(k)
+                    if isinstance(v, str) and v:
+                        target = v
+                        break
+                if not target:
+                    for v in inp.values():
+                        if isinstance(v, str) and v:
+                            target = v
+                            break
+                evs.append({"kind": "tool_call", "ts": cur_ts,
+                            "tool": pd.get("tool") or "?",
+                            "target": target[:60]})
+            elif pt == "step-finish":
+                evs.append({"kind": "turn_end", "ts": cur_ts})
+            # reasoning / step-start / 其他 → TUI 不顯示，overlay 也不顯示
+        return evs
 
     # Harness 內部訊息（task-notification / system-reminder）以 user 角色寫進
     # transcript，但活畫面的 TUI 從不原樣顯示它們——overlay 也不該（Howard

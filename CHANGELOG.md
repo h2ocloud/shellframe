@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.29.0 (2026-07-05)
+
+### Features
+- **OpenCode 分頁支援上滾歷史對話**（Howard requested：第 9 個 tab 用另一套
+  harness 跑開源模型，上滑查不到歷史）。根因：opencode 的 TUI 原地重繪
+  （Bubble Tea 式），捲出視窗的內容從不進 terminal scrollback / pyte history
+  （實測 pyte 只有一屏 25 行）——terminal 來源天生只有「目前這一屏」。
+  - 新增 opencode transcript 來源：直讀 `~/.local/share/opencode/opencode.db`
+    （SQLite，read-only）的 session→message→part，normalize 成與 claude/codex
+    相同的事件形狀，走**同一個** `_render_transcript_overlay` → 樣式與一般
+    分頁一致（❯ user 行、工具行收合、markdown 上色）。
+  - session↔pane 對應：opencode 把 pane title 設成 `OC | <session.title>`，
+    以 title 反查（前綴比對容忍 tmux 截斷），fallback 同 cwd 最近 session。
+    多個 opencode 分頁各自對到自己的 session。
+  - 來源順序：opencode 分頁 alt-screen 時 transcript 優先、terminal fallback
+    （claude/codex 維持 v0.23.2 terminal-first 不動）。
+
+### Fixes
+- **tmux status bar（綠條）洩漏進上滾 overlay**：`history-audit` 對 s69 抓到
+  `[sf_s69] 0:opencode.exe* [0,0] "OC | …"` 直出 overlay 內容。共用去重管線
+  加行首錨定過濾（兩個來源都吃到）；對話內文「提及」sf_ 標籤的行不受影響。
+  回歸測試：`tests_history_dedup.py::test_tmux_status_bar_filtered`。
+
 ## v0.28.0 (2026-07-05)
 
 ### Performance — 8 tabs 常駐近零 idle 成本（規格 `docs/perf-optimization-2026-07-05.md`）

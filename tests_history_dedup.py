@@ -180,6 +180,23 @@ def test_transcript_render_fidelity():
             assert l.endswith("\x1b[0m"), repr(l)
 
 
+def test_tmux_status_bar_filtered():
+    """tmux 綠條（status bar）不是對話內容，兩個來源的管線都要濾掉——
+    history-audit 對 s69(opencode) 抓到 '[sf_s69] 0:opencode.exe* …' 直出
+    overlay（v0.29.0）。行首錨定：對話中「提到」sf_ 標籤的行不受影響。"""
+    out = dedupe([
+        "AI 的回覆第一行",
+        '[sf_s69] 0:opencode.exe* [0,0] "OC | 原子習慣前兩頁內" 10:44 05-Jul',
+        '  [sf_s43] 1:claude* [178,45] "移民議題" 09:00 05-Jul',
+        "我在 [sf_s69] 這個 tab 看到 0:錯誤 記錄 [1,2] 座標",  # 內文提及 → 保留
+        "AI 的回覆最後一行",
+    ], ansi=False)
+    assert "opencode.exe" not in out, out
+    assert "1:claude*" not in out, out
+    assert "我在 [sf_s69] 這個 tab" in out, out
+    assert "AI 的回覆第一行" in out and "AI 的回覆最後一行" in out, out
+
+
 if __name__ == "__main__":
     import traceback
     fails = 0
