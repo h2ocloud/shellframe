@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.28.0 (2026-07-05)
+
+### Performance — 8 tabs 常駐近零 idle 成本（規格 `docs/perf-optimization-2026-07-05.md`）
+
+實測熱點（`perf_debug` instrumentation）：flush loop 的 CPU 100% 集中在 pyte
+`screen.display` 全螢幕 render（3.9ms/次），由每 2s 對每個 slot 的 auto-compact
+掃描觸發。改法與成效：
+
+- **Dirty-flag idle slot**：`feed_output` 設 `scan_dirty`，settled 掃描後清；
+  auto-compact 跳過非 dirty 的 slot → 真正 idle 的 tab 完全不碰 `screen.display`。
+- **`screen.display` 快取**：`_slot_display` 以 `_feed_gen` generation counter
+  快取，同一 settled 狀態多處存取只 render 一次。
+- **自適應 flush cadence**：全靜止連續 6 tick → sleep 0.5s 放寬到 2s，
+  `_flush_wake` Event 讓新輸出立即喚醒（不增延遲）；auto-compact 掃描 2s→8s。
+- **`_read_settings` 1s TTL 快取**：消除 flush loop 每 2s×N slot 的 config 讀取。
+- **Hot-path regex 預編譯**：`_is_bridge_noise_line`/`_is_tool_call`/
+  `_extract_new_text`/`_detect_menu_prompt` 內每行每塊的字面 pattern 全 hoist
+  成模組常數。
+- **Webview**：xterm `cursorBlink: false`（消除前景 idle 每 ~530ms 游標重繪
+  → WindowServer composite）；`renderLoops`/`loadSchedules` 加 `document.hidden`
+  守衛（背景視窗零週期性 JS/DOM）。
+
+成效：`screen_display` 759ms/196x → 45–87ms/14–24x（~90%↓）、`auto_compact`
+814ms → 30–38ms（~95%↓）、進程 idle CPU 32% → **0–4%**（達標 <5%）。詳見
+`docs/perf-results-2026-07-05.md`。`perf_debug` 開關永久保留供日後回歸量測。
+
+零功能回歸：TG 收發、`[[SF:*]]` 燈號、選單偵測、board、auto-compact、stall
+偵測、歷史去重全部照常；單元測試 6/6 全過。
+
 ## v0.27.0 (2026-07-05)
 
 ### Features
