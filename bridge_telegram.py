@@ -658,6 +658,13 @@ class SessionSlot:
         self.reply_start_marker = ""
         self.reply_end_marker = ""
         self.marker_prompt = ""         # injected wrapper instruction (to exclude its echo)
+        # Marker-scan throttle (flush-loop hot path). One failed scan costs a
+        # full strip_ansi over pending_raw (≤120KB ≈ 45ms) — re-arm only when
+        # BOTH the rescan interval elapsed AND new PTY bytes arrived
+        # (_feed_gen advanced). Unthrottled per-tick rescans after the 120s
+        # force window were the 2026-07-06 96%-CPU regression.
+        self.marker_next_scan_ts = 0.0
+        self.marker_scan_gen = -1
         self.last_extraction_ts = 0.0   # time of last successful response extraction
         # Throttle for sendChatAction. TG keeps the typing bubble alive ~5s,
         # so 4s pacing keeps it visible without burning 10× the API calls the
@@ -1778,19 +1785,35 @@ class TelegramBridge(BridgeBase):
             return "", has_open
         return candidates[-1], has_open
 
-    def _extract_marked_mobile_reply(self, slot) -> str:
-        """Extract the marked mobile reply; wait if a newer reply is streaming."""
-        reply, has_open = self._pick_marker_reply(slot, allow_inprogress=False)
-        # A newer reply is still streaming (unclosed start) → wait for it so we
-        # forward the complete version, not a half-painted one.
-        if has_open:
-            return ""
-        return reply
+    # Minimum spacing between marker scans for one slot. A scan is a full
+    # strip_ansi over pending_raw (≤120KB ≈ 45ms measured) — per-tick (0.5s)
+    # rescans burn ~18% CPU per stuck slot (2026-07-06 regression).
+    _MARKER_RESCAN_INTERVAL = 3.0
 
-    def _extract_marked_mobile_reply_force(self, slot) -> str:
-        """Force-extract the last complete marked reply, ignoring the
-        still-streaming guard. Used as fallback after 30s."""
-        reply, _ = self._pick_marker_reply(slot, allow_inprogress=True)
+    def _try_marker_extract(self, slot, now: float, total: float) -> str:
+        """Throttled, dirty-gated marker extraction for the flush-loop hot path.
+
+        Runs ONE _pick_marker_reply pass (the old code ran it twice — once
+        normal, once force). A failed scan re-arms only after
+        _MARKER_RESCAN_INTERVAL AND once new PTY bytes landed (_feed_gen
+        advanced): rescanning an unchanged buffer can't find a marker that
+        wasn't there. Streaming guard preserved: an unclosed start marker
+        means a newer reply is still painting — wait for it, unless we've
+        been waiting `total` ≥ 30s (force: take the last complete reply)."""
+        if now < slot.marker_next_scan_ts:
+            return ""
+        gen = getattr(slot, "_feed_gen", 0)
+        if gen == slot.marker_scan_gen:
+            return ""
+        reply, has_open = self._pick_marker_reply(slot, allow_inprogress=False)
+        if has_open and total < 30.0:
+            reply = ""
+        if not reply:
+            slot.marker_next_scan_ts = now + self._MARKER_RESCAN_INTERVAL
+            slot.marker_scan_gen = gen
+            return ""
+        slot.marker_next_scan_ts = 0.0
+        slot.marker_scan_gen = -1
         return reply
 
     # Explicit agent signal marker — a worker prints one of these on its own
@@ -2265,15 +2288,14 @@ class TelegramBridge(BridgeBase):
                         continue
 
                     if slot.expect_marker:
-                        marked_reply = self._extract_marked_mobile_reply(slot)
-                        if not marked_reply:
-                            # Don't reset timer forever — after 30s force-extract
-                            # by stripping tail guard (avoids permanent block when
-                            # rating prompt or other noise confuses the tail check).
-                            if total < 30.0:
-                                slot.last_output_time = now
-                                continue
-                            marked_reply = self._extract_marked_mobile_reply_force(slot)
+                        # 回歸守則：這裡在 total ≥ 120s 後每 tick 都會進來
+                        # （idle<3 的閘門被 total 分支繞過），所以掃描本身
+                        # 必須節流 + dirty-gated——2026-07-06 的 96% CPU 事故
+                        # 就是這條路徑每 0.5s 對 120KB pending_raw 跑兩次
+                        # strip_ansi。節流邏輯在 _try_marker_extract 內。
+                        _t_mk = self._perf_t()
+                        marked_reply = self._try_marker_extract(slot, now, total)
+                        self._perf_end("extract_marker", _t_mk)
                         if not marked_reply:
                             slot.last_output_time = now
                             continue
@@ -3851,6 +3873,8 @@ class TelegramBridge(BridgeBase):
             slot.reply_start_marker = start_marker
             slot.reply_end_marker = end_marker
             slot.marker_prompt = marker_prompt
+            slot.marker_next_scan_ts = 0.0
+            slot.marker_scan_gen = -1
         else:
             slot.expect_marker = False
             slot.reply_start_marker = ""

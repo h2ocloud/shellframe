@@ -83,3 +83,38 @@ macOS 上 py-spy attach 需要 sudo（不可用），改用：
 - 只動效能，不改功能行為、不重構無關模組、不加超出需求的抽象。
 - 記憶體（RSS ~106MB）不在本次範圍。
 - 修改期間 ShellFrame 持續在跑（你就在它裡面）：頻繁 commit、避免留長時間未提交的工作樹。
+
+## 回歸守則（2026-07-06 事故後新增，任何進 `_flush_loop` 熱路徑的改動必讀）
+
+**事故**：v0.28.0 優化後 CPU 仍回升到 96%（重啟後 55 分鐘）。sample 顯示
+`_flush_loop` thread 88% 時間在 sre regex。真凶不是 v0.29.1 的 live screen
+（`_live_tail` 只在注入路徑、有 sleep 有界），而是 `expect_marker` 重試路徑
+——一條**從未被 perf_debug 計時**的舊路徑：
+
+1. `if idle < 3.0 and total < 120.0: continue` 這個閘門在 `total ≥ 120s` 後
+   永久失效（`first_output_time` 只在抽取成功時歸零）。
+2. 之後每 0.5s tick 對 ≤120KB `pending_raw` 跑兩次 `strip_ansi`
+   （normal + force 各一次，實測 45ms/次 = 90ms/tick = **18% CPU / stuck slot**）。
+3. 失敗路徑 `last_output_time = now` 讓 slot 永遠 pending → 鎖死 0.5s 快 tick。
+4. 觸發面：v0.29.1 起 delivery UNCONFIRMED 不重試（防重複送出，正確），但
+   `expect_marker` 留著永遠等不到回覆 → stuck slot 常態化（當日 s57/s58/s66
+   三個 ≈ 54% + 主線程 pyte feed = 96%）。
+
+**修法（v0.29.5）**：`_try_marker_extract` —— 單次 `_pick_marker_reply`（原本
+跑兩次）、失敗後節流 `_MARKER_RESCAN_INTERVAL=3s`、dirty gate（`_feed_gen`
+沒前進 = buffer 沒新 bytes，重掃不可能有新結果，直接跳過）、成功即重置。
+worst case 從 90ms/0.5s 降到 45ms/3s（1.5%/slot），idle slot 為 0。
+
+**守則**：
+1. **任何進 `_flush_loop` 熱路徑的新掃描，必須 dirty-gated（`_feed_gen` /
+   `scan_dirty`）+ 節流（明確的最小重掃間隔）+ 預編譯 regex。**
+   「閘門會擋住」不算數——本次事故就是閘門在邊界條件（total≥120s）下失效。
+2. **必須掛 perf_debug 計時**（`_perf_t()` / `_perf_end("phase", t0)`）。
+   本次事故 perf 摘要一片乾淨、CPU 卻 96%，就是因為熱點在未計時路徑：
+   計時的盲區 = 下次事故的藏身處。marker 路徑現已計入 `extract_marker` phase。
+3. 掃描成本要以「最壞 buffer」估：`pending_raw` 上限 120KB、`strip_ansi`
+   實測 ~45ms（v0.29.5 時點）。任何 O(buffer) 操作乘上 tick 頻率算 CPU%，
+   超過 1-2%/slot 就要重新設計。
+4. 重試迴圈的退出條件要檢查「失敗時狀態有沒有推進」：本次 `last_output_time
+   = now` + `first_output_time` 不歸零 = 永動機。失敗路徑必須讓下次嘗試
+   變便宜（節流）或變不必要（dirty gate），二者至少其一。

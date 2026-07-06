@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.29.5 (2026-07-06)
+
+### Fixes
+- **96% CPU 回歸（總控實測：重啟後 55 分鐘 `_flush_loop` thread 88% 時間燒 regex）**。
+  真凶不是 v0.29.1 的 live screen 訊號源（`_live_tail` 不在 flush loop、有 sleep 有界），
+  而是 `expect_marker` 重試路徑——一條從未被 perf_debug 計時的舊路徑：
+  `idle<3 and total<120` 閘門在 `total ≥ 120s` 後**永久失效**（`first_output_time`
+  只在抽取成功時歸零），之後每 0.5s tick 對 ≤120KB `pending_raw` 跑**兩次**
+  `strip_ansi`（normal+force，實測 45ms/次 = 18% CPU/slot）；失敗路徑
+  `last_output_time = now` 又把 slot 鎖死在 0.5s 快 tick。觸發面：v0.29.1 起
+  delivery UNCONFIRMED 不重試（防重複送出，保留），但 expect_marker 永遠等不到
+  回覆 → stuck slot 常態化（當日 s57/s58/s66 三個 ≈ 54% + 主線程 pyte feed = 96%）。
+  修法 `_try_marker_extract`：單次 `_pick_marker_reply`（原本掃兩次）＋失敗後
+  節流 3s ＋ dirty gate（`_feed_gen` 沒前進＝buffer 沒新 bytes，直接跳過）＋
+  成功即重置；掛上 `extract_marker` perf phase（消滅計時盲區）。worst case
+  90ms/0.5s → 45ms/3s（1.5%/slot），idle slot 0。v0.29.1/v0.29.3 功能行為不變
+  （串流等待/30s force/防重複送出全保留）。
+  回歸測試：`tests_tg_marker_throttle.py` 4 案例；`tests_tg_reply.py` 改走新入口。
+  回歸守則新增於 `docs/perf-optimization-2026-07-05.md`。
+
 ## v0.29.4 (2026-07-06)
 
 ### Fixes
