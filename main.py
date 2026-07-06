@@ -2943,6 +2943,30 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         s.write(data)
         self._arm_awaiting_response(sid, data)
 
+    def get_session_model_info(self, sid: str):
+        """Model + thinking effort for a session — TG bridge menu/list uses
+        this to mirror the desktop sidebar badge (Howard 2026-07-06). Returns
+        {"name","effort","provider"} or None (non-AI tab / not detectable).
+        Cheap: agent_status mtime-caches its transcript/settings parses. Uses
+        the real session's cwd+session_id so it's per-tab accurate (the same
+        path the sidebar badge takes), not the global settings fallback."""
+        s = self.sessions.get(sid)
+        if not s:
+            return None
+        worker = {
+            "cmd": getattr(s, "cmd", ""),
+            "cwd": getattr(s, "cwd", "~"),
+            "tmux_name": getattr(s, "_tmux_name", None),
+            "session_id": getattr(s, "session_id", None),
+        }
+        try:
+            path = agent_status.resolve_transcript(worker)
+            return agent_status.detect_model_info(
+                worker, path if (path and os.path.exists(path)) else None)
+        except Exception:
+            _swallow(f"get_session_model_info:{sid}")
+            return None
+
     @staticmethod
     def _init_inject_decision(s, data: str) -> str:
         """State machine for the web-UI init-prompt gate. Returns:
@@ -4079,6 +4103,7 @@ try {
             on_check_update=self.check_update,
             on_new_session=lambda c: self.new_session(c, 200, 50),
             on_consume_init=self.consume_init_prompt_if_ready,
+            on_model_info=self.get_session_model_info,
         )
 
         # Register existing sessions (skip bridge-disabled ones)
@@ -4512,6 +4537,7 @@ try {
                     on_check_update=self.check_update,
                     on_new_session=lambda c: self.new_session(c, 200, 50),
                     on_consume_init=self.consume_init_prompt_if_ready,
+                    on_model_info=self.get_session_model_info,
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset

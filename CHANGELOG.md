@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.29.6 (2026-07-06)
+
+### Features
+- **TG 指令選單／`/list` 帶上模型＋思考深度**（Howard 提，比照桌面側邊欄的 model badge）：Telegram 的 `/1 /2 …` 切換選單描述與 `/list` 輸出，每個 session 現在都顯示「模型 · effort」，如 `Switch to SF · Opus 4.8 · xhigh`、`/4 HR 〔Sonnet 5 · xhigh〕`。逐分頁準確（走 main.py `get_session_model_info`，用該 session 真實 cwd/session_id 偵測，與側邊欄同一來源），Claude／Codex 皆支援；非 AI 分頁或偵測不到就不加、不炸。後端新增 bridge callback `on_model_info`。回歸測試 `tests_tg_model_badge.py`。
+
 ## v0.29.5 (2026-07-06)
 
 ### Fixes
@@ -19,6 +24,7 @@
   （串流等待/30s force/防重複送出全保留）。
   回歸測試：`tests_tg_marker_throttle.py` 4 案例；`tests_tg_reply.py` 改走新入口。
   回歸守則新增於 `docs/perf-optimization-2026-07-05.md`。
+
 
 ## v0.29.4 (2026-07-06)
 

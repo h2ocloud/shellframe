@@ -725,7 +725,7 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None, on_consume_init=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None, on_consume_init=None, on_model_info=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
@@ -737,6 +737,7 @@ class TelegramBridge(BridgeBase):
         self._on_check_update = on_check_update  # callback for update check from TG
         self._on_new_session = on_new_session  # callback(cmd) -> sid, create new session
         self._on_consume_init = on_consume_init  # callback(sid) -> str, init prompt if ready
+        self._on_model_info = on_model_info  # callback(sid) -> {name,effort,provider}|None
         self._offset = 0
         self._flush_thread = None
         self._watchdog_thread = None
@@ -1016,9 +1017,11 @@ class TelegramBridge(BridgeBase):
         with self._slots_lock:
             for sid in self._slot_order:
                 slot = self.slots[sid]
+                # Description max 256 chars; label+model comfortably fits.
+                desc = f"Switch to {slot.label}{self._slot_model_suffix(slot)}"
                 commands.append({
                     "command": str(slot.index),
-                    "description": f"Switch to {slot.label}",
+                    "description": desc[:256],
                 })
         # Generic ops after the session list
         commands.extend([
@@ -1050,6 +1053,20 @@ class TelegramBridge(BridgeBase):
         tg_api(self.config.bot_token, "setChatMenuButton", {
             "menu_button": {"type": "commands"},
         })
+
+    def _slot_model_suffix(self, slot):
+        """' · Opus 4.8 · xhigh' for a slot (mirrors the desktop sidebar
+        badge), or '' when unknown / non-AI. Cheap; main.py mtime-caches."""
+        if not self._on_model_info:
+            return ""
+        try:
+            mi = self._on_model_info(slot.sid)
+        except Exception:
+            mi = None
+        if not mi or not mi.get("name"):
+            return ""
+        eff = mi.get("effort")
+        return f" · {mi['name']} · {eff}" if eff else f" · {mi['name']}"
 
     def refresh_commands(self):
         """Re-register commands after sessions change."""
@@ -4077,7 +4094,9 @@ class TelegramBridge(BridgeBase):
             lines = [f"📋 ShellFrame — {state} @ @{bot}", ""]
             for sid, slot in slots_snapshot:
                 marker = " ◀ active" if sid == active_sid else ""
-                lines.append(f"\n/{slot.index}  {slot.label}{marker}")
+                model = self._slot_model_suffix(slot).lstrip(" ·").strip()
+                model_tag = f"  〔{model}〕" if model else ""
+                lines.append(f"\n/{slot.index}  {slot.label}{model_tag}{marker}")
                 preview = self._peek_last_response(slot)
                 if preview:
                     # Compact preview: first 3 lines, max 200 chars
