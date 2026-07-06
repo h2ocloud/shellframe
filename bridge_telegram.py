@@ -1031,6 +1031,7 @@ class TelegramBridge(BridgeBase):
             {"command": "restart", "description": "Full app restart (sessions preserved)"},
             {"command": "update", "description": "Check & apply ShellFrame updates"},
             {"command": "new", "description": "New session (default: claude)"},
+            {"command": "rename", "description": "Rename tab: /rename <新名> 或 /rename <編號> <新名>"},
             {"command": "close", "description": "Close current session (with confirm)"},
         ])
         # The claude-plugins-official telegram plugin shares this bot token
@@ -3738,7 +3739,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -4465,6 +4466,52 @@ class TelegramBridge(BridgeBase):
                 "chat_id": chat_id, "text": msg_text,
             })
 
+        elif cmd in ("rename", "改名"):
+            # /rename <新名稱> — 改 active 分頁；/rename <編號> <新名稱> — 改指定
+            # 分頁（編號同 /N 切換）。走 sfctl IPC 的 rename → main.py
+            # rename_session：bridge slot label、webview tab、config 持久化
+            # 一次到位（v0.29.2 的即時推送修正也吃得到）。
+            parts = (text or "").split(maxsplit=2)
+            args = parts[1:]
+            target_slot = None
+            if len(args) >= 2 and args[0].isdigit():
+                idx = int(args[0])
+                target_slot = next(
+                    (s for s in self.slots.values() if s.index == idx), None)
+                new_name = args[1].strip()
+                if not target_slot:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": f"找不到編號 /{idx} 的分頁，先 /list 看一下。"})
+                    return
+            else:
+                new_name = " ".join(args).strip()
+                active_sid = self.get_active_sid(user_id)
+                target_slot = self.slots.get(active_sid) if active_sid else None
+                if not target_slot:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": "沒有 active session，先用 /list 選一個。"})
+                    return
+            if not new_name:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "用法：/rename <新名稱>（改目前分頁）或 /rename <編號> <新名稱>"})
+                return
+            if len(new_name) > 60:
+                new_name = new_name[:60]
+
+            def _do_rename(slot=target_slot, name=new_name, chat_id=chat_id):
+                old = slot.label
+                result = self._sfctl_call("rename", {"sid": slot.sid, "name": name})
+                if result.get("success"):
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"✏️ /{slot.index}「{old}」→「{name}」"})
+                else:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"❌ 改名失敗：{result.get('message', 'IPC timeout')}"})
+            threading.Thread(target=_do_rename, daemon=True).start()
+
         elif cmd in ("start", "help"):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
@@ -4476,6 +4523,7 @@ class TelegramBridge(BridgeBase):
                     "  /new [cmd] — new session (default: claude)\n"
                     "  /close — close current session (with confirm)\n"
                     "  /1, /2, … — switch session\n"
+                    "  /rename <新名> — 改目前分頁名；/rename <編號> <新名> 改指定分頁（alias /改名）\n"
                     "  /break — 中斷目前分頁 AI（送 ESC；alias /stop /中斷）\n"
                     "  /voice — 語音整理設定/切模型（/voice <模型>、/voice on|off）\n\n"
                     "Bridge control:\n"
