@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.29.4 (2026-07-06)
+
+### Fixes
+- **TG 誤報「popup detected (UserNotificationCenter)」** (Howard 2026-07-06，人不在電腦前一直收到)：stall 警告的阻擋彈窗偵測把 `UserNotificationCenter` 當成 TCC 對話框，但它其實擁有**所有 macOS 通知橫幅**（Slack/Mail/行事曆…）。任何 app 跳個橫幅、又剛好有 session 在等回覆，就誤報成「有彈窗擋住、去把它關掉」——橫幅根本不擋前景，訊息也無從執行。修法：把 `UserNotificationCenter` 移出阻擋清單，只留真正會 modal 阻擋的 `SecurityAgent`（密碼/鑰匙圈）、`CoreServicesUIAgent`（隔離確認）、`universalAccessAuthWarn`（輔助使用）；並要求命中視窗需有實際尺寸（≥120×60）且非透明，過濾 0x0／幽靈系統視窗。回歸測試 `tests_stall_popup.py`（8 情境，含假 Quartz 視窗清單）。
+
 ## v0.29.3 (2026-07-06)
 
 ### Features

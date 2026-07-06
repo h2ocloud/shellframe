@@ -1232,10 +1232,16 @@ class TelegramBridge(BridgeBase):
     # dialog is blocking foreground work. Checked before firing stall warnings
     # so we don't cry wolf on long-running AI tasks.
     _POPUP_OWNERS = frozenset({
-        "UserNotificationCenter",   # TCC permission dialogs (Sonoma+)
         "CoreServicesUIAgent",      # quarantine / "are you sure you want to open" / auth
         "SecurityAgent",            # admin password / keychain prompts
         "universalAccessAuthWarn",  # Accessibility prompts
+        # UserNotificationCenter deliberately EXCLUDED (Howard 2026-07-06:
+        # 常收到「popup detected (UserNotificationCenter)」誤報). It owns EVERY
+        # macOS notification banner — Slack/Mail/Calendar/etc. — not just TCC
+        # dialogs. A transient banner appearing while a session waits fired a
+        # false "blocking popup" alarm; banners don't block foreground work and
+        # "去把它關掉" is useless when away. The genuinely-modal owners below
+        # actually block and are effectively never spurious.
         # loginwindow deliberately excluded: it's always running and frequently
         # owns transparent/system-management windows during normal operation
         # (sleep/wake transitions, screen-lock manager, Touch ID prep), so
@@ -1244,6 +1250,12 @@ class TelegramBridge(BridgeBase):
         # whenever the model thinks for >25s. Real lock-screen blocking can't
         # be dismissed remotely anyway, so detecting it has no upside.
     })
+
+    # A real modal dialog has visible bounds; system-management windows
+    # (loginwindow's 0x0, transparent transition surfaces) do not. Require a
+    # dialog-sized visible window before treating an owner match as blocking.
+    _POPUP_MIN_W = 120
+    _POPUP_MIN_H = 60
 
     def _detect_blocking_popup(self):
         """Return owner name of a visible system popup, or None.
@@ -1270,7 +1282,15 @@ class TelegramBridge(BridgeBase):
             return None
         for w in wins:
             owner = w.get("kCGWindowOwnerName", "")
-            if owner in self._POPUP_OWNERS:
+            if owner not in self._POPUP_OWNERS:
+                continue
+            # Must be a real, visible, dialog-sized window — not a 0x0 or
+            # transparent system-management surface.
+            if float(w.get("kCGWindowAlpha", 1.0)) <= 0.0:
+                continue
+            b = w.get("kCGWindowBounds", {}) or {}
+            if (b.get("Width", 0) >= self._POPUP_MIN_W
+                    and b.get("Height", 0) >= self._POPUP_MIN_H):
                 return owner
         return None
 
