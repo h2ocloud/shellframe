@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.29.3 (2026-07-06)
+
+### Features
+- **TG 端 `/model` 互動選單**（Howard 提）：手機發 `/model` → bridge 把原生指令送進 active 分頁開 picker → 解析選項後回 TG **inline 按鈕**（含目前模型 ✔ 標記、effort 狀態、取消鈕）。點按鈕即選定——實測 CC 2.1.x picker **數字鍵＝立即選定並存為新 session 預設（免 Enter）**，所以按鈕只送數字；取消鈕送 Esc 關閉 picker、模型不變。分頁忙碌中（回合進行）會擋下並提示，不會把指令戳進生成中的畫面。
+- 附帶修正：**通用選單偵測被 picker chrome 行 reset**——「◉ xHigh effort ←/→ to adjust」這類行會把已收集的選項清空，這正是 /model 選單過去偵測不到的根因；現在 chrome 行直接略過（◉/←→/to adjust）。
+- 回歸測試：`tests_tg_model_menu.py` 6 案例（picker 測資為實機截取畫面）。
+
 ## v0.29.2 (2026-07-06)
 
 ### Fixes

@@ -621,6 +621,9 @@ _NUMBERED_ITEM_RE = re.compile(r'\d+\.?\s')
 _USERNAME_PREFIX_RE = re.compile(r'^(\w+):\s')
 _MENU_ITEM_RE = re.compile(r'^(\d+)[\.\)]\s+(.+)$')
 _MENU_END_RE = re.compile(r'esc|cancel|tab|enter', re.I)
+# Picker chrome（如 /model 的「◉ xHigh effort ←/→ to adjust」）不是選項也不是
+# 結尾，但也不該把已收集的選項 reset 掉——那正是 /model 選單偵測不到的原因。
+_MENU_CHROME_RE = re.compile(r'[◉○←→]|to adjust', re.I)
 _MENU_ACTION_RE = re.compile(
     r'Action Required|Would you like|Do you want|approval|approve|permission', re.I)
 
@@ -1943,7 +1946,8 @@ class TelegramBridge(BridgeBase):
                     if len(menu_lines) >= 2:
                         break
                 # Non-menu line in middle — reset (false positive)
-                if line.strip() and not _MENU_END_RE.search(line):
+                if (line.strip() and not _MENU_END_RE.search(line)
+                        and not _MENU_CHROME_RE.search(line)):
                     menu_lines = []
                     menu_options = []
         if len(menu_lines) >= 2:
@@ -2375,6 +2379,103 @@ class TelegramBridge(BridgeBase):
             # Adaptive-cadence bookkeeping: grow the idle streak on fully-quiet
             # ticks, reset the moment any slot needs attention.
             idle_streak = 0 if tick_busy else (idle_streak + 1)
+
+    _MODEL_PICKER_HEADER_RE = re.compile(r'Select model', re.I)
+    _MODEL_EFFORT_RE = re.compile(r'[◉○].*effort', re.I)
+
+    def _parse_model_menu(self, lines):
+        """從 live display 解析 Claude Code /model picker。
+        回 (options, effort_line) 或 None。options=[{num,label,desc,current}]。
+        實測（CC 2.1.x）：選項為「N. Name[ ✔]   描述」、游標 ❯、footer 有
+        Esc to cancel；「◉ xHigh effort ←/→」是 chrome。"""
+        text = "\n".join(lines)
+        if not self._MODEL_PICKER_HEADER_RE.search(text):
+            return None
+        options = []
+        effort_line = ""
+        for line in lines:
+            stripped = line.lstrip().lstrip('❯›').lstrip()
+            m = _MENU_ITEM_RE.match(stripped)
+            if m:
+                num, rest = m.group(1), m.group(2).strip()
+                parts = re.split(r'\s{2,}', rest, maxsplit=1)
+                name = parts[0].strip()
+                desc = parts[1].strip() if len(parts) > 1 else ""
+                options.append({
+                    "num": num,
+                    "label": name.replace("✔", "").strip(),
+                    "desc": desc,
+                    "current": "✔" in rest,
+                })
+            elif self._MODEL_EFFORT_RE.search(line):
+                effort_line = line.strip()
+        if len(options) < 2:
+            return None
+        return options, effort_line
+
+    def _handle_model_command(self, user_id: int, chat_id: int):
+        """TG /model：把原生 /model 送進 active 分頁、等 picker 出現、
+        把選項變成 inline 按鈕。按鈕→送數字（picker 數字鍵＝立即選定）。"""
+        active_sid = self.get_active_sid(user_id)
+        slot = self.slots.get(active_sid) if active_sid else None
+        if not slot:
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": "沒有 active session，先用 /list 選一個。"})
+            return
+
+        def _run():
+            with slot.write_lock:
+                disp = "\n".join(self._slot_display(slot))
+                if re.search(r"esc to interrupt", disp, re.I):
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"「{slot.label}」正在跑回合中，等它結束再 /model。"})
+                    return
+                slot.write_fn("\x15")          # 清輸入框殘字
+                time.sleep(0.15)
+                slot.write_fn("/model")
+                time.sleep(0.3)
+                slot.write_fn("\r")
+            menu = None
+            for _ in range(16):                 # 最多等 ~4.8s
+                time.sleep(0.3)
+                try:
+                    menu = self._parse_model_menu(self._slot_display(slot))
+                except Exception:
+                    menu = None
+                if menu:
+                    break
+            if not menu:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": (f"已把 /model 送進「{slot.label}」，但沒偵測到選單"
+                             "（分頁可能不是 claude、或畫面被其他東西佔住）。")})
+                return
+            options, effort_line = menu
+            slot.pending_menu = True
+            slot.pending_menu_options = [
+                {"num": o["num"], "text": o["label"]} for o in options]
+            lines = [f"🎛 {slot.label} — 選擇模型（點按鈕立即生效，並存為新 session 預設）"]
+            for o in options:
+                mark = " ✔（目前）" if o["current"] else ""
+                desc = f" — {o['desc']}" if o["desc"] else ""
+                lines.append(f"{o['num']}. {o['label']}{mark}{desc}")
+            if effort_line:
+                lines.append(f"（{effort_line}，effort 調整請在桌面端操作）")
+            keyboard = []
+            for o in options[:9]:
+                mark = " ✔" if o["current"] else ""
+                keyboard.append([{
+                    "text": f"{o['num']}. {o['label']}{mark}",
+                    "callback_data": f"mchoice:{slot.sid}:{o['num']}"}])
+            keyboard.append([{"text": "✖ 取消（Esc）",
+                              "callback_data": f"mcancel:{slot.sid}"}])
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": "\n".join(lines),
+                "reply_markup": {"inline_keyboard": keyboard},
+            })
+        threading.Thread(target=_run, daemon=True).start()
 
     def _send_choice_menu(self, chat_id: int, slot, text: str):
         """Send a detected CLI approval/menu prompt as Telegram inline buttons."""
@@ -3318,6 +3419,51 @@ class TelegramBridge(BridgeBase):
                 target=self._handle_update, args=(synthetic,), daemon=True).start()
             return
 
+        if data.startswith("mchoice:"):
+            # /model picker：數字鍵＝立即選定並存為預設（實測），不送 \r
+            parts = data.split(":", 2)
+            if len(parts) < 3:
+                return
+            sid, choice = parts[1], parts[2]
+            slot = self.slots.get(sid)
+            if not slot:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "Session already gone."})
+                return
+            self._user_chat[user_id] = chat_id
+            self._user_active[user_id] = sid
+            slot.pending_menu = False
+            slot.pending_menu_options = []
+            try:
+                slot.write_fn(choice)
+                slot.awaiting_response = True
+                slot.last_write_ts = time.time()
+                slot.stall_warned = False
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": f"✅ 已選 {choice}，等分頁回確認…"})
+            except Exception as e:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": f"送出失敗：{e}"})
+            return
+
+        if data.startswith("mcancel:"):
+            sid = data.split(":", 1)[1]
+            slot = self.slots.get(sid)
+            if slot:
+                slot.pending_menu = False
+                slot.pending_menu_options = []
+                try:
+                    slot.write_fn("\x1b")   # Esc 關閉 picker
+                except Exception:
+                    pass
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id,
+                "text": "已取消，模型未變更。"})
+            return
+
         if data.startswith("choice:"):
             parts = data.split(":", 2)
             if len(parts) < 3:
@@ -3533,7 +3679,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -3903,6 +4049,11 @@ class TelegramBridge(BridgeBase):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": "\n".join(lines),
             })
+
+        elif cmd == "model":
+            # 原生 /model 互動化：轉傳給分頁開 picker → 解析選項 → TG inline
+            # 按鈕選擇（實測：picker 按數字＝立即選定並存為新 session 預設）。
+            self._handle_model_command(user_id, chat_id)
 
         elif cmd in ("usage", "水位"):
             # Per-tab AI usage water-level. Resolve the active session, then
