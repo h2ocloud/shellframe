@@ -98,6 +98,25 @@ with patch("main.load_config", return_value=override_config):
     failed += 0 if not result else 1
     print(f"  [{status}] preset override False      cmd='claude --quiet'       -> {result}")
 
+# ── init 注入時機 gate（v0.23.3：新分頁打 /model 被 inject 的修正）──
+import types as _types
+print("\n_init_inject_decision（斜線指令不消耗 init、逐鍵 hold）:")
+_D = api.__class__._init_inject_decision
+def _gate_case(name, seqs, want_last, want_hold=None):
+    global passed, failed
+    s = _types.SimpleNamespace(_init_pending=True)
+    res = [_D(s, c) for c in seqs]
+    ok = res[-1] == want_last and (want_hold is None or getattr(s, "_init_hold", False) == want_hold)
+    passed += 1 if ok else 0
+    failed += 0 if ok else 1
+    print(f"  [{'PASS' if ok else 'FAIL'}] {name} -> {res[-1]}")
+_gate_case("逐鍵 /model+Enter 全程不注入", ["/", "m", "o", "d", "e", "l", "\r"], "pass", want_hold=False)
+_gate_case("斜線送出後真訊息才注入", ["/", "m", "\r", "你"], "inject")
+_gate_case("貼上 /model\\r 不留 hold", ["/model\r"], "pass", want_hold=False)
+_gate_case("新分頁直接打字立即注入", ["你"], "inject")
+_gate_case("裸 Enter 不觸發", ["\r"], "pass")
+_gate_case("選單方向鍵不觸發", ["/", "m", "\r", "\x1b[B", "\r"], "pass")
+
 print(f"\n{'='*50}")
 print(f"Results: {passed} passed, {failed} failed")
 if failed:

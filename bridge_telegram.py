@@ -3636,9 +3636,11 @@ class TelegramBridge(BridgeBase):
 
         # Inject init prompt if CLI just became ready (first user message path).
         # Mirrors write_input's web-UI injection so TG-created AI sessions get
-        # the same system prompt.
+        # the same system prompt. Slash commands (/model, /compact…) are NOT a
+        # first message — don't spend the init prompt on them; it stays armed
+        # for the next real message (same rule as the web-UI gate).
         init_prompt = ""
-        if self._on_consume_init:
+        if self._on_consume_init and not forwarded.lstrip().startswith("/"):
             try:
                 init_prompt = self._on_consume_init(active_sid) or ""
             except Exception:

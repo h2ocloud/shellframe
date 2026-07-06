@@ -2894,7 +2894,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                         _dlog("slug", f"tmux rename {old_name!r} → {new_name!r}")
                 threading.Thread(target=_do_slug, daemon=True).start()
         # IME dedup is handled in JS (compositionstart/end + time window)
-        # On the first user *content*, inject the init prompt BEFORE the message.
+        # On the first REAL user message, inject the init prompt BEFORE it.
         #
         # xterm.js delivers the message text and the Enter that submits it in
         # SEPARATE write_input calls — each typed key / paste flushes on its own
@@ -2905,25 +2905,34 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         # message. Trigger instead on the first content-bearing chunk and prepend
         # the prompt to it, so INIT_PROMPT is always first and the user's text
         # (and its later bare '\r') flow naturally after.
-        if getattr(s, '_init_pending', False) and self._is_user_content(data):
-            # Check if CLI output looks like an AI tool ready for conversation
-            # (not a login screen, auth flow, or shell prompt)
-            with s.lock:
-                tail = bytes(s._recent).decode('utf-8', errors='replace')
-            clean = self._ANSI_RE.sub('', tail) if tail else ""
-            if self._AI_READY_RE.search(clean):
-                # AI tool is ready — inject init prompt ahead of this chunk.
-                s._init_pending = False
-                prompt = self._get_init_prompt()
-                if prompt:
-                    if self.bridge:
-                        slot = self.bridge.slots.get(sid)
-                        if slot:
-                            slot.sent_texts.append(prompt)
-                    s.write(prompt + "\n\n---\nUser's first message: " + data)
-                    self._arm_awaiting_response(sid, data)
-                    return
-            # Not ready yet (login/auth flow) — pass through, keep _init_pending
+        #
+        # SLASH COMMANDS ARE NOT A FIRST MESSAGE (Howard: 新分頁打 /model 被
+        # inject 一大段、指令直接壞掉). A chunk whose line starts with '/' is a
+        # CLI command (/model, /compact…) — never spend the init prompt on it.
+        # Because input arrives per-keystroke, a lone '/' must also HOLD the
+        # gate for the rest of that line (otherwise the next key 'm' would
+        # inject mid-command); the hold releases when the line is submitted.
+        if getattr(s, '_init_pending', False):
+            decision = self._init_inject_decision(s, data)
+            if decision == "inject":
+                # Check if CLI output looks like an AI tool ready for
+                # conversation (not a login screen, auth flow, shell prompt)
+                with s.lock:
+                    tail = bytes(s._recent).decode('utf-8', errors='replace')
+                clean = self._ANSI_RE.sub('', tail) if tail else ""
+                if self._AI_READY_RE.search(clean):
+                    # AI tool is ready — inject init prompt ahead of this chunk.
+                    s._init_pending = False
+                    prompt = self._get_init_prompt()
+                    if prompt:
+                        if self.bridge:
+                            slot = self.bridge.slots.get(sid)
+                            if slot:
+                                slot.sent_texts.append(prompt)
+                        s.write(prompt + "\n\n---\nUser's first message: " + data)
+                        self._arm_awaiting_response(sid, data)
+                        return
+                # Not ready yet (login/auth flow) — pass through, keep _init_pending
         should = self._should_prepend_master_turn_preamble(sid, s, data)
         _dlog("preamble", f"sid={sid} should={should} label={self._session_label(sid, s)!r} is_master={self._is_master_session(sid, s)} inject_init={self._should_inject_init(getattr(s, 'cmd', ''))} enabled={self._master_turn_preamble_enabled()} data={data!r:.60}")
         if should:
@@ -2933,6 +2942,28 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return
         s.write(data)
         self._arm_awaiting_response(sid, data)
+
+    @staticmethod
+    def _init_inject_decision(s, data: str) -> str:
+        """State machine for the web-UI init-prompt gate. Returns:
+          'inject' — first chunk of a real message: safe to prepend INIT_PROMPT
+          'pass'   — control/enter chunk, or slash-command line in progress
+        Slash-command handling: a content chunk whose line starts with '/'
+        sets _init_hold so per-keystroke follow-ups ('m','o','d'…) don't
+        inject mid-command; the hold clears once that line submits (\\r/\\n),
+        keeping _init_pending armed for the NEXT real message."""
+        submits = ('\r' in data) or ('\n' in data)
+        if getattr(s, '_init_hold', False):
+            if submits:
+                s._init_hold = False
+            return "pass"
+        if not Api._is_user_content(data):
+            return "pass"
+        if data.lstrip().startswith("/"):
+            if not submits:          # pasted "/cmd\r" completes in one chunk
+                s._init_hold = True  # typed '/': hold until the line submits
+            return "pass"
+        return "inject"
 
     def consume_init_prompt_if_ready(self, sid: str) -> str:
         """If session has pending init prompt AND CLI looks ready, consume and return it.

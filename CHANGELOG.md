@@ -85,6 +85,15 @@
   - 只送單一 ESC——Claude 連按兩次 ESC 會進歷史導覽而非中斷。
   - 走 `write_lock` 序列化，不與其他注入交錯；`/help` 已補上說明。
 
+## v0.23.3 (2026-07-06)
+
+### Fixes
+- **新分頁打 `/model` 被 INIT_PROMPT 灌爆——init 注入時機修正**（Howard 回報「都會被 prompt inject、好長好難用、觸發時機是錯的」）：
+  - 根因：web UI 的 init 注入以「第一個含內容的 write_input chunk」觸發，而 xterm 逐鍵送字——你打 `/` 的那一鍵就被當成第一則訊息，INIT_PROMPT＋「User's first message: /」直接進 composer，斜線指令選單整個壞掉。
+  - 修法：**斜線指令不是第一則訊息**。行首 `/` 的輸入不消耗 init prompt（留給下一則真實訊息），並以 `_init_hold` 狀態機撐過逐鍵輸入（`/`→`m`→`o`…），該行送出（Enter）才解除——中途任何一鍵都不會再觸發注入；`/model` 選單的方向鍵/Enter 也不受影響。
+  - TG 路徑同步修正：`/model` 等 CLI 指令從手機轉發時同樣不消耗 init。
+  - 回歸測試：test_init_prompt.py 新增 6 組鍵序案例（33/33 綠）。
+
 ## v0.23.2 (2026-07-03)
 
 ### Fixes
