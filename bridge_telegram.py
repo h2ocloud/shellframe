@@ -3727,13 +3727,13 @@ class TelegramBridge(BridgeBase):
                 # preamble / User message: [Request interrupted]」bug). Wait
                 # for the CLI to return to idle (no "esc to interrupt" footer)
                 # before injecting. Bounded so a wedged session can't block forever.
+                # 訊號源用 live screen（_live_tail）而非 PTY ring bytes：
+                # ring 是歷史，turn 結束後殘留的 footer 會把 idle 分頁誤判
+                # 成 busy，訊息卡在這裡最多 120s（「送不進去」主因之一）。
                 deadline = time.time() + 120.0
                 while time.time() < deadline:
-                    try:
-                        recent = slot.peek_fn() if slot.peek_fn else ""
-                    except Exception:
-                        recent = ""
-                    if not re.search(r'esc to interrupt', recent or "", re.I):
+                    if not re.search(r'esc to interrupt',
+                                     self._live_tail(slot), re.I):
                         break
                     time.sleep(0.5)
 
@@ -3751,10 +3751,7 @@ class TelegramBridge(BridgeBase):
                     _blog(f"[send] {slot.sid} submit CR len={len(visible_payload)}\n")
                     slot.write_fn("\r")
                     time.sleep(0.6)
-                    try:
-                        after = slot.peek_fn() if slot.peek_fn else ""
-                    except Exception:
-                        after = ""
+                    after = self._live_tail(slot)
                     # Codex can occasionally keep focus on its pasted-content
                     # chip after the first CR. If the chip is still visible and
                     # the CLI did not start a turn, send LF as a conservative
@@ -3796,6 +3793,12 @@ class TelegramBridge(BridgeBase):
                         if not delivered and residue:
                             _blog(f"[send] {slot.sid} delivery FAILED after retry\n")
                             notify_failed = True
+                    elif not delivered:
+                        # 無殘留可安全重試（重試有重複送出風險），但也不能
+                        # 再靜默——這正是「prompt 沒反應、/fetch 也沒變化」
+                        # 的無聲掉訊窗口（對話框吃掉輸入、畫面被捲走等）。
+                        _blog(f"[send] {slot.sid} delivery UNCONFIRMED (no residue)\n")
+                        notify_failed = True
             # Notify OUTSIDE write_lock — tg_api can block up to 35s and
             # holding the slot's write lock that long queues every
             # subsequent message for this tab behind a dead HTTPS call.
@@ -3803,15 +3806,37 @@ class TelegramBridge(BridgeBase):
                 try:
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
-                        "text": (f"⚠ 訊息可能沒送進「{slot.label}」：重試 1 次後"
-                                 "仍未確認送出。原文還留在該分頁輸入框，"
-                                 f"可回 /{slot.index} 查看狀態或直接重發。"),
+                        "text": (f"⚠ 無法確認訊息已送進「{slot.label}」。"
+                                 f"若該分頁沒動靜請直接重發，或用 /{slot.index} "
+                                 "切過去看狀態、/fetch 看最新回覆。"),
                     })
                 except Exception:
                     pass
         threading.Thread(target=_send, daemon=True).start()
 
     _INJECT_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07')
+
+    def _live_tail(self, slot, rows: int = 6) -> str:
+        """注入訊號用的「現在畫面尾端」文字（footer 區）。
+
+        v0.29.1 之前這裡用 peek_fn()（最後 ~1KB 原始 PTY bytes）——那是
+        「歷史」不是「現在」：turn 結束後的收尾重繪若不足 1KB，舊的
+        'esc to interrupt' footer 會殘留在 ring 裡，idle 分頁被 busy guard
+        誤擋最多 120s（Howard:「/fetch 之後訊息送不進去、沒反應」），送達
+        驗證也會拿殘影假 delivered → 真失敗不重試不通知。live pyte screen
+        沒有記憶效應，footer 在就是在。取最後 rows 個非空行，避免對話
+        內文提到 'esc to interrupt' 造成誤判。無 pyte screen 時（測試
+        fake slot）退回 ring bytes。"""
+        if getattr(slot, "screen", None) is not None:
+            try:
+                lines = [l for l in self._slot_display(slot) if l.strip()]
+                return "\n".join(lines[-rows:])
+            except Exception:
+                pass
+        try:
+            return (slot.peek_fn() or "") if slot.peek_fn else ""
+        except Exception:
+            return ""
 
     def _verify_injection(self, slot, payload, injected_at, window=8.0):
         """(delivered, residue) — 送達驗證。
@@ -3838,10 +3863,7 @@ class TelegramBridge(BridgeBase):
         recent = ""
         t0 = time.time()
         while time.time() - t0 < window:
-            try:
-                recent = slot.peek_fn() if slot.peek_fn else ""
-            except Exception:
-                recent = ""
+            recent = self._live_tail(slot)
             if re.search(r"esc to interrupt", recent or "", re.I):
                 return True, False
             if getattr(slot, "last_extraction_ts", 0.0) > injected_at:

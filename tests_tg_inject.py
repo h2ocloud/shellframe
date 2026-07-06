@@ -69,7 +69,34 @@ def test_ambiguous_no_retry():
     assert got == (False, False), got
 
 
-# ── 6. 審查 bug #2 的 gate 素材：detect_ai 分流正確（gate 本身在 _send 閉包內）──
+# ── 6. v0.29.1：stale PTY ring 不得假 delivered——訊號源改 live screen。
+#      turn 結束後 'esc to interrupt' 殘留在 ring（peek_fn），但現在畫面
+#      （pyte display）乾淨 → 不可回 (True, False)（那會讓真失敗不重試
+#      不通知，Howard 的「/fetch 後訊息送不進去」）。──
+def test_stale_ring_not_delivered():
+    slot = _slot("...舊輸出 (esc to interrupt) 殘影...")  # ring 有殘影
+    # 模擬 live screen（走 _slot_display 的 cache-hit 路徑，免建真 pyte）
+    slot.screen = object()
+    slot._feed_gen = 1
+    slot._display_cache = ["❯ 輸入框", "", "  乾淨的 idle 畫面"]
+    slot._display_cache_gen = 1
+    got = BR._verify_injection(slot, PAYLOAD, injected_at=100.0, window=0.6)
+    assert got == (False, False), got
+
+
+# ── 7. v0.29.1：live screen 顯示 mid-turn → delivered（CC 會把注入排隊，
+#      不得 retry 造成重複送出）──
+def test_live_screen_midturn_is_delivered():
+    slot = _slot("ring 沒有訊號")
+    slot.screen = object()
+    slot._feed_gen = 1
+    slot._display_cache = ["回覆生成中…", "(esc to interrupt)"]
+    slot._display_cache_gen = 1
+    got = BR._verify_injection(slot, PAYLOAD, injected_at=100.0, window=0.6)
+    assert got == (True, False), got
+
+
+# ── 8. 審查 bug #2 的 gate 素材：detect_ai 分流正確（gate 本身在 _send 閉包內）──
 def test_detect_ai_gate_material():
     assert _bt._detect_ai("claude --permission-mode x") == "claude"
     assert _bt._detect_ai("/usr/local/bin/sf-codex") == "codex"

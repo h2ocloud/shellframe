@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.29.1 (2026-07-06)
+
+### Fixes
+- **TG 訊息偶發送不進分頁（Howard:「/fetch 之後 prompt 沒反應、/fetch 也沒變化」）**。
+  根因：busy guard 與送達驗證的訊號源是 `peek_fn()`（最後 ~1KB 原始 PTY
+  bytes）——那是「歷史」不是「現在」。turn 結束的收尾重繪若不足 1KB，舊的
+  `esc to interrupt` footer 殘留在 ring 裡：
+  - idle 分頁被誤判 busy → 訊息卡 busy guard 最多 **120s**（體感=沒反應）；
+  - 送達驗證拿殘影假 delivered → 真失敗**不重試也不通知**（無聲掉訊）。
+  修法：新增 `_live_tail()`（live pyte screen 尾端非空行，footer 在就是在、
+  無記憶效應），busy guard / 送達驗證 / paste-chip 檢查三處改用；ring 僅
+  作無 screen 時的 fallback。
+- **長 turn 中注入造成重複訊息**：busy guard 120s 超時後注入，CC 其實已
+  排隊（queued），舊驗證誤判未送達 → retry 重貼 → 同一則訊息送兩次（實測
+  s57 重現）。live screen 顯示 mid-turn 即視為 delivered，不再誤 retry。
+- **驗證不確定（無殘留）從靜默改為通知**：「⚠ 無法確認訊息已送進…請重發」
+  ——不重試（避免重複送出風險）但不再無聲。
+  回歸測試：`tests_tg_inject.py` 新增 stale-ring / mid-turn-queued 兩案例。
+
 ## v0.29.0 (2026-07-05)
 
 ### Features
