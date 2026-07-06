@@ -3634,14 +3634,31 @@ try {
             local = {"version": "0.0.0"}
 
         try:
-            req = urllib.request.Request(REPO_URL, headers={"User-Agent": "shellframe"})
+            # Cache-bust: raw.githubusercontent is Fastly-cached (~5 min) and
+            # serves a STALE version.json right after a push — a machine that
+            # checks in that window sees no update (Howard 2026-07-06: 遠端撞版
+            # 那台偵測不到更新). A unique query string is a distinct cache key,
+            # plus no-cache headers, so we always read the just-pushed value.
+            bust = int(time.time())
+            req = urllib.request.Request(
+                f"{REPO_URL}?t={bust}",
+                headers={"User-Agent": "shellframe",
+                         "Cache-Control": "no-cache", "Pragma": "no-cache"})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 remote = json.loads(resp.read().decode())
         except:
             return json.dumps({"local": local["version"], "remote": None, "update_available": False, "error": "Could not reach GitHub"})
 
-        local_v = tuple(int(x) for x in local["version"].split("."))
-        remote_v = tuple(int(x) for x in remote["version"].split("."))
+        # Defensive version parse: a non-numeric segment (channel suffix, WIP
+        # tag) must not raise out of the check and read as "no update".
+        def _vtuple(s):
+            out = []
+            for x in str(s).split("."):
+                m = re.match(r"\d+", x)
+                out.append(int(m.group()) if m else 0)
+            return tuple(out)
+        local_v = _vtuple(local.get("version", "0"))
+        remote_v = _vtuple(remote.get("version", "0"))
         has_update = remote_v > local_v
 
         return json.dumps({

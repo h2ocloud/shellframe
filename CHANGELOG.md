@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.29.7 (2026-07-06)
+
+### Fixes
+- **App 內「檢查更新」偵測不到剛推的版本**（Howard 2026-07-06：遠端撞版那台抓不到更新）：`check_update` 讀 `raw.githubusercontent.com/.../main/version.json`，這個 Fastly CDN 有 ~5 分鐘快取，剛 push 完會餵**舊的 version.json** → 該時段檢查的機器看不到新版。修法：加 cache-bust query（`?t=<epoch>`）＋ `Cache-Control/Pragma: no-cache`，永遠讀到剛推的值。順手硬化版本比較：非數字段（channel 後綴／WIP tag）不再讓整個檢查拋例外而誤判「無更新」。
+
 ## v0.29.6 (2026-07-06)
 
 ### Features
