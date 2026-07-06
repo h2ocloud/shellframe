@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.29.2 (2026-07-06)
+
+### Fixes
+- **sfctl/TG 改名不會反映到畫面**（Howard:「你說 tab 有 rename 我怎麼看都沒有」）：
+  `rename_session` 只更新後端＋bridge＋config，從未推給 webview——UI 靠
+  1.5s 輪詢撿，輪詢失效時 tab 名永遠停在舊值，形成「後端說改了、畫面沒變」
+  各說各話。現在 rename 直接 `evaluate_js` 推 `__sfApplyLabel`（改 label
+  ＋renderTabs＋renderSidebar），輪詢降為備援。實測 sfctl rename 後 1s 內
+  UI 同步。
+
+### Tools
+- **新增 `ui_sessions` 診斷 IPC**：回傳 webview「眼中」的 tabs/labels/順序，
+  專治「後端說有、畫面沒有」——直接問 UI 而不是用後端狀態推論。gotcha：
+  `evaluate_js` 的回傳值在背景 thread 會卡死（WKWebView round-trip 不回），
+  改走 fire-and-forget＋JS 回呼 `report_ui_state` 存值；且 `sessions/
+  sessionOrder` 是 script 作用域，需經 `window.__sfUiState` closure 取。
+
 ## v0.29.1 (2026-07-06)
 
 ### Fixes

@@ -5347,6 +5347,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Expose for Python to nudge after non-UI session changes (TG /new, sfctl, etc.)
   window._syncSessionsFromBackend = syncSessionsFromBackend;
 
+  // sfctl/TG rename 的即時套用（Python rename_session 直推；1.5s 輪詢當備援）
+  window.__sfApplyLabel = (sid, label) => {
+    const s = sessions[sid];
+    if (!s || !label || s.label === label) return;
+    s.label = label;
+    renderTabs();
+    try { renderSidebar(); } catch (_) {}
+  };
+  // ui_sessions 診斷用：sessions/sessionOrder 是 script 作用域變數，
+  // evaluate_js 的全域看不到——這裡用 closure 曝露快照。
+  window.__sfUiState = () => JSON.stringify({
+    order: sessionOrder,
+    active: activeId,
+    labels: Object.fromEntries(
+      Object.entries(sessions).map(([k, v]) => [k, v && v.label])),
+  });
+
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a
   // background command watcher thread, so keep reconciliation periodic too.

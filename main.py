@@ -4572,6 +4572,11 @@ try {
             )
             self.bridge.refresh_commands()
 
+    def report_ui_state(self, payload: str) -> str:
+        """JS 回呼（ui_sessions 診斷）：webview 把它眼中的 tabs/labels 存回來。"""
+        self._ui_state_report = str(payload or "")
+        return "ok"
+
     def rename_session(self, sid: str, name: str) -> str:
         """Rename a session. Updates bridge label if connected. Persists to config."""
         _dlog("lifecycle", f"rename_session sid={sid} name={name!r}")
@@ -4584,6 +4589,16 @@ try {
             self.bridge.refresh_commands()
         if self.line_bridge and sid in self.line_bridge.slots:
             self.line_bridge.slots[sid].label = name
+        # 即時推給 webview——sfctl/TG 改名原本只更新後端，UI 靠 1.5s 輪詢
+        # 撿；輪詢若失效（JS 例外、pywebview 斷橋）tab 名就永遠停在舊值，
+        # 造成「後端說改了、畫面沒變」各說各話。直接推一次，輪詢當備援。
+        if getattr(self, "_window", None):
+            try:
+                self._window.evaluate_js(
+                    f'window.__sfApplyLabel && '
+                    f'__sfApplyLabel({json.dumps(sid)}, {json.dumps(name)})')
+            except Exception:
+                _swallow("rename_session.push_label")
         # Persist
         cfg = load_config()
         labels = cfg.get("session_labels", {})
@@ -4945,6 +4960,28 @@ try {
                 return {"success": False, "message": "Rename failed"}
             except Exception as e:
                 return {"success": False, "message": f"Rename failed: {e}"}
+
+        elif cmd == "ui_sessions":
+            # 診斷用：回傳 webview「眼中」的 tabs/labels。專治「後端說有、
+            # 畫面沒有」各說各話——直接問 UI 而不是用後端狀態推論。
+            # 注意：evaluate_js 的「回傳值」在背景 thread 會卡死（WKWebView
+            # round-trip 不回來），所以走 fire-and-forget＋JS 回呼
+            # report_ui_state 存值、這裡輪詢取件。
+            try:
+                if not self._window:
+                    return {"success": False, "message": "no window"}
+                self._ui_state_report = None
+                self._window.evaluate_js(
+                    'try { pywebview.api.report_ui_state('
+                    'window.__sfUiState ? __sfUiState() : "{}"); } catch(e) {}')
+                deadline = time.time() + 3.0
+                while time.time() < deadline:
+                    if self._ui_state_report is not None:
+                        return {"success": True, "message": self._ui_state_report}
+                    time.sleep(0.1)
+                return {"success": False, "message": "UI 未回報（webview 無回應）"}
+            except Exception as e:
+                return {"success": False, "message": f"ui_sessions failed: {e}"}
 
         elif cmd == "history_audit":
             try:
