@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.29.11 (2026-07-08)
+
+### Fixes
+- **側邊欄模型徽章判定不準確**：根因有四，逐一修復：
+  1. **全域 fallback 污染（主因）**：`detect_model_info` claude 分支原本在
+     transcript 解析不到時退回 `~/.claude/settings.json` 的 `model`——那個值是
+     「最後一次 /model 存的 session 預設」（如 `opus[1m]`），導致大量分頁顯示
+     同一個錯誤模型。修：拿掉全域 fallback，無 transcript 且無 `--model` flag
+     的分頁一律回 None（不顯示），寧可空白也不顯示錯的。
+  2. **全域 model 有 ANSI／`[1m]` 髒字**：`~/.claude/settings.json` 實測值為
+     `opus[1m]`（含 tag），舊版 `_pretty_model` 只 strip 結尾 `[1m]` 且不認
+     bare alias。修：任意位置 strip `[1m]` 與 ANSI escape；bare alias
+     （opus／sonnet／haiku／fable）直接首字大寫顯示（如 "Opus"），不硬湊版號。
+  3. **`--model` 啟動旗標被忽略**：cmd 如 `claude --model fable` 是最可靠的
+     per-tab 訊號（在 transcript 產生前），但舊版完全沒解析。修：新增
+     `_parse_model_flag(cmd)` 解析 `--model <x>`／`--model=<x>`，支援 alias
+     與完整 `claude-*` id；transcript 無法取得時退而採用此值。
+  4. **sidechain 模型污染主 chain**：`_parse_claude_transcript_model` 沒過濾
+     `isSidechain=True`，主 agent 跑 opus 但 spawn sonnet subagent 時徽章會
+     錯顯為 Sonnet。修：加 `isSidechain is True` 過濾，只採 main-chain
+     assistant 記錄的 `message.model`。
+  回歸測試：`tests_agent_status.py` 新增 17 案例（含 4 成因端對端），26/26 PASS；
+  `tests_tg_model_menu.py` 7/7 PASS。
+
 ## v0.29.10 (2026-07-07)
 
 ### Fixes

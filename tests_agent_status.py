@@ -126,5 +126,83 @@ ok("Codex detail includes action/task/narration",
    and narration.startswith("我會先"),
    repr((action, task, narration)))
 
-print(f"\n=== {9 - len(fails)}/9 groups PASS ===")
+# ── 回歸：模型判定準確性（成因 1–4）──────────────────────────────────────────
+
+# 成因 2：_pretty_model 強化 — ANSI + [1m] 任意位置 + bare alias
+ok("pretty_model: opus[1m] alias → Opus",
+   ag._pretty_model("opus[1m]") == "Opus")
+ok("pretty_model: bare alias sonnet → Sonnet",
+   ag._pretty_model("sonnet") == "Sonnet")
+ok("pretty_model: bare alias fable → Fable",
+   ag._pretty_model("fable") == "Fable")
+ok("pretty_model: [1m] mid-string claude-opus-4[1m]8 → still parsed",
+   # 移除 [1m] 後剩 claude-opus-48，match group 2=4 group3=None → "Opus 4"
+   ag._pretty_model("claude-opus-4[1m]8").startswith("Opus"))
+ok("pretty_model: ANSI stripped",
+   ag._pretty_model("\x1b[1msonnet\x1b[0m") == "Sonnet")
+ok("pretty_model: full id claude-fable-5 → Fable 5",
+   ag._pretty_model("claude-fable-5") == "Fable 5")
+ok("pretty_model: full id claude-opus-4-8 → Opus 4.8",
+   ag._pretty_model("claude-opus-4-8") == "Opus 4.8")
+ok("pretty_model: full id claude-sonnet-5 → Sonnet 5",
+   ag._pretty_model("claude-sonnet-5") == "Sonnet 5")
+
+# 成因 3：_parse_model_flag 解析 --model flag
+ok("parse_model_flag: --model opus",
+   ag._parse_model_flag("claude --model opus foo") == "opus")
+ok("parse_model_flag: --model=claude-fable-5",
+   ag._parse_model_flag("claude --model=claude-fable-5 --dangerously-skip-permissions")
+   == "claude-fable-5")
+ok("parse_model_flag: no flag → None",
+   ag._parse_model_flag("claude --dangerously-skip-permissions") is None)
+ok("parse_model_flag: --model opus[1m] strips tag",
+   ag._parse_model_flag("claude --model opus[1m]") == "opus")
+
+# 成因 3 + detect_model_info：無 transcript 但有 --model flag → 回模型名
+_worker_with_flag = {"cmd": "claude --model fable --dangerously-skip-permissions",
+                     "cwd": "/tmp", "tmux_name": "worker-1"}
+_info = ag.detect_model_info(_worker_with_flag, transcript_path=None)
+ok("detect_model_info: --model flag 無 transcript → 回模型",
+   _info is not None and _info.get("name") == "Fable")
+
+# 成因 1：無 transcript 無 flag → None（不吃全域 settings.json）
+_worker_bare = {"cmd": "claude --dangerously-skip-permissions",
+                "cwd": "/tmp", "tmux_name": "worker-2"}
+_info2 = ag.detect_model_info(_worker_bare, transcript_path=None)
+ok("detect_model_info: 無 transcript 無 flag → None（不吃全域）",
+   _info2 is None)
+
+# 成因 4（isSidechain 過濾）：主 opus + sidechain sonnet → 回 opus
+import json as _json, tempfile as _tf, os as _os
+
+_transcript_lines = [
+    # 主 chain：opus
+    _json.dumps({"type": "assistant", "isSidechain": False,
+                 "message": {"model": "claude-opus-4-8", "content": []}}),
+    # sidechain：sonnet（Task subagent）
+    _json.dumps({"type": "assistant", "isSidechain": True,
+                 "message": {"model": "claude-sonnet-5", "content": []}}),
+    # 另一筆主 chain（較舊，應被覆蓋）
+    _json.dumps({"type": "assistant", "isSidechain": False,
+                 "message": {"model": "claude-opus-4-8", "content": []}}),
+]
+with _tf.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as _f:
+    _f.write("\n".join(_transcript_lines) + "\n")
+    _tmp_path = _f.name
+
+try:
+    _model = ag._parse_claude_transcript_model(_tmp_path)
+    ok("isSidechain 過濾：主 opus + sidechain sonnet → opus",
+       _model == "claude-opus-4-8", f"got {_model!r}")
+    # 透過 detect_model_info 端對端
+    _worker_sc = {"cmd": "claude", "cwd": "/tmp", "tmux_name": "worker-3"}
+    _info3 = ag.detect_model_info(_worker_sc, transcript_path=_tmp_path)
+    ok("detect_model_info isSidechain 端對端 → Opus 4.8",
+       _info3 is not None and _info3.get("name") == "Opus 4.8",
+       repr(_info3))
+finally:
+    _os.unlink(_tmp_path)
+
+_TOTAL = 9 + 17
+print(f"\n=== {_TOTAL - len(fails)}/{_TOTAL} groups PASS ===")
 sys.exit(1 if fails else 0)

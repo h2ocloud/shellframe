@@ -250,12 +250,25 @@ def _tail_lines(path, tail_bytes=262144):
     return list(reversed(data.decode("utf-8", errors="replace").splitlines()))
 
 
+_ALIAS_NAMES = {"opus", "sonnet", "haiku", "fable"}
+
 def _pretty_model(mid: str) -> str:
     """模型 id → 顯示名。claude-fable-5 → Fable 5、claude-opus-4-8 → Opus 4.8、
-    claude-haiku-4-5-20251001 → Haiku 4.5；gpt-* 首段大寫；其餘原樣。"""
+    claude-haiku-4-5-20251001 → Haiku 4.5；bare alias（opus/sonnet/haiku/fable）
+    → 首字大寫（無版號）；gpt-* 首段大寫；其餘原樣。
+    任意位置的 [1m] 與 ANSI escape 先 strip 再判斷。"""
     if not mid:
         return ""
-    mid = re.sub(r"\[1m\]$", "", mid.strip())
+    # strip ANSI escape sequences
+    mid = re.sub(r"\x1b\[[0-9;]*m", "", mid.strip())
+    # strip [1m] anywhere in the string（含結尾、中間）
+    mid = re.sub(r"\[1m\]", "", mid).strip()
+    if not mid:
+        return ""
+    # bare alias（in-session /model 選的別名如 opus、sonnet…）
+    if mid.lower() in _ALIAS_NAMES:
+        return mid.capitalize()
+    # full claude-* id
     m = re.match(r"^claude-([a-z]+)-(\d+)(?:-(\d))?(?:-|$)", mid)
     if m:
         name = m.group(1).capitalize()
@@ -267,7 +280,8 @@ def _pretty_model(mid: str) -> str:
 
 
 def _parse_claude_transcript_model(path):
-    """transcript 最新 assistant 的 message.model（略過 <synthetic> 錯誤佔位）。"""
+    """transcript 最新 **main-chain**（isSidechain=False）assistant 的 message.model。
+    略過 <synthetic> 錯誤佔位；略過 isSidechain=True（Task subagent 的模型）。"""
     scanned = 0
     for ln in _tail_lines(path):
         if '"model"' not in ln:
@@ -279,10 +293,32 @@ def _parse_claude_transcript_model(path):
             o = json.loads(ln)
         except Exception:
             continue
+        # 只採 main-chain：type=assistant 且非 sidechain（False 或欄位不存在）
+        if o.get("type") != "assistant":
+            continue
+        if o.get("isSidechain") is True:
+            continue
         model = ((o.get("message") or {}).get("model") or "").strip()
         if model and not model.startswith("<"):
             return model
     return None
+
+
+def _parse_model_flag(cmd: str):
+    """從 cmd 字串解析 --model <x> 或 --model=<x>，回 normalized model 字串或 None。
+    支援 bare alias（opus/sonnet/haiku/fable）與完整 claude-* id。"""
+    if not cmd:
+        return None
+    m = re.search(r"--model[= ](['\"]?)(\S+)\1", cmd)
+    if not m:
+        return None
+    val = m.group(2).strip("'\"")
+    # strip [1m] / ANSI
+    val = re.sub(r"\x1b\[[0-9;]*m", "", val)
+    val = re.sub(r"\[1m\]", "", val).strip()
+    if not val:
+        return None
+    return val
 
 
 def _parse_claude_settings(path):
@@ -333,12 +369,18 @@ def detect_model_info(worker: dict, transcript_path=None):
             return {"name": _pretty_model(info["model"]),
                     "effort": info.get("effort") or "", "provider": "codex"}
         if kind == "claude":
+            # 優先序（per-tab 最準的放最前）：
+            # (a) transcript main-chain 最新 assistant.message.model（反映 /model 切換）
+            # (b) cmd 的 --model flag（啟動時指定的模型）
+            # (c) 都無 → None，不退回全域 settings.json（全域是 session 預設，
+            #     不代表每個分頁的實際模型，是主要錯誤來源）
             model = _cached_parse(transcript_path, _parse_claude_transcript_model) \
                 if transcript_path else None
-            glob_cfg = _cached_parse(CLAUDE_SETTINGS_JSON, _parse_claude_settings) or {}
-            model = model or glob_cfg.get("model")
+            if not model:
+                model = _parse_model_flag(worker.get("cmd", ""))
             if not model:
                 return None
+            glob_cfg = _cached_parse(CLAUDE_SETTINGS_JSON, _parse_claude_settings) or {}
             return {"name": _pretty_model(model),
                     "effort": glob_cfg.get("effort") or "", "provider": "claude"}
     except Exception:
