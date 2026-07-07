@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.29.9 (2026-07-07)
+
+### Fixes
+- **Windows：TG 橋接訊息卡在輸入框送不出去（codex 最嚴重）**（Howard 2026-07-07 回報）。
+  根因鏈：Windows/ConPTY 把注入的 payload 逐字合成 key events，client 端 drain 大
+  payload 遠超過固定 0.3s——codex（crossterm 讀 win32 事件，拿不到 bracketed-paste
+  框架，靠「連續輸入 burst」偵測貼上）在 burst 窗內收到提交的 CR 會把它當**換行**
+  插進 composer 而不是送出 → 整段訊息卡在對話框。四段修法：
+  1. `_inject` 送 CR 前改等 **echo 靜止**（`_wait_paste_drain`：最後輸出 chunk
+     安靜 ≥0.25s 才送，Windows cap 較高、按 payload 長度放大），取代固定 0.3s。
+  2. 送達驗證階梯加**裸 Enter nudge**：residue（字還躺在 composer）時先補一個
+     Enter——已送出時 composer 是空的、冪等 no-op；比直接全量重貼安全（Ctrl-U
+     對多行 composer 可能只清一行，重貼會疊字）。nudge 無效才走原本的重貼重試。
+  3. `_verify_injection` 把 codex 的 `[Pasted Content …]` chip 視為 residue——
+     chip 摺疊時 payload 尾段不在畫面上，舊判定會落入「不確定」靜默放棄。
+  4. **`_reader_winpty` 漏餵 `_recent` ring buffer**（Windows 專屬實 bug）：
+     peek_fn、startup-trust 自動接受、送達驗證 fallback 在 Windows 整組失明，補上。
+  另 `_send_text_to_session`（sfctl/delegate/init-prompt 路徑）Windows fallback 分支
+  同步補：按長度放大的 CR 前等待＋畫面驗證後的 Enter nudge。
+  回歸測試：`tests_tg_inject.py` 新增 chip-residue、drain quiet/noisy 兩案例。
+
+## v0.29.8 (2026-07-07)
+
+### Fixes
+- `/fetch` 狀態感知——訊息排隊中（inject_pending）/回合生成中先標示，舊回覆不再被誤讀成「沒收到」。
+
 ## v0.29.7 (2026-07-06)
 
 ### Fixes

@@ -4031,7 +4031,7 @@ class TelegramBridge(BridgeBase):
                     # atomically so embedded newlines don't prematurely submit
                     # partial input.
                     slot.write_fn("\x1b[200~" + visible_payload + "\x1b[201~")
-                    time.sleep(0.3)
+                    self._wait_paste_drain(slot, len(visible_payload))
                     _blog(f"[send] {slot.sid} submit CR len={len(visible_payload)}\n")
                     slot.write_fn("\r")
                     time.sleep(0.6)
@@ -4063,6 +4063,17 @@ class TelegramBridge(BridgeBase):
                 if _detect_ai(getattr(slot, "cmd", "") or ""):
                     delivered, residue = self._verify_injection(
                         slot, visible_payload, inject_t0)
+                    if not delivered and residue:
+                        # 典型卡法（Windows/ConPTY 的 codex 最常見）：payload 已
+                        # 完整躺在 composer，只是提交的 CR 被貼上偵測（burst）
+                        # 當成換行吞掉——字都在，只差一個 Enter。先補裸 Enter：
+                        # 已送出時 composer 是空的，多的 Enter 是 no-op；比直接
+                        # 全量重貼安全（Ctrl-U 對多行 composer 可能只清一行，
+                        # 重貼會疊字）。
+                        _blog(f"[send] {slot.sid} residue → bare Enter nudge\n")
+                        slot.write_fn("\r")
+                        delivered, residue = self._verify_injection(
+                            slot, visible_payload, inject_t0, window=4.0)
                     if not delivered and residue:
                         _blog(f"[send] {slot.sid} delivery unconfirmed + residue → retry\n")
                         if slot.prepare_fn:
@@ -4109,6 +4120,29 @@ class TelegramBridge(BridgeBase):
         threading.Thread(target=_send_tracked, daemon=True).start()
 
     _INJECT_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07')
+
+    def _wait_paste_drain(self, slot, nchars: int):
+        """貼上後、送 Enter 前的等待——等 composer echo「安靜」而非固定 0.3s。
+
+        Windows/ConPTY 把整段 payload 逐字合成 key events，client 端（尤其
+        codex/crossterm 讀 win32 事件、拿不到 bracketed-paste 框架，靠連續
+        輸入 burst 偵測貼上）drain 大 payload 常超過 0.3s；CR 在 burst 窗內
+        到達會被當成「換行」插進 composer 而不是送出——訊息整段卡在輸入框
+        （Windows 掉訊主因）。改成等最後一個輸出 chunk 靜止 >= QUIET 才視為
+        ingest 完成；idle 動畫（spinner/游標重繪）可能讓畫面永不安靜，
+        cap 保底、按 payload 長度放大。"""
+        QUIET = 0.25
+        t0 = time.time()
+        floor = t0 + 0.3                # 維持既有下限，行為不倒退
+        cap = t0 + (3.0 if _IS_WIN else 1.0) + min(3.0, nchars / 4000.0)
+        while True:
+            now = time.time()
+            if now >= cap:
+                break
+            last = getattr(slot, "last_chunk_ts", 0.0) or 0.0
+            if now >= floor and (now - last) >= QUIET:
+                break
+            time.sleep(0.05)
 
     def _live_tail(self, slot, rows: int = 6) -> str:
         """注入訊號用的「現在畫面尾端」文字（footer 區）。
@@ -4165,6 +4199,10 @@ class TelegramBridge(BridgeBase):
             time.sleep(0.5)
         plain = self._INJECT_ANSI_RE.sub('', recent or "")
         residue = bool(tail) and tail in re.sub(r"\s+", "", plain)
+        # codex 把大貼上摺疊成 [Pasted Content …] chip——payload 尾段不在畫面
+        # 上，但內容確實還卡在 composer，等同殘留（可安全 nudge/重試）。
+        if not residue and re.search(r'\[Pasted (?:Content|text)[^\]]*\]', plain, re.I):
+            residue = True
         return False, residue
 
     def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):

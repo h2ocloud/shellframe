@@ -96,7 +96,39 @@ def test_live_screen_midturn_is_delivered():
     assert got == (True, False), got
 
 
-# ── 8. 審查 bug #2 的 gate 素材：detect_ai 分流正確（gate 本身在 _send 閉包內）──
+# ── 8. v0.29.9：codex paste chip 摺疊 → payload 尾段不在畫面上，但內容
+#      確實卡在 composer——必須視為 residue（可 nudge/重試），不得落入
+#      (False, False) 靜默放棄（Windows/ConPTY 卡輸入框主場景）──
+def test_paste_chip_is_residue():
+    got = BR._verify_injection(_slot("❯ [Pasted Content 42 lines]"), PAYLOAD,
+                               injected_at=100.0, window=0.6)
+    assert got == (False, True), got
+
+
+# ── 9. v0.29.9：_wait_paste_drain——echo 已安靜時只等下限（~0.3s），
+#      echo 持續滾動時等到 cap 為止（不無限等）──
+def test_wait_paste_drain_quiet_vs_noisy():
+    import time as _t
+    quiet = types.SimpleNamespace(last_chunk_ts=_t.time() - 10.0)
+    t0 = _t.time()
+    BR._wait_paste_drain(quiet, 500)
+    quiet_elapsed = _t.time() - t0
+    assert 0.25 <= quiet_elapsed < 0.9, f"安靜畫面應只等下限：{quiet_elapsed:.2f}s"
+
+    class _Ticker:
+        # last_chunk_ts 每次讀都是「剛剛」→ 永不安靜，必須由 cap 收斂
+        @property
+        def last_chunk_ts(self):
+            return _t.time()
+    t0 = _t.time()
+    BR._wait_paste_drain(_Ticker(), 0)
+    noisy_elapsed = _t.time() - t0
+    cap_max = (3.0 if _bt._IS_WIN else 1.0) + 0.5
+    assert quiet_elapsed < noisy_elapsed <= cap_max, \
+        f"滾動畫面應等到 cap：{noisy_elapsed:.2f}s (cap≈{cap_max})"
+
+
+# ── 10. 審查 bug #2 的 gate 素材：detect_ai 分流正確（gate 本身在 _send 閉包內）──
 def test_detect_ai_gate_material():
     assert _bt._detect_ai("claude --permission-mode x") == "claude"
     assert _bt._detect_ai("/usr/local/bin/sf-codex") == "codex"

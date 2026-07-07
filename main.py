@@ -1069,8 +1069,15 @@ class Session:
             try:
                 data = self._winpty.read(16384)
                 if data:
+                    raw = data.encode("utf-8", errors="replace") if isinstance(data, str) else data
                     with self.lock:
-                        self.buffer.extend(data.encode("utf-8", errors="replace") if isinstance(data, str) else data)
+                        self.buffer.extend(raw)
+                        # _recent 一定要跟 unix reader 一樣餵：Windows 上 peek_fn、
+                        # startup-trust 自動接受、TG 送達驗證的 fallback 全靠它，
+                        # 漏餵等於這些機制在 Windows 整組失明。
+                        self._recent.extend(raw)
+                        if len(self._recent) > 8192:
+                            self._recent = self._recent[-8192:]
                         now = time.time()
                         self._last_activity_time = now
                         self._last_output_activity_time = now
@@ -2833,8 +2840,31 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         if text:
             s.write(text)
         if submit:
-            time.sleep(0.05)
-            s.write("\r")
+            if IS_WIN and text:
+                # ConPTY 把 payload 逐字合成 key events，client 端（尤其 codex/
+                # crossterm 讀 win32 事件、拿不到 bracketed-paste 框架）drain 大
+                # payload 遠超過固定短延遲；CR 在貼上偵測（burst）窗內到達會被
+                # 當成換行插進 composer 而不是送出——訊息整段卡在輸入框。
+                # 等待按長度放大；送出後若畫面仍掛著 payload 尾段（或 codex 的
+                # paste chip）且無 turn 訊號，補一個裸 Enter——composer 已空時
+                # 是 no-op，不會重複送出。
+                time.sleep(max(0.3, min(2.0, len(text) / 2500.0)))
+                s.write("\r")
+                time.sleep(0.8)
+                try:
+                    tail = self._ANSI_RE.sub('', bytes(s._recent).decode("utf-8", errors="replace"))
+                except Exception:
+                    tail = ""
+                probe = re.sub(r"\s+", "", text)[-18:]
+                flat = re.sub(r"\s+", "", tail)
+                stuck = ((probe and probe in flat)
+                         or re.search(r'\[Pasted (?:Content|text)[^\]]*\]', tail, re.I))
+                if stuck and not re.search(r"esc to interrupt", tail, re.I):
+                    _dlog("send", f"win nudge Enter sid={s.sid} (payload stuck in composer)")
+                    s.write("\r")
+            else:
+                time.sleep(0.05)
+                s.write("\r")
         return False
 
     @staticmethod
