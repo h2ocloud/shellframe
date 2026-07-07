@@ -672,6 +672,10 @@ class SessionSlot:
         # force window were the 2026-07-06 96%-CPU regression.
         self.marker_next_scan_ts = 0.0
         self.marker_scan_gen = -1
+        # True while a TG message is waiting in the busy-guard queue / being
+        # written into the PTY. /fetch reads it to tell the user their message
+        # is queued (not lost) instead of silently showing the previous reply.
+        self.inject_pending = False
         self.last_extraction_ts = 0.0   # time of last successful response extraction
         # Throttle for sendChatAction. TG keeps the typing bubble alive ~5s,
         # so 4s pacing keeps it visible without burning 10× the API calls the
@@ -4092,7 +4096,17 @@ class TelegramBridge(BridgeBase):
                     })
                 except Exception:
                     pass
-        threading.Thread(target=_send, daemon=True).start()
+        def _send_tracked():
+            # /fetch 據 inject_pending 回報「訊息排隊中、尚未送入」——
+            # 沒有這個旗標，排隊期間 fetch 只會看到上一則回覆，使用者
+            # 會誤判成訊息沒傳到。
+            slot.inject_pending = True
+            try:
+                _send()
+            finally:
+                slot.inject_pending = False
+
+        threading.Thread(target=_send_tracked, daemon=True).start()
 
     _INJECT_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07')
 
@@ -4520,16 +4534,26 @@ class TelegramBridge(BridgeBase):
                 })
                 return
             slot = self.slots[active_sid]
+            # 狀態感知（v0.29.8，Howard:「等不及去 fetch 結果拿到舊回覆，
+            # 會以為訊息沒傳到」）：fetch 讀的是即時畫面，但內容是「上一則
+            # 完整回覆」——若新訊息還在排隊或回合進行中，先講清楚，別讓
+            # 舊回覆被誤讀成「沒收到新訊息」。
+            status = ""
+            if getattr(slot, "inject_pending", False):
+                status = "📨 你的訊息還在排隊（分頁回合進行中，尚未送入）\n"
+            elif re.search(r"esc to interrupt", self._live_tail(slot), re.I):
+                status = "⏳ 回合進行中，新回覆還在生成——以下是上一則回覆\n"
             reply_text = self._peek_last_response(slot)
             if not reply_text:
                 tg_api(self.config.bot_token, "sendMessage", {
-                    "chat_id": chat_id, "text": "No AI reply found in current session.",
+                    "chat_id": chat_id,
+                    "text": (status or "") + "No AI reply found in current session.",
                 })
                 return
             # Truncate if needed (TG max message = 4096 chars)
             if len(reply_text) > 4000:
                 reply_text = reply_text[:4000] + "\n…(truncated)"
-            header = f"📌 {slot.label} (/{slot.index})"
+            header = f"📌 {slot.label} (/{slot.index})\n{status}" if status else f"📌 {slot.label} (/{slot.index})"
             msg_text = f"{header}\n\n{reply_text}"
             # Don't pin (Howard v0.11.58: the pinned banner in chat is noisy
             # and rarely useful — the message itself is enough; user scrolls
