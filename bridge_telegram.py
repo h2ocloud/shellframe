@@ -362,6 +362,21 @@ _MASTER_TURN_PREAMBLE = (
     "the message verbatim (ShellFrame auto-resolves them)."
 )
 
+# 自動派工關閉時的中性版：不推派工，其餘規則（grounding、tab label）保留。
+_MASTER_TURN_PREAMBLE_MANUAL = (
+    "[總控] You are the master tab. Auto-delegation is OFF in ShellFrame "
+    "settings — handle tasks in this tab by default, and use `sfctl delegate` "
+    "/ `sfctl new` only when the user explicitly asks for a worker or parallel "
+    "tab（如「派工」「開分頁」「開 worker」）.\n"
+    "Grounding — do NOT fabricate: never state the contents of an email, file, "
+    "command output, or a worker's result unless you actually read it this turn "
+    "(Read / `sfctl peek`). If you haven't verified something, say so and go "
+    "read it — never guess amounts, dates, names, or quotes, and never report a "
+    "worker's output you didn't actually peek.\n"
+    "Refer to workers by tab label, never by sid. Keep any #<tab-label> tags in "
+    "the message verbatim (ShellFrame auto-resolves them)."
+)
+
 # Built-in defaults for the two user-editable prompts. Users override via
 # Settings UI; values persist in ~/.config/shellframe/config.json under
 # settings.{ui_prompt, tg_prompt}. Missing or empty values fall through to
@@ -418,7 +433,7 @@ DEFAULT_UI_PROMPT = (
     "Acknowledge briefly and wait for the user's first message."
 )
 
-DEFAULT_TG_PROMPT = (
+_TG_PROMPT_BASE = (
     "[TG] Replying to Telegram mobile — keep responses short and "
     "skimmable: bullets > paragraphs, fence code blocks, no tables (TG "
     "can't render them), no ASCII-art dividers. Long reply → lead with a "
@@ -430,6 +445,12 @@ DEFAULT_TG_PROMPT = (
     "sfctl.py (tmux sessions survive)\n"
     "Straightforward asks — just edit + reload, don't ask permission. "
     "Bump `version.json` + CHANGELOG.md for anything user-visible.\n\n"
+)
+
+# 派工協調段落——受「自動派工」開關管（v0.29.10）。開關關閉時這段曾照樣
+# 每回合注入（它藏在 TG prompt 裡、不在 master preamble），是「自動派工
+# 關掉還是會派工」的根因。
+_TG_COORD_DELEGATE = (
     "Default coordination: keep this tab as `總控-*` when it is the active "
     "user-facing session. For non-trivial parallel work, run `sfctl list`, "
     "then prefer `sfctl delegate <role> \"<task>\"` to create/reuse the right "
@@ -440,6 +461,16 @@ DEFAULT_TG_PROMPT = (
     "finished worker tabs by default for follow-up; only close them when the "
     "user asks or the tab is broken/noisy. Idle reaper handles unused tabs."
 )
+
+_TG_COORD_MANUAL = (
+    "Coordination: auto-delegation is OFF in ShellFrame settings — handle the "
+    "work in THIS tab by default. Use `sfctl delegate` / `sfctl new` only when "
+    "the user explicitly asks for a worker / parallel tab（如「派工」「開分頁」"
+    "「開 worker」）. `sfctl list` / `sfctl peek` for answering questions about "
+    "other tabs is always fine."
+)
+
+DEFAULT_TG_PROMPT = _TG_PROMPT_BASE + _TG_COORD_DELEGATE
 
 
 def _read_config() -> dict:
@@ -503,6 +534,12 @@ def master_turn_preamble_enabled() -> bool:
 
 
 def get_master_turn_preamble() -> str:
+    """Master per-turn preamble。自訂文字與內建版的「主動評估派工」段落都
+    受「自動派工」開關管：關閉時改用中性版（保留 grounding／tab label 規
+    則，但明講只在使用者要求時派工）——否則自訂的 Delegation Protocol 文
+    字會繞過開關繼續推派工。"""
+    if not auto_delegate_enabled():
+        return _MASTER_TURN_PREAMBLE_MANUAL
     settings = _read_settings()
     custom = settings.get("master_turn_preamble")
     if isinstance(custom, str) and custom.strip():
@@ -540,13 +577,24 @@ def get_ui_prompt() -> str:
     return disk or DEFAULT_UI_PROMPT
 
 
+def auto_delegate_enabled() -> bool:
+    """設定頁「自動派工（實驗性）」開關，預設關。v0.29.10 前這個鍵沒有任何
+    後端 consumer（死開關），而派工協調指令藏在 TG prompt 裡每回合照灌。"""
+    return _read_settings().get("auto_delegate_enabled", False) is True
+
+
 def get_tg_prompt() -> str:
-    """TG per-turn preamble. User config > built-in. Empty string = built-in."""
+    """TG per-turn preamble. User config > built-in. Empty string = built-in.
+
+    內建版的協調段落受「自動派工」開關管：關閉時改為「在本分頁處理、
+    僅在使用者明確要求時派工」。自訂 tg_prompt 一律原文照用（使用者
+    自己寫的內容不做手術）。"""
     settings = _read_settings()
     custom = settings.get("tg_prompt")
     if isinstance(custom, str) and custom.strip():
         return custom.strip()
-    return DEFAULT_TG_PROMPT
+    coord = _TG_COORD_DELEGATE if auto_delegate_enabled() else _TG_COORD_MANUAL
+    return _TG_PROMPT_BASE + coord
 
 
 def get_user_prompt_paths() -> list[str]:

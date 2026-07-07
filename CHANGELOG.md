@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.29.10 (2026-07-07)
+
+### Fixes
+- **「自動派工」開關關了還是會派工**（Howard 回報）：根因有二——
+  1. `auto_delegate_enabled`（設定頁「自動派工（實驗性）」）**後端沒有任何
+     consumer**，是顆沒接線的死開關；
+  2. 真正每回合推派工的指令不在 master preamble（Howard 早已關掉
+     `master_turn_preamble_enabled`），而是藏在 **TG per-turn prompt 的
+     「Default coordination: … prefer `sfctl delegate` …」段落**，不受任何
+     開關管。
+  修：開關正式接線。關閉（預設）時 TG prompt 協調段落換成「在本分頁處理，
+  僅在使用者明確要求（派工/開分頁/開 worker）時才 delegate」；master
+  per-turn preamble 同樣改中性版（grounding／tab label 規則保留），且自訂
+  Delegation Protocol 文字不再繞過開關。開啟時行為與過去相同。自訂
+  `tg_prompt` 原文照用不做手術。`sfctl delegate` 手動派工不受影響。
+  回歸測試：`tests_auto_delegate_gate.py` 5 案例。
+
 ## v0.29.9 (2026-07-07)
 
 ### Fixes
