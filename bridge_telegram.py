@@ -7,6 +7,7 @@ Zero external dependencies (uses urllib).
 import itertools
 import json
 import os as _os
+import queue as _queue
 import re
 import shutil
 import subprocess
@@ -110,7 +111,13 @@ def _build_regex():
     loading_words = f.get("loading_words", ["Channelling", "Undulating", "Gitifying", "Thinking", "Initializing"])
     box_chars = f.get("box_drawing_chars", "╭╮╰╯│─┌┐└┘┤├┬┴┼═║╔╗╚╝╠╣╦╩╬")
     mcp_pats = f.get("mcp_patterns", ["plugin:.*MCP", "MCP server failed", "reply failed", "allowlisted"])
-    status_pats = f.get("status_bar_patterns", [])
+    # 回歸守則：`.*` 開頭且無 ^ 錨點的 pattern 在長無空白行（base64/JWT/
+    # minified 輸出）上是 O(N²) 災難性回溯——實測 `.*\d+%\s*left.*` 對一行
+    # 40KB base64 要 9 秒，flush loop 整條卡死（2026-07-07「TG 收不到」事故）。
+    # filters 可能來自遠端/使用者編輯，這裡一律自動補 ^（MULTILINE 下 regex
+    # 引擎只在行首嘗試 → 線性）。
+    status_pats = ['^' + p if p.startswith('.*') else p
+                   for p in f.get("status_bar_patterns", [])]
     osc_pats = f.get("osc_cleanup_patterns", [])
 
     return {
@@ -125,7 +132,7 @@ def _build_regex():
         "spinner": re.compile(f'[{re.escape(spinner_chars)}]+'),
         "loading": re.compile(
             '(?:' + '|'.join(re.escape(w) for w in loading_words) + r')(?:…|\.\.\.)?'
-            r'|[A-Z]\w{2,}(?:ing|ling|ting|ning|ring)(?:…|\.\.\.)'  # catch any Xxxing… (incl. accented chars)
+            r'|[A-Z]\w{2,40}(?:ing|ling|ting|ning|ring)(?:…|\.\.\.)'  # catch any Xxxing… (incl. accented chars); 上界 40 防長 token 回溯
         ),
         "tui": re.compile(f'[{re.escape(box_chars)}]+'),
         "mcp": re.compile('|'.join(mcp_pats)),
@@ -771,6 +778,20 @@ class TelegramBridge(BridgeBase):
         # widened sleep interval.
         self._flush_wake = threading.Event()
 
+        # ── Inbound update dispatch queue (v0.29.7) ──
+        # _handle_update used to run INLINE in _poll_loop. Two silent-drop
+        # modes followed (Howard:「TG 傳入有時候收不到」)：
+        #   1. slow inline work (voice STT / photo download can take 60s+)
+        #      froze getUpdates → watchdog declared the poll wedged →
+        #      self-reload killed the in-flight message (offset already saved
+        #      = never re-fetched);
+        #   2. any exception in _handle_update bubbled to the poll-loop
+        #      except → message lost with only a [poll] log line.
+        # Now the poll loop only enqueues; a dedicated FIFO worker handles
+        # updates one at a time (preserves per-batch ordering) and a crash
+        # notifies the sender instead of vanishing.
+        self._update_queue = _queue.Queue()
+
     # ── Perf instrumentation helpers ──
 
     def _perf_t(self):
@@ -977,6 +998,9 @@ class TelegramBridge(BridgeBase):
 
         self._flush_thread = threading.Thread(target=self._flush_loop, daemon=True)
         self._flush_thread.start()
+
+        self._dispatch_thread = threading.Thread(target=self._dispatch_loop, daemon=True)
+        self._dispatch_thread.start()
 
         self._watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
         self._watchdog_thread.start()
@@ -2809,8 +2833,12 @@ class TelegramBridge(BridgeBase):
                         if cmd in ("/restart", "/update_now", "/reload"):
                             _blog(f"  startup safety: skipping {cmd}\n")
                             continue
-                    self._handle_update(update)
-                    # Save AGAIN post-handle so /N switches, auto-track, and
+                    # Hand off to the dispatch worker — NEVER handle inline.
+                    # Inline handling froze getUpdates during slow work (STT/
+                    # downloads) → watchdog self-reload ate the in-flight
+                    # message. See _dispatch_loop.
+                    self._update_queue.put(update)
+                    # Save AGAIN post-enqueue so /N switches, auto-track, and
                     # first-message routing land on disk immediately instead
                     # of waiting up to 30s for the next getUpdates cycle.
                     self._save_offset()
@@ -2831,6 +2859,34 @@ class TelegramBridge(BridgeBase):
                           f"({type(e).__name__}): {e} — sleeping {backoff:.1f}s\n")
                 time.sleep(backoff)
                 backoff = min(backoff * 2, BACKOFF_MAX)
+
+    def _dispatch_loop(self):
+        """FIFO worker for inbound TG updates (see _update_queue in __init__).
+
+        One update at a time — preserves arrival order for rapid message
+        bursts into the same tab. A handler crash logs the traceback AND
+        tells the sender to resend (the offset is already saved, so the
+        message will NOT be re-fetched — silence here = permanent loss)."""
+        while self.active and not self._stop_event.is_set():
+            try:
+                update = self._update_queue.get(timeout=1.0)
+            except _queue.Empty:
+                continue
+            try:
+                self._handle_update(update)
+            except Exception as e:
+                import traceback
+                _blog(f"[dispatch] _handle_update crashed ({type(e).__name__}): {e}\n"
+                      + traceback.format_exc() + "\n")
+                chat_id = ((update.get("message") or {}).get("chat") or {}).get("id")
+                if chat_id:
+                    try:
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"⚠ 這則訊息處理時出錯（{type(e).__name__}），沒有送進分頁，請重發。",
+                        })
+                    except Exception:
+                        pass
 
     def _watchdog_loop(self):
         """Monitor poll liveness. If `_last_poll_tick` goes stale (>120s with no
@@ -3938,11 +3994,27 @@ class TelegramBridge(BridgeBase):
                 # 訊號源用 live screen（_live_tail）而非 PTY ring bytes：
                 # ring 是歷史，turn 結束後殘留的 footer 會把 idle 分頁誤判
                 # 成 busy，訊息卡在這裡最多 120s（「送不進去」主因之一）。
-                deadline = time.time() + 120.0
+                t_wait0 = time.time()
+                deadline = t_wait0 + 120.0
+                queued_notified = False
                 while time.time() < deadline:
                     if not re.search(r'esc to interrupt',
                                      self._live_tail(slot), re.I):
                         break
+                    # 等超過 8s 就先回報「已收到、排隊中」——這段最長 120s 的
+                    # 靜默等待正是「傳了沒反應=以為沒收到」的體感來源。通知用
+                    # 背景 thread 發，不在 write_lock 裡等 TG HTTPS。
+                    if not queued_notified and time.time() - t_wait0 >= 8.0:
+                        queued_notified = True
+                        threading.Thread(
+                            target=tg_api,
+                            args=(self.config.bot_token, "sendMessage", {
+                                "chat_id": chat_id,
+                                "text": (f"⏳ 已收到。「{slot.label}」回合進行中，"
+                                         "訊息排隊等空檔自動送入（最多 2 分鐘）。"),
+                            }),
+                            kwargs={"timeout": 5}, daemon=True,
+                        ).start()
                     time.sleep(0.5)
 
                 def _inject():
