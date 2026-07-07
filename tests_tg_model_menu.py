@@ -81,12 +81,16 @@ def test_model_command_full_flow():
     writes, sent = [], []
     br, slot = _bridge(writes=writes, sent=sent)
     br._handle_model_command(111, 222)
+    # 等「含鍵盤的那則」——前面測試的 _confirm daemon thread 可能先往
+    # （被 re-patch 的）global tg_api 塞 editMessageText，不能等到有訊息就停。
+    menus = []
     for _ in range(40):
-        if sent:
+        menus = [p for m, p in sent if isinstance(p, dict) and "reply_markup" in p]
+        if menus:
             break
         time.sleep(0.2)
-    assert sent, "沒送出 TG 訊息"
-    _, payload = sent[-1]
+    assert menus, sent
+    payload = menus[-1]
     kb = payload["reply_markup"]["inline_keyboard"]
     assert len(kb) == 6                       # 5 選項 + 取消
     assert kb[2][0]["callback_data"] == "mchoice:s99:3" and "✔" in kb[2][0]["text"]
@@ -111,10 +115,29 @@ def test_mchoice_writes_digit_only():
     writes, sent = [], []
     br, slot = _bridge(writes=writes, sent=sent)
     slot.pending_menu = True
+    # 畫面直接放確認行，讓 _confirm thread 立刻收斂（免等 6s fallback）
+    slot._display_cache = ["⎿  Set model to Sonnet 5 and saved as your default for new sessions"]
     br._handle_callback_query(_cq("mchoice:s99:4"))
-    assert writes == ["4"], writes            # 免 \r：數字即選定
-    assert slot.pending_menu is False and slot.awaiting_response is True
+    assert writes == ["4"], writes            # 免 \r：數字即選定（2026-07-07 實機再驗證）
+    assert slot.pending_menu is False
     assert any("已選 4" in p.get("text", "") for m, p in sent if m == "editMessageText")
+
+
+def test_mchoice_confirms_from_screen():
+    """v0.29.9：確認行「⎿ Set model to …」被 _extract_new_text 過濾（⎿ 開頭），
+    永遠不會經 flush loop 回 TG——必須主動掃 live screen 回報，否則 TG 停在
+    「等確認」讓使用者誤判失敗（實際上模型已切換）。"""
+    writes, sent = [], []
+    br, slot = _bridge(writes=writes, sent=sent)
+    slot.pending_menu = True
+    slot._display_cache = ["⎿  Set model to Sonnet 5 and saved as your default for new sessions"]
+    br._handle_callback_query(_cq("mchoice:s99:4"))
+    deadline = time.time() + 3.0
+    ok = lambda: any("模型已切換：Sonnet 5" in p.get("text", "")
+                     for m, p in sent if m == "editMessageText")
+    while time.time() < deadline and not ok():
+        time.sleep(0.1)
+    assert ok(), sent
 
 
 def test_mcancel_sends_esc():

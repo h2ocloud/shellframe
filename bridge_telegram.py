@@ -3557,16 +3557,40 @@ class TelegramBridge(BridgeBase):
             slot.pending_menu_options = []
             try:
                 slot.write_fn(choice)
-                slot.awaiting_response = True
-                slot.last_write_ts = time.time()
-                slot.stall_warned = False
-                tg_api(self.config.bot_token, "editMessageText", {
-                    "chat_id": chat_id, "message_id": message_id,
-                    "text": f"✅ 已選 {choice}，等分頁回確認…"})
             except Exception as e:
                 tg_api(self.config.bot_token, "editMessageText", {
                     "chat_id": chat_id, "message_id": message_id,
                     "text": f"送出失敗：{e}"})
+                return
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id,
+                "text": f"✅ 已選 {choice}，確認中…"})
+
+            # v0.29.9：確認改為主動掃 live screen。picker 的確認行是
+            # 「⎿ Set model to …」——⎿ 開頭在 _extract_new_text 被過濾，
+            # 永遠不會經 flush loop 轉回 TG。舊版設 awaiting_response 乾等，
+            # TG 停在「等分頁回確認…」→ Howard 誤判「選了沒成功」（實測
+            # s70 模型其實切換成功、確認只是沒送回手機）。
+            def _confirm(slot=slot, chat_id=chat_id, message_id=message_id, choice=choice):
+                for _ in range(12):                     # 最多等 ~6s
+                    time.sleep(0.5)
+                    try:
+                        tail = "\n".join(self._slot_display(slot)[-12:])
+                    except Exception:
+                        continue
+                    m = re.search(r'Set model to\s+([^\n]+?)\s*(?:and saved[^\n]*)?$',
+                                  tail, re.M)
+                    if m:
+                        tg_api(self.config.bot_token, "editMessageText", {
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": (f"✅ {slot.label} 模型已切換：{m.group(1).strip()}"
+                                     "（已存為新 session 預設）")})
+                        return
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": (f"✳ 已送出選擇 {choice}，但 6 秒內沒在畫面看到確認。"
+                             f"用 /{slot.index} 切過去或 /fetch 檢查。")})
+            threading.Thread(target=_confirm, daemon=True).start()
             return
 
         if data.startswith("mcancel:"):
