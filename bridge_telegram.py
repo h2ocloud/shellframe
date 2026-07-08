@@ -682,6 +682,12 @@ _MENU_CHROME_RE = re.compile(r'[◉○←→]|to adjust', re.I)
 _MENU_ACTION_RE = re.compile(
     r'Action Required|Would you like|Do you want|approval|approve|permission', re.I)
 
+# Rate-limit detection patterns (read from live screen, not from extract path)
+_RATE_LIMIT_RE = re.compile(
+    r"hit your (?:session|usage) limit|/rate-limit-options|/usage-credits to finish",
+    re.I)
+_RATE_LIMIT_RESET_RE = re.compile(r'resets?\s+([^\n·]+?)(?:\s*[\|·]|$)', re.I | re.MULTILINE)
+
 
 class SessionSlot:
     """One session registered with the bridge."""
@@ -751,6 +757,10 @@ class SessionSlot:
         # Completion notification: last time we posted a macOS banner for
         # this slot's AI reply. Cooldown prevents multi-chunk spam.
         self.last_notify_ts = 0.0
+        # Rate-limit detection: True once we have fired the TG alert for the
+        # current rate-limit episode; cleared when the screen no longer shows
+        # rate-limit signals so the next episode re-notifies.
+        self.rate_limit_notified = False
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
         # history 由 3000 降至 800：兼顧長回應擷取與 per-tab 記憶體/掃描成本（撐 10+ tab）
@@ -1792,13 +1802,20 @@ class TelegramBridge(BridgeBase):
             slot.sent_responses = set(list(slot.sent_responses)[-100:])
 
         # If no normal responses extracted, check for a pending menu prompt
-        # (e.g., Claude permission dialog: ❯ 1. Yes / 2. No)
+        # (e.g., Claude permission dialog: ❯ 1. Yes / 2. No).
+        # Skip when a rate-limit screen is up — the dedicated _detect_rate_limit
+        # path (slow_tick) already notifies; firing the generic menu here too
+        # would produce a double notification and a confusing 1./2. menu without
+        # context (rate-limit options look like an ordinary numbered menu).
         if not new_texts:
-            menu = self._detect_menu_prompt(slot)
-            if menu and menu not in slot.sent_responses:
-                slot.sent_responses.add(menu)
-                slot.pending_menu = True
-                new_texts.append(menu)
+            rate_limit_active = _RATE_LIMIT_RE.search(
+                "\n".join(l.rstrip() for l in self._slot_display(slot)))
+            if not rate_limit_active:
+                menu = self._detect_menu_prompt(slot)
+                if menu and menu not in slot.sent_responses:
+                    slot.sent_responses.add(menu)
+                    slot.pending_menu = True
+                    new_texts.append(menu)
         else:
             slot.pending_menu = False
             slot.pending_menu_options = []
@@ -2095,6 +2112,69 @@ class TelegramBridge(BridgeBase):
         slot.pending_menu_options = []
         return ""
 
+    def _detect_rate_limit(self, slot):
+        """Scan the live screen for Claude rate-limit / session-limit signals.
+
+        Reads directly from _slot_display (not from the _extract_new_text path
+        which filters ⎿ lines) so the banner is never missed.
+
+        Returns a dict {"reset": str|"", "interactive": bool} on match,
+        or None when no rate-limit signal is found on screen.
+        """
+        lines = self._slot_display(slot)
+        screen_text = "\n".join(l.rstrip() for l in lines)
+        if not _RATE_LIMIT_RE.search(screen_text):
+            return None
+        reset = ""
+        m = _RATE_LIMIT_RESET_RE.search(screen_text)
+        if m:
+            reset = m.group(1).strip().rstrip(".")
+        interactive = bool(
+            re.search(r'/rate-limit-options', screen_text, re.I)
+            or re.search(r'stop and wait|switch to usage credits', screen_text, re.I)
+        )
+        return {"reset": reset, "interactive": interactive}
+
+    def _notify_rate_limit(self, slot, info: dict):
+        """Send a TG notification for a rate-limit episode.
+
+        For interactive menus (/rate-limit-options with 1./2. choices) we also
+        attach inline buttons so the user can pick remotely.
+        """
+        label = slot.label or slot.sid
+        reset_str = info["reset"]
+        reset_part = f"，{reset_str} 重置" if reset_str else ""
+        msg = f"🚫 [{label}] 撞到 Claude 額度上限{reset_part}。"
+        if info["interactive"]:
+            msg += "\n請選擇如何繼續："
+        target_chats = set()
+        for uid, active_sid in list(self._user_active.items()):
+            if active_sid == slot.sid and uid in self._user_chat:
+                target_chats.add(self._user_chat[uid])
+        if not target_chats and self._slot_order and slot.sid == self._slot_order[0]:
+            for chat_id in self._user_chat.values():
+                target_chats.add(chat_id)
+        for chat_id in target_chats:
+            try:
+                if info["interactive"]:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": msg,
+                        "reply_markup": {"inline_keyboard": [
+                            [{"text": "⏳ 等待重置",
+                              "callback_data": f"rlchoice:{slot.sid}:1"}],
+                            [{"text": "💳 改用 usage credits",
+                              "callback_data": f"rlchoice:{slot.sid}:2"}],
+                        ]},
+                    })
+                else:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": msg,
+                    })
+                _blog(f"[rate-limit] {slot.sid} notified chat={chat_id}\n")
+            except Exception as e:
+                _blog(f"[rate-limit] {slot.sid} notify failed: {e}\n")
+
     @staticmethod
     def _tmux_capture(sid: str, history_lines: int = 3000) -> str:
         """Capture a tmux pane's rendered scrollback as plain text. Returns ''
@@ -2305,6 +2385,33 @@ class TelegramBridge(BridgeBase):
                             daemon=True,
                         ).start()
                 self._perf_end("stall_detect", _t_st)
+
+            # Rate-limit detection: scan live screen for session/usage-limit
+            # banners and /rate-limit-options menus. Runs on every slow_tick
+            # (2s cadence) so it catches episodes quickly regardless of whether
+            # the affected tab has an active user or has_user_msg set.
+            if slow_tick and _read_settings().get("rate_limit_notify", True):
+                for sid in sids:
+                    slot = self.slots.get(sid)
+                    if not slot:
+                        continue
+                    try:
+                        info = self._detect_rate_limit(slot)
+                    except Exception as e:
+                        _blog(f"[rate-limit] {sid} detect failed: {e}\n")
+                        continue
+                    if info is not None:
+                        if not slot.rate_limit_notified:
+                            slot.rate_limit_notified = True
+                            threading.Thread(
+                                target=self._notify_rate_limit,
+                                args=(slot, info),
+                                daemon=True,
+                            ).start()
+                    else:
+                        # Signal gone (limit reset / user acted) — clear flag
+                        # so the next episode re-notifies.
+                        slot.rate_limit_notified = False
 
             # Claude auto-compact check — runs outside output_lock so the
             # scan doesn't contend with feed_output. 一個 regex 掃最後 ~8 行 /slot，
@@ -3654,6 +3761,40 @@ class TelegramBridge(BridgeBase):
             tg_api(self.config.bot_token, "editMessageText", {
                 "chat_id": chat_id, "message_id": message_id,
                 "text": "已取消，模型未變更。"})
+            return
+
+        if data.startswith("rlchoice:"):
+            # Rate-limit interactive menu: "1" = wait, "2" = usage credits.
+            # The /rate-limit-options menu is confirmed with Enter, so we send
+            # the digit immediately followed by \r.
+            parts = data.split(":", 2)
+            if len(parts) < 3:
+                return
+            sid, choice = parts[1], parts[2]
+            slot = self.slots.get(sid)
+            if not slot:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "Session already gone."})
+                return
+            self._user_chat[user_id] = chat_id
+            self._user_active[user_id] = sid
+            label_map = {"1": "⏳ 等待重置", "2": "💳 改用 usage credits"}
+            label_text = label_map.get(choice, choice)
+            try:
+                slot.write_fn(f"{choice}\r")
+                # Clear the notified flag so if the same limit reappears we
+                # don't stay silent (shouldn't happen, but cheap insurance).
+                slot.rate_limit_notified = False
+            except Exception as e:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": f"送出失敗：{e}"})
+                return
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id,
+                "text": f"✅ 已選「{label_text}」，送出中…"})
+            _blog(f"[rate-limit] {sid} user chose {choice!r}\n")
             return
 
         if data.startswith("choice:"):

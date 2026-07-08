@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.29.12 (2026-07-08)
+
+### Fixes
+- **分頁撞到 Claude 額度上限時 TG 端完全靜默**：根因有二，一起修復：
+  1. **橫幅被 noise filter 過濾**：`_extract_new_text` 的 `_is_bridge_noise_line`
+     把所有以 `⎿` 開頭的行視為工具結果雜訊過濾掉，導致
+     `⎿  You've hit your session limit · resets 3pm (Asia/Taipei)` 永遠不會轉發到 TG。
+     修：新增 `_detect_rate_limit(slot)` 直接讀 `_slot_display`（繞過 extract 路徑），
+     用 `_RATE_LIMIT_RE` 掃描 `hit your (session|usage) limit`、`/rate-limit-options`、
+     `/usage-credits to finish` 等訊號，並以 `_RATE_LIMIT_RESET_RE` 抓 reset 時間。
+  2. **stall watchdog 沉默**：`_warn_stalled` 只在偵測到 macOS 阻擋彈窗時才通知，
+     rate-limit 無彈窗 → 完全沉默。修：在 flush loop 的 slow_tick（2s 週期）加
+     rate-limit 掃描，逐 slot 呼叫 `_detect_rate_limit`；命中時推 TG 通知，若為
+     `/rate-limit-options` 互動選單則附 inline 按鈕（`rlchoice:` prefix）讓使用者
+     遠端選「⏳ 等待重置」或「💳 改用 usage credits」。
+- **去重**：`slot.rate_limit_notified` 旗標確保同一 episode 只通知一次；訊號消失
+  （重置或使用者操作）後旗標清除，下次 episode 會重新通知。
+- **雙重通知防護**：`_extract_new_text` 呼叫 `_detect_menu_prompt` 前先檢查 rate-limit
+  狀態，有 rate-limit 橫幅時跳過通用 menu prompt 偵測，避免「1. Stop / 2. Switch」
+  選單被當普通 numbered menu 重複轉發。
+- **設定開關**：`settings.rate_limit_notify`（預設 `true`）可關閉此功能。
+- 新增 `tests_rate_limit.py`（6 案例全 PASS）；既有 5 個測試檔全數通過。
+
 ## v0.29.11 (2026-07-08)
 
 ### Fixes
