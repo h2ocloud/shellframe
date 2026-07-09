@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.29.13 (2026-07-09)
+
+### Fixes
+- **靜默自動更新反覆重啟、卡「本次更新」彈窗、TG 收不到**（Howard 回報「非常嚴重」）：
+  根因是 web/index.html 每 5 分鐘的週期檢查在 `autoUpdate` 開啟時會**靜默
+  `git pull`（do_update）**把未確認的遠端改動拉到磁碟，接著 reload/restart →
+  啟動時版本一變就彈「本次更新」modal，整個過程把總控分頁的對話打斷，使用者
+  傳的訊息落在重啟窗口/被打斷的回合裡 → 體感「收不到」。這幾天頻繁 push 讓它
+  每隔幾分鐘就自動拉一次，症狀被放大。
+  修法：(1) 週期檢查改為**只通知不拉取**——偵測到新版只顯示「vX 可更新（點我）」
+  橫幅，實際 pull + reload/restart 只在使用者點擊後才執行；(2) `autoUpdate`
+  預設改為**關閉（opt-in）**，開啟也只是通知；(3) 同步把現有 config
+  `settings.autoUpdate` 設為 false。生效需 `sfctl restart`（web/index.html 改動）。
+
 ## v0.29.12 (2026-07-08)
 
 ### Fixes

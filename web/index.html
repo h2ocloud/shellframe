@@ -778,8 +778,8 @@
           </select>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoUpdate">Auto Update</label>
-          <button class="toggle-switch on" id="setting-autoupdate"></button>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoUpdate">Update notify</label>
+          <button class="toggle-switch" id="setting-autoupdate"></button>
         </div>
         <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="shiftEnterLabel">Shift+Enter = newline</label>
@@ -1267,7 +1267,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fontSize: 'Terminal font',
       uiScale: 'Interface size',
       language: 'Language',
-      autoUpdate: 'Auto Update',
+      autoUpdate: 'Update notify (no auto-pull)',
       autoCompactClaude: 'Auto /compact (Claude)',
       percentLeft: '% left',
       globalHotkey: 'Global hotkey',
@@ -1418,7 +1418,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       fontSize: '終端字型',
       uiScale: '介面大小',
       language: '語言',
-      autoUpdate: '自動更新',
+      autoUpdate: '更新通知（不自動拉取）',
       autoCompactClaude: '自動 /compact（Claude）',
       percentLeft: '% 剩餘',
       globalHotkey: '全域快捷鍵',
@@ -1641,7 +1641,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = config.settings || {};
     lang = s.language || (/^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en');
     currentFontSize = s.fontSize || 14;
-    autoUpdateEnabled = s.autoUpdate !== false; // default true
+    autoUpdateEnabled = s.autoUpdate === true; // default OFF (opt-in). 開啟也只「通知」不靜默拉取。
     shiftEnterNewline = s.shiftEnterNewline !== false; // default true
     // Apply UI scale (interface size)
     const uiScale = s.uiScale || 1;
@@ -4836,8 +4836,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   });
 
-  // Auto-update toggle
-  let autoUpdateEnabled = true;
+  // Auto-update toggle — default OFF (opt-in). Even when ON it only NOTIFIES
+  // (banner), never silently git-pulls. See periodic check below.
+  let autoUpdateEnabled = false;
   const $autoUpdateToggle = document.getElementById('setting-autoupdate');
   $autoUpdateToggle.addEventListener('click', async function() {
     this.classList.toggle('on');
@@ -5997,19 +5998,32 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const raw = await pywebview.api.check_update();
       const info = JSON.parse(raw);
       if (info.update_available && !document.getElementById('update-banner-btn')) {
-        // Pull silently
-        const upd = JSON.parse(await pywebview.api.do_update());
-        // Show "Reload to update" banner in tab bar
+        // NOTIFY ONLY — never silently git-pull. Silent pull (the old
+        // `await do_update()` here) changed code on disk under the running
+        // app every 5 min, then a later reload/restart popped an unexpected
+        // "what's new" modal and disrupted the master tab mid-conversation
+        // (Howard 2026-07-09:「會自動更新卡在畫面、TG 收不到」). Now the
+        // banner just announces availability; the actual pull + reload/
+        // restart only happens when the user clicks it.
         const banner = document.createElement('span');
         banner.className = 'update-banner';
         banner.id = 'update-banner-btn';
-        const needsRestart = upd && upd.needs_restart;
-        banner.textContent = needsRestart
-          ? (lang === 'zh-TW' ? `v${info.remote} 重啟以更新` : `v${info.remote} Restart to update`)
-          : (lang === 'zh-TW' ? `v${info.remote} 重載以更新` : `v${info.remote} Reload to update`);
-        banner.addEventListener('click', () => {
-          if (needsRestart) confirmRestart(upd.version || info.remote, true);
-          else location.reload();
+        banner.textContent = lang === 'zh-TW'
+          ? `v${info.remote} 可更新（點我）` : `v${info.remote} available (click)`;
+        banner.addEventListener('click', async () => {
+          banner.textContent = lang === 'zh-TW' ? '更新中…' : 'Updating…';
+          try {
+            const upd = JSON.parse(await pywebview.api.do_update());
+            if (!upd.success) {
+              banner.textContent = (lang === 'zh-TW' ? '更新失敗：' : 'Failed: ')
+                + (upd.message || '');
+              return;
+            }
+            if (upd.needs_restart) confirmRestart(upd.version || info.remote, true);
+            else location.reload();
+          } catch (e) {
+            banner.textContent = lang === 'zh-TW' ? '更新失敗' : 'Update failed';
+          }
         });
         const spacer = document.querySelector('.tab-spacer');
         spacer.parentNode.insertBefore(banner, spacer.nextSibling);
