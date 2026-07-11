@@ -3481,11 +3481,44 @@ class TelegramBridge(BridgeBase):
             _blog(f"  refine failed ({model}): {e}\n")
         return text
 
+    # Telegram Bot API getFile 只能下載 ≤20MB 的檔案；超過會回 error，
+    # 影片檔常超過 → 舊版靜默丟棄（Howard 2026-07-11「影片檔也掉」）。
+    _TG_GETFILE_MAX = 20 * 1024 * 1024
+
+    def _fetch_media(self, media: dict, default_ext: str, chat_id, label: str) -> str:
+        """下載一個 TG 媒體物件（photo/document/video/audio…）到本地，回本地路徑
+        或 ''。任何失敗都會**主動通知使用者**（絕不靜默丟棄）：檔案超過 20MB
+        getFile 上限、getFile/下載失敗，都回一則說明。media 是 TG 的媒體 dict
+        （含 file_id、可能有 file_size / file_name / mime_type）。"""
+        if not isinstance(media, dict) or not media.get("file_id"):
+            return ""
+        size = media.get("file_size") or 0
+        if size and size > self._TG_GETFILE_MAX:
+            mb = size / 1024 / 1024
+            _blog(f"  {label} too big: {mb:.1f}MB > 20MB getFile 上限\n")
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": (f"⚠ 收到{label}（{mb:.0f}MB），但超過 Telegram bot 的 "
+                         "20MB 下載上限，無法取得。\n改用其他方式傳：把檔案存到共用"
+                         "位置貼路徑、或壓縮/裁短到 20MB 以下再傳。"),
+            })
+            return ""
+        ext = _Path(media.get("file_name", "")).suffix or default_ext
+        path = self._download_tg_file(media["file_id"], ext)
+        if not path:
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": (f"⚠ 收到{label}但下載失敗（可能超過 20MB、網路逾時或 "
+                         "Telegram 暫時性錯誤），沒有送進分頁，請重試或改貼路徑。"),
+            })
+        return path
+
     def _download_tg_file(self, file_id: str, ext: str = "") -> str:
         """Download a Telegram file by file_id, save to CLAUDE_TMP. Returns local path or ''."""
         try:
             result = tg_api(self.config.bot_token, "getFile", {"file_id": file_id})
             if not result.get("ok"):
+                _blog(f"  getFile failed: {result.get('description','?')}\n")
                 return ""
             file_path = result["result"].get("file_path", "")
             if not file_path:
@@ -3891,26 +3924,42 @@ class TelegramBridge(BridgeBase):
         # Track chat
         self._user_chat[user_id] = chat_id
 
-        # ── Handle photo / document / voice / file messages ──
+        # ── Handle photo / document / video / voice / file messages ──
         file_paths = []
         has_photo = bool(msg.get("photo"))
         has_doc = bool(msg.get("document"))
         has_voice = bool(msg.get("voice"))       # TG voice note (ogg/opus)
         has_audio = bool(msg.get("audio"))       # TG audio file
-        _blog(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} doc={has_doc} voice={has_voice} audio={has_audio}\n")
+        # video（壓縮影片）/ video_note（圓形短片）/ animation（GIF/無聲 mp4）
+        # 舊版完全沒處理 → 傳影片直接靜默丟棄（Howard 2026-07-11）。
+        has_video = bool(msg.get("video"))
+        has_video_note = bool(msg.get("video_note"))
+        has_animation = bool(msg.get("animation"))
+        # 是否帶了任何媒體：用來在下載全失敗且無文字時「明講」而非靜默 return。
+        media_present = any((has_photo, has_doc, has_voice, has_audio,
+                             has_video, has_video_note, has_animation))
+        _blog(f"_handle_update: text={text!r} caption={caption!r} photo={has_photo} "
+              f"doc={has_doc} voice={has_voice} audio={has_audio} video={has_video} "
+              f"video_note={has_video_note} animation={has_animation}\n")
         if has_photo:
             # TG sends multiple sizes; pick the largest (last)
-            photo = msg["photo"][-1]
-            path = self._download_tg_file(photo["file_id"], ".png")
-            _blog(f"  photo download: file_id={photo['file_id']} path={path!r}\n")
+            path = self._fetch_media(msg["photo"][-1], ".png", chat_id, "圖片")
             if path:
                 file_paths.append(path)
         if has_doc:
-            doc = msg["document"]
-            fname = doc.get("file_name", "file")
-            ext = _Path(fname).suffix or ".bin"
-            path = self._download_tg_file(doc["file_id"], ext)
-            _blog(f"  doc download: fname={fname} path={path!r}\n")
+            path = self._fetch_media(msg["document"], ".bin", chat_id, "檔案")
+            if path:
+                file_paths.append(path)
+        if has_video:
+            path = self._fetch_media(msg["video"], ".mp4", chat_id, "影片")
+            if path:
+                file_paths.append(path)
+        if has_video_note:
+            path = self._fetch_media(msg["video_note"], ".mp4", chat_id, "圓形短片")
+            if path:
+                file_paths.append(path)
+        if has_animation:
+            path = self._fetch_media(msg["animation"], ".mp4", chat_id, "動圖")
             if path:
                 file_paths.append(path)
 
@@ -3987,8 +4036,13 @@ class TelegramBridge(BridgeBase):
                     })
                     return
 
-        # If message has only files (no text), we still need to proceed
+        # If message has only files (no text), we still need to proceed.
+        # 媒體有帶但全部下載失敗、又沒文字/caption：不能靜默 return（那正是
+        # 「傳了沒反應」的來源）。_fetch_media 失敗時已各自通知過，但若連
+        # caption 都沒有就再補一則兜底，確保使用者一定知道這則沒送進去。
         if not text and not file_paths:
+            if media_present and not caption:
+                _blog("  media-only message: all downloads failed, nothing forwarded\n")
             return
 
         # Whitelist check

@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.29.14 (2026-07-11)
+
+### Fixes
+- **容易掉 TG 訊息、影片檔尤其**（Howard 回報）：三個靜默丟棄點一起修——
+  1. **影片完全沒處理**：`_handle_update` 只認 photo/doc/voice/audio，
+     `video`/`video_note`/`animation` 全漏 → 傳影片（無 caption）直接靜默
+     丟棄。現在都會下載成檔案附件轉發。
+  2. **20MB 下載上限**：Telegram bot `getFile` 只能下載 ≤20MB 的檔，影片
+     常超過 → 舊版失敗回空字串又不講。新增 `_fetch_media` 先看 `file_size`，
+     超過就明確告知「超過 20MB 上限，改貼路徑/壓縮再傳」，不再靜默。
+  3. **下載失敗靜默 return**：任何媒體下載失敗（逾時/超限/TG 暫時錯誤）
+     都會回一則說明「沒送進分頁，請重試或改貼路徑」，不再無聲消失。
+  回歸測試：`tests_tg_media.py` 5 案例。純 bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.13 (2026-07-09)
 
 ### Fixes
