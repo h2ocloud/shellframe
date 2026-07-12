@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.29.15 (2026-07-12)
+
+### Fixes
+- **回覆傳不回 TG、像失聯、都要自己 /fetch**（Howard 回報）：TG-wrap 分頁的
+  回覆要靠模型吐出 `[[TG_REPLY_xxx]]` marker 才會轉發，但模型有時忘了或吐錯
+  marker，舊版就**永遠等一個不會出現的 marker**、每 tick 重置計時 → 回覆
+  無限卡住不轉發，使用者只能手動 /fetch 才看得到（/fetch 直接讀畫面、繞過
+  marker，所以它有效）。
+  修法：marker 抽取失敗時**不再重置 last_output_time**（讓 flush 每 tick 重入
+  持續嘗試，掃描本身已節流），並在 **turn 結束（live tail 無 esc to interrupt）
+  且等 ≥30s 仍無 marker** 時，改用 /fetch 那條純文字抽取（`_peek_last_response`）
+  自動轉發，並清掉殘留的 marker token 與 wrapper 指示回顯；fallback 的 tmux
+  capture 另節流到每 3s。使用者不必再手動 fetch。
+  回歸測試：`tests_marker_fallback.py` 5 案例。純 bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.14 (2026-07-11)
 
 ### Fixes

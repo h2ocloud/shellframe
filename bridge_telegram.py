@@ -726,6 +726,8 @@ class SessionSlot:
         # force window were the 2026-07-06 96%-CPU regression.
         self.marker_next_scan_ts = 0.0
         self.marker_scan_gen = -1
+        # marker 抽取失敗時，fallback 純文字轉發的 _peek 節流（每 3s 最多一次）。
+        self._fb_next_ts = 0.0
         # True while a TG message is waiting in the busy-guard queue / being
         # written into the PTY. /fetch reads it to tell the user their message
         # is queued (not lost) instead of silently showing the previous reply.
@@ -1927,6 +1929,38 @@ class TelegramBridge(BridgeBase):
         slot.marker_scan_gen = -1
         return reply
 
+    # 模型沒吐出 [[TG_REPLY]] marker 時，等 turn 結束後這麼久就 fallback 轉發
+    # 純文字（而非無限等一個永遠不會出現的 marker）。給足時間讓真的有 marker
+    # 的慢回覆先正常走 marker 路徑。
+    _MARKER_FALLBACK_SECS = 30.0
+
+    def _marker_fallback_text(self, slot) -> str:
+        """marker 抽取失敗時的兜底回覆文字：等同 /fetch 讀的最後一則 AI 回應
+        （_peek_last_response），但清掉任何殘留的 [[TG_REPLY_xxx]] token 與
+        wrapper 指示回顯，避免把 marker 碎片或指示原文送給使用者。回 '' 表示
+        連畫面上都沒有可轉發的內容（此時維持原本的等待，不亂送）。"""
+        try:
+            raw = self._peek_last_response(slot) or ""
+        except Exception:
+            return ""
+        if not raw.strip():
+            return ""
+        cleaned = _REPLY_MARKER_TOKEN_RE.sub("", raw)
+        # 指示比對基準也要先去掉 marker token（畫面上的指示回顯已被上面清掉
+        # token），否則兩邊對不上、指示原文會被誤當回覆送出。
+        instr = _REPLY_MARKER_TOKEN_RE.sub(
+            "", getattr(slot, "marker_prompt", "") or "").replace(" ", "")
+        kept = []
+        for ln in cleaned.splitlines():
+            s = ln.strip()
+            if not s:
+                continue
+            # 丟掉 wrapper 指示本身的回顯（「最終要回 Telegram 的文字請放在…」）
+            if instr and s.replace(" ", "") in instr:
+                continue
+            kept.append(s)
+        return "\n".join(kept).strip()
+
     # Explicit agent signal marker — a worker prints one of these on its own
     # line to declare this tab's state. Tolerates leading bullet/cursor glyphs
     # (⏺ ❯ › • * -) that Claude/Codex prepend to the first line of a reply.
@@ -2498,22 +2532,54 @@ class TelegramBridge(BridgeBase):
                         marked_reply = self._try_marker_extract(slot, now, total)
                         self._perf_end("extract_marker", _t_mk)
                         if not marked_reply:
-                            slot.last_output_time = now
-                            continue
-                        # Drain pyte history so the same screen repaint is not
-                        # re-extracted on a later mobile turn.
-                        try:
-                            self._extract_new_text(slot)
-                        except Exception:
-                            pass
-                        new_lines = [marked_reply]
-                        slot.sent_responses.add(marked_reply)
-                        slot.pending_raw = ""
-                        slot.expect_marker = False
-                        slot.reply_start_marker = ""
-                        slot.reply_end_marker = ""
-                        slot.marker_prompt = ""
-                        slot.has_user_msg = False
+                            # FALLBACK（v0.29.15，Howard:「回覆傳不回來、都要自己
+                            # fetch」）：模型有時根本沒吐出 [[TG_REPLY]] marker（忘了
+                            # 或吐錯），舊版就永遠等一個不會出現的 marker → 無限
+                            # 靜默。這裡**不重置 last_output_time**（讓 flush 每
+                            # tick 重入持續嘗試；marker 掃描由 _try_marker_extract
+                            # 自身節流），並在 turn 結束（live tail 無 'esc to
+                            # interrupt'）且等夠久後，改用 /fetch 那條純文字抽取
+                            # 自動轉發，使用者不必再手動 fetch。fallback 的 _peek
+                            # 另用 _fb_next_ts 節流到每 3s，避免每 tick 都 tmux
+                            # capture。
+                            turn_ended = not re.search(
+                                r'esc to interrupt', self._live_tail(slot), re.I)
+                            if not (turn_ended and total >= self._MARKER_FALLBACK_SECS):
+                                continue
+                            if now < getattr(slot, "_fb_next_ts", 0.0):
+                                continue
+                            slot._fb_next_ts = now + 3.0
+                            fb = self._marker_fallback_text(slot)
+                            if not fb:
+                                continue
+                            _blog(f"[send] {sid} marker missing → fallback "
+                                  f"forward ({len(fb)} chars) after {total:.0f}s\n")
+                            new_lines = [fb]
+                            slot.sent_responses.add(fb)
+                            slot.pending_raw = ""
+                            slot.expect_marker = False
+                            slot.reply_start_marker = ""
+                            slot.reply_end_marker = ""
+                            slot.marker_prompt = ""
+                            slot.has_user_msg = False
+                            slot.marker_next_scan_ts = 0.0
+                            slot.marker_scan_gen = -1
+                            slot._fb_next_ts = 0.0
+                        else:
+                            # Drain pyte history so the same screen repaint is not
+                            # re-extracted on a later mobile turn.
+                            try:
+                                self._extract_new_text(slot)
+                            except Exception:
+                                pass
+                            new_lines = [marked_reply]
+                            slot.sent_responses.add(marked_reply)
+                            slot.pending_raw = ""
+                            slot.expect_marker = False
+                            slot.reply_start_marker = ""
+                            slot.reply_end_marker = ""
+                            slot.marker_prompt = ""
+                            slot.has_user_msg = False
                     else:
                         # Extract new text via screen diff (only final changes)
                         _t_ex = self._perf_t()
@@ -4220,6 +4286,7 @@ class TelegramBridge(BridgeBase):
             slot.marker_prompt = marker_prompt
             slot.marker_next_scan_ts = 0.0
             slot.marker_scan_gen = -1
+            slot._fb_next_ts = 0.0
         else:
             slot.expect_marker = False
             slot.reply_start_marker = ""
