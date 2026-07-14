@@ -117,6 +117,22 @@ _gate_case("新分頁直接打字立即注入", ["你"], "inject")
 _gate_case("裸 Enter 不觸發", ["\r"], "pass")
 _gate_case("選單方向鍵不觸發", ["/", "m", "\r", "\x1b[B", "\r"], "pass")
 
+# ── 全域開關（v0.29.16：預設關，settings.inject_init_prompt=true 才武裝）──
+print("\n_inject_init_prompt_enabled（全域開關，預設關）:")
+_E = api.__class__._inject_init_prompt_enabled
+for cfg, want, name in [
+    ({}, False, "無設定 → 預設關"),
+    ({"settings": {}}, False, "空 settings → 關"),
+    ({"settings": {"inject_init_prompt": True}}, True, "明確開 → 開"),
+    ({"settings": {"inject_init_prompt": False}}, False, "明確關 → 關"),
+]:
+    with patch("main.load_config", return_value=cfg):
+        got = _E()
+    ok = got is want
+    passed += 1 if ok else 0
+    failed += 0 if ok else 1
+    print(f"  [{'PASS' if ok else 'FAIL'}] {name} -> {got}")
+
 print(f"\n{'='*50}")
 print(f"Results: {passed} passed, {failed} failed")
 if failed:

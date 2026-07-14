@@ -2554,7 +2554,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             )
 
         # Mark session for init prompt — only for AI CLI tools, not shells/editors/etc.
-        session._init_pending = self._should_inject_init(cmd)
+        session._init_pending = self._inject_init_prompt_enabled() and self._should_inject_init(cmd)
         # Nudge the UI to reconcile immediately (don't wait for 1.5s bridge poll).
         # Covers sessions created via TG /new, sfctl, or any non-UI path.
         self._plugin_dispatch_session_open(sid, cmd.split()[0] if cmd else sid)
@@ -2580,6 +2580,19 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 self._window.evaluate_js('window._syncSessionsFromBackend && window._syncSessionsFromBackend()')
         except Exception:
             _swallow("Api._notify_ui_sessions_changed:2751")
+
+    @staticmethod
+    def _inject_init_prompt_enabled() -> bool:
+        """首次訊息前置 INIT_PROMPT 的全域開關，預設關（Howard 2026-07-14：
+        觸發時機不對、內容已非必要）。只 gate `_init_pending` 的武裝——
+        `_should_inject_init` 本身另被 master preamble 與完成通知
+        （_arm_awaiting_response）借用為「AI 分頁」判定，不能在那裡關。
+        切換後對新開的分頁生效。"""
+        try:
+            return (load_config().get("settings", {}) or {}).get(
+                "inject_init_prompt", False) is True
+        except Exception:
+            return False
 
     def _should_inject_init(self, cmd: str) -> bool:
         """Decide whether a session command should receive the init prompt.

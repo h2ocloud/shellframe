@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.29.16 (2026-07-14)
+
+### Changes
+- **初次對話的 INIT_PROMPT 注入改為預設關閉＋新增全域開關**（Howard 2026-07-14：
+  觸發時機不對、已非必要、找不到開關）。原本只有 preset 層級的 `inject_init`
+  override、沒有全域開關。新增 `settings.inject_init_prompt`（預設 `false`），
+  設定頁新增「首次訊息注入 INIT 提示」toggle；只 gate `_init_pending` 的武裝
+  （UI 首訊與 TG 首訊兩條注入路徑同一個閘），**不動 `_should_inject_init`**——
+  它另被總控每輪提醒與完成通知借用為「AI 分頁」判定，在那裡關會誤傷。
+  切換後對新開的分頁生效。preset 的 `inject_init: true` 在全域開啟時仍有效。
+  回歸測試：`test_init_prompt.py` 新增全域開關 4 案例（37/37 PASS）。
+  生效需 `sfctl restart`（main.py + web/index.html 改動）。
+
 ## v0.29.15 (2026-07-12)
 
 ### Fixes

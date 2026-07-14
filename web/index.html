@@ -833,6 +833,13 @@
             <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
           </div>
         </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="injectInitLabel">Init prompt on first message</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch" id="setting-inject-init"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="injectInitHint">Prepend INIT_PROMPT.md (ShellFrame environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.</span>
+          </div>
+        </div>
       </div>
 
       <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
@@ -1276,6 +1283,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       completionNotificationsHint: 'Notify when an AI reply finishes while shellframe is not in the foreground',
       masterTurnPreamble: 'Master turn reminder',
       masterTurnPreambleHint: 'Remind master tabs to consider delegation before each AI turn',
+      injectInitLabel: 'Init prompt on first message',
+      injectInitHint: 'Prepend INIT_PROMPT.md (ShellFrame environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
       idleCleanupTitle: 'Idle tab cleanup',
       idleCleanupDesc: 'Automatically summarize and close idle AI tabs. Protected/main tabs are kept.',
       idleAfter: 'Idle after',
@@ -1427,6 +1436,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       completionNotificationsHint: 'AI 回覆完成且 shellframe 不在前景時通知',
       masterTurnPreamble: '總控每輪提醒',
       masterTurnPreambleHint: '每次總控送出 AI 輸入前提醒先判斷是否派工',
+      injectInitLabel: '首次訊息注入 INIT 提示',
+      injectInitHint: '新 AI 分頁的第一則訊息前自動前置 INIT_PROMPT.md（環境說明＋sfctl 指南）。切換後對新開的分頁生效。預設關閉。',
       idleCleanupTitle: '閒置頁籤自動清理',
       idleCleanupDesc: '自動摘要並關閉閒置 AI 頁籤。受保護頁籤與主頁籤會保留。',
       idleAfter: '閒置超過',
@@ -4298,6 +4309,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-model-badge').classList.toggle(
       'on', s.show_model_badge !== false,
     );
+    document.getElementById('setting-inject-init').classList.toggle(
+      'on', s.inject_init_prompt === true,
+    );
     refreshBoard();
     syncIdleReaperSettings();
     syncSettingsBridge();
@@ -4352,6 +4366,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings.show_model_badge = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
       renderSidebar();
+    });
+
+  document.getElementById('setting-inject-init')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.inject_init_prompt = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
     });
 
   document.getElementById('setting-auto-delegate')
