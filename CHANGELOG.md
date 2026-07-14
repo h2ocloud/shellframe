@@ -2,6 +2,20 @@
 
 ## v0.29.16 (2026-07-14)
 
+### Fixes
+- **/fetch 之後容易「斷掉」、變成不自動回覆**（Howard 回報）：`_flush_loop`
+  的 while-body 沒有頂層 try/except，per-slot 轉發路徑上 `_extract_new_text`、
+  `_extract_file_paths`、`split_for_telegram`、主路徑的 board/signal detect
+  都**沒有防護**——任一在怪異畫面/回覆內容上拋例外，就會衝出 flush 迴圈、
+  **靜默殺掉整條 flush 執行緒**（daemon thread 例外進 stderr、不進 bridge log，
+  所以查不到 traceback），結果所有分頁一起停止自動回覆，只能 reload 救回。
+  這也解釋了為何常在傳媒體/長回覆後發生、且要手動 /fetch 才看得到。
+  修法：per-slot 的抽取、file-path、split、board/signal、每個收件人的送訊/
+  送檔各自 try/except，單次錯誤只記錄跳過，flush 執行緒永不因單一 slot/送出
+  而死。純 bridge 改動，`sfctl reload` 生效。
+
+## v0.29.16 (2026-07-14)
+
 ### Changes
 - **初次對話的 INIT_PROMPT 注入改為預設關閉＋新增全域開關**（Howard 2026-07-14：
   觸發時機不對、已非必要、找不到開關）。原本只有 preset 層級的 `inject_init`

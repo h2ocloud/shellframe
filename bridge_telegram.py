@@ -2581,9 +2581,19 @@ class TelegramBridge(BridgeBase):
                             slot.marker_prompt = ""
                             slot.has_user_msg = False
                     else:
-                        # Extract new text via screen diff (only final changes)
+                        # Extract new text via screen diff (only final changes).
+                        # Guarded: _extract_new_text does heavy pyte/regex parsing;
+                        # a throw on pathological screen content used to propagate
+                        # out of the flush loop and silently kill the thread
+                        # (daemon-thread exceptions go to stderr, not the log →
+                        # no traceback, auto-reply just stops for ALL tabs).
                         _t_ex = self._perf_t()
-                        new_lines = self._extract_new_text(slot)
+                        try:
+                            new_lines = self._extract_new_text(slot)
+                        except Exception as e:
+                            _blog(f"[flush] {sid} extract_new_text failed "
+                                  f"(loop survives): {type(e).__name__}: {e}\n")
+                            new_lines = []
                         self._perf_end("extract_new_text", _t_ex)
                     slot.sent_texts.clear()
                     slot.last_output_time = 0
@@ -2632,13 +2642,19 @@ class TelegramBridge(BridgeBase):
 
                 # Apply [[SF:TASK:...]] board markers, then fire desktop + TG
                 # banner on a [[SF:STATE]] transition; both strip their raw
-                # marker lines out of the forwarded text.
-                _t_b = self._perf_t()
-                new_lines = self._detect_and_apply_board(slot, new_lines)
-                self._perf_end("detect_board", _t_b)
-                _t_s = self._perf_t()
-                new_lines = self._detect_and_fire_signal(slot, new_lines)
-                self._perf_end("detect_signal", _t_s)
+                # marker lines out of the forwarded text. Guarded like the drain
+                # path (2467) — a board/signal error must not kill the flush
+                # thread (would stop auto-reply for ALL tabs).
+                try:
+                    _t_b = self._perf_t()
+                    new_lines = self._detect_and_apply_board(slot, new_lines)
+                    self._perf_end("detect_board", _t_b)
+                    _t_s = self._perf_t()
+                    new_lines = self._detect_and_fire_signal(slot, new_lines)
+                    self._perf_end("detect_signal", _t_s)
+                except Exception as e:
+                    _blog(f"[flush] {sid} board/signal detect failed "
+                          f"(loop survives): {type(e).__name__}: {e}\n")
                 if not new_lines:
                     continue
 
@@ -2650,8 +2666,14 @@ class TelegramBridge(BridgeBase):
                     and new_lines[0].startswith("❓ ")
                 )
 
-                # Detect file paths in response for TG file sending
-                file_paths = self._extract_file_paths(clean)
+                # Detect file paths + split for TG. Guarded: regex/splitting on
+                # pathological reply content must not kill the flush thread.
+                try:
+                    file_paths = self._extract_file_paths(clean)
+                except Exception as e:
+                    _blog(f"[flush] {sid} extract_file_paths failed: "
+                          f"{type(e).__name__}: {e}\n")
+                    file_paths = []
 
                 # Tag with session label
                 prefix = f"[{slot.label}] " if len(self.slots) > 1 else ""
@@ -2659,7 +2681,12 @@ class TelegramBridge(BridgeBase):
 
                 # Long replies are split into multiple TG messages (≤4096 cap),
                 # never truncated. Menu prompts stay single (kept short by design).
-                msg_parts = [msg] if is_menu_prompt else split_for_telegram(msg)
+                try:
+                    msg_parts = [msg] if is_menu_prompt else split_for_telegram(msg)
+                except Exception as e:
+                    _blog(f"[flush] {sid} split_for_telegram failed: "
+                          f"{type(e).__name__}: {e}\n")
+                    msg_parts = [msg[:3900]]
 
                 # Collect target chat_ids
                 target_chats = set()
@@ -2673,17 +2700,27 @@ class TelegramBridge(BridgeBase):
                             target_chats.add(chat_id)
 
                 for chat_id in target_chats:
-                    if is_menu_prompt:
-                        self._send_choice_menu(chat_id, slot, msg)
-                    else:
-                        for part in msg_parts:
-                            tg_api(self.config.bot_token, "sendMessage", {
-                                "chat_id": chat_id,
-                                "text": part,
-                            })
-                    # Send detected files as documents
-                    for fp in file_paths:
-                        self._send_tg_file(chat_id, fp)
+                    # 每個收件人的送訊/送檔各自 try——一個 send 失敗（尤其
+                    # v0.29.14 影片走 _send_tg_file：大檔 sendDocument 失敗、
+                    # 路徑消失）以前會**衝出 flush 迴圈、靜默殺掉整條 flush
+                    # 執行緒 → 所有分頁停止自動回覆**（Howard 2026-07-14
+                    # 「/fetch 後很容易斷、不自動回覆」的根因）。現在只記錄
+                    # 跳過，執行緒永不因單次 send 而死。
+                    try:
+                        if is_menu_prompt:
+                            self._send_choice_menu(chat_id, slot, msg)
+                        else:
+                            for part in msg_parts:
+                                tg_api(self.config.bot_token, "sendMessage", {
+                                    "chat_id": chat_id,
+                                    "text": part,
+                                })
+                        # Send detected files as documents
+                        for fp in file_paths:
+                            self._send_tg_file(chat_id, fp)
+                    except Exception as e:
+                        _blog(f"[flush] {sid} send to {chat_id} failed "
+                              f"(loop survives): {type(e).__name__}: {e}\n")
 
             # Adaptive-cadence bookkeeping: grow the idle streak on fully-quiet
             # ticks, reset the moment any slot needs attention.
