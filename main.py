@@ -63,6 +63,9 @@ CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
 # Matched against the base command name (last path component, no extension).
 AI_CLI_TOOLS = {"claude", "codex", "sf-codex", "aider", "cursor", "copilot", "goose", "gemini"}
 STARTUP_TRUST_AI_TOOLS = {"claude", "codex", "sf-codex"}
+# UI 麥克風錄音注入 AI 分頁時的前置 tag——告訴 AI 這是 STT 逐字稿、要先解析
+# 語意/意圖（辨識誤差、口語贅字）再行動，不要逐字照辦。
+MIC_STT_TAG = "🎙[語音輸入（STT 逐字稿）｜可能有辨識誤差，請先解析語意與意圖再執行]"
 TRUSTED_STARTUP_CWDS = {str(Path.home()), str(Path.home().resolve())}
 
 APP_DIR = Path(__file__).parent
@@ -4348,6 +4351,200 @@ try {
             traceback.print_exc()
             return json.dumps({"success": False, "message": str(e)})
 
+    # ── UI 麥克風語音輸入（介面內錄音 → STT → 注入當前分頁）──
+    # 錄音走原生 ffmpeg（mac=avfoundation / win=dshow / linux=alsa），不走
+    # WKWebView getUserMedia——TCC 歸屬清楚（掛在 ShellFrame.app 下）、
+    # 三平台同一條路，且轉出 16kHz mono WAV 正好是 whisper 要的格式。
+    _MIC_MAX_SEC = 300
+
+    @staticmethod
+    def _mic_ffmpeg() -> str:
+        return shutil.which("ffmpeg") or (
+            "/opt/homebrew/bin/ffmpeg" if os.path.exists("/opt/homebrew/bin/ffmpeg") else "")
+
+    @staticmethod
+    def _parse_dshow_audio_devices(listing: str) -> list:
+        """從 `ffmpeg -list_devices` 的 stderr 撈 dshow 音訊裝置名。"""
+        return re.findall(r'"([^"]+)"\s*\(audio\)', listing or "")
+
+    def mic_record_start(self) -> str:
+        proc = getattr(self, "_mic_proc", None)
+        if proc is not None and proc.poll() is None:
+            return json.dumps({"ok": False, "reason": "busy"})
+        ffmpeg = self._mic_ffmpeg()
+        if not ffmpeg:
+            return json.dumps({"ok": False, "reason": "no_ffmpeg"})
+        import tempfile
+        out = os.path.join(tempfile.gettempdir(), f"sf_mic_{int(time.time())}.wav")
+
+        def _spawn(in_args):
+            # stdin=PIPE：之後寫 'q' 讓 ffmpeg 優雅收尾（正確寫 WAV header）
+            return subprocess.Popen(
+                [ffmpeg, "-hide_banner", "-loglevel", "error", *in_args,
+                 "-ac", "1", "-ar", "16000", "-t", str(self._MIC_MAX_SEC), "-y", out],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        if sys.platform == "darwin":
+            proc = _spawn(["-f", "avfoundation", "-i", ":default"])
+            time.sleep(0.8)
+            if proc.poll() is not None:  # 舊版 ffmpeg 不認 :default → 退 :0
+                proc = _spawn(["-f", "avfoundation", "-i", ":0"])
+                time.sleep(0.8)
+        elif IS_WIN:
+            try:
+                r = subprocess.run(
+                    [ffmpeg, "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
+                    capture_output=True, text=True, timeout=10)
+                devices = self._parse_dshow_audio_devices((r.stderr or "") + (r.stdout or ""))
+            except Exception:
+                devices = []
+            if not devices:
+                return json.dumps({"ok": False, "reason": "no_mic_device"})
+            proc = _spawn(["-f", "dshow", "-i", f"audio={devices[0]}"])
+            time.sleep(0.8)
+        else:
+            proc = _spawn(["-f", "alsa", "-i", "default"])
+            time.sleep(0.8)
+
+        if proc.poll() is not None:
+            detail = ""
+            try:
+                detail = (proc.stderr.read() or b"").decode("utf-8", "replace")[-400:]
+            except Exception:
+                pass
+            _dlog("mic", f"record start failed: {detail!r}")
+            return json.dumps({"ok": False, "reason": "record_failed", "detail": detail})
+        self._mic_proc = proc
+        self._mic_path = out
+        _dlog("mic", f"recording → {out}")
+        return json.dumps({"ok": True})
+
+    def mic_record_stop(self, sid: str = "", cancel: bool = False) -> str:
+        proc = getattr(self, "_mic_proc", None)
+        path = getattr(self, "_mic_path", "") or ""
+        self._mic_proc = None
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.stdin.write(b"q")
+                proc.stdin.flush()
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            try:
+                proc.wait(timeout=8)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        if cancel:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            return json.dumps({"ok": True, "cancelled": True})
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        # 16kHz mono s16 ≈ 32KB/s；小於這個幾乎必是沒收到聲音（含 TCC 拒絕）
+        if size < 12000:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            return json.dumps({"ok": False, "reason": "empty_audio"})
+        return self._mic_transcribe_inject(path, sid)
+
+    def mic_retry_transcribe(self, sid: str = "") -> str:
+        """裝完 STT 後重轉上一段錄音（音檔在失敗時被保留）。"""
+        path = getattr(self, "_mic_last_wav", "") or ""
+        if not path or not os.path.exists(path):
+            return json.dumps({"ok": False, "reason": "no_audio"})
+        return self._mic_transcribe_inject(path, sid)
+
+    def _mic_transcribe_inject(self, path: str, sid: str) -> str:
+        br = self.bridge
+        text = ""
+        try:
+            if br is not None:
+                text = br._transcribe_voice(path)
+            else:
+                # TG bridge 沒開也能轉：借 TelegramBridge 的 STT 鏈（方法只用
+                # config.stt_backend 與 class 屬性，不碰 bridge 執行狀態）
+                import types as _t
+                backend = (load_config().get("bridge", {}) or {}).get("stt_backend", "auto")
+                shim = _t.SimpleNamespace(config=_t.SimpleNamespace(
+                    stt_backend=backend, stt_remote_url=""))
+                text = TelegramBridge._transcribe_voice(shim, path)
+        except Exception as e:
+            _dlog("mic", f"transcribe error: {e}")
+        if not (text or "").strip():
+            ready = False
+            try:
+                cfg = load_config().get("bridge", {}) or {}
+                st = TelegramBridge.stt_status(cfg.get("stt_remote_url", ""))
+                ready = bool(st["local"]["ready"] or st["plugin"]["ready"] or st["remote"]["ready"])
+            except Exception:
+                pass
+            self._mic_last_wav = path  # 留檔給裝完後 mic_retry_transcribe
+            return json.dumps({"ok": False, "reason": "stt_failed" if ready else "no_backend"})
+        try:
+            if br is not None:
+                text = br._refine_transcript(text) or text
+        except Exception:
+            pass
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        self._mic_last_wav = ""
+        s = self.sessions.get(sid)
+        if not s:
+            return json.dumps({"ok": True, "text": text, "injected": False})
+        is_ai = bool(bridge_telegram._detect_ai(getattr(s, "cmd", "") or ""))
+        if is_ai:
+            # 下 tag 讓 AI 知道這是語音轉文字、要先解析語意再動作
+            payload = MIC_STT_TAG + "\n" + text
+            self._send_text_to_session(s, payload, submit=True)
+        else:
+            # 非 AI 分頁（shell 等）：純文字貼進輸入行、不送出，避免誤執行
+            self._send_text_to_session(s, text, submit=False)
+        return json.dumps({"ok": True, "text": text, "injected": True, "ai": is_ai})
+
+    def mic_install_ffmpeg(self) -> str:
+        """引導安裝 ffmpeg（錄音依賴）——一次到位，不只給指令。"""
+        try:
+            if IS_WIN:
+                winget = shutil.which("winget")
+                if not winget:
+                    return json.dumps({"success": False,
+                                       "message": "找不到 winget，請手動安裝 ffmpeg 後重試"})
+                r = subprocess.run(
+                    [winget, "install", "--id", "Gyan.FFmpeg",
+                     "--accept-source-agreements", "--accept-package-agreements", "--silent"],
+                    capture_output=True, text=True, timeout=900)
+            elif sys.platform == "darwin":
+                brew = shutil.which("brew") or (
+                    "/opt/homebrew/bin/brew" if os.path.exists("/opt/homebrew/bin/brew") else "")
+                if not brew:
+                    return json.dumps({"success": False,
+                                       "message": "找不到 Homebrew，請先裝 brew 或手動安裝 ffmpeg"})
+                r = subprocess.run([brew, "install", "ffmpeg"],
+                                   capture_output=True, text=True, timeout=1800)
+            else:
+                return json.dumps({"success": False,
+                                   "message": "請用系統套件管理器安裝 ffmpeg（apt/dnf）"})
+            ok = bool(self._mic_ffmpeg())
+            return json.dumps({
+                "success": ok,
+                "message": "ffmpeg 已就緒" if ok else ((r.stderr or r.stdout) or "")[-300:],
+            })
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
     def stop_bridge(self) -> str:
         if self.bridge:
             self.bridge.stop()
@@ -5990,8 +6187,41 @@ def _register_global_hotkey():
         print(f"[shellframe] hotkey register failed: {e}", file=sys.stderr)
 
 
+def _ensure_mic_usage_plist():
+    """macOS：確保 app bundle 有 NSMicrophoneUsageDescription。
+
+    沒有這個 key，TCC 不會跳麥克風授權、錄音直接靜默失敗。既有安裝走
+    git pull 更新不會重跑 install.sh，所以啟動時自癒：補 key + ad-hoc
+    重簽（不 --deep，同 install.sh 的理由），下次 TCC 檢查即生效。"""
+    if sys.platform != "darwin":
+        return
+    desc = "ShellFrame 需要使用麥克風進行語音輸入（STT 語音轉文字）。"
+    for bundle in (Path("/Applications/ShellFrame.app"),
+                   Path.home() / "Applications" / "ShellFrame.app",
+                   APP_DIR / "ShellFrame.app"):
+        plist = bundle / "Contents" / "Info.plist"
+        if not plist.exists():
+            continue
+        try:
+            r = subprocess.run(
+                ["/usr/libexec/PlistBuddy", "-c", "Print :NSMicrophoneUsageDescription", str(plist)],
+                capture_output=True, timeout=5)
+            if r.returncode == 0:
+                continue
+            subprocess.run(
+                ["/usr/libexec/PlistBuddy", "-c",
+                 f"Add :NSMicrophoneUsageDescription string {desc}", str(plist)],
+                capture_output=True, timeout=5)
+            subprocess.run(["codesign", "--force", "--sign", "-", str(bundle)],
+                           capture_output=True, timeout=15)
+            print(f"[shellframe] added NSMicrophoneUsageDescription → {bundle}", file=sys.stderr)
+        except Exception as e:
+            print(f"[shellframe] mic plist heal failed for {bundle}: {e}", file=sys.stderr)
+
+
 def main():
     _self_heal_venv()
+    _ensure_mic_usage_plist()
     # Guard before we allocate anything expensive — if another shellframe
     # is already running, activate it and exit this process. Prevents
     # double-instance TG bridge 409 conflicts when Howard rapidly toggles

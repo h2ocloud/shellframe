@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.29.18 (2026-07-15)
+
+### Features
+- **介面內語音輸入（STT）麥克風按鈕**（Howard 提：不必再透過 Telegram 傳語音）。
+  終端右下角新增懸浮 🎙：點一下開始錄音（紅色脈動＋計時，上限 5 分鐘，✕ 可取消），
+  再點一下停止 → 走既有 STT 鏈（plugin → 本地 whisper → 遠端 provider）＋
+  LLM 潤稿 → 注入**當前分頁**：
+  - AI 分頁：前置語音 tag（`🎙[語音輸入（STT 逐字稿）｜可能有辨識誤差，請先解析
+    語意與意圖再執行]`）後自動送出——AI 知道這是語音轉換、會先解析意圖。
+  - 非 AI 分頁（shell 等）：純文字貼進輸入行、**不送出**，避免誤執行。
+  錄音走原生 ffmpeg（mac=avfoundation / win=dshow 自動挑裝置 / linux=alsa），
+  不走 WKWebView getUserMedia——TCC 歸屬清楚、三平台同一條路、直接產出
+  whisper 要的 16kHz mono WAV。
+  **引導安裝**：沒 ffmpeg → 一鍵 brew/winget 裝；STT 後端全不可用 → 引導裝
+  本地 whisper，**錄音會保留、裝完自動轉錄**，不用重講一次。
+  **開關**：設定 → 🎙 語音轉錄 →「介面錄音按鈕」（`settings.stt_mic_button`，
+  預設開）。macOS 麥克風權限：Info.plist 補 `NSMicrophoneUsageDescription`
+  （repo bundle 已含；既有安裝由啟動自癒 `_ensure_mic_usage_plist` 補 key＋
+  ad-hoc 重簽，免重跑 install.sh）。
+  新 API：`mic_record_start/stop`、`mic_retry_transcribe`、`mic_install_ffmpeg`。
+  回歸測試：`tests_mic_stt.py` 7 案例。生效需 `sfctl restart`。
+
 ## v0.29.17 (2026-07-14)
 
 ### Fixes

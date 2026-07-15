@@ -2,27 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>ShellFrame</string>
-    <key>CFBundleDisplayName</key>
-    <string>ShellFrame</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.h2ocloud.shellframe</string>
-    <key>CFBundleVersion</key>
-    <string>0.12.11</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.12.11</string>
-    <key>CFBundleExecutable</key>
-    <string>shellframe</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>CFBundleIconFile</key>
-    <string>shellframe</string>
-    <key>LSUIElement</key>
-    <false/>
+	<key>CFBundleDisplayName</key>
+	<string>ShellFrame</string>
+	<key>CFBundleExecutable</key>
+	<string>shellframe</string>
+	<key>CFBundleIconFile</key>
+	<string>shellframe</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.h2ocloud.shellframe</string>
+	<key>CFBundleName</key>
+	<string>ShellFrame</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.12.11</string>
+	<key>CFBundleVersion</key>
+	<string>0.12.11</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>LSUIElement</key>
+	<false/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ShellFrame 需要使用麥克風進行語音輸入（STT 語音轉文字）。</string>
 </dict>
 </plist>

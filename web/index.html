@@ -649,6 +649,31 @@
     opacity: 1;
     filter: invert(1) brightness(1.5);
   }
+
+  /* ── Voice input (STT) floating mic ── */
+  #mic-fab {
+    position: fixed; right: 16px; bottom: 14px; z-index: 40;
+    display: flex; gap: 6px; align-items: center;
+  }
+  #mic-fab button {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid #3b4261; background: #1f2335; color: #c0caf5;
+    font-size: 15px; cursor: pointer; line-height: 1;
+  }
+  #mic-fab button:hover { border-color: #7aa2f7; }
+  #btn-mic.rec {
+    background: #f7768e; border-color: #f7768e; color: #fff;
+    animation: micpulse 1.2s ease-in-out infinite;
+  }
+  #btn-mic.busy { opacity: .6; cursor: wait; }
+  @keyframes micpulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(247,118,142,.5); }
+    50% { box-shadow: 0 0 0 8px rgba(247,118,142,0); }
+  }
+  #mic-timer {
+    font-size: 11px; color: #f7768e; min-width: 30px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
 </style>
 </head>
 <body>
@@ -686,6 +711,13 @@
     <div style="font-size:32px;margin-bottom:8px">+</div>
     <div style="color:#7aa2f7;font-size:14px" data-i18n="dropToAttach">Drop file to attach</div>
   </div>
+</div>
+
+<!-- Voice input (STT) floating mic — 錄音→STT→帶 tag 注入當前分頁 -->
+<div id="mic-fab" style="display:none">
+  <span id="mic-timer" style="display:none">0:00</span>
+  <button id="btn-mic-cancel" data-i18n-title="micCancel" title="取消錄音" style="display:none;font-size:12px">✕</button>
+  <button id="btn-mic" data-i18n-title="micTitle" title="語音輸入（STT）">🎙</button>
 </div>
 
 <!-- Main content -->
@@ -1004,6 +1036,11 @@
 ]'></textarea>
         </div>
         <div id="stt-detail" style="font-size:11px;color:#787c99;margin-top:6px;line-height:1.5"></div>
+        <div class="bridge-field" style="margin-top:8px">
+          <label data-i18n="micButtonLabel">介面錄音按鈕 🎙</label>
+          <button class="toggle-switch on" id="setting-mic-button"></button>
+        </div>
+        <div class="bridge-help" data-i18n="micButtonHelp">在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。</div>
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btn-stt-refresh">↻ 檢查</button>
           <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
@@ -1285,6 +1322,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       masterTurnPreambleHint: 'Remind master tabs to consider delegation before each AI turn',
       injectInitLabel: 'Init prompt on first message',
       injectInitHint: 'Prepend INIT_PROMPT.md (ShellFrame environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
+      micButtonLabel: 'Voice input button 🎙',
+      micButtonHelp: 'Show a mic at the bottom-right of the terminal: record → STT → inject into the active tab with a voice tag, no more sending voice notes through Telegram.',
+      micTitle: 'Voice input (STT)',
+      micCancel: 'Cancel recording',
+      micNeedFfmpeg: 'Recording needs ffmpeg, which is not installed. Install it now? (macOS: Homebrew / Windows: winget — may take a few minutes)',
+      micFfmpegReady: 'ffmpeg ready — tap the mic again to record.',
+      micNeedStt: 'No STT backend is ready (local whisper / remote provider). Install local STT now? Your recording is kept and will be transcribed right after install.',
+      micSttStillFail: 'STT still failed after install. Check Settings → 🎙 STT, then tap the mic to retry.',
+      micEmpty: 'No audio captured. If this is the first use, allow Microphone for ShellFrame in System Settings → Privacy, then retry.',
+      micRecordFailed: 'Recorder failed to start. Check that a microphone is available and ShellFrame has mic permission.',
+      micSttFail: 'Transcription returned nothing — try again, closer to the mic.',
+      micNoDevice: 'No audio input device found.',
       idleCleanupTitle: 'Idle tab cleanup',
       idleCleanupDesc: 'Automatically summarize and close idle AI tabs. Protected/main tabs are kept.',
       idleAfter: 'Idle after',
@@ -1438,6 +1487,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       masterTurnPreambleHint: '每次總控送出 AI 輸入前提醒先判斷是否派工',
       injectInitLabel: '首次訊息注入 INIT 提示',
       injectInitHint: '新 AI 分頁的第一則訊息前自動前置 INIT_PROMPT.md（環境說明＋sfctl 指南）。切換後對新開的分頁生效。預設關閉。',
+      micButtonLabel: '介面錄音按鈕 🎙',
+      micButtonHelp: '在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。',
+      micTitle: '語音輸入（STT）',
+      micCancel: '取消錄音',
+      micNeedFfmpeg: '錄音需要 ffmpeg，目前未安裝。要現在安裝嗎？（macOS 走 Homebrew／Windows 走 winget，可能需要幾分鐘）',
+      micFfmpegReady: 'ffmpeg 已就緒——再按一次麥克風即可錄音。',
+      micNeedStt: 'STT 後端尚未就緒（本地 whisper／遠端服務都不可用）。要現在安裝本地 STT 嗎？剛剛的錄音已保留，裝完會自動轉錄。',
+      micSttStillFail: '安裝後轉錄仍失敗。請到 設定 → 🎙 語音轉錄 檢查，再按麥克風重試。',
+      micEmpty: '沒有收到聲音。若是第一次使用，請到 系統設定 → 隱私權與安全性 → 麥克風 允許 ShellFrame，然後重試。',
+      micRecordFailed: '錄音啟動失敗。請確認有可用的麥克風、且 ShellFrame 有麥克風權限。',
+      micSttFail: '轉錄結果是空的——請再試一次、靠近麥克風一點。',
+      micNoDevice: '找不到音訊輸入裝置。',
       idleCleanupTitle: '閒置頁籤自動清理',
       idleCleanupDesc: '自動摘要並關閉閒置 AI 頁籤。受保護頁籤與主頁籤會保留。',
       idleAfter: '閒置超過',
@@ -1661,6 +1722,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (s.sidebar_width) document.getElementById('sidebar').style.setProperty('--sidebar-w', s.sidebar_width + 'px');
     if (s.board_width) document.getElementById('board-panel').style.setProperty('--board-w', s.board_width + 'px');
     renderPresets();
+    micFabSync();
     applyI18n();
   }
 
@@ -4312,6 +4374,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-inject-init').classList.toggle(
       'on', s.inject_init_prompt === true,
     );
+    document.getElementById('setting-mic-button').classList.toggle(
+      'on', s.stt_mic_button !== false,
+    );
     refreshBoard();
     syncIdleReaperSettings();
     syncSettingsBridge();
@@ -4374,6 +4439,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings = config.settings || {};
       config.settings.inject_init_prompt = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
+
+  document.getElementById('setting-mic-button')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.stt_mic_button = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+      micFabSync();
     });
 
   document.getElementById('setting-auto-delegate')
@@ -4761,6 +4835,94 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       btn.textContent = '✗ Error';
     }
     setTimeout(() => { btn.textContent = '安裝本地 STT'; btn.disabled = false; }, 3000);
+  });
+
+  // ── 語音輸入（麥克風 fab：後端 ffmpeg 錄音 → STT → 注入當前分頁）──
+  const $mic = document.getElementById('btn-mic');
+  const $micCancel = document.getElementById('btn-mic-cancel');
+  const $micTimer = document.getElementById('mic-timer');
+  let micState = 'idle', micT0 = 0, micIv = null;   // idle | rec | busy
+
+  function micFabSync() {
+    const s = config.settings || {};
+    document.getElementById('mic-fab').style.display =
+      (s.stt_mic_button !== false) ? 'flex' : 'none';
+  }
+
+  function micSet(state) {
+    micState = state;
+    $mic.classList.toggle('rec', state === 'rec');
+    $mic.classList.toggle('busy', state === 'busy');
+    $mic.textContent = state === 'rec' ? '⏹' : (state === 'busy' ? '⏳' : '🎙');
+    $micCancel.style.display = state === 'rec' ? '' : 'none';
+    $micTimer.style.display = state === 'rec' ? '' : 'none';
+    if (state === 'rec') {
+      micT0 = Date.now();
+      $micTimer.textContent = '0:00';
+      micIv = setInterval(() => {
+        const sec = Math.floor((Date.now() - micT0) / 1000);
+        $micTimer.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+        if (sec >= 300) $mic.click();   // 與後端 -t 300 硬上限對齊
+      }, 500);
+    } else if (micIv) { clearInterval(micIv); micIv = null; }
+  }
+
+  async function micGuide(r) {
+    // 依失敗原因引導：裝 ffmpeg / 裝 STT（裝完自動重轉剛剛那段錄音）
+    if (r.reason === 'no_ffmpeg') {
+      if (confirm(t('micNeedFfmpeg'))) {
+        micSet('busy');
+        try {
+          const ir = JSON.parse(await pywebview.api.mic_install_ffmpeg());
+          alert(ir.success ? t('micFfmpegReady') : (ir.message || 'install failed'));
+        } catch (e) { alert('install error: ' + e); }
+      }
+    } else if (r.reason === 'no_backend') {
+      if (confirm(t('micNeedStt'))) {
+        micSet('busy');
+        try { await pywebview.api.stt_install_local(); } catch (_) {}
+        try {
+          const rr = JSON.parse(await pywebview.api.mic_retry_transcribe(activeId || ''));
+          if (rr.ok) return;
+        } catch (_) {}
+        alert(t('micSttStillFail'));
+      }
+    } else if (r.reason === 'empty_audio') {
+      alert(t('micEmpty'));
+    } else if (r.reason === 'record_failed') {
+      alert(t('micRecordFailed') + (r.detail ? '\n' + r.detail : ''));
+    } else if (r.reason === 'stt_failed') {
+      alert(t('micSttFail'));
+    } else if (r.reason === 'no_mic_device') {
+      alert(t('micNoDevice'));
+    }
+  }
+
+  $mic.addEventListener('click', async () => {
+    if (micState === 'busy') return;
+    if (micState === 'idle') {
+      let r;
+      try { r = JSON.parse(await pywebview.api.mic_record_start()); }
+      catch (e) { return; }
+      if (r.ok) { micSet('rec'); return; }
+      await micGuide(r);
+      micSet('idle');
+      return;
+    }
+    // rec → 停止並轉錄（成功時後端直接注入當前分頁，畫面上就看得到）
+    micSet('busy');
+    let r;
+    try { r = JSON.parse(await pywebview.api.mic_record_stop(activeId || '')); }
+    catch (e) { micSet('idle'); return; }
+    if (!r.ok) await micGuide(r);
+    micSet('idle');
+  });
+
+  $micCancel.addEventListener('click', async () => {
+    if (micState !== 'rec') return;
+    micSet('busy');
+    try { await pywebview.api.mic_record_stop('', true); } catch (_) {}
+    micSet('idle');
   });
 
   document.getElementById('btn-settings-bridge-connect').addEventListener('click', async () => {
