@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.29.19 (2026-07-24)
+
+### Fixes
+- **假警報「⚠ 無法確認訊息已送進」——實際有送進、回覆隨後就到**（Howard
+  07-21/07-24 截圖，HR 分頁連兩天中招）。根因：8s 驗證窗有結構性盲區——快
+  回合在兩次 0.5s poll 之間就開始又結束（'esc to interrupt' footer 抓不到），
+  extraction 又走 marker 路徑、模型漏吐 marker 時 fallback 最長等 30s →
+  兩個強訊號都 miss → 立刻發⚠，然後回覆才進來。
+  修法：「不確定且無殘留」不再立刻通知，改交**背景延遲判定**
+  （`_deferred_delivery_verdict`）：再觀察最長 45s，期間看到 turn 訊號或
+  「這次注入之後」的 extraction 就靜默收工；全程無聲才發警告。有殘留的
+  真卡死路徑（nudge→重貼→仍失敗）維持立即通知。
+- **轉發回覆夾雜畫面 chrome**：`[[TG_REPLY_xxx]]` marker 行、`✳ Cogitated
+  for 1m 38s`／`✻ Crunched for…` footer、`new task? /clear to save …`、
+  「──── 分頁標題 ────」分隔線全混進 TG 訊息。根因：footer 動詞會輪換
+  （Cooked/Crunched/Cogitated/…）但 `_TUI_SENTINEL_RE`/`_NOISE_SESSION_END_RE`
+  用固定動詞清單、符號 ✳ 也不在字元集；meaningful-lines fallback 更完全
+  不濾 marker 行與標題分隔線。
+  修法：兩個 regex 改認「`<verb>ed/ing for <時長>`」形狀＋補 `/clear to save`；
+  新增共用 `_is_forward_noise_line`（marker token 行／footer／規則線佔比
+  ≥50% 的標題分隔線），接進 `_extract_meaningful_lines`、`_peek_last_response`
+  AI-block 過濾、`_marker_fallback_text` 三個轉發出口（fallback 與 /fetch
+  同源，一起乾淨）。
+  回歸測試：`tests_tg_inject.py` 新增雜訊過濾＋延遲判定 2 組案例。
+  純 bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.18 (2026-07-15)
 
 ### Features

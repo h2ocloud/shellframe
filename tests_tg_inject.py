@@ -128,6 +128,57 @@ def test_wait_paste_drain_quiet_vs_noisy():
         f"滾動畫面應等到 cap：{noisy_elapsed:.2f}s (cap≈{cap_max})"
 
 
+# ── 11. v0.29.19：轉發雜訊過濾——marker 行 / 輪換動詞 footer / 標題分隔線
+#      不得混進 TG 訊息（Howard 2026-07-24 截圖回歸）──
+def test_forward_noise_lines():
+    noise = [
+        "[[TG_REPLY_8672de59]]",
+        "[[/TG_REPLY_7bd51f7f]]",
+        "✳ Cogitated for 1m 38s",
+        "✻ Crunched for 1m 50s",
+        "* Baked for 12s",
+        "new task? /clear to save 670.3k tokens",
+        "──────────────── 整理 HR 系統待簽單 ────",
+        "────────────────────────",
+    ]
+    for ln in noise:
+        assert BR._is_forward_noise_line(ln), f"應判雜訊：{ln!r}"
+    content = [
+        "✅ 簽完了。原本列的 20 筆＋新進 17 筆，總共 37 筆全部簽核成功",
+        "那筆曾婉瑜的生理假要不要保留？我可以幫你看內容",
+        "Testing for 30 seconds of load then report",
+        "補打卡已排 9:10——完成後回報",
+    ]
+    for ln in content:
+        assert not BR._is_forward_noise_line(ln), f"誤殺內容：{ln!r}"
+
+
+# ── 12. v0.29.19：延遲判定——快回合的「不確定」不再立刻發假警報；
+#      有 extraction 訊號→靜默收工、全程無聲→才通知 ──
+def test_deferred_verdict():
+    import time as _t
+    br = object.__new__(_bt.TelegramBridge)
+    br.config = types.SimpleNamespace(bot_token="tok")
+    sent = []
+    orig = _bt.tg_api
+    _bt.tg_api = lambda *a, **k: sent.append(a)
+    try:
+        # a) 注入後有 extraction → 不通知
+        slot = _slot("乾淨畫面", extraction_ts=200.0)
+        slot.label, slot.index, slot.sid = "HR", 5, "s1"
+        br._deferred_delivery_verdict(slot, 123, injected_at=150.0, extra_wait=1.2)
+        assert sent == [], f"有訊號仍通知：{sent}"
+        # b) 全程無訊號 → 通知一次
+        slot2 = _slot("乾淨畫面", extraction_ts=0.0)
+        slot2.label, slot2.index, slot2.sid = "HR", 5, "s2"
+        t0 = _t.time()
+        br._deferred_delivery_verdict(slot2, 123, injected_at=150.0, extra_wait=1.2)
+        assert len(sent) == 1, f"無訊號應通知一次：{sent}"
+        assert _t.time() - t0 >= 1.0, "應等滿觀察窗才通知"
+    finally:
+        _bt.tg_api = orig
+
+
 # ── 10. 審查 bug #2 的 gate 素材：detect_ai 分流正確（gate 本身在 _send 閉包內）──
 def test_detect_ai_gate_material():
     assert _bt._detect_ai("claude --permission-mode x") == "claude"

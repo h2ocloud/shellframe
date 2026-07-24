@@ -251,7 +251,10 @@ _TUI_SENTINEL_RE = re.compile(
     r'|(?:\b\d\s*:\s*(?:bad|fine|good|dismiss)\b.*\b\d\s*:\s*(?:bad|fine|good|dismiss)\b)'
     r'|(?:^\s*\d\s*:\s*(?:bad|fine|good|dismiss)\s*$)'
     r'|(?:\besc to interrupt\b)'
-    r'|(?:^[✻✢✳∗✽·●⏺•*─\-]{0,2}\s*(?:cooked|worked|saut[eé]ed|churned|baking|brewing|simmering|forging)\s+for\s+\d)',
+    # turn 結束 footer：動詞會輪換（Cooked/Crunched/Cogitated/…），不能列舉——
+    # 認「<verb>ed/ing for <時長>」到行尾的形狀（2026-07-24 Crunched/Cogitated 漏網）
+    r'|(?:^[✻✢✳∗✽·●⏺•*─\-\s]{0,3}\w+(?:ed|ing)\s+for\s+(?:\d+[hm]\s*)*\d+(?:\.\d+)?s?\s*(?:[·(].*)?$)'
+    r'|(?:new task\?\s*/clear)|(?:/clear to save)',
     re.IGNORECASE)
 
 # Stray reply-marker tokens that can leak into a span when a TUI repaint nests
@@ -668,7 +671,9 @@ _NOISE_TOOLCALL_RE = re.compile(r'^[A-Z][\w\s]*\(.+\)$')
 _NOISE_LINES_EXPAND_RE = re.compile(r'^(?:\.\.\. )?\+\d+\s+lines?\s+\(ctrl[+ ]o to expand\)')
 _NOISE_MODE_RE = re.compile(r'\b(?:auto mode on|esc to interrupt|shift\+tab to cycle)\b')
 _NOISE_THOUGHT_RE = re.compile(r'\b(?:thought|thinking) for \d+s\b')
-_NOISE_SESSION_END_RE = re.compile(r'^[✻\*─\-]{1,2}\s*(cooked|worked|sautéed|churned|waddling|baking)\b')
+_NOISE_SESSION_END_RE = re.compile(
+    # 動詞輪換＋符號不固定（✻✳✢…）——認「<verb>ed/ing for <時長>」形狀
+    r'^[✻✢✳∗✽·●⏺•*─\-\s]{0,3}[a-z]+(?:ed|ing)\s+for\s+(?:\d+[hm]\s*)*\d+(?:\.\d+)?s?\b')
 _NOISE_RATING_NUM_RE = re.compile(r'^\d+:\s*\w+')
 _NOISE_RATING_OPT_RE = re.compile(r'\d+:\s*(?:bad|fine|good|dismiss)')
 _TOOLCALL_PREFIX_RE = re.compile(r'^[A-Z][\w\s]*\(')
@@ -1903,6 +1908,18 @@ class TelegramBridge(BridgeBase):
     # rescans burn ~18% CPU per stuck slot (2026-07-06 regression).
     _MARKER_RESCAN_INTERVAL = 3.0
 
+    def _is_forward_noise_line(self, s: str) -> bool:
+        """轉發前最後防線：marker token 行、turn 結束 footer、含分頁標題的
+        分隔線——這些是畫面 chrome 不是回覆內容（Howard 2026-07-24 截圖：
+        [[TG_REPLY]]／✳ Cogitated for…／「──── 標題 ──」全混進 TG 訊息）。"""
+        s = (s or "").strip()
+        if "TG_REPLY_" in s:
+            return True
+        if _TUI_SENTINEL_RE.search(s):
+            return True
+        rule_chars = sum(c in "─━—═-" for c in s)
+        return rule_chars >= 6 and rule_chars >= len(s.replace(" ", "")) * 0.5
+
     def _try_marker_extract(self, slot, now: float, total: float) -> str:
         """Throttled, dirty-gated marker extraction for the flush-loop hot path.
 
@@ -1957,6 +1974,8 @@ class TelegramBridge(BridgeBase):
                 continue
             # 丟掉 wrapper 指示本身的回顯（「最終要回 Telegram 的文字請放在…」）
             if instr and s.replace(" ", "") in instr:
+                continue
+            if self._is_forward_noise_line(s):
                 continue
             kept.append(s)
         return "\n".join(kept).strip()
@@ -2289,7 +2308,8 @@ class TelegramBridge(BridgeBase):
                 last.pop(0)
             last = [l for l in last if not (
                 (l and all(c in '─━═│║╭╮╰╯┌┐└┘ |-_' for c in l)) or
-                self._is_bridge_noise_line(l)
+                self._is_bridge_noise_line(l) or
+                self._is_forward_noise_line(l)
             )]
             text = '\n'.join(last).strip()
             if text and text not in self._FILTERED_RESPONSES and not self._is_tool_call(last[0].strip() if last else ""):
@@ -2327,6 +2347,8 @@ class TelegramBridge(BridgeBase):
             if first_word in self._SPINNER_VERBS:
                 continue
             if self._is_bridge_noise_line(stripped):
+                continue
+            if self._is_forward_noise_line(stripped):
                 continue
             # Skip prompt-only lines (› / ❯ alone)
             if stripped in ('›', '❯', '> ', '>'):
@@ -4348,6 +4370,7 @@ class TelegramBridge(BridgeBase):
             # messages — spawn concurrent _send threads whose write+Enter
             # interleave into one mangled buffer (malformed input / tool calls).
             notify_failed = False
+            defer_unconfirmed = False
             with slot.write_lock:
                 # Ready the pane first: a session left in tmux copy-mode
                 # (scrolled-back terminal) swallows pasted bytes entirely —
@@ -4463,8 +4486,13 @@ class TelegramBridge(BridgeBase):
                         # 無殘留可安全重試（重試有重複送出風險），但也不能
                         # 再靜默——這正是「prompt 沒反應、/fetch 也沒變化」
                         # 的無聲掉訊窗口（對話框吃掉輸入、畫面被捲走等）。
-                        _blog(f"[send] {slot.sid} delivery UNCONFIRMED (no residue)\n")
-                        notify_failed = True
+                        # 不過**不立刻吵**：快回合會在 0.5s poll 間隙就結束、
+                        # extraction 又要等 marker（fallback 最長 30s），8s 窗
+                        # 內兩個強訊號都抓不到 → 假警報「無法確認」之後回覆
+                        # 才到（Howard 2026-07-24 截圖）。改交給背景延遲判定，
+                        # 再觀察 45s 有訊號就靜默收工。
+                        _blog(f"[send] {slot.sid} delivery UNCONFIRMED (no residue) → deferred verdict\n")
+                        defer_unconfirmed = True
             # Notify OUTSIDE write_lock — tg_api can block up to 35s and
             # holding the slot's write lock that long queues every
             # subsequent message for this tab behind a dead HTTPS call.
@@ -4478,6 +4506,10 @@ class TelegramBridge(BridgeBase):
                     })
                 except Exception:
                     pass
+            elif defer_unconfirmed:
+                threading.Thread(
+                    target=self._deferred_delivery_verdict,
+                    args=(slot, chat_id, inject_t0), daemon=True).start()
         def _send_tracked():
             # /fetch 據 inject_pending 回報「訊息排隊中、尚未送入」——
             # 沒有這個旗標，排隊期間 fetch 只會看到上一則回覆，使用者
@@ -4536,6 +4568,39 @@ class TelegramBridge(BridgeBase):
             return (slot.peek_fn() or "") if slot.peek_fn else ""
         except Exception:
             return ""
+
+    def _deferred_delivery_verdict(self, slot, chat_id, injected_at,
+                                   extra_wait: float = 45.0):
+        """「不確定且無殘留」的延遲判定——先不吵，再觀察最長 extra_wait 秒。
+
+        8s 驗證窗有結構性盲區：快回合在兩次 0.5s poll 之間就開始又結束
+        （footer 抓不到），而 extraction 走 marker 路徑最長要等 30s 的
+        fallback 才會發生 → 假警報「⚠ 無法確認已送進」發完、回覆才進來
+        （Howard 2026-07-24 截圖，HR 分頁連兩天中招）。這裡看到 turn 訊號
+        或「這次注入之後」的 extraction 就靜默收工；真的全程無聲才警告。"""
+        deadline = time.time() + extra_wait
+        while time.time() < deadline:
+            try:
+                if getattr(slot, "last_extraction_ts", 0.0) > injected_at:
+                    _blog(f"[send] {slot.sid} deferred verdict: reply extracted → OK\n")
+                    return
+                if re.search(r"esc to interrupt", self._live_tail(slot) or "", re.I):
+                    _blog(f"[send] {slot.sid} deferred verdict: turn running → OK\n")
+                    return
+            except Exception:
+                pass
+            time.sleep(1.0)
+        _blog(f"[send] {slot.sid} deferred verdict: still silent after "
+              f"{extra_wait:.0f}s → notify\n")
+        try:
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": (f"⚠ 無法確認訊息已送進「{slot.label}」。"
+                         f"若該分頁沒動靜請直接重發，或用 /{slot.index} "
+                         "切過去看狀態、/fetch 看最新回覆。"),
+            })
+        except Exception:
+            pass
 
     def _verify_injection(self, slot, payload, injected_at, window=8.0):
         """(delivered, residue) — 送達驗證。
