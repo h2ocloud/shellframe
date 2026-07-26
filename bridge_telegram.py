@@ -733,6 +733,11 @@ class SessionSlot:
         self.marker_scan_gen = -1
         # marker 抽取失敗時，fallback 純文字轉發的 _peek 節流（每 3s 最多一次）。
         self._fb_next_ts = 0.0
+        # 這個「訊息 epoch」內是否已轉發過至少一個 marker block。用來支援
+        # follow-up 連續訊息（第一則回覆後保持監聽、每個新 block 各轉發一次），
+        # 並讓「模型漏 marker」的 fallback 只在完全沒轉發過 marker 時才觸發
+        # （避免對已用 marker 的分頁重複發 peek）。新使用者訊息時重置。
+        self.marker_forwarded = False
         # True while a TG message is waiting in the busy-guard queue / being
         # written into the PTY. /fetch reads it to tell the user their message
         # is queued (not lost) instead of silently showing the previous reply.
@@ -1939,6 +1944,11 @@ class TelegramBridge(BridgeBase):
         reply, has_open = self._pick_marker_reply(slot, allow_inprogress=False)
         if has_open and total < 30.0:
             reply = ""
+        # follow-up 支援：_pick_marker_reply 回「最後一個完整 block」，第一則
+        # 轉發後它會一直回同一個 → 若已在 sent_responses 就當「沒有新的」，
+        # 走節流等下一個真正的新 block（feed_gen 前進才會重掃）。
+        if reply and reply in getattr(slot, "sent_responses", ()):
+            reply = ""
         if not reply:
             slot.marker_next_scan_ts = now + self._MARKER_RESCAN_INTERVAL
             slot.marker_scan_gen = gen
@@ -2567,6 +2577,11 @@ class TelegramBridge(BridgeBase):
                             # capture。
                             turn_ended = not re.search(
                                 r'esc to interrupt', self._live_tail(slot), re.I)
+                            # marker_forwarded=True 代表這 epoch 已用 marker 轉發過
+                            # → 「沒有新 block」是正常等待，不是漏 marker，別 fallback
+                            # 發 peek（會重送）。只有從頭到尾都沒 marker 才 fallback。
+                            if slot.marker_forwarded:
+                                continue
                             if not (turn_ended and total >= self._MARKER_FALLBACK_SECS):
                                 continue
                             if now < getattr(slot, "_fb_next_ts", 0.0):
@@ -2597,12 +2612,17 @@ class TelegramBridge(BridgeBase):
                                 pass
                             new_lines = [marked_reply]
                             slot.sent_responses.add(marked_reply)
-                            slot.pending_raw = ""
-                            slot.expect_marker = False
-                            slot.reply_start_marker = ""
-                            slot.reply_end_marker = ""
-                            slot.marker_prompt = ""
-                            slot.has_user_msg = False
+                            # Follow-up 連續訊息（Howard 2026-07-26：「只回一則、
+                            # 背景 subagent 完成的訊息漏掉」）：**不再**清掉
+                            # expect_marker / markers / has_user_msg——保持 marker
+                            # 監聽，AI 之後每包一個新的 [[TG_REPLY]] block（例如
+                            # 背景 worker 跑完的完成通知）都會被當「新 block」轉發
+                            # 一次（去重在 _try_marker_extract）。只有新使用者訊息
+                            # 才重置 token / marker_forwarded。marker_forwarded 讓
+                            # fallback 只在完全沒用過 marker 時才觸發。
+                            # 不清 pending_raw：後續 block 會 append 進來，靠
+                            # sent_responses 去重避免重送舊的。
+                            slot.marker_forwarded = True
                     else:
                         # Extract new text via screen diff (only final changes).
                         # Guarded: _extract_new_text does heavy pyte/regex parsing;
@@ -4520,6 +4540,7 @@ class TelegramBridge(BridgeBase):
             slot.marker_next_scan_ts = 0.0
             slot.marker_scan_gen = -1
             slot._fb_next_ts = 0.0
+            slot.marker_forwarded = False   # 新訊息 epoch：重新允許 fallback
         else:
             slot.expect_marker = False
             slot.reply_start_marker = ""

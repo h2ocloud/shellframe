@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.29.21 (2026-07-26)
+
+### Fixes
+- **Follow-up 連續訊息只回一則、背景 subagent 完成的訊息漏掉**（Howard 回報）：
+  TG-wrap 分頁在**第一則 marker 回覆後就清掉** `expect_marker`/`has_user_msg`，
+  之後 AI 再包的 `[[TG_REPLY]]` 訊息（例如「背景 worker 已啟動…好了通知你」
+  後，worker 跑完的完成通知）落進 drain 路徑、只做 signal 偵測、**不轉發** →
+  體感「只回一則」。
+  修法：第一則回覆後**保持 marker 監聽**（不清 expect_marker/markers/
+  has_user_msg），AI 之後每包一個「新的」marker block 都轉發一次；去重在
+  `_try_marker_extract`（已在 `sent_responses` 的 block 當「沒有新的」、走
+  節流等下一個真正的新 block）。只有新使用者訊息才重置 token。新增
+  `slot.marker_forwarded` 旗標讓「模型漏 marker」的 fallback 只在整個 epoch
+  從未用過 marker 時才觸發（避免對已用 marker 的分頁重送 peek）。
+  回歸測試：`tests_tg_followup.py` 5 案例。純 bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.20 (2026-07-26)
 
 ### Features
