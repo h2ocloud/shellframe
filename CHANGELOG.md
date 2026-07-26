@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.29.20 (2026-07-26)
+
+### Features
+- **TG `/effort` — 遠端調 active 分頁的推理深度（claude + codex 統一）**（Howard 提）。
+  兩邊原生 UX 不同，收斂成一組 TG inline 按鈕：
+  - **claude**：原生 `/effort` 是滑桿（low/medium/high/xhigh/max/ultracode）。
+    帶參數 `/effort <level>` 會跳 Yes/No 確認——`_apply_effort_claude` 送層級後
+    自動答「1」確認，回讀「effort level / thinking with <level>」。
+  - **codex**：`/model` →Enter 保留目前模型→「Select Reasoning Level」編號選單
+    （1 Low／2 Medium／3 High／4 Extra high／5 Max）——`_apply_effort_codex`
+    自動走完並回讀 header 的 effort。
+  用法：TG 打 `/effort`（alias `/推理`）→ 依分頁是 claude/codex 顯示對應層級
+  按鈕→點一下套用，回合進行中會擋下。非 claude/codex 分頁會提示不適用。
+  已加入 bot 指令選單與 /help。回歸測試：`tests_tg_effort.py` 6 案例。
+  純 bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.19 (2026-07-24)
 
 ### Fixes
@@ -24,7 +40,6 @@
   AI-block 過濾、`_marker_fallback_text` 三個轉發出口（fallback 與 /fetch
   同源，一起乾淨）。
   回歸測試：`tests_tg_inject.py` 新增雜訊過濾＋延遲判定 2 組案例。
-  純 bridge 改動，`sfctl reload` 生效。
 
 ## v0.29.18 (2026-07-15)
 

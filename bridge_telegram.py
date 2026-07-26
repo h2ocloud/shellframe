@@ -1125,6 +1125,7 @@ class TelegramBridge(BridgeBase):
             {"command": "update", "description": "Check & apply ShellFrame updates"},
             {"command": "new", "description": "New session (default: claude)"},
             {"command": "rename", "description": "Rename tab: /rename <新名> 或 /rename <編號> <新名>"},
+            {"command": "effort", "description": "調推理深度（claude/codex，inline 按鈕）"},
             {"command": "close", "description": "Close current session (with confirm)"},
         ])
         # The claude-plugins-official telegram plugin shares this bot token
@@ -2845,6 +2846,121 @@ class TelegramBridge(BridgeBase):
             })
         threading.Thread(target=_run, daemon=True).start()
 
+    # ── /effort：調整 active 分頁的推理深度（claude + codex 統一）──────────
+    # claude 原生 `/effort <level>`（滑桿層級 low→ultracode，帶參數會跳
+    # Yes/No 確認）；codex 走 `/model`→Enter 保留模型→reasoning 編號選單。
+    # 兩邊 UX 不同，這裡收斂成一組 TG inline 按鈕。
+    _EFFORT_CLAUDE = [
+        ("low", "Low 最快"), ("medium", "Medium"), ("high", "High（預設）"),
+        ("xhigh", "xHigh"), ("max", "Max 最深"), ("ultracode", "Ultracode（+workflows）"),
+    ]
+    # codex reasoning 選單編號（實測 gpt-5.6）：1 Low / 2 Medium / 3 High /
+    # 4 Extra high / 5 More reasoning…(Max)
+    _EFFORT_CODEX = [
+        ("1", "Low 最快"), ("2", "Medium"), ("3", "High"),
+        ("4", "Extra high"), ("5", "Max 最深"),
+    ]
+
+    def _handle_effort_command(self, user_id: int, chat_id: int):
+        """TG /effort：把 active 分頁目前的 AI（claude/codex）推理深度層級
+        變成 inline 按鈕；點按鈕即套用（efchoice callback 各自驅動原生 UX）。"""
+        active_sid = self.get_active_sid(user_id)
+        slot = self.slots.get(active_sid) if active_sid else None
+        if not slot:
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": "沒有 active session，先用 /list 選一個。"})
+            return
+        kind = _detect_ai(getattr(slot, "cmd", "") or "")
+        if kind not in ("claude", "codex"):
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": f"「{slot.label}」不是 claude/codex 分頁，沒有推理深度可調。"})
+            return
+        if re.search(r"esc to interrupt", self._live_tail(slot), re.I):
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": f"「{slot.label}」正在跑回合中，等它結束再 /effort。"})
+            return
+        levels = self._EFFORT_CLAUDE if kind == "claude" else self._EFFORT_CODEX
+        # 目前層級（盡力偵測）：狀態列的 ◈/◉ <level> 或 codex header 的 model 行
+        cur = ""
+        try:
+            disp = "\n".join(self._slot_display(slot))
+            m = re.search(r'[◈◉]\s*(low|medium|high|xhigh|max|ultracode)\b', disp, re.I)
+            if m:
+                cur = m.group(1).lower()
+            elif kind == "codex":
+                m = re.search(r'model:\s*\S+\s+(low|medium|high|extra high|\S+)',
+                              disp, re.I)
+                if m:
+                    cur = m.group(1).lower()
+        except Exception:
+            pass
+        keyboard = []
+        for token, label in levels:
+            mark = " ✔" if cur and (cur in label.lower() or label.lower().startswith(cur)) else ""
+            keyboard.append([{"text": f"{label}{mark}",
+                              "callback_data": f"efchoice:{kind}:{slot.sid}:{token}"}])
+        keyboard.append([{"text": "✖ 取消", "callback_data": f"efcancel:{slot.sid}"}])
+        head = f"🧠 {slot.label}（{kind}）— 選推理深度" + (f"　目前：{cur}" if cur else "")
+        tg_api(self.config.bot_token, "sendMessage", {
+            "chat_id": chat_id, "text": head,
+            "reply_markup": {"inline_keyboard": keyboard}})
+
+    def _apply_effort_claude(self, slot, level: str):
+        """claude：送 /effort <level>，若跳 Yes/No 確認就答 1。回確認字串或 ''。"""
+        with slot.write_lock:
+            slot.write_fn("\x15")            # 清輸入框
+            time.sleep(0.15)
+            slot.write_fn(f"/effort {level}")
+            time.sleep(0.3)
+            slot.write_fn("\r")
+        # 等畫面：可能直接生效，或跳「Change effort level? 1. Yes …」確認
+        for _ in range(14):
+            time.sleep(0.4)
+            tail = "\n".join(self._slot_display(slot)[-14:])
+            if re.search(r"Change effort level\?", tail, re.I):
+                with slot.write_lock:
+                    slot.write_fn("1\r")     # Yes, switch
+                continue
+            m = re.search(r'(?:effort level (?:as|to)|thinking with)\s+(\w+)', tail, re.I)
+            if m:
+                return m.group(1)
+        return ""
+
+    def _apply_effort_codex(self, slot, num: str):
+        """codex：/model → Enter 保留模型 → reasoning 編號選單 → num → Enter。"""
+        with slot.write_lock:
+            slot.write_fn("\x15")
+            time.sleep(0.15)
+            slot.write_fn("/model")
+            time.sleep(0.3)
+            slot.write_fn("\r")
+        # 等 model picker，Enter 保留目前模型 → 進 reasoning 步驟
+        got_reasoning = False
+        for _ in range(14):
+            time.sleep(0.4)
+            tail = "\n".join(self._slot_display(slot)[-16:])
+            if re.search(r"Select Reasoning Level", tail, re.I):
+                got_reasoning = True
+                break
+            if re.search(r"Select Model and Effort|Select Model", tail, re.I):
+                with slot.write_lock:
+                    slot.write_fn("\r")      # 保留目前模型，進 effort 步驟
+        if not got_reasoning:
+            return ""
+        with slot.write_lock:
+            slot.write_fn(num)
+            time.sleep(0.2)
+            slot.write_fn("\r")
+        for _ in range(10):
+            time.sleep(0.4)
+            tail = "\n".join(self._slot_display(slot)[-16:])
+            m = re.search(r'model:\s*\S+\s+(low|medium|high|extra high|\w+)', tail, re.I)
+            if m:
+                return m.group(1)
+        return "已送出"
+
     def _send_choice_menu(self, chat_id: int, slot, text: str):
         """Send a detected CLI approval/menu prompt as Telegram inline buttons."""
         options = list(getattr(slot, 'pending_menu_options', []) or [])
@@ -3921,6 +4037,64 @@ class TelegramBridge(BridgeBase):
                 "text": "已取消，模型未變更。"})
             return
 
+        if data.startswith("efchoice:"):
+            # /effort：efchoice:<kind>:<sid>:<token>。claude token=層級字串、
+            # codex token=reasoning 選單編號。各自驅動原生 UX（見 _apply_effort_*）。
+            parts = data.split(":", 3)
+            if len(parts) < 4:
+                return
+            kind, sid, token = parts[1], parts[2], parts[3]
+            slot = self.slots.get(sid)
+            if not slot:
+                tg_api(self.config.bot_token, "editMessageText", {
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": "Session already gone."})
+                return
+            self._user_chat[user_id] = chat_id
+            self._user_active[user_id] = sid
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id,
+                "text": f"🧠 套用推理深度中…（{slot.label}）"})
+
+            def _run(kind=kind, slot=slot, token=token,
+                     chat_id=chat_id, message_id=message_id):
+                try:
+                    if kind == "claude":
+                        got = self._apply_effort_claude(slot, token)
+                        label = token
+                    else:
+                        got = self._apply_effort_codex(slot, token)
+                        label = dict(self._EFFORT_CODEX).get(token, token)
+                except Exception as e:
+                    tg_api(self.config.bot_token, "editMessageText", {
+                        "chat_id": chat_id, "message_id": message_id,
+                        "text": f"❌ 套用失敗：{type(e).__name__}: {e}"})
+                    return
+                if got:
+                    tg_api(self.config.bot_token, "editMessageText", {
+                        "chat_id": chat_id, "message_id": message_id,
+                        "text": f"✅ {slot.label} 推理深度 → {got}"})
+                else:
+                    tg_api(self.config.bot_token, "editMessageText", {
+                        "chat_id": chat_id, "message_id": message_id,
+                        "text": (f"✳ 已送出（{label}），但沒在畫面看到確認。"
+                                 f"用 /{slot.index} 切過去或 /fetch 檢查。")})
+            threading.Thread(target=_run, daemon=True).start()
+            return
+
+        if data.startswith("efcancel:"):
+            sid = data.split(":", 1)[1]
+            slot = self.slots.get(sid)
+            if slot:
+                try:
+                    slot.write_fn("\x1b")
+                except Exception:
+                    pass
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id,
+                "text": "已取消，推理深度未變更。"})
+            return
+
         if data.startswith("rlchoice:"):
             # Rate-limit interactive menu: "1" = wait, "2" = usage credits.
             # The /rate-limit-options menu is confirmed with Enter, so we send
@@ -4191,7 +4365,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -4679,6 +4853,11 @@ class TelegramBridge(BridgeBase):
             # 按鈕選擇（實測：picker 按數字＝立即選定並存為新 session 預設）。
             self._handle_model_command(user_id, chat_id)
 
+        elif cmd in ("effort", "推理"):
+            # 推理深度：claude /effort 滑桿層級 + codex /model reasoning 步驟，
+            # 收斂成 TG inline 按鈕（見 _handle_effort_command）。
+            self._handle_effort_command(user_id, chat_id)
+
         elif cmd in ("usage", "水位"):
             # Per-tab AI usage water-level. Resolve the active session, then
             # query main.py in a background thread (the codex/claude probe can
@@ -5094,6 +5273,7 @@ class TelegramBridge(BridgeBase):
                     "  /close — close current session (with confirm)\n"
                     "  /1, /2, … — switch session\n"
                     "  /rename <新名> — 改目前分頁名；/rename <編號> <新名> 改指定分頁（alias /改名）\n"
+                    "  /effort — 調目前分頁推理深度（claude/codex，inline 按鈕；alias /推理）\n"
                     "  /break — 中斷目前分頁 AI（送 ESC；alias /stop /中斷）\n"
                     "  /voice — 語音整理設定/切模型（/voice <模型>、/voice on|off）\n\n"
                     "Bridge control:\n"
