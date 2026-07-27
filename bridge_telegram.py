@@ -2935,10 +2935,13 @@ class TelegramBridge(BridgeBase):
             slot.write_fn(f"/effort {level}")
             time.sleep(0.3)
             slot.write_fn("\r")
-        # 等畫面：可能直接生效，或跳「Change effort level? 1. Yes …」確認
+        # 等畫面：可能直接生效，或跳「Change effort level? 1. Yes …」確認。
+        # 讀 _live_tail（濾空列取尾端）而非 display[-N:]——pyte 螢幕固定 50 列，
+        # 實際終端較矮時尾端切片全是空白列，確認字串永遠讀不到（Howard
+        # 2026-07-27：ultracode 明明套用成功卻回「沒在畫面看到確認」）。
         for _ in range(14):
             time.sleep(0.4)
-            tail = "\n".join(self._slot_display(slot)[-14:])
+            tail = self._live_tail(slot, rows=14)
             if re.search(r"Change effort level\?", tail, re.I):
                 with slot.write_lock:
                     slot.write_fn("1\r")     # Yes, switch
@@ -2960,7 +2963,7 @@ class TelegramBridge(BridgeBase):
         got_reasoning = False
         for _ in range(14):
             time.sleep(0.4)
-            tail = "\n".join(self._slot_display(slot)[-16:])
+            tail = self._live_tail(slot, rows=16)
             if re.search(r"Select Reasoning Level", tail, re.I):
                 got_reasoning = True
                 break
@@ -2975,7 +2978,7 @@ class TelegramBridge(BridgeBase):
             slot.write_fn("\r")
         for _ in range(10):
             time.sleep(0.4)
-            tail = "\n".join(self._slot_display(slot)[-16:])
+            tail = self._live_tail(slot, rows=16)
             m = re.search(r'model:\s*\S+\s+(low|medium|high|extra high|\w+)', tail, re.I)
             if m:
                 return m.group(1)
@@ -4024,7 +4027,7 @@ class TelegramBridge(BridgeBase):
                 for _ in range(12):                     # 最多等 ~6s
                     time.sleep(0.5)
                     try:
-                        tail = "\n".join(self._slot_display(slot)[-12:])
+                        tail = self._live_tail(slot, rows=12)
                     except Exception:
                         continue
                     m = re.search(r'Set model to\s+([^\n]+?)\s*(?:and saved[^\n]*)?$',

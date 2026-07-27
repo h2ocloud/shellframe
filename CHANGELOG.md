@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.29.22 (2026-07-27)
+
+### Fixes
+- **TG `/effort`／`/model` 明明套用成功卻回「已送出但沒在畫面看到確認」**
+  （Howard 07-27：tab13 選 ultracode，畫面實際已顯示
+  `Set effort level to ultracode…`、狀態列也變 ultracode）。
+  根因：確認回讀用 `_slot_display(slot)[-N:]`——pyte 虛擬螢幕固定 50 列，
+  實際終端較矮（~36-44 列）時內容只佔上半部，**尾端切片幾乎全是空白列**，
+  確認行（在 composer 上方幾行）永遠不在切片裡。共 4 處同款：
+  `_apply_effort_claude`、`_apply_effort_codex` ×2、`/model` picker 確認。
+  修法：統一改用 `_live_tail(slot, rows=N)`（先濾空列再取尾端，v0.29.1 就是
+  為此而生）。測試 harness 同步拿掉假 `_live_tail` 改走真實實作；
+  `tests_tg_effort.py` 新增「確認行＋30 列空白尾」回歸案例。
+  純 bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.21 (2026-07-26)
 
 ### Fixes

@@ -31,7 +31,8 @@ def _bridge(cmd, display, sent=None, writes=None):
         screen=object(), _feed_gen=1, _display_cache=display, _display_cache_gen=1)
     br.slots = {"s1": slot}
     br.get_active_sid = lambda uid: "s1"
-    br._live_tail = lambda s, rows=6: "\n".join(s._display_cache[-rows:])
+    # 不假造 _live_tail——走真實實作（cache-hit 路徑讀 _display_cache），
+    # 才測得到「濾空列取尾端」的行為（v0.29.22 回歸）。
     _bt.tg_api = lambda tok, m, p=None: (sent.append((m, p)) if sent is not None else None) or {}
     return br, slot
 
@@ -97,6 +98,20 @@ def test_apply_claude_confirms():
     assert any(w.startswith("/effort high") for w in writes), writes
     assert "1\r" in writes, writes                    # 答了 Yes
     assert got == "high", got
+
+
+# ── 5b. v0.29.22 回歸：實際終端比 pyte 50 列矮 → display 尾端是一排空白列、
+#      確認行落在空白列之上——回讀必須先濾空列再取尾端，否則明明套用成功
+#      卻回「沒在畫面看到確認」（Howard 2026-07-27 tab13 ultracode 實案）──
+def test_apply_claude_readback_blank_tail():
+    writes = []
+    confirm = ("⎿  Set effort level to ultracode (this session only): "
+               "xhigh + dynamic workflow orchestration")
+    display = [confirm, "❯ ", "⏵⏵ bypass permissions on"] + [""] * 30
+    br, slot = _bridge("claude", display, writes=writes)
+    got = br._apply_effort_claude(slot, "ultracode")
+    assert got == "ultracode", f"空白列尾端應仍讀到確認：{got!r}"
+    assert any(w.startswith("/effort ultracode") for w in writes), writes
 
 
 # ── 6. 層級定義完整（claude 6 級、codex 5 級）──
