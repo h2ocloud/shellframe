@@ -70,6 +70,17 @@ def test_slot_has_marker_forwarded_flag():
     assert "self.marker_forwarded" in src, "SessionSlot 缺 marker_forwarded 初始化"
 
 
+# ── 6. v0.29.22 防「剛送出就重送上一則」：fallback 用 msg_sent_ts 時鐘 +
+#      對 sent_responses 去重（兩道防線都要在）──
+def test_fallback_guards_present():
+    import inspect
+    src = inspect.getsource(_bt.TelegramBridge._flush_loop)
+    assert "msg_sent_ts" in src, "fallback 未改用 msg_sent_ts 時鐘"
+    assert "fb in slot.sent_responses" in src, "fallback 缺 sent_responses 去重"
+    init = inspect.getsource(_bt.SessionSlot.__init__)
+    assert "self.msg_sent_ts" in init, "SessionSlot 缺 msg_sent_ts 初始化"
+
+
 if __name__ == "__main__":
     fails = []
     for name, fn in sorted(globals().items()):

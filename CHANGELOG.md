@@ -1,5 +1,23 @@
 # Changelog
 
+<<<<<<< HEAD
+## v0.29.23 (2026-08-01)
+
+### Fixes
+- **剛送出訊息就立刻收到「上一則回覆」的重複**（Howard 回報）：v0.29.21 的
+  follow-up 監聽讓 has_user_msg 保持 True，觸發了 fallback 的一個潛在 bug——
+  fallback 的等待時鐘用 `total = now - first_output_time`，但 `first_output_time`
+  在忙碌分頁（持續有輸出）會停在很久以前 → `total` 變幾萬秒（log 實測 36902s）→
+  `total >= 30` 永遠成立。於是一送新訊息（重置 marker_forwarded、重新開放
+  fallback），在新回覆還沒生成前，fallback 就用「畫面上還是上一則回覆」的 peek
+  立刻重送 = 重複。
+  修法：(1) fallback 時鐘改用 `slot.msg_sent_ts`（這則使用者訊息送出的時刻），
+  不再用 stale 的 first_output_time；(2) fallback 內容對 `sent_responses` 去重，
+  已送過的回覆絕不重送（直接防線）；(3) 每則新訊息清 pending_raw ＋重置輸出
+  時鐘，新 epoch 從乾淨開始。回歸測試：`tests_tg_followup.py` +1。
+>>>>>>> 48b4da0 (v0.29.23: 修「剛送出就重送上一則回覆」——fallback 時鐘改用 msg_sent_ts(非stale first_output_time)+對 sent_responses 去重+新訊息清 buffer)
+  純 bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.22 (2026-07-27)
 
 ### Fixes
@@ -13,8 +31,7 @@
   修法：統一改用 `_live_tail(slot, rows=N)`（先濾空列再取尾端，v0.29.1 就是
   為此而生）。測試 harness 同步拿掉假 `_live_tail` 改走真實實作；
   `tests_tg_effort.py` 新增「確認行＋30 列空白尾」回歸案例。
-  純 bridge 改動，`sfctl reload` 生效。
-
+=======
 ## v0.29.21 (2026-07-26)
 
 ### Fixes

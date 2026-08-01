@@ -733,6 +733,10 @@ class SessionSlot:
         self.marker_scan_gen = -1
         # marker 抽取失敗時，fallback 純文字轉發的 _peek 節流（每 3s 最多一次）。
         self._fb_next_ts = 0.0
+        # 這則使用者訊息送出的時刻——fallback 的等待時鐘用它，而非
+        # first_output_time（後者在忙碌分頁會停在很久以前，害 total 變幾萬秒、
+        # fallback 一送新訊息就誤觸把上一則回覆重送。v0.29.22）。
+        self.msg_sent_ts = 0.0
         # 這個「訊息 epoch」內是否已轉發過至少一個 marker block。用來支援
         # follow-up 連續訊息（第一則回覆後保持監聽、每個新 block 各轉發一次），
         # 並讓「模型漏 marker」的 fallback 只在完全沒轉發過 marker 時才觸發
@@ -2582,13 +2586,18 @@ class TelegramBridge(BridgeBase):
                             # 發 peek（會重送）。只有從頭到尾都沒 marker 才 fallback。
                             if slot.marker_forwarded:
                                 continue
-                            if not (turn_ended and total >= self._MARKER_FALLBACK_SECS):
+                            # 時鐘用「自這則使用者訊息送出」算，不用 total（見
+                            # msg_sent_ts 註解）——否則忙碌分頁一送新訊息就誤觸。
+                            waited = now - (slot.msg_sent_ts or now)
+                            if not (turn_ended and waited >= self._MARKER_FALLBACK_SECS):
                                 continue
                             if now < getattr(slot, "_fb_next_ts", 0.0):
                                 continue
                             slot._fb_next_ts = now + 3.0
                             fb = self._marker_fallback_text(slot)
-                            if not fb:
+                            # 去重：畫面上若還是上一則（已送過的）回覆，絕不重送
+                            # ——這是「剛送出就回上一則」重複的直接防線。
+                            if not fb or fb in slot.sent_responses:
                                 continue
                             _blog(f"[send] {sid} marker missing → fallback "
                                   f"forward ({len(fb)} chars) after {total:.0f}s\n")
@@ -4466,12 +4475,16 @@ class TelegramBridge(BridgeBase):
                 "text": f"📎 {count} file{'s' if count > 1 else ''} received: {names}",
             })
 
-        # Mark that this session has received a real user message
-        # Clear any pre-existing buffer (system prompt responses, etc.)
-        if not slot.has_user_msg:
-            with slot.output_lock:
-                slot.output_buf = ""
-                slot.pending_raw = ""
+        # Mark that this session has received a real user message. 每則新訊息
+        # 都清 buffer + 重置輸出時鐘：新 epoch 從乾淨開始，避免 follow-up
+        # 保留下來的舊 block 與 stale first_output_time 混進來（v0.29.22 的
+        # 「剛送出就重送上一則」根因之一）。
+        with slot.output_lock:
+            slot.output_buf = ""
+            slot.pending_raw = ""
+            slot.first_output_time = 0
+            slot.last_output_time = 0
+        slot.msg_sent_ts = time.time()
         slot.has_user_msg = True
         slot.awaiting_response = True  # arm typing indicator + flush extraction
         # Track what we send so we can filter echo from output
