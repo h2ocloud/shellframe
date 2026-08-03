@@ -3679,37 +3679,70 @@ try {
         except:
             local = {"version": "0.0.0"}
 
+        # Remote version STRING — for display only (banner「vX 可更新」). Cache-
+        # bust: raw.githubusercontent is Fastly-cached (~5 min) and serves a
+        # STALE version.json right after a push.
+        remote_ver = None
         try:
-            # Cache-bust: raw.githubusercontent is Fastly-cached (~5 min) and
-            # serves a STALE version.json right after a push — a machine that
-            # checks in that window sees no update (Howard 2026-07-06: 遠端撞版
-            # 那台偵測不到更新). A unique query string is a distinct cache key,
-            # plus no-cache headers, so we always read the just-pushed value.
             bust = int(time.time())
             req = urllib.request.Request(
                 f"{REPO_URL}?t={bust}",
                 headers={"User-Agent": "shellframe",
                          "Cache-Control": "no-cache", "Pragma": "no-cache"})
             with urllib.request.urlopen(req, timeout=5) as resp:
-                remote = json.loads(resp.read().decode())
-        except:
-            return json.dumps({"local": local["version"], "remote": None, "update_available": False, "error": "Could not reach GitHub"})
+                remote_ver = json.loads(resp.read().decode()).get("version")
+        except Exception:
+            pass
 
-        # Defensive version parse: a non-numeric segment (channel suffix, WIP
-        # tag) must not raise out of the check and read as "no update".
+        # AUTHORITATIVE update signal: git commit SHA, NOT the version.json
+        # semver (Howard 2026-08-03:「版號不能衝突，會讓其他機器檢測不到
+        # update」）。並行 session 撞版號時，舊機器看到 remote_v == local_v →
+        # 誤判沒更新、永遠不更新。改比對 remote main 的 commit SHA vs 本機
+        # HEAD：版號變純顯示，撞號再也不影響偵測。git 不可用時退回 semver。
+        def _git(*args, timeout=8):
+            try:
+                r = subprocess.run(["git", "-C", str(APP_DIR), *args],
+                                   capture_output=True, text=True, timeout=timeout)
+                return r.stdout.strip() if r.returncode == 0 else ""
+            except Exception:
+                return ""
+        local_sha = _git("rev-parse", "HEAD")
+        ls = _git("ls-remote", "origin", "-h", "refs/heads/main")
+        remote_sha = ls.split()[0] if ls else ""
+        if local_sha and remote_sha:
+            has_update = remote_sha != local_sha
+            if has_update:
+                # 避免「本機領先遠端」誤報：remote_sha 是本機 HEAD 的祖先
+                # ＝本機在前面（remote 物件在本機才判得出；不在＝遠端有新東西
+                # → 維持 has_update）。免 fetch。
+                anc = subprocess.run(
+                    ["git", "-C", str(APP_DIR), "merge-base",
+                     "--is-ancestor", remote_sha, "HEAD"],
+                    capture_output=True, timeout=8)
+                if anc.returncode == 0:
+                    has_update = False
+            return json.dumps({
+                "local": local["version"],
+                "remote": remote_ver or local["version"],
+                "update_available": has_update,
+                "remote_sha": remote_sha[:7],
+            })
+
+        # FALLBACK：git 不可用 → 回到 version.json semver 比對（舊行為）。
+        if remote_ver is None:
+            return json.dumps({"local": local["version"], "remote": None,
+                               "update_available": False,
+                               "error": "Could not reach GitHub"})
         def _vtuple(s):
             out = []
             for x in str(s).split("."):
                 m = re.match(r"\d+", x)
                 out.append(int(m.group()) if m else 0)
             return tuple(out)
-        local_v = _vtuple(local.get("version", "0"))
-        remote_v = _vtuple(remote.get("version", "0"))
-        has_update = remote_v > local_v
-
+        has_update = _vtuple(remote_ver) > _vtuple(local.get("version", "0"))
         return json.dumps({
             "local": local["version"],
-            "remote": remote["version"],
+            "remote": remote_ver,
             "update_available": has_update,
         })
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.29.24 (2026-08-03)
+
+### Fixes
+- **版號衝突會讓其他機器偵測不到 update**（Howard 回報）：`check_update` 原本
+  比對 version.json 的 semver（`remote_v > local_v`）。多個並行 session 撞同一
+  版號時（近期常發生），舊機器看到 `remote_v == local_v` → 判定沒更新 →
+  **永遠不更新**，即使程式碼其實變了。
+  修法（根治）：`check_update` 改用 **git commit SHA** 當權威訊號——比對
+  `git ls-remote origin main` 的 SHA vs 本機 HEAD，不同就是有更新；版號變純
+  顯示用，撞號再也不影響偵測。用 `merge-base --is-ancestor` 免 fetch 排除
+  「本機領先遠端」誤報；git 不可用時退回原本的 semver 比對。
+  生效需 `sfctl restart`（main.py）；其他機器經一次正常更新後即獲得此邏輯。
+
+### Tooling
+- 新增 `scripts/bump_version.py`：取 本機＋origin/main＋tags 的最大 semver
+  再 +1，commit 前跑它就拿到「比所有已知版號都大」的號，避免撞號的手動
+  renumber。（撞號已不影響偵測，此為避免版號重複的雙保險。）
+
 <<<<<<< HEAD
 ## v0.29.23 (2026-08-01)
 
