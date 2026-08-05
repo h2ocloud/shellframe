@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.29.27 (2026-08-05)
+
+### Fixes
+- **拖曳檔案沒帶路徑・第二層根因**（v0.29.26 修了 uri-list 缺檔名，Howard
+  重測仍無反應）。js:drop 足跡顯示這次更徹底：`types=["Files"]`——
+  **新版 macOS Finder 拖曳放上 pasteboard 的是 file-reference URL
+  （`file:///.file/id=…`），WebKit 完全轉不出 text/uri-list**，DOM 端一條
+  路徑都拿不到；blob fallback 又靜默失敗（無 onerror 監聽）。
+  修法：**繞過 WebKit，後端直讀 macOS drag pasteboard**——新增
+  `drag_pasteboard_paths` API（NSPasteboard「Apple CFPasteboard drag」＋
+  `NSURL.path()` 把 file-id URL 解回真實路徑，drop 結束後內容仍在，已用
+  實案 pptx 驗證解出 `/Users/neux/Downloads/遠東商銀_….pptx`）。前端在
+  uri-list 抽不到／不齊時改問 pasteboard，檔名（NFC 正規化）對得上
+  `dt.files` 且 `paths_exist` 驗過才注入。blob fallback 補 `onerror`＋
+  save 失敗 log（js:drop-blob），不再靜默。
+  回歸測試：`tests_drop_paths.py` 增至 6 案例。生效需 `sfctl restart`。
+
 ## v0.29.26 (2026-08-05)
 
 ### Fixes

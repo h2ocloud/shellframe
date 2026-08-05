@@ -4126,6 +4126,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         vPaths = candidates.filter(p => !p.endsWith('/'));
       }
     }
+    // 新版 macOS Finder 拖曳給的是 file-reference URL（file:///.file/id=…），
+    // WebKit 轉不出 uri-list → DOM types 只剩 ["Files"]、上面整段抽不到路徑。
+    // 原生 drag pasteboard 上的 URL 還在，請後端用 NSURL 解回真實路徑；
+    // 檔名（NFC 正規化後）要對得上這次拖進來的 dt.files 才採用。
+    if (vPaths.length < dtFiles.length || (!vPaths.length && dtFiles.length)) {
+      try {
+        const pb = JSON.parse(await pywebview.api.drag_pasteboard_paths());
+        const want = new Set(dtFiles.map(f => (f.name || '').normalize('NFC')));
+        let cand = pb.filter(p => want.has((p.split('/').pop() || '').normalize('NFC')));
+        if (!cand.length && pb.length === dtFiles.length) cand = pb;
+        if (cand.length) {
+          const ok = JSON.parse(await pywebview.api.paths_exist(JSON.stringify(cand)));
+          for (let i = 0; i < cand.length; i++) {
+            if (ok[i] && !vPaths.includes(cand[i])) vPaths.push(cand[i]);
+          }
+        }
+        try { pywebview.api.js_debug('drop-pb', JSON.stringify({ pb, used: vPaths })); } catch (_) {}
+      } catch (_) {}
+    }
     if (vPaths.length >= Math.max(1, dtFiles.length)) {
       const ai = isAiSession(activeId);
       if (ai) {
@@ -4142,25 +4161,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // ~/.claude/tmp/.
     const files = dtFiles;
     if (files && files.length > 0) {
+      const _blobFail = (what) => {
+        try { pywebview.api.js_debug('drop-blob', what); } catch (_) {}
+      };
       for (const file of files) {
         if (file.type.startsWith('image/')) {
           const reader = new FileReader();
+          reader.onerror = () => _blobFail('FileReader error(image): ' + (reader.error && reader.error.name) + ' ' + file.name);
           reader.onload = async () => {
             const path = await pywebview.api.save_image(reader.result);
             if (path && !path.startsWith('ERROR')) {
               if (isAiSession(activeId)) { attachFile(path, reader.result); }
               else { await pywebview.api.write_input(activeId, path); }
-            }
+            } else { _blobFail('save_image failed: ' + path); }
           };
           reader.readAsDataURL(file);
         } else {
           const reader = new FileReader();
+          reader.onerror = () => _blobFail('FileReader error(file): ' + (reader.error && reader.error.name) + ' ' + file.name);
           reader.onload = async () => {
             const path = await pywebview.api.save_file_from_clipboard(reader.result, file.name || 'file');
             if (path && !path.startsWith('ERROR')) {
               if (isAiSession(activeId)) { attachFile(path, null); }
               else { await pywebview.api.write_input(activeId, path); }
-            }
+            } else { _blobFail('save_file failed: ' + path); }
             _refocusActive();
           };
           reader.readAsDataURL(file);

@@ -47,5 +47,14 @@ check("空輸入回空 list", json.loads(api.paths_exist("")) == [])
 
 os.unlink(real)
 
+# drag_pasteboard_paths：非 darwin 回空；darwin 回 JSON list（內容依當下
+# pasteboard，不驗值只驗形狀與不炸）
+from unittest.mock import patch as _patch
+with _patch("sys.platform", "linux"):
+    check("非 darwin 回空 list", json.loads(api.drag_pasteboard_paths()) == [])
+if sys.platform == "darwin":
+    r = json.loads(api.drag_pasteboard_paths())
+    check("darwin 回 JSON list 不炸", isinstance(r, list))
+
 print(f"\nResults: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

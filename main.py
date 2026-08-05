@@ -3516,6 +3516,37 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         except Exception:
             return json.dumps([])
 
+    def drag_pasteboard_paths(self) -> str:
+        """macOS：從 drag pasteboard 直讀拖曳檔案的真實路徑（drop 後仍在）。
+
+        新版 macOS 的 Finder 拖曳放上 pasteboard 的是 file-reference URL
+        （file:///.file/id=…），WebKit 轉不出 text/uri-list——DOM 端 types
+        只剩 ["Files"]、完全拿不到路徑（2026-08-05 實案，js:drop 足跡）。
+        原生 pasteboard 上這顆 URL 還在，NSURL.path() 會解回真實路徑
+        （含 CJK 檔名）。"""
+        if sys.platform != "darwin":
+            return json.dumps([])
+        try:
+            from AppKit import NSPasteboard
+            from Foundation import NSURL
+            pb = NSPasteboard.pasteboardWithName_("Apple CFPasteboard drag")
+            paths = []
+            for it in (pb.pasteboardItems() or []):
+                u = it.stringForType_("public.file-url")
+                if not u:
+                    continue
+                try:
+                    p = NSURL.URLWithString_(u).path()
+                except Exception:
+                    p = None
+                if p:
+                    paths.append(str(p))
+            _dlog("drop", f"drag pasteboard → {paths!r}")
+            return json.dumps(paths)
+        except Exception as e:
+            _dlog("drop", f"drag pasteboard read failed: {e}")
+            return json.dumps([])
+
     def js_debug(self, tag: str, msg: str) -> str:
         """前端事件落 debug log。拖放/貼上這類 WebKit 行為差異在後端毫無
         足跡（2026-08-05 drop 掉檔名查了半天），給前端一條 log 通道。"""
