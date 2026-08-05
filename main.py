@@ -3504,6 +3504,24 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         except Exception:
             return json.dumps([])
 
+    def paths_exist(self, paths_json: str) -> str:
+        """拖放路徑修復鏈用：回傳每個候選路徑是否真實存在。
+
+        WebKit 對含非 ASCII 檔名的拖放，text/uri-list 可能只給到資料夾
+        （檔名整段消失）——前端用 dt.files 的檔名把資料夾補回完整路徑後，
+        必須經這裡驗證存在才敢注入，驗不過就退 blob fallback。"""
+        try:
+            paths = json.loads(paths_json or "[]")
+            return json.dumps([bool(p) and os.path.exists(str(p)) for p in paths])
+        except Exception:
+            return json.dumps([])
+
+    def js_debug(self, tag: str, msg: str) -> str:
+        """前端事件落 debug log。拖放/貼上這類 WebKit 行為差異在後端毫無
+        足跡（2026-08-05 drop 掉檔名查了半天），給前端一條 log 通道。"""
+        _dlog(f"js:{tag}", str(msg)[:500])
+        return "ok"
+
     def save_file_from_clipboard(self, data_url: str, filename: str) -> str:
         """Save a non-image file from clipboard data URL. Returns saved path."""
         try:

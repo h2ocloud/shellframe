@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.29.26 (2026-08-05)
+
+### Fixes
+- **拖曳檔案進來沒帶上路徑**（Howard 08-05：拖 Finder 檔案毫無反應）。
+  debug log 還原真相：drop 有觸發、也有寫入，但注入的是
+  `/Users/neux/Downloads/`——**WebKit 對含非 ASCII（CJK）檔名的拖放，
+  text/uri-list 可能只給到資料夾、檔名整段消失**（實案：遠東商銀_官網改版
+  _AI銜接.pptx）。舊版拿這個壞路徑就 early-return，連本來能救的 blob
+  fallback 都到不了 → 體感「沒帶路徑」。
+  修復鏈：1) 資料夾結尾的候選用 `dt.files` 的檔名補回完整路徑；2) 新增後端
+  `paths_exist` 驗證存在，驗過才注入（保留原始路徑，AI 讀真檔非複本）；
+  3) 補不齊（有效路徑數 < 拖入檔案數）→ 退回 blob fallback 存
+  `~/.claude/tmp`（帶原檔名）。dataTransfer 快照全部移到 await 之前
+  （WebKit 在 await 後會清空 dataTransfer）。
+  另新增 `js_debug` API：前端拖放/貼上這類 WebKit 行為差異從此在
+  debug log 有足跡（這次查案全靠事後 log 推斷）。
+  回歸測試：`tests_drop_paths.py` 4 案例。生效需 `sfctl restart`。
+
 ## v0.29.25 (2026-08-05)
 
 ### Fixes

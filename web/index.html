@@ -4079,6 +4079,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // fallback for webapps that only expose in-memory blobs.
     const dt = e.dataTransfer;
     const readTypes = (dt && dt.types) ? Array.from(dt.types) : [];
+    // dataTransfer 在 await 之後會被 WebKit 清空（neutered）——getData 與
+    // files 快照都必須在任何 await 之前同步取完。File 物件本身取到後不失效。
+    const dtFiles = (dt && dt.files) ? Array.from(dt.files) : [];
     const urlPaths = [];
     for (const typ of ['text/uri-list', 'public.file-url', 'text/plain']) {
       if (!readTypes.includes(typ)) continue;
@@ -4094,12 +4097,41 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
       if (urlPaths.length) break;
     }
+    try {
+      pywebview.api.js_debug('drop', JSON.stringify(
+        { types: readTypes, urls: urlPaths, files: dtFiles.map(f => f.name) }));
+    } catch (_) {}
+
+    // WebKit 對含非 ASCII 檔名的拖放，uri-list 可能只給到資料夾
+    // （file:///…/Downloads/，檔名整段消失——2026-08-05 遠東商銀 pptx 實案，
+    // 舊版拿壞路徑直接 early-return，連 blob fallback 都到不了）。修復鏈：
+    // 1) 資料夾結尾的候選用 dt.files 的檔名補回完整路徑
+    // 2) 後端驗證存在，驗過才注入（保留原始路徑，AI 讀真檔不是複本）
+    // 3) 補不齊（數量少於拖進來的檔案）→ 走 blob fallback 存 ~/.claude/tmp
+    let vPaths = [];
     if (urlPaths.length > 0) {
+      const names = dtFiles.map(f => f.name).filter(Boolean);
+      const candidates = [];
+      for (const p of urlPaths) {
+        if (p.endsWith('/') && names.length) {
+          for (const n of names) candidates.push(p + n);
+        } else {
+          candidates.push(p);
+        }
+      }
+      try {
+        const ok = JSON.parse(await pywebview.api.paths_exist(JSON.stringify(candidates)));
+        vPaths = candidates.filter((p, i) => ok[i]);
+      } catch (_) {
+        vPaths = candidates.filter(p => !p.endsWith('/'));
+      }
+    }
+    if (vPaths.length >= Math.max(1, dtFiles.length)) {
       const ai = isAiSession(activeId);
       if (ai) {
-        for (const p of urlPaths) attachFile(p, null);
+        for (const p of vPaths) attachFile(p, null);
       } else {
-        await pywebview.api.write_input(activeId, urlPaths.join(' '));
+        await pywebview.api.write_input(activeId, vPaths.join(' '));
       }
       return;
     }
@@ -4108,7 +4140,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // browsers / apps that hold the blob in memory. file.path is undefined in
     // WKWebView (Electron-only), so we read the bytes and save a copy under
     // ~/.claude/tmp/.
-    const files = dt && dt.files;
+    const files = dtFiles;
     if (files && files.length > 0) {
       for (const file of files) {
         if (file.type.startsWith('image/')) {
