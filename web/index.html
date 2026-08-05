@@ -437,7 +437,14 @@
     font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
     color: #565f89; padding: 10px 12px 6px; user-select: none; white-space: nowrap;
   }
-  #sidebar-sessions { flex: 1; overflow-y: auto; overflow-x: hidden; }
+  #sidebar-sessions { flex: 1; overflow-y: auto; overflow-x: hidden;
+    container-type: inline-size; container-name: sb; }
+  /* 側欄縮窄時，優先保留「命名(label)」，先藏掉重複性高、低識別度的資訊
+     （模型徽章幾乎每列都是 Opus 4.8·xhigh）。Howard 2026-08-05。
+     label 本身 flex:1 會自動取回空出來的空間。*/
+  @container sb (max-width: 215px) { #sidebar-sessions .sb-item .sb-model { display: none; } }
+  @container sb (max-width: 165px) { #sidebar-sessions .sb-item .sb-bridge { display: none; } }
+  @container sb (max-width: 165px) { #sidebar-sessions .sb-item > span[style*="min-width:14px"] { display: none; } }
   #sidebar-sessions::-webkit-scrollbar { width: 4px; }
   #sidebar-sessions::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 2px; }
   #sidebar-footer {

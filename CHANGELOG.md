@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.29.25 (2026-08-05)
+
+### Fixes
+- **側欄縮窄時把「命名」擠掉、卻保留重複的模型徽章**（Howard 回報：應保留
+  命名資訊，不是後面重複性高、低識別度的資訊）。根因：`.sb-label` 是
+  `flex:1`（會收縮 + ellipsis），但 `.sb-model` 是 `flex-shrink:0`（永不收縮）
+  → 窄的時候 label 先被吃掉、模型徽章反而全留（幾乎每列都是 Opus 4.8·xhigh，
+  無識別度）。
+  修法：`#sidebar-sessions` 設 CSS container query，側欄窄到 ≤215px 先隱藏
+  模型徽章、≤165px 再隱藏 TG 徽章與編號，label（flex:1）自動取回空間 →
+  縮窄時優先看得到分頁名稱。生效需 `sfctl restart`（web/index.html）。
+
 ## v0.29.24 (2026-08-03)
 
 ### Fixes
