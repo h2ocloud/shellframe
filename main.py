@@ -2129,6 +2129,19 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         if not sid:
             return {"success": False, "message": "sid required"}
         event = str(args.get("event") or "")
+        # hook 事件帶的 session_id / transcript_path 是「這個分頁現在寫哪個
+        # transcript」的唯一即時真相——/clear 會在同一個 claude process 裡
+        # 輪替 uuid，spawn 時的 --session-id 與 nearest-birth 都會釘在舊檔
+        # （2026-08-06 tab13 badge 顯示 Opus 4.6、實際 Opus 5 的根因）。
+        # 存在 state gate 之前：被 ignore 的事件同樣帶有效路徑。
+        s = self.sessions.get(sid)
+        if s is not None:
+            tp = str(args.get("transcript_path") or "").strip()
+            csid = str(args.get("session_id") or "").strip()
+            if tp:
+                s._hook_transcript_path = tp
+            if csid:
+                s.session_id = csid
         state = self._hook_state_for(
             event,
             str(args.get("notification_type") or ""),
@@ -2289,6 +2302,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                                     "cwd": getattr(s, "cwd", "~"),
                                     "tmux_name": getattr(s, "_tmux_name", None),
                                     "session_id": getattr(s, "session_id", None),
+                                    "transcript_hint": getattr(s, "_hook_transcript_path", None),
                                 }
                                 # Screen wording must come from the CURRENT rendered
                                 # screen. The _recent ring buffer is a byte-stream
@@ -3004,6 +3018,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             "cwd": getattr(s, "cwd", "~"),
             "tmux_name": getattr(s, "_tmux_name", None),
             "session_id": getattr(s, "session_id", None),
+            "transcript_hint": getattr(s, "_hook_transcript_path", None),
         }
         try:
             path = agent_status.resolve_transcript(worker)

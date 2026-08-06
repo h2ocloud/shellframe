@@ -203,6 +203,59 @@ try:
 finally:
     _os.unlink(_tmp_path)
 
-_TOTAL = 9 + 17
+# ── v0.29.28：badge 判讀修正（Howard 2026-08-06 tab13 顯示 Opus 4.6/xhigh、
+#    實際 Opus 5/ultracode）──
+
+# a) cmd uuid 抽取（resume 同檔續寫、birth 極舊，nearest-birth 必錯）
+ok("_cmd_session_uuid resume",
+   ag._cmd_session_uuid("claude --resume a6c737b5-b155-48b4-bb3f-bff736d775a4 --x")
+   == "a6c737b5-b155-48b4-bb3f-bff736d775a4")
+ok("_cmd_session_uuid session-id 大寫也收",
+   ag._cmd_session_uuid("claude --session-id CEBBB46F-21C9-4B0F-9DA0-1B2A7922A919")
+   == "cebbb46f-21c9-4b0f-9da0-1b2a7922a919")
+ok("_cmd_session_uuid 無 uuid → None", ag._cmd_session_uuid("claude --model opus") is None)
+
+# b) resolve_transcript：hook hint 最優先（唯一跟得上 /clear uuid 輪替的來源）
+with _tf.NamedTemporaryFile(suffix=".jsonl", delete=False) as _f:
+    _hint = _f.name
+try:
+    _got = ag.resolve_transcript({"cmd": "claude", "cwd": "~", "tmux_name": None,
+                                  "transcript_hint": _hint})
+    ok("resolve_transcript hint 優先", _got == _hint, repr(_got))
+finally:
+    _os.unlink(_hint)
+
+# c) per-tab effort：transcript 的 /effort 痕跡優先於全域 effortLevel；
+#    增量掃描（標記離檔尾很遠也要看得到、追加後更新）
+_eff_lines = [
+    '{"type":"user","message":{"content":"<local-command-stdout>Set effort level to ultracode (this session only): xhigh + dynamic workflow orchestration</local-command-stdout>"}}',
+] + ['{"type":"assistant","message":{"model":"claude-opus-5","content":"filler"}}'] * 50
+with _tf.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as _f:
+    _f.write("\n".join(_eff_lines) + "\n")
+    _eff_path = _f.name
+try:
+    ok("effort 痕跡（非尾端）→ ultracode",
+       ag._parse_claude_transcript_effort(_eff_path) == "ultracode")
+    with open(_eff_path, "a") as _f:
+        _f.write('{"type":"user","message":{"content":"<local-command-stdout>Set effort level to max</local-command-stdout>"}}\n')
+    ok("追加新痕跡 → 增量掃描更新為 max",
+       ag._parse_claude_transcript_effort(_eff_path) == "max")
+    _info_e = ag.detect_model_info({"cmd": "claude", "cwd": "/tmp", "tmux_name": None},
+                                   transcript_path=_eff_path)
+    ok("detect_model_info effort 走 per-tab 痕跡",
+       _info_e is not None and _info_e.get("effort") == "max", repr(_info_e))
+finally:
+    _os.unlink(_eff_path)
+
+# d) assistant 行的字串不算 effort 痕跡（對話內容討論這段字不設定）
+with _tf.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as _f:
+    _f.write('{"type":"assistant","message":{"model":"claude-opus-5","content":"Set effort level to low"}}\n')
+    _asst_path = _f.name
+try:
+    ok("assistant 行不觸發 effort", ag._parse_claude_transcript_effort(_asst_path) is None)
+finally:
+    _os.unlink(_asst_path)
+
+_TOTAL = 9 + 17 + 8
 print(f"\n=== {_TOTAL - len(fails)}/{_TOTAL} groups PASS ===")
 sys.exit(1 if fails else 0)

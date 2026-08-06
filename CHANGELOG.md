@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.29.28 (2026-08-06)
+
+### Fixes
+- **側欄模型徽章判讀不準**（Howard 08-06 截圖：tab13 顯示「Opus 4.6 ·
+  xhigh」、實際跑「Opus 5 · ultracode」）。三個根因逐一修：
+  1. **`/clear` 會在同一個 claude process 裡輪替 session uuid**——spawn 的
+     `--session-id` 與 nearest-birth 都釘在舊 transcript，badge 永遠顯示
+     /clear 前的模型。修：sf_agent_hook 每個事件本來就帶
+     `session_id`/`transcript_path`，`_on_agent_event` 現在存回 Session
+     （唯一跟得上輪替的即時真相），解析鏈最優先吃這個 hint。
+  2. **`--resume` 是同檔續寫**（birth 是最初建立日，可能一個月前），
+     nearest-birth 必錯。修：直接抽 cmd 的 `--resume/--session-id` uuid
+     對檔名；nearest-birth 錨點同時從「pane 首個 process」改成「pane 樹裡
+     最新啟動的 claude process」（同 pane 退出重開的案例）。
+  3. **effort 只讀全域 settings.json 的 effortLevel**——`/effort <level>`
+     是 session-only 不寫全域，所有分頁都顯示同一個 xhigh。修：新增
+     per-tab transcript 的 `/effort` 痕跡掃描（Set/Kept effort level to X，
+     **增量掃描**：標記常離檔尾十幾 MB，固定 tail 窗會漏；首掃 ~30ms、
+     之後只掃新增 bytes ~0.1ms），全域值退為 fallback。
+  設定頁「Session 顯示模型標籤」改標**（實驗性）**——偵測屬盡力而為，
+  不想看可關（`settings.show_model_badge`，原開關就存在）。
+  回歸測試：`tests_agent_status.py` 新增 8 組（34/34）。生效需 `sfctl restart`。
+
 ## v0.29.27 (2026-08-05)
 
 ### Fixes

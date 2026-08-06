@@ -113,6 +113,42 @@ def _lsof_open_jsonl(pids, name_contains: str):
     return None
 
 
+def _cmd_session_uuid(cmd: str):
+    """cmd 的 --resume <uuid> / --session-id <uuid>（resume=同檔續寫，uuid
+    即 transcript 檔名）。"""
+    m = re.search(r"--(?:resume|session-id)[= ]([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})",
+                  cmd or "")
+    return m.group(1).lower() if m else None
+
+
+def _claude_proc_start(pane_pid):
+    """pane 樹裡「最新啟動的 claude process」的 start epoch，無則 None。
+    同一 pane 退出重開 claude 時，pane 首 process 的 start 是舊的，拿它做
+    nearest-birth 錨點會對到上一段 session 的 transcript。"""
+    try:
+        pids = _pid_tree(pane_pid)
+        if not pids:
+            return None
+        r = subprocess.run(
+            ["ps", "-o", "pid=,command=", "-p", ",".join(str(p) for p in pids)],
+            capture_output=True, text=True, timeout=2)
+        best = None
+        for line in r.stdout.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) < 2:
+                continue
+            pid, cmd = parts
+            head = cmd.split()[0].rsplit("/", 1)[-1]
+            if head != "claude" and not re.search(r"(^|/)claude(\s|$)", cmd):
+                continue
+            st = _proc_start_epoch(pid)
+            if st and (best is None or st > best):
+                best = st
+        return best
+    except Exception:
+        return None
+
+
 def _proc_start_epoch(pid):
     """Process start time as epoch seconds (macOS `ps -o lstart`)."""
     try:
@@ -176,25 +212,36 @@ def resolve_transcript(worker: dict):
             # fallback：整棵 sessions 樹取最新 mtime
             return _newest_jsonl(os.path.join(CODEX_SESSIONS, "*/*/*/rollout-*.jsonl"))
         if kind == "claude":
-            # ONLY map when we have a confident, deterministic id (P3 spawn with
-            # --session-id). The newest-mtime guess is deliberately NOT used as a
-            # fallback: tabs sharing the $HOME slug would all resolve to whichever
-            # transcript was written last, so every idle tab would inherit the one
-            # active session's state and falsely show "working". When unmapped we
-            # return None → status 'unknown' → the browser per-tab heuristic (which
-            # reads each tab's own terminal) drives the dot, which is accurate.
+            # 優先序（愈前愈接近「即時真相」）：
+            # (0) hook 回報的 transcript_path——sf_agent_hook 每個事件都帶，
+            #     唯一能跟上 /clear 的 uuid 輪替（同 process 換檔，其餘來源
+            #     全會釘在舊檔 → badge 顯示舊模型）。
+            # (1) session_id（spawn 的 --session-id；hook 活著時會被更新成
+            #     當前 uuid）。
+            # (2) cmd 的 --resume/--session-id uuid——resume 是同檔續寫，
+            #     birth 是最初建立日，nearest-birth 必錯；uuid 直接對。
+            # (3) nearest-birth，錨定 pane 樹裡「最新啟動的 claude process」
+            #     ——claude 在同一 pane 退出重開時，pane 首 process 的 start
+            #     是舊的。The newest-mtime guess is deliberately NOT used:
+            #     tabs sharing the $HOME slug would all resolve to whichever
+            #     transcript was written last.
+            hint = worker.get("transcript_hint")
+            if hint and os.path.exists(hint):
+                return hint
             slug = _cwd_slug(worker.get("cwd", "~"))
             sid = worker.get("session_id")
-            if sid:  # P3: deterministic mapping for newly spawned tabs
+            if sid:
                 p = os.path.join(CLAUDE_PROJECTS, slug, f"{sid}.jsonl")
                 if os.path.exists(p):
                     return p
-            # Existing tabs (spawned before --session-id): map by matching the
-            # tab's claude process start time to the nearest transcript birth
-            # time. Distinct per tab, so no false "all show the active one".
+            cmd_sid = _cmd_session_uuid(worker.get("cmd", ""))
+            if cmd_sid:
+                p = os.path.join(CLAUDE_PROJECTS, slug, f"{cmd_sid}.jsonl")
+                if os.path.exists(p):
+                    return p
             pane = _tmux_pane_pid(worker.get("tmux_name"))
             if pane:
-                start = _proc_start_epoch(pane)
+                start = _claude_proc_start(pane) or _proc_start_epoch(pane)
                 if start:
                     return _nearest_birth_jsonl(
                         os.path.join(CLAUDE_PROJECTS, slug, "*.jsonl"), start)
@@ -304,6 +351,43 @@ def _parse_claude_transcript_model(path):
     return None
 
 
+_EFFORT_MARK_RE = re.compile(r"(?:Set|Kept) effort level (?:to|as) ([a-z]+)", re.I)
+_effort_scan_cache = {}  # path -> (scanned_bytes, level_or_None)
+
+
+def _parse_claude_transcript_effort(path):
+    """transcript 中最新的 /effort 痕跡（Set/Kept effort level to <level>）。
+
+    /effort <level> 是 session-only、不寫全域 settings.json——badge 若只讀
+    全域 effortLevel，每個分頁都顯示同一個值（2026-08-06：tab13 實際
+    ultracode、badge 顯示 xhigh）。標記可能離檔尾很遠（早上設、之後累積
+    十幾 MB 輸出），固定 tail 窗會漏——改增量掃描：首次全掃、之後只掃
+    新增 bytes，結果沿用。assistant 行略過（對話內容貼到這段字串不算數）。"""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    scanned, level = _effort_scan_cache.get(path, (0, None))
+    if size < scanned:              # 檔案被截斷/替換 → 重掃
+        scanned, level = 0, None
+    if size > scanned:
+        try:
+            with open(path, "rb") as f:
+                f.seek(scanned)
+                new = f.read(size - scanned).decode("utf-8", errors="replace")
+        except OSError:
+            return level
+        for ln in reversed(new.splitlines()):
+            if "effort level" not in ln or '"assistant"' in ln:
+                continue
+            m = _EFFORT_MARK_RE.search(ln)
+            if m:
+                level = m.group(1).lower()
+                break
+        _effort_scan_cache[path] = (size, level)
+    return level
+
+
 def _parse_model_flag(cmd: str):
     """從 cmd 字串解析 --model <x> 或 --model=<x>，回 normalized model 字串或 None。
     支援 bare alias（opus/sonnet/haiku/fable）與完整 claude-* id。"""
@@ -380,9 +464,17 @@ def detect_model_info(worker: dict, transcript_path=None):
                 model = _parse_model_flag(worker.get("cmd", ""))
             if not model:
                 return None
-            glob_cfg = _cached_parse(CLAUDE_SETTINGS_JSON, _parse_claude_settings) or {}
+            # effort：per-tab transcript 的 /effort 痕跡優先（session-only，
+            # 不寫全域）；沒有才退全域 settings.json 的 effortLevel。
+            # 不走 _cached_parse——parser 自帶增量掃描快取（mtime 快取會在
+            # 活躍分頁每次寫入時整檔重掃 14MB）。
+            effort = _parse_claude_transcript_effort(transcript_path) \
+                if transcript_path else None
+            if not effort:
+                glob_cfg = _cached_parse(CLAUDE_SETTINGS_JSON, _parse_claude_settings) or {}
+                effort = glob_cfg.get("effort") or ""
             return {"name": _pretty_model(model),
-                    "effort": glob_cfg.get("effort") or "", "provider": "claude"}
+                    "effort": effort, "provider": "claude"}
     except Exception:
         pass
     return None
