@@ -1048,6 +1048,11 @@
           <button class="toggle-switch on" id="setting-mic-button"></button>
         </div>
         <div class="bridge-help" data-i18n="micButtonHelp">在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。</div>
+        <div class="bridge-field" style="margin-top:8px">
+          <label data-i18n="voiceApplyGateLabel">語音送出前先確認（Apply）</label>
+          <button class="toggle-switch" id="setting-voice-apply-gate"></button>
+        </div>
+        <div class="bridge-help" data-i18n="voiceApplyGateHelp">Telegram 語音轉錄後，先跳「✅ Apply」按鈕確認再送進分頁（STT 有誤差時較安全）。關閉＝轉錄完直接自動送出。</div>
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btn-stt-refresh">↻ 檢查</button>
           <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
@@ -1331,6 +1336,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       injectInitHint: 'Prepend INIT_PROMPT.md (ShellFrame environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
       micButtonLabel: 'Voice input button 🎙',
       micButtonHelp: 'Show a mic at the bottom-right of the terminal: record → STT → inject into the active tab with a voice tag, no more sending voice notes through Telegram.',
+      voiceApplyGateLabel: 'Confirm voice before sending (Apply)',
+      voiceApplyGateHelp: 'After transcribing a Telegram voice note, show an "✅ Apply" button to confirm before sending to the tab (safer when STT is imperfect). Off = auto-submit right after transcription.',
       micTitle: 'Voice input (STT)',
       micCancel: 'Cancel recording',
       micNeedFfmpeg: 'Recording needs ffmpeg, which is not installed. Install it now? (macOS: Homebrew / Windows: winget — may take a few minutes)',
@@ -1496,6 +1503,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       injectInitHint: '新 AI 分頁的第一則訊息前自動前置 INIT_PROMPT.md（環境說明＋sfctl 指南）。切換後對新開的分頁生效。預設關閉。',
       micButtonLabel: '介面錄音按鈕 🎙',
       micButtonHelp: '在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。',
+      voiceApplyGateLabel: '語音送出前先確認（Apply）',
+      voiceApplyGateHelp: 'Telegram 語音轉錄後，先跳「✅ Apply」按鈕確認再送進分頁（STT 有誤差時較安全）。關閉＝轉錄完直接自動送出。',
       micTitle: '語音輸入（STT）',
       micCancel: '取消錄音',
       micNeedFfmpeg: '錄音需要 ffmpeg，目前未安裝。要現在安裝嗎？（macOS 走 Homebrew／Windows 走 winget，可能需要幾分鐘）',
@@ -4440,6 +4449,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-mic-button').classList.toggle(
       'on', s.stt_mic_button !== false,
     );
+    document.getElementById('setting-voice-apply-gate').classList.toggle(
+      'on', s.voice_apply_gate !== false,   // default on
+    );
     refreshBoard();
     syncIdleReaperSettings();
     syncSettingsBridge();
@@ -4511,6 +4523,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings.stt_mic_button = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
       micFabSync();
+    });
+
+  document.getElementById('setting-voice-apply-gate')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.voice_apply_gate = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
     });
 
   document.getElementById('setting-auto-delegate')

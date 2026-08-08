@@ -555,6 +555,12 @@ def show_tg_wrapper() -> bool:
     return settings.get("show_tg_wrapper", True) is not False
 
 
+def voice_apply_gate() -> bool:
+    """語音轉錄後是否要先跳「✅ Apply」確認按鈕再送進 session。預設 True
+    （STT 有誤差，確認過再送較安全）。關閉時轉錄完直接自動送出。"""
+    return _read_settings().get("voice_apply_gate", True) is not False
+
+
 def is_master_label(label: str) -> bool:
     text = str(label or "").strip()
     folded = text.casefold()
@@ -4317,29 +4323,36 @@ class TelegramBridge(BridgeBase):
                         fwd_text = text + " " + refined
                     else:
                         fwd_text = f"🎙 {refined}"
-                    # Apply-gate: STT is imperfect, so don't auto-submit. Park the
-                    # transcribed text and show inline Apply/Cancel — only forward
-                    # to the session when the user taps ✅ Apply. Target session is
-                    # resolved at Apply time so switching tabs meanwhile still works.
-                    self._voice_seq += 1
-                    token = str(self._voice_seq)
-                    self._pending_voice[token] = {
-                        "text": fwd_text, "user_id": user_id, "chat_id": chat_id,
-                    }
-                    body = f"🎙 {refined[:800]}{'…' if len(refined) > 800 else ''}"
-                    if refined.strip() != transcribed.strip():
-                        raw_preview = transcribed[:200] + ('…' if len(transcribed) > 200 else '')
-                        body += f"\n\n原稿：{raw_preview}"
-                    body += "\n\n送出到 session？"
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id,
-                        "text": body,
-                        "reply_markup": {"inline_keyboard": [[
-                            {"text": "✅ Apply", "callback_data": f"vapply:{token}"},
-                            {"text": "✕ Cancel", "callback_data": f"vcancel:{token}"},
-                        ]]},
-                    })
-                    return
+                    if not voice_apply_gate():
+                        # Apply-gate OFF（Howard 2026-08-08：語音每次都要按 Apply
+                        # 很煩）：轉錄完直接把文字當成一般訊息往下走正常轉發路徑
+                        # 自動送進 session，不再跳 ✅ Apply。
+                        text = fwd_text
+                        _blog(f"  voice auto-submit (gate off): {fwd_text[:60]!r}\n")
+                        # fall through to the normal forward path below
+                    else:
+                        # Apply-gate ON（預設）：STT 有誤差，不自動送出。先泊住
+                        # 轉錄文字＋顯示 inline Apply/Cancel，使用者點 ✅ Apply 才
+                        # 送進 session（送出時才解析目標分頁，中途切分頁也 OK）。
+                        self._voice_seq += 1
+                        token = str(self._voice_seq)
+                        self._pending_voice[token] = {
+                            "text": fwd_text, "user_id": user_id, "chat_id": chat_id,
+                        }
+                        body = f"🎙 {refined[:800]}{'…' if len(refined) > 800 else ''}"
+                        if refined.strip() != transcribed.strip():
+                            raw_preview = transcribed[:200] + ('…' if len(transcribed) > 200 else '')
+                            body += f"\n\n原稿：{raw_preview}"
+                        body += "\n\n送出到 session？"
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": body,
+                            "reply_markup": {"inline_keyboard": [[
+                                {"text": "✅ Apply", "callback_data": f"vapply:{token}"},
+                                {"text": "✕ Cancel", "callback_data": f"vcancel:{token}"},
+                            ]]},
+                        })
+                        return
                 else:
                     # Build a helpful diagnostic so the user knows WHY it failed
                     status = self.stt_status()

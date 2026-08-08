@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.29.29 (2026-08-08)
+
+### Features
+- **語音「Apply 確認」可關閉**（Howard 提：TG 傳語音每次都跳 ✅ Apply 很煩，
+  記得有開關但其實沒接線）。原本語音轉錄後**一律**泊住＋跳 Apply/Cancel（寫死、
+  無設定）。新增 `settings.voice_apply_gate`（預設 True＝維持確認；STT 有誤差時
+  較安全），關閉時轉錄完直接把文字自動送進分頁、不再跳 Apply。設定頁 🎙 語音
+  轉錄 區新增「語音送出前先確認（Apply）」toggle。Howard 的設定已設為關。
+  bridge 邏輯 `sfctl reload` 即生效；UI toggle 需 `sfctl restart`。
+  回歸測試：`tests_voice_gate.py` 4 案例。
+
 ## v0.29.28 (2026-08-06)
 
 ### Fixes
