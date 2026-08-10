@@ -11,6 +11,14 @@
   bridge 邏輯 `sfctl reload` 即生效；UI toggle 需 `sfctl restart`。
   回歸測試：`tests_voice_gate.py` 4 案例。
 
+### Fixes
+- **Codex 用量查不到**：新增 rollout JSONL 與 app-server 即時 quota 讀取，舊版 SQLite 保留為相容 fallback；token 失效時明確顯示需要重新登入。
+- **AI 帳號 profile**：支援 Codex/Claude 的全域與單一 session 帳號指派，session 啟動時套用正確的 profile，面板只顯示安全 metadata、不暴露 credential。
+- **Codex 帳號辨識**：用實際 `CODEX_HOME` 讀取帳號與用量，避免不同 profile 共用錯誤的全域資料。
+
+### Tests
+- `tests_usage_probe.py`、`tests_accounts.py` 全部通過；Python 編譯與 `git diff --check` 通過。
+
 ## v0.29.28 (2026-08-06)
 
 ### Fixes

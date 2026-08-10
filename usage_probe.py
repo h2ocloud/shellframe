@@ -16,6 +16,8 @@ import base64
 import glob
 import json
 import os
+import queue
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -30,10 +32,19 @@ from datetime import datetime
 CLAUDE_USAGE_API = "https://api.anthropic.com/api/oauth/usage"
 _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 
-# Codex logs a `codex.rate_limits` event to its local SQLite log on every API
-# turn, so the latest snapshot is readable on disk — no app-server spawn (which
-# is heavy and dies under sandboxes), no billable call, no openclaw dependency.
+# Older Codex versions logged a `codex.rate_limits` event to this local SQLite
+# log. Keep it as a read-only compatibility fallback; current versions persist
+# the snapshot in rollout JSONL below.
 CODEX_LOG_GLOB = os.path.expanduser("~/.codex/logs_*.sqlite")
+
+# Newer Codex versions persist the same snapshot in rollout JSONL instead of
+# the retired feedback log table.  Read only the tail: rollout files can be
+# very large, while rate-limit events are appended near the end of each turn.
+CODEX_ROLLOUT_GLOB = os.path.expanduser(
+    "~/.codex/sessions/*/*/*/rollout-*.jsonl"
+)
+CODEX_ROLLOUT_TAIL_BYTES = 512 * 1024
+CODEX_APP_SERVER_TIMEOUT = 12
 
 # Legacy fallback only (present on the openclaw host, absent elsewhere).
 CLAUDE_SCRIPT = os.path.expanduser(
@@ -96,12 +107,14 @@ def _plan_label(plan, org=None) -> str:
     return f"{nice}（{tag}）"
 
 
-def _claude_oauth() -> dict:
+def _claude_oauth(env=None) -> dict:
     """Read the Claude Code OAuth blob from the macOS Keychain. {} on failure.
 
     All claude tabs on this machine share the same ~/.claude credentials, so
     this reflects whatever account the current claude tab is signed in as.
     """
+    if env and env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return {"accessToken": env["CLAUDE_CODE_OAUTH_TOKEN"]}
     try:
         raw = subprocess.run(
             ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
@@ -130,14 +143,25 @@ def _claude_account() -> str:
     return " · ".join(parts)
 
 
-def _codex_account(result_plan=None) -> str:
+def profile_account(profile: dict | None) -> str:
+    """Format the safe account metadata stored by ShellFrame."""
+    if not profile:
+        return ""
+    plan = _plan_label(profile.get("plan"), profile.get("organization"))
+    return " · ".join(
+        p for p in (profile.get("email"), plan or profile.get("label")) if p
+    )
+
+
+def _codex_account(result_plan=None, home=None) -> str:
     """'neux.ios@neux.com.tw · Pro（個人）' or '' if unavailable.
 
     Reads ~/.codex/auth.json — the account sf-codex actually runs as.
     """
     email = plan = None
     try:
-        d = json.load(open(os.path.expanduser("~/.codex/auth.json")))
+        auth_path = os.path.join(home, "auth.json") if home else os.path.expanduser("~/.codex/auth.json")
+        d = json.load(open(auth_path))
         tok = (d.get("tokens") or {}).get("access_token", "")
         payload = tok.split(".")[1]
         payload += "=" * (-len(payload) % 4)
@@ -196,7 +220,7 @@ def _claude_stale(c):
     return s
 
 
-def _fetch_claude():
+def _fetch_claude(env=None):
     """Return {'5hr': (pct, reset), 'week': (pct, reset)[, '_stale': True]} or None.
 
     Primary path: call the OAuth usage API directly with the local Keychain
@@ -213,7 +237,7 @@ def _fetch_claude():
     if now - c["last_try"] < _CLAUDE_RETRY_MIN:
         return _claude_stale(c) if c["data"] else None
     c["last_try"] = now
-    token = _claude_oauth().get("accessToken")
+    token = (_claude_oauth(env) if env else _claude_oauth()).get("accessToken")
     if token:
         try:
             req = urllib.request.Request(CLAUDE_USAGE_API, headers={
@@ -242,6 +266,31 @@ def _fetch_claude():
     if c["data"]:
         return _claude_stale(c)
     return _fetch_claude_script()
+
+
+def _fetch_claude_profile(env):
+    """Fetch a non-global Claude profile without touching the shared cache."""
+    token = _claude_oauth(env).get("accessToken") if env else None
+    if not token:
+        return None
+    try:
+        req = urllib.request.Request(CLAUDE_USAGE_API, headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": _CLAUDE_OAUTH_BETA,
+            "anthropic-version": "2023-06-01",
+            "User-Agent": "shellframe-usage-probe",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        out = {}
+        for source, target in (("five_hour", "5hr"), ("seven_day", "week")):
+            item = data.get(source) or {}
+            if item.get("utilization") is not None:
+                out[target] = (round(item["utilization"]), _fmt_iso(item.get("resets_at", "")))
+        return out or None
+    except Exception:
+        return None
 
 
 def _fetch_claude_script():
@@ -289,13 +338,13 @@ def _extract_json(text, anchor):
     return None
 
 
-def _codex_ratelimits_snapshot():
+def _codex_ratelimits_snapshot(log_glob=None):
     """Latest `codex.rate_limits` event from codex's local SQLite log, or None.
 
     Codex emits this on every API turn (see ~/.codex/logs_*.sqlite), so the most
     recent row is the freshest known usage without any network/app-server call.
     """
-    dbs = sorted(glob.glob(CODEX_LOG_GLOB), key=os.path.getmtime, reverse=True)
+    dbs = sorted(glob.glob(log_glob or CODEX_LOG_GLOB), key=os.path.getmtime, reverse=True)
     for db in dbs:
         try:
             con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
@@ -317,13 +366,114 @@ def _codex_ratelimits_snapshot():
     return None
 
 
-def _fetch_codex():
+def _codex_rollout_snapshot(rollout_glob=None):
+    """Return the newest rate-limit snapshot from Codex rollout JSONL, or None."""
+    candidates = []
+    for path in glob.glob(rollout_glob or CODEX_ROLLOUT_GLOB):
+        try:
+            candidates.append((os.path.getmtime(path), path))
+        except OSError:
+            continue
+
+    for _, path in sorted(candidates, reverse=True):
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - CODEX_ROLLOUT_TAIL_BYTES))
+                text = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            continue
+
+        for line in reversed(text.splitlines()):
+            try:
+                row = json.loads(line)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            payload = row.get("payload") or {}
+            rate_limits = (
+                payload.get("rate_limits")
+                or payload.get("rateLimits")
+                or row.get("rate_limits")
+                or row.get("rateLimits")
+            )
+            if isinstance(rate_limits, dict):
+                return {
+                    "rate_limits": rate_limits,
+                    "timestamp": row.get("timestamp"),
+                }
+    return None
+
+
+def _codex_window_key(window, fallback):
+    """Map a Codex rate-limit window to ShellFrame's UI keys."""
+    try:
+        minutes = int(window.get("window_minutes"))
+    except (AttributeError, TypeError, ValueError):
+        return fallback
+    if minutes <= 300:
+        return "5hr"
+    if minutes <= 10080:
+        return "week"
+    return None
+
+
+def _fetch_codex_rollout(rollout_glob=None):
+    """Normalize the current rollout JSONL rate-limit shape for the UI."""
+    snapshot = _codex_rollout_snapshot(rollout_glob)
+    if not snapshot:
+        return None
+    rate_limits = snapshot["rate_limits"]
+    out = {}
+    for name, fallback in (("primary", "5hr"), ("secondary", "week")):
+        window = rate_limits.get(name)
+        if not isinstance(window, dict):
+            continue
+        pct = window.get("used_percent", window.get("usedPercent"))
+        if pct is None:
+            continue
+        key = _codex_window_key(window, fallback)
+        if key is None:
+            continue
+        reset = window.get(
+            "resets_at", window.get("reset_at", window.get("resetsAt"))
+        )
+        if isinstance(reset, (int, float)):
+            reset_text = _fmt_epoch(reset)
+        else:
+            reset_text = _fmt_iso(reset or "")
+        out[key] = (round(pct), reset_text)
+    if not out:
+        return None
+    out["_plan"] = rate_limits.get("plan_type", rate_limits.get("planType"))
+    timestamp = snapshot.get("timestamp")
+    if timestamp:
+        try:
+            out["_ts"] = datetime.fromisoformat(
+                timestamp.replace("Z", "+00:00")
+            ).timestamp()
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return out
+
+
+def _fetch_codex(home=None):
     """Return {'5hr': (pct, reset), 'week': (pct, reset), '_plan': ...} or None.
 
-    Primary: read the latest snapshot from codex's local log (self-contained).
-    Falls back to the legacy openclaw codex_usage module if it is present.
+    Primary: read the latest snapshot from Codex rollout JSONL. Older Codex
+    versions are supported through the local SQLite log, then the legacy
+    openclaw codex_usage module.
     """
-    snap = _codex_ratelimits_snapshot()
+    rollout_glob = None
+    log_glob = None
+    if home:
+        rollout_glob = os.path.join(home, "sessions", "*", "*", "*", "rollout-*.jsonl")
+        log_glob = os.path.join(home, "logs_*.sqlite")
+    rollout = _fetch_codex_rollout(rollout_glob)
+    if rollout:
+        return rollout
+
+    snap = _codex_ratelimits_snapshot(log_glob)
     if snap:
         rl = snap.get("rate_limits") or {}
         out = {}
@@ -341,6 +491,9 @@ def _fetch_codex():
             if ra and raf is not None:
                 out["_ts"] = ra - raf
             return out
+    live = _fetch_codex_app_server(home=home)
+    if live:
+        return live
     return _fetch_codex_openclaw()
 
 
@@ -372,7 +525,122 @@ def _fetch_codex_openclaw():
     return out
 
 
-def probe_data(cmd: str) -> dict:
+def _codex_app_server_binary() -> str | None:
+    """Find the ShellFrame Codex launcher without hard-coding an install path."""
+    return shutil.which("sf-codex") or shutil.which("codex")
+
+
+def _read_jsonrpc_response(proc, response_id: int, timeout: float):
+    """Read one JSON-RPC response from a long-running app-server process."""
+    lines = queue.Queue()
+
+    def _reader():
+        try:
+            for line in proc.stdout:
+                lines.put(line)
+        except Exception:
+            pass
+
+    import threading
+    threading.Thread(target=_reader, daemon=True).start()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            line = lines.get(timeout=max(0.05, min(0.25, deadline - time.time())))
+        except queue.Empty:
+            continue
+        try:
+            message = json.loads(line)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if message.get("id") == response_id:
+            return message
+    return None
+
+
+def _fetch_codex_app_server(home=None):
+    """Fetch live Codex rate limits through the local app-server JSON-RPC API.
+
+    This is read-only: account/rateLimits/read asks Codex for the current quota
+    and does not start a model turn. It fills the gap before a new tab has a
+    local rollout/SQLite snapshot.
+    """
+    binary = _codex_app_server_binary()
+    if not binary:
+        return None
+    proc = None
+    env = os.environ.copy()
+    if home:
+        env["CODEX_HOME"] = home
+    try:
+        proc = subprocess.Popen(
+            [binary, "app-server"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            env=env,
+        )
+        requests = (
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"clientInfo": {"name": "shellframe-usage-probe", "version": "0.1"}}},
+            {"jsonrpc": "2.0", "method": "initialized", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {}},
+        )
+        for request in requests:
+            proc.stdin.write(json.dumps(request) + "\n")
+            proc.stdin.flush()
+        response = _read_jsonrpc_response(proc, 2, CODEX_APP_SERVER_TIMEOUT)
+        if not response:
+            return None
+        if response.get("error"):
+            message = str((response.get("error") or {}).get("message") or "")
+            if "401" in message or "token_invalidated" in message or "Unauthorized" in message:
+                return {"_error": "auth_required", "_error_message": "Codex 登入已失效，請重新登入"}
+            return {"_error": "app_server_error", "_error_message": "Codex 用量服務暫時無法查詢"}
+        result = response.get("result") or {}
+        rate_limits = result.get("rateLimits") or {}
+        out = {}
+        for source, target, fallback_minutes in (
+            ("primary", "5hr", 300), ("secondary", "week", 10080)
+        ):
+            window = rate_limits.get(source)
+            if not isinstance(window, dict):
+                continue
+            pct = window.get("usedPercent", window.get("used_percent"))
+            if pct is None:
+                continue
+            minutes = window.get(
+                "windowDurationMins", window.get("window_minutes", fallback_minutes)
+            )
+            key = _codex_window_key({"window_minutes": minutes}, target)
+            if key is None:
+                continue
+            reset = window.get("resetsAt", window.get("resets_at"))
+            reset_text = (
+                _fmt_epoch(reset) if isinstance(reset, (int, float))
+                else _fmt_iso(reset or "")
+            )
+            out[key] = (round(pct), reset_text)
+        if not out:
+            return None
+        out["_plan"] = rate_limits.get("planType", rate_limits.get("plan_type"))
+        return out
+    except (OSError, subprocess.SubprocessError, BrokenPipeError):
+        return None
+    finally:
+        if proc is not None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+
+def probe_data(cmd: str, env=None) -> dict:
     """Structured usage water-level for the inline top-bar indicator.
 
     Same fetch path as probe(), but returns machine-readable fields the web UI
@@ -383,12 +651,20 @@ def probe_data(cmd: str) -> dict:
     if ai is None:
         return {"ai": None, "error": "not_ai"}
 
-    data = _fetch_codex() if ai == "codex" else _fetch_claude()
-    account = (_codex_account(data.get("_plan") if data else None)
+    home = (env or {}).get("CODEX_HOME")
+    if ai == "codex":
+        data = _fetch_codex(home=home)
+    else:
+        data = _fetch_claude_profile(env) if env else _fetch_claude()
+    account = (_codex_account(data.get("_plan") if data else None, home=home)
                if ai == "codex" else _claude_account())
 
     out = {"ai": ai, "account": account, "five_hr": None, "week": None,
            "snapshot": None, "error": None, "stale": False}
+    if data and data.get("_error"):
+        out["error"] = data["_error"]
+        out["error_message"] = data.get("_error_message", "")
+        return out
     if not data:
         out["error"] = "no_data"
         return out
@@ -405,19 +681,18 @@ def probe_data(cmd: str) -> dict:
     return out
 
 
-def probe(cmd: str) -> str:
-    """Detect provider from cmd, fetch usage, return a friendly text block."""
-    d = probe_data(cmd)
+def probe_text(d: dict) -> str:
+    """Render an already-fetched structured reading as the slash-command text."""
     ai = d.get("ai")
     if ai is None:
         return "此 tab 不是 claude / codex，無法查用量。"
 
     account = d.get("account")
-    if d.get("error") == "no_data":
+    if d.get("error"):
         lines = [f"AI 水位 {ai}"]
         if account:
             lines.append(f"帳號 {account}")
-        lines.append(f"查不到資料（請確認已登入 {ai}）")
+        lines.append(d.get("error_message") or f"查不到資料（請確認已登入 {ai}）")
         return "\n".join(lines)
 
     lines = [f"AI 水位 {ai}"]
@@ -434,3 +709,8 @@ def probe(cmd: str) -> str:
     if d.get("snapshot"):
         lines.append(f"快照 {d['snapshot']}")
     return "\n".join(lines)
+
+
+def probe(cmd: str, env=None) -> str:
+    """Detect provider from cmd, fetch usage, return a friendly text block."""
+    return probe_text(probe_data(cmd, env=env))

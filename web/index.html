@@ -108,6 +108,20 @@
   #usage-brief .ub-none { color: #565f89; }
   #usage-brief.stale { opacity: .5; }
 
+  /* Account switcher opened from the usage pill */
+  .account-panel-note { color:#7f87aa; font-size:11px; line-height:1.5; margin:-6px 0 12px; }
+  .account-provider { background:#24283b; border-radius:8px; padding:11px; margin:8px 0; }
+  .account-provider-title { display:flex; justify-content:space-between; color:#c0caf5; font-size:13px; font-weight:600; }
+  .account-scope { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .account-scope-card { flex:1; min-width:150px; background:#1a1b26; border:1px solid #292e42; border-radius:6px; padding:7px 9px; }
+  .account-scope-card .scope { color:#565f89; font-size:10px; text-transform:uppercase; }
+  .account-scope-card .who { color:#a9b1d6; font-size:11px; word-break:break-all; margin-top:3px; }
+  .account-list { display:flex; flex-direction:column; gap:5px; margin-top:9px; }
+  .account-row { display:flex; align-items:center; gap:7px; background:#1a1b26; border-radius:5px; padding:6px 8px; }
+  .account-row .account-name { flex:1; color:#a9b1d6; font-size:11px; min-width:0; }
+  .account-row .account-name small { display:block; color:#565f89; margin-top:2px; }
+  .account-row button { padding:4px 7px; font-size:10px; }
+
   /* ── Image preview ── */
   #image-bar {
     display: none; align-items: center; gap: 6px;
@@ -692,7 +706,7 @@
   <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
-  <button id="usage-brief" title="AI 用量水位 — 點擊看細節" style="display:none"></button>
+  <button id="usage-brief" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
@@ -3176,8 +3190,85 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _commitUsageRender(activeProv, !!keptReal);
     }
   }
+  let _accountPanelEl = null;
+  function _accountLabel(item) {
+    if (!item) return '尚未登入';
+    return [item.email, item.label && item.label !== item.email ? item.label : '', item.plan]
+      .filter(Boolean).join(' · ');
+  }
+  function _accountProviderBlock(provider, info) {
+    const title = provider === 'codex' ? 'Codex' : 'Claude';
+    const current = info.current, global = info.global;
+    const rows = (info.accounts || []).map(item => {
+      const id = esc(item.id || '');
+      const currentOn = current && current.id === item.id;
+      const globalOn = global && global.id === item.id;
+      return `<div class="account-row"><div class="account-name">${esc(_accountLabel(item))}` +
+        `<small>${currentOn ? '目前 Session' : ''}${currentOn && globalOn ? ' · ' : ''}${globalOn ? '下一個 Session' : ''}</small></div>` +
+        `<button class="btn btn-ghost" data-account-action="session" data-provider="${provider}" data-ref="${id}" ${currentOn ? 'disabled' : ''}>切目前</button>` +
+        `<button class="btn btn-ghost" data-account-action="global" data-provider="${provider}" data-ref="${id}" ${globalOn ? 'disabled' : ''}>設下一個</button></div>`;
+    }).join('');
+    return `<div class="account-provider"><div class="account-provider-title"><span>${title}</span>` +
+      `<span style="font-size:10px;color:#565f89">${info.logged_in ? `${info.accounts.length} 個帳號` : '未登入'}</span></div>` +
+      `<div class="account-scope"><div class="account-scope-card"><div class="scope">目前 Session</div><div class="who">${esc(_accountLabel(current))}</div></div>` +
+      `<div class="account-scope-card"><div class="scope">下一個 Session（全域）</div><div class="who">${esc(_accountLabel(global))}</div></div></div>` +
+      `<div class="account-list">${rows || '<div style="color:#565f89;font-size:11px;padding:5px">尚未發現登入帳號</div>'}</div>` +
+      `<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-primary" data-account-action="login" data-provider="${provider}">登入新帳號</button>` +
+      `<button class="btn btn-ghost" data-account-action="capture" data-provider="${provider}">重新整理已登入</button></div></div>`;
+  }
+  async function showAccountPanel() {
+    if (!_accountPanelEl) {
+      _accountPanelEl = document.createElement('div');
+      _accountPanelEl.className = 'modal-overlay';
+      _accountPanelEl.style.zIndex = '450';
+      _accountPanelEl.innerHTML = `<div class="modal" style="width:570px;max-width:94vw"><h2>AI 帳號</h2>` +
+        `<div class="account-panel-note">切換「目前 Session」只重啟這個 tab；其他 tab 不動。切換「下一個 Session」只影響之後新開的 tab。</div>` +
+        `<div id="account-panel-body"></div><div class="modal-footer"><span id="account-panel-status" style="color:#e0af68;font-size:11px"></span>` +
+        `<button class="btn btn-ghost" data-account-action="close">關閉</button></div></div>`;
+      document.body.appendChild(_accountPanelEl);
+      _accountPanelEl.addEventListener('click', async (event) => {
+        if (event.target === _accountPanelEl || event.target.dataset.accountAction === 'close') {
+          _accountPanelEl.classList.remove('open'); return;
+        }
+        const button = event.target.closest('[data-account-action]');
+        if (!button || button.disabled) return;
+        const action = button.dataset.accountAction;
+        const provider = button.dataset.provider;
+        const ref = button.dataset.ref;
+        const status = document.getElementById('account-panel-status');
+        if (status) status.textContent = '處理中…';
+        try {
+          let raw;
+          if (action === 'session') raw = await pywebview.api.account_switch_session(activeId || '', provider, ref);
+          else if (action === 'global') raw = await pywebview.api.account_switch_global(provider, ref);
+          else if (action === 'login') raw = await pywebview.api.account_login_start(provider);
+          else if (action === 'capture') raw = await pywebview.api.account_capture_login(provider);
+          else return;
+          const result = JSON.parse(raw || '{}');
+          if (!result.success && result.message) throw new Error(result.message);
+          if (status) status.textContent = result.message || (action === 'login' ? '登入 tab 已開啟' : '已更新');
+          await showAccountPanel();
+          if (action === 'session' || action === 'global') refreshUsageBrief();
+        } catch (error) {
+          if (status) status.textContent = error.message || '操作失敗';
+        }
+      });
+    }
+    const body = _accountPanelEl.querySelector('#account-panel-body');
+    const status = _accountPanelEl.querySelector('#account-panel-status');
+    if (status) status.textContent = '';
+    try {
+      const state = JSON.parse(await pywebview.api.account_state(activeId || '') || '{}');
+      const providers = state.providers || {};
+      body.innerHTML = _accountProviderBlock('codex', providers.codex || {accounts:[]}) +
+        _accountProviderBlock('claude', providers.claude || {accounts:[]});
+    } catch (error) {
+      body.textContent = error.message || '帳號資料讀取失敗';
+    }
+    _accountPanelEl.classList.add('open');
+  }
   document.getElementById('usage-brief').addEventListener('click', () => {
-    if (activeId) runTabUsage(activeId, false);
+    showAccountPanel();
   });
   window.refreshUsageBrief = refreshUsageBrief;
   window.refreshUsageBriefThrottled = refreshUsageBriefThrottled;

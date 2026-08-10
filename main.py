@@ -41,6 +41,7 @@ import bridge_telegram
 import bridge_line
 import board
 import agent_status
+import account_manager
 from api_history import HistoryApiMixin
 from api_schedules import SchedulesApiMixin
 import usage_probe
@@ -78,6 +79,9 @@ SHELLFRAME_CODEX_CMD = f"{CODEX_LAUNCHER} {CODEX_AUTONOMOUS_FLAGS}"
 CONFIG_DIR = Path.home() / ".config" / "shellframe"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
+ACCOUNT_MANAGER = account_manager.AccountManager(
+    root=CONFIG_DIR / "account-profiles"
+)
 
 DEFAULT_AGENT_ROSTER = {
     "時程信件": {
@@ -152,6 +156,9 @@ AGENT_ROLE_ALIASES = {
 }
 
 DEFAULT_CONFIG = {
+    # Account refs are safe metadata only. Credential snapshots are kept under
+    # ACCOUNT_MANAGER.root with private filesystem permissions.
+    "accounts": account_manager._empty_accounts(),
     "user_prompt_paths": ["~/.claude/CLAUDE.md"],
     "plugins": {
         "installed": [],
@@ -845,9 +852,15 @@ class Session:
     """One PTY tab session."""
 
     def __init__(self, sid: str, cmd: str, cols: int, rows: int,
-                 on_data=None, tmux_name: str = None):
+                 on_data=None, tmux_name: str = None, account_refs: dict | None = None):
         self.sid = sid
         self.cmd = cmd
+        self.cols = int(cols)
+        self.rows = int(rows)
+        self.account_refs = {
+            provider: (account_refs or {}).get(provider)
+            for provider in account_manager.PROVIDERS
+        }
         # Transcript correlation: claude tabs get a stable --session-id so the
         # auto status detector can find their JSONL. None for codex/other (codex
         # is mapped via lsof) and for reattached sessions (recovered from tmux env).
@@ -878,7 +891,15 @@ class Session:
         # across read() calls so CJK / box-drawing chars never get split
         # into U+FFFD replacement characters (the "─���─" garble).
         self._decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
-        self._start(cols, rows)
+        self._start(self.cols, self.rows)
+
+    def _launch_env(self) -> dict:
+        """Build the child environment for this tab's account snapshot."""
+        env = _session_env()
+        for provider, ref in self.account_refs.items():
+            if ref:
+                env.update(ACCOUNT_MANAGER.env_for(provider, ref))
+        return env
 
     def _start(self, cols, rows):
         if IS_WIN:
@@ -907,6 +928,7 @@ class Session:
             # -e SF_SID=…: the spawned CLI (and thus its Claude Code hooks,
             # which inherit the process env) can identify which ShellFrame
             # tab it belongs to. See sf_agent_hook.py.
+            launch_env = self._launch_env()
             result = subprocess.run([
                 "tmux", "new-session", "-d",
                 "-s", self._tmux_name,
@@ -914,7 +936,7 @@ class Session:
                 "-c", self.cwd,
                 "-e", f"SF_SID={self.sid}",
                 self.cmd,
-            ], capture_output=True, timeout=5, env=_session_env())
+            ], capture_output=True, timeout=5, env=launch_env)
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or b"").decode("utf-8", errors="replace").strip()
                 _dlog("lifecycle", f"tmux new-session failed name={self._tmux_name} cmd={self.cmd!r} error={detail!r}")
@@ -924,18 +946,24 @@ class Session:
             subprocess.run([
                 "tmux", "set-environment", "-t", self._tmux_name,
                 "SF_CMD", self.cmd,
-            ], capture_output=True, timeout=3, env=_session_env())
+            ], capture_output=True, timeout=3, env=launch_env)
             # Persist the claude --session-id so reattach/restart can recover
             # the transcript correlation without guessing.
             if self.session_id:
                 subprocess.run([
                     "tmux", "set-environment", "-t", self._tmux_name,
                     "SF_SESSION_ID", self.session_id,
-                ], capture_output=True, timeout=3, env=_session_env())
+                ], capture_output=True, timeout=3, env=launch_env)
         else:
             # Existing session: the freshly generated session_id is wrong (the
             # running claude already chose one at creation). Recover the real one.
             self.session_id = _tmux_get_env(self._tmux_name, "SF_SESSION_ID") or None
+            for provider in account_manager.PROVIDERS:
+                self.account_refs[provider] = (
+                    self.account_refs.get(provider)
+                    or _tmux_get_env(self._tmux_name, f"SF_ACCOUNT_{provider.upper()}")
+                    or None
+                )
             # Resize existing tmux session to match terminal
             subprocess.run([
                 "tmux", "resize-window", "-t", self._tmux_name,
@@ -952,11 +980,18 @@ class Session:
             "tmux", "set-environment", "-t", self._tmux_name,
             "SF_CMD", self.cmd,
         ], capture_output=True, timeout=3)
+        for provider in account_manager.PROVIDERS:
+            ref = self.account_refs.get(provider)
+            if ref:
+                subprocess.run([
+                    "tmux", "set-environment", "-t", self._tmux_name,
+                    f"SF_ACCOUNT_{provider.upper()}={ref}",
+                ], capture_output=True, timeout=3)
 
         # Attach via PTY fork — child runs `tmux attach`, parent reads master_fd
         self.child_pid, self.master_fd = pty.fork()
         if self.child_pid == 0:
-            env = _session_env()
+            env = self._launch_env()
             env["TERM"] = "xterm-256color"
             env["COLORTERM"] = "truecolor"
             env.setdefault("LANG", "en_US.UTF-8")
@@ -973,7 +1008,7 @@ class Session:
     def _start_unix(self, cols, rows):
         """Fallback: direct PTY fork (no tmux)."""
         args = shlex.split(self.cmd)
-        env = _session_env()
+        env = self._launch_env()
         exe = shutil.which(args[0], path=env.get("PATH"))
 
         self.child_pid, self.master_fd = pty.fork()
@@ -1006,7 +1041,7 @@ class Session:
 
     def _start_win(self, cols, rows):
         args = shlex.split(self.cmd)
-        env = _session_env()
+        env = self._launch_env()
         exe = shutil.which(args[0], path=env.get("PATH"))
         cmd_args = [exe] + args[1:] if exe else ["powershell", "-NoProfile", "-Command", self.cmd]
 
@@ -1155,6 +1190,8 @@ class Session:
         return self._decoder.decode(data)
 
     def resize(self, cols, rows):
+        self.cols = int(cols)
+        self.rows = int(rows)
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
             try:
                 self._winpty.setwinsize(rows, cols)
@@ -1300,6 +1337,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                     "sid": sid,
                     "cmd": _canonical_cmd(s.cmd),
                     "tmux_name": getattr(s, '_tmux_name', None) or "",
+                    "account_refs": dict(getattr(s, "account_refs", {}) or {}),
                     "bridge_enabled": bool(bridge_enabled),
                     "order": idx,
                     "updated_at": int(time.time()),
@@ -1943,6 +1981,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         """
         _dlog("lifecycle", f"restore_tmux_sessions called cols={cols} rows={rows}")
         cfg = load_config()
+        if ACCOUNT_MANAGER.ensure(cfg):
+            save_config(cfg)
+        default_account_refs = ACCOUNT_MANAGER.session_refs(cfg)
         saved_labels = cfg.get("session_labels", {})
         bridge_disabled = set(cfg.get("bridge_disabled_sessions", []))
         manifest = self._manifest_entries(cfg)
@@ -1965,12 +2006,20 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 sid = self._resolve_tmux_sid(info, cfg)
                 entry = manifest_by_sid.get(sid) or manifest_by_tmux.get(tmux_name) or {}
                 cmd = _canonical_cmd(info["cmd"] or entry.get("cmd") or "bash")
+                account_refs = dict(entry.get("account_refs") or {})
+                for provider in account_manager.PROVIDERS:
+                    account_refs.setdefault(
+                        provider,
+                        _tmux_get_env(tmux_name, f"SF_ACCOUNT_{provider.upper()}")
+                        or default_account_refs.get(provider),
+                    )
                 if sid in self.sessions:
                     continue  # already attached
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
                 session = Session(sid, cmd, cols, rows,
                                   on_data=self._output_event.set,
-                                  tmux_name=tmux_name)
+                                  tmux_name=tmux_name,
+                                  account_refs=account_refs)
                 self.sessions[sid] = session
                 # Restore bridge enabled/disabled state from config
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
@@ -2001,9 +2050,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             try:
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
                 tmux_name = entry.get("tmux_name") or None
+                account_refs = dict(entry.get("account_refs") or default_account_refs)
                 session = Session(sid, cmd, cols, rows,
                                   on_data=self._output_event.set,
-                                  tmux_name=tmux_name)
+                                  tmux_name=tmux_name,
+                                  account_refs=account_refs)
                 self.sessions[sid] = session
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._init_pending = False
@@ -2536,15 +2587,27 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                                "label": getattr(s, '_custom_label', None)})
         return json.dumps(result)
 
-    def new_session(self, cmd: str, cols: int, rows: int, source: str = "manual", handoff: bool = False) -> str:
+    def new_session(self, cmd: str, cols: int, rows: int, source: str = "manual",
+                    handoff: bool = False, inherit_accounts: bool = True) -> str:
         cmd = _canonical_cmd(cmd)
+        cfg = load_config()
+        if ACCOUNT_MANAGER.ensure(cfg):
+            save_config(cfg)
+        account_refs = ACCOUNT_MANAGER.session_refs(cfg) if inherit_accounts else {
+            provider: None for provider in account_manager.PROVIDERS
+        }
         self._counter += 1
         sid = f"s{self._counter}"
         _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows} source={source!r}")
-        session = Session(sid, cmd, cols, rows, on_data=self._output_event.set)
+        session = Session(sid, cmd, cols, rows, on_data=self._output_event.set,
+                          account_refs=account_refs)
         session._lifecycle_source = source or ""
         session._lifecycle_handoff = bool(handoff or source in {"scheduler", "scheduled", "auto"})
         self.sessions[sid] = session
+        def _remember_account_refs(current):
+            accounts = current.setdefault("accounts", account_manager._empty_accounts())
+            accounts.setdefault("sessions", {})[sid] = dict(account_refs)
+        update_config(_remember_account_refs)
         self._start_startup_trust_watcher(sid, session)
         session._bridge_enabled = True
         # Soft persistence (Windows / no-tmux fallback): record this session
@@ -2684,6 +2747,14 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 save_config(cfg)
             # Drop from soft-persistence list (Windows / no-tmux)
             self._drop_soft_session(sid)
+            def _drop_account_ref(current):
+                accounts = current.get("accounts") or {}
+                sessions = accounts.get("sessions") or {}
+                if sid in sessions:
+                    sessions.pop(sid, None)
+                    accounts["sessions"] = sessions
+                    current["accounts"] = accounts
+            update_config(_drop_account_ref)
             self._persist_session_manifest()
         self._notify_ui_sessions_changed()
         if s and (handoff or lifecycle_handoff):
@@ -3106,6 +3177,169 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         s = self.sessions.get(sid)
         return s.alive if s else False
 
+    def _account_config(self):
+        cfg = load_config()
+        if ACCOUNT_MANAGER.ensure(cfg):
+            save_config(cfg)
+        return cfg
+
+    def _account_state(self, sid: str = ""):
+        cfg = self._account_config()
+        session = self.sessions.get(sid)
+        if session:
+            cfg.setdefault("accounts", account_manager._empty_accounts()) \
+                .setdefault("sessions", {})[sid] = dict(session.account_refs)
+        return cfg, ACCOUNT_MANAGER.safe_state(cfg, sid or None)
+
+    def account_state(self, sid: str = "") -> str:
+        """Safe account panel data: refs and labels, never credential contents."""
+        try:
+            return json.dumps(self._account_state(sid)[1], ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    def account_switch_global(self, provider: str, ref: str) -> str:
+        """Change only the account inherited by future sessions."""
+        try:
+            cfg = self._account_config()
+            ACCOUNT_MANAGER.set_global(cfg, provider, ref)
+            save_config(cfg)
+            return json.dumps({"success": True, "scope": "global",
+                               "state": self._account_state()[1]}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
+
+    def _restart_session_for_account(self, sid: str, account_refs: dict):
+        old = self.sessions.get(sid)
+        if not old:
+            raise ValueError("此 tab 不存在或已關閉")
+        cmd = old.cmd
+        cols, rows = old.cols, old.rows
+        tmux_name = old._tmux_name
+        label = getattr(old, "_custom_label", None)
+        bridge_enabled = getattr(old, "_bridge_enabled", True)
+        lifecycle_source = getattr(old, "_lifecycle_source", "")
+        lifecycle_handoff = getattr(old, "_lifecycle_handoff", False)
+        if self.bridge:
+            self.bridge.unregister_session(sid)
+        if self.line_bridge:
+            self.line_bridge.unregister_session(sid)
+        old.kill()
+        session = Session(sid, cmd, cols, rows, on_data=self._output_event.set,
+                          tmux_name=tmux_name, account_refs=account_refs)
+        session._bridge_enabled = bridge_enabled
+        session._init_pending = False
+        session._startup_trust_pending = False
+        session._slug_pending = False
+        session._lifecycle_source = lifecycle_source
+        session._lifecycle_handoff = lifecycle_handoff
+        if label:
+            session._custom_label = label
+        self.sessions[sid] = session
+        if self.bridge:
+            self.bridge.register_session(
+                sid, label or (cmd.split()[0] if cmd else sid),
+                lambda text, _s=session: _s.write(text),
+                peek_fn=lambda _s=session: bytes(_s._recent).decode("utf-8", errors="replace"),
+                prepare_fn=lambda _s=session: self._prepare_pane_for_input(_s),
+                cmd=cmd,
+            )
+            self.bridge.refresh_commands()
+        if self.line_bridge:
+            self.line_bridge.register_session(
+                sid, label or (cmd.split()[0] if cmd else sid),
+                lambda text, _s=session: _s.write(text),
+                peek_fn=lambda _s=session: bytes(_s._recent).decode("utf-8", errors="replace"),
+            )
+        self._persist_session_manifest()
+        self._notify_ui_sessions_changed()
+        return session
+
+    def account_switch_session(self, sid: str, provider: str, ref: str) -> str:
+        """Switch/relaunch one tab; all other running tabs stay untouched."""
+        try:
+            cfg = self._account_config()
+            if provider not in account_manager.PROVIDERS:
+                raise ValueError("unknown provider")
+            ACCOUNT_MANAGER.set_session_ref(cfg, sid, provider, ref)
+            session = self.sessions.get(sid)
+            if not session:
+                raise ValueError("此 tab 不存在或已關閉")
+            refs = dict(session.account_refs)
+            refs[provider] = ref
+            cfg.setdefault("accounts", account_manager._empty_accounts()) \
+                .setdefault("sessions", {})[sid] = refs
+            save_config(cfg)
+            self._restart_session_for_account(sid, refs)
+            return json.dumps({"success": True, "scope": "session", "sid": sid,
+                               "state": self._account_state(sid)[1]}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
+
+    def account_login_start(self, provider: str) -> str:
+        """Open an explicit provider login tab; nothing starts automatically."""
+        try:
+            if provider == "codex":
+                cmd = f"{CODEX_LAUNCHER} login"
+            elif provider == "claude":
+                cmd = "claude"
+            else:
+                raise ValueError("unknown provider")
+            # Login must use the provider's canonical auth location. If it
+            # inherited the current profile, /login would overwrite that
+            # profile instead of creating a new account.
+            sid = self.new_session(cmd, 120, 30, source="account-login",
+                                   inherit_accounts=False)
+            if provider == "claude":
+                # The login command is deliberately sent only after the user
+                # explicitly pressed the panel's Login button.
+                threading.Timer(
+                    2.0, lambda: self._send_text_to_session(
+                        self.sessions.get(sid), "/login", submit=True
+                    ) if self.sessions.get(sid) else None
+                ).start()
+            return json.dumps({"success": True, "sid": sid, "provider": provider,
+                               "message": "登入頁籤已開啟；完成瀏覽器登入後回到面板按重新整理。"},
+                              ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
+
+    def account_capture_login(self, provider: str) -> str:
+        """Capture credentials after an explicit login flow into a new profile."""
+        try:
+            cfg = self._account_config()
+            ref = ACCOUNT_MANAGER.sync_current(cfg, provider)
+            if not ref:
+                raise ValueError("尚未偵測到已登入帳號")
+            save_config(cfg)
+            return json.dumps({"success": True, "ref": ref,
+                               "state": self._account_state()[1]}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
+
+    def _probe_session_data(self, session: Session):
+        provider = usage_probe.detect_ai(session.cmd)
+        env = ACCOUNT_MANAGER.env_for(
+            provider, session.account_refs.get(provider)
+        ) if provider else {}
+        result = usage_probe.probe_data(session.cmd, env=env)
+        profile = ACCOUNT_MANAGER.profile(
+            self._account_config(), provider, session.account_refs.get(provider)
+        ) if provider and session.account_refs.get(provider) else None
+        if profile:
+            result["account"] = usage_probe.profile_account(profile)
+        # Existing Codex tmux processes predate per-account CODEX_HOME and
+        # therefore left their rollout JSONL in ~/.codex. Reuse that snapshot
+        # only when this tab is the currently discovered canonical account;
+        # a genuinely different profile must not display another account's
+        # quota.
+        if (provider == "codex" and result.get("error") == "no_data"
+                and session.account_refs.get(provider)):
+            discovered = ACCOUNT_MANAGER.discover(provider) or {}
+            if discovered.get("id") == session.account_refs.get(provider):
+                result = usage_probe.probe_data(session.cmd)
+        return result
+
     def tab_usage(self, sid: str) -> str:
         """Web /usage slash command: return this tab's AI usage water-level.
 
@@ -3117,7 +3351,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         if not s:
             return "此 tab 不存在或已關閉。"
         try:
-            return usage_probe.probe(s.cmd)
+            data = self._probe_session_data(s)
+            return usage_probe.probe_text(data)
         except Exception as e:
             return f"用量查詢失敗：{e}"
 
@@ -3133,7 +3368,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         if usage_probe.detect_ai(cmd) is None:
             cmd = "claude"
         try:
-            return json.dumps(usage_probe.probe_data(cmd))
+            provider = usage_probe.detect_ai(cmd)
+            result = self._probe_session_data(s) if s else usage_probe.probe_data(cmd)
+            if s and provider:
+                profile = ACCOUNT_MANAGER.profile(
+                    self._account_config(), provider, s.account_refs.get(provider)
+                )
+                if profile:
+                    result["account"] = " · ".join(
+                        x for x in (profile.get("email"), profile.get("label")) if x
+                    )
+            return json.dumps(result)
         except Exception as e:
             return json.dumps({"ai": None, "error": str(e)})
 

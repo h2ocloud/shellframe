@@ -13,6 +13,8 @@
   5. 完全沒資料（無快取+API 失敗+無 legacy script）→ no_data
   6. 磁碟快取跨重啟載回；超過 24h 不還魂
   7. detect_ai 判定
+  8. Codex rollout JSONL 的新版 weekly-only rate limit 格式
+  9. Codex rollout JSONL 的 5hr/week window 正規化
 """
 
 import contextlib
@@ -23,6 +25,7 @@ import tempfile
 import time as real_time
 import types
 import urllib.error
+from unittest import mock
 
 import usage_probe as U
 
@@ -97,6 +100,21 @@ def probe_env(clock, urlopen, cache_file=None, token="fake-token"):
         U.urllib.request.urlopen = saved_urlopen
         if tmpdir:
             tmpdir.cleanup()
+
+
+@contextlib.contextmanager
+def codex_rollout_env(pattern):
+    """隔離 Codex rollout/legacy lookup，避免測試讀到本機真實帳號資料。"""
+    saved = {k: getattr(U, k) for k in (
+        "CODEX_LOG_GLOB", "CODEX_ROLLOUT_GLOB", "CODEX_SCRIPT_DIR")}
+    try:
+        U.CODEX_LOG_GLOB = "/nonexistent/logs_*.sqlite"
+        U.CODEX_ROLLOUT_GLOB = pattern
+        U.CODEX_SCRIPT_DIR = "/nonexistent/codex-usage"
+        yield
+    finally:
+        for k, v in saved.items():
+            setattr(U, k, v)
 
 
 # ────────────────────────── tests ──────────────────────────
@@ -189,6 +207,123 @@ def test_detect_ai():
     assert U.detect_ai("codex") == "codex"
     assert U.detect_ai("/bin/zsh -l") is None
     assert U.detect_ai("") is None
+
+
+def test_codex_rollout_jsonl_reads_weekly_only_rate_limit():
+    event = {
+        "timestamp": "2026-08-10T02:02:01.635Z",
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "rate_limits": {
+                "primary": {
+                    "used_percent": 13.0,
+                    "window_minutes": 10080,
+                    "resets_at": 1786826020,
+                },
+                "secondary": None,
+                "plan_type": "pro",
+            },
+        },
+    }
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "rollout-2026-08-10.jsonl")
+        with open(path, "w") as f:
+            f.write(json.dumps(event) + "\n")
+        with codex_rollout_env(os.path.join(td, "rollout-*.jsonl")):
+            out = U._fetch_codex()
+    assert out and out["week"][0] == 13, out
+    assert "5hr" not in out, out
+    assert out["_plan"] == "pro", out
+
+
+def test_codex_rollout_jsonl_normalizes_five_hour_and_week_windows():
+    event = {
+        "timestamp": "2026-08-10T02:02:01.635Z",
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "rate_limits": {
+                "primary": {
+                    "used_percent": 18.0,
+                    "window_minutes": 300,
+                    "resets_at": 1786327200,
+                },
+                "secondary": {
+                    "used_percent": 42.0,
+                    "window_minutes": 10080,
+                    "resets_at": 1786826020,
+                },
+                "plan_type": "pro",
+            },
+        },
+    }
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "rollout-2026-08-10.jsonl")
+        with open(path, "w") as f:
+            f.write(json.dumps(event) + "\n")
+        with codex_rollout_env(os.path.join(td, "rollout-*.jsonl")):
+            out = U._fetch_codex()
+    assert out and out["5hr"][0] == 18 and out["week"][0] == 42, out
+
+
+def test_codex_app_server_normalizes_live_rate_limits():
+    class FakeStdin:
+        def write(self, value):
+            return len(value)
+        def flush(self):
+            return None
+
+    class FakeProc:
+        stdin = FakeStdin()
+        stdout = []
+        def terminate(self):
+            return None
+        def wait(self, timeout=None):
+            return None
+
+    response = {
+        "id": 2,
+        "result": {"rateLimits": {
+            "primary": {"usedPercent": 7, "windowDurationMins": 10080,
+                         "resetsAt": 1786944032},
+            "secondary": None,
+            "planType": "team",
+        }},
+    }
+    with mock.patch.object(U.shutil, "which", return_value="/fake/sf-codex"), \
+         mock.patch.object(U.subprocess, "Popen", return_value=FakeProc()), \
+         mock.patch.object(U, "_read_jsonrpc_response", return_value=response):
+        out = U._fetch_codex_app_server(home="/tmp/profile")
+    assert out and out["week"][0] == 7 and out["_plan"] == "team", out
+
+
+def test_codex_app_server_surfaces_invalid_auth():
+    class FakeStdin:
+        def write(self, value):
+            return len(value)
+        def flush(self):
+            return None
+
+    class FakeProc:
+        stdin = FakeStdin()
+        stdout = []
+        def terminate(self):
+            return None
+        def wait(self, timeout=None):
+            return None
+
+    response = {"id": 2, "error": {
+        "code": -32603, "message": "401 Unauthorized token_invalidated"
+    }}
+    with mock.patch.object(U.shutil, "which", return_value="/fake/sf-codex"), \
+         mock.patch.object(U.subprocess, "Popen", return_value=FakeProc()), \
+         mock.patch.object(U, "_read_jsonrpc_response", return_value=response):
+        out = U._fetch_codex_app_server(home="/tmp/profile")
+    assert out == {
+        "_error": "auth_required",
+        "_error_message": "Codex 登入已失效，請重新登入",
+    }
 
 
 # ────────────────────────── plain runner ──────────────────────────
