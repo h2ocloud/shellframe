@@ -852,7 +852,8 @@ class Session:
     """One PTY tab session."""
 
     def __init__(self, sid: str, cmd: str, cols: int, rows: int,
-                 on_data=None, tmux_name: str = None, account_refs: dict | None = None):
+                 on_data=None, tmux_name: str = None, account_refs: dict | None = None,
+                 account_refs_authoritative: bool = False):
         self.sid = sid
         self.cmd = cmd
         self.cols = int(cols)
@@ -861,6 +862,10 @@ class Session:
             provider: (account_refs or {}).get(provider)
             for provider in account_manager.PROVIDERS
         }
+        # 舊 tmux tab 可能是在帳號 profile 功能加入前建立，manifest 只代表
+        # 設定檔快照，不代表正在跑的 CLI 真正吃哪個帳號。切換動作明確傳入
+        # authoritative 時才保留傳入 refs；一般 reattach 要以 tmux env 為準。
+        self._account_refs_authoritative = bool(account_refs_authoritative)
         # Transcript correlation: claude tabs get a stable --session-id so the
         # auto status detector can find their JSONL. None for codex/other (codex
         # is mapped via lsof) and for reattached sessions (recovered from tmux env).
@@ -959,11 +964,15 @@ class Session:
             # running claude already chose one at creation). Recover the real one.
             self.session_id = _tmux_get_env(self._tmux_name, "SF_SESSION_ID") or None
             for provider in account_manager.PROVIDERS:
-                self.account_refs[provider] = (
-                    self.account_refs.get(provider)
-                    or _tmux_get_env(self._tmux_name, f"SF_ACCOUNT_{provider.upper()}")
-                    or None
+                runtime_ref = _tmux_get_env(
+                    self._tmux_name, f"SF_ACCOUNT_{provider.upper()}"
                 )
+                if runtime_ref:
+                    self.account_refs[provider] = runtime_ref
+                elif not self._account_refs_authoritative:
+                    # 沒有 runtime marker 的舊 tab 要視為未知，避免 UI 把
+                    # manifest 的 Team 誤當成實際正在跑的帳號並鎖住按鈕。
+                    self.account_refs[provider] = None
             # Resize existing tmux session to match terminal
             subprocess.run([
                 "tmux", "resize-window", "-t", self._tmux_name,
@@ -3226,7 +3235,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             self.line_bridge.unregister_session(sid)
         old.kill()
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set,
-                          tmux_name=tmux_name, account_refs=account_refs)
+                          tmux_name=tmux_name, account_refs=account_refs,
+                          account_refs_authoritative=True)
         session._bridge_enabled = bridge_enabled
         session._init_pending = False
         session._startup_trust_pending = False

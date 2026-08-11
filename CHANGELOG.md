@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.29.30 (2026-08-11)
+
+### Fixes
+- **舊 tab 切換帳號被鎖住**：舊 tmux session 沒有 `SF_ACCOUNT_*` runtime marker 時，不再把 manifest 快照誤當成實際帳號；切換 Team/Pro 會重新注入正確 profile，避免第四個 tab 顯示 Pro 卻把 Team 按鈕鎖住。
+
 ## v0.29.29 (2026-08-08)
 
 ### Features
