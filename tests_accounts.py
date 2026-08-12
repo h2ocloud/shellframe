@@ -69,6 +69,17 @@ def test_session_refs_snapshot_global_and_env_is_profile_specific():
         assert os.path.exists(os.path.join(env["CODEX_HOME"], "auth.json"))
 
 
+def test_env_for_blank_ref_returns_no_overrides():
+    """沒釘 profile 的舊 tab（ref=None）要回空 env，不能炸也不能指到 provider 根目錄。"""
+    with tempfile.TemporaryDirectory() as td:
+        manager = AccountManager(root=os.path.join(td, "profiles"), home=td,
+                                 keychain_getter=lambda: {})
+        manager.write_profile("codex", "codex-a", {"tokens": {"access_token": "a"}})
+        for ref in (None, "", 0, {}):
+            assert manager.env_for("codex", ref) == {}, ref
+        assert manager.env_for("codex", "codex-a")["CODEX_HOME"]
+
+
 def test_switching_global_does_not_mutate_existing_session_snapshot():
     with tempfile.TemporaryDirectory() as td:
         manager = AccountManager(root=os.path.join(td, "profiles"), home=td,

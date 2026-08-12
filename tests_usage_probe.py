@@ -80,7 +80,8 @@ GOOD_API_PAYLOAD = {
 def probe_env(clock, urlopen, cache_file=None, token="fake-token"):
     """隔離 usage_probe 的外部世界：時鐘、網路、Keychain、磁碟快取、legacy script。"""
     saved = {k: getattr(U, k) for k in (
-        "time", "_claude_cache", "_USAGE_CACHE_FILE", "_claude_oauth", "CLAUDE_SCRIPT")}
+        "time", "_claude_cache", "_account_cache", "_USAGE_CACHE_FILE",
+        "_claude_oauth", "CLAUDE_SCRIPT")}
     saved_urlopen = U.urllib.request.urlopen
     tmpdir = None
     try:
@@ -89,8 +90,15 @@ def probe_env(clock, urlopen, cache_file=None, token="fake-token"):
             cache_file = os.path.join(tmpdir.name, "usage_cache.json")
         U.time = clock.module()
         U._claude_cache = None                    # 重置 lazy cache
+        U._account_cache = {}                     # 重置 per-account 快取
         U._USAGE_CACHE_FILE = cache_file
-        U._claude_oauth = lambda: {"accessToken": token} if token else {}
+        # 真實 _claude_oauth 會優先吃 env 的 per-account token，帳號面板就是走
+        # 這條；沒帶 env 時才回退到 Keychain（這裡以 token 假裝）。
+        U._claude_oauth = lambda env=None: (
+            {"accessToken": (env or {}).get("CLAUDE_CODE_OAUTH_TOKEN")}
+            if (env or {}).get("CLAUDE_CODE_OAUTH_TOKEN")
+            else ({"accessToken": token} if token else {})
+        )
         U.CLAUDE_SCRIPT = "/nonexistent/fetch_oauth_usage.sh"  # 關掉 legacy 路徑
         U.urllib.request.urlopen = urlopen
         yield cache_file
@@ -100,6 +108,45 @@ def probe_env(clock, urlopen, cache_file=None, token="fake-token"):
         U.urllib.request.urlopen = saved_urlopen
         if tmpdir:
             tmpdir.cleanup()
+
+
+class TokenAwareUrlopen:
+    """依 Authorization header 分流：模擬各帳號有各自 token 與各自結果。
+
+    outcomes = {token: payload | Exception}
+    """
+
+    def __init__(self, outcomes):
+        self.outcomes = outcomes
+        self.calls = []
+
+    def __call__(self, req, timeout=0):
+        token = (req.get_header("Authorization") or "").split()[-1]
+        self.calls.append(token)
+        outcome = self.outcomes.get(token)
+        if isinstance(outcome, Exception):
+            raise outcome
+        body = json.dumps(outcome).encode()
+
+        class _Resp:
+            def read(self_inner):
+                return body
+
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *a):
+                return False
+
+        return _Resp()
+
+
+def account_env(token):
+    return {"CLAUDE_CODE_OAUTH_TOKEN": token, "CLAUDE_CONFIG_DIR": "/tmp/profile"}
+
+
+def http_error(code):
+    return urllib.error.HTTPError("u", code, "boom", {}, io.BytesIO())
 
 
 @contextlib.contextmanager
@@ -199,6 +246,97 @@ def test_disk_cache_survives_restart_but_not_a_day():
         clock.now += U._CLAUDE_DISK_MAX_AGE + 10
         with probe_env(clock, net2, cache_file=cache_file):
             assert U._fetch_claude() is None
+
+
+def test_account_usage_expired_login_reports_reason_not_no_data():
+    """帳號面板列出每個帳號：憑證過期要明講「重新登入」，不能只說查不到。"""
+    clock = FakeClock()
+    net = TokenAwareUrlopen({"tok-expired": http_error(401)})
+    with probe_env(clock, net):
+        out = U.account_usage("claude", env=account_env("tok-expired"), ref="claude-b")
+        assert out["error"] == "auth_required", out
+        assert "重新登入" in out["error_message"], out
+        assert out["five_hr"] is None and out["week"] is None, out
+
+
+def test_account_usage_backoff_replays_real_reason():
+    """退避窗內不再打 API，但要重播真因（過期），不能蓋成「剛查過」。"""
+    clock = FakeClock()
+    net = TokenAwareUrlopen({"tok-expired": http_error(401)})
+    with probe_env(clock, net):
+        U.account_usage("claude", env=account_env("tok-expired"), ref="claude-b")
+        calls = len(net.calls)
+        clock.now += 10
+        out = U.account_usage("claude", env=account_env("tok-expired"), ref="claude-b")
+        assert len(net.calls) == calls, "退避窗內不應再打 API"
+        assert out["error"] == "auth_required", out
+
+
+def test_account_usage_is_cached_per_account_without_cross_talk():
+    """一個帳號查得到、另一個過期，數字不能互相污染；TTL 內零 API call。"""
+    clock = FakeClock()
+    net = TokenAwareUrlopen({"tok-ok": GOOD_API_PAYLOAD, "tok-expired": http_error(401)})
+    with probe_env(clock, net):
+        ok = U.account_usage("claude", env=account_env("tok-ok"), ref="claude-a")
+        bad = U.account_usage("claude", env=account_env("tok-expired"), ref="claude-b")
+        assert ok["five_hr"]["pct"] == 18 and ok["week"]["pct"] == 20, ok
+        assert bad["five_hr"] is None and bad["error"] == "auth_required", bad
+        calls = len(net.calls)
+        clock.now += 30                                   # _ACCOUNT_OK_TTL 內
+        again = U.account_usage("claude", env=account_env("tok-ok"), ref="claude-a")
+        assert again["five_hr"]["pct"] == 18 and again["stale"] is False, again
+        assert len(net.calls) == calls, f"TTL 內不該再打 API：{net.calls}"
+
+
+def test_account_usage_429_serves_that_accounts_own_stale_reading():
+    clock = FakeClock()
+    net = TokenAwareUrlopen({"tok-ok": GOOD_API_PAYLOAD})
+    with probe_env(clock, net):
+        U.account_usage("claude", env=account_env("tok-ok"), ref="claude-a")
+        clock.now += 200                                  # 過 TTL 與退避窗
+        net.outcomes["tok-ok"] = http_error(429)
+        out = U.account_usage("claude", env=account_env("tok-ok"), ref="claude-a")
+        assert out["stale"] is True and out["five_hr"]["pct"] == 18, out
+        assert "頻繁" in out["error_message"], out
+
+
+def test_account_usage_current_claude_shares_the_pill_cache():
+    """目前登入的帳號走共享快取，面板與膠囊不會互相把 token 打到 429。"""
+    clock = FakeClock()
+    net = TokenAwareUrlopen({"fake-token": GOOD_API_PAYLOAD})
+    with probe_env(clock, net):
+        U._fetch_claude()                                 # 膠囊先查（1 次 API）
+        calls = len(net.calls)
+        with mock.patch.object(U, "_claude_account", return_value="me · Team"):
+            out = U.account_usage("claude", env=account_env("tok-ok"),
+                                  ref="claude-a", is_current=True)
+        assert out["five_hr"]["pct"] == 18, out
+        assert len(net.calls) == calls, "目前帳號應重用膠囊快取，不該另打一次"
+
+
+def test_account_usage_codex_weekly_only_plan_is_not_an_error():
+    """Codex Team 只有週限額（無 5h 窗口）→ 5h 留空但不是錯誤。"""
+    clock = FakeClock()
+    net = TokenAwareUrlopen({})
+    with probe_env(clock, net):
+        with mock.patch.object(U, "_fetch_codex",
+                               return_value={"week": (0, "08-18 12:48"), "_plan": "team"}):
+            out = U.account_usage("codex", env={"CODEX_HOME": "/tmp/profile"},
+                                  ref="codex-a")
+    assert out["error"] is None and out["five_hr"] is None, out
+    assert out["week"] == {"pct": 0, "reset": "08-18 12:48"}, out
+
+
+def test_pill_and_panel_caches_coexist_on_disk():
+    """兩邊都寫同一個快取檔：read-modify-write，不能互相清掉。"""
+    clock = FakeClock()
+    net = TokenAwareUrlopen({"fake-token": GOOD_API_PAYLOAD, "tok-ok": GOOD_API_PAYLOAD})
+    with probe_env(clock, net) as cache_file:
+        U.account_usage("claude", env=account_env("tok-ok"), ref="claude-a")
+        U._fetch_claude()                                 # 膠囊路徑後寫
+        blob = json.load(open(cache_file))
+        assert blob["claude"]["data"]["5hr"][0] == 18, blob
+        assert blob["accounts"]["claude:claude-a"]["data"]["5hr"][0] == 18, blob
 
 
 def test_detect_ai():

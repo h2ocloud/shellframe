@@ -250,6 +250,12 @@ class AccountManager:
         return result
 
     def env_for(self, provider: str, ref: str) -> dict:
+        # A missing/blank ref means "no profile pinned" (e.g. a tab reattached
+        # from before profiles existed). Return no overrides so the caller falls
+        # back to the provider's canonical credentials — joining a blank ref
+        # into a path would either raise or point at the provider root.
+        if not ref or not isinstance(ref, str):
+            return {}
         directory = self._profile_dir(provider, ref)
         if not directory.is_dir():
             return {}

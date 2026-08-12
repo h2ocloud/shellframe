@@ -10,6 +10,7 @@ Windows: Edge WebView2 + subprocess
 import atexit
 import base64
 import codecs
+import concurrent.futures
 import ctypes
 import ctypes.util
 import errno
@@ -3327,15 +3328,63 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
+    def account_usage_all(self, refresh: bool = False) -> str:
+        """Every logged-in account's water-level, for the AI accounts panel.
+
+        One reading per account so the panel can show all of them at once
+        instead of only the active tab's. Accounts are queried in parallel —
+        they use different tokens / CODEX_HOMEs, so there is no shared
+        rate-limit budget between them — while usage_probe keeps a per-account
+        cache so re-opening the panel does not re-hit the APIs.
+        """
+        try:
+            cfg = self._account_config()
+            accounts = cfg.get("accounts") or {}
+            jobs = []
+            for provider in account_manager.PROVIDERS:
+                # The account the provider is really signed in as right now:
+                # it may read from the canonical location instead of a snapshot.
+                current = (ACCOUNT_MANAGER.discover(provider) or {}).get("id")
+                for item in (accounts.get("profiles") or {}).get(provider, []) or []:
+                    ref = item.get("id")
+                    if ref:
+                        jobs.append((provider, ref, item, ref == current))
+
+            def _one(job):
+                provider, ref, item, is_current = job
+                data = usage_probe.account_usage(
+                    provider,
+                    env=ACCOUNT_MANAGER.env_for(provider, ref),
+                    ref=ref,
+                    account=usage_probe.profile_account(item),
+                    force=bool(refresh),
+                    is_current=is_current,
+                )
+                data["is_current_login"] = is_current
+                return provider, ref, data
+
+            out = {provider: {} for provider in account_manager.PROVIDERS}
+            if jobs:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=min(4, len(jobs))
+                ) as pool:
+                    for provider, ref, data in pool.map(_one, jobs):
+                        out[provider][ref] = data
+            return json.dumps({"success": True, "providers": out}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
+
     def _probe_session_data(self, session: Session):
         provider = usage_probe.detect_ai(session.cmd)
-        env = ACCOUNT_MANAGER.env_for(
-            provider, session.account_refs.get(provider)
-        ) if provider else {}
+        ref = session.account_refs.get(provider) if provider else None
+        # A reattached tab from before per-account profiles has no ref (see
+        # Session._account_refs_authoritative); env_for needs a real ref, so
+        # fall back to the provider's global credentials instead of erroring.
+        env = ACCOUNT_MANAGER.env_for(provider, ref) if ref else {}
         result = usage_probe.probe_data(session.cmd, env=env)
         profile = ACCOUNT_MANAGER.profile(
-            self._account_config(), provider, session.account_refs.get(provider)
-        ) if provider and session.account_refs.get(provider) else None
+            self._account_config(), provider, ref
+        ) if ref else None
         if profile:
             result["account"] = usage_probe.profile_account(profile)
         # Existing Codex tmux processes predate per-account CODEX_HOME and
@@ -3343,10 +3392,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         # only when this tab is the currently discovered canonical account;
         # a genuinely different profile must not display another account's
         # quota.
-        if (provider == "codex" and result.get("error") == "no_data"
-                and session.account_refs.get(provider)):
+        if provider == "codex" and result.get("error") == "no_data" and ref:
             discovered = ACCOUNT_MANAGER.discover(provider) or {}
-            if discovered.get("id") == session.account_refs.get(provider):
+            if discovered.get("id") == ref:
                 result = usage_probe.probe_data(session.cmd)
         return result
 

@@ -121,6 +121,15 @@
   .account-row .account-name { flex:1; color:#a9b1d6; font-size:11px; min-width:0; }
   .account-row .account-name small { display:block; color:#565f89; margin-top:2px; }
   .account-row button { padding:4px 7px; font-size:10px; }
+  /* Per-account water-level line inside each row */
+  .account-usage { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:4px; font-size:11px; }
+  .account-usage .au-k { color:#565f89; margin-right:4px; }
+  .account-usage .au-reset { color:#565f89; margin-left:5px; }
+  .account-usage .au-note { color:#565f89; }
+  .account-usage .au-bad { color:#e0af68; }
+  .account-usage .au-v.lvl-ok { color:#9ece6a; }
+  .account-usage .au-v.lvl-warn { color:#e0af68; }
+  .account-usage .au-v.lvl-hot { color:#f7768e; }
 
   /* ── Image preview ── */
   #image-bar {
@@ -3191,20 +3200,82 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
   let _accountPanelEl = null;
+  // Last readings, kept between opens so re-opening the panel paints numbers
+  // immediately (with their timestamp) while a refresh runs in the background.
+  let _accountUsage = {};
+  async function _loadAccountUsage(force) {
+    if (!_accountPanelEl) return;
+    const cells = _accountPanelEl.querySelectorAll('[data-usage-key]');
+    if (!cells.length) return;
+    if (force) cells.forEach(el => { el.innerHTML = '<span class="au-note">用量查詢中…</span>'; });
+    try {
+      const res = JSON.parse(await pywebview.api.account_usage_all(!!force) || '{}');
+      if (!res.success) throw new Error(res.message || '用量查詢失敗');
+      _accountUsage = res.providers || {};
+      cells.forEach(el => {
+        const [provider, ref] = (el.dataset.usageKey || '').split('|');
+        el.innerHTML = _accountUsageHtml((_accountUsage[provider] || {})[ref]);
+      });
+    } catch (error) {
+      cells.forEach(el => {
+        el.innerHTML = `<span class="au-bad">⚠ ${esc(error.message || '用量查詢失敗')}</span>`;
+      });
+    }
+  }
   function _accountLabel(item) {
     if (!item) return '尚未登入';
     return [item.email, item.label && item.label !== item.email ? item.label : '', item.plan]
       .filter(Boolean).join(' · ');
   }
+  // Per-account water-level line. Every logged-in account gets one, so the panel
+  // answers "how much is left on each of my accounts" without switching tabs.
+  // Never invents a number: an account we cannot read says why (expired login,
+  // rate limit, no data yet), and a window the plan doesn't have renders as —
+  // (e.g. Codex Team is weekly-only, so it has no 5h window at all).
+  // Backend timestamps are "MM-DD HH:MM"; drop today's date so a row stays a
+  // single glance ("重置 15:50") and only keeps the date when it really differs.
+  function _shortWhen(text) {
+    const m = /^(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(text || '');
+    if (!m) return text || '';
+    const now = new Date();
+    const today = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return `${m[1]}-${m[2]}` === today ? m[3] : text;
+  }
+  function _accountUsageHtml(u) {
+    if (!u) return '<span class="au-note">用量查詢中…</span>';
+    const seg = (label, info) => `<span class="au-seg"><span class="au-k">${label}</span>` + (info
+      ? `<span class="au-v ${_usageLevel(info.pct)}">${info.pct}%</span>` +
+        `<span class="au-reset">重置 ${esc(_shortWhen(info.reset) || '?')}</span>`
+      : '<span class="au-note">—</span>') + '</span>';
+    if (!u.five_hr && !u.week) {
+      const why = u.error_message ||
+        (u.error === 'no_data' ? '這個帳號還沒有用量資料'
+          : u.error === 'not_ai' ? '不支援的帳號類型'
+            : '查不到用量');
+      return `<span class="au-bad">⚠ ${esc(why)}</span>`;
+    }
+    const parts = [seg('5h', u.five_hr), seg('7d', u.week)];
+    if (u.stale) {
+      parts.push(`<span class="au-bad">⚠ ${esc(u.error_message || '本次更新失敗，顯示上次資料')}` +
+        `${u.checked ? `（${esc(_shortWhen(u.checked))}）` : ''}</span>`);
+    } else if (u.snapshot) {
+      parts.push(`<span class="au-note">快照 ${esc(_shortWhen(u.snapshot))}</span>`);
+    } else if (u.checked) {
+      parts.push(`<span class="au-note">查詢 ${esc(_shortWhen(u.checked))}</span>`);
+    }
+    return parts.join('');
+  }
   function _accountProviderBlock(provider, info) {
     const title = provider === 'codex' ? 'Codex' : 'Claude';
     const current = info.current, global = info.global;
+    const usage = (_accountUsage[provider] || {});
     const rows = (info.accounts || []).map(item => {
       const id = esc(item.id || '');
       const currentOn = current && current.id === item.id;
       const globalOn = global && global.id === item.id;
       return `<div class="account-row"><div class="account-name">${esc(_accountLabel(item))}` +
-        `<small>${currentOn ? '目前 Session' : ''}${currentOn && globalOn ? ' · ' : ''}${globalOn ? '下一個 Session' : ''}</small></div>` +
+        `<small>${currentOn ? '目前 Session' : ''}${currentOn && globalOn ? ' · ' : ''}${globalOn ? '下一個 Session' : ''}</small>` +
+        `<div class="account-usage" data-usage-key="${provider}|${id}">${_accountUsageHtml(usage[item.id])}</div></div>` +
         `<button class="btn btn-ghost" data-account-action="session" data-provider="${provider}" data-ref="${id}" ${currentOn ? 'disabled' : ''}>切目前</button>` +
         `<button class="btn btn-ghost" data-account-action="global" data-provider="${provider}" data-ref="${id}" ${globalOn ? 'disabled' : ''}>設下一個</button></div>`;
     }).join('');
@@ -3224,6 +3295,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _accountPanelEl.innerHTML = `<div class="modal" style="width:570px;max-width:94vw"><h2>AI 帳號</h2>` +
         `<div class="account-panel-note">切換「目前 Session」只重啟這個 tab；其他 tab 不動。切換「下一個 Session」只影響之後新開的 tab。</div>` +
         `<div id="account-panel-body"></div><div class="modal-footer"><span id="account-panel-status" style="color:#e0af68;font-size:11px"></span>` +
+        `<button class="btn btn-ghost" data-account-action="usage">重新查用量</button>` +
         `<button class="btn btn-ghost" data-account-action="close">關閉</button></div></div>`;
       document.body.appendChild(_accountPanelEl);
       _accountPanelEl.addEventListener('click', async (event) => {
@@ -3239,6 +3311,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (status) status.textContent = '處理中…';
         try {
           let raw;
+          if (action === 'usage') {
+            if (status) status.textContent = '查詢用量中…';
+            await _loadAccountUsage(true);
+            if (status) status.textContent = '用量已更新';
+            return;
+          }
           if (action === 'session') raw = await pywebview.api.account_switch_session(activeId || '', provider, ref);
           else if (action === 'global') raw = await pywebview.api.account_switch_global(provider, ref);
           else if (action === 'login') raw = await pywebview.api.account_login_start(provider);
@@ -3262,6 +3340,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const providers = state.providers || {};
       body.innerHTML = _accountProviderBlock('codex', providers.codex || {accounts:[]}) +
         _accountProviderBlock('claude', providers.claude || {accounts:[]});
+      // Usage needs network / a codex app-server spawn, so it must not hold the
+      // panel closed: rows render first, then fill in (cached ones instantly).
+      _loadAccountUsage(false);
     } catch (error) {
       body.textContent = error.message || '帳號資料讀取失敗';
     }

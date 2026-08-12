@@ -32,6 +32,10 @@ from datetime import datetime
 CLAUDE_USAGE_API = "https://api.anthropic.com/api/oauth/usage"
 _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 
+# Providers this module can report a water-level for (mirrors account_manager,
+# kept local so usage_probe stays importable on its own).
+PROVIDERS = ("claude", "codex")
+
 # Older Codex versions logged a `codex.rate_limits` event to this local SQLite
 # log. Keep it as a read-only compatibility fallback; current versions persist
 # the snapshot in rollout JSONL below.
@@ -186,6 +190,40 @@ _CLAUDE_RETRY_MIN = 60       # min gap between live API attempts (rate-limit gua
 _CLAUDE_DISK_MAX_AGE = 86400  # don't resurrect a reading older than a day on boot
 _claude_cache = None         # {"data": {...}|None, "ts": epoch, "last_try": epoch}
 
+# The accounts panel asks for EVERY logged-in account, not just the active tab's.
+# Each account carries its own token and its own rate-limit budget, so readings
+# are cached per account ref with the same hard backoff: opening the panel a few
+# times in a row must not burn every account's quota. Measured on this machine:
+# the Claude usage API 429s a token that was queried successfully <1 min earlier,
+# so the panel leans on these caches rather than on live fetches.
+_ACCOUNT_OK_TTL = 120        # reuse an account's reading this fresh, no fetch
+_ACCOUNT_RETRY_MIN = {"claude": 60, "codex": 10}
+_account_cache = {}         # "provider:ref" -> {"data", "ts", "last_try"}
+
+
+def _read_cache_file() -> dict:
+    try:
+        with open(_USAGE_CACHE_FILE) as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _write_cache_file(mutate):
+    """Read-modify-write the shared cache file.
+
+    The pill (claude section) and the accounts panel (accounts section) both
+    persist here, so a plain overwrite would drop the other's entries.
+    """
+    try:
+        blob = _read_cache_file()
+        mutate(blob)
+        os.makedirs(os.path.dirname(_USAGE_CACHE_FILE), exist_ok=True)
+        with open(_USAGE_CACHE_FILE, "w") as f:
+            json.dump(blob, f)
+    except Exception:
+        pass
+
 
 def _claude_cache_state():
     """Lazy-load the persistent cache so reset times survive an app restart."""
@@ -193,24 +231,39 @@ def _claude_cache_state():
     if _claude_cache is not None:
         return _claude_cache
     _claude_cache = {"data": None, "ts": 0, "last_try": 0}
-    try:
-        with open(_USAGE_CACHE_FILE) as f:
-            d = (json.load(f) or {}).get("claude") or {}
-        if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
-            _claude_cache["data"] = d["data"]
-            _claude_cache["ts"] = d.get("ts", 0)
-    except Exception:
-        pass
+    d = _read_cache_file().get("claude") or {}
+    if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
+        _claude_cache["data"] = d["data"]
+        _claude_cache["ts"] = d.get("ts", 0)
     return _claude_cache
 
 
 def _save_claude_cache(c):
-    try:
-        os.makedirs(os.path.dirname(_USAGE_CACHE_FILE), exist_ok=True)
-        with open(_USAGE_CACHE_FILE, "w") as f:
-            json.dump({"claude": {"data": c["data"], "ts": c["ts"]}}, f)
-    except Exception:
-        pass
+    def _mutate(blob):
+        blob["claude"] = {"data": c["data"], "ts": c["ts"]}
+    _write_cache_file(_mutate)
+
+
+def _account_cache_state(key: str):
+    """Per-account cache entry, seeded from disk on first use."""
+    if key in _account_cache:
+        return _account_cache[key]
+    entry = {"data": None, "ts": 0, "last_try": 0}
+    d = (_read_cache_file().get("accounts") or {}).get(key) or {}
+    if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
+        entry["data"] = d["data"]
+        entry["ts"] = d.get("ts", 0)
+    _account_cache[key] = entry
+    return entry
+
+
+def _save_account_cache(key: str, entry):
+    def _mutate(blob):
+        accounts = blob.setdefault("accounts", {})
+        if not isinstance(accounts, dict):
+            accounts = blob["accounts"] = {}
+        accounts[key] = {"data": entry["data"], "ts": entry["ts"]}
+    _write_cache_file(_mutate)
 
 
 def _claude_stale(c):
@@ -269,10 +322,17 @@ def _fetch_claude(env=None):
 
 
 def _fetch_claude_profile(env):
-    """Fetch a non-global Claude profile without touching the shared cache."""
+    """Fetch one Claude profile's water-level without touching the shared cache.
+
+    Returns the usual {'5hr': …, 'week': …} mapping, or an {'_error': …} marker
+    so callers can say *why* a specific account has no numbers: a stored profile
+    token expires (401) and the accounts panel must tell the user to log in
+    again rather than silently showing 查不到.
+    """
     token = _claude_oauth(env).get("accessToken") if env else None
     if not token:
-        return None
+        return {"_error": "auth_required",
+                "_error_message": "找不到這個帳號的憑證，請重新登入"}
     try:
         req = urllib.request.Request(CLAUDE_USAGE_API, headers={
             "Authorization": f"Bearer {token}",
@@ -283,14 +343,24 @@ def _fetch_claude_profile(env):
         })
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
-        out = {}
-        for source, target in (("five_hour", "5hr"), ("seven_day", "week")):
-            item = data.get(source) or {}
-            if item.get("utilization") is not None:
-                out[target] = (round(item["utilization"]), _fmt_iso(item.get("resets_at", "")))
-        return out or None
-    except Exception:
-        return None
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return {"_error": "auth_required",
+                    "_error_message": "Claude 登入已過期，請重新登入這個帳號"}
+        if e.code == 429:
+            return {"_error": "rate_limited",
+                    "_error_message": "Claude 用量 API 查詢過於頻繁，稍後重試"}
+        return {"_error": "api_error",
+                "_error_message": f"Claude 用量 API 回 HTTP {e.code}"}
+    except Exception as e:
+        return {"_error": "network_error",
+                "_error_message": f"連線 Claude 用量 API 失敗：{type(e).__name__}"}
+    out = {}
+    for source, target in (("five_hour", "5hr"), ("seven_day", "week")):
+        item = data.get(source) or {}
+        if item.get("utilization") is not None:
+            out[target] = (round(item["utilization"]), _fmt_iso(item.get("resets_at", "")))
+    return out or None
 
 
 def _fetch_claude_script():
@@ -640,25 +710,8 @@ def _fetch_codex_app_server(home=None):
                     pass
 
 
-def probe_data(cmd: str, env=None) -> dict:
-    """Structured usage water-level for the inline top-bar indicator.
-
-    Same fetch path as probe(), but returns machine-readable fields the web UI
-    can render as a compact pill (used %, reset time) instead of a text block.
-    Percentages are *utilisation* (how much is used), matching the /usage modal.
-    """
-    ai = detect_ai(cmd)
-    if ai is None:
-        return {"ai": None, "error": "not_ai"}
-
-    home = (env or {}).get("CODEX_HOME")
-    if ai == "codex":
-        data = _fetch_codex(home=home)
-    else:
-        data = _fetch_claude_profile(env) if env else _fetch_claude()
-    account = (_codex_account(data.get("_plan") if data else None, home=home)
-               if ai == "codex" else _claude_account())
-
+def _shape(ai, data, account="") -> dict:
+    """Render a raw fetch result as the machine-readable fields the UI wants."""
     out = {"ai": ai, "account": account, "five_hr": None, "week": None,
            "snapshot": None, "error": None, "stale": False}
     if data and data.get("_error"):
@@ -679,6 +732,109 @@ def probe_data(cmd: str, env=None) -> dict:
     if data.get("_ts"):
         out["snapshot"] = _fmt_epoch(data["_ts"])
     return out
+
+
+def probe_data(cmd: str, env=None) -> dict:
+    """Structured usage water-level for the inline top-bar indicator.
+
+    Same fetch path as probe(), but returns machine-readable fields the web UI
+    can render as a compact pill (used %, reset time) instead of a text block.
+    Percentages are *utilisation* (how much is used), matching the /usage modal.
+    """
+    ai = detect_ai(cmd)
+    if ai is None:
+        return {"ai": None, "error": "not_ai"}
+
+    home = (env or {}).get("CODEX_HOME")
+    if ai == "codex":
+        data = _fetch_codex(home=home)
+    else:
+        data = _fetch_claude_profile(env) if env else _fetch_claude()
+    account = (_codex_account(data.get("_plan") if data else None, home=home)
+               if ai == "codex" else _claude_account())
+    return _shape(ai, data, account)
+
+
+def account_usage(provider: str, env=None, ref: str = "", account: str = "",
+                  force: bool = False, is_current: bool = False) -> dict:
+    """One logged-in account's water-level, for the AI accounts panel.
+
+    The panel shows every account side by side, which means N fetches per open —
+    so each account ref gets its own cache plus a per-provider retry floor. Two
+    further rules keep the numbers honest:
+
+      * `is_current` (this ref is the account the provider is *actually* signed
+        in as right now) routes Claude through the shared `_fetch_claude` cache,
+        so the top-bar pill and the panel never rate-limit each other on the
+        same token, and lets Codex fall back to the canonical ~/.codex snapshot
+        when the per-profile CODEX_HOME has no rollout yet.
+      * Never estimate. A stale reading is returned flagged, and an account we
+        cannot read reports the reason (expired login, rate limit) instead of a
+        number.
+    """
+    if provider not in PROVIDERS:
+        return {"ai": None, "error": "not_ai"}
+    env = env or {}
+    now = time.time()
+    # The signed-in account shares its reading with the pill's own cache path
+    # (_fetch_claude brings its own TTL, backoff and stale handling).
+    if is_current and provider == "claude":
+        data = _fetch_claude()
+        out = _shape(provider, data, account or _claude_account())
+        shared = _claude_cache_state()
+        if shared.get("ts"):
+            out["checked"] = _fmt_epoch(shared["ts"])
+        return out
+
+    key = f"{provider}:{ref or 'current'}"
+    cache = _account_cache_state(key)
+    if cache["data"] and not force and now - cache["ts"] < _ACCOUNT_OK_TTL:
+        out = _shape(provider, dict(cache["data"]), account)
+        out["checked"] = _fmt_epoch(cache["ts"])
+        return out
+    if now - cache["last_try"] < _ACCOUNT_RETRY_MIN.get(provider, 60):
+        # Inside the backoff window even an explicit refresh must not fetch:
+        # that is exactly how a panel re-open storm gets the token 429'd.
+        if cache["data"]:
+            out = _shape(provider, {**cache["data"], "_stale": True}, account)
+            out["checked"] = _fmt_epoch(cache["ts"])
+            return out
+        # Replay the last real reason (e.g. an expired login) instead of
+        # 「剛查過」: the backoff is ours, and hiding the cause behind it would
+        # tell the user to wait when what they need to do is log in again.
+        if cache.get("error"):
+            return _shape(provider, dict(cache["error"]), account)
+        return _shape(provider, {"_error": "rate_limited",
+                                 "_error_message": "剛查過，稍後再試"}, account)
+    cache["last_try"] = now
+
+    if provider == "codex":
+        data = _fetch_codex(home=env.get("CODEX_HOME"))
+        if is_current and (not data or data.get("_error")):
+            data = _fetch_codex()
+    else:
+        data = _fetch_claude_profile(env)
+
+    if data and not data.get("_error"):
+        cache["data"] = {k: v for k, v in data.items() if k != "_stale"}
+        cache["ts"] = now
+        cache.pop("error", None)
+        _save_account_cache(key, cache)
+        out = _shape(provider, data, account)
+        out["checked"] = _fmt_epoch(now)
+        return out
+    if data and data.get("_error"):
+        # Kept in memory only, so a restart is still worth one real retry.
+        cache["error"] = {"_error": data["_error"],
+                          "_error_message": data.get("_error_message", "")}
+    if cache["data"]:
+        # This attempt produced nothing usable, but we have a previous reading:
+        # show it flagged (the reset times are still what the user wants).
+        out = _shape(provider, {**cache["data"], "_stale": True}, account)
+        out["checked"] = _fmt_epoch(cache["ts"])
+        out["error_message"] = (data or {}).get("_error_message", "")
+        return out
+    return _shape(provider, data, account)
 
 
 def probe_text(d: dict) -> str:
