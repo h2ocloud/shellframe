@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.29.31 (2026-08-12)
 
 ### Features
 - **AI 帳號面板列出每個帳號的用量**（Howard 提：點開要看到全部帳號的用量）。原本面板
