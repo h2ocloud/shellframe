@@ -321,6 +321,26 @@ def _fetch_claude(env=None):
     return _fetch_claude_script()
 
 
+def _claude_profile_expired(env) -> bool:
+    """Has this profile's stored OAuth token already expired?
+
+    Checked locally before calling the API: an expired token can only come back
+    401, and spending the account's rate-limit budget on it means the next real
+    attempt gets a 429 whose message ("too frequent") hides the actual problem
+    ("log in again").
+    """
+    directory = (env or {}).get("CLAUDE_CONFIG_DIR")
+    if not directory:
+        return False
+    try:
+        with open(os.path.join(directory, ".credentials.json")) as f:
+            oauth = (json.load(f) or {}).get("claudeAiOauth") or {}
+    except Exception:
+        return False
+    expires_at = oauth.get("expiresAt")           # milliseconds
+    return bool(expires_at and expires_at / 1000 < time.time())
+
+
 def _fetch_claude_profile(env):
     """Fetch one Claude profile's water-level without touching the shared cache.
 
@@ -333,6 +353,9 @@ def _fetch_claude_profile(env):
     if not token:
         return {"_error": "auth_required",
                 "_error_message": "找不到這個帳號的憑證，請重新登入"}
+    if _claude_profile_expired(env):
+        return {"_error": "auth_required",
+                "_error_message": "Claude 登入已過期，請重新登入這個帳號"}
     try:
         req = urllib.request.Request(CLAUDE_USAGE_API, headers={
             "Authorization": f"Bearer {token}",

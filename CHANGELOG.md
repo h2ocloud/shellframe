@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Features
+- **AI 帳號面板列出每個帳號的用量**（Howard 提：點開要看到全部帳號的用量）。原本面板
+  只有帳號名稱與切換按鈕，用量只有右上膠囊那一個（目前 tab 的帳號）。現在每個已登入
+  帳號各自帶一條水位：`5h 20% 重置 15:50　7d 17% 重置 08-18 03:59　查詢 12:30`，
+  顏色沿用膠囊的門檻（60% 黃、85% 紅），footer 多一顆「重新查用量」。
+  面板先畫帳號、用量非同步補上，開窗不會被網路卡住。
+  - 後端 `Api.account_usage_all(refresh)` 平行查各 provider×帳號（各自 token /
+    `CODEX_HOME`，彼此無共用額度）；`usage_probe.account_usage()` 做 per-account
+    快取（TTL 120s）與 per-provider 退避（claude 60s、codex 10s）。**實測 Claude
+    OAuth usage API 對同一 token 一分鐘內重查就回 429**，所以面板一次列 N 個帳號必須
+    靠快取，不能每次現查。
+  - 目前登入中的那個帳號改走膠囊的共享快取，避免面板與膠囊互相把同一顆 token 打到 429。
+  - 查不到就講原因、不推估：profile token 過期 → 「請重新登入這個帳號」（本地先看
+    `expiresAt`，不拿必然失敗的 token 去吃額度）、429 → 「稍後重試」、退避窗內重播上次
+    真因而不是「剛查過」。有舊讀數就顯示並標 ⚠ stale。Codex Team 只有週限額，5h 顯示
+    「—」而不是錯誤。
+
+### Fixes
+- **右上膠囊「用量 查不到」**：v0.29.30 起舊 tab 的 `account_refs` 會是 None，而
+  `env_for(provider, None)` 直接 TypeError（`PosixPath / None`），整個
+  `tab_usage_brief` 掛掉——膠囊因此對所有 reattach 的舊 tab 都顯示查不到。`env_for`
+  對空 ref 回 `{}`，呼叫端改吃 provider 全域憑證。
+- **用量快取檔互相清掉**：膠囊（`claude` 區）與帳號面板（`accounts` 區）共用
+  `usage_cache.json`，原本整檔覆寫；改為 read-modify-write。
+
+### Tests
+- `tests_usage_probe.py` 新增 8 案（過期 token 不打 API／退避窗重播真因／per-account
+  快取不互相污染／429 回該帳號自己的 stale／目前帳號共用膠囊快取／codex 週限額不算錯／
+  兩區快取共存）、`tests_accounts.py` 新增 `env_for` 空 ref；六套回歸全過。
+- UI 驗收：Playwright 載入真實 `web/index.html` + 真實後端資料截圖（實機四個帳號、
+  合成邊界案例各一張）。
+
 ## v0.29.30 (2026-08-11)
 
 ### Fixes

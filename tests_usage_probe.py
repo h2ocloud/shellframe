@@ -259,6 +259,24 @@ def test_account_usage_expired_login_reports_reason_not_no_data():
         assert out["five_hr"] is None and out["week"] is None, out
 
 
+def test_account_usage_expired_token_is_detected_without_burning_the_api():
+    """本地就知道 token 過期 → 不打 API（打了只會 401，還害下一次變 429 誤報）。"""
+    clock = FakeClock()
+    net = TokenAwareUrlopen({"tok-expired": GOOD_API_PAYLOAD})
+    with tempfile.TemporaryDirectory() as profile_dir:
+        with open(os.path.join(profile_dir, ".credentials.json"), "w") as f:
+            json.dump({"claudeAiOauth": {
+                "accessToken": "tok-expired",
+                "expiresAt": int((clock.now - 3600) * 1000),
+            }}, f)
+        env = {"CLAUDE_CODE_OAUTH_TOKEN": "tok-expired",
+               "CLAUDE_CONFIG_DIR": profile_dir}
+        with probe_env(clock, net):
+            out = U.account_usage("claude", env=env, ref="claude-b")
+    assert out["error"] == "auth_required", out
+    assert net.calls == [], f"過期 token 不該打 API：{net.calls}"
+
+
 def test_account_usage_backoff_replays_real_reason():
     """退避窗內不再打 API，但要重播真因（過期），不能蓋成「剛查過」。"""
     clock = FakeClock()

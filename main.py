@@ -3338,6 +3338,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         cache so re-opening the panel does not re-hit the APIs.
         """
         try:
+            # Normalised explicitly: a JS-side "false" arriving as a string
+            # would make bool() force a refresh on every open — the fastest way
+            # to get every account rate-limited.
+            force = refresh is True or str(refresh).strip().lower() in ("true", "1")
             cfg = self._account_config()
             accounts = cfg.get("accounts") or {}
             jobs = []
@@ -3357,7 +3361,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                     env=ACCOUNT_MANAGER.env_for(provider, ref),
                     ref=ref,
                     account=usage_probe.profile_account(item),
-                    force=bool(refresh),
+                    force=force,
                     is_current=is_current,
                 )
                 data["is_current_login"] = is_current
