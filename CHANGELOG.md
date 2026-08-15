@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.29.32 (2026-08-15)
+
+### Fixes
+- **側欄分頁點兩下改名被誤判成拖曳**（Howard 回報：最末端的分頁尤其中招）。
+  根因：拖曳門檻只有 5px 且不分方向，雙擊的**第二次按下**只要手抖幾 px 就
+  進入 drag → 改名永遠觸發不了。修法：(1) 雙擊時間窗（400ms）內的第二次
+  mousedown **完全不啟動拖曳**（意圖是改名）；(2) 門檻 5px→9px 且要求
+  「垂直位移為主」（dy≥9 且 dy>dx）——側欄 reorder 本來就是上下移動，點擊
+  時的水平抖動不該觸發。生效需 `sfctl restart`（web/index.html）。
+
+### Changes
+- **眼鏡外掛（rokid-bridge）卸載**：從設定頁卸載無效的根因是
+  `com.h2ocloud.rokid-bridge-listener` LaunchAgent 帶 `KeepAlive=true`——
+  plugin 停用完全不碰它，listener 一直被系統復活。已 unload + plist 備份到
+  `.disabled-agents/`、進程確認消失、config 的 plugins installed/enabled
+  移除 rokid-bridge。根治（讓卸載自動清 side-effect）見
+  `docs/plugin-sdk-plan.md`。
+
 ## v0.29.31 (2026-08-12)
 
 ### Features

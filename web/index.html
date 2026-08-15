@@ -2541,6 +2541,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── Sidebar (mouse-based drag — HTML5 drag unreliable in WKWebView) ──
   let _sbDragging = false;
+  // 雙擊改名的計時狀態。提到這層共用，讓 mousedown(拖曳)也看得到——
+  // 雙擊的第二次按下若手抖幾 px 會被判成拖曳、改名永遠觸發不了
+  // （Howard 2026-08-15：最末端的分頁點兩下都變拖曳）。
+  let _sbLastClickSid = null, _sbLastClickTime = 0;
+  const SB_DBLCLICK_MS = 400;
 
   // Model + thinking-effort badge for a session row. Auto-detected on the
   // Python side (claude: transcript's latest assistant model + global
@@ -2746,14 +2751,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // Double-click sidebar label to rename (manual detection — native dblclick breaks because renderSidebar rebuilds DOM)
   {
-    let _sbLastClickSid = null, _sbLastClickTime = 0;
     document.getElementById('sidebar-sessions').addEventListener('click', (e) => {
       if (e.target.closest('[data-action]')) return;
       const item = e.target.closest('.sb-item');
       if (!item || !item.dataset.sid) return;
       const sid = item.dataset.sid;
       const now = Date.now();
-      if (_sbLastClickSid === sid && now - _sbLastClickTime < 400) {
+      if (_sbLastClickSid === sid && now - _sbLastClickTime < SB_DBLCLICK_MS) {
         _sbLastClickSid = null;
         renameSession(sid);
         return;
@@ -2770,14 +2774,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (e.target.closest('[data-action]')) return;
     if (e.target.classList.contains('busy-dot')) return;  // dot click ≠ drag
     const sid = item.dataset.sid;
+    // 雙擊的第二次按下 → 完全不啟動拖曳。使用者意圖是改名，這時手抖
+    // 幾 px 不該變成 reorder（改名因此永遠觸發不了）。
+    if (_sbLastClickSid === sid && Date.now() - _sbLastClickTime < SB_DBLCLICK_MS) return;
     let moved = false;
     const startY = e.clientY;
+    const startX = e.clientX;
     const container = document.getElementById('sidebar-sessions');
 
     let _lastHighlight = null;
     function onMove(ev) {
-      if (!moved && Math.abs(ev.clientY - startY) < 5) return;
-      if (!moved) ev.preventDefault();
+      // 門檻由 5px 提高到 9px，且要求「垂直位移為主」——側欄 reorder 本來
+      // 就是上下移動；點擊時的水平抖動不該啟動拖曳。
+      if (!moved) {
+        const dy = Math.abs(ev.clientY - startY);
+        const dx = Math.abs(ev.clientX - startX);
+        if (dy < 9 || dy < dx) return;
+        ev.preventDefault();
+      }
       moved = true;
       _sbDragging = true;
       item.style.opacity = '.3';
