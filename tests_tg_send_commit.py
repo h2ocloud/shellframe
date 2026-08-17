@@ -29,6 +29,8 @@ _spec = importlib.util.spec_from_file_location(
     "bt", os.path.join(_HERE, "bridge_telegram.py"))
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
+# 測試不要污染 production 的 /tmp/shellframe_bridge.log（Howard 靠它除錯）
+_bt._blog = lambda msg: None
 
 TOKEN = "TG_REPLY_deadbeef"
 START, END = f"[[{TOKEN}]]", f"[[/{TOKEN}]]"
