@@ -920,6 +920,21 @@ class StatusTracker:
         self._last = {}         # sid -> (state, since_ts)
         self._pending = {}      # sid -> (candidate_state, first_seen_ts)
         self._detail = {}       # sid -> (action, task, narration) 最近非空值（穩定呈現）
+        # sid -> (computed_at, result)。TG 長回合心跳唯讀這份快取，**不得**自己
+        # 呼叫 status_for()——那會觸發 transcript 解析，把成本帶進 bridge 的
+        # flush loop。main.py 的 0.6s monitor thread 已經在算了，直接讀。
+        self._last_result = {}
+
+    def last_result(self, sid, max_age=None):
+        """回 (result_dict, age_seconds)，沒有／過期回 (None, None)。純唯讀。"""
+        got = self._last_result.get(sid)
+        if not got:
+            return None, None
+        at, res = got
+        age = time.time() - at
+        if max_age is not None and age > max_age:
+            return None, age
+        return res, age
 
     def _resolve_cached(self, sid, worker, now):
         path, at = self._path_cache.get(sid, (None, 0))
@@ -950,7 +965,18 @@ class StatusTracker:
         return prev
 
     def status_for(self, sid, worker, screen_tail="", now=None):
-        """回傳 {state, dot, activity, summary, why, transcript}。永不拋例外。"""
+        """回傳 {state, dot, activity, summary, why, transcript}。永不拋例外。
+
+        結果順手存進 `_last_result`，供 `last_result(sid)` 唯讀取用（TG 心跳）。
+        """
+        ret = self._status_for_impl(sid, worker, screen_tail=screen_tail, now=now)
+        try:
+            self._last_result[sid] = (now or time.time(), ret)
+        except Exception:
+            pass
+        return ret
+
+    def _status_for_impl(self, sid, worker, screen_tail="", now=None):
         now = now or time.time()
         try:
             path = self._resolve_cached(sid, worker, now)

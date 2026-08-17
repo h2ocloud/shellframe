@@ -3109,6 +3109,19 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             _swallow(f"get_session_model_info:{sid}")
             return None
 
+    def _agent_status_snapshot(self, sid: str):
+        """TG 長回合心跳的狀態來源：**唯讀**最近一次 StatusTracker 結果。
+
+        回 (result_dict, age_seconds) 或 None。刻意不呼叫 status_for()——那會
+        觸發 transcript 解析（lsof / JSONL 尾讀），成本會被帶進 bridge 的
+        flush loop。_start_status_monitor 那條 0.6s thread 已經在算了，這裡
+        只是把算好的值遞出去，等於零額外成本。"""
+        try:
+            res, age = self._status_tracker.last_result(sid)
+        except Exception:
+            return None
+        return (res, age) if res else None
+
     @staticmethod
     def _init_inject_decision(s, data: str) -> str:
         """State machine for the web-UI init-prompt gate. Returns:
@@ -4571,6 +4584,7 @@ try {
             on_new_session=lambda c: self.new_session(c, 200, 50),
             on_consume_init=self.consume_init_prompt_if_ready,
             on_model_info=self.get_session_model_info,
+            on_agent_status=self._agent_status_snapshot,
         )
 
         # Register existing sessions (skip bridge-disabled ones)
@@ -5199,6 +5213,7 @@ try {
                     on_new_session=lambda c: self.new_session(c, 200, 50),
                     on_consume_init=self.consume_init_prompt_if_ready,
                     on_model_info=self.get_session_model_info,
+                    on_agent_status=self._agent_status_snapshot,
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset

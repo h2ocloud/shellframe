@@ -1,5 +1,153 @@
 # Changelog
 
+## v0.29.33 (2026-08-17)
+
+TG「愛回不回、不知道訊息有沒有收到」的根治。SA 設計稿：
+`docs/design-delivery-and-harness.md` 主題 A。結論是 **tab 11 不回話是 bug，
+不是缺功能**——所以本輪＝修 8 個靜默丟訊的洞，再讓狀態可見。
+
+### Fixes — 靜默丟訊（每一項都補了回歸測試）
+
+- **P0-1 `strip_ansi()` 的 `>>>…<<<` 劫持吞掉整個 buffer**（根因）。
+  `strip_ansi` 開頭有一段舊 `>>> response <<<` marker 方案的殘骸：
+  `re.search(r'>>>\s*(.*?)\s*<<<', clean, re.DOTALL)` 命中就直接 return，
+  **丟掉其餘全部**。現行 marker 是 `[[TG_REPLY_<uuid8>]]`，這段早已無人使用
+  卻保有破壞性副作用——只要 120KB `pending_raw` 裡任何位置出現一組
+  `>>>` … `<<<`（Python REPL 提示、bash here-string `cmd <<< "x"`、
+  git conflict、diff 輸出，agent 畫面上極常見），marker 區塊就被整段抹除。
+  實測（Howard 提供的輸入）：
+  `">>> some python repl\nprint(1)\n<<<\n[[TG_REPLY_ab]]真正的回覆[[/TG_REPLY_ab]]"`
+  → 修前 `strip_ansi` 只剩 `'print(1)'`，回覆與 marker 全被丟棄；修後整段保留、
+  `_pick_marker_reply` 抽得到「真正的回覆」。
+  致命之處在於它**會自我維持**：marker 永遠抽不到 → `marker_forwarded` 永遠
+  False → 走 fallback → fallback 又要求 turn 已結束 → 也永遠不成立 →
+  **完全靜默、零 log 的永久失聯**。修法：刪除該三行（`tests_tg_marker_hijack.py`
+  另有一條測試盯著它別被加回來）。
+
+- **P0-2 pyte history deque 飽和後 scrollback 永久失明**。
+  `screen.history.top` 是 `deque(maxlen=800)`，**滿了之後 `len()` 恆為 800**，
+  舊行從左邊被擠掉、長度不變 → `_history_offset` 卡死在 800，`> hlen` 為假
+  （相等）、`< hlen` 也為假 → 該 slot 此後**永遠不再掃描任何 scrollback**，
+  只剩 50 行 live screen 可抽，兩次 flush tick 之間捲過去的回覆永久遺失。
+  長壽命分頁（跑了兩天的 s87）必然早就飽和。實測：飽和後舊邏輯掃到 **0 行**；
+  修後改為重掃 history 尾端 64 行，捲走的回覆抽得回來。
+  另加一道廉價 dirty gate（history 最後一行的 signature 沒變就跳過），
+  實測有新行 0.90ms／gate 命中 0.136ms。
+
+- **P0-3 送 TG 不看回傳值 ＋ 先進去重集合＝回覆永久蒸發**。
+  舊碼是 `sent_responses.add(reply)` 在前、`tg_api(... "sendMessage")` 在後，
+  而 `tg_api` 把 429 flood-wait / 400 / 逾時 / DNS 全部轉成 `{"ok": False}`
+  回傳值，呼叫端**完全不看**（全 repo grep `429|retry_after` 零命中）。
+  於是一次失敗＝永不重送、也永不會被重新抽取。改成 commit 模型：抽取階段只
+  決定「要送什麼」，所有不可逆副作用（進去重集合、清 `pending_raw`、關 marker
+  監聽、`marker_forwarded`）一律等 `ok:true` 才套用；新增 `_send_text_checked()`
+  檢查回傳值，短 flood-wait（≤5s）就地重試一次，長的回報秒數由呼叫端退避後
+  重抽——**不在 flush loop 裡 sleep**（那是所有分頁共用的單一執行緒）。
+  最終失敗會告訴使用者「內容沒有遺失，用 /fetch 重取」。
+
+- **P0-4 沒有收件人的回覆照樣被標記成已送**。`target_chats` 為空集合時
+  （沒有使用者 active、又不是 `_slot_order[0]` 的 master 派工 worker 分頁），
+  舊版仍把回覆加進 `sent_responses` 然後送給零個人，之後連 `/fetch` 都救不回。
+  修後：log `[flush] <sid> no target chat, keep for /fetch`，不污染去重集合、
+  不清 `pending_raw`。
+
+- **P1-13 去重集合的迭代順序不確定**（P0-2 的前置條件，SA 標為順序不可顛倒）。
+  `sent_responses` 原本是 plain `set`，兩處行為因此隨機：溢位裁切
+  `set(list(s)[-100:])` 的「最後 100 筆」是任意順序（可能丟掉最新回覆、留下
+  遠古的）；superset/subset 迴圈兩種關係各自 `break`，先撞到誰看運氣。
+  P0-2 會**刻意重掃 scrollback**、完全依賴這個集合擋重複，不修就會把「靜默
+  丟訊」換成「隨機重複洗版」。改用保序容器 `_OrderedSet`（dict 為底，O(1)
+  membership），並明訂優先序：**已被送過的內容包含 → 不重送**。
+  `sfctl reload` 後 main.py 會還原成 plain set，`_extract_new_text` 開頭一次
+  isinstance 把它正規化回來。
+
+- **P0-5 語音檔下載失敗完全無 `else`**：TG `getFile` 沒拿到檔就一路往下，
+  最後被「沒文字也沒檔案」那條 `return` 靜默吃掉。現在明講並中止。
+- **P0-6 `_inject()` 的 `write_fn` 無例外保護**：pane 已關 / tmux session 不在
+  時 OSError 直接逸散到 daemon thread（traceback 只噴 stderr、log 一行都沒有）。
+  現在包 try/except，失敗 → 清空回執 ＋「寫入失敗，訊息沒有送出」。
+- **P0-7 offset 早於 enqueue 儲存**：`reload`/`restart` 時還躺在 `_update_queue`
+  裡的訊息永遠不會再被 `getUpdates` 取回。改動 offset 時序會把重啟迴圈的舊病
+  帶回來，所以改為純加法：`stop()` 把殘留佇列落盤（`tg_pending.json`，上限 20
+  則），下次啟動重播並濾掉自我重啟指令。
+- **P0-8 busy guard 等滿 120s 仍強制注入卻不告知**：可能打斷對方上一個回合，
+  使用者完全不知情。現在保持 👀 ＋ 明講「已強制送入，可能打斷它上一個回合」。
+
+### Features — 讓狀態可見
+
+- **送達回執（reaction 狀態機）**：T0 收下 👀 → T1 確認送進 session 🫡 →
+  T2 送不進去則清空 reaction ＋ 既有文字警告。用 reaction 而非新訊息：就地標
+  在使用者自己那則訊息上，不佔對話列、不推播、不洗版；bot 只能有一個 reaction、
+  後設的取代先設的，天生就是狀態機。補掉了「注入成功到 8s 排隊通知之間完全
+  靜默」的空窗（8s 的「⏳ 排隊中」文字保留，它帶有 reaction 表達不了的資訊）。
+  ⚠ **✅ 不在 Telegram 的 reaction 白名單**——2026-08-17 用真實 bot token 實測：
+  👀 `ok` / 🫡 `ok` / 👌 `ok` / ✅ `400 REACTION_INVALID`。
+  單則失敗不退回文字（沒有告知價值、只製造雜訊）；同一 chat 連續失敗 3 次才
+  一次性告知並全域停用（T2 的實質告警是文字，不受此開關影響）。
+  所有 reaction 呼叫 `timeout=5` 且一律在 `slot.write_lock` 之外。
+
+- **長回合心跳**：主 agent 在等背景 sub 時，Claude Code 的 footer 一直掛著
+  `esc to interrupt` → turn 永遠不算結束 → 30s fallback 永遠不觸發，背景任務
+  跑數小時這條路就靜默數小時（Howard 說的「愛回不回」）。現在 3 分鐘沒消息就
+  開始回報進度：
+  ```
+  ⏳「調研者」還在跑 · 已 8 分 12 秒
+     working · Delegating — wiring _parse_presets
+     在等 1 個背景 agent（↓933.7k tokens）
+     /11 切過去看 · /fetch 抓現況 · /quiet 這輪別再提醒
+  ```
+  **零新增掃描**：閘門掛既有 2s slow_tick，只讀 slot 上的 float/bool 欄位；
+  狀態行讀 main.py 那條 0.6s monitor thread 已經算好的 `StatusTracker` 快取
+  （新增 `StatusTracker.last_result(sid)` 唯讀介面，**不觸發** transcript 解析）。
+  防洗版四道：180s 首次門檻、指數退避 300→1800s（3min→8min→15.5min→26.75min→
+  之後每 30min）、內容 hash 去重、`/quiet` 出口。回覆送出或新訊息即自動重置。
+  拿不到狀態資料（transcript 還沒落盤、shell 分頁、資料超過 30s 沒更新）就降級
+  成只印第一行，**絕不因此不發**。
+
+- **`/quiet`（`/安靜`）**：對當前 active 分頁的這一個 epoch 停發心跳，下一則
+  訊息自動恢復。已加進 TG 指令選單。
+
+- **超長回合的「進行中預覽」**：等滿 15 分鐘且本 epoch 仍零回覆時，心跳附帶
+  畫面上最後一個 AI block 的前 300 字，並標明「進行中預覽（非最終回覆）」。
+  安全條件全部實作：**絕不進 `sent_responses`**（否則真回覆來時被永久壓制——
+  這是唯一不可退讓的一條）、不動 marker 監聽、每 epoch 上限 2 次、
+  `_feed_gen` dirty gate、內容相同就跳過。
+
+- **`[marker-miss]` 診斷**（僅 `perf_debug=on`）：marker 抽取失敗時記錄
+  `raw=` / `clean=`，用來分辨「`strip_ansi` 吃掉」「120KB 驅逐或模型沒吐」
+  「span 配對問題」三種假說。關閉時只有一次 bool 判斷。
+
+### 效能
+
+紅線：穩態 CPU ≤25%、新增 phase 單項 ≤50ms/60s、全部 phase 合計 ≤150ms/60s。
+
+| 新增項目 | 實測 | 佔紅線 |
+|---|---|---|
+| `heartbeat_gate`（13 slots × 30 次/分） | **0.038 ms/60s** | 0.08% |
+| `preview_peek` | 每 epoch ≤2 次、間隔 ≥15 分 | ~0 |
+| `extract_new_text` 飽和重掃（有新行） | 0.90 ms/次 | — |
+| 同上，dirty gate 命中（無新行） | 0.136 ms/次 | — |
+| P0-1 省下的 DOTALL 全 buffer 搜尋 | −0.020 ms/次 marker scan | — |
+
+送達回執與心跳的網路 I/O **全部在背景 thread**，`_flush_loop` 同步路徑成本為 0。
+`_send_text_checked` 的就地重試上限 5s，長 flood-wait 不在 flush loop 裡 sleep。
+
+### 測試
+
+新增 5 個測試檔（全套 21 → **26 檔，全綠**）：
+`tests_tg_marker_hijack.py`（P0-1，用 Howard 的實測輸入當測資）、
+`tests_tg_history_saturation.py`（P0-2，含「舊邏輯掃到 0 行」的失明重現）、
+`tests_tg_send_commit.py`（P0-3/P0-4/P1-13，真的跑一輪 `_flush_loop`）、
+`tests_tg_reaction.py`（回執狀態機、失敗 3 次停用）、
+`tests_tg_heartbeat.py`（門檻、退避序列、`/quiet`、預覽 S1–S6）。
+
+### 生效方式
+
+`bridge_telegram.py` 走 `sfctl reload` 即生效。
+`main.py` / `agent_status.py` 的改動（`on_agent_status` 注入 ＋
+`StatusTracker.last_result`）**需要 `sfctl restart`**；未重啟前心跳自動降級成
+只印第一行，其餘功能不受影響。
+
 ## v0.29.32 (2026-08-15)
 
 ### Fixes
