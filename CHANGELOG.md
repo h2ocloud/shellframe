@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.29.35 (2026-08-17)
+
+### Fixes
+- **測試污染 production bridge log**（QA 第二輪 N-7；`a9c8b54` 只修了 5 個檔）。
+  剩下 4 個測試檔（`tests_rate_limit` / `tests_tg_inject` / `tests_tg_media` /
+  `tests_tg_model_menu`）每跑一次就把 `chat=9999`、`user=111`、`s1/s2`、
+  `[rate-limit] test notified` 等 fixture 痕跡寫進 `/tmp/shellframe_bridge.log`
+  （實測累積 256 筆）。這不只是雜訊——**它直接破壞了除錯依據**：本輪 QA 與總控
+  都曾據被污染的 log 推論真實行為（例如 `flush s87 users={42: 's87'}` 其實是
+  測試 fixture 的 user id，不是真實流量）。
+  修法：4 個檔沿用既有寫法在載入後靜音 `_blog`。複驗：全套 26 檔跑完，
+  log 行數增加 **0**。
+
 ## v0.29.34 (2026-08-17)
 
 QA 對抗性驗收（`docs/qa-report-2026-08-17.md`）判定 CONDITIONAL PASS：效能全數

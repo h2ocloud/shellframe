@@ -22,6 +22,9 @@ _spec = importlib.util.spec_from_file_location(
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
 
+# 測試不得寫進 production 的 bridge log（Howard 靠那份 log 除錯）
+_bt._blog = lambda msg: None
+
 BR = object.__new__(_bt.TelegramBridge)
 PAYLOAD = "[SF-TG wrapper]\n最終要回 Telegram 的文字…\n\nhoward: 幫我查一下部署狀態好嗎"
 
