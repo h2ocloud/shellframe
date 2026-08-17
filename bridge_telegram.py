@@ -3143,6 +3143,11 @@ class TelegramBridge(BridgeBase):
                     _blog(f"[flush] {sid} board/signal detect failed "
                           f"(loop survives): {type(e).__name__}: {e}\n")
                 if not new_lines:
+                    # 整段被 board/signal 吃掉（例如純 [[SF:GREEN]] 行）：沒有東西
+                    # 要送，但內容確實**已經處理過**——必須進去重集合，否則下一波
+                    # 輸出會把同一段重抽一次。這不是 P0-3 的「送出失敗」情境。
+                    for _t in dedup_pending:
+                        slot.sent_responses.add(_t)
                     continue
 
                 clean = '\n'.join(new_lines)
