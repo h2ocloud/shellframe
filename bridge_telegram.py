@@ -1498,9 +1498,15 @@ class TelegramBridge(BridgeBase):
             return False
         data = {"chat_id": chat_id, "message_id": message_id,
                 "reaction": [{"type": "emoji", "emoji": emoji}] if emoji else []}
+        t0 = time.time()
         resp = tg_api(self.config.bot_token, "setMessageReaction", data, timeout=5)
         if resp.get("ok"):
             self._reaction_fail.pop(chat_id, None)
+            # 成功也記一行——QA 2026-08-17 指出新功能在 production 的觸發次數
+            # 全部是 0、無從驗證。每則使用者訊息最多 2 行，量很小，換到的是
+            # 「這個功能到底有沒有在動」可被稽核。
+            _blog(f"[reaction] {chat_id} msg={message_id} "
+                  f"{emoji or 'clear'} ok ({(time.time() - t0) * 1000:.0f}ms)\n")
             return True
         desc = str(resp.get("description") or "")
         n = self._reaction_fail.get(chat_id, 0) + 1
@@ -2765,14 +2771,15 @@ class TelegramBridge(BridgeBase):
         return out
 
     def _send_heartbeat(self, sid: str, waited: float):
-        """背景 thread：發一則「還在跑」的心跳。閘門在 _flush_loop（A4.2）。"""
-        t_hb0 = self._perf_t()
-        try:
-            self._send_heartbeat_inner(sid, waited)
-        finally:
-            self._perf_end("heartbeat_send", t_hb0)
+        """背景 thread：發一則「還在跑」的心跳。閘門在 _flush_loop（A4.2）。
 
-    def _send_heartbeat_inner(self, sid: str, waited: float):
+        perf 計時：**整支函式刻意不計時**。2026-08-17 實機量到
+        `heartbeat_send=945.6ms/1x` —— 那 945ms 幾乎全是 sendMessage 的 HTTPS
+        往返，在背景 thread、不吃 flush loop 的 CPU，卻會把 60s 摘要的合計
+        直接推爆 150ms 紅線、淹掉真正的迴歸訊號。改成只計 CPU 段
+        （`heartbeat_status` / `heartbeat_bg` / `preview_peek`），送出本身以
+        `[heartbeat]` log 行記錄。`_set_reaction` 同理（SA A3.6 亦如此規定）。
+        """
         slot = self.slots.get(sid)
         if not slot:
             return
@@ -3730,10 +3737,12 @@ class TelegramBridge(BridgeBase):
         except Exception:
             pass
         if not left:
-            try:
-                self._PENDING_FILE.unlink()
-            except Exception:
-                pass
+            # ⚠ 這裡**不能**刪檔（2026-08-17 實機驗證抓到）：佇列空只代表「這一輪
+            # 沒有待處理訊息」，不代表磁碟上那份是垃圾。檔案只會由
+            # _replay_pending_updates() 讀完後刪除，所以它存在＝上一輪存了、還沒
+            # 有人重播過。在這裡刪掉，等於兩次快速 reload（第二次的 poll loop
+            # 還沒跑到 replay 就又被 stop）就把上一輪的訊息永久丟掉——正是 P0-7
+            # 要修的那個病。
             return
         try:
             self._PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)

@@ -291,6 +291,35 @@ def test_replay_filter_strips_bot_suffix():
     assert not tmp.exists(), "重播後應刪檔，避免無限重播"
 
 
+# ── 13. P0-7：stop() 不得刪掉「上一輪存了、還沒被重播」的 pending 檔 ──
+def test_stop_does_not_delete_unreplayed_pending():
+    """2026-08-17 實機驗證抓到：`_persist_pending_updates()` 在佇列為空時會
+    unlink 檔案。但佇列空只代表「這一輪沒有待處理訊息」，不代表磁碟上那份是
+    垃圾——檔案只由 _replay_pending_updates() 讀完後刪除，所以它存在＝上一輪
+    存了、還沒有人重播過。兩次快速 reload（第二次的 poll loop 還沒跑到 replay
+    就又被 stop）就會把上一輪的訊息永久丟掉，正是 P0-7 要修的那個病。"""
+    import json as _json
+    import tempfile
+    from pathlib import Path as _P
+    br = object.__new__(_bt.TelegramBridge)
+    br._update_queue = _queue.Queue()
+    tmp = _P(tempfile.mkdtemp()) / "tg_pending.json"
+    br._PENDING_FILE = tmp
+    payload = [{"message": {"text": "上一輪還沒重播的訊息"}}]
+    tmp.write_text(_json.dumps(payload), encoding="utf-8")
+
+    br._persist_pending_updates()          # 佇列是空的
+    assert tmp.exists(), "stop() 把還沒重播的訊息刪掉了＝永久遺失"
+    assert _json.loads(tmp.read_text()) == payload, "內容被覆寫了"
+
+    # 有東西時照樣覆寫存檔，且重播後檔案才消失
+    br._update_queue.put({"message": {"text": "新的一則"}})
+    br._persist_pending_updates()
+    assert [u["message"]["text"] for u in _json.loads(tmp.read_text())] == ["新的一則"]
+    assert br._replay_pending_updates() == 1
+    assert not tmp.exists(), "重播後應刪檔"
+
+
 if __name__ == "__main__":
     fails = []
     for name, fn in sorted(globals().items()):

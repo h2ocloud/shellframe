@@ -72,6 +72,23 @@ QA 對抗性驗收（`docs/qa-report-2026-08-17.md`）判定 CONDITIONAL PASS：
   （`text.split()[0][1:].split("@")[0].lower()`）兩邊剝法不一致；群組裡 Telegram
   客戶端送的就是 `/restart@YourBot`。改成同一種剝法。
 
+### Fixes — 實機驗證時新發現
+
+- **P0-7 的 `stop()` 會刪掉「上一輪存了、還沒被重播」的 pending 檔**
+  （這一版做實機端到端驗證時當場踩到）。`_persist_pending_updates()` 在佇列為空
+  時 unlink 檔案；但佇列空只代表「這一輪沒有待處理訊息」，檔案存在＝上一輪存了、
+  還沒有人重播過（它只由 `_replay_pending_updates()` 讀完後刪除）。兩次快速
+  reload——第二次的 poll loop 還沒跑到 replay 就又被 stop——就把上一輪的訊息永久
+  丟掉，正是 P0-7 本來要修的病。改成佇列為空時**不動檔案**。
+- **`heartbeat_send` phase 移除**：實機量到 `heartbeat_send=945.6ms/1x`，那 945ms
+  幾乎全是 sendMessage 的 HTTPS 往返——在背景 thread、不吃 flush loop 的 CPU，
+  卻會把 60s 摘要合計直接推爆 150ms 紅線、淹掉真正的迴歸訊號。改成只計 CPU 段
+  （`heartbeat_status` / `heartbeat_bg` / `preview_peek`），送出本身以
+  `[heartbeat]` log 記錄。`_set_reaction` 同理（SA A3.6 亦如此規定）。
+- **reaction 成功也記 log**：QA 指出新功能在 production 的觸發次數全是 0、無從
+  驗證。現在成功也留一行 `[reaction] <chat> msg=<id> 👀 ok (868ms)`，每則使用者
+  訊息最多 2 行。
+
 ### Fixes — Minor
 
 - **m-1**　移除死狀態 `slot.pending_reaction`（宣告＋寫入、全檔零讀取）。
@@ -96,6 +113,27 @@ QA 對抗性驗收（`docs/qa-report-2026-08-17.md`）判定 CONDITIONAL PASS：
 | 送出失敗路徑最壞同步阻塞 | **23s**（改動前 35s） | 不得放大 |
 
 B-1 的修法只多一個 bool 判斷，無額外掃描成本。
+
+### 實機驗證（不再只有單元測試）
+
+在**自己新開的測試分頁**（`sleep 100000`，用完 `sfctl close`）上跑通，
+全程未對 Howard 的 worker 分頁注入任何訊息；測試期間短暫把他的 TG active 分頁
+指到測試分頁，事後走同一條機制切回 s87 並確認 `user_active` 已還原。
+production log 的實機軌跡：
+
+```
+[poll] replayed 2 queued update(s) from previous run     ← P0-7 重播（含 M-5 過濾）
+[send] s90 submit CR len=1071                            ← 注入到測試分頁
+[marker-miss] s90 raw=True clean=True rawlen=1070 …      ← P0-1 修好的直接證據
+[heartbeat] s90 waited=26s n=1 state='' preview=False    ← 長回合心跳
+[reaction] 8535404559 msg=4184 👀 ok (868ms)             ← T0 送達回執
+[reaction] 8535404559 msg=4184 🫡 ok (901ms)             ← T1 已送進 session
+```
+
+`[marker-miss]` 的 `clean=True` 是 P0-1 的關鍵證據：修前 `strip_ansi` 的
+`>>>…<<<` 劫持會讓它是 `clean=False`。（心跳為了在數十秒內觀察，測試期間把
+`HEARTBEAT_FIRST_S` / `HEARTBEAT_INTERVAL_S` 暫時調成 25s，測完已還原成
+180s / 300s。）
 
 ### 測試
 
