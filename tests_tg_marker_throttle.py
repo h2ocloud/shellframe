@@ -26,8 +26,11 @@ START = "[[TG_REPLY_ab12cd34]]"
 END = "[[/TG_REPLY_ab12cd34]]"
 
 
-def _slot(raw, gen=1):
+def _slot(raw, gen=1, msg_age=0.0):
+    # msg_age = 這則使用者訊息送出到現在幾秒。M-3 之後未閉合 span 的強制等待
+    # 以 msg_sent_ts 起算（不再用 total——見 _try_marker_extract 註解）。
     return types.SimpleNamespace(
+        msg_sent_ts=1000.0 - msg_age,
         expect_marker=True,
         reply_start_marker=START,
         reply_end_marker=END,
@@ -92,9 +95,16 @@ def test_rescan_after_interval_and_new_bytes():
 # ── 3. 串流守衛保留：未閉合 start → total<30 等待、total>=30 取最後完整 ──
 def test_streaming_guard_preserved():
     raw = START + "舊的完整回應" + END + "\n" + START + "新的還在打字中…"
-    assert BR._try_marker_extract(_slot(raw), now=1000.0, total=10.0) == ""
-    got = BR._try_marker_extract(_slot(raw), now=1000.0, total=40.0)
+    # 訊息剛送出 → 等串流打完
+    assert BR._try_marker_extract(_slot(raw, msg_age=10.0), now=1000.0, total=10.0) == ""
+    # 這則使用者訊息已經等超過 30s → 取最後一個完整 block，不再無限等
+    got = BR._try_marker_extract(_slot(raw, msg_age=40.0), now=1000.0, total=10.0)
     assert got == "舊的完整回應", got
+    # M-3 回歸：total 很小但訊息已等很久時也要放行——舊碼用 total 當時鐘，
+    # 而 first_output_time 每次 flush 後歸零，持續輸出的分頁 total 幾乎永遠
+    # <30 → 已完成的 block 被未閉合 span 無限期壓住（「愛回不回」的一條路徑）。
+    got2 = BR._try_marker_extract(_slot(raw, msg_age=120.0), now=1000.0, total=0.5)
+    assert got2 == "舊的完整回應", got2
 
 
 # ── 4. 抽取成功 → 節流狀態重置（下一輪注入不被舊狀態卡住）──

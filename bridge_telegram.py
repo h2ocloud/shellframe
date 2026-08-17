@@ -830,9 +830,9 @@ class SessionSlot:
         self.screen = pyte.HistoryScreen(200, 50, history=800)
         self.stream = pyte.Stream(self.screen)
         self._history_offset = 0  # tracks processed history lines
-        # 飽和後重掃 scrollback 尾端時，用來擋「history 沒長新行」的廉價 gate
-        # （最後一行 signature，0.01ms；避免每 tick 白掃 64 行 0.65ms）。
-        self._hist_tail_sig = None
+        # 飽和後重掃 scrollback 尾端的 dirty gate：上次重掃時的 _feed_gen。
+        # 用 feed_gen 而非「最後一行內容」——後者在空白行時有盲點（M-1）。
+        self._hist_scan_gen = -1
         # perf_debug 診斷用：上次 _pick_marker_reply 清洗後 marker 還在不在
         self._dbg_clean_has = None
         self.sent_responses = _OrderedSet(("Understood.", "Understood"))  # pre-filter acks
@@ -852,18 +852,23 @@ class SessionSlot:
         self._feed_gen = 0
         self._display_cache = None
         self._display_cache_gen = -1
-        # ── 送達回執 ──（chat_id, message_id）of 最新一則使用者訊息。覆蓋式：
-        # 舊的那則停在它最後的狀態、不再更新，符合直覺。
-        self.pending_reaction = None
+        # 送達回執不需要 slot 欄位：_send() 以閉包捕獲當時那則訊息的
+        # origin_msg_id，天生就是「舊的那則停在它最後的狀態」（SA A3.5 的意圖），
+        # 且沒有跨執行緒競態。曾經宣告過 slot.pending_reaction，全檔零讀取＝
+        # 死狀態，已移除（QA m-1）。
         # ── 長回合心跳 ──（狀態全部是 float/int/str，閘門 O(1)、不碰 buffer）
         self._hb_next_ts = 0.0      # 下一次允許發心跳的時間（指數退避）
-        self._hb_count = 0          # 這個 epoch 已發幾則（算退避倍率）
-        self._hb_last_hash = ""     # 內容 hash，一樣的話不重發
+        self._hb_count = 0          # 這個 epoch 閘門觸發過幾次（算退避倍率）
+        self._hb_interval = 0.0     # 閘門上次用的退避間隔（內容去重的時間基準）
+        self._hb_last_hash = ""     # 內容 hash，一樣且未滿 2×間隔才跳過
+        self._hb_last_sent_ts = 0.0  # 上次**實際送出**的時刻（不是閘門觸發時刻）
         self._hb_quiet = False      # /quiet：這個 epoch 使用者要求安靜
         # ── 進行中預覽 ──
         self._preview_count = 0     # 每個 epoch 最多 PREVIEW_MAX 次
         self._preview_gen = -1      # buffer 沒新 bytes 就不重取（_feed_gen gate）
         self._preview_last = ""     # 與上次相同就跳過
+        # 送出失敗 ⚠ 警告的節流閘（M-4）：下次允許發警告的時刻
+        self._send_fail_warn_ts = 0.0
 
 
 class TelegramBridge(BridgeBase):
@@ -946,17 +951,24 @@ class TelegramBridge(BridgeBase):
     # ── Perf instrumentation helpers ──
 
     def _perf_t(self):
-        """Return a monotonic start stamp when perf_debug is on, else None."""
-        return time.monotonic() if self._perf_enabled else None
+        """Return a monotonic start stamp when perf_debug is on, else None.
+
+        getattr 而非直接取值：測試大量用 `object.__new__(TelegramBridge)` 造
+        假 bridge，`__init__` 沒跑過。計時是純觀測，缺欄位時安靜關掉即可，
+        不該讓被測路徑炸掉。"""
+        return time.monotonic() if getattr(self, "_perf_enabled", False) else None
 
     def _perf_end(self, name: str, t0):
         """Accumulate elapsed time for phase `name` (no-op when t0 is None)."""
         if t0 is None:
             return
         dt = time.monotonic() - t0
-        b = self._perf.get(name)
+        perf = getattr(self, "_perf", None)
+        if perf is None:
+            return
+        b = perf.get(name)
         if b is None:
-            self._perf[name] = [dt, 1]
+            perf[name] = [dt, 1]
         else:
             b[0] += dt
             b[1] += 1
@@ -1476,7 +1488,12 @@ class TelegramBridge(BridgeBase):
 
         硬性要求（repo 血案）：timeout=5、且**永遠在 slot.write_lock 之外**
         呼叫——tg_api 最長可以卡 35 秒，握著 write_lock 會把該分頁後續所有
-        訊息排在一個死掉的 HTTPS 後面。"""
+        訊息排在一個死掉的 HTTPS 後面。
+
+        perf 計時：**刻意不進 `_perf_*`**（SA A3.6 明文如此）。這是純網路往返、
+        在背景 thread、不在 flush loop；一次 HTTPS 300ms 若計進 60s 摘要，
+        會直接吃掉整條 150ms 的預算、把真正的 CPU 迴歸淹掉。改以 `[reaction]`
+        log 行記錄延遲與失敗。"""
         if getattr(self, "_reaction_disabled", False) or not chat_id or not message_id:
             return False
         data = {"chat_id": chat_id, "message_id": message_id,
@@ -1752,8 +1769,11 @@ class TelegramBridge(BridgeBase):
             return True
         return False
 
-    # deque 飽和後每次重掃的 scrollback 尾端行數（實測 64 行 ≈ 0.65ms/次，
-    # 有最後一行 signature 當 dirty gate，沒新行時 0.01ms）。
+    # deque 飽和後每次重掃的 scrollback 尾端行數。
+    # 成本：QA 用同一個飽和 slot 做 A/B（64 vs 0，各 200 次呼叫）實測
+    # **+1.09 ms/次**（不是我原本註解寫的 0.65ms——那是只算 history 行 join、
+    # 漏掉多出來 64 行流進 block 解析的成本）。呼叫頻率中位數 12 次/60s、
+    # 最高 27 次/60s → +13～29 ms/60s，在 50ms 單項紅線內。
     _HISTORY_SATURATED_TAIL = 64
 
     def _extract_new_text(self, slot):
@@ -1791,16 +1811,17 @@ class TelegramBridge(BridgeBase):
         # 只剩 50 行 live screen 可抽，兩次 flush tick 之間捲過去的回覆永久遺失。
         # 長壽命分頁（跑了兩天的 s87）必然早就飽和。修法：飽和後改為固定重掃
         # 尾端 K 行，重複內容交給 sent_responses（_OrderedSet，見 P1-13）擋。
-        # 廉價 dirty gate：最後一行沒變＝沒有新行捲出去，直接跳過（0.01ms vs
-        # 0.65ms/64 行）——回歸守則第 1 條要求的節流。
+        #
+        # dirty gate 用 `_feed_gen`（每個 PTY chunk +1），**不是**「history 最後
+        # 一行的 signature」。M-1：signature 版有空白行盲點——TUI 捲出去的最後
+        # 一行常常是空白，前後兩次都是 ''，重掃就被整個跳過，其間捲過去超出 64
+        # 行窗的內容永久遺失（靜默丟訊沒根治）。`_feed_gen` 單調遞增、無盲點、
+        # O(1)，而且是 repo 既有的 dirty-gate 慣用法（marker_scan_gen 同款）。
         maxlen = getattr(htop, "maxlen", None) or 0
         if maxlen and hlen >= maxlen:
-            try:
-                sig = "".join(htop[-1][col].data for col in range(cols)).rstrip()
-            except Exception:
-                sig = None
-            if sig is None or sig != slot._hist_tail_sig:
-                slot._hist_tail_sig = sig
+            gen = getattr(slot, "_feed_gen", 0)
+            if gen != slot._hist_scan_gen:
+                slot._hist_scan_gen = gen
                 start = min(start, max(0, hlen - self._HISTORY_SATURATED_TAIL))
         if start < hlen:
             for hist_line in itertools.islice(htop, start, hlen):
@@ -1814,7 +1835,9 @@ class TelegramBridge(BridgeBase):
             all_lines.append(line.rstrip())
         self._perf_end("screen_display", _t_disp)
 
-        # Collect response blocks: list of list-of-lines
+        # Collect response blocks: list of (list-of-lines, closed).
+        # `closed` = 這個 block 已被提示行／下一個 AI marker 終結。**只有結尾那個
+        # block 可能是 closed=False**，代表內容還在增長——B-1 的判定關鍵。
         blocks = []
         current_block = None
 
@@ -1838,7 +1861,7 @@ class TelegramBridge(BridgeBase):
                     current_block.append(after_prompt)
                 else:
                     if current_block is not None:
-                        blocks.append(current_block)
+                        blocks.append((current_block, True))
                         current_block = None
                 continue
 
@@ -1848,7 +1871,7 @@ class TelegramBridge(BridgeBase):
             if marker:
                 # If we were already collecting, save that block first
                 if current_block is not None:
-                    blocks.append(current_block)
+                    blocks.append((current_block, True))
                 current_block = [stripped[len(marker):].strip()]
                 marker_hit = True
 
@@ -1859,12 +1882,12 @@ class TelegramBridge(BridgeBase):
             if current_block is not None:
                 current_block.append(stripped)
 
-        # Don't forget the last block
+        # Don't forget the last block — 沒有被任何東西終結，內容可能還在長
         if current_block is not None:
-            blocks.append(current_block)
+            blocks.append((current_block, False))
 
         new_texts = []
-        for block_lines in blocks:
+        for block_lines, block_closed in blocks:
             # Strip trailing empty lines
             while block_lines and not block_lines[-1]:
                 block_lines.pop()
@@ -1933,6 +1956,19 @@ class TelegramBridge(BridgeBase):
                 if prev in text:
                     supersets.append(prev)
             if already_sent:
+                continue
+            # ── B-1（QA Blocker）：內容還在增長時，不要把每一版都當「加長版、該送」──
+            # 飽和分頁重掃 scrollback 尾端時，一個**沒有被提示行終結**的 AI block
+            # 每輪會多吃進上一輪新增的幾行 → 每輪產生一份比上輪更長的文字。
+            # 舊碼走到這裡會判定「這是加長版」→ 丟掉舊的短版本 → 送新的，
+            # 於是同一段內容被轉發 64 次、每則遞增一行（長 build / `tail -f` /
+            # 訓練 log 這類純捲動 shell 分頁）。去重集合完全沒有機會擋，因為
+            # 每一版都是全新字串。
+            # 修法：block 尚未終結（closed=False）＝仍在增長，這一版不送、
+            # **也不動去重集合**——等它被提示行終結、或停止增長後再送最終完整版。
+            # 已終結的 block 走原本的展開邏輯，Claude Code TUI 那條正確路徑
+            # （實測 0→1）完全不受影響。
+            if supersets and not block_closed:
                 continue
             for prev in supersets:
                 slot.sent_responses.discard(prev)
@@ -2086,6 +2122,10 @@ class TelegramBridge(BridgeBase):
     # rescans burn ~18% CPU per stuck slot (2026-07-06 regression).
     _MARKER_RESCAN_INTERVAL = 3.0
 
+    # 串流中（未閉合 start marker）時，最多壓住已完成 block 多久。時鐘從
+    # slot.msg_sent_ts 起算，見 _try_marker_extract 的 M-3 註解。
+    _OPEN_SPAN_WAIT_S = 30.0
+
     def _is_forward_noise_line(self, s: str) -> bool:
         """轉發前最後防線：marker token 行、turn 結束 footer、含分頁標題的
         分隔線——這些是畫面 chrome 不是回覆內容（Howard 2026-07-24 截圖：
@@ -2115,7 +2155,14 @@ class TelegramBridge(BridgeBase):
             return ""
         reply, has_open = self._pick_marker_reply(slot, allow_inprogress=False)
         miss_reason = ""
-        if has_open and total < 30.0:
+        # M-3（SA A5.2 指名）：未閉合 span 的強制等待，時鐘要以「**這則使用者
+        # 訊息**送出」為起點，不能用 total。`total = now - first_output_time`，
+        # 而 first_output_time 每次 flush 後歸零 → 持續輸出的分頁 total 幾乎
+        # 永遠 < 30 → 只要 buffer 裡存在一個未閉合的 [[TG_REPLY_x]]（TUI 重繪
+        # 很容易製造），**已經寫完的 block 會被無限期壓住**。這是「愛回不回」
+        # 的其中一條路徑。理由與 BT 的 msg_sent_ts 註解相同。
+        waited_since_msg = now - (getattr(slot, "msg_sent_ts", 0.0) or now)
+        if has_open and waited_since_msg < self._OPEN_SPAN_WAIT_S:
             reply = ""
             miss_reason = "open-span-wait"
         # follow-up 支援：_pick_marker_reply 回「最後一個完整 block」，第一則
@@ -2603,7 +2650,11 @@ class TelegramBridge(BridgeBase):
 
         規則沿用原本 flush 迴圈裡的兩段邏輯（抽出來共用，心跳的 G5 閘門也用
         它，避免對空氣心跳）：把這個 slot 設為 active 的使用者，加上——若它是
-        第一個 slot——所有還沒明確選過分頁的使用者。"""
+        第一個 slot——所有還沒明確選過分頁的使用者。
+
+        perf 計時：不自己開 phase。兩個呼叫點都已經被外層計時包住
+        （心跳閘門在 `heartbeat_gate` 內、flush 送出路徑在 per-slot 迴圈內），
+        巢狀再計一次只會重複計算。成本是 O(使用者數)，個位數 dict 走訪。"""
         chats = set()
         for uid, active_sid in list(self._user_active.items()):
             if active_sid == sid and uid in self._user_chat:
@@ -2616,10 +2667,15 @@ class TelegramBridge(BridgeBase):
 
     # TG flood-wait 的 description 形狀：'Too Many Requests: retry after 12'
     _RETRY_AFTER_RE = re.compile(r'retry after (\d+)', re.I)
-    # flush loop 是所有分頁共用的單執行緒——在這裡 sleep 就等於全部分頁一起卡。
-    # 短的 flood-wait 就地重試一次；長的交給呼叫端退避後重抽（回覆沒進去重
-    # 集合，不會遺失）。
-    _SEND_INLINE_RETRY_MAX_S = 5.0
+    # flush loop 是所有分頁共用的單執行緒——在這裡 sleep 或等 HTTPS 就等於全部
+    # 分頁一起卡。短的 flood-wait 就地重試一次；長的交給呼叫端退避後重抽
+    # （回覆沒進去重集合，不會遺失）。
+    # M-4：最壞阻塞必須壓在改動前（單次 tg_api 預設 timeout=35s）之下。
+    #   10s + sleep(≤3s) + 10s = 23s < 35s。逾時警告改走背景 thread，不佔這條路。
+    _SEND_INLINE_RETRY_MAX_S = 3.0
+    _SEND_TIMEOUT_S = 10.0
+    # 送出失敗的 ⚠ 警告：每個 slot 最少間隔這麼久才再發一次（防洗版）。
+    _SEND_FAIL_NOTIFY_INTERVAL_S = 300.0
 
     def _send_text_checked(self, sid: str, chat_id, text: str):
         """sendMessage + **檢查回傳值**。回 (ok, retry_after_seconds)。
@@ -2629,7 +2685,8 @@ class TelegramBridge(BridgeBase):
         `sent_responses` → **永不重送、也永不會被重新抽取**（全 repo grep
         429|retry_after 零命中）。"""
         resp = tg_api(self.config.bot_token, "sendMessage",
-                      {"chat_id": chat_id, "text": text}, timeout=20)
+                      {"chat_id": chat_id, "text": text},
+                      timeout=self._SEND_TIMEOUT_S)
         if resp.get("ok"):
             return True, 0.0
         desc = str(resp.get("description") or "")
@@ -2639,7 +2696,8 @@ class TelegramBridge(BridgeBase):
             _blog(f"[send] {sid} → {chat_id} flood-wait {wait:.0f}s, retrying once\n")
             time.sleep(wait)
             resp = tg_api(self.config.bot_token, "sendMessage",
-                          {"chat_id": chat_id, "text": text}, timeout=20)
+                          {"chat_id": chat_id, "text": text},
+                          timeout=self._SEND_TIMEOUT_S)
             if resp.get("ok"):
                 return True, 0.0
             desc = str(resp.get("description") or "")
@@ -2664,10 +2722,13 @@ class TelegramBridge(BridgeBase):
         cb = getattr(self, "_on_agent_status", None)
         if not cb:
             return ""
+        t0 = self._perf_t()
         try:
             got = cb(sid)
         except Exception:
             return ""
+        finally:
+            self._perf_end("heartbeat_status", t0)
         if not got:
             return ""
         res, age = got if isinstance(got, tuple) else (got, 0.0)
@@ -2687,10 +2748,13 @@ class TelegramBridge(BridgeBase):
     def _heartbeat_bg_line(self, slot):
         """第 3 行：畫面尾端的「等 N 個背景 agent / ↓ tokens」。走既有
         _live_tail（_feed_gen display 快取），不新增 render。"""
+        t0 = self._perf_t()
         try:
             tail = self._live_tail(slot, rows=6) or ""
         except Exception:
             return ""
+        finally:
+            self._perf_end("heartbeat_bg", t0)
         m = self._BG_AGENT_RE.search(tail)
         if not m:
             return ""
@@ -2702,6 +2766,13 @@ class TelegramBridge(BridgeBase):
 
     def _send_heartbeat(self, sid: str, waited: float):
         """背景 thread：發一則「還在跑」的心跳。閘門在 _flush_loop（A4.2）。"""
+        t_hb0 = self._perf_t()
+        try:
+            self._send_heartbeat_inner(sid, waited)
+        finally:
+            self._perf_end("heartbeat_send", t_hb0)
+
+    def _send_heartbeat_inner(self, sid: str, waited: float):
         slot = self.slots.get(sid)
         if not slot:
             return
@@ -2711,13 +2782,29 @@ class TelegramBridge(BridgeBase):
         status_line = self._heartbeat_status_line(sid)
         bg_line = self._heartbeat_bg_line(slot)
 
-        # 內容 hash 去重：同樣的話不連發（但退避計數已在閘門推進，所以跳過
-        # 一次會讓下一次間隔更長，不會變成高頻重試）。
+        # ── 內容 hash 去重（M-2 修正）──
+        # 舊條件 `sig == _hb_last_hash and _hb_count > 1` 是錯的：跳過時不更新
+        # `_hb_last_hash`，於是**狀態一旦不變，第 2 則之後全部永久靜音**。而
+        # 「長時間卡住、狀態一直沒變」正是 s87「愛回不回」的形狀——等於我們修
+        # s87 的功能在 s87 的情境下自己失效（QA M-2）。
+        # SA 規格是「內容相同 **且** 距上次實際送出未滿 2 × 當前間隔」才跳過：
+        # 退避計數照樣推進，所以沉默會愈拉愈長，但**永遠不會永久靜音**。
+        # 另外：`status_line` 與 `bg_line` 都空時（main.py 還沒 restart、或
+        # shell 分頁）根本沒有「資訊」可以去重，訊息裡唯一會變的就是已等時間
+        # ——這種情況不做內容去重，交給退避節流就好，否則就是保證只發一則。
+        now = time.time()
         sig = f"{status_line}|{bg_line}"
-        if sig and sig == slot._hb_last_hash and slot._hb_count > 1:
-            _blog(f"[heartbeat] {sid} skipped (same content) waited={waited:.0f}s\n")
+        informative = bool(status_line or bg_line)
+        interval = slot._hb_interval or self.HEARTBEAT_INTERVAL_S
+        if (informative and sig == slot._hb_last_hash
+                and slot._hb_last_sent_ts
+                and (now - slot._hb_last_sent_ts) < 2 * interval):
+            _blog(f"[heartbeat] {sid} skipped (same content, "
+                  f"{now - slot._hb_last_sent_ts:.0f}s < 2×{interval:.0f}s) "
+                  f"waited={waited:.0f}s\n")
             return
         slot._hb_last_hash = sig
+        slot._hb_last_sent_ts = now
 
         lines = [f"⏳「{slot.label}」還在跑 · 已 {self._fmt_waited(waited)}"]
         if status_line:
@@ -2841,9 +2928,10 @@ class TelegramBridge(BridgeBase):
 
             # ── 長回合心跳閘門（A4.2）──
             # 全部掛在既有的 2s slow_tick 上，**不新增迴圈、不新增掃描**。
-            # 這裡只做欄位比較（O(1)/slot，實測見 heartbeat_gate phase）；
-            # 唯一昂貴的動作（_live_tail / _peek_last_response）都在
-            # _send_heartbeat 的背景 thread 裡，而且最快 300s 才一次。
+            # 這裡只做欄位比較（O(1)/slot，實測見 heartbeat_gate phase）：
+            # 不碰輸出緩衝、不 render screen、不跑 regex。唯一昂貴的動作
+            # （live tail 讀取、tmux peek）都在 _send_heartbeat 的背景 thread
+            # 裡，而且最快 300s 才一次。
             if slow_tick:
                 _t_hb = self._perf_t()
                 now_hb = time.time()
@@ -2872,10 +2960,12 @@ class TelegramBridge(BridgeBase):
                     # G5 有人收（不要對空氣心跳）
                     if not self._target_chats_for(sid):
                         continue
-                    slot._hb_next_ts = now_hb + min(
+                    interval = min(
                         self.HEARTBEAT_MAX_S,
                         self.HEARTBEAT_INTERVAL_S
                         * (self.HEARTBEAT_BACKOFF ** slot._hb_count))
+                    slot._hb_next_ts = now_hb + interval
+                    slot._hb_interval = interval   # 內容去重的 2×間隔基準
                     slot._hb_count += 1
                     threading.Thread(target=self._send_heartbeat,
                                      args=(sid, waited), daemon=True).start()
@@ -3238,7 +3328,9 @@ class TelegramBridge(BridgeBase):
                     # 回覆真的出去了 → 關掉這個 epoch 的心跳
                     slot._hb_count = 0
                     slot._hb_next_ts = 0.0
+                    slot._hb_interval = 0.0
                     slot._hb_last_hash = ""
+                    slot._hb_last_sent_ts = 0.0
                 else:
                     # 沒進去重集合＝下一次掃描還會重抽，不會永久蒸發。但要退避，
                     # 免得 TG 掛掉時每 0.5s 重試變成打樁。429 就等到 flood-wait
@@ -3251,15 +3343,22 @@ class TelegramBridge(BridgeBase):
                         getattr(slot, "_fb_next_ts", 0.0), time.time() + back)
                     _blog(f"[flush] {sid} send FAILED → kept out of dedup, "
                           f"will re-extract\n")
-                    for chat_id in target_chats:
-                        try:
-                            tg_api(self.config.bot_token, "sendMessage", {
-                                "chat_id": chat_id,
-                                "text": (f"⚠ 「{slot.label}」的回覆送出失敗（Telegram "
-                                         "拒收或逾時）。內容沒有遺失——用 /fetch 重取。"),
-                            }, timeout=5)
-                        except Exception:
-                            pass
+                    # M-4：警告本身要節流，而且**不能在 flush loop 裡等 HTTPS**。
+                    # 舊版對每個 target chat 直接 sendMessage、零節流——一旦撞上
+                    # 洗版或 TG 掛掉，警告會自己變成第二波洗版，而且把單執行緒的
+                    # flush loop 一起拖住（所有分頁的 TG 收送同時停擺）。
+                    now_fail = time.time()
+                    if now_fail >= slot._send_fail_warn_ts:
+                        slot._send_fail_warn_ts = (
+                            now_fail + self._SEND_FAIL_NOTIFY_INTERVAL_S)
+                        warn = (f"⚠ 「{slot.label}」的回覆送出失敗（Telegram "
+                                "拒收或逾時）。內容沒有遺失——用 /fetch 重取。")
+                        for chat_id in target_chats:
+                            threading.Thread(
+                                target=tg_api,
+                                args=(self.config.bot_token, "sendMessage",
+                                      {"chat_id": chat_id, "text": warn}),
+                                kwargs={"timeout": 5}, daemon=True).start()
 
             # Adaptive-cadence bookkeeping: grow the idle streak on fully-quiet
             # ticks, reset the moment any slot needs attention.
@@ -3661,7 +3760,10 @@ class TelegramBridge(BridgeBase):
             if not isinstance(upd, dict):
                 continue
             text = ((upd.get("message") or {}).get("text") or "").strip().lower()
-            cmd = text.split()[0] if text else ""
+            # M-5：必須跟指令派發端（_handle_update）用同一種剝法——群組裡
+            # Telegram 客戶端送出的是 `/restart@YourBot`，只切空白會漏掉 →
+            # 重播 /restart → 再重啟，正是這個過濾器要防的迴圈。
+            cmd = text.split()[0].split("@")[0] if text else ""
             if cmd in self._PENDING_SKIP_CMDS:
                 _blog(f"[poll] replay: skipping self-restart cmd {cmd}\n")
                 continue
@@ -5059,7 +5161,9 @@ class TelegramBridge(BridgeBase):
         # 新 epoch：重置心跳 / 預覽狀態（A4.3 停止條件之一）
         slot._hb_next_ts = 0.0
         slot._hb_count = 0
+        slot._hb_interval = 0.0
         slot._hb_last_hash = ""
+        slot._hb_last_sent_ts = 0.0
         slot._hb_quiet = False
         slot._preview_count = 0
         slot._preview_gen = -1
@@ -5068,7 +5172,6 @@ class TelegramBridge(BridgeBase):
         # 補掉現在「注入成功到 8s 排隊通知之間完全靜默」的空窗。覆蓋式記錄，
         # _send() 之後用它把狀態推到 T1/T2。
         origin_msg_id = msg.get("message_id")
-        slot.pending_reaction = (chat_id, origin_msg_id) if origin_msg_id else None
         self._react_async(chat_id, origin_msg_id, self.REACTION_SEEN)
         # Track what we send so we can filter echo from output
         slot.sent_texts.append(forwarded)

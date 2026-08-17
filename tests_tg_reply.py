@@ -20,6 +20,7 @@ def mkslot(raw):
     s.reply_start_marker = START; s.reply_end_marker = END
     s.pending_raw = raw; s.peek_fn = None; s.marker_prompt = INSTR
     s.marker_next_scan_ts = 0.0; s.marker_scan_gen = -1; s._feed_gen = 1
+    s.msg_sent_ts = 1000.0      # 「剛送出」；extract_force 會改成等很久
     return s
 
 # v0.29.5: 熱路徑入口統一為 _try_marker_extract（節流版）。
@@ -28,6 +29,8 @@ def mkslot(raw):
 def extract(slot):
     return bridge._try_marker_extract(slot, now=1000.0, total=10.0)
 def extract_force(slot):
+    # M-3：未閉合 span 的強制等待改以 msg_sent_ts 起算，不再看 total
+    slot.msg_sent_ts = 1000.0 - 40.0
     return bridge._try_marker_extract(slot, now=1000.0, total=40.0)
 
 bridge = TB.__new__(TB)

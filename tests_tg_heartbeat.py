@@ -111,6 +111,95 @@ def test_quiet_mutes_epoch():
     assert _gate(s, 9999.0) == (False, "quiet")
 
 
+# ── 5b. M-2：狀態不變時**不得永久靜音**（QA Major）──
+def _hb_bridge(sent, status=None):
+    def api(token, method, data=None, timeout=35):
+        sent.append(data["text"])
+        return {"ok": True}
+    _bt.tg_api = api
+    br = object.__new__(BR)
+    br.config = types.SimpleNamespace(bot_token="x")
+    br._perf_enabled = False
+    br._perf = {}
+    br._on_agent_status = (lambda sid: (status, 1.0)) if status else None
+    br._live_tail = lambda slot, rows=6: ""
+    return br
+
+
+def _wire(br, s):
+    br.slots = {"s87": s}
+    br._slot_order = ["s87"]
+    br._user_active = {1: "s87"}
+    br._user_chat = {1: 555}
+
+
+def test_unchanging_state_is_not_silenced_forever():
+    """舊條件 `sig == _hb_last_hash and _hb_count > 1` 讓「狀態一直沒變的卡住
+    分頁」每個 epoch 只發一則就永久靜音——而那正是 s87「愛回不回」的形狀，
+    等於修 s87 的功能在 s87 的情境下自己失效。SA 規格是「相同 **且** 距上次
+    實際送出未滿 2×當前間隔」才跳過：退避照樣拉長，但永遠不會永久靜音。"""
+    sent = []
+    br = _hb_bridge(sent, status={"state": "working", "action": "同一件事",
+                                  "task": ""})
+    s = _slot()
+    _wire(br, s)
+    # 模擬閘門連續觸發（間隔照退避數列），內容全程不變
+    now = 1000.0 + BR.HEARTBEAT_FIRST_S
+    fired = 0
+    for _ in range(12):
+        while not _gate(s, now)[0]:
+            now += 1.0
+        fired += 1
+        s._hb_interval = min(BR.HEARTBEAT_MAX_S,
+                             BR.HEARTBEAT_INTERVAL_S
+                             * (BR.HEARTBEAT_BACKOFF ** max(0, s._hb_count - 1)))
+        _send_at(br, "s87", now - 1000.0, now)
+        now += 1.0
+    assert len(sent) >= 3, (
+        f"狀態不變時 {fired} 次閘門只送出 {len(sent)} 則——永久靜音又回來了")
+
+
+def _send_at(br, sid, waited, now):
+    """用固定的 now 呼叫 _send_heartbeat（避開真實時鐘）。"""
+    real = _bt.time.time
+    _bt.time.time = lambda: now
+    try:
+        br._send_heartbeat(sid, waited)
+    finally:
+        _bt.time.time = real
+
+
+def test_dedup_window_is_time_based_not_count_based():
+    """同一內容、距上次送出很近 → 跳過；超過 2×間隔 → 一定要再發一次。"""
+    sent = []
+    br = _hb_bridge(sent, status={"state": "working", "action": "X", "task": ""})
+    s = _slot()
+    _wire(br, s)
+    s._hb_count, s._hb_interval = 1, 300.0
+    _send_at(br, "s87", 200.0, 10000.0)
+    assert len(sent) == 1
+    s._hb_count = 2
+    _send_at(br, "s87", 500.0, 10000.0 + 300.0)     # 300 < 2×300 → 跳過
+    assert len(sent) == 1, sent
+    s._hb_count = 3
+    _send_at(br, "s87", 900.0, 10000.0 + 700.0)     # 700 > 2×300 → 要發
+    assert len(sent) == 2, sent
+
+
+def test_no_informative_content_never_deduped():
+    """main.py 尚未 restart（_on_agent_status is None）、或 shell 分頁時，
+    status/bg 兩行都空 → sig 恆為 '|'。此時訊息裡唯一會變的就是已等時間，
+    做內容去重等於保證每個 epoch 只發一則（QA 指出的加重情形）。"""
+    sent = []
+    br = _hb_bridge(sent)                            # 無 status callback
+    s = _slot()
+    _wire(br, s)
+    for i, (cnt, t) in enumerate(((1, 10000.0), (2, 10300.0), (3, 10750.0))):
+        s._hb_count, s._hb_interval = cnt, 300.0
+        _send_at(br, "s87", 200.0 + i * 300, t)
+    assert len(sent) == 3, f"沒有可去重的資訊時不該擋: {sent}"
+
+
 # ── 5. 內容 hash 去重：一樣的狀態不連發 ──
 def test_content_hash_dedup():
     sent = []

@@ -21,6 +21,7 @@ P1-13：sent_responses 曾是 plain set，superset/subset 迴圈與溢位裁切�
 
 import importlib.util
 import os
+import queue as _queue
 import threading
 import types
 
@@ -231,6 +232,63 @@ def test_dedup_decision_order_independent():
         results.append(br._extract_new_text(slot))
     assert results[0] == results[1], f"判定仍與順序有關: {results}"
     assert results[0] == [], f"已被更長的已送內容包含 → 不該重送: {results[0]}"
+
+
+# ── 11. M-4：送出失敗的 ⚠ 警告要節流，而且不得在 flush loop 裡等 HTTPS ──
+def test_send_failure_warning_is_throttled():
+    """洗版或 TG 掛掉時，零節流的警告會自己變成第二波洗版，並把單執行緒的
+    flush loop 一起拖住（所有分頁 TG 收送同時停擺）。"""
+    br, slot, calls = _run(_HARD)
+    warns = [t for t in _sent_texts(calls) if "送出失敗" in t]
+    assert len(warns) == 1, warns
+    assert slot._send_fail_warn_ts > 0, "沒有設節流閘"
+    # 節流窗內第二次失敗不得再發
+    import time as _t
+    calls2 = []
+    br2 = _bridge(calls2, _HARD)
+    slot2 = _slot_with_marker(br2)
+    slot2._send_fail_warn_ts = _t.time() + 120.0    # 仍在節流窗內
+    br2._user_chat = {42: 999}
+    br2._user_active = {42: slot2.sid}
+    br2._flush_loop()
+    assert not [t for t in _sent_texts(calls2) if "送出失敗" in t], calls2
+
+
+def test_send_failure_warning_not_blocking_flush_loop():
+    """警告走背景 thread；失敗路徑的同步阻塞上限必須低於改動前的單次
+    tg_api 預設 timeout=35s。"""
+    src = open(os.path.join(_HERE, "bridge_telegram.py"), encoding="utf-8").read()
+    fail_branch = src.split("send FAILED → kept out of dedup", 1)[1][:1200]
+    assert "threading.Thread(" in fail_branch, "警告必須在背景 thread 發"
+    br = object.__new__(_bt.TelegramBridge)
+    worst = (br._SEND_TIMEOUT_S * 2) + br._SEND_INLINE_RETRY_MAX_S
+    assert worst < 35.0, f"失敗路徑同步阻塞 {worst}s，比改動前的 35s 還糟"
+
+
+# ── 12. M-5：重播過濾器必須跟指令派發端用同一種剝法（/restart@botname）──
+def test_replay_filter_strips_bot_suffix():
+    """群組裡 Telegram 客戶端送的是 `/restart@YourBot`。只切空白會漏掉 →
+    重播 /restart → 再重啟，正是這個過濾器要防的迴圈。"""
+    import json as _json
+    import tempfile
+    from pathlib import Path as _P
+    br = object.__new__(_bt.TelegramBridge)
+    br._update_queue = _queue.Queue()
+    tmp = _P(tempfile.mkdtemp()) / "tg_pending.json"
+    br._PENDING_FILE = tmp
+    tmp.write_text(_json.dumps([
+        {"message": {"text": "/restart@ShellFrameBot"}},
+        {"message": {"text": "/RELOAD@ShellFrameBot"}},
+        {"message": {"text": "/restart"}},
+        {"message": {"text": "正常訊息"}},
+    ]), encoding="utf-8")
+    n = br._replay_pending_updates()
+    got = []
+    while not br._update_queue.empty():
+        got.append(br._update_queue.get_nowait()["message"]["text"])
+    assert got == ["正常訊息"], f"自我重啟指令沒被濾掉: {got}"
+    assert n == 1
+    assert not tmp.exists(), "重播後應刪檔，避免無限重播"
 
 
 if __name__ == "__main__":

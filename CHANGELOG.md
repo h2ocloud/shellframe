@@ -1,5 +1,117 @@
 # Changelog
 
+## v0.29.34 (2026-08-17)
+
+QA 對抗性驗收（`docs/qa-report-2026-08-17.md`）判定 CONDITIONAL PASS：效能全數
+過線，但抓到 1 個 Blocker + 5 個 Major。本版把它們修掉。
+
+### Fixes — Blocker
+
+- **B-1　飽和分頁 + 純捲動輸出 → 同一段內容重複轉發 64 次**（SA A8 事先警告的
+  「靜默丟訊換成重複洗版」，只是根因不在去重集合）。
+  去重集合本身沒破——QA 刻意攻擊 `_OrderedSet` 的裁切邊界（260 / 400 block）都
+  沒破。真正的洞在 superset 規則：`_extract_new_text` 的 AI block 會把 `⏺` 之後
+  所有行一路收集到遇見提示行為止，**飽和重掃讓一個「沒有提示行終結」的 block
+  每輪多吃進上一輪新增的幾行** → 每輪產生一份比上輪更長的文字 → 撞上
+  `if prev in text: supersets.append(prev)` 被判定成「加長版、該送」，
+  舊的短版本還被從去重集合裡拿掉。每一版都是全新字串，去重根本沒機會擋。
+  觸發前提：history 飽和 ＋ 無提示行終結 block ＋ 連續輸出 >120s ——
+  長 build、`tail -f`、訓練 log 這類 shell 分頁。
+  **修法**：block 收集時記下「是否已被提示行／下一個 AI marker 終結」
+  （`blocks` 改帶 `closed` 旗標）。未終結＝內容仍在增長時，**不套用 superset
+  展開**：這一版不送、也不動去重集合，等它被終結或停止增長再送最終完整版。
+  已終結的 block 走原本邏輯，Claude Code TUI 那條已經正確的路徑不受影響。
+  實測（飽和分頁、140 輪，走真實 `feed_output` 攝入路徑）：
+
+  | 分頁輸出形狀 | 修前 | 修後 |
+  |---|---|---|
+  | 純捲動輸出（shell / build / 長 log） | **64**（799, 806, 813…每則遞增一行） | **1** |
+  | Claude Code TUI，每次重繪帶 `›` 輸入框 | 1 | 1 |
+  | TUI 工具結果 `⎿` 連續捲動 | 1 | 1 |
+
+### Fixes — Major
+
+- **M-2　長回合心跳只發一則就永久靜音**（讓本輪核心價值歸零的那條）。
+  舊條件 `sig == _hb_last_hash and _hb_count > 1`：跳過時不更新
+  `_hb_last_hash`，於是**狀態一旦不變，第 2 則之後全部被擋死**。而「長時間卡住、
+  狀態一直沒變」正是 s87「愛回不回」的形狀——修 s87 的功能在 s87 的情境下自己
+  失效。加重情形：`main.py` 未 restart 時 `_on_agent_status is None`，
+  `sig` 恆為 `"|"`，**保證每個 epoch 只發一則**。
+  **修法**：照 SA 規格改成時間條件——內容相同 **且** 距上次*實際送出*未滿
+  `2 × 當前退避間隔` 才跳過（新增 `_hb_interval` / `_hb_last_sent_ts`）。
+  退避計數照樣推進，沉默會愈拉愈長，但**永遠不會永久靜音**。
+  另外：`status_line` 與 `bg_line` 都空時根本沒有「資訊」可去重（訊息裡唯一會變
+  的就是已等時間），這種情況不做內容去重，只靠退避節流。
+
+- **M-1　P0-2 的 dirty gate 有空白行盲點，靜默丟訊沒根治**。
+  舊 gate 取「history 最後一行」當 signature，該行內容前後相同時（空白行、重複
+  的 log 行——TUI 上極常見）signature 不變 → 重掃被整個跳過，其間捲過去、超出
+  64 行窗的內容永久遺失。
+  **修法**：改用單調遞增的 `_feed_gen`（每個 PTY chunk +1）當 gate，沒有盲點、
+  O(1)，而且是 repo 既有慣用法（`marker_scan_gen` 同款）。production 全檔只有
+  一處 `stream.feed`（在 `feed_output` 內、同一個鎖裡 bump `_feed_gen`），
+  所以「history 只會因 feed_gen 前進而增長」是絕對成立的不變式。
+
+- **M-3　SA A5.2 指名的 `has_open` 時鐘沒改**（上一版漏做）。
+  `total = now - first_output_time`，而 `first_output_time` 每次 flush 後歸零 →
+  持續輸出的分頁 `total` 幾乎永遠 < 30 → 只要 buffer 裡存在一個未閉合的
+  `[[TG_REPLY_x]]`（TUI 重繪很容易製造），**已經寫完的 block 會被無限期壓住**。
+  改以 `slot.msg_sent_ts` 起算（新增 `_OPEN_SPAN_WAIT_S = 30.0`）。
+
+- **M-4　送出失敗的 ⚠ 警告無節流，且放大 flush loop 阻塞**。
+  舊版對每個 target chat 直接同步 `sendMessage`、零節流——撞上洗版或 TG 故障時
+  警告自己變成第二波洗版，還把單執行緒的 flush loop 一起拖住（所有分頁 TG 收送
+  同時停擺）。
+  **修法**：(1) 每個 slot 最少間隔 300s 才再發一次警告（`_send_fail_warn_ts`）；
+  (2) 警告改走背景 thread，完全退出 flush loop 同步路徑；
+  (3) 收緊逾時 `_SEND_TIMEOUT_S 20→10`、就地重試上限 `5→3` —— 失敗路徑最壞
+  同步阻塞 10+3+10 = **23s，低於改動前單次 `tg_api` 的預設 35s**。
+
+- **M-5　`/restart@botname` 沒被重播過濾器擋掉 → 重啟迴圈風險**。
+  `cmd = text.split()[0]` 沒剝 `@botname`，與指令派發端
+  （`text.split()[0][1:].split("@")[0].lower()`）兩邊剝法不一致；群組裡 Telegram
+  客戶端送的就是 `/restart@YourBot`。改成同一種剝法。
+
+### Fixes — Minor
+
+- **m-1**　移除死狀態 `slot.pending_reaction`（宣告＋寫入、全檔零讀取）。
+  `_send()` 以閉包捕獲 `origin_msg_id` 本來就是正確且無競態的做法，
+  天生符合 SA A3.5 的「舊的那則停在它最後的狀態」。
+- **m-5**　`_heartbeat_bg_line` / `_heartbeat_status_line` / `_send_heartbeat`
+  補掛 `_perf_t()`／`_perf_end()`（新增 phase：`heartbeat_bg`、
+  `heartbeat_status`、`heartbeat_send`）。
+  `_set_reaction` **刻意不計時**（SA A3.6 明文）——純網路往返、在背景 thread、
+  不在 flush loop；一次 HTTPS 300ms 若計進 60s 摘要會直接吃掉整條 150ms 預算、
+  把真正的 CPU 迴歸淹掉，改以 `[reaction]` log 記錄。`_target_chats_for` 的兩個
+  呼叫點都已被外層 phase 包住，巢狀再計會重複計算。
+- **m-2**　更正註解裡低估的成本數字：飽和重掃不是 0.65ms/次，實測 **+0.98～1.09
+  ms/次**（原數字漏算多出來的 64 行流進 block 解析的成本）。
+
+### 效能（自己重量，非取安靜視窗）
+
+| 項目 | 實測 | 紅線 |
+|---|---|---|
+| `heartbeat_gate`（13 slots） | 1.3 µs/tick → **0.039 ms/60s** | ≤50ms/60s |
+| P0-2 飽和重掃（A/B：tail 64 vs 0） | **+976 µs/次** × 12–27 次/60s → +12～26 ms/60s | ≤50ms/60s |
+| 送出失敗路徑最壞同步阻塞 | **23s**（改動前 35s） | 不得放大 |
+
+B-1 的修法只多一個 bool 判斷，無額外掃描成本。
+
+### 測試
+
+`tests_tg_history_saturation.py` 重寫：改走**真實攝入路徑 `feed_output()`**
+（原本用 `slot.stream.feed()` 直餵會繞過 `_feed_gen`，測到的行為與 production
+不同——QA 的重現腳本也踩到這點），並新增
+`test_no_flood_on_plain_scrolling_output`（B-1，飽和分頁連續輸出 140 輪）、
+`test_tui_shapes_still_forward_once`（確保沒動到 TUI 正確路徑）、
+`test_growing_block_forwards_final_version_once_closed`（防洗版不得製造新的
+靜默丟訊）、`test_unchanged_tail_line_no_blind_spot`（M-1）、
+`test_tail_gate_skips_without_new_bytes`。
+`tests_tg_heartbeat.py` 新增 M-2 三條；`tests_tg_send_commit.py` 新增 M-4 兩條、
+M-5 一條；`tests_tg_marker_throttle.py` / `tests_tg_reply.py` 隨 M-3 的時鐘變更
+更新，並加一條「total 很小但訊息已等很久也要放行」的回歸斷言。
+26 個測試檔全綠。
+
 ## v0.29.33 (2026-08-17)
 
 TG「愛回不回、不知道訊息有沒有收到」的根治。SA 設計稿：
