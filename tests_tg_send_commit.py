@@ -118,7 +118,13 @@ def _sent_texts(calls):
 _OK = lambda m, d: {"ok": True, "result": {}}
 _FLOOD = lambda m, d: {"ok": False, "description":
                        "HTTP 429: {\"description\":\"Too Many Requests: retry after 12\"}"}
-_HARD = lambda m, d: {"ok": False, "description": "HTTP 400: Bad Request: chat not found"}
+# 可重試的硬失敗（伺服器暫時性錯誤）——這種才該 rollback 重抽。
+# 注意：不可以用 "chat not found"／"bot was blocked" 當測資，那是**永久性**
+# 失敗，v0.29.36 起會 commit（重抽再多次也不會成功，留著只會無限重試）。
+_HARD = lambda m, d: {"ok": False, "description": "HTTP 500: Internal Server Error"}
+# 永久性失敗（使用者封鎖 bot）
+_BLOCKED = lambda m, d: {"ok": False,
+                         "description": "Forbidden: bot was blocked by the user"}
 
 
 # ── 1. 送成功 → 才進去重集合 ──
@@ -173,7 +179,7 @@ def test_inline_retry_once_on_short_flood():
     _bt.tg_api = api
     br = object.__new__(_bt.TelegramBridge)
     br.config = types.SimpleNamespace(bot_token="x")
-    ok, ra = br._send_text_checked("s1", 9, "hi")
+    ok, ra, _perm = br._send_text_checked("s1", 9, "hi")
     assert ok is True and ra == 0.0, (ok, ra)
     assert len(seen) == 2, "短 flood-wait 應該就地重試一次"
 
@@ -188,7 +194,7 @@ def test_long_flood_not_slept_inline():
     br = object.__new__(_bt.TelegramBridge)
     br.config = types.SimpleNamespace(bot_token="x")
     t0 = _t.time()
-    ok, ra = br._send_text_checked("s1", 9, "hi")
+    ok, ra, _perm = br._send_text_checked("s1", 9, "hi")
     assert ok is False and ra == 25.0, (ok, ra)
     assert _t.time() - t0 < 1.0, "flush loop 是所有分頁共用的執行緒，不可以在裡面睡 25 秒"
 
@@ -332,3 +338,12 @@ if __name__ == "__main__":
                 fails.append(name)
     print(f"\n=== {'ALL PASS' if not fails else f'{len(fails)} FAILED'} ===")
     raise SystemExit(1 if fails else 0)
+
+
+# ── v0.29.36：唯一收件人封鎖了 bot（永久失敗）→ 必須 commit，不可無限重抽。
+#    這就是 Howard 2026-08-19「對話1跳針」的端對端形狀。
+def test_permanent_failure_commits_and_unroutes():
+    br, slot, calls = _run(_BLOCKED)
+    assert REPLY in slot.sent_responses, \
+        "永久失敗仍不 commit → 下一輪重抽重送＝跳針"
+    assert not br._user_chat, f"封鎖 bot 的 chat 未從路由移除: {br._user_chat}"

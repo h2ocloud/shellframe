@@ -2683,8 +2683,17 @@ class TelegramBridge(BridgeBase):
     # 送出失敗的 ⚠ 警告：每個 slot 最少間隔這麼久才再發一次（防洗版）。
     _SEND_FAIL_NOTIFY_INTERVAL_S = 300.0
 
+    # 永久性投遞失敗——重試再多次也不會成功（使用者封鎖了 bot、把 bot 踢出
+    # 群組、chat 不存在、帳號被停用）。這種收件人**不可以**讓整批判定成失敗，
+    # 否則已經成功收到的人會被無限重送（Howard 2026-08-19「對話1跳針」：兩個
+    # chat 封鎖了 bot → 每輪 flush 都 FAILED → 不進去重 → 重抽重送，但他其實
+    # 每次都收到了）。
+    _PERMANENT_SEND_RE = re.compile(
+        r"bot was blocked by the user|user is deactivated|chat not found"
+        r"|bot was kicked|have no rights to send|PEER_ID_INVALID", re.I)
+
     def _send_text_checked(self, sid: str, chat_id, text: str):
-        """sendMessage + **檢查回傳值**。回 (ok, retry_after_seconds)。
+        """sendMessage + **檢查回傳值**。回 (ok, retry_after_seconds, permanent)。
 
         P0-3：舊版是 fire-and-forget——`tg_api` 把 429 / 400 / 逾時 / DNS 全部
         轉成 {"ok": False, …} 回傳值，而呼叫端完全不看，回覆卻已經先進了
@@ -2694,7 +2703,7 @@ class TelegramBridge(BridgeBase):
                       {"chat_id": chat_id, "text": text},
                       timeout=self._SEND_TIMEOUT_S)
         if resp.get("ok"):
-            return True, 0.0
+            return True, 0.0, False
         desc = str(resp.get("description") or "")
         m = self._RETRY_AFTER_RE.search(desc)
         wait = float(m.group(1)) if m else 0.0
@@ -2705,12 +2714,14 @@ class TelegramBridge(BridgeBase):
                           {"chat_id": chat_id, "text": text},
                           timeout=self._SEND_TIMEOUT_S)
             if resp.get("ok"):
-                return True, 0.0
+                return True, 0.0, False
             desc = str(resp.get("description") or "")
             m = self._RETRY_AFTER_RE.search(desc)
             wait = float(m.group(1)) if m else 0.0
-        _blog(f"[send] {sid} → {chat_id} sendMessage NOT ok: {desc[:160]}\n")
-        return False, wait
+        permanent = bool(self._PERMANENT_SEND_RE.search(desc))
+        _blog(f"[send] {sid} → {chat_id} sendMessage NOT ok"
+              f"{' (PERMANENT)' if permanent else ''}: {desc[:160]}\n")
+        return False, wait, permanent
 
     @staticmethod
     def _fmt_waited(sec: float) -> str:
@@ -3289,7 +3300,14 @@ class TelegramBridge(BridgeBase):
                           f"({len(new_lines)} block(s) held)\n")
                     continue
 
-                send_ok = True
+                # 逐收件人判定（v0.29.36）。舊版一律「任一失敗＝整批 FAILED」，
+                # 於是**一個封鎖 bot 的 chat 就能讓所有正常收件人被無限重送**。
+                # 現在分三種結果：any_ok（有人真的收到）、retryable_fail
+                # （429/逾時/網路——值得重抽）、permanent_fail（403 封鎖等，
+                # 重試無意義）。
+                any_ok = False
+                retryable_fail = False
+                dead_chats = set()
                 retry_after = 0.0
                 for chat_id in target_chats:
                     # 每個收件人的送訊/送檔各自 try——一個 send 失敗（尤其
@@ -3301,22 +3319,41 @@ class TelegramBridge(BridgeBase):
                     try:
                         if is_menu_prompt:
                             self._send_choice_menu(chat_id, slot, msg)
+                            any_ok = True
                         else:
                             for part in msg_parts:
-                                ok, ra = self._send_text_checked(sid, chat_id, part)
-                                if not ok:
-                                    send_ok = False
+                                ok, ra, perm = self._send_text_checked(
+                                    sid, chat_id, part)
+                                if ok:
+                                    any_ok = True
+                                elif perm:
+                                    dead_chats.add(chat_id)
+                                else:
+                                    retryable_fail = True
                                     retry_after = max(retry_after, ra)
                         # Send detected files as documents
                         for fp in file_paths:
                             self._send_tg_file(chat_id, fp)
                     except Exception as e:
-                        send_ok = False
+                        retryable_fail = True
                         _blog(f"[flush] {sid} send to {chat_id} failed "
                               f"(loop survives): {type(e).__name__}: {e}\n")
 
-                # ── commit / rollback（P0-3）──
-                if send_ok:
+                # 永久失效的收件人：從路由表移除，否則每則回覆都要再撞一次 403，
+                # 而且警告也會一直發給收不到的人。
+                if dead_chats:
+                    for _uid, _cid in list(self._user_chat.items()):
+                        if _cid in dead_chats:
+                            self._user_chat.pop(_uid, None)
+                            self._user_active.pop(_uid, None)
+                    _blog(f"[flush] {sid} dropped dead chat(s) "
+                          f"{sorted(dead_chats)} — blocked/invalid, unrouted\n")
+
+                # ── commit / rollback（P0-3，v0.29.36 改為逐收件人）──
+                # commit 條件：有人真的收到，或雖然沒人收到但**全是永久失敗**
+                # （重抽重送也不會成功，留在 buffer 只會變成無限重試）。
+                # 只有「可重試的失敗」才 rollback 重抽。
+                if any_ok or not retryable_fail:
                     for _t in dedup_pending:
                         slot.sent_responses.add(_t)
                     if commit_marker_forwarded:
@@ -3360,7 +3397,7 @@ class TelegramBridge(BridgeBase):
                             now_fail + self._SEND_FAIL_NOTIFY_INTERVAL_S)
                         warn = (f"⚠ 「{slot.label}」的回覆送出失敗（Telegram "
                                 "拒收或逾時）。內容沒有遺失——用 /fetch 重取。")
-                        for chat_id in target_chats:
+                        for chat_id in (target_chats - dead_chats):
                             threading.Thread(
                                 target=tg_api,
                                 args=(self.config.bot_token, "sendMessage",
