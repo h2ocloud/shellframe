@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.29.37 (2026-08-20)
+
+### Features
+- **用量膠囊加 token 配速**（Howard 提：「wk 29%」單看不知道是快還是慢）。把週額度
+  平均攤到整個窗口，算出「今天應該用到幾 % 才會剛好用完」，疊在 `wk` 右邊：
+
+  ```
+  5h 7%  wk 30%  pc 32%      剛好在配速線上（綠）
+  5h 7%  wk 45%  pc 32%▲     燒太快（黃；超過 +25% 轉紅）
+  5h 7%  wk 10%  pc 32%▼     額度用不完（藍）
+  ```
+
+  `pc` 是**目標值**，所以顏色看的是「偏離」而不是「水位」——藍色不是警告，是
+  「額度沒用完」，月費制方案用不完也是浪費。滑過膠囊的 tooltip 給可行動的說法：
+  `週期第 2.3／7 天 → 今天應累積 32%`、`目前 30%（落後 2%，約 0.1 天的量）`、
+  `照這個速度會在重置前用完（剩 4.7 天）`。AI 帳號面板的每個帳號也各有一條。
+  實例：codex team 帳號 7d **92%** 看起來很紅，但週期已到第 6 天、配速線 84%，
+  其實只超前 8%——這正是單看百分比會誤判的情況。
+  - 可關閉：`settings.usage_pace`（預設開）。設定頁一個 toggle，帳號面板 footer
+    再一顆「配速 開／關」——膠囊是看到它的地方，就地能關比翻設定好。
+  - 後端：窗口的 reset 時刻與長度原本被格式化成字串就丟了。`_pace_meta()` 用
+    side-channel dict 帶 reset epoch + `window_minutes`，**刻意不動
+    `(pct, reset)` tuple**（那個形狀在十幾處被解包、又存在磁碟快取裡，舊快取必須
+    照樣載入，只是沒有配速）。claude live／profile／legacy script、codex
+    rollout／sqlite／app-server 六條路徑都帶；codex 直接用它自己回報的
+    `windowDurationMins`（Team 的 primary 就是 10080 分＝一週，不能假設
+    primary=5h）。
+  - 資料不足或不合理就不顯示配速、不推估：舊快取沒有 meta、stale 讀數的 reset
+    已經過去、reset 比整個窗口還遠，三種都不畫。
+
+### Fixes
+- **設定關不掉配速**（開發中自己抓到）：`_paceEnabled()` 一開始讀 `window.config`，
+  但 `config` 是模組變數（`let config = null`），永遠讀不到 → 開關無效。另外
+  config 是 async 載入，膠囊可能在設定到位前先畫一次，`loadConfig()` 完成後補一次
+  重繪。
+
+### Tests
+- `tests_usage_probe.py` 新增 4 案（配速 meta／跨重啟存活／舊版快取無 meta 不炸／
+  codex app-server 回報真實窗口長度）；五套回歸全過。
+- 前端配速邊界用 node 驗 6 案；UI 用 Playwright 載真實 `web/index.html` 截 5 種
+  膠囊狀態＋帳號面板。
+
 ## v0.29.36 (2026-08-19)
 
 ### Fixes
