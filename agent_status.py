@@ -21,9 +21,12 @@ from __future__ import annotations
 import json
 import os
 import glob
+import sqlite3
 import time
 import subprocess
 import re
+
+import usage_probe
 
 # ── 狀態機門檻（秒）──
 WORKING_FRESH_S = 8
@@ -45,16 +48,41 @@ VERB = {
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 
+# Antigravity CLI (agy) keeps no JSONL transcript. Each conversation is its own
+# SQLite file, and the live process holds an open lock naming that conversation
+# — which is how a tab is matched to it (same lsof trick codex needs).
+AGY_HOME = os.path.expanduser("~/.gemini/antigravity-cli")
+AGY_PRESENCE_DIR = os.path.join(AGY_HOME, "presence")
+AGY_CONVERSATIONS_DIR = os.path.join(AGY_HOME, "conversations")
+AGY_LOG_DIR = os.path.join(AGY_HOME, "log")
+# steps.status values, established by sampling a live run: a step sits at 8
+# while the agent works on it and settles to 3 when it is finished.
+AGY_STEP_RUNNING = 8
+AGY_STEP_DONE = 3
+# How long a finished turn keeps reporting "done" (must exceed DONE_QUIET_S so
+# the state survives debouncing and the completion is actually noticed).
+AGY_DONE_WINDOW_S = 15
+
 
 # ────────────────────────── tab → transcript 對應 ──────────────────────────
 
 def _worker_kind(cmd: str) -> str:
+    """Provider key for a launch command, or 'other'.
+
+    The loose substring match for claude/codex is kept deliberately: wrapped
+    commands (`bash -lc "codex resume"`) rely on it. Everything else comes from
+    the shared provider registry, so a newly supported CLI is recognised here
+    without editing this function (see docs/adding-a-provider.md).
+    """
     c = (cmd or "").lower()
     if "codex" in c:
         return "codex"
     if "claude" in c:
         return "claude"
-    return "other"
+    try:
+        return usage_probe.detect_ai(cmd) or "other"
+    except Exception:
+        return "other"
 
 
 def _cwd_slug(cwd: str) -> str:
@@ -111,6 +139,115 @@ def _lsof_open_jsonl(pids, name_contains: str):
             if path.endswith(".jsonl") and name_contains in path:
                 return path
     return None
+
+
+def _lsof_open_paths(pids, contains: str):
+    """Paths open anywhere in the pid tree whose name contains `contains`."""
+    hits = []
+    for p in pids:
+        try:
+            r = subprocess.run(["lsof", "-p", str(p)], capture_output=True,
+                               timeout=3, text=True)
+        except Exception:
+            continue
+        if r.returncode != 0:
+            continue
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            path = parts[-1] if parts else ""
+            if contains in path:
+                hits.append(path)
+    return hits
+
+
+def _agy_conversation_db(worker: dict):
+    """tab → its agy conversation SQLite, or None.
+
+    The running process holds `presence/<conversation-id>.lock` open, so the id
+    comes straight from the pid tree rather than from guessing by mtime — two
+    agy tabs in the same directory would otherwise collide.
+    """
+    pane = _tmux_pane_pid(worker.get("tmux_name"))
+    if not pane:
+        return None
+    for path in _lsof_open_paths(_pid_tree(pane), "/antigravity-cli/presence/"):
+        conversation_id = os.path.basename(path).removesuffix(".lock")
+        if not conversation_id:
+            continue
+        db = os.path.join(AGY_CONVERSATIONS_DIR, f"{conversation_id}.db")
+        if os.path.exists(db):
+            return db
+    return None
+
+
+def _agy_log_path(worker: dict):
+    """The live process's own log file (it is that process's stdout/stderr)."""
+    pane = _tmux_pane_pid(worker.get("tmux_name"))
+    if not pane:
+        return None
+    for path in _lsof_open_paths(_pid_tree(pane), "/antigravity-cli/log/cli-"):
+        if path.endswith(".log") and os.path.exists(path):
+            return path
+    return None
+
+
+def _agy_last_step(db_path: str):
+    """{'idx', 'status', 'age'} for the newest step, or None.
+
+    Read-only, and the freshness clock comes from the -wal file: the database
+    runs in WAL mode, so the main file's mtime stops moving while a turn writes.
+    """
+    if not db_path or not os.path.exists(db_path):
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1)
+        try:
+            row = con.execute(
+                "SELECT idx, status FROM steps ORDER BY idx DESC LIMIT 1"
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    newest = 0.0
+    for candidate in (db_path + "-wal", db_path):
+        try:
+            newest = max(newest, os.path.getmtime(candidate))
+        except OSError:
+            continue
+    return {"idx": row[0], "status": row[1],
+            "age": max(0.0, time.time() - newest) if newest else None}
+
+
+_AGY_MODEL_RE = re.compile(r'selected model override to backend: label="([^"]+)"')
+
+
+def _parse_agy_model(log_path: str):
+    """Newest model label the process announced, e.g. 'Gemini 3.7 Flash (High)'.
+
+    Reads only the tail: these logs grow steadily and the current selection is
+    re-announced on every model switch.
+    """
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 256 * 1024))
+            text = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    matches = _AGY_MODEL_RE.findall(text)
+    return matches[-1] if matches else None
+
+
+def _split_agy_model_label(label: str):
+    """'Gemini 3.7 Flash (High)' → ('Gemini 3.7 Flash', 'high')."""
+    m = re.match(r"^(.*?)\s*\(([^)]+)\)\s*$", label or "")
+    if m:
+        return m.group(1).strip(), m.group(2).strip().lower()
+    return (label or "").strip(), ""
 
 
 def _cmd_session_uuid(cmd: str):
@@ -202,6 +339,10 @@ def resolve_transcript(worker: dict):
     """
     try:
         kind = _worker_kind(worker.get("cmd", ""))
+        if kind == "agy":
+            # Not a transcript: agy's state lives in a per-conversation SQLite.
+            # Returned through the same slot so the resolve cache applies.
+            return _agy_conversation_db(worker)
         if kind == "codex":
             # codex 持續持有 rollout fd → lsof 直接命中（最可靠）
             pane = _tmux_pane_pid(worker.get("tmux_name"))
@@ -445,6 +586,15 @@ def detect_model_info(worker: dict, transcript_path=None):
     """tab 的 {name, effort, provider}；非 AI tab 或偵測不到回 None。永不拋。"""
     try:
         kind = _worker_kind(worker.get("cmd", ""))
+        if kind == "agy":
+            # The label the running process last announced beats any config
+            # file: it follows /model switches inside the session.
+            log_path = _agy_log_path(worker)
+            label = _parse_agy_model(log_path) if log_path else None
+            if not label:
+                return None
+            name, effort = _split_agy_model_label(label)
+            return {"name": name, "effort": effort, "provider": "agy"}
         if kind == "codex":
             info = _cached_parse(transcript_path, _parse_codex_rollout) if transcript_path else None
             info = info or _cached_parse(CODEX_CONFIG_TOML, _parse_codex_config)
@@ -848,7 +998,7 @@ def compute_state(events, now=None, screen_tail=""):
 
     # No transcript events (or none yet) → drive purely from the screen so a
     # freshly spawned tab that's actually working still shows up instead of
-    # vanishing as 'unknown'. Howard: 新增的 tab 被當沒看到.
+    # vanishing as 'unknown'. 回報：新增的 tab 被當沒看到.
     if not events:
         if menu and not spinner:
             return "decision", {}, "menu (screen only)"
@@ -868,7 +1018,7 @@ def compute_state(events, now=None, screen_tail=""):
     #  • an editable input prompt / rating prompt with NO menu means the TUI is
     #    back to waiting for input → any decision_req still sitting at the tail
     #    of the transcript was already answered or dismissed and must NOT pin
-    #    "等決策" forever (Howard: idle tabs stuck on 等決策 for 3394m/979m, i.e.
+    #    "等決策" forever (回報：idle tabs stuck on 等決策 for 3394m/979m, i.e.
     #    their whole lifetime, because decision_req had no staleness guard the
     #    way pending_tool does).
     if menu and not spinner:
@@ -889,7 +1039,7 @@ def compute_state(events, now=None, screen_tail=""):
     # it's plausibly still running: a tool_call left pending for longer than the
     # stuck threshold with no spinner on screen has almost certainly finished
     # (its tool_result just isn't in our parsed tail) and the turn went idle —
-    # otherwise every such tab shows "working" for hours (Howard: 102m「Running
+    # otherwise every such tab shows "working" for hours (回報：102m「Running
     # open …」on a long-idle tab).
     if pending_tool and (spinner or age is None or age < STUCK_IDLE_S):
         return "working", activity, "tool running"
@@ -948,7 +1098,13 @@ class StatusTracker:
 
     def _debounce(self, sid, state, now):
         """狀態翻轉去抖：decision/stuck 需穩定 ~1.2s（防畫面瞬閃誤觸），
-        其餘需 DONE_QUIET_S。回傳生效狀態。"""
+        其餘需 DONE_QUIET_S。回傳生效狀態。
+
+        ⚠ 已知問題（2026-08-20 發現，尚未修）：候選預設值取 `(state, now)`，
+        於是 `cand != state` 永遠成立不了、pending 從不寫入、`now - first`
+        永遠是 0，導致「已建立狀態 → 新狀態」的轉移不會生效。影響
+        claude/codex，修動核心行為要另開一輪驗證，不在 agy 這批一起改。
+        """
         prev, since = self._last.get(sid, (None, now))
         if state == prev:
             self._pending.pop(sid, None)
@@ -976,9 +1132,67 @@ class StatusTracker:
             pass
         return ret
 
+    def _agy_status(self, sid, worker, now, screen_tail, model):
+        """agy state, straight from its per-conversation SQLite.
+
+        agy has no JSONL transcript, so the event-based state machine has
+        nothing to chew on; the steps table answers the question directly (the
+        newest step sits at AGY_STEP_RUNNING while the agent works). Falls back
+        to the shared screen-only read when the conversation can't be found —
+        a brand-new tab still on the welcome screen has no conversation yet.
+        """
+        db = self._resolve_cached(sid, worker, now)
+        step = _agy_last_step(db) if db else None
+        if not step:
+            state, act, why = compute_state([], now=now, screen_tail=screen_tail)
+            state = self._debounce(sid, state, now)
+            _, since = self._last.get(sid, (state, now))
+            return {"state": state, "dot": DOT.get(state, ""), "activity": act,
+                    "summary": (act.get("verb") if act else "") or state,
+                    "action": "", "narration": "", "task": "",
+                    "elapsed": int(now - since), "why": "agy screen-only: " + why,
+                    "transcript": db, "loop": None, "model": model}
+        # Completion is measured from when this tab was last seen RUNNING, not
+        # from file mtime: a live agy process keeps touching the -wal in the
+        # background (quota refresh and friends), so an idle tab would look
+        # freshly finished forever. It has to be a *window* rather than a
+        # one-shot transition, because _debounce only promotes a state that
+        # holds for DONE_QUIET_S — a single-sample "done" never survives.
+        seen = getattr(self, "_agy_seen", None)
+        if seen is None:
+            seen = self._agy_seen = {}
+        _, _, last_running = seen.get(sid, (None, None, 0.0))
+        if step["status"] == AGY_STEP_RUNNING:
+            last_running = now
+            stalled = step["age"] is not None and step["age"] > STUCK_IDLE_S
+            state = "stuck" if stalled else "working"
+            why = f"agy step {step['idx']} running" + (" (no writes)" if stalled else "")
+        elif last_running and now - last_running <= AGY_DONE_WINDOW_S:
+            state, why = "done", f"agy step {step['idx']} just finished"
+        else:
+            state, why = "idle", f"agy step {step['idx']} settled"
+        seen[sid] = (step["idx"], step["status"], last_running)
+        # No _debounce here on purpose: that guard exists to swallow flicker in
+        # screen-scraped signals, and this state comes from a committed SQLite
+        # row — it doesn't bounce. (It also currently never promotes a changed
+        # state; see the note in _debounce.)
+        prev_state, since = self._last.get(sid, (None, now))
+        if state != prev_state:
+            since = now
+            self._last[sid] = (state, now)
+        return {"state": state, "dot": DOT.get(state, ""), "activity": None,
+                "summary": state, "action": "", "narration": "", "task": "",
+                "elapsed": int(now - since), "why": why,
+                "transcript": db, "loop": None, "model": model}
+
     def _status_for_impl(self, sid, worker, screen_tail="", now=None):
         now = now or time.time()
         try:
+            if _worker_kind(worker.get("cmd", "")) == "agy":
+                return self._agy_status(
+                    sid, worker, now, screen_tail,
+                    detect_model_info(worker),
+                )
             path = self._resolve_cached(sid, worker, now)
             model = detect_model_info(worker, path if (path and os.path.exists(path)) else None)
             if not path or not os.path.exists(path):

@@ -24,7 +24,7 @@ PTY (main.py Session)  ──evaluate_js 推 bytes──▶  webview xterm.js (w
 
 **關鍵結論**：
 - 「**在不在動（藍燈）其實已是自動偵測**」（Path A+B），不靠自報也會亮藍。
-- **真正不穩的是「語意靜止態」**——綠(done)/紅(decision)/黃(stuck) 完全靠 agent 自印 `[[SF:...]]`。reuse tab 多輪後 agent 忘記印 → 燈卡在藍、或停在上一輪的綠。這正是 Howard 講的痛點。
+- **真正不穩的是「語意靜止態」**——綠(done)/紅(decision)/黃(stuck) 完全靠 agent 自印 `[[SF:...]]`。reuse tab 多輪後 agent 忘記印 → 燈卡在藍、或停在上一輪的綠。這正是 使用者講的痛點。
 - 瀏覽器端**沒有檔案系統權限**，讀不到 transcript。→ **要用 transcript 偵測，邏輯必須搬到 main.py server 端**，算好狀態再推回 webview。這是本方案的核心架構決策。
 
 ---
@@ -102,7 +102,7 @@ cwd 多半 = `$HOME`，slug `-Users-neux` 被所有 home-cwd 的 claude tab 共�
 - `DONE_QUIET_S=3`：turn_end 後安定 3s 才報 done（避免下一輪馬上又動造成綠→藍閃爍）。
 - `STUCK_TOOL_S=90`：長命令容忍 90s（配合 spinner：有 spinner 永遠 working，不誤判 stuck）。
 - `STUCK_IDLE_S=45`：turn 未結束又全無活動的保守 stuck 門檻。
-- **dot 翻轉去抖**：working↔done 需穩定 2 個取樣（~0.8s）才翻；decision/stuck 立即浮現（要 Howard 注意）。
+- **dot 翻轉去抖**：working↔done 需穩定 2 個取樣（~0.8s）才翻；decision/stuck 立即浮現（要 使用者 注意）。
 
 ### 4.3 POC 實測（真實 log，§見終端輸出）
 
@@ -157,12 +157,12 @@ main.py server 端每 ~500ms 算好各 tab 的 `{state, dot, activity, task}`，
 
 **建議改法（降為輔助，不全移除）**：
 - **移除** `[[SF:WORKING]]` / `[[SF:GREEN]]` 的「義務自報」——working/done 改由偵測自動判定，agent 不需印。
-- **保留**但改為「可選」：`[[SF:RED]]`（需決策）與 `[[SF:YELLOW:原因]]`（卡住等外部條件）——這兩個是 agent **才知道的語意**（例如「在等 Howard 回 LINE」偵測看不出來），保留讓 agent 主動標記 + 觸發 bridge 推播。但燈號顏色以偵測為主，自報只在偵測沒抓到時補。
+- **保留**但改為「可選」：`[[SF:RED]]`（需決策）與 `[[SF:YELLOW:原因]]`（卡住等外部條件）——這兩個是 agent **才知道的語意**（例如「在等 使用者 回 LINE」偵測看不出來），保留讓 agent 主動標記 + 觸發 bridge 推播。但燈號顏色以偵測為主，自報只在偵測沒抓到時補。
 - 新文字草案（取代 L93–102）：
   > **Tab status is auto-detected** from your activity (tool calls, turn boundaries) — you do NOT need to print `[[SF:WORKING]]` or `[[SF:GREEN]]`; the cockpit infers working/done automatically.
-  > Only when you are **blocked on an external condition** the cockpit cannot see (waiting on a person/another team/an external event), print one line `[[SF:YELLOW:one-line reason]]`; and when you need **Howard's decision**, print `[[SF:RED]]` followed by a numbered menu. These are optional hints, not status reporting.
+  > Only when you are **blocked on an external condition** the cockpit cannot see (waiting on a person/another team/an external event), print one line `[[SF:YELLOW:one-line reason]]`; and when you need **the user's decision**, print `[[SF:RED]]` followed by a numbered menu. These are optional hints, not status reporting.
 
-> ⚠️ 此為「大改方向 + 動正式檔」，**報告先給 Howard review，核可後才改 INIT_PROMPT.md / main.py**。
+> ⚠️ 此為「大改方向 + 動正式檔」，**報告先給 維護者 review，核可後才改 INIT_PROMPT.md / main.py**。
 
 ---
 
@@ -182,7 +182,7 @@ main.py server 端每 ~500ms 算好各 tab 的 `{state, dot, activity, task}`，
 - **feature flag**：server 偵測用設定開關，可一鍵關回現狀。
 - **回滾**：本分支獨立，未動 main；棄用直接切回 main 分支即可。
 - **效能**：transcript 只 seek 檔尾增量讀、500ms 一次、active tab 才掃，成本可忽略。
-- **版號**：不自行 bump，等 Howard 主導。
+- **版號**：不自行 bump，等 維護者主導。
 
 ---
 
@@ -192,7 +192,7 @@ main.py server 端每 ~500ms 算好各 tab 的 `{state, dot, activity, task}`，
 2. 架構必走 **server 端偵測 → 推 webview**（瀏覽器讀不到 transcript）。
 3. tab 對應：claude 建議 `--session-id`、codex 用 lsof，皆已實測。
 
-**需 Howard 拍板**：
+**需維護者拍板**：
 - (a) 是否採「transcript 為主 + pyte 補強」這條主線？
 - (b) claude 是否接受加 `--session-id` spawn 參數（換取確定性對應）？
 - (c) 自報規則降級方案（§6）是否照走（移除 WORKING/GREEN 義務、保留 RED/YELLOW 可選）？

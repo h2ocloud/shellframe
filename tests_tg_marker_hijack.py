@@ -8,7 +8,7 @@
 bash here-string、git conflict、diff 輸出——agent 畫面上極常見），整個 buffer
 就只剩那一小段，`[[TG_REPLY_…]]` 區塊被完全抹除。
 
-Howard 親自實測的輸入（本檔 test_howard_repro 用的就是這一組）：
+實機實測的輸入（本檔 test_marker_repro 用的就是這一組）：
     ">>> some python repl\\nprint(1)\\n<<<\\n[[TG_REPLY_ab]]真正的回覆[[/TG_REPLY_ab]]"
 修前輸出：'print(1)'      ← 回覆與 marker 全被丟棄
 修後：整段保留，_pick_marker_reply 抽得到「真正的回覆」
@@ -27,7 +27,7 @@ _spec = importlib.util.spec_from_file_location(
     "bt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge_telegram.py"))
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
-# 測試不要污染 production 的 /tmp/shellframe_bridge.log（Howard 靠它除錯）
+# 測試不要污染 production 的 /tmp/shellframe_bridge.log（使用者靠它除錯）
 _bt._blog = lambda msg: None
 
 
@@ -51,8 +51,8 @@ def _bridge():
     return br
 
 
-# ── 1. Howard 的實測輸入：marker 區塊必須存活 ──
-def test_howard_repro():
+# ── 1. 實機實測的輸入：marker 區塊必須存活 ──
+def test_marker_repro():
     raw = ("some python repl\n>>> print(1)\n<<<\n"
            "[[TG_REPLY_ab]]真正的回覆[[/TG_REPLY_ab]]")
     out = _bt.strip_ansi(raw, sent_texts=[])

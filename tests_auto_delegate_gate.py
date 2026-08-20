@@ -3,7 +3,7 @@
 
 修前：`auto_delegate_enabled` 沒有任何後端 consumer（死開關），而派工協調
 指令藏在 DEFAULT_TG_PROMPT 的「Default coordination」段落，每回合照灌——
-Howard:「自動派工關掉 shellframe 還是會派工」。修後：TG prompt 協調段落與
+回報：「自動派工關掉 shellframe 還是會派工」。修後：TG prompt 協調段落與
 master per-turn preamble（含自訂文字）都受開關管。
 
 跑法：

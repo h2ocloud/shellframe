@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """封鎖 bot 的收件人不得害其他人被無限重送（v0.29.36）。
 
-2026-08-19 Howard「對話1跳針」：兩個 chat 封鎖了 bot（403 bot was blocked
+2026-08-19 回報「對話1跳針」：兩個 chat 封鎖了 bot（403 bot was blocked
 by the user），舊版 flush 一律「任一失敗＝整批 FAILED」→ 內容不進去重集合
-→ 下一輪重抽重送 → Howard（唯一收得到的人）每輪都再收一次同樣內容，還附帶
+→ 下一輪重抽重送 → 唯一收得到的人每輪都再收一次同樣內容，還附帶
 一則「送出失敗」警告。
 
 修法：逐收件人判定——any_ok / retryable_fail / permanent(403…)。
@@ -21,7 +21,7 @@ _spec = importlib.util.spec_from_file_location(
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
 
-# 測試不得寫進 production 的 bridge log（Howard 靠那份 log 除錯）
+# 測試不得寫進 production 的 bridge log（使用者靠那份 log 除錯）
 _bt._blog = lambda msg: None
 
 BLOCKED = {"ok": False, "error_code": 403,
@@ -72,7 +72,7 @@ def test_permanent_patterns():
 
 
 # ── 5. 核心回歸：一個封鎖 + 一個正常 → 必須 commit（不重抽、不洗版）──
-#      這條就是 Howard 看到的跳針。用原始碼層級確認 commit 條件正確。
+#      這條就是 使用者看到的跳針。用原始碼層級確認 commit 條件正確。
 def test_commit_condition_source():
     import inspect
     src = inspect.getsource(_bt.TelegramBridge._flush_loop)

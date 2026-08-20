@@ -203,7 +203,7 @@ try:
 finally:
     _os.unlink(_tmp_path)
 
-# ── v0.29.28：badge 判讀修正（Howard 2026-08-06 tab13 顯示 Opus 4.6/xhigh、
+# ── v0.29.28：badge 判讀修正（回報 2026-08-06 tab13 顯示 Opus 4.6/xhigh、
 #    實際 Opus 5/ultracode）──
 
 # a) cmd uuid 抽取（resume 同檔續寫、birth 極舊，nearest-birth 必錯）
@@ -256,6 +256,59 @@ try:
 finally:
     _os.unlink(_asst_path)
 
-_TOTAL = 9 + 17 + 8
+# ── agy（Antigravity CLI）─────────────────────────────────────────────────
+# agy 沒有 JSONL transcript：狀態來自 per-conversation SQLite 的 steps.status，
+# 這裡直接餵 _agy_last_step 的回傳，不碰真實檔案。
+from unittest import mock as _mock
+
+_agy_worker = {"sid": "s1", "cmd": "/Users/x/.local/bin/agy", "cwd": "/tmp",
+               "tmux_name": "sf_s1"}
+
+ok("agy kind 來自 provider registry",
+   ag._worker_kind("/Users/x/.local/bin/agy") == "agy"
+   and ag._worker_kind("agy --model something") == "agy"
+   and ag._worker_kind("bash") == "other")
+
+# 完成從「最後一次看到 RUNNING」起算的窗口，不是檔案 mtime——agy 活著時會一直
+# 碰 -wal。窗口外回 idle。（SQLite 狀態不會瞬閃，所以這條路徑不過 _debounce。）
+_agy_samples = [(0.0, ag.AGY_STEP_RUNNING), (1.0, ag.AGY_STEP_DONE),
+                (5.0, ag.AGY_STEP_DONE), (30.0, ag.AGY_STEP_DONE)]
+_agy_seen = []
+_tracker = ag.StatusTracker()
+_t0 = 1_000_000.0
+for _dt, _status in _agy_samples:
+    with _mock.patch.object(ag.StatusTracker, "_resolve_cached", return_value="/tmp/c.db"), \
+         _mock.patch.object(ag, "detect_model_info", return_value=None), \
+         _mock.patch.object(ag, "_agy_last_step",
+                            return_value={"idx": 3, "status": _status, "age": 0.1}):
+        _agy_seen.append(_tracker.status_for("s1", _agy_worker, screen_tail="",
+                                             now=_t0 + _dt)["state"])
+ok("agy working→done→idle",
+   _agy_seen == ["working", "done", "done", "idle"], str(_agy_seen))
+
+_tracker = ag.StatusTracker()
+with _mock.patch.object(ag.StatusTracker, "_resolve_cached", return_value="/tmp/c.db"), \
+     _mock.patch.object(ag, "detect_model_info", return_value=None), \
+     _mock.patch.object(ag, "_agy_last_step", return_value={
+         "idx": 9, "status": ag.AGY_STEP_RUNNING, "age": ag.STUCK_IDLE_S + 30}):
+    _agy_stuck = _tracker.status_for("s1", _agy_worker, screen_tail="")
+ok("agy 執行中但長時間無寫入 → stuck", _agy_stuck["state"] == "stuck", _agy_stuck["why"])
+
+# 新分頁還停在歡迎畫面時沒有 conversation，要退回 screen-only 而不是消失
+_tracker = ag.StatusTracker()
+with _mock.patch.object(ag.StatusTracker, "_resolve_cached", return_value=None), \
+     _mock.patch.object(ag, "detect_model_info", return_value=None), \
+     _mock.patch.object(ag, "_agy_last_step", return_value=None):
+    _agy_new = _tracker.status_for("s1", _agy_worker, screen_tail="")
+ok("agy 無 conversation → screen-only fallback",
+   _agy_new["why"].startswith("agy screen-only") and _agy_new["transcript"] is None,
+   _agy_new["why"])
+
+ok("agy 模型標籤拆成 name + effort",
+   ag._split_agy_model_label("Gemini 3.7 Flash (High)") == ("Gemini 3.7 Flash", "high")
+   and ag._split_agy_model_label("Claude Sonnet 4.6 (Thinking)") == ("Claude Sonnet 4.6", "thinking")
+   and ag._split_agy_model_label("Some Model") == ("Some Model", ""))
+
+_TOTAL = 9 + 17 + 8 + 5
 print(f"\n=== {_TOTAL - len(fails)}/{_TOTAL} groups PASS ===")
 sys.exit(1 if fails else 0)

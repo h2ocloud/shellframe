@@ -30,7 +30,7 @@ _spec = importlib.util.spec_from_file_location(
     "bt", os.path.join(_HERE, "bridge_telegram.py"))
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
-# 測試不要污染 production 的 /tmp/shellframe_bridge.log（Howard 靠它除錯）
+# 測試不要污染 production 的 /tmp/shellframe_bridge.log（使用者靠它除錯）
 _bt._blog = lambda msg: None
 
 TOKEN = "TG_REPLY_deadbeef"
@@ -341,7 +341,7 @@ if __name__ == "__main__":
 
 
 # ── v0.29.36：唯一收件人封鎖了 bot（永久失敗）→ 必須 commit，不可無限重抽。
-#    這就是 Howard 2026-08-19「對話1跳針」的端對端形狀。
+#    這就是 回報 2026-08-19「對話1跳針」的端對端形狀。
 def test_permanent_failure_commits_and_unroutes():
     br, slot, calls = _run(_BLOCKED)
     assert REPLY in slot.sent_responses, \

@@ -31,7 +31,7 @@ _spec = importlib.util.spec_from_file_location(
     "bt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge_telegram.py"))
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
-# 測試不要污染 production 的 /tmp/shellframe_bridge.log（Howard 靠它除錯）
+# 測試不要污染 production 的 /tmp/shellframe_bridge.log（使用者靠它除錯）
 _bt._blog = lambda msg: None
 
 
@@ -193,7 +193,7 @@ def test_no_flood_on_plain_scrolling_output():
 
 
 def test_tui_shapes_still_forward_once():
-    """Howard 日常在用的 Claude Code TUI 形狀必須維持 1 次——B-1 的修法
+    """日常在用的 Claude Code TUI 形狀必須維持 1 次——B-1 的修法
     不得動到這條已經正確的路徑。"""
     br = _bridge()
     slot = _slot(br)

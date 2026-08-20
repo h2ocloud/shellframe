@@ -244,7 +244,7 @@ class HistoryApiMixin:
         # moment the screen is created, so when the bridge starts feeding
         # mid-conversation the display's top half can be all blanks
         # (cursor lives near the bottom). Without this trim the overlay
-        # opens to a wall of empty space — Howard saw "上面不見了 / 整段
+        # opens to a wall of empty space — the user saw "上面不見了 / 整段
         #空白才出現條目". Internal blank lines (between paragraphs) are
         # preserved; only the top contiguous run is dropped.
         while out and not out[0][0].strip():
@@ -317,7 +317,7 @@ class HistoryApiMixin:
                 # header recurs at unrelated points; the bare anchor match
                 # then dropped EVERYTHING between the first and last
                 # occurrence — nuking the whole conversation and leaving just
-                # the banner (Howard: 上滾只剩 banner、沒對話). Only collapse
+                # the banner (使用者: 上滾只剩 banner、沒對話). Only collapse
                 # when the dropped block's char stream actually re-appears
                 # immediately after l_last, i.e. the same frame really was
                 # re-rendered at a new width.
@@ -359,7 +359,7 @@ class HistoryApiMixin:
         viewport during the current long reply. So when a user's single
         reply ran longer than one screen and they scrolled up to read the
         beginning, the overlay would dutifully show the previous shell
-        prompt / unrelated history — Howard's exact complaint.
+        prompt / unrelated history — the user's exact complaint.
 
         Fix: detect alt-screen via `#{alternate_on}` and switch source.
         pyte's HistoryScreen, fed by the bridge directly from PTY bytes,
@@ -384,10 +384,10 @@ class HistoryApiMixin:
                 _swallow(f"get_clean_history.transcript:{sid}")
             return resp
 
-        # Source order (v0.23.2, Howard 實測後定調)：終端來源優先——那才是
+        # Source order (v0.23.2, 實測後定調)：終端來源優先——那才是
         # 「跟活畫面同一個樣子」（tmux -e 原樣 SGR / pyte 重建），重複問題已由
         # 共用去重管線處理。transcript 渲染（markdown 近似＋工具行）跟 TUI
-        # 讀感差距大（v0.23.0 把它放第一位，Howard：「越差越多」），降級為
+        # 讀感差距大（v0.23.0 把它放第一位，回報：「越差越多」），降級為
         # fallback——只在 pyte 拿不出東西時救場（典型：app 剛重啟、bridge 的
         # pyte 從零開始，而 alt-screen 下 tmux scrollback 又是錯的 buffer）。
 
@@ -489,7 +489,7 @@ class HistoryApiMixin:
         # character stream but split at different points, so the
         # line-level dedup below can't see them. This wrap-invariant
         # pass drops the stale partial frames, keeping the last (current
-        # width) render — Howard's "上滾看到同段落重複 N 次、樣式錯亂".
+        # width) render — the user's "上滾看到同段落重複 N 次、樣式錯亂".
         raw_lines = self._collapse_redraw_frames(raw_lines)
         cleaned = []  # list of (stripped_for_compare, original_for_output)
         for line in raw_lines:
@@ -527,7 +527,7 @@ class HistoryApiMixin:
         #     re-emitted 3+ times in mixed CJK/ASCII content (tables
         #     where every cell is the same date label, audit reports
         #     where a single event line gets re-rendered after each
-        #     status-bar refresh, etc.). Howard's screenshot:
+        #     status-bar refresh, etc.). the user's screenshot:
         #     "Warren 寄 V1.5.1 部版資訊" appears 4× in a row.
         #
         # Two gates so we collapse both without nuking legit user
@@ -557,7 +557,7 @@ class HistoryApiMixin:
         # like "雙語混搭" / "中文動詞句、有立場" used to land on this
         # gate when they appeared in three nearby outline blocks
         # ("英文短句、有電影感", "中文動詞句、有立場", repeated for
-        # each section). Howard saw the "1." / "2." entries vanish
+        # each section). the user saw the "1." / "2." entries vanish
         # from his outline. Keep the gate tight to long redraw
         # strings (audit rows, full sentences); short headings now
         # always pass through.
@@ -812,7 +812,7 @@ class HistoryApiMixin:
         return evs
 
     # Harness 內部訊息（task-notification / system-reminder）以 user 角色寫進
-    # transcript，但活畫面的 TUI 從不原樣顯示它們——overlay 也不該（Howard
+    # transcript，但活畫面的 TUI 從不原樣顯示它們——overlay 也不該（使用者
     # 的「scroll 樣式不同」截圖裡整段 <usage>…</task-notification> 直出）。
     _TASK_NOTIF_RE = re.compile(r"<task-notification>.*?</task-notification>", re.S)
     _TASK_NOTIF_SUMMARY_RE = re.compile(r"<summary>(.*?)</summary>", re.S)
@@ -886,7 +886,7 @@ class HistoryApiMixin:
         R = "\x1b[0m" if ansi else ""
         out = []
         # 連續 tool_call 收合成一行摘要——一次修 bug 動輒 20+ 個工具呼叫，
-        # 逐行列出是工具行牆（Howard 截圖的主要噪音），TUI 讀感也不是那樣。
+        # 逐行列出是工具行牆（使用者 截圖的主要噪音），TUI 讀感也不是那樣。
         pending_tools = []
 
         def _flush_tools():
@@ -956,7 +956,7 @@ class HistoryApiMixin:
           - `summary`: counts + verdict + path to the on-disk dump
           - `missing_from_overlay`: reply lines that don't appear in the
             tmux_cleaned text (these are exactly the "上滾找不到 reply 上半段"
-            cases Howard reported).
+            cases reported).
           - `noise_in_overlay`: overlay lines that don't appear in
             tmux_raw OR last_extracted — these are spurious entries the
             dedup pass left behind.

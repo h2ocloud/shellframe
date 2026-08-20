@@ -25,7 +25,7 @@ _spec = importlib.util.spec_from_file_location(
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
 
-# 測試不得寫進 production 的 bridge log（Howard 靠那份 log 除錯）
+# 測試不得寫進 production 的 bridge log（使用者靠那份 log 除錯）
 _bt._blog = lambda msg: None
 
 # ── 建立最小可用的 TelegramBridge 實例（不啟動執行緒）───────────────────────

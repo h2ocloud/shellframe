@@ -196,7 +196,7 @@ if not (turn_ended and waited >= self._MARKER_FALLBACK_SECS): continue          
 `✻ Waiting for 1 background agent to finish` 期間，Claude Code 的 footer 仍掛著
 `esc to interrupt` → `turn_ended` 恆為 False → 30s fallback **永遠不會觸發**。
 背景 agent 跑 5 分鐘、30 分鐘、數小時，這條路就靜默數小時。
-這正是 Howard 講的「愛回不回」的體感來源。
+這正是 使用者講的「愛回不回」的體感來源。
 
 #### ④ 【高度可能・P1】`pending_raw` 120KB 驅逐掉 marker 區塊
 
@@ -662,7 +662,7 @@ if not reply:
 | Ollama OpenAI 相容層 `190:11434/v1/models` | **HTTP 200** | ✅ 三個端點**全部**講 OpenAI 相容協定 → 探測鏈可以只寫一套 client，不需要 Ollama 專用的 `/api/tags` 轉換（規劃文件 D-3 可簡化） |
 
 **結論**：27B／35B 未拍板 → 設計**不得寫死模型名**；Gateway 不是空殼而是要 key
-→ 401 必須**明講「需要 API key」**，不能當成「沒模型」靜默跳過（否則 Howard 會第二次
+→ 401 必須**明講「需要 API key」**，不能當成「沒模型」靜默跳過（否則 使用者會第二次
 得到「入口不明朗」的錯誤印象）。
 
 ### B1.2 repo 內已有的 LLM 呼叫（直接沿用，不要重造）
@@ -698,13 +698,13 @@ Harness 的 HTTP 層應該是這段的泛化版（多一個 `Authorization` head
 ### B2.1 分級
 
 只給自己用 → 略過對外安全邊界；但**「不要它自己亂動」仍然是硬需求**，
-因為 harness 動的是 Howard 正在用的活分頁。
+因為 harness 動的是 使用者正在用的活分頁。
 
 | 級別 | 值 | 能做 | 不能做 |
 |---|---|---|---|
 | **L0 關閉** | `off` | 什麼都不做。連端點探測都不跑 | 全部 |
 | **L1 觀察** | `observe` | 呼叫模型判讀、寫 `[harness]` log、在側欄／設定頁顯示判讀結果與命中的端點 | **不得**發任何 TG／桌面通知，不得改任何 slot 狀態，不得寫 config |
-| **L2 建議** | `suggest` | L1 全部 ＋ 發通知給 Howard 本人（TG／macOS banner）＋ 在通知上掛 inline 按鈕讓 Howard 一鍵確認執行某個動作 | **不得**在沒有 Howard 點擊的情況下執行任何動作 |
+| **L2 建議** | `suggest` | L1 全部 ＋ 發通知給 擁有者本人（TG／macOS banner）＋ 在通知上掛 inline 按鈕讓 使用者 一鍵確認執行某個動作 | **不得**在沒有 使用者 點擊的情況下執行任何動作 |
 | **L3 協助** | `assist` | L2 全部 ＋ **自動執行白名單內的動作**（見 B2.2） | 白名單以外一律只能建議 |
 
 **預設 `off`**。分級是單調遞增的（L3 ⊃ L2 ⊃ L1），所以 UI 只需要一個下拉，不需要一堆開關。
@@ -719,7 +719,7 @@ Harness 的 HTTP 層應該是這段的泛化版（多一個 `Authorization` head
 | `read_bridge_log(n)` 讀 log 尾段 | 唯讀 |
 | `set_signal(sid, state, reason)` 更新側欄燈號 | 純 UI，下一次真實訊號就覆蓋 |
 | `set_status_detail(sid, text)` 更新側欄細節文字 | 純 UI |
-| `notify_owner(text)` 發通知給 **Howard 本人** 的 chat_id | 收件人只有他自己；等同 L2 已允許的能力 |
+| `notify_owner(text)` 發通知給 **擁有者本人** 的 chat_id | 收件人只有他自己；等同 L2 已允許的能力 |
 | `rescan_marker(sid)` 強制重置 `marker_next_scan_ts` 觸發一次重掃 | 冪等、無副作用、不送出任何東西 |
 
 實作上白名單應是一個模組層 `frozenset` + 一個 dispatch dict，
@@ -731,7 +731,7 @@ Harness 的 HTTP 層應該是這段的泛化版（多一個 `Authorization` head
 |---|---|
 | **改變 AI 對話** | `send_to_session` / 任何 PTY 注入 / `/compact` / `/model` / `/effort` / 回答畫面上的選單或 approval |
 | **生命週期** | `restart` / `reload` / `close_session` / `new_session` / `delegate` / `rename` |
-| **對外通訊** | 送訊給 Howard 本人以外的任何 chat_id、LINE、Email、任何第三方 API |
+| **對外通訊** | 送訊給 擁有者本人以外的任何 chat_id、LINE、Email、任何第三方 API |
 | **檔案／系統** | 檔案寫入、`git`、shell 執行、`launchctl`、安裝／卸載 plugin |
 | **自我提權** | 讀寫 `settings.harness.*`（尤其**不得**改自己的 `level`）、改 `filters.json`、改任何 config |
 
@@ -780,7 +780,7 @@ def harness_level() -> str:
 - 巢狀成一個 `harness` 物件（而非 `harness_level` / `harness_base_url` 一堆平鋪 key）：
   `save_settings` 是整包覆蓋（main.py:2522），巢狀物件讓 `harness_level()` 一次讀完，
   也讓未來加場景不污染頂層命名空間。
-- `base_url` 有值時**刻意不 fallback**：Howard 明確指定了端點卻被悄悄換掉，
+- `base_url` 有值時**刻意不 fallback**：使用者明確指定了端點卻被悄悄換掉，
   比直接報錯更糟（「我以為在用 35B，其實跑 Ollama 的 0.6b」）。
 - `model_prefer` 而非 `model` 白名單：27B/35B 未拍板，偏好字串讓切換不需改程式。
 - `max_calls_per_hour` 是硬煞車，不是建議值。
@@ -1028,7 +1028,7 @@ _flush_loop (0.5s/2s)                 harness worker thread（新增，1 條）
 
 | 風險 | 影響 | 緩解 |
 |---|---|---|
-| 模型判讀出錯，L3 自動做了不該做的事 | 干擾 Howard 的活分頁 | 白名單窮舉（B2.2）＋ dispatch dict 不用 `getattr` ＋ L3 只放行唯讀／純顯示。**最壞情況只是側欄燈號閃錯色** |
+| 模型判讀出錯，L3 自動做了不該做的事 | 干擾 使用者的活分頁 | 白名單窮舉（B2.2）＋ dispatch dict 不用 `getattr` ＋ L3 只放行唯讀／純顯示。**最壞情況只是側欄燈號閃錯色** |
 | 190 記憶體告急（110/121GB），harness 呼叫壓垮 vLLM | 35B crash loop、單字查詞/RAG 全掛（有前科） | 單 worker 序列化 ＋ `max_calls_per_hour=60` ＋ 稀疏觸發（只在異常時）。建議第一版 `model_prefer` 填小模型（如 `gpt-oss:20b`）避免搶 35B 的 GPU |
 | Gateway 之後接好了，探測鏈順序讓它被跳過 | 又回到「入口不明朗」 | Gateway 排第一順位；401 明確回報而非靜默跳過；狀態列常駐顯示實際命中 |
 | `save_settings` 整包覆蓋，舊版 UI 送上來的 settings 會抹掉 `harness` 物件 | 設定莫名消失 | 在 `Api.save_settings`（main.py:2522）加一層「未出現的既知子物件保留」的合併，或至少對 `harness` 特判。這是既有的結構性弱點，順手補 |
@@ -1084,7 +1084,7 @@ _flush_loop (0.5s/2s)                 harness worker thread（新增，1 條）
 | 順序 | 項目 | 為什麼排這裡 | 產出 |
 |---|---|---|---|
 | **1** | A 階段 0：`[marker-miss]` 診斷 | 先量再改。整份 A 的根因排序建立在此之上 | 一行診斷 log |
-| **2** | A 階段 1：P0-1 ～ P0-8 | **這是 Howard 痛點的根治**。tab 11 不回話是 bug 不是缺功能；先修 bug，再談通知 | `reload` 即可驗證 |
+| **2** | A 階段 1：P0-1 ～ P0-8 | **這是 使用者痛點的根治**。tab 11 不回話是 bug 不是缺功能；先修 bug，再談通知 | `reload` 即可驗證 |
 | **3** | A 階段 2：送達回執 | 小、獨立、立即有感；API 路徑已有先例 | 👀 / 🫡 狀態機 |
 | **4** | A 階段 3：長回合心跳 | 依賴 `StatusTracker.last_result`（要動 main.py → `restart`） | 心跳 + `/quiet` |
 | **5** | B 階段 1：端點探測 | 純讀取零風險，先讓「入口明朗」可見；與 A 無依賴，**可與 3/4 平行** | `sfctl harness-status` |

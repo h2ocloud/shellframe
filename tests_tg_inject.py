@@ -22,7 +22,7 @@ _spec = importlib.util.spec_from_file_location(
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
 
-# 測試不得寫進 production 的 bridge log（Howard 靠那份 log 除錯）
+# 測試不得寫進 production 的 bridge log（使用者靠那份 log 除錯）
 _bt._blog = lambda msg: None
 
 BR = object.__new__(_bt.TelegramBridge)
@@ -75,7 +75,7 @@ def test_ambiguous_no_retry():
 # ── 6. v0.29.1：stale PTY ring 不得假 delivered——訊號源改 live screen。
 #      turn 結束後 'esc to interrupt' 殘留在 ring（peek_fn），但現在畫面
 #      （pyte display）乾淨 → 不可回 (True, False)（那會讓真失敗不重試
-#      不通知，Howard 的「/fetch 後訊息送不進去」）。──
+#      不通知，使用者回報的「/fetch 後訊息送不進去」）。──
 def test_stale_ring_not_delivered():
     slot = _slot("...舊輸出 (esc to interrupt) 殘影...")  # ring 有殘影
     # 模擬 live screen（走 _slot_display 的 cache-hit 路徑，免建真 pyte）
@@ -132,7 +132,7 @@ def test_wait_paste_drain_quiet_vs_noisy():
 
 
 # ── 11. v0.29.19：轉發雜訊過濾——marker 行 / 輪換動詞 footer / 標題分隔線
-#      不得混進 TG 訊息（Howard 2026-07-24 截圖回歸）──
+#      不得混進 TG 訊息（回報 2026-07-24 截圖回歸）──
 def test_forward_noise_lines():
     noise = [
         "[[TG_REPLY_8672de59]]",

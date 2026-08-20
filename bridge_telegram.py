@@ -936,7 +936,7 @@ class TelegramBridge(BridgeBase):
 
         # ── Inbound update dispatch queue (v0.29.7) ──
         # _handle_update used to run INLINE in _poll_loop. Two silent-drop
-        # modes followed (Howard:「TG 傳入有時候收不到」)：
+        # modes followed (回報：「TG 傳入有時候收不到」)：
         #   1. slow inline work (voice STT / photo download can take 60s+)
         #      froze getUpdates → watchdog declared the poll wedged →
         #      self-reload killed the in-flight message (offset already saved
@@ -1191,12 +1191,12 @@ class TelegramBridge(BridgeBase):
     def _set_bot_commands(self):
         """Register slash commands with Telegram.
 
-        Order: numbered session switchers FIRST (v0.11.57 — Howard mostly
+        Order: numbered session switchers FIRST (v0.11.57 — the user mostly
         opens the picker to swap sessions, so /1 /2 ... should be the
         thumb-reachable top of the menu). Generic ops follow.
 
         Menu trimmed (v0.11.55): /help, /pause, /resume, /reload removed from
-        the visible menu — Howard reported they cluttered the picker without
+        the visible menu — reported they cluttered the picker without
         being used. Their handlers stay (typed by hand or from old shortcuts
         they still respond), they just aren't suggested.
         """
@@ -1315,10 +1315,10 @@ class TelegramBridge(BridgeBase):
 
     def _signal_desktop_notify(self, slot, state: str, reason: str = ""):
         """Post a macOS banner for an explicit agent signal (GREEN/RED/YELLOW)
-        so Howard doesn't have to watch Telegram — the desktop pops『做完了／
+        so the user doesn't have to watch Telegram — the desktop pops『做完了／
         要我決策／卡住』. Reuses the osascript path from _maybe_notify_completion;
         unlike completion banners this fires even when ShellFrame is frontmost
-        (Howard may be on a different tab) but still respects the
+        (the user may be on a different tab) but still respects the
         completion_notifications toggle. Called once per state transition
         (caller dedups via slot.last_signal). macOS only."""
         if _sys.platform != "darwin":
@@ -1450,7 +1450,7 @@ class TelegramBridge(BridgeBase):
         "CoreServicesUIAgent",      # quarantine / "are you sure you want to open" / auth
         "SecurityAgent",            # admin password / keychain prompts
         "universalAccessAuthWarn",  # Accessibility prompts
-        # UserNotificationCenter deliberately EXCLUDED (Howard 2026-07-06:
+        # UserNotificationCenter deliberately EXCLUDED (回報 2026-07-06:
         # 常收到「popup detected (UserNotificationCenter)」誤報). It owns EVERY
         # macOS notification banner — Slack/Mail/Calendar/etc. — not just TCC
         # dialogs. A transient banner appearing while a session waits fired a
@@ -1634,7 +1634,7 @@ class TelegramBridge(BridgeBase):
                 # 截斷時**保住 start marker**（v0.29.37）。長輸出（研究報告、
                 # 長 build log）會把 buffer 撐到上限，開頭的 [[TG_REPLY_x]]
                 # 被擠出去 → span 永遠配不出來 → 每則回覆都得等 30s fallback
-                # 兜底（Howard「愛回不回」的其中一條），而且每 3s 還要對
+                # 兜底（回報「愛回不回」的其中一條），而且每 3s 還要對
                 # 120KB 白跑一次 strip_ansi（實測 31ms／次，log 中 81% 的
                 # marker-miss 都是 raw=False）。把它接回保留區開頭，span 就
                 # 還能配對——這是效能與功能同一個修法。
@@ -1933,13 +1933,13 @@ class TelegramBridge(BridgeBase):
 
             text = '\n'.join(block_lines)
 
-            # Strip AI echo of username prefix (e.g., "Howard: response" → "response")
+            # Strip AI echo of username prefix (e.g., "Name: response" → "response")
             # Some AI tools mimic the input prefix format in their responses
             for sent in slot.sent_texts:
-                # Extract username prefix pattern from sent text (e.g., "Howard: ")
+                # Extract username prefix pattern from sent text (e.g., "Name: ")
                 m = _USERNAME_PREFIX_RE.match(sent)
                 if m:
-                    prefix = m.group(0)  # "Howard: "
+                    prefix = m.group(0)  # "Name: "
                     if text.startswith(prefix):
                         text = text[len(prefix):]
                         block_lines[0] = block_lines[0][len(prefix):]
@@ -1993,7 +1993,7 @@ class TelegramBridge(BridgeBase):
             # Skip echo of sent text. Three detection modes:
             #   1. reply is entirely nested inside a sent text (nr in ns)
             #   2. sent text starts the reply (ns[:25] in nr) — catches the
-            #      "Howard: xxx" prefix echo
+            #      "the user: xxx" prefix echo
             #   3. reply contains a long contiguous chunk from a sent text
             #      (>= ECHO_CHUNK_MIN chars) — catches preamble drift where
             #      the AI emits "...sfctl restart — full restart for main.py
@@ -2152,7 +2152,7 @@ class TelegramBridge(BridgeBase):
 
     def _is_forward_noise_line(self, s: str) -> bool:
         """轉發前最後防線：marker token 行、turn 結束 footer、含分頁標題的
-        分隔線——這些是畫面 chrome 不是回覆內容（Howard 2026-07-24 截圖：
+        分隔線——這些是畫面 chrome 不是回覆內容（回報 2026-07-24 截圖：
         [[TG_REPLY]]／✳ Cogitated for…／「──── 標題 ──」全混進 TG 訊息）。"""
         s = (s or "").strip()
         if "TG_REPLY_" in s:
@@ -2280,7 +2280,7 @@ class TelegramBridge(BridgeBase):
 
         Broadcasts rather than routing by active tab because a master-delegated
         worker has no active-chat mapping (has_user_msg stays False) — yet its
-        「done / stuck」signal is exactly what Howard wants pushed proactively.
+        「done / stuck」signal is exactly what the user wants pushed proactively.
         Returns new_lines with the raw marker line(s) stripped out."""
         sig_state, sig_reason, kept = self._detect_signal_in_lines(new_lines)
         if sig_state and sig_state != getattr(slot, "last_signal", ""):
@@ -2718,7 +2718,7 @@ class TelegramBridge(BridgeBase):
 
     # 永久性投遞失敗——重試再多次也不會成功（使用者封鎖了 bot、把 bot 踢出
     # 群組、chat 不存在、帳號被停用）。這種收件人**不可以**讓整批判定成失敗，
-    # 否則已經成功收到的人會被無限重送（Howard 2026-08-19「對話1跳針」：兩個
+    # 否則已經成功收到的人會被無限重送（回報 2026-08-19「對話1跳針」：兩個
     # chat 封鎖了 bot → 每輪 flush 都 FAILED → 不進去重 → 重抽重送，但他其實
     # 每次都收到了）。
     _PERMANENT_SEND_RE = re.compile(
@@ -3102,7 +3102,7 @@ class TelegramBridge(BridgeBase):
                         # Drain old content so it won't be re-extracted later
                         # when a TG message arrives. This advances _history_offset
                         # and marks existing AI blocks as "sent".
-                        # Master-delegated workers live here (Howard never DM'd
+                        # Master-delegated workers live here (the maintainer never DM'd
                         # the tab), so this is the ONLY place their [[SF:...]]
                         # signals can be caught — run signal detection on the
                         # drained lines so done/stuck/decision still notifies.
@@ -3142,7 +3142,7 @@ class TelegramBridge(BridgeBase):
                         marked_reply = self._try_marker_extract(slot, now, total)
                         self._perf_end("extract_marker", _t_mk)
                         if not marked_reply:
-                            # FALLBACK（v0.29.15，Howard:「回覆傳不回來、都要自己
+                            # FALLBACK（v0.29.15，回報：「回覆傳不回來、都要自己
                             # fetch」）：模型有時根本沒吐出 [[TG_REPLY]] marker（忘了
                             # 或吐錯），舊版就永遠等一個不會出現的 marker → 無限
                             # 靜默。這裡**不重置 last_output_time**（讓 flush 每
@@ -3192,7 +3192,7 @@ class TelegramBridge(BridgeBase):
                             # P0-3：add() 延到 sendMessage 回 ok:true 之後。
                             dedup_pending = [marked_reply]
                             commit_marker_forwarded = True
-                            # Follow-up 連續訊息（Howard 2026-07-26：「只回一則、
+                            # Follow-up 連續訊息（回報 2026-07-26：「只回一則、
                             # 背景 subagent 完成的訊息漏掉」）：**不再**清掉
                             # expect_marker / markers / has_user_msg——保持 marker
                             # 監聽，AI 之後每包一個新的 [[TG_REPLY]] block（例如
@@ -3235,7 +3235,7 @@ class TelegramBridge(BridgeBase):
                         slot.last_extraction_ts = now
                         # Stash the extracted text for `sfctl history-audit`.
                         # This is the ground-truth "what the AI actually said"
-                        # — anything Howard sees in scroll-up that contradicts
+                        # — anything the user sees in scroll-up that contradicts
                         # this is a buffer-fidelity bug we can now measure.
                         extracted = '\n'.join(new_lines)
                         slot.last_extracted_text = extracted
@@ -3346,7 +3346,7 @@ class TelegramBridge(BridgeBase):
                     # 每個收件人的送訊/送檔各自 try——一個 send 失敗（尤其
                     # v0.29.14 影片走 _send_tg_file：大檔 sendDocument 失敗、
                     # 路徑消失）以前會**衝出 flush 迴圈、靜默殺掉整條 flush
-                    # 執行緒 → 所有分頁停止自動回覆**（Howard 2026-07-14
+                    # 執行緒 → 所有分頁停止自動回覆**（回報 2026-07-14
                     # 「/fetch 後很容易斷、不自動回覆」的根因）。現在只記錄
                     # 跳過，執行緒永不因單次 send 而死。
                     try:
@@ -3609,7 +3609,7 @@ class TelegramBridge(BridgeBase):
             slot.write_fn("\r")
         # 等畫面：可能直接生效，或跳「Change effort level? 1. Yes …」確認。
         # 讀 _live_tail（濾空列取尾端）而非 display[-N:]——pyte 螢幕固定 50 列，
-        # 實際終端較矮時尾端切片全是空白列，確認字串永遠讀不到（Howard
+        # 實際終端較矮時尾端切片全是空白列，確認字串永遠讀不到（使用者
         # 2026-07-27：ultracode 明明套用成功卻回「沒在畫面看到確認」）。
         for _ in range(14):
             time.sleep(0.4)
@@ -4014,7 +4014,7 @@ class TelegramBridge(BridgeBase):
                     backoff = 1.0
             except Exception as e:
                 consecutive_errors += 1
-                # Log every failure (was silent before — Howard reported
+                # Log every failure (was silent before — reported
                 # "feels unstable" with no log evidence to investigate).
                 # Coalesce noisy repeats: log first 3 verbosely, then every
                 # 10th, to avoid drowning the log if the network's truly down.
@@ -4487,7 +4487,7 @@ class TelegramBridge(BridgeBase):
         return text
 
     # Telegram Bot API getFile 只能下載 ≤20MB 的檔案；超過會回 error，
-    # 影片檔常超過 → 舊版靜默丟棄（Howard 2026-07-11「影片檔也掉」）。
+    # 影片檔常超過 → 舊版靜默丟棄（回報 2026-07-11「影片檔也掉」）。
     _TG_GETFILE_MAX = 20 * 1024 * 1024
 
     def _fetch_media(self, media: dict, default_ext: str, chat_id, label: str) -> str:
@@ -4762,7 +4762,7 @@ class TelegramBridge(BridgeBase):
             # v0.29.9：確認改為主動掃 live screen。picker 的確認行是
             # 「⎿ Set model to …」——⎿ 開頭在 _extract_new_text 被過濾，
             # 永遠不會經 flush loop 轉回 TG。舊版設 awaiting_response 乾等，
-            # TG 停在「等分頁回確認…」→ Howard 誤判「選了沒成功」（實測
+            # TG 停在「等分頁回確認…」→ 使用者誤判「選了沒成功」（實測
             # s70 模型其實切換成功、確認只是沒送回手機）。
             def _confirm(slot=slot, chat_id=chat_id, message_id=message_id, choice=choice):
                 for _ in range(12):                     # 最多等 ~6s
@@ -4994,7 +4994,7 @@ class TelegramBridge(BridgeBase):
         has_voice = bool(msg.get("voice"))       # TG voice note (ogg/opus)
         has_audio = bool(msg.get("audio"))       # TG audio file
         # video（壓縮影片）/ video_note（圓形短片）/ animation（GIF/無聲 mp4）
-        # 舊版完全沒處理 → 傳影片直接靜默丟棄（Howard 2026-07-11）。
+        # 舊版完全沒處理 → 傳影片直接靜默丟棄（回報 2026-07-11）。
         has_video = bool(msg.get("video"))
         has_video_note = bool(msg.get("video_note"))
         has_animation = bool(msg.get("animation"))
@@ -5061,7 +5061,7 @@ class TelegramBridge(BridgeBase):
                     else:
                         fwd_text = f"🎙 {refined}"
                     if not voice_apply_gate():
-                        # Apply-gate OFF（Howard 2026-08-08：語音每次都要按 Apply
+                        # Apply-gate OFF（回報 2026-08-08：語音每次都要按 Apply
                         # 很煩）：轉錄完直接把文字當成一般訊息往下走正常轉發路徑
                         # 自動送進 session，不再跳 ✅ Apply。
                         text = fwd_text
@@ -5490,7 +5490,7 @@ class TelegramBridge(BridgeBase):
                         # 不過**不立刻吵**：快回合會在 0.5s poll 間隙就結束、
                         # extraction 又要等 marker（fallback 最長 30s），8s 窗
                         # 內兩個強訊號都抓不到 → 假警報「無法確認」之後回覆
-                        # 才到（Howard 2026-07-24 截圖）。改交給背景延遲判定，
+                        # 才到（回報 2026-07-24 截圖）。改交給背景延遲判定，
                         # 再觀察 45s 有訊號就靜默收工。
                         _blog(f"[send] {slot.sid} delivery UNCONFIRMED (no residue) → deferred verdict\n")
                         defer_unconfirmed = True
@@ -5587,7 +5587,7 @@ class TelegramBridge(BridgeBase):
         v0.29.1 之前這裡用 peek_fn()（最後 ~1KB 原始 PTY bytes）——那是
         「歷史」不是「現在」：turn 結束後的收尾重繪若不足 1KB，舊的
         'esc to interrupt' footer 會殘留在 ring 裡，idle 分頁被 busy guard
-        誤擋最多 120s（Howard:「/fetch 之後訊息送不進去、沒反應」），送達
+        誤擋最多 120s（回報：「/fetch 之後訊息送不進去、沒反應」），送達
         驗證也會拿殘影假 delivered → 真失敗不重試不通知。live pyte screen
         沒有記憶效應，footer 在就是在。取最後 rows 個非空行，避免對話
         內文提到 'esc to interrupt' 造成誤判。無 pyte screen 時（測試
@@ -5610,7 +5610,7 @@ class TelegramBridge(BridgeBase):
         8s 驗證窗有結構性盲區：快回合在兩次 0.5s poll 之間就開始又結束
         （footer 抓不到），而 extraction 走 marker 路徑最長要等 30s 的
         fallback 才會發生 → 假警報「⚠ 無法確認已送進」發完、回覆才進來
-        （Howard 2026-07-24 截圖，HR 分頁連兩天中招）。這裡看到 turn 訊號
+        （回報 2026-07-24 截圖，HR 分頁連兩天中招）。這裡看到 turn 訊號
         或「這次注入之後」的 extraction 就靜默收工；真的全程無聲才警告。"""
         deadline = time.time() + extra_wait
         while time.time() < deadline:
@@ -6068,7 +6068,7 @@ class TelegramBridge(BridgeBase):
                 })
                 return
             slot = self.slots[active_sid]
-            # 狀態感知（v0.29.8，Howard:「等不及去 fetch 結果拿到舊回覆，
+            # 狀態感知（v0.29.8，回報：「等不及去 fetch 結果拿到舊回覆，
             # 會以為訊息沒傳到」）：fetch 讀的是即時畫面，但內容是「上一則
             # 完整回覆」——若新訊息還在排隊或回合進行中，先講清楚，別讓
             # 舊回覆被誤讀成「沒收到新訊息」。
@@ -6089,7 +6089,7 @@ class TelegramBridge(BridgeBase):
                 reply_text = reply_text[:4000] + "\n…(truncated)"
             header = f"📌 {slot.label} (/{slot.index})\n{status}" if status else f"📌 {slot.label} (/{slot.index})"
             msg_text = f"{header}\n\n{reply_text}"
-            # Don't pin (Howard v0.11.58: the pinned banner in chat is noisy
+            # Don't pin (v0.11.58: the pinned banner in chat is noisy
             # and rarely useful — the message itself is enough; user scrolls
             # if they need to find it).
             tg_api(self.config.bot_token, "sendMessage", {

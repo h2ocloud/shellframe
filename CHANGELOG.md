@@ -27,9 +27,30 @@
 - 用量讀數為 stale 時保留「本次失敗原因」：CLI 被移除或登出，不該看起來只是
   一次更新失敗。
 
+- **agy 分頁也有狀態點與模型徽章**。agy 沒有 JSONL transcript，改讀它自己的
+  資料：每個對話是一個 SQLite（`conversations/<id>.db`），`steps` 最後一筆的
+  `status` 就是真相（實測 8＝執行中、3＝完成）；分頁對應靠執行中的 process
+  open 著的 `presence/<id>.lock`（跟 codex 用 lsof 認 rollout 同一手法，兩個
+  同目錄的 agy 分頁才不會互相認錯）。模型徽章取該 process log 最後宣告的
+  `label="Gemini 3.7 Flash (High)"`，會跟著 session 內的 `/model` 切換。
+  - 「剛完成」用**距離最後一次看到執行中**的窗口判定，不用檔案 mtime：agy
+    活著時會持續碰 `-wal`，用 mtime 會讓閒置分頁永遠顯示剛完成。
+  - 還停在歡迎畫面、沒有 conversation 的新分頁會退回共用的 screen-only 判定，
+    不會變成 unknown 而從 feed 消失。
+
 ### Housekeeping
 - `usage_probe.py` 移除範例 docstring 內的個人 email／組織名，改用
   `you@example.com`；一處 migration 註解改成中性描述。
+- **開源可讀性：註解／docstring／文件內的個人識別改為中性稱呼**（維護者、
+  使用者、回報＋日期），涵蓋 34 個檔案。刻意不動三類：`CHANGELOG` 歷史、
+  會注入給 agent 的內容（`INIT_PROMPT.md`、`main.py` 的 preamble 字串）、
+  README 的作者署名。行為零改動，14 套回歸測試全過。
+
+### Known issues
+- `agent_status._debounce()` 的候選預設值取 `(state, now)`，導致 pending 永遠
+  不寫入、`now - first` 恆為 0 → 「已建立狀態 → 新狀態」的轉移不會生效
+  （影響 claude/codex 的狀態點）。已在函式 docstring 標註；修它會改變核心
+  行為，另開一輪驗證處理。agy 的狀態不走這條路徑。
 
 ## v0.29.38 (2026-08-20)
 

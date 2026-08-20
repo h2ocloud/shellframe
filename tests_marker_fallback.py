@@ -2,7 +2,7 @@
 """marker 缺失 fallback 回歸測試（v0.29.15）。
 
 修前：模型沒吐出 [[TG_REPLY]] marker 時，回覆永遠不轉發 → 使用者只能自己
-/fetch（Howard 2026-07-12「回覆傳不回來、像失聯、都要自己 fetch」）。
+/fetch（回報 2026-07-12「回覆傳不回來、像失聯、都要自己 fetch」）。
 修後：turn 結束後仍抓不到 marker，就用 /fetch 那條純文字（_peek_last_response）
 自動轉發，並清掉殘留的 [[TG_REPLY_xxx]] token 與 wrapper 指示回顯。
 

@@ -1,7 +1,7 @@
 # ShellFrame Review Workflow
 
 This is the playbook for triaging incoming PRs, issues, and tracking project
-health (stars, forks). Followed manually by Howard, and by AI sessions when
+health (stars, forks). Followed manually by the maintainer, and by AI sessions when
 asked to "check shellframe inbox" or run on a schedule.
 
 ## Daily / on-demand check
@@ -35,7 +35,7 @@ are new PRs/issues, drop into the per-item review below.
 
 ## PR review checklist
 
-Run for each open PR. Don't merge anything without Howard's explicit approval.
+Run for each open PR. Don't merge anything without the maintainer's explicit approval.
 
 ```bash
 gh pr view <num> --repo h2ocloud/shellframe
@@ -79,8 +79,8 @@ gh pr checks <num> --repo h2ocloud/shellframe
 ### Recommendation categories
 
 - **Approve & merge** — Trivial fixes (typos, docs), small bug fixes
-  with obvious correctness. Howard still gets the final click.
-- **Approve with nits** — Mostly good, a couple of comments. Howard
+  with obvious correctness. the maintainer still gets the final click.
+- **Approve with nits** — Mostly good, a couple of comments. the user
   decides whether to fix in this PR or follow-up.
 - **Request changes** — Substantive issues (correctness, design,
   scope). Leave concrete actionable feedback.
@@ -109,7 +109,7 @@ gh issue view <num> --repo h2ocloud/shellframe
 
 - **bug** — Reproducible, with steps. If reporter didn't include
   reproduction, ask first; don't guess.
-- **feature request** — Evaluate against project scope. Howard's
+- **feature request** — Evaluate against project scope. the user's
   philosophy: build what HE needs, accept community PRs that align,
   don't take on features for hypothetical users.
 - **question** — Answer if quick, otherwise point to README / WINDOWS.md.
@@ -158,7 +158,7 @@ If stars cross thresholds (10, 25, 50, 100), it's a moment to:
 - Add a basic test suite
 - Review CONTRIBUTING.md for clarity
 
-Howard's default: ship freely while small, tighten when there's an audience.
+the maintainer's default: ship freely while small, tighten when there's an audience.
 
 ## When AI sessions run this
 
@@ -185,4 +185,4 @@ If you're a Claude session asked to "check shellframe inbox":
    ```
 4. Update `last_review.json` with the current state so the next run can
    diff against it.
-5. Never merge or close anything without Howard's explicit OK.
+5. Never merge or close anything without the maintainer's explicit OK.

@@ -65,7 +65,7 @@
     box-shadow: 0 0 7px #9ece6a, 0 0 3px #9ece6a;
     opacity: 1;
   }
-  /* 🔴 DECISION — red, urgent fast pulse: needs Howard / master decision */
+  /* 🔴 DECISION — red, urgent fast pulse: needs the user / master decision */
   .busy-dot.sig-decision {
     background: #f7768e;
     box-shadow: 0 0 7px #f7768e, 0 0 3px #f7768e;
@@ -467,7 +467,7 @@
   #sidebar-sessions { flex: 1; overflow-y: auto; overflow-x: hidden;
     container-type: inline-size; container-name: sb; }
   /* 側欄縮窄時，優先保留「命名(label)」，先藏掉重複性高、低識別度的資訊
-     （模型徽章幾乎每列都是 Opus 4.8·xhigh）。Howard 2026-08-05。
+     （模型徽章幾乎每列都是 Opus 4.8·xhigh）。回報 2026-08-05。
      label 本身 flex:1 會自動取回空出來的空間。*/
   @container sb (max-width: 215px) { #sidebar-sessions .sb-item .sb-model { display: none; } }
   @container sb (max-width: 165px) { #sidebar-sessions .sb-item .sb-bridge { display: none; } }
@@ -1232,14 +1232,14 @@
 
     <div class="about-section">
       <h3 data-i18n="author">Author</h3>
-      <p>Howard Wu (<a href="https://github.com/h2ocloud" target="_blank">@h2ocloud</a>)</p>
+      <p>the user Wu (<a href="https://github.com/h2ocloud" target="_blank">@h2ocloud</a>)</p>
     </div>
 
     <div class="about-section">
       <h3 data-i18n="license">License</h3>
       <div class="license-text">MIT License
 
-Copyright (c) 2026 Howard Wu (h2ocloud)
+Copyright (c) 2026 the user Wu (h2ocloud)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -2561,7 +2561,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let _sbDragging = false;
   // 雙擊改名的計時狀態。提到這層共用，讓 mousedown(拖曳)也看得到——
   // 雙擊的第二次按下若手抖幾 px 會被判成拖曳、改名永遠觸發不了
-  // （Howard 2026-08-15：最末端的分頁點兩下都變拖曳）。
+  // （回報 2026-08-15：最末端的分頁點兩下都變拖曳）。
   let _sbLastClickSid = null, _sbLastClickTime = 0;
   const SB_DBLCLICK_MS = 400;
 
@@ -3824,7 +3824,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // Surface the capture source — `pyte (alt-screen)` means we pulled
       // from pyte because the TUI is in alt-screen mode (Claude/Codex);
       // `tmux (normal)` means the pane was on the normal screen so
-      // tmux's scrollback is authoritative. If Howard ever sees the
+      // tmux's scrollback is authoritative. If the user ever sees the
       // wrong content again, the label tells us which buffer lied.
       const sourceTag = source ? ` · source: ${source}` : '';
       hint.textContent = '📜 History (deduped) — scroll to bottom, type, or Esc to return' + sourceTag;
@@ -3843,7 +3843,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // parses the tmux ANSI capture directly (colours included).
       // No padding: the live .term-pane is inset:0 with no padding, so the
       // overlay's xterm must sit flush to the same left edge — any padding
-      // here shows up as a horizontal indent vs the live view (Howard's
+      // here shows up as a horizontal indent vs the live view (the user's
       // "縮排感"). Match the live pane exactly.
       const termHost = document.createElement('div');
       termHost.style.cssText = 'position:absolute;inset:0;overflow:hidden';
@@ -4318,7 +4318,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       //    populates `clipboardData.items` with kind='file' stubs whose
       //    blob.size is 0 — WKWebView doesn't materialize NSPasteboard
       //    file URLs into actual bytes for browser-side reads. v0.11.56
-      //    Howard repro: copied 2 PDFs in Finder, paste produced two
+      //    the user repro: copied 2 PDFs in Finder, paste produced two
       //    0-byte clipboard_*.pdf files because fileBlobs branch
       //    happily wrote the empty data URLs. The osascript-backed
       //    backend reads the real file paths off NSPasteboard and we
@@ -4528,7 +4528,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // save_image IPC → write_input) take well over a second to settle, and
   // WKWebView keeps re-blurring the helper textarea during that window.
   // The old "fire 4 setTimeouts up to 200ms" approach lost the race for
-  // anything heavier than a small text paste — Howard saw "can't even
+  // anything heavier than a small text paste — the user saw "can't even
   // type after pasting a chunk of text or images".
   //
   // New strategy: spin a guard for up to 3 seconds. Every 80ms we check
@@ -6610,7 +6610,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // `await do_update()` here) changed code on disk under the running
         // app every 5 min, then a later reload/restart popped an unexpected
         // "what's new" modal and disrupted the master tab mid-conversation
-        // (Howard 2026-07-09:「會自動更新卡在畫面、TG 收不到」). Now the
+        // (回報 2026-07-09:「會自動更新卡在畫面、TG 收不到」). Now the
         // banner just announces availability; the actual pull + reload/
         // restart only happens when the user clicks it.
         const banner = document.createElement('span');

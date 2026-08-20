@@ -1879,7 +1879,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 compact = " | ".join(line for line in lines if line.strip())
                 # 用 bracketed-paste + 分離 Enter 的可靠提交（_send_text_to_session），
                 # 取代 naive write(text+"\r")——後者在 TUI（總控 mid-turn / 輸入殘留）
-                # 會卡在輸入框沒送出（Howard 2026-06-27 實際踩到）。
+                # 會卡在輸入框沒送出（使用者 2026-06-27 實際踩到）。
                 self._send_text_to_session(target, compact, submit=True)
             self._bridge_send_handoff(text)
         except Exception as e:
@@ -2690,7 +2690,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
     @staticmethod
     def _inject_init_prompt_enabled() -> bool:
-        """首次訊息前置 INIT_PROMPT 的全域開關，預設關（Howard 2026-07-14：
+        """首次訊息前置 INIT_PROMPT 的全域開關，預設關（回報 2026-07-14：
         觸發時機不對、內容已非必要）。只 gate `_init_pending` 的武裝——
         `_should_inject_init` 本身另被 master preamble 與完成通知
         （_arm_awaiting_response）借用為「AI 分頁」判定，不能在那裡關。
@@ -3064,7 +3064,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         # the prompt to it, so INIT_PROMPT is always first and the user's text
         # (and its later bare '\r') flow naturally after.
         #
-        # SLASH COMMANDS ARE NOT A FIRST MESSAGE (Howard: 新分頁打 /model 被
+        # SLASH COMMANDS ARE NOT A FIRST MESSAGE (使用者: 新分頁打 /model 被
         # inject 一大段、指令直接壞掉). A chunk whose line starts with '/' is a
         # CLI command (/model, /compact…) — never spend the init prompt on it.
         # Because input arrives per-keystroke, a lone '/' must also HOLD the
@@ -3103,7 +3103,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
     def get_session_model_info(self, sid: str):
         """Model + thinking effort for a session — TG bridge menu/list uses
-        this to mirror the desktop sidebar badge (Howard 2026-07-06). Returns
+        this to mirror the desktop sidebar badge (the user 2026-07-06). Returns
         {"name","effort","provider"} or None (non-AI tab / not detectable).
         Cheap: agent_status mtime-caches its transcript/settings parses. Uses
         the real session's cwd+session_id so it's per-tab accurate (the same
@@ -4115,7 +4115,7 @@ try {
             pass
 
         # AUTHORITATIVE update signal: git commit SHA, NOT the version.json
-        # semver (Howard 2026-08-03:「版號不能衝突，會讓其他機器檢測不到
+        # semver (使用者 2026-08-03:「版號不能衝突，會讓其他機器檢測不到
         # update」）。並行 session 撞版號時，舊機器看到 remote_v == local_v →
         # 誤判沒更新、永遠不更新。改比對 remote main 的 commit SHA vs 本機
         # HEAD：版號變純顯示，撞號再也不影響偵測。git 不可用時退回 semver。
@@ -4532,7 +4532,7 @@ try {
                 # "exec launcher directly" strategy worked around a stale
                 # bundle-id registration but lost the bundle wrapping, so
                 # the new process showed up as a generic "Python" icon —
-                # Howard saw two Dock entries during restart and couldn't
+                # the user saw two Dock entries during restart and couldn't
                 # tell which was shellframe. With `open -n <path>` the new
                 # instance inherits the clicked app's identity properly.
                 app_path = _find_macos_app_path()
@@ -6210,7 +6210,7 @@ def _move_windows_to_mouse_screen():
     thread — caller wraps in NSOperationQueue.mainQueue() if invoked
     from a non-main context (signal handler etc.).
 
-    Howard's ask: "滑鼠到哪邊，調用快捷鍵就要啟動在那個視窗" — when
+    the user's ask: "滑鼠到哪邊，調用快捷鍵就要啟動在那個視窗" — when
     the user fires the global hotkey, the window should appear on
     whichever monitor the cursor is on, not wherever the window
     happened to be sitting before. NSWindowCollectionBehaviorMoveToActiveSpace
@@ -6272,7 +6272,7 @@ def _summon_self_main_thread():
     end up looping launch attempts in some background scenarios
     (Dock animation, paste-driven app activation, NSWorkspace events
     that fire `open -b` which re-enters _ensure_single_instance which
-    re-sends SIGUSR1, …). Without throttling Howard saw the window
+    re-sends SIGUSR1, …). Without throttling the user saw the window
     "keep popping to the front without me pressing the hotkey". A
     legitimate user click resolves to a single summon; a runaway loop
     only paints once.
@@ -6411,7 +6411,7 @@ def _ensure_single_instance():
     is `org.python.python` (or whatever Python's framework uses), NOT
     `com.h2ocloud.shellframe`. The previous bundle-id lookup never
     matched our own process, never blocked duplicate launches, and
-    Howard kept seeing two-instance TG 409 conflicts. PID file +
+    the user kept seeing two-instance TG 409 conflicts. PID file +
     SIGUSR1 sidesteps the bundle-id resolution entirely.
     """
     if sys.platform == "win32":
@@ -6532,7 +6532,7 @@ def _register_global_hotkey():
                   f"hidden={is_hidden} on_current_space={on_space}",
                   file=sys.stderr)
             # Only treat as "hide" when shellframe is visible in THIS space
-            # AND focused. Howard uses macOS Spaces heavily — if the window
+            # AND focused. the user uses macOS Spaces heavily — if the window
             # is on another space, activating should pull it to the current
             # space (via NSWindowCollectionBehaviorMoveToActiveSpace set at
             # load time), not yank the user across spaces.
@@ -6540,7 +6540,7 @@ def _register_global_hotkey():
                 NSApp.hide_(None)
                 return
             # Summon path. NOT rate-limited — this branch only runs from a
-            # real user keypress (NSEvent local/global monitor), and Howard
+            # real user keypress (NSEvent local/global monitor), and the user
             # legitimately toggles hide→summon faster than the 2s floor.
             # The SIGUSR1 / LaunchServices feedback loop the throttle was
             # meant to break lives in _summon_self_main_thread, which has
@@ -6679,7 +6679,7 @@ def main():
     _ensure_mic_usage_plist()
     # Guard before we allocate anything expensive — if another shellframe
     # is already running, activate it and exit this process. Prevents
-    # double-instance TG bridge 409 conflicts when Howard rapidly toggles
+    # double-instance TG bridge 409 conflicts when the user rapidly toggles
     # via hotkey / Dock click while the previous instance is still winding
     # down.
     _ensure_single_instance()
@@ -6822,7 +6822,7 @@ def main():
         # MoveToActiveSpace so that when the global hotkey activates the
         # app, the window moves to the user's CURRENT space instead of
         # warping the user to whichever space the window happened to be
-        # on. Howard uses Mission Control heavily — the default behaviour
+        # on. the user uses Mission Control heavily — the default behaviour
         # (space-switch to window) breaks flow; "window comes to me"
         # matches his ask ("隨傳隨到").
         try:
@@ -6881,7 +6881,7 @@ def _write_crash_log(exc: BaseException):
             f.write("\n\nRecover with:\n")
             f.write("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash\n")
         print(f"[shellframe] crash log written to {crash_file}", file=sys.stderr)
-        # macOS: surface a dialog so Howard's colleagues see the recovery command
+        # macOS: surface a dialog so the user's colleagues see the recovery command
         if sys.platform == "darwin":
             try:
                 subprocess.run([

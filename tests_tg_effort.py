@@ -102,7 +102,7 @@ def test_apply_claude_confirms():
 
 # ── 5b. v0.29.22 回歸：實際終端比 pyte 50 列矮 → display 尾端是一排空白列、
 #      確認行落在空白列之上——回讀必須先濾空列再取尾端，否則明明套用成功
-#      卻回「沒在畫面看到確認」（Howard 2026-07-27 tab13 ultracode 實案）──
+#      卻回「沒在畫面看到確認」（回報 2026-07-27 tab13 ultracode 實案）──
 def test_apply_claude_readback_blank_tail():
     writes = []
     confirm = ("⎿  Set effort level to ultracode (this session only): "

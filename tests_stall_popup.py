@@ -1,6 +1,6 @@
 """阻擋性彈窗偵測（_detect_blocking_popup）回歸測試（v0.29.4）。
 
-Howard 2026-07-06：常收到「popup detected (UserNotificationCenter)」誤報。
+回報 2026-07-06：常收到「popup detected (UserNotificationCenter)」誤報。
 UserNotificationCenter 擁有所有通知橫幅（非 TCC modal），且橫幅不擋前景——
 移出阻擋清單；並要求命中的視窗有實際尺寸＋非透明，過濾 0x0 / 幽靈系統視窗。
 

@@ -1,6 +1,6 @@
 """TG 指令選單／list 帶模型徽章（v0.29.5）回歸測試。
 
-Howard 2026-07-06：TG 也要像側邊欄顯示每分頁的模型＋思考深度。
+回報 2026-07-06：TG 也要像側邊欄顯示每分頁的模型＋思考深度。
 model 資訊來自 main.py 的 get_session_model_info（callback on_model_info）。
 
 跑法：

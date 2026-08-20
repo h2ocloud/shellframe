@@ -3,7 +3,7 @@
 
 痛點：主 agent 在等背景 sub 時，Claude Code 的 footer 一直掛著
 `esc to interrupt` → `turn_ended` 恆為 False → 30s fallback 永遠不觸發 →
-背景任務跑 5 分鐘、30 分鐘、數小時，這條路就靜默數小時（Howard 說的
+背景任務跑 5 分鐘、30 分鐘、數小時，這條路就靜默數小時（使用者說的
 「愛回不回」）。心跳補的就是這段。
 
 設計紅線（本檔就是在守它們）：
@@ -27,7 +27,7 @@ _spec = importlib.util.spec_from_file_location(
     "bt", os.path.join(_HERE, "bridge_telegram.py"))
 _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
-# 測試不要污染 production 的 /tmp/shellframe_bridge.log（Howard 靠它除錯）
+# 測試不要污染 production 的 /tmp/shellframe_bridge.log（使用者靠它除錯）
 _bt._blog = lambda msg: None
 BR = _bt.TelegramBridge
 
