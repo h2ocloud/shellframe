@@ -3074,6 +3074,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     setTimeout(() => { if (activeId) fitTerm(activeId); }, 180);
   });
 
+  // AI-CLI registry, filled from the backend (pywebview.api.ai_providers()) so
+  // adding a provider there needs no change in this file. The literals are only
+  // the pre-load fallback. Declared here — ahead of the usage pill, which reads
+  // it while painting during init — so it is never touched inside its TDZ.
+  let AI_PROVIDERS = {};
+  let AI_CLI_TOOLS = new Set(['claude', 'codex', 'sf-codex', 'aider', 'cursor', 'copilot', 'goose', 'gemini']);
+
   // ── Inline usage water-level pill ──
   // Always-on top-bar indicator so the key numbers (5hr + weekly utilisation)
   // are visible at a glance — no need to keep opening the modal. Follows the
@@ -3180,16 +3187,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     _usageIdleTimer = setTimeout(() => { refreshUsageBrief(); }, USAGE_IDLE_POLL_MS);
   }
   // Which provider's water-level a tab maps to. Mirrors the backend
-  // (usage_probe.detect_ai + tab_usage_brief's claude fallback): a codex tab →
-  // codex, everything else (claude tabs and non-AI tabs) → claude.
+  // (usage_probe.detect_ai + tab_usage_brief's claude fallback): match the
+  // tab's command against the registry, and fall back to claude for non-AI
+  // tabs so the indicator still shows something.
   function _usageProviderFor(sid) {
-    const s = sessions[sid];
-    const cmd = (s && s.cmd) || '';
-    const isCodex = cmd.split(/\s+/).some(tok => {
-      const base = tok.split('/').pop().replace(/\.\w+$/, '');
-      return base === 'codex' || base === 'sf-codex';
-    });
-    return isCodex ? 'codex' : 'claude';
+    const tokens = _cmdTokens(sid);
+    for (const [name, spec] of Object.entries(AI_PROVIDERS)) {
+      if ((spec.binaries || []).some(b => tokens.includes(b))) return name;
+    }
+    // Pre-load fallback: recognise codex without the registry, else claude.
+    return tokens.some(t => t === 'codex' || t === 'sf-codex') ? 'codex' : 'claude';
   }
   // Record what the pill is now showing so a same-provider tab switch is a
   // no-op. `ok` = we have a real reading (not 查不到/⚠); only good readings are
@@ -4045,12 +4052,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // ── Detect AI vs plain terminal sessions ──
-  const AI_CLI_TOOLS = new Set(['claude', 'codex', 'aider', 'cursor', 'copilot', 'goose', 'gemini']);
-  function isAiSession(sid) {
+  // AI_PROVIDERS / AI_CLI_TOOLS are declared further up, before the usage pill:
+  // the pill paints during init and reads the registry, and a `let` declared
+  // here would put it in the temporal dead zone at that moment.
+  function _cmdTokens(sid) {
     const s = sessions[sid];
-    if (!s) return false;
-    const tokens = s.cmd.split(/\s+/);
-    return tokens.some(t => AI_CLI_TOOLS.has(t.split('/').pop().replace(/\.\w+$/, '')));
+    if (!s || !s.cmd) return [];
+    return s.cmd.split(/\s+/).map(t => t.split('/').pop().replace(/\.\w+$/, ''));
+  }
+  async function loadAiProviders() {
+    try {
+      const d = JSON.parse(await pywebview.api.ai_providers() || '{}');
+      AI_PROVIDERS = d.providers || {};
+      const binaries = Object.values(AI_PROVIDERS).flatMap(p => p.binaries || []);
+      if (binaries.length) AI_CLI_TOOLS = new Set([...binaries, ...(d.extra || [])]);
+      refreshUsageBrief();          // the pill's provider mapping just widened
+    } catch (_) { /* keep the fallback set */ }
+  }
+  function isAiSession(sid) {
+    return _cmdTokens(sid).some(t => AI_CLI_TOOLS.has(t));
   }
   // Codex's Esc default cancels the agent; user wants Esc to clear the
   // composer instead (matching plain-terminal Ctrl+U semantics).
@@ -7040,6 +7060,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function init() {
     await waitApi();
     await loadConfig();
+    loadAiProviders();          // widens AI-tab / provider detection; not blocking
     // Attach the Enter safety net immediately so it's live before any paste —
     // covers focus-drift cases that don't go through _refocusActive (e.g.
     // WKWebView blurring the textarea after an IME-commit Enter).

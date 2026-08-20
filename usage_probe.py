@@ -1,15 +1,17 @@
 """Per-tab AI usage probe for ShellFrame slash commands (/usage, /水位).
 
-Given a session's launch command, detect whether it runs Claude or Codex and
-fetch that provider's quota water-level using the existing local scripts:
+Detects which AI CLI a session runs (see PROVIDER_SPECS) and reports that
+provider's quota water-level. Each provider is read the cheapest reliable way:
 
-  - Claude: ~/.openclaw/workspace/skills/claude-usage/scripts/fetch_oauth_usage.sh
-            (Keychain OAuth token → api.anthropic.com/api/oauth/usage; no browser)
-  - Codex:  ~/.openclaw/workspace/skills/openai-codex-usage/scripts/codex_usage.py
-            (codex app-server JSONRPC account/rateLimits/read)
+  - Claude: OAuth usage API with the local Keychain token (no browser)
+  - Codex:  local rollout/SQLite snapshot, else app-server JSONRPC
+  - agy:    Antigravity CLI's own `/usage` slash command in print mode (JSON)
 
-Returns a short, friendly text block. Never raises — failures become a friendly
-message so a slash command can't crash a tab.
+Adding another CLI means one PROVIDER_SPECS entry plus two adapters — see
+docs/adding-a-provider.md.
+
+Never raises: failures become a friendly message so a slash command can't
+crash a tab, and every "no data" says *why* rather than guessing a number.
 """
 
 import base64
@@ -32,9 +34,42 @@ from datetime import datetime
 CLAUDE_USAGE_API = "https://api.anthropic.com/api/oauth/usage"
 _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 
-# Providers this module can report a water-level for (mirrors account_manager,
-# kept local so usage_probe stays importable on its own).
-PROVIDERS = ("claude", "codex")
+# ── Provider registry ───────────────────────────────────────────────────────
+# One entry per supported AI CLI. `binaries` are the command names that identify
+# it in a session's launch command; `probe`/`account` are attached at the bottom
+# of this module once the fetchers exist.
+#
+# Adding another CLI should mean adding one entry here plus its two adapters —
+# nothing in main.py or the web UI hard-codes provider names; they read this
+# table (see docs/adding-a-provider.md).
+PROVIDER_SPECS = {
+    "claude": {"label": "Claude Code", "binaries": ("claude",)},
+    "codex": {"label": "Codex", "binaries": ("codex", "sf-codex")},
+    "agy": {"label": "Antigravity", "binaries": ("agy", "antigravity")},
+}
+# Superset of account_manager.PROVIDERS: a provider can report quota without
+# supporting per-account profiles (agy signs in as one Google account).
+PROVIDERS = tuple(PROVIDER_SPECS)
+_BINARY_TO_PROVIDER = {
+    binary: name
+    for name, spec in PROVIDER_SPECS.items()
+    for binary in spec["binaries"]
+}
+
+# Antigravity CLI (`agy`). It keeps no local quota snapshot to read, so the
+# documented route is its own print-mode slash command, which returns
+# structured JSON. Spawning a 140MB Go binary is not free, hence the cache.
+AGY_USAGE_TIMEOUT = 45
+AGY_OK_TTL = 120
+AGY_RETRY_MIN = 20
+# A GUI-launched app usually has a bare PATH, and agy installs into ~/.local/bin.
+AGY_FALLBACK_PATHS = (
+    os.path.expanduser("~/.local/bin/agy"),
+    "/usr/local/bin/agy",
+    "/opt/homebrew/bin/agy",
+)
+AGY_ACCOUNTS_FILE = os.path.expanduser("~/.gemini/google_accounts.json")
+_agy_cache = None            # {"data": …, "ts": …, "last_try": …}
 
 # Older Codex versions logged a `codex.rate_limits` event to this local SQLite
 # log. Keep it as a read-only compatibility fallback; current versions persist
@@ -60,18 +95,35 @@ CODEX_SCRIPT_DIR = os.path.expanduser(
 
 
 def detect_ai(cmd: str):
-    """Return 'claude', 'codex', or None based on a session launch command."""
+    """Return a PROVIDER_SPECS key for a session launch command, else None.
+
+    Matches on the base command name (last path component, extension stripped)
+    so `/usr/local/bin/agy`, `agy.exe` and a bare `agy` all resolve the same.
+    """
     if not cmd:
         return None
     for tok in cmd.split():
         base = tok.split("/")[-1]
         if "." in base:
             base = base.rsplit(".", 1)[0]
-        if base in ("codex", "sf-codex"):
-            return "codex"
-        if base == "claude":
-            return "claude"
+        provider = _BINARY_TO_PROVIDER.get(base)
+        if provider:
+            return provider
     return None
+
+
+def provider_binaries() -> frozenset:
+    """Every command name that identifies a known provider.
+
+    Callers that need "is this an AI CLI?" derive it from here instead of
+    keeping their own list, so a new provider needs no change on their side.
+    """
+    return frozenset(_BINARY_TO_PROVIDER)
+
+
+def provider_labels() -> dict:
+    """{provider key: human label} for UI surfaces."""
+    return {name: spec["label"] for name, spec in PROVIDER_SPECS.items()}
 
 
 def _fmt_epoch(epoch) -> str:
@@ -162,7 +214,7 @@ def _claude_oauth(env=None) -> dict:
 
 
 def _claude_account() -> str:
-    """'howardwu@neux.com.tw · Team（企業·Neux Com）' or '' if unavailable."""
+    """e.g. 'you@example.com · Team（企業·Acme）', or '' if unavailable."""
     email = org = None
     try:
         cj = json.load(open(os.path.expanduser("~/.claude.json")))
@@ -188,7 +240,7 @@ def profile_account(profile: dict | None) -> str:
 
 
 def _codex_account(result_plan=None, home=None) -> str:
-    """'neux.ios@neux.com.tw · Pro（個人）' or '' if unavailable.
+    """e.g. 'you@example.com · Pro（個人）', or '' if unavailable.
 
     Reads ~/.codex/auth.json — the account sf-codex actually runs as.
     """
@@ -787,6 +839,8 @@ def _shape(ai, data, account="") -> dict:
         return out
     if data.get("_stale"):
         out["stale"] = True  # last good reading; this refresh failed (e.g. 429)
+        if data.get("_error_message"):
+            out["error_message"] = data["_error_message"]
     for key, target in (("5hr", "five_hr"), ("week", "week")):
         if key not in data:
             continue
@@ -803,7 +857,183 @@ def _shape(ai, data, account="") -> dict:
             out[target]["window_minutes"] = minutes
     if data.get("_ts"):
         out["snapshot"] = _fmt_epoch(data["_ts"])
+    # Some providers meter several model families against separate budgets
+    # (agy: Gemini vs Claude/GPT). The pill follows the primary one; the rest
+    # travel here so the tooltip and the accounts panel can list them all.
+    if data.get("_groups"):
+        out["groups"] = [
+            {"name": g.get("name", ""), "pct": g.get("used"),
+             "reset": g.get("reset", ""), "window": g.get("window", "")}
+            for g in data["_groups"]
+        ]
     return out
+
+
+def _agy_binary():
+    return shutil.which("agy") or next(
+        (p for p in AGY_FALLBACK_PATHS if os.access(p, os.X_OK)), None
+    )
+
+
+def _agy_account() -> str:
+    """The Google account agy is signed in as, e.g. 'you@example.com'."""
+    try:
+        with open(AGY_ACCOUNTS_FILE) as f:
+            return (json.load(f) or {}).get("active") or ""
+    except Exception:
+        return ""
+
+
+def _agy_cache_state():
+    global _agy_cache
+    if _agy_cache is not None:
+        return _agy_cache
+    _agy_cache = {"data": None, "ts": 0, "last_try": 0}
+    d = _read_cache_file().get("agy") or {}
+    if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
+        _agy_cache["data"] = d["data"]
+        _agy_cache["ts"] = d.get("ts", 0)
+    return _agy_cache
+
+
+def _agy_quota():
+    """Run agy's own /usage slash command in print mode and normalise it.
+
+    Shape of the reply (agy 1.1.16):
+        {"status": "SUCCESS",
+         "command": {"name": "usage", "data": {"groups": [
+             {"name": "Gemini Models",
+              "buckets": [{"window": "weekly", "remaining_fraction": 1.0,
+                           "reset_time": "2026-08-27T08:43:54Z"}]},
+             {"name": "Claude and GPT models", "buckets": [...]}]}}}
+
+    Note `remaining_fraction` counts DOWN from 1.0 while ShellFrame displays
+    utilisation, so it is inverted here. Each group has its own weekly budget;
+    the pill follows the Gemini one (agy's default models) and the rest ride
+    along in `_groups` for the tooltip and the accounts panel.
+    """
+    binary = _agy_binary()
+    if not binary:
+        return {"_error": "not_installed",
+                "_error_message": "找不到 agy（Antigravity CLI）"}
+    try:
+        r = subprocess.run(
+            [binary, "-p", "/usage", "--output-format", "json",
+             "--print-timeout", "30s"],
+            capture_output=True, text=True, timeout=AGY_USAGE_TIMEOUT,
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        return {"_error": "probe_failed",
+                "_error_message": f"agy 用量查詢失敗：{type(e).__name__}"}
+    payload = None
+    for line in reversed((r.stdout or "").strip().splitlines()):
+        try:
+            payload = json.loads(line)
+            break
+        except (TypeError, json.JSONDecodeError):
+            continue
+    if not payload:
+        return {"_error": "probe_failed",
+                "_error_message": "agy 沒有回傳可解析的用量 JSON（可能需要重新登入）"}
+    if str(payload.get("status") or "").upper() not in ("SUCCESS", ""):
+        return {"_error": "auth_required",
+                "_error_message": "agy 查不到用量，請執行 agy 重新登入"}
+
+    groups = ((payload.get("command") or {}).get("data") or {}).get("groups") or []
+    parsed = []
+    for group in groups:
+        for bucket in group.get("buckets") or []:
+            fraction = bucket.get("remaining_fraction")
+            if fraction is None:
+                continue
+            window = str(bucket.get("window") or "")
+            reset_iso = bucket.get("reset_time") or ""
+            parsed.append({
+                "name": group.get("name") or "",
+                "used": round((1 - float(fraction)) * 100),
+                "reset": _fmt_iso(reset_iso),
+                "epoch": _epoch_from_iso(reset_iso),
+                "window": window,
+                "key": "week" if window.startswith("week") else "5hr",
+            })
+    if not parsed:
+        return {"_error": "no_data",
+                "_error_message": "agy 回了用量但沒有任何額度區間"}
+
+    primary = next((g for g in parsed if "gemini" in g["name"].lower()), parsed[0])
+    out = {primary["key"]: (primary["used"], primary["reset"])}
+    _pace_meta(out, primary["key"], primary["epoch"],
+               _WINDOW_MINUTES.get(primary["key"]))
+    out["_groups"] = parsed
+    return out
+
+
+def _fetch_agy():
+    """Cached agy quota: the pill polls, and each probe spawns a Go binary."""
+    now = time.time()
+    cache = _agy_cache_state()
+    if cache["data"] and now - cache["ts"] < AGY_OK_TTL:
+        return dict(cache["data"])
+    if now - cache["last_try"] < AGY_RETRY_MIN:
+        if cache["data"]:
+            return {**cache["data"], "_stale": True}
+        return None
+    cache["last_try"] = now
+    data = _agy_quota()
+    if data and not data.get("_error"):
+        cache["data"] = data
+        cache["ts"] = now
+
+        def _mutate(blob):
+            blob["agy"] = {"data": data, "ts": now}
+        _write_cache_file(_mutate)
+        return data
+    if cache["data"]:
+        # Show the last good reading, but keep *why* this refresh failed: an
+        # uninstalled/logged-out CLI must not look like a plain refresh blip.
+        stale = {**cache["data"], "_stale": True}
+        if data and data.get("_error_message"):
+            stale["_error_message"] = data["_error_message"]
+        return stale
+    return data
+
+
+# ── Per-provider adapters ───────────────────────────────────────────────────
+# Each provider exposes the same two callables so probe_data() stays generic:
+#   probe(env)          -> raw dict / None      (env carries profile overrides)
+#   account(data, env)  -> human label for the signed-in account
+
+
+def _probe_claude(env):
+    # With profile env vars this is a specific account; without them it is the
+    # machine's current login (and shares the cached reading).
+    return _fetch_claude_profile(env) if env else _fetch_claude()
+
+
+def _account_claude(data, env):
+    return _claude_account()
+
+
+def _probe_codex(env):
+    return _fetch_codex(home=(env or {}).get("CODEX_HOME"))
+
+
+def _account_codex(data, env):
+    return _codex_account((data or {}).get("_plan"),
+                          home=(env or {}).get("CODEX_HOME"))
+
+
+def _probe_agy(env):
+    return _fetch_agy()
+
+
+def _account_agy(data, env):
+    return _agy_account()
+
+
+PROVIDER_SPECS["claude"].update(probe=_probe_claude, account=_account_claude)
+PROVIDER_SPECS["codex"].update(probe=_probe_codex, account=_account_codex)
+PROVIDER_SPECS["agy"].update(probe=_probe_agy, account=_account_agy)
 
 
 def probe_data(cmd: str, env=None) -> dict:
@@ -814,17 +1044,11 @@ def probe_data(cmd: str, env=None) -> dict:
     Percentages are *utilisation* (how much is used), matching the /usage modal.
     """
     ai = detect_ai(cmd)
-    if ai is None:
+    spec = PROVIDER_SPECS.get(ai or "")
+    if not spec:
         return {"ai": None, "error": "not_ai"}
-
-    home = (env or {}).get("CODEX_HOME")
-    if ai == "codex":
-        data = _fetch_codex(home=home)
-    else:
-        data = _fetch_claude_profile(env) if env else _fetch_claude()
-    account = (_codex_account(data.get("_plan") if data else None, home=home)
-               if ai == "codex" else _claude_account())
-    return _shape(ai, data, account)
+    data = spec["probe"](env)
+    return _shape(ai, data, spec["account"](data, env))
 
 
 def account_usage(provider: str, env=None, ref: str = "", account: str = "",

@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Features
+- **支援 Antigravity CLI（`agy`）**，並把「再多支援一個 AI CLI」變成一處註冊。
+  - 用量／配速：`agy` 沒有本機額度快照，改跑它自己的 print-mode `/usage`
+    （`--output-format json`）。它回的是**剩餘**比例，UI 顯示的是已用，所以會反轉；
+    只有週窗口，因此膠囊的 `5h` 段自動消失、`wk` + `pc` 照常。額度分兩組
+    （Gemini／Claude+GPT），膠囊跟主要那組、tooltip 與帳號面板列出全部。
+    spawn 一顆大 binary 不便宜，因此有 TTL 120s 快取與 20s 退避。
+  - **Provider registry**：`usage_probe.PROVIDER_SPECS` 成為單一事實來源，
+    `detect_ai()`、`probe_data()`、`main.AI_CLI_TOOLS` 都改由表驅動；前端透過新的
+    `Api.ai_providers()` 取得對應表，不再自己寫死 provider 名稱。新增一個 CLI
+    = 一筆 registry ＋ 兩個 adapter，`main.py` 與 `web/index.html` 都不用動。
+  - `+` 選單多一個 Antigravity preset。預設 preset 的補齊改用 seen-list
+    （`_default_ai_presets_offered`），所以之後追加 provider 時既有安裝會自動拿到
+    新 preset，不必再寫一次 migration；使用者刪掉的 preset 仍然不會被塞回來。
+    preset 指令刻意不寫死模型（各家 CLI 自己記住選擇，寫死很快過期）。
+  - 新增 `docs/adding-a-provider.md`：資料合約、配速 metadata、錯誤要講原因不推估、
+    快取責任、選用的帳號／狀態偵測擴充點、檢查清單。
+
+### Fixes
+- **膠囊初始渲染撞 TDZ**：provider 對應表以 `let` 宣告在膠囊程式碼之後，而膠囊在
+  init 階段就會畫一次 → `Cannot access 'AI_PROVIDERS' before initialization`。
+  宣告移到使用點之前。（UI 截圖驗收時抓到。）
+- 用量讀數為 stale 時保留「本次失敗原因」：CLI 被移除或登出，不該看起來只是
+  一次更新失敗。
+
+### Housekeeping
+- `usage_probe.py` 移除範例 docstring 內的個人 email／組織名，改用
+  `you@example.com`；一處 migration 註解改成中性描述。
+
 ## v0.29.38 (2026-08-20)
 
 ### Performance

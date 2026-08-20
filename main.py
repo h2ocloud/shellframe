@@ -63,7 +63,11 @@ CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
 
 # AI CLI tools that should receive the init prompt.
 # Matched against the base command name (last path component, no extension).
-AI_CLI_TOOLS = {"claude", "codex", "sf-codex", "aider", "cursor", "copilot", "goose", "gemini"}
+# Providers with usage/quota support come from the registry, so adding one there
+# is enough for it to be treated as an AI tab here too; the extras are CLIs we
+# recognise but don't meter.
+OTHER_AI_CLI_TOOLS = {"aider", "cursor", "copilot", "goose", "gemini"}
+AI_CLI_TOOLS = set(usage_probe.provider_binaries()) | OTHER_AI_CLI_TOOLS
 STARTUP_TRUST_AI_TOOLS = {"claude", "codex", "sf-codex"}
 # UI 麥克風錄音注入 AI 分頁時的前置 tag——告訴 AI 這是 STT 逐字稿、要先解析
 # 語意/意圖（辨識誤差、口語贅字）再行動，不要逐字照辦。
@@ -177,6 +181,7 @@ DEFAULT_CONFIG = {
         # which-check at config-build time.
         {"name": "Claude", "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions", "icon": "\U0001F680"},   # 🚀
         {"name": "Codex",  "cmd": SHELLFRAME_CODEX_CMD,  "icon": "\U0001F916"},   # 🤖
+        {"name": "Antigravity", "cmd": "agy", "icon": "\U0001FA90"},              # 🪐
     ],
     "settings": {
         "fontSize": 14,
@@ -333,9 +338,15 @@ def _ensure_plugins_defaults(cfg: dict) -> bool:
     return changed
 
 
+# Presets offered in the "+" menu for supported AI CLIs. Appending an entry
+# here is all a new provider needs: existing installs pick it up on next launch
+# (see the seen-list migration in load_config), and anything the user deleted
+# stays deleted. Commands stay model-agnostic on purpose — every CLI persists
+# its own model choice, and a hard-coded model name goes stale fast.
 _DEFAULT_AI_PRESETS = [
     {"name": "Claude", "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions", "icon": "\U0001F680"},
     {"name": "Codex",  "cmd": SHELLFRAME_CODEX_CMD,  "icon": "\U0001F916"},
+    {"name": "Antigravity", "cmd": "agy", "icon": "\U0001FA90"},   # 🪐
 ]
 
 _AUTONOMOUS_PRESET_CMDS = {
@@ -440,20 +451,26 @@ def load_config():
             cfg = json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
         except Exception:
             return DEFAULT_CONFIG.copy()
-        # One-shot migration for installs that predate the AI-CLI defaults:
-        # if neither Claude nor Codex appears in the user's preset list,
-        # append them so the "+" menu offers them out of the box. Users who
-        # explicitly removed either preset before this migration ran will
-        # get them back once — that's acceptable; deleting them again is
-        # one click and the flag below blocks future re-adds.
-        if not cfg.get("_default_ai_presets_migrated"):
+        # Offer a preset for every supported AI CLI, once each. Tracking which
+        # ones were already offered (rather than a single "migrated" flag) is
+        # what makes supporting another CLI a one-line change: append it to
+        # _DEFAULT_AI_PRESETS and every existing install gains the preset on
+        # next launch, while presets the user deleted stay deleted.
+        offered = set(cfg.get("_default_ai_presets_offered") or [])
+        if not offered and cfg.get("_default_ai_presets_migrated"):
+            offered = {"Claude", "Codex"}      # what the old flag stood for
+        if len(offered) < len(_DEFAULT_AI_PRESETS):
             existing_cmds = {
                 (p.get("cmd") or "").strip() for p in cfg.get("presets", []) or []
             }
             for preset in _DEFAULT_AI_PRESETS:
+                if preset["name"] in offered:
+                    continue
                 if preset["cmd"] not in existing_cmds:
                     cfg.setdefault("presets", []).append(dict(preset))
-            cfg["_default_ai_presets_migrated"] = True
+                offered.add(preset["name"])
+            cfg["_default_ai_presets_offered"] = sorted(offered)
+            cfg["_default_ai_presets_migrated"] = True   # kept for older builds
             try:
                 save_config(cfg)
             except Exception:
@@ -473,10 +490,10 @@ def load_config():
                     save_config(cfg)
                 except Exception:
                     _swallow("load_config:443")
-        # One-shot migration: Howard uses ShellFrame through Telegram and
-        # wants the agents to execute instead of repeatedly asking for tool
-        # approvals. Upgrade the stock Claude/Codex presets only when they
-        # are still the old bare commands.
+        # One-shot migration: ShellFrame is often driven remotely (e.g. through
+        # the Telegram bridge), where an agent stopping to ask for tool approval
+        # just stalls. Upgrade the stock Claude/Codex presets to the
+        # low-friction launchers, but only while they are still bare commands.
         if not cfg.get("_autonomous_ai_presets_v1"):
             changed = False
             for p in cfg.get("presets", []) or []:
@@ -3340,6 +3357,25 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                                "state": self._account_state()[1]}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
+
+    def ai_providers(self) -> str:
+        """The AI-CLI registry, for the web UI.
+
+        The front end derives "is this an AI tab / which provider" from this
+        instead of keeping its own literals, so supporting another CLI needs no
+        change in index.html. `extra` are CLIs recognised without quota support.
+        """
+        try:
+            return json.dumps({
+                "providers": {
+                    name: {"label": spec["label"],
+                           "binaries": list(spec["binaries"])}
+                    for name, spec in usage_probe.PROVIDER_SPECS.items()
+                },
+                "extra": sorted(OTHER_AI_CLI_TOOLS),
+            }, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"providers": {}, "extra": [], "error": str(e)})
 
     def account_usage_all(self, refresh: bool = False) -> str:
         """Every logged-in account's water-level, for the AI accounts panel.

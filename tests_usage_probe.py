@@ -440,6 +440,116 @@ def test_codex_app_server_reports_its_real_window_length():
     assert "5hr" not in out, out
 
 
+AGY_USAGE_JSON = json.dumps({
+    "status": "SUCCESS",
+    "command": {"name": "usage", "data": {"groups": [
+        {"name": "Gemini Models", "buckets": [
+            {"window": "weekly", "remaining_fraction": 0.7,
+             "reset_time": "2026-08-27T08:43:54Z"}]},
+        {"name": "Claude and GPT models", "buckets": [
+            {"window": "weekly", "remaining_fraction": 1.0,
+             "reset_time": "2026-08-27T08:43:54Z"}]},
+    ]}},
+})
+
+
+@contextlib.contextmanager
+def agy_env(clock, stdout=AGY_USAGE_JSON, returncode=0, cache_file=None,
+            binary="/fake/agy"):
+    """agy 用量走 subprocess（agy -p /usage），這裡完全離線 mock 掉。
+
+    也隔離磁碟快取：讀到真實 usage_cache.json 會讓測試看到本機實際讀數。
+    """
+    saved = {k: getattr(U, k) for k in ("time", "_agy_cache", "_USAGE_CACHE_FILE")}
+    tmpdir = None
+    try:
+        if cache_file is None:
+            tmpdir = tempfile.TemporaryDirectory()
+            cache_file = os.path.join(tmpdir.name, "usage_cache.json")
+        U.time = clock.module()
+        U._agy_cache = None
+        U._USAGE_CACHE_FILE = cache_file
+        completed = types.SimpleNamespace(stdout=stdout, stderr="", returncode=returncode)
+        with mock.patch.object(U.shutil, "which", return_value=binary), \
+             mock.patch.object(U.os, "access", return_value=False), \
+             mock.patch.object(U.subprocess, "run", return_value=completed) as run, \
+             mock.patch.object(U, "_agy_account", return_value="you@example.com"):
+            yield run
+    finally:
+        for k, v in saved.items():
+            setattr(U, k, v)
+        if tmpdir:
+            tmpdir.cleanup()
+
+
+def test_agy_usage_inverts_remaining_fraction_and_carries_pace():
+    """agy 回的是「剩餘」比例，UI 顯示的是「已用」——不能直接搬。"""
+    clock = FakeClock()
+    with agy_env(clock):
+        d = U.probe_data("agy --model some-model")
+    assert d["ai"] == "agy" and d["error"] is None, d
+    assert d["week"]["pct"] == 30, d                    # remaining 0.7 → used 30%
+    assert d["week"]["window_minutes"] == 10080, d
+    assert d["week"]["reset_epoch"] == int(
+        U.datetime.fromisoformat("2026-08-27T08:43:54+00:00").timestamp()), d
+    assert d["five_hr"] is None, d                      # agy 只有週窗口
+    assert [g["name"] for g in d["groups"]] == ["Gemini Models", "Claude and GPT models"], d
+
+
+def test_agy_usage_is_cached_so_the_pill_does_not_respawn_the_binary():
+    clock = FakeClock()
+    with agy_env(clock) as run:
+        U.probe_data("agy")
+        assert run.call_count == 1
+        clock.now += 30                                 # AGY_OK_TTL 內
+        d = U.probe_data("agy")
+        assert run.call_count == 1, "TTL 內不該再 spawn 一次 agy"
+        assert d["week"]["pct"] == 30, d
+
+
+def test_agy_missing_binary_says_not_installed():
+    clock = FakeClock()
+    with agy_env(clock, binary=None):
+        d = U.probe_data("agy")
+    assert d["error"] == "not_installed", d
+    assert "agy" in d["error_message"], d
+
+
+def test_agy_stale_reading_still_says_why_the_refresh_failed():
+    """有舊讀數時顯示舊值，但「沒裝／登出」的原因不能被吞掉。"""
+    clock = FakeClock()
+    with tempfile.TemporaryDirectory() as td:
+        cache_file = os.path.join(td, "usage_cache.json")
+        with agy_env(clock, cache_file=cache_file):
+            U.probe_data("agy")                     # 先存一筆好讀數
+        clock.now += 300                            # 出 TTL 與退避窗
+        with agy_env(clock, cache_file=cache_file, binary=None):
+            d = U.probe_data("agy")
+    assert d["stale"] is True and d["week"]["pct"] == 30, d
+    assert "agy" in d.get("error_message", ""), d
+
+
+def test_agy_unparseable_output_reports_reason_not_a_number():
+    clock = FakeClock()
+    with agy_env(clock, stdout="Sign in required\n"):
+        d = U.probe_data("agy")
+    assert d["error"] == "probe_failed", d
+    assert d["week"] is None and d["five_hr"] is None, d
+
+
+def test_provider_registry_drives_detection_and_probing():
+    """追加 provider 只加一筆 registry：detect_ai 與 probe_data 都該跟著走。"""
+    assert set(U.PROVIDERS) == set(U.PROVIDER_SPECS), U.PROVIDERS
+    for name, spec in U.PROVIDER_SPECS.items():
+        assert callable(spec.get("probe")), name
+        assert callable(spec.get("account")), name
+        for binary in spec["binaries"]:
+            assert U.detect_ai(binary) == name, (binary, name)
+            assert U.detect_ai(f"/opt/tools/{binary} --flag x") == name, binary
+    assert "agy" in U.provider_binaries()
+    assert U.provider_labels()["agy"] == "Antigravity"
+
+
 def test_detect_ai():
     assert U.detect_ai("claude --permission-mode x") == "claude"
     assert U.detect_ai("/usr/local/bin/sf-codex resume") == "codex"
