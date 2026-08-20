@@ -66,7 +66,7 @@ class _ScanCounter:
 
 # ── 1. 失敗掃描後：同 gen（沒有新 PTY bytes）不得重掃，即使時間到 ──
 def test_dirty_gate_blocks_rescan_without_new_bytes():
-    slot = _slot("no marker here at all")
+    slot = _slot(START + " 未閉合，配不出 span")  # 含 marker 痕跡才會走到掃描
     with _ScanCounter() as sc:
         assert BR._try_marker_extract(slot, now=1000.0, total=150.0) == ""
         assert sc.count == 1
@@ -80,7 +80,7 @@ def test_dirty_gate_blocks_rescan_without_new_bytes():
 
 # ── 2. 時間到 + 有新 bytes → 允許重掃 ──
 def test_rescan_after_interval_and_new_bytes():
-    slot = _slot("no marker here")
+    slot = _slot(START + " 未閉合，配不出 span")
     with _ScanCounter() as sc:
         BR._try_marker_extract(slot, now=1000.0, total=150.0)
         slot._feed_gen = 2          # 新 PTY chunk

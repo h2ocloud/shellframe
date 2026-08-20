@@ -1629,8 +1629,19 @@ class TelegramBridge(BridgeBase):
             except Exception:
                 pass
             slot.pending_raw += raw_text
-            if len(slot.pending_raw) > 120000:
-                slot.pending_raw = slot.pending_raw[-120000:]
+            if len(slot.pending_raw) > self._PENDING_RAW_MAX:
+                keep = slot.pending_raw[-self._PENDING_RAW_MAX:]
+                # 截斷時**保住 start marker**（v0.29.37）。長輸出（研究報告、
+                # 長 build log）會把 buffer 撐到上限，開頭的 [[TG_REPLY_x]]
+                # 被擠出去 → span 永遠配不出來 → 每則回覆都得等 30s fallback
+                # 兜底（Howard「愛回不回」的其中一條），而且每 3s 還要對
+                # 120KB 白跑一次 strip_ansi（實測 31ms／次，log 中 81% 的
+                # marker-miss 都是 raw=False）。把它接回保留區開頭，span 就
+                # 還能配對——這是效能與功能同一個修法。
+                sm = slot.reply_start_marker
+                if sm and sm not in keep and sm in slot.pending_raw:
+                    keep = sm + "\n" + keep
+                slot.pending_raw = keep
             now_ts = time.time()
             slot.last_output_time = now_ts
             slot.last_chunk_ts = now_ts  # for stall detection (not reset by flush)
@@ -2123,10 +2134,17 @@ class TelegramBridge(BridgeBase):
             return "", has_open
         return candidates[-1], has_open
 
+    # pending_raw 上限。超過就保留尾端（並保住 start marker，見 feed_output）。
+    _PENDING_RAW_MAX = 120000
+
     # Minimum spacing between marker scans for one slot. A scan is a full
     # strip_ansi over pending_raw (≤120KB ≈ 45ms measured) — per-tick (0.5s)
     # rescans burn ~18% CPU per stuck slot (2026-07-06 regression).
     _MARKER_RESCAN_INTERVAL = 3.0
+    # 預檢用的尾端視窗（strip_ansi 16KB 實測 4.2ms，仍比全量 31ms 省 7 倍）
+    _MARKER_PROBE_TAIL = 16384
+    # 預檢確認「marker 真的不在」時的重掃間隔。拉長但不放棄。
+    _MARKER_PROBE_BACKOFF = 15.0
 
     # 串流中（未閉合 start marker）時，最多壓住已完成 block 多久。時鐘從
     # slot.msg_sent_ts 起算，見 _try_marker_extract 的 M-3 註解。
@@ -2159,6 +2177,21 @@ class TelegramBridge(BridgeBase):
         gen = getattr(slot, "_feed_gen", 0)
         if gen == slot.marker_scan_gen:
             return ""
+        # 便宜預檢（v0.29.37）：`_pick_marker_reply` 要對整個 pending_raw 跑
+        # strip_ansi——實測 120KB＝**31ms**，而 log 顯示 81% 的掃描是
+        # `raw=False`（marker 根本不在 buffer）＝31ms 註定白花。這裡先用
+        # str.find 確認 marker 痕跡（實測 0.016ms，快 1900 倍）。
+        # **不直接放棄**：找不到時改用「較長節流」而非跳過，因為 TUI 有機會把
+        # ANSI 插進 marker 中間讓 find 失手——寧可延遲重掃，也不製造新的靜默
+        # 丟訊（那是這個檔案修了一整輪的東西）。marker token 的 `TG_REPLY_`
+        # 前綴夠短，被 ANSI 打斷的機率低。
+        probe = (slot.reply_start_marker or "")[:9]
+        if probe and probe not in slot.pending_raw:
+            tail = slot.pending_raw[-self._MARKER_PROBE_TAIL:]
+            if probe not in strip_ansi(tail, sent_texts=[]):
+                slot.marker_next_scan_ts = now + self._MARKER_PROBE_BACKOFF
+                slot.marker_scan_gen = gen
+                return ""
         reply, has_open = self._pick_marker_reply(slot, allow_inprogress=False)
         miss_reason = ""
         # M-3（SA A5.2 指名）：未閉合 span 的強制等待，時鐘要以「**這則使用者

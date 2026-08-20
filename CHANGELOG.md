@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.29.38 (2026-08-20)
+
+### Performance
+- **marker 掃描是目前唯一的 CPU 熱點，81% 的掃描是註定失敗的白工**。
+  實測現況（14 slots）：`extract_marker` **473ms/60s、每分鐘 115 次、每次
+  4.1ms**——其他所有 phase 加起來才 ~50ms。深挖 production log：
+  **405 筆 `rawlen=120000`**（buffer 幾乎永遠撐滿上限）、
+  **358 筆 `raw=False` vs 83 筆 `raw=True`**——也就是 81% 的掃描在
+  「marker 根本不在 buffer」的情況下，仍對 120KB 跑完整 `strip_ansi`
+  （單獨實測 **31ms**）。三個常用分頁（研究報告 / ShellFrame開發 / 救援總控）
+  都持續踩在這個循環裡。
+  兩個修法（效能與功能同一個根因）：
+  1. **截斷時保住 start marker**：長輸出（研究報告、長 build log）把 buffer
+     撐到上限後，開頭的 `[[TG_REPLY_x]]` 被擠出去 → span 永遠配不出來 →
+     每則回覆都得等 30s fallback 兜底（Howard「愛回不回」的其中一條路徑），
+     而且每次重掃都註定失敗。現在截斷時把 start marker 接回保留區開頭。
+  2. **便宜預檢**：掃描前先用 `str.find` 確認 marker 痕跡（實測 **0.016ms**，
+     比全量掃描快 **1900 倍**）。找不到時**不直接放棄**——改用較長節流
+     （15s）而非跳過，並保留第二層（尾端 16KB 的 `strip_ansi`，4.2ms）作為
+     ANSI 打斷 marker 時的救援，避免為了省 CPU 而製造新的靜默丟訊。
+  回歸測試：新增 `tests_tg_marker_perf.py`（4 案例，含「預檢不得破壞真實抽取」
+  與「ANSI 夾住 marker 仍要救回」）；`tests_tg_marker_throttle.py` 測資更新
+  （原本用無 marker 的字串，現在會被預檢提前攔下，改用未閉合 start marker
+  才測得到節流與 dirty gate）。
+
 ## v0.29.37 (2026-08-20)
 
 ### Features
