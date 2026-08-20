@@ -91,6 +91,36 @@ def _fmt_iso(iso: str) -> str:
         return "?"
 
 
+# Nominal window length per UI key, used when the provider doesn't state one.
+# Pacing needs to know how long the window is: "已用 29%" only becomes "領先 /
+# 落後" once you know how much of the window has already elapsed.
+_WINDOW_MINUTES = {"5hr": 300, "week": 10080}
+
+
+def _epoch_from_iso(iso):
+    if not iso:
+        return None
+    try:
+        return datetime.fromisoformat(iso).timestamp()
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _pace_meta(out, key, reset_epoch=None, window_minutes=None):
+    """Record the reset instant + window length a pace line needs.
+
+    Deliberately kept in side-channel dicts instead of widening the
+    (pct, reset_text) tuples: those are unpacked in a dozen places and are
+    persisted in the on-disk cache, so an entry written by an older build must
+    still load — it simply comes back without pacing metadata.
+    """
+    if reset_epoch:
+        out.setdefault("_reset_epoch", {})[key] = int(reset_epoch)
+    minutes = window_minutes or _WINDOW_MINUTES.get(key)
+    if minutes:
+        out.setdefault("_window_minutes", {})[key] = int(minutes)
+
+
 _ENTERPRISE_PLANS = {"team", "business", "enterprise", "edu"}
 _PLAN_NICE = {
     "team": "Team", "business": "Business", "enterprise": "Enterprise",
@@ -303,12 +333,13 @@ def _fetch_claude(env=None):
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode())
             out = {}
-            fh = data.get("five_hour") or {}
-            if fh.get("utilization") is not None:
-                out["5hr"] = (round(fh["utilization"]), _fmt_iso(fh.get("resets_at", "")))
-            sd = data.get("seven_day") or {}
-            if sd.get("utilization") is not None:
-                out["week"] = (round(sd["utilization"]), _fmt_iso(sd.get("resets_at", "")))
+            for source, key in (("five_hour", "5hr"), ("seven_day", "week")):
+                item = data.get(source) or {}
+                if item.get("utilization") is None:
+                    continue
+                resets_at = item.get("resets_at", "")
+                out[key] = (round(item["utilization"]), _fmt_iso(resets_at))
+                _pace_meta(out, key, _epoch_from_iso(resets_at))
             if out:
                 c["data"] = out
                 c["ts"] = now
@@ -382,7 +413,9 @@ def _fetch_claude_profile(env):
     for source, target in (("five_hour", "5hr"), ("seven_day", "week")):
         item = data.get(source) or {}
         if item.get("utilization") is not None:
-            out[target] = (round(item["utilization"]), _fmt_iso(item.get("resets_at", "")))
+            resets_at = item.get("resets_at", "")
+            out[target] = (round(item["utilization"]), _fmt_iso(resets_at))
+            _pace_meta(out, target, _epoch_from_iso(resets_at))
     return out or None
 
 
@@ -401,12 +434,11 @@ def _fetch_claude_script():
     if not data.get("ok"):
         return None
     out = {}
-    if data.get("five_hour"):
-        fh = data["five_hour"]
-        out["5hr"] = (fh.get("pct", 0), _fmt_iso(fh.get("resets", "")))
-    if data.get("seven_day"):
-        sd = data["seven_day"]
-        out["week"] = (sd.get("pct", 0), _fmt_iso(sd.get("resets", "")))
+    for source, target in (("five_hour", "5hr"), ("seven_day", "week")):
+        item = data.get(source)
+        if item:
+            out[target] = (item.get("pct", 0), _fmt_iso(item.get("resets", "")))
+            _pace_meta(out, target, _epoch_from_iso(item.get("resets", "")))
     return out or None
 
 
@@ -533,9 +565,13 @@ def _fetch_codex_rollout(rollout_glob=None):
         )
         if isinstance(reset, (int, float)):
             reset_text = _fmt_epoch(reset)
+            reset_epoch = reset
         else:
             reset_text = _fmt_iso(reset or "")
+            reset_epoch = _epoch_from_iso(reset or "")
         out[key] = (round(pct), reset_text)
+        _pace_meta(out, key, reset_epoch,
+                   window.get("window_minutes", window.get("windowDurationMins")))
     if not out:
         return None
     out["_plan"] = rate_limits.get("plan_type", rate_limits.get("planType"))
@@ -574,8 +610,12 @@ def _fetch_codex(home=None):
         secondary = rl.get("secondary") or {}
         if primary.get("used_percent") is not None:
             out["5hr"] = (round(primary["used_percent"]), _fmt_epoch(primary.get("reset_at")))
+            _pace_meta(out, "5hr", primary.get("reset_at"),
+                       primary.get("window_minutes"))
         if secondary.get("used_percent") is not None:
             out["week"] = (round(secondary["used_percent"]), _fmt_epoch(secondary.get("reset_at")))
+            _pace_meta(out, "week", secondary.get("reset_at"),
+                       secondary.get("window_minutes"))
         if out:
             out["_plan"] = snap.get("plan_type")
             # Snapshot time = reset_at - reset_after_seconds. The snapshot is only
@@ -710,11 +750,12 @@ def _fetch_codex_app_server(home=None):
             if key is None:
                 continue
             reset = window.get("resetsAt", window.get("resets_at"))
-            reset_text = (
-                _fmt_epoch(reset) if isinstance(reset, (int, float))
-                else _fmt_iso(reset or "")
-            )
+            if isinstance(reset, (int, float)):
+                reset_text, reset_epoch = _fmt_epoch(reset), reset
+            else:
+                reset_text, reset_epoch = _fmt_iso(reset or ""), _epoch_from_iso(reset or "")
             out[key] = (round(pct), reset_text)
+            _pace_meta(out, key, reset_epoch, minutes)
         if not out:
             return None
         out["_plan"] = rate_limits.get("planType", rate_limits.get("plan_type"))
@@ -746,12 +787,20 @@ def _shape(ai, data, account="") -> dict:
         return out
     if data.get("_stale"):
         out["stale"] = True  # last good reading; this refresh failed (e.g. 429)
-    if "5hr" in data:
-        pct, reset = data["5hr"]
-        out["five_hr"] = {"pct": pct, "reset": reset}
-    if "week" in data:
-        pct, reset = data["week"]
-        out["week"] = {"pct": pct, "reset": reset}
+    for key, target in (("5hr", "five_hr"), ("week", "week")):
+        if key not in data:
+            continue
+        pct, reset = data[key]
+        out[target] = {"pct": pct, "reset": reset}
+        # Pacing metadata is optional: entries cached by an older build (or
+        # sources that never reported a reset instant) simply arrive without it
+        # and the UI then shows no pace line rather than guessing one.
+        epoch = (data.get("_reset_epoch") or {}).get(key)
+        minutes = (data.get("_window_minutes") or {}).get(key)
+        if epoch:
+            out[target]["reset_epoch"] = epoch
+        if minutes:
+            out[target]["window_minutes"] = minutes
     if data.get("_ts"):
         out["snapshot"] = _fmt_epoch(data["_ts"])
     return out

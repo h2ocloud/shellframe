@@ -357,6 +357,89 @@ def test_pill_and_panel_caches_coexist_on_disk():
         assert blob["accounts"]["claude:claude-a"]["data"]["5hr"][0] == 18, blob
 
 
+def test_pace_metadata_rides_along_for_claude():
+    """配速要算得出來，就得知道窗口何時重置、窗口多長。"""
+    clock = FakeClock()
+    net = UrlopenMock(payload=GOOD_API_PAYLOAD)
+    with probe_env(clock, net):
+        raw = U._fetch_claude()
+        assert raw["_window_minutes"] == {"5hr": 300, "week": 10080}, raw
+        expected = int(U.datetime.fromisoformat("2026-07-07T09:00:00+08:00").timestamp())
+        assert raw["_reset_epoch"]["week"] == expected, raw
+        d = U.probe_data("claude")
+        assert d["week"]["reset_epoch"] == expected, d
+        assert d["week"]["window_minutes"] == 10080, d
+        assert d["five_hr"]["window_minutes"] == 300, d
+
+
+def test_pace_metadata_survives_the_disk_cache():
+    clock = FakeClock()
+    net = UrlopenMock(payload=GOOD_API_PAYLOAD)
+    with tempfile.TemporaryDirectory() as td:
+        cache_file = os.path.join(td, "usage_cache.json")
+        with probe_env(clock, net, cache_file=cache_file):
+            U._fetch_claude()
+        clock.now += 300
+        with probe_env(clock, net, cache_file=cache_file):   # 模擬重啟
+            d = U.probe_data("claude")
+        assert d["week"]["window_minutes"] == 10080, d
+        assert d["week"]["reset_epoch"], d
+
+
+def test_reading_cached_by_an_older_build_loads_without_pace():
+    """舊版寫的快取沒有配速欄位 → 照常顯示用量，只是沒有配速（不能炸）。"""
+    clock = FakeClock()
+    net = UrlopenMock(error=urllib.error.URLError("down"))
+    with tempfile.TemporaryDirectory() as td:
+        cache_file = os.path.join(td, "usage_cache.json")
+        with open(cache_file, "w") as f:
+            json.dump({"claude": {"data": {"5hr": [18, "07-03 18:00"],
+                                           "week": [20, "07-07 09:00"]},
+                                  "ts": clock.now}}, f)
+        with probe_env(clock, net, cache_file=cache_file):
+            fresh = U.probe_data("claude")            # 還在 TTL 內 → 直接用
+            clock.now += 300                          # 出 TTL，API 又掛 → stale 路徑
+            stale = U.probe_data("claude")
+    for d in (fresh, stale):
+        assert d["week"]["pct"] == 20 and d["five_hr"]["pct"] == 18, d
+        assert "reset_epoch" not in d["week"], d
+        assert "window_minutes" not in d["week"], d
+    assert stale["stale"] is True, stale
+
+
+def test_codex_app_server_reports_its_real_window_length():
+    """Codex Team 的 primary 窗口就是一週（10080 分）——配速得照這個算，
+    不能假設 primary=5h。"""
+    class FakeStdin:
+        def write(self, _):
+            return None
+
+        def flush(self):
+            return None
+
+    class FakeProc:
+        stdin = FakeStdin()
+        stdout = []
+
+        def terminate(self):
+            return None
+
+        def wait(self, timeout=None):
+            return None
+
+    response = {"id": 2, "result": {"rateLimits": {
+        "primary": {"usedPercent": 92, "windowDurationMins": 10080,
+                    "resetsAt": 1787290531},
+        "secondary": None, "planType": "team"}}}
+    with mock.patch.object(U.shutil, "which", return_value="/fake/sf-codex"), \
+         mock.patch.object(U.subprocess, "Popen", return_value=FakeProc()), \
+         mock.patch.object(U, "_read_jsonrpc_response", return_value=response):
+        out = U._fetch_codex_app_server(home="/tmp/profile")
+    assert out["_window_minutes"] == {"week": 10080}, out
+    assert out["_reset_epoch"] == {"week": 1787290531}, out
+    assert "5hr" not in out, out
+
+
 def test_detect_ai():
     assert U.detect_ai("claude --permission-mode x") == "claude"
     assert U.detect_ai("/usr/local/bin/sf-codex resume") == "codex"

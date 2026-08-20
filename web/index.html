@@ -105,6 +105,9 @@
   #usage-brief .ub-v.lvl-ok { color: #9ece6a; }
   #usage-brief .ub-v.lvl-warn { color: #e0af68; }
   #usage-brief .ub-v.lvl-hot { color: #f7768e; }
+  /* Pace: blue = behind the burn-rate line (quota going unused), not a warning */
+  #usage-brief .ub-v.lvl-under { color: #7aa2f7; }
+  #usage-brief .ub-arrow { font-size: 9px; margin-left: 1px; }
   #usage-brief .ub-none { color: #565f89; }
   #usage-brief.stale { opacity: .5; }
 
@@ -130,6 +133,7 @@
   .account-usage .au-v.lvl-ok { color:#9ece6a; }
   .account-usage .au-v.lvl-warn { color:#e0af68; }
   .account-usage .au-v.lvl-hot { color:#f7768e; }
+  .account-usage .au-v.lvl-under { color:#7aa2f7; }
 
   /* ── Image preview ── */
   #image-bar {
@@ -896,6 +900,13 @@
           </div>
         </div>
         <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="usagePaceLabel">Token pacing on the usage pill</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-usage-pace"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="usagePaceHint">Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.</span>
+          </div>
+        </div>
+        <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="injectInitLabel">Init prompt on first message</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch" id="setting-inject-init"></button>
@@ -1486,6 +1497,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       modelBadgeLabel: 'Model badge on sessions (experimental)',
       modelBadgeHint: "Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.",
+      usagePaceLabel: 'Token pacing on the usage pill',
+      usagePaceHint: 'Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.',
       releaseNotesTitle: "What's new",
       releaseNotesGotIt: 'Got it',
     },
@@ -1651,6 +1664,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       loopsEmpty: '目前沒有排程中的對話',
       experimentalLoopsLabel: 'Loops 排程對話面板（實驗性）',
       experimentalLoopsHint: '右側面板收納「有排程的對話」：正在跑 /loop、建了 cron routine、或被 scheduler 啟動的頁籤——顯示下次喚醒倒數與各自在等什麼。預設關閉。',
+      usagePaceLabel: '用量膠囊顯示 token 配速',
+      usagePaceHint: '在 wk 旁邊加一段 pc：把週額度平均攤到整個週期，也就是「今天應該用到幾 %」才會剛好用完。▲ 表示燒太快、▼ 表示額度用不完。滑過膠囊看細節（第幾天／落後或超前幾天的量）。',
       modelBadgeLabel: 'Session 顯示模型標籤（實驗性）',
       modelBadgeHint: '自動偵測每個分頁的模型與 thinking effort（Claude / Codex 都支援），顯示在左側 session 列。偵測屬盡力而為，可能有誤——不想看就在這裡關掉。',
       releaseNotesTitle: '本次更新',
@@ -1763,6 +1778,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     renderPresets();
     micFabSync();
     applyI18n();
+    // The pill may already have painted before settings arrived (it defaults
+    // pacing on), so repaint once we actually know the preference.
+    if (window.refreshUsageBrief) window.refreshUsageBrief();
   }
 
   function applyI18n() {
@@ -3065,6 +3083,71 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (pct >= 60) return 'lvl-warn';
     return 'lvl-ok';
   }
+  // ── Token pacing ──
+  // A weekly quota is only "29% used" in isolation; what you actually want to
+  // know is whether that is ahead of or behind schedule. The window's reset
+  // instant + length give the answer: by the time 2.3 of 7 days have elapsed,
+  // an even burn rate would have consumed 32%. Target is the linear pace line,
+  // diff is how far the real number sits from it (+ = burning too fast,
+  // - = leaving quota on the table, which on a flat-rate plan is also waste).
+  function _usagePace(info) {
+    if (!info || !info.reset_epoch || !info.window_minutes) return null;
+    const totalMs = info.window_minutes * 60 * 1000;
+    const remainingMs = info.reset_epoch * 1000 - Date.now();
+    // Outside the window (a stale reading whose reset already passed, or a
+    // clock/data mismatch) there is no honest pace to show.
+    if (!(totalMs > 0) || remainingMs <= 0 || remainingMs > totalMs) return null;
+    const elapsedMs = totalMs - remainingMs;
+    const target = Math.round((elapsedMs / totalMs) * 100);
+    return {
+      target,
+      diff: Math.round(info.pct - target),
+      elapsedDays: elapsedMs / 86400000,
+      totalDays: totalMs / 86400000,
+      remainingDays: remainingMs / 86400000,
+    };
+  }
+  // Colour by DEVIATION, not by level: the pace number is a target, so green
+  // means "on schedule", amber/red mean burning ahead of it, blue means the
+  // quota is going unused.
+  function _paceLevel(diff) {
+    if (diff >= 25) return 'lvl-hot';
+    if (diff >= 10) return 'lvl-warn';
+    if (diff <= -15) return 'lvl-under';
+    return 'lvl-ok';
+  }
+  function _paceArrow(diff) {
+    if (diff >= 10) return '▲';
+    if (diff <= -15) return '▼';
+    return '';
+  }
+  function _paceEnabled() {
+    // `config` is module-scoped and starts null (get_config is async), so read
+    // it defensively: the pill's first paint can happen before settings land.
+    try {
+      return ((config && config.settings) || {}).usage_pace !== false;  // default on
+    } catch (_) {
+      return true;
+    }
+  }
+  // "落後 2%（約 0.2 天的量）" — expressing the gap in days is what makes it
+  // actionable: 14% behind on a weekly window ≈ a full day of unused quota.
+  function _paceGapText(pace) {
+    if (!pace.diff) return '剛好在配速線上';
+    const days = Math.abs(pace.diff) / 100 * pace.totalDays;
+    const scale = days >= 0.1 ? `，約 ${days.toFixed(1)} 天的量` : '';
+    return `${pace.diff > 0 ? '超前' : '落後'} ${Math.abs(pace.diff)}%${scale}`;
+  }
+  function _paceTooltipLines(pace, pct) {
+    return [
+      `配速：週期第 ${pace.elapsedDays.toFixed(1)}／${Math.round(pace.totalDays)} 天`
+      + ` → 今天應累積 ${pace.target}%`,
+      `目前 ${pct}%（${_paceGapText(pace)}）`,
+      pace.diff >= 10
+        ? `照這個速度會在重置前用完（剩 ${pace.remainingDays.toFixed(1)} 天）`
+        : pace.diff <= -15 ? '額度用不完，可以放心多用' : '',
+    ].filter(Boolean);
+  }
   // Render a muted placeholder instead of vanishing: a usage pill that
   // disappears whenever a probe fails looks like a bug and loses its slot in
   // the top bar. Keep the pill present, say "查不到", and stay clickable so the
@@ -3189,13 +3272,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         ? `<span class="ub-seg"><span class="ub-k">${label}</span>` +
           `<span class="ub-v ${_usageLevel(info.pct)}">${info.pct}%</span></span>`
         : '';
+      // Pace rides next to wk: the weekly window is the one worth pacing (the
+      // 5h window refills too often for "am I on track" to mean anything).
+      const pace = _paceEnabled() ? _usagePace(d.week) : null;
+      const paceSeg = pace
+        ? `<span class="ub-seg"><span class="ub-k">pc</span>` +
+          `<span class="ub-v ${_paceLevel(pace.diff)}">${pace.target}%` +
+          `<span class="ub-arrow">${_paceArrow(pace.diff)}</span></span></span>`
+        : '';
       el.innerHTML = (d.stale ? '<span class="ub-seg ub-none">⚠</span>' : '') +
-        [seg('5h', d.five_hr), seg('wk', d.week)].filter(Boolean).join('');
+        [seg('5h', d.five_hr), seg('wk', d.week), paceSeg].filter(Boolean).join('');
       const tip = [];
       if (d.stale) tip.push('⚠ 本次更新失敗，顯示上次資料');
       if (d.account) tip.push(d.account);
       if (d.five_hr) tip.push(`5hr 已用 ${d.five_hr.pct}%・重置 ${d.five_hr.reset}`);
       if (d.week) tip.push(`本週已用 ${d.week.pct}%・重置 ${d.week.reset}`);
+      if (pace) tip.push(..._paceTooltipLines(pace, d.week.pct));
       if (d.snapshot) tip.push(`快照 ${d.snapshot}`);
       el.title = tip.join('\n') || 'AI 用量水位 — 點擊看細節';
       el.classList.toggle('stale', !!d.stale);
@@ -3269,6 +3361,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       return `<span class="au-bad">⚠ ${esc(why)}</span>`;
     }
     const parts = [seg('5h', u.five_hr), seg('7d', u.week)];
+    // Same pace line as the pill, but with room to spell the gap out.
+    const pace = _paceEnabled() ? _usagePace(u.week) : null;
+    if (pace) {
+      parts.push(`<span class="au-seg"><span class="au-k">配速</span>` +
+        `<span class="au-v ${_paceLevel(pace.diff)}">${pace.target}%</span>` +
+        `<span class="au-reset">${esc(_paceGapText(pace))}</span></span>`);
+    }
     if (u.stale) {
       parts.push(`<span class="au-bad">⚠ ${esc(u.error_message || '本次更新失敗，顯示上次資料')}` +
         `${u.checked ? `（${esc(_shortWhen(u.checked))}）` : ''}</span>`);
@@ -3309,6 +3408,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _accountPanelEl.innerHTML = `<div class="modal" style="width:570px;max-width:94vw"><h2>AI 帳號</h2>` +
         `<div class="account-panel-note">切換「目前 Session」只重啟這個 tab；其他 tab 不動。切換「下一個 Session」只影響之後新開的 tab。</div>` +
         `<div id="account-panel-body"></div><div class="modal-footer"><span id="account-panel-status" style="color:#e0af68;font-size:11px"></span>` +
+        `<button class="btn btn-ghost" id="account-pace-toggle" data-account-action="pace"></button>` +
         `<button class="btn btn-ghost" data-account-action="usage">重新查用量</button>` +
         `<button class="btn btn-ghost" data-account-action="close">關閉</button></div></div>`;
       document.body.appendChild(_accountPanelEl);
@@ -3331,6 +3431,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             if (status) status.textContent = '用量已更新';
             return;
           }
+          // Second entry point for the pacing switch: the pill is where you
+          // notice it, so turning it off right here beats digging through 設定.
+          if (action === 'pace') {
+            await saveUsagePaceEnabled(!_paceEnabled());
+            if (status) status.textContent = _paceEnabled() ? '配速已開啟' : '配速已關閉';
+            return;
+          }
           if (action === 'session') raw = await pywebview.api.account_switch_session(activeId || '', provider, ref);
           else if (action === 'global') raw = await pywebview.api.account_switch_global(provider, ref);
           else if (action === 'login') raw = await pywebview.api.account_login_start(provider);
@@ -3349,6 +3456,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const body = _accountPanelEl.querySelector('#account-panel-body');
     const status = _accountPanelEl.querySelector('#account-panel-status');
     if (status) status.textContent = '';
+    const paceButton = _accountPanelEl.querySelector('#account-pace-toggle');
+    if (paceButton) paceButton.textContent = `配速 ${_paceEnabled() ? '開' : '關'}`;
     try {
       const state = JSON.parse(await pywebview.api.account_state(activeId || '') || '{}');
       const providers = state.providers || {};
@@ -3366,6 +3475,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     showAccountPanel();
   });
   window.refreshUsageBrief = refreshUsageBrief;
+  // Exposed like the refresh helpers above: lets the pace switch be driven from
+  // the console / a UI test without going through the settings modal.
+  window.saveUsagePaceEnabled = saveUsagePaceEnabled;
   window.refreshUsageBriefThrottled = refreshUsageBriefThrottled;
   window.refreshUsageBriefAfterTurn = refreshUsageBriefAfterTurn;
   window.onActiveTabChangedForUsage = onActiveTabChangedForUsage;
@@ -4629,6 +4741,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-model-badge').classList.toggle(
       'on', s.show_model_badge !== false,
     );
+    document.getElementById('setting-usage-pace').classList.toggle(
+      'on', s.usage_pace !== false,          // default on
+    );
     document.getElementById('setting-inject-init').classList.toggle(
       'on', s.inject_init_prompt === true,
     );
@@ -4692,6 +4807,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings.show_model_badge = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
       renderSidebar();
+    });
+
+  // Shared by the settings toggle and the accounts-panel switch, so both entry
+  // points stay in sync and both repaint immediately.
+  async function saveUsagePaceEnabled(on) {
+    config = config || {};
+    config.settings = config.settings || {};
+    config.settings.usage_pace = on;
+    const settingToggle = document.getElementById('setting-usage-pace');
+    if (settingToggle) settingToggle.classList.toggle('on', on);
+    await pywebview.api.save_settings(JSON.stringify(config.settings));
+    refreshUsageBrief();
+    if (_accountPanelEl && _accountPanelEl.classList.contains('open')) {
+      showAccountPanel();
+    }
+  }
+
+  document.getElementById('setting-usage-pace')
+    .addEventListener('click', function() {
+      saveUsagePaceEnabled(!this.classList.contains('on'));
     });
 
   document.getElementById('setting-inject-init')
