@@ -456,8 +456,12 @@ def _claude_profile_expired(env) -> bool:
 
     Checked locally before calling the API: an expired token can only come back
     401, and spending the account's rate-limit budget on it means the next real
-    attempt gets a 429 whose message ("too frequent") hides the actual problem
-    ("log in again").
+    attempt gets a 429 whose message ("too frequent") hides the actual problem.
+
+    Note what this does *not* mean: the CLI refreshes its own tokens, so an
+    account whose stored snapshot has expired is usually still perfectly
+    usable. Only our ability to read its quota is gone — which is why the
+    message says that instead of telling the user to log in again.
     """
     directory = (env or {}).get("CLAUDE_CONFIG_DIR")
     if not directory:
@@ -484,8 +488,10 @@ def _fetch_claude_profile(env):
         return {"_error": "auth_required",
                 "_error_message": "找不到這個帳號的憑證，請重新登入"}
     if _claude_profile_expired(env):
-        return {"_error": "auth_required",
-                "_error_message": "Claude 登入已過期，請重新登入這個帳號"}
+        return {"_error": "snapshot_stale",
+                "_error_message": "這個帳號的快照憑證過期，查不到用量"
+                                  "（帳號本身可能還好用：切到它跑一次，"
+                                  "或按「重新整理已登入」）"}
     try:
         req = urllib.request.Request(CLAUDE_USAGE_API, headers={
             "Authorization": f"Bearer {token}",
@@ -498,8 +504,10 @@ def _fetch_claude_profile(env):
             data = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
-            return {"_error": "auth_required",
-                    "_error_message": "Claude 登入已過期，請重新登入這個帳號"}
+            return {"_error": "snapshot_stale",
+                    "_error_message": "這個帳號的快照憑證被拒（可能已過期），查不到用量"
+                                      "（帳號本身可能還好用：切到它跑一次，"
+                                      "或按「重新整理已登入」）"}
         if e.code == 429:
             return {"_error": "rate_limited",
                     "_error_message": "Claude 用量 API 查詢過於頻繁，稍後重試"}
@@ -828,7 +836,10 @@ def _fetch_codex_app_server(home=None):
         if response.get("error"):
             message = str((response.get("error") or {}).get("message") or "")
             if "401" in message or "token_invalidated" in message or "Unauthorized" in message:
-                return {"_error": "auth_required", "_error_message": "Codex 登入已失效，請重新登入"}
+                return {"_error": "snapshot_stale",
+                        "_error_message": "這個帳號的快照憑證被拒（可能已過期），查不到用量"
+                                          "（帳號本身可能還好用：切到它跑一次，"
+                                          "或按「重新整理已登入」）"}
             return {"_error": "app_server_error", "_error_message": "Codex 用量服務暫時無法查詢"}
         result = response.get("result") or {}
         rate_limits = result.get("rateLimits") or {}

@@ -248,14 +248,21 @@ def test_disk_cache_survives_restart_but_not_a_day():
             assert U._fetch_claude() is None
 
 
-def test_account_usage_expired_login_reports_reason_not_no_data():
-    """帳號面板列出每個帳號：憑證過期要明講「重新登入」，不能只說查不到。"""
+def test_account_usage_rejected_snapshot_says_quota_unreadable_not_logged_out():
+    """憑證被拒要講「查不到用量」，**不能**說「登入已失效」。
+
+    CLI 自己會用 refresh token 換新 access token，所以我們手上的快照過期時，
+    那個帳號通常還好用得很——顯示「登入已失效，請重新登入」會叫使用者去做一件
+    根本不需要做的事（實測：三個 codex profile 有兩個 access token 已過期，
+    但全都還有 refresh token，而 CLI 正常運作）。
+    """
     clock = FakeClock()
     net = TokenAwareUrlopen({"tok-expired": http_error(401)})
     with probe_env(clock, net):
         out = U.account_usage("claude", env=account_env("tok-expired"), ref="claude-b")
-        assert out["error"] == "auth_required", out
-        assert "重新登入" in out["error_message"], out
+        assert out["error"] == "snapshot_stale", out
+        assert "查不到用量" in out["error_message"], out
+        assert "請重新登入" not in out["error_message"], out
         assert out["five_hr"] is None and out["week"] is None, out
 
 
@@ -273,7 +280,7 @@ def test_account_usage_expired_token_is_detected_without_burning_the_api():
                "CLAUDE_CONFIG_DIR": profile_dir}
         with probe_env(clock, net):
             out = U.account_usage("claude", env=env, ref="claude-b")
-    assert out["error"] == "auth_required", out
+    assert out["error"] == "snapshot_stale", out
     assert net.calls == [], f"過期 token 不該打 API：{net.calls}"
 
 
@@ -287,7 +294,7 @@ def test_account_usage_backoff_replays_real_reason():
         clock.now += 10
         out = U.account_usage("claude", env=account_env("tok-expired"), ref="claude-b")
         assert len(net.calls) == calls, "退避窗內不應再打 API"
-        assert out["error"] == "auth_required", out
+        assert out["error"] == "snapshot_stale", out
 
 
 def test_account_usage_is_cached_per_account_without_cross_talk():
@@ -298,7 +305,7 @@ def test_account_usage_is_cached_per_account_without_cross_talk():
         ok = U.account_usage("claude", env=account_env("tok-ok"), ref="claude-a")
         bad = U.account_usage("claude", env=account_env("tok-expired"), ref="claude-b")
         assert ok["five_hr"]["pct"] == 18 and ok["week"]["pct"] == 20, ok
-        assert bad["five_hr"] is None and bad["error"] == "auth_required", bad
+        assert bad["five_hr"] is None and bad["error"] == "snapshot_stale", bad
         calls = len(net.calls)
         clock.now += 30                                   # _ACCOUNT_OK_TTL 內
         again = U.account_usage("claude", env=account_env("tok-ok"), ref="claude-a")
@@ -669,10 +676,8 @@ def test_codex_app_server_surfaces_invalid_auth():
          mock.patch.object(U.subprocess, "Popen", return_value=FakeProc()), \
          mock.patch.object(U, "_read_jsonrpc_response", return_value=response):
         out = U._fetch_codex_app_server(home="/tmp/profile")
-    assert out == {
-        "_error": "auth_required",
-        "_error_message": "Codex 登入已失效，請重新登入",
-    }
+    assert out["_error"] == "snapshot_stale", out
+    assert "查不到用量" in out["_error_message"], out
 
 
 # ────────────────────────── plain runner ──────────────────────────

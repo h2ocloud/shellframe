@@ -3563,9 +3563,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             return rank(a) - rank(b) || a.localeCompare(b);
           })
         : ['codex', 'claude'];
-      body.innerHTML = order
-        .map(p => _accountProviderBlock(p, providers[p] || {accounts: []}))
-        .join('');
+      body.innerHTML = order.map(p => providers[p]
+        ? _accountProviderBlock(p, providers[p])
+        // Missing ≠ signed out. The usual cause is a version skew: the web UI
+        // reloads with a new build while the Python side is still the old
+        // process, so it doesn't know this provider yet. Saying "未登入" there
+        // sends the user off to re-login for no reason.
+        : `<div class="account-provider"><div class="account-provider-title">` +
+          `<span>${esc((AI_PROVIDERS[p] && AI_PROVIDERS[p].label) || p)}</span>` +
+          `<span style="font-size:10px;color:#e0af68">後端未回報</span></div>` +
+          `<div style="color:#565f89;font-size:11px;padding:5px 0">前端認得這個 CLI，` +
+          `但後端沒有回它的帳號資料——通常是 app 更新後 Python 端還沒重啟。` +
+          `重啟 ShellFrame 就會出現（不是登入問題）。</div></div>`
+      ).join('');
       // Usage needs network / a codex app-server spawn, so it must not hold the
       // panel closed: rows render first, then fill in (cached ones instantly).
       _loadAccountUsage(false);
