@@ -317,6 +317,33 @@ if [ -n "$SHELL_RC" ] && ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
   echo "  Added ~/.local/bin to PATH in $(basename "$SHELL_RC")"
 fi
 
+# ── 5. AI CLIs ──────────────────────────────────────────────
+# ShellFrame is a wrapper: without at least one AI CLI its stock presets open
+# tabs that die with "command not found", which looks like ShellFrame is
+# broken. Report what's missing and how to get it. Kept as a report rather than
+# an automatic install — these are third-party installers piping to a shell,
+# which is the user's call to make.
+echo ""
+echo "AI CLIs:"
+MISSING_CLI=""
+check_cli() {   # name, binary, install command
+  if command -v "$2" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$2" ]; then
+    echo "  ✅ $1"
+  else
+    echo "  ⬜ $1 — not installed"
+    MISSING_CLI="${MISSING_CLI}      $3\n"
+  fi
+}
+check_cli "Claude Code" claude 'curl -fsSL https://claude.ai/install.sh | bash'
+check_cli "Codex"       codex  'npm install -g @openai/codex'
+check_cli "Antigravity" agy    'curl -fsSL https://antigravity.google/cli/install.sh | bash'
+if [ -n "$MISSING_CLI" ]; then
+  echo ""
+  echo "  To install the missing ones:"
+  printf "%b" "$MISSING_CLI"
+  echo "      (or use the ⬜ entries in ShellFrame's AI 帳號 panel)"
+fi
+
 # ── Done ────────────────────────────────────────────────────
 VERSION=$(.venv/bin/python -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo '?')
 echo ""

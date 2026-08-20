@@ -43,10 +43,40 @@ _CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 # nothing in main.py or the web UI hard-codes provider names; they read this
 # table (see docs/adding-a-provider.md).
 PROVIDER_SPECS = {
-    "claude": {"label": "Claude Code", "binaries": ("claude",)},
-    "codex": {"label": "Codex", "binaries": ("codex", "sf-codex")},
-    "agy": {"label": "Antigravity", "binaries": ("agy", "antigravity")},
+    "claude": {
+        "label": "Claude Code", "binaries": ("claude",),
+        "install": {
+            "command": "curl -fsSL https://claude.ai/install.sh | bash",
+            "docs": "https://docs.claude.com/en/docs/claude-code/setup",
+        },
+    },
+    "codex": {
+        "label": "Codex", "binaries": ("codex", "sf-codex"),
+        "install": {
+            "command": "npm install -g @openai/codex",
+            "docs": "https://developers.openai.com/codex/cli/",
+        },
+    },
+    "agy": {
+        "label": "Antigravity", "binaries": ("agy", "antigravity"),
+        "install": {
+            "command": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+            "docs": "https://antigravity.google/docs/cli/install",
+            "note": "安裝到 ~/.local/bin/agy，並把該路徑寫進 shell 設定；"
+                    "之後用 `agy update` 自我升級。",
+        },
+    },
 }
+
+# Where a CLI plausibly lives. Checked in addition to PATH because a GUI-launched
+# app inherits a bare PATH — ~/.local/bin (where several of these installers put
+# their binary) is usually missing, which would look like "not installed".
+COMMON_BIN_DIRS = (
+    os.path.expanduser("~/.local/bin"),
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    "/usr/bin",
+)
 # Superset of account_manager.PROVIDERS: a provider can report quota without
 # supporting per-account profiles (agy signs in as one Google account).
 PROVIDERS = tuple(PROVIDER_SPECS)
@@ -62,12 +92,6 @@ _BINARY_TO_PROVIDER = {
 AGY_USAGE_TIMEOUT = 45
 AGY_OK_TTL = 120
 AGY_RETRY_MIN = 20
-# A GUI-launched app usually has a bare PATH, and agy installs into ~/.local/bin.
-AGY_FALLBACK_PATHS = (
-    os.path.expanduser("~/.local/bin/agy"),
-    "/usr/local/bin/agy",
-    "/opt/homebrew/bin/agy",
-)
 AGY_ACCOUNTS_FILE = os.path.expanduser("~/.gemini/google_accounts.json")
 _agy_cache = None            # {"data": …, "ts": …, "last_try": …}
 
@@ -124,6 +148,29 @@ def provider_binaries() -> frozenset:
 def provider_labels() -> dict:
     """{provider key: human label} for UI surfaces."""
     return {name: spec["label"] for name, spec in PROVIDER_SPECS.items()}
+
+
+def provider_binary_path(provider: str):
+    """Absolute path to the provider's CLI, or None if it isn't installed.
+
+    Looks on PATH first, then in the usual install directories: the app is
+    normally launched from the GUI, which hands it a bare PATH, so a CLI in
+    ~/.local/bin would otherwise read as missing.
+    """
+    spec = PROVIDER_SPECS.get(provider) or {}
+    for binary in spec.get("binaries", ()):
+        found = shutil.which(binary)
+        if found:
+            return found
+        for directory in COMMON_BIN_DIRS:
+            candidate = os.path.join(directory, binary)
+            if os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
+def provider_installed(provider: str) -> bool:
+    return provider_binary_path(provider) is not None
 
 
 def _fmt_epoch(epoch) -> str:
@@ -870,9 +917,7 @@ def _shape(ai, data, account="") -> dict:
 
 
 def _agy_binary():
-    return shutil.which("agy") or next(
-        (p for p in AGY_FALLBACK_PATHS if os.access(p, os.X_OK)), None
-    )
+    return provider_binary_path("agy")
 
 
 def _agy_account() -> str:
@@ -1107,9 +1152,15 @@ def account_usage(provider: str, env=None, ref: str = "", account: str = "",
     if provider == "codex":
         data = _fetch_codex(home=env.get("CODEX_HOME"))
         if is_current and (not data or data.get("_error")):
+            # This ref *is* the signed-in account, so the canonical ~/.codex
+            # snapshot legitimately describes it.
             data = _fetch_codex()
-    else:
+    elif provider == "claude":
+        # Per-profile token, deliberately outside the shared cache.
         data = _fetch_claude_profile(env)
+    else:
+        # Providers without per-account profiles use their registry probe.
+        data = PROVIDER_SPECS[provider]["probe"](env)
 
     if data and not data.get("_error"):
         cache["data"] = {k: v for k, v in data.items() if k != "_stale"}

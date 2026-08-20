@@ -1100,17 +1100,17 @@ class StatusTracker:
         """狀態翻轉去抖：decision/stuck 需穩定 ~1.2s（防畫面瞬閃誤觸），
         其餘需 DONE_QUIET_S。回傳生效狀態。
 
-        ⚠ 已知問題（2026-08-20 發現，尚未修）：候選預設值取 `(state, now)`，
-        於是 `cand != state` 永遠成立不了、pending 從不寫入、`now - first`
-        永遠是 0，導致「已建立狀態 → 新狀態」的轉移不會生效。影響
-        claude/codex，修動核心行為要另開一輪驗證，不在 agy 這批一起改。
+        候選的預設值**必須**是 None：先前寫成 `(state, now)`，於是
+        `cand != state` 永遠不成立、pending 從不寫入、每次呼叫都把 first
+        重設成 now，`now - first` 恆為 0 → 除了 `prev is None` 的第一次，
+        任何狀態轉移都無法生效（狀態點在首次判定後就凍住）。
         """
         prev, since = self._last.get(sid, (None, now))
         if state == prev:
             self._pending.pop(sid, None)
             return state
         hold = 1.2 if state in ("decision", "stuck") else DONE_QUIET_S
-        cand, first = self._pending.get(sid, (state, now))
+        cand, first = self._pending.get(sid, (None, now))
         if cand != state:
             self._pending[sid] = (state, now)
             return prev or state

@@ -2137,7 +2137,61 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // ── Session management ──
+  // A stock preset for a CLI that isn't installed yet would open a tab that
+  // dies instantly with "command not found" — which reads as ShellFrame being
+  // broken. Check first and offer to install instead.
+  async function _providerInstallGate(cmd) {
+    let info;
+    try {
+      info = JSON.parse(await pywebview.api.provider_ready(cmd) || '{}');
+    } catch (_) {
+      return true;                       // 檢查壞掉不擋開分頁
+    }
+    if (info.ready !== false) return true;
+    const install = info.install || {};
+    const label = info.label || info.provider || 'CLI';
+    return await new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay open';
+      overlay.style.zIndex = '460';
+      overlay.innerHTML = `<div class="modal" style="width:540px;max-width:94vw">` +
+        `<h2>${esc(label)} 尚未安裝</h2>` +
+        `<div class="account-panel-note">這個分頁要跑 <code>${esc(cmd)}</code>，` +
+        `但本機找不到 ${esc(label)} 的執行檔。可以直接用官方指令安裝：</div>` +
+        (install.command
+          ? `<pre style="background:#1a1b26;border:1px solid #292e42;border-radius:6px;` +
+            `padding:9px;font-size:11px;color:#a9b1d6;overflow-x:auto;margin:8px 0">` +
+            `${esc(install.command)}</pre>` : '') +
+        (install.note ? `<div class="account-panel-note">${esc(install.note)}</div>` : '') +
+        `<div class="modal-footer">` +
+        (install.docs ? `<button class="btn btn-ghost" data-gate="docs">看官方文件</button>` : '') +
+        `<button class="btn btn-ghost" data-gate="cancel">取消</button>` +
+        (install.command ? `<button class="btn btn-primary" data-gate="install">在新分頁安裝</button>` : '') +
+        `</div></div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', async (event) => {
+        const action = event.target.dataset ? event.target.dataset.gate : null;
+        if (event.target !== overlay && !action) return;
+        if (action === 'docs') {
+          pywebview.api.open_url(install.docs).catch(() => {});
+          return;                        // 留著視窗，看完還能按安裝
+        }
+        overlay.remove();
+        if (action === 'install') {
+          try {
+            const r = JSON.parse(await pywebview.api.install_provider(info.provider) || '{}');
+            if (!r.success && r.message) alert(r.message);
+          } catch (e) {
+            alert((e && e.message) || '安裝指令送出失敗');
+          }
+        }
+        resolve(false);                  // 不論如何都不開這個 AI 分頁
+      });
+    });
+  }
+
   async function openSession(cmd, label) {
+    if (!await _providerInstallGate(cmd)) return;
     // Block syncSessionsFromBackend until this function's `sessions[sid] = ...`
     // claim lands. Without this, the notify fired inside new_session (main.py
     // line 660) would race with our await and spawn a duplicate pane.
@@ -3386,19 +3440,46 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return parts.join('');
   }
   function _accountProviderBlock(provider, info) {
-    const title = provider === 'codex' ? 'Codex' : 'Claude';
+    // Label comes from the registry so a new provider needs no change here.
+    const title = (AI_PROVIDERS[provider] && AI_PROVIDERS[provider].label) || provider;
     const current = info.current, global = info.global;
     const usage = (_accountUsage[provider] || {});
+    // Some CLIs sign in as exactly one account and manage it themselves, so
+    // there is nothing to switch between — show the water-level, drop the
+    // switch/login buttons rather than offering actions that can't work.
+    const single = !!info.single_account;
     const rows = (info.accounts || []).map(item => {
       const id = esc(item.id || '');
       const currentOn = current && current.id === item.id;
       const globalOn = global && global.id === item.id;
+      const tags = single ? 'CLI 自己管理登入'
+        : `${currentOn ? '目前 Session' : ''}${currentOn && globalOn ? ' · ' : ''}${globalOn ? '下一個 Session' : ''}`;
       return `<div class="account-row"><div class="account-name">${esc(_accountLabel(item))}` +
-        `<small>${currentOn ? '目前 Session' : ''}${currentOn && globalOn ? ' · ' : ''}${globalOn ? '下一個 Session' : ''}</small>` +
+        `<small>${tags}</small>` +
         `<div class="account-usage" data-usage-key="${provider}|${id}">${_accountUsageHtml(usage[item.id])}</div></div>` +
-        `<button class="btn btn-ghost" data-account-action="session" data-provider="${provider}" data-ref="${id}" ${currentOn ? 'disabled' : ''}>切目前</button>` +
-        `<button class="btn btn-ghost" data-account-action="global" data-provider="${provider}" data-ref="${id}" ${globalOn ? 'disabled' : ''}>設下一個</button></div>`;
+        (single ? '' :
+          `<button class="btn btn-ghost" data-account-action="session" data-provider="${provider}" data-ref="${id}" ${currentOn ? 'disabled' : ''}>切目前</button>` +
+          `<button class="btn btn-ghost" data-account-action="global" data-provider="${provider}" data-ref="${id}" ${globalOn ? 'disabled' : ''}>設下一個</button>`) +
+        `</div>`;
     }).join('');
+    // A CLI that isn't installed can't have accounts — say that, and offer the
+    // install instead of an empty row the user can't act on.
+    const missing = info.installed === false;
+    const installButton = (missing && (info.install || {}).command)
+      ? `<button class="btn btn-primary" data-account-action="install-provider" data-provider="${provider}">安裝 ${esc(title)}</button>`
+      : '';
+    if (missing) {
+      return `<div class="account-provider"><div class="account-provider-title"><span>${esc(title)}</span>` +
+        `<span style="font-size:10px;color:#e0af68">未安裝</span></div>` +
+        `<div style="color:#565f89;font-size:11px;padding:5px 0 8px">本機找不到執行檔` +
+        `${(info.install || {}).command ? `：<code>${esc(info.install.command)}</code>` : ''}</div>` +
+        `<div style="display:flex;gap:6px">${installButton}</div></div>`;
+    }
+    if (single) {
+      return `<div class="account-provider"><div class="account-provider-title"><span>${esc(title)}</span>` +
+        `<span style="font-size:10px;color:#565f89">${info.logged_in ? '單一帳號' : '未登入'}</span></div>` +
+        `<div class="account-list">${rows || '<div style="color:#565f89;font-size:11px;padding:5px">尚未登入（在分頁裡執行該 CLI 登入）</div>'}</div></div>`;
+    }
     return `<div class="account-provider"><div class="account-provider-title"><span>${title}</span>` +
       `<span style="font-size:10px;color:#565f89">${info.logged_in ? `${info.accounts.length} 個帳號` : '未登入'}</span></div>` +
       `<div class="account-scope"><div class="account-scope-card"><div class="scope">目前 Session</div><div class="who">${esc(_accountLabel(current))}</div></div>` +
@@ -3445,6 +3526,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             if (status) status.textContent = _paceEnabled() ? '配速已開啟' : '配速已關閉';
             return;
           }
+          if (action === 'install-provider') {
+            const r = JSON.parse(await pywebview.api.install_provider(provider) || '{}');
+            if (!r.success) throw new Error(r.message || '安裝指令送出失敗');
+            if (status) status.textContent = r.message || '已開安裝分頁';
+            return;
+          }
           if (action === 'session') raw = await pywebview.api.account_switch_session(activeId || '', provider, ref);
           else if (action === 'global') raw = await pywebview.api.account_switch_global(provider, ref);
           else if (action === 'login') raw = await pywebview.api.account_login_start(provider);
@@ -3468,8 +3555,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       const state = JSON.parse(await pywebview.api.account_state(activeId || '') || '{}');
       const providers = state.providers || {};
-      body.innerHTML = _accountProviderBlock('codex', providers.codex || {accounts:[]}) +
-        _accountProviderBlock('claude', providers.claude || {accounts:[]});
+      // Iterate the registry (with the historical codex/claude order first) so
+      // a newly supported provider shows up without editing this line.
+      const order = Object.keys(AI_PROVIDERS).length
+        ? Object.keys(AI_PROVIDERS).sort((a, b) => {
+            const rank = p => (p === 'codex' ? 0 : p === 'claude' ? 1 : 2);
+            return rank(a) - rank(b) || a.localeCompare(b);
+          })
+        : ['codex', 'claude'];
+      body.innerHTML = order
+        .map(p => _accountProviderBlock(p, providers[p] || {accounts: []}))
+        .join('');
       // Usage needs network / a codex app-server spawn, so it must not hold the
       // panel closed: rows render first, then fill in (cached ones instantly).
       _loadAccountUsage(false);
@@ -3485,6 +3581,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Exposed like the refresh helpers above: lets the pace switch be driven from
   // the console / a UI test without going through the settings modal.
   window.saveUsagePaceEnabled = saveUsagePaceEnabled;
+  // Exposed for the same reason as the helpers above: lets the install gate be
+  // driven from the console / a UI test without going through the + menu.
+  window.providerInstallGate = _providerInstallGate;
   window.refreshUsageBriefThrottled = refreshUsageBriefThrottled;
   window.refreshUsageBriefAfterTurn = refreshUsageBriefAfterTurn;
   window.onActiveTabChangedForUsage = onActiveTabChangedForUsage;

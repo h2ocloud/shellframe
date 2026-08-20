@@ -3223,13 +3223,49 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             save_config(cfg)
         return cfg
 
+    @staticmethod
+    def _single_account_state(provider: str):
+        """Panel entry for a provider that has quota but no switchable profiles.
+
+        Some CLIs sign in as exactly one account and manage that themselves
+        (agy → one Google account), so there is nothing to switch between. They
+        still belong in the panel: the point is seeing every account's
+        water-level. `single_account` tells the UI to drop the switch buttons.
+        Derived from the registry, so a future usage-only provider needs no
+        change here.
+        """
+        spec = usage_probe.PROVIDER_SPECS.get(provider) or {}
+        label = ""
+        try:
+            label = spec["account"](None, {}) if spec.get("account") else ""
+        except Exception:
+            label = ""
+        if not label:
+            return {"current": None, "global": None, "accounts": [],
+                    "logged_in": False, "single_account": True}
+        item = {"id": f"{provider}-current", "email": label, "label": label,
+                "plan": "", "organization": ""}
+        return {"current": item, "global": item, "accounts": [item],
+                "logged_in": True, "single_account": True}
+
     def _account_state(self, sid: str = ""):
         cfg = self._account_config()
         session = self.sessions.get(sid)
         if session:
             cfg.setdefault("accounts", account_manager._empty_accounts()) \
                 .setdefault("sessions", {})[sid] = dict(session.account_refs)
-        return cfg, ACCOUNT_MANAGER.safe_state(cfg, sid or None)
+        state = ACCOUNT_MANAGER.safe_state(cfg, sid or None)
+        for provider in usage_probe.PROVIDERS:
+            if provider not in account_manager.PROVIDERS:
+                state["providers"][provider] = self._single_account_state(provider)
+            entry = state["providers"].setdefault(provider, {})
+            # "not installed" and "installed but not signed in" need different
+            # advice, so the panel gets both facts instead of one blank row.
+            entry["installed"] = usage_probe.provider_installed(provider)
+            entry["install"] = (
+                usage_probe.PROVIDER_SPECS.get(provider, {}).get("install") or {}
+            )
+        return cfg, state
 
     def account_state(self, sid: str = "") -> str:
         """Safe account panel data: refs and labels, never credential contents."""
@@ -3369,13 +3405,67 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return json.dumps({
                 "providers": {
                     name: {"label": spec["label"],
-                           "binaries": list(spec["binaries"])}
+                           "binaries": list(spec["binaries"]),
+                           "installed": usage_probe.provider_installed(name),
+                           "install": spec.get("install") or {}}
                     for name, spec in usage_probe.PROVIDER_SPECS.items()
                 },
                 "extra": sorted(OTHER_AI_CLI_TOOLS),
             }, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"providers": {}, "extra": [], "error": str(e)})
+
+    def provider_ready(self, cmd: str) -> str:
+        """Is the AI CLI this command launches actually installed?
+
+        Called before opening an AI tab. Without this check a missing binary
+        makes the tab die instantly with "command not found", which reads as
+        ShellFrame being broken rather than as a CLI that needs installing —
+        exactly what a stock preset for a not-yet-installed CLI would do.
+        Errors resolve to ready=True: a broken check must not block a tab.
+        """
+        try:
+            provider = usage_probe.detect_ai(cmd or "")
+            if not provider:
+                return json.dumps({"ready": True})
+            spec = usage_probe.PROVIDER_SPECS.get(provider) or {}
+            return json.dumps({
+                "ready": usage_probe.provider_installed(provider),
+                "provider": provider,
+                "label": spec.get("label", provider),
+                "install": spec.get("install") or {},
+            }, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ready": True, "error": str(e)}, ensure_ascii=False)
+
+    def install_provider(self, provider: str) -> str:
+        """Open a shell tab and run that CLI's documented install command.
+
+        Visible on purpose: the command runs in a real tab the user can read,
+        interrupt and re-run, instead of a silent background install.
+        """
+        try:
+            spec = usage_probe.PROVIDER_SPECS.get(provider)
+            if not spec:
+                raise ValueError("unknown provider")
+            command = ((spec.get("install") or {}).get("command") or "").strip()
+            if not command:
+                raise ValueError(f"{spec.get('label', provider)} 沒有內建安裝指令，請參考官方文件")
+            shell = "powershell" if IS_WIN else "bash"
+            sid = self.new_session(shell, 120, 30, source="provider-install",
+                                   inherit_accounts=False)
+            session = self.sessions.get(sid)
+            if session:
+                threading.Timer(
+                    1.5, lambda: self._send_text_to_session(session, command, submit=True)
+                ).start()
+            return json.dumps({
+                "success": True, "sid": sid, "command": command,
+                "message": f"已在新分頁執行 {spec.get('label', provider)} 安裝指令，"
+                           f"裝完再開分頁即可。",
+            }, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
     def account_usage_all(self, refresh: bool = False) -> str:
         """Every logged-in account's water-level, for the AI accounts panel.
@@ -3394,7 +3484,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cfg = self._account_config()
             accounts = cfg.get("accounts") or {}
             jobs = []
-            for provider in account_manager.PROVIDERS:
+            for provider in usage_probe.PROVIDERS:
+                if provider not in account_manager.PROVIDERS:
+                    # Quota but no switchable profiles: one implicit account,
+                    # read with no credential override (see _single_account_state).
+                    entry = self._single_account_state(provider)
+                    if entry["logged_in"]:
+                        jobs.append((provider, entry["current"]["id"],
+                                     entry["current"], True))
+                    continue
                 # The account the provider is really signed in as right now:
                 # it may read from the canonical location instead of a snapshot.
                 current = (ACCOUNT_MANAGER.discover(provider) or {}).get("id")
@@ -3405,18 +3503,20 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
             def _one(job):
                 provider, ref, item, is_current = job
+                profiled = provider in account_manager.PROVIDERS
                 data = usage_probe.account_usage(
                     provider,
-                    env=ACCOUNT_MANAGER.env_for(provider, ref),
+                    env=ACCOUNT_MANAGER.env_for(provider, ref) if profiled else {},
                     ref=ref,
-                    account=usage_probe.profile_account(item),
+                    account=usage_probe.profile_account(item) if profiled
+                    else (item.get("email") or ""),
                     force=force,
                     is_current=is_current,
                 )
                 data["is_current_login"] = is_current
                 return provider, ref, data
 
-            out = {provider: {} for provider in account_manager.PROVIDERS}
+            out = {provider: {} for provider in usage_probe.PROVIDERS}
             if jobs:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=min(4, len(jobs))

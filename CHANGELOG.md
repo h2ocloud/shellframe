@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.29.40 (2026-08-20)
+
+### Fixes
+- **未安裝的 CLI 不再開出一個秒死的分頁**（回報：另一台更新後 `+` 選單預設就有
+  Antigravity，一點就壞）。內建 preset 對還沒安裝的 CLI 會開出 command not found
+  的分頁，看起來像 ShellFrame 壞了。現在開 AI 分頁前先確認執行檔存在，缺少時改
+  跳安裝引導：官方安裝指令、說明、「看官方文件」與**「在新分頁安裝」**（指令在
+  真分頁裡跑，看得到、可中斷）。三個 provider 的安裝資訊都在 registry 裡，新增
+  provider 時一併帶上即可。
+- **狀態轉移失效（`_debounce`）**：候選預設值寫成 `(state, now)`，於是
+  `cand != state` 永遠不成立、pending 從不寫入、每次呼叫都把 first 重設成 now →
+  除了第一次判定，**任何狀態轉移都不會生效**（狀態點會凍在首次判定）。改成候選
+  預設 None。影響 claude/codex 的側欄狀態點。
+- **執行檔查找不再只看 PATH**：GUI 啟動的 app 拿到的是精簡 PATH，`~/.local/bin`
+  通常不在裡面，會把已安裝的 CLI 誤判成沒裝。改為 PATH ＋ 常見安裝目錄。
+
+### Features
+- **AI 帳號面板列出所有 provider**，包含只有單一登入帳號的（agy → 一個 Google
+  帳號）：顯示帳號與水位／配速，但不顯示切換鍵（沒有可切的東西）。未安裝的
+  provider 顯示「未安裝」＋一鍵安裝，而不是一列空白。區塊標題與順序都來自
+  registry，新增 provider 無需改前端。
+- `install.sh` 結尾盤點三個 AI CLI 的安裝狀態，缺的列出安裝指令。
+
 ## v0.29.39 (2026-08-20)
 
 ### Features
