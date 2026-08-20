@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.29.39 (2026-08-20)
 
 ### Features
 - **支援 Antigravity CLI（`agy`）**，並把「再多支援一個 AI CLI」變成一處註冊。
