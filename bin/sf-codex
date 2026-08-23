@@ -9,6 +9,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Spark 地端模型（config.toml 的 profiles.spark）走 LiteLLM gateway，需要 key。
+# 存在 ~/.codex/spark.env 而非這裡，因為本檔在版控內。
+if [[ -z "${SPARK_API_KEY:-}" && -r "${HOME}/.codex/spark.env" ]]; then
+  # shellcheck source=/dev/null
+  source "${HOME}/.codex/spark.env"
+fi
+export SPARK_API_KEY="${SPARK_API_KEY:-}"
+
 candidates=()
 
 if [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then

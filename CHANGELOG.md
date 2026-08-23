@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.29.42 (2026-08-23)
+
+### Changes
+- **新增 SparkAgent preset**（`sf-sparkagent`）：`+` 選單開得出來的地端 agent
+  harness。模型跑 190 的 Ornith-1.5-35B-A3B-Abliterated（經 LiteLLM gateway 別名
+  `spark-main`），agent 進程留在 Mac，所以檔案／shell 工具碰得到這台的東西。
+  smoke test 全過：tool calling、檔案讀寫、deny-list 阻擋危險指令都實測過。
+- **`sf-codex` 會載入 `~/.codex/spark.env`**（gateway key，該檔不進版控），Codex
+  側的 provider／profile 接線可用。但**不建議拿 Codex 跑地端**：同一顆模型，
+  Codex 每次請求送 368KB／約 100K tokens（24 個 tool 定義就佔 342KB），塞不進
+  65K context；就算把 `max-model-len` 開到 131072 裝得下，每輪 prefill 100K 在
+  GB10 上也要好幾分鐘。這也是為什麼 harness 選 sparkagent。
+
 ## v0.29.41 (2026-08-20)
 
 ### Fixes
