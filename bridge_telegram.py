@@ -535,6 +535,51 @@ def _update_settings(patch: dict) -> bool:
             return False
 
 
+# ── Line-oriented agents: instructions must not look like user messages ──
+#
+# A TUI agent (claude, codex) receives our per-turn wrapper as one bracketed
+# paste and treats it as context for the turn. An agent whose channel is a
+# line-oriented REPL cannot: every injected instruction arrives looking exactly
+# like something the user typed, so it *answers* each rule ("got it, noted!")
+# and only reaches the real question at the end. Framing the instruction part
+# lets such an agent route it to its system prompt instead. Agents that don't
+# understand the markers never see them — the gate is the launch command.
+SYSTEM_DIRECTIVE_START = "<<<SF:SYSTEM>>>"
+SYSTEM_DIRECTIVE_END = "<<<SF:/SYSTEM>>>"
+_DEFAULT_DIRECTIVE_AGENTS = ("sparkagent",)
+
+
+def system_directive_agents() -> tuple:
+    """Launch-command substrings whose agents want framed instructions."""
+    configured = _read_settings().get("system_directive_agents")
+    if isinstance(configured, list):
+        return tuple(str(x).lower() for x in configured if str(x).strip())
+    return _DEFAULT_DIRECTIVE_AGENTS
+
+
+def wants_system_directive(cmd: str) -> bool:
+    c = (cmd or "").lower()
+    return any(name in c for name in system_directive_agents())
+
+
+def frame_system_directive(payload: str, user_text: str) -> str:
+    """Wrap everything preceding ``user_text`` as a system directive block.
+
+    Returns ``payload`` unchanged when there is nothing to frame, so a plain
+    forwarded message never grows markers.
+    """
+    if not user_text or user_text not in payload:
+        return payload
+    head, _, tail = payload.rpartition(user_text)
+    instructions = head.strip()
+    if not instructions:
+        return payload
+    return (
+        f"{SYSTEM_DIRECTIVE_START}\n{instructions}\n{SYSTEM_DIRECTIVE_END}"
+        f"\n\n{user_text}{tail}"
+    )
+
+
 def master_turn_preamble_enabled() -> bool:
     settings = _read_settings()
     return settings.get("master_turn_preamble_enabled", True) is not False
@@ -5143,8 +5188,16 @@ class TelegramBridge(BridgeBase):
         if not text and caption:
             text = caption
 
+        # `//` 逃逸前綴：`//new` ＝「我要的是分頁裡那個 /new，不是 bridge 的
+        # /new」。剝掉一個斜線後**跳過 bridge 指令攔截**，讓它照一般 CLI
+        # 指令原文送進分頁。沒有這個出口時，凡是撞名的指令（/new /model
+        # /status /help…）永遠會被 bridge 吃掉，分頁那邊根本收不到。
+        escaped_slash = bool(text) and text.startswith("//") and len(text) > 2
+        if escaped_slash:
+            text = text[1:]
+
         # ── Slash commands (text-only, no files) ──
-        if text and text.startswith("/") and not file_paths:
+        if text and text.startswith("/") and not file_paths and not escaped_slash:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
             if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜') or cmd.isdigit():
@@ -5339,6 +5392,15 @@ class TelegramBridge(BridgeBase):
             slot.sent_texts.append(tag)
         elif wrap_with_preamble and not show_wrapper:
             visible_payload = payload
+
+        # See wants_system_directive(): give line-oriented agents an explicit
+        # instruction/message split instead of one indistinguishable blob.
+        if wants_system_directive(slot.cmd) and visible_payload != forwarded:
+            framed = frame_system_directive(visible_payload, forwarded)
+            if framed != visible_payload:
+                visible_payload = framed
+                slot.sent_texts.append(SYSTEM_DIRECTIVE_START)
+                slot.sent_texts.append(SYSTEM_DIRECTIVE_END)
 
         def _send():
             # Serialize all PTY writes for this slot. Without this, a paste
@@ -6155,6 +6217,8 @@ class TelegramBridge(BridgeBase):
                     "  /1, /2, … — switch session\n"
                     "  /rename <新名> — 改目前分頁名；/rename <編號> <新名> 改指定分頁（alias /改名）\n"
                     "  /effort — 調目前分頁推理深度（claude/codex，inline 按鈕；alias /推理）\n"
+                    "  //xxx — 強制把 /xxx 原文送進分頁（例：//new 送分頁的 /new，"
+                    "不會被 bridge 攔截）\n"
                     "  /break — 中斷目前分頁 AI（送 ESC；alias /stop /中斷）\n"
                     "  /voice — 語音整理設定/切模型（/voice <模型>、/voice on|off）\n\n"
                     "Bridge control:\n"

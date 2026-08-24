@@ -3200,12 +3200,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return `${pace.diff > 0 ? '超前' : '落後'} ${Math.abs(pace.diff)}%${scale}`;
   }
   function _paceTooltipLines(pace, pct) {
+    // 單位跟著窗口長度走：5 小時窗口用「天」會變成「第 0.1／0 天」這種廢話。
+    const hours = pace.totalDays * 24;
+    const short = hours <= 24;
+    const el = short ? `${(pace.elapsedDays * 24).toFixed(1)} 小時`
+                     : `${pace.elapsedDays.toFixed(1)} 天`;
+    const tot = short ? `${Math.round(hours)} 小時`
+                      : `${Math.round(pace.totalDays)} 天`;
+    const left = short ? `${(pace.remainingDays * 24).toFixed(1)} 小時`
+                       : `${pace.remainingDays.toFixed(1)} 天`;
+    const due = short ? '現在應累積' : '今天應累積';
     return [
-      `配速：週期第 ${pace.elapsedDays.toFixed(1)}／${Math.round(pace.totalDays)} 天`
-      + ` → 今天應累積 ${pace.target}%`,
+      `配速：週期第 ${el}／${tot} → ${due} ${pace.target}%`,
       `目前 ${pct}%（${_paceGapText(pace)}）`,
       pace.diff >= 10
-        ? `照這個速度會在重置前用完（剩 ${pace.remainingDays.toFixed(1)} 天）`
+        ? `照這個速度會在重置前用完（剩 ${left}）`
         : pace.diff <= -15 ? '額度用不完，可以放心多用' : '',
     ].filter(Boolean);
   }
@@ -3333,22 +3342,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         ? `<span class="ub-seg"><span class="ub-k">${label}</span>` +
           `<span class="ub-v ${_usageLevel(info.pct)}">${info.pct}%</span></span>`
         : '';
-      // Pace rides next to wk: the weekly window is the one worth pacing (the
-      // 5h window refills too often for "am I on track" to mean anything).
-      const pace = _paceEnabled() ? _usagePace(d.week) : null;
-      const paceSeg = pace
+      // 配速 segment：每個窗口各自跟在自己的用量後面（5h pc 在 5h 後、
+      // wk pc 在 wk 後）。原本只做 week，理由是「5h 窗口重置太頻繁」；但撞
+      // 5 小時上限時「這一輪燒太快嗎」其實才是最急的問題，所以兩個都給。
+      // `_usagePace` 在缺 reset_epoch／window_minutes 時回 null，來源沒提供
+      // 5h 配速資料就自動不顯示，不會變成假數字。
+      const on = _paceEnabled();
+      const pace5 = on ? _usagePace(d.five_hr) : null;
+      const paceWk = on ? _usagePace(d.week) : null;
+      const paceSeg = (pace) => pace
         ? `<span class="ub-seg"><span class="ub-k">pc</span>` +
           `<span class="ub-v ${_paceLevel(pace.diff)}">${pace.target}%` +
           `<span class="ub-arrow">${_paceArrow(pace.diff)}</span></span></span>`
         : '';
       el.innerHTML = (d.stale ? '<span class="ub-seg ub-none">⚠</span>' : '') +
-        [seg('5h', d.five_hr), seg('wk', d.week), paceSeg].filter(Boolean).join('');
+        [seg('5h', d.five_hr), paceSeg(pace5),
+         seg('wk', d.week), paceSeg(paceWk)].filter(Boolean).join('');
       const tip = [];
       if (d.stale) tip.push('⚠ 本次更新失敗，顯示上次資料');
       if (d.account) tip.push(d.account);
       if (d.five_hr) tip.push(`5hr 已用 ${d.five_hr.pct}%・重置 ${d.five_hr.reset}`);
       if (d.week) tip.push(`本週已用 ${d.week.pct}%・重置 ${d.week.reset}`);
-      if (pace) tip.push(..._paceTooltipLines(pace, d.week.pct));
+      // 兩個 pc 標籤同名，tooltip 必須標明各自屬於哪個窗口。
+      if (pace5) tip.push('— 5 小時配速 —', ..._paceTooltipLines(pace5, d.five_hr.pct));
+      if (paceWk) tip.push('— 每週配速 —', ..._paceTooltipLines(paceWk, d.week.pct));
       if (d.snapshot) tip.push(`快照 ${d.snapshot}`);
       el.title = tip.join('\n') || 'AI 用量水位 — 點擊看細節';
       el.classList.toggle('stale', !!d.stale);
