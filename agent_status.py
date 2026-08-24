@@ -934,6 +934,14 @@ def _detail(evs):
 
 
 SPINNER_RE = ("esc to interrupt", "Working (", "Running…", "↑")
+# pi 的狀態列**固定**顯示「↑79k ↓1.5k 14.5%/128k (auto)   spark-vision」——
+# 那個 ↑ 是 token 計數，不是進度指示，但它命中 SPINNER_RE 的 "↑" → pi 分頁
+# 永遠被判成 working，跑完也不會變燈（2026-08-24 回報：蒸餾任務跑完、檔案已
+# 產出、token 停在 ↑79k 不動，燈號仍是工作中）。pi 真正的工作訊號是 braille
+# spinner + Working，完成訊號則是「token 數不再變動」。見 _pi_status。
+_PI_STATUS_RE = re.compile(
+    r"↑\s*([\d.]+[kKmM]?)\s+↓\s*([\d.]+[kKmM]?)\s+([\d.]+)%/")
+_PI_WORKING_RE = re.compile(r"[⠁-⣿]\s*Working")
 MENU_RE = ("❯ 1.", "› 1.", "Do you want", "Would you like to run",
            "1. Yes", "Esc to cancel")
 
@@ -1185,10 +1193,66 @@ class StatusTracker:
                 "elapsed": int(now - since), "why": why,
                 "transcript": db, "loop": None, "model": model}
 
+    # pi 完成後 token 數就不再變動；隔這麼久沒動＝這一輪真的結束了。
+    _PI_IDLE_S = 6.0
+    # 剛完成的「亮一下」窗口，與 agy 的 AGY_DONE_WINDOW_S 同義。
+    _PI_DONE_WINDOW_S = 90.0
+
+    def _pi_status(self, sid, worker, now, screen_tail, model):
+        """pi 的燈號，純看畫面（pi 沒有 JSONL transcript，跟 agy 一樣）。
+
+        兩個訊號，都取自 pi TUI 的固定樣式：
+        1. `⠧ Working...`（braille spinner）＝ 正在跑，最直接。
+        2. 狀態列 `↑79k ↓1.5k 14.5%/128k (auto)` 的 token 數——**變動中**代表
+           還在產出；停住超過 _PI_IDLE_S 就是這一輪結束了。
+
+        不能沿用共用的 `compute_state`：`SPINNER_RE` 含 "↑"，而 pi 狀態列永遠
+        有 ↑（token 計數），會把每個 pi 分頁釘死在 working。
+        """
+        scr = screen_tail or ""
+        seen = getattr(self, "_pi_seen", None)
+        if seen is None:
+            seen = self._pi_seen = {}
+        prev_sig, prev_change, last_active = seen.get(sid, (None, 0.0, 0.0))
+
+        m = _PI_STATUS_RE.search(scr)
+        sig = m.group(0) if m else None
+        spinning = bool(_PI_WORKING_RE.search(scr))
+
+        if sig != prev_sig:          # token 數變了 → 正在產出
+            prev_change = now
+        changed_recently = (now - prev_change) < self._PI_IDLE_S if prev_change else False
+
+        if spinning or changed_recently:
+            state = "working"
+            why = "pi spinner" if spinning else "pi tokens moving"
+            last_active = now
+        elif last_active and now - last_active <= self._PI_DONE_WINDOW_S:
+            state, why = "done", "pi tokens settled"
+        elif sig or scr.strip():
+            state, why = "idle", "pi idle"
+        else:
+            state, why = "unknown", "pi no screen"
+        seen[sid] = (sig, prev_change, last_active)
+
+        summary = "working" if state == "working" else state
+        _, since = self._last.get(sid, (state, now))
+        if self._last.get(sid, (None,))[0] != state:
+            self._last[sid] = (state, now)
+            since = now
+        return {"state": state, "dot": DOT.get(state, ""), "activity": {},
+                "summary": summary, "action": "", "narration": "", "task": "",
+                "elapsed": int(now - since), "why": why,
+                "transcript": None, "loop": None, "model": model}
+
     def _status_for_impl(self, sid, worker, screen_tail="", now=None):
         now = now or time.time()
         try:
-            if _worker_kind(worker.get("cmd", "")) == "agy":
+            _kind = _worker_kind(worker.get("cmd", ""))
+            if _kind == "pi":
+                return self._pi_status(
+                    sid, worker, now, screen_tail, detect_model_info(worker))
+            if _kind == "agy":
                 return self._agy_status(
                     sid, worker, now, screen_tail,
                     detect_model_info(worker),

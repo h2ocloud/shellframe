@@ -347,6 +347,10 @@ _DEFAULT_AI_PRESETS = [
     {"name": "Claude", "cmd": "claude --permission-mode bypassPermissions --dangerously-skip-permissions", "icon": "\U0001F680"},
     {"name": "Codex",  "cmd": SHELLFRAME_CODEX_CMD,  "icon": "\U0001F916"},
     {"name": "Antigravity", "cmd": "agy", "icon": "\U0001FA90"},   # 🪐
+    # 通用 pi（接自己的 provider）。地端 Spark 版本走使用者自訂 preset
+    # sf-pi-spark——那支啟動器帶 SPARK_API_KEY 與 ~/.pi/agent/models.json，
+    # 是機器特有設定，不適合當預設。沒安裝時由 registry 的 install 引導。
+    {"name": "Pi", "cmd": "pi", "icon": "\U0001D70B"},              # 𝜋
 ]
 
 _AUTONOMOUS_PRESET_CMDS = {

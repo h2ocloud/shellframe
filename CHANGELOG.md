@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.29.43 (2026-08-23)
+
+### Fixes
+- **修好 SparkAgent 分頁「逐條回覆 wrapper 規則」**：TG 每回合注入的 preamble
+  （回覆標記、手機格式、自我修改說明、協作規則）會被 sparkagent 當成 7-9 則
+  獨立使用者訊息，各自跑一次模型、各回一則「收到，已設定」，Howard 真正的問題
+  排到最後才處理。**與模型智能無關**——模型從沒拿到完整 preamble，每次只看到
+  一塊碎片。
+  - 根因有兩層：① sparkagent 的 channel 是 `input()` 逐行 REPL，不解析我們送的
+    bracketed paste（`ESC[200~…ESC[201~`），payload 每個換行都 submit 一次；
+    ② 就算整段進得去，它也沒有 system prompt 管道，指示與使用者訊息長得一模一樣。
+  - 本側修法：對 line-oriented agent（`system_directive_agents`，預設
+    `sparkagent`）把 payload 中「使用者訊息之前的所有指示」包成
+    `<<<SF:SYSTEM>>>…<<<SF:/SYSTEM>>>`，讓對方能把它導進 system prompt、把 turn
+    留給真正的問題。**claude / codex / shell 分頁完全不受影響**（gate 看啟動指令），
+    純轉發訊息也不會長出標記。
+  - 標記字串一併記進 `slot.sent_texts`，echo filter／前綴剝除照舊運作。
+  - sparkagent 側的對應修法（bracketed paste 組裝 + directive→system）在
+    `h2ocloud/sparkagent`：新增 `input_stream.py`、`directives.py`，17 個新測試。
+  - 新測試 `tests_system_directive.py`（6 項）；端到端實測：13 行的真實 payload
+    從「7 個 turn」變成 **1 個 turn**。
+
 ## v0.29.42 (2026-08-23)
 
 ### Changes

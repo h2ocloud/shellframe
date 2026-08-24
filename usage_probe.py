@@ -57,6 +57,19 @@ PROVIDER_SPECS = {
             "docs": "https://developers.openai.com/codex/cli/",
         },
     },
+    "pi": {
+        "label": "Pi", "binaries": ("pi", "sf-pi-spark"),
+        "install": {
+            "command": "npm i -g @earendil-works/pi-coding-agent",
+            "docs": "https://www.npmjs.com/package/@earendil-works/pi-coding-agent",
+            "note": "需 Node 22.19+。computer-use 擴充另外裝："
+                    "`pi install npm:@injaneity/pi-computer-use`——它的 "
+                    "postinstall 會被 npm allowScripts 擋下，要 approve 才會裝 "
+                    "helper app。接地端模型的 provider 設定在 "
+                    "~/.pi/agent/models.json（vLLM 需 "
+                    "compat.supportsDeveloperRole=false）。",
+        },
+    },
     "agy": {
         "label": "Antigravity", "binaries": ("agy", "antigravity"),
         "install": {
@@ -1090,6 +1103,22 @@ def _account_agy(data, env):
 PROVIDER_SPECS["claude"].update(probe=_probe_claude, account=_account_claude)
 PROVIDER_SPECS["codex"].update(probe=_probe_codex, account=_account_codex)
 PROVIDER_SPECS["agy"].update(probe=_probe_agy, account=_account_agy)
+
+
+def _probe_pi(env):
+    """pi 沒有配額讀數——它接的是使用者自己設定的 provider（地端 vLLM／
+    Ollama／任何 OpenAI 相容端點，見 ~/.pi/agent/models.json），那些端點
+    沒有 5h／週用量的概念。回 None＝「此 provider 無水位可報」，上層會
+    照既有的 no-reading 路徑處理（不顯示 pill，不是錯誤）。"""
+    return None
+
+
+def _account_pi(data, env):
+    """pi 不做帳號登入（金鑰在 provider 設定裡），沒有可顯示的帳號。"""
+    return ""
+
+
+PROVIDER_SPECS["pi"].update(probe=_probe_pi, account=_account_pi)
 
 
 def probe_data(cmd: str, env=None) -> dict:
