@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.29.44 (2026-08-24)
+
+### Features
+- **支援 pi coding agent**（`@earendil-works/pi-coding-agent` 0.84.3）作為
+  provider。registry 加一筆 `pi`（binaries: `pi`、`sf-pi-spark`），因此自動
+  取得 AI-tab 語意、`+` 選單 preset、前端 provider 對映——`AI_CLI_TOOLS` 與
+  `ai_providers()` 都由 registry 推導，不需改 main.py／前端。
+  pi 接的是使用者自訂 provider（地端 vLLM／Ollama，見
+  `~/.pi/agent/models.json`），**沒有配額概念**，故 `probe` 明確回 None
+  （不顯示水位 pill，不是錯誤）。已驗證不誤判 `pip`／`pipenv`／`python -m pip`。
+
+### Fixes
+- **pi 分頁的燈號永遠停在「工作中」、跑完也不變**（回報：蒸餾任務跑完、
+  檔案已產出、token 停在 ↑79k 不動，燈號沒反映完成）。
+  根因：共用的 `SPINNER_RE` 含 `"↑"`，而 pi 狀態列**固定**顯示
+  `↑79k ↓1.5k 14.5%/128k (auto)   spark-vision`——那個 ↑ 是 token 計數、
+  不是進度指示，於是每個 pi 分頁都被釘死在 working。
+  修法：新增 pi 專屬狀態機 `_pi_status`（照 `_agy_status` 的模式，pi 同樣
+  沒有 JSONL transcript），只看兩個訊號——
+  1. `⠧ Working...`（braille spinner）＝ 正在跑；
+  2. 狀態列 token 數**變動中**＝還在產出；停住超過 6 秒＝這一輪結束
+     （done 亮 90 秒後轉 idle）。
+  共用路徑對 pi 的誤判由 `test_shared_path_would_misjudge` 釘住，日後共用
+  邏輯若改動會提醒重新評估。
+
+### Docs
+- registry 補上 pi 的安裝引導（v0.29.40 的機制）：
+  `npm i -g @earendil-works/pi-coding-agent`、需 **Node 22.19+**；
+  computer-use 擴充 `pi install npm:@injaneity/pi-computer-use`，並註明
+  **postinstall 會被 npm allowScripts 擋下、要 approve 才會裝 helper app**；
+  另註明 vLLM 相容開關 `compat.supportsDeveloperRole=false`。
+
+回歸測試：新增 `tests_pi_provider.py`（6 案例）。全套 30 檔綠。
+**生效需 `sfctl restart`**（`usage_probe.py`／`agent_status.py`／`main.py`）。
+
 ## v0.29.43 (2026-08-23)
 
 ### Fixes
