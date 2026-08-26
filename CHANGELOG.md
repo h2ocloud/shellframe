@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.29.46 (2026-08-26)
+
+### Fixes
+- **「⚠ 無法確認訊息已送進『X』」一直誤報 —— bridge 的虛擬終端比真實
+  終端高，看到的是殘影不是現在的畫面**。每個 slot 有自己的 pyte 螢幕，
+  送達驗證／busy guard／卡住偵測全靠它讀「現在畫面尾端」（`_live_tail`）。
+  但螢幕寫死 200x50，真實 pane 常是 101x31 —— CLI 只重畫 viewport 內的
+  列，**viewport 以下那些列永遠停在上一次被畫到的內容**。於是
+  `_live_tail` 取最後幾行非空列時，撈到的是幾小時前的殘影
+  （`✻ Worked for 3m 50s · done 12:49 PM`），永遠配不到 `esc to interrupt`：
+
+  - 送達驗證兩個強訊號（turn footer／新 extraction）全瞎 → 每則訊息都在
+    8s 窗＋45s 延遲判定後噴「無法確認」，而訊息其實好好地送進去了。
+  - busy guard 同樣瞎掉 → 對方回合進行中照樣注入（會打斷上一個回合）。
+  - marker fallback 的 `turn_ended` 恆為 True。
+
+  修法：slot 的 pyte 螢幕**高度對齊真實 PTY**（`register_session` 帶
+  `cols`/`rows`，`App.resize` 改視窗大小時同步呼叫新的
+  `resize_session()`）。不用 pyte 自己的 `screen.resize()`——它縮列是從
+  **上面**砍（50→31 保留第 19~49 列），等於把 live viewport 丟掉、殘影
+  留著，剛好相反；改成換一張新螢幕並把 scrollback 搬過去，SIGWINCH 之後
+  CLI 會自己重畫。寬度仍保持寬鬆（≥200），因為 CLI 早就照真實寬度折行了，
+  虛擬螢幕比較窄反而會多折。高度不明／荒謬時退回舊的 50 列。
+  `_live_tail` 取樣窗同時由 6 行放寬到 10 行：footer 區在 tmux 狀態列 +
+  「bypass permissions」提示 + composer 上下框線 + 輸入行之後，spinner
+  剛好卡在第 6 行，任何一條額外 chrome（`✔ Update installed`）就把它擠掉。
+
+- **模型把 `[[TG_REPLY_x]]` 寫成 `<<TG_REPLY_x>>` 就整條分頁不再自動轉發**。
+  這個筆誤有黏性：同一個 session 寫過一次，往後每回合都照抄自己上一輪，於是
+  該分頁**每一則**回覆都配不到 marker，只能等 30s fallback 兜底——體感是
+  「回覆解析不到、要自己 /fetch」。token 是 8 位 hex 亂數，換個括號不可能撞
+  到別的東西，所以抽取前先把 `<<…>>` 正規化回 `[[…]]`（`normalize_reply_markers`），
+  殘留 token 的清理正則也一併吃這個別名。實例：2026-08-26「雜事」分頁連 5
+  回合全是 `<<>>`，一次都沒自動轉發。回歸測試：`tests_tg_marker_alias.py`（5 案例）。
+
+  回歸測試：新增 `tests_tg_screen_geometry.py`（6 案例，含釘住 pyte 縮列
+  語意那條）。全套 31 檔綠。main.py 有動 → 需 `sfctl restart`。
+  Howard 2026-08-26 回報（「雜事」分頁連續 6 則全誤報）。
+
 ## v0.29.45 (2026-08-25)
 
 ### Features

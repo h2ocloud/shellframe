@@ -263,7 +263,20 @@ _TUI_SENTINEL_RE = re.compile(
 
 # Stray reply-marker tokens that can leak into a span when a TUI repaint nests
 # a fresh [[TG_REPLY_xxx]] inside an earlier still-open block.
-_REPLY_MARKER_TOKEN_RE = re.compile(r'\[\[/?TG_REPLY_[0-9a-fA-F]+\]\]')
+_REPLY_MARKER_TOKEN_RE = re.compile(
+    r'(?:\[\[|<<)/?TG_REPLY_[0-9a-fA-F]+(?:\]\]|>>)')
+
+# 模型偶爾把 [[TG_REPLY_x]] 寫成 <<TG_REPLY_x>>——而且是**黏性**的：同一個
+# session 一旦寫過一次，往後每回合都照抄自己上一輪的寫法，該分頁的回覆從此
+# 永遠配不到 marker，只能等 30s fallback 兜底（使用者體感＝「回覆解析不
+# 到 / 要自己 /fetch」）。token 本身是 8 位 hex 亂數，換個括號不可能撞到別
+# 的東西，所以抽取前先把別名正規化回官方寫法。
+_REPLY_MARKER_ALT_RE = re.compile(r'<<(/?TG_REPLY_[0-9a-fA-F]+)>>')
+
+
+def normalize_reply_markers(text: str) -> str:
+    """`<<TG_REPLY_x>>` → `[[TG_REPLY_x]]`（見 _REPLY_MARKER_ALT_RE）。"""
+    return _REPLY_MARKER_ALT_RE.sub(r'[[\1]]', text or "")
 
 
 def clean_mobile_marker_response(text: str) -> str:
@@ -786,11 +799,45 @@ class _OrderedSet:
         return f"_OrderedSet({list(self._d)!r})"
 
 
+# Virtual-terminal geometry for the per-slot pyte screen. ROWS must track the
+# real PTY height: pyte only ever paints the rows the CLI addresses, so a
+# screen taller than the terminal keeps whatever was last painted on the rows
+# below the viewport — stale "ghost" text that never gets cleared. `_live_tail`
+# then samples ghosts instead of the live footer and every screen-based signal
+# (delivery verify, busy guard, stall watchdog) goes blind on that tab.
+# COLS stays generous: the CLI already wrapped its output at the real width, so
+# a wider virtual screen only leaves unused space on the right, while a screen
+# narrower than the real terminal would wrap text the terminal did not.
+_SCREEN_ROWS_DEFAULT = 50
+_SCREEN_ROWS_MIN, _SCREEN_ROWS_MAX = 10, 200
+_SCREEN_COLS_MIN, _SCREEN_COLS_MAX = 200, 500
+
+
+def _screen_dims(cols, rows):
+    """(cols, rows) for a slot's pyte screen, clamped to sane bounds.
+
+    Unknown/absurd height falls back to the historical 50 rows — better a few
+    ghost rows than a screen shorter than the viewport (which would clip the
+    live footer outright)."""
+    try:
+        rows = int(rows or 0)
+    except (TypeError, ValueError):
+        rows = 0
+    if not (_SCREEN_ROWS_MIN <= rows <= _SCREEN_ROWS_MAX):
+        rows = _SCREEN_ROWS_DEFAULT
+    try:
+        cols = int(cols or 0)
+    except (TypeError, ValueError):
+        cols = 0
+    cols = max(_SCREEN_COLS_MIN, min(cols, _SCREEN_COLS_MAX))
+    return cols, rows
+
+
 class SessionSlot:
     """One session registered with the bridge."""
 
     def __init__(self, sid: str, label: str, write_fn, index: int, peek_fn=None,
-                 prepare_fn=None, cmd: str = ""):
+                 prepare_fn=None, cmd: str = "", cols: int = 0, rows: int = 0):
         self.sid = sid
         self.label = label
         self.cmd = cmd  # session launch command — AI-vs-shell gate for delivery verify
@@ -872,7 +919,11 @@ class SessionSlot:
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
         # history 由 3000 降至 800：兼顧長回應擷取與 per-tab 記憶體/掃描成本（撐 10+ tab）
-        self.screen = pyte.HistoryScreen(200, 50, history=800)
+        # Height mirrors the real PTY (see _screen_dims) so no row below the
+        # viewport can hold ghost text; resize_session() keeps it in sync.
+        self.screen_cols, self.screen_rows = _screen_dims(cols, rows)
+        self.screen = pyte.HistoryScreen(self.screen_cols, self.screen_rows,
+                                         history=800)
         self.stream = pyte.Stream(self.screen)
         self._history_offset = 0  # tracks processed history lines
         # 飽和後重掃 scrollback 尾端的 dirty gate：上次重掃時的 _feed_gen。
@@ -1082,8 +1133,18 @@ class TelegramBridge(BridgeBase):
     # ── Session management ──
 
     def register_session(self, sid: str, label: str, write_fn, peek_fn=None,
-                         prepare_fn=None, cmd: str = ""):
-        """Register a session tab with the bridge."""
+                         prepare_fn=None, cmd: str = "", cols: int = 0,
+                         rows: int = 0):
+        """Register a session tab with the bridge.
+
+        cols/rows are the session's live PTY geometry — the virtual screen is
+        built (or re-sized) to match, see _screen_dims."""
+        if sid in self.slots and rows:
+            # Re-register (restart / re-attach) also carries fresh geometry.
+            # Only when the caller actually knows it — a geometry-less
+            # re-register must not reset a correctly sized screen back to the
+            # 200x50 default.
+            self.resize_session(sid, cols, rows)
         with self._slots_lock:
             if sid in self.slots:
                 self.slots[sid].label = label
@@ -1098,8 +1159,40 @@ class TelegramBridge(BridgeBase):
             idx = len(self._slot_order) + 1
             self.slots[sid] = SessionSlot(sid, label, write_fn, idx,
                                           peek_fn=peek_fn, prepare_fn=prepare_fn,
-                                          cmd=cmd)
+                                          cmd=cmd, cols=cols, rows=rows)
             self._slot_order.append(sid)
+
+    def resize_session(self, sid: str, cols: int, rows: int):
+        """PTY resized → rebuild the slot's virtual screen at the new geometry.
+
+        Not pyte's own screen.resize(): shrinking there deletes rows from the
+        TOP (50→31 keeps rows 19-49), i.e. it throws the live viewport away and
+        *keeps* the ghost rows — the exact opposite of what we need. Swapping in
+        a fresh screen is safe because the same resize sends SIGWINCH to the
+        CLI, which repaints the whole viewport within a second; scrollback is
+        carried over so long-reply extraction keeps its history.
+        """
+        slot = self.slots.get(sid)
+        if slot is None:
+            return
+        new_cols, new_rows = _screen_dims(cols, rows)
+        if (new_cols == getattr(slot, "screen_cols", 0)
+                and new_rows == getattr(slot, "screen_rows", 0)):
+            return
+        with slot.output_lock:
+            old = slot.screen
+            screen = pyte.HistoryScreen(new_cols, new_rows, history=800)
+            try:
+                screen.history.top.extend(old.history.top)
+            except Exception:
+                pass
+            slot.screen = screen
+            slot.stream = pyte.Stream(screen)
+            slot.screen_cols, slot.screen_rows = new_cols, new_rows
+            slot._feed_gen += 1
+            slot._display_cache = None
+            slot.scan_dirty = True
+        _blog(f"[resize] {sid} virtual screen → {new_cols}x{new_rows}\n")
 
     def unregister_session(self, sid: str):
         """Remove a session from the bridge."""
@@ -2152,7 +2245,7 @@ class TelegramBridge(BridgeBase):
                 raw += "\n" + (slot.peek_fn() or "")
             except Exception:
                 pass
-        clean_raw = strip_ansi(raw, sent_texts=[])
+        clean_raw = normalize_reply_markers(strip_ansi(raw, sent_texts=[]))
         # A6.0 診斷（僅 perf_debug=on）：記下「清洗後 marker 還在不在」，供
         # _try_marker_extract 的失敗分支印 [marker-miss]。放這裡是因為 clean_raw
         # 只存在於本函式內，重算一次 strip_ansi 要 30ms（120KB）。
@@ -5643,7 +5736,7 @@ class TelegramBridge(BridgeBase):
                 break
             time.sleep(0.05)
 
-    def _live_tail(self, slot, rows: int = 6) -> str:
+    def _live_tail(self, slot, rows: int = 10) -> str:
         """注入訊號用的「現在畫面尾端」文字（footer 區）。
 
         v0.29.1 之前這裡用 peek_fn()（最後 ~1KB 原始 PTY bytes）——那是
@@ -5653,7 +5746,12 @@ class TelegramBridge(BridgeBase):
         驗證也會拿殘影假 delivered → 真失敗不重試不通知。live pyte screen
         沒有記憶效應，footer 在就是在。取最後 rows 個非空行，避免對話
         內文提到 'esc to interrupt' 造成誤判。無 pyte screen 時（測試
-        fake slot）退回 ring bytes。"""
+        fake slot）退回 ring bytes。
+
+        rows=10（原本 6）：footer 區在 tmux 狀態列 + 「bypass permissions」
+        提示 + composer 上下框線 + 輸入行之後，spinner 剛好卡在第 6 行——
+        任何一條額外 chrome（「✔ Update installed」、排隊訊息提示）就把它
+        擠出取樣窗。螢幕高度已對齊真實 PTY，多取幾行不會撈到畫面外的殘影。"""
         if getattr(slot, "screen", None) is not None:
             try:
                 lines = [l for l in self._slot_display(slot) if l.strip()]

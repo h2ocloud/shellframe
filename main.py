@@ -2654,6 +2654,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
                 prepare_fn=lambda _s=session: self._prepare_pane_for_input(_s),
                 cmd=cmd,
+                cols=session.cols, rows=session.rows,
             )
             self.bridge.refresh_commands()
         if self.line_bridge:
@@ -3324,6 +3325,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 peek_fn=lambda _s=session: bytes(_s._recent).decode("utf-8", errors="replace"),
                 prepare_fn=lambda _s=session: self._prepare_pane_for_input(_s),
                 cmd=cmd,
+                cols=session.cols, rows=session.rows,
             )
             self.bridge.refresh_commands()
         if self.line_bridge:
@@ -3602,6 +3604,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         s = self.sessions.get(sid)
         if s:
             s.resize(cols, rows)
+            # The TG bridge reads this session through its own pyte screen —
+            # leave that at the old height and every row below the new viewport
+            # keeps its last paint forever (ghost text). `_live_tail` would then
+            # sample ghosts instead of the live footer and the tab goes blind
+            # (no delivery confirm, no busy guard, no stall watch).
+            if self.bridge is not None:
+                try:
+                    self.bridge.resize_session(sid, cols, rows)
+                except Exception:
+                    _swallow("App.resize:bridge_resize")
 
 
 
@@ -4740,6 +4752,7 @@ try {
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                 prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
                 cmd=getattr(s, 'cmd', '') or '',
+                cols=getattr(s, 'cols', 0), rows=getattr(s, 'rows', 0),
             )
 
         self.bridge.start()
@@ -5227,6 +5240,7 @@ try {
                     peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                     prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
                     cmd=getattr(s, 'cmd', '') or '',
+                    cols=getattr(s, 'cols', 0), rows=getattr(s, 'rows', 0),
                 )
             else:
                 self.bridge.unregister_session(sid)
@@ -5369,6 +5383,7 @@ try {
                         peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                         prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
                         cmd=getattr(s, 'cmd', '') or '',
+                        cols=getattr(s, 'cols', 0), rows=getattr(s, 'rows', 0),
                     )
                 # Restore user routing state — filter out sids that disappeared
                 self.bridge._user_active = {
@@ -5411,6 +5426,7 @@ try {
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
                 prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
                 cmd=getattr(s, 'cmd', '') or '',
+                cols=getattr(s, 'cols', 0), rows=getattr(s, 'rows', 0),
             )
             self.bridge.refresh_commands()
 
