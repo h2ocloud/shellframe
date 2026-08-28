@@ -921,6 +921,9 @@ class SessionSlot:
         # history 由 3000 降至 800：兼顧長回應擷取與 per-tab 記憶體/掃描成本（撐 10+ tab）
         # Height mirrors the real PTY (see _screen_dims) so no row below the
         # viewport can hold ghost text; resize_session() keeps it in sync.
+        # 這個分頁是否曾經被確認「CLI 已就緒」——只擋第一次注入，之後不再
+        # 每則訊息都去 capture-pane。
+        self.ready_confirmed = False
         self.screen_cols, self.screen_rows = _screen_dims(cols, rows)
         self.screen = pyte.HistoryScreen(self.screen_cols, self.screen_rows,
                                          history=800)
@@ -975,7 +978,7 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None, on_consume_init=None, on_model_info=None, on_agent_status=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None, on_consume_init=None, on_model_info=None, on_agent_status=None, on_input_blocked=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
@@ -992,6 +995,12 @@ class TelegramBridge(BridgeBase):
         # 心跳的狀態行用它，禁止在裡面呼叫 status_for()（會觸發 transcript 解析）。
         # main.py 尚未重啟時是 None，心跳自動降級成只有第一行，不會失效。
         self._on_agent_status = on_agent_status
+        # callback(sid) -> str：分頁正卡在會吃掉輸入的啟動對話框時回傳原因，
+        # 否則回空字串。只在「這個分頁的第一次注入」用（見 _wait_input_safe）。
+        # 刻意做成**偵測危險狀態**而不是「偵測就緒」：就緒訊號抓不到只會退回
+        # 舊行為，抓錯就緒卻會把正常分頁的訊息全擋掉（實測 _AI_READY_RE 對
+        # Claude Code 2.x 的 ❯ composer 根本配不到，做成就緒閘門會災難）。
+        self._on_input_blocked = on_input_blocked
         self._offset = 0
         self._flush_thread = None
         self._watchdog_thread = None
@@ -5564,6 +5573,30 @@ class TelegramBridge(BridgeBase):
                         slot.prepare_fn()
                     except Exception:
                         pass
+                # Ready gate（只擋這個分頁的第一次注入，見 _wait_session_ready）：
+                # CLI 還停在啟動對話框時，Ctrl-U＋整段文字＋Enter 等於幫使用者
+                # 選了一個選項，而 Claude Code 信任對話框第 2 項是 No, exit。
+                if (not slot.ready_confirmed
+                        and _detect_ai(getattr(slot, "cmd", "") or "")):
+                    blocked = self._wait_input_safe(slot)
+                    if not blocked:
+                        slot.ready_confirmed = True
+                    else:
+                        # 沒寫進去＝清掉 👀，並講清楚為什麼、怎麼補送。通知走
+                        # 背景 thread：這裡還握著 write_lock，tg_api 可能卡 35s。
+                        _blog(f"[ready] {slot.sid} 未就緒，這則不注入\n")
+                        self._react_async(chat_id, origin_msg_id, None)
+                        threading.Thread(
+                            target=tg_api,
+                            args=(self.config.bot_token, "sendMessage", {
+                                "chat_id": chat_id,
+                                "text": (f"⚠「{slot.label}」還卡在{blocked}，"
+                                         "這則沒有送進去。\n先到那個分頁把對話框"
+                                         "點掉再重發——硬送會被當成在對話框裡選"
+                                         "項目，分頁可能因此被關掉。"),
+                            }),
+                            kwargs={"timeout": 10}, daemon=True).start()
+                        return False
                 # Busy guard: writing + Enter while Claude Code is mid-turn
                 # makes it abort the in-flight turn with "[Request interrupted]"
                 # and submit a mixed/empty buffer (this is the「貼文字變
@@ -5810,6 +5843,35 @@ class TelegramBridge(BridgeBase):
             return (slot.peek_fn() or "") if slot.peek_fn else ""
         except Exception:
             return ""
+
+    def _wait_input_safe(self, slot, timeout: float = 20.0) -> str:
+        """新分頁的第一則訊息：確認畫面不是卡在會吃掉輸入的啟動對話框。
+
+        沒有這道閘門時，訊息會直接打進 trust prompt 之類的選單——Ctrl-U ＋
+        一整段文字 ＋ Enter 在選單裡就是「選一個選項」，而 Claude Code 信任
+        對話框第 2 項是 **No, exit**：分頁被自己收到的訊息關掉，訊息也一起
+        消失。Howard 2026-08-28 手機端 /new 開的分頁就是這樣沒的（注入後畫面
+        沒殘留、沒開回合，3 分鐘後 tmux session 直接不見）。
+
+        回傳擋下的原因，空字串＝可以送。偵測不到危險就放行（fail open），
+        所以偵測失準最多是退回舊行為，不會把正常分頁的訊息擋死。
+        只擋第一次：放行過就記在 slot.ready_confirmed，之後不再 capture-pane。
+        """
+        if not self._on_input_blocked:
+            return ""
+        deadline = time.time() + timeout
+        reason = ""
+        while time.time() < deadline:
+            try:
+                reason = self._on_input_blocked(slot.sid) or ""
+            except Exception as e:
+                _blog(f"[ready] {slot.sid} check failed ({type(e).__name__}: {e})"
+                      " → 放行\n")
+                return ""
+            if not reason:
+                return ""
+            time.sleep(1.0)
+        return reason
 
     def _deferred_delivery_verdict(self, slot, chat_id, injected_at,
                                    extra_wait: float = 45.0, origin_msg_id=None):

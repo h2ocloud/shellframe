@@ -3211,6 +3211,46 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         clean = self._ANSI_RE.sub('', "\n".join(parts)) if parts else ""
         return bool(self._AI_READY_RE.search(clean))
 
+    _STARTUP_EXIT_OPTION_RE = _re.compile(
+        r'^\s*(?:[❯>›]\s*)?2[.)]\s*No,?\s*exit', _re.MULTILINE | _re.IGNORECASE)
+
+    def startup_dialog_blocking(self, sid: str) -> str:
+        """分頁是否正停在會吃掉貼上輸入的啟動對話框；回傳原因（空＝安全）。
+
+        TG bridge 的注入是 Ctrl-U ＋整段文字 ＋ Enter——打進選單就是「幫使用者
+        選一個選項」，而 Claude Code 信任對話框第 2 項是 No, exit，分頁會被
+        自己收到的訊息關掉（2026-08-28 實例）。這裡刻意只偵測**危險狀態**，
+        偵測不到就放行：`_AI_READY_RE` 那種「就緒偵測」對 Claude Code 2.x 的
+        ❯ composer 配不到，拿來當閘門會把正常分頁全擋死。
+        """
+        s = self.sessions.get(sid)
+        if not s or not getattr(s, "alive", False):
+            return ""
+        # 先給既有的自動接受一次機會處理掉信任對話框
+        try:
+            self._auto_accept_startup_trust_prompt(sid, s)
+        except Exception:
+            _swallow("Api.startup_dialog_blocking:trust")
+        parts = []
+        tmux_name = getattr(s, "_tmux_name", None)
+        if tmux_name:
+            try:
+                r = subprocess.run(
+                    ["tmux", "capture-pane", "-p", "-J", "-t", tmux_name, "-S", "-40"],
+                    capture_output=True, text=True, timeout=1)
+                if r.returncode == 0 and r.stdout:
+                    parts.append(r.stdout)
+            except Exception:
+                _swallow("Api.startup_dialog_blocking:capture")
+        if not parts:
+            return ""
+        clean = self._ANSI_RE.sub('', "\n".join(parts))
+        if self._STARTUP_TRUST_RE.search(clean):
+            return "啟動信任對話框"
+        if self._STARTUP_EXIT_OPTION_RE.search(clean):
+            return "啟動選單（有 No, exit 選項）"
+        return ""
+
     def read_output(self, sid: str) -> str:
         """Read buffered output. Used only during reconnect — normal output is pushed."""
         s = self.sessions.get(sid)
@@ -4737,6 +4777,7 @@ try {
             on_consume_init=self.consume_init_prompt_if_ready,
             on_model_info=self.get_session_model_info,
             on_agent_status=self._agent_status_snapshot,
+            on_input_blocked=self.startup_dialog_blocking,
         )
 
         # Register existing sessions (skip bridge-disabled ones)
@@ -5368,6 +5409,7 @@ try {
                     on_consume_init=self.consume_init_prompt_if_ready,
                     on_model_info=self.get_session_model_info,
                     on_agent_status=self._agent_status_snapshot,
+                    on_input_blocked=self.startup_dialog_blocking,
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
