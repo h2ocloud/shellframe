@@ -1202,8 +1202,20 @@ class TelegramBridge(BridgeBase):
     def _remove_slots_locked(self, sids):
         """Remove slots while self._slots_lock is held."""
         removed = False
+        gone_labels = {}
         for sid in sids:
             if sid in self.slots:
+                slot = self.slots[sid]
+                gone_labels[sid] = slot.label
+                # 分頁死掉時把最後畫面留在 log 裡：tmux session 一沒，
+                # 現場就完全蒸發，事後只剩「分頁不見了」查不出死因
+                # （2026-08-28 s169 開了 3 分鐘就消失，無跡可循）。
+                try:
+                    tail = (self._live_tail(slot, rows=8) or "").strip()
+                except Exception:
+                    tail = ""
+                _blog(f"[slot-gone] {sid} '{slot.label}' last screen:\n"
+                      f"{tail[-800:]}\n")
                 self.slots.pop(sid, None)
                 removed = True
             if sid in self._slot_order:
@@ -1214,13 +1226,23 @@ class TelegramBridge(BridgeBase):
         for i, s in enumerate(self._slot_order):
             if s in self.slots:
                 self.slots[s].index = i + 1
+        # 使用者手上的分頁消失 → 改指第一格，但**必須講**（見
+        # _notify_active_slot_gone）：靜默改指等於下一則工作指令悄悄落到
+        # 別的分頁，手機端只看得到 👀/🫡。
+        reroutes = []
         for uid, active_sid in list(self._user_active.items()):
             if active_sid in self.slots:
                 continue
+            gone = gone_labels.get(active_sid, active_sid)
             if self._slot_order:
                 self._user_active[uid] = self._slot_order[0]
+                reroutes.append((uid, gone, self._slot_order[0]))
             else:
                 del self._user_active[uid]
+                reroutes.append((uid, gone, ""))
+        if reroutes:
+            threading.Thread(target=self._notify_active_slot_gone,
+                             args=(reroutes,), daemon=True).start()
         default = getattr(self, '_default_active_sid', None)
         if default and default not in self.slots:
             self._default_active_sid = self._slot_order[0] if self._slot_order else ""
@@ -1247,6 +1269,32 @@ class TelegramBridge(BridgeBase):
             ]
             if stale:
                 self._remove_slots_locked(stale)
+
+    def _notify_active_slot_gone(self, reroutes):
+        """分頁在使用者手上消失（CLI 退出／分頁被關）→ 明講訊息改送去哪。
+
+        舊版靜默把 _user_active 改指 _slot_order[0]：手機端只看得到 👀／🫡，
+        下一則工作指令就悄悄落進別的分頁。Howard 2026-08-28 實例：新開的
+        分頁 3 分鐘後死掉，接著丟的「台壽展場案 API 規格」任務跑進「雜事」，
+        他是 /10 打不開才發現分頁不見了。跑在背景 thread：呼叫端還握著
+        _slots_lock，而 tg_api 可能卡到 35s。"""
+        for uid, gone_label, new_sid in reroutes:
+            chat_id = self._user_chat.get(uid)
+            if not chat_id:
+                continue
+            slot = self.slots.get(new_sid) if new_sid else None
+            if slot is not None:
+                body = (f"⚠ 分頁「{gone_label}」已經結束（CLI 退出或分頁被關）。\n"
+                        f"之後的訊息會自動送到「{slot.label}」(/{slot.index})，"
+                        f"要換請用下面的編號。\n\n{self._slot_menu_text(uid)}")
+            else:
+                body = (f"⚠ 分頁「{gone_label}」已經結束，"
+                        "目前沒有其他分頁可以接手。")
+            try:
+                tg_api(self.config.bot_token, "sendMessage",
+                       {"chat_id": chat_id, "text": body}, timeout=10)
+            except Exception:
+                pass
 
     def reorder_slots(self, ordered_sids: list):
         """Reorder session slots to match the given sid list. Reindexes /1, /2, etc."""
@@ -5838,6 +5886,17 @@ class TelegramBridge(BridgeBase):
             residue = True
         return False, residue
 
+    def _slot_menu_text(self, user_id) -> str:
+        """編號→分頁名的精簡清單（不含回覆預覽，/N 打錯時直接附上）。"""
+        active_sid = self.get_active_sid(user_id)
+        with self._slots_lock:
+            rows = [(self.slots[sid].index, self.slots[sid].label,
+                     sid == active_sid) for sid in self._slot_order]
+        if not rows:
+            return "（目前沒有任何分頁）"
+        return "\n".join(f"/{i}  {label}{'  ◀ 現在在這' if act else ''}"
+                          for i, label, act in rows)
+
     def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):
         """Handle slash commands. `text` is the full message text (for argv parsing)."""
 
@@ -5935,6 +5994,8 @@ class TelegramBridge(BridgeBase):
 
         elif cmd.isdigit():
             idx = int(cmd)
+            switch_msg = None
+            out_of_range = 0     # 0=沒事，否則＝目前分頁數（含 0 個）
             with self._slots_lock:
                 if 1 <= idx <= len(self._slot_order):
                     sid = self._slot_order[idx - 1]
@@ -5946,15 +6007,29 @@ class TelegramBridge(BridgeBase):
                     if last_resp:
                         preview = last_resp[:3000] + "\n...(truncated)" if len(last_resp) > 3000 else last_resp
                         switch_msg += f"\n\n💬 Last AI response:\n{preview}"
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id,
-                        "text": switch_msg,
-                    })
                 else:
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id,
-                        "text": f"Invalid session number. Use /list to see available sessions.",
-                    })
+                    out_of_range = -1
+            # 送出一律在鎖外：_slot_menu_text 自己要拿 _slots_lock（非
+            # reentrant），而 tg_api 可能卡到 35s，不能扣著 slot 鎖等 HTTPS。
+            if switch_msg:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": switch_msg,
+                })
+            if out_of_range:
+                # 死巷子的錯誤訊息（「Invalid session number. Use /list」）在
+                # 手機上等於要再敲一次指令才知道能選什麼——而且編號會漂：
+                # 分頁關掉／死掉後，後面的全部往前遞補，聊天室裡舊的 /list
+                # 就過期了（Howard 2026-08-28：照舊清單敲 /10，第 10 個分頁
+                # 早就沒了）。直接把現在的編號表附上，一則訊息就能改點。
+                n = len(self._slot_order)
+                head = (f"⚠ 沒有 /{idx} —— 目前 {n} 個分頁（/1–/{n}）。"
+                        if n else "⚠ 目前沒有任何分頁。")
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": f"{head}\n分頁關掉後編號會往前遞補，舊清單會過期。"
+                            f"\n\n{self._slot_menu_text(user_id)}",
+                })
 
         elif cmd == "reload":
             if self._on_reload:
