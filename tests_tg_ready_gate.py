@@ -88,7 +88,7 @@ def test_gate_wired_into_send():
     # 擋下時必須是「不注入 + 通知」，不能默默吞掉
     gate = SEND_SRC.split("_wait_input_safe", 1)[1][:2000]
     assert "return False" in gate, "擋下後仍會往下注入"
-    assert "sendMessage" in gate, "擋下沒有通知使用者"
+    assert "_notify_input_blocked" in gate, "擋下沒有通知使用者"
 
 
 # ── 7. 只對 AI 分頁生效（shell 分頁沒有「就緒」概念，不能擋）──

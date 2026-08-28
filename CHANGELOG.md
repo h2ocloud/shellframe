@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.29.49 (2026-08-28)
+
+### Fixes
+- **自動接受信任對話框＝自動關掉新分頁**。Claude Code 這版的
+  「Quick safety check」游標**預設停在 `No, exit`**（Yes 在下面一行）：
+
+        ❯ No, exit
+          Yes, I trust this folder
+
+  舊的 `_auto_accept_startup_trust_prompt` 是「送一個 Enter」，等於替使用者
+  選了 exit。現在改成先讀游標在哪一行、再決定按幾次方向鍵，確定落在
+  「Yes, I trust this folder」才 Enter；選項讀不出來就**維持 pending 不亂按**，
+  留給 TG 帶回手機。順帶讓 `startup_dialog_blocking` 在任何時候看到這個對話框
+  都能補答（不受開機那幾秒的 deadline 限制），卡住的分頁自己救得回來。
+
+### Features
+- **信任對話框帶回 Telegram**。純手機操作時桌面不在手邊，而這個對話框既不能
+  盲按 Enter、也不能靠「硬送一則訊息」清掉（兩者都會關分頁）。現在 `/new` 開的
+  分頁若停在對話框，會直接在 TG 推一組 inline 按鈕
+  「✅ 信任這個資料夾 / ✕ 關掉分頁」，按下去由 app 端用游標感知的方式作答；
+  被 ready gate 擋下的訊息也改成附上同一組按鈕，並提醒回答完重發。
+  同一分頁只推一次，不洗版。`/new` 的成功訊息也補上分頁編號（`/N`）。
+
+作答後 5 秒內不重複作答（對話框文字還留在畫面時再按一次，就會變成對著正常
+  composer 按 Up＋Enter，把上一則輸入叫回來又送出去）。
+
+  實測：17:16 新開的分頁停在對話框，新邏輯判定 `keys=['Up','Enter']`（那次是
+  Yes 在上、游標在 No），分頁順利進到正常輸入狀態。
+
+回歸測試：新增 `tests_trust_dialog.py`（8 案例）。全套 34 檔綠。
+main.py 有動 → 需 `sfctl restart`。Howard 2026-08-28 回報＋截圖。
+
 ## v0.29.48 (2026-08-28)
 
 ### Fixes

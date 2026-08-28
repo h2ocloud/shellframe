@@ -924,6 +924,8 @@ class SessionSlot:
         # 這個分頁是否曾經被確認「CLI 已就緒」——只擋第一次注入，之後不再
         # 每則訊息都去 capture-pane。
         self.ready_confirmed = False
+        # 已經把信任對話框的按鈕推到 TG 了嗎（避免每次偵測都洗版）
+        self.trust_prompt_sent = False
         self.screen_cols, self.screen_rows = _screen_dims(cols, rows)
         self.screen = pyte.HistoryScreen(self.screen_cols, self.screen_rows,
                                          history=800)
@@ -978,7 +980,8 @@ class TelegramBridge(BridgeBase):
 
     PLATFORM = "telegram"
 
-    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None, on_consume_init=None, on_model_info=None, on_agent_status=None, on_input_blocked=None):
+    def __init__(self, bridge_id: str, config: TelegramBridgeConfig, on_status_change=None, on_reload=None, on_close_session=None, on_restart=None, on_check_update=None, on_new_session=None, on_consume_init=None, on_model_info=None, on_agent_status=None, on_input_blocked=None,
+                 on_answer_dialog=None):
         # write_fn not used directly — each session slot has its own
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
         self.bot_info = {}
@@ -1001,6 +1004,9 @@ class TelegramBridge(BridgeBase):
         # 舊行為，抓錯就緒卻會把正常分頁的訊息全擋掉（實測 _AI_READY_RE 對
         # Claude Code 2.x 的 ❯ composer 根本配不到，做成就緒閘門會災難）。
         self._on_input_blocked = on_input_blocked
+        # callback(sid, trust: bool) -> bool：替分頁回答啟動信任對話框。
+        # 讓對話框可以「帶回手機」用按鈕選，不必跑去桌面點。
+        self._on_answer_dialog = on_answer_dialog
         self._offset = 0
         self._flush_thread = None
         self._watchdog_thread = None
@@ -4817,16 +4823,63 @@ class TelegramBridge(BridgeBase):
                 if new_sid:
                     self._user_active[user_id] = new_sid
                     self._default_active_sid = new_sid
+                    slot = self.slots.get(new_sid)
+                    idx = f"（/{slot.index}）" if slot else ""
                     tg_api(self.config.bot_token, "editMessageText", {
                         "chat_id": chat_id, "message_id": message_id,
-                        "text": f"✚ {preset.get('icon', '▶')} {preset.get('name')} 已建立\n切到此 session（/list 可看全部）",
+                        "text": (f"✚ {preset.get('icon', '▶')} "
+                                 f"{preset.get('name')} 已建立{idx}\n"
+                                 "已切到這個分頁（/list 可看全部）"),
                     })
+                    # 新分頁很常停在信任對話框（游標預設在 No, exit）。等它畫
+                    # 出來，若真的卡住就把選項帶回手機——不然使用者只會看到
+                    # 「已建立」，然後丟進去的第一則訊息把分頁按掉。
+                    if self._on_input_blocked:
+                        for _ in range(16):
+                            time.sleep(0.5)
+                            try:
+                                reason = self._on_input_blocked(new_sid) or ""
+                            except Exception:
+                                reason = ""
+                            if reason:
+                                self._offer_trust_buttons(
+                                    new_sid, chat_id,
+                                    (self.slots[new_sid].label
+                                     if new_sid in self.slots
+                                     else preset.get("name") or new_sid),
+                                    reason)
+                                break
                 else:
                     tg_api(self.config.bot_token, "editMessageText", {
                         "chat_id": chat_id, "message_id": message_id,
                         "text": f"❌ Create failed: {err or 'unknown error'}",
                     })
             threading.Thread(target=_do_create, daemon=True).start()
+            return
+
+        if data.startswith("trust:"):
+            parts = data.split(":", 2)
+            sid = parts[1] if len(parts) > 1 else ""
+            want = (parts[2] if len(parts) > 2 else "") == "yes"
+            slot = self.slots.get(sid)
+            label = slot.label if slot else sid
+            ok = False
+            if self._on_answer_dialog and sid:
+                try:
+                    ok = bool(self._on_answer_dialog(sid, want))
+                except Exception as e:
+                    _blog(f"[trust] answer failed sid={sid}: {e}\n")
+            if ok and want:
+                text = (f"✅ 已替「{label}」選「Yes, I trust this folder」，"
+                        "分頁可以用了，直接把訊息發過來。")
+            elif ok:
+                text = f"✕ 已替「{label}」選「No, exit」，分頁會關掉。"
+            else:
+                text = (f"⚠ 沒能替「{label}」按下去——對話框可能已經不在，"
+                        "或畫面讀不到選項。到桌面看一下比較快。")
+            tg_api(self.config.bot_token, "editMessageText", {
+                "chat_id": chat_id, "message_id": message_id, "text": text,
+            })
             return
 
         if data.startswith("close:"):
@@ -5587,15 +5640,8 @@ class TelegramBridge(BridgeBase):
                         _blog(f"[ready] {slot.sid} 未就緒，這則不注入\n")
                         self._react_async(chat_id, origin_msg_id, None)
                         threading.Thread(
-                            target=tg_api,
-                            args=(self.config.bot_token, "sendMessage", {
-                                "chat_id": chat_id,
-                                "text": (f"⚠「{slot.label}」還卡在{blocked}，"
-                                         "這則沒有送進去。\n先到那個分頁把對話框"
-                                         "點掉再重發——硬送會被當成在對話框裡選"
-                                         "項目，分頁可能因此被關掉。"),
-                            }),
-                            kwargs={"timeout": 10}, daemon=True).start()
+                            target=self._notify_input_blocked,
+                            args=(slot, chat_id, blocked), daemon=True).start()
                         return False
                 # Busy guard: writing + Enter while Claude Code is mid-turn
                 # makes it abort the in-flight turn with "[Request interrupted]"
@@ -5843,6 +5889,47 @@ class TelegramBridge(BridgeBase):
             return (slot.peek_fn() or "") if slot.peek_fn else ""
         except Exception:
             return ""
+
+    def _notify_input_blocked(self, slot, chat_id, reason: str):
+        """被啟動對話框擋下：先把選項帶回 TG，帶不動才退回純文字說明。"""
+        if self._offer_trust_buttons(slot.sid, chat_id, slot.label, reason):
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id,
+                "text": f"（剛剛那則沒有送進「{slot.label}」，回答完再重發一次）",
+            }, timeout=10)
+            return
+        tg_api(self.config.bot_token, "sendMessage", {
+            "chat_id": chat_id,
+            "text": (f"⚠「{slot.label}」還卡在{reason}，這則沒有送進去。\n"
+                     "先把那個對話框處理掉再重發——硬送會被當成在對話框裡選"
+                     "項目，分頁可能因此被關掉。"),
+        }, timeout=10)
+
+    def _offer_trust_buttons(self, sid: str, chat_id, label: str, reason: str = ""):
+        """把 CLI 的啟動信任對話框帶回 TG，用 inline 按鈕讓使用者直接回答。
+
+        這個對話框的游標**預設停在 No, exit**，所以既不能盲按 Enter，也不能
+        叫使用者「硬送一則訊息」——兩者都會把分頁關掉。純手機操作時桌面根本
+        不在手邊，選項一定要帶回來（Howard 2026-08-28 要求）。"""
+        if not self._on_answer_dialog:
+            return False
+        slot = self.slots.get(sid)
+        if slot is not None:
+            if slot.trust_prompt_sent:
+                return False
+            slot.trust_prompt_sent = True
+        tail = f"（{reason}）" if reason else ""
+        tg_api(self.config.bot_token, "sendMessage", {
+            "chat_id": chat_id,
+            "text": (f"❓「{label}」停在 Claude Code 的信任對話框{tail}。\n"
+                     "這個對話框游標預設在「No, exit」，硬送訊息會把分頁關掉，"
+                     "所以先在這裡回答："),
+            "reply_markup": {"inline_keyboard": [[
+                {"text": "✅ 信任這個資料夾", "callback_data": f"trust:{sid}:yes"},
+                {"text": "✕ 關掉分頁", "callback_data": f"trust:{sid}:no"},
+            ]]},
+        })
+        return True
 
     def _wait_input_safe(self, slot, timeout: float = 20.0) -> str:
         """新分頁的第一則訊息：確認畫面不是卡在會吃掉輸入的啟動對話框。

@@ -2858,6 +2858,76 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 _swallow("Api._startup_trust_tail:2894")
         return "\n".join(parts)[-4000:]
 
+    # 信任對話框的兩個選項行。Claude Code 這版的游標**預設停在「No, exit」**
+    # （2026-08-28 截圖實證），所以「按 Enter 就對了」是致命假設：Enter 直接
+    # 讓 CLI 退出、分頁消失。選項順序與有無編號都隨版本變，所以一律先讀游標
+    # 在哪一行，再決定要按幾次方向鍵。
+    _TRUST_OPT_YES_RE = _re.compile(r'Yes,\s*I\s*trust\s*this\s*folder', _re.I)
+    _TRUST_OPT_NO_RE = _re.compile(r'No,?\s*exit', _re.I)
+    _TRUST_CURSOR_RE = _re.compile(r'^\s*[❯>›»▶]\s*\S')
+
+    def _trust_dialog_nav(self, clean: str):
+        """(方向, 步數) 讓游標走到「Yes, I trust this folder」；抓不到回 None。"""
+        rows = []          # [(is_yes, has_cursor)]
+        for line in clean.splitlines():
+            is_yes = bool(self._TRUST_OPT_YES_RE.search(line))
+            is_no = bool(self._TRUST_OPT_NO_RE.search(line))
+            if not (is_yes or is_no):
+                continue
+            rows.append((is_yes, bool(self._TRUST_CURSOR_RE.match(line))))
+        if len(rows) < 2:
+            return None
+        try:
+            yes_i = next(i for i, (is_yes, _) in enumerate(rows) if is_yes)
+            cur_i = next(i for i, (_, cur) in enumerate(rows) if cur)
+        except StopIteration:
+            return None
+        delta = yes_i - cur_i
+        return ("Down" if delta > 0 else "Up", abs(delta))
+
+    def answer_startup_trust(self, sid: str, trust: bool = True) -> bool:
+        """把啟動信任對話框答掉（預設選 Yes）。回傳有沒有真的按下去。
+
+        絕不盲按 Enter：這版游標預設在「No, exit」，盲按 = 關掉分頁。"""
+        s = self.sessions.get(sid)
+        if not s or not getattr(s, "alive", False):
+            return False
+        # 冷卻：答完之後對話框文字還會留在畫面／ring buffer 幾秒，沒有這道
+        # 閘門會再按一次——那時已經是正常 composer，Up 會把上一則輸入叫回
+        # 輸入框、Enter 再送出去。5s 足夠讓畫面翻頁。
+        now = time.monotonic()
+        if now - getattr(s, "_trust_answered_at", 0.0) < 5.0:
+            return False
+        clean = self._ANSI_RE.sub('', self._startup_trust_tail(s) or "")
+        if not self._STARTUP_TRUST_RE.search(clean):
+            return False
+        nav = self._trust_dialog_nav(clean)
+        if nav is None:
+            _dlog("trust", f"trust dialog options unparsable sid={sid} — 不敢按")
+            return False
+        key, steps = nav
+        if not trust:                      # 要選 No：往反方向同樣的步數
+            key, steps = ("Up" if key == "Down" else "Down"), steps
+            if steps == 0:
+                key, steps = "Down", 1
+        keys = [key] * steps + ["Enter"]
+        tmux_name = getattr(s, "_tmux_name", None)
+        _dlog("trust", f"answering trust dialog sid={sid} trust={trust} keys={keys}")
+        try:
+            if tmux_name:
+                subprocess.run(["tmux", "send-keys", "-t", tmux_name] + keys,
+                               capture_output=True, timeout=2)
+            else:
+                seq = {"Down": "\x1b[B", "Up": "\x1b[A", "Enter": "\r"}
+                for k in keys:
+                    s.write(seq[k])
+                    time.sleep(0.05)
+        except Exception:
+            _swallow("Api.answer_startup_trust")
+            return False
+        s._trust_answered_at = time.monotonic()
+        return True
+
     def _auto_accept_startup_trust_prompt(self, sid: str, s: Session):
         """Answer only known startup trust prompts for trusted AI cwd launches."""
         if not getattr(s, '_startup_trust_pending', False):
@@ -2873,19 +2943,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         clean = self._ANSI_STRIP_RE.sub('', clean) if clean else ""
         if not self._STARTUP_TRUST_RE.search(clean):
             return
+        # 舊版在這裡直接送 Enter —— 這版游標預設停在「No, exit」，等於
+        # 自動把新分頁關掉（2026-08-28 手機端開的分頁就是這樣沒的）。
+        if not self.answer_startup_trust(sid, trust=True):
+            # 選項讀不出來就**維持 pending**，讓 TG 那邊把對話框帶回手機給
+            # 使用者自己選，絕不亂按。
+            s._startup_trust_pending = True
+            return
         s._startup_trust_pending = False
         s._startup_trust_answered = True
         _dlog("trust", f"auto-accepted startup trust prompt sid={sid} cwd={getattr(s, 'cwd', '')!r}")
-        if getattr(s, '_tmux_name', None):
-            try:
-                subprocess.run(
-                    ["tmux", "send-keys", "-t", s._tmux_name, "Enter"],
-                    capture_output=True, timeout=1,
-                )
-                return
-            except Exception:
-                _swallow("Api._auto_accept_startup_trust_prompt:2923")
-        s.write("\r")
 
     def _prepare_pane_for_input(self, s: Session) -> bool:
         """Ready a session's pane to receive injected input (TG bridge
@@ -3246,6 +3313,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return ""
         clean = self._ANSI_RE.sub('', "\n".join(parts))
         if self._STARTUP_TRUST_RE.search(clean):
+            # 受信任的 cwd 就直接（游標感知地）答掉，不要讓使用者卡在這。
+            # 這條路徑沒有 _startup_trust_deadline 的時限，所以連「開機那幾秒
+            # 沒抓到、對話框一直掛著」的分頁也救得回來。
+            if (_should_auto_accept_startup_trust(getattr(s, "cmd", ""),
+                                                 getattr(s, "cwd", ""))
+                    and self.answer_startup_trust(sid, trust=True)):
+                time.sleep(0.6)
+                s._startup_trust_pending = False
+                s._startup_trust_answered = True
+                return ""
             return "啟動信任對話框"
         if self._STARTUP_EXIT_OPTION_RE.search(clean):
             return "啟動選單（有 No, exit 選項）"
@@ -4778,6 +4855,7 @@ try {
             on_model_info=self.get_session_model_info,
             on_agent_status=self._agent_status_snapshot,
             on_input_blocked=self.startup_dialog_blocking,
+            on_answer_dialog=self.answer_startup_trust,
         )
 
         # Register existing sessions (skip bridge-disabled ones)
@@ -5410,6 +5488,7 @@ try {
                     on_model_info=self.get_session_model_info,
                     on_agent_status=self._agent_status_snapshot,
                     on_input_blocked=self.startup_dialog_blocking,
+                    on_answer_dialog=self.answer_startup_trust,
                 )
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
