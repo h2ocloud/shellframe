@@ -575,6 +575,47 @@ def wants_system_directive(cmd: str) -> bool:
     return any(name in c for name in system_directive_agents())
 
 
+# Line-oriented agents（REPL 型：讀一行、跑一行）。跟 system_directive 的
+# 清單**刻意分開**——那個管「指令要不要加框」，這個管「送達驗證適不適用」，
+# 兩者未必重疊。
+#
+# 為什麼要這份清單：`_verify_injection` 的 delivered 只認兩個 **Claude Code
+# TUI 專屬**訊號——畫面出現 `esc to interrupt` footer、或 bridge 抽到新回覆
+# （last_extraction_ts）。line-oriented REPL 兩個都不會有 → delivered 永遠
+# False → 觸發「補裸 Enter」（agent 多收一次空輸入、多回一次）＋45 秒後
+# 「無法確認送達」通知。訊息其實每次都送到了（2026-08-29 pi 分頁實案）。
+# 精確比對的代價：**wrapper 也要列出來**。Howard 的 preset 走的是
+# `sf-pi-spark`／`sf-sparkagent`（帶金鑰與 provider 設定的啟動器），漏了它們
+# 這個修法就只對裸 `pi` 生效、preset 開的分頁照樣跳針。
+_DEFAULT_LINE_ORIENTED_AGENTS = (
+    "sparkagent", "sf-sparkagent", "pi", "sf-pi-spark",
+)
+
+
+def line_oriented_agents() -> tuple:
+    """Launch-command basenames whose agents are line-oriented REPLs."""
+    configured = _read_settings().get("line_oriented_agents")
+    if isinstance(configured, list):
+        return tuple(str(x).lower() for x in configured if str(x).strip())
+    return _DEFAULT_LINE_ORIENTED_AGENTS
+
+
+def is_line_oriented(cmd: str) -> bool:
+    """Exact basename match on the launch command's first token.
+
+    **不能用 substring**：pi 分頁的啟動指令就是裸字串 `pi`，用 `in` 比對會把
+    `pip install …`／`api-server`／`raspi-config` 一起誤判成 line-oriented，
+    那些分頁就會失去送達驗證。
+    """
+    first = (cmd or "").strip().split()
+    if not first:
+        return False
+    base = _os.path.basename(first[0]).lower()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    return base in line_oriented_agents()
+
+
 def frame_system_directive(payload: str, user_text: str) -> str:
     """Wrap everything preceding ``user_text`` as a system directive block.
 
@@ -5733,7 +5774,14 @@ class TelegramBridge(BridgeBase):
                 # still sitting on screen (composer residue), the submit
                 # didn't land — recover the pane and retry once. Still stuck
                 # → tell the TG user instead of dropping silently.
-                if injected and _detect_ai(getattr(slot, "cmd", "") or ""):
+                _slot_cmd = getattr(slot, "cmd", "") or ""
+                if injected and is_line_oriented(_slot_cmd):
+                    # REPL 型 agent：送出即視為送達。它沒有 composer／turn
+                    # footer，驗證的兩個強訊號都不存在，硬驗只會得到假陰性，
+                    # 然後補一個沒人要的裸 Enter 再吵一則「無回應」。
+                    _blog(f"[send] {slot.sid} line-oriented agent → "
+                          f"skip delivery verification\n")
+                elif injected and _detect_ai(_slot_cmd):
                     delivered, residue = self._verify_injection(
                         slot, visible_payload, inject_t0)
                     if not delivered and residue:

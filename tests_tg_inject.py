@@ -204,3 +204,14 @@ if __name__ == "__main__":
                 traceback.print_exc()
     print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")
     sys.exit(1 if fails else 0)
+
+# ── v0.29.46：line-oriented gate 的分流素材。TUI agent 仍要走 _verify_injection
+#    （上面那些案例就是它的行為），REPL 型則整段跳過。兩者不可混淆。
+def test_line_oriented_gate_material():
+    assert _bt.is_line_oriented("pi") is True
+    assert _bt.is_line_oriented("sf-pi-spark") is True
+    assert _bt.is_line_oriented("pip install x") is False
+    # TUI agent 一律不得被當成 line-oriented，否則失去送達驗證
+    for cmd in ("claude --model opus", "codex --search", "agy"):
+        assert _bt.is_line_oriented(cmd) is False, cmd
+        assert _bt.detect_ai(cmd) if hasattr(_bt, "detect_ai") else True

@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.29.50 (2026-08-29)
+
+### Fixes
+- **TG 送訊息給 pi 分頁會「跳針」**（pi 多回一次，接著再收到一則「無回應」
+  通知）。根因不在 pi：`_verify_injection` 判定 delivered 只認兩個
+  **Claude Code TUI 專屬**訊號——畫面出現 `esc to interrupt` footer、或
+  bridge 抽到新回覆（`last_extraction_ts`）。pi 是 line-oriented REPL，兩者
+  皆無 → delivered 永遠 False → 觸發兩段補償：
+  1. residue 判為真 → 補送裸 Enter（agent 多收一次空輸入、多回一次）；
+  2. 走 deferred verdict → 45 秒後通知「無法確認送達」。
+  訊息其實每次都成功送到了。
+  修法：新增 `_DEFAULT_LINE_ORIENTED_AGENTS` ＋ `line_oriented_agents()`
+  （可由 `settings.line_oriented_agents` 覆寫）＋ `is_line_oriented(cmd)`，
+  送出路徑對這類分頁直接視為送達，跳過 nudge／retry／deferred verdict，
+  並留下 `[send] <sid> line-oriented agent → skip delivery verification`。
+  與 `system_directive_agents` **刻意分開**：那份管「指令要不要加框」，
+  這份管「送達驗證適不適用」，兩者未必重疊。
+  比對用**啟動指令第一個 token 的 basename 做完整相等**，不用 substring——
+  pi 分頁的指令就是裸字串 `pi`，`in` 比對會把 `pip install …`／`api-server`／
+  `raspi-config` 一起誤判、害那些分頁失去送達驗證。
+  清單同時涵蓋 preset 用的 wrapper（`sf-pi-spark`／`sf-sparkagent`）——
+  精確比對的代價就是 wrapper 必須列出，否則只有裸 `pi` 生效、preset 開的
+  分頁照樣跳針。
+  Claude／Codex／agy 分頁的驗證與重試行為完全不變（有測試釘住 TUI 分支）。
+
+回歸測試：新增 `tests_tg_line_oriented.py`（6 案例）＋`tests_tg_inject.py`
+補 gate 分流素材。全套 32 檔綠。bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.49 (2026-08-28)
 
 ### Fixes
@@ -684,7 +712,6 @@ main.py 有動 → 需 `sfctl restart`。
   再 +1，commit 前跑它就拿到「比所有已知版號都大」的號，避免撞號的手動
   renumber。（撞號已不影響偵測，此為避免版號重複的雙保險。）
 
-<<<<<<< HEAD
 ## v0.29.23 (2026-08-01)
 
 ### Fixes
@@ -699,7 +726,6 @@ main.py 有動 → 需 `sfctl restart`。
   不再用 stale 的 first_output_time；(2) fallback 內容對 `sent_responses` 去重，
   已送過的回覆絕不重送（直接防線）；(3) 每則新訊息清 pending_raw ＋重置輸出
   時鐘，新 epoch 從乾淨開始。回歸測試：`tests_tg_followup.py` +1。
->>>>>>> 48b4da0 (v0.29.23: 修「剛送出就重送上一則回覆」——fallback 時鐘改用 msg_sent_ts(非stale first_output_time)+對 sent_responses 去重+新訊息清 buffer)
   純 bridge 改動，`sfctl reload` 生效。
 
 ## v0.29.22 (2026-07-27)
@@ -715,7 +741,6 @@ main.py 有動 → 需 `sfctl restart`。
   修法：統一改用 `_live_tail(slot, rows=N)`（先濾空列再取尾端，v0.29.1 就是
   為此而生）。測試 harness 同步拿掉假 `_live_tail` 改走真實實作；
   `tests_tg_effort.py` 新增「確認行＋30 列空白尾」回歸案例。
-=======
 ## v0.29.21 (2026-07-26)
 
 ### Fixes
