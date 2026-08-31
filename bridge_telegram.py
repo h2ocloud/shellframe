@@ -300,6 +300,40 @@ def _is_marker_fragment(line: str, markers) -> bool:
     return False
 
 
+# 串流渲染的中間狀態：TUI 逐步畫出一段長回覆時，每次重繪都在原始 PTY 串流
+# 留下一份「畫到一半」的版本，而它們全都落在 marker span 內 → 被當成正文。
+# 特徵是**後一版是前一版的嚴格延伸**（`…是否仍維` → `…是否仍維持「文件齊備」`），
+# 所以逐行去重完全擋不住（每行都不一樣）——2026-08-31 s88「日常」實案。
+# 只往後看有限行數：中間狀態必然彼此相鄰，限制窗口讓成本維持線性
+# （長回覆數百行時，全量兩兩比較會是 O(n²)，踩到效能紅線）。
+_STREAM_FOLD_WINDOW = 40
+# 前綴要夠長才摺疊。短行的前綴關係在正常內容裡很常見（清單的 `- todo` 與
+# `- todo list 要整理` 是兩個合法項目），無條件摺疊會變成**靜默刪內容**——
+# 那正是這個檔案修了一整輪要避免的事。串流中間狀態通常是被截在句子中途的
+# 長句（實案都在 20 字以上），12 字門檻足以分開兩者。
+_STREAM_FOLD_MIN_LEN = 12
+
+
+def _fold_streaming_prefixes(lines):
+    """丟掉「是後面某行嚴格前綴」的行，只留最完整的那一版。"""
+    keep = []
+    n = len(lines)
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if len(s) >= _STREAM_FOLD_MIN_LEN:
+            hi = min(n, i + 1 + _STREAM_FOLD_WINDOW)
+            superseded = False
+            for j in range(i + 1, hi):
+                later = lines[j].strip()
+                if len(later) > len(s) and later.startswith(s):
+                    superseded = True
+                    break
+            if superseded:
+                continue
+        keep.append(ln)
+    return keep
+
+
 def clean_mobile_marker_response(text: str, markers=()) -> str:
     """Light cleanup for text already isolated by a mobile reply marker.
 
@@ -310,7 +344,7 @@ def clean_mobile_marker_response(text: str, markers=()) -> str:
     """
     lines = []
     seen = set()
-    for line in (text or "").splitlines():
+    for line in _fold_streaming_prefixes((text or "").splitlines()):
         # Drop any residual reply-marker token that leaked into the span
         # (nested repaints can carry a stray [[TG_REPLY_xxx]] / [[/TG_REPLY_xxx]]).
         stripped = _REPLY_MARKER_TOKEN_RE.sub("", line).strip()
