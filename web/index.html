@@ -501,6 +501,11 @@
   .sb-bridge:hover { border-color: #7aa2f7; color: #7aa2f7; }
   .sb-bridge.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
   .sb-bridge.active-bridge { border-color: #7aa2f7; color: #7aa2f7; background: rgba(122,162,247,.1); }
+  /* Glasses permission. Off is deliberately near-invisible and on is loud:
+     "on" means a voice command from outside the house runs here. */
+  .sb-glasses { opacity: .3; }
+  .sb-glasses:hover { opacity: 1; }
+  .sb-glasses.on { opacity: 1; border-color: #e0af68; color: #e0af68; background: rgba(224,175,104,.12); }
   .sb-line { margin-left: -4px; }
   .sb-divider {
     display: flex; align-items: center; gap: 6px; padding: 8px 12px;
@@ -2253,7 +2258,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }, 3500);
       return;
     }
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
     // Persist the preset's display name so it survives restart. Without
@@ -2398,7 +2403,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.attachCustomWheelEventHandler(() => term.buffer.active.type !== 'alternate');
 
     const label = customLabel || cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
     setupAttachKeyHandler(sid, term);
@@ -2662,6 +2667,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         modelBadgeHtml(s) +
+        `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` +
         (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
         (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
@@ -2688,6 +2694,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
           modelBadgeHtml(s) +
+          `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` +
           `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
           `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
         container.appendChild(el);
@@ -2789,6 +2796,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       e.preventDefault();
       e.stopPropagation();
       confirmCloseTab(closeBtn.dataset.sid);
+      return;
+    }
+    // Glasses badge click → grant / revoke the Agent Relay bridge for this tab
+    const glassesAction = e.target.closest('[data-action="toggle-glasses"]');
+    if (glassesAction) {
+      e.preventDefault();
+      e.stopPropagation();
+      const sid = glassesAction.dataset.sid;
+      if (sessions[sid]?.glassesEnabled) toggleSessionGlasses(sid, false);
+      else confirmGlassesAllow(sid);
       return;
     }
     // TG badge click → switch TG active session
@@ -2932,6 +2949,59 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       } catch(e) {}
       renderTabs();
     }
+  }
+
+  async function toggleSessionGlasses(sid, enabled) {
+    try {
+      const result = JSON.parse(await pywebview.api.set_session_glasses(sid, enabled));
+      if (result.success && sessions[sid]) sessions[sid].glassesEnabled = result.enabled;
+      renderSidebar();
+    } catch (err) { console.warn('glasses toggle error:', err); }
+  }
+
+  /* Opening a tab to the glasses is not a preference, it is a grant: every tab
+     runs with --dangerously-skip-permissions, so from that moment anything
+     Howard says into the G2 mic runs on this machine. One tab at a time, always
+     an explicit yes, and never a bulk switch. */
+  let _glassesConfirmOpen = false;
+  function confirmGlassesAllow(sid) {
+    const s = sessions[sid];
+    if (!s || _glassesConfirmOpen) return;
+    _glassesConfirmOpen = true;
+    const isZh = lang === 'zh-TW';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '400';
+    overlay.innerHTML = `
+      <div class="modal" style="width:380px;padding:20px">
+        <h2 style="font-size:14px;margin-bottom:10px">${isZh ? '開放眼鏡對這個分頁下指令？' : 'Let the glasses drive this tab?'}</h2>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
+          ${isZh
+            ? `之後從 G2 眼鏡說出來的話，會直接變成「${esc(s.label)}」的輸入並執行。<br>這個分頁跑的是 <code>--dangerously-skip-permissions</code>，不會再問你第二次。`
+            : `Anything spoken into the G2 then runs as input to “${esc(s.label)}”.<br>This tab runs <code>--dangerously-skip-permissions</code>; nothing will ask again.`}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" id="glasses-cancel">${isZh ? '取消' : 'Cancel'}</button>
+          <button class="btn btn-primary" id="glasses-confirm">${isZh ? '開放' : 'Allow'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = (allow) => {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      _glassesConfirmOpen = false;
+      if (allow) toggleSessionGlasses(sid, true);
+      else { try { sessions[sid] && sessions[sid].term.focus(); } catch (_) {} }
+    };
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    overlay.querySelector('#glasses-confirm').addEventListener('click', () => done(true));
+    overlay.querySelector('#glasses-cancel').addEventListener('click', () => done(false));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+    overlay.querySelector('#glasses-confirm').focus();
   }
 
   document.getElementById('btn-sidebar').addEventListener('click', () => {
@@ -6051,6 +6121,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           await reconnectSession(s.sid, s.cmd, s.label || null);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
+            sessions[s.sid].glassesEnabled = s.glasses_enabled === true;
           }
           changed = true;
         } else if (sessions[s.sid]) {
@@ -6062,6 +6133,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
           if (sessions[s.sid].bridgeEnabled !== nextBridgeEnabled) {
             sessions[s.sid].bridgeEnabled = nextBridgeEnabled;
+            changed = true;
+          }
+          const nextGlasses = s.glasses_enabled === true;
+          if (sessions[s.sid].glassesEnabled !== nextGlasses) {
+            sessions[s.sid].glassesEnabled = nextGlasses;
             changed = true;
           }
         }
@@ -7215,6 +7291,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           await reconnectSession(s.sid, s.cmd, customLabel);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
+            sessions[s.sid].glassesEnabled = s.glasses_enabled === true;
           }
         }
         // Auto-restore chat bridges if config was saved

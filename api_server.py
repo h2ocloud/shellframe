@@ -161,6 +161,24 @@ def _openapi_spec(version: str) -> dict:
                     "responses": {"200": ok},
                 },
             },
+            "/sessions/{sid}/glasses-allow": {
+                "post": {
+                    "summary": "Let the Agent Relay glasses bridge inject into this tab",
+                    "description": "Fail-closed allow list. Every tab runs with "
+                                   "--dangerously-skip-permissions, so this grants "
+                                   "voice-driven arbitrary execution on this machine. "
+                                   "One sid per call on purpose; there is no enable-all.",
+                    "parameters": [sid], "responses": {"200": ok},
+                },
+            },
+            "/sessions/{sid}/glasses-deny": {
+                "post": {"summary": "Take the glasses permission back for this tab",
+                         "parameters": [sid], "responses": {"200": ok}},
+            },
+            "/glasses": {
+                "get": {"summary": "Agent Relay bridge state + which tabs are open to the glasses",
+                        "responses": {"200": ok}},
+            },
             "/status": {"get": {"summary": "Roster + live tab states", "responses": {"200": ok}}},
             "/roster": {"get": {"summary": "Configured worker roles", "responses": {"200": ok}}},
             "/delegate": {
@@ -320,6 +338,8 @@ def _make_handler(execute_fn, token: str, allowed_nets, version: str):
                 return self._send(200, self._exec("status", {}))
             if path == "/roster":
                 return self._send(200, self._exec("roster", {}))
+            if path == "/glasses":
+                return self._send(200, self._exec("glasses_status", {}))
             if path == "/events":
                 try:
                     cursor = int((q.get("since") or ["0"])[0])
@@ -361,6 +381,12 @@ def _make_handler(execute_fn, token: str, allowed_nets, version: str):
                 if action == "rename":
                     return self._send(200, self._exec("rename", {
                         "sid": sid, "name": body.get("name", "")}))
+                # Opening a tab to the glasses is at most as powerful as
+                # /sessions/{sid}/send, which this same token already grants.
+                if action in ("glasses-allow", "glasses-deny"):
+                    return self._send(200, self._exec("glasses", {
+                        "action": "allow" if action.endswith("allow") else "deny",
+                        "sids": [sid]}))
 
             return self._send(404, {"success": False, "message": "no such route"})
 

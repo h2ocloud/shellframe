@@ -85,6 +85,13 @@ def _worker_kind(cmd: str) -> str:
         return "other"
 
 
+def worker_kind(cmd: str) -> str:
+    """Public alias for `_worker_kind` — the glasses bridge needs the same
+    claude/codex/other classification main.py uses, and duplicating the
+    wrapped-command handling in a second place is how the two drift apart."""
+    return _worker_kind(cmd)
+
+
 def _cwd_slug(cwd: str) -> str:
     """Claude Code 的 project 目錄 slug：把 / 與 . 換成 -。"""
     p = os.path.realpath(os.path.expanduser(cwd or "~"))

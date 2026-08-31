@@ -381,6 +381,24 @@ def _replace_first_command(cmd: str, replacement: str) -> str:
     return leading + replacement + suffix
 
 
+# Where the glasses bridge (Agent Relay) drops its heartbeat. Read-only from
+# here — ShellFrame never writes it and never dials the relay itself.
+GLASSES_STATE_PATH = os.path.expanduser("~/.local/share/evenclaude/state.json")
+GLASSES_STATE_STALE_S = 120
+
+
+def _session_provider(cmd: str) -> str:
+    """'claude' | 'codex' | whatever usage_probe knows | 'other'.
+
+    Derived from the launch command every time rather than stored, so a tab
+    that gets relaunched under a different CLI cannot keep a stale label.
+    """
+    try:
+        return agent_status.worker_kind(cmd or "")
+    except Exception:
+        return "other"
+
+
 def _canonical_cmd(cmd: str) -> str:
     cmd = _normalize_dashes(cmd or "")
     try:
@@ -1352,6 +1370,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cfg = load_config()
             labels = cfg.get("session_labels", {}) or {}
             disabled = set(cfg.get("bridge_disabled_sessions", []) or [])
+            glasses_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
             order = self._ordered_sids(cfg, preferred_order)
             manifest = []
             for idx, sid in enumerate(order):
@@ -1364,12 +1383,20 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                     disabled.add(sid)
                 else:
                     disabled.discard(sid)
+                # Allow list, not a deny list: a tab that is missing from the
+                # manifest must come back with the glasses OFF, never ON.
+                glasses_enabled = getattr(s, '_glasses_enabled', False)
+                if glasses_enabled:
+                    glasses_allowed.add(sid)
+                else:
+                    glasses_allowed.discard(sid)
                 entry = {
                     "sid": sid,
                     "cmd": _canonical_cmd(s.cmd),
                     "tmux_name": getattr(s, '_tmux_name', None) or "",
                     "account_refs": dict(getattr(s, "account_refs", {}) or {}),
                     "bridge_enabled": bool(bridge_enabled),
+                    "glasses_enabled": bool(glasses_enabled),
                     "order": idx,
                     "updated_at": int(time.time()),
                 }
@@ -1386,6 +1413,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cfg["session_order"] = [e["sid"] for e in manifest]
             cfg["session_labels"] = labels
             cfg["bridge_disabled_sessions"] = sorted(disabled)
+            cfg["glasses_allowed_sessions"] = sorted(glasses_allowed)
             save_config(cfg)
         except Exception as e:
             _dlog("lifecycle", f"persist manifest failed: {e}")
@@ -2017,6 +2045,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         default_account_refs = ACCOUNT_MANAGER.session_refs(cfg)
         saved_labels = cfg.get("session_labels", {})
         bridge_disabled = set(cfg.get("bridge_disabled_sessions", []))
+        glasses_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
         manifest = self._manifest_entries(cfg)
         manifest_by_sid = {str(e.get("sid")): e for e in manifest}
         manifest_by_tmux = {str(e.get("tmux_name")): e for e in manifest if e.get("tmux_name")}
@@ -2054,6 +2083,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 self.sessions[sid] = session
                 # Restore bridge enabled/disabled state from config
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
+                session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
                 session._init_pending = False
                 session._startup_trust_pending = False
                 session._slug_pending = False
@@ -2088,6 +2118,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                                   account_refs=account_refs)
                 self.sessions[sid] = session
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
+                session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
                 session._init_pending = False
                 session._startup_trust_pending = False
                 session._slug_pending = False
@@ -2615,6 +2646,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             if s.alive:
                 result.append({"sid": sid, "cmd": s.cmd, "alive": True,
                                "bridge_enabled": getattr(s, '_bridge_enabled', True),
+                               "glasses_enabled": getattr(s, '_glasses_enabled', False),
+                               "provider": _session_provider(s.cmd),
                                "label": getattr(s, '_custom_label', None)})
         return json.dumps(result)
 
@@ -2641,6 +2674,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         update_config(_remember_account_refs)
         self._start_startup_trust_watcher(sid, session)
         session._bridge_enabled = True
+        # Glasses stay off until someone explicitly opens this tab. See
+        # Api.set_session_glasses for why there is no enable-all.
+        session._glasses_enabled = False
         # Soft persistence (Windows / no-tmux fallback): record this session
         # so the next startup can recreate it
         self._save_soft_session(sid, cmd)
@@ -3416,6 +3452,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)
         bridge_enabled = getattr(old, "_bridge_enabled", True)
+        glasses_enabled = getattr(old, "_glasses_enabled", False)
         lifecycle_source = getattr(old, "_lifecycle_source", "")
         lifecycle_handoff = getattr(old, "_lifecycle_handoff", False)
         if self.bridge:
@@ -3427,6 +3464,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                           tmux_name=tmux_name, account_refs=account_refs,
                           account_refs_authoritative=True)
         session._bridge_enabled = bridge_enabled
+        session._glasses_enabled = glasses_enabled
         session._init_pending = False
         session._startup_trust_pending = False
         session._slug_pending = False
@@ -5386,6 +5424,118 @@ try {
         self._persist_session_manifest()
         return json.dumps({"success": True, "enabled": enabled})
 
+    # ---------------------------------------------------------- glasses ---
+    # The Agent Relay bridge (G2 glasses -> relay -> this Mac) can inject text
+    # into a tab as if it were typed. Every tab here runs with
+    # --dangerously-skip-permissions, so opening a tab to the glasses means
+    # "anything I say out loud, on the street, runs on this machine". Hence:
+    # allow list not deny list, off by default, one sid at a time, no
+    # enable-all, and the state is visible in the sidebar and in `sfctl list`.
+
+    def set_session_glasses(self, sid: str, enabled: bool) -> str:
+        s = self.sessions.get(sid)
+        if not s:
+            return json.dumps({"success": False, "message": f"no such session {sid}"})
+        s._glasses_enabled = bool(enabled)
+        cfg = load_config()
+        allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
+        if enabled:
+            allowed.add(sid)
+        else:
+            allowed.discard(sid)
+        cfg["glasses_allowed_sessions"] = sorted(allowed)
+        save_config(cfg)
+        self._persist_session_manifest()
+        _dlog("glasses", f"{sid} glasses_enabled={bool(enabled)}")
+        return json.dumps({"success": True, "sid": sid, "enabled": bool(enabled)})
+
+    _glasses_transcript_cache: dict = {}
+
+    def _glasses_transcript(self, sid: str) -> str:
+        hit = Api._glasses_transcript_cache.get(sid)
+        if hit and time.time() - hit[0] < 20:
+            return hit[1]
+        s = self.sessions.get(sid)
+        path = ""
+        if s is not None:
+            try:
+                path = agent_status.resolve_transcript({
+                    "cmd": getattr(s, "cmd", ""),
+                    "cwd": getattr(s, "cwd", "~"),
+                    "tmux_name": getattr(s, "_tmux_name", None),
+                    "session_id": getattr(s, "session_id", None),
+                    "transcript_hint": getattr(s, "_hook_transcript_path", None),
+                }) or ""
+            except Exception:
+                _swallow(f"_glasses_transcript:{sid}")
+                path = ""
+        Api._glasses_transcript_cache[sid] = (time.time(), path)
+        return path
+
+    @staticmethod
+    def _glasses_bridge_state():
+        """(state_dict | None, age_seconds | None) from the bridge heartbeat."""
+        try:
+            with open(GLASSES_STATE_PATH) as f:
+                st = json.load(f)
+            return st, int(time.time() - os.path.getmtime(GLASSES_STATE_PATH))
+        except Exception:
+            return None, None
+
+    def get_glasses_status(self) -> str:
+        st, age = self._glasses_bridge_state()
+        allowed = []
+        for sid, s in self.sessions.items():
+            if not getattr(s, "_glasses_enabled", False):
+                continue
+            allowed.append({
+                "sid": sid,
+                "label": getattr(s, "_custom_label", None) or (s.cmd.split()[0] if s.cmd else sid),
+                "provider": _session_provider(s.cmd),
+                "alive": bool(s.alive),
+            })
+        return json.dumps({
+            "success": True,
+            "allowed": allowed,
+            "bridge": st,
+            "bridgeAgeSec": age,
+            "bridgeStale": age is None or age > GLASSES_STATE_STALE_S,
+        })
+
+    def _glasses_report(self) -> str:
+        st, age = self._glasses_bridge_state()
+        out = []
+        if st is None:
+            out.append("  bridge     未執行 —— 找不到 " + GLASSES_STATE_PATH)
+            out.append("             眼鏡送得出去，但沒有人在這台機器上收")
+        elif age is not None and age > GLASSES_STATE_STALE_S:
+            out.append(f"  bridge     心跳停在 {age} 秒前 —— 多半掛了或被 launchd 停掉")
+        else:
+            r = st.get("relay") or {}
+            out.append(f"  bridge     執行中（心跳 {age} 秒前，v{st.get('version', '?')}）")
+            if r.get("reachable"):
+                out.append(f"  relay      通  bridgeOnline={r.get('bridgeOnline')}  "
+                           f"devices={r.get('devices')}  queued={r.get('queued')}")
+            else:
+                out.append(f"  relay      連不到  {r.get('error') or ''}")
+            devs = st.get("devices") or []
+            out.append(f"  devices    {len(devs)} 副眼鏡已配對"
+                       + (f"（{devs[0].get('label', '')}）" if devs else ""))
+        out.append("")
+        allowed = [(sid, s) for sid, s in self.sessions.items()
+                   if getattr(s, "_glasses_enabled", False)]
+        if not allowed:
+            out.append("  開放中     0 個分頁 —— fail-closed，眼鏡現在送不進任何地方")
+        else:
+            out.append(f"  開放中     {len(allowed)} 個分頁")
+            for sid, s in allowed:
+                label = getattr(s, "_custom_label", None) or (s.cmd.split()[0] if s.cmd else sid)
+                mark = "\u25cf" if s.alive else "\u25cb"
+                out.append(f"    {mark} {sid:<5s} {_session_provider(s.cmd):<7s} {label}")
+        out.append("")
+        out.append("  開放一個分頁：sfctl glasses allow <sid>      收回：sfctl glasses deny <sid>")
+        return "\n".join(out)
+
     def reorder_sessions(self, order_json: str) -> str:
         """Reorder sessions. Updates TG bridge /1 /2 commands to match."""
         order = json.loads(order_json)
@@ -5850,12 +6000,53 @@ try {
                     "cmd": s.cmd,
                     "alive": s.alive,
                     "bridge_enabled": getattr(s, '_bridge_enabled', True),
+                    "glasses_enabled": getattr(s, '_glasses_enabled', False),
+                    "provider": _session_provider(s.cmd),
+                    # the glasses bridge needs this to find a codex rollout:
+                    # codex has no --session-id, so the only reliable link from
+                    # tab to transcript is the fd the process holds open.
+                    # Resolved here (cached) rather than in the bridge so the
+                    # lsof logic lives in exactly one place, and only for tabs
+                    # that are actually open to the glasses — normally zero.
+                    "tmux_name": getattr(s, '_tmux_name', None) or "",
+                    "transcript": (self._glasses_transcript(sid)
+                                   if getattr(s, '_glasses_enabled', False) else ""),
                 })
             return {
                 "success": True,
                 "message": f"{len(sessions_info)} sessions",
                 "details": {"sessions": sessions_info},
             }
+
+        elif cmd == "glasses_status":
+            st = json.loads(self.get_glasses_status())
+            return {"success": True,
+                    "message": f"{len(st.get('allowed') or [])} allowed",
+                    "details": st}
+
+        elif cmd == "glasses":
+            action = str(args.get("action") or "status").lower()
+            sids = [x for x in (args.get("sids") or []) if x]
+            if action in ("allow", "deny"):
+                if not sids:
+                    return {"success": False, "message": f"glasses {action} 需要至少一個 sid"}
+                changed, missing = [], []
+                for sid in sids:
+                    r = json.loads(self.set_session_glasses(sid, action == "allow"))
+                    (changed if r.get("success") else missing).append(sid)
+                if not changed:
+                    return {"success": False,
+                            "message": f"沒有這些分頁：{', '.join(missing)}"}
+                verb = "開放" if action == "allow" else "收回"
+                msg = f"{verb} {', '.join(changed)}"
+                if missing:
+                    msg += f"（略過不存在的 {', '.join(missing)}）"
+            elif action == "status":
+                msg = "glasses status"
+            else:
+                return {"success": False, "message": f"unknown action {action!r}"}
+            return {"success": True, "message": msg,
+                    "details": {"text": self._glasses_report()}}
 
         elif cmd == "roster":
             roster = self._agent_roster_config(load_config())

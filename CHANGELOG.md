@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.30.0 (2026-08-31)
+
+### Features
+- **眼鏡（Agent Relay）白名單搬進 ShellFrame**。以前要開放某個分頁給 G2 眼鏡
+  下語音指令，得跑另一支 CLI 的 `evenclaude allow s88`，狀態只能自己 curl。
+  現在 sid 語彙統一，開關與狀態都在 ShellFrame 裡：
+  - 側邊欄每列多一顆 👓，點一下開／關；**開的時候會跳確認對話框**，
+    收回不會問。設計上刻意不做「全開」按鈕。
+  - `sfctl glasses` 看狀態（bridge 心跳／relay 連線／已配對眼鏡／開放中的分頁），
+    `sfctl glasses allow s88`、`sfctl glasses deny s88` 一次一個 sid。
+  - 本機 API 加 `GET /glasses`、`POST /sessions/{sid}/glasses-allow|glasses-deny`，
+    `GET /sessions` 多回 `glasses_enabled` / `provider` / `tmux_name` / `transcript`。
+  - 為什麼這是安全設計而不是 UX：這裡每個分頁都跑
+    `--dangerously-skip-permissions`，把分頁開給眼鏡＝「在外面講的話會在這台
+    機器上執行」。所以是 **allow list 不是 deny list**（`glasses_allowed_sessions`），
+    新分頁預設關，manifest 缺欄位一律解讀成關，重開／換帳號重生分頁都沿用原值。
+    `bridge_disabled_sessions` 是 deny list，這支刻意反過來。
+
+- **`GET /sessions` 回報 provider**（`claude` / `codex` / `pi` / `other`）。
+  沿用 `agent_status` 既有的判定（`_worker_kind` 開了公開別名 `worker_kind`），
+  不另寫第二套字串比對——那正是兩邊會走鐘的方式。眼鏡端靠它分辨「這則回覆
+  是誰講的」，因為現在 Claude 與 Codex 分頁都能接。
+
+- **glasses-enabled 的分頁順便回 transcript 路徑**。codex 沒有 `--session-id`，
+  唯一可靠的 tab→rollout 對應是它開著的 fd（`lsof`）——這段邏輯 `agent_status`
+  已經有，所以留在這裡解析（20 秒快取）而不是讓橋接端再抄一份。
+  **只對已開放的分頁解析**，沒開放時成本是零。
+
+回歸測試：新增 `tests_glasses_allowlist.py`（24 案例，含 provider 判定、
+只動指定 sid、不存在的 sid 不得污染設定檔、manifest 往返、升級路徑預設關）。
+全套 38 檔綠。`main.py` / `web/index.html` / `sfctl.py` / `api_server.py` 都有動，
+**需要 `sfctl restart`**。
+
 ## v0.29.52 (2026-08-31)
 
 ### Fixes
