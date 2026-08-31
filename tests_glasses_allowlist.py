@@ -103,13 +103,58 @@ sessions2["s1"]._glasses_enabled = False
 api2._persist_session_manifest()
 check("收回後 allow list 清空", cfg2["glasses_allowed_sessions"] == [])
 
+# ⚠️ 這一組釘的是 2026-08-31 差點釀成的事故類型：授權被「靜靜」清空。
+# 一個沒設過 _glasses_enabled 的 Session 物件（任何未來新增的重建路徑都可能
+# 忘了設），以前會被 getattr(..., False) 讀成「使用者關掉了」然後 discard。
+print("silent-clear guard")
+cfg5 = {"glasses_allowed_sessions": ["s1", "s2"]}
+sessions5 = {"s1": FakeSession(label="日常"), "s2": FakeSession(label="研究")}
+api5 = make_api(sessions5, cfg5)
+api5._persist_session_manifest = main.Api._persist_session_manifest.__get__(api5)
+# 兩個 session 物件都「沒有意見」（模擬重建後忘了設旗標）
+api5._persist_session_manifest()
+check("沒有意見的 session 不得推翻設定檔", cfg5["glasses_allowed_sessions"] == ["s1", "s2"])
+check("manifest 沿用設定檔的值",
+      all(e["glasses_enabled"] for e in cfg5["session_manifest"]))
+
+# 明確關掉才會真的關掉
+sessions5["s1"]._glasses_enabled = False
+api5._persist_session_manifest()
+check("明確 False 才會收回", cfg5["glasses_allowed_sessions"] == ["s2"])
+sessions5["s2"]._glasses_enabled = False
+api5._persist_session_manifest()
+check("全部明確關掉就是空的（deny 仍要能清空）", cfg5["glasses_allowed_sessions"] == [])
+
 # 升級路徑：舊版 manifest 沒有這個欄位
 legacy = {"sid": "s7"}
 allowed = set()
 check("舊 manifest + 空 allow list = 關",
       bool(legacy.get("glasses_enabled", "s7" in allowed)) is False)
 
-# ── 5. 狀態報告：沒有 bridge 時要說得出「送不進來」 ──────────────────
+# ── 5. 授權變更一定要留痕（擋不住的就要看得見） ─────────────────────
+print("audit trail")
+cfg4 = {}
+sessions4 = {"s1": FakeSession(label="日常"), "s2": FakeSession("codex", label="Pi")}
+api4 = make_api(sessions4, cfg4)
+api4.set_session_glasses("s1", True, "sfctl")
+api4.set_session_glasses("s2", True, "api")
+api4.set_session_glasses("s1", False, "ui")
+trail = cfg4.get("glasses_audit") or []
+check("每次變更都留一筆", len(trail) == 3)
+check("記得是誰改的", [e["source"] for e in trail] == ["sfctl", "api", "ui"])
+check("記得開還是關", [e["enabled"] for e in trail] == [True, True, False])
+check("記得哪個 sid", [e["sid"] for e in trail] == ["s1", "s2", "s1"])
+# 一個 shell 迴圈五秒就能把每個分頁各開一次——擋不住，但每一筆都要看得見
+for i in range(60):
+    api4.set_session_glasses("s1", i % 2 == 0, "sfctl")
+check("留痕有上限，不會把設定檔養大", len(cfg4["glasses_audit"]) == 40)
+check("留的是最新的那些", cfg4["glasses_audit"][-1]["sid"] == "s1")
+# 失敗的變更不該留痕（不存在的 sid）
+before = len(cfg4["glasses_audit"])
+api4.set_session_glasses("s404", True, "sfctl")
+check("失敗的變更不留痕", len(cfg4["glasses_audit"]) == before)
+
+# ── 6. 狀態報告：沒有 bridge 時要說得出「送不進來」 ──────────────────
 print("status report")
 main.GLASSES_STATE_PATH = "/nonexistent/evenclaude/state.json"
 cfg3 = {}

@@ -2953,7 +2953,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   async function toggleSessionGlasses(sid, enabled) {
     try {
-      const result = JSON.parse(await pywebview.api.set_session_glasses(sid, enabled));
+      const result = JSON.parse(await pywebview.api.set_session_glasses(sid, enabled, 'ui'));
       if (result.success && sessions[sid]) sessions[sid].glassesEnabled = result.enabled;
       renderSidebar();
     } catch (err) { console.warn('glasses toggle error:', err); }

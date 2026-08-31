@@ -386,7 +386,7 @@ def _make_handler(execute_fn, token: str, allowed_nets, version: str):
                 if action in ("glasses-allow", "glasses-deny"):
                     return self._send(200, self._exec("glasses", {
                         "action": "allow" if action.endswith("allow") else "deny",
-                        "sids": [sid]}))
+                        "sids": [sid], "source": "api"}))
 
             return self._send(404, {"success": False, "message": "no such route"})
 

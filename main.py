@@ -1370,7 +1370,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cfg = load_config()
             labels = cfg.get("session_labels", {}) or {}
             disabled = set(cfg.get("bridge_disabled_sessions", []) or [])
-            glasses_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
+            prev_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
+            glasses_allowed = set(prev_allowed)
             order = self._ordered_sids(cfg, preferred_order)
             manifest = []
             for idx, sid in enumerate(order):
@@ -1385,11 +1386,19 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                     disabled.discard(sid)
                 # Allow list, not a deny list: a tab that is missing from the
                 # manifest must come back with the glasses OFF, never ON.
-                glasses_enabled = getattr(s, '_glasses_enabled', False)
-                if glasses_enabled:
+                #
+                # The sentinel matters. Reading this with a `False` default and
+                # then discarding means **any** code path that builds a Session
+                # without setting the flag silently revokes that tab — the
+                # authorisation quietly disappears and looks like a bug in the
+                # glasses instead. `None` = "this object never had an opinion",
+                # and an object with no opinion must not overrule the file.
+                glasses_flag = getattr(s, '_glasses_enabled', None)
+                if glasses_flag is True:
                     glasses_allowed.add(sid)
-                else:
+                elif glasses_flag is False:
                     glasses_allowed.discard(sid)
+                glasses_enabled = sid in glasses_allowed
                 entry = {
                     "sid": sid,
                     "cmd": _canonical_cmd(s.cmd),
@@ -1413,6 +1422,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cfg["session_order"] = [e["sid"] for e in manifest]
             cfg["session_labels"] = labels
             cfg["bridge_disabled_sessions"] = sorted(disabled)
+            # Tripwire. Emptying the allow list is a legitimate thing for a deny
+            # to do, but it should never be a side effect of persisting the tab
+            # list — and if it ever is again, this is the line that says so.
+            if prev_allowed and not glasses_allowed:
+                _dlog("glasses", f"allow list emptied while persisting manifest: "
+                                 f"was {sorted(prev_allowed)}, sessions seen={len(order)}")
             cfg["glasses_allowed_sessions"] = sorted(glasses_allowed)
             save_config(cfg)
         except Exception as e:
@@ -2791,6 +2806,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         idle_seconds: int | None = None,
     ):
         _dlog("lifecycle", f"close_session sid={sid} reason={reason!r}")
+        # 授權要跟著分頁一起結束。不收的話那個 sid 會永遠留在
+        # glasses_allowed_sessions 裡，而 `sfctl glasses` 只走訪還活著的
+        # session，所以看不到它——一個看不見的、方向朝「開」的殘留。
+        # sid 單調遞增不會重複用，所以目前危害有限，但方向錯了就是錯了。
+        if sid in self.sessions and getattr(self.sessions[sid], "_glasses_enabled", False):
+            try:
+                self.set_session_glasses(sid, False, "close")
+            except Exception:
+                _swallow(f"close_session:glasses:{sid}")
         s = self.sessions.get(sid)
         label = self._session_label(sid, s)
         cmd = s.cmd if s else ""
@@ -5429,10 +5453,17 @@ try {
     # into a tab as if it were typed. Every tab here runs with
     # --dangerously-skip-permissions, so opening a tab to the glasses means
     # "anything I say out loud, on the street, runs on this machine". Hence:
-    # allow list not deny list, off by default, one sid at a time, no
-    # enable-all, and the state is visible in the sidebar and in `sfctl list`.
+    # allow list not deny list, off by default, and every change is recorded.
+    #
+    # Note what is NOT claimed: that many tabs cannot be opened at once. They
+    # can — `sfctl glasses allow` takes several sids, and a shell loop would
+    # work even if it did not. What holds is that no single control opens
+    # everything, and that each grant lands in `config.glasses_audit` with its
+    # source, so a mass grant is visible after the fact even though it is not
+    # prevented. (2026-08-31: eleven tabs were opened in five seconds and the
+    # only trace was a debug log that rolls.)
 
-    def set_session_glasses(self, sid: str, enabled: bool) -> str:
+    def set_session_glasses(self, sid: str, enabled: bool, source: str = "") -> str:
         s = self.sessions.get(sid)
         if not s:
             return json.dumps({"success": False, "message": f"no such session {sid}"})
@@ -5444,9 +5475,22 @@ try {
         else:
             allowed.discard(sid)
         cfg["glasses_allowed_sessions"] = sorted(allowed)
+        # "沒有全開按鈕" 只是 UI 的性質，不是強制的限制：一個 shell 迴圈五秒就能把
+        # 每個分頁各開一次。實際發生過（2026-08-31 有支程式這樣做，11 個分頁全開了
+        # 二十分鐘沒人發現）。擋不住的就要看得見——所以每一次變更都留痕，`sfctl
+        # glasses` 會把最近幾筆印出來。
+        trail = list(cfg.get("glasses_audit") or [])
+        trail.append({
+            "ts": int(time.time()),
+            "sid": sid,
+            "enabled": bool(enabled),
+            "source": source or "?",
+            "label": getattr(s, "_custom_label", None) or "",
+        })
+        cfg["glasses_audit"] = trail[-40:]
         save_config(cfg)
         self._persist_session_manifest()
-        _dlog("glasses", f"{sid} glasses_enabled={bool(enabled)}")
+        _dlog("glasses", f"{sid} glasses_enabled={bool(enabled)} source={source or '?'}")
         return json.dumps({"success": True, "sid": sid, "enabled": bool(enabled)})
 
     _glasses_transcript_cache: dict = {}
@@ -5532,6 +5576,15 @@ try {
                 label = getattr(s, "_custom_label", None) or (s.cmd.split()[0] if s.cmd else sid)
                 mark = "\u25cf" if s.alive else "\u25cb"
                 out.append(f"    {mark} {sid:<5s} {_session_provider(s.cmd):<7s} {label}")
+        trail = (load_config().get("glasses_audit") or [])[-5:]
+        if trail:
+            out.append("")
+            out.append("  最近的授權變更")
+            for e in reversed(trail):
+                when = time.strftime("%m-%d %H:%M", time.localtime(e.get("ts", 0)))
+                verb = "開放" if e.get("enabled") else "收回"
+                out.append(f"    {when}  {verb} {e.get('sid', '?'):<5s} "
+                           f"{e.get('label', ''):<10s} via {e.get('source', '?')}")
         out.append("")
         out.append("  開放一個分頁：sfctl glasses allow <sid>      收回：sfctl glasses deny <sid>")
         return "\n".join(out)
@@ -6031,8 +6084,9 @@ try {
                 if not sids:
                     return {"success": False, "message": f"glasses {action} 需要至少一個 sid"}
                 changed, missing = [], []
+                source = str(args.get("source") or "sfctl")
                 for sid in sids:
-                    r = json.loads(self.set_session_glasses(sid, action == "allow"))
+                    r = json.loads(self.set_session_glasses(sid, action == "allow", source))
                     (changed if r.get("success") else missing).append(sid)
                 if not changed:
                     return {"success": False,

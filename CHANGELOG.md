@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.30.1 (2026-08-31)
+
+### Fixes
+- **眼鏡授權的變更完全沒有留痕**。v0.30.0 只有透過手機端 bridge 的那條路會寫
+  稽核；`sfctl glasses allow`、本機 API、側邊欄那顆 👓 三條路都只進 debug log，
+  而 debug log 會滾掉。
+  怎麼被抓到的：一支自動化程式在 13:26:06–13:26:11 之間跑了十一次
+  `sfctl glasses allow`（每 0.5 秒一次，一個 sid 一次），把**全部 11 個分頁**都開了，
+  當下有一副已配對的眼鏡在線，這個狀態維持了約二十分鐘才被發現——而唯一的線索
+  是 `/tmp/shellframe_debug.log` 裡的 `[glasses]` 行。
+  **這也修正了一個過度宣稱**：「沒有全開按鈕」只是 UI 的性質，不是強制的限制
+  （`sfctl glasses allow` 本來就吃多個 sid，就算不吃，一個 shell 迴圈也一樣）。
+  正確的說法是「沒有單一控制項能一次全開，而且每一筆授權都留得下來」。
+  修法：`set_session_glasses` 多收一個 `source`（`sfctl` / `api` / `ui`），
+  每次成功的變更寫進 `config.glasses_audit`（環狀，保留最後 40 筆），
+  `sfctl glasses` 印出最近 5 筆。失敗的變更不留痕。
+
+- **白名單有可能被「靜靜」清空**。`_persist_session_manifest` 以前是
+  `getattr(s, '_glasses_enabled', False)` 然後 discard——也就是說**任何**建立
+  Session 卻忘了設這個旗標的路徑（未來新增一條就中），都會在下一次持久化時
+  把那個分頁的授權悄悄拿掉。使用者看到的是「眼鏡突然送不進去了」，
+  然後很自然地去把一堆分頁重開一次，反而擴大暴露。
+  修法：旗標改用 `None` 當哨兵——「這個物件沒有意見」不得推翻設定檔，
+  只有明確的 `True` / `False` 才會加入或移除。另外加一條 tripwire：
+  持久化時若把一個非空的白名單寫成空的，就在 debug log 留一行說明當下看到
+  幾個 session，下次再發生才查得出來。`deny` 要清空仍然清得掉。
+
+回歸測試：`tests_glasses_allowlist.py` 補第 5、6 組（11 案例：留痕內容、
+來源標記、上限、失敗不留痕；沒有意見的 session 不得推翻設定檔、明確 deny
+仍能清空）。全套 38 檔綠。`main.py` / `api_server.py` / `web/index.html`
+有動，**需要 `sfctl restart`**。
+
 ## v0.30.0 (2026-08-31)
 
 ### Features
