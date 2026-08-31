@@ -149,6 +149,16 @@ for i in range(60):
     api4.set_session_glasses("s1", i % 2 == 0, "sfctl")
 check("留痕有上限，不會把設定檔養大", len(cfg4["glasses_audit"]) == 40)
 check("留的是最新的那些", cfg4["glasses_audit"][-1]["sid"] == "s1")
+# ⚠️ 沒有真的改變狀態就不留痕。不然對同一個 sid 連下 40 次 no-op deny，
+# 就能把整段軌跡擠出環狀緩衝——而授權本身完全沒動。留痕是這一版的全部理由，
+# 不能這麼容易被洗掉。
+before_noop = len(cfg4["glasses_audit"])
+state = cfg4["glasses_allowed_sessions"]
+for _ in range(50):
+    api4.set_session_glasses("s2", "s2" in state, "sfctl")   # 重複現況＝no-op
+check("no-op 不留痕（不然軌跡會被洗掉）", len(cfg4["glasses_audit"]) == before_noop)
+check("no-op 也不改授權", cfg4["glasses_allowed_sessions"] == state)
+
 # 失敗的變更不該留痕（不存在的 sid）
 before = len(cfg4["glasses_audit"])
 api4.set_session_glasses("s404", True, "sfctl")
