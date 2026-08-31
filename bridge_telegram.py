@@ -5606,6 +5606,19 @@ class TelegramBridge(BridgeBase):
                 f"最終要回 Telegram 的文字請放在 {start_marker} 和 {end_marker} 之間。"
                 "標記外可以思考或操作，但手機只會收到標記內文字。"
             )
+            # line-oriented agent 會**逐階段**輸出（先回一則「正在檢查…」再做
+            # 事、最後才給結果），而每個 marker 區塊 bridge 都會照 v0.29.21 的
+            # follow-up 語意各轉發一次 → 使用者端就是「跳針」（2026-08-31 pi
+            # s93 實案：先收到「正在檢查…」再收到最終回覆）。Claude Code 只在
+            # 收尾包一次 marker，所以不會踩到。這裡對這類 agent 明講 marker 的
+            # 語意：進度不要包。follow-up 能力本身保留——背景任務真的完成時
+            # 再包一次仍會送出。
+            if is_line_oriented(slot.cmd or ""):
+                marker_prompt += (
+                    "（重要）標記只用在**最終回覆**：進度、「正在檢查…」、"
+                    "「讓我先讀…」這類過程說明請寫在標記外，不要包進標記，"
+                    "否則手機會收到一堆半成品訊息。一個任務完成才包一次。"
+                )
             if init_prompt:
                 payload = init_prompt + "\n\n" + marker_prompt + "\n\n---\nUser's first message: " + forwarded
             else:

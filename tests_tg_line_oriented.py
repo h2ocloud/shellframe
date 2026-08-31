@@ -83,3 +83,18 @@ if __name__ == "__main__":
                 print(f"FAIL {name}: {e}"); fails.append(name)
     print(f"\n=== {'ALL PASS' if not fails else f'{len(fails)} FAILED'} ===")
     raise SystemExit(1 if fails else 0)
+
+# ── 7. v0.29.51：line-oriented agent 的 marker 指示要多一句「只包最終回覆」。
+#      pi 會逐階段輸出（先回「正在檢查…」再做事），每個 marker 區塊都會被
+#      follow-up 機制各轉發一次 → 使用者端就是跳針（2026-08-31 s93 實案）。
+def test_line_oriented_marker_prompt_has_final_only_rule():
+    import inspect
+    src = inspect.getsource(_bt.TelegramBridge._handle_update)
+    assert "is_line_oriented(slot.cmd" in src, "marker 指示沒有依 agent 型別分流"
+    assert "最終回覆" in src and "不要包進標記" in src, \
+        "缺「進度不要包進 marker」的指示"
+    # TUI agent 不該拿到這段（它們本來就只在收尾包一次）
+    i_rule = src.index("不要包進標記")
+    i_gate = src.index("is_line_oriented(slot.cmd")
+    assert i_gate < i_rule, "指示必須在 line-oriented 閘門之內"
+

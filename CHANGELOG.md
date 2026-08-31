@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.29.51 (2026-08-31)
+
+### Fixes
+- **pi 分頁在 TG 還是跳針**（v0.29.50 修掉送達驗證那條之後仍在）。
+  這次不是 bridge 的 bug：pi 會**逐階段**把輸出包進 marker——
+  先回一則 `[[TG_REPLY_x]] 正在檢查… [[/TG_REPLY_x]]`，做完事再包一次
+  最終回覆。bridge 照 v0.29.21 的 follow-up 語意，每個 marker 區塊各轉發
+  一次（那是為了「背景 worker 完成通知」刻意加的），使用者端就變成一則
+  進度＋一則結果＝跳針。Claude Code 只在收尾包一次，所以從不踩到。
+  修法：對 line-oriented agent 在 marker 指示後面追加一句語意說明——
+  標記只用於**最終回覆**，進度／「正在檢查…」寫在標記外。
+  **follow-up 能力本身保留**（背景任務真的完成時再包一次仍會送出），
+  TUI agent 的指示一字未改。
+
+### Known
+- log 中偶見 `[rate-limit] <sid> detect failed: string index out of range`。
+  已被 try/except 接住、不影響功能，且用空白／空列 display 重現不出來，
+  故本輪不動它（避免為了「看起來完整」亂改沒把握的路徑），先記錄在此。
+
+回歸測試：`tests_tg_line_oriented.py` 補第 7 案（指示必須在 line-oriented
+閘門內、TUI 不受影響）。全套 37 檔綠。bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.50 (2026-08-29)
 
 ### Fixes
