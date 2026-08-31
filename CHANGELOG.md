@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.29.52 (2026-08-31)
+
+### Fixes
+- **pi 傳到 TG 的訊息塞滿 marker 碎片**（實案截圖：一則訊息裡有 20 行
+  `[[` / `[[/` / `[[/TG` / `[[/TG_REPLY_3ca` … 逐字元增長的殘骸）。
+  這與 v0.29.51 修的「進度被當成回覆」是**不同的洩漏**。
+  根因：pi 是**逐字元 flush** end marker，原始 PTY 串流因此留下
+  `[[` → `[[/` → … → `[[/TG_REPLY_3ca65bb9]` 整串中間狀態，而它們全都落在
+  start／end 之間 → `_pick_marker_reply` 的 span 配對本身是對的（它找到的是
+  完整 end marker），但 **span 內容**把那些中間狀態一起帶了出來。
+  既有防線都擋不住：`_REPLY_MARKER_TOKEN_RE` 要求 `]]` 結尾，攔不到半截；
+  `clean_mobile_marker_response` 的逐行去重也沒用——每一行都不一樣。
+  Claude Code 一次寫完 marker，所以從不觸發。
+  修法：新增 `_is_marker_fragment()`——判斷某行是否只是本輪 marker 的
+  **前綴**，是就整行丟掉；清洗函式改吃 `markers` 參數（未傳時行為完全不變，
+  其他呼叫端不受影響）。以 marker 前綴判定而非萬用 regex，所以正文裡正常的
+  `[[weird]]`／`[[note]]` 不會被誤刪（有測試釘住）。
+
+調研過程：先用 log 確認那則訊息走的是**正常 marker 路徑**（不是 fallback、
+不是 /fetch），再用逐字元串流重現出與截圖一模一樣的 20 行碎片，才動手。
+
+回歸測試：新增 `tests_tg_marker_fragment.py`（5 案例，含誤刪防護與
+向後相容）。全套 38 檔綠。bridge 改動，`sfctl reload` 生效。
+
 ## v0.29.51 (2026-08-31)
 
 ### Fixes

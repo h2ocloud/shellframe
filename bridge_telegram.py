@@ -279,7 +279,28 @@ def normalize_reply_markers(text: str) -> str:
     return _REPLY_MARKER_ALT_RE.sub(r'[[\1]]', text or "")
 
 
-def clean_mobile_marker_response(text: str) -> str:
+def _is_marker_fragment(line: str, markers) -> bool:
+    """這一行是否只是某個 reply marker 打到一半的殘骸。
+
+    line-oriented agent（pi）是**逐字元 flush** end marker 的，原始 PTY 串流
+    因此留下 `[[` → `[[/` → `[[/TG` → … → `[[/TG_REPLY_3ca65bb9]` 這一整串
+    中間狀態，而且它們全都落在 start／end 之間 → 被當成回覆內容送出
+    （2026-08-31 實案，一則訊息塞了 20 行碎片）。
+    既有的 `_REPLY_MARKER_TOKEN_RE` 要求 `]]` 結尾，擋不到半截；
+    `clean_mobile_marker_response` 的去重也擋不住——每一行都不一樣。
+    這裡用「是不是某個 marker 的前綴」判斷，精準且不會誤刪正文
+    （正常內容不會整行只有 `[[/TG_REPL`）。
+    """
+    s = line.strip()
+    if len(s) < 2 or not s.startswith("[["):
+        return False
+    for m in markers:
+        if m and (m.startswith(s) or m.rstrip("]").startswith(s.rstrip("]"))):
+            return True
+    return False
+
+
+def clean_mobile_marker_response(text: str, markers=()) -> str:
     """Light cleanup for text already isolated by a mobile reply marker.
 
     Also hard-truncates at the first Claude Code/Codex TUI sentinel line: when
@@ -294,6 +315,8 @@ def clean_mobile_marker_response(text: str) -> str:
         # (nested repaints can carry a stray [[TG_REPLY_xxx]] / [[/TG_REPLY_xxx]]).
         stripped = _REPLY_MARKER_TOKEN_RE.sub("", line).strip()
         if not stripped:
+            continue
+        if _is_marker_fragment(stripped, markers):
             continue
         if _TUI_SENTINEL_RE.search(stripped):
             break
@@ -2363,7 +2386,8 @@ class TelegramBridge(BridgeBase):
         for _, e, inner in spans:
             if e < 0:
                 continue
-            cleaned = clean_mobile_marker_response(inner)
+            cleaned = clean_mobile_marker_response(
+                inner, (slot.reply_start_marker, slot.reply_end_marker))
             if not cleaned:
                 continue
             # Drop the wrapper-instruction echo: its inner span is part of the
