@@ -905,6 +905,13 @@
           </div>
         </div>
         <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="glassesLabel">Glasses control (Agent Relay add-on)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch" id="setting-glasses"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="glassesHint">Shows a per-tab switch that lets Even Realities G2 glasses type into that tab. Needs the separate Agent Relay bridge — off by default, and turning it on grants nothing on its own.</span>
+          </div>
+        </div>
+        <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="usagePaceLabel">Token pacing on the usage pill</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-usage-pace"></button>
@@ -1502,6 +1509,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       modelBadgeLabel: 'Model badge on sessions (experimental)',
       modelBadgeHint: "Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.",
+      glassesLabel: 'Glasses control (Agent Relay add-on)',
+      glassesHint: "Shows a per-tab switch that lets Even Realities G2 glasses type into that tab. Needs the separate Agent Relay bridge — off by default, and turning it on grants nothing on its own.",
       usagePaceLabel: 'Token pacing on the usage pill',
       usagePaceHint: 'Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.',
       releaseNotesTitle: "What's new",
@@ -1673,6 +1682,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       usagePaceHint: '在 wk 旁邊加一段 pc：把週額度平均攤到整個週期，也就是「今天應該用到幾 %」才會剛好用完。▲ 表示燒太快、▼ 表示額度用不完。滑過膠囊看細節（第幾天／落後或超前幾天的量）。',
       modelBadgeLabel: 'Session 顯示模型標籤（實驗性）',
       modelBadgeHint: '自動偵測每個分頁的模型與 thinking effort（Claude / Codex 都支援），顯示在左側 session 列。偵測屬盡力而為，可能有誤——不想看就在這裡關掉。',
+      glassesLabel: '眼鏡操控（Agent Relay 外掛）',
+      glassesHint: '在每個分頁顯示一個開關，開了之後 Even Realities G2 眼鏡就能對那個分頁打字。需要另外安裝 Agent Relay bridge 才有用，預設關閉；打開這裡只是把開關顯示出來，本身不授權任何分頁。',
       releaseNotesTitle: '本次更新',
       releaseNotesGotIt: '知道了',
     }
@@ -2627,6 +2638,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Model + thinking-effort badge for a session row. Auto-detected on the
   // Python side (claude: transcript's latest assistant model + global
   // effortLevel; codex: rollout turn_context) and pushed with agent status.
+  /* 眼鏡（Agent Relay）是外掛：沒裝 bridge 的人不該看到這顆按鈕。
+     預設關，設定裡打開才出現。 */
+  function glassesUiEnabled() {
+    return !!(config && config.settings && config.settings.glasses_enabled === true);
+  }
   function showModelBadge() {
     return !(config && config.settings && config.settings.show_model_badge === false);
   }
@@ -2667,7 +2683,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         modelBadgeHtml(s) +
-        `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` +
+        (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
         (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
         (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
@@ -2694,7 +2710,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
           `<span class="sb-label">${esc(s.label)}</span>` +
           modelBadgeHtml(s) +
-          `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` +
+          (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
           `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
           `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
         container.appendChild(el);
@@ -4957,6 +4973,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-model-badge').classList.toggle(
       'on', s.show_model_badge !== false,
     );
+    document.getElementById('setting-glasses').classList.toggle(
+      'on', s.glasses_enabled === true,
+    );
     document.getElementById('setting-usage-pace').classList.toggle(
       'on', s.usage_pace !== false,          // default on
     );
@@ -5021,6 +5040,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       this.classList.toggle('on');
       config.settings = config.settings || {};
       config.settings.show_model_badge = this.classList.contains('on');
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+      renderSidebar();
+    });
+
+  document.getElementById('setting-glasses')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      config.settings = config.settings || {};
+      config.settings.glasses_enabled = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
       renderSidebar();
     });

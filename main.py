@@ -189,7 +189,10 @@ DEFAULT_CONFIG = {
         "master_turn_preamble_enabled": True,
         "experimental_board": False,
         "experimental_loops": False,
-        "show_model_badge": True
+        "show_model_badge": True,
+        # 眼鏡（Agent Relay）是外掛功能，要另外裝 bridge 才有用。
+        # 預設關：沒裝的人不該在每個分頁上看到一顆按不出東西的按鈕。
+        "glasses_enabled": False
     },
     "idle_reaper": {
         "enabled": False,
