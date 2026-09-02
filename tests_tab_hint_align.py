@@ -31,13 +31,15 @@ m = re.search(r"  function positionTabHint\(\) \{.*?\n  \}\n", html, re.S)
 assert m, "找不到 positionTabHint"
 FN = m.group(0)
 css = re.search(r"  #tab-hint \{.*?\n  \}", html, re.S).group(0)
+# gutter 寬度從 index.html 讀，別在測試裡寫死——它就是給人調的那個旋鈕
+GUTTER = int(re.search(r"--hint-gutter: (\d+)px", html).group(1))
 
 PAGE = """<!doctype html><meta charset="utf-8">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <style>
 body{margin:0;background:#1a1b26}
-:root{--hint-gutter:26px}
+:root{--hint-gutter:__GUT__px}
 #terminal-wrap{position:relative;width:900px;height:400px}
 __CSS__
 </style>
@@ -62,7 +64,8 @@ term.write('第一行輸出\\r\\n第二行輸出\\r\\n⏺ 上一則回覆\\r\\n>
 with sync_playwright() as pw:
     b = pw.chromium.launch()
     pg = b.new_page(viewport={"width": 960, "height": 460})
-    pg.set_content(PAGE.replace("__CSS__", css).replace("__FN__", FN))
+    pg.set_content(PAGE.replace("__CSS__", css).replace("__FN__", FN)
+                              .replace("__GUT__", str(GUTTER)))
     pg.wait_for_function("() => window.ready === true")
     pg.wait_for_timeout(300)
     r = pg.evaluate("""() => {
@@ -94,9 +97,26 @@ with sync_playwright() as pw:
     nonlocal_fails = []
     check("標籤垂直中心對齊游標那一行", abs(r["垂直中心差"]) <= 1, f"差 {r['垂直中心差']}px")
     check("標籤站在左側 gutter 裡（貼最左）", r["標籤左緣"] <= 2, f"左緣 {r['標籤左緣']}px")
-    check("標籤不超出 gutter 寬度（不蓋終端內容）", r["標籤寬"] <= 26, f"寬 {r['標籤寬']}px")
-    check("終端內容從 gutter 之後才開始", r["終端左緣"] >= 26, f"終端左緣 {r['終端左緣']}px")
+    check("標籤不超出 gutter 寬度（不蓋終端內容）", r["標籤寬"] <= GUTTER, f"寬 {r['標籤寬']}px vs gutter {GUTTER}px")
+    check("終端內容從 gutter 之後才開始", r["終端左緣"] >= GUTTER, f"終端左緣 {r['終端左緣']}px vs gutter {GUTTER}px")
     check("對到的就是游標所在的那一行", "我打的字" in r["該行內容"], r["該行內容"])
+
+    # 守住 v0.30.12 的破圖：text-orientation:upright 會把拉丁字母一個個立起來，
+    # 「sf dev」變 s/f/d/e/v 五行；flex 又會跟 writing-mode 打架擠成一團。
+    r2 = pg.evaluate("""() => {
+      const el = document.getElementById('tab-hint');
+      const cs = getComputedStyle(el);
+      const heights = {};
+      for (const nm of ['sf dev', '影片處理']) {
+        el.textContent = nm; window.positionTabHint();
+        heights[nm] = Math.round(el.getBoundingClientRect().height);
+      }
+      return { upright: cs.textOrientation === 'upright', flex: cs.display === 'flex', heights };
+    }""")
+    check("英文不逐字立起來（text-orientation 不是 upright）", not r2["upright"])
+    check("不用 flex（會跟 writing-mode 打架）", not r2["flex"])
+    check("英文分頁名不超過 2.5 行高", r2["heights"]["sf dev"] <= 48,
+          f"sf dev 高 {r2['heights']['sf dev']}px")
     pg.screenshot(path=str(SP / "cursor_align.png"))
     b.close()
     print("\nALL PASS" if not sum(nonlocal_fails) else f"\n{sum(nonlocal_fails)} FAILED")
