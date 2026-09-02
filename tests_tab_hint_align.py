@@ -85,6 +85,7 @@ with sync_playwright() as pw:
         垂直中心差: Math.round(((hb.top + hb.bottom) / 2) - ((rowBox.top + rowBox.bottom) / 2)),
         標籤左緣: Math.round(hb.left - wb.left),
         標籤寬: Math.round(hb.width),
+        標籤右緣: Math.round(hb.right - wb.left),
         終端左緣: Math.round(document.querySelector('.xterm-screen').getBoundingClientRect().left - wb.left),
       };
     }""")
@@ -96,8 +97,11 @@ with sync_playwright() as pw:
 
     nonlocal_fails = []
     check("標籤垂直中心對齊游標那一行", abs(r["垂直中心差"]) <= 1, f"差 {r['垂直中心差']}px")
-    check("標籤站在左側 gutter 裡（貼最左）", r["標籤左緣"] <= 2, f"左緣 {r['標籤左緣']}px")
-    check("標籤不超出 gutter 寬度（不蓋終端內容）", r["標籤寬"] <= GUTTER, f"寬 {r['標籤寬']}px vs gutter {GUTTER}px")
+    check("標籤貼在最左（可往側欄那側溢出一點）", r["標籤左緣"] <= 2, f"左緣 {r['標籤左緣']}px")
+    # 真正要守的是「不遮終端」，不是「不超出 gutter」——標籤刻意往左吃一點到側欄
+    # 那側（字體才放得大又不多佔終端寬度），所以比的是右緣有沒有壓到終端左緣。
+    check("標籤右緣沒壓到終端內容", r["標籤右緣"] <= r["終端左緣"],
+          f"標籤右緣 {r['標籤右緣']}px vs 終端左緣 {r['終端左緣']}px")
     check("終端內容從 gutter 之後才開始", r["終端左緣"] >= GUTTER, f"終端左緣 {r['終端左緣']}px vs gutter {GUTTER}px")
     check("對到的就是游標所在的那一行", "我打的字" in r["該行內容"], r["該行內容"])
 

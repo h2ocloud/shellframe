@@ -213,20 +213,25 @@
      positionTabHint）。不蓋任何終端內容——上一版蓋在輸入行前面會擋掉剛打的
      頭幾個字，被 Howard 退掉。 */
   #tab-hint {
-    position: absolute; top: 0; left: 0; z-index: 60;
-    width: var(--hint-gutter);
+    /* 往左吃 4px 到側欄那一側：字體要看得清楚（Howard 2026-09-02：「太小了，
+       我是說不能剛剛的字體，然後往左邊再放嗎」），但不想為此多佔終端寬度。
+       #terminal-wrap 沒有 overflow:hidden、#sidebar 也沒有 z-index，所以負
+       left 會疊在側欄邊界上而不是被裁掉。標籤右緣剛好落在 gutter 右緣，
+       一個字都不壓到終端。 */
+    position: absolute; top: 0; left: -4px; z-index: 60;
+    width: calc(var(--hint-gutter) + 4px);
     pointer-events: none; user-select: none;
     /* 不加 text-orientation: upright——那會把拉丁字母也一個一個立起來，
        「sf dev」變成 s/f/d/e/v 五行，又高又像破圖（Howard 2026-09-02 回報）。
        預設的 mixed 讓英文整串側躺、中文保持直立，高度省一半以上。
        也不要用 flex：flex 的主軸會跟 writing-mode 一起轉，文字會擠成一團。 */
     writing-mode: vertical-rl;
-    font-size: 9px; line-height: 1; letter-spacing: .5px;
-    padding: 5px 0; box-sizing: border-box;
+    font-size: 11px; line-height: 1.1; letter-spacing: .5px;
+    padding: 6px 0; box-sizing: border-box;
     text-align: center;
     border-radius: 5px;
     background: rgba(122, 162, 247, .07);
-    color: #7f95c9; opacity: .8;
+    color: #93aada; opacity: .92;
     max-height: 7em; overflow: hidden;
   }
   /* Prevent IME composition text from overflowing and bouncing at edge */
