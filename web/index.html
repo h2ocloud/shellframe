@@ -200,18 +200,22 @@
   .ui-scale-btn.active { color: #7aa2f7; border-color: #7aa2f7; background: rgba(122,162,247,.1); }
   .term-pane { position: absolute; inset: 0; display: none; overflow: hidden; }
   .term-pane.active { display: block; }
-  /* 貼著使用者打字的那一行，不是右上角。Howard 2026-09-02 退過一次右上角版本：
-     「放在我打字的附近，不然跟左邊有什麼差，都離視線很遠」。bottom 由
-     updateTabHint 依終端字級算，避開最底下那條 tmux status line。 */
+  /* 就貼在輸入行的最左邊，游標正前方。Howard 2026-09-02 連退兩版：右上角
+     「跟左邊有什麼差，都離視線很遠」，右下角還是太遠——第三版直接照他說的
+     「可以刻意佔位，在我的輸入匡前面」，蓋掉提示符前面那一小塊。
+     所以刻意做窄（最多五個字就截斷）：擋住的是自己剛打的頭一兩個字，比
+     「整段打進錯的分頁」便宜太多。bottom 由 updateTabHint 依終端字級算，
+     坐在最底下那條 tmux status line 上面一行。 */
   #tab-hint {
-    position: absolute; bottom: 27px; right: 14px; z-index: 20;
+    /* z-index 要壓過 xterm 的 row（pane 是後 append 的兄弟節點），也要壓過
+       右下角那顆 mic-fab（40）——第一版給 20，標籤被終端文字蓋掉看不見。 */
+    position: absolute; top: 0; left: 6px; z-index: 60;
     pointer-events: none; user-select: none;
-    font-size: 10px; line-height: 1; letter-spacing: .3px;
-    padding: 3px 9px; border-radius: 999px;
-    background: rgba(122, 162, 247, .12);
-    border: 1px solid rgba(122, 162, 247, .24);
-    color: #7aa2f7; opacity: .6;
-    max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 10px; line-height: 1; letter-spacing: .2px;
+    padding: 2px 6px; border-radius: 4px;
+    background: #1e2a4a; box-shadow: 0 0 0 1px rgba(122, 162, 247, .45);
+    color: #9ab8fa; opacity: .95;
+    max-width: 5.6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
@@ -2546,29 +2550,38 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!name) { el.hidden = true; return; }
     el.textContent = name;
     el.title = name;
-    // 讓它坐在 tmux status line 上面那一行（＝輸入區）的右側。行高隨終端字級
-    // 變，寫死 px 在改字級後會偏。
-    const lh = Math.round((currentFontSize || 14) * 1.35);
-    el.style.bottom = (lh + 8) + 'px';
-    // 避開右下角的麥克風 FAB（z-index 40，會直接壓在標籤上——第一版就被它
-    // 遮掉一半）。它是 position:fixed、標籤是相對 #terminal-wrap 的 absolute，
-    // 兩個座標系不同，所以用實際 rect 判斷有沒有重疊，不寫死 offset：
-    // 右側面板展開時 terminal-wrap 的右緣會往左縮，那時就不需要讓位。
-    let right = 14;
+    el.hidden = false;          // 先顯示才量得到 offsetHeight
+    positionTabHint();
+  }
+
+  // 標籤跟著**游標那一行**走。前三版都是猜位置——右上角、右下角、寫死「倒數
+  // 第幾行」——而輸入行的位置其實會動：Claude Code 的權限提示行、tmux status
+  // line 存不存在、多行輸入時輸入框往上長，全都會讓它偏掉。直接讀 xterm 的
+  // DOM row 位置最準（ShellFrame 沒載 canvas/webgl addon，是 DOM renderer，
+  // .xterm-rows 下每行一個 div），而且不必猜行高。
+  // 游標移動就重新對位（打字、換行、TUI 重繪都會動游標）。用 rAF 合併，
+  // 免得每個按鍵都觸發一次 layout 量測。
+  let _hintRaf = 0;
+  function scheduleTabHintPosition() {
+    if (_hintRaf) return;
+    _hintRaf = requestAnimationFrame(() => { _hintRaf = 0; positionTabHint(); });
+  }
+
+  function positionTabHint() {
+    const el = document.getElementById('tab-hint');
+    if (!el || el.hidden) return;
+    const s = activeId && sessions[activeId];
+    if (!s) return;
     try {
-      const mic = document.getElementById('mic-fab');
-      const wrapBox = el.parentElement.getBoundingClientRect();
-      // 不能用 offsetParent 判斷可見：mic-fab 是 position:fixed，fixed 元素的
-      // offsetParent 恆為 null，第一版就是這樣讓避讓邏輯整段沒生效（Playwright
-      // 驗收才抓到——標籤仍被壓在麥克風底下）。看 rect 有沒有面積最直接。
-      if (mic && mic.getBoundingClientRect().width > 0) {
-        const mb = mic.getBoundingClientRect();
-        const overlap = Math.round(wrapBox.right - mb.left);
-        if (mb.width && overlap > 0) right = overlap + 10;
-      }
-    } catch (_) {}
-    el.style.right = right + 'px';
-    el.hidden = false;
+      const rows = s.pane.querySelector('.xterm-rows');
+      const row = rows && rows.children[s.term.buffer.active.cursorY];
+      if (!row) return;
+      const rb = row.getBoundingClientRect();
+      const wb = el.parentElement.getBoundingClientRect();
+      if (!rb.height) return;
+      el.style.top = Math.round(
+        rb.top - wb.top + (rb.height - el.offsetHeight) / 2) + 'px';
+    } catch (_) { /* renderer 還沒 ready，下一次游標移動再對位 */ }
   }
   window.updateTabHint = updateTabHint;
 
@@ -3842,6 +3855,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // ── Attach: intercept Enter/Shift+Enter before xterm ──
   let shiftEnterNewline = true; // default on; toggled in Settings
   function setupAttachKeyHandler(sid, term) {
+    // 分頁名標籤要黏在游標那一行，游標一動就重新對位。
+    try {
+      term.onCursorMove(() => {
+        if (sid === activeId) scheduleTabHintPosition();
+      });
+    } catch (_) {}
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
       // ── composition 進行中，鍵盤完全讓給 IME ──

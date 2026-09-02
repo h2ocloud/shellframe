@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.30.10 (2026-09-02)
+
+### Changes
+- **分頁名標籤改成黏在游標那一行的最前面**（Howard 2026-09-02 連退三版：右上角
+  「跟左邊有什麼差，都離視線很遠」→ 右下角還是遠 → 「可以刻意佔位，在我的輸入匡
+  前面嗎」）。
+  前三版都在**猜**位置——右上角、右下角、寫死「倒數第幾行」。而輸入行的位置本來
+  就會動：Claude Code 的權限提示行、tmux status line 存不存在、多行輸入時輸入框
+  往上長，任何一個變了就偏掉。這版直接讀 xterm 的 DOM row 位置對齊
+  `buffer.active.cursorY`（ShellFrame 沒載 canvas/webgl addon，是 DOM renderer），
+  不猜行高也不假設行號；`onCursorMove` 觸發重新對位，用 rAF 合併避免每個按鍵都
+  做一次 layout 量測。
+  刻意做窄（最多五個字截斷）：擋掉的是自己剛打的頭一兩個字，比「整段打進錯的
+  分頁」便宜太多。`>` 提示符仍看得到。
+  另修：`z-index` 原本給 20，被 xterm 的 row 蓋過去（pane 是後 append 的兄弟
+  節點），標籤只剩一個看不出字的淡框——改 60 並換成實心底色。
+  驗收（`cursor_align_qa.py`，真實 xterm 5.5.0 + 從 index.html 抽出的
+  `positionTabHint`）：游標在第 3 行「> 我打的字」，該行 48–64、標籤 49–63，
+  **垂直中心差 0**。
+
 ## v0.30.9 (2026-09-02)
 
 ### Changes

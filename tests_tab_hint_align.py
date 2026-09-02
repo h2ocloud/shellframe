@@ -1,0 +1,100 @@
+"""分頁名標籤要對齊游標那一行——用真實 xterm.js 5.5.0 驗，不是模擬。
+
+Howard 2026-09-02 連退三版（右上角/右下角/寫死倒數第幾行）。輸入行位置會動：
+權限提示行、tmux status line、多行輸入都會讓它偏，所以標籤必須跟著 cursorY。
+position 邏輯直接從 web/index.html 抽出來跑，不留會走樣的副本。
+
+需要 playwright；沒裝就 SKIP。
+
+跑法：python3 tests_tab_hint_align.py
+"""
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    # .venv 沒裝 playwright，系統 python 有；轉手過去，不然 run_tests.sh 底下永遠 SKIP
+    if os.environ.get("_HINT_QA_REEXEC") != "1":
+        env = dict(os.environ, _HINT_QA_REEXEC="1")
+        sys.exit(subprocess.call(["python3", str(pathlib.Path(__file__).resolve())], env=env))
+    print("SKIP  tests_tab_hint_align.py（沒裝 playwright）\nALL PASS")
+    sys.exit(0)
+
+SP = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
+html = pathlib.Path("/Users/neux/.local/apps/shellframe/web/index.html").read_text(encoding="utf-8")
+# 把 positionTabHint 從 index.html 抽出來跑，不複製一份會走樣的副本
+m = re.search(r"  function positionTabHint\(\) \{.*?\n  \}\n", html, re.S)
+assert m, "找不到 positionTabHint"
+FN = m.group(0)
+css = re.search(r"  #tab-hint \{.*?\n  \}", html, re.S).group(0)
+
+PAGE = """<!doctype html><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<style>
+body{margin:0;background:#1a1b26}
+#terminal-wrap{position:relative;width:900px;height:400px}
+__CSS__
+</style>
+<div id="terminal-wrap"><div id="tab-hint" hidden>影片處理</div></div>
+<script>
+const term = new Terminal({ fontSize: 14, theme: { background: '#1a1b26' } });
+const wrap = document.getElementById('terminal-wrap');
+const host = document.createElement('div');
+host.style.cssText = 'position:absolute;inset:0';
+wrap.appendChild(host);
+term.open(host);
+window.activeId = 's1';
+window.sessions = { s1: { pane: wrap, term } };
+let activeId = 's1', sessions = window.sessions;
+__FN__
+window.positionTabHint = positionTabHint;
+window.ready = false;
+// 印幾行，游標停在最後一行
+term.write('第一行輸出\\r\\n第二行輸出\\r\\n⏺ 上一則回覆\\r\\n> 我打的字', () => { window.ready = true; });
+</script>"""
+
+with sync_playwright() as pw:
+    b = pw.chromium.launch()
+    pg = b.new_page(viewport={"width": 960, "height": 460})
+    pg.set_content(PAGE.replace("__CSS__", css).replace("__FN__", FN))
+    pg.wait_for_function("() => window.ready === true")
+    pg.wait_for_timeout(300)
+    r = pg.evaluate("""() => {
+      const el = document.getElementById('tab-hint');
+      el.hidden = false;
+      window.positionTabHint();
+      const rows = document.querySelector('.xterm-rows');
+      const y = window.sessions.s1.term.buffer.active.cursorY;
+      const rowBox = rows.children[y].getBoundingClientRect();
+      const hb = el.getBoundingClientRect();
+      const wb = document.getElementById('terminal-wrap').getBoundingClientRect();
+      return {
+        游標在第幾行: y,
+        該行內容: rows.children[y].textContent.trim().slice(0, 20),
+        該行範圍: [Math.round(rowBox.top), Math.round(rowBox.bottom)],
+        標籤範圍: [Math.round(hb.top), Math.round(hb.bottom)],
+        垂直中心差: Math.round(((hb.top + hb.bottom) / 2) - ((rowBox.top + rowBox.bottom) / 2)),
+        標籤左緣: Math.round(hb.left - wb.left),
+        標籤寬: Math.round(hb.width),
+      };
+    }""")
+    fails = 0
+
+    def check(name, ok, detail=""):
+        nonlocal_fails.append(0 if ok else 1)
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name}{'' if ok else '  ' + detail}")
+
+    nonlocal_fails = []
+    check("標籤垂直中心對齊游標那一行", abs(r["垂直中心差"]) <= 1, f"差 {r['垂直中心差']}px")
+    check("標籤在該行的最前面（貼左緣）", r["標籤左緣"] <= 10, f"左緣 {r['標籤左緣']}px")
+    check("標籤刻意做窄，不吃掉整行", r["標籤寬"] <= 90, f"寬 {r['標籤寬']}px")
+    check("對到的就是游標所在的那一行", "我打的字" in r["該行內容"], r["該行內容"])
+    pg.screenshot(path=str(SP / "cursor_align.png"))
+    b.close()
+    print("\nALL PASS" if not sum(nonlocal_fails) else f"\n{sum(nonlocal_fails)} FAILED")
+    sys.exit(1 if sum(nonlocal_fails) else 0)
