@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.30.5 (2026-09-02)
+
+### Fixes
+- **注音打到一半按 shift，那個還沒確認的字會重複一遍**（Howard 2026-09-02）。
+  機制對照 xterm.js 5.5.0 源碼，並用**真實 xterm 實測重現**
+  （`tests_ime_seq.py`：keyup 在 `compositionend` 之前 → `onData` 收到
+  `['你','你']`；在之後 → 只有 `['你']`）：
+  `CompositionHelper.keydown()` 對 keyCode 16（Shift）`return false` 不 finalize；
+  macOS 注音在 shift 的 **keyup** 才切英文並 commit，而 `Terminal._keyUp()`
+  這時已把 `_keyDownSeen` 設回 `false`；於是 `_inputEvent()` 的
+  `(!ev.composed || !this._keyDownSeen)` 放行送出一次，`compositionend` 走
+  `_finalizeComposition(true)` 排的 `setTimeout(0)` 又送一次。
+  原本就有 IME 去重，但條件是 `data.length > 1`——一個中文字 length 就是 1，
+  整條規則對這個情境完全沒作用。
+  **去重綁定「這一次 commit」，不用時間窗口猜**：`compositionend` 帶的 `data`
+  就是這次 commit 的內容，只放行第一次，下一次 `compositionstart` 清空。人要打
+  出同一個字必然經過新的 `compositionstart`，所以連打「好好」不會被吃掉。
+  ⚠️ 中途有一版用 150ms 時間窗口，**會吃掉使用者連打的第二個相同字**（Howard
+  當場回報）。實測兩次送出只差 **≤0.8ms**，150ms 大了兩個數量級——那版是錯的，
+  已換掉。`tests_ime_seq.py` 的案例 E/F 就是守這條線：連打兩個相同字、以及
+  shift 中斷後再正常打同一個字，兩個都必須留下。
+- **模型 badge 在重啟後會退化**。偵測的即時真相是 hook 回報的
+  `transcript_path`，但它只活在記憶體裡——重啟就沒了，偵測掉回 `cmd` 裡的
+  `--resume` uuid（啟動時那一份，不是現在在寫的那一份）。現在會寫進 session
+  manifest，重啟時接回來（只在 hook 回報換檔時落地，不是每個 PreToolUse 都重寫
+  config）。
+
+### Changes
+- **TG slash 選單只留分頁名**。`setMyCommands` 是註冊當下的快照，模型掛上去只會
+  腐爛：分頁久沒動就凍在幾天前那次對話的模型，手機端也看不出它已經過期
+  （Howard 2026-09-01：整排 Sonnet 5、scrum 顯示 8/24 留下的 Opus 4.8）。模型改在
+  `/N` 切過去時即時算，放進表頭：`Switched to 雜事 (/5) · Opus 5 · xhigh`。偵測在
+  `_slots_lock` **外**跑——它要讀 transcript，活躍分頁的檔可以到十幾 MB。
+- **拖檔案：dragenter 先讀原生 pasteboard**，drop 時就不必等一趟 IPC、也不必依賴
+  `dt.files`。順手擋掉一個會**附錯檔**的風險：drag pasteboard 會留著上一次拖曳的
+  內容（實測沒有拖曳進行中，仍讀得到十分鐘前那個 pptx），而從瀏覽器拖 blob 的來
+  源不寫這塊 pasteboard，數量又剛好都是 1 個。新增 `drag_pasteboard_snapshot()`
+  多回一個 `changeCount`，前端拿它跟「最後一次採用過的值」比對，相同就不信；開機
+  時先把當下的值記成用過。三個條件（changeCount 更新過、數量精確相符、真的有檔案）
+  同時成立才走預讀。
+  ⚠️ **這不是「拖檔案要等好幾秒」的解**。昨天推測是 `dt.files` 具現化複製整檔，
+  拿 `BlobRegistryFiles-*` 目錄的時間戳當佐證——**推翻了**：那些目錄每次 WebKit
+  啟動就建立，而且全都是空的，拖的檔案只有 15KB。實測 handler 內部只花 18ms
+  （`afterFiles: 11ms`），耗時在「WebKit 把 drop 交給我們之前」。
+- **原生層量測放開滑鼠的那一刻**（`drag_mark()`：`NSEvent.pressedMouseButtons()`
+  20ms 輪詢）。JS 拿不到這個時間——drop 事件本身就是放開之後才派送的，所以前端量
+  到的 `sinceDragOver` 分不出「使用者拖著不動幾秒才放手」跟「放手後 WebKit 卡在
+  dispatch 前面」。現在 `[js:drop]` 會直接帶 `sinceMouseUp=`，一次拖放就能定位。
+- **關閉留痕**。2026-08-31 23:51 macOS 排程的自動更新發起重新開機、loginwindow
+  逐一 quit 掉所有 GUI app（隨後 LINE 回 `userCanceledErr` 擋下重啟，機器沒重開、
+  更新沒裝，但 ShellFrame 已經死了）。debug log 當時一個字都沒有。現在視窗關閉與
+  SIGINT/SIGTERM 都會寫一行 `[lifecycle]`。
+- **`./run_tests.sh`**：一次跑完 `tests_*.py` 與 `tests_*.js`。前端純邏輯的測試是
+  `.js`（node 跑），只用 `tests_*.py` 的 glob 會掃不到，孤兒測試等於沒測。
+
 ## 0.30.4
 
 - 眼鏡（Agent Relay）改成**外掛、預設隱藏**。它需要另外安裝 bridge 才有作用，

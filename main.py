@@ -1412,6 +1412,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                     "order": idx,
                     "updated_at": int(time.time()),
                 }
+                # 模型 badge 的即時真相是 hook 回報的 transcript 路徑（見
+                # agent_event）。它原本只活在記憶體裡：ShellFrame 一重啟，所有
+                # 分頁的 hint 就消失，偵測掉回 cmd 的 --resume uuid ＝ 啟動時
+                # 指定的那份舊 transcript，badge 於是顯示過期模型。
+                hook_tp = getattr(s, "_hook_transcript_path", "") or ""
+                if hook_tp:
+                    entry["transcript_path"] = hook_tp
+                hook_csid = getattr(s, "session_id", "") or ""
+                if hook_csid:
+                    entry["claude_session_id"] = hook_csid
                 lifecycle_source = getattr(s, "_lifecycle_source", "") or ""
                 if lifecycle_source:
                     entry["lifecycle_source"] = lifecycle_source
@@ -2047,6 +2057,24 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 return str(sid)
         return suffix or name
 
+    @staticmethod
+    def _restore_transcript_hint(session, entry: dict):
+        """把 manifest 存下來的 transcript hint 接回 Session。
+
+        少了這一步，重啟後的分頁只剩 cmd 裡的 --resume uuid 可推——那是「啟動
+        時那一份」，不是「現在在寫的那一份」（/clear 會輪替 uuid，resume 也常
+        fork 出新檔），模型 badge 會停在舊檔最後一筆的模型。路徑不存在就不接，
+        讓偵測照原本的優先序往下走。"""
+        try:
+            tp = str(entry.get("transcript_path") or "").strip()
+            if tp and os.path.exists(tp):
+                session._hook_transcript_path = tp
+            csid = str(entry.get("claude_session_id") or "").strip()
+            if csid and not getattr(session, "session_id", None):
+                session.session_id = csid
+        except Exception:
+            _swallow(f"restore_transcript_hint:{getattr(session, 'sid', '?')}")
+
     def restore_tmux_sessions(self, cols: int = 80, rows: int = 24) -> str:
         """Restore orphaned sessions on startup.
 
@@ -2107,6 +2135,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
                 session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
+                self._restore_transcript_hint(session, entry)
                 # Restore custom label
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
@@ -2142,6 +2171,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
                 session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
+                self._restore_transcript_hint(session, entry)
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
                     session._custom_label = label
@@ -2269,10 +2299,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         if s is not None:
             tp = str(args.get("transcript_path") or "").strip()
             csid = str(args.get("session_id") or "").strip()
-            if tp:
+            changed = False
+            if tp and getattr(s, "_hook_transcript_path", None) != tp:
                 s._hook_transcript_path = tp
-            if csid:
+                changed = True
+            if csid and getattr(s, "session_id", None) != csid:
                 s.session_id = csid
+                changed = True
+            # 只有真的換檔才落地——hook 每個 PreToolUse 都會進來，無條件
+            # persist 等於把整份 config 重寫成高頻寫入。
+            if changed:
+                self._persist_session_manifest()
         state = self._hook_state_for(
             event,
             str(args.get("notification_type") or ""),
@@ -4216,10 +4253,95 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             _dlog("drop", f"drag pasteboard read failed: {e}")
             return json.dumps([])
 
+    def drag_pasteboard_snapshot(self) -> str:
+        """同 drag_pasteboard_paths，但附上 pasteboard 的 changeCount。
+
+        drag pasteboard **會留著上一次拖曳的內容**——實測沒有任何拖曳進行中，
+        仍讀得到十分鐘前那次拖進來的 pptx。所以「路徑數量跟這次拖進來的檔案數
+        對得上」不足以判定它是這次的：從瀏覽器拖 in-memory blob 的來源根本不寫
+        這塊 pasteboard，數量又剛好都是 1 個，就會把殘留的舊檔附上去。
+        changeCount 只在有人真的寫入時遞增，是唯一分得出「這次寫的」跟「上次留
+        下的」的訊號。前端拿它跟最後一次採用過的值比對，相同就不信。"""
+        if sys.platform != "darwin":
+            return json.dumps({"paths": [], "change": -1})
+        try:
+            from AppKit import NSPasteboard
+            from Foundation import NSURL
+            pb = NSPasteboard.pasteboardWithName_("Apple CFPasteboard drag")
+            change = int(pb.changeCount())
+            paths = []
+            for it in (pb.pasteboardItems() or []):
+                u = it.stringForType_("public.file-url")
+                if not u:
+                    continue
+                try:
+                    p = NSURL.URLWithString_(u).path()
+                except Exception:
+                    p = None
+                if p:
+                    paths.append(str(p))
+            return json.dumps({"paths": paths, "change": change})
+        except Exception as e:
+            _dlog("drop", f"drag pasteboard snapshot failed: {e}")
+            return json.dumps({"paths": [], "change": -1})
+
+    def drag_mark(self) -> str:
+        """拖曳進入視窗 → 開始盯滑鼠左鍵，記下放開的那一刻。
+
+        JS 拿不到「使用者放開滑鼠」的時間：drop 事件本身就是放開之後才被派送
+        的，所以前端量到的 sinceDragOver 分不出兩種完全不同的情況——使用者拖著
+        不動幾秒才放手，還是放手後 WebKit 卡在 dispatch 前面。這裡用
+        NSEvent.pressedMouseButtons() 補上那一刻（20ms 輪詢，最多盯 60 秒），
+        js_debug('drop') 進來時就能算出真正的感知延遲。
+        觸控板 tap-drag 之類左鍵本來就沒按下的情況標成 unknown，不要謊報 0。"""
+        if sys.platform != "darwin":
+            return "skip"
+        if getattr(self, "_drag_watch_running", False):
+            return "already"
+        self._drag_mouse_up_ts = 0.0
+        self._drag_watch_running = True
+
+        def _watch():
+            try:
+                from AppKit import NSEvent
+                t0 = time.time()
+                # 先確認現在真的按著左鍵，否則這次量測沒有意義
+                pressed = False
+                while time.time() - t0 < 1.0:
+                    if int(NSEvent.pressedMouseButtons()) & 1:
+                        pressed = True
+                        break
+                    time.sleep(0.02)
+                if not pressed:
+                    self._drag_mouse_up_ts = -1.0     # unknown
+                    return
+                while time.time() - t0 < 60.0:
+                    if not (int(NSEvent.pressedMouseButtons()) & 1):
+                        self._drag_mouse_up_ts = time.time()
+                        return
+                    time.sleep(0.02)
+            except Exception as e:
+                _dlog("drop", f"drag_mark watch failed: {e}")
+                self._drag_mouse_up_ts = -1.0
+            finally:
+                self._drag_watch_running = False
+
+        threading.Thread(target=_watch, daemon=True).start()
+        return "ok"
+
     def js_debug(self, tag: str, msg: str) -> str:
         """前端事件落 debug log。拖放/貼上這類 WebKit 行為差異在後端毫無
         足跡（2026-08-05 drop 掉檔名查了半天），給前端一條 log 通道。"""
-        _dlog(f"js:{tag}", str(msg)[:500])
+        extra = ""
+        if tag == "drop":
+            up = getattr(self, "_drag_mouse_up_ts", 0.0)
+            if up and up > 0:
+                extra = f"  sinceMouseUp={int((time.time() - up) * 1000)}ms"
+            elif up == -1.0:
+                extra = "  sinceMouseUp=unknown(左鍵未按下)"
+            else:
+                extra = "  sinceMouseUp=?(還沒放開就進 drop?)"
+        _dlog(f"js:{tag}", str(msg)[:500] + extra)
         return "ok"
 
     def save_file_from_clipboard(self, data_url: str, filename: str) -> str:
@@ -7185,8 +7307,17 @@ def main():
 
     # Safety net: clean up on exit no matter what
     atexit.register(api.cleanup_all)
-    signal.signal(signal.SIGINT, lambda *_: (api.cleanup_all(), os._exit(0)))
-    signal.signal(signal.SIGTERM, lambda *_: (api.cleanup_all(), os._exit(0)))
+    def _exit_on_signal(signum, _frame):
+        # 同上：訊號路徑也要留痕，才分得出「被 kill」跟「視窗被 quit」。
+        try:
+            _dlog("lifecycle", f"signal {signum} → exiting pid={os.getpid()}")
+        except Exception:
+            pass
+        api.cleanup_all()
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, _exit_on_signal)
+    signal.signal(signal.SIGTERM, _exit_on_signal)
 
     # Restore window geometry from last close. Pass ONLY width/height to
     # create_window; x/y is applied AFTER the window exists (via
@@ -7291,6 +7422,13 @@ def main():
         _swallow("main:6981")
 
     def _on_closed_save_and_cleanup():
+        # 關閉一定要留痕。2026-08-31 23:51 macOS 排程的自動更新發起重新開機、
+        # loginwindow 逐一 quit 掉所有 GUI app，ShellFrame 就這樣沒了——debug
+        # log 裡一個字都沒有，只能靠 unified log 逐秒比對才確定不是自己崩潰。
+        try:
+            _dlog("lifecycle", f"window closed → cleanup_and_exit pid={os.getpid()}")
+        except Exception:
+            pass
         # Cancel pending debounce + flush synchronously so the close actually
         # captures the last known geometry before the process exits.
         with _geom_lock:

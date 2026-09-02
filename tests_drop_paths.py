@@ -56,5 +56,21 @@ if sys.platform == "darwin":
     r = json.loads(api.drag_pasteboard_paths())
     check("darwin 回 JSON list 不炸", isinstance(r, list))
 
+# drag_pasteboard_snapshot：多帶 changeCount。drag pasteboard 會留著上一次拖曳
+# 的內容（實測沒有拖曳進行中仍讀得到十分鐘前那個檔案），前端要靠 changeCount
+# 才分得出「這次寫的」跟「上次留下的」——少了它，從瀏覽器拖 blob 會附到舊檔。
+with _patch("sys.platform", "linux"):
+    r = json.loads(api.drag_pasteboard_snapshot())
+    check("非 darwin snapshot 回 paths=[] change=-1", r == {"paths": [], "change": -1})
+if sys.platform == "darwin":
+    r = json.loads(api.drag_pasteboard_snapshot())
+    check("darwin snapshot 形狀正確",
+          isinstance(r.get("paths"), list) and isinstance(r.get("change"), int))
+    check("snapshot 與 paths 版路徑一致",
+          r["paths"] == json.loads(api.drag_pasteboard_paths()))
+    check("changeCount 連兩次讀相同（沒人寫入就不遞增）",
+          json.loads(api.drag_pasteboard_snapshot())["change"] == r["change"])
+    check("drag_mark 不炸（非 darwin 回 skip）", api.drag_mark() in ("ok", "already"))
+
 print(f"\nResults: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

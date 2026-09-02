@@ -1504,8 +1504,11 @@ class TelegramBridge(BridgeBase):
         with self._slots_lock:
             for sid in self._slot_order:
                 slot = self.slots[sid]
-                # Description max 256 chars; label+model comfortably fits.
-                desc = f"Switch to {slot.label}{self._slot_model_suffix(slot)}"
+                # 只放分頁名。模型曾經掛在這裡，但 setMyCommands 是「註冊當下」
+                # 的快照：分頁久沒動，badge 就凍在幾天前那次對話的模型，而手機端
+                # 看不出它已經過期（Howard 2026-09-01：整排 Sonnet 5、scrum 顯示
+                # 8/24 留下的 Opus 4.8）。模型改在 /N 切過去時即時算。
+                desc = f"Switch to {slot.label}"
                 commands.append({
                     "command": str(slot.index),
                     "description": desc[:256],
@@ -6263,20 +6266,30 @@ class TelegramBridge(BridgeBase):
         elif cmd.isdigit():
             idx = int(cmd)
             switch_msg = None
+            switch_slot = None
+            switch_head = ""
             out_of_range = 0     # 0=沒事，否則＝目前分頁數（含 0 個）
             with self._slots_lock:
                 if 1 <= idx <= len(self._slot_order):
                     sid = self._slot_order[idx - 1]
                     self._user_active[user_id] = sid
                     slot = self.slots[sid]
+                    switch_slot = slot
                     # Peek at last AI response before sending switch msg
                     last_resp = self._peek_last_response(slot)
-                    switch_msg = f"Switched to {slot.label} (/{slot.index})"
+                    switch_head = f"Switched to {slot.label} (/{slot.index})"
+                    switch_msg = ""
                     if last_resp:
                         preview = last_resp[:3000] + "\n...(truncated)" if len(last_resp) > 3000 else last_resp
-                        switch_msg += f"\n\n💬 Last AI response:\n{preview}"
+                        switch_msg = f"\n\n💬 Last AI response:\n{preview}"
                 else:
                     out_of_range = -1
+            # 模型偵測要在鎖外：它會去讀 transcript（活躍分頁的檔可以到十幾
+            # MB），扣著 _slots_lock 等於把整座 bridge 卡在磁碟上。
+            if switch_slot is not None:
+                switch_msg = (switch_head
+                              + self._slot_model_suffix(switch_slot)
+                              + switch_msg)
             # 送出一律在鎖外：_slot_menu_text 自己要拿 _slots_lock（非
             # reentrant），而 tg_api 可能卡到 35s，不能扣著 slot 鎖等 HTTPS。
             if switch_msg:

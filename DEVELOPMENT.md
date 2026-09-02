@@ -13,6 +13,15 @@
 - ⚠️ 改了 `main.py` / `web` / 新 import 的模組卻只 `reload`，**不會生效**——一定要 `restart`。`restart` 時 tmux sessions 會留著。
 - 排查「改了沒生效」時，先確認用對 reload/restart。
 
+## 跑測試
+
+- `./run_tests.sh` — 一次跑完 `tests_*.py` 與 `tests_*.js`。
+- ⚠️ 前端純邏輯的測試是 **`.js`**（例：`tests_ime_dedup.js`，用 node 跑，函式直接
+  從 `web/index.html` 抽出來，不另外複製一份會走樣的副本）。只用 `tests_*.py`
+  的 glob 掃會漏掉它們——所以一律走 `run_tests.sh`。
+- `tests_ime_seq.py` 需要 playwright（載真實 xterm.js 驗 IME 事件序列）。`.venv`
+  裡沒裝，它會自己轉手給系統 `python3`；兩邊都沒有才 SKIP。
+
 ## 版本與發布
 
 - 任何 **user-visible** 變更 → bump `version.json` + 寫 `CHANGELOG.md`（中英對照、最新版置頂）。version 用 semver；新功能進 minor（如 0.13.x → 0.14.0）。

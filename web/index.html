@@ -2290,12 +2290,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
     // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
-      let composing = false, lastSent = '', lastTime = 0;
+      let composing = false;
+      const imeDedup = _makeImeDedup();
       let inputBuf = '', inputTimer = null;
       const textarea = pane.querySelector('textarea.xterm-helper-textarea');
       if (textarea) {
-        textarea.addEventListener('compositionstart', () => { composing = true; _imeComposing = true; });
-        textarea.addEventListener('compositionend', () => { composing = false; _imeComposing = false; });
+        textarea.addEventListener('compositionstart', () => {
+          composing = true; _imeComposing = true; imeDedup.started();
+        });
+        textarea.addEventListener('compositionend', (e) => {
+          composing = false; _imeComposing = false; imeDedup.composed(e && e.data);
+        });
       }
       term.onData(data => {
         // WKWebView can leave `composing` true while xterm already emits the
@@ -2307,11 +2312,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (trackUsageLine(sid, data)) return;
         // Reset scroll lock on Enter (user submitted input)
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
-        const now = Date.now();
-        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
-          if (data === lastSent && now - lastTime < 400) return;
-          lastSent = data; lastTime = now;
-        }
+        if (imeDedup.shouldDrop(data)) return;
         // Enter / single control chars → send immediately (skip microbatch).
         // The setTimeout(0) microbatch helps for rapid multi-char input
         // (IME, paste bursts) but adds a full event-loop tick + possible
@@ -2428,12 +2429,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     // Input → PTY (IME dedup + microbatch to reduce bridge IPC calls)
     {
-      let composing = false, lastSent = '', lastTime = 0;
+      let composing = false;
+      const imeDedup = _makeImeDedup();
       let inputBuf = '', inputTimer = null;
       const textarea = pane.querySelector('textarea.xterm-helper-textarea');
       if (textarea) {
-        textarea.addEventListener('compositionstart', () => { composing = true; _imeComposing = true; });
-        textarea.addEventListener('compositionend', () => { composing = false; _imeComposing = false; });
+        textarea.addEventListener('compositionstart', () => {
+          composing = true; _imeComposing = true; imeDedup.started();
+        });
+        textarea.addEventListener('compositionend', (e) => {
+          composing = false; _imeComposing = false; imeDedup.composed(e && e.data);
+        });
       }
       term.onData(data => {
         // Same IME-race guard as createSession: composition can lag behind
@@ -2444,11 +2450,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // ShellFrame-local slash command (/usage, /水位): handled here, not sent.
         if (trackUsageLine(sid, data)) return;
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
-        const now = Date.now();
-        if (data.length > 1 && !/^[\x00-\x7f]+$/.test(data)) {
-          if (data === lastSent && now - lastTime < 400) return;
-          lastSent = data; lastTime = now;
-        }
+        if (imeDedup.shouldDrop(data)) return;
         if (data === '\r' || data === '\n' || data.length === 1) {
           if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
           if ((data === '\r' || data === '\n') && pastePending > 0) {
@@ -4589,26 +4591,76 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let _tabDragging = false;
   let _dragSid = null;  // shared drag state (WKWebView dataTransfer workaround)
 
+  let _lastDragEnterTs = 0;
+  let _lastDragOverTs = 0;
+  let _dragOverCount = 0;       // 判別「使用者拖著不動」vs「WebKit 真的卡住」
+  let _dragPbPaths = null;      // dragenter 預讀到的原生 pasteboard 路徑
+  let _dragPbPending = null;
+  let _dragPbChange = -1;       // 這次讀到的 pasteboard changeCount
+  let _usedPbChange = -1;       // 最後一次「採用過」的 changeCount
+  // 殘留比「慢」更糟——下一次拖曳會附到上一次的檔案。進出視窗、drop 完成、
+  // 內部拖曳一律清掉，而且「看過的就算用過」：拖進來又拖出去那一份從未被採
+  // 用，但它已經是舊的了，不認列的話接著從瀏覽器拖圖片會因為 changeCount 仍
+  // 比開機基準新而通過檢查，附上剛才那個沒放成功的檔案。
+  function _resetDragPb() {
+    if (_dragPbChange >= 0) _usedPbChange = _dragPbChange;
+    _dragPbPaths = null; _dragPbPending = null; _dragPbChange = -1;
+  }
+  // 開機基準：pasteboard 現在的 changeCount 是「上一次拖曳留下的」，不是我們
+  // 的。先記成用過，之後只有真的被寫入（changeCount 遞增）才會被採用。
+  (async () => {
+    try {
+      const r = JSON.parse(await pywebview.api.drag_pasteboard_snapshot() || '{}');
+      if (typeof r.change === 'number') _usedPbChange = r.change;
+    } catch (_) {}
+  })();
+
   document.addEventListener('dragenter', (e) => {
     e.preventDefault();
     if (_tabDragging || _sbDragging) return;
     dragCounter++;
     $dropOverlay.style.display = 'flex';
+    _lastDragEnterTs = performance.now();
+    _dragOverCount = 0;
+    // 拖曳「進行中」原生 drag pasteboard 上就已經有檔案 URL 了，先讀下來：
+    // drop 時不必再等一趟 IPC，也不必依賴 dt.files（WebKit 具現化的那條路）。
+    if (!_dragPbPending && _dragPbPaths === null) {
+      try { pywebview.api.drag_mark(); } catch (_) {}
+      _dragPbPending = (async () => {
+        try {
+          const r = JSON.parse(await pywebview.api.drag_pasteboard_snapshot() || '{}');
+          _dragPbPaths = Array.isArray(r.paths) ? r.paths : [];
+          _dragPbChange = (typeof r.change === 'number') ? r.change : -1;
+        } catch (_) { _dragPbPaths = []; _dragPbChange = -1; }
+      })();
+    }
   });
   document.addEventListener('dragleave', (e) => {
     e.preventDefault();
     if (_tabDragging || _sbDragging) return;
     dragCounter--;
-    if (dragCounter <= 0) { dragCounter = 0; $dropOverlay.style.display = 'none'; }
+    if (dragCounter <= 0) { dragCounter = 0; $dropOverlay.style.display = 'none'; _resetDragPb(); }
   });
-  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    _lastDragOverTs = performance.now();
+    _dragOverCount++;
+  });
   document.addEventListener('drop', async (e) => {
+    // 量測（Howard 2026-09-01/02：拖檔案要等好幾秒）。handler 內部實測只有
+    // 十幾毫秒，所以耗時在「WebKit 把 drop 交給我們之前」。sinceMouseUp 由原
+    // 生層量（見 main.py 的 drag_mark / mouse_up_ts）——JS 拿不到放開滑鼠的
+    // 那一刻，只靠 sinceDragOver 分不出「使用者拖著不動」跟「WebKit 卡住」。
+    const _t = { t0: performance.now() };
+    _t.sinceDragOver = Math.round(_t.t0 - _lastDragOverTs);
+    _t.sinceDragEnter = Math.round(_t.t0 - _lastDragEnterTs);
+    _t.dragOverCount = _dragOverCount;
     e.preventDefault();
     dragCounter = 0;
     $dropOverlay.style.display = 'none';
-    if (_tabDragging || _sbDragging) return;
+    if (_tabDragging || _sbDragging) { _resetDragPb(); return; }
 
-    if (!activeId || !sessions[activeId]) return;
+    if (!activeId || !sessions[activeId]) { _resetDragPb(); return; }
 
     // Try to pull absolute file paths straight from the drag payload FIRST.
     // Finder / most macOS apps populate text/uri-list (and/or text/plain) with
@@ -4620,7 +4672,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const readTypes = (dt && dt.types) ? Array.from(dt.types) : [];
     // dataTransfer 在 await 之後會被 WebKit 清空（neutered）——getData 與
     // files 快照都必須在任何 await 之前同步取完。File 物件本身取到後不失效。
-    const dtFiles = (dt && dt.files) ? Array.from(dt.files) : [];
+    //
+    // dt.files 延到確定需要才取：dragenter 預讀的原生 pasteboard 若已經交出
+    // 對得上數量的路徑，這條路完全不必碰它。dt.items 的 kind 只是 metadata。
+    let _itemCount = 0;
+    try {
+      if (dt && dt.items) {
+        for (const it of dt.items) if (it.kind === 'file') _itemCount++;
+      }
+    } catch (_) { _itemCount = 0; }
+    const pbPre = Array.isArray(_dragPbPaths) ? _dragPbPaths : [];
+    // 三個條件同時成立才信預讀，缺一個就走原鏈：
+    //   1. changeCount 比「最後一次採用過的」新——drag pasteboard 會留著上一次
+    //      拖曳的內容（實測：沒有拖曳進行中，仍讀得到十分鐘前那個 pptx），而從
+    //      瀏覽器拖 blob 的來源不寫這塊 pasteboard。少了這條，拖一張網頁圖片就
+    //      會附上前一次拖過的舊檔。
+    //   2. 數量精確相符（排除混在同一次拖曳裡的非檔案項）。
+    //   3. 真的有檔案拖進來。
+    const pbFresh = _dragPbChange >= 0 && _dragPbChange !== _usedPbChange;
+    const pbReady = pbFresh && pbPre.length > 0 && _itemCount > 0
+                    && pbPre.length === _itemCount;
+    const dtFiles = pbReady ? [] : ((dt && dt.files) ? Array.from(dt.files) : []);
+    _t.afterFiles = Math.round(performance.now() - _t.t0);
     const urlPaths = [];
     for (const typ of ['text/uri-list', 'public.file-url', 'text/plain']) {
       if (!readTypes.includes(typ)) continue;
@@ -4636,10 +4709,37 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
       if (urlPaths.length) break;
     }
+    _t.afterUriList = Math.round(performance.now() - _t.t0);
     try {
       pywebview.api.js_debug('drop', JSON.stringify(
-        { types: readTypes, urls: urlPaths, files: dtFiles.map(f => f.name) }));
+        { types: readTypes, urls: urlPaths, files: dtFiles.map(f => f.name),
+          pbPre, pbReady, pbFresh, pbChange: _dragPbChange,
+          usedChange: _usedPbChange, items: _itemCount, ms: _t }));
     } catch (_) {}
+
+    // 預讀命中 → 只驗存在就注入。
+    if (pbReady) {
+      let ok = [];
+      try { ok = JSON.parse(await pywebview.api.paths_exist(JSON.stringify(pbPre))); }
+      catch (_) { ok = pbPre.map(() => true); }
+      const hit = pbPre.filter((p, i) => ok[i]);
+      _t.afterVerify = Math.round(performance.now() - _t.t0);
+      try { pywebview.api.js_debug('drop-pre', JSON.stringify({ hit, ms: _t })); } catch (_) {}
+      if (hit.length) {
+        _usedPbChange = _dragPbChange;   // 同一份 pasteboard 內容不會被用兩次
+        _resetDragPb();
+        if (isAiSession(activeId)) {
+          for (const p of hit) attachFile(p, null);
+        } else {
+          await pywebview.api.write_input(activeId, hit.join(' '));
+        }
+        return;
+      }
+      // 驗不過（檔案在預讀後被搬走之類）——dt 已被 await 清空，這一輪只能放棄。
+      try { pywebview.api.js_debug('drop-pre', 'pasteboard paths vanished'); } catch (_) {}
+      _resetDragPb();
+      return;
+    }
 
     // WebKit 對含非 ASCII 檔名的拖放，uri-list 可能只給到資料夾
     // （file:///…/Downloads/，檔名整段消失——2026-08-05 遠東商銀 pptx 實案，
@@ -4685,6 +4785,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       } catch (_) {}
     }
     if (vPaths.length >= Math.max(1, dtFiles.length)) {
+      _resetDragPb();
       const ai = isAiSession(activeId);
       if (ai) {
         for (const p of vPaths) attachFile(p, null);
@@ -4752,6 +4853,64 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // modal / settings input / xterm internal element keeps the guard from
   // fighting legitimate user clicks.
   let _imeComposing = false;
+
+  // ── IME 把同一個 commit 送兩次的去重 ──
+  // 注音打到一半、還沒選字時按 shift 切英文，macOS 會把組到一半的內容直接
+  // commit（Howard 2026-09-02）。機制對照過 xterm.js 5.5.0 源碼、並用真實
+  // xterm 實測重現（tests/ime_seq_probe.py）：
+  //   CompositionHelper.keydown()  keyCode 16（Shift）→ return false，不 finalize
+  //   Terminal._keyUp()            this._keyDownSeen = false
+  //   compositionend               → _finalizeComposition(true)：setTimeout(0) 送一次
+  //   Terminal._inputEvent()       條件 (!ev.composed || !this._keyDownSeen) → 再送一次
+  // 切換發生在 shift 的 **keyup**，所以 commit 進來時 `_keyDownSeen` 已被清成
+  // false，兩條路都放行 → 同一個字進 PTY 兩遍。實測：keyup 在 compositionend
+  // 之前 → onData 收到 ['你','你']；keyup 在之後 → 只有 ['你']。
+  //
+  // 去重**綁定「這一次 commit」**，不用時間窗口猜：compositionend 帶的 data
+  // 就是這次 commit 的內容，只放行第一次，之後同內容全擋，下一次
+  // compositionstart 清空。人要打出同一個字必然經過新的 compositionstart，
+  // 所以連打「好好」不會被吃掉——第一版用 150ms 時間窗口就是這樣吃掉字的
+  // （實測兩次送出只差 ≤0.8ms，150ms 大了兩個數量級）。
+  function _makeImeDedup() {
+    let expect = '', expectSent = false, expectUntil = 0;
+    let lastSent = '', lastTime = 0;
+    const drop = (why, data, extra) => {
+      try {
+        pywebview.api.js_debug('ime-dup', JSON.stringify(
+          Object.assign({ why, data }, extra || {})));
+      } catch (_) {}
+      return true;
+    };
+    return {
+      started() { expect = ''; expectSent = false; expectUntil = 0; },
+      composed(data) {
+        expect = data || '';
+        expectSent = false;
+        // 純保險：實測兩次送出間隔 ≤0.8ms，60ms 有七十幾倍餘裕；而人打完下一
+        // 個字最快也要兩百毫秒以上，所以這個上限不會擦到真的輸入。
+        expectUntil = Date.now() + 60;
+      },
+      shouldDrop(data) {
+        if (/^[\x00-\x7f]*$/.test(data)) return false;   // 純 ASCII 不經手
+        const now = Date.now();
+        if (expect && data === expect && now < expectUntil) {
+          if (!expectSent) {
+            expectSent = true; lastSent = data; lastTime = now;
+            return false;                      // 這次 commit 的第一次，放行
+          }
+          return drop('commit-dup', data, { expect });
+        }
+        // 後備：有些 IME 不發 compositionend（或 data 為空），這時多字元仍靠
+        // 原本的 400ms 去重擋——人不可能連打出一模一樣的長串。
+        if (data.length > 1 && data === lastSent && now - lastTime < 400) {
+          return drop('multi-char-400ms', data, { gap: now - lastTime });
+        }
+        lastSent = data; lastTime = now;
+        return false;
+      },
+    };
+  }
+
   let _refocusGuardId = null;
   let _refocusHardCapId = null;
   let _pasteEnterListenerAttached = false;

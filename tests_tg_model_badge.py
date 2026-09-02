@@ -10,6 +10,8 @@ model 資訊來自 main.py 的 get_session_model_info（callback on_model_info�
 import importlib.util
 import os
 import sys
+import threading
+import time
 import types
 
 _spec = importlib.util.spec_from_file_location(
@@ -49,12 +51,61 @@ def test_suffix_no_callback_is_empty():
     assert br._slot_model_suffix(_slot("s1", 1, "x")) == ""
 
 
-def test_command_description_shape():
+def test_command_description_has_no_model():
+    """選單只放分頁名。setMyCommands 是註冊當下的快照，模型掛上去只會腐爛——
+    分頁久沒動就凍在幾天前那次對話的模型，手機端看不出它已經過期
+    （Howard 2026-09-01：scrum 分頁顯示 8/24 留下的 Opus 4.8）。"""
     br = _bridge({"s1": {"name": "Fable 5", "effort": "xhigh", "provider": "claude"}})
+    br._slots_lock = threading.Lock()
     slot = _slot("s1", 1, "toolhub 優化")
-    desc = f"Switch to {slot.label}{br._slot_model_suffix(slot)}"
-    assert desc == "Switch to toolhub 優化 · Fable 5 · xhigh"
+    br.slots = {"s1": slot}
+    br._slot_order = ["s1"]
+    br.config = types.SimpleNamespace(bot_token="TEST", allowed_users=[])
+    br.bot_info = {}
+    sent = []
+    _bt.tg_api = lambda tok, m, p: sent.append((m, p)) or {}
+    br._set_bot_commands()
+    desc = next(p for m, p in sent if m == "setMyCommands")["commands"][0]["description"]
+    assert desc == "Switch to toolhub 優化", desc
+    assert "Fable" not in desc and "xhigh" not in desc
     assert len(desc) <= 256
+
+
+def test_switch_header_carries_model():
+    """模型改在 /N 切過去時即時算，放進表頭。"""
+    br = _bridge({"s1": {"name": "Opus 5", "effort": "xhigh", "provider": "claude"}})
+    br._slots_lock = threading.Lock()
+    slot = _slot("s1", 5, "雜事")
+    br.slots = {"s1": slot}
+    br._slot_order = ["s1"]
+    br._user_active = {}
+    br._last_prune_ts = time.time()
+    br.config = types.SimpleNamespace(bot_token="TEST", allowed_users=[])
+    br._peek_last_response = lambda s: "上一則回覆"
+    sent = []
+    _bt.tg_api = lambda tok, m, p: sent.append((m, p)) or {}
+    br._handle_command("1", 111, 222)   # /N 是 _slot_order 的 1-based 位置
+    text = next(p for m, p in sent if m == "sendMessage")["text"]
+    assert text.startswith("Switched to 雜事 (/5) · Opus 5 · xhigh"), text
+    assert "💬 Last AI response:\n上一則回覆" in text
+
+
+def test_switch_header_without_model():
+    """偵測不到就只有分頁名，不能掰一個出來。"""
+    br = _bridge({})
+    br._slots_lock = threading.Lock()
+    slot = _slot("s1", 2, "bash")
+    br.slots = {"s1": slot}
+    br._slot_order = ["s1"]
+    br._user_active = {}
+    br._last_prune_ts = time.time()
+    br.config = types.SimpleNamespace(bot_token="TEST", allowed_users=[])
+    br._peek_last_response = lambda s: ""
+    sent = []
+    _bt.tg_api = lambda tok, m, p: sent.append((m, p)) or {}
+    br._handle_command("1", 111, 222)
+    text = next(p for m, p in sent if m == "sendMessage")["text"]
+    assert text == "Switched to bash (/2)", text
 
 
 def test_list_line_shape():
