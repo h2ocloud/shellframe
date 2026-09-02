@@ -200,15 +200,18 @@
   .ui-scale-btn.active { color: #7aa2f7; border-color: #7aa2f7; background: rgba(122,162,247,.1); }
   .term-pane { position: absolute; inset: 0; display: none; overflow: hidden; }
   .term-pane.active { display: block; }
+  /* 貼著使用者打字的那一行，不是右上角。Howard 2026-09-02 退過一次右上角版本：
+     「放在我打字的附近，不然跟左邊有什麼差，都離視線很遠」。bottom 由
+     updateTabHint 依終端字級算，避開最底下那條 tmux status line。 */
   #tab-hint {
-    position: absolute; top: 8px; right: 16px; z-index: 20;
+    position: absolute; bottom: 27px; right: 14px; z-index: 20;
     pointer-events: none; user-select: none;
-    font-size: 11px; line-height: 1; letter-spacing: .3px;
-    padding: 4px 10px; border-radius: 999px;
-    background: rgba(122, 162, 247, .13);
-    border: 1px solid rgba(122, 162, 247, .28);
-    color: #7aa2f7; opacity: .72;
-    max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 10px; line-height: 1; letter-spacing: .3px;
+    padding: 3px 9px; border-radius: 999px;
+    background: rgba(122, 162, 247, .12);
+    border: 1px solid rgba(122, 162, 247, .24);
+    color: #7aa2f7; opacity: .6;
+    max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
@@ -2543,6 +2546,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!name) { el.hidden = true; return; }
     el.textContent = name;
     el.title = name;
+    // 讓它坐在 tmux status line 上面那一行（＝輸入區）的右側。行高隨終端字級
+    // 變，寫死 px 在改字級後會偏。
+    const lh = Math.round((currentFontSize || 14) * 1.35);
+    el.style.bottom = (lh + 8) + 'px';
+    // 避開右下角的麥克風 FAB（z-index 40，會直接壓在標籤上——第一版就被它
+    // 遮掉一半）。它是 position:fixed、標籤是相對 #terminal-wrap 的 absolute，
+    // 兩個座標系不同，所以用實際 rect 判斷有沒有重疊，不寫死 offset：
+    // 右側面板展開時 terminal-wrap 的右緣會往左縮，那時就不需要讓位。
+    let right = 14;
+    try {
+      const mic = document.getElementById('mic-fab');
+      const wrapBox = el.parentElement.getBoundingClientRect();
+      // 不能用 offsetParent 判斷可見：mic-fab 是 position:fixed，fixed 元素的
+      // offsetParent 恆為 null，第一版就是這樣讓避讓邏輯整段沒生效（Playwright
+      // 驗收才抓到——標籤仍被壓在麥克風底下）。看 rect 有沒有面積最直接。
+      if (mic && mic.getBoundingClientRect().width > 0) {
+        const mb = mic.getBoundingClientRect();
+        const overlap = Math.round(wrapBox.right - mb.left);
+        if (mb.width && overlap > 0) right = overlap + 10;
+      }
+    } catch (_) {}
+    el.style.right = right + 'px';
     el.hidden = false;
   }
   window.updateTabHint = updateTabHint;

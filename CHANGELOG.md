@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.30.9 (2026-09-02)
+
+### Changes
+- **分頁名提示改放到打字的那一行旁邊**（Howard 2026-09-02 退掉右上角那版：「我比較
+  想要你放在我打字的附近，不然跟左邊有什麼差，都離視線很遠」）。
+  現在坐在最底下那條 tmux status line **上面一行**的右側——也就是輸入區那一行。
+  `bottom` 依終端字級算（`fontSize × 1.35 + 8`），改字級不會偏。
+  順手修掉自己的一個 bug：避開右下角麥克風 FAB 的判斷原本寫 `offsetParent !== null`，
+  而 **`position: fixed` 元素的 `offsetParent` 恆為 `null`**，整段避讓等於沒生效，
+  標籤照樣被壓在麥克風底下（Playwright 驗收截圖才抓到）。改成看 rect 有沒有面積，
+  並用兩者的實際 rect 判斷重疊——麥克風是 fixed、標籤是相對 `#terminal-wrap` 的
+  absolute，座標系不同，寫死 offset 在右側面板展開時會多讓一段空白。
+
 ## v0.30.8 (2026-09-02)
 
 ### Changes
