@@ -198,24 +198,33 @@
   }
   .ui-scale-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
   .ui-scale-btn.active { color: #7aa2f7; border-color: #7aa2f7; background: rgba(122,162,247,.1); }
-  .term-pane { position: absolute; inset: 0; display: none; overflow: hidden; }
+  /* 左邊留 26px 給分頁名標籤站（--hint-gutter）。.term-pane 是 absolute，
+     inset 相對 #terminal-wrap 的 padding box，所以把 left 推開就等於整個終端
+     右移，xterm 的 cols 會跟著 pane 寬度重算，不會壓到內容。
+     Howard 2026-09-02：「從 UI 左側 在側欄旁邊 讓一個空間，你這樣目前有點暴力，
+     反而會讓我打字看不到前幾個字」——上一版直接蓋在輸入行前面確實會擋字。 */
+  :root { --hint-gutter: 26px; }
+  .term-pane {
+    position: absolute; inset: 0 0 0 var(--hint-gutter);
+    display: none; overflow: hidden;
+  }
   .term-pane.active { display: block; }
-  /* 就貼在輸入行的最左邊，游標正前方。Howard 2026-09-02 連退兩版：右上角
-     「跟左邊有什麼差，都離視線很遠」，右下角還是太遠——第三版直接照他說的
-     「可以刻意佔位，在我的輸入匡前面」，蓋掉提示符前面那一小塊。
-     所以刻意做窄（最多五個字就截斷）：擋住的是自己剛打的頭一兩個字，比
-     「整段打進錯的分頁」便宜太多。bottom 由 updateTabHint 依終端字級算，
-     坐在最底下那條 tmux status line 上面一行。 */
+  /* 站在左側那條 gutter 裡，直排，垂直中心對齊游標那一行（見
+     positionTabHint）。不蓋任何終端內容——上一版蓋在輸入行前面會擋掉剛打的
+     頭幾個字，被 Howard 退掉。 */
   #tab-hint {
-    /* z-index 要壓過 xterm 的 row（pane 是後 append 的兄弟節點），也要壓過
-       右下角那顆 mic-fab（40）——第一版給 20，標籤被終端文字蓋掉看不見。 */
-    position: absolute; top: 0; left: 6px; z-index: 60;
+    position: absolute; top: 0; left: 0; z-index: 60;
+    width: var(--hint-gutter);
     pointer-events: none; user-select: none;
-    font-size: 10px; line-height: 1; letter-spacing: .2px;
-    padding: 2px 6px; border-radius: 4px;
-    background: #1e2a4a; box-shadow: 0 0 0 1px rgba(122, 162, 247, .45);
-    color: #9ab8fa; opacity: .95;
-    max-width: 5.6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    writing-mode: vertical-rl; text-orientation: upright;
+    font-size: 11px; line-height: 1.15; letter-spacing: 1px;
+    padding: 6px 0; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    background: rgba(122, 162, 247, .10);
+    box-shadow: inset 0 0 0 1px rgba(122, 162, 247, .22);
+    color: #9ab8fa; opacity: .9;
+    max-height: 8.5em; overflow: hidden;
   }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }

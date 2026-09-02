@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.30.11 (2026-09-02)
+
+### Changes
+- **分頁名標籤改站進左側自己的一條空間，不再蓋終端內容**（Howard 2026-09-02：
+  「或是你從 UI 左側 在側欄旁邊 讓一個空間，你這樣目前有點暴力，反而會讓我打字
+  看不到前幾個字」）。
+  上一版直接疊在輸入行最前面，確實會擋掉剛打的頭一兩個字——他說得對，那是暴力解。
+  現在 `.term-pane` 的 `inset` 左邊推開 `--hint-gutter: 26px`（pane 是 absolute，
+  inset 相對 `#terminal-wrap` 的 padding box，所以整個終端右移、xterm 的 cols 跟著
+  pane 寬度重算），標籤直排（`writing-mode: vertical-rl` + `text-orientation:
+  upright`）站在那條 gutter 裡。**一個字都不遮**，而垂直位置仍然跟著游標那一行走。
+  驗收（`tests_tab_hint_align.py`，真實 xterm 5.5.0）：標籤左緣 0、寬 26px 不超出
+  gutter、終端內容從 26px 之後才開始、垂直中心差 0。
+
 ## v0.30.10 (2026-09-02)
 
 ### Changes

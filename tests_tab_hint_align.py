@@ -37,6 +37,7 @@ PAGE = """<!doctype html><meta charset="utf-8">
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <style>
 body{margin:0;background:#1a1b26}
+:root{--hint-gutter:26px}
 #terminal-wrap{position:relative;width:900px;height:400px}
 __CSS__
 </style>
@@ -45,7 +46,7 @@ __CSS__
 const term = new Terminal({ fontSize: 14, theme: { background: '#1a1b26' } });
 const wrap = document.getElementById('terminal-wrap');
 const host = document.createElement('div');
-host.style.cssText = 'position:absolute;inset:0';
+host.style.cssText = 'position:absolute;inset:0 0 0 var(--hint-gutter)';
 wrap.appendChild(host);
 term.open(host);
 window.activeId = 's1';
@@ -81,6 +82,7 @@ with sync_playwright() as pw:
         垂直中心差: Math.round(((hb.top + hb.bottom) / 2) - ((rowBox.top + rowBox.bottom) / 2)),
         標籤左緣: Math.round(hb.left - wb.left),
         標籤寬: Math.round(hb.width),
+        終端左緣: Math.round(document.querySelector('.xterm-screen').getBoundingClientRect().left - wb.left),
       };
     }""")
     fails = 0
@@ -91,8 +93,9 @@ with sync_playwright() as pw:
 
     nonlocal_fails = []
     check("標籤垂直中心對齊游標那一行", abs(r["垂直中心差"]) <= 1, f"差 {r['垂直中心差']}px")
-    check("標籤在該行的最前面（貼左緣）", r["標籤左緣"] <= 10, f"左緣 {r['標籤左緣']}px")
-    check("標籤刻意做窄，不吃掉整行", r["標籤寬"] <= 90, f"寬 {r['標籤寬']}px")
+    check("標籤站在左側 gutter 裡（貼最左）", r["標籤左緣"] <= 2, f"左緣 {r['標籤左緣']}px")
+    check("標籤不超出 gutter 寬度（不蓋終端內容）", r["標籤寬"] <= 26, f"寬 {r['標籤寬']}px")
+    check("終端內容從 gutter 之後才開始", r["終端左緣"] >= 26, f"終端左緣 {r['終端左緣']}px")
     check("對到的就是游標所在的那一行", "我打的字" in r["該行內容"], r["該行內容"])
     pg.screenshot(path=str(SP / "cursor_align.png"))
     b.close()
