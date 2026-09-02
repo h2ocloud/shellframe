@@ -3189,6 +3189,35 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return
         if data:
             now = time.time()
+            # ── IME commit 雙送的保底去重 ──
+            # 前端（web/index.html 的 _makeImeDedup）擋的是 xterm.onData 那條路，
+            # 但 2026-09-02 實測重複仍然穿過來：10:05:51.665 / .758 兩筆一模一樣
+            # 的 8 字、中間 93ms，而前端**一筆 ime-dup 足跡都沒留**——那條路徑
+            # 根本沒經過它（write_input 在前端有 28 個呼叫點，onData 只是其中
+            # 一條）。這裡是所有輸入的唯一出口，保底擋在這。
+            #
+            # 只認 IME commit 的形狀：含非 ASCII、長度 > 1、內容完全相同、
+            # 200ms 內。人要連打出一模一樣的**詞組**，光注音加選字就要三百毫秒
+            # 以上，碰不到這個窗口；單字（len == 1）完全不管，免得吃掉「哈哈」
+            # 這種連字（實測雙送間隔 93～111ms）。
+            if len(data) > 1 and not data.isascii():
+                prev = getattr(s, "_ime_last_chunk", "")
+                prev_ts = getattr(s, "_ime_last_ts", 0.0)
+                if data == prev and (now - prev_ts) < 0.2:
+                    _dlog("ime", f"sid={sid} 擋掉 IME 重複 "
+                                 f"gap={int((now - prev_ts) * 1000)}ms "
+                                 f"len={len(data)} preview={data[:20]!r}")
+                    s._ime_last_ts = now      # 連三送也要一路擋掉
+                    return
+                s._ime_last_chunk = data
+                s._ime_last_ts = now
+            else:
+                # 任何不是 IME-commit 形狀的輸入（按鍵、Enter、ASCII、單字）都
+                # 代表「上一次 commit 已經結束」——雙送的兩筆之間不會夾任何東西
+                # （實測 10:05:51.665 / .758 中間沒有別的 write）。清掉狀態，
+                # 免得使用者送出後立刻再打同一個詞被當成重複吃掉。
+                s._ime_last_chunk = ""
+                s._ime_last_ts = 0.0
             s._startup_trust_pending = False
             s._last_activity_time = now
             s._last_user_activity_time = now
@@ -3223,7 +3252,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                         self._persist_session_manifest()
                         _dlog("slug", f"tmux rename {old_name!r} → {new_name!r}")
                 threading.Thread(target=_do_slug, daemon=True).start()
-        # IME dedup is handled in JS (compositionstart/end + time window)
+        # IME dedup：前端 _makeImeDedup 擋 xterm.onData 那條，上面的保底擋其餘路徑。
         # On the first REAL user message, inject the init prompt BEFORE it.
         #
         # xterm.js delivers the message text and the Enter that submits it in

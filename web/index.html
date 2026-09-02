@@ -2292,6 +2292,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     {
       let composing = false;
       const imeDedup = _makeImeDedup();
+      // 一行足跡，用來確認「前端這版真的載進來了」。2026-09-02 排查時就是因為
+      // 完全沒有 ime-* 記錄，才發現重複走的不是 onData 這條路。
+      try { pywebview.api.js_debug('ime-init', sid); } catch (_) {}
       let inputBuf = '', inputTimer = null;
       const textarea = pane.querySelector('textarea.xterm-helper-textarea');
       if (textarea) {
@@ -2431,6 +2434,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     {
       let composing = false;
       const imeDedup = _makeImeDedup();
+      // 一行足跡，用來確認「前端這版真的載進來了」。2026-09-02 排查時就是因為
+      // 完全沒有 ime-* 記錄，才發現重複走的不是 onData 這條路。
+      try { pywebview.api.js_debug('ime-init', sid); } catch (_) {}
       let inputBuf = '', inputTimer = null;
       const textarea = pane.querySelector('textarea.xterm-helper-textarea');
       if (textarea) {
