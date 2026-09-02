@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.30.7 (2026-09-02)
+
+### Fixes
+- **注音重複字的真正根因：不是 shift，是選字流程本身**（Howard 2026-09-02 補上
+  關鍵情境：「打完字要選字**按下空白鍵**的時候，如果這時候按 shift／大寫鎖」）。
+  xterm 的 `CompositionHelper.keydown` 只對 Shift/Ctrl/Alt（16/17/18）放行，
+  **其他任何 keydown 一律 `_finalizeComposition(false)`**，把當下 textarea 裡
+  **還沒選字的組字內容**直接送進 PTY。而注音的選字流程按的正是那些鍵：空白叫候
+  選清單、數字鍵挑字。
+  真實 xterm 5.5.0 實測（`tests_ime_seq.py` 的 candidate-picker 案例）——打
+  「ㄧ」→ 空白 → 按 `2` 選字，xterm 送出：
+
+      ['ㄧ', '2', '依', '依']
+
+  注音符號漏了、選字用的數字漏了、最後那個字還重複一次。這正是「案案2」的形狀
+  ——之前只盯著 shift 造成的**雙送**，漏掉了更大的那半。
+  修法：**composition 進行中把鍵盤完全讓給 IME**（`attachCustomKeyEventHandler`
+  回 `false`，不 preventDefault，IME 照樣收得到）。全攔之後只剩
+  `['依','依']`，再由 IME 去重收成一個「依」。
+  紅線都測了（16 項）：沒在組字時空白／數字／字母／Enter／Caps／Shift 全部放行、
+  讓渡只看 keydown、以及 `compositionstart` 的時間戳超過 30 秒就不再信任——萬一
+  `compositionend` 沒送到，鍵盤不會被永久吃掉。
+
 ## v0.30.6 (2026-09-02)
 
 ### Fixes
