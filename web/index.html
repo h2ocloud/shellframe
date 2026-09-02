@@ -200,6 +200,16 @@
   .ui-scale-btn.active { color: #7aa2f7; border-color: #7aa2f7; background: rgba(122,162,247,.1); }
   .term-pane { position: absolute; inset: 0; display: none; overflow: hidden; }
   .term-pane.active { display: block; }
+  #tab-hint {
+    position: absolute; top: 8px; right: 16px; z-index: 20;
+    pointer-events: none; user-select: none;
+    font-size: 11px; line-height: 1; letter-spacing: .3px;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(122, 162, 247, .13);
+    border: 1px solid rgba(122, 162, 247, .28);
+    color: #7aa2f7; opacity: .72;
+    max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
   /* Force xterm scrollbar always visible. WKWebView's default overlay
@@ -770,7 +780,12 @@
     </div>
   </div>
   <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
-  <div id="terminal-wrap"></div>
+  <div id="terminal-wrap">
+    <!-- 現在在哪個分頁。Howard 2026-09-02：「我很常錯頻」——把話打進錯的分頁
+         是最貴的錯誤（訊息進到不相干的 agent 手裡），所以這個提示常駐、不做
+         淡出。pointer-events:none 讓它不吃點擊、不影響選字。 -->
+    <div id="tab-hint" hidden></div>
+  </div>
   <div class="panel-resizer" id="board-resizer" title="拖曳調整寬度"></div>
   <div id="board-panel" class="collapsed">
     <div id="board-header">
@@ -2518,6 +2533,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }, 500);
   }
 
+  // 終端右上角常駐顯示「現在在哪個分頁」。renderTabs 之後呼叫，改名／關閉／
+  // 切換都會經過那裡。
+  function updateTabHint() {
+    const el = document.getElementById('tab-hint');
+    if (!el) return;
+    const s = activeId && sessions[activeId];
+    const name = s ? (s.label || activeId) : '';
+    if (!name) { el.hidden = true; return; }
+    el.textContent = name;
+    el.title = name;
+    el.hidden = false;
+  }
+  window.updateTabHint = updateTabHint;
+
   function switchTab(sid) {
     // Close any open scroll-history overlay — it belongs to no specific tab
     try { if (typeof ScrollHistory !== 'undefined') ScrollHistory.close(); } catch(_) {}
@@ -2537,6 +2566,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     renderTabs();
     updateImageBar();
+    updateTabHint();
     // Same-provider switch reuses the on-screen reading; only claude↔codex
     // (with a stale cache) re-probes. See onActiveTabChangedForUsage.
     try { if (window.onActiveTabChangedForUsage) window.onActiveTabChangedForUsage(); } catch (_) {}
@@ -2631,6 +2661,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       $tabs.appendChild(tab);
     });
     renderSidebar();
+    updateTabHint();   // 改名／關閉分頁都會經過這裡
   }
 
   function syncBridgeOrder() {

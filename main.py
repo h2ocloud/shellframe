@@ -2225,7 +2225,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                             chunk = f"\x1b[2m…[已略過 {dropped} 字元的大量輸出]…\x1b[0m\r\n" + chunk
                         escaped = json.dumps(chunk)
                         try:
+                            # evaluate_js 會等主執行緒排程＋等 JS 跑完（xterm.write
+                            # 連渲染一起算）。UI 凍結時就是卡在這裡，但以前沒有任何
+                            # 數據——凍結是間歇性的，事後 sample 抓不到。超過 400ms
+                            # 的推送留一筆，才知道是哪個分頁、多大的 chunk 造成的。
+                            _t0 = time.time()
                             self._window.evaluate_js(f'_pushOutput("{sid}",{escaped})')
+                            _dt = time.time() - _t0
+                            if _dt > 0.4:
+                                _dlog("perf", f"evaluate_js 慢 {int(_dt * 1000)}ms "
+                                              f"sid={sid} chunk={len(chunk)}字元 "
+                                              f"tabs={len(self.sessions)}")
                             pending.pop(sid, None)
                             bg_last_push[sid] = now
                             pushed = True

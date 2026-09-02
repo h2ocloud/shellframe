@@ -1550,6 +1550,11 @@ class TelegramBridge(BridgeBase):
     def _slot_model_suffix(self, slot):
         """' · Opus 4.8 · xhigh' for a slot (mirrors the desktop sidebar
         badge), or '' when unknown / non-AI. Cheap; main.py mtime-caches."""
+        # 側邊欄的模型徽章關掉時，TG 這邊也要一起消失——同一個開關管兩邊，
+        # 不要各有一套狀態（Howard 2026-09-02：「如果本地沒開啟顯示模型，
+        # TG 也要隱藏掉」。他本地早就關了，TG 卻還在顯示一個不準的值）。
+        if _read_settings().get("show_model_badge") is False:
+            return ""
         if not self._on_model_info:
             return ""
         try:

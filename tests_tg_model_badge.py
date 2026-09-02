@@ -20,6 +20,12 @@ _bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bt)
 
 
+# _slot_model_suffix 會讀 settings 的 show_model_badge（跟側邊欄同一個開關）。
+# 測試不能吃到這台機器的真實 config——Howard 本地就是關的，那會讓所有「該顯示
+# 模型」的測項全部假性失敗。預設 stub 成開啟，要驗開關本身的測項自己覆蓋。
+_bt._read_settings = lambda: {"show_model_badge": True}
+
+
 def _bridge(model_map):
     br = object.__new__(_bt.TelegramBridge)
     br._on_model_info = lambda sid: model_map.get(sid)
@@ -28,6 +34,23 @@ def _bridge(model_map):
 
 def _slot(sid, index, label):
     return types.SimpleNamespace(sid=sid, index=index, label=label)
+
+
+def test_suffix_follows_local_badge_toggle():
+    """側邊欄的模型徽章關掉時，TG 這邊也要一起消失。同一個開關管兩邊——
+    Howard 2026-09-02：他本地早就關了，TG 卻還在顯示一個不準的值。"""
+    br = _bridge({"s1": {"name": "Opus 5", "effort": "xhigh", "provider": "claude"}})
+    slot = _slot("s1", 1, "SF")
+    orig = _bt._read_settings
+    try:
+        _bt._read_settings = lambda: {"show_model_badge": False}
+        assert br._slot_model_suffix(slot) == ""
+        _bt._read_settings = lambda: {"show_model_badge": True}
+        assert br._slot_model_suffix(slot) == " · Opus 5 · xhigh"
+        _bt._read_settings = lambda: {}          # 沒設過 → 預設顯示
+        assert br._slot_model_suffix(slot) == " · Opus 5 · xhigh"
+    finally:
+        _bt._read_settings = orig
 
 
 def test_suffix_with_effort():
