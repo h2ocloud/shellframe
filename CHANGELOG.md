@@ -6,6 +6,44 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.21 (2026-09-04)
+
+### Changes
+
+- **The terminal no longer intercepts any keystroke during IME composition.**
+  v0.30.7 withheld keydown events from xterm while a composition was active, to
+  stop `CompositionHelper.keydown` treating candidate-selection keys as "composition
+  finished" and pushing the unconverted buffer to the PTY. That approach broke
+  input-source switching in two escalating ways — first requiring a second press,
+  then failing outright — so it has been removed entirely.
+  Measurement shows the interception was never necessary for the switching path:
+  against real xterm.js 5.5.0, neither keydown nor keyup is `preventDefault`ed for
+  CapsLock, Shift, Ctrl or Cmd, whether or not a composition is open. The IME
+  always receives those keys; withholding them only disturbed the event stream
+  macOS relies on.
+  Filtering now happens purely on the data side: while a composition is open,
+  output that consists only of Bopomofo letters and tone marks, or a single digit
+  1-9, is dropped — those are the half-finished buffer and the candidate-selection
+  keypress, never something the user meant to type. A real commit is Han
+  characters and passes through. Deliberately narrower than "drop everything
+  during composition": WKWebView can deliver `compositionend` after xterm has
+  emitted the committed text, and dropping wholesale would lose characters.
+  22 cases in `tests_ime_seq.py`, including the full candidate-picker sequence
+  end-to-end.
+
+  **終端不再於 IME 組字期間攔截任何按鍵。** v0.30.7 曾在組字進行中把 keydown 從
+  xterm 手上收走，避免 `CompositionHelper.keydown` 把選字按鍵當成「組字結束」而把
+  未轉換的緩衝推進 PTY。這個做法讓輸入來源切換連續壞了兩次——先是要按第二次才生效，
+  接著完全切不過去——因此整段移除。
+  量測顯示這種攔截對切換路徑從來就不必要：以真實 xterm.js 5.5.0 驗證，CapsLock、
+  Shift、Ctrl、Cmd 的 keydown 與 keyup 都不會被 `preventDefault`，組字中與否都一樣。
+  IME 一直都收得到那些鍵，把它們收走只是干擾了 macOS 依賴的事件流。
+  過濾現在完全在資料側：組字進行中，只由注音字母與聲調組成、或單一個 1-9 數字的
+  輸出一律丟棄——那是半成品緩衝與選字動作本身，不是使用者想輸入的內容。真正 commit
+  出來的是漢字，照樣通過。這比「組字中一律丟棄」刻意更窄：WKWebView 可能在 xterm
+  已送出 committed text 之後才派送 `compositionend`，全丟會掉字。
+  `tests_ime_seq.py` 共 22 項，含完整的候選清單選字端對端流程。
+
 ## v0.30.20 (2026-09-04)
 
 ### Fixes

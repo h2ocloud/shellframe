@@ -2391,10 +2391,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // 沒被攔，它們造成的 _finalizeComposition(false) 會把當下的注音推出
         // 來，在這裡丟掉。只擋「純注音」而不是「組字中的一切」：WKWebView 有
         // 時 compositionend 慢於 xterm 送出 committed text，全擋會掉字。
-        if (_imeComposeStart[sid] && BOPOMOFO_ONLY_RE.test(data)) {
+        if (_imeComposeStart[sid] && IME_LEAK_RE.test(data)) {
           try {
             pywebview.api.js_debug('ime-dup', JSON.stringify(
-              { why: 'bopomofo-leak', data }));
+              { why: 'compose-leak', data }));
           } catch (_) {}
           return;
         }
@@ -2552,10 +2552,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // 沒被攔，它們造成的 _finalizeComposition(false) 會把當下的注音推出
         // 來，在這裡丟掉。只擋「純注音」而不是「組字中的一切」：WKWebView 有
         // 時 compositionend 慢於 xterm 送出 committed text，全擋會掉字。
-        if (_imeComposeStart[sid] && BOPOMOFO_ONLY_RE.test(data)) {
+        if (_imeComposeStart[sid] && IME_LEAK_RE.test(data)) {
           try {
             pywebview.api.js_debug('ime-dup', JSON.stringify(
-              { why: 'bopomofo-leak', data }));
+              { why: 'compose-leak', data }));
           } catch (_) {}
           return;
         }
@@ -3968,28 +3968,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch (_) {}
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
-      // ── composition 進行中，鍵盤完全讓給 IME ──
-      // xterm 的 CompositionHelper.keydown 只對 Shift/Ctrl/Alt（16/17/18）放行，
-      // 其他任何 keydown 一律 `_finalizeComposition(false)`，把當下 textarea 裡
-      // **還沒選字的組字內容**直接送進 PTY。而注音的選字流程按的正是那些鍵：
-      // 空白叫候選清單、數字鍵挑字。實測（真實 xterm 5.5.0，tests_ime_seq.py
-      // 的 candidate-picker 案例）打「ㄧ」→ 空白 → 按 2 選字，xterm 送出
-      //     ['ㄧ', '2', '依', '依']
-      // 注音符號跟選字用的數字都漏進去了，最後一個字還重複——正是 Howard
-      // 2026-09-02 看到的「案案2」。全攔之後只剩 ['依','依']，再由 IME 去重
-      // 收成一個「依」。
-      // 30 秒是保險：萬一 compositionend 沒送到（狀態卡在 true），鍵盤不會被
-      // 永久吃掉。
-      // 修飾鍵一律放行。攔了它們，macOS 的中英切換要按兩次才生效——切換依賴
-      // 完整的事件流，把 keydown 從 xterm 手上收掉就會打斷它（日常使用回報：
-      // 「要按兩次大寫鎖才能換中英，操作很卡」）。
-      // xterm 對 Shift/Ctrl/Alt（16/17/18）本來就不會結束組字；CapsLock(20)
-      // 會，但它漏出來的那份「未選字注音」由下面 onData 的注音過濾兜住。
-      const _cs = _imeComposeStart[sid];
-      if (_cs && !IME_PASSTHROUGH_KEYS.has(ev.keyCode)
-          && Date.now() - _cs < 30000) {
-        return false;
-      }
+      // ── 組字中「不」從 xterm 手上收走按鍵 ──
+      // 這裡曾經在 composition 進行中攔掉 keydown，為的是不讓 xterm 的
+      // `CompositionHelper.keydown` 把選字用的按鍵（空白叫候選、數字挑字）
+      // 當成「組字結束」而呼叫 `_finalizeComposition(false)`，把還沒選字的
+      // 注音推進 PTY。
+      // 但攔 keydown 會打斷 macOS 的輸入來源切換：先是變成要按兩次才生效，
+      // 收窄到只放行修飾鍵之後更糟——完全切不過去。切換依賴完整的鍵盤事件流，
+      // 這條路走不通，已整段移除。
+      // 漏出來的半成品改在資料側處理，見下面 onData 的 IME_LEAK_RE。
       // Windows: Ctrl+C with an active selection copies it instead of sending
       // the interrupt (\x03) — Windows Terminal behaviour. Users reaching for
       // "copy" must not interrupt/kill the running CLI (a dead CLI looks like
@@ -5148,13 +5135,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // 每個分頁各自記 composition 起點（0/undefined ＝ 沒在組字）。原本是單一
   // 全域旗標，A 分頁組字中切到 B 分頁打字，B 的按鍵會被 A 的狀態擋掉。
   const _imeComposeStart = {};  // sid -> ts；見 setupAttachKeyHandler 的鍵盤讓渡
-  // 組字中不從 xterm 手上收走的按鍵：Shift / Ctrl / Alt / CapsLock / Cmd。
-  // 收走會打斷 macOS 的中英切換（要按兩次才生效）。
-  const IME_PASSTHROUGH_KEYS = new Set([16, 17, 18, 20, 91, 92, 93, 224]);
-  // 純注音（含聲調與空白）＝ 還沒選字的組字內容。CompositionHelper 把選字用的
-  // 按鍵當成「結束組字」，會把這種半成品直接推進 PTY；而真正 commit 出來的是
-  // 漢字，不可能是純注音，所以這條判斷不會誤殺選好的字。
-  const BOPOMOFO_ONLY_RE = /^[\u3105-\u312F\u31A0-\u31BF\u02C7\u02CA\u02CB\u02D9\s]+$/;
+  // 組字進行中，xterm 漏出來的「半成品」長這兩種：
+  //   1. 純注音（含聲調）——CompositionHelper 把選字按鍵當成組字結束，直接把
+  //      當下的注音緩衝推出來。真正 commit 的一定是漢字，不會是純注音。
+  //   2. 選字動作本身的按鍵——組字中按空白是叫候選清單、按 1-9 是挑字，那些
+  //      不是要輸入的內容。組字中不可能有人是真的想打一個空白或單一數字。
+  // 為什麼放在資料側而不是攔 keydown：攔 keydown 會打斷 macOS 的輸入來源
+  // 切換（先是要按兩次，收窄後完全切不過去），那條路已放棄。
+  const IME_LEAK_RE = /^(?:[\u3105-\u312F\u31A0-\u31BF\u02C7\u02CA\u02CB\u02D9\s]+|[1-9])$/;
 
   // ── IME 把同一個 commit 送兩次的去重 ──
   // 注音打到一半、還沒選字時按 shift 切英文，macOS 會把組到一半的內容直接
