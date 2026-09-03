@@ -506,15 +506,24 @@ class HistoryApiMixin:
             # 顯示，overlay 一律濾掉。
             if self._TMUX_STATUS_RE.search(stripped):
                 continue
-            if cleaned:
+            # 空行不能參與 strict-prefix 比較。空字串是任何字串的前綴，所以
+            # 段落之間的空行會兩邊都中：current 是空 → 被判成「prev 的前綴」
+            # 直接 skip；prev 是空 → 被判成「current 的前綴」而拿 current 蓋掉
+            # 那個空行。結果**每一個內部空行都消失**，上滾看到的歷史整段黏成
+            # 一團，跟活畫面的排版完全不同（Howard 2026-09-03：「上滑樣式會跑
+            # 掉…我希望的就是無縫銜接」）。
+            # 上面 _render_rows 的註解本來就寫明「Internal blank lines
+            # (between paragraphs) are preserved」——這裡是實作跟設計意圖打架。
+            if cleaned and stripped:
                 prev_stripped, _ = cleaned[-1]
-                # Current is strict prefix of previous → skip (rare)
-                if prev_stripped.startswith(stripped) and stripped != prev_stripped:
-                    continue
-                # Previous is strict prefix of current → replace with longer
-                if stripped.startswith(prev_stripped) and stripped != prev_stripped:
-                    cleaned[-1] = (stripped, original)
-                    continue
+                if prev_stripped:
+                    # Current is strict prefix of previous → skip (rare)
+                    if prev_stripped.startswith(stripped) and stripped != prev_stripped:
+                        continue
+                    # Previous is strict prefix of current → replace with longer
+                    if stripped.startswith(prev_stripped) and stripped != prev_stripped:
+                        cleaned[-1] = (stripped, original)
+                        continue
             cleaned.append((stripped, original))
 
         # Pass 2: collapse repeats. Two regimes that need different

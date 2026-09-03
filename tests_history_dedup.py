@@ -38,6 +38,36 @@ def test_cjk_stream_redraw_collapsed():
     assert out.count("敘事結構") == 1, out
 
 
+# ── 1b. 段落之間的空行要留住（v0.30.16「上滑樣式會跑掉」根因） ──
+# 空字串是任何字串的前綴，strict-prefix 那兩條判斷會兩邊都中：current 是空 →
+# 當成「prev 的前綴」skip；prev 是空 → 當成「current 的前綴」拿 current 蓋掉。
+# 結果每個內部空行都消失，上滾的歷史整段黏成一團、跟活畫面排版完全不同。
+def test_paragraph_blank_lines_preserved():
+    lines = ["第一段的內容在這裡", "", "第二段的內容在這裡", "", "第三段"]
+    out = dedupe(lines).split("\n")
+    assert out == lines, out
+
+
+def test_blank_line_not_eaten_by_neighbours():
+    # 前後都是「會互相成為前綴」的行，空行仍要活著
+    lines = ["abc", "", "abcdef"]
+    out = dedupe(lines).split("\n")
+    assert out == ["abc", "", "abcdef"], out
+
+
+def test_multiple_blank_lines_kept():
+    lines = ["前文", "", "", "後文"]
+    out = dedupe(lines).split("\n")
+    assert out == lines, out
+
+
+def test_prefix_collapse_still_works_across_nonblank():
+    # 修空行不能把真正的 strict-prefix 摺疊弄壞（串流重繪的主要形狀）
+    lines = ["這是一段還沒寫完的回", "這是一段還沒寫完的回覆內容"]
+    out = dedupe(lines).split("\n")
+    assert out == ["這是一段還沒寫完的回覆內容"], out
+
+
 # ── 2. 程式碼合法重複 ×2 保留（v0.11.9「code 被吃掉」反例） ──
 def test_code_repeats_preserved():
     lines = ["def foo():", "    return null;", "def bar():", "    return null;"]

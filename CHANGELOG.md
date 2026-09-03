@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.30.16 (2026-09-03)
+
+### Fixes
+- **上滑歷史的排版跟活畫面對不上**（Howard 2026-09-03：「上滑樣式會跑掉…我希望的
+  就是無縫銜接」，附了上滑前後的對照圖）。
+  不是樣式問題——兩邊的 xterm 參數本來就一致（同 fontSize／fontFamily／theme，
+  兩邊都沒設 lineHeight）。真正消失的是**段落之間的空行**：
+  `_dedupe_history_lines` 的 strict-prefix 判斷會兩邊都中，因為**空字串是任何字串
+  的前綴**——
+  - current 是空行 → 被判成「prev 的前綴」直接 `continue` 丟掉；
+  - prev 是空行 → 被判成「current 的前綴」，拿 current 把那個空行蓋掉。
+  於是每一個內部空行都不見了，上滾的歷史整段黏成一團，看起來就是「行距變密、
+  樣式跑掉」。而 `_render_rows` 的註解本來就寫明「Internal blank lines (between
+  paragraphs) are preserved」——這是實作跟設計意圖打架。
+  修法：空行不參與 strict-prefix 比較（current 或 prev 任一為空就跳過那兩條判斷），
+  非空行之間的摺疊完全不動。
+  驗證：`tests_history_dedup.py` 加四項（段落空行保留、空行不被前後鄰居吃掉、連續
+  多個空行保留、非空行的 prefix 摺疊仍生效）；另對真實 session 跑
+  `sfctl history-audit`——overlay 裡 14% 是空行（修之前會是 0），missing／noise／dup
+  三個計數都是 0。
+
 ## v0.30.15 (2026-09-03)
 
 ### Changes
