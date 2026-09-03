@@ -4154,9 +4154,68 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     function isOpen() { return !!overlay; }
 
+    // 開 overlay 之前，先把活畫面上「看得到的最後幾行」抄下來當錨點。
+    // 歷史經過 dedup 摺疊，行數會比活畫面少，所以單純 scrollToBottom 之後
+    // 同一段文字會落在不同高度——那就是上滑瞬間的上下段差。抓錨點是為了讓
+    // 它回到原本的那一行。
+    // 略過 spinner 那類每秒變動的行（`Symbioting… (6m 37s)`），它在歷史裡
+    // 只會留下別的秒數，比不到。
+    function grabLiveAnchors(sid) {
+      const out = [];
+      try {
+        const s = sessions[sid];
+        if (!s || !s.term) return out;
+        const buf = s.term.buffer.active;
+        for (let y = s.term.rows - 1; y >= 0 && out.length < 4; y--) {
+          const line = buf.getLine(buf.viewportY + y);
+          if (!line) continue;
+          const t = line.translateToString(true).trim();
+          if (t.length < 8) continue;                 // 太短不夠獨特
+          if (/\(\s*\d+[ms]\b/.test(t)) continue;     // spinner 計時
+          if (/^[─━—\-=_]{4,}$/.test(t)) continue;     // 分隔線
+          // tmux 綠條在歷史裡被濾掉（_TMUX_STATUS_RE），拿它當錨點一定比不到
+          if (/^\[[^\]]+\]\s+\d/.test(t)) continue;
+          out.push({ text: t, row: y });
+        }
+      } catch (_) {}
+      return out;
+    }
+
+    // 把 overlay 捲到「錨點落在活畫面同一行」的位置。找不到就維持
+    // scrollToBottom 的結果（也就是舊行為），不會比原本更差。
+    function alignToAnchors(anchors) {
+      if (!histTerm || !anchors || !anchors.length) return null;
+      try {
+        const buf = histTerm.buffer.active;
+        const rows = histTerm.rows;
+        for (const a of anchors) {
+          // 從底部往上找，最多回溯 3 螢幕高度
+          const limit = Math.min(buf.length, buf.baseY + rows);
+          const from = Math.max(0, limit - rows * 3);
+          for (let abs = limit - 1; abs >= from; abs--) {
+            const line = buf.getLine(abs);
+            if (!line) continue;
+            if (line.translateToString(true).trim() !== a.text) continue;
+            // 要讓這一行出現在螢幕第 a.row 行 → viewportY = abs - a.row。
+            // overlay 比活畫面矮一行（讓綠條露出），所以活畫面靠底的那幾行
+            // 可能根本對不進來；夾到範圍內會把錨點推出畫面（實測對齊後跑到
+            // 第 -1 行），所以對不進來就換下一個候選。
+            if (a.row >= rows) continue;
+            const targetTop = abs - a.row;
+            if (targetTop < 0 || targetTop > buf.baseY) continue;
+            const delta = targetTop - buf.viewportY;
+            if (delta) histTerm.scrollLines(delta);
+            return { text: a.text.slice(0, 24), row: a.row, delta };
+          }
+        }
+      } catch (_) {}
+      return null;
+    }
+
     function show(text, sid, opts) {
       close();
       boundSid = sid || activeId;
+      const liveAnchors = grabLiveAnchors(boundSid);
       const fontSize = (opts && opts.fontSize) || currentFontSize || 13;
       const source = (opts && opts.source) || '';
 
@@ -4271,7 +4330,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       } catch (_) {}
       const reveal = () => { try { overlay.style.opacity = '1'; } catch (_) {} };
       histTerm.write(text || '(no history)', () => {
-        try { histTerm.scrollToBottom(); } catch (_) {}
+        try {
+          histTerm.scrollToBottom();
+          const hit = alignToAnchors(liveAnchors);
+          try {
+            pywebview.api.js_debug('hist-align', JSON.stringify(
+              hit ? { aligned: hit } : { aligned: false, tried: liveAnchors.length }));
+          } catch (_) {}
+        } catch (_) {}
         requestAnimationFrame(reveal);
       });
       setTimeout(reveal, 250); // safety net if the write callback is missed

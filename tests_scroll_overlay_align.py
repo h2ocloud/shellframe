@@ -67,6 +67,78 @@ window.measure = function (gutterOn) {
 };
 </script>"""
 
+GRAB = re.search(r"    function grabLiveAnchors\(sid\) \{.*?\n    \}\n", html, re.S).group(0)
+ALIGN = re.search(r"    function alignToAnchors\(anchors\) \{.*?\n    \}\n", html, re.S).group(0)
+
+ALIGN_JS = r"""async () => {
+  // 活畫面：10 行內容，最後一行是錨點
+  const liveLines = [];
+  for (let i = 1; i <= 9; i++) liveLines.push('live content line ' + i);
+  liveLines.push('ANCHOR-LINE-UNIQUE-0001');
+  // 活畫面最後一行是 tmux 綠條，歷史裡被濾掉——錨點只能是它上面那行
+  liveLines.push('[sf_s173] 0:2.1.252*    [0,0] "* demo" 13:36');
+  // 歷史：同樣內容，但錨點之後還多兩行——capture 的瞬間可能比活畫面新，
+  // dedup 也會讓行數對不上。任一種都會讓 scrollToBottom 之後錨點不在活畫面
+  // 上的那一行，這正是要修的錯位。
+  const histLines = ['old history A', 'old history B']
+    .concat(liveLines.slice(0, -1))          // 綠條被濾掉
+    .concat(['captured after A', 'captured after B']);
+
+  // write 是異步的——不等 callback 就讀 buffer 會全部抓到空行
+  const mk = async (host, lines, rows) => {
+    const t = new Terminal({ fontSize: 14, rows, cols: 80,
+                             disableStdin: true, cursorBlink: false, convertEol: true });
+    t.open(host);
+    await new Promise(res => t.write(lines.join('\r\n'), res));
+    return t;
+  };
+  const wrap = document.getElementById('terminal-wrap');
+  const h1 = document.createElement('div');
+  h1.style.cssText = 'position:absolute;inset:0;visibility:hidden';
+  const h2 = document.createElement('div');
+  h2.style.cssText = 'position:absolute;inset:0;visibility:hidden';
+  wrap.appendChild(h1); wrap.appendChild(h2);
+
+  const liveTerm = await mk(h1, liveLines, 6);      // 只看得到最後 6 行（含綠條）
+  const histTermLocal = await mk(h2, histLines, 5); // overlay 少一行
+
+  // 讓抽出來的函式看得到它需要的變數
+  const sessions = { s1: { term: liveTerm } };
+  const activeId = 's1';
+  let histTerm = histTermLocal;
+  __GRAB__
+  __ALIGN__
+
+  const anchors = grabLiveAnchors('s1');
+  const lb = liveTerm.buffer.active;
+  let liveRow = -1;
+  for (let y = liveTerm.rows - 1; y >= 0; y--) {
+    const ln = lb.getLine(lb.viewportY + y);
+    if (ln && ln.translateToString(true).trim() === 'ANCHOR-LINE-UNIQUE-0001') { liveRow = y; break; }
+  }
+  const rowOf = (t) => {
+    const b = t.buffer.active;
+    for (let y = t.rows - 1; y >= 0; y--) {
+      const ln = b.getLine(b.viewportY + y);
+      if (ln && ln.translateToString(true).trim() === 'ANCHOR-LINE-UNIQUE-0001') return y;
+    }
+    return -1;
+  };
+  histTermLocal.scrollToBottom();
+  const before = rowOf(histTermLocal);
+  alignToAnchors(anchors);
+  const after = rowOf(histTermLocal);
+  // 找不到錨點的情況：亂給一個不存在的文字，位置不該變
+  histTermLocal.scrollToBottom();
+  const missBefore = histTermLocal.buffer.active.viewportY;
+  alignToAnchors([{ text: 'THIS-TEXT-DOES-NOT-EXIST-ANYWHERE', row: 2 }]);
+  const missAfter = histTermLocal.buffer.active.viewportY;
+
+  h1.remove(); h2.remove();
+  return { liveRow, histRowBefore: before, histRowAfter: after, missBefore, missAfter,
+           anchorCount: anchors.length };
+}""".replace("__GRAB__", GRAB).replace("__ALIGN__", ALIGN)
+
 passed = failed = 0
 
 
@@ -96,6 +168,20 @@ with sync_playwright() as pw:
     off = pg.evaluate("() => window.measure(false)")
     check("沒有 gutter 時退回 0（不寫死 gutter，向後相容）",
           off["leftInset"] == 0, str(off))
+
+    # ── 錨點對齊：歷史經 dedup 會比活畫面短，單純 scrollToBottom 會讓同一段
+    #    文字落在不同高度（上滑瞬間的上下段差）。驗錨點把它拉回同一行。
+    ali = pg.evaluate(ALIGN_JS)
+    check("錨點行回到活畫面上的同一個螢幕行",
+          ali["histRowAfter"] == ali["liveRow"],
+          f"live 第 {ali['liveRow']} 行 → overlay 第 {ali['histRowAfter']} 行"
+          f"（對齊前在第 {ali['histRowBefore']} 行）")
+    check("對齊確實動過（證明這個案例本來是歪的）",
+          ali["histRowBefore"] != ali["liveRow"],
+          "測資沒造出錯位，這項驗不到東西")
+    check("找不到錨點時不動（維持 scrollToBottom 的舊行為）",
+          ali["missBefore"] == ali["missAfter"],
+          f"{ali['missBefore']} → {ali['missAfter']}")
     b.close()
 
 print(f"\nResults: {passed} passed, {failed} failed")

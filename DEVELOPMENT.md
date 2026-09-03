@@ -24,7 +24,9 @@
 
 ## 版本與發布
 
-- 任何 **user-visible** 變更 → bump `version.json` + 寫 `CHANGELOG.md`（中英對照、最新版置頂）。version 用 semver；新功能進 minor（如 0.13.x → 0.14.0）。
+- 任何 **user-visible** 變更 → bump `version.json` + 寫 `CHANGELOG.md`。
+  **格式與語言規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)**（英文先、中文後；不寫人名、不貼原始對話；症狀／根因／修法／驗證四件事）。
+  由 `tests_changelog_format.py` 強制檢查，`./run_tests.sh` 會跑——格式不符是紅燈。version 用 semver；新功能進 minor（如 0.13.x → 0.14.0）。
 - **多台同步**：維護者多台機器都會在線推版。改動前先 `git fetch` / 確認 `origin/main`，**別自己 bump 撞到別台的版號**；改完就 `commit` + `push origin main`（SF 慣例直推 main、靠推版同步多台）。
 - WIP 不要混進無關 commit：working tree 可能同時有別的開發中改動，commit 時只 `git add` 自己要發的檔，別 `git add .` 把半成品一起推。
 

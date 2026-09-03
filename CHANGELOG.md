@@ -1,263 +1,317 @@
 # Changelog
 
+> Format and language rules: [`docs/changelog-guide.md`](docs/changelog-guide.md).
+> Enforced by `tests_changelog_format.py` (runs in `./run_tests.sh`).
+>
+> 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
+> 由 `tests_changelog_format.py` 強制檢查。
+
+## v0.30.18 (2026-09-03)
+
+### Fixes
+
+- **Opening scroll-up history no longer shifts content vertically.**
+  Geometry was already correct — the overlay is deliberately one row shorter so
+  the tmux status bar stays visible, and measurement confirmed its row count and
+  content bottom line up exactly. The jump came from *content*: history is
+  deduplicated, so the same passage occupies fewer lines than on the live screen
+  and `scrollToBottom()` left it at a different height. The overlay now takes up
+  to four anchor lines from the live viewport — skipping the spinner row, rules
+  and the tmux status bar, none of which survive into history — finds the first
+  one in the captured text and scrolls so it lands on the same screen row.
+  Anchors that cannot fit (the overlay is one row shorter) are skipped rather
+  than clamped, which previously pushed the anchor off screen entirely. With no
+  match it falls back to `scrollToBottom()`, i.e. the previous behaviour.
+  `tests_scroll_overlay_align.py` reproduces a 3-row offset and asserts the
+  anchor returns to the live row.
+
+  **上滑歷史開啟時不再垂直位移。** 幾何本來就是對的——overlay 刻意矮一行讓 tmux 綠條
+  露出，量測確認它的行數與內容底部完全對齊。跳動來自**內容**：歷史經過去重，同一段
+  文字佔的行數比活畫面少，`scrollToBottom()` 之後就落在不同高度。現在 overlay 會從
+  活畫面取最多四行錨點——略過 spinner 那行、分隔線與 tmux 綠條，這些都不會留在歷史裡
+  ——在擷取的文字中找到第一個相符者，捲動到讓它落在同一個螢幕行。對不進來的錨點
+  （overlay 矮一行）直接換下一個而不是硬夾，先前硬夾會把錨點整個推出畫面。完全找不到
+  時退回 `scrollToBottom()`，也就是原本的行為。`tests_scroll_overlay_align.py` 重現
+  3 行的錯位並驗證錨點回到活畫面的那一行。
+
+### Internal
+
+- **Release notes now have a written standard and a gate that enforces it.**
+  `docs/changelog-guide.md` defines the structure (semver heading with date,
+  `Fixes` / `Changes` / `Added` / `Internal` sections), requires each entry to be
+  written in English first and then Chinese, and requires it to answer four
+  things: symptom, root cause, fix, and which test guards it. It also bans what
+  had been creeping in: personal names, pasted chat excerpts, internal
+  codenames, and self-flagellation. `tests_changelog_format.py` (part of
+  `./run_tests.sh`) checks the heading format, that `version.json` matches the
+  top entry, that section names are known, that both languages are substantially
+  present, and that no names or quoted complaints appear. Entries for
+  v0.30.5–v0.30.17 were rewritten to the standard and 55 occurrences of a
+  maintainer's name were removed across the whole file, so the name check can
+  guard the entire document rather than just the latest release.
+
+  **Release notes 有了成文規範，以及擋得住的檢查。** `docs/changelog-guide.md` 定義
+  骨架（semver 標題帶日期，`Fixes`／`Changes`／`Added`／`Internal` 分區）、要求每個
+  條目英文先中文後，並要求回答四件事：症狀、根因、修法、哪支測試守著。同時明文禁止
+  先前逐漸滲入的東西：人名、貼上的對話片段、內部代號、對自己的檢討。
+  `tests_changelog_format.py`（納入 `./run_tests.sh`）檢查標題格式、`version.json`
+  是否等於最新版、分區名是否已知、兩種語言是否都有足量內容、以及是否出現人名或引號
+  裡的抱怨。v0.30.5–v0.30.17 的條目已按規範重寫，並清掉全檔 55 處維護者姓名，因此
+  人名檢查得以守住整份文件而非只有最新版。
+
 ## v0.30.17 (2026-09-03)
 
 ### Fixes
-- **上滑瞬間整個畫面往左跳一段**（Howard 2026-09-03：「會有一個斷差感，修掉，體驗
-  要無縫」）。**這是我自己在 v0.30.11 造成的回歸**：那版給 `.term-pane` 加了
-  `inset: 0 0 0 var(--hint-gutter)`，把活畫面往右推 17px 讓出分頁名標籤的位置，
-  但上滑 overlay 還停在 `left: 0`——兩者左緣差了整條 gutter，切換時內容橫向位移。
-  overlay 那段程式碼裡本來就寫著「the live .term-pane is inset:0 with no padding,
-  so the overlay's xterm must sit flush to the same left edge」，那個前提被我打破了
-  卻沒跟著改。註解也一起更正，免得下一次有人照舊註解把 `left` 改回 0。
-  修法：**量** live pane 的實際左緣（`pane.left - host.left`），不寫死 0 也不寫死
-  gutter——面板寬度、UI scale 之後怎麼變都跟得上，沒有 gutter 時自動退回 0。
-  新增 `tests_scroll_overlay_align.py`：有 gutter 時左緣跟到 17px、沒 gutter 時退回
-  0、下緣仍留至少一行給 tmux 綠條，另外靜態守住實作真的在「量」而不是寫死常數。
+
+- **Scroll-up history no longer shifts the view sideways when it opens.**
+  A regression introduced in v0.30.11: that release moved the live terminal pane
+  to start at `--hint-gutter` to make room for the tab-name label, but the
+  history overlay was still pinned to `left: 0`, so opening it displaced every
+  line by the gutter width. The overlay now measures the live pane's actual left
+  edge instead of assuming zero, so it follows future layout changes too and
+  falls back to 0 when there is no gutter. Regression test:
+  `tests_scroll_overlay_align.py`.
+
+  **上滑歷史開啟時不再橫向位移。** 這是 v0.30.11 引入的回歸：該版把活畫面左緣推到
+  `--hint-gutter` 以容納分頁名標籤，overlay 卻仍固定在 `left: 0`，一開就讓每一行
+  整體位移一條 gutter 的寬度。現在改為量測 live pane 的實際左緣，而不是假設它是 0
+  ——之後版面再變也跟得上，沒有 gutter 時自動退回 0。回歸測試：
+  `tests_scroll_overlay_align.py`。
 
 ## v0.30.16 (2026-09-03)
 
 ### Fixes
-- **上滑歷史的排版跟活畫面對不上**（Howard 2026-09-03：「上滑樣式會跑掉…我希望的
-  就是無縫銜接」，附了上滑前後的對照圖）。
-  不是樣式問題——兩邊的 xterm 參數本來就一致（同 fontSize／fontFamily／theme，
-  兩邊都沒設 lineHeight）。真正消失的是**段落之間的空行**：
-  `_dedupe_history_lines` 的 strict-prefix 判斷會兩邊都中，因為**空字串是任何字串
-  的前綴**——
-  - current 是空行 → 被判成「prev 的前綴」直接 `continue` 丟掉；
-  - prev 是空行 → 被判成「current 的前綴」，拿 current 把那個空行蓋掉。
-  於是每一個內部空行都不見了，上滾的歷史整段黏成一團，看起來就是「行距變密、
-  樣式跑掉」。而 `_render_rows` 的註解本來就寫明「Internal blank lines (between
-  paragraphs) are preserved」——這是實作跟設計意圖打架。
-  修法：空行不參與 strict-prefix 比較（current 或 prev 任一為空就跳過那兩條判斷），
-  非空行之間的摺疊完全不動。
-  驗證：`tests_history_dedup.py` 加四項（段落空行保留、空行不被前後鄰居吃掉、連續
-  多個空行保留、非空行的 prefix 摺疊仍生效）；另對真實 session 跑
-  `sfctl history-audit`——overlay 裡 14% 是空行（修之前會是 0），missing／noise／dup
-  三個計數都是 0。
+
+- **Blank lines between paragraphs survive in scroll-up history.**
+  The strict-prefix dedup pass dropped every internal blank line, because an
+  empty string is a prefix of any string: a blank current line looked like a
+  prefix of the previous one and was skipped, and a blank previous line was
+  overwritten by the next. History therefore rendered as one dense block that
+  did not match the live screen. Blank lines are now excluded from that
+  comparison; collapsing between non-blank lines is unchanged. `_render_rows`
+  had always documented that internal blank lines are preserved, so the
+  implementation contradicted its own contract with no test guarding it.
+  Four new cases in `tests_history_dedup.py`.
+
+  **上滑歷史保留段落之間的空行。** strict-prefix 去重會吃掉所有內部空行，因為空字串
+  是任何字串的前綴：空的當前行被判定為前一行的前綴而跳過，空的前一行則被下一行蓋掉。
+  歷史因此擠成一整團，與活畫面的排版完全不同。現在空行不參與該比較，非空行之間的
+  摺疊不變。`_render_rows` 本來就註明內部空行要保留，實作與自己的約定打架，而且沒有
+  測試守著。`tests_history_dedup.py` 新增四項。
 
 ## v0.30.15 (2026-09-03)
 
-### Changes
-- **側欄 Sessions 標題旁多一顆重判狀態的 ↻，另加五分鐘定期重算**（Howard
-  2026-09-03：「有些情況我會中斷對話，這時候燈號就不會變動了，可能一直都是
-  執行中」）。
-  根因是兩層防護剛好互相掩護：中斷對話（Ctrl+C／Esc）時 Claude Code 不一定會發
-  Stop hook，`_hook_events` 就卡在 `working`；而 status monitor 的 idle gating
-  又因為「這個分頁的 PTY 從上一輪之後沒印任何東西」而跳過重算——於是燈號永遠停在
-  執行中。原有的 `FORCE_REFRESH = 15s` 救不了，它只在有輸出過的分頁上重算。
-  新增 `refresh_agent_status(sid="")`：把狀態快取與 hook 狀態一起清掉，讓 heuristic
-  從畫面／transcript 重新判斷。真的還在跑會被重新標回 working，所以清掉是安全的。
-  側欄那顆 ↻ 呼叫它（帶一圈旋轉回饋），status monitor 也每 300 秒自己做一次
-  ——安靜的分頁靠後者，不必等使用者想起來按。
+### Added
+
+- **Manual and periodic re-evaluation of the per-tab status dot.**
+  Interrupting an agent (Ctrl+C / Esc) does not reliably emit a Stop hook, so the
+  cached state stayed `working`; the status monitor's idle gating then skipped
+  recomputation because the tab's PTY had printed nothing since the last pass.
+  The two safeguards covered for each other and the dot stayed on "running"
+  indefinitely. The existing 15-second force-refresh could not help, as it only
+  revisits tabs that produced output. New `refresh_agent_status(sid="")` clears
+  both the status cache and the hook state so the heuristics re-derive it from
+  the screen; a tab that really is busy gets marked `working` again, which makes
+  clearing safe. A ↻ button beside the sidebar's Sessions heading calls it, and
+  the monitor now does the same every 300 seconds so silent tabs recover without
+  user action. 8 cases in `tests_status_refresh.py`.
+
+  **狀態燈號可手動、也會定期重判。** 中斷 agent（Ctrl+C／Esc）時不一定會發出 Stop
+  hook，快取狀態就停在 `working`；而 status monitor 的 idle gating 又因為該分頁自上
+  一輪起沒有任何輸出而跳過重算。兩層防護互相掩護，燈號於是永遠停在「執行中」。原有
+  的 15 秒強制重算救不了，它只重訪有輸出過的分頁。新增
+  `refresh_agent_status(sid="")`：清掉狀態快取與 hook 狀態，讓 heuristic 從畫面重新
+  判斷；真的還在忙的分頁會被重新標回 `working`，所以清掉是安全的。側欄 Sessions
+  標題旁的 ↻ 會呼叫它，monitor 也每 300 秒自己做一次，安靜的分頁不必等使用者動作。
+  `tests_status_refresh.py` 共 8 項。
 
 ## v0.30.14 (2026-09-03)
 
-### Changes
-- **雙擊左側的分頁名標籤，直接開改名 popup**（Howard 2026-09-03：「點旁邊這個 tab
-  兩下也讓我可以進到編輯 tab name 的 popup，這樣可以更方便一點」）。接的是既有的
-  `renameSession()`，跟上方分頁列雙擊改名走同一條路。
-  標籤原本是 `pointer-events: none` 的純提示，這版收回點擊並加上 `cursor: pointer`
-  ＋ hover 提亮；`user-select` 仍關著，免得雙擊選到標籤自己的文字。
-  綁一次就夠——標籤是靜態 DOM，不像側欄那樣會被 `renderSidebar` 重建（側欄當年就是
-  因為重建才讓 native dblclick 失效、得改成手工偵測）。
-  它只佔左側那條 17px 的 gutter，終端選字不受影響。
+### Added
 
-## v0.30.13 (2026-09-02)
+- **Double-click the tab-name label to rename the session.**
+  Reuses the existing `renameSession()` dialog, the same one the tab bar and the
+  sidebar open. The label previously had `pointer-events: none`; it now takes
+  clicks and shows a pointer cursor with a hover highlight, while text selection
+  stays disabled so a double-click cannot select the label's own text. One
+  listener is enough, because unlike the sidebar the label is static DOM and is
+  never rebuilt by a render pass.
 
-### Changes
-- **分頁名標籤字體加回來，改往側欄那一側吃 4px**（Howard 2026-09-02：「太小了，
-  我是說不能剛剛的字體，然後往左邊再放嗎」）。上一版為了消除壓迫感把字級砍到
-  9px，結果變成看不清。
-  字級回到 **11px**、對比也調回來，但不為此多佔終端寬度：標籤 `left: -4px`、寬
-  `gutter + 4px`，往左疊在側欄邊界上（`#terminal-wrap` 沒有 `overflow: hidden`、
-  `#sidebar` 也沒有 `z-index`，所以是疊上去而不是被裁掉）。標籤右緣剛好落在
-  gutter 右緣，終端**一個字都沒被壓到**。
-  實測：`sf dev` 42px(2.2行)、`影片處理` 58px(3.1行)、`遠銀` 35px(1.8行)，
-  終端內容一律從 17px 之後開始。
-  測試斷言也跟著改對：原本檢查「標籤不超出 gutter 寬度」，但真正要守的是「右緣
-  沒壓到終端左緣」——標籤刻意往左吃是設計，不是違規。
+  **雙擊分頁名標籤即可改名。** 沿用既有的 `renameSession()` 對話框，與分頁列、側欄
+  走同一條路。標籤原本是 `pointer-events: none` 的純提示，現在收回點擊、加上 pointer
+  游標與 hover 提亮，並維持關閉文字選取，避免雙擊選到標籤自己的文字。只需綁一次，
+  因為與側欄不同，標籤是靜態 DOM，不會被 render 重建。
 
-## v0.30.12 (2026-09-02)
+## v0.30.8 – v0.30.13 (2026-09-02 – 2026-09-03)
 
-### Fixes
-- **分頁名標籤「破圖」＋太擠**（Howard 2026-09-02：「太擠了，看得好壓迫」「破圖疊
-  出去到側欄呢」）。兩個原因：
-  1. `text-orientation: upright` 把**拉丁字母也一個一個立起來**——「sf dev」變成
-     s/f/d/e/v 五行，又高又像破圖。拿掉它，用預設的 `mixed`：英文整串側躺、中文
-     保持直立，「sf dev」從 5 行降到 **1.8 行**。
-  2. `display: flex` 跟 `writing-mode: vertical-rl` 打架（flex 主軸會跟著轉），
-     文字擠成一團。改回 `text-align: center`。
-  順手把壓迫感收掉：gutter 26px → **17px**，字級 11px → 9px，底色與文字對比都調淡。
-  實測三種分頁名在 17px 窄條裡的佔位：`sf dev` 35px(1.8行)、`影片處理` 48px(2.5行)、
-  `遠銀` 29px(1.5行)，都不溢出到側欄，終端內容一律從 17px 之後開始。
-  想再調鬆緊只有一個變數：`--hint-gutter`。
+### Added
 
-## v0.30.11 (2026-09-02)
+- **A persistent label shows which tab you are typing into.**
+  Typing into the wrong tab is expensive: the message lands in an unrelated
+  agent's context. The label sits in a 17px gutter left of the terminal, set
+  vertically, and tracks the row the cursor is on by reading the xterm DOM row
+  for `buffer.active.cursorY` rather than guessing a fixed corner or a fixed row
+  offset. The input row genuinely moves: the permission-hint row, the presence of
+  a tmux status line and multi-line input all shift it. The label covers no
+  terminal content and overlaps the sidebar edge by 4px, so legible 11px type
+  costs no terminal width. `tests_tab_hint_align.py` asserts vertical centring on
+  the cursor row, that the label never overlaps the terminal, and that Latin
+  names are not stacked one letter per line.
+
+  **常駐標籤顯示目前正在對哪個分頁打字。** 打錯分頁的代價很高：訊息會落進不相干的
+  agent 的脈絡裡。標籤直排於終端左側 17px 的 gutter 中，並跟隨游標所在的那一行
+  ——讀取 `buffer.active.cursorY` 對應的 xterm DOM row，而不是猜固定角落或固定行號。
+  輸入行的位置確實會移動：權限提示行、tmux status line 是否存在、以及多行輸入都會
+  影響它。標籤不遮任何終端內容，並往側欄那側疊 4px，使 11px 的可讀字級不必多佔終端
+  寬度。`tests_tab_hint_align.py` 驗證垂直對齊游標行、標籤絕不壓到終端、以及拉丁
+  文字不會被逐字母堆疊。
 
 ### Changes
-- **分頁名標籤改站進左側自己的一條空間，不再蓋終端內容**（Howard 2026-09-02：
-  「或是你從 UI 左側 在側欄旁邊 讓一個空間，你這樣目前有點暴力，反而會讓我打字
-  看不到前幾個字」）。
-  上一版直接疊在輸入行最前面，確實會擋掉剛打的頭一兩個字——他說得對，那是暴力解。
-  現在 `.term-pane` 的 `inset` 左邊推開 `--hint-gutter: 26px`（pane 是 absolute，
-  inset 相對 `#terminal-wrap` 的 padding box，所以整個終端右移、xterm 的 cols 跟著
-  pane 寬度重算），標籤直排（`writing-mode: vertical-rl` + `text-orientation:
-  upright`）站在那條 gutter 裡。**一個字都不遮**，而垂直位置仍然跟著游標那一行走。
-  驗收（`tests_tab_hint_align.py`，真實 xterm 5.5.0）：標籤左緣 0、寬 26px 不超出
-  gutter、終端內容從 26px 之後才開始、垂直中心差 0。
 
-## v0.30.10 (2026-09-02)
+- **Telegram hides the model badge whenever the desktop sidebar hides it.**
+  The two surfaces kept separate state, so the bridge went on showing a stale
+  value after the badge had been switched off locally. The slash-command menu
+  dropped the model entirely: `setMyCommands` is a snapshot taken at registration
+  time, so a tab left idle for days freezes on whichever model it last talked to,
+  with nothing on the phone to indicate the value is out of date. The model is
+  now computed at switch time and shown in the reply header instead.
 
-### Changes
-- **分頁名標籤改成黏在游標那一行的最前面**（Howard 2026-09-02 連退三版：右上角
-  「跟左邊有什麼差，都離視線很遠」→ 右下角還是遠 → 「可以刻意佔位，在我的輸入匡
-  前面嗎」）。
-  前三版都在**猜**位置——右上角、右下角、寫死「倒數第幾行」。而輸入行的位置本來
-  就會動：Claude Code 的權限提示行、tmux status line 存不存在、多行輸入時輸入框
-  往上長，任何一個變了就偏掉。這版直接讀 xterm 的 DOM row 位置對齊
-  `buffer.active.cursorY`（ShellFrame 沒載 canvas/webgl addon，是 DOM renderer），
-  不猜行高也不假設行號；`onCursorMove` 觸發重新對位，用 rAF 合併避免每個按鍵都
-  做一次 layout 量測。
-  刻意做窄（最多五個字截斷）：擋掉的是自己剛打的頭一兩個字，比「整段打進錯的
-  分頁」便宜太多。`>` 提示符仍看得到。
-  另修：`z-index` 原本給 20，被 xterm 的 row 蓋過去（pane 是後 append 的兄弟
-  節點），標籤只剩一個看不出字的淡框——改 60 並換成實心底色。
-  驗收（`cursor_align_qa.py`，真實 xterm 5.5.0 + 從 index.html 抽出的
-  `positionTabHint`）：游標在第 3 行「> 我打的字」，該行 48–64、標籤 49–63，
-  **垂直中心差 0**。
+  **Telegram 的模型徽章跟隨桌面側欄的開關。** 兩邊原本各有一套狀態，本地關掉徽章後
+  bridge 仍顯示一個過期的值。slash 指令選單則完全移除模型：`setMyCommands` 是註冊
+  當下的快照，久未使用的分頁會凍結在它上次對話的模型上，而手機端看不出這個值已經
+  過期。模型改在切換分頁時即時計算，放進回覆表頭。
 
-## v0.30.9 (2026-09-02)
+### Internal
 
-### Changes
-- **分頁名提示改放到打字的那一行旁邊**（Howard 2026-09-02 退掉右上角那版：「我比較
-  想要你放在我打字的附近，不然跟左邊有什麼差，都離視線很遠」）。
-  現在坐在最底下那條 tmux status line **上面一行**的右側——也就是輸入區那一行。
-  `bottom` 依終端字級算（`fontSize × 1.35 + 8`），改字級不會偏。
-  順手修掉自己的一個 bug：避開右下角麥克風 FAB 的判斷原本寫 `offsetParent !== null`，
-  而 **`position: fixed` 元素的 `offsetParent` 恆為 `null`**，整段避讓等於沒生效，
-  標籤照樣被壓在麥克風底下（Playwright 驗收截圖才抓到）。改成看 rect 有沒有面積，
-  並用兩者的實際 rect 判斷重疊——麥克風是 fixed、標籤是相對 `#terminal-wrap` 的
-  absolute，座標系不同，寫死 offset 在右側面板展開時會多讓一段空白。
+- `evaluate_js` pushes slower than 400ms now log the tab, chunk size and tab
+  count. An intermittent UI freeze reported in daily use could not be captured by
+  sampling after the fact, so this records evidence instead of guessing. Not a
+  fix; the cause is still open.
 
-## v0.30.8 (2026-09-02)
-
-### Changes
-- **終端右上角常駐顯示「現在在哪個分頁」**（Howard 2026-09-02：「我很常錯頻」）。
-  把話打進錯的分頁是最貴的錯誤——訊息會落到不相干的 agent 手裡，所以這個提示
-  常駐、不做淡出。`pointer-events: none` 讓它不吃點擊也不影響選字；分頁名很長時
-  截斷在畫面 46% 寬以內（實測 32 字的名字佔 32%，不會蓋掉終端也不溢出）。
-  切換／改名／關閉分頁都會經過 `switchTab` 或 `renderTabs`，兩處都會更新。
-- **TG 的模型顯示改為跟隨本地的「顯示模型徽章」開關**（Howard：「如果本地沒開啟
-  顯示模型，TG 也要隱藏掉」）。他本地早就把徽章關了，TG 卻還在顯示一個不準的
-  值——同一個開關管兩邊，不要各有一套狀態。
-
-### 進行中（尚未確診）
-- **UI 有時候跑到一半凍結**。當下 `sample` 主執行緒抓不到——1495/1667 個取樣都在
-  等事件，凍結是間歇性的，事後取樣看不到現場。已知的結構性嫌疑是 output pusher：
-  `evaluate_js` 會等主執行緒排程**再等 JS 跑完**（`xterm.write` 連渲染一起算），
-  而目前 14 個分頁、當前分頁全速推送（5ms 間隔、單次上限 64KB）。
-  加了量測：單次推送超過 400ms 就寫一筆 `[perf] evaluate_js 慢 …ms sid=… chunk=…
-  字元 tabs=…`。下次凍結後看 log 就知道是哪個分頁、多大的 chunk、幾個分頁在跑。
+  超過 400ms 的 `evaluate_js` 推送會記錄分頁、chunk 大小與分頁數。日常使用中回報的
+  間歇性 UI 凍結無法事後取樣重現，因此先留下證據而非猜測。這不是修復，原因仍未確診。
 
 ## v0.30.7 (2026-09-02)
 
 ### Fixes
-- **注音重複字的真正根因：不是 shift，是選字流程本身**（Howard 2026-09-02 補上
-  關鍵情境：「打完字要選字**按下空白鍵**的時候，如果這時候按 shift／大寫鎖」）。
-  xterm 的 `CompositionHelper.keydown` 只對 Shift/Ctrl/Alt（16/17/18）放行，
-  **其他任何 keydown 一律 `_finalizeComposition(false)`**，把當下 textarea 裡
-  **還沒選字的組字內容**直接送進 PTY。而注音的選字流程按的正是那些鍵：空白叫候
-  選清單、數字鍵挑字。
-  真實 xterm 5.5.0 實測（`tests_ime_seq.py` 的 candidate-picker 案例）——打
-  「ㄧ」→ 空白 → 按 `2` 選字，xterm 送出：
 
-      ['ㄧ', '2', '依', '依']
+- **Chinese input no longer leaks composition text while picking a candidate.**
+  xterm's `CompositionHelper.keydown` only exempts Shift/Ctrl/Alt; every other
+  key calls `_finalizeComposition(false)`, which pushes whatever is currently in
+  the textarea straight to the PTY. Bopomofo candidate selection presses exactly
+  those keys: space opens the candidate list and digits pick an entry. Verified
+  against real xterm.js 5.5.0 — typing `ㄧ`, pressing space, then `2` emitted
+  `['ㄧ', '2', '依', '依']`, i.e. the raw phonetic symbol, the selection digit and
+  a duplicated commit. The keyboard is now handed entirely to the IME while a
+  composition is active, leaving `['依', '依']`, which the dedup below collapses
+  to one. A 30-second staleness cap means a missed `compositionend` cannot
+  swallow the keyboard permanently. 16 cases in `tests_ime_seq.py`.
 
-  注音符號漏了、選字用的數字漏了、最後那個字還重複一次。這正是「案案2」的形狀
-  ——之前只盯著 shift 造成的**雙送**，漏掉了更大的那半。
-  修法：**composition 進行中把鍵盤完全讓給 IME**（`attachCustomKeyEventHandler`
-  回 `false`，不 preventDefault，IME 照樣收得到）。全攔之後只剩
-  `['依','依']`，再由 IME 去重收成一個「依」。
-  紅線都測了（16 項）：沒在組字時空白／數字／字母／Enter／Caps／Shift 全部放行、
-  讓渡只看 keydown、以及 `compositionstart` 的時間戳超過 30 秒就不再信任——萬一
-  `compositionend` 沒送到，鍵盤不會被永久吃掉。
+  **中文輸入在選字過程不再漏出組字內容。** xterm 的 `CompositionHelper.keydown` 只
+  放行 Shift/Ctrl/Alt，其他任何按鍵一律呼叫 `_finalizeComposition(false)`，把當下
+  textarea 裡的內容直接送進 PTY。而注音的選字流程按的正是那些鍵：空白鍵叫出候選
+  清單、數字鍵挑選。以真實 xterm.js 5.5.0 驗證：打「ㄧ」→ 空白 → 按 `2`，送出
+  `['ㄧ', '2', '依', '依']`，即注音符號、選字數字與重複的 commit。現在 composition
+  進行中把鍵盤完全交給 IME，只剩 `['依', '依']`，再由下述去重收成一個。另設 30 秒
+  過期上限，避免漏收 `compositionend` 時鍵盤被永久吃掉。`tests_ime_seq.py` 共 16 項。
 
-## v0.30.6 (2026-09-02)
-
-### Fixes
-- **注音重複字：v0.30.5 的前端去重沒擋住，補上 `write_input` 的保底**。實測
-  （Howard 回報後查 log）：restart 載入 v0.30.5 之後 46 秒，`10:05:51.665` 與
-  `10:05:51.758` 兩筆一模一樣的 8 字（`這些都是我打字後`，間隔 93ms）照樣進了
-  PTY，而前端**一筆 `ime-dup` 足跡都沒留**。前端新版確實有載入（新加的
-  `[js:ime-init]` 足跡每個分頁都印了），所以不是沒生效——是**重複走的不是
-  `term.onData` 那條路**。前端 `write_input` 有 28 個呼叫點，`term.onData`
-  只是其中一條。
-  保底改在 `write_input`——所有輸入的唯一出口。只認 IME commit 的形狀：含非
-  ASCII、長度 > 1、內容完全相同、200ms 內，且**中間沒夾任何其他輸入**（雙送的
-  兩筆之間不會夾東西，實測那兩筆中間確實沒有別的 write）。
-  三條紅線都有測（`tests_ime_backstop.py`，8 項）：單字不去重（「哈哈」要留
-  住）、ASCII 完全不經手、中間夾了 Enter 之後的重複要留下。最後那項在寫測試時
-  真的抓到誤吞——就是 Howard 說的「會直接刪掉我最後一個字」那個形狀。
-  前端那份保留（它綁定 commit 內容、更精確），並加一行 `ime-init` 足跡，之後排
-  查才分得出「前端沒載到」跟「路徑沒經過它」。
-
-## v0.30.5 (2026-09-02)
+## v0.30.5 – v0.30.6 (2026-09-02)
 
 ### Fixes
-- **注音打到一半按 shift，那個還沒確認的字會重複一遍**（Howard 2026-09-02）。
-  機制對照 xterm.js 5.5.0 源碼，並用**真實 xterm 實測重現**
-  （`tests_ime_seq.py`：keyup 在 `compositionend` 之前 → `onData` 收到
-  `['你','你']`；在之後 → 只有 `['你']`）：
-  `CompositionHelper.keydown()` 對 keyCode 16（Shift）`return false` 不 finalize；
-  macOS 注音在 shift 的 **keyup** 才切英文並 commit，而 `Terminal._keyUp()`
-  這時已把 `_keyDownSeen` 設回 `false`；於是 `_inputEvent()` 的
-  `(!ev.composed || !this._keyDownSeen)` 放行送出一次，`compositionend` 走
-  `_finalizeComposition(true)` 排的 `setTimeout(0)` 又送一次。
-  原本就有 IME 去重，但條件是 `data.length > 1`——一個中文字 length 就是 1，
-  整條規則對這個情境完全沒作用。
-  **去重綁定「這一次 commit」，不用時間窗口猜**：`compositionend` 帶的 `data`
-  就是這次 commit 的內容，只放行第一次，下一次 `compositionstart` 清空。人要打
-  出同一個字必然經過新的 `compositionstart`，所以連打「好好」不會被吃掉。
-  ⚠️ 中途有一版用 150ms 時間窗口，**會吃掉使用者連打的第二個相同字**（Howard
-  當場回報）。實測兩次送出只差 **≤0.8ms**，150ms 大了兩個數量級——那版是錯的，
-  已換掉。`tests_ime_seq.py` 的案例 E/F 就是守這條線：連打兩個相同字、以及
-  shift 中斷後再正常打同一個字，兩個都必須留下。
-- **模型 badge 在重啟後會退化**。偵測的即時真相是 hook 回報的
-  `transcript_path`，但它只活在記憶體裡——重啟就沒了，偵測掉回 `cmd` 裡的
-  `--resume` uuid（啟動時那一份，不是現在在寫的那一份）。現在會寫進 session
-  manifest，重啟時接回來（只在 hook 回報換檔時落地，不是每個 PreToolUse 都重寫
-  config）。
+
+- **Committing a Chinese character no longer types it twice.**
+  Switching to English mid-composition commits the pending text, and because
+  macOS switches on the modifier's keyup, xterm's `_keyDownSeen` has already been
+  cleared — so both `_inputEvent` and the `setTimeout` scheduled by
+  `_finalizeComposition` pass the same text through. The existing dedup only
+  looked at `data.length > 1`, and a Chinese character has length 1, so the rule
+  never applied. Dedup is now keyed on this specific commit (the
+  `compositionend` payload) rather than a time window: the first copy passes,
+  later identical copies within the same composition are dropped, and the next
+  `compositionstart` resets it, so typing the same character twice on purpose
+  still yields two. An earlier attempt used a 150ms window and ate real
+  keystrokes; measured separation between the duplicate writes is under 1ms, so
+  that window was two orders of magnitude too wide. A backstop in `write_input`
+  covers the same shape for the other input paths, and only when no other input
+  is interleaved. Tests: `tests_ime_dedup.js`, `tests_ime_seq.py`,
+  `tests_ime_backstop.py`.
+
+  **中文字送出時不再重複一次。** 在組字途中切換中英文會 commit 未完成的內容，而
+  macOS 是在修飾鍵的 keyup 才切換，此時 xterm 的 `_keyDownSeen` 已被清除，於是
+  `_inputEvent` 與 `_finalizeComposition` 排的 `setTimeout` 兩條路都把同一段文字送
+  出去。原有去重只看 `data.length > 1`，而中文字長度為 1，規則從未生效。現在去重
+  綁定「這一次 commit」（`compositionend` 的內容）而非時間窗口：第一份放行，同一次
+  composition 內後續完全相同的重複丟棄，下一次 `compositionstart` 重置，所以刻意連
+  打同一個字仍會得到兩個。先前一版用 150ms 窗口，會吃掉真實輸入；實測兩次寫入的
+  間隔不到 1ms，該窗口大了兩個數量級。另在 `write_input` 加保底，涵蓋其他輸入路徑
+  的同一形狀，且僅在中間沒有夾雜其他輸入時生效。測試：`tests_ime_dedup.js`、
+  `tests_ime_seq.py`、`tests_ime_backstop.py`。
+
+- **The model badge no longer degrades after a restart.**
+  Detection relies on the transcript path reported by the agent hook, which only
+  lived in memory. After a restart it fell back to the `--resume` UUID on the
+  command line, i.e. the transcript named at launch rather than the one being
+  written now — `/clear` rotates the UUID and resume often forks a new file. The
+  path and current session UUID are now persisted in the session manifest and
+  restored on startup, written only when the hook reports a different file rather
+  than on every tool call.
+
+  **模型徽章在重啟後不再退化。** 偵測依賴 agent hook 回報的 transcript 路徑，而它
+  只存在記憶體中。重啟後便退回命令列裡的 `--resume` UUID，也就是啟動時指定的那份
+  transcript，而不是當下正在寫入的那份——`/clear` 會輪替 UUID，resume 也常 fork 出
+  新檔。該路徑與當前 session UUID 現在會寫入 session manifest 並於啟動時還原，且僅
+  在 hook 回報換檔時落地，而非每次工具呼叫都寫。
 
 ### Changes
-- **TG slash 選單只留分頁名**。`setMyCommands` 是註冊當下的快照，模型掛上去只會
-  腐爛：分頁久沒動就凍在幾天前那次對話的模型，手機端也看不出它已經過期
-  （Howard 2026-09-01：整排 Sonnet 5、scrum 顯示 8/24 留下的 Opus 4.8）。模型改在
-  `/N` 切過去時即時算，放進表頭：`Switched to 雜事 (/5) · Opus 5 · xhigh`。偵測在
-  `_slots_lock` **外**跑——它要讀 transcript，活躍分頁的檔可以到十幾 MB。
-- **拖檔案：dragenter 先讀原生 pasteboard**，drop 時就不必等一趟 IPC、也不必依賴
-  `dt.files`。順手擋掉一個會**附錯檔**的風險：drag pasteboard 會留著上一次拖曳的
-  內容（實測沒有拖曳進行中，仍讀得到十分鐘前那個 pptx），而從瀏覽器拖 blob 的來
-  源不寫這塊 pasteboard，數量又剛好都是 1 個。新增 `drag_pasteboard_snapshot()`
-  多回一個 `changeCount`，前端拿它跟「最後一次採用過的值」比對，相同就不信；開機
-  時先把當下的值記成用過。三個條件（changeCount 更新過、數量精確相符、真的有檔案）
-  同時成立才走預讀。
-  ⚠️ **這不是「拖檔案要等好幾秒」的解**。昨天推測是 `dt.files` 具現化複製整檔，
-  拿 `BlobRegistryFiles-*` 目錄的時間戳當佐證——**推翻了**：那些目錄每次 WebKit
-  啟動就建立，而且全都是空的，拖的檔案只有 15KB。實測 handler 內部只花 18ms
-  （`afterFiles: 11ms`），耗時在「WebKit 把 drop 交給我們之前」。
-- **原生層量測放開滑鼠的那一刻**（`drag_mark()`：`NSEvent.pressedMouseButtons()`
-  20ms 輪詢）。JS 拿不到這個時間——drop 事件本身就是放開之後才派送的，所以前端量
-  到的 `sinceDragOver` 分不出「使用者拖著不動幾秒才放手」跟「放手後 WebKit 卡在
-  dispatch 前面」。現在 `[js:drop]` 會直接帶 `sinceMouseUp=`，一次拖放就能定位。
-- **關閉留痕**。2026-08-31 23:51 macOS 排程的自動更新發起重新開機、loginwindow
-  逐一 quit 掉所有 GUI app（隨後 LINE 回 `userCanceledErr` 擋下重啟，機器沒重開、
-  更新沒裝，但 ShellFrame 已經死了）。debug log 當時一個字都沒有。現在視窗關閉與
-  SIGINT/SIGTERM 都會寫一行 `[lifecycle]`。
-- **`./run_tests.sh`**：一次跑完 `tests_*.py` 與 `tests_*.js`。前端純邏輯的測試是
-  `.js`（node 跑），只用 `tests_*.py` 的 glob 會掃不到，孤兒測試等於沒測。
 
-## 0.30.4
+- **Drag-and-drop reads the native drag pasteboard on `dragenter`.**
+  This removes an IPC round-trip at drop time and avoids depending on `dt.files`.
+  It also closes a wrong-file hazard found while implementing it: the drag
+  pasteboard retains the previous drag's contents — with no drag in progress it
+  still returns a file dropped ten minutes earlier — and sources that hand over
+  an in-memory blob never write to it, so matching on path count alone would
+  attach the stale file. `drag_pasteboard_snapshot()` also returns the
+  pasteboard's `changeCount`, which only advances on a real write; the preread is
+  trusted only when that value is newer than the last one used, the path count
+  matches exactly, and files are actually present.
+
+  This is **not** a fix for slow path resolution on drop. The earlier hypothesis
+  (WebKit copying the file while materialising `dt.files`) was disproved: the
+  `BlobRegistryFiles-*` directories cited as evidence are created once per WebKit
+  launch and are empty. Measurement showed the handler itself takes 18ms and the
+  delay sits before WebKit dispatches the drop event.
+
+  **拖放改在 `dragenter` 就讀取原生 drag pasteboard。** 這省掉 drop 當下的一趟 IPC，
+  也不再依賴 `dt.files`。同時修掉實作過程中發現的附錯檔風險：drag pasteboard 會保留
+  上一次拖曳的內容——在沒有任何拖曳進行時，仍讀得到十分鐘前拖入的檔案——而交付
+  in-memory blob 的來源根本不寫這塊 pasteboard，因此僅比對路徑數量會把殘留的舊檔
+  附上去。`drag_pasteboard_snapshot()` 另外回傳 pasteboard 的 `changeCount`，它只在
+  真的被寫入時遞增；唯有該值比上次採用過的更新、路徑數量精確相符、且確實有檔案時
+  才信任預讀結果。
+
+  這**不是**拖放取得路徑緩慢的修復。先前的假設（WebKit 具現化 `dt.files` 時複製
+  檔案）已被推翻：當作證據的 `BlobRegistryFiles-*` 目錄是每次 WebKit 啟動就建立且
+  皆為空。量測顯示 handler 本身只花 18ms，延遲發生在 WebKit 派送 drop 事件之前。
+
+### Internal
+
+- Window close and SIGINT/SIGTERM each write a `[lifecycle]` line. A scheduled
+  macOS update quit every GUI app during an unattended restart that another
+  application subsequently cancelled; the debug log recorded nothing, so
+  establishing that the app had not crashed required a second-by-second read of
+  the unified log.
+
+  視窗關閉與 SIGINT／SIGTERM 各會寫一行 `[lifecycle]`。macOS 排程更新曾在無人時
+  發起重新開機並 quit 掉所有 GUI app，隨後該重啟又被另一個應用程式取消；當時 debug
+  log 什麼都沒留，要確認 app 並非自行崩潰得逐秒比對 unified log。
+
+- `./run_tests.sh` runs `tests_*.py` and `tests_*.js` together. Front-end logic
+  tests are `.js`, and a Python-only glob silently skipped them.
+
+  `./run_tests.sh` 會一併執行 `tests_*.py` 與 `tests_*.js`。前端邏輯測試是 `.js`，
+  只用 Python 的 glob 會靜默漏掉它們。
+
+## v0.30.4 (2026-09-01)
 
 - 眼鏡（Agent Relay）改成**外掛、預設隱藏**。它需要另外安裝 bridge 才有作用，
   沒裝的人在每個分頁上看到一顆按不出東西的按鈕只是困惑。設定裡新增
@@ -303,7 +357,7 @@ bridge 改動，`sfctl reload` 生效。
 
 ### Corrections
 - v0.30.1 的說明把 13:26 那次「十一個分頁一次開完」寫成「被違規全開」。**那是錯的**
-  ——那是 Howard 要求的。我在不知情下把它當異常，還一次 deny 掉，毀了他要的狀態。
+  ——那是維護者要求的。我在不知情下把它當異常，還一次 deny 掉，毀了他要的狀態。
   發現的問題本身仍然成立（那十一次變更在正式稽核軌跡上是隱形的），但事件的
   性質寫反了，已在該條目更正。
 
@@ -318,7 +372,7 @@ bridge 改動，`sfctl reload` 生效。
   而 debug log 會滾掉。
   怎麼被抓到的：13:26:06–13:26:11 之間有十一次 `sfctl glasses allow`
   （每 0.5 秒一次、一個 sid 一次）把**全部 11 個分頁**都開了。
-  ⚠️ **更正**：這是 Howard 要求的，不是違規操作——當時寫成「被違規全開」是錯的，
+  ⚠️ **更正**：這是維護者要求的，不是違規操作——當時寫成「被違規全開」是錯的，
   我在不知情下把它當成異常還一次 deny 掉，反而毀了他要的狀態。
   但抓到的問題本身成立：**唯一的線索只有 `/tmp/shellframe_debug.log` 裡的
   `[glasses]` 行**，那個檔會滾掉、也在 `/tmp`。授權變更了十一個分頁，
@@ -482,7 +536,7 @@ bridge 改動，`sfctl reload` 生效。
   Yes 在上、游標在 No），分頁順利進到正常輸入狀態。
 
 回歸測試：新增 `tests_trust_dialog.py`（8 案例）。全套 34 檔綠。
-main.py 有動 → 需 `sfctl restart`。Howard 2026-08-28 回報＋截圖。
+main.py 有動 → 需 `sfctl restart`。維護者 2026-08-28 回報＋截圖。
 
 ## v0.29.48 (2026-08-28)
 
@@ -509,7 +563,7 @@ main.py 有動 → 需 `sfctl restart`。
   時，bridge 會把使用者的 active 指到第一格——但**完全不講**。純手機操作時
   你只看得到 👀／🫡，下一則工作指令就悄悄落進別的分頁。實例：2026-08-28
   15:29 開的新分頁 3 分鐘後消失，15:34 丟的「台壽展場案 API 規格」任務跑進
-  「雜事」，Howard 是 `/10` 打不開才發現分頁早就不在。現在改指之前會先發一則
+  「雜事」，維護者是 `/10` 打不開才發現分頁早就不在。現在改指之前會先發一則
   「⚠ 分頁『X』已經結束，之後的訊息會送到『Y』(/N)」並附上現在的編號表；
   通知走背景 thread（呼叫端還握著 slot 鎖，tg_api 可能卡 35s）。
 
@@ -562,8 +616,7 @@ main.py 有動 → 需 `sfctl restart`。
   回合全是 `<<>>`，一次都沒自動轉發。回歸測試：`tests_tg_marker_alias.py`（5 案例）。
 
   回歸測試：新增 `tests_tg_screen_geometry.py`（6 案例，含釘住 pyte 縮列
-  語意那條）。全套 31 檔綠。main.py 有動 → 需 `sfctl restart`。
-  Howard 2026-08-26 回報（「雜事」分頁連續 6 則全誤報）。
+  語意那條）。全套 31 檔綠。main.py 有動 → 需 `sfctl restart`。維護者 2026-08-26 回報（「雜事」分頁連續 6 則全誤報）。
 
 ## v0.29.45 (2026-08-25)
 
@@ -629,7 +682,7 @@ main.py 有動 → 需 `sfctl restart`。
 ### Fixes
 - **修好 SparkAgent 分頁「逐條回覆 wrapper 規則」**：TG 每回合注入的 preamble
   （回覆標記、手機格式、自我修改說明、協作規則）會被 sparkagent 當成 7-9 則
-  獨立使用者訊息，各自跑一次模型、各回一則「收到，已設定」，Howard 真正的問題
+  獨立使用者訊息，各自跑一次模型、各回一則「收到，已設定」，維護者真正的問題
   排到最後才處理。**與模型智能無關**——模型從沒拿到完整 preamble，每次只看到
   一塊碎片。
   - 根因有兩層：① sparkagent 的 channel 是 `input()` 逐行 REPL，不解析我們送的
@@ -765,7 +818,7 @@ main.py 有動 → 需 `sfctl restart`。
   兩個修法（效能與功能同一個根因）：
   1. **截斷時保住 start marker**：長輸出（研究報告、長 build log）把 buffer
      撐到上限後，開頭的 `[[TG_REPLY_x]]` 被擠出去 → span 永遠配不出來 →
-     每則回覆都得等 30s fallback 兜底（Howard「愛回不回」的其中一條路徑），
+     每則回覆都得等 30s fallback 兜底（維護者「愛回不回」的其中一條路徑），
      而且每次重掃都註定失敗。現在截斷時把 start marker 接回保留區開頭。
   2. **便宜預檢**：掃描前先用 `str.find` 確認 marker 痕跡（實測 **0.016ms**，
      比全量掃描快 **1900 倍**）。找不到時**不直接放棄**——改用較長節流
@@ -779,7 +832,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.37 (2026-08-20)
 
 ### Features
-- **用量膠囊加 token 配速**（Howard 提：「wk 29%」單看不知道是快還是慢）。把週額度
+- **用量膠囊加 token 配速**（維護者提：「wk 29%」單看不知道是快還是慢）。把週額度
   平均攤到整個窗口，算出「今天應該用到幾 % 才會剛好用完」，疊在 `wk` 右邊：
 
   ```
@@ -821,12 +874,11 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.36 (2026-08-19)
 
 ### Fixes
-- **同一則回覆一直重送（Howard：「對話1跳針」）＋ 假的「送出失敗」警告**。
+- **同一則回覆一直重送（維護者：「對話1跳針」）＋ 假的「送出失敗」警告**。
   根因是 v0.29.34 P0-3 commit 模型的副作用：送出判定是**整批**的
   （任一收件人失敗＝整批 FAILED → 不進去重集合 → 下一輪重抽重送）。
   實際 log：兩個 chat（`5582043292`、`5617995311`）**把 bot 封鎖了**
-  （HTTP 403 `bot was blocked by the user`），於是每輪 flush 都判定失敗，
-  Howard 這個唯一收得到的收件人**每輪都再收一次同樣內容**，還附一則
+  （HTTP 403 `bot was blocked by the user`），於是每輪 flush 都判定失敗，維護者這個唯一收得到的收件人**每輪都再收一次同樣內容**，還附一則
   「回覆送出失敗」警告——而他其實每次都收到了。
   修法：改為**逐收件人判定**——
   1. `_send_text_checked` 回傳加 `permanent` 旗標，辨識永久性投遞失敗
@@ -912,7 +964,7 @@ main.py 有動 → 需 `sfctl restart`。
 
 - **長回合心跳**：主 agent 在等背景 sub 時，Claude Code 的 footer 一直掛著
   `esc to interrupt` → turn 永遠不算結束 → 30s fallback 永遠不觸發，背景任務
-  跑數小時這條路就靜默數小時（Howard 說的「愛回不回」）。現在 3 分鐘沒消息就
+  跑數小時這條路就靜默數小時（回報說的「愛回不回」）。現在 3 分鐘沒消息就
   開始回報進度：
   ```
   ⏳「調研者」還在跑 · 已 8 分 12 秒
@@ -959,7 +1011,7 @@ main.py 有動 → 需 `sfctl restart`。
 ### 測試
 
 新增 5 個測試檔（全套 21 → **26 檔，全綠**）：
-`tests_tg_marker_hijack.py`（P0-1，用 Howard 的實測輸入當測資）、
+`tests_tg_marker_hijack.py`（P0-1，用維護者的實測輸入當測資）、
 `tests_tg_history_saturation.py`（P0-2，含「舊邏輯掃到 0 行」的失明重現）、
 `tests_tg_send_commit.py`（P0-3/P0-4/P1-13，真的跑一輪 `_flush_loop`）、
 `tests_tg_reaction.py`（回執狀態機、失敗 3 次停用）、
@@ -975,7 +1027,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.32 (2026-08-15)
 
 ### Fixes
-- **側欄分頁點兩下改名被誤判成拖曳**（Howard 回報：最末端的分頁尤其中招）。
+- **側欄分頁點兩下改名被誤判成拖曳**（回報回報：最末端的分頁尤其中招）。
   根因：拖曳門檻只有 5px 且不分方向，雙擊的**第二次按下**只要手抖幾 px 就
   進入 drag → 改名永遠觸發不了。修法：(1) 雙擊時間窗（400ms）內的第二次
   mousedown **完全不啟動拖曳**（意圖是改名）；(2) 門檻 5px→9px 且要求
@@ -993,7 +1045,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.31 (2026-08-12)
 
 ### Features
-- **AI 帳號面板列出每個帳號的用量**（Howard 提：點開要看到全部帳號的用量）。原本面板
+- **AI 帳號面板列出每個帳號的用量**（維護者提：點開要看到全部帳號的用量）。原本面板
   只有帳號名稱與切換按鈕，用量只有右上膠囊那一個（目前 tab 的帳號）。現在每個已登入
   帳號各自帶一條水位：`5h 20% 重置 15:50　7d 17% 重置 08-18 03:59　查詢 12:30`，
   顏色沿用膠囊的門檻（60% 黃、85% 紅），footer 多一顆「重新查用量」。
@@ -1032,11 +1084,11 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.29 (2026-08-08)
 
 ### Features
-- **語音「Apply 確認」可關閉**（Howard 提：TG 傳語音每次都跳 ✅ Apply 很煩，
+- **語音「Apply 確認」可關閉**（維護者提：TG 傳語音每次都跳 ✅ Apply 很煩，
   記得有開關但其實沒接線）。原本語音轉錄後**一律**泊住＋跳 Apply/Cancel（寫死、
   無設定）。新增 `settings.voice_apply_gate`（預設 True＝維持確認；STT 有誤差時
   較安全），關閉時轉錄完直接把文字自動送進分頁、不再跳 Apply。設定頁 🎙 語音
-  轉錄 區新增「語音送出前先確認（Apply）」toggle。Howard 的設定已設為關。
+  轉錄 區新增「語音送出前先確認（Apply）」toggle。維護者的設定已設為關。
   bridge 邏輯 `sfctl reload` 即生效；UI toggle 需 `sfctl restart`。
   回歸測試：`tests_voice_gate.py` 4 案例。
 
@@ -1051,7 +1103,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.28 (2026-08-06)
 
 ### Fixes
-- **側欄模型徽章判讀不準**（Howard 08-06 截圖：tab13 顯示「Opus 4.6 ·
+- **側欄模型徽章判讀不準**（維護者 08-06 截圖：tab13 顯示「Opus 4.6 ·
   xhigh」、實際跑「Opus 5 · ultracode」）。三個根因逐一修：
   1. **`/clear` 會在同一個 claude process 裡輪替 session uuid**——spawn 的
      `--session-id` 與 nearest-birth 都釘在舊 transcript，badge 永遠顯示
@@ -1074,8 +1126,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.27 (2026-08-05)
 
 ### Fixes
-- **拖曳檔案沒帶路徑・第二層根因**（v0.29.26 修了 uri-list 缺檔名，Howard
-  重測仍無反應）。js:drop 足跡顯示這次更徹底：`types=["Files"]`——
+- **拖曳檔案沒帶路徑・第二層根因**（v0.29.26 修了 uri-list 缺檔名，維護者重測仍無反應）。js:drop 足跡顯示這次更徹底：`types=["Files"]`——
   **新版 macOS Finder 拖曳放上 pasteboard 的是 file-reference URL
   （`file:///.file/id=…`），WebKit 完全轉不出 text/uri-list**，DOM 端一條
   路徑都拿不到；blob fallback 又靜默失敗（無 onerror 監聽）。
@@ -1091,7 +1142,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.26 (2026-08-05)
 
 ### Fixes
-- **拖曳檔案進來沒帶上路徑**（Howard 08-05：拖 Finder 檔案毫無反應）。
+- **拖曳檔案進來沒帶上路徑**（維護者 08-05：拖 Finder 檔案毫無反應）。
   debug log 還原真相：drop 有觸發、也有寫入，但注入的是
   `/Users/neux/Downloads/`——**WebKit 對含非 ASCII（CJK）檔名的拖放，
   text/uri-list 可能只給到資料夾、檔名整段消失**（實案：遠東商銀_官網改版
@@ -1109,7 +1160,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.25 (2026-08-05)
 
 ### Fixes
-- **側欄縮窄時把「命名」擠掉、卻保留重複的模型徽章**（Howard 回報：應保留
+- **側欄縮窄時把「命名」擠掉、卻保留重複的模型徽章**（回報回報：應保留
   命名資訊，不是後面重複性高、低識別度的資訊）。根因：`.sb-label` 是
   `flex:1`（會收縮 + ellipsis），但 `.sb-model` 是 `flex-shrink:0`（永不收縮）
   → 窄的時候 label 先被吃掉、模型徽章反而全留（幾乎每列都是 Opus 4.8·xhigh，
@@ -1121,7 +1172,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.24 (2026-08-03)
 
 ### Fixes
-- **版號衝突會讓其他機器偵測不到 update**（Howard 回報）：`check_update` 原本
+- **版號衝突會讓其他機器偵測不到 update**（回報回報）：`check_update` 原本
   比對 version.json 的 semver（`remote_v > local_v`）。多個並行 session 撞同一
   版號時（近期常發生），舊機器看到 `remote_v == local_v` → 判定沒更新 →
   **永遠不更新**，即使程式碼其實變了。
@@ -1139,7 +1190,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.23 (2026-08-01)
 
 ### Fixes
-- **剛送出訊息就立刻收到「上一則回覆」的重複**（Howard 回報）：v0.29.21 的
+- **剛送出訊息就立刻收到「上一則回覆」的重複**（回報回報）：v0.29.21 的
   follow-up 監聽讓 has_user_msg 保持 True，觸發了 fallback 的一個潛在 bug——
   fallback 的等待時鐘用 `total = now - first_output_time`，但 `first_output_time`
   在忙碌分頁（持續有輸出）會停在很久以前 → `total` 變幾萬秒（log 實測 36902s）→
@@ -1156,7 +1207,7 @@ main.py 有動 → 需 `sfctl restart`。
 
 ### Fixes
 - **TG `/effort`／`/model` 明明套用成功卻回「已送出但沒在畫面看到確認」**
-  （Howard 07-27：tab13 選 ultracode，畫面實際已顯示
+  （維護者 07-27：tab13 選 ultracode，畫面實際已顯示
   `Set effort level to ultracode…`、狀態列也變 ultracode）。
   根因：確認回讀用 `_slot_display(slot)[-N:]`——pyte 虛擬螢幕固定 50 列，
   實際終端較矮（~36-44 列）時內容只佔上半部，**尾端切片幾乎全是空白列**，
@@ -1168,7 +1219,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.21 (2026-07-26)
 
 ### Fixes
-- **Follow-up 連續訊息只回一則、背景 subagent 完成的訊息漏掉**（Howard 回報）：
+- **Follow-up 連續訊息只回一則、背景 subagent 完成的訊息漏掉**（回報回報）：
   TG-wrap 分頁在**第一則 marker 回覆後就清掉** `expect_marker`/`has_user_msg`，
   之後 AI 再包的 `[[TG_REPLY]]` 訊息（例如「背景 worker 已啟動…好了通知你」
   後，worker 跑完的完成通知）落進 drain 路徑、只做 signal 偵測、**不轉發** →
@@ -1184,7 +1235,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.20 (2026-07-26)
 
 ### Features
-- **TG `/effort` — 遠端調 active 分頁的推理深度（claude + codex 統一）**（Howard 提）。
+- **TG `/effort` — 遠端調 active 分頁的推理深度（claude + codex 統一）**（維護者提）。
   兩邊原生 UX 不同，收斂成一組 TG inline 按鈕：
   - **claude**：原生 `/effort` 是滑桿（low/medium/high/xhigh/max/ultracode）。
     帶參數 `/effort <level>` 會跳 Yes/No 確認——`_apply_effort_claude` 送層級後
@@ -1200,7 +1251,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.19 (2026-07-24)
 
 ### Fixes
-- **假警報「⚠ 無法確認訊息已送進」——實際有送進、回覆隨後就到**（Howard
+- **假警報「⚠ 無法確認訊息已送進」——實際有送進、回覆隨後就到**（維護者
   07-21/07-24 截圖，HR 分頁連兩天中招）。根因：8s 驗證窗有結構性盲區——快
   回合在兩次 0.5s poll 之間就開始又結束（'esc to interrupt' footer 抓不到），
   extraction 又走 marker 路徑、模型漏吐 marker 時 fallback 最長等 30s →
@@ -1225,7 +1276,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.18 (2026-07-15)
 
 ### Features
-- **介面內語音輸入（STT）麥克風按鈕**（Howard 提：不必再透過 Telegram 傳語音）。
+- **介面內語音輸入（STT）麥克風按鈕**（維護者提：不必再透過 Telegram 傳語音）。
   終端右下角新增懸浮 🎙：點一下開始錄音（紅色脈動＋計時，上限 5 分鐘，✕ 可取消），
   再點一下停止 → 走既有 STT 鏈（plugin → 本地 whisper → 遠端 provider）＋
   LLM 潤稿 → 注入**當前分頁**：
@@ -1247,7 +1298,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.17 (2026-07-14)
 
 ### Fixes
-- **/fetch 之後容易「斷掉」、變成不自動回覆**（Howard 回報）：`_flush_loop`
+- **/fetch 之後容易「斷掉」、變成不自動回覆**（回報回報）：`_flush_loop`
   的 while-body 沒有頂層 try/except，per-slot 轉發路徑上 `_extract_new_text`、
   `_extract_file_paths`、`split_for_telegram`、主路徑的 board/signal detect
   都**沒有防護**——任一在怪異畫面/回覆內容上拋例外，就會衝出 flush 迴圈、
@@ -1261,7 +1312,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.16 (2026-07-14)
 
 ### Changes
-- **初次對話的 INIT_PROMPT 注入改為預設關閉＋新增全域開關**（Howard 2026-07-14：
+- **初次對話的 INIT_PROMPT 注入改為預設關閉＋新增全域開關**（回報（2026-07-14）：
   觸發時機不對、已非必要、找不到開關）。原本只有 preset 層級的 `inject_init`
   override、沒有全域開關。新增 `settings.inject_init_prompt`（預設 `false`），
   設定頁新增「首次訊息注入 INIT 提示」toggle；只 gate `_init_pending` 的武裝
@@ -1274,7 +1325,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.15 (2026-07-12)
 
 ### Fixes
-- **回覆傳不回 TG、像失聯、都要自己 /fetch**（Howard 回報）：TG-wrap 分頁的
+- **回覆傳不回 TG、像失聯、都要自己 /fetch**（回報回報）：TG-wrap 分頁的
   回覆要靠模型吐出 `[[TG_REPLY_xxx]]` marker 才會轉發，但模型有時忘了或吐錯
   marker，舊版就**永遠等一個不會出現的 marker**、每 tick 重置計時 → 回覆
   無限卡住不轉發，使用者只能手動 /fetch 才看得到（/fetch 直接讀畫面、繞過
@@ -1289,7 +1340,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.14 (2026-07-11)
 
 ### Fixes
-- **容易掉 TG 訊息、影片檔尤其**（Howard 回報）：三個靜默丟棄點一起修——
+- **容易掉 TG 訊息、影片檔尤其**（回報回報）：三個靜默丟棄點一起修——
   1. **影片完全沒處理**：`_handle_update` 只認 photo/doc/voice/audio，
      `video`/`video_note`/`animation` 全漏 → 傳影片（無 caption）直接靜默
      丟棄。現在都會下載成檔案附件轉發。
@@ -1303,7 +1354,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.13 (2026-07-09)
 
 ### Fixes
-- **靜默自動更新反覆重啟、卡「本次更新」彈窗、TG 收不到**（Howard 回報「非常嚴重」）：
+- **靜默自動更新反覆重啟、卡「本次更新」彈窗、TG 收不到**（回報回報「非常嚴重」）：
   根因是 web/index.html 每 5 分鐘的週期檢查在 `autoUpdate` 開啟時會**靜默
   `git pull`（do_update）**把未確認的遠端改動拉到磁碟，接著 reload/restart →
   啟動時版本一變就彈「本次更新」modal，整個過程把總控分頁的對話打斷，使用者
@@ -1364,10 +1415,10 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.10 (2026-07-07)
 
 ### Fixes
-- **「自動派工」開關關了還是會派工**（Howard 回報）：根因有二——
+- **「自動派工」開關關了還是會派工**（回報回報）：根因有二——
   1. `auto_delegate_enabled`（設定頁「自動派工（實驗性）」）**後端沒有任何
      consumer**，是顆沒接線的死開關；
-  2. 真正每回合推派工的指令不在 master preamble（Howard 早已關掉
+  2. 真正每回合推派工的指令不在 master preamble（維護者早已關掉
      `master_turn_preamble_enabled`），而是藏在 **TG per-turn prompt 的
      「Default coordination: … prefer `sfctl delegate` …」段落**，不受任何
      開關管。
@@ -1381,7 +1432,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.9 (2026-07-07)
 
 ### Fixes
-- **Windows：TG 橋接訊息卡在輸入框送不出去（codex 最嚴重）**（Howard 2026-07-07 回報）。
+- **Windows：TG 橋接訊息卡在輸入框送不出去（codex 最嚴重）**（回報 2026-07-07）。
   根因鏈：Windows/ConPTY 把注入的 payload 逐字合成 key events，client 端 drain 大
   payload 遠超過固定 0.3s——codex（crossterm 讀 win32 事件，拿不到 bracketed-paste
   框架，靠「連續輸入 burst」偵測貼上）在 burst 窗內收到提交的 CR 會把它當**換行**
@@ -1407,12 +1458,12 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.7 (2026-07-06)
 
 ### Fixes
-- **App 內「檢查更新」偵測不到剛推的版本**（Howard 2026-07-06：遠端撞版那台抓不到更新）：`check_update` 讀 `raw.githubusercontent.com/.../main/version.json`，這個 Fastly CDN 有 ~5 分鐘快取，剛 push 完會餵**舊的 version.json** → 該時段檢查的機器看不到新版。修法：加 cache-bust query（`?t=<epoch>`）＋ `Cache-Control/Pragma: no-cache`，永遠讀到剛推的值。順手硬化版本比較：非數字段（channel 後綴／WIP tag）不再讓整個檢查拋例外而誤判「無更新」。
+- **App 內「檢查更新」偵測不到剛推的版本**（回報（2026-07-06）：遠端撞版那台抓不到更新）：`check_update` 讀 `raw.githubusercontent.com/.../main/version.json`，這個 Fastly CDN 有 ~5 分鐘快取，剛 push 完會餵**舊的 version.json** → 該時段檢查的機器看不到新版。修法：加 cache-bust query（`?t=<epoch>`）＋ `Cache-Control/Pragma: no-cache`，永遠讀到剛推的值。順手硬化版本比較：非數字段（channel 後綴／WIP tag）不再讓整個檢查拋例外而誤判「無更新」。
 
 ## v0.29.6 (2026-07-06)
 
 ### Features
-- **TG 指令選單／`/list` 帶上模型＋思考深度**（Howard 提，比照桌面側邊欄的 model badge）：Telegram 的 `/1 /2 …` 切換選單描述與 `/list` 輸出，每個 session 現在都顯示「模型 · effort」，如 `Switch to SF · Opus 4.8 · xhigh`、`/4 HR 〔Sonnet 5 · xhigh〕`。逐分頁準確（走 main.py `get_session_model_info`，用該 session 真實 cwd/session_id 偵測，與側邊欄同一來源），Claude／Codex 皆支援；非 AI 分頁或偵測不到就不加、不炸。後端新增 bridge callback `on_model_info`。回歸測試 `tests_tg_model_badge.py`。
+- **TG 指令選單／`/list` 帶上模型＋思考深度**（維護者提，比照桌面側邊欄的 model badge）：Telegram 的 `/1 /2 …` 切換選單描述與 `/list` 輸出，每個 session 現在都顯示「模型 · effort」，如 `Switch to SF · Opus 4.8 · xhigh`、`/4 HR 〔Sonnet 5 · xhigh〕`。逐分頁準確（走 main.py `get_session_model_info`，用該 session 真實 cwd/session_id 偵測，與側邊欄同一來源），Claude／Codex 皆支援；非 AI 分頁或偵測不到就不加、不炸。後端新增 bridge callback `on_model_info`。回歸測試 `tests_tg_model_badge.py`。
 
 ## v0.29.5 (2026-07-06)
 
@@ -1438,19 +1489,19 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.4 (2026-07-06)
 
 ### Fixes
-- **TG 誤報「popup detected (UserNotificationCenter)」** (Howard 2026-07-06，人不在電腦前一直收到)：stall 警告的阻擋彈窗偵測把 `UserNotificationCenter` 當成 TCC 對話框，但它其實擁有**所有 macOS 通知橫幅**（Slack/Mail/行事曆…）。任何 app 跳個橫幅、又剛好有 session 在等回覆，就誤報成「有彈窗擋住、去把它關掉」——橫幅根本不擋前景，訊息也無從執行。修法：把 `UserNotificationCenter` 移出阻擋清單，只留真正會 modal 阻擋的 `SecurityAgent`（密碼/鑰匙圈）、`CoreServicesUIAgent`（隔離確認）、`universalAccessAuthWarn`（輔助使用）；並要求命中視窗需有實際尺寸（≥120×60）且非透明，過濾 0x0／幽靈系統視窗。回歸測試 `tests_stall_popup.py`（8 情境，含假 Quartz 視窗清單）。
+- **TG 誤報「popup detected (UserNotificationCenter)」** (回報 2026-07-06)：stall 警告的阻擋彈窗偵測把 `UserNotificationCenter` 當成 TCC 對話框，但它其實擁有**所有 macOS 通知橫幅**（Slack/Mail/行事曆…）。任何 app 跳個橫幅、又剛好有 session 在等回覆，就誤報成「有彈窗擋住、去把它關掉」——橫幅根本不擋前景，訊息也無從執行。修法：把 `UserNotificationCenter` 移出阻擋清單，只留真正會 modal 阻擋的 `SecurityAgent`（密碼/鑰匙圈）、`CoreServicesUIAgent`（隔離確認）、`universalAccessAuthWarn`（輔助使用）；並要求命中視窗需有實際尺寸（≥120×60）且非透明，過濾 0x0／幽靈系統視窗。回歸測試 `tests_stall_popup.py`（8 情境，含假 Quartz 視窗清單）。
 
 ## v0.29.3 (2026-07-06)
 
 ### Features
-- **TG 端 `/model` 互動選單**（Howard 提）：手機發 `/model` → bridge 把原生指令送進 active 分頁開 picker → 解析選項後回 TG **inline 按鈕**（含目前模型 ✔ 標記、effort 狀態、取消鈕）。點按鈕即選定——實測 CC 2.1.x picker **數字鍵＝立即選定並存為新 session 預設（免 Enter）**，所以按鈕只送數字；取消鈕送 Esc 關閉 picker、模型不變。分頁忙碌中（回合進行）會擋下並提示，不會把指令戳進生成中的畫面。
+- **TG 端 `/model` 互動選單**（維護者提）：手機發 `/model` → bridge 把原生指令送進 active 分頁開 picker → 解析選項後回 TG **inline 按鈕**（含目前模型 ✔ 標記、effort 狀態、取消鈕）。點按鈕即選定——實測 CC 2.1.x picker **數字鍵＝立即選定並存為新 session 預設（免 Enter）**，所以按鈕只送數字；取消鈕送 Esc 關閉 picker、模型不變。分頁忙碌中（回合進行）會擋下並提示，不會把指令戳進生成中的畫面。
 - 附帶修正：**通用選單偵測被 picker chrome 行 reset**——「◉ xHigh effort ←/→ to adjust」這類行會把已收集的選項清空，這正是 /model 選單過去偵測不到的根因；現在 chrome 行直接略過（◉/←→/to adjust）。
 - 回歸測試：`tests_tg_model_menu.py` 6 案例（picker 測資為實機截取畫面）。
 
 ## v0.29.2 (2026-07-06)
 
 ### Fixes
-- **sfctl/TG 改名不會反映到畫面**（Howard:「你說 tab 有 rename 我怎麼看都沒有」）：
+- **sfctl/TG 改名不會反映到畫面**（維護者:「你說 tab 有 rename 我怎麼看都沒有」）：
   `rename_session` 只更新後端＋bridge＋config，從未推給 webview——UI 靠
   1.5s 輪詢撿，輪詢失效時 tab 名永遠停在舊值，形成「後端說改了、畫面沒變」
   各說各話。現在 rename 直接 `evaluate_js` 推 `__sfApplyLabel`（改 label
@@ -1467,7 +1518,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.1 (2026-07-06)
 
 ### Fixes
-- **TG 訊息偶發送不進分頁（Howard:「/fetch 之後 prompt 沒反應、/fetch 也沒變化」）**。
+- **TG 訊息偶發送不進分頁（維護者:「/fetch 之後 prompt 沒反應、/fetch 也沒變化」）**。
   根因：busy guard 與送達驗證的訊號源是 `peek_fn()`（最後 ~1KB 原始 PTY
   bytes）——那是「歷史」不是「現在」。turn 結束的收尾重繪若不足 1KB，舊的
   `esc to interrupt` footer 殘留在 ring 裡：
@@ -1486,7 +1537,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.29.0 (2026-07-05)
 
 ### Features
-- **OpenCode 分頁支援上滾歷史對話**（Howard requested：第 9 個 tab 用另一套
+- **OpenCode 分頁支援上滾歷史對話**（維護者 requested：第 9 個 tab 用另一套
   harness 跑開源模型，上滑查不到歷史）。根因：opencode 的 TUI 原地重繪
   （Bubble Tea 式），捲出視窗的內容從不進 terminal scrollback / pyte history
   （實測 pyte 只有一屏 25 行）——terminal 來源天生只有「目前這一屏」。
@@ -1538,14 +1589,14 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.27.0 (2026-07-05)
 
 ### Features
-- **STT 新增 `remote_first` 模式**（Howard requested：中英夾雜要更準）：先打遠端 STT provider，連不到才 fallback 回本機 whisper。用來把語音辨識導到 Spark（190）GPU 上的 **Qwen3-ASR-1.7B** server（:9700，含 s2twp 繁體轉換），中英夾雜辨識實測明顯優於 Mac 端 mlx-whisper（範例句 Spark/Whisper/Turbo 專有名詞全對，3.5s）。
+- **STT 新增 `remote_first` 模式**（維護者 requested：中英夾雜要更準）：先打遠端 STT provider，連不到才 fallback 回本機 whisper。用來把語音辨識導到 Spark（190）GPU 上的 **Qwen3-ASR-1.7B** server（:9700，含 s2twp 繁體轉換），中英夾雜辨識實測明顯優於 Mac 端 mlx-whisper（範例句 Spark/Whisper/Turbo 專有名詞全對，3.5s）。
   - 對比：原本想部署 whisper-large-v3 到 Spark，但 GPU 已被 vLLM(64G)+Ollama(22G) 佔滿而 OOM；改用既有的 Qwen3-ASR server（本就更適合中文/code-switching），零額外 GPU 成本。
   - 設定走 `config.bridge.stt_backend = "remote_first"` + `stt_providers`（Spark :9700，field `audio`，result key `text`）。
 
 ## v0.26.0 (2026-07-05)
 
 ### Features
-- **語音整理接 Spark AI 模型 + 可切模型**（Howard requested）：語音 Typeless 整理改指向 Spark（190）Ollama 的 `qwythos:9b`，補上完整中英文標點、去贅字、修辨識錯字。實測 warm ~1.8s、cold ~12s（Ollama keep-alive 後保持熱）。
+- **語音整理接 Spark AI 模型 + 可切模型**（維護者 requested）：語音 Typeless 整理改指向 Spark（190）Ollama 的 `qwythos:9b`，補上完整中英文標點、去贅字、修辨識錯字。實測 warm ~1.8s、cold ~12s（Ollama keep-alive 後保持熱）。
   - 新增 TG `/voice` 指令：`/voice` 看目前設定 + 端點可用模型清單、`/voice <模型>` 切模型、`/voice on|off` 開關整理。
   - CLEAN prompt 強化標點指示（明列 `，。、？！：「」`）。
   - 模型自動挑選跳過 OCR / vision / embed / rerank 模型（避免 deepseek-ocr 被誤選）。
@@ -1554,7 +1605,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.25.0 (2026-07-05)
 
 ### Features
-- **語音 Apply 閘門（Typeless 式）**（Howard requested）：TG 傳語音轉錄+refine 後**不再自動送出**，改先顯示整理後文字 + inline `✅ Apply / ✕ Cancel`。按 Apply 才把 prompt 送進 session，按 Cancel 就丟棄。
+- **語音 Apply 閘門（Typeless 式）**（維護者 requested）：TG 傳語音轉錄+refine 後**不再自動送出**，改先顯示整理後文字 + inline `✅ Apply / ✕ Cancel`。按 Apply 才把 prompt 送進 session，按 Cancel 就丟棄。
   - STT 會糊，這道閘門讓你送出前先過目、避免錯字直接餵給 AI。
   - 目標 session 在**按 Apply 當下**才解析，中途切分頁也 OK。
   - Apply 走既有完整 forward pipeline（preamble 包裝、選單偵測、`_send` + 送達驗證），行為與手打訊息一致。
@@ -1563,7 +1614,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.24.0 (2026-07-04)
 
 ### Features
-- **`/break` — TG 遠端中斷 AI**（Howard requested）：手機在目前分頁送 `/break`（或 `/stop`、`/esc`、`/interrupt`、`/中斷`、`/打斷`）即對該分頁送出 ESC，打斷 AI 正在跑的 turn（Claude Code / Codex 都吃 ESC）。
+- **`/break` — TG 遠端中斷 AI**（維護者 requested）：手機在目前分頁送 `/break`（或 `/stop`、`/esc`、`/interrupt`、`/中斷`、`/打斷`）即對該分頁送出 ESC，打斷 AI 正在跑的 turn（Claude Code / Codex 都吃 ESC）。
   - 送 ESC 前先跑 `prepare_fn` 退出 tmux copy-mode，確保 ESC 落在 CLI 而非 copy-mode。
   - 只送單一 ESC——Claude 連按兩次 ESC 會進歷史導覽而非中斷。
   - 走 `write_lock` 序列化，不與其他注入交錯；`/help` 已補上說明。
@@ -1571,7 +1622,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.23.3 (2026-07-06)
 
 ### Fixes
-- **新分頁打 `/model` 被 INIT_PROMPT 灌爆——init 注入時機修正**（Howard 回報「都會被 prompt inject、好長好難用、觸發時機是錯的」）：
+- **新分頁打 `/model` 被 INIT_PROMPT 灌爆——init 注入時機修正**（回報回報「都會被 prompt inject、好長好難用、觸發時機是錯的」）：
   - 根因：web UI 的 init 注入以「第一個含內容的 write_input chunk」觸發，而 xterm 逐鍵送字——你打 `/` 的那一鍵就被當成第一則訊息，INIT_PROMPT＋「User's first message: /」直接進 composer，斜線指令選單整個壞掉。
   - 修法：**斜線指令不是第一則訊息**。行首 `/` 的輸入不消耗 init prompt（留給下一則真實訊息），並以 `_init_hold` 狀態機撐過逐鍵輸入（`/`→`m`→`o`…），該行送出（Enter）才解除——中途任何一鍵都不會再觸發注入；`/model` 選單的方向鍵/Enter 也不受影響。
   - TG 路徑同步修正：`/model` 等 CLI 指令從手機轉發時同樣不消耗 init。
@@ -1580,7 +1631,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.23.2 (2026-07-03)
 
 ### Fixes
-- **上滾來源優先序反轉——終端來源為主，transcript 降為 fallback**（Howard 實測 v0.23.1 後定調：transcript 渲染整面工具行牆「越差越多」）：
+- **上滾來源優先序反轉——終端來源為主，transcript 降為 fallback**（維護者實測 v0.23.1 後定調：transcript 渲染整面工具行牆「越差越多」）：
   - 上滾 overlay 回到 pyte/tmux 終端 frame 為主——本來就跟活畫面同一個樣子，重複問題已由 v0.23.0 的統一去重管線處理。實測發現 **Claude Code v2.1.x 已不用 alt-screen**（normal buffer 渲染），tmux scrollback 就是完整正確的歷史，深度 1,000+ 行、原樣 SGR。
   - transcript 渲染只在終端來源拿不出內容時救場（典型：app 剛重啟、pyte 從零開始且 pane 在 alt-screen）。
   - fallback 用的 transcript 渲染同步改善：**連續工具呼叫收合成一行摘要**（`⏺ Bash ×6、Edit ×2`，不再是 20 行工具牆）、`[Image: …]` 縮為 📎 圖片。
@@ -1589,14 +1640,14 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.23.1 (2026-07-03)
 
 ### Fixes
-- **上滾 transcript overlay「樣式跟活畫面不同」**（Howard 截圖回報）：
+- **上滾 transcript overlay「樣式跟活畫面不同」**（維護者截圖回報）：
   - **markdown 現在渲染成 ANSI**：`**粗體**`、行內 `code`、`#` 標題（粗體青色）、`-`/`1.` 列點記號上色、`>` 引用淡化、``` 圍欄 code 區塊、`---` 轉分隔線——不再原樣露出星號反引號，讀起來接近活畫面 TUI。
   - **harness 雜訊不再直出**：transcript 裡 user 角色夾帶的 `<task-notification>…</task-notification>`（背景 agent 回報，含整包 result/usage XML）摺疊成一行 dim 摘要「⏺ <summary>（內容略）」、`<system-reminder>` 整段移除——活畫面 TUI 本來就不顯示這些，overlay 對齊。
   - 回歸測試 +1（`test_transcript_render_fidelity`）。
 
 ## v0.23.0 (2026-07-03)
 
-一次完整復盤驅動的大版本：P0→P2 全清（Howard 核可的優化計畫），四套回歸測試全綠。
+一次完整復盤驅動的大版本：P0→P2 全清（維護者核可的優化計畫），四套回歸測試全綠。
 
 ### Features
 - **Session 列顯示模型＋thinking effort 徽章**：左側 session 列每個分頁自動偵測目前跑的模型與 effort（如 `Fable 5 · xhigh`、`GPT-5.5 · medium`），Claude（transcript 最新 assistant 的 model＋全域 effortLevel）與 Codex（rollout 最新 turn_context，退 config.toml）都支援；`/model` 切換後下一輪自動更新。stat/mtime 快取，500ms 輪詢無感。設定 → 「Session 顯示模型標籤」可關（預設開）。
@@ -1662,17 +1713,17 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.22.3 (2026-06-30)
 
 ### Changes
-- **切換同供應商的分頁不再重查水位，直接沿用畫面上的讀數**：膠囊一次只跟著一個供應商（claude 或 codex）。原本每切一次分頁都重打一次 probe，但 claude→claude 切來切去數字根本一樣，白查。改成：切到的新分頁若對應的供應商跟膠囊現在顯示的相同 → 什麼都不做；只有 claude↔codex 真的換了供應商才動作，且優先沿用該供應商 2 分鐘內的快取讀數，沒有新鮮快取才真的去 probe。等於只有換供應商、且讀數過期時才會 call，來回切不會一直重打。供應商判定對齊後端（codex 分頁→codex，其餘含 claude／非 AI 分頁→claude）。Howard 2026-06-30 提。
+- **切換同供應商的分頁不再重查水位，直接沿用畫面上的讀數**：膠囊一次只跟著一個供應商（claude 或 codex）。原本每切一次分頁都重打一次 probe，但 claude→claude 切來切去數字根本一樣，白查。改成：切到的新分頁若對應的供應商跟膠囊現在顯示的相同 → 什麼都不做；只有 claude↔codex 真的換了供應商才動作，且優先沿用該供應商 2 分鐘內的快取讀數，沒有新鮮快取才真的去 probe。等於只有換供應商、且讀數過期時才會 call，來回切不會一直重打。供應商判定對齊後端（codex 分頁→codex，其餘含 claude／非 AI 分頁→claude）。維護者 2026-06-30 提。
 
 ## v0.22.2 (2026-06-30)
 
 ### Changes
-- **水位膠囊改成事件驅動更新，不再固定每 5 分鐘輪詢**：水位只有在「跑了一個回合」之後才會變動，固定計時器多半是重撈同一個數字。改成跟著當前分頁的對話活動走：(1) 你**下了新 prompt／回合開始**（分頁由閒置轉忙）→ 立刻刷新（15 秒內不重複，避免一來一回狂打）；(2) 回合**結束**（由忙轉閒）→ 等 4 秒沉澱再刷新，短回合連發只會合併成一次、且抓得到回合後的最新數字；(3) **都沒動靜** → 每 15 分鐘輪詢一次當 fallback（每次刷新都重置這個倒數，只在真的安靜一段時間後才會跑）。切換分頁仍即時刷新。等於有事才查、沒事 15 分鐘看一次。Howard 2026-06-30 提。
+- **水位膠囊改成事件驅動更新，不再固定每 5 分鐘輪詢**：水位只有在「跑了一個回合」之後才會變動，固定計時器多半是重撈同一個數字。改成跟著當前分頁的對話活動走：(1) 你**下了新 prompt／回合開始**（分頁由閒置轉忙）→ 立刻刷新（15 秒內不重複，避免一來一回狂打）；(2) 回合**結束**（由忙轉閒）→ 等 4 秒沉澱再刷新，短回合連發只會合併成一次、且抓得到回合後的最新數字；(3) **都沒動靜** → 每 15 分鐘輪詢一次當 fallback（每次刷新都重置這個倒數，只在真的安靜一段時間後才會跑）。切換分頁仍即時刷新。等於有事才查、沒事 15 分鐘看一次。維護者 2026-06-30 提。
 
 ## v0.22.1 (2026-06-30)
 
 ### Fixes
-- **水位膠囊查不到時不再整顆消失**：v0.22.0 的右上角 AI 用量水位膠囊，只要 fetch 不到水位（沒登入供應商、抓不到資料、後端例外）就直接 `display:none` 把整顆膠囊藏掉——看起來像功能壞了，膠囊在頂列的位置也跟著消失。改為保留膠囊、改顯示灰字佔位狀態：(1) 抓到供應商但沒水位（多半沒登入）→ `用量 查不到`，tooltip 提示「請確認已登入 <claude/codex>」；(2) 後端 fetch 例外 → `用量 ⚠`，tooltip 帶錯誤訊息；(3) IPC/JS 例外 → 有上一次讀數就保留並淡化（沿用舊行為），沒有才顯示 `用量 ⚠`。三種狀態都維持原位置、仍可點擊開完整水位彈窗重試。Howard 2026-06-30 回報。
+- **水位膠囊查不到時不再整顆消失**：v0.22.0 的右上角 AI 用量水位膠囊，只要 fetch 不到水位（沒登入供應商、抓不到資料、後端例外）就直接 `display:none` 把整顆膠囊藏掉——看起來像功能壞了，膠囊在頂列的位置也跟著消失。改為保留膠囊、改顯示灰字佔位狀態：(1) 抓到供應商但沒水位（多半沒登入）→ `用量 查不到`，tooltip 提示「請確認已登入 <claude/codex>」；(2) 後端 fetch 例外 → `用量 ⚠`，tooltip 帶錯誤訊息；(3) IPC/JS 例外 → 有上一次讀數就保留並淡化（沿用舊行為），沒有才顯示 `用量 ⚠`。三種狀態都維持原位置、仍可點擊開完整水位彈窗重試。維護者 2026-06-30 回報。
 
 ## v0.22.0 (2026-06-29)
 
@@ -1698,10 +1749,10 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.20.3 (2026-06-28)
 
 ### Fixes
-- **TG 收到 Codex 回覆被重複多次、混入「›Explain this codebase」**：當回覆比終端 viewport 長時，Codex/Claude 的 TUI 在串流中會捲動並重繪——把同一塊內容以重疊視窗一再吐進線性化的 PTY 流，於是 `[[TG_REPLY]]` 起訖標記之間夾了好幾幀重複行，原本只去重「相鄰重複行」的清理擋不掉非相鄰重複，整段被 `split_for_telegram` 切成多則超長重複訊息送出。修正三處：(1) `_marker_spans` 改為「每個 end 配對最近的 start」（tightest pairing），避免重繪插入的新 start 讓首個 start→遠端 end 貪婪吃進中間整段殘影；(2) `clean_mobile_marker_response` 改為全域行去重（保留首次出現）並清掉殘留的 `[[TG_REPLY_xxx]]` token，把捲動重繪壓回唯一行；(3) `filters.json` echo_keywords 補上 Codex 空輸入框預設提示 `explain this codebase`，連同既有 `summarize recent commits`／`switch models or reasoning` 一併在 strip 階段濾掉，標記內也不再殘留 composer footer。標記存在時 Telegram 仍只送「標記內最後一個完整 block」，絕不 fallback 整個終端畫面。Howard 2026-06-28 回報。
+- **TG 收到 Codex 回覆被重複多次、混入「›Explain this codebase」**：當回覆比終端 viewport 長時，Codex/Claude 的 TUI 在串流中會捲動並重繪——把同一塊內容以重疊視窗一再吐進線性化的 PTY 流，於是 `[[TG_REPLY]]` 起訖標記之間夾了好幾幀重複行，原本只去重「相鄰重複行」的清理擋不掉非相鄰重複，整段被 `split_for_telegram` 切成多則超長重複訊息送出。修正三處：(1) `_marker_spans` 改為「每個 end 配對最近的 start」（tightest pairing），避免重繪插入的新 start 讓首個 start→遠端 end 貪婪吃進中間整段殘影；(2) `clean_mobile_marker_response` 改為全域行去重（保留首次出現）並清掉殘留的 `[[TG_REPLY_xxx]]` token，把捲動重繪壓回唯一行；(3) `filters.json` echo_keywords 補上 Codex 空輸入框預設提示 `explain this codebase`，連同既有 `summarize recent commits`／`switch models or reasoning` 一併在 strip 階段濾掉，標記內也不再殘留 composer footer。標記存在時 Telegram 仍只送「標記內最後一個完整 block」，絕不 fallback 整個終端畫面。維護者 2026-06-28 回報。
 
 ### Fixes
-- **Idle-reaper 交接訊息卡在輸入框沒送出**：本機模式（TG bridge 未 active）下，`_write_lifecycle_handoff` 用 naive `target.write(compact + "\r")` 直接寫進總控 PTY，在 Claude/Codex TUI（總控 mid-turn 或輸入行有殘留）下那個 `\r` 常被忽略 → 交接文字累在輸入框、沒提交成一輪。改用既有可靠提交路徑 `_send_text_to_session(target, compact, submit=True)`（tmux bracketed-paste 一次成型 + 貼上完成才送分離的 Enter）。Howard 2026-06-27 實際踩到（idle_reaper 關閉 s75 後交接卡住）。
+- **Idle-reaper 交接訊息卡在輸入框沒送出**：本機模式（TG bridge 未 active）下，`_write_lifecycle_handoff` 用 naive `target.write(compact + "\r")` 直接寫進總控 PTY，在 Claude/Codex TUI（總控 mid-turn 或輸入行有殘留）下那個 `\r` 常被忽略 → 交接文字累在輸入框、沒提交成一輪。改用既有可靠提交路徑 `_send_text_to_session(target, compact, submit=True)`（tmux bracketed-paste 一次成型 + 貼上完成才送分離的 Enter）。維護者 2026-06-27 實際踩到（idle_reaper 關閉 s75 後交接卡住）。
 
 ## v0.20.1 (2026-06-25)
 
