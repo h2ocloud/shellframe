@@ -46,8 +46,12 @@ DEDUP_SRC = m.group(0)
 
 # 下面 harness 註冊的 customKeyEventHandler 是 index.html 那道讓渡的等價複製。
 # 這行斷言確保它沒被拿掉——不然測試會在「功能已被移除」的情況下繼續全綠。
-assert "_imeComposing && _imeComposingSince" in html, \
-    "web/index.html 少了 composition 進行中的鍵盤讓渡"
+assert "_imeComposeStart[sid]" in html, \
+    "web/index.html 少了 composition 進行中的鍵盤讓渡（per-tab 狀態）"
+# composition 事件必須委派在 pane 上：綁 xterm 的 helper textarea 本身，一旦它被
+# 重建 listener 就永久失效，讓渡跟著失效 → 注音符號會整串進 PTY。
+assert "pane.addEventListener('compositionstart'" in html, \
+    "composition 事件要委派在 pane，不能綁 textarea 元素"
 
 PAGE = """<!doctype html><meta charset="utf-8">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
@@ -63,25 +67,28 @@ const ta = document.querySelector('textarea.xterm-helper-textarea');
 const dedup = _makeImeDedup();
 // 跟 web/index.html 一樣的接法：composition 事件餵給去重器，它才知道
 // 「這一次 commit 的內容是什麼」。少了這兩行就只剩 400ms 後備規則。
-let _imeComposing = false, _imeComposingSince = 0;
-ta.addEventListener('compositionstart', () => {
-  _imeComposing = true; _imeComposingSince = Date.now(); dedup.started();
-});
-ta.addEventListener('compositionend', (e) => {
-  _imeComposing = false; _imeComposingSince = 0; dedup.composed(e && e.data);
-});
+// 與 index.html 一樣委派在容器上，而不是綁 textarea 元素本身
+const paneEl = document.getElementById('t');
+const _cs = {};
+paneEl.addEventListener('compositionstart', () => { _cs.s1 = Date.now(); dedup.started(); });
+paneEl.addEventListener('compositionend', (e) => { delete _cs.s1; dedup.composed(e && e.data); });
 // index.html 那道讓渡的等價複製：composition 進行中鍵盤完全歸 IME。
 window._guard = function (ev) {
   if (ev.type !== 'keydown') return true;
-  if (_imeComposing && _imeComposingSince && Date.now() - _imeComposingSince < 30000) {
-    return false;
-  }
+  const st = _cs.s1;
+  if (st && Date.now() - st < 30000) return false;
   return true;
 };
-window._setComposing = function (on) {
-  _imeComposing = on; _imeComposingSince = on ? Date.now() : 0;
+window._setComposing = function (on) { if (on) _cs.s1 = Date.now(); else delete _cs.s1; };
+window._ageComposing = function (ms) { if (_cs.s1) _cs.s1 -= ms; };
+// 委派的價值：把 textarea 整個換掉，composition 事件仍要被接到
+window._rebuildTextarea = function () {
+  const old = paneEl.querySelector('textarea.xterm-helper-textarea');
+  const fresh = document.createElement('textarea');
+  fresh.className = old.className;
+  old.replaceWith(fresh);
+  return fresh;
 };
-window._ageComposing = function (ms) { _imeComposingSince -= ms; };
 term.attachCustomKeyEventHandler(window._guard);
 window.RAW = [];      // xterm 實際送出的（去重前）
 window.OUT = [];      // 去重後真正會進 PTY 的
@@ -251,6 +258,23 @@ with sync_playwright() as pw:
     }""")
     check("L 組字中（新鮮）→ 攔", res["fresh"] is False)
     check("L2 狀態卡住超過 30 秒 → 放行（鍵盤不會被永久吃掉）", res["stale"] is True)
+
+    # M — 委派的核心保證：xterm 把 helper textarea 換掉之後，composition 狀態
+    #     仍然更新得到。舊寫法綁在 textarea 元素上，重建即永久失效，讓渡跟著
+    #     失效 → 注音的每個按鍵都讓 xterm 送出未選字的組字內容（整串注音）。
+    res = page.evaluate("""() => {
+      const mk = (c) => new KeyboardEvent('keydown', { keyCode: c });
+      window._setComposing(false);
+      const fresh = window._rebuildTextarea();
+      fresh.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      const guardedAfterRebuild = window._guard(mk(32)) === false;
+      fresh.dispatchEvent(new CompositionEvent('compositionend', { data: '你', bubbles: true }));
+      const releasedAfterEnd = window._guard(mk(32)) === true;
+      return { guardedAfterRebuild, releasedAfterEnd };
+    }""")
+    check("換掉 textarea 後 compositionstart 仍讓渡鍵盤（委派有效）",
+          res["guardedAfterRebuild"])
+    check("compositionend 之後鍵盤放行", res["releasedAfterEnd"])
 
     # H — 擋掉的要留下足跡，而且理由是 commit-dup（不是時間窗口）
     page.evaluate("window.reset()")

@@ -6,6 +6,37 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.19 (2026-09-03)
+
+### Fixes
+
+- **Chinese input no longer degrades into a stream of raw phonetic symbols.**
+  Reported as intermittent in daily use: every character arrived as unconverted
+  Bopomofo instead of the selected word. This is the full form of the fault
+  v0.30.7 addressed — when the keyboard hand-off is not in effect, xterm calls
+  `_finalizeComposition(false)` on *every* keystroke during composition, pushing
+  the half-finished composition buffer to the PTY each time. The hand-off depends on
+  composition state, and that state was tracked by listeners attached directly
+  to xterm's helper textarea, with a silent skip when the element could not be
+  found. That textarea belongs to xterm: once it is replaced, the listeners are
+  gone for good and composition state never updates again — hence "intermittent".
+  Composition events are now delegated on the pane, which they bubble to, so
+  replacing the textarea cannot break them. State is also per-tab now: a single
+  global flag meant a tab left mid-composition could swallow keystrokes in
+  whichever tab you switched to. `tests_ime_seq.py` grew a case that replaces the
+  textarea outright and asserts the hand-off still engages (18 cases).
+
+  **中文輸入不再退化成一串未選字的注音符號。** 日常使用中回報為間歇發生：每個字都
+  以注音形式出現，而非選定的漢字。這是 v0.30.7 處理的那個問題的完整形態——鍵盤讓渡
+  一旦失效，注音的**每一個**按鍵都會讓 xterm 走 `_finalizeComposition(false)`，把當下
+  還沒選字的組字內容送進 PTY。而讓渡依賴 composition 狀態，該狀態原本由直接綁在
+  xterm helper textarea 上的 listener 維護，抓不到元素時還會靜默跳過。那個 textarea
+  由 xterm 管理：一旦被重建，listener 就永久消失，composition 狀態從此不再更新
+  ——這正是「偶而」的來源。現在 composition 事件委派在 pane 上（事件本來就會冒泡到
+  這裡），換掉 textarea 也不會斷。狀態同時改為 per-tab：單一全域旗標會讓停在組字中
+  的分頁吃掉你切過去的另一個分頁的按鍵。`tests_ime_seq.py` 新增一項把 textarea 整個
+  換掉、驗讓渡仍生效（共 18 項）。
+
 ## v0.30.18 (2026-09-03)
 
 ### Fixes
