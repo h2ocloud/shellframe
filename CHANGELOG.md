@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.30.15 (2026-09-03)
+
+### Changes
+- **側欄 Sessions 標題旁多一顆重判狀態的 ↻，另加五分鐘定期重算**（Howard
+  2026-09-03：「有些情況我會中斷對話，這時候燈號就不會變動了，可能一直都是
+  執行中」）。
+  根因是兩層防護剛好互相掩護：中斷對話（Ctrl+C／Esc）時 Claude Code 不一定會發
+  Stop hook，`_hook_events` 就卡在 `working`；而 status monitor 的 idle gating
+  又因為「這個分頁的 PTY 從上一輪之後沒印任何東西」而跳過重算——於是燈號永遠停在
+  執行中。原有的 `FORCE_REFRESH = 15s` 救不了，它只在有輸出過的分頁上重算。
+  新增 `refresh_agent_status(sid="")`：把狀態快取與 hook 狀態一起清掉，讓 heuristic
+  從畫面／transcript 重新判斷。真的還在跑會被重新標回 working，所以清掉是安全的。
+  側欄那顆 ↻ 呼叫它（帶一圈旋轉回饋），status monitor 也每 300 秒自己做一次
+  ——安靜的分頁靠後者，不必等使用者想起來按。
+
 ## v0.30.14 (2026-09-03)
 
 ### Changes

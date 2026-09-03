@@ -2426,6 +2426,28 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return json.dumps({"installed": False, "error": f"write failed: {e}"})
         return self.get_status_hooks_info()
 
+    def refresh_agent_status(self, sid: str = "") -> str:
+        """把狀態快取與 hook 狀態清掉，強制下一輪從畫面／transcript 重算。
+
+        中斷對話（Ctrl+C／Esc）時 Claude Code 不一定會發 Stop hook，
+        `_hook_events` 就卡在 working；而 status monitor 的 idle gating 又因為
+        PTY 不再輸出而跳過重算——燈號於是一直停在「執行中」（Howard 2026-09-03
+        回報）。清掉之後 heuristic 會重新判斷：真的還在跑就會再標回 working，
+        所以清掉是安全的。
+
+        sid 空字串＝全部分頁。"""
+        try:
+            targets = [sid] if sid else list(self.sessions.keys())
+            for t in targets:
+                self._status_cache.pop(t, None)
+                self._hook_events.pop(t, None)
+            _dlog("status", f"強制重算狀態 targets={len(targets)}"
+                            f"{' sid=' + sid if sid else ' (全部)'}")
+            return json.dumps({"refreshed": len(targets)})
+        except Exception as e:
+            _swallow(f"refresh_agent_status:{sid}")
+            return json.dumps({"refreshed": 0, "error": str(e)})
+
     def _start_status_monitor(self):
         """Background thread: every ~600ms compute each tab's agent status from
         its transcript/rollout log (+ screen wording) and push to the webview.
@@ -2453,8 +2475,14 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             # debounce) still land within FORCE_REFRESH.
             FORCE_REFRESH = 15.0   # full recompute at least this often per tab
             PUSH_HEARTBEAT = 5.0   # elapsed-only changes push at most this often
+            # FORCE_REFRESH 只在「有輸出過」的分頁上重算，救不了中斷後就完全
+            # 安靜的分頁——hook 沒發 Stop、PTY 也不再動，燈號會一直停在
+            # working。每 5 分鐘連 hook 狀態一起清掉重判一次（Howard
+            # 2026-09-03：「有些情況我會中斷對話，這時候燈號就不會變動了」）。
+            HOOK_RESET_INTERVAL = 300.0
             cache = self._status_cache  # sid -> {out_ts, computed_at, since_ts, result}
             last_push = {"key": None, "at": 0.0}
+            last_hook_reset = time.time()
             while True:
                 try:
                     if not self._auto_status_enabled() or not self._window:
@@ -2465,6 +2493,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                         cache.pop(stale, None)
                     for stale in [k for k in self._hook_events if k not in self.sessions]:
                         self._hook_events.pop(stale, None)
+                    if now - last_hook_reset >= HOOK_RESET_INTERVAL:
+                        last_hook_reset = now
+                        cache.clear()
+                        self._hook_events.clear()
+                        _dlog("status", "五分鐘定期重算：清掉 hook 與狀態快取")
                     out = {}
                     for sid, s in list(self.sessions.items()):
                         try:

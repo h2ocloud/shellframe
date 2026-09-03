@@ -501,6 +501,16 @@
   .panel-resizer.dragging { background: #7aa2f7; }
   /* No transition during an active drag so the panel tracks the cursor. */
   #sidebar.resizing, #board-panel.resizing { transition: none; }
+  .sb-sessions-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  #btn-refresh-status {
+    background: none; border: none; padding: 0 2px; cursor: pointer;
+    color: #6f7ba0; font-size: 15px; line-height: 1;
+    transition: color .12s, transform .3s;
+  }
+  #btn-refresh-status:hover { color: #7aa2f7; }
+  #btn-refresh-status.spinning { color: #7aa2f7; transform: rotate(360deg); }
   .sb-section-title {
     font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
     color: #565f89; padding: 10px 12px 6px; user-select: none; white-space: nowrap;
@@ -803,7 +813,12 @@
 <!-- Main content -->
 <div id="app-body">
   <div id="sidebar" class="collapsed">
-    <div class="sb-section-title">Sessions</div>
+    <div class="sb-section-title sb-sessions-head">
+      <span data-i18n="sessions">Sessions</span>
+      <!-- 中斷對話後 hook 不一定發 Stop，燈號會卡在執行中；這顆是手動重判。
+           後端另有五分鐘定期重算（Howard 2026-09-03）。 -->
+      <button id="btn-refresh-status" title="重新判斷所有分頁的狀態燈號">↻</button>
+    </div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
       <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
@@ -1476,6 +1491,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       updateFailed: 'Update failed',
       screenshotAttached: 'Screenshot attached',
       fileAttached: 'File attached',
+      sessions: 'Sessions',
       dropToAttach: 'Drop file to attach',
       processExited: '[process exited]',
       shiftEnterLabel: 'Shift+Enter = newline',
@@ -1647,6 +1663,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       updateFailed: '更新失敗',
       screenshotAttached: '已附加截圖',
       fileAttached: '已附加檔案',
+      sessions: '分頁',
       dropToAttach: '放開以附加檔案',
       processExited: '[程序已結束]',
       shiftEnterLabel: 'Shift+Enter 換行',
@@ -2587,6 +2604,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // 可以進到編輯 tab name 的 popup，這樣可以更方便一點」）。標籤是靜態 DOM，
   // 不會像側欄那樣被 render 重建，所以綁一次就夠——側欄那邊當初就是因為
   // renderSidebar 會重建 DOM，native dblclick 才失效、得手工偵測。
+  // 手動重判狀態燈號。中斷對話（Ctrl+C／Esc）時 Claude Code 不一定會發 Stop
+  // hook，狀態就卡在 working，而 monitor 的 idle gating 又因為 PTY 不再輸出
+  // 而跳過重算——按這顆把 hook 與狀態快取一起清掉，讓它從畫面重新判斷。
+  (function bindRefreshStatus() {
+    const btn = document.getElementById('btn-refresh-status');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.classList.add('spinning');
+      try { await pywebview.api.refresh_agent_status(''); } catch (_) {}
+      // transform 的 transition 跑完再拿掉，才看得到一圈
+      setTimeout(() => btn.classList.remove('spinning'), 320);
+    });
+  })();
+
   (function bindTabHintRename() {
     const el = document.getElementById('tab-hint');
     if (!el) return;
