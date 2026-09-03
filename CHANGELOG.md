@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.30.14 (2026-09-03)
+
+### Changes
+- **雙擊左側的分頁名標籤，直接開改名 popup**（Howard 2026-09-03：「點旁邊這個 tab
+  兩下也讓我可以進到編輯 tab name 的 popup，這樣可以更方便一點」）。接的是既有的
+  `renameSession()`，跟上方分頁列雙擊改名走同一條路。
+  標籤原本是 `pointer-events: none` 的純提示，這版收回點擊並加上 `cursor: pointer`
+  ＋ hover 提亮；`user-select` 仍關著，免得雙擊選到標籤自己的文字。
+  綁一次就夠——標籤是靜態 DOM，不像側欄那樣會被 `renderSidebar` 重建（側欄當年就是
+  因為重建才讓 native dblclick 失效、得改成手工偵測）。
+  它只佔左側那條 17px 的 gutter，終端選字不受影響。
+
 ## v0.30.13 (2026-09-02)
 
 ### Changes

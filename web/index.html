@@ -220,7 +220,9 @@
        一個字都不壓到終端。 */
     position: absolute; top: 0; left: -4px; z-index: 60;
     width: calc(var(--hint-gutter) + 4px);
-    pointer-events: none; user-select: none;
+    /* 收回點擊：雙擊這裡就能改分頁名（Howard 2026-09-03）。它只佔左側那條
+       gutter，不會吃到終端的選字；user-select 仍關著，免得雙擊選到文字。 */
+    pointer-events: auto; cursor: pointer; user-select: none;
     /* 不加 text-orientation: upright——那會把拉丁字母也一個一個立起來，
        「sf dev」變成 s/f/d/e/v 五行，又高又像破圖（Howard 2026-09-02 回報）。
        預設的 mixed 讓英文整串側躺、中文保持直立，高度省一半以上。
@@ -233,6 +235,11 @@
     background: rgba(122, 162, 247, .07);
     color: #93aada; opacity: .92;
     max-height: 7em; overflow: hidden;
+    transition: background .12s, opacity .12s;
+  }
+  #tab-hint:hover {
+    opacity: 1; color: #c0caf5;
+    background: rgba(122, 162, 247, .18);
   }
   /* Prevent IME composition text from overflowing and bouncing at edge */
   .xterm-helper-textarea { overflow: hidden !important; max-width: 1px !important; }
@@ -2576,6 +2583,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // line 存不存在、多行輸入時輸入框往上長，全都會讓它偏掉。直接讀 xterm 的
   // DOM row 位置最準（ShellFrame 沒載 canvas/webgl addon，是 DOM renderer，
   // .xterm-rows 下每行一個 div），而且不必猜行高。
+  // 雙擊標籤直接開改名 popup（Howard 2026-09-03：「點旁邊這個 tab 兩下也讓我
+  // 可以進到編輯 tab name 的 popup，這樣可以更方便一點」）。標籤是靜態 DOM，
+  // 不會像側欄那樣被 render 重建，所以綁一次就夠——側欄那邊當初就是因為
+  // renderSidebar 會重建 DOM，native dblclick 才失效、得手工偵測。
+  (function bindTabHintRename() {
+    const el = document.getElementById('tab-hint');
+    if (!el) return;
+    el.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (activeId && sessions[activeId]) renameSession(activeId);
+    });
+  })();
+
   // 游標移動就重新對位（打字、換行、TUI 重繪都會動游標）。用 rAF 合併，
   // 免得每個按鍵都觸發一次 layout 量測。
   let _hintRaf = 0;

@@ -121,6 +121,26 @@ with sync_playwright() as pw:
     check("不用 flex（會跟 writing-mode 打架）", not r2["flex"])
     check("英文分頁名不超過 2.5 行高", r2["heights"]["sf dev"] <= 48,
           f"sf dev 高 {r2['heights']['sf dev']}px")
+
+    # v0.30.14：雙擊標籤要能開改名 popup，所以它必須收回點擊
+    r3 = pg.evaluate("""() => {
+      const el = document.getElementById('tab-hint');
+      const cs = getComputedStyle(el);
+      let threw = null;
+      try {
+        el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      } catch (e) { threw = String(e); }
+      return { pe: cs.pointerEvents, cursor: cs.cursor,
+               noSelect: cs.userSelect === 'none' || cs.webkitUserSelect === 'none',
+               threw };
+    }""")
+    check("標籤收回點擊（pointer-events: auto）", r3["pe"] == "auto", r3["pe"])
+    check("游標是 pointer，看得出可點", r3["cursor"] == "pointer", r3["cursor"])
+    check("仍關掉文字選取（雙擊不會選到字）", r3["noSelect"])
+    check("dblclick 不炸", r3["threw"] is None, str(r3["threw"]))
+    # 靜態守住綁定本身——CSS 對了但沒接 renameSession 一樣沒用
+    check("dblclick 有接到 renameSession(activeId)",
+          "renameSession(activeId)" in html and "bindTabHintRename" in html)
     pg.screenshot(path=str(SP / "cursor_align.png"))
     b.close()
     print("\nALL PASS" if not sum(nonlocal_fails) else f"\n{sum(nonlocal_fails)} FAILED")
