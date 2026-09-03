@@ -4173,13 +4173,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // pane to the pixel (leftover < 1 row at the bottom), so measure the
       // status-row TOP relative to #terminal-wrap's bottom, not just one row.
       let bottomInset = 0;
+      // 左邊也要對齊。v0.30.11 之後 .term-pane 是 `inset: 0 0 0 --hint-gutter`
+      // （左側讓出一條放分頁名標籤），overlay 卻還停在 left:0 —— 上滑瞬間整
+      // 個畫面往左跳一段，就是 Howard 2026-09-03 說的「斷差感」。不寫死
+      // gutter 的值：量 live pane 的實際左緣，面板寬度、UI scale 之後怎麼變
+      // 都跟得上。
+      let leftInset = 0;
       try {
         const lt = sessions[boundSid] && sessions[boundSid].term;
-        const ls = sessions[boundSid] && sessions[boundSid].pane.querySelector('.xterm-screen');
+        const lpane = sessions[boundSid] && sessions[boundSid].pane;
+        const ls = lpane && lpane.querySelector('.xterm-screen');
+        const hostRect = host.getBoundingClientRect();
         if (lt && ls && lt.rows) {
           const lsRect = ls.getBoundingClientRect();
           const rowH = lsRect.height / lt.rows;
-          bottomInset = Math.max(0, Math.round(host.getBoundingClientRect().bottom - lsRect.bottom + rowH));
+          bottomInset = Math.max(0, Math.round(hostRect.bottom - lsRect.bottom + rowH));
+        }
+        if (lpane) {
+          leftInset = Math.max(0, Math.round(
+            lpane.getBoundingClientRect().left - hostRect.left));
         }
       } catch (_) {}
 
@@ -4192,8 +4204,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // (visible morph). An instant reveal once it's already scrolled to the
       // bottom is snappier — the swap is near-invisible since the bottom of
       // the history matches the live screen.
-      overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:' + bottomInset + 'px;' +
-        'background:#1a1b26;z-index:40;opacity:0;';
+      overlay.style.cssText = 'position:absolute;top:0;left:' + leftInset + 'px;right:0;bottom:' +
+        bottomInset + 'px;background:#1a1b26;z-index:40;opacity:0;';
 
       // Header floats ON TOP of the terminal (absolute) instead of taking
       // layout space — so the overlay's xterm fills the SAME area as the live
@@ -4225,10 +4237,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // match exactly. A <pre> can't grid-align CJK (tables drifted) and its
       // line metrics differed, so scrolling up never felt seamless. xterm
       // parses the tmux ANSI capture directly (colours included).
-      // No padding: the live .term-pane is inset:0 with no padding, so the
-      // overlay's xterm must sit flush to the same left edge — any padding
-      // here shows up as a horizontal indent vs the live view (the user's
-      // "縮排感"). Match the live pane exactly.
+      // No padding here: the overlay itself is already positioned at the live
+      // pane's left edge (leftInset above), so the xterm must sit flush inside
+      // it — any padding shows up as a horizontal indent vs the live view (the
+      // user's "縮排感"). NOTE: the live .term-pane is no longer inset:0 — since
+      // v0.30.11 it starts at --hint-gutter, which is why leftInset is measured
+      // rather than assumed to be 0.
       const termHost = document.createElement('div');
       termHost.style.cssText = 'position:absolute;inset:0;overflow:hidden';
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.30.17 (2026-09-03)
+
+### Fixes
+- **上滑瞬間整個畫面往左跳一段**（Howard 2026-09-03：「會有一個斷差感，修掉，體驗
+  要無縫」）。**這是我自己在 v0.30.11 造成的回歸**：那版給 `.term-pane` 加了
+  `inset: 0 0 0 var(--hint-gutter)`，把活畫面往右推 17px 讓出分頁名標籤的位置，
+  但上滑 overlay 還停在 `left: 0`——兩者左緣差了整條 gutter，切換時內容橫向位移。
+  overlay 那段程式碼裡本來就寫著「the live .term-pane is inset:0 with no padding,
+  so the overlay's xterm must sit flush to the same left edge」，那個前提被我打破了
+  卻沒跟著改。註解也一起更正，免得下一次有人照舊註解把 `left` 改回 0。
+  修法：**量** live pane 的實際左緣（`pane.left - host.left`），不寫死 0 也不寫死
+  gutter——面板寬度、UI scale 之後怎麼變都跟得上，沒有 gutter 時自動退回 0。
+  新增 `tests_scroll_overlay_align.py`：有 gutter 時左緣跟到 17px、沒 gutter 時退回
+  0、下緣仍留至少一行給 tmux 綠條，另外靜態守住實作真的在「量」而不是寫死常數。
+
 ## v0.30.16 (2026-09-03)
 
 ### Fixes
