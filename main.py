@@ -2058,6 +2058,60 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         return suffix or name
 
     @staticmethod
+    def _claude_transcript_exists(csid: str) -> bool:
+        """這個 session uuid 在磁碟上還找得到 transcript 嗎。
+
+        不看 manifest 存的 `transcript_path`——那是 hook 回報**當時**的路徑，
+        `/clear` 之後就換檔了（重開機演練時，14 個分頁裡有 5 個是這種：uuid
+        還在、舊路徑已消失）。uuid 才是 `--resume` 真正吃的東西，直接在
+        ~/.claude/projects 底下找它，不必猜 cwd slug。"""
+        if not csid:
+            return False
+        try:
+            import glob as _glob
+            root = os.path.expanduser("~/.claude/projects")
+            return bool(_glob.glob(os.path.join(root, "*", f"{csid}.jsonl")))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _cmd_with_resume(cmd: str, csid: str) -> str:
+        """把 claude 分頁的啟動指令換成 `--resume <當前 session uuid>`。
+
+        機器重新開機後 tmux server 不在了，分頁得重新 spawn。manifest 存的 cmd
+        是「當初怎麼開的」——沒有 --resume 就是開一個**全新對話**，所有分頁的
+        上下文一次丟光。就算 cmd 裡本來就有 --resume，那個 uuid 也是**啟動當時**
+        的：`/clear` 會輪替 uuid、resume 也常 fork 出新檔（實例：某分頁 cmd 裡是
+        八月的 uuid，當前其實已經是另一個）。所以一律以 hook 回報、落地在
+        manifest 的 uuid 為準，並把舊的 --resume / --session-id 拿掉。
+
+        只處理 claude；codex／agy／一般 shell 各有自己的續接方式，不碰。
+        """
+        if not cmd or not csid:
+            return cmd
+        try:
+            tokens = shlex.split(cmd)
+        except ValueError:
+            return cmd
+        if not tokens:
+            return cmd
+        exe = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if exe not in ("claude", "claude.cmd", "claude.exe"):
+            return cmd
+        out, skip = [tokens[0], "--resume", csid], False
+        for t in tokens[1:]:
+            if skip:
+                skip = False
+                continue
+            if t in ("--resume", "--session-id"):
+                skip = True
+                continue
+            if t.startswith("--resume=") or t.startswith("--session-id="):
+                continue
+            out.append(t)
+        return shlex.join(out)
+
+    @staticmethod
     def _restore_transcript_hint(session, entry: dict):
         """把 manifest 存下來的 transcript hint 接回 Session。
 
@@ -2155,6 +2209,18 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cmd = _canonical_cmd(entry.get("cmd", ""))
             if not sid or not cmd or sid in self.sessions:
                 continue
+            # 這條路是「tmux 沒了」才走的（機器重開機）。接回原本的對話，
+            # 否則每個分頁都會是一個空白的新 session。transcript 檔不在就
+            # 不接——與其 resume 失敗讓分頁開不起來，不如開新的。
+            csid = str(entry.get("claude_session_id") or "").strip()
+            if csid:
+                if self._claude_transcript_exists(csid):
+                    resumed = self._cmd_with_resume(cmd, csid)
+                    if resumed != cmd:
+                        _dlog("lifecycle", f"  {sid} 接回對話 --resume {csid[:8]}")
+                        cmd = resumed
+                else:
+                    _dlog("lifecycle", f"  {sid} 有 uuid 但找不到 transcript，開新對話")
             try:
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
                 tmux_name = entry.get("tmux_name") or None

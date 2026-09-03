@@ -6,6 +6,41 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.22 (2026-09-04)
+
+### Fixes
+
+- **Tabs reconnect to their existing conversation after a machine reboot.**
+  A reboot takes the tmux server with it, so every tab has to be re-spawned from
+  the session manifest. The manifest stores the command the tab was *originally*
+  opened with — without `--resume` that means a brand-new, empty session, losing
+  the context of every tab at once. Even a command that already carried
+  `--resume` held the uuid from launch time, which goes stale: `/clear` rotates
+  it and resume itself often forks a new file. Restore now rewrites the command
+  with the session uuid the agent hook last reported (persisted in the manifest
+  since v0.30.5), dropping any older `--resume` / `--session-id` first, and only
+  for `claude` — codex, agy and plain shells are left alone.
+  Existence is checked by locating `<uuid>.jsonl` under `~/.claude/projects`
+  rather than trusting the stored transcript path: that path is where the hook
+  last saw the file, and `/clear` moves it. A dry run over the real manifest
+  found 5 of 14 tabs would have been treated as unresumable on the stored path
+  alone; by uuid all 14 resolve. If nothing is found the tab opens fresh, since a
+  failed resume would leave it unusable.
+  14 cases in `tests_reboot_resume.py`.
+
+  **重新開機後分頁會接回原本的對話。** 重開機會一併帶走 tmux server，所有分頁都得
+  從 session manifest 重新 spawn。manifest 存的是這個分頁**當初**的啟動指令——沒有
+  `--resume` 就等於開一個空白的新 session，一次丟掉所有分頁的上下文。就算指令本來
+  帶著 `--resume`，那個 uuid 也是啟動當時的，會過期：`/clear` 會輪替它，resume 本身
+  也常 fork 出新檔。現在還原時改用 agent hook 最後回報的 session uuid（自 v0.30.5
+  起就落地在 manifest）重寫指令，先移除舊的 `--resume` ／ `--session-id`，而且只對
+  `claude` 動手——codex、agy 與一般 shell 不碰。
+  是否存在改為在 `~/.claude/projects` 底下尋找 `<uuid>.jsonl`，而不是相信存下來的
+  transcript 路徑：那個路徑只是 hook 最後看到檔案的位置，`/clear` 會讓它搬家。對真實
+  manifest 做乾跑，光看存下來的路徑會有 14 個分頁中的 5 個被判定無法接回；改用 uuid
+  則 14 個全部找得到。完全找不到時就開新的，因為 resume 失敗會讓分頁根本起不來。
+  `tests_reboot_resume.py` 共 14 項。
+
 ## v0.30.21 (2026-09-04)
 
 ### Changes
