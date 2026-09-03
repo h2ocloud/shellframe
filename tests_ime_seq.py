@@ -52,6 +52,9 @@ assert "_imeComposeStart[sid]" in html, \
 # 重建 listener 就永久失效，讓渡跟著失效 → 注音符號會整串進 PTY。
 assert "pane.addEventListener('compositionstart'" in html, \
     "composition 事件要委派在 pane，不能綁 textarea 元素"
+# 修飾鍵不能從 xterm 手上收走——收走會讓 macOS 的中英切換要按兩次
+assert "IME_PASSTHROUGH_KEYS" in html and "BOPOMOFO_ONLY_RE" in html, \
+    "少了修飾鍵白名單或組字中漏出注音的過濾"
 
 PAGE = """<!doctype html><meta charset="utf-8">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
@@ -73,10 +76,11 @@ const _cs = {};
 paneEl.addEventListener('compositionstart', () => { _cs.s1 = Date.now(); dedup.started(); });
 paneEl.addEventListener('compositionend', (e) => { delete _cs.s1; dedup.composed(e && e.data); });
 // index.html 那道讓渡的等價複製：composition 進行中鍵盤完全歸 IME。
+const IME_PASSTHROUGH_KEYS = new Set([16, 17, 18, 20, 91, 92, 93, 224]);
 window._guard = function (ev) {
   if (ev.type !== 'keydown') return true;
   const st = _cs.s1;
-  if (st && Date.now() - st < 30000) return false;
+  if (st && !IME_PASSTHROUGH_KEYS.has(ev.keyCode) && Date.now() - st < 30000) return false;
   return true;
 };
 window._setComposing = function (on) { if (on) _cs.s1 = Date.now(); else delete _cs.s1; };
@@ -92,8 +96,10 @@ window._rebuildTextarea = function () {
 term.attachCustomKeyEventHandler(window._guard);
 window.RAW = [];      // xterm 實際送出的（去重前）
 window.OUT = [];      // 去重後真正會進 PTY 的
+const BOPOMOFO_ONLY_RE = /^[\u3105-\u312F\u31A0-\u31BF\u02C7\u02CA\u02CB\u02D9\s]+$/;
 term.onData(d => {
   window.RAW.push(d);
+  if (_cs.s1 && BOPOMOFO_ONLY_RE.test(d)) return;   // 組字中漏出的半成品
   if (!dedup.shouldDrop(d)) window.OUT.push(d);
 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -145,6 +151,12 @@ window.pickFromCandidates = async function (commit, switchKeyCode) {
   ta.dispatchEvent(new CompositionEvent('compositionend', { data: commit, bubbles: true }));
   ta.dispatchEvent(new InputEvent('input', { data: commit, inputType: 'insertText', composed: true, bubbles: true }));
   await sleep(60);
+};
+// 直接餵 onData 的處理鏈（模擬 xterm 送出資料），驗注音過濾與去重
+window.__emit = function (d) {
+  window.RAW.push(d);
+  if (_cs.s1 && BOPOMOFO_ONLY_RE.test(d)) return;
+  if (!dedup.shouldDrop(d)) window.OUT.push(d);
 };
 window.reset = function () { window.RAW.length = 0; window.OUT.length = 0; window.DROPPED.length = 0; ta.value = ''; };
 </script>"""
@@ -232,16 +244,18 @@ with sync_playwright() as pw:
     res = page.evaluate("""() => {
       const mk = (c) => new KeyboardEvent('keydown', { keyCode: c });
       window._setComposing(false);
-      const idle = [32, 50, 65, 13, 20, 16].map(c => window._guard(mk(c)));
+      const idle = [32, 50, 65, 13, 20, 16].map(c => window._guard(mk(c)));  // 閒置時一律放行
       window._setComposing(true);
-      const composing = [32, 50, 65, 13, 20, 16].map(c => window._guard(mk(c)));
+      // 修飾鍵（20 CapsLock / 16 Shift）刻意不列在這裡——組字中它們必須放行，
+      // 否則 macOS 的中英切換要按兩次。那條由 N 測項守。
+      const composing = [32, 50, 65, 13].map(c => window._guard(mk(c)));
       window._setComposing(false);
       const keyup = window._guard(new KeyboardEvent('keyup', { keyCode: 32 }));
       return { idle, composing, keyup };
     }""")
     check("K 沒在組字時：空白/數字/字母/Enter/Caps/Shift 全部放行",
           all(res["idle"]), f"idle={res['idle']}")
-    check("K2 組字中：這些鍵全部讓給 IME",
+    check("K2 組字中：空白/數字/字母/Enter 讓給 IME（修飾鍵見 N）",
           not any(res["composing"]), f"composing={res['composing']}")
     check("K3 讓渡只看 keydown，keyup 不攔", res["keyup"] is True)
 
@@ -258,6 +272,37 @@ with sync_playwright() as pw:
     }""")
     check("L 組字中（新鮮）→ 攔", res["fresh"] is False)
     check("L2 狀態卡住超過 30 秒 → 放行（鍵盤不會被永久吃掉）", res["stale"] is True)
+
+    # N — 修飾鍵在組字中也必須放行，否則 macOS 中英切換要按兩次
+    res = page.evaluate("""() => {
+      const mk = (c) => new KeyboardEvent('keydown', { keyCode: c });
+      window._setComposing(true);
+      const mods = [16, 17, 18, 20, 91, 93].map(c => window._guard(mk(c)));
+      const others = [32, 50, 65, 13].map(c => window._guard(mk(c)));
+      window._setComposing(false);
+      return { mods, others };
+    }""")
+    check("組字中 Shift/Ctrl/Alt/CapsLock/Cmd 全部放行（中英切換不被打斷）",
+          all(res["mods"]), f"mods={res['mods']}")
+    check("組字中空白/數字/字母/Enter 仍讓給 IME",
+          not any(res["others"]), f"others={res['others']}")
+
+    # O — 修飾鍵放行後，它們造成的「未選字注音」要在 onData 被丟掉
+    page.evaluate("window.reset()")
+    res = page.evaluate("""() => {
+      window._setComposing(true);
+      const before = window.OUT.length;
+      // 模擬 CapsLock 造成的 _finalizeComposition(false)：xterm 把半成品送出
+      window.__emit('ㄑㄩㄝˋ');
+      const afterLeak = window.OUT.length;
+      // commit 出來的漢字（compositionend 之後）必須放行
+      window._setComposing(false);
+      window.__emit('確');
+      return { leaked: afterLeak - before, committed: window.OUT.length - afterLeak };
+    }""")
+    check("組字中漏出的純注音被丟掉", res["leaked"] == 0, f"漏了 {res['leaked']} 筆")
+    check("commit 出來的漢字照樣進 PTY（不會掉字）", res["committed"] == 1,
+          f"進了 {res['committed']} 筆")
 
     # M — 委派的核心保證：xterm 把 helper textarea 換掉之後，composition 狀態
     #     仍然更新得到。舊寫法綁在 textarea 元素上，重建即永久失效，讓渡跟著

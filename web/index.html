@@ -2387,6 +2387,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (trackUsageLine(sid, data)) return;
         // Reset scroll lock on Enter (user submitted input)
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
+        // 組字進行中漏出來的純注音一定是半成品——修飾鍵（CapsLock 等）刻意
+        // 沒被攔，它們造成的 _finalizeComposition(false) 會把當下的注音推出
+        // 來，在這裡丟掉。只擋「純注音」而不是「組字中的一切」：WKWebView 有
+        // 時 compositionend 慢於 xterm 送出 committed text，全擋會掉字。
+        if (_imeComposeStart[sid] && BOPOMOFO_ONLY_RE.test(data)) {
+          try {
+            pywebview.api.js_debug('ime-dup', JSON.stringify(
+              { why: 'bopomofo-leak', data }));
+          } catch (_) {}
+          return;
+        }
         if (imeDedup.shouldDrop(data)) return;
         // Enter / single control chars → send immediately (skip microbatch).
         // The setTimeout(0) microbatch helps for rapid multi-char input
@@ -2537,6 +2548,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // ShellFrame-local slash command (/usage, /水位): handled here, not sent.
         if (trackUsageLine(sid, data)) return;
         if (data === '\r' || data === '\n') sessions[sid]._userScrolledUp = false;
+        // 組字進行中漏出來的純注音一定是半成品——修飾鍵（CapsLock 等）刻意
+        // 沒被攔，它們造成的 _finalizeComposition(false) 會把當下的注音推出
+        // 來，在這裡丟掉。只擋「純注音」而不是「組字中的一切」：WKWebView 有
+        // 時 compositionend 慢於 xterm 送出 committed text，全擋會掉字。
+        if (_imeComposeStart[sid] && BOPOMOFO_ONLY_RE.test(data)) {
+          try {
+            pywebview.api.js_debug('ime-dup', JSON.stringify(
+              { why: 'bopomofo-leak', data }));
+          } catch (_) {}
+          return;
+        }
         if (imeDedup.shouldDrop(data)) return;
         if (data === '\r' || data === '\n' || data.length === 1) {
           if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
@@ -3958,8 +3980,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // 收成一個「依」。
       // 30 秒是保險：萬一 compositionend 沒送到（狀態卡在 true），鍵盤不會被
       // 永久吃掉。
+      // 修飾鍵一律放行。攔了它們，macOS 的中英切換要按兩次才生效——切換依賴
+      // 完整的事件流，把 keydown 從 xterm 手上收掉就會打斷它（日常使用回報：
+      // 「要按兩次大寫鎖才能換中英，操作很卡」）。
+      // xterm 對 Shift/Ctrl/Alt（16/17/18）本來就不會結束組字；CapsLock(20)
+      // 會，但它漏出來的那份「未選字注音」由下面 onData 的注音過濾兜住。
       const _cs = _imeComposeStart[sid];
-      if (_cs && Date.now() - _cs < 30000) {
+      if (_cs && !IME_PASSTHROUGH_KEYS.has(ev.keyCode)
+          && Date.now() - _cs < 30000) {
         return false;
       }
       // Windows: Ctrl+C with an active selection copies it instead of sending
@@ -5120,6 +5148,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // 每個分頁各自記 composition 起點（0/undefined ＝ 沒在組字）。原本是單一
   // 全域旗標，A 分頁組字中切到 B 分頁打字，B 的按鍵會被 A 的狀態擋掉。
   const _imeComposeStart = {};  // sid -> ts；見 setupAttachKeyHandler 的鍵盤讓渡
+  // 組字中不從 xterm 手上收走的按鍵：Shift / Ctrl / Alt / CapsLock / Cmd。
+  // 收走會打斷 macOS 的中英切換（要按兩次才生效）。
+  const IME_PASSTHROUGH_KEYS = new Set([16, 17, 18, 20, 91, 92, 93, 224]);
+  // 純注音（含聲調與空白）＝ 還沒選字的組字內容。CompositionHelper 把選字用的
+  // 按鍵當成「結束組字」，會把這種半成品直接推進 PTY；而真正 commit 出來的是
+  // 漢字，不可能是純注音，所以這條判斷不會誤殺選好的字。
+  const BOPOMOFO_ONLY_RE = /^[\u3105-\u312F\u31A0-\u31BF\u02C7\u02CA\u02CB\u02D9\s]+$/;
 
   // ── IME 把同一個 commit 送兩次的去重 ──
   // 注音打到一半、還沒選字時按 shift 切英文，macOS 會把組到一半的內容直接

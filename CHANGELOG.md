@@ -6,6 +6,44 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.20 (2026-09-04)
+
+### Fixes
+
+- **Switching between Chinese and English input works on the first press again.**
+  A regression from v0.30.7: while a composition was active the terminal handed
+  *every* keydown to the IME, including the modifier that switches input source.
+  macOS needs the full event stream to act on that key, so taking it away meant
+  the switch only landed on the second press, and typing felt sticky throughout.
+  Modifiers (Shift, Ctrl, Alt, CapsLock, Cmd) are now always left alone; only the
+  keys that xterm mistakes for "composition finished" — space, digits, Enter,
+  letters — are still withheld, and those are exactly the ones Bopomofo
+  candidate selection uses.
+
+  Letting CapsLock through re-opens the original hole, since xterm then calls
+  `_finalizeComposition(false)` and pushes the unconverted buffer to the PTY. A
+  second, narrower guard catches that on the data side: while a composition is
+  open, output consisting **only** of Bopomofo letters and tone marks is dropped,
+  because a real commit is always Han characters. The guard is deliberately not
+  "drop everything during composition" — WKWebView can deliver `compositionend`
+  after xterm has already emitted the committed text, and dropping wholesale
+  would lose characters. Two new cases pin both halves: modifiers pass through,
+  and a leaked phonetic buffer is dropped while the committed character still
+  gets through (22 cases in `tests_ime_seq.py`).
+
+  **中英文輸入切換恢復按一次就生效。** 這是 v0.30.7 引入的回歸：組字進行中，終端把
+  **每一個** keydown 都讓給 IME，包含用來切換輸入來源的那顆修飾鍵。macOS 需要完整的
+  事件流才能處理該鍵，被收走之後切換得按第二次才生效，整體打字手感也變鈍。現在修飾鍵
+  （Shift、Ctrl、Alt、CapsLock、Cmd）一律不碰；只有會被 xterm 誤判成「組字結束」的鍵
+  ——空白、數字、Enter、字母——仍然攔著，而那些正是注音選字會用到的鍵。
+
+  放行 CapsLock 會讓原本的漏洞重開，因為 xterm 接著就呼叫
+  `_finalizeComposition(false)`，把未轉換的緩衝區推進 PTY。第二道較窄的防線改在資料
+  側處理：組字進行中，**只由**注音字母與聲調符號組成的輸出一律丟棄，因為真正 commit
+  出來的一定是漢字。這道防線刻意不是「組字中一律丟棄」——WKWebView 可能在 xterm 已經
+  送出 committed text 之後才派送 `compositionend`，全丟會掉字。兩個新測項各守一半：
+  修飾鍵放行、漏出的注音被丟而 commit 的漢字照樣通過（`tests_ime_seq.py` 共 22 項）。
+
 ## v0.30.19 (2026-09-03)
 
 ### Fixes
