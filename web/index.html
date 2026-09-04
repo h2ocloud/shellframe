@@ -2278,7 +2278,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   async function openSession(cmd, label, opts) {
+    // 開新分頁的分段計時。回報「新分頁出現前整個畫面白掉、切分頁也沒反應，
+    // 等三十秒才恢復」，但後端 log 顯示 new_session 到前端就緒只有 3.6 秒，
+    // 也沒有任何慢 evaluate_js 的記錄——卡在別的地方，先量出來再說。
+    const _nt = { t0: performance.now() };
     if (!await _providerInstallGate(cmd)) return;
+    _nt.gate = Math.round(performance.now() - _nt.t0);
     const askName = !!(opts && opts.askName);
     // Block syncSessionsFromBackend until this function's `sessions[sid] = ...`
     // claim lands. Without this, the notify fired inside new_session (main.py
@@ -2323,7 +2328,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     let sid = '';
     try {
+      _nt.beforeApi = Math.round(performance.now() - _nt.t0);
       sid = await pywebview.api.new_session(cmd, term.cols, term.rows);
+      _nt.afterApi = Math.round(performance.now() - _nt.t0);
     } catch (e) {
       const detail = e && (e.message || String(e)) || 'unknown error';
       term.write(`\r\n\x1b[31m[failed to create session]\x1b[0m ${detail}\r\n`);
@@ -2468,6 +2475,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     switchTab(sid);
     renderTabs();
+    _nt.total = Math.round(performance.now() - _nt.t0);
+    try { pywebview.api.js_debug('newtab', JSON.stringify({ sid, ms: _nt })); } catch (_) {}
     // 使用者自己開的新分頁：直接問名字。preset 已經帶名字了，不問。
     // 自動作答信任對話框是在後端做的（不看前端焦點），所以這個 popup 不會
     // 卡到分頁啟動。

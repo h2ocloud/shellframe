@@ -6,6 +6,25 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.27 (2026-09-04)
+
+### Internal
+
+- **Opening a new tab is now timed in stages.** Reported alongside the naming
+  dialog: the whole view goes blank while a new tab is being created, switching
+  tabs does nothing, and it clears after roughly thirty seconds. The backend log
+  does not explain it — `new_session` to front-end ready measured 3.6s, and there
+  is no slow-`evaluate_js` record at all, so the stall is elsewhere. Each stage
+  is now recorded to `[js:newtab]`: the provider install gate, the round trip
+  through `new_session`, and the total to first paint. Not a fix; it is the
+  evidence needed to find one.
+
+  **開新分頁改為分段計時。** 與命名對話框一併回報：新分頁建立期間整個畫面會白掉、
+  切分頁也沒反應，大約三十秒後才恢復。後端 log 解釋不了——`new_session` 到前端就緒
+  實測只有 3.6 秒，而且完全沒有慢 `evaluate_js` 的記錄，所以卡點在別處。現在每個
+  階段都會寫進 `[js:newtab]`：provider 安裝檢查、`new_session` 的往返、以及到畫面
+  首次繪出的總時間。這不是修復，是找出修法所需的證據。
+
 ## v0.30.26 (2026-09-04)
 
 ### Fixes
