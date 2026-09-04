@@ -25,7 +25,7 @@ except ImportError:
     sys.exit(0)
 
 SP = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
-html = pathlib.Path("/Users/neux/.local/apps/shellframe/web/index.html").read_text(encoding="utf-8")
+html = (pathlib.Path(__file__).resolve().parent / "web/index.html").read_text(encoding="utf-8")
 # 把 positionTabHint 從 index.html 抽出來跑，不複製一份會走樣的副本
 m = re.search(r"  function positionTabHint\(\) \{.*?\n  \}\n", html, re.S)
 assert m, "找不到 positionTabHint"

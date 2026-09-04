@@ -718,10 +718,18 @@ class HistoryApiMixin:
             return None
         if not evs:
             return None
+        # claude/codex 有 sparse floor（太短的 transcript 讀感不如活畫面），
+        # opencode 不能照抄：它的 fallback 就是活畫面本身。opencode 的 TUI
+        # 原地重繪，捲出視窗的內容不進 terminal scrollback 也不進 pyte
+        # history——alt-screen 下 tmux capture 拿到的就是使用者眼前那一屏，
+        # 落回去等於「上滑看不到歷史」（日常使用回報）。所以門檻改成
+        # 「transcript 裡有沒有真的對話」：只要有一則 user/assistant 訊息，
+        # 它就是唯一有歷史的來源，短也要用。
+        if not any(e.get("kind") in ("user_msg", "assistant_text") for e in evs):
+            return None
         text = self._render_transcript_overlay(evs, ansi)
         plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
-        # 同 claude/codex 的 sparse floor：太短的 transcript 讀感不如活畫面。
-        if len(plain.strip()) < 400 or plain.count("\n") < 8:
+        if not plain.strip():
             return None
         return json.dumps({
             "success": True,

@@ -6,6 +6,43 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.29 (2026-09-04)
+
+### Fixes
+
+- **Scroll-up history works in opencode tabs.** Scrolling up there showed the
+  same screen that was already visible, so a tab had no readable history at all.
+  Root cause: opencode reached the overlay through the same sparse floor as the
+  Claude and Codex tabs — a transcript shorter than 400 characters is discarded
+  in favour of the terminal capture, because for those CLIs the live pane is the
+  better read. For opencode that fallback is the live pane itself: its TUI
+  redraws in place, so rows that scroll out of the viewport never enter the
+  terminal scrollback nor the emulator history, and an alternate-screen capture
+  returns exactly the frame the user is already looking at. The floor is now a
+  content test rather than a length test — the transcript is used whenever it
+  holds at least one user or assistant message, and a tool-call-only transcript
+  still falls through to the terminal pipeline. Regression test:
+  `tests_opencode_history.py`, whose main case is the reported 167-character
+  conversation that the old threshold rejected.
+
+  **opencode 分頁的上滑歷史可以用了。** 在那種分頁往上滑，看到的還是眼前這一屏，
+  等於整個分頁沒有歷史可讀。根因是 opencode 沿用了 Claude 與 Codex 分頁那條稀疏
+  門檻：transcript 不足 400 字就丟掉、改用終端擷取，因為對那兩種 CLI 來說活畫面
+  讀感較好。但 opencode 的這個 fallback 就是活畫面本身——它的 TUI 原地重繪，捲出
+  視窗的內容既不進終端 scrollback 也不進模擬器歷史，alt-screen 下的擷取拿到的正是
+  使用者眼前那一幀。門檻因此從「長度」改成「內容」：只要 transcript 裡有一則使用者
+  或助理訊息就採用，而只有工具呼叫、沒有對話的 transcript 仍然讓路給終端管線。
+  回歸測試 `tests_opencode_history.py`，主案例就是被舊門檻擋掉的那段 167 字對話。
+
+### Internal
+
+- **The tab-label alignment test reads the page from its own directory.** It
+  had an absolute path to one machine's checkout hard-coded, so the suite went
+  red on every other machine before running a single assertion.
+
+  **分頁名對齊測試改從自己所在目錄讀頁面。** 它寫死了某一台機器 checkout 的絕對
+  路徑，在其他機器上還沒跑到任何斷言就整支紅燈。
+
 ## v0.30.28 (2026-09-04)
 
 ### Fixes
