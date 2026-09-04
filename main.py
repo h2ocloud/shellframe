@@ -6208,6 +6208,13 @@ try {
         if not s:
             return json.dumps({"success": False})
         s._custom_label = name
+        # 明確命名過的分頁不該再被 auto-slug 蓋掉。auto-slug 是在第一次送出
+        # 訊息時用 haiku 依內容命名，原本不管使用者有沒有自己取過名字——新分頁
+        # 一建立就跳出命名 popup（v0.30.25）之後，這個覆蓋會讓剛取的名字在第一
+        # 句話之後就消失，功能等於白做。
+        if getattr(s, "_slug_pending", False):
+            s._slug_pending = False
+            _dlog("lifecycle", f"  {sid} 已手動命名，取消 auto-slug")
         if self.bridge and sid in self.bridge.slots:
             self.bridge.slots[sid].label = name
             self.bridge.refresh_commands()

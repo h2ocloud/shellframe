@@ -1491,6 +1491,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       updateFailed: 'Update failed',
       screenshotAttached: 'Screenshot attached',
       fileAttached: 'File attached',
+      nameNewSession: 'Name this session',
+      sessionName: 'Session Name',
+      skip: 'Skip',
+      cancel: 'Cancel',
       sessions: 'Sessions',
       dropToAttach: 'Drop file to attach',
       processExited: '[process exited]',
@@ -1663,6 +1667,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       updateFailed: '更新失敗',
       screenshotAttached: '已附加截圖',
       fileAttached: '已附加檔案',
+      nameNewSession: '為這個分頁命名',
+      sessionName: '分頁名稱',
+      skip: '跳過',
+      cancel: '取消',
       sessions: '分頁',
       dropToAttach: '放開以附加檔案',
       processExited: '[程序已結束]',
@@ -2269,8 +2277,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   }
 
-  async function openSession(cmd, label) {
+  async function openSession(cmd, label, opts) {
     if (!await _providerInstallGate(cmd)) return;
+    const askName = !!(opts && opts.askName);
     // Block syncSessionsFromBackend until this function's `sessions[sid] = ...`
     // claim lands. Without this, the notify fired inside new_session (main.py
     // line 660) would race with our await and spawn a duplicate pane.
@@ -2459,6 +2468,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     switchTab(sid);
     renderTabs();
+    // 使用者自己開的新分頁：直接問名字。preset 已經帶名字了，不問。
+    // 自動作答信任對話框是在後端做的（不看前端焦點），所以這個 popup 不會
+    // 卡到分頁啟動。
+    if (askName && !label) {
+      setTimeout(() => { if (sessions[sid]) renameSession(sid, { isNew: true }); }, 60);
+    }
     } finally {
       _uiCreatingSession--;
       if (_uiCreatingSession === 0 && _syncDeferred) {
@@ -2913,20 +2928,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // ── Rename session (double-click on label) ──
-  function renameSession(sid) {
+  // opts.isNew：分頁剛建立就跳出來問名字（Howard 2026-09-04：「我的使用情境
+  // 每次都是新增分頁後去改名，有點卡」）。跳過就維持原本的行為——第一次送出
+  // 訊息時由 auto-slug 依內容命名。
+  function renameSession(sid, opts) {
     const s = sessions[sid];
     if (!s) return;
+    const isNew = !!(opts && opts.isNew);
     // In-page rename dialog
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay open';
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:300px;padding:16px">
-        <h2 style="font-size:14px;margin-bottom:12px">Session Name</h2>
+        <h2 style="font-size:14px;margin-bottom:12px">${isNew
+          ? t('nameNewSession') : t('sessionName')}</h2>
         <input type="text" id="rename-input" value="${esc(s.label)}"
           style="width:100%;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
-          <button class="btn btn-ghost" id="rename-cancel">Cancel</button>
+          <button class="btn btn-ghost" id="rename-cancel">${isNew
+            ? t('skip') : t('cancel')}</button>
           <button class="btn btn-primary" id="rename-ok">OK</button>
         </div>
       </div>`;
@@ -5326,7 +5347,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   document.getElementById('btn-run-custom').addEventListener('click', () => {
     const cmd = $customCmd.value.trim();
-    if (cmd) { openSession(cmd); closeModal(); }
+    if (cmd) { openSession(cmd, null, { askName: true }); closeModal(); }
   });
   $customCmd.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { document.getElementById('btn-run-custom').click(); }

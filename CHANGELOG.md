@@ -6,6 +6,42 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.25 (2026-09-04)
+
+### Added
+
+- **A new session asks for its name straight away, with Skip to keep the old
+  behaviour.** The habitual flow is "open a tab, immediately rename it", and
+  having to go and double-click every time is friction. The dialog now appears
+  as soon as a tab opened from the New Session box is ready, pre-filled with the
+  command name; Skip or Esc leaves everything as it was, so the first message
+  still triggers the haiku auto-slug. Preset tabs already carry a name and are
+  not asked. Auto-accepting the startup trust dialog runs in the backend and
+  does not depend on focus, so the dialog cannot interfere with a tab still
+  starting up.
+
+  **新分頁一建立就先問名字，按「跳過」則維持原本行為。** 實際的使用習慣是「開一個
+  分頁、馬上改名」，每次都要自己去雙擊是多餘的摩擦。現在從 New Session 開出來的
+  分頁一就緒就會跳出命名對話框，預先填好指令名稱；按「跳過」或 Esc 就什麼都不變，
+  第一句話仍會觸發 haiku 的自動命名。preset 分頁本來就帶名字，不會被問。自動回答
+  啟動信任對話框是在後端進行、不看焦點，所以這個對話框不會干擾還在啟動的分頁。
+
+### Fixes
+
+- **A name you typed yourself is no longer overwritten by the automatic one.**
+  The auto-slug renames a tab from the content of its first message, and it did
+  so regardless of whether the tab had already been named by hand. That was
+  survivable while renaming was a deliberate act after the fact; with the new
+  dialog appearing up front it would have wiped the name one message later,
+  making the feature pointless. Renaming a session now clears the pending
+  auto-slug. 10 cases in `tests_new_tab_naming.py`.
+
+  **自己輸入的名字不會再被自動命名蓋掉。** auto-slug 會依第一則訊息的內容重新命名
+  分頁，而且原本不管這個分頁是否已經被手動命名過。在「改名是事後的刻意動作」的年代
+  還撐得住；但新的命名對話框改成一開始就跳出來之後，名字會在一句話之後就被抹掉，
+  功能等於白做。現在改名會一併取消待處理的 auto-slug。
+  `tests_new_tab_naming.py` 共 10 項。
+
 ## v0.30.24 (2026-09-04)
 
 ### Fixes
