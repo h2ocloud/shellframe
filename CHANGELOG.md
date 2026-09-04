@@ -6,6 +6,53 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.31.3 (2026-09-05)
+
+### Fixes
+
+- **Scroll-up history in opencode tabs now looks like the tab it came from.**
+  The overlay opened, but it read as a different application: markdown tables
+  came through as raw pipe characters, horizontal rules were a fixed 40 columns
+  wide regardless of the pane, bullets were rewritten to a different glyph than
+  the one on screen, and the whole conversation sat flush against the left edge
+  while the live view indents it. The renderer was one generic markdown-to-ANSI
+  approximation applied to every CLI, and an approximation shared by two
+  differently-styled TUIs matches neither.
+
+  Layout and palette are now per-CLI, and the opencode values were measured off
+  the running application rather than guessed: content indents five columns with
+  a two-column right margin, bullets keep their original marker, tables are
+  drawn as boxes stretched to the available width, rules match the table width,
+  text wraps after punctuation rather than after any wide character, and the
+  colours are the app's own 24-bit values. Column widths follow the formula
+  recovered from two live tables — natural content width, then the leftover
+  space split evenly with the remainder handed out left to right — which
+  reproduces both measured cases exactly. Rendering the whole conversation and
+  diffing it against the live screen now comes out identical line for line over
+  the overlapping region.
+
+  The pane's column count is passed in from the front end, since sizing tables
+  and rules the way a TUI does is impossible without knowing how wide the pane
+  is. Tabs on the default skin are unchanged. Regression tests:
+  `tests_overlay_skin.py`, which pins the measured numbers.
+
+  **opencode 分頁的上滑歷史，現在看起來就是那個分頁。** overlay 打得開了，
+  但讀起來像另一個應用程式：markdown 表格原樣吐出管線字元、水平線不管分頁多寬
+  都固定 40 欄、列點被換成跟畫面上不同的符號、整段對話貼齊左緣而活畫面是有縮排的。
+  問題在於渲染器是一套通用的 markdown→ANSI 近似值、套用在所有 CLI 上，而兩個
+  風格不同的 TUI 共用一套近似值的結果是兩邊都不像。
+
+  排版與配色改成逐一 CLI 各自一套，opencode 的值是從執行中的應用程式量出來的，
+  不是猜的：內容縮排五欄、右緣留兩欄、列點保留原本的符號、表格畫成方框並撐滿
+  可用寬度、水平線與表格同寬、文字斷在標點之後而不是任意全形字之後，顏色直接用
+  它自己的 24-bit 值。欄寬公式是從兩張實機表格反推出來的——先取內容自然寬，再把
+  剩餘寬度平分、餘數由左往右各加一——兩組實測都完全重現。把整段對話渲染出來跟
+  活畫面逐行比對，重疊區間現在完全一致。
+
+  分頁寬度改由前端傳入：不知道分頁多寬，就不可能照 TUI 的方式決定表格與水平線
+  的尺寸。使用預設樣式的分頁行為不變。回歸測試 `tests_overlay_skin.py`，把量到的
+  數字釘住。
+
 ## v0.31.2 (2026-09-05)
 
 ### Fixes

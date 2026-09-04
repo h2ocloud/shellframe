@@ -349,7 +349,8 @@ class HistoryApiMixin:
                 cells += 2
         return cells
 
-    def get_clean_history(self, sid: str, max_lines: int = 10000, ansi: bool = True) -> str:
+    def get_clean_history(self, sid: str, max_lines: int = 10000,
+                          ansi: bool = True, cols: int = 0) -> str:
         """Return scroll-back history for the overlay, with streaming
         redraw noise collapsed.
 
@@ -381,7 +382,7 @@ class HistoryApiMixin:
             resp = self._pyte_fallback_response(sid, ansi=ansi)
             try:
                 if not json.loads(resp).get("success"):
-                    t = self._transcript_history_response(s, sid, ansi) if s else None
+                    t = self._transcript_history_response(s, sid, ansi, cols) if s else None
                     if t:
                         return t
             except Exception:
@@ -416,7 +417,7 @@ class HistoryApiMixin:
             # 順序。claude/codex 維持 v0.23.2 terminal-first 不動。
             if self._is_opencode_cmd(getattr(s, "cmd", "")):
                 try:
-                    resp = self._transcript_history_response(s, sid, ansi)
+                    resp = self._transcript_history_response(s, sid, ansi, cols)
                     if resp:
                         return resp
                 except Exception:
@@ -458,7 +459,7 @@ class HistoryApiMixin:
                 # transcript：alt-screen 下 tmux scrollback 是錯的 buffer
                 #（normal-screen 舊內容），transcript 反而是唯一正確來源。
             try:
-                resp = self._transcript_history_response(s, sid, ansi)
+                resp = self._transcript_history_response(s, sid, ansi, cols)
                 if resp:
                     return resp
             except Exception:
@@ -635,7 +636,7 @@ class HistoryApiMixin:
 
     _TRANSCRIPT_MAX_RECORDS = 3000
 
-    def _transcript_history_response(self, s, sid: str, ansi: bool):
+    def _transcript_history_response(self, s, sid: str, ansi: bool, cols: int = 0):
         """Overlay text rendered from the session's transcript JSONL, or
         None when this tab has no usable transcript (→ caller falls back to
         the terminal pipeline). Fidelity note: events come from
@@ -653,7 +654,7 @@ class HistoryApiMixin:
             # 不進 terminal scrollback / pyte history —— transcript（其 SQLite
             # session 庫）是唯一有完整對話的來源。
             if self._is_opencode_cmd(worker["cmd"]):
-                return self._opencode_history_response(worker, ansi)
+                return self._opencode_history_response(worker, ansi, cols)
             return None
         path = agent_status.resolve_transcript(worker)
         if not path or not os.path.exists(path):
@@ -673,7 +674,7 @@ class HistoryApiMixin:
             max_records=self._TRANSCRIPT_MAX_RECORDS)
         if err or not evs:
             return None
-        text = self._render_transcript_overlay(evs, ansi)
+        text = self._render_transcript_overlay(evs, ansi, cols=cols)
         plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
         # Sparse transcript (fresh tab, a lone /command) reads worse than
         # the terminal view — fall back below this floor.
@@ -706,7 +707,7 @@ class HistoryApiMixin:
                 return True
         return False
 
-    def _opencode_history_response(self, worker: dict, ansi: bool):
+    def _opencode_history_response(self, worker: dict, ansi: bool, cols: int = 0):
         """Overlay text from opencode's SQLite session store, or None
         （→ caller 落回 terminal 管線）. 事件 normalize 成與 claude/codex
         相同的形狀後走同一個 _render_transcript_overlay —— 樣式即與一般
@@ -727,7 +728,8 @@ class HistoryApiMixin:
         # 它就是唯一有歷史的來源，短也要用。
         if not any(e.get("kind") in ("user_msg", "assistant_text") for e in evs):
             return None
-        text = self._render_transcript_overlay(evs, ansi)
+        text = self._render_transcript_overlay(
+            evs, ansi, self._SKIN_OPENCODE, cols)
         plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
         if not plain.strip():
             return None
@@ -840,60 +842,254 @@ class HistoryApiMixin:
         return text.strip()
 
     # Markdown → ANSI：讓 overlay 的 assistant 文字接近活畫面 TUI 的渲染
-    # （粗體、行內 code、標題、列點、引用、圍欄 code），而不是 `**` 反引號
-    # 原樣露出。近似即可，目標是「讀起來是同一個 app」。
+    # （標題、粗體、行內 code、列點、引用、圍欄 code、表格），而不是把 `**`
+    # 與反引號原樣露出。目標是「讀起來是同一個 app」。
+    #
+    # skin＝各家 TUI 的排版與配色。不同 harness 差很多，用同一套近似值就會出現
+    # 「上滑跟活畫面對不上」的斷差感。opencode 的值是 2026-09-05 用
+    # `tmux capture-pane -e` 從實機畫面量的，不是估的：內容縮排 5 欄、右緣留 2、
+    # 列點保留 `-`、表格畫成方框並撐滿可用寬度、水平線與表格同寬、24-bit 原色。
     _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
     _MD_CODE_RE = re.compile(r"`([^`\n]+)`")
     _MD_HDR_RE = re.compile(r"^(#{1,6})\s+(.*)$")
     _MD_BULLET_RE = re.compile(r"^(\s*)([-*])\s+")
     _MD_NUM_RE = re.compile(r"^(\s*)(\d{1,3}\.)\s+")
     _MD_HR_RE = re.compile(r"^\s*(---+|\*\*\*+)\s*$")
+    _ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+    # 表格分隔列：`|---|:--:|`。只在「上一列有 |」時才拿來判斷，所以不會跟
+    # 水平線 `---` 搶。
+    _MD_TABLE_SEP_RE = re.compile(r"^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$")
+
+    _SKIN_DEFAULT = {
+        "indent": 0, "right_margin": 0, "wrap": False,
+        "user_prefix": "\x1b[1;36m❯ \x1b[0m", "user_cont": "  ",
+        "text": "", "head": "\x1b[1m\x1b[36m", "bold": "\x1b[1m",
+        "code": "\x1b[38;5;180m", "bullet": "\x1b[36m", "border": "\x1b[2m",
+        "quote": "\x1b[2m", "fence": "\x1b[38;5;250m", "dim": "\x1b[2m",
+        "bullet_marker": "•", "table_stretch": False, "table_pad": 1,
+        "table_row_sep": False,
+    }
+    _SKIN_OPENCODE = {
+        "indent": 5, "right_margin": 2, "wrap": True,
+        "user_prefix": "  \x1b[38;2;92;156;245m┃\x1b[0m  ",
+        "user_cont": "  \x1b[38;2;92;156;245m┃\x1b[0m  ",
+        "user_pad": "  \x1b[38;2;92;156;245m┃\x1b[0m",
+        "text": "\x1b[38;2;238;238;238m",
+        "head": "\x1b[1m\x1b[38;2;157;124;216m",
+        "bold": "\x1b[1m\x1b[38;2;245;167;66m",
+        "code": "\x1b[38;2;127;216;143m",
+        "bullet": "\x1b[38;2;250;178;131m",
+        "border": "\x1b[38;2;128;128;128m",
+        "quote": "\x1b[38;2;128;128;128m",
+        "fence": "\x1b[38;2;170;170;170m",
+        "dim": "\x1b[38;2;128;128;128m",
+        "bullet_marker": None, "table_stretch": True, "table_pad": 0,
+        "table_row_sep": True,
+    }
 
     @classmethod
-    def _md_ansi_lines(cls, text: str, ansi: bool):
-        if not ansi:
-            return text.splitlines()
-        BOLD, CYAN, DIM, R = "\x1b[1m", "\x1b[36m", "\x1b[2m", "\x1b[0m"
-        CODE = "\x1b[38;5;180m"
-        out = []
-        in_fence = False
-        for ln in text.splitlines():
-            if ln.lstrip().startswith("```"):
-                in_fence = not in_fence
-                out.append(f"{DIM}{ln}{R}")
+    def _disp_width(cls, s: str) -> int:
+        """終端顯示寬度（全形算 2、組合字元算 0），ANSI 先剝掉。"""
+        s = cls._ANSI_SGR_RE.sub("", s)
+        w = 0
+        for ch in s:
+            if unicodedata.combining(ch):
                 continue
-            if in_fence:
-                out.append(f"\x1b[38;5;250m{ln}{R}")
-                continue
-            m = cls._MD_HDR_RE.match(ln)
+            w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        return w
+
+    # 中日文可以斷行的位置。實測 opencode 是「斷在標點之後」而不是任意全形字之後
+    # ——同一段文字，斷在任意字後會多塞 4 欄、句子被切在詞中間，跟活畫面對不上。
+    _CJK_BREAK_AFTER = set("、，。！？；：）」』】》〉…～・,.!?;:)]}")
+
+    @classmethod
+    def _wrap_ansi(cls, line: str, width: int):
+        """依顯示寬度斷行，續行沿用當下的 SGR 狀態。
+
+        續行的還原方式＝重放「自上一次 reset 起的所有 SGR 序列」。SGR 是狀態機，
+        重放等價於還原當下狀態，也不必自己維護一份 attribute 表。
+
+        斷點優先序：空白或標點之後（詞邊界）→ 任意全形字之後 → 硬切。
+        """
+        if width <= 0 or cls._disp_width(line) <= width:
+            return [line]
+        out, cur, w, sgr = [], [], 0, ""
+        brk_word = brk_any = -1
+        i, n = 0, len(line)
+        while i < n:
+            m = cls._ANSI_SGR_RE.match(line, i)
             if m:
-                out.append(f"{BOLD}{CYAN}{m.group(2)}{R}")
+                seq = m.group(0)
+                cur.append(seq)
+                sgr = "" if seq == "\x1b[0m" else sgr + seq
+                i = m.end()
                 continue
-            if cls._MD_HR_RE.match(ln):
-                out.append(f"{DIM}{'─' * 40}{R}")
-                continue
-            if ln.lstrip().startswith(">"):
-                out.append(f"{DIM}{ln}{R}")
-                continue
-            ln = cls._MD_BULLET_RE.sub(f"\\1{CYAN}•{R} ", ln, count=1)
-            ln = cls._MD_NUM_RE.sub(f"\\1{CYAN}\\2{R} ", ln, count=1)
-            ln = cls._MD_BOLD_RE.sub(f"{BOLD}\\1\x1b[22m", ln)
-            ln = cls._MD_CODE_RE.sub(f"{CODE}\\1\x1b[39m", ln)
-            out.append(ln)
+            ch = line[i]
+            cw = 0 if unicodedata.combining(ch) else (
+                2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1)
+            if w + cw > width and cur:
+                brk = brk_word if brk_word > 0 else brk_any
+                head, tail = (cur[:brk], cur[brk:]) if brk > 0 else (cur, [])
+                out.append("".join(head).rstrip())
+                cur = ([sgr] if sgr else []) + tail
+                w = cls._disp_width("".join(tail))
+                brk_word = brk_any = -1
+            cur.append(ch)
+            w += cw
+            if ch == " " or ch in cls._CJK_BREAK_AFTER:
+                brk_word = len(cur)
+            if cw == 2:
+                brk_any = len(cur)
+            i += 1
+        if cur:
+            out.append("".join(cur).rstrip())
         return out
 
     @classmethod
-    def _render_transcript_overlay(cls, evs, ansi: bool) -> str:
+    def _md_table_at(cls, lines, i):
+        """lines[i] 起是不是 markdown 表格？回 (rows, 下一個 index) 或 None。"""
+        if i + 1 >= len(lines) or "|" not in lines[i]:
+            return None
+        if not cls._MD_TABLE_SEP_RE.match(lines[i + 1]) or "|" not in lines[i + 1]:
+            return None
+
+        def cells(ln):
+            s = ln.strip()
+            if s.startswith("|"):
+                s = s[1:]
+            if s.endswith("|"):
+                s = s[:-1]
+            return [c.strip() for c in s.split("|")]
+
+        rows = [cells(lines[i])]
+        j = i + 2
+        while (j < len(lines) and "|" in lines[j]
+               and not cls._MD_TABLE_SEP_RE.match(lines[j])):
+            rows.append(cells(lines[j]))
+            j += 1
+        return rows, j
+
+    @classmethod
+    def _render_md_table(cls, rows, skin, width, ansi):
+        """markdown 表格 → 方框表。
+
+        撐滿模式（opencode）的欄寬公式是實機反推出來的：每欄先取內容自然寬，
+        再把剩餘寬度平分，餘數由左往右各加 1。兩組實測都對得上
+        （3 欄 6/6/6 → 28/27/27；2 欄 14/18 → 40/43）。
+        """
+        n = max(len(r) for r in rows)
+        rows = [r + [""] * (n - len(r)) for r in rows]
+        pad = skin["table_pad"]
+        nat = [max(cls._disp_width(r[c]) for r in rows) + pad * 2 for c in range(n)]
+        if skin["table_stretch"] and width > 0:
+            inner = max(sum(nat), width - (n + 1))
+            add, rem = divmod(inner - sum(nat), n)
+            w = [nat[c] + add + (1 if c < rem else 0) for c in range(n)]
+        else:
+            w = nat
+        B = skin["border"] if ansi else ""
+        HEAD = skin["head"] if ansi else ""
+        TEXT = skin["text"] if ansi else ""
+        R = "\x1b[0m" if ansi else ""
+
+        def rule(left, mid, right):
+            return B + left + mid.join("─" * x for x in w) + right + R
+
+        def row(cells, head=False):
+            col = HEAD if head else TEXT
+            parts = []
+            for c, cell in enumerate(cells):
+                body = " " * pad + cell
+                body += " " * max(0, w[c] - cls._disp_width(body))
+                parts.append(f"{col}{body}{R}" if col else body)
+            return B + "│" + R + (B + "│" + R).join(parts) + B + "│" + R
+
+        out = [rule("┌", "┬", "┐"), row(rows[0], head=True), rule("├", "┼", "┤")]
+        for idx, r in enumerate(rows[1:]):
+            if idx and skin["table_row_sep"]:
+                out.append(rule("├", "┼", "┤"))
+            out.append(row(r))
+        out.append(rule("└", "┴", "┘"))
+        return out
+
+    @classmethod
+    def _md_ansi_lines(cls, text: str, ansi: bool, skin=None, width: int = 0):
+        if not ansi:
+            return text.splitlines()
+        skin = skin or cls._SKIN_DEFAULT
+        R = "\x1b[0m"
+        TEXT, HEAD, BOLD = skin["text"], skin["head"], skin["bold"]
+        CODE, BULLET, DIM = skin["code"], skin["bullet"], skin["dim"]
+        src = text.splitlines()
+        out = []
+        in_fence = False
+        i = 0
+        while i < len(src):
+            ln = src[i]
+            if ln.lstrip().startswith("```"):
+                in_fence = not in_fence
+                out.append(f"{DIM}{ln}{R}")
+                i += 1
+                continue
+            if in_fence:
+                out.append(f"{skin['fence']}{ln}{R}")
+                i += 1
+                continue
+            tbl = cls._md_table_at(src, i)
+            if tbl:
+                rows, i = tbl
+                out.extend(cls._render_md_table(rows, skin, width, ansi))
+                continue
+            i += 1
+            m = cls._MD_HDR_RE.match(ln)
+            if m:
+                out.append(f"{HEAD}{m.group(2)}{R}")
+                continue
+            if cls._MD_HR_RE.match(ln):
+                out.append(f"{DIM}{'─' * (width if width > 0 else 40)}{R}")
+                continue
+            if ln.lstrip().startswith(">"):
+                out.append(f"{skin['quote']}{ln}{R}")
+                continue
+            marker = skin["bullet_marker"]
+            if marker:
+                ln = cls._MD_BULLET_RE.sub(f"\\1{BULLET}{marker}{R}{TEXT} ", ln, count=1)
+            else:
+                ln = cls._MD_BULLET_RE.sub(f"\\1{BULLET}\\2{R}{TEXT} ", ln, count=1)
+            ln = cls._MD_NUM_RE.sub(f"\\1{BULLET}\\2{R}{TEXT} ", ln, count=1)
+            ln = cls._MD_BOLD_RE.sub(f"{BOLD}\\1{R}{TEXT}", ln)
+            ln = cls._MD_CODE_RE.sub(f"{CODE}\\1{R}{TEXT}", ln)
+            out.append(TEXT + ln if TEXT else ln)
+        if skin["wrap"]:
+            wrapped = []
+            for ln in out:
+                wrapped.extend(cls._wrap_ansi(ln, width))
+            out = wrapped
+        return out
+
+    @classmethod
+    def _render_transcript_overlay(cls, evs, ansi: bool, skin=None,
+                                   cols: int = 0) -> str:
         """Normalized transcript events → terminal-styled conversation text.
-        Styling mirrors the live TUI reading experience: user lines get a
-        bold-cyan ❯ prefix, assistant markdown is rendered to ANSI, harness
-        noise is collapsed, tool calls are dim one-liners, decision requests
-        are yellow. Every styled line closes with SGR reset."""
-        B_CYAN = "\x1b[1;36m" if ansi else ""
-        DIM = "\x1b[2m" if ansi else ""
+
+        Styling follows the tab's skin so the overlay reads like that harness's
+        live TUI: the user marker, indent, palette and table style are the ones
+        measured from the real app. Harness noise is collapsed, tool calls are
+        dim one-liners, decision requests are yellow. Every styled line closes
+        with an SGR reset. `cols` is the live pane width — the renderer needs it
+        to size tables and rules the way the TUI does; 0 means unknown, and
+        everything falls back to unwrapped, content-sized output."""
+        skin = skin or cls._SKIN_DEFAULT
+        indent = " " * skin["indent"]
+        width = max(0, cols - skin["indent"] - skin["right_margin"]) if cols else 0
+        DIM = skin["dim"] if ansi else ""
         YEL = "\x1b[33m" if ansi else ""
         RED = "\x1b[31m" if ansi else ""
         R = "\x1b[0m" if ansi else ""
+        u_first = skin["user_prefix"] if ansi else "❯ "
+        u_cont = skin["user_cont"] if ansi else "  "
+        u_width = (max(0, cols - cls._disp_width(u_first) - skin["right_margin"])
+                   if cols and skin["wrap"] else 0)
         out = []
         # 連續 tool_call 收合成一行摘要——一次修 bug 動輒 20+ 個工具呼叫，
         # 逐行列出是工具行牆（使用者 截圖的主要噪音），TUI 讀感也不是那樣。
@@ -904,13 +1100,13 @@ class HistoryApiMixin:
                 return
             if len(pending_tools) <= 2:
                 for tool, tgt in pending_tools:
-                    out.append(f"{DIM}⏺ {tool}({tgt}){R}")
+                    out.append(f"{indent}{DIM}⏺ {tool}({tgt}){R}")
             else:
                 from collections import Counter
                 counts = Counter(t for t, _ in pending_tools)
                 summary = "、".join(
                     f"{t} ×{n}" if n > 1 else t for t, n in counts.most_common())
-                out.append(f"{DIM}⏺ {summary}{R}")
+                out.append(f"{indent}{DIM}⏺ {summary}{R}")
             pending_tools.clear()
 
         for ev in evs:
@@ -928,16 +1124,28 @@ class HistoryApiMixin:
                     continue
                 if out:
                     out.append("")
-                for i, ln in enumerate(text.splitlines()):
-                    out.append((f"{B_CYAN}❯ {R}" if i == 0 else "  ") + ln + R)
+                body = []
+                for ln in text.splitlines():
+                    body.extend(cls._wrap_ansi(ln, u_width) if u_width else [ln])
+                pad = skin.get("user_pad") or ""
+                if pad:
+                    out.append(pad)
+                for i, ln in enumerate(body):
+                    out.append((u_first if i == 0 else u_cont) + ln + R)
+                if pad:
+                    out.append(pad)
             elif k == "assistant_text" and (ev.get("text") or "").strip():
                 if out:
                     out.append("")
-                out.extend(ln + R for ln in cls._md_ansi_lines(ev["text"], ansi))
+                # 空行不要帶縮排：活畫面的空行就是空的，留一排空白會讓
+                # 「複製上滑內容」多出看不見的尾隨空格。
+                out.extend(
+                    (indent + ln + R) if cls._ANSI_STRIP_RE.sub('', ln).strip() else ""
+                    for ln in cls._md_ansi_lines(ev["text"], ansi, skin, width))
             elif k == "decision_req":
-                out.append(f"{YEL}⚠ 等待決策 {ev.get('target', '')}{R}")
+                out.append(f"{indent}{YEL}⚠ 等待決策 {ev.get('target', '')}{R}")
             elif k == "error" and ev.get("text"):
-                out.append(f"{RED}✖ {ev['text']}{R}")
+                out.append(f"{indent}{RED}✖ {ev['text']}{R}")
         _flush_tools()
         return "\n".join(out)
 

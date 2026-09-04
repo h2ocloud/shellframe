@@ -4528,7 +4528,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       e.stopPropagation();
       if (_loading) return;
       _loading = true;
-      pywebview.api.get_clean_history(sid, 10000, true).then(res => {
+      // Pass the live pane's column count: the transcript renderer sizes
+      // tables and rules exactly the way the TUI does, and it can only do that
+      // if it knows how wide the pane is.
+      pywebview.api.get_clean_history(sid, 10000, true, s.term.cols).then(res => {
         _loading = false;
         try {
           const result = JSON.parse(res);
