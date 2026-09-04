@@ -63,6 +63,24 @@ AGY_STEP_DONE = 3
 # the state survives debouncing and the completion is actually noticed).
 AGY_DONE_WINDOW_S = 15
 
+# opencode (SST) keeps every session in one shared SQLite index rather than
+# per-conversation files: ~/.local/share/opencode/opencode.db. A tab is matched
+# to its session through the pane title — opencode sets it to
+# "OC | <session title>" — falling back to the newest session in the same cwd.
+OPENCODE_DB = os.path.expanduser("~/.local/share/opencode/opencode.db")
+# 一輪結束後仍報 "done" 的窗口，同 AGY_DONE_WINDOW_S 的用意。
+OPENCODE_DONE_WINDOW_S = 15
+# 這些 finish 值代表「這一則訊息停下來只是為了跑工具」，turn 還沒結束。
+OPENCODE_MIDTURN_FINISH = {"tool-calls", "tool_calls"}
+_OPENCODE_SES_CACHE = {}     # tmux_name → (查詢時間, session_id)
+_OPENCODE_SES_TTL = 15.0
+
+# pi coding agent 的 session 檔：~/.pi/agent/sessions/<cwd-slug>/<ISO>_<uuid>.jsonl
+# slug＝cwd 的 / 換成 - 再前後各包一層 -（/Users/howard → --Users-howard--）。
+PI_SESSIONS = os.path.expanduser("~/.pi/agent/sessions")
+_PI_FILE_TS_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z_")
+
 
 # ────────────────────────── tab → transcript 對應 ──────────────────────────
 
@@ -165,6 +183,175 @@ def _lsof_open_paths(pids, contains: str):
             if contains in path:
                 hits.append(path)
     return hits
+
+
+def _pi_cwd_slug(cwd: str) -> str:
+    p = os.path.realpath(os.path.expanduser(cwd or "~"))
+    return "-" + p.replace("/", "-") + "--"
+
+
+def _pi_file_epoch(name: str):
+    """pi session 檔名裡的建立時刻 → epoch，認不得回 None。"""
+    m = _PI_FILE_TS_RE.match(name or "")
+    if not m:
+        return None
+    return _parse_iso("%sT%s:%s:%s.%sZ" % m.groups())
+
+
+def _pi_session_file(worker: dict):
+    """tab → pi 的 session JSONL，或 None。
+
+    pi 不像 codex 一直握著檔案（append 完就關），所以 lsof 那條路沒有；macOS
+    也讀不到別的 process 的 PI_SESSION_FILE（SIP 擋住 `ps -E`）。可用的錨點是
+    檔名裡的建立時刻——pi 開 session 就用當下時間命名，對得上該 process 的啟動
+    時間。先只留「這個 pi process 起來之後才建立」的檔（session 中途重開會再
+    生一個，取其中最新寫入的），拿不到 process 起始時間才退回整個 slug 目錄
+    取最新。⚠️ 同一個 cwd 開兩個 pi 分頁時分不出來——那要 pi 自己吐 session id
+    才有解，目前它不吐。
+    """
+    files = glob.glob(os.path.join(
+        PI_SESSIONS, _pi_cwd_slug(worker.get("cwd")), "*.jsonl"))
+    if not files:
+        return None
+    pane = _tmux_pane_pid(worker.get("tmux_name"))
+    start = _proc_start_epoch(pane) if pane else None
+    pool = files
+    if start:
+        # 5 秒寬限：檔名時刻由 pi 自己蓋，與 process 起始差幾百 ms 是常態。
+        own = [f for f in files
+               if (_pi_file_epoch(os.path.basename(f)) or 0) >= start - 5]
+        pool = own or files
+    try:
+        return max(pool, key=os.path.getmtime)
+    except OSError:
+        return None
+
+
+def _parse_pi_session_model(path):
+    """pi session 檔裡最後一筆 model_change / thinking_level_change。
+
+    整檔掃而不是只看檔頭：session 中途 `/model`、`/thinking` 切換會再寫一筆，
+    只讀開頭就會把徽章釘在啟動時的模型上。呼叫端走 `_cached_parse`，檔案沒動
+    就不會重掃。
+    """
+    model = effort = None
+    try:
+        with open(path, "r", errors="replace") as fh:
+            for line in fh:
+                if ('"model_change"' not in line
+                        and '"thinking_level_change"' not in line):
+                    continue
+                try:
+                    o = json.loads(line)
+                except Exception:
+                    continue
+                if o.get("type") == "model_change":
+                    model = o.get("modelId") or model
+                elif o.get("type") == "thinking_level_change":
+                    effort = o.get("thinkingLevel") or effort
+    except OSError:
+        return None
+    return {"model": model, "effort": effort} if (model or effort) else None
+
+
+def _tmux_pane_title(tmux_name: str) -> str:
+    if not tmux_name:
+        return ""
+    try:
+        r = subprocess.run(["tmux", "display-message", "-p", "-t", tmux_name,
+                            "#{pane_title}"], capture_output=True,
+                           timeout=2, text=True)
+        if r.returncode == 0:
+            return (r.stdout or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def opencode_session_id(worker: dict, db_path: str = None, now: float = None):
+    """tab → opencode session id, or None.
+
+    Canonical resolver, shared by the status light and the scroll-up history
+    overlay — two copies of "which session is this tab?" is how they drift.
+    Pane title first ("OC | <title>", possibly truncated by tmux, so matched as
+    a prefix and tie-broken by recency), then the newest session in the same
+    cwd, which is the common single-tab case and also covers a tab whose title
+    tmux has not picked up yet.
+    """
+    db = db_path or OPENCODE_DB
+    if not os.path.exists(str(db)):
+        return None
+    now = now or time.time()
+    tmux_name = worker.get("tmux_name") or ""
+    ck = (tmux_name, str(db))
+    cached = _OPENCODE_SES_CACHE.get(ck) if tmux_name else None
+    if cached and now - cached[0] < _OPENCODE_SES_TTL and cached[1]:
+        return cached[1]
+    title = _tmux_pane_title(tmux_name)
+    if title.startswith("OC | "):
+        title = title[5:].strip()
+    else:
+        title = ""
+    ses_id = None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
+        try:
+            row = None
+            if title:
+                row = con.execute(
+                    "SELECT id FROM session WHERE title LIKE ? || '%' "
+                    "ORDER BY time_updated DESC LIMIT 1", (title,)).fetchone()
+            if row is None:
+                cwd = os.path.expanduser(worker.get("cwd") or "~")
+                row = con.execute(
+                    "SELECT id FROM session WHERE directory = ? "
+                    "ORDER BY time_updated DESC LIMIT 1", (cwd,)).fetchone()
+            ses_id = row[0] if row else None
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    if tmux_name:
+        _OPENCODE_SES_CACHE[ck] = (now, ses_id)
+    return ses_id
+
+
+def _opencode_last_message(ses_id: str, db_path: str = None):
+    """該 session 最新一則訊息的 {role, finish, completed, created, model}，
+    或 None。
+
+    新鮮度用訊息自己的時間戳，不用檔案 mtime：opencode 的 DB 是**所有** session
+    共用一個檔，隔壁分頁一寫 -wal，mtime 就跟著跳——那個時鐘不屬於這個分頁。
+    """
+    db = db_path or OPENCODE_DB
+    if not ses_id or not os.path.exists(str(db)):
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
+        try:
+            row = con.execute(
+                "SELECT data FROM message WHERE session_id = ? "
+                "ORDER BY time_created DESC, id DESC LIMIT 1",
+                (ses_id,)).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    try:
+        d = json.loads(row[0])
+    except Exception:
+        return None
+    t = d.get("time") or {}
+    model = d.get("modelID") or ""
+    if not model and isinstance(d.get("model"), dict):
+        model = d["model"].get("modelID") or ""
+    def _sec(ms):
+        return ms / 1000.0 if isinstance(ms, (int, float)) and ms else None
+    return {"role": d.get("role") or "", "finish": d.get("finish") or "",
+            "completed": _sec(t.get("completed")), "created": _sec(t.get("created")),
+            "model": model}
 
 
 def _agy_conversation_db(worker: dict):
@@ -593,6 +780,27 @@ def detect_model_info(worker: dict, transcript_path=None):
     """tab 的 {name, effort, provider}；非 AI tab 或偵測不到回 None。永不拋。"""
     try:
         kind = _worker_kind(worker.get("cmd", ""))
+        if kind == "pi":
+            path = _pi_session_file(worker)
+            info = _cached_parse(path, _parse_pi_session_model) if path else None
+            if not info or not info.get("model"):
+                return None
+            # thinkingLevel 的預設就是 off——每個 pi 分頁都掛一個 "off" 只是
+            # 雜訊，有開才顯示。
+            effort = info.get("effort") or ""
+            return {"name": _pretty_model(info["model"]),
+                    "effort": "" if effort == "off" else effort,
+                    "provider": "pi"}
+        if kind == "opencode":
+            # The model is recorded per message, so the badge follows an
+            # in-session model switch on the next message rather than being
+            # pinned to whatever the tab was launched with.
+            ses = opencode_session_id(worker)
+            msg = _opencode_last_message(ses) if ses else None
+            name = _pretty_model((msg or {}).get("model") or "")
+            if not name:
+                return None
+            return {"name": name, "effort": "", "provider": "opencode"}
         if kind == "agy":
             # The label the running process last announced beats any config
             # file: it follows /model switches inside the session.
@@ -1147,6 +1355,58 @@ class StatusTracker:
             pass
         return ret
 
+    def _opencode_status(self, sid, worker, now, screen_tail, model):
+        """opencode state, straight from its shared session SQLite.
+
+        opencode keeps no JSONL transcript, so the event state machine has
+        nothing to chew on; the session's newest message answers the question
+        directly. An assistant message with no completion stamp is still being
+        generated; one that finished with `tool-calls` has merely paused to run
+        a tool, so the turn is still going; anything else ended the turn. Falls
+        back to the shared screen-only read when the tab has no session yet —
+        a brand-new tab sitting on the welcome screen.
+
+        Freshness comes from the message stamps rather than the file mtime:
+        every session shares one database, so a neighbouring tab's writes would
+        otherwise look like this tab making progress.
+        """
+        ses = opencode_session_id(worker, now=now)
+        msg = _opencode_last_message(ses) if ses else None
+        if not msg:
+            state, act, why = compute_state([], now=now, screen_tail=screen_tail)
+            state = self._debounce(sid, state, now)
+            _, since = self._last.get(sid, (state, now))
+            return {"state": state, "dot": DOT.get(state, ""), "activity": act,
+                    "summary": (act.get("verb") if act else "") or state,
+                    "action": "", "narration": "", "task": "",
+                    "elapsed": int(now - since),
+                    "why": "opencode screen-only: " + why,
+                    "transcript": None, "loop": None, "model": model}
+        age = max(0.0, now - (msg["completed"] or msg["created"] or now))
+        if msg["role"] == "user" or not msg["completed"]:
+            state = "stuck" if age > STUCK_IDLE_S else "working"
+            why = f"opencode {msg['role'] or 'message'} in flight"
+        elif msg["finish"] in OPENCODE_MIDTURN_FINISH:
+            state = "stuck" if age > STUCK_IDLE_S else "working"
+            why = "opencode running a tool"
+        elif age <= OPENCODE_DONE_WINDOW_S:
+            state = "done"
+            why = "opencode turn finished (%s)" % (msg["finish"] or "stop")
+        else:
+            state, why = "idle", "opencode settled"
+        if state == "stuck":
+            why += " (no writes)"
+        # No _debounce, same reasoning as _agy_status: this comes from a
+        # committed SQLite row, not a screen scrape — it does not bounce.
+        prev_state, since = self._last.get(sid, (None, now))
+        if state != prev_state:
+            since = now
+            self._last[sid] = (state, now)
+        return {"state": state, "dot": DOT.get(state, ""), "activity": None,
+                "summary": state, "action": "", "narration": "", "task": "",
+                "elapsed": int(now - since), "why": why,
+                "transcript": None, "loop": None, "model": model}
+
     def _agy_status(self, sid, worker, now, screen_tail, model):
         """agy state, straight from its per-conversation SQLite.
 
@@ -1256,6 +1516,9 @@ class StatusTracker:
         now = now or time.time()
         try:
             _kind = _worker_kind(worker.get("cmd", ""))
+            if _kind == "opencode":
+                return self._opencode_status(
+                    sid, worker, now, screen_tail, detect_model_info(worker))
             if _kind == "pi":
                 return self._pi_status(
                     sid, worker, now, screen_tail, detect_model_info(worker))

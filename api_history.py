@@ -743,38 +743,14 @@ class HistoryApiMixin:
         db = self._OPENCODE_DB
         if not db.exists():
             return []
-        sid_row = None
+        # session 對應（pane title → 同 cwd 最近一個）由 agent_status 提供，
+        # 狀態燈與這裡共用同一份——兩份「這個分頁是哪個 session」必然會走鐘。
+        ses_id = agent_status.opencode_session_id(worker, db_path=str(db))
+        if not ses_id:
+            return []
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1.0)
         try:
             con.row_factory = sqlite3.Row
-            # 1) pane title → session。pane title 可能被 tmux 截斷，用前綴比對；
-            #    同名取最近更新的那個。
-            title = ""
-            tmux_name = worker.get("tmux_name")
-            if tmux_name:
-                try:
-                    r = subprocess.run(
-                        ["tmux", "display-message", "-p", "-t", tmux_name,
-                         "#{pane_title}"],
-                        capture_output=True, text=True, timeout=2)
-                    title = (r.stdout or "").strip()
-                except Exception:
-                    title = ""
-            if title.startswith("OC | "):
-                title = title[5:].strip()
-            if title:
-                sid_row = con.execute(
-                    "SELECT id FROM session WHERE title LIKE ? || '%' "
-                    "ORDER BY time_updated DESC LIMIT 1", (title,)).fetchone()
-            # 2) fallback：同 cwd 的最近 session（單一 opencode 分頁的常態）。
-            if sid_row is None:
-                cwd = os.path.expanduser(worker.get("cwd") or "~")
-                sid_row = con.execute(
-                    "SELECT id FROM session WHERE directory = ? "
-                    "ORDER BY time_updated DESC LIMIT 1", (cwd,)).fetchone()
-            if sid_row is None:
-                return []
-            ses_id = sid_row["id"]
             # 只取最近 max_messages 則訊息（長 session 防整表掃）。
             rows = con.execute(
                 "SELECT m.id AS mid, m.data AS mdata, m.time_created AS mts,"

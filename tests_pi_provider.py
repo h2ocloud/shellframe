@@ -90,6 +90,115 @@ def test_shared_path_would_misjudge():
         "若共用路徑不再誤判，_pi_status 的必要性需重新評估"
 
 
+# ── 7. 模型徽章：pi 的 session 檔就有 model_change / thinking_level_change ──
+#      舊行為：detect_model_info 沒有 pi 分支 → pi 分頁永遠沒有模型徽章。
+import glob as _glob            # noqa: E402
+import json as _json            # noqa: E402
+import os as _os                # noqa: E402
+import tempfile as _tempfile    # noqa: E402
+
+
+def _pi_session_dir(lines_by_file, start=1_000_000.0):
+    """建一個假的 ~/.pi/agent/sessions 樹，回 (root, worker, restore)。"""
+    root = _tempfile.mkdtemp(prefix="sf_pi_test_")
+    cwd = _os.path.join(root, "work")
+    _os.makedirs(cwd, exist_ok=True)
+    slug_dir = _os.path.join(root, "sessions", A._pi_cwd_slug(cwd))
+    _os.makedirs(slug_dir, exist_ok=True)
+    for i, (name, records) in enumerate(lines_by_file):
+        path = _os.path.join(slug_dir, name)
+        with open(path, "w") as fh:
+            for r in records:
+                fh.write(_json.dumps(r) + "\n")
+        _os.utime(path, (start + i, start + i))     # 後面的檔比較新
+    saved = (A.PI_SESSIONS, A._tmux_pane_pid, A._proc_start_epoch)
+    A.PI_SESSIONS = _os.path.join(root, "sessions")
+    A._tmux_pane_pid = lambda name: 4242
+    A._proc_start_epoch = lambda pid: start
+
+    def restore():
+        A.PI_SESSIONS, A._tmux_pane_pid, A._proc_start_epoch = saved
+
+    return {"cmd": "sf-pi-spark", "cwd": cwd, "tmux_name": "sf_x"}, restore
+
+
+def _pi_records(model, thinking=None):
+    recs = [{"type": "session", "version": 3, "cwd": "/x",
+             "timestamp": "2026-08-28T14:37:29.665Z"},
+            {"type": "model_change", "provider": "spark", "modelId": model,
+             "timestamp": "2026-08-28T14:37:29.699Z"}]
+    if thinking:
+        recs.append({"type": "thinking_level_change", "thinkingLevel": thinking,
+                     "timestamp": "2026-08-28T14:37:29.699Z"})
+    return recs
+
+
+def test_cwd_slug():
+    assert A._pi_cwd_slug("/Users/howard") == "--Users-howard--"
+
+
+def test_file_epoch_parsed_from_name():
+    got = A._pi_file_epoch("2026-08-28T14-24-15-712Z_01a048c1.jsonl")
+    assert got and abs(got - 1787927055.712) < 0.01, got
+    assert A._pi_file_epoch("not-a-session.jsonl") is None
+
+
+def test_model_badge():
+    worker, restore = _pi_session_dir(
+        [("2026-08-28T14-37-29-665Z_aaa.jsonl", _pi_records("spark-main"))])
+    try:
+        info = A.detect_model_info(worker)
+    finally:
+        restore()
+    assert info and info["name"] == "spark-main", info
+    assert info["provider"] == "pi", info
+
+
+def test_thinking_off_is_not_shown_but_on_is():
+    worker, restore = _pi_session_dir(
+        [("2026-08-28T14-37-29-665Z_aaa.jsonl",
+          _pi_records("spark-main", "off"))])
+    try:
+        assert A.detect_model_info(worker)["effort"] == ""
+    finally:
+        restore()
+    worker, restore = _pi_session_dir(
+        [("2026-08-28T14-37-29-665Z_bbb.jsonl",
+          _pi_records("spark-main", "high"))])
+    try:
+        assert A.detect_model_info(worker)["effort"] == "high"
+    finally:
+        restore()
+
+
+def test_midsession_model_switch_wins():
+    recs = _pi_records("spark-main") + [
+        {"type": "model_change", "provider": "spark", "modelId": "spark-vision",
+         "timestamp": "2026-08-28T15:00:00.000Z"}]
+    worker, restore = _pi_session_dir(
+        [("2026-08-28T14-37-29-665Z_ccc.jsonl", recs)])
+    try:
+        assert A.detect_model_info(worker)["name"] == "spark-vision"
+    finally:
+        restore()
+
+
+# ── 8. 同 cwd 多個 session 檔：只認這個 process 起來之後建立的，取最新寫入 ──
+#      （分頁中途重開 session 會再生一個檔；上一個分頁留下的舊檔不能贏）
+def test_picks_this_process_newest_file():
+    worker, restore = _pi_session_dir([
+        # 舊檔：檔名時刻早於 process 起始（1_000_000 → 1970-01-12T13:46:40Z）
+        ("1970-01-11T00-00-00-000Z_old.jsonl", _pi_records("stale-model")),
+        ("1970-01-12T14-00-00-000Z_new.jsonl", _pi_records("live-model")),
+    ])
+    try:
+        got = A._pi_session_file(worker)
+        assert got and got.endswith("_new.jsonl"), got
+        assert A.detect_model_info(worker)["name"] == "live-model"
+    finally:
+        restore()
+
+
 if __name__ == "__main__":
     fails = []
     for name, fn in sorted(globals().items()):

@@ -70,6 +70,16 @@ PROVIDER_SPECS = {
                     "compat.supportsDeveloperRole=false）。",
         },
     },
+    "opencode": {
+        "label": "OpenCode", "binaries": ("opencode",),
+        "install": {
+            "command": "curl -fsSL https://opencode.ai/install | bash",
+            "docs": "https://opencode.ai/docs/",
+            "note": "也在 homebrew-core：`brew install opencode`。模型走使用者自己"
+                    "設定的 provider（~/.config/opencode/opencode.json），"
+                    "地端 OpenAI 相容端點也算，所以沒有單一配額可報。",
+        },
+    },
     "agy": {
         "label": "Antigravity", "binaries": ("agy", "antigravity"),
         "install": {
@@ -1119,6 +1129,25 @@ def _account_pi(data, env):
 
 
 PROVIDER_SPECS["pi"].update(probe=_probe_pi, account=_account_pi)
+
+
+def _probe_opencode(env):
+    """opencode 沒有單一配額讀數。它把模型委給使用者設定的 provider
+    （~/.config/opencode/opencode.json：Anthropic／OpenAI／任何 OpenAI 相容
+    端點，含地端），每個 provider 的配額各自獨立、也可能根本沒有配額概念，
+    從 opencode 這一側問不出一個能代表這個分頁的數字。回 None＝「此
+    provider 無水位可報」，上層走既有的 no-reading 路徑（不顯示 pill，不是
+    錯誤）——與 pi 同。猜一個數字比不顯示更糟。"""
+    return None
+
+
+def _account_opencode(data, env):
+    """opencode 的登入是 per-provider（`opencode auth login`），沒有單一帳號
+    可顯示。"""
+    return ""
+
+
+PROVIDER_SPECS["opencode"].update(probe=_probe_opencode, account=_account_opencode)
 
 
 def probe_data(cmd: str, env=None) -> dict:

@@ -6,6 +6,80 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.31.0 (2026-09-04)
+
+### Added
+
+- **opencode is a recognised provider.** It used to be just another command you
+  could run in a tab: not counted as an AI tab, no status dot, no model badge,
+  no init prompt. It now has a registry entry, so tabs running it get the
+  AI-tab affordances the other CLIs have. It reports no usage figure on
+  purpose — opencode delegates the model to whatever provider the user
+  configured, local endpoints included, and those budgets are separate or
+  absent, so there is no single number that represents the tab. Reporting
+  nothing beats inventing one. Tests: `tests_opencode_provider.py`.
+
+  **opencode 正式成為認得的 provider。** 它原本只是「可以在分頁裡跑的一個指令」：
+  不算 AI 分頁、沒有狀態燈、沒有模型徽章、不吃 init prompt。現在有了 registry
+  條目，跑它的分頁就享有其他 CLI 既有的待遇。用量刻意回報「沒有」——opencode 把
+  模型委給使用者自己設定的 provider（含地端端點），各自的配額互相獨立、甚至根本
+  沒有配額概念，不存在一個能代表這個分頁的數字。不報比亂編好。
+  測試：`tests_opencode_provider.py`。
+
+- **Status dot and model badge for opencode tabs.** Both read its session
+  SQLite, which is where opencode keeps the conversation instead of a JSONL
+  transcript, so the shared event state machine had nothing to work with. The
+  distinction that matters is what `finish` means: a message that ended with
+  `tool-calls` has only paused to run a tool and the turn is still going, while
+  anything else ends it. Freshness comes from the message timestamps rather
+  than the database file's mtime, because every session shares one file — a
+  neighbouring tab's writes would otherwise read as this tab making progress.
+  A turn with no writes for longer than the stall threshold is reported stuck
+  rather than working forever.
+
+  **opencode 分頁有狀態燈與模型徽章了。** 兩者都讀它的 session SQLite——opencode
+  的對話存在那裡而不是 JSONL transcript，共用的事件狀態機無從判起。關鍵在 `finish`
+  的語意：以 `tool-calls` 結束的訊息只是停下來跑工具、turn 還沒結束，其餘才算結束。
+  新鮮度取訊息自己的時間戳而非資料庫檔案的 mtime，因為所有 session 共用一個檔，
+  否則隔壁分頁一寫入就會被讀成這個分頁有進展。超過卡住門檻沒有任何寫入的 turn
+  回報為卡住，而不是永遠停在執行中。
+
+### Fixes
+
+- **pi tabs show which model they are running.** pi has been a registered
+  provider with a working status dot since v0.29.41, but the model badge was
+  never wired up, so those tabs sat blank while every other AI tab named its
+  model. The label now comes from the session file's own `model_change` and
+  `thinking_level_change` records, which means an in-session model switch is
+  reflected instead of the badge being pinned to the launch flags. Thinking
+  level is shown only when it is on, since off is the default and would
+  otherwise decorate every pi tab. Matching a tab to its session file is
+  anchored on the creation time encoded in the file name: pi closes the file
+  between appends, so the open-file trick used for another CLI does not apply,
+  and the OS will not hand over another process's environment. Tests in
+  `tests_pi_provider.py`.
+
+  **pi 分頁看得到自己跑的是哪個模型。** pi 從 v0.29.41 起就是註冊過的 provider、
+  狀態燈也正常，但模型徽章一直沒接上，於是別的 AI 分頁都標著模型名，只有它是空的。
+  標籤現在取自 session 檔自己的 `model_change` 與 `thinking_level_change` 紀錄，
+  因此 session 中途換模型會跟著反映，而不是被釘在啟動參數上。thinking 等級只在
+  開啟時顯示，因為預設就是關閉、否則每個 pi 分頁都會掛一個沒有資訊量的標記。
+  分頁與 session 檔的對應錨定在檔名裡的建立時刻：pi 每次 append 完就關檔，
+  另一個 CLI 用的「檔案一直開著」那招對它無效，作業系統也不會交出別的 process
+  的環境變數。測試在 `tests_pi_provider.py`。
+
+### Internal
+
+- **One session resolver for opencode, shared by the status light and the
+  scroll-up history.** Both need to answer "which session is this tab?", and
+  the overlay already had its own copy; two implementations of that question
+  drift apart. The resolver now lives next to the other tab-to-transcript
+  lookups and both callers use it.
+
+  **opencode 的 session 對應收斂成一份，狀態燈與上滑歷史共用。** 兩邊都要回答
+  「這個分頁是哪個 session」，而 overlay 已經自己有一份；同一個問題兩份實作必然
+  走鐘。對應邏輯移到其他「分頁 → transcript」查找的旁邊，兩個呼叫端共用它。
+
 ## v0.30.29 (2026-09-04)
 
 ### Fixes

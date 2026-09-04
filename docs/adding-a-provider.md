@@ -4,7 +4,10 @@ ShellFrame wraps AI coding CLIs. Beyond running one in a tab — which needs no
 code at all — a *provider* is a CLI that ShellFrame also understands well
 enough to report its quota, pace its usage, and treat its tabs as AI tabs.
 
-Supported today: `claude` (Claude Code), `codex`, `agy` (Antigravity CLI).
+Supported today: `claude` (Claude Code), `codex`, `agy` (Antigravity CLI),
+`pi` (Pi coding agent), `opencode`. The last two report no usage figure —
+they run whatever model the user pointed them at, so there is no single
+budget to read; see the note on saying why in *Errors* below.
 
 Adding another one is **one registry entry plus two adapter functions** in
 `usage_probe.py`. Nothing in `main.py` or `web/index.html` hard-codes provider
