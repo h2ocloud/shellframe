@@ -20,6 +20,7 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import agent_status  # noqa: E402
 import api_history  # noqa: E402
 
 API = object.__new__(api_history.HistoryApiMixin)
@@ -60,14 +61,20 @@ def response_for(parts_by_message):
     cwd = os.path.join(tmp, "work")
     os.makedirs(cwd, exist_ok=True)
     build_db(db, parts_by_message, cwd)
-    old = api_history.HistoryApiMixin._OPENCODE_DB
+    old_db = api_history.HistoryApiMixin._OPENCODE_DB
+    old_title = agent_status._tmux_pane_title
     api_history.HistoryApiMixin._OPENCODE_DB = db
+    # 分頁 → session 只認 pane title（見 agent_status.opencode_session_id）
+    agent_status._tmux_pane_title = lambda name: "OC | 測試 session"
+    agent_status._OPENCODE_SES_CACHE.clear()
     try:
         worker = {"cmd": "opencode --model spark/spark-main", "cwd": cwd,
-                  "tmux_name": None, "session_id": None}
+                  "tmux_name": "sf_test", "session_id": None}
         return API._opencode_history_response(worker, True)
     finally:
-        api_history.HistoryApiMixin._OPENCODE_DB = old
+        api_history.HistoryApiMixin._OPENCODE_DB = old_db
+        agent_status._tmux_pane_title = old_title
+        agent_status._OPENCODE_SES_CACHE.clear()
 
 
 # ── 1. 回歸本體：一來一往的短對話也要出 transcript ──

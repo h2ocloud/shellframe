@@ -6,6 +6,32 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.31.1 (2026-09-04)
+
+### Fixes
+
+- **A second opencode tab in the same directory no longer shows the first
+  tab's conversation.** Matching a tab to its opencode session tried the pane
+  title first — opencode stamps it as `OC | <session title>` — and then fell
+  back to "the most recently updated session in this working directory". That
+  fallback is wrong the moment two opencode tabs share a directory: a freshly
+  opened tab has no title of its own yet, so the fallback handed it the
+  neighbouring tab's session, and its scroll-up history, status dot and model
+  badge all described the other conversation. The fallback is gone; without a
+  pane title the lookup now returns nothing and the caller falls back to the
+  terminal pipeline. A tab that has not started a conversation has none to
+  show anyway. Verified with two live tabs — each now resolves to its own
+  session — and covered by two cases in `tests_opencode_provider.py`.
+
+  **同一個目錄開第二個 opencode 分頁，不會再看到第一個分頁的對話。** 分頁對應到
+  opencode session 的方式是先比 pane title（opencode 會蓋成 `OC | <session 標題>`），
+  比不到就退回「這個工作目錄裡最近更新的 session」。一旦同目錄開了兩個 opencode
+  分頁，那條退路就是錯的：新開的分頁還沒有自己的標題，退路直接把隔壁分頁的
+  session 給了它，於是上滑歷史、狀態燈、模型徽章講的全是另一段對話。這條退路已經
+  移除；沒有 pane title 就回報查不到，呼叫端落回終端管線。還沒開始對話的分頁本來
+  就沒有歷史可顯示。已用兩個實際分頁驗證各自對到自己的 session，並在
+  `tests_opencode_provider.py` 補兩個案例守住。
+
 ## v0.31.0 (2026-09-04)
 
 ### Added

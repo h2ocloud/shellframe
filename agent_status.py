@@ -273,10 +273,15 @@ def opencode_session_id(worker: dict, db_path: str = None, now: float = None):
 
     Canonical resolver, shared by the status light and the scroll-up history
     overlay — two copies of "which session is this tab?" is how they drift.
-    Pane title first ("OC | <title>", possibly truncated by tmux, so matched as
-    a prefix and tie-broken by recency), then the newest session in the same
-    cwd, which is the common single-tab case and also covers a tab whose title
-    tmux has not picked up yet.
+
+    The only per-tab signal is the pane title: opencode sets it to
+    "OC | <session title>", which tmux may truncate, so it is matched as a
+    prefix and ties are broken by recency. There is deliberately NO fallback to
+    "newest session in the same cwd": with two opencode tabs open in one
+    directory that hands the caller the *other* tab's conversation, which is
+    how a fresh tab came to show its neighbour's history and status. Until
+    opencode has stamped the title, this tab has no session — and a tab with no
+    session has no conversation to show anyway.
     """
     db = db_path or OPENCODE_DB
     if not os.path.exists(str(db)):
@@ -288,24 +293,18 @@ def opencode_session_id(worker: dict, db_path: str = None, now: float = None):
     if cached and now - cached[0] < _OPENCODE_SES_TTL and cached[1]:
         return cached[1]
     title = _tmux_pane_title(tmux_name)
-    if title.startswith("OC | "):
-        title = title[5:].strip()
-    else:
-        title = ""
+    if not title.startswith("OC | "):
+        return None
+    title = title[5:].strip()
+    if not title:
+        return None
     ses_id = None
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
         try:
-            row = None
-            if title:
-                row = con.execute(
-                    "SELECT id FROM session WHERE title LIKE ? || '%' "
-                    "ORDER BY time_updated DESC LIMIT 1", (title,)).fetchone()
-            if row is None:
-                cwd = os.path.expanduser(worker.get("cwd") or "~")
-                row = con.execute(
-                    "SELECT id FROM session WHERE directory = ? "
-                    "ORDER BY time_updated DESC LIMIT 1", (cwd,)).fetchone()
+            row = con.execute(
+                "SELECT id FROM session WHERE title LIKE ? || '%' "
+                "ORDER BY time_updated DESC LIMIT 1", (title,)).fetchone()
             ses_id = row[0] if row else None
         finally:
             con.close()
