@@ -47,6 +47,21 @@ LEGACY_SCREEN = """Do you trust the files in this folder?
 ❯ 1. Yes, I trust this folder
   2. No, exit"""
 
+# TUI 重繪的前一幀：選項已經畫出來，游標還沒畫上去。ring buffer 會把這種
+# 半成品跟後面的完整幀一起留著（2026-09-04 正式環境事故的原始素材）。
+HALF_DRAWN_FRAME = """Quick safety check: Is this a project you created or one you trust?
+
+  No, exit
+  Yes, I trust this folder
+"""
+
+# 送出 Yes 之後的畫面：對話框沒了，剩正常 composer。
+ACCEPTED_SCREEN = """▐▛███▛█   Claude Code v2.1.260
+  ▝▝ ▝▝    /Users/neux
+
+❯
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"""
+
 
 # ── 1. 游標在 No, exit（現行版本）→ 要往下一格才是 Yes ──
 def test_nav_cursor_on_no():
@@ -108,6 +123,78 @@ def test_no_callback_no_buttons():
     br.slots = {}
     br._on_answer_dialog = None
     assert br._offer_trust_buttons("s9", 1, "Claude") is False
+
+
+# ── 9. 跨幀殘影不准算出反方向（v0.30.24 事故回歸）──
+#
+# 2026-09-04 正式環境 log 實錄 keys=['Up','Enter']：ring buffer 裡半成品幀的
+# 「Yes」排在完整幀的游標之前，舊版拿第一個 Yes 配第一個游標 → 算成 Up。
+# 游標本來就在 No, exit，Up 到頂不 wrap ＝原地不動，Enter 就是選 No, exit
+# 把分頁關掉。
+def test_nav_ignores_stale_frames():
+    tail = HALF_DRAWN_FRAME + "\n" + NEW_SCREEN
+    assert A._trust_dialog_nav(A, tail) == ("Down", 1)
+
+
+# ── 10. 只有半成品幀（畫面上沒游標）→ 不敢按 ──
+def test_nav_half_drawn_is_unparsable():
+    assert A._trust_dialog_nav(A, HALF_DRAWN_FRAME) is None
+
+
+# ── 11. 定位要用單幀畫面，不能用會疊殘影的 tail ──
+def test_answer_locates_on_single_frame():
+    src = inspect.getsource(A.answer_startup_trust)
+    assert "_startup_trust_screen" in src, "還在用 _startup_trust_tail 定位游標"
+
+
+# ── 12. 按下去之後要確認對話框真的消失，沒消失要回 False 讓它重試 ──
+def _fake_session(screen, accept_on_enter):
+    class FakeSession:
+        def __init__(self):
+            self.sid = "s1"
+            self.alive = True
+            self.cmd = "claude --dangerously-skip-permissions"
+            self.cwd = os.path.expanduser("~")
+            self.lock = threading.Lock()
+            self._recent = bytearray(screen.encode())
+            self._tmux_name = None      # 逼它走 PTY write 路徑，好收按鍵
+            self.keys = []
+
+        def write(self, data):
+            self.keys.append(data)
+            if accept_on_enter and data == "\r":
+                self._recent = bytearray(ACCEPTED_SCREEN.encode())
+    return FakeSession()
+
+
+def _api_with(session):
+    api = object.__new__(A)
+    api.sessions = {"s1": session}
+    return api
+
+
+def test_answer_returns_true_when_dialog_cleared():
+    s = _fake_session(NEW_SCREEN, accept_on_enter=True)
+    api = _api_with(s)
+    assert api.answer_startup_trust("s1", trust=True) is True
+    assert s.keys == ["\x1b[B", "\r"], f"按鍵不對：{s.keys}"   # Down, Enter
+
+
+def test_answer_returns_false_when_keys_swallowed():
+    """按鍵被還沒接手鍵盤的 TUI 吃掉——舊版照樣回 True，呼叫端把 pending
+    關掉，對話框就永遠掛在那裡沒人救。"""
+    s = _fake_session(NEW_SCREEN, accept_on_enter=False)
+    api = _api_with(s)
+    assert api.answer_startup_trust("s1", trust=True) is False
+
+
+# ── 13. 重開 app／重開機接回來的分頁也要掛 watcher ──
+def test_restore_arms_trust_watcher():
+    src = inspect.getsource(A.restore_tmux_sessions)
+    assert "session._startup_trust_pending = False" not in src, \
+        "restore 又把 auto-accept 關掉了（14 分頁全卡死的原因）"
+    assert src.count("_start_startup_trust_watcher") == 2, \
+        "tmux reattach 與 soft restore 兩條路都要掛 watcher"
 
 
 if __name__ == "__main__":

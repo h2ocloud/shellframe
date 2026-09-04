@@ -6,6 +6,54 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.24 (2026-09-04)
+
+### Fixes
+
+- **The startup trust dialog is answered in the right direction instead of
+  closing the tab.** The cursor-aware answer read its screen text from a buffer
+  that concatenates the raw PTY ring buffer with a tmux snapshot, so a
+  half-drawn frame — options painted, cursor not yet — could sit ahead of the
+  finished one. Pairing the first `Yes, I trust this folder` row with the first
+  cursor row across two different frames inverted the result: with the cursor
+  resting on `No, exit`, the computed key was `Up`, which does not wrap at the
+  top of the list, so the following `Enter` selected `No, exit` and closed the
+  tab. Navigation now reads a single tmux frame and refuses any frame that does
+  not contain exactly one cursor row. The keystrokes are verified as well —
+  after sending, the screen is re-read, and a dialog that is still up (common
+  when the keys arrive before the TUI has taken the keyboard) keeps the tab
+  pending for a retry instead of being reported as answered. Regression tests:
+  `tests_trust_dialog.py`.
+
+  **啟動信任對話框會按對方向，不會反而把分頁關掉。** 游標感知的作答邏輯，讀的
+  是「PTY ring buffer ＋ tmux 快照」接起來的文字，於是一個只畫了選項、還沒畫上
+  游標的半成品幀，可能排在完整幀前面。用第一個 `Yes, I trust this folder` 去配
+  第一個游標行，跨幀配對就把方向算反了：游標本來停在 `No, exit`，卻算出要按
+  `Up`，而清單頂端不會 wrap，等於原地不動，接著那個 `Enter` 就是選 `No, exit`
+  把分頁關掉。現在定位只讀單一 tmux 幀，且該幀必須剛好有一個游標行，否則不敢
+  按。按鍵本身也會驗證——送出後重讀畫面，對話框還在（按鍵搶在 TUI 接手鍵盤前
+  送出時很常見）就保持 pending 等重試，而不是謊報已作答。回歸測試：
+  `tests_trust_dialog.py`。
+
+- **Tabs restored after an app restart or a reboot answer the dialog too.** The
+  restore paths cleared the pending flag outright, so the auto-accept watcher
+  never ran for a reattached or respawned tab — but those are freshly launched
+  processes and do get asked. The result was every AI tab stalling on the same
+  dialog after a restart, with no way forward from the keyboard: the cursor
+  defaults to `No, exit`, so typing a message and pressing Enter closes the tab
+  instead of sending anything. Restore now keeps the decision made in
+  `Session.__init__` (trusted working directory plus a known AI command) and
+  starts the watcher, for tmux reattach, disk-backed soft restore, and the
+  account-switch respawn alike. Regression test: `tests_trust_dialog.py`.
+
+  **重開 app／重開機接回來的分頁也會自動作答。** restore 路徑直接把 pending
+  旗標關掉，reattach 或重新 spawn 的分頁因此完全沒有 watcher——但那些正是剛長
+  出來、一定會被問的行程。結果是重啟後每個 AI 分頁都卡在同一個對話框，而且鍵盤
+  救不回來：游標預設在 `No, exit`，打字後按 Enter 等於選它，分頁直接關掉。現在
+  restore 沿用 `Session.__init__` 依「受信任工作目錄＋已知 AI 指令」算出的判斷
+  並掛上 watcher，tmux reattach、磁碟 soft restore、換帳號重開三條路徑一致。
+  回歸測試：`tests_trust_dialog.py`。
+
 ## v0.30.23 (2026-09-04)
 
 ### Fixes

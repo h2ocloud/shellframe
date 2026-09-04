@@ -2296,11 +2296,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
                 session._init_pending = False
-                session._startup_trust_pending = False
+                # 這裡**不要**關掉 _startup_trust_pending。開機／重開 app 時
+                # tmux 裡那些 `claude --resume` 是剛長出來的行程，一樣會停在
+                # 資料夾信任對話框上，而且游標預設在 No, exit——沒人來答就是
+                # 整排分頁全卡死（2026-09-04 實例：14 個分頁全中）。
+                # Session.__init__ 已經依「受信任 cwd + AI 指令」算好該不該
+                # 接手，照它的判斷走，並把 watcher 掛起來。
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
                 session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
+                self._start_startup_trust_watcher(sid, session)
                 # Restore custom label
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
@@ -2349,11 +2355,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
                 session._init_pending = False
-                session._startup_trust_pending = False
+                # soft restore 是**重新 spawn** 一個行程（機器重開、tmux 沒
+                # 了），信任對話框百分之百會出現，更不能關掉 watcher。
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
                 session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
+                self._start_startup_trust_watcher(sid, session)
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
                     session._custom_label = label
@@ -3183,6 +3191,28 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 _swallow("Api._startup_trust_tail:2894")
         return "\n".join(parts)[-4000:]
 
+    def _startup_trust_screen(self, s: Session) -> str:
+        """**當前畫面**（單一幀），拿來判斷游標在哪一行、以及對話框答掉了沒。
+
+        跟 `_startup_trust_tail` 的差別是這裡不接 ring buffer：ring buffer 是
+        TUI 逐幀重繪的原始位元組，同一個對話框會疊很多份殘影，用來算游標位置
+        會跨幀配對出反方向（見 `_trust_dialog_nav`）。偵測要靈敏所以用 tail，
+        **按鍵前的定位一律用這個**。沒有 tmux（Windows）時才退回 ring buffer。
+        """
+        tmux_name = getattr(s, '_tmux_name', None)
+        if tmux_name:
+            try:
+                r = subprocess.run(
+                    ["tmux", "capture-pane", "-p", "-J", "-t", tmux_name],
+                    capture_output=True, text=True, timeout=1,
+                )
+                if r.returncode == 0 and r.stdout:
+                    return r.stdout[-4000:]
+            except Exception:
+                _swallow("Api._startup_trust_screen")
+        with s.lock:
+            return bytes(s._recent).decode('utf-8', errors='replace')[-4000:]
+
     # 信任對話框的兩個選項行。Claude Code 這版的游標**預設停在「No, exit」**
     # （2026-08-28 截圖實證），所以「按 Enter 就對了」是致命假設：Enter 直接
     # 讓 CLI 退出、分頁消失。選項順序與有無編號都隨版本變，所以一律先讀游標
@@ -3192,7 +3222,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     _TRUST_CURSOR_RE = _re.compile(r'^\s*[❯>›»▶]\s*\S')
 
     def _trust_dialog_nav(self, clean: str):
-        """(方向, 步數) 讓游標走到「Yes, I trust this folder」；抓不到回 None。"""
+        """(方向, 步數) 讓游標走到「Yes, I trust this folder」；抓不到回 None。
+
+        **只認最後一幀**：餵進來的文字可能是 ring buffer（TUI 逐幀重繪的原始
+        輸出）接上 tmux 快照，同一個對話框會出現好幾次，而且早期那幾幀常常
+        還沒畫上游標。舊版拿「第一個 Yes」配「第一個游標」，跨幀配對就會算出
+        反方向——2026-09-04 正式環境 log 實錄 `keys=['Up','Enter']`：游標本來
+        就在 No, exit，Up 到頂不會 wrap，等於原地不動再按 Enter＝選 No, exit
+        把分頁關掉。取最後兩個選項行才是當前畫面的真實狀態。
+        """
         rows = []          # [(is_yes, has_cursor)]
         for line in clean.splitlines():
             is_yes = bool(self._TRUST_OPT_YES_RE.search(line))
@@ -3202,6 +3240,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             rows.append((is_yes, bool(self._TRUST_CURSOR_RE.match(line))))
         if len(rows) < 2:
             return None
+        rows = rows[-2:]
+        # 一幀裡有且只有一個游標。0 個＝還沒畫完，2 個＝跨幀殘影，
+        # 兩種都代表這份文字不是乾淨的單幀畫面 → 不敢按。
+        if sum(1 for _, cur in rows if cur) != 1:
+            return None
+        if len({is_yes for is_yes, _ in rows}) != 2:
+            return None          # 兩行是同一個選項的殘影，配對不出來
         try:
             yes_i = next(i for i, (is_yes, _) in enumerate(rows) if is_yes)
             cur_i = next(i for i, (_, cur) in enumerate(rows) if cur)
@@ -3223,7 +3268,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         now = time.monotonic()
         if now - getattr(s, "_trust_answered_at", 0.0) < 5.0:
             return False
-        clean = self._ANSI_RE.sub('', self._startup_trust_tail(s) or "")
+        # 定位一律用當前畫面（單一幀），不用會疊殘影的 tail。
+        clean = self._ANSI_RE.sub('', self._startup_trust_screen(s) or "")
         if not self._STARTUP_TRUST_RE.search(clean):
             return False
         nav = self._trust_dialog_nav(clean)
@@ -3251,7 +3297,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             _swallow("Api.answer_startup_trust")
             return False
         s._trust_answered_at = time.monotonic()
-        return True
+        # 送完要回頭確認畫面**真的翻頁了**。舊版送完就回 True，呼叫端跟著把
+        # pending 關掉——只要那幾個按鍵送進還沒接手鍵盤的 TUI（開機頭一秒很
+        # 常見），按鍵石沉大海，對話框留在畫面上而且再也沒人來救，分頁卡死。
+        for _ in range(3):
+            time.sleep(0.25)
+            after = self._ANSI_RE.sub('', self._startup_trust_screen(s) or "")
+            if not self._STARTUP_TRUST_RE.search(after):
+                return True
+        _dlog("trust", f"trust dialog still up after keys sid={sid} — 保持 pending 待重試")
+        return False
 
     def _auto_accept_startup_trust_prompt(self, sid: str, s: Session):
         """Answer only known startup trust prompts for trusted AI cwd launches."""
@@ -3784,13 +3839,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         session._bridge_enabled = bridge_enabled
         session._glasses_enabled = glasses_enabled
         session._init_pending = False
-        session._startup_trust_pending = False
+        # 換帳號＝把行程砍掉重開，等同全新啟動，信任對話框會再問一次。
         session._slug_pending = False
         session._lifecycle_source = lifecycle_source
         session._lifecycle_handoff = lifecycle_handoff
         if label:
             session._custom_label = label
         self.sessions[sid] = session
+        # 註冊進 self.sessions 之後才掛 watcher——answer_startup_trust 是用
+        # sid 回查 session 的，先掛會空轉幾輪。
+        self._start_startup_trust_watcher(sid, session)
         if self.bridge:
             self.bridge.register_session(
                 sid, label or (cmd.split()[0] if cmd else sid),
