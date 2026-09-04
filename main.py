@@ -19,6 +19,7 @@ import json
 import os
 import platform
 import plistlib
+import glob
 import re
 import shlex
 import shutil
@@ -400,6 +401,19 @@ def _session_provider(cmd: str) -> str:
         return agent_status.worker_kind(cmd or "")
     except Exception:
         return "other"
+
+
+def _worker_is_codex(cmd: str) -> bool:
+    """這個分頁跑的是 codex 嗎（看第一個 token，含 .cmd/.exe 包裝）。"""
+    try:
+        tokens = shlex.split(cmd or "")
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    exe = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    exe = exe[:-4] if exe.endswith((".cmd", ".bat", ".exe")) else exe
+    return exe in ("codex", "sf-codex")
 
 
 def _canonical_cmd(cmd: str) -> str:
@@ -921,6 +935,10 @@ class Session:
         self.win_proc = None
         self.alive = True
         now = time.time()
+        # codex 分頁在 Windows 上要靠這個時間錨點認自己的 rollout：那裡沒有
+        # lsof、也沒有 tmux pane 可查，只能問「哪一份 rollout 是我開起來之後
+        # 才出現的」。
+        self._spawn_ts = now
         self._last_activity_time = now
         self._last_user_activity_time = now
         self._last_output_activity_time = 0.0
@@ -1422,6 +1440,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 hook_csid = getattr(s, "session_id", "") or ""
                 if hook_csid:
                     entry["claude_session_id"] = hook_csid
+                # codex 沒有 hook 可以回報，得自己認 rollout。Windows 關掉
+                # ShellFrame 等於整批 session 斷線（沒有 tmux 撐著），這個 id
+                # 是重開後唯一能接回原本對話的線索。
+                if _worker_is_codex(getattr(s, "cmd", "")):
+                    codex_sid = self._codex_session_id(sid, s)
+                    if codex_sid:
+                        entry["codex_session_id"] = codex_sid
                 lifecycle_source = getattr(s, "_lifecycle_source", "") or ""
                 if lifecycle_source:
                     entry["lifecycle_source"] = lifecycle_source
@@ -2057,6 +2082,76 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 return str(sid)
         return suffix or name
 
+    _CODEX_ROLLOUT_RE = re.compile(r"rollout-.*?-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                                   r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl$")
+
+    def _codex_session_id(self, sid: str, s) -> str:
+        """這個 codex 分頁對應的 rollout session uuid（'' = 認不出來）。
+
+        macOS／Linux 走 agent_status.resolve_transcript：codex 會一直持有
+        rollout 的 fd，lsof 直接命中，最準。
+        Windows 兩者都沒有（沒 lsof、沒 tmux pane），agent_status 的 fallback
+        是「全域最新的一份 rollout」——多個 codex 分頁會全部指到同一份。這裡
+        改用時序＋認領：取「這個分頁 spawn 之後才建立、且還沒被別的分頁認領」
+        的最早一份。認領表就是各 session 已經記住的 id。
+        """
+        try:
+            cached = getattr(s, "_codex_sid", "")
+            if cached:
+                return cached
+            path = ""
+            try:
+                path = agent_status.resolve_transcript({
+                    "cmd": getattr(s, "cmd", ""),
+                    "cwd": getattr(s, "cwd", "~"),
+                    "tmux_name": getattr(s, "_tmux_name", None),
+                }) or ""
+            except Exception:
+                path = ""
+            if IS_WIN or not path:
+                taken = {getattr(o, "_codex_sid", "") for k, o in self.sessions.items()
+                         if k != sid}
+                spawn = float(getattr(s, "_spawn_ts", 0.0) or 0.0)
+                best = None
+                for f in glob.glob(os.path.join(
+                        os.path.expanduser("~/.codex/sessions"),
+                        "*", "*", "*", "rollout-*.jsonl")):
+                    m = self._CODEX_ROLLOUT_RE.search(f)
+                    if not m or m.group(1) in taken:
+                        continue
+                    try:
+                        born = os.path.getmtime(f)
+                    except OSError:
+                        continue
+                    # 給 5 秒寬容：rollout 可能在 spawn 之前一瞬間就建好
+                    if born < spawn - 5:
+                        continue
+                    if best is None or born < best[0]:
+                        best = (born, m.group(1))
+                if best:
+                    s._codex_sid = best[1]
+                    return best[1]
+                return ""
+            m = self._CODEX_ROLLOUT_RE.search(path)
+            if m:
+                s._codex_sid = m.group(1)
+                return m.group(1)
+        except Exception:
+            _swallow(f"_codex_session_id:{sid}")
+        return ""
+
+    @staticmethod
+    def _codex_rollout_exists(csid: str) -> bool:
+        """這個 codex session uuid 在磁碟上還找得到 rollout 嗎。"""
+        if not csid:
+            return False
+        try:
+            return bool(glob.glob(os.path.join(
+                os.path.expanduser("~/.codex/sessions"),
+                "*", "*", "*", f"rollout-*-{csid}.jsonl")))
+        except Exception:
+            return False
+
     @staticmethod
     def _claude_transcript_exists(csid: str) -> bool:
         """這個 session uuid 在磁碟上還找得到 transcript 嗎。
@@ -2096,20 +2191,36 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         if not tokens:
             return cmd
         exe = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
-        if exe not in ("claude", "claude.cmd", "claude.exe"):
-            return cmd
-        out, skip = [tokens[0], "--resume", csid], False
-        for t in tokens[1:]:
-            if skip:
-                skip = False
-                continue
-            if t in ("--resume", "--session-id"):
-                skip = True
-                continue
-            if t.startswith("--resume=") or t.startswith("--session-id="):
-                continue
-            out.append(t)
-        return shlex.join(out)
+        exe = exe[:-4] if exe.endswith((".cmd", ".bat", ".exe")) else exe
+
+        if exe == "claude":
+            out, skip = [tokens[0], "--resume", csid], False
+            for t in tokens[1:]:
+                if skip:
+                    skip = False
+                    continue
+                if t in ("--resume", "--session-id"):
+                    skip = True
+                    continue
+                if t.startswith("--resume=") or t.startswith("--session-id="):
+                    continue
+                out.append(t)
+            return shlex.join(out)
+
+        if exe == "codex":
+            # `codex resume <SESSION_ID>` —— resume 是子指令，必須緊接在
+            # 執行檔後面。舊指令若已經是 `codex resume …`（帶 id、帶 --last
+            # 或什麼都沒帶的 picker 形式），先把那段拆掉再重組，否則會變成
+            # `codex resume resume …`。
+            rest = tokens[1:]
+            if rest and rest[0] == "resume":
+                rest = rest[1:]
+                if rest and not rest[0].startswith("-"):
+                    rest = rest[1:]          # 舊的 session id
+                rest = [t for t in rest if t != "--last"]
+            return shlex.join([tokens[0], "resume", csid, *rest])
+
+        return cmd          # agy / 一般 shell 各有自己的續接方式，不碰
 
     @staticmethod
     def _restore_transcript_hint(session, entry: dict):
@@ -2212,15 +2323,20 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             # 這條路是「tmux 沒了」才走的（機器重開機）。接回原本的對話，
             # 否則每個分頁都會是一個空白的新 session。transcript 檔不在就
             # 不接——與其 resume 失敗讓分頁開不起來，不如開新的。
-            csid = str(entry.get("claude_session_id") or "").strip()
+            if _worker_is_codex(cmd):
+                csid = str(entry.get("codex_session_id") or "").strip()
+                found = self._codex_rollout_exists(csid)
+            else:
+                csid = str(entry.get("claude_session_id") or "").strip()
+                found = self._claude_transcript_exists(csid)
             if csid:
-                if self._claude_transcript_exists(csid):
+                if found:
                     resumed = self._cmd_with_resume(cmd, csid)
                     if resumed != cmd:
-                        _dlog("lifecycle", f"  {sid} 接回對話 --resume {csid[:8]}")
+                        _dlog("lifecycle", f"  {sid} 接回對話 resume {csid[:8]}")
                         cmd = resumed
                 else:
-                    _dlog("lifecycle", f"  {sid} 有 uuid 但找不到 transcript，開新對話")
+                    _dlog("lifecycle", f"  {sid} 有 uuid 但找不到記錄檔，開新對話")
             try:
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
                 tmux_name = entry.get("tmux_name") or None

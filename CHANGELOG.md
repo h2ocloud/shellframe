@@ -6,6 +6,46 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.23 (2026-09-04)
+
+### Fixes
+
+- **Codex tabs reconnect to their session too, which matters most on Windows.**
+  v0.30.22 restored `claude` tabs by uuid; this extends it to `codex` and closes
+  the gap that hurts Windows specifically. There is no tmux there, so quitting
+  ShellFrame kills every session outright — the disk-backed manifest is the only
+  thing that survives, and without a session id each tab came back empty.
+  `codex resume <SESSION_ID>` takes a uuid, and the uuid is already in the
+  rollout filename, so restore now rewrites the command with it. `resume` is a
+  subcommand and must follow the executable immediately, and any previous
+  `resume <id>` / `--last` is stripped first so the command cannot degenerate
+  into `codex resume resume`.
+  Identifying *which* rollout belongs to *which* tab differs by platform. On
+  macOS and Linux codex keeps the rollout file open, so `lsof` pins it exactly.
+  Windows has neither `lsof` nor a tmux pane, and the existing fallback — newest
+  rollout overall — would give every codex tab the same file. Restore there uses
+  ordering plus a claim table: the earliest rollout created after that tab was
+  spawned and not already claimed by another tab. Tabs record their spawn time
+  for this. If nothing matches, the tab opens fresh rather than resuming someone
+  else's conversation.
+  27 cases in `tests_reboot_resume.py`, including the Windows claim path
+  exercised against real rollout files with `IS_WIN` patched on.
+
+  **Codex 分頁同樣會接回原本的 session，這對 Windows 尤其重要。** v0.30.22 讓
+  `claude` 分頁用 uuid 接回；這一版擴及 `codex`，補上 Windows 特別痛的缺口——那裡
+  沒有 tmux，關掉 ShellFrame 等於直接殺掉所有 session，只有落地的 manifest 活得下來，
+  而少了 session id 每個分頁都會回到空白狀態。
+  `codex resume <SESSION_ID>` 吃 uuid，而 uuid 本來就寫在 rollout 的檔名裡，所以還原
+  時直接用它重寫指令。`resume` 是子指令、必須緊接在執行檔後面，且會先移除既有的
+  `resume <id>` ／ `--last`，避免指令退化成 `codex resume resume`。
+  至於「哪一份 rollout 屬於哪個分頁」，各平台做法不同。macOS 與 Linux 上 codex 會一直
+  持有 rollout 的檔案控制代碼，`lsof` 可以精準定位。Windows 兩者都沒有，而既有的
+  fallback「全域最新的一份 rollout」會讓所有 codex 分頁指到同一個檔。那裡改用時序加上
+  認領表：取這個分頁 spawn 之後才建立、且尚未被其他分頁認領的最早一份。分頁為此會記下
+  自己的 spawn 時間。完全對不上時就開新的，而不是接到別人的對話。
+  `tests_reboot_resume.py` 共 27 項，含把 `IS_WIN` patch 成開啟、拿真實 rollout 檔跑
+  的 Windows 認領路徑。
+
 ## v0.30.22 (2026-09-04)
 
 ### Fixes
