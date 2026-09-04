@@ -6,6 +6,33 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.28 (2026-09-04)
+
+### Fixes
+
+- **Tables keep their row separators in scroll-up history.** A 13-row table has
+  12 identical `├───┼───┼───┤` lines, and the repeat gate — any sufficiently wide
+  line seen three or more times in one capture is collapsed to its last
+  occurrence — ate every one of them, leaving only the outer border and the rows
+  fused into a single block. That gate exists to collapse streaming redraw
+  frames, where repetition means a stale partial render; a table rule is the
+  opposite, a legitimate repeat, exactly like the blank lines fixed in v0.30.16.
+  Lines composed entirely of box-drawing or ASCII rule characters are now exempt
+  from the repeat gate. Data rows that merely *contain* those characters are not
+  exempt, so a genuinely repeated table row still collapses.
+  Verified against the reported table: 27 lines in, 27 lines out, all 12
+  separators intact. Three cases in `tests_history_dedup.py`.
+
+  **上滑歷史的表格會保留列分隔線。** 一張 13 列的表有 12 條一模一樣的
+  `├───┼───┼───┤`，而重複摺疊規則——同一行在一次 capture 裡出現三次以上就只留最後
+  一份——把它們全部吃掉，只剩最外框，所有列黏成一整團。那條規則是為了摺疊串流重繪
+  的殘影，在那個情境裡重複代表過期的半成品畫面；表格框線恰好相反，它是**合法的
+  重複**，跟 v0.30.16 修的空行完全同類。現在整行只由 box-drawing 或 ASCII 框線字元
+  組成的行不受重複摺疊約束；而只是**包含**這些字元的資料列不豁免，所以真正重複的
+  表格資料列仍會被收成一份。
+  用回報的那張表驗證：進去 27 行、出來 27 行，12 條分隔線全部完整。
+  `tests_history_dedup.py` 新增三項。
+
 ## v0.30.27 (2026-09-04)
 
 ### Internal

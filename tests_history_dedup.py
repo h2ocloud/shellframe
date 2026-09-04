@@ -68,6 +68,38 @@ def test_prefix_collapse_still_works_across_nonblank():
     assert out == ["這是一段還沒寫完的回覆內容"], out
 
 
+# ── 1c. 表格框線要全部留住（v0.30.28「上滑後表格黏成一團」根因） ──
+# 一張 13 列的表有 12 條一模一樣的 `├───┼───┼───┤`，Gate B（同一行出現 ≥3 次
+# 只留最後）會把它們全部吃掉，只剩頭尾兩條線。這跟空行同類：合法的重複。
+def test_table_rules_all_preserved():
+    top = "┌────────┬──────────────┬──────────┐"
+    mid = "├────────┼──────────────┼──────────┤"
+    bot = "└────────┴──────────────┴──────────┘"
+    rows = []
+    for i in range(6):
+        rows += [f"│ 06-0{i}  │ 場次標題 {i}       │ 連結     │", mid]
+    lines = [top] + rows[:-1] + [bot]
+    out = dedupe(lines).split("\n")
+    assert out.count(mid) == 5, f"分隔線只剩 {out.count(mid)} 條\n" + "\n".join(out)
+    assert out == lines, out
+
+
+def test_ascii_table_rules_preserved():
+    mid = "+--------+----------+"
+    lines = [mid, "| a      | b        |", mid, "| c      | d        |", mid,
+             "| e      | f        |", mid]
+    out = dedupe(lines).split("\n")
+    assert out.count(mid) == 4, out
+
+
+def test_box_rule_detection_does_not_eat_content():
+    # 內容行裡有框線字元（表格的資料列）不能被當成框線而豁免摺疊——
+    # 那些若真的重複三次以上，仍該收成一份
+    row = "│ 同一列內容重複出現很多次的長字串 │"
+    out = dedupe([row] * 4).split("\n")
+    assert out.count(row) == 1, out
+
+
 # ── 2. 程式碼合法重複 ×2 保留（v0.11.9「code 被吃掉」反例） ──
 def test_code_repeats_preserved():
     lines = ["def foo():", "    return null;", "def bar():", "    return null;"]

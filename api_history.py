@@ -251,6 +251,10 @@ class HistoryApiMixin:
             out.pop(0)
         return '\n'.join(rendered for _, rendered in out)
 
+    # 表格／框線用的字元（含 ASCII 的 +-| 與全套 box-drawing）。整行只由這些
+    # 組成就是框線，不是內容。
+    _BOX_RULE_RE = re.compile(r'[\s\u2500-\u257f|+=_-]+')
+
     _NORM_NOSPACE_RE = re.compile(r'\s+')
 
     @classmethod
@@ -577,8 +581,19 @@ class HistoryApiMixin:
         # equal.
         def _key(s_stripped):
             return self._NORM_WHITESPACE_RE.sub(' ', s_stripped).strip()
+
+        # 表格框線一律不參與重複摺疊。一張 13 列的表有 12 條一模一樣的
+        # `├───┼───┼───┤`，Gate B（同一行出現 ≥3 次只留最後一份）會把它們
+        # 全部吃掉，上滾看到的表格就整團黏在一起、只剩頭尾兩條線
+        # （日常使用中回報，附上滑前後對照圖）。這跟空行是同一類：**合法的
+        # 重複**，不是串流重繪的殘影。
+        def _is_box_rule(s_stripped):
+            t = s_stripped.strip()
+            return bool(t) and not self._BOX_RULE_RE.sub('', t)
         counts = Counter()
         for stripped, _ in cleaned:
+            if _is_box_rule(stripped):
+                continue
             if self._visual_width(stripped.strip()) >= REPEAT_GATE_MIN_WIDTH:
                 counts[_key(stripped)] += 1
         # Precompute the LAST index for each gated key so the final
@@ -586,6 +601,8 @@ class HistoryApiMixin:
         last_idx_cjk = {}
         last_idx_rep = {}
         for i, (stripped, _) in enumerate(cleaned):
+            if _is_box_rule(stripped):
+                continue
             k = _key(stripped)
             vw = self._visual_width(stripped.strip())
             is_cjk = (vw >= DEDUP_MIN_WIDTH
