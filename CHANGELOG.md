@@ -6,6 +6,30 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.30.26 (2026-09-04)
+
+### Fixes
+
+- **Preset tabs get the naming dialog too, and no longer keep the preset name
+  forever.** Two mistakes in v0.30.25. First, only the New Session box asked for
+  a name; opening a tab from a preset is the common path and it still appeared
+  unnamed-and-unasked. Second and worse: opening from a preset also calls
+  `rename_session` to apply the preset's own name, and v0.30.25 treated any
+  rename as a deliberate one — so it cancelled the pending auto-slug and every
+  preset tab was stuck on the preset name, never renamed from its content again.
+  `rename_session` now takes `manual`, set only by the naming dialog, and preset
+  tabs ask for a name with the preset's name pre-filled.
+  14 cases in `tests_new_tab_naming.py`.
+
+  **preset 分頁也會跳命名對話框，而且不會再永遠停在 preset 名稱。** v0.30.25 有兩
+  個錯。第一，只有 New Session 那條會問名字，而從 preset 開分頁才是常走的路徑，那
+  條依然沒被問。第二個更嚴重：從 preset 開分頁時也會呼叫 `rename_session` 去套用
+  preset 自己的名稱，而 v0.30.25 把任何改名都當成使用者的刻意決定——於是取消了待
+  處理的 auto-slug，每個 preset 分頁就此卡在 preset 名稱上，再也不會依內容改名。
+  `rename_session` 現在多一個 `manual` 參數，只有命名對話框會設定它；preset 分頁
+  則會跳出命名對話框並預先填好 preset 名稱。
+  `tests_new_tab_naming.py` 共 14 項。
+
 ## v0.30.25 (2026-09-04)
 
 ### Added

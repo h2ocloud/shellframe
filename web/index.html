@@ -1905,7 +1905,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       `;
       el.addEventListener('click', (e) => {
         if (e.target.classList.contains('p-del')) return;
-        openSession(p.cmd, p.name);
+        openSession(p.cmd, p.name, { askName: true });
         closeModal();
       });
       el.querySelector('.p-del').addEventListener('click', async (e) => {
@@ -2471,7 +2471,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // 使用者自己開的新分頁：直接問名字。preset 已經帶名字了，不問。
     // 自動作答信任對話框是在後端做的（不看前端焦點），所以這個 popup 不會
     // 卡到分頁啟動。
-    if (askName && !label) {
+    if (askName) {
       setTimeout(() => { if (sessions[sid]) renameSession(sid, { isNew: true }); }, 60);
     }
     } finally {
@@ -2967,7 +2967,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (tab) { tab.style.color = '#9ece6a'; setTimeout(() => tab.style.color = '', 600); }
           // Persist: localStorage as immediate backup + API for cross-restart
           try { const ls = JSON.parse(localStorage.getItem('sf_labels') || '{}'); ls[sid] = val; localStorage.setItem('sf_labels', JSON.stringify(ls)); } catch(e) {}
-          pywebview.api.rename_session(sid, val).catch(() => {});
+          // manual=true：這是使用者在命名對話框裡自己打的，會取消 auto-slug。
+          // openSession 帶 preset 名稱那條刻意不傳，那不是使用者的決定。
+          pywebview.api.rename_session(sid, val, true).catch(() => {});
         }
       }
       // Defer the term.focus() to the next tick so the keydown event that

@@ -49,15 +49,22 @@ def _api():
 
 # 手動命名要關掉 auto-slug，否則第一句話之後名字就被覆蓋
 api, s = _api()
-api.rename_session("s1", "遠銀提案")
-check("手動命名後 auto-slug 被關掉", s._slug_pending is False)
+api.rename_session("s1", "遠銀提案", manual=True)
+check("使用者手動命名後 auto-slug 被關掉", s._slug_pending is False)
 check("名字有寫進 session", s._custom_label == "遠銀提案")
 
 # 已經關掉的不會被打開
 api, s = _api()
 s._slug_pending = False
-api.rename_session("s1", "x")
+api.rename_session("s1", "x", manual=True)
 check("原本就關著的維持關著", s._slug_pending is False)
+
+# preset 開分頁時也會走 rename_session（帶 preset 名稱），那不是使用者的決定
+# ——當成手動命名的話，preset 分頁會永遠停在 preset 名稱、再也不被 auto-slug 改名
+api, s = _api()
+api.rename_session("s1", "Claude")
+check("preset 帶進來的名稱不取消 auto-slug", s._slug_pending is True)
+check("但名字還是有套用", s._custom_label == "Claude")
 
 # 不存在的 sid 不炸
 api, _ = _api()
@@ -68,11 +75,15 @@ check("未知 sid 回 success=False 不炸",
 # ── 前端：新分頁才問名字，preset（已帶名字）不問 ──
 idx = (HERE / "web/index.html").read_text(encoding="utf-8")
 check("openSession 接受 askName 選項", "const askName = !!(opts && opts.askName)" in idx)
-check("只有沒帶 label 的新分頁會跳命名", "if (askName && !label) {" in idx)
+check("askName 的分頁都會跳命名（含 preset）", "if (askName) {" in idx)
 check("New Session 的 Run 會帶 askName",
       "openSession(cmd, null, { askName: true })" in idx)
-check("preset 那條沒帶 askName（已經有名字了）",
-      "openSession(p.cmd, p.name);" in idx)
+check("preset 那條也會問名字（那才是實際的使用路徑）",
+      "openSession(p.cmd, p.name, { askName: true })" in idx)
+check("popup 的改名帶 manual=true",
+      "rename_session(sid, val, true)" in idx)
+check("openSession 帶 preset 名稱那條不帶 manual",
+      "rename_session(sid, label).catch" in idx)
 check("命名 popup 有 isNew 模式（標題與按鈕文字不同）",
       "renameSession(sid, { isNew: true })" in idx and "opts.isNew" in idx)
 check("跳過鍵有翻譯（中英都有）",

@@ -6201,18 +6201,24 @@ try {
         self._ui_state_report = str(payload or "")
         return "ok"
 
-    def rename_session(self, sid: str, name: str) -> str:
-        """Rename a session. Updates bridge label if connected. Persists to config."""
-        _dlog("lifecycle", f"rename_session sid={sid} name={name!r}")
+    def rename_session(self, sid: str, name: str, manual: bool = False) -> str:
+        """Rename a session. Updates bridge label if connected. Persists to config.
+
+        manual=True 代表「使用者自己取的名字」，只有這種才會取消 auto-slug。
+        preset 開分頁時也會走這支（帶 preset 名稱），那是系統自動帶的
+        ——把它也當成手動命名的話，preset 分頁會永遠停在 preset 名稱、
+        再也不會被 auto-slug 依內容改名。
+        """
+        _dlog("lifecycle", f"rename_session sid={sid} name={name!r} manual={manual}")
         s = self.sessions.get(sid)
         if not s:
             return json.dumps({"success": False})
         s._custom_label = name
-        # 明確命名過的分頁不該再被 auto-slug 蓋掉。auto-slug 是在第一次送出
-        # 訊息時用 haiku 依內容命名，原本不管使用者有沒有自己取過名字——新分頁
-        # 一建立就跳出命名 popup（v0.30.25）之後，這個覆蓋會讓剛取的名字在第一
-        # 句話之後就消失，功能等於白做。
-        if getattr(s, "_slug_pending", False):
+        # 使用者自己取的名字不該再被 auto-slug 蓋掉。auto-slug 是在第一次送出
+        # 訊息時用 haiku 依內容命名——新分頁一建立就跳命名 popup 之後，這個覆蓋
+        # 會讓剛取的名字在第一句話之後消失，功能等於白做。
+        # 但只認 manual：preset 帶進來的名稱也走這支，那不是使用者的決定。
+        if manual and getattr(s, "_slug_pending", False):
             s._slug_pending = False
             _dlog("lifecycle", f"  {sid} 已手動命名，取消 auto-slug")
         if self.bridge and sid in self.bridge.slots:
