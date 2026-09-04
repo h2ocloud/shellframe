@@ -120,6 +120,17 @@ def test_markdown_table_rendered_not_raw():
     assert not any(x.strip().startswith("|") for x in out), out
 
 
+# ── 10b. 儲存格裡的行內 markdown 要渲染掉，欄寬也要照渲染後的字算 ──
+#        原字 `**Multi-AZ**` 比 `Multi-AZ` 寬 4 欄，照原字算整張表會歪掉。
+def test_table_cell_inline_markdown():
+    rows = [["**A**", "B"], ["**Multi-AZ**", "多可用性區域部署"]]
+    out = H._render_md_table(rows, OC, 60, True)
+    body = [plain(x) for x in out if "│" in plain(x)]
+    assert all("**" not in x for x in body), body
+    assert "Multi-AZ" in body[1], body
+    assert {H._disp_width(plain(x)) for x in out} == {60}
+
+
 # ── 11. 端到端：opencode skin 的縮排 5 欄與 ┃ 側槽 ──
 def test_overlay_indent_and_gutter():
     evs = [{"kind": "user_msg", "ts": 1, "text": "你好"},

@@ -6,6 +6,25 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.31.4 (2026-09-05)
+
+### Fixes
+
+- **Table cells no longer show their markdown markers in scroll-up history.**
+  A cell written as `**Multi-AZ**` came through with the asterisks intact, and
+  because column widths are measured from the cell text, those four extra
+  columns also skewed the whole table away from the width the live view draws.
+  Inline markdown is now rendered inside cells the same way it is in ordinary
+  text, and the width is measured after the markers are removed. Found by
+  rendering a real tab's conversation and diffing it against its live screen,
+  which now matches line for line. Case added to `tests_overlay_skin.py`.
+
+  **上滑歷史的表格儲存格不會再露出 markdown 標記。** 寫成 `**Multi-AZ**` 的
+  儲存格連星號一起顯示出來；而欄寬是照儲存格文字量的，那多出來的四欄還會讓整張
+  表跟活畫面畫出來的寬度對不上。現在儲存格裡的行內 markdown 比照一般內文渲染，
+  寬度也在拿掉標記之後才量。這是把真實分頁的對話渲染出來、跟它的活畫面逐行比對時
+  抓到的，現在逐行完全相同。`tests_overlay_skin.py` 補一個案例。
+
 ## v0.31.3 (2026-09-05)
 
 ### Fixes

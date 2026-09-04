@@ -946,6 +946,19 @@ class HistoryApiMixin:
         return out
 
     @classmethod
+    def _md_strip(cls, text: str) -> str:
+        """拿掉行內 markdown 標記，只留看得見的字（量寬度用）。"""
+        text = cls._MD_BOLD_RE.sub(r"\1", text)
+        return cls._MD_CODE_RE.sub(r"\1", text)
+
+    @classmethod
+    def _md_inline(cls, text: str, skin) -> str:
+        """行內 markdown → ANSI（粗體、行內 code），回到 skin 的內文顏色。"""
+        R, TEXT = "\x1b[0m", skin["text"]
+        text = cls._MD_BOLD_RE.sub(f"{skin['bold']}\\1{R}{TEXT}", text)
+        return cls._MD_CODE_RE.sub(f"{skin['code']}\\1{R}{TEXT}", text)
+
+    @classmethod
     def _md_table_at(cls, lines, i):
         """lines[i] 起是不是 markdown 表格？回 (rows, 下一個 index) 或 None。"""
         if i + 1 >= len(lines) or "|" not in lines[i]:
@@ -980,7 +993,10 @@ class HistoryApiMixin:
         n = max(len(r) for r in rows)
         rows = [r + [""] * (n - len(r)) for r in rows]
         pad = skin["table_pad"]
-        nat = [max(cls._disp_width(r[c]) for r in rows) + pad * 2 for c in range(n)]
+        # 欄寬要用「markdown 標記拿掉之後」的寬度算。儲存格裡的 `**粗體**` 在
+        # 活畫面是渲染掉的，照原字算會多出 4 欄、整張表跟著歪。
+        bare = [[cls._md_strip(c) for c in r] for r in rows]
+        nat = [max(cls._disp_width(b[c]) for b in bare) + pad * 2 for c in range(n)]
         if skin["table_stretch"] and width > 0:
             inner = max(sum(nat), width - (n + 1))
             add, rem = divmod(inner - sum(nat), n)
@@ -999,8 +1015,10 @@ class HistoryApiMixin:
             col = HEAD if head else TEXT
             parts = []
             for c, cell in enumerate(cells):
-                body = " " * pad + cell
-                body += " " * max(0, w[c] - cls._disp_width(body))
+                plain = cls._md_strip(cell)
+                shown = plain if (head or not ansi) else cls._md_inline(cell, skin)
+                fill = " " * max(0, w[c] - cls._disp_width(plain) - pad)
+                body = " " * pad + shown + fill
                 parts.append(f"{col}{body}{R}" if col else body)
             return B + "│" + R + (B + "│" + R).join(parts) + B + "│" + R
 
@@ -1018,8 +1036,8 @@ class HistoryApiMixin:
             return text.splitlines()
         skin = skin or cls._SKIN_DEFAULT
         R = "\x1b[0m"
-        TEXT, HEAD, BOLD = skin["text"], skin["head"], skin["bold"]
-        CODE, BULLET, DIM = skin["code"], skin["bullet"], skin["dim"]
+        TEXT, HEAD = skin["text"], skin["head"]
+        BULLET, DIM = skin["bullet"], skin["dim"]
         src = text.splitlines()
         out = []
         in_fence = False
@@ -1057,8 +1075,7 @@ class HistoryApiMixin:
             else:
                 ln = cls._MD_BULLET_RE.sub(f"\\1{BULLET}\\2{R}{TEXT} ", ln, count=1)
             ln = cls._MD_NUM_RE.sub(f"\\1{BULLET}\\2{R}{TEXT} ", ln, count=1)
-            ln = cls._MD_BOLD_RE.sub(f"{BOLD}\\1{R}{TEXT}", ln)
-            ln = cls._MD_CODE_RE.sub(f"{CODE}\\1{R}{TEXT}", ln)
+            ln = cls._md_inline(ln, skin)
             out.append(TEXT + ln if TEXT else ln)
         if skin["wrap"]:
             wrapped = []
