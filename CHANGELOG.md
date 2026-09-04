@@ -6,6 +6,46 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.31.2 (2026-09-05)
+
+### Fixes
+
+- **Scroll-up history now actually opens in opencode tabs.** v0.30.29 fixed
+  which source the overlay reads for those tabs, but the overlay was never
+  asked to open: the wheel listener that triggers it is attached to the pane and
+  runs in the bubble phase, and opencode's TUI enables mouse tracking (1003 plus
+  SGR 1006). With mouse tracking on, xterm.js turns the wheel into a mouse
+  report for the application and stops it propagating, so that listener was
+  never called once. Claude and Codex tabs do not enable mouse tracking, which
+  is why only this one CLI looked broken. The listener now runs in the capture
+  phase, where it is reached first. Measured against real xterm.js 5.5.0: with
+  mouse tracking on, a bubble listener fires zero times and a capture listener
+  fires once; with it off — the Claude and Codex case — both fire, so nothing
+  that already worked changes. Regression test:
+  `tests_scroll_wheel_capture.py`, which also pins the listener options in the
+  page so this cannot silently revert to a passive bubble listener.
+
+  **opencode 分頁的上滑歷史真的會打開了。** v0.30.29 修好的是那些分頁該讀哪個
+  來源，但 overlay 根本沒被叫起來過：觸發它的滾輪監聽掛在 pane 上、跑在 bubble
+  階段，而 opencode 的 TUI 會開 mouse tracking（1003 加 SGR 1006）。mouse
+  tracking 一開，xterm.js 就把滾輪轉成給應用程式的滑鼠回報並擋掉冒泡，那個監聽器
+  因此一次都沒被呼叫過。Claude 與 Codex 分頁不開 mouse tracking，所以看起來只有
+  這一支 CLI 壞掉。監聽改掛 capture 階段，事件會先經過那裡。用真實 xterm.js
+  5.5.0 量過：開著 mouse tracking 時 bubble 監聽觸發 0 次、capture 觸發 1 次；
+  關掉時（Claude 與 Codex 的情況）兩者都會觸發，所以原本會動的分頁不受影響。
+  回歸測試 `tests_scroll_wheel_capture.py`，同時把頁面上的監聽選項釘住，避免哪天
+  又被改回 passive 的 bubble 監聽而沒人發現。
+
+  Known limit, recorded in the test rather than only in a comment: taking the
+  event in the capture phase still does not stop the mouse report reaching the
+  application — xterm sends it from higher up the capture chain than any
+  listener on the pane can reach. It is harmless here; the overlay covers the
+  pane, and a mouse-tracking TUI redraws continuously anyway.
+
+  已知限制，寫進測試而不是只寫在註解裡：在 capture 階段接管仍然擋不掉送往應用程式
+  的滑鼠回報——xterm 是從比 pane 上任何監聽器都更外層的地方送出去的。這裡無害：
+  overlay 會蓋住畫面，開著 mouse tracking 的 TUI 本來就持續重繪。
+
 ## v0.31.1 (2026-09-04)
 
 ### Fixes

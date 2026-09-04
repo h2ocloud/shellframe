@@ -4501,6 +4501,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   function setupScrollHistory(sid, pane) {
     let _loading = false;
+    // CAPTURE phase, deliberately. A TUI that turns on mouse tracking (opencode
+    // sends 1003+1006) makes xterm.js translate the wheel into a mouse report
+    // and stop it propagating, so a bubble-phase listener here never runs at all
+    // — scroll-up was dead in those tabs, whatever the backend returned.
+    // Verified against real xterm.js 5.5.0 in tests_scroll_wheel_capture.py:
+    // with mouse tracking on, bubble fires 0 times and capture fires once.
+    // Note this is the same intent as attachCustomWheelEventHandler above ("in
+    // the alternate buffer the wheel belongs to this overlay"), which the
+    // mouse-report path simply does not consult.
     pane.addEventListener('wheel', (e) => {
       const s = sessions[sid];
       if (!s) return;
@@ -4509,6 +4518,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (direction !== 'up') return;
       const buf = s.term.buffer.active;
       if (buf.viewportY > 0) return; // xterm has its own scrollback, let it handle
+      // We are opening the overlay, so stop the page and xterm's viewport from
+      // also acting on this wheel. Everything above this line lets the event
+      // through untouched. Known limit: it does NOT stop the mouse report from
+      // reaching the app — xterm sends that from higher up the capture chain
+      // than any listener here can reach (measured; see the wheel test). Harmless
+      // in practice: the overlay covers the pane and mouse-tracking TUIs redraw.
+      e.preventDefault();
+      e.stopPropagation();
       if (_loading) return;
       _loading = true;
       pywebview.api.get_clean_history(sid, 10000, true).then(res => {
@@ -4518,7 +4535,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (result.success) ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi });
         } catch (err) { /* ignore */ }
       }).catch(() => { _loading = false; });
-    }, { passive: true });
+    }, { capture: true, passive: false });
   }
 
   // ── Image / file attach ──
