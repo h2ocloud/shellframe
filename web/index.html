@@ -3795,13 +3795,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.className = 'modal-overlay open';
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
-      <div class="modal" style="width:320px;padding:20px">
-        <h2 style="font-size:14px">🔗 配對另一台 ShellFrame</h2>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-          <button class="btn btn-primary" id="pc-pair" style="padding:10px">產生配對碼<span style="opacity:.6;font-weight:400">（這台當被連端）</span></button>
+      <div class="modal" style="width:340px;padding:20px">
+        <h2 style="font-size:14px">🔗 配對裝置</h2>
+        <button class="btn btn-primary" id="pc-app" style="width:100%;padding:12px;margin-top:12px;display:flex;align-items:center;gap:10px;text-align:left">
+          <span style="font-size:20px">📱</span>
+          <span>
+            <div>手機／平板 App</div>
+            <div style="opacity:.7;font-weight:400;font-size:11px;margin-top:1px">立即顯示 QR code，用 ShellFrame App 掃描</div>
+          </span>
+        </button>
+        <div style="display:flex;align-items:center;gap:8px;margin:14px 0;color:#565f89;font-size:11px">
+          <div style="flex:1;height:1px;background:#3b4261"></div>其他 ShellFrame<div style="flex:1;height:1px;background:#3b4261"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-ghost" id="pc-pair" style="padding:10px;border:1px solid #3b4261">產生配對碼<span style="opacity:.6;font-weight:400">（這台當被連端）</span></button>
           <button class="btn btn-ghost" id="pc-join" style="padding:10px;border:1px solid #3b4261">加入配對<span style="opacity:.6">（輸入對方的碼）</span></button>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+        <div style="display:flex;justify-content:flex-end;margin-top:14px">
           <button class="btn btn-ghost" id="pc-cancel">取消</button>
         </div>
       </div>`;
@@ -3809,6 +3819,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     function finish() { overlay.remove(); }
     document.getElementById('pc-cancel').addEventListener('click', finish);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    // App 一律視為 duplex（App 端沒有主／從選項），略過單向／雙向選單直接產 QR，降低配對門檻。
+    document.getElementById('pc-app').addEventListener('click', () => { finish(); showPairModal('duplex'); });
     document.getElementById('pc-pair').addEventListener('click', () => { finish(); showPairModeChooser(); });
     document.getElementById('pc-join').addEventListener('click', () => { finish(); showJoinModal(); });
   }

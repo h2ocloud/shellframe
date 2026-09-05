@@ -88,6 +88,20 @@
   位址、port、碼、relay（先試位址、再走 relay），兩台電腦可以在手機上不重打字
   就配起來。
 
+- **The sidebar's "＋ 配對" entry now leads with the phone/tablet app.** The
+  chooser used to read as computer-to-computer only ("配對另一台 ShellFrame")
+  with no mention of the app, and pairing a phone meant first picking a
+  duplex/master/slave binding mode that the app has no use for (it always
+  connects as a full peer). A new "📱 手機／平板 App" button sits above the
+  ShellFrame-to-ShellFrame options and goes straight to the QR code, skipping
+  that mode picker.
+
+  **側欄「＋ 配對」入口現在把手機／平板 App 放在最前面。** 原本的選單看起來只
+  是電腦對電腦（「配對另一台 ShellFrame」），完全沒提到 App；配對手機還得先選
+  一個對 App 毫無意義的單向／雙向綁定模式（App 一律以完整 peer 身分連線）。新
+  增的「📱 手機／平板 App」按鈕排在 ShellFrame 對 ShellFrame 選項之上，直接跳到
+  QR code，略過那個選單。
+
 ### Internal
 
 - `docs/mobile-link.md` documents pairing, faithful mirroring, relay deployment,
