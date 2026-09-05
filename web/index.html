@@ -7689,6 +7689,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
       // Remove sessions that no longer exist in backend (closed via TG)
       for (const sid of localSids) {
+        // 遠端（Frame Link）分頁不在本機後端清單裡，別把它們當成「已關閉」清掉
+        // ——否則每 1.5s 這輪就會砍掉遠端 pane、activeId 歸零、彈回本機分頁。
+        if (isRemoteSid(sid)) continue;
         if (!backendSids.has(sid)) {
           const s = sessions[sid];
           if (s) { try { s.term.dispose(); } catch(e) {} if (s.pane) s.pane.remove(); }

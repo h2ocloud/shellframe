@@ -6,6 +6,25 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.3 (2026-09-05)
+
+### Fixes
+
+- **Clicking a remote session no longer bounces back to a local tab.** The
+  1.5 s `syncSessionsFromBackend` reconciler treated any tab missing from the
+  local backend's session list as "closed elsewhere" and disposed it — but a
+  Frame Link remote pane (`rmt:<peer>:<sid>`) is by design never in the local
+  list, so on every tick its pane was destroyed, `activeId` was reset to null,
+  and the view immediately snapped back to whichever local tab came first. You
+  could open a remote session but never stay on it. The reconciler now skips
+  remote sids entirely, and a remote pane only goes away when you close it or
+  the peer link drops.
+
+  **點遠端 session 不再彈回本機分頁。** 每 1.5 秒的 `syncSessionsFromBackend`
+  會把「不在本機後端 session 清單裡」的分頁當成「在別處被關掉」清除——但 Frame
+  Link 的遠端 pane（`rmt:<peer>:<sid>`）本來就不在本機清單，於是每一輪都被砍、
+  `activeId` 歸零、畫面彈回本機分頁。現在這個對帳流程完全跳過遠端 sid。
+
 ## v0.32.2 (2026-09-05)
 
 ### Fixes
