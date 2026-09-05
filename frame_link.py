@@ -716,6 +716,34 @@ class FrameLink:
                         "sid": body.get("sid", ""),
                         "data": body.get("data", "")}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/resize":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute("resize_pty", {
+                        "sid": body.get("sid", ""),
+                        "cols": body.get("cols", 0),
+                        "rows": body.get("rows", 0)}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/new":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute("new_session", {
+                        "cmd": body.get("cmd", "claude"),
+                        "source": "frame_link"}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/close":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute("close_session", {
+                        "sid": body.get("sid", ""),
+                        "reason": "frame_link"}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/message":
                     res = link._local_message(peer_id, str(body.get("text", "")))
                     return self._send(200, res, sign_for=peer, nonce=nonce)
@@ -1055,6 +1083,44 @@ class FrameLink:
             body = json.dumps({"sid": sid, "data": data}).encode()
             return self._signed_request(peer, "POST", "/link/input", body,
                                         timeout=5)
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
+
+    def remote_resize(self, peer_id: str, sid: str, cols: int, rows: int) -> dict:
+        peer = self.peers().get(peer_id)
+        if not peer or not peer.get("host") or not peer.get("port"):
+            return {"success": False, "message": "peer 不可直連"}
+        try:
+            body = json.dumps({"sid": sid, "cols": int(cols),
+                               "rows": int(rows)}).encode()
+            return self._signed_request(peer, "POST", "/link/resize", body,
+                                        timeout=5)
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def remote_new(self, peer_id: str, cmd: str = "claude") -> dict:
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            body = json.dumps({"cmd": cmd or "claude"}).encode()
+            res = self._signed_request(peer, "POST", "/link/new", body, timeout=15)
+            self._mark_status(peer_id, True)
+            return res
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
+
+    def remote_close(self, peer_id: str, sid: str) -> dict:
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            body = json.dumps({"sid": sid}).encode()
+            res = self._signed_request(peer, "POST", "/link/close", body, timeout=10)
+            self._mark_status(peer_id, True)
+            return res
         except Exception as e:
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}

@@ -6560,6 +6560,18 @@ try {
         return json.dumps(self._link().remote_input(peer_id, sid, data),
                           ensure_ascii=False)
 
+    def link_remote_resize(self, peer_id: str, sid: str, cols: int, rows: int) -> str:
+        return json.dumps(self._link().remote_resize(peer_id, sid, cols, rows),
+                          ensure_ascii=False)
+
+    def link_remote_new(self, peer_id: str, cmd: str = "claude") -> str:
+        return json.dumps(self._link().remote_new(peer_id, cmd),
+                          ensure_ascii=False)
+
+    def link_remote_close(self, peer_id: str, sid: str) -> str:
+        return json.dumps(self._link().remote_close(peer_id, sid),
+                          ensure_ascii=False)
+
     def link_message(self, peer_id: str, text: str) -> str:
         return json.dumps(self._link().send_message(peer_id, text),
                           ensure_ascii=False)
@@ -6792,6 +6804,22 @@ try {
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "message": f"raw_input failed: {e}"}
+
+        elif cmd == "resize_pty":
+            # Frame Link：遠端檢視端把「它的可視尺寸」推過來，讓這台的 PTY
+            # reflow 成一樣大——遠端 pane 才撐得滿、alt-screen 不破版。
+            try:
+                sid = args.get("sid", "")
+                cols = int(args.get("cols") or 0)
+                rows = int(args.get("rows") or 0)
+                if not sid or cols <= 0 or rows <= 0:
+                    return {"success": False, "message": "bad sid/cols/rows"}
+                if sid not in self.sessions:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                self.resize(sid, cols, rows)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "message": f"resize_pty failed: {e}"}
 
         elif cmd == "peek":
             try:

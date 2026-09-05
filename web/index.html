@@ -905,7 +905,6 @@
   <button class="tab-action" id="btn-sidebar" title="Toggle sidebar" style="font-size:14px">☰</button>
   <div id="tabs"></div>
   <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
-  <button id="btn-link" data-i18n-title="linkBtnTitle" title="Frame Link — 配對其他 ShellFrame">🔗</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
   <button id="usage-brief" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
@@ -2087,6 +2086,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   const _fitTimers = {};
   function fitTerm(sid) {
     if (_fitTimers[sid]) return;
+    // 遠端 pane 走自己的 fit（撐滿後把尺寸推給對方 PTY）
+    if (sessions[sid] && sessions[sid].isRemote) {
+      _fitTimers[sid] = requestAnimationFrame(() => {
+        _fitTimers[sid] = null;
+        fitRemotePane(sid);
+      });
+      return;
+    }
     _fitTimers[sid] = requestAnimationFrame(() => {
       _fitTimers[sid] = null;
       const s = sessions[sid];
@@ -2893,10 +2900,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       sessions[sid].pane.classList.add('active');
       // Preserve user's scroll position on tab switch — don't force-bottom.
       // _userScrolledUp stays as-is so fitTerm respects current position.
-      // 遠端 pane 尺寸鎖定對方 PTY，不 fit（fit 會改成本機容器尺寸→畫面錯位）
-      if (!isRemoteSid(sid)) fitTerm(sid);
+      if (isRemoteSid(sid)) {
+        // 撐滿視窗並把尺寸推給對方，再開始串流
+        setTimeout(() => fitRemotePane(sid), 0);
+        if (_remoteStreamSid !== sid) startRemoteStream(sid);
+      } else {
+        fitTerm(sid);
+      }
       sessions[sid].term.focus();
-      if (isRemoteSid(sid) && _remoteStreamSid !== sid) startRemoteStream(sid);
     }
     renderTabs();
     updateImageBar();
@@ -3191,6 +3202,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             loadRemoteTabs(p.id);
             return;
           }
+          // 新增遠端 session（跟本機 ＋ 一樣的位置感）
+          const newRow = document.createElement('div');
+          newRow.className = 'sb-remote-hint';
+          newRow.style.cssText = 'padding-left:26px;cursor:pointer;color:#7aa2f7';
+          newRow.dataset.pnew = p.id;
+          newRow.textContent = '＋ 新增 session';
+          newRow.title = `在「${p.name}」開一個新 session`;
+          container.appendChild(newRow);
           if (!tabs.length) {
             const em = document.createElement('div');
             em.className = 'sb-remote-hint';
@@ -3208,10 +3227,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             row.dataset.rlabel = rt.label || rt.sid;
             row.title = `操作「${p.name}」的這個 session（在主終端區，跟本機分頁一樣）`;
             const dot = sessions[rmt] ? (activeId === rmt ? '●' : '▣') : '▫';
+            // ✕ = 關閉對方的 session（跟 local 一樣，會先確認）
             row.innerHTML =
               `<span style="opacity:.5;font-size:10px;pointer-events:none">${dot}</span>` +
               `<span class="sb-label" style="pointer-events:none">${esc(rt.label || rt.sid)}</span>` +
-              (sessions[rmt] ? `<span class="sb-close" data-action="close-remote" data-rmt="${esc(rmt)}" title="收掉這台的檢視（不會關對方的 session）">&times;</span>` : '');
+              `<span class="sb-close" data-action="kill-remote" data-pid="${esc(p.id)}" data-rsid="${esc(rt.sid)}" data-rlabel="${esc(rt.label || rt.sid)}" title="關閉「${esc(p.name)}」的這個 session（會先確認）">&times;</span>`;
             container.appendChild(row);
           });
         });
@@ -3390,11 +3410,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       else if (pact.dataset.pact === 'edit') editPeerAddress(p);
       return;
     }
-    const closeRemote = e.target.closest('[data-action="close-remote"]');
-    if (closeRemote) {
+    const pnew = e.target.closest('[data-pnew]');
+    if (pnew) {
       e.preventDefault();
       e.stopPropagation();
-      closeTab(closeRemote.dataset.rmt);
+      const p = ((linkState && linkState.peers) || []).find(x => x.id === pnew.dataset.pnew);
+      if (p) newRemoteSession(p);
+      return;
+    }
+    const killRemote = e.target.closest('[data-action="kill-remote"]');
+    if (killRemote) {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = ((linkState && linkState.peers) || []).find(x => x.id === killRemote.dataset.pid);
+      if (p) confirmKillRemote(p, killRemote.dataset.rsid, killRemote.dataset.rlabel);
       return;
     }
     const remoteRow = e.target.closest('[data-action="remote-tab"]');
@@ -3596,26 +3625,134 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!info) return;
       pywebview.api.link_remote_input(info.peerId, info.rsid, data).catch(() => {});
     });
+    // pane 尺寸變了（視窗縮放、側欄開合）→ 重新 fit 並推給對方
+    try {
+      const ro = new ResizeObserver(() => { if (activeId === sid) fitRemotePane(sid); });
+      ro.observe(pane);
+    } catch (e) {}
     sessions[sid] = {
       term, fitAddon, pane, cmd: '', label: (rt && rt.label) || (rt && rt.sid) || sid,
       isRemote: true, peerId: peer.id, rsid: (rt && rt.sid) || '',
       peerName: peer.name, attachments: [], attachCounter: 0,
       bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false,
       _lastOutputTs: 0, _busy: false, _streamSeq: -1,
-      _rcols: (rt && rt.cols) || 0, _rrows: (rt && rt.rows) || 0,
+      _lastCols: 0, _lastRows: 0,
     };
-    // 對齊對方 PTY 尺寸：遠端多半是 alt-screen（claude/codex），cols/rows 不同
-    // 畫面會整個錯位。有回報尺寸就固定成它，不用 fit。
-    if (rt && rt.cols && rt.rows) {
-      try { term.resize(rt.cols, rt.rows); } catch (e) {}
-    }
     return sessions[sid];
+  }
+
+  // 遠端 pane：撐滿本機視窗（跟本機分頁一樣 fit），再把「我們的可視尺寸」推給
+  // 對方 PTY 讓它 reflow——這樣才會填滿、alt-screen（claude/codex）不破版。
+  function fitRemotePane(sid) {
+    const s = sessions[sid];
+    if (!s || !s.isRemote) return;
+    try { s.fitAddon.fit(); } catch (e) {}
+    const cols = s.term.cols, rows = s.term.rows;
+    if (cols > 0 && rows > 0 && (cols !== s._lastCols || rows !== s._lastRows)) {
+      s._lastCols = cols; s._lastRows = rows;
+      const info = parseRemoteSid(sid);
+      if (info) pywebview.api.link_remote_resize(info.peerId, info.rsid, cols, rows)
+        .then(() => { s._streamSeq = -1; })   // resize→對方全畫面重繪，重新 attach
+        .catch(() => {});
+    }
   }
 
   function openRemoteSession(peer, rt) {
     const sid = remoteSid(peer.id, rt.sid);
     ensureRemotePane(sid, peer, rt);
     switchTab(sid);
+  }
+
+  // 在遠端開一個新 session（跟本機「新分頁」概念一致）
+  function newRemoteSession(peer) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:360px;padding:20px">
+        <h2 style="font-size:14px">在「${esc2(peer.name)}」開新 session</h2>
+        <div style="display:flex;flex-direction:column;gap:6px;margin:12px 0">
+          <button class="btn btn-primary" data-cmd="claude" style="padding:8px">Claude</button>
+          <button class="btn btn-ghost" data-cmd="sf-codex --dangerously-bypass-approvals-and-sandbox --search --no-alt-screen" style="padding:8px;border:1px solid #3b4261">Codex</button>
+          <button class="btn btn-ghost" data-cmd="bash" style="padding:8px;border:1px solid #3b4261">bash</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="rn-cmd" placeholder="自訂指令" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+          <button class="btn btn-primary" id="rn-run">開</button>
+        </div>
+        <div id="rn-err" style="color:#f7768e;font-size:12px;margin-top:8px;min-height:14px"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-ghost" id="rn-cancel">取消</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function finish() { overlay.remove(); }
+    document.getElementById('rn-cancel').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    async function create(cmd) {
+      const err = document.getElementById('rn-err');
+      err.style.color = '#a9b1d6'; err.textContent = '建立中…';
+      try {
+        const res = JSON.parse(await pywebview.api.link_remote_new(peer.id, cmd));
+        if (res.success) {
+          finish();
+          delete linkRemoteTabs[peer.id];
+          await loadRemoteTabs(peer.id);
+          const rsid = res.details && res.details.sid;
+          if (rsid) openRemoteSession(peer, { sid: rsid, label: cmd.split(/\s/)[0] });
+        } else {
+          err.style.color = '#f7768e'; err.textContent = res.message || '建立失敗';
+        }
+      } catch (e) { err.style.color = '#f7768e'; err.textContent = '建立失敗：' + e; }
+    }
+    overlay.querySelectorAll('[data-cmd]').forEach(b =>
+      b.addEventListener('click', () => create(b.dataset.cmd)));
+    document.getElementById('rn-run').addEventListener('click', () => {
+      const v = document.getElementById('rn-cmd').value.trim();
+      if (v) create(v);
+    });
+    document.getElementById('rn-cmd').focus();
+  }
+
+  // 關閉遠端 session（會先確認，跟本機側欄 ✕ 一致）
+  function confirmKillRemote(peer, rsid, rlabel) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:340px;padding:20px">
+        <h2 style="font-size:14px">關閉「${esc2(peer.name)}／${esc2(rlabel || rsid)}」？</h2>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin:10px 0">
+          這會直接關閉對方那台的這個 session（等同在對方機器上關掉分頁）。
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="kr-cancel">取消</button>
+          <button class="btn btn-primary" id="kr-ok" style="background:#f7768e;border-color:#f7768e">關閉</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function finish() { overlay.remove(); }
+    document.getElementById('kr-cancel').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    document.getElementById('kr-ok').addEventListener('click', async () => {
+      try { await pywebview.api.link_remote_close(peer.id, rsid); } catch (e) {}
+      finish();
+      // 收掉本機開著的檢視 pane
+      const rmt = remoteSid(peer.id, rsid);
+      if (sessions[rmt]) {
+        if (_remoteStreamSid === rmt) stopRemoteStream();
+        try { sessions[rmt].term.dispose(); } catch (e) {}
+        if (sessions[rmt].pane) sessions[rmt].pane.remove();
+        delete sessions[rmt];
+        if (activeId === rmt) {
+          activeId = null;
+          if (sessionOrder.length) switchTab(sessionOrder[sessionOrder.length - 1]);
+        }
+      }
+      delete linkRemoteTabs[peer.id];
+      await loadRemoteTabs(peer.id);
+      renderTabs();
+    });
   }
 
   function startRemoteStream(sid) {
@@ -3694,14 +3831,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       linkState = JSON.parse(await pywebview.api.link_status());
     } catch (e) { return; }
-    const anyOn = (linkState.peers || []).some(p => p.reachable);
-    const btn = document.getElementById('btn-link');
-    btn.classList.toggle('on', anyOn);
-    btn.title = anyOn
-      ? 'Frame Link — ' + (linkState.peers || []).filter(p => p.reachable).map(p => p.name).join(', ')
-      : t('linkBtnTitle');
-    if (rerender !== false && linkPanelOpen()) renderLinkSections();
     renderSidebar();   // 側欄隔離線以下的 peer 燈號／清單同步
+  }
+
+  // 有新訊息/檔案但面板沒開在那台 → 閃一下側欄該 peer 那列提示
+  function flashLinkPeer(peerId) {
+    try {
+      const head = document.querySelector(`.sb-peer-head[data-pid="${peerId}"]`);
+      if (head) {
+        head.style.transition = 'background .2s';
+        head.style.background = 'rgba(158,206,106,.25)';
+        setTimeout(() => { head.style.background = ''; }, 1200);
+      }
+    } catch (e) {}
   }
 
   // 「＋ 配對」（側欄隔離線上的入口）：選「產生配對碼」或「加入配對」
@@ -4180,9 +4322,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             && linkPanelOpen()) {
           appendLinkMsg(ev);
         } else {
-          const btn = document.getElementById('btn-link');
-          btn.classList.add('pulse');
-          setTimeout(() => btn.classList.remove('pulse'), 3500);
+          flashLinkPeer(ev.peer_id);
         }
         return;
       }
@@ -4191,26 +4331,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             && linkPanelOpen()) {
           appendLinkFileRow(null, ev);
         } else {
-          const btn = document.getElementById('btn-link');
-          btn.classList.add('pulse');
-          setTimeout(() => btn.classList.remove('pulse'), 3500);
+          flashLinkPeer(ev.peer_id);
         }
         return;
       }
     } catch (e) {}
   };
 
-  // ── wiring：🔗 按鈕、關閉、resizer ──
-  // 🔗（tab bar）→ 打開側欄並展開「其他 ShellFrame」區，配對／session 都在那裡。
-  document.getElementById('btn-link').addEventListener('click', () => {
-    const sb = document.getElementById('sidebar');
-    if (sb.classList.contains('collapsed')) { sb.classList.remove('collapsed'); updateResizerVisibility(); }
-    linkUi.sbPeers = false;   // 確保展開
-    saveLinkUi();
-    refreshLinkStatus(true);
-    // 沒有 peer 就直接開配對流程
-    if (!linkState || !(linkState.peers || []).length) showPairChooser();
-  });
+  // ── wiring：訊息/檔案面板關閉、resizer（配對入口在側欄隔離線）──
   const _btnLinkClose = document.getElementById('btn-link-close');
   if (_btnLinkClose) _btnLinkClose.addEventListener('click', () => toggleLinkPanel(false));
   // 面板高度拖曳（上緣）

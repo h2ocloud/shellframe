@@ -6,6 +6,41 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.4 (2026-09-05)
+
+### Changes
+
+- **Remote panes now fill the window, and remote sessions can be created and
+  closed from the UI like local ones.** A remote pane was locked to the peer's
+  reported terminal size and skipped the fit addon, so it only painted the top
+  portion of a taller window and alt-screen apps wrapped wrong. A remote pane
+  now fits the window like any local tab and pushes its own cols/rows to the
+  peer (`/link/resize` → the peer's PTY reflows), on open and on every resize.
+  The sidebar peer section gained ＋ 新增 session (opens Claude / Codex / bash
+  or a custom command on the peer) and a ✕ on each remote session that closes
+  it on the peer after a confirm — mirroring the local sidebar. The tab-bar
+  copy of a remote tab still just detaches the view. New `/link/resize`,
+  `/link/new`, `/link/close` endpoints (control-gated) with cases in
+  `tests_frame_link.py`.
+
+  **遠端 pane 現在會撐滿視窗，遠端 session 也能像本機一樣新增／關閉。** 之前遠端
+  pane 被鎖成對方回報的終端尺寸又不跑 fit，較高的視窗只畫得到上半部、alt-screen
+  app 還會換行錯位。現在遠端 pane 跟本機分頁一樣 fit 撐滿，並把自己的 cols/rows
+  推給對方（`/link/resize` → 對方 PTY 跟著 reflow），開啟時與每次縮放都會同步。
+  側欄 peer 區多了「＋ 新增 session」（在對方開 Claude／Codex／bash 或自訂指令）
+  與每個遠端 session 的 ✕（確認後關閉對方那個 session），跟本機側欄一致；tab bar
+  上的遠端分頁 ✕ 仍只是收掉檢視。新增 `/link/resize`、`/link/new`、`/link/close`
+  端點（受主從權限管制），`tests_frame_link.py` 補上案例。
+
+- **Removed the 🔗 button from the tab bar.** Pairing and all peer actions live
+  on the sidebar divider now, so the top button was redundant; taking it out
+  keeps the tab bar clean. New-message / new-file attention now briefly
+  highlights the peer's row in the sidebar instead of pulsing the old button.
+
+  **移除 tab bar 上的 🔗 按鈕。** 配對與所有 peer 操作都在側欄隔離線了，頂部那顆
+  是多餘的，拿掉讓 tab bar 更乾淨。有新訊息／新檔案時，改成短暫高亮側欄該 peer
+  那一列，取代原本閃爍那顆按鈕。
+
 ## v0.32.3 (2026-09-05)
 
 ### Fixes

@@ -63,12 +63,18 @@ class Node:
         self.raw = []           # (sid, data) received via /link/input
         self.events = []        # notify() pushes
 
+        self.resizes = []       # (sid, cols, rows) via /link/resize
+        self.created = []        # cmd via /link/new
+        self.closed = []         # sid via /link/close
+
         def execute(cmd, args):
             if cmd == "list":
                 return {"success": True, "message": "2 sessions",
                         "details": {"sessions": [
-                            {"sid": "s1", "label": f"{name}-tab1", "alive": True},
-                            {"sid": "s2", "label": f"{name}-tab2", "alive": True},
+                            {"sid": "s1", "label": f"{name}-tab1", "alive": True,
+                             "cols": 80, "rows": 24},
+                            {"sid": "s2", "label": f"{name}-tab2", "alive": True,
+                             "cols": 80, "rows": 24},
                         ]}}
             if cmd == "peek":
                 return {"success": True,
@@ -79,6 +85,16 @@ class Node:
                 return {"success": True, "message": "sent"}
             if cmd == "raw_input":
                 self.raw.append((args.get("sid"), args.get("data")))
+                return {"success": True}
+            if cmd == "resize_pty":
+                self.resizes.append((args.get("sid"), args.get("cols"),
+                                     args.get("rows")))
+                return {"success": True}
+            if cmd == "new_session":
+                self.created.append(args.get("cmd"))
+                return {"success": True, "details": {"sid": "sNEW"}}
+            if cmd == "close_session":
+                self.closed.append(args.get("sid"))
                 return {"success": True}
             return {"success": False, "message": f"unknown {cmd}"}
 
@@ -332,6 +348,23 @@ def main():
         a.link.feed_output("sZ", "unwatched")
         z = b.link.remote_stream(a.fid, "sZ", -1)
         check("unwatched tab buffers nothing on attach", z.get("data") == "")
+
+        # ── 遠端 resize / new / close ──
+        rr = b.link.remote_resize(a.fid, "sA", 120, 40)
+        check("remote_resize reaches peer",
+              rr.get("success") and ("sA", 120, 40) in a.resizes)
+        rn = b.link.remote_new(a.fid, "claude")
+        check("remote_new creates a session",
+              rn.get("success") and rn.get("details", {}).get("sid") == "sNEW"
+              and "claude" in a.created)
+        rc = b.link.remote_close(a.fid, "s2")
+        check("remote_close closes a session",
+              rc.get("success") and "s2" in a.closed)
+        # list 帶 cols/rows 供遠端 pane 對齊
+        info2 = b.link.remote_info(a.fid)
+        check("list reports cols/rows",
+              all("cols" in s and "rows" in s
+                  for s in info2["details"]["sessions"]))
         a.link.unpair(b.fid)
 
         # ── helpers ──
