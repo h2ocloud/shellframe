@@ -6,6 +6,39 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.2 (2026-09-05)
+
+### Fixes
+
+- **Removed the duplicate remote-session tree; the bottom panel no longer
+  shadows the sidebar.** After sessions became sidebar-first, the bottom split
+  panel still rendered its own copy of every peer and its sessions, and those
+  copies were not clickable — two lists of the same thing, one of them dead.
+  The bottom panel is now content-only: it carries a message thread or a file
+  transfer view for one peer, opened from that peer's 💬 / 📁 row in the
+  sidebar, and closes with an ✕. The peer/session tree lives in exactly one
+  place (the sidebar). The 🔗 tab-bar button now opens the sidebar and expands
+  the Frame Link zone (and starts pairing when there are no peers yet) instead
+  of toggling the panel.
+
+  **移除重複的遠端 session 樹；底部面板不再和側欄疊影。** session 改成側欄為主
+  之後，底部分割面板還是各自畫了一份 peer 與其 session，而且那份點不動——同一
+  份東西兩個清單、其中一個還是死的。底部面板現在只放內容：某台 peer 的訊息對話
+  或檔案傳輸，從側欄該 peer 的 💬／📁 列點開、用 ✕ 收起。peer／session 樹只留
+  側欄一處。tab bar 的 🔗 改成打開側欄並展開 Frame Link 區（沒有 peer 時直接
+  進配對），不再開那個面板。
+
+- **Remote panes match the peer's terminal size, so remote TUIs render
+  correctly.** A remote Claude/Codex tab draws to the alternate screen at the
+  peer's cols×rows; showing that stream in a pane fitted to this window's size
+  garbled the layout. `list` now reports each session's cols/rows, and a remote
+  pane locks its xterm to those dimensions instead of running the fit addon.
+
+  **遠端 pane 對齊對方的終端尺寸，遠端 TUI 才畫得對。** 遠端的 Claude/Codex
+  分頁是照對方的 cols×rows 畫 alt-screen 的，用本機視窗尺寸 fit 過的 pane 去顯示
+  那串輸出會整個亂掉。`list` 現在回報每個 session 的 cols/rows，遠端 pane 把
+  xterm 鎖成那個尺寸、不跑 fit addon。
+
 ## v0.32.1 (2026-09-05)
 
 ### Changes

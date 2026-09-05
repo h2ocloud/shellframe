@@ -6683,6 +6683,10 @@ try {
                     "bridge_enabled": getattr(s, '_bridge_enabled', True),
                     "glasses_enabled": getattr(s, '_glasses_enabled', False),
                     "provider": _session_provider(s.cmd),
+                    # Frame Link 無縫遠端分頁：對齊對方 PTY 尺寸，alt-screen TUI
+                    # （claude/codex）才不會因 cols/rows 不同而畫面錯位。
+                    "cols": getattr(s, 'cols', 0),
+                    "rows": getattr(s, 'rows', 0),
                     # the glasses bridge needs this to find a codex rollout:
                     # codex has no --session-id, so the only reliable link from
                     # tab to transcript is the fd the process holds open.

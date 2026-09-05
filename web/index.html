@@ -976,18 +976,15 @@
 </div>
 
 <!-- Frame Link — 跨機配對面板（下半部分割，🔗 展開） -->
+<!-- 訊息／檔案內容區（從側欄 peer 的 💬📁 點開；遠端 session 不在這裡、
+     直接在主終端區開）。不再重複整棵 peer/session 樹。 -->
 <div id="link-resizer" title="拖曳調整高度"></div>
 <div id="link-panel">
-  <div id="link-side">
-    <div id="link-sections"></div>
-    <div id="link-side-footer">
-      <button class="link-act" id="btn-link-pair" data-i18n="linkPairBtn">產生配對碼</button>
-      <button class="link-act" id="btn-link-join" data-i18n="linkJoinBtn">加入配對</button>
-      <button class="link-act" id="btn-link-toggle" style="margin-left:auto"></button>
-    </div>
-  </div>
   <div id="link-main">
-    <div id="link-main-head"><span id="link-main-title" style="color:#565f89">—</span></div>
+    <div id="link-main-head">
+      <span id="link-main-title" style="color:#565f89">—</span>
+      <button class="link-act" id="btn-link-close" style="margin-left:auto" title="收起">✕</button>
+    </div>
     <div id="link-main-body"></div>
     <div id="link-input-row" style="display:none">
       <input type="text" id="link-input" placeholder=""/>
@@ -2896,7 +2893,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       sessions[sid].pane.classList.add('active');
       // Preserve user's scroll position on tab switch — don't force-bottom.
       // _userScrolledUp stays as-is so fitTerm respects current position.
-      fitTerm(sid);
+      // 遠端 pane 尺寸鎖定對方 PTY，不 fit（fit 會改成本機容器尺寸→畫面錯位）
+      if (!isRemoteSid(sid)) fitTerm(sid);
       sessions[sid].term.focus();
       if (isRemoteSid(sid) && _remoteStreamSid !== sid) startRemoteStream(sid);
     }
@@ -3161,6 +3159,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
           container.appendChild(head);
           if (pCollapsed) return;
+          // peer 動作列：💬 訊息、📁 檔案、✎ 位址（都不受主從限制）
+          const acts = document.createElement('div');
+          acts.className = 'sb-remote-hint';
+          acts.style.cssText = 'display:flex;gap:12px;padding-left:26px;cursor:default';
+          acts.innerHTML =
+            `<span data-pact="msg" data-pid="${esc(p.id)}" style="cursor:pointer" title="跟這台互傳訊息">💬 訊息</span>` +
+            `<span data-pact="file" data-pid="${esc(p.id)}" style="cursor:pointer" title="傳檔案給這台">📁 檔案</span>` +
+            `<span data-pact="edit" data-pid="${esc(p.id)}" style="cursor:pointer" title="編輯位址（IP 換了改這裡）">✎ 位址</span>`;
+          container.appendChild(acts);
           if (!p.reachable) {
             const em = document.createElement('div');
             em.className = 'sb-remote-hint';
@@ -3372,6 +3379,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!linkUi[k]) loadRemoteTabs(peerHead.dataset.pid);
       return;
     }
+    const pact = e.target.closest('[data-pact]');
+    if (pact) {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = ((linkState && linkState.peers) || []).find(x => x.id === pact.dataset.pid);
+      if (!p) return;
+      if (pact.dataset.pact === 'msg') openLinkMessages(p);
+      else if (pact.dataset.pact === 'file') openLinkFiles(p);
+      else if (pact.dataset.pact === 'edit') editPeerAddress(p);
+      return;
+    }
     const closeRemote = e.target.closest('[data-action="close-remote"]');
     if (closeRemote) {
       e.preventDefault();
@@ -3387,7 +3405,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         alert(`「${p.name}」是單向配對的主控端，這台無權操作它的 session。`);
         return;
       }
-      openRemoteSession(p, { sid: remoteRow.dataset.rsid, label: remoteRow.dataset.rlabel });
+      // 用快取裡的完整 rt（含 cols/rows），才能把遠端 pane 尺寸鎖成對方的
+      const full = (linkRemoteTabs[p.id] || []).find(x => x.sid === remoteRow.dataset.rsid)
+                   || { sid: remoteRow.dataset.rsid, label: remoteRow.dataset.rlabel };
+      openRemoteSession(p, full);
       return;
     }
     const lineAction = e.target.closest('[data-action="switch-line"]');
@@ -3581,7 +3602,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       peerName: peer.name, attachments: [], attachCounter: 0,
       bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false,
       _lastOutputTs: 0, _busy: false, _streamSeq: -1,
+      _rcols: (rt && rt.cols) || 0, _rrows: (rt && rt.rows) || 0,
     };
+    // 對齊對方 PTY 尺寸：遠端多半是 alt-screen（claude/codex），cols/rows 不同
+    // 畫面會整個錯位。有回報尺寸就固定成它，不用 fit。
+    if (rt && rt.cols && rt.rows) {
+      try { term.resize(rt.cols, rt.rows); } catch (e) {}
+    }
     return sessions[sid];
   }
 
@@ -3648,21 +3675,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return document.getElementById('link-panel').classList.contains('open');
   }
 
+  // 底部面板現在只承載「訊息／檔案」內容。它由側欄 peer 的 💬📁 點開，
+  // 不再是遠端 session 的檢視入口（那個已無縫搬進主終端區）。
   function toggleLinkPanel(force) {
     const panel = document.getElementById('link-panel');
     const resizer = document.getElementById('link-resizer');
     const open = (force !== undefined) ? force : !panel.classList.contains('open');
     panel.classList.toggle('open', open);
     resizer.style.display = open ? 'block' : 'none';
-    linkUi.open = open;
-    saveLinkUi();
-    if (open) {
-      refreshLinkStatus(true);
-      if (!linkStatusTimer) linkStatusTimer = setInterval(() => refreshLinkStatus(false), 12000);
-    } else {
-      stopLinkPeek();
-      if (linkStatusTimer) { clearInterval(linkStatusTimer); linkStatusTimer = null; }
-    }
+    if (!open) { linkView = null; }
     // 面板開合改變 terminal 高度 → xterm 要重新 fit
     if (activeId && sessions[activeId] && sessions[activeId].fitAddon) {
       setTimeout(() => { try { sessions[activeId].fitAddon.fit(); } catch (e) {} }, 60);
@@ -3709,118 +3730,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   function esc2(s) { return esc(String(s == null ? '' : s)); }
 
-  function renderLinkSections() {
-    const box = document.getElementById('link-sections');
-    if (!box || !linkState) return;
-    box.innerHTML = '';
-
-    // ── 本機 section（藍色條）──
-    const localCollapsed = !!linkUi.cLocal;
-    const lh = document.createElement('div');
-    lh.className = 'link-sec-head local';
-    lh.innerHTML = `<span class="link-caret">${localCollapsed ? '▸' : '▾'}</span>` +
-      `🖥️ <b>${esc2(t('linkLocalSec'))}</b>` +
-      `<span style="color:#565f89">· ${esc2(linkState.frame_name || '')}</span>` +
-      `<span class="link-count">${sessionOrder.length}</span>`;
-    lh.addEventListener('click', () => { linkUi.cLocal = !localCollapsed; saveLinkUi(); renderLinkSections(); });
-    box.appendChild(lh);
-    if (!localCollapsed) {
-      sessionOrder.forEach(sid => {
-        const s = sessions[sid];
-        if (!s) return;
-        const it = document.createElement('div');
-        it.className = 'link-item local-item' + (sid === activeId ? ' sel' : '');
-        it.innerHTML = `<span class="li-label">${esc2(s.label)}</span>`;
-        it.title = '切到本機分頁';
-        it.addEventListener('click', () => switchTab(sid));
-        box.appendChild(it);
-      });
-    }
-
-    // ── 每台遠端 peer 一個 section（綠色條；離線灰）──
-    (linkState.peers || []).forEach(p => {
-      const key = 'c_' + p.id;
-      const collapsed = !!linkUi[key];
-      const head = document.createElement('div');
-      head.className = 'link-sec-head remote' + (p.reachable ? '' : ' offline');
-      head.innerHTML = `<span class="link-caret">${collapsed ? '▸' : '▾'}</span>` +
-        `<span class="link-peer-dot${p.reachable ? ' on' : ''}"></span>` +
-        `🌐 <b>${esc2(p.name)}</b>` +
-        `<span style="color:#565f89;font-size:10px">${esc2(p.host || '')}${p.port ? ':' + p.port : ''}</span>` +
-        `<span class="link-unpair" data-pid="${esc2(p.id)}" title="斷開這台 ShellFrame">&times;</span>`;
-      head.addEventListener('click', (e) => {
-        if (e.target.classList.contains('link-unpair')) { confirmUnpair(p); return; }
-        linkUi[key] = !collapsed;
-        saveLinkUi();
-        renderLinkSections();
-        if (collapsed) loadRemoteTabs(p.id);   // 剛展開 → 抓遠端分頁
-      });
-      box.appendChild(head);
-      if (!collapsed) {
-        const acts = document.createElement('div');
-        acts.className = 'link-item';
-        acts.style.gap = '10px';
-        acts.innerHTML =
-          `<span data-act="msg" title="跟這台互傳訊息">💬 訊息</span>` +
-          `<span data-act="file" title="傳檔案給這台">📁 檔案</span>` +
-          `<span data-act="edit" title="編輯位址（IP 換了用這裡改）">✎ 位址</span>`;
-        acts.addEventListener('click', (e) => {
-          const act = e.target.dataset && e.target.dataset.act;
-          if (act === 'msg') openLinkMessages(p);
-          else if (act === 'file') openLinkFiles(p);
-          else if (act === 'edit') editPeerAddress(p);
-        });
-        box.appendChild(acts);
-        if (!p.reachable) {
-          const em = document.createElement('div');
-          em.className = 'link-empty';
-          em.textContent = p.host ? '離線／不可直連（訊息與檔案會排隊等對方來拉）'
-                                  : '無位址（僅能等對方輪詢取件）';
-          box.appendChild(em);
-        } else {
-          const tabs = linkRemoteTabs[p.id];
-          if (!tabs) {
-            const em = document.createElement('div');
-            em.className = 'link-empty';
-            em.textContent = '載入遠端分頁…';
-            box.appendChild(em);
-            loadRemoteTabs(p.id);
-          } else if (!tabs.length) {
-            const em = document.createElement('div');
-            em.className = 'link-empty';
-            em.textContent = '(對方沒有開分頁)';
-            box.appendChild(em);
-          } else {
-            tabs.forEach(rt => {
-              const it = document.createElement('div');
-              const sel = linkView && linkView.type === 'remote'
-                          && linkView.peerId === p.id && linkView.sid === rt.sid;
-              it.className = 'link-item' + (sel ? ' sel' : '');
-              it.innerHTML = `<span style="opacity:.5;font-size:10px">▣</span>` +
-                             `<span class="li-label">${esc2(rt.label || rt.sid)}</span>`;
-              it.title = '看這個遠端分頁的畫面';
-              it.addEventListener('click', () => openRemoteSession(p, rt));
-              box.appendChild(it);
-            });
-          }
-        }
-      }
-    });
-    if (!(linkState.peers || []).length) {
-      const em = document.createElement('div');
-      em.className = 'link-empty';
-      em.style.padding = '8px 10px';
-      em.textContent = '尚未配對。一台按「產生配對碼」、另一台按「加入配對」。';
-      box.appendChild(em);
-    }
-    // footer：連線功能開關
-    const tog = document.getElementById('btn-link-toggle');
-    tog.textContent = linkState.running ? '連線：開' : '連線：關';
-    tog.title = linkState.running
-      ? `監聽 ${(linkState.addresses || []).join(', ')} :${linkState.listen_port} — 點一下關閉`
-      : '目前不接受跨機連線 — 點一下開啟';
-    tog.style.color = linkState.running ? '#9ece6a' : '#565f89';
-  }
+  // 側欄已經負責 peer/session 樹；底部面板改成純訊息／檔案內容，不再重複整棵樹。
+  // 這個函式保留成 no-op，讓舊呼叫點不必逐一拆除。
+  function renderLinkSections() {}
 
   const _linkTabsInflight = {};
   async function loadRemoteTabs(peerId) {
@@ -3881,6 +3793,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // ── 右欄視圖：訊息 ──
   async function openLinkMessages(peer) {
     stopLinkPeek();
+    toggleLinkPanel(true);
     linkView = { type: 'messages', peerId: peer.id, peerName: peer.name };
     linkMainTitle(`💬 與 <b>${esc2(peer.name)}</b> 的訊息`);
     const row = document.getElementById('link-input-row');
@@ -3926,6 +3839,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // ── 右欄視圖：檔案 ──
   async function openLinkFiles(peer) {
     stopLinkPeek();
+    toggleLinkPanel(true);
     linkView = { type: 'files', peerId: peer.id, peerName: peer.name };
     linkMainTitle(`📁 與 <b>${esc2(peer.name)}</b> 的檔案`);
     document.getElementById('link-input-row').style.display = 'none';
@@ -4286,17 +4200,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch (e) {}
   };
 
-  // ── wiring：🔗 按鈕、footer、resizer ──
-  document.getElementById('btn-link').addEventListener('click', () => toggleLinkPanel());
-  document.getElementById('btn-link-pair').addEventListener('click', showPairModal);
-  document.getElementById('btn-link-join').addEventListener('click', showJoinModal);
-  document.getElementById('btn-link-toggle').addEventListener('click', async () => {
-    if (!linkState) return;
-    try {
-      linkState = JSON.parse(await pywebview.api.link_set_enabled(!linkState.running));
-      renderLinkSections();
-    } catch (e) {}
+  // ── wiring：🔗 按鈕、關閉、resizer ──
+  // 🔗（tab bar）→ 打開側欄並展開「其他 ShellFrame」區，配對／session 都在那裡。
+  document.getElementById('btn-link').addEventListener('click', () => {
+    const sb = document.getElementById('sidebar');
+    if (sb.classList.contains('collapsed')) { sb.classList.remove('collapsed'); updateResizerVisibility(); }
+    linkUi.sbPeers = false;   // 確保展開
+    saveLinkUi();
+    refreshLinkStatus(true);
+    // 沒有 peer 就直接開配對流程
+    if (!linkState || !(linkState.peers || []).length) showPairChooser();
   });
+  const _btnLinkClose = document.getElementById('btn-link-close');
+  if (_btnLinkClose) _btnLinkClose.addEventListener('click', () => toggleLinkPanel(false));
   // 面板高度拖曳（上緣）
   (() => {
     const resizer = document.getElementById('link-resizer');
@@ -4331,7 +4247,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   function linkUiInit() {
     refreshLinkStatus(false);
-    if (linkUi.open) toggleLinkPanel(true);
+    // 面板不再自動開——它現在只在點 💬／📁 時彈出
   }
 
   /* Opening a tab to the glasses is not a preference, it is a grant: every tab
