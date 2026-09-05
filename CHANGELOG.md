@@ -6,6 +6,30 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.8 (2026-09-05)
+
+### Added
+
+- **`/delay` — schedule a prompt to send into a tab later (Telegram).**
+  `/delay 30m <prompt>` queues `<prompt>` and injects it into the active tab
+  after the delay; handy for waiting out a usage-quota reset. Duration accepts
+  `30m` / `2h` / `90s` / `1h30m`, or a bare number as minutes. `/delay` (or
+  `/delay list`) shows what's queued with time remaining and an id; `/delay
+  cancel <id>` takes one back before it fires. The queue is persisted to
+  `~/.local/state/shellframe/tg_delays.json` and driven by a scheduler in the
+  app process, so pending sends survive a restart; when one fires you get a
+  Telegram confirmation (or a warning if the target tab is gone). Also fixed a
+  latent issue where `/link` was forwarded to the tab instead of handled by the
+  bridge.
+
+  **`/delay` — 排程晚點把 prompt 送進分頁（Telegram）。** `/delay 30m <prompt>`
+  會把 `<prompt>` 排隊、延遲後注入當前 active 分頁；適合等用量配額重置再送。
+  時間吃 `30m`／`2h`／`90s`／`1h30m`，或裸數字當分鐘。`/delay`（或 `/delay list`）
+  列出排程中的項目、剩餘時間與 id；`/delay cancel <id>` 可在送出前收回。佇列存到
+  `~/.local/state/shellframe/tg_delays.json`、由 app 進程內的排程器驅動，restart
+  也不會遺失；到點送出會回 Telegram 確認（分頁已不在則回警告）。順帶修掉
+  `/link` 之前被當一般指令轉進分頁、而非由 bridge 處理的問題。
+
 ## v0.32.7 (2026-09-05)
 
 ### Added

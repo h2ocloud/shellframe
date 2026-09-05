@@ -63,6 +63,11 @@ if not IS_WIN:
 CLAUDE_TMP = Path.home() / ".claude" / "tmp"
 CLAUDE_TMP.mkdir(parents=True, exist_ok=True)
 
+# 延遲送出佇列（TG /delay）——持久化到檔案，App 端排程器每幾秒掃、到點注入。
+# 放檔案是為了 restart 後不遺失（怕用量不夠時排隊等重置再送）。
+SF_STATE_DIR = Path.home() / ".local" / "state" / "shellframe"
+DELAYS_FILE = SF_STATE_DIR / "tg_delays.json"
+
 # AI CLI tools that should receive the init prompt.
 # Matched against the base command name (last path component, no extension).
 # Providers with usage/quota support come from the registry, so adding one there
@@ -2025,6 +2030,96 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             _dlog("handoff", f"TG handoff sent to {len(chat_ids)} chats")
         except Exception as e:
             _dlog("handoff", f"TG send failed: {e}")
+
+    # ── 延遲送出佇列（TG /delay）──────────────────────────────────────────
+    @staticmethod
+    def _load_delays() -> list:
+        try:
+            return json.loads(DELAYS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+
+    @staticmethod
+    def _save_delays(items: list):
+        try:
+            SF_STATE_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = DELAYS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(DELAYS_FILE)
+        except Exception as e:
+            _dlog("delay", f"save failed: {e}")
+
+    def delay_add(self, sid: str, text: str, delay_sec: int,
+                  chat_id: int = 0, label: str = "") -> dict:
+        if not sid or not text.strip():
+            return {"success": False, "message": "缺 sid 或內容"}
+        delay_sec = max(1, int(delay_sec))
+        items = self._load_delays()
+        did = uuid.uuid4().hex[:6]
+        items.append({
+            "id": did, "sid": sid, "text": text,
+            "due_ts": time.time() + delay_sec, "created_ts": time.time(),
+            "chat_id": int(chat_id or 0), "label": label or sid,
+        })
+        self._save_delays(items)
+        return {"success": True, "id": did, "due_ts": time.time() + delay_sec}
+
+    def delay_list(self) -> list:
+        return sorted(self._load_delays(), key=lambda x: x.get("due_ts", 0))
+
+    def delay_cancel(self, did: str) -> dict:
+        items = self._load_delays()
+        kept = [x for x in items if x.get("id") != did]
+        if len(kept) == len(items):
+            return {"success": False, "message": f"找不到排程 {did}"}
+        self._save_delays(kept)
+        return {"success": True}
+
+    def _start_delay_scheduler(self):
+        if getattr(self, "_delay_started", False):
+            return
+        self._delay_started = True
+
+        def _fire(entry):
+            sid = entry.get("sid", "")
+            s = self.sessions.get(sid)
+            label = entry.get("label", sid)
+            ok = False
+            if s and s.alive:
+                try:
+                    s._startup_trust_pending = False
+                    self._send_text_to_session(s, entry.get("text", ""), submit=True)
+                    ok = True
+                except Exception as e:
+                    _dlog("delay", f"fire failed sid={sid}: {e}")
+            chat_id = entry.get("chat_id")
+            if chat_id and self.bridge:
+                try:
+                    from bridge_telegram import tg_api
+                    note = (f"⏰ 已送出排程 prompt → {label}" if ok
+                            else f"⚠️ 排程到點但分頁不在了（{label}），未送出")
+                    tg_api(self.bridge.config.bot_token, "sendMessage",
+                           {"chat_id": chat_id, "text": note}, timeout=5)
+                except Exception:
+                    _swallow("_start_delay_scheduler:notify")
+
+        def _loop():
+            while True:
+                try:
+                    items = self._load_delays()
+                    if items:
+                        now = time.time()
+                        due = [x for x in items if x.get("due_ts", 0) <= now]
+                        if due:
+                            keep = [x for x in items if x.get("due_ts", 0) > now]
+                            self._save_delays(keep)
+                            for entry in due:
+                                _fire(entry)
+                except Exception as e:
+                    _dlog("delay", f"scheduler loop error: {e}")
+                time.sleep(5)
+
+        threading.Thread(target=_loop, daemon=True, name="sf-delay").start()
 
     def _start_idle_reaper(self):
         if self._idle_reaper_started:
@@ -7053,6 +7148,54 @@ try {
             except Exception as e:
                 return {"success": False, "message": f"link join failed: {e}"}
 
+        elif cmd == "delay_schedule":
+            try:
+                res = self.delay_add(
+                    args.get("sid", ""), args.get("text", ""),
+                    int(args.get("delay_sec") or 0),
+                    chat_id=int(args.get("chat_id") or 0),
+                    label=args.get("label", ""))
+                if not res.get("success"):
+                    return res
+                mins = int(args.get("delay_sec") or 0) // 60
+                secs = int(args.get("delay_sec") or 0) % 60
+                when = time.strftime("%H:%M", time.localtime(res["due_ts"]))
+                dur = (f"{mins}m" + (f"{secs}s" if secs else "")) if mins else f"{secs}s"
+                return {"success": True,
+                        "message": f"⏳ 已排程（{res['id']}）：{dur} 後（約 {when}）送出\n"
+                                   f"未送出前可 /delay cancel {res['id']} 收回",
+                        "details": res}
+            except Exception as e:
+                return {"success": False, "message": f"delay schedule failed: {e}"}
+
+        elif cmd == "delay_list":
+            try:
+                items = self.delay_list()
+                if not items:
+                    return {"success": True, "message": "沒有排程中的 /delay"}
+                now = time.time()
+                lines = ["⏳ 排程中："]
+                for x in items:
+                    left = int(x.get("due_ts", 0) - now)
+                    when = time.strftime("%H:%M", time.localtime(x.get("due_ts", 0)))
+                    left_s = (f"{left // 60}m{left % 60}s" if left >= 60
+                              else f"{max(0, left)}s")
+                    preview = (x.get("text", "") or "").replace("\n", " ")[:40]
+                    lines.append(f" [{x.get('id')}] {x.get('label','')} · {when}"
+                                 f"（剩 {left_s}）\n   {preview}")
+                return {"success": True, "message": "\n".join(lines), "details": {"items": items}}
+            except Exception as e:
+                return {"success": False, "message": f"delay list failed: {e}"}
+
+        elif cmd == "delay_cancel":
+            try:
+                res = self.delay_cancel(args.get("id", ""))
+                return {"success": res.get("success", False),
+                        "message": ("🗑 已收回排程 " + args.get("id", ""))
+                                   if res.get("success") else res.get("message", "取消失敗")}
+            except Exception as e:
+                return {"success": False, "message": f"delay cancel failed: {e}"}
+
         elif cmd == "link_unpair":
             try:
                 target = (args.get("peer") or "").strip()
@@ -8165,6 +8308,7 @@ def main():
     api._start_command_watcher()
     api._start_api_server()
     api._start_frame_link()
+    api._start_delay_scheduler()
     webview.start(debug=("--debug" in sys.argv))
 
     # If webview.start() returns but process is still alive, force exit

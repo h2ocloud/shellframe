@@ -401,6 +401,22 @@ def split_for_telegram(text: str, limit: int = 3900) -> list:
     return chunks
 
 
+def _parse_duration(s: str):
+    """'30m'/'2h'/'90s'/'1h30m'/'45'(=分) → 秒數；無法解析回 None。上限 24h。"""
+    s = (s or "").strip().lower()
+    if not s:
+        return None
+    if s.isdigit():                       # 裸數字＝分鐘
+        return min(int(s) * 60, 86400)
+    total, matched = 0, False
+    for num, unit in re.findall(r"(\d+)\s*([hms])", s):
+        matched = True
+        total += int(num) * {"h": 3600, "m": 60, "s": 1}[unit]
+    if not matched:
+        return None
+    return min(total, 86400) if total > 0 else None
+
+
 def tg_api(token: str, method: str, data=None, timeout: float = 35) -> dict:
     """Telegram Bot API call. Default timeout=35s suits long-poll getUpdates
     (server-side wait=30 + slack). Fire-and-forget calls (sendChatAction,
@@ -1524,6 +1540,7 @@ class TelegramBridge(BridgeBase):
             {"command": "rename", "description": "Rename tab: /rename <新名> 或 /rename <編號> <新名>"},
             {"command": "effort", "description": "調推理深度（claude/codex，inline 按鈕）"},
             {"command": "quiet", "description": "這一輪別再提醒進度（心跳靜音）"},
+            {"command": "delay", "description": "排程晚點送 prompt：/delay 30m <prompt>；/delay 看清單"},
             {"command": "link", "description": "跨機配對：/link pair、/link join <host> <碼>"},
             {"command": "close", "description": "Close current session (with confirm)"},
         ])
@@ -5511,7 +5528,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths and not escaped_slash:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜', 'delay', 'link') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -6317,6 +6334,49 @@ class TelegramBridge(BridgeBase):
                     "text": f"{head}\n分頁關掉後編號會往前遞補，舊清單會過期。"
                             f"\n\n{self._slot_menu_text(user_id)}",
                 })
+
+        elif cmd == "delay":
+            # /delay 30m <prompt> → 排程晚點把 prompt 送進當前 active 分頁。
+            # /delay list｜/delay cancel <id>。主要用途：用量不夠時排到重置後再送。
+            argv = (text or "").split(maxsplit=2)[1:]   # 去掉 "/delay"
+            sub = (argv[0].lower() if argv else "list")
+
+            if sub == "list" or not argv:
+                res = self._sfctl_call("delay_list", {}, timeout=10.0)
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": res.get("message") or "查詢失敗"})
+                return
+            if sub == "cancel":
+                did = argv[1].strip() if len(argv) > 1 else ""
+                if not did:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id, "text": "用法：/delay cancel <id>（/delay 看 id）"})
+                    return
+                res = self._sfctl_call("delay_cancel", {"id": did}, timeout=10.0)
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": res.get("message") or "取消失敗"})
+                return
+
+            # 排程：/delay <duration> <prompt>
+            delay_sec = _parse_duration(argv[0])
+            prompt = argv[1] if len(argv) > 1 else ""
+            if delay_sec is None or not prompt.strip():
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "用法：/delay 30m 你的 prompt\n（時間可 30m／2h／90s／1h30m）\n"
+                            "查詢：/delay　收回：/delay cancel <id>"})
+                return
+            active_sid = self.get_active_sid(user_id)
+            slot = self.slots.get(active_sid) if active_sid else None
+            if not active_sid or not slot:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "沒有 active 分頁，先 /list 選一個。"})
+                return
+            res = self._sfctl_call("delay_schedule", {
+                "sid": active_sid, "text": prompt, "delay_sec": delay_sec,
+                "chat_id": chat_id, "label": slot.label}, timeout=10.0)
+            tg_api(self.config.bot_token, "sendMessage", {
+                "chat_id": chat_id, "text": res.get("message") or "排程失敗"})
 
         elif cmd == "link":
             # Frame Link（跨機配對）遠端操作：人在外面用 TG 就能把兩台接起來。
