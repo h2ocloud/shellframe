@@ -34,6 +34,7 @@ Design notes (why it looks like this):
     import, mirroring api_server.py.
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -49,6 +50,11 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, quote
+
+try:
+    import link_relay            # relay (NAT-friendly) transport, optional
+except ImportError:          # pragma: no cover
+    link_relay = None
 
 PAIR_TTL = 120               # seconds a pairing code stays valid
 PAIR_MAX_ATTEMPTS = 5        # bad proofs before the code dies
@@ -68,6 +74,8 @@ FILES_DIR = STATE_DIR / "frame_link_files"      # staged outbox files
 INBOX_FILE = STATE_DIR / "frame_link_inbox.json"
 OUTBOX_FILE = STATE_DIR / "frame_link_outbox.json"
 DOWNLOADS_DIR = Path.home() / "Downloads" / "ShellFrame"
+VOICE_MAX_BYTES = 16 * 1024 * 1024       # one voice note through /link/voice
+PAIR_URL_SCHEME = "shellframe"          # shellframe://pair?d=<base64url json> (QR + deep link)
 
 
 def _now() -> float:
@@ -143,6 +151,29 @@ def local_addresses() -> list:
     return addrs
 
 
+def build_pair_url(payload: dict) -> str:
+    """Pairing QR / deep-link content. The same string is drawn as a QR on the
+    desktop and sent as a tappable link over Telegram; the phone app registers
+    the `shellframe://` scheme."""
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    b = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return f"{PAIR_URL_SCHEME}://pair?d={b}"
+
+
+def parse_pair_url(url: str):
+    """Inverse of build_pair_url. Returns the payload dict or None."""
+    m = re.match(r"^\s*" + PAIR_URL_SCHEME + r"://pair\?(?:[^#]*&)?d=([A-Za-z0-9_-]+)", url or "")
+    if not m:
+        return None
+    b = m.group(1)
+    b += "=" * (-len(b) % 4)
+    try:
+        obj = json.loads(base64.urlsafe_b64decode(b).decode("utf-8"))
+    except Exception:
+        return None
+    return obj if isinstance(obj, dict) and obj.get("code") else None
+
+
 class _JsonStore:
     """Tiny locked JSON file persistence (inbox log / outbox queues)."""
 
@@ -167,6 +198,13 @@ class _JsonStore:
                 tmp.replace(self._path)
             except Exception:
                 pass
+
+
+class _HeaderView(dict):
+    """Case-insensitive .get() over lower-cased response headers (urllib-like)."""
+
+    def get(self, key, default=None):
+        return super().get(str(key).lower(), default)
 
 
 class FrameLink:
@@ -204,6 +242,7 @@ class FrameLink:
         # get buffered, so idle operation costs nothing.
         self._streams = {}              # sid -> {seq,min_seq,chunks,bytes,watch_ts}
         self._streams_lock = threading.Lock()
+        self._relay = None              # link_relay.RelayClient when config relay.url is set
 
         self._state_dir = Path(state_dir) if state_dir else STATE_DIR
         self._files_dir = self._state_dir / "frame_link_files"
@@ -234,6 +273,15 @@ class FrameLink:
     def peers(self) -> dict:
         return dict(self._cfg().get("peers") or {})
 
+    def _peer(self, peer_id: str):
+        """Copy of one peer entry with its id attached (relay routing needs it)."""
+        p = self.peers().get(peer_id)
+        if not p:
+            return None
+        p = dict(p)
+        p["id"] = peer_id
+        return p
+
     # ── lifecycle ─────────────────────────────────────────────────────────
     def start(self) -> bool:
         cfg = self._cfg()
@@ -256,10 +304,65 @@ class FrameLink:
                                              name="sf-link-poll")
         self._poll_thread.start()
         self._log(f"[link] listening on {host}:{port}")
+        self._start_relay()
         return True
+
+    # ── relay（TG 式出站長輪詢；電腦不必開 port）────────────────────────
+    def _relay_settings(self):
+        r = self._cfg().get("relay") or {}
+        return (str(r.get("url") or "").strip().rstrip("/"),
+                str(r.get("token") or "").strip())
+
+    def _local_listen_addr(self):
+        cfg = self._cfg()
+        host = str(cfg.get("listen_host", "0.0.0.0") or "0.0.0.0")
+        if host in ("0.0.0.0", "::", ""):
+            host = "127.0.0.1"
+        return host, int(cfg.get("listen_port", 8767))
+
+    def _start_relay(self):
+        if link_relay is None:
+            return
+        url, token = self._relay_settings()
+        if not url or not token:
+            return
+        if self._relay is None:
+            self._relay = link_relay.RelayClient(self._relay_settings, self._local_listen_addr,
+                                                 log=self._log, frame_id=self.frame_id())
+        self._relay.start()
+
+    def set_relay(self, url: str, token: str) -> dict:
+        """Point this computer at a relay (and start polling it right away)."""
+        url = (url or "").strip().rstrip("/")
+        token = (token or "").strip()
+        def fn(block):
+            block["relay"] = {"url": url, "token": token}
+        self._mutate_cfg(fn)
+        if self._relay:
+            self._relay.stop()
+            self._relay = None
+        if url and token and self.running():
+            self._start_relay()
+        return {"success": True, "relay": self._relay.status() if self._relay else
+                {"configured": bool(url), "connected": False}}
+
+    def set_public_host(self, host: str) -> dict:
+        """Optional public address (DDNS / port-forward) advertised in pairing QRs."""
+        def fn(block):
+            block["public_host"] = (host or "").strip()[:200]
+        self._mutate_cfg(fn)
+        return {"success": True}
+
+    @staticmethod
+    def _addressable(peer: dict) -> bool:
+        """Can we reach this peer at all — directly or through a relay?"""
+        return bool((peer.get("host") and peer.get("port"))
+                    or ((peer.get("relay") or {}).get("url")))
 
     def stop(self):
         self._poll_stop.set()
+        if self._relay:
+            self._relay.stop()
         httpd, self._httpd = self._httpd, None
         if httpd:
             try:
@@ -282,6 +385,8 @@ class FrameLink:
                 "name": p.get("name", pid[:8]),
                 "host": p.get("host", ""),
                 "port": p.get("port", 0),
+                "kind": p.get("kind", ""),                     # "ios" for phones/tablets
+                "via_relay": bool((p.get("relay") or {}).get("url")),
                 "reachable": bool(st.get("reachable")),
                 "last_ok": st.get("last_ok", 0),
                 "last_err": st.get("last_err", ""),
@@ -301,6 +406,9 @@ class FrameLink:
             "listen_host": cfg.get("listen_host", "0.0.0.0"),
             "listen_port": int(cfg.get("listen_port", 8767)),
             "addresses": local_addresses(),
+            "public_host": cfg.get("public_host", ""),
+            "relay": (self._relay.status() if self._relay else
+                      {"configured": bool(self._relay_settings()[0]), "connected": False}),
             "peers": peers,
             "pairing": pairing,
         }
@@ -333,11 +441,24 @@ class FrameLink:
                 "handshakes": {},   # joiner_nonce -> host_nonce
             }
         cfg = self._cfg()
+        port = int(cfg.get("listen_port", 8767))
+        hosts = local_addresses()
+        public_host = str(cfg.get("public_host") or "").strip()
+        if public_host and public_host not in hosts:
+            hosts.append(public_host)
+        relay_url, relay_token = self._relay_settings()
+        payload = {"v": 1, "fid": cfg.get("frame_id", ""), "name": self.frame_name(),
+                   "hosts": hosts, "port": port, "code": code, "mode": mode}
+        if relay_url and relay_token:
+            payload["relay"] = {"url": relay_url, "token": relay_token}
         return {
             "success": True,
             "code": code,
-            "port": int(cfg.get("listen_port", 8767)),
+            "port": port,
             "addresses": local_addresses(),
+            "public_host": public_host,
+            "relay_url": relay_url,
+            "pair_url": build_pair_url(payload),
             "expires_in": PAIR_TTL,
         }
 
@@ -382,6 +503,7 @@ class FrameLink:
         joiner_id = str(body.get("joiner_id") or "")
         joiner_name = str(body.get("joiner_name") or "")[:60] or "peer"
         joiner_port = int(body.get("joiner_port") or 0)
+        joiner_kind = re.sub(r"[^a-z0-9_-]", "", str(body.get("joiner_kind") or "").lower())[:16]
         with self._pairing_lock:
             if self._pairing is not p:
                 return 404, {"success": False, "message": "pairing closed"}
@@ -414,6 +536,7 @@ class FrameLink:
             "port": joiner_port,
             "secret": secret,
             "mode": my_mode,
+            "kind": joiner_kind,
             "added": _now(),
         })
         with self._pairing_lock:
@@ -426,10 +549,48 @@ class FrameLink:
                      "host_port": int(cfg.get("listen_port", 8767))}
 
     # ── pairing: joiner side ──────────────────────────────────────────────
-    def join(self, host: str, port: int, code: str) -> dict:
+    def join_url(self, url: str) -> dict:
+        """Join from a pairing QR / deep link: try each advertised address, then
+        the relay (the phone app does exactly the same)."""
+        p = parse_pair_url(url)
+        if not p:
+            return {"success": False, "message": "看不懂這個配對連結"}
+        hosts = [h for h in (p.get("hosts") or []) if h]
+        port = int(p.get("port") or 8767)
+        relay = p.get("relay") if isinstance(p.get("relay"), dict) else None
+        fid = str(p.get("fid") or "")
+        last = {"success": False, "message": "沒有位址也沒有 relay"}
+        for h in hosts:
+            last = self.join(h, port, p.get("code", ""), relay=relay, fid=fid)
+            if last.get("success") or not str(last.get("message", "")).startswith("連不到"):
+                return last
+        if relay and fid:
+            return self.join("", port, p.get("code", ""), relay=relay, fid=fid)
+        return last
+
+    def _pair_post(self, host: str, port: int, relay, fid: str, path: str, obj: dict) -> dict:
+        if host:
+            return self._plain_post(f"http://{host}:{port}{path}", obj)
+        if relay and fid and link_relay is not None:
+            status, _h, raw = link_relay.relay_call(
+                str(relay.get("url") or ""), str(relay.get("token") or ""), fid,
+                "POST", path, {"Content-Type": "application/json"},
+                json.dumps(obj).encode(), timeout=10)
+            try:
+                parsed = json.loads(raw.decode("utf-8") or "{}")
+            except Exception:
+                parsed = {}
+            if status != 200:
+                raise RuntimeError(parsed.get("message") or f"HTTP {status}")
+            return parsed
+        raise RuntimeError("no host and no relay")
+
+    def join(self, host: str, port: int, code: str, relay: dict = None,
+             fid: str = "") -> dict:
         host = (host or "").strip()
         code_norm = normalize_code(code)
-        if not host or not code_norm:
+        relay = relay if (isinstance(relay, dict) and relay.get("url")) else None
+        if (not host and not (relay and fid)) or not code_norm:
             return {"success": False, "message": "host 與配對碼必填"}
         if len(code_norm) < 8:
             return {"success": False, "message": "配對碼格式不對"}
@@ -437,12 +598,12 @@ class FrameLink:
         cfg = self._cfg()
         my_id = cfg.get("frame_id", "")
         joiner_nonce = secrets.token_hex(16)
-        base = f"http://{host}:{port}"
+        where = f"{host}:{port}" if host else f"relay {relay.get('url')}"
         try:
-            r1 = self._plain_post(f"{base}/link/pair/start",
-                                  {"joiner_nonce": joiner_nonce})
+            r1 = self._pair_post(host, port, relay, fid, "/link/pair/start",
+                                 {"joiner_nonce": joiner_nonce})
         except Exception as e:
-            return {"success": False, "message": f"連不到 {host}:{port} — {e}"}
+            return {"success": False, "message": f"連不到 {where} — {e}"}
         if not r1.get("success"):
             return {"success": False,
                     "message": r1.get("message", "對方沒有開配對窗口")}
@@ -451,13 +612,14 @@ class FrameLink:
             return {"success": False, "message": "handshake 回應異常"}
         proof_j = _proof(code_norm, "join", joiner_nonce, host_nonce)
         try:
-            r2 = self._plain_post(f"{base}/link/pair/finish", {
+            r2 = self._pair_post(host, port, relay, fid, "/link/pair/finish", {
                 "joiner_nonce": joiner_nonce,
                 "proof": proof_j,
                 "joiner_id": my_id,
                 "joiner_name": self.frame_name(),
                 "joiner_port": int(cfg.get("listen_port", 8767))
                                if cfg.get("enabled") else 0,
+                "joiner_kind": "shellframe",
             })
         except Exception as e:
             return {"success": False, "message": f"配對失敗 — {e}"}
@@ -467,6 +629,8 @@ class FrameLink:
         # fake host could collect our proof and pair us to itself. The mode is
         # bound into the host proof so a middleman can't flip 單向/雙向.
         host_id = str(r2.get("host_id") or "")
+        if fid and host_id and fid != host_id:
+            return {"success": False, "message": "對方回報的 frame_id 與配對連結不符"}
         wire_mode = str(r2.get("mode") or "duplex")
         if wire_mode not in ("duplex", "host_controls", "joiner_controls"):
             return {"success": False, "message": "未知的配對模式（版本不相容？）"}
@@ -479,13 +643,16 @@ class FrameLink:
         my_mode = {"duplex": "duplex", "host_controls": "slave",
                    "joiner_controls": "master"}[wire_mode]
         peer = {
-            "name": str(r2.get("host_name") or host)[:60],
+            "name": str(r2.get("host_name") or host or host_id[:8])[:60],
             "host": host,
             "port": int(r2.get("host_port") or port),
             "secret": secret,
             "mode": my_mode,
             "added": _now(),
         }
+        if relay:
+            peer["relay"] = {"url": str(relay.get("url") or "").rstrip("/"),
+                             "token": str(relay.get("token") or "")}
         self._store_peer(host_id, peer)
         self._peer_status[host_id] = {"reachable": True, "last_ok": _now(),
                                       "last_err": ""}
@@ -517,7 +684,8 @@ class FrameLink:
             pass
         return {"success": True}
 
-    def update_peer(self, peer_id: str, host: str, port: int) -> dict:
+    def update_peer(self, peer_id: str, host: str, port: int, relay: dict = None) -> dict:
+        """relay=None keeps the stored relay; relay={} clears it; relay={url,token} sets it."""
         peers = self.peers()
         if peer_id not in peers:
             return {"success": False, "message": "no such peer"}
@@ -526,6 +694,12 @@ class FrameLink:
             if p is not None:
                 p["host"] = (host or "").strip()
                 p["port"] = int(port or 8767)
+                if relay is not None:
+                    if relay.get("url"):
+                        p["relay"] = {"url": str(relay["url"]).strip().rstrip("/"),
+                                      "token": str(relay.get("token") or "")}
+                    else:
+                        p.pop("relay", None)
         self._mutate_cfg(fn)
         return {"success": True}
 
@@ -700,6 +874,8 @@ class FrameLink:
 
                 if path == "/link/file":
                     return self._recv_file()
+                if path == "/link/voice":
+                    return self._recv_voice()
 
                 raw = self._body()
                 peer_id, peer, nonce = link._verify_request(self, raw)
@@ -829,6 +1005,68 @@ class FrameLink:
                 res = {"success": True, "saved": str(dest)}
                 return self._send(200, res, sign_for=peer, nonce=nonce)
 
+            def _recv_voice(self):
+                """Phone / watch voice note → the same STT→refine→inject chain the
+                Telegram bridge and the desktop mic use (`voice_inject`). Signed
+                like /link/file: signature covers the declared sha256, body is
+                verified while streaming to a temp file."""
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    n = 0
+                if n <= 0 or n > VOICE_MAX_BYTES:
+                    return self._send(413, {"success": False,
+                                            "message": f"audio too large (cap {VOICE_MAX_BYTES})"})
+                claimed_hash = self.headers.get("X-SF-Body-Sha256") or ""
+                peer_id, peer, nonce = link._verify_request(self, claimed_hash.encode())
+                if not peer_id:
+                    return self._send(403, {"success": False, "message": peer})
+                if not link._peer_may_control(peer_id):
+                    return self._send(403, {"success": False,
+                        "message": "單向配對：對方無權操作這台"},
+                        sign_for=peer, nonce=nonce)
+                q = parse_qs(urlparse(self.path).query)
+                sid = (q.get("sid") or [""])[0]
+                fname = _safe_filename(self.headers.get("X-SF-Filename") or "voice.m4a")
+                ext = os.path.splitext(fname)[1].lower() or ".m4a"
+                if not re.fullmatch(r"\.[a-z0-9]{1,5}", ext):
+                    ext = ".m4a"
+                vdir = link._state_dir / "frame_link_voice"
+                vdir.mkdir(parents=True, exist_ok=True)
+                dest = vdir / f"{int(_now() * 1000)}-{secrets.token_hex(4)}{ext}"
+                h = hashlib.sha256()
+                try:
+                    with open(dest, "wb") as f:
+                        left = n
+                        while left > 0:
+                            chunk = self.rfile.read(min(65536, left))
+                            if not chunk:
+                                break
+                            h.update(chunk)
+                            f.write(chunk)
+                            left -= len(chunk)
+                    if left != 0 or not _consteq(h.hexdigest(), claimed_hash):
+                        dest.unlink(missing_ok=True)
+                        return self._send(400, {"success": False,
+                                                "message": "hash mismatch / truncated"},
+                                          sign_for=peer, nonce=nonce)
+                except OSError as e:
+                    dest.unlink(missing_ok=True)
+                    return self._send(500, {"success": False, "message": str(e)},
+                                      sign_for=peer, nonce=nonce)
+                res = link._execute("voice_inject", {"path": str(dest), "sid": sid,
+                                                     "source": "frame_link"}) or {}
+                try:
+                    dest.unlink(missing_ok=True)   # voice_inject removes it on success; be sure
+                except OSError:
+                    pass
+                text = str((res.get("details") or {}).get("text") or "")
+                link._record_inbox({"kind": "voice", "peer_id": peer_id,
+                                    "peer_name": (link.peers().get(peer_id) or {}).get("name", "peer"),
+                                    "sid": sid, "ok": bool(res.get("success")),
+                                    "text": text[:200]})
+                return self._send(200, res, sign_for=peer, nonce=nonce)
+
             def do_GET(self):
                 u = urlparse(self.path)
                 path = u.path.rstrip("/")
@@ -874,6 +1112,24 @@ class FrameLink:
                         since = -1
                     res = link._stream_read(sid, since)
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/snapshot":
+                    # 彩色（含 ANSI）的目前可視畫面：手機 attach 時先貼一張，再接增量串流。
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    sid = (q.get("sid") or [""])[0]
+                    res = link._execute("snapshot", {"sid": sid}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/signals":
+                    # Agent RED/YELLOW/GREEN signals（同 local API 的 /events）→ 手機端「要你決定」提示。
+                    try:
+                        since = int((q.get("since") or ["0"])[0])
+                    except ValueError:
+                        since = 0
+                    events, tail = link._signals_since(since)
+                    return self._send(200, {"success": True, "cursor": tail, "events": events},
+                                      sign_for=peer, nonce=nonce)
                 if path == "/link/events":
                     try:
                         since = int((q.get("since") or ["0"])[0])
@@ -926,6 +1182,15 @@ class FrameLink:
         self._record_inbox({"kind": "message", "peer_id": peer_id,
                             "peer_name": peer_name, "text": text})
         return {"success": True}
+
+    def _signals_since(self, since: int):
+        """Agent signal events from the local API event bus (shared ring buffer;
+        api_server imports nothing from main.py so this is import-safe)."""
+        try:
+            import api_server
+            return api_server.EVENT_BUS.since(int(since))
+        except Exception:
+            return [], int(since)
 
     def _record_inbox(self, ev: dict):
         ev = dict(ev)
@@ -1014,31 +1279,67 @@ class FrameLink:
         if body:
             headers["Content-Type"] = "application/json"
         headers.update(extra_headers or {})
+        status, resp_headers, raw = self._transport(peer, method, path_qs, headers,
+                                                    body, timeout)
+        if status != 200:
+            try:
+                msg = json.loads(raw.decode("utf-8") or "{}").get("message", "")
+            except Exception:
+                msg = ""
+            raise RuntimeError(f"HTTP {status}" + (f": {msg}" if msg else ""))
+        resp_sig = resp_headers.get("x-sf-sign") or ""
+        if raw_response:
+            # binary: signature covers the sha256 hex of the payload
+            expected = self._sign_response(
+                peer, nonce, _sha256_hex(raw).encode())
+            if not _consteq(resp_sig, expected):
+                raise ValueError("response signature mismatch")
+            return raw, _HeaderView(resp_headers)
+        expected = self._sign_response(peer, nonce, raw)
+        if not _consteq(resp_sig, expected):
+            raise ValueError("response signature mismatch")
+        return json.loads(raw.decode("utf-8"))
+
+    def _transport(self, peer: dict, method: str, path_qs: str, headers: dict,
+                   body: bytes, timeout: float):
+        """Direct HTTP when the peer has an address; relay when it doesn't (or
+        when direct fails and a relay is configured for that peer). Returns
+        (status, headers_lowercased, body) — non-2xx is returned, not raised."""
+        direct = bool(peer.get("host") and peer.get("port"))
+        relay = peer.get("relay") or {}
+        via_relay = bool(relay.get("url") and relay.get("token") and link_relay is not None)
+        if direct:
+            try:
+                return self._direct_request(peer, method, path_qs, headers, body, timeout)
+            except Exception:
+                if not via_relay:
+                    raise
+        if via_relay:
+            fid = str(peer.get("id") or "")
+            if not fid:
+                raise RuntimeError("relay routing needs the peer id (use _peer(peer_id))")
+            return link_relay.relay_call(str(relay["url"]), str(relay["token"]), fid,
+                                         method, path_qs, headers, body, timeout=timeout)
+        raise RuntimeError("peer 沒有位址也沒有 relay")
+
+    def _direct_request(self, peer: dict, method: str, path_qs: str, headers: dict,
+                        body: bytes, timeout: float):
         url = self._peer_base(peer) + path_qs
         req = urllib.request.Request(url, data=body or None, method=method,
                                      headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            resp_sig = resp.headers.get("X-SF-Sign") or ""
-            if raw_response:
-                # binary: signature covers the sha256 hex of the payload
-                expected = self._sign_response(
-                    peer, nonce, _sha256_hex(raw).encode())
-                if not _consteq(resp_sig, expected):
-                    raise ValueError("response signature mismatch")
-                return raw, resp.headers
-            expected = self._sign_response(peer, nonce, raw)
-            if not _consteq(resp_sig, expected):
-                raise ValueError("response signature mismatch")
-            return json.loads(raw.decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, {k.lower(): v for k, v in resp.headers.items()}, resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, {k.lower(): v for k, v in e.headers.items()}, e.read()
 
     def _peer_or_err(self, peer_id: str):
-        peer = self.peers().get(peer_id)
+        peer = self._peer(peer_id)
         if not peer:
             return None, {"success": False, "message": "no such peer"}
-        if not peer.get("host") or not peer.get("port"):
+        if not self._addressable(peer):
             return None, {"success": False,
-                          "message": "peer 沒有可連的位址（等對方來拉，或編輯位址）"}
+                          "message": "peer 沒有可連的位址（等對方來拉，或編輯位址／relay）"}
         return peer, None
 
     def _mark_status(self, peer_id: str, ok: bool, err: str = ""):
@@ -1104,8 +1405,8 @@ class FrameLink:
     def remote_input(self, peer_id: str, sid: str, data: str) -> dict:
         """Raw keystrokes → remote PTY (seamless terminal). Fire-and-forget-ish:
         no outbox fallback — typing into an offline peer makes no sense."""
-        peer = self.peers().get(peer_id)
-        if not peer or not peer.get("host") or not peer.get("port"):
+        peer = self._peer(peer_id)
+        if not peer or not self._addressable(peer):
             return {"success": False, "message": "peer 不可直連"}
         try:
             body = json.dumps({"sid": sid, "data": data}).encode()
@@ -1116,8 +1417,8 @@ class FrameLink:
             return {"success": False, "message": str(e)}
 
     def remote_resize(self, peer_id: str, sid: str, cols: int, rows: int) -> dict:
-        peer = self.peers().get(peer_id)
-        if not peer or not peer.get("host") or not peer.get("port"):
+        peer = self._peer(peer_id)
+        if not peer or not self._addressable(peer):
             return {"success": False, "message": "peer 不可直連"}
         try:
             body = json.dumps({"sid": sid, "cols": int(cols),
@@ -1168,11 +1469,11 @@ class FrameLink:
 
     def remote_send(self, peer_id: str, sid: str, text: str,
                     submit: bool = True) -> dict:
-        peer = self.peers().get(peer_id)
+        peer = self._peer(peer_id)
         if not peer:
             return {"success": False, "message": "no such peer"}
         body = json.dumps({"sid": sid, "text": text, "submit": submit}).encode()
-        if peer.get("host") and peer.get("port"):
+        if self._addressable(peer):
             try:
                 res = self._signed_request(peer, "POST", "/link/send", body)
                 self._mark_status(peer_id, True)
@@ -1187,13 +1488,13 @@ class FrameLink:
                                        "text": text, "submit": submit})
 
     def send_message(self, peer_id: str, text: str) -> dict:
-        peer = self.peers().get(peer_id)
+        peer = self._peer(peer_id)
         if not peer:
             return {"success": False, "message": "no such peer"}
         text = (text or "")[:8000]
         rec = {"kind": "message", "dir": "out", "peer_id": peer_id,
                "peer_name": peer.get("name", ""), "text": text}
-        if peer.get("host") and peer.get("port"):
+        if self._addressable(peer):
             try:
                 body = json.dumps({"text": text}).encode()
                 res = self._signed_request(peer, "POST", "/link/message", body)
@@ -1208,7 +1509,7 @@ class FrameLink:
         return out
 
     def send_file(self, peer_id: str, path: str) -> dict:
-        peer = self.peers().get(peer_id)
+        peer = self._peer(peer_id)
         if not peer:
             return {"success": False, "message": "no such peer"}
         src = Path(os.path.expanduser(path or "")).resolve()
@@ -1219,7 +1520,7 @@ class FrameLink:
             return {"success": False, "message": f"檔案超過上限 {MAX_FILE_BYTES // (1024*1024)}MB"}
         data = src.read_bytes()
         digest = _sha256_hex(data)
-        if peer.get("host") and peer.get("port"):
+        if self._addressable(peer):
             try:
                 res = self._signed_request(
                     peer, "POST", "/link/file", body=data,
@@ -1257,8 +1558,10 @@ class FrameLink:
         for peer_id, peer in self.peers().items():
             if self._poll_stop.is_set():
                 break
-            if not peer.get("host") or not peer.get("port"):
+            if not self._addressable(peer):
                 continue
+            peer = dict(peer)
+            peer["id"] = peer_id
             try:
                 since = int(cursors.get(peer_id, 0))
                 res = self._signed_request(

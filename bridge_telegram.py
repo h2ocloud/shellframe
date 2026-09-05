@@ -6390,11 +6390,16 @@ class TelegramBridge(BridgeBase):
             def _do_link(sub=sub, argv=argv, chat_id=chat_id):
                 if sub == "pair":
                     result = self._sfctl_call("link_pair", {}, timeout=15.0)
+                elif sub == "join" and len(argv) >= 2 and argv[1].startswith("shellframe://"):
+                    # 配對 QR 的深連結（另一台的 /link pair 回覆裡那串）：位址、port、
+                    # 碼、relay 都在裡面，貼過來就好。
+                    result = self._sfctl_call("link_join", {"url": argv[1]}, timeout=45.0)
                 elif sub == "join":
                     if len(argv) < 3:
                         tg_api(self.config.bot_token, "sendMessage", {
                             "chat_id": chat_id,
-                            "text": "用法：/link join <host[:port]> <配對碼>"})
+                            "text": "用法：/link join <host[:port]> <配對碼>\n"
+                                    "　　　/link join shellframe://pair?d=…（貼配對連結）"})
                         return
                     hostport, code = argv[1], argv[2]
                     host, _, port = hostport.partition(":")

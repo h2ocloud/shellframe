@@ -279,6 +279,10 @@ def _ensure_frame_link_defaults(cfg: dict) -> bool:
         "listen_port": 8767,
         "frame_name": "",
         "peers": {},
+        # 公網／手機：relay = TG 式出站長輪詢（電腦不用開 port）；public_host =
+        # 有 port-forward 時對外的 IP／網域，會一起放進配對 QR。
+        "relay": {"url": "", "token": ""},
+        "public_host": "",
     }
     for key, value in defaults.items():
         if key not in raw:
@@ -6625,12 +6629,30 @@ try {
     def link_join(self, host: str, port: int, code: str) -> str:
         return json.dumps(self._link().join(host, port, code), ensure_ascii=False)
 
+    def link_join_url(self, url: str) -> str:
+        """Join from a pairing QR / shellframe:// deep link (tries hosts, then relay)."""
+        return json.dumps(self._link().join_url(url), ensure_ascii=False)
+
     def link_unpair(self, peer_id: str) -> str:
         return json.dumps(self._link().unpair(peer_id))
 
-    def link_update_peer(self, peer_id: str, host: str, port: int) -> str:
-        return json.dumps(self._link().update_peer(peer_id, host, port),
+    def link_update_peer(self, peer_id: str, host: str, port: int,
+                         relay_url: str = None, relay_token: str = "") -> str:
+        relay = None
+        if relay_url is not None:
+            relay = {"url": relay_url, "token": relay_token} if relay_url else {}
+        return json.dumps(self._link().update_peer(peer_id, host, port, relay),
                           ensure_ascii=False)
+
+    def link_set_relay(self, url: str, token: str) -> str:
+        """Relay for phones / peers behind NAT (TG-style outbound long-poll)."""
+        try:
+            return json.dumps(self._link().set_relay(url, token), ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def link_set_public_host(self, host: str) -> str:
+        return json.dumps(self._link().set_public_host(host), ensure_ascii=False)
 
     def link_ping(self, peer_id: str) -> str:
         return json.dumps(self._link().ping_peer(peer_id), ensure_ascii=False)
@@ -6971,6 +6993,65 @@ try {
             except Exception as e:
                 return {"success": False, "message": f"resize_pty failed: {e}"}
 
+        elif cmd == "snapshot":
+            # Frame Link 手機端：目前可視畫面的彩色快照（tmux capture-pane -e，含 ANSI
+            # 與游標位置）。attach 時先貼這張再接增量串流，開起來就是電腒上看到的樣子。
+            try:
+                sid = args.get("sid", "")
+                s = self.sessions.get(sid)
+                if not s:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                tmux_name = getattr(s, "_tmux_name", None)
+                if IS_WIN or not tmux_name or not shutil.which("tmux"):
+                    return {"success": False, "message": "snapshot needs tmux"}
+                r = subprocess.run(["tmux", "capture-pane", "-e", "-p", "-t", tmux_name],
+                                   capture_output=True, timeout=3)
+                if r.returncode != 0:
+                    return {"success": False,
+                            "message": r.stderr.decode("utf-8", errors="replace").strip()
+                            or "capture-pane failed"}
+                lines = r.stdout.decode("utf-8", errors="replace").split("\n")
+                if lines and lines[-1] == "":
+                    lines.pop()
+                ansi = "\x1b[0m" + "\r\n".join(lines)
+                try:
+                    cur = subprocess.run(["tmux", "display-message", "-p", "-t", tmux_name,
+                                          "#{cursor_x},#{cursor_y}"],
+                                         capture_output=True, timeout=2)
+                    cx, cy = cur.stdout.decode().strip().split(",")
+                    ansi += f"\x1b[{int(cy) + 1};{int(cx) + 1}H"
+                except Exception:
+                    pass
+                return {"success": True, "message": f"{len(lines)} rows",
+                        "details": {"ansi": ansi, "cols": getattr(s, "cols", 0),
+                                    "rows": getattr(s, "rows", 0)}}
+            except Exception as e:
+                return {"success": False, "message": f"snapshot failed: {e}"}
+
+        elif cmd == "voice_inject":
+            # Frame Link 手機／手錶語音：走與 TG 語音、桌面麥克風相同的
+            # STT → 精煉 → 注入鏈（AI 分頁帶語音 tag 送出；shell 分頁只貼不送）。
+            try:
+                path = args.get("path", "")
+                sid = args.get("sid", "")
+                if not path or not os.path.exists(path):
+                    return {"success": False, "message": "no audio file"}
+                raw = self._mic_transcribe_inject(path, sid)
+                res = json.loads(raw) if isinstance(raw, str) else (raw or {})
+                if not res.get("ok"):
+                    reason = res.get("reason", "stt_failed")
+                    msg = {"no_backend": "電腦沒有可用的語音辨識後端（設定 → 語音輸入）",
+                           "stt_failed": "語音辨識失敗（沒聽出文字）",
+                           "no_audio": "沒有音檔"}.get(reason, reason)
+                    return {"success": False, "message": msg, "details": res}
+                injected = bool(res.get("injected"))
+                return {"success": True,
+                        "message": "transcribed" + (" + injected" if injected else " (session gone)"),
+                        "details": {"text": res.get("text", ""), "injected": injected,
+                                    "ai": bool(res.get("ai"))}}
+            except Exception as e:
+                return {"success": False, "message": f"voice_inject failed: {e}"}
+
         elif cmd == "peek":
             try:
                 sid = args.get("sid", "")
@@ -7125,20 +7206,25 @@ try {
                 if not res.get("success"):
                     return res
                 addrs = ", ".join(res.get("addresses") or []) or "?"
-                return {"success": True,
-                        "message": (f"🔗 配對碼：{res['code']}\n"
-                                    f"位址：{addrs}  port {res['port']}\n"
-                                    f"{res['expires_in']} 秒內、限一次，"
-                                    f"在另一台 ShellFrame 選「加入配對」輸入"),
-                        "details": res}
+                msg = (f"🔗 配對碼：{res['code']}\n"
+                       f"位址：{addrs}  port {res['port']}\n"
+                       f"{res['expires_in']} 秒內、限一次，"
+                       f"在另一台 ShellFrame 選「加入配對」輸入\n"
+                       f"📱 手機 App：點連結直接配對 → {res.get('pair_url', '')}")
+                if not res.get("relay_url"):
+                    msg += "\n（尚未設定 relay：手機需與電腦同區網，或電腦有 port-forward）"
+                return {"success": True, "message": msg, "details": res}
             except Exception as e:
                 return {"success": False, "message": f"link pair failed: {e}"}
 
         elif cmd == "link_join":
             try:
-                res = self._link().join(args.get("host", ""),
-                                        int(args.get("port") or 8767),
-                                        args.get("code", ""))
+                if args.get("url"):
+                    res = self._link().join_url(args.get("url", ""))
+                else:
+                    res = self._link().join(args.get("host", ""),
+                                            int(args.get("port") or 8767),
+                                            args.get("code", ""))
                 if res.get("success"):
                     self._notify_ui_sessions_changed()
                     return {"success": True,

@@ -1491,6 +1491,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
+<!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -4048,19 +4050,44 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       <div class="modal" style="width:380px;padding:20px">
         <h2 style="font-size:14px">🔗 配對碼（一次性，<span id="lp-count">${res.expires_in}</span> 秒內有效）</h2>
         <div style="text-align:center;font-size:11px;color:#565f89;margin-top:4px">${modeLabel}</div>
-        <div class="link-code-display">${esc2(res.code)}</div>
-        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
-          在另一台 ShellFrame 按「加入配對」，輸入：<br>
-          位址：<code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
-          　port <code style="color:#7aa2f7">${res.port}</code><br>
-          <span style="color:#565f89">跨公網時填這台對外的 IP／網域（需可達，例如 port forward）。
-          TG 遠端也可以：/link pair、/link join</span>
+        <div style="display:flex;gap:14px;align-items:center;margin-top:8px">
+          <div id="lp-qr" style="flex:0 0 auto;background:#fff;border-radius:8px;padding:6px;line-height:0;min-width:132px;min-height:132px"></div>
+          <div style="flex:1;min-width:0">
+            <div class="link-code-display" style="margin:0 0 6px">${esc2(res.code)}</div>
+            <div style="font-size:11px;color:#a9b1d6;line-height:1.6">
+              📱 <b>手機／iPad</b>：用 ShellFrame App 掃 QR 即配對。<br>
+              🖥 <b>另一台 ShellFrame</b>：「加入配對」輸入
+              位址 <code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
+              port <code style="color:#7aa2f7">${res.port}</code>，或貼上配對連結。
+            </div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#565f89;line-height:1.6;margin-top:8px">
+          ${res.relay_url
+            ? `公網：已設定 relay <code style="color:#7aa2f7">${esc2(res.relay_url)}</code>，手機在外面也連得到。`
+            : `公網：尚未設定 relay（config <code>frame_link.relay</code>），手機需同區網或這台有 port-forward${res.public_host ? '（' + esc2(res.public_host) + '）' : ''}。`}
+          TG 遠端：/link pair 會回同一條配對連結。
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
           <button class="btn btn-ghost" id="lp-close">關閉配對窗口</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
+    // QR：內容就是 res.pair_url（shellframe://pair?d=…）。lib 沒載到就退回顯示連結文字。
+    try {
+      const qrEl = document.getElementById('lp-qr');
+      if (qrEl && res.pair_url && typeof qrcode === 'function') {
+        const qr = qrcode(0, 'M');
+        qr.addData(res.pair_url);
+        qr.make();
+        qrEl.innerHTML = qr.createSvgTag({ cellSize: 3, margin: 0, scalable: true });
+        const svg = qrEl.querySelector('svg');
+        if (svg) { svg.style.width = '120px'; svg.style.height = '120px'; svg.style.display = 'block'; }
+      } else if (qrEl) {
+        qrEl.style.background = 'transparent';
+        qrEl.innerHTML = `<div style="font-size:10px;color:#565f89;line-height:1.4;word-break:break-all;max-width:160px">${esc2(res.pair_url || '')}</div>`;
+      }
+    } catch (e) {}
     let left = res.expires_in;
     const timer = setInterval(() => {
       left -= 1;

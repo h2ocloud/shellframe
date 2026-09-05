@@ -37,3 +37,9 @@ config.json
 shellframe_*.log
 shellframe_*.json
 *.sqlite
+
+# iOS companion app build output / Xcode user state
+ios/build/
+ios/qa/*.png
+*.xcuserstate
+xcuserdata/
