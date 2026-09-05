@@ -388,6 +388,9 @@ _DEFAULT_AI_PRESETS = [
     # sf-pi-spark——那支啟動器帶 SPARK_API_KEY 與 ~/.pi/agent/models.json，
     # 是機器特有設定，不適合當預設。沒安裝時由 registry 的 install 引導。
     {"name": "Pi", "cmd": "pi", "icon": "\U0001D70B"},              # 𝜋
+    # 裸指令即可——opencode 自己管模型 provider／登入，不需要 ShellFrame 加旗標。
+    # 沒安裝時走既有的「未安裝→安裝」gate（usage_probe.PROVIDER_SPECS['opencode']）。
+    {"name": "OpenCode", "cmd": "opencode", "icon": "\U0001F9E9"},  # 🧩
 ]
 
 _AUTONOMOUS_PRESET_CMDS = {

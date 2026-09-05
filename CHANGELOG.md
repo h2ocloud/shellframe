@@ -6,6 +6,31 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.34.0 (2026-09-05)
+
+### Added
+
+- **OpenCode joins the default AI preset list.** Every other supported CLI
+  (Claude, Codex, Antigravity, Pi) has shown up as a ready-to-open preset on a
+  brand-new install since the preset-migration mechanism was built, but
+  OpenCode was never added to that list — a fresh computer had no OpenCode
+  button to open, and the only way to reach it was the Accounts panel's
+  install prompt. Added to `_DEFAULT_AI_PRESETS`; the existing per-preset
+  migration (`_default_ai_presets_offered`) retrofits it into every already-
+  running install on next launch, same as a new one. Bare `opencode` command —
+  it manages its own model provider and login, so no extra flags are needed;
+  a computer without the binary yet gets the existing "not installed → install
+  here" gate the same as any other provider.
+
+  **OpenCode 加入預設 AI 清單。** 其他每個支援的 CLI（Claude、Codex、
+  Antigravity、Pi）自從 preset 遷移機制做好之後，全新安裝就會直接看到可開的
+  預設按鈕，唯獨 OpenCode 從沒被加進這份清單——全新電腦沒有 OpenCode 按鈕可
+  點，只能從帳號面板的安裝提示找到它。已加進 `_DEFAULT_AI_PRESETS`；既有的
+  per-preset 遷移機制（`_default_ai_presets_offered`）下次啟動就會把它補進
+  所有已經在跑的安裝，跟全新安裝一樣。指令用裸的 `opencode`——它自己管模型
+  provider 與登入，不需要額外旗標；本機還沒裝執行檔時走跟其他 provider 一樣
+  的「未安裝→就地安裝」引導。
+
 ## v0.33.0 (2026-09-05)
 
 ### Added
