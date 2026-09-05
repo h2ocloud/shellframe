@@ -202,6 +202,76 @@ def test_account_switch_carries_transcript_and_resumes_uuid():
     assert "--session-id" not in resumed, resumed
 
 
+def _write_claude_json(home, email, org, org_tier, user_tier):
+    json.dump({"oauthAccount": {
+        "emailAddress": email, "organizationName": org,
+        "organizationRateLimitTier": org_tier,
+        "userRateLimitTier": user_tier,
+    }}, open(os.path.join(home, ".claude.json"), "w"))
+
+
+def test_discover_flags_credential_metadata_mismatch():
+    """回歸（Howard 2026-09-05：兩個帳號都顯示同一人的用量）。
+
+    切帳號殘留 → ~/.claude.json 說 team、keychain token 其實是個人。
+    discover 要標記 mismatch，capture/ensure 才擋得下。"""
+    with tempfile.TemporaryDirectory() as td:
+        home = os.path.join(td, "home")
+        os.makedirs(home)
+        # 帳號資料是 team（org/user tier = team），token 卻是個人（pro / default_claude_ai）
+        _write_claude_json(home, "team@neux.test", "Neux Com",
+                           "default_raven", "default_claude_max_5x")
+        manager = AccountManager(root=os.path.join(td, "profiles"), home=home,
+                                 keychain_getter=lambda: {"claudeAiOauth": {
+                                     "accessToken": "personal-token",
+                                     "subscriptionType": "pro",
+                                     "rateLimitTier": "default_claude_ai",
+                                 }})
+        d = manager.discover("claude")
+        assert d and d.get("mismatch"), "沒抓到 token 與帳號資料不一致"
+        assert d["mismatch"]["token_plan"] == "pro"
+
+        # ensure() 不該把對不上的 profile 記進去
+        cfg = {}
+        manager.ensure(cfg)
+        assert not (cfg["accounts"]["profiles"].get("claude")), \
+            "mismatch 的帳號不該被 ensure 記錄"
+
+
+def test_discover_consistent_account_has_no_mismatch():
+    """一致的帳號（token tier 落在 .claude.json 的 tier 集合裡）不該誤判。"""
+    with tempfile.TemporaryDirectory() as td:
+        home = os.path.join(td, "home")
+        os.makedirs(home)
+        _write_claude_json(home, "team@neux.test", "Neux Com",
+                           "default_raven", "default_claude_max_5x")
+        manager = AccountManager(root=os.path.join(td, "profiles"), home=home,
+                                 keychain_getter=lambda: {"claudeAiOauth": {
+                                     "accessToken": "team-token",
+                                     "subscriptionType": "team",
+                                     "rateLimitTier": "default_claude_max_5x",
+                                 }})
+        d = manager.discover("claude")
+        assert d and not d.get("mismatch"), "一致的帳號被誤判成 mismatch"
+        cfg = {}
+        manager.ensure(cfg)
+        assert cfg["accounts"]["profiles"]["claude"], "一致的帳號應該被記錄"
+
+
+def test_discover_missing_tiers_fails_open():
+    """舊帳號沒有 rateLimitTier 欄位時不判定 mismatch（fail-open，別擋正常登入）。"""
+    with tempfile.TemporaryDirectory() as td:
+        home = os.path.join(td, "home")
+        os.makedirs(home)
+        json.dump({"oauthAccount": {"emailAddress": "a@test", "organizationName": "X"}},
+                  open(os.path.join(home, ".claude.json"), "w"))
+        manager = AccountManager(root=os.path.join(td, "profiles"), home=home,
+                                 keychain_getter=lambda: {"claudeAiOauth": {
+                                     "accessToken": "tok", "subscriptionType": "pro"}})
+        d = manager.discover("claude")
+        assert d and not d.get("mismatch")
+
+
 def test_carry_transcript_noop_when_same_config_dir():
     """同帳號（config dir 沒變）不必搬，也不該炸。"""
     import types

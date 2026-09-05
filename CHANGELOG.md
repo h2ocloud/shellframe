@@ -6,6 +6,32 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.34.3 (2026-09-05)
+
+### Fixes
+
+- **Capturing an account now refuses to save mismatched credentials.** A tab's
+  `~/.claude.json` account metadata (email/org) and the Keychain OAuth token can
+  drift apart after account switching — the account reads as one identity while
+  the token belongs to another. Capturing that state stored a profile whose
+  token was a *different* account's, which is why two profiles could both report
+  the same person's usage. Account discovery now cross-checks the token's
+  `rateLimitTier` against the tiers recorded in `~/.claude.json`; when they
+  belong to different accounts, "重新整理已登入" blocks with an explanation
+  (log in to the right account and capture again) instead of saving, and startup
+  discovery skips the bad profile rather than recording it. Missing tier fields
+  fail open so normal logins are never blocked. Successful capture now also
+  reports which account it saved. Regression tests in `tests_accounts.py`.
+
+  **抓取帳號時會擋下對不上的憑證。** 分頁的 `~/.claude.json` 帳號資料（email/org）
+  與 Keychain 的 OAuth token 在切帳號後可能會對不上——帳號看起來是一個人、token
+  其實是另一個帳號的。把這種狀態抓下來，存進去的 profile 就握著別人的 token，
+  這正是「兩個 profile 都顯示同一個人用量」的原因。帳號探測現在會把 token 的
+  `rateLimitTier` 和 `~/.claude.json` 記錄的 tier 交叉比對；判定是不同帳號時，
+  「重新整理已登入」會擋下並說明（請登入正確帳號後再抓一次），不再存錯；開機探測
+  也會跳過這種壞 profile 不記錄。缺 tier 欄位時採 fail-open，不會擋到正常登入。
+  抓取成功也會回報存下的是哪個帳號。回歸測試在 `tests_accounts.py`。
+
 ## v0.34.2 (2026-09-05)
 
 ### Fixes

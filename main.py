@@ -4129,14 +4129,39 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
     def account_capture_login(self, provider: str) -> str:
-        """Capture credentials after an explicit login flow into a new profile."""
+        """Capture credentials after an explicit login flow into a new profile.
+
+        防呆（Howard 2026-09-05）：切帳號殘留會讓 ~/.claude.json 的帳號資料與
+        keychain 的 token 對不上（帳號顯示 team、token 其實是個人），抓下來的
+        profile 就用錯 token → 「兩個帳號都顯示同一個人的用量」。抓取前先驗證
+        兩邊一致，對不上就擋下、不寫入，並告訴使用者去重新登入選對帳號。"""
         try:
             cfg = self._account_config()
-            ref = ACCOUNT_MANAGER.sync_current(cfg, provider)
+            discovered = ACCOUNT_MANAGER.discover(provider)
+            if not discovered:
+                raise ValueError("尚未偵測到已登入帳號")
+            mm = discovered.get("mismatch") if isinstance(discovered, dict) else None
+            if mm:
+                who = mm.get("email") or mm.get("organization") or "?"
+                tiers = "／".join(mm.get("account_tiers") or []) or "?"
+                plan = mm.get("token_plan") or mm.get("token_tier") or "?"
+                return json.dumps({
+                    "success": False,
+                    "mismatch": True,
+                    "message": (f"擋下：憑證與帳號資料對不上，沒有存下。\n"
+                                f"帳號顯示 {who}（{tiers}），但目前的登入憑證是"
+                                f"「{plan}」方案——不是同一個帳號。\n"
+                                f"這通常是切帳號殘留造成的：請在該分頁重新 /login、"
+                                f"確認登入到正確帳號後，再按一次「重新整理已登入」。"),
+                }, ensure_ascii=False)
+            ref = ACCOUNT_MANAGER.sync_current(cfg, provider, discovered)
             if not ref:
                 raise ValueError("尚未偵測到已登入帳號")
             save_config(cfg)
+            captured = ACCOUNT_MANAGER.profile(cfg, provider, ref) or {}
+            who = captured.get("email") or captured.get("label") or ref
             return json.dumps({"success": True, "ref": ref,
+                               "message": f"已存下帳號：{who}",
                                "state": self._account_state()[1]}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)

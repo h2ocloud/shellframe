@@ -118,6 +118,24 @@ class AccountManager:
         if not (email or org or access):
             return None
         identity = email or org or access[:24]
+        # 憑證↔帳號資料一致性：email/org 來自 ~/.claude.json（oauthAccount），
+        # token 來自 keychain。切帳號殘留會讓兩邊對不上（帳號顯示 team、token
+        # 其實是個人）——結果就是「兩個帳號都顯示同一個人的用量」。keychain token
+        # 的 rateLimitTier 若不在 .claude.json 記錄的 org/user tier 裡，代表這個
+        # token 跟這份帳號資料不是同一個帳號。缺欄位時不判定（fail-open，寧可放行
+        # 也不要擋掉正常登入）。
+        token_tier = oauth.get("rateLimitTier") or ""
+        acct_tiers = {t for t in (account.get("organizationRateLimitTier"),
+                                  account.get("userRateLimitTier")) if t}
+        mismatch = None
+        if token_tier and acct_tiers and token_tier not in acct_tiers:
+            mismatch = {
+                "email": email,
+                "organization": org,
+                "account_tiers": sorted(acct_tiers),
+                "token_plan": plan,
+                "token_tier": token_tier,
+            }
         return {
             "id": _safe_ref("claude", identity),
             "email": email,
@@ -126,6 +144,7 @@ class AccountManager:
             "label": email or org or "Claude 帳號",
             "source": "Claude Code-credentials",
             "credential": credential,
+            "mismatch": mismatch,
         }
 
     def discover(self, provider: str):
@@ -184,15 +203,20 @@ class AccountManager:
                 changed = True
             discovered = self.discover(provider)
             if discovered:
+                # 憑證與帳號資料對不上（切帳號殘留）→ 別把壞 profile 記進去，
+                # 免得之後那個 ref 一直用錯 token 顯示別人的用量。
+                if discovered.get("mismatch"):
+                    continue
                 ref = self._add_profile(accounts, provider, discovered)
                 if accounts["global"].get(provider) is None:
                     accounts["global"][provider] = ref
                     changed = True
         return changed
 
-    def sync_current(self, cfg: dict, provider: str):
+    def sync_current(self, cfg: dict, provider: str, discovered: dict | None = None):
         accounts = cfg.setdefault("accounts", _empty_accounts())
-        discovered = self.discover(provider)
+        if discovered is None:
+            discovered = self.discover(provider)
         if not discovered:
             return None
         ref = self._add_profile(accounts, provider, discovered)
