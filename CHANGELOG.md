@@ -6,6 +6,52 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.1 (2026-09-06)
+
+### Fixes
+
+- **Scrolling up in an alt-screen tab shows real history again instead of the
+  current screen.** Claude Code started using the alternate screen in 2.1.261
+  (2.1.260 does not), and tmux keeps no scrollback for it, so the terminal source
+  is reduced to whatever pyte holds — the current viewport. Three things then had
+  to line up, and all three were wrong. The gate deciding whether pyte's output
+  counts as history tested for more than 64 characters, which only rejects an
+  empty capture and never "one screenful" — the reported tab measured 29 lines /
+  1525 characters and sailed through. Falling back to the transcript built its
+  worker without `transcript_hint`, the only pointer to the per-account profile
+  directory, so `resolve_transcript` looked under `~/.claude/projects`, found
+  nothing and returned None. The request then fell through to
+  `tmux capture-pane`, which under the alternate screen reads the wrong buffer
+  entirely. The gate now compares line count against the pane height, and the
+  transcript path is passed through. Only the OpenCode TUI had been treated as a
+  tab whose scrollback cannot be recovered from the terminal; that condition is
+  detected now rather than hard-coded to one CLI.
+
+  **alt-screen 分頁上滾時會顯示真正的歷史，而不是當前畫面。** Claude Code 從
+  2.1.261 起使用替代畫面（2.1.260 不會），而 tmux 不會為它保留 scrollback，於是
+  終端來源只剩 pyte 手上的東西——也就是目前這一屏。接著有三件事必須同時成立，而
+  三件都是壞的。判斷 pyte 的輸出算不算歷史，用的門檻是「超過 64 字元」，那只擋得掉
+  全空的擷取，永遠擋不掉「只有一屏」——回報的那個分頁實測 29 行／1525 字元，輕鬆
+  通過。退到 transcript 時，組 worker 少了 `transcript_hint`，而那是唯一指得到帳號
+  profile 目錄的線索，於是 `resolve_transcript` 去 `~/.claude/projects` 底下找、
+  找不到、回 None。最後請求落到 `tmux capture-pane`，而那在替代畫面下讀的完全是錯的
+  buffer。現在門檻改為比對行數與 pane 高度，transcript 路徑也一併傳進去。原本只有
+  OpenCode 的 TUI 被當成「scrollback 無法從終端還原」的分頁；這個條件現在是偵測出來
+  的，不再寫死成單一 CLI。
+
+- **A tab whose account was switched resumes after a reboot.** The uuid-based
+  restore added in v0.30.22 looked for `<uuid>.jsonl` only under
+  `~/.claude/projects`. Switching accounts moves transcripts to
+  `~/.config/shellframe/account-profiles/<provider>/<account>/projects/`, so
+  those tabs were judged unresumable and would have come back empty. Both roots
+  are searched now. 8 cases in `tests_alt_screen_history.py`.
+
+  **切過帳號的分頁重新開機後會接回對話。** v0.30.22 加的 uuid 還原只在
+  `~/.claude/projects` 底下找 `<uuid>.jsonl`，而切換帳號會把 transcript 移到
+  `~/.config/shellframe/account-profiles/<provider>/<account>/projects/`，那些分頁
+  因此被判定無法接回、重開後會是空白的。現在兩個根目錄都會找。
+  `tests_alt_screen_history.py` 共 8 項。
+
 ## v0.35.0 (2026-09-05)
 
 ### Added

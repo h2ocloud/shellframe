@@ -448,16 +448,30 @@ class HistoryApiMixin:
                 # Length gate on the PLAIN text — SGR bytes would let a
                 # nearly-empty styled capture pass.
                 plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
-                if plain and len(plain) > 64:
+                # 「有內容」不等於「有歷史」。64 字元的門檻只擋得掉全空，擋不掉
+                # 「只有目前這一屏」——對原地重繪的 TUI，pyte 的 history 本來就
+                # 留不住捲出去的內容。原本只有 opencode 被當成這種例外，因為當時
+                # claude 不進 alt-screen；Claude Code 2.1.261 起會進（2.1.260
+                # 不會），於是它落入完全相同的處境：上滾看到的跟活畫面一樣多，
+                # 等於沒有歷史（實測某分頁 29 行／1525 字元，遠遠通過舊門檻）。
+                # 改成比行數：要明顯多於一屏才算數，否則交給 transcript。
+                _rows = 24
+                try:
+                    _rows = int(getattr(slot.screen, "lines", 0)) or 24
+                except Exception:
+                    pass
+                _has_history = bool(plain) and len(plain.split("\n")) > _rows * 1.5
+                if plain and len(plain) > 64 and _has_history:
                     return json.dumps({
                         "success": True,
                         "text": text,
                         "ansi": ansi,
                         "source": "pyte (alt-screen)",
                     })
-                # pyte empty/too-short（app 剛重啟、bridge 沒跑）→ 先試
-                # transcript：alt-screen 下 tmux scrollback 是錯的 buffer
-                #（normal-screen 舊內容），transcript 反而是唯一正確來源。
+                # pyte 空的／只有一屏（app 剛重啟、bridge 沒跑，或 TUI 原地
+                # 重繪留不住 scrollback）→ 先試 transcript：alt-screen 下 tmux
+                # scrollback 是錯的 buffer（normal-screen 舊內容），transcript
+                # 反而是唯一正確來源。
             try:
                 resp = self._transcript_history_response(s, sid, ansi, cols)
                 if resp:
@@ -647,6 +661,14 @@ class HistoryApiMixin:
             "cwd": getattr(s, "cwd", "~"),
             "tmux_name": getattr(s, "_tmux_name", None),
             "session_id": getattr(s, "session_id", None),
+            # hook 回報的路徑是唯一指得到 account-profile 目錄的線索：切過帳號
+            # 的分頁，transcript 不在 ~/.claude/projects，而在
+            # ~/.config/shellframe/account-profiles/<provider>/<acct>/projects/…。
+            # 少了它，resolve_transcript 會掉到「拿 session_id 去
+            # ~/.claude/projects 底下找」，對這種分頁永遠找不到 → 這裡回 None
+            # → 上滾落到 tmux capture，而 alt-screen 下那是錯的 buffer，只剩
+            # 目前一屏。回報「某個分頁無法上滑看歷史」就是這條鏈。
+            "transcript_hint": getattr(s, "_hook_transcript_path", None),
         }
         kind = agent_status._worker_kind(worker["cmd"])
         if kind not in ("claude", "codex"):

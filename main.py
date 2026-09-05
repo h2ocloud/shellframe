@@ -2318,8 +2318,18 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return False
         try:
             import glob as _glob
-            root = os.path.expanduser("~/.claude/projects")
-            return bool(_glob.glob(os.path.join(root, "*", f"{csid}.jsonl")))
+            # 兩個地方都要找：預設帳號在 ~/.claude/projects，而切過帳號的分頁
+            # 在 ~/.config/shellframe/account-profiles/<provider>/<acct>/
+            # projects/。只找前者的話，切過帳號的分頁重開機一律被判成「找不到
+            # transcript」而開新對話——上滾歷史也是栽在同一個假設上。
+            roots = [
+                os.path.expanduser("~/.claude/projects"),
+                os.path.join(str(CONFIG_DIR), "account-profiles", "*", "*", "projects"),
+            ]
+            for root in roots:
+                if _glob.glob(os.path.join(root, "*", f"{csid}.jsonl")):
+                    return True
+            return False
         except Exception:
             return False
 
