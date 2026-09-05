@@ -6,6 +6,44 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.5 (2026-09-05)
+
+### Fixes
+
+- **Remote alt-screen apps (Claude / Codex / opencode) now paint correctly on
+  attach.** The first frame of a remote pane came from the cleaned scrollback
+  reconstruction, which is wrong for an alternate-screen TUI, so the view was
+  garbled until the next redraw. On attach the peer now returns a real snapshot
+  of the current screen via `tmux capture-pane -e` (ANSI intact) prefixed with
+  a clear+home, and the client paints that before streaming increments. Same
+  path is reused after a resize, so a reflow repaints cleanly.
+
+  **遠端 alt-screen app（Claude／Codex／opencode）一開就畫得對了。** 遠端 pane
+  的第一畫面本來是拿 cleaned scrollback 重建版，對 alt-screen TUI 是錯的，畫面
+  會破到下次重繪才恢復。現在 attach 時對方用 `tmux capture-pane -e`（保留 ANSI）
+  回傳當前畫面快照、前置 clear+home，client 先畫這個再串增量。resize 後也走同一
+  條路，reflow 會乾淨重畫。
+
+- **Screenshots (and other images) can be pasted into a remote session.**
+  Pasting into a remote pane did nothing useful before — the image was saved to
+  a local temp path the peer can't read. The image bytes are now sent to the
+  peer (`/link/paste`), saved there, and the peer injects the path with the
+  same bracketed-paste escape a local paste uses, so the remote Claude/Codex
+  picks it up as `[image #N]`. Arbitrary (non-image) files still go through the
+  sidebar's 📁 file transfer.
+
+  **截圖（與其他圖片）可以貼進遠端 session 了。** 之前貼進遠端 pane 沒作用——
+  圖片被存到對方讀不到的本機暫存路徑。現在圖片位元組會送到對方（`/link/paste`）
+  落地，再由對方用跟本機貼圖相同的 bracketed-paste escape 注入路徑，遠端的
+  Claude/Codex 就會辨識成 `[image #N]`。一般（非圖片）檔案仍走側欄的 📁 檔案傳送。
+
+- **Author name restored in the About panel and license.** A privacy scrub had
+  mangled the author line into an impersonal placeholder; the About panel and
+  the MIT copyright line now show the correct author name and @h2ocloud handle.
+
+  **關於面板與授權的作者名修正。** 一次隱私替換把作者行洗成不具名的佔位字串，
+  現在關於面板與 MIT 版權行都顯示正確的作者名與 @h2ocloud handle。
+
 ## v0.32.4 (2026-09-05)
 
 ### Changes

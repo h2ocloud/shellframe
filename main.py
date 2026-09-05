@@ -6564,6 +6564,11 @@ try {
         return json.dumps(self._link().remote_resize(peer_id, sid, cols, rows),
                           ensure_ascii=False)
 
+    def link_remote_paste(self, peer_id: str, sid: str, data_url: str,
+                          filename: str = "paste.png") -> str:
+        return json.dumps(self._link().remote_paste(peer_id, sid, data_url, filename),
+                          ensure_ascii=False)
+
     def link_remote_new(self, peer_id: str, cmd: str = "claude") -> str:
         return json.dumps(self._link().remote_new(peer_id, cmd),
                           ensure_ascii=False)
@@ -6804,6 +6809,56 @@ try {
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "message": f"raw_input failed: {e}"}
+
+        elif cmd == "save_paste":
+            # Frame Link：把遠端檢視端貼上的圖片位元組（base64）落地成檔案，
+            # 回傳路徑，讓對方的 CLI（Claude/Codex）能像本機貼圖那樣讀到。
+            try:
+                import base64 as _b64
+                filename = os.path.basename(args.get("filename", "") or "paste.png")
+                data_b64 = args.get("data_b64", "") or ""
+                if "," in data_b64 and data_b64[:5].lower() == "data:":
+                    data_b64 = data_b64.split(",", 1)[1]
+                raw = _b64.b64decode(data_b64)
+                if not raw or len(raw) > 64 * 1024 * 1024:
+                    return {"success": False, "message": "bad/too-large paste"}
+                dest_dir = CLAUDE_TMP / "framelink-paste"
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^\w.\-]", "_", filename) or "paste.png"
+                dest = dest_dir / f"{int(time.time()*1000)}_{stem}"
+                dest.write_bytes(raw)
+                return {"success": True, "details": {"path": str(dest)}}
+            except Exception as e:
+                return {"success": False, "message": f"save_paste failed: {e}"}
+
+        elif cmd == "raw_screen":
+            # Frame Link 無縫遠端分頁的初次上畫：用 tmux capture-pane -e 取「當前
+            # 可視畫面」含 ANSI 色碼，前置 clear+home 直接重現對方畫面。這對
+            # alt-screen TUI（claude/codex/opencode）才畫得對——cleaned peek 拿到
+            # 的是 scrollback 重建版，貼進 xterm 會破圖。
+            try:
+                sid = args.get("sid", "")
+                s = self.sessions.get(sid)
+                if not s:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                tn = getattr(s, "_tmux_name", None)
+                if tn:
+                    tmux = _tmux_bin() or "tmux"
+                    out = subprocess.run(
+                        [tmux, "capture-pane", "-e", "-p", "-t", tn],
+                        capture_output=True, text=True, timeout=3)
+                    if out.returncode == 0:
+                        screen = out.stdout.rstrip("\n").replace("\n", "\r\n")
+                        return {"success": True,
+                                "details": {"screen": "\x1b[2J\x1b[H" + screen}}
+                # 非 tmux session：退回 cleaned history（至少有內容）
+                raw = self.get_clean_history(sid, max_lines=200)
+                res = json.loads(raw) if isinstance(raw, str) else raw
+                txt = (res.get("text") or "").replace("\n", "\r\n")
+                return {"success": True,
+                        "details": {"screen": "\x1b[2J\x1b[H" + txt}}
+            except Exception as e:
+                return {"success": False, "message": f"raw_screen failed: {e}"}
 
         elif cmd == "resize_pty":
             # Frame Link：遠端檢視端把「它的可視尺寸」推過來，讓這台的 PTY

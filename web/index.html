@@ -1455,14 +1455,14 @@
 
     <div class="about-section">
       <h3 data-i18n="author">Author</h3>
-      <p>the user Wu (<a href="https://github.com/h2ocloud" target="_blank">@h2ocloud</a>)</p>
+      <p>Howard Wu (<a href="https://github.com/h2ocloud" target="_blank">@h2ocloud</a>)</p>
     </div>
 
     <div class="about-section">
       <h3 data-i18n="license">License</h3>
       <div class="license-text">MIT License
 
-Copyright (c) 2026 the user Wu (h2ocloud)
+Copyright (c) 2026 Howard Wu (h2ocloud)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -3761,8 +3761,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = sessions[sid];
     if (!info || !s) return;
     _remoteStreamSid = sid;
-    s._streamSeq = -1;                 // -1 = (re)attach：先清畫面重貼
+    s._streamSeq = -1;                 // -1 = (re)attach：向對方要 snapshot 重貼
     try { s.term.reset(); } catch (e) {}
+    // attach：拿 tmux -e snapshot（含 ANSI，alt-screen 也畫得對），再切增量串流
     const pull = async () => {
       if (_remoteStreamSid !== sid || !sessions[sid]) return;
       try {
@@ -3770,9 +3771,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           info.peerId, info.rsid, s._streamSeq));
         if (_remoteStreamSid !== sid) return;      // 已切走
         if (res.success) {
-          if (res.reset && s._streamSeq >= 0) {
-            // buffer 捲走了我要的段落 → 重貼一次整屏
+          // reset（attach 或 buffer 捲走）＋有 snapshot → 清屏重貼整個畫面
+          if (res.reset) {
             try { s.term.reset(); } catch (e) {}
+            if (res.snapshot) s.term.write(res.snapshot);
           }
           if (res.data) s.term.write(res.data);
           s._streamSeq = (typeof res.seq === 'number') ? res.seq : s._streamSeq;
@@ -3783,22 +3785,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
       } catch (e) {}
     };
-    // 首拉先拿 peek 全屏當底，再切成增量串流，開起來就有內容不是空白
-    (async () => {
-      try {
-        const pk = JSON.parse(await pywebview.api.link_remote_peek(info.peerId, info.rsid, 200));
-        if (_remoteStreamSid === sid && pk.success && pk.details && pk.details.text) {
-          s.term.reset();
-          s.term.write(pk.details.text.replace(/\n/g, '\r\n'));
-        }
-      } catch (e) {}
-      // attach 串流游標
-      try {
-        const res = JSON.parse(await pywebview.api.link_remote_stream(info.peerId, info.rsid, -1));
-        if (res.success && typeof res.seq === 'number') s._streamSeq = res.seq;
-      } catch (e) {}
-      _remoteStreamTimer = setInterval(pull, 250);
-    })();
+    pull();                              // 立刻 attach＋畫 snapshot
+    _remoteStreamTimer = setInterval(pull, 250);
   }
 
   function stopRemoteStream() {
@@ -5765,6 +5753,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function attachFile(path, dataUrl) {
     if (!activeId || !sessions[activeId]) return;
     const s = sessions[activeId];
+    // 遠端 session：本機存的 path 對方讀不到。把圖片位元組送過去落地，由對方
+    // 那端用 bracketed paste 注入路徑（跟本機貼圖同機制）。目前支援有 dataUrl
+    // 的貼上（截圖／圖片）；純檔案拖放請走側欄「📁 檔案」。
+    if (s.isRemote) {
+      const info = parseRemoteSid(activeId);
+      if (!dataUrl) {
+        s.term.write('\r\n\x1b[33m[遠端 session 僅支援貼「圖片」；一般檔案請用側欄的「📁 檔案」傳送]\x1b[0m\r\n');
+        return;
+      }
+      const fname = (path && path.split('/').pop()) || 'paste.png';
+      s.attachCounter = (s.attachCounter || 0) + 1;
+      s.attachments.push({ path: fname, dataUrl, tag: s.attachCounter });
+      updateImageBar();
+      pywebview.api.link_remote_paste(info.peerId, info.rsid, dataUrl, fname)
+        .then(raw => {
+          let r = {}; try { r = JSON.parse(raw); } catch (e) {}
+          if (!r.success) s.term.write('\r\n\x1b[31m[遠端貼圖失敗：' + esc0((r && r.message) || '') + ']\x1b[0m\r\n');
+          // 送出後清掉 chip（路徑已注入對方）
+          s.attachments = s.attachments.filter(a => a.tag !== s.attachCounter);
+          updateImageBar();
+        })
+        .catch(() => {});
+      _refocusActive();
+      return;
+    }
     if (!s.attachments.some(a => a.path === path)) {
       s.attachCounter = (s.attachCounter || 0) + 1;
       s.attachments.push({ path, dataUrl: dataUrl || null, tag: s.attachCounter });

@@ -66,6 +66,7 @@ class Node:
         self.resizes = []       # (sid, cols, rows) via /link/resize
         self.created = []        # cmd via /link/new
         self.closed = []         # sid via /link/close
+        self.pasted = []         # (filename, data_b64) via /link/paste
 
         def execute(cmd, args):
             if cmd == "list":
@@ -96,6 +97,12 @@ class Node:
             if cmd == "close_session":
                 self.closed.append(args.get("sid"))
                 return {"success": True}
+            if cmd == "raw_screen":
+                return {"success": True,
+                        "details": {"screen": f"\x1b[2J\x1b[Hsnapshot-of-{args.get('sid')}@{name}"}}
+            if cmd == "save_paste":
+                self.pasted.append((args.get("filename"), args.get("data_b64")))
+                return {"success": True, "details": {"path": f"/tmp/{name}-paste.png"}}
             return {"success": False, "message": f"unknown {cmd}"}
 
         def update_config(mutator):
@@ -335,9 +342,11 @@ def main():
         # ── 串流（無縫遠端畫面）──
         pc2 = a.link.pairing_begin(mode="duplex")
         b.link.join("127.0.0.1", a.port, pc2["code"])
-        # attach（since=-1）→ 回目前 seq、無資料
+        # attach（since=-1）→ 回目前 seq + snapshot（含 ANSI，alt-screen 才畫得對）
         att = b.link.remote_stream(a.fid, "sA", -1)
         check("stream attach returns seq", att.get("success") and "seq" in att)
+        check("stream attach carries a screen snapshot",
+              att.get("reset") is True and "snapshot-of-sA" in (att.get("snapshot") or ""))
         base = att["seq"]
         a.link.feed_output("sA", "hello ")
         a.link.feed_output("sA", "world")
@@ -360,6 +369,13 @@ def main():
         rc = b.link.remote_close(a.fid, "s2")
         check("remote_close closes a session",
               rc.get("success") and "s2" in a.closed)
+        # 遠端貼圖：位元組落地 + bracketed paste 注入
+        rp = b.link.remote_paste(a.fid, "s1", "data:image/png;base64,aGVsbG8=", "shot.png")
+        check("remote_paste saves file and injects path",
+              rp.get("success") and rp.get("path", "").endswith("paste.png")
+              and any(f == "shot.png" for f, _ in a.pasted))
+        check("remote_paste bracketed the injected path",
+              any("\x1b[200~" in d and rp["path"] in d for (_sid, d) in a.raw))
         # list 帶 cols/rows 供遠端 pane 對齊
         info2 = b.link.remote_info(a.fid)
         check("list reports cols/rows",

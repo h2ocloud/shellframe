@@ -608,11 +608,25 @@ class FrameLink:
             return st["seq"]
 
     def _stream_read(self, sid: str, since: int) -> dict:
+        # Attach (since<0): hand back an accurate snapshot of the current screen
+        # (tmux capture with ANSI) so alt-screen TUIs paint correctly, plus the
+        # seq to stream from. Capture is done OUTSIDE the lock (it forks tmux).
+        if since < 0:
+            with self._streams_lock:
+                seq = self._stream_open_locked(sid)
+            snap = ""
+            try:
+                res = self._execute("raw_screen", {"sid": sid}) or {}
+                snap = (res.get("details") or {}).get("screen", "") if res.get("success") else ""
+            except Exception:
+                snap = ""
+            return {"success": True, "seq": seq, "data": "", "snapshot": snap,
+                    "reset": True}
         with self._streams_lock:
             st = self._streams.get(sid)
-            if st is None or since < 0:
+            if st is None:
                 seq = self._stream_open_locked(sid)
-                return {"success": True, "seq": seq, "data": "", "reset": st is None}
+                return {"success": True, "seq": seq, "data": "", "reset": True}
             st["watch_ts"] = _now()
             if since < st["min_seq"]:
                 # buffer 已捲走 client 要的區段 → 請 client 重新 attach 畫面
@@ -744,6 +758,24 @@ class FrameLink:
                         "sid": body.get("sid", ""),
                         "reason": "frame_link"}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/paste":
+                    # 遠端檢視端貼上的圖片：落地成檔 → 用 bracketed paste 把路徑
+                    # 注入對方的 session（跟本機貼圖同一機制）。
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    saved = link._execute("save_paste", {
+                        "filename": body.get("filename", "paste.png"),
+                        "data_b64": body.get("data_b64", "")}) or {}
+                    if not saved.get("success"):
+                        return self._send(200, saved, sign_for=peer, nonce=nonce)
+                    rpath = (saved.get("details") or {}).get("path", "")
+                    link._execute("raw_input", {
+                        "sid": body.get("sid", ""),
+                        "data": " \x1b[200~" + rpath + "\x1b[201~"})
+                    return self._send(200, {"success": True, "path": rpath},
+                                      sign_for=peer, nonce=nonce)
                 if path == "/link/message":
                     res = link._local_message(peer_id, str(body.get("text", "")))
                     return self._send(200, res, sign_for=peer, nonce=nonce)
@@ -1096,6 +1128,19 @@ class FrameLink:
                                "rows": int(rows)}).encode()
             return self._signed_request(peer, "POST", "/link/resize", body,
                                         timeout=5)
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def remote_paste(self, peer_id: str, sid: str, data_url: str,
+                     filename: str = "paste.png") -> dict:
+        peer = self.peers().get(peer_id)
+        if not peer or not peer.get("host") or not peer.get("port"):
+            return {"success": False, "message": "peer 不可直連"}
+        try:
+            body = json.dumps({"sid": sid, "filename": filename,
+                               "data_b64": data_url}).encode()
+            return self._signed_request(peer, "POST", "/link/paste", body,
+                                        timeout=30)
         except Exception as e:
             return {"success": False, "message": str(e)}
 
