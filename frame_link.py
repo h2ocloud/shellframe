@@ -507,6 +507,14 @@ class FrameLink:
         out = self._outbox.load()
         if out.pop(peer_id, None) is not None:
             self._outbox.save(out)
+        # 順手清掉這個 peer 在 cursor 檔的殘留（否則依歷來配對數單調成長）
+        try:
+            cstore = _JsonStore(self._state_dir / "frame_link_cursors.json", {})
+            cur = cstore.load()
+            if cur.pop(peer_id, None) is not None:
+                cstore.save(cur)
+        except Exception:
+            pass
         return {"success": True}
 
     def update_peer(self, peer_id: str, host: str, port: int) -> dict:
@@ -594,18 +602,6 @@ class FrameLink:
                 old_seq, old = st["chunks"].pop(0)
                 st["bytes"] -= len(old)
                 st["min_seq"] = old_seq + 1
-
-    def _stream_open(self, sid: str) -> int:
-        """開始（或續留）緩衝某分頁，回傳目前 seq——當作 client 的起點。"""
-        with self._streams_lock:
-            st = self._streams.get(sid)
-            if st is None:
-                st = {"seq": 0, "min_seq": 0, "chunks": [], "bytes": 0,
-                      "watch_ts": _now()}
-                self._streams[sid] = st
-            else:
-                st["watch_ts"] = _now()
-            return st["seq"]
 
     def _stream_read(self, sid: str, since: int) -> dict:
         # Attach (since<0): hand back an accurate snapshot of the current screen
@@ -1278,6 +1274,15 @@ class FrameLink:
                 self._mark_status(peer_id, False, str(e))
         return changed
 
+    def _sweep_streams(self):
+        """丟掉已過 watch TTL 的 stream buffer——lazy 清理只在該 sid 又有 output
+        或又被拉時才發生，靜默切走的分頁得靠這個週期性掃除。"""
+        cutoff = _now() - self.STREAM_WATCH_TTL
+        with self._streams_lock:
+            for sid in [s for s, st in self._streams.items()
+                        if st["watch_ts"] < cutoff]:
+                del self._streams[sid]
+
     def _poll_loop(self):
         cursors_store = _JsonStore(self._state_dir / "frame_link_cursors.json", {})
         while not self._poll_stop.is_set():
@@ -1285,6 +1290,7 @@ class FrameLink:
                 cursors = cursors_store.load()
                 if self.poll_once(cursors):
                     cursors_store.save(cursors)
+                self._sweep_streams()
             except Exception as e:
                 self._log(f"[link] poll loop error: {e}")
             self._poll_stop.wait(POLL_INTERVAL)

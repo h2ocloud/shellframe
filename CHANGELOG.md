@@ -6,6 +6,46 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.6 (2026-09-05)
+
+### Fixes
+
+- **Unpairing a peer while viewing one of its remote sessions no longer leaves
+  a zombie poller.** `confirmUnpair` didn't stop the stream or dispose the
+  peer's open remote panes, so the 4 Hz stream loop kept hitting a now-unknown
+  peer forever. Unpair now disposes every `rmt:` pane for that peer, stops the
+  stream, closes the message/file panel if it was on that peer, and drops its
+  sidebar-collapse state. The remote stream loop also backs off exponentially
+  (250 ms → 3 s) on errors instead of hammering at 4 Hz, and a successful pair
+  now clears the pairing-code countdown instead of firing a late cancel.
+
+  **在檢視某台 peer 的遠端 session 時把它斷開配對，不再殘留殭屍輪詢。**
+  `confirmUnpair` 之前沒停串流、也沒收掉該 peer 開著的遠端 pane，4Hz 串流迴圈
+  會一直打一個已不存在的 peer。現在斷開會 dispose 該 peer 所有 `rmt:` pane、
+  停串流、若訊息／檔案面板停在那台就一併收起、並清掉側欄收合狀態。遠端串流迴圈
+  出錯時改成指數退避（250ms→3s）不再固定 4Hz 空打；配對成功也會清掉配對碼倒數，
+  不再送出遲來的 cancel。
+
+### Internal
+
+- **Dead-code sweep of the Frame Link feature.** Removed the superseded
+  bottom-panel remote viewer (`openRemoteView`) and its now-orphaned peek loop
+  (`linkPeekTimer` / `stopLinkPeek`), the no-op `renderLinkSections` and its
+  call sites, an unused `linkStatusTimer`, the duplicate lock-free
+  `_stream_open` in frame_link.py, and the dead CSS left from the old tab-bar
+  🔗 button and two-column panel (`#btn-link`, `#link-side`, `.link-sec-head`,
+  `#link-remote-screen`, …). Remote panes now dispose their ResizeObserver on
+  close, the stream buffer map is swept for expired entries in the poll loop,
+  and `unpair` clears the peer's saved poll cursor. No behaviour change.
+
+  **Frame Link 死碼清掃。** 移除被取代的底部面板遠端檢視（`openRemoteView`）與其
+  孤兒 peek 迴圈（`linkPeekTimer`／`stopLinkPeek`）、no-op 的 `renderLinkSections`
+  及呼叫點、未用的 `linkStatusTimer`、frame_link.py 裡重複的無鎖 `_stream_open`，
+  以及舊 tab-bar 🔗 鈕與雙欄面板殘留的死 CSS（`#btn-link`、`#link-side`、
+  `.link-sec-head`、`#link-remote-screen` 等）。遠端 pane 關閉時會 disconnect
+  ResizeObserver、串流 buffer map 在 poll loop 週期清除過期項、`unpair` 也清掉該
+  peer 的輪詢 cursor。行為不變。
+
 ## v0.32.5 (2026-09-05)
 
 ### Fixes
