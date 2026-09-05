@@ -678,8 +678,29 @@
   }
   .sb-divider.drag-over { color: #7aa2f7; background: rgba(122,162,247,.06); border-radius: 4px; }
   .sb-divider.drag-over::before, .sb-divider.drag-over::after { background: #7aa2f7; }
-  .sb-item.unbridged { opacity: .85; } /* not grayed out — still fully functional, just not TG-bridged */
-  .sb-divider { cursor: help; }
+  /* TG 停用的 session 留在原位、整列暗掉（不再搬到隔離線下面——那區改屬
+     其他電腦的 session）。hover 恢復可讀，功能照常。 */
+  .sb-item.unbridged { opacity: .45; }
+  .sb-item.unbridged:hover { opacity: .9; }
+  .sb-tg.off { opacity: .5; border-style: dashed; }
+  .sb-divider { cursor: pointer; }
+  /* 隔離線右端的「＋ 配對」：Frame Link 的入口就在這條線上 */
+  .sb-pair-btn {
+    flex: none; border: 1px solid #3b4261; border-radius: 4px; background: none;
+    color: #565f89; font-size: 10px; padding: 1px 7px; cursor: pointer;
+    line-height: 1.5; transition: all .15s;
+  }
+  .sb-pair-btn:hover { border-color: #9ece6a; color: #9ece6a; }
+  /* 遠端（其他 ShellFrame）區塊：peer 標題列＋它的 session 列 */
+  .sb-peer-head { border-left: 2px solid #9ece6a33; }
+  .sb-peer-head.offline { border-left-color: transparent; }
+  .sb-peer-head .sb-peer-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: #3b4261; flex-shrink: 0;
+  }
+  .sb-peer-head .sb-peer-dot.on { background: #9ece6a; box-shadow: 0 0 5px #9ece6a; }
+  .sb-remote { padding-left: 26px; color: #787c99; cursor: pointer; }
+  .sb-remote:hover { color: #c0caf5; }
+  .sb-remote-hint { padding: 2px 12px 4px 26px; font-size: 10px; color: #3b4261; }
   .sb-item { cursor: grab; -webkit-user-select: none; user-select: none; }
   .sb-item:active { cursor: grabbing; }
   /* visibility (not display) so the row layout doesn't shift on hover */
@@ -1636,6 +1657,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterShortcut: 'Newline (no submit)',
       tgUnbridgedDivider: 'Not bridged by ShellFrame',
       linkBtnTitle: 'Frame Link — pair another ShellFrame (cross-machine)',
+      linkSidebarDivider: 'Other ShellFrames',
       linkPairBtn: 'Pairing code',
       linkJoinBtn: 'Join',
       linkSend: 'Send',
@@ -1817,6 +1839,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterShortcut: '換行（不送出）',
       tgUnbridgedDivider: '不由 ShellFrame 橋接',
       linkBtnTitle: 'Frame Link — 配對其他 ShellFrame（跨機連線）',
+      linkSidebarDivider: '其他 ShellFrame',
       linkPairBtn: '產生配對碼',
       linkJoinBtn: '加入配對',
       linkSend: '送出',
@@ -2864,15 +2887,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (activeId && sessions[activeId]) {
       sessions[activeId].pane.classList.remove('active');
     }
+    // 切離遠端分頁就停掉它的串流；切到遠端就開始串流（只串當前這個）
+    if (_remoteStreamSid && _remoteStreamSid !== sid) stopRemoteStream();
     activeId = sid;
     localStorage.setItem('sf_active_tab', sid);
-    persistActiveTab(sid);
+    if (!isRemoteSid(sid)) persistActiveTab(sid);   // 遠端 sid 不持久化（重啟不還原）
     if (sessions[sid]) {
       sessions[sid].pane.classList.add('active');
       // Preserve user's scroll position on tab switch — don't force-bottom.
       // _userScrolledUp stays as-is so fitTerm respects current position.
       fitTerm(sid);
       sessions[sid].term.focus();
+      if (isRemoteSid(sid) && _remoteStreamSid !== sid) startRemoteStream(sid);
     }
     renderTabs();
     updateImageBar();
@@ -2888,6 +2914,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function closeTab(sid) {
     const s = sessions[sid];
     if (!s) return;
+    // 遠端分頁：只是收掉這台的檢視（不殺對方的 session）
+    if (s.isRemote) {
+      if (_remoteStreamSid === sid) stopRemoteStream();
+      try { s.term.dispose(); } catch (e) {}
+      s.pane.remove();
+      delete sessions[sid];
+      if (activeId === sid) {
+        activeId = null;
+        const ids = sessionOrder.slice();
+        if (ids.length) switchTab(ids[ids.length - 1]);
+      }
+      renderTabs();
+      renderSidebar();
+      return;
+    }
     await pywebview.api.close_session(sid);
     // Dispose xterm.js instance to free WebGL contexts, buffers, addons
     try { s.term.dispose(); } catch(e) {}
@@ -2895,7 +2936,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     delete sessions[sid];
     sessionOrder = sessionOrder.filter(id => id !== sid);
 
-    const ids = sessionOrder.length ? sessionOrder : Object.keys(sessions);
+    const ids = sessionOrder.length ? sessionOrder : Object.keys(sessions).filter(id => !isRemoteSid(id));
     if (ids.length > 0) {
       switchTab(activeId === sid ? ids[ids.length - 1] : activeId);
     } else {
@@ -2970,6 +3011,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
       $tabs.appendChild(tab);
     });
+    // 開著的遠端 session 也在 tab bar 露出（🌐 前綴），接在本機分頁後面。
+    // 不進 sessionOrder，所以 TG 編號/持久化/reorder 完全不受影響。
+    Object.keys(sessions).forEach((sid) => {
+      const s = sessions[sid];
+      if (!s || !s.isRemote) return;
+      const tab = document.createElement('button');
+      tab.className = 'tab' + (sid === activeId ? ' active' : '');
+      tab.dataset.sid = sid;
+      tab.title = `🌐 ${s.peerName}（遠端）`;
+      tab.innerHTML = `
+        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>
+        <span class="icon" style="opacity:.55;font-size:10px">🌐</span>
+        <span class="label">${esc(s.label)}</span>
+        <span class="close-tab" data-sid="${sid}">&times;</span>
+      `;
+      tab.addEventListener('click', (e) => {
+        if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
+        switchTab(sid);
+      });
+      $tabs.appendChild(tab);
+    });
     renderSidebar();
     updateTabHint();   // 改名／關閉分頁都會經過這裡
     // Frame Link 面板開著的話，「本機」區塊要跟著分頁增刪改名同步
@@ -3019,68 +3081,135 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const hasLineBridge = lineBridgeState && lineBridgeState.active;
     const hasAnyBridge = hasBridge || hasLineBridge;
     const enabledSids = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled !== false);
-    const disabledSids = sessionOrder.filter(sid => sessions[sid]?.bridgeEnabled === false);
     const activeTgSid = bridgeState?.active_sid || (enabledSids[0] || '');
     const activeLineSid = lineBridgeState?.active_sid || (enabledSids[0] || '');
 
     let tgIdx = 0;
 
-    enabledSids.forEach(sid => {
+    // 本機 sessions 全部一區：TG 停用的列留在原位、整列暗掉（unbridged），
+    // 不再搬到隔離線下面——那一區改屬其他電腦（Frame Link）的 session。
+    sessionOrder.forEach(sid => {
       const s = sessions[sid];
       if (!s) return;
-      tgIdx++;
-      const isActiveTg = hasBridge && sid === activeTgSid;
-      const isActiveLine = hasLineBridge && sid === activeLineSid;
+      const tgOff = s.bridgeEnabled === false;
+      if (!tgOff) tgIdx++;
+      const isActiveTg = hasBridge && !tgOff && sid === activeTgSid;
+      const isActiveLine = hasLineBridge && !tgOff && sid === activeLineSid;
       const el = document.createElement('div');
-      el.className = 'sb-item' + (sid === activeId ? ' active' : '');
+      el.className = 'sb-item' + (tgOff ? ' unbridged' : '') + (sid === activeId ? ' active' : '');
       el.dataset.sid = sid;
-      el.dataset.section = 'on';
+      el.dataset.section = 'local';
+      const tgChip = !hasBridge ? '' : (tgOff
+        ? `<span class="sb-bridge sb-tg off" data-action="switch-tg" data-sid="${sid}" title="這個分頁的 TG 連線已停用（自管／不受 bridge 監控）。點一下重新啟用">TG</span>`
+        : `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? '再點一下＝停用這個分頁的 TG 連線' : '點一下把 TG 切到這個分頁'}">${isActiveTg ? '◀ TG' : 'TG'}</span>`);
       el.innerHTML =
         `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>` +
-        (hasAnyBridge ? `<span style="opacity:.4;font-size:10px;min-width:14px">${tgIdx}</span>` : '') +
+        (hasAnyBridge ? `<span style="opacity:${tgOff ? '.3' : '.4'};font-size:10px;min-width:14px">${tgOff ? '·' : tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         modelBadgeHtml(s) +
         (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
-        (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? '再點一下＝停用這個分頁的 TG 連線' : '點一下把 TG 切到這個分頁'}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
-        (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
+        tgChip +
+        (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
       container.appendChild(el);
     });
 
-    if (hasAnyBridge) {
+    // ── 隔離線＝Frame Link 入口；線以下是其他 ShellFrame 的 session 專區 ──
+    try {
+      const peers = (linkState && linkState.peers) || [];
+      const zoneCollapsed = !!linkUi.sbPeers;
       const divider = document.createElement('div');
       divider.className = 'sb-divider';
       divider.dataset.section = 'divider';
-      divider.textContent = t('tgUnbridgedDivider');
-      divider.title = t('tgUnbridgedTooltip');
+      divider.dataset.action = 'link-zone';
+      divider.title = '隔離線以下＝配對的其他 ShellFrame 的 session。點線收合／展開，點「＋ 配對」接上另一台。';
+      divider.innerHTML =
+        `<span style="pointer-events:none">${zoneCollapsed ? '▸' : '▾'} 🔗 ${esc(t('linkSidebarDivider'))}${peers.length ? ` (${peers.length})` : ''}</span>` +
+        `<button class="sb-pair-btn" data-action="link-pair" title="配對另一台 ShellFrame（產生配對碼／加入配對）">＋ 配對</button>`;
       container.appendChild(divider);
 
-      disabledSids.forEach(sid => {
-        const s = sessions[sid];
-        if (!s) return;
-        const el = document.createElement('div');
-        el.className = 'sb-item unbridged' + (sid === activeId ? ' active' : '');
-        el.dataset.sid = sid;
-        el.dataset.section = 'off';
-        el.innerHTML =
-          `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>` +
-          `<span style="opacity:.3;font-size:10px;min-width:14px">·</span>` +
-          `<span class="sb-label">${esc(s.label)}</span>` +
-          modelBadgeHtml(s) +
-          (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
-          `<span class="sb-bridge" style="opacity:.35;font-size:9px">${t('tgSelfManaged')}</span>` +
-          `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
-        container.appendChild(el);
-      });
-
-      // Empty zone at bottom for dropping
-      if (disabledSids.length === 0) {
-        const zone = document.createElement('div');
-        zone.style.cssText = 'min-height:24px';
-        zone.dataset.section = 'off';
-        container.appendChild(zone);
+      if (!zoneCollapsed) {
+        if (!peers.length) {
+          const hint = document.createElement('div');
+          hint.className = 'sb-remote-hint';
+          hint.textContent = '尚未配對其他 ShellFrame——按「＋ 配對」開始';
+          container.appendChild(hint);
+        }
+        peers.forEach(p => {
+          const pCollapsed = !!linkUi['sb_' + p.id];
+          const head = document.createElement('div');
+          head.className = 'sb-item sb-peer-head' + (p.reachable ? '' : ' offline');
+          head.dataset.action = 'peer-head';
+          head.dataset.pid = p.id;
+          head.title = (p.reachable ? '連線中' : '離線') +
+            `｜${p.host || '(無位址)'}${p.port ? ':' + p.port : ''}｜點一下收合／展開，✕ 斷開配對`;
+          head.innerHTML =
+            `<span style="pointer-events:none;font-size:9px;color:#565f89">${pCollapsed ? '▸' : '▾'}</span>` +
+            `<span class="sb-peer-dot${p.reachable ? ' on' : ''}"></span>` +
+            `<span class="sb-label" style="pointer-events:none">🌐 ${esc(p.name)}</span>` +
+            `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(p.id)}" title="斷開這台 ShellFrame（會先確認）">&times;</span>`;
+          // 配對方向徽章：單向時標「主／從」
+          if (p.mode && p.mode !== 'duplex') {
+            const badge = document.createElement('span');
+            badge.className = 'sb-model';
+            badge.style.marginLeft = '4px';
+            badge.textContent = p.mode === 'master' ? '主控' : '受控';
+            badge.title = p.mode === 'master'
+              ? '單向：這台能操作對方，對方不能操作這台'
+              : '單向：對方能操作這台，這台不能操作對方';
+            head.insertBefore(badge, head.querySelector('.sb-close'));
+          }
+          container.appendChild(head);
+          if (pCollapsed) return;
+          if (!p.reachable) {
+            const em = document.createElement('div');
+            em.className = 'sb-remote-hint';
+            em.textContent = p.host ? '離線——訊息／檔案會排隊等它上線來拉' : '無位址——等對方輪詢取件';
+            container.appendChild(em);
+            return;
+          }
+          if (!p.can_control) {
+            const em = document.createElement('div');
+            em.className = 'sb-remote-hint';
+            em.textContent = '對方為主控端——這台不能操作它的 session（仍可互傳訊息／檔案）';
+            container.appendChild(em);
+            return;
+          }
+          const tabs = linkRemoteTabs[p.id];
+          if (!tabs) {
+            const em = document.createElement('div');
+            em.className = 'sb-remote-hint';
+            em.textContent = '載入遠端 session…';
+            container.appendChild(em);
+            loadRemoteTabs(p.id);
+            return;
+          }
+          if (!tabs.length) {
+            const em = document.createElement('div');
+            em.className = 'sb-remote-hint';
+            em.textContent = '(對方沒有開分頁)';
+            container.appendChild(em);
+            return;
+          }
+          tabs.forEach(rt => {
+            const rmt = remoteSid(p.id, rt.sid);
+            const row = document.createElement('div');
+            row.className = 'sb-item sb-remote' + (activeId === rmt ? ' active' : '');
+            row.dataset.action = 'remote-tab';
+            row.dataset.pid = p.id;
+            row.dataset.rsid = rt.sid;
+            row.dataset.rlabel = rt.label || rt.sid;
+            row.title = `操作「${p.name}」的這個 session（在主終端區，跟本機分頁一樣）`;
+            const dot = sessions[rmt] ? (activeId === rmt ? '●' : '▣') : '▫';
+            row.innerHTML =
+              `<span style="opacity:.5;font-size:10px;pointer-events:none">${dot}</span>` +
+              `<span class="sb-label" style="pointer-events:none">${esc(rt.label || rt.sid)}</span>` +
+              (sessions[rmt] ? `<span class="sb-close" data-action="close-remote" data-rmt="${esc(rmt)}" title="收掉這台的檢視（不會關對方的 session）">&times;</span>` : '');
+            container.appendChild(row);
+          });
+        });
       }
-    }
+    } catch (e) { /* Frame Link 區塊壞掉不拖垮本機列表 */ }
   }
 
   // ── Rename session (double-click on label) ──
@@ -3190,14 +3319,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       return;
     }
     // TG badge click → switch TG active session.
-    // 已經是 active 的分頁再點一下 TG icon → 直接停用該分頁與 TG 的連線
-    // （原本只能拖到「不由 ShellFrame 橋接」區，Howard 2026-09-05 要求
-    // 點擊就能斷）。停用後拖回上區即可恢復。
+    // 三態（2026-09-05 定案）：停用中的暗 chip 點一下＝重新啟用；已是 active
+    // 的分頁再點一下＝停用（列留原位變暗，不搬區）；其餘＝切 active。
     const tgAction = e.target.closest('[data-action="switch-tg"]');
     if (tgAction) {
       e.preventDefault();
       e.stopPropagation();
       const sid = tgAction.dataset.sid;
+      if (sessions[sid] && sessions[sid].bridgeEnabled === false) {
+        toggleSessionBridge(sid, true);
+        return;
+      }
       if (bridgeState && bridgeState.active_sid === sid) {
         toggleSessionBridge(sid, false);
         return;
@@ -3206,6 +3338,56 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (bridgeState) bridgeState.active_sid = sid;
         renderSidebar();
       }).catch(err => console.warn('switch error:', err));
+      return;
+    }
+    // ── Frame Link（隔離線以下）──
+    const pairBtn = e.target.closest('[data-action="link-pair"]');
+    if (pairBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      showPairChooser();
+      return;
+    }
+    const unpairBtn = e.target.closest('[data-action="unpair-peer"]');
+    if (unpairBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = ((linkState && linkState.peers) || []).find(x => x.id === unpairBtn.dataset.pid);
+      if (p) confirmUnpair(p);
+      return;
+    }
+    const zone = e.target.closest('[data-action="link-zone"]');
+    if (zone) {
+      linkUi.sbPeers = !linkUi.sbPeers;
+      saveLinkUi();
+      renderSidebar();
+      return;
+    }
+    const peerHead = e.target.closest('[data-action="peer-head"]');
+    if (peerHead) {
+      const k = 'sb_' + peerHead.dataset.pid;
+      linkUi[k] = !linkUi[k];
+      saveLinkUi();
+      renderSidebar();
+      if (!linkUi[k]) loadRemoteTabs(peerHead.dataset.pid);
+      return;
+    }
+    const closeRemote = e.target.closest('[data-action="close-remote"]');
+    if (closeRemote) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeTab(closeRemote.dataset.rmt);
+      return;
+    }
+    const remoteRow = e.target.closest('[data-action="remote-tab"]');
+    if (remoteRow) {
+      const p = ((linkState && linkState.peers) || []).find(x => x.id === remoteRow.dataset.pid);
+      if (!p) return;
+      if (!p.can_control) {
+        alert(`「${p.name}」是單向配對的主控端，這台無權操作它的 session。`);
+        return;
+      }
+      openRemoteSession(p, { sid: remoteRow.dataset.rsid, label: remoteRow.dataset.rlabel });
       return;
     }
     const lineAction = e.target.closest('[data-action="switch-line"]');
@@ -3272,15 +3454,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       moved = true;
       _sbDragging = true;
       item.style.opacity = '.3';
-      // Highlight drop target (track last to avoid clearing ALL every frame)
+      // Highlight drop target (track last to avoid clearing ALL every frame).
+      // 只亮本機列——隔離線以下是其他電腦的 session，拖不進去（v0.32.1 起
+      // 拖曳只剩 reorder，停用 TG 改點 chip）。
       const target = document.elementFromPoint(ev.clientX, ev.clientY);
-      const dropItem = target ? (target.closest('.sb-item') || target.closest('.sb-divider') || target.closest('[data-section="off"]')) : null;
+      let dropItem = target ? target.closest('.sb-item') : null;
+      if (dropItem && !dropItem.dataset.sid) dropItem = null;
       if (dropItem !== _lastHighlight) {
         if (_lastHighlight) _lastHighlight.style.background = '';
         _lastHighlight = (dropItem && dropItem !== item) ? dropItem : null;
-        if (_lastHighlight) {
-          _lastHighlight.style.background = _lastHighlight.classList?.contains('sb-divider') ? 'rgba(122,162,247,.1)' : '#292e42';
-        }
+        if (_lastHighlight) _lastHighlight.style.background = '#292e42';
       }
     }
 
@@ -3293,18 +3476,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!moved) return;
       const target = document.elementFromPoint(ev.clientX, ev.clientY);
       if (!target) return;
-      const dropEl = target.closest('.sb-item') || target.closest('.sb-divider') || target.closest('[data-section="off"]');
+      const dropEl = target.closest('.sb-item');
       if (!dropEl || dropEl === item) return;
-      const dropSection = dropEl.dataset?.section;
-      const fromEnabled = sessions[sid]?.bridgeEnabled !== false;
-
-      if (dropSection === 'divider' || dropSection === 'off') {
-        if (fromEnabled) toggleSessionBridge(sid, false);
-      } else if (dropSection === 'on' && !fromEnabled) {
-        // Drop onto enabled section → enable TG
-        toggleSessionBridge(sid, true);
-      } else if (dropEl.dataset?.sid && dropEl.dataset.sid !== sid) {
-        // Reorder within same section
+      // 拖曳只做本機列 reorder。TG 停用／啟用改成點 chip（列原位變暗），
+      // 「拖到隔離線下停用」已移除——那一區現在是其他電腦的 session。
+      if (dropEl.dataset?.sid && dropEl.dataset.sid !== sid) {
         const toSid = dropEl.dataset.sid;
         const fromIdx = sessionOrder.indexOf(sid);
         const toIdx = sessionOrder.indexOf(toSid);
@@ -3364,6 +3540,110 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try { localStorage.setItem('sf_link_ui', JSON.stringify(linkUi)); } catch (e) {}
   }
 
+  // ── 無縫遠端 session：在主終端區開一個真正的 xterm，串流對方 PTY 原始輸出、
+  //    鍵盤直送對方。點擊方式跟本機分頁完全一樣，只是它跑在另一台電腦。────
+  let _remoteStreamTimer = null;
+  let _remoteStreamSid = null;    // 目前正在串流的 remote pane sid（只串當前這個）
+  function remoteSid(peerId, rsid) { return 'rmt:' + peerId + ':' + rsid; }
+  function isRemoteSid(sid) { return typeof sid === 'string' && sid.startsWith('rmt:'); }
+  function parseRemoteSid(sid) {
+    const m = /^rmt:([^:]+):(.+)$/.exec(sid || '');
+    return m ? { peerId: m[1], rsid: m[2] } : null;
+  }
+
+  function ensureRemotePane(sid, peer, rt) {
+    if (sessions[sid]) return sessions[sid];
+    const pane = document.createElement('div');
+    pane.className = 'term-pane';
+    $wrap.appendChild(pane);
+    const term = new Terminal({
+      fontSize: currentFontSize,
+      fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
+      theme: THEME, cursorBlink: false, scrollback: 10000, allowProposedApi: true
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon.WebLinksAddon(activateUrlExternally));
+    const u11 = new Unicode11Addon.Unicode11Addon();
+    term.loadAddon(u11);
+    term.unicode.activeVersion = '11';
+    term.open(pane);
+    term.attachCustomWheelEventHandler(() => term.buffer.active.type !== 'alternate');
+    // 鍵盤直送遠端 PTY（原始位元組：方向鍵/Ctrl-C/Enter 照原樣）
+    term.onData(data => {
+      const info = parseRemoteSid(sid);
+      if (!info) return;
+      pywebview.api.link_remote_input(info.peerId, info.rsid, data).catch(() => {});
+    });
+    sessions[sid] = {
+      term, fitAddon, pane, cmd: '', label: (rt && rt.label) || (rt && rt.sid) || sid,
+      isRemote: true, peerId: peer.id, rsid: (rt && rt.sid) || '',
+      peerName: peer.name, attachments: [], attachCounter: 0,
+      bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false,
+      _lastOutputTs: 0, _busy: false, _streamSeq: -1,
+    };
+    return sessions[sid];
+  }
+
+  function openRemoteSession(peer, rt) {
+    const sid = remoteSid(peer.id, rt.sid);
+    ensureRemotePane(sid, peer, rt);
+    switchTab(sid);
+  }
+
+  function startRemoteStream(sid) {
+    stopRemoteStream();
+    const info = parseRemoteSid(sid);
+    const s = sessions[sid];
+    if (!info || !s) return;
+    _remoteStreamSid = sid;
+    s._streamSeq = -1;                 // -1 = (re)attach：先清畫面重貼
+    try { s.term.reset(); } catch (e) {}
+    const pull = async () => {
+      if (_remoteStreamSid !== sid || !sessions[sid]) return;
+      try {
+        const res = JSON.parse(await pywebview.api.link_remote_stream(
+          info.peerId, info.rsid, s._streamSeq));
+        if (_remoteStreamSid !== sid) return;      // 已切走
+        if (res.success) {
+          if (res.reset && s._streamSeq >= 0) {
+            // buffer 捲走了我要的段落 → 重貼一次整屏
+            try { s.term.reset(); } catch (e) {}
+          }
+          if (res.data) s.term.write(res.data);
+          s._streamSeq = (typeof res.seq === 'number') ? res.seq : s._streamSeq;
+          s._connErr = false;
+        } else if (!s._connErr) {
+          s._connErr = true;
+          s.term.write(`\r\n\x1b[33m[${esc0(s.peerName)} 連線中斷：${esc0(res.message || '')}]\x1b[0m\r\n`);
+        }
+      } catch (e) {}
+    };
+    // 首拉先拿 peek 全屏當底，再切成增量串流，開起來就有內容不是空白
+    (async () => {
+      try {
+        const pk = JSON.parse(await pywebview.api.link_remote_peek(info.peerId, info.rsid, 200));
+        if (_remoteStreamSid === sid && pk.success && pk.details && pk.details.text) {
+          s.term.reset();
+          s.term.write(pk.details.text.replace(/\n/g, '\r\n'));
+        }
+      } catch (e) {}
+      // attach 串流游標
+      try {
+        const res = JSON.parse(await pywebview.api.link_remote_stream(info.peerId, info.rsid, -1));
+        if (res.success && typeof res.seq === 'number') s._streamSeq = res.seq;
+      } catch (e) {}
+      _remoteStreamTimer = setInterval(pull, 250);
+    })();
+  }
+
+  function stopRemoteStream() {
+    if (_remoteStreamTimer) { clearInterval(_remoteStreamTimer); _remoteStreamTimer = null; }
+    _remoteStreamSid = null;
+  }
+
+  function esc0(s) { return String(s == null ? '' : s).replace(/[\x00-\x08\x0b-\x1f]/g, ''); }
+
   function linkPanelOpen() {
     return document.getElementById('link-panel').classList.contains('open');
   }
@@ -3400,6 +3680,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       ? 'Frame Link — ' + (linkState.peers || []).filter(p => p.reachable).map(p => p.name).join(', ')
       : t('linkBtnTitle');
     if (rerender !== false && linkPanelOpen()) renderLinkSections();
+    renderSidebar();   // 側欄隔離線以下的 peer 燈號／清單同步
+  }
+
+  // 「＋ 配對」（側欄隔離線上的入口）：選「產生配對碼」或「加入配對」
+  function showPairChooser() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:320px;padding:20px">
+        <h2 style="font-size:14px">🔗 配對另一台 ShellFrame</h2>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" id="pc-pair" style="padding:10px">產生配對碼<span style="opacity:.6;font-weight:400">（這台當被連端）</span></button>
+          <button class="btn btn-ghost" id="pc-join" style="padding:10px;border:1px solid #3b4261">加入配對<span style="opacity:.6">（輸入對方的碼）</span></button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-ghost" id="pc-cancel">取消</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function finish() { overlay.remove(); }
+    document.getElementById('pc-cancel').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    document.getElementById('pc-pair').addEventListener('click', () => { finish(); showPairModeChooser(); });
+    document.getElementById('pc-join').addEventListener('click', () => { finish(); showJoinModal(); });
   }
 
   function esc2(s) { return esc(String(s == null ? '' : s)); }
@@ -3494,7 +3799,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
               it.innerHTML = `<span style="opacity:.5;font-size:10px">▣</span>` +
                              `<span class="li-label">${esc2(rt.label || rt.sid)}</span>`;
               it.title = '看這個遠端分頁的畫面';
-              it.addEventListener('click', () => openRemoteView(p, rt));
+              it.addEventListener('click', () => openRemoteSession(p, rt));
               box.appendChild(it);
             });
           }
@@ -3517,12 +3822,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     tog.style.color = linkState.running ? '#9ece6a' : '#565f89';
   }
 
+  const _linkTabsInflight = {};
   async function loadRemoteTabs(peerId) {
+    if (_linkTabsInflight[peerId]) return;   // sidebar 重繪頻繁，別重複打
+    _linkTabsInflight[peerId] = true;
     try {
       const res = JSON.parse(await pywebview.api.link_remote_tabs(peerId));
       linkRemoteTabs[peerId] = (res.details && res.details.sessions) || [];
     } catch (e) { linkRemoteTabs[peerId] = []; }
+    finally { _linkTabsInflight[peerId] = false; }
     if (linkPanelOpen()) renderLinkSections();
+    renderSidebar();   // 側欄的遠端 session 區塊也吃這份快取
   }
 
   function linkMainTitle(html) {
@@ -3737,25 +4047,56 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
 
   // ── 配對：產生配對碼（modal＋倒數）──
-  async function showPairModal() {
+  // 先選單向／雙向，再產碼。mode 綁進 host proof，中間人改不了。
+  function showPairModeChooser() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:360px;padding:20px">
+        <h2 style="font-size:14px">產生配對碼 — 選擇綁定方式</h2>
+        <div style="font-size:11px;color:#565f89;margin:4px 0 12px">配對完兩邊都會出現彼此，差別在誰能操作誰的 session。訊息／檔案互傳不受限。</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-primary" data-mode="duplex" style="padding:10px;text-align:left">🔄 雙向<span style="opacity:.65;font-weight:400"> — 兩邊都能操作對方</span></button>
+          <button class="btn btn-ghost" data-mode="host_controls" style="padding:10px;text-align:left;border:1px solid #3b4261">➡️ 這台當主<span style="opacity:.65"> — 只有這台能操作對方</span></button>
+          <button class="btn btn-ghost" data-mode="joiner_controls" style="padding:10px;text-align:left;border:1px solid #3b4261">⬅️ 這台當從<span style="opacity:.65"> — 只有對方能操作這台</span></button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-ghost" id="pm-cancel">取消</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function finish() { overlay.remove(); }
+    document.getElementById('pm-cancel').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    overlay.querySelectorAll('[data-mode]').forEach(b => {
+      b.addEventListener('click', () => { finish(); showPairModal(b.dataset.mode); });
+    });
+  }
+
+  async function showPairModal(mode) {
+    mode = mode || 'duplex';
     let res;
-    try { res = JSON.parse(await pywebview.api.link_pair_begin()); }
+    try { res = JSON.parse(await pywebview.api.link_pair_begin(mode)); }
     catch (e) { alert('產生配對碼失敗：' + e); return; }
     if (!res.success) {
       // listener 沒開 → 順手開起來再重試一次
       try {
         const st = JSON.parse(await pywebview.api.link_set_enabled(true));
-        if (st.running) { showPairModal(); return; }
+        if (st.running) { showPairModal(mode); return; }
       } catch (e) {}
       alert(res.message || '產生配對碼失敗');
       return;
     }
+    const modeLabel = { duplex: '🔄 雙向', host_controls: '➡️ 這台當主',
+                        joiner_controls: '⬅️ 這台當從' }[mode] || mode;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay open';
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:380px;padding:20px">
         <h2 style="font-size:14px">🔗 配對碼（一次性，<span id="lp-count">${res.expires_in}</span> 秒內有效）</h2>
+        <div style="text-align:center;font-size:11px;color:#565f89;margin-top:4px">${modeLabel}</div>
         <div class="link-code-display">${esc2(res.code)}</div>
         <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
           在另一台 ShellFrame 按「加入配對」，輸入：<br>

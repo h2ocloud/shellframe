@@ -60,6 +60,7 @@ class Node:
             "peers": {},
         }}
         self.sent = []          # (sid, text, submit) received via /link/send
+        self.raw = []           # (sid, data) received via /link/input
         self.events = []        # notify() pushes
 
         def execute(cmd, args):
@@ -76,6 +77,9 @@ class Node:
                 self.sent.append((args.get("sid"), args.get("text"),
                                   args.get("submit")))
                 return {"success": True, "message": "sent"}
+            if cmd == "raw_input":
+                self.raw.append((args.get("sid"), args.get("data")))
+                return {"success": True}
             return {"success": False, "message": f"unknown {cmd}"}
 
         def update_config(mutator):
@@ -272,6 +276,63 @@ def main():
         check("unpair removes peer", b.fid not in a.link.peers())
         st, _ = signed_get(b, peer_a_from_b, "/link/ping")
         check("unpaired peer can no longer talk", st == 403)
+
+        # ── 單向配對（主從）+ raw input + 串流 ──
+        # A 產碼 host_controls → A 當主：A 能操作 B，B 不能操作 A。
+        pc = a.link.pairing_begin(mode="host_controls")
+        rj = b.link.join("127.0.0.1", a.port, pc["code"])
+        check("directional pairing joins", rj.get("success") is True)
+        check("A sees B as master-side (can control)",
+              (a.link.peers()[b.fid].get("mode")) == "master")
+        check("B sees A as slave-side (cannot control)",
+              (b.link.peers()[a.fid].get("mode")) == "slave")
+        st = a.link.status()
+        bp = [p for p in st["peers"] if p["id"] == b.fid][0]
+        check("A can_control B", bp["can_control"] is True)
+        st2 = b.link.status()
+        ap = [p for p in st2["peers"] if p["id"] == a.fid][0]
+        check("B cannot_control A", ap["can_control"] is False)
+        # A → B raw input 允許
+        ri = a.link.remote_input(b.fid, "s1", "ls\r")
+        check("master raw_input reaches slave",
+              ri.get("success") is True and ("s1", "ls\r") in b.raw)
+        # B → A 被拒（B 是從，無權操作 A）
+        before = len(a.raw)
+        rd = b.link.remote_input(a.fid, "s1", "whoami\r")
+        check("slave raw_input to master denied",
+              rd.get("success") is False and len(a.raw) == before)
+        rinfo = b.link.remote_info(a.fid)
+        check("slave sees no tabs on master",
+              rinfo.get("no_control") is True and
+              not (rinfo.get("details", {}).get("sessions")))
+        rpk = b.link.remote_peek(a.fid, "s1")
+        check("slave peek on master denied", rpk.get("success") is False)
+        # mode 竄改：joiner 收到被改過 mode 的 host proof → 驗不過
+        # （直接呼叫 join 對假 host 難模擬，改驗 proof 綁 mode）
+        pn, hn = "a" * 32, "b" * 16
+        code = "K7QX2MRD34"
+        check("host proof binds mode",
+              frame_link._proof(code, "host", pn, hn, "duplex") !=
+              frame_link._proof(code, "host", pn, hn, "host_controls"))
+        a.link.unpair(b.fid)
+
+        # ── 串流（無縫遠端畫面）──
+        pc2 = a.link.pairing_begin(mode="duplex")
+        b.link.join("127.0.0.1", a.port, pc2["code"])
+        # attach（since=-1）→ 回目前 seq、無資料
+        att = b.link.remote_stream(a.fid, "sA", -1)
+        check("stream attach returns seq", att.get("success") and "seq" in att)
+        base = att["seq"]
+        a.link.feed_output("sA", "hello ")
+        a.link.feed_output("sA", "world")
+        got = b.link.remote_stream(a.fid, "sA", base)
+        check("stream delivers incremental output",
+              got.get("success") and got.get("data") == "hello world")
+        # 只有被 watch 的分頁才緩衝：沒 attach 的分頁 feed 後 attach 拿不到舊料
+        a.link.feed_output("sZ", "unwatched")
+        z = b.link.remote_stream(a.fid, "sZ", -1)
+        check("unwatched tab buffers nothing on attach", z.get("data") == "")
+        a.link.unpair(b.fid)
 
         # ── helpers ──
         check("normalize_code strips separators",

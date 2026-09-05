@@ -6,6 +6,61 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.1 (2026-09-05)
+
+### Changes
+
+- **Frame Link is now seamless: a remote session opens like any local tab.**
+  The first cut put remote viewing in a separate bottom split panel, which read
+  as a different mode of operation. Now the pairing entry lives on the sidebar
+  divider (＋ 配對), the divider and everything below it is the "other
+  ShellFrames" zone, and clicking a peer's session opens a real xterm in the
+  main terminal area — it streams the remote PTY's raw output (a new
+  `/link/stream` incremental channel, only buffering tabs someone is actually
+  watching) and sends keystrokes straight to the remote PTY (`/link/input`,
+  raw bytes: arrows, Ctrl-C, Enter pass through). Remote tabs also appear in the
+  top tab bar with a 🌐 prefix; closing one detaches the view without killing
+  the remote session. Regression cases for stream attach/increment and raw
+  input added to `tests_frame_link.py`.
+
+  **Frame Link 改成無縫：遠端 session 就像本機分頁一樣點開。** 第一版把遠端檢視
+  放在獨立的下方分割面板，操作感是「另一種模式」。現在配對入口移到側欄隔離線
+  （＋ 配對），隔離線以下整區就是「其他 ShellFrame」，點對方的 session 會在主
+  終端區開一個真正的 xterm——串流對方 PTY 的原始輸出（新增 `/link/stream`
+  增量通道，只緩衝有人在看的分頁）、鍵盤直送對方 PTY（`/link/input`，原始位元組：
+  方向鍵、Ctrl-C、Enter 照原樣）。遠端分頁也會在上方 tab bar 以 🌐 露出；關掉
+  只是收掉檢視、不會殺對方的 session。串流 attach／增量與 raw input 的回歸案例
+  加進 `tests_frame_link.py`。
+
+- **Pairing can be one-way or two-way; both sides always see each other.**
+  When generating a code you pick 雙向 (either side can drive the other),
+  這台當主 (only this machine drives the peer), or 這台當從 (only the peer
+  drives this machine). The mode is bound into the host's pairing proof, so a
+  middleman can't flip it. After pairing both machines list each other; a
+  master/slave badge shows the direction, and the controlled side is refused at
+  `/link/info`, `/link/peek`, `/link/stream`, `/link/send` and `/link/input`.
+  Messages and file transfer stay bidirectional regardless of mode. Covered by
+  new directional-pairing cases in `tests_frame_link.py`.
+
+  **配對可單向或雙向，兩邊都會看到彼此。** 產碼時選 🔄 雙向（互相能操作）、
+  ➡️ 這台當主（只有這台能操作對方）、⬅️ 這台當從（只有對方能操作這台）。模式
+  綁進 host 的配對 proof，中間人改不了。配對後兩台互相列出對方；主／從徽章標
+  方向，受控端在 `/link/info`、`/link/peek`、`/link/stream`、`/link/send`、
+  `/link/input` 一律被拒。訊息與檔案互傳不受模式限制。回歸案例已加進
+  `tests_frame_link.py`。
+
+- **Disabling a tab's Telegram bridge no longer moves it to another section.**
+  Clicking the chip on the active TG tab dims that row in place (and the dim
+  chip re-enables on click); the sidebar divider and the area below it are now
+  reserved for other machines' sessions, so a local tab never lands there. The
+  old "drag a row under the divider to disable" gesture is gone — drag is
+  reorder-only now.
+
+  **停用分頁的 Telegram 橋接不再把它搬到別區。** 點 active 分頁的 chip 會讓那列
+  原位變暗（暗 chip 點一下重新啟用）；側欄隔離線與其下已改留給其他電腦的
+  session，本機分頁不會再掉到那裡。舊的「拖到隔離線下停用」手勢移除——拖曳現在
+  只做排序。
+
 ## v0.32.0 (2026-09-05)
 
 ### Added

@@ -103,8 +103,12 @@ def derive_secret(code_norm: str, joiner_nonce: str, host_nonce: str,
     return _hmac_hex(code_norm.encode(), transcript.encode())
 
 
-def _proof(code_norm: str, role: str, joiner_nonce: str, host_nonce: str) -> str:
-    return _hmac_hex(code_norm.encode(), f"sf-pair-{role}|{joiner_nonce}|{host_nonce}".encode())
+def _proof(code_norm: str, role: str, joiner_nonce: str, host_nonce: str,
+           extra: str = "") -> str:
+    """extra: host 的 proof 綁配對模式（duplex/host_controls/joiner_controls），
+    中間人竄改 mode 會讓 joiner 驗不過。"""
+    return _hmac_hex(code_norm.encode(),
+                     f"sf-pair-{role}|{joiner_nonce}|{host_nonce}|{extra}".encode())
 
 
 def _safe_filename(name: str) -> str:
@@ -195,6 +199,12 @@ class FrameLink:
         self._peer_status = {}          # peer_id -> {reachable,last_ok,last_err}
         self._cursor_lock = threading.Lock()
 
+        # Raw-output ring buffers for the seamless remote-tab view. Only tabs a
+        # peer is actively streaming (a /link/stream request in the last 30 s)
+        # get buffered, so idle operation costs nothing.
+        self._streams = {}              # sid -> {seq,min_seq,chunks,bytes,watch_ts}
+        self._streams_lock = threading.Lock()
+
         self._state_dir = Path(state_dir) if state_dir else STATE_DIR
         self._files_dir = self._state_dir / "frame_link_files"
         self._downloads_dir = Path(downloads_dir) if downloads_dir else DOWNLOADS_DIR
@@ -266,6 +276,7 @@ class FrameLink:
         peers = []
         for pid, p in (cfg.get("peers") or {}).items():
             st = self._peer_status.get(pid, {})
+            mode = p.get("mode", "duplex")
             peers.append({
                 "id": pid,
                 "name": p.get("name", pid[:8]),
@@ -274,6 +285,8 @@ class FrameLink:
                 "reachable": bool(st.get("reachable")),
                 "last_ok": st.get("last_ok", 0),
                 "last_err": st.get("last_err", ""),
+                "mode": mode,                                  # 本機視角
+                "can_control": mode in ("duplex", "master"),   # 我能操作對方
             })
         with self._pairing_lock:
             pairing = None
@@ -293,8 +306,16 @@ class FrameLink:
         }
 
     # ── pairing: host side ────────────────────────────────────────────────
-    def pairing_begin(self) -> dict:
-        """Open a PAIR_TTL pairing window and hand the UI a one-time code."""
+    def pairing_begin(self, mode: str = "duplex") -> dict:
+        """Open a PAIR_TTL pairing window and hand the UI a one-time code.
+
+        mode（產碼端視角，會綁進 host proof）：
+          duplex          雙向，彼此都能操作對方的 session
+          host_controls   單向：這台當主，只有這台能操作對方
+          joiner_controls 單向：這台當從，只有對方能操作這台
+        訊息與檔案互傳不受 mode 限制。"""
+        if mode not in ("duplex", "host_controls", "joiner_controls"):
+            mode = "duplex"
         if not self.running():
             started = False
             if self._cfg().get("enabled"):
@@ -308,6 +329,7 @@ class FrameLink:
                 "code": normalize_code(code),
                 "expires": _now() + PAIR_TTL,
                 "attempts": 0,
+                "mode": mode,
                 "handshakes": {},   # joiner_nonce -> host_nonce
             }
         cfg = self._cfg()
@@ -380,6 +402,10 @@ class FrameLink:
         host_id = cfg.get("frame_id", "")
         secret = derive_secret(p["code"], joiner_nonce, host_nonce,
                                joiner_id, host_id)
+        mode = p.get("mode", "duplex")
+        # 本機視角的角色：master=我能操作對方、對方不能操作我；slave=反之。
+        my_mode = {"duplex": "duplex", "host_controls": "master",
+                   "joiner_controls": "slave"}[mode]
         # Joiner is often behind NAT: keep whatever endpoint it advertised
         # (may be unreachable — the poller marks it and the outbox covers it).
         self._store_peer(joiner_id, {
@@ -387,14 +413,15 @@ class FrameLink:
             "host": client_ip if joiner_port else "",
             "port": joiner_port,
             "secret": secret,
+            "mode": my_mode,
             "added": _now(),
         })
         with self._pairing_lock:
             self._pairing = None        # single use
-        proof_h = _proof(p["code"], "host", joiner_nonce, host_nonce)
+        proof_h = _proof(p["code"], "host", joiner_nonce, host_nonce, mode)
         self._notify({"kind": "paired", "peer_id": joiner_id,
                       "peer_name": joiner_name})
-        return 200, {"success": True, "proof": proof_h,
+        return 200, {"success": True, "proof": proof_h, "mode": mode,
                      "host_id": host_id, "host_name": self.frame_name(),
                      "host_port": int(cfg.get("listen_port", 8767))}
 
@@ -437,18 +464,26 @@ class FrameLink:
         if not r2.get("success"):
             return {"success": False, "message": r2.get("message", "配對被拒絕")}
         # Mutual auth: the host must prove it knew the code too, otherwise a
-        # fake host could collect our proof and pair us to itself.
+        # fake host could collect our proof and pair us to itself. The mode is
+        # bound into the host proof so a middleman can't flip 單向/雙向.
         host_id = str(r2.get("host_id") or "")
-        expected_h = _proof(code_norm, "host", joiner_nonce, host_nonce)
+        wire_mode = str(r2.get("mode") or "duplex")
+        if wire_mode not in ("duplex", "host_controls", "joiner_controls"):
+            return {"success": False, "message": "未知的配對模式（版本不相容？）"}
+        expected_h = _proof(code_norm, "host", joiner_nonce, host_nonce, wire_mode)
         if not _consteq(str(r2.get("proof") or ""), expected_h) or not host_id:
-            return {"success": False, "message": "對方無法證明持有配對碼（可能是假冒端點）"}
+            return {"success": False, "message": "對方無法證明持有配對碼（可能是假冒端點或版本不相容）"}
         secret = derive_secret(code_norm, joiner_nonce, host_nonce,
                                my_id, host_id)
+        # joiner 視角：host_controls → 對方是主、我是從（slave）
+        my_mode = {"duplex": "duplex", "host_controls": "slave",
+                   "joiner_controls": "master"}[wire_mode]
         peer = {
             "name": str(r2.get("host_name") or host)[:60],
             "host": host,
             "port": int(r2.get("host_port") or port),
             "secret": secret,
+            "mode": my_mode,
             "added": _now(),
         }
         self._store_peer(host_id, peer)
@@ -528,6 +563,74 @@ class FrameLink:
         return _hmac_hex(bytes.fromhex(peer["secret"]),
                          f"resp\n{nonce}\n{_sha256_hex(body)}".encode())
 
+    def _peer_may_control(self, peer_id: str) -> bool:
+        """單向（主從）配對的權限閘：對方能不能看/操作這台的 session。
+        mode 是本機視角——master＝只有我能操作對方 → 對方對我 deny。
+        訊息、檔案、ping、events 不在此限。"""
+        mode = (self.peers().get(peer_id) or {}).get("mode", "duplex")
+        return mode in ("duplex", "slave")
+
+    # ── raw output streaming（無縫遠端分頁）────────────────────────────────
+    STREAM_WATCH_TTL = 30       # 沒人拉 30s 就停止緩衝該分頁
+    STREAM_MAX_BYTES = 262144   # 每分頁 ring buffer 上限
+
+    def feed_output(self, sid: str, data: str):
+        """main.py 的 output pusher 每個 chunk 都會呼叫——必須極快。
+        只有最近有 /link/stream 請求的分頁才緩衝，平時零成本。"""
+        st = self._streams.get(sid)
+        if st is None:
+            return
+        with self._streams_lock:
+            st = self._streams.get(sid)
+            if st is None:
+                return
+            if _now() - st["watch_ts"] > self.STREAM_WATCH_TTL:
+                del self._streams[sid]
+                return
+            st["chunks"].append((st["seq"], data))
+            st["seq"] += 1
+            st["bytes"] += len(data)
+            while st["bytes"] > self.STREAM_MAX_BYTES and st["chunks"]:
+                old_seq, old = st["chunks"].pop(0)
+                st["bytes"] -= len(old)
+                st["min_seq"] = old_seq + 1
+
+    def _stream_open(self, sid: str) -> int:
+        """開始（或續留）緩衝某分頁，回傳目前 seq——當作 client 的起點。"""
+        with self._streams_lock:
+            st = self._streams.get(sid)
+            if st is None:
+                st = {"seq": 0, "min_seq": 0, "chunks": [], "bytes": 0,
+                      "watch_ts": _now()}
+                self._streams[sid] = st
+            else:
+                st["watch_ts"] = _now()
+            return st["seq"]
+
+    def _stream_read(self, sid: str, since: int) -> dict:
+        with self._streams_lock:
+            st = self._streams.get(sid)
+            if st is None or since < 0:
+                seq = self._stream_open_locked(sid)
+                return {"success": True, "seq": seq, "data": "", "reset": st is None}
+            st["watch_ts"] = _now()
+            if since < st["min_seq"]:
+                # buffer 已捲走 client 要的區段 → 請 client 重新 attach 畫面
+                return {"success": True, "seq": st["seq"], "data": "",
+                        "reset": True}
+            data = "".join(d for s, d in st["chunks"] if s >= since)
+            return {"success": True, "seq": st["seq"], "data": data}
+
+    def _stream_open_locked(self, sid: str) -> int:
+        st = self._streams.get(sid)
+        if st is None:
+            st = {"seq": 0, "min_seq": 0, "chunks": [], "bytes": 0,
+                  "watch_ts": _now()}
+            self._streams[sid] = st
+        else:
+            st["watch_ts"] = _now()
+        return st["seq"]
+
     # ── HTTP server ───────────────────────────────────────────────────────
     def _make_handler(self):
         link = self
@@ -595,10 +698,23 @@ class FrameLink:
                 body = self._body_json(raw)
 
                 if path == "/link/send":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：這台是主控端，對方無權操作"},
+                            sign_for=peer, nonce=nonce)
                     res = link._local_send(body.get("sid", ""),
                                            body.get("text", ""),
                                            bool(body.get("submit", True)),
                                            source_peer=peer_id)
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/input":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute("raw_input", {
+                        "sid": body.get("sid", ""),
+                        "data": body.get("data", "")}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/message":
                     res = link._local_message(peer_id, str(body.get("text", "")))
@@ -671,16 +787,36 @@ class FrameLink:
                         "name": link.frame_name(), "version": link._version,
                         "ts": _now()}, sign_for=peer, nonce=nonce)
                 if path == "/link/info":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(200, {"success": True, "message": "0 sessions",
+                            "details": {"sessions": []}, "frame_name": link.frame_name(),
+                            "no_control": True}, sign_for=peer, nonce=nonce)
                     res = link._execute("list", {}) or {}
                     res["frame_name"] = link.frame_name()
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/peek":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
                     sid = (q.get("sid") or [""])[0]
                     try:
                         lines = int((q.get("lines") or ["120"])[0])
                     except ValueError:
                         lines = 120
                     res = link._execute("peek", {"sid": sid, "lines": lines}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/stream":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    sid = (q.get("sid") or [""])[0]
+                    try:
+                        since = int((q.get("since") or ["-1"])[0])
+                    except ValueError:
+                        since = -1
+                    res = link._stream_read(sid, since)
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/events":
                     try:
@@ -890,6 +1026,35 @@ class FrameLink:
         try:
             path = f"/link/peek?sid={quote(sid)}&lines={int(lines)}"
             return self._signed_request(peer, "GET", path)
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
+
+    def remote_stream(self, peer_id: str, sid: str, since: int = -1) -> dict:
+        """Incremental raw-output pull for the seamless remote view.
+        since=-1 → (re)attach: server returns current seq, empty data."""
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            path = f"/link/stream?sid={quote(sid)}&since={int(since)}"
+            res = self._signed_request(peer, "GET", path, timeout=6)
+            self._mark_status(peer_id, True)
+            return res
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
+
+    def remote_input(self, peer_id: str, sid: str, data: str) -> dict:
+        """Raw keystrokes → remote PTY (seamless terminal). Fire-and-forget-ish:
+        no outbox fallback — typing into an offline peer makes no sense."""
+        peer = self.peers().get(peer_id)
+        if not peer or not peer.get("host") or not peer.get("port"):
+            return {"success": False, "message": "peer 不可直連"}
+        try:
+            body = json.dumps({"sid": sid, "data": data}).encode()
+            return self._signed_request(peer, "POST", "/link/input", body,
+                                        timeout=5)
         except Exception as e:
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}

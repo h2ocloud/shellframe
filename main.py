@@ -2428,6 +2428,14 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                         self._auto_accept_startup_trust_prompt(sid, s)
                         if (self.bridge or self.line_bridge) and getattr(s, '_bridge_enabled', True):
                             self._bridge_queue.put_nowait((sid, data))
+                        # Frame Link：把原始輸出餵給正在被遠端串流的分頁（無縫
+                        # 遠端畫面）。feed_output 只緩衝有人在看的分頁，平時零成本。
+                        fl = getattr(self, "frame_link", None)
+                        if fl is not None:
+                            try:
+                                fl.feed_output(sid, data)
+                            except Exception:
+                                pass
                         pending[sid] = pending.get(sid, "") + data
                     chunk = pending.get(sid)
                     if chunk and self._window:
@@ -6513,8 +6521,8 @@ try {
         update_config(fn)
         return self.link_status()
 
-    def link_pair_begin(self) -> str:
-        return json.dumps(self._link().pairing_begin(), ensure_ascii=False)
+    def link_pair_begin(self, mode: str = "duplex") -> str:
+        return json.dumps(self._link().pairing_begin(mode), ensure_ascii=False)
 
     def link_pair_cancel(self) -> str:
         return json.dumps(self._link().pairing_cancel())
@@ -6539,9 +6547,17 @@ try {
         return json.dumps(self._link().remote_peek(peer_id, sid, lines),
                           ensure_ascii=False)
 
+    def link_remote_stream(self, peer_id: str, sid: str, since: int = -1) -> str:
+        return json.dumps(self._link().remote_stream(peer_id, sid, since),
+                          ensure_ascii=False)
+
     def link_remote_send(self, peer_id: str, sid: str, text: str,
                          submit: bool = True) -> str:
         return json.dumps(self._link().remote_send(peer_id, sid, text, submit),
+                          ensure_ascii=False)
+
+    def link_remote_input(self, peer_id: str, sid: str, data: str) -> str:
+        return json.dumps(self._link().remote_input(peer_id, sid, data),
                           ensure_ascii=False)
 
     def link_message(self, peer_id: str, text: str) -> str:
@@ -6758,6 +6774,20 @@ try {
                 return {"success": True, "message": f"Sent {len(text)} chars to {sid}"}
             except Exception as e:
                 return {"success": False, "message": f"Send failed: {e}"}
+
+        elif cmd == "raw_input":
+            # Frame Link 無縫遠端分頁：把遠端使用者的原始鍵盤位元組直接寫進 PTY
+            # （方向鍵、Ctrl-C、Enter 都照原樣），不走 send 的 paste-buffer/submit。
+            try:
+                sid = args.get("sid", "")
+                data = args.get("data", "")
+                s = self.sessions.get(sid)
+                if not s:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                s.write(data)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "message": f"raw_input failed: {e}"}
 
         elif cmd == "peek":
             try:
