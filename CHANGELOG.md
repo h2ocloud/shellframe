@@ -6,6 +6,43 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.2 (2026-09-06)
+
+### Added
+
+- **Dropping a file onto a remote tab works, and the transfer is packaged.**
+  The drop handler never distinguished remote tabs: it called `write_input` and
+  injected a local path, both of which mean nothing on the other machine, so the
+  file simply vanished. Attaching now goes through one entry point that decides
+  local or remote internally — callers pass a path and get the same behaviour
+  either way. Reading the file and base64-encoding it happens in the backend, not
+  the front end: a large image would blow out the string argument crossing the
+  pywebview bridge, and the page has no way to read a local file anyway. The
+  transfer itself reuses the existing paste channel, so the far side lands the
+  file and injects its own path exactly as a local paste does. Size cap and a
+  clear error when the file is gone.
+
+  **拖檔案到遠端分頁可以用了，傳輸也封裝起來。** drop handler 從來沒有分辨遠端
+  分頁：它呼叫 `write_input`、注入本機路徑，這兩件事在對方那台都沒有意義，檔案
+  就這樣消失。附檔現在走單一入口，本機／遠端的差別藏在裡面——呼叫端只給路徑，
+  兩邊行為一致。讀檔與 base64 編碼放在後端而非前端：大圖會把跨 pywebview 橋的
+  字串參數撐爆，而且頁面本來就沒有讀本機檔案的能力。傳輸本身沿用既有的貼上通道，
+  對方落地後注入它自己的路徑，跟本機貼上完全一樣。附大小上限，檔案不在時給明確
+  錯誤。
+
+- **Remote tabs show a working-state light.** It rides on the session list the
+  peer already fetches (`/link/info`), so the refresh rate is whatever that
+  listing uses — no second, faster channel. The state comes from the snapshot the
+  status monitor has already computed; resolving a transcript during a listing
+  that a peer polls would not be worth one light, so an unavailable state simply
+  renders no light. 14 cases in `tests_remote_tab_features.py`.
+
+  **遠端分頁會顯示工作狀態燈。** 它掛在 peer 本來就會拉的 session 列表
+  （`/link/info`）上，更新頻率就是那份列表的頻率——不另外開一條更快的通道。狀態
+  取自 status monitor 已經算好的快照；為了一顆燈而在「被 peer 週期性拉取的列表」
+  裡解 transcript 並不划算，所以取不到狀態就不畫燈。
+  `tests_remote_tab_features.py` 共 14 項。
+
 ## v0.35.1 (2026-09-06)
 
 ### Fixes

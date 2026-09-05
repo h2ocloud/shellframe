@@ -3779,6 +3779,23 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             _swallow(f"get_session_model_info:{sid}")
             return None
 
+    def _agent_state_for_list(self, sid: str) -> str:
+        """給 sfctl list／Frame Link 用的單字狀態（'working' / 'done' / ''）。
+
+        只讀 status monitor 已經算好的快照——這支會被遠端 peer 週期性拉取，
+        成本必須是零；為了一顆燈在列表時去解 transcript 不划算。取不到就回空
+        字串，遠端寧可沒有燈，也不要拖慢列表。"""
+        try:
+            snap = self._agent_status_snapshot(sid)
+            if not snap:
+                return ""
+            res = snap[0] if isinstance(snap, tuple) else snap
+            if isinstance(res, dict):
+                return str(res.get("state") or "")
+        except Exception:
+            _swallow(f"_agent_state_for_list:{sid}")
+        return ""
+
     def _agent_status_snapshot(self, sid: str):
         """TG 長回合心跳的狀態來源：**唯讀**最近一次 StatusTracker 結果。
 
@@ -6796,6 +6813,11 @@ try {
         return json.dumps(self._link().remote_paste(peer_id, sid, data_url, filename),
                           ensure_ascii=False)
 
+    def link_remote_attach_file(self, peer_id: str, sid: str, path: str) -> str:
+        """拖放／選檔附到遠端分頁。前端只給本機路徑，讀檔與傳輸都在後端。"""
+        return json.dumps(self._link().remote_attach_file(peer_id, sid, path),
+                          ensure_ascii=False)
+
     def link_remote_new(self, peer_id: str, cmd: str = "claude") -> str:
         return json.dumps(self._link().remote_new(peer_id, cmd),
                           ensure_ascii=False)
@@ -6933,6 +6955,10 @@ try {
                     "bridge_enabled": getattr(s, '_bridge_enabled', True),
                     "glasses_enabled": getattr(s, '_glasses_enabled', False),
                     "provider": _session_provider(s.cmd),
+                    # 遠端檢視端的狀態燈。用 status monitor 算好的快照
+                    #（唯讀、零額外成本）。同步頻率就是 peer 拉 /link/info
+                    # 的頻率，刻意不另外開高頻通道。
+                    "agent_state": self._agent_state_for_list(sid),
                     # Frame Link 無縫遠端分頁：對齊對方 PTY 尺寸，alt-screen TUI
                     # （claude/codex）才不會因 cols/rows 不同而畫面錯位。
                     "cols": getattr(s, 'cols', 0),

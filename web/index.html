@@ -3178,8 +3178,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             row.dataset.rlabel = rt.label || rt.sid;
             row.title = `操作「${p.name}」的這個 session（在主終端區，跟本機分頁一樣）`;
             const dot = sessions[rmt] ? (activeId === rmt ? '●' : '▣') : '▫';
+            // 工作狀態燈：沿用本機那顆 .busy-dot 的樣式，資料來自對方 list
+            // 回傳的 agent_state。同步頻率就是拉遠端分頁列表的頻率，沒有另外
+            // 開高頻通道（Howard 2026-09-06：「同步不用那麼頻繁」）。
+            const rState = rt.agent_state || '';
+            const stateDot = rState
+              ? `<span class="busy-dot${rState === 'working' ? ' on' : ''}" `
+                + `title="${rState === 'working' ? '執行中' : '閒置'}" `
+                + `style="pointer-events:none;margin-right:4px"></span>`
+              : '';
             // ✕ = 關閉對方的 session（跟 local 一樣，會先確認）
             row.innerHTML =
+              stateDot +
               `<span style="opacity:.5;font-size:10px;pointer-events:none">${dot}</span>` +
               `<span class="sb-label" style="pointer-events:none">${esc(rt.label || rt.sid)}</span>` +
               `<span class="sb-close" data-action="kill-remote" data-pid="${esc(p.id)}" data-rsid="${esc(rt.sid)}" data-rlabel="${esc(rt.label || rt.sid)}" title="關閉「${esc(p.name)}」的這個 session（會先確認）">&times;</span>`;
@@ -3544,6 +3554,42 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let _remoteStreamSid = null;    // 目前正在串流的 remote pane sid（只串當前這個）
   function remoteSid(peerId, rsid) { return 'rmt:' + peerId + ':' + rsid; }
   function isRemoteSid(sid) { return typeof sid === 'string' && sid.startsWith('rmt:'); }
+
+  // 把一個**本機路徑**附到某個分頁。本機分頁直接注入路徑（AI CLI 自己去讀檔）；
+  // 遠端分頁不能用 write_input——那是本機 PTY——改成把檔案送過去、對方落地後
+  // 注入它那邊的路徑。呼叫端不必知道差別，體感一致（Howard 2026-09-06：
+  // 「把傳輸放到共用區，封裝好上傳跟下載，體感要一樣」）。
+  // 讀檔轉 base64 在後端做：大圖走 pywebview 的 IPC 會塞爆字串參數。
+  async function attachPathToSession(sid, path) {
+    if (!isRemoteSid(sid)) { attachFile(path, null); return true; }
+    const info = parseRemoteSid(sid);
+    const s = sessions[sid];
+    try {
+      const raw = await pywebview.api.link_remote_attach_file(
+        info.peerId, info.rsid, path);
+      let r = {}; try { r = JSON.parse(raw); } catch (_) {}
+      if (!r.success) {
+        if (s && s.term) {
+          s.term.write('\r\n\x1b[31m[遠端附檔失敗：'
+            + esc0((r && r.message) || '') + ']\x1b[0m\r\n');
+        }
+        return false;
+      }
+      // 對方落地後的檔名，chip 顯示用（路徑已注入對方的 composer）
+      if (s) {
+        s.attachCounter = (s.attachCounter || 0) + 1;
+        s.attachments.push({ path: (path.split('/').pop() || path),
+                             dataUrl: null, tag: s.attachCounter });
+        updateImageBar();
+      }
+      return true;
+    } catch (e) {
+      if (s && s.term) {
+        s.term.write('\r\n\x1b[31m[遠端附檔失敗：' + esc0(String(e)) + ']\x1b[0m\r\n');
+      }
+      return false;
+    }
+  }
   function parseRemoteSid(sid) {
     const m = /^rmt:([^:]+):(.+)$/.exec(sid || '');
     return m ? { peerId: m[1], rsid: m[2] } : null;
@@ -6224,7 +6270,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (hit.length) {
         _usedPbChange = _dragPbChange;   // 同一份 pasteboard 內容不會被用兩次
         _resetDragPb();
-        if (isAiSession(activeId)) {
+        // 遠端分頁不能用 write_input／本機路徑注入，走統一入口
+        if (isRemoteSid(activeId)) {
+          for (const p of hit) await attachPathToSession(activeId, p);
+        } else if (isAiSession(activeId)) {
           for (const p of hit) attachFile(p, null);
         } else {
           await pywebview.api.write_input(activeId, hit.join(' '));
@@ -6282,8 +6331,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     if (vPaths.length >= Math.max(1, dtFiles.length)) {
       _resetDragPb();
-      const ai = isAiSession(activeId);
-      if (ai) {
+      // 同上：遠端分頁走統一入口，本機維持原本的路徑注入
+      if (isRemoteSid(activeId)) {
+        for (const p of vPaths) await attachPathToSession(activeId, p);
+      } else if (isAiSession(activeId)) {
         for (const p of vPaths) attachFile(p, null);
       } else {
         await pywebview.api.write_input(activeId, vPaths.join(' '));

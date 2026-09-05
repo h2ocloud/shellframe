@@ -1470,6 +1470,27 @@ class FrameLink:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    def remote_attach_file(self, peer_id: str, sid: str, path: str) -> dict:
+        """把本機的一個檔案附到遠端分頁：讀檔 → base64 → 對方落地 → 注入路徑。
+
+        前端拖放／選檔拿到的是**本機路徑**，而遠端分頁不能用 write_input——那是
+        本機 PTY。讀檔轉 base64 這一步刻意放後端：大圖走 pywebview 的 IPC 會把
+        字串參數塞爆，而且前端本來就沒有讀本機檔案的能力。呼叫端只給路徑，
+        體感與本機拖放一致。
+        """
+        try:
+            src = Path(os.path.expanduser(path or "")).resolve()
+            if not src.is_file():
+                return {"success": False, "message": f"檔案不存在：{src}"}
+            size = src.stat().st_size
+            if size > MAX_FILE_BYTES:
+                return {"success": False,
+                        "message": f"檔案超過上限 {MAX_FILE_BYTES // (1024*1024)}MB"}
+            data_b64 = base64.b64encode(src.read_bytes()).decode()
+        except Exception as e:
+            return {"success": False, "message": f"讀檔失敗：{e}"}
+        return self.remote_paste(peer_id, sid, data_b64, src.name)
+
     def remote_new(self, peer_id: str, cmd: str = "claude") -> dict:
         peer, err = self._peer_or_err(peer_id)
         if err:
