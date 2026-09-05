@@ -6,110 +6,251 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.0 (2026-09-05)
+
+### Added
+
+- **A phone or tablet can pair as a Frame Link peer.** A companion app (iOS,
+  iPadOS and watchOS, developed in its own repository) pairs with the same
+  one-time code handshake a second ShellFrame uses, then mirrors any tab: the
+  raw `/link/stream` output renders in a native terminal with the desktop's own
+  16-colour theme, keystrokes go straight back to the PTY (`/link/input`,
+  hardware keyboards included), and a composer sends prose through
+  `/link/send`, the same injection path Telegram messages take. One device can
+  bind any number of computers, each with its own derived secret.
+
+  **手機或平板可以像一台 Frame Link peer 一樣配對。** 配套 App（iOS、iPadOS、
+  watchOS，放在自己的 repo 開發）用與第二台 ShellFrame 相同的一次性配對碼握手
+  配對，之後任一分頁都能鏡射：`/link/stream` 的原始輸出畫進原生終端、用與桌面
+  相同的 16 色主題，鍵盤經 `/link/input` 直送 PTY（含外接鍵盤），訊息框則走
+  `/link/send`——也就是 Telegram 訊息用的同一條注入路徑。一台裝置可以綁任意
+  多台電腦，每台各自導出一把金鑰。
+
+- **A relay makes Frame Link work across the public internet.** Two peers both
+  behind NAT could never reach each other, which ruled out using a phone away
+  from home. `relay_server.py` (stdlib, in-memory) forwards opaque signed
+  envelopes; the computer long-polls it outbound via `link_relay.RelayClient`,
+  replays each envelope against its own listener over loopback and posts the
+  answer back, so no inbound port is ever opened. Pairing works through the
+  relay too, and once `frame_link.relay` (`url`, `token`) is set the pairing QR
+  carries it so clients fall back from direct to relay on their own. The relay
+  can read what it forwards — Frame Link is signed but not encrypted — so it has
+  to be a host you control, behind TLS. Covered end to end by `tests_relay.py`:
+  pairing, signed calls, the 401/404/504 paths and attempts to bypass signing.
+
+  **relay 讓 Frame Link 能跨公網。** 兩端都在 NAT 後面就永遠連不到彼此，手機一
+  離開家就沒得用。`relay_server.py`（純標準函式庫、記憶體內）只轉送簽章過的封包；
+  電腦透過 `link_relay.RelayClient` 出站長輪詢，把封包在自己的 loopback 上對自己
+  的 listener 重放、再把回應貼回去，全程不需要開任何對內的 port。配對本身也能走
+  relay，設定 `frame_link.relay`（`url`、`token`）之後配對 QR 會帶上它，client
+  直連失敗就會自動改走 relay。relay 看得到它轉送的內容——Frame Link 有簽章但沒有
+  加密——所以必須是你自己控制、且前面有 TLS 的主機。`tests_relay.py` 端到端涵蓋
+  配對、簽章呼叫、401／404／504 各條路徑，以及繞過簽章的嘗試。
+
+- **Voice notes from a phone or watch (`/link/voice`).** The watch records a
+  clip, hands it to the phone, and the phone posts it signed over its sha256
+  (the same scheme `/link/file` uses) to the new route, which runs the exact
+  chain Telegram voice notes and the desktop microphone already use — whisper,
+  refine, tagged injection for AI tabs and paste-only for shells — and returns
+  the transcript.
+
+  **手機與手錶的語音輸入（`/link/voice`）。** 手錶錄一段音、交給手機，手機以蓋
+  sha256 的簽章（與 `/link/file` 同一套）送到這個新路由，電腦端跑的是 Telegram
+  語音與桌面麥克風本來就在用的同一條鏈——whisper、精煉、AI 分頁帶標記注入、shell
+  分頁只貼不送——並回傳逐字稿。
+
+- **`/link/snapshot` and `/link/signals`.** Snapshot returns the visible screen
+  with its colours and cursor position (`tmux capture-pane -e`), so a remote
+  view opens looking like the desktop instead of the plain text `peek` returns.
+  Signals exposes the agent RED/YELLOW/GREEN event bus the local HTTP API
+  already publishes, so a remote client can flag the tabs waiting on a decision.
+
+  **`/link/snapshot` 與 `/link/signals`。** snapshot 回傳含顏色與游標位置的可視
+  畫面（`tmux capture-pane -e`），遠端一打開就跟桌面長得一樣，而不是 `peek` 的
+  純文字。signals 把本機 HTTP API 已經在發布的 agent RED／YELLOW／GREEN 事件開給
+  遠端，讓遠端能標出正在等你決定的分頁。
+
+### Changes
+
+- **Tabs can be dragged into a new order from a paired device, and both sides
+  agree.** Reordering only ever existed as a drag in this window. A remote
+  viewer now gets `/link/reorder`, which routes into the same `reorder_sessions`
+  the desktop drag calls, so `session_order` is persisted and the Telegram
+  `/1` `/2` numbering follows. `list` reports tabs in that durable order rather
+  than raw dictionary order, and this window adopts the backend order on its
+  regular sync — so a drag on a phone appears here within a tick instead of
+  after a restart. A local drag suppresses that adoption for three seconds so
+  an in-flight push is never raced. Regression cases for the route, the empty
+  order and the one-way pairing refusal are in `tests_frame_link.py`.
+
+  **配對裝置上可以拖曳分頁排序，兩邊會一致。** 排序過去只有「在這個視窗裡拖」
+  一種做法。遠端現在有 `/link/reorder`，它走的是桌面拖曳呼叫的同一支
+  `reorder_sessions`，因此 `session_order` 會落盤、Telegram 的 `/1` `/2` 編號也
+  跟著改。`list` 改為依這個持久順序回報分頁，而不是原始字典順序；這個視窗也會在
+  例行同步時採用後端順序——所以在手機上拖完，這裡一個 tick 內就會變，不必等重啟。
+  本機剛拖過的三秒內會略過採用，避免和自己還在路上的推送打架。路由、空清單、
+  單向配對被拒三種情況的回歸測試都在 `tests_frame_link.py`。
+
+- **Telegram `/link join` accepts a pairing link.** `/link join
+  shellframe://pair?d=…` reads the host, port, code and relay out of the link
+  and tries the addresses before the relay, so two computers can be paired from
+  a phone without retyping any of it.
+
+  **Telegram `/link join` 接受配對連結。** `/link join shellframe://pair?d=…`
+  會從連結裡取出位址、port、配對碼與 relay，先試位址再走 relay，兩台電腦可以在
+  手機上完成配對而不必重打任何一段。
+
+### Fixes
+
+- **Reordering no longer pushes bridge-disabled tabs to the end.** The drag
+  handler sent only the bridge-enabled tabs to `reorder_sessions`, but the
+  backend stores whatever it receives as the durable `session_order` and
+  appends the rest, so every tab with its Telegram bridge switched off drifted
+  to the bottom on the next restart. The full order is sent now; `reorder_slots`
+  already ignores any sid it has no bridge slot for.
+
+  **排序不再把關掉 TG 橋接的分頁擠到最後。** 拖曳的處理只把有開橋接的分頁送進
+  `reorder_sessions`，但後端會把收到的內容當成持久的 `session_order` 存起來、其
+  餘的接在後面，於是每個關掉 Telegram 橋接的分頁都會在下次重啟時漂到最下面。現在
+  改送完整順序；`reorder_slots` 本來就會忽略它沒有對應 slot 的 sid。
+
+### Internal
+
+- `docs/mobile-link.md` covers pairing, faithful mirroring, deploying the relay,
+  the trust boundary that relay implies, and the watch path.
+
+  `docs/mobile-link.md` 記錄配對、忠實鏡射、relay 的部署、relay 帶來的信任邊界，
+  以及手錶那條路徑。
+
+## v0.34.3 (2026-09-05)
+
+### Fixes
+
+- **Capturing an account now refuses to save mismatched credentials.** A tab's
+  `~/.claude.json` account metadata (email/org) and the Keychain OAuth token can
+  drift apart after account switching — the account reads as one identity while
+  the token belongs to another. Capturing that state stored a profile whose
+  token was a *different* account's, which is why two profiles could both report
+  the same person's usage. Account discovery now cross-checks the token's
+  `rateLimitTier` against the tiers recorded in `~/.claude.json`; when they
+  belong to different accounts, "重新整理已登入" blocks with an explanation
+  (log in to the right account and capture again) instead of saving, and startup
+  discovery skips the bad profile rather than recording it. Missing tier fields
+  fail open so normal logins are never blocked. Successful capture now also
+  reports which account it saved. Regression tests in `tests_accounts.py`.
+
+  **抓取帳號時會擋下對不上的憑證。** 分頁的 `~/.claude.json` 帳號資料（email/org）
+  與 Keychain 的 OAuth token 在切帳號後可能會對不上——帳號看起來是一個人、token
+  其實是另一個帳號的。把這種狀態抓下來，存進去的 profile 就握著別人的 token，
+  這正是「兩個 profile 都顯示同一個人用量」的原因。帳號探測現在會把 token 的
+  `rateLimitTier` 和 `~/.claude.json` 記錄的 tier 交叉比對；判定是不同帳號時，
+  「重新整理已登入」會擋下並說明（請登入正確帳號後再抓一次），不再存錯；開機探測
+  也會跳過這種壞 profile 不記錄。缺 tier 欄位時採 fail-open，不會擋到正常登入。
+  抓取成功也會回報存下的是哪個帳號。回歸測試在 `tests_accounts.py`。
+
+## v0.34.2 (2026-09-05)
+
+### Fixes
+
+- **Switching a Claude tab's account now keeps the conversation — it resumes
+  the same session instead of starting blank.** Each account is a separate
+  `CLAUDE_CONFIG_DIR`, so the running conversation's transcript lives under the
+  *old* account's config home; relaunching under the new account simply
+  couldn't see it, and the tab came back empty. The switch now copies the
+  current session's transcript (`<uuid>.jsonl`) into the new account's
+  `projects/<same cwd slug>/` and relaunches with `--resume <uuid>`, so the
+  same history continues under the new account — the point being to keep one
+  conversation going across an account/quota change. Same-account re-pins and
+  non-Claude tabs are unaffected. Regression tests in `tests_accounts.py`.
+
+  **切換 Claude 分頁的帳號現在會保留對話——用 --resume 接回同一段，不再空白重開。**
+  每個帳號是獨立的 `CLAUDE_CONFIG_DIR`，正在進行的對話 transcript 存在**舊**帳號
+  的 config 家目錄下，用新帳號重開根本看不到，分頁就空了。現在切換會把當前
+  session 的 transcript（`<uuid>.jsonl`）複製進新帳號的 `projects/<相同 cwd slug>/`，
+  並以 `--resume <uuid>` 重開，同一段歷史就在新帳號底下續接——目的就是讓一段對話
+  跨帳號／配額切換還能繼續。同帳號重釘與非 Claude 分頁不受影響。回歸測試在
+  `tests_accounts.py`。
+
+## v0.34.1 (2026-09-05)
+
+### Fixes
+
+- **Switching a tab's Claude/Codex account now actually takes effect — no more
+  forced re-login.** Account switching relaunches the tab's process with the
+  account pinned through env vars (`CLAUDE_CONFIG_DIR` /
+  `CLAUDE_CODE_OAUTH_TOKEN`, or `CODEX_HOME`). Those were passed only through
+  the subprocess environment of the `tmux new-session` call — but tmux spawns
+  the new pane from the **server's** environment, so whenever a tmux server was
+  already running (i.e. any time a second tab exists) the account vars were
+  silently dropped and the relaunched tab came up on the default/previous
+  account, looking logged-out. Only `SF_SID` survived, because it was the one
+  var passed the correct way (`-e KEY=VAL`). The account overrides are now
+  passed the same way, so the switched tab launches on the right, already
+  authenticated profile. Regression test in `tests_accounts.py` captures the
+  `tmux new-session` argv and asserts the account env is present.
+
+  **切換分頁的 Claude／Codex 帳號現在真的會生效——不再被迫重新 /login。**
+  切帳號是把分頁行程重啟、用環境變數釘住帳號（`CLAUDE_CONFIG_DIR`／
+  `CLAUDE_CODE_OAUTH_TOKEN`，或 `CODEX_HOME`）。這些變數之前只透過
+  `tmux new-session` 的 subprocess 環境傳——但 tmux 是從**server**的環境
+  spawn 新 pane，所以只要 tmux server 已在跑（有第二個分頁時必然），帳號變數
+  就被默默丟掉，重啟的分頁用預設／前一個帳號起來，看起來像沒登入。只有
+  `SF_SID` 活著，因為它是唯一用對方法（`-e KEY=VAL`）傳的。現在帳號 override
+  也照這個方法傳，切換的分頁就會用正確、已登入的 profile 啟動。
+  `tests_accounts.py` 加了回歸測試：攔 `tmux new-session` 的 argv、確認帳號
+  env 有在裡面。
+
+  切帳號仍是把該分頁重啟（換帳號＝換一組憑證／對話記錄），所以那一刻畫面上的
+  對話會重來——這是換帳號的本質，不是這次修的登入問題。
+
+## v0.34.0 (2026-09-05)
+
+### Added
+
+- **OpenCode joins the default AI preset list.** Every other supported CLI
+  (Claude, Codex, Antigravity, Pi) has shown up as a ready-to-open preset on a
+  brand-new install since the preset-migration mechanism was built, but
+  OpenCode was never added to that list — a fresh computer had no OpenCode
+  button to open, and the only way to reach it was the Accounts panel's
+  install prompt. Added to `_DEFAULT_AI_PRESETS`; the existing per-preset
+  migration (`_default_ai_presets_offered`) retrofits it into every already-
+  running install on next launch, same as a new one. Bare `opencode` command —
+  it manages its own model provider and login, so no extra flags are needed;
+  a computer without the binary yet gets the existing "not installed → install
+  here" gate the same as any other provider.
+
+  **OpenCode 加入預設 AI 清單。** 其他每個支援的 CLI（Claude、Codex、
+  Antigravity、Pi）自從 preset 遷移機制做好之後，全新安裝就會直接看到可開的
+  預設按鈕，唯獨 OpenCode 從沒被加進這份清單——全新電腦沒有 OpenCode 按鈕可
+  點，只能從帳號面板的安裝提示找到它。已加進 `_DEFAULT_AI_PRESETS`；既有的
+  per-preset 遷移機制（`_default_ai_presets_offered`）下次啟動就會把它補進
+  所有已經在跑的安裝，跟全新安裝一樣。指令用裸的 `opencode`——它自己管模型
+  provider 與登入，不需要額外旗標；本機還沒裝執行檔時走跟其他 provider 一樣
+  的「未安裝→就地安裝」引導。
+
 ## v0.33.0 (2026-09-05)
 
 ### Added
 
-- **iPhone / iPad companion app: a phone is now a Frame Link peer.** The new
-  SwiftUI app in `ios/` pairs with the same one-time code handshake as a second
-  ShellFrame, then mirrors any tab through the raw `/link/stream` channel into a
-  native terminal (SwiftTerm, same 16-colour theme as the desktop), sends
-  keystrokes straight to the PTY (`/link/input`, hardware keyboards on iPad
-  included) and offers a bridge-quality message composer (`/link/send`, the
-  Telegram injection path). One device binds any number of computers, each with
-  its own secret in the Keychain. iPhone defaults to a view-faithful mode that
-  renders at the computer's own cols×rows without touching the desktop; iPad
-  defaults to fitting the screen (`/link/resize`), and switching back restores
-  the original size. Pairing QR codes now appear in the desktop pairing modal
-  (`pair_url` — a `shellframe://pair?d=…` deep link that the TG `/link pair`
-  reply also carries, so a tap pairs from anywhere). Peers record a `kind`
-  (`ios`) for the sidebar.
+- **Pairing shows a QR code, and the entry point leads with the phone app.**
+  Generating a pairing code only ever produced a text code — pairing a phone
+  meant typing the host address, port and code by hand, and the entry chooser
+  read as computer-to-computer only ("配對另一台 ShellFrame") with no mention
+  of a phone app. `pairing_begin()` now also returns a `pair_url`
+  (`shellframe://pair?d=<base64url JSON>` carrying the host addresses, port,
+  code and binding mode), which the pairing modal draws as a QR code next to
+  the text code. The "＋ 配對" entry now leads with a "📱 手機／平板 App" button
+  that jumps straight to the QR, skipping the duplex/master/slave binding
+  picker — a phone app always connects as a full peer, so that choice was
+  never meaningful for it.
 
-  **iPhone／iPad 配對 App：手機成為 Frame Link 的一個 peer。** `ios/` 下的 SwiftUI
-  App 用與第二台 ShellFrame 完全相同的一次性配對碼握手配對，之後任一分頁經
-  `/link/stream` 原始串流進原生終端（SwiftTerm，與桌面同一組 16 色主題）、鍵盤
-  經 `/link/input` 直送 PTY（iPad 外接鍵盤照常）、並提供走 Telegram 注入路徑的
-  訊息框（`/link/send`）。一支裝置可綁多台電腦，金鑰各自存 Keychain。iPhone 預設
-  「照電腦尺寸」忠實顯示、不動桌面；iPad 預設撐滿（`/link/resize`），切回時還原
-  尺寸。桌面配對 modal 現在直接畫 QR（`pair_url`＝`shellframe://pair?d=…` 深連結，
-  TG `/link pair` 的回覆也帶同一條，點了就配）。peer 記錄 `kind`（`ios`）供側欄辨識。
-
-- **Relay for the public internet — the Telegram pattern applied to Frame Link.**
-  Two peers behind NAT could not reach each other. `relay_server.py` (stdlib,
-  in-memory) forwards opaque signed envelopes; the computer long-polls it
-  outbound (`link_relay.RelayClient`), replays each envelope against its own
-  listener over loopback and posts the answer back, so no inbound port is ever
-  needed. Pairing works through the relay too. Configure `frame_link.relay`
-  (`url`, `token`); the QR then carries it and clients fall back from direct to
-  relay automatically. The relay sees plaintext by design (Frame Link is
-  HMAC-only): run your own, behind TLS. Covered end to end by `tests_relay.py`
-  (pairing, signed calls, 401/404/504 paths, signature bypass attempts).
-
-  **公網 relay——把 Telegram 那套出站長輪詢用在 Frame Link 上。** 兩台都在 NAT 後
-  就互相連不到。`relay_server.py`（stdlib、in-memory）只轉送簽過章的 envelope；
-  電腦出站長輪詢（`link_relay.RelayClient`）、把 envelope 在 loopback 對自己的
-  listener 重放、再貼回答案，完全不需要開 port。配對本身也能走 relay。設定
-  `frame_link.relay`（`url`、`token`）後 QR 會帶上它，client 直連失敗自動改走 relay。
-  relay 看得到明文（Frame Link 只簽章不加密）：請自架、放 TLS 後面。
-  `tests_relay.py` 端到端涵蓋配對、簽章呼叫、401／404／504 與繞簽章的嘗試。
-
-- **Apple Watch voice notes, and `/link/voice` for phones.** The watch app
-  records an AAC clip, hands it to the iPhone over WatchConnectivity, and the
-  phone posts it (signed over its sha256, like `/link/file`) to the new
-  `/link/voice` route, which runs the exact chain Telegram voice notes and the
-  desktop microphone use (`voice_inject` → `_mic_transcribe_inject`: whisper →
-  refine → tagged inject for AI tabs, paste-only for shells) and returns the
-  transcript. The phone toolbar's 🎙 uses the same route.
-
-  **Apple Watch 錄音送出，手機也有 `/link/voice`。** 手錶 App 錄一段 AAC，經
-  WatchConnectivity 交給 iPhone，手機以簽章（蓋 sha256，同 `/link/file`）送到新
-  路由 `/link/voice`，電腦端跑與 TG 語音、桌面麥克風完全相同的鏈（`voice_inject`
-  → `_mic_transcribe_inject`：whisper → 精煉 → AI 分頁帶 tag 送出、shell 只貼不送）
-  並回傳逐字稿。手機工具列的 🎙 走同一條。
-
-- **`/link/snapshot` and `/link/signals`.** Snapshot returns the visible screen
-  with colours and cursor (`tmux capture-pane -e`) so a remote view opens looking
-  exactly like the desktop instead of a plain-text `peek`; signals exposes the
-  agent RED/YELLOW/GREEN event bus already used by the local HTTP API so a
-  remote client can badge tabs that need a decision.
-
-  **`/link/snapshot` 與 `/link/signals`。** snapshot 回傳含顏色與游標的可視畫面
-  （`tmux capture-pane -e`），遠端一開就跟桌面一樣，而不是純文字 `peek`；signals
-  把 local HTTP API 已有的 agent RED／YELLOW／GREEN 事件開給遠端，讓要你決定的分頁
-  能被標出來。
-
-### Changes
-
-- **TG `/link join` accepts a pairing link.** `/link join shellframe://pair?d=…`
-  reads host, port, code and relay from the link (tries the addresses first, then
-  the relay), so two computers can be paired from a phone without retyping.
-
-  **TG `/link join` 接受配對連結。** `/link join shellframe://pair?d=…` 從連結取
-  位址、port、碼、relay（先試位址、再走 relay），兩台電腦可以在手機上不重打字
-  就配起來。
-
-- **The sidebar's "＋ 配對" entry now leads with the phone/tablet app.** The
-  chooser used to read as computer-to-computer only ("配對另一台 ShellFrame")
-  with no mention of the app, and pairing a phone meant first picking a
-  duplex/master/slave binding mode that the app has no use for (it always
-  connects as a full peer). A new "📱 手機／平板 App" button sits above the
-  ShellFrame-to-ShellFrame options and goes straight to the QR code, skipping
-  that mode picker.
-
-  **側欄「＋ 配對」入口現在把手機／平板 App 放在最前面。** 原本的選單看起來只
-  是電腦對電腦（「配對另一台 ShellFrame」），完全沒提到 App；配對手機還得先選
-  一個對 App 毫無意義的單向／雙向綁定模式（App 一律以完整 peer 身分連線）。新
-  增的「📱 手機／平板 App」按鈕排在 ShellFrame 對 ShellFrame 選項之上，直接跳到
-  QR code，略過那個選單。
-
-### Internal
-
-- `docs/mobile-link.md` documents pairing, faithful mirroring, relay deployment,
-  the trust boundary and the watch path. Version number in this branch is
-  provisional pending merge.
-
-  `docs/mobile-link.md` 記錄配對、忠實鏡射、relay 部署、信任邊界與手錶路徑。
-  本分支的版號為暫定，合併時再定。
+  **配對現在會出現 QR code，入口也把手機 App 放在最前面。** 產生配對碼過去只給
+  一段純文字，手機端得手動輸入位址、port、碼；「＋ 配對」的選單看起來也只是
+  電腦對電腦（「配對另一台 ShellFrame」），完全沒提到手機 App。`pairing_begin()`
+  現在多回傳一個 `pair_url`（`shellframe://pair?d=<base64url JSON>`，帶位址、
+  port、碼、綁定模式），配對視窗會把它畫成 QR code、與文字碼並列顯示。「＋ 配對」
+  入口現在把「📱 手機／平板 App」放在最前面，點了直接跳到 QR，略過單向／雙向
+  綁定選單——手機 App 一律以完整 peer 身分連線，那個選擇對它從來就沒有意義。
 
 ## v0.32.8 (2026-09-05)
 

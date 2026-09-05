@@ -392,6 +392,9 @@ _DEFAULT_AI_PRESETS = [
     # sf-pi-spark——那支啟動器帶 SPARK_API_KEY 與 ~/.pi/agent/models.json，
     # 是機器特有設定，不適合當預設。沒安裝時由 registry 的 install 引導。
     {"name": "Pi", "cmd": "pi", "icon": "\U0001D70B"},              # 𝜋
+    # 裸指令即可——opencode 自己管模型 provider／登入，不需要 ShellFrame 加旗標。
+    # 沒安裝時走既有的「未安裝→安裝」gate（usage_probe.PROVIDER_SPECS['opencode']）。
+    {"name": "OpenCode", "cmd": "opencode", "icon": "\U0001F9E9"},  # 🧩
 ]
 
 _AUTONOMOUS_PRESET_CMDS = {
@@ -999,12 +1002,20 @@ class Session:
         self._decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
         self._start(self.cols, self.rows)
 
+    def _account_env_overrides(self) -> dict:
+        """Just the account-pinning env vars for this tab (CLAUDE_CONFIG_DIR /
+        CLAUDE_CODE_OAUTH_TOKEN / CODEX_HOME). Passed to `tmux new-session` via
+        `-e` so the pane actually inherits them (see _start_tmux)."""
+        overrides = {}
+        for provider, ref in self.account_refs.items():
+            if ref:
+                overrides.update(ACCOUNT_MANAGER.env_for(provider, ref))
+        return overrides
+
     def _launch_env(self) -> dict:
         """Build the child environment for this tab's account snapshot."""
         env = _session_env()
-        for provider, ref in self.account_refs.items():
-            if ref:
-                env.update(ACCOUNT_MANAGER.env_for(provider, ref))
+        env.update(self._account_env_overrides())
         return env
 
     def _start(self, cols, rows):
@@ -1035,12 +1046,24 @@ class Session:
             # which inherit the process env) can identify which ShellFrame
             # tab it belongs to. See sf_agent_hook.py.
             launch_env = self._launch_env()
+            # Per-session env vars must be passed with `-e KEY=VAL`, NOT via
+            # subprocess env: `tmux new-session` spawns the pane from the tmux
+            # SERVER's environment, so `env=launch_env` is silently ignored
+            # whenever a server already exists (i.e. any time there's more than
+            # the first tab). The account overrides (CLAUDE_CONFIG_DIR /
+            # CLAUDE_CODE_OAUTH_TOKEN / CODEX_HOME) live here — without `-e`
+            # they never reach the child, so an account switch launches with the
+            # wrong/default credentials and the tab looks logged-out
+            # (Howard 2026-09-05: 切換 token 後對話消失、要重新 /login).
+            new_session_env_args = ["-e", f"SF_SID={self.sid}"]
+            for _k, _v in self._account_env_overrides().items():
+                new_session_env_args += ["-e", f"{_k}={_v}"]
             result = subprocess.run([
                 "tmux", "new-session", "-d",
                 "-s", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
                 "-c", self.cwd,
-                "-e", f"SF_SID={self.sid}",
+                *new_session_env_args,
                 self.cmd,
             ], capture_output=True, timeout=5, env=launch_env)
             if result.returncode != 0:
@@ -3955,11 +3978,63 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
+    @staticmethod
+    def _claude_config_dir_for(refs: dict) -> str:
+        """這組 account refs 對應的 claude 設定家目錄（含 projects/transcripts）。
+        沒釘 profile → 預設 ~/.claude。"""
+        ref = (refs or {}).get("claude")
+        env = ACCOUNT_MANAGER.env_for("claude", ref) if ref else {}
+        return env.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+
+    def _carry_claude_transcript(self, old_session, csid: str, new_refs: dict):
+        """切帳號＝換 CLAUDE_CONFIG_DIR，新帳號的 projects 裡沒有這段對話的
+        transcript，`--resume` 會找不到、歷史就消失（Howard 2026-09-05）。
+        把當前對話的 uuid.jsonl 複製進新帳號的 projects/<同一個 cwd slug>/，
+        resume 才接得回同一段歷史。同帳號（config dir 沒變）則不必搬。"""
+        if not csid:
+            return
+        old_dir = self._claude_config_dir_for(getattr(old_session, "account_refs", {}))
+        new_dir = self._claude_config_dir_for(new_refs)
+        if os.path.abspath(old_dir) == os.path.abspath(new_dir):
+            return
+        src = getattr(old_session, "_hook_transcript_path", "") or ""
+        if not (src and os.path.isfile(src)):
+            import glob as _glob
+            for root in (os.path.join(old_dir, "projects"),
+                         os.path.expanduser("~/.claude/projects")):
+                hits = _glob.glob(os.path.join(root, "*", f"{csid}.jsonl"))
+                if hits:
+                    src = hits[0]
+                    break
+        if not (src and os.path.isfile(src)):
+            _dlog("account", f"switch: 找不到 {csid} 的 transcript，歷史無法搬移")
+            return
+        slug = os.path.basename(os.path.dirname(src))
+        dst_dir = os.path.join(new_dir, "projects", slug)
+        try:
+            os.makedirs(dst_dir, exist_ok=True)
+            dst = os.path.join(dst_dir, f"{csid}.jsonl")
+            if not os.path.exists(dst):
+                shutil.copy2(src, dst)
+            _dlog("account", f"switch: 搬移 transcript {csid} → {dst}")
+        except OSError as e:
+            _dlog("account", f"switch: transcript 搬移失敗 {e}")
+
     def _restart_session_for_account(self, sid: str, account_refs: dict):
         old = self.sessions.get(sid)
         if not old:
             raise ValueError("此 tab 不存在或已關閉")
         cmd = old.cmd
+        # 保留對話：claude 分頁換帳號時，把當前 uuid 的 transcript 搬進新帳號的
+        # config dir，並以 --resume <uuid> 重開，歷史才不會消失。
+        csid = getattr(old, "session_id", "") or ""
+        try:
+            is_claude = usage_probe.detect_ai(cmd) == "claude"
+        except Exception:
+            is_claude = False
+        if is_claude and csid:
+            self._carry_claude_transcript(old, csid, account_refs)
+            cmd = self._cmd_with_resume(cmd, csid)
         cols, rows = old.cols, old.rows
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)
@@ -4058,14 +4133,39 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
     def account_capture_login(self, provider: str) -> str:
-        """Capture credentials after an explicit login flow into a new profile."""
+        """Capture credentials after an explicit login flow into a new profile.
+
+        防呆（Howard 2026-09-05）：切帳號殘留會讓 ~/.claude.json 的帳號資料與
+        keychain 的 token 對不上（帳號顯示 team、token 其實是個人），抓下來的
+        profile 就用錯 token → 「兩個帳號都顯示同一個人的用量」。抓取前先驗證
+        兩邊一致，對不上就擋下、不寫入，並告訴使用者去重新登入選對帳號。"""
         try:
             cfg = self._account_config()
-            ref = ACCOUNT_MANAGER.sync_current(cfg, provider)
+            discovered = ACCOUNT_MANAGER.discover(provider)
+            if not discovered:
+                raise ValueError("尚未偵測到已登入帳號")
+            mm = discovered.get("mismatch") if isinstance(discovered, dict) else None
+            if mm:
+                who = mm.get("email") or mm.get("organization") or "?"
+                tiers = "／".join(mm.get("account_tiers") or []) or "?"
+                plan = mm.get("token_plan") or mm.get("token_tier") or "?"
+                return json.dumps({
+                    "success": False,
+                    "mismatch": True,
+                    "message": (f"擋下：憑證與帳號資料對不上，沒有存下。\n"
+                                f"帳號顯示 {who}（{tiers}），但目前的登入憑證是"
+                                f"「{plan}」方案——不是同一個帳號。\n"
+                                f"這通常是切帳號殘留造成的：請在該分頁重新 /login、"
+                                f"確認登入到正確帳號後，再按一次「重新整理已登入」。"),
+                }, ensure_ascii=False)
+            ref = ACCOUNT_MANAGER.sync_current(cfg, provider, discovered)
             if not ref:
                 raise ValueError("尚未偵測到已登入帳號")
             save_config(cfg)
+            captured = ACCOUNT_MANAGER.profile(cfg, provider, ref) or {}
+            who = captured.get("email") or captured.get("label") or ref
             return json.dumps({"success": True, "ref": ref,
+                               "message": f"已存下帳號：{who}",
                                "state": self._account_state()[1]}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
@@ -6806,9 +6906,15 @@ try {
             }
 
         elif cmd == "list":
-            # List all sessions with sid + label + alive state
+            # List all sessions with sid + label + alive state, in the same
+            # durable order the desktop tab bar uses (drag-reorder persists to
+            # config session_order via _ordered_sids). A remote viewer should
+            # see the tabs in the user's own order, not raw dict order.
             sessions_info = []
-            for sid, s in self.sessions.items():
+            for sid in self._ordered_sids():
+                s = self.sessions.get(sid)
+                if not s:
+                    continue
                 sessions_info.append({
                     "sid": sid,
                     "label": getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid),
@@ -7089,6 +7195,21 @@ try {
                 return {"success": False, "message": "Rename failed"}
             except Exception as e:
                 return {"success": False, "message": f"Rename failed: {e}"}
+
+        elif cmd == "reorder":
+            # Remote drag-to-reorder (the phone app). Deliberately the *same*
+            # entry point the desktop tab drag uses, so session_order lands on
+            # disk and the Telegram /1 /2 numbering follows — reorder on either
+            # surface and the other one agrees on the next refresh.
+            try:
+                order = args.get("order") or []
+                if not isinstance(order, list) or not order:
+                    return {"success": False, "message": "order (non-empty list) required"}
+                result_json = self.reorder_sessions(json.dumps(order))
+                result = json.loads(result_json) if isinstance(result_json, str) else result_json
+                return result if isinstance(result, dict) else {"success": True}
+            except Exception as e:
+                return {"success": False, "message": f"Reorder failed: {e}"}
 
         elif cmd == "ui_sessions":
             # 診斷用：回傳 webview「眼中」的 tabs/labels。專治「後端說有、

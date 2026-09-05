@@ -2993,10 +2993,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     updateTabHint();   // 改名／關閉分頁都會經過這裡
   }
 
+  // Set whenever this window pushes an order, so the 1.5 s backend sync below
+  // doesn't race a drag that is still in flight and snap the tab back.
+  let _localOrderPushedAt = 0;
   function syncBridgeOrder() {
-    pywebview.api.reorder_sessions(JSON.stringify(
-      sessionOrder.filter(s => sessions[s]?.bridgeEnabled !== false)
-    ));
+    // Push the FULL order, not just the bridge-enabled tabs. The backend
+    // persists what it receives as `session_order`, and both a restart and a
+    // paired phone read that back — filtering here is what used to shuffle
+    // bridge-disabled tabs to the end everywhere else. `reorder_slots` already
+    // ignores any sid it has no bridge slot for, so sending all of them is safe.
+    _localOrderPushedAt = Date.now();
+    pywebview.api.reorder_sessions(JSON.stringify(sessionOrder));
   }
 
   // ── Sidebar (mouse-based drag — HTML5 drag unreliable in WKWebView) ──
@@ -7830,6 +7837,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             sessions[s.sid].glassesEnabled = nextGlasses;
             changed = true;
           }
+        }
+      }
+
+      // Adopt the backend's tab order. `list` reports tabs in the durable
+      // `session_order`, so a drag performed on a paired phone shows up here
+      // within a tick instead of waiting for a restart. Only when the two sides
+      // hold the same set (never reorder from a half-synced list), and not
+      // right after a local drag whose own push may still be in flight.
+      if (Date.now() - _localOrderPushedAt > 3000) {
+        const backendOrder = backend.map(s => s.sid).filter(sid => sessions[sid]);
+        if (backendOrder.length === sessionOrder.length &&
+            backendOrder.join(' ') !== sessionOrder.join(' ')) {
+          sessionOrder = backendOrder;
+          changed = true;
         }
       }
 

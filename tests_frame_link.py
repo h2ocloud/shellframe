@@ -67,6 +67,7 @@ class Node:
         self.created = []        # cmd via /link/new
         self.closed = []         # sid via /link/close
         self.pasted = []         # (filename, data_b64) via /link/paste
+        self.reorders = []       # order list via /link/reorder
 
         def execute(cmd, args):
             if cmd == "list":
@@ -96,6 +97,9 @@ class Node:
                 return {"success": True, "details": {"sid": "sNEW"}}
             if cmd == "close_session":
                 self.closed.append(args.get("sid"))
+                return {"success": True}
+            if cmd == "reorder":
+                self.reorders.append(list(args.get("order") or []))
                 return {"success": True}
             if cmd == "raw_screen":
                 return {"success": True,
@@ -330,6 +334,10 @@ def main():
               not (rinfo.get("details", {}).get("sessions")))
         rpk = b.link.remote_peek(a.fid, "s1")
         check("slave peek on master denied", rpk.get("success") is False)
+        before_ro = len(a.reorders)
+        rod = b.link.remote_reorder(a.fid, ["s1", "s2"])
+        check("slave reorder on master denied",
+              rod.get("success") is False and len(a.reorders) == before_ro)
         # mode 竄改：joiner 收到被改過 mode 的 host proof → 驗不過
         # （直接呼叫 join 對假 host 難模擬，改驗 proof 綁 mode）
         pn, hn = "a" * 32, "b" * 16
@@ -369,6 +377,12 @@ def main():
         rc = b.link.remote_close(a.fid, "s2")
         check("remote_close closes a session",
               rc.get("success") and "s2" in a.closed)
+        ro = b.link.remote_reorder(a.fid, ["s2", "s1"])
+        check("remote_reorder reaches peer",
+              ro.get("success") and a.reorders and a.reorders[-1] == ["s2", "s1"])
+        bad_ro = b.link.remote_reorder(a.fid, [])
+        check("remote_reorder rejects an empty order",
+              bad_ro.get("success") is not True)
         # 遠端貼圖：位元組落地 + bracketed paste 注入
         rp = b.link.remote_paste(a.fid, "s1", "data:image/png;base64,aGVsbG8=", "shot.png")
         check("remote_paste saves file and injects path",

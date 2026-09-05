@@ -930,6 +930,21 @@ class FrameLink:
                         "sid": body.get("sid", ""),
                         "reason": "frame_link"}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/reorder":
+                    # Drag-to-reorder from a remote viewer. Routes into the same
+                    # reorder the desktop tab drag uses, so session_order is
+                    # persisted and TG /1 /2 numbering follows.
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    order = body.get("order")
+                    if not isinstance(order, list) or not order:
+                        return self._send(400, {"success": False,
+                            "message": "order (non-empty list) required"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute("reorder", {"order": order}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/paste":
                     # 遠端檢視端貼上的圖片：落地成檔 → 用 bracketed paste 把路徑
                     # 注入對方的 session（跟本機貼圖同一機制）。
@@ -1425,6 +1440,20 @@ class FrameLink:
                                "rows": int(rows)}).encode()
             return self._signed_request(peer, "POST", "/link/resize", body,
                                         timeout=5)
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def remote_reorder(self, peer_id: str, order: list) -> dict:
+        """Drag-to-reorder the peer's tab list (the phone app). Goes through the
+        peer's own reorder path, so its `session_order` is persisted and its TG
+        numbering follows — both surfaces then agree."""
+        peer = self._peer(peer_id)
+        if not peer or not self._addressable(peer):
+            return {"success": False, "message": "peer 不可直連"}
+        try:
+            body = json.dumps({"order": list(order)}).encode()
+            return self._signed_request(peer, "POST", "/link/reorder", body,
+                                        timeout=10)
         except Exception as e:
             return {"success": False, "message": str(e)}
 
