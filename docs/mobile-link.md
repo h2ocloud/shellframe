@@ -39,11 +39,41 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
   會亮橘色驚嘆號。
 - 多台電腦：每台是獨立 peer、獨立金鑰；側欄一台一區。
 
-## 公網：relay（TG 式出站長輪詢）
+## 公網：三條路，預設走 Tailscale
 
-手機在外面、電腦在 NAT 後 → 兩邊都連不進對方。解法跟 Telegram bridge 一樣：
-**電腦只出不進**，去一個 relay 長輪詢；手機把請求投到 relay，電腦拉回來、在
-本機 loopback 對自己的 Frame Link listener 重放、把回應貼回去。
+手機在外面、電腦在 NAT 後 → 兩邊都連不進對方。三種解法，門檻差很多：
+
+| 做法 | 誰適合 | 要準備什麼 |
+|---|---|---|
+| **Tailscale**（建議、預設） | 所有人 | 兩邊各裝一次 App 並登入同一帳號 |
+| relay | 自己有主機的人 | 一台主機 + 網域 + TLS |
+| port-forward／反向代理 | 電腦位址固定的情況 | 固網 IP 或網域、路由器設定 |
+
+### Tailscale（建議寫進使用說明的那條）
+
+Tailscale 把你自己的裝置接成一個私人網路，每台拿到一個固定的 `100.x.x.x`
+位址，不管在家、在公司還是走 4G 都連得到，中間是 WireGuard 加密——剛好補上
+Frame Link 只簽章、不加密這件事。
+
+對 ShellFrame 來說**完全不用改任何設定**：那個 `100.x` 位址就跟區網 IP 一樣，
+在 App 的「編輯位址」填進去、port 仍是 8767 就好。
+
+1. 電腦：`brew install --cask tailscale`（安裝要 sudo），開啟並登入。
+2. 手機／平板：App Store 裝 Tailscale，登入**同一個帳號**。
+3. 電腦上看它給的 `100.x.x.x`。
+4. App →（該台電腦的）⋯ → 編輯位址 → 填 `100.x.x.x`，port `8767`。
+
+之後配對與日常使用完全一樣，只是位址換成永遠連得到的那一個。這也是同類工具
+（例如 OpenClaw）的官方建議做法——它們同樣不提供資料 relay。
+
+⚠️ 用 MagicDNS 名稱（`xxx.ts.net`）而不是 `100.x` 數字位址時，走的是網域名稱，
+需要 App 的 ATS 允許非 HTTPS 網域——這點已修（見下方「App 端注意」）。
+
+### relay（TG 式出站長輪詢）
+
+自己有主機時才需要。解法跟 Telegram bridge 一樣：**電腦只出不進**，去一個
+relay 長輪詢；手機把請求投到 relay，電腦拉回來、在本機 loopback 對自己的
+Frame Link listener 重放、把回應貼回去。
 
 ```
 手機 ── POST /r/<fid>/call ──▶ relay ◀── GET /r/<fid>/pull (long-poll 25s) ── 電腦
@@ -62,8 +92,14 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
   ```
   或 `pywebview.api.link_set_relay(url, token)`。設定後產生的 QR 會帶 relay，
   手機拿到就會「直連優先、直連不到走 relay」自動切換（側欄顯示「經 relay」）。
-  `public_host` 是有 port-forward 時對外的 IP／網域，會一起放進 QR 的 hosts。
-- 不用 relay 也可以：VPN／Tailscale 讓手機直連 8767，或 port-forward + `public_host`。
+- `public_host` 是有 port-forward 時對外的 IP／網域，也會一起放進 QR 的 hosts。
+
+### App 端注意
+
+App 的 ATS 只保留 `NSAllowsArbitraryLoads`。**不要**再加回
+`NSAllowsLocalNetworking`：iOS 10 起只要有那個 key，`NSAllowsArbitraryLoads`
+會整個被忽略，結果只有 IP 位址連得通，任何網域名稱（DDNS、relay 網址、
+MagicDNS）都會在送出前就被擋掉，畫面上只顯示「連不上」。
 
 ### 信任邊界（請看）
 
