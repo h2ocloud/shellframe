@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""遠端分頁的附檔與狀態燈（v0.35.2）。
+"""遠端分頁的上滑歷史、附檔與狀態燈（v0.35.2）。
 
-回報三件事：遠端分頁無法上滑看歷史、沒有工作狀態燈、不能貼圖。這支守後兩件
-——附檔與狀態燈；上滑歷史另計。
+回報三件事：遠端分頁無法上滑看歷史、沒有工作狀態燈、不能貼圖。這支三件都守。
+
+上滑歷史壞在兩層：後端沒有 history 端點，前端連滾輪監聽都沒裝在遠端 pane 上。
+只修一層，使用者看到的還是「上滑沒反應」。
 
 附檔：拖放拿到的是**本機路徑**，而遠端分頁不能用 write_input（那是本機 PTY），
 drop handler 原本完全沒判斷遠端，檔案就這樣靜默消失。讀檔轉 base64 刻意放後端：
@@ -75,6 +77,32 @@ check("狀態取自算好的快照，不在列表時解 transcript",
 check("取不到狀態回空字串（寧可沒燈也不拖慢列表）",
       Api._agent_state_for_list(Api(), "no-such-sid") == "")
 check("遠端側欄會畫狀態燈", "const rState = rt.agent_state" in idx and "busy-dot" in idx)
+
+# ── 上滑歷史 ──
+check("frame_link 有 remote_history", hasattr(frame_link.FrameLink, "remote_history"))
+check("Api 有 link_remote_history", hasattr(Api, "link_remote_history"))
+fl_src = (HERE / "frame_link.py").read_text(encoding="utf-8")
+check("有 /link/history 端點", 'path == "/link/history"' in fl_src)
+check("端點跟 peek 一樣要過 _peer_may_control",
+      '/link/history' in fl_src.split('def do_GET')[-1].split('path == "/link/stream"')[0]
+      and "_peer_may_control" in fl_src.split('path == "/link/history"')[1].split("return")[0])
+hist_src = inspect.getsource(frame_link.FrameLink.remote_history)
+check("timeout 給得比 peek 寬（對方要先重建 transcript）", "timeout=15" in hist_src)
+check("cols 有帶過去（表格／橫線要照對方寬度排）", "cols=" in hist_src)
+
+check("後端有獨立的 history 指令（不併進 peek）", 'elif cmd == "history":' in main_src)
+hist_cmd = main_src.split('elif cmd == "history":')[1].split('elif cmd == "peek":')[0]
+check("history 帶 ansi 出去（peek 會剝掉，貼回 xterm 會破圖）", "ansi=True" in hist_cmd)
+check("history 回傳 source（overlay 要標歷史來源）", '"source"' in hist_cmd)
+check("遠端行數有上限（帶 ANSI 的一萬行不該走簽章連線）", "min(int(args.get(\"lines\"" in hist_cmd)
+
+check("前端有統一的 fetchHistory", "async function fetchHistory(sid, cols)" in idx)
+check("fetchHistory 內部才分本機／遠端",
+      "if (isRemoteSid(sid))" in idx.split("async function fetchHistory")[1].split("function setupScrollHistory")[0])
+check("overlay 只認一種回傳形狀",
+      idx.count("ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi })") == 1)
+check("遠端 pane 有掛滾輪監聽（原本完全沒裝）",
+      "setupScrollHistory(sid, pane);\n    return sessions[sid];" in idx)
 
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")

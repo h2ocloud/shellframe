@@ -56,6 +56,7 @@ def _bridge(calls, responder):
     br._slots_lock = threading.Lock()
     br._user_active = {}
     br._user_chat = {}
+    br._rate_limit_seen = {}   # 正常由 __init__ 建；這裡是 object.__new__ 的假 bridge
     br._last_prune_ts = 0.0
     br.paused = False
     br.config = types.SimpleNamespace(bot_token="x")

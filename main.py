@@ -6791,6 +6791,10 @@ try {
         return json.dumps(self._link().remote_peek(peer_id, sid, lines),
                           ensure_ascii=False)
 
+    def link_remote_history(self, peer_id: str, sid: str, cols: int = 0) -> str:
+        return json.dumps(self._link().remote_history(peer_id, sid, cols),
+                          ensure_ascii=False)
+
     def link_remote_stream(self, peer_id: str, sid: str, since: int = -1) -> str:
         return json.dumps(self._link().remote_stream(peer_id, sid, since),
                           ensure_ascii=False)
@@ -7193,6 +7197,38 @@ try {
                                     "ai": bool(res.get("ai"))}}
             except Exception as e:
                 return {"success": False, "message": f"voice_inject failed: {e}"}
+
+        elif cmd == "history":
+            # Frame Link 遠端分頁的上滑歷史。刻意不併進 peek：peek 是給手機端／
+            # master 編排用的，它剝掉空行、丟掉 ANSI 與 source，貼回 xterm 會破圖。
+            # 這裡原封不動把 overlay 要的三個欄位（text / source / ansi）帶回去。
+            try:
+                sid = args.get("sid", "")
+                if not sid:
+                    return {"success": False, "message": "No sid provided"}
+                if sid not in self.sessions:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                # 上限比本機的 10000 低：帶 ANSI 的一萬行要走簽章連線，是好幾百 KB，
+                # 而 overlay 本來就是拿來回看最近的內容。
+                max_lines = max(1, min(int(args.get("lines", 3000)), 3000))
+                cols = int(args.get("cols", 0) or 0)
+                raw = self.get_clean_history(sid, max_lines=max_lines,
+                                             ansi=True, cols=cols)
+                result = json.loads(raw) if isinstance(raw, str) else raw
+                if not result.get("success"):
+                    return {"success": False,
+                            "message": result.get("reason", "history failed")}
+                return {
+                    "success": True,
+                    "message": f"{len(result.get('text', '').splitlines())} lines",
+                    "details": {
+                        "text": result.get("text", ""),
+                        "source": result.get("source", ""),
+                        "ansi": bool(result.get("ansi")),
+                    },
+                }
+            except Exception as e:
+                return {"success": False, "message": f"History failed: {e}"}
 
         elif cmd == "peek":
             try:

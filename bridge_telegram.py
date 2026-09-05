@@ -874,6 +874,19 @@ _RATE_LIMIT_RE = re.compile(
     r"hit your (?:session|usage) limit|/rate-limit-options|/usage-credits to finish",
     re.I)
 _RATE_LIMIT_RESET_RE = re.compile(r'resets?\s+([^\n·]+?)(?:\s*[\|·]|$)', re.I | re.MULTILINE)
+# "Usage limit reset · continuing automatically" — printed when the window rolls
+# over. Deliberately not matching "resets", because "resets 10:40pm" is part of
+# the *banner*: reading it as a clear would silently swallow every real episode.
+_RATE_LIMIT_CLEARED_RE = re.compile(r'limit\s+reset(?!s)\b', re.I)
+# The horizontal rules that fence the input box. Used to find where the live
+# prompt starts, so "how far above the prompt is this banner" is answerable.
+_INPUT_BOX_RULE_RE = re.compile(r'^\s*[\u2500-\u257f\-=_]{20,}\s*$')
+# A live episode leaves the banner within a few lines of the input box: the
+# auto-continue path adds one status line, the /rate-limit-options menu about
+# five (prompt + numbered choices + the Enter/Esc footer). Beyond that the
+# conversation has moved on and the banner is scrollback — which never ages
+# out, so it would match forever.
+_RATE_LIMIT_LIVE_TAIL = 6
 
 
 class _OrderedSet:
@@ -1131,6 +1144,12 @@ class TelegramBridge(BridgeBase):
         self._slot_order = []      # ordered list of sids
         self._user_active = {}     # user_id -> sid (current session per user)
         self._user_chat = {}       # user_id -> chat_id
+        # sid -> signature of the rate-limit episode already announced. On the
+        # slot it would be lost on every bridge start (fresh SessionSlot), and
+        # the bridge starts more often than an episode lasts — that alone
+        # re-announced a limit that had been over for hours. Persisted with the
+        # rest of the routing state.
+        self._rate_limit_seen = {}
         self._slots_lock = threading.Lock()
         self._last_prune_ts = 0.0
 
@@ -2773,19 +2792,56 @@ class TelegramBridge(BridgeBase):
         slot.pending_menu_options = []
         return ""
 
+    @staticmethod
+    def _rate_limit_signature(info: dict) -> str:
+        """Identity of one rate-limit episode.
+
+        The reset time alone is not enough — a limit hit twice in the same
+        window carries the same time — so the banner line rides along, and the
+        interactive flag distinguishes a plain banner from a menu that wants an
+        answer.
+        """
+        return "|".join((info.get("reset", ""),
+                         "1" if info.get("interactive") else "0",
+                         info.get("signal", "")))
+
     def _detect_rate_limit(self, slot):
         """Scan the live screen for Claude rate-limit / session-limit signals.
 
         Reads directly from _slot_display (not from the _extract_new_text path
         which filters ⎿ lines) so the banner is never missed.
 
-        Returns a dict {"reset": str|"", "interactive": bool} on match,
-        or None when no rate-limit signal is found on screen.
+        A banner that is merely *visible* is not an episode: the text stays on
+        screen for the rest of the conversation, so the match is only taken as
+        live when nothing below it says the window rolled over and the prompt
+        is still close underneath.
+
+        Returns {"reset": str|"", "interactive": bool, "signal": str} on match,
+        or None when no live rate-limit signal is on screen.
         """
-        lines = self._slot_display(slot)
-        screen_text = "\n".join(l.rstrip() for l in lines)
-        if not _RATE_LIMIT_RE.search(screen_text):
+        rows = [l.rstrip() for l in self._slot_display(slot)]
+        hit_idx = -1
+        for i, row in enumerate(rows):
+            if _RATE_LIMIT_RE.search(row):
+                hit_idx = i          # last match wins — a retried episode is
+                                     # the one we care about, not the first
+        if hit_idx < 0:
             return None
+        # The episode ended on screen: Claude printed its own reset line below
+        # the banner. Both stay visible for the rest of the conversation.
+        for row in rows[hit_idx + 1:]:
+            if _RATE_LIMIT_CLEARED_RE.search(row):
+                return None
+        # Still on screen but no longer the live state.
+        box_top = len(rows)
+        rule_idx = [i for i, row in enumerate(rows) if _INPUT_BOX_RULE_RE.match(row)]
+        for a, b in zip(rule_idx, rule_idx[1:]):
+            if b - a <= 6:
+                box_top = a          # last such pair is the input box; earlier
+                                     # rules are markdown in the conversation
+        if sum(1 for row in rows[hit_idx + 1:box_top] if row.strip()) > _RATE_LIMIT_LIVE_TAIL:
+            return None
+        screen_text = "\n".join(rows)
         reset = ""
         m = _RATE_LIMIT_RESET_RE.search(screen_text)
         if m:
@@ -2794,7 +2850,8 @@ class TelegramBridge(BridgeBase):
             re.search(r'/rate-limit-options', screen_text, re.I)
             or re.search(r'stop and wait|switch to usage credits', screen_text, re.I)
         )
-        return {"reset": reset, "interactive": interactive}
+        return {"reset": reset, "interactive": interactive,
+                "signal": rows[hit_idx].strip()}
 
     def _notify_rate_limit(self, slot, info: dict):
         """Send a TG notification for a rate-limit episode.
@@ -3363,17 +3420,22 @@ class TelegramBridge(BridgeBase):
                         _blog(f"[rate-limit] {sid} detect failed: {e}\n")
                         continue
                     if info is not None:
-                        if not slot.rate_limit_notified:
-                            slot.rate_limit_notified = True
+                        sig = self._rate_limit_signature(info)
+                        slot.rate_limit_notified = True
+                        if self._rate_limit_seen.get(sid) != sig:
+                            self._rate_limit_seen[sid] = sig
+                            self._save_state()
                             threading.Thread(
                                 target=self._notify_rate_limit,
                                 args=(slot, info),
                                 daemon=True,
                             ).start()
                     else:
-                        # Signal gone (limit reset / user acted) — clear flag
-                        # so the next episode re-notifies.
+                        # Signal gone (limit reset / user acted) — forget the
+                        # episode so the next one announces itself.
                         slot.rate_limit_notified = False
+                        if self._rate_limit_seen.pop(sid, None) is not None:
+                            self._save_state()
 
             # Claude auto-compact check — runs outside output_lock so the
             # scan doesn't contend with feed_output. 一個 regex 掃最後 ~8 行 /slot，
@@ -4192,6 +4254,7 @@ class TelegramBridge(BridgeBase):
                 "user_active": {str(uid): sid for uid, sid in self._user_active.items()},
                 "user_chat": {str(uid): cid for uid, cid in self._user_chat.items()},
                 "default_active_sid": getattr(self, '_default_active_sid', None),
+                "rate_limit_seen": dict(getattr(self, '_rate_limit_seen', {})),
             }
             self._OFFSET_FILE.write_text(
                 json.dumps(data, ensure_ascii=False),
@@ -4234,6 +4297,11 @@ class TelegramBridge(BridgeBase):
                     self._user_chat[uid] = cid
             if saved_default and saved_default in self.slots and not getattr(self, '_default_active_sid', None):
                 self._default_active_sid = saved_default
+            # Sessions that are gone drop out here, so the map cannot grow
+            # without bound across restarts.
+            for sid, sig in (data.get("rate_limit_seen") or {}).items():
+                if sid in self.slots and sid not in self._rate_limit_seen:
+                    self._rate_limit_seen[sid] = sig
             _blog(f"[restore] applied restored={restored} user_chat={dict(self._user_chat)} "
                   f"default={getattr(self, '_default_active_sid', None)!r}\n")
         except Exception as e:
@@ -5252,9 +5320,11 @@ class TelegramBridge(BridgeBase):
             label_text = label_map.get(choice, choice)
             try:
                 slot.write_fn(f"{choice}\r")
-                # Clear the notified flag so if the same limit reappears we
+                # Clear the notified state so if the same limit reappears we
                 # don't stay silent (shouldn't happen, but cheap insurance).
                 slot.rate_limit_notified = False
+                self._rate_limit_seen.pop(sid, None)
+                self._save_state()
             except Exception as e:
                 tg_api(self.config.bot_token, "editMessageText", {
                     "chat_id": chat_id, "message_id": message_id,

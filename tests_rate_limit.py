@@ -34,6 +34,27 @@ _BR._slot_order = []
 _BR._user_active = {}
 _BR._user_chat = {}
 _BR.config = types.SimpleNamespace(bot_token="FAKE_TOKEN")
+_BR._rate_limit_seen = {}
+_BR._save_state = lambda: None
+
+
+def _tick(bridge, slot):
+    """One slow_tick of the poll loop's rate-limit branch.
+
+    Copied structurally from _poll_loop so the dedup tests exercise the real
+    decision (persisted signature) rather than a flag the loop no longer reads.
+    """
+    info = bridge._detect_rate_limit(slot)
+    if info is not None:
+        sig = bridge._rate_limit_signature(info)
+        slot.rate_limit_notified = True
+        if bridge._rate_limit_seen.get(slot.sid) != sig:
+            bridge._rate_limit_seen[slot.sid] = sig
+            bridge._notify_rate_limit(slot, info)
+    else:
+        slot.rate_limit_notified = False
+        bridge._rate_limit_seen.pop(slot.sid, None)
+    return info
 
 
 # ── helper：偽造一個 SessionSlot ─────────────────────────────────────────────
@@ -100,7 +121,7 @@ def test_interactive_menu_detected():
 
 
 def test_dedup_same_tick_only_notifies_once():
-    """連續兩次偵測到 rate-limit，只通知一次。"""
+    """連續兩 tick 偵測到同一個 episode，只通知一次。"""
     lines = [
         "  ⎿  You've hit your session limit · resets 5pm (Asia/Taipei)",
         "  /usage-credits to finish what you're working on.",
@@ -109,34 +130,57 @@ def test_dedup_same_tick_only_notifies_once():
     _BR._slot_order = [slot.sid]
     _BR._user_chat = {1: 9999}
     _BR._user_active = {1: slot.sid}
+    _BR._rate_limit_seen = {}
 
     _sent_messages.clear()
     _bt.tg_api = _fake_tg_api
     try:
-        # 第一 tick：應通知
-        info = _BR._detect_rate_limit(slot)
-        if info is not None and not slot.rate_limit_notified:
-            slot.rate_limit_notified = True
-            _BR._notify_rate_limit(slot, info)
-
+        _tick(_BR, slot)
         first_count = len(_sent_messages)
         assert first_count >= 1, "第一次應送通知"
 
-        # 第二 tick：已 notified，不重複
-        info = _BR._detect_rate_limit(slot)
-        if info is not None and not slot.rate_limit_notified:
-            slot.rate_limit_notified = True
-            _BR._notify_rate_limit(slot, info)
+        _tick(_BR, slot)
+        assert len(_sent_messages) == first_count, (
+            f"第二 tick 不應再送（sent_count: {len(_sent_messages)}）")
+    finally:
+        _bt.tg_api = _orig_tg_api
 
-        second_count = len(_sent_messages)
-        assert second_count == first_count, (
-            f"第二 tick 不應再送（sent_count: {second_count} vs {first_count}）")
+
+def test_dedup_survives_bridge_restart():
+    """Bridge 重啟（slot 物件重建）後不得重送同一個 episode。
+
+    這是 TG 狂跳的主因：旗標掛在 SessionSlot 上，bridge 一重啟就歸零，
+    而 bridge 重啟得比一次額度視窗還頻繁。
+    """
+    lines = [
+        "  ⎿  You've hit your session limit · resets 5pm (Asia/Taipei)",
+        "  /usage-credits to finish what you're working on.",
+    ]
+    slot = _make_slot(lines)
+    _BR._slot_order = [slot.sid]
+    _BR._user_chat = {1: 9999}
+    _BR._user_active = {1: slot.sid}
+    _BR._rate_limit_seen = {}
+
+    _sent_messages.clear()
+    _bt.tg_api = _fake_tg_api
+    try:
+        _tick(_BR, slot)
+        first_count = len(_sent_messages)
+        assert first_count >= 1
+
+        # 重啟：slot 全新（rate_limit_notified=False），signature map 從磁碟回來
+        fresh = _make_slot(lines)
+        _tick(_BR, fresh)
+        assert len(_sent_messages) == first_count, (
+            "重啟後重送了同一個 episode"
+            f"（sent_count: {len(_sent_messages)} vs {first_count}）")
     finally:
         _bt.tg_api = _orig_tg_api
 
 
 def test_clear_and_renotify_after_reset():
-    """訊號消失 → 清旗標 → 再次出現 → 重新通知。"""
+    """訊號消失 → 忘掉 episode → 再次出現 → 重新通知。"""
     rate_lines = [
         "  ⎿  You've hit your session limit · resets 5pm (Asia/Taipei)",
         "  /usage-credits to finish what you're working on.",
@@ -149,40 +193,92 @@ def test_clear_and_renotify_after_reset():
     _BR._slot_order = [slot.sid]
     _BR._user_chat = {1: 9999}
     _BR._user_active = {1: slot.sid}
+    _BR._rate_limit_seen = {}
 
     _sent_messages.clear()
     _bt.tg_api = _fake_tg_api
     try:
-        # Episode 1
-        info = _BR._detect_rate_limit(slot)
-        if info is not None and not slot.rate_limit_notified:
-            slot.rate_limit_notified = True
-            _BR._notify_rate_limit(slot, info)
+        _tick(_BR, slot)
         count_after_ep1 = len(_sent_messages)
         assert count_after_ep1 >= 1
 
-        # 訊號消失 → 清旗標
         slot.screen = _FakeScreen(normal_lines)
         slot._display_cache = None
-        info2 = _BR._detect_rate_limit(slot)
-        assert info2 is None, "正常畫面應回 None"
-        if info2 is None:
-            slot.rate_limit_notified = False
+        assert _tick(_BR, slot) is None, "正常畫面應回 None"
+        assert slot.sid not in _BR._rate_limit_seen, "episode 應已忘掉"
 
-        assert not slot.rate_limit_notified, "旗標應已清除"
-
-        # Episode 2：rate-limit 再次出現 → 應再通知
         slot.screen = _FakeScreen(rate_lines)
         slot._display_cache = None
-        info3 = _BR._detect_rate_limit(slot)
-        if info3 is not None and not slot.rate_limit_notified:
-            slot.rate_limit_notified = True
-            _BR._notify_rate_limit(slot, info3)
-        count_after_ep2 = len(_sent_messages)
-        assert count_after_ep2 > count_after_ep1, (
-            f"第二次 episode 應再送通知（sent_count: {count_after_ep2}）")
+        _tick(_BR, slot)
+        assert len(_sent_messages) > count_after_ep1, (
+            f"第二次 episode 應再送通知（sent_count: {len(_sent_messages)}）")
     finally:
         _bt.tg_api = _orig_tg_api
+
+
+# 額度視窗滾過去之後的真實畫面形狀：橫幅還在，但 Claude 自己印了 reset 行，
+# 底下對話又繼續了好幾行。這份畫面在日常使用中每分鐘重送一次通知。
+_STALE_SCREEN = [
+    "  ⏺ Stopped watching Artifact: \"notes\" (artifact not found)",
+    "     ⎿  You've hit your session limit · resets 10:40pm (Asia/Taipei)",
+    "        /upgrade or /usage-credits to finish what you're working on.",
+    "",
+    "  ⏺ Usage limit reached · continuing automatically at 10:40pm · esc or type to cancel",
+    "",
+    "  ✻ Brewed for 0s · done 7:23 PM",
+    "",
+    "  ⏺ Usage limit reset · continuing automatically",
+    "",
+    "  ⏺ 沒有進行中的任務被中斷——上次的工作已經完成並交付了。",
+    "",
+    "  ✻ Brewed for 31s · done 10:41 PM",
+    "",
+    "  " + "\u2500" * 100,
+    "  ❯ ",
+    "  " + "\u2500" * 100,
+    "    ⏵⏵ bypass permissions on (shift+tab to cycle)",
+]
+
+
+def test_finished_episode_not_reported():
+    """視窗已經滾過去（畫面上有 reset 行）→ 不得再視為 live。"""
+    slot = _make_slot(list(_STALE_SCREEN))
+    assert _BR._detect_rate_limit(slot) is None, (
+        "額度已重置的畫面仍被判為 rate-limit")
+
+
+def test_scrolled_away_banner_not_reported():
+    """reset 行已捲掉、只剩橫幅，但對話早就走遠 → 不得再視為 live。"""
+    screen = [l for l in _STALE_SCREEN if "Usage limit reset" not in l]
+    screen[9:9] = ["  接下來我把三個 sheet 的文字重新順過。", "",
+                   "  - 功能說明改成規格表語氣", "",
+                   "  - 每個儲存格都加了註解", "",
+                   "  - 欄位名稱同步改掉", "",
+                   "  ⏺ 已經寫回檔案了。", "",
+                   "  ✻ Brewed for 12s · done 11:02 PM", ""]
+    slot = _make_slot(screen)
+    assert _BR._detect_rate_limit(slot) is None, (
+        "橫幅已是 scrollback，仍被判為 rate-limit")
+
+
+def test_live_banner_above_prompt_still_reported():
+    """橫幅就在輸入框上方（真的正在卡額度）→ 仍要通知。"""
+    screen = [
+        "  ⏺ 我來看一下這段程式。",
+        "",
+        "     ⎿  You've hit your session limit · resets 10:40pm (Asia/Taipei)",
+        "        /upgrade or /usage-credits to finish what you're working on.",
+        "",
+        "  ⏺ Usage limit reached · continuing automatically at 10:40pm",
+        "",
+        "  " + "\u2500" * 100,
+        "  ❯ ",
+        "  " + "\u2500" * 100,
+    ]
+    slot = _make_slot(screen)
+    info = _BR._detect_rate_limit(slot)
+    assert info is not None, "真的卡額度時仍必須通知"
+    assert "10:40pm" in info["reset"]
 
 
 def test_normal_screen_no_false_positive():

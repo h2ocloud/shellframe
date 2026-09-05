@@ -41,7 +41,57 @@
   （`/link/info`）上，更新頻率就是那份列表的頻率——不另外開一條更快的通道。狀態
   取自 status monitor 已經算好的快照；為了一顆燈而在「被 peer 週期性拉取的列表」
   裡解 transcript 並不划算，所以取不到狀態就不畫燈。
-  `tests_remote_tab_features.py` 共 14 項。
+  `tests_remote_tab_features.py` 共 28 項。
+
+- **Remote tabs can be scrolled up for history.** This was broken in two
+  places, and fixing either one alone still reads as "scrolling up does
+  nothing": there was no history endpoint on the link, and the remote pane
+  never had the wheel listener attached in the first place. The endpoint runs
+  the same transcript rebuilder the local overlay uses, on the machine that
+  owns the session — an alt-screen TUI's recently scrolled-off rows exist only
+  in that machine's screen state, so rebuilding anywhere else returns the wrong
+  history. It carries the viewing pane's column count, so tables and rules come
+  back at the width they are being read at. Line count is capped well below the
+  local limit and the timeout is wider than the peek default: ten thousand
+  styled lines over a signed connection is hundreds of KB, and a rebuild that
+  times out silently looks exactly like the missing feature it replaces. The
+  front end resolves local and remote into one shape, so the overlay itself
+  stays unaware of the difference.
+
+  **遠端分頁可以上滑看歷史了。** 這件事壞在兩層，只修一層使用者看到的還是
+  「上滑沒反應」：連線上沒有 history 端點，而遠端 pane 根本沒掛滾輪監聽。端點
+  用的是本機 overlay 同一支 transcript 重建器，跑在擁有該 session 的那台機器上
+  ——alt-screen TUI 剛捲掉的那幾行只存在於那台的畫面狀態裡，在別台重建會拿到
+  錯的歷史。它會把觀看端的欄寬帶過去，表格與橫線因此照閱讀時的寬度排回來。
+  行數上限訂得比本機低、timeout 比 peek 寬：一萬行帶樣式的內容走簽章連線是好
+  幾百 KB，而重建逾時的樣子跟「這功能不存在」一模一樣。前端把本機與遠端收斂成
+  同一種回傳形狀，overlay 因此不必知道差別。
+
+### Fixes
+
+- **A rate-limit notification no longer repeats for an episode that is already
+  over.** Reported in daily use: the limit had lifted hours earlier and the
+  notification kept arriving roughly once a minute. Two causes, both needed
+  fixing. The detector matched a plain regex against the whole visible screen,
+  and the banner text stays in the conversation for the rest of the session —
+  so it matched forever, with no way to age out. It now takes the match as live
+  only when nothing below it says the window rolled over and the prompt is
+  still close underneath. Separately, the "already announced" flag lived on the
+  session slot, which is rebuilt on every bridge start — and the bridge starts
+  far more often than a limit window lasts, so each start re-announced the same
+  episode. That state is now persisted with the rest of the routing state and
+  keyed by the episode, so a genuinely new limit still notifies. Ten cases in
+  `tests_rate_limit.py`, including the real screen shape that caused this.
+
+  **額度上限通知不會再為「早就結束的 episode」重複發送。** 日常使用中回報：額度
+  幾小時前就解除了，通知還是差不多每分鐘跳一次。兩個原因都要修。偵測是拿一條
+  regex 掃整個可視畫面，而橫幅文字會在對話裡留到 session 結束——所以它會永遠命
+  中，沒有任何老化機制。現在只有在「底下沒有任何一行說視窗已經滾過去」且「輸入
+  框還貼在下面」時，才把命中視為 live。另外，「已通知」旗標掛在 session slot 上，
+  而 slot 每次 bridge 啟動都會重建——bridge 重啟得比一次額度視窗還頻繁，於是每次
+  啟動都重報同一個 episode。這份狀態現在跟其他路由狀態一起持久化，並以 episode
+  為鍵，真正的新上限仍然會通知。`tests_rate_limit.py` 共 10 項，含造成這次問題的
+  真實畫面形狀。
 
 ## v0.35.1 (2026-09-06)
 

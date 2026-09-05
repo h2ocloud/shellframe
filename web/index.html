@@ -3557,8 +3557,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // 把一個**本機路徑**附到某個分頁。本機分頁直接注入路徑（AI CLI 自己去讀檔）；
   // 遠端分頁不能用 write_input——那是本機 PTY——改成把檔案送過去、對方落地後
-  // 注入它那邊的路徑。呼叫端不必知道差別，體感一致（Howard 2026-09-06：
-  // 「把傳輸放到共用區，封裝好上傳跟下載，體感要一樣」）。
+  // 注入它那邊的路徑。呼叫端不必知道差別，兩邊體感一致——這是需求，不是巧合：
+  // 上傳與下載都封裝在這條路徑後面。
   // 讀檔轉 base64 在後端做：大圖走 pywebview 的 IPC 會塞爆字串參數。
   async function attachPathToSession(sid, path) {
     if (!isRemoteSid(sid)) { attachFile(path, null); return true; }
@@ -3633,6 +3633,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _lastOutputTs: 0, _busy: false, _streamSeq: -1,
       _lastCols: 0, _lastRows: 0, _ro: ro,
     };
+    // 遠端 pane 從來沒掛上這個——所以遠端分頁上滑沒反應的原因有兩層：後端沒有
+    // history 端點，前端連滾輪監聽都沒裝。兩層都要補，只補一層看起來還是壞的。
+    setupScrollHistory(sid, pane);
     return sessions[sid];
   }
 
@@ -5685,6 +5688,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return { show, close, isOpen };
   })();
 
+  // 上滑歷史的取得。遠端分頁走 /link/history——它跟本機的 get_clean_history 是
+  // 同一支重建器，只是在對方那台跑：alt-screen 的 TUI 要靠 pyte 的 history 才拿
+  // 得到剛捲掉的那幾行，那份狀態只存在於執行 session 的那台機器上。
+  // 回傳形狀在這裡收斂成一種，overlay 因此不必分辨本機或遠端。
+  async function fetchHistory(sid, cols) {
+    if (isRemoteSid(sid)) {
+      const info = parseRemoteSid(sid);
+      if (!info) return null;
+      const res = await pywebview.api.link_remote_history(info.peerId, info.rsid, cols || 0);
+      const result = JSON.parse(res);
+      if (!result || !result.success) return null;
+      const d = result.details || {};
+      if (!d.text) return null;
+      return { text: d.text, source: d.source || 'remote', ansi: !!d.ansi };
+    }
+    const res = await pywebview.api.get_clean_history(sid, 10000, true, cols);
+    const result = JSON.parse(res);
+    if (!result || !result.success) return null;
+    return { text: result.text, source: result.source, ansi: result.ansi };
+  }
+
   function setupScrollHistory(sid, pane) {
     let _loading = false;
     // CAPTURE phase, deliberately. A TUI that turns on mouse tracking (opencode
@@ -5717,12 +5741,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // Pass the live pane's column count: the transcript renderer sizes
       // tables and rules exactly the way the TUI does, and it can only do that
       // if it knows how wide the pane is.
-      pywebview.api.get_clean_history(sid, 10000, true, s.term.cols).then(res => {
+      fetchHistory(sid, s.term.cols).then(result => {
         _loading = false;
-        try {
-          const result = JSON.parse(res);
-          if (result.success) ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi });
-        } catch (err) { /* ignore */ }
+        if (result) ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi });
       }).catch(() => { _loading = false; });
     }, { capture: true, passive: false });
   }

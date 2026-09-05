@@ -1115,6 +1115,18 @@ class FrameLink:
                         lines = 120
                     res = link._execute("peek", {"sid": sid, "lines": lines}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/history":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    sid = (q.get("sid") or [""])[0]
+                    try:
+                        cols = int((q.get("cols") or ["0"])[0])
+                    except ValueError:
+                        cols = 0
+                    res = link._execute("history", {"sid": sid, "cols": cols}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/stream":
                     if not link._peer_may_control(peer_id):
                         return self._send(403, {"success": False,
@@ -1398,6 +1410,25 @@ class FrameLink:
         try:
             path = f"/link/peek?sid={quote(sid)}&lines={int(lines)}"
             return self._signed_request(peer, "GET", path)
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
+
+    def remote_history(self, peer_id: str, sid: str, cols: int = 0) -> dict:
+        """Scroll-back history for a remote tab's overlay.
+
+        Timed out generously against the peek default: the far side rebuilds the
+        transcript before it answers, and a slow rebuild returning nothing looks
+        to the user exactly like the missing feature this replaces.
+        """
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            path = f"/link/history?sid={quote(sid)}&cols={int(cols)}"
+            res = self._signed_request(peer, "GET", path, timeout=15)
+            self._mark_status(peer_id, True)
+            return res
         except Exception as e:
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}
