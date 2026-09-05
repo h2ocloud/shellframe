@@ -5698,9 +5698,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!info) return null;
       const res = await pywebview.api.link_remote_history(info.peerId, info.rsid, cols || 0);
       const result = JSON.parse(res);
-      if (!result || !result.success) return null;
-      const d = result.details || {};
-      if (!d.text) return null;
+      const d = (result && result.details) || {};
+      if (!result || !result.success || !d.text) {
+        // 失敗時什麼都不做，看起來就跟「這功能不存在」一模一樣——而最可能的
+        // 原因正是對方那台還沒更新（舊版沒有這個端點）。所以照樣開 overlay，
+        // 把原因寫在裡面。
+        const why = (result && result.message) || '沒有回應';
+        return { text: '（取不到遠端歷史：' + why + '）\n'
+                     + '對方那台需要 v0.35.2 以上才有這個端點。',
+                 source: 'remote', ansi: false };
+      }
       return { text: d.text, source: d.source || 'remote', ansi: !!d.ansi };
     }
     const res = await pywebview.api.get_clean_history(sid, 10000, true, cols);

@@ -56,7 +56,11 @@
   styled lines over a signed connection is hundreds of KB, and a rebuild that
   times out silently looks exactly like the missing feature it replaces. The
   front end resolves local and remote into one shape, so the overlay itself
-  stays unaware of the difference.
+  stays unaware of the difference. The endpoint is new, so a peer on an older
+  build does not have it — in that case the overlay still opens and says so,
+  because a silent no-op is indistinguishable from the bug being unfixed.
+  10 cases in `tests_remote_scroll_history.py` drive real wheel events at a
+  real terminal through the shipped functions.
 
   **遠端分頁可以上滑看歷史了。** 這件事壞在兩層，只修一層使用者看到的還是
   「上滑沒反應」：連線上沒有 history 端點，而遠端 pane 根本沒掛滾輪監聽。端點
@@ -65,7 +69,10 @@
   錯的歷史。它會把觀看端的欄寬帶過去，表格與橫線因此照閱讀時的寬度排回來。
   行數上限訂得比本機低、timeout 比 peek 寬：一萬行帶樣式的內容走簽章連線是好
   幾百 KB，而重建逾時的樣子跟「這功能不存在」一模一樣。前端把本機與遠端收斂成
-  同一種回傳形狀，overlay 因此不必知道差別。
+  同一種回傳形狀，overlay 因此不必知道差別。端點是新的，對方跑舊版就沒有——那種
+  情況 overlay 照樣開，並把原因寫在裡面，因為靜默不動跟「這個 bug 沒修好」看起來
+  完全一樣。`tests_remote_scroll_history.py` 共 10 項，拿真的滾輪事件打真的終端機，
+  跑的是實際出貨的那幾支函式。
 
 ### Fixes
 

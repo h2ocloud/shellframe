@@ -1476,6 +1476,11 @@ class TelegramBridge(BridgeBase):
         if self.active:
             return
 
+        # Load before either thread spawns. The poll loop restores this too,
+        # but detection runs on the flush thread — a limit that is live across
+        # a restart could otherwise be re-announced in the gap.
+        self._load_rate_limit_seen()
+
         result = tg_api(self.config.bot_token, "getMe")
         if not result.get("ok"):
             self._emit_status({"state": "error", "message": f"Invalid bot token: {result.get('description', 'unknown')}"})
@@ -2836,7 +2841,7 @@ class TelegramBridge(BridgeBase):
         box_top = len(rows)
         rule_idx = [i for i, row in enumerate(rows) if _INPUT_BOX_RULE_RE.match(row)]
         for a, b in zip(rule_idx, rule_idx[1:]):
-            if b - a <= 6:
+            if b - a <= 12:      # a long typed prompt still fences as one box
                 box_top = a          # last such pair is the input box; earlier
                                      # rules are markdown in the conversation
         if sum(1 for row in rows[hit_idx + 1:box_top] if row.strip()) > _RATE_LIMIT_LIVE_TAIL:
@@ -4263,6 +4268,15 @@ class TelegramBridge(BridgeBase):
         except Exception:
             pass
 
+    def _load_rate_limit_seen(self):
+        """Bring already-announced rate-limit episodes back from disk."""
+        try:
+            for sid, sig in (self._load_persisted().get("rate_limit_seen") or {}).items():
+                if sid in self.slots and sid not in self._rate_limit_seen:
+                    self._rate_limit_seen[sid] = sig
+        except Exception as e:
+            _blog(f"[rate-limit] load seen failed: {e}\n")
+
     def _restore_user_routing(self):
         """Called from _poll_loop entry once slots are registered. Restores
         user_active + user_chat mappings from disk, filtering out sids that
@@ -4299,9 +4313,7 @@ class TelegramBridge(BridgeBase):
                 self._default_active_sid = saved_default
             # Sessions that are gone drop out here, so the map cannot grow
             # without bound across restarts.
-            for sid, sig in (data.get("rate_limit_seen") or {}).items():
-                if sid in self.slots and sid not in self._rate_limit_seen:
-                    self._rate_limit_seen[sid] = sig
+            self._load_rate_limit_seen()
             _blog(f"[restore] applied restored={restored} user_chat={dict(self._user_chat)} "
                   f"default={getattr(self, '_default_active_sid', None)!r}\n")
         except Exception as e:
