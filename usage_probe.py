@@ -71,13 +71,16 @@ PROVIDER_SPECS = {
         },
     },
     "opencode": {
-        "label": "OpenCode", "binaries": ("opencode",),
+        "label": "OpenCode", "binaries": ("opencode", "sf-opencode-spark"),
         "install": {
             "command": "curl -fsSL https://opencode.ai/install | bash",
             "docs": "https://opencode.ai/docs/",
             "note": "也在 homebrew-core：`brew install opencode`。模型走使用者自己"
                     "設定的 provider（~/.config/opencode/opencode.json），"
-                    "地端 OpenAI 相容端點也算，所以沒有單一配額可報。",
+                    "地端 OpenAI 相容端點也算，所以沒有單一配額可報。"
+                    "接地端 Spark 用 preset『OpenCode (Spark)』(sf-opencode-spark)——"
+                    "它首次執行會自動把 spark provider 寫進 opencode.json，裝好 "
+                    "opencode 就能直接開，不必手動編設定。",
         },
     },
     "agy": {

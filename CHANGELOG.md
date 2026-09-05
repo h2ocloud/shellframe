@@ -6,6 +6,41 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.7 (2026-09-05)
+
+### Added
+
+- **OpenCode local-Spark preset self-provisions on first run.** New launcher
+  `sf-opencode-spark`: if `~/.config/opencode/opencode.json` has no Spark
+  provider yet, it writes one (OpenAI-compatible, tunnel 11439, key from
+  `~/.codex/spark.env`) before launching `opencode --model spark/spark-main`.
+  So after installing the opencode binary the preset works with no manual
+  provider editing. Registered as an opencode binary for detection, and the
+  install note points at it. (Install of the binary itself was already wired
+  via the provider registry.)
+
+  **OpenCode 地端 Spark preset 首次執行自我佈建。** 新增啟動器
+  `sf-opencode-spark`：若 `~/.config/opencode/opencode.json` 還沒有 Spark
+  provider，就先寫入（OpenAI 相容、tunnel 11439、key 取自 `~/.codex/spark.env`）
+  再啟動 `opencode --model spark/spark-main`。裝好 opencode 二進位後直接開這個
+  preset 就能通，不必手動編 provider 設定。已註冊為 opencode 的偵測 binary、
+  安裝說明也指向它。（二進位本身的安裝原本就由 provider registry 接好。）
+
+### Changes
+
+- **Tidied the New-Session presets and removed a duplicate.** The bare "Pi"
+  preset (`pi`) was redundant with "Pi-Spark" — on this machine pi only has the
+  Spark provider, so both launched the same local backend. Dropped "Pi", and
+  renamed the local group for clarity: "Pi (Spark)", "SparkAgent (Spark)",
+  "OpenCode (Spark)". Cloud presets (Claude Code, Codex) and Bash unchanged.
+  The old config was backed up next to config.json.
+
+  **整理新增 session 的 preset、移除重複項。** 裸的「Pi」preset（`pi`）與
+  「Pi-Spark」重複——這台 pi 只設了 Spark provider，兩者其實同一個地端後端。
+  已移除「Pi」，並把地端群組改成一致命名：「Pi (Spark)」「SparkAgent (Spark)」
+  「OpenCode (Spark)」。雲端 preset（Claude Code、Codex）與 Bash 不變。舊設定已
+  備份在 config.json 旁。
+
 ## v0.32.6 (2026-09-05)
 
 ### Fixes
