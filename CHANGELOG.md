@@ -6,6 +6,29 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.34.2 (2026-09-05)
+
+### Fixes
+
+- **Switching a Claude tab's account now keeps the conversation — it resumes
+  the same session instead of starting blank.** Each account is a separate
+  `CLAUDE_CONFIG_DIR`, so the running conversation's transcript lives under the
+  *old* account's config home; relaunching under the new account simply
+  couldn't see it, and the tab came back empty. The switch now copies the
+  current session's transcript (`<uuid>.jsonl`) into the new account's
+  `projects/<same cwd slug>/` and relaunches with `--resume <uuid>`, so the
+  same history continues under the new account — the point being to keep one
+  conversation going across an account/quota change. Same-account re-pins and
+  non-Claude tabs are unaffected. Regression tests in `tests_accounts.py`.
+
+  **切換 Claude 分頁的帳號現在會保留對話——用 --resume 接回同一段，不再空白重開。**
+  每個帳號是獨立的 `CLAUDE_CONFIG_DIR`，正在進行的對話 transcript 存在**舊**帳號
+  的 config 家目錄下，用新帳號重開根本看不到，分頁就空了。現在切換會把當前
+  session 的 transcript（`<uuid>.jsonl`）複製進新帳號的 `projects/<相同 cwd slug>/`，
+  並以 `--resume <uuid>` 重開，同一段歷史就在新帳號底下續接——目的就是讓一段對話
+  跨帳號／配額切換還能繼續。同帳號重釘與非 Claude 分頁不受影響。回歸測試在
+  `tests_accounts.py`。
+
 ## v0.34.1 (2026-09-05)
 
 ### Fixes

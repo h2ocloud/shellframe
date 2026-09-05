@@ -3974,11 +3974,63 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
+    @staticmethod
+    def _claude_config_dir_for(refs: dict) -> str:
+        """這組 account refs 對應的 claude 設定家目錄（含 projects/transcripts）。
+        沒釘 profile → 預設 ~/.claude。"""
+        ref = (refs or {}).get("claude")
+        env = ACCOUNT_MANAGER.env_for("claude", ref) if ref else {}
+        return env.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+
+    def _carry_claude_transcript(self, old_session, csid: str, new_refs: dict):
+        """切帳號＝換 CLAUDE_CONFIG_DIR，新帳號的 projects 裡沒有這段對話的
+        transcript，`--resume` 會找不到、歷史就消失（Howard 2026-09-05）。
+        把當前對話的 uuid.jsonl 複製進新帳號的 projects/<同一個 cwd slug>/，
+        resume 才接得回同一段歷史。同帳號（config dir 沒變）則不必搬。"""
+        if not csid:
+            return
+        old_dir = self._claude_config_dir_for(getattr(old_session, "account_refs", {}))
+        new_dir = self._claude_config_dir_for(new_refs)
+        if os.path.abspath(old_dir) == os.path.abspath(new_dir):
+            return
+        src = getattr(old_session, "_hook_transcript_path", "") or ""
+        if not (src and os.path.isfile(src)):
+            import glob as _glob
+            for root in (os.path.join(old_dir, "projects"),
+                         os.path.expanduser("~/.claude/projects")):
+                hits = _glob.glob(os.path.join(root, "*", f"{csid}.jsonl"))
+                if hits:
+                    src = hits[0]
+                    break
+        if not (src and os.path.isfile(src)):
+            _dlog("account", f"switch: 找不到 {csid} 的 transcript，歷史無法搬移")
+            return
+        slug = os.path.basename(os.path.dirname(src))
+        dst_dir = os.path.join(new_dir, "projects", slug)
+        try:
+            os.makedirs(dst_dir, exist_ok=True)
+            dst = os.path.join(dst_dir, f"{csid}.jsonl")
+            if not os.path.exists(dst):
+                shutil.copy2(src, dst)
+            _dlog("account", f"switch: 搬移 transcript {csid} → {dst}")
+        except OSError as e:
+            _dlog("account", f"switch: transcript 搬移失敗 {e}")
+
     def _restart_session_for_account(self, sid: str, account_refs: dict):
         old = self.sessions.get(sid)
         if not old:
             raise ValueError("此 tab 不存在或已關閉")
         cmd = old.cmd
+        # 保留對話：claude 分頁換帳號時，把當前 uuid 的 transcript 搬進新帳號的
+        # config dir，並以 --resume <uuid> 重開，歷史才不會消失。
+        csid = getattr(old, "session_id", "") or ""
+        try:
+            is_claude = usage_probe.detect_ai(cmd) == "claude"
+        except Exception:
+            is_claude = False
+        if is_claude and csid:
+            self._carry_claude_transcript(old, csid, account_refs)
+            cmd = self._cmd_with_resume(cmd, csid)
         cols, rows = old.cols, old.rows
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)

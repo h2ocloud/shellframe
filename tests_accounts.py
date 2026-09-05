@@ -159,6 +159,67 @@ def test_account_env_reaches_tmux_new_session_via_dash_e():
     assert argv.count("-e") >= 3, argv   # SF_SID + 2 個帳號 var
 
 
+def test_account_switch_carries_transcript_and_resumes_uuid():
+    """回歸（Howard 2026-09-05：切帳號後對話歷史消失，應該用 uuid resume）。
+
+    切帳號＝換 CLAUDE_CONFIG_DIR，新帳號 projects 裡沒有這段對話→--resume 找不到。
+    這裡驗證：(1) transcript 被搬進新帳號的 projects/<同一 slug>/；
+    (2) 啟動指令被改成 --resume <uuid>。"""
+    import types
+    import main
+
+    with tempfile.TemporaryDirectory() as td:
+        old_dir = os.path.join(td, "cfg-A")
+        new_dir = os.path.join(td, "cfg-B")
+        slug = "-Users-howard-proj"
+        csid = "11111111-2222-3333-4444-555555555555"
+        src = os.path.join(old_dir, "projects", slug, f"{csid}.jsonl")
+        os.makedirs(os.path.dirname(src))
+        with open(src, "w") as f:
+            f.write('{"type":"user","message":"hello history"}\n')
+
+        saved_env_for = main.ACCOUNT_MANAGER.env_for
+        try:
+            main.ACCOUNT_MANAGER.env_for = lambda provider, ref: (
+                {"CLAUDE_CONFIG_DIR": old_dir} if ref == "A"
+                else {"CLAUDE_CONFIG_DIR": new_dir} if ref == "B"
+                else {})
+            api = object.__new__(main.Api)          # 跳過重量級 __init__
+            old_session = types.SimpleNamespace(
+                account_refs={"claude": "A"}, _hook_transcript_path=src)
+            api._carry_claude_transcript(old_session, csid, {"claude": "B"})
+        finally:
+            main.ACCOUNT_MANAGER.env_for = saved_env_for
+
+        dst = os.path.join(new_dir, "projects", slug, f"{csid}.jsonl")
+        assert os.path.isfile(dst), "transcript 沒被搬到新帳號的 projects"
+        assert open(dst).read() == open(src).read(), "搬移後內容不一致"
+
+    # 啟動指令要變成 --resume <uuid>（丟掉舊的 --session-id）
+    resumed = main.Api._cmd_with_resume(
+        "claude --model opus --session-id old-id --dangerously-skip-permissions", csid)
+    assert "--resume" in resumed and csid in resumed, resumed
+    assert "--session-id" not in resumed, resumed
+
+
+def test_carry_transcript_noop_when_same_config_dir():
+    """同帳號（config dir 沒變）不必搬，也不該炸。"""
+    import types
+    import main
+    with tempfile.TemporaryDirectory() as td:
+        d = os.path.join(td, "cfg")
+        os.makedirs(os.path.join(d, "projects", "slug"))
+        saved = main.ACCOUNT_MANAGER.env_for
+        try:
+            main.ACCOUNT_MANAGER.env_for = lambda p, r: {"CLAUDE_CONFIG_DIR": d}
+            api = object.__new__(main.Api)
+            old = types.SimpleNamespace(account_refs={"claude": "A"},
+                                        _hook_transcript_path="/nonexistent")
+            api._carry_claude_transcript(old, "some-uuid", {"claude": "A"})  # 不該丟例外
+        finally:
+            main.ACCOUNT_MANAGER.env_for = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
