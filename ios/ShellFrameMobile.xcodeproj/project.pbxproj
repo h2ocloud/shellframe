@@ -15,6 +15,7 @@
 		32A6EC99D9158E4075993855 /* ShellFrameWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 61945324DAD73E3C28FA170F /* ShellFrameWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		43C7B9A0E45CD8C285C9605B /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 0E4366543297264391511093 /* SwiftTerm */; };
 		5A5E3FE72448F2A2EFBB3CF1 /* PeersSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE952FAC5963ACE5B6957068 /* PeersSidebar.swift */; };
+		5B62292EF68494404CC62FEA /* RemoteTerminalUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AF0DE46CD1FBFBC49FC72B8 /* RemoteTerminalUITests.swift */; };
 		64341327E5176379BE11350C /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01146EB05B9A6D71F6B18C57 /* WatchBridge.swift */; };
 		65669D21EEC663DA4C20E57D /* LinkCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2F6CFCEFC2AA38DAA83B0ED /* LinkCrypto.swift */; };
 		665D5C87178FE9FC5C3F8F06 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731E70C6A9D1BF481C104F11 /* PairingView.swift */; };
@@ -33,6 +34,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		7D9769709CB0D87A9020DF26 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D72BE0E12174DDCF019F3734 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F8FEF3E8B49330F407B77BFE;
+			remoteInfo = ShellFrameMobile;
+		};
 		BD8EAFA1A3B12C6622BC5D5E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = D72BE0E12174DDCF019F3734 /* Project object */;
@@ -58,11 +66,13 @@
 
 /* Begin PBXFileReference section */
 		01146EB05B9A6D71F6B18C57 /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
+		0D3E9A5A8121F2DF3F21F288 /* ShellFrameMobile.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShellFrameMobile.entitlements; sourceTree = "<group>"; };
 		24B63FFE7C1501C88145504E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		2EBA61E90494CA77BED63CF4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		61945324DAD73E3C28FA170F /* ShellFrameWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ShellFrameWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		627774BB16268D462A6CA7D3 /* ShellFrameMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellFrameMobileApp.swift; sourceTree = "<group>"; };
 		6991CC9DBA52641D922B4D16 /* FrameLinkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameLinkClient.swift; sourceTree = "<group>"; };
+		6AF0DE46CD1FBFBC49FC72B8 /* RemoteTerminalUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalUITests.swift; sourceTree = "<group>"; };
 		731E70C6A9D1BF481C104F11 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		80E31C30FEBBF1FFF71C35A4 /* PeerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerStore.swift; sourceTree = "<group>"; };
 		82EE3BD87834A0AE74982566 /* TerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScreen.swift; sourceTree = "<group>"; };
@@ -71,6 +81,7 @@
 		92C3D7E42638FBD7844ED366 /* PhoneLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneLink.swift; sourceTree = "<group>"; };
 		95B39587A972891F902A63AD /* VoiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSheet.swift; sourceTree = "<group>"; };
 		A0F0A36695495CD451EE072A /* RecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderView.swift; sourceTree = "<group>"; };
+		ABB255917FA6B067CC1DEA5F /* ShellFrameMobileUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ShellFrameMobileUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B123BEF0771E45077908715E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B4E2BB10E537B1F240B7EB3E /* ShellFrameWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellFrameWatchApp.swift; sourceTree = "<group>"; };
 		CB49D3E6AB2EA737418DDDBE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -121,6 +132,7 @@
 			children = (
 				1AA2FA7031BEB00E2A37D575 /* Shared */,
 				9AC72AE9C7DDCBCA4E71512E /* ShellFrameMobile */,
+				9AD438C6F328E25195273789 /* ShellFrameMobileUITests */,
 				688DB3258E3A535740139B44 /* ShellFrameWatch */,
 				EAB080491374ABF6716A7917 /* Products */,
 			);
@@ -155,6 +167,7 @@
 			isa = PBXGroup;
 			children = (
 				B123BEF0771E45077908715E /* Info.plist */,
+				0D3E9A5A8121F2DF3F21F288 /* ShellFrameMobile.entitlements */,
 				627774BB16268D462A6CA7D3 /* ShellFrameMobileApp.swift */,
 			);
 			path = App;
@@ -171,10 +184,19 @@
 			path = ShellFrameMobile;
 			sourceTree = "<group>";
 		};
+		9AD438C6F328E25195273789 /* ShellFrameMobileUITests */ = {
+			isa = PBXGroup;
+			children = (
+				6AF0DE46CD1FBFBC49FC72B8 /* RemoteTerminalUITests.swift */,
+			);
+			path = ShellFrameMobileUITests;
+			sourceTree = "<group>";
+		};
 		EAB080491374ABF6716A7917 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				DB925BA5052E5BAF24F1C48F /* ShellFrameMobile.app */,
+				ABB255917FA6B067CC1DEA5F /* ShellFrameMobileUITests.xctest */,
 				61945324DAD73E3C28FA170F /* ShellFrameWatch.app */,
 			);
 			name = Products;
@@ -208,6 +230,24 @@
 			productName = ShellFrameWatch;
 			productReference = 61945324DAD73E3C28FA170F /* ShellFrameWatch.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A5E1A329B411B69D7E48197B /* ShellFrameMobileUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E7DD6878AE511A3C655132E /* Build configuration list for PBXNativeTarget "ShellFrameMobileUITests" */;
+			buildPhases = (
+				6E5945AE4590CB90D4783370 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9B554901C4522E6358876D91 /* PBXTargetDependency */,
+			);
+			name = ShellFrameMobileUITests;
+			packageProductDependencies = (
+			);
+			productName = ShellFrameMobileUITests;
+			productReference = ABB255917FA6B067CC1DEA5F /* ShellFrameMobileUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		F8FEF3E8B49330F407B77BFE /* ShellFrameMobile */ = {
 			isa = PBXNativeTarget;
@@ -243,6 +283,11 @@
 						DevelopmentTeam = 487V8X9AHS;
 						ProvisioningStyle = Automatic;
 					};
+					A5E1A329B411B69D7E48197B = {
+						DevelopmentTeam = 487V8X9AHS;
+						ProvisioningStyle = Automatic;
+						TestTargetID = F8FEF3E8B49330F407B77BFE;
+					};
 					F8FEF3E8B49330F407B77BFE = {
 						DevelopmentTeam = 487V8X9AHS;
 						ProvisioningStyle = Automatic;
@@ -267,12 +312,21 @@
 			projectRoot = "";
 			targets = (
 				F8FEF3E8B49330F407B77BFE /* ShellFrameMobile */,
+				A5E1A329B411B69D7E48197B /* ShellFrameMobileUITests */,
 				1A0938C189C99CE9BFBC4119 /* ShellFrameWatch */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		6E5945AE4590CB90D4783370 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5B62292EF68494404CC62FEA /* RemoteTerminalUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		88120F38EBDE7312D9391FCB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -311,6 +365,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		9B554901C4522E6358876D91 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F8FEF3E8B49330F407B77BFE /* ShellFrameMobile */;
+			targetProxy = 7D9769709CB0D87A9020DF26 /* PBXContainerItemProxy */;
+		};
 		D74321FD0DF95DFEBB04FA91 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 1A0938C189C99CE9BFBC4119 /* ShellFrameWatch */;
@@ -323,6 +382,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ShellFrameMobile/App/ShellFrameMobile.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ShellFrameMobile/App/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -343,10 +403,28 @@
 			};
 			name = Release;
 		};
+		228E6606395588967810E241 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.howard.shellframe.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ShellFrameMobile;
+			};
+			name = Debug;
+		};
 		277CA238E4CB5550376F457B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ShellFrameMobile/App/ShellFrameMobile.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ShellFrameMobile/App/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -528,9 +606,35 @@
 			};
 			name = Release;
 		};
+		C3DD6601C9F2EEB1F86073B6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.howard.shellframe.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ShellFrameMobile;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		3E7DD6878AE511A3C655132E /* Build configuration list for PBXNativeTarget "ShellFrameMobileUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				228E6606395588967810E241 /* Debug */,
+				C3DD6601C9F2EEB1F86073B6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		405C3F0289DCAD1409C0BC4B /* Build configuration list for PBXNativeTarget "ShellFrameMobile" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -13,7 +13,8 @@ struct RootView: View {
     @State private var pairPayload: PairPayload?
     @State private var showPairing = false
     @State private var showSettings = false
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    @State private var columnVisibility: NavigationSplitViewVisibility =
+        UIDevice.current.userInterfaceIdiom == .pad ? .all : .automatic
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -27,8 +28,9 @@ struct RootView: View {
                 EmptyDetail(hasPeers: !store.peers.isEmpty, showPairing: $showPairing)
             }
         }
+        .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $showPairing, onDismiss: { pairPayload = nil }) {
-            PairingView(initialPayload: pairPayload)
+            PairingView(incoming: $pairPayload)
                 .environmentObject(store)
         }
         .sheet(isPresented: $showSettings) {
@@ -40,12 +42,21 @@ struct RootView: View {
                 showPairing = true
             }
         }
+        .onAppear {
+            // QA hook (simulator only): SF_QA_PAIR_URL feeds a pairing link without the
+            // system "Open in ShellFrame?" prompt that `simctl openurl` triggers.
+            if let raw = QAHooks.pairURL, let p = PairPayload.parse(text: raw) {
+                pairPayload = p
+                showPairing = true
+            }
+        }
         // QA hook (simulator only): SF_QA_AUTOSELECT=1 opens the first live session once
         // the peer list loads, so screenshots can be driven without tapping.
         .onChange(of: store.sessions) { _, all in
-            guard selection == nil, QAHooks.autoselect else { return }
+            guard selection == nil, let want = QAHooks.autoselect else { return }
             for p in store.peers {
-                if let s = (all[p.id] ?? []).first(where: { $0.isAlive }) {
+                let list = all[p.id] ?? []
+                if let s = (want == "1" ? list.first(where: { $0.isAlive }) : list.first(where: { $0.sid == want })) {
                     selection = SessionRef(peerId: p.id, sid: s.sid)
                     return
                 }
@@ -55,7 +66,15 @@ struct RootView: View {
 }
 
 enum QAHooks {
-    static var autoselect: Bool { ProcessInfo.processInfo.environment["SF_QA_AUTOSELECT"] == "1" }
+    static var pairURL: String? {
+        let v = ProcessInfo.processInfo.environment["SF_QA_PAIR_URL"] ?? ""
+        return v.isEmpty ? nil : v
+    }
+    /// "1" = first live session; otherwise a sid (e.g. "s42").
+    static var autoselect: String? {
+        let v = ProcessInfo.processInfo.environment["SF_QA_AUTOSELECT"] ?? ""
+        return v.isEmpty ? nil : v
+    }
     /// "1" / "0" forces fit mode for screenshots; unset = device default.
     static var fitOverride: Bool? {
         switch ProcessInfo.processInfo.environment["SF_QA_FIT"] {

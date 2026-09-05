@@ -42,11 +42,25 @@ targets:
         PRODUCT_NAME: ShellFrame
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_FILE: ShellFrameMobile/App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ShellFrameMobile/App/ShellFrameMobile.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+
+  ShellFrameMobileUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ShellFrameMobileUITests
+    dependencies:
+      - target: ShellFrameMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.howard.shellframe.uitests
+        TEST_TARGET_NAME: ShellFrameMobile
+        GENERATE_INFOPLIST_FILE: YES
 
   ShellFrameWatch:
     type: application
@@ -62,3 +76,16 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.howard.shellframe
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: NO
+
+schemes:
+  ShellFrameMobile:
+    build:
+      targets:
+        ShellFrameMobile: all
+        ShellFrameMobileUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ShellFrameMobileUITests

@@ -51,6 +51,23 @@
 - TG / delegate 路徑（`bridge_telegram` consume/concat、`_send_text_to_session` tmux paste-buffer）本就 prompt 在前。
 - TG→master 貼文字污染（變 preamble / malformed）：靠 write 序列化 + bracketed paste + busy 守門解（v0.13.5–0.13.7）。
 
+## 手機 App（`ios/`）與 relay
+
+- 手機／iPad／Watch App 在 `ios/`：`xcodegen generate` 產專案（`brew install xcodegen`），
+  SwiftTerm 走 SPM（第一次要 `xcodebuild -downloadComponent MetalToolchain`），
+  xcodebuild 加 `-skipPackagePluginValidation -skipMacroValidation`。設計與協定見
+  [`docs/mobile-link.md`](docs/mobile-link.md)。
+- **模擬器 build 不能加 `CODE_SIGNING_ALLOWED=NO`**：沒簽章就沒 keychain entitlement，
+  Keychain 回 -34018，配對金鑰存不進去（現在有檔案 fallback，但別依賴它）。
+- 配對／串流／resize 的 UI 驗收：`ShellFrameMobileUITests`（XCUITest，會真的打字進
+  配對的電腦）。跑法：
+  `TEST_RUNNER_SF_QA_SID=<sid> TEST_RUNNER_SF_QA_OUT=<dir> xcodebuild test -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iPhone 16 Pro' …`
+  模擬器沒相機，配對用 QA 掛鉤 `SIMCTL_CHILD_SF_QA_PAIR_URL=<pair_url> xcrun simctl launch …`
+  （`simctl openurl` 會跳系統的「要在 ShellFrame 打開嗎？」點不掉）。
+- `frame_link.py` / `link_relay.py` / `relay_server.py` 改動：`sfctl restart`（不是 reload）。
+  回歸：`tests_frame_link.py`、`tests_relay.py`（同 process 起 relay + 兩個 instance）。
+- relay 是「電腦出站長輪詢」，跟 TG bridge 一樣不用開 port；relay 看得到明文，自架＋TLS。
+
 ## 持久化 / state
 
 - json 持久化仿 `_persist`（main.py ~1157）+ soft-session 機制；state 放 `~/.local/state/shellframe/`。

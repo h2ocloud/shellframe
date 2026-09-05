@@ -114,10 +114,14 @@ final class PeerStore: ObservableObject {
     func refresh(peerId: String) async {
         guard let conn = connection(for: peerId) else {
             lastError[peerId] = LinkError.noSecret.localizedDescription
+            reachable[peerId] = false
+            sfLog.error("refresh \(peerId, privacy: .public): no connection (secret missing)")
             return
         }
         do {
             let info = try await conn.info()
+            let via = await conn.transportLabel
+            sfLog.info("refresh \(peerId, privacy: .public): \(info.sessions.count) sessions via \(via, privacy: .public)")
             sessions[peerId] = info.sessions
             noControl[peerId] = info.noControl
             reachable[peerId] = true
@@ -142,6 +146,7 @@ final class PeerStore: ObservableObject {
         } catch {
             reachable[peerId] = false
             lastError[peerId] = error.localizedDescription
+            sfLog.error("refresh \(peerId, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

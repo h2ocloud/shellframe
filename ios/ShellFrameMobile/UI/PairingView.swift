@@ -6,7 +6,9 @@ import VisionKit
 struct PairingView: View {
     @EnvironmentObject var store: PeerStore
     @Environment(\.dismiss) private var dismiss
-    var initialPayload: PairPayload?
+    /// Payload handed in by a deep link / QA hook. A binding (not a value) so the
+    /// sheet never captures a stale nil when state changes in the same transaction.
+    @Binding var incoming: PairPayload?
 
     @State private var payload: PairPayload?
     @State private var host = ""
@@ -83,7 +85,8 @@ struct PairingView: View {
             .navigationTitle("配對電腦")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("關閉") { dismiss() } } }
-            .onAppear { if let p = initialPayload { payload = p; scanning = false } }
+            .onAppear { if let p = incoming { payload = p; scanning = false } }
+            .onChange(of: incoming) { _, p in if let p { payload = p; scanning = false } }
             // A scanned QR or a tapped shellframe:// link already expresses intent: pair right away.
             .onChange(of: payload) { _, p in
                 if let p, !working { pair(p) }

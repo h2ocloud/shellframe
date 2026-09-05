@@ -26,6 +26,7 @@ struct TerminalScreen: View {
         ZStack(alignment: .top) {
             TerminalHost(model: model)
                 .ignoresSafeArea(.container, edges: .bottom)
+                .accessibilityIdentifier("terminal")
             if let s = model.status {
                 Text(s)
                     .font(.caption)
@@ -42,12 +43,14 @@ struct TerminalScreen: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { model.toggleKeyboard() } label: { Image(systemName: "keyboard") }
                     .help("顯示／收起鍵盤")
+                    .accessibilityIdentifier("keyboardButton")
                 Button { model.fitMode.toggle() } label: {
                     Image(systemName: model.fitMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                 }
                 .help(model.fitMode ? "目前：撐滿這台裝置（會改電腦上的終端尺寸）" : "目前：照電腦尺寸顯示")
                 Button { showVoice = true } label: { Image(systemName: "mic") }
                 Button { showComposer = true } label: { Image(systemName: "text.bubble") }
+                    .accessibilityIdentifier("composerButton")
                 Menu {
                     Button { model.sendBytes("\u{03}") } label: { Label("Ctrl-C", systemImage: "xmark.octagon") }
                     Button { model.sendBytes("\u{1b}") } label: { Label("Esc", systemImage: "escape") }
@@ -329,6 +332,7 @@ struct ComposerSheet: View {
                 Text("送到 \(peerName) › \(sessionLabel)。走與 Telegram 相同的注入路徑（等 AI 空檔、整段貼上），比逐字敲鍵盤穩。")
                     .font(.footnote).foregroundStyle(.secondary)
                 TextEditor(text: $text)
+                    .accessibilityIdentifier("composerText")
                     .font(.body.monospaced())
                     .frame(minHeight: 160)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
@@ -351,6 +355,7 @@ struct ComposerSheet: View {
                         }
                     }
                     .disabled(working || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("composerSend")
                 }
             }
         }

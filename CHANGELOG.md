@@ -6,6 +6,97 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.33.0 (2026-09-05)
+
+### Added
+
+- **iPhone / iPad companion app: a phone is now a Frame Link peer.** The new
+  SwiftUI app in `ios/` pairs with the same one-time code handshake as a second
+  ShellFrame, then mirrors any tab through the raw `/link/stream` channel into a
+  native terminal (SwiftTerm, same 16-colour theme as the desktop), sends
+  keystrokes straight to the PTY (`/link/input`, hardware keyboards on iPad
+  included) and offers a bridge-quality message composer (`/link/send`, the
+  Telegram injection path). One device binds any number of computers, each with
+  its own secret in the Keychain. iPhone defaults to a view-faithful mode that
+  renders at the computer's own cols×rows without touching the desktop; iPad
+  defaults to fitting the screen (`/link/resize`), and switching back restores
+  the original size. Pairing QR codes now appear in the desktop pairing modal
+  (`pair_url` — a `shellframe://pair?d=…` deep link that the TG `/link pair`
+  reply also carries, so a tap pairs from anywhere). Peers record a `kind`
+  (`ios`) for the sidebar.
+
+  **iPhone／iPad 配對 App：手機成為 Frame Link 的一個 peer。** `ios/` 下的 SwiftUI
+  App 用與第二台 ShellFrame 完全相同的一次性配對碼握手配對，之後任一分頁經
+  `/link/stream` 原始串流進原生終端（SwiftTerm，與桌面同一組 16 色主題）、鍵盤
+  經 `/link/input` 直送 PTY（iPad 外接鍵盤照常）、並提供走 Telegram 注入路徑的
+  訊息框（`/link/send`）。一支裝置可綁多台電腦，金鑰各自存 Keychain。iPhone 預設
+  「照電腦尺寸」忠實顯示、不動桌面；iPad 預設撐滿（`/link/resize`），切回時還原
+  尺寸。桌面配對 modal 現在直接畫 QR（`pair_url`＝`shellframe://pair?d=…` 深連結，
+  TG `/link pair` 的回覆也帶同一條，點了就配）。peer 記錄 `kind`（`ios`）供側欄辨識。
+
+- **Relay for the public internet — the Telegram pattern applied to Frame Link.**
+  Two peers behind NAT could not reach each other. `relay_server.py` (stdlib,
+  in-memory) forwards opaque signed envelopes; the computer long-polls it
+  outbound (`link_relay.RelayClient`), replays each envelope against its own
+  listener over loopback and posts the answer back, so no inbound port is ever
+  needed. Pairing works through the relay too. Configure `frame_link.relay`
+  (`url`, `token`); the QR then carries it and clients fall back from direct to
+  relay automatically. The relay sees plaintext by design (Frame Link is
+  HMAC-only): run your own, behind TLS. Covered end to end by `tests_relay.py`
+  (pairing, signed calls, 401/404/504 paths, signature bypass attempts).
+
+  **公網 relay——把 Telegram 那套出站長輪詢用在 Frame Link 上。** 兩台都在 NAT 後
+  就互相連不到。`relay_server.py`（stdlib、in-memory）只轉送簽過章的 envelope；
+  電腦出站長輪詢（`link_relay.RelayClient`）、把 envelope 在 loopback 對自己的
+  listener 重放、再貼回答案，完全不需要開 port。配對本身也能走 relay。設定
+  `frame_link.relay`（`url`、`token`）後 QR 會帶上它，client 直連失敗自動改走 relay。
+  relay 看得到明文（Frame Link 只簽章不加密）：請自架、放 TLS 後面。
+  `tests_relay.py` 端到端涵蓋配對、簽章呼叫、401／404／504 與繞簽章的嘗試。
+
+- **Apple Watch voice notes, and `/link/voice` for phones.** The watch app
+  records an AAC clip, hands it to the iPhone over WatchConnectivity, and the
+  phone posts it (signed over its sha256, like `/link/file`) to the new
+  `/link/voice` route, which runs the exact chain Telegram voice notes and the
+  desktop microphone use (`voice_inject` → `_mic_transcribe_inject`: whisper →
+  refine → tagged inject for AI tabs, paste-only for shells) and returns the
+  transcript. The phone toolbar's 🎙 uses the same route.
+
+  **Apple Watch 錄音送出，手機也有 `/link/voice`。** 手錶 App 錄一段 AAC，經
+  WatchConnectivity 交給 iPhone，手機以簽章（蓋 sha256，同 `/link/file`）送到新
+  路由 `/link/voice`，電腦端跑與 TG 語音、桌面麥克風完全相同的鏈（`voice_inject`
+  → `_mic_transcribe_inject`：whisper → 精煉 → AI 分頁帶 tag 送出、shell 只貼不送）
+  並回傳逐字稿。手機工具列的 🎙 走同一條。
+
+- **`/link/snapshot` and `/link/signals`.** Snapshot returns the visible screen
+  with colours and cursor (`tmux capture-pane -e`) so a remote view opens looking
+  exactly like the desktop instead of a plain-text `peek`; signals exposes the
+  agent RED/YELLOW/GREEN event bus already used by the local HTTP API so a
+  remote client can badge tabs that need a decision.
+
+  **`/link/snapshot` 與 `/link/signals`。** snapshot 回傳含顏色與游標的可視畫面
+  （`tmux capture-pane -e`），遠端一開就跟桌面一樣，而不是純文字 `peek`；signals
+  把 local HTTP API 已有的 agent RED／YELLOW／GREEN 事件開給遠端，讓要你決定的分頁
+  能被標出來。
+
+### Changes
+
+- **TG `/link join` accepts a pairing link.** `/link join shellframe://pair?d=…`
+  reads host, port, code and relay from the link (tries the addresses first, then
+  the relay), so two computers can be paired from a phone without retyping.
+
+  **TG `/link join` 接受配對連結。** `/link join shellframe://pair?d=…` 從連結取
+  位址、port、碼、relay（先試位址、再走 relay），兩台電腦可以在手機上不重打字
+  就配起來。
+
+### Internal
+
+- `docs/mobile-link.md` documents pairing, faithful mirroring, relay deployment,
+  the trust boundary and the watch path. Version number in this branch is
+  provisional pending merge.
+
+  `docs/mobile-link.md` 記錄配對、忠實鏡射、relay 部署、信任邊界與手錶路徑。
+  本分支的版號為暫定，合併時再定。
+
 ## v0.32.8 (2026-09-05)
 
 ### Added
