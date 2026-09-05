@@ -19,6 +19,7 @@
 		64341327E5176379BE11350C /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01146EB05B9A6D71F6B18C57 /* WatchBridge.swift */; };
 		65669D21EEC663DA4C20E57D /* LinkCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2F6CFCEFC2AA38DAA83B0ED /* LinkCrypto.swift */; };
 		665D5C87178FE9FC5C3F8F06 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731E70C6A9D1BF481C104F11 /* PairingView.swift */; };
+		71C3223487B1A11712151CC4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04DBB85DE30934CB973BB3E5 /* Assets.xcassets */; };
 		73AC82CE8B4C7A004767190F /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = D57B30CBE2EE5DB456E044BC /* Keychain.swift */; };
 		7911BF187820FEC1F7876B77 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E874C822E4745C370FAAD4 /* SharedModels.swift */; };
 		855CCECCA086F53AF63D57C5 /* TerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82EE3BD87834A0AE74982566 /* TerminalScreen.swift */; };
@@ -26,6 +27,7 @@
 		914CF8083A205FC2A5A21629 /* Transport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5DD0572361A2063316AE94 /* Transport.swift */; };
 		9A2C153FFC31347CA2C3C79A /* ShellFrameMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627774BB16268D462A6CA7D3 /* ShellFrameMobileApp.swift */; };
 		9F377560E882C2D6D6A94261 /* ShellFrameWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E2BB10E537B1F240B7EB3E /* ShellFrameWatchApp.swift */; };
+		C2A3292DC124D99249B43899 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0D0CC52041D6C17213D3B3F3 /* Assets.xcassets */; };
 		D898820412A268D4FDF1E7B2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9B51338AAAA3D4C6115DC8 /* Models.swift */; };
 		E712DB3C738E66F5CE7AB4C2 /* FrameLinkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6991CC9DBA52641D922B4D16 /* FrameLinkClient.swift */; };
 		F1CD28ED1073140A726BAE1C /* RecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F0A36695495CD451EE072A /* RecorderView.swift */; };
@@ -66,6 +68,8 @@
 
 /* Begin PBXFileReference section */
 		01146EB05B9A6D71F6B18C57 /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
+		04DBB85DE30934CB973BB3E5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0D0CC52041D6C17213D3B3F3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0D3E9A5A8121F2DF3F21F288 /* ShellFrameMobile.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShellFrameMobile.entitlements; sourceTree = "<group>"; };
 		24B63FFE7C1501C88145504E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		2EBA61E90494CA77BED63CF4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -155,6 +159,7 @@
 		688DB3258E3A535740139B44 /* ShellFrameWatch */ = {
 			isa = PBXGroup;
 			children = (
+				04DBB85DE30934CB973BB3E5 /* Assets.xcassets */,
 				CB49D3E6AB2EA737418DDDBE /* Info.plist */,
 				92C3D7E42638FBD7844ED366 /* PhoneLink.swift */,
 				A0F0A36695495CD451EE072A /* RecorderView.swift */,
@@ -176,6 +181,7 @@
 		9AC72AE9C7DDCBCA4E71512E /* ShellFrameMobile */ = {
 			isa = PBXGroup;
 			children = (
+				0D0CC52041D6C17213D3B3F3 /* Assets.xcassets */,
 				8EAB2C6BC2C679E35AF7A704 /* App */,
 				61F81A4FA2121F173AF70D33 /* Core */,
 				252247723DDAE0EA0A27B97B /* UI */,
@@ -219,6 +225,7 @@
 			buildConfigurationList = C780A9712E04BDDA94E126F9 /* Build configuration list for PBXNativeTarget "ShellFrameWatch" */;
 			buildPhases = (
 				88120F38EBDE7312D9391FCB /* Sources */,
+				FD6FE4A5A5A41D6EEB919761 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -254,6 +261,7 @@
 			buildConfigurationList = 405C3F0289DCAD1409C0BC4B /* Build configuration list for PBXNativeTarget "ShellFrameMobile" */;
 			buildPhases = (
 				BAFA024DD4964FF512E07A6E /* Sources */,
+				3957E6CE6C98CC744747F94C /* Resources */,
 				A1E85A4AA167F86A2510B829 /* Frameworks */,
 				02F88E8A13B5F665AB34199F /* Embed Watch Content */,
 			);
@@ -317,6 +325,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3957E6CE6C98CC744747F94C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C2A3292DC124D99249B43899 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FD6FE4A5A5A41D6EEB919761 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				71C3223487B1A11712151CC4 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		6E5945AE4590CB90D4783370 /* Sources */ = {

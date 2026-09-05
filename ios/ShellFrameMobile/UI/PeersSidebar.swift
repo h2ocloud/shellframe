@@ -26,8 +26,9 @@ struct PeersSidebar: View {
                         Text(store.reachable[peer.id] == false ? "連不上" : "沒有 session")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    ForEach(list) { s in
-                        SessionRow(session: s, needsAttention: store.attention[peer.id]?.contains(s.sid) == true)
+                    ForEach(Array(list.enumerated()), id: \.element.id) { idx, s in
+                        SessionRow(session: s, number: idx + 1,
+                                   needsAttention: store.attention[peer.id]?.contains(s.sid) == true)
                             .tag(SessionRef(peerId: peer.id, sid: s.sid))
                             .contextMenu {
                                 Button(role: .destructive) {
@@ -128,10 +129,15 @@ struct PeerHeader: View {
 
 struct SessionRow: View {
     var session: RemoteSession
+    var number: Int            // same 1-based order as the desktop sidebar
     var needsAttention: Bool
 
     var body: some View {
         HStack(spacing: 8) {
+            Text("\(number)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 18, alignment: .trailing)
             Image(systemName: icon)
                 .foregroundStyle(session.isAlive ? Color.accentColor : Color.secondary)
                 .frame(width: 18)

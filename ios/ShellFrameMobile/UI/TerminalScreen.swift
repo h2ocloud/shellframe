@@ -52,6 +52,9 @@ struct TerminalScreen: View {
                 Button { showComposer = true } label: { Image(systemName: "text.bubble") }
                     .accessibilityIdentifier("composerButton")
                 Menu {
+                    Button { model.bumpFont(+1) } label: { Label("字體放大（\(Int(model.fontSize)) pt）", systemImage: "textformat.size.larger") }
+                    Button { model.bumpFont(-1) } label: { Label("字體縮小", systemImage: "textformat.size.smaller") }
+                    Divider()
                     Button { model.sendBytes("\u{03}") } label: { Label("Ctrl-C", systemImage: "xmark.octagon") }
                     Button { model.sendBytes("\u{1b}") } label: { Label("Esc", systemImage: "escape") }
                     Button { model.sendBytes("\u{0c}") } label: { Label("Ctrl-L 重繪", systemImage: "arrow.clockwise") }
@@ -100,6 +103,23 @@ final class TerminalModel: NSObject, ObservableObject, TerminalViewDelegate {
     }
     @Published var peerSize: (Int, Int) = (0, 0) {
         didSet { if !fitMode { host?.applyLayout() } }
+    }
+
+    /// Terminal font size (points), persisted. Fit mode: bigger font = fewer cols
+    /// on the computer. Fixed mode: this is the 100 % zoom size; pinch / double-tap
+    /// toggles between fit-to-width and 100 %.
+    @Published var fontSize: CGFloat = TerminalModel.storedFontSize {
+        didSet { UserDefaults.standard.set(Double(fontSize), forKey: "sf.fontSize"); host?.applyFont() }
+    }
+
+    static var defaultFontSize: CGFloat { UIDevice.current.userInterfaceIdiom == .pad ? 15 : 14 }
+    static var storedFontSize: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "sf.fontSize")
+        return v >= 9 && v <= 32 ? CGFloat(v) : defaultFontSize
+    }
+
+    func bumpFont(_ delta: CGFloat) {
+        fontSize = min(32, max(9, fontSize + delta))
     }
 
     weak var host: TerminalHostView?
@@ -230,15 +250,18 @@ final class TerminalHostView: UIView, UIScrollViewDelegate {
     private let scroll = UIScrollView()
     private weak var model: TerminalModel?
     private var lastBounds: CGRect = .zero
+    private var zoomInitialized = false
 
     static let bg = UIColor(red: 0x1a / 255, green: 0x1b / 255, blue: 0x26 / 255, alpha: 1)
 
     init(model: TerminalModel) {
         self.model = model
-        let size = UIDevice.current.userInterfaceIdiom == .pad ? 13.0 : 12.0
         terminal = TerminalView(frame: CGRect(x: 0, y: 0, width: 320, height: 240),
-                                font: UIFont.monospacedSystemFont(ofSize: size, weight: .regular))
+                                font: UIFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular))
         super.init(frame: .zero)
+        let dbl = UITapGestureRecognizer(target: self, action: #selector(doubleTapped))
+        dbl.numberOfTapsRequired = 2
+        scroll.addGestureRecognizer(dbl)
         backgroundColor = Self.bg
         terminal.nativeBackgroundColor = Self.bg
         terminal.nativeForegroundColor = UIColor(red: 0xa9 / 255, green: 0xb1 / 255, blue: 0xd6 / 255, alpha: 1)
@@ -264,6 +287,22 @@ final class TerminalHostView: UIView, UIScrollViewDelegate {
             lastBounds = bounds
             applyLayout()
         }
+    }
+
+    /// Re-apply the model's font (A− / A+). Fit mode re-fits → the computer gets a
+    /// new cols×rows through the normal sizeChanged path.
+    func applyFont() {
+        guard let model else { return }
+        terminal.font = UIFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular)
+        applyLayout()
+    }
+
+    /// Fixed mode: double-tap toggles fit-to-width ↔ 100 % (native font size).
+    @objc private func doubleTapped(_ g: UITapGestureRecognizer) {
+        guard let model, !model.fitMode else { return }
+        let fitW = scroll.minimumZoomScale
+        let target: CGFloat = scroll.zoomScale < 0.98 ? 1 : fitW
+        scroll.setZoomScale(target, animated: true)
     }
 
     func resetScreen() {
@@ -296,8 +335,9 @@ final class TerminalHostView: UIView, UIScrollViewDelegate {
             let fitW = bounds.width / max(opt.width, 1)
             scroll.minimumZoomScale = min(1, fitW)
             scroll.maximumZoomScale = 3
-            if scroll.zoomScale < scroll.minimumZoomScale || scroll.zoomScale == 1 && fitW < 1 {
-                scroll.zoomScale = scroll.minimumZoomScale
+            if !zoomInitialized || scroll.zoomScale < scroll.minimumZoomScale {
+                scroll.zoomScale = scroll.minimumZoomScale     // open at fit-to-width; pinch / double-tap to enlarge
+                zoomInitialized = true
             }
             terminal.setNeedsLayout()
         }
