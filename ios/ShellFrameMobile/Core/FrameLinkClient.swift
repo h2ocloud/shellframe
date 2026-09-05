@@ -257,7 +257,7 @@ enum Pairing {
 
     static func pair(payload: PairPayload, myId: String, myName: String) async throws -> Result {
         let code = LinkCrypto.normalizeCode(payload.code)
-        guard code.count >= 8 else { throw LinkError.pairing("配對碑格式不對".replacingOccurrences(of: "碑", with: "碼")) }
+        guard code.count >= 8 else { throw LinkError.pairing("配對碼格式不對") }
         var transports: [LinkTransport] = payload.hosts.map { DirectTransport(host: $0, port: payload.port) }
         if let relay = payload.relay, !relay.url.isEmpty, let fid = payload.fid, !fid.isEmpty {
             transports.append(RelayTransport(relay: relay, frameId: fid))

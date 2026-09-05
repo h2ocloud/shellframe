@@ -6995,7 +6995,7 @@ try {
 
         elif cmd == "snapshot":
             # Frame Link 手機端：目前可視畫面的彩色快照（tmux capture-pane -e，含 ANSI
-            # 與游標位置）。attach 時先貼這張再接增量串流，開起來就是電腒上看到的樣子。
+            # 與游標位置）。attach 時先貼這張再接增量串流，開起來就是電腦上看到的樣子。
             try:
                 sid = args.get("sid", "")
                 s = self.sessions.get(sid)

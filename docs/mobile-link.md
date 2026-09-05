@@ -24,7 +24,7 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
 
 - 串流：`/link/stream` 增量原始 PTY 輸出 → 手機端 SwiftTerm 渲染（同一套 ANSI、
   同一組 Tokyo Night 16 色）。attach 時先拿 `/link/snapshot`（`tmux capture-pane -e`，
-  含顏色與游標）畫底，舊版電腳退回純文字 `peek`。
+  含顏色與游標）畫底，舊版電腦退回純文字 `peek`。
 - 鍵盤：`/link/input` 原始位元組直送 PTY（方向鍵、Ctrl-C、Enter 照原樣）。iPad
   外接鍵盤由 SwiftTerm 處理；軟體鍵盤上方有 Esc／Ctrl／Tab／方向鍵列。
 - 尺寸兩種模式（工具列箭頭鈕切換）：
@@ -32,16 +32,16 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
     **不會動到電腦上的終端**。
   - **撐滿這台裝置**（iPad 預設）：把手機／iPad 的可視格數推給電腦
     （`/link/resize`），電腦上該分頁會跟著 reflow——跟桌面版遠端分頁一樣。
-    切回照電腳尺寸時會把原尺寸還回去。
+    切回照電腦尺寸時會把原尺寸還回去。
 - 訊息框（💬）：走 `/link/send`，也就是 Telegram 訊息那條注入路徑（等 AI 空檔、
   tmux bracketed paste、再 Enter），長 prompt 比逐字敲穩。
 - 「要你決定」：`/link/signals` 讀 agent 的 `[[SF:RED/YELLOW]]`，側欄該 session
   會亮橘色驚嘆號。
-- 多台電腳：每台是獨立 peer、獨立金鑰；側欄一台一區。
+- 多台電腦：每台是獨立 peer、獨立金鑰；側欄一台一區。
 
 ## 公網：relay（TG 式出站長輪詢）
 
-手機在外面、電腳在 NAT 後 → 兩邊都連不進對方。解法跟 Telegram bridge 一樣：
+手機在外面、電腦在 NAT 後 → 兩邊都連不進對方。解法跟 Telegram bridge 一樣：
 **電腦只出不進**，去一個 relay 長輪詢；手機把請求投到 relay，電腦拉回來、在
 本機 loopback 對自己的 Frame Link listener 重放、把回應貼回去。
 

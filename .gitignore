@@ -41,5 +41,7 @@ shellframe_*.json
 # iOS companion app build output / Xcode user state
 ios/build/
 ios/qa/*.png
+ios/qa/report.html
+ios/qa/small/
 *.xcuserstate
 xcuserdata/

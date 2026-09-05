@@ -136,6 +136,9 @@ final class TerminalModel: NSObject, ObservableObject, TerminalViewDelegate {
         stream?.stop()
         stream = nil
         resizeTask?.cancel()
+        // Leaving the view (back, background, quit) must not leave the desktop
+        // squashed to this device's size: hand the tab its own size back.
+        if fitMode, originalPeerSize != nil { restorePeerSize() }
     }
 
     func repaint() { stream?.requestRepaint() }
