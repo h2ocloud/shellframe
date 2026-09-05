@@ -47,6 +47,7 @@ import account_manager
 from api_history import HistoryApiMixin
 from api_schedules import SchedulesApiMixin
 import usage_probe
+import frame_link as frame_link_mod
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
 from bridge_line import LineBridge, LineBridgeConfig
 
@@ -256,6 +257,33 @@ def _ensure_api_server_defaults(cfg: dict) -> bool:
             changed = True
     if cfg.get("api_server") is not raw:
         cfg["api_server"] = raw
+        changed = True
+    return changed
+
+
+def _ensure_frame_link_defaults(cfg: dict) -> bool:
+    """Surface the (default-off) Frame Link block in config.json. frame_id is
+    generated once and never rotated — peers key their secrets to it."""
+    raw = cfg.get("frame_link")
+    if not isinstance(raw, dict):
+        raw = {}
+    changed = False
+    defaults = {
+        "enabled": False,
+        "listen_host": "0.0.0.0",
+        "listen_port": 8767,
+        "frame_name": "",
+        "peers": {},
+    }
+    for key, value in defaults.items():
+        if key not in raw:
+            raw[key] = value
+            changed = True
+    if not raw.get("frame_id"):
+        raw["frame_id"] = uuid.uuid4().hex
+        changed = True
+    if cfg.get("frame_link") is not raw:
+        cfg["frame_link"] = raw
         changed = True
     return changed
 
@@ -580,6 +608,8 @@ def load_config():
             cfg_defaults_changed = True
         if _ensure_api_server_defaults(cfg):
             cfg_defaults_changed = True
+        if _ensure_frame_link_defaults(cfg):
+            cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
                 save_config(cfg)
@@ -591,6 +621,7 @@ def load_config():
     _ensure_agent_roster_defaults(cfg)
     _ensure_user_prompt_paths_default(cfg)
     _ensure_plugins_defaults(cfg)
+    _ensure_frame_link_defaults(cfg)
     return cfg
 
 
@@ -1343,6 +1374,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         self._plugins = None
         self._idle_reaper_started = False
         self._api_httpd = None        # Local HTTP API server handle (Settings hot-toggle)
+        self.frame_link = None        # FrameLink instance (created lazily in _start_frame_link)
         self._hook_events = {}        # sid -> hook-driven state (see _on_agent_event)
         self._status_cache = {}       # sid -> cached status result (idle gating)
         self._plugins_reload()
@@ -6417,6 +6449,131 @@ try {
                     _dlog("api", f"api_server shutdown failed: {e}")
         return self.get_api_server_info()
 
+    # ── Frame Link（跨機配對）────────────────────────────────────────────
+    def _start_frame_link(self):
+        """Create the FrameLink instance (always) and start its listener when
+        config frame_link.enabled is true. Safe to call again after a settings
+        toggle — start() is idempotent."""
+        if getattr(self, "frame_link", None) is None:
+            try:
+                ver = json.loads(VERSION_FILE.read_text()).get("version", "0")
+            except Exception:
+                ver = "0"
+            self.frame_link = frame_link_mod.FrameLink(
+                get_config=load_config,
+                update_config=update_config,
+                execute_fn=self._execute_sfctl,
+                notify=self._on_link_event,
+                log=lambda m: _dlog("link", m),
+                version=ver,
+            )
+        try:
+            if load_config().get("frame_link", {}).get("enabled"):
+                self.frame_link.start()
+        except Exception as e:
+            _dlog("link", f"start failed: {e}")
+
+    def _on_link_event(self, ev: dict):
+        """Push a Frame Link event (message / file / paired / peer_status)
+        into the webview so the panel updates live."""
+        try:
+            if self._window:
+                payload = json.dumps(ev, ensure_ascii=False)
+                self._window.evaluate_js(
+                    f"window._sfLinkEvent && _sfLinkEvent({payload})")
+        except Exception:
+            _swallow("_on_link_event")
+
+    def _link(self):
+        if getattr(self, "frame_link", None) is None:
+            self._start_frame_link()
+        return self.frame_link
+
+    def link_status(self) -> str:
+        try:
+            return json.dumps(self._link().status(), ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"enabled": False, "running": False,
+                               "peers": [], "error": str(e)})
+
+    def link_set_enabled(self, enabled: bool) -> str:
+        def fn(cfg):
+            cfg.setdefault("frame_link", {})["enabled"] = bool(enabled)
+        update_config(fn)
+        fl = self._link()
+        if enabled:
+            fl.start()
+        else:
+            fl.stop()
+        return self.link_status()
+
+    def link_set_name(self, name: str) -> str:
+        def fn(cfg):
+            cfg.setdefault("frame_link", {})["frame_name"] = str(name or "").strip()[:60]
+        update_config(fn)
+        return self.link_status()
+
+    def link_pair_begin(self) -> str:
+        return json.dumps(self._link().pairing_begin(), ensure_ascii=False)
+
+    def link_pair_cancel(self) -> str:
+        return json.dumps(self._link().pairing_cancel())
+
+    def link_join(self, host: str, port: int, code: str) -> str:
+        return json.dumps(self._link().join(host, port, code), ensure_ascii=False)
+
+    def link_unpair(self, peer_id: str) -> str:
+        return json.dumps(self._link().unpair(peer_id))
+
+    def link_update_peer(self, peer_id: str, host: str, port: int) -> str:
+        return json.dumps(self._link().update_peer(peer_id, host, port),
+                          ensure_ascii=False)
+
+    def link_ping(self, peer_id: str) -> str:
+        return json.dumps(self._link().ping_peer(peer_id), ensure_ascii=False)
+
+    def link_remote_tabs(self, peer_id: str) -> str:
+        return json.dumps(self._link().remote_info(peer_id), ensure_ascii=False)
+
+    def link_remote_peek(self, peer_id: str, sid: str, lines: int = 120) -> str:
+        return json.dumps(self._link().remote_peek(peer_id, sid, lines),
+                          ensure_ascii=False)
+
+    def link_remote_send(self, peer_id: str, sid: str, text: str,
+                         submit: bool = True) -> str:
+        return json.dumps(self._link().remote_send(peer_id, sid, text, submit),
+                          ensure_ascii=False)
+
+    def link_message(self, peer_id: str, text: str) -> str:
+        return json.dumps(self._link().send_message(peer_id, text),
+                          ensure_ascii=False)
+
+    def link_send_file(self, peer_id: str, path: str) -> str:
+        return json.dumps(self._link().send_file(peer_id, path),
+                          ensure_ascii=False)
+
+    def link_recent_events(self, limit: int = 100) -> str:
+        try:
+            return json.dumps(self._link().recent_events(int(limit)),
+                              ensure_ascii=False)
+        except Exception:
+            return "[]"
+
+    def link_pick_file(self) -> str:
+        """Native open-file dialog for「傳檔案給 peer」."""
+        try:
+            dialog_type = getattr(webview, "OPEN_DIALOG", None)
+            if dialog_type is None:
+                dialog_type = webview.FileDialog.OPEN
+            result = self._window.create_file_dialog(dialog_type,
+                                                     allow_multiple=False)
+            if result:
+                path = result[0] if isinstance(result, (list, tuple)) else result
+                return json.dumps({"success": True, "path": str(path)})
+            return json.dumps({"success": False, "message": "cancelled"})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
     def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
         """Execute a sfctl command and return result dict."""
         args = args or {}
@@ -6729,6 +6886,74 @@ try {
             ok = board.remove_task(args.get("id", ""))
             return {"success": ok, "message": "Removed" if ok else "No such task"}
 
+        elif cmd == "link_status":
+            # Frame Link（跨機配對）狀態：listener + peers 可達性。
+            try:
+                st = self._link().status()
+                lines = [f"🔗 Frame Link — {'on' if st.get('running') else 'off'}"
+                         f" · {st.get('frame_name')}"]
+                if st.get("running"):
+                    addrs = ", ".join(st.get("addresses") or []) or "?"
+                    lines.append(f"   {addrs} :{st.get('listen_port')}")
+                for p in st.get("peers") or []:
+                    dot = "🟢" if p.get("reachable") else "⚫"
+                    lines.append(f" {dot} {p['name']} — {p.get('host') or '(無位址)'}"
+                                 f":{p.get('port') or ''}")
+                if not st.get("peers"):
+                    lines.append(" (尚未配對任何 ShellFrame)")
+                return {"success": True, "message": "\n".join(lines),
+                        "details": st}
+            except Exception as e:
+                return {"success": False, "message": f"link status failed: {e}"}
+
+        elif cmd == "link_pair":
+            # 產生短效一次性配對碼（TG 遠端也能觸發，人在外面即可配對）。
+            try:
+                res = self._link().pairing_begin()
+                if not res.get("success"):
+                    return res
+                addrs = ", ".join(res.get("addresses") or []) or "?"
+                return {"success": True,
+                        "message": (f"🔗 配對碼：{res['code']}\n"
+                                    f"位址：{addrs}  port {res['port']}\n"
+                                    f"{res['expires_in']} 秒內、限一次，"
+                                    f"在另一台 ShellFrame 選「加入配對」輸入"),
+                        "details": res}
+            except Exception as e:
+                return {"success": False, "message": f"link pair failed: {e}"}
+
+        elif cmd == "link_join":
+            try:
+                res = self._link().join(args.get("host", ""),
+                                        int(args.get("port") or 8767),
+                                        args.get("code", ""))
+                if res.get("success"):
+                    self._notify_ui_sessions_changed()
+                    return {"success": True,
+                            "message": f"✅ 已配對：{res.get('peer_name')}",
+                            "details": res}
+                return res
+            except Exception as e:
+                return {"success": False, "message": f"link join failed: {e}"}
+
+        elif cmd == "link_unpair":
+            try:
+                target = (args.get("peer") or "").strip()
+                peers = self._link().peers()
+                pid = target if target in peers else ""
+                if not pid:
+                    for k, v in peers.items():
+                        if v.get("name") == target:
+                            pid = k
+                            break
+                if not pid:
+                    return {"success": False,
+                            "message": f"找不到 peer「{target}」（用 link_status 看名單）"}
+                self._link().unpair(pid)
+                return {"success": True, "message": f"已斷開 {target}"}
+            except Exception as e:
+                return {"success": False, "message": f"link unpair failed: {e}"}
+
         elif cmd == "usage":
             # Per-tab AI usage water-level. Detects claude/codex from the
             # session's launch command and queries the matching local script.
@@ -6760,6 +6985,11 @@ try {
         if self.line_bridge:
             self.line_bridge.stop()
             self.line_bridge = None
+        if getattr(self, "frame_link", None):
+            try:
+                self.frame_link.stop()
+            except Exception:
+                _swallow("Api.cleanup_all:frame_link")
         for s in list(self.sessions.values()):
             # Detach only — tmux sessions stay alive for reattach on restart
             s.kill(kill_tmux=False)
@@ -7817,6 +8047,7 @@ def main():
     _register_global_hotkey()
     api._start_command_watcher()
     api._start_api_server()
+    api._start_frame_link()
     webview.start(debug=("--debug" in sys.argv))
 
     # If webview.start() returns but process is still alive, force exit

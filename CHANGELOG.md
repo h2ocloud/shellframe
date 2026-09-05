@@ -6,6 +6,70 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.32.0 (2026-09-05)
+
+### Added
+
+- **Frame Link — pair two ShellFrame instances across machines.** A 🔗 button
+  in the tab-bar gap (dim = no peer connected, lit = at least one reachable)
+  opens a resizable bottom split panel. Pairing uses a short-lived one-time
+  code (10 chars, 120 s, max 5 bad attempts): the code never travels in
+  cleartext — both sides exchange HMAC proofs and independently derive a
+  256-bit long-term secret. After pairing you can browse the peer's tabs with
+  a live screen view, inject prompts into its tabs, exchange chat messages,
+  and transfer files (received files land in `~/Downloads/ShellFrame/<peer>/`).
+  Every request is HMAC-SHA256 signed (timestamp + nonce against replay,
+  responses signed too); traffic is not encrypted — see
+  [`docs/frame-link.md`](docs/frame-link.md) for the security model. Works
+  over the public internet with only ONE reachable side: the unreachable peer
+  polls a signed outbox, so messages, tab injections and file offers queue up
+  and get pulled through NAT. Local and each remote frame render as separately
+  collapsible, colour-coded sections; each peer row has an ✕ with a confirm
+  popup to unpair, and an ✎ to fix the address when the peer's IP drifts.
+  End-to-end regression: `tests_frame_link.py` (two instances in one process:
+  pairing, replay/tamper rejection, remote ops, direct + store-and-forward
+  message/file paths).
+
+  **Frame Link — 跨機配對兩台 ShellFrame。** tab bar 分頁間隔多了一顆 🔗
+  （暗＝沒有連上的 peer、亮＝至少一台可達），點開可拖高的下半部分割面板。
+  配對用短效一次性配對碼（10 字元、120 秒、連錯 5 次作廢）：配對碼不走網路
+  明文——雙方互出 HMAC proof、各自導出 256-bit 長期金鑰。配對後可以看對方
+  分頁清單與即時畫面、把指令注入對方分頁、互傳訊息與檔案（收到的檔存
+  `~/Downloads/ShellFrame/<peer 名>/`）。所有請求都有 HMAC-SHA256 簽章
+  （timestamp＋nonce 防重放、回應也簽章）；流量未加密——安全模型見
+  [`docs/frame-link.md`](docs/frame-link.md)。跨公網只要**一邊可達**就能全雙工：
+  不可達的那台輪詢帶簽章的 outbox，訊息／分頁指令／檔案 offer 會排隊被拉走、
+  穿過 NAT。本機與每台遠端各是可收合的色條區塊，一眼可分；peer 列右邊的 ✕
+  斷開配對（跳確認 popup）、✎ 在對方 IP 漂移時直接改位址免重配。端到端回歸：
+  `tests_frame_link.py`（同 process 兩個 instance：配對、重放／竄改拒絕、
+  遠端操作、直連與 store-and-forward 訊息／檔案）。
+
+- **Pair over Telegram — `/link` command.** `/link pair` opens a pairing
+  window and replies with the code + addresses; `/link join <host[:port]>
+  <code>` pairs from the other machine's bot; `/link` shows listener state and
+  peer reachability; `/link unpair <name>` disconnects. Both machines can be
+  paired remotely without touching either desktop.
+
+  **TG 遠端配對——`/link` 指令。** `/link pair` 開配對窗口並回覆配對碼與位址；
+  在另一台的 bot 下 `/link join <host[:port]> <碼>` 完成配對；`/link` 看
+  listener 狀態與 peers 可達性；`/link unpair <名稱>` 斷開。人在外面
+  兩台桌機都不用碰就能完成配對。
+
+### Changes
+
+- **Clicking the active tab's TG chip now disables that tab's Telegram
+  bridge.** Turning a tab's TG connection off used to require dragging its
+  sidebar row down into the "not bridged" section — the chip itself only
+  switched the active session. Now the chip on the already-active TG tab acts
+  as a one-click disable (tooltip says so); dragging the row back up
+  re-enables, unchanged. Covered by the existing bridge-toggle path
+  (`set_session_bridge`).
+
+  **已是 TG active 的分頁再點一下 TG chip＝直接停用該分頁的 TG 連線。** 以前
+  要把側欄那列拖到「不由 ShellFrame 橋接」區才能關，chip 本身只能切換 active。
+  現在對已 active 的分頁點 chip 就是一鍵停用（tooltip 有註明）；拖回上區恢復，
+  行為不變。走既有的 `set_session_bridge` 路徑。
+
 ## v0.31.4 (2026-09-05)
 
 ### Fixes

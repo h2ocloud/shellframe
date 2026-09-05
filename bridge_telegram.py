@@ -1524,6 +1524,7 @@ class TelegramBridge(BridgeBase):
             {"command": "rename", "description": "Rename tab: /rename <新名> 或 /rename <編號> <新名>"},
             {"command": "effort", "description": "調推理深度（claude/codex，inline 按鈕）"},
             {"command": "quiet", "description": "這一輪別再提醒進度（心跳靜音）"},
+            {"command": "link", "description": "跨機配對：/link pair、/link join <host> <碼>"},
             {"command": "close", "description": "Close current session (with confirm)"},
         ])
         # The claude-plugins-official telegram plugin shares this bot token
@@ -6316,6 +6317,47 @@ class TelegramBridge(BridgeBase):
                     "text": f"{head}\n分頁關掉後編號會往前遞補，舊清單會過期。"
                             f"\n\n{self._slot_menu_text(user_id)}",
                 })
+
+        elif cmd == "link":
+            # Frame Link（跨機配對）遠端操作：人在外面用 TG 就能把兩台接起來。
+            #   /link                → 狀態（listener + peers 可達性）
+            #   /link pair           → 產生短效一次性配對碼
+            #   /link join <host[:port]> <code> → 用配對碼加入另一台
+            #   /link unpair <name>  → 斷開 peer
+            argv = (text or "").split()[1:]
+            sub = (argv[0].lower() if argv else "status")
+
+            def _do_link(sub=sub, argv=argv, chat_id=chat_id):
+                if sub == "pair":
+                    result = self._sfctl_call("link_pair", {}, timeout=15.0)
+                elif sub == "join":
+                    if len(argv) < 3:
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": "用法：/link join <host[:port]> <配對碼>"})
+                        return
+                    hostport, code = argv[1], argv[2]
+                    host, _, port = hostport.partition(":")
+                    result = self._sfctl_call("link_join", {
+                        "host": host, "port": int(port or 8767),
+                        "code": code}, timeout=30.0)
+                elif sub == "unpair":
+                    if len(argv) < 2:
+                        tg_api(self.config.bot_token, "sendMessage", {
+                            "chat_id": chat_id,
+                            "text": "用法：/link unpair <peer 名稱>"})
+                        return
+                    result = self._sfctl_call("link_unpair",
+                                              {"peer": " ".join(argv[1:])},
+                                              timeout=15.0)
+                else:
+                    result = self._sfctl_call("link_status", {}, timeout=15.0)
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": result.get("message") or "Frame Link 操作失敗",
+                })
+
+            threading.Thread(target=_do_link, daemon=True).start()
 
         elif cmd == "reload":
             if self._on_reload:

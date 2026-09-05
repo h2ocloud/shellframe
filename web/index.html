@@ -501,6 +501,117 @@
   .panel-resizer.dragging { background: #7aa2f7; }
   /* No transition during an active drag so the panel tracks the cursor. */
   #sidebar.resizing, #board-panel.resizing { transition: none; }
+
+  /* ── Frame Link（跨機配對）── */
+  /* Tab-bar 中間間隔的 🔗：沒配對＝暗、有 peer 連上＝亮、有事件＝脈動 */
+  #btn-link {
+    -webkit-app-region: no-drag; background: none; border: none;
+    font-size: 14px; padding: 4px 8px; margin-left: 2px; border-radius: 6px;
+    cursor: pointer; color: #565f89; opacity: .38; transition: all .2s;
+  }
+  #btn-link:hover { background: #1a1b26; opacity: .8; }
+  #btn-link.on { opacity: 1; color: #9ece6a; text-shadow: 0 0 8px rgba(158,206,106,.5); }
+  #btn-link.pulse { animation: busy-pulse 1s ease-in-out 3; opacity: 1; }
+  /* 上緣水平 resizer（既有 .panel-resizer 是直的，這裡要橫的） */
+  #link-resizer {
+    flex: 0 0 5px; height: 5px; cursor: row-resize; background: transparent;
+    transition: background .1s; display: none;
+  }
+  #link-resizer:hover { background: #292e42; }
+  #link-resizer.dragging { background: #7aa2f7; }
+  #link-panel {
+    height: var(--link-h, 260px); background: #16161e;
+    border-top: 1px solid #292e42; display: none; flex-shrink: 0;
+    overflow: hidden;
+  }
+  #link-panel.open { display: flex; }
+  #link-panel.resizing { transition: none; }
+  #link-side {
+    width: 250px; flex-shrink: 0; border-right: 1px solid #292e42;
+    display: flex; flex-direction: column; overflow-y: auto; padding: 6px 0;
+  }
+  #link-side-footer {
+    margin-top: auto; padding: 8px; display: flex; gap: 6px; flex-wrap: wrap;
+    border-top: 1px solid #24283b;
+  }
+  .link-sec-head {
+    display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    font-size: 11px; cursor: pointer; user-select: none; white-space: nowrap;
+    color: #a9b1d6;
+  }
+  .link-sec-head:hover { background: #1a1b26; }
+  .link-sec-head .link-caret { color: #565f89; font-size: 9px; width: 10px; }
+  .link-sec-head .link-count { color: #565f89; font-size: 10px; }
+  /* 本機／遠端要一眼分得出來：左邊色條＋不同 hue 的標題 */
+  .link-sec-head.local { border-left: 3px solid #7aa2f7; }
+  .link-sec-head.remote { border-left: 3px solid #9ece6a; }
+  .link-sec-head.remote.offline { border-left-color: #565f89; }
+  .link-sec-head .link-peer-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: #3b4261; flex-shrink: 0;
+  }
+  .link-sec-head .link-peer-dot.on { background: #9ece6a; box-shadow: 0 0 5px #9ece6a; }
+  .link-sec-head .link-unpair {
+    margin-left: auto; color: #565f89; font-size: 13px; padding: 0 4px;
+    border-radius: 3px; line-height: 1;
+  }
+  .link-sec-head .link-unpair:hover { color: #f7768e; background: #292e42; }
+  .link-item {
+    display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 24px;
+    font-size: 12px; color: #787c99; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .link-item:hover { background: #1a1b26; color: #c0caf5; }
+  .link-item.sel { background: #1f2335; color: #c0caf5; }
+  .link-item.local-item { border-left: 3px solid transparent; }
+  .link-item .li-label { overflow: hidden; text-overflow: ellipsis; }
+  .link-empty { padding: 4px 10px 4px 24px; font-size: 11px; color: #3b4261; }
+  .link-act {
+    background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px;
+    color: #a9b1d6; font-size: 11px; padding: 4px 8px; cursor: pointer;
+    transition: all .15s;
+  }
+  .link-act:hover { border-color: #7aa2f7; color: #7aa2f7; }
+  #link-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #link-main-head {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    border-bottom: 1px solid #24283b; font-size: 12px; color: #a9b1d6;
+    flex-shrink: 0; min-height: 30px;
+  }
+  #link-main-body { flex: 1; overflow-y: auto; padding: 8px 10px; min-height: 0; }
+  #link-remote-screen {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px;
+    line-height: 1.45; white-space: pre-wrap; word-break: break-all;
+    color: #a9b1d6;
+  }
+  #link-input-row {
+    display: flex; gap: 6px; padding: 6px 10px; border-top: 1px solid #24283b;
+    flex-shrink: 0;
+  }
+  #link-input-row input[type="text"] {
+    flex: 1; background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px;
+    padding: 6px 8px; color: #c0caf5; font-size: 12px; outline: none;
+  }
+  #link-input-row input[type="text"]:focus { border-color: #7aa2f7; }
+  .link-msg { margin-bottom: 8px; font-size: 12px; }
+  .link-msg .lm-meta { font-size: 10px; color: #565f89; margin-bottom: 2px; }
+  .link-msg .lm-body {
+    display: inline-block; background: #1f2335; border-radius: 8px;
+    padding: 6px 10px; color: #c0caf5; white-space: pre-wrap; word-break: break-word;
+  }
+  .link-msg.out { text-align: right; }
+  .link-msg.out .lm-body { background: #283457; }
+  .link-msg .lm-file { color: #9ece6a; cursor: pointer; text-decoration: underline; }
+  #link-dropzone {
+    border: 2px dashed #3b4261; border-radius: 8px; padding: 18px;
+    text-align: center; color: #565f89; font-size: 12px; margin-bottom: 10px;
+    transition: all .15s;
+  }
+  #link-dropzone.over { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.06); }
+  .link-code-display {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 30px;
+    letter-spacing: 3px; color: #9ece6a; text-align: center; padding: 14px 0;
+    user-select: text;
+  }
   .sb-sessions-head {
     display: flex; align-items: center; justify-content: space-between; gap: 6px;
   }
@@ -773,6 +884,7 @@
   <button class="tab-action" id="btn-sidebar" title="Toggle sidebar" style="font-size:14px">☰</button>
   <div id="tabs"></div>
   <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
+  <button id="btn-link" data-i18n-title="linkBtnTitle" title="Frame Link — 配對其他 ShellFrame">🔗</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
   <button id="usage-brief" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
@@ -839,6 +951,27 @@
       <span id="feed-overview"></span>
     </div>
     <div id="board-list"></div>
+  </div>
+</div>
+
+<!-- Frame Link — 跨機配對面板（下半部分割，🔗 展開） -->
+<div id="link-resizer" title="拖曳調整高度"></div>
+<div id="link-panel">
+  <div id="link-side">
+    <div id="link-sections"></div>
+    <div id="link-side-footer">
+      <button class="link-act" id="btn-link-pair" data-i18n="linkPairBtn">產生配對碼</button>
+      <button class="link-act" id="btn-link-join" data-i18n="linkJoinBtn">加入配對</button>
+      <button class="link-act" id="btn-link-toggle" style="margin-left:auto"></button>
+    </div>
+  </div>
+  <div id="link-main">
+    <div id="link-main-head"><span id="link-main-title" style="color:#565f89">—</span></div>
+    <div id="link-main-body"></div>
+    <div id="link-input-row" style="display:none">
+      <input type="text" id="link-input" placeholder=""/>
+      <button class="link-act" id="btn-link-send" data-i18n="linkSend">送出</button>
+    </div>
   </div>
 </div>
 
@@ -1502,6 +1635,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
       shiftEnterShortcut: 'Newline (no submit)',
       tgUnbridgedDivider: 'Not bridged by ShellFrame',
+      linkBtnTitle: 'Frame Link — pair another ShellFrame (cross-machine)',
+      linkPairBtn: 'Pairing code',
+      linkJoinBtn: 'Join',
+      linkSend: 'Send',
+      linkLocalSec: 'Local',
       tgUnbridgedTooltip: 'Sessions below are not monitored by ShellFrame\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
       tgSelfManaged: 'own',
       tgBotToken: 'Bot Token',
@@ -1678,6 +1816,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
       shiftEnterShortcut: '換行（不送出）',
       tgUnbridgedDivider: '不由 ShellFrame 橋接',
+      linkBtnTitle: 'Frame Link — 配對其他 ShellFrame（跨機連線）',
+      linkPairBtn: '產生配對碼',
+      linkJoinBtn: '加入配對',
+      linkSend: '送出',
+      linkLocalSec: '本機',
       tgUnbridgedTooltip: '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
       tgSelfManaged: '自管',
       tgBotToken: 'Bot Token',
@@ -2829,6 +2972,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
     renderSidebar();
     updateTabHint();   // 改名／關閉分頁都會經過這裡
+    // Frame Link 面板開著的話，「本機」區塊要跟著分頁增刪改名同步
+    try {
+      if (linkState && linkPanelOpen()) renderLinkSections();
+    } catch (e) {}
   }
 
   function syncBridgeOrder() {
@@ -2894,7 +3041,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         `<span class="sb-label">${esc(s.label)}</span>` +
         modelBadgeHtml(s) +
         (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
-        (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
+        (hasBridge ? `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? '再點一下＝停用這個分頁的 TG 連線' : '點一下把 TG 切到這個分頁'}">${isActiveTg ? '◀ TG' : 'TG'}</span>` : '') +
         (hasLineBridge ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
       container.appendChild(el);
@@ -3042,12 +3189,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       else confirmGlassesAllow(sid);
       return;
     }
-    // TG badge click → switch TG active session
+    // TG badge click → switch TG active session.
+    // 已經是 active 的分頁再點一下 TG icon → 直接停用該分頁與 TG 的連線
+    // （原本只能拖到「不由 ShellFrame 橋接」區，Howard 2026-09-05 要求
+    // 點擊就能斷）。停用後拖回上區即可恢復。
     const tgAction = e.target.closest('[data-action="switch-tg"]');
     if (tgAction) {
       e.preventDefault();
       e.stopPropagation();
       const sid = tgAction.dataset.sid;
+      if (bridgeState && bridgeState.active_sid === sid) {
+        toggleSessionBridge(sid, false);
+        return;
+      }
       pywebview.api.switch_bridge_session(sid).then((raw) => {
         if (bridgeState) bridgeState.active_sid = sid;
         renderSidebar();
@@ -3191,6 +3345,652 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (result.success && sessions[sid]) sessions[sid].glassesEnabled = result.enabled;
       renderSidebar();
     } catch (err) { console.warn('glasses toggle error:', err); }
+  }
+
+  // ── Frame Link（跨機配對）────────────────────────────────────────────
+  // 🔗 在 tab bar 分頁間隔：暗＝沒有連上的 peer、亮＝至少一台可達。
+  // 點開下半部分割面板：左欄「本機／每台遠端」各自可收合、色條區分；
+  // 右欄依選擇顯示 遠端分頁畫面（peek 輪詢）／訊息／檔案傳輸。
+  let linkState = null;         // link_status() 快照
+  let linkView = null;          // {type:'remote'|'messages'|'files', peerId, sid, label}
+  let linkPeekTimer = null;
+  let linkStatusTimer = null;
+  let linkRemoteTabs = {};      // peerId -> sessions list（快取，展開時抓）
+  const linkUi = (() => {       // 收合狀態 + 面板高度，localStorage 持久化
+    try { return JSON.parse(localStorage.getItem('sf_link_ui') || '{}'); }
+    catch (e) { return {}; }
+  })();
+  function saveLinkUi() {
+    try { localStorage.setItem('sf_link_ui', JSON.stringify(linkUi)); } catch (e) {}
+  }
+
+  function linkPanelOpen() {
+    return document.getElementById('link-panel').classList.contains('open');
+  }
+
+  function toggleLinkPanel(force) {
+    const panel = document.getElementById('link-panel');
+    const resizer = document.getElementById('link-resizer');
+    const open = (force !== undefined) ? force : !panel.classList.contains('open');
+    panel.classList.toggle('open', open);
+    resizer.style.display = open ? 'block' : 'none';
+    linkUi.open = open;
+    saveLinkUi();
+    if (open) {
+      refreshLinkStatus(true);
+      if (!linkStatusTimer) linkStatusTimer = setInterval(() => refreshLinkStatus(false), 12000);
+    } else {
+      stopLinkPeek();
+      if (linkStatusTimer) { clearInterval(linkStatusTimer); linkStatusTimer = null; }
+    }
+    // 面板開合改變 terminal 高度 → xterm 要重新 fit
+    if (activeId && sessions[activeId] && sessions[activeId].fitAddon) {
+      setTimeout(() => { try { sessions[activeId].fitAddon.fit(); } catch (e) {} }, 60);
+    }
+  }
+
+  async function refreshLinkStatus(rerender) {
+    try {
+      linkState = JSON.parse(await pywebview.api.link_status());
+    } catch (e) { return; }
+    const anyOn = (linkState.peers || []).some(p => p.reachable);
+    const btn = document.getElementById('btn-link');
+    btn.classList.toggle('on', anyOn);
+    btn.title = anyOn
+      ? 'Frame Link — ' + (linkState.peers || []).filter(p => p.reachable).map(p => p.name).join(', ')
+      : t('linkBtnTitle');
+    if (rerender !== false && linkPanelOpen()) renderLinkSections();
+  }
+
+  function esc2(s) { return esc(String(s == null ? '' : s)); }
+
+  function renderLinkSections() {
+    const box = document.getElementById('link-sections');
+    if (!box || !linkState) return;
+    box.innerHTML = '';
+
+    // ── 本機 section（藍色條）──
+    const localCollapsed = !!linkUi.cLocal;
+    const lh = document.createElement('div');
+    lh.className = 'link-sec-head local';
+    lh.innerHTML = `<span class="link-caret">${localCollapsed ? '▸' : '▾'}</span>` +
+      `🖥️ <b>${esc2(t('linkLocalSec'))}</b>` +
+      `<span style="color:#565f89">· ${esc2(linkState.frame_name || '')}</span>` +
+      `<span class="link-count">${sessionOrder.length}</span>`;
+    lh.addEventListener('click', () => { linkUi.cLocal = !localCollapsed; saveLinkUi(); renderLinkSections(); });
+    box.appendChild(lh);
+    if (!localCollapsed) {
+      sessionOrder.forEach(sid => {
+        const s = sessions[sid];
+        if (!s) return;
+        const it = document.createElement('div');
+        it.className = 'link-item local-item' + (sid === activeId ? ' sel' : '');
+        it.innerHTML = `<span class="li-label">${esc2(s.label)}</span>`;
+        it.title = '切到本機分頁';
+        it.addEventListener('click', () => switchTab(sid));
+        box.appendChild(it);
+      });
+    }
+
+    // ── 每台遠端 peer 一個 section（綠色條；離線灰）──
+    (linkState.peers || []).forEach(p => {
+      const key = 'c_' + p.id;
+      const collapsed = !!linkUi[key];
+      const head = document.createElement('div');
+      head.className = 'link-sec-head remote' + (p.reachable ? '' : ' offline');
+      head.innerHTML = `<span class="link-caret">${collapsed ? '▸' : '▾'}</span>` +
+        `<span class="link-peer-dot${p.reachable ? ' on' : ''}"></span>` +
+        `🌐 <b>${esc2(p.name)}</b>` +
+        `<span style="color:#565f89;font-size:10px">${esc2(p.host || '')}${p.port ? ':' + p.port : ''}</span>` +
+        `<span class="link-unpair" data-pid="${esc2(p.id)}" title="斷開這台 ShellFrame">&times;</span>`;
+      head.addEventListener('click', (e) => {
+        if (e.target.classList.contains('link-unpair')) { confirmUnpair(p); return; }
+        linkUi[key] = !collapsed;
+        saveLinkUi();
+        renderLinkSections();
+        if (collapsed) loadRemoteTabs(p.id);   // 剛展開 → 抓遠端分頁
+      });
+      box.appendChild(head);
+      if (!collapsed) {
+        const acts = document.createElement('div');
+        acts.className = 'link-item';
+        acts.style.gap = '10px';
+        acts.innerHTML =
+          `<span data-act="msg" title="跟這台互傳訊息">💬 訊息</span>` +
+          `<span data-act="file" title="傳檔案給這台">📁 檔案</span>` +
+          `<span data-act="edit" title="編輯位址（IP 換了用這裡改）">✎ 位址</span>`;
+        acts.addEventListener('click', (e) => {
+          const act = e.target.dataset && e.target.dataset.act;
+          if (act === 'msg') openLinkMessages(p);
+          else if (act === 'file') openLinkFiles(p);
+          else if (act === 'edit') editPeerAddress(p);
+        });
+        box.appendChild(acts);
+        if (!p.reachable) {
+          const em = document.createElement('div');
+          em.className = 'link-empty';
+          em.textContent = p.host ? '離線／不可直連（訊息與檔案會排隊等對方來拉）'
+                                  : '無位址（僅能等對方輪詢取件）';
+          box.appendChild(em);
+        } else {
+          const tabs = linkRemoteTabs[p.id];
+          if (!tabs) {
+            const em = document.createElement('div');
+            em.className = 'link-empty';
+            em.textContent = '載入遠端分頁…';
+            box.appendChild(em);
+            loadRemoteTabs(p.id);
+          } else if (!tabs.length) {
+            const em = document.createElement('div');
+            em.className = 'link-empty';
+            em.textContent = '(對方沒有開分頁)';
+            box.appendChild(em);
+          } else {
+            tabs.forEach(rt => {
+              const it = document.createElement('div');
+              const sel = linkView && linkView.type === 'remote'
+                          && linkView.peerId === p.id && linkView.sid === rt.sid;
+              it.className = 'link-item' + (sel ? ' sel' : '');
+              it.innerHTML = `<span style="opacity:.5;font-size:10px">▣</span>` +
+                             `<span class="li-label">${esc2(rt.label || rt.sid)}</span>`;
+              it.title = '看這個遠端分頁的畫面';
+              it.addEventListener('click', () => openRemoteView(p, rt));
+              box.appendChild(it);
+            });
+          }
+        }
+      }
+    });
+    if (!(linkState.peers || []).length) {
+      const em = document.createElement('div');
+      em.className = 'link-empty';
+      em.style.padding = '8px 10px';
+      em.textContent = '尚未配對。一台按「產生配對碼」、另一台按「加入配對」。';
+      box.appendChild(em);
+    }
+    // footer：連線功能開關
+    const tog = document.getElementById('btn-link-toggle');
+    tog.textContent = linkState.running ? '連線：開' : '連線：關';
+    tog.title = linkState.running
+      ? `監聽 ${(linkState.addresses || []).join(', ')} :${linkState.listen_port} — 點一下關閉`
+      : '目前不接受跨機連線 — 點一下開啟';
+    tog.style.color = linkState.running ? '#9ece6a' : '#565f89';
+  }
+
+  async function loadRemoteTabs(peerId) {
+    try {
+      const res = JSON.parse(await pywebview.api.link_remote_tabs(peerId));
+      linkRemoteTabs[peerId] = (res.details && res.details.sessions) || [];
+    } catch (e) { linkRemoteTabs[peerId] = []; }
+    if (linkPanelOpen()) renderLinkSections();
+  }
+
+  function linkMainTitle(html) {
+    document.getElementById('link-main-title').innerHTML = html;
+  }
+
+  function stopLinkPeek() {
+    if (linkPeekTimer) { clearInterval(linkPeekTimer); linkPeekTimer = null; }
+  }
+
+  // ── 右欄視圖：遠端分頁畫面 ──
+  function openRemoteView(peer, rt) {
+    stopLinkPeek();
+    linkView = { type: 'remote', peerId: peer.id, sid: rt.sid, label: rt.label || rt.sid, peerName: peer.name };
+    linkMainTitle(`🌐 <b>${esc2(peer.name)}</b> <span style="color:#565f89">／</span> ${esc2(linkView.label)}` +
+                  `<span style="color:#565f89;font-size:10px;margin-left:8px">遠端分頁即時畫面（1.5s 更新）</span>`);
+    const body = document.getElementById('link-main-body');
+    body.innerHTML = '<pre id="link-remote-screen">載入中…</pre>';
+    const row = document.getElementById('link-input-row');
+    row.style.display = 'flex';
+    document.getElementById('link-input').placeholder =
+      `送指令到 ${peer.name}／${linkView.label}（Enter 送出）`;
+    renderLinkSections();
+    const poll = async () => {
+      if (!linkView || linkView.type !== 'remote') return;
+      try {
+        const res = JSON.parse(await pywebview.api.link_remote_peek(linkView.peerId, linkView.sid, 120));
+        const el = document.getElementById('link-remote-screen');
+        if (!el) return;
+        if (res.success) {
+          const text = (res.details && res.details.text) || '';
+          if (el.textContent !== text) {
+            const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 30;
+            el.textContent = text || '(空白畫面)';
+            if (atBottom) body.scrollTop = body.scrollHeight;
+          }
+        } else {
+          el.textContent = '⚠ ' + (res.message || 'peek 失敗');
+        }
+      } catch (e) {}
+    };
+    poll();
+    linkPeekTimer = setInterval(poll, 1500);
+  }
+
+  // ── 右欄視圖：訊息 ──
+  async function openLinkMessages(peer) {
+    stopLinkPeek();
+    linkView = { type: 'messages', peerId: peer.id, peerName: peer.name };
+    linkMainTitle(`💬 與 <b>${esc2(peer.name)}</b> 的訊息`);
+    const row = document.getElementById('link-input-row');
+    row.style.display = 'flex';
+    document.getElementById('link-input').placeholder = `傳訊息給 ${peer.name}（Enter 送出）`;
+    const body = document.getElementById('link-main-body');
+    body.innerHTML = '';
+    try {
+      const evs = JSON.parse(await pywebview.api.link_recent_events(200));
+      evs.filter(ev => ev.kind === 'message' && ev.peer_id === peer.id)
+         .forEach(ev => appendLinkMsg(ev));
+    } catch (e) {}
+    body.scrollTop = body.scrollHeight;
+    renderLinkSections();
+  }
+
+  function appendLinkMsg(ev) {
+    const body = document.getElementById('link-main-body');
+    if (!body) return;
+    const div = document.createElement('div');
+    div.className = 'link-msg' + (ev.dir === 'out' ? ' out' : '');
+    const when = ev.ts ? new Date(ev.ts * 1000).toLocaleTimeString() : '';
+    const who = ev.dir === 'out' ? (linkState && linkState.frame_name) || '我' : (ev.peer_name || 'peer');
+    if (ev.kind === 'file') {
+      div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · 已排隊' : ''}</div>` +
+        `<span class="lm-body">📁 <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
+        ` <span style="color:#565f89;font-size:10px">${fmtBytes(ev.size)}</span></span>`;
+    } else {
+      div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · 已排隊（對方離線）' : ''}</div>` +
+        `<span class="lm-body">${esc2(ev.text || '')}</span>`;
+    }
+    body.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function fmtBytes(n) {
+    if (!n && n !== 0) return '';
+    if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n > 1024) return (n / 1024).toFixed(0) + ' KB';
+    return n + ' B';
+  }
+
+  // ── 右欄視圖：檔案 ──
+  async function openLinkFiles(peer) {
+    stopLinkPeek();
+    linkView = { type: 'files', peerId: peer.id, peerName: peer.name };
+    linkMainTitle(`📁 與 <b>${esc2(peer.name)}</b> 的檔案`);
+    document.getElementById('link-input-row').style.display = 'none';
+    const body = document.getElementById('link-main-body');
+    body.innerHTML =
+      `<div id="link-dropzone">把檔案拖到這裡傳給 ${esc2(peer.name)}，或
+         <a href="#" id="link-pick" style="color:#7aa2f7">選擇檔案</a>
+         <span style="color:#3b4261">（收到的檔在 ~/Downloads/ShellFrame/）</span>
+       </div><div id="link-file-log"></div>`;
+    document.getElementById('link-pick').addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const r = JSON.parse(await pywebview.api.link_pick_file());
+        if (r.success && r.path) sendLinkFile(peer.id, r.path);
+      } catch (err) {}
+    });
+    const dz = document.getElementById('link-dropzone');
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+    try {
+      const evs = JSON.parse(await pywebview.api.link_recent_events(200));
+      const log = document.getElementById('link-file-log');
+      evs.filter(ev => ev.kind === 'file' && ev.peer_id === peer.id)
+         .forEach(ev => appendLinkFileRow(log, ev));
+    } catch (e) {}
+    renderLinkSections();
+  }
+
+  function appendLinkFileRow(log, ev) {
+    if (!log) log = document.getElementById('link-file-log');
+    if (!log) return;
+    const div = document.createElement('div');
+    div.className = 'link-msg' + (ev.dir === 'out' ? ' out' : '');
+    const when = ev.ts ? new Date(ev.ts * 1000).toLocaleString() : '';
+    const arrow = ev.dir === 'out' ? '↗ 送出' : '↘ 收到';
+    div.innerHTML = `<div class="lm-meta">${arrow} · ${when}${ev.queued ? ' · 已排隊（對方離線）' : ''}</div>` +
+      `<span class="lm-body">📄 <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
+      ` <span style="color:#565f89;font-size:10px">${fmtBytes(ev.size)}</span></span>`;
+    log.appendChild(div);
+  }
+
+  async function sendLinkFile(peerId, path) {
+    try {
+      const res = JSON.parse(await pywebview.api.link_send_file(peerId, path));
+      if (linkView && linkView.type === 'files' && linkView.peerId === peerId) {
+        appendLinkFileRow(null, {
+          kind: 'file', dir: 'out', peer_id: peerId, ts: Date.now() / 1000,
+          name: path.split('/').pop(), queued: !!res.queued,
+          size: undefined,
+        });
+      }
+      if (!res.success && !res.queued) alert('傳檔失敗：' + (res.message || ''));
+    } catch (e) { alert('傳檔失敗：' + e); }
+  }
+
+  // 面板內開檔（收到的檔案點一下用系統開啟）
+  document.getElementById('link-main-body').addEventListener('click', (e) => {
+    const f = e.target.closest('.lm-file');
+    if (f && f.dataset.path) {
+      pywebview.api.open_local_file(f.dataset.path).catch(() => {});
+    }
+  });
+
+  // 檔案拖進 link 面板：capture 阻斷 document 層的「附加到終端」路徑
+  document.getElementById('link-panel').addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dz = document.getElementById('link-dropzone');
+    if (dz) dz.classList.remove('over');
+    if (!linkView || linkView.type !== 'files') return;
+    const paths = [];
+    try {
+      for (const typ of ['text/uri-list', 'public.file-url', 'text/plain']) {
+        const raw = e.dataTransfer.getData(typ) || '';
+        for (const line of raw.split(/\r?\n/)) {
+          const s = line.trim();
+          if (s.startsWith('file://')) {
+            try { paths.push(decodeURIComponent(s.slice(7))); } catch (_) {}
+          } else if (s.startsWith('/') && !paths.includes(s)) paths.push(s);
+        }
+        if (paths.length) break;
+      }
+    } catch (_) {}
+    if (!paths.length) {
+      alert('拿不到檔案路徑——請改用「選擇檔案」按鈕');
+      return;
+    }
+    paths.forEach(p => sendLinkFile(linkView.peerId, p));
+  }, true);
+  document.getElementById('link-panel').addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
+  // ── 輸入列（遠端指令／訊息共用）──
+  async function sendLinkInput() {
+    const input = document.getElementById('link-input');
+    const text = input.value;
+    if (!text.trim() || !linkView) return;
+    input.value = '';
+    if (linkView.type === 'remote') {
+      try {
+        const res = JSON.parse(await pywebview.api.link_remote_send(
+          linkView.peerId, linkView.sid, text, true));
+        if (!res.success && !res.queued) alert('送出失敗：' + (res.message || ''));
+      } catch (e) { alert('送出失敗：' + e); }
+    } else if (linkView.type === 'messages') {
+      try {
+        await pywebview.api.link_message(linkView.peerId, text);
+      } catch (e) { alert('送出失敗：' + e); }
+      // 樂觀 append —— 後端也會推 _sfLinkEvent，用 ts 去重太小題大作，
+      // 這裡直接靠 dir=out 的事件不重複 append（見 _sfLinkEvent）。
+    }
+  }
+  document.getElementById('btn-link-send').addEventListener('click', sendLinkInput);
+  document.getElementById('link-input').addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter') { e.preventDefault(); sendLinkInput(); }
+  });
+
+  // ── 配對：產生配對碼（modal＋倒數）──
+  async function showPairModal() {
+    let res;
+    try { res = JSON.parse(await pywebview.api.link_pair_begin()); }
+    catch (e) { alert('產生配對碼失敗：' + e); return; }
+    if (!res.success) {
+      // listener 沒開 → 順手開起來再重試一次
+      try {
+        const st = JSON.parse(await pywebview.api.link_set_enabled(true));
+        if (st.running) { showPairModal(); return; }
+      } catch (e) {}
+      alert(res.message || '產生配對碼失敗');
+      return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:380px;padding:20px">
+        <h2 style="font-size:14px">🔗 配對碼（一次性，<span id="lp-count">${res.expires_in}</span> 秒內有效）</h2>
+        <div class="link-code-display">${esc2(res.code)}</div>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
+          在另一台 ShellFrame 按「加入配對」，輸入：<br>
+          位址：<code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
+          　port <code style="color:#7aa2f7">${res.port}</code><br>
+          <span style="color:#565f89">跨公網時填這台對外的 IP／網域（需可達，例如 port forward）。
+          TG 遠端也可以：/link pair、/link join</span>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" id="lp-close">關閉配對窗口</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    let left = res.expires_in;
+    const timer = setInterval(() => {
+      left -= 1;
+      const el = document.getElementById('lp-count');
+      if (el) el.textContent = Math.max(0, left);
+      if (left <= 0) finish();
+    }, 1000);
+    // 配對成功事件會把 modal 收掉（見 _sfLinkEvent 的 paired 分支）
+    overlay.dataset.linkPairing = '1';
+    function finish() {
+      clearInterval(timer);
+      overlay.remove();
+      pywebview.api.link_pair_cancel().catch(() => {});
+    }
+    document.getElementById('lp-close').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+  }
+
+  // ── 配對：加入（輸入 host/port/碼）──
+  function showJoinModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:380px;padding:20px">
+        <h2 style="font-size:14px">🔗 加入配對</h2>
+        <div style="display:flex;gap:8px;margin:12px 0 8px">
+          <input type="text" id="lj-host" placeholder="對方 IP 或網域" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+          <input type="text" id="lj-port" value="8767" style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+        </div>
+        <input type="text" id="lj-code" placeholder="配對碼（例：K7QX2-MRD34）" autocapitalize="characters"
+          style="width:100%;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#9ece6a;font-size:16px;font-family:Menlo,monospace;letter-spacing:2px;outline:none"/>
+        <div id="lj-err" style="color:#f7768e;font-size:12px;margin-top:8px;min-height:16px"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+          <button class="btn btn-ghost" id="lj-cancel">取消</button>
+          <button class="btn btn-primary" id="lj-ok">配對</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const $host = document.getElementById('lj-host');
+    $host.focus();
+    function finish() { overlay.remove(); }
+    document.getElementById('lj-cancel').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    document.getElementById('lj-ok').addEventListener('click', async () => {
+      const host = $host.value.trim();
+      const port = parseInt(document.getElementById('lj-port').value.trim() || '8767', 10);
+      const code = document.getElementById('lj-code').value.trim();
+      const err = document.getElementById('lj-err');
+      if (!host || !code) { err.textContent = '位址與配對碼都要填'; return; }
+      err.style.color = '#a9b1d6';
+      err.textContent = '配對中…';
+      try {
+        const res = JSON.parse(await pywebview.api.link_join(host, port, code));
+        if (res.success) {
+          finish();
+          linkRemoteTabs = {};
+          refreshLinkStatus(true);
+          toggleLinkPanel(true);
+        } else {
+          err.style.color = '#f7768e';
+          err.textContent = res.message || '配對失敗';
+        }
+      } catch (e) {
+        err.style.color = '#f7768e';
+        err.textContent = '配對失敗：' + e;
+      }
+    });
+  }
+
+  // ── 斷聯（✕ → 確認 popup）──
+  function confirmUnpair(peer) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:340px;padding:20px">
+        <h2 style="font-size:14px">斷開與「${esc2(peer.name)}」的配對？</h2>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin:10px 0">
+          會刪除這台儲存的配對金鑰，之後要重新配對才能連。<br>
+          <span style="color:#565f89">對方那台的配對記錄要在對方機器上自行移除。</span>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+          <button class="btn btn-ghost" id="lu-cancel">取消</button>
+          <button class="btn btn-primary" id="lu-ok" style="background:#f7768e;border-color:#f7768e">斷開</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function finish() { overlay.remove(); }
+    document.getElementById('lu-cancel').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    document.getElementById('lu-ok').addEventListener('click', async () => {
+      try { await pywebview.api.link_unpair(peer.id); } catch (e) {}
+      finish();
+      if (linkView && linkView.peerId === peer.id) {
+        stopLinkPeek();
+        linkView = null;
+        linkMainTitle('—');
+        document.getElementById('link-main-body').innerHTML = '';
+        document.getElementById('link-input-row').style.display = 'none';
+      }
+      delete linkRemoteTabs[peer.id];
+      refreshLinkStatus(true);
+    });
+  }
+
+  // ── 編輯 peer 位址（IP 漂移時免重配對）──
+  function editPeerAddress(peer) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:340px;padding:20px">
+        <h2 style="font-size:14px">編輯「${esc2(peer.name)}」的位址</h2>
+        <div style="display:flex;gap:8px;margin:12px 0">
+          <input type="text" id="le-host" value="${esc2(peer.host || '')}" placeholder="IP 或網域" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+          <input type="text" id="le-port" value="${peer.port || 8767}" style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="le-cancel">取消</button>
+          <button class="btn btn-primary" id="le-ok">儲存</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function finish() { overlay.remove(); }
+    document.getElementById('le-cancel').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    document.getElementById('le-ok').addEventListener('click', async () => {
+      const host = document.getElementById('le-host').value.trim();
+      const port = parseInt(document.getElementById('le-port').value.trim() || '8767', 10);
+      try { await pywebview.api.link_update_peer(peer.id, host, port); } catch (e) {}
+      finish();
+      delete linkRemoteTabs[peer.id];
+      try { await pywebview.api.link_ping(peer.id); } catch (e) {}
+      refreshLinkStatus(true);
+    });
+  }
+
+  // ── 後端事件推播（訊息／檔案／配對成功／可達性變化）──
+  window._sfLinkEvent = function(ev) {
+    try {
+      if (!ev || !ev.kind) return;
+      if (ev.kind === 'paired') {
+        // 配對成功：收掉「產生配對碼」modal、刷新面板
+        document.querySelectorAll('[data-link-pairing]').forEach(el => el.remove());
+        linkRemoteTabs = {};
+        refreshLinkStatus(true);
+        if (!linkPanelOpen()) toggleLinkPanel(true);
+        return;
+      }
+      if (ev.kind === 'peer_status') { refreshLinkStatus(true); return; }
+      if (ev.kind === 'message' && ev.dir !== 'out') {
+        if (linkView && linkView.type === 'messages' && linkView.peerId === ev.peer_id
+            && linkPanelOpen()) {
+          appendLinkMsg(ev);
+        } else {
+          const btn = document.getElementById('btn-link');
+          btn.classList.add('pulse');
+          setTimeout(() => btn.classList.remove('pulse'), 3500);
+        }
+        return;
+      }
+      if (ev.kind === 'file' && ev.dir !== 'out') {
+        if (linkView && linkView.type === 'files' && linkView.peerId === ev.peer_id
+            && linkPanelOpen()) {
+          appendLinkFileRow(null, ev);
+        } else {
+          const btn = document.getElementById('btn-link');
+          btn.classList.add('pulse');
+          setTimeout(() => btn.classList.remove('pulse'), 3500);
+        }
+        return;
+      }
+    } catch (e) {}
+  };
+
+  // ── wiring：🔗 按鈕、footer、resizer ──
+  document.getElementById('btn-link').addEventListener('click', () => toggleLinkPanel());
+  document.getElementById('btn-link-pair').addEventListener('click', showPairModal);
+  document.getElementById('btn-link-join').addEventListener('click', showJoinModal);
+  document.getElementById('btn-link-toggle').addEventListener('click', async () => {
+    if (!linkState) return;
+    try {
+      linkState = JSON.parse(await pywebview.api.link_set_enabled(!linkState.running));
+      renderLinkSections();
+    } catch (e) {}
+  });
+  // 面板高度拖曳（上緣）
+  (() => {
+    const resizer = document.getElementById('link-resizer');
+    const panel = document.getElementById('link-panel');
+    if (linkUi.h) document.documentElement.style.setProperty('--link-h', linkUi.h + 'px');
+    resizer.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = panel.offsetHeight;
+      resizer.classList.add('dragging');
+      panel.classList.add('resizing');
+      function onMove(ev) {
+        const h = Math.min(Math.max(startH + (startY - ev.clientY), 140),
+                           Math.round(window.innerHeight * 0.65));
+        document.documentElement.style.setProperty('--link-h', h + 'px');
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        resizer.classList.remove('dragging');
+        panel.classList.remove('resizing');
+        linkUi.h = panel.offsetHeight;
+        saveLinkUi();
+        if (activeId && sessions[activeId] && sessions[activeId].fitAddon) {
+          try { sessions[activeId].fitAddon.fit(); } catch (e) {}
+        }
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
+
+  function linkUiInit() {
+    refreshLinkStatus(false);
+    if (linkUi.open) toggleLinkPanel(true);
   }
 
   /* Opening a tab to the glasses is not a preference, it is a grant: every tab
@@ -7808,6 +8608,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       document.getElementById('sidebar').classList.remove('collapsed');
     }
     updateResizerVisibility();
+    linkUiInit();               // Frame Link：狀態燈 + 上次面板開合狀態
 
     // Restore tmux sessions from previous run, then check for hot-reload sessions
     try { await pywebview.api.restore_tmux_sessions(80, 24); } catch(e) {}
