@@ -998,12 +998,20 @@ class Session:
         self._decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
         self._start(self.cols, self.rows)
 
+    def _account_env_overrides(self) -> dict:
+        """Just the account-pinning env vars for this tab (CLAUDE_CONFIG_DIR /
+        CLAUDE_CODE_OAUTH_TOKEN / CODEX_HOME). Passed to `tmux new-session` via
+        `-e` so the pane actually inherits them (see _start_tmux)."""
+        overrides = {}
+        for provider, ref in self.account_refs.items():
+            if ref:
+                overrides.update(ACCOUNT_MANAGER.env_for(provider, ref))
+        return overrides
+
     def _launch_env(self) -> dict:
         """Build the child environment for this tab's account snapshot."""
         env = _session_env()
-        for provider, ref in self.account_refs.items():
-            if ref:
-                env.update(ACCOUNT_MANAGER.env_for(provider, ref))
+        env.update(self._account_env_overrides())
         return env
 
     def _start(self, cols, rows):
@@ -1034,12 +1042,24 @@ class Session:
             # which inherit the process env) can identify which ShellFrame
             # tab it belongs to. See sf_agent_hook.py.
             launch_env = self._launch_env()
+            # Per-session env vars must be passed with `-e KEY=VAL`, NOT via
+            # subprocess env: `tmux new-session` spawns the pane from the tmux
+            # SERVER's environment, so `env=launch_env` is silently ignored
+            # whenever a server already exists (i.e. any time there's more than
+            # the first tab). The account overrides (CLAUDE_CONFIG_DIR /
+            # CLAUDE_CODE_OAUTH_TOKEN / CODEX_HOME) live here — without `-e`
+            # they never reach the child, so an account switch launches with the
+            # wrong/default credentials and the tab looks logged-out
+            # (Howard 2026-09-05: 切換 token 後對話消失、要重新 /login).
+            new_session_env_args = ["-e", f"SF_SID={self.sid}"]
+            for _k, _v in self._account_env_overrides().items():
+                new_session_env_args += ["-e", f"{_k}={_v}"]
             result = subprocess.run([
                 "tmux", "new-session", "-d",
                 "-s", self._tmux_name,
                 "-x", str(cols), "-y", str(rows),
                 "-c", self.cwd,
-                "-e", f"SF_SID={self.sid}",
+                *new_session_env_args,
                 self.cmd,
             ], capture_output=True, timeout=5, env=launch_env)
             if result.returncode != 0:

@@ -98,6 +98,67 @@ def test_switching_global_does_not_mutate_existing_session_snapshot():
         assert cfg["accounts"]["global"]["codex"] == "codex-b"
 
 
+def test_account_env_reaches_tmux_new_session_via_dash_e():
+    """回歸（Howard 2026-09-05：切帳號後對話消失、要重新 /login）。
+
+    根因：`tmux new-session` 是從 tmux SERVER 的環境 spawn pane，client 的
+    `env=` 在 server 已存在時（多分頁時必然）被忽略。所以帳號 env
+    （CLAUDE_CONFIG_DIR / CLAUDE_CODE_OAUTH_TOKEN）必須用 `-e KEY=VAL` 傳，
+    否則新 pane 拿不到、等於用預設帳號啟動＝看起來沒登入。
+    這裡直接攔 tmux new-session 的 argv，確認帳號 env 有進 `-e`。
+    """
+    import main
+
+    saved = {
+        "run": main.subprocess.run,
+        "exists": main._tmux_session_exists,
+        "hastmux": main._has_tmux,
+        "fork": main.pty.fork,
+        "thread": main.threading.Thread,
+        "env_for": main.ACCOUNT_MANAGER.env_for,
+    }
+    captured = []
+
+    class _R:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+
+    class _NoThread:
+        def __init__(self, *a, **k):
+            pass
+        def start(self):
+            pass
+
+    try:
+        main.subprocess.run = lambda argv, *a, **k: (captured.append(list(argv)) or _R())
+        main._tmux_session_exists = lambda name: False
+        main._has_tmux = lambda: True
+        main.pty.fork = lambda: (4242, 9)          # parent branch → 不真的 exec
+        main.threading.Thread = _NoThread            # 別讓 reader 讀壞 fd
+        main.ACCOUNT_MANAGER.env_for = lambda provider, ref: {
+            "CLAUDE_CONFIG_DIR": "/tmp/sf-profiles/claude/claude-b",
+            "CLAUDE_CODE_OAUTH_TOKEN": "tok-abc123",
+        }
+        main.Session("sTEST", "claude", 80, 24, account_refs={"claude": "claude-b"})
+    finally:
+        main.subprocess.run = saved["run"]
+        main._tmux_session_exists = saved["exists"]
+        main._has_tmux = saved["hastmux"]
+        main.pty.fork = saved["fork"]
+        main.threading.Thread = saved["thread"]
+        main.ACCOUNT_MANAGER.env_for = saved["env_for"]
+
+    new_sessions = [c for c in captured
+                    if len(c) > 1 and c[0] == "tmux" and c[1] == "new-session"]
+    assert new_sessions, "沒有攔到 tmux new-session"
+    argv = new_sessions[0]
+    assert "CLAUDE_CONFIG_DIR=/tmp/sf-profiles/claude/claude-b" in argv, argv
+    assert "CLAUDE_CODE_OAUTH_TOKEN=tok-abc123" in argv, argv
+    # 每個帳號 env 前面都要有一個 `-e`
+    assert argv.count("-e") >= 3, argv   # SF_SID + 2 個帳號 var
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

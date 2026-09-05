@@ -6,6 +6,38 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.34.1 (2026-09-05)
+
+### Fixes
+
+- **Switching a tab's Claude/Codex account now actually takes effect — no more
+  forced re-login.** Account switching relaunches the tab's process with the
+  account pinned through env vars (`CLAUDE_CONFIG_DIR` /
+  `CLAUDE_CODE_OAUTH_TOKEN`, or `CODEX_HOME`). Those were passed only through
+  the subprocess environment of the `tmux new-session` call — but tmux spawns
+  the new pane from the **server's** environment, so whenever a tmux server was
+  already running (i.e. any time a second tab exists) the account vars were
+  silently dropped and the relaunched tab came up on the default/previous
+  account, looking logged-out. Only `SF_SID` survived, because it was the one
+  var passed the correct way (`-e KEY=VAL`). The account overrides are now
+  passed the same way, so the switched tab launches on the right, already
+  authenticated profile. Regression test in `tests_accounts.py` captures the
+  `tmux new-session` argv and asserts the account env is present.
+
+  **切換分頁的 Claude／Codex 帳號現在真的會生效——不再被迫重新 /login。**
+  切帳號是把分頁行程重啟、用環境變數釘住帳號（`CLAUDE_CONFIG_DIR`／
+  `CLAUDE_CODE_OAUTH_TOKEN`，或 `CODEX_HOME`）。這些變數之前只透過
+  `tmux new-session` 的 subprocess 環境傳——但 tmux 是從**server**的環境
+  spawn 新 pane，所以只要 tmux server 已在跑（有第二個分頁時必然），帳號變數
+  就被默默丟掉，重啟的分頁用預設／前一個帳號起來，看起來像沒登入。只有
+  `SF_SID` 活著，因為它是唯一用對方法（`-e KEY=VAL`）傳的。現在帳號 override
+  也照這個方法傳，切換的分頁就會用正確、已登入的 profile 啟動。
+  `tests_accounts.py` 加了回歸測試：攔 `tmux new-session` 的 argv、確認帳號
+  env 有在裡面。
+
+  切帳號仍是把該分頁重啟（換帳號＝換一組憑證／對話記錄），所以那一刻畫面上的
+  對話會重來——這是換帳號的本質，不是這次修的登入問題。
+
 ## v0.34.0 (2026-09-05)
 
 ### Added
