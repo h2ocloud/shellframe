@@ -1491,6 +1491,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
+<!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -3793,13 +3795,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.className = 'modal-overlay open';
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
-      <div class="modal" style="width:320px;padding:20px">
-        <h2 style="font-size:14px">🔗 配對另一台 ShellFrame</h2>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-          <button class="btn btn-primary" id="pc-pair" style="padding:10px">產生配對碼<span style="opacity:.6;font-weight:400">（這台當被連端）</span></button>
+      <div class="modal" style="width:340px;padding:20px">
+        <h2 style="font-size:14px">🔗 配對裝置</h2>
+        <button class="btn btn-primary" id="pc-app" style="width:100%;padding:12px;margin-top:12px;display:flex;align-items:center;gap:10px;text-align:left">
+          <span style="font-size:20px">📱</span>
+          <span>
+            <div>手機／平板 App</div>
+            <div style="opacity:.7;font-weight:400;font-size:11px;margin-top:1px">立即顯示 QR code，用 ShellFrame App 掃描</div>
+          </span>
+        </button>
+        <div style="display:flex;align-items:center;gap:8px;margin:14px 0;color:#565f89;font-size:11px">
+          <div style="flex:1;height:1px;background:#3b4261"></div>其他 ShellFrame<div style="flex:1;height:1px;background:#3b4261"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-ghost" id="pc-pair" style="padding:10px;border:1px solid #3b4261">產生配對碼<span style="opacity:.6;font-weight:400">（這台當被連端）</span></button>
           <button class="btn btn-ghost" id="pc-join" style="padding:10px;border:1px solid #3b4261">加入配對<span style="opacity:.6">（輸入對方的碼）</span></button>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+        <div style="display:flex;justify-content:flex-end;margin-top:14px">
           <button class="btn btn-ghost" id="pc-cancel">取消</button>
         </div>
       </div>`;
@@ -3807,6 +3819,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     function finish() { overlay.remove(); }
     document.getElementById('pc-cancel').addEventListener('click', finish);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+    // App 一律視為 duplex（App 端沒有主／從選項），略過單向／雙向選單直接產 QR，降低配對門檻。
+    document.getElementById('pc-app').addEventListener('click', () => { finish(); showPairModal('duplex'); });
     document.getElementById('pc-pair').addEventListener('click', () => { finish(); showPairModeChooser(); });
     document.getElementById('pc-join').addEventListener('click', () => { finish(); showJoinModal(); });
   }
@@ -4048,19 +4062,40 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       <div class="modal" style="width:380px;padding:20px">
         <h2 style="font-size:14px">🔗 配對碼（一次性，<span id="lp-count">${res.expires_in}</span> 秒內有效）</h2>
         <div style="text-align:center;font-size:11px;color:#565f89;margin-top:4px">${modeLabel}</div>
-        <div class="link-code-display">${esc2(res.code)}</div>
-        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
-          在另一台 ShellFrame 按「加入配對」，輸入：<br>
-          位址：<code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
-          　port <code style="color:#7aa2f7">${res.port}</code><br>
-          <span style="color:#565f89">跨公網時填這台對外的 IP／網域（需可達，例如 port forward）。
-          TG 遠端也可以：/link pair、/link join</span>
+        <div style="display:flex;gap:14px;align-items:center;margin-top:8px">
+          <div id="lp-qr" style="flex:0 0 auto;background:#fff;border-radius:8px;padding:6px;line-height:0;min-width:132px;min-height:132px"></div>
+          <div style="flex:1;min-width:0">
+            <div class="link-code-display" style="margin:0 0 6px">${esc2(res.code)}</div>
+            <div style="font-size:11px;color:#a9b1d6;line-height:1.6">
+              📱 <b>手機／iPad</b>：用 ShellFrame App 掃 QR 即配對。<br>
+              🖥 <b>另一台 ShellFrame</b>：「加入配對」輸入
+              位址 <code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
+              port <code style="color:#7aa2f7">${res.port}</code>。
+            </div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#565f89;line-height:1.6;margin-top:8px">
+          跨公網時填這台對外的 IP／網域（需可達，例如 port forward）。TG 遠端：/link pair、/link join
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
           <button class="btn btn-ghost" id="lp-close">關閉配對窗口</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
+    try {
+      const qrEl = document.getElementById('lp-qr');
+      if (qrEl && res.pair_url && typeof qrcode === 'function') {
+        const qr = qrcode(0, 'M');
+        qr.addData(res.pair_url);
+        qr.make();
+        qrEl.innerHTML = qr.createSvgTag({ cellSize: 3, margin: 0, scalable: true });
+        const svg = qrEl.querySelector('svg');
+        if (svg) { svg.style.width = '120px'; svg.style.height = '120px'; svg.style.display = 'block'; }
+      } else if (qrEl) {
+        qrEl.style.background = 'transparent';
+        qrEl.innerHTML = `<div style="font-size:10px;color:#565f89;line-height:1.4;word-break:break-all;max-width:160px">${esc2(res.pair_url || '')}</div>`;
+      }
+    } catch (e) {}
     let left = res.expires_in;
     const timer = setInterval(() => {
       left -= 1;

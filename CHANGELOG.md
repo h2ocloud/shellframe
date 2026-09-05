@@ -6,6 +6,30 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.33.0 (2026-09-05)
+
+### Added
+
+- **Pairing shows a QR code, and the entry point leads with the phone app.**
+  Generating a pairing code only ever produced a text code — pairing a phone
+  meant typing the host address, port and code by hand, and the entry chooser
+  read as computer-to-computer only ("配對另一台 ShellFrame") with no mention
+  of a phone app. `pairing_begin()` now also returns a `pair_url`
+  (`shellframe://pair?d=<base64url JSON>` carrying the host addresses, port,
+  code and binding mode), which the pairing modal draws as a QR code next to
+  the text code. The "＋ 配對" entry now leads with a "📱 手機／平板 App" button
+  that jumps straight to the QR, skipping the duplex/master/slave binding
+  picker — a phone app always connects as a full peer, so that choice was
+  never meaningful for it.
+
+  **配對現在會出現 QR code，入口也把手機 App 放在最前面。** 產生配對碼過去只給
+  一段純文字，手機端得手動輸入位址、port、碼；「＋ 配對」的選單看起來也只是
+  電腦對電腦（「配對另一台 ShellFrame」），完全沒提到手機 App。`pairing_begin()`
+  現在多回傳一個 `pair_url`（`shellframe://pair?d=<base64url JSON>`，帶位址、
+  port、碼、綁定模式），配對視窗會把它畫成 QR code、與文字碼並列顯示。「＋ 配對」
+  入口現在把「📱 手機／平板 App」放在最前面，點了直接跳到 QR，略過單向／雙向
+  綁定選單——手機 App 一律以完整 peer 身分連線，那個選擇對它從來就沒有意義。
+
 ## v0.32.8 (2026-09-05)
 
 ### Added

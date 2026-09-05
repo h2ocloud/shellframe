@@ -34,6 +34,7 @@ Design notes (why it looks like this):
     import, mirroring api_server.py.
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -68,6 +69,29 @@ FILES_DIR = STATE_DIR / "frame_link_files"      # staged outbox files
 INBOX_FILE = STATE_DIR / "frame_link_inbox.json"
 OUTBOX_FILE = STATE_DIR / "frame_link_outbox.json"
 DOWNLOADS_DIR = Path.home() / "Downloads" / "ShellFrame"
+PAIR_URL_SCHEME = "shellframe"          # shellframe://pair?d=<base64url json> (QR + deep link)
+
+
+def build_pair_url(payload: dict) -> str:
+    """Pairing QR / deep-link content: the same string is drawn as a QR on the
+    desktop and read by the phone app's camera scanner or a tapped link."""
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    b = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return f"{PAIR_URL_SCHEME}://pair?d={b}"
+
+
+def parse_pair_url(url: str):
+    """Inverse of build_pair_url. Returns the payload dict or None."""
+    m = re.match(r"^\s*" + PAIR_URL_SCHEME + r"://pair\?(?:[^#]*&)?d=([A-Za-z0-9_-]+)", url or "")
+    if not m:
+        return None
+    b = m.group(1)
+    b += "=" * (-len(b) % 4)
+    try:
+        obj = json.loads(base64.urlsafe_b64decode(b).decode("utf-8"))
+    except Exception:
+        return None
+    return obj if isinstance(obj, dict) and obj.get("code") else None
 
 
 def _now() -> float:
@@ -333,11 +357,16 @@ class FrameLink:
                 "handshakes": {},   # joiner_nonce -> host_nonce
             }
         cfg = self._cfg()
+        port = int(cfg.get("listen_port", 8767))
+        hosts = local_addresses()
+        payload = {"v": 1, "fid": cfg.get("frame_id", ""), "name": self.frame_name(),
+                   "hosts": hosts, "port": port, "code": code, "mode": mode}
         return {
             "success": True,
             "code": code,
-            "port": int(cfg.get("listen_port", 8767)),
-            "addresses": local_addresses(),
+            "port": port,
+            "addresses": hosts,
+            "pair_url": build_pair_url(payload),
             "expires_in": PAIR_TTL,
         }
 
