@@ -6,6 +6,40 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.4 (2026-09-06)
+
+### Changes
+
+- **A remote tab now says which machine it belongs to, and looks like a remote
+  tab.** Switching to one left nothing on screen to place you: the chip was
+  already in the tab strip, but it shared the local tab's styling, prefixed a
+  small globe, and its label carried only the far-side tab name — no peer. With
+  no local tab marked active either, the top of the window answered neither
+  "am I remote" nor "which one". The chip now carries three signals at once: a
+  ⇄ icon, the peer's name joined to the tab name, and a dashed cyan outline
+  that differs in shape, not just in colour, so it separates in peripheral
+  vision. Only the active one is bright — an idle remote tab stays muted,
+  because most of the time it is not the one you are typing into. Typing into a
+  remote tab sends keystrokes to another machine; that is worth recognising at
+  a glance. The working light on the chip reuses the state the sidebar already
+  fetched, so it costs no extra request. The left-hand tab-name label switches
+  to the same cyan and nothing else — it is set vertically, and a machine name
+  stacked on top of a tab name would run off the top of the pane. 14 cases in
+  `tests_remote_tab_chip.py` run the shipped chip code against the shipped CSS
+  and save `qa-shots/remote-tab-chip.png`.
+
+  **遠端分頁現在說得出自己屬於哪一台，看起來也像遠端分頁。** 切過去之後畫面上
+  沒有任何東西幫你定位：chip 其實已經在分頁列裡，但它跟本機分頁共用樣式、前面
+  只多一個小地球，標籤又只有對方的分頁名、沒有機器名。加上此時沒有任何本機分頁
+  是 active，視窗頂部既回答不了「我在遠端嗎」也回答不了「哪一個」。chip 現在
+  一次給三個訊號：⇄ 圖示、對方機器名接上分頁名、以及虛線青框——形狀不同而不只是
+  顏色不同，餘光就分得出來。只有 active 的那個是亮的，閒置的遠端分頁維持暗色，
+  因為多數時間它不是你正在打字的那個。打字進遠端分頁等於把按鍵送到另一台機器，
+  這件事值得一眼認得出來。chip 上的工作燈沿用側欄已經拉到的狀態，不多花一次
+  請求。左側那條直排的分頁名標籤只換成同一個青色、其他不動——它是直的，機器名
+  疊上分頁名會直接頂出畫面。`tests_remote_tab_chip.py` 共 14 項，拿實際出貨的
+  chip 程式碼跑在實際出貨的 CSS 上，並存下 `qa-shots/remote-tab-chip.png`。
+
 ## v0.35.3 (2026-09-06)
 
 ### Internal

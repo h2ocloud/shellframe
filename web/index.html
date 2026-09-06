@@ -34,6 +34,21 @@
   .tab .close-tab:hover { color: #f7768e; background: #292e42; }
   .tab[draggable] { cursor: grab; }
   .tab[draggable]:active { cursor: grabbing; }
+  /* 遠端分頁。切過去之後鍵盤輸入是送到另一台機器，這件事必須一眼看得出來，
+     所以不只換色，還換邊框形狀——虛線在餘光裡就跟本機分頁不一樣。 */
+  .tab.tab-remote {
+    border: 1px dashed #3d5a6c; color: #4d7d94;
+    padding: 5px 10px; margin: 3px 2px;
+  }
+  .tab.tab-remote:hover { background: #172231; color: #7dcfff; border-color: #7dcfff; }
+  .tab.tab-remote.active {
+    background: #172231; color: #7dcfff; border-color: #7dcfff;
+  }
+  .tab.tab-remote .peer { opacity: .75; }
+  .tab.tab-remote .close-tab:hover { color: #7dcfff; }
+  /* 左側分頁名標籤：遠端時換成同一個青色。機器名不進標籤（直排會太佔位），
+     顏色負責回答「這是遠端嗎」，頂部的 chip 負責回答「哪一台的哪個分頁」。 */
+  #tab-hint.remote { color: #7dcfff; opacity: .85; }
   .busy-dot {
     display: inline-block; width: 7px; height: 7px; border-radius: 50%;
     background: transparent; flex-shrink: 0; cursor: pointer; position: relative;
@@ -2772,6 +2787,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!name) { el.hidden = true; return; }
     el.textContent = name;
     el.title = name;
+    // 遠端時只換顏色。機器名不進標籤——它是直排的，多幾個字就頂到天花板；
+    // 「哪一台」交給頂部的 chip 回答，這裡只回答「這是不是遠端」。
+    el.classList.toggle('remote', isRemoteSid(activeId));
     el.hidden = false;          // 先顯示才量得到 offsetHeight
     positionTabHint();
   }
@@ -2968,21 +2986,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
       $tabs.appendChild(tab);
     });
-    // 開著的遠端 session 也在 tab bar 露出（🌐 前綴），接在本機分頁後面。
-    // 不進 sessionOrder，所以 TG 編號/持久化/reorder 完全不受影響。
+    // 開著的遠端 session 接在本機分頁後面，同一列——要找分頁只看一個地方。
+    // 不進 sessionOrder，所以 TG 編號／持久化／reorder 完全不受影響，也因此
+    // 不可拖曳排序。
+    // 舊版跟本機分頁共用 .tab 樣式、只在前面加一個 🌐，切過去之後幾乎分不出
+    // 差別，而且看不到是哪一台。這裡改成三件事一起講：⇄ 圖示、對方機器名、
+    // 虛線青色外框。鍵盤輸入送到另一台機器是有後果的事，值得一眼認得出來。
     Object.keys(sessions).forEach((sid) => {
       const s = sessions[sid];
       if (!s || !s.isRemote) return;
+      const peer = s.peerName || '遠端';
       const tab = document.createElement('button');
-      tab.className = 'tab' + (sid === activeId ? ' active' : '');
+      tab.className = 'tab tab-remote' + (sid === activeId ? ' active' : '');
       tab.dataset.sid = sid;
-      tab.title = `🌐 ${s.peerName}（遠端）`;
-      tab.innerHTML = `
-        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}"></span>
-        <span class="icon" style="opacity:.55;font-size:10px">🌐</span>
-        <span class="label">${esc(s.label)}</span>
-        <span class="close-tab" data-sid="${sid}">&times;</span>
-      `;
+      tab.title = `「${peer}」的分頁「${s.label}」——鍵盤輸入會送到那台機器`;
+      tab.innerHTML =
+        `<span class="busy-dot${s._remoteState === 'working' ? ' on' : ''}" `
+        + `style="pointer-events:none"></span>`
+        + `<span class="icon" style="font-size:11px;opacity:.8">⇄</span>`
+        + `<span class="label"><span class="peer">${esc(peer)}</span>`
+        + `·${esc(s.label)}</span>`
+        + `<span class="close-tab" data-sid="${sid}" `
+        + `title="收掉這台的檢視（不會關掉對方的 session）">&times;</span>`;
       tab.addEventListener('click', (e) => {
         if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
         switchTab(sid);
@@ -3182,6 +3207,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             // 回傳的 agent_state。同步頻率就是拉遠端分頁列表的頻率，沒有另外
             // 開高頻通道——這個燈不需要那麼即時。
             const rState = rt.agent_state || '';
+            // 同一份狀態也給頂部的 chip 用，不另外拉一次
+            if (sessions[rmt]) sessions[rmt]._remoteState = rState;
             const stateDot = rState
               ? `<span class="busy-dot${rState === 'working' ? ' on' : ''}" `
                 + `title="${rState === 'working' ? '執行中' : '閒置'}" `
