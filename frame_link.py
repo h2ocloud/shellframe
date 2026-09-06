@@ -37,12 +37,14 @@ Design notes (why it looks like this):
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
 import secrets
 import shutil
 import socket
+import subprocess
 import threading
 import time
 import urllib.request
@@ -130,8 +132,51 @@ def _safe_dirname(name: str) -> str:
     return out[:80]
 
 
+def _mesh_vpn_addresses() -> list:
+    """IPv4 addresses in 100.64.0.0/10 held by this machine.
+
+    That range is RFC 6598 carrier-grade NAT space, which Tailscale hands out to
+    every node on a tailnet — an address that follows the machine between home,
+    office and mobile networks. Neither of the probes in `local_addresses()`
+    finds it: the UDP-connect trick reports whichever source address the default
+    route picks, and the hostname lookup only returns what the resolver knows.
+    Without this, a pairing QR generated on a laptop advertises just its current
+    LAN address, so a phone that scans it at home stops working the moment
+    either end moves — the one address that would have kept working is missing.
+
+    Enumerating interfaces needs no dependency beyond the platform's own tool,
+    and pairing is rare enough that shelling out costs nothing.
+    """
+    if os.name == "nt":
+        cmd = ["ipconfig"]
+    elif shutil.which("ip"):
+        cmd = ["ip", "-4", "-o", "addr"]          # Linux
+    else:
+        cmd = ["ifconfig"]                        # macOS / BSD
+    try:
+        out = subprocess.run(cmd, capture_output=True, timeout=4).stdout.decode(
+            "utf-8", errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = []
+    for raw in re.findall(r"\b(100\.\d{1,3}\.\d{1,3}\.\d{1,3})\b", out):
+        try:
+            ip = ipaddress.ip_address(raw)
+        except ValueError:
+            continue
+        # 100.0.0.0/8 is mostly public space; only the /10 is CGNAT.
+        if ip in ipaddress.ip_network("100.64.0.0/10") and raw not in found:
+            found.append(raw)
+    return found
+
+
 def local_addresses() -> list:
-    """Best-effort list of this machine's non-loopback IPv4 addresses."""
+    """Best-effort list of this machine's non-loopback IPv4 addresses.
+
+    Ordered by how fast they are likely to be: the default-route address first,
+    then anything the resolver knows, then mesh-VPN addresses last — those work
+    from anywhere, so they belong in the list, but a peer on the same LAN should
+    try the LAN address first."""
     addrs = []
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -148,6 +193,9 @@ def local_addresses() -> list:
                 addrs.append(ip)
     except OSError:
         pass
+    for ip in _mesh_vpn_addresses():
+        if ip not in addrs:
+            addrs.append(ip)
     return addrs
 
 

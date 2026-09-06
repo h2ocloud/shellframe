@@ -403,6 +403,31 @@ def main():
         check("generated code uses safe alphabet", all(
             c in frame_link._CODE_ALPHABET
             for c in frame_link.normalize_code(frame_link.generate_code())))
+
+        # ── mesh-VPN (Tailscale) address discovery ──
+        # A pairing QR that only advertises the current LAN address stops working
+        # the moment either end moves; the 100.64.0.0/10 address does not.
+        class _FakeOut:
+            def __init__(self, text): self.stdout = text.encode()
+        real_run = frame_link.subprocess.run
+        sample = ("inet 192.168.51.140 netmask 0xffffff00\n"
+                  "inet 100.102.111.127 --> 100.102.111.127 netmask 0xffffffff\n"
+                  "inet 100.20.5.7 netmask 0xff000000\n"          # public 100.x, not CGNAT
+                  "inet 127.0.0.1 netmask 0xff000000\n")
+        frame_link.subprocess.run = lambda *a, **k: _FakeOut(sample)
+        try:
+            mesh = frame_link._mesh_vpn_addresses()
+        finally:
+            frame_link.subprocess.run = real_run
+        check("mesh address discovery finds the 100.64/10 address",
+              mesh == ["100.102.111.127"])
+
+        frame_link.subprocess.run = lambda *a, **k: (_ for _ in ()).throw(OSError("no such tool"))
+        try:
+            degraded = frame_link._mesh_vpn_addresses()
+        finally:
+            frame_link.subprocess.run = real_run
+        check("mesh address discovery degrades quietly", degraded == [])
     finally:
         a.cleanup()
         b.cleanup()
