@@ -289,7 +289,9 @@ class FrameLink:
         # peer is actively streaming (a /link/stream request in the last 30 s)
         # get buffered, so idle operation costs nothing.
         self._streams = {}              # sid -> {seq,min_seq,chunks,bytes,watch_ts}
-        self._streams_lock = threading.Lock()
+        # Condition, not a bare Lock: a long-polling reader parks on it and
+        # feed_output wakes it the instant the PTY produces a byte.
+        self._streams_lock = threading.Condition()
         self._relay = None              # link_relay.RelayClient when config relay.url is set
 
         self._state_dir = Path(state_dir) if state_dir else STATE_DIR
@@ -803,6 +805,7 @@ class FrameLink:
     # ── raw output streaming（無縫遠端分頁）────────────────────────────────
     STREAM_WATCH_TTL = 30       # 沒人拉 30s 就停止緩衝該分頁
     STREAM_MAX_BYTES = 262144   # 每分頁 ring buffer 上限
+    STREAM_MAX_WAIT = 25        # long-poll 上限（秒）；每個等待中的請求佔一條執行緒
 
     def feed_output(self, sid: str, data: str):
         """main.py 的 output pusher 每個 chunk 都會呼叫——必須極快。
@@ -820,12 +823,13 @@ class FrameLink:
             st["chunks"].append((st["seq"], data))
             st["seq"] += 1
             st["bytes"] += len(data)
+            self._streams_lock.notify_all()      # wake any long-polling reader
             while st["bytes"] > self.STREAM_MAX_BYTES and st["chunks"]:
                 old_seq, old = st["chunks"].pop(0)
                 st["bytes"] -= len(old)
                 st["min_seq"] = old_seq + 1
 
-    def _stream_read(self, sid: str, since: int) -> dict:
+    def _stream_read(self, sid: str, since: int, wait: float = 0.0) -> dict:
         # Attach (since<0): hand back an accurate snapshot of the current screen
         # (tmux capture with ANSI) so alt-screen TUIs paint correctly, plus the
         # seq to stream from. Capture is done OUTSIDE the lock (it forks tmux).
@@ -840,18 +844,29 @@ class FrameLink:
                 snap = ""
             return {"success": True, "seq": seq, "data": "", "snapshot": snap,
                     "reset": True}
+        # wait>0 turns this into a long poll: block until the PTY actually
+        # produces something, so an echoed keystroke comes back in one network
+        # round trip instead of waiting out a client-side poll interval — and an
+        # idle tab costs one parked request instead of tens of empty ones.
+        deadline = _now() + max(0.0, min(float(wait or 0), self.STREAM_MAX_WAIT))
         with self._streams_lock:
-            st = self._streams.get(sid)
-            if st is None:
-                seq = self._stream_open_locked(sid)
-                return {"success": True, "seq": seq, "data": "", "reset": True}
-            st["watch_ts"] = _now()
-            if since < st["min_seq"]:
-                # buffer 已捲走 client 要的區段 → 請 client 重新 attach 畫面
-                return {"success": True, "seq": st["seq"], "data": "",
-                        "reset": True}
-            data = "".join(d for s, d in st["chunks"] if s >= since)
-            return {"success": True, "seq": st["seq"], "data": data}
+            while True:
+                st = self._streams.get(sid)
+                if st is None:
+                    seq = self._stream_open_locked(sid)
+                    return {"success": True, "seq": seq, "data": "", "reset": True}
+                st["watch_ts"] = _now()          # refreshed each pass, so a parked
+                                                 # reader never looks abandoned
+                if since < st["min_seq"]:
+                    # buffer 已捲走 client 要的區段 → 請 client 重新 attach 畫面
+                    return {"success": True, "seq": st["seq"], "data": "",
+                            "reset": True}
+                data = "".join(d for s, d in st["chunks"] if s >= since)
+                left = deadline - _now()
+                if data or left <= 0:
+                    return {"success": True, "seq": st["seq"], "data": data}
+                # capped so watch_ts keeps refreshing and a closed tab is noticed
+                self._streams_lock.wait(min(1.0, left))
 
     def _stream_open_locked(self, sid: str) -> int:
         st = self._streams.get(sid)
@@ -1185,7 +1200,11 @@ class FrameLink:
                         since = int((q.get("since") or ["-1"])[0])
                     except ValueError:
                         since = -1
-                    res = link._stream_read(sid, since)
+                    try:
+                        wait = float((q.get("wait") or ["0"])[0])
+                    except ValueError:
+                        wait = 0.0
+                    res = link._stream_read(sid, since, wait)
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/snapshot":
                     # 彩色（含 ANSI）的目前可視畫面：手機 attach 時先貼一張，再接增量串流。
@@ -1481,15 +1500,22 @@ class FrameLink:
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}
 
-    def remote_stream(self, peer_id: str, sid: str, since: int = -1) -> dict:
+    def remote_stream(self, peer_id: str, sid: str, since: int = -1,
+                      wait: float = 0.0) -> dict:
         """Incremental raw-output pull for the seamless remote view.
-        since=-1 → (re)attach: server returns current seq, empty data."""
+        since=-1 → (re)attach: server returns current seq, empty data.
+        wait>0 → long poll: the peer holds the request until output appears, so
+        an echoed keystroke returns in one round trip. Older peers ignore it and
+        answer immediately, which is still correct, just chattier."""
         peer, err = self._peer_or_err(peer_id)
         if err:
             return err
         try:
             path = f"/link/stream?sid={quote(sid)}&since={int(since)}"
-            res = self._signed_request(peer, "GET", path, timeout=6)
+            if wait and wait > 0:
+                path += f"&wait={float(wait):g}"
+            res = self._signed_request(peer, "GET", path,
+                                       timeout=max(6.0, float(wait) + 6.0))
             self._mark_status(peer_id, True)
             return res
         except Exception as e:

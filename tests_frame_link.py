@@ -366,6 +366,31 @@ def main():
         z = b.link.remote_stream(a.fid, "sZ", -1)
         check("unwatched tab buffers nothing on attach", z.get("data") == "")
 
+        # ── long-poll streaming ──
+        # The whole point: an echoed keystroke should come back in one round
+        # trip, not after a client-side poll interval expires.
+        import threading as _th
+        att2 = b.link.remote_stream(a.fid, "sLP", -1)
+        base2 = att2["seq"]
+        t0 = time.time()
+        empty = b.link.remote_stream(a.fid, "sLP", base2, wait=1.0)
+        waited = time.time() - t0
+        check("long poll blocks when there is no output",
+              empty.get("success") and empty.get("data") == "" and waited >= 0.9)
+
+        got_box = {}
+        def _reader():
+            got_box["res"] = b.link.remote_stream(a.fid, "sLP", base2, wait=10.0)
+            got_box["t"] = time.time()
+        th = _th.Thread(target=_reader, daemon=True); th.start()
+        time.sleep(0.4)                       # let the reader park on the condition
+        fired = time.time()
+        a.link.feed_output("sLP", "echoed-char")
+        th.join(timeout=5)
+        latency = got_box.get("t", 1e9) - fired
+        check("long poll returns the moment output appears",
+              got_box.get("res", {}).get("data") == "echoed-char" and latency < 0.5)
+
         # ── 遠端 resize / new / close ──
         rr = b.link.remote_resize(a.fid, "sA", 120, 40)
         check("remote_resize reaches peer",
