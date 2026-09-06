@@ -46,7 +46,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
           dropped.length === 1 && dropped[0].why === 'commit-dup');
   }
 
-  // 守 Howard 回報的誤吞：新的一次 composition 就是新的字，不能算重複
+  // 守住回報過的誤吞：新的一次 composition 就是新的字，不能算重複
   {
     const d = _makeImeDedup();
     d.started(); d.composed('好');

@@ -657,7 +657,7 @@ def wants_system_directive(cmd: str) -> bool:
 # （last_extraction_ts）。line-oriented REPL 兩個都不會有 → delivered 永遠
 # False → 觸發「補裸 Enter」（agent 多收一次空輸入、多回一次）＋45 秒後
 # 「無法確認送達」通知。訊息其實每次都送到了（2026-08-29 pi 分頁實案）。
-# 精確比對的代價：**wrapper 也要列出來**。Howard 的 preset 走的是
+# 精確比對的代價：**wrapper 也要列出來**。實際用到的 preset 走的是
 # `sf-pi-spark`／`sf-sparkagent`（帶金鑰與 provider 設定的啟動器），漏了它們
 # 這個修法就只對裸 `pi` 生效、preset 開的分頁照樣跳針。
 _DEFAULT_LINE_ORIENTED_AGENTS = (
@@ -1422,9 +1422,9 @@ class TelegramBridge(BridgeBase):
         """分頁在使用者手上消失（CLI 退出／分頁被關）→ 明講訊息改送去哪。
 
         舊版靜默把 _user_active 改指 _slot_order[0]：手機端只看得到 👀／🫡，
-        下一則工作指令就悄悄落進別的分頁。Howard 2026-08-28 實例：新開的
-        分頁 3 分鐘後死掉，接著丟的「台壽展場案 API 規格」任務跑進「雜事」，
-        他是 /10 打不開才發現分頁不見了。跑在背景 thread：呼叫端還握著
+        下一則工作指令就悄悄落進別的分頁。日常使用中的實例：新開的分頁
+        3 分鐘後死掉，接著丟的任務跑進另一個分頁，直到 /10 打不開才發現
+        分頁不見了。跑在背景 thread：呼叫端還握著
         _slots_lock，而 tg_api 可能卡到 35s。"""
         for uid, gone_label, new_sid in reroutes:
             chat_id = self._user_chat.get(uid)
@@ -1546,8 +1546,8 @@ class TelegramBridge(BridgeBase):
                 slot = self.slots[sid]
                 # 只放分頁名。模型曾經掛在這裡，但 setMyCommands 是「註冊當下」
                 # 的快照：分頁久沒動，badge 就凍在幾天前那次對話的模型，而手機端
-                # 看不出它已經過期（Howard 2026-09-01：整排 Sonnet 5、scrum 顯示
-                # 8/24 留下的 Opus 4.8）。模型改在 /N 切過去時即時算。
+                # 看不出它已經過期（日常使用中回報：整排顯示同一個模型，其中一個
+                # 分頁停在幾週前那次對話的舊模型）。模型改在 /N 切過去時即時算。
                 desc = f"Switch to {slot.label}"
                 commands.append({
                     "command": str(slot.index),
@@ -1593,8 +1593,8 @@ class TelegramBridge(BridgeBase):
         """' · Opus 4.8 · xhigh' for a slot (mirrors the desktop sidebar
         badge), or '' when unknown / non-AI. Cheap; main.py mtime-caches."""
         # 側邊欄的模型徽章關掉時，TG 這邊也要一起消失——同一個開關管兩邊，
-        # 不要各有一套狀態（Howard 2026-09-02：「如果本地沒開啟顯示模型，
-        # TG 也要隱藏掉」。他本地早就關了，TG 卻還在顯示一個不準的值）。
+        # 不要各有一套狀態：日常使用中回報本地早就關掉了，TG 卻還在顯示一個
+        # 不準的值。
         if _read_settings().get("show_model_badge") is False:
             return ""
         if not self._on_model_info:
@@ -6137,7 +6137,7 @@ class TelegramBridge(BridgeBase):
 
         這個對話框的游標**預設停在 No, exit**，所以既不能盲按 Enter，也不能
         叫使用者「硬送一則訊息」——兩者都會把分頁關掉。純手機操作時桌面根本
-        不在手邊，選項一定要帶回來（Howard 2026-08-28 要求）。"""
+        不在手邊，選項一定要帶回來。"""
         if not self._on_answer_dialog:
             return False
         slot = self.slots.get(sid)
@@ -6164,7 +6164,7 @@ class TelegramBridge(BridgeBase):
         沒有這道閘門時，訊息會直接打進 trust prompt 之類的選單——Ctrl-U ＋
         一整段文字 ＋ Enter 在選單裡就是「選一個選項」，而 Claude Code 信任
         對話框第 2 項是 **No, exit**：分頁被自己收到的訊息關掉，訊息也一起
-        消失。Howard 2026-08-28 手機端 /new 開的分頁就是這樣沒的（注入後畫面
+        消失。日常使用中，手機端 /new 開的分頁就是這樣沒的（注入後畫面
         沒殘留、沒開回合，3 分鐘後 tmux session 直接不見）。
 
         回傳擋下的原因，空字串＝可以送。偵測不到危險就放行（fail open），
@@ -6406,7 +6406,7 @@ class TelegramBridge(BridgeBase):
                 # 死巷子的錯誤訊息（「Invalid session number. Use /list」）在
                 # 手機上等於要再敲一次指令才知道能選什麼——而且編號會漂：
                 # 分頁關掉／死掉後，後面的全部往前遞補，聊天室裡舊的 /list
-                # 就過期了（Howard 2026-08-28：照舊清單敲 /10，第 10 個分頁
+                # 就過期了（日常使用中回報：照舊清單敲 /10，第 10 個分頁
                 # 早就沒了）。直接把現在的編號表附上，一則訊息就能改點。
                 n = len(self._slot_order)
                 head = (f"⚠ 沒有 /{idx} —— 目前 {n} 個分頁（/1–/{n}）。"

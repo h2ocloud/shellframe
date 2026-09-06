@@ -3,7 +3,7 @@
 
 中斷對話（Ctrl+C／Esc）時 Claude Code 不一定會發 Stop hook，`_hook_events` 就卡在
 working；而 status monitor 的 idle gating 又因為 PTY 不再輸出而跳過重算——燈號於是
-一直停在「執行中」（Howard 2026-09-03 回報）。`refresh_agent_status()` 把 hook 與
+一直停在「執行中」（日常使用中回報）。`refresh_agent_status()` 把 hook 與
 狀態快取一起清掉，讓 heuristic 從畫面重新判斷。
 
 跑法：.venv/bin/python tests_status_refresh.py

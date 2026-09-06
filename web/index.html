@@ -201,8 +201,8 @@
   /* 左邊留 26px 給分頁名標籤站（--hint-gutter）。.term-pane 是 absolute，
      inset 相對 #terminal-wrap 的 padding box，所以把 left 推開就等於整個終端
      右移，xterm 的 cols 會跟著 pane 寬度重算，不會壓到內容。
-     Howard 2026-09-02：「從 UI 左側 在側欄旁邊 讓一個空間，你這樣目前有點暴力，
-     反而會讓我打字看不到前幾個字」——上一版直接蓋在輸入行前面確實會擋字。 */
+     日常使用中回報：上一版直接蓋在輸入行前面，會擋掉剛打的頭幾個字，所以
+     改成在側欄旁邊讓出一條空間。 */
   :root { --hint-gutter: 17px; }
   .term-pane {
     position: absolute; inset: 0 0 0 var(--hint-gutter);
@@ -211,20 +211,20 @@
   .term-pane.active { display: block; }
   /* 站在左側那條 gutter 裡，直排，垂直中心對齊游標那一行（見
      positionTabHint）。不蓋任何終端內容——上一版蓋在輸入行前面會擋掉剛打的
-     頭幾個字，被 Howard 退掉。 */
+     頭幾個字，被退回。 */
   #tab-hint {
-    /* 往左吃 4px 到側欄那一側：字體要看得清楚（Howard 2026-09-02：「太小了，
-       我是說不能剛剛的字體，然後往左邊再放嗎」），但不想為此多佔終端寬度。
+    /* 往左吃 4px 到側欄那一側：字體要看得清楚（日常使用中回報上一版字級
+       太小，但不想為此多佔終端寬度）。
        #terminal-wrap 沒有 overflow:hidden、#sidebar 也沒有 z-index，所以負
        left 會疊在側欄邊界上而不是被裁掉。標籤右緣剛好落在 gutter 右緣，
        一個字都不壓到終端。 */
     position: absolute; top: 0; left: -4px; z-index: 60;
     width: calc(var(--hint-gutter) + 4px);
-    /* 收回點擊：雙擊這裡就能改分頁名（Howard 2026-09-03）。它只佔左側那條
+    /* 收回點擊：雙擊這裡就能改分頁名。它只佔左側那條
        gutter，不會吃到終端的選字；user-select 仍關著，免得雙擊選到文字。 */
     pointer-events: auto; cursor: pointer; user-select: none;
     /* 不加 text-orientation: upright——那會把拉丁字母也一個一個立起來，
-       「sf dev」變成 s/f/d/e/v 五行，又高又像破圖（Howard 2026-09-02 回報）。
+       「sf dev」變成 s/f/d/e/v 五行，又高又像破圖（日常使用中回報）。
        預設的 mixed 讓英文整串側躺、中文保持直立，高度省一半以上。
        也不要用 flex：flex 的主軸會跟 writing-mode 一起轉，文字會擠成一團。 */
     writing-mode: vertical-rl;
@@ -897,7 +897,7 @@
     <div class="sb-section-title sb-sessions-head">
       <span data-i18n="sessions">Sessions</span>
       <!-- 中斷對話後 hook 不一定發 Stop，燈號會卡在執行中；這顆是手動重判。
-           後端另有五分鐘定期重算（Howard 2026-09-03）。 -->
+           後端另有五分鐘定期重算。 -->
       <button id="btn-refresh-status" title="重新判斷所有分頁的狀態燈號">↻</button>
     </div>
     <div id="sidebar-sessions"></div>
@@ -908,8 +908,8 @@
   </div>
   <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
   <div id="terminal-wrap">
-    <!-- 現在在哪個分頁。Howard 2026-09-02：「我很常錯頻」——把話打進錯的分頁
-         是最貴的錯誤（訊息進到不相干的 agent 手裡），所以這個提示常駐、不做
+    <!-- 現在在哪個分頁。日常使用中最常見也最貴的錯誤就是打錯分頁——訊息
+         進到不相干的 agent 手裡，所以這個提示常駐、不做
          淡出。pointer-events:none 讓它不吃點擊、不影響選字。 -->
     <div id="tab-hint" hidden></div>
   </div>
@@ -2781,8 +2781,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // line 存不存在、多行輸入時輸入框往上長，全都會讓它偏掉。直接讀 xterm 的
   // DOM row 位置最準（ShellFrame 沒載 canvas/webgl addon，是 DOM renderer，
   // .xterm-rows 下每行一個 div），而且不必猜行高。
-  // 雙擊標籤直接開改名 popup（Howard 2026-09-03：「點旁邊這個 tab 兩下也讓我
-  // 可以進到編輯 tab name 的 popup，這樣可以更方便一點」）。標籤是靜態 DOM，
+  // 雙擊標籤直接開改名 popup（日常使用中要求：從標籤本身就能改名，不必再
+  // 繞去側欄）。標籤是靜態 DOM，
   // 不會像側欄那樣被 render 重建，所以綁一次就夠——側欄那邊當初就是因為
   // renderSidebar 會重建 DOM，native dblclick 才失效、得手工偵測。
   // 手動重判狀態燈號。中斷對話（Ctrl+C／Esc）時 Claude Code 不一定會發 Stop
@@ -3180,7 +3180,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             const dot = sessions[rmt] ? (activeId === rmt ? '●' : '▣') : '▫';
             // 工作狀態燈：沿用本機那顆 .busy-dot 的樣式，資料來自對方 list
             // 回傳的 agent_state。同步頻率就是拉遠端分頁列表的頻率，沒有另外
-            // 開高頻通道（Howard 2026-09-06：「同步不用那麼頻繁」）。
+            // 開高頻通道——這個燈不需要那麼即時。
             const rState = rt.agent_state || '';
             const stateDot = rState
               ? `<span class="busy-dot${rState === 'working' ? ' on' : ''}" `
@@ -3201,8 +3201,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // ── Rename session (double-click on label) ──
-  // opts.isNew：分頁剛建立就跳出來問名字（Howard 2026-09-04：「我的使用情境
-  // 每次都是新增分頁後去改名，有點卡」）。跳過就維持原本的行為——第一次送出
+  // opts.isNew：分頁剛建立就跳出來問名字（日常使用中幾乎每次新增分頁都會
+  // 馬上改名，分兩步很卡）。跳過就維持原本的行為——第一次送出
   // 訊息時由 auto-slug 依內容命名。
   function renameSession(sid, opts) {
     const s = sessions[sid];
@@ -4384,7 +4384,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   /* Opening a tab to the glasses is not a preference, it is a grant: every tab
      runs with --dangerously-skip-permissions, so from that moment anything
-     Howard says into the G2 mic runs on this machine. One tab at a time, always
+     said into the G2 mic runs on this machine. One tab at a time, always
      an explicit yes, and never a bulk switch. */
   let _glassesConfirmOpen = false;
   function confirmGlassesAllow(sid) {
@@ -5484,7 +5484,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       let bottomInset = 0;
       // 左邊也要對齊。v0.30.11 之後 .term-pane 是 `inset: 0 0 0 --hint-gutter`
       // （左側讓出一條放分頁名標籤），overlay 卻還停在 left:0 —— 上滑瞬間整
-      // 個畫面往左跳一段，就是 Howard 2026-09-03 說的「斷差感」。不寫死
+      // 個畫面往左跳一段，上滑就有一道明顯的落差。不寫死
       // gutter 的值：量 live pane 的實際左緣，面板寬度、UI scale 之後怎麼變
       // 都跟得上。
       let leftInset = 0;
@@ -6217,7 +6217,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     _dragOverCount++;
   });
   document.addEventListener('drop', async (e) => {
-    // 量測（Howard 2026-09-01/02：拖檔案要等好幾秒）。handler 內部實測只有
+    // 量測（日常使用中回報拖檔案要等好幾秒）。handler 內部實測只有
     // 十幾毫秒，所以耗時在「WebKit 把 drop 交給我們之前」。sinceMouseUp 由原
     // 生層量（見 main.py 的 drag_mark / mouse_up_ts）——JS 拿不到放開滑鼠的
     // 那一刻，只靠 sinceDragOver 分不出「使用者拖著不動」跟「WebKit 卡住」。
@@ -6442,7 +6442,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── IME 把同一個 commit 送兩次的去重 ──
   // 注音打到一半、還沒選字時按 shift 切英文，macOS 會把組到一半的內容直接
-  // commit（Howard 2026-09-02）。機制對照過 xterm.js 5.5.0 源碼、並用真實
+  // commit。機制對照過 xterm.js 5.5.0 源碼、並用真實
   // xterm 實測重現（tests/ime_seq_probe.py）：
   //   CompositionHelper.keydown()  keyCode 16（Shift）→ return false，不 finalize
   //   Terminal._keyUp()            this._keyDownSeen = false

@@ -26,7 +26,7 @@ _spec.loader.exec_module(_bt)
 _bt._blog = lambda msg: None
 
 BR = object.__new__(_bt.TelegramBridge)
-PAYLOAD = "[SF-TG wrapper]\n最終要回 Telegram 的文字…\n\nhoward: 幫我查一下部署狀態好嗎"
+PAYLOAD = "[SF-TG wrapper]\n最終要回 Telegram 的文字…\n\nuser: 幫我查一下部署狀態好嗎"
 
 
 def _slot(screen, extraction_ts=0.0, write_ts=100.0):
@@ -52,7 +52,7 @@ def test_fresh_extraction_is_delivered():
 # ── 3. 審查 bug #1：注入「之前」的舊 extraction（且 last_write_ts 被
 #      extraction loop 歸零）不得假 delivered；殘留在畫面 → 可重試 ──
 def test_stale_extraction_not_delivered():
-    slot = _slot("\x1b[38;5;242m> \x1b[0mhoward: 幫我查一下部署狀態好嗎",
+    slot = _slot("\x1b[38;5;242m> \x1b[0muser: 幫我查一下部署狀態好嗎",
                  extraction_ts=100.0, write_ts=0.0)   # write_ts 已被歸零
     got = BR._verify_injection(slot, PAYLOAD, injected_at=150.0, window=0.6)
     assert got == (False, True), f"舊 extraction 假 delivered 回歸：{got}"
@@ -60,7 +60,7 @@ def test_stale_extraction_not_delivered():
 
 # ── 4. 殘留判定：payload 最後一行掛在畫面（含 ANSI）→ (False, True) ──
 def test_composer_residue_detected():
-    slot = _slot("\x1b[38;5;242m> \x1b[0mhoward: 幫我查一下部署狀態好嗎\x1b[K\n ▶▶ bypass")
+    slot = _slot("\x1b[38;5;242m> \x1b[0muser: 幫我查一下部署狀態好嗎\x1b[K\n ▶▶ bypass")
     got = BR._verify_injection(slot, PAYLOAD, injected_at=100.0, window=0.6)
     assert got == (False, True), got
 

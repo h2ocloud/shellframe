@@ -529,8 +529,8 @@ class HistoryApiMixin:
             # 段落之間的空行會兩邊都中：current 是空 → 被判成「prev 的前綴」
             # 直接 skip；prev 是空 → 被判成「current 的前綴」而拿 current 蓋掉
             # 那個空行。結果**每一個內部空行都消失**，上滾看到的歷史整段黏成
-            # 一團，跟活畫面的排版完全不同（Howard 2026-09-03：「上滑樣式會跑
-            # 掉…我希望的就是無縫銜接」）。
+            # 一團，跟活畫面的排版完全不同——日常使用中回報上滑後排版與活畫面
+            # 對不起來，要求兩者無縫銜接。
             # 上面 _render_rows 的註解本來就寫明「Internal blank lines
             # (between paragraphs) are preserved」——這裡是實作跟設計意圖打架。
             if cleaned and stripped:
@@ -555,8 +555,8 @@ class HistoryApiMixin:
         #     re-emitted 3+ times in mixed CJK/ASCII content (tables
         #     where every cell is the same date label, audit reports
         #     where a single event line gets re-rendered after each
-        #     status-bar refresh, etc.). the user's screenshot:
-        #     "Warren 寄 V1.5.1 部版資訊" appears 4× in a row.
+        #     status-bar refresh, etc.). In the reported screenshot a
+        #     single mixed-content table row appeared 4× in a row.
         #
         # Two gates so we collapse both without nuking legit user
         # repeats (`return null;` appearing twice in code, two

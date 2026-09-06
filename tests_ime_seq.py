@@ -8,8 +8,8 @@
 dispatch 真實的 composition/input/keydown/keyup 事件，看**最後進 PTY 的是
 什麼**。
 
-第一版去重用 150ms 時間窗口，會吃掉使用者連打的第二個相同字（Howard
-2026-09-02 回報）。實測兩次送出只差 ≤0.8ms，窗口大了兩個數量級——所以改成
+第一版去重用 150ms 時間窗口，會吃掉使用者連打的第二個相同字（日常使用中
+回報）。實測兩次送出只差 ≤0.8ms，窗口大了兩個數量級——所以改成
 綁定「這一次 commit」。案例 E/F 就是守這條線的。
 
 需要 playwright（`pip install playwright && playwright install chromium`）。
@@ -192,7 +192,7 @@ with sync_playwright() as pw:
           page.evaluate("window.RAW") == ["你"] and page.evaluate("window.OUT") == ["你"],
           f"raw={page.evaluate('window.RAW')} out={page.evaluate('window.OUT')}")
 
-    # E — 守住 Howard 回報的誤吞：連打兩個一樣的字，兩個都要留下
+    # E — 守住回報過的誤吞：連打兩個一樣的字，兩個都要留下
     page.evaluate("window.reset()")
     page.evaluate("async () => { await window.typeCJK('好', false); await window.typeCJK('好', false); }")
     out = page.evaluate("window.OUT")
@@ -218,14 +218,14 @@ with sync_playwright() as pw:
     out = page.evaluate("window.OUT")
     check("G ASCII 連打不去重", out == ["a", "a", "a"], f"out={out}")
 
-    # I — Howard 的真實操作：空白叫候選清單 + 數字鍵選字
+    # I — 真實操作序列：空白叫候選清單 + 數字鍵選字
     page.evaluate("window.reset()")
     page.evaluate("() => window.pickFromCandidates('依', 0)")
     out = page.evaluate("window.OUT")
     check("I 候選清單選字 → 只進一個字（注音符號與選字數字都不能漏）",
           out == ["依"], f"out={out}")
 
-    # J — 同上，中途按 CapsLock 切中英文（Howard 說主要是想切中英文時發生）
+    # J — 同上，中途按 CapsLock 切中英文（回報中最常觸發的就是這個情境）
     page.evaluate("window.reset()")
     page.evaluate("() => window.pickFromCandidates('依', 20)")
     out = page.evaluate("window.OUT")

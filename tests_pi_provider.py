@@ -134,7 +134,7 @@ def _pi_records(model, thinking=None):
 
 
 def test_cwd_slug():
-    assert A._pi_cwd_slug("/Users/howard") == "--Users-howard--"
+    assert A._pi_cwd_slug("/Users/alice") == "--Users-alice--"
 
 
 def test_file_epoch_parsed_from_name():

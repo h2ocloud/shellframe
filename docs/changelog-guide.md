@@ -5,6 +5,10 @@
 >
 > 這份規範由 `tests_changelog_format.py` 強制檢查，`./run_tests.sh` 會跑它。
 > 格式不符就是紅燈，發版前擋得住。
+>
+> **第 4 節（不准出現的東西）適用於整個 repo，不只 CHANGELOG。** 註解、
+> docstring、測試 fixture 一樣是公開內容，由 `tests_repo_hygiene.py` 掃 git
+> 追蹤的每一個檔案。
 
 ## 1. 每個版本的骨架
 
@@ -64,7 +68,7 @@
 ### 好 / 壞對照
 
 ```markdown
-✗ 壞：- 修好 Howard 說的「太小了」的問題，字級改回 11px。
+✗ 壞：- 修好維護者說的「太小了」的問題，字級改回 11px。
 
 ✓ 好：- **Tab-name label is legible again.** v0.30.12 shrank it to 9px while
         reducing visual weight, which made it unreadable. Back to 11px; the
@@ -86,4 +90,16 @@
 4. 同時具備足量中文與足量英文內容（雙語缺一不可）
 5. 不含人名與私人對話痕跡（黑名單 + 引號口語偵測）
 
-舊版條目不追溯——規範從導入的那一版往後生效。
+格式（1–4）只看最新版，舊條目不追溯；人名（5）守全檔——導入規範時已把舊條目
+一併清乾淨，留一個乾淨的基線。
+
+`tests_repo_hygiene.py`（同樣納入 `./run_tests.sh`）掃 **git 追蹤的每一個
+`.py` / `.js` / `.html` / `.md` / `.sh` / `.json` / `.css`**：
+
+1. 不含人名（作者署名的姓名全稱除外）
+2. 不含客戶名與專案代稱——**包含程式字串裡的**。客戶專屬的設定（例如 LINE
+   gateway 的關鍵字路由）放使用者 config，不放 repo
+3. 引號裡沒有直接貼上的口語
+
+豁免只按「長什麼樣子」給：`com.<name>.*` 這種 LaunchAgent／bundle 識別字、
+inline code、URL。整個檔案放行的只有這份規範自己——它得寫得出壞例子。

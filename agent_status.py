@@ -76,7 +76,7 @@ _OPENCODE_SES_CACHE = {}     # tmux_name → (查詢時間, session_id)
 _OPENCODE_SES_TTL = 15.0
 
 # pi coding agent 的 session 檔：~/.pi/agent/sessions/<cwd-slug>/<ISO>_<uuid>.jsonl
-# slug＝cwd 的 / 換成 - 再前後各包一層 -（/Users/howard → --Users-howard--）。
+# slug＝cwd 的 / 換成 - 再前後各包一層 -（/Users/alice → --Users-alice--）。
 PI_SESSIONS = os.path.expanduser("~/.pi/agent/sessions")
 _PI_FILE_TS_RE = re.compile(
     r"^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z_")

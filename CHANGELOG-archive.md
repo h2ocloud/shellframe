@@ -138,7 +138,7 @@
 ## v0.15.1 (2026-06-10)
 
 ### Fixes
-- **上滾歷史：收掉「resize 重繪幀」造成的重複（v0.15.0 的真正根因）** — 診斷 live session 的 `history_audit` 發現：視窗 resize（開關側 panel／字級變動／拖拉佔比）會讓 Claude 以新寬度重繪串流中的內容，**tmux scrollback 把每個寬度的副本都錄下來**。這些副本去掉空白後字元流相同、但斷行點不同，所以 v0.15.0 的逐行 dedup 完全看不到 → 上滾看到同一段落以不同斷行重複 N 次、樣式錯亂（Howard 截圖的綠色 diff 區糊成一片即此類）。
+- **上滾歷史：收掉「resize 重繪幀」造成的重複（v0.15.0 的真正根因）** — 診斷 live session 的 `history_audit` 發現：視窗 resize（開關側 panel／字級變動／拖拉佔比）會讓 Claude 以新寬度重繪串流中的內容，**tmux scrollback 把每個寬度的副本都錄下來**。這些副本去掉空白後字元流相同、但斷行點不同，所以 v0.15.0 的逐行 dedup 完全看不到 → 上滾看到同一段落以不同斷行重複 N 次、樣式錯亂（回報截圖裡綠色 diff 區糊成一片即此類）。
   - 新增 `_collapse_redraw_frames()`：wrap-invariant 錨點偵測——每行正規化（去 ANSI＋去所有空白）串成單一字元流，找「100 字元視窗從某行首出現、又在更後面的行首重現」的重繪邊界，保留首次出現之前 + 最後一次出現之後，丟掉中間的過時部分幀（最後一幀才是當前寬度、最完整的渲染）。在 tmux capture 後、逐行 dedup 前先跑。
   - 安全閥：視窗 100 字元（≈ 一整行程式碼/中文，巧合重現機率極低）＋ 中間需 ≥15 行才收 → 短回音與合法重複指令永不誤砍（已用「3 段相同長行、中間夾獨特內容」反例驗證零誤傷）。O(行數) 單趟、迭代收斂多次 resize；10k 行實測 ~20-40ms。
   - 實測 live 擷取：同一指令的 3 份不同寬度重繪 → 收成 1 份，穩定 header 與最終完整內容均保留。
@@ -220,10 +220,10 @@
 ## v0.13.5 (2026-06-02)
 
 ### Changes
-- **Restored「report to the user by tab label, not sid」to both master preambles** — the v0.13.3 refactor rewrote `bridge_telegram.py._MASTER_TURN_PREAMBLE` (into the 5-step delegation flow) and `main.py.MASTER_TURN_PREAMBLE`, and in doing so dropped the v0.12.25 rule that tells the master to refer to workers by their human-readable tab label (e.g.「點裝備優化」) rather than sid (e.g. s48) when reporting to Howard. Re-appended to both: sid is only for the master's own sfctl calls; if a handoff/report or sfctl output gives only a sid, run `sfctl list` to map it to the tab label before relaying.
+- **Restored「report to the user by tab label, not sid」to both master preambles** — the v0.13.3 refactor rewrote `bridge_telegram.py._MASTER_TURN_PREAMBLE` (into the 5-step delegation flow) and `main.py.MASTER_TURN_PREAMBLE`, and in doing so dropped the v0.12.25 rule that tells the master to refer to workers by their human-readable tab label rather than sid (e.g. s48) when reporting to the user. Re-appended to both: sid is only for the master's own sfctl calls; if a handoff/report or sfctl output gives only a sid, run `sfctl list` to map it to the tab label before relaying.
 
 ### 變更
-- **兩份 master preamble 補回「對使用者用 tab 名稱、不用 sid」規則** — v0.13.3 重構改寫了 `bridge_telegram.py._MASTER_TURN_PREAMBLE`（成 5 步派工流程）與 `main.py.MASTER_TURN_PREAMBLE`，過程中掉了 v0.12.25 那條「總控回報給 Howard 一律用人類可讀 tab 名稱（如「點裝備優化」）、不要用 sid（如 s48）」規則。兩份都補回：sid 只用於總控自己呼叫 sfctl；若交接/回報或 sfctl 輸出只給 sid，先 `sfctl list` 對照翻成 tab 名再轉述。
+- **兩份 master preamble 補回「對使用者用 tab 名稱、不用 sid」規則** — v0.13.3 重構改寫了 `bridge_telegram.py._MASTER_TURN_PREAMBLE`（成 5 步派工流程）與 `main.py.MASTER_TURN_PREAMBLE`，過程中掉了 v0.12.25 那條「總控回報給使用者一律用人類可讀 tab 名稱、不要用 sid（如 s48）」規則。兩份都補回：sid 只用於總控自己呼叫 sfctl；若交接/回報或 sfctl 輸出只給 sid，先 `sfctl list` 對照翻成 tab 名再轉述。
 
 ## v0.13.4 (2026-06-02)
 
@@ -357,10 +357,10 @@
 ## v0.12.12 (2026-05-27)
 
 ### Fixes
-- **`sfctl send` and `sfctl delegate` now submit large prompts reliably** — orchestrator dispatch now uses tmux paste buffers with bracketed paste for tmux-backed sessions, then sends Enter only after the paste completes. This avoids the previous direct PTY write path where large or multiline AI prompts could appear in the worker input box but fail to submit until Howard pressed Enter manually.
+- **`sfctl send` and `sfctl delegate` now submit large prompts reliably** — orchestrator dispatch now uses tmux paste buffers with bracketed paste for tmux-backed sessions, then sends Enter only after the paste completes. This avoids the previous direct PTY write path where large or multiline AI prompts could appear in the worker input box but fail to submit until Enter was pressed manually.
 
 ### 修正
-- **`sfctl send` 與 `sfctl delegate` 現在能穩定送出大段 prompt** — 總控派工改用 tmux paste buffer 加 bracketed paste，貼上完成後才送 Enter。避免舊的 PTY raw write 在長文字或多行 AI prompt 時，文字已進入 worker 輸入框但沒有自動送出、需要 Howard 手動按 Enter 的問題。
+- **`sfctl send` 與 `sfctl delegate` 現在能穩定送出大段 prompt** — 總控派工改用 tmux paste buffer 加 bracketed paste，貼上完成後才送 Enter。避免舊的 PTY raw write 在長文字或多行 AI prompt 時，文字已進入 worker 輸入框但沒有自動送出、需要手動按 Enter 的問題。
 
 ## v0.12.11 (2026-05-27)
 
@@ -743,7 +743,7 @@
 ## v0.11.67 (2026-05-24)
 
 ### Fixes
-- **Telegram approval menus for CLI action prompts** — when Claude/Codex shows a numbered approval / action-required prompt, ShellFrame now sends it to Telegram as inline buttons. Tapping a button writes the selected number back into the correct session, so Howard can resolve approvals from mobile without typing raw digits.
+- **Telegram approval menus for CLI action prompts** — when Claude/Codex shows a numbered approval / action-required prompt, ShellFrame now sends it to Telegram as inline buttons. Tapping a button writes the selected number back into the correct session, so approvals can be resolved from mobile without typing raw digits.
 - **Red pending-decision dot survives UI re-render** — tabs and sidebar now preserve the `attention` dot class during render, and the screen scanner detects Codex `Action Required` / `Would you like to run...` prompts in addition to Claude-style `❯ 1.` menus.
 - **Codex preset path is absolute** — the built-in Codex preset now uses ShellFrame's absolute `bin/sf-codex` path instead of a literal `~`, and existing saved presets / session manifests are normalized on startup.
 - **Codex launch flags no longer conflict** — the preset no longer combines `--dangerously-bypass-approvals-and-sandbox` with `-a never`, which newer Codex rejects before the TUI can start.
@@ -805,13 +805,13 @@
 ## v0.11.61 (2026-05-22)
 
 ### Adds
-- **`sfctl history-audit` — self-check tool so I can diagnose "上滾看到不對的歷史" instead of guessing** — Howard's complaint after v0.11.60 didn't fix it: "你自己這個對話就是壞的, 你能不能設計一個自檢的機制, 你可以自己上滾複製文字然後比對". This is exactly that. Bridge now stashes every extracted AI reply on the slot (`last_extracted_text` + 5-deep `recent_extractions` rolling window). New `history_audit(sid)` API gathers four parallel snapshots — (1) `last_extracted` ground truth, (2) `tmux_cleaned` (what the overlay returns), (3) `tmux_raw` (pre-dedup capture-pane), (4) `pyte_history` (independent source) — normalises them, computes `missing_from_overlay` (reply lines absent from overlay = the actual bug class) and `noise_in_overlay` (overlay lines that match neither raw bytes nor reply = dedup residue / cross-tab bleed), dumps everything to `~/.config/shellframe/diag/history-audit_<sid>_<ts>.txt`, and returns a one-line verdict. `sfctl history-audit [sid]` is the CLI entry — defaults to first session. Workflow: reproduce the bad scroll-up, run `sfctl history-audit`, share the dump path, and the next debug pass has measured evidence instead of theories.
+- **`sfctl history-audit` — self-check tool so I can diagnose "上滾看到不對的歷史" instead of guessing** — The complaint after v0.11.60 failed to fix it was blunt: the tool could not check its own output, so every diagnosis was a guess. This is that check. Bridge now stashes every extracted AI reply on the slot (`last_extracted_text` + 5-deep `recent_extractions` rolling window). New `history_audit(sid)` API gathers four parallel snapshots — (1) `last_extracted` ground truth, (2) `tmux_cleaned` (what the overlay returns), (3) `tmux_raw` (pre-dedup capture-pane), (4) `pyte_history` (independent source) — normalises them, computes `missing_from_overlay` (reply lines absent from overlay = the actual bug class) and `noise_in_overlay` (overlay lines that match neither raw bytes nor reply = dedup residue / cross-tab bleed), dumps everything to `~/.config/shellframe/diag/history-audit_<sid>_<ts>.txt`, and returns a one-line verdict. `sfctl history-audit [sid]` is the CLI entry — defaults to first session. Workflow: reproduce the bad scroll-up, run `sfctl history-audit`, share the dump path, and the next debug pass has measured evidence instead of theories.
 
 ### Fixes
 - **New Codex sessions sometimes required a UI reload before the conversation appeared** — root cause was a race between backend session creation/output and frontend attachment. `new_session()` can push output and notify `syncSessionsFromBackend` before `openSession()` has registered the returned sid locally; the existing duplicate-pane guard correctly blocked that sync, but if the notify was the only one the frontend saw, the new Codex tab stayed invisible until reload. Fix: `_pushOutput` now buffers output for unknown sids and flushes it once `openSession`/`reconnectSession` attaches the xterm, guarded sync calls are replayed after `_uiCreatingSession` drops, and a 1.5s reconciliation safety net catches non-UI creations from TG or `sfctl`.
 
 ### 新增
-- **`sfctl history-audit` 自檢工具，讓我能用「實際比對」而不是「猜」來修上滾顯示錯誤的問題** — Howard 在 v0.11.60 沒修好後直接點破：「你自己這個對話就是壞的，你能不能設計一個自檢的機制，你可以自己上滾複製文字然後比對」。就是這個。bridge 把每次提取的 AI 回應存到 slot 上（`last_extracted_text` + 5 筆 rolling window）。新 API `history_audit(sid)` 同時抓四份快照：(1) `last_extracted`（reply 真實內容）、(2) `tmux_cleaned`（overlay 看到的）、(3) `tmux_raw`（去 dedup 前的 capture-pane）、(4) `pyte_history`（獨立來源），正規化後算出 `missing_from_overlay`（reply 有但 overlay 沒有的行 = 真正的 bug class）跟 `noise_in_overlay`（overlay 有但 raw bytes / reply 都對不上的行 = dedup 殘骸或 cross-tab 串味），完整快照存到 `~/.config/shellframe/diag/history-audit_<sid>_<ts>.txt`，回傳一行 verdict。CLI：`sfctl history-audit [sid]`，預設第一個 session。流程：重現上滾爆掉的狀況 → `sfctl history-audit` → 把 dump 路徑丟給我，下一次 debug 就有實證可看。
+- **`sfctl history-audit` 自檢工具，讓我能用「實際比對」而不是「猜」來修上滾顯示錯誤的問題** — v0.11.60 沒修好之後被點出真正的問題：工具沒有辦法檢查自己的輸出，每次診斷都是用猜的。這就是那個自檢機制。bridge 把每次提取的 AI 回應存到 slot 上（`last_extracted_text` + 5 筆 rolling window）。新 API `history_audit(sid)` 同時抓四份快照：(1) `last_extracted`（reply 真實內容）、(2) `tmux_cleaned`（overlay 看到的）、(3) `tmux_raw`（去 dedup 前的 capture-pane）、(4) `pyte_history`（獨立來源），正規化後算出 `missing_from_overlay`（reply 有但 overlay 沒有的行 = 真正的 bug class）跟 `noise_in_overlay`（overlay 有但 raw bytes / reply 都對不上的行 = dedup 殘骸或 cross-tab 串味），完整快照存到 `~/.config/shellframe/diag/history-audit_<sid>_<ts>.txt`，回傳一行 verdict。CLI：`sfctl history-audit [sid]`，預設第一個 session。流程：重現上滾爆掉的狀況 → `sfctl history-audit` → 把 dump 路徑丟給我，下一次 debug 就有實證可看。
 
 ### 修正
 - **新增 Codex session 有時要重載 UI 才看得到對話** — 根因是 backend 建 session / 推 output 跟 frontend attach terminal 之間有 race。`new_session()` 可能在 `openSession()` 還沒把回傳 sid 寫進本地 `sessions` 前就推 output、通知 `syncSessionsFromBackend`；既有 duplicate-pane guard 會正確擋掉這次 sync，但如果這是 frontend 唯一收到的通知，新 Codex tab 就會隱形直到 reload。修法：`_pushOutput` 對未知 sid 先暫存，等 `openSession` / `reconnectSession` attach xterm 後 flush；guard 擋過的 sync 在 `_uiCreatingSession` 歸零後補跑；另外加 1.5s 低成本 reconcile，補住 TG / `sfctl` 這種非 UI 建立 session 的通知漏失。
@@ -819,7 +819,7 @@
 ## v0.11.60 (2026-05-21)
 
 ### Fixes
-- **Scrolling up after a long single AI reply showed the WRONG history — Howard's exact words: "我單次拿到的回應超過一個畫面 我上滾一定是看到不對的歷史"** — root cause was the scroll-history overlay always reading from `tmux capture-pane`, even when the pane was in the alternate-screen buffer. Claude Code / Codex / vim all enter alt-screen on startup via `\x1b[?1049h`; in that mode tmux's scrollback contains the NORMAL-screen history (whatever was on the terminal BEFORE the TUI took over), NOT the rows that just scrolled out of the alt-screen viewport during the current long reply. So the overlay dutifully returned the previous shell prompt / unrelated session contents — looked like the dedup was broken, but it was a buffer-mismatch problem we'd never noticed because earlier symptoms ("往上滑完全不會動") had pushed us to make tmux primary in v0.11.40. Fix: `get_clean_history` now probes `#{alternate_on}` first. In alt-screen mode it serves from pyte's HistoryScreen (the bridge feeds every PTY byte through pyte, including alt-screen line-feeds, so its `history.top` deque actually has the recent reply text). Outside alt-screen tmux remains primary — its 10000-row scrollback dwarfs pyte's 3000-row cap and carries colour. Response gains a `source` field surfaced in the overlay header so future "wrong history" reports tell us which buffer to investigate.
+- **Scrolling up after a long single AI reply showed the WRONG history — reported symptom: whenever a single reply ran longer than one screen, scrolling up always showed unrelated history** — root cause was the scroll-history overlay always reading from `tmux capture-pane`, even when the pane was in the alternate-screen buffer. Claude Code / Codex / vim all enter alt-screen on startup via `\x1b[?1049h`; in that mode tmux's scrollback contains the NORMAL-screen history (whatever was on the terminal BEFORE the TUI took over), NOT the rows that just scrolled out of the alt-screen viewport during the current long reply. So the overlay dutifully returned the previous shell prompt / unrelated session contents — looked like the dedup was broken, but it was a buffer-mismatch problem we'd never noticed because earlier symptoms ("往上滑完全不會動") had pushed us to make tmux primary in v0.11.40. Fix: `get_clean_history` now probes `#{alternate_on}` first. In alt-screen mode it serves from pyte's HistoryScreen (the bridge feeds every PTY byte through pyte, including alt-screen line-feeds, so its `history.top` deque actually has the recent reply text). Outside alt-screen tmux remains primary — its 10000-row scrollback dwarfs pyte's 3000-row cap and carries colour. Response gains a `source` field surfaced in the overlay header so future "wrong history" reports tell us which buffer to investigate.
 
 ### 修正
 - **單次 AI 回應超過一個畫面後上滾看到的是「不對的歷史」** — 根因是 scroll-history overlay 一律用 `tmux capture-pane`，沒有偵測 pane 是不是在 alternate-screen buffer。Claude Code / Codex / vim 啟動時都會切到 alt-screen（`\x1b[?1049h`）；在那個模式下 tmux 的 scrollback 是 alt-screen **進入前**的 normal-screen 歷史，**不是**當前長 reply 滾出視窗的內容。所以 overlay 老老實實回傳「之前 shell prompt / 上一段對話」 — 看起來像 dedup 壞掉，其實是 buffer 拿錯了。先前 v0.11.40 為了修「往上滑完全不會動」把 tmux 改成 primary，當時沒考慮到 alt-screen case。修法：`get_clean_history` 先用 `#{alternate_on}` 偵測；alt-screen 時改吃 pyte 的 HistoryScreen（bridge 把每個 PTY byte 都餵給 pyte，alt-screen 的 line-feed 也會推進 `history.top`，所以那裡才是當前 reply 真正的上半段）。非 alt-screen 維持 tmux（10000 行容量比 pyte 3000 行大、有顏色）。回傳多帶 `source` 欄位顯示在 overlay header 上，下次再看到不對直接看標籤就知道是哪邊出問題。
@@ -835,16 +835,16 @@
 ## v0.11.58 (2026-05-15)
 
 ### Fixes
-- **Multi-file paste from Finder still dropped — Howard's repro: 2 PDFs → only 1 reached Claude, with 0-byte clipboard_*.pdf files on disk** — the Cmd+V handler's order of operations was wrong. v0.11.56 fixed filename collisions but the real Finder-paste path was being misrouted: `clipboardData.items` reports kind='file' for Finder-copied items, BUT WKWebView doesn't materialize NSPasteboard file URLs into byte data, so `item.getAsFile()` returns 0-byte stub blobs. The in-browser fileBlobs branch happily wrote those empty data URLs to disk and returned, never reaching the osascript-backed `get_clipboard_files()` fallback that would have found the real file paths. Swapped branch order: osascript path now comes FIRST for non-image files; in-browser fileBlobs is the fallback and now skips `blob.size === 0` blobs so any leftover Finder stubs are ignored.
+- **Multi-file paste from Finder still dropped — reported repro: 2 PDFs → only 1 reached Claude, with 0-byte clipboard_*.pdf files on disk** — the Cmd+V handler's order of operations was wrong. v0.11.56 fixed filename collisions but the real Finder-paste path was being misrouted: `clipboardData.items` reports kind='file' for Finder-copied items, BUT WKWebView doesn't materialize NSPasteboard file URLs into byte data, so `item.getAsFile()` returns 0-byte stub blobs. The in-browser fileBlobs branch happily wrote those empty data URLs to disk and returned, never reaching the osascript-backed `get_clipboard_files()` fallback that would have found the real file paths. Swapped branch order: osascript path now comes FIRST for non-image files; in-browser fileBlobs is the fallback and now skips `blob.size === 0` blobs so any leftover Finder stubs are ignored.
 
 ### Changes
-- **`/fetch` no longer pins the reply** — Howard: pinned banner in chat is noisy and rarely useful. Message is still sent normally; user scrolls if they need to find it. Updated slash-menu description and `/help` text accordingly.
+- **`/fetch` no longer pins the reply** — Reported in daily use: a pinned banner in chat is noisy and rarely useful. Message is still sent normally; user scrolls if they need to find it. Updated slash-menu description and `/help` text accordingly.
 
 ### 修正
-- **Finder 多檔複製貼上還是只有一張進 Claude — Howard 實測：2 個 PDF 變成 0 bytes 落地、只有一個進 Claude** — Cmd+V 路徑的分支順序錯了。v0.11.56 修好檔名碰撞，但 Finder 複製的真實路徑被誤導：`clipboardData.items` 對 Finder 複製的檔案會回 kind='file'，但 WKWebView 不會把 NSPasteboard 的 file URL materialize 成 byte data，`item.getAsFile()` 拿到的是 0-byte stub blob。in-browser fileBlobs branch 把空的 data URL 寫到磁碟然後 return，永遠走不到 `get_clipboard_files()` (osascript) 那條真正能拿到 file path 的 fallback。把 branch 順序交換：osascript 路徑放最前面（非圖片時走得到），in-browser fileBlobs 降為 fallback 且加 `blob.size === 0` 過濾，殘留的 Finder stub blob 直接忽略。
+- **Finder 多檔複製貼上還是只有一張進 Claude — 實測回報：2 個 PDF 變成 0 bytes 落地、只有一個進 Claude** — Cmd+V 路徑的分支順序錯了。v0.11.56 修好檔名碰撞，但 Finder 複製的真實路徑被誤導：`clipboardData.items` 對 Finder 複製的檔案會回 kind='file'，但 WKWebView 不會把 NSPasteboard 的 file URL materialize 成 byte data，`item.getAsFile()` 拿到的是 0-byte stub blob。in-browser fileBlobs branch 把空的 data URL 寫到磁碟然後 return，永遠走不到 `get_clipboard_files()` (osascript) 那條真正能拿到 file path 的 fallback。把 branch 順序交換：osascript 路徑放最前面（非圖片時走得到），in-browser fileBlobs 降為 fallback 且加 `blob.size === 0` 過濾，殘留的 Finder stub blob 直接忽略。
 
 ### 變更
-- **`/fetch` 不再 pin 訊息** — Howard 回報置頂訊息很吵、用處不大。訊息照常送出，要找的話自己往上滾。同步更新 slash 選單敘述跟 `/help` 文字。
+- **`/fetch` 不再 pin 訊息** — 日常使用中回報置頂訊息很吵、用處不大。訊息照常送出，要找的話自己往上滾。同步更新 slash 選單敘述跟 `/help` 文字。
 
 ## v0.11.57 (2026-05-15)
 
@@ -852,54 +852,54 @@
 - **TG long-poll felt unstable but the log was useless for diagnosing it** — `_poll_loop`'s exception handler was `except Exception: time.sleep(5)` with zero logging. Any wifi blip / TLS reset / sleep-wake event silently produced 5+ seconds of dead bridge time and left no trace. Worse, the per-flush debug path dumped the full screen on every empty poll across 8 sessions, so the 1MB log cap rotated every few minutes and real signals got buried. Fix: log exceptions with type+message (first 3 verbosely, then every 10th to coalesce sustained outages); exponential backoff 1→2→4→8→15s instead of fixed 5s so transient blips recover ~3× faster; emit a `[poll] recovered after N consecutive errors` line on the comeback. Empty-flush log entries dropped — only log when there's actual content to forward.
 
 ### Changes
-- **TG slash menu now puts `/1`, `/2`, ... session switchers BEFORE the generic ops** — Howard reported the picker is mostly used to swap sessions on mobile; bumped numbered switchers to the top so they're thumb-reachable. Generic ops (`/fetch`, `/list`, `/restart`, `/update`, `/new`, `/close`) move below.
+- **TG slash menu now puts `/1`, `/2`, ... session switchers BEFORE the generic ops** — Reported in daily use: the picker is mostly used to swap sessions on mobile; bumped numbered switchers to the top so they're thumb-reachable. Generic ops (`/fetch`, `/list`, `/restart`, `/update`, `/new`, `/close`) move below.
 
 ### 修正
 - **TG long-poll 感覺不穩但 log 完全沒線索** — `_poll_loop` 的 exception 處理是 `except Exception: time.sleep(5)`，完全沒 log。任何 wifi 抖動／TLS reset／sleep-wake 都靜默吞掉 5+ 秒、毫無痕跡。更糟的是每次 flush 對 8 個 session 都 dump 整個 screen，1MB log 上限每幾分鐘就 rotate 一次、真實訊號全被淹沒。修法：exception 路徑 log 出 type+message（前 3 次完整、之後每 10 次一筆避免風暴），改成指數 backoff 1→2→4→8→15s 取代固定 5s，連續錯誤後復原時 emit `[poll] recovered after N consecutive errors`。空 flush 不再寫 log，只在有實際內容要 forward 時寫。
 
 ### 變更
-- **TG slash 選單把 `/1`、`/2`、... session 切換放最前面** — Howard 回報手機開選單主要是切 session；把數字命令往前推到拇指可達範圍。其他通用命令（`/fetch`、`/list`、`/restart`、`/update`、`/new`、`/close`）移到後面。
+- **TG slash 選單把 `/1`、`/2`、... session 切換放最前面** — 日常使用中回報手機開選單主要是切 session；把數字命令往前推到拇指可達範圍。其他通用命令（`/fetch`、`/list`、`/restart`、`/update`、`/new`、`/close`）移到後面。
 
 ## v0.11.56 (2026-05-14)
 
 ### Fixes
-- **Multi-image paste only attached the LAST image — Howard saw a single chip when pasting 3** — `save_image()` / `save_file_from_clipboard()` built filenames at second precision (`%Y%m%d_%H%M%S`). The Cmd+V handler's image loop runs each `save_image` call back-to-back; three images pasted in the same second got identical filenames, each rewrote the previous on disk, and `save_image` returned the same path three times. The JS `attachFile()` dedup (`s.attachments.some(a => a.path === path)`) then collapsed the three identical paths into one chip → only one `[image #N]` reached Claude / Codex. Bumped to microsecond precision (`%Y%m%d_%H%M%S_%f`); verified 5 back-to-back calls now produce 5 distinct filenames. No other change — the iteration / chip-rendering / PTY-write logic was always correct; the collision was the only thing dropping images on the floor.
+- **Multi-image paste only attached the LAST image — only a single chip appeared when pasting 3** — `save_image()` / `save_file_from_clipboard()` built filenames at second precision (`%Y%m%d_%H%M%S`). The Cmd+V handler's image loop runs each `save_image` call back-to-back; three images pasted in the same second got identical filenames, each rewrote the previous on disk, and `save_image` returned the same path three times. The JS `attachFile()` dedup (`s.attachments.some(a => a.path === path)`) then collapsed the three identical paths into one chip → only one `[image #N]` reached Claude / Codex. Bumped to microsecond precision (`%Y%m%d_%H%M%S_%f`); verified 5 back-to-back calls now produce 5 distinct filenames. No other change — the iteration / chip-rendering / PTY-write logic was always correct; the collision was the only thing dropping images on the floor.
 
 ### 修正
-- **多張圖片貼上實際只附第一張 — Howard 看到只有一個 chip 以為其他沒貼進去** — `save_image()` 與 `save_file_from_clipboard()` 用秒精度的時間戳當檔名（`%Y%m%d_%H%M%S`）。Cmd+V 的 image loop 對每張 blob 連續呼叫 `save_image`，同一秒內三張圖會拿到一樣的檔名，磁碟上後者覆蓋前者、`save_image` 三次都回傳同一個 path。JS 端 `attachFile()` 的 dedup（`s.attachments.some(a => a.path === path)`）就把三個一樣的 path 縮成一個 chip → 只送一個 `[image #N]` 給 Claude / Codex 看。改用微秒精度（`%Y%m%d_%H%M%S_%f`）；實測五次 back-to-back 拿到五個不同檔名。其他邏輯（iteration、chip 渲染、寫入 PTY）原本就對，只有檔名碰撞這一處在丟圖。
+- **多張圖片貼上實際只附第一張 — 只看到一個 chip，以為其他沒貼進去** — `save_image()` 與 `save_file_from_clipboard()` 用秒精度的時間戳當檔名（`%Y%m%d_%H%M%S`）。Cmd+V 的 image loop 對每張 blob 連續呼叫 `save_image`，同一秒內三張圖會拿到一樣的檔名，磁碟上後者覆蓋前者、`save_image` 三次都回傳同一個 path。JS 端 `attachFile()` 的 dedup（`s.attachments.some(a => a.path === path)`）就把三個一樣的 path 縮成一個 chip → 只送一個 `[image #N]` 給 Claude / Codex 看。改用微秒精度（`%Y%m%d_%H%M%S_%f`）；實測五次 back-to-back 拿到五個不同檔名。其他邏輯（iteration、chip 渲染、寫入 PTY）原本就對，只有檔名碰撞這一處在丟圖。
 
 ## v0.11.55 (2026-05-14)
 
 ### Changes
-- **Trim Telegram bot slash-command menu — drop `/help`, `/pause`, `/resume`, `/reload`** — Howard reported the picker had too many entries that he never used. Removed those four from `_set_bot_commands()`'s registered list so the TG client's command menu only shows the ones he actually uses (`/fetch`, `/list`, `/restart`, `/update`, `/new`, `/close`, plus the numbered `/1` `/2` ... session switchers). Handlers stay in place — typing the commands by hand still works, they just aren't suggested.
+- **Trim Telegram bot slash-command menu — drop `/help`, `/pause`, `/resume`, `/reload`** — Reported in daily use: the picker had too many entries that he never used. Removed those four from `_set_bot_commands()`'s registered list so the TG client's command menu only shows the ones he actually uses (`/fetch`, `/list`, `/restart`, `/update`, `/new`, `/close`, plus the numbered `/1` `/2` ... session switchers). Handlers stay in place — typing the commands by hand still works, they just aren't suggested.
 
 ### 變更
-- **精簡 Telegram bot 的 slash 選單 — 拿掉 `/help`、`/pause`、`/resume`、`/reload`** — Howard 回報選單太雜、這四個用不到。從 `_set_bot_commands()` 註冊清單移除，TG 選單只剩會用的（`/fetch`、`/list`、`/restart`、`/update`、`/new`、`/close`，加上 `/1` `/2` ... session 切換）。Handler 還在 — 手動打還能跑，只是不會主動推薦。
+- **精簡 Telegram bot 的 slash 選單 — 拿掉 `/help`、`/pause`、`/resume`、`/reload`** — 日常使用中回報選單太雜、這四個用不到。從 `_set_bot_commands()` 註冊清單移除，TG 選單只剩會用的（`/fetch`、`/list`、`/restart`、`/update`、`/new`、`/close`，加上 `/1` `/2` ... session 切換）。Handler 還在 — 手動打還能跑，只是不會主動推薦。
 
 ## v0.11.54 (2026-05-13)
 
 ### Fixes
-- **Scroll-up history overlay showed the wrong frame's context — Howard saw user-message followed by Claude Code splash banner instead of the actual reply** — `Api.get_clean_history()`'s two dedup gates (CJK-heavy + ≥3× generic-line repeat) kept the FIRST occurrence of each duplicated line. Claude Code's TUI re-renders the whole viewport on every state change (splash → conversation, scroll-up, every stream tick), so tmux captures the SAME line in multiple frames with different surrounding context. For Howard's `sf_s20`, the user's prompt `❯ 我有傳訊息了 你可以去log 看一下...` appeared at line 795 (frame T1: followed by Claude Code v2.1.112 splash + Write tool call) AND at line 1858 (frame T2: followed by the real Bash(ssh) log query and `⏺ Log 證據（你訊息進來了 ✓）`). Keep-first deduper picked T1 — the overlay showed the splash-banner version and dropped the canonical T2 reply, hence the "scroll up doesn't connect to the live view" complaint Howard's been raising for releases. Switched both gates to keep-LAST: precompute `last_idx[key]` over the cleaned list, emit each line only at its last index. The most-recent frame is the canonical one (final stream tick, post-redraw state); earlier instances are partial / mis-contextualized. Prefix-collapse pass (Pass 1) unchanged — it already keeps the longest of consecutive prefix-duplicates.
+- **Scroll-up history overlay showed the wrong frame's context — the overlay showed a user message followed by the Claude Code splash banner instead of the actual reply** — `Api.get_clean_history()`'s two dedup gates (CJK-heavy + ≥3× generic-line repeat) kept the FIRST occurrence of each duplicated line. Claude Code's TUI re-renders the whole viewport on every state change (splash → conversation, scroll-up, every stream tick), so tmux captures the SAME line in multiple frames with different surrounding context. In the reported session, the user's own prompt line appeared at line 795 (frame T1: followed by Claude Code v2.1.112 splash + Write tool call) AND at line 1858 (frame T2: followed by the real Bash(ssh) log query and `⏺ Log 證據（你訊息進來了 ✓）`). Keep-first deduper picked T1 — the overlay showed the splash-banner version and dropped the canonical T2 reply, hence the long-standing "scroll up doesn't connect to the live view" complaint. Switched both gates to keep-LAST: precompute `last_idx[key]` over the cleaned list, emit each line only at its last index. The most-recent frame is the canonical one (final stream tick, post-redraw state); earlier instances are partial / mis-contextualized. Prefix-collapse pass (Pass 1) unchanged — it already keeps the longest of consecutive prefix-duplicates.
 
 ### 修正
-- **往上滾的歷史 overlay 抓到錯誤 frame 的 context — Howard 看到的是 user 訊息接 Claude Code 啟動 banner，而不是真實的回覆** — `Api.get_clean_history()` 的兩個 dedup gate（CJK-heavy 行、≥3× 重複行）原本保留**第一次**出現。Claude Code 的 TUI 每次狀態變化都會整個 viewport 重繪（splash → 對話、scroll up、每個 stream tick），tmux 把每個 frame 都記下來、同一行會在多個 frame 出現但 context 不同。Howard 的 `sf_s20`：`❯ 我有傳訊息了 你可以去log 看一下...` 同時出現在 line 795（T1 frame：後接 Claude Code v2.1.112 啟動 banner + Write 工具呼叫）跟 line 1858（T2 frame：後接真實的 Bash(ssh) log 查詢 + `⏺ Log 證據（你訊息進來了 ✓）`）。keep-first 選了 T1 → overlay 顯示 splash banner 版本、把正確的 T2 回覆丟掉，所以滾上去「銜接不上」。改成 keep-LAST：先建 `last_idx[key]` map，最後一次出現的 index 才 emit。最新 frame 是最終狀態（stream 結束、重繪完）；早期 instance 通常是 partial 或 context 不對的快照。Pass 1 prefix-collapse 不動（已經正確保留兩個連續 prefix-dup 中較長的那個）。
+- **往上滾的歷史 overlay 抓到錯誤 frame 的 context — overlay 顯示的是 user 訊息接 Claude Code 啟動 banner，而不是真實的回覆** — `Api.get_clean_history()` 的兩個 dedup gate（CJK-heavy 行、≥3× 重複行）原本保留**第一次**出現。Claude Code 的 TUI 每次狀態變化都會整個 viewport 重繪（splash → 對話、scroll up、每個 stream tick），tmux 把每個 frame 都記下來、同一行會在多個 frame 出現但 context 不同。回報的那個分頁裡，使用者自己那行 prompt 同時出現在 line 795（T1 frame：後接 Claude Code v2.1.112 啟動 banner + Write 工具呼叫）跟 line 1858（T2 frame：後接真實的 Bash(ssh) log 查詢 + `⏺ Log 證據（你訊息進來了 ✓）`）。keep-first 選了 T1 → overlay 顯示 splash banner 版本、把正確的 T2 回覆丟掉，所以滾上去「銜接不上」。改成 keep-LAST：先建 `last_idx[key]` map，最後一次出現的 index 才 emit。最新 frame 是最終狀態（stream 結束、重繪完）；早期 instance 通常是 partial 或 context 不對的快照。Pass 1 prefix-collapse 不動（已經正確保留兩個連續 prefix-dup 中較長的那個）。
 
 ## v0.11.53 (2026-05-11)
 
 ### Fixes
-- **Enter silently lost after `paste image → type Chinese → Enter to confirm IME candidate → Enter to submit`** — Howard reported the second Enter wouldn't submit. Root cause: the document-level Enter safety net (`_ensurePasteEnterListener`) was gated on `_refocusGuardId !== null`, but the refocus guard auto-clears after 240ms of stable focus. So once the user spent time typing Chinese, the guard was long gone. When IME confirmation fires, WKWebView briefly blurs the xterm helper textarea — and the next Enter lands on body / image-bar with no listener to catch it. Made the safety net always-on (renamed `_ensureStealEnterListener`, attached at init); added `e.isComposing || keyCode === 229` guard so IME-commit Enter isn't intercepted (it must reach the IME naturally to commit the candidate). All other guards stay (Enter only, no modifiers, `_isStealableFocus` skips real form controls / xterm textarea), so normal typing is untouched.
+- **Enter silently lost after `paste image → type Chinese → Enter to confirm IME candidate → Enter to submit`** — Reported in daily use: the second Enter wouldn't submit. Root cause: the document-level Enter safety net (`_ensurePasteEnterListener`) was gated on `_refocusGuardId !== null`, but the refocus guard auto-clears after 240ms of stable focus. So once the user spent time typing Chinese, the guard was long gone. When IME confirmation fires, WKWebView briefly blurs the xterm helper textarea — and the next Enter lands on body / image-bar with no listener to catch it. Made the safety net always-on (renamed `_ensureStealEnterListener`, attached at init); added `e.isComposing || keyCode === 229` guard so IME-commit Enter isn't intercepted (it must reach the IME naturally to commit the candidate). All other guards stay (Enter only, no modifiers, `_isStealableFocus` skips real form controls / xterm textarea), so normal typing is untouched.
 
 ### 修正
-- **「貼圖 → 打中文 → Enter 確認選字 → Enter 送出」第二個 Enter 默默丟失** — Howard 回報送不出去。根因：document-level 的 Enter 兜底 listener（`_ensurePasteEnterListener`）被 `_refocusGuardId !== null` 守住，但 refocus guard 在 focus 穩定 240ms 後就自動清掉。使用者打中文這段時間 guard 早就 null 了，IME 確認選字時 WKWebView 短暫 blur xterm helper textarea，下一個 Enter 落到 body / image-bar 又沒 listener 接 → 靜默丟失。把兜底 listener 改成 always-on（更名 `_ensureStealEnterListener`、init 時掛上）；新增 `e.isComposing || keyCode === 229` 守衛，IME-commit Enter 不偷（要讓它自然送到 IME 完成候選確認）。其他守衛保留（只接 Enter、不接修飾鍵、`_isStealableFocus` 跳過真表單與 xterm textarea），正常打字不受影響。
+- **「貼圖 → 打中文 → Enter 確認選字 → Enter 送出」第二個 Enter 默默丟失** — 日常使用中回報送不出去。根因：document-level 的 Enter 兜底 listener（`_ensurePasteEnterListener`）被 `_refocusGuardId !== null` 守住，但 refocus guard 在 focus 穩定 240ms 後就自動清掉。使用者打中文這段時間 guard 早就 null 了，IME 確認選字時 WKWebView 短暫 blur xterm helper textarea，下一個 Enter 落到 body / image-bar 又沒 listener 接 → 靜默丟失。把兜底 listener 改成 always-on（更名 `_ensureStealEnterListener`、init 時掛上）；新增 `e.isComposing || keyCode === 229` 守衛，IME-commit Enter 不偷（要讓它自然送到 IME 完成候選確認）。其他守衛保留（只接 Enter、不接修飾鍵、`_isStealableFocus` 跳過真表單與 xterm textarea），正常打字不受影響。
 
 ## v0.11.52 (2026-05-11)
 
 ### Fixes
-- **Codex preset silently launched without `--full-auto` because macOS smart-substitution turned `--` into `—`** — Howard's saved Codex preset had `"cmd": "codex —full-auto"` (em-dash, U+2014). `shlex.split` preserved the em-dash, codex didn't recognize it as a flag, and the token landed in the prompt textarea as a queued user message instead of activating full-auto mode. Added `_normalize_dashes()` — collapses em-dash / en-dash at token boundaries back to `--`. Applied at three points: (1) `save_preset` so new presets typed in the UI get corrected on save, (2) `new_session` so existing dirty configs auto-correct on spawn, (3) a one-shot `_dash_normalized_v1` migration in `load_config` that rewrites all stored presets the first time the new version loads. Howard's live config was migrated to `codex --full-auto`.
+- **Codex preset silently launched without `--full-auto` because macOS smart-substitution turned `--` into `—`** — The saved Codex preset had `"cmd": "codex —full-auto"` (em-dash, U+2014). `shlex.split` preserved the em-dash, codex didn't recognize it as a flag, and the token landed in the prompt textarea as a queued user message instead of activating full-auto mode. Added `_normalize_dashes()` — collapses em-dash / en-dash at token boundaries back to `--`. Applied at three points: (1) `save_preset` so new presets typed in the UI get corrected on save, (2) `new_session` so existing dirty configs auto-correct on spawn, (3) a one-shot `_dash_normalized_v1` migration in `load_config` that rewrites all stored presets the first time the new version loads. The live config was migrated to `codex --full-auto`.
 - **Right-click paste of a clipboard image (e.g. `⌃⇧⌘4` screenshot) silently did nothing** — `_rightClickPaste()` relied on `navigator.clipboard.read()`, but WKWebView gates clipboard reads behind permission AND doesn't expose `image/*` MIME types reliably, so the try/catch swallowed the failure with no user feedback. Added backend `read_clipboard_image()` that reads NSPasteboard directly via PyObjC — prefers `NSPasteboardTypePNG`, falls back to `NSPasteboardTypeTIFF` and re-encodes through `NSBitmapImageRep` (macOS screenshots land on the pasteboard as TIFF, not PNG). UI now falls back to this backend when the browser API yields nothing. Cmd+V was already fine — its `e.clipboardData.items` comes from a trusted user gesture and exposes images correctly; only right-click was broken.
 
 ### 修正
-- **Codex preset 默默啟動但 `--full-auto` 沒生效，因為 macOS 智慧型替換把 `--` 換成 `—`** — Howard 存的 Codex preset cmd 是 `codex —full-auto`（em-dash, U+2014），`shlex.split` 保留 em-dash、codex 不認得它是 flag、整個 token 變成排隊送進 prompt 的 user message，full-auto 模式根本沒被啟動。新增 `_normalize_dashes()` — 把 token 邊界的 em-dash / en-dash 還原成 `--`。三個地方套用：(1) `save_preset` 寫入時、(2) `new_session` 啟動時（既存髒 config 自動修）、(3) `load_config` 一次性 `_dash_normalized_v1` migration（首次跑新版會掃過所有 preset）。Howard 的 live config 已被遷移成 `codex --full-auto`。
+- **Codex preset 默默啟動但 `--full-auto` 沒生效，因為 macOS 智慧型替換把 `--` 換成 `—`** — 存下來的 Codex preset cmd 是 `codex —full-auto`（em-dash, U+2014），`shlex.split` 保留 em-dash、codex 不認得它是 flag、整個 token 變成排隊送進 prompt 的 user message，full-auto 模式根本沒被啟動。新增 `_normalize_dashes()` — 把 token 邊界的 em-dash / en-dash 還原成 `--`。三個地方套用：(1) `save_preset` 寫入時、(2) `new_session` 啟動時（既存髒 config 自動修）、(3) `load_config` 一次性 `_dash_normalized_v1` migration（首次跑新版會掃過所有 preset）。live config 已被遷移成 `codex --full-auto`。
 - **右鍵貼上剪貼簿圖片（例如 `⌃⇧⌘4` 截圖）默默無反應** — `_rightClickPaste()` 仰賴 `navigator.clipboard.read()`，但 WKWebView 對 clipboard 讀取有 permission gate 且不會穩定暴露 `image/*` MIME，try/catch 把錯誤吞掉、使用者完全沒回饋。新增後端 `read_clipboard_image()` 直接走 PyObjC 讀 NSPasteboard — 優先抓 `NSPasteboardTypePNG`、抓不到再 fallback `NSPasteboardTypeTIFF` 經 `NSBitmapImageRep` 重編碼成 PNG（macOS 截圖在 pasteboard 上是 TIFF 不是 PNG）。前端在 browser API 拿空時 fallback 到這條後端路徑。Cmd+V 不受影響 —— 它的 `e.clipboardData.items` 來自 trusted user gesture、image blob 直接可拿，問題只在右鍵。
 
 ## v0.11.51 (2026-05-11)
@@ -913,10 +913,10 @@
 ## v0.11.50 (2026-05-09)
 
 ### Fixes
-- **TG bridge spammed false "macOS popup detected (loginwindow)" stall warnings** — Howard reported polling looked unstable, but the polling loop was healthy; the noise came from `_detect_blocking_popup()`. `_POPUP_OWNERS` listed `loginwindow`, which is always running and frequently owns on-screen system-management windows during normal operation (sleep/wake transitions, screen-lock manager, Touch ID prep). Any long Claude response (>25s silent) tripped `_warn_stalled` → `CGWindowListCopyWindowInfo` matched a loginwindow-owned window → user got a TG warning telling them to dismiss a popup that wasn't there. Removed `loginwindow` from the popup-owner set; the remaining owners (`UserNotificationCenter`, `CoreServicesUIAgent`, `SecurityAgent`, `universalAccessAuthWarn`) all spawn on-demand for real auth/permission dialogs. If the Mac is genuinely lock-screened, ShellFrame can't be brought to front anyway, so detecting it had no upside.
+- **TG bridge spammed false "macOS popup detected (loginwindow)" stall warnings** — Polling looked unstable, but the polling loop was healthy; the noise came from `_detect_blocking_popup()`. `_POPUP_OWNERS` listed `loginwindow`, which is always running and frequently owns on-screen system-management windows during normal operation (sleep/wake transitions, screen-lock manager, Touch ID prep). Any long Claude response (>25s silent) tripped `_warn_stalled` → `CGWindowListCopyWindowInfo` matched a loginwindow-owned window → user got a TG warning telling them to dismiss a popup that wasn't there. Removed `loginwindow` from the popup-owner set; the remaining owners (`UserNotificationCenter`, `CoreServicesUIAgent`, `SecurityAgent`, `universalAccessAuthWarn`) all spawn on-demand for real auth/permission dialogs. If the Mac is genuinely lock-screened, ShellFrame can't be brought to front anyway, so detecting it had no upside.
 
 ### 修正
-- **TG bridge 一直噴假的「macOS popup detected (loginwindow)」stall 警告** — Howard 以為 polling 不穩，但 poll loop 本身健康；噪音是 `_detect_blocking_popup()` 出來的。`_POPUP_OWNERS` 把 `loginwindow` 列為「擋路 popup owner」，但 loginwindow 是 macOS 永遠在跑的 process，正常使用中常持有 on-screen 系統管理 window（睡眠/喚醒切換、鎖螢幕管理、Touch ID prep）。Claude 任何 >25s 沒輸出的長思考 → `_warn_stalled` 觸發 → `CGWindowListCopyWindowInfo` 命中 loginwindow → user 收到「快去關掉不存在的 popup」TG 警告。把 `loginwindow` 從 popup owner 名單移除，留下的（`UserNotificationCenter` / `CoreServicesUIAgent` / `SecurityAgent` / `universalAccessAuthWarn`）都是按需 spawn 的真權限/認證 dialog。Mac 真的被鎖了 ShellFrame 也召不回前景，偵測它沒意義。
+- **TG bridge 一直噴假的「macOS popup detected (loginwindow)」stall 警告** — 看起來像 polling 不穩，但 poll loop 本身健康；噪音是 `_detect_blocking_popup()` 出來的。`_POPUP_OWNERS` 把 `loginwindow` 列為「擋路 popup owner」，但 loginwindow 是 macOS 永遠在跑的 process，正常使用中常持有 on-screen 系統管理 window（睡眠/喚醒切換、鎖螢幕管理、Touch ID prep）。Claude 任何 >25s 沒輸出的長思考 → `_warn_stalled` 觸發 → `CGWindowListCopyWindowInfo` 命中 loginwindow → user 收到「快去關掉不存在的 popup」TG 警告。把 `loginwindow` 從 popup owner 名單移除，留下的（`UserNotificationCenter` / `CoreServicesUIAgent` / `SecurityAgent` / `universalAccessAuthWarn`）都是按需 spawn 的真權限/認證 dialog。Mac 真的被鎖了 ShellFrame 也召不回前景，偵測它沒意義。
 
 ## v0.11.49 (2026-05-03)
 
@@ -943,10 +943,10 @@
 ## v0.11.48 (2026-05-03)
 
 ### Fixes
-- **Global hotkey silently dead when launched from a Rosetta-translated parent shell** — root cause was identity-leak via process arch inheritance, not anything in the hotkey code itself. Howard's interactive shell runs x86_64 under Rosetta; when the `ShellFrame.app` bash launcher exec'd `.venv/bin/python` it inherited that arch, so the live process ran as **x86_64** with kernel-reported bundle id `com.apple.python3` (not `com.h2ocloud.shellframe`). TCC scopes Accessibility permission per code identity → `NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` returns nil → `⌃⌥Space` only worked when ShellFrame was already foreground (local monitor doesn't need Accessibility), and "summon from background" silently no-op'd. Symptom: 「快捷鍵叫不出來」. Fix: all three launchers (`ShellFrame.app/Contents/MacOS/shellframe`, `run.sh`, the `~/.local/bin/shellframe` written by `install.sh`) now detect Apple Silicon via `sysctl hw.optional.arm64` and prepend `arch -arm64` to the python exec, breaking inheritance and stabilising the TCC subject as the .app bundle.
+- **Global hotkey silently dead when launched from a Rosetta-translated parent shell** — root cause was identity-leak via process arch inheritance, not anything in the hotkey code itself. The interactive shell ran x86_64 under Rosetta; when the `ShellFrame.app` bash launcher exec'd `.venv/bin/python` it inherited that arch, so the live process ran as **x86_64** with kernel-reported bundle id `com.apple.python3` (not `com.h2ocloud.shellframe`). TCC scopes Accessibility permission per code identity → `NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` returns nil → `⌃⌥Space` only worked when ShellFrame was already foreground (local monitor doesn't need Accessibility), and "summon from background" silently no-op'd. Symptom: 「快捷鍵叫不出來」. Fix: all three launchers (`ShellFrame.app/Contents/MacOS/shellframe`, `run.sh`, the `~/.local/bin/shellframe` written by `install.sh`) now detect Apple Silicon via `sysctl hw.optional.arm64` and prepend `arch -arm64` to the python exec, breaking inheritance and stabilising the TCC subject as the .app bundle.
 
 ### 修正
-- **從 Rosetta shell 啟動時 ⌃⌥Space 全域熱鍵默默失效** — 根因是 process arch 繼承造成 TCC 身份漂移，hotkey code 本身沒問題。Howard 的互動 shell 跑在 Rosetta（x86_64），`ShellFrame.app` 的 bash launcher exec `.venv/bin/python` 時 arch 繼承過去，結果整個 process 以 **x86_64** 執行，kernel 看到的 bundle id 變成 `com.apple.python3` 而不是 `com.h2ocloud.shellframe`。TCC 的 Accessibility 權限按 code identity 綁定 → `NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` 直接 return nil → `⌃⌥Space` 只有在 ShellFrame 已經在前景時還能動（local monitor 不需 Accessibility），背景叫回視窗就完全沒反應。對應症狀：「快捷鍵叫不出來」。修法：三個 launcher（`ShellFrame.app/Contents/MacOS/shellframe`、`run.sh`、`install.sh` 寫到 `~/.local/bin/shellframe` 的那份）統統用 `sysctl hw.optional.arm64` 偵測 Apple Silicon，命中就 `exec arch -arm64 .venv/bin/python …`，斷掉 arch 繼承鏈，讓 TCC subject 穩定回到 .app bundle。
+- **從 Rosetta shell 啟動時 ⌃⌥Space 全域熱鍵默默失效** — 根因是 process arch 繼承造成 TCC 身份漂移，hotkey code 本身沒問題。互動 shell 跑在 Rosetta（x86_64），`ShellFrame.app` 的 bash launcher exec `.venv/bin/python` 時 arch 繼承過去，結果整個 process 以 **x86_64** 執行，kernel 看到的 bundle id 變成 `com.apple.python3` 而不是 `com.h2ocloud.shellframe`。TCC 的 Accessibility 權限按 code identity 綁定 → `NSEvent.addGlobalMonitorForEventsMatchingMask_handler_` 直接 return nil → `⌃⌥Space` 只有在 ShellFrame 已經在前景時還能動（local monitor 不需 Accessibility），背景叫回視窗就完全沒反應。對應症狀：「快捷鍵叫不出來」。修法：三個 launcher（`ShellFrame.app/Contents/MacOS/shellframe`、`run.sh`、`install.sh` 寫到 `~/.local/bin/shellframe` 的那份）統統用 `sysctl hw.optional.arm64` 偵測 Apple Silicon，命中就 `exec arch -arm64 .venv/bin/python …`，斷掉 arch 繼承鏈，讓 TCC subject 穩定回到 .app bundle。
 
 ## v0.11.47 (2026-05-01)
 
@@ -995,12 +995,12 @@
 ## v0.11.43 (2026-04-29)
 
 ### Fixes
-- **Scroll-history overlay still ate numbered outline items + same heading repeated** — two related dedup mistakes Howard caught in a slide-naming outline:
+- **Scroll-history overlay still ate numbered outline items + same heading repeated** — two related dedup mistakes caught in a slide-naming outline:
   - "英文短句、有電影感" (a section heading) appeared **twice** because the dedup key was the raw stripped line — residual ANSI bytes / different leading whitespace between the two captures made them compare unequal. Tightened the ANSI strip regex (now also catches OSC hyperlinks, charset designates, and CSI sequences ending in `~`/`?`/`>`) and normalised whitespace runs to a single space when computing the dedup key, so visually-identical lines really do collide.
   - Short numbered subtitles like "3. Year One" (vw 12–14) used to fall under the ≥3-occurrence gate when several similar outline blocks existed in the buffer, and got collapsed away. Raised that gate's minimum width from 12 to 20 cells — wide redraw rows (audit logs, sentences) still get folded; short bullets / numbered headings always pass through.
 
 ### 修正
-- **上滾 overlay 還是會吃掉編號列點 + 同一行 heading 重複出現** — 兩個 dedup 邏輯破口，Howard 在簡報命名 outline 截圖抓到：
+- **上滾 overlay 還是會吃掉編號列點 + 同一行 heading 重複出現** — 兩個 dedup 邏輯破口，在簡報命名 outline 的截圖裡抓到：
   - 「英文短句、有電影感」（章節標題）出現**兩次**：dedup key 用 raw stripped line，但兩次 capture 殘留的 ANSI bytes / 縮排不同，比對不相等就漏抓。新 ANSI 規則加抓 OSC 超連結、charset designates、CSI 收尾 `~`/`?`/`>`；dedup key 也把空白合併成單空格，視覺相同的行才真的命中 set。
   - 「3. Year One」這種短編號副標（寬度 12-14）在 outline 多塊類似結構時會落到 ≥3 重複規則被砍。`REPEAT_GATE_MIN_WIDTH` 從 12 拉到 20，長 row（audit / 完整句子）照樣摺，短 bullet / 編號標題不再被誤殺。
 
@@ -1015,7 +1015,7 @@
 ## v0.11.41 (2026-04-29)
 
 ### Fixes
-- **Duplicate-instance guard never actually triggered → still got two shellframes after summon** — v0.11.31's `_ensure_single_instance` looked up `runningApplicationsWithBundleIdentifier_("com.h2ocloud.shellframe")`. But the launcher exec's `python main.py` directly, so the kernel sees the process as Python.app — bundle id `org.python.python`, not `com.h2ocloud.shellframe`. The lookup never matched the running instance, the guard never fired, and Howard kept seeing two-instance TG 409 conflicts whenever a click / hotkey path raced against a still-shutting-down instance. Replaced with a PID-file approach: each instance writes `/tmp/shellframe.pid` on startup and registers a `SIGUSR1` handler that brings the window forward; a duplicate launch reads the file, probes the PID with `kill(pid, 0)`, and — if alive — signals the existing instance instead of booting itself, then `os._exit(0)`. Stale PID files (last shutdown crashed) are detected by the liveness probe and overwritten cleanly.
+- **Duplicate-instance guard never actually triggered → still got two shellframes after summon** — v0.11.31's `_ensure_single_instance` looked up `runningApplicationsWithBundleIdentifier_("com.h2ocloud.shellframe")`. But the launcher exec's `python main.py` directly, so the kernel sees the process as Python.app — bundle id `org.python.python`, not `com.h2ocloud.shellframe`. The lookup never matched the running instance, the guard never fired, and two-instance TG 409 conflicts kept appearing whenever a click / hotkey path raced against a still-shutting-down instance. Replaced with a PID-file approach: each instance writes `/tmp/shellframe.pid` on startup and registers a `SIGUSR1` handler that brings the window forward; a duplicate launch reads the file, probes the PID with `kill(pid, 0)`, and — if alive — signals the existing instance instead of booting itself, then `os._exit(0)`. Stale PID files (last shutdown crashed) are detected by the liveness probe and overwritten cleanly.
 
 ### 修正
 - **單一 instance 防護根本沒觸發 → 仍會多開** — v0.11.31 的 `_ensure_single_instance` 用 `runningApplicationsWithBundleIdentifier_("com.h2ocloud.shellframe")` 找重複，但 launcher 直接 exec `python main.py`，kernel 看到的是 Python.app（bundle id `org.python.python`），**不會匹配 `com.h2ocloud.shellframe`**。lookup 永遠空，guard 從來沒生效，所以 hotkey 喚出時若新 instance 跟舊 instance 重疊，TG 409 衝突就發生。改成 PID-file：每個 instance 啟動時寫 `/tmp/shellframe.pid` + 註冊 `SIGUSR1` handler（收到就把視窗叫到前景）；新 launch 讀 PID file → `kill(pid, 0)` 探活 → 若活著就 signal 那個 PID 來前景 + `os._exit(0)` 不啟動。Stale PID file（上次 crash 留下）被探活步驟識別出來覆蓋掉，不會卡死。
@@ -1049,10 +1049,10 @@
 ## v0.11.37 (2026-04-28)
 
 ### Fixes
-- **Scroll-history overlay still showed 4× duplicate rows on tables / audit logs** — v0.11.25's CJK ≥ 90% gate only collapsed pure-Chinese streaming redraw. It missed mixed-content rows that ALSO get redrawn during streaming, like Howard's "4/2 | Warren 寄 V1.5.1 部版資訊" appearing 4× in a row. Added a second gate: any line ≥ 12 cells wide that occurs ≥ 3 times in the capture is collapsed to its first occurrence (count threshold = 3, not 2, so legitimate two-time repeats — `return null;` twice, two adjacent table rows that genuinely share a date — are preserved).
+- **Scroll-history overlay still showed 4× duplicate rows on tables / audit logs** — v0.11.25's CJK ≥ 90% gate only collapsed pure-Chinese streaming redraw. It missed mixed-content rows that ALSO get redrawn during streaming, like a mixed-content table row repeated 4× in a row. Added a second gate: any line ≥ 12 cells wide that occurs ≥ 3 times in the capture is collapsed to its first occurrence (count threshold = 3, not 2, so legitimate two-time repeats — `return null;` twice, two adjacent table rows that genuinely share a date — are preserved).
 
 ### 修正
-- **上滾 history 表格 / audit log 還是會出現 4× 重複** — v0.11.25 的 CJK ≥ 90% 規則只抓純中文 streaming redraw。Howard 截圖中混合內容（例如 `4/2 | Warren 寄 V1.5.1 部版資訊` 連續 4 次）逃過閘門，照樣多次寫入 scrollback。新增第二條閘門：任何 ≥ 12 cells 寬的行在這份 capture 出現 ≥ 3 次 → 只保留第一次。閾值用 3 不是 2，避免誤砍合法的兩次重複（同一段 code 出現兩次 `return null;`、相鄰兩列 table 同一天日期都保留）。
+- **上滾 history 表格 / audit log 還是會出現 4× 重複** — v0.11.25 的 CJK ≥ 90% 規則只抓純中文 streaming redraw。回報截圖中的混合內容（例如同一列表格連續 4 次）逃過閘門，照樣多次寫入 scrollback。新增第二條閘門：任何 ≥ 12 cells 寬的行在這份 capture 出現 ≥ 3 次 → 只保留第一次。閾值用 3 不是 2，避免誤砍合法的兩次重複（同一段 code 出現兩次 `return null;`、相鄰兩列 table 同一天日期都保留）。
 
 ## v0.11.36 (2026-04-28)
 
@@ -1101,7 +1101,7 @@
 - **Rapid hotkey toggle could spawn a second instance → TG bot 409 Conflict** — when the user hammered ⌃⌥Space while a previous instance was still shutting down, the old process still had the TG bridge polling while a new process booted and started its own poller. Two pollers on the same bot token immediately 409-conflict each other and messages stop flowing. Two fixes: (1) `_ensure_single_instance()` runs first thing in `main()` — if another shellframe is already registered with the bundle id, we activate it and `os._exit(0)` without setting up any state. (2) `cleanup_all()` tears down NSEvent hotkey monitors before stopping the bridge, so a late ⌃⌥Space during shutdown can't ping `open -b` and race a second instance into the window where the bridge is still alive.
 
 ### 修正
-- **快速熱鍵開關會重開第二個 instance → TG bot 409 Conflict** — Howard 連按 ⌃⌥Space，原 instance 還在 cleanup、bridge 還沒 stop 完，新 instance 已經開起來各自 polling 同一個 bot token → Telegram 直接 409 打架、訊息卡住。兩個防線：(1) `main()` 最早期跑 `_ensure_single_instance()`，若 bundle id 已有 instance 在跑，直接 activate 它然後 `os._exit(0)`，新 process 不配置任何資源。(2) `cleanup_all()` 先拆 NSEvent 熱鍵 monitor 再 stop bridge，避免 shutdown 中被 ⌃⌥Space 觸發 `open -b` 跟還活著的 bridge 搶 token。
+- **快速熱鍵開關會重開第二個 instance → TG bot 409 Conflict** — 連按 ⌃⌥Space，原 instance 還在 cleanup、bridge 還沒 stop 完，新 instance 已經開起來各自 polling 同一個 bot token → Telegram 直接 409 打架、訊息卡住。兩個防線：(1) `main()` 最早期跑 `_ensure_single_instance()`，若 bundle id 已有 instance 在跑，直接 activate 它然後 `os._exit(0)`，新 process 不配置任何資源。(2) `cleanup_all()` 先拆 NSEvent 熱鍵 monitor 再 stop bridge，避免 shutdown 中被 ⌃⌥Space 觸發 `open -b` 跟還活著的 bridge 搶 token。
 
 ### 修正
 - **macOS 26 上 v0.11.30 的 `⌃⌥Space` 新功能讓 shellframe 一啟動就 SIGTRAP、視窗完全沒出來** — v0.11.30 在 `_on_loaded` 裡對所有 `NSApp.windows()` 呼叫 `setCollectionBehavior_()`，但 pywebview 的 loaded event 是在背景 thread 觸發的。macOS 26 (Tahoe) 把 AppKit 「NSWindow mutation 只能在主執行緒」的規則從「未定義行為」升級成硬性 `EXC_BREAKPOINT` / SIGTRAP，所以已經升級到 26 的使用者升到 v0.11.30 後會一啟動就死；而且因為 crash 發生在 ObjC 層，Python 的 `try/except` 跟 `_write_crash_log` 都攔不到，`~/.shellframe-crash.log` 是空的（沉默失敗模式，最難 debug 的那種）。修法是把 `setCollectionBehavior_` 迴圈包進 block 再用 `NSOperationQueue.mainQueue()` 派回主執行緒，這樣不論 `_on_loaded` 跑在哪個 thread，mutation 都在 main thread 上執行。
@@ -1112,7 +1112,7 @@
 - **Spaces-aware `⌃⌥Space` — window always comes to YOU, not you to window** — on macOS each window lives in a specific Space; the default `activateIgnoringOtherApps` jumps the user's viewport to wherever shellframe's window happens to live, which breaks flow for heavy Mission Control users. Now shellframe's NSWindows are tagged with `NSWindowCollectionBehaviorMoveToActiveSpace`, so hotkey activation pulls the window into the user's current space instead. The hide/show decision also factors in the current space: if shellframe is NOT visible in the space you're on, the hotkey treats it as "hidden" and summons it; only when the window is visibly present in your current space AND focused does it hide. Visible-on-current-space detection uses Quartz's on-screen window list filtered by our PID.
 
 ### 新功能
-- **`⌃⌥Space` 支援虛擬桌面 — 視窗跟著你跑，不是你跟著視窗跑** — macOS 每個視窗屬於某個 Space；`activateIgnoringOtherApps` 預設會把使用者的視角切到視窗所在的 Space，對大量用 Mission Control 的人（Howard）流程會被打斷。現在 shellframe 的 NSWindow 加上 `NSWindowCollectionBehaviorMoveToActiveSpace`，熱鍵 activate 時視窗會跑到「你當下這個 Space」。隱藏 / 喚出的判斷也加進 current-space 檢查：當下 Space **看不到** shellframe → 視為隱藏，熱鍵把它叫到眼前；當下 Space **看得到** 且有 focus → 才真的 hide。用 Quartz on-screen window list 過濾自己 PID 判斷「當下 Space 是否有我的視窗」。
+- **`⌃⌥Space` 支援虛擬桌面 — 視窗跟著你跑，不是你跟著視窗跑** — macOS 每個視窗屬於某個 Space；`activateIgnoringOtherApps` 預設會把使用者的視角切到視窗所在的 Space，對大量使用 Mission Control 的人來說流程會被打斷。現在 shellframe 的 NSWindow 加上 `NSWindowCollectionBehaviorMoveToActiveSpace`，熱鍵 activate 時視窗會跑到「你當下這個 Space」。隱藏 / 喚出的判斷也加進 current-space 檢查：當下 Space **看不到** shellframe → 視為隱藏，熱鍵把它叫到眼前；當下 Space **看得到** 且有 focus → 才真的 hide。用 Quartz on-screen window list 過濾自己 PID 判斷「當下 Space 是否有我的視窗」。
 
 ## v0.11.29 (2026-04-24)
 
@@ -1155,10 +1155,10 @@
 ## v0.11.25 (2026-04-23)
 
 ### Fixes
-- **Scroll-history overlay still swallowed mixed-CJK report labels** — v0.11.16's CJK-dominance gate (≥ 50% fullwidth) was lenient enough to catch headings like `PM 卡改善 (Mentor Bridge 命題有效)` and bank lists `彰銀/新新併/華南/台壽` when they legitimately repeated in a long audit report. Tightened to ≥ 90%: only near-pure-CJK prose (streaming redraw noise is 100% CJK anyway) still triggers dedup; any line with ASCII, digits, slashes, or brackets is preserved in full.
+- **Scroll-history overlay still swallowed mixed-CJK report labels** — v0.11.16's CJK-dominance gate (≥ 50% fullwidth) was lenient enough to catch headings like `PM 卡改善 (Mentor Bridge 命題有效)` and bank lists like `A 銀/B 銀/C 銀/D 銀` when they legitimately repeated in a long audit report. Tightened to ≥ 90%: only near-pure-CJK prose (streaming redraw noise is 100% CJK anyway) still triggers dedup; any line with ASCII, digits, slashes, or brackets is preserved in full.
 
 ### 修正
-- **上滾 overlay 還是會把「含 ASCII 的中文 heading」吃掉** — v0.11.16 的 CJK 門檻是 ≥ 50% 全形字元，不夠嚴，像 `PM 卡改善 (Mentor Bridge 命題有效)`、銀行列表 `彰銀/新新併/華南/台壽` 這類在長 audit report 裡合法重複的行會被誤砍。改成 ≥ 90%：只有**幾乎純中文**的行（streaming redraw noise 本來就 100% CJK）才進 dedup，任何帶 ASCII / 數字 / 斜線 / 括號的行完整保留。
+- **上滾 overlay 還是會把「含 ASCII 的中文 heading」吃掉** — v0.11.16 的 CJK 門檻是 ≥ 50% 全形字元，不夠嚴，像 `PM 卡改善 (Mentor Bridge 命題有效)`、銀行列表 `A 銀/B 銀/C 銀/D 銀` 這類在長 audit report 裡合法重複的行會被誤砍。改成 ≥ 90%：只有**幾乎純中文**的行（streaming redraw noise 本來就 100% CJK）才進 dedup，任何帶 ASCII / 數字 / 斜線 / 括號的行完整保留。
 
 ## v0.11.24 (2026-04-21)
 
@@ -1182,7 +1182,7 @@
 - **Scroll-history overlay clipped the right half of wide content** — overlay xterm used `fit.fit()` to size cols to the container width. When the live session's tmux pane was wider (e.g. 140 cols rendering a table), capturing at 140 into a 100-col overlay made xterm re-wrap / clip and the right half of every line vanished. Now the overlay pins cols to the LIVE session's current cols and wraps the xterm mount in a horizontal scroll container, so tables, code, and wrap-sensitive output render at their original width (horizontal scroll kicks in when the session was wider than the overlay).
 
 ### 修正
-- **上滾 overlay 會把寬內容右半截掉** — overlay 的 xterm 用 `fit.fit()` 把 cols 縮到 overlay 容器寬度。live session 的 tmux pane 若更寬（例如 140 cols 渲染表格），140 col 內容丟進 100 col overlay 會被 xterm 重 wrap / 截斷，右半行就消失（Howard 看到的 `/Prod/FundSelectList | 說明` 表格右邊切掉）。現在 overlay 把 cols 鎖定成 **live session 當下的 cols**，xterm mount 外層加水平 scroll 容器，表格 / code / 對寬度敏感的輸出都能保留原本寬度，overlay 比 session 窄時自動出水平 scrollbar。
+- **上滾 overlay 會把寬內容右半截掉** — overlay 的 xterm 用 `fit.fit()` 把 cols 縮到 overlay 容器寬度。live session 的 tmux pane 若更寬（例如 140 cols 渲染表格），140 col 內容丟進 100 col overlay 會被 xterm 重 wrap / 截斷，右半行就消失（回報中看到的表格右半被切掉）。現在 overlay 把 cols 鎖定成 **live session 當下的 cols**，xterm mount 外層加水平 scroll 容器，表格 / code / 對寬度敏感的輸出都能保留原本寬度，overlay 比 session 窄時自動出水平 scrollbar。
 
 ## v0.11.21 (2026-04-21)
 
@@ -1205,7 +1205,7 @@
 ## v0.11.19 (2026-04-20)
 
 ### Fixes
-- **Startup crash on multi-monitor Macs fixed** — pywebview's cocoa `windowDidMove_` callback does `i.window.screen().frame()`. During the initial move-to-saved-coords on a multi-display setup, the window can be transiently off every attached display, at which point `screen()` returns `None` and `.frame()` raises `AttributeError` before the UI ever paints. Our own pre-validator (checks the saved centre lands on an attached display) was passing, but the pywebview-internal transient still crashed. Added a defensive monkey-patch that wraps pywebview's `windowDidMove_` to no-op when `screen()` is None — the window still lands at its final position, we just skip the bogus mid-move event. Saved `(-102, -756)` from an unplugged portrait display was the trigger on Howard's setup; config's stale x/y were also scrubbed so the next launch centres cleanly.
+- **Startup crash on multi-monitor Macs fixed** — pywebview's cocoa `windowDidMove_` callback does `i.window.screen().frame()`. During the initial move-to-saved-coords on a multi-display setup, the window can be transiently off every attached display, at which point `screen()` returns `None` and `.frame()` raises `AttributeError` before the UI ever paints. Our own pre-validator (checks the saved centre lands on an attached display) was passing, but the pywebview-internal transient still crashed. Added a defensive monkey-patch that wraps pywebview's `windowDidMove_` to no-op when `screen()` is None — the window still lands at its final position, we just skip the bogus mid-move event. Saved `(-102, -756)` from an unplugged portrait display was the trigger on the affected setup; config's stale x/y were also scrubbed so the next launch centres cleanly.
 
 ### 修正
 - **多螢幕 Mac 啟動就 crash 的問題修掉** — pywebview cocoa 後端的 `windowDidMove_` 在裡頭跑 `i.window.screen().frame()`。多螢幕環境第一次把視窗移到上次存的座標時，視窗會有一瞬間落在任何一塊螢幕之外，這時 `screen()` 回 `None`、`.frame()` 直接丟 `AttributeError`，UI 還沒畫就整個 app 死。我們自己的前置驗證（檢查中心是否在任一螢幕上）有過，但 pywebview 內部那個瞬間 transient 還是會中。加了一層 monkey-patch 包住 pywebview 的 `windowDidMove_`，`screen()` 是 None 就直接 no-op — 視窗最終還是會落在該在的位置，我們只是跳過那個假的中間事件。這次觸發源是當初直式螢幕拔掉後留下的 `(-102, -756)`，config 順手清掉，下次開會回到置中。
@@ -1446,7 +1446,7 @@
 
 ### Fixes
 - **Bridge polling watchdog** — if the TG poll loop goes >120s without a network round-trip (hung DNS, stuck socket, long sleep + wake hiccup), a watchdog thread now auto-triggers `hot_reload_bridge()` to rebuild the polling. Prevents "TG completely silent, even `/reload` doesn't work" situations.
-- **`sfctl restart`** — added alongside existing `sfctl reload` / `status`. Lets Howard (or any user with terminal access) force a full app restart even when TG is totally wedged. `sfctl` IPC uses file-based command passing through `_start_command_watcher`, so it works independent of bridge polling state.
+- **`sfctl restart`** — added alongside existing `sfctl reload` / `status`. Lets any user with terminal access force a full app restart even when TG is totally wedged. `sfctl` IPC uses file-based command passing through `_start_command_watcher`, so it works independent of bridge polling state.
 
 ### 修正
 - **TG polling watchdog** — TG poll loop 超過 120 秒沒任何 network round-trip（DNS 卡死、socket hang、長 sleep 醒來斷線），watchdog thread 會自動觸發 `hot_reload_bridge()` 重建 polling。避免「TG 完全沒反應、連 `/reload` 都沒用」的情境。
@@ -1761,10 +1761,10 @@
 ## v0.5.2 (2026-04-09)
 
 ### New Features
-- **TG menu prompts** — When an AI session is waiting on a numbered choice (e.g., Claude permission dialog `❯ 1. Yes / 2. No`), the bridge now forwards the options to TG. Reply with just `1`, `2`, etc. and the digit is sent raw (no `Howard:` prefix) so the CLI picks the option.
+- **TG menu prompts** — When an AI session is waiting on a numbered choice (e.g., Claude permission dialog `❯ 1. Yes / 2. No`), the bridge now forwards the options to TG. Reply with just `1`, `2`, etc. and the digit is sent raw (no user-name prefix) so the CLI picks the option.
 
 ### 新功能
-- **TG 選單回應** — AI session 卡在編號選項（例如 Claude 權限對話框 `❯ 1. Yes / 2. No`）時，bridge 會把選項送到 TG。直接回 `1`、`2` 等數字即可，bridge 會跳過 `Howard:` 前綴讓 CLI 正確選擇。
+- **TG 選單回應** — AI session 卡在編號選項（例如 Claude 權限對話框 `❯ 1. Yes / 2. No`）時，bridge 會把選項送到 TG。直接回 `1`、`2` 等數字即可，bridge 會跳過使用者名稱前綴讓 CLI 正確選擇。
 
 ## v0.5.1 (2026-04-09)
 
@@ -1807,7 +1807,7 @@
 - **IME bounce** — Constrain helper textarea to prevent Chinese composition bounce at edge.
 - **Paste broken** — Fixed TEXTAREA check blocking xterm paste handler.
 - **TG session switch from UI** — Sidebar switch now works even before any TG message is sent.
-- **TG prefix echo** — Strip "Howard:" prefix when AI mimics the input format in responses.
+- **TG prefix echo** — Strip the user-name prefix when AI mimics the input format in responses.
 - **About buttons** — Check + Reload moved to top of About modal.
 - **Hot-reload error logging** — Traceback printed on `/reload` failure.
 
@@ -1824,7 +1824,7 @@
 - **IME 彈跳** — 限制 textarea 寬度防止中文組字溢出。
 - **貼圖失效** — 修正 TEXTAREA 判斷誤擋 xterm paste。
 - **TG session 切換** — 從側邊欄切換在重啟後也能正確運作。
-- **TG 前綴回聲** — AI 模仿 "Howard:" 格式時自動去除。
+- **TG 前綴回聲** — AI 模仿「使用者名稱：」格式時自動去除。
 - **About 按鈕上移** — Check 和 Reload 移到頂部。
 
 ## v0.4.3 (2026-04-08)

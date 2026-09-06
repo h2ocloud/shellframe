@@ -45,7 +45,7 @@ This prompt re-injects into new sessions, so a restarted session recovers this c
 
 ### Tab status (auto-detected — usually don't report)
 Your tab's state is inferred from activity: blue while you run, green when your turn ends. **Don't print `[[SF:WORKING]]` / `[[SF:GREEN]]`.** Two optional hints, each alone on its own line, only when they apply:
-- `[[SF:RED]]` — needs Howard/master decision; follow it with a numbered menu (the options are the decision).
+- `[[SF:RED]]` — needs the operator/master decision; follow it with a numbered menu (the options are the decision).
 - `[[SF:YELLOW:one-line reason]]` — blocked on an external condition the cockpit can't see (a person, another team, an external event).
 
 When in doubt, print nothing.

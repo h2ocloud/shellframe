@@ -21,8 +21,8 @@ _spec.loader.exec_module(_bt)
 
 
 # _slot_model_suffix 會讀 settings 的 show_model_badge（跟側邊欄同一個開關）。
-# 測試不能吃到這台機器的真實 config——Howard 本地就是關的，那會讓所有「該顯示
-# 模型」的測項全部假性失敗。預設 stub 成開啟，要驗開關本身的測項自己覆蓋。
+# 測試不能吃到這台機器的真實 config——開發機上這個開關就是關的，那會讓所有
+# 「該顯示模型」的測項全部假性失敗。預設 stub 成開啟，要驗開關的測項自己覆蓋。
 _bt._read_settings = lambda: {"show_model_badge": True}
 
 
@@ -38,7 +38,7 @@ def _slot(sid, index, label):
 
 def test_suffix_follows_local_badge_toggle():
     """側邊欄的模型徽章關掉時，TG 這邊也要一起消失。同一個開關管兩邊——
-    Howard 2026-09-02：他本地早就關了，TG 卻還在顯示一個不準的值。"""
+    日常使用中回報：本地早就關了，TG 卻還在顯示一個不準的值。"""
     br = _bridge({"s1": {"name": "Opus 5", "effort": "xhigh", "provider": "claude"}})
     slot = _slot("s1", 1, "SF")
     orig = _bt._read_settings
@@ -77,7 +77,7 @@ def test_suffix_no_callback_is_empty():
 def test_command_description_has_no_model():
     """選單只放分頁名。setMyCommands 是註冊當下的快照，模型掛上去只會腐爛——
     分頁久沒動就凍在幾天前那次對話的模型，手機端看不出它已經過期
-    （Howard 2026-09-01：scrum 分頁顯示 8/24 留下的 Opus 4.8）。"""
+    （日常使用中回報：某個分頁顯示的是幾週前那次對話留下的舊模型）。"""
     br = _bridge({"s1": {"name": "Fable 5", "effort": "xhigh", "provider": "claude"}})
     br._slots_lock = threading.Lock()
     slot = _slot("s1", 1, "toolhub 優化")

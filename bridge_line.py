@@ -39,10 +39,10 @@ DEFAULT_LINE_PROMPT = (
     "make each reply self-contained."
 )
 
+# 只放通用路由。客戶／專案專屬的關鍵字不屬於 public repo，而且那正是每台安裝
+# 都不一樣的部分——放在使用者 config 的 "line_gateway_routes" 裡（見
+# _gateway_routes），會排在內建路由前面。
 LINE_GATEWAY_ROUTES = (
-    ("LINE-KGI", (
-        "凱基", "kgi", "sit", "uat", "qa",
-    )),
     ("LINE-Reminder", (
         "提醒", "打卡", "remind", "reminder", "鬧鐘", "排程", "停止", "關掉", "關閉",
     )),
@@ -105,6 +105,25 @@ def _read_settings() -> dict:
     except Exception:
         pass
     return {}
+
+
+def _gateway_routes():
+    """使用者自訂路由 ＋ 內建通用路由，自訂的優先。
+
+    config.json 的 settings.line_gateway_routes 形狀：
+        [{"label": "LINE-Foo", "keywords": ["kw1", "kw2"]}, ...]
+    形狀不對的條目直接跳過——路由表壞掉不該讓整條 LINE 通道停擺。
+    """
+    custom = []
+    for item in (_read_settings().get("line_gateway_routes") or []):
+        try:
+            label = str(item["label"]).strip()
+            keywords = tuple(str(k) for k in item["keywords"] if str(k).strip())
+        except (TypeError, KeyError, ValueError):
+            continue
+        if label and keywords:
+            custom.append((label, keywords))
+    return tuple(custom) + LINE_GATEWAY_ROUTES
 
 
 def get_line_prompt() -> str:
@@ -661,7 +680,7 @@ class LineBridge(BridgeBase):
 
     def _route_label(self, text: str) -> str:
         lowered = (text or "").casefold()
-        for label, keywords in LINE_GATEWAY_ROUTES:
+        for label, keywords in _gateway_routes():
             if any(keyword.casefold() in lowered for keyword in keywords):
                 return label
         return "LINE-Gateway"

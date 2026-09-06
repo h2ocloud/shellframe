@@ -3,8 +3,8 @@
 
 模型偶爾把 `[[TG_REPLY_x]]` 寫成 `<<TG_REPLY_x>>`，而且黏性極強——同一個
 session 寫過一次就會一路照抄自己上一輪，該分頁的回覆從此**每一回合**都配
-不到 marker，只能等 30s fallback 兜底（實際案例：2026-08-26「雜事」分頁連
-續 5 回合全是 `<<>>`，回覆一次都沒自動轉發，Howard 得手動 /fetch）。
+不到 marker，只能等 30s fallback 兜底（實際案例：連續 5 回合全是 `<<>>`，
+回覆一次都沒自動轉發，只能手動 /fetch）。
 
 跑法：.venv/bin/python tests_tg_marker_alias.py
 """

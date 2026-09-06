@@ -30,7 +30,7 @@ A = _main.Api
 
 NEW_SCREEN = """Accessing workspace:
 
-/Users/neux
+/Users/alice
 
 Quick safety check: Is this a project you created or one you trust?
 
@@ -57,7 +57,7 @@ HALF_DRAWN_FRAME = """Quick safety check: Is this a project you created or one y
 
 # 送出 Yes 之後的畫面：對話框沒了，剩正常 composer。
 ACCEPTED_SCREEN = """▐▛███▛█   Claude Code v2.1.260
-  ▝▝ ▝▝    /Users/neux
+  ▝▝ ▝▝    /Users/alice
 
 ❯
   ⏵⏵ bypass permissions on (shift+tab to cycle)"""

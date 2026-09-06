@@ -49,9 +49,9 @@ def _api():
 
 # 手動命名要關掉 auto-slug，否則第一句話之後名字就被覆蓋
 api, s = _api()
-api.rename_session("s1", "遠銀提案", manual=True)
+api.rename_session("s1", "改版提案", manual=True)
 check("使用者手動命名後 auto-slug 被關掉", s._slug_pending is False)
-check("名字有寫進 session", s._custom_label == "遠銀提案")
+check("名字有寫進 session", s._custom_label == "改版提案")
 
 # 已經關掉的不會被打開
 api, s = _api()

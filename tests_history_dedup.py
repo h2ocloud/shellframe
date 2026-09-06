@@ -174,9 +174,9 @@ def test_ansi_reset_per_line():
             assert line.endswith("\x1b[0m"), repr(line)
 
 
-# ── 9. 混合中英內容 ×4 收 1（v0.11.25「Warren 寄 V1.5.1 部版資訊 ×4」反例） ──
+# ── 9. 混合中英內容 ×4 收 1（v0.11.25 的反例：同一列表格連續出現四次） ──
 def test_mixed_content_4x_collapsed():
-    lines = (["4/2 | Warren 寄 V1.5.1 部版資訊"] * 4
+    lines = (["4/2 | 寄出 V1.5.1 部版資訊"] * 4
              + ["其他獨特內容一", "其他獨特內容二"])
     out = dedupe(lines)
     assert out.count("V1.5.1 部版資訊") == 1, out

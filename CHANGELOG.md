@@ -6,6 +6,41 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.3 (2026-09-06)
+
+### Internal
+
+- **Names, client references and pasted chat are gone from the source, and a
+  check now keeps them out.** The CHANGELOG has had a gate since v0.35.1, but
+  the rule it enforces was never only about the CHANGELOG: comments,
+  docstrings and test fixtures are just as public. They carried the
+  maintainer's name with a date stamp in about eighty places, dozens of
+  verbatim complaints from the conversations that prompted each fix, a
+  colleague's real name in a dedup fixture, and several customer names —
+  including one sitting in a shipped routing table, where a keyword list
+  decided which gateway a message went to. Prose now says "reported in daily
+  use" and describes the symptom instead of quoting it; fixtures use neutral
+  values; the customer-specific routes moved out of the repo into user config,
+  where per-install settings belong, and the built-in table keeps only the
+  generic routes. `tests_repo_hygiene.py` scans every git-tracked source and
+  doc file for all three classes. Exemptions are granted by shape, never by
+  file — `com.<name>.*` identifiers, inline code, URLs, and an author's full
+  name in an attribution line — and program strings are deliberately *not*
+  exempt, since that is exactly where the routing table hid. The guide at
+  `docs/changelog-guide.md` now states that its rules cover the whole repo.
+
+  **原始碼裡的人名、客戶名與貼上的對話都清掉了，並且加了機器守門。** CHANGELOG
+  從 v0.35.1 起就有守門，但那條規則從來不只適用於 CHANGELOG：註解、docstring、
+  測試 fixture 一樣是公開內容。它們帶著約八十處維護者姓名加日期、幾十句當初促成
+  修復的原話、一個同事真名躺在 dedup fixture 裡，還有數個客戶名——其中一個就在
+  出貨的 routing table 裡，那份關鍵字清單決定訊息要送到哪個 gateway。敘述改成
+  「日常使用中回報」並描述症狀而不是引用原話；fixture 改用中性值；客戶專屬的路由
+  搬出 repo、進到使用者 config——每台安裝本來就不同的設定就該放在那裡，內建表只
+  留通用路由。`tests_repo_hygiene.py` 掃 git 追蹤的每一個原始碼與文件檔，三類都
+  守。豁免只按「長什麼樣子」給，不整個檔案放行——`com.<name>.*` 識別字、inline
+  code、URL、署名處的姓名全稱——而且**程式字串不豁免**，因為那正是 routing table
+  藏身的地方。`docs/changelog-guide.md` 也寫明它的規則涵蓋整個 repo。
+
 ## v0.35.2 (2026-09-06)
 
 ### Added
@@ -1870,7 +1905,7 @@ main.py 有動 → 需 `sfctl restart`。
 - **分頁在你手上死掉，訊息被靜默改送到別的分頁**。分頁沒了（CLI 退出／被關）
   時，bridge 會把使用者的 active 指到第一格——但**完全不講**。純手機操作時
   你只看得到 👀／🫡，下一則工作指令就悄悄落進別的分頁。實例：2026-08-28
-  15:29 開的新分頁 3 分鐘後消失，15:34 丟的「台壽展場案 API 規格」任務跑進
+  15:29 開的新分頁 3 分鐘後消失，15:34 丟的另一項任務跑進
   「雜事」，維護者是 `/10` 打不開才發現分頁早就不在。現在改指之前會先發一則
   「⚠ 分頁『X』已經結束，之後的訊息會送到『Y』(/N)」並附上現在的編號表；
   通知走背景 thread（呼叫端還握著 slot 鎖，tg_api 可能卡 35s）。

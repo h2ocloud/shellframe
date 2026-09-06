@@ -63,7 +63,7 @@ PTY (main.py Session)  ──evaluate_js 推 bytes──▶  webview xterm.js (w
 
 ## 3. tab → transcript 對應（可行性關鍵，已實測）
 
-cwd 多半 = `$HOME`，slug `-Users-neux` 被所有 home-cwd 的 claude tab 共用 → **光靠目錄無法分辨**。實測三種對應法：
+cwd 多半 = `$HOME`，slug `-Users-<name>` 被所有 home-cwd 的 claude tab 共用 → **光靠目錄無法分辨**。實測三種對應法：
 
 | 方法 | Claude | Codex | 說明 |
 |---|---|---|---|

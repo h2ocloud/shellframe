@@ -99,7 +99,7 @@ def test_switching_global_does_not_mutate_existing_session_snapshot():
 
 
 def test_account_env_reaches_tmux_new_session_via_dash_e():
-    """回歸（Howard 2026-09-05：切帳號後對話消失、要重新 /login）。
+    """回歸（日常使用中回報：切帳號後對話消失、要重新 /login）。
 
     根因：`tmux new-session` 是從 tmux SERVER 的環境 spawn pane，client 的
     `env=` 在 server 已存在時（多分頁時必然）被忽略。所以帳號 env
@@ -160,7 +160,7 @@ def test_account_env_reaches_tmux_new_session_via_dash_e():
 
 
 def test_account_switch_carries_transcript_and_resumes_uuid():
-    """回歸（Howard 2026-09-05：切帳號後對話歷史消失，應該用 uuid resume）。
+    """回歸（日常使用中回報：切帳號後對話歷史消失，應該用 uuid resume）。
 
     切帳號＝換 CLAUDE_CONFIG_DIR，新帳號 projects 裡沒有這段對話→--resume 找不到。
     這裡驗證：(1) transcript 被搬進新帳號的 projects/<同一 slug>/；
@@ -171,7 +171,7 @@ def test_account_switch_carries_transcript_and_resumes_uuid():
     with tempfile.TemporaryDirectory() as td:
         old_dir = os.path.join(td, "cfg-A")
         new_dir = os.path.join(td, "cfg-B")
-        slug = "-Users-howard-proj"
+        slug = "-Users-alice-proj"
         csid = "11111111-2222-3333-4444-555555555555"
         src = os.path.join(old_dir, "projects", slug, f"{csid}.jsonl")
         os.makedirs(os.path.dirname(src))
@@ -211,7 +211,7 @@ def _write_claude_json(home, email, org, org_tier, user_tier):
 
 
 def test_discover_flags_credential_metadata_mismatch():
-    """回歸（Howard 2026-09-05：兩個帳號都顯示同一人的用量）。
+    """回歸（日常使用中回報：兩個帳號都顯示同一人的用量）。
 
     切帳號殘留 → ~/.claude.json 說 team、keychain token 其實是個人。
     discover 要標記 mismatch，capture/ensure 才擋得下。"""
@@ -219,7 +219,7 @@ def test_discover_flags_credential_metadata_mismatch():
         home = os.path.join(td, "home")
         os.makedirs(home)
         # 帳號資料是 team（org/user tier = team），token 卻是個人（pro / default_claude_ai）
-        _write_claude_json(home, "team@neux.test", "Neux Com",
+        _write_claude_json(home, "team@example.test", "Example Org",
                            "default_raven", "default_claude_max_5x")
         manager = AccountManager(root=os.path.join(td, "profiles"), home=home,
                                  keychain_getter=lambda: {"claudeAiOauth": {
@@ -243,7 +243,7 @@ def test_discover_consistent_account_has_no_mismatch():
     with tempfile.TemporaryDirectory() as td:
         home = os.path.join(td, "home")
         os.makedirs(home)
-        _write_claude_json(home, "team@neux.test", "Neux Com",
+        _write_claude_json(home, "team@example.test", "Example Org",
                            "default_raven", "default_claude_max_5x")
         manager = AccountManager(root=os.path.join(td, "profiles"), home=home,
                                  keychain_getter=lambda: {"claudeAiOauth": {

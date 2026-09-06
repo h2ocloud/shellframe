@@ -1054,7 +1054,7 @@ class Session:
             # CLAUDE_CODE_OAUTH_TOKEN / CODEX_HOME) live here — without `-e`
             # they never reach the child, so an account switch launches with the
             # wrong/default credentials and the tab looks logged-out
-            # (Howard 2026-09-05: 切換 token 後對話消失、要重新 /login).
+            # (reported in daily use: 切換 token 後對話消失、要重新 /login).
             new_session_env_args = ["-e", f"SF_SID={self.sid}"]
             for _k, _v in self._account_env_overrides().items():
                 new_session_env_args += ["-e", f"{_k}={_v}"]
@@ -1695,17 +1695,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             "- 本 tab 燈號由 ShellFrame 從你的『實際活動』自動判定（工具呼叫、回合起訖、畫面）：執行中自動亮 🔵、回合結束自動轉 🟢。"
             "**不需要再印 `[[SF:WORKING]]` 或 `[[SF:GREEN]]`**，專心做事即可。\n"
             "- 只有兩個『偵測看不出來』的狀態保留為可選提示（要用時自成一行、前後不接其他文字）：\n"
-            "  - 需要 Howard／總控決策 → `[[SF:RED]]` → 🔴紅，並接編號選單（選項即決策內容），讓 TG 把選項推給 Howard。\n"
-            "  - 卡在『外部條件』（等人回覆、等他隊、等外部事件等偵測看不到的）→ `[[SF:YELLOW:一句話原因]]` → 🟡黃，原因推給 Howard。\n"
-            "- 這兩個是提示不是狀態回報；不確定就不要印，working／done 由偵測涵蓋。決策回合仍要附編號選單供 Howard 選擇。\n"
+            "  - 需要使用者／總控決策 → `[[SF:RED]]` → 🔴紅，並接編號選單（選項即決策內容），讓 TG 把選項推給使用者。\n"
+            "  - 卡在『外部條件』（等人回覆、等他隊、等外部事件等偵測看不到的）→ `[[SF:YELLOW:一句話原因]]` → 🟡黃，原因推給使用者。\n"
+            "- 這兩個是提示不是狀態回報；不確定就不要印，working／done 由偵測涵蓋。決策回合仍要附編號選單供使用者選擇。\n"
             "\n收尾規則（務必遵守）：\n"
-            "- 每次『完成任務』或『需要 Howard／總控決策』時，回合最後務必輸出一個編號選項選單（搭配上面 GREEN／RED 燈號），"
-            "讓 ShellFrame 偵測為待決策、把選項以 TG 按鈕推給 Howard。不要只用純文字結尾後 idle。\n"
+            "- 每次『完成任務』或『需要使用者／總控決策』時，回合最後務必輸出一個編號選項選單（搭配上面 GREEN／RED 燈號），"
+            "讓 ShellFrame 偵測為待決策、把選項以 TG 按鈕推給使用者。不要只用純文字結尾後 idle。\n"
             "- 選單格式硬規則：至少 2 項，每項自成一行、行首為「數字.」或「數字)」，連續排列、中間不夾其他文字或空行，例如：\n"
             "1. 回收此 tab（任務完成）\n"
             "2. 還要調整：<說明>\n"
             "- 『先沉澱記憶，才可被回收』：在選單提供『回收此 tab』選項前，必須先確認已把本次洞察／學習／"
-            "操作 gotcha 寫入 memory（~/.claude/projects/-Users-howard/memory/），或在該選項旁註明「此任務無需記憶」。"
+            "操作 gotcha 寫入 memory（~/.claude/projects/<專案 slug>/memory/），或在該選項旁註明「此任務無需記憶」。"
             "這也是 GREEN 的前提——記憶沉澱完才給綠燈。\n"
         )
         user_prompt = bridge_telegram.load_user_instructions(max_chars=2000)
@@ -2793,7 +2793,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
         中斷對話（Ctrl+C／Esc）時 Claude Code 不一定會發 Stop hook，
         `_hook_events` 就卡在 working；而 status monitor 的 idle gating 又因為
-        PTY 不再輸出而跳過重算——燈號於是一直停在「執行中」（Howard 2026-09-03
+        PTY 不再輸出而跳過重算——燈號於是一直停在「執行中」（日常使用中回報
         回報）。清掉之後 heuristic 會重新判斷：真的還在跑就會再標回 working，
         所以清掉是安全的。
 
@@ -2839,7 +2839,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             PUSH_HEARTBEAT = 5.0   # elapsed-only changes push at most this often
             # FORCE_REFRESH 只在「有輸出過」的分頁上重算，救不了中斷後就完全
             # 安靜的分頁——hook 沒發 Stop、PTY 也不再動，燈號會一直停在
-            # working。每 5 分鐘連 hook 狀態一起清掉重判一次（Howard
+            # working。每 5 分鐘連 hook 狀態一起清掉重判一次（日常使用中
             # 2026-09-03：「有些情況我會中斷對話，這時候燈號就不會變動了」）。
             HOOK_RESET_INTERVAL = 300.0
             cache = self._status_cache  # sid -> {out_ts, computed_at, since_ts, result}
@@ -4015,7 +4015,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
     def _carry_claude_transcript(self, old_session, csid: str, new_refs: dict):
         """切帳號＝換 CLAUDE_CONFIG_DIR，新帳號的 projects 裡沒有這段對話的
-        transcript，`--resume` 會找不到、歷史就消失（Howard 2026-09-05）。
+        transcript，`--resume` 會找不到、歷史就消失（日常使用中回報）。
         把當前對話的 uuid.jsonl 複製進新帳號的 projects/<同一個 cwd slug>/，
         resume 才接得回同一段歷史。同帳號（config dir 沒變）則不必搬。"""
         if not csid:
@@ -4162,7 +4162,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     def account_capture_login(self, provider: str) -> str:
         """Capture credentials after an explicit login flow into a new profile.
 
-        防呆（Howard 2026-09-05）：切帳號殘留會讓 ~/.claude.json 的帳號資料與
+        防呆（日常使用中回報）：切帳號殘留會讓 ~/.claude.json 的帳號資料與
         keychain 的 token 對不上（帳號顯示 team、token 其實是個人），抓下來的
         profile 就用錯 token → 「兩個帳號都顯示同一個人的用量」。抓取前先驗證
         兩邊一致，對不上就擋下、不寫入，並告訴使用者去重新登入選對帳號。"""
