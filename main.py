@@ -7700,32 +7700,62 @@ def _coords_on_attached_screen(x: int, y: int, w: int, h: int) -> bool:
     returns None, then .frame() blows up. We pre-validate via NSScreen
     and drop the coords if they're off-screen.
 
-    On non-macOS platforms we don't currently detect this — return True
-    so nothing is dropped. Linux/Windows pywebview backends have
-    different (usually safer) fallback behaviour.
+    On Windows we validate via EnumDisplayMonitors so that stale coords
+    from a disconnected monitor (e.g. docking-station removed) don't
+    cause the window to open off-screen.
     """
-    if sys.platform != "darwin":
-        return True
-    try:
-        from AppKit import NSScreen
-    except Exception:
-        return True
-    screens = list(NSScreen.screens() or [])
-    if not screens:
-        return False
-    primary_h = float(screens[0].frame().size.height)
-    cx = x + w / 2.0
-    cy_pywebview = y + h / 2.0
-    cy_cocoa = primary_h - cy_pywebview  # convert to Cocoa bottom-up Y
-    for s in screens:
-        f = s.frame()
-        x_min = float(f.origin.x)
-        x_max = x_min + float(f.size.width)
-        y_min = float(f.origin.y)
-        y_max = y_min + float(f.size.height)
-        if x_min <= cx <= x_max and y_min <= cy_cocoa <= y_max:
+    cx = int(x + w / 2)
+    cy = int(y + h / 2)
+
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            import ctypes.wintypes
+            monitors = []
+
+            MonitorEnumProc = ctypes.WINFUNCTYPE(
+                ctypes.c_bool,
+                ctypes.c_ulong, ctypes.c_ulong,
+                ctypes.POINTER(ctypes.wintypes.RECT),
+                ctypes.c_long,
+            )
+
+            def _enum(hmon, hdc, lprect, lparam):
+                r = lprect.contents
+                monitors.append((r.left, r.top, r.right, r.bottom))
+                return 1
+
+            ctypes.windll.user32.EnumDisplayMonitors(None, None, MonitorEnumProc(_enum), 0)
+            if not monitors:
+                return True  # can't enumerate — don't block
+            for left, top, right, bottom in monitors:
+                if left <= cx < right and top <= cy < bottom:
+                    return True
+            return False
+        except Exception:
             return True
-    return False
+
+    if sys.platform == "darwin":
+        try:
+            from AppKit import NSScreen
+        except Exception:
+            return True
+        screens = list(NSScreen.screens() or [])
+        if not screens:
+            return False
+        primary_h = float(screens[0].frame().size.height)
+        cy_cocoa = primary_h - (y + h / 2.0)  # convert to Cocoa bottom-up Y
+        for s in screens:
+            f = s.frame()
+            x_min = float(f.origin.x)
+            x_max = x_min + float(f.size.width)
+            y_min = float(f.origin.y)
+            y_max = y_min + float(f.size.height)
+            if x_min <= (x + w / 2.0) <= x_max and y_min <= cy_cocoa <= y_max:
+                return True
+        return False
+
+    return True
 
 
 def _patch_pywebview_cocoa_none_screen():
