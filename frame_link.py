@@ -993,6 +993,20 @@ class FrameLink:
                         "sid": body.get("sid", ""),
                         "reason": "frame_link"}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/rename":
+                    # Same rename the desktop double-click uses, so the new label
+                    # persists and shows up on every surface.
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    name = str(body.get("name") or "").strip()
+                    if not name:
+                        return self._send(400, {"success": False,
+                            "message": "name required"}, sign_for=peer, nonce=nonce)
+                    res = link._execute("rename", {"sid": body.get("sid", ""),
+                                                   "name": name[:60]}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/reorder":
                     # Drag-to-reorder from a remote viewer. Routes into the same
                     # reorder the desktop tab drag uses, so session_order is
@@ -1545,6 +1559,19 @@ class FrameLink:
                                "rows": int(rows)}).encode()
             return self._signed_request(peer, "POST", "/link/resize", body,
                                         timeout=5)
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def remote_rename(self, peer_id: str, sid: str, name: str) -> dict:
+        """Rename one of the peer's tabs (phone app). Goes through the peer's own
+        rename, so the label persists and its TG/desktop surfaces agree."""
+        peer = self._peer(peer_id)
+        if not peer or not self._addressable(peer):
+            return {"success": False, "message": "peer 不可直連"}
+        try:
+            body = json.dumps({"sid": sid, "name": name}).encode()
+            return self._signed_request(peer, "POST", "/link/rename", body,
+                                        timeout=10)
         except Exception as e:
             return {"success": False, "message": str(e)}
 

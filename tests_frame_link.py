@@ -68,6 +68,7 @@ class Node:
         self.closed = []         # sid via /link/close
         self.pasted = []         # (filename, data_b64) via /link/paste
         self.reorders = []       # order list via /link/reorder
+        self.renames = []        # (sid, name) via /link/rename
 
         def execute(cmd, args):
             if cmd == "list":
@@ -100,6 +101,9 @@ class Node:
                 return {"success": True}
             if cmd == "reorder":
                 self.reorders.append(list(args.get("order") or []))
+                return {"success": True}
+            if cmd == "rename":
+                self.renames.append((args.get("sid"), args.get("name")))
                 return {"success": True}
             if cmd == "raw_screen":
                 return {"success": True,
@@ -334,6 +338,10 @@ def main():
               not (rinfo.get("details", {}).get("sessions")))
         rpk = b.link.remote_peek(a.fid, "s1")
         check("slave peek on master denied", rpk.get("success") is False)
+        before_rn = len(a.renames)
+        rnd = b.link.remote_rename(a.fid, "s1", "nope")
+        check("slave rename on master denied",
+              rnd.get("success") is False and len(a.renames) == before_rn)
         before_ro = len(a.reorders)
         rod = b.link.remote_reorder(a.fid, ["s1", "s2"])
         check("slave reorder on master denied",
@@ -402,6 +410,11 @@ def main():
         rc = b.link.remote_close(a.fid, "s2")
         check("remote_close closes a session",
               rc.get("success") and "s2" in a.closed)
+        rn2 = b.link.remote_rename(a.fid, "s1", "  改好的名字  ")
+        check("remote_rename reaches peer and is trimmed",
+              rn2.get("success") and ("s1", "改好的名字") in a.renames)
+        blank = b.link.remote_rename(a.fid, "s1", "   ")
+        check("remote_rename rejects a blank name", blank.get("success") is not True)
         ro = b.link.remote_reorder(a.fid, ["s2", "s1"])
         check("remote_reorder reaches peer",
               ro.get("success") and a.reorders and a.reorders[-1] == ["s2", "s1"])
