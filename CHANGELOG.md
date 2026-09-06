@@ -6,6 +6,37 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.5 (2026-09-06)
+
+### Fixes
+
+- **Window no longer opens off-screen on Windows after a monitor is
+  disconnected.** When a saved window position placed the window's centre
+  outside every attached display — typically after unplugging an external
+  monitor or a docking station — ShellFrame on Windows reopened the window at
+  those stale coordinates, placing it beyond any reachable display area. The
+  root cause was that `_coords_on_attached_screen()` validated saved coordinates
+  against the live set of attached displays on macOS (via `NSScreen`) but
+  always returned `True` on Windows, letting any coordinate through unchecked.
+  It now calls `EnumDisplayMonitors` on `win32` to enumerate the current monitor
+  rects and checks whether the window centre falls inside at least one of them.
+  Coordinates that miss every monitor are discarded and the window centres on the
+  primary display instead, matching the existing macOS behaviour.
+  Stale coordinates already persisted in `~/.config/shellframe/config.json` are
+  cleared automatically on the first launch that detects them out-of-bounds, so
+  no manual config editing is required.
+
+  **Windows 上拔掉螢幕後，視窗不再開在畫面外。** 當儲存的視窗位置讓視窗中心
+  落在所有目前接著的螢幕之外——常見於拔除外接螢幕或 Dock——ShellFrame 在 Windows
+  上會直接用那個舊座標重新開窗，導致視窗出現在任何可觸及的顯示範圍之外。根本原因是
+  `_coords_on_attached_screen()` 在 macOS 會透過 `NSScreen` 把儲存的座標對照目前
+  連接的螢幕清單來驗證，但在 Windows 上直接回傳 `True`，讓任何座標都通過而不加檢查。
+  現在在 `win32` 上呼叫 `EnumDisplayMonitors` 列出目前所有 monitor 的邊界矩形，
+  並確認視窗中心是否落在其中至少一個之內。中心落不進任何 monitor 的座標會被捨棄，
+  改為在主顯示器居中，與既有的 macOS 行為一致。已經存在
+  `~/.config/shellframe/config.json` 裡的舊座標，只要首次啟動時偵測到超出邊界就會
+  自動清除，不需要手動修改設定檔。
+
 ## v0.35.4 (2026-09-06)
 
 ### Changes
