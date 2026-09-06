@@ -3640,10 +3640,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.unicode.activeVersion = '11';
     term.open(pane);
     term.attachCustomWheelEventHandler(() => term.buffer.active.type !== 'alternate');
-    // 鍵盤直送遠端 PTY（原始位元組：方向鍵/Ctrl-C/Enter 照原樣）
+    // 鍵盤直送遠端 PTY（原始位元組：方向鍵/Ctrl-C/Enter 照原樣），但先過 IME
+    // 守門——本機 pane 有這層、遠端以前沒有，所以遠端打中文會重複／漏注音。
+    // composition 事件委派在 pane 上（跟本機 pane 同模式，textarea 重建也不失效）。
+    const imeGuard = _makeImeInputGuard(sid);
+    pane.addEventListener('compositionstart', () => imeGuard.start());
+    pane.addEventListener('compositionend', (e) => imeGuard.end(e && e.data));
     term.onData(data => {
       const info = parseRemoteSid(sid);
       if (!info) return;
+      if (!imeGuard.keep(data)) return;
       pywebview.api.link_remote_input(info.peerId, info.rsid, data).catch(() => {});
     });
     // pane 尺寸變了（視窗縮放、側欄開合）→ 重新 fit 並推給對方
@@ -6520,6 +6526,38 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
         lastSent = data; lastTime = now;
         return false;
+      },
+    };
+  }
+
+  // 一個 IME-aware 的輸入守門，把「去重 + 組字漏出」兩道濾網收成 keep(data)。
+  // 本機 pane 的那套（_makeImeDedup + IME_LEAK_RE + _imeComposeStart）原本只掛
+  // 在本機 term.onData 上，遠端（Frame Link）pane 的 onData 是裸送 → 遠端分頁
+  // 打中文會重複、注音半成品／選字鍵漏進去（2026-09-07 回報：「我用我用」
+  // 「還是要用還是要用」＋拉丁字被拆）。遠端 pane 改用這個守門補齊同一層保護。
+  // composing 由自己記（不靠 _imeComposeStart 的全域鍵），這樣純邏輯可單測。
+  function _makeImeInputGuard(sid) {
+    const dedup = _makeImeDedup();
+    let composing = false;
+    return {
+      start() {
+        composing = true;
+        if (sid) _imeComposeStart[sid] = Date.now();
+        _imeComposing = true;
+        dedup.started();
+      },
+      end(data) {
+        composing = false;
+        if (sid) delete _imeComposeStart[sid];
+        _imeComposing = false;
+        dedup.composed(data);
+      },
+      // true = 送出；false = 丟掉。
+      keep(data) {
+        if (data === '\r' || data === '\n') return true;   // Enter 永不丟
+        if (composing && IME_LEAK_RE.test(data)) return false;  // 組字漏出的注音/選字鍵
+        if (dedup.shouldDrop(data)) return false;          // 同一次 commit 送兩次
+        return true;
       },
     };
   }

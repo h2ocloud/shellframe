@@ -6,6 +6,29 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.6 (2026-09-07)
+
+### Fixes
+
+- **Chinese input into a remote (Frame Link) tab no longer duplicates or leaks
+  half-composed characters.** Local tabs run every keystroke through an
+  IME-aware guard — it drops the second copy when the OS commits a phrase twice
+  (the classic shift-mid-composition double-send) and swallows the raw Zhuyin /
+  candidate-selection keys that leak out mid-composition. Remote panes sent
+  `term.onData` straight to the peer with none of that, so typing Chinese into a
+  remote tab produced doubled phrases ("我用我用", "還是要用還是要用") and
+  stray characters. The guard is now factored into `_makeImeInputGuard` and the
+  remote pane runs its keystrokes through the same two filters (with Enter and
+  plain ASCII always passing). Regression cases added to `tests_ime_dedup.js`.
+
+  **打中文到遠端（Frame Link）分頁不再重複、不再漏半成品。** 本機分頁的每個按鍵
+  都會過一道 IME 感知守門——系統把一個片語 commit 兩次時（注音打到一半切 shift
+  的經典重送）丟掉第二份，並吞掉組字中漏出來的純注音／選字鍵。遠端 pane 之前是
+  把 `term.onData` 直接送給對方、完全沒有這層，所以打中文會出現片語重複
+  （「我用我用」「還是要用還是要用」）和多餘字元。現在把守門抽成
+  `_makeImeInputGuard`，遠端 pane 的按鍵也過同樣兩道濾網（Enter 與純 ASCII 一律
+  放行）。回歸案例加進 `tests_ime_dedup.js`。
+
 ## v0.35.5 (2026-09-06)
 
 ### Fixes
