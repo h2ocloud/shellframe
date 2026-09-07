@@ -6,6 +6,94 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.8 (2026-09-07)
+
+### Fixes
+
+- **A tab's status and model badge can no longer be read from another
+  account's transcript.** Multiple accounts work by pointing the CLI at a
+  different config directory — `CODEX_HOME` for one provider,
+  `CLAUDE_CONFIG_DIR` for the other — and the transcript, the config and the
+  model all live under that directory. Resolution ignored it. The Codex
+  resolver matched open file descriptors against the literal string
+  `/.codex/sessions/`, which can never match a path under a profile directory
+  (`account-profiles/codex/<ref>/sessions/…` has no dot before `codex`), so a
+  tab on a switched account always missed and fell through to "the
+  newest-modified rollout anywhere on disk" — another tab's conversation. The
+  Claude branch had the same blind spot in its transcript search, and both
+  providers' model fallbacks read the global config file rather than the
+  account's own.
+
+  Every resolution now runs against the tab's own directory: file descriptors
+  are accepted by directory prefix rather than a substring, the search for a
+  transcript is scoped to that account, and the model falls back to that
+  account's config. The Codex branch also honours the recorded transcript path
+  and the remembered rollout id, which names the file exactly. When nothing
+  identifies the tab's own transcript the answer is now "unknown" instead of a
+  guess — state falls back to reading the tab's own screen, which cannot be
+  another conversation. Restore-after-reboot looks for the rollout under the
+  right account too; it used to search only the global tree, decide the record
+  was gone, and start a blank conversation.
+
+  The directory itself is now read from the environment variable the running
+  CLI actually uses, not from the stored account reference. Measured on a live
+  tab: its process held a rollout open under a profile directory while the
+  stored reference said no account was pinned, because the marker that
+  reference is recovered from is only written when a tab is created with one.
+  With the directory read from the environment, that tab resolves to its own
+  rollout and its badge changed from the globally configured model to the one
+  the session is actually running. Read once per tab and kept on the session,
+  not on a timer: the status loop calls this every pass, and on a machine where
+  the existing pane captures already time out, adding a recurring subprocess to
+  that path trades terminal smoothness for a value that does not change. 23 cases in
+  `tests_session_account_context.py` cover two accounts on the same working
+  directory, a descriptor belonging to the other account, a remembered id from
+  the other account, and the environment/reference/default fallback order.
+
+  **分頁的狀態與模型不會再從另一個帳號的 transcript 讀出來。** 多帳號是靠讓 CLI
+  指到不同的 config 目錄實作的——一個 provider 用 `CODEX_HOME`、另一個用
+  `CLAUDE_CONFIG_DIR`——而 transcript、config 與模型全都寫在那個目錄底下。解析
+  完全沒有考慮它。Codex 的解析拿開啟的檔案描述子去比對字面字串
+  `/.codex/sessions/`，那條字串永遠不會命中 profile 目錄底下的路徑
+  （`account-profiles/codex/<ref>/sessions/…` 的 codex 前面沒有點），於是切過帳號
+  的分頁一律落空，掉進「磁碟上最近修改的那一份 rollout」——也就是另一個分頁的
+  對話。Claude 分支在搜尋 transcript 時有同樣的盲點，而兩個 provider 的模型
+  fallback 都讀全域 config 而不是該帳號自己那份。
+
+  現在每一次解析都跑在分頁自己的目錄上：檔案描述子改用目錄前綴而非子字串來
+  判斷，transcript 的搜尋限定在該帳號內，模型 fallback 讀該帳號的 config。
+  Codex 分支另外會採用記下來的 transcript 路徑與記住的 rollout id——後者的檔名
+  直接帶著 id，是精確對應。當沒有任何線索能指認分頁自己的 transcript 時，答案
+  現在是「不知道」而不是猜一個：狀態改由分頁自己的畫面判斷，那不可能是別人的
+  對話。重開機後的還原也會到正確的帳號底下找 rollout；它以前只搜全域樹，然後
+  判定記錄不存在、開一個空白對話。
+
+  目錄本身現在改讀「跑起來的 CLI 真正吃的環境變數」，而不是儲存的帳號參照。
+  活體實測：有個分頁的 process 開著 profile 目錄底下的 rollout，而儲存的參照卻
+  說它沒有 pin 任何帳號——因為那個參照是從一個 marker 還原的，而該 marker 只在
+  「建立分頁時就帶著帳號」的情況下才會寫入。改讀環境變數之後，那個分頁解析到
+  自己的 rollout，badge 也從全域設定的模型變成該 session 實際在跑的模型。每個
+  分頁只讀一次並掛在 session 上，不走計時器：狀態迴圈每一輪都會呼叫它，而在
+  既有的畫面擷取都已經會逾時的機器上，往那條路徑加一個週期性的 subprocess，
+  等於拿終端的流暢度去換一個不會變的值。
+  `tests_session_account_context.py` 共 23 項，涵蓋同一個工作目錄下的兩個帳號、
+  描述子屬於另一個帳號、記住的 id 屬於另一個帳號，以及環境變數／參照／預設值的
+  優先順序。
+
+### Internal
+
+- **The per-tab resolution context is built in one place.** Four call sites each
+  assembled their own dictionary of command, working directory, pane name and
+  session id, and all four were missing the account identity — which is why
+  adding it needed a single edit in each of four spots rather than one. They now
+  share one accessor, so the next field to reach status, model and transcript
+  resolution is added once.
+
+  **分頁的解析 context 收斂成一個入口。** 原本四個呼叫點各自拼一份 dict（指令、
+  工作目錄、pane 名稱、session id），而四份都少了帳號身分——這也正是為什麼補上
+  它得在四個地方各改一次。現在共用同一支存取器，下一個要貫穿狀態、模型與
+  transcript 解析的欄位只要加一次。
+
 ## v0.35.7 (2026-09-07)
 
 ### Fixes

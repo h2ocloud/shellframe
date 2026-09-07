@@ -2247,6 +2247,84 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     _CODEX_ROLLOUT_RE = re.compile(r"rollout-.*?-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
                                    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl$")
 
+    # provider → 那個 CLI 用哪個環境變數指 config 目錄
+    _CONFIG_DIR_ENV = {"codex": "CODEX_HOME", "claude": "CLAUDE_CONFIG_DIR"}
+
+    @staticmethod
+    def _provider_config_dir(provider: str, ref) -> str:
+        """provider＋account ref → 那個帳號的 config 目錄（''＝沒 pin profile）。"""
+        if not ref:
+            return ""
+        try:
+            env = ACCOUNT_MANAGER.env_for(provider, ref) or {}
+        except Exception:
+            return ""
+        return env.get("CODEX_HOME") or env.get("CLAUDE_CONFIG_DIR") or ""
+
+    def _live_config_dir(self, s, provider: str) -> str:
+        """這個分頁**實際正在用**的 provider config 目錄。
+
+        `account_refs` 不夠可靠：reattach 時它是從 tmux 的 `SF_ACCOUNT_<P>`
+        marker 還原的，而那個 marker 只在建立分頁時「有 ref 才寫」。實測有分頁
+        的 tmux env 帶著 `CODEX_HOME=<profile>`、卻沒有 marker，於是還原後
+        account_refs 是 None——ShellFrame 以為它沒 pin 帳號，解析就回頭去找全域
+        路徑，而那個 process 的 rollout 根本不在全域樹裡。
+
+        所以優先讀 provider 自己的環境變數：那是跑起來的 CLI 真正吃的值，也是
+        rollout／transcript 實際寫進去的目錄。讀不到才退回 account_refs 的對應。
+        每個分頁只問一次 tmux，之後掛在 session 物件上。status monitor 每輪都會
+        呼叫這支，而這台機器上光是既有的 capture-pane 就已經會逾時——再加一個
+        週期性的 subprocess 進那條路徑，等於拿終端的流暢度去換一個不會變的值。
+        帳號切換走 _restart_session_for_account，那會建一個新的 Session 物件，
+        快取跟著舊物件一起消失，所以不需要額外的失效機制。
+        """
+        env_key = self._CONFIG_DIR_ENV.get(provider)
+        if not env_key:
+            return ""
+        cached = getattr(s, "_config_dir_cache", None)
+        if cached and cached[0] == provider:
+            return cached[1]
+        value = ""
+        tmux_name = getattr(s, "_tmux_name", None)
+        if tmux_name and not IS_WIN:
+            value = (_tmux_get_env(tmux_name, env_key) or "").strip()
+            if value and not os.path.isdir(value):
+                value = ""          # 目錄不在就當沒設，別把解析導到不存在的樹
+        if not value:
+            value = self._provider_config_dir(
+                provider, (getattr(s, "account_refs", {}) or {}).get(provider))
+        try:
+            s._config_dir_cache = (provider, value)
+        except Exception:
+            _swallow("_live_config_dir:cache")
+        return value
+
+    def _worker_ctx(self, sid: str, s) -> dict:
+        """這個分頁的解析 context——狀態、模型、transcript 全部吃同一份。
+
+        以前每個呼叫點各自拼一份 dict，而且都少了帳號身分：多帳號是靠 provider
+        的 config 目錄做的（codex→CODEX_HOME、claude→CLAUDE_CONFIG_DIR），
+        transcript 與 config 都寫在那個目錄底下。少了它，解析會回頭去讀全域路徑
+        ——切過帳號的分頁因此讀到別的帳號，甚至別的分頁的對話。
+
+        `config_dir` 空字串＝這個分頁沒有 pin profile，用 provider 的預設位置。
+        """
+        provider = _session_provider(getattr(s, "cmd", ""))
+        config_dir = ""
+        try:
+            config_dir = self._live_config_dir(s, provider)
+        except Exception:
+            _swallow(f"_worker_ctx:{sid}")
+        return {
+            "cmd": getattr(s, "cmd", ""),
+            "cwd": getattr(s, "cwd", "~"),
+            "tmux_name": getattr(s, "_tmux_name", None),
+            "session_id": getattr(s, "session_id", None),
+            "transcript_hint": getattr(s, "_hook_transcript_path", None),
+            "codex_session_id": getattr(s, "_codex_sid", "") or "",
+            "config_dir": config_dir,
+        }
+
     def _codex_session_id(self, sid: str, s) -> str:
         """這個 codex 分頁對應的 rollout session uuid（'' = 認不出來）。
 
@@ -2261,13 +2339,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cached = getattr(s, "_codex_sid", "")
             if cached:
                 return cached
+            ctx = self._worker_ctx(sid, s)
             path = ""
             try:
-                path = agent_status.resolve_transcript({
-                    "cmd": getattr(s, "cmd", ""),
-                    "cwd": getattr(s, "cwd", "~"),
-                    "tmux_name": getattr(s, "_tmux_name", None),
-                }) or ""
+                path = agent_status.resolve_transcript(ctx) or ""
             except Exception:
                 path = ""
             if IS_WIN or not path:
@@ -2275,8 +2350,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                          if k != sid}
                 spawn = float(getattr(s, "_spawn_ts", 0.0) or 0.0)
                 best = None
+                # 掃描限定這個分頁自己的 sessions 根目錄——認領表跨分頁共用，
+                # 但候選檔不能跨帳號，否則會認領到別的帳號的 rollout。
                 for f in glob.glob(os.path.join(
-                        os.path.expanduser("~/.codex/sessions"),
+                        agent_status.codex_sessions_root(ctx),
                         "*", "*", "*", "rollout-*.jsonl")):
                     m = self._CODEX_ROLLOUT_RE.search(f)
                     if not m or m.group(1) in taken:
@@ -2303,14 +2380,19 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         return ""
 
     @staticmethod
-    def _codex_rollout_exists(csid: str) -> bool:
-        """這個 codex session uuid 在磁碟上還找得到 rollout 嗎。"""
+    def _codex_rollout_exists(csid: str, sessions_root: str = "") -> bool:
+        """這個 codex session uuid 在磁碟上還找得到 rollout 嗎。
+
+        sessions_root 空＝全域預設位置。帳號 profile 的 rollout 不在全域樹裡，
+        少了這個參數，切過帳號的分頁重開機時一律判定「檔不在」→ 不 resume →
+        對話看起來憑空消失。
+        """
         if not csid:
             return False
+        root = sessions_root or os.path.expanduser("~/.codex/sessions")
         try:
             return bool(glob.glob(os.path.join(
-                os.path.expanduser("~/.codex/sessions"),
-                "*", "*", "*", f"rollout-*-{csid}.jsonl")))
+                root, "*", "*", "*", f"rollout-*-{csid}.jsonl")))
         except Exception:
             return False
 
@@ -2503,7 +2585,14 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             # 不接——與其 resume 失敗讓分頁開不起來，不如開新的。
             if _worker_is_codex(cmd):
                 csid = str(entry.get("codex_session_id") or "").strip()
-                found = self._codex_rollout_exists(csid)
+                # rollout 要在「這個分頁的帳號目錄」底下找。帳號 profile 的
+                # rollout 不在全域樹裡，用全域路徑找一定落空，然後就會判定
+                # 「找不到記錄檔」而開一個空白對話。
+                entry_refs = dict(entry.get("account_refs") or default_account_refs)
+                found = self._codex_rollout_exists(
+                    csid, agent_status.codex_sessions_root(
+                        {"config_dir": self._provider_config_dir("codex",
+                                                                 entry_refs.get("codex"))}))
             else:
                 csid = str(entry.get("claude_session_id") or "").strip()
                 found = self._claude_transcript_exists(csid)
@@ -2533,6 +2622,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 session._lifecycle_source = entry.get("lifecycle_source", "")
                 session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
+                # codex 沒有 hook 可以回報，manifest 的 uuid 就是它重開之後
+                # 唯一的精確錨點——蓋回 session，解析不必等 lsof 命中。
+                if _worker_is_codex(cmd) and csid:
+                    session._codex_sid = csid
                 self._start_startup_trust_watcher(sid, session)
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
@@ -2878,13 +2971,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                                 result = dict(c["result"])
                                 result["elapsed"] = int(now - c["since_ts"])
                             else:
-                                worker = {
-                                    "cmd": getattr(s, "cmd", ""),
-                                    "cwd": getattr(s, "cwd", "~"),
-                                    "tmux_name": getattr(s, "_tmux_name", None),
-                                    "session_id": getattr(s, "session_id", None),
-                                    "transcript_hint": getattr(s, "_hook_transcript_path", None),
-                                }
+                                worker = self._worker_ctx(sid, s)
                                 # Screen wording must come from the CURRENT rendered
                                 # screen. The _recent ring buffer is a byte-stream
                                 # history — a /model or feedback menu that scrolled
@@ -3772,13 +3859,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         s = self.sessions.get(sid)
         if not s:
             return None
-        worker = {
-            "cmd": getattr(s, "cmd", ""),
-            "cwd": getattr(s, "cwd", "~"),
-            "tmux_name": getattr(s, "_tmux_name", None),
-            "session_id": getattr(s, "session_id", None),
-            "transcript_hint": getattr(s, "_hook_transcript_path", None),
-        }
+        worker = self._worker_ctx(sid, s)
         try:
             path = agent_status.resolve_transcript(worker)
             return agent_status.detect_model_info(
@@ -6219,13 +6300,8 @@ try {
         path = ""
         if s is not None:
             try:
-                path = agent_status.resolve_transcript({
-                    "cmd": getattr(s, "cmd", ""),
-                    "cwd": getattr(s, "cwd", "~"),
-                    "tmux_name": getattr(s, "_tmux_name", None),
-                    "session_id": getattr(s, "session_id", None),
-                    "transcript_hint": getattr(s, "_hook_transcript_path", None),
-                }) or ""
+                path = agent_status.resolve_transcript(
+                    self._worker_ctx(sid, s)) or ""
             except Exception:
                 _swallow(f"_glasses_transcript:{sid}")
                 path = ""
