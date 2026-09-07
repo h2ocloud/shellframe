@@ -3850,6 +3850,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const panel = document.getElementById('link-panel');
     const resizer = document.getElementById('link-resizer');
     const open = (force !== undefined) ? force : !panel.classList.contains('open');
+    // 這個面板只承載「某個 peer 的訊息」或「某個 peer 的檔案」，linkView 就是
+    // 那個選擇。沒有選擇卻要求展開＝沒有東西可畫，開了只是從終端偷走 260px。
+    // 呼叫端必須先設好 linkView（openLinkMessages / openLinkFiles 就是入口）。
+    if (open && !linkView) return;
     panel.classList.toggle('open', open);
     resizer.style.display = open ? 'block' : 'none';
     if (!open) { linkView = null; }
@@ -3934,8 +3938,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── 底部面板：訊息 ──
   async function openLinkMessages(peer) {
-    toggleLinkPanel(true);
     linkView = { type: 'messages', peerId: peer.id, peerName: peer.name };
+    toggleLinkPanel(true);          // linkView 要先設好，toggle 會檢查
     linkMainTitle(`💬 與 <b>${esc2(peer.name)}</b> 的訊息`);
     const row = document.getElementById('link-input-row');
     row.style.display = 'flex';
@@ -3979,8 +3983,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── 底部面板：檔案 ──
   async function openLinkFiles(peer) {
-    toggleLinkPanel(true);
     linkView = { type: 'files', peerId: peer.id, peerName: peer.name };
+    toggleLinkPanel(true);          // 同上
     linkMainTitle(`📁 與 <b>${esc2(peer.name)}</b> 的檔案`);
     document.getElementById('link-input-row').style.display = 'none';
     const body = document.getElementById('link-main-body');
@@ -4249,8 +4253,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (res.success) {
           finish();
           linkRemoteTabs = {};
+          // 配對成功只更新側欄——新配對的 peer 那一列會出現，💬／📁 就在上面。
+          // 舊版在這裡無條件 toggleLinkPanel(true)，但沒有選訊息也沒有選檔案，
+          // 面板就開成一片 260px 的空白（左上只有一個「—」佔位標題）。
           refreshLinkStatus(true);
-          toggleLinkPanel(true);
         } else {
           err.style.color = '#f7768e';
           err.textContent = res.message || '配對失敗';

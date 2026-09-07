@@ -539,14 +539,22 @@ def load_config():
         if not offered and cfg.get("_default_ai_presets_migrated"):
             offered = {"Claude", "Codex"}      # what the old flag stood for
         if len(offered) < len(_DEFAULT_AI_PRESETS):
-            existing_cmds = {
-                (p.get("cmd") or "").strip() for p in cfg.get("presets", []) or []
-            }
+            existing = cfg.get("presets", []) or []
+            existing_cmds = {(p.get("cmd") or "").strip() for p in existing}
+            # 名稱也要比。cmd 比對是精確字串，使用者一旦改過內建 preset 的指令
+            # （例如把 opencode 換成絕對路徑）就對不上了；此時只要 offered 記錄
+            # 因為任何原因回退——config 從舊備份還原、或只剩舊的
+            # _default_ai_presets_migrated 旗標（它只代表 Claude/Codex）——同名的
+            # preset 就會被再加一次，清單裡出現兩個一樣的東西。
+            existing_names = {(p.get("name") or "").strip() for p in existing}
             for preset in _DEFAULT_AI_PRESETS:
                 if preset["name"] in offered:
                     continue
-                if preset["cmd"] not in existing_cmds:
+                if (preset["cmd"] not in existing_cmds
+                        and preset["name"] not in existing_names):
                     cfg.setdefault("presets", []).append(dict(preset))
+                    existing_names.add(preset["name"])
+                    existing_cmds.add(preset["cmd"])
                 offered.add(preset["name"])
             cfg["_default_ai_presets_offered"] = sorted(offered)
             cfg["_default_ai_presets_migrated"] = True   # kept for older builds

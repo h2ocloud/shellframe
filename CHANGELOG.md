@@ -6,6 +6,84 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.7 (2026-09-07)
+
+### Fixes
+
+- **Pairing no longer leaves an empty panel across the bottom of the window.**
+  Reported in daily use: about 260px of the window went blank, with only a
+  placeholder dash top-left and a close button top-right. That is the Frame
+  Link messages/files panel. It carries exactly two things — one peer's
+  messages, or one peer's files — and which of the two is a selection the user
+  makes from the sidebar. Pairing success opened the panel unconditionally
+  without making that selection, so there was nothing to render and the panel
+  simply took height away from the terminal. Pairing now only refreshes the
+  sidebar, where the newly paired peer appears with its own message and file
+  buttons. The panel additionally refuses to open with no selection, so no
+  future caller can reproduce the blank state; the two real entry points now
+  set the selection before asking it to open. Closing restores the terminal
+  height and re-fits, as before. 13 cases in `tests_link_panel_empty.py` drive
+  the shipped functions and save before/after screenshots.
+
+  **配對成功不會再在視窗下半部留下一片空白面板。** 日常使用中回報：視窗有約
+  260px 整片空白，左上角只有一個佔位的「—」、右上角一個關閉鈕。那是 Frame Link
+  的訊息／檔案面板。它只承載兩種內容——某個 peer 的訊息，或某個 peer 的檔案
+  ——而是哪一種是使用者從側欄做的選擇。配對成功時無條件展開面板卻沒有做這個
+  選擇，於是沒有東西可畫，面板只是從終端把高度拿走。配對現在只更新側欄，新
+  配對的 peer 會出現在那裡，訊息與檔案的按鈕就在那一列上。面板另外會拒絕在
+  沒有選擇時展開，任何呼叫端都不可能再重現這個空白狀態；兩個真正的入口改成
+  先設好選擇再要求展開。關閉時終端高度回復並重新 fit，跟原本一樣。
+  `tests_link_panel_empty.py` 共 13 項，跑的是實際出貨的函式，並存下修前修後
+  的截圖。
+
+- **A built-in preset can no longer appear twice in the new-session list.** The
+  once-each offer for every supported CLI de-duplicated on the command string
+  alone. Editing a built-in preset's command — pointing it at an absolute path,
+  say — makes that comparison miss, so if the record of what had already been
+  offered was ever rolled back (a config restored from an older backup, or only
+  the legacy flag left, which stands for two of the CLIs), the same preset was
+  appended again. The offer now also skips a name that is already present.
+  Custom variants of the same CLI under different names still coexist, and a
+  built-in the user deleted still stays deleted. 9 cases in
+  `tests_preset_dedup.py`.
+
+  **內建 preset 不會再在新增分頁的清單裡出現兩份。** 「每個支援的 CLI 各提供
+  一次」原本只比對指令字串來判斷重複。使用者一旦改過內建 preset 的指令——例如
+  指到絕對路徑——這個比對就對不上；此時只要「已提供過哪些」的記錄因為任何原因
+  回退（config 從舊備份還原，或只剩舊旗標，而它只代表其中兩支 CLI），同一個
+  preset 就會被再加一次。提供時現在也會跳過已經存在的名稱。同一支 CLI 底下
+  不同名稱的自訂變體照樣共存，使用者刪掉的內建也仍然不會自己長回來。
+  `tests_preset_dedup.py` 共 9 項。
+
+### Internal
+
+- **The test entry point now decides pass or fail from the child's exit code.**
+  It captured the output of each test but discarded the status, then judged the
+  run by whether the last line contained `PASS`, `0 failed` or `all green`. Both
+  failure modes are reproducible: a test that exits 7 while printing `ALL PASS`
+  was reported as passing, and `Results: 1 passed, 10 failed` passed too,
+  because it contains `0 failed` as a substring. Every "all green" this repo has
+  reported was therefore unverified. Output is now only the summary line;
+  failure is a non-zero exit, full stop. Collection also covers `test_*.py`
+  (singular) — `test_init_prompt.py` had never been run — de-duplicated against
+  the plural glob, and a run that collects nothing is a failure rather than a
+  vacuous pass. Tests that skip for a missing runtime are counted and shown
+  separately from passes, since exiting 0 without running is not evidence of
+  anything. 10 cases in `tests_runner_self.py` run the real runner against
+  deliberately misbehaving fake tests. The honest runner reports 62/62 with no
+  skips.
+
+  **測試入口現在用子程序的退出碼判定成敗。** 它抓了每支測試的輸出卻把狀態丟掉，
+  然後看最後一行有沒有 `PASS`、`0 failed`、`all green` 來判斷。兩種誤判都可重現：
+  一支 exit 7 但印出 `ALL PASS` 的測試會被判成通過，而 `Results: 1 passed,
+  10 failed` 也會通過，因為它含有 `0 failed` 這個子字串。這個 repo 過去每一次
+  「全綠」因此都是未經驗證的。輸出現在只用來顯示摘要；失敗就是退出碼非零，沒有
+  例外。收集範圍也涵蓋 `test_*.py`（單數）——`test_init_prompt.py` 從來沒被跑過
+  ——並與複數的 glob 去重，而收集不到任何測試現在是失敗而不是空洞的通過。因為
+  缺少 runtime 而跳過的測試會分開計數與顯示，畢竟「沒跑卻回 0」不能證明任何事。
+  `tests_runner_self.py` 共 10 項，拿真正的 runner 去跑故意亂來的假測試。誠實的
+  runner 回報 62/62，零跳過。
+
 ## v0.35.6 (2026-09-07)
 
 ### Fixes
