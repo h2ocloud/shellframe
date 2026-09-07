@@ -2629,7 +2629,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // Reconnect to an existing PTY session after page reload (hot update)
+  // 正在建立中的 sid。只檢查 sessions[sid] 不夠：這支函式在把 sessions[sid]
+  // 寫進去之前有好幾個 await，兩個並行呼叫會雙雙通過那個檢查、各造一個 pane。
+  const _reconnectInflight = new Map();
+
   async function reconnectSession(sid, cmd, customLabel = null) {
+    // 同一個 sid 不要造第二個 pane。造第二個會把 sessions[sid] 換成新的 term，
+    // 舊的那個 DOM 節點連著使用者看到的內容一起變成孤兒，而新的這個沒有人重播
+    // 畫面給它——終端於是整片空白。實測過：兩輪 reconcile 疊在一起時，每一個
+    // sid 的 pane 都會被造兩次。
+    if (sessions[sid]) return sessions[sid];
+    if (_reconnectInflight.has(sid)) return _reconnectInflight.get(sid);
+    const building = _reconnectSession(sid, cmd, customLabel);
+    _reconnectInflight.set(sid, building);
+    try { return await building; }
+    finally { _reconnectInflight.delete(sid); }
+  }
+
+  async function _reconnectSession(sid, cmd, customLabel = null) {
     const pane = document.createElement('div');
     pane.className = 'term-pane';
     $wrap.appendChild(pane);
@@ -2910,6 +2927,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     s.pane.remove();
     delete sessions[sid];
     sessionOrder = sessionOrder.filter(id => id !== sid);
+    bumpSessionsRev();
 
     const ids = sessionOrder.length ? sessionOrder : Object.keys(sessions).filter(id => !isRemoteSid(id));
     if (ids.length > 0) {
@@ -3669,6 +3687,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // 遠端 pane 從來沒掛上這個——所以遠端分頁上滑沒反應的原因有兩層：後端沒有
     // history 端點，前端連滾輪監聽都沒裝。兩層都要補，只補一層看起來還是壞的。
     setupScrollHistory(sid, pane);
+    bumpSessionsRev();
     return sessions[sid];
   }
 
@@ -3681,6 +3700,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try { s.term.dispose(); } catch (e) {}
     if (s.pane) s.pane.remove();
     delete sessions[sid];
+    bumpSessionsRev();
   }
 
   // 遠端 pane：撐滿本機視窗（跟本機分頁一樣 fit），再把「我們的可視尺寸」推給
@@ -7933,13 +7953,55 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Reconcile frontend session list with backend (catches sessions
   // created/closed via TG /new /close, sfctl, or any non-UI path).
   // Returns true if anything changed.
+  // 同一時間只跑一輪 reconcile。這支有四個觸發源（1.5 秒定時、bridge session
+  // 數變化、Python 直推、開分頁之後），每一輪中間都有 await：list_sessions 一次，
+  // 再對每個新 sid 各 await 一次 reconnectSession。兩輪疊在一起時，第二輪拿到的
+  // 是「第一輪還沒建完」的 sessions 快照，於是把每個 pane 又造一次。
+  // 進行中被觸發不丟掉——記成 pending，這一輪結束再補跑一次，否則剛剛那次
+  // session 變動就沒人去對帳了。
+  let _syncInflight = null;
+  let _syncPending = false;
+  // sessions / sessionOrder 的版本號。跨過 await 之後版本變了，手上這份回應就是
+  // 過期的：照著寫回去會把新的 label / order 蓋成舊的（原函式可重現）。
+  let _sessionsRev = 0;
+  function bumpSessionsRev() { _sessionsRev++; }
+  // 回應序號。版本號只抓得到「成員有變」，抓不到單純的倒序：兩輪都沒有增刪
+  // session，但晚到的那一份帶著舊 label，照樣會把新 label 蓋回去。每一輪領一個
+  // 號碼，套用前確認沒有比自己新的已經套用過。
+  let _syncSeq = 0;
+  let _syncAppliedSeq = 0;
+  window.__sfSyncStats = () => ({ rev: _sessionsRev, inflight: !!_syncInflight,
+                                  pending: _syncPending, seq: _syncSeq,
+                                  applied: _syncAppliedSeq });
+
   async function syncSessionsFromBackend() {
+    if (_syncInflight) { _syncPending = true; return _syncInflight; }
+    _syncInflight = (async () => {
+      try {
+        return await _reconcileSessionsOnce();
+      } finally {
+        _syncInflight = null;
+        if (_syncPending) {
+          _syncPending = false;
+          setTimeout(() => { syncSessionsFromBackend(); }, 0);
+        }
+      }
+    })();
+    return _syncInflight;
+  }
+
+  async function _reconcileSessionsOnce() {
     if (_uiCreatingSession > 0) {
       _syncDeferred = true;
       return false;
     }
     try {
+      const revAtStart = _sessionsRev;
+      const mySeq = ++_syncSeq;
       const raw = await pywebview.api.list_sessions();
+      if (mySeq < _syncAppliedSeq) return false;       // 有更新的已經套用過
+      if (_sessionsRev !== revAtStart) return false;   // 成員在等待期間變了
+      _syncAppliedSeq = mySeq;
       const backend = JSON.parse(raw);
       const backendSids = new Set(backend.map(s => s.sid));
       const localSids = new Set(Object.keys(sessions));
@@ -7956,6 +8018,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           delete sessions[sid];
           sessionOrder = sessionOrder.filter(id => id !== sid);
           if (activeId === sid) activeId = null;
+          bumpSessionsRev();
           changed = true;
         }
       }
@@ -7964,12 +8027,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // (created via TG /new). Use reconnectSession — it spawns the term,
       // applies custom label, hooks up the input pipe, etc.
       for (const s of backend) {
-        if (!localSids.has(s.sid)) {
+        // 用當下的 sessions 判斷，不是進函式時的 localSids 快照——這個迴圈裡
+        // 每一步都 await，快照跑幾百毫秒就過期了。
+        if (!sessions[s.sid]) {
           await reconnectSession(s.sid, s.cmd, s.label || null);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
             sessions[s.sid].glassesEnabled = s.glasses_enabled === true;
           }
+          bumpSessionsRev();
           changed = true;
         } else if (sessions[s.sid]) {
           const nextLabel = s.label || sessions[s.sid].cmd.split(/\s/)[0];

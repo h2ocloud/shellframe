@@ -6,6 +6,67 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.9 (2026-09-07)
+
+### Fixes
+
+- **The terminal no longer goes blank when sessions are created or closed from
+  outside the window.** Reported in daily use, with the cause visible in the
+  debug log: every tab logged its terminal-initialisation line twice inside two
+  and a half seconds — one full round, then a second full round starting before
+  the first had finished. Reconciliation between the window and the backend
+  session list runs from four triggers (a timer, a change in the bridge's
+  session count, a nudge from the backend, and finishing a new tab), and each
+  round awaits once for the session list and once more per new tab. Two rounds
+  overlapping meant the second worked from a snapshot of "which tabs the window
+  already has" taken while the first was still building them, so it built every
+  pane a second time. The second terminal replaced the first in the window's
+  own table, which orphaned the DOM node holding what the user was reading, and
+  nothing replays the screen into a pane created that way — so the terminal was
+  empty.
+
+  Only one round now runs at a time; a trigger that arrives during a round is
+  remembered and runs once after it, so a session change is never simply
+  dropped. Membership is checked against the live table immediately before
+  building, not against a snapshot taken several hundred milliseconds earlier.
+  Attaching to a tab is idempotent across the whole build, not just at its
+  first line — checking whether the tab exists is not enough when the check and
+  the registration sit either side of several awaits. And a response that comes
+  back after a newer one has already been applied is discarded instead of
+  writing its stale labels and tab order over the newer ones, which was
+  reproducible on its own. 9 cases in `tests_session_sync_race.js` drive the
+  shipped reconciliation and the shipped attach guard with controlled response
+  ordering.
+
+  **從視窗外面建立或關閉 session 時，終端不會再變成一片空白。** 日常使用中回報，
+  根因在 debug log 裡看得見：每一個分頁的終端初始化那一行在兩秒半內出現兩次
+  ——完整一輪，接著第二輪在第一輪還沒跑完就開始。視窗與後端 session 清單的對帳
+  有四個觸發源（定時器、bridge session 數變化、後端直推、開完新分頁），而每一輪
+  會 await 一次取清單、再對每個新分頁各 await 一次。兩輪重疊時，第二輪拿到的
+  「視窗已經有哪些分頁」是在第一輪還在建的過程中取的快照，於是把每個 pane 又
+  建了一次。第二個終端在視窗自己的表裡取代了第一個，使用者正在看的那個 DOM
+  節點因此變成孤兒，而這樣建出來的 pane 沒有任何機制會把畫面重播進去——終端
+  於是空的。
+
+  現在同一時間只跑一輪；在一輪進行中抵達的觸發會被記下來、結束後補跑一次，
+  session 變動不會就這樣被丟掉。成員判斷改成在建立前的那一刻查即時的表，而不是
+  幾百毫秒前取的快照。接上分頁的動作在「整個建立過程」都是冪等的，不只是第一行
+  ——當檢查與註冊分別落在好幾個 await 的兩側時，「查一下分頁在不在」並不夠。
+  另外，比較新的回應已經套用之後才回來的舊回應會被丟掉，不再把過期的名稱與分頁
+  順序蓋在新的上面，那一項本來就可以獨立重現。`tests_session_sync_race.js` 共
+  9 項，用受控的回應順序去打實際出貨的對帳流程與接上分頁的守門。
+
+### Internal
+
+- **A remote-pane assertion no longer depends on two lines being adjacent.** It
+  matched the wheel-listener call together with the following line, so any
+  insertion between them failed the assertion while the behaviour was intact.
+  It now looks inside the function body.
+
+  **遠端 pane 的一項斷言不再依賴兩行相鄰。** 它把滾輪監聽那一行連著下一行一起
+  比對，於是中間插入任何東西都會讓斷言失敗，而功能其實是好的。現在改成在函式
+  主體裡找。
+
 ## v0.35.8 (2026-09-07)
 
 ### Fixes
