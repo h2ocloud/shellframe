@@ -321,6 +321,21 @@
   }
   .preset-item .p-del:hover { color: #f7768e; background: #1a1b26; }
 
+  /* 同一支 CLI 的幾個啟動器收成一組。組標題只是分隔用的小字，不是可點的東西
+     ——真正能點的還是下面那幾列，所以刻意做得比列本身輕。 */
+  .preset-group-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: #565f89; margin: 6px 2px 0;
+  }
+  .preset-group-head::after {
+    content: ''; flex: 1; height: 1px; background: #292e42;
+  }
+  /* 組內縮排，一眼看得出這幾列屬於同一支 CLI */
+  .preset-item.p-grouped { margin-left: 14px; }
+  .preset-item .p-variant { font-size: 13px; color: #c0caf5; }
+  .preset-item .p-variant.p-default { color: #7aa2f7; }
+
   .custom-cmd { display: flex; gap: 8px; }
   .custom-cmd input {
     flex: 1; background: #24283b; border: 1px solid #3b4261; border-radius: 6px;
@@ -2018,31 +2033,60 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
-  function renderPresets() {
+  // 同一支 CLI 的幾個啟動器（雲端／地端閘門／帶不同旗標）在平面清單裡只差一個
+  // 括號，讀起來像同一個東西出現兩次。分組由後端算（跟狀態、模型、帳號判斷同
+  // 一支分類器），這裡只負責畫：兩個以上成員才出組標題，單獨一支照舊平鋪。
+  function presetRow(item, grouped, groupTitle) {
+    const el = document.createElement('div');
+    el.className = 'preset-item' + (grouped ? ' p-grouped' : '');
+    const primary = grouped
+      ? `<div class="p-variant${item.variant ? '' : ' p-default'}">`
+        + `${esc(item.variant || '預設')}</div>`
+      : `<div class="p-name">${esc(item.name)}</div>`;
+    el.innerHTML =
+      `<span class="p-icon">${item.icon || '▶'}</span>`
+      + `<div class="p-info">${primary}`
+      + `<div class="p-cmd">${esc(item.cmd)}</div></div>`
+      + `<button class="p-del" data-name="${esc(item.name)}" title="Delete">&times;</button>`;
+    el.title = grouped ? `${groupTitle} — ${item.name}` : item.name;
+    el.addEventListener('click', (e) => {
+      if (e.target.classList.contains('p-del')) return;
+      openSession(item.cmd, item.name, { askName: true });
+      closeModal();
+    });
+    el.querySelector('.p-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const raw = await pywebview.api.delete_preset(item.name);
+      config = JSON.parse(raw);
+      renderPresets();
+    });
+    return el;
+  }
+
+  async function renderPresets() {
+    let groups = null;
+    try {
+      groups = JSON.parse(await pywebview.api.preset_groups());
+    } catch (e) { groups = null; }
+    if (!Array.isArray(groups)) {
+      // 拿不到分組就照 config 平鋪——對話框不能因為分組壞掉就開不出東西。
+      groups = (config.presets || []).map(p => ({
+        title: p.name, items: [{ name: p.name, cmd: p.cmd, icon: p.icon,
+                                 variant: '' }],
+      }));
+    }
     $presets.innerHTML = '';
-    (config.presets || []).forEach(p => {
-      const el = document.createElement('div');
-      el.className = 'preset-item';
-      el.innerHTML = `
-        <span class="p-icon">${p.icon || '▶'}</span>
-        <div class="p-info">
-          <div class="p-name">${esc(p.name)}</div>
-          <div class="p-cmd">${esc(p.cmd)}</div>
-        </div>
-        <button class="p-del" data-name="${esc(p.name)}" title="Delete">&times;</button>
-      `;
-      el.addEventListener('click', (e) => {
-        if (e.target.classList.contains('p-del')) return;
-        openSession(p.cmd, p.name, { askName: true });
-        closeModal();
-      });
-      el.querySelector('.p-del').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const raw = await pywebview.api.delete_preset(p.name);
-        config = JSON.parse(raw);
-        renderPresets();
-      });
-      $presets.appendChild(el);
+    groups.forEach(g => {
+      const items = g.items || [];
+      if (items.length > 1) {
+        const head = document.createElement('div');
+        head.className = 'preset-group-head';
+        head.innerHTML = `<span>${esc(g.title)}</span>`;
+        $presets.appendChild(head);
+        items.forEach(it => $presets.appendChild(presetRow(it, true, g.title)));
+      } else {
+        items.forEach(it => $presets.appendChild(presetRow(it, false, g.title)));
+      }
     });
   }
 

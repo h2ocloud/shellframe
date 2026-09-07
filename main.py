@@ -3047,6 +3047,57 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         return json.dumps(load_config())
 
     @staticmethod
+    def _preset_variant(name: str, title: str) -> str:
+        """同一支 CLI 底下這個 preset 的區別字（''＝這是預設的那個）。
+
+        「Claude (家用地端)」在「Claude Code」這一組裡的區別字是「家用地端」：
+        把組名的字拿掉、括號與標點剝掉，剩下的就是它跟同組其他成員的差異。
+        """
+        rest = (name or "").strip()
+        for word in (title or "").split():
+            rest = re.sub(re.escape(word), "", rest, flags=re.I)
+        rest = rest.strip(" ()[]（）【】·-—_/、,，:：")
+        return rest.strip()
+
+    def preset_groups(self) -> str:
+        """新增分頁對話框用的 preset 分組。
+
+        同一支 CLI 的幾個啟動器（雲端／地端閘門／帶不同旗標）在平面清單裡只差
+        一個括號，讀起來像同一個東西出現兩次。按 CLI 收成一組，區別字放在組裡，
+        那才看得出是「同一支的兩種接法」。
+
+        分組用的是 `_session_provider`——跟狀態、模型、帳號判斷同一支分類器，
+        分頁與 preset 因此不會各有一套說法。認不出 CLI 的（bash 之類）各自
+        獨立一組，前端會畫成單獨一列。順序沿用 config 裡的順序，組的位置就是它
+        第一個成員的位置，所以既有的清單不會被重排。
+        """
+        try:
+            labels = usage_probe.provider_labels()
+        except Exception:
+            labels = {}
+        groups, index = [], {}
+        for preset in (load_config().get("presets") or []):
+            name = str(preset.get("name") or "")
+            cmd = str(preset.get("cmd") or "")
+            kind = _session_provider(cmd)
+            key = kind if kind != "other" else f"solo:{name}"
+            if key not in index:
+                index[key] = len(groups)
+                groups.append({
+                    "provider": "" if kind == "other" else kind,
+                    "title": labels.get(kind) or name,
+                    "items": [],
+                })
+            group = groups[index[key]]
+            group["items"].append({
+                "name": name,
+                "cmd": cmd,
+                "icon": preset.get("icon") or "",
+                "variant": self._preset_variant(name, group["title"]),
+            })
+        return json.dumps(groups, ensure_ascii=False)
+
+    @staticmethod
     def _board_enabled() -> bool:
         return bool((load_config().get("settings", {}) or {}).get("experimental_board", False))
 

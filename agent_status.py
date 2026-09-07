@@ -135,9 +135,39 @@ def _worker_kind(cmd: str) -> str:
     if "claude" in c:
         return "claude"
     try:
-        return usage_probe.detect_ai(cmd) or "other"
+        return (usage_probe.detect_ai(cmd)
+                or _sf_launcher_provider(cmd)
+                or "other")
     except Exception:
         return "other"
+
+
+def _sf_launcher_provider(cmd: str):
+    """`sf-<provider>-<變體>` → 那個 provider，認不出來回 None。
+
+    ShellFrame 自己的啟動器都照這個命名（sf-codex、sf-pi-spark、
+    sf-opencode-home…）。把每一支都登記進 provider registry 也能work，但那等於
+    讓一份公開的 registry 累積每台機器各自的 wrapper 名稱；`sf-` 前綴讓這條規則
+    可以直接推導出來，而且範圍夠窄——只有以 sf- 開頭的指令會被這樣解讀。
+
+    這條規則放在這裡而不是 usage_probe.detect_ai：detect_ai 決定「套哪個額度
+    讀取器」，而接地端模型閘門的啟動器不該去顯示雲端額度。這支決定的是「這個
+    分頁在跑哪個 CLI」，那對 wrapper 就是該認出來。
+    """
+    for tok in (cmd or "").split():
+        base = tok.split("/")[-1]
+        if "." in base:
+            base = base.rsplit(".", 1)[0]
+        if not base.lower().startswith("sf-"):
+            continue
+        for part in base.split("-")[1:]:
+            try:
+                found = usage_probe.detect_ai(part)
+            except Exception:
+                found = None
+            if found:
+                return found
+    return None
 
 
 def worker_kind(cmd: str) -> str:

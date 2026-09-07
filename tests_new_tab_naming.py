@@ -78,8 +78,11 @@ check("openSession 接受 askName 選項", "const askName = !!(opts && opts.askN
 check("askName 的分頁都會跳命名（含 preset）", "if (askName) {" in idx)
 check("New Session 的 Run 會帶 askName",
       "openSession(cmd, null, { askName: true })" in idx)
+# 在 presetRow 的函式主體裡找 openSession——別綁死變數名，改名不該讓斷言紅燈
+_preset_row = idx.split("function presetRow(item, grouped, groupTitle) {")[1] \
+    .split("\n  }\n")[0]
 check("preset 那條也會問名字（那才是實際的使用路徑）",
-      "openSession(p.cmd, p.name, { askName: true })" in idx)
+      "openSession(" in _preset_row and "askName: true" in _preset_row)
 check("popup 的改名帶 manual=true",
       "rename_session(sid, val, true)" in idx)
 check("openSession 帶 preset 名稱那條不帶 manual",

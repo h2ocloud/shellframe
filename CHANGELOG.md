@@ -6,6 +6,79 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.10 (2026-09-07)
+
+### Changes
+
+- **The new-session list groups the launchers of one CLI together instead of
+  reading as duplicates.** Reported in daily use: the list looked like it had
+  several duplicate entries. The data was correct — two launchers for the same
+  CLI, one for the hosted service and one pointing at a local-model gateway —
+  but in a flat list of eight rows their names differed only by a parenthesis,
+  which reads as the same thing listed twice. Launchers of one CLI now sit
+  under a heading for that CLI, indented, labelled by what distinguishes them
+  (the parenthetical, with the CLI's own name stripped out; the one with no
+  distinguishing part is labelled as the default). A CLI with only one launcher
+  is unchanged, and so is the existing order — a group takes the position of its
+  first member, so nothing in the list moves. Clicking a row still launches that
+  row's own command and the delete button still removes that row's own entry.
+
+  Grouping is computed by the same classifier that decides a tab's provider for
+  status, model and account handling, rather than a second rule that could
+  disagree with it.
+
+  **新增分頁的清單會把同一支 CLI 的幾個啟動器收成一組，不再讀起來像重複。**
+  日常使用中回報：清單看起來有好幾個重複的項目。資料其實是對的——同一支 CLI
+  有兩個啟動器，一個接雲端服務、一個接地端模型的閘門——但在八列平面清單裡，
+  它們的名稱只差一個括號，讀起來就是同一個東西被列了兩次。同一支 CLI 的啟動器
+  現在收在該 CLI 的標題底下、縮排，並以「它跟同組其他成員的差異」命名（括號裡
+  那段，CLI 自己的名字會被剝掉；沒有差異字的那個標示為預設）。只有一個啟動器
+  的 CLI 維持原樣，既有的順序也維持原樣——一組的位置就是它第一個成員的位置，
+  所以清單裡沒有任何東西會移動。點某一列還是啟動該列自己的指令，刪除鈕也還是
+  只刪該列自己的項目。
+
+  分組用的是「決定分頁 provider」的那同一支分類器（狀態、模型、帳號判斷都吃
+  它），而不是另寫一條可能跟它意見不同的規則。
+
+### Fixes
+
+- **A launcher named after ShellFrame's own convention is recognised as the CLI
+  it launches.** Provider detection matches the command's base name against a
+  registry of known binaries, and the registry carries a few wrapper names
+  explicitly. One that had not been added resolved to "unknown", so its tab
+  showed no provider, was excluded from account handling, and would have landed
+  in its own group here. Wrappers named `sf-<cli>-<variant>` are now derived
+  from the prefix, so a machine-specific launcher works without adding an entry
+  to a shared registry. The rule is deliberately narrow: only a name starting
+  with `sf-` is read this way, and only when a following part names a known CLI.
+
+  This is kept separate from the choice of which usage reader applies to a tab,
+  which is unchanged — a launcher pointing at a local-model gateway should not
+  start reporting a hosted service's quota. 23 cases in
+  `tests_preset_groups.py` cover both halves and save a screenshot.
+
+  **照 ShellFrame 自己命名慣例的啟動器會被認出是哪一支 CLI。** provider 判斷是
+  拿指令的基本名稱去比對一份已知執行檔的 registry，而 registry 裡明確帶了幾個
+  wrapper 名稱。其中一支沒有被加進去，於是解析成「不明」——那個分頁沒有 provider
+  標示、被排除在帳號判斷之外，在這裡也會自己落成一組。`sf-<cli>-<變體>` 這種
+  wrapper 名稱現在直接從前綴推導，機器特有的啟動器不必再往共用的 registry 加一筆。
+  這條規則刻意做得很窄：只有以 `sf-` 開頭的名稱會被這樣解讀，而且後面某一段必須
+  是已知的 CLI。
+
+  這跟「該分頁套哪個額度讀取器」是分開的，後者沒有變動——接地端模型閘門的啟動器
+  不該開始回報雲端服務的額度。`tests_preset_groups.py` 共 23 項，兩半都涵蓋，
+  並存下截圖。
+
+### Internal
+
+- **Two assertions no longer break when a variable is renamed.** They matched a
+  call together with its exact argument names, so a refactor that kept the
+  behaviour still turned them red. They now look for the call inside the
+  relevant function body.
+
+  **兩項斷言不再因為變數改名而紅燈。** 它們把呼叫連著確切的參數名一起比對，於是
+  行為沒變的重構照樣讓它們失敗。現在改成在相關函式的主體裡找那個呼叫。
+
 ## v0.35.9 (2026-09-07)
 
 ### Fixes
