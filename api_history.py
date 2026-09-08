@@ -656,20 +656,13 @@ class HistoryApiMixin:
         the terminal pipeline). Fidelity note: events come from
         agent_status's normalizer, which keeps user/assistant text and
         tool-call one-liners; interleaved thinking is omitted by design."""
-        worker = {
-            "cmd": getattr(s, "cmd", ""),
-            "cwd": getattr(s, "cwd", "~"),
-            "tmux_name": getattr(s, "_tmux_name", None),
-            "session_id": getattr(s, "session_id", None),
-            # hook 回報的路徑是唯一指得到 account-profile 目錄的線索：切過帳號
-            # 的分頁，transcript 不在 ~/.claude/projects，而在
-            # ~/.config/shellframe/account-profiles/<provider>/<acct>/projects/…。
-            # 少了它，resolve_transcript 會掉到「拿 session_id 去
-            # ~/.claude/projects 底下找」，對這種分頁永遠找不到 → 這裡回 None
-            # → 上滾落到 tmux capture，而 alt-screen 下那是錯的 buffer，只剩
-            # 目前一屏。回報「某個分頁無法上滑看歷史」就是這條鏈。
-            "transcript_hint": getattr(s, "_hook_transcript_path", None),
-        }
+        # 跟狀態、模型解析共用同一份 context（含帳號的 config 目錄）。這裡曾經
+        # 自己拼一份，少了帳號身分：切過帳號的分頁，transcript 不在
+        # ~/.claude/projects 而在 account-profiles/<provider>/<acct>/projects/…，
+        # 解析因此找不到 → 這裡回 None → 上滾落到 tmux capture，而 alt-screen
+        # 下那是錯的 buffer，只剩目前一屏。回報「某個分頁無法上滑看歷史」就是
+        # 這條鏈。各處自己拼 context 正是它會再發生一次的原因。
+        worker = self._worker_ctx(sid, s)
         kind = agent_status._worker_kind(worker["cmd"])
         if kind not in ("claude", "codex"):
             # OpenCode 分頁：TUI 原地重繪（Bubble Tea 式），捲出視窗的內容從
@@ -687,7 +680,8 @@ class HistoryApiMixin:
         if kind == "codex":
             pane = agent_status._tmux_pane_pid(worker.get("tmux_name"))
             hit = (agent_status._lsof_open_jsonl(
-                agent_status._pid_tree(pane), "/.codex/sessions/")
+                agent_status._pid_tree(pane),
+                [agent_status.codex_sessions_root(worker)])
                 if pane else None)
             if hit != path:
                 return None
@@ -883,7 +877,11 @@ class HistoryApiMixin:
     _MD_TABLE_SEP_RE = re.compile(r"^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$")
 
     _SKIN_DEFAULT = {
-        "indent": 0, "right_margin": 0, "wrap": False,
+        # wrap：使用者訊息要照 pane 寬度斷行。關著的時候長訊息整行送進 overlay，
+        # 由 xterm 硬切——實測某分頁的 wrapper 前言有 309 字元一行，上滑看到的是
+        # 詞中間被切斷（「no tables (TG can't ren／der them)」），而活畫面在同一段
+        # 是照詞斷行的。
+        "indent": 0, "right_margin": 0, "wrap": True,
         "user_prefix": "\x1b[1;36m❯ \x1b[0m", "user_cont": "  ",
         "text": "", "head": "\x1b[1m\x1b[36m", "bold": "\x1b[1m",
         "code": "\x1b[38;5;180m", "bullet": "\x1b[36m", "border": "\x1b[2m",
@@ -1155,6 +1153,14 @@ class HistoryApiMixin:
                 continue
             if k in ("tool_result", "turn_end"):
                 continue  # 不 flush：讓跨 result 的連續工具呼叫也能收合
+            # 只有真的會畫出東西的事件才沖掉待收合的工具行。Claude 在每個
+            # tool_use 旁邊會附一個**空的** text block——實測某分頁 13 個
+            # tool_call 之間夾了 9 個長度 0 的 assistant_text。它們什麼都不畫，
+            # 卻把 pending_tools 沖掉，於是每個工具各佔一行，上滑看到的是一道
+            # 工具行牆，而活畫面在同一段只有一行摘要。
+            if (k in ("user_msg", "assistant_text", "error")
+                    and not (ev.get("text") or "").strip()):
+                continue
             _flush_tools()
             if k == "user_msg" and (ev.get("text") or "").strip():
                 text = cls._strip_harness_noise(ev["text"], DIM, R)
@@ -1163,9 +1169,17 @@ class HistoryApiMixin:
                     continue
                 if out:
                     out.append("")
-                body = []
-                for ln in text.splitlines():
-                    body.extend(cls._wrap_ansi(ln, u_width) if u_width else [ln])
+                # 使用者訊息也走 markdown 渲染。活畫面會把它當 markdown 畫
+                # （inline code 有顏色、不是裸的反引號），這裡原本只做 harness
+                # 雜訊清理就直接輸出，於是上滑看到 `sfctl reload` 帶著反引號、
+                # 活畫面是上了色的——同一段文字兩種樣子。
+                body = cls._md_ansi_lines(text, ansi, skin, u_width)
+                if not ansi and u_width:
+                    # 純文字模式的 markdown 渲染刻意原樣回傳（沒有樣式可以表達
+                    # 格式，就保留來源文字），連斷行也不做。斷行是排版不是樣式，
+                    # 這裡補回來——否則「複製上滑內容」會拿到沒斷行的長行。
+                    body = [w for ln in body
+                            for w in (cls._wrap_ansi(ln, u_width) or [ln])]
                 pad = skin.get("user_pad") or ""
                 if pad:
                     out.append(pad)

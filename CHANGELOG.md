@@ -6,6 +6,80 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.11 (2026-09-08)
+
+### Fixes
+
+- **Scroll-up history reads like the live screen again.** Claude Code enters the
+  alternate screen and repaints in place from 2.1.261, so scrolled-off rows are
+  not retained anywhere in the terminal and the overlay renders that tab's
+  history from its transcript instead. Three differences from the live view were
+  reported, and all three were measurable in the renderer.
+
+  A wall of one tool call per line where the live screen shows a single summary.
+  The renderer already collapsed consecutive tool calls, but Claude attaches an
+  *empty* text block to each tool use — one measured tab had nine zero-length
+  ones interleaved between thirteen tool calls. Those events draw nothing, yet
+  they flushed the pending tool calls, so each was emitted on its own. Only an
+  event that will actually produce output flushes now; the same tab renders one
+  summary line.
+
+  Backticks shown literally where the live screen styles inline code. A user
+  message went out with harness noise stripped and nothing else, skipping the
+  markdown rendering that assistant text already used. It goes through the same
+  renderer now, so a command in backticks is coloured the way the live TUI
+  colours it.
+
+  Words broken mid-word. Wrapping was disabled in the default skin, so a long
+  user message went to the overlay as one line and the terminal hard-broke it at
+  the pane edge — one measured line was 309 characters. It now wraps at the pane
+  width on word boundaries. The plain-text mode keeps the markdown source, since
+  without styling the backticks are the only thing carrying the format, but it
+  wraps too — line breaks are layout, not styling, and copying scroll-up content
+  should not produce one endless line. 18 cases in
+  `tests_history_transcript_fidelity.py`, with the event shape taken from a real
+  transcript.
+
+  **上滑歷史又讀得像活畫面了。** Claude Code 從 2.1.261 起會進 alternate screen
+  並原地重繪，捲出去的內容在終端裡哪裡都留不住，所以那種分頁的上滑歷史改成從
+  transcript 重繪。回報了三處跟活畫面的差異，而三處都能在渲染器裡量到。
+
+  一個工具呼叫一行的工具行牆，而活畫面在同一段只有一行摘要。渲染器本來就會收合
+  連續的工具呼叫，但 Claude 會在每個 tool use 旁邊附一個**空的** text block
+  ——實測某個分頁在 13 個工具呼叫之間夾了 9 個長度為 0 的。那些事件什麼都不畫，
+  卻會沖掉待收合的工具呼叫，於是每一個都自己佔一行。現在只有「真的會產生輸出」
+  的事件才會沖掉；同一個分頁現在只畫一行摘要。
+
+  反引號直接顯示出來，而活畫面會把 inline code 上色。使用者訊息原本只清掉
+  harness 雜訊就直接輸出，跳過了 assistant 文字本來就在用的 markdown 渲染。現在
+  兩者走同一個渲染器，反引號裡的指令會照活畫面的顏色上色。
+
+  詞被切在中間。預設 skin 的斷行是關著的，於是長的使用者訊息整行送進 overlay，
+  由終端在 pane 邊緣硬切——實測有一行是 309 個字元。現在會照 pane 寬度、在詞的
+  邊界斷行。純文字模式保留 markdown 來源（沒有樣式可以表達格式時，反引號本身就是
+  唯一承載格式的東西），但同樣會斷行——斷行是排版不是樣式，而複製上滑內容不該
+  拿到一條沒有盡頭的長行。`tests_history_transcript_fidelity.py` 共 18 項，事件
+  形狀取自真實的 transcript。
+
+- **A tab on a switched account can scroll up through its Codex history again.**
+  v0.35.8 changed open-descriptor matching from a substring to a directory
+  prefix, and one call site was missed: the guard that confirms the resolved
+  transcript is the file this pane's own process holds open. It still passed the
+  old substring, which can never match a directory prefix, so the guard always
+  refused and the overlay fell back to capturing the terminal — the wrong buffer
+  in the alternate screen, which shows only the current screen. That site now
+  uses the account-aware sessions root, and the transcript source shares the
+  same per-tab context as status and model resolution instead of assembling its
+  own, which is why it was missed in the first place.
+
+  **切過帳號的分頁又能上滑看 Codex 的歷史了。** v0.35.8 把「開啟中的檔案描述子」
+  的比對從子字串改成目錄前綴，而漏掉一個呼叫點：確認解析出來的 transcript 就是
+  這個 pane 自己的程序開著的那個檔的守門。它還是傳舊的子字串，而那永遠不可能
+  match 一個目錄前綴，於是守門一律拒絕，overlay 掉回去擷取終端——在 alternate
+  screen 下那是錯的 buffer，只看得到目前這一屏。那個呼叫點現在用帳號感知的
+  sessions 根目錄，而 transcript 來源改成跟狀態、模型解析共用同一份分頁 context，
+  不再自己拼一份——各處自己拼 context 正是它一開始會被漏掉的原因。
+
 ## v0.35.10 (2026-09-07)
 
 ### Changes
