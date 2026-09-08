@@ -6,6 +6,58 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.14 (2026-09-08)
+
+### Fixes
+
+- **Concurrent usage readings no longer erase each other from the cache.** The
+  accounts panel queries up to four accounts in parallel, and each one
+  read-modify-writes the same cache file with nothing serialising them. "A
+  reads, B reads, B writes, A writes" is a legal interleaving, and A writes back
+  the blob it read plus its own section — B's entry is simply gone. The whole
+  read-modify-write now runs under one lock, and 24 threads writing their own
+  account keep all 24.
+
+  A write inside a write is also handled, which a re-entrant lock alone does
+  not fix: the outer call would still overwrite with the blob it read before the
+  inner one ran, so a nested change now applies to the blob already in progress
+  instead of starting its own cycle.
+
+  The file is replaced atomically rather than reopened for writing. Writing in
+  place leaves it truncated for as long as the encode takes, and the top-bar
+  indicator reads this file on a timer — a reader could get half a document.
+
+  **Two callers wanting the same account now cause one query.** Different
+  surfaces — the indicator, the usage panel, the accounts panel — can ask for
+  the same account at the same moment, and both would call the API. Measured on
+  this machine, a token queried twice inside a minute gets rate-limited, so the
+  second call was not just wasted but harmful. One request per account is in
+  flight at a time; whoever waits finds the fresh reading in the cache.
+  Different accounts still run in parallel — they hold different tokens and
+  separate budgets. 8 cases in `tests_usage_cache_concurrency.py` cover the
+  interleavings, the truncated-read window, and both fetch behaviours.
+
+  **並行的用量讀數不會再互相從快取裡抹掉。** 帳號面板一次最多並行查四個帳號，
+  每一個都會 read-modify-write 同一個快取檔，而它們之間沒有任何序列化。
+  「A 讀、B 讀、B 寫、A 寫」是完全合法的交錯，而 A 寫回去的是它讀到的 blob 加上
+  自己那一段——B 那一筆就這樣消失了。整段 read-modify-write 現在在同一把鎖底下，
+  24 條執行緒各寫自己的帳號，24 筆全在。
+
+  「寫入之中的寫入」也處理了，那不是可重入的鎖本身能解決的：外層仍然會用它在
+  巢狀之前讀到的 blob 覆蓋回去，所以巢狀的修改現在會套用到「已經在處理中」的
+  那份 blob，而不是自己另跑一輪。
+
+  檔案改成原子替換，而不是重新開檔寫入。原地寫入會讓檔案在編碼期間一直是截斷
+  狀態，而頂列的用量指示會定時讀這個檔——讀到半份文件是有可能的。
+
+  **兩個呼叫端要同一個帳號，現在只會產生一次查詢。** 不同介面（頂列指示、用量
+  面板、帳號面板）可能在同一刻要同一個帳號，而兩邊都會去打 API。在這台機器上實
+  測，同一個 token 一分鐘內查兩次就會被限流，所以第二次不只是浪費，是有害的。
+  同一個帳號一次只有一個請求在飛；等到的那一邊會在快取裡找到剛寫好的讀數。不同
+  帳號仍然並行——它們用不同的 token、額度也是分開的。
+  `tests_usage_cache_concurrency.py` 共 8 項，涵蓋各種交錯、截斷讀取的時間窗、
+  以及兩種查詢行為。
+
 ## v0.35.13 (2026-09-08)
 
 ### Fixes

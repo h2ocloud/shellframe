@@ -22,6 +22,8 @@ import queue
 import shutil
 import sqlite3
 import subprocess
+import tempfile
+import threading
 import time
 import urllib.request
 import urllib.error
@@ -356,41 +358,100 @@ _ACCOUNT_RETRY_MIN = {"claude": 60, "codex": 10}
 _account_cache = {}         # "provider:ref" -> {"data", "ts", "last_try"}
 
 
+# 快取檔與這兩份記憶體快取的共用鎖。帳號面板一次最多開 4 條執行緒查用量
+# （main.py 的 account_usage_all），每一條都會 read-modify-write 同一個檔。
+# 沒有鎖的時候「A 讀 → B 讀 → B 寫 → A 寫」是完全合法的交錯，而 A 寫回去的是
+# 它讀到的舊 blob ＋ 自己那一段——B 那一筆就這樣消失（已隔離重現）。
+# RLock：_write_cache_file 的 mutate 裡面還會再讀。
+_CACHE_LOCK = threading.RLock()
+# 每個 account 一把「進行中」鎖。同一個帳號被兩個 UI 入口同時要求時，只有一條
+# 真的去打 API，另一條等它寫完快取後直接命中——省一次查詢，也少一次 429 的機會。
+_fetch_locks = {}
+# 正在處理中的那份 blob（每條執行緒各一份）。巢狀寫入要套用到它，見
+# _write_cache_file。
+_cache_tls = threading.local()
+
+
+def _fetch_lock(key: str):
+    with _CACHE_LOCK:
+        lock = _fetch_locks.get(key)
+        if lock is None:
+            lock = _fetch_locks[key] = threading.Lock()
+        return lock
+
+
 def _read_cache_file() -> dict:
-    try:
-        with open(_USAGE_CACHE_FILE) as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
+    with _CACHE_LOCK:
+        try:
+            with open(_USAGE_CACHE_FILE) as f:
+                return json.load(f) or {}
+        except Exception:
+            return {}
 
 
 def _write_cache_file(mutate):
-    """Read-modify-write the shared cache file.
+    """Read-modify-write the shared cache file, atomically and under one lock.
 
     The pill (claude section) and the accounts panel (accounts section) both
-    persist here, so a plain overwrite would drop the other's entries.
+    persist here, so a plain overwrite would drop the other's entries — and
+    without the lock the read-modify-write of two threads interleaves and one
+    of them loses its section entirely.
+
+    The replace is atomic so a reader never sees half a JSON document: writing
+    in place leaves the file truncated for as long as the dump takes, and the
+    pill reads this file on a timer.
     """
-    try:
-        blob = _read_cache_file()
-        mutate(blob)
-        os.makedirs(os.path.dirname(_USAGE_CACHE_FILE), exist_ok=True)
-        with open(_USAGE_CACHE_FILE, "w") as f:
-            json.dump(blob, f)
-    except Exception:
-        pass
+    with _CACHE_LOCK:
+        active = getattr(_cache_tls, "blob", None)
+        if active is not None:
+            # 巢狀寫入：套用到正在處理中的那份 blob，不要自己再跑一輪讀改寫。
+            # 跑自己那一輪的話，外層接下來仍然會用它**在巢狀之前**讀到的舊 blob
+            # 覆蓋回去，內層那一筆就消失了——鎖是可重入的，擋不住這種形狀。
+            try:
+                mutate(active)
+            except Exception:
+                pass
+            return
+        try:
+            blob = _read_cache_file()
+            _cache_tls.blob = blob
+            try:
+                mutate(blob)
+                directory = os.path.dirname(_USAGE_CACHE_FILE)
+                os.makedirs(directory, exist_ok=True)
+                # 同一個目錄下的暫存檔——os.replace 要同一個檔案系統才是原子的。
+                fd, tmp = tempfile.mkstemp(dir=directory, prefix=".usage_cache.",
+                                           suffix=".tmp")
+                try:
+                    with os.fdopen(fd, "w") as f:
+                        json.dump(blob, f)
+                    os.replace(tmp, _USAGE_CACHE_FILE)
+                except Exception:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+                    raise
+            finally:
+                _cache_tls.blob = None
+        except Exception:
+            pass
 
 
 def _claude_cache_state():
     """Lazy-load the persistent cache so reset times survive an app restart."""
     global _claude_cache
-    if _claude_cache is not None:
+    with _CACHE_LOCK:
+        if _claude_cache is not None:
+            return _claude_cache
+        state = {"data": None, "ts": 0, "last_try": 0}
+        d = _read_cache_file().get("claude") or {}
+        if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
+            state["data"] = d["data"]
+            state["ts"] = d.get("ts", 0)
+        # 最後才發佈，否則另一條執行緒可能拿到還沒填完的那份
+        _claude_cache = state
         return _claude_cache
-    _claude_cache = {"data": None, "ts": 0, "last_try": 0}
-    d = _read_cache_file().get("claude") or {}
-    if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
-        _claude_cache["data"] = d["data"]
-        _claude_cache["ts"] = d.get("ts", 0)
-    return _claude_cache
 
 
 def _save_claude_cache(c):
@@ -401,15 +462,16 @@ def _save_claude_cache(c):
 
 def _account_cache_state(key: str):
     """Per-account cache entry, seeded from disk on first use."""
-    if key in _account_cache:
-        return _account_cache[key]
-    entry = {"data": None, "ts": 0, "last_try": 0}
-    d = (_read_cache_file().get("accounts") or {}).get(key) or {}
-    if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
-        entry["data"] = d["data"]
-        entry["ts"] = d.get("ts", 0)
-    _account_cache[key] = entry
-    return entry
+    with _CACHE_LOCK:
+        if key in _account_cache:
+            return _account_cache[key]
+        entry = {"data": None, "ts": 0, "last_try": 0}
+        d = (_read_cache_file().get("accounts") or {}).get(key) or {}
+        if d.get("data") and (time.time() - d.get("ts", 0)) < _CLAUDE_DISK_MAX_AGE:
+            entry["data"] = d["data"]
+            entry["ts"] = d.get("ts", 0)
+        _account_cache[key] = entry
+        return entry
 
 
 def _save_account_cache(key: str, entry):
@@ -1192,7 +1254,8 @@ def account_usage(provider: str, env=None, ref: str = "", account: str = "",
     # The signed-in account shares its reading with the pill's own cache path
     # (_fetch_claude brings its own TTL, backoff and stale handling).
     if is_current and provider == "claude":
-        data = _fetch_claude()
+        with _fetch_lock("claude:shared"):
+            data = _fetch_claude()
         out = _shape(provider, data, account or _claude_account())
         shared = _claude_cache_state()
         if shared.get("ts"):
@@ -1200,6 +1263,17 @@ def account_usage(provider: str, env=None, ref: str = "", account: str = "",
         return out
 
     key = f"{provider}:{ref or 'current'}"
+    # 同一個帳號一次只有一條真的去查。面板一次開 4 條執行緒，而不同 UI 入口
+    # （頂列 pill、/usage、面板）可能同時要同一個帳號——兩條都打 API 除了浪費，
+    # 還會讓第二條吃到 429（實測：同一個 token 一分鐘內查兩次就會被擋）。
+    # 等到的那一條進來時 OK_TTL 內的命中就成立，直接讀剛寫好的快取。
+    with _fetch_lock(key):
+        return _account_usage_locked(provider, env, ref, account, force,
+                                     is_current, key, now)
+
+
+def _account_usage_locked(provider, env, ref, account, force, is_current,
+                          key, now):
     cache = _account_cache_state(key)
     if cache["data"] and not force and now - cache["ts"] < _ACCOUNT_OK_TTL:
         out = _shape(provider, dict(cache["data"]), account)
