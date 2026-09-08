@@ -6,6 +6,54 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.15 (2026-09-08)
+
+### Added
+
+- **Update and restart a paired machine's ShellFrame from this one.** A paired
+  peer's row in the sidebar gains a maintenance entry offering four actions on
+  that machine: check for an update, update, restart, and hot-reload the bridge.
+  Update runs the same upgrade path the local button uses, so it keeps that
+  path's per-step recovery and reports the recovery command if it fails; it does
+  not restart afterwards, matching the local flow where restarting is a separate
+  deliberate step. Restart keeps that machine's tmux-backed sessions, and the
+  new instance reattaches to them.
+
+  Three limits, because these change another machine's state. The action is
+  taken from a fixed list rather than passed through as a command name — the
+  alternative is handing a paired machine the whole command surface. The
+  receiving machine applies the same permission gate as session control, so a
+  one-directional pairing where the other side is the controller refuses. And
+  each destructive action is confirmed here first, with the machine named in the
+  prompt; checking for an update is read-only and is not.
+
+  A restart drops the connection by definition, and that is reported as sent
+  rather than failed — but only for a transport failure. A refusal is a reply,
+  and reporting a rejected permission as "sent, restarting" would be worse than
+  reporting nothing, so an HTTP status now carries its own exception type and
+  never lands in that branch. 35 cases in `tests_link_maintenance.py`, plus an
+  end-to-end round trip in `tests_frame_link.py`: two paired instances where the
+  controlling side succeeds, the controlled side is refused, and an action
+  outside the list is never even sent.
+
+  **從這台更新、重啟配對機器上的 ShellFrame。** 側欄裡配對過的機器那一列多了一個
+  維運入口，提供四個對那台執行的動作：檢查更新、更新、重新啟動、熱重載 bridge。
+  更新走的是本機那顆按鈕同一條升級路徑，因此保有它每一步的復原機制，失敗時會把
+  復原指令帶回來；更新完不會自動重啟，跟本機流程一致——重啟是另一個明確的動作。
+  重啟會保留那台由 tmux 撐著的 session，新的 instance 會接回去。
+
+  因為這些動作會改變另一台機器的狀態，設了三道限制。動作取自固定清單，而不是把
+  名稱轉手當指令傳過去——不這樣做等於把整個指令面交給配對機器。接收端套用跟操作
+  session 同一道權限閘，所以單向配對中「對方是主控端」的情況會被拒絕。而每一個
+  破壞性動作都要在這邊先確認，確認框裡會寫出是哪一台；檢查更新是唯讀的，不需要
+  確認。
+
+  重啟一定會讓連線中斷，那會回報為「已送出」而不是失敗——但僅限於傳輸層的失敗。
+  拒絕是一種回應，而把「權限被擋」報成「已送出，正在重啟」比什麼都不報更糟，
+  所以 HTTP 狀態現在有自己的例外型別，永遠不會落進那個分支。
+  `tests_link_maintenance.py` 共 35 項，另外 `tests_frame_link.py` 補了端到端
+  往返：兩個配對過的 instance，主控端成功、受控端被拒、清單以外的動作連送都不送。
+
 ## v0.35.14 (2026-09-08)
 
 ### Fixes

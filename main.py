@@ -6926,6 +6926,10 @@ try {
         return json.dumps(self._link().remote_peek(peer_id, sid, lines),
                           ensure_ascii=False)
 
+    def link_remote_maintenance(self, peer_id: str, action: str) -> str:
+        return json.dumps(self._link().remote_maintenance(peer_id, action),
+                          ensure_ascii=False)
+
     def link_remote_history(self, peer_id: str, sid: str, cols: int = 0) -> str:
         return json.dumps(self._link().remote_history(peer_id, sid, cols),
                           ensure_ascii=False)
@@ -7040,6 +7044,34 @@ try {
                 }
             except Exception as e:
                 return {"success": False, "message": f"Restart failed: {e}"}
+
+        elif cmd == "check_update":
+            try:
+                result = json.loads(self.check_update())
+                return {
+                    "success": True,
+                    "message": ("有新版 v{}".format(result.get("remote"))
+                                if result.get("update_available")
+                                else "已是最新版 v{}".format(result.get("local"))),
+                    "details": result,
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Check update failed: {e}"}
+
+        elif cmd == "update":
+            # do_update 是 git pull ＋ 依賴安裝，會跑幾十秒；它自己每一步都有
+            # 復原路徑，失敗時會回 recovery 指令而不是把安裝弄壞。更新完不會自動
+            # 重啟——跟本機的流程一樣，重啟是另一個明確的動作。
+            try:
+                result = json.loads(self.do_update())
+                return {
+                    "success": bool(result.get("success")),
+                    "message": result.get("message", "Update finished"),
+                    "details": {k: v for k, v in result.items()
+                                if k not in ("success", "message")},
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Update failed: {e}"}
 
         elif cmd == "reload":
             try:

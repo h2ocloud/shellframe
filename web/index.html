@@ -3242,7 +3242,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           acts.innerHTML =
             `<span data-pact="msg" data-pid="${esc(p.id)}" style="cursor:pointer" title="跟這台互傳訊息">💬 訊息</span>` +
             `<span data-pact="file" data-pid="${esc(p.id)}" style="cursor:pointer" title="傳檔案給這台">📁 檔案</span>` +
-            `<span data-pact="edit" data-pid="${esc(p.id)}" style="cursor:pointer" title="編輯位址（IP 換了改這裡）">✎ 位址</span>`;
+            `<span data-pact="edit" data-pid="${esc(p.id)}" style="cursor:pointer" title="編輯位址（IP 換了改這裡）">✎ 位址</span>` +
+            // 維運（更新／重啟對方那台）只在「這台有權操作它」且它線上時出現。
+            // 權限最終還是由對方那端把關（單向配對會擋），這裡只是不要給一個
+            // 按了必定被拒的入口。
+            (p.can_control && p.reachable
+              ? `<span data-pact="maint" data-pid="${esc(p.id)}" style="cursor:pointer" title="更新／重啟這台的 ShellFrame">⟳ 維運</span>`
+              : '');
           container.appendChild(acts);
           if (!p.reachable) {
             const em = document.createElement('div');
@@ -3487,6 +3493,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (pact.dataset.pact === 'msg') openLinkMessages(p);
       else if (pact.dataset.pact === 'file') openLinkFiles(p);
       else if (pact.dataset.pact === 'edit') editPeerAddress(p);
+      else if (pact.dataset.pact === 'maint') showPeerMaintenance(p);
       return;
     }
     const pnew = e.target.closest('[data-pnew]');
@@ -4361,6 +4368,85 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         err.style.color = '#f7768e';
         err.textContent = '配對失敗：' + e;
       }
+    });
+  }
+
+  // ── 遠端維運（更新／重啟對方那台的 ShellFrame）──────────────────────────
+  // 更新與重啟會改變另一台機器的狀態，所以每一個動作都先確認、而且確認框裡要
+  // 寫出是哪一台。檢查更新是唯讀的，不必確認。
+  const PEER_MAINT_ACTIONS = [
+    { action: 'check_update', label: '檢查更新', icon: '🔍', confirm: null,
+      hint: '只比對版本，不做任何改動' },
+    { action: 'update', label: '更新', icon: '⬇️',
+      confirm: '會在那台執行 git pull 與依賴安裝（幾十秒）。更新完不會自動重啟。',
+      hint: 'git pull ＋ 依賴安裝' },
+    { action: 'restart', label: '重新啟動', icon: '🔄',
+      confirm: '會重啟那台的 ShellFrame。tmux 撐著的 session 會留下來，新的 instance 會接回去；連線會短暫中斷。',
+      hint: 'session 會接回去，連線會短暫斷' },
+    { action: 'reload', label: '熱重載 bridge', icon: '♻️',
+      confirm: '只重建那台的 Telegram bridge，不會動到任何 session。',
+      hint: '只重建 bridge，不動 session' },
+  ];
+
+  function showPeerMaintenance(peer) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '300';
+    overlay.innerHTML = `
+      <div class="modal" style="width:420px;padding:20px">
+        <h2 style="font-size:14px">⟳ 維運「${esc2(peer.name)}」</h2>
+        <div style="font-size:12px;color:#565f89;line-height:1.6;margin:8px 0 12px">
+          這些動作在<b style="color:#a9b1d6">對方那台</b>執行。對方若把這台設為受控端，
+          它會直接拒絕。
+        </div>
+        <div id="pm-list" style="display:flex;flex-direction:column;gap:6px"></div>
+        <div id="pm-out" style="font-size:12px;color:#a9b1d6;margin-top:10px;
+             min-height:16px;white-space:pre-wrap;max-height:180px;overflow:auto"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button class="btn btn-ghost" id="pm-close">關閉</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const out = overlay.querySelector('#pm-out');
+    const list = overlay.querySelector('#pm-list');
+    function finish() { overlay.remove(); }
+    overlay.querySelector('#pm-close').addEventListener('click', finish);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
+
+    PEER_MAINT_ACTIONS.forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost';
+      btn.style.cssText = 'text-align:left;padding:8px 10px;border:1px solid #3b4261';
+      btn.innerHTML = `${item.icon} ${esc2(item.label)}`
+        + `<span style="color:#565f89;font-size:11px;margin-left:8px">${esc2(item.hint)}</span>`;
+      btn.addEventListener('click', async () => {
+        if (item.confirm && !window.confirm(
+              `在「${peer.name}」執行「${item.label}」？\n\n${item.confirm}`)) return;
+        list.querySelectorAll('button').forEach(b => { b.disabled = true; });
+        out.style.color = '#a9b1d6';
+        out.textContent = `${item.label}中…`;
+        try {
+          const res = JSON.parse(
+            await pywebview.api.link_remote_maintenance(peer.id, item.action));
+          out.style.color = res.success ? '#9ece6a' : '#f7768e';
+          const extra = res.details && (res.details.post_steps || res.details.recovery)
+            ? '\n' + [].concat(res.details.post_steps || [],
+                                res.details.recovery ? ['復原：' + res.details.recovery] : []
+                               ).join('\n')
+            : '';
+          out.textContent = (res.message || (res.success ? '完成' : '失敗')) + extra;
+          if (item.action === 'restart') {
+            // 對方重啟時 peer 會短暫離線，狀態燈自己會恢復；這裡順手刷一次。
+            setTimeout(() => refreshLinkStatus(true), 4000);
+          }
+        } catch (e) {
+          out.style.color = '#f7768e';
+          out.textContent = '送出失敗：' + e;
+        } finally {
+          list.querySelectorAll('button').forEach(b => { b.disabled = false; });
+        }
+      });
+      list.appendChild(btn);
     });
   }
 

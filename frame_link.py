@@ -255,6 +255,21 @@ class _HeaderView(dict):
         return super().get(str(key).lower(), default)
 
 
+class LinkHTTPError(RuntimeError):
+    """對方回了非 200：它有回應，只是拒絕或出錯。
+
+    跟「連不上」要分得開。有些動作（重啟）連線中斷本來就是預期的，會被當成
+    成功；但「對方明確拒絕」絕對不能落進同一個分支，否則權限被擋會被報成
+    「已送出，正在重啟」。RuntimeError 的子類別，所以既有的 except Exception
+    都照舊。
+    """
+
+    def __init__(self, status: int, message: str = ""):
+        super().__init__(f"HTTP {status}" + (f": {message}" if message else ""))
+        self.status = status
+        self.message = message
+
+
 class FrameLink:
     def __init__(self, *, get_config, update_config, execute_fn,
                  notify=None, log=None, version="0",
@@ -1007,6 +1022,24 @@ class FrameLink:
                     res = link._execute("rename", {"sid": body.get("sid", ""),
                                                    "name": name[:60]}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/maintenance":
+                    # 對配對過、且有權操作這台的對方，開放「更新／重啟」這類
+                    # 維運動作。跟 session 操作同一道權限閘：master 模式下對方
+                    # 無權動這台。
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    action = str(body.get("action") or "").strip()
+                    if action not in link.MAINTENANCE_ACTIONS:
+                        # 白名單，不是把字串轉手丟給 _execute——那等於把整個
+                        # sfctl 指令面開放給遠端。
+                        return self._send(400, {"success": False,
+                            "message": f"action must be one of "
+                                       f"{sorted(link.MAINTENANCE_ACTIONS)}"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute(action, {}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/reorder":
                     # Drag-to-reorder from a remote viewer. Routes into the same
                     # reorder the desktop tab drag uses, so session_order is
@@ -1394,7 +1427,7 @@ class FrameLink:
                 msg = json.loads(raw.decode("utf-8") or "{}").get("message", "")
             except Exception:
                 msg = ""
-            raise RuntimeError(f"HTTP {status}" + (f": {msg}" if msg else ""))
+            raise LinkHTTPError(status, msg)
         resp_sig = resp_headers.get("x-sf-sign") or ""
         if raw_response:
             # binary: signature covers the sha256 hex of the payload
@@ -1573,6 +1606,52 @@ class FrameLink:
             return self._signed_request(peer, "POST", "/link/rename", body,
                                         timeout=10)
         except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # 遠端可以觸發的維運動作。白名單，而且刻意不含任何會執行任意指令的東西。
+    #   check_update：只讀，比對版本
+    #   update：git pull ＋ 依賴安裝（不自動重啟，跟本機流程一致）
+    #   restart：重啟 app（tmux session 會留著，新 instance 會接回去）
+    #   reload：只熱載入 bridge 模組，不動 session
+    MAINTENANCE_ACTIONS = frozenset({"check_update", "update", "restart", "reload"})
+    # update 會跑 git pull ＋ pip install；restart 是延後 0.8 秒才 exec，所以
+    # 回應來得及送出。逾時不代表失敗——對方可能正在重啟。
+    MAINTENANCE_TIMEOUTS = {"check_update": 20, "update": 300,
+                            "restart": 20, "reload": 30}
+
+    def remote_maintenance(self, peer_id: str, action: str) -> dict:
+        """在對方那台觸發 update／restart 這類維運動作。
+
+        這是**會改變對方機器狀態**的操作，所以三道限制：白名單（不接受任意
+        指令）、對方那端的 _peer_may_control 閘（單向配對時擋掉）、以及呼叫端
+        必須自己先跟使用者確認（UI 有確認框）。
+        """
+        action = (action or "").strip()
+        if action not in self.MAINTENANCE_ACTIONS:
+            return {"success": False,
+                    "message": f"action must be one of "
+                               f"{sorted(self.MAINTENANCE_ACTIONS)}"}
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            body = json.dumps({"action": action}).encode()
+            res = self._signed_request(
+                peer, "POST", "/link/maintenance", body,
+                timeout=self.MAINTENANCE_TIMEOUTS.get(action, 30))
+            self._mark_status(peer_id, True)
+            return res
+        except LinkHTTPError as e:
+            # 對方有回應、只是拒絕（例如單向配對擋掉）——這是失敗，不能混進
+            # 下面那個「重啟時斷線屬預期」的分支。
+            return {"success": False, "message": e.message or str(e),
+                    "status": e.status}
+        except Exception as e:
+            if action == "restart":
+                # 對方重啟時連線本來就會斷——這不是失敗。
+                return {"success": True, "restarting": True,
+                        "message": f"已送出重啟；連線中斷屬預期（{e}）"}
+            self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}
 
     def remote_reorder(self, peer_id: str, order: list) -> dict:
