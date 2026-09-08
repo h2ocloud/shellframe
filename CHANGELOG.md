@@ -6,6 +6,54 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.13 (2026-09-08)
+
+### Fixes
+
+- **Double-clicking a sidebar row to rename it works when the list is scrolled.**
+  Reported in daily use: with the sidebar scrolled down, double-clicking a
+  conversation to rename it made the list jump away instead. The first click
+  switches tab, and switching tab rebuilds the whole sidebar — every row is
+  replaced with a new node. The second click is aimed at a position on screen,
+  so if the list moves at all it lands on a different row; the rename condition
+  (same row, within the double-click window) then never holds, and the click
+  switches to that other tab instead.
+
+  Whether emptying the container resets the scroll offset is platform-specific,
+  so the fix does not rest on that: the rebuild is skipped for the length of the
+  double-click window, which makes the interaction immune to the list moving for
+  any reason. The active-row highlight is still applied immediately — that is a
+  class change, not a rebuild — so switching tabs feels no slower, and the full
+  rebuild runs once the window closes. The window is armed on mouse-down rather
+  than on click, because the listener that switches tab is registered before the
+  one that detects the double-click, so the first click's rebuild happens before
+  a click-based flag could be set.
+
+  Separately, the rebuild now restores the scroll offset. The status lights, the
+  bridge chips and the model badges all make the sidebar re-render every few
+  seconds, so a list that loses its offset on rebuild is pulled back to the top
+  repeatedly, not only during a double-click. 15 cases in
+  `tests_sidebar_scroll_rename.py` drive the shipped double-click detection and
+  the shipped rebuild guard against a real scrolled list, and assert that no
+  rebuild happens between the two clicks.
+
+  **側欄捲下去之後，雙擊某一列改名可以用了。** 日常使用中回報：側欄捲到下面時，
+  想雙擊某個對話改名，清單反而會跳走。第一下會切分頁，而切分頁會重建整個側欄
+  ——每一列都換成新的節點。第二下是對著螢幕上的位置點的，清單只要動一下就會落在
+  別的列上，改名的條件（同一列、且在雙擊窗口內）因此永遠不成立，那一下反而切到
+  那另一個分頁。
+
+  清空容器會不會重置捲動位置是平台相依的，所以修法不押在那件事上：雙擊窗口內
+  跳過重建，這讓這個互動對「清單因為任何原因移動」都免疫。active 的高亮仍然
+  立刻套用——那是換 class，不是重建——所以切分頁的手感沒有變慢，完整重建等窗口
+  結束再跑一次。窗口是在 mouse-down 武裝而不是 click，因為切分頁的監聽器註冊得
+  比偵測雙擊的早，第一下的重建會發生在「以 click 為基準的旗標」被設定之前。
+
+  另外，重建現在會還原捲動位置。狀態燈、bridge chip、模型 badge 都會讓側欄每隔
+  幾秒重繪一次，所以一份重建就掉捲動位置的清單會被反覆拉回頂端，不只在雙擊的
+  時候。`tests_sidebar_scroll_rename.py` 共 15 項，拿實際出貨的雙擊偵測與重建
+  守門去打一份真的捲到下面的清單，並確認兩下之間完全沒有重建。
+
 ## v0.35.12 (2026-09-08)
 
 ### Fixes

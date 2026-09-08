@@ -3100,6 +3100,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // （回報 2026-08-15：最末端的分頁點兩下都變拖曳）。
   let _sbLastClickSid = null, _sbLastClickTime = 0;
   const SB_DBLCLICK_MS = 400;
+  let _sbRenderDeferred = 0;
+  // 「剛剛按下了某一列，雙擊還可能來」的期限。跟 _sbLastClickTime 分開是因為
+  // 順序：切分頁的 click 監聽器註冊得比改名偵測早，所以第一下的重建會發生在
+  // _sbLastClickSid 被設定**之前**。這個旗標在 mousedown 就武裝（mousedown 比
+  // click 早），renderSidebar 因此在第一下就已經知道要延後。
+  let _sbClickGuardUntil = 0;
 
   // Model + thinking-effort badge for a session row. Auto-detected on the
   // Python side (claude: transcript's latest assistant model + global
@@ -3123,6 +3129,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function renderSidebar() {
     const container = document.getElementById('sidebar-sessions');
     if (!container) return;
+    // 雙擊窗口內不要重建 DOM。第一下會經過 switchTab → renderTabs →
+    // renderSidebar，把整份清單換成全新的節點；使用者的第二下是對著螢幕上
+    // 同一個位置點的，清單只要動一下，第二下就落在別的列上，改名因此永遠
+    // 觸發不到（回報：側欄捲下去雙擊改名「都會跳走」）。
+    // active 的高亮仍然立刻套用——只是就地改 class，不動結構，所以切分頁的
+    // 回饋沒有延遲；完整重建延後到窗口結束。
+    if (Date.now() < _sbClickGuardUntil) {
+      container.querySelectorAll('.sb-item.active')
+               .forEach(n => n.classList.remove('active'));
+      const cur = container.querySelector(`.sb-item[data-sid="${activeId}"]`);
+      if (cur) cur.classList.add('active');
+      clearTimeout(_sbRenderDeferred);
+      _sbRenderDeferred = setTimeout(renderSidebar, SB_DBLCLICK_MS);
+      return;
+    }
+    clearTimeout(_sbRenderDeferred);
+    _sbRenderDeferred = 0;
+    // 捲動位置要留住。清空 innerHTML 會讓 WebKit 把 scrollTop 歸零（Chromium
+    // 在同一個 task 內填回去就不會），而狀態燈、TG chip、模型 badge 都會讓這支
+    // 每隔幾秒重跑一次——捲到下面時會被一直拉回頂端。
+    const keepScroll = container.scrollTop;
     container.innerHTML = '';
     const hasBridge = bridgeState && bridgeState.active;
     const hasLineBridge = lineBridgeState && lineBridgeState.active;
@@ -3287,6 +3314,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         });
       }
     } catch (e) { /* Frame Link 區塊壞掉不拖垮本機列表 */ }
+    // 內容重建完才還原——瀏覽器會自己夾在可捲範圍內，清單變短時不會捲到空白。
+    if (keepScroll) container.scrollTop = keepScroll;
   }
 
   // ── Rename session (double-click on label) ──
@@ -3532,6 +3561,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!item || !item.dataset.sid) return;
     if (e.target.closest('[data-action]')) return;
     if (e.target.classList.contains('busy-dot')) return;  // dot click ≠ drag
+    // 從這一刻起到雙擊窗口結束都不要重建側欄的 DOM（見 renderSidebar）。
+    // mousedown 比 click 早，所以第一下觸發的重建也擋得住。
+    _sbClickGuardUntil = Date.now() + SB_DBLCLICK_MS;
     const sid = item.dataset.sid;
     // 雙擊的第二次按下 → 完全不啟動拖曳。使用者意圖是改名，這時手抖
     // 幾 px 不該變成 reorder（改名因此永遠觸發不了）。
