@@ -6,6 +6,56 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.12 (2026-09-08)
+
+### Fixes
+
+- **Scroll-up history shows the agent's replies again.** v0.35.11 fixed how the
+  transcript-rendered history *looked* but not what it contained: the reply
+  itself was missing, and the diagnosis behind one of those fixes was wrong.
+  The transcript normaliser emitted at most one event per record, and an
+  assistant record can hold thinking, several tool calls and the reply text at
+  once. Two things followed. A record whose stop reason is the end of the turn
+  returned only "turn ended" and dropped its text — and the reply is in exactly
+  that record, so an agent's answer never reached the overlay at all. And a
+  record holding several tool calls kept only the last one.
+
+  This also corrects v0.35.11's account of the tool-call wall. Those
+  zero-length text events were not empty blocks attached to each tool use; they
+  were records containing only thinking, flattened into an empty text event.
+  The wall was a symptom of the same single-event limit. Records are now
+  expanded in order — thinking still produces nothing, deliberately, but it no
+  longer produces an empty event either. Measured on the tab that was reported:
+  two text blocks of 161 and 79 characters that reached no event before now
+  render, and the same thirteen tool calls collapse to one summary line for the
+  right reason.
+
+  A background-task notice is a harness-injected record in the user's role, and
+  it was rendered with the user's own marker, reading as though the user had
+  said it; the live view draws it as a bullet. It now renders without the
+  marker, while a real user message keeps it. 28 cases in
+  `tests_history_transcript_fidelity.py`; the full suite covers the status
+  detector, which shares this normaliser.
+
+  **上滑歷史又看得到 agent 的回覆了。** v0.35.11 修好了 transcript 歷史「看起來」
+  的問題，但沒修到它「裝了什麼」：回覆本身是缺的，而其中一項修正的根因判斷是
+  錯的。transcript 正規化器每筆記錄最多只吐一個事件，而一筆 assistant 記錄可以
+  同時帶 thinking、好幾個工具呼叫、以及回覆文字。於是兩件事發生：stop reason 是
+  「回合結束」的那筆只回「回合結束」、把文字丟掉——而回覆就正好在那一筆，所以
+  agent 的答案從來沒有進到 overlay。而一筆裡帶好幾個工具呼叫的，只留最後一個。
+
+  這同時更正 v0.35.11 對「工具行牆」的說法。那些長度為 0 的文字事件並不是
+  「附在每個 tool use 旁邊的空區塊」，而是「只含 thinking 的記錄被壓成一個空的
+  文字事件」。工具行牆是同一個「一筆只吐一個事件」限制的症狀。現在整筆會照順序
+  展開——thinking 仍然刻意不輸出，但它也不再變成一個空事件。在回報的那個分頁上
+  實測：161 與 79 字元的兩個文字區塊以前一個事件都進不去，現在畫得出來，而同樣
+  13 個工具呼叫收成一行摘要，理由也對了。
+
+  背景任務通知是 harness 以使用者身分注入的記錄，而它被掛上了使用者自己的標記，
+  讀起來像是使用者說了那句話；活畫面是畫成一個項目符號。現在不加標記，而真正的
+  使用者訊息仍然保留。`tests_history_transcript_fidelity.py` 共 28 項；狀態偵測
+  共用這支正規化器，由完整測試覆蓋。
+
 ## v0.35.11 (2026-09-08)
 
 ### Fixes

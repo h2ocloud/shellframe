@@ -1024,21 +1024,33 @@ def _norm_claude(o):
             return None
         return {"kind": "user_msg", "ts": ts, "text": text}
     if t == "assistant":
-        sr = m.get("stop_reason")
-        out = None
+        # 一筆 assistant 記錄可以同時帶 thinking、多個 tool_use、以及回覆文字。
+        # 舊版每筆只回一個事件，代價是兩件事：
+        #   1. `stop_reason == "end_turn"` 直接回 turn_end，把那一筆的文字丟掉
+        #      ——而回覆就在那一筆。上滑歷史因此看不到 agent 的回覆（實測某分頁
+        #      的 transcript 有兩個 text 區塊 161／79 字元，事件裡一個都沒有）。
+        #   2. 一筆裡有 N 個 tool_use 只留最後一個；只有 thinking 的那筆會回一個
+        #      **空的** assistant_text，那個空事件還會把待收合的工具行沖掉。
+        # 改成照順序把整筆的內容都吐出來。thinking 仍然刻意不輸出（歷史 overlay
+        # 不重播思考），但它不再變成一個空事件。
+        events = []
         for c in (m.get("content") or []):
-            if isinstance(c, dict) and c.get("type") == "tool_use":
+            if not isinstance(c, dict):
+                continue
+            ctype = c.get("type")
+            if ctype == "tool_use":
                 name = c.get("name")
                 ev = {"kind": "tool_call", "ts": ts, "tool": name,
                       "target": _target(name, c.get("input"))}
                 if name == "AskUserQuestion":
                     ev["kind"] = "decision_req"
-                out = ev
-        if sr == "end_turn":
-            return {"kind": "turn_end", "ts": ts}
-        if out:
-            return out
-        return {"kind": "assistant_text", "ts": ts, "text": _content_text(m.get("content"))}
+                events.append(ev)
+            elif ctype in ("text", "output_text") and (c.get("text") or "").strip():
+                events.append({"kind": "assistant_text", "ts": ts,
+                               "text": c["text"].strip()})
+        if m.get("stop_reason") == "end_turn":
+            events.append({"kind": "turn_end", "ts": ts})
+        return events or None
     return None
 
 
@@ -1131,7 +1143,13 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300):
         except Exception:
             continue
         e = norm(o)
-        if e:
+        if not e:
+            continue
+        # 正規化器可以回一筆或一串——一筆 assistant 記錄可以同時帶多個工具呼叫
+        # 與回覆文字，硬塞成一個事件就是上面那兩個 bug 的來源。
+        if isinstance(e, list):
+            evs.extend(x for x in e if x)
+        else:
             evs.append(e)
     if evs and evs[-1].get("ts") is None:
         try:

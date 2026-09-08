@@ -1180,12 +1180,21 @@ class HistoryApiMixin:
                     # 這裡補回來——否則「複製上滑內容」會拿到沒斷行的長行。
                     body = [w for ln in body
                             for w in (cls._wrap_ansi(ln, u_width) or [ln])]
+                # harness 注入的系統通知（背景任務完成之類）在 transcript 裡是
+                # user 記錄，但它不是使用者說的話。_strip_harness_noise 已經把它
+                # 摺成一行、開頭是 assistant 的 ⏺ 標記；再加上 ❯ 使用者標記會讀成
+                # 「使用者說了這句」，活畫面則是畫成一個項目符號。
+                is_notice = cls._ANSI_STRIP_RE.sub('', body[0] if body else '') \
+                    .lstrip().startswith("⏺")
                 pad = skin.get("user_pad") or ""
-                if pad:
+                if pad and not is_notice:
                     out.append(pad)
                 for i, ln in enumerate(body):
-                    out.append((u_first if i == 0 else u_cont) + ln + R)
-                if pad:
+                    if is_notice:
+                        out.append(indent + ln + R)
+                    else:
+                        out.append((u_first if i == 0 else u_cont) + ln + R)
+                if pad and not is_notice:
                     out.append(pad)
             elif k == "assistant_text" and (ev.get("text") or "").strip():
                 if out:

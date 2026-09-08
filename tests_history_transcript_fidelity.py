@@ -122,7 +122,58 @@ check("第一行有使用者標記", rows[0].startswith("❯ "), repr(rows[0]))
 check("續行縮排對齊（不是頂到最左）",
       len(rows) > 1 and rows[1].startswith("  "), repr(rows[1:2]))
 
-# ── 6. codex 分支的 lsof 守門要用帳號感知的根目錄 ─────────────────────────
+# ── 6. 一筆 assistant 記錄的內容要整筆吐出來 ──────────────────────────────
+# 舊版每筆只回一個事件：`stop_reason == "end_turn"` 直接回 turn_end、把那一筆的
+# 文字丟掉——而 agent 的回覆就在那一筆，上滑歷史因此看不到回覆。一筆裡有多個
+# tool_use 也只留最後一個，而只有 thinking 的那筆會回一個空的 assistant_text。
+rec = {
+    "type": "assistant",
+    "timestamp": "2026-09-08T09:20:00.000Z",
+    "message": {
+        "role": "assistant",
+        "stop_reason": "end_turn",
+        "content": [
+            {"type": "thinking", "thinking": "想一下"},
+            {"type": "tool_use", "name": "Bash", "input": {"command": "date"}},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/a.py"}},
+            {"type": "text", "text": "今天打卡搞定："},
+        ],
+    },
+}
+evs = agent_status._norm_claude(rec)
+check("一筆記錄回一串事件", isinstance(evs, list), type(evs).__name__)
+kinds = [e["kind"] for e in evs]
+check("end_turn 那筆的回覆文字沒有被丟掉",
+      any(e["kind"] == "assistant_text" and "今天打卡搞定" in e["text"] for e in evs),
+      str(kinds))
+check("一筆裡的兩個 tool_use 都留著（舊版只留最後一個）",
+      kinds.count("tool_call") == 2, str(kinds))
+check("turn_end 仍然會發（狀態機靠它判回合結束）", "turn_end" in kinds, str(kinds))
+check("turn_end 排在內容之後", kinds.index("turn_end") == len(kinds) - 1, str(kinds))
+check("thinking 不輸出，也不會變成空事件",
+      all((e.get("text") or "").strip() or e["kind"] != "assistant_text" for e in evs),
+      str(evs))
+only_thinking = agent_status._norm_claude({
+    "type": "assistant", "timestamp": "2026-09-08T09:20:00.000Z",
+    "message": {"role": "assistant", "stop_reason": "tool_use",
+                "content": [{"type": "thinking", "thinking": "嗯"}]}})
+check("只有 thinking 的那筆回 None（不是一個空的 assistant_text）",
+      only_thinking is None, str(only_thinking))
+
+# ── 7. harness 注入的系統通知不要掛使用者標記 ─────────────────────────────
+notice = render([{"kind": "user_msg", "text":
+                  "<task-notification>\n<task-id>x</task-id>\n"
+                  "<summary>查詢狀態</summary>\n</task-notification>"}],
+                ansi=False, cols=100)
+rows = [l for l in notice.split("\n") if l.strip()]
+check("背景任務通知不加 ❯（活畫面是畫成項目符號）",
+      rows and not rows[0].startswith("❯"), repr(rows[:1]))
+check("通知本身還是有畫出來", rows and "⏺" in rows[0], repr(rows[:1]))
+real_user = render([{"kind": "user_msg", "text": "排今天打卡"}], ansi=False)
+check("真正的使用者訊息仍然有 ❯",
+      real_user.split("\n")[0].startswith("❯ "), repr(real_user))
+
+# ── 8. codex 分支的 lsof 守門要用帳號感知的根目錄 ─────────────────────────
 hist = (HERE / "api_history.py").read_text(encoding="utf-8")
 guard = hist.split('if kind == "codex":')[1].split("return None")[0]
 check("codex 守門用 codex_sessions_root（0.35.8 漏掉的呼叫點）",
