@@ -292,7 +292,7 @@ def _claude_account() -> str:
     """e.g. 'you@example.com · Team（企業·Acme）', or '' if unavailable."""
     email = org = None
     try:
-        cj = json.load(open(os.path.expanduser("~/.claude.json")))
+        cj = json.load(open(os.path.expanduser("~/.claude.json"), encoding="utf-8"))
         oa = cj.get("oauthAccount", {}) or {}
         email = oa.get("emailAddress")
         org = oa.get("organizationName")
@@ -555,7 +555,7 @@ def _claude_profile_expired(env) -> bool:
     if not directory:
         return False
     try:
-        with open(os.path.join(directory, ".credentials.json")) as f:
+        with open(os.path.join(directory, ".credentials.json"), encoding="utf-8") as f:
             oauth = (json.load(f) or {}).get("claudeAiOauth") or {}
     except Exception:
         return False

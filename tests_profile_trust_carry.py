@@ -157,7 +157,135 @@ check("三條 spawn 路徑都在 spawn 前帶信任",
       f"只有 {main_src.count('self._carry_trust_to_profile(')} 處")
 carry = main_src.split("def _carry_trust_to_profile")[1].split("\n    def ")[0]
 check("寫檔用原子替換（Claude Code 自己也在寫這個檔）",
-      "os.replace(" in carry, carry[-400:])
+      "_atomic_write_json(" in carry
+      and "os.replace(" in main_src.split("def _atomic_write_json")[1]
+                                   .split("\ndef ")[0],
+      carry[-400:])
+
+
+# ── 8. Fix 1：家目錄 + AI 分頁，標準設定缺這筆/停在 False → 主動扶正 ──
+#    （不是只搬「已經是 True」的決定。這是 watcher 本來就會自動接受的範圍。）
+def run_canonical(cmd, cwd_is_home, canonical_blob):
+    """跑 _carry_trust_to_profile（沒 pin 帳號），回傳標準設定被改成什麼。"""
+    td = tempfile.mkdtemp(prefix="sf-canon-")
+    home = os.path.join(td, "home")
+    os.makedirs(home)
+    canonical = Path(home) / ".claude.json"
+    if canonical_blob is not None:
+        canonical.write_text(json.dumps(canonical_blob), encoding="utf-8")
+    cwd = home if cwd_is_home else os.path.join(td, "elsewhere")
+    orig_exp = os.path.expanduser
+    os.path.expanduser = lambda p: p.replace("~", home, 1) if p.startswith("~") else p
+    orig_trusted = _main.TRUSTED_STARTUP_CWDS
+    _main.TRUSTED_STARTUP_CWDS = {home, str(Path(home).resolve())}
+    try:
+        _FakeSession(cmd, cwd)._carry_trust_to_profile({})
+        return json.loads(canonical.read_text(encoding="utf-8")) if canonical.exists() else None, cwd
+    finally:
+        os.path.expanduser = orig_exp
+        _main.TRUSTED_STARTUP_CWDS = orig_trusted
+        import shutil
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def _any_trusted(blob):
+    return bool(blob) and any(
+        v.get("hasTrustDialogAccepted") is True
+        for v in (blob.get("projects") or {}).values())
+
+
+blob, cwd = run_canonical(CLAUDE, True, {"projects": {}})
+check("Fix1: 標準設定沒這筆 → 家目錄 AI 分頁自動補 True",
+      _any_trusted(blob), str(blob))
+
+blob2, cwd2 = run_canonical(CLAUDE, True, None)
+check("Fix1: 標準設定完全不存在時,家目錄 AI 分頁也建得出來並補 True",
+      _any_trusted(blob2), str(blob2))
+
+blob, cwd = run_canonical(CLAUDE, False, {"projects": {}})
+check("Fix1: 非家目錄仍然不代替使用者決定",
+      (blob or {}).get("projects", {}).get(cwd) is None, str(blob))
+
+blob, cwd = run_canonical("bash", True, {"projects": {}})
+check("Fix1: 非 AI 分頁不碰標準設定",
+      (blob or {}).get("projects", {}).get(cwd) is None, str(blob))
+
+
+# ── 9. Fix 2：Windows 正斜線 key ── canonical 存 "C:/x"、cwd 傳 "C:\\x" 要對得上
+def run_win(cwd, config_dir, canonical_blob, profile_blob=None):
+    td = tempfile.mkdtemp(prefix="sf-win-")
+    home = os.path.join(td, "home")
+    os.makedirs(home)
+    Path(home, ".claude.json").write_text(json.dumps(canonical_blob), encoding="utf-8")
+    prof = os.path.join(td, "profile")
+    os.makedirs(prof)
+    if profile_blob is not None:
+        Path(prof, ".claude.json").write_text(json.dumps(profile_blob), encoding="utf-8")
+    orig_exp = os.path.expanduser
+    os.path.expanduser = lambda p: p.replace("~", home, 1) if p.startswith("~") else p
+    orig_win = _main.IS_WIN
+    _main.IS_WIN = True
+    try:
+        _FakeSession(CLAUDE, cwd)._carry_trust_to_profile({"CLAUDE_CONFIG_DIR": prof})
+        t = Path(prof, ".claude.json")
+        return json.loads(t.read_text(encoding="utf-8")) if t.exists() else None
+    finally:
+        os.path.expanduser = orig_exp
+        _main.IS_WIN = orig_win
+        import shutil
+        shutil.rmtree(td, ignore_errors=True)
+
+
+out = run_win(r"C:\Users\bob", True,
+              {"projects": {"C:/Users/bob": {"hasTrustDialogAccepted": True}}})
+check("Fix2: canonical 正斜線 key 對得上 cwd 的反斜線",
+      out is not None
+      and any(v.get("hasTrustDialogAccepted") is True
+              for v in out.get("projects", {}).values()),
+      str(out))
+
+out = run_win(r"C:\Users\bob", True,
+              {"projects": {"C:/Users/bob": {"hasTrustDialogAccepted": True}}},
+              profile_blob={"projects": {"C:/Users/bob": {"hasTrustDialogAccepted": False,
+                                                          "lastCost": 2}}})
+check("Fix2: 已有的正斜線 key 直接沿用,不會多長一個反斜線 key",
+      out is not None and list(out.get("projects", {}).keys()) == ["C:/Users/bob"]
+      and out["projects"]["C:/Users/bob"]["hasTrustDialogAccepted"] is True
+      and out["projects"]["C:/Users/bob"].get("lastCost") == 2,
+      str(out))
+
+
+# ── 10. Fix 3：一次性提示旗標從標準設定鏡射進 profile ──
+out = run(CLAUDE, "/Users/alice", True,
+          {"projects": {"/Users/alice": {"hasTrustDialogAccepted": True}},
+           "hasCompletedOnboarding": True,
+           "fullscreenUpsellSeenCount": 3,
+           "lastOnboardingVersion": "2.1.74"},
+          profile_blob={"projects": {"/Users/alice": {"hasTrustDialogAccepted": True}}})
+check("Fix3: onboarding 旗標鏡射進 profile",
+      out.get("hasCompletedOnboarding") is True, str(out))
+check("Fix3: fullscreen 升級提示計數鏡射進 profile（就是那個 renderer 提示）",
+      out.get("fullscreenUpsellSeenCount") == 3, str(out))
+check("Fix3: onboarding 版本字串鏡射進 profile",
+      out.get("lastOnboardingVersion") == "2.1.74", str(out))
+
+out = run(CLAUDE, "/Users/alice", True,
+          {"projects": {"/Users/alice": {"hasTrustDialogAccepted": True}},
+           "fullscreenUpsellSeenCount": 1},
+          profile_blob={"projects": {"/Users/alice": {"hasTrustDialogAccepted": True}},
+                        "fullscreenUpsellSeenCount": 5})
+check("Fix3: profile 既有值較大時不倒退",
+      out.get("fullscreenUpsellSeenCount") == 5, str(out))
+
+check("Fix3: 標準設定沒帶某旗標時 profile 也不會被塞",
+      "hasSeenTasksHint" not in out, str(out))
+
+
+# ── 11. Fix 3：預寫建立起信任後,watcher 不再 arm ──
+_seed_src = main_src.split("def _carry_trust_to_profile")[1].split("\n    def ")[0]
+check("Fix3: 預寫成功建立信任 → 關掉 _startup_trust_pending（watcher 不 arm）",
+      "self._startup_trust_pending = False" in _seed_src, _seed_src[-300:])
+
 
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")

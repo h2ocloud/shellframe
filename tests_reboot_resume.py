@@ -103,7 +103,7 @@ check("空 uuid → False", E("") is False)
 check("找得到的 uuid → True（用真實 manifest 裡的一筆驗）", any(
     E(x.get("claude_session_id", ""))
     for x in __import__("json").load(
-        open(Path.home() / ".config/shellframe/config.json")).get("session_manifest", [])
+        open(Path.home() / ".config/shellframe/config.json", encoding="utf-8")).get("session_manifest", [])
     if x.get("claude_session_id")))
 
 # ── Windows 路徑：沒有 lsof、沒有 tmux pane，只能靠「spawn 之後才出現的

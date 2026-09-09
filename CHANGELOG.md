@@ -6,6 +6,58 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.17 (2026-09-10)
+
+### Fixes
+
+- **A tab pinned to a switched account stops re-asking to trust the home
+  directory, and stops replaying onboarding, on Windows.** The previous
+  release carried an existing trust decision into the account profile, but
+  only when the canonical config already recorded the directory as trusted,
+  and it matched the directory with a back-slash path while the CLI stores
+  that key with forward slashes — so on Windows the lookup never matched and
+  nothing was carried. Three changes close the gap. The project key is now
+  separator-normalised before every read and write, so a back-slash working
+  directory lines up with the forward-slash key the CLI wrote. When the tab
+  is a home-directory AI launch — the same range the keystroke watcher
+  already auto-accepts — trust is written into the canonical config and the
+  profile up front, rather than waiting for the dialog and racing the
+  full-screen interface for it. And the one-time first-run flags the
+  canonical config already carries, such as onboarding-complete, the
+  fullscreen-renderer prompt counter and the onboarding version, are mirrored
+  into the profile, so a fresh account directory no longer shows every intro
+  prompt again. Once the pre-write has established trust the keystroke watcher
+  is never armed; it stays only as a fallback for when the canonical config
+  cannot be read. Writes remain atomic, a corrupt profile file is rebuilt
+  instead of blocking the tab, and other keys are preserved. 26 cases in
+  `tests_profile_trust_carry.py`.
+
+  **Windows 上,綁定切換帳號的分頁不會再重問家目錄信任,也不會重跑 onboarding。**
+  上一版把已存在的信任決定帶進帳號 profile,但只在標準設定已經把該目錄記成信任
+  時才動作,而且比對用的是反斜線路徑,CLI 存的 key 卻是正斜線——所以 Windows 上
+  永遠比不中,什麼都沒帶。這版補三個洞。專案 key 在每次讀寫前都先正規化分隔線,
+  反斜線的工作目錄就對得上 CLI 寫的正斜線 key。當分頁是家目錄的 AI 啟動(就是
+  送按鍵的 watcher 本來就會自動接受的同一個範圍),信任會在啟動前就寫進標準設定
+  與 profile,而不是等對話框跳出來再去跟全螢幕介面搶。標準設定已經帶著的一次性
+  初次啟動旗標,例如 onboarding 已完成、全螢幕算繪提示的計數、onboarding 版本,
+  會一併鏡射進 profile,新的帳號目錄就不會把每個介紹提示再走一遍。預寫一旦把信任
+  建立起來,送按鍵的 watcher 完全不會 arm;它只留作標準設定讀不到時的退路。寫檔
+  仍是原子替換,壞掉的 profile 檔會重建而不是卡住分頁,其他 key 保留。
+  `tests_profile_trust_carry.py` 共 26 項。
+
+### Internal
+
+- **Reading JSON on Windows no longer depends on the console code page.** A
+  few call sites opened a config or credentials JSON file without an explicit
+  encoding, so on a machine whose default code page is not UTF-8 a non-ASCII
+  byte in the file raised a decode error — one of them broke a reboot-resume
+  test outright on this platform. Those reads now pin utf-8.
+
+  **Windows 上讀 JSON 不再看主控台的字碼頁臉色。** 有幾處開啟設定或憑證的 JSON
+  檔時沒有指定編碼,於是在預設字碼頁不是 UTF-8 的機器上,檔案裡一個非 ASCII 位元
+  組就會讓解碼炸掉——其中一處直接讓重開機接回的測試在這個平台上跑不起來。這些
+  讀取現在固定用 utf-8。
+
 ## v0.35.16 (2026-09-09)
 
 ### Fixes
