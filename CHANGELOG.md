@@ -6,6 +6,51 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.16 (2026-09-09)
+
+### Fixes
+
+- **A tab on a switched account stops asking whether its own home directory is
+  trusted.** Reported in daily use: every new tab brought up a permission
+  prompt. It is not the operating system's — it is the CLI asking whether the
+  working directory can be trusted, and it kept asking for a directory the user
+  had already trusted.
+
+  The answer is recorded in the config directory, and pinning a tab to an
+  account points it at that account's own directory, where the record does not
+  exist. Measured on this machine: the canonical config had the home directory
+  trusted, one account profile still had it as not-trusted, and another had no
+  config file at all — so every tab opened under an account asked again. A
+  watcher was answering the prompt by sending keystrokes, which is a race
+  against a full-screen interface and loses: the log shows it answering and the
+  prompt still standing afterwards.
+
+  The decision the user already made is now carried into the account's config
+  before the tab starts. Only a decision that already exists is carried: a
+  directory the canonical config does not mark trusted still brings up the
+  prompt, so nothing is decided on the user's behalf. Other fields in the
+  account's record are preserved, a corrupt config file is rebuilt rather than
+  allowed to block a tab, and the file is replaced atomically because the CLI
+  writes it too. Verified on a real new tab: the profile's record went from
+  not-trusted to trusted and no prompt appeared. 14 cases in
+  `tests_profile_trust_carry.py`.
+
+  **切了帳號的分頁不會再問「你自己的家目錄可不可信」。** 日常使用中回報：每開一個
+  新分頁都會跳權限詢問。那不是作業系統的權限，是 CLI 在問工作目錄可不可信——而且
+  問的是一個使用者早就信任過的目錄。
+
+  答案記在 config 目錄裡，而把分頁綁到某個帳號等於把它指到該帳號自己的目錄，
+  那裡沒有這筆紀錄。在這台機器上實測：標準設定裡家目錄是信任的，其中一個帳號
+  profile 仍停在「未信任」，另一個連設定檔都沒有——所以每個在帳號底下開的分頁都會
+  再問一次。原本有一個 watcher 用送按鍵的方式回答，那是在跟全螢幕介面賽跑，而且
+  會輸：log 裡就是它回答完、對話框還立在那裡。
+
+  使用者已經做過的決定，現在會在分頁啟動前帶進該帳號的設定。只搬已經存在的決定：
+  標準設定沒有標記信任的目錄照樣會跳詢問，不會有任何事情被代替決定。帳號紀錄裡
+  的其他欄位會保留，設定檔壞掉會重建而不是讓分頁開不起來，寫入用原子替換——因為
+  CLI 自己也在寫這個檔。用真的新分頁驗過：profile 的紀錄從未信任變成信任，而且
+  沒有跳詢問。`tests_profile_trust_carry.py` 共 14 項。
+
 ## v0.35.15 (2026-09-08)
 
 ### Added

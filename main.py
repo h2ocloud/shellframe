@@ -22,6 +22,7 @@ import plistlib
 import glob
 import re
 import shlex
+import tempfile
 import shutil
 import signal
 import subprocess
@@ -441,6 +442,12 @@ def _session_provider(cmd: str) -> str:
         return agent_status.worker_kind(cmd or "")
     except Exception:
         return "other"
+
+
+def _worker_is_claude(cmd: str) -> bool:
+    """這個分頁跑的是 claude 嗎。用 worker_kind 而不是自己比字串——它認得
+    wrapper（sf-claude-home 之類），跟狀態、模型、帳號判斷同一支分類器。"""
+    return _session_provider(cmd) == "claude"
 
 
 def _worker_is_codex(cmd: str) -> bool:
@@ -1026,6 +1033,63 @@ class Session:
         env.update(self._account_env_overrides())
         return env
 
+    def _carry_trust_to_profile(self, env: dict):
+        """把「使用者早就信任過這個目錄」這個決定帶進帳號 profile。
+
+        Claude Code 把「這個目錄可信嗎」記在 CLAUDE_CONFIG_DIR 底下的
+        .claude.json。切了帳號的分頁指到 profile 目錄，那份設定是空的——於是
+        使用者的家目錄在標準設定裡明明早就是信任的，每開一個新分頁還是會再問
+        一次（實測：profile 的紀錄停在 False，另一個 profile 連檔案都沒有）。
+
+        這裡**只搬已經存在的決定**，不自己造一個：標準設定沒說信任的目錄照樣
+        會跳對話框（由 _start_startup_trust_watcher 接手）。決定權還是使用者的，
+        只是不會因為換帳號而被問第二次。
+        """
+        config_dir = (env or {}).get("CLAUDE_CONFIG_DIR")
+        if not config_dir or not _worker_is_claude(self.cmd):
+            return
+        cwd = self.cwd or os.path.expanduser("~")
+        try:
+            canonical = Path(os.path.expanduser("~/.claude.json"))
+            if not canonical.exists():
+                return
+            trusted = (json.loads(canonical.read_text(encoding="utf-8"))
+                       .get("projects") or {}).get(cwd) or {}
+            if trusted.get("hasTrustDialogAccepted") is not True:
+                return          # 使用者沒信任過 → 不代替他決定
+            target = Path(config_dir) / ".claude.json"
+            blob = {}
+            if target.exists():
+                try:
+                    blob = json.loads(target.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    blob = {}
+            projects = blob.setdefault("projects", {})
+            if not isinstance(projects, dict):
+                projects = blob["projects"] = {}
+            entry = projects.setdefault(cwd, {})
+            if entry.get("hasTrustDialogAccepted") is True:
+                return
+            entry["hasTrustDialogAccepted"] = True
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # 原子替換：Claude Code 自己也在寫這個檔，半份 JSON 會讓它整個
+            # 設定重置。
+            fd, tmp = tempfile.mkstemp(dir=str(target.parent),
+                                       prefix=".claude.json.", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(blob, f)
+                os.replace(tmp, target)
+            except Exception:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+            _dlog("trust", f"{self.sid} 把 {cwd} 的信任帶進 {Path(config_dir).name}")
+        except Exception as e:
+            _dlog("trust", f"{self.sid} carry trust failed: {e}")
+
     def _start(self, cols, rows):
         if IS_WIN:
             self._start_win(cols, rows)
@@ -1054,6 +1118,9 @@ class Session:
             # which inherit the process env) can identify which ShellFrame
             # tab it belongs to. See sf_agent_hook.py.
             launch_env = self._launch_env()
+            # 在 spawn 之前把信任決定帶進 profile——之後才寫就來不及，對話框
+            # 已經跳出來了。
+            self._carry_trust_to_profile(launch_env)
             # Per-session env vars must be passed with `-e KEY=VAL`, NOT via
             # subprocess env: `tmux new-session` spawns the pane from the tmux
             # SERVER's environment, so `env=launch_env` is silently ignored
@@ -1150,6 +1217,7 @@ class Session:
         """Fallback: direct PTY fork (no tmux)."""
         args = shlex.split(self.cmd)
         env = self._launch_env()
+        self._carry_trust_to_profile(env)
         exe = shutil.which(args[0], path=env.get("PATH"))
 
         self.child_pid, self.master_fd = pty.fork()
@@ -1183,6 +1251,7 @@ class Session:
     def _start_win(self, cols, rows):
         args = shlex.split(self.cmd)
         env = self._launch_env()
+        self._carry_trust_to_profile(env)
         exe = shutil.which(args[0], path=env.get("PATH"))
         cmd_args = [exe] + args[1:] if exe else ["powershell", "-NoProfile", "-Command", self.cmd]
 
