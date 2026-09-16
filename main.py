@@ -196,6 +196,10 @@ DEFAULT_CONFIG = {
         "master_turn_preamble_enabled": True,
         "experimental_board": False,
         "experimental_loops": False,
+        # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
+        # default: delivery writes into another agent's prompt unattended, and
+        # every tab runs with permissions bypassed. Rules live in agent_link.py.
+        "experimental_a2a": False,
         "show_model_badge": True,
         # 眼鏡（Agent Relay）是外掛功能，要另外裝 bridge 才有用。
         # 預設關：沒裝的人不該在每個分頁上看到一顆按不出東西的按鈕。
@@ -7267,6 +7271,46 @@ try {
                 return {"success": False, "message": "Rename failed"}
             except Exception as e:
                 return {"success": False, "message": f"Rename failed: {e}"}
+
+        elif cmd == "conversation":
+            # Structured turns for a chat-style view, instead of terminal bytes.
+            # Reuses the transcript reader the scroll-up history already relies
+            # on, so Claude and Codex both normalise to the same event shape.
+            try:
+                sid = args.get("sid", "")
+                limit = max(1, min(int(args.get("limit") or 80), 400))
+                s_obj = self.sessions.get(sid)
+                if not s_obj:
+                    return {"success": False, "message": f"No such session: {sid}"}
+                worker = {"cmd": s_obj.cmd, "cwd": getattr(s_obj, "cwd", "") or "",
+                          "tmux_name": getattr(s_obj, "_tmux_name", "") or "",
+                          "session_id": getattr(s_obj, "session_id", "") or ""}
+                path = agent_status.resolve_transcript(worker)
+                if not path:
+                    return {"success": False,
+                            "message": "這個分頁沒有可讀的對話記錄（可能還沒送出過訊息）"}
+                fmt, evs, err = agent_status._read_tail_events(str(path))
+                if err and not evs:
+                    return {"success": False, "message": f"transcript unreadable: {err}"}
+                turns = [e for e in evs
+                         if e.get("kind") in ("user_msg", "assistant_text",
+                                              "tool_call", "error")]
+                return {"success": True, "message": f"{len(turns)} turns",
+                        "details": {"format": fmt, "turns": turns[-limit:],
+                                    "label": getattr(s_obj, "_custom_label", None)
+                                             or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
+            except Exception as e:
+                return {"success": False, "message": f"conversation failed: {e}"}
+
+        elif cmd == "a2a_history":
+            try:
+                import agent_link
+                return {"success": True,
+                        "details": {"entries": agent_link.history(int(args.get("limit") or 100)),
+                                    "enabled": bool((load_config().get("settings") or {})
+                                                    .get("experimental_a2a", False))}}
+            except Exception as e:
+                return {"success": False, "message": f"a2a_history failed: {e}"}
 
         elif cmd == "reorder":
             # Remote drag-to-reorder (the phone app). Deliberately the *same*

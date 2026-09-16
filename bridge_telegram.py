@@ -60,6 +60,11 @@ try:
 except Exception:
     board = None
 
+try:
+    import agent_link  # agent-to-agent messaging rules (experimental)
+except Exception:
+    agent_link = None
+
 
 # ── Dynamic filter system ──
 # Loads rules from filters.json (local or remote), falls back to hardcoded defaults.
@@ -2695,6 +2700,10 @@ class TelegramBridge(BridgeBase):
     _BOARD_RE = re.compile(
         r'^[\s>❯›⏺•*\-]*\[\[\s*SF\s*:\s*TASK\s*:\s*([^\]]*?)\s*\]\]\s*$',
         re.IGNORECASE)
+    # [[SF:TO:<role>|<message>]] — one agent addressing another by roster role.
+    _A2A_RE = re.compile(
+        r'^[\s>❯›⏺•*\-]*\[\[\s*SF\s*:\s*TO\s*:\s*([^|\]]+?)\s*\|\s*(.+?)\s*\]\]\s*$',
+        re.IGNORECASE | re.DOTALL)
 
     @staticmethod
     def _parse_board_marker(body: str):
@@ -2709,6 +2718,88 @@ class TelegramBridge(BridgeBase):
                 k, _, v = p.partition("=")
                 kv[k.strip().lower()] = v.strip()
         return action, kv
+
+    def _detect_and_route_a2a(self, slot, new_lines):
+        """Scan freshly extracted lines for [[SF:TO:role|text]] markers and hand
+        the text to that role's tab. Returns new_lines with marker lines stripped
+        so they are never forwarded to Telegram as noise.
+
+        Gated by settings.experimental_a2a; a no-op otherwise. Every decision,
+        including refusals, goes through agent_link.authorize() and is recorded
+        there — delivery writes into another agent's prompt, so it is worth being
+        able to answer 'who told it to do that' afterwards."""
+        if agent_link is None or not new_lines:
+            return new_lines
+        try:
+            enabled = bool(_read_settings().get("experimental_a2a", False))
+        except Exception:
+            return new_lines
+        if not enabled:
+            # Still strip the markers: with the feature off they are noise, not
+            # something the user wants forwarded to their phone.
+            return [ln for ln in new_lines if not self._A2A_RE.match(ln)]
+
+        kept = []
+        from_sid = getattr(slot, "sid", "") or ""
+        from_label = getattr(slot, "label", None) or from_sid
+        for line in new_lines:
+            m = self._A2A_RE.match(line)
+            if not m:
+                kept.append(line)
+                continue
+            to_role = (m.group(1) or "").strip()
+            text = (m.group(2) or "").strip()
+            try:
+                self._route_a2a(from_sid, from_label, to_role, text)
+            except Exception as e:
+                _blog(f"[a2a] {from_sid} route failed: {e}\n")
+        return kept
+
+    def _route_a2a(self, from_sid: str, from_label: str, to_role: str, text: str):
+        """Resolve the role to a tab, check the rules, deliver."""
+        roster, to_sid, to_label = {}, "", to_role
+        try:
+            res = self._sfctl_call("roster", {}, timeout=10.0) or {}
+            for r in (res.get("details") or {}).get("roles", []) or []:
+                roster[r.get("role", "")] = r
+            entry = roster.get(to_role) or {}
+            to_label = entry.get("label") or to_role
+            lst = self._sfctl_call("list", {}, timeout=10.0) or {}
+            for s in (lst.get("details") or {}).get("sessions", []) or []:
+                if (s.get("label") or "") == to_label:
+                    to_sid = s.get("sid", "")
+                    break
+        except Exception as e:
+            _blog(f"[a2a] lookup failed: {e}\n")
+
+        ok, reason, depth = agent_link.authorize(
+            enabled=True, from_sid=from_sid, from_label=from_label,
+            to_role=to_role, to_sid=to_sid, text=text, roster=roster)
+        if not ok:
+            agent_link.record({"kind": "refused", "from_sid": from_sid,
+                               "from_label": from_label, "to_role": to_role,
+                               "text": text[:200], "reason": reason})
+            _blog(f"[a2a] refused {from_label} -> {to_role}: {reason}\n")
+            return
+
+        payload = agent_link.format_delivery(from_label, text)
+        # delegate opens the role's tab when it is not running yet, which is the
+        # same path the user's own `sfctl delegate` takes.
+        if to_sid:
+            res = self._sfctl_call("send", {"sid": to_sid, "text": payload,
+                                            "submit": True}, timeout=30.0) or {}
+        else:
+            res = self._sfctl_call("delegate", {"role": to_role,
+                                                "task": payload}, timeout=60.0) or {}
+        delivered = bool(res.get("success"))
+        if delivered and to_sid:
+            agent_link.note_delivered(to_sid, depth)
+        agent_link.record({"kind": "message" if delivered else "failed",
+                           "from_sid": from_sid, "from_label": from_label,
+                           "to_role": to_role, "to_sid": to_sid,
+                           "to_label": to_label, "text": text, "depth": depth,
+                           "reason": "" if delivered else (res.get("message") or "")})
+        _blog(f"[a2a] {from_label} -> {to_role} depth={depth} ok={delivered}\n")
 
     def _detect_and_apply_board(self, slot, new_lines):
         """Scan freshly extracted lines for [[SF:TASK:...]] markers, apply them
@@ -3508,6 +3599,7 @@ class TelegramBridge(BridgeBase):
                             try:
                                 _t_b = self._perf_t()
                                 drained = self._detect_and_apply_board(slot, drained)
+                                drained = self._detect_and_route_a2a(slot, drained)
                                 self._perf_end("detect_board", _t_b)
                                 _t_s = self._perf_t()
                                 self._detect_and_fire_signal(slot, drained)
@@ -3669,6 +3761,7 @@ class TelegramBridge(BridgeBase):
                 try:
                     _t_b = self._perf_t()
                     new_lines = self._detect_and_apply_board(slot, new_lines)
+                    new_lines = self._detect_and_route_a2a(slot, new_lines)
                     self._perf_end("detect_board", _t_b)
                     _t_s = self._perf_t()
                     new_lines = self._detect_and_fire_signal(slot, new_lines)

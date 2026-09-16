@@ -1220,6 +1220,35 @@ class FrameLink:
                         wait = 0.0
                     res = link._stream_read(sid, since, wait)
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/conversation":
+                    # Structured turns for the chat view. Cheaper and far more
+                    # useful on a phone than replaying terminal bytes: the app
+                    # lays the conversation out itself instead of rendering an
+                    # 80-column screen designed for a desktop.
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    sid = (q.get("sid") or [""])[0]
+                    try:
+                        limit = int((q.get("limit") or ["80"])[0])
+                    except ValueError:
+                        limit = 80
+                    res = link._execute("conversation", {"sid": sid, "limit": limit}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/a2a":
+                    # The agent-to-agent audit log, which is what makes the group
+                    # view possible: who said what to whom, and what was refused.
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    try:
+                        limit = int((q.get("limit") or ["100"])[0])
+                    except ValueError:
+                        limit = 100
+                    res = link._execute("a2a_history", {"limit": limit}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/snapshot":
                     # 彩色（含 ANSI）的目前可視畫面：手機 attach 時先貼一張，再接增量串流。
                     if not link._peer_may_control(peer_id):
@@ -1559,6 +1588,30 @@ class FrameLink:
                                "rows": int(rows)}).encode()
             return self._signed_request(peer, "POST", "/link/resize", body,
                                         timeout=5)
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def remote_conversation(self, peer_id: str, sid: str, limit: int = 80) -> dict:
+        """Structured conversation turns for the chat view."""
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            return self._signed_request(
+                peer, "GET",
+                f"/link/conversation?sid={quote(sid)}&limit={int(limit)}", timeout=15)
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
+
+    def remote_a2a(self, peer_id: str, limit: int = 100) -> dict:
+        """Agent-to-agent audit log from the peer."""
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            return self._signed_request(peer, "GET",
+                                        f"/link/a2a?limit={int(limit)}", timeout=10)
         except Exception as e:
             return {"success": False, "message": str(e)}
 
