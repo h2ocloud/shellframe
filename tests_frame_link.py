@@ -69,6 +69,7 @@ class Node:
         self.pasted = []         # (filename, data_b64) via /link/paste
         self.reorders = []       # order list via /link/reorder
         self.renames = []        # (sid, name) via /link/rename
+        self.maint = []          # action via /link/maintenance
 
         def execute(cmd, args):
             if cmd == "list":
@@ -93,6 +94,9 @@ class Node:
                 self.resizes.append((args.get("sid"), args.get("cols"),
                                      args.get("rows")))
                 return {"success": True}
+            if cmd in ("check_update", "update", "restart", "reload"):
+                self.maint.append(cmd)
+                return {"success": True, "message": f"{cmd} on {name}"}
             if cmd == "new_session":
                 self.created.append(args.get("cmd"))
                 return {"success": True, "details": {"sid": "sNEW"}}
@@ -346,6 +350,24 @@ def main():
         rod = b.link.remote_reorder(a.fid, ["s1", "s2"])
         check("slave reorder on master denied",
               rod.get("success") is False and len(a.reorders) == before_ro)
+        # ── 遠端維運（更新／重啟對方那台）──
+        # 主端可以，從端不行；白名單以外的 action 連送都不送。
+        rm = a.link.remote_maintenance(b.fid, "check_update")
+        check("master maintenance reaches slave",
+              rm.get("success") is True and b.maint == ["check_update"])
+        before_m = len(b.maint)
+        rmu = a.link.remote_maintenance(b.fid, "update")
+        check("master can trigger update on slave",
+              rmu.get("success") is True and len(b.maint) == before_m + 1)
+        before_am = len(a.maint)
+        rmd = b.link.remote_maintenance(a.fid, "restart")
+        check("slave maintenance on master denied",
+              rmd.get("success") is False and len(a.maint) == before_am)
+        before_bm = len(b.maint)
+        rmx = a.link.remote_maintenance(b.fid, "new_session")
+        check("non-whitelisted maintenance action never sent",
+              rmx.get("success") is False and len(b.maint) == before_bm
+              and not b.created)
         # mode 竄改：joiner 收到被改過 mode 的 host proof → 驗不過
         # （直接呼叫 join 對假 host 難模擬，改驗 proof 綁 mode）
         pn, hn = "a" * 32, "b" * 16

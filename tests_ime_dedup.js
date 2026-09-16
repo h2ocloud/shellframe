@@ -15,10 +15,19 @@ const path = require('path');
 const html = fs.readFileSync(path.join(__dirname, 'web/index.html'), 'utf8');
 const m = html.match(/function _makeImeDedup\(\) \{[\s\S]*?\n  \}\n/);
 if (!m) { console.error('FAIL  在 index.html 找不到 _makeImeDedup'); process.exit(1); }
+const mGuard = html.match(/function _makeImeInputGuard\(sid\) \{[\s\S]*?\n  \}\n/);
+if (!mGuard) { console.error('FAIL  在 index.html 找不到 _makeImeInputGuard'); process.exit(1); }
+const mLeak = html.match(/const IME_LEAK_RE = [^\n]+/);
+if (!mLeak) { console.error('FAIL  在 index.html 找不到 IME_LEAK_RE'); process.exit(1); }
 
 let dropped = [];
 global.pywebview = { api: { js_debug: (tag, msg) => dropped.push(JSON.parse(msg)) } };
 const _makeImeDedup = new Function(`${m[0]}; return _makeImeDedup;`)();
+// 守門用到 IME_LEAK_RE + _imeComposeStart + _imeComposing（外層全域），注入後
+// 抽出來，驗它把「本機那套保護」正確套到（遠端 pane 之前完全沒有）。
+const _makeImeInputGuard = new Function(
+  `${mLeak[0]}; const _imeComposeStart = {}; let _imeComposing = false;` +
+  `${m[0]}${mGuard[0]}; return _makeImeInputGuard;`)();
 
 let fails = 0;
 function check(name, ok, detail) {
@@ -81,6 +90,33 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const d = _makeImeDedup();
     d.started(); d.composed('你');
     check('與 commit 內容不同 → 放行', !d.shouldDrop('你') && !d.shouldDrop('好'));
+  }
+
+  // ── 遠端 pane 的 IME 守門（_makeImeInputGuard）：遠端以前是裸送，
+  //    這裡驗它把去重 + 漏字擋 + Enter 放行都套上（2026-09-07 回報）──
+  {
+    const g = _makeImeInputGuard('rmt:peer:s1');
+    // 一次 commit（compositionstart → compositionend('還是要用')）只放行一次，
+    // 第二次同內容擋掉——這正是「還是要用還是要用」重複的修法。
+    g.start(); g.end('還是要用');
+    check('遠端守門：commit 第一次放行', g.keep('還是要用') === true);
+    check('遠端守門：同一次 commit 第二次 → 擋', g.keep('還是要用') === false);
+  }
+  {
+    const g = _makeImeInputGuard('rmt:peer:s1');
+    g.start();                                  // 組字中
+    check('遠端守門：組字中漏出的純注音 → 擋', g.keep('ㄨㄛ') === false);
+    check('遠端守門：組字中漏出的空白（叫候選）→ 擋', g.keep(' ') === false);
+    check('遠端守門：組字中漏出的選字數字 → 擋', g.keep('3') === false);
+    check('遠端守門：組字中真的漢字 commit → 放行', g.keep('我') === true);
+    g.end('我');
+  }
+  {
+    const g = _makeImeInputGuard('rmt:peer:s1');
+    check('遠端守門：Enter 永遠放行', g.keep('\r') === true);
+    check('遠端守門：純 ASCII 打字不擋', g.keep('o') && g.keep('p') && g.keep('e'));
+    // 非組字狀態下的空白不該被當漏字擋掉（英文句子要能打空白）
+    check('遠端守門：非組字時空白照送', g.keep(' ') === true);
   }
 
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

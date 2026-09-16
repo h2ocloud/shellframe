@@ -22,6 +22,7 @@ import plistlib
 import glob
 import re
 import shlex
+import tempfile
 import shutil
 import signal
 import subprocess
@@ -447,6 +448,12 @@ def _session_provider(cmd: str) -> str:
         return "other"
 
 
+def _worker_is_claude(cmd: str) -> bool:
+    """這個分頁跑的是 claude 嗎。用 worker_kind 而不是自己比字串——它認得
+    wrapper（sf-claude-home 之類），跟狀態、模型、帳號判斷同一支分類器。"""
+    return _session_provider(cmd) == "claude"
+
+
 def _worker_is_codex(cmd: str) -> bool:
     """這個分頁跑的是 codex 嗎（看第一個 token，含 .cmd/.exe 包裝）。"""
     try:
@@ -543,14 +550,22 @@ def load_config():
         if not offered and cfg.get("_default_ai_presets_migrated"):
             offered = {"Claude", "Codex"}      # what the old flag stood for
         if len(offered) < len(_DEFAULT_AI_PRESETS):
-            existing_cmds = {
-                (p.get("cmd") or "").strip() for p in cfg.get("presets", []) or []
-            }
+            existing = cfg.get("presets", []) or []
+            existing_cmds = {(p.get("cmd") or "").strip() for p in existing}
+            # 名稱也要比。cmd 比對是精確字串，使用者一旦改過內建 preset 的指令
+            # （例如把 opencode 換成絕對路徑）就對不上了；此時只要 offered 記錄
+            # 因為任何原因回退——config 從舊備份還原、或只剩舊的
+            # _default_ai_presets_migrated 旗標（它只代表 Claude/Codex）——同名的
+            # preset 就會被再加一次，清單裡出現兩個一樣的東西。
+            existing_names = {(p.get("name") or "").strip() for p in existing}
             for preset in _DEFAULT_AI_PRESETS:
                 if preset["name"] in offered:
                     continue
-                if preset["cmd"] not in existing_cmds:
+                if (preset["cmd"] not in existing_cmds
+                        and preset["name"] not in existing_names):
                     cfg.setdefault("presets", []).append(dict(preset))
+                    existing_names.add(preset["name"])
+                    existing_cmds.add(preset["cmd"])
                 offered.add(preset["name"])
             cfg["_default_ai_presets_offered"] = sorted(offered)
             cfg["_default_ai_presets_migrated"] = True   # kept for older builds
@@ -896,6 +911,94 @@ def _should_auto_accept_startup_trust(cmd: str, cwd: str) -> bool:
 from sf_log import TMP_DIR, DEBUG_LOG, _LOG_MAX_BYTES, _dlog, _swallow  # noqa: F401
 
 
+def _claude_project_key(path: str) -> str:
+    """Claude Code projects key normaliser. On Windows Claude stores the key
+    with forward slashes ("C:/Users/x") while self.cwd has back slashes, so a
+    naive lookup never matches and trust is copied nowhere (the 0.35.16 gap).
+    Only swap the separator -- no resolve()/abspath(), which would rewrite a
+    unix-style test path into an absolute Windows one."""
+    raw = os.path.expanduser(path or "~")
+    return raw.replace("\\", "/") if IS_WIN else raw
+
+
+def _match_project_entry(projects: dict, cwd: str):
+    """Find this cwd's entry in a projects dict, comparing normalised
+    (separator + case). Returns (existing_key, entry) or (None, None)."""
+    if not isinstance(projects, dict):
+        return None, None
+    want = os.path.normcase(_claude_project_key(cwd))
+    for k, v in projects.items():
+        try:
+            if os.path.normcase(_claude_project_key(k)) == want:
+                return k, v
+        except Exception:
+            continue
+    return None, None
+
+
+def _read_json_obj(path) -> dict:
+    try:
+        path = Path(path)
+        if path.exists():
+            v = json.loads(path.read_text(encoding="utf-8"))
+            return v if isinstance(v, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def _atomic_write_json(target, blob: dict):
+    """Atomic-replace write. Claude Code writes .claude.json too; a half file
+    makes it reset its whole config, so never rewrite in place."""
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(target.parent),
+                               prefix=".claude.json.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(blob, f)
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _cwd_trusted_in_any_config(cwd: str) -> bool:
+    """Has the user explicitly trusted this cwd in ANY config -- the canonical
+    ~/.claude.json or any account profile. Only an explicit True counts; this
+    is "a decision the user made", not one made for them."""
+    home = os.path.expanduser("~")
+    paths = [Path(home) / ".claude.json"]
+    try:
+        paths += [Path(x) for x in glob.glob(os.path.join(
+            home, ".config", "shellframe", "account-profiles",
+            "*", "*", ".claude.json"))]
+    except Exception:
+        pass
+    for pth in paths:
+        _, entry = _match_project_entry(_read_json_obj(pth).get("projects") or {}, cwd)
+        if (entry or {}).get("hasTrustDialogAccepted") is True:
+            return True
+    return False
+
+
+# Mirror these one-time first-run flags from the canonical ~/.claude.json into
+# an account profile so a tab pinned to a switched account does not re-ask
+# onboarding / the fullscreen-renderer upsell. Only values the canonical config
+# already carries are copied -- nothing is fabricated.
+_FIRST_RUN_MIRROR_KEYS = (
+    "hasCompletedOnboarding",
+    "hasCompletedProjectOnboarding",
+    "lastOnboardingVersion",
+    "fullscreenUpsellSeenCount",
+    "hasSeenTasksHint",
+    "hasUsedBackslashReturn",
+    "effortCalloutV2Dismissed",
+)
+
 
 def _has_tmux() -> bool:
     """Check if tmux is available on PATH."""
@@ -1022,6 +1125,117 @@ class Session:
         env.update(self._account_env_overrides())
         return env
 
+    def _carry_trust_to_profile(self, env: dict):
+        """Answer Claude Code's startup questions by writing config BEFORE
+        spawn, instead of letting a keystroke-sending watcher race the
+        full-screen TUI after the dialog appears (it loses -- debug log:
+        "trust dialog still up after keys").
+
+        1. Trust dialog: if the user has trusted this cwd in the canonical
+           config or any account profile, OR this is the range the watcher
+           already auto-accepts (home dir + an AI tab), write trust into the
+           canonical config and this tab's account profile. Otherwise do
+           nothing -- the dir still prompts, the decision stays the user's.
+        2. One-time prompts (onboarding, fullscreen upsell): mirror the
+           flags the canonical config already carries into the profile.
+        3. Once trust is established, clear _startup_trust_pending so the
+           watcher never arms; it stays only as a last resort for when the
+           pre-seed could not establish trust (e.g. canonical unreadable).
+
+        Every write goes through _atomic_write_json (Claude Code writes this
+        file too); a corrupt file is rebuilt; other keys are preserved. All
+        three spawn paths (tmux / unix / windows) call this before spawn.
+        """
+        if not _worker_is_claude(self.cmd):
+            return
+        cwd = self.cwd or os.path.expanduser("~")
+        config_dir = (env or {}).get("CLAUDE_CONFIG_DIR")
+        canonical = Path(os.path.expanduser("~/.claude.json"))
+        try:
+            implicit = _should_auto_accept_startup_trust(self.cmd, cwd)
+            trusted = implicit or _cwd_trusted_in_any_config(cwd)
+            if not trusted and not config_dir:
+                return
+
+            # Canonical: only correct it inside the implicit range (home dir
+            # + AI tab -- the same circle the watcher already auto-accepts)
+            # and only when the entry is missing / not True. Trust for any
+            # other dir is never decided on the user's behalf.
+            if trusted and implicit:
+                cblob = _read_json_obj(canonical)
+                _, centry = _match_project_entry(cblob.get("projects") or {}, cwd)
+                if (centry or {}).get("hasTrustDialogAccepted") is not True:
+                    cprojects = cblob.setdefault("projects", {})
+                    if not isinstance(cprojects, dict):
+                        cprojects = cblob["projects"] = {}
+                    ck, centry = _match_project_entry(cprojects, cwd)
+                    ck = ck or _claude_project_key(cwd)
+                    centry = centry or {}
+                    centry["hasTrustDialogAccepted"] = True
+                    cprojects[ck] = centry
+                    try:
+                        _atomic_write_json(canonical, cblob)
+                        _dlog("trust", f"{self.sid} seeded canonical trust for {cwd}")
+                    except Exception as e:
+                        _dlog("trust", f"{self.sid} canonical seed failed: {e}")
+
+            established = trusted and (_match_project_entry(
+                _read_json_obj(canonical).get("projects") or {}, cwd)[1]
+                or {}).get("hasTrustDialogAccepted") is True
+
+            if config_dir:
+                target = Path(config_dir) / ".claude.json"
+                blob = _read_json_obj(target)
+                changed = False
+
+                if trusted:
+                    projects = blob.setdefault("projects", {})
+                    if not isinstance(projects, dict):
+                        projects = blob["projects"] = {}
+                    pk, entry = _match_project_entry(projects, cwd)
+                    pk = pk or _claude_project_key(cwd)
+                    entry = entry or {}
+                    if entry.get("hasTrustDialogAccepted") is not True:
+                        entry["hasTrustDialogAccepted"] = True
+                        changed = True
+                    projects[pk] = entry
+
+                cblob = _read_json_obj(canonical)
+                for k in _FIRST_RUN_MIRROR_KEYS:
+                    if k not in cblob:
+                        continue
+                    cv, pv = cblob[k], blob.get(k)
+                    if isinstance(cv, bool):
+                        if cv and not pv:
+                            blob[k] = True
+                            changed = True
+                    elif isinstance(cv, (int, float)):
+                        if (not isinstance(pv, (int, float))) or isinstance(pv, bool) or pv < cv:
+                            blob[k] = cv
+                            changed = True
+                    elif isinstance(cv, str):
+                        if not pv:
+                            blob[k] = cv
+                            changed = True
+
+                if changed:
+                    try:
+                        _atomic_write_json(target, blob)
+                        _dlog("trust", f"{self.sid} seeded {Path(config_dir).name} for {cwd}")
+                    except Exception as e:
+                        _dlog("trust", f"{self.sid} profile seed failed: {e}")
+                        return
+                if trusted:
+                    _, e2 = _match_project_entry(
+                        _read_json_obj(target).get("projects") or {}, cwd)
+                    if (e2 or {}).get("hasTrustDialogAccepted") is True:
+                        established = True
+
+            if established:
+                self._startup_trust_pending = False
+        except Exception as e:
+            _dlog("trust", f"{self.sid} carry trust failed: {e}")
+
     def _start(self, cols, rows):
         if IS_WIN:
             self._start_win(cols, rows)
@@ -1050,6 +1264,9 @@ class Session:
             # which inherit the process env) can identify which ShellFrame
             # tab it belongs to. See sf_agent_hook.py.
             launch_env = self._launch_env()
+            # 在 spawn 之前把信任決定帶進 profile——之後才寫就來不及，對話框
+            # 已經跳出來了。
+            self._carry_trust_to_profile(launch_env)
             # Per-session env vars must be passed with `-e KEY=VAL`, NOT via
             # subprocess env: `tmux new-session` spawns the pane from the tmux
             # SERVER's environment, so `env=launch_env` is silently ignored
@@ -1146,6 +1363,7 @@ class Session:
         """Fallback: direct PTY fork (no tmux)."""
         args = shlex.split(self.cmd)
         env = self._launch_env()
+        self._carry_trust_to_profile(env)
         exe = shutil.which(args[0], path=env.get("PATH"))
 
         self.child_pid, self.master_fd = pty.fork()
@@ -1179,6 +1397,7 @@ class Session:
     def _start_win(self, cols, rows):
         args = shlex.split(self.cmd)
         env = self._launch_env()
+        self._carry_trust_to_profile(env)
         exe = shutil.which(args[0], path=env.get("PATH"))
         cmd_args = [exe] + args[1:] if exe else ["powershell", "-NoProfile", "-Command", self.cmd]
 
@@ -2243,6 +2462,84 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     _CODEX_ROLLOUT_RE = re.compile(r"rollout-.*?-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
                                    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl$")
 
+    # provider → 那個 CLI 用哪個環境變數指 config 目錄
+    _CONFIG_DIR_ENV = {"codex": "CODEX_HOME", "claude": "CLAUDE_CONFIG_DIR"}
+
+    @staticmethod
+    def _provider_config_dir(provider: str, ref) -> str:
+        """provider＋account ref → 那個帳號的 config 目錄（''＝沒 pin profile）。"""
+        if not ref:
+            return ""
+        try:
+            env = ACCOUNT_MANAGER.env_for(provider, ref) or {}
+        except Exception:
+            return ""
+        return env.get("CODEX_HOME") or env.get("CLAUDE_CONFIG_DIR") or ""
+
+    def _live_config_dir(self, s, provider: str) -> str:
+        """這個分頁**實際正在用**的 provider config 目錄。
+
+        `account_refs` 不夠可靠：reattach 時它是從 tmux 的 `SF_ACCOUNT_<P>`
+        marker 還原的，而那個 marker 只在建立分頁時「有 ref 才寫」。實測有分頁
+        的 tmux env 帶著 `CODEX_HOME=<profile>`、卻沒有 marker，於是還原後
+        account_refs 是 None——ShellFrame 以為它沒 pin 帳號，解析就回頭去找全域
+        路徑，而那個 process 的 rollout 根本不在全域樹裡。
+
+        所以優先讀 provider 自己的環境變數：那是跑起來的 CLI 真正吃的值，也是
+        rollout／transcript 實際寫進去的目錄。讀不到才退回 account_refs 的對應。
+        每個分頁只問一次 tmux，之後掛在 session 物件上。status monitor 每輪都會
+        呼叫這支，而這台機器上光是既有的 capture-pane 就已經會逾時——再加一個
+        週期性的 subprocess 進那條路徑，等於拿終端的流暢度去換一個不會變的值。
+        帳號切換走 _restart_session_for_account，那會建一個新的 Session 物件，
+        快取跟著舊物件一起消失，所以不需要額外的失效機制。
+        """
+        env_key = self._CONFIG_DIR_ENV.get(provider)
+        if not env_key:
+            return ""
+        cached = getattr(s, "_config_dir_cache", None)
+        if cached and cached[0] == provider:
+            return cached[1]
+        value = ""
+        tmux_name = getattr(s, "_tmux_name", None)
+        if tmux_name and not IS_WIN:
+            value = (_tmux_get_env(tmux_name, env_key) or "").strip()
+            if value and not os.path.isdir(value):
+                value = ""          # 目錄不在就當沒設，別把解析導到不存在的樹
+        if not value:
+            value = self._provider_config_dir(
+                provider, (getattr(s, "account_refs", {}) or {}).get(provider))
+        try:
+            s._config_dir_cache = (provider, value)
+        except Exception:
+            _swallow("_live_config_dir:cache")
+        return value
+
+    def _worker_ctx(self, sid: str, s) -> dict:
+        """這個分頁的解析 context——狀態、模型、transcript 全部吃同一份。
+
+        以前每個呼叫點各自拼一份 dict，而且都少了帳號身分：多帳號是靠 provider
+        的 config 目錄做的（codex→CODEX_HOME、claude→CLAUDE_CONFIG_DIR），
+        transcript 與 config 都寫在那個目錄底下。少了它，解析會回頭去讀全域路徑
+        ——切過帳號的分頁因此讀到別的帳號，甚至別的分頁的對話。
+
+        `config_dir` 空字串＝這個分頁沒有 pin profile，用 provider 的預設位置。
+        """
+        provider = _session_provider(getattr(s, "cmd", ""))
+        config_dir = ""
+        try:
+            config_dir = self._live_config_dir(s, provider)
+        except Exception:
+            _swallow(f"_worker_ctx:{sid}")
+        return {
+            "cmd": getattr(s, "cmd", ""),
+            "cwd": getattr(s, "cwd", "~"),
+            "tmux_name": getattr(s, "_tmux_name", None),
+            "session_id": getattr(s, "session_id", None),
+            "transcript_hint": getattr(s, "_hook_transcript_path", None),
+            "codex_session_id": getattr(s, "_codex_sid", "") or "",
+            "config_dir": config_dir,
+        }
+
     def _codex_session_id(self, sid: str, s) -> str:
         """這個 codex 分頁對應的 rollout session uuid（'' = 認不出來）。
 
@@ -2257,13 +2554,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             cached = getattr(s, "_codex_sid", "")
             if cached:
                 return cached
+            ctx = self._worker_ctx(sid, s)
             path = ""
             try:
-                path = agent_status.resolve_transcript({
-                    "cmd": getattr(s, "cmd", ""),
-                    "cwd": getattr(s, "cwd", "~"),
-                    "tmux_name": getattr(s, "_tmux_name", None),
-                }) or ""
+                path = agent_status.resolve_transcript(ctx) or ""
             except Exception:
                 path = ""
             if IS_WIN or not path:
@@ -2271,8 +2565,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                          if k != sid}
                 spawn = float(getattr(s, "_spawn_ts", 0.0) or 0.0)
                 best = None
+                # 掃描限定這個分頁自己的 sessions 根目錄——認領表跨分頁共用，
+                # 但候選檔不能跨帳號，否則會認領到別的帳號的 rollout。
                 for f in glob.glob(os.path.join(
-                        os.path.expanduser("~/.codex/sessions"),
+                        agent_status.codex_sessions_root(ctx),
                         "*", "*", "*", "rollout-*.jsonl")):
                     m = self._CODEX_ROLLOUT_RE.search(f)
                     if not m or m.group(1) in taken:
@@ -2299,14 +2595,19 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         return ""
 
     @staticmethod
-    def _codex_rollout_exists(csid: str) -> bool:
-        """這個 codex session uuid 在磁碟上還找得到 rollout 嗎。"""
+    def _codex_rollout_exists(csid: str, sessions_root: str = "") -> bool:
+        """這個 codex session uuid 在磁碟上還找得到 rollout 嗎。
+
+        sessions_root 空＝全域預設位置。帳號 profile 的 rollout 不在全域樹裡，
+        少了這個參數，切過帳號的分頁重開機時一律判定「檔不在」→ 不 resume →
+        對話看起來憑空消失。
+        """
         if not csid:
             return False
+        root = sessions_root or os.path.expanduser("~/.codex/sessions")
         try:
             return bool(glob.glob(os.path.join(
-                os.path.expanduser("~/.codex/sessions"),
-                "*", "*", "*", f"rollout-*-{csid}.jsonl")))
+                root, "*", "*", "*", f"rollout-*-{csid}.jsonl")))
         except Exception:
             return False
 
@@ -2499,7 +2800,14 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             # 不接——與其 resume 失敗讓分頁開不起來，不如開新的。
             if _worker_is_codex(cmd):
                 csid = str(entry.get("codex_session_id") or "").strip()
-                found = self._codex_rollout_exists(csid)
+                # rollout 要在「這個分頁的帳號目錄」底下找。帳號 profile 的
+                # rollout 不在全域樹裡，用全域路徑找一定落空，然後就會判定
+                # 「找不到記錄檔」而開一個空白對話。
+                entry_refs = dict(entry.get("account_refs") or default_account_refs)
+                found = self._codex_rollout_exists(
+                    csid, agent_status.codex_sessions_root(
+                        {"config_dir": self._provider_config_dir("codex",
+                                                                 entry_refs.get("codex"))}))
             else:
                 csid = str(entry.get("claude_session_id") or "").strip()
                 found = self._claude_transcript_exists(csid)
@@ -2529,6 +2837,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 session._lifecycle_source = entry.get("lifecycle_source", "")
                 session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
+                # codex 沒有 hook 可以回報，manifest 的 uuid 就是它重開之後
+                # 唯一的精確錨點——蓋回 session，解析不必等 lsof 命中。
+                if _worker_is_codex(cmd) and csid:
+                    session._codex_sid = csid
                 self._start_startup_trust_watcher(sid, session)
                 label = entry.get("label") or saved_labels.get(sid)
                 if label:
@@ -2874,13 +3186,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                                 result = dict(c["result"])
                                 result["elapsed"] = int(now - c["since_ts"])
                             else:
-                                worker = {
-                                    "cmd": getattr(s, "cmd", ""),
-                                    "cwd": getattr(s, "cwd", "~"),
-                                    "tmux_name": getattr(s, "_tmux_name", None),
-                                    "session_id": getattr(s, "session_id", None),
-                                    "transcript_hint": getattr(s, "_hook_transcript_path", None),
-                                }
+                                worker = self._worker_ctx(sid, s)
                                 # Screen wording must come from the CURRENT rendered
                                 # screen. The _recent ring buffer is a byte-stream
                                 # history — a /model or feedback menu that scrolled
@@ -2954,6 +3260,57 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
     def get_config(self) -> str:
         return json.dumps(load_config())
+
+    @staticmethod
+    def _preset_variant(name: str, title: str) -> str:
+        """同一支 CLI 底下這個 preset 的區別字（''＝這是預設的那個）。
+
+        「Claude (家用地端)」在「Claude Code」這一組裡的區別字是「家用地端」：
+        把組名的字拿掉、括號與標點剝掉，剩下的就是它跟同組其他成員的差異。
+        """
+        rest = (name or "").strip()
+        for word in (title or "").split():
+            rest = re.sub(re.escape(word), "", rest, flags=re.I)
+        rest = rest.strip(" ()[]（）【】·-—_/、,，:：")
+        return rest.strip()
+
+    def preset_groups(self) -> str:
+        """新增分頁對話框用的 preset 分組。
+
+        同一支 CLI 的幾個啟動器（雲端／地端閘門／帶不同旗標）在平面清單裡只差
+        一個括號，讀起來像同一個東西出現兩次。按 CLI 收成一組，區別字放在組裡，
+        那才看得出是「同一支的兩種接法」。
+
+        分組用的是 `_session_provider`——跟狀態、模型、帳號判斷同一支分類器，
+        分頁與 preset 因此不會各有一套說法。認不出 CLI 的（bash 之類）各自
+        獨立一組，前端會畫成單獨一列。順序沿用 config 裡的順序，組的位置就是它
+        第一個成員的位置，所以既有的清單不會被重排。
+        """
+        try:
+            labels = usage_probe.provider_labels()
+        except Exception:
+            labels = {}
+        groups, index = [], {}
+        for preset in (load_config().get("presets") or []):
+            name = str(preset.get("name") or "")
+            cmd = str(preset.get("cmd") or "")
+            kind = _session_provider(cmd)
+            key = kind if kind != "other" else f"solo:{name}"
+            if key not in index:
+                index[key] = len(groups)
+                groups.append({
+                    "provider": "" if kind == "other" else kind,
+                    "title": labels.get(kind) or name,
+                    "items": [],
+                })
+            group = groups[index[key]]
+            group["items"].append({
+                "name": name,
+                "cmd": cmd,
+                "icon": preset.get("icon") or "",
+                "variant": self._preset_variant(name, group["title"]),
+            })
+        return json.dumps(groups, ensure_ascii=False)
 
     @staticmethod
     def _board_enabled() -> bool:
@@ -3768,13 +4125,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         s = self.sessions.get(sid)
         if not s:
             return None
-        worker = {
-            "cmd": getattr(s, "cmd", ""),
-            "cwd": getattr(s, "cwd", "~"),
-            "tmux_name": getattr(s, "_tmux_name", None),
-            "session_id": getattr(s, "session_id", None),
-            "transcript_hint": getattr(s, "_hook_transcript_path", None),
-        }
+        worker = self._worker_ctx(sid, s)
         try:
             path = agent_status.resolve_transcript(worker)
             return agent_status.detect_model_info(
@@ -6215,13 +6566,8 @@ try {
         path = ""
         if s is not None:
             try:
-                path = agent_status.resolve_transcript({
-                    "cmd": getattr(s, "cmd", ""),
-                    "cwd": getattr(s, "cwd", "~"),
-                    "tmux_name": getattr(s, "_tmux_name", None),
-                    "session_id": getattr(s, "session_id", None),
-                    "transcript_hint": getattr(s, "_hook_transcript_path", None),
-                }) or ""
+                path = agent_status.resolve_transcript(
+                    self._worker_ctx(sid, s)) or ""
             except Exception:
                 _swallow(f"_glasses_transcript:{sid}")
                 path = ""
@@ -6795,6 +7141,10 @@ try {
         return json.dumps(self._link().remote_peek(peer_id, sid, lines),
                           ensure_ascii=False)
 
+    def link_remote_maintenance(self, peer_id: str, action: str) -> str:
+        return json.dumps(self._link().remote_maintenance(peer_id, action),
+                          ensure_ascii=False)
+
     def link_remote_history(self, peer_id: str, sid: str, cols: int = 0) -> str:
         return json.dumps(self._link().remote_history(peer_id, sid, cols),
                           ensure_ascii=False)
@@ -6909,6 +7259,34 @@ try {
                 }
             except Exception as e:
                 return {"success": False, "message": f"Restart failed: {e}"}
+
+        elif cmd == "check_update":
+            try:
+                result = json.loads(self.check_update())
+                return {
+                    "success": True,
+                    "message": ("有新版 v{}".format(result.get("remote"))
+                                if result.get("update_available")
+                                else "已是最新版 v{}".format(result.get("local"))),
+                    "details": result,
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Check update failed: {e}"}
+
+        elif cmd == "update":
+            # do_update 是 git pull ＋ 依賴安裝，會跑幾十秒；它自己每一步都有
+            # 復原路徑，失敗時會回 recovery 指令而不是把安裝弄壞。更新完不會自動
+            # 重啟——跟本機的流程一樣，重啟是另一個明確的動作。
+            try:
+                result = json.loads(self.do_update())
+                return {
+                    "success": bool(result.get("success")),
+                    "message": result.get("message", "Update finished"),
+                    "details": {k: v for k, v in result.items()
+                                if k not in ("success", "message")},
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Update failed: {e}"}
 
         elif cmd == "reload":
             try:

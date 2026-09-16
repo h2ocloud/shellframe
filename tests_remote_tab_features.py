@@ -101,8 +101,12 @@ check("fetchHistory 內部才分本機／遠端",
       "if (isRemoteSid(sid))" in idx.split("async function fetchHistory")[1].split("function setupScrollHistory")[0])
 check("overlay 只認一種回傳形狀",
       idx.count("ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi })") == 1)
+# 在 ensureRemotePane 的函式主體裡找，不要靠相鄰行——相鄰行會被任何插入打斷，
+# 那時失敗的是斷言而不是功能。
+_ensure_remote = idx.split("function ensureRemotePane(sid, peer, rt) {")[1] \
+    .split("\n  }\n")[0]
 check("遠端 pane 有掛滾輪監聽（原本完全沒裝）",
-      "setupScrollHistory(sid, pane);\n    return sessions[sid];" in idx)
+      "setupScrollHistory(sid, pane);" in _ensure_remote)
 
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")

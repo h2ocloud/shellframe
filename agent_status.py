@@ -48,6 +48,43 @@ VERB = {
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 
+
+# ── 這個分頁的身分：帳號 profile 目錄 ──────────────────────────────────────
+# 多帳號是靠 provider 的 config 目錄做的：codex 吃 CODEX_HOME、claude 吃
+# CLAUDE_CONFIG_DIR，帳號管理把 profile 指到 account-profiles/<provider>/<ref>。
+# transcript、config、模型全都寫在那個目錄底下，所以解析一定要跟著分頁自己的
+# 目錄走。少了這一步，一個分頁會去讀另一個帳號（甚至另一個分頁）的檔案。
+# worker["config_dir"] 由呼叫端（main.py 的 _worker_ctx）從 account_manager
+# 的 env_for 帶進來，空字串＝這個分頁沒有 pin profile，用 provider 的預設位置。
+
+def _config_dir(worker: dict) -> str:
+    try:
+        return (worker.get("config_dir") or "").strip()
+    except Exception:
+        return ""
+
+
+def _under(path: str, root: str) -> bool:
+    """path 是否落在 root 底下（正規化後的前綴比對，不是子字串）。"""
+    if not path or not root:
+        return False
+    try:
+        root_abs = os.path.realpath(root)
+        path_abs = os.path.realpath(path)
+    except OSError:
+        return False
+    return path_abs == root_abs or path_abs.startswith(root_abs + os.sep)
+
+
+def codex_sessions_root(worker: dict) -> str:
+    cd = _config_dir(worker)
+    return os.path.join(cd, "sessions") if cd else CODEX_SESSIONS
+
+
+def claude_projects_root(worker: dict) -> str:
+    cd = _config_dir(worker)
+    return os.path.join(cd, "projects") if cd else CLAUDE_PROJECTS
+
 # Antigravity CLI (agy) keeps no JSONL transcript. Each conversation is its own
 # SQLite file, and the live process holds an open lock naming that conversation
 # — which is how a tab is matched to it (same lsof trick codex needs).
@@ -98,9 +135,39 @@ def _worker_kind(cmd: str) -> str:
     if "claude" in c:
         return "claude"
     try:
-        return usage_probe.detect_ai(cmd) or "other"
+        return (usage_probe.detect_ai(cmd)
+                or _sf_launcher_provider(cmd)
+                or "other")
     except Exception:
         return "other"
+
+
+def _sf_launcher_provider(cmd: str):
+    """`sf-<provider>-<變體>` → 那個 provider，認不出來回 None。
+
+    ShellFrame 自己的啟動器都照這個命名（sf-codex、sf-pi-spark、
+    sf-opencode-home…）。把每一支都登記進 provider registry 也能work，但那等於
+    讓一份公開的 registry 累積每台機器各自的 wrapper 名稱；`sf-` 前綴讓這條規則
+    可以直接推導出來，而且範圍夠窄——只有以 sf- 開頭的指令會被這樣解讀。
+
+    這條規則放在這裡而不是 usage_probe.detect_ai：detect_ai 決定「套哪個額度
+    讀取器」，而接地端模型閘門的啟動器不該去顯示雲端額度。這支決定的是「這個
+    分頁在跑哪個 CLI」，那對 wrapper 就是該認出來。
+    """
+    for tok in (cmd or "").split():
+        base = tok.split("/")[-1]
+        if "." in base:
+            base = base.rsplit(".", 1)[0]
+        if not base.lower().startswith("sf-"):
+            continue
+        for part in base.split("-")[1:]:
+            try:
+                found = usage_probe.detect_ai(part)
+            except Exception:
+                found = None
+            if found:
+                return found
+    return None
 
 
 def worker_kind(cmd: str) -> str:
@@ -149,8 +216,17 @@ def _pid_tree(root_pid: int, depth=2):
     return pids
 
 
-def _lsof_open_jsonl(pids, name_contains: str):
-    """在 pid 樹中找開啟的、路徑含 name_contains 的 .jsonl（codex 用）。"""
+def _lsof_open_jsonl(pids, roots):
+    """在 pid 樹中找開啟的 .jsonl，且路徑必須落在 roots 之一底下（codex 用）。
+
+    收「根目錄」而不是子字串是刻意的。舊版寫死比對 `/.codex/sessions/`，那條
+    字串永遠不會命中帳號 profile 底下的 rollout
+    （account-profiles/codex/<ref>/sessions/… 的 codex 前面沒有點），於是切過
+    帳號的分頁一律 lsof 落空、掉進「全域最新一份」的 fallback，讀到別人的對話。
+    """
+    if isinstance(roots, str):
+        roots = [roots]
+    roots = [r for r in roots if r]
     for p in pids:
         try:
             r = subprocess.run(["lsof", "-p", str(p)], capture_output=True,
@@ -161,7 +237,9 @@ def _lsof_open_jsonl(pids, name_contains: str):
             continue
         for line in r.stdout.splitlines():
             path = line.split()[-1] if line.split() else ""
-            if path.endswith(".jsonl") and name_contains in path:
+            if not path.endswith(".jsonl"):
+                continue
+            if any(_under(path, root) for root in roots):
                 return path
     return None
 
@@ -511,6 +589,13 @@ def _nearest_birth_jsonl(pattern: str, target_epoch: float, max_delta=900):
     return best
 
 
+def _safe_mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
 def _newest_jsonl(pattern: str, within_s=3600):
     cutoff = time.time() - within_s
     best, best_m = None, 0.0
@@ -537,14 +622,30 @@ def resolve_transcript(worker: dict):
             # Returned through the same slot so the resolve cache applies.
             return _agy_conversation_db(worker)
         if kind == "codex":
-            # codex 持續持有 rollout fd → lsof 直接命中（最可靠）
+            # 全部限定在「這個分頁自己的」sessions 根目錄底下。
+            root = codex_sessions_root(worker)
+            # (0) 呼叫端記下的那一份（manifest／hook），存在就用
+            hint = worker.get("transcript_hint")
+            if hint and os.path.exists(hint):
+                return hint
+            # (1) codex 會一直持有 rollout 的 fd → lsof 直接命中（最可靠）
             pane = _tmux_pane_pid(worker.get("tmux_name"))
             if pane:
-                hit = _lsof_open_jsonl(_pid_tree(pane), "/.codex/sessions/")
+                hit = _lsof_open_jsonl(_pid_tree(pane), [root])
                 if hit:
                     return hit
-            # fallback：整棵 sessions 樹取最新 mtime
-            return _newest_jsonl(os.path.join(CODEX_SESSIONS, "*/*/*/rollout-*.jsonl"))
+            # (2) 這個分頁記住的 rollout uuid——檔名帶 uuid，是精確對應
+            csid = (worker.get("codex_session_id") or "").strip()
+            if csid:
+                hits = glob.glob(os.path.join(root, "*", "*", "*",
+                                              f"rollout-*-{csid}.jsonl"))
+                if hits:
+                    return max(hits, key=lambda f: _safe_mtime(f))
+            # (3) 認不出來就認不出來。舊版在這裡退成「整棵樹最新 mtime 的那一
+            #     份」，那是跨分頁污染的來源：兩個 codex 分頁會指到同一份，切過
+            #     帳號的分頁更是直接讀到別的帳號。狀態改由畫面 heuristic 判斷，
+            #     那會落在自己的 pane 上，不會讀到別人的對話。
+            return None
         if kind == "claude":
             # 優先序（愈前愈接近「即時真相」）：
             # (0) hook 回報的 transcript_path——sf_agent_hook 每個事件都帶，
@@ -562,15 +663,18 @@ def resolve_transcript(worker: dict):
             hint = worker.get("transcript_hint")
             if hint and os.path.exists(hint):
                 return hint
+            # 切過帳號的分頁，transcript 在 profile 底下的 projects/，不在
+            # ~/.claude/projects——用全域路徑找不到，或更糟：找到別的帳號的。
+            projects = claude_projects_root(worker)
             slug = _cwd_slug(worker.get("cwd", "~"))
             sid = worker.get("session_id")
             if sid:
-                p = os.path.join(CLAUDE_PROJECTS, slug, f"{sid}.jsonl")
+                p = os.path.join(projects, slug, f"{sid}.jsonl")
                 if os.path.exists(p):
                     return p
             cmd_sid = _cmd_session_uuid(worker.get("cmd", ""))
             if cmd_sid:
-                p = os.path.join(CLAUDE_PROJECTS, slug, f"{cmd_sid}.jsonl")
+                p = os.path.join(projects, slug, f"{cmd_sid}.jsonl")
                 if os.path.exists(p):
                     return p
             pane = _tmux_pane_pid(worker.get("tmux_name"))
@@ -578,7 +682,7 @@ def resolve_transcript(worker: dict):
                 start = _claude_proc_start(pane) or _proc_start_epoch(pane)
                 if start:
                     return _nearest_birth_jsonl(
-                        os.path.join(CLAUDE_PROJECTS, slug, "*.jsonl"), start)
+                        os.path.join(projects, slug, "*.jsonl"), start)
             return None
     except Exception:
         return None
@@ -811,7 +915,12 @@ def detect_model_info(worker: dict, transcript_path=None):
             return {"name": name, "effort": effort, "provider": "agy"}
         if kind == "codex":
             info = _cached_parse(transcript_path, _parse_codex_rollout) if transcript_path else None
-            info = info or _cached_parse(CODEX_CONFIG_TOML, _parse_codex_config)
+            # 沒 rollout 時退這個分頁自己的 config.toml——帳號 profile 各有一份，
+            # 讀全域那份會顯示別的帳號設的模型。
+            cd = _config_dir(worker)
+            info = info or _cached_parse(
+                os.path.join(cd, "config.toml") if cd else CODEX_CONFIG_TOML,
+                _parse_codex_config)
             if not info or not info.get("model"):
                 return None
             return {"name": _pretty_model(info["model"]),
@@ -835,7 +944,10 @@ def detect_model_info(worker: dict, transcript_path=None):
             effort = _parse_claude_transcript_effort(transcript_path) \
                 if transcript_path else None
             if not effort:
-                glob_cfg = _cached_parse(CLAUDE_SETTINGS_JSON, _parse_claude_settings) or {}
+                cd = _config_dir(worker)
+                glob_cfg = _cached_parse(
+                    os.path.join(cd, "settings.json") if cd else CLAUDE_SETTINGS_JSON,
+                    _parse_claude_settings) or {}
                 effort = glob_cfg.get("effort") or ""
             return {"name": _pretty_model(model),
                     "effort": effort, "provider": "claude"}
@@ -912,21 +1024,33 @@ def _norm_claude(o):
             return None
         return {"kind": "user_msg", "ts": ts, "text": text}
     if t == "assistant":
-        sr = m.get("stop_reason")
-        out = None
+        # 一筆 assistant 記錄可以同時帶 thinking、多個 tool_use、以及回覆文字。
+        # 舊版每筆只回一個事件，代價是兩件事：
+        #   1. `stop_reason == "end_turn"` 直接回 turn_end，把那一筆的文字丟掉
+        #      ——而回覆就在那一筆。上滑歷史因此看不到 agent 的回覆（實測某分頁
+        #      的 transcript 有兩個 text 區塊 161／79 字元，事件裡一個都沒有）。
+        #   2. 一筆裡有 N 個 tool_use 只留最後一個；只有 thinking 的那筆會回一個
+        #      **空的** assistant_text，那個空事件還會把待收合的工具行沖掉。
+        # 改成照順序把整筆的內容都吐出來。thinking 仍然刻意不輸出（歷史 overlay
+        # 不重播思考），但它不再變成一個空事件。
+        events = []
         for c in (m.get("content") or []):
-            if isinstance(c, dict) and c.get("type") == "tool_use":
+            if not isinstance(c, dict):
+                continue
+            ctype = c.get("type")
+            if ctype == "tool_use":
                 name = c.get("name")
                 ev = {"kind": "tool_call", "ts": ts, "tool": name,
                       "target": _target(name, c.get("input"))}
                 if name == "AskUserQuestion":
                     ev["kind"] = "decision_req"
-                out = ev
-        if sr == "end_turn":
-            return {"kind": "turn_end", "ts": ts}
-        if out:
-            return out
-        return {"kind": "assistant_text", "ts": ts, "text": _content_text(m.get("content"))}
+                events.append(ev)
+            elif ctype in ("text", "output_text") and (c.get("text") or "").strip():
+                events.append({"kind": "assistant_text", "ts": ts,
+                               "text": c["text"].strip()})
+        if m.get("stop_reason") == "end_turn":
+            events.append({"kind": "turn_end", "ts": ts})
+        return events or None
     return None
 
 
@@ -1019,7 +1143,13 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300):
         except Exception:
             continue
         e = norm(o)
-        if e:
+        if not e:
+            continue
+        # 正規化器可以回一筆或一串——一筆 assistant 記錄可以同時帶多個工具呼叫
+        # 與回覆文字，硬塞成一個事件就是上面那兩個 bug 的來源。
+        if isinstance(e, list):
+            evs.extend(x for x in e if x)
+        else:
             evs.append(e)
     if evs and evs[-1].get("ts") is None:
         try:

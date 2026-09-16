@@ -6,6 +6,698 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.35.17 (2026-09-10)
+
+### Fixes
+
+- **A tab pinned to a switched account stops re-asking to trust the home
+  directory, and stops replaying onboarding, on Windows.** The previous
+  release carried an existing trust decision into the account profile, but
+  only when the canonical config already recorded the directory as trusted,
+  and it matched the directory with a back-slash path while the CLI stores
+  that key with forward slashes — so on Windows the lookup never matched and
+  nothing was carried. Three changes close the gap. The project key is now
+  separator-normalised before every read and write, so a back-slash working
+  directory lines up with the forward-slash key the CLI wrote. When the tab
+  is a home-directory AI launch — the same range the keystroke watcher
+  already auto-accepts — trust is written into the canonical config and the
+  profile up front, rather than waiting for the dialog and racing the
+  full-screen interface for it. And the one-time first-run flags the
+  canonical config already carries, such as onboarding-complete, the
+  fullscreen-renderer prompt counter and the onboarding version, are mirrored
+  into the profile, so a fresh account directory no longer shows every intro
+  prompt again. Once the pre-write has established trust the keystroke watcher
+  is never armed; it stays only as a fallback for when the canonical config
+  cannot be read. Writes remain atomic, a corrupt profile file is rebuilt
+  instead of blocking the tab, and other keys are preserved. 26 cases in
+  `tests_profile_trust_carry.py`.
+
+  **Windows 上,綁定切換帳號的分頁不會再重問家目錄信任,也不會重跑 onboarding。**
+  上一版把已存在的信任決定帶進帳號 profile,但只在標準設定已經把該目錄記成信任
+  時才動作,而且比對用的是反斜線路徑,CLI 存的 key 卻是正斜線——所以 Windows 上
+  永遠比不中,什麼都沒帶。這版補三個洞。專案 key 在每次讀寫前都先正規化分隔線,
+  反斜線的工作目錄就對得上 CLI 寫的正斜線 key。當分頁是家目錄的 AI 啟動(就是
+  送按鍵的 watcher 本來就會自動接受的同一個範圍),信任會在啟動前就寫進標準設定
+  與 profile,而不是等對話框跳出來再去跟全螢幕介面搶。標準設定已經帶著的一次性
+  初次啟動旗標,例如 onboarding 已完成、全螢幕算繪提示的計數、onboarding 版本,
+  會一併鏡射進 profile,新的帳號目錄就不會把每個介紹提示再走一遍。預寫一旦把信任
+  建立起來,送按鍵的 watcher 完全不會 arm;它只留作標準設定讀不到時的退路。寫檔
+  仍是原子替換,壞掉的 profile 檔會重建而不是卡住分頁,其他 key 保留。
+  `tests_profile_trust_carry.py` 共 26 項。
+
+### Internal
+
+- **Reading JSON on Windows no longer depends on the console code page.** A
+  few call sites opened a config or credentials JSON file without an explicit
+  encoding, so on a machine whose default code page is not UTF-8 a non-ASCII
+  byte in the file raised a decode error — one of them broke a reboot-resume
+  test outright on this platform. Those reads now pin utf-8.
+
+  **Windows 上讀 JSON 不再看主控台的字碼頁臉色。** 有幾處開啟設定或憑證的 JSON
+  檔時沒有指定編碼,於是在預設字碼頁不是 UTF-8 的機器上,檔案裡一個非 ASCII 位元
+  組就會讓解碼炸掉——其中一處直接讓重開機接回的測試在這個平台上跑不起來。這些
+  讀取現在固定用 utf-8。
+
+## v0.35.16 (2026-09-09)
+
+### Fixes
+
+- **A tab on a switched account stops asking whether its own home directory is
+  trusted.** Reported in daily use: every new tab brought up a permission
+  prompt. It is not the operating system's — it is the CLI asking whether the
+  working directory can be trusted, and it kept asking for a directory the user
+  had already trusted.
+
+  The answer is recorded in the config directory, and pinning a tab to an
+  account points it at that account's own directory, where the record does not
+  exist. Measured on this machine: the canonical config had the home directory
+  trusted, one account profile still had it as not-trusted, and another had no
+  config file at all — so every tab opened under an account asked again. A
+  watcher was answering the prompt by sending keystrokes, which is a race
+  against a full-screen interface and loses: the log shows it answering and the
+  prompt still standing afterwards.
+
+  The decision the user already made is now carried into the account's config
+  before the tab starts. Only a decision that already exists is carried: a
+  directory the canonical config does not mark trusted still brings up the
+  prompt, so nothing is decided on the user's behalf. Other fields in the
+  account's record are preserved, a corrupt config file is rebuilt rather than
+  allowed to block a tab, and the file is replaced atomically because the CLI
+  writes it too. Verified on a real new tab: the profile's record went from
+  not-trusted to trusted and no prompt appeared. 14 cases in
+  `tests_profile_trust_carry.py`.
+
+  **切了帳號的分頁不會再問「你自己的家目錄可不可信」。** 日常使用中回報：每開一個
+  新分頁都會跳權限詢問。那不是作業系統的權限，是 CLI 在問工作目錄可不可信——而且
+  問的是一個使用者早就信任過的目錄。
+
+  答案記在 config 目錄裡，而把分頁綁到某個帳號等於把它指到該帳號自己的目錄，
+  那裡沒有這筆紀錄。在這台機器上實測：標準設定裡家目錄是信任的，其中一個帳號
+  profile 仍停在「未信任」，另一個連設定檔都沒有——所以每個在帳號底下開的分頁都會
+  再問一次。原本有一個 watcher 用送按鍵的方式回答，那是在跟全螢幕介面賽跑，而且
+  會輸：log 裡就是它回答完、對話框還立在那裡。
+
+  使用者已經做過的決定，現在會在分頁啟動前帶進該帳號的設定。只搬已經存在的決定：
+  標準設定沒有標記信任的目錄照樣會跳詢問，不會有任何事情被代替決定。帳號紀錄裡
+  的其他欄位會保留，設定檔壞掉會重建而不是讓分頁開不起來，寫入用原子替換——因為
+  CLI 自己也在寫這個檔。用真的新分頁驗過：profile 的紀錄從未信任變成信任，而且
+  沒有跳詢問。`tests_profile_trust_carry.py` 共 14 項。
+
+## v0.35.15 (2026-09-08)
+
+### Added
+
+- **Update and restart a paired machine's ShellFrame from this one.** A paired
+  peer's row in the sidebar gains a maintenance entry offering four actions on
+  that machine: check for an update, update, restart, and hot-reload the bridge.
+  Update runs the same upgrade path the local button uses, so it keeps that
+  path's per-step recovery and reports the recovery command if it fails; it does
+  not restart afterwards, matching the local flow where restarting is a separate
+  deliberate step. Restart keeps that machine's tmux-backed sessions, and the
+  new instance reattaches to them.
+
+  Three limits, because these change another machine's state. The action is
+  taken from a fixed list rather than passed through as a command name — the
+  alternative is handing a paired machine the whole command surface. The
+  receiving machine applies the same permission gate as session control, so a
+  one-directional pairing where the other side is the controller refuses. And
+  each destructive action is confirmed here first, with the machine named in the
+  prompt; checking for an update is read-only and is not.
+
+  A restart drops the connection by definition, and that is reported as sent
+  rather than failed — but only for a transport failure. A refusal is a reply,
+  and reporting a rejected permission as "sent, restarting" would be worse than
+  reporting nothing, so an HTTP status now carries its own exception type and
+  never lands in that branch. 35 cases in `tests_link_maintenance.py`, plus an
+  end-to-end round trip in `tests_frame_link.py`: two paired instances where the
+  controlling side succeeds, the controlled side is refused, and an action
+  outside the list is never even sent.
+
+  **從這台更新、重啟配對機器上的 ShellFrame。** 側欄裡配對過的機器那一列多了一個
+  維運入口，提供四個對那台執行的動作：檢查更新、更新、重新啟動、熱重載 bridge。
+  更新走的是本機那顆按鈕同一條升級路徑，因此保有它每一步的復原機制，失敗時會把
+  復原指令帶回來；更新完不會自動重啟，跟本機流程一致——重啟是另一個明確的動作。
+  重啟會保留那台由 tmux 撐著的 session，新的 instance 會接回去。
+
+  因為這些動作會改變另一台機器的狀態，設了三道限制。動作取自固定清單，而不是把
+  名稱轉手當指令傳過去——不這樣做等於把整個指令面交給配對機器。接收端套用跟操作
+  session 同一道權限閘，所以單向配對中「對方是主控端」的情況會被拒絕。而每一個
+  破壞性動作都要在這邊先確認，確認框裡會寫出是哪一台；檢查更新是唯讀的，不需要
+  確認。
+
+  重啟一定會讓連線中斷，那會回報為「已送出」而不是失敗——但僅限於傳輸層的失敗。
+  拒絕是一種回應，而把「權限被擋」報成「已送出，正在重啟」比什麼都不報更糟，
+  所以 HTTP 狀態現在有自己的例外型別，永遠不會落進那個分支。
+  `tests_link_maintenance.py` 共 35 項，另外 `tests_frame_link.py` 補了端到端
+  往返：兩個配對過的 instance，主控端成功、受控端被拒、清單以外的動作連送都不送。
+
+## v0.35.14 (2026-09-08)
+
+### Fixes
+
+- **Concurrent usage readings no longer erase each other from the cache.** The
+  accounts panel queries up to four accounts in parallel, and each one
+  read-modify-writes the same cache file with nothing serialising them. "A
+  reads, B reads, B writes, A writes" is a legal interleaving, and A writes back
+  the blob it read plus its own section — B's entry is simply gone. The whole
+  read-modify-write now runs under one lock, and 24 threads writing their own
+  account keep all 24.
+
+  A write inside a write is also handled, which a re-entrant lock alone does
+  not fix: the outer call would still overwrite with the blob it read before the
+  inner one ran, so a nested change now applies to the blob already in progress
+  instead of starting its own cycle.
+
+  The file is replaced atomically rather than reopened for writing. Writing in
+  place leaves it truncated for as long as the encode takes, and the top-bar
+  indicator reads this file on a timer — a reader could get half a document.
+
+  **Two callers wanting the same account now cause one query.** Different
+  surfaces — the indicator, the usage panel, the accounts panel — can ask for
+  the same account at the same moment, and both would call the API. Measured on
+  this machine, a token queried twice inside a minute gets rate-limited, so the
+  second call was not just wasted but harmful. One request per account is in
+  flight at a time; whoever waits finds the fresh reading in the cache.
+  Different accounts still run in parallel — they hold different tokens and
+  separate budgets. 8 cases in `tests_usage_cache_concurrency.py` cover the
+  interleavings, the truncated-read window, and both fetch behaviours.
+
+  **並行的用量讀數不會再互相從快取裡抹掉。** 帳號面板一次最多並行查四個帳號，
+  每一個都會 read-modify-write 同一個快取檔，而它們之間沒有任何序列化。
+  「A 讀、B 讀、B 寫、A 寫」是完全合法的交錯，而 A 寫回去的是它讀到的 blob 加上
+  自己那一段——B 那一筆就這樣消失了。整段 read-modify-write 現在在同一把鎖底下，
+  24 條執行緒各寫自己的帳號，24 筆全在。
+
+  「寫入之中的寫入」也處理了，那不是可重入的鎖本身能解決的：外層仍然會用它在
+  巢狀之前讀到的 blob 覆蓋回去，所以巢狀的修改現在會套用到「已經在處理中」的
+  那份 blob，而不是自己另跑一輪。
+
+  檔案改成原子替換，而不是重新開檔寫入。原地寫入會讓檔案在編碼期間一直是截斷
+  狀態，而頂列的用量指示會定時讀這個檔——讀到半份文件是有可能的。
+
+  **兩個呼叫端要同一個帳號，現在只會產生一次查詢。** 不同介面（頂列指示、用量
+  面板、帳號面板）可能在同一刻要同一個帳號，而兩邊都會去打 API。在這台機器上實
+  測，同一個 token 一分鐘內查兩次就會被限流，所以第二次不只是浪費，是有害的。
+  同一個帳號一次只有一個請求在飛；等到的那一邊會在快取裡找到剛寫好的讀數。不同
+  帳號仍然並行——它們用不同的 token、額度也是分開的。
+  `tests_usage_cache_concurrency.py` 共 8 項，涵蓋各種交錯、截斷讀取的時間窗、
+  以及兩種查詢行為。
+
+## v0.35.13 (2026-09-08)
+
+### Fixes
+
+- **Double-clicking a sidebar row to rename it works when the list is scrolled.**
+  Reported in daily use: with the sidebar scrolled down, double-clicking a
+  conversation to rename it made the list jump away instead. The first click
+  switches tab, and switching tab rebuilds the whole sidebar — every row is
+  replaced with a new node. The second click is aimed at a position on screen,
+  so if the list moves at all it lands on a different row; the rename condition
+  (same row, within the double-click window) then never holds, and the click
+  switches to that other tab instead.
+
+  Whether emptying the container resets the scroll offset is platform-specific,
+  so the fix does not rest on that: the rebuild is skipped for the length of the
+  double-click window, which makes the interaction immune to the list moving for
+  any reason. The active-row highlight is still applied immediately — that is a
+  class change, not a rebuild — so switching tabs feels no slower, and the full
+  rebuild runs once the window closes. The window is armed on mouse-down rather
+  than on click, because the listener that switches tab is registered before the
+  one that detects the double-click, so the first click's rebuild happens before
+  a click-based flag could be set.
+
+  Separately, the rebuild now restores the scroll offset. The status lights, the
+  bridge chips and the model badges all make the sidebar re-render every few
+  seconds, so a list that loses its offset on rebuild is pulled back to the top
+  repeatedly, not only during a double-click. 15 cases in
+  `tests_sidebar_scroll_rename.py` drive the shipped double-click detection and
+  the shipped rebuild guard against a real scrolled list, and assert that no
+  rebuild happens between the two clicks.
+
+  **側欄捲下去之後，雙擊某一列改名可以用了。** 日常使用中回報：側欄捲到下面時，
+  想雙擊某個對話改名，清單反而會跳走。第一下會切分頁，而切分頁會重建整個側欄
+  ——每一列都換成新的節點。第二下是對著螢幕上的位置點的，清單只要動一下就會落在
+  別的列上，改名的條件（同一列、且在雙擊窗口內）因此永遠不成立，那一下反而切到
+  那另一個分頁。
+
+  清空容器會不會重置捲動位置是平台相依的，所以修法不押在那件事上：雙擊窗口內
+  跳過重建，這讓這個互動對「清單因為任何原因移動」都免疫。active 的高亮仍然
+  立刻套用——那是換 class，不是重建——所以切分頁的手感沒有變慢，完整重建等窗口
+  結束再跑一次。窗口是在 mouse-down 武裝而不是 click，因為切分頁的監聽器註冊得
+  比偵測雙擊的早，第一下的重建會發生在「以 click 為基準的旗標」被設定之前。
+
+  另外，重建現在會還原捲動位置。狀態燈、bridge chip、模型 badge 都會讓側欄每隔
+  幾秒重繪一次，所以一份重建就掉捲動位置的清單會被反覆拉回頂端，不只在雙擊的
+  時候。`tests_sidebar_scroll_rename.py` 共 15 項，拿實際出貨的雙擊偵測與重建
+  守門去打一份真的捲到下面的清單，並確認兩下之間完全沒有重建。
+
+## v0.35.12 (2026-09-08)
+
+### Fixes
+
+- **Scroll-up history shows the agent's replies again.** v0.35.11 fixed how the
+  transcript-rendered history *looked* but not what it contained: the reply
+  itself was missing, and the diagnosis behind one of those fixes was wrong.
+  The transcript normaliser emitted at most one event per record, and an
+  assistant record can hold thinking, several tool calls and the reply text at
+  once. Two things followed. A record whose stop reason is the end of the turn
+  returned only "turn ended" and dropped its text — and the reply is in exactly
+  that record, so an agent's answer never reached the overlay at all. And a
+  record holding several tool calls kept only the last one.
+
+  This also corrects v0.35.11's account of the tool-call wall. Those
+  zero-length text events were not empty blocks attached to each tool use; they
+  were records containing only thinking, flattened into an empty text event.
+  The wall was a symptom of the same single-event limit. Records are now
+  expanded in order — thinking still produces nothing, deliberately, but it no
+  longer produces an empty event either. Measured on the tab that was reported:
+  two text blocks of 161 and 79 characters that reached no event before now
+  render, and the same thirteen tool calls collapse to one summary line for the
+  right reason.
+
+  A background-task notice is a harness-injected record in the user's role, and
+  it was rendered with the user's own marker, reading as though the user had
+  said it; the live view draws it as a bullet. It now renders without the
+  marker, while a real user message keeps it. 28 cases in
+  `tests_history_transcript_fidelity.py`; the full suite covers the status
+  detector, which shares this normaliser.
+
+  **上滑歷史又看得到 agent 的回覆了。** v0.35.11 修好了 transcript 歷史「看起來」
+  的問題，但沒修到它「裝了什麼」：回覆本身是缺的，而其中一項修正的根因判斷是
+  錯的。transcript 正規化器每筆記錄最多只吐一個事件，而一筆 assistant 記錄可以
+  同時帶 thinking、好幾個工具呼叫、以及回覆文字。於是兩件事發生：stop reason 是
+  「回合結束」的那筆只回「回合結束」、把文字丟掉——而回覆就正好在那一筆，所以
+  agent 的答案從來沒有進到 overlay。而一筆裡帶好幾個工具呼叫的，只留最後一個。
+
+  這同時更正 v0.35.11 對「工具行牆」的說法。那些長度為 0 的文字事件並不是
+  「附在每個 tool use 旁邊的空區塊」，而是「只含 thinking 的記錄被壓成一個空的
+  文字事件」。工具行牆是同一個「一筆只吐一個事件」限制的症狀。現在整筆會照順序
+  展開——thinking 仍然刻意不輸出，但它也不再變成一個空事件。在回報的那個分頁上
+  實測：161 與 79 字元的兩個文字區塊以前一個事件都進不去，現在畫得出來，而同樣
+  13 個工具呼叫收成一行摘要，理由也對了。
+
+  背景任務通知是 harness 以使用者身分注入的記錄，而它被掛上了使用者自己的標記，
+  讀起來像是使用者說了那句話；活畫面是畫成一個項目符號。現在不加標記，而真正的
+  使用者訊息仍然保留。`tests_history_transcript_fidelity.py` 共 28 項；狀態偵測
+  共用這支正規化器，由完整測試覆蓋。
+
+## v0.35.11 (2026-09-08)
+
+### Fixes
+
+- **Scroll-up history reads like the live screen again.** Claude Code enters the
+  alternate screen and repaints in place from 2.1.261, so scrolled-off rows are
+  not retained anywhere in the terminal and the overlay renders that tab's
+  history from its transcript instead. Three differences from the live view were
+  reported, and all three were measurable in the renderer.
+
+  A wall of one tool call per line where the live screen shows a single summary.
+  The renderer already collapsed consecutive tool calls, but Claude attaches an
+  *empty* text block to each tool use — one measured tab had nine zero-length
+  ones interleaved between thirteen tool calls. Those events draw nothing, yet
+  they flushed the pending tool calls, so each was emitted on its own. Only an
+  event that will actually produce output flushes now; the same tab renders one
+  summary line.
+
+  Backticks shown literally where the live screen styles inline code. A user
+  message went out with harness noise stripped and nothing else, skipping the
+  markdown rendering that assistant text already used. It goes through the same
+  renderer now, so a command in backticks is coloured the way the live TUI
+  colours it.
+
+  Words broken mid-word. Wrapping was disabled in the default skin, so a long
+  user message went to the overlay as one line and the terminal hard-broke it at
+  the pane edge — one measured line was 309 characters. It now wraps at the pane
+  width on word boundaries. The plain-text mode keeps the markdown source, since
+  without styling the backticks are the only thing carrying the format, but it
+  wraps too — line breaks are layout, not styling, and copying scroll-up content
+  should not produce one endless line. 18 cases in
+  `tests_history_transcript_fidelity.py`, with the event shape taken from a real
+  transcript.
+
+  **上滑歷史又讀得像活畫面了。** Claude Code 從 2.1.261 起會進 alternate screen
+  並原地重繪，捲出去的內容在終端裡哪裡都留不住，所以那種分頁的上滑歷史改成從
+  transcript 重繪。回報了三處跟活畫面的差異，而三處都能在渲染器裡量到。
+
+  一個工具呼叫一行的工具行牆，而活畫面在同一段只有一行摘要。渲染器本來就會收合
+  連續的工具呼叫，但 Claude 會在每個 tool use 旁邊附一個**空的** text block
+  ——實測某個分頁在 13 個工具呼叫之間夾了 9 個長度為 0 的。那些事件什麼都不畫，
+  卻會沖掉待收合的工具呼叫，於是每一個都自己佔一行。現在只有「真的會產生輸出」
+  的事件才會沖掉；同一個分頁現在只畫一行摘要。
+
+  反引號直接顯示出來，而活畫面會把 inline code 上色。使用者訊息原本只清掉
+  harness 雜訊就直接輸出，跳過了 assistant 文字本來就在用的 markdown 渲染。現在
+  兩者走同一個渲染器，反引號裡的指令會照活畫面的顏色上色。
+
+  詞被切在中間。預設 skin 的斷行是關著的，於是長的使用者訊息整行送進 overlay，
+  由終端在 pane 邊緣硬切——實測有一行是 309 個字元。現在會照 pane 寬度、在詞的
+  邊界斷行。純文字模式保留 markdown 來源（沒有樣式可以表達格式時，反引號本身就是
+  唯一承載格式的東西），但同樣會斷行——斷行是排版不是樣式，而複製上滑內容不該
+  拿到一條沒有盡頭的長行。`tests_history_transcript_fidelity.py` 共 18 項，事件
+  形狀取自真實的 transcript。
+
+- **A tab on a switched account can scroll up through its Codex history again.**
+  v0.35.8 changed open-descriptor matching from a substring to a directory
+  prefix, and one call site was missed: the guard that confirms the resolved
+  transcript is the file this pane's own process holds open. It still passed the
+  old substring, which can never match a directory prefix, so the guard always
+  refused and the overlay fell back to capturing the terminal — the wrong buffer
+  in the alternate screen, which shows only the current screen. That site now
+  uses the account-aware sessions root, and the transcript source shares the
+  same per-tab context as status and model resolution instead of assembling its
+  own, which is why it was missed in the first place.
+
+  **切過帳號的分頁又能上滑看 Codex 的歷史了。** v0.35.8 把「開啟中的檔案描述子」
+  的比對從子字串改成目錄前綴，而漏掉一個呼叫點：確認解析出來的 transcript 就是
+  這個 pane 自己的程序開著的那個檔的守門。它還是傳舊的子字串，而那永遠不可能
+  match 一個目錄前綴，於是守門一律拒絕，overlay 掉回去擷取終端——在 alternate
+  screen 下那是錯的 buffer，只看得到目前這一屏。那個呼叫點現在用帳號感知的
+  sessions 根目錄，而 transcript 來源改成跟狀態、模型解析共用同一份分頁 context，
+  不再自己拼一份——各處自己拼 context 正是它一開始會被漏掉的原因。
+
+## v0.35.10 (2026-09-07)
+
+### Changes
+
+- **The new-session list groups the launchers of one CLI together instead of
+  reading as duplicates.** Reported in daily use: the list looked like it had
+  several duplicate entries. The data was correct — two launchers for the same
+  CLI, one for the hosted service and one pointing at a local-model gateway —
+  but in a flat list of eight rows their names differed only by a parenthesis,
+  which reads as the same thing listed twice. Launchers of one CLI now sit
+  under a heading for that CLI, indented, labelled by what distinguishes them
+  (the parenthetical, with the CLI's own name stripped out; the one with no
+  distinguishing part is labelled as the default). A CLI with only one launcher
+  is unchanged, and so is the existing order — a group takes the position of its
+  first member, so nothing in the list moves. Clicking a row still launches that
+  row's own command and the delete button still removes that row's own entry.
+
+  Grouping is computed by the same classifier that decides a tab's provider for
+  status, model and account handling, rather than a second rule that could
+  disagree with it.
+
+  **新增分頁的清單會把同一支 CLI 的幾個啟動器收成一組，不再讀起來像重複。**
+  日常使用中回報：清單看起來有好幾個重複的項目。資料其實是對的——同一支 CLI
+  有兩個啟動器，一個接雲端服務、一個接地端模型的閘門——但在八列平面清單裡，
+  它們的名稱只差一個括號，讀起來就是同一個東西被列了兩次。同一支 CLI 的啟動器
+  現在收在該 CLI 的標題底下、縮排，並以「它跟同組其他成員的差異」命名（括號裡
+  那段，CLI 自己的名字會被剝掉；沒有差異字的那個標示為預設）。只有一個啟動器
+  的 CLI 維持原樣，既有的順序也維持原樣——一組的位置就是它第一個成員的位置，
+  所以清單裡沒有任何東西會移動。點某一列還是啟動該列自己的指令，刪除鈕也還是
+  只刪該列自己的項目。
+
+  分組用的是「決定分頁 provider」的那同一支分類器（狀態、模型、帳號判斷都吃
+  它），而不是另寫一條可能跟它意見不同的規則。
+
+### Fixes
+
+- **A launcher named after ShellFrame's own convention is recognised as the CLI
+  it launches.** Provider detection matches the command's base name against a
+  registry of known binaries, and the registry carries a few wrapper names
+  explicitly. One that had not been added resolved to "unknown", so its tab
+  showed no provider, was excluded from account handling, and would have landed
+  in its own group here. Wrappers named `sf-<cli>-<variant>` are now derived
+  from the prefix, so a machine-specific launcher works without adding an entry
+  to a shared registry. The rule is deliberately narrow: only a name starting
+  with `sf-` is read this way, and only when a following part names a known CLI.
+
+  This is kept separate from the choice of which usage reader applies to a tab,
+  which is unchanged — a launcher pointing at a local-model gateway should not
+  start reporting a hosted service's quota. 23 cases in
+  `tests_preset_groups.py` cover both halves and save a screenshot.
+
+  **照 ShellFrame 自己命名慣例的啟動器會被認出是哪一支 CLI。** provider 判斷是
+  拿指令的基本名稱去比對一份已知執行檔的 registry，而 registry 裡明確帶了幾個
+  wrapper 名稱。其中一支沒有被加進去，於是解析成「不明」——那個分頁沒有 provider
+  標示、被排除在帳號判斷之外，在這裡也會自己落成一組。`sf-<cli>-<變體>` 這種
+  wrapper 名稱現在直接從前綴推導，機器特有的啟動器不必再往共用的 registry 加一筆。
+  這條規則刻意做得很窄：只有以 `sf-` 開頭的名稱會被這樣解讀，而且後面某一段必須
+  是已知的 CLI。
+
+  這跟「該分頁套哪個額度讀取器」是分開的，後者沒有變動——接地端模型閘門的啟動器
+  不該開始回報雲端服務的額度。`tests_preset_groups.py` 共 23 項，兩半都涵蓋，
+  並存下截圖。
+
+### Internal
+
+- **Two assertions no longer break when a variable is renamed.** They matched a
+  call together with its exact argument names, so a refactor that kept the
+  behaviour still turned them red. They now look for the call inside the
+  relevant function body.
+
+  **兩項斷言不再因為變數改名而紅燈。** 它們把呼叫連著確切的參數名一起比對，於是
+  行為沒變的重構照樣讓它們失敗。現在改成在相關函式的主體裡找那個呼叫。
+
+## v0.35.9 (2026-09-07)
+
+### Fixes
+
+- **The terminal no longer goes blank when sessions are created or closed from
+  outside the window.** Reported in daily use, with the cause visible in the
+  debug log: every tab logged its terminal-initialisation line twice inside two
+  and a half seconds — one full round, then a second full round starting before
+  the first had finished. Reconciliation between the window and the backend
+  session list runs from four triggers (a timer, a change in the bridge's
+  session count, a nudge from the backend, and finishing a new tab), and each
+  round awaits once for the session list and once more per new tab. Two rounds
+  overlapping meant the second worked from a snapshot of "which tabs the window
+  already has" taken while the first was still building them, so it built every
+  pane a second time. The second terminal replaced the first in the window's
+  own table, which orphaned the DOM node holding what the user was reading, and
+  nothing replays the screen into a pane created that way — so the terminal was
+  empty.
+
+  Only one round now runs at a time; a trigger that arrives during a round is
+  remembered and runs once after it, so a session change is never simply
+  dropped. Membership is checked against the live table immediately before
+  building, not against a snapshot taken several hundred milliseconds earlier.
+  Attaching to a tab is idempotent across the whole build, not just at its
+  first line — checking whether the tab exists is not enough when the check and
+  the registration sit either side of several awaits. And a response that comes
+  back after a newer one has already been applied is discarded instead of
+  writing its stale labels and tab order over the newer ones, which was
+  reproducible on its own. 9 cases in `tests_session_sync_race.js` drive the
+  shipped reconciliation and the shipped attach guard with controlled response
+  ordering.
+
+  **從視窗外面建立或關閉 session 時，終端不會再變成一片空白。** 日常使用中回報，
+  根因在 debug log 裡看得見：每一個分頁的終端初始化那一行在兩秒半內出現兩次
+  ——完整一輪，接著第二輪在第一輪還沒跑完就開始。視窗與後端 session 清單的對帳
+  有四個觸發源（定時器、bridge session 數變化、後端直推、開完新分頁），而每一輪
+  會 await 一次取清單、再對每個新分頁各 await 一次。兩輪重疊時，第二輪拿到的
+  「視窗已經有哪些分頁」是在第一輪還在建的過程中取的快照，於是把每個 pane 又
+  建了一次。第二個終端在視窗自己的表裡取代了第一個，使用者正在看的那個 DOM
+  節點因此變成孤兒，而這樣建出來的 pane 沒有任何機制會把畫面重播進去——終端
+  於是空的。
+
+  現在同一時間只跑一輪；在一輪進行中抵達的觸發會被記下來、結束後補跑一次，
+  session 變動不會就這樣被丟掉。成員判斷改成在建立前的那一刻查即時的表，而不是
+  幾百毫秒前取的快照。接上分頁的動作在「整個建立過程」都是冪等的，不只是第一行
+  ——當檢查與註冊分別落在好幾個 await 的兩側時，「查一下分頁在不在」並不夠。
+  另外，比較新的回應已經套用之後才回來的舊回應會被丟掉，不再把過期的名稱與分頁
+  順序蓋在新的上面，那一項本來就可以獨立重現。`tests_session_sync_race.js` 共
+  9 項，用受控的回應順序去打實際出貨的對帳流程與接上分頁的守門。
+
+### Internal
+
+- **A remote-pane assertion no longer depends on two lines being adjacent.** It
+  matched the wheel-listener call together with the following line, so any
+  insertion between them failed the assertion while the behaviour was intact.
+  It now looks inside the function body.
+
+  **遠端 pane 的一項斷言不再依賴兩行相鄰。** 它把滾輪監聽那一行連著下一行一起
+  比對，於是中間插入任何東西都會讓斷言失敗，而功能其實是好的。現在改成在函式
+  主體裡找。
+
+## v0.35.8 (2026-09-07)
+
+### Fixes
+
+- **A tab's status and model badge can no longer be read from another
+  account's transcript.** Multiple accounts work by pointing the CLI at a
+  different config directory — `CODEX_HOME` for one provider,
+  `CLAUDE_CONFIG_DIR` for the other — and the transcript, the config and the
+  model all live under that directory. Resolution ignored it. The Codex
+  resolver matched open file descriptors against the literal string
+  `/.codex/sessions/`, which can never match a path under a profile directory
+  (`account-profiles/codex/<ref>/sessions/…` has no dot before `codex`), so a
+  tab on a switched account always missed and fell through to "the
+  newest-modified rollout anywhere on disk" — another tab's conversation. The
+  Claude branch had the same blind spot in its transcript search, and both
+  providers' model fallbacks read the global config file rather than the
+  account's own.
+
+  Every resolution now runs against the tab's own directory: file descriptors
+  are accepted by directory prefix rather than a substring, the search for a
+  transcript is scoped to that account, and the model falls back to that
+  account's config. The Codex branch also honours the recorded transcript path
+  and the remembered rollout id, which names the file exactly. When nothing
+  identifies the tab's own transcript the answer is now "unknown" instead of a
+  guess — state falls back to reading the tab's own screen, which cannot be
+  another conversation. Restore-after-reboot looks for the rollout under the
+  right account too; it used to search only the global tree, decide the record
+  was gone, and start a blank conversation.
+
+  The directory itself is now read from the environment variable the running
+  CLI actually uses, not from the stored account reference. Measured on a live
+  tab: its process held a rollout open under a profile directory while the
+  stored reference said no account was pinned, because the marker that
+  reference is recovered from is only written when a tab is created with one.
+  With the directory read from the environment, that tab resolves to its own
+  rollout and its badge changed from the globally configured model to the one
+  the session is actually running. Read once per tab and kept on the session,
+  not on a timer: the status loop calls this every pass, and on a machine where
+  the existing pane captures already time out, adding a recurring subprocess to
+  that path trades terminal smoothness for a value that does not change. 23 cases in
+  `tests_session_account_context.py` cover two accounts on the same working
+  directory, a descriptor belonging to the other account, a remembered id from
+  the other account, and the environment/reference/default fallback order.
+
+  **分頁的狀態與模型不會再從另一個帳號的 transcript 讀出來。** 多帳號是靠讓 CLI
+  指到不同的 config 目錄實作的——一個 provider 用 `CODEX_HOME`、另一個用
+  `CLAUDE_CONFIG_DIR`——而 transcript、config 與模型全都寫在那個目錄底下。解析
+  完全沒有考慮它。Codex 的解析拿開啟的檔案描述子去比對字面字串
+  `/.codex/sessions/`，那條字串永遠不會命中 profile 目錄底下的路徑
+  （`account-profiles/codex/<ref>/sessions/…` 的 codex 前面沒有點），於是切過帳號
+  的分頁一律落空，掉進「磁碟上最近修改的那一份 rollout」——也就是另一個分頁的
+  對話。Claude 分支在搜尋 transcript 時有同樣的盲點，而兩個 provider 的模型
+  fallback 都讀全域 config 而不是該帳號自己那份。
+
+  現在每一次解析都跑在分頁自己的目錄上：檔案描述子改用目錄前綴而非子字串來
+  判斷，transcript 的搜尋限定在該帳號內，模型 fallback 讀該帳號的 config。
+  Codex 分支另外會採用記下來的 transcript 路徑與記住的 rollout id——後者的檔名
+  直接帶著 id，是精確對應。當沒有任何線索能指認分頁自己的 transcript 時，答案
+  現在是「不知道」而不是猜一個：狀態改由分頁自己的畫面判斷，那不可能是別人的
+  對話。重開機後的還原也會到正確的帳號底下找 rollout；它以前只搜全域樹，然後
+  判定記錄不存在、開一個空白對話。
+
+  目錄本身現在改讀「跑起來的 CLI 真正吃的環境變數」，而不是儲存的帳號參照。
+  活體實測：有個分頁的 process 開著 profile 目錄底下的 rollout，而儲存的參照卻
+  說它沒有 pin 任何帳號——因為那個參照是從一個 marker 還原的，而該 marker 只在
+  「建立分頁時就帶著帳號」的情況下才會寫入。改讀環境變數之後，那個分頁解析到
+  自己的 rollout，badge 也從全域設定的模型變成該 session 實際在跑的模型。每個
+  分頁只讀一次並掛在 session 上，不走計時器：狀態迴圈每一輪都會呼叫它，而在
+  既有的畫面擷取都已經會逾時的機器上，往那條路徑加一個週期性的 subprocess，
+  等於拿終端的流暢度去換一個不會變的值。
+  `tests_session_account_context.py` 共 23 項，涵蓋同一個工作目錄下的兩個帳號、
+  描述子屬於另一個帳號、記住的 id 屬於另一個帳號，以及環境變數／參照／預設值的
+  優先順序。
+
+### Internal
+
+- **The per-tab resolution context is built in one place.** Four call sites each
+  assembled their own dictionary of command, working directory, pane name and
+  session id, and all four were missing the account identity — which is why
+  adding it needed a single edit in each of four spots rather than one. They now
+  share one accessor, so the next field to reach status, model and transcript
+  resolution is added once.
+
+  **分頁的解析 context 收斂成一個入口。** 原本四個呼叫點各自拼一份 dict（指令、
+  工作目錄、pane 名稱、session id），而四份都少了帳號身分——這也正是為什麼補上
+  它得在四個地方各改一次。現在共用同一支存取器，下一個要貫穿狀態、模型與
+  transcript 解析的欄位只要加一次。
+
+## v0.35.7 (2026-09-07)
+
+### Fixes
+
+- **Pairing no longer leaves an empty panel across the bottom of the window.**
+  Reported in daily use: about 260px of the window went blank, with only a
+  placeholder dash top-left and a close button top-right. That is the Frame
+  Link messages/files panel. It carries exactly two things — one peer's
+  messages, or one peer's files — and which of the two is a selection the user
+  makes from the sidebar. Pairing success opened the panel unconditionally
+  without making that selection, so there was nothing to render and the panel
+  simply took height away from the terminal. Pairing now only refreshes the
+  sidebar, where the newly paired peer appears with its own message and file
+  buttons. The panel additionally refuses to open with no selection, so no
+  future caller can reproduce the blank state; the two real entry points now
+  set the selection before asking it to open. Closing restores the terminal
+  height and re-fits, as before. 13 cases in `tests_link_panel_empty.py` drive
+  the shipped functions and save before/after screenshots.
+
+  **配對成功不會再在視窗下半部留下一片空白面板。** 日常使用中回報：視窗有約
+  260px 整片空白，左上角只有一個佔位的「—」、右上角一個關閉鈕。那是 Frame Link
+  的訊息／檔案面板。它只承載兩種內容——某個 peer 的訊息，或某個 peer 的檔案
+  ——而是哪一種是使用者從側欄做的選擇。配對成功時無條件展開面板卻沒有做這個
+  選擇，於是沒有東西可畫，面板只是從終端把高度拿走。配對現在只更新側欄，新
+  配對的 peer 會出現在那裡，訊息與檔案的按鈕就在那一列上。面板另外會拒絕在
+  沒有選擇時展開，任何呼叫端都不可能再重現這個空白狀態；兩個真正的入口改成
+  先設好選擇再要求展開。關閉時終端高度回復並重新 fit，跟原本一樣。
+  `tests_link_panel_empty.py` 共 13 項，跑的是實際出貨的函式，並存下修前修後
+  的截圖。
+
+- **A built-in preset can no longer appear twice in the new-session list.** The
+  once-each offer for every supported CLI de-duplicated on the command string
+  alone. Editing a built-in preset's command — pointing it at an absolute path,
+  say — makes that comparison miss, so if the record of what had already been
+  offered was ever rolled back (a config restored from an older backup, or only
+  the legacy flag left, which stands for two of the CLIs), the same preset was
+  appended again. The offer now also skips a name that is already present.
+  Custom variants of the same CLI under different names still coexist, and a
+  built-in the user deleted still stays deleted. 9 cases in
+  `tests_preset_dedup.py`.
+
+  **內建 preset 不會再在新增分頁的清單裡出現兩份。** 「每個支援的 CLI 各提供
+  一次」原本只比對指令字串來判斷重複。使用者一旦改過內建 preset 的指令——例如
+  指到絕對路徑——這個比對就對不上；此時只要「已提供過哪些」的記錄因為任何原因
+  回退（config 從舊備份還原，或只剩舊旗標，而它只代表其中兩支 CLI），同一個
+  preset 就會被再加一次。提供時現在也會跳過已經存在的名稱。同一支 CLI 底下
+  不同名稱的自訂變體照樣共存，使用者刪掉的內建也仍然不會自己長回來。
+  `tests_preset_dedup.py` 共 9 項。
+
+### Internal
+
+- **The test entry point now decides pass or fail from the child's exit code.**
+  It captured the output of each test but discarded the status, then judged the
+  run by whether the last line contained `PASS`, `0 failed` or `all green`. Both
+  failure modes are reproducible: a test that exits 7 while printing `ALL PASS`
+  was reported as passing, and `Results: 1 passed, 10 failed` passed too,
+  because it contains `0 failed` as a substring. Every "all green" this repo has
+  reported was therefore unverified. Output is now only the summary line;
+  failure is a non-zero exit, full stop. Collection also covers `test_*.py`
+  (singular) — `test_init_prompt.py` had never been run — de-duplicated against
+  the plural glob, and a run that collects nothing is a failure rather than a
+  vacuous pass. Tests that skip for a missing runtime are counted and shown
+  separately from passes, since exiting 0 without running is not evidence of
+  anything. 10 cases in `tests_runner_self.py` run the real runner against
+  deliberately misbehaving fake tests. The honest runner reports 62/62 with no
+  skips.
+
+  **測試入口現在用子程序的退出碼判定成敗。** 它抓了每支測試的輸出卻把狀態丟掉，
+  然後看最後一行有沒有 `PASS`、`0 failed`、`all green` 來判斷。兩種誤判都可重現：
+  一支 exit 7 但印出 `ALL PASS` 的測試會被判成通過，而 `Results: 1 passed,
+  10 failed` 也會通過，因為它含有 `0 failed` 這個子字串。這個 repo 過去每一次
+  「全綠」因此都是未經驗證的。輸出現在只用來顯示摘要；失敗就是退出碼非零，沒有
+  例外。收集範圍也涵蓋 `test_*.py`（單數）——`test_init_prompt.py` 從來沒被跑過
+  ——並與複數的 glob 去重，而收集不到任何測試現在是失敗而不是空洞的通過。因為
+  缺少 runtime 而跳過的測試會分開計數與顯示，畢竟「沒跑卻回 0」不能證明任何事。
+  `tests_runner_self.py` 共 10 項，拿真正的 runner 去跑故意亂來的假測試。誠實的
+  runner 回報 62/62，零跳過。
+
+## v0.35.6 (2026-09-07)
+
+### Fixes
+
+- **Chinese input into a remote (Frame Link) tab no longer duplicates or leaks
+  half-composed characters.** Local tabs run every keystroke through an
+  IME-aware guard — it drops the second copy when the OS commits a phrase twice
+  (the classic shift-mid-composition double-send) and swallows the raw Zhuyin /
+  candidate-selection keys that leak out mid-composition. Remote panes sent
+  `term.onData` straight to the peer with none of that, so typing Chinese into a
+  remote tab produced doubled phrases ("我用我用", "還是要用還是要用") and
+  stray characters. The guard is now factored into `_makeImeInputGuard` and the
+  remote pane runs its keystrokes through the same two filters (with Enter and
+  plain ASCII always passing). Regression cases added to `tests_ime_dedup.js`.
+
+  **打中文到遠端（Frame Link）分頁不再重複、不再漏半成品。** 本機分頁的每個按鍵
+  都會過一道 IME 感知守門——系統把一個片語 commit 兩次時（注音打到一半切 shift
+  的經典重送）丟掉第二份，並吞掉組字中漏出來的純注音／選字鍵。遠端 pane 之前是
+  把 `term.onData` 直接送給對方、完全沒有這層，所以打中文會出現片語重複
+  （「我用我用」「還是要用還是要用」）和多餘字元。現在把守門抽成
+  `_makeImeInputGuard`，遠端 pane 的按鍵也過同樣兩道濾網（Enter 與純 ASCII 一律
+  放行）。回歸案例加進 `tests_ime_dedup.js`。
+
 ## v0.35.5 (2026-09-06)
 
 ### Fixes

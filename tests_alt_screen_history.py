@@ -42,14 +42,28 @@ def check(name, ok, detail=""):
 hist = (HERE / "api_history.py").read_text(encoding="utf-8")
 main_src = (HERE / "main.py").read_text(encoding="utf-8")
 
-# ── 1. transcript 來源要拿得到 hook 回報的路徑 ──
+# ── 1. transcript 來源要拿到「帳號感知」的 context ──
+# 原本這裡自己拼一份 worker dict，只帶 transcript_hint。各處自己拼 context 就是
+# 它會再壞一次的原因：0.35.8 把帳號的 config 目錄加進解析時，這一份沒跟上，
+# codex 分頁的上滑歷史整條斷掉。改成共用 Api._worker_ctx。
 m = re.search(r"def _transcript_history_response.*?kind = agent_status\._worker_kind",
               hist, re.S)
-check("_transcript_history_response 有組 worker", bool(m))
+check("_transcript_history_response 有取 worker context", bool(m))
 if m:
-    check("worker 帶 transcript_hint（唯一指得到 account-profile 的線索）",
-          '"transcript_hint": getattr(s, "_hook_transcript_path", None)' in m.group(0),
-          "少了它，切過帳號的分頁永遠找不到 transcript")
+    check("走共用的 _worker_ctx，不自己拼一份",
+          "self._worker_ctx(sid, s)" in m.group(0), m.group(0)[-200:])
+main_src = (HERE / "main.py").read_text(encoding="utf-8")
+ctx = main_src.split("def _worker_ctx(self, sid: str, s) -> dict:")[1].split("\n    def ")[0]
+check("_worker_ctx 帶 transcript_hint（指得到 account-profile 的線索）",
+      "_hook_transcript_path" in ctx)
+check("_worker_ctx 帶 config_dir（切過帳號的分頁靠它找對目錄）",
+      '"config_dir"' in ctx)
+# codex 分支的 lsof 守門也要用帳號感知的根目錄，不能是寫死的子字串
+codex_guard = hist.split('if kind == "codex":')[1].split("return None")[0]
+check("codex 的 lsof 守門用帳號感知的 sessions 根目錄",
+      "codex_sessions_root(worker)" in codex_guard, codex_guard)
+check("不再拿寫死的 /.codex/sessions/ 子字串比對",
+      '"/.codex/sessions/"' not in codex_guard, codex_guard)
 
 # ── 2. pyte 夠不夠用要看行數，不是字元數 ──
 check("pyte 門檻改用行數判斷（只有一屏不算歷史）",
