@@ -1408,6 +1408,19 @@
     </div>
 
     <div class="about-section">
+      <h3>給 AI 的使用說明（Skill）</h3>
+      <p>把這份說明貼給任何 AI，它就知道怎麼操作 ShellFrame：讀其他分頁、派工、
+      以及<b>跨機器操控另一台電腦的 session</b>。裡面要求 AI 先自己查版本，再對照
+      功能表，避免它用到這個版本還沒有的指令。</p>
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+        <button class="btn btn-primary" id="btn-copy-skill" style="font-size:11px;padding:4px 10px">複製給 AI</button>
+        <button class="btn btn-ghost" id="btn-open-skill" style="font-size:11px;padding:4px 10px">看內容</button>
+        <span id="skill-copy-msg" style="font-size:11px;color:#9ece6a"></span>
+      </div>
+      <pre id="skill-preview" style="display:none;white-space:pre-wrap;max-height:260px;overflow:auto;background:#1a1b26;border:1px solid #3b4261;border-radius:6px;padding:10px;margin-top:8px;font-size:10px;line-height:1.5;color:#a9b1d6"></pre>
+    </div>
+
+    <div class="about-section">
       <h3 data-i18n="usage">Usage</h3>
       <ul id="about-usage-list">
         <li>Click <code>+</code> or press <span class="kbd">Cmd/Ctrl+T</span> to open a new session</li>
@@ -8566,6 +8579,39 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const body = encodeURIComponent(`**Version:** ${ver}\n**Platform:** ${platform}\n\n**What happened:**\n\n\n**Steps to reproduce:**\n1. \n\n**Expected vs actual:**\n`);
     window.open(`https://github.com/h2ocloud/shellframe/issues/new?title=${title}&body=${body}`, '_blank');
   });
+  // ── About → skill sheet for an AI ──
+  let _skillText = '';
+  async function loadSkillDoc() {
+    if (_skillText) return _skillText;
+    try {
+      const r = JSON.parse(await pywebview.api.ai_skill_doc());
+      _skillText = r.success ? (r.text || '') : '';
+    } catch (e) { _skillText = ''; }
+    return _skillText;
+  }
+  document.getElementById('btn-copy-skill').addEventListener('click', async () => {
+    const msg = document.getElementById('skill-copy-msg');
+    const text = await loadSkillDoc();
+    if (!text) { msg.style.color = '#f7768e'; msg.textContent = '讀不到說明檔'; return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      msg.style.color = '#9ece6a';
+      msg.textContent = '已複製 ' + text.length + ' 字，貼給 AI 即可';
+    } catch (e) {
+      // Clipboard can be refused in the webview; show it so it can be copied by hand.
+      const pre = document.getElementById('skill-preview');
+      pre.textContent = text; pre.style.display = 'block';
+      msg.style.color = '#e0af68'; msg.textContent = '無法自動複製，內容如下';
+    }
+    setTimeout(() => { msg.textContent = ''; }, 6000);
+  });
+  document.getElementById('btn-open-skill').addEventListener('click', async () => {
+    const pre = document.getElementById('skill-preview');
+    if (pre.style.display === 'block') { pre.style.display = 'none'; return; }
+    pre.textContent = (await loadSkillDoc()) || '讀不到 docs/ai-skill.md';
+    pre.style.display = 'block';
+  });
+
   document.getElementById('btn-check-update').addEventListener('click', async () => {
     const btn = document.getElementById('btn-check-update');
     const result = document.getElementById('check-update-result');

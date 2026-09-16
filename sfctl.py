@@ -537,6 +537,31 @@ def main():
     p_send.add_argument("--no-submit", dest="submit", action="store_false",
                         help="Don't append Enter after text")
 
+    sub.add_parser("version", help="ShellFrame version + which experimental features are on")
+
+    # ── cross-machine (Frame Link): same verbs, with a paired computer in front ──
+    p_ll = sub.add_parser("link-list", help="List sessions on a paired computer")
+    p_ll.add_argument("peer", help="Peer name or frame_id (see: sfctl link-status)")
+    p_lk = sub.add_parser("link-peek", help="Read a session's screen on a paired computer")
+    p_lk.add_argument("peer"); p_lk.add_argument("sid")
+    p_lk.add_argument("--lines", type=int, default=120)
+    p_lc = sub.add_parser("link-conversation",
+                          help="Typed conversation turns from a paired computer's session")
+    p_lc.add_argument("peer"); p_lc.add_argument("sid")
+    p_lc.add_argument("--limit", type=int, default=80)
+    p_ls = sub.add_parser("link-send", help="Send a prompt into a session on a paired computer")
+    p_ls.add_argument("peer"); p_ls.add_argument("sid"); p_ls.add_argument("text")
+    p_ls.add_argument("--no-submit", action="store_true", help="Paste without pressing Enter")
+    p_ln = sub.add_parser("link-new", help="Open a session on a paired computer")
+    p_ln.add_argument("peer")
+    p_ln.add_argument("launch", nargs="?", default="claude",
+                      help="Command to launch (default: claude)")
+    p_lx = sub.add_parser("link-close", help="Close a session on a paired computer")
+    p_lx.add_argument("peer"); p_lx.add_argument("sid")
+    p_lr = sub.add_parser("link-rename", help="Rename a session on a paired computer")
+    p_lr.add_argument("peer"); p_lr.add_argument("sid"); p_lr.add_argument("name")
+    sub.add_parser("link-status", help="Paired computers and whether they are reachable")
+
     p_peek = sub.add_parser("peek", help="Read the last N lines of a session's pane (deduped)")
     p_peek.add_argument("sid", help="Session id")
     p_peek.add_argument("--lines", type=int, default=50,
@@ -664,6 +689,30 @@ def main():
         }))
     elif args.cmd == "history-audit":
         _print_result(_rpc("history_audit", {"sid": args.sid}, timeout=20))
+    elif args.cmd == "version":
+        _print_result(_rpc("version"))
+    elif args.cmd == "link-status":
+        _print_result(_rpc("link_status"))
+    elif args.cmd == "link-list":
+        _print_result(_rpc("link_list", {"peer": args.peer}))
+    elif args.cmd == "link-peek":
+        _print_result(_rpc("link_peek", {"peer": args.peer, "sid": args.sid,
+                                         "lines": args.lines}))
+    elif args.cmd == "link-conversation":
+        _print_result(_rpc("link_conversation", {"peer": args.peer, "sid": args.sid,
+                                                 "limit": args.limit}))
+    elif args.cmd == "link-send":
+        _print_result(_rpc("link_send", {"peer": args.peer, "sid": args.sid,
+                                         "text": args.text,
+                                         "submit": not args.no_submit}, timeout=45.0))
+    elif args.cmd == "link-new":
+        _print_result(_rpc("link_new", {"peer": args.peer, "cmd": args.launch},
+                           timeout=45.0))
+    elif args.cmd == "link-close":
+        _print_result(_rpc("link_close", {"peer": args.peer, "sid": args.sid}, timeout=30.0))
+    elif args.cmd == "link-rename":
+        _print_result(_rpc("link_rename", {"peer": args.peer, "sid": args.sid,
+                                           "name": args.name}, timeout=30.0))
     elif args.cmd == "board-list":
         _print_result(_rpc("board_list"))
     elif args.cmd == "board-add":

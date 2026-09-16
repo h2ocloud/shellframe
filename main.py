@@ -5445,6 +5445,16 @@ try {
             _swallow("Api.get_latest_release_notes:4601")
         return json.dumps({"version": version, "heading": heading, "body": body})
 
+    def ai_skill_doc(self) -> str:
+        """The agent-facing skill sheet (docs/ai-skill.md), for the About panel's
+        copy button. Served from disk so it tracks the installed build rather
+        than a copy pasted into the UI that would drift out of date."""
+        try:
+            path = Path(__file__).resolve().parent / "docs" / "ai-skill.md"
+            return json.dumps({"success": True, "text": path.read_text(encoding="utf-8")})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
     def check_update(self) -> str:
         """Check GitHub for latest version. Returns JSON with local, remote, update_available."""
         try:
@@ -7896,6 +7906,57 @@ try {
                                    if res.get("success") else res.get("message", "取消失敗")}
             except Exception as e:
                 return {"success": False, "message": f"delay cancel failed: {e}"}
+
+        elif cmd == "version":
+            # An agent should ask what it is driving before assuming a feature
+            # exists, rather than hard-coding a version it was told once.
+            try:
+                v = json.loads(VERSION_FILE.read_text()).get("version", "0")
+            except Exception:
+                v = "0"
+            st = (load_config().get("settings") or {})
+            return {"success": True, "message": f"ShellFrame v{v}",
+                    "details": {"version": v,
+                                "experimental": {k: bool(st.get(k))
+                                                 for k in ("experimental_a2a",
+                                                           "experimental_board",
+                                                           "experimental_loops")}}}
+
+        elif cmd in ("link_list", "link_peek", "link_send", "link_new",
+                     "link_close", "link_rename", "link_conversation"):
+            # Cross-machine session control. Same verbs as the local ones, with a
+            # peer in front; the peer may be named or given by frame_id.
+            try:
+                target = (args.get("peer") or "").strip()
+                peers = self._link().peers()
+                pid = target if target in peers else ""
+                if not pid:
+                    for k, v in peers.items():
+                        if v.get("name") == target:
+                            pid = k
+                            break
+                if not pid:
+                    names = ", ".join(v.get("name", k[:8]) for k, v in peers.items()) or "(none)"
+                    return {"success": False,
+                            "message": f"找不到 peer「{target}」。已配對：{names}"}
+                link, sid = self._link(), args.get("sid", "")
+                if cmd == "link_list":
+                    return link.remote_info(pid)
+                if cmd == "link_peek":
+                    return link.remote_peek(pid, sid, int(args.get("lines") or 120))
+                if cmd == "link_conversation":
+                    return link.remote_conversation(pid, sid, int(args.get("limit") or 80))
+                if cmd == "link_send":
+                    return link.remote_send(pid, sid, args.get("text", ""),
+                                            bool(args.get("submit", True)))
+                if cmd == "link_new":
+                    return link.remote_new(pid, args.get("cmd") or "claude")
+                if cmd == "link_close":
+                    return link.remote_close(pid, sid)
+                if cmd == "link_rename":
+                    return link.remote_rename(pid, sid, args.get("name", ""))
+            except Exception as e:
+                return {"success": False, "message": f"{cmd} failed: {e}"}
 
         elif cmd == "link_unpair":
             try:
