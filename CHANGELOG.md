@@ -6,6 +6,36 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.36.3 (2026-09-17)
+
+### Fixes
+
+- **Windows can apply an update again.** Restarting was refused whenever any
+  terminal session existed — which on Windows is always — so an update could be
+  downloaded but never applied, and the dialog's only button read "Restart
+  blocked". Windows has no tmux, so a restart recreates each tab from its saved
+  command and label rather than reattaching: the tabs come back, the scrollback
+  and any in-progress conversation do not. That is a trade-off to put to the
+  user, not to decide for them. The dialog now says exactly what is lost and how
+  many tabs are affected, and offers "Restart anyway". An explicit `sfctl
+  restart` or Telegram `/restart` carries the confirmation itself, since on
+  Windows that is often the only way to reach the machine and there is nobody
+  at the screen to answer a prompt.
+
+  **Windows 終於能套用更新。** 只要還有任何終端 session 就拒絕重啟——而 Windows
+  上永遠都有——於是更新下載得下來卻永遠套用不了，對話框上唯一的按鈕還寫著「無法
+  安全重啟」。Windows 沒有 tmux，重啟是照存檔的指令與名稱重建分頁而不是 reattach：
+  分頁會回來，scrollback 與進行到一半的對話不會。這是該交給使用者決定的取捨，不是
+  替他決定。現在對話框會明說會失去什麼、影響幾個分頁，並提供「仍要重啟」。明確下
+  的 `sfctl restart` 或 Telegram `/restart` 則自帶確認——在 Windows 上那常常是唯一
+  搆得到那台機器的方式，而當下沒有人在螢幕前回答提示。
+
+- **Only one restart dialog appears.** Two update paths could both open it,
+  stacking identical dialogs and repeating the same warning inside them.
+
+  **重啟對話框只會出現一個。** 兩條更新路徑都可能開啟它，結果疊出一模一樣的對話框，
+  裡面的警告也重複了一次。
+
 ## v0.36.2 (2026-09-17)
 
 ### Changes

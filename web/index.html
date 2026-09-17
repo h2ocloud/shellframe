@@ -8853,9 +8853,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // ── Restart confirmation modal ──
   function confirmRestart(version, fromUpdate) {
     const isZh = lang === 'zh-TW';
+    // One dialog at a time. Two update paths can both reach here (the check and
+    // the post-update prompt), which stacked identical dialogs and repeated the
+    // same warning inside them.
+    document.querySelectorAll('[data-restart-modal]').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay open';
     overlay.style.zIndex = '400';
+    overlay.setAttribute('data-restart-modal', '1');
     overlay.innerHTML = `
       <div class="modal" style="width:380px;padding:20px">
         <div style="text-align:center;font-size:32px;color:#7aa2f7;font-family:monospace;margin-bottom:8px">↻</div>
@@ -8885,12 +8890,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       try {
         const result = JSON.parse(raw);
         if (result && result.success === false) {
-          document.getElementById('restart-now').disabled = false;
-          document.getElementById('restart-now').textContent = isZh ? '無法安全重啟' : 'Restart blocked';
-          const msg = document.createElement('div');
-          msg.style.cssText = 'font-size:11px;color:#f7768e;background:rgba(247,118,142,.08);border-left:2px solid #f7768e;padding:8px 10px;margin-top:10px;border-radius:3px;line-height:1.45';
-          msg.textContent = result.message || (isZh ? '重啟被阻止，避免關閉 live sessions。' : 'Restart blocked to avoid closing live sessions.');
-          document.getElementById('restart-now').parentNode.parentNode.insertBefore(msg, document.getElementById('restart-now').parentNode);
+          const btn = document.getElementById('restart-now');
+          btn.disabled = false;
+          // Windows cannot reattach sessions, so it asks first rather than
+          // refusing. Say what will happen and let the user decide; a dialog
+          // whose only button reads "blocked" leaves the update unapplyable.
+          const canConfirm = result.needs_confirm === true;
+          btn.textContent = canConfirm
+            ? (isZh ? '仍要重啟' : 'Restart anyway')
+            : (isZh ? '無法重啟' : 'Restart failed');
+          if (!document.getElementById('restart-warn')) {
+            const msg = document.createElement('div');
+            msg.id = 'restart-warn';
+            msg.style.cssText = 'font-size:11px;color:#e0af68;background:rgba(224,175,104,.08);border-left:2px solid #e0af68;padding:8px 10px;margin-top:10px;border-radius:3px;line-height:1.45';
+            msg.textContent = result.message || (isZh ? '重啟會關閉目前的 session。' : 'Restarting will close the current sessions.');
+            btn.parentNode.parentNode.insertBefore(msg, btn.parentNode);
+          }
+          if (canConfirm) {
+            btn.onclick = async () => {
+              btn.disabled = true;
+              btn.textContent = isZh ? '重啟中...' : 'Restarting...';
+              await pywebview.api.restart_app(true);
+            };
+          }
         }
       } catch(e) {}
       // The current process will exit; new window will appear shortly

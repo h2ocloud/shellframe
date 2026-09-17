@@ -5734,7 +5734,7 @@ try {
                 "recovery": RECOVERY_CMD,
             })
 
-    def restart_app(self) -> str:
+    def restart_app(self, confirm: bool = False) -> str:
         """Restart the app — spawns a new instance and exits the current one.
         tmux-backed sessions persist; the new instance reattaches on startup.
 
@@ -5797,13 +5797,24 @@ try {
                 )
 
             if IS_WIN:
-                if self.sessions:
+                # Windows has no tmux, so a restart recreates each tab from the
+                # persisted manifest (same command, same label, same position)
+                # rather than reattaching — scrollback is lost, the tabs are not.
+                # This used to refuse outright whenever any session existed,
+                # which on Windows is always: an update could be downloaded but
+                # never applied, and the dialog's only button said "blocked".
+                # The caller now asks first (confirm=True) instead.
+                if self.sessions and not confirm:
+                    n = len(self.sessions)
                     return json.dumps({
                         "success": False,
+                        "needs_confirm": True,
+                        "session_count": n,
                         "message": (
-                            "Windows restart would terminate live terminal sessions. "
-                            "Close or finish sessions first; update files are installed, "
-                            "but Python/core changes apply after a manual restart."
+                            f"Windows has no tmux, so restarting recreates your {n} "
+                            "tab(s) from their saved commands and labels — scrollback "
+                            "and any in-progress AI conversation are lost. Anything "
+                            "running in a tab is stopped."
                         ),
                         "preserves_sessions": False,
                     })
@@ -7290,7 +7301,12 @@ try {
 
         elif cmd == "restart":
             try:
-                result_json = self.restart_app()
+                # `sfctl restart` and TG /restart are already explicit asks, and
+                # on Windows they are often the only way to reach the machine —
+                # so they carry the confirmation rather than bouncing back a
+                # prompt no one is there to answer. Pass confirm=false to get
+                # the warning instead.
+                result_json = self.restart_app(confirm=bool(args.get("confirm", True)))
                 result = json.loads(result_json) if isinstance(result_json, str) else result_json
                 return {
                     "success": result.get("success", False),
