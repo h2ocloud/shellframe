@@ -1634,6 +1634,13 @@ class FrameLink:
                 peer, "GET",
                 f"/link/conversation?sid={quote(sid)}&limit={int(limit)}", timeout=15)
         except Exception as e:
+            # A 404 here is not a failure to reach the peer: the route simply
+            # does not exist on it. Say which side is behind rather than leaving
+            # the caller to guess at a bare "no such route".
+            if "404" in str(e):
+                return {"success": False,
+                        "message": (f"「{peer.get('name', peer_id[:8])}」的 ShellFrame "
+                                    f"還沒有這個功能（需要 0.36.0 以上，請在那台更新）")}
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}
 
@@ -1646,6 +1653,8 @@ class FrameLink:
             return self._signed_request(peer, "GET",
                                         f"/link/a2a?limit={int(limit)}", timeout=10)
         except Exception as e:
+            if "404" in str(e):
+                return {"success": False, "message": "對方的 ShellFrame 還沒有這個功能（需要 0.36.0 以上）"}
             return {"success": False, "message": str(e)}
 
     def remote_rename(self, peer_id: str, sid: str, name: str) -> dict:
