@@ -1922,6 +1922,69 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // State
   const IS_MAC = (navigator.platform || navigator.userAgent || '').toUpperCase().includes('MAC');
+  const IS_WIN = (navigator.platform || navigator.userAgent || '').toUpperCase().includes('WIN');
+
+  // 每個 term 都套這些。以前只在三個建 Terminal 的地方各寫一份 options，
+  // 平台調整漏掉其中一個就會有分頁行為不一樣。
+  function termOptions(extra) {
+    const opts = Object.assign({
+      fontSize: currentFontSize,
+      fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
+      theme: THEME, cursorBlink: false, scrollback: 10000, allowProposedApi: true,
+    }, extra || {});
+    if (IS_WIN) {
+      // ConPTY 的換行與重排跟 Unix pty 不一樣：它會把捲出去的內容重新輸出，
+      // 而且不送真正的換行標記。xterm 有針對這個後端的處理，但要被告知才會啟用
+      // ——沒設的話上滑看到的歷史會被截斷、視窗寬度變動後對不回原本的段落。
+      opts.windowsPty = { backend: 'conpty' };
+    }
+    return opts;
+  }
+
+  // 應用程式要求閃爍游標時，維持不閃。
+  //
+  // Codex 會送 DECSCUSR（`CSI Ps SP q`，奇數值＝閃爍）與 `CSI ? 12 h`；實測
+  // 這兩者都會把 xterm 的 cursorBlink 從 false 翻成 true。cursorBlink 關掉是
+  // 刻意的：閃爍游標每秒重繪兩次，閒置的前景視窗就一直在推合成器——在 Windows
+  // 的 WebView2 上那正是「一直閃、很卡」。
+  // 形狀（方塊／底線／豎線）照樣尊重應用程式，只把「會閃」那一半拿掉。
+  function keepCursorSteady(term) {
+    try {
+      // DECSCUSR：0/1=閃爍方塊 2=方塊 3=閃爍底線 4=底線 5=閃爍豎線 6=豎線
+      term.parser.registerCsiHandler({ intermediates: ' ', final: 'q' }, (params) => {
+        const ps = (params && params.length ? params[0] : 0) || 0;
+        const steady = { 0: 2, 1: 2, 3: 4, 5: 6 }[ps];
+        if (steady === undefined) return false;      // 本來就不閃 → 交給 xterm
+        term.write(`\x1b[${steady} q`);
+        return true;                                  // 這一個我們處理掉了
+      });
+      // att610 閃爍開關：開的請求直接吞掉，關的照舊放行
+      term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
+        return !!(params && params.length === 1 && params[0] === 12);
+      });
+    } catch (e) { /* 舊版 xterm 沒有 parser API → 維持原行為 */ }
+  }
+
+  // 顏色查詢（OSC 10/11/12）不要在資料流裡回答。
+  //
+  // xterm 會照規範回一段 `ESC ] 10 ; rgb:…  ESC \`，而那段回覆是走 onData
+  // ——也就是被當成「使用者輸入」寫進 PTY。只要問的那一方已經不在讀了（啟動
+  // 過程中很常見），這段位元組就原封不動出現在對話輸入框裡。回報的畫面
+  // `0;rgb:a9a9/b1b1/d6d6…11;rgb:1a1a/1b1b/2626` 就是它，那兩組數字正是
+  // ShellFrame 自己的前景與背景色。
+  //
+  // 改成不在頻內回答；顏色改由 COLORFGBG 環境變數告訴應用程式（見 main.py
+  // 的 _session_env），那是帶外的、不會變成輸入。
+  function swallowColorQueries(term) {
+    try {
+      [10, 11, 12].forEach(id => {
+        term.parser.registerOscHandler(id, (payload) => {
+          // 只吞查詢（payload 是 "?"）。真的要設色的請求照舊交給 xterm。
+          return String(payload).trim() === '?';
+        });
+      });
+    } catch (e) { /* 舊版 xterm 沒有 parser API → 維持原行為 */ }
+  }
   let sessions = {};
   let sessionOrder = [];  // ordered sid list — drives tab numbering & TG /1 /2
   let activeId = null;
@@ -2493,14 +2556,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (activeId && sessions[activeId]) sessions[activeId].pane.classList.remove('active');
     $wrap.appendChild(pane);
 
-    const term = new Terminal({
-      fontSize: currentFontSize,
-      fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
-      // cursorBlink off: a blinking cursor repaints the cursor cell ~2×/s
-      // forever, so an idle foreground window keeps driving WindowServer
-      // composites. Solid cursor stays fully visible. (perf item 5)
-      theme: THEME, cursorBlink: false, scrollback: 10000, allowProposedApi: true
-    });
+    const term = new Terminal(termOptions());
+    keepCursorSteady(term);
+    swallowColorQueries(term);
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon.WebLinksAddon(activateUrlExternally));
@@ -2708,14 +2766,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     pane.className = 'term-pane';
     $wrap.appendChild(pane);
 
-    const term = new Terminal({
-      fontSize: currentFontSize,
-      fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
-      // cursorBlink off: a blinking cursor repaints the cursor cell ~2×/s
-      // forever, so an idle foreground window keeps driving WindowServer
-      // composites. Solid cursor stays fully visible. (perf item 5)
-      theme: THEME, cursorBlink: false, scrollback: 10000, allowProposedApi: true
-    });
+    const term = new Terminal(termOptions());
+    keepCursorSteady(term);
+    swallowColorQueries(term);
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon.WebLinksAddon(activateUrlExternally));
@@ -3741,11 +3794,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const pane = document.createElement('div');
     pane.className = 'term-pane';
     $wrap.appendChild(pane);
-    const term = new Terminal({
-      fontSize: currentFontSize,
-      fontFamily: '"MesloLGS NF", "Fira Code", "SF Mono", Menlo, Monaco, monospace',
-      theme: THEME, cursorBlink: false, scrollback: 10000, allowProposedApi: true
-    });
+    const term = new Terminal(termOptions());
+    keepCursorSteady(term);
+    swallowColorQueries(term);
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon.WebLinksAddon(activateUrlExternally));
@@ -5451,11 +5502,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         pywebview.api.write_input(sid, '\x15'); // Ctrl+U = line kill
         return false;
       }
-      // Shift+Enter → newline without submit (for AI sessions)
-      // Sends \n instead of \r; Claude Code / Codex treat \n as line break.
+      // Shift+Enter → 換行但不送出。
+      //
+      // 這裡一定要攔：實測 xterm.js 5.5.0 對 Shift+Enter 一律送 `\r`，跟純
+      // Enter 完全一樣，即使應用程式已經開了 modifyOtherKeys 也是——終端本身
+      // 表達不出「帶 Shift 的 Enter」，所以位元組得由我們合成。
+      //
+      // 送什麼要看對方讀什麼：
+      //   Claude Code — 把 `\n` 當換行（一直是這樣，維持不動）
+      //   Codex       — 它的 TUI 會開 modifyOtherKeys（二進位裡有
+      //                 keyboard_modes::EnableModifyOtherKeys），那個模式下
+      //                 Shift+Enter 的編碼是 `CSI 27;2;13~`。裸 `\n` 在
+      //                 crossterm 那邊會被讀成普通的 Enter，所以換不了行。
       if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey && shiftEnterNewline) {
         ev.preventDefault();
-        pywebview.api.write_input(sid, '\n');
+        pywebview.api.write_input(
+          sid, isCodexSession(sid) ? '\x1b[27;2;13~' : '\n');
         return false;
       }
       if (ev.key !== 'Enter' || ev.ctrlKey || ev.metaKey || ev.altKey) return true;
@@ -6095,7 +6157,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function isCodexSession(sid) {
     const s = sessions[sid];
     if (!s) return false;
-    return s.cmd.split(/\s+/).some(t => t.split('/').pop().replace(/\.\w+$/, '') === 'codex');
+    // wrapper 也要算。ShellFrame 自己的啟動器叫 sf-codex／sf-codex-<變體>，
+    // 只比對 basename === 'codex' 會漏掉它們——那些分頁因此拿不到 Codex 專屬的
+    // 鍵盤處理（Esc 清行、Shift+Enter 換行），而那正是大家實際在用的指令。
+    return s.cmd.split(/\s+/).some(t => {
+      const base = t.split(/[\\/]/).pop().replace(/\.\w+$/, '').toLowerCase();
+      return base === 'codex' || /^sf-(.+-)?codex(-.+)?$/.test(base);
+    });
   }
 
   // ── Per-tab AI usage (/usage, /水位) ──
@@ -6724,6 +6792,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         // 原本的 400ms 去重擋——人不可能連打出一模一樣的長串。
         if (data.length > 1 && data === lastSent && now - lastTime < 400) {
           return drop('multi-char-400ms', data, { gap: now - lastTime });
+        }
+        // 最後一道：不管幾個字，同一段非 ASCII 在 30ms 內又來一次就是雙送。
+        //
+        // 上面那條只管 length > 1，因為單字的連打（「哈哈」）是真的輸入，實測
+        // 兩次相隔 93～111ms。但那條的前提是 compositionend 有帶回 commit 內容
+        // ——只要 IME 不發那個事件（Windows 的 WebView2 有這種情形），單字就完全
+        // 沒有任何一條規則擋得住，於是每個字都重複。回報「中文輸入文字會持續
+        // 重複」走的正是這裡。
+        // 30ms 兩邊都有餘裕：實測雙送間隔 ≤0.8ms（37 倍），而最快的真實連打是
+        // 93ms（3 倍）。
+        if (data === lastSent && now - lastTime < 30) {
+          return drop('same-chunk-30ms', data, { gap: now - lastTime });
         }
         lastSent = data; lastTime = now;
         return false;

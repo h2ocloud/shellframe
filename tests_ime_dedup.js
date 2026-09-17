@@ -71,9 +71,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     check('無 composition 資訊時多字元 400ms 內重複 → 擋', d.shouldDrop('你好'));
   }
   {
+    // v0.35.17 改：原本這裡是「無 composition 資訊時單字重複一律放行（不猜）」。
+    // 那個保守選擇的代價在 Windows 上現形——WebView2 有不發 compositionend 的
+    // 情形，於是單字完全沒有任何規則擋得住，每個字都重複（回報：中文輸入文字
+    // 會持續重複）。
+    // 現在仍然不猜，只是把界線畫在量到的數字上：雙送實測 ≤0.8ms，最快的真實
+    // 連打實測 93ms，門檻取 30ms——距離雙送 37 倍、距離真實連打 3 倍。
     const d = _makeImeDedup();
-    check('無 composition 資訊時單字重複 → 放行（不猜）',
-          !d.shouldDrop('哈') && !d.shouldDrop('哈'));
+    check('單字在 30ms 內重複 → 擋（那個間隔人做不到）',
+          !d.shouldDrop('哈') && d.shouldDrop('哈'));
   }
 
   // 60ms 上限只是保險：超過就當這次 commit 結束
@@ -117,6 +123,40 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     check('遠端守門：純 ASCII 打字不擋', g.keep('o') && g.keep('p') && g.keep('e'));
     // 非組字狀態下的空白不該被當漏字擋掉（英文句子要能打空白）
     check('遠端守門：非組字時空白照送', g.keep(' ') === true);
+  }
+
+  // ── compositionend 沒帶回 commit 內容時，單字也不能重複（v0.35.17）────────
+  // 主路徑靠 compositionend 記下「這次 commit 是什麼」；Windows 的 WebView2 有
+  // 不發那個事件的情形，於是只剩「length > 1 且 400ms 內」那條後備——單字完全
+  // 沒有規則擋得住，每個字都重複。回報「中文輸入文字會持續重複」就是這個。
+  const spin = (ms) => { const t = Date.now(); while (Date.now() - t < ms) {} };
+  {
+    const d = _makeImeDedup();   // 沒有 started()／composed()＝收不到組字事件
+    check('缺 compositionend：單字第一次放行', d.shouldDrop('好') === false);
+    check('缺 compositionend：同一個字 30ms 內再來＝雙送，要擋',
+          d.shouldDrop('好') === true);
+  }
+  {
+    const d = _makeImeDedup();
+    check('過了窗口的連打是真的輸入', d.shouldDrop('好') === false);
+    spin(40);
+    check('30ms 之後的同一個字不能吃掉（實測最快連打 93ms）',
+          d.shouldDrop('好') === false);
+  }
+  {
+    const d = _makeImeDedup();
+    check('純 ASCII 完全不經手',
+          d.shouldDrop('a') === false && d.shouldDrop('a') === false);
+  }
+  {
+    const d = _makeImeDedup();
+    d.started(); d.composed('哈');
+    check('正常路徑：這次 commit 的第一次放行', d.shouldDrop('哈') === false);
+    check('正常路徑：同一次 commit 的第二次要擋', d.shouldDrop('哈') === true);
+    spin(40);
+    d.started(); d.composed('哈');
+    check('正常路徑：新的一次 commit＝新的字，要放行',
+          d.shouldDrop('哈') === false);
   }
 
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

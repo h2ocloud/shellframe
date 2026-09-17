@@ -159,6 +159,26 @@ if len(rolls) >= 2:
 else:
     print("  [SKIP] 本機 rollout 少於兩份，跳過 Windows 認領情境")
 
+# ── ShellFrame 自己的啟動器也要能接回對話（v0.35.17）──────────────────────
+# sf-codex / sf-claude-home 都是 `exec <真的 CLI> "$@"`，參數原樣透傳，所以續接
+# 的處理跟裸指令完全一樣——但名字比對只認 "codex"／"claude" 的話會漏掉它們，那些
+# 分頁重開機後一律開新對話。而那正是實際在用的指令。
+U = "11111111-2222-3333-4444-555555555555"
+for cmd, want in [
+    ("sf-codex --search", f"sf-codex resume {U} --search"),
+    ("sf-codex resume old-id --search", f"sf-codex resume {U} --search"),
+    ("sf-codex resume --last", f"sf-codex resume {U}"),
+    ("sf-claude-home", f"sf-claude-home --resume {U}"),
+    ("sf-claude-home --dangerously-skip-permissions",
+     f"sf-claude-home --resume {U} --dangerously-skip-permissions"),
+    ("codex --search", f"codex resume {U} --search"),
+    ("agy", "agy"),
+    ("bash -l", "bash -l"),
+]:
+    got = Api._cmd_with_resume(cmd, U)
+    check(f"wrapper 續接：{cmd!r}", got == want, f"得到 {got!r}")
+
+
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")
 sys.exit(1 if failed else 0)

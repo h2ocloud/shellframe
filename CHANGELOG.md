@@ -6,6 +6,126 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.36.4 (2026-09-17)
+
+### Fixes
+
+- **The cursor no longer blinks, even when the running program asks it to.**
+  Blinking is off on purpose: a blinking cursor repaints twice a second forever,
+  so an idle foreground window keeps driving the compositor — felt most on
+  Windows, where it was reported as constant flicker and sluggishness. But a
+  program can turn it back on with a cursor-style escape, and Codex does; against
+  real xterm.js both that escape and the older blink-enable flip the setting from
+  off to on. Both are neutralised now, while the requested *shape* — block,
+  underline, bar — is still honoured.
+
+  **游標不會再閃，即使執行中的程式要求它閃。** 不閃是刻意的：閃爍游標每秒重繪
+  兩次，閒置的前景視窗就一直在推合成器——這在 Windows 上感受最明顯，回報就是
+  「一直閃、很卡」。但程式可以用游標樣式的逸出序列把它打開，而 Codex 就會這麼做；
+  拿真的 xterm.js 量，那個序列與較舊的閃爍開關都會把設定從關翻成開。兩者現在都
+  擋掉了，而要求的**形狀**（方塊／底線／豎線）照樣尊重。
+
+- **A colour query no longer turns into text in the input box.** Reported at
+  startup: a run of characters like `0;rgb:a9a9/b1b1/d6d6…11;rgb:1a1a/1b1b/2626`
+  appearing in the composer. That is the terminal's reply to a program asking
+  what the foreground and background colours are — and the numbers are this
+  app's own palette. The reply travels back the same way typed characters do, so
+  if whoever asked has already stopped reading, it lands in the input box
+  verbatim. The query is no longer answered in-band; the palette is advertised
+  through the long-standing `COLORFGBG` environment variable instead, which a
+  program can read and which cannot become input. Requests that actually *set* a
+  colour still work.
+
+  **顏色查詢不會再變成輸入框裡的文字。** 啟動時回報：對話輸入框出現
+  `0;rgb:a9a9/b1b1/d6d6…11;rgb:1a1a/1b1b/2626` 這樣一串。那是終端對「前景與背景
+  是什麼顏色」這個詢問的回覆——而那些數字正是這個 app 自己的配色。回覆是走跟
+  「使用者打的字」同一條路回去的，所以只要問的那一方已經不在讀了，它就原封不動
+  落在輸入框裡。現在不在頻內回答這個查詢，改用行之有年的 `COLORFGBG` 環境變數
+  告訴程式配色——程式讀得到，而它不可能變成輸入。真的要**設定**顏色的請求照舊生效。
+
+- **Shift+Enter inserts a line break in Codex.** Measured against real xterm.js:
+  Shift+Enter produces a plain carriage return, identical to Enter alone, even
+  when the program has enabled the protocol that would distinguish them — the
+  terminal cannot express the combination, so the bytes have to be synthesised.
+  They were, as a bare line feed, which is what Claude Code reads as a line
+  break; Codex enables the other-keys protocol and under it expects a different
+  encoding, so a bare line feed reached it as an ordinary Enter. Each now gets
+  the encoding it reads. Recognising a Codex tab also covers this app's own
+  launcher names, which the previous exact-name match missed — those tabs were
+  getting neither the Codex-specific Escape handling nor this.
+
+  **Shift+Enter 在 Codex 裡會換行。** 拿真的 xterm.js 量到：Shift+Enter 送出的是
+  一個普通的 carriage return，跟單獨的 Enter 完全一樣，即使程式已經開啟了能區分
+  兩者的協定也一樣——終端表達不出這個組合，位元組只能由這個 app 合成。原本合成的
+  是裸的換行字元，那是 Claude Code 讀作換行的形式；Codex 開的是另一套按鍵協定，
+  在那底下它期待的是不同的編碼，所以裸換行到它那裡就是一個普通的 Enter。現在各自
+  拿到自己讀得懂的編碼。判斷「這是不是 Codex 分頁」也改成認得這個 app 自己的啟動器
+  名稱，先前的精確比對會漏掉它們——那些分頁因此連 Codex 專屬的 Escape 處理也拿不到。
+
+- **Scroll-up history is no longer cut short where there is no terminal
+  multiplexer.** On that path — Windows — the history comes from the
+  reconstructed screen, and a program that redraws in place keeps nothing there
+  beyond the current screen. The reconstruction counted as usable whenever it was
+  not empty, so the overlay showed one screen and called that the history. It now
+  has to contain meaningfully more than one screen to count, matching the rule
+  already applied on the alternate-screen path; otherwise the transcript is used,
+  which holds the whole conversation. Not being able to get back to where you
+  were after scrolling down should improve with this, since what it was scrolling
+  through was that truncated history.
+
+  xterm is also told the backend is ConPTY on Windows, which it needs in order to
+  apply that backend's line-wrapping handling; it was never set, so wrapped lines
+  were reflowed on the wrong assumptions.
+
+  **沒有終端多工器的環境，上滑歷史不會再被截斷。** 那條路徑——也就是 Windows
+  ——的歷史來自重建的畫面，而原地重繪的程式在那裡留不下目前這一屏以外的東西。
+  重建結果只要不是空的就算可用，於是 overlay 顯示了一屏就當作那是全部的歷史。
+  現在它必須明顯多於一屏才算數，跟 alternate screen 那條路徑已經在用的判準一致；
+  否則就改用 transcript，那裡有完整的對話。「往下滑之後回不到原本的段落」應該會
+  隨之改善，因為它捲的本來就是那份被截斷的歷史。
+
+  另外也把「後端是 ConPTY」告訴 xterm——它需要知道才會套用該後端的換行處理，而
+  先前從來沒設，折行因此是照錯的假設重排的。
+
+- **Chinese input no longer repeats every character where the input method does
+  not report what it committed.** De-duplication keys on that report; without it
+  the only remaining rule covered multi-character commits, so a method that
+  commits one character at a time had nothing catching it. A repeat of the same
+  non-ASCII text within 30ms now counts as a double send whatever its length. The
+  threshold comes from both measurements that bound it: a double send arrives
+  within 0.8ms, and the fastest genuine repeat of one character measured 93ms.
+  This replaces a deliberately conservative rule that let single characters
+  through rather than guess — the guess is no longer needed, the boundary is
+  measured.
+
+  **輸入法沒有回報「這次送出了什麼」時，中文輸入不會再每個字都重複。** 去重原本
+  以那份回報為鍵；沒有它，剩下的唯一規則只管多字元的送出，於是一次送一個字的
+  輸入法完全沒有東西擋得住。同一段非 ASCII 在 30ms 內再次出現，現在不論長度都
+  算雙送。這個門檻取自框住它的兩個量測：雙送的間隔在 0.8ms 內，而同一個字最快的
+  真實連打量到 93ms。這取代了原本「寧可放行也不猜」的保守規則——現在不需要猜，
+  界線是量出來的。
+
+- **A tab launched through this app's own launcher reconnects to its
+  conversation after a restart.** The command rewrite that adds the resume
+  argument matched the CLI's exact name, so a wrapper — which simply passes its
+  arguments through to that CLI — was left alone and the tab came back as a blank
+  conversation. Wrappers are recognised now, for both supported CLIs.
+
+  **透過這個 app 自己的啟動器開的分頁，重開後接得回原本的對話。** 加上續接參數的
+  指令改寫是比對 CLI 的精確名稱，所以 wrapper——它只是把參數原樣透傳給那支 CLI
+  ——被略過，分頁於是變成一個空白的新對話。現在兩支支援的 CLI 的 wrapper 都認得。
+
+### Internal
+
+- **The three places that create a terminal share one set of options.** Each kept
+  its own copy, so a platform adjustment applied to one of them left the other
+  two behaving differently. 28 cases in `tests_terminal_escapes.py` drive the
+  shipped escape handling against real xterm.js.
+
+  **三處建立終端的地方共用同一份設定。** 原本各留一份，於是針對平台的調整套在
+  其中一處，另外兩處的行為就不一樣。`tests_terminal_escapes.py` 共 28 項，拿實際
+  出貨的逸出序列處理去打真的 xterm.js。
+
 ## v0.36.3 (2026-09-17)
 
 ### Fixes

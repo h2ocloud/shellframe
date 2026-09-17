@@ -1462,11 +1462,29 @@ class HistoryApiMixin:
             text = ""
         if text:
             text = self._dedupe_history_lines(text.split("\n"), ansi)
-        if text and text.strip():
+        plain = self._ANSI_STRIP_RE.sub('', text) if ansi else text
+        # 「有內容」不等於「有歷史」。原地重繪的 TUI（codex、claude 2.1.261 起）
+        # 捲出去的內容不會進 pyte 的 history，所以這裡拿到的常常就只有「現在
+        # 這一屏」——上滑看到的跟活畫面一樣多，等於歷史被截斷。Windows 沒有
+        # tmux，這條就是它唯一的終端來源，回報的「上滑內容被截斷」走的正是這裡。
+        # 跟 alt-screen 那條同一個判準：要明顯多於一屏才算數，否則交給
+        # transcript（呼叫端會接手）。
+        _rows = 24
+        try:
+            _rows = int(getattr(slot.screen, "lines", 0)) or 24
+        except Exception:
+            pass
+        _has_history = bool(plain.strip()) and len(plain.split("\n")) > _rows * 1.5
+        if plain and plain.strip() and _has_history:
             return json.dumps({
                 "success": True, "text": text, "ansi": ansi,
                 "source": "pyte (no-tmux)",
             })
+        if plain and plain.strip():
+            # 只有一屏：不是「沒有內容」，是「沒有歷史」。分開回報，呼叫端才
+            # 知道該去拿 transcript，而不是把這一屏當成全部的歷史交出去。
+            return json.dumps({"success": False, "reason": "only current screen",
+                               "text": ""})
         return json.dumps({"success": False, "reason": "no history", "text": ""})
 
     def enter_scroll_history(self, sid: str) -> str:

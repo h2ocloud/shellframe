@@ -792,6 +792,13 @@ def _session_env() -> dict:
         p for p in os.pathsep.join(path_parts).split(os.pathsep)
         if p and not (p in seen or seen.add(p))
     )
+    # 配色用帶外的方式告訴應用程式。想知道背景是深是淺的 TUI 會送 OSC 11 查詢，
+    # 而終端的回覆是走「輸入」這條路回去的——問的那一方只要已經不在讀了（啟動
+    # 過程中很常見），那段回覆就原封不動變成使用者輸入框裡的一串亂碼。前端因此
+    # 不在頻內回答那個查詢（見 web/index.html 的 swallowColorQueries），改用這個
+    # 幾十年來就有的環境變數：15;0＝淺前景、深背景，對應 ShellFrame 固定的深色
+    # 主題。應用程式讀得到答案，而且它不可能變成輸入。
+    env.setdefault("COLORFGBG", "15;0")
     return env
 
 # macOS GUI launches often get a minimal PATH. Normalize the parent process
@@ -2665,6 +2672,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return cmd
         exe = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
         exe = exe[:-4] if exe.endswith((".cmd", ".bat", ".exe")) else exe
+        # ShellFrame 自己的啟動器（sf-codex、sf-claude-home…）都是
+        # `exec <真的 CLI> "$@"`，參數原樣透傳——所以續接的處理跟裸指令一樣，
+        # 只是名字要認得出來。漏掉的話那些分頁重開機後一律開新對話，而那正是
+        # 大家實際在用的指令。
+        if exe.startswith("sf-"):
+            for part in exe.split("-")[1:]:
+                if part in ("claude", "codex"):
+                    exe = part
+                    break
 
         if exe == "claude":
             out, skip = [tokens[0], "--resume", csid], False
