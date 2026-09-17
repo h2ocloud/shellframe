@@ -6,6 +6,28 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.36.1 (2026-09-17)
+
+### Fixes
+
+- **Telegram no longer depends on the window rendering.** The bridge was only
+  ever started by the web UI's restore path, which runs after the window
+  finishes loading, so anything that blocked that load — a dialog on launch, a
+  slow or failed render — took Telegram down with it. That is precisely when
+  remote access matters most: the user is away from the machine and the UI is
+  the one thing they cannot reach. Startup now brings the bridge up from Python
+  on its own thread, before the UI is involved at all. The UI's restore already
+  returns early when the bridge is running and `start_bridge` replaces rather
+  than duplicates, so the two paths cannot fight. Guarded by
+  `tests_bridge_autostart.py`.
+
+  **Telegram 不再取決於視窗有沒有畫出來。** 橋接過去只由 web UI 的還原流程啟動，
+  而那段要等視窗載入完成才跑，於是任何擋住載入的東西——啟動時的對話框、載入很慢
+  或渲染失敗——都會把 Telegram 一起弄掉。偏偏那正是最需要遠端的時候：人不在機器
+  前，而 UI 正是他唯一碰不到的東西。現在啟動時直接由 Python 在自己的執行緒把橋接
+  拉起來，完全不經過 UI。UI 的還原本來就會在橋接已在跑時提早返回，`start_bridge`
+  也是取代而非疊加，兩條路不會打架。由 `tests_bridge_autostart.py` 守住。
+
 ## v0.36.0 (2026-09-17)
 
 ### Added

@@ -5955,6 +5955,32 @@ try {
 
     # ── Bridge API ──
 
+    def _autostart_bridge(self):
+        """Bring the Telegram bridge up from Python, without waiting for the UI.
+
+        The bridge used to be started only by the web UI's restore path, which
+        runs after the window finishes loading. Anything that blocks that load —
+        a modal dialog on launch, a slow or failed render — therefore took
+        Telegram down with it, exactly when remote access matters most: the user
+        is away from the machine and the UI is the one thing they cannot reach.
+
+        Startup now does not depend on the UI at all. The UI's own restore is
+        idempotent (it returns early when the bridge is already active), so the
+        two cannot fight."""
+        try:
+            saved = (load_config() or {}).get("bridge") or {}
+            token = saved.get("bot_token") or ""
+            if not token or getattr(self, "bridge", None):
+                return
+            res = self.start_bridge(token,
+                                    json.dumps(saved.get("allowed_users") or []),
+                                    saved.get("prefix_enabled") is not False,
+                                    "")          # no initial prompt on restore
+            ok = json.loads(res).get("success") if isinstance(res, str) else False
+            _dlog("bridge", f"autostart {'ok' if ok else 'failed'} (UI-independent)")
+        except Exception as e:
+            _dlog("bridge", f"autostart failed: {e}")
+
     def start_bridge(self, bot_token: str, allowed_users_json: str,
                      prefix_enabled: bool, initial_prompt: str) -> str:
         """Start the global TG bridge. Registers all current sessions."""
@@ -9101,6 +9127,11 @@ def main():
     api._start_api_server()
     api._start_frame_link()
     api._start_delay_scheduler()
+    # Telegram must not depend on the window rendering: a dialog or a stalled
+    # load would otherwise cut off remote access entirely. Started on a thread
+    # so a slow network cannot hold up the window either.
+    threading.Thread(target=api._autostart_bridge, daemon=True,
+                     name="sf-bridge-autostart").start()
     webview.start(debug=("--debug" in sys.argv))
 
     # If webview.start() returns but process is still alive, force exit
