@@ -6,6 +6,70 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.36.0 (2026-09-17)
+
+### Added
+
+- **Agents can address each other by role (experimental, off by default).** An
+  agent writes `[[SF:TO:Coding|…]]` in its own output and the bridge delivers
+  that text into the tab holding the `Coding` role, labelled as coming from a
+  peer rather than from the user. Delivery is an unattended write into another
+  agent's prompt and every tab runs with permissions bypassed, so the rules sit
+  in one reviewable module (`agent_link.py`) instead of the bridge: roster roles
+  only, never to itself, a depth cap so a two-agent exchange cannot run away, a
+  per-tab rate cap, a size cap, and an audit entry for every message including
+  the refused ones. Enable with `settings.experimental_a2a`. Covered by
+  `tests_agent_link.py`, the runaway-loop case included.
+
+  **代理可以用角色互相傳話（實驗性，預設關）。** 代理在自己的輸出寫
+  `[[SF:TO:Coding|…]]`，橋接就把那段文字送進持有 `Coding` 角色的分頁，並標明
+  它來自同儕而非使用者。這個投遞會在無人看管的情況下寫進另一個代理的輸入，而
+  每個分頁都是 bypass permissions 在跑，因此規則集中在單一可審閱的模組
+  （`agent_link.py`）而不是散在橋接裡：只認 roster 角色、不得寄給自己、深度上限
+  讓兩個代理不會無止境對話、單一分頁速率上限、長度上限，以及每一則（含被拒的）
+  都留稽核記錄。用 `settings.experimental_a2a` 開啟。`tests_agent_link.py`
+  涵蓋上述各項，包含失控迴圈那條。
+
+- **A session can be read as a conversation instead of a screen.** The new
+  `conversation` command returns typed turns — user messages, assistant text,
+  tool calls, errors — by reusing the transcript reader the scroll-up history
+  already depends on, so Claude and Codex normalise to one shape. Exposed to
+  paired devices as `/link/conversation`, with `/link/a2a` for the exchange log.
+  A phone can now lay out a conversation itself rather than re-drawing an
+  80-column screen built for a desktop.
+
+  **分頁可以當成對話來讀，而不只是畫面。** 新的 `conversation` 指令回傳結構化的
+  對話輪次——使用者訊息、助理回覆、工具呼叫、錯誤——沿用捲動歷史本來就在用的
+  轉錄檔解析，因此 Claude 與 Codex 會正規化成同一種格式。以 `/link/conversation`
+  開放給已配對的裝置，另有 `/link/a2a` 提供代理往來記錄。手機因此可以自己排版
+  對話，而不是重繪一個為桌面設計的 80 欄畫面。
+
+- **A skill sheet for the AI running in a tab, reachable from About.** An agent
+  dropped into a tab had no single description of what it could drive, so
+  delegating to a role, reading another tab and anything cross-machine went
+  unused unless someone explained them by hand. `docs/ai-skill.md` is that
+  description, with a copy button in About that serves the file from disk so it
+  tracks the installed build. It opens by telling the agent to run
+  `sfctl version` and check the feature table before using anything, rather than
+  trusting a version it was told once.
+
+  **給分頁裡的 AI 的技能說明，可從「關於」取得。** 被丟進分頁的代理沒有一份完整
+  的能力說明，於是派工給角色、讀其他分頁、跨機器操作這些功能，除非有人逐一解釋
+  否則不會被用到。`docs/ai-skill.md` 就是那份說明，「關於」裡的複製鈕直接從磁碟
+  讀檔，因此內容永遠跟著已安裝的版本走。它開頭就要求代理先跑 `sfctl version`
+  並對照功能表，而不是相信某次被告知的版本。
+
+- **Cross-machine session control from the command line.** The Frame Link routes
+  existed and the phone used them, but an agent could only pair and unpair.
+  Added `link-list`, `link-peek`, `link-conversation`, `link-send`, `link-new`,
+  `link-close`, `link-rename` and `link-status`, mirroring the local verbs with a
+  peer in front, plus `version` itself.
+
+  **從命令列操控其他機器的 session。** Frame Link 的路由本來就在、手機也在用，但
+  代理只能配對與解除配對。新增 `link-list`、`link-peek`、`link-conversation`、
+  `link-send`、`link-new`、`link-close`、`link-rename`、`link-status`，以本機動詞
+  加上 peer 的形式對應，另外加上 `version`。
+
 ## v0.35.17 (2026-09-10)
 
 ### Fixes
