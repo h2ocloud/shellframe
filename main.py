@@ -2803,6 +2803,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 restored.append({"sid": sid, "cmd": cmd})
             if existing:
                 self._persist_session_manifest(saved_order)
+                # Bridge 可能在這些分頁存在之前就啟動了（見 _sync_bridge_sessions）
+                self._sync_bridge_sessions()
                 return json.dumps(restored)
 
         # Disk-backed fallback: recreate tabs fresh after a machine reboot
@@ -2870,6 +2872,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 _dlog("lifecycle", f"  soft restore failed for {sid}: {e}")
         if restored:
             self._persist_session_manifest(saved_order)
+        # 同上：還原完無條件同步一次
+        self._sync_bridge_sessions()
         return json.dumps(restored)
 
     def _start_output_pusher(self):
@@ -5986,6 +5990,53 @@ try {
 
     # ── Bridge API ──
 
+    def _sync_bridge_sessions(self):
+        """把目前所有存活的分頁補進 bridge，缺哪個補哪個。
+
+        Bridge 的啟動與分頁的還原是兩條獨立的路。v0.36.1 起 bridge 由 Python 在
+        視窗開起來**之前**自己啟動（UI 卡住不該讓遠端失聯），而分頁是 UI 載入後
+        才還原的——於是 bridge 起來時 self.sessions 還是空的，一個註冊都沒發生；
+        UI 之後看到 bridge 已經在跑就不再呼叫 start_bridge，那些分頁因此永遠不在
+        bridge 裡。實測：app 有 21 個分頁、bridge 0 個 slot，Telegram 回報
+        「Sessions: none」、/list 空的、任何指令都是「No active session」。
+
+        註冊本身是冪等的（同一個 sid 重複註冊只是覆蓋），所以還原完就無條件同步
+        一次，不去猜 bridge 是「剛啟動」還是「早就在跑」。
+        """
+        for bridge in (getattr(self, "bridge", None),
+                       getattr(self, "line_bridge", None)):
+            if not bridge:
+                continue
+            try:
+                have = set(getattr(bridge, "slots", {}) or {})
+                added = 0
+                for sid, s in list(self.sessions.items()):
+                    if sid in have or not getattr(s, "alive", False):
+                        continue
+                    if not getattr(s, "_bridge_enabled", True):
+                        continue
+                    label = (getattr(s, "_custom_label", None)
+                             or (s.cmd.split()[0] if s.cmd else sid))
+                    bridge.register_session(
+                        sid, label,
+                        lambda text, _s=s: _s.write(text),
+                        peek_fn=lambda _s=s: bytes(_s._recent).decode(
+                            "utf-8", errors="replace"),
+                        prepare_fn=lambda _s=s: self._prepare_pane_for_input(_s),
+                        cmd=getattr(s, "cmd", "") or "",
+                        cols=getattr(s, "cols", 0), rows=getattr(s, "rows", 0),
+                    )
+                    added += 1
+                if added:
+                    _dlog("bridge", f"同步補上 {added} 個分頁到 "
+                                    f"{getattr(bridge, 'bridge_id', '?')}")
+                    try:
+                        bridge.refresh_commands()
+                    except Exception:
+                        _swallow("_sync_bridge_sessions:refresh")
+            except Exception as e:
+                _dlog("bridge", f"sync sessions failed: {e}")
+
     def _autostart_bridge(self):
         """Bring the Telegram bridge up from Python, without waiting for the UI.
 
@@ -6009,6 +6060,10 @@ try {
                                     "")          # no initial prompt on restore
             ok = json.loads(res).get("success") if isinstance(res, str) else False
             _dlog("bridge", f"autostart {'ok' if ok else 'failed'} (UI-independent)")
+            # 兩條路的順序不保證：分頁若已經還原完才輪到這裡，start_bridge 已經
+            # 註冊過；反過來就由這一次補上。兩邊都同步才不必賭誰先。
+            if ok:
+                self._sync_bridge_sessions()
         except Exception as e:
             _dlog("bridge", f"autostart failed: {e}")
 

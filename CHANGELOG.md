@@ -6,6 +6,43 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.36.5 (2026-09-17)
+
+### Fixes
+
+- **Telegram sees the tabs again after a restart.** Reported: every command
+  answered "No active session", the listing was empty and the bridge reported no
+  sessions — while the app had twenty-one tabs open.
+
+  Starting the bridge and restoring the tabs are two independent paths, and
+  v0.36.1 made the bridge start from Python before the window renders, so that a
+  stalled interface could not cut off remote access. That is right, but it also
+  put the bridge's start ahead of the restore: the loop that registers the
+  existing tabs ran against an empty list, and the interface, seeing the bridge
+  already running, never asked it to start again — so the tabs were never
+  registered at all. Measured: twenty-one tabs against zero registered.
+
+  Registration no longer depends on which of the two happens first. It is
+  idempotent, so the tabs are synced once after a restore and once after the
+  bridge starts on its own; whichever ran first, the other fills in the gap.
+  Tabs that are closed or that the user has taken off the bridge stay off it, a
+  failure on one channel does not stop the other, and a second sync does nothing.
+  14 cases in `tests_bridge_session_sync.py`.
+
+  **重啟之後 Telegram 又看得到分頁了。** 回報：每個指令都回「No active session」、
+  列表是空的、bridge 回報沒有 session——而 app 裡有二十一個分頁開著。
+
+  啟動 bridge 與還原分頁是兩條獨立的路，而 v0.36.1 把 bridge 改成由 Python 在
+  視窗算繪之前啟動，好讓卡住的介面不會連帶切斷遠端存取。那是對的，但它同時也把
+  bridge 的啟動排到了還原之前：「註冊現有分頁」那一圈跑在一份空清單上，而介面
+  看到 bridge 已經在跑，就不再要求它重新啟動——那些分頁於是從頭到尾沒被註冊過。
+  實測：二十一個分頁對零個註冊。
+
+  註冊不再取決於兩者誰先發生。它是冪等的，所以還原完同步一次、bridge 自己起來
+  之後也同步一次；不論哪一條先跑，另一條會把缺的補上。已經關掉的分頁、以及使用者
+  自己從 bridge 拿掉的分頁不會被加回去，其中一條通道失敗不會拖垮另一條，重複同步
+  不會做任何事。`tests_bridge_session_sync.py` 共 14 項。
+
 ## v0.36.4 (2026-09-17)
 
 ### Fixes
