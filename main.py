@@ -201,6 +201,10 @@ DEFAULT_CONFIG = {
         # default: delivery writes into another agent's prompt unattended, and
         # every tab runs with permissions bypassed. Rules live in agent_link.py.
         "experimental_a2a": False,
+        # Emoji receipts on the user's own Telegram messages (👀 / 🫡). Off:
+        # they mark up the user's chat history, and the delivery warning covers
+        # the silence they were added for.
+        "tg_reactions": False,
         "show_model_badge": True,
         # 眼鏡（Agent Relay）是外掛功能，要另外裝 bridge 才有用。
         # 預設關：沒裝的人不該在每個分頁上看到一顆按不出東西的按鈕。

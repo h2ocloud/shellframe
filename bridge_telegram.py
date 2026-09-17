@@ -1837,6 +1837,13 @@ class TelegramBridge(BridgeBase):
     REACTION_DELIVERED = "🫡"   # T1：確認送進 session 了
     _REACTION_FAIL_LIMIT = 3
 
+    def _reactions_enabled(self) -> bool:
+        """Emoji receipts on the user's own messages. Off unless asked for."""
+        try:
+            return bool(_read_settings().get("tg_reactions", False))
+        except Exception:
+            return False
+
     def _set_reaction(self, chat_id, message_id, emoji):
         """設 / 清一則訊息上的 reaction。emoji 傳 None 或 '' = 清空（T2）。
 
@@ -1882,7 +1889,11 @@ class TelegramBridge(BridgeBase):
         return False
 
     def _react_async(self, chat_id, message_id, emoji):
-        """背景 thread 版的 _set_reaction。不阻塞任何路徑。"""
+        """背景 thread 版的 _set_reaction。不阻塞任何路徑。
+        Clearing a reaction (emoji=None) is always allowed, so a receipt left by
+        an earlier run is still tidied up after the setting is turned off."""
+        if emoji is not None and not self._reactions_enabled():
+            return
         if getattr(self, "_reaction_disabled", False) or not chat_id or not message_id:
             return
         threading.Thread(target=self._set_reaction,
@@ -5807,7 +5818,12 @@ class TelegramBridge(BridgeBase):
         # 補掉現在「注入成功到 8s 排隊通知之間完全靜默」的空窗。覆蓋式記錄，
         # _send() 之後用它把狀態推到 T1/T2。
         origin_msg_id = msg.get("message_id")
-        self._react_async(chat_id, origin_msg_id, self.REACTION_SEEN)
+        # Receipts are opt-in. They were added to fill the silence between
+        # injection and the reply, but they mark up the user's own messages in
+        # their chat history, and the delivery warning below already covers the
+        # case they existed for. settings.tg_reactions turns them back on.
+        if self._reactions_enabled():
+            self._react_async(chat_id, origin_msg_id, self.REACTION_SEEN)
         # Track what we send so we can filter echo from output
         slot.sent_texts.append(forwarded)
         # Keep only last 10 sent texts
@@ -6300,6 +6316,14 @@ class TelegramBridge(BridgeBase):
                     _blog(f"[send] {slot.sid} deferred verdict: turn running → OK\n")
                     self._react_async(chat_id, origin_msg_id, self.REACTION_DELIVERED)
                     return
+                # Screen scraping alone produced false alarms: a CLI that does
+                # not print "esc to interrupt" (or prints it off the captured
+                # tail) looked silent even while it was working. The agent hooks
+                # report the turn directly, so ask them before crying wolf.
+                if self._hook_says_working(slot, injected_at):
+                    _blog(f"[send] {slot.sid} deferred verdict: hook says working → OK\n")
+                    self._react_async(chat_id, origin_msg_id, self.REACTION_DELIVERED)
+                    return
             except Exception:
                 pass
             time.sleep(1.0)
@@ -6315,6 +6339,29 @@ class TelegramBridge(BridgeBase):
             })
         except Exception:
             pass
+
+    def _hook_says_working(self, slot, injected_at: float) -> bool:
+        """True when the agent hooks report this tab working since the injection.
+
+        This is the same signal the status badge uses, and unlike the screen it
+        does not depend on a particular CLI printing a particular string."""
+        cb = getattr(self, "_on_agent_status", None)
+        if not cb:
+            return False
+        try:
+            got = cb(slot.sid)
+            res, age = got if isinstance(got, tuple) else (got, 0.0)
+            if not res:
+                return False
+            if age is not None and age > 30:
+                return False              # stale reading proves nothing
+            if (res.get("state") or "").lower() not in ("working", "busy", "running"):
+                return False
+            since = res.get("since") or res.get("ts") or 0
+            # Working since before we injected is someone else's turn.
+            return (not since) or float(since) >= injected_at - 2.0
+        except Exception:
+            return False
 
     def _verify_injection(self, slot, payload, injected_at, window=8.0):
         """(delivered, residue) — 送達驗證。

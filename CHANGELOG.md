@@ -6,6 +6,39 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.36.2 (2026-09-17)
+
+### Changes
+
+- **Telegram no longer reacts to your own messages.** The 👀 / 🫡 receipts were
+  added to fill the silence between injecting a message and the reply arriving,
+  but they annotate the user's own chat history, and the delivery warning
+  already covers that silence. Off by default; `settings.tg_reactions` turns
+  them back on. Clearing a receipt still works regardless, so ones left by an
+  earlier build are tidied up rather than stranded.
+
+  **Telegram 不再對你自己的訊息按讚。** 👀／🫡 回執當初是為了補「注入完到收到
+  回覆之間的靜默」，但它會在使用者自己的聊天記錄上留下記號，而那段靜默現在已由
+  送達警告負責。改為預設關閉，要的話用 `settings.tg_reactions` 打開。清除回執
+  不受開關影響，所以舊版留下的記號仍會被清掉，不會卡在那裡。
+
+### Fixes
+
+- **Fewer false "無法確認訊息已送進" warnings.** Delivery was confirmed by
+  looking for `esc to interrupt` on the captured screen, so a CLI that does not
+  print it — or prints it outside the captured tail — looked silent even while
+  it was working, and the warning fired on a message that had in fact arrived.
+  The check now also consults the agent hooks, the same signal the status badge
+  uses, which report the turn directly instead of depending on one CLI's
+  wording. A stale reading (over 30 s) or a turn that began before the injection
+  still counts as no evidence.
+
+  **大幅減少「無法確認訊息已送進」的誤報。** 送達確認原本只在擷取到的畫面上找
+  `esc to interrupt`，於是不印這串字的 CLI（或那串字落在擷取範圍外時）看起來就
+  像沒反應，訊息明明送到了卻還是跳警告。現在會同時參考 agent hooks——也就是狀態
+  徽章用的那個訊號——它直接回報這一輪的狀態，不必依賴某個 CLI 的特定字串。讀數
+  過舊（超過 30 秒）或那一輪在注入之前就開始了，仍然算「沒有證據」。
+
 ## v0.36.1 (2026-09-17)
 
 ### Fixes
