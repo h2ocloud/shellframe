@@ -71,6 +71,97 @@
   把同一份指標寫進 `~/.codex/AGENTS.md` 的標記區塊裡——不會自動執行，因為那個檔案
   使用者自己也在寫，而且裝兩次只會留下一個區塊。
 
+### Fixes
+
+- **A delegated tab that was just opened now actually receives its message.**
+  Delegation into a role whose tab was not running opened the tab and sent the
+  prompt straight away, before the CLI had reached its input line, so the text
+  was swallowed by the startup screen. The tab existed, the call reported
+  success, and nothing was ever asked. Rare when the target was already open,
+  which is why it survived; the normal case for a group fan-out, which opens
+  every member that is not running.
+
+  Two causes underneath. Readiness detection never matched the prompt glyph
+  Claude Code currently draws, so a freshly opened Claude tab always looked busy;
+  measured against a live pane showing that prompt, where the old pattern still
+  said no. And nothing waited: delegation now waits for the tab, and says which
+  role it gave up on rather than reporting a send that did not happen.
+
+  The glyph is added only to the empty-input-line pattern, deliberately. It also
+  marks the highlighted row of a menu, and a menu read as an input line means the
+  next paste picks an option — which is the failure that once closed a tab by
+  answering its own trust dialog with "No, exit". 9 cases in
+  `tests_agent_ready_gate.py`.
+
+  **剛開起來的分頁，派工這次是真的送得到了。** 派工給一個分頁沒開著的角色時，
+  分頁會被開起來、prompt 隨即送出——那時 CLI 還沒走到輸入列，整段文字被開場畫面
+  吃掉。分頁在、呼叫回報成功、但從頭到尾沒有人被問到任何事。目標本來就開著時不會
+  發生，所以它一直活著；而群組群發會把沒開的成員通通開起來，那就是常態。
+
+  底下兩個原因。就緒判讀從來沒配到 Claude Code 現在畫的那個提示符，所以新開的
+  Claude 分頁永遠看起來在忙；拿真實畫面實測，舊的樣式在提示符就在眼前時仍然說
+  「沒就緒」。另一個是根本沒有人在等：派工現在會等分頁就緒，等不到就講清楚是哪個
+  角色沒送出，而不是回報一個沒發生的送出。
+
+  那個字元只加進「空輸入列」那條，是刻意的。它同時也是選單被選中那一列的記號，
+  而把選單當成輸入列，下一次貼上就等於選了一個選項——那正是當年分頁自己回答信任
+  對話框的 No, exit 把自己關掉的那個故障。`tests_agent_ready_gate.py` 9 例。
+
+- **A tab pinned to an account profile can be read as a conversation again.**
+  Such a tab keeps its transcript inside that profile rather than under the
+  global path. The conversation reader built its own lookup context and left the
+  profile out, so every profile-pinned tab reported having no conversation while
+  it was visibly answering on screen. That reader is what the phone renders a
+  session as a chat from, and what a group thread merges, so both were affected.
+
+  **綁在帳號 profile 底下的分頁，對話又讀得到了。** 這種分頁的 transcript 寫在
+  那個 profile 裡面，不在全域路徑。對話讀取器自己拼了一份查詢 context、漏掉
+  profile，於是每一個這種分頁都回報「沒有對話」——而畫面上它正在回話。手機把
+  session 畫成聊天、群組把多人對話合併，用的都是這個讀取器，兩邊一起壞。
+
+- **A fan-out no longer holds up everything else.** Group members are opened in
+  parallel. Serially, a five-member group with nothing open held the command loop
+  for minutes while every other command queued behind it, including the ones you
+  would use to find out what was wrong.
+  **群發不再卡住其他操作。** 群組成員改成平行開啟；序列跑的話，五個成員全沒開的
+  群組會把指令迴圈佔住好幾分鐘，其他指令全部排在後面——包含你用來查是哪裡卡住的
+  那幾個。
+
+### Added
+
+- **You can see which agent is stuck, and on what.** A tab stopped on a dialog
+  produces no output, so every signal read it as finished. Menus are now detected
+  by shape rather than by wording — a dialog nobody has seen before is caught the
+  day it ships, which matters because the model chooser that prompted this did
+  not exist when the last one was written — and the dialog's own text travels to
+  the tab list. The phone shows a red marker and what is being asked, instead of
+  a silence indistinguishable from idleness. The check runs inside the status
+  monitor that is already reading these screens, so a phone listing twenty tabs
+  still costs the computer nothing extra.
+
+  **看得出來是哪一個 agent 卡住、卡在什麼上面。** 停在對話框上的分頁不會有輸出，
+  所以每一種訊號都把它讀成「做完了」。選單現在認形狀不認字串——沒見過的對話框在
+  它上線那天就抓得到，這點很重要，因為引發這次修正的模型選單在上一個對話框寫成時
+  還不存在——而且對話框自己的文字會一路帶到分頁清單。手機上是一個紅色標記加上
+  它正在問什麼，不再是一段和閒置無法區分的沉默。這個檢查跑在本來就在讀這些畫面的
+  狀態監看裡，所以手機一次列二十個分頁，電腦這邊的成本沒有增加。
+
+- **A role can pin its model.** The tab doing the dispatching is usually worth
+  the strong model; the workers it opens often are not. A roster role carries its
+  own model and the launch command gets the right flag for that CLI, so the split
+  is a decision in config rather than whatever the CLI happened to choose today —
+  which is also what stops a worker from opening straight onto a model chooser.
+  A CLI we do not recognise is left alone: appending a flag it does not
+  understand turns a working launch into a startup error. The model shows up in
+  the roster, in group listings and beside each member in the phone's group view.
+
+  **角色可以指定自己的模型。** 負責派工的那個分頁通常值得用強的模型，它開出去的
+  worker 往往不必。名冊角色帶自己的模型，啟動指令會補上該 CLI 對應的參數，於是
+  強弱分工是設定裡的決定，而不是 CLI 今天剛好選了什麼——這也正是讓 worker 不會
+  一開起來就停在模型選單上的作法。認不出來的 CLI 就不動它：補一個它不認識的參數，
+  會把本來能跑的啟動變成啟動失敗。模型會出現在名冊、群組清單，以及手機群組畫面上
+  每個成員的名字旁邊。
+
 ### Internal
 
 - The version command now enumerates the experimental flags from the settings

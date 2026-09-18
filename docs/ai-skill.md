@@ -58,6 +58,16 @@ sfctl roster            # configured roles and what each is responsible for
 `sid` (`s12`) is the handle for everything else. `label` is the human name shown
 on the tab, and is what a role resolves to.
 
+Each row also carries `agent_state` (working / done / idle), `agent_activity`
+(one line of what it is doing) and `runs_on` (which CLI on which model). When
+`agent_blocked` is non-empty the tab is **stopped on a dialog waiting for a
+person**, and its text is what is being asked. Do not send into a blocked tab and
+do not read its silence as finished — say who is stuck and what it is asking.
+
+`sfctl roster` shows the model each role is pinned to. A role may run a smaller
+model than the tab dispatching to it; that is a deliberate arrangement, not a
+misconfiguration, so do not "fix" it.
+
 ## 2. Read a tab
 
 ```bash
@@ -140,6 +150,10 @@ The user creates and edits groups in Settings → 實驗性 → 角色群組; a 
 hold at most 8 roles. Groups are also on the phone app and on Telegram
 (`/group <名稱> <訊息>`), and all three read the same list.
 
+A send reports per member, and a member that failed says why — usually that its
+tab opened but stopped on a dialog. That is not something to retry around: a
+person has to answer it.
+
 **If you receive a group message**, the banner is telling you the truth: the
 same text went to the other named roles. Do your part, and say what you are
 leaving to whom rather than silently covering everything.
@@ -160,6 +174,7 @@ leaving to whom rather than silently covering everything.
 | `sfctl version`, `link-*` CLI verbs, `conversation`, A2A | 0.36.0 |
 | Role groups (`experimental_groups`), `sfctl group-*`, TG `/group` | 0.37.0 |
 | `sfctl skill` — this document, from the running build | 0.37.0 |
+| Per-role model pinning, `runs_on`, `agent_blocked` in the tab list | 0.37.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
