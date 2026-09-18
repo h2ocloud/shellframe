@@ -3317,7 +3317,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                             # look quiet are checked; one mid-turn cannot be
                             # sitting on a startup menu.
                             if result.get("state") in ("", "idle", "done", "unknown"):
-                                result["blocked"] = self._blocked_reason_cached(sid, now)
+                                result["blocked"] = self._blocked_reason_cached(
+                                    sid, out_ts, now)
                             else:
                                 self._blocked_cache.pop(sid, None)
                                 result["blocked"] = ""
@@ -4276,23 +4277,25 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
     _BLOCKED_TTL = 6.0          # seconds a menu verdict is trusted for
 
-    def _blocked_reason_cached(self, sid: str, now: float) -> str:
+    def _blocked_reason_cached(self, sid: str, out_ts: float, now: float) -> str:
         """Why this tab is waiting on a person, '' when it is not.
 
-        Rate-limited rather than computed every pass: the check forks
-        capture-pane, the monitor runs at 0.6s, and a dialog that has been up for
-        six seconds is still up. Once a tab is answered the entry is dropped by
-        the caller, so the light clears on the next pass rather than after the
-        TTL."""
+        Two gates, because this forks capture-pane and the monitor runs at 0.6s
+        across every tab. A dialog appearing is itself output, so a tab that has
+        printed nothing since the last verdict cannot have acquired one — that
+        alone removes the steady-state cost for a fleet of quiet tabs. The TTL is
+        the fallback for anything that changes without printing."""
         cache = self._blocked_cache
         hit = cache.get(sid)
+        if hit and hit[2] == out_ts and now - hit[0] < 60.0:
+            return hit[1]
         if hit and now - hit[0] < self._BLOCKED_TTL:
             return hit[1]
         try:
             reason = self.startup_dialog_blocking(sid) or ""
         except Exception:
             reason = ""
-        cache[sid] = (now, reason)
+        cache[sid] = (now, reason, out_ts)
         return reason
 
     def _agent_state_for_list(self, sid: str) -> str:
@@ -4404,6 +4407,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         r'^[ \t]*❯[ \t]+(\S[^\n]*)\n(?:[ \t]*\n)*[ \t]{2,}(\S[^\n]*)$',
         _re.MULTILINE)
 
+    # An empty composer line. Its presence means the CLI is waiting for typing,
+    # not for a choice — a menu takes the composer's place rather than sitting
+    # above it. Used to veto _MENU_RE, which otherwise matches a `❯ some command`
+    # line sitting in scrollback.
+    _COMPOSER_RE = _re.compile(r'^[ \t]*❯[ \t]*$', _re.MULTILINE)
+
     def startup_dialog_blocking(self, sid: str) -> str:
         """分頁是否正停在會吃掉貼上輸入的啟動對話框；回傳原因（空＝安全）。
 
@@ -4449,7 +4458,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return "啟動信任對話框"
         if self._STARTUP_EXIT_OPTION_RE.search(clean):
             return "啟動選單（有 No, exit 選項）"
-        m = self._MENU_RE.search(clean)
+        # A menu *replaces* the composer, so a capture that still shows an empty
+        # composer line is a working tab, whatever else is on screen. Without
+        # this, a tab whose scrollback happens to hold `❯ ls` above an indented
+        # line reads as blocked — which would put a red light on an idle tab and,
+        # because this same check gates the Telegram bridge's first injection,
+        # refuse a perfectly deliverable message.
+        m = None if self._COMPOSER_RE.search(clean) else self._MENU_RE.search(clean)
         if m:
             # The wording is carried back, not just the fact of a menu: the
             # point is that the user can read it on their phone and answer,

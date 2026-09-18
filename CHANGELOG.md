@@ -139,6 +139,14 @@
   monitor that is already reading these screens, so a phone listing twenty tabs
   still costs the computer nothing extra.
 
+  A menu takes the composer's place, so a capture that still shows an empty
+  composer is a working tab whatever else is on screen — without that guard a tab
+  whose scrollback happened to hold a shell prompt above an indented line read as
+  blocked, and because the same check gates Telegram's first injection, its next
+  message would have been refused. 15 cases in `tests_agent_ready_gate.py`; the
+  settings toggle and the skill panel are driven in a browser with screenshots in
+  `tests_groups_ui.py` and `tests_skill_panel_ui.py`.
+
   **看得出來是哪一個 agent 卡住、卡在什麼上面。** 停在對話框上的分頁不會有輸出，
   所以每一種訊號都把它讀成「做完了」。選單現在認形狀不認字串——沒見過的對話框在
   它上線那天就抓得到，這點很重要，因為引發這次修正的模型選單在上一個對話框寫成時

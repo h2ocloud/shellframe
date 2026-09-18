@@ -124,7 +124,10 @@ def _print_result(result: dict, verbose: bool = True):
                 print(f"  (分頁剛開，還沒有對話記錄：{'、'.join(d['quiet'])})")
         elif "roles" in d and isinstance(d["roles"], list):
             for r in d["roles"]:
-                print(f"  {r.get('role')}  ->  {r.get('label')}  [{r.get('agent_code')}]")
+                # The model is part of the role's identity now: a worker may be
+                # deliberately on a smaller one than the tab dispatching to it.
+                runs = f"  ({r.get('runs_on')})" if r.get("runs_on") else ""
+                print(f"  {r.get('role')}  ->  {r.get('label')}  [{r.get('agent_code')}]{runs}")
                 if r.get("responsibility"):
                     print(f"      {r.get('responsibility')}")
         else:

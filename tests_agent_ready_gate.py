@@ -36,7 +36,7 @@ def patterns():
     a copy would keep passing after the real ones changed."""
     src = open(os.path.join(ROOT, "main.py"), encoding="utf-8").read()
     out = {}
-    for name in ("_AI_READY_RE", "_MENU_RE", "_STARTUP_EXIT_OPTION_RE"):
+    for name in ("_AI_READY_RE", "_MENU_RE", "_STARTUP_EXIT_OPTION_RE", "_COMPOSER_RE"):
         m = re.search(name + r"\s*=\s*_re\.compile\(", src)
         assert m, f"{name} not found in main.py"
         # Balance the parens rather than stopping at the first ")\n": the
@@ -92,9 +92,30 @@ ANSWERED = """⏺ Switched to Sonnet 5 for this session · /model to change
 """
 
 
+# A working tab whose scrollback happens to hold a `❯ <command>` line above an
+# indented one. Shape alone cannot tell this from a menu — the live composer
+# underneath is what does, and this is the case that would otherwise put a red
+# light on an idle tab and refuse its next Telegram message.
+PROMPT_IN_SCROLLBACK = """  ❯ ls -la
+  total 24
+  drwxr-xr-x  5 neux  staff  160 Sep 18 20:00 .
+
+────────────────────────────────────────
+❯ 
+────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+"""
+
+
+def blocked(clean, menu, composer):
+    """The same veto startup_dialog_blocking applies."""
+    return None if composer.search(clean) else menu.search(clean)
+
+
 def main():
     p = patterns()
     ready, menu, exit_opt = p["_AI_READY_RE"], p["_MENU_RE"], p["_STARTUP_EXIT_OPTION_RE"]
+    composer = p["_COMPOSER_RE"]
 
     # ── 空輸入列＝可以送 ──
     check("an empty ❯ input line reads as ready", bool(ready.search(IDLE_PROMPT)))
@@ -120,6 +141,15 @@ def main():
     check("an unseen menu is caught by shape", bool(menu.search(unseen)))
     check("ordinary prose is not mistaken for a menu",
           not menu.search("這是一段普通輸出\n  只是縮排了而已\n"))
+
+    # ── 有 composer 就是還能打字，不管畫面上還有什麼 ──
+    check("a ❯ line in scrollback does not block a working tab",
+          blocked(PROMPT_IN_SCROLLBACK, menu, composer) is None)
+    check("the composer is what distinguishes it",
+          bool(composer.search(PROMPT_IN_SCROLLBACK)) and bool(menu.search(PROMPT_IN_SCROLLBACK)))
+    check("a real menu has no composer, so it still blocks",
+          not composer.search(CREDITS_MENU)
+          and blocked(CREDITS_MENU, menu, composer) is not None)
 
     print()
     if FAILED:
