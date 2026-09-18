@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
 import bridge_line
 import board
+import agent_model
 import agent_status
 import account_manager
 from api_history import HistoryApiMixin
@@ -1653,6 +1654,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         self.frame_link = None        # FrameLink instance (created lazily in _start_frame_link)
         self._hook_events = {}        # sid -> hook-driven state (see _on_agent_event)
         self._status_cache = {}       # sid -> cached status result (idle gating)
+        # sid -> (checked_at, reason). Why a quiet tab is quiet: a dialog it is
+        # waiting on, or '' for genuinely idle. Rate-limited; see _BLOCKED_TTL.
+        self._blocked_cache = {}
         self._plugins_reload()
         self._start_idle_reaper()
 
@@ -1814,6 +1818,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             clean["role"] = str(role)
             clean["label"] = str(clean.get("label") or role).strip()
             clean["cmd"] = _canonical_cmd(str(clean.get("cmd") or "claude").strip())
+            # A role may pin its own model. The dispatcher is usually the strong
+            # model and the workers it opens need not be, and leaving that to
+            # whatever the CLI defaults to is how a tab ends up stopped on a
+            # model chooser with a delegated message stuck behind it.
+            clean["model"] = str(clean.get("model") or "").strip()
+            if clean["model"]:
+                try:
+                    import agent_model
+                    clean["cmd"] = agent_model.apply(clean["cmd"], clean["model"])
+                except Exception:
+                    _swallow("Api._agent_roster_config:model")
             clean["agent_code"] = str(clean.get("agent_code") or "").strip()
             clean["responsibility"] = str(clean.get("responsibility") or "").strip()
             clean["handoff"] = bool(clean.get("handoff", True))
@@ -1960,6 +1975,24 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             )
         return prompt
 
+    def _wait_until_ready(self, sid: str, timeout: float = 45.0) -> bool:
+        """Block until a just-opened AI tab can accept a pasted prompt.
+
+        The same gate the Telegram bridge applies to a tab's first injection,
+        reused here rather than reimplemented: a CLI still on its startup screen
+        turns a paste plus Enter into an answer to whatever dialog is up. Polls
+        rather than watches output because a TUI redraws constantly, so "output
+        stopped" says nothing about readiness."""
+        deadline = time.monotonic() + max(1.0, timeout)
+        while time.monotonic() < deadline:
+            s = self.sessions.get(sid)
+            if not s or not getattr(s, "alive", False):
+                return False
+            if self.is_session_ready_for_bridge(sid) and not self.startup_dialog_blocking(sid):
+                return True
+            time.sleep(0.4)
+        return False
+
     def delegate_task(self, role: str, task: str) -> dict:
         task = str(task or "").strip()
         if not task:
@@ -1991,6 +2024,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
 
         tagged = self._extract_tab_tags(task, exclude_sid=sid)
         prompt = self._delegate_prompt(resolved_role, entry, task, tagged=tagged)
+        if created and not self._wait_until_ready(sid):
+            # Measured: an AI CLI needs seconds to reach its prompt, and text
+            # pasted before then is eaten by the startup screen — the tab exists,
+            # the call reports success, and nothing was ever asked. Rare when
+            # delegating to a tab that is already open; the normal case for a
+            # group fan-out, which opens every member that is not running.
+            return {"success": False,
+                    "message": f"{label}（{sid}）開起來了，但等不到它就緒，這則沒有送出",
+                    "details": {"sid": sid, "label": label, "role": resolved_role,
+                                "created": True, "not_ready": True}}
         session._startup_trust_pending = False
         self._send_text_to_session(session, prompt, submit=True)
         return {
@@ -3264,6 +3307,20 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                                 result = self._apply_hook_state(result, hk, now)
                             # 排程面板用：標出被 scheduler/auto 啟動的頁籤
                             result["lifecycle_source"] = getattr(s, "_lifecycle_source", "")
+                            # A tab stopped on a dialog is not idle and not
+                            # working: it is waiting for a person, and from the
+                            # outside its silence is indistinguishable from
+                            # being done. Checked here, in the thread that is
+                            # already reading this tab's screen, so the tab list
+                            # — pulled by every paired phone every few seconds —
+                            # stays free of capture-pane forks. Only tabs that
+                            # look quiet are checked; one mid-turn cannot be
+                            # sitting on a startup menu.
+                            if result.get("state") in ("", "idle", "done", "unknown"):
+                                result["blocked"] = self._blocked_reason_cached(sid, now)
+                            else:
+                                self._blocked_cache.pop(sid, None)
+                                result["blocked"] = ""
                             out[sid] = result
                         except Exception:
                             out[sid] = {"state": "unknown", "dot": "",
@@ -3707,8 +3764,18 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     # (not in login/setup/auth flow). Checked after stripping ANSI escapes.
     import re as _re
     _ANSI_RE = _re.compile(r'\x1b\[[^A-Za-z]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b.|\x07')
+    # `❯` (U+276F) is Claude Code's current prompt glyph. It was missing from the
+    # bare-prompt alternative, so a freshly opened Claude tab never registered as
+    # ready: measured against a live tab whose pane showed `❯ ` and which this
+    # pattern still called busy.
+    #
+    # It is deliberately NOT added to the second alternative. `❯` also marks the
+    # highlighted row of a Claude Code menu (`❯ Switch to Sonnet 5 and continue`),
+    # and `^\s*❯\s+\S` would read that menu as an input prompt — which is the
+    # worst possible misread, since pasting into a menu picks an option.
+    # `startup_dialog_blocking` is what recognises menus.
     _AI_READY_RE = _re.compile(
-        r'[>›]\s*$'           # Claude Code / Codex input prompt
+        r'[>›❯]\s*$'          # Claude Code / Codex input prompt (empty input line)
         r'|^\s*[>›]\s+\S'     # Codex placeholder on the input line
         r'|^\s*Tip:'           # Codex tip line (shown after ready)
         r'|model:\s+\S'        # Codex model info box
@@ -4190,6 +4257,44 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             _swallow(f"_agent_activity_for_list:{sid}")
         return ""
 
+    def _agent_blocked_for_list(self, sid: str) -> str:
+        """Why this tab is waiting on a person, for a remote list.
+
+        Same zero-cost rule again: this reads what the 0.6s monitor already
+        worked out. A phone asking twenty tabs for their state must not make the
+        computer fork twenty capture-panes."""
+        try:
+            snap = self._agent_status_snapshot(sid)
+            if not snap:
+                return ""
+            res = snap[0] if isinstance(snap, tuple) else snap
+            if isinstance(res, dict):
+                return str(res.get("blocked") or "")[:120]
+        except Exception:
+            _swallow(f"_agent_blocked_for_list:{sid}")
+        return ""
+
+    _BLOCKED_TTL = 6.0          # seconds a menu verdict is trusted for
+
+    def _blocked_reason_cached(self, sid: str, now: float) -> str:
+        """Why this tab is waiting on a person, '' when it is not.
+
+        Rate-limited rather than computed every pass: the check forks
+        capture-pane, the monitor runs at 0.6s, and a dialog that has been up for
+        six seconds is still up. Once a tab is answered the entry is dropped by
+        the caller, so the light clears on the next pass rather than after the
+        TTL."""
+        cache = self._blocked_cache
+        hit = cache.get(sid)
+        if hit and now - hit[0] < self._BLOCKED_TTL:
+            return hit[1]
+        try:
+            reason = self.startup_dialog_blocking(sid) or ""
+        except Exception:
+            reason = ""
+        cache[sid] = (now, reason)
+        return reason
+
     def _agent_state_for_list(self, sid: str) -> str:
         """給 sfctl list／Frame Link 用的單字狀態（'working' / 'done' / ''）。
 
@@ -4290,6 +4395,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     _STARTUP_EXIT_OPTION_RE = _re.compile(
         r'^\s*(?:[❯>›]\s*)?2[.)]\s*No,?\s*exit', _re.MULTILINE | _re.IGNORECASE)
 
+    # A Claude Code menu: a highlighted row `❯ <something>` with at least one
+    # more option under it. Named dialogs come and go with every release — the
+    # model/usage-credits chooser ("❯ Switch to Sonnet 5 and continue") did not
+    # exist when the trust dialog was written — so this matches the *shape* of a
+    # menu instead of its wording, and any new one is caught the day it ships.
+    _MENU_RE = _re.compile(
+        r'^[ \t]*❯[ \t]+(\S[^\n]*)\n(?:[ \t]*\n)*[ \t]{2,}(\S[^\n]*)$',
+        _re.MULTILINE)
+
     def startup_dialog_blocking(self, sid: str) -> str:
         """分頁是否正停在會吃掉貼上輸入的啟動對話框；回傳原因（空＝安全）。
 
@@ -4335,6 +4449,14 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             return "啟動信任對話框"
         if self._STARTUP_EXIT_OPTION_RE.search(clean):
             return "啟動選單（有 No, exit 選項）"
+        m = self._MENU_RE.search(clean)
+        if m:
+            # The wording is carried back, not just the fact of a menu: the
+            # point is that the user can read it on their phone and answer,
+            # rather than being told something unnamed is in the way.
+            first = m.group(1).strip()[:70]
+            second = m.group(2).strip()[:70]
+            return f"等你選：{first} ／ {second}"
         return ""
 
     def read_output(self, sid: str) -> str:
@@ -7572,6 +7694,12 @@ try {
                     # 的頻率，刻意不另外開高頻通道。
                     "agent_state": self._agent_state_for_list(sid),
                     "agent_activity": self._agent_activity_for_list(sid),
+                    # Non-empty when the tab is stopped on a dialog. Carries the
+                    # dialog's own wording, so a phone can show what is being
+                    # asked instead of only that something is.
+                    "agent_blocked": self._agent_blocked_for_list(sid),
+                    # Which CLI on which model answered you.
+                    "runs_on": agent_model.describe(s.cmd),
                     # Frame Link 無縫遠端分頁：對齊對方 PTY 尺寸，alt-screen TUI
                     # （claude/codex）才不會因 cols/rows 不同而畫面錯位。
                     "cols": getattr(s, 'cols', 0),
@@ -7633,6 +7761,11 @@ try {
                     "agent_code": entry.get("agent_code", ""),
                     "responsibility": entry.get("responsibility", ""),
                     "cmd": entry.get("cmd", ""),
+                    # Which CLI on which model. Worth showing next to the role:
+                    # the whole point of pinning is that you can see at a glance
+                    # that the dispatcher is strong and the workers are not.
+                    "model": entry.get("model", ""),
+                    "runs_on": agent_model.describe(entry.get("cmd", "")),
                 })
             return {
                 "success": True,
@@ -7894,7 +8027,10 @@ try {
                 out = []
                 for name, g in groups.items():
                     out.append({"name": name, "roles": g["roles"],
-                                "created": g.get("created")})
+                                "created": g.get("created"),
+                                "runs_on": {r: agent_model.describe(
+                                    (roster.get(r) or {}).get("cmd", ""))
+                                    for r in g["roles"]}})
                 return {"success": True, "message": f"{len(out)} groups",
                         "details": {"groups": out, "roles": list(roster.keys())}}
 
@@ -7936,42 +8072,72 @@ try {
                 if not text:
                     return {"success": False, "message": "訊息必填"}
                 a2a_on = bool((cfg.get("settings") or {}).get("experimental_a2a", False))
-                sent, failed = [], []
-                for role in members:
+
+                def _one(role):
                     body = agent_group.format_group_message(name, members, role, text,
                                                             a2a=a2a_on)
                     try:
                         # delegate opens the role's tab when it is not running,
                         # which is what makes a group usable after a restart.
                         r = self.delegate_task(role, body) or {}
-                        (sent if r.get("success") else failed).append(role)
-                    except Exception:
-                        failed.append(role)
+                        return role, bool(r.get("success")), str(r.get("message") or "")
+                    except Exception as e:
+                        return role, False, str(e)
+
+                # In parallel, because each cold member costs the time its CLI
+                # takes to boot. Serially, a five-member group with nothing open
+                # holds the command loop for minutes, and every other sfctl call
+                # — including the ones used to find out what is wrong — queues
+                # behind it. Parallel makes the fan-out cost one member's wait.
+                results = []
+                if len(members) == 1:
+                    results.append(_one(members[0]))
+                else:
+                    with concurrent.futures.ThreadPoolExecutor(
+                            max_workers=min(len(members), agent_group.MAX_MEMBERS)) as pool:
+                        results = list(pool.map(_one, members))
+
+                sent = [r for r, ok, _ in results if ok]
+                failed = [(r, why) for r, ok, why in results if not ok]
+                # The reason travels with the failure. "失敗：知庫" tells you
+                # nothing you can act on; "知庫：等你選：Switch to Sonnet 5…"
+                # tells you exactly which tab to open and what it is asking.
+                tail = ("（" + "；".join(f"{r}：{why}" for r, why in failed) + "）") if failed else ""
                 return {"success": bool(sent),
-                        "message": (f"已送給 {len(sent)}/{len(members)} 個角色"
-                                    + (f"（失敗：{'、'.join(failed)}）" if failed else "")),
-                        "details": {"sent": sent, "failed": failed, "members": members}}
+                        "message": f"已送給 {len(sent)}/{len(members)} 個角色{tail}",
+                        "details": {"sent": sent,
+                                    "failed": [r for r, _ in failed],
+                                    "failures": [{"role": r, "reason": w} for r, w in failed],
+                                    "members": members}}
 
             # group_conversation — one thread, every reply attributed.
             limit = max(1, min(int(args.get("limit") or 120), 400))
-            per_member, missing = {}, []
+            # Two different silences, kept apart on purpose. `offline` is "this
+            # role has no tab": nothing was ever going to answer. `quiet` is "the
+            # tab is open but has written no transcript yet", which is the normal
+            # state for the seconds after a fan-out opens one — reporting that as
+            # offline made a working send look like a failed one.
+            per_member, offline, quiet = {}, [], []
             for role in members:
                 entry = roster.get(role) or {}
                 label = entry.get("label") or role
                 sid, _sess = self._find_session_by_label(label)
                 if not sid:
-                    missing.append(role)
+                    offline.append(role)
                     continue
                 res = self._execute_sfctl("conversation",
                                           {"sid": sid, "limit": limit}) or {}
                 if res.get("success"):
                     per_member[role] = (res.get("details") or {}).get("turns") or []
                 else:
-                    missing.append(role)
+                    quiet.append(role)
+            note = ""
+            if quiet:
+                note = f"（{'、'.join(quiet)} 分頁剛開，還沒有對話記錄）"
             return {"success": True,
-                    "message": f"{len(per_member)}/{len(members)} 個角色有對話",
+                    "message": f"{len(per_member)}/{len(members)} 個角色有對話{note}",
                     "details": {"name": name, "members": members,
-                                "offline": missing,
+                                "offline": offline, "quiet": quiet,
                                 "turns": agent_group.merge_turns(per_member, limit)}}
 
         elif cmd == "conversation":

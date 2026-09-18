@@ -1720,8 +1720,10 @@ class FrameLink:
             return err
         try:
             body = json.dumps({"name": name, "text": text}).encode()
+            # A member with no tab open is opened and waited for, so this is
+            # measured in tens of seconds, not the few a plain send takes.
             return self._signed_request(peer, "POST", "/link/group/send", body,
-                                        timeout=60)
+                                        timeout=180)
         except Exception as e:
             return {"success": False, "message": str(e)}
 

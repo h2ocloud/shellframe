@@ -120,6 +120,8 @@ def _print_result(result: dict, verbose: bool = True):
                 print(f"  [{who}] {body}")
             if d.get("offline"):
                 print(f"  (沒開分頁：{'、'.join(d['offline'])})")
+            if d.get("quiet"):
+                print(f"  (分頁剛開，還沒有對話記錄：{'、'.join(d['quiet'])})")
         elif "roles" in d and isinstance(d["roles"], list):
             for r in d["roles"]:
                 print(f"  {r.get('role')}  ->  {r.get('label')}  [{r.get('agent_code')}]")
@@ -730,7 +732,7 @@ def main():
     elif args.cmd == "group-send":
         # Fan-out opens tabs and starts turns, so give it the same room as send.
         _print_result(_rpc("group_send", {"name": args.name, "text": args.text},
-                           timeout=60.0))
+                           timeout=180.0))
     elif args.cmd == "group-conversation":
         _print_result(_rpc("group_conversation", {"name": args.name,
                                                   "limit": args.limit}, timeout=30.0))
