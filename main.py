@@ -8150,9 +8150,13 @@ try {
                 s_obj = self.sessions.get(sid)
                 if not s_obj:
                     return {"success": False, "message": f"No such session: {sid}"}
-                worker = {"cmd": s_obj.cmd, "cwd": getattr(s_obj, "cwd", "") or "",
-                          "tmux_name": getattr(s_obj, "_tmux_name", "") or "",
-                          "session_id": getattr(s_obj, "session_id", "") or ""}
+                # `_worker_ctx` rather than a hand-rolled dict. The local one was
+                # missing `config_dir`, and a tab pinned to an account profile
+                # keeps its transcript under that profile — so the lookup went to
+                # the global path, found nothing, and every such tab reported
+                # "no conversation" while it was visibly answering on screen.
+                # That is the chat view on the phone, not a corner case.
+                worker = self._worker_ctx(sid, s_obj)
                 path = agent_status.resolve_transcript(worker)
                 if not path:
                     return {"success": False,
