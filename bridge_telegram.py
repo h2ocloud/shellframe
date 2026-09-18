@@ -1571,6 +1571,7 @@ class TelegramBridge(BridgeBase):
             {"command": "quiet", "description": "這一輪別再提醒進度（心跳靜音）"},
             {"command": "delay", "description": "排程晚點送 prompt：/delay 30m <prompt>；/delay 看清單"},
             {"command": "link", "description": "跨機配對：/link pair、/link join <host> <碼>"},
+            {"command": "group", "description": "角色群組（實驗性）：/group 看清單、/group <名稱> <訊息> 群發"},
             {"command": "close", "description": "Close current session (with confirm)"},
         ])
         # The claude-plugins-official telegram plugin shares this bot token
@@ -6599,6 +6600,48 @@ class TelegramBridge(BridgeBase):
                 "chat_id": chat_id, "label": slot.label}, timeout=10.0)
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": res.get("message") or "排程失敗"})
+
+        elif cmd in ("group", "groups"):
+            # TG compatibility for groups. A group fans out to several tabs, and
+            # each tab's reply already comes back through the bridge labelled
+            # with its own tab name -- so the replies arrive as separate
+            # messages, each attributed, which is the readable shape on a phone.
+            # Nothing about the existing per-tab routing changes.
+            argv = (text or "").split(None, 2)[1:]
+            def _do_group(argv=argv, chat_id=chat_id):
+                if not argv:
+                    res = self._sfctl_call("group_list", {}, timeout=15.0)
+                    det = (res.get("details") or {})
+                    gs = det.get("groups") or []
+                    if not res.get("success"):
+                        msg = res.get("message") or "群組功能沒開"
+                    elif not gs:
+                        roles = "、".join(det.get("roles") or []) or "(名冊是空的)"
+                        msg = ("還沒有任何群組。在電腦的設定 → 實驗性 → 角色群組裡建立。\n"
+                               f"可用角色：{roles}")
+                    else:
+                        lines = ["🧑‍🤝‍🧑 角色群組："]
+                        for g in gs:
+                            lines.append(f"• {g['name']}：{'、'.join(g.get('roles') or [])}")
+                        lines.append("\n用法：/group <名稱> <訊息>")
+                        msg = "\n".join(lines)
+                    tg_api(self.config.bot_token, "sendMessage",
+                           {"chat_id": chat_id, "text": msg})
+                    return
+                if len(argv) < 2:
+                    tg_api(self.config.bot_token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": "用法：/group <群組名稱> <訊息>；/group 單獨用可看清單"})
+                    return
+                res = self._sfctl_call("group_send",
+                                       {"name": argv[0], "text": argv[1]},
+                                       timeout=90.0)
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": (res.get("message") or "群發失敗")
+                            + ("\n各角色的回覆會照原本的方式分別回到這裡。"
+                               if res.get("success") else "")})
+            threading.Thread(target=_do_group, daemon=True).start()
 
         elif cmd == "link":
             # Frame Link（跨機配對）遠端操作：人在外面用 TG 就能把兩台接起來。

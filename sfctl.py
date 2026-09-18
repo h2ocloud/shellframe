@@ -106,6 +106,20 @@ def _print_result(result: dict, verbose: bool = True):
                 alive = "*" if s.get("alive") else "-"
                 bridge = "" if s.get("bridge_enabled", True) else " (unbridged)"
                 print(f"  {alive} {s.get('sid')}  {s.get('label')}{bridge}  - {s.get('cmd', '')[:60]}")
+        elif "groups" in d and isinstance(d["groups"], list):
+            # Checked before "roles": group-list carries both, and its `roles`
+            # is a plain list of role names rather than roster entries.
+            for g in d["groups"]:
+                print(f"  {g.get('name')}  <-  {'、'.join(g.get('roles') or [])}")
+            if d.get("roles"):
+                print(f"  (可用角色：{'、'.join(str(r) for r in d['roles'])})")
+        elif "turns" in d and isinstance(d["turns"], list):
+            for t in d["turns"]:
+                who = t.get("speaker") or t.get("kind") or "?"
+                body = str(t.get("text") or "").replace("\n", " ")[:160]
+                print(f"  [{who}] {body}")
+            if d.get("offline"):
+                print(f"  (沒開分頁：{'、'.join(d['offline'])})")
         elif "roles" in d and isinstance(d["roles"], list):
             for r in d["roles"]:
                 print(f"  {r.get('role')}  ->  {r.get('label')}  [{r.get('agent_code')}]")
@@ -538,6 +552,17 @@ def main():
                         help="Don't append Enter after text")
 
     sub.add_parser("version", help="ShellFrame version + which experimental features are on")
+    sub.add_parser("skill", help="Print the agent-facing reference for this build (read this first)")
+
+    # ── role groups (experimental_groups): one message, several agents ──
+    sub.add_parser("group-list", help="List role groups and who is in them")
+    p_gs = sub.add_parser("group-send", help="Send one message to every role in a group")
+    p_gs.add_argument("name", help="Group name — see: sfctl group-list")
+    p_gs.add_argument("text", help="Message text")
+    p_gc = sub.add_parser("group-conversation",
+                          help="One merged thread of the group's replies, attributed per role")
+    p_gc.add_argument("name", help="Group name")
+    p_gc.add_argument("--limit", type=int, default=120, help="Turns to return (default 120)")
 
     # ── cross-machine (Frame Link): same verbs, with a paired computer in front ──
     p_ll = sub.add_parser("link-list", help="List sessions on a paired computer")
@@ -691,6 +716,24 @@ def main():
         _print_result(_rpc("history_audit", {"sid": args.sid}, timeout=20))
     elif args.cmd == "version":
         _print_result(_rpc("version"))
+    elif args.cmd == "skill":
+        # Straight to stdout: this is a document to be read, and the generic
+        # "  key: value" rendering would bury it.
+        r = _rpc("skill_doc", timeout=20)
+        if not r.get("success"):
+            print(f"ERR {r.get('message', '')}")
+            sys.exit(1)
+        print((r.get("details") or {}).get("text", ""))
+        sys.exit(0)
+    elif args.cmd == "group-list":
+        _print_result(_rpc("group_list"))
+    elif args.cmd == "group-send":
+        # Fan-out opens tabs and starts turns, so give it the same room as send.
+        _print_result(_rpc("group_send", {"name": args.name, "text": args.text},
+                           timeout=60.0))
+    elif args.cmd == "group-conversation":
+        _print_result(_rpc("group_conversation", {"name": args.name,
+                                                  "limit": args.limit}, timeout=30.0))
     elif args.cmd == "link-status":
         _print_result(_rpc("link_status"))
     elif args.cmd == "link-list":

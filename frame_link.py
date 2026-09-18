@@ -1008,6 +1008,17 @@ class FrameLink:
                         "sid": body.get("sid", ""),
                         "reason": "frame_link"}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/group/send":
+                    # Drives several agents at once, so it is gated like every
+                    # other write and refused outright on a one-way pairing.
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權操作這台"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute("group_send", {
+                        "name": body.get("name", ""),
+                        "text": body.get("text", "")}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/rename":
                     # Same rename the desktop double-click uses, so the new label
                     # persists and shows up on every surface.
@@ -1268,6 +1279,25 @@ class FrameLink:
                     except ValueError:
                         limit = 80
                     res = link._execute("conversation", {"sid": sid, "limit": limit}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/groups":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    res = link._execute("group_list", {}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/group/conversation":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    try:
+                        limit = int((q.get("limit") or ["120"])[0])
+                    except ValueError:
+                        limit = 120
+                    res = link._execute("group_conversation", {
+                        "name": (q.get("name") or [""])[0], "limit": limit}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/a2a":
                     # The agent-to-agent audit log, which is what makes the group
@@ -1655,6 +1685,44 @@ class FrameLink:
         except Exception as e:
             if "404" in str(e):
                 return {"success": False, "message": "對方的 ShellFrame 還沒有這個功能（需要 0.36.0 以上）"}
+            return {"success": False, "message": str(e)}
+
+    def remote_groups(self, peer_id: str) -> dict:
+        """Role groups defined on the peer (experimental feature there)."""
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            return self._signed_request(peer, "GET", "/link/groups", timeout=10)
+        except Exception as e:
+            if "404" in str(e):
+                return {"success": False, "message": "對方的 ShellFrame 還沒有群組功能（需要 0.37.0 以上）"}
+            return {"success": False, "message": str(e)}
+
+    def remote_group_conversation(self, peer_id: str, name: str,
+                                  limit: int = 120) -> dict:
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            return self._signed_request(
+                peer, "GET",
+                f"/link/group/conversation?name={quote(name)}&limit={int(limit)}",
+                timeout=20)
+        except Exception as e:
+            if "404" in str(e):
+                return {"success": False, "message": "對方的 ShellFrame 還沒有群組功能（需要 0.37.0 以上）"}
+            return {"success": False, "message": str(e)}
+
+    def remote_group_send(self, peer_id: str, name: str, text: str) -> dict:
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            body = json.dumps({"name": name, "text": text}).encode()
+            return self._signed_request(peer, "POST", "/link/group/send", body,
+                                        timeout=60)
+        except Exception as e:
             return {"success": False, "message": str(e)}
 
     def remote_rename(self, peer_id: str, sid: str, name: str) -> dict:

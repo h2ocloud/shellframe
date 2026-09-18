@@ -6,6 +6,82 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.0 (2026-09-18)
+
+### Added
+
+- **Role groups: one message, several agents, one thread.** Relaying the same
+  question into four tabs by hand and stitching the answers together in your head
+  is work the computer should be doing. A group is a name plus a list of roster
+  roles — roles rather than tab ids, so a group still means something after a tab
+  is closed and reopened. Send once and every member receives it; read one merged
+  thread with each turn attributed to whoever said it.
+
+  Each member is told it is a group message, which group, and who else is in it,
+  so they divide the work instead of four agents doing the same thing. Sending
+  goes through delegation, so a member whose tab is not running gets one opened.
+  Limits: at most eight roles per group, twenty groups, and only roles that exist
+  in the roster — a group naming a role that does not exist would fail silently at
+  send time, which is worse than refusing it when it is created.
+
+  Off by default, behind 實驗性 → 角色群組, because sending drives several agents
+  at once and every tab runs with permissions bypassed. Available in the same
+  place from all three surfaces: Settings on the desktop, the phone app, and
+  Telegram's `/group <名稱> <訊息>`. 16 cases in `tests_agent_group.py`.
+
+  **角色群組：一則訊息、多個 agent、一條對話。** 把同一個問題手動貼進四個分頁、
+  再自己在腦袋裡把回覆拼起來，這是電腦該做的事。群組是一個名字加上一串名冊角色
+  ——用角色而不是分頁 id，所以分頁關掉再開，群組依然有意義。送一次每個成員都收
+  得到；回來看到的是一條合併過的對話，每一則都標明是誰說的。
+
+  每個成員都會被告知這是群組訊息、屬於哪個群組、還有誰在裡面，所以他們會分工，
+  而不是四個 agent 做同一件事。送出走的是派工，所以沒開分頁的成員會被開起來。
+  上限：一組最多八個角色、最多二十組，而且只能放名冊裡真的有的角色——放一個不
+  存在的角色會在送出的當下無聲失敗，那比在建立時就擋下來更糟。
+
+  預設關閉，放在 實驗性 → 角色群組 底下，因為送出會同時驅動好幾個 agent，而每個
+  分頁都是 bypass permissions 在跑。桌面設定、手機 app、Telegram 的
+  `/group <名稱> <訊息>` 三邊看到的是同一份清單。`tests_agent_group.py` 16 例。
+
+- **AI 自己找得到操作說明。** The reference that tells an agent how to drive
+  ShellFrame used to live behind a copy button in About, which only helps if
+  someone remembers to press it. Two changes. `sfctl skill` prints that reference
+  off the installed build, stamped with its version and which experimental
+  features are switched on, so one command answers both what is being driven and
+  how. And on start-up ShellFrame writes a small skill into
+  `~/.claude/skills/shellframe/`, a directory Claude Code already reads by itself
+  — so an agent in a tab finds it without being told.
+
+  What gets installed is a pointer, not a copy: a few lines of what ShellFrame is,
+  then an instruction to run `sfctl skill` for anything specific. A copy would be
+  wrong the first time ShellFrame updates. Switchable off in Settings. For Codex
+  there is a button that writes the same pointer into `~/.codex/AGENTS.md` inside
+  a marked block — never automatic, since that file is one the user writes in too,
+  and installing twice leaves one block rather than two.
+
+  **AI 自己找得到操作說明。** 那份告訴 agent 怎麼操作 ShellFrame 的說明書，過去
+  藏在「關於」裡的一顆複製鍵後面，而那要有人記得去按才有用。兩個改動。
+  `sfctl skill` 會直接印出安裝版本裡的那份說明，開頭標上版本與哪些實驗性功能是
+  開著的，一道指令同時回答「我在開什麼」跟「怎麼開」。另外啟動時 ShellFrame 會
+  在 `~/.claude/skills/shellframe/` 寫一份 skill，那是 Claude Code 本來就會自己
+  去讀的目錄——分頁裡的 agent 不必被告知就會找到。
+
+  裝出去的是指標不是副本：幾行說明 ShellFrame 是什麼，接著叫它去跑 `sfctl skill`
+  查細節。副本在第一次更新之後就是錯的。設定裡可以關掉。Codex 則另外給一顆按鍵，
+  把同一份指標寫進 `~/.codex/AGENTS.md` 的標記區塊裡——不會自動執行，因為那個檔案
+  使用者自己也在寫，而且裝兩次只會留下一個區塊。
+
+### Internal
+
+- The version command now enumerates the experimental flags from the settings
+  themselves instead of a hard-coded list, so a new flag is visible to an agent
+  the day it is added. A test now fails when the version is bumped without the
+  agent reference catching up, or when an experimental flag exists that the
+  reference never mentions — documentation drift that otherwise produces no error
+  at all, just an agent reaching for commands that are not there.
+  `tests_ai_skill.py` 加上 18 例；版本指令改為從設定列舉實驗性旗標，文件落後於
+  build 時測試會紅燈。
+
 ## v0.36.5 (2026-09-17)
 
 ### Fixes

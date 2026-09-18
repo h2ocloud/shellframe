@@ -20,14 +20,27 @@ sfctl version
 ```
 
 ```
-OK ShellFrame v0.36.0
-   version: 0.36.0
-   experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_loops": false}
+OK ShellFrame v0.37.0
+   version: 0.37.0
+   experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_groups": true, "experimental_loops": false}
 ```
+
+The flag list is read from the live settings, so it always names every
+experimental feature this build has — including ones this document has not
+caught up with. A feature listed `false` is off: the commands exist but refuse.
 
 Then look the features you need up in the table in §5. If a command is missing,
 the installed build predates it — say so rather than retrying or guessing a
 workaround.
+
+From 0.37.0 you can fetch this document from the machine you are actually on,
+already stamped with its version and flags:
+
+```bash
+sfctl skill
+```
+
+Prefer that over any copy you were handed: the copy ages, that one cannot.
 
 Every command prints `OK <message>` or `ERR <message>` and exits accordingly, so
 you can branch on the exit status.
@@ -104,6 +117,33 @@ A peer that is unreachable is reported as such. Messages and file transfers queu
 for an offline peer, but **screen reads and injections do not** — there is
 nothing to read on a machine that is not answering.
 
+## 4.5 Talk to several agents at once (groups)
+
+Needs `experimental_groups`. A **group** is a name plus a list of roster roles —
+roles, not sids, so a group still means something after a tab is closed and
+reopened.
+
+```bash
+sfctl group-list                       # groups, their members, and the roles available
+sfctl group-send 小隊 "先各自查一下這個 bug 的影響範圍"
+sfctl group-conversation 小隊 --limit 80
+```
+
+`group-send` fans the message out through `delegate`, so a member whose tab is
+not running gets one opened. Each member receives the text under a banner naming
+the group and the other members, which is what lets them divide the work instead
+of four agents doing the same thing. `group-conversation` reads every member's
+transcript and merges it into one thread in time order, each turn tagged with
+who said it.
+
+The user creates and edits groups in Settings → 實驗性 → 角色群組; a group can
+hold at most 8 roles. Groups are also on the phone app and on Telegram
+(`/group <名稱> <訊息>`), and all three read the same list.
+
+**If you receive a group message**, the banner is telling you the truth: the
+same text went to the other named roles. Do your part, and say what you are
+leaving to whom rather than silently covering everything.
+
 ## 5. Which build has what
 
 `sfctl version` first, then:
@@ -118,6 +158,8 @@ nothing to read on a machine that is not answering.
 | Remote drag-reorder (`/link/reorder`) | 0.35.0 |
 | Remote rename (`/link/rename`) | 0.35.x |
 | `sfctl version`, `link-*` CLI verbs, `conversation`, A2A | 0.36.0 |
+| Role groups (`experimental_groups`), `sfctl group-*`, TG `/group` | 0.37.0 |
+| `sfctl skill` — this document, from the running build | 0.37.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

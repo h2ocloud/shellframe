@@ -201,6 +201,16 @@ DEFAULT_CONFIG = {
         # default: delivery writes into another agent's prompt unattended, and
         # every tab runs with permissions bypassed. Rules live in agent_link.py.
         "experimental_a2a": False,
+        # Role groups: one message to several agents, replies in one thread.
+        # Off by default — sending drives several permission-bypassed agents at
+        # once. Rules live in agent_group.py.
+        "experimental_groups": False,
+        # Install a pointer skill into ~/.claude/skills/shellframe/ on start, so
+        # an agent in a tab discovers `sfctl skill` without being told. On by
+        # default: it is a directory only ShellFrame writes, and it holds a
+        # pointer rather than a copy, so there is nothing to go stale. See
+        # ai_skill.py.
+        "ai_skill_autoinstall": True,
         # Emoji receipts on the user's own Telegram messages (👀 / 🫡). Off:
         # they mark up the user's chat history, and the delivery warning covers
         # the silence they were added for.
@@ -5491,6 +5501,72 @@ try {
             _swallow("Api.get_latest_release_notes:4601")
         return json.dumps({"version": version, "heading": heading, "body": body})
 
+    def sfctl_call(self, cmd: str, args_json: str = "{}") -> str:
+        """Let the web UI reach a dispatch command directly.
+
+        The UI has a bespoke Api method per feature, which is fine for the big
+        ones but heavy for a small settings panel. Groups are configured through
+        the same commands the CLI, Telegram and paired phones use, so there is
+        exactly one implementation to keep correct.
+
+        Deliberately narrow: only the group commands are reachable, so this does
+        not quietly become a way to run anything from the page."""
+        allowed = {"group_list", "group_save", "group_delete"}
+        if cmd not in allowed:
+            return json.dumps({"success": False,
+                               "message": f"{cmd} is not callable from the UI"})
+        try:
+            args = json.loads(args_json or "{}")
+        except Exception:
+            args = {}
+        try:
+            return json.dumps(self._execute_sfctl(cmd, args), ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def _autoinstall_ai_skill(self):
+        """Keep ~/.claude/skills/shellframe/SKILL.md in step with this install.
+
+        Deliberately fire-and-forget: an agent not finding the pointer is a
+        missed convenience, never a reason to hold up startup or the bridge."""
+        try:
+            if not (load_config().get("settings") or {}).get("ai_skill_autoinstall", True):
+                return
+            import ai_skill
+            changed, where = ai_skill.install_claude_skill()
+            if changed:
+                print(f"[ai-skill] installed pointer skill at {where}")
+        except Exception as e:
+            print(f"[ai-skill] skipped: {e}")
+
+    def ai_skill_status(self) -> str:
+        """Where the pointer is installed, for the About panel."""
+        try:
+            import ai_skill
+            return json.dumps({"success": True, "details": ai_skill.status()},
+                              ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
+    def ai_skill_install(self, target: str = "claude", remove: bool = False) -> str:
+        """Install (or, for Codex, remove) the pointer. Codex shares AGENTS.md
+        with the user, so it is only ever touched from this button."""
+        try:
+            import ai_skill
+            if target == "codex":
+                changed, where = ai_skill.install_codex_agents(remove=bool(remove))
+                verb = "移除" if remove else "寫入"
+            else:
+                changed, where = ai_skill.install_claude_skill()
+                verb = "寫入"
+            ok = not str(where).startswith("寫入失敗") and "找不到" not in str(where)
+            return json.dumps({"success": ok,
+                               "message": (f"已{verb}：{where}" if changed and ok
+                                           else where if not ok else f"已經是最新的：{where}"),
+                               "details": ai_skill.status()}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})
+
     def ai_skill_doc(self) -> str:
         """The agent-facing skill sheet (docs/ai-skill.md), for the About panel's
         copy button. Served from disk so it tracks the installed build rather
@@ -6071,6 +6147,7 @@ try {
         Startup now does not depend on the UI at all. The UI's own restore is
         idempotent (it returns early when the bridge is already active), so the
         two cannot fight."""
+        self._autoinstall_ai_skill()
         try:
             saved = (load_config() or {}).get("bridge") or {}
             token = saved.get("bot_token") or ""
@@ -7800,6 +7877,103 @@ try {
             except Exception as e:
                 return {"success": False, "message": f"Rename failed: {e}"}
 
+        elif cmd in ("group_list", "group_save", "group_delete",
+                     "group_send", "group_conversation"):
+            try:
+                import agent_group
+            except Exception as e:
+                return {"success": False, "message": f"agent_group unavailable: {e}"}
+            cfg = load_config()
+            if not (cfg.get("settings") or {}).get("experimental_groups", False):
+                return {"success": False,
+                        "message": "群組是實驗性功能，請先在設定裡打開（實驗性 → 角色群組）"}
+            roster = self._agent_roster_config(cfg)
+            groups = agent_group.normalize(cfg.get("groups"))
+
+            if cmd == "group_list":
+                out = []
+                for name, g in groups.items():
+                    out.append({"name": name, "roles": g["roles"],
+                                "created": g.get("created")})
+                return {"success": True, "message": f"{len(out)} groups",
+                        "details": {"groups": out, "roles": list(roster.keys())}}
+
+            if cmd == "group_save":
+                ok, name, roles, err = agent_group.validate(
+                    args.get("name", ""), args.get("roles") or [], roster)
+                if not ok:
+                    return {"success": False, "message": err}
+                def _mut(c):
+                    gs = agent_group.normalize(c.get("groups"))
+                    gs[name] = {"roles": roles,
+                                "created": (gs.get(name) or {}).get("created") or time.time()}
+                    c["groups"] = gs
+                update_config(_mut)
+                return {"success": True, "message": f"已儲存群組「{name}」",
+                        "details": {"name": name, "roles": roles}}
+
+            if cmd == "group_delete":
+                name = str(args.get("name") or "").strip()
+                if name not in groups:
+                    return {"success": False, "message": f"找不到群組「{name}」"}
+                def _mut(c):
+                    gs = agent_group.normalize(c.get("groups"))
+                    gs.pop(name, None)
+                    c["groups"] = gs
+                update_config(_mut)
+                return {"success": True, "message": f"已刪除群組「{name}」"}
+
+            name = str(args.get("name") or "").strip()
+            g = groups.get(name)
+            if not g:
+                names = "、".join(groups.keys()) or "(無)"
+                return {"success": False,
+                        "message": f"找不到群組「{name}」。已有：{names}"}
+            members = g["roles"]
+
+            if cmd == "group_send":
+                text = str(args.get("text") or "").strip()
+                if not text:
+                    return {"success": False, "message": "訊息必填"}
+                a2a_on = bool((cfg.get("settings") or {}).get("experimental_a2a", False))
+                sent, failed = [], []
+                for role in members:
+                    body = agent_group.format_group_message(name, members, role, text,
+                                                            a2a=a2a_on)
+                    try:
+                        # delegate opens the role's tab when it is not running,
+                        # which is what makes a group usable after a restart.
+                        r = self.delegate_task(role, body) or {}
+                        (sent if r.get("success") else failed).append(role)
+                    except Exception:
+                        failed.append(role)
+                return {"success": bool(sent),
+                        "message": (f"已送給 {len(sent)}/{len(members)} 個角色"
+                                    + (f"（失敗：{'、'.join(failed)}）" if failed else "")),
+                        "details": {"sent": sent, "failed": failed, "members": members}}
+
+            # group_conversation — one thread, every reply attributed.
+            limit = max(1, min(int(args.get("limit") or 120), 400))
+            per_member, missing = {}, []
+            for role in members:
+                entry = roster.get(role) or {}
+                label = entry.get("label") or role
+                sid, _sess = self._find_session_by_label(label)
+                if not sid:
+                    missing.append(role)
+                    continue
+                res = self._execute_sfctl("conversation",
+                                          {"sid": sid, "limit": limit}) or {}
+                if res.get("success"):
+                    per_member[role] = (res.get("details") or {}).get("turns") or []
+                else:
+                    missing.append(role)
+            return {"success": True,
+                    "message": f"{len(per_member)}/{len(members)} 個角色有對話",
+                    "details": {"name": name, "members": members,
+                                "offline": missing,
+                                "turns": agent_group.merge_turns(per_member, limit)}}
+
         elif cmd == "conversation":
             # Structured turns for a chat-style view, instead of terminal bytes.
             # Reuses the transcript reader the scroll-up history already relies
@@ -8055,12 +8229,35 @@ try {
             except Exception:
                 v = "0"
             st = (load_config().get("settings") or {})
+            # Enumerated from the settings themselves, not a hard-coded list: a
+            # new experimental flag must show up here the day it is added, or an
+            # agent reading this has no way to learn the feature exists.
+            keys = sorted(set(k for k in DEFAULT_CONFIG.get("settings", {})
+                              if k.startswith("experimental_"))
+                          | set(k for k in st if k.startswith("experimental_")))
             return {"success": True, "message": f"ShellFrame v{v}",
                     "details": {"version": v,
-                                "experimental": {k: bool(st.get(k))
-                                                 for k in ("experimental_a2a",
-                                                           "experimental_board",
-                                                           "experimental_loops")}}}
+                                "experimental": {k: bool(st.get(k)) for k in keys}}}
+
+        elif cmd == "skill_doc":
+            # `sfctl skill` — the agent-facing reference, served from disk with a
+            # live header, so one call answers both "what am I driving" and
+            # "how". Anything else would drift from the installed build.
+            try:
+                doc = (Path(__file__).resolve().parent / "docs" / "ai-skill.md"
+                       ).read_text(encoding="utf-8")
+            except Exception as e:
+                return {"success": False, "message": f"讀不到 docs/ai-skill.md: {e}"}
+            ver = self._execute_sfctl("version", {}) or {}
+            det = ver.get("details") or {}
+            on = [k for k, v in (det.get("experimental") or {}).items() if v]
+            header = (f"<!-- 這台機器實際跑的是 ShellFrame v{det.get('version', '?')}；"
+                      f"已開啟的實驗性功能：{'、'.join(on) or '（無）'}。"
+                      f"底下提到但沒開的功能，就是不能用。 -->\n\n")
+            return {"success": True, "message": "ai-skill.md",
+                    "details": {"version": det.get("version", ""),
+                                "experimental": det.get("experimental") or {},
+                                "text": header + doc}}
 
         elif cmd in ("link_list", "link_peek", "link_send", "link_new",
                      "link_close", "link_rename", "link_conversation"):

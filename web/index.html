@@ -934,6 +934,9 @@
     <div id="sidebar-footer">
       <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
       <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
+      <!-- 說明書放在「關於」裡面等於沒放：要有人記得去翻才會用到。這顆直接
+           開到那一段，順便顯示它有沒有裝進 AI 會自己讀的地方。 -->
+      <button class="sb-footer-btn" id="btn-ai-skill" title="給 AI 的 ShellFrame 操作說明"><span style="opacity:.5">🤖</span> 給 AI 的說明</button>
     </div>
   </div>
   <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
@@ -1078,6 +1081,23 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-master-preamble"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="masterTurnPreambleHint">Remind master tabs to consider delegation before each AI turn</span>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">角色群組 — 一則訊息送給多個角色（實驗性）</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch" id="setting-experimental-groups"></button>
+            <span style="font-size:11px;color:#565f89">把名冊裡的角色組成群，一次送給全部成員，回覆合併成一條對話。手機 App 與 TG <code>/group</code> 都可用。預設關閉。</span>
+          </div>
+          <div id="groups-editor" style="display:none;margin-top:8px;padding:8px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px">
+            <div id="groups-list" style="font-size:11px;color:#a9b1d6"></div>
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+              <input type="text" id="group-new-name" placeholder="群組名稱"
+                style="flex:0 0 120px;background:#24283b;border:1px solid #3b4261;border-radius:3px;padding:4px 6px;color:#c0caf5;font-size:11px;outline:none"/>
+              <div id="group-role-picks" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"></div>
+              <button class="btn btn-primary" id="group-save" style="font-size:11px;padding:3px 10px">新增／更新</button>
+            </div>
+            <div id="group-msg" style="font-size:11px;margin-top:6px;min-height:14px"></div>
           </div>
         </div>
         <div>
@@ -1407,11 +1427,23 @@
       <p data-i18n="aboutDesc">Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.</p>
     </div>
 
-    <div class="about-section">
+    <div class="about-section" id="about-skill-section">
       <h3>給 AI 的使用說明（Skill）</h3>
       <p>把這份說明貼給任何 AI，它就知道怎麼操作 ShellFrame：讀其他分頁、派工、
-      以及<b>跨機器操控另一台電腦的 session</b>。裡面要求 AI 先自己查版本，再對照
-      功能表，避免它用到這個版本還沒有的指令。</p>
+      角色群組，以及<b>跨機器操控另一台電腦的 session</b>。裡面要求 AI 先自己查版本，
+      再對照功能表，避免它用到這個版本還沒有的指令。</p>
+      <p style="color:#9aa5ce">分頁裡的 AI 其實不用等你貼：讓它自己跑
+      <code>sfctl skill</code>，印出來的就是這台機器實際安裝的版本，開頭會標明版本
+      與哪些實驗性功能是開著的。</p>
+      <div id="skill-install" style="margin-top:8px;padding:8px 10px;background:#1a1b26;border:1px solid #3b4261;border-radius:6px">
+        <div style="font-size:11px;color:#a9b1d6;margin-bottom:6px">讓 AI 預設就會用</div>
+        <div id="skill-install-status" style="font-size:11px;color:#565f89;line-height:1.7">讀取中…</div>
+        <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="btn-install-claude" style="font-size:11px;padding:4px 10px">重新寫入 Claude Code</button>
+          <button class="btn btn-ghost" id="btn-install-codex" style="font-size:11px;padding:4px 10px">寫入 Codex AGENTS.md</button>
+          <span id="skill-install-msg" style="font-size:11px;color:#9ece6a"></span>
+        </div>
+      </div>
       <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
         <button class="btn btn-primary" id="btn-copy-skill" style="font-size:11px;padding:4px 10px">複製給 AI</button>
         <button class="btn btn-ghost" id="btn-open-skill" style="font-size:11px;padding:4px 10px">看內容</button>
@@ -7061,6 +7093,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-experimental-loops').classList.toggle(
       'on', s.experimental_loops === true,
     );
+    document.getElementById('setting-experimental-groups').classList.toggle(
+      'on', s.experimental_groups === true,
+    );
+    document.getElementById('groups-editor').style.display =
+      s.experimental_groups === true ? 'block' : 'none';
+    if (s.experimental_groups === true) refreshGroupsEditor();
     document.getElementById('setting-model-badge').classList.toggle(
       'on', s.show_model_badge !== false,
     );
@@ -7115,6 +7153,69 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings = config.settings || {};
       config.settings.show_tg_wrapper = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
+    });
+
+  // ── 角色群組（實驗性）──
+  let _groupRoles = [];
+  async function refreshGroupsEditor() {
+    const listEl = document.getElementById('groups-list');
+    const picks = document.getElementById('group-role-picks');
+    if (!listEl) return;
+    let res;
+    try { res = JSON.parse(await pywebview.api.sfctl_call('group_list', '{}')); }
+    catch (e) { listEl.textContent = '讀不到群組：' + e; return; }
+    const det = (res && res.details) || {};
+    const groups = det.groups || [];
+    _groupRoles = det.roles || [];
+    listEl.innerHTML = groups.length
+      ? groups.map(g => `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">
+           <span style="color:#7aa2f7">${esc2(g.name)}</span>
+           <span style="color:#565f89">${esc2((g.roles || []).join('、'))}</span>
+           <button class="btn btn-ghost" data-group-del="${esc2(g.name)}"
+             style="font-size:10px;padding:1px 6px;margin-left:auto">刪除</button>
+         </div>`).join('')
+      : '<div style="color:#565f89">還沒有群組。取個名字、勾選角色，按「新增／更新」。</div>';
+    picks.innerHTML = _groupRoles.map(r =>
+      `<label style="font-size:11px;color:#a9b1d6;display:flex;align-items:center;gap:3px">
+         <input type="checkbox" value="${esc2(r)}" class="group-role-cb"/>${esc2(r)}</label>`).join('')
+      || '<span style="font-size:11px;color:#f7768e">名冊裡還沒有角色</span>';
+    listEl.querySelectorAll('[data-group-del]').forEach(b => {
+      b.addEventListener('click', async () => {
+        await pywebview.api.sfctl_call('group_delete',
+          JSON.stringify({ name: b.dataset.groupDel }));
+        refreshGroupsEditor();
+      });
+    });
+  }
+
+  document.getElementById('group-save').addEventListener('click', async () => {
+    const msg = document.getElementById('group-msg');
+    const name = document.getElementById('group-new-name').value.trim();
+    const roles = Array.from(document.querySelectorAll('.group-role-cb:checked'))
+      .map(c => c.value);
+    let res;
+    try {
+      res = JSON.parse(await pywebview.api.sfctl_call('group_save',
+        JSON.stringify({ name, roles })));
+    } catch (e) { msg.style.color = '#f7768e'; msg.textContent = String(e); return; }
+    msg.style.color = res.success ? '#9ece6a' : '#f7768e';
+    msg.textContent = res.message || '';
+    if (res.success) {
+      document.getElementById('group-new-name').value = '';
+      document.querySelectorAll('.group-role-cb').forEach(c => { c.checked = false; });
+      refreshGroupsEditor();
+    }
+  });
+
+  document.getElementById('setting-experimental-groups')
+    .addEventListener('click', async function() {
+      this.classList.toggle('on');
+      const on = this.classList.contains('on');
+      config.settings = config.settings || {};
+      config.settings.experimental_groups = on;
+      await pywebview.api.save_settings(JSON.stringify(config.settings));
+      document.getElementById('groups-editor').style.display = on ? 'block' : 'none';
+      if (on) refreshGroupsEditor();
     });
 
   document.getElementById('setting-experimental-loops')
@@ -8634,6 +8735,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   document.getElementById('btn-about').addEventListener('click', async () => {
     $modalAbout.classList.add('open');
     checkForUpdate();
+    refreshSkillInstall();
     // Show current release notes + release history (last 5)
     try {
       const changelog = await pywebview.api.get_changelog();
@@ -8690,6 +8792,67 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (pre.style.display === 'block') { pre.style.display = 'none'; return; }
     pre.textContent = (await loadSkillDoc()) || '讀不到 docs/ai-skill.md';
     pre.style.display = 'block';
+  });
+
+  // ── Where the pointer is installed ─────────────────────────────────────────
+  // The point of the pointer is that nobody has to do anything, so this panel is
+  // status first and buttons second: it exists to answer "is it actually there".
+  async function refreshSkillInstall() {
+    const el = document.getElementById('skill-install-status');
+    if (!el) return;
+    let d = null;
+    try {
+      const r = JSON.parse(await pywebview.api.ai_skill_status());
+      d = r.success ? r.details : null;
+    } catch (e) { d = null; }
+    if (!d) { el.textContent = '讀不到安裝狀態'; return; }
+    const mark = ok => ok ? '<span style="color:#9ece6a">✓</span>' : '<span style="color:#e0af68">—</span>';
+    const rows = [
+      `${mark(d.claude)} Claude Code：${d.claude ? '已裝，新分頁自己會讀到' : '未安裝'} <code style="font-size:10px">${d.claude_path}</code>`,
+      d.codex_available
+        ? `${mark(d.codex)} Codex：${d.codex ? '已寫入標記區塊' : '未寫入'} <code style="font-size:10px">${d.codex_path}</code>`
+        : `${mark(false)} Codex：這台機器沒有 ~/.codex`,
+      `<span style="color:#565f89">AI 要跑的指令：<code style="font-size:10px">${d.sfctl} skill</code></span>`,
+    ];
+    el.innerHTML = rows.join('<br>');
+    const cx = document.getElementById('btn-install-codex');
+    if (cx) {
+      cx.disabled = !d.codex_available;
+      cx.textContent = d.codex ? '從 Codex AGENTS.md 移除' : '寫入 Codex AGENTS.md';
+      cx.dataset.remove = d.codex ? '1' : '';
+    }
+  }
+  async function runSkillInstall(target, remove) {
+    const msg = document.getElementById('skill-install-msg');
+    msg.style.color = '#565f89'; msg.textContent = '處理中…';
+    try {
+      const r = JSON.parse(await pywebview.api.ai_skill_install(target, !!remove));
+      msg.style.color = r.success ? '#9ece6a' : '#f7768e';
+      msg.textContent = r.message || '';
+    } catch (e) {
+      msg.style.color = '#f7768e'; msg.textContent = String(e);
+    }
+    await refreshSkillInstall();
+    setTimeout(() => { msg.textContent = ''; }, 8000);
+  }
+  document.getElementById('btn-install-claude')
+    .addEventListener('click', () => runSkillInstall('claude', false));
+  document.getElementById('btn-install-codex')
+    .addEventListener('click', (e) => runSkillInstall('codex', e.currentTarget.dataset.remove === '1'));
+
+  // Sidebar shortcut: open About straight at the skill section rather than
+  // making someone scroll a modal to find it.
+  document.getElementById('btn-ai-skill').addEventListener('click', () => {
+    document.getElementById('btn-about').click();
+    const sec = document.getElementById('about-skill-section');
+    setTimeout(() => {
+      try {
+        sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        sec.style.transition = 'background .3s';
+        sec.style.background = '#2a2f45';
+        setTimeout(() => { sec.style.background = ''; }, 1400);
+      } catch (_) {}
+    }, 90);
   });
 
   document.getElementById('btn-check-update').addEventListener('click', async () => {
