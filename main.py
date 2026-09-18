@@ -4158,6 +4158,28 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             _swallow(f"get_session_model_info:{sid}")
             return None
 
+    def _agent_activity_for_list(self, sid: str) -> str:
+        """One short line of what this tab is doing, for a remote list.
+
+        Same zero-cost rule as the state beside it: read the monitor's snapshot,
+        never parse a transcript to fill a list row. A remote viewer showing
+        twenty tabs should be able to tell at a glance which one is waiting on
+        it, and a bare state word does not carry that."""
+        try:
+            snap = self._agent_status_snapshot(sid)
+            if not snap:
+                return ""
+            res = snap[0] if isinstance(snap, tuple) else snap
+            if not isinstance(res, dict):
+                return ""
+            for key in ("task", "action", "narration", "summary"):
+                v = str(res.get(key) or "").strip()
+                if v:
+                    return v[:120]
+        except Exception:
+            _swallow(f"_agent_activity_for_list:{sid}")
+        return ""
+
     def _agent_state_for_list(self, sid: str) -> str:
         """給 sfctl list／Frame Link 用的單字狀態（'working' / 'done' / ''）。
 
@@ -7472,6 +7494,7 @@ try {
                     #（唯讀、零額外成本）。同步頻率就是 peer 拉 /link/info
                     # 的頻率，刻意不另外開高頻通道。
                     "agent_state": self._agent_state_for_list(sid),
+                    "agent_activity": self._agent_activity_for_list(sid),
                     # Frame Link 無縫遠端分頁：對齊對方 PTY 尺寸，alt-screen TUI
                     # （claude/codex）才不會因 cols/rows 不同而畫面錯位。
                     "cols": getattr(s, 'cols', 0),
