@@ -3856,7 +3856,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       ro.observe(pane);
     } catch (e) {}
     sessions[sid] = {
-      term, fitAddon, pane, cmd: '', label: (rt && rt.label) || (rt && rt.sid) || sid,
+      // cmd 要帶：Shift+Enter 送哪種編碼、Esc 要不要當清行，都看對方跑的是
+      // 哪支 CLI。留空的話遠端分頁一律被當成非 AI 分頁處理。
+      term, fitAddon, pane, cmd: (rt && rt.cmd) || '',
+      label: (rt && rt.label) || (rt && rt.sid) || sid,
       isRemote: true, peerId: peer.id, rsid: (rt && rt.sid) || '',
       peerName: peer.name, attachments: [], attachCounter: 0,
       bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false,
@@ -3866,6 +3869,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // 遠端 pane 從來沒掛上這個——所以遠端分頁上滑沒反應的原因有兩層：後端沒有
     // history 端點，前端連滾輪監聽都沒裝。兩層都要補，只補一層看起來還是壞的。
     setupScrollHistory(sid, pane);
+    // 自訂按鍵處理也一樣：遠端 pane 原本完全沒掛，所以 Shift+Enter 落回 xterm
+    // 的預設（送 \r）＝直接把對話送出去，Esc 清行也沒有。送出改走
+    // sendKeysToSession，本機／遠端由它分派。
+    setupAttachKeyHandler(sid, term);
     bumpSessionsRev();
     return sessions[sid];
   }
@@ -5497,6 +5504,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   // ── Attach: intercept Enter/Shift+Enter before xterm ──
   let shiftEnterNewline = true; // default on; toggled in Settings
+  // 把原始位元組送進某個 session。本機走 PTY，遠端走 Frame Link——呼叫端不必
+  // 知道差別。少了這層，任何「合成按鍵」的處理（Shift+Enter、Esc 清行）都只有
+  // 本機分頁吃得到：遠端 pane 的按鍵是裸送給 xterm 的，Shift+Enter 因此變成
+  // 普通的 Enter，直接把對話送出去。
+  function sendKeysToSession(sid, data) {
+    if (!isRemoteSid(sid)) {
+      pywebview.api.write_input(sid, data);
+      return;
+    }
+    const info = parseRemoteSid(sid);
+    if (!info) return;
+    pywebview.api.link_remote_input(info.peerId, info.rsid, data).catch(() => {});
+  }
+
   function setupAttachKeyHandler(sid, term) {
     // 分頁名標籤要黏在游標那一行，游標一動就重新對位。
     try {
@@ -5531,7 +5552,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // Codex's native Esc cancels the agent run; user prefers Esc to clear
       // the composer like a regular shell, so we intercept it here.
       if (ev.key === 'Escape' && (!isAiSession(sid) || isCodexSession(sid))) {
-        pywebview.api.write_input(sid, '\x15'); // Ctrl+U = line kill
+        sendKeysToSession(sid, '\x15'); // Ctrl+U = line kill
         return false;
       }
       // Shift+Enter → 換行但不送出。
@@ -5548,7 +5569,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       //                 crossterm 那邊會被讀成普通的 Enter，所以換不了行。
       if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey && shiftEnterNewline) {
         ev.preventDefault();
-        pywebview.api.write_input(
+        sendKeysToSession(
           sid, isCodexSession(sid) ? '\x1b[27;2;13~' : '\n');
         return false;
       }

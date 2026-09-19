@@ -6,6 +6,40 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.1 (2026-09-19)
+
+### Fixes
+
+- **Shift+Enter inserts a line break in a tab on another machine, instead of
+  sending the message.** The custom key handling — Shift+Enter, Escape to clear
+  the line, Ctrl+C to copy a selection on Windows — was only ever attached to
+  local tabs. A tab driven over the link got none of it, so Shift+Enter fell
+  through to the terminal's default, which is a plain carriage return: the same
+  thing Enter alone sends. This is the same gap that left those tabs unable to
+  scroll back through history — abilities added to local tabs over time that the
+  remote ones never picked up.
+
+  Two things had to change underneath. Sending was written against the local
+  process directly, so it is now one entry point that decides local or remote
+  internally; anything synthesising keystrokes works on either without knowing
+  the difference. And which encoding to send depends on what the other machine
+  is running, while a remote tab carried no record of that at all — every one of
+  them was treated as a plain terminal. It now comes across with the tab
+  listing. 16 cases in `tests_remote_key_handling.py`.
+
+  **Shift+Enter 在另一台機器的分頁裡會換行，而不是把訊息送出去。** 自訂按鍵處理
+  ——Shift+Enter、Escape 清除整行、Windows 上用 Ctrl+C 複製選取——從頭到尾只掛在
+  本機分頁上。透過連線操作的分頁一個都沒有，於是 Shift+Enter 落回終端的預設，
+  也就是一個普通的 carriage return：跟單獨按 Enter 送出的東西一模一樣。這跟先前
+  「那些分頁上滑看不到歷史」是同一個缺口——本機分頁一路長出來的能力，遠端的從來
+  沒有跟上。
+
+  底下有兩件事要先改。送出原本是直接寫死對本機行程，現在收斂成一個入口，由它
+  在內部決定本機還是遠端；任何需要合成按鍵的處理因此兩邊通用，不必知道差別。
+  另外，要送哪一種編碼取決於對方跑的是什麼，而遠端分頁根本沒有記錄這件事
+  ——它們一律被當成純終端機。現在這個資訊會跟著分頁清單一起帶過來。
+  `tests_remote_key_handling.py` 共 16 項。
+
 ## v0.37.0 (2026-09-18)
 
 ### Added
