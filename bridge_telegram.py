@@ -1570,6 +1570,7 @@ class TelegramBridge(BridgeBase):
             {"command": "effort", "description": "調推理深度（claude/codex，inline 按鈕）"},
             {"command": "quiet", "description": "這一輪別再提醒進度（心跳靜音）"},
             {"command": "delay", "description": "排程晚點送 prompt：/delay 30m <prompt>；/delay 看清單"},
+            {"command": "relaunch", "description": "重啟此分頁的 CLI 套用更新（接回對話）"},
             {"command": "link", "description": "跨機配對：/link pair、/link join <host> <碼>"},
             {"command": "group", "description": "角色群組（實驗性）：/group 看清單、/group <名稱> <訊息> 群發"},
             {"command": "close", "description": "Close current session (with confirm)"},
@@ -5715,7 +5716,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths and not escaped_slash:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜', 'delay', 'link') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜', 'delay', 'link', 'relaunch') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -6557,6 +6558,23 @@ class TelegramBridge(BridgeBase):
                     "text": f"{head}\n分頁關掉後編號會往前遞補，舊清單會過期。"
                             f"\n\n{self._slot_menu_text(user_id)}",
                 })
+
+        elif cmd == "relaunch":
+            # /relaunch → 重啟當前 active 分頁的 CLI 行程、套用 claude/codex 更新，
+            # 並用 --resume 接回原對話。常駐行程不會自己換版，這是套用更新的出口。
+            active_sid = self.get_active_sid(user_id)
+            slot = self.slots.get(active_sid) if active_sid else None
+            if not active_sid or not slot:
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": "沒有 active 分頁，先 /list 選一個。"})
+                return
+
+            def _do_relaunch(sid=active_sid, chat_id=chat_id):
+                res = self._sfctl_call("relaunch", {"sid": sid}, timeout=30.0)
+                tg_api(self.config.bot_token, "sendMessage", {
+                    "chat_id": chat_id, "text": res.get("message") or "重啟失敗"})
+
+            threading.Thread(target=_do_relaunch, daemon=True).start()
 
         elif cmd == "delay":
             # /delay 30m <prompt> → 排程晚點把 prompt 送進當前 active 分頁。

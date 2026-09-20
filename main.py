@@ -4600,16 +4600,27 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         if not old:
             raise ValueError("此 tab 不存在或已關閉")
         cmd = old.cmd
-        # 保留對話：claude 分頁換帳號時，把當前 uuid 的 transcript 搬進新帳號的
-        # config dir，並以 --resume <uuid> 重開，歷史才不會消失。
+        # 保留對話：把行程砍掉重開時（換帳號、或「套用 CLI 更新」重啟），用
+        # --resume <uuid> 接回原對話。claude 換帳號會換 config dir，先把 uuid 的
+        # transcript 搬進新 config dir 再 resume；codex 只在帳號不變（CODEX_HOME
+        # 不變、rollout 找得到）時 resume，換帳號則照舊重新開始。
         csid = getattr(old, "session_id", "") or ""
+        same_account = (dict(account_refs or {})
+                        == dict(getattr(old, "account_refs", {}) or {}))
         try:
-            is_claude = usage_probe.detect_ai(cmd) == "claude"
+            provider = usage_probe.detect_ai(cmd)
         except Exception:
-            is_claude = False
-        if is_claude and csid:
+            provider = None
+        if provider == "claude" and csid:
             self._carry_claude_transcript(old, csid, account_refs)
             cmd = self._cmd_with_resume(cmd, csid)
+        elif provider == "codex" and same_account:
+            try:
+                ccsid = self._codex_session_id(sid, old) or ""
+            except Exception:
+                ccsid = ""
+            if ccsid:
+                cmd = self._cmd_with_resume(cmd, ccsid)
         cols, rows = old.cols, old.rows
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)
@@ -4676,6 +4687,34 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             self._restart_session_for_account(sid, refs)
             return json.dumps({"success": True, "scope": "session", "sid": sid,
                                "state": self._account_state(sid)[1]}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
+
+    def relaunch_session(self, sid: str) -> str:
+        """重啟這個 tab 的 CLI 行程，套用 CLI（claude/codex）的更新並盡量續接對話。
+
+        為什麼需要：AI CLI 是常駐在 tmux 裡的長命行程，claude/codex 自我更新只換
+        了磁碟上的執行檔，**正在跑的行程仍是舊版**；而 `sfctl restart` 只重開 GUI、
+        tmux 分頁照留，等於行程沒動 → 使用者以為「更新失敗」。這裡把該分頁的行程
+        砍掉重開（帳號不變），claude 用 --resume、codex 用 `codex resume` 接回原
+        對話，新版執行檔就生效了。非 AI 分頁（bash 等）則單純重開。"""
+        try:
+            old = self.sessions.get(sid)
+            if not old:
+                return json.dumps({"success": False, "message": "此 tab 不存在或已關閉"},
+                                  ensure_ascii=False)
+            provider = None
+            try:
+                provider = usage_probe.detect_ai(old.cmd)
+            except Exception:
+                provider = None
+            self._restart_session_for_account(sid, dict(getattr(old, "account_refs", {})))
+            label = getattr(self.sessions.get(sid), "_custom_label", None) or sid
+            msg = (f"已重啟「{label}」的 CLI 並套用更新"
+                   + ("（已 --resume 接回對話）" if provider in ("claude", "codex")
+                      else ""))
+            return json.dumps({"success": True, "sid": sid, "provider": provider or "",
+                               "message": msg}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
@@ -7605,6 +7644,20 @@ try {
                 return {"success": True, "message": f"Closed {sid}"}
             except Exception as e:
                 return {"success": False, "message": f"Failed: {e}"}
+
+        elif cmd == "relaunch":
+            try:
+                sid = args.get("sid", "")
+                if not sid:
+                    return {"success": False, "message": "No sid provided"}
+                raw = self.relaunch_session(sid)
+                res = json.loads(raw) if isinstance(raw, str) else raw
+                return {"success": res.get("success", False),
+                        "message": res.get("message", ""),
+                        "details": {k: v for k, v in res.items()
+                                    if k not in ("success", "message")}}
+            except Exception as e:
+                return {"success": False, "message": f"relaunch failed: {e}"}
 
         elif cmd == "restart":
             try:

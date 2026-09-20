@@ -6,7 +6,28 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
-## v0.37.1 (2026-09-19)
+## v0.37.2 (2026-09-20)
+
+### Added
+
+- **Relaunch a tab's CLI to apply a claude/codex update, keeping the
+  conversation.** AI CLIs run as long-lived tmux processes, and claude/codex
+  self-updates only swap the on-disk binary — a *running* tab keeps its old
+  version, and `sfctl restart` reopens the GUI while keeping tmux, so the
+  process never restarts and the update looks like it "failed". New `⟳` on each
+  AI tab's sidebar row (and `/relaunch` over Telegram) restarts just that tab's
+  CLI process and resumes the conversation — claude via `--resume <uuid>`,
+  codex via `codex resume <id>` — so the new build takes effect without losing
+  context. Reuses the account-switch relaunch engine (which already carries the
+  transcript and resumes). Regression test in `tests_accounts.py`.
+
+  **重啟分頁的 CLI 套用 claude/codex 更新，且對話不斷。** AI CLI 是常駐在 tmux
+  的長命行程，claude/codex 自我更新只換了磁碟上的執行檔——正在跑的分頁仍是舊版，
+  而 `sfctl restart` 只重開 GUI、tmux 分頁照留，行程沒動，看起來就像「更新失敗」。
+  現在每個 AI 分頁側欄列多了 `⟳`（Telegram 則是 `/relaunch`），只重啟那個分頁的
+  CLI 行程並接回對話——claude 用 `--resume <uuid>`、codex 用 `codex resume <id>`
+  ——新版就生效、上下文不掉。沿用換帳號那套（本來就會搬 transcript 並 resume）的
+  重啟引擎。回歸測試在 `tests_accounts.py`。
 
 ### Fixes
 

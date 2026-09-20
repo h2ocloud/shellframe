@@ -202,6 +202,24 @@ def test_account_switch_carries_transcript_and_resumes_uuid():
     assert "--session-id" not in resumed, resumed
 
 
+def test_relaunch_resume_command_claude_and_codex():
+    """回歸（日常回報：CLI 更新後常駐行程還是舊版；重啟分頁要能接回對話）。
+    relaunch 靠 _cmd_with_resume 把啟動指令改成 resume 形式，claude 與 codex 都要對。"""
+    import main
+    cid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    # claude：--resume <uuid>
+    r = main.Api._cmd_with_resume(
+        "claude --model opus --dangerously-skip-permissions", cid)
+    assert r.startswith("claude ") and "--resume" in r and cid in r, r
+    # codex：resume 是子指令，必須緊接在執行檔後、不能變成 resume resume
+    r2 = main.Api._cmd_with_resume(
+        "sf-codex --dangerously-bypass-approvals-and-sandbox --search", cid)
+    assert "resume" in r2 and cid in r2, r2
+    assert "resume resume" not in r2, r2
+    r3 = main.Api._cmd_with_resume("codex resume old-id --search", cid)
+    assert r3.count("resume") == 1 and cid in r3 and "old-id" not in r3, r3
+
+
 def _write_claude_json(home, email, org, org_tier, user_tier):
     json.dump({"oauthAccount": {
         "emailAddress": email, "organizationName": org,

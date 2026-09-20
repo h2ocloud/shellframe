@@ -689,6 +689,13 @@
   }
   .sb-item:hover .sb-close, .sb-item.active .sb-close { visibility: visible; }
   .sb-item .sb-close:hover { color: #f7768e; background: #292e42; }
+  /* 重啟 CLI 套用更新——只在 hover/active 時露出，跟 close 同一組工具 */
+  .sb-item .sb-relaunch {
+    flex: none; visibility: hidden; width: 16px; height: 16px; line-height: 16px;
+    text-align: center; border-radius: 3px; font-size: 12px; color: #565f89; cursor: pointer;
+  }
+  .sb-item:hover .sb-relaunch, .sb-item.active .sb-relaunch { visibility: visible; }
+  .sb-item .sb-relaunch:hover { color: #7aa2f7; background: #292e42; }
   .sb-footer-btn {
     display: flex; align-items: center; gap: 8px;
     padding: 6px 10px; background: none; border: none;
@@ -3282,6 +3289,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
         tgChip +
         (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
+        (isAiSession(sid) ? `<span class="sb-relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">⟳</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
       container.appendChild(el);
     });
@@ -3516,6 +3524,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       e.preventDefault();
       e.stopPropagation();
       confirmCloseTab(closeBtn.dataset.sid);
+      return;
+    }
+    // Relaunch button → restart this tab's CLI to apply a claude/codex update,
+    // resuming the conversation. Confirm first: it kills the running process.
+    const relaunchBtn = e.target.closest('[data-action="relaunch"]');
+    if (relaunchBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      confirmRelaunchTab(relaunchBtn.dataset.sid);
       return;
     }
     // Glasses badge click → grant / revoke the Agent Relay bridge for this tab
@@ -9276,6 +9293,55 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function appMod(e) { return IS_MAC ? (e.metaKey && !e.ctrlKey) : (e.ctrlKey && !e.metaKey); }
 
   let _closeConfirmOpen = false;
+  let _relaunchConfirmOpen = false;
+  function confirmRelaunchTab(sid) {
+    const s = sessions[sid];
+    if (!s || _relaunchConfirmOpen) return;
+    _relaunchConfirmOpen = true;
+    const isZh = lang === 'zh-TW';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '400';
+    overlay.innerHTML = `
+      <div class="modal" style="width:360px;padding:20px">
+        <h2 style="font-size:14px;margin-bottom:10px">${isZh ? '重啟 CLI 套用更新？' : 'Relaunch CLI to apply update?'}</h2>
+        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
+          ${isZh
+            ? `會把「${esc(s.label)}」的 CLI 行程重開，套用 claude/codex 最新版，並用 --resume 接回目前的對話。<span style="color:#565f89">常駐行程不會自己換版，這是套用更新的方式。</span>`
+            : `Restarts the “${esc(s.label)}” CLI process to pick up the latest claude/codex build, resuming the current conversation.`}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" id="relaunch-cancel">${isZh ? '取消' : 'Cancel'}</button>
+          <button class="btn btn-primary" id="relaunch-confirm">${isZh ? '重啟' : 'Relaunch'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = (go) => {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      _relaunchConfirmOpen = false;
+      if (go) {
+        pywebview.api.relaunch_session(sid).then((raw) => {
+          try {
+            const r = JSON.parse(raw || '{}');
+            if (!r.success && r.message) alert(r.message);
+          } catch (_) {}
+        }).catch(() => {});
+      } else {
+        try { sessions[sid] && sessions[sid].term.focus(); } catch (_) {}
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    overlay.querySelector('#relaunch-confirm').addEventListener('click', () => done(true));
+    overlay.querySelector('#relaunch-cancel').addEventListener('click', () => done(false));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+    overlay.querySelector('#relaunch-confirm').focus();
+  }
+
   function confirmCloseTab(sid) {
     const s = sessions[sid];
     if (!s || _closeConfirmOpen) return;
