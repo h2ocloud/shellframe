@@ -6,7 +6,26 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
-## v0.37.2 (2026-09-20)
+## v0.37.3 (2026-09-21)
+
+### Fixes
+
+- **Pasting a large block of text into a remote (Frame Link) tab now actually
+  sends.** The paste flows — the large-paste confirm bar, the 2–9 line
+  bracketed paste, the right-click paste, and the fallback Enter that submits
+  after a paste — all wrote straight to a *local* PTY via `write_input`. A
+  remote tab has no local session under that id, so the text silently went
+  nowhere and nothing submitted. Every one of those paths now routes through
+  `sendKeysToSession`, which sends to the remote peer (`link_remote_input`)
+  when the tab is remote and to the local PTY otherwise. Regression checks
+  added to `tests_remote_key_handling.py`.
+
+  **貼大量文字到遠端（Frame Link）分頁現在會真的送出。** 貼上的幾條路徑——貼上
+  確認列、2–9 行的 bracketed 貼上、右鍵貼上、以及貼完之後兜底送出的 Enter——
+  全都用 `write_input` 直接寫到**本機** PTY。遠端分頁在本機沒有對應的 session，
+  文字就默默沒進去、也沒送出。現在這些路徑一律改走 `sendKeysToSession`：遠端分頁
+  送到對方（`link_remote_input`）、本機才走本機 PTY。回歸檢查加進
+  `tests_remote_key_handling.py`。
 
 ### Added
 

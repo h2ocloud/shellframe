@@ -6353,7 +6353,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const sid = pendingPasteSid;
       _clearPasteConfirm();
       if (sid && sessions[sid]) {
-        pywebview.api.write_input(sid, '\x1b[200~' + text + '\x1b[201~');
+        sendKeysToSession(sid, '\x1b[200~' + text + '\x1b[201~');
       }
       // After the apply, Claude Code shows the "[Pasted text #N]" chip
       // and the user typically presses Enter again to submit. The bar
@@ -6414,7 +6414,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (lines >= 2 && text) {
         e.stopPropagation();
         e.preventDefault();
-        pywebview.api.write_input(activeId, '\x1b[200~' + text + '\x1b[201~');
+        sendKeysToSession(activeId, '\x1b[200~' + text + '\x1b[201~');
         return;
       }
       // Single-line small paste — safe to fall through to xterm.
@@ -6464,7 +6464,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           const dataUrl = await readDataUrl(blob);
           const path = await pywebview.api.save_image(dataUrl);
           if (ai) { attachFile(path, dataUrl); }
-          else { await pywebview.api.write_input(activeId, path); }
+          else { await sendKeysToSession(activeId, path); }
         }
         return;
       }
@@ -6488,7 +6488,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (ai) {
             for (const filePath of paths) attachFile(filePath, null);
           } else {
-            await pywebview.api.write_input(activeId, paths.join(' '));
+            await sendKeysToSession(activeId, paths.join(' '));
           }
           return;
         }
@@ -6956,7 +6956,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!_isStealableFocus(document.activeElement)) return;
       e.preventDefault();
       e.stopPropagation();
-      try { pywebview.api.write_input(activeId, '\r'); } catch (_) {}
+      // 遠端分頁的送出 Enter 也要走 link_remote_input，否則貼完大量文字後這個
+      // 兜底 Enter 只寫到本機、遠端對話永遠送不出去（2026-09-21 回報的一部分）。
+      try { sendKeysToSession(activeId, '\r'); } catch (_) {}
       try { ta && ta.focus(); } catch (_) {}
     }, true);
   }
@@ -9519,7 +9521,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             const path = await pywebview.api.save_image(dataUrl);
             if (path && !path.startsWith('ERROR')) {
               if (ai) attachFile(path, dataUrl);
-              else await pywebview.api.write_input(activeId, path);
+              else await sendKeysToSession(activeId, path);
               handled = true;
             }
           }
@@ -9544,7 +9546,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const path = await pywebview.api.save_image(dataUrl);
         if (path && !path.startsWith('ERROR')) {
           if (ai) attachFile(path, dataUrl);
-          else await pywebview.api.write_input(activeId, path);
+          else await sendKeysToSession(activeId, path);
           _refocusActive();
           return;
         }
@@ -9561,7 +9563,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (ai) {
           for (const p of paths) attachFile(p, null);
         } else {
-          await pywebview.api.write_input(activeId, paths.join(' '));
+          await sendKeysToSession(activeId, paths.join(' '));
         }
         _refocusActive();
         return;
@@ -9583,7 +9585,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // Wrap in bracketed-paste so AI CLIs see it as a paste event
       // (matches the keyboard-paste path xterm.js takes when bracketed
       // paste mode is enabled by the PTY).
-      await pywebview.api.write_input(activeId, '\x1b[200~' + text + '\x1b[201~');
+      await sendKeysToSession(activeId, '\x1b[200~' + text + '\x1b[201~');
       _refocusActive();
     } catch (_) {}
   }

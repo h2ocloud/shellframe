@@ -89,6 +89,24 @@ for cmd, want_codex in [
     check(f"遠端分頁 cmd={cmd[:34]!r} → {'Codex 編碼' if want_codex else '換行字元'}",
           got is want_codex)
 
+# ── 貼上路徑也要走 sendKeysToSession（2026-09-21：遠端貼大量文字沒送出）──────
+# 貼上確認列、多行貼上、右鍵貼上、兜底送出 Enter 原本一律 write_input(本機 PTY)，
+# 對遠端分頁等於寫到不存在的本機 session → 大量文字貼進遠端對話沒真的送出。
+check("貼上確認列送出走 sendKeysToSession（不是寫死 write_input）",
+      "sendKeysToSession(sid, '\\x1b[200~' + text + '\\x1b[201~')" in idx)
+check("多行貼上走 sendKeysToSession",
+      idx.count("sendKeysToSession(activeId, '\\x1b[200~' + text + '\\x1b[201~')") >= 1)
+check("兜底送出 Enter 走 sendKeysToSession（遠端才送得出去）",
+      "sendKeysToSession(activeId, '\\r')" in idx)
+# 這幾條貼上/送出路徑不能再有寫死的本機 write_input（否則遠端靜默失效）
+for needle in (
+    "pywebview.api.write_input(sid, '\\x1b[200~'",
+    "pywebview.api.write_input(activeId, '\\x1b[200~'",
+    "pywebview.api.write_input(activeId, '\\r')",
+):
+    check(f"貼上/送出路徑不再殘留寫死本機送出：{needle[-24:]}",
+          needle not in idx, needle)
+
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")
 sys.exit(1 if failed else 0)
