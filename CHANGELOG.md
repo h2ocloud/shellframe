@@ -6,6 +6,26 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.4 (2026-09-21)
+
+### Fixes
+
+- **Scroll-up history for a remote (Frame Link) tab no longer shows grey
+  background blocks.** The history overlay renders the terminal-source ANSI, and
+  content pulled from a peer carried background-colour / reverse-video runs (the
+  peer's TUI shading, or a background SGR whose reset was lost in the stream)
+  that painted the whole block grey. The overlay now strips background and
+  reverse SGR before rendering, keeping foreground colours and bold/italic/
+  underline — a local tab's history has no background codes at all, so this is a
+  no-op there and only cleans up the cross-machine case. New test
+  `tests_history_bg_strip.js`.
+
+  **跨機（Frame Link）分頁的上滑歷史不再出現灰色底塊。** 歷史 overlay 是照終端來源
+  的 ANSI 渲染，從對方抓回來的內容帶了背景色／反白（對方 TUI 的底色，或串流中背景
+  SGR 的重置漏掉），整塊被塗成灰底。現在 overlay 渲染前會把背景與反白的 SGR 拿掉、
+  只留前景色與粗體/斜體/底線——本機分頁的歷史本來就沒有任何背景碼，所以對本機等於
+  沒變，只清乾淨跨機那條。新增測試 `tests_history_bg_strip.js`。
+
 ## v0.37.3 (2026-09-21)
 
 ### Fixes

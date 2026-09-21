@@ -5828,12 +5828,44 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       return null;
     }
 
+    // 把每個 SGR（\x1b[...m）裡的「背景色」與「反白(7)」拿掉，只留前景色與
+    // 粗體/斜體/底線那些。上滑歷史 overlay 是拿來回看的，背景色塊（跨機 session
+    // 抓回來的內容會帶 claude TUI 的灰底/反白，或串流中斷句漏掉 49 重置而讓灰底
+    // 一路漏染）在這裡只會變成醜醜的灰方塊——本機來源實測完全沒有背景碼，所以
+    // 這個清洗對本機是 no-op，只治跨機那條（2026-09-21 回報）。
+    function _stripBgReverseSgr(s) {
+      if (!s || s.indexOf('\x1b[') < 0) return s;
+      const BG_NAMED = new Set([
+        '7', '27',                       // reverse / no-reverse
+        '40','41','42','43','44','45','46','47','48','49',
+        '100','101','102','103','104','105','106','107',
+      ]);
+      return s.replace(/\x1b\[([0-9;:]*)m/g, (m, body) => {
+        const toks = body.split(';');
+        const out = [];
+        for (let i = 0; i < toks.length; i++) {
+          const t = toks[i];
+          if (t === '48') {              // 48;5;N 或 48;2;r;g;b —— 連參數一起吃掉
+            if (toks[i + 1] === '5') i += 2;
+            else if (toks[i + 1] === '2') i += 4;
+            continue;
+          }
+          if (BG_NAMED.has(t)) continue; // 具名背景 / reverse 丟掉
+          out.push(t);                   // 其餘（0 重置、前景、粗斜底線…）留著
+        }
+        return '\x1b[' + out.join(';') + 'm';
+      });
+    }
+
     function show(text, sid, opts) {
       close();
       boundSid = sid || activeId;
       const liveAnchors = grabLiveAnchors(boundSid);
       const fontSize = (opts && opts.fontSize) || currentFontSize || 13;
       const source = (opts && opts.source) || '';
+      // 跨機（Frame Link）抓回來的歷史會帶背景色塊/反白，清掉只留前景，overlay
+      // 才乾淨。本機來源本來就沒有背景碼，等於不變。
+      if (text) text = _stripBgReverseSgr(text);
 
       // Mount inside #terminal-wrap — NOT document.body — so the sidebar
       // stays fully visible and interactive behind the overlay.
