@@ -51,7 +51,9 @@ you can branch on the exit status.
 
 ```bash
 sfctl list              # every tab: sid, label, command, alive, provider, size
-sfctl status            # roster + live per-tab state
+sfctl status            # bridge state, then one live line per tab
+sfctl state s12         # one tab's live state — the cheapest thing to poll
+sfctl state --all       # only the tabs that need attention
 sfctl roster            # configured roles and what each is responsible for
 ```
 
@@ -67,6 +69,40 @@ do not read its silence as finished — say who is stuck and what it is asking.
 `sfctl roster` shows the model each role is pinned to. A role may run a smaller
 model than the tab dispatching to it; that is a deliberate arrangement, not a
 misconfiguration, so do not "fix" it.
+
+### Asking only "is this tab all right?"
+
+`sfctl state` answers that in one line, without returning any screen content. It
+is the right call when you are deciding whether to dispatch to a tab, or
+checking on one you dispatched to — reading its screen or conversation to find
+that out costs far more and tells you less.
+
+```bash
+sfctl state s12                    # one line
+sfctl state s12 --json             # same fields, machine-readable
+sfctl state --all                  # only tabs needing attention; healthy ones omitted
+sfctl state --all --stale-min 30   # …counting 30 minutes of silence as stalled
+sfctl link-state <peer> s12        # the same, for a tab on a paired computer
+```
+
+Fields: `sid`, `label`, `agent_state` (working / done / idle), `agent_activity`
+(one line), `agent_blocked` (what it is asking, when stopped on a person),
+`last_error` (the most recent error in its conversation — an authentication
+failure, a rate limit, a 5xx — empty when there is none), `last_output_at` and
+`idle_for_s` (how long it has been silent), and `runs_on` (the model actually
+answering, not the launch flag).
+
+A tab counts as needing attention when it is blocked on a person, has an error,
+or has been silent past the threshold. A tab that is *working* is never counted
+as stalled — a long reasoning turn is silent on purpose.
+
+Exit code: `0` nothing to attend to, `1` something does, `2` the query itself
+failed. Prefer that over parsing the text.
+
+Errors, activity and blocked text are redacted before they leave: credentials in
+a command line or a URL are replaced rather than printed. Nothing here returns
+screen content — for that you would ask for the screen or the conversation
+deliberately.
 
 ## 2. Read a tab
 

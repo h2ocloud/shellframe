@@ -6,6 +6,79 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.5 (2026-09-25)
+
+### Added
+
+- **`sfctl state` — one line that says whether a tab is all right.** For a
+  scheduler deciding whether to dispatch to a tab, or checking on one it已
+  dispatched to, the existing answer was to read the screen or the conversation:
+  far more to read, and less of what was actually being asked. This returns
+  structured fields only — state, what it is doing, what it is asking when it is
+  stopped on a person, the most recent error in its conversation, how long it
+  has been silent, and the model actually answering. No screen content.
+
+  `--all` returns only the tabs needing attention: blocked on a person, carrying
+  an error, or silent past a threshold. A *working* tab is never counted as
+  stalled, because a long reasoning turn is silent on purpose. `--json` for
+  machines, and the exit code carries the answer too — nothing to attend to,
+  something does, or the query itself failed — so a caller need not parse text.
+  `sfctl link-state <peer> <sid>` asks the same of a paired computer, behind the
+  same permission gate as every other cross-machine verb.
+
+  Everything that leaves is redacted first. The first version returned a line
+  containing a URL with a password in it as though it were an error; credentials
+  in a command line or a URL are now replaced. Error detection was also far too
+  loose — ordinary prose mentioning a timeout or a quota was reported as a
+  failure, and three of twenty-two healthy tabs came back flagged. It now matches
+  the shapes errors actually take, only in what the agent said, and only in short
+  lines. 49 cases in `tests_state_query.py`.
+
+  **`sfctl state` — 一行看出一個分頁好不好。** 對於「要不要把工作派給這個分頁」
+  或「派出去的那個還好嗎」，原本的答案是去讀畫面或讀對話：要讀的東西多得多，而且
+  回答的還不是問的那件事。這支只回結構化欄位——狀態、正在做什麼、卡在等人時它在問
+  什麼、對話裡最近一筆錯誤、多久沒有輸出、以及實際在回答的模型。沒有任何畫面內容。
+
+  `--all` 只回需要注意的分頁：在等人、有錯誤、或沉默超過門檻。正在 working 的分頁
+  永遠不算停滯——長推理本來就是安靜的。`--json` 給機器讀，退出碼也帶著答案（沒事、
+  有事、查詢本身失敗），呼叫端不必去 parse 文字。`sfctl link-state <peer> <sid>`
+  對配對的機器問同一件事，走跟其他跨機動作同一道權限閘。
+
+  送出去的每一樣東西都先遮過。第一版曾經把一行內含密碼的網址當成錯誤回傳；指令
+  或網址裡的憑證現在會被取代。錯誤偵測也太鬆——一般敘述提到 timeout 或 quota 就
+  被報成故障，二十二個正常分頁有三個被標記。現在只認錯誤真正的講法、只看 agent
+  說的話、而且只看短的那幾行。`tests_state_query.py` 共 49 項。
+
+### Fixes
+
+- **`sfctl status` shows the per-tab state its own documentation promises.** The
+  reference says it is "roster plus live per-tab state"; it printed the bridge's
+  own four lines and nothing else, so anyone following the documentation saw no
+  tab state at all and assumed it lived somewhere else. It now prints one line
+  per tab, from the snapshot the monitor already holds. It deliberately omits the
+  error field, which needs a transcript read per tab — ask `sfctl state` for that.
+
+  **`sfctl status` 會顯示它自己的文件所承諾的每分頁狀態。** 參考文件說它是
+  「roster ＋ live per-tab state」，但它只印 bridge 自己那四行——照著文件用的人
+  看不到任何分頁狀態，於是以為那要去別的地方找。現在每個分頁印一行，資料來自監控
+  本來就持有的快照。它刻意不含錯誤欄位，那需要逐頁讀 transcript——要那個就用
+  `sfctl state`。
+
+- **`sfctl restart` works again on a machine that has been running for days.**
+  The direct path looks up the process through a file under the system temporary
+  directory, which the operating system deletes once it has gone untouched for
+  three days. Printing that failure also exits, so the fallback that asks the app
+  to restart itself never ran: on a long-lived install the command answered "PID
+  file not found" and did nothing at all, every time. Measured here on a process
+  five days old. The failure now falls through to the fallback, and the file is
+  touched periodically so it stops being collected in the first place.
+
+  **`sfctl restart` 在開了好幾天的機器上又能用了。** 直接路徑透過系統暫存目錄下的
+  一個檔案找行程，而作業系統會在該檔三天沒被碰過之後把它刪掉。印出那個失敗的同時
+  也會結束程式，所以「請 app 自己重啟」那條後備從來沒機會執行：在長時間運作的安裝
+  上，這個指令每次都只回「PID file not found」然後什麼都沒做。在這台跑了五天的行程
+  上實測到。失敗現在會往下走到後備，而那個檔也會被定期碰一下，從源頭避免被回收。
+
 ## v0.37.4 (2026-09-21)
 
 ### Fixes

@@ -523,6 +523,62 @@ def _permissions_windows(args):
             print(f"  {c}")
 
 
+def _fmt_age(seconds) -> str:
+    """把「幾秒沒輸出」壓成一小段人看得懂的字。"""
+    try:
+        s = int(seconds)
+    except (TypeError, ValueError):
+        return "?"
+    if s < 0:
+        return "沒輸出過"
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+    return f"{s // 86400}d"
+
+
+def _print_state(result: dict, as_json: bool = False) -> int:
+    """狀態查詢的輸出。刻意短：這是給外部調度者讀的，每一行都要有用。
+
+    永遠不印畫面內容——活動、阻塞、錯誤都是後端算好的結構化欄位，錯誤還先遮過
+    憑證。退出碼：0＝查到且都正常，1＝有需要注意的分頁，2＝查詢本身失敗。
+    """
+    result = result or {}
+    details = result.get("details") or {}
+    states = details.get("states") or []
+    if as_json:
+        print(json.dumps({
+            "success": bool(result.get("success")),
+            "message": result.get("message", ""),
+            "checked": details.get("checked", len(states)),
+            "states": states,
+        }, ensure_ascii=False))
+        return 0 if result.get("success") and not states else (
+            1 if result.get("success") else 2)
+    if not result.get("success"):
+        print(f"ERR {result.get('message', '')}")
+        return 2
+    if not states:
+        print(f"OK {result.get('message', '')}")
+        return 0
+    for st in states:
+        bits = [f"{st.get('sid', '?'):<6}", f"{(st.get('label') or '')[:18]:<18}",
+                f"{(st.get('agent_state') or '?'):<7}"]
+        detail = st.get("agent_blocked") or st.get("agent_activity") or ""
+        if detail:
+            bits.append(f"· {detail[:46]}")
+        if st.get("last_error"):
+            bits.append(f"· ⚠ {st['last_error'][:60]}")
+        if st.get("runs_on"):
+            bits.append(f"· {st['runs_on']}")
+        bits.append(f"· {_fmt_age(st.get('idle_for_s'))} 無輸出")
+        print("  " + " ".join(bits))
+    return 1 if details.get("checked") is not None else 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="sfctl",
@@ -534,6 +590,20 @@ def main():
     sub.add_parser("reload", help="Hot-reload bridge_telegram module")
     sub.add_parser("restart", help="Full app restart (sessions preserved)")
     sub.add_parser("list", help="List all sessions with sid + label + alive state")
+
+    p_state = sub.add_parser(
+        "state",
+        help="One line of live state for a tab (for schedulers): state, activity, "
+             "blocked-on, last error, idle time, model")
+    p_state.add_argument("sid", nargs="?", default="",
+                         help="Tab sid, e.g. s12. Omit with --all.")
+    p_state.add_argument("--all", action="store_true",
+                         help="Every tab that needs attention (blocked, errored, "
+                              "or silent too long) — healthy tabs are omitted")
+    p_state.add_argument("--stale-min", type=float, default=0,
+                         help="Minutes of silence that counts as stalled with "
+                              "--all (default 15). A working tab is never stalled.")
+    p_state.add_argument("--json", action="store_true", help="Machine-readable")
     sub.add_parser("roster", help="List configured manual delegation roles")
 
     p_delegate = sub.add_parser("delegate", help="Delegate a task to a configured worker role")
@@ -575,6 +645,12 @@ def main():
     p_lk = sub.add_parser("link-peek", help="Read a session's screen on a paired computer")
     p_lk.add_argument("peer"); p_lk.add_argument("sid")
     p_lk.add_argument("--lines", type=int, default=120)
+    p_ls = sub.add_parser(
+        "link-state", help="Live state for a tab on a paired computer")
+    p_ls.add_argument("peer"); p_ls.add_argument("sid", nargs="?", default="")
+    p_ls.add_argument("--all", action="store_true")
+    p_ls.add_argument("--stale-min", type=float, default=0)
+    p_ls.add_argument("--json", action="store_true")
     p_lc = sub.add_parser("link-conversation",
                           help="Typed conversation turns from a paired computer's session")
     p_lc.add_argument("peer"); p_lc.add_argument("sid")
@@ -670,12 +746,31 @@ def main():
     args = parser.parse_args()
 
     if args.cmd == "status":
-        _print_result(_rpc("status"))
+        r = _rpc("status")
+        d = (r or {}).get("details") or {}
+        print(f"{'OK' if (r or {}).get('success') else 'ERR'} {(r or {}).get('message', '')}")
+        for k in ("state", "bot", "sessions", "paused"):
+            if k in d:
+                print(f"  {k}: {d[k]}")
+        # docs/ai-skill.md 說 status 是「roster ＋ live per-tab state」，但它一直
+        # 只印 bridge 那幾行；照著文件用的人看不到任何分頁狀態。
+        if d.get("states"):
+            print()
+            _print_state({"success": True, "details": {"states": d["states"]}})
+        return 0
     elif args.cmd == "reload":
         _print_result(_rpc("reload", timeout=20))
     elif args.cmd == "restart":
         if sys.platform == "darwin":
-            _print_result(_restart_macos_direct())
+            direct = _restart_macos_direct()
+            if direct.get("success"):
+                _print_result(direct)          # _print_result 會 exit
+            # 失敗就往下走 RPC。直接路徑要讀 /tmp 的 PID 檔，而 macOS 會清掉
+            # 三天沒被碰過的 /tmp 檔案——開著超過三天的安裝，那個檔就不見了，
+            # 而 _print_result 結尾會 sys.exit，於是 fallback 從來沒機會跑：
+            # `sfctl restart` 對長時間運作的機器等於永久失效（實測：行程已跑
+            # 五天，restart 只回「PID file not found」，app 動都沒動）。
+            print(f"（直接重啟不可用：{direct.get('message', '')}，改走 app 自己重啟）")
         _print_result(_rpc("restart", timeout=30))
     elif args.cmd == "list":
         _print_result(_rpc("list"))
@@ -741,6 +836,23 @@ def main():
                                                   "limit": args.limit}, timeout=30.0))
     elif args.cmd == "link-status":
         _print_result(_rpc("link_status"))
+    elif args.cmd == "state":
+        if not args.sid and not args.all:
+            print("ERR state 要給 sid，或用 --all")
+            return 2
+        r = _rpc("state", {"sid": args.sid, "all": args.all,
+                           "stale_min": args.stale_min}, timeout=30)
+        return _print_state(r, as_json=args.json)
+
+    elif args.cmd == "link-state":
+        if not args.sid and not args.all:
+            print("ERR link-state 要給 sid，或用 --all")
+            return 2
+        r = _rpc("link_state", {"peer": args.peer, "sid": args.sid,
+                                "all": args.all, "stale_min": args.stale_min},
+                 timeout=40)
+        return _print_state(r, as_json=args.json)
+
     elif args.cmd == "link-list":
         _print_result(_rpc("link_list", {"peer": args.peer}))
     elif args.cmd == "link-peek":
@@ -785,4 +897,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # 退出碼要有意義：外部調度者會用它決定要不要介入，而不是去 parse 文字。
+    sys.exit(main() or 0)

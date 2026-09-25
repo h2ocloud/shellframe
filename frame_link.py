@@ -1236,6 +1236,24 @@ class FrameLink:
                         lines = 120
                     res = link._execute("peek", {"sid": sid, "lines": lines}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/state":
+                    # 跨機的低成本狀態查詢。跟 /link/info 分開：info 是週期性
+                    # 拉的完整清單，state 是「問一次某個分頁現在怎麼了」，可以
+                    # 負擔解析成本。回的是結構化欄位，沒有畫面內容。
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：對方無權查看這台"},
+                            sign_for=peer, nonce=nonce)
+                    sid = (q.get("sid") or [""])[0]
+                    args = {"sid": sid}
+                    if (q.get("all") or [""])[0] in ("1", "true", "yes"):
+                        args = {"all": True}
+                        try:
+                            args["stale_min"] = float((q.get("stale_min") or ["0"])[0])
+                        except ValueError:
+                            args["stale_min"] = 0
+                    res = link._execute("state", args) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/history":
                     if not link._peer_may_control(peer_id):
                         return self._send(403, {"success": False,
@@ -1583,6 +1601,24 @@ class FrameLink:
         try:
             path = f"/link/peek?sid={quote(sid)}&lines={int(lines)}"
             return self._signed_request(peer, "GET", path)
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
+
+    def remote_state(self, peer_id: str, sid: str = "", all_tabs: bool = False,
+                     stale_min: float = 0) -> dict:
+        """對方那台某個分頁（或所有有問題的分頁）的狀態摘要。"""
+        peer, err = self._peer_or_err(peer_id)
+        if err:
+            return err
+        try:
+            if all_tabs:
+                path = f"/link/state?all=1&stale_min={float(stale_min or 0)}"
+            else:
+                path = f"/link/state?sid={quote(sid)}"
+            res = self._signed_request(peer, "GET", path, timeout=20)
+            self._mark_status(peer_id, True)
+            return res
         except Exception as e:
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}

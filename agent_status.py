@@ -1118,6 +1118,84 @@ def _detect_format(first_line):
     return None
 
 
+# 對話裡「出事了」的樣子。刻意只認**錯誤的形狀**，不認內容——這支的用途是讓外部
+# 調度者知道某個分頁是不是卡在認證或額度上，不是把對話搬出來。
+_ERROR_RE = re.compile(
+    r"(api\s*error"
+    r"|rate[\s_-]?limit(?:ed|\s*(?:exceeded|error))"
+    r"|quota\s*(?:exceeded|exhausted)"
+    r"|(?:hit|reached)\s+your\s+(?:usage|session)\s+limit"
+    r"|credit\s+balance\s+is\s+too\s+low"
+    r"|overloaded_error"
+    r"|401\s+unauthorized|403\s+forbidden|429\s+too\s+many"
+    r"|http\s*(?:4\d\d|5\d\d)"
+    r"|token\s+(?:revoked|expired)"
+    r"|invalid[\s_-]?(?:api[\s_-]?key|x-api-key)"
+    r"|authentication[\s_]+(?:failed|error)"
+    r"|connection\s+(?:reset|refused)"
+    r"|econnrefused|enotfound)",
+    re.I)
+# 一般散文提到 timeout / quota / 401 是家常便飯（「回應 timeout 的設定值」），所以
+# 上面只認錯誤自己的講法。另外再加一道長度閘：錯誤訊息是短的，長段落是回覆。
+_ERROR_MAX_LINE = 200
+# 疑似憑證的東西一律遮掉。錯誤訊息很常把 key 的前綴、Authorization 標頭或整串
+# token 一起吐出來，而這支的輸出是要給外部調度者看的。
+_SECRET_RE = re.compile(
+    r"(sk-[A-Za-z0-9_\-]{8,}"
+    r"|Bearer\s+[A-Za-z0-9._\-]{8,}"
+    r"|gh[pousr]_[A-Za-z0-9]{8,}"
+    r"|eyJ[A-Za-z0-9._\-]{20,}"
+    r"|[A-Za-z0-9_\-]{32,})")
+# 網址裡內嵌的帳密。實測這支把一行含 https://user:pass@host 的文字當成錯誤回傳
+# ——遮蔽只看「像金鑰的字串」是不夠的，密碼可以是任何短字。
+_URL_CRED_RE = re.compile(r"(\b[a-z][a-z0-9+.\-]*://)[^\s/@:]+:[^\s/@]*@", re.I)
+
+
+def redact(text: str, limit: int = 160) -> str:
+    """把一段訊息變成可以交給外部的一行：遮憑證、壓成單行、截短。"""
+    if not text:
+        return ""
+    out = _URL_CRED_RE.sub(r"\1<redacted>@", str(text))
+    out = _SECRET_RE.sub("<redacted>", out)
+    out = " ".join(out.split())
+    return out[:limit]
+
+
+def last_error(worker: dict, tail_bytes: int = 65536, max_records: int = 120) -> str:
+    """這個分頁的對話裡最近一筆錯誤，沒有就回空字串。
+
+    只從 transcript 讀，不碰畫面——畫面內容不屬於這支的輸出。回傳的是**經過遮蔽
+    與截短的錯誤訊息本身**，讓外部調度者分得出「在等人」「撞額度」「憑證失效」
+    這三種完全不同的停滯，而不必去讀對話。
+    """
+    try:
+        path = resolve_transcript(worker)
+        if not path or not os.path.exists(path):
+            return ""
+        fmt, evs, err = _read_tail_events(path, tail_bytes=tail_bytes,
+                                          max_records=max_records)
+        if err or not evs:
+            return ""
+        for ev in reversed(evs):
+            kind = ev.get("kind")
+            if kind == "error":
+                return redact(ev.get("text") or "error")
+            if kind == "assistant_text":
+                # 只看 agent 說的話。使用者自己打的字裡提到 401 或 timeout，是在
+                # 討論問題，不是這個分頁出了問題。
+                text = ev.get("text") or ""
+                # 逐行找，回傳命中的那一行而不是整段——整段可能是一大篇回覆。
+                for line in reversed(text.splitlines()):
+                    stripped = line.strip()
+                    if len(stripped) > _ERROR_MAX_LINE:
+                        continue
+                    if _ERROR_RE.search(stripped):
+                        return redact(stripped)
+    except Exception:
+        return ""
+    return ""
+
+
 def _read_tail_events(path, tail_bytes=262144, max_records=300):
     """只讀檔尾 tail_bytes，避免整檔讀（codex log 可達 GB）。"""
     try:

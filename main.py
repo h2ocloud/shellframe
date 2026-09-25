@@ -4298,6 +4298,76 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         cache[sid] = (now, reason, out_ts)
         return reason
 
+    # 多久沒有輸出算「停滯」，--all 沒給門檻時的預設（分鐘）。
+    STATE_STALE_DEFAULT_MIN = 15
+
+    def _session_state_row(self, sid: str, s, now: float = None,
+                           with_error: bool = True) -> dict:
+        """一個分頁的狀態摘要——外部調度者要的最小集合。
+
+        全部是結構化欄位，沒有畫面內容。狀態、活動、阻塞三項讀 status monitor
+        已經算好的快照（零額外成本）；錯誤與最後輸出時間是這支自己補的，因為
+        `list` 會被週期性拉取，不該為了這兩個欄位讓每一輪都變貴。
+        """
+        now = now or time.time()
+        out_ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
+        state = self._agent_state_for_list(sid) or "idle"
+        # 錯誤要解 transcript，是這一列裡唯一有實際成本的欄位。逐頁掃過去的
+        # 呼叫端（status）可以關掉；問單一分頁的（state）一定要。
+        last_error = ""
+        if with_error:
+            try:
+                last_error = agent_status.last_error(self._worker_ctx(sid, s))
+            except Exception:
+                last_error = ""
+        # runs_on 要的是「現在跑哪個模型」。agent_model.describe 只讀得到啟動
+        # 指令裡有沒有 --model，沒指定的分頁就只會回 CLI 名稱；狀態監控本來就
+        # 從 transcript 解出了實際模型，先用它。
+        runs_on = ""
+        try:
+            snap = self._agent_status_snapshot(sid)
+            res = (snap[0] if isinstance(snap, tuple) else snap) or {}
+            mi = res.get("model") if isinstance(res, dict) else None
+            if isinstance(mi, dict) and mi.get("name"):
+                runs_on = mi["name"] + (f" {mi['effort']}" if mi.get("effort") else "")
+        except Exception:
+            runs_on = ""
+        if not runs_on:
+            runs_on = agent_model.describe(getattr(s, "cmd", ""))
+        return {
+            "sid": sid,
+            "label": (getattr(s, "_custom_label", None)
+                      or (s.cmd.split()[0] if s.cmd else sid)),
+            "agent_state": state,
+            # 活動與阻塞同樣過一次遮蔽：活動行會帶正在跑的指令，而指令裡出現
+            # 憑證不是罕見的事，這個輸出是要交給外部調度者的。
+            "agent_activity": agent_status.redact(
+                self._agent_activity_for_list(sid), 120),
+            "agent_blocked": agent_status.redact(
+                self._agent_blocked_for_list(sid), 120),
+            "last_error": last_error,
+            "last_output_at": int(out_ts) if out_ts else 0,
+            "idle_for_s": int(now - out_ts) if out_ts else -1,
+            "runs_on": runs_on,
+        }
+
+    def _state_row_is_problem(self, row: dict, stale_min: float = 0) -> bool:
+        """這一列需不需要人介入。
+
+        三種：在等人回答、對話裡有錯誤、或太久沒有輸出。「太久」由呼叫端給，
+        因為合理值取決於那台在跑什麼——長推理的分頁十分鐘不吭聲是正常的。
+        沒給就用預設門檻；正在 working 的分頁不算停滯，它本來就在忙。
+        """
+        if row.get("agent_blocked"):
+            return True
+        if row.get("last_error"):
+            return True
+        limit = float(stale_min or self.STATE_STALE_DEFAULT_MIN) * 60
+        idle = row.get("idle_for_s", -1)
+        if row.get("agent_state") == "working":
+            return False
+        return idle >= 0 and idle > limit
+
     def _agent_state_for_list(self, sid: str) -> str:
         """給 sfctl list／Frame Link 用的單字狀態（'working' / 'done' / ''）。
 
@@ -7542,6 +7612,12 @@ try {
         return json.dumps(self._link().remote_maintenance(peer_id, action),
                           ensure_ascii=False)
 
+    def link_remote_state(self, peer_id: str, sid: str = "",
+                          all_tabs: bool = False, stale_min: float = 0) -> str:
+        return json.dumps(
+            self._link().remote_state(peer_id, sid, all_tabs, stale_min),
+            ensure_ascii=False)
+
     def link_remote_history(self, peer_id: str, sid: str, cols: int = 0) -> str:
         return json.dumps(self._link().remote_history(peer_id, sid, cols),
                           ensure_ascii=False)
@@ -7736,8 +7812,60 @@ try {
                     "bot": status.get("bot"),
                     "sessions": status.get("sessions", 0),
                     "paused": status.get("paused", False),
+                    # docs/ai-skill.md 說 status 是「roster ＋ live per-tab state」，
+                    # 但這裡一直只回 bridge 自己的狀態——照著文件用的人看到的是
+                    # 一行 bridge 狀態，然後以為分頁狀態要另外找。補上每個分頁的
+                    # 那一列（讀 monitor 已經算好的快照，零額外成本）。
+                    # with_error=False：status 可能被輪詢，而解析錯誤要讀
+                    # transcript，逐頁做等於每一輪 N 次檔案讀取。要錯誤就用
+                    # `sfctl state`——那是問單一分頁、或只列有問題的那幾個。
+                    "states": [self._session_state_row(sid, s, with_error=False)
+                               for sid, s in ((i, self.sessions.get(i))
+                                              for i in self._ordered_sids())
+                               if s is not None],
                 }
             }
+
+        elif cmd == "state":
+            # 給外部調度者的低成本狀態查詢。刻意跟 `list` 分開：list 會被遠端
+            # peer 週期性拉，欄位多一個就是每台每輪都多付；而 state 是「問一次
+            # 某個分頁現在怎麼了」，可以負擔解析 transcript 的成本。
+            #
+            # 輸出只有結構化欄位，沒有任何畫面內容——調度者要判斷的是「能不能
+            # 派工給它」，不是讀它的對話。錯誤訊息會先遮憑證再截短。
+            try:
+                want = str(args.get("sid") or "").strip()
+                want_all = bool(args.get("all"))
+                stale_min = float(args.get("stale_min") or 0)
+                if not want and not want_all:
+                    return {"success": False, "message": "sid required (or --all)"}
+                sids = self._ordered_sids() if want_all else [want]
+                now = time.time()
+                rows, problems = [], []
+                for sid in sids:
+                    s = self.sessions.get(sid)
+                    if not s:
+                        if want_all:
+                            continue
+                        return {"success": False, "message": f"No such session: {sid}"}
+                    row = self._session_state_row(sid, s, now)
+                    rows.append(row)
+                    if self._state_row_is_problem(row, stale_min):
+                        problems.append(row)
+                if want_all:
+                    # --all 只列有問題的：調度者要的是「誰需要我介入」，把 20 個
+                    # 正常分頁一起回去只是讓它多讀 20 行。數量仍然回報，這樣
+                    # 「沒有問題」跟「沒查到分頁」分得開。
+                    return {
+                        "success": True,
+                        "message": (f"{len(problems)}/{len(rows)} 需要注意"
+                                    if problems else f"{len(rows)} 個分頁都正常"),
+                        "details": {"states": problems, "checked": len(rows)},
+                    }
+                return {"success": True, "message": rows[0].get("label") or want,
+                        "details": {"states": rows}}
+            except Exception as e:
+                return {"success": False, "message": f"State failed: {e}"}
 
         elif cmd == "list":
             # List all sessions with sid + label + alive state, in the same
@@ -8498,7 +8626,8 @@ try {
                                 "text": header + doc}}
 
         elif cmd in ("link_list", "link_peek", "link_send", "link_new",
-                     "link_close", "link_rename", "link_conversation"):
+                     "link_close", "link_rename", "link_conversation",
+                     "link_state"):
             # Cross-machine session control. Same verbs as the local ones, with a
             # peer in front; the peer may be named or given by frame_id.
             try:
@@ -8530,6 +8659,9 @@ try {
                     return link.remote_close(pid, sid)
                 if cmd == "link_rename":
                     return link.remote_rename(pid, sid, args.get("name", ""))
+                if cmd == "link_state":
+                    return link.remote_state(pid, sid, bool(args.get("all")),
+                                             float(args.get("stale_min") or 0))
             except Exception as e:
                 return {"success": False, "message": f"{cmd} failed: {e}"}
 
@@ -9002,6 +9134,28 @@ def _register_carbon_hotkey(on_press) -> tuple[bool, str]:
 _PID_FILE = TMP_DIR / "shellframe.pid"
 
 
+def _start_pid_file_keepalive():
+    """定期碰一下 PID 檔，免得它被 /tmp 的清理掃掉。
+
+    macOS 會刪除 /tmp 底下三天沒被存取過的檔案。這個檔寫一次就不再碰，所以
+    開著超過三天的安裝會失去它——而 `sfctl restart` 的直接路徑靠它找行程，
+    於是長時間運作的機器反而重啟不了（實測：行程跑了五天，restart 只回
+    「PID file not found」）。一天碰一次就夠，成本是一次 utime。
+    """
+    def _loop():
+        while True:
+            time.sleep(21600)          # 6 小時
+            try:
+                if _PID_FILE.exists():
+                    os.utime(_PID_FILE, None)
+                else:
+                    _PID_FILE.write_text(str(os.getpid()))
+            except Exception:
+                pass
+    threading.Thread(target=_loop, daemon=True,
+                     name="sf-pidfile-keepalive").start()
+
+
 def _move_windows_to_mouse_screen():
     """Move every shellframe NSWindow to the screen where the cursor
     currently sits, centred on that screen. Must be called on the main
@@ -9145,6 +9299,7 @@ def _release_pid_file():
 def _claim_pid_file():
     try:
         _PID_FILE.write_text(str(os.getpid()))
+        _start_pid_file_keepalive()
     except Exception:
         return
     atexit.register(_release_pid_file)
