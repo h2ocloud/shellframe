@@ -556,8 +556,9 @@ def _print_state(result: dict, as_json: bool = False) -> int:
             "checked": details.get("checked", len(states)),
             "states": states,
         }, ensure_ascii=False))
-        return 0 if result.get("success") and not states else (
-            1 if result.get("success") else 2)
+        if not result.get("success"):
+            return 2
+        return 1 if any(st.get("needs_attention") for st in states) else 0
     if not result.get("success"):
         print(f"ERR {result.get('message', '')}")
         return 2
@@ -576,7 +577,9 @@ def _print_state(result: dict, as_json: bool = False) -> int:
             bits.append(f"· {st['runs_on']}")
         bits.append(f"· {_fmt_age(st.get('idle_for_s'))} 無輸出")
         print("  " + " ".join(bits))
-    return 1 if details.get("checked") is not None else 0
+    # 退出碼只看「有沒有需要介入的」。單獨問一個分頁時它也要準——原本是看
+    # 有沒有 checked 欄位，那等於在問「你用的是不是 --all」，不是在問狀態。
+    return 1 if any(st.get("needs_attention") for st in states) else 0
 
 
 def main():
@@ -651,6 +654,12 @@ def main():
     p_ls.add_argument("--all", action="store_true")
     p_ls.add_argument("--stale-min", type=float, default=0)
     p_ls.add_argument("--json", action="store_true")
+    p_lm = sub.add_parser(
+        "link-maintenance",
+        help="Update / restart ShellFrame on a paired computer")
+    p_lm.add_argument("peer")
+    p_lm.add_argument("action",
+                      choices=["check_update", "update", "restart", "reload"])
     p_lc = sub.add_parser("link-conversation",
                           help="Typed conversation turns from a paired computer's session")
     p_lc.add_argument("peer"); p_lc.add_argument("sid")
@@ -852,6 +861,11 @@ def main():
                                 "all": args.all, "stale_min": args.stale_min},
                  timeout=40)
         return _print_state(r, as_json=args.json)
+
+    elif args.cmd == "link-maintenance":
+        _print_result(_rpc("link_maintenance",
+                           {"peer": args.peer, "action": args.action},
+                           timeout=320))
 
     elif args.cmd == "link-list":
         _print_result(_rpc("link_list", {"peer": args.peer}))

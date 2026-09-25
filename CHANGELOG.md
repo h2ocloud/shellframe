@@ -6,6 +6,32 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.6 (2026-09-25)
+
+### Added
+
+- **`sfctl link-maintenance <peer> <action>` — update or restart another machine
+  from the command line.** Those actions existed but only behind a button in the
+  sidebar, so keeping a second machine current could not be scripted. Same fixed
+  list of actions and the same permission gate as before; the button is
+  unchanged.
+
+  **`sfctl link-maintenance <peer> <action>` — 從命令列更新或重啟另一台。**
+  這些動作本來就有，但只藏在側欄的按鈕後面，所以「讓第二台跟上」這件事沒辦法寫進
+  腳本。動作清單與權限閘跟原本完全一樣，按鈕也沒有變。
+
+### Fixes
+
+- **The state query's exit code reflects the tab, not the flag.** It returned
+  "needs attention" whenever the caller had passed `--all`, rather than whenever
+  something actually needed attention — so asking about one tab could never
+  report a problem through the exit code. Each row now carries that judgement
+  from the side that knows the threshold, and the exit code reads it.
+
+  **狀態查詢的退出碼反映的是分頁，不是參數。** 它原本只要呼叫端用了 `--all` 就回
+  「需要注意」，而不是真的有事才回——於是單獨問一個分頁時，退出碼永遠說不出那個
+  分頁有問題。每一列現在由「知道門檻的那一側」帶上這個判斷，退出碼照著讀。
+
 ## v0.37.5 (2026-09-25)
 
 ### Added

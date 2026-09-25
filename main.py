@@ -4351,6 +4351,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             "runs_on": runs_on,
         }
 
+    def _state_row(self, sid: str, s, now: float = None,
+                   with_error: bool = True, stale_min: float = 0) -> dict:
+        """一列狀態，並自己標上「需不需要人介入」。
+
+        讓呼叫端不必重算一次同樣的判斷——單獨問一個分頁時，退出碼要能直接說
+        「這個分頁有事」，而那個判斷只有這裡知道門檻。
+        """
+        row = self._session_state_row(sid, s, now, with_error)
+        row["needs_attention"] = self._state_row_is_problem(row, stale_min)
+        return row
+
     def _state_row_is_problem(self, row: dict, stale_min: float = 0) -> bool:
         """這一列需不需要人介入。
 
@@ -7848,9 +7859,9 @@ try {
                         if want_all:
                             continue
                         return {"success": False, "message": f"No such session: {sid}"}
-                    row = self._session_state_row(sid, s, now)
+                    row = self._state_row(sid, s, now, stale_min=stale_min)
                     rows.append(row)
-                    if self._state_row_is_problem(row, stale_min):
+                    if row["needs_attention"]:
                         problems.append(row)
                 if want_all:
                     # --all 只列有問題的：調度者要的是「誰需要我介入」，把 20 個
@@ -8353,6 +8364,21 @@ try {
                 # "no conversation" while it was visibly answering on screen.
                 # That is the chat view on the phone, not a corner case.
                 worker = self._worker_ctx(sid, s_obj)
+                # opencode keeps no transcript file — its history is in the
+                # shared session SQLite — so it needs its own reader rather than
+                # a path. Without this every opencode tab reported having no
+                # conversation and the phone drew an empty chat for a tab that
+                # was plainly holding one.
+                if _session_provider(s_obj.cmd) == "opencode":
+                    turns = agent_status.opencode_turns(worker, limit)
+                    if not turns:
+                        return {"success": False,
+                                "message": "這個 opencode 分頁還沒有可讀的對話"
+                                           "（分頁標題還沒被 opencode 標上，或還沒送出過訊息）"}
+                    return {"success": True, "message": f"{len(turns)} turns",
+                            "details": {"format": "opencode", "turns": turns,
+                                        "label": getattr(s_obj, "_custom_label", None)
+                                                 or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
                 path = agent_status.resolve_transcript(worker)
                 if not path:
                     return {"success": False,
@@ -8627,7 +8653,7 @@ try {
 
         elif cmd in ("link_list", "link_peek", "link_send", "link_new",
                      "link_close", "link_rename", "link_conversation",
-                     "link_state"):
+                     "link_state", "link_maintenance"):
             # Cross-machine session control. Same verbs as the local ones, with a
             # peer in front; the peer may be named or given by frame_id.
             try:
@@ -8662,6 +8688,11 @@ try {
                 if cmd == "link_state":
                     return link.remote_state(pid, sid, bool(args.get("all")),
                                              float(args.get("stale_min") or 0))
+                if cmd == "link_maintenance":
+                    # 更新／重啟另一台。動作是白名單（見 FrameLink），對方那端
+                    # 還會再過一次權限閘。原本只有側欄的 ⟳ 維運進得去，所以
+                    # 跨機更新沒辦法寫進腳本。
+                    return link.remote_maintenance(pid, args.get("action") or "")
             except Exception as e:
                 return {"success": False, "message": f"{cmd} failed: {e}"}
 

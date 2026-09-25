@@ -393,6 +393,74 @@ def opencode_session_id(worker: dict, db_path: str = None, now: float = None):
     return ses_id
 
 
+def opencode_turns(worker: dict, limit: int = 120, db_path: str = None):
+    """opencode tab → typed conversation turns, in the shape the chat views use.
+
+    opencode writes no transcript file, so `resolve_transcript` has nothing to
+    return for it and every opencode tab reported "no conversation" — the phone
+    rendered an empty chat for a tab that was visibly holding one. Its history
+    lives in the shared SQLite instead: `message` carries the role, and `part`
+    carries the actual content, one row per text block or tool call.
+
+    Read-only, and limited to the *newest* rows rather than the whole session:
+    that database holds every session on the machine, and a long one is
+    thousands of parts.
+    """
+    db = db_path or OPENCODE_DB
+    ses = opencode_session_id(worker, db_path=db)
+    if not ses or not os.path.exists(str(db)):
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+        try:
+            rows = con.execute(
+                "SELECT p.time_created, p.data, m.data FROM part p "
+                "JOIN message m ON m.id = p.message_id "
+                "WHERE p.session_id = ? "
+                "ORDER BY p.time_created DESC, p.id DESC LIMIT ?",
+                (ses, max(1, min(int(limit or 120), 400)) * 3)).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+    turns = []
+    for created, pdata, mdata in reversed(rows):
+        try:
+            part = json.loads(pdata)
+            msg = json.loads(mdata) if mdata else {}
+        except Exception:
+            continue
+        ts = created / 1000.0 if isinstance(created, (int, float)) else 0.0
+        kind_in = part.get("type")
+        if kind_in == "text":
+            text = (part.get("text") or "").strip()
+            if not text:
+                continue
+            turns.append({
+                "kind": "user_msg" if msg.get("role") == "user" else "assistant_text",
+                "text": text, "tool": "", "target": "", "ts": ts})
+        elif kind_in == "tool":
+            state = part.get("state") or {}
+            inp = state.get("input") if isinstance(state.get("input"), dict) else {}
+            # Whatever the tool was actually pointed at. Which file was read or
+            # which command ran is the part worth seeing in a list; the tool's
+            # bare name on its own says very little.
+            target = ""
+            for key in ("filePath", "path", "command", "pattern", "query", "url"):
+                v = inp.get(key)
+                if isinstance(v, str) and v.strip():
+                    target = v.strip()
+                    break
+            if not target:
+                target = str(state.get("title") or "").strip()
+            turns.append({"kind": "tool_call", "text": "",
+                          "tool": str(part.get("tool") or "tool"),
+                          "target": target[:200], "ts": ts})
+        # step-start / step-finish are bookkeeping, not conversation.
+    return turns[-max(1, int(limit or 120)):]
+
+
 def _opencode_last_message(ses_id: str, db_path: str = None):
     """該 session 最新一則訊息的 {role, finish, completed, created, model}，
     或 None。

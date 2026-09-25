@@ -109,6 +109,20 @@ check("欄位齊全",
       set(row) == {"sid", "label", "agent_state", "agent_activity", "agent_blocked",
                    "last_error", "last_output_at", "idle_for_s", "runs_on"},
       str(sorted(row)))
+
+# 帶判斷的那一版：呼叫端不必自己重算門檻，退出碼才說得準
+api_n = api_with({"state": "done"}, error="API Error: 401")
+row_n = api_n._state_row("s9", _S(out_ago=5))
+A.last_error = api_n.__dict__["_restore_last_error"]
+check("_state_row 會自己標上 needs_attention", row_n.get("needs_attention") is True,
+      str(row_n))
+api_ok = api_with({"state": "done"})
+row_ok = api_ok._state_row("s9", _S(out_ago=5))
+A.last_error = api_ok.__dict__["_restore_last_error"]
+check("沒事的分頁 needs_attention 是 False", row_ok.get("needs_attention") is False,
+      str(row_ok))
+check("退出碼看的是 needs_attention，不是「你用了 --all 沒」",
+      "needs_attention" in (HERE / "sfctl.py").read_text(encoding="utf-8"))
 check("runs_on 是實際模型，不是只有 CLI 名稱", row["runs_on"] == "Opus 5 xhigh", row["runs_on"])
 check("沒有任何畫面內容的欄位",
       not any(k in row for k in ("screen", "text", "output", "peek", "cmd")),
@@ -168,8 +182,11 @@ check("status 不解析錯誤（它可能被輪詢）",
 check("有 /link/state 端點", 'path == "/link/state"' in fl_src)
 check("跨機端點過同一道權限閘",
       "_peer_may_control(peer_id)" in fl_src.split('path == "/link/state"')[1][:400])
-check("link-state 共用既有的 peer 解析（不另寫一份）",
-      '"link_state")' in main_src and "找不到 peer" in main_src)
+# 在共用那一組裡，而不是自己另寫一份 peer 解析——比對整個 tuple，不綁尾端，
+# 否則之後往那組再加一個指令就會紅燈。
+_group = main_src.split('elif cmd in ("link_list"')[1].split("):")[0]
+check("link-state 併在既有的跨機指令組裡（共用 peer 解析）",
+      '"link_state"' in _group and "找不到 peer" in main_src, _group)
 check("CLI 有 state 與 link-state",
       'sub.add_parser(\n        "state"' in sfctl_src or '"state",' in sfctl_src)
 check("CLI 有 --all 與 --stale-min", "--stale-min" in sfctl_src and '"--all"' in sfctl_src)
