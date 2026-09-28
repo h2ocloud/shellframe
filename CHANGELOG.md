@@ -6,6 +6,35 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.7 (2026-09-28)
+
+### Fixes
+
+- **A self-update on Windows could silently do nothing: files were replaced
+  on disk, but the running window never changed.** `restart_app()` spawns the
+  new process, then lets the old one sleep ~0.8s (detach cleanup, then exit)
+  so its RPC response reaches the UI first. A fresh process finishes Python
+  startup well under that on most machines, reaches the single-instance mutex
+  check, finds the old process still holding it, concludes "another instance
+  is already running," raises the *old* window to the foreground, and exits.
+  The new process — the one carrying the update — is the one that dies; the
+  old one survives and looks, from the UI, exactly like restart did nothing.
+  The mutex check now retries for up to ~1.8s before giving up, comfortably
+  past the old process's own exit budget. A genuine second launch (the guard's
+  actual job) still gets redirected to the existing window, just under two
+  seconds later than before — not perceptible. 6 cases in
+  `tests_win_restart_race.py`.
+
+  **Windows 上的自我更新可能完全沒有反應：檔案在磁碟上換過了，視窗卻沒變。**
+  `restart_app()` 先 spawn 新行程，再讓舊行程睡大約 0.8 秒（先 detach 清理、
+  再結束）,為的是讓 RPC 回應先送回前端。新行程在大多數機器上，Python 開機
+  遠比這個快，走到單實例 mutex 檢查時，舊行程的 mutex 還沒放掉，於是新行程
+  判定「已經有一個在跑」,把*舊*視窗拉到前景、自己結束。死掉的是帶著更新的
+  新行程,活下來的是舊的——從介面上看,就像按了重啟卻什麼都沒發生。mutex
+  檢查現在會重試到大約 1.8 秒才放棄,足夠蓋過舊行程自己的退出預算。真的有
+  第二個實例要開時（這個防護原本要擋的情況）,一樣會被導去既有視窗,只是慢了
+  不到兩秒才發生——感覺不出來。`tests_win_restart_race.py` 共 6 項。
+
 ## v0.37.6 (2026-09-25)
 
 ### Added
