@@ -786,6 +786,136 @@ def _tmux_get_env(tmux_name: str, key: str):
     return ""
 
 
+def _claude_config_roots() -> list:
+    """ShellFrame 可能把 claude 開進去的每一個設定家目錄：預設的 ~/.claude，
+    加上 account-profiles/claude/ 底下每個帳號 profile。"""
+    roots = [os.path.expanduser("~/.claude")]
+    try:
+        base = CONFIG_DIR / "account-profiles" / "claude"
+        roots += sorted(str(p) for p in base.iterdir() if p.is_dir())
+    except OSError:
+        pass
+    return roots
+
+
+def _same_dir(a: str, b: str) -> bool:
+    return bool(a) and bool(b) and (os.path.realpath(os.path.expanduser(a))
+                                    == os.path.realpath(os.path.expanduser(b)))
+
+
+def _claude_dir_for_live_pids(pids, csid: str = "", roots=None) -> str:
+    """跑著的 claude 行程**真正**用的設定家目錄。
+
+    Claude Code 會替每個執行中的行程寫 `<設定家目錄>/sessions/<pid>.json`，
+    那個檔案落在哪個目錄，那就是它吃的 CLAUDE_CONFIG_DIR，不管這個值是從哪裡
+    繼承來的。`account_refs` 跟 tmux 的 session env 都可能沒有它：舊的 tmux
+    server 全域環境曾經帶過 CLAUDE_CONFIG_DIR，後來拿掉了，在那之前開的分頁
+    就是「隱性」跑在帳號 profile 裡（實例：9 個分頁 relaunch 後直接消失）。
+    同一個 pid 對到好幾個目錄時，以 sessionId 相符的為準。"""
+    fallback = ""
+    for pid in pids or []:
+        for root in (roots if roots is not None else _claude_config_roots()):
+            path = os.path.join(root, "sessions", f"{pid}.json")
+            if not os.path.isfile(path):
+                continue
+            if not csid:
+                return root
+            try:
+                with open(path, encoding="utf-8") as f:
+                    live_sid = (json.load(f) or {}).get("sessionId")
+            except (OSError, ValueError):
+                live_sid = None
+            if live_sid == csid:
+                return root
+            fallback = fallback or root
+    return fallback
+
+
+_RESUME_UUID_RE = re.compile(
+    r"--(?:resume|session-id)[= ]([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})")
+
+
+def _claude_session_hint(pids, cmd: str, roots=None) -> str:
+    """記憶體裡沒有 session uuid 時，這個分頁最可信的 uuid。
+
+    ShellFrame 重開之後、分頁還沒送出任何 hook 事件之前，`session_id` 是空的
+    （閒置分頁可以一直空著）。先看跑著的行程自己寫的 sessions/<pid>.json，再退回
+    啟動指令裡的 `--resume／--session-id <uuid>`。"""
+    for pid in pids or []:
+        for root in (roots if roots is not None else _claude_config_roots()):
+            path = os.path.join(root, "sessions", f"{pid}.json")
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    live_sid = (json.load(f) or {}).get("sessionId") or ""
+            except (OSError, ValueError):
+                live_sid = ""
+            if live_sid:
+                return live_sid
+    m = _RESUME_UUID_RE.search(cmd or "")
+    return m.group(1) if m else ""
+
+
+def _claude_newest_transcript(csid: str, roots=None) -> str:
+    """所有設定家目錄裡 `<csid>.jsonl` 最新的那一份（沒有就回空字串）。
+
+    同一段對話可能有好幾份：切帳號時複製過、或預設目錄殘留一份很久以前的。
+    正在寫的那份一定最新，也最大（實例：舊副本 599 行、真正的 2952 行，
+    挑錯就是「重啟成功但對話退回 23 天前」，而且沒有任何錯誤訊息）。"""
+    if not csid:
+        return ""
+    best, best_key = "", None
+    for root in (roots if roots is not None else _claude_config_roots()):
+        for path in glob.glob(os.path.join(root, "projects", "*", f"{csid}.jsonl")):
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            key = (st.st_mtime, st.st_size)
+            if best_key is None or key > best_key:
+                best, best_key = path, key
+    return best
+
+
+def _claude_home_of_transcript(path: str) -> str:
+    """`<家目錄>/projects/<slug>/<uuid>.jsonl` → `<家目錄>`。"""
+    if not path:
+        return ""
+    return os.path.dirname(os.path.dirname(os.path.dirname(path)))
+
+
+def _claude_ensure_transcript_in(csid: str, target_home: str, src: str = "",
+                                 roots=None) -> str:
+    """確保 `target_home` 底下有這段對話**最新**的 transcript，`--resume` 才接得
+    回完整歷史。回傳 target 那份的路徑（做不到就回空字串）。
+
+    target 沒有 → 複製進去。target 已經有、但比來源舊又比較短 → 先把它改名留底
+    （`.sf-bak-<時間>`，不刪），再換成新的。舊版只在「沒有」時才複製，target
+    若殘留一份舊副本就會悄悄接回舊對話。"""
+    src = src if (src and os.path.isfile(src)) else _claude_newest_transcript(csid, roots)
+    if not (src and target_home):
+        return ""
+    if _same_dir(_claude_home_of_transcript(src), target_home):
+        return src
+    dst_dir = os.path.join(target_home, "projects", os.path.basename(os.path.dirname(src)))
+    dst = os.path.join(dst_dir, f"{csid}.jsonl")
+    try:
+        os.makedirs(dst_dir, exist_ok=True)
+        if os.path.exists(dst):
+            s_st, d_st = os.stat(src), os.stat(dst)
+            if not (s_st.st_mtime > d_st.st_mtime and s_st.st_size > d_st.st_size):
+                return dst
+            os.replace(dst, f"{dst}.sf-bak-{int(time.time())}")
+        shutil.copy2(src, dst)
+        _dlog("account", f"transcript {csid[:8]} → {dst}")
+        return dst
+    except OSError as e:
+        _dlog("account", f"transcript {csid[:8]} 複製失敗 {e}")
+        return ""
+
+
 def _session_env() -> dict:
     env = dict(os.environ)
     path_parts = [
@@ -1082,8 +1212,14 @@ class Session:
 
     def __init__(self, sid: str, cmd: str, cols: int, rows: int,
                  on_data=None, tmux_name: str = None, account_refs: dict | None = None,
-                 account_refs_authoritative: bool = False):
+                 account_refs_authoritative: bool = False, claude_home: str = ""):
         self.sid = sid
+        # 沒 pin 帳號、對話卻住在某個 claude 家目錄（從環境繼承來的）時，重開要
+        # 照原樣只帶 CLAUDE_CONFIG_DIR。不改 pin：pin 會連帶把 profile 當下的
+        # access token 寫死進環境變數，那個 token 幾小時就過期、行程又不會自己
+        # 換新，分頁之後就變成 401 要重新 /login。只給家目錄，claude 會自己更新
+        # 那個目錄裡的憑證。
+        self._claude_home_override = claude_home or ""
         self.cmd = cmd
         self.cols = int(cols)
         self.rows = int(rows)
@@ -1139,6 +1275,9 @@ class Session:
         for provider, ref in self.account_refs.items():
             if ref:
                 overrides.update(ACCOUNT_MANAGER.env_for(provider, ref))
+        home = getattr(self, "_claude_home_override", "")
+        if home and not self.account_refs.get("claude"):
+            overrides["CLAUDE_CONFIG_DIR"] = home
         return overrides
 
     def _launch_env(self) -> dict:
@@ -2569,6 +2708,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
             value = (_tmux_get_env(tmux_name, env_key) or "").strip()
             if value and not os.path.isdir(value):
                 value = ""          # 目錄不在就當沒設，別把解析導到不存在的樹
+        if not value and provider == "claude" and tmux_name and not IS_WIN:
+            # session env 沒有、不代表行程沒吃：從 tmux 全域環境繼承來的值只
+            # 存在行程自己身上。claude 會在它真正的家目錄寫 sessions/<pid>.json。
+            home = _claude_dir_for_live_pids(self._pane_pids(s),
+                                             getattr(s, "session_id", "") or "")
+            if home and not _same_dir(home, os.path.expanduser("~/.claude")):
+                value = home
         if not value:
             value = self._provider_config_dir(
                 provider, (getattr(s, "account_refs", {}) or {}).get(provider))
@@ -2884,7 +3030,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                         {"config_dir": self._provider_config_dir("codex",
                                                                  entry_refs.get("codex"))}))
             else:
-                csid = str(entry.get("claude_session_id") or "").strip()
+                # manifest 沒記 uuid（舊分頁常見）就用啟動指令裡的 --resume uuid，
+                # 否則下面的家目錄判斷整段跳過，resume 落在錯的目錄、分頁一開就結束。
+                csid = (str(entry.get("claude_session_id") or "").strip()
+                        or _claude_session_hint([], cmd))
                 found = self._claude_transcript_exists(csid)
             if csid:
                 if found:
@@ -2898,10 +3047,23 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
                 tmux_name = entry.get("tmux_name") or None
                 account_refs = dict(entry.get("account_refs") or default_account_refs)
+                claude_home = ""
+                if csid and found and not _worker_is_codex(cmd):
+                    # 「找得到 transcript」不等於「在這個分頁的帳號目錄裡找得到」。
+                    # 找得到的是別的家目錄：沒 pin 就照原樣帶那個家目錄重開，有 pin
+                    # 就把最新那份搬進 pin 的目錄——否則 resume 落空、分頁一開就結束。
+                    home = _claude_home_of_transcript(_claude_newest_transcript(csid))
+                    claude_home = self._claude_home_to_keep(account_refs, home)
+                    if claude_home:
+                        _dlog("lifecycle", f"  {sid} 對話在 {claude_home}，照原樣帶家目錄")
+                    elif home and not _same_dir(home, self._claude_config_dir_for(account_refs)):
+                        _claude_ensure_transcript_in(
+                            csid, self._claude_config_dir_for(account_refs))
                 session = Session(sid, cmd, cols, rows,
                                   on_data=self._output_event.set,
                                   tmux_name=tmux_name,
-                                  account_refs=account_refs)
+                                  account_refs=account_refs,
+                                  claude_home=claude_home)
                 self.sessions[sid] = session
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
@@ -4642,39 +4804,76 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         env = ACCOUNT_MANAGER.env_for("claude", ref) if ref else {}
         return env.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
 
-    def _carry_claude_transcript(self, old_session, csid: str, new_refs: dict):
+    def _pane_pids(self, s) -> list:
+        """這個分頁 pane 的行程 pid，加上它的直接子行程（有些指令是殼包 claude）。"""
+        tmux_name = getattr(s, "_tmux_name", None)
+        if not tmux_name or IS_WIN:
+            return []
+        try:
+            r = subprocess.run(["tmux", "display-message", "-p", "-t", tmux_name,
+                                "#{pane_pid}"], capture_output=True, text=True, timeout=3)
+            pid = r.stdout.strip()
+            if not pid.isdigit():
+                return []
+            kids = subprocess.run(["pgrep", "-P", pid], capture_output=True,
+                                  text=True, timeout=3).stdout.split()
+            return [pid] + [k for k in kids if k.isdigit()]
+        except Exception:
+            _swallow("_pane_pids")
+            return []
+
+    def _actual_claude_home(self, s, csid: str) -> str:
+        """這個分頁的對話**實際**住在哪個 claude 設定家目錄。
+
+        依序看：跑著的行程的 sessions/<pid>.json（最準，行程吃的就是它）→
+        hook 回報的 transcript 路徑 → 硬碟上這個 uuid 最新的那份。
+        `account_refs` 不在名單裡：它只記得 ShellFrame 自己 pin 過的帳號，
+        從環境繼承來的它不知道（實例：refs 是 null，對話卻在 profile 目錄）。"""
+        home = _claude_dir_for_live_pids(self._pane_pids(s), csid)
+        if home:
+            return home
+        tp = getattr(s, "_hook_transcript_path", "") or ""
+        if tp and os.path.isfile(tp) and (not csid or os.path.basename(tp) == f"{csid}.jsonl"):
+            return _claude_home_of_transcript(tp)
+        return _claude_home_of_transcript(_claude_newest_transcript(csid))
+
+    def _claude_home_to_keep(self, refs: dict, home: str) -> str:
+        """帳號不變的重開，要不要照原樣帶 `CLAUDE_CONFIG_DIR=<home>`。
+
+        只在「沒 pin claude 帳號、對話卻住在預設以外的家目錄」時回 home——那就是
+        從環境繼承來、ShellFrame 沒記到的那種。有 pin 就照 pin 走（transcript 由
+        呼叫端搬進 pin 的目錄）；home 是預設目錄就什麼都不必帶。"""
+        if not home or (refs or {}).get("claude"):
+            return ""
+        if _same_dir(home, self._claude_config_dir_for(refs)):
+            return ""
+        return home
+
+    def _carry_claude_transcript(self, old_session, csid: str, new_refs: dict,
+                                 src_home: str = "", dst_home: str = ""):
         """切帳號＝換 CLAUDE_CONFIG_DIR，新帳號的 projects 裡沒有這段對話的
         transcript，`--resume` 會找不到、歷史就消失（日常使用中回報）。
         把當前對話的 uuid.jsonl 複製進新帳號的 projects/<同一個 cwd slug>/，
-        resume 才接得回同一段歷史。同帳號（config dir 沒變）則不必搬。"""
+        resume 才接得回同一段歷史。同帳號（config dir 沒變）則不必搬。
+
+        `src_home` 是對話實際所在的家目錄（`_actual_claude_home`）；沒給才用
+        舊 refs 推。`dst_home` 是新行程會用的家目錄（有 override 時）；沒給就用
+        新 refs 推。來源一律取最新的那份，目標若殘留舊副本會被換掉（留底不刪）。"""
         if not csid:
             return
-        old_dir = self._claude_config_dir_for(getattr(old_session, "account_refs", {}))
-        new_dir = self._claude_config_dir_for(new_refs)
-        if os.path.abspath(old_dir) == os.path.abspath(new_dir):
+        old_dir = src_home or self._claude_config_dir_for(
+            getattr(old_session, "account_refs", {}))
+        new_dir = dst_home or self._claude_config_dir_for(new_refs)
+        if _same_dir(old_dir, new_dir):
             return
         src = getattr(old_session, "_hook_transcript_path", "") or ""
-        if not (src and os.path.isfile(src)):
-            import glob as _glob
-            for root in (os.path.join(old_dir, "projects"),
-                         os.path.expanduser("~/.claude/projects")):
-                hits = _glob.glob(os.path.join(root, "*", f"{csid}.jsonl"))
-                if hits:
-                    src = hits[0]
-                    break
-        if not (src and os.path.isfile(src)):
+        if not (src and os.path.isfile(src) and os.path.basename(src) == f"{csid}.jsonl"):
+            src = (_claude_newest_transcript(csid, roots=[old_dir])
+                   or _claude_newest_transcript(csid))
+        if not src:
             _dlog("account", f"switch: 找不到 {csid} 的 transcript，歷史無法搬移")
             return
-        slug = os.path.basename(os.path.dirname(src))
-        dst_dir = os.path.join(new_dir, "projects", slug)
-        try:
-            os.makedirs(dst_dir, exist_ok=True)
-            dst = os.path.join(dst_dir, f"{csid}.jsonl")
-            if not os.path.exists(dst):
-                shutil.copy2(src, dst)
-            _dlog("account", f"switch: 搬移 transcript {csid} → {dst}")
-        except OSError as e:
-            _dlog("account", f"switch: transcript 搬移失敗 {e}")
+        _claude_ensure_transcript_in(csid, new_dir, src=src)
 
     def _restart_session_for_account(self, sid: str, account_refs: dict):
         old = self.sessions.get(sid)
@@ -4686,6 +4885,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         # transcript 搬進新 config dir 再 resume；codex 只在帳號不變（CODEX_HOME
         # 不變、rollout 找得到）時 resume，換帳號則照舊重新開始。
         csid = getattr(old, "session_id", "") or ""
+        claude_home = ""
+        try:
+            _is_claude = usage_probe.detect_ai(cmd) == "claude"
+        except Exception:
+            _is_claude = False
+        if _is_claude and not csid:
+            # ShellFrame 重開後、還沒收到 hook 的閒置分頁，session_id 是空的。
+            # 空著就會跳過下面整段家目錄判斷，直接用舊指令重開（實測：分頁消失）。
+            csid = _claude_session_hint(self._pane_pids(old), cmd)
         same_account = (dict(account_refs or {})
                         == dict(getattr(old, "account_refs", {}) or {}))
         try:
@@ -4693,7 +4901,18 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         except Exception:
             provider = None
         if provider == "claude" and csid:
-            self._carry_claude_transcript(old, csid, account_refs)
+            # 先量對話實際住哪。帳號不變的重啟（套用 CLI 更新）要接回行程原本
+            # 的家目錄——只看 refs 的話，隱性跑在 profile 裡的分頁會拿預設目錄
+            # 去 --resume：找不到就當場結束（分頁消失），預設目錄剛好有舊副本
+            # 就悄悄接回舊對話（實例：599 行 vs 2952 行，退回 23 天前）。
+            actual = self._actual_claude_home(old, csid)
+            if same_account:
+                claude_home = self._claude_home_to_keep(account_refs, actual)
+                if claude_home:
+                    _dlog("account", f"relaunch {sid}: 對話在 {claude_home}，照原樣帶 "
+                                     f"CLAUDE_CONFIG_DIR 重開")
+            self._carry_claude_transcript(old, csid, account_refs, src_home=actual,
+                                          dst_home=claude_home)
             cmd = self._cmd_with_resume(cmd, csid)
         elif provider == "codex" and same_account:
             try:
@@ -4716,7 +4935,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         old.kill()
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set,
                           tmux_name=tmux_name, account_refs=account_refs,
-                          account_refs_authoritative=True)
+                          account_refs_authoritative=True, claude_home=claude_home)
         session._bridge_enabled = bridge_enabled
         session._glasses_enabled = glasses_enabled
         session._init_pending = False

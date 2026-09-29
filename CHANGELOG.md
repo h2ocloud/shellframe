@@ -6,6 +6,51 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.8 (2026-09-29)
+
+### Fixes
+
+- **Relaunching a tab (`/relaunch`, or relaunch to pick up a CLI update) could
+  make it vanish, or quietly resume a weeks-old copy of the conversation.**
+  Reported while relaunching 19 tabs onto a new Claude Code release: 9 tabs
+  closed the moment they restarted, and 1 came back "fine" but showing a
+  version of the conversation 23 days old (599 transcript lines instead of
+  2,952). Measured cause: those tabs' `claude` processes had inherited
+  `CLAUDE_CONFIG_DIR=<account profile>` from an earlier tmux global
+  environment, so their conversations lived in the profile, while ShellFrame
+  had them recorded as "no account pinned". Relaunch trusted that record and
+  ran `claude --resume` against the default `~/.claude`: no transcript there
+  means claude exits immediately and tmux drops the tab; a leftover old copy
+  there means it resumes that instead, with no error. Relaunch now measures
+  where the conversation really lives — the running process's
+  `sessions/<pid>.json`, then the path the hook reported, then the newest copy
+  on disk — and restarts it in that same home directory. It passes only
+  `CLAUDE_CONFIG_DIR`, deliberately not pinning the account: a pin also puts
+  the profile's current access token into the environment, and that token
+  expires within hours with no way for the process to renew it, so the tab
+  would later fail with 401. It also no longer skips this when the tab's session id isn't known yet (right after ShellFrame restarts, an idle tab has sent no hook event, and older manifests never recorded one) — the id comes from the running process's `sessions/<pid>.json` or the `--resume` in its command. The same check now guards the reboot restore path
+  (which had the identical gap), account switching (which only copied the
+  transcript when the target had none, so a stale copy there won), and the
+  status/model/history reader. A stale copy that gets replaced is renamed to
+  `.sf-bak-<time>`, never deleted. 12 cases in `tests_relaunch_config_home.py`.
+
+  **重啟分頁（`/relaunch`、或為了套用 CLI 更新而重啟）可能讓分頁直接消失，
+  或悄悄接回幾週前的舊對話。** 回報情境：把 19 個分頁重啟到新版 Claude Code，
+  其中 9 個一重啟就關掉，另 1 個看起來正常，接回的卻是 23 天前的版本
+  （transcript 599 行，真正的有 2,952 行）。量到的原因：這些分頁的 `claude`
+  行程是從早先 tmux 全域環境繼承了 `CLAUDE_CONFIG_DIR=<帳號 profile>`，對話
+  存在 profile 裡；ShellFrame 卻記成「沒有 pin 帳號」。重啟照這筆紀錄，拿預設
+  的 `~/.claude` 去 `claude --resume`：那裡沒有這段對話，claude 當場結束、
+  tmux 把分頁收掉；那裡剛好有一份舊副本，就接回舊副本，而且沒有任何錯誤訊息。
+  現在重啟前會先量對話實際住在哪——依序看執行中行程的 `sessions/<pid>.json`、
+  hook 回報的路徑、硬碟上最新的那份——然後在同一個家目錄重開。只帶
+  `CLAUDE_CONFIG_DIR`，刻意不改成 pin 帳號：pin 會連帶把 profile 當下的 access
+  token 放進環境變數，那個 token 幾小時內就過期、行程又沒辦法自己換新，分頁之後
+  會變成 401。分頁的 session uuid 還不知道時也不再跳過這段判斷（ShellFrame 剛重開、閒置分頁還沒送出 hook 事件，舊的 manifest 也從沒記過）——改從執行中行程的 `sessions/<pid>.json` 或指令裡的 `--resume` 取得。重開機還原（有一模一樣的漏洞）、切帳號（以前只在目標
+  「沒有」時才複製，目標有舊副本就用舊的）、以及狀態／模型／歷史的讀取，也改用
+  同一個判斷。被換掉的舊副本會改名成 `.sf-bak-<時間>` 留底，不會刪除。
+  `tests_relaunch_config_home.py` 共 12 項。
+
 ## v0.37.7 (2026-09-28)
 
 ### Fixes
