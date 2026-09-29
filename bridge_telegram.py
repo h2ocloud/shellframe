@@ -1314,6 +1314,33 @@ class TelegramBridge(BridgeBase):
                                           peek_fn=peek_fn, prepare_fn=prepare_fn,
                                           cmd=cmd, cols=cols, rows=rows)
             self._slot_order.append(sid)
+        # 重啟後分頁比 poll loop 晚註冊：這時才把「重啟前使用者選的分頁」補回來
+        # （見 _restore_user_routing 的 pending），否則訊息會一直落在第一格。
+        self._apply_pending_routing(sid)
+
+    def _apply_pending_routing(self, sid: str):
+        """Apply a restart-time routing choice whose tab registered only now."""
+        pending = getattr(self, "_pending_user_active", None) or {}
+        applied = []
+        for uid, psid in list(pending.items()):
+            if psid != sid:
+                continue
+            pending.pop(uid, None)
+            if uid not in self._user_active:
+                self._user_active[uid] = sid
+                applied.append(uid)
+        pdef = getattr(self, "_pending_default_sid", None)
+        if pdef and pdef == sid:
+            self._pending_default_sid = None
+            if not getattr(self, "_default_active_sid", None):
+                self._default_active_sid = sid
+                applied.append("default")
+        if applied:
+            _blog(f"[restore] late-applied {sid} → {applied}\n")
+            try:
+                self._save_state()
+            except Exception:
+                pass
 
     def resize_session(self, sid: str, cols: int, rows: int):
         """PTY resized → rebuild the slot's virtual screen at the new geometry.
@@ -4360,11 +4387,17 @@ class TelegramBridge(BridgeBase):
         try:
             self._OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
             # int keys need str conversion for JSON
+            # 重啟後分頁還沒註冊前的存檔不能把使用者原本的選擇洗掉：還在
+            # pending 的也一併寫回（正式的 _user_active 優先）。
+            ua = {str(uid): sid for uid, sid in
+                  (getattr(self, "_pending_user_active", None) or {}).items()}
+            ua.update({str(uid): sid for uid, sid in self._user_active.items()})
             data = {
                 "offset": self._offset,
-                "user_active": {str(uid): sid for uid, sid in self._user_active.items()},
+                "user_active": ua,
                 "user_chat": {str(uid): cid for uid, cid in self._user_chat.items()},
-                "default_active_sid": getattr(self, '_default_active_sid', None),
+                "default_active_sid": (getattr(self, '_default_active_sid', None)
+                                       or getattr(self, '_pending_default_sid', None)),
                 "rate_limit_seen": dict(getattr(self, '_rate_limit_seen', {})),
             }
             self._OFFSET_FILE.write_text(
@@ -4396,6 +4429,11 @@ class TelegramBridge(BridgeBase):
             _blog(f"[restore] slots={slot_keys} saved_user_active={saved} "
                   f"saved_chat={saved_chat} saved_default={saved_default!r}\n")
             restored = {}
+            # v0.36.1 起 bridge 由 Python 先起、UI 之後才把分頁註冊進來，所以這裡
+            # 常常 slots=[]：使用者原本選的分頁當下還原不了，get_active_sid 就退到
+            # 第一個分頁，整串 TG 訊息都送錯分頁（「整個脫鉤」）。還原不了的先
+            # 暫存，等那個分頁 register_session 時由 _apply_pending_routing 補上。
+            pending = {}
             for uid_str, sid in saved.items():
                 try:
                     uid = int(uid_str)
@@ -4404,6 +4442,9 @@ class TelegramBridge(BridgeBase):
                 if sid in self.slots and uid not in self._user_active:
                     self._user_active[uid] = sid
                     restored[uid] = sid
+                elif sid and uid not in self._user_active:
+                    pending[uid] = sid
+            self._pending_user_active = pending
             # Restore user_chat independently — TG typing indicator + flush
             # forwarding both need uid → chat_id mapping available before the
             # user sends their first post-restart message (otherwise typing is
@@ -4417,11 +4458,14 @@ class TelegramBridge(BridgeBase):
                     self._user_chat[uid] = cid
             if saved_default and saved_default in self.slots and not getattr(self, '_default_active_sid', None):
                 self._default_active_sid = saved_default
+            elif saved_default and not getattr(self, '_default_active_sid', None):
+                self._pending_default_sid = saved_default
             # Sessions that are gone drop out here, so the map cannot grow
             # without bound across restarts.
             self._load_rate_limit_seen()
             _blog(f"[restore] applied restored={restored} user_chat={dict(self._user_chat)} "
-                  f"default={getattr(self, '_default_active_sid', None)!r}\n")
+                  f"default={getattr(self, '_default_active_sid', None)!r} "
+                  f"pending={pending} pending_default={getattr(self, '_pending_default_sid', None)!r}\n")
         except Exception as e:
             _blog(f"[restore] FAILED: {e}\n")
 
@@ -5742,7 +5786,10 @@ class TelegramBridge(BridgeBase):
         # ── Forward message to active session ──
         active_sid = self.get_active_sid(user_id)
         # Ensure user is tracked in _user_active (so flush/typing can find them)
-        if active_sid and user_id not in self._user_active:
+        # ——但重啟後使用者原本選的分頁還沒註冊（pending）時不要把「第一格」
+        # 寫成他的選擇，不然等那個分頁註冊進來也補不回去，錯的落點會黏住。
+        if (active_sid and user_id not in self._user_active
+                and user_id not in (getattr(self, "_pending_user_active", None) or {})):
             self._user_active[user_id] = active_sid
         if not active_sid or active_sid not in self.slots:
             tg_api(self.config.bot_token, "sendMessage", {

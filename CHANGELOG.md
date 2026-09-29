@@ -6,6 +6,34 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.9 (2026-09-30)
+
+### Fixes
+
+- **After a restart, Telegram messages go back to the tab you had selected
+  instead of the first tab.** Since the bridge started from Python before the UI
+  registered its tabs, the routing restore at poll-loop start ran against an
+  empty tab list (`[restore] slots=[]`), so the tab picked with `/N` before the
+  restart was never restored and every message fell through to the first tab.
+  Worse, the first incoming message then recorded that first tab as the user's
+  choice, and the pre-handling save overwrote the real choice on disk, so the
+  wrong tab stuck. In daily use the first tab happened to have an expired OAuth
+  login, so messages "went in" but nothing ever answered. Choices that cannot be
+  restored yet are now kept pending and applied the moment their tab registers;
+  while pending, an incoming message no longer overwrites them and saves keep
+  them on disk. Restores against already-registered tabs (hot reload) are
+  unchanged. New test `tests_tg_restore_late_register.py`.
+
+  **重啟之後，Telegram 訊息會回到你原本選的分頁，不再全部掉進第一個分頁。**
+  bridge 改成由 Python 先起、UI 之後才註冊分頁，於是 poll loop 開頭的路由還原
+  面對的是空的分頁清單（`[restore] slots=[]`）：重啟前用 `/N` 選好的分頁從來沒被
+  還原，每則訊息都落到第一個分頁。更糟的是第一則進來的訊息會把「第一個分頁」
+  記成使用者的選擇，處理前的存檔再把磁碟上真正的選擇蓋掉，錯的落點從此黏住。
+  日常使用中第一個分頁剛好是 OAuth 登入過期的那一格，所以訊息看似送進去了、
+  卻永遠沒有回應。現在當下還原不了的選擇會先暫存，等那個分頁一註冊就補上；
+  暫存期間進來的訊息不會蓋掉它，存檔也會把它保留在磁碟上。分頁已註冊時的還原
+  （熱重載路徑）行為不變。新增測試 `tests_tg_restore_late_register.py`。
+
 ## v0.37.8 (2026-09-29)
 
 ### Fixes
