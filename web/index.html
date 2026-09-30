@@ -5561,7 +5561,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!IS_MAC && ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey &&
           (ev.key === 'c' || ev.key === 'C') && term.hasSelection()) {
         ev.preventDefault();
-        try { pywebview.api.copy_text(term.getSelection()); } catch(_) {}
+        try { copySelection(term.getSelection(), 'live-ctrl-c'); } catch(_) {}
         term.clearSelection();
         return false;
       }
@@ -6020,8 +6020,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         e.stopPropagation();
         const sel = (histTerm && histTerm.getSelection && histTerm.getSelection()) || '';
         if (sel) {
-          try { await pywebview.api.copy_text(sel); } catch (_) {}
-          try { histTerm.clearSelection(); } catch (_) {}
+          // Keep the highlight when the write failed so a 2nd right-click retries.
+          if (await copySelection(sel, 'history-rightclick')) {
+            try { histTerm.clearSelection(); } catch (_) {}
+          }
         }
       });
 
@@ -6058,7 +6060,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C') &&
             histTerm && histTerm.hasSelection && histTerm.hasSelection()) {
           e.preventDefault(); e.stopPropagation();
-          try { pywebview.api.copy_text(histTerm.getSelection()); } catch (_) {}
+          try { copySelection(histTerm.getSelection(), 'history-ctrl-c'); } catch (_) {}
           return;
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -7908,7 +7910,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const publicUrl = document.getElementById('settings-line-public-url').value.trim();
     const url = publicUrl || lineLocalWebhookUrl();
     try {
-      await pywebview.api.copy_text(url);
+      await pywebview.api.copy_text(url, 'url');
       const btn = document.getElementById('btn-settings-line-copy-url');
       btn.textContent = t('copied');
       setTimeout(() => { btn.textContent = t('lineCopyUrl'); }, 900);
@@ -8009,7 +8011,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   $apiCopyBtn.addEventListener('click', async function() {
     if (!_apiInfo || !_apiInfo.token) return;
-    try { await pywebview.api.copy_text(_apiInfo.token); } catch (_) { return; }
+    try { await pywebview.api.copy_text(_apiInfo.token, 'api-token'); } catch (_) { return; }
     const orig = this.textContent;
     this.textContent = '✓';
     setTimeout(() => { this.textContent = orig; }, 900);
@@ -9504,6 +9506,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
+  // Every "copy the selection" path goes through here so the debug log can say,
+  // per copy, which surface asked (live-rightclick, history-ctrl-c, ...), how long
+  // the selection was, and whether the clipboard write worked -- never the text.
+  // Resolves true only when the backend confirmed the write; a rejected bridge
+  // call or an 'ERROR: ...' reply is false, so callers can keep the selection
+  // instead of clearing it after a copy that never landed.
+  async function copySelection(text, surface) {
+    try {
+      return (await pywebview.api.copy_text(text, surface)) === 'ok';
+    } catch (_) {
+      // The bridge itself failed, so the backend never logged this attempt.
+      try {
+        pywebview.api.js_debug('clipboard',
+          `copy surface=${surface} len=${(text || '').length} ok=false bridge-error`);
+      } catch (_) {}
+      return false;
+    }
+  }
+
   // ── Right-click: select → copy, no select → paste (Windows CMD style) ──
   // Capture selection on mousedown because xterm.js clears it before contextmenu fires
   let _pendingSel = '';
@@ -9514,12 +9535,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   $wrap.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
+    // Take the capture up front. Resetting it after the copy's await let a quick
+    // second right-click (whose mousedown had re-captured the still-visible
+    // selection) have its capture wiped, so it fell through to PASTE.
+    const sel = _pendingSel;
+    _pendingSel = '';
     if (!activeId || !sessions[activeId]) return;
     const term = sessions[activeId].term;
-    if (_pendingSel) {
-      await pywebview.api.copy_text(_pendingSel);
-      term.clearSelection();
-      _pendingSel = '';
+    if (sel) {
+      // Drop the highlight only once the copy is confirmed; on failure keep it
+      // so the next right-click retries instead of silently losing it.
+      if (await copySelection(sel, 'live-rightclick')) term.clearSelection();
     } else {
       // Right-click paste mirrors Cmd+V: image / file in clipboard goes
       // through the attach pipeline, not raw text. The browser's
@@ -9711,7 +9737,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     $copyBtn.addEventListener('click', async () => {
       if (!_block) return;
-      await pywebview.api.copy_text(_block.text);
+      await pywebview.api.copy_text(_block.text, 'code-block');
       $copyBtn.textContent = t('copied');
       $copyBtn.classList.add('copied');
       setTimeout(() => {

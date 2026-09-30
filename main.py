@@ -1772,6 +1772,103 @@ class Session:
                 _swallow("Session._force_kill:1217")
 
 
+def _clipboard_utf16(text: str) -> bytes:
+    """CF_UNICODETEXT payload: UTF-16LE, CRLF newlines, one NUL terminator.
+
+    No BOM. The clipboard format is UTF-16LE by definition, so a BOM is not
+    needed and would be stored as a literal U+FEFF in front of the copied text
+    (which is exactly what feeding `clip.exe` a BOM did). 'surrogatepass'
+    because a JS selection can end on half a surrogate pair; a strict encode
+    would raise and lose the whole copy."""
+    t = text.replace("\r\n", "\n").replace("\n", "\r\n")
+    return (t + "\0").encode("utf-16le", "surrogatepass")
+
+
+_WIN_CLIP = None  # (user32, kernel32) with prototypes set, built on first use
+
+
+def _win_clip_api():
+    global _WIN_CLIP
+    if _WIN_CLIP is None:
+        from ctypes import wintypes as wt
+        u32 = ctypes.WinDLL("user32", use_last_error=True)
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Explicit prototypes: without them ctypes marshals handles as 32-bit
+        # ints and truncates them on 64-bit Windows.
+        u32.OpenClipboard.argtypes = [wt.HWND]
+        u32.OpenClipboard.restype = wt.BOOL
+        u32.CloseClipboard.argtypes = []
+        u32.CloseClipboard.restype = wt.BOOL
+        u32.EmptyClipboard.argtypes = []
+        u32.EmptyClipboard.restype = wt.BOOL
+        u32.SetClipboardData.argtypes = [wt.UINT, wt.HANDLE]
+        u32.SetClipboardData.restype = wt.HANDLE
+        u32.CreateWindowExW.argtypes = [
+            wt.DWORD, wt.LPCWSTR, wt.LPCWSTR, wt.DWORD,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wt.HWND, wt.HMENU, wt.HINSTANCE, wt.LPVOID]
+        u32.CreateWindowExW.restype = wt.HWND
+        u32.DestroyWindow.argtypes = [wt.HWND]
+        u32.DestroyWindow.restype = wt.BOOL
+        k32.GlobalAlloc.argtypes = [wt.UINT, ctypes.c_size_t]
+        k32.GlobalAlloc.restype = wt.HGLOBAL
+        k32.GlobalLock.argtypes = [wt.HGLOBAL]
+        k32.GlobalLock.restype = wt.LPVOID
+        k32.GlobalUnlock.argtypes = [wt.HGLOBAL]
+        k32.GlobalUnlock.restype = wt.BOOL
+        k32.GlobalFree.argtypes = [wt.HGLOBAL]
+        k32.GlobalFree.restype = wt.HGLOBAL
+        _WIN_CLIP = (u32, k32)
+    return _WIN_CLIP
+
+
+def _win_set_clipboard_text(text: str) -> None:
+    """Put `text` on the Windows clipboard as CF_UNICODETEXT via the Win32 API.
+
+    Replaces piping into clip.exe, which cannot be fed UTF-16 cleanly: without
+    a BOM it guesses the encoding from the byte pattern and garbles text that
+    is all CJK (no ASCII bytes to give it away); with a BOM it keeps the BOM as
+    a literal U+FEFF. Raises OSError (with the Win32 error code) on failure."""
+    u32, k32 = _win_clip_api()
+    data = _clipboard_utf16(text)
+    hmem = k32.GlobalAlloc(0x0002, len(data))  # GMEM_MOVEABLE
+    if not hmem:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        ptr = k32.GlobalLock(hmem)
+        if not ptr:
+            raise ctypes.WinError(ctypes.get_last_error())
+        ctypes.memmove(ptr, data, len(data))
+        k32.GlobalUnlock(hmem)
+        # A real owner window: documented behaviour when OpenClipboard(NULL) is
+        # used is that EmptyClipboard leaves no owner and SetClipboardData fails.
+        hwnd = u32.CreateWindowExW(0, "STATIC", None, 0, 0, 0, 0, 0, None, None, None, None)
+        if not hwnd:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            # Another process (clipboard manager, remote session) can hold the
+            # clipboard open for a moment; retry ~0.5s before giving up.
+            for _ in range(20):
+                if u32.OpenClipboard(hwnd):
+                    break
+                time.sleep(0.025)
+            else:
+                raise ctypes.WinError(ctypes.get_last_error())
+            try:
+                if not u32.EmptyClipboard():
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if not u32.SetClipboardData(13, hmem):  # CF_UNICODETEXT
+                    raise ctypes.WinError(ctypes.get_last_error())
+                hmem = None  # the system owns the buffer now
+            finally:
+                u32.CloseClipboard()
+        finally:
+            u32.DestroyWindow(hwnd)
+    finally:
+        if hmem:
+            k32.GlobalFree(hmem)
+
+
 class Api(HistoryApiMixin, SchedulesApiMixin):
     """JS <-> Python bridge."""
 
@@ -5589,27 +5686,45 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})
 
-    def copy_text(self, text: str) -> str:
-        """Copy text to system clipboard. macOS uses pbcopy, Windows uses
-        clip.exe (UTF-16LE BOM expected for Unicode), Linux tries xclip/wl-copy."""
+    def copy_text(self, text: str, surface: str = "") -> str:
+        """Copy text to the system clipboard. Windows writes CF_UNICODETEXT
+        through the Win32 API (clip.exe cannot take UTF-16 cleanly, see
+        _win_set_clipboard_text); macOS uses pbcopy, Linux xclip/wl-copy.
+
+        `surface` names the UI path that asked (live-rightclick, history-ctrl-c,
+        ...). Every call logs surface, length, ok/fail and duration to the
+        debug log -- never the text, and never an exception message (a codec
+        error message quotes the offending character)."""
+        t0 = time.perf_counter()
+        n = len(text) if isinstance(text, str) else 0
+        tag = "".join(c for c in str(surface or "") if c.isalnum() or c in "_.-")[:32] or "?"
+        via, err = ("win32" if IS_WIN else "cli"), ""
         try:
-            if IS_WIN:
-                # clip.exe accepts UTF-16LE; encode with BOM for safety
-                p = subprocess.Popen(['clip'], stdin=subprocess.PIPE)
-                p.communicate(text.encode('utf-16le'))
+            if not n:
+                # An empty write would clear whatever the user has on the clipboard.
+                err = "empty text"
+            elif IS_WIN:
+                _win_set_clipboard_text(text)
             else:
                 # macOS: pbcopy. Linux fallback: try xclip then wl-copy.
                 tool = 'pbcopy' if shutil.which('pbcopy') else (
                     'xclip' if shutil.which('xclip') else (
                         'wl-copy' if shutil.which('wl-copy') else None))
                 if not tool:
-                    return 'ERROR: no clipboard tool found'
-                args = [tool, '-selection', 'clipboard'] if tool == 'xclip' else [tool]
-                p = subprocess.Popen(args, stdin=subprocess.PIPE)
-                p.communicate(text.encode('utf-8'))
-            return 'ok'
+                    err = "no clipboard tool found"
+                else:
+                    via = tool
+                    args = [tool, '-selection', 'clipboard'] if tool == 'xclip' else [tool]
+                    p = subprocess.Popen(args, stdin=subprocess.PIPE)
+                    p.communicate(text.encode('utf-8'))
         except Exception as e:
-            return f'ERROR: {e}'
+            err = type(e).__name__
+            if getattr(e, "winerror", None):
+                err += f" winerror={e.winerror}"
+        _dlog("clipboard", f"copy surface={tag} len={n} ok={not err} via={via} "
+                           f"ms={(time.perf_counter() - t0) * 1000:.0f}"
+                           + (f" err={err}" if err else ""))
+        return f"ERROR: {err}" if err else "ok"
 
     def paste_text(self) -> str:
         """Read text from system clipboard."""

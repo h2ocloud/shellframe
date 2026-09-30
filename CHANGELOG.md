@@ -6,6 +6,66 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.10 (2026-10-01)
+
+### Fixes
+
+- **Copying text on Windows no longer puts the wrong text on the clipboard.**
+  Right-click copy (and Ctrl+C on a selection, and the copy buttons)
+  occasionally left garbled text, or text with an invisible character in front
+  of it, on the clipboard, and the next copy was fine again. It depended on what
+  was selected, so it looked random. The copy piped UTF-16 into `clip.exe`,
+  which cannot be fed UTF-16 cleanly: without a byte-order mark it guesses the
+  encoding from the byte pattern, so a selection made only of CJK characters
+  (no ASCII bytes to give it away) was decoded as an ANSI code page and came out
+  garbled; with a byte-order mark it stored the mark as a literal U+FEFF in
+  front of the text. Copies now write `CF_UNICODETEXT` through the Win32
+  clipboard API, without a BOM and with CRLF line endings as before, and retry
+  briefly when another program is holding the clipboard. An empty copy no longer
+  clears the clipboard. Checked against the live Windows clipboard (pure CJK, an
+  8,400-character selection, mixed text with an emoji, concurrent writers, a
+  busy clipboard). New test `tests_clipboard_copy.py`.
+
+  **Windows 上複製文字不再把錯的內容放進剪貼簿。** 右鍵複製（以及選取後按
+  Ctrl+C、各個複製按鈕）偶爾會在剪貼簿留下亂碼，或在文字前面多出一個看不見的
+  字元，下一次複製又恢復正常；因為取決於選了什麼內容，看起來像隨機發生。舊做法
+  是把 UTF-16 餵給 `clip.exe`，而它沒辦法乾淨地吃 UTF-16：沒有位元組順序標記
+  （BOM）時它靠位元組樣式猜編碼，只含中日韓字元的選取（沒有 ASCII 位元組提供線
+  索）會被當成 ANSI 碼頁解碼而變成亂碼；加上 BOM 則會把 BOM 當成字面上的 U+FEFF
+  存到文字前面。現在改為直接用 Win32 剪貼簿 API 寫入 `CF_UNICODETEXT`，不帶 BOM、
+  換行維持 CRLF，其他程式短暫占用剪貼簿時會重試；空字串也不再清掉剪貼簿。已用
+  真實的 Windows 剪貼簿驗證（純中文、8,400 字的選取、含 emoji 的混合文字、同時
+  寫入、剪貼簿被占用）。新增測試 `tests_clipboard_copy.py`。
+
+- **A right-click copy that fails keeps the selection, and a quick second
+  right-click is no longer turned into a paste.** The live terminal cleared the
+  selection whether or not the write succeeded, and reset its stored selection
+  only after the copy had finished, which wiped the selection captured by a
+  second right-click made in the meantime, so that click fell through to paste.
+  The selection is now cleared only once the copy is confirmed, and the stored
+  selection is taken before the copy starts. Covered by `tests_clipboard_copy.py`.
+
+  **右鍵複製失敗時會保留選取，快速連按兩次右鍵也不會變成貼上。** 活畫面的終端機
+  不論寫入成功與否都會清掉選取，而且要等複製結束才重設暫存的選取，於是期間第二次
+  右鍵所抓到的選取被抹掉，那一下就落入貼上分支。現在確認寫入成功才清掉選取，
+  並且在複製開始之前就先取走暫存的選取。由 `tests_clipboard_copy.py` 守著。
+
+### Changes
+
+- **Every copy leaves one line in the debug log.** It reads
+  `[clipboard] copy surface=… len=… ok=… via=… ms=…` and records which path
+  asked (right-click or Ctrl+C in the live terminal or the history overlay, the
+  code-block button, URL copy, API-token copy), how long the text was, and
+  whether the write worked. It never contains the copied text, nor an error
+  message that could quote it, so a wrong-clipboard report can be traced to a
+  specific path.
+
+  **每次複製都會在 debug log 留下一行。** 格式為
+  `[clipboard] copy surface=… len=… ok=… via=… ms=…`，記錄是哪一條路徑觸發
+  （活畫面或歷史 overlay 的右鍵／Ctrl+C、程式碼區塊按鈕、複製網址、複製 API
+  token）、文字長度，以及寫入是否成功。內容絕不包含被複製的文字，也不含可能引用
+  該文字的錯誤訊息，所以「剪貼簿內容不對」的回報可以對到具體的路徑。
+
 ## v0.37.9 (2026-09-30)
 
 ### Fixes
