@@ -4751,7 +4751,34 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     # not for a choice — a menu takes the composer's place rather than sitting
     # above it. Used to veto _MENU_RE, which otherwise matches a `❯ some command`
     # line sitting in scrollback.
-    _COMPOSER_RE = _re.compile(r'^[ \t]*❯[ \t]*$', _re.MULTILINE)
+    _COMPOSER_RE = _re.compile(r'^[ \t\u00a0]*❯[ \t\u00a0]*$', _re.MULTILINE)
+
+    # 輸入框（composer）的 `❯` 列不一定是空的：Claude Code 會在閒置的輸入列放
+    # 一段 dim 灰字的「建議下一句」，使用者也可能留著沒送出的草稿。只看文字，兩者
+    # 都是「❯ 某段字」——空輸入列配不到，退去比選單形狀，再被捲動區裡「❯ 上一則
+    # 訊息＋縮排的 ⎿ 附件列」或草稿的第二行配中，閒置分頁就被判成「等你選」：TG
+    # 第一則訊息被丟掉、還誤報成信任對話框（回報：TG 發的訊息都進不來；實測 22 個
+    # 分頁有 3 個這樣卡著）。輸入框的特徵是上下各一條 ─── 框線、`❯` 緊貼在上框線
+    # 下面；選單的 `❯` 上面是標題或說明，不會緊貼框線。
+    _COMPOSER_BORDER_RE = _re.compile(r'^[ \t]*─{10,}[ \t]*$')
+    _PROMPT_GLYPH_RE = _re.compile(r'^[ \t\u00a0]*❯')
+
+    @classmethod
+    def _blank_composer_line(cls, raw: str) -> str:
+        """畫面（可帶 ANSI）→ 把輸入框裡 `❯` 那列換成空的 `❯`，其餘原封不動。
+
+        換掉的是建議字或草稿，判斷「是不是停在選單」時兩者都等於空輸入列。"""
+        lines = (raw or "").split("\n")
+        plain = [cls._ANSI_RE.sub('', line) for line in lines]
+        prev = -1
+        for i, text in enumerate(plain):
+            if (cls._PROMPT_GLYPH_RE.match(text) and prev >= 0
+                    and cls._COMPOSER_BORDER_RE.match(plain[prev])
+                    and any(cls._COMPOSER_BORDER_RE.match(t) for t in plain[i + 1:i + 13])):
+                lines[i] = "❯"
+            if text.strip():
+                prev = i
+        return "\n".join(lines)
 
     def startup_dialog_blocking(self, sid: str) -> str:
         """分頁是否正停在會吃掉貼上輸入的啟動對話框；回傳原因（空＝安全）。
@@ -4783,7 +4810,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
                 _swallow("Api.startup_dialog_blocking:capture")
         if not parts:
             return ""
-        clean = self._ANSI_RE.sub('', "\n".join(parts))
+        clean = self._ANSI_RE.sub('', self._blank_composer_line("\n".join(parts)))
         if self._STARTUP_TRUST_RE.search(clean):
             # 受信任的 cwd 就直接（游標感知地）答掉，不要讓使用者卡在這。
             # 這條路徑沒有 _startup_trust_deadline 的時限，所以連「開機那幾秒

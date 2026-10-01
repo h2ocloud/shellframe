@@ -6,6 +6,44 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.11 (2026-10-01)
+
+### Fixes
+
+- **Telegram messages to an idle tab could be dropped, with a bogus "stuck
+  on the trust dialog" notice.** Reported as "nothing I send from Telegram gets
+  in". Measured cause: a tab's first message after ShellFrame starts goes
+  through a gate that refuses to type into a menu. That gate recognised the
+  input box only when the `❯` line was empty, but an idle Claude Code input box
+  often isn't — it shows a dim "suggested next prompt", or holds an unsent
+  draft. The gate then fell back to matching menu *shape*, and found one in the
+  scrollback (an earlier `❯ prompt` followed by an indented `⎿` attachment or
+  "Ran 2 shell commands" line), so the tab read as "waiting for a choice". The
+  message was discarded, and Telegram was told the tab was on the trust dialog,
+  with trust buttons that did nothing. 3 of 22 live tabs were in this state.
+  The input box is now recognised by its structure — the `❯` line sitting
+  right under the box's top `───` rule, with the bottom rule a few lines below
+  — whatever text is in it; real menus (trust dialog, usage-credits chooser,
+  a menu directly under a rule) still block. The same check drives delegation
+  readiness and the tab's "blocked" status, so those stop false-alarming too.
+  Telegram now offers the trust buttons only for an actual trust dialog and
+  otherwise says what the tab is waiting on. 12 cases in
+  `tests_ready_gate_composer.py`.
+
+  **送到閒置分頁的 TG 訊息可能被丟掉，還收到一則「停在信任對話框」的假通知。**
+  回報：TG 發的東西都進不來。量到的原因：ShellFrame 起來後，每個分頁的第一則
+  訊息要先過一道「不要打進選單」的閘門。這道閘門只在 `❯` 那列是空的時候才認得
+  輸入框，但閒置的 Claude Code 輸入框常常不是空的：裡面有一段灰色的「建議下一
+  句」，或是一份沒送出的草稿。認不出輸入框之後，閘門改比「選單形狀」，結果在
+  捲動區找到一個（之前的 `❯ 提問`，下面接一行縮排的 `⎿` 附件或「Ran 2 shell
+  commands」），分頁就被判成「等你選」。訊息被丟掉，TG 還被告知分頁停在信任
+  對話框，附上按了也沒作用的信任按鈕。當下 22 個分頁有 3 個是這個狀態。現在改用
+  結構認輸入框——`❯` 那列緊貼在輸入框上方的 `───` 框線下、下方幾行內有下框線
+  ——不管裡面是什麼字都算；真的選單（信任對話框、額度選單、緊貼框線的選單）照樣
+  擋。同一個判斷也用在派工前的就緒檢查和分頁的「卡住」狀態，那兩處的誤報一起
+  消失。TG 只有在真的是信任對話框時才給信任按鈕，其他情況照實說分頁在等什麼。
+  `tests_ready_gate_composer.py` 共 12 項。
+
 ## v0.37.10 (2026-10-01)
 
 ### Fixes

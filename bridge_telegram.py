@@ -6276,8 +6276,13 @@ class TelegramBridge(BridgeBase):
             return ""
 
     def _notify_input_blocked(self, slot, chat_id, reason: str):
-        """被啟動對話框擋下：先把選項帶回 TG，帶不動才退回純文字說明。"""
-        if self._offer_trust_buttons(slot.sid, chat_id, slot.label, reason):
+        """被啟動對話框擋下：先把選項帶回 TG，帶不動才退回純文字說明。
+
+        信任按鈕只給真的信任對話框。以前任何原因都套「停在信任對話框」＋按鈕，
+        被一般選單（或誤判）擋下時也這樣講，使用者照著按「信任」什麼都不會發生，
+        訊息也沒送進去。"""
+        is_trust = "信任" in (reason or "") or "No, exit" in (reason or "")
+        if is_trust and self._offer_trust_buttons(slot.sid, chat_id, slot.label, reason):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
                 "text": f"（剛剛那則沒有送進「{slot.label}」，回答完再重發一次）",
