@@ -45,13 +45,13 @@ def old_verdict(raw):
 
 # 實際擷取的形狀：捲動區有一則帶附件的舊訊息，輸入框裡是灰色建議字。
 GHOST = (
-    "❯ 這個案例幫我補上 小N那塊的圖片案例   [Image #5]  [Image #6]\n"
+    "❯ 這個案例幫我補上那塊的圖片   [Image #5]  [Image #6]\n"
     "  ⎿  [Image #4]\n"
     "\n"
     "⏺ 已補上。\n"
     "\n"
     f"\x1b[38;5;244m{B}\n"
-    "\x1b[39m❯ \x1b[2m幕僚長走的是 Grok Bot 桌面 app 在 Mac 上跑指令\x1b[0m\n"
+    "\x1b[39m❯ \x1b[2m建議的下一句會長這樣\x1b[0m\n"
     f"\x1b[38;5;244m{B}\n"
     "\x1b[39m  \x1b[38;5;211m⏵⏵ bypass permissions on\x1b[38;5;246m (shift+tab to cycle)\n"
 )
@@ -59,17 +59,28 @@ GHOST = (
 # 實際擷取的形狀：捲動區有一則舊提問（下面接縮排的工具列），輸入框裡是兩行、
 # 沒送出的一般顏色草稿。
 DRAFT = (
-    "❯ 幫我追加一下 凱基期貨 的議題討論 0.5\n"
+    "❯ 幫我追加一筆議題討論 0.5\n"
     "\n"
     "  Ran 2 shell commands\n"
     "\n"
     "✻ Baked for 12s · done 10:03 AM\n"
     f"{B}\n"
-    "❯ 今天幫我補排一張臨時的卡片是新光銀行有上版狀況排除 1.5小時\n"
+    "❯ 今天幫我補排一張臨時的卡片 1.5小時\n"
     "\n"
     "  還有幫我排\n"
     f"{B}\n"
     "  ⏵⏵ bypass permissions on (shift+tab to cycle)\n"
+)
+
+# 分頁取過名字：上框線帶標題（實際擷取的形狀），輸入框裡是灰色建議字。
+TITLED = (
+    "❯ 幫我追加一筆議題討論 0.5\n"
+    "\n"
+    "  Ran 2 shell commands\n"
+    "\n"
+    f"{'─' * 48} 簡報整理 ─\n"
+    "\x1b[39m❯\u00a0\x1b[2m把那份重新整理一次\x1b[0m\n"
+    f"{B}\n"
 )
 
 TRUST = (
@@ -97,6 +108,8 @@ def main_():
     check("灰色建議字：現在判為可以送", verdict(GHOST) == "ok")
     check("沒送出的草稿：修正前會被誤判成選單", old_verdict(DRAFT) == "menu")
     check("沒送出的草稿：現在判為可以送", verdict(DRAFT) == "ok")
+    check("上框線帶分頁標題：修正前會被誤判成選單", old_verdict(TITLED) == "menu")
+    check("上框線帶分頁標題：現在判為可以送", verdict(TITLED) == "ok")
     check("信任對話框照樣擋下", verdict(TRUST) == "trust")
     check("額度選單照樣擋下", verdict(CREDITS) == "menu")
     check("緊貼框線、沒有下框線的選單照樣擋下", verdict(MENU_UNDER_RULE) == "menu")

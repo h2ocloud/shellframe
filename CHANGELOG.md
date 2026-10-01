@@ -6,6 +6,23 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.12 (2026-10-01)
+
+### Fixes
+
+- **The 0.37.11 input-box check missed tabs that have been given a name.**
+  A named tab draws its title into the input box's top rule
+  (`──── <name> ─`), and the check required that line to be nothing but `─`,
+  so such a tab with a suggested prompt or a draft in its input box could
+  still be read as "waiting for a choice" and lose its first Telegram message.
+  The top rule now only has to start with a long run of `─`. 2 more cases in
+  `tests_ready_gate_composer.py` (14 total).
+
+  **0.37.11 的輸入框判斷漏了取過名字的分頁。** 分頁取過名字時，輸入框的上框線
+  會帶標題（`──── <名稱> ─`），而判斷要求那一行只能有 `─`，所以這種分頁的輸入
+  框裡有建議字或草稿時，仍可能被判成「等你選」、丟掉第一則 TG 訊息。現在上框線
+  只要求行首是一長串 `─`。`tests_ready_gate_composer.py` 多 2 項（共 14 項）。
+
 ## v0.37.11 (2026-10-01)
 
 ### Fixes

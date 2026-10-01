@@ -4760,7 +4760,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin):
     # 第一則訊息被丟掉、還誤報成信任對話框（回報：TG 發的訊息都進不來；實測 22 個
     # 分頁有 3 個這樣卡著）。輸入框的特徵是上下各一條 ─── 框線、`❯` 緊貼在上框線
     # 下面；選單的 `❯` 上面是標題或說明，不會緊貼框線。
-    _COMPOSER_BORDER_RE = _re.compile(r'^[ \t]*─{10,}[ \t]*$')
+    # 上框線可能帶標題（分頁取過名字時：`──── <分頁名稱> ─`），
+    # 所以只要求行首是一長串 ─，不要求整行都是。
+    _COMPOSER_BORDER_RE = _re.compile(r'^[ \t]*─{10,}')
     _PROMPT_GLYPH_RE = _re.compile(r'^[ \t\u00a0]*❯')
 
     @classmethod
