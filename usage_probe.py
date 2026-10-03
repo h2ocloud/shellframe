@@ -276,6 +276,11 @@ def _claude_oauth(env=None) -> dict:
     """
     if env and env.get("CLAUDE_CODE_OAUTH_TOKEN"):
         return {"accessToken": env["CLAUDE_CODE_OAUTH_TOKEN"]}
+    if env and env.get("CLAUDE_CONFIG_DIR"):
+        # Profile tab: read that profile's own (self-refreshing) Keychain
+        # entry, not the global one, which belongs to the default ~/.claude.
+        from account_manager import read_claude_profile_oauth
+        return read_claude_profile_oauth(env["CLAUDE_CONFIG_DIR"])
     try:
         raw = subprocess.run(
             ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
@@ -554,11 +559,8 @@ def _claude_profile_expired(env) -> bool:
     directory = (env or {}).get("CLAUDE_CONFIG_DIR")
     if not directory:
         return False
-    try:
-        with open(os.path.join(directory, ".credentials.json"), encoding="utf-8") as f:
-            oauth = (json.load(f) or {}).get("claudeAiOauth") or {}
-    except Exception:
-        return False
+    from account_manager import read_claude_profile_oauth
+    oauth = read_claude_profile_oauth(directory)
     expires_at = oauth.get("expiresAt")           # milliseconds
     return bool(expires_at and expires_at / 1000 < time.time())
 
