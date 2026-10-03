@@ -107,6 +107,16 @@ PROMPT_IN_SCROLLBACK = """  ❯ ls -la
 """
 
 
+# Claude Code 2.x draws the idle composer as "❯" plus a non-breaking space.
+# A finished /model line above it must not keep the tab blocked.
+MODEL_APPLIED = """❯ /model claude-sonnet-5-5
+  ⎿  Set model to Sonnet 5 and saved as your default for new sessions
+
+────────────────────────────────────────────────────────────────────────────────
+❯\u00a0
+────────────────────────────────────────────────────────────────────────────────
+"""
+
 def blocked(clean, menu, composer):
     """The same veto startup_dialog_blocking applies."""
     return None if composer.search(clean) else menu.search(clean)
@@ -150,6 +160,8 @@ def main():
     check("a real menu has no composer, so it still blocks",
           not composer.search(CREDITS_MENU)
           and blocked(CREDITS_MENU, menu, composer) is not None)
+    check("a finished /model with a nbsp composer does not block",
+          blocked(MODEL_APPLIED, menu, composer) is None)
 
     print()
     if FAILED:

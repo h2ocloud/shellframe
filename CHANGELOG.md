@@ -6,6 +6,27 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.13 (2026-10-03)
+
+### Internal
+
+- **Regression test for a tab stuck as "not ready" after `/model`.**
+  Reported in daily use: after switching a tab's model with `/model`, every
+  Telegram message to it was answered "not ready". The finished command left
+  `❯ /model …` followed by an indented `⎿  Set model to …` line in the
+  scrollback, which matches the menu shape, and the idle input box below it is
+  drawn as `❯` plus a non-breaking space, which the input-box check before
+  0.37.11 did not accept, so nothing vetoed the menu match. 0.37.11 already
+  accepts the non-breaking space; this release pins that exact screen as a case
+  in `tests_agent_ready_gate.py`, which fails against the pre-0.37.11 pattern.
+
+  **補上 `/model` 之後分頁一直「未就緒」的回歸測試。** 日常使用中回報：用
+  `/model` 換過模型的分頁，之後每一則 TG 訊息都被回「未就緒」。指令跑完後，捲動
+  區留下 `❯ /model …` 加一行縮排的 `⎿  Set model to …`，剛好符合選單形狀；而
+  下方閒置的輸入框畫成 `❯` 加一個不換行空白（nbsp），0.37.11 以前的輸入框判斷
+  不認它，於是沒有東西否決那個選單比對。0.37.11 已經接受 nbsp；這版把這個畫面
+  原樣釘成 `tests_agent_ready_gate.py` 的一個案例，用 0.37.11 以前的規則跑會失敗。
+
 ## v0.37.12 (2026-10-01)
 
 ### Fixes
