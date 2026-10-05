@@ -9,6 +9,7 @@ import json
 import os
 import time
 
+from sf_config import CONFIG_LOCK
 from api_host import main
 
 
@@ -17,33 +18,34 @@ class GlassesApiMixin:
         s = self.sessions.get(sid)
         if not s:
             return json.dumps({"success": False, "message": f"no such session {sid}"})
-        was = sid in set(main.load_config().get("glasses_allowed_sessions", []) or [])
-        s._glasses_enabled = bool(enabled)
-        cfg = main.load_config()
-        allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
-        if enabled:
-            allowed.add(sid)
-        else:
-            allowed.discard(sid)
-        cfg["glasses_allowed_sessions"] = sorted(allowed)
-        # "沒有全開按鈕" 只是 UI 的性質，不是強制的限制：一個 shell 迴圈五秒就能把
-        # 每個分頁各開一次。實際發生過（2026-08-31 有支程式這樣做，11 個分頁全開了
-        # 二十分鐘沒人發現）。擋不住的就要看得見——所以每一次變更都留痕，`sfctl
-        # glasses` 會把最近幾筆印出來。
-        # 只有真的改變狀態才留痕。不然對同一個 sid 連下 40 次 no-op deny
-        # 就能把先前的紀錄全部擠出環狀緩衝——而授權本身完全沒動。
-        # 「擋不住的就要看得見」，那個「看得見」不能這麼容易被洗掉。
-        if was != bool(enabled):
-            trail = list(cfg.get("glasses_audit") or [])
-            trail.append({
-                "ts": int(time.time()),
-                "sid": sid,
-                "enabled": bool(enabled),
-                "source": source or "?",
-                "label": getattr(s, "_custom_label", None) or "",
-            })
-            cfg["glasses_audit"] = trail[-40:]
-        main.save_config(cfg)
+        with CONFIG_LOCK:
+            was = sid in set(main.load_config().get("glasses_allowed_sessions", []) or [])
+            s._glasses_enabled = bool(enabled)
+            cfg = main.load_config()
+            allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
+            if enabled:
+                allowed.add(sid)
+            else:
+                allowed.discard(sid)
+            cfg["glasses_allowed_sessions"] = sorted(allowed)
+            # "沒有全開按鈕" 只是 UI 的性質，不是強制的限制：一個 shell 迴圈五秒就能把
+            # 每個分頁各開一次。實際發生過（2026-08-31 有支程式這樣做，11 個分頁全開了
+            # 二十分鐘沒人發現）。擋不住的就要看得見——所以每一次變更都留痕，`sfctl
+            # glasses` 會把最近幾筆印出來。
+            # 只有真的改變狀態才留痕。不然對同一個 sid 連下 40 次 no-op deny
+            # 就能把先前的紀錄全部擠出環狀緩衝——而授權本身完全沒動。
+            # 「擋不住的就要看得見」，那個「看得見」不能這麼容易被洗掉。
+            if was != bool(enabled):
+                trail = list(cfg.get("glasses_audit") or [])
+                trail.append({
+                    "ts": int(time.time()),
+                    "sid": sid,
+                    "enabled": bool(enabled),
+                    "source": source or "?",
+                    "label": getattr(s, "_custom_label", None) or "",
+                })
+                cfg["glasses_audit"] = trail[-40:]
+            main.save_config(cfg)
         self._persist_session_manifest()
         main._dlog("glasses", f"{sid} glasses_enabled={bool(enabled)} source={source or '?'}")
         return json.dumps({"success": True, "sid": sid, "enabled": bool(enabled)})

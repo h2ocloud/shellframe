@@ -6,6 +6,57 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.38.1 (2026-10-06)
+
+### Fixes
+
+- **A Telegram reply is no longer lost when the next message arrives while the
+  previous reply is still being sent.** Sending a reply can take tens of
+  seconds. A message that arrived during that time armed a new turn, and the
+  old turn's clean-up then ran over it: it cleared the new turn's reply markers
+  and its "waiting for a reply" flag, so the answer was drained as stale screen
+  output and never forwarded. It could also switch off the new turn's fallback
+  for replies that miss their markers. Each turn now has a number. Clean-up
+  only applies if the number has not moved since the reply was taken, and a
+  turn's state is armed in one locked step. Regression test:
+  `tests_tg_turn_races.py`.
+
+  **上一則回覆還在送出時又來了新訊息，Telegram 的回覆不會再遺失。** 送出一則
+  回覆可能要數十秒。這段期間到的新訊息會開始新回合，但舊回合的收尾隨後蓋過
+  它：清掉新回合的回覆標記和「等待回覆」旗標，新答案就被當成畫面上的舊輸出
+  排掉、沒有轉發；也可能把新回合「缺標記時的兜底轉發」關掉。現在每個回合都
+  有編號，收尾只在編號沒變時才生效，新回合的狀態也在同一個鎖內一次設好。回歸
+  測試：`tests_tg_turn_races.py`。
+
+- **Sending a follow-up while the AI is still answering no longer loses the first
+  reply.** Every message gets its own reply markers, but the bridge only watched
+  the newest pair and cleared the output buffer on every message. A follow-up
+  sent mid-answer, or a second message queued before the first one was typed,
+  made the first reply unrecognisable. Markers whose reply has not arrived stay
+  watched (oldest first, up to three, for ten minutes). While one is in flight
+  the buffer is kept; once replies are delivered, the next message still starts
+  from a clean buffer so old replies are not sent twice.
+
+  **AI 還在回答時補傳一句，第一則的回覆不會再不見。** 每則訊息都有自己的回覆
+  標記，但 bridge 只認最新一組，而且每則新訊息都清空輸出緩衝。回答途中補一句、
+  或第一則還沒打進去就排了第二則，第一則的回覆就認不出來。現在還沒收到回覆的
+  標記會繼續被追蹤（最舊的先，最多三組、十分鐘）；有回覆在路上時保留緩衝，
+  回覆都送達後，下一則訊息仍從乾淨的緩衝開始，舊回覆不會重送。
+
+- **Settings changed at the same moment no longer overwrite each other.** 22
+  places in the app read config.json, changed it and wrote it back without
+  holding the config lock for the whole update, and the Telegram bridge used a
+  lock of its own. Two writers that read the same version saved over each other.
+  With reads slowed to force the overlap, six presets saved at once left one
+  behind. Every read-modify-write now holds one shared lock (`sf_config`). A
+  check rejects new ones that don't. Regression test: `tests_config_rmw.py`.
+
+  **同時修改的設定不會再互相蓋掉。** App 裡有 22 處「讀 config.json → 修改 →
+  寫回」沒有在整個過程中持有設定鎖，Telegram bridge 也用自己的另一把鎖；兩個
+  寫入者讀到同一版本，就會互相覆蓋。把讀取放慢、強迫重疊時，同時存六個 preset
+  只留下一個。現在所有「讀→改→寫」都持有同一把共用鎖（`sf_config`），並有一項
+  檢查擋住沒上鎖的新寫法。回歸測試：`tests_config_rmw.py`。
+
 ## v0.38.0 (2026-10-05)
 
 ### Fixes

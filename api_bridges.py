@@ -10,6 +10,7 @@ import json
 import threading
 import time
 
+from sf_config import CONFIG_LOCK
 from api_host import main
 
 
@@ -160,20 +161,21 @@ class BridgesApiMixin:
             threading.Thread(target=_send_prompt, daemon=True).start()
 
         # Persist bridge config (preserve existing STT settings)
-        cfg = main.load_config()
-        prev_bridge = cfg.get("bridge", {})
-        persisted_initial_prompt = initial_prompt
-        if not persisted_initial_prompt and prev_bridge.get("initial_prompt"):
-            persisted_initial_prompt = prev_bridge.get("initial_prompt", "")
-        cfg["bridge"] = {
-            "bot_token": bot_token,
-            "allowed_users": [int(u) for u in allowed],
-            "prefix_enabled": prefix_enabled,
-            "initial_prompt": persisted_initial_prompt,
-            "stt_backend": prev_bridge.get("stt_backend", "auto"),
-            "stt_providers": prev_bridge.get("stt_providers", []),
-        }
-        main.save_config(cfg)
+        with CONFIG_LOCK:
+            cfg = main.load_config()
+            prev_bridge = cfg.get("bridge", {})
+            persisted_initial_prompt = initial_prompt
+            if not persisted_initial_prompt and prev_bridge.get("initial_prompt"):
+                persisted_initial_prompt = prev_bridge.get("initial_prompt", "")
+            cfg["bridge"] = {
+                "bot_token": bot_token,
+                "allowed_users": [int(u) for u in allowed],
+                "prefix_enabled": prefix_enabled,
+                "initial_prompt": persisted_initial_prompt,
+                "stt_backend": prev_bridge.get("stt_backend", "auto"),
+                "stt_providers": prev_bridge.get("stt_providers", []),
+            }
+            main.save_config(cfg)
         self._persist_session_manifest()
 
         return json.dumps({"success": self.bridge.connected, **self.bridge.get_status()})
@@ -183,9 +185,10 @@ class BridgesApiMixin:
             self.bridge.stop()
             self.bridge = None
             # Remove from config
-            cfg = main.load_config()
-            cfg.pop("bridge", None)
-            main.save_config(cfg)
+            with CONFIG_LOCK:
+                cfg = main.load_config()
+                cfg.pop("bridge", None)
+                main.save_config(cfg)
             return json.dumps({"success": True})
         return json.dumps({"success": False, "message": "No bridge running"})
 
@@ -241,20 +244,21 @@ class BridgesApiMixin:
                 self.line_bridge = None
                 return json.dumps({"success": False, "message": message, **status})
 
-            cfg = main.load_config()
-            cfg["line_bridge"] = {
-                "channel_access_token": channel_access_token,
-                "channel_secret": channel_secret,
-                "allowed_users": allowed,
-                "prefix_enabled": bool(prefix_enabled),
-                "webhook_port": config.webhook_port,
-                "webhook_path": config.webhook_path,
-                "public_webhook_url": public_webhook_url or "",
-                "delivery_mode": config.delivery_mode,
-                "poll_path": config.poll_path,
-                "forward_secret": forward_secret or "",
-            }
-            main.save_config(cfg)
+            with CONFIG_LOCK:
+                cfg = main.load_config()
+                cfg["line_bridge"] = {
+                    "channel_access_token": channel_access_token,
+                    "channel_secret": channel_secret,
+                    "allowed_users": allowed,
+                    "prefix_enabled": bool(prefix_enabled),
+                    "webhook_port": config.webhook_port,
+                    "webhook_path": config.webhook_path,
+                    "public_webhook_url": public_webhook_url or "",
+                    "delivery_mode": config.delivery_mode,
+                    "poll_path": config.poll_path,
+                    "forward_secret": forward_secret or "",
+                }
+                main.save_config(cfg)
             return json.dumps({"success": True, "exists": True, **status})
         except Exception as e:
             import traceback
@@ -265,9 +269,10 @@ class BridgesApiMixin:
         if self.line_bridge:
             self.line_bridge.stop()
             self.line_bridge = None
-        cfg = main.load_config()
-        cfg.pop("line_bridge", None)
-        main.save_config(cfg)
+        with CONFIG_LOCK:
+            cfg = main.load_config()
+            cfg.pop("line_bridge", None)
+            main.save_config(cfg)
         return json.dumps({"success": True})
 
     def get_line_bridge_status(self) -> str:
@@ -318,14 +323,15 @@ class BridgesApiMixin:
             else:
                 self.line_bridge.unregister_session(sid)
         # Persist bridge-disabled sessions so they survive restart
-        cfg = main.load_config()
-        disabled = set(cfg.get("bridge_disabled_sessions", []))
-        if enabled:
-            disabled.discard(sid)
-        else:
-            disabled.add(sid)
-        cfg["bridge_disabled_sessions"] = sorted(disabled)
-        main.save_config(cfg)
+        with CONFIG_LOCK:
+            cfg = main.load_config()
+            disabled = set(cfg.get("bridge_disabled_sessions", []))
+            if enabled:
+                disabled.discard(sid)
+            else:
+                disabled.add(sid)
+            cfg["bridge_disabled_sessions"] = sorted(disabled)
+            main.save_config(cfg)
         self._persist_session_manifest()
         return json.dumps({"success": True, "enabled": enabled})
 

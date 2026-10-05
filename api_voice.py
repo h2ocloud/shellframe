@@ -14,6 +14,7 @@ import sys
 import time
 import urllib.request
 
+from sf_config import CONFIG_LOCK
 from api_host import main
 
 
@@ -33,20 +34,21 @@ class VoiceApiMixin:
 
     def stt_save_settings(self, backend: str, providers_json: str) -> str:
         """Update STT backend + provider chain in config + live bridge."""
-        cfg = main.load_config()
-        bridge_cfg = cfg.get("bridge", {})
-        if backend in ("auto", "plugin", "local", "remote", "off"):
-            bridge_cfg["stt_backend"] = backend
-        if providers_json is not None:
-            try:
-                providers = json.loads(providers_json) if providers_json else []
-                if not isinstance(providers, list):
-                    return json.dumps({"success": False, "message": "providers must be a list"})
-                bridge_cfg["stt_providers"] = providers
-            except json.JSONDecodeError as e:
-                return json.dumps({"success": False, "message": f"invalid JSON: {e}"})
-        cfg["bridge"] = bridge_cfg
-        main.save_config(cfg)
+        with CONFIG_LOCK:
+            cfg = main.load_config()
+            bridge_cfg = cfg.get("bridge", {})
+            if backend in ("auto", "plugin", "local", "remote", "off"):
+                bridge_cfg["stt_backend"] = backend
+            if providers_json is not None:
+                try:
+                    providers = json.loads(providers_json) if providers_json else []
+                    if not isinstance(providers, list):
+                        return json.dumps({"success": False, "message": "providers must be a list"})
+                    bridge_cfg["stt_providers"] = providers
+                except json.JSONDecodeError as e:
+                    return json.dumps({"success": False, "message": f"invalid JSON: {e}"})
+            cfg["bridge"] = bridge_cfg
+            main.save_config(cfg)
         # Apply to running bridge
         if self.bridge:
             self.bridge.config.stt_backend = bridge_cfg.get("stt_backend", "auto")

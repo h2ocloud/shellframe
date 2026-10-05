@@ -15,6 +15,7 @@ import threading
 import time
 from pathlib import Path
 
+from sf_config import CONFIG_LOCK
 from api_host import main
 
 
@@ -132,9 +133,10 @@ class RemoteApiMixin:
             import secrets
             token = secrets.token_urlsafe(24)
             try:
-                full = main.load_config()
-                full.setdefault("api_server", {})["token"] = token
-                main.save_config(full)
+                with CONFIG_LOCK:
+                    full = main.load_config()
+                    full.setdefault("api_server", {})["token"] = token
+                    main.save_config(full)
             except Exception as e:
                 main._dlog("api", f"failed persisting generated token: {e}")
         try:
@@ -182,9 +184,10 @@ class RemoteApiMixin:
         Enabling auto-generates and persists a token if blank (fail-closed
         stays intact: _start_api_server never serves without a token)."""
         try:
-            full = main.load_config()
-            full.setdefault("api_server", {})["enabled"] = bool(enabled)
-            main.save_config(full)
+            with CONFIG_LOCK:
+                full = main.load_config()
+                full.setdefault("api_server", {})["enabled"] = bool(enabled)
+                main.save_config(full)
         except Exception as e:
             main._dlog("api", f"failed saving api_server.enabled: {e}")
         if enabled:

@@ -46,6 +46,7 @@ import board
 import agent_model
 import agent_status
 import account_manager
+import sf_config
 from api_history import HistoryApiMixin
 from api_schedules import SchedulesApiMixin
 # Api 的各領域 mixin 透過 api_host 的 late-bound `main` 取用本模組的全域；
@@ -549,7 +550,8 @@ def _normalize_dashes(cmd: str) -> str:
 # poll, geometry flush, session lifecycle) all do load→mutate→save; without
 # this the last writer silently clobbers the others' keys. Writers should
 # use update_config(); bare load/save stay for read-only or legacy sites.
-_CONFIG_LOCK = threading.RLock()
+# 所有 config.json 寫入者共用的鎖（見 sf_config.py）；TG bridge 與 mixin 也用同一把。
+_CONFIG_LOCK = sf_config.CONFIG_LOCK
 
 
 def update_config(mutator):
@@ -1979,86 +1981,87 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         tmux has no surviving sessions.
         """
         try:
-            cfg = load_config()
-            labels = cfg.get("session_labels", {}) or {}
-            disabled = set(cfg.get("bridge_disabled_sessions", []) or [])
-            prev_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
-            glasses_allowed = set(prev_allowed)
-            order = self._ordered_sids(cfg, preferred_order)
-            manifest = []
-            for idx, sid in enumerate(order):
-                s = self.sessions.get(sid)
-                if not s:
-                    continue
-                label = getattr(s, '_custom_label', None) or labels.get(sid)
-                bridge_enabled = getattr(s, '_bridge_enabled', True)
-                if not bridge_enabled:
-                    disabled.add(sid)
-                else:
-                    disabled.discard(sid)
-                # Allow list, not a deny list: a tab that is missing from the
-                # manifest must come back with the glasses OFF, never ON.
-                #
-                # The sentinel matters. Reading this with a `False` default and
-                # then discarding means **any** code path that builds a Session
-                # without setting the flag silently revokes that tab — the
-                # authorisation quietly disappears and looks like a bug in the
-                # glasses instead. `None` = "this object never had an opinion",
-                # and an object with no opinion must not overrule the file.
-                glasses_flag = getattr(s, '_glasses_enabled', None)
-                if glasses_flag is True:
-                    glasses_allowed.add(sid)
-                elif glasses_flag is False:
-                    glasses_allowed.discard(sid)
-                glasses_enabled = sid in glasses_allowed
-                entry = {
-                    "sid": sid,
-                    "cmd": _canonical_cmd(s.cmd),
-                    "tmux_name": getattr(s, '_tmux_name', None) or "",
-                    "account_refs": dict(getattr(s, "account_refs", {}) or {}),
-                    "bridge_enabled": bool(bridge_enabled),
-                    "glasses_enabled": bool(glasses_enabled),
-                    "order": idx,
-                    "updated_at": int(time.time()),
-                }
-                # 模型 badge 的即時真相是 hook 回報的 transcript 路徑（見
-                # agent_event）。它原本只活在記憶體裡：ShellFrame 一重啟，所有
-                # 分頁的 hint 就消失，偵測掉回 cmd 的 --resume uuid ＝ 啟動時
-                # 指定的那份舊 transcript，badge 於是顯示過期模型。
-                hook_tp = getattr(s, "_hook_transcript_path", "") or ""
-                if hook_tp:
-                    entry["transcript_path"] = hook_tp
-                hook_csid = getattr(s, "session_id", "") or ""
-                if hook_csid:
-                    entry["claude_session_id"] = hook_csid
-                # codex 沒有 hook 可以回報，得自己認 rollout。Windows 關掉
-                # ShellFrame 等於整批 session 斷線（沒有 tmux 撐著），這個 id
-                # 是重開後唯一能接回原本對話的線索。
-                if _worker_is_codex(getattr(s, "cmd", "")):
-                    codex_sid = self._codex_session_id(sid, s)
-                    if codex_sid:
-                        entry["codex_session_id"] = codex_sid
-                lifecycle_source = getattr(s, "_lifecycle_source", "") or ""
-                if lifecycle_source:
-                    entry["lifecycle_source"] = lifecycle_source
-                if getattr(s, "_lifecycle_handoff", False):
-                    entry["lifecycle_handoff"] = True
-                if label:
-                    entry["label"] = label
-                    labels[sid] = label
-                manifest.append(entry)
-            cfg["session_manifest"] = manifest
-            cfg["session_order"] = [e["sid"] for e in manifest]
-            cfg["session_labels"] = labels
-            cfg["bridge_disabled_sessions"] = sorted(disabled)
-            # Tripwire. Emptying the allow list is a legitimate thing for a deny
-            # to do, but it should never be a side effect of persisting the tab
-            # list — and if it ever is again, this is the line that says so.
-            if prev_allowed and not glasses_allowed:
-                _dlog("glasses", f"allow list emptied while persisting manifest: "
-                                 f"was {sorted(prev_allowed)}, sessions seen={len(order)}")
-            cfg["glasses_allowed_sessions"] = sorted(glasses_allowed)
-            save_config(cfg)
+            with _CONFIG_LOCK:
+                cfg = load_config()
+                labels = cfg.get("session_labels", {}) or {}
+                disabled = set(cfg.get("bridge_disabled_sessions", []) or [])
+                prev_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
+                glasses_allowed = set(prev_allowed)
+                order = self._ordered_sids(cfg, preferred_order)
+                manifest = []
+                for idx, sid in enumerate(order):
+                    s = self.sessions.get(sid)
+                    if not s:
+                        continue
+                    label = getattr(s, '_custom_label', None) or labels.get(sid)
+                    bridge_enabled = getattr(s, '_bridge_enabled', True)
+                    if not bridge_enabled:
+                        disabled.add(sid)
+                    else:
+                        disabled.discard(sid)
+                    # Allow list, not a deny list: a tab that is missing from the
+                    # manifest must come back with the glasses OFF, never ON.
+                    #
+                    # The sentinel matters. Reading this with a `False` default and
+                    # then discarding means **any** code path that builds a Session
+                    # without setting the flag silently revokes that tab — the
+                    # authorisation quietly disappears and looks like a bug in the
+                    # glasses instead. `None` = "this object never had an opinion",
+                    # and an object with no opinion must not overrule the file.
+                    glasses_flag = getattr(s, '_glasses_enabled', None)
+                    if glasses_flag is True:
+                        glasses_allowed.add(sid)
+                    elif glasses_flag is False:
+                        glasses_allowed.discard(sid)
+                    glasses_enabled = sid in glasses_allowed
+                    entry = {
+                        "sid": sid,
+                        "cmd": _canonical_cmd(s.cmd),
+                        "tmux_name": getattr(s, '_tmux_name', None) or "",
+                        "account_refs": dict(getattr(s, "account_refs", {}) or {}),
+                        "bridge_enabled": bool(bridge_enabled),
+                        "glasses_enabled": bool(glasses_enabled),
+                        "order": idx,
+                        "updated_at": int(time.time()),
+                    }
+                    # 模型 badge 的即時真相是 hook 回報的 transcript 路徑（見
+                    # agent_event）。它原本只活在記憶體裡：ShellFrame 一重啟，所有
+                    # 分頁的 hint 就消失，偵測掉回 cmd 的 --resume uuid ＝ 啟動時
+                    # 指定的那份舊 transcript，badge 於是顯示過期模型。
+                    hook_tp = getattr(s, "_hook_transcript_path", "") or ""
+                    if hook_tp:
+                        entry["transcript_path"] = hook_tp
+                    hook_csid = getattr(s, "session_id", "") or ""
+                    if hook_csid:
+                        entry["claude_session_id"] = hook_csid
+                    # codex 沒有 hook 可以回報，得自己認 rollout。Windows 關掉
+                    # ShellFrame 等於整批 session 斷線（沒有 tmux 撐著），這個 id
+                    # 是重開後唯一能接回原本對話的線索。
+                    if _worker_is_codex(getattr(s, "cmd", "")):
+                        codex_sid = self._codex_session_id(sid, s)
+                        if codex_sid:
+                            entry["codex_session_id"] = codex_sid
+                    lifecycle_source = getattr(s, "_lifecycle_source", "") or ""
+                    if lifecycle_source:
+                        entry["lifecycle_source"] = lifecycle_source
+                    if getattr(s, "_lifecycle_handoff", False):
+                        entry["lifecycle_handoff"] = True
+                    if label:
+                        entry["label"] = label
+                        labels[sid] = label
+                    manifest.append(entry)
+                cfg["session_manifest"] = manifest
+                cfg["session_order"] = [e["sid"] for e in manifest]
+                cfg["session_labels"] = labels
+                cfg["bridge_disabled_sessions"] = sorted(disabled)
+                # Tripwire. Emptying the allow list is a legitimate thing for a deny
+                # to do, but it should never be a side effect of persisting the tab
+                # list — and if it ever is again, this is the line that says so.
+                if prev_allowed and not glasses_allowed:
+                    _dlog("glasses", f"allow list emptied while persisting manifest: "
+                                     f"was {sorted(prev_allowed)}, sessions seen={len(order)}")
+                cfg["glasses_allowed_sessions"] = sorted(glasses_allowed)
+                save_config(cfg)
         except Exception as e:
             _dlog("lifecycle", f"persist manifest failed: {e}")
 
@@ -3078,9 +3081,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             but scrollback is gone. Used on Windows.
         """
         _dlog("lifecycle", f"restore_tmux_sessions called cols={cols} rows={rows}")
-        cfg = load_config()
-        if ACCOUNT_MANAGER.ensure(cfg):
-            save_config(cfg)
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            if ACCOUNT_MANAGER.ensure(cfg):
+                save_config(cfg)
         default_account_refs = ACCOUNT_MANAGER.session_refs(cfg)
         saved_labels = cfg.get("session_labels", {})
         bridge_disabled = set(cfg.get("bridge_disabled_sessions", []))
@@ -3444,23 +3448,25 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
     def save_preset(self, name: str, cmd: str, icon: str) -> str:
         cmd = _normalize_dashes(cmd)
-        cfg = load_config()
-        # Update existing or add new
-        for p in cfg["presets"]:
-            if p["name"] == name:
-                p["cmd"] = cmd
-                p["icon"] = icon
-                save_config(cfg)
-                return json.dumps(cfg)
-        cfg["presets"].append({"name": name, "cmd": cmd, "icon": icon})
-        save_config(cfg)
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            # Update existing or add new
+            for p in cfg["presets"]:
+                if p["name"] == name:
+                    p["cmd"] = cmd
+                    p["icon"] = icon
+                    save_config(cfg)
+                    return json.dumps(cfg)
+            cfg["presets"].append({"name": name, "cmd": cmd, "icon": icon})
+            save_config(cfg)
         return json.dumps(cfg)
 
     def save_settings(self, settings_json: str) -> str:
-        cfg = load_config()
-        old_hotkey = (cfg.get("settings", {}) or {}).get("global_hotkey_enabled", True)
-        cfg["settings"] = json.loads(settings_json)
-        save_config(cfg)
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            old_hotkey = (cfg.get("settings", {}) or {}).get("global_hotkey_enabled", True)
+            cfg["settings"] = json.loads(settings_json)
+            save_config(cfg)
         # Re-register the global hotkey if the toggle changed, so users
         # don't need to restart for the setting to take effect.
         new_hotkey = cfg["settings"].get("global_hotkey_enabled", True)
@@ -3472,56 +3478,59 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         return json.dumps(cfg)
 
     def save_idle_reaper(self, idle_json: str) -> str:
-        cfg = load_config()
-        _ensure_idle_reaper_defaults(cfg)
-        current = cfg.get("idle_reaper", {}) or {}
-        incoming = json.loads(idle_json) if idle_json else {}
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            _ensure_idle_reaper_defaults(cfg)
+            current = cfg.get("idle_reaper", {}) or {}
+            incoming = json.loads(idle_json) if idle_json else {}
 
-        def _bool(key: str, default: bool) -> bool:
-            value = incoming.get(key, default)
-            return bool(value)
+            def _bool(key: str, default: bool) -> bool:
+                value = incoming.get(key, default)
+                return bool(value)
 
-        def _seconds(key: str, default: float, minimum: float) -> int:
-            try:
-                value = float(incoming.get(key, default))
-            except (TypeError, ValueError):
-                value = default
-            return int(max(minimum, value))
+            def _seconds(key: str, default: float, minimum: float) -> int:
+                try:
+                    value = float(incoming.get(key, default))
+                except (TypeError, ValueError):
+                    value = default
+                return int(max(minimum, value))
 
-        current["enabled"] = _bool("enabled", current.get("enabled", False))
-        current["idle_sec"] = _seconds("idle_sec", current.get("idle_sec", 1800), 30)
-        current["summary_grace_sec"] = _seconds(
-            "summary_grace_sec",
-            current.get("summary_grace_sec", 120),
-            10,
-        )
-        current["handoff_to_main"] = _bool(
-            "handoff_to_main",
-            current.get("handoff_to_main", True),
-        )
-        cfg["idle_reaper"] = current
-        save_config(cfg)
+            current["enabled"] = _bool("enabled", current.get("enabled", False))
+            current["idle_sec"] = _seconds("idle_sec", current.get("idle_sec", 1800), 30)
+            current["summary_grace_sec"] = _seconds(
+                "summary_grace_sec",
+                current.get("summary_grace_sec", 120),
+                10,
+            )
+            current["handoff_to_main"] = _bool(
+                "handoff_to_main",
+                current.get("handoff_to_main", True),
+            )
+            cfg["idle_reaper"] = current
+            save_config(cfg)
         return json.dumps(cfg)
 
     def delete_preset(self, name: str) -> str:
-        cfg = load_config()
-        cfg["presets"] = [p for p in cfg["presets"] if p["name"] != name]
-        save_config(cfg)
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            cfg["presets"] = [p for p in cfg["presets"] if p["name"] != name]
+            save_config(cfg)
         return json.dumps(cfg)
 
     def reorder_presets(self, order_json: str) -> str:
         """Reorder presets by name list. E.g. ["Bash","Claude Code","Codex"]."""
-        cfg = load_config()
-        order = json.loads(order_json) if order_json else []
-        by_name = {p["name"]: p for p in cfg.get("presets", [])}
-        reordered = [by_name[n] for n in order if n in by_name]
-        # Append any presets not in the order list (safety)
-        seen = set(order)
-        for p in cfg.get("presets", []):
-            if p["name"] not in seen:
-                reordered.append(p)
-        cfg["presets"] = reordered
-        save_config(cfg)
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            order = json.loads(order_json) if order_json else []
+            by_name = {p["name"]: p for p in cfg.get("presets", [])}
+            reordered = [by_name[n] for n in order if n in by_name]
+            # Append any presets not in the order list (safety)
+            seen = set(order)
+            for p in cfg.get("presets", []):
+                if p["name"] not in seen:
+                    reordered.append(p)
+            cfg["presets"] = reordered
+            save_config(cfg)
         return json.dumps(cfg)
 
     def list_sessions(self) -> str:
@@ -3549,9 +3558,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
     def new_session(self, cmd: str, cols: int, rows: int, source: str = "manual",
                     handoff: bool = False, inherit_accounts: bool = True) -> str:
         cmd = _canonical_cmd(cmd)
-        cfg = load_config()
-        if ACCOUNT_MANAGER.ensure(cfg):
-            save_config(cfg)
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            if ACCOUNT_MANAGER.ensure(cfg):
+                save_config(cfg)
         account_refs = ACCOUNT_MANAGER.session_refs(cfg) if inherit_accounts else {
             provider: None for provider in account_manager.PROVIDERS
         }
@@ -3710,12 +3720,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             self._plugin_dispatch_session_close(sid)
             s.kill()
             # Clean up persisted label
-            cfg = load_config()
-            labels = cfg.get("session_labels", {})
-            if sid in labels:
-                del labels[sid]
-                cfg["session_labels"] = labels
-                save_config(cfg)
+            with _CONFIG_LOCK:
+                cfg = load_config()
+                labels = cfg.get("session_labels", {})
+                if sid in labels:
+                    del labels[sid]
+                    cfg["session_labels"] = labels
+                    save_config(cfg)
             # Drop from soft-persistence list (Windows / no-tmux)
             self._drop_soft_session(sid)
             def _drop_account_ref(current):
@@ -4816,11 +4827,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             except Exception:
                 _swallow("rename_session.push_label")
         # Persist
-        cfg = load_config()
-        labels = cfg.get("session_labels", {})
-        labels[sid] = name
-        cfg["session_labels"] = labels
-        save_config(cfg)
+        with _CONFIG_LOCK:
+            cfg = load_config()
+            labels = cfg.get("session_labels", {})
+            labels[sid] = name
+            cfg["session_labels"] = labels
+            save_config(cfg)
         self._persist_session_manifest()
         return json.dumps({"success": True})
 
@@ -5855,12 +5867,13 @@ def main():
             # Saved screen is gone — scrub so we don't stash stale coords
             # back on the first move event.
             try:
-                cfg_now = load_config()
-                win = cfg_now.get("window", {}) or {}
-                win.pop("x", None)
-                win.pop("y", None)
-                cfg_now["window"] = win
-                save_config(cfg_now)
+                with _CONFIG_LOCK:
+                    cfg_now = load_config()
+                    win = cfg_now.get("window", {}) or {}
+                    win.pop("x", None)
+                    win.pop("y", None)
+                    cfg_now["window"] = win
+                    save_config(cfg_now)
             except Exception:
                 _swallow("main:6923")
             print(f"[shellframe] saved window position ({saved_x},{saved_y}) "

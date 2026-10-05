@@ -603,13 +603,15 @@ def _read_settings() -> dict:
     return val
 
 
-_SETTINGS_WRITE_LOCK = threading.Lock()
+# config.json 的寫入鎖必須跟 App 其他寫入者是同一把（sf_config.CONFIG_LOCK）：
+# 各用各的鎖時，App 與 TG 同時「讀→改→寫」會互相蓋掉對方的修改。
+import sf_config as _sf_config
 
 
 def _update_settings(patch: dict) -> bool:
     """Read-modify-write config.json settings with the given key/value patch.
     Returns True on success. Used by TG /voice to switch refine model live."""
-    with _SETTINGS_WRITE_LOCK:
+    with _sf_config.CONFIG_LOCK:
         try:
             cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
             cfg = _read_config()
@@ -1001,6 +1003,14 @@ class SessionSlot:
         self.reply_start_marker = ""
         self.reply_end_marker = ""
         self.marker_prompt = ""         # injected wrapper instruction (to exclude its echo)
+        # 回合編號：每則新的使用者訊息（或選單選擇）+1。flush 抽取時記下編號，
+        # 送出（可能耗時數十秒）後的 commit 只在編號沒變時才重置回合狀態——否則
+        # 會把送出期間才到的新訊息狀態一起清掉，新回合的回覆被當舊輸出排掉。
+        self.turn_epoch = 0
+        # 還在等回覆的 marker 組，最舊在前：{"start","end","prompt","epoch","answered"}。
+        # 新訊息不會把還沒回的舊 marker 擠掉——使用者在 AI 回覆途中或排隊時
+        # 補一句，前一則的回覆仍會被認出、轉發。
+        self.reply_markers = []
         # Marker-scan throttle (flush-loop hot path). One failed scan costs a
         # full strip_ansi over pending_raw (≤120KB ≈ 45ms) — re-arm only when
         # BOTH the rescan interval elapsed AND new PTY bytes arrived
@@ -2038,9 +2048,13 @@ class TelegramBridge(BridgeBase):
                 # 120KB 白跑一次 strip_ansi（實測 31ms／次，log 中 81% 的
                 # marker-miss 都是 raw=False）。把它接回保留區開頭，span 就
                 # 還能配對——這是效能與功能同一個修法。
-                sm = slot.reply_start_marker
-                if sm and sm not in keep and sm in slot.pending_raw:
-                    keep = sm + "\n" + keep
+                # 還在等回覆的每一組都要保住（使用者回覆途中補一句時不只一組）。
+                starts = [m.get("start") for m in (getattr(slot, "reply_markers", None) or [])
+                          if not m.get("answered")]
+                starts.append(slot.reply_start_marker)
+                for sm in dict.fromkeys(starts):
+                    if sm and sm not in keep and sm in slot.pending_raw:
+                        keep = sm + "\n" + keep
                 slot.pending_raw = keep
             now_ts = time.time()
             slot.last_output_time = now_ts
@@ -2455,6 +2469,82 @@ class TelegramBridge(BridgeBase):
 
         return new_texts
 
+    # 同時追蹤、尚未收到回覆的舊 marker 組上限（不含新的這組），以及存活時限：
+    # 模型偶爾忘了包 marker，那組就永遠「未回覆」——不設時限的話，之後每則新
+    # 訊息都會因為它而不清 buffer，等於永久關掉 v0.29.22 的重送防護。
+    _MAX_INFLIGHT_MARKERS = 3
+    _INFLIGHT_MARKER_TTL = 600.0
+
+    def _begin_turn(self, slot, marker=None, track_texts=()):
+        """Arm a new user turn on `slot` atomically (under output_lock).
+
+        marker: {"start","end","prompt"} when the reply comes back between reply
+        markers, else None. track_texts: what we inject this turn, for the echo
+        filter. Everything the flush loop reads to decide "is this a new turn,
+        which marker, should I fall back" changes in one locked step, and the
+        turn number moves so a commit still in flight for an older turn can tell
+        its reset no longer applies.
+        """
+        now = time.time()
+        with slot.output_lock:
+            slot.turn_epoch = getattr(slot, "turn_epoch", 0) + 1
+            inflight = [m for m in (getattr(slot, "reply_markers", None) or [])
+                        if not m.get("answered")
+                        and now - m.get("ts", now) < self._INFLIGHT_MARKER_TTL
+                        ][-self._MAX_INFLIGHT_MARKERS:]
+            if marker and inflight:
+                # 舊回覆還在路上：保留 buffer 與輸出時鐘，讓它照常被抽出轉發。
+                # 清掉它正是「回覆途中補一句，前一則回覆就不見」的根因。
+                slot.reply_markers = inflight + [
+                    dict(marker, epoch=slot.turn_epoch, answered=False, ts=now)]
+            else:
+                # 每則新訊息都清 buffer + 重置輸出時鐘：新 epoch 從乾淨開始，避免
+                # 舊 block 與 stale first_output_time 混進來（v0.29.22 的「剛送出
+                # 就重送上一則」根因之一）。
+                slot.output_buf = ""
+                slot.pending_raw = ""
+                slot.first_output_time = 0
+                slot.last_output_time = 0
+                slot.reply_markers = ([dict(marker, epoch=slot.turn_epoch, answered=False, ts=now)]
+                                      if marker else [])
+            slot.msg_sent_ts = now
+            slot.has_user_msg = True
+            slot.awaiting_response = True  # arm typing indicator + flush extraction
+            # 新 epoch：重置心跳 / 預覽狀態（A4.3 停止條件之一）
+            slot._hb_next_ts = 0.0
+            slot._hb_count = 0
+            slot._hb_interval = 0.0
+            slot._hb_last_hash = ""
+            slot._hb_last_sent_ts = 0.0
+            slot._hb_quiet = False
+            slot._preview_count = 0
+            slot._preview_gen = -1
+            slot._preview_last = ""
+            if marker:
+                slot.expect_marker = True
+                slot.reply_start_marker = marker["start"]
+                slot.reply_end_marker = marker["end"]
+                slot.marker_prompt = marker.get("prompt", "")
+                slot.marker_next_scan_ts = 0.0
+                slot.marker_scan_gen = -1
+                slot._fb_next_ts = 0.0
+                slot.marker_forwarded = False   # 新訊息 epoch：重新允許 fallback
+            else:
+                slot.expect_marker = False
+                slot.reply_start_marker = ""
+                slot.reply_end_marker = ""
+                slot.marker_prompt = ""
+            # Track what we send so we can filter echo from output. Cap at 30:
+            # each user msg adds up to ~4 entries (text, preamble, marker prompt,
+            # wrapper tags); at 10 the history covered only a few turns.
+            slot.sent_texts.extend(t for t in track_texts if t)
+            if len(slot.sent_texts) > 30:
+                slot.sent_texts = slot.sent_texts[-30:]
+            # Mark the start of a write → reply watch cycle for stall detection
+            slot.last_write_ts = now
+            slot.stall_warned = False
+        return slot.turn_epoch
+
     @staticmethod
     def _marker_spans(clean_raw: str, start_m: str, end_m: str):
         """Return [(start_idx, end_idx, inner_text)] for every start→end pair in
@@ -2513,16 +2603,39 @@ class TelegramBridge(BridgeBase):
         # 只存在於本函式內，重算一次 strip_ansi 要 30ms（120KB）。
         if getattr(self, "_perf_enabled", False):
             slot._dbg_clean_has = slot.reply_start_marker in clean_raw
-        spans = self._marker_spans(
-            clean_raw, slot.reply_start_marker, slot.reply_end_marker)
+        entries = [m for m in (getattr(slot, "reply_markers", None) or [])
+                   if m.get("start") and m.get("end")]
+        if not entries or entries[-1]["start"] != slot.reply_start_marker:
+            # 狀態不是 _begin_turn 設的（舊測試、熱重載前的 slot）：只有目前這組。
+            entries = [{"start": slot.reply_start_marker, "end": slot.reply_end_marker,
+                        "prompt": getattr(slot, "marker_prompt", "") or "",
+                        "epoch": getattr(slot, "turn_epoch", 0)}]
+        sent = getattr(slot, "sent_responses", ())
+        slot._picked_marker = None
+        last = ("", False)
+        # 最舊的先：使用者在回覆途中或排隊時補一句，前一則的回覆先送，
+        # 不會因為 marker 換成新的那組而被忽略。
+        for entry in entries:
+            reply, has_open = self._marker_entry_reply(clean_raw, entry)
+            if reply and reply not in sent:
+                slot._picked_marker = entry
+                return reply, has_open
+            last = (reply, has_open)
+        return last
+
+    def _marker_entry_reply(self, clean_raw: str, entry: dict):
+        """Last complete reply between one marker pair, and whether a newer one is
+        still streaming (unclosed start). Drops spans whose content is part of the
+        injected instruction (the echoed "{start} 和 {end}" example)."""
+        start_m, end_m = entry["start"], entry["end"]
+        spans = self._marker_spans(clean_raw, start_m, end_m)
         has_open = any(e < 0 for _, e, _ in spans)
-        instr_n = (getattr(slot, "marker_prompt", "") or "").replace(" ", "")
+        instr_n = (entry.get("prompt") or "").replace(" ", "")
         candidates = []
         for _, e, inner in spans:
             if e < 0:
                 continue
-            cleaned = clean_mobile_marker_response(
-                inner, (slot.reply_start_marker, slot.reply_end_marker))
+            cleaned = clean_mobile_marker_response(inner, (start_m, end_m))
             if not cleaned:
                 continue
             # Drop the wrapper-instruction echo: its inner span is part of the
@@ -3623,10 +3736,15 @@ class TelegramBridge(BridgeBase):
                 dedup_pending = []
                 commit_fallback_reset = False
                 commit_marker_forwarded = False
+                picked_marker = None      # 這次轉發的是哪一組 marker 的回覆
+                older_turn_reply = False  # 它屬於比目前更舊的回合（回覆途中又來了新訊息）
 
                 with slot.output_lock:
                     if slot.last_output_time == 0:
                         continue
+                    # 抽取當下的回合編號。下面送 TG 可能要數十秒，期間新訊息會讓
+                    # 編號前進——commit 時編號不同就不准重置回合狀態。
+                    epoch_at_extract = getattr(slot, "turn_epoch", 0)
                     tick_busy = True  # pending output → stay on the fast cadence
                     if not slot.has_user_msg:
                         # Drain old content so it won't be re-extracted later
@@ -3723,6 +3841,10 @@ class TelegramBridge(BridgeBase):
                             # P0-3：add() 延到 sendMessage 回 ok:true 之後。
                             dedup_pending = [marked_reply]
                             commit_marker_forwarded = True
+                            picked_marker = getattr(slot, "_picked_marker", None)
+                            older_turn_reply = bool(
+                                picked_marker
+                                and picked_marker.get("epoch", epoch_at_extract) < epoch_at_extract)
                             # Follow-up 連續訊息（回報 2026-07-26：「只回一則、
                             # 背景 subagent 完成的訊息漏掉」）：**不再**清掉
                             # expect_marker / markers / has_user_msg——保持 marker
@@ -3754,11 +3876,14 @@ class TelegramBridge(BridgeBase):
                         for _t in new_lines:
                             slot.sent_responses.discard(_t)
                         dedup_pending = list(new_lines)
-                    slot.sent_texts.clear()
+                    if not older_turn_reply:
+                        # 較舊回合的回覆：新回合已經送出、正在等，它的回聲過濾
+                        # 清單與等待狀態不能被這次抽取清掉。
+                        slot.sent_texts.clear()
                     slot.last_output_time = 0
                     slot.first_output_time = 0
                     # Response extracted → close the stall-watch window
-                    if new_lines:
+                    if new_lines and not older_turn_reply:
                         was_awaiting = slot.awaiting_response
                         slot.last_write_ts = 0.0
                         slot.stall_warned = False
@@ -3921,25 +4046,33 @@ class TelegramBridge(BridgeBase):
                 if any_ok or not retryable_fail:
                     for _t in dedup_pending:
                         slot.sent_responses.add(_t)
-                    if commit_marker_forwarded:
-                        slot.marker_forwarded = True
-                    if commit_fallback_reset:
-                        with slot.output_lock:
+                    # 送出期間（可能數十秒）若到了新訊息，turn_epoch 已前進：下面的
+                    # 回合重置屬於舊回合，套上去會把新回合的 has_user_msg／marker
+                    # 清掉，新回覆就被當舊輸出排掉（靜默丟回覆）。只在編號沒變時做。
+                    with slot.output_lock:
+                        same_turn = getattr(slot, "turn_epoch", 0) == epoch_at_extract
+                        if picked_marker is not None:
+                            picked_marker["answered"] = True
+                        if commit_marker_forwarded and same_turn and not older_turn_reply:
+                            slot.marker_forwarded = True
+                        if commit_fallback_reset and same_turn:
                             slot.pending_raw = ""
                             slot.expect_marker = False
                             slot.reply_start_marker = ""
                             slot.reply_end_marker = ""
                             slot.marker_prompt = ""
+                            slot.reply_markers = []
                             slot.has_user_msg = False
                             slot.marker_next_scan_ts = 0.0
                             slot.marker_scan_gen = -1
                             slot._fb_next_ts = 0.0
-                    # 回覆真的出去了 → 關掉這個 epoch 的心跳
-                    slot._hb_count = 0
-                    slot._hb_next_ts = 0.0
-                    slot._hb_interval = 0.0
-                    slot._hb_last_hash = ""
-                    slot._hb_last_sent_ts = 0.0
+                    if same_turn and not older_turn_reply:
+                        # 回覆真的出去了 → 關掉這個 epoch 的心跳
+                        slot._hb_count = 0
+                        slot._hb_next_ts = 0.0
+                        slot._hb_interval = 0.0
+                        slot._hb_last_hash = ""
+                        slot._hb_last_sent_ts = 0.0
                 else:
                     # 沒進去重集合＝下一次掃描還會重抽，不會永久蒸發。但要退避，
                     # 免得 TG 掛掉時每 0.5s 重試變成打樁。429 就等到 flood-wait
@@ -5523,10 +5656,12 @@ class TelegramBridge(BridgeBase):
             slot.pending_menu_options = []
             try:
                 slot.write_fn(f"{choice}\r")
-                slot.has_user_msg = True
-                slot.awaiting_response = True
-                slot.last_write_ts = time.time()
-                slot.stall_warned = False
+                with slot.output_lock:
+                    slot.turn_epoch += 1   # 舊回合還在送出中的 commit 不得清掉這個
+                    slot.has_user_msg = True
+                    slot.awaiting_response = True
+                    slot.last_write_ts = time.time()
+                    slot.stall_warned = False
                 tg_api(self.config.bot_token, "editMessageText", {
                     "chat_id": chat_id,
                     "message_id": message_id,
@@ -5847,28 +5982,11 @@ class TelegramBridge(BridgeBase):
                 "text": f"📎 {count} file{'s' if count > 1 else ''} received: {names}",
             })
 
-        # Mark that this session has received a real user message. 每則新訊息
-        # 都清 buffer + 重置輸出時鐘：新 epoch 從乾淨開始，避免 follow-up
-        # 保留下來的舊 block 與 stale first_output_time 混進來（v0.29.22 的
-        # 「剛送出就重送上一則」根因之一）。
-        with slot.output_lock:
-            slot.output_buf = ""
-            slot.pending_raw = ""
-            slot.first_output_time = 0
-            slot.last_output_time = 0
-        slot.msg_sent_ts = time.time()
-        slot.has_user_msg = True
-        slot.awaiting_response = True  # arm typing indicator + flush extraction
-        # 新 epoch：重置心跳 / 預覽狀態（A4.3 停止條件之一）
-        slot._hb_next_ts = 0.0
-        slot._hb_count = 0
-        slot._hb_interval = 0.0
-        slot._hb_last_hash = ""
-        slot._hb_last_sent_ts = 0.0
-        slot._hb_quiet = False
-        slot._preview_count = 0
-        slot._preview_gen = -1
-        slot._preview_last = ""
+        # 這一回合的狀態（has_user_msg、markers、回聲過濾清單、心跳…）不在這裡
+        # 逐項設定，而是收集好後由 _begin_turn() 在 output_lock 內一次套用，
+        # 見下方 _send() 之前。逐項設定時，flush 執行緒可能在中途看到半套狀態，
+        # 或用上一回合的 commit 把新回合清掉。
+        track = []
         # ── T0 送達回執：已收下、準備注入 ──
         # 補掉現在「注入成功到 8s 排隊通知之間完全靜默」的空窗。覆蓋式記錄，
         # _send() 之後用它把狀態推到 T1/T2。
@@ -5880,19 +5998,7 @@ class TelegramBridge(BridgeBase):
         if self._reactions_enabled():
             self._react_async(chat_id, origin_msg_id, self.REACTION_SEEN)
         # Track what we send so we can filter echo from output
-        slot.sent_texts.append(forwarded)
-        # Keep only last 10 sent texts
-        # Cap sent_texts at 30 (was 10). Each user msg appends up to 2
-        # entries (the forwarded text AND the TG preamble wrap), so at cap
-        # 10 the history covered only ~5 user turns — on a chatty session
-        # the AI could echo a preamble fragment long after that preamble
-        # rotated out of sent_texts, and the echo filter missed it.
-        if len(slot.sent_texts) > 30:
-            slot.sent_texts = slot.sent_texts[-30:]
-
-        # Mark the start of a write → reply watch cycle for stall detection
-        slot.last_write_ts = time.time()
-        slot.stall_warned = False
+        track.append(forwarded)
 
         # Inject init prompt if CLI just became ready (first user message path).
         # Mirrors write_input's web-UI injection so TG-created AI sessions get
@@ -5906,14 +6012,14 @@ class TelegramBridge(BridgeBase):
             except Exception:
                 init_prompt = ""
         if init_prompt:
-            slot.sent_texts.append(init_prompt)
+            track.append(init_prompt)
             payload = init_prompt + "\n\n---\nUser's first message: " + forwarded
         elif wrap_with_preamble:
             preamble = get_tg_prompt()
             if preamble:
                 # Record preamble in sent_texts so echo-filter + prefix-strip
                 # continue to work normally on the real `forwarded` text.
-                slot.sent_texts.append(preamble)
+                track.append(preamble)
                 payload = preamble + "\n\n" + forwarded
             else:
                 payload = forwarded
@@ -5922,7 +6028,7 @@ class TelegramBridge(BridgeBase):
 
         if not init_prompt and master_turn_preamble_enabled() and is_master_label(slot.label):
             master_preamble = wrap_master_turn_input(forwarded)
-            slot.sent_texts.append(master_preamble)
+            track.append(master_preamble)
             if wrap_with_preamble and payload != forwarded:
                 payload = payload.rsplit(forwarded, 1)[0] + master_preamble
             else:
@@ -5953,20 +6059,10 @@ class TelegramBridge(BridgeBase):
                 payload = init_prompt + "\n\n" + marker_prompt + "\n\n---\nUser's first message: " + forwarded
             else:
                 payload = marker_prompt + "\n\n" + payload
-            slot.sent_texts.append(marker_prompt)
-            slot.expect_marker = True
-            slot.reply_start_marker = start_marker
-            slot.reply_end_marker = end_marker
-            slot.marker_prompt = marker_prompt
-            slot.marker_next_scan_ts = 0.0
-            slot.marker_scan_gen = -1
-            slot._fb_next_ts = 0.0
-            slot.marker_forwarded = False   # 新訊息 epoch：重新允許 fallback
+            track.append(marker_prompt)
+            marker = {"start": start_marker, "end": end_marker, "prompt": marker_prompt}
         else:
-            slot.expect_marker = False
-            slot.reply_start_marker = ""
-            slot.reply_end_marker = ""
-            slot.marker_prompt = ""
+            marker = None
 
         # Write text first, then Enter after a brief delay.
         # When show_tg_wrapper is on, prefix with a visible tag so the
@@ -5976,7 +6072,7 @@ class TelegramBridge(BridgeBase):
         if wrap_with_preamble and show_wrapper and payload != forwarded:
             tag = "[SF-TG wrapper]"
             visible_payload = f"{tag}\n{payload}"
-            slot.sent_texts.append(tag)
+            track.append(tag)
         elif wrap_with_preamble and not show_wrapper:
             visible_payload = payload
 
@@ -5986,8 +6082,10 @@ class TelegramBridge(BridgeBase):
             framed = frame_system_directive(visible_payload, forwarded)
             if framed != visible_payload:
                 visible_payload = framed
-                slot.sent_texts.append(SYSTEM_DIRECTIVE_START)
-                slot.sent_texts.append(SYSTEM_DIRECTIVE_END)
+                track.append(SYSTEM_DIRECTIVE_START)
+                track.append(SYSTEM_DIRECTIVE_END)
+
+        self._begin_turn(slot, marker, track)
 
         def _send():
             # Serialize all PTY writes for this slot. Without this, a paste

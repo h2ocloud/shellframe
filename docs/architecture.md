@@ -87,9 +87,14 @@ startup-trust watchers, and the bridges' poll/dispatch/flush threads. Rules:
 - Never hold a lock across `evaluate_js`, a bridge call or a subprocess.
 - Iterate a snapshot (`list(d)`) of any dict another thread mutates.
 - Hand out ids under a lock (`Api._next_sid`).
-- Config: `save_config` / `update_config` write atomically under `_CONFIG_LOCK`;
+- Config: every load → modify → save holds the one shared lock
+  (`sf_config.CONFIG_LOCK`; `main._CONFIG_LOCK` is the same object), or goes
+  through `update_config`. Writes are atomic; reads take no lock.
   `load_config` falls back to the last good copy if the file cannot be parsed.
-  Nothing else may write `config.json` non-atomically.
+  `tests_config_rmw.py` rejects an unlocked read-modify-write.
+- Telegram turns: arm a turn only through `TelegramBridge._begin_turn` (one locked
+  step, bumps `turn_epoch`); flush-loop clean-up must check the epoch it extracted
+  under. Unanswered reply markers stay in `slot.reply_markers`.
 
 ## 5. Rules for changes
 
@@ -110,13 +115,10 @@ startup-trust watchers, and the bridges' poll/dispatch/flush threads. Rules:
 ## 6. Known hazards (open)
 
 From the 0.38 architecture review; each needs its own change and tests.
+(Fixed in 0.38.1: the two Telegram lost-reply races and unlocked config writes.)
 
-- Telegram flush/commit can reset turn state set by a newer message (lost reply);
-  a second queued message replaces the first one's reply marker.
 - The Telegram bridge calls the host through a single command/result file pair
   (`_sfctl_call`); concurrent calls can overwrite each other.
-- 22 functions do load → modify → save without holding the config lock across
-  the update (lost update between writers).
 - `_execute_sfctl` is a 1,000-line `if/elif` chain; a table of handlers would let
   sfctl help, the HTTP API and allowlists come from one place.
 - `web/index.html` is one 8.5k-line IIFE with ad-hoc RPC calls and polling.

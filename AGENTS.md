@@ -16,4 +16,5 @@ PTY or tmux session.
 - **Public repo:** no personal names, private hosts or credentials in code,
   comments, tests or docs (`tests_repo_hygiene.py` checks this).
 - **Do not** import `main` from a mixin, write `config.json` outside
-  `save_config`/`update_config`, or hold a lock across `evaluate_js` or a subprocess.
+  `save_config`/`update_config`, load-modify-save without `sf_config.CONFIG_LOCK`,
+  or hold a lock across `evaluate_js` or a subprocess.

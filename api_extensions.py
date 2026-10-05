@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from sf_config import CONFIG_LOCK
 from api_host import main
 
 
@@ -147,21 +148,22 @@ class ExtensionsApiMixin:
         return {}
 
     def _set_plugin_installed_enabled(self, name: str, installed: bool | None = None, enabled: bool | None = None) -> dict:
-        cfg = main.load_config()
-        main._ensure_plugins_defaults(cfg)
-        plugin_cfg = main._plugins_config(cfg)
-        installed_set = {str(v) for v in (plugin_cfg.get("installed") or [])}
-        enabled_set = {str(v) for v in (plugin_cfg.get("enabled") or [])}
-        if installed is not None:
-            (installed_set.add if installed else installed_set.discard)(name)
-        if enabled is not None:
-            (enabled_set.add if enabled else enabled_set.discard)(name)
-        if enabled is True:
-            installed_set.add(name)
-        plugin_cfg["installed"] = sorted(installed_set)
-        plugin_cfg["enabled"] = sorted(enabled_set)
-        cfg["plugins"] = plugin_cfg
-        main.save_config(cfg)
+        with CONFIG_LOCK:
+            cfg = main.load_config()
+            main._ensure_plugins_defaults(cfg)
+            plugin_cfg = main._plugins_config(cfg)
+            installed_set = {str(v) for v in (plugin_cfg.get("installed") or [])}
+            enabled_set = {str(v) for v in (plugin_cfg.get("enabled") or [])}
+            if installed is not None:
+                (installed_set.add if installed else installed_set.discard)(name)
+            if enabled is not None:
+                (enabled_set.add if enabled else enabled_set.discard)(name)
+            if enabled is True:
+                installed_set.add(name)
+            plugin_cfg["installed"] = sorted(installed_set)
+            plugin_cfg["enabled"] = sorted(enabled_set)
+            cfg["plugins"] = plugin_cfg
+            main.save_config(cfg)
         return cfg
 
     def marketplace_install(self, name: str, repo_url: str) -> str:

@@ -12,14 +12,16 @@ import os
 import subprocess
 import threading
 
+from sf_config import CONFIG_LOCK
 from api_host import main
 
 
 class AccountsApiMixin:
     def _account_config(self):
-        cfg = main.load_config()
-        if main.ACCOUNT_MANAGER.ensure(cfg):
-            main.save_config(cfg)
+        with CONFIG_LOCK:
+            cfg = main.load_config()
+            if main.ACCOUNT_MANAGER.ensure(cfg):
+                main.save_config(cfg)
         return cfg
 
     @staticmethod
