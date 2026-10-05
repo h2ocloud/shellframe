@@ -42,6 +42,50 @@ def _safe_ref(provider: str, identity: str) -> str:
     return f"{provider}-{digest}"
 
 
+def claude_keychain_service(config_dir) -> str:
+    """Keychain service name Claude Code uses for a CLAUDE_CONFIG_DIR profile.
+
+    Claude Code suffixes the service with the first 8 hex chars of
+    sha256(config dir); the default ~/.claude has no suffix.
+    """
+    digest = hashlib.sha256(str(config_dir).encode()).hexdigest()[:8]
+    return f"Claude Code-credentials-{digest}"
+
+
+def read_claude_profile_keychain(config_dir) -> dict:
+    """The OAuth blob Claude Code keeps for this profile in Keychain. {} if none.
+
+    This is the live credential: Claude Code refreshes it in place. The
+    profile's .credentials.json is only the snapshot we seeded at add time.
+    """
+    try:
+        raw = subprocess.run(
+            ["security", "find-generic-password", "-s",
+             claude_keychain_service(config_dir), "-w"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if raw:
+            value = json.loads(raw)
+            return value if isinstance(value, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def read_claude_profile_oauth(config_dir, keychain_reader=None) -> dict:
+    """claudeAiOauth for a profile: its own Keychain entry first, else the seed file."""
+    reader = keychain_reader or read_claude_profile_keychain
+    oauth = (reader(config_dir) or {}).get("claudeAiOauth") or {}
+    if oauth:
+        return oauth
+    try:
+        with open(os.path.join(str(config_dir), ".credentials.json"), encoding="utf-8") as fh:
+            value = json.load(fh)
+        return ((value if isinstance(value, dict) else {}).get("claudeAiOauth")) or {}
+    except Exception:
+        return {}
+
+
 def _chmod_private(path: Path, mode: int):
     try:
         path.chmod(mode)
@@ -50,10 +94,12 @@ def _chmod_private(path: Path, mode: int):
 
 
 class AccountManager:
-    def __init__(self, root=None, home=None, keychain_getter=None):
+    def __init__(self, root=None, home=None, keychain_getter=None,
+                 profile_keychain_reader=None):
         self.home = Path(home or Path.home()).expanduser()
         self.root = Path(root or (self.home / ".config" / "shellframe" / "account-profiles"))
         self.keychain_getter = keychain_getter or self._read_keychain
+        self.profile_keychain_reader = profile_keychain_reader or read_claude_profile_keychain
 
     def _profile_dir(self, provider: str, ref: str) -> Path:
         return self.root / provider / ref
@@ -164,6 +210,11 @@ class AccountManager:
             target = directory / "auth.json"
         else:
             target = directory / ".credentials.json"
+            # 這個 profile 已經在自己的 Keychain 項目登入過（Claude Code 會自己
+            # 續期）→ 別再拿全域 Keychain 的快照蓋掉。全域那份只在預設
+            # ~/.claude 跑時才會更新，往往早就過期，蓋過去只會害新分頁要重新登入。
+            if self.profile_keychain_reader(directory):
+                return directory
         with target.open("w", encoding="utf-8") as fh:
             json.dump(credential, fh, ensure_ascii=False)
             fh.write("\n")
@@ -285,11 +336,10 @@ class AccountManager:
             return {}
         if provider == "codex":
             return {"CODEX_HOME": str(directory)}
-        env = {"CLAUDE_CONFIG_DIR": str(directory)}
-        credential = self._read_json(directory / ".credentials.json")
-        token = (credential.get("claudeAiOauth") or {}).get("accessToken")
-        if token:
-            # Claude Code documents this process-scoped token override. It
-            # prevents one tab's account from changing another tab's Keychain.
-            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-        return env
+        # Only the config dir. CLAUDE_CONFIG_DIR alone already isolates the
+        # account: Claude Code keys its Keychain entry by the config dir, so
+        # tabs on different profiles never touch each other's credentials.
+        # Injecting CLAUDE_CODE_OAUTH_TOKEN froze a snapshot access token into
+        # the process — it overrides the Keychain, never refreshes, and once
+        # expired forced a /login in every new tab.
+        return {"CLAUDE_CONFIG_DIR": str(directory)}

@@ -308,6 +308,59 @@ def test_carry_transcript_noop_when_same_config_dir():
             main.ACCOUNT_MANAGER.env_for = saved
 
 
+def test_claude_env_is_config_dir_only_no_frozen_token():
+    """回歸（日常使用中回報：shellframe 每開一個新 claude 分頁都要重新 /login）。
+
+    根因：env_for 把 profile 的 .credentials.json（從全域 Keychain 複製來的快照）
+    塞進 CLAUDE_CODE_OAUTH_TOKEN。這個變數比 Keychain 優先、又不會續期，快照一過期
+    每個新分頁都只能重新登入。CLAUDE_CONFIG_DIR 本身就會讓 Claude Code 用這個
+    profile 自己的 Keychain 項目，帳號一樣是隔離的。"""
+    with tempfile.TemporaryDirectory() as td:
+        manager = AccountManager(root=os.path.join(td, "profiles"), home=td,
+                                 keychain_getter=lambda: {},
+                                 profile_keychain_reader=lambda d: {})
+        directory = manager.write_profile("claude", "claude-a", {"claudeAiOauth": {
+            "accessToken": "stale-snapshot", "expiresAt": 1}})
+        env = manager.env_for("claude", "claude-a")
+        assert env == {"CLAUDE_CONFIG_DIR": str(directory)}, env
+
+
+def test_write_profile_keeps_profile_that_has_its_own_keychain_login():
+    """profile 已在自己的 Keychain 項目登入過 → 不准拿全域快照蓋掉 seed 檔。"""
+    with tempfile.TemporaryDirectory() as td:
+        logged_in = set()
+        manager = AccountManager(root=os.path.join(td, "profiles"), home=td,
+                                 keychain_getter=lambda: {},
+                                 profile_keychain_reader=lambda d: (
+                                     {"claudeAiOauth": {"accessToken": "live"}}
+                                     if str(d) in logged_in else {}))
+        directory = manager.write_profile("claude", "claude-a",
+                                          {"claudeAiOauth": {"accessToken": "seed"}})
+        logged_in.add(str(directory))
+        manager.write_profile("claude", "claude-a",
+                              {"claudeAiOauth": {"accessToken": "stale-global"}})
+        saved = json.load(open(os.path.join(directory, ".credentials.json")))
+        assert saved["claudeAiOauth"]["accessToken"] == "seed", saved
+
+
+def test_claude_keychain_service_matches_claude_code_naming():
+    from account_manager import claude_keychain_service
+    import hashlib
+    d = "/Users/x/.config/shellframe/account-profiles/claude/claude-a"
+    assert claude_keychain_service(d) == (
+        "Claude Code-credentials-" + hashlib.sha256(d.encode()).hexdigest()[:8])
+
+
+def test_profile_oauth_prefers_keychain_over_seed_file():
+    from account_manager import read_claude_profile_oauth
+    with tempfile.TemporaryDirectory() as td:
+        json.dump({"claudeAiOauth": {"accessToken": "seed"}},
+                  open(os.path.join(td, ".credentials.json"), "w"))
+        live = lambda d: {"claudeAiOauth": {"accessToken": "live"}}
+        assert read_claude_profile_oauth(td, live)["accessToken"] == "live"
+        assert read_claude_profile_oauth(td, lambda d: {})["accessToken"] == "seed"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
