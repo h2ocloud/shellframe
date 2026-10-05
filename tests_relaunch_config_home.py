@@ -7,6 +7,7 @@ relaunch 只看 refs → 拿預設目錄去 --resume：
   (2) 預設目錄剛好有舊副本 → 重啟「成功」但接回 23 天前的版本（599 行 vs 2952 行）。
 """
 
+from _testsrc import api_class_source, fold_host  # main.py + api_*.py mixins
 import inspect
 import json
 import os
@@ -190,13 +191,13 @@ def test_relaunch_and_restore_fill_missing_uuid_first():
     i_hint = src.find("_claude_session_hint(")
     i_actual = src.find("_actual_claude_home(")
     assert i_hint != -1 and i_hint < i_actual, "uuid 空的時候要先補，才判斷家目錄"
-    block = inspect.getsource(main.Api)
+    block = api_class_source(main.Api)
     block = block[block.find("soft restore from config"):]
     assert block.find("_claude_session_hint(") < block.find("_claude_transcript_exists(csid)")
 
 
 def _body(fn):
-    return inspect.getsource(fn)
+    return fold_host(inspect.getsource(fn))
 
 
 def test_relaunch_measures_actual_home_before_resume():
@@ -213,7 +214,7 @@ def test_relaunch_measures_actual_home_before_resume():
 
 
 def test_soft_restore_keeps_home_or_carries_before_spawn():
-    src = inspect.getsource(main.Api)
+    src = api_class_source(main.Api)
     start = src.find("soft restore from config")
     assert start != -1
     block = src[start:]

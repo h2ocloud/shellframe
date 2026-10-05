@@ -14,6 +14,7 @@ drop handler 原本完全沒判斷遠端，檔案就這樣靜默消失。讀檔�
 
 跑法：.venv/bin/python tests_remote_tab_features.py
 """
+from _testsrc import app_source  # main.py + api_*.py mixins
 import inspect
 import sys
 from pathlib import Path
@@ -41,7 +42,7 @@ def check(name, ok, detail=""):
 
 
 idx = (HERE / "web/index.html").read_text(encoding="utf-8")
-main_src = (HERE / "main.py").read_text(encoding="utf-8")
+main_src = app_source()
 
 # ── 附檔封裝 ──
 check("frame_link 有 remote_attach_file", hasattr(frame_link.FrameLink, "remote_attach_file"))

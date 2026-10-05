@@ -9,6 +9,7 @@
 跑法：.venv/bin/python tests_bridge_autostart.py
 """
 
+from _testsrc import app_source  # main.py + api_*.py mixins
 import ast
 import os
 import pathlib
@@ -24,7 +25,7 @@ def check(name, cond):
 
 
 def main():
-    src = pathlib.Path(__file__).with_name("main.py").read_text(encoding="utf-8")
+    src = app_source()
     tree = ast.parse(src)
 
     # 1. The autostart exists at all.

@@ -8,6 +8,7 @@ working；而 status monitor 的 idle gating 又因為 PTY 不再輸出而跳過
 
 跑法：.venv/bin/python tests_status_refresh.py
 """
+from _testsrc import app_source  # main.py + api_*.py mixins
 import json
 import re
 import sys
@@ -75,7 +76,7 @@ r = json.loads(api.refresh_agent_status(""))
 check("零分頁不炸", r["refreshed"] == 0, str(r))
 
 # 定期重算的常數要真的存在（前端按鈕只能救手動，安靜的分頁靠這個）
-mono = (HERE / "main.py").read_text(encoding="utf-8")
+mono = app_source()
 m = re.search(r"HOOK_RESET_INTERVAL = (\d+(?:\.\d+)?)", mono)
 check("status monitor 有五分鐘定期重算", bool(m) and float(m.group(1)) == 300.0,
       f"HOOK_RESET_INTERVAL={m.group(1) if m else '找不到'}")

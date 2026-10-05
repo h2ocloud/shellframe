@@ -15,6 +15,7 @@ start_bridge 的「註冊現有分頁」那一圈因此一個都沒跑到；UI �
 
 跑法：.venv/bin/python tests_bridge_session_sync.py
 """
+from _testsrc import app_source  # main.py + api_*.py mixins
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -125,7 +126,7 @@ api5._sync_bridge_sessions()
 check("一邊註冊失敗，另一邊照樣補上", "s1" in lb2.slots, str(sorted(lb2.slots)))
 
 # ── 7. 接線：還原完與 bridge 自啟後都要同步 ───────────────────────────────
-src = (HERE / "main.py").read_text(encoding="utf-8")
+src = app_source()
 restore = src.split("def restore_tmux_sessions")[1].split("\n    def ")[0]
 check("分頁還原的兩個返回點都同步",
       restore.count("self._sync_bridge_sessions()") == 2,

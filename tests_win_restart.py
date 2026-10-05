@@ -11,6 +11,7 @@ Windows 上永遠都有 session，等於更新下載得下來卻永遠套用不�
 跑法：.venv/bin/python tests_win_restart.py
 """
 
+from _testsrc import app_source  # main.py + api_*.py mixins
 import ast
 import pathlib
 import re
@@ -27,7 +28,7 @@ def check(name, cond):
 
 def main():
     here = pathlib.Path(__file__).parent
-    src = (here / "main.py").read_text(encoding="utf-8")
+    src = app_source()
     js = (here / "web" / "index.html").read_text(encoding="utf-8")
 
     tree = ast.parse(src)

@@ -14,6 +14,7 @@
 
 跑法：.venv/bin/python tests_link_maintenance.py
 """
+from _testsrc import app_source  # main.py + api_*.py mixins
 import inspect
 import json
 import sys
@@ -43,7 +44,7 @@ def check(name, ok, detail=""):
 
 FL = frame_link.FrameLink
 fl_src = (HERE / "frame_link.py").read_text(encoding="utf-8")
-main_src = (HERE / "main.py").read_text(encoding="utf-8")
+main_src = app_source()
 idx = (HERE / "web/index.html").read_text(encoding="utf-8")
 
 # ── 白名單 ────────────────────────────────────────────────────────────────

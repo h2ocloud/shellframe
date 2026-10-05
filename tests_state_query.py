@@ -14,6 +14,7 @@ JSON，讓外部調度者分得出「在忙」「在等人」「撞到錯誤」�
 
 跑法：.venv/bin/python tests_state_query.py
 """
+from _testsrc import app_source  # main.py + api_*.py mixins
 import json
 import sys
 import time
@@ -169,7 +170,7 @@ for secs, want in [(5, "5s"), (90, "1m"), (7325, "2h02m"), (90000, "1d"), (-1, "
     check(f"時間格式 {secs} → {want}", sfctl._fmt_age(secs) == want, sfctl._fmt_age(secs))
 
 # ── 接線 ───────────────────────────────────────────────────────────────────
-main_src = (HERE / "main.py").read_text(encoding="utf-8")
+main_src = app_source()
 sfctl_src = (HERE / "sfctl.py").read_text(encoding="utf-8")
 fl_src = (HERE / "frame_link.py").read_text(encoding="utf-8")
 check("後端有 state 指令", 'elif cmd == "state":' in main_src)
