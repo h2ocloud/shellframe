@@ -115,8 +115,8 @@ From the 0.38 architecture review; each needs its own change and tests.
   a second queued message replaces the first one's reply marker.
 - The Telegram bridge calls the host through a single command/result file pair
   (`_sfctl_call`); concurrent calls can overwrite each other.
-- About 25 call sites do load → modify → save without holding the config lock
-  across the update (lost update between writers).
+- 22 functions do load → modify → save without holding the config lock across
+  the update (lost update between writers).
 - `_execute_sfctl` is a 1,000-line `if/elif` chain; a table of handlers would let
   sfctl help, the HTTP API and allowlists come from one place.
 - `web/index.html` is one 8.5k-line IIFE with ad-hoc RPC calls and polling.
