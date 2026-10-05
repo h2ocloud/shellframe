@@ -564,11 +564,37 @@ def update_config(mutator):
         return cfg
 
 
+# 最後一次成功解析的 config.json 原文。讀到壞檔（另一個寫入者寫到一半、磁碟錯誤）
+# 時退回這份，而不是 DEFAULT_CONFIG——後者一旦被任何呼叫端 save 回去，使用者的
+# presets、帳號、bot token、配對對象就全被洗掉。
+_LAST_GOOD_CONFIG_TEXT = None
+
+
+def _read_config_json():
+    """Parse config.json; on failure retry briefly, then fall back to the last good copy.
+
+    Returns None only when the file cannot be parsed and nothing good was ever read.
+    """
+    global _LAST_GOOD_CONFIG_TEXT
+    for attempt in range(3):
+        try:
+            text = CONFIG_FILE.read_text(encoding='utf-8')
+            cfg = json.loads(text)
+            _LAST_GOOD_CONFIG_TEXT = text
+            return cfg
+        except Exception:
+            if attempt < 2:
+                time.sleep(0.05)
+    if _LAST_GOOD_CONFIG_TEXT is not None:
+        _dlog("config", "config.json unreadable; using the last good copy instead of defaults")
+        return json.loads(_LAST_GOOD_CONFIG_TEXT)
+    return None
+
+
 def load_config():
     if CONFIG_FILE.exists():
-        try:
-            cfg = json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
-        except Exception:
+        cfg = _read_config_json()
+        if cfg is None:
             return DEFAULT_CONFIG.copy()
         # Offer a preset for every supported AI CLI, once each. Tracking which
         # ones were already offered (rather than a single "migrated" flag) is
@@ -3510,6 +3536,16 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                                "label": getattr(s, '_custom_label', None)})
         return json.dumps(result)
 
+    _SID_LOCK = threading.Lock()
+
+    def _next_sid(self) -> str:
+        """Hand out the next tab id. new_session is called from pywebview's per-call
+        threads, the sfctl watcher and the bridges at once; an unlocked
+        ``self._counter += 1`` can give two tabs the same sid."""
+        with self._SID_LOCK:
+            self._counter += 1
+            return f"s{self._counter}"
+
     def new_session(self, cmd: str, cols: int, rows: int, source: str = "manual",
                     handoff: bool = False, inherit_accounts: bool = True) -> str:
         cmd = _canonical_cmd(cmd)
@@ -3519,8 +3555,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         account_refs = ACCOUNT_MANAGER.session_refs(cfg) if inherit_accounts else {
             provider: None for provider in account_manager.PROVIDERS
         }
-        self._counter += 1
-        sid = f"s{self._counter}"
+        sid = self._next_sid()
         _dlog("lifecycle", f"new_session sid={sid} cmd={cmd!r} cols={cols} rows={rows} source={source!r}")
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set,
                           account_refs=account_refs)

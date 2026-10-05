@@ -6,6 +6,107 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.38.0 (2026-10-05)
+
+### Fixes
+
+- **An unreadable config.json no longer resets ShellFrame to its defaults.**
+  `load_config()` returned `DEFAULT_CONFIG` whenever the file failed to parse,
+  for example when it was read while another writer was half-way through it.
+  The next caller that saved then wrote the defaults back, wiping presets,
+  account profiles, the bot token and paired peers. It now retries briefly and
+  falls back to the last copy it parsed successfully; the defaults are used only
+  if nothing was ever read. Regression test: `tests_hardening.py`.
+
+  **config.json 讀不懂時，不會再把 ShellFrame 重設成預設值。** 只要檔案解析
+  失敗（例如另一個寫入者寫到一半時被讀到），`load_config()` 就回傳
+  `DEFAULT_CONFIG`；下一個存檔的呼叫端就把預設值寫回去，presets、帳號 profile、
+  bot token、配對對象全被洗掉。現在會短暫重試，再退回上一份成功解析的內容；
+  只有從沒讀成功過才用預設值。回歸測試：`tests_hardening.py`。
+
+- **The Telegram settings writer no longer rewrites config.json unsafely.** It
+  wrote the file in place (not atomically, under a different lock from the app),
+  so the app could read a half-written file. And when it could not parse the
+  file it started from an empty copy and wrote back only the settings. It now
+  writes through a temp file and `os.replace`, and refuses to write when the
+  existing file cannot be read. Regression test: `tests_hardening.py`.
+
+  **Telegram 的設定寫入不再以不安全的方式改寫 config.json。** 它原本直接覆寫
+  檔案（非原子寫入、用的鎖和 App 不同），App 可能讀到寫一半的檔；而且讀不懂
+  檔案時會從空白內容開始，只寫回 settings。現在改成先寫暫存檔再 `os.replace`，
+  既有檔案讀不懂時拒絕寫入。回歸測試：`tests_hardening.py`。
+
+- **`/group` from Telegram reaches its handler.** The command was in the bot menu
+  but missing from the bridge's own-command list, so the text was typed into the
+  CLI instead. A check now requires every menu command to be handled.
+
+  **Telegram 的 `/group` 會送到它的處理程式。** 這個指令在 bot 選單裡，卻不在
+  bridge 自己處理的指令清單中，所以被當成文字打進 CLI。現在有一項檢查要求選單
+  裡的每個指令都有人處理。
+
+- **Tabs restored after the LINE bridge started now reach LINE.** The app
+  registers late tabs with the same keywords for both bridges, but
+  `LineBridge.register_session` did not accept them; the `TypeError` was
+  swallowed, so LINE never saw those tabs. Both bridges now accept the same
+  keywords, checked against the host's actual call.
+
+  **LINE bridge 啟動後才還原的分頁，現在也會出現在 LINE。** App 用同一組參數
+  把晚到的分頁註冊給兩個 bridge，但 `LineBridge.register_session` 不收這些參數；
+  `TypeError` 被吞掉，LINE 就一直看不到那些分頁。現在兩邊收同一組參數，並對照
+  App 實際的呼叫做檢查。
+
+- **Two tabs opened at the same moment can no longer get the same id.** Tabs are
+  created from several threads at once (UI calls, sfctl, the bridges) and the id
+  counter was incremented without a lock. Ids now come from a locked allocator.
+
+  **同時開兩個分頁，不會再拿到同一個 id。** 分頁會從多個執行緒同時建立（UI、
+  sfctl、bridge），而 id 計數器遞增時沒有上鎖。現在改由有鎖的配發器發 id。
+
+- **The status monitor no longer drops a whole update when a tab closes during a
+  sweep.** Its cleanup iterated dictionaries that other threads were changing;
+  the resulting error was swallowed along with that round of status. It now
+  iterates a snapshot.
+
+  **狀態監看在掃描中途有分頁關閉時，不會再整輪狀態一起丟掉。** 清理步驟遍歷的
+  dict 同時被其他執行緒修改，產生的錯誤被吞掉，那一輪狀態也一起不見。現在改為
+  遍歷快照。
+
+### Internal
+
+- **The `Api` class is split into ten domain modules, without behaviour change.**
+  153 methods (4,178 lines) moved verbatim from `main.py` into `api_accounts`,
+  `api_bridges`, `api_desktop`, `api_extensions`, `api_glasses`, `api_link`,
+  `api_remote`, `api_status`, `api_update` and `api_voice`. `main.py` went from
+  10,306 to about 6,000 lines and the `Api` class from 7,254 lines and 242
+  methods to about 2,950 lines and 106 methods. Moved code reaches main.py's
+  globals through a late-bound handle (`api_host`), so monkeypatching and the
+  Telegram hot reload behave as before. Checked mechanically: the same 323 `Api`
+  attributes with identical normalized syntax trees, the same 144 public js_api
+  names, and all 112 methods the UI calls.
+
+  **`Api` 類別拆成十個領域模組，行為不變。** 153 個方法（4,178 行）原封不動從
+  `main.py` 搬進 `api_accounts`、`api_bridges`、`api_desktop`、`api_extensions`、
+  `api_glasses`、`api_link`、`api_remote`、`api_status`、`api_update`、`api_voice`。
+  `main.py` 從 10,306 行降到約 6,000 行，`Api` 類別從 7,254 行、242 個方法降到約
+  2,950 行、106 個方法。搬出去的程式透過 late-bound 的 `api_host` 取用 main.py
+  的全域，monkeypatch 和 Telegram 熱重載的行為都跟以前一樣。以程式機械驗證：
+  `Api` 一樣是 323 個屬性、正規化語法樹完全相同、公開 js_api 一樣 144 個、UI
+  呼叫的 112 個方法都在。
+
+- **Architecture fitness checks and a map for contributors.**
+  `tests_architecture.py` caps the size of `main.py`, the `Api` class and every
+  module. It also forbids mixins from importing `main` and any method from being
+  defined twice, and requires every js_api call in the UI to exist on the
+  backend. `docs/architecture.md` maps modules, data flows and threads;
+  `AGENTS.md` (imported by `CLAUDE.md`) gives coding agents the working rules.
+  Tests that read source now go through `_testsrc.app_source()`.
+
+  **架構健康檢查與給貢獻者的地圖。** `tests_architecture.py` 限制 `main.py`、
+  `Api` 類別與每個模組的大小，禁止 mixin import `main`、禁止同名方法定義兩次，
+  並要求 UI 呼叫的每個 js_api 方法在後端都存在。`docs/architecture.md` 整理模組、
+  資料流與執行緒；`AGENTS.md`（由 `CLAUDE.md` 匯入）給 coding agent 工作守則。
+  需要讀原始碼的測試改走 `_testsrc.app_source()`。
+
 ## v0.37.14 (2026-10-05)
 
 ### Fixes

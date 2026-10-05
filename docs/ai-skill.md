@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellFrame v0.37.0
-   version: 0.37.0
+OK ShellFrame v0.38.0
+   version: 0.38.0
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -211,6 +211,7 @@ leaving to whom rather than silently covering everything.
 | Role groups (`experimental_groups`), `sfctl group-*`, TG `/group` | 0.37.0 |
 | `sfctl skill` — this document, from the running build | 0.37.0 |
 | Per-role model pinning, `runs_on`, `agent_blocked` in the tab list | 0.37.0 |
+| TG `/group` actually reaches the bridge (listed since 0.37.0, but typed into the CLI before 0.38.0) | 0.38.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

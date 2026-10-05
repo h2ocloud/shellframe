@@ -261,7 +261,11 @@ class LineBridge(BridgeBase):
             or (gateway_worker_cmd or "").strip()
             or "codex"
         )
-    def register_session(self, sid: str, label: str, write_fn, peek_fn=None):
+    def register_session(self, sid: str, label: str, write_fn, peek_fn=None,
+                         prepare_fn=None, cmd: str = "", cols: int = 0, rows: int = 0):
+        # The host registers tabs with the same keywords for TG and LINE; LINE
+        # does not use prepare_fn/cmd/geometry yet but must accept them, or the
+        # TypeError (swallowed by the caller) drops every late-restored tab.
         with self._slots_lock:
             if sid in self.slots:
                 self.slots[sid].label = label
@@ -269,6 +273,9 @@ class LineBridge(BridgeBase):
                 return
             self.slots[sid] = LineSessionSlot(sid, label, write_fn, len(self._slot_order) + 1, peek_fn=peek_fn)
             self._slot_order.append(sid)
+
+    def refresh_commands(self):
+        """LINE has no bot command menu. Present so the host can treat both bridges alike."""
 
     def unregister_session(self, sid: str):
         with self._slots_lock:

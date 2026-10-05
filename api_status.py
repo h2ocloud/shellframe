@@ -239,9 +239,9 @@ class StatusApiMixin:
                         time.sleep(1.0)
                         continue
                     now = time.time()
-                    for stale in [k for k in cache if k not in self.sessions]:
+                    for stale in [k for k in list(cache) if k not in self.sessions]:
                         cache.pop(stale, None)
-                    for stale in [k for k in self._hook_events if k not in self.sessions]:
+                    for stale in [k for k in list(self._hook_events) if k not in self.sessions]:
                         self._hook_events.pop(stale, None)
                     if now - last_hook_reset >= HOOK_RESET_INTERVAL:
                         last_hook_reset = now

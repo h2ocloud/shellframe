@@ -1,13 +1,14 @@
 # ShellFrame 開發 / 發布注意事項
 
 > 累積的 gotcha 與慣例，避免重踩。改動前先讀。
+> 模組地圖、資料流、執行緒模型與「新程式碼放哪」的規則見 [`docs/architecture.md`](docs/architecture.md)。
 
 ## Reload vs Restart（哪種改動用哪個）
 
 | 改到的檔 | 生效方式 |
 |---|---|
 | `bridge_telegram.py` / `filters.json` | `sfctl reload`（hot-reload） |
-| `main.py` / `web/index.html` / `sfctl.py` / 新模組（如 `board.py`） | **`sfctl restart`（必須）** |
+| `main.py` / `api_*.py` / `web/index.html` / `sfctl.py` / 新模組（如 `board.py`） | **`sfctl restart`（必須）** |
 
 - `sfctl reload` → `hot_reload_bridge()`：`importlib.reload(bridge_telegram)` + **重建 `TelegramBridge` instance**，保留 PTY sessions、polling offset、per-slot 狀態（`sent_texts` / `sent_responses` / pending_menu）。
 - ⚠️ 改了 `main.py` / `web` / 新 import 的模組卻只 `reload`，**不會生效**——一定要 `restart`。`restart` 時 tmux sessions 會留著。

@@ -613,12 +613,18 @@ def _update_settings(patch: dict) -> bool:
         try:
             cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
             cfg = _read_config()
+            if not cfg and cfg_file.exists() and cfg_file.stat().st_size > 0:
+                # _read_config() 讀不懂時回 {}；照寫下去整份 config 只剩 settings。
+                _blog("  _update_settings: config.json unreadable; not overwriting it\n")
+                return False
             settings = cfg.get("settings") or {}
             settings.update(patch)
             cfg["settings"] = settings
             cfg_file.parent.mkdir(parents=True, exist_ok=True)
-            cfg_file.write_text(
-                json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+            # 原子寫入：main.py 隨時可能在讀 config.json，寫一半的檔會被當成壞檔。
+            tmp = cfg_file.with_suffix(".json.tg.tmp")
+            tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+            _os.replace(tmp, cfg_file)
             _SETTINGS_CACHE["ts"] = 0.0  # invalidate so the write is seen at once
             return True
         except Exception as e:
@@ -5760,7 +5766,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths and not escaped_slash:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜', 'delay', 'link', 'relaunch') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜', 'delay', 'link', 'relaunch', 'group', 'groups') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
