@@ -361,6 +361,105 @@ def test_profile_oauth_prefers_keychain_over_seed_file():
         assert read_claude_profile_oauth(td, lambda d: {})["accessToken"] == "seed"
 
 
+def _file_login_manager(td, home_claude=None, home_codex=None):
+    """Windows/Linux-shaped manager: no Keychain anywhere, tokens live in files."""
+    home = os.path.join(td, "home")
+    os.makedirs(os.path.join(home, ".claude"))
+    os.makedirs(os.path.join(home, ".codex"))
+    json.dump({"oauthAccount": {"emailAddress": "me@example.test"}},
+              open(os.path.join(home, ".claude.json"), "w"))
+    json.dump(home_claude or {"claudeAiOauth": {"accessToken": "", "refreshToken": "",
+                                                 "expiresAt": 0, "subscriptionType": "pro"}},
+              open(os.path.join(home, ".claude", ".credentials.json"), "w"))
+    if home_codex:
+        json.dump(home_codex, open(os.path.join(home, ".codex", "auth.json"), "w"))
+    return home, AccountManager(root=os.path.join(td, "profiles"), home=home,
+                                keychain_getter=lambda: {},
+                                profile_keychain_reader=lambda d: {})
+
+
+def test_ensure_never_wipes_a_login_made_inside_a_profile_tab():
+    """回歸（日常使用中回報：連到另一台 Windows 機器，/login 完馬上又過期）。
+
+    根因：ensure() 每次查帳號都把「預設目錄」的登入寫回 profile 的
+    .credentials.json。Windows/Linux 沒有 Keychain，profile 分頁裡 /login 的 token
+    就寫在這個檔，幾分鐘內被預設目錄那份（空殼）蓋掉，等於沒登入。"""
+    with tempfile.TemporaryDirectory() as td:
+        home, manager = _file_login_manager(td)
+        cfg = {}
+        manager.ensure(cfg)
+        ref = cfg["accounts"]["global"]["claude"]
+        target = os.path.join(td, "profiles", "claude", ref, ".credentials.json")
+        # the user logs in from a tab pinned to this profile
+        json.dump({"claudeAiOauth": {"accessToken": "fresh-login", "refreshToken": "fresh-refresh",
+                                     "expiresAt": 9999999999999}}, open(target, "w"))
+        for _ in range(3):           # UI refresh, usage probe, next new tab ...
+            manager.ensure(cfg)
+        saved = json.load(open(target))["claudeAiOauth"]
+        assert saved["accessToken"] == "fresh-login" and saved["refreshToken"] == "fresh-refresh", saved
+
+
+def test_ensure_never_wipes_a_codex_login_made_inside_a_profile():
+    with tempfile.TemporaryDirectory() as td:
+        codex = {"tokens": {"access_token": "seed-access", "refresh_token": "seed-refresh",
+                            "account_id": "acct-1"}}
+        home, manager = _file_login_manager(td, home_codex=codex)
+        cfg = {}
+        manager.ensure(cfg)
+        ref = cfg["accounts"]["global"]["codex"]
+        target = os.path.join(td, "profiles", "codex", ref, "auth.json")
+        json.dump({"tokens": {"access_token": "rotated-access", "refresh_token": "rotated-refresh",
+                              "account_id": "acct-1"}}, open(target, "w"))
+        manager.ensure(cfg)
+        assert json.load(open(target))["tokens"]["refresh_token"] == "rotated-refresh"
+
+
+def test_ensure_still_seeds_a_profile_that_has_no_login_yet():
+    with tempfile.TemporaryDirectory() as td:
+        real = {"claudeAiOauth": {"accessToken": "from-default", "refreshToken": "r", "expiresAt": 1}}
+        home, manager = _file_login_manager(td, home_claude=real)
+        cfg = {}
+        manager.ensure(cfg)
+        ref = cfg["accounts"]["global"]["claude"]
+        target = os.path.join(td, "profiles", "claude", ref, ".credentials.json")
+        assert json.load(open(target))["claudeAiOauth"]["accessToken"] == "from-default"
+        # a blank stub in the profile is replaced once the default login has real tokens
+        json.dump({"claudeAiOauth": {"accessToken": "", "refreshToken": "", "expiresAt": 0}},
+                  open(target, "w"))
+        manager.ensure(cfg)
+        assert json.load(open(target))["claudeAiOauth"]["accessToken"] == "from-default"
+
+
+def test_blank_default_login_never_replaces_a_real_one_even_when_forced():
+    with tempfile.TemporaryDirectory() as td:
+        home, manager = _file_login_manager(td)
+        cfg = {}
+        manager.ensure(cfg)
+        ref = cfg["accounts"]["global"]["claude"]
+        target = os.path.join(td, "profiles", "claude", ref, ".credentials.json")
+        json.dump({"claudeAiOauth": {"accessToken": "fresh-login", "refreshToken": "fresh-refresh"}},
+                  open(target, "w"))
+        manager.sync_current(cfg, "claude")        # explicit "refresh logged-in accounts"
+        assert json.load(open(target))["claudeAiOauth"]["accessToken"] == "fresh-login"
+
+
+def test_explicit_refresh_still_adopts_a_real_default_login():
+    with tempfile.TemporaryDirectory() as td:
+        home, manager = _file_login_manager(td)
+        cfg = {}
+        manager.ensure(cfg)
+        ref = cfg["accounts"]["global"]["claude"]
+        target = os.path.join(td, "profiles", "claude", ref, ".credentials.json")
+        json.dump({"claudeAiOauth": {"accessToken": "old-profile-login", "refreshToken": "old"}},
+                  open(target, "w"))
+        json.dump({"claudeAiOauth": {"accessToken": "new-default-login", "refreshToken": "new"}},
+                  open(os.path.join(home, ".claude", ".credentials.json"), "w"))
+        manager.ensure(cfg)                        # implicit: leaves the profile alone
+        assert json.load(open(target))["claudeAiOauth"]["accessToken"] == "old-profile-login"
+        manager.sync_current(cfg, "claude")        # explicit: the user asked for it
+        assert json.load(open(target))["claudeAiOauth"]["accessToken"] == "new-default-login"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

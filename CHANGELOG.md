@@ -6,6 +6,37 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.37.14 (2026-10-05)
+
+### Fixes
+
+- **A login made inside a profile tab no longer disappears a few minutes
+  later.** Reported in daily use on a Windows machine: after `/login` in a tab
+  pinned to an account profile, the tab said the login had expired again within
+  minutes, every time. Every account query (the sidebar refresh, the usage
+  probe, opening a tab) re-seeded each profile's credential file from the
+  default login directory. Without a Keychain, a profile tab's tokens live in
+  that very file, so the next query overwrote the fresh login with the default
+  directory's copy, which is often a blank stub left behind by an earlier
+  failed refresh (empty tokens, `expiresAt: 0`). It also left two copies
+  sharing one refresh-token lineage. The Keychain check added in the previous
+  release only protected macOS. A profile is now seeded only while it holds
+  no usable token. The explicit "refresh logged-in accounts" action may still
+  replace it, but only with a credential that actually has tokens. Codex
+  `auth.json` had the same overwrite and gets the same rule. 5 cases in
+  `tests_accounts.py`, 4 of which fail on the old behaviour.
+
+  **在帳號 profile 分頁裡登入的憑證，不會再過幾分鐘就消失。** 日常使用中在一台
+  Windows 機器上回報：釘在某個帳號 profile 的分頁 `/login` 之後，幾分鐘內又顯示
+  登入過期，每次都這樣。每次查帳號（側欄刷新、用量探針、開分頁）都會把預設登入目錄
+  的憑證重新寫進各 profile 的憑證檔。沒有 Keychain 時，profile 分頁的 token 就
+  存在這個檔裡，所以下一次查詢就用預設目錄那份蓋掉剛登入的憑證，而預設目錄那份
+  常常是先前續期失敗留下的空殼（token 為空、`expiresAt: 0`）。這樣也會讓兩份
+  副本共用同一條 refresh token，互相踢掉。前一版加的 Keychain 檢查只保護了
+  macOS。現在 profile 只有在「沒有可用 token」時才會被播種；使用者明確按「重新
+  整理已登入」仍可覆蓋，但來源必須真的帶有 token。Codex 的 `auth.json` 有同樣的
+  覆蓋問題，套用同一條規則。`tests_accounts.py` 新增 5 項，其中 4 項在舊行為下會失敗。
+
 ## v0.37.13 (2026-10-03)
 
 ### Internal

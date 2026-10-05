@@ -86,6 +86,23 @@ def read_claude_profile_oauth(config_dir, keychain_reader=None) -> dict:
         return {}
 
 
+def _has_tokens(provider: str, credential) -> bool:
+    """True when a credential blob carries a usable token (not a blank stub).
+
+    Claude Code leaves a stub with empty tokens and ``expiresAt: 0`` behind
+    after a failed refresh; a stub like that is worth nothing as a seed and
+    must never replace a real login.
+    """
+    if not isinstance(credential, dict):
+        return False
+    if provider == "codex":
+        tokens = credential.get("tokens") or {}
+        return bool(tokens.get("access_token") or tokens.get("refresh_token")
+                    or credential.get("OPENAI_API_KEY"))
+    oauth = credential.get("claudeAiOauth") or {}
+    return bool(oauth.get("accessToken") or oauth.get("refreshToken"))
+
+
 def _chmod_private(path: Path, mode: int):
     try:
         path.chmod(mode)
@@ -200,7 +217,19 @@ class AccountManager:
             return self._discover_claude()
         raise ValueError(f"unknown provider: {provider}")
 
-    def write_profile(self, provider: str, ref: str, credential: dict):
+    def write_profile(self, provider: str, ref: str, credential: dict, force: bool = False):
+        """Seed a profile's credential file; never clobber a login that lives there.
+
+        The profile directory is the CLI's live config dir (CLAUDE_CONFIG_DIR /
+        CODEX_HOME): a /login inside a profile tab writes its tokens into this
+        very file and the CLI refreshes them in place. ``ensure()`` runs on
+        every account query, so copying the default login over a profile that
+        already holds its own tokens wiped that login within minutes (and made
+        two copies share one refresh-token lineage). A profile is therefore
+        only seeded while it has no usable token. ``force`` is for the explicit
+        "refresh logged-in accounts" action, and even then a credential without
+        tokens never replaces one that has them.
+        """
         directory = self._profile_dir(provider, ref)
         directory.mkdir(parents=True, exist_ok=True)
         _chmod_private(self.root, 0o700)
@@ -215,6 +244,13 @@ class AccountManager:
             # ~/.claude 跑時才會更新，往往早就過期，蓋過去只會害新分頁要重新登入。
             if self.profile_keychain_reader(directory):
                 return directory
+        incoming_live = _has_tokens(provider, credential)
+        if _has_tokens(provider, self._read_json(target)):
+            # 憑證檔本身就是 live 登入（Windows/Linux 沒有 Keychain，token 就在這個檔）。
+            if not (force and incoming_live):
+                return directory
+        elif target.exists() and not incoming_live:
+            return directory  # 空殼蓋空殼沒有意義，也不要把空殼寫進去
         with target.open("w", encoding="utf-8") as fh:
             json.dump(credential, fh, ensure_ascii=False)
             fh.write("\n")
@@ -225,7 +261,7 @@ class AccountManager:
         return {k: discovered.get(k, "") for k in
                 ("id", "email", "label", "plan", "organization")}
 
-    def _add_profile(self, accounts: dict, provider: str, discovered: dict):
+    def _add_profile(self, accounts: dict, provider: str, discovered: dict, force: bool = False):
         profiles = accounts["profiles"].setdefault(provider, [])
         ref = discovered["id"]
         item = self._metadata(discovered)
@@ -238,7 +274,7 @@ class AccountManager:
         if not replaced:
             item["updated_at"] = int(time.time())
             profiles.append(item)
-        self.write_profile(provider, ref, discovered.get("credential") or {})
+        self.write_profile(provider, ref, discovered.get("credential") or {}, force=force)
         return ref
 
     def ensure(self, cfg: dict) -> bool:
@@ -270,7 +306,7 @@ class AccountManager:
             discovered = self.discover(provider)
         if not discovered:
             return None
-        ref = self._add_profile(accounts, provider, discovered)
+        ref = self._add_profile(accounts, provider, discovered, force=True)
         if accounts["global"].get(provider) is None:
             accounts["global"][provider] = ref
         return ref
