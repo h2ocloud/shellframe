@@ -9525,17 +9525,26 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
-  // ── Right-click: select → copy. One right-click is ONE action. ──
-  // With a selection it only copies. Without one it pastes (Windows CMD style)
-  // everywhere except macOS, where Cmd+V is the paste and a right-click that
-  // finds no selection does nothing: the selection can be gone by then (the TUI
-  // redraws under it, the click arrives as ctrl-click, one click raising two
-  // contextmenu events) and a stray paste into a live agent's input box is far
-  // worse than a missed copy.
+  // ── Right-click: selection → copy; no selection → paste. One click, ONE action. ──
+  // The two never combine: a click that copies must not also paste. The selection
+  // can be gone by the time contextmenu fires (the TUI redraws under it, a
+  // ctrl-click arrives as button 0, one click can raise two contextmenu events),
+  // so a click that follows a copy within RIGHT_CLICK_QUIET_MS is that same click
+  // or its twin, never a request to paste.
+  const RIGHT_CLICK_QUIET_MS = 1500;
+  function _rightClickAction(sel, now, lastCopyAt) {
+    if (sel) return 'copy';
+    if (now - lastCopyAt < RIGHT_CLICK_QUIET_MS) return 'none';
+    return 'paste';
+  }
+  function _logRightClick(action, sel, sinceCopyMs) {
+    // 只記決策，不記內容。「複製又貼上」這類回報靠這行才分得出走了哪條路。
+    try { pywebview.api.js_debug('rightclick', JSON.stringify(
+      { action, sel: sel ? sel.length : 0, sinceCopyMs })); } catch (_) {}
+  }
   // Capture selection on mousedown because xterm.js clears it before contextmenu fires
   let _pendingSel = '';
   let _lastRightClickCopyAt = 0;
-  const RIGHT_CLICK_QUIET_MS = 1500;
   $wrap.addEventListener('mousedown', (e) => {
     // macOS turns ctrl+click into a secondary click: button 0 + ctrlKey.
     if ((e.button === 2 || (e.button === 0 && e.ctrlKey)) && activeId && sessions[activeId]) {
@@ -9551,22 +9560,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     _pendingSel = '';
     if (!activeId || !sessions[activeId]) return;
     const term = sessions[activeId].term;
-    if (sel) {
-      _lastRightClickCopyAt = Date.now();
+    const now = Date.now();
+    const action = _rightClickAction(sel, now, _lastRightClickCopyAt);
+    _logRightClick(action, sel, _lastRightClickCopyAt ? now - _lastRightClickCopyAt : -1);
+    if (action === 'copy') {
+      _lastRightClickCopyAt = now;
       // Drop the highlight only once the copy is confirmed; on failure keep it
       // so the next right-click retries instead of silently losing it.
       if (await copySelection(sel, 'live-rightclick')) term.clearSelection();
-      return;
+    } else if (action === 'paste') {
+      // Right-click paste mirrors Cmd+V: image / file in clipboard goes
+      // through the attach pipeline, not raw text. The browser's
+      // synthetic ClipboardEvent only fires for keyboard / menu paste,
+      // so we drive the same machinery here ourselves.
+      _rightClickPaste();
     }
-    // Nothing selected. Right after a copy this is the same click (or its
-    // twin event), never a request to paste.
-    if (Date.now() - _lastRightClickCopyAt < RIGHT_CLICK_QUIET_MS) return;
-    if (IS_MAC) return;
-    // Right-click paste mirrors Cmd+V: image / file in clipboard goes
-    // through the attach pipeline, not raw text. The browser's
-    // synthetic ClipboardEvent only fires for keyboard / menu paste,
-    // so we drive the same machinery here ourselves.
-    _rightClickPaste();
   });
 
   async function _rightClickPaste() {

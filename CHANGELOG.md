@@ -6,6 +6,33 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.38.3 (2026-10-06)
+
+### Fixes
+
+- **Right-click paste is back on macOS.** v0.38.2 stopped a right-click with
+  nothing selected from doing anything on macOS, to prevent a copy from also
+  pasting. That removed paste for everyone who pastes with the right button, and
+  the guard it was meant to be was already covered by the rule that a click
+  within 1.5 seconds of a copy is never a paste. The rules are now: a selection
+  is copied and nothing else; no selection pastes, on every platform, except
+  within 1.5 seconds of a copy. The decision is a small pure function
+  (`_rightClickAction`) that `tests_right_click.js` runs for real; the previous
+  test only matched source text and passed with the behaviour backwards. Every
+  right-click now writes one line to the debug log (`[js:rightclick]` with the
+  action taken, the selection length, and ms since the last copy, never the
+  text), so a future "it copied and pasted" report can be traced to the path
+  that fired.
+
+  **macOS 上右鍵貼上回來了。** v0.38.2 為了避免「複製時順便貼上」，讓 macOS 上
+  沒有選取的右鍵什麼都不做；結果習慣用右鍵貼上的人貼不了。那個保護其實已經由
+  「複製後 1.5 秒內的右鍵一律不貼」涵蓋。現在的規則是：有選取只複製、不做別的；
+  沒有選取就貼上（所有平台一樣），只有複製後 1.5 秒內例外。決策被抽成一個小的純
+  函式（`_rightClickAction`），由 `tests_right_click.js` 實際執行驗證；上一版的
+  測試只比對原始碼字串，行為寫反了它也照過。每次右鍵現在會在 debug log 留一行
+  （`[js:rightclick]`，記錄做了什麼、選取長度、距離上次複製幾毫秒，不含內容），
+  下次再有「複製又貼上」的回報，可以對到是哪條路徑觸發的。
+
 ## v0.38.2 (2026-10-06)
 
 ### Fixes
