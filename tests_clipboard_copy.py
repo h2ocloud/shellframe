@@ -156,6 +156,22 @@ check("capture is taken BEFORE the copy's await (a quick 2nd right-click keeps i
       and h.index("_pendingSel = '';") < h.index("await copySelection"))
 check("selection is cleared only after a confirmed write",
       re.search(r"if \(await copySelection\(sel, 'live-rightclick'\)\) term\.clearSelection\(\)", h) is not None)
+# 一次右鍵只做一件事：有選取只複製；macOS 上沒選取也不貼上
+i_copy = h.find("await copySelection")
+i_after = h.find("return;", i_copy)
+check("right-click with a selection returns right after the copy (never reaches paste)",
+      i_copy != -1 and i_after != -1 and "_rightClickPaste()" not in h[:i_after])
+check("a right-click right after a copy is ignored, not turned into a paste",
+      "_lastRightClickCopyAt" in h and "RIGHT_CLICK_QUIET_MS" in h
+      and h.index("_lastRightClickCopyAt") < h.index("_rightClickPaste()"))
+check("macOS never pastes on right-click (Cmd+V is the paste)",
+      "if (IS_MAC) return;" in h and h.index("if (IS_MAC) return;") < h.index("_rightClickPaste()"))
+md = re.search(r"\$wrap\.addEventListener\('mousedown'.*?\n  \}\);", html, re.S)
+check("ctrl+click (macOS secondary click) captures the selection too",
+      bool(md) and "e.ctrlKey" in md.group(0) and "getSelection()" in md.group(0))
+hist = re.search(r"overlay\.addEventListener\('contextmenu'.*?\n      \}\);", html, re.S)
+check("history overlay right-click only ever copies",
+      bool(hist) and "_rightClickPaste" not in hist.group(0) and "stopPropagation" in hist.group(0))
 for tag in ("history-rightclick", "history-ctrl-c", "live-ctrl-c"):
     check(f"'{tag}' surface is wired", f"'{tag}'" in html)
 

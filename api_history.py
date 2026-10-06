@@ -1017,6 +1017,9 @@ class HistoryApiMixin:
         # 活畫面是渲染掉的，照原字算會多出 4 欄、整張表跟著歪。
         bare = [[cls._md_strip(c) for c in r] for r in rows]
         nat = [max(cls._disp_width(b[c]) for b in bare) + pad * 2 for c in range(n)]
+        # 畫不下就改直式：方框比 pane 寬，後面的斷行會把每條框線、每個儲存格切碎。
+        if width > 0 and sum(nat) + n + 1 > width:
+            return cls._render_md_table_vertical(rows, skin, width, ansi)
         if skin["table_stretch"] and width > 0:
             inner = max(sum(nat), width - (n + 1))
             add, rem = divmod(inner - sum(nat), n)
@@ -1049,6 +1052,26 @@ class HistoryApiMixin:
             out.append(row(r))
         out.append(rule("└", "┴", "┘"))
         return out
+
+    _VERTICAL_TABLE_RULE = 40    # 區塊間分隔線寬（Claude Code 2.1.284 實測）
+
+    @classmethod
+    def _render_md_table_vertical(cls, rows, skin, width, ansi):
+        """太寬的表格 → 每列一個「欄名: 值」區塊，區塊間一條細線（最後一塊後面沒有）。
+        格式照 Claude Code 2.1.284 的活畫面：欄名粗體加冒號，值太長由後面的斷行處理。"""
+        label = [cls._md_strip(h).strip() or f"({i + 1})" for i, h in enumerate(rows[0])]
+        B, BOLD = (skin["border"], skin["bold"]) if ansi else ("", "")
+        TEXT, R = (skin["text"], "\x1b[0m") if ansi else ("", "")
+        rule = B + "─" * min(cls._VERTICAL_TABLE_RULE, width) + R
+        out = []
+        for idx, r in enumerate(rows[1:]):
+            if idx:
+                out.append(rule)
+            for c, cell in enumerate(r):
+                value = cls._md_inline(cell, skin) if ansi else cls._md_strip(cell)
+                out.append(f"{TEXT}{BOLD}{label[c]}:{R}{TEXT} {value}{R}" if value
+                           else f"{BOLD}{label[c]}:{R}")
+        return out or [rule]
 
     @classmethod
     def _md_ansi_lines(cls, text: str, ansi: bool, skin=None, width: int = 0):

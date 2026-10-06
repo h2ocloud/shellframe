@@ -9525,11 +9525,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
-  // ── Right-click: select → copy, no select → paste (Windows CMD style) ──
+  // ── Right-click: select → copy. One right-click is ONE action. ──
+  // With a selection it only copies. Without one it pastes (Windows CMD style)
+  // everywhere except macOS, where Cmd+V is the paste and a right-click that
+  // finds no selection does nothing: the selection can be gone by then (the TUI
+  // redraws under it, the click arrives as ctrl-click, one click raising two
+  // contextmenu events) and a stray paste into a live agent's input box is far
+  // worse than a missed copy.
   // Capture selection on mousedown because xterm.js clears it before contextmenu fires
   let _pendingSel = '';
+  let _lastRightClickCopyAt = 0;
+  const RIGHT_CLICK_QUIET_MS = 1500;
   $wrap.addEventListener('mousedown', (e) => {
-    if (e.button === 2 && activeId && sessions[activeId]) {
+    // macOS turns ctrl+click into a secondary click: button 0 + ctrlKey.
+    if ((e.button === 2 || (e.button === 0 && e.ctrlKey)) && activeId && sessions[activeId]) {
       _pendingSel = sessions[activeId].term.getSelection() || '';
     }
   });
@@ -9543,16 +9552,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (!activeId || !sessions[activeId]) return;
     const term = sessions[activeId].term;
     if (sel) {
+      _lastRightClickCopyAt = Date.now();
       // Drop the highlight only once the copy is confirmed; on failure keep it
       // so the next right-click retries instead of silently losing it.
       if (await copySelection(sel, 'live-rightclick')) term.clearSelection();
-    } else {
-      // Right-click paste mirrors Cmd+V: image / file in clipboard goes
-      // through the attach pipeline, not raw text. The browser's
-      // synthetic ClipboardEvent only fires for keyboard / menu paste,
-      // so we drive the same machinery here ourselves.
-      _rightClickPaste();
+      return;
     }
+    // Nothing selected. Right after a copy this is the same click (or its
+    // twin event), never a request to paste.
+    if (Date.now() - _lastRightClickCopyAt < RIGHT_CLICK_QUIET_MS) return;
+    if (IS_MAC) return;
+    // Right-click paste mirrors Cmd+V: image / file in clipboard goes
+    // through the attach pipeline, not raw text. The browser's
+    // synthetic ClipboardEvent only fires for keyboard / menu paste,
+    // so we drive the same machinery here ourselves.
+    _rightClickPaste();
   });
 
   async function _rightClickPaste() {

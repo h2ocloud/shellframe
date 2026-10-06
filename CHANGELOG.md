@@ -6,6 +6,72 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.38.2 (2026-10-06)
+
+### Fixes
+
+- **A table too wide for the pane no longer falls apart in the scroll-up
+  history.** Reported as "the history styling keeps breaking". The history is
+  re-typeset from the conversation transcript, and its box tables were sized
+  from their content only, never from the pane. A table wider than the pane
+  became box lines wider than the pane, and the wrapping step that follows
+  then cut every rule and every cell into several pieces, leaving a shredded
+  grid. The same table in the live view is a vertical list. Measured on Claude
+  Code 2.1.284, which draws a table it cannot fit as one `label: value` block
+  per row, labels in bold, with a 40-column rule between blocks. The history
+  now does the same whenever the box would be wider than the pane (the opencode
+  style too, which was shredded the same way); a table that fits is still drawn
+  as a box, and an unknown pane width changes nothing. Not replicated: Claude
+  Code also wraps text *inside* cells of a moderately wide table; the history
+  shows such a table as blocks, which is plainer but never garbled. 21 cases in
+  `tests_history_wide_table.py`, screenshot in `qa-shots/history-wide-table.png`.
+
+  **太寬的表格不再在上滑歷史裡碎掉。** 回報：歷史紀錄的樣式一直跑掉。歷史畫面
+  是從對話紀錄重新排版的，它的方框表只照內容算寬度、完全不看 pane 有多寬。表格
+  比 pane 寬時，畫出來的框線每一行都比 pane 寬，後面的斷行再把每條框線、每個
+  儲存格切成好幾段，整張表碎成一團；同一張表在活畫面是直式的清單。實測
+  Claude Code 2.1.284：畫不下的表格會改成每一列一個「欄名: 值」區塊，欄名粗體，
+  區塊之間一條 40 欄的細線。歷史現在照做，只要方框比 pane 寬就改成直式
+  （opencode 風格原本也是同樣被切碎，一併處理）；畫得下的表格仍然是方框，
+  不知道 pane 寬度時行為不變。沒有複製的部分：Claude Code 對寬度中等的表格會在
+  儲存格「裡面」換行，歷史這種情況改畫成直式區塊，比較樸素但不會亂。
+  `tests_history_wide_table.py` 共 21 項，截圖在 `qa-shots/history-wide-table.png`。
+
+- **A right-click copies and nothing else.** With a selection a right-click
+  only copies, as before; but with no selection it used to paste into the tab,
+  and the selection is often gone by then (the TUI redraws under it, a ctrl-click
+  arrives with button 0 so nothing was captured, one click can raise two
+  context-menu events). That turned a copy into a stray paste into a live
+  agent's input. On macOS a right-click with nothing selected now does nothing
+  (Cmd+V pastes), a right-click within 1.5 seconds of a copy is never a paste on
+  any platform, and ctrl-click captures the selection like a right-click does.
+  Windows keeps right-click paste when nothing is selected. Cases added to
+  `tests_clipboard_copy.py`.
+
+  **右鍵只複製，不會順便貼上。** 有選取時右鍵一直都只複製；但沒有選取時它會把
+  剪貼簿貼進分頁，而那時選取常常已經不在了（TUI 在底下重畫、ctrl+點擊的 button
+  是 0 所以沒抓到選取、一次點擊可能觸發兩次 contextmenu），於是一次複製變成往
+  執行中的 agent 輸入框亂貼一段。現在 macOS 上沒有選取時右鍵什麼都不做（貼上用
+  Cmd+V）；任何平台上，複製後 1.5 秒內的右鍵都不會變成貼上；ctrl+點擊也會像右鍵
+  一樣抓取選取。Windows 沒有選取時仍維持右鍵貼上。`tests_clipboard_copy.py`
+  補了對應的檢查。
+
+- **ShellFrame failed to start on Python 3.13 after the v0.38.0 module split.**
+  One method annotation, `session: main.Session` in `api_accounts.py`, is
+  evaluated while the class is being defined, and at that moment `main` has not
+  defined `Session` yet, so importing `main` raised `AttributeError` before
+  anything ran. Python 3.14 evaluates annotations lazily and never hit it; on
+  3.13 (this repo's virtualenv) 28 of 94 test files could not even import, and
+  a restart onto this code would have left no app. The annotation is now a
+  string.
+
+  **v0.38.0 拆分模組之後，ShellFrame 在 Python 3.13 上啟動不起來。**
+  `api_accounts.py` 有一個方法註解 `session: main.Session`，在定義 class 的當下
+  就會被求值，而那一刻 `main` 還沒定義 `Session`，所以 import `main` 在任何東西
+  跑起來之前就丟出 `AttributeError`。Python 3.14 的註解是惰性求值，沒踩到；在
+  3.13（這個 repo 的虛擬環境）上，94 個測試檔有 28 個連 import 都過不了，用這份
+  程式碼重啟的話會整個 app 起不來。現在這個註解改成字串。
+
 ## v0.38.1 (2026-10-06)
 
 ### Fixes

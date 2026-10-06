@@ -507,7 +507,7 @@ class AccountsApiMixin:
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 
-    def _probe_session_data(self, session: main.Session):
+    def _probe_session_data(self, session: "main.Session"):
         provider = main.usage_probe.detect_ai(session.cmd)
         ref = session.account_refs.get(provider) if provider else None
         # A reattached tab from before per-account profiles has no ref (see
