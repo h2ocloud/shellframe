@@ -1264,15 +1264,29 @@ def last_error(worker: dict, tail_bytes: int = 65536, max_records: int = 120) ->
     return ""
 
 
-def _read_tail_events(path, tail_bytes=262144, max_records=300):
-    """只讀檔尾 tail_bytes，避免整檔讀（codex log 可達 GB）。"""
+def _read_tail_events(path, tail_bytes=262144, max_records=300, grow_to_bytes=0):
+    """只讀檔尾 tail_bytes，避免整檔讀（codex log 可達 GB）。
+
+    grow_to_bytes：窗口裡的紀錄不足 max_records 時，依平均每筆大小往前擴大（最多
+    幾輪），上限 grow_to_bytes。貼過截圖的對話一筆動輒十幾 KB（圖片以 base64 內嵌
+    在紀錄裡），固定窗口只涵蓋整段對話的一小截，上滑歷史因此只剩最後一點。預設 0
+    ＝不擴大：狀態列這類頻繁呼叫維持原本的成本。"""
     try:
         size = os.path.getsize(path)
+        window = min(size, tail_bytes)
         with open(path, "rb") as f:
-            if size > tail_bytes:
-                f.seek(size - tail_bytes)
-                f.readline()  # 丟掉被切半的第一行
-            raw = f.read()
+            for _ in range(4):
+                f.seek(size - window)
+                raw = f.read()
+                if window < size:                      # 丟掉被切半的第一行
+                    nl = raw.find(b"\n")
+                    raw = raw[nl + 1:] if nl >= 0 else b""
+                lines = [ln for ln in raw.split(b"\n") if ln.strip()]
+                if (not grow_to_bytes or window >= size or window >= grow_to_bytes
+                        or len(lines) >= max_records):
+                    break
+                per = max(1, len(raw) // max(1, len(lines)))
+                window = min(size, grow_to_bytes, max(window * 2, int(per * max_records * 1.25)))
         # 第一行格式判斷需檔頭；單獨讀一次
         with open(path, "r", errors="replace") as fh:
             head = fh.readline()
@@ -1283,9 +1297,9 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300):
         return None, [], "unknown format"
     norm = _norm_claude if fmt == "claude" else _norm_codex
     evs = []
-    for line in raw.decode("utf-8", errors="replace").splitlines()[-max_records:]:
+    for line in lines[-max_records:]:
         try:
-            o = json.loads(line)
+            o = json.loads(line.decode("utf-8", errors="replace"))
         except Exception:
             continue
         e = norm(o)

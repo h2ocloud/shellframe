@@ -6,6 +6,36 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.38.4 (2026-10-06)
+
+### Fixes
+
+- **A tab where you had pasted many screenshots showed almost none of its
+  conversation when you scrolled up.** Reported as "I can't scroll up to see
+  the history in my last tab". The scroll-up history for Claude tabs is built
+  from the conversation file, and it read only the last 2 MB of it. Screenshots
+  are stored inside that file as base64, so the affected tab's file was 25 MB
+  across 1,946 records, and 2 MB reached back only 137 of them (7%): the history
+  was 86 lines with a single user message, and everything earlier was cut off.
+  The read now widens backwards, sized from the average record, until it has
+  the last 3,000 records or reaches the start of the file (hard cap 256 MB);
+  for that tab that is 683 events instead of 66, in 0.04 seconds. Only the
+  history opts in: the status monitor and the other callers keep the small fixed
+  window, so their cost is unchanged. The reader also splits records on newline
+  bytes only; it used `str.splitlines()`, which also breaks a record in two at
+  a U+2028 or U+2029 inside the text. 13 cases in
+  `tests_history_transcript_window.py`.
+
+  **貼過很多截圖的分頁，上滑時幾乎看不到它的對話。** 回報：最後一個分頁拉不上去
+  看歷史。Claude 分頁的上滑歷史是從對話檔組出來的，而它只讀檔案最後 2 MB。截圖
+  是以 base64 存在那個檔案裡的，所以出事的分頁對話檔有 25 MB、1,946 筆紀錄，2 MB
+  只往回涵蓋 137 筆（約 7%）：歷史只有 86 行、一則使用者訊息，更早的全被切掉。
+  現在會依平均每筆大小往前擴大讀取範圍，直到湊滿最後 3,000 筆紀錄或讀到檔案開頭
+  （上限 256 MB）；那個分頁從 66 個事件變成 683 個，耗時 0.04 秒。只有歷史這條路
+  會擴大，狀態列和其他呼叫仍用原本的小窗口，成本不變。另外讀取時只用換行位元組
+  切紀錄；原本的 `str.splitlines()` 遇到文字裡的 U+2028 或 U+2029 也會把一筆紀錄
+  切成兩半。`tests_history_transcript_window.py` 共 13 項。
+
 ## v0.38.3 (2026-10-06)
 
 ### Fixes

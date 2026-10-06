@@ -647,8 +647,8 @@ class HistoryApiMixin:
         return "\n".join(orig + reset for _, orig in final)
 
     _TRANSCRIPT_TAIL_BYTES = 2 * 1024 * 1024
-
     _TRANSCRIPT_MAX_RECORDS = 3000
+    _TRANSCRIPT_GROW_BYTES = 256 * 1024 * 1024    # 貼過截圖的對話 2MB 只涵蓋約 7%
 
     def _transcript_history_response(self, s, sid: str, ansi: bool, cols: int = 0):
         """Overlay text rendered from the session's transcript JSONL, or
@@ -687,7 +687,7 @@ class HistoryApiMixin:
                 return None
         fmt, evs, err = agent_status._read_tail_events(
             path, tail_bytes=self._TRANSCRIPT_TAIL_BYTES,
-            max_records=self._TRANSCRIPT_MAX_RECORDS)
+            max_records=self._TRANSCRIPT_MAX_RECORDS, grow_to_bytes=self._TRANSCRIPT_GROW_BYTES)
         if err or not evs:
             return None
         text = self._render_transcript_overlay(evs, ansi, cols=cols)
