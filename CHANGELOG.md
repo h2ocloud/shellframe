@@ -6,6 +6,42 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.38.6 (2026-10-08)
+
+### Fixes
+
+- **Pulling up in a working tab no longer snaps back to the bottom.** Reported
+  as "when I pull up in my last tab it jumps back by itself". Opening the
+  scroll-up history takes a round trip to the backend, and the history always
+  landed at its very bottom. Whatever you had pulled up in the meantime was
+  swallowed without being counted: a short flick was lost completely (measured
+  with the real overlay code and a 600 ms fetch: 0 lines above the bottom), and
+  a sustained pull came up about 27 lines short of where it would have ended
+  with an instant fetch. Meanwhile the live view was already moving, because
+  the same wheel events still reach a TUI that has mouse tracking on, so the
+  covering history looked like a jump back. The pull is now accumulated while
+  the history loads and, together with anything that arrives while the content
+  is still being written into the overlay, applied once it is in place, so it
+  continues from where you were: the same 75-event pull now ends at the same
+  line whether the fetch takes 600 ms or 50 ms. Each open also leaves one debug
+  line (`[js:hist-open]`: how long the fetch took and how many lines were
+  carried over, never any text), so a recurrence can be traced. Not changed:
+  the live Claude Code view still scrolls from those wheel events, which cannot
+  be stopped from here. 9 cases in `tests_scroll_history_gesture.py`, which run
+  the real overlay code in a real xterm.js (6 of them fail on the old code).
+
+  **在作業中的分頁往上拉，不會再被打回最底部。** 回報：最後一個分頁拉上來又自己
+  跳回去。打開上滑歷史要向後端取一趟，而歷史落地時一律在最底部；這段時間你已經拉
+  上去的量被吞掉、沒有累積：短短一下整個被丟掉（用真的 overlay 程式碼、取回 600 毫秒
+  實測：離最底部 0 行），持續拉的也比取回即時時少了約 27 行。同時活畫面其實已經在
+  動了——開著滑鼠追蹤的 TUI 仍會收到同一批滾輪事件——蓋上去的歷史看起來就像跳
+  回去。現在取歷史期間的滑動量會累積，連同內容還在寫進 overlay 時收到的，等內容就位
+  後一次補上，從你原本的位置接著滑：同樣 75 個事件的拉動，取回 600 毫秒或 50 毫秒
+  都停在同一行。每次打開也會留一行 debug log（`[js:hist-open]`：取回花多久、帶過去
+  幾行，不含任何文字），之後再有類似回報可以追。沒有改的部分：活畫面的 Claude Code
+  仍會因為那批滾輪事件自己捲動，這一點從這裡擋不住。`tests_scroll_history_gesture.py`
+  共 9 項，在真的 xterm.js 裡跑真的 overlay 程式碼（舊程式碼會有 6 項失敗）。
+
 ## v0.38.5 (2026-10-08)
 
 ### Fixes

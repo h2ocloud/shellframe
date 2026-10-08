@@ -16,6 +16,7 @@ drop handler 原本完全沒判斷遠端，檔案就這樣靜默消失。讀檔�
 """
 from _testsrc import app_source  # main.py + api_*.py mixins
 import inspect
+import re
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -100,8 +101,11 @@ check("遠端行數有上限（帶 ANSI 的一萬行不該走簽章連線）", "
 check("前端有統一的 fetchHistory", "async function fetchHistory(sid, cols)" in idx)
 check("fetchHistory 內部才分本機／遠端",
       "if (isRemoteSid(sid))" in idx.split("async function fetchHistory")[1].split("function setupScrollHistory")[0])
+# 只守「唯一一處呼叫、吃 result.text／source／ansi」；後面附加的選項（例如載入期間
+# 累積的上滑量）不該讓它失敗，所以不比整行字串。
 check("overlay 只認一種回傳形狀",
-      idx.count("ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi })") == 1)
+      idx.count("ScrollHistory.show(") == 1
+      and re.search(r"ScrollHistory\.show\(result\.text, sid, \{ source: result\.source, ansi: result\.ansi[,\s}]", idx) is not None)
 # 在 ensureRemotePane 的函式主體裡找，不要靠相鄰行——相鄰行會被任何插入打斷，
 # 那時失敗的是斷言而不是功能。
 _ensure_remote = idx.split("function ensureRemotePane(sid, peer, rt) {")[1] \

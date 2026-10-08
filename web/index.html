@@ -5977,13 +5977,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (live && live.cols) histTerm.resize(live.cols, histTerm.rows);
       } catch (_) {}
       const reveal = () => { try { overlay.style.opacity = '1'; } catch (_) {} };
+      // 內容寫進去之前（取歷史要等、write 本身也是非同步），使用者已經往上滑的量
+      // 不能丟：落地時一律捲到底，一次短手勢會整個被吃掉，看起來就是「拉上來又自己
+      // 跳回去」。載入期間累積的量（opts.scrollUp）加上寫入期間的，寫完一次補上。
+      let ready = false;
+      let early = (opts && opts.scrollUp) || 0;
       histTerm.write(text || '(no history)', () => {
+        ready = true;
         try {
           histTerm.scrollToBottom();
           const hit = alignToAnchors(liveAnchors);
+          if (early > 0) histTerm.scrollLines(-early);
           try {
             pywebview.api.js_debug('hist-align', JSON.stringify(
-              hit ? { aligned: hit } : { aligned: false, tried: liveAnchors.length }));
+              hit ? { aligned: hit, up: early } : { aligned: false, tried: liveAnchors.length, up: early }));
           } catch (_) {}
         } catch (_) {}
         requestAnimationFrame(reveal);
@@ -5997,6 +6004,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (!histTerm) return;
         e.preventDefault();
         const n = Math.max(1, Math.round(Math.abs(e.deltaY) / 16));
+        if (!ready) { early = Math.max(0, early + (e.deltaY < 0 ? n : -n)); return; }
         if (e.deltaY < 0) {
           histTerm.scrollLines(-n);
         } else {
@@ -6118,6 +6126,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   function setupScrollHistory(sid, pane) {
     let _loading = false;
+    let _pendingUp = 0;     // 載入歷史這段時間，使用者已經往上滑的行數（show 時補上）
     // CAPTURE phase, deliberately. A TUI that turns on mouse tracking (opencode
     // sends 1003+1006) makes xterm.js translate the wheel into a mouse report
     // and stop it propagating, so a bubble-phase listener here never runs at all
@@ -6143,15 +6152,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // in practice: the overlay covers the pane and mouse-tracking TUIs redraw.
       e.preventDefault();
       e.stopPropagation();
+      _pendingUp += Math.max(1, Math.round(Math.abs(e.deltaY) / 16));
       if (_loading) return;
       _loading = true;
+      const t0 = performance.now();
       // Pass the live pane's column count: the transcript renderer sizes
       // tables and rules exactly the way the TUI does, and it can only do that
       // if it knows how wide the pane is.
       fetchHistory(sid, s.term.cols).then(result => {
         _loading = false;
-        if (result) ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi });
-      }).catch(() => { _loading = false; });
+        const up = _pendingUp; _pendingUp = 0;
+        try { pywebview.api.js_debug('hist-open', JSON.stringify(
+          { ms: Math.round(performance.now() - t0), up, ok: !!result })); } catch (_) {}
+        if (result) ScrollHistory.show(result.text, sid, { source: result.source, ansi: result.ansi, scrollUp: up });
+      }).catch(() => { _loading = false; _pendingUp = 0; });
     }, { capture: true, passive: false });
   }
 
