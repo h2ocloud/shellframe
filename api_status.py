@@ -84,6 +84,9 @@ class StatusApiMixin:
             "state": state, "ts": now, "since": since,
             "tool": tool if state == "working" else "",
             "event": event,
+            # 送達驗證要的是「prompt 被收下」的時間，不是最新狀態——後面的
+            # PreToolUse／Stop 會蓋掉 state，這個值要往後帶。
+            "prompt_at": now if event == "UserPromptSubmit" else (prev or {}).get("prompt_at", 0.0),
         }
         # Invalidate the gated cache so the next monitor pass (≤0.6s) refreshes
         # transcript-side details alongside the new exact state.

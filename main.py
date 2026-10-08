@@ -4399,7 +4399,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             res, age = self._status_tracker.last_result(sid)
         except Exception:
             return None
-        return (res, age) if res else None
+        return (dict(res, prompt_at=(self._hook_events.get(sid) or {}).get("prompt_at", 0.0)), age) if res else None
 
     @staticmethod
     def _init_inject_decision(s, data: str) -> str:

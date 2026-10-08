@@ -54,6 +54,7 @@ def _blog(msg: str):
 import pyte
 
 from bridge_base import BridgeBase, BridgeConfigBase
+import bridge_delivery
 
 try:
     import board  # shared task-board store (experimental)
@@ -6551,14 +6552,14 @@ class TelegramBridge(BridgeBase):
                 return True, False
             if getattr(slot, "last_extraction_ts", 0.0) > injected_at:
                 return True, False
+            # hook 的 UserPromptSubmit：agent 自己說收到了，不看畫面，最準。
+            if bridge_delivery.prompt_accepted(getattr(self, "_on_agent_status", None), getattr(slot, "sid", ""), injected_at):
+                return True, False
             time.sleep(0.5)
-        plain = self._INJECT_ANSI_RE.sub('', recent or "")
-        residue = bool(tail) and tail in re.sub(r"\s+", "", plain)
-        # codex 把大貼上摺疊成 [Pasted Content …] chip——payload 尾段不在畫面
-        # 上，但內容確實還卡在 composer，等同殘留（可安全 nudge/重試）。
-        if not residue and re.search(r'\[Pasted (?:Content|text)[^\]]*\]', plain, re.I):
-            residue = True
-        return False, residue
+        # 只看輸入框：送出去的訊息會回顯在對話區，整個畫面比對會把每則成功的
+        # 訊息都當成「卡在輸入框」，補 Enter、再重貼一次——第二份變成排隊的重複訊息。
+        return False, bridge_delivery.residue_in_composer(
+            self._INJECT_ANSI_RE.sub('', recent or ""), tail)
 
     def _slot_menu_text(self, user_id) -> str:
         """編號→分頁名的精簡清單（不含回覆預覽，/N 打錯時直接附上）。"""

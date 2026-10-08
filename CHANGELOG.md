@@ -6,6 +6,45 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.38.5 (2026-10-08)
+
+### Fixes
+
+- **"Couldn't confirm the message reached the tab" no longer fires on messages
+  that did arrive, and the message is no longer typed in a second time.**
+  Reported as "the experience is bad, it keeps telling me it couldn't be sent".
+  In the log window 24 of 89 Telegram messages got that warning, and 25 were
+  re-pasted. Measured on one of them: the agent's own hook recorded the prompt
+  as accepted 0.5 seconds after the paste, the conversation file holds the
+  message once at that time, and a second copy arrives 14 seconds later as a
+  queued message, which is the re-paste. Two causes. First, the check for "the
+  message is still sitting in the input box" matched the end of the message
+  against the whole screen, but a submitted message is echoed in the
+  conversation above the input box, so every delivered message looked stuck:
+  ShellFrame pressed Enter again, then pasted the whole message a second time,
+  and warned when that did not change anything. It now looks only inside the
+  input box (between its two rules; on 18 of 18 live tabs that region is found),
+  and the paste-chip check is limited to the same place. Second, the check never
+  asked the agent hooks, which report the accepted prompt exactly: a
+  UserPromptSubmit after the paste now counts as delivered at once, before any
+  screen reading, and a stale one from before the paste is ignored. Tabs without
+  hooks (other CLIs) keep the screen check, now with the corrected input-box
+  rule. New module `bridge_delivery.py`; 24 cases in
+  `tests_bridge_delivery.py`.
+
+  **訊息明明有送進去，不再收到「無法確認」，也不會被重貼第二次。** 回報：體驗很差，
+  每次都說送不進去。在 log 涵蓋的範圍內，89 則 Telegram 訊息有 24 則收到這個警告、
+  25 則被重貼。實際量其中一則：agent 自己的 hook 在貼上後 0.5 秒就記下「prompt 已
+  收下」，對話檔裡那個時間點有一筆，14 秒後同一段又以排隊訊息的形式進來一次——
+  那就是重貼。兩個原因。第一，「訊息還卡在輸入框」的判斷是拿訊息結尾去比對整個
+  畫面，但送出去的訊息會回顯在輸入框上方的對話區，於是每一則成功送達的訊息都被
+  看成卡住：ShellFrame 再按一次 Enter、接著把整則訊息再貼一次，貼完沒變化又發警告。
+  現在只看輸入框裡面（兩條框線之間；18 個執行中分頁全部抓得到），貼上標籤的檢查
+  也限定在同一個範圍。第二，判斷從來沒問過 agent 的 hook，而 hook 會精確回報 prompt
+  被收下：現在貼上之後出現 UserPromptSubmit 就立刻算送達，不必再讀畫面，貼上之前
+  的舊事件不算。沒有 hook 的 CLI 仍用畫面判斷，只是套用了修正後的輸入框規則。
+  新增模組 `bridge_delivery.py`，`tests_bridge_delivery.py` 共 24 項。
+
 ## v0.38.4 (2026-10-06)
 
 ### Fixes
