@@ -1988,6 +1988,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         tmux has no surviving sessions.
         """
         try:
+            # grok 的 session 目錄要跑 pgrep／lsof（快取未命中時好幾次子行程），
+            # 不能拿著 config 鎖去做——所以在鎖外先解析好，鎖裡只讀結果。
+            grok_sids = {sid: agent_grok.session_id(self._worker_ctx(sid, s))
+                         for sid, s in list(self.sessions.items())
+                         if _session_provider(getattr(s, "cmd", "")) == "grok"}
             with _CONFIG_LOCK:
                 cfg = load_config()
                 labels = cfg.get("session_labels", {}) or {}
@@ -2042,7 +2047,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     if _session_provider(getattr(s, "cmd", "")) == "grok":
                         # grok 的 uuid 不是 claude 的 transcript id，寫進 claude_session_id
                         # 會被當成 claude 的 --resume。目錄以 lsof 為準，/new 之後會跟到新的。
-                        grok_sid = agent_grok.session_id(self._worker_ctx(sid, s)) or hook_csid
+                        grok_sid = grok_sids.get(sid) or hook_csid
                         if grok_sid:
                             entry["grok_session_id"] = grok_sid
                     elif hook_csid:

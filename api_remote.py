@@ -1228,11 +1228,11 @@ class RemoteApiMixin:
             if not s:
                 return {"success": False, "message": "此 tab 不存在或已關閉。"}
             try:
-                text = main.usage_probe.probe(s.cmd)
-                # grok 沒有配額讀數，但這個 session 的 token／context 有，補在後面一行
+                # grok 沒有配額端點，走它自己的說明；probe() 那句「請確認已登入」對它不準確
                 if agent_grok.is_grok_cmd(s.cmd):
-                    extra = agent_grok.usage_text(self._worker_ctx(sid, s))
-                    text = f"{text}\n{extra}" if extra else text
+                    text = agent_grok.usage_report(self._worker_ctx(sid, s))
+                else:
+                    text = main.usage_probe.probe(s.cmd)
                 return {"success": True, "message": text}
             except Exception as e:
                 return {"success": False, "message": f"用量查詢失敗：{e}"}

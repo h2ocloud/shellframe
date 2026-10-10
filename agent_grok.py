@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import time
 import uuid
 
@@ -45,7 +46,10 @@ STALL_S = 60                # 最後一筆事件超過這麼久、畫面又沒�
 # 忙碌時的 footer 是 `Ctrl+c:cancel`；閒置時是 `Ctrl+x:shortcuts`，不會命中。
 # `[stop]` 是 spinner 那一行的結尾。
 TURN_BUSY_RE = re.compile(r"Ctrl\+c:cancel|\[stop\]")
-_DIR_TTL = 5.0              # lsof 很慢；狀態每 0.5 秒問一次，同一分頁 5 秒內沿用結果
+# lsof 很慢，狀態每 0.5 秒問一次。找到的目錄快取 30 秒：/new 之後最多慢 30 秒才跟到新的，
+# 與 codex 的 _resolve_cached 同一個理由；沒找到只快取 5 秒，免得新分頁等太久。
+_DIR_TTL_HIT = 30.0
+_DIR_TTL_MISS = 5.0
 _DIR_CACHE = {}             # tmux_name → (查詢時間, session 目錄或 None)
 _QUERY_RE = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.S)
 # Claude 紀錄一定帶這些鍵；grok 的 type 名稱（user／assistant／system）跟 Claude 撞名，
@@ -151,16 +155,43 @@ def _recency(d):
     return (created or 0.0, A._safe_mtime(os.path.join(d, "events.jsonl")))
 
 
+def _events_open_in(pid):
+    """這個行程 lsof 看到、開著的 events.jsonl（限定在 GROK_SESSIONS 底下）。
+
+    不用 agent_status._lsof_open_paths：它對整棵樹每個 pid 都跑一次 lsof，而且從不提早停。
+    grok 的樹裡還有 MCP 伺服器（node／bun…），每次未命中都要多跑好幾次 lsof。
+    """
+    import agent_status as A
+    try:
+        r = subprocess.run(["lsof", "-p", str(pid)], capture_output=True, timeout=3, text=True)
+    except Exception:
+        return []
+    if r.returncode != 0:
+        return []
+    out = []
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        path = parts[-1] if parts else ""
+        if path.endswith("/events.jsonl") and A._under(path, GROK_SESSIONS):
+            out.append(path)
+    return out
+
+
 def _live_dir(tmux_name):
-    """pane 行程樹裡 lsof 看到、正開著 events.jsonl 的 session 目錄（新的優先）。"""
+    """pane 行程樹裡開著 events.jsonl 的 session 目錄（新的優先）。
+
+    樹的順序是根在前。grok 本體就是 pane 的根行程，它握著自己開過的每一份 events.jsonl
+    （包括 /new 之前的那份），所以命中就停，不必再去掃 MCP 子行程。
+    """
     import agent_status as A
     pane = A._tmux_pane_pid(tmux_name)
     if not pane:
         return None
-    paths = A._lsof_open_paths(A._pid_tree(pane), "/events.jsonl")
-    dirs = {os.path.dirname(p) for p in paths
-            if p.endswith("/events.jsonl") and A._under(p, GROK_SESSIONS)}
-    return max(dirs, key=_recency) if dirs else None
+    for pid in A._pid_tree(pane):
+        paths = _events_open_in(pid)
+        if paths:
+            return max({os.path.dirname(p) for p in paths}, key=_recency)
+    return None
 
 
 def session_dir(worker):
@@ -169,7 +200,7 @@ def session_dir(worker):
         tmux = worker.get("tmux_name") or ""
         now = time.time()
         hit = _DIR_CACHE.get(tmux) if tmux else None
-        if hit and now - hit[0] < _DIR_TTL:
+        if hit and now - hit[0] < (_DIR_TTL_HIT if hit[1] else _DIR_TTL_MISS):
             return hit[1]
         d = _live_dir(tmux) if tmux else None
         if not d:
@@ -353,6 +384,12 @@ def _status(worker, now, screen):
             return "done", f"grok turn {last.get('outcome') or 'ended'}"
         return "idle", "grok settled"
     if _awaiting_permission(evs):
+        # 實測（grok 1.0.50，預設權限模式，沒有人按任何鍵）：permission_requested 之後
+        # 畫面沒有對話框，只有 spinner 與忙碌 footer，22.4 秒後自動 allow（另一次 3.6 秒）。
+        # 所以待決的請求只有在畫面**沒有**忙碌訊號時才算等人；忙碌時是 grok 自己在審。
+        # 不要因為看到 permission_requested 就改回 decision。
+        if busy:
+            return "working", "grok permission auto-review"
         return "decision", "grok permission prompt"
     if age > STALL_S and not busy:
         return "idle", f"grok silent {int(age)}s, no busy footer"
@@ -404,3 +441,13 @@ def usage_text(worker):
         return "Grok Build 本 session：" + " · ".join(parts)
     except Exception:
         return ""
+
+
+def usage_report(worker):
+    """grok 分頁 /usage 的整段文字。grok 沒有配額端點，所以第一行直接說明沒有 5h／週讀數，
+    不沿用通用的「查不到資料（請確認已登入）」——那句對 grok 是錯的。本 session 用量有就接在後面。"""
+    lines = ["AI 水位 Grok Build", "沒有公開的 5h／週配額讀數（SuperGrok 不提供）。"]
+    extra = usage_text(worker)
+    if extra:
+        lines.append(extra)
+    return "\n".join(lines)

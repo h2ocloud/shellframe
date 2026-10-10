@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -33,6 +34,7 @@ import agent_status as A  # noqa: E402
 import usage_probe as U  # noqa: E402
 from _testsrc import app_source  # noqa: E402
 import main as MAIN  # noqa: E402
+_REAL_RUN = subprocess.run
 from main import Api  # noqa: E402
 
 SID = "97e7251f-c368-468d-8e58-9088a4001027"
@@ -42,6 +44,9 @@ OLD = "a6c737b5-b155-48b4-bb3f-bff736d775a4"
 NOW = time.time()
 IDLE_FOOTER = "Shift+Tab:mode  │  Ctrl+x:shortcuts"
 BUSY_FOOTER = "Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts"
+# 有背景任務時忙碌 footer 多一段；同樣要算忙碌
+BUSY_FOOTER_BG = "Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+b:send to bg  │  Ctrl+x:shortcuts"
+BUSY_FOOTERS = (BUSY_FOOTER, BUSY_FOOTER_BG)
 WORKER = {"cmd": f"grok --session-id {SID}", "cwd": "/home/user/work", "tmux_name": ""}
 _ROOTS = []
 passed = failed = 0
@@ -218,17 +223,41 @@ def test_api_cmd_with_resume_routes_grok_and_keeps_claude():
 
 # ── 5. session 目錄對應 ──────────────────────────────────────────────────
 
+class _Clock:
+    """替掉 agent_grok 的 time 模組，讓快取的 TTL 可以被推進。"""
+
+    def __init__(self, t):
+        self.t = t
+
+    def time(self):
+        return self.t
+
+
 @contextlib.contextmanager
-def fake_lsof(paths, pane=4242):
-    """假裝 pane 行程樹裡 lsof 看到這些路徑。"""
-    saved = (A._tmux_pane_pid, A._pid_tree, A._lsof_open_paths)
+def fake_lsof(pids, table, clock=None, pane=4242):
+    """假的 pane 行程樹與 lsof：pids 依序（根在前）；table 是 {pid: [開著的路徑]}。
+    產出 calls（每次 lsof 查的 pid）。真正的 _events_open_in 照常跑，只是 lsof 的輸出是假的。"""
+    calls = []
+    saved = (A._tmux_pane_pid, A._pid_tree, subprocess.run, G.time)
+
+    def run(args, **kw):
+        if args[:1] != ["lsof"]:
+            raise AssertionError(f"unexpected subprocess: {args}")
+        pid = int(args[2])
+        calls.append(pid)
+        body = "".join(f"grok {pid} user 4u REG 1,2 0 1 {p}\n" for p in table.get(pid, []))
+        return types.SimpleNamespace(returncode=0, stdout=body)
+
     A._tmux_pane_pid = lambda name: pane if name else None
-    A._pid_tree = lambda root, depth=2: [root]
-    A._lsof_open_paths = lambda pids, contains: [p for p in paths if contains in p]
+    A._pid_tree = lambda root, depth=2: list(pids)
+    subprocess.run = run
+    if clock is not None:
+        G.time = clock
     try:
-        yield
+        yield calls
     finally:
-        A._tmux_pane_pid, A._pid_tree, A._lsof_open_paths = saved
+        A._tmux_pane_pid, A._pid_tree, subprocess.run, G.time = saved
+        G._DIR_CACHE.clear()
 
 
 def test_session_dir_by_cmd_uuid():
@@ -250,9 +279,38 @@ def test_lsof_newest_created_wins():
     old_d = make_session(SID, {"events.jsonl": "", "summary.json": summary(created_ago=3600)})
     new_d = make_session(SID_NEW, {"events.jsonl": "", "summary.json": summary(created_ago=60)})
     paths = [os.path.join(old_d, "events.jsonl"), os.path.join(new_d, "events.jsonl")]
-    with fake_lsof(paths):
+    with fake_lsof([4242, 4243], {4242: paths}):
         got = G.session_dir({"cmd": "grok", "cwd": "/home/user/work", "tmux_name": "sf_a"})
     check("lsof 同時看到兩份（/new 之後）→ created_at 較新的那份", got == new_d, str(got))
+
+
+def test_lsof_stops_at_first_hit_and_caches_by_ttl():
+    new_root()
+    d = make_session(SID, {"events.jsonl": "", "summary.json": summary()})
+    ev = os.path.join(d, "events.jsonl")
+    pids = [5000, 5001, 5002]                    # 根在前；根就是 grok 本體，握著 events.jsonl
+    clock = _Clock(1000.0)
+    hit = {"cmd": "grok", "cwd": "/home/user/work", "tmux_name": "sf_hit"}
+    with fake_lsof(pids, {5000: [ev]}, clock) as calls:
+        got1 = G.session_dir(hit)
+        check("命中根行程就停：只 lsof 一次", got1 == d and calls == [5000], f"{got1} {calls}")
+        clock.t += 10
+        got2 = G.session_dir(hit)
+        check("命中後 30 秒內走快取，不再 lsof", got2 == d and calls == [5000], str(calls))
+        clock.t += 25                            # 共 35 秒，超過 30 秒的命中 TTL
+        G.session_dir(hit)
+        check("超過 30 秒才重新查", calls == [5000, 5000], str(calls))
+    miss = {"cmd": "grok", "cwd": "/home/user/work", "tmux_name": "sf_miss"}
+    with fake_lsof(pids, {}, clock) as calls:
+        check("整棵樹都沒有 → None", G.session_dir(miss) is None)
+        check("未命中會掃完整棵樹", calls == pids, str(calls))
+        clock.t += 3
+        G.session_dir(miss)
+        check("未命中 5 秒內走快取", calls == pids, str(calls))
+        clock.t += 3                             # 共 6 秒，超過 5 秒的未命中 TTL
+        G.session_dir(miss)
+        check("未命中超過 5 秒就重查", calls == pids + pids, str(calls))
+    check("lsof 掃描與 time 已還原", subprocess.run is _REAL_RUN and G.time is time)
 
 
 def test_same_cwd_without_id_is_none():
@@ -326,7 +384,18 @@ def test_status_working_mid_tool():
 def test_status_permission_pending_is_decision():
     rows = TOOL_TURN[:8]
     st = status_of(rows)
-    check("permission_requested 未解決 → decision", st[0] == "decision", str(st))
+    check("permission_requested 未解決、畫面空白 → decision", st[0] == "decision", str(st))
+    st_idle = status_of(rows, screen=IDLE_FOOTER)
+    check("permission_requested 未解決、閒置 footer → decision", st_idle[0] == "decision", str(st_idle))
+
+
+def test_status_pending_permission_under_busy_footer_is_auto_review():
+    # 實測：grok 自己在審，畫面沒有對話框，只有忙碌 footer；不是等人
+    rows = TOOL_TURN[:8]
+    for footer in BUSY_FOOTERS:
+        st = status_of(rows, screen=footer)
+        check(f"permission 待決＋忙碌 footer → working（{footer[-30:]}）",
+              st[0] == "working" and st[1] == "grok permission auto-review", str(st))
 
 
 def test_status_permission_resolved_is_not_decision():
@@ -353,16 +422,17 @@ def test_status_silent_turn_without_busy_footer_is_idle():
     rows = [(120, {"type": "turn_started", "model_id": "grok-4.7"}), (120, {"type": "first_token"})]
     st = status_of(rows, screen=IDLE_FOOTER)
     check("120 秒沒事件、畫面閒置 → idle（中斷的 turn 不永遠 working）", st[0] == "idle", str(st))
-    st2 = status_of(rows, screen=BUSY_FOOTER)
-    check("同樣 120 秒但畫面仍忙碌 → working", st2[0] == "working", str(st2))
+    for footer in BUSY_FOOTERS:
+        st2 = status_of(rows, screen=footer)
+        check(f"同樣 120 秒但畫面仍忙碌 → working（{footer[-30:]}）", st2[0] == "working", str(st2))
 
 
 def test_status_screen_only_when_no_session():
     new_root()
-    busy = G.status(WORKER, NOW, BUSY_FOOTER)
+    busy = G.status(WORKER, NOW, BUSY_FOOTER_BG)
     idle = G.status(WORKER, NOW, IDLE_FOOTER)
     none = G.status(WORKER, NOW, "")
-    check("沒有 session + 忙碌 footer → working", busy[0] == "working", str(busy))
+    check("沒有 session + 忙碌 footer（含背景任務）→ working", busy[0] == "working", str(busy))
     check("沒有 session + 閒置 footer → idle", idle[0] == "idle", str(idle))
     check("沒有 session 也沒有畫面 → unknown", none[0] == "unknown", str(none))
 
@@ -395,6 +465,24 @@ def test_usage_text_from_session_files():
     check("沒有 usage.json → 空字串", G.usage_text({"cmd": "grok", "cwd": "/x", "tmux_name": ""}) == "")
 
 
+def test_usage_report_full_text():
+    new_root()
+    usage = {"session": {"totalTokens": 72986, "turnCount": 2}}
+    signals = {"contextTokensUsed": 24288, "contextWindowTokens": 256000}
+    make_session(SID, {"summary.json": summary(), "usage.json": json.dumps(usage),
+                       "signals.json": json.dumps(signals)})
+    got = G.usage_report(WORKER)
+    check("usage_report 第一行是品牌、第二行說明沒有配額",
+          got.split("\n")[0] == "AI 水位 Grok Build"
+          and got.split("\n")[1] == "沒有公開的 5h／週配額讀數（SuperGrok 不提供）。", got)
+    check("usage_report 第三行是本 session 用量",
+          got.split("\n")[2] == "Grok Build 本 session：context 24K/256K · 72,986 tokens · 2 回合", got)
+    no_usage = G.usage_report({"cmd": "grok", "cwd": "/x", "tmux_name": ""})
+    check("沒有用量資料時只有前兩行（不出現通用的「請確認已登入」）",
+          no_usage.split("\n") == ["AI 水位 Grok Build", "沒有公開的 5h／週配額讀數（SuperGrok 不提供）。"]
+          and "登入" not in no_usage, no_usage)
+
+
 # ── 10. TG 忙碌判斷 ──────────────────────────────────────────────────────
 
 def _load_bridge():
@@ -407,6 +495,7 @@ def _load_bridge():
 def test_tg_turn_busy_regex():
     bt = _load_bridge()
     check("grok 忙碌 footer 算回合進行中", bool(bt._TURN_BUSY_RE.search(BUSY_FOOTER)))
+    check("grok 忙碌 footer（含背景任務）也算", bool(bt._TURN_BUSY_RE.search(BUSY_FOOTER_BG)))
     check("Claude 的 esc to interrupt 仍算", bool(bt._TURN_BUSY_RE.search("✻ Thinking… (esc to interrupt)")))
     check("grok 閒置 footer 不算", bt._TURN_BUSY_RE.search(IDLE_FOOTER) is None)
 
@@ -504,6 +593,13 @@ def test_history_takes_transcript_path_for_grok():
           Api._transcript_history_response(stub, pi, "s1", False, 80) is None)
 
 
+def _function_body(src, marker):
+    """從 marker 開始到下一個同層級的 def（method 縮排 4 格）為止的原始碼。"""
+    i = src.index(marker)
+    j = src.find("\n    def ", i + len(marker))
+    return src[i:j if j > 0 else len(src)]
+
+
 def test_wiring_source_checks():
     src = app_source()
     check("manifest：grok 寫 grok_session_id，不寫 claude_session_id",
@@ -512,7 +608,13 @@ def test_wiring_source_checks():
           'elif _session_provider(cmd) == "grok":' in src and "agent_grok.session_exists(csid)" in src)
     check("soft restore：grok 不進 claude 的家目錄搬移",
           'and _session_provider(cmd) != "grok":' in src)
-    check("/usage：grok 補上 session 用量一行", "agent_grok.usage_text(self._worker_ctx(sid, s))" in src)
+    check("/usage：grok 走 usage_report（不用 probe 的「請確認已登入」）",
+          "agent_grok.usage_report(self._worker_ctx(sid, s))" in src)
+    body = _function_body(src, "def _persist_session_manifest")
+    lock_at = body.find("with _CONFIG_LOCK:")
+    check("manifest：grok 的 lsof 解析在 config 鎖之前，鎖內沒有 lsof 呼叫",
+          lock_at > 0 and "agent_grok.session_id(" in body
+          and body.rfind("agent_grok.session_id(") < lock_at, f"lock_at={lock_at}")
     check("換帳號／套用更新重開：grok 換成 --resume 同一個 session（不是同 id 的新對話）",
           'elif provider == "grok":' in src and "agent_grok.session_id(self._worker_ctx(sid, old))" in src)
     check("registry 與 preset 都有 grok", "grok" in U.PROVIDER_SPECS and any(
