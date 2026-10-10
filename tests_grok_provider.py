@@ -471,16 +471,130 @@ def test_usage_report_full_text():
     signals = {"contextTokensUsed": 24288, "contextWindowTokens": 256000}
     make_session(SID, {"summary.json": summary(), "usage.json": json.dumps(usage),
                        "signals.json": json.dumps(signals)})
-    got = G.usage_report(WORKER)
-    check("usage_report 第一行是品牌、第二行說明沒有配額",
-          got.split("\n")[0] == "AI 水位 Grok Build"
-          and got.split("\n")[1] == "沒有公開的 5h／週配額讀數（SuperGrok 不提供）。", got)
-    check("usage_report 第三行是本 session 用量",
-          got.split("\n")[2] == "Grok Build 本 session：context 24K/256K · 72,986 tokens · 2 回合", got)
-    no_usage = G.usage_report({"cmd": "grok", "cwd": "/x", "tmux_name": ""})
-    check("沒有用量資料時只有前兩行（不出現通用的「請確認已登入」）",
-          no_usage.split("\n") == ["AI 水位 Grok Build", "沒有公開的 5h／週配額讀數（SuperGrok 不提供）。"]
-          and "登入" not in no_usage, no_usage)
+    # 配速數字跟現在的時鐘有關，這裡把窗口釘成「還剩整整 2 天／共 7 天」，
+    # 已用 14% → 應累積 71%，落後 57%。不打真正的 billing。
+    now = time.time()
+    reading = {
+        "week": (14, "10-12 08:35"),
+        "_reset_epoch": {"week": int(now + 2 * 86400)},
+        "_window_minutes": {"week": 7 * 24 * 60},
+        "_groups": [{"name": "Grok Build", "used": 12}, {"name": "App Builder", "used": 2}],
+    }
+    orig_quota, orig_label = G.quota, G.account_label
+    G.quota = lambda: reading
+    G.account_label = lambda: "user@example.com"
+    try:
+        got = G.usage_report(WORKER)
+        lines = got.split("\n")
+        check("usage_report 第一行是品牌", lines[0] == "AI 水位 Grok Build", got)
+        check("usage_report 帶帳號，不含權杖字樣",
+              lines[1] == "帳號 user@example.com" and "key" not in got, got)
+        check("usage_report 寫出週配額與配速",
+              lines[2] == "週配額已用 14%｜重置 10-12 08:35｜配速應 71%（落後 57%）", got)
+        check("usage_report 列出各產品用量",
+              "Grok Build 12%" in lines and "App Builder 2%" in lines, got)
+        check("usage_report 末行是本 session 用量",
+              lines[-1] == "Grok Build 本 session：context 24K/256K · 72,986 tokens · 2 回合", got)
+        G.quota = lambda: {"_error": "auth_required",
+                           "_error_message": "尚未登入 Grok Build，請執行 grok login"}
+        no_usage = G.usage_report({"cmd": "grok", "cwd": "/x", "tmux_name": ""})
+        check("沒登入時說明原因，不再宣稱沒有週配額",
+              no_usage.split("\n") == ["AI 水位 Grok Build", "尚未登入 Grok Build，請執行 grok login"]
+              and "沒有公開" not in no_usage and "請確認已登入" not in no_usage, no_usage)
+    finally:
+        G.quota, G.account_label = orig_quota, orig_label
+
+
+_BILLING = {
+    "config": {
+        "creditUsagePercent": 14.0,
+        "currentPeriod": {
+            "type": "USAGE_PERIOD_TYPE_WEEKLY",
+            "start": "2026-10-05T00:35:42+00:00",
+            "end": "2026-10-12T00:35:42+00:00",
+        },
+        "billingPeriodStart": "2026-10-05T00:35:42+00:00",
+        "billingPeriodEnd": "2026-10-12T00:35:42+00:00",
+        "productUsage": [
+            {"product": "GrokBuild", "usagePercent": 12.0},
+            {"product": "GrokAppBuilder", "usagePercent": 2.0},
+            {"product": "GrokChat"},
+        ],
+    }
+}
+
+
+def test_quota_payload_weekly_pace_inputs():
+    got = G._quota_from_payload(_BILLING)
+    check("週配額百分比是已用 14，不是剩下的", got.get("week", (None,))[0] == 14, str(got))
+    check("重置時刻有字", bool(got.get("week", (None, ""))[1]) and got["week"][1] != "?", str(got))
+    check("配速要用的重置 epoch 是週期結束",
+          (got.get("_reset_epoch") or {}).get("week") == int(datetime(2026, 10, 12, 0, 35, 42, tzinfo=timezone.utc).timestamp()),
+          str(got.get("_reset_epoch")))
+    check("窗口長度是 7 天", (got.get("_window_minutes") or {}).get("week") == 7 * 24 * 60, str(got))
+    check("沒有 5 小時窗口（不編一個）", "5hr" not in got, str(got))
+    names = [g["name"] for g in got.get("_groups") or []]
+    check("產品拆分含 Grok Build 與 App Builder，略過沒有百分比的項目",
+          names == ["Grok Build", "App Builder"], str(names))
+    check("沒有百分比的回應說原因，不回 0",
+          G._quota_from_payload({"config": {}}).get("_error") == "no_data")
+
+
+def test_quota_uses_billing_and_caches():
+    G._reset_quota_cache()
+    calls = {"n": 0}
+
+    def fake_fetch(token):
+        calls["n"] += 1
+        check("送給 billing 的不是空權杖", token == "test-token-value", token[:4])
+        return 200, json.dumps(_BILLING).encode()
+
+    orig_fetch, orig_auth = G._fetch_billing, G.AUTH_FILE
+    auth = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    json.dump({"https://auth.example.test": {"key": "test-token-value", "email": "user@example.com"}}, auth)
+    auth.close()
+    G._fetch_billing = fake_fetch
+    G.AUTH_FILE = auth.name
+    try:
+        first = G.quota()
+        second = G.quota()
+        check("quota 讀到週配額 14%", (first.get("week") or (None,))[0] == 14, str(first))
+        check("60 秒內不打第二次", calls["n"] == 1 and second.get("week") == first.get("week"), str(calls))
+        check("帳號標籤是 email", G.account_label() == "user@example.com", G.account_label())
+        G._reset_quota_cache()
+        G.AUTH_FILE = auth.name + ".missing"
+        missing = G.quota()
+        check("沒有登入檔就說明要 grok login，而且沒有發請求",
+              missing.get("_error") == "auth_required" and calls["n"] == 1
+              and "grok login" in missing.get("_error_message", ""), str(missing))
+    finally:
+        G._fetch_billing, G.AUTH_FILE = orig_fetch, orig_auth
+        G._reset_quota_cache()
+        os.unlink(auth.name)
+
+
+def test_probe_data_exposes_pace_fields():
+    orig_q, orig_a = G.quota, G.account_label
+    now = time.time()
+    G.quota = lambda: {
+        "week": (14, "10-12 08:35"),
+        "_reset_epoch": {"week": int(now + 2 * 86400)},
+        "_window_minutes": {"week": 7 * 24 * 60},
+        "_groups": [{"name": "Grok Build", "used": 12, "reset": "10-12 08:35",
+                     "window": "weekly", "key": "week"}],
+    }
+    G.account_label = lambda: "user@example.com"
+    try:
+        d = U.probe_data("grok --session-id x")
+        week = d.get("week") or {}
+        check("pill 資料是 grok 的週配額", d.get("ai") == "grok" and week.get("pct") == 14, str(d))
+        check("pill 帶重置 epoch 與 7 天窗口",
+              week.get("reset_epoch") and week.get("window_minutes") == 7 * 24 * 60, str(week))
+        check("沒有 5 小時窗口", d.get("five_hr") is None, str(d.get("five_hr")))
+        check("帳號進 pill", d.get("account") == "user@example.com", str(d.get("account")))
+        check("產品拆分進 groups", (d.get("groups") or [{}])[0].get("pct") == 12, str(d.get("groups")))
+    finally:
+        G.quota, G.account_label = orig_q, orig_a
 
 
 # ── 10. TG 忙碌判斷 ──────────────────────────────────────────────────────
@@ -610,6 +724,8 @@ def test_wiring_source_checks():
           'and _session_provider(cmd) != "grok":' in src)
     check("/usage：grok 走 usage_report（不用 probe 的「請確認已登入」）",
           "agent_grok.usage_report(self._worker_ctx(sid, s))" in src)
+    check("web 與 sfctl 的 /usage 都走 usage_report",
+          src.count("agent_grok.usage_report(self._worker_ctx(sid, s))") >= 2)
     body = _function_body(src, "def _persist_session_manifest")
     lock_at = body.find("with _CONFIG_LOCK:")
     check("manifest：grok 的 lsof 解析在 config 鎖之前，鎖內沒有 lsof 呼叫",

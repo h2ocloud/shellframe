@@ -7,9 +7,11 @@ enough to report its quota, pace its usage, and treat its tabs as AI tabs.
 Supported today: `claude` (Claude Code), `codex`, `agy` (Antigravity CLI),
 `pi` (Pi coding agent), `opencode`, `grok` (Grok Build). `pi` and `opencode`
 report no usage figure — they run whatever model the user pointed them at, so
-there is no single budget to read. `grok` has no public quota endpoint, but its
-`/usage` shows the current session's tokens and context from its own files.
-See the note on saying why in *Errors* below.
+there is no single budget to read. `grok`'s account allowance is a weekly
+window from `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`
+(`creditUsagePercent` is utilisation, `currentPeriod` is the window). There is
+no 5-hour bucket. The fetcher lives in `agent_grok.py` because `usage_probe.py`
+is at its line budget; `_probe_grok` only delegates. See *Errors* below.
 
 Adding another one is **one registry entry plus two adapter functions** in
 `usage_probe.py`. Nothing in `main.py` or `web/index.html` hard-codes provider

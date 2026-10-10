@@ -5197,6 +5197,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (d.account) tip.push(d.account);
       if (d.five_hr) tip.push(`5hr 已用 ${d.five_hr.pct}%・重置 ${d.five_hr.reset}`);
       if (d.week) tip.push(`本週已用 ${d.week.pct}%・重置 ${d.week.reset}`);
+      if (Array.isArray(d.groups)) {
+        d.groups.forEach(g => {
+          if (g && g.name && g.pct != null) tip.push(`${g.name} ${g.pct}%`);
+        });
+      }
       // 兩個 pc 標籤同名，tooltip 必須標明各自屬於哪個窗口。
       if (pace5) tip.push('— 5 小時配速 —', ..._paceTooltipLines(pace5, d.five_hr.pct));
       if (paceWk) tip.push('— 每週配速 —', ..._paceTooltipLines(paceWk, d.week.pct));

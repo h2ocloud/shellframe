@@ -1228,7 +1228,7 @@ class RemoteApiMixin:
             if not s:
                 return {"success": False, "message": "此 tab 不存在或已關閉。"}
             try:
-                # grok 沒有配額端點，走它自己的說明；probe() 那句「請確認已登入」對它不準確
+                # grok 的說明含週配額與本 session token；probe() 只有前者。
                 if agent_grok.is_grok_cmd(s.cmd):
                     text = agent_grok.usage_report(self._worker_ctx(sid, s))
                 else:

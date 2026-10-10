@@ -6,7 +6,8 @@ provider's quota water-level. Each provider is read the cheapest reliable way:
   - Claude: OAuth usage API with the local Keychain token (no browser)
   - Codex:  local rollout/SQLite snapshot, else app-server JSONRPC
   - agy:    Antigravity CLI's own `/usage` slash command in print mode (JSON)
-  - pi, opencode, grok: no quota to report (see their _probe_* adapters)
+  - pi, opencode: no quota to report (see their _probe_* adapters)
+  - grok: weekly billing on cli-chat-proxy (agent_grok.quota; no 5h window)
 
 Adding another CLI means one PROVIDER_SPECS entry plus two adapters — see
 docs/adding-a-provider.md.
@@ -100,8 +101,9 @@ PROVIDER_SPECS = {
         "install": {
             "command": "curl -fsSL https://x.ai/cli/install.sh | bash",
             "docs": "https://x.ai/cli",
-            "note": "SuperGrok 登入用 `grok login`。沒有公開的 5h／週配額，所以頂列不顯示水位；"
-                    "分頁內 `/usage` 顯示這個 session 的 token 與 context。",
+            "note": "登入用 `grok login`。週配額來自 cli-chat-proxy 的 billing"
+                    "（已用百分比與週期起迄），頂列顯示 wk 與配速；沒有 5 小時窗口。"
+                    "分頁內 `/usage` 同時列出本 session 的 token 與 context。",
         },
     },
 }
@@ -1228,14 +1230,14 @@ PROVIDER_SPECS["opencode"].update(probe=_probe_opencode, account=_account_openco
 
 
 def _probe_grok(env):
-    """Grok Build 沒有公開的配額端點，本機 session 檔也推不出 5h／週水位。回 None＝
-    「無水位可報」（不顯示 pill，不是錯誤）。猜一個數字比不顯示更糟。"""
-    return None
+    """週配額的抓取與快取在 agent_grok。本檔已在行數上限。"""
+    import agent_grok
+    return agent_grok.quota()
 
 
 def _account_grok(data, env):
-    """登入是 SuperGrok 帳號；憑證檔含權杖，這裡不讀，所以沒有可安全顯示的帳號名。"""
-    return ""
+    import agent_grok
+    return agent_grok.account_label()
 
 
 PROVIDER_SPECS["grok"].update(probe=_probe_grok, account=_account_grok)

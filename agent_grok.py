@@ -7,6 +7,9 @@ grok 沒有 Claude／Codex 那種「檔名就是 session id」的 transcript，�
   chat_history.jsonl         對話本文——上滑歷史與手機的 chat 視圖
   summary.json               current_model_id、reasoning_effort（/model 切換會寫回）
   usage.json、signals.json   這個 session 的 token 與 context 用量
+帳號的週配額不在 session 檔裡。grok 的 /usage 視窗打的是
+cli-chat-proxy 的 /v1/billing?format=credits：creditUsagePercent 是已用百分比，
+currentPeriod 是週期起迄（實測為 USAGE_PERIOD_TYPE_WEEKLY，沒有 5 小時窗口）。
 分頁要對到自己的那個目錄，依序試：lsof 看 pane 行程正開著哪個 events.jsonl（/new 之後也
 跟得上）→ 啟動時 pin 的 --session-id → manifest 記下的 uuid。全都不中就回 None，**不**退回
 「同一個 cwd 最新的那份」：兩個 grok 分頁開在同一目錄時會互相讀到對方的對話。
@@ -20,8 +23,12 @@ import os
 import re
 import shlex
 import subprocess
+import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
+from datetime import datetime, timezone
 
 GROK_SESSIONS = os.path.expanduser("~/.grok/sessions")
 
@@ -443,10 +450,262 @@ def usage_text(worker):
         return ""
 
 
+# 帳號週配額。grok 的 /usage 視窗打的就是這支，不是 session 檔推得出來的。
+# 實測（grok 1.0.50）：GET 回 {"config": {creditUsagePercent, currentPeriod, productUsage}}。
+# creditUsagePercent 是「已用」百分比；currentPeriod 實測為一週，沒有 5 小時窗口。
+BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
+AUTH_FILE = os.path.expanduser("~/.grok/auth.json")
+_QUOTA_OK_TTL = 60
+_QUOTA_RETRY_MIN = 45
+_QUOTA_TIMEOUT = 12
+_QUOTA_LOCK = threading.Lock()
+_quota_cache = {"data": None, "ts": 0, "last_try": 0, "error": None}
+_PRODUCT_NAMES = {
+    "GrokBuild": "Grok Build",
+    "GrokAppBuilder": "App Builder",
+    "GrokChat": "Chat",
+}
+
+
+def _reset_quota_cache():
+    _quota_cache.update(data=None, ts=0, last_try=0, error=None)
+
+
+def _credentials(blob):
+    """auth.json 裡那份登入物件。只取形狀，呼叫端自己決定要不要讀 key。"""
+    if not isinstance(blob, dict):
+        return None
+    named = blob.get("https://accounts.x.ai/sign-in")
+    if isinstance(named, dict) and isinstance(named.get("key"), str) and named.get("key"):
+        return named
+    for value in blob.values():
+        if isinstance(value, dict) and isinstance(value.get("key"), str) and value.get("key"):
+            return value
+    if isinstance(blob.get("key"), str) and blob.get("key"):
+        return blob
+    return None
+
+
+def _load_credentials():
+    try:
+        with open(AUTH_FILE, encoding="utf-8") as f:
+            return _credentials(json.load(f))
+    except Exception:
+        return None
+
+
+def account_label():
+    """登入帳號的 email。權杖留在檔案裡，不進任何回傳字串。沒登入回 ""。"""
+    cred = _load_credentials()
+    email = (cred or {}).get("email")
+    return email.strip() if isinstance(email, str) else ""
+
+
+def _epoch(iso):
+    if not iso or not isinstance(iso, str):
+        return None
+    try:
+        return datetime.fromisoformat(iso).timestamp()
+    except ValueError:
+        return None
+
+
+def _fmt_reset(epoch):
+    if not epoch:
+        return "?"
+    try:
+        return datetime.fromtimestamp(epoch, timezone.utc).astimezone().strftime("%m-%d %H:%M")
+    except (OSError, OverflowError, ValueError):
+        return "?"
+
+
+def _pct(value):
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            return None
+    if isinstance(value, (int, float)):
+        return int(round(float(value)))
+    return None
+
+
+def _quota_from_payload(payload):
+    """把 billing JSON 收成 usage_probe 的原始形狀。沒有百分比就不編一個。"""
+    if not isinstance(payload, dict):
+        return {"_error": "no_data", "_error_message": "帳單回應沒有用量百分比"}
+    cfg = payload.get("config") if isinstance(payload.get("config"), dict) else payload
+    pct = _pct(cfg.get("creditUsagePercent"))
+    if pct is None:
+        return {"_error": "no_data", "_error_message": "帳單回應沒有用量百分比"}
+    period = cfg.get("currentPeriod") if isinstance(cfg.get("currentPeriod"), dict) else {}
+    start = _epoch(period.get("start") or cfg.get("billingPeriodStart"))
+    end = _epoch(period.get("end") or cfg.get("billingPeriodEnd"))
+    minutes = int(round((end - start) / 60)) if start and end and end > start else None
+    kind = str(period.get("type") or "")
+    key = "5hr" if ("HOUR" in kind or (minutes is not None and minutes <= 12 * 60)) else "week"
+    reset = _fmt_reset(end)
+    out = {key: (pct, reset)}
+    if end and minutes:
+        out["_reset_epoch"] = {key: int(end)}
+        out["_window_minutes"] = {key: minutes}
+    groups = []
+    for item in cfg.get("productUsage") or []:
+        if not isinstance(item, dict):
+            continue
+        used = _pct(item.get("usagePercent"))
+        if used is None:
+            continue
+        product = item.get("product") or ""
+        name = _PRODUCT_NAMES.get(product, product)
+        if not name:
+            continue
+        groups.append({
+            "name": name, "used": used, "reset": reset,
+            "epoch": int(end) if end else None,
+            "window": "weekly" if key == "week" else "5h", "key": key,
+        })
+    if groups:
+        out["_groups"] = groups
+    return out
+
+
+def _fetch_billing(token):
+    """GET billing。回 (status, body)。連線失敗回 (0, b'')。不把權杖放進例外文字。"""
+    req = urllib.request.Request(BILLING_URL, headers={
+        "Authorization": "Bearer " + token,
+        "Accept": "application/json",
+        "x-grok-client-identifier": "grok-shell",
+        "User-Agent": "grok-shell",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=_QUOTA_TIMEOUT) as resp:
+            return resp.status, resp.read(65536)
+    except urllib.error.HTTPError as exc:
+        try:
+            exc.read(2048)
+        except Exception:
+            pass
+        return exc.code, b""
+    except Exception:
+        return 0, b""
+
+
+def _quota_live():
+    cred = _load_credentials()
+    token = (cred or {}).get("key") if cred else None
+    if not isinstance(token, str) or not token:
+        return {"_error": "auth_required",
+                "_error_message": "尚未登入 Grok Build，請執行 grok login"}
+    status, body = _fetch_billing(token)
+    if status == 200:
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception:
+            return {"_error": "probe_failed", "_error_message": "週配額回應無法解析"}
+        return _quota_from_payload(payload)
+    if status in (401, 403):
+        return {"_error": "auth_required",
+                "_error_message": "登入已過期，請執行 grok login"}
+    if status == 429:
+        return {"_error": "rate_limited", "_error_message": "週配額查詢太頻繁，稍後再試"}
+    if status == 0:
+        return {"_error": "probe_failed", "_error_message": "週配額查詢失敗（連不上）"}
+    return {"_error": "probe_failed", "_error_message": f"週配額查詢失敗（HTTP {status}）"}
+
+
+def quota():
+    """帳號週配額，形狀給 usage_probe。快取 60 秒；失敗時沿用上次成功的讀數並標 stale。永不拋。"""
+    now = time.time()
+    with _QUOTA_LOCK:
+        cached = _quota_cache
+        if cached["data"] and now - cached["ts"] < _QUOTA_OK_TTL:
+            return dict(cached["data"])
+        if now - cached["last_try"] < _QUOTA_RETRY_MIN:
+            if cached["data"]:
+                return {**cached["data"], "_stale": True}
+            if cached.get("error"):
+                return dict(cached["error"])
+            return {"_error": "rate_limited", "_error_message": "剛查過，稍後再試"}
+        cached["last_try"] = now
+        try:
+            data = _quota_live()
+        except Exception:
+            data = {"_error": "probe_failed", "_error_message": "週配額查詢失敗"}
+        if data and data.get("week") and not data.get("_error"):
+            cached["data"] = {k: v for k, v in data.items() if k != "_stale"}
+            cached["ts"] = now
+            cached["error"] = None
+            return dict(cached["data"])
+        # 5hr-only 也是一次成功讀數（目前實測沒有，留著以免窗口改成短週期時被當成失敗）。
+        if data and data.get("5hr") and not data.get("_error"):
+            cached["data"] = {k: v for k, v in data.items() if k != "_stale"}
+            cached["ts"] = now
+            cached["error"] = None
+            return dict(cached["data"])
+        cached["error"] = data
+        if cached["data"]:
+            stale = {**cached["data"], "_stale": True}
+            if data and data.get("_error_message"):
+                stale["_error_message"] = data["_error_message"]
+            return stale
+        return data or {"_error": "probe_failed", "_error_message": "週配額查詢失敗"}
+
+
+def _pace_clause(data):
+    """`週配額已用 14%｜重置 10-12 08:35｜配速應 71%（落後 57%）`。沒有重置時刻就不編配速。"""
+    week = (data or {}).get("week")
+    if not week:
+        five = (data or {}).get("5hr")
+        if not five:
+            return ""
+        return f"短週期已用 {five[0]}%｜重置 {five[1]}"
+    pct, reset = week
+    epoch = ((data.get("_reset_epoch") or {}).get("week"))
+    minutes = ((data.get("_window_minutes") or {}).get("week"))
+    base = f"週配額已用 {pct}%｜重置 {reset}"
+    if not epoch or not minutes:
+        return base
+    total = minutes * 60
+    remaining = epoch - time.time()
+    if total <= 0 or remaining <= 0 or remaining > total:
+        return base
+    target = int(round((total - remaining) / total * 100))
+    diff = int(round(pct - target))
+    if diff <= -15:
+        gap = f"落後 {abs(diff)}%"
+    elif diff >= 10:
+        gap = f"超前 {diff}%"
+    elif diff == 0:
+        gap = "剛好在配速線上"
+    else:
+        gap = f"接近配速（差 {diff:+d}%）"
+    return f"{base}｜配速應 {target}%（{gap}）"
+
+
 def usage_report(worker):
-    """grok 分頁 /usage 的整段文字。grok 沒有配額端點，所以第一行直接說明沒有 5h／週讀數，
-    不沿用通用的「查不到資料（請確認已登入）」——那句對 grok 是錯的。本 session 用量有就接在後面。"""
-    lines = ["AI 水位 Grok Build", "沒有公開的 5h／週配額讀數（SuperGrok 不提供）。"]
+    """grok 分頁 /usage 的整段文字：週配額與配速，再加上這個 session 的 token。"""
+    lines = ["AI 水位 Grok Build"]
+    try:
+        reading = quota()
+    except Exception:
+        reading = {"_error": "probe_failed", "_error_message": "週配額查詢失敗"}
+    if reading and (reading.get("week") or reading.get("5hr")):
+        who = account_label()
+        if who:
+            lines.append(f"帳號 {who}")
+        if reading.get("_stale"):
+            lines.append("⚠ 本次更新失敗，顯示上次資料")
+        clause = _pace_clause(reading)
+        if clause:
+            lines.append(clause)
+        for group in reading.get("_groups") or []:
+            if group.get("name") and group.get("used") is not None:
+                lines.append(f"{group['name']} {group['used']}%")
+    else:
+        lines.append((reading or {}).get("_error_message") or "查不到週配額。")
     extra = usage_text(worker)
     if extra:
         lines.append(extra)

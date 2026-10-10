@@ -549,6 +549,9 @@ class AccountsApiMixin:
         if not s:
             return "此 tab 不存在或已關閉。"
         try:
+            # grok 的視窗要同時有週配額與本 session 的 token；probe_text 只有前者。
+            if agent_grok.is_grok_cmd(s.cmd):
+                return agent_grok.usage_report(self._worker_ctx(sid, s))
             data = self._probe_session_data(s)
             return main.usage_probe.probe_text(data)
         except Exception as e:

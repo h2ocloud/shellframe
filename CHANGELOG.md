@@ -6,6 +6,34 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.39.1 (2026-10-10)
+
+### Fixes
+
+- **A Grok Build tab shows its weekly allowance and pace on the usage pill.**
+  v0.39.0 treated `grok` as a provider with nothing to meter, so the top-bar
+  pill stayed on "查不到" and `/usage` said there was no weekly figure. That
+  was wrong: grok's own usage view already requests
+  `GET /v1/billing?format=credits` from cli-chat-proxy. The body carries
+  `creditUsagePercent` (utilisation, not remaining) and `currentPeriod`, which
+  on a measured account is `USAGE_PERIOD_TYPE_WEEKLY` with a start and an end
+  seven days apart. There is no five-hour bucket, so none is invented. The pill
+  now renders that window as `wk` plus the `pc` pace line (ahead, on schedule,
+  or leaving quota unused), and `/usage` prints the same reading beside this
+  session's token and context counts. A product row with no percentage is
+  omitted rather than shown as zero. Covered by `tests_grok_provider.py` and
+  `tests_grok_usage_pill.py`.
+
+  **Grok Build 分頁的頂列用量膠囊會顯示週配額與配速。** v0.39.0 把 `grok`
+  當成沒有可報的配額，頂列停在「查不到」，`/usage` 也寫沒有週讀數。這與 grok
+  自己的用量視窗不符：它打的是 cli-chat-proxy 的
+  `GET /v1/billing?format=credits`。回應裡的 `creditUsagePercent` 是已用百分比
+  （不是剩餘），`currentPeriod` 在實測帳號上是 `USAGE_PERIOD_TYPE_WEEKLY`，
+  起迄剛好七天。沒有五小時窗口，所以不編一個。膠囊現在把這個窗口畫成 `wk`，
+  旁邊的 `pc` 是配速（超前、剛好、或額度用不完）。`/usage` 在同一個讀數後面
+  接上這個 session 的 token 與 context。某個產品沒有百分比就略過，不顯示成 0。
+  由 `tests_grok_provider.py` 與 `tests_grok_usage_pill.py` 守著。
+
 ## v0.39.0 (2026-10-10)
 
 ### Added

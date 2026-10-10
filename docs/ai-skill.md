@@ -213,6 +213,7 @@ leaving to whom rather than silently covering everything.
 | Per-role model pinning, `runs_on`, `agent_blocked` in the tab list | 0.37.0 |
 | TG `/group` actually reaches the bridge (listed since 0.37.0, but typed into the CLI before 0.38.0) | 0.38.0 |
 | Grok Build (`grok`) tabs: status, model badge, conversation, `--resume` after a restart, `-m` role pinning | 0.39.0 |
+| Grok Build weekly allowance and pace on the usage pill (`wk` / `pc`) and in `/usage` | 0.39.1 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
