@@ -12,6 +12,7 @@ import os
 import subprocess
 import threading
 
+import agent_grok
 from sf_config import CONFIG_LOCK
 from api_host import main
 
@@ -211,6 +212,12 @@ class AccountsApiMixin:
                 ccsid = ""
             if ccsid:
                 cmd = self._cmd_with_resume(cmd, ccsid)
+        elif provider == "grok":
+            # 行程砍掉前才問得到 sessions 目錄（lsof）。直接拿舊的 --session-id 重開，
+            # grok 會當成「同 id 的新對話」，所以要換成 --resume 接回同一份。
+            gsid = agent_grok.session_id(self._worker_ctx(sid, old)) or ""
+            if gsid:
+                cmd = self._cmd_with_resume(cmd, gsid)
         cols, rows = old.cols, old.rows
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)

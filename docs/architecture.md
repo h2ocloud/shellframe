@@ -1,7 +1,7 @@
 # ShellFrame architecture
 
 > 中文摘要：ShellFrame 是「pywebview 前端 + Python 後端 + 每個分頁一個 PTY/tmux」的桌面終端，
-> 專門跑 AI CLI（Claude Code、Codex、opencode、pi）。後端唯一對前端的介面是 `Api`
+> 專門跑 AI CLI（Claude Code、Codex、opencode、pi、Grok Build）。後端唯一對前端的介面是 `Api`
 > 物件；它由 `main.py` 的核心加上 `api_*.py` 的領域 mixin 組成。新增功能時，先在
 > 下面的模組地圖找到所屬領域，放進對應的 mixin 或模組；`tests_architecture.py`
 > 會擋住 `main.py` 再次膨脹、mixin 反向 import main、同名方法互蓋。
@@ -52,6 +52,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
 | Domain | `agent_status.py` | Screen-based agent state detection per tab |
+| | `agent_grok.py` | Grok Build's session files: which session a tab owns, turn status, transcript, model and usage |
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `account_manager.py` | Profile directories and credential seeding per provider |
 | | `frame_link.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, NAT relay |

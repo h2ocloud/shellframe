@@ -45,6 +45,7 @@ import bridge_line
 import board
 import agent_model
 import agent_status
+import agent_grok
 import account_manager
 import sf_config
 from api_history import HistoryApiMixin
@@ -430,6 +431,9 @@ _DEFAULT_AI_PRESETS = [
     # 裸指令即可——opencode 自己管模型 provider／登入，不需要 ShellFrame 加旗標。
     # 沒安裝時走既有的「未安裝→安裝」gate（usage_probe.PROVIDER_SPECS['opencode']）。
     {"name": "OpenCode", "cmd": "opencode", "icon": "\U0001F9E9"},  # 🧩
+    # 同 Claude／Codex 是自主模式；bypassPermissions 不會寫進 grok 的 config。
+    # 模型刻意不指定，交給 grok 自己的預設（/model 的選擇它會自己存）。
+    {"name": "Grok Build", "cmd": "grok --permission-mode bypassPermissions", "icon": "\U0001D54F"},  # 𝕏
 ]
 
 _AUTONOMOUS_PRESET_CMDS = {
@@ -1277,6 +1281,9 @@ class Session:
         # auto status detector can find their JSONL. None for codex/other (codex
         # is mapped via lsof) and for reattached sessions (recovered from tmux env).
         self.cmd, self.session_id = _maybe_claude_session_id(self.cmd)
+        if self.session_id is None:
+            # grok 沒有 hook 會回報 session，只能自己指定 uuid（見 agent_grok.pin_session_id）
+            self.cmd, self.session_id = agent_grok.pin_session_id(self.cmd)
         self.cwd = _session_cwd()
         self.buffer = bytearray()
         self.lock = threading.Lock()
@@ -2032,7 +2039,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     if hook_tp:
                         entry["transcript_path"] = hook_tp
                     hook_csid = getattr(s, "session_id", "") or ""
-                    if hook_csid:
+                    if _session_provider(getattr(s, "cmd", "")) == "grok":
+                        # grok 的 uuid 不是 claude 的 transcript id，寫進 claude_session_id
+                        # 會被當成 claude 的 --resume。目錄以 lsof 為準，/new 之後會跟到新的。
+                        grok_sid = agent_grok.session_id(self._worker_ctx(sid, s)) or hook_csid
+                        if grok_sid:
+                            entry["grok_session_id"] = grok_sid
+                    elif hook_csid:
                         entry["claude_session_id"] = hook_csid
                     # codex 沒有 hook 可以回報，得自己認 rollout。Windows 關掉
                     # ShellFrame 等於整批 session 斷線（沒有 tmux 撐著），這個 id
@@ -3002,7 +3015,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         八月的 uuid，當前其實已經是另一個）。所以一律以 hook 回報、落地在
         manifest 的 uuid 為準，並把舊的 --resume / --session-id 拿掉。
 
-        只處理 claude；codex／agy／一般 shell 各有自己的續接方式，不碰。
+        只處理 claude 與 grok；codex／agy／一般 shell 各有自己的續接方式，不碰。
         """
         if not cmd or not csid:
             return cmd
@@ -3020,7 +3033,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         # 大家實際在用的指令。
         if exe.startswith("sf-"):
             for part in exe.split("-")[1:]:
-                if part in ("claude", "codex"):
+                if part in ("claude", "codex", "grok"):
                     exe = part
                     break
 
@@ -3037,6 +3050,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     continue
                 out.append(t)
             return shlex.join(out)
+
+        if exe == "grok":
+            return agent_grok.cmd_with_resume(cmd, csid)
 
         if exe == "codex":
             # `codex resume <SESSION_ID>` —— resume 是子指令，必須緊接在
@@ -3173,6 +3189,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     csid, agent_status.codex_sessions_root(
                         {"config_dir": self._provider_config_dir("codex",
                                                                  entry_refs.get("codex"))}))
+            elif _session_provider(cmd) == "grok":
+                # grok 的對話在 ~/.grok/sessions 底下，不走 claude 的家目錄搬移
+                csid = (str(entry.get("grok_session_id") or "").strip()
+                        or agent_grok.cmd_session_uuid(cmd) or "")
+                found = agent_grok.session_exists(csid)
             else:
                 # manifest 沒記 uuid（舊分頁常見）就用啟動指令裡的 --resume uuid，
                 # 否則下面的家目錄判斷整段跳過，resume 落在錯的目錄、分頁一開就結束。
@@ -3192,7 +3213,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 tmux_name = entry.get("tmux_name") or None
                 account_refs = dict(entry.get("account_refs") or default_account_refs)
                 claude_home = ""
-                if csid and found and not _worker_is_codex(cmd):
+                if csid and found and not _worker_is_codex(cmd) and _session_provider(cmd) != "grok":
                     # 「找得到 transcript」不等於「在這個分頁的帳號目錄裡找得到」。
                     # 找得到的是別的家目錄：沒 pin 就照原樣帶那個家目錄重開，有 pin
                     # 就把最新那份搬進 pin 的目錄——否則 resume 落空、分頁一開就結束。

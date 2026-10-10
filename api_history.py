@@ -411,11 +411,11 @@ class HistoryApiMixin:
             _swallow("Api.get_clean_history:3563")
 
         if in_alt_screen:
-            # OpenCode 例外：其 TUI 原地重繪，pyte history 只有目前一屏
+            # OpenCode／grok 例外：兩者 TUI 原地重繪，pyte history 只有目前一屏
             #（實測 25 行/1016 chars），terminal-first 會讓上滾「只剩一屏」。
-            # transcript（opencode.db）才有完整對話 → 對 opencode 分頁反轉
-            # 順序。claude/codex 維持 v0.23.2 terminal-first 不動。
-            if self._is_opencode_cmd(getattr(s, "cmd", "")):
+            # transcript（opencode.db、chat_history.jsonl）才有完整對話 → 這兩種
+            # 分頁先走 transcript。claude/codex 維持 v0.23.2 terminal-first 不動。
+            if self._is_opencode_cmd(getattr(s, "cmd", "")) or agent_status._worker_kind(getattr(s, "cmd", "")) == "grok":
                 try:
                     resp = self._transcript_history_response(s, sid, ansi, cols)
                     if resp:
@@ -664,7 +664,7 @@ class HistoryApiMixin:
         # 這條鏈。各處自己拼 context 正是它會再發生一次的原因。
         worker = self._worker_ctx(sid, s)
         kind = agent_status._worker_kind(worker["cmd"])
-        if kind not in ("claude", "codex"):
+        if kind not in ("claude", "codex", "grok"):
             # OpenCode 分頁：TUI 原地重繪（Bubble Tea 式），捲出視窗的內容從
             # 不進 terminal scrollback / pyte history —— transcript（其 SQLite
             # session 庫）是唯一有完整對話的來源。

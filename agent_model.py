@@ -27,6 +27,9 @@ PROVIDERS = {
     "claude": ("--model", ["opus", "sonnet", "haiku"]),
     "codex":  ("-m", ["gpt-5-codex", "gpt-5", "o3"]),
     "opencode": ("--model", []),
+    # 注意：grok 啟動時帶 -m／--effort 會把值寫進 ~/.grok/config.toml 的 default，
+    # 等於改了使用者全域的預設，不只這個分頁。roster 角色要 pin 才這樣用。
+    "grok": ("-m", ["grok-4.7", "grok-4.7-build-fast", "grok-4.6"]),
 }
 
 

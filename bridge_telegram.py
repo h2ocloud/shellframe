@@ -267,6 +267,10 @@ _TUI_SENTINEL_RE = re.compile(
     r'|(?:new task\?\s*/clear)|(?:/clear to save)',
     re.IGNORECASE)
 
+# 「回合進行中」的畫面標記。Claude 的 footer 是 esc to interrupt；grok 忙碌時是 Ctrl+c:cancel
+# （閒置時的 Ctrl+x:shortcuts 不命中）。注入前的 busy guard 與送達驗證都看這個。
+_TURN_BUSY_RE = re.compile(r"esc to interrupt|Ctrl\+c:cancel", re.I)
+
 # Stray reply-marker tokens that can leak into a span when a TUI repaint nests
 # a fresh [[TG_REPLY_xxx]] inside an earlier still-open block.
 _REPLY_MARKER_TOKEN_RE = re.compile(
@@ -3802,8 +3806,7 @@ class TelegramBridge(BridgeBase):
                             # 自動轉發，使用者不必再手動 fetch。fallback 的 _peek
                             # 另用 _fb_next_ts 節流到每 3s，避免每 tick 都 tmux
                             # capture。
-                            turn_ended = not re.search(
-                                r'esc to interrupt', self._live_tail(slot), re.I)
+                            turn_ended = not _TURN_BUSY_RE.search(self._live_tail(slot))
                             # marker_forwarded=True 代表這 epoch 已用 marker 轉發過
                             # → 「沒有新 block」是正常等待，不是漏 marker，別 fallback
                             # 發 peek（會重送）。只有從頭到尾都沒 marker 才 fallback。
@@ -4153,7 +4156,7 @@ class TelegramBridge(BridgeBase):
         def _run():
             with slot.write_lock:
                 disp = "\n".join(self._slot_display(slot))
-                if re.search(r"esc to interrupt", disp, re.I):
+                if _TURN_BUSY_RE.search(disp):
                     tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
                         "text": f"「{slot.label}」正在跑回合中，等它結束再 /model。"})
@@ -4234,7 +4237,7 @@ class TelegramBridge(BridgeBase):
                 "chat_id": chat_id,
                 "text": f"「{slot.label}」不是 claude/codex 分頁，沒有推理深度可調。"})
             return
-        if re.search(r"esc to interrupt", self._live_tail(slot), re.I):
+        if _TURN_BUSY_RE.search(self._live_tail(slot)):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
                 "text": f"「{slot.label}」正在跑回合中，等它結束再 /effort。"})
@@ -6139,8 +6142,7 @@ class TelegramBridge(BridgeBase):
                 deadline = t_wait0 + 120.0
                 queued_notified = False
                 while time.time() < deadline:
-                    if not re.search(r'esc to interrupt',
-                                     self._live_tail(slot), re.I):
+                    if not _TURN_BUSY_RE.search(self._live_tail(slot)):
                         break
                     # 等超過 8s 就先回報「已收到、排隊中」——這段最長 120s 的
                     # 靜默等待正是「傳了沒反應=以為沒收到」的體感來源。通知用
@@ -6192,7 +6194,7 @@ class TelegramBridge(BridgeBase):
                     # fallback.
                     if (
                         re.search(r'\[Pasted (?:Content|text)[^\]]*\]', after or "", re.I)
-                        and not re.search(r'esc to interrupt', after or "", re.I)
+                        and not _TURN_BUSY_RE.search(after or "")
                     ):
                         _blog(f"[send] {slot.sid} submit LF fallback after paste chip\n")
                         try:
@@ -6471,7 +6473,7 @@ class TelegramBridge(BridgeBase):
                     _blog(f"[send] {slot.sid} deferred verdict: reply extracted → OK\n")
                     self._react_async(chat_id, origin_msg_id, self.REACTION_DELIVERED)
                     return
-                if re.search(r"esc to interrupt", self._live_tail(slot) or "", re.I):
+                if _TURN_BUSY_RE.search(self._live_tail(slot) or ""):
                     _blog(f"[send] {slot.sid} deferred verdict: turn running → OK\n")
                     self._react_async(chat_id, origin_msg_id, self.REACTION_DELIVERED)
                     return
@@ -6548,7 +6550,7 @@ class TelegramBridge(BridgeBase):
         t0 = time.time()
         while time.time() - t0 < window:
             recent = self._live_tail(slot)
-            if re.search(r"esc to interrupt", recent or "", re.I):
+            if _TURN_BUSY_RE.search(recent or ""):
                 return True, False
             if getattr(slot, "last_extraction_ts", 0.0) > injected_at:
                 return True, False
@@ -7143,7 +7145,7 @@ class TelegramBridge(BridgeBase):
             status = ""
             if getattr(slot, "inject_pending", False):
                 status = "📨 你的訊息還在排隊（分頁回合進行中，尚未送入）\n"
-            elif re.search(r"esc to interrupt", self._live_tail(slot), re.I):
+            elif _TURN_BUSY_RE.search(self._live_tail(slot)):
                 status = "⏳ 回合進行中，新回覆還在生成——以下是上一則回覆\n"
             reply_text = self._peek_last_response(slot)
             if not reply_text:

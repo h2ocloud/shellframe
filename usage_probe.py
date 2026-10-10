@@ -6,6 +6,7 @@ provider's quota water-level. Each provider is read the cheapest reliable way:
   - Claude: OAuth usage API with the local Keychain token (no browser)
   - Codex:  local rollout/SQLite snapshot, else app-server JSONRPC
   - agy:    Antigravity CLI's own `/usage` slash command in print mode (JSON)
+  - pi, opencode, grok: no quota to report (see their _probe_* adapters)
 
 Adding another CLI means one PROVIDER_SPECS entry plus two adapters — see
 docs/adding-a-provider.md.
@@ -92,6 +93,15 @@ PROVIDER_SPECS = {
             "docs": "https://antigravity.google/docs/cli/install",
             "note": "安裝到 ~/.local/bin/agy，並把該路徑寫進 shell 設定；"
                     "之後用 `agy update` 自我升級。",
+        },
+    },
+    "grok": {
+        "label": "Grok Build", "binaries": ("grok",),
+        "install": {
+            "command": "curl -fsSL https://x.ai/cli/install.sh | bash",
+            "docs": "https://x.ai/cli",
+            "note": "SuperGrok 登入用 `grok login`。沒有公開的 5h／週配額，所以頂列不顯示水位；"
+                    "分頁內 `/usage` 顯示這個 session 的 token 與 context。",
         },
     },
 }
@@ -1215,6 +1225,20 @@ def _account_opencode(data, env):
 
 
 PROVIDER_SPECS["opencode"].update(probe=_probe_opencode, account=_account_opencode)
+
+
+def _probe_grok(env):
+    """Grok Build 沒有公開的配額端點，本機 session 檔也推不出 5h／週水位。回 None＝
+    「無水位可報」（不顯示 pill，不是錯誤）。猜一個數字比不顯示更糟。"""
+    return None
+
+
+def _account_grok(data, env):
+    """登入是 SuperGrok 帳號；憑證檔含權杖，這裡不讀，所以沒有可安全顯示的帳號名。"""
+    return ""
+
+
+PROVIDER_SPECS["grok"].update(probe=_probe_grok, account=_account_grok)
 
 
 def probe_data(cmd: str, env=None) -> dict:

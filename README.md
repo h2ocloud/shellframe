@@ -1,6 +1,6 @@
 # ShellFrame
 
-Multi-tab GUI terminal wrapper for AI coding assistants. Wraps any CLI tool (Claude Code, Codex, Aider, etc.) with image paste, Telegram bridge, session persistence, and more.
+Multi-tab GUI terminal wrapper for AI coding assistants. Wraps any CLI tool (Claude Code, Codex, Grok Build, Aider, etc.) with image paste, Telegram bridge, session persistence, and more.
 
 ## Why
 

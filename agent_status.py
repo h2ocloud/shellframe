@@ -26,6 +26,7 @@ import time
 import subprocess
 import re
 
+import agent_grok
 import usage_probe
 
 # ── 狀態機門檻（秒）──
@@ -689,6 +690,9 @@ def resolve_transcript(worker: dict):
             # Not a transcript: agy's state lives in a per-conversation SQLite.
             # Returned through the same slot so the resolve cache applies.
             return _agy_conversation_db(worker)
+        if kind == "grok":
+            # 對話本文是 chat_history.jsonl；session 目錄由 agent_grok 認（見該模組）。
+            return agent_grok.transcript_path(worker)
         if kind == "codex":
             # 全部限定在「這個分頁自己的」sessions 根目錄底下。
             root = codex_sessions_root(worker)
@@ -764,6 +768,8 @@ def resolve_transcript(worker: dict):
 #           ~/.claude/settings.json 的 effortLevel（/model 選單本來就存全域）。
 #   codex:  rollout 最新 turn_context 的 model/effort（per-session 準確）；
 #           沒 rollout 時退 ~/.codex/config.toml。
+#   grok:   session 目錄 summary.json 的 current_model_id／reasoning_effort
+#           （/model、--effort 切換都會寫進去；見 agent_grok.model_info）。
 # 全部走 stat/mtime 快取 —— status_for 每 ~500ms 呼叫，未變動時只有 stat 成本。
 
 CLAUDE_SETTINGS_JSON = os.path.expanduser("~/.claude/settings.json")
@@ -951,6 +957,8 @@ def detect_model_info(worker: dict, transcript_path=None):
     """tab 的 {name, effort, provider}；非 AI tab 或偵測不到回 None。永不拋。"""
     try:
         kind = _worker_kind(worker.get("cmd", ""))
+        if kind == "grok":
+            return agent_grok.model_info(worker)
         if kind == "pi":
             path = _pi_session_file(worker)
             info = _cached_parse(path, _parse_pi_session_model) if path else None
@@ -1181,6 +1189,9 @@ def _detect_format(first_line):
         return None
     if o.get("type") in ("session_meta", "response_item", "event_msg", "turn_context"):
         return "codex"
+    # grok 的 type 名稱跟 Claude 撞名，必須先認它的形狀，否則會被當成 claude
+    if agent_grok.is_grok_record(o):
+        return "grok"
     if "sessionId" in o or o.get("type") in ("user", "assistant", "system", "summary"):
         return "claude"
     return None
@@ -1295,7 +1306,7 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300, grow_to_bytes=0)
     fmt = _detect_format(head)
     if not fmt:
         return None, [], "unknown format"
-    norm = _norm_claude if fmt == "claude" else _norm_codex
+    norm = {"claude": _norm_claude, "grok": agent_grok.norm}.get(fmt, _norm_codex)
     evs = []
     for line in lines[-max_records:]:
         try:
@@ -1801,10 +1812,26 @@ class StatusTracker:
                 "elapsed": int(now - since), "why": why,
                 "transcript": None, "loop": None, "model": model}
 
+    def _grok_status(self, sid, worker, now, screen_tail, model):
+        """Grok Build 的燈號。events.jsonl 的 turn 事件是權威來源，畫面只在它不存在時補位。
+        走 _debounce，跟 Claude 分支一致——turn 結束的 done 會晚 DONE_QUIET_S 才亮。"""
+        state, why = agent_grok.status(worker, now, screen_tail)
+        state = self._debounce(sid, state, now)
+        _, since = self._last.get(sid, (state, now))
+        tp = agent_grok.transcript_path(worker)
+        return {"state": state, "dot": DOT.get(state, ""), "activity": {},
+                "summary": state, "action": "", "narration": "", "task": "",
+                "elapsed": int(now - since), "why": why,
+                "transcript": os.path.basename(tp) if tp else None,
+                "loop": None, "model": model}
+
     def _status_for_impl(self, sid, worker, screen_tail="", now=None):
         now = now or time.time()
         try:
             _kind = _worker_kind(worker.get("cmd", ""))
+            if _kind == "grok":
+                return self._grok_status(
+                    sid, worker, now, screen_tail, detect_model_info(worker))
             if _kind == "opencode":
                 return self._opencode_status(
                     sid, worker, now, screen_tail, detect_model_info(worker))

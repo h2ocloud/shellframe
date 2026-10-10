@@ -5,9 +5,11 @@ code at all — a *provider* is a CLI that ShellFrame also understands well
 enough to report its quota, pace its usage, and treat its tabs as AI tabs.
 
 Supported today: `claude` (Claude Code), `codex`, `agy` (Antigravity CLI),
-`pi` (Pi coding agent), `opencode`. The last two report no usage figure —
-they run whatever model the user pointed them at, so there is no single
-budget to read; see the note on saying why in *Errors* below.
+`pi` (Pi coding agent), `opencode`, `grok` (Grok Build). `pi` and `opencode`
+report no usage figure — they run whatever model the user pointed them at, so
+there is no single budget to read. `grok` has no public quota endpoint, but its
+`/usage` shows the current session's tokens and context from its own files.
+See the note on saying why in *Errors* below.
 
 Adding another one is **one registry entry plus two adapter functions** in
 `usage_probe.py`. Nothing in `main.py` or `web/index.html` hard-codes provider
@@ -152,7 +154,8 @@ CLI that only supports one signed-in account still reports quota fine.
 **Status detection and model badge** (`agent_status.py`) — busy/idle dots and
 the per-tab model label. This is provider-specific: Claude and Codex are read
 from transcript files, so a CLI storing state elsewhere (a SQLite index, a
-protobuf blob, a log file) needs its own reader. Skipping this only costs you
+protobuf blob, a log file) needs its own reader (`grok` keeps a session
+directory per conversation and has `agent_grok.py`). Skipping this only costs you
 the dot and the badge.
 
 **Startup-trust auto-accept** (`STARTUP_TRUST_AI_TOOLS` in `main.py`) — add your

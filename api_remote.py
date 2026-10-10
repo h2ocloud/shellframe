@@ -15,6 +15,7 @@ import threading
 import time
 from pathlib import Path
 
+import agent_grok
 from sf_config import CONFIG_LOCK
 from api_host import main
 
@@ -1228,6 +1229,10 @@ class RemoteApiMixin:
                 return {"success": False, "message": "此 tab 不存在或已關閉。"}
             try:
                 text = main.usage_probe.probe(s.cmd)
+                # grok 沒有配額讀數，但這個 session 的 token／context 有，補在後面一行
+                if agent_grok.is_grok_cmd(s.cmd):
+                    extra = agent_grok.usage_text(self._worker_ctx(sid, s))
+                    text = f"{text}\n{extra}" if extra else text
                 return {"success": True, "message": text}
             except Exception as e:
                 return {"success": False, "message": f"用量查詢失敗：{e}"}
