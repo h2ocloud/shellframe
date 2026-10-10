@@ -2,7 +2,7 @@
 
 You are running inside a **ShellFrame** tab. ShellFrame is a multi-tab terminal
 workspace: every tab is a tmux-backed shell, usually running an AI CLI (Claude
-Code, Codex, OpenCode…). From inside one tab you can see and drive the others,
+Code, Codex, OpenCode, Grok Build…). From inside one tab you can see and drive the others,
 and — once two machines are paired — the tabs on another computer as well.
 
 This document is the whole interface. Paste it to an agent and it can operate
@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellFrame v0.38.0
-   version: 0.38.0
+OK ShellFrame v0.39.0
+   version: 0.39.0
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -212,6 +212,7 @@ leaving to whom rather than silently covering everything.
 | `sfctl skill` — this document, from the running build | 0.37.0 |
 | Per-role model pinning, `runs_on`, `agent_blocked` in the tab list | 0.37.0 |
 | TG `/group` actually reaches the bridge (listed since 0.37.0, but typed into the CLI before 0.38.0) | 0.38.0 |
+| Grok Build (`grok`) tabs: status, model badge, conversation, `--resume` after a restart, `-m` role pinning | 0.39.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

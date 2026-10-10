@@ -6,6 +6,67 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.39.0 (2026-10-10)
+
+### Added
+
+- **Grok Build (`grok`) is a supported agent type, next to Claude Code and
+  Codex.** Until now a `grok` tab was just a command: no status dot, no model
+  badge, no scroll-up history, and a reboot or account relaunch opened an empty
+  conversation. grok keeps each conversation in its own directory under
+  `~/.grok/sessions/` and has no hook that reports which one a tab owns, so new
+  grok tabs are now started with a pinned `--session-id`, and the tab is matched
+  to its directory by the files the grok process holds open (this follows `/new`)
+  or by that pinned id — never by "the newest session in this folder", which
+  would let two grok tabs in one directory read each other. From that directory:
+  the status dot comes from grok's own turn events (`events.jsonl`), the model
+  badge and effort from `summary.json` (it follows `-m`, `--effort` and `/model`),
+  the scroll-up history and the phone / `link-conversation` chat view from
+  `chat_history.jsonl`, and `/usage` shows the session's context and token count
+  (grok has no public 5-hour / weekly quota, so the top-bar pill stays hidden).
+  A reboot, soft restore or account / update relaunch reopens the same
+  conversation with `--resume <id>`. A "Grok Build" preset
+  (`grok --permission-mode bypassPermissions`, autonomous like the Claude and
+  Codex presets) is added to the `+` menu, and roster roles can pin a model with
+  `-m` — note that grok itself saves a `-m` / `--effort` choice as its global
+  default. Only the `grok` command is recognised; the `agent` alias the installer
+  also creates is deliberately left alone. Grok's automatic permission review
+  (measured at 3.6 s and 22.4 s with no dialog on screen) shows as working, not as
+  waiting for you. 101 checks in `tests_grok_provider.py`, including a real grok
+  PTY capture.
+
+  **Grok Build（`grok`）成為支援的 agent，與 Claude Code、Codex 並列。** 之前
+  `grok` 分頁只是一般指令：沒有狀態燈、沒有模型徽章、上滑看不到歷史，重開機或換帳號
+  重開後是一段空白對話。grok 把每段對話放在 `~/.grok/sessions/` 下各自的目錄，也沒有
+  hook 會回報分頁對應哪一個，所以新開的 grok 分頁會先指定 `--session-id`，再用 grok
+  行程正開著的檔案（`/new` 之後也跟得上）或這個指定的 id 對到目錄——絕不用「這個
+  資料夾最新的那份」去猜，否則同一目錄的兩個 grok 分頁會讀到彼此的對話。從那個目錄：
+  狀態燈來自 grok 自己的 turn 事件（`events.jsonl`），模型與 effort 來自
+  `summary.json`（跟著 `-m`、`--effort`、`/model` 變），上滑歷史與手機／
+  `link-conversation` 的對話視圖來自 `chat_history.jsonl`，`/usage` 顯示本 session
+  的 context 與 token 數（grok 沒有公開的 5 小時／每週配額，所以頂列不顯示水位）。
+  重開機、soft restore、換帳號或套用更新的重開，都用 `--resume <id>` 接回同一段
+  對話。`+` 選單新增「Grok Build」preset（`grok --permission-mode bypassPermissions`，
+  與 Claude、Codex 的 preset 一樣是自主模式），roster 角色可以用 `-m` 指定模型——
+  注意 grok 本身會把 `-m`／`--effort` 存成它的全域預設。只認 `grok` 指令；安裝器
+  另外建立的 `agent` 別名刻意不認。grok 的自動權限審查（實測 3.6 秒與 22.4 秒，
+  畫面上沒有對話框）顯示為進行中，不會被當成在等你決定。`tests_grok_provider.py`
+  101 項檢查，含一份真實的 grok PTY 擷取。
+
+### Fixes
+
+- **Telegram no longer types into a grok turn that is still running.** The busy
+  guard before injecting a message and the delivery check after it only knew
+  Claude Code's `esc to interrupt` footer, so a grok tab mid-turn looked idle and
+  a delivered message was never positively confirmed. Both now also recognise
+  grok's `Ctrl+c:cancel` footer (one shared pattern for all eight places that ask
+  "is a turn running?"). Covered in `tests_grok_provider.py`.
+
+  **Telegram 不會再把訊息打進還在跑的 grok 回合。** 注入前的忙碌等待與注入後的送達
+  確認只認得 Claude Code 的 `esc to interrupt` footer，grok 回合進行中看起來就像
+  閒置，送達也永遠無法確認。兩者現在也認得 grok 的 `Ctrl+c:cancel` footer（八個
+  判斷「回合是否進行中」的地方共用同一個樣式）。由 `tests_grok_provider.py` 守著。
+
 ## v0.38.6 (2026-10-08)
 
 ### Fixes
