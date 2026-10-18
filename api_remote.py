@@ -1243,8 +1243,8 @@ class RemoteApiMixin:
             except Exception as e:
                 return {"success": False, "message": f"用量查詢失敗：{e}"}
 
-        elif cmd in ("a2a_send", "a2a_handoff", "a2a_result", "a2a_log",
-                     "a2a_deliver", "route_hint"):
+        elif cmd in ("a2a_send", "a2a_handoff", "a2a_result", "a2a_next",
+                     "a2a_log", "a2a_deliver", "route_hint"):
             return a2a_host.handle(self, cmd, args)
 
         else:

@@ -41,6 +41,8 @@ import time
 import uuid
 from pathlib import Path
 
+import a2a_ssh
+
 STATE_DIR = Path.home() / ".local" / "state" / "shellframe"
 LOG_FILE = STATE_DIR / "agent_link.json"
 
@@ -174,7 +176,9 @@ def format_handoff(from_label: str, task: str, hid: str, hint: str = "") -> str:
     """交接進對方 prompt 的本文。任務原文不變，建議只附加一行。"""
     extra = f"\n路由建議（這是建議，不是指令）：{hint}" if hint else ""
     return (f"[[A2A：來自「{from_label}」的交接，不是使用者本人。"
-            f"做完請執行 sfctl a2a-result {hid} \"結果\"]]\n"
+            f"做完請執行 sfctl a2a-result {hid} \"結果\"。"
+            f"改了檔案就改用 sfctl a2a-result {hid} --diff \"diff 摘要\"。"
+            f"下一步由交辦方執行 sfctl a2a-next {hid} \"下一步\"]]\n"
             f"{task}{extra}")
 
 
@@ -236,6 +240,11 @@ def _claim_fp(key) -> bool:
         return True
 
 
+def _release_fp(key):
+    with _lock:
+        _fingerprints.pop(key, None)
+
+
 def _load_handoffs() -> dict:
     try:
         data = json.loads(handoff_path().read_text(encoding="utf-8"))
@@ -279,6 +288,19 @@ def _mark_answered(hid: str) -> bool:
         return True
 
 
+def _patch_handoff(hid: str, **fields) -> bool:
+    """在鎖內改欄位。記錄已被丟掉就不復活，也不蓋掉背景執行剛寫的 answered。"""
+    with _lock:
+        data = _load_handoffs()
+        rec = data.get(hid)
+        if not rec:
+            return False
+        rec.update(fields)
+        data[hid] = rec
+        _save_handoffs(data)
+        return True
+
+
 def _drop_handoff(hid: str):
     with _lock:
         data = _load_handoffs()
@@ -308,6 +330,18 @@ def _ok(message: str, details: dict) -> dict:
     return {"success": True, "message": message, "details": details}
 
 
+def _is_coordinator(ctx, role: str, to_label: str) -> bool:
+    """目標是總管（用角色名或分頁標籤指到都算）。總管不接交辦，但收訊息與結果。"""
+    roster = ctx.roster() or {}
+    if (roster.get(role) or {}).get("coordinator"):
+        return True
+    if not to_label:
+        return False
+    return any((entry or {}).get("coordinator")
+               and ((entry or {}).get("label") or key) == to_label
+               for key, entry in roster.items())
+
+
 def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: str,
             kind: str = "send", msg_id: str = None, hint: str = "",
             route_hint=None, remote: bool = False, direction: str = "local",
@@ -323,12 +357,18 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
     if msg_id and not claim_id(msg_id):
         return _fail("duplicate id", text=text, target=target_key, msg_id=msg_id,
                      from_sid=from_sid)
-    if not _claim_fp((from_sid, kind, target_key, text)):
+    fp = (from_sid, kind, target_key, text)
+    if not _claim_fp(fp):
         release_id(msg_id)
         return _fail("duplicate message", text=text, target=target_key, msg_id=msg_id,
                      from_sid=from_sid)
 
     to_sid, to_label = ctx.resolve(role, sid)
+    if kind == "handoff" and _is_coordinator(ctx, role, to_label):
+        release_id(msg_id)
+        _release_fp(fp)
+        return _fail("總管只派工與驗收", text=text, target=target_key, msg_id=msg_id,
+                     from_sid=from_sid, from_label=from_label)
     roster = {} if remote else (ctx.roster() or {})
     ok, reason, depth = authorize(
         enabled=True, from_sid=from_sid, from_label=from_label,
@@ -381,14 +421,126 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
     return _ok(f"已交給 {label} ({to_sid or 'new'})", details)
 
 
+def _worker_name(target: str) -> str:
+    text = (target or "").strip()
+    if not text.startswith("worker:"):
+        return ""
+    return text.split(":", 1)[1].strip()
+
+
+def dispatch_worker(ctx, *, name: str, target: str, text: str, from_sid: str = "",
+                    from_label: str = "", kind: str = "handoff", msg_id: str = None,
+                    hint: str = "", route_hint=None, allow_write: bool = False) -> dict:
+    """SSH 只是執行器。結果在這台送回交辦方，不進 Frame Link 的離線佇列。
+
+    驗證都是同步的，失敗立刻回。通過後 ssh 在背景跑（ctx.spawn），馬上回「已交出」，
+    因為 sfctl 指令由同一條執行緒逐一處理，不能被一次 ssh 卡住。"""
+    text = (text or "").strip()
+    if not ctx.enabled():
+        return _fail("experimental_a2a is off", text=text, target=target,
+                     from_sid=from_sid, from_label=from_label)
+    if not from_sid:
+        return _fail("missing origin", text=text, target=target, from_sid=from_sid)
+    worker = (ctx.workers() or {}).get(name) if getattr(ctx, "workers", None) else None
+    if not worker:
+        return _fail("unknown worker", text=text, target=target, from_sid=from_sid)
+    if kind == "handoff" and not msg_id:
+        msg_id = uuid.uuid4().hex[:12]
+    if msg_id and not claim_id(msg_id):
+        return _fail("duplicate id", text=text, target=target, msg_id=msg_id,
+                     from_sid=from_sid)
+    fp = (from_sid, kind, target, text)
+    if not _claim_fp(fp):
+        release_id(msg_id)
+        return _fail("duplicate message", text=text, target=target, msg_id=msg_id,
+                     from_sid=from_sid)
+    ok, reason, depth = authorize(
+        enabled=True, from_sid=from_sid, from_label=from_label or from_sid,
+        to_role=name, to_sid="", text=text, roster={}, remote=True)
+    if not ok:
+        release_id(msg_id)
+        _release_fp(fp)
+        return _fail(reason, text=text, target=target, msg_id=msg_id, from_sid=from_sid)
+    mode, gate_err = a2a_ssh.gate(worker, text, allow_write=allow_write)
+    if gate_err:
+        release_id(msg_id)
+        _release_fp(fp)
+        return _fail(gate_err, text=text, target=target, msg_id=msg_id, from_sid=from_sid)
+    handoff = kind == "handoff" and bool(msg_id)
+    if handoff:
+        # 先寫記錄：結果回來之前，continue_handoff 看到 answered=False 會擋。
+        _put_handoff(msg_id, {
+            "direction": "local", "origin_sid": from_sid, "reply_peer": "",
+            "depth": depth, "answered": False, "target": target,
+            "from_label": from_label or from_sid,
+        })
+
+    def _failed(message: str, notify: bool):
+        release_id(msg_id)
+        _release_fp(fp)
+        if handoff:
+            _drop_handoff(msg_id)
+        record({"kind": "failed", "reason": message, "text": text[:200],
+                "target": target, "msg_id": msg_id, "from_sid": from_sid,
+                "depth": depth})
+        if notify:
+            try:
+                ctx.send(from_sid, format_delivery(name, f"執行失敗：{message}"))
+            except Exception:
+                pass
+
+    def _run():
+        """可能在背景執行緒。結果或失敗都送回交辦分頁，不丟例外。"""
+        try:
+            ran = a2a_ssh.execute(worker, text, allow_write=allow_write,
+                                  runner=getattr(ctx, "run_ssh", None))
+        except Exception as e:
+            ran = {"ok": False, "message": str(e)[:200] or "ssh failed"}
+        if not ran.get("ok"):
+            _failed(ran.get("message") or "ssh failed", True)
+            return
+        out = (ran.get("out") or "").strip()
+        if len(out) > MAX_CHARS:
+            out = out[:MAX_CHARS] + "\n…（已截斷）"
+        try:
+            res = ctx.send(from_sid, format_delivery(name, out or "(no output)")) or {}
+        except Exception as e:
+            res = {"success": False, "message": str(e)[:200]}
+        if not res.get("success"):
+            _failed(res.get("message") or "delivery failed", False)
+            return
+        if handoff:
+            _mark_answered(msg_id)
+        record({"kind": "result", "text": out[:200], "target": target,
+                "msg_id": msg_id, "from_sid": from_sid, "from_label": name,
+                "depth": depth})
+
+    spawn = getattr(ctx, "spawn", None)
+    if callable(spawn):
+        spawn(_run)
+    else:
+        _run()
+    details = {"id": msg_id, "depth": depth, "target": target, "mode": mode}
+    if kind == "handoff" and route_hint:
+        details["route_hint"] = route_hint
+    return _ok(f"已交給 {name}（ssh，{mode}），結果會送回這個分頁", details)
+
+
 def dispatch(ctx, *, target: str, text: str, from_sid: str = "", from_label: str = "",
-             kind: str = "send", msg_id: str = None, hint: str = "", route_hint=None) -> dict:
+             kind: str = "send", msg_id: str = None, hint: str = "", route_hint=None,
+             allow_write: bool = False) -> dict:
     """本機 sfctl 入口。peer/… 走簽過名的 remote，不進離線佇列。"""
     parsed = parse_target(target)
     text = (text or "").strip()
     if not ctx.enabled():
         return _fail("experimental_a2a is off", text=text, target=target,
                      from_sid=from_sid, from_label=from_label)
+    worker = _worker_name(target)
+    if worker:
+        return dispatch_worker(
+            ctx, name=worker, target=target, text=text, from_sid=from_sid,
+            from_label=from_label, kind=kind, msg_id=msg_id, hint=hint,
+            route_hint=route_hint, allow_write=allow_write)
     if not parsed["peer"]:
         return deliver(ctx, role=parsed["role"], sid="", text=text, from_sid=from_sid,
                        from_label=from_label or from_sid, kind=kind, msg_id=msg_id,
@@ -450,9 +602,13 @@ def _inject_result(ctx, rec: dict, text: str, from_label: str) -> dict:
 
 
 def report_result(ctx, hid: str, text: str, from_sid: str = "", from_label: str = "",
-                  remote_return: bool = False) -> dict:
-    """handoff 的結果只送一次。direction=out 的那筆要等對方回，自己不能回。"""
+                  remote_return: bool = False, diff: bool = False) -> dict:
+    """handoff 的結果只送一次。direction=out 的那筆要等對方回，自己不能回。
+
+    diff=True 時在原文前加一行標籤，讓交辦方看得出這是 diff 摘要而不是狀態。"""
     text = (text or "").strip()
+    if diff and text:
+        text = "diff 摘要：\n" + text
     hid = (hid or "").strip()
     rec = _get_handoff(hid)
     if not rec:
@@ -482,6 +638,36 @@ def report_result(ctx, hid: str, text: str, from_sid: str = "", from_label: str 
     record({"kind": "result", "text": text, "msg_id": result_id, "target": hid,
             "from_sid": from_sid, "from_label": from_label})
     return _ok(f"已回報 {hid}", {"id": hid})
+
+
+def continue_handoff(ctx, hid: str, task: str, from_sid: str = "", from_label: str = "",
+                     hint: str = "", route_hint=None, allow_write: bool = False) -> dict:
+    """交辦方把下一步送回同一個目標。受任方不能自己接續。"""
+    hid = (hid or "").strip()
+    step = (task or "").strip()
+    rec = _get_handoff(hid)
+    if not rec:
+        return _fail("unknown handoff", text=step, msg_id=hid, from_sid=from_sid)
+    origin = rec.get("origin_sid") or ""
+    if rec.get("direction") == "in" or (origin and from_sid != origin):
+        return _fail("下一步要由交辦方接續", text=step, msg_id=hid, from_sid=from_sid)
+    if not rec.get("answered"):
+        return _fail("上一步還沒回報", text=step, msg_id=hid, from_sid=from_sid)
+    target = rec.get("target") or ""
+    if not step:
+        return _fail("empty message", text="", msg_id=hid, from_sid=from_sid)
+    res = dispatch(
+        ctx, target=target, text=f"延續 {hid}。\n{step}",
+        from_sid=from_sid, from_label=from_label or from_sid, kind="handoff",
+        hint=hint, route_hint=route_hint, allow_write=allow_write)
+    new_id = ((res.get("details") or {}).get("id") or "")
+    if res.get("success") and new_id:
+        _patch_handoff(new_id, continues=hid)
+        details = dict(res.get("details") or {})
+        details["continues"] = hid
+        res = dict(res)
+        res["details"] = details
+    return res
 
 
 def accept_remote(ctx, payload: dict) -> dict:

@@ -56,6 +56,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `agent_cursor.py` | Cursor Agent (`cursor-agent` only): session pin, store.db, transcript, billing class |
 | | `agent_route.py` | Quota hint for delegate / handoff. Suggests; does not spend or retarget |
 | | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
+| | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `account_manager.py` | Profile directories and credential seeding per provider |
 | | `frame_link.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, NAT relay |

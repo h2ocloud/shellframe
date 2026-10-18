@@ -6,6 +6,108 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.40.1 (2026-10-18)
+
+### Fixes
+
+- **The Cursor Agent install button works on Windows.**
+  On Windows the install action opened a PowerShell tab and typed the macOS and
+  Linux installer, a curl download piped into bash, which PowerShell cannot run.
+  The provider table held one Unix command for every platform. Windows now gets
+  the official PowerShell installer (`irm 'https://cursor.com/install?win32=true' | iex`);
+  macOS and Linux keep the curl command. Covered by tests_cursor_provider.py.
+
+  **Cursor Agent 的安裝按鈕在 Windows 上可以用了。**
+  Windows 按安裝時，會開一個 PowerShell 分頁，貼上 macOS／Linux 的安裝指令，
+  也就是 curl 下載後交給 bash，PowerShell 跑不起來。原因是 provider 表對所有
+  平台只放一條 Unix 指令。現在 Windows 改用官方的 PowerShell 安裝指令
+  （`irm 'https://cursor.com/install?win32=true' | iex`），macOS 與 Linux 維持
+  curl。由 tests_cursor_provider.py 守著。
+
+### Changes
+
+- **The route hint sends a large implementation to cursor-agent first, and names the other half of the pair.**
+  In v0.40.0 an implementation task was suggested to Grok Build before
+  cursor-agent, and the hint did not say who should plan or review the work.
+  The hint now prefers cursor-agent on the subscription model composer-2.5 for
+  implementation (Grok Build stays the fallback, also inside the subscription),
+  keeps planning on Claude Opus, and adds a review tier that also goes to
+  Claude Opus. A task that says it is a review counts as review even when it
+  also mentions design. Each hint names the counterpart: the implementer for a
+  plan or review, the planner and reviewer for an implementation. It is still
+  advice only; nothing is retargeted, started, or billed. Covered by
+  tests_agent_route.py.
+
+  **路由建議把大量實作先交給 cursor-agent，並點出配對的另一側。**
+  v0.40.0 的實作任務會先建議 Grok Build，再來才是 cursor-agent，建議也沒說
+  誰該規劃或審查。現在實作優先建議訂閱內的 cursor-agent composer-2.5（Grok
+  Build 是備選，同樣在訂閱內），規劃仍給 Claude Opus，另外新增審查這一檔，
+  同樣給 Claude Opus。任務寫明是審查時，即使提到設計也算審查。每則建議都會
+  點出配對的另一側：規劃或審查配實作方，實作配規劃與審查。這仍然只是建議，
+  不改派、不啟動、不花額度。由 tests_agent_route.py 守著。
+
+### Added
+
+- **A handoff can come back as a diff summary, and the requester can send the next step to the same agent.**
+  Claude Code and cursor-agent are meant to work as a pair, one planning or
+  reviewing and the other implementing, in either direction. After the first
+  handoff there was no way to say the result was a set of file changes, and the
+  next step had to be addressed again by hand, which could land on a different
+  tab. A result can now be marked as a diff summary, and a new command sends
+  the next step as a fresh handoff to the same target, on this machine or the
+  same paired peer, starting with the previous id. Only the requester can
+  continue, and only after the previous result is in. Covered by
+  tests_agent_link.py.
+
+  **交接結果可以是 diff 摘要，交辦方也能把下一步送回同一個 agent。**
+  Claude Code 與 cursor-agent 要配成一對，一邊規劃或審查、一邊實作，方向可以
+  互換。第一次交接之後，沒辦法標明結果是一組檔案改動，下一步也得重新手動指定
+  目標，可能送到別的分頁。現在結果可以標成 diff 摘要，新的指令把下一步當成一筆
+  新的交接，送回同一個目標（同一台，或同一台已配對的機器），本文以上一筆的
+  編號開頭。只有交辦方能接續，而且要等上一筆回報之後。由 tests_agent_link.py
+  守著。
+
+- **A roster role can be the coordinator, which hands out work but is not handed implementation.**
+  With several machines handing work around, the agent that splits and checks
+  the work could itself receive an implementation task and stop coordinating.
+  A roster entry can now set a coordinator flag. A handoff aimed at that role,
+  by role name or by its session id, is refused. Messages and results still
+  reach it. Covered by tests_agent_link.py.
+
+  **roster 可以指定一個總管角色，只派工與驗收，不接實作。**
+  多台機器互相交接時，負責拆工作與驗收的那個 agent 也可能被交接實作，結果
+  不再協調。現在 roster 項目可以設總管旗標。交接到那個角色，不論用角色名或
+  它的 session id，都會被拒。一般訊息與結果仍然送得到。由
+  tests_agent_link.py 守著。
+
+- **A host without ShellFrame can run a headless cursor-agent task over SSH, read-only by default on production.**
+  Some machines that should take work do not run ShellFrame, so they cannot be
+  Frame Link peers. A paired ShellFrame host can now use SSH only as an
+  executor: it runs cursor-agent in print mode on the configured host and sends
+  the output back to the requesting tab. This is not a second transport and
+  nothing is queued when the host is down. Hosts are listed in the local config
+  only, never in the defaults. A host marked production starts in plan or ask
+  mode without force; writing needs an explicit flag on that one task, and a
+  task that restarts or stops a service is refused before any connection, even
+  with that flag. The model flag is limited to subscription models. The command
+  returns at once and the output, capped at 4000 characters, or a failure
+  notice arrives in the tab later, so a slow host does not hold up other
+  commands. On a PowerShell host the prompt is reduced to characters that the
+  Windows launcher cannot re-split. Covered by tests_a2a_ssh.py and
+  tests_agent_link.py, with a fake runner; no real host is contacted in tests.
+
+  **沒有 ShellFrame 的主機可以透過 SSH 跑 headless cursor-agent 任務，正式環境預設唯讀。**
+  有些該接工作的機器沒有跑 ShellFrame，所以不能成為 Frame Link 的配對機器。
+  現在已配對的 ShellFrame 主機可以把 SSH 只當執行器：在設定好的主機上以列印
+  模式跑 cursor-agent，把輸出送回交辦的分頁。這不是第二條傳輸通道，主機離線
+  也不排隊。主機只寫在本機設定，不進預設值。標成正式環境的主機以 plan 或 ask
+  模式啟動，不加 force；要寫入得在那一筆任務明確加旗標，而重啟或停止服務的
+  任務在連線前就拒絕，加了旗標也一樣。模型旗標只允許訂閱內的模型。指令會立刻
+  返回，輸出（上限 4000 字）或失敗通知稍後送進分頁，慢的主機不會卡住其他指令。
+  PowerShell 主機上的提示會先換掉 Windows 啟動器會重新切開的字元。由
+  tests_a2a_ssh.py 與 tests_agent_link.py 用假的執行器守著，測試不連任何真實
+  主機。
+
 ## v0.40.0 (2026-10-18)
 
 ### Added

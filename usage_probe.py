@@ -109,7 +109,7 @@ PROVIDER_SPECS = {
     "cursor": {
         "label": "Cursor Agent", "binaries": ("cursor-agent",),
         "install": {
-            "command": "curl -fsS https://cursor.com/install | bash",
+            "command": __import__("agent_cursor").install_command(os.name == "nt"),
             "docs": "https://cursor.com/docs/cli/overview",
             "note": "`agent` 不是這支 CLI。預設 composer-2.5（訂閱）。"
                     "Claude／GPT／Gemini 是付費。沒有本地配額，不估算百分比。",

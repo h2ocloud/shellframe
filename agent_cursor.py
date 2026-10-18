@@ -499,6 +499,13 @@ def account_label(data=None, env=None):
     return ""
 
 
+def install_command(windows: bool) -> str:
+    """安裝分頁在 Windows 跑 PowerShell（見 api_accounts.install_provider），不能用 bash。"""
+    if windows:
+        return "irm 'https://cursor.com/install?win32=true' | iex"
+    return "curl -fsS https://cursor.com/install | bash"
+
+
 def _billing_label(kind):
     return {"subscription": "訂閱", "paid": "付費",
             "auto": "auto，可能選到付費模型", "unknown": "未分類"}.get(kind, "未分類")

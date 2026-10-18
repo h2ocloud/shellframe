@@ -150,8 +150,19 @@ def test_wiring():
           and U.PROVIDER_SPECS["cursor"]["binaries"] == ("cursor-agent",))
 
 
+def test_install_command():
+    win = C.install_command(True)
+    check("windows install runs in powershell", "irm" in win and "win32=true" in win
+          and "bash" not in win)
+    check("posix install uses curl", "curl" in C.install_command(False)
+          and "bash" in C.install_command(False))
+    check("provider spec follows the platform",
+          U.PROVIDER_SPECS["cursor"]["install"]["command"] == C.install_command(os.name == "nt"))
+
+
 if __name__ == "__main__":
     test_detect_and_pin()
+    test_install_command()
     test_store_transcript_status_and_billing()
     test_wiring()
     print()

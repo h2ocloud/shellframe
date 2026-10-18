@@ -6,6 +6,7 @@
 
 import re
 
+_REVIEW = ("審查", "review", "校對")
 _PLAN = ("規劃", "架構", "系統設計", "權衡", "tradeoff", "trade-off", "設計")
 _LIGHT = ("摘要", "格式", "翻譯", "查一下")
 _PAID_NAME = re.compile(
@@ -14,26 +15,30 @@ _PAID_NAME = re.compile(
 _SKIP = {"not_installed", "auth_required"}
 
 # 候選是固定清單。Cursor 只出現訂閱模型 composer-2.5，不選第三方付費模型。
-_OPENCODE = {"key": "opencode", "label": "OpenCode（地端）", "model": ""}
-_PI = {"key": "pi", "label": "Pi（地端）", "model": ""}
+_OPENCODE = {"key": "opencode", "label": "OpenCode（地端 Spark）", "model": ""}
+_PI = {"key": "pi", "label": "Pi（地端 Spark）", "model": ""}
 _GROK = {"key": "grok", "label": "Grok Build（訂閱）", "model": ""}
 _CURSOR = {"key": "cursor", "label": "cursor-agent composer-2.5（訂閱）",
            "model": "composer-2.5"}
 _OPUS = {"key": "claude", "label": "Claude Opus", "model": "opus", "drop_at_90": True}
 
+# 預設分工。大量實作先給 cursor 訂閱模型；規劃與審查先給 Opus。
 _TIERS = {
     "light": (_OPENCODE, _PI, _GROK, _CURSOR),
-    "code": (_GROK, _CURSOR),
+    "code": (_CURSOR, _GROK),
     "plan": (_OPUS, _GROK),
+    "review": (_OPUS, _GROK),
 }
 
 
 def classify(task, tier=None) -> str:
-    """light／code／plan。--tier 覆寫關鍵字。"""
+    """light／code／plan／review。--tier 覆寫關鍵字。"""
     if tier in _TIERS:
         return tier
     text = task or ""
     low = text.lower()
+    if any(k in text or k in low for k in _REVIEW):
+        return "review"
     if any(k in text or k in low for k in _PLAN):
         return "plan"
     if any(k in text for k in _LIGHT):
@@ -78,8 +83,32 @@ def _paid_named(task) -> bool:
     return bool(_PAID_NAME.search(task or ""))
 
 
+def _counterpart(tier):
+    """配對的另一側。(provider, model)。輕活沒有 Claude／Cursor 配對。"""
+    if tier in ("plan", "review"):
+        return "cursor", "composer-2.5"
+    if tier == "code":
+        return "claude", "opus"
+    return "", ""
+
+
+def _pair_sentence(tier) -> str:
+    """點出配對的另一側。不改這一則實際選到誰。"""
+    if tier in ("plan", "review"):
+        return ("配對的實作方是 cursor-agent composer-2.5"
+                "（訂閱內；Grok 4.7 也是訂閱內）。")
+    if tier == "code":
+        return "配對的規劃與審查是 Claude Opus。"
+    if tier == "light":
+        return "輕活留給地端 Spark。"
+    return ""
+
+
 def _text(tier, label, note, paid) -> str:
     parts = [f"建議（{tier}）：{label}" if label else "沒有可建議的 agent"]
+    pair = _pair_sentence(tier)
+    if pair:
+        parts.append(pair)
     if note:
         parts.append(note)
     if paid:
@@ -94,8 +123,10 @@ def hint(task, readings, tier=None) -> dict:
         kind = classify(task, tier)
         chosen = _pick(_TIERS[kind], readings)
         paid = _paid_named(task)
+        other, other_model = _counterpart(kind)
         if not chosen:
             return {"tier": kind, "suggestion": "", "model": "", "label": "",
+                    "counterpart": other, "counterpart_model": other_model,
                     "paid_named": paid, "note": "",
                     "text": _text(kind, "", "", paid)}
         note = ""
@@ -104,10 +135,12 @@ def hint(task, readings, tier=None) -> dict:
         elif chosen.get("pct") is not None and chosen["pct"] >= 90:
             note = "此候選週已用已達 90%，仍是目前較可接受的選擇"
         return {"tier": kind, "suggestion": chosen["key"], "model": chosen["model"],
-                "label": chosen["label"], "paid_named": paid, "note": note,
+                "label": chosen["label"], "counterpart": other,
+                "counterpart_model": other_model, "paid_named": paid, "note": note,
                 "text": _text(kind, chosen["label"], note, paid)}
     except Exception:
         return {"tier": "code", "suggestion": "", "model": "", "label": "",
+                "counterpart": "claude", "counterpart_model": "opus",
                 "paid_named": False, "note": "",
                 "text": "沒有可建議的 agent。這是建議，不是指令。"}
 

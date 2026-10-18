@@ -27,9 +27,16 @@ def test_tiers_and_quota():
            "pi": {"week_pct": None, "error": "no_data"},
            "grok": {"week_pct": 10}, "cursor": {"week_pct": 10},
            "claude": {"week_pct": 10}}
-    check("light prefers local", hint("幫我翻譯這段", low)["suggestion"] == "opencode")
-    check("code prefers grok", hint("修這個函式", low)["suggestion"] == "grok")
+    check("light prefers local spark", hint("幫我翻譯這段", low)["suggestion"] == "opencode")
+    check("light names spark", "地端 Spark" in hint("翻譯這段", low)["text"])
+    code = hint("修這個函式", low)
+    check("code prefers cursor composer", code["suggestion"] == "cursor"
+          and code["model"] == "composer-2.5" and code["counterpart"] == "claude")
     check("plan prefers opus", hint("規劃這個架構", low)["suggestion"] == "claude")
+    review = hint("審查這段實作", low)
+    check("review prefers opus and pairs cursor",
+          review["tier"] == "review" and review["suggestion"] == "claude"
+          and review["counterpart_model"] == "composer-2.5")
     check("tier override beats keywords",
           hint("規劃這個架構", low, tier="light")["suggestion"] == "opencode")
     check("local no_data is still eligible",
@@ -37,8 +44,8 @@ def test_tiers_and_quota():
                          "pi": {"error": "not_installed"},
                          "grok": {"error": "not_installed"},
                          "cursor": {"error": "not_installed"}})["suggestion"] == "opencode")
-    demoted = hint("修這個函式", {"grok": {"week_pct": 95}, "cursor": {"week_pct": 20}})
-    check("a full grok week moves behind cursor", demoted["suggestion"] == "cursor", demoted)
+    demoted = hint("修這個函式", {"grok": {"week_pct": 20}, "cursor": {"week_pct": 95}})
+    check("a full cursor week moves behind grok", demoted["suggestion"] == "grok", demoted)
     check("cursor with no reading says so",
           hint("修這個函式", {"grok": {"error": "not_installed"},
                              "cursor": {"error": "no_data"}})["note"] == "用量未知")
@@ -58,7 +65,7 @@ def test_tiers_and_quota():
                       "details": {"sid": "s2"}}, "修這個函式", low)
     check("annotate keeps the delegate message",
           out["message"] == "Delegated to Coding (s2)"
-          and out["details"]["route_hint"]["suggestion"] == "grok")
+          and out["details"]["route_hint"]["suggestion"] == "cursor")
     check("annotate does not raise on garbage", R.annotate(None, "x") is None)
 
 

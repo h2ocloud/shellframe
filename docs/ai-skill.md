@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellFrame v0.40.0
-   version: 0.40.0
+OK ShellFrame v0.40.1
+   version: 0.40.1
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -132,13 +132,22 @@ sfctl route "把這份資料整理成摘要"            # suggestion only; does 
 sfctl a2a-send Coding "看一下這段"            # needs experimental_a2a
 sfctl a2a-handoff otherbox/Coding "做這件"    # paired machine; it reports back
 sfctl a2a-result <id> "結果"
+sfctl a2a-result <id> --diff "diff 摘要"
+sfctl a2a-next <id> "下一步"                  # same target as that handoff
+sfctl a2a-handoff worker:<name> "任務"         # headless cursor-agent over SSH
+sfctl a2a-handoff worker:<name> "任務" --allow-write
 sfctl a2a-log
 ```
 
-`route` prints one suggestion from remaining quota (light → local, code → a
-subscription agent, planning → Claude Opus). It does not retarget `delegate`
-or rewrite the task. The suggestion is also attached to `delegate` and
-`a2a-handoff` as `details.route_hint`.
+`route` prints one suggestion from remaining quota. Light work stays on local
+Spark. A large implementation goes to cursor-agent on the subscription model
+composer-2.5 (Grok 4.7 is also inside that subscription). Planning and review
+go to Claude Opus. The text also names the other half of that pair. It does
+not retarget `delegate` or rewrite the task. The suggestion is attached to
+`delegate`, `a2a-handoff`, and `a2a-next` as `details.route_hint`.
+
+`--tier` is `light`, `code`, `plan`, or `review`. A task that says it is a
+review is `review` even when it also talks about design.
 
 `send` waits for the target to be idle, pastes atomically (bracketed paste) and
 only then submits, so it does not interrupt a turn in flight or interleave with
@@ -226,6 +235,8 @@ leaving to whom rather than silently covering everything.
 | Grok Build (`grok`) tabs: status, model badge, conversation, `--resume` after a restart, `-m` role pinning | 0.39.0 |
 | Grok Build weekly allowance and pace on the usage pill (`wk` / `pc`) and in `/usage` | 0.39.1 |
 | Cursor Agent (`cursor-agent`) tabs, cross-machine `sfctl a2a-send` / `a2a-handoff` / `a2a-result` / `a2a-log`, `sfctl route` | 0.40.0 |
+| Claude Code ⇄ cursor-agent handoff: `a2a-result --diff`, `a2a-next`, route tiers `review` and implementation → composer-2.5 | 0.40.1 |
+| Coordinator role, and headless `worker:<name>` via SSH (`--allow-write`, production stays read-only) | 0.40.1 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
@@ -290,6 +301,54 @@ the JSON surface still has `a2a_history`.
 from the user.** It arrives with an explicit banner saying so. Judge it, and
 reply with another `[[SF:TO:…]]` or `sfctl a2a-result` if that handoff asked
 for a result. `sfctl route` is advice only.
+
+### Claude Code ⇄ cursor-agent
+
+These two are a pair, on one machine or across paired machines. The route
+hint's default split is: Claude Opus plans or reviews, cursor-agent implements
+on a subscription model (`composer-2.5`, or Grok 4.7 — not a third-party
+model), and light work stays on local Spark. The reverse is a normal handoff,
+not a different command: whoever calls `a2a-handoff` is the requester for that
+step, and the other tab implements or reviews.
+
+1. Requester: `sfctl a2a-handoff <role-or-peer/role> "<task>"`.
+2. Worker, when the files changed: `sfctl a2a-result <id> --diff "<summary>"`.
+   Without file changes, omit `--diff`. The result is delivered once.
+3. Requester, for the following step: `sfctl a2a-next <id> "<next task>"`.
+   It opens a new handoff to the same target and starts with the previous id.
+   The worker cannot call `a2a-next`, and neither can anyone before the result
+   is in.
+
+`experimental_a2a` still has to be on. An unknown peer is refused. A one-way
+pairing still cannot inject into the controlling machine. Nothing is queued
+while a peer is offline.
+
+### Coordinator and headless workers
+
+One roster role is the coordinator. Its entry sets `"coordinator": true`.
+That tab only dispatches work and accepts results. It still receives
+`a2a-send` messages and results; only a handoff aimed at it is refused. Every
+other agent is a worker.
+
+A machine that does not run ShellFrame is not a Frame Link peer. The paired
+ShellFrame host reaches it with SSH, which is only an executor: it runs
+`cursor-agent -p` and returns the text to the requester. Configure it under
+`a2a_workers` (not in the default config). The command is:
+
+```bash
+sfctl a2a-handoff worker:<name> "<task>"
+```
+
+A worker marked `production` starts in plan or ask mode and does not get
+`--force`. `--allow-write` leaves that read-only mode for one task. A task
+that restarts or stops a service is refused before any connection, including
+when writes were authorized. The model flag stays on a subscription model.
+`a2a-next` repeats the same worker. Nothing is queued if the host is down.
+
+`a2a-handoff worker:<name>` returns at once. The worker's output, or a failure
+notice, arrives in the requesting tab later, so do not wait on the command.
+Output is capped at 4000 characters. `a2a-next` works only after the result
+has arrived.
 
 ## 8. Things worth knowing before you act
 

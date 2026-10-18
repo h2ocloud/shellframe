@@ -619,13 +619,23 @@ def main():
     p_hand = sub.add_parser("a2a-handoff", help="Hand a task off; the other side reports with a2a-result")
     p_hand.add_argument("target")
     p_hand.add_argument("task")
+    p_hand.add_argument("--allow-write", action="store_true",
+                        help="Let a production SSH worker leave read-only mode. "
+                             "Service restarts stay refused.")
     p_res = sub.add_parser("a2a-result", help="Report the result of a handoff id")
     p_res.add_argument("id")
     p_res.add_argument("text")
+    p_res.add_argument("--diff", action="store_true",
+                       help="Mark the text as a diff summary")
+    p_next = sub.add_parser("a2a-next", help="Send the next step of a handoff back to the same target")
+    p_next.add_argument("id")
+    p_next.add_argument("task")
+    p_next.add_argument("--allow-write", action="store_true",
+                        help="Let a production SSH worker leave read-only mode")
     sub.add_parser("a2a-log", help="Show the agent-to-agent audit log")
     p_route = sub.add_parser("route", help="Suggest an agent from remaining quota; does not send")
     p_route.add_argument("task")
-    p_route.add_argument("--tier", choices=("light", "code", "plan"), default="")
+    p_route.add_argument("--tier", choices=("light", "code", "plan", "review"), default="")
 
     p_new = sub.add_parser("new", help="Create a new session")
     p_new.add_argument("command", nargs="?", default="claude",
@@ -815,13 +825,20 @@ def main():
     elif args.cmd == "a2a-handoff":
         _print_result(_rpc("a2a_handoff", {
             "target": args.target, "text": args.task,
+            "allow_write": bool(args.allow_write),
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=45))
     elif args.cmd == "a2a-result":
         _print_result(_rpc("a2a_result", {
-            "id": args.id, "text": args.text,
+            "id": args.id, "text": args.text, "diff": bool(args.diff),
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=30))
+    elif args.cmd == "a2a-next":
+        _print_result(_rpc("a2a_next", {
+            "id": args.id, "task": args.task,
+            "allow_write": bool(args.allow_write),
+            "from_sid": os.environ.get("SF_SID", ""),
+        }, timeout=45))
     elif args.cmd == "a2a-log":
         _print_result(_rpc("a2a_log", {}, timeout=15))
     elif args.cmd == "route":

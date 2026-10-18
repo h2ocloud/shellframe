@@ -1,6 +1,7 @@
 """sfctl 與 Frame Link 之間的 A2A 接線。規則在 agent_link，這裡只碰分頁與 peer。"""
 
 import os
+import threading
 
 import agent_link
 import agent_route
@@ -68,6 +69,22 @@ class _Ctx:
     def remote(self, peer_id: str, payload: dict) -> dict:
         return self.api._link().remote_a2a(peer_id, payload)
 
+    def workers(self) -> dict:
+        try:
+            from api_host import main
+            import a2a_ssh
+            return a2a_ssh.normalize_all(main.load_config().get("a2a_workers") or {})
+        except Exception:
+            return {}
+
+    def run_ssh(self, argv):
+        import a2a_ssh
+        return a2a_ssh.default_runner(argv)
+
+    def spawn(self, fn):
+        """ssh 最久 180 秒，不能卡住逐一處理 sfctl 的那條執行緒。"""
+        threading.Thread(target=fn, daemon=True, name="a2a-ssh").start()
+
 
 def _readings() -> dict:
     try:
@@ -105,7 +122,14 @@ def handle(api, cmd: str, args: dict) -> dict:
         if cmd == "a2a_result":
             return agent_link.report_result(
                 ctx, args.get("id") or "", args.get("text") or "",
-                from_sid=sid, from_label=label)
+                from_sid=sid, from_label=label, diff=bool(args.get("diff")))
+        if cmd == "a2a_next":
+            task = args.get("text") or args.get("task") or ""
+            hint = agent_route.hint(task, _readings())
+            return agent_link.continue_handoff(
+                ctx, args.get("id") or "", task, from_sid=sid, from_label=label,
+                hint=hint.get("text") or "", route_hint=hint or None,
+                allow_write=bool(args.get("allow_write")))
         if cmd in ("a2a_send", "a2a_handoff"):
             kind = "handoff" if cmd == "a2a_handoff" else "send"
             hint = {}
@@ -116,7 +140,8 @@ def handle(api, cmd: str, args: dict) -> dict:
                 ctx, target=args.get("target") or "",
                 text=args.get("text") or args.get("task") or "",
                 from_sid=sid, from_label=label, kind=kind,
-                hint=hint.get("text") or "", route_hint=hint or None)
+                hint=hint.get("text") or "", route_hint=hint or None,
+                allow_write=bool(args.get("allow_write")))
         return {"success": False, "message": f"unknown {cmd}"}
     except Exception as e:
         return {"success": False, "message": f"{cmd} failed: {e}"}
