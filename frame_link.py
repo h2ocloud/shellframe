@@ -971,6 +971,14 @@ class FrameLink:
                                            bool(body.get("submit", True)),
                                            source_peer=peer_id)
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/a2a/send":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False,
+                            "message": "單向配對：這台是主控端，對方無權操作"},
+                            sign_for=peer, nonce=nonce)
+                    body["source_peer"] = peer_id
+                    res = link._execute("a2a_deliver", body) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/input":
                     if not link._peer_may_control(peer_id):
                         return self._send(403, {"success": False,
@@ -1915,6 +1923,22 @@ class FrameLink:
                 self._mark_status(peer_id, False, str(e))
         return self._enqueue(peer_id, {"type": "send", "sid": sid,
                                        "text": text, "submit": submit})
+
+    def remote_a2a(self, peer_id: str, payload: dict) -> dict:
+        """簽過名的 A2A。連不上就拒，不進離線佇列。"""
+        peer = self._peer(peer_id)
+        if not peer:
+            return {"success": False, "message": "no such peer"}
+        if not self._addressable(peer):
+            return {"success": False, "message": "peer unreachable"}
+        try:
+            body = json.dumps(payload or {}).encode()
+            res = self._signed_request(peer, "POST", "/link/a2a/send", body, timeout=20)
+            self._mark_status(peer_id, True)
+            return res
+        except Exception as e:
+            self._mark_status(peer_id, False, str(e))
+            return {"success": False, "message": str(e)}
 
     def send_message(self, peer_id: str, text: str) -> dict:
         peer = self._peer(peer_id)

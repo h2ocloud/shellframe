@@ -269,7 +269,7 @@ _TUI_SENTINEL_RE = re.compile(
 
 # 「回合進行中」的畫面標記。Claude 的 footer 是 esc to interrupt；grok 忙碌時是 Ctrl+c:cancel
 # （閒置時的 Ctrl+x:shortcuts 不命中）。注入前的 busy guard 與送達驗證都看這個。
-_TURN_BUSY_RE = re.compile(r"esc to interrupt|Ctrl\+c:cancel", re.I)
+_TURN_BUSY_RE = re.compile(r"esc to interrupt|Ctrl\+c:cancel|ctrl\+c to stop", re.I)
 
 # Stray reply-marker tokens that can leak into a span when a TUI repaint nests
 # a fresh [[TG_REPLY_xxx]] inside an earlier still-open block.
@@ -2920,50 +2920,14 @@ class TelegramBridge(BridgeBase):
         return kept
 
     def _route_a2a(self, from_sid: str, from_label: str, to_role: str, text: str):
-        """Resolve the role to a tab, check the rules, deliver."""
-        roster, to_sid, to_label = {}, "", to_role
+        """規則在 a2a_host。目標可以是角色，也可以是 peer/角色。"""
         try:
-            res = self._sfctl_call("roster", {}, timeout=10.0) or {}
-            for r in (res.get("details") or {}).get("roles", []) or []:
-                roster[r.get("role", "")] = r
-            entry = roster.get(to_role) or {}
-            to_label = entry.get("label") or to_role
-            lst = self._sfctl_call("list", {}, timeout=10.0) or {}
-            for s in (lst.get("details") or {}).get("sessions", []) or []:
-                if (s.get("label") or "") == to_label:
-                    to_sid = s.get("sid", "")
-                    break
+            self._sfctl_call("a2a_send", {
+                "target": to_role, "text": text,
+                "from_sid": from_sid, "from_label": from_label,
+            }, timeout=30.0)
         except Exception as e:
-            _blog(f"[a2a] lookup failed: {e}\n")
-
-        ok, reason, depth = agent_link.authorize(
-            enabled=True, from_sid=from_sid, from_label=from_label,
-            to_role=to_role, to_sid=to_sid, text=text, roster=roster)
-        if not ok:
-            agent_link.record({"kind": "refused", "from_sid": from_sid,
-                               "from_label": from_label, "to_role": to_role,
-                               "text": text[:200], "reason": reason})
-            _blog(f"[a2a] refused {from_label} -> {to_role}: {reason}\n")
-            return
-
-        payload = agent_link.format_delivery(from_label, text)
-        # delegate opens the role's tab when it is not running yet, which is the
-        # same path the user's own `sfctl delegate` takes.
-        if to_sid:
-            res = self._sfctl_call("send", {"sid": to_sid, "text": payload,
-                                            "submit": True}, timeout=30.0) or {}
-        else:
-            res = self._sfctl_call("delegate", {"role": to_role,
-                                                "task": payload}, timeout=60.0) or {}
-        delivered = bool(res.get("success"))
-        if delivered and to_sid:
-            agent_link.note_delivered(to_sid, depth)
-        agent_link.record({"kind": "message" if delivered else "failed",
-                           "from_sid": from_sid, "from_label": from_label,
-                           "to_role": to_role, "to_sid": to_sid,
-                           "to_label": to_label, "text": text, "depth": depth,
-                           "reason": "" if delivered else (res.get("message") or "")})
-        _blog(f"[a2a] {from_label} -> {to_role} depth={depth} ok={delivered}\n")
+            _blog(f"[a2a] {from_sid} route failed: {e}\n")
 
     def _detect_and_apply_board(self, slot, new_lines):
         """Scan freshly extracted lines for [[SF:TASK:...]] markers, apply them

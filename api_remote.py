@@ -15,7 +15,9 @@ import threading
 import time
 from pathlib import Path
 
+import agent_cursor
 import agent_grok
+import a2a_host
 from sf_config import CONFIG_LOCK
 from api_host import main
 
@@ -488,7 +490,9 @@ class RemoteApiMixin:
 
         elif cmd == "delegate":
             try:
-                return self.delegate_task(args.get("role", ""), args.get("task", ""))
+                return a2a_host.annotate_delegate(
+                    self.delegate_task(args.get("role", ""), args.get("task", "")),
+                    args.get("task", ""))
             except Exception as e:
                 return {"success": False, "message": f"Delegate failed: {e}"}
 
@@ -1231,11 +1235,17 @@ class RemoteApiMixin:
                 # grok 的說明含週配額與本 session token；probe() 只有前者。
                 if agent_grok.is_grok_cmd(s.cmd):
                     text = agent_grok.usage_report(self._worker_ctx(sid, s))
+                elif agent_cursor.is_cursor_cmd(s.cmd):
+                    text = agent_cursor.usage_report(self._worker_ctx(sid, s))
                 else:
                     text = main.usage_probe.probe(s.cmd)
                 return {"success": True, "message": text}
             except Exception as e:
                 return {"success": False, "message": f"用量查詢失敗：{e}"}
+
+        elif cmd in ("a2a_send", "a2a_handoff", "a2a_result", "a2a_log",
+                     "a2a_deliver", "route_hint"):
+            return a2a_host.handle(self, cmd, args)
 
         else:
             return {"success": False, "message": f"Unknown command: {cmd}"}

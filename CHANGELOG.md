@@ -6,6 +6,81 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.40.0 (2026-10-18)
+
+### Added
+
+- **Cursor Agent is a supported tab type, beside Claude Code, Codex, and Grok Build.**
+  A cursor-agent tab was only a shell command: no status dot, no model badge,
+  no way to reopen the same chat after a reboot, and the phone footer could not
+  tell a running turn from an idle prompt. The installer also creates an agent
+  binary that is Grok Build, and the desktop IDE is a different cursor command,
+  so matching either of those would attach the wrong provider. ShellFrame now
+  recognises only the cursor-agent program, including its Windows launcher.
+  A new tab is started with a pinned session id and reopened with resume when
+  that chat still exists on disk. The status dot comes from the chat transcript
+  and from the on-screen line that says how to stop the turn; the confirm-to-exit
+  line is idle, not busy. The usage view names the model and whether it sits
+  inside the subscription, spends prepaid credit as a third-party model, or is
+  left on automatic selection. There is no local quota file, so the pill does
+  not invent a percentage. The new-tab preset pins a subscription model and does
+  not enable on-demand billing. Covered by tests_cursor_provider.py.
+
+  **Cursor Agent 成為支援的分頁類型，與 Claude Code、Codex、Grok Build 並列。**
+  之前這類分頁只是一般指令：沒有狀態燈、沒有模型徽章、重開機後不能接回同一段
+  對話，手機上的忙碌列也分不出回合還在跑。安裝器另外建立的 agent 指令其實是
+  Grok Build，桌面 IDE 則是另一個 cursor 指令，認錯就會套上錯誤的 provider。
+  現在只認 cursor-agent 這個程式，包含 Windows 的啟動器。新分頁會指定 session
+  id，記錄還在時用 resume 接回。狀態燈來自對話記錄，以及畫面上那行怎麼停止回合
+  的字；再按一次才離開的確認行算閒置，不算忙碌。用量畫面會寫出模型，並標它是
+  訂閱內、會花預付額度的第三方模型，或是自動選模型。本機沒有配額檔，所以用量
+  膠囊不編一個百分比。新分頁的預設釘在訂閱模型，也不打開按需計費。由
+  tests_cursor_provider.py 守著。
+
+- **A tab can hand work to an agent on this machine or on a paired machine, and get one result back.**
+  Agents could already delegate to a local role, but a task that belonged on
+  another paired computer had no command that both delivered the prompt and
+  expected a report. The new commands send a message, hand off a task, return
+  a result, and print the audit log. Delivery reuses Frame Link. The peer must
+  already be paired, an unknown name is refused, and a one-way pairing still
+  cannot inject a prompt into the controlling machine. Nothing is stored for
+  later when the peer is offline, so a message cannot arrive twice after the
+  link returns. The same text inside one minute, and the same id, are dropped.
+  A result is delivered once. A handoff that has already reached the depth cap
+  can still report. The feature stays behind the existing experimental flag,
+  which remains off until it is turned on. Covered by tests_agent_link.py and
+  tests_frame_link.py.
+
+  **分頁可以把工作交給這台或已配對機器上的 agent，並收回一次結果。**
+  先前只能把工作派給本機角色。該由另一台已配對電腦做的事，沒有一個指令會把
+  提示送過去並等對方回報。新指令可以傳訊息、移交任務、回傳結果、印出稽核紀錄。
+  傳送走既有的 Frame Link。對方必須已經配對，不認識的名字直接拒絕，單向配對
+  仍然不能把輸入送進主控那台。對方不在線就不先排進待送佇列，避免連線恢復後送出
+  兩次。同一分鐘內的相同內容，以及同一個編號，都會丟掉。結果只送達一次。深度
+  已經到頂的移交仍可以回報。功能留在原本的實驗旗標後面，預設維持關閉，要打開
+  才會送。由 tests_agent_link.py 與 tests_frame_link.py 守著。
+
+- **Delegate and handoff now carry a usage hint, and a separate command prints that hint without sending anything.**
+  Choosing an agent by habit could spend a nearly exhausted weekly allowance,
+  or pick a third-party model that draws prepaid credit, while a cheaper local
+  or subscription agent would have done the job. The hint classifies the task
+  as light work, coding, or planning, then suggests the cheapest adequate
+  option from the readings already on the usage pill. Unknown usage stays
+  eligible and is not treated as zero. A planning model whose week is at least
+  nine tenths used is left out. Other agents at that level move to the back of
+  the list. If the task names a third-party model, the hint says that choice is
+  paid and does not select it. The suggestion is attached to the reply. It does
+  not change the destination and it does not start a process. Covered by
+  tests_agent_route.py.
+
+  **派工與移交現在會附上用量建議，另有一個指令只印同樣的建議、什麼都不送。**
+  依習慣挑 agent，可能把快用完的週配額再花掉，或選到會扣預付額度的第三方模型，
+  而更便宜的地端或訂閱 agent 就做得完。建議先把任務分成輕量、寫程式或規劃，
+  再用用量膠囊上已有的讀數，挑夠用又較省的一個。讀數未知仍可被選到，不會被當成
+  已經用了零。規劃用的模型若這一週已用到九成以上就排除。其他 agent 到了這個
+  水位只是排到後面。任務若點名第三方模型，建議會註明那是付費，並且不選它。
+  建議附在回覆上，不改目的地，也不會因此啟動行程。由 tests_agent_route.py 守著。
+
 ## v0.39.1 (2026-10-10)
 
 ### Fixes

@@ -45,6 +45,7 @@ import bridge_line
 import board
 import agent_model
 import agent_status
+import agent_cursor
 import agent_grok
 import account_manager
 import sf_config
@@ -434,6 +435,8 @@ _DEFAULT_AI_PRESETS = [
     # 同 Claude／Codex 是自主模式；bypassPermissions 不會寫進 grok 的 config。
     # 模型刻意不指定，交給 grok 自己的預設（/model 的選擇它會自己存）。
     {"name": "Grok Build", "cmd": "grok --permission-mode bypassPermissions", "icon": "\U0001D54F"},  # 𝕏
+    # 預設釘訂閱模型。第三方模型會花預付額度，不放進預設。
+    {"name": "Cursor Agent", "cmd": "cursor-agent --model composer-2.5 --trust --force", "icon": "\U0001F5B1"},
 ]
 
 _AUTONOMOUS_PRESET_CMDS = {
@@ -1284,6 +1287,8 @@ class Session:
         if self.session_id is None:
             # grok 沒有 hook 會回報 session，只能自己指定 uuid（見 agent_grok.pin_session_id）
             self.cmd, self.session_id = agent_grok.pin_session_id(self.cmd)
+        if self.session_id is None:
+            self.cmd, self.session_id = agent_cursor.pin_session_id(self.cmd)
         self.cwd = _session_cwd()
         self.buffer = bytearray()
         self.lock = threading.Lock()
@@ -1993,6 +1998,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             grok_sids = {sid: agent_grok.session_id(self._worker_ctx(sid, s))
                          for sid, s in list(self.sessions.items())
                          if _session_provider(getattr(s, "cmd", "")) == "grok"}
+            cursor_sids = {
+                sid: (agent_cursor.cmd_session_uuid(getattr(s, "cmd", "") or "")
+                      or agent_cursor.session_id(self._worker_ctx(sid, s)))
+                for sid, s in list(self.sessions.items())
+                if _session_provider(getattr(s, "cmd", "")) == "cursor"}
             with _CONFIG_LOCK:
                 cfg = load_config()
                 labels = cfg.get("session_labels", {}) or {}
@@ -2050,6 +2060,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                         grok_sid = grok_sids.get(sid) or hook_csid
                         if grok_sid:
                             entry["grok_session_id"] = grok_sid
+                    elif _session_provider(getattr(s, "cmd", "")) == "cursor":
+                        if cursor_sids.get(sid):
+                            entry["cursor_session_id"] = cursor_sids[sid]
                     elif hook_csid:
                         entry["claude_session_id"] = hook_csid
                     # codex 沒有 hook 可以回報，得自己認 rollout。Windows 關掉
@@ -2908,6 +2921,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             "session_id": getattr(s, "session_id", None),
             "transcript_hint": getattr(s, "_hook_transcript_path", None),
             "codex_session_id": getattr(s, "_codex_sid", "") or "",
+            "cursor_session_id": getattr(s, "cursor_session_id", "") or "",
             "config_dir": config_dir,
         }
 
@@ -3020,7 +3034,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         八月的 uuid，當前其實已經是另一個）。所以一律以 hook 回報、落地在
         manifest 的 uuid 為準，並把舊的 --resume / --session-id 拿掉。
 
-        只處理 claude 與 grok；codex／agy／一般 shell 各有自己的續接方式，不碰。
+        只處理 claude、grok 與 cursor；codex／agy／一般 shell 各有自己的續接方式，不碰。
         """
         if not cmd or not csid:
             return cmd
@@ -3030,6 +3044,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             return cmd
         if not tokens:
             return cmd
+        if agent_cursor.is_cursor_cmd(cmd):
+            return agent_cursor.cmd_with_resume(cmd, csid)
         exe = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
         exe = exe[:-4] if exe.endswith((".cmd", ".bat", ".exe")) else exe
         # ShellFrame 自己的啟動器（sf-codex、sf-claude-home…）都是
@@ -3089,6 +3105,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             csid = str(entry.get("claude_session_id") or "").strip()
             if csid and not getattr(session, "session_id", None):
                 session.session_id = csid
+            if entry.get("cursor_session_id"):
+                session.cursor_session_id = str(entry["cursor_session_id"]).strip()
         except Exception:
             _swallow(f"restore_transcript_hint:{getattr(session, 'sid', '?')}")
 
@@ -3199,6 +3217,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 csid = (str(entry.get("grok_session_id") or "").strip()
                         or agent_grok.cmd_session_uuid(cmd) or "")
                 found = agent_grok.session_exists(csid)
+            elif _session_provider(cmd) == "cursor":
+                csid = (str(entry.get("cursor_session_id") or "").strip()
+                        or agent_cursor.cmd_session_uuid(cmd) or "")
+                found = bool(csid) and agent_cursor.session_exists(csid)
             else:
                 # manifest 沒記 uuid（舊分頁常見）就用啟動指令裡的 --resume uuid，
                 # 否則下面的家目錄判斷整段跳過，resume 落在錯的目錄、分頁一開就結束。
@@ -3219,16 +3241,17 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 account_refs = dict(entry.get("account_refs") or default_account_refs)
                 claude_home = ""
                 if csid and found and not _worker_is_codex(cmd) and _session_provider(cmd) != "grok":
-                    # 「找得到 transcript」不等於「在這個分頁的帳號目錄裡找得到」。
-                    # 找得到的是別的家目錄：沒 pin 就照原樣帶那個家目錄重開，有 pin
-                    # 就把最新那份搬進 pin 的目錄——否則 resume 落空、分頁一開就結束。
-                    home = _claude_home_of_transcript(_claude_newest_transcript(csid))
-                    claude_home = self._claude_home_to_keep(account_refs, home)
-                    if claude_home:
-                        _dlog("lifecycle", f"  {sid} 對話在 {claude_home}，照原樣帶家目錄")
-                    elif home and not _same_dir(home, self._claude_config_dir_for(account_refs)):
-                        _claude_ensure_transcript_in(
-                            csid, self._claude_config_dir_for(account_refs))
+                    if _session_provider(cmd) != "cursor":
+                        # 「找得到 transcript」不等於「在這個分頁的帳號目錄裡找得到」。
+                        # 找得到的是別的家目錄：沒 pin 就照原樣帶那個家目錄重開，有 pin
+                        # 就把最新那份搬進 pin 的目錄——否則 resume 落空、分頁一開就結束。
+                        home = _claude_home_of_transcript(_claude_newest_transcript(csid))
+                        claude_home = self._claude_home_to_keep(account_refs, home)
+                        if claude_home:
+                            _dlog("lifecycle", f"  {sid} 對話在 {claude_home}，照原樣帶家目錄")
+                        elif home and not _same_dir(home, self._claude_config_dir_for(account_refs)):
+                            _claude_ensure_transcript_in(
+                                csid, self._claude_config_dir_for(account_refs))
                 session = Session(sid, cmd, cols, rows,
                                   on_data=self._output_event.set,
                                   tmux_name=tmux_name,

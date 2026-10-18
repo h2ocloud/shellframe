@@ -11,7 +11,13 @@ there is no single budget to read. `grok`'s account allowance is a weekly
 window from `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`
 (`creditUsagePercent` is utilisation, `currentPeriod` is the window). There is
 no 5-hour bucket. The fetcher lives in `agent_grok.py` because `usage_probe.py`
-is at its line budget; `_probe_grok` only delegates. See *Errors* below.
+is at its line budget; the registry probe only delegates. `cursor` (the
+`cursor-agent` binary — not the unrelated `agent` binary, and not the IDE
+`cursor`) is the same shape: session files live in `agent_cursor.py`, and
+`quota()` reports `no_data` instead of inventing a percentage. There is no
+local account file to read. Third-party Cursor models spend prepaid credit
+and are labelled paid; the default preset pins the subscription model
+`composer-2.5`. See *Errors* below.
 
 Adding another one is **one registry entry plus two adapter functions** in
 `usage_probe.py`. Nothing in `main.py` or `web/index.html` hard-codes provider

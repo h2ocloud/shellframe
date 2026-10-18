@@ -26,6 +26,7 @@ import time
 import subprocess
 import re
 
+import agent_cursor
 import agent_grok
 import usage_probe
 
@@ -131,6 +132,9 @@ def _worker_kind(cmd: str) -> str:
     without editing this function (see docs/adding-a-provider.md).
     """
     c = (cmd or "").lower()
+    # cursor-agent --model claude-… 含有 claude 這個字，必須先認執行檔。
+    if agent_cursor.is_cursor_cmd(cmd):
+        return "cursor"
     if "codex" in c:
         return "codex"
     if "claude" in c:
@@ -693,6 +697,8 @@ def resolve_transcript(worker: dict):
         if kind == "grok":
             # 對話本文是 chat_history.jsonl；session 目錄由 agent_grok 認（見該模組）。
             return agent_grok.transcript_path(worker)
+        if kind == "cursor":
+            return agent_cursor.transcript_path(worker)
         if kind == "codex":
             # 全部限定在「這個分頁自己的」sessions 根目錄底下。
             root = codex_sessions_root(worker)
@@ -959,6 +965,8 @@ def detect_model_info(worker: dict, transcript_path=None):
         kind = _worker_kind(worker.get("cmd", ""))
         if kind == "grok":
             return agent_grok.model_info(worker)
+        if kind == "cursor":
+            return agent_cursor.model_info(worker)
         if kind == "pi":
             path = _pi_session_file(worker)
             info = _cached_parse(path, _parse_pi_session_model) if path else None
@@ -1192,6 +1200,8 @@ def _detect_format(first_line):
     # grok 的 type 名稱跟 Claude 撞名，必須先認它的形狀，否則會被當成 claude
     if agent_grok.is_grok_record(o):
         return "grok"
+    if agent_cursor.is_cursor_record(o):
+        return "cursor"
     if "sessionId" in o or o.get("type") in ("user", "assistant", "system", "summary"):
         return "claude"
     return None
@@ -1306,7 +1316,8 @@ def _read_tail_events(path, tail_bytes=262144, max_records=300, grow_to_bytes=0)
     fmt = _detect_format(head)
     if not fmt:
         return None, [], "unknown format"
-    norm = {"claude": _norm_claude, "grok": agent_grok.norm}.get(fmt, _norm_codex)
+    norm = {"claude": _norm_claude, "grok": agent_grok.norm,
+            "cursor": agent_cursor.norm}.get(fmt, _norm_codex)
     evs = []
     for line in lines[-max_records:]:
         try:
@@ -1829,6 +1840,9 @@ class StatusTracker:
         now = now or time.time()
         try:
             _kind = _worker_kind(worker.get("cmd", ""))
+            if _kind == "cursor":
+                return agent_cursor.status_view(
+                    self, sid, worker, now, screen_tail, detect_model_info(worker))
             if _kind == "grok":
                 return self._grok_status(
                     sid, worker, now, screen_tail, detect_model_info(worker))

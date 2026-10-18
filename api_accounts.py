@@ -12,6 +12,7 @@ import os
 import subprocess
 import threading
 
+import agent_cursor
 import agent_grok
 from sf_config import CONFIG_LOCK
 from api_host import main
@@ -218,6 +219,11 @@ class AccountsApiMixin:
             gsid = agent_grok.session_id(self._worker_ctx(sid, old)) or ""
             if gsid:
                 cmd = self._cmd_with_resume(cmd, gsid)
+        elif provider == "cursor":
+            csid = (agent_cursor.cmd_session_uuid(cmd)
+                    or agent_cursor.session_id(self._worker_ctx(sid, old)) or "")
+            if csid:
+                cmd = self._cmd_with_resume(cmd, csid)
         cols, rows = old.cols, old.rows
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)
@@ -552,6 +558,8 @@ class AccountsApiMixin:
             # grok 的視窗要同時有週配額與本 session 的 token；probe_text 只有前者。
             if agent_grok.is_grok_cmd(s.cmd):
                 return agent_grok.usage_report(self._worker_ctx(sid, s))
+            if agent_cursor.is_cursor_cmd(s.cmd):
+                return agent_cursor.usage_report(self._worker_ctx(sid, s))
             data = self._probe_session_data(s)
             return main.usage_probe.probe_text(data)
         except Exception as e:

@@ -70,6 +70,7 @@ class Node:
         self.reorders = []       # order list via /link/reorder
         self.renames = []        # (sid, name) via /link/rename
         self.maint = []          # action via /link/maintenance
+        self.a2a = []            # payloads via /link/a2a/send
 
         def execute(cmd, args):
             if cmd == "list":
@@ -115,6 +116,9 @@ class Node:
             if cmd == "save_paste":
                 self.pasted.append((args.get("filename"), args.get("data_b64")))
                 return {"success": True, "details": {"path": f"/tmp/{name}-paste.png"}}
+            if cmd == "a2a_deliver":
+                self.a2a.append(dict(args or {}))
+                return {"success": True, "message": "delivered"}
             return {"success": False, "message": f"unknown {cmd}"}
 
         def update_config(mutator):
@@ -242,6 +246,10 @@ def main():
         sent = b.link.remote_send(a.fid, "s2", "hello from B")
         check("remote_send lands in A's tab",
               sent.get("success") and a.sent == [("s2", "hello from B", True)])
+        a2a = b.link.remote_a2a(a.fid, {"id": "h1", "text": "ping", "target": "Coding"})
+        check("remote_a2a lands in a2a_deliver",
+              a2a.get("success") and a.a2a and a.a2a[-1].get("text") == "ping"
+              and a.a2a[-1].get("source_peer") == b.fid)
 
         # ── 訊息（直連）──
         msg = b.link.send_message(a.fid, "哈囉 A")
@@ -336,6 +344,10 @@ def main():
         rd = b.link.remote_input(a.fid, "s1", "whoami\r")
         check("slave raw_input to master denied",
               rd.get("success") is False and len(a.raw) == before)
+        before_a2a = len(a.a2a)
+        denied = b.link.remote_a2a(a.fid, {"id": "h2", "text": "nope"})
+        check("slave remote_a2a to master denied",
+              denied.get("success") is False and len(a.a2a) == before_a2a)
         rinfo = b.link.remote_info(a.fid)
         check("slave sees no tabs on master",
               rinfo.get("no_control") is True and

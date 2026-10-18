@@ -106,6 +106,15 @@ PROVIDER_SPECS = {
                     "分頁內 `/usage` 同時列出本 session 的 token 與 context。",
         },
     },
+    "cursor": {
+        "label": "Cursor Agent", "binaries": ("cursor-agent",),
+        "install": {
+            "command": "curl -fsS https://cursor.com/install | bash",
+            "docs": "https://cursor.com/docs/cli/overview",
+            "note": "`agent` 不是這支 CLI。預設 composer-2.5（訂閱）。"
+                    "Claude／GPT／Gemini 是付費。沒有本地配額，不估算百分比。",
+        },
+    },
 }
 
 # Where a CLI plausibly lives. Checked in addition to PATH because a GUI-launched
@@ -1195,15 +1204,10 @@ PROVIDER_SPECS["agy"].update(probe=_probe_agy, account=_account_agy)
 
 
 def _probe_pi(env):
-    """pi 沒有配額讀數——它接的是使用者自己設定的 provider（地端 vLLM／
-    Ollama／任何 OpenAI 相容端點，見 ~/.pi/agent/models.json），那些端點
-    沒有 5h／週用量的概念。回 None＝「此 provider 無水位可報」，上層會
-    照既有的 no-reading 路徑處理（不顯示 pill，不是錯誤）。"""
-    return None
+    return None  # 地端 provider，沒有單一水位
 
 
 def _account_pi(data, env):
-    """pi 不做帳號登入（金鑰在 provider 設定裡），沒有可顯示的帳號。"""
     return ""
 
 
@@ -1211,36 +1215,38 @@ PROVIDER_SPECS["pi"].update(probe=_probe_pi, account=_account_pi)
 
 
 def _probe_opencode(env):
-    """opencode 沒有單一配額讀數。它把模型委給使用者設定的 provider
-    （~/.config/opencode/opencode.json：Anthropic／OpenAI／任何 OpenAI 相容
-    端點，含地端），每個 provider 的配額各自獨立、也可能根本沒有配額概念，
-    從 opencode 這一側問不出一個能代表這個分頁的數字。回 None＝「此
-    provider 無水位可報」，上層走既有的 no-reading 路徑（不顯示 pill，不是
-    錯誤）——與 pi 同。猜一個數字比不顯示更糟。"""
-    return None
+    return None  # 配額在各自的 provider，這裡問不出一個數字
 
 
 def _account_opencode(data, env):
-    """opencode 的登入是 per-provider（`opencode auth login`），沒有單一帳號
-    可顯示。"""
     return ""
 
 
 PROVIDER_SPECS["opencode"].update(probe=_probe_opencode, account=_account_opencode)
 
 
-def _probe_grok(env):
-    """週配額的抓取與快取在 agent_grok。本檔已在行數上限。"""
-    import agent_grok
-    return agent_grok.quota()
+def _bind(module, quota_name, label_name):
+    """呼叫當下才取函式。無參數的測試替身用 TypeError 退回。"""
+    def probe(env=None):
+        fn = getattr(__import__(module), quota_name)
+        try:
+            return fn(env)
+        except TypeError:
+            return fn()
+
+    def account(data=None, env=None):
+        fn = getattr(__import__(module), label_name)
+        try:
+            return fn(data, env)
+        except TypeError:
+            return fn()
+    return probe, account
 
 
-def _account_grok(data, env):
-    import agent_grok
-    return agent_grok.account_label()
-
-
-PROVIDER_SPECS["grok"].update(probe=_probe_grok, account=_account_grok)
+_gp, _ga = _bind("agent_grok", "quota", "account_label")
+_cp, _ca = _bind("agent_cursor", "quota", "account_label")
+PROVIDER_SPECS["grok"].update(probe=_gp, account=_ga)
+PROVIDER_SPECS["cursor"].update(probe=_cp, account=_ca)
 
 
 def probe_data(cmd: str, env=None) -> dict:

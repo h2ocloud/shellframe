@@ -53,11 +53,14 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
 | Domain | `agent_status.py` | Screen-based agent state detection per tab |
 | | `agent_grok.py` | Grok Build's session files: which session a tab owns, turn status, transcript, model and usage |
+| | `agent_cursor.py` | Cursor Agent (`cursor-agent` only): session pin, store.db, transcript, billing class |
+| | `agent_route.py` | Quota hint for delegate / handoff. Suggests; does not spend or retarget |
+| | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `account_manager.py` | Profile directories and credential seeding per provider |
 | | `frame_link.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, NAT relay |
 | | `bridge_telegram.py`, `bridge_line.py`, `bridge_base.py` | Chat bridges: polling, routing, injection, reply extraction |
-| | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent messages, model pins, AI skill |
+| | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent rules, model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |
 | Shared | `sf_log.py` | `_dlog` / `_swallow` logging primitives |
 
