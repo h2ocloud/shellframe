@@ -11,6 +11,9 @@ import subprocess
 import threading
 import time
 
+import agent_status
+import sf_log
+import sf_notify
 from api_host import main
 
 
@@ -201,6 +204,23 @@ class StatusApiMixin:
             main._swallow(f"refresh_agent_status:{sid}")
             return json.dumps({"refreshed": 0, "error": str(e)})
 
+    def _notify_transitions(self, out: dict):
+        """Feed one monitor pass to the optional webhook notifier (sf_notify).
+        A no-op unless the user configured a URL and `auto`; never raises."""
+        try:
+            notifier = getattr(self, "_auto_notifier", None)
+            if notifier is None:
+                notifier = self._auto_notifier = sf_notify.AutoNotifier(
+                    log=sf_log._dlog, redact=lambda t: agent_status.redact(t, 200))
+
+            def label_of(sid):
+                s = self.sessions.get(sid)
+                return getattr(s, "_custom_label", None) or (
+                    s.cmd.split()[0] if s is not None and s.cmd else sid)
+            notifier.process(out, label_of)
+        except Exception:
+            sf_log._swallow("_notify_transitions")
+
     def _start_status_monitor(self):
         """Background thread: every ~600ms compute each tab's agent status from
         its transcript/rollout log (+ screen wording) and push to the webview.
@@ -325,6 +345,7 @@ class StatusApiMixin:
                             out[sid] = {"state": "unknown", "dot": "",
                                         "summary": "", "activity": {}}
                             cache.pop(sid, None)
+                    self._notify_transitions(out)
                     if out and self._window:
                         # Push only when something besides `elapsed` changed,
                         # or on a slow heartbeat so elapsed keeps ticking —

@@ -14,6 +14,7 @@ Usage:
     sfctl send s3 "研究這個主題"
     sfctl peek s3 [--lines 50]
     sfctl rename s3 research-done
+    sfctl notify --status DONE --message "tests passed"   # optional webhook; no-op if not configured
     sfctl close s3
     sfctl reload | restart
 """
@@ -582,6 +583,68 @@ def _print_state(result: dict, as_json: bool = False) -> int:
     return 1 if any(st.get("needs_attention") for st in states) else 0
 
 
+def _load_sf_notify():
+    """sfctl runs through a symlink in ~/.local/bin; make sure the real install
+    directory (where sf_notify.py lives) is importable."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import sf_notify
+    return sf_notify
+
+
+def _tab_label(sid: str) -> str:
+    """The tab's label from the running app; "" on any failure (the label is optional)."""
+    try:
+        r = _rpc("list", timeout=2.0)
+        for s in ((r or {}).get("details") or {}).get("sessions") or []:
+            if s.get("sid") == sid:
+                return str(s.get("label") or "")
+    except Exception:
+        pass
+    return ""
+
+
+def _cmd_notify(args) -> int:
+    """Optional outbound webhook. Silent no-op when not configured; a failed
+    delivery warns on stderr but still exits 0 — it must never block the tab
+    that called it. Never prints the auth value or the URL path/query."""
+    status = (args.status or "").strip().upper()
+    try:
+        sn = _load_sf_notify()
+    except Exception:
+        print("WARN notify not delivered: sf_notify module unavailable", file=sys.stderr)
+        return 0
+    if status not in sn.STATUSES:
+        print(f"ERR --status must be one of {', '.join(sn.STATUSES)}", file=sys.stderr)
+        return 2
+    try:
+        cfg = sn.load_config(warn=lambda m: print(f"WARN notify: {m}", file=sys.stderr))
+        if cfg is None:
+            if args.dry_run:
+                print("notify: not configured")
+            return 0
+        sid = args.sid if args.sid is not None else os.environ.get("SF_SID", "")
+        label = args.label
+        if label is None:
+            label = _tab_label(sid) if sid else ""
+        payload = sn.build_payload(status, args.message, sid=sid, label=label)
+        if args.dry_run:
+            print(f"notify: url  {sn.mask_url(cfg['url'])}")
+            print(f"notify: auth {sn.mask_auth(cfg['auth'])}")
+            print(f"notify: auto-notify {'on' if cfg['auto'] else 'off'}")
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        ok, info = sn.send(payload, cfg, timeout=5.0)
+        if ok:
+            print(f"OK notify sent ({status})")
+        else:
+            print(f"WARN notify not delivered: {sn.scrub(info, cfg)}", file=sys.stderr)
+    except Exception as e:
+        print(f"WARN notify not delivered: error ({type(e).__name__})", file=sys.stderr)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="sfctl",
@@ -652,6 +715,19 @@ def main():
     p_send.add_argument("text", help="Text to send")
     p_send.add_argument("--no-submit", dest="submit", action="store_false",
                         help="Don't append Enter after text")
+
+    p_notify = sub.add_parser(
+        "notify",
+        help="Send an outbound webhook notification (optional; silent no-op when "
+             "not configured, never fails the caller)")
+    p_notify.add_argument("--status", required=True,
+                          help="DONE, BLOCKED, QUESTION or INFO (case-insensitive)")
+    p_notify.add_argument("--message", required=True, help="Short text for the notification")
+    p_notify.add_argument("--sid", default=None, help="Tab sid (default: $SF_SID)")
+    p_notify.add_argument("--label", default=None,
+                          help="Tab label (default: looked up from the running app)")
+    p_notify.add_argument("--dry-run", action="store_true",
+                          help="Show the masked target and the payload; send nothing")
 
     sub.add_parser("version", help="ShellFrame version + which experimental features are on")
     sub.add_parser("skill", help="Print the agent-facing reference for this build (read this first)")
@@ -872,6 +948,8 @@ def main():
             "reason": args.reason,
             "handoff": args.handoff,
         }))
+    elif args.cmd == "notify":
+        return _cmd_notify(args)
     elif args.cmd == "history-audit":
         _print_result(_rpc("history_audit", {"sid": args.sid}, timeout=20))
     elif args.cmd == "version":

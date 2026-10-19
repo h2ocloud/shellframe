@@ -64,6 +64,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent rules, model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |
 | Shared | `sf_log.py` | `_dlog` / `_swallow` logging primitives |
+| | `sf_notify.py` | Optional outbound webhook (leaf, stdlib only): config, payload, masked send, transition tracker for auto-notify. Used by `sfctl notify` and the status monitor; see [`notify-webhook.md`](notify-webhook.md) |
 
 ## 3. Data flows
 
@@ -81,7 +82,8 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
   (Ctrl-U, bracketed paste, Enter) after the readiness gate.
 - **Agent status.** Hook events (exact) override the screen-scraping monitor
   (`api_status`, every 0.6 s, idle-gated); the UI is pushed only on change plus a
-  heartbeat.
+  heartbeat. The same pass feeds the optional
+  webhook auto-notify (`sf_notify`), which only reacts to real state transitions.
 
 ## 4. Threads and shared state
 

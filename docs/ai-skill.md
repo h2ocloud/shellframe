@@ -157,6 +157,19 @@ another writer. Prefer it over typing keystrokes.
 rather than a specific tab poked: it resolves the role from the roster, finds or
 opens that tab, and sends the task.
 
+### Tell the person you are done or stuck
+
+```bash
+sfctl notify --status DONE --message "tests pass, PR is ready"
+sfctl notify --status BLOCKED --message "need the staging password"
+```
+
+`--status` is `DONE`, `BLOCKED`, `QUESTION` or `INFO`. It posts to the webhook the person
+configured (`docs/notify-webhook.md`). With none configured it prints nothing and exits 0;
+if delivery fails it only warns on stderr and still exits 0, so calling it at the end of
+a task can never break the task. `--dry-run` shows the (masked) target and payload and
+sends nothing.
+
 ## 4. Drive another computer's tabs
 
 Two ShellFrames pair once with a one-time code (§ `docs/frame-link.md`). After
