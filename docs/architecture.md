@@ -50,6 +50,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_status.py` | Agent status: hook events, status hook install, the status monitor thread |
 | | `api_update.py` | Version, changelog, self-update, app restart |
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
+| | `api_tmux.py` | Tab ↔ tmux bookkeeping around restore: sid resolution, background reattach of tabs that failed at startup, `sfctl orphans`, repaint after display wake |
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
 | Domain | `agent_status.py` | Screen-based agent state detection per tab |
 | | `agent_grok.py` | Grok Build's session files: which session a tab owns, turn status, transcript, model and usage |
@@ -58,6 +59,8 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
 | | `usage_probe.py` | Per-tab usage/quota probes |
+| | `tmux_sessions.py` | sf_* tmux sessions as data: tolerant listing, orphan report (also a read-only CLI), highest sid, client refresh |
+| | `wake_watch.py` | macOS display sleep/wake notifications → callbacks on a worker thread; memory-pressure probe |
 | | `account_manager.py` | Profile directories and credential seeding per provider |
 | | `frame_link.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, NAT relay |
 | | `bridge_telegram.py`, `bridge_line.py`, `bridge_base.py` | Chat bridges: polling, routing, injection, reply extraction |

@@ -293,6 +293,8 @@ class DesktopApiMixin:
         """前端事件落 debug log。拖放/貼上這類 WebKit 行為差異在後端毫無
         足跡（2026-08-05 drop 掉檔名查了半天），給前端一條 log 通道。"""
         extra = ""
+        if tag == "wake":
+            self._wake_ack_at = time.time()  # _on_display_wake waits for this
         if tag == "drop":
             up = getattr(self, "_drag_mouse_up_ts", 0.0)
             if up and up > 0:

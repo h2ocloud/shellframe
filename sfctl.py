@@ -593,6 +593,7 @@ def main():
     sub.add_parser("reload", help="Hot-reload bridge_telegram module")
     sub.add_parser("restart", help="Full app restart (sessions preserved)")
     sub.add_parser("list", help="List all sessions with sid + label + alive state")
+    sub.add_parser("orphans", help="sf_* tmux sessions still running with no tab (report only)")
 
     p_state = sub.add_parser(
         "state",
@@ -807,6 +808,8 @@ def main():
         _print_result(_rpc("restart", timeout=30))
     elif args.cmd == "list":
         _print_result(_rpc("list"))
+    elif args.cmd == "orphans":
+        _print_result(_rpc("orphans"), verbose=False)
 
     elif args.cmd == "glasses":
         _print_result(_rpc("glasses", {"action": args.action, "sids": args.sid}))

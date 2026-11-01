@@ -6,6 +6,71 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.40.2 (2026-11-01)
+
+### Fixes
+
+- **Restarting the app reattaches every tab, even when tmux answers slowly.**
+  Under heavy memory pressure the tmux server can be paged out and take seconds
+  to answer. On restart, one tmux call inside the restore loop timed out, the
+  exception left the loop, and the page swallowed it. Every session after that
+  point kept running with no tab: in daily use, 15 of 25 agents were orphaned
+  this way. Each tab is now attached on its own; a tab that fails is logged and
+  retried in the background after 5, 20 and 60 seconds, and the page picks it up
+  through its normal session sync. Tab metadata and resize calls to tmux are
+  best effort, and one slow answer no longer turns the session list empty.
+  Covered by tests_restore_resilience.py.
+
+  **重開 app 時，每個分頁都會接回來，tmux 回應慢也一樣。** 記憶體吃緊時 tmux
+  server 可能被換出，回一個指令要好幾秒。重開時，restore 迴圈裡一個 tmux 呼叫
+  逾時，例外直接跳出迴圈，頁面又把錯誤吞掉，之後的 session 都還在跑卻沒有分頁。
+  日常使用中曾有 25 個 agent 裡 15 個因此變成孤兒。現在每個分頁各自接回；失敗的
+  記進 log，並在背景於 5、20、60 秒後重試，接回後頁面照一般的 session 同步把分頁
+  長出來。分頁 metadata 與 resize 的 tmux 呼叫改成盡力而為，單次回應慢也不會讓
+  session 清單整份變空。由 tests_restore_resilience.py 守著。
+
+- **A new tab can no longer attach to an orphaned session.**
+  The sid counter only advanced as far as the restore loop got, so after an
+  aborted restore the next new tab could reuse a number that an orphaned session
+  still held, and attach to that agent instead of a fresh shell. The counter now
+  starts above every existing `sf_sN` session. Covered by
+  tests_restore_resilience.py.
+
+  **新分頁不會再接到孤兒 session 上。** sid 計數器只推進到 restore 迴圈實際走到
+  的位置，所以 restore 中斷後，下一個新分頁可能拿到孤兒 session 還占著的編號，
+  直接接到那個 agent，而不是開一個新的 shell。現在計數器從所有既有 `sf_sN`
+  session 的最大編號之後開始。由 tests_restore_resilience.py 守著。
+
+- **The terminal repaints after the display wakes.**
+  After display sleep the window could stay blank. The app did not react to wake
+  at all, and a resize interrupted by sleep could leave the terminal canvas
+  hidden. On macOS the app now listens for screen sleep and wake: tmux redraws
+  the visible tab, the page re-fits and repaints it and un-hides the canvas, and
+  the debug log records the memory-pressure level and how long the page took to
+  answer. A page that does not answer within 30 seconds is logged as stalled; it
+  is not reloaded automatically, because reloading a slow page makes it slower.
+  Covered by tests_restore_resilience.py.
+
+  **螢幕喚醒後終端會重畫。** 螢幕睡眠後視窗可能一直是空白。app 原本完全不處理
+  喚醒，而且被睡眠打斷的 resize 可能讓終端畫布停在隱藏狀態。現在 macOS 上會監聽
+  螢幕睡眠與喚醒：tmux 重畫目前看得到的分頁，頁面重新量尺寸、重畫並取消隱藏
+  畫布，debug log 記下當時的記憶體壓力等級與頁面多久才回應。30 秒內沒回應的
+  頁面只記成卡住，不自動重新載入，因為頁面慢的時候重新載入只會更慢。由
+  tests_restore_resilience.py 守著。
+
+### Added
+
+- **`sfctl orphans` lists tmux sessions that are running with no tab.**
+  Each row shows the session, its pid and command, memory use, idle time and
+  tab label. It only reports; nothing is killed. `python3 tmux_sessions.py`
+  prints the same report without going through the app, so it also works
+  against an older running build.
+
+  **`sfctl orphans` 列出還在跑、卻沒有分頁的 tmux session。** 每列顯示
+  session、pid 與指令、記憶體用量、閒置時間和分頁名稱。只回報，不會殺任何
+  程序。`python3 tmux_sessions.py` 不經過 app 也能印出同一份報告，所以對執行
+  中的舊版 app 也能用。
+
 ## v0.40.1 (2026-10-18)
 
 ### Fixes

@@ -2090,6 +2090,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   };
 
+  // 螢幕睡醒／視窗重新可見：強制重排、重畫目前分頁。fitTerm 會在一個 frame 把
+  // .xterm-screen 藏起來、下一個 frame 才放出來——兩個 frame 中間剛好睡著或被遮住，
+  // 終端就一直是隱形的。後端在螢幕醒來時呼叫（_on_display_wake），並等這裡回報。
+  let _lastWakeRepaint = 0;
+  window._sfOnWake = function(reason) {
+    const now = Date.now();
+    if (now - _lastWakeRepaint < 1000) return;
+    _lastWakeRepaint = now;
+    document.querySelectorAll('.xterm-screen').forEach(el => { el.style.visibility = ''; });
+    const s = activeId && sessions[activeId];
+    if (s && !s.isRemote) {
+      try {
+        fitTerm(activeId);
+        s.term.refresh(0, s.term.rows - 1);
+      } catch (e) {}
+    }
+    try { pywebview.api.js_debug('wake', `${reason} hidden=${document.hidden} active=${activeId || ''}`); } catch (e) {}
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) window._sfOnWake('visible');
+  });
+
   const $tabs = document.getElementById('tabs');
   const $wrap = document.getElementById('terminal-wrap');
   const $modal = document.getElementById('modal-new');
@@ -9870,7 +9892,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     linkUiInit();               // Frame Link：狀態燈 + 上次面板開合狀態
 
     // Restore tmux sessions from previous run, then check for hot-reload sessions
-    try { await pywebview.api.restore_tmux_sessions(80, 24); } catch(e) {}
+    try { await pywebview.api.restore_tmux_sessions(80, 24); }
+    catch(e) { try { pywebview.api.js_debug('restore', String(e)); } catch(_) {} }
     try {
       const existing = JSON.parse(await pywebview.api.list_sessions());
       if (existing.length > 0) {

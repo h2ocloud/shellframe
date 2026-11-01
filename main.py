@@ -65,6 +65,9 @@ from api_remote import RemoteApiMixin
 from api_status import StatusApiMixin
 from api_update import UpdateApiMixin
 from api_voice import VoiceApiMixin
+from api_tmux import TmuxApiMixin
+import tmux_sessions
+import wake_watch
 import usage_probe
 import frame_link as frame_link_mod
 from bridge_telegram import TelegramBridge, TelegramBridgeConfig
@@ -835,6 +838,16 @@ def _tmux_get_env(tmux_name: str, key: str):
     return ""
 
 
+def _tmux_quiet(*args, env=None) -> None:
+    """Best-effort tmux call (tab metadata, resize). A tmux server paged out
+    under memory pressure can take seconds to answer; a timeout here must not
+    abort attaching the tab."""
+    try:
+        subprocess.run(["tmux", *args], capture_output=True, timeout=3, env=env)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        _dlog("tmux", f"{args[0]} {args[2] if len(args) > 2 else ''} skipped: {e!r}")
+
+
 def _claude_config_roots() -> list:
     """ShellFrame 可能把 claude 開進去的每一個設定家目錄：預設的 ~/.claude，
     加上 account-profiles/claude/ 底下每個帳號 profile。"""
@@ -1221,39 +1234,7 @@ def _tmux_session_exists(name: str) -> bool:
 
 def _list_tmux_sessions() -> list[dict]:
     """List all sf_* tmux sessions. Returns [{name, cmd, sid}]."""
-    try:
-        tmux = _tmux_bin()
-        if not tmux:
-            _dlog("lifecycle", "  tmux binary not found")
-            return []
-        r = subprocess.run(
-            [tmux, "list-sessions", "-F", "#{session_name}"],
-            capture_output=True, text=True, timeout=3)
-        if r.returncode != 0:
-            _dlog("lifecycle", f"  tmux list-sessions failed rc={r.returncode} err={r.stderr.strip()!r}")
-            return []
-        result = []
-        for line in r.stdout.strip().split("\n"):
-            name = line.strip()
-            if not name.startswith(TMUX_PREFIX):
-                continue
-            # Get the original command from tmux env
-            cr = subprocess.run(
-                [tmux, "show-environment", "-t", name, "SF_CMD"],
-                capture_output=True, text=True, timeout=3)
-            cmd = ""
-            if cr.returncode == 0 and "=" in cr.stdout:
-                cmd = cr.stdout.strip().split("=", 1)[1]
-            sr = subprocess.run(
-                [tmux, "show-environment", "-t", name, "SF_SID"],
-                capture_output=True, text=True, timeout=3)
-            sid = ""
-            if sr.returncode == 0 and "=" in sr.stdout:
-                sid = sr.stdout.strip().split("=", 1)[1]
-            result.append({"name": name, "cmd": cmd, "sid": sid})
-        return result
-    except Exception:
-        return []
+    return tmux_sessions.list_sf_sessions(_tmux_bin(), TMUX_PREFIX)
 
 
 class Session:
@@ -1534,28 +1515,18 @@ class Session:
                     # manifest 的 Team 誤當成實際正在跑的帳號並鎖住按鈕。
                     self.account_refs[provider] = None
             # Resize existing tmux session to match terminal
-            subprocess.run([
-                "tmux", "resize-window", "-t", self._tmux_name,
-                "-x", str(cols), "-y", str(rows),
-            ], capture_output=True, timeout=3, env=_session_env())
+            _tmux_quiet("resize-window", "-t", self._tmux_name,
+                        "-x", str(cols), "-y", str(rows), env=_session_env())
 
         # Store stable metadata on both new and existing sessions. tmux names
         # can be renamed for readability; SF_SID is the durable tab identity.
-        subprocess.run([
-            "tmux", "set-environment", "-t", self._tmux_name,
-            "SF_SID", self.sid,
-        ], capture_output=True, timeout=3)
-        subprocess.run([
-            "tmux", "set-environment", "-t", self._tmux_name,
-            "SF_CMD", self.cmd,
-        ], capture_output=True, timeout=3)
+        _tmux_quiet("set-environment", "-t", self._tmux_name, "SF_SID", self.sid)
+        _tmux_quiet("set-environment", "-t", self._tmux_name, "SF_CMD", self.cmd)
         for provider in account_manager.PROVIDERS:
             ref = self.account_refs.get(provider)
             if ref:
-                subprocess.run([
-                    "tmux", "set-environment", "-t", self._tmux_name,
-                    f"SF_ACCOUNT_{provider.upper()}={ref}",
-                ], capture_output=True, timeout=3)
+                _tmux_quiet("set-environment", "-t", self._tmux_name,
+                            f"SF_ACCOUNT_{provider.upper()}={ref}")
 
         # Attach via PTY fork — child runs `tmux attach`, parent reads master_fd
         self.child_pid, self.master_fd = pty.fork()
@@ -1926,7 +1897,7 @@ def _win_set_clipboard_text(text: str) -> None:
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
-          UpdateApiMixin, VoiceApiMixin):
+          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):
@@ -2810,32 +2781,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
         threading.Thread(target=_loop, daemon=True).start()
 
-    @staticmethod
-    def _manifest_entries(cfg: dict) -> list[dict]:
-        manifest = cfg.get("session_manifest") or []
-        if manifest:
-            return [e for e in manifest if e.get("sid") and e.get("cmd")]
-        # Backward compatibility with the old Windows/no-tmux soft list.
-        return [e for e in (cfg.get("session_list") or []) if e.get("sid") and e.get("cmd")]
-
-    @staticmethod
-    def _resolve_tmux_sid(info: dict, cfg: dict) -> str:
-        """Resolve stable sid for a tmux session whose display name may change."""
-        if info.get("sid"):
-            return str(info["sid"])
-        name = info.get("name", "")
-        suffix = name[len(TMUX_PREFIX):] if name.startswith(TMUX_PREFIX) else name
-        if re.fullmatch(r"s\d+", suffix or ""):
-            return suffix
-        for entry in Api._manifest_entries(cfg):
-            if entry.get("tmux_name") == name:
-                return str(entry.get("sid"))
-        saved_labels = cfg.get("session_labels", {}) or {}
-        for sid, label in saved_labels.items():
-            if _slugify(str(label)) == suffix:
-                return str(sid)
-        return suffix or name
-
     _CODEX_ROLLOUT_RE = re.compile(r"rollout-.*?-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
                                    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl$")
 
@@ -3138,6 +3083,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         if not IS_WIN and _has_tmux():
             existing = _list_tmux_sessions()
             _dlog("lifecycle", f"  found tmux sessions: {[e['name'] for e in existing]}")
+            # 新分頁的 sid 要排在每個 sf_sN 之後，否則 new_session 會 attach 到別人的 agent
+            self._counter = max(self._counter, tmux_sessions.highest_sid(e["name"] for e in existing))
+            failed = []
             if existing:
                 existing = sorted(
                     existing,
@@ -3158,10 +3106,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 if sid in self.sessions:
                     continue  # already attached
                 self._counter = max(self._counter, int(sid[1:]) if sid[1:].isdigit() else 0)
-                session = Session(sid, cmd, cols, rows,
-                                  on_data=self._output_event.set,
-                                  tmux_name=tmux_name,
-                                  account_refs=account_refs)
+                try:
+                    session = Session(sid, cmd, cols, rows,
+                                      on_data=self._output_event.set,
+                                      tmux_name=tmux_name,
+                                      account_refs=account_refs)
+                except Exception as e:  # 一個分頁接不回不能拖垮後面全部（見 _retry_failed_attach）
+                    _dlog("lifecycle", f"  attach {tmux_name} failed: {e!r}")
+                    failed.append(tmux_name)
+                    continue
                 self.sessions[sid] = session
                 # Restore bridge enabled/disabled state from config
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
@@ -3185,6 +3138,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 restored.append({"sid": sid, "cmd": cmd})
             if existing:
                 self._persist_session_manifest(saved_order)
+                self._retry_failed_attach(failed)
                 # Bridge 可能在這些分頁存在之前就啟動了（見 _sync_bridge_sessions）
                 self._sync_bridge_sessions()
                 return json.dumps(restored)
@@ -5865,6 +5819,7 @@ def main():
     _apply_macos_app_identity()
     _patch_pywebview_cocoa_none_screen()
     api = Api()
+    wake_watch.install(api._on_display_wake, api._on_display_sleep)
     html_path = Path(__file__).parent / "web" / "index.html"
 
     # Safety net: clean up on exit no matter what

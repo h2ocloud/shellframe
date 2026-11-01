@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellFrame v0.40.1
-   version: 0.40.1
+OK ShellFrame v0.40.2
+   version: 0.40.2
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -55,6 +55,7 @@ sfctl status            # bridge state, then one live line per tab
 sfctl state s12         # one tab's live state — the cheapest thing to poll
 sfctl state --all       # only the tabs that need attention
 sfctl roster            # configured roles and what each is responsible for
+sfctl orphans           # tmux sessions still running with no tab (report only)
 ```
 
 `sid` (`s12`) is the handle for everything else. `label` is the human name shown
@@ -237,6 +238,7 @@ leaving to whom rather than silently covering everything.
 | Cursor Agent (`cursor-agent`) tabs, cross-machine `sfctl a2a-send` / `a2a-handoff` / `a2a-result` / `a2a-log`, `sfctl route` | 0.40.0 |
 | Claude Code ⇄ cursor-agent handoff: `a2a-result --diff`, `a2a-next`, route tiers `review` and implementation → composer-2.5 | 0.40.1 |
 | Coordinator role, and headless `worker:<name>` via SSH (`--allow-write`, production stays read-only) | 0.40.1 |
+| `sfctl orphans`: tmux sessions still running with no tab, report only | 0.40.2 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

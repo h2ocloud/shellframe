@@ -18,6 +18,7 @@ from pathlib import Path
 import agent_cursor
 import agent_grok
 import a2a_host
+import tmux_sessions
 from sf_config import CONFIG_LOCK
 from api_host import main
 
@@ -1140,6 +1141,12 @@ class RemoteApiMixin:
             return {"success": True, "message": f"ShellFrame v{v}",
                     "details": {"version": v,
                                 "experimental": {k: bool(st.get(k)) for k in keys}}}
+
+        elif cmd == "orphans":
+            # sf_* tmux sessions still running with no tab (report only, never killed)
+            rows = self.orphan_sessions()
+            return {"success": True, "message": tmux_sessions.format_orphans(rows),
+                    "details": {"orphans": rows}}
 
         elif cmd == "skill_doc":
             # `sfctl skill` — the agent-facing reference, served from disk with a
