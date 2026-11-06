@@ -3782,7 +3782,7 @@ class TelegramBridge(BridgeBase):
                         # 被重送 29 次）。
                         if slot.marker_forwarded and bridge_delivery.turn_superseded(
                                 getattr(self, "_on_agent_status", None), sid,
-                                [m.get("start") for m in slot.reply_markers]
+                                [m.get("start") for m in getattr(slot, "reply_markers", None) or []]
                                 + [slot.reply_start_marker], slot.last_extraction_ts):
                             _blog(f"[turn] {sid} newer prompt from elsewhere — "
                                   f"stop forwarding this Telegram turn\n")
@@ -3791,7 +3791,8 @@ class TelegramBridge(BridgeBase):
                         _t_mk = self._perf_t()
                         marked_reply = self._try_marker_extract(slot, now, total)
                         self._perf_end("extract_marker", _t_mk)
-                        if marked_reply and len(slot.turn_sent) > self._MAX_FOLLOWUPS:
+                        # getattr：sfctl reload 留下的舊 slot 沒有 turn_sent。
+                        if marked_reply and len(getattr(slot, "turn_sent", ())) > self._MAX_FOLLOWUPS:
                             # 不論原因，一輪 TG 最多 1 則回覆 + N 則後續，之後停聽並說一聲。
                             _blog(f"[turn] {sid} follow-up cap reached — stop forwarding\n")
                             new_lines, dedup_pending = [self._FOLLOWUP_CAP_NOTICE], []
@@ -4052,7 +4053,7 @@ class TelegramBridge(BridgeBase):
                     for _t in dedup_pending:
                         slot.sent_responses.add(_t)
                     if getattr(slot, "turn_epoch", 0) == epoch_at_extract:
-                        slot.turn_sent.extend(dedup_pending)
+                        slot.turn_sent = list(getattr(slot, "turn_sent", ())) + dedup_pending
                     # 送出期間（可能數十秒）若到了新訊息，turn_epoch 已前進：下面的
                     # 回合重置屬於舊回合，套上去會把新回合的 has_user_msg／marker
                     # 清掉，新回覆就被當舊輸出排掉（靜默丟回覆）。只在編號沒變時做。

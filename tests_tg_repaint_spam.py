@@ -260,6 +260,25 @@ def test_new_message_resets_the_turn_counters():
           len(br.sent) == 2 and "11:00" in br.sent[-1], br.sent)
 
 
+def test_slot_from_before_a_hot_reload():
+    """`sfctl reload` swaps the module but keeps the old slot objects, which
+    have no `turn_sent`. The flush thread serves every tab, so an
+    AttributeError there would stop replies everywhere."""
+    print("slot created before a hot reload")
+    br, slot = bridge(status=lambda sid: ({"prompt_marker": TOKEN}, 0.0))
+    first_reply(br, slot)
+    del slot.turn_sent
+    output(slot, f"{START}\n背景任務完成：週報已經寄出，收件人三位。\n{END}\n")
+    try:
+        tick(br)
+        ok = True
+    except AttributeError as e:
+        ok = False
+        print("   ", e)
+    check("the flush tick survives", ok)
+    check("and the follow-up goes out", len(br.sent) == 2, br.sent)
+
+
 # ── which prompt is the newest one ──────────────────────────────────────────
 
 def _u(text):

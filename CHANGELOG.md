@@ -6,6 +6,24 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.40.4 (2026-11-06)
+
+### Fixes
+
+- **Applying v0.40.3 with `sfctl reload` can no longer stop Telegram replies.**
+  `sfctl reload` swaps the bridge module but keeps the tab objects it already
+  had, and those have no record of what this turn sent. The first follow-up
+  after such a reload raised an error inside the loop that forwards replies for
+  every tab, which stopped replies everywhere until a restart. Those tabs now
+  start with an empty record, so the follow-up is checked and forwarded as usual
+  and the other tabs keep replying. A full restart was never affected, because it
+  creates every tab object from scratch. Covered by tests_tg_repaint_spam.py.
+
+  **用 `sfctl reload` 套用 v0.40.3，不會再讓 Telegram 回覆全部停擺。** `sfctl reload`
+  換掉 bridge 模組，但沿用原本的分頁物件，而舊物件沒有「這一輪送過什麼」的紀錄。
+  reload 之後第一則後續回覆會在負責所有分頁轉發的迴圈裡出錯，所有分頁的回覆都停住，
+  直到重啟。現在這類分頁從空紀錄開始。由 tests_tg_repaint_spam.py 守著。
+
 ## v0.40.3 (2026-11-06)
 
 ### Fixes
