@@ -122,7 +122,7 @@ def test_mouse_tracking_blocks_bubble_not_capture():
     check("alt screen 的 wheel handler 回 false 時，滾輪回報也被擋（只剩游標移動回報）",
           not wheel(on) and any(d.startswith("\x1b[<35;") for d in on["pty"]),
           f"pty={on['pty']}；全螢幕 Claude Code 因此要 _xtermTakesWheel 放行，"
-          "見 tests_scroll_native_claude.py")
+          "見 tests_scroll_native_tui.py")
     check("mouse tracking 下 bubble 監聽收不到（根因）", on["bubble"] == 0,
           f"bubble={on['bubble']}；若這裡變成 1，xterm.js 行為已改，"
           "capture workaround 可以重新評估")

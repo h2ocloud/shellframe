@@ -6153,18 +6153,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return { text: result.text, source: result.source, ansi: result.ansi };
   }
 
-  // Claude Code 的全螢幕模式（alt screen＋自己開 1003/1006 滑鼠追蹤）有自己的
-  // 捲動歷史，一路捲得到對話開頭，畫的就是原本那個畫面。這種分頁的滾輪交給它：
-  // xterm 放行滾輪，就會轉成滑鼠回報送進去。以前 alt screen 的滾輪一律擋下、
-  // 改蓋 transcript 重新排版的 overlay——那份怎麼調樣式都不是原畫面。
+  // 跟一般終端機一樣：程式要了滑鼠，滾輪就是它的。開滑鼠追蹤的全螢幕 TUI
+  // （Claude Code 全螢幕模式、grok、opencode，皆實測 1003＋1006）都有自己的
+  // 捲動歷史，畫的就是原本那個畫面；xterm 放行滾輪就會轉成滑鼠回報送進去。
+  // 以前 alt screen 的滾輪一律擋下、改蓋重新排版的 overlay——那份怎麼調樣式都
+  // 不是原畫面，opencode 甚至因此完全捲不動自己（v0.31.2 的回報）。
   // 重排版歷史（可選取複製、含壓縮前的內容）改成按住 Option 或 Shift 再往上滑。
-  // 只放行量過的 Claude Code；opencode 這類從 v0.31.2 起靠 overlay 上滑的照舊。
+  // tmux 分頁的 xterm 一律在 alt buffer（tmux attach 自己會切），滑鼠模式則是
+  // tmux 照 pane 裡的程式轉過來的，所以這裡看的是 pane 裡那支程式要不要滑鼠。
+  // 不開滑鼠的（codex／pi／agy 的 inline 畫面、vim）照舊走 overlay：它們的
+  // overlay 來源是 tmux 原樣輸出（-e），本來就是原畫面。
   function _appScrollsItself(s) {
     const t = s && s.term;
     return !!t && t.buffer.active.type === 'alternate'
-      && !!t.modes && t.modes.mouseTrackingMode !== 'none'
-      && String(s.cmd || '').split(/\s+/).some(tok =>
-        tok.replace(/['"]/g, '').split(/[\\/]/).pop() === 'claude');
+      && !!t.modes && t.modes.mouseTrackingMode !== 'none';
   }
 
   // attachCustomWheelEventHandler：滾輪要不要交給 xterm。alt screen 預設不給——

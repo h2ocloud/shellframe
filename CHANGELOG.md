@@ -6,6 +6,33 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.40.6 (2026-11-06)
+
+### Fixes
+
+- **Scrolling up shows each agent's own screen: grok, opencode and every other full-screen program that takes the mouse.**
+  v0.40.5 handed the wheel only to full-screen Claude Code. The rule is now the one a
+  normal terminal follows: if the program in the tab asked for the mouse, the wheel
+  belongs to it. Measured in tmux, Claude Code's full-screen mode, grok and opencode
+  all turn the mouse on and keep their own scrollable history (opencode scrolled 30
+  lines for 10 wheel steps), so scrolling up now shows the screen each of them drew.
+  opencode could not scroll at all before: ShellFrame never let the wheel through, so
+  the report from v0.31.2 was about this. codex, pi, agy, cursor-agent and Claude Code
+  in its normal mode run inline and do not take the mouse. For them the history still
+  opens over the tab, and it is the tab's own output kept by tmux, colours included,
+  never the version rebuilt from the transcript. Option or Shift with scroll up still
+  opens the rebuilt history in every tab. Covered by tests_scroll_native_tui.py and
+  tests_history_inline_source.py.
+
+  **往上滑看到的是各 agent 自己的畫面：grok、opencode，以及所有要了滑鼠的全螢幕程式。**
+  v0.40.5 只把滾輪交給全螢幕的 Claude Code；現在跟一般終端機一樣，分頁裡的程式要了
+  滑鼠，滾輪就是它的。實測 Claude Code 全螢幕模式、grok、opencode 都會開滑鼠、都有
+  自己的捲動歷史，往上滑就是它們自己畫的畫面。opencode 以前完全捲不動，就是因為
+  滾輪從來沒送到它（v0.31.2 的回報）。codex、pi、agy、cursor-agent 和一般模式的
+  Claude Code 是 inline、不要滑鼠；它們往上滑仍開在分頁上，內容是 tmux 留下的原樣
+  輸出（含顏色），不是從對話紀錄重畫的版本。任何分頁按住 Option 或 Shift 往上滑，
+  仍可開重畫的歷史。由 tests_scroll_native_tui.py、tests_history_inline_source.py 守著。
+
 ## v0.40.5 (2026-11-06)
 
 ### Fixes
@@ -21,14 +48,14 @@
   open the rebuilt history instead: text in it can be selected and copied, and it
   reaches back past a compaction. Other full-screen programs that take the mouse,
   such as opencode, still open the rebuilt history as before. Covered by
-  tests_scroll_native_claude.py.
+  tests_scroll_native_tui.py.
 
   **全螢幕 Claude Code 分頁往上滑，看到的就是 Claude Code 自己的畫面。**
   全螢幕模式的 Claude Code 自己保有整段對話，收到滾輪就會自己捲。ShellFrame 以前在
   alt screen 一律擋下滾輪，改在上面蓋一份從對話紀錄重畫的歷史；那份怎麼調都不會跟
   原畫面一樣，所以好幾版的樣式修正都沒對上。現在滾輪交給 Claude Code，一路捲得到
   對話開頭。按住 Option 或 Shift 再往上滑，才開重畫的那份（可選取複製、看得到壓縮
-  前的內容）。opencode 這類同樣開滑鼠的全螢幕程式照舊。由 tests_scroll_native_claude.py 守著。
+  前的內容）。opencode 這類同樣開滑鼠的全螢幕程式照舊。由 tests_scroll_native_tui.py 守著。
 
 ## v0.40.4 (2026-11-06)
 
