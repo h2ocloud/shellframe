@@ -6,6 +6,40 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.40.3 (2026-11-06)
+
+### Fixes
+
+- **One Telegram reply is no longer re-sent dozens of times after you keep working in the tab.**
+  A tab answered one Telegram message with one reply (the transcript holds exactly
+  one), then the user went on typing in that tab from the desktop. The tab runs
+  Claude Code in full-screen mode, which redraws the visible conversation on
+  every change and only the cells that changed. Each redraw re-emitted the old
+  reply's markers together with whatever was repainted in between: the reply
+  with letters missing, tool progress, half the screen. Every span was a little
+  different, so the exact-match dedup never matched, and the bridge forwarded
+  each one as a follow-up: 29 messages in the log window alone. Three guards now
+  apply after a reply has gone out. The turn ends once the tab's transcript shows
+  a newer prompt that did not come from Telegram. Text that is mostly a redraw of
+  what this turn already sent is not a new reply. Whatever the cause, a turn
+  forwards the reply plus at most three follow-ups, then stops with one notice
+  that points to /fetch. A real follow-up, such as a background task finishing,
+  still goes out. Replayed on the captured messages, the second and third guards
+  alone let 2 of 29 through, and the first stops all of them. Covered by
+  tests_tg_repaint_spam.py.
+
+  **一則 Telegram 回覆，不會因為你接著在分頁裡工作而被重送幾十次。** 某個分頁對一則
+  Telegram 訊息只回了一次（對話紀錄裡只有一則），之後使用者改在桌面上繼續對同一個
+  分頁下指令。這個分頁的 Claude Code 跑在全螢幕模式，畫面一有變動就重畫看得到的對話，
+  而且只畫有變的格子。每次重畫都會帶出舊回覆的標記，夾著中間被重畫的東西：缺字的
+  回覆、工具進度、半個畫面。每一段都有點不同，逐字比對的去重永遠對不上，bridge 就把
+  每一段都當成後續回覆送出，光是 log 留下的那段就有 29 則。現在回覆送出後有三道防線。
+  對話紀錄出現一則不是從 Telegram 來的新指令，這一輪就結束。內容大多是這一輪已送
+  文字的重畫，不算新回覆。不論原因，一輪最多送出回覆加三則後續，之後停止並發一則
+  提示，請用 /fetch 看最新內容。真正的後續訊息（例如背景任務完成）照樣會送。拿攔到
+  的訊息重播：只靠後兩道防線，29 則剩 2 則；加上第一道，全部擋下。由
+  tests_tg_repaint_spam.py 守著。
+
 ## v0.40.2 (2026-11-01)
 
 ### Fixes

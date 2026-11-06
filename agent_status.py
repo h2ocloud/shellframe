@@ -27,6 +27,7 @@ import subprocess
 import re
 
 import agent_cursor
+import bridge_delivery
 import agent_grok
 import usage_probe
 
@@ -1604,6 +1605,7 @@ class StatusTracker:
         self._last = {}         # sid -> (state, since_ts)
         self._pending = {}      # sid -> (candidate_state, first_seen_ts)
         self._detail = {}       # sid -> (action, task, narration) 最近非空值（穩定呈現）
+        self._pmark = {}        # sid -> 最新真人 prompt 的 TG marker（bridge 判斷回合是否被取代）
         # sid -> (computed_at, result)。TG 長回合心跳唯讀這份快取，**不得**自己
         # 呼叫 status_for()——那會觸發 transcript 解析，把成本帶進 bridge 的
         # flush loop。main.py 的 0.6s monitor thread 已經在算了，直接讀。
@@ -1894,13 +1896,15 @@ class StatusTracker:
             pa, pt, pn = self._detail.get(sid, ("", "", ""))
             action, task, narration = action or pa, task or pt, narration or pn
             self._detail[sid] = (action, task, narration)
+            pm = bridge_delivery.latest_prompt_marker(evs)
+            self._pmark[sid] = pm = self._pmark.get(sid) if pm is None else pm
             summary = action or narration or state
             _, since = self._last.get(sid, (state, now))
             return {"state": state, "dot": DOT.get(state, ""), "activity": act,
                     "summary": summary, "action": action, "narration": narration,
                     "task": task, "elapsed": int(now - since), "why": why,
                     "transcript": os.path.basename(path), "fmt": fmt, "loop": loop,
-                    "model": model}
+                    "model": model, "prompt_marker": pm}
         except Exception as e:
             return {"state": "unknown", "dot": "", "activity": {},
                     "summary": "", "why": f"exc:{e}", "transcript": None, "loop": None,

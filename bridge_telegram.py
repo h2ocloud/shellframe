@@ -1034,6 +1034,8 @@ class SessionSlot:
         # 並讓「模型漏 marker」的 fallback 只在完全沒轉發過 marker 時才觸發
         # （避免對已用 marker 的分頁重複發 peek）。新使用者訊息時重置。
         self.marker_forwarded = False
+        # 這個 epoch 真的送出去的 block（送成功才記）：重畫判斷與後續則數上限用。
+        self.turn_sent = []
         # True while a TG message is waiting in the busy-guard queue / being
         # written into the PTY. /fetch reads it to tell the user their message
         # is queued (not lost) instead of silently showing the previous reply.
@@ -2515,6 +2517,7 @@ class TelegramBridge(BridgeBase):
             slot.msg_sent_ts = now
             slot.has_user_msg = True
             slot.awaiting_response = True  # arm typing indicator + flush extraction
+            slot.turn_sent = []
             # 新 epoch：重置心跳 / 預覽狀態（A4.3 停止條件之一）
             slot._hb_next_ts = 0.0
             slot._hb_count = 0
@@ -2681,6 +2684,19 @@ class TelegramBridge(BridgeBase):
         rule_chars = sum(c in "─━—═-" for c in s)
         return rule_chars >= 6 and rule_chars >= len(s.replace(" ", "")) * 0.5
 
+    # 一輪 TG 在第一則回覆後最多再轉發幾則（背景任務完成通知等），超過就停聽。
+    _MAX_FOLLOWUPS = 3
+    _FOLLOWUP_CAP_NOTICE = ("（這個分頁後續輸出太多，已停止自動轉發這一輪。"
+                            "要看最新內容請用 /fetch）")
+
+    @staticmethod
+    def _end_marker_turn(slot):
+        """Stop listening for this turn's reply markers. Caller holds output_lock."""
+        slot.pending_raw = slot.reply_start_marker = slot.reply_end_marker = ""
+        slot.marker_prompt, slot.expect_marker, slot.has_user_msg = "", False, False
+        slot.reply_markers = []
+        slot.marker_next_scan_ts, slot.marker_scan_gen, slot._fb_next_ts = 0.0, -1, 0.0
+
     def _try_marker_extract(self, slot, now: float, total: float) -> str:
         """Throttled, dirty-gated marker extraction for the flush-loop hot path.
 
@@ -2729,6 +2745,11 @@ class TelegramBridge(BridgeBase):
         if reply and reply in getattr(slot, "sent_responses", ()):
             reply = ""
             miss_reason = "dup"
+        # 全螢幕模式重畫已送回覆：缺字、夾雜其他畫面，逐字去重永遠對不上。
+        if (reply and getattr(slot, "marker_forwarded", False)
+                and bridge_delivery.repaint_of(reply, getattr(slot, "turn_sent", ()))):
+            reply = ""
+            miss_reason = "repaint"
         if not reply:
             # A6.0 步驟 0 診斷：分辨「strip_ansi 吃掉 marker」(raw=True clean=False)
             # /「120KB 驅逐或模型沒吐」(raw=False)/「span 配對或清洗過濾」
@@ -3756,10 +3777,26 @@ class TelegramBridge(BridgeBase):
                         # 必須節流 + dirty-gated——2026-07-06 的 96% CPU 事故
                         # 就是這條路徑每 0.5s 對 120KB pending_raw 跑兩次
                         # strip_ansi。節流邏輯在 _try_marker_extract 內。
+                        # 回覆送出後使用者改在分頁裡下了新指令 → 這輪 TG 結束，之後
+                        # 畫面上的 marker 都是重畫（見 bridge_delivery，一則回覆實測
+                        # 被重送 29 次）。
+                        if slot.marker_forwarded and bridge_delivery.turn_superseded(
+                                getattr(self, "_on_agent_status", None), sid,
+                                [m.get("start") for m in slot.reply_markers]
+                                + [slot.reply_start_marker], slot.last_extraction_ts):
+                            _blog(f"[turn] {sid} newer prompt from elsewhere — "
+                                  f"stop forwarding this Telegram turn\n")
+                            self._end_marker_turn(slot)
+                            continue
                         _t_mk = self._perf_t()
                         marked_reply = self._try_marker_extract(slot, now, total)
                         self._perf_end("extract_marker", _t_mk)
-                        if not marked_reply:
+                        if marked_reply and len(slot.turn_sent) > self._MAX_FOLLOWUPS:
+                            # 不論原因，一輪 TG 最多 1 則回覆 + N 則後續，之後停聽並說一聲。
+                            _blog(f"[turn] {sid} follow-up cap reached — stop forwarding\n")
+                            new_lines, dedup_pending = [self._FOLLOWUP_CAP_NOTICE], []
+                            commit_fallback_reset = True
+                        elif not marked_reply:
                             # FALLBACK（v0.29.15，回報：「回覆傳不回來、都要自己
                             # fetch」）：模型有時根本沒吐出 [[TG_REPLY]] marker（忘了
                             # 或吐錯），舊版就永遠等一個不會出現的 marker → 無限
@@ -4014,6 +4051,8 @@ class TelegramBridge(BridgeBase):
                 if any_ok or not retryable_fail:
                     for _t in dedup_pending:
                         slot.sent_responses.add(_t)
+                    if getattr(slot, "turn_epoch", 0) == epoch_at_extract:
+                        slot.turn_sent.extend(dedup_pending)
                     # 送出期間（可能數十秒）若到了新訊息，turn_epoch 已前進：下面的
                     # 回合重置屬於舊回合，套上去會把新回合的 has_user_msg／marker
                     # 清掉，新回覆就被當舊輸出排掉（靜默丟回覆）。只在編號沒變時做。
@@ -4024,16 +4063,7 @@ class TelegramBridge(BridgeBase):
                         if commit_marker_forwarded and same_turn and not older_turn_reply:
                             slot.marker_forwarded = True
                         if commit_fallback_reset and same_turn:
-                            slot.pending_raw = ""
-                            slot.expect_marker = False
-                            slot.reply_start_marker = ""
-                            slot.reply_end_marker = ""
-                            slot.marker_prompt = ""
-                            slot.reply_markers = []
-                            slot.has_user_msg = False
-                            slot.marker_next_scan_ts = 0.0
-                            slot.marker_scan_gen = -1
-                            slot._fb_next_ts = 0.0
+                            self._end_marker_turn(slot)
                     if same_turn and not older_turn_reply:
                         # 回覆真的出去了 → 關掉這個 epoch 的心跳
                         slot._hb_count = 0
