@@ -2635,8 +2635,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // sends ArrowUp to the PTY, which recalls the previous prompt. We never
     // want that: scroll-up history is browsed via the dedup overlay
     // (setupScrollHistory). Block xterm's wheel handling in the alt buffer;
-    // in the normal buffer keep native scrollback wheel scrolling.
-    term.attachCustomWheelEventHandler(() => term.buffer.active.type !== 'alternate');
+    // in the normal buffer keep native scrollback wheel scrolling. Full-screen
+    // Claude Code scrolls its own history, so it gets the wheel (_xtermTakesWheel).
+    term.attachCustomWheelEventHandler(ev => _xtermTakesWheel(term, ev));
 
     let sid = '';
     try {
@@ -2845,8 +2846,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // sends ArrowUp to the PTY, which recalls the previous prompt. We never
     // want that: scroll-up history is browsed via the dedup overlay
     // (setupScrollHistory). Block xterm's wheel handling in the alt buffer;
-    // in the normal buffer keep native scrollback wheel scrolling.
-    term.attachCustomWheelEventHandler(() => term.buffer.active.type !== 'alternate');
+    // in the normal buffer keep native scrollback wheel scrolling. Full-screen
+    // Claude Code scrolls its own history, so it gets the wheel (_xtermTakesWheel).
+    term.attachCustomWheelEventHandler(ev => _xtermTakesWheel(term, ev));
 
     const label = customLabel || cmd.split(/\s/)[0];
     sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
@@ -3875,7 +3877,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.loadAddon(u11);
     term.unicode.activeVersion = '11';
     term.open(pane);
-    term.attachCustomWheelEventHandler(() => term.buffer.active.type !== 'alternate');
+    term.attachCustomWheelEventHandler(ev => _xtermTakesWheel(term, ev));
     // 鍵盤直送遠端 PTY（原始位元組：方向鍵/Ctrl-C/Enter 照原樣），但先過 IME
     // 守門——本機 pane 有這層、遠端以前沒有，所以遠端打中文會重複／漏注音。
     // composition 事件委派在 pane 上（跟本機 pane 同模式，textarea 重建也不失效）。
@@ -6151,6 +6153,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return { text: result.text, source: result.source, ansi: result.ansi };
   }
 
+  // Claude Code 的全螢幕模式（alt screen＋自己開 1003/1006 滑鼠追蹤）有自己的
+  // 捲動歷史，一路捲得到對話開頭，畫的就是原本那個畫面。這種分頁的滾輪交給它：
+  // xterm 放行滾輪，就會轉成滑鼠回報送進去。以前 alt screen 的滾輪一律擋下、
+  // 改蓋 transcript 重新排版的 overlay——那份怎麼調樣式都不是原畫面。
+  // 重排版歷史（可選取複製、含壓縮前的內容）改成按住 Option 或 Shift 再往上滑。
+  // 只放行量過的 Claude Code；opencode 這類從 v0.31.2 起靠 overlay 上滑的照舊。
+  function _appScrollsItself(s) {
+    const t = s && s.term;
+    return !!t && t.buffer.active.type === 'alternate'
+      && !!t.modes && t.modes.mouseTrackingMode !== 'none'
+      && String(s.cmd || '').split(/\s+/).some(tok =>
+        tok.replace(/['"]/g, '').split(/[\\/]/).pop() === 'claude');
+  }
+
+  // attachCustomWheelEventHandler：滾輪要不要交給 xterm。alt screen 預設不給——
+  // 沒開滑鼠追蹤的 TUI，xterm 會把滾輪轉成方向鍵，往上滑就叫出上一則提問；
+  // 開了滑鼠追蹤的，這裡回 false 連滑鼠回報也一起擋掉（xterm 5.5.0 實測）。
+  function _xtermTakesWheel(term, ev) {
+    if (term.buffer.active.type !== 'alternate') return true;
+    if (ev && (ev.altKey || ev.shiftKey)) return false;   // Option／Shift＝要重排版的歷史
+    return _appScrollsItself(Object.values(sessions).find(x => x.term === term));
+  }
+
   function setupScrollHistory(sid, pane) {
     let _loading = false;
     let _pendingUp = 0;     // 載入歷史這段時間，使用者已經往上滑的行數（show 時補上）
@@ -6160,26 +6185,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // — scroll-up was dead in those tabs, whatever the backend returned.
     // Verified against real xterm.js 5.5.0 in tests_scroll_wheel_capture.py:
     // with mouse tracking on, bubble fires 0 times and capture fires once.
-    // Note this is the same intent as attachCustomWheelEventHandler above ("in
-    // the alternate buffer the wheel belongs to this overlay"), which the
-    // mouse-report path simply does not consult.
+    // (Full-screen Claude Code is the exception: _xtermTakesWheel lets xterm
+    // send it the wheel, and the check below leaves the event alone.)
     pane.addEventListener('wheel', (e) => {
       const s = sessions[sid];
       if (!s) return;
       if (ScrollHistory.isOpen()) return; // overlay handles its own scroll natively
-      const direction = e.deltaY < 0 ? 'up' : 'down';
-      if (direction !== 'up') return;
+      // macOS 按住 Shift 時滾輪變成橫向（deltaX），所以 Shift 也看 deltaX。
+      const dy = e.deltaY || (e.shiftKey ? e.deltaX : 0);
+      if (dy >= 0) return;
       const buf = s.term.buffer.active;
       if (buf.viewportY > 0) return; // xterm has its own scrollback, let it handle
+      if (!e.altKey && !e.shiftKey && _appScrollsItself(s)) return;
       // We are opening the overlay, so stop the page and xterm's viewport from
       // also acting on this wheel. Everything above this line lets the event
-      // through untouched. Known limit: it does NOT stop the mouse report from
-      // reaching the app — xterm sends that from higher up the capture chain
-      // than any listener here can reach (measured; see the wheel test). Harmless
-      // in practice: the overlay covers the pane and mouse-tracking TUIs redraw.
+      // through untouched.
       e.preventDefault();
       e.stopPropagation();
-      _pendingUp += Math.max(1, Math.round(Math.abs(e.deltaY) / 16));
+      _pendingUp += Math.max(1, Math.round(Math.abs(dy) / 16));
       if (_loading) return;
       _loading = true;
       const t0 = performance.now();

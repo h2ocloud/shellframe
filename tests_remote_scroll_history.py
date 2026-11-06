@@ -42,7 +42,8 @@ def grab(pattern):
 IS_REMOTE = grab(r"  function isRemoteSid\(sid\) \{[^\n]*\n")
 PARSE_REMOTE = grab(r"  function parseRemoteSid\(sid\) \{.*?\n  \}\n")
 FETCH = grab(r"  async function fetchHistory\(sid, cols\) \{.*?\n  \}\n")
-SETUP = grab(r"  function setupScrollHistory\(sid, pane\) \{.*?\n  \}\n")
+# 連同它前面的 _appScrollsItself／_xtermTakesWheel（setupScrollHistory 會呼叫）
+SETUP = grab(r"  function _appScrollsItself\(s\) \{.*?\n  function setupScrollHistory\(sid, pane\) \{.*?\n  \}\n")
 
 PAGE = """<!doctype html><meta charset="utf-8">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>

@@ -6,6 +6,30 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.40.5 (2026-11-06)
+
+### Fixes
+
+- **Scrolling up in a full-screen Claude Code tab shows Claude Code's own screen.**
+  Claude Code in full-screen mode keeps its whole conversation and scrolls it
+  itself when it receives the mouse wheel. ShellFrame never let the wheel through
+  on the alternate screen. Instead it drew a second copy of the history, rebuilt
+  from the transcript, on top of the tab. That copy could never look like the real
+  screen, which is why several releases of style fixes never matched it. The wheel
+  now goes to Claude Code, so what you scroll through is the screen Claude Code drew,
+  up to the start of the conversation. Hold Option or Shift while scrolling up to
+  open the rebuilt history instead: text in it can be selected and copied, and it
+  reaches back past a compaction. Other full-screen programs that take the mouse,
+  such as opencode, still open the rebuilt history as before. Covered by
+  tests_scroll_native_claude.py.
+
+  **全螢幕 Claude Code 分頁往上滑，看到的就是 Claude Code 自己的畫面。**
+  全螢幕模式的 Claude Code 自己保有整段對話，收到滾輪就會自己捲。ShellFrame 以前在
+  alt screen 一律擋下滾輪，改在上面蓋一份從對話紀錄重畫的歷史；那份怎麼調都不會跟
+  原畫面一樣，所以好幾版的樣式修正都沒對上。現在滾輪交給 Claude Code，一路捲得到
+  對話開頭。按住 Option 或 Shift 再往上滑，才開重畫的那份（可選取複製、看得到壓縮
+  前的內容）。opencode 這類同樣開滑鼠的全螢幕程式照舊。由 tests_scroll_native_claude.py 守著。
+
 ## v0.40.4 (2026-11-06)
 
 ### Fixes

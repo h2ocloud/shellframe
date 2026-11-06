@@ -42,7 +42,8 @@ def grab(pattern):
 
 SCROLL = grab(r"  const ScrollHistory = \(function\(\) \{.*?\n    return \{ show, close, isOpen \};\n  \}\)\(\);\n")
 FETCH = grab(r"  async function fetchHistory\(sid, cols\) \{.*?\n  \}\n")
-SETUP = grab(r"  function setupScrollHistory\(sid, pane\) \{.*?\n  \}\n")
+# 連同它前面的 _appScrollsItself／_xtermTakesWheel（setupScrollHistory 會呼叫）
+SETUP = grab(r"  function _appScrollsItself\(s\) \{.*?\n  function setupScrollHistory\(sid, pane\) \{.*?\n  \}\n")
 THEME = grab(r"  const THEME = \{.*?\n  \};\n")
 
 HIST = "\n".join(f"history line {i:03d}" for i in range(400))

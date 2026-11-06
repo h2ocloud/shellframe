@@ -115,8 +115,14 @@ def test_mouse_tracking_blocks_bubble_not_capture():
         off = wheel_counts(pg, "plain")
         claimed = wheel_counts(pg, "opencode", claim=True)
         b.close()
-    check("mouse tracking 下滾輪確實被送進 PTY", bool(on["pty"]),
-          f"pty={on['pty']}")
+    # PTY 裡的 `\x1b[<35;…M` 是游標移動回報（1003 會回報每次移動），不是滾輪；
+    # 滾輪回報是按鍵碼 64／65。早期這裡只看 PTY 有沒有東西，把移動回報誤當成
+    # 「滾輪送到 app 了」。
+    wheel = lambda log: [d for d in log["pty"] if re.match(r"\x1b\[<6[45];", d)]
+    check("alt screen 的 wheel handler 回 false 時，滾輪回報也被擋（只剩游標移動回報）",
+          not wheel(on) and any(d.startswith("\x1b[<35;") for d in on["pty"]),
+          f"pty={on['pty']}；全螢幕 Claude Code 因此要 _xtermTakesWheel 放行，"
+          "見 tests_scroll_native_claude.py")
     check("mouse tracking 下 bubble 監聽收不到（根因）", on["bubble"] == 0,
           f"bubble={on['bubble']}；若這裡變成 1，xterm.js 行為已改，"
           "capture workaround 可以重新評估")
@@ -127,13 +133,8 @@ def test_mouse_tracking_blocks_bubble_not_capture():
     check("一般畫面（claude/pi）兩種階段都收得到（對照組）",
           off["bubble"] >= 1 and off["capture"] >= 1,
           f"bubble={off['bubble']} capture={off['capture']}")
-    # 已知限制，寫成測試而不是寫成註解：即使在 capture 階段
-    # preventDefault + stopImmediatePropagation，滑鼠回報照樣會送到 app——
-    # xterm 是從比這裡更外層的 capture 送出去的。實務上無害（overlay 蓋住
-    # 畫面、mouse tracking 的 TUI 本來就一直重繪）。哪天這裡變成擋得住，
-    # 表示可以把「接管」做得更乾淨。
-    check("已知限制：capture 接管仍擋不掉滑鼠回報", bool(claimed["pty"]),
-          f"pty={claimed['pty']}；若變成空的，xterm 行為已改，可收緊接管")
+    check("overlay 接管時 app 收不到滾輪（不會在底下跟著捲）", not wheel(claimed),
+          f"pty={claimed['pty']}")
 
 
 if __name__ == "__main__":
