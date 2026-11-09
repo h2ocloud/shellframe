@@ -4354,7 +4354,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             res, age = self._status_tracker.last_result(sid)
         except Exception:
             return None
-        return (dict(res, prompt_at=(self._hook_events.get(sid) or {}).get("prompt_at", 0.0)), age) if res else None
+        if not res:
+            return None
+        # The tracker keeps the screen/transcript guess; a fresh hook event is the
+        # truth the UI already shows. Apply it here too, or `sfctl state`, `list`
+        # and `bots` call a tab done in the middle of its turn.
+        hk = self._hook_events.get(sid)
+        if hk and time.time() - hk.get("ts", 0) <= self._HOOK_TTL:
+            res = self._apply_hook_state(res, hk, time.time())
+        return (dict(res, prompt_at=(hk or {}).get("prompt_at", 0.0)), age)
 
     @staticmethod
     def _init_inject_decision(s, data: str) -> str:
