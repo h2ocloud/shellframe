@@ -8067,9 +8067,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       $hooksState.innerHTML = `<span style="color:#f7768e">●</span> ${esc(info.error)}`;
     } else if (info.installed) {
       $hooksState.innerHTML = `<span style="color:#9ece6a">●</span> ` +
-        (isZh ? '已安裝（新開的 Claude tab 生效）' : 'installed (new Claude tabs)');
+        (isZh ? `已安裝（${info.total || 1} 個設定檔，含帳號 profile；新開的 Claude tab 生效）` : `installed (${info.total || 1} settings files incl. account profiles; new Claude tabs)`);
     } else {
-      $hooksState.textContent = isZh ? '未安裝' : 'not installed';
+      $hooksState.textContent = info.installed_count ? (isZh ? `部分安裝（${info.installed_count}/${info.total} 個設定檔）——打開開關補齊` : `partly installed (${info.installed_count}/${info.total} settings files): switch on to complete`) : (isZh ? '未安裝' : 'not installed');
     }
   }
   async function refreshStatusHooks() {

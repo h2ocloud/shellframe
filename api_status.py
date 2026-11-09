@@ -10,6 +10,7 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 import agent_status
 import sf_log
@@ -121,30 +122,38 @@ class StatusApiMixin:
     def _sf_hook_command(self) -> str:
         return f'python3 "{main.APP_DIR / "sf_agent_hook.py"}"'
 
-    def get_status_hooks_info(self) -> str:
-        """Settings UI: are the ShellFrame status hooks installed in ~/.claude/settings.json?"""
-        installed = False
-        try:
-            p = self._CLAUDE_SETTINGS_PATH
-            cfg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-            hooks = cfg.get("hooks") or {}
-            installed = all(
-                any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
-                for ev in self._HOOK_EVENTS)
-        except Exception:
-            main._swallow("Api.get_status_hooks_info:2188")
-        return json.dumps({"installed": installed,
-                           "settings_path": str(self._CLAUDE_SETTINGS_PATH)})
+    # A tab started under a ShellFrame account profile reads that profile's
+    # settings.json as its *user* settings; ~/.claude/settings.json reaches it only
+    # as project settings when the tab's working directory happens to be ~. So the
+    # hooks go into every profile too, or tabs elsewhere never report their state.
+    _CLAUDE_PROFILES_ROOT = Path.home() / ".config" / "shellframe" / "account-profiles" / "claude"
 
-    def set_status_hooks_enabled(self, enabled: bool) -> str:
-        """Install/remove the status hook entries. Merge is surgical: only
-        groups whose command references sf_agent_hook.py are touched, every
-        other hook in the user's settings.json survives byte-for-byte."""
-        p = self._CLAUDE_SETTINGS_PATH
+    def _status_hook_targets(self) -> list:
+        """[(label, settings.json path)] every Claude tab may take its hooks from."""
+        targets = [("~/.claude", self._CLAUDE_SETTINGS_PATH)]
+        try:
+            for d in sorted(x for x in Path(self._CLAUDE_PROFILES_ROOT).iterdir() if x.is_dir()):
+                targets.append((f"profile {d.name}", d / "settings.json"))
+        except OSError:
+            pass
+        return targets
+
+    def _hooks_installed_in(self, p: Path) -> bool:
+        try:
+            hooks = (json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}).get("hooks") or {}
+        except Exception:
+            return False
+        return all(any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
+                   for ev in self._HOOK_EVENTS)
+
+    def _write_status_hooks(self, p: Path, enabled: bool) -> str:
+        """Install/remove the status hook entries in one settings.json. Merge is
+        surgical: only groups whose command references sf_agent_hook.py are
+        touched; every other key and hook survives. Returns an error or ''."""
         try:
             cfg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
         except Exception as e:
-            return json.dumps({"installed": False, "error": f"settings.json unreadable: {e}"})
+            return f"{p}: unreadable ({e})"
         hooks = cfg.setdefault("hooks", {})
         if enabled:
             for ev in self._HOOK_EVENTS:
@@ -171,7 +180,6 @@ class StatusApiMixin:
                     hooks.pop(ev, None)
             if not hooks:
                 cfg.pop("hooks", None)
-            self._hook_events.clear()
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
             tmp = str(p) + ".tmp"
@@ -179,8 +187,60 @@ class StatusApiMixin:
                 json.dump(cfg, f, ensure_ascii=False, indent=2)
             os.replace(tmp, p)
         except Exception as e:
-            return json.dumps({"installed": False, "error": f"write failed: {e}"})
-        return self.get_status_hooks_info()
+            return f"{p}: write failed ({e})"
+        return ""
+
+    def get_status_hooks_info(self) -> str:
+        """Settings UI: are the status hooks in every settings.json a Claude tab reads?"""
+        rows = []
+        try:
+            for label, p in self._status_hook_targets():
+                rows.append({"label": label, "path": str(p), "installed": self._hooks_installed_in(p)})
+        except Exception:
+            main._swallow("Api.get_status_hooks_info:2188")
+        done = sum(1 for r in rows if r["installed"])
+        return json.dumps({"installed": bool(rows) and done == len(rows),
+                           "installed_count": done, "total": len(rows), "targets": rows,
+                           "settings_path": str(self._CLAUDE_SETTINGS_PATH)})
+
+    def set_status_hooks_enabled(self, enabled: bool) -> str:
+        """Install/remove the status hooks in ~/.claude and in every account profile."""
+        errors = [e for e in (self._write_status_hooks(p, bool(enabled))
+                              for _label, p in self._status_hook_targets()) if e]
+        if not enabled:
+            self._hook_events.clear()
+        info = json.loads(self.get_status_hooks_info())
+        if errors:
+            info["error"] = "; ".join(errors)[:300]
+        return json.dumps(info)
+
+    def _last_activity_at(self, sid: str, s, out_ts: float = 0.0) -> float:
+        """When this tab's agent last did something real: the newest of its
+        transcript's last write and its last hook event. Both survive a ShellFrame
+        restart, unlike the PTY output time, which every reattach repaint resets
+        (after a restart every tab looked about 45 s idle). Falls back to the PTY
+        output time for a CLI with no transcript file."""
+        best = 0.0
+        try:
+            res, _age = self._status_tracker.last_result(sid)
+            best = float((res or {}).get("activity_at") or 0)
+        except Exception:
+            best = 0.0
+        hk = (getattr(self, "_hook_events", None) or {}).get(sid) or {}
+        best = max(best, float(hk.get("ts") or 0))
+        return best or float(out_ts or 0)
+
+    def _sync_status_hooks_to_profiles(self) -> int:
+        """Hooks were switched on (they are in ~/.claude): make sure every account
+        profile has them too, including one created since. Returns how many files
+        were changed. Never removes anything."""
+        if not self._hooks_installed_in(self._CLAUDE_SETTINGS_PATH):
+            return 0
+        changed = 0
+        for _label, p in self._status_hook_targets()[1:]:
+            if not self._hooks_installed_in(p) and not self._write_status_hooks(p, True):
+                changed += 1
+        return changed
 
     def refresh_agent_status(self, sid: str = "") -> str:
         """把狀態快取與 hook 狀態清掉，強制下一輪從畫面／transcript 重算。
@@ -229,6 +289,12 @@ class StatusApiMixin:
         if self._status_started:
             return
         self._status_started = True
+        try:   # profiles created since the hooks were switched on get them too
+            n = self._sync_status_hooks_to_profiles()
+            if n:
+                sf_log._dlog("hookstat", f"status hooks added to {n} account profile settings file(s)")
+        except Exception:
+            sf_log._swallow("status:sync_profile_hooks")
 
         def monitor():
             # (hook override below) Industry survey 2026-06: every OSS agent
@@ -310,7 +376,8 @@ class StatusApiMixin:
                                           "elapsed": st.get("elapsed", 0),
                                           "activity": st.get("activity") or {},
                                           "loop": st.get("loop"),
-                                          "model": st.get("model")}
+                                          "model": st.get("model"),
+                                          "activity_at": st.get("activity_at") or 0}
                                 cache[sid] = {
                                     "out_ts": out_ts,
                                     "computed_at": now,

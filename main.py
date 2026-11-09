@@ -4281,6 +4281,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             runs_on = ""
         if not runs_on:
             runs_on = agent_model.describe(getattr(s, "cmd", ""))
+        last_at = self._last_activity_at(sid, s, out_ts)
         return {
             "sid": sid,
             "label": (getattr(s, "_custom_label", None)
@@ -4293,8 +4294,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             "agent_blocked": agent_status.redact(
                 self._agent_blocked_for_list(sid), 120),
             "last_error": last_error,
-            "last_output_at": int(out_ts) if out_ts else 0,
-            "idle_for_s": int(now - out_ts) if out_ts else -1,
+            "last_output_at": int(last_at) if last_at else 0,
+            "idle_for_s": int(now - last_at) if last_at else -1,
             "runs_on": runs_on,
         }
 

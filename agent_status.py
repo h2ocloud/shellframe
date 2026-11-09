@@ -1904,7 +1904,7 @@ class StatusTracker:
                     "summary": summary, "action": action, "narration": narration,
                     "task": task, "elapsed": int(now - since), "why": why,
                     "transcript": os.path.basename(path), "fmt": fmt, "loop": loop,
-                    "model": model, "prompt_marker": pm}
+                    "model": model, "prompt_marker": pm, "activity_at": os.path.getmtime(path)}
         except Exception as e:
             return {"state": "unknown", "dot": "", "activity": {},
                     "summary": "", "why": f"exc:{e}", "transcript": None, "loop": None,
