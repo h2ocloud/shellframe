@@ -23,10 +23,11 @@
   last conversation and the other bots. Closing one (×, ⌘W, sfctl, Telegram or the
   idle reaper) first asks the bot to write this conversation's summary and update
   MEMORY.md in `~/.config/shellframe/bots/<name>/`; a bot that does not answer still
-  leaves the captured screen, so a close never loses the conversation. Because the
-  bot writes its own memory inside its own session, this works the same in Claude
-  Code, Codex, Grok Build, OpenCode, agy, pi and cursor-agent. `sfctl bots` lists who
-  is awake, asleep or external. Covered by tests_bots.py and tests_bots_ui.py.
+  leaves the captured screen, so a close never loses the conversation. The bot writes
+  its own memory inside its own session, so the same flow runs for every CLI ShellFrame
+  drives (Claude Code, Codex, Grok Build, OpenCode, agy, pi, cursor-agent); it was
+  exercised end to end with Claude Code. `sfctl bots` lists who is awake, asleep or
+  external. Covered by tests_bots.py and tests_bots_ui.py.
 
   **Bots（實驗功能，設定 → Bots，預設關）：每個分頁有一張臉，分頁也可以開成有自己記憶的 bot。**
   燈號換成用 SVG／CSS 畫的小 bot：形狀和顏色是它的身分（12 種形狀、14 種顏色，右鍵可換），
@@ -36,8 +37,9 @@
   設定的角色：叫醒時開分頁並交給它一份簡報（執掌、skill 與 SKILL.md 路徑、MEMORY.md、
   上次對話摘要、其他 bot）；關閉時（×、⌘W、sfctl、Telegram、閒置回收）先請它把這次對話
   的摘要寫進 `~/.config/shellframe/bots/<名稱>/` 並更新 MEMORY.md，沒回應也會留下最後的
-  畫面，關閉不會弄丟對話。記憶由 bot 在自己的對話裡寫，所以 Claude Code、Codex、Grok Build、
-  OpenCode、agy、pi、cursor-agent 都一樣。`sfctl bots` 列出醒著、休息中、外部的 bot。
+  畫面，關閉不會弄丟對話。記憶由 bot 在自己的對話裡寫，所以每種 CLI（Claude Code、Codex、
+  Grok Build、OpenCode、agy、pi、cursor-agent）走的是同一套流程；完整實測過的是 Claude Code。
+  `sfctl bots` 列出醒著、休息中、外部的 bot。
   由 tests_bots.py、tests_bots_ui.py 守著。
 
 - **External bots: A2A to a bot that lives outside ShellFrame goes out through its webhook, and it answers with `sfctl --as`.**

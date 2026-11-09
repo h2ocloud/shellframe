@@ -76,7 +76,8 @@ a close never loses the conversation. The user can also close without writing.
 
 Why the bot writes its own memory: every CLI ShellFrame runs (Claude Code,
 Codex, Grok Build, OpenCode, agy, pi, cursor-agent) can write a file, so the
-same flow works everywhere, and no second process spends the user's
+same flow runs everywhere (exercised end to end with Claude Code; a CLI that does
+not write in time still leaves the captured screen), and no second process spends the user's
 subscription outside the official interactive CLI.
 
 Memory hygiene, both in the brief and the close prompt: text from other bots,

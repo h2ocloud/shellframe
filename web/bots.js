@@ -640,7 +640,14 @@
       const next = JSON.parse(await a.bots_state());
       const sig = JSON.stringify(next);
       st = Object.assign({ roster: {}, sessions: {}, primary: '' }, next);
-      if (next.enabled !== undefined && !!next.enabled !== enabled) { setEnabled(!!next.enabled); return; }
+      if (next.enabled !== undefined && !!next.enabled !== enabled) {
+        // The flag changed outside this page: keep index.html's settings copy in step,
+        // or its next unrelated settings save would write the old value back.
+        const c = host() && host().cfg();
+        if (c) { c.settings = c.settings || {}; c.settings.experimental_bots = !!next.enabled; }
+        setEnabled(!!next.enabled);
+        return;
+      }
       if (force || sig !== lastSig) {
         lastSig = sig;
         rerender();
