@@ -201,6 +201,20 @@ check("delegate to an open busy tab is queued, not typed in", res["success"] and
 api.state["s1"] = ""
 check("…and goes in when it frees", wait_for(lambda: any(s == "s1" and "please refactor" in t for s, t in api.sent)))
 
+print("a new conversation is ready")
+# Measured live: a delegate to a role with no open tab opened it, then waited 45 s
+# for an empty `❯` line that a new Claude Code conversation never shows.
+api_r = make_api(("s9", "fresh"))
+api_r._auto_accept_startup_trust_prompt = lambda sid, s: None
+api_r.screen["s9"] = "\n".join(["", "", RULE, "\x1b[39m❯\xa0\x1b[2mTry \"how does <filepath> work?\"\x1b[0m",
+                                RULE, "  ⏵⏵ bypass permissions on"])
+check("a new Claude Code conversation, its dim placeholder in the box, is ready",
+      api_r.is_session_ready_for_bridge("s9"))
+api_r.screen["s9"] = box("\x1b[39m❯\xa0half typed")
+check("…not when the box holds the user's draft", not api_r.is_session_ready_for_bridge("s9"))
+api_r.screen["s9"] = "starting claude…"
+check("…nor before the box is drawn", not api_r.is_session_ready_for_bridge("s9"))
+
 td.capture = real_capture
 check("capture reads nothing for a tab without tmux", td.capture(api, "s1") == "")
 

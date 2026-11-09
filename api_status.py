@@ -327,7 +327,7 @@ class StatusApiMixin:
         try:   # profiles created since the hooks were switched on get them too
             n = self._sync_status_hooks_to_profiles()
             if n:
-                sf_log._dlog("hookstat", f"status hooks added to {n} account profile settings file(s)")
+                sf_log._dlog("hookstat", f"status hooks added or completed in {n} Claude settings file(s)")
         except Exception:
             sf_log._swallow("status:sync_profile_hooks")
 

@@ -4461,7 +4461,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             except Exception:
                 _swallow("Api.is_session_ready_for_bridge:3154")
         clean = self._ANSI_RE.sub('', "\n".join(parts)) if parts else ""
-        return bool(self._AI_READY_RE.search(clean))
+        if self._AI_READY_RE.search(clean):
+            return True
+        # Measured: a new Claude Code conversation greets with a dim placeholder in the
+        # input box (`❯ Try "how does <filepath> work?"`), never an empty `❯` line, so a
+        # delegate to a role with no open tab waited 45 s and gave up. Read the box with
+        # its colours: empty or only a dim suggestion is ready to type into.
+        return tab_delivery.composer_state(tab_delivery.capture(self, sid))[0] in ("empty", "suggestion")
 
     _STARTUP_EXIT_OPTION_RE = _re.compile(
         r'^\s*(?:[❯>›]\s*)?2[.)]\s*No,?\s*exit', _re.MULTILINE | _re.IGNORECASE)

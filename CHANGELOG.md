@@ -24,6 +24,20 @@
   tmux 名稱、配對、repo 與安裝網址都維持原名，現有設定、腳本與配對的機器照常運作。給 AI 的
   提示在解釋指令或路徑時仍寫 ShellFrame；系統設定裡的 App 名稱要等用新名字重新安裝後才會變。
 
+- **`sfctl state` and `sfctl bots` lead with the tab's name and its place in the tab bar.**
+  People find a tab by its name and where it sits, not by a sid like s274. A `state`
+  line now starts with the name, then `#N` (the tab's place in the tab bar, counted
+  from 1), then the sid, with names padded by terminal cells so Chinese names line up;
+  the row carries `position`. An awake bot in `sfctl bots` says which tab it is, and
+  the raw dump after the listing is gone. `sfctl list` only appends `#N` to each line
+  so scripts that read it keep working. Covered by tests_state_query.py and tests_bots.py.
+
+  **`sfctl state` 和 `sfctl bots` 先列分頁名稱和它在分頁列的位置。** 人是靠名稱和位置找分頁，
+  不是靠 s274 這種代碼。`state` 每一行改成名稱在前，接著 `#N`（在分頁列的第幾個，從 1 算），
+  最後才是 sid；名稱以終端機格數對齊，中文名稱也對得齊，資料多一個 `position` 欄位。
+  `sfctl bots` 裡醒著的 bot 會說它在第幾個分頁，清單後面那串原始資料拿掉了。`sfctl list`
+  只在每行最後加 `#N`，讀它的腳本照常運作。由 tests_state_query.py、tests_bots.py 守著。
+
 ### Added
 
 - **The primary bot is a conversation like any other bot, with a playbook for taking stock and handing work out, and you can drag bots on and off its card.**
@@ -131,6 +145,75 @@
   設為主要 Bot、開記憶資料夾，或讓這個分頁不再當 bot 的分頁。不再當 bot 時，bot 和它的
   記憶都保留，分頁就算還叫那個名字也不會被自動認回去。
 
+- **Text for a tab waits for the tab: `send`, A2A and `delegate` queue while it works, and the queue survives a restart.**
+  `sfctl send` and A2A used to type into a tab at once, even mid-turn, while the docs
+  said `send` waited. Now text for a tab that is working, waiting on a decision, in a
+  Telegram turn, or holding the user's unsent text waits in that tab's queue (first in,
+  first out) and goes in when that ends; `--now` sends at once. The input box is read
+  with its colours, so Claude Code's dim suggestion is not mistaken for the user's
+  draft; `sfctl peek` and `sfctl state` say which it is. After 30 minutes an item is
+  dropped and its sender is told. The queue is kept on disk
+  (`~/.config/shellframe/delivery_queue.json`): after a restart each item waits only
+  what is left of its time, and one that cannot be delivered (its tab did not come
+  back, or it was being typed in when the app went down) is reported to the sender.
+  Covered by tests_tab_delivery.py and tests_delivery_restart.py.
+
+  **送給分頁的字會等分頁：`send`、A2A、`delegate` 在對方忙時排隊，重啟也不會掉。** 以前
+  `sfctl send` 和 A2A 會立刻打進分頁，回合進行中也一樣，說明文件卻寫 `send` 會等。現在對方正在
+  跑、在等決定、在處理 Telegram，或輸入框有使用者還沒送出的字時，訊息會進那個分頁的佇列（先進先
+  出），結束後才送；加 `--now` 立刻送。讀輸入框時連顏色一起讀，Claude Code 的灰色建議字不會被當成
+  使用者的草稿；`sfctl peek`、`sfctl state` 會標出是哪一種。等了 30 分鐘還送不進去就放棄並通知送件方。
+  佇列存在磁碟（`~/.config/shellframe/delivery_queue.json`）：重啟後每則只等原本剩下的時間；
+  送不到的（分頁沒回來、或送到一半 App 關了）一定通知送件方。由 tests_tab_delivery.py、
+  tests_delivery_restart.py 守著。
+
+- **Sidebar: search, idle only, newest first, and how long ago each tab answered (bots on).**
+  Above the list, a search box matches a tab's name, its bot's job and its latest line;
+  "Idle" hides what is running and sorts newest first; "> 30 min" keeps the long-quiet
+  ones; "Recent first" puts running tabs on top, then by last answer. Every row says how
+  long ago it last answered: the transcript's last write (which survives a restart),
+  never the redraw a tab sends when it is reattached. These are a view: your own order,
+  which is also Telegram's `/1` `/2`, is untouched, rows do not move while the pointer
+  is moving over the list, and dragging does not reorder while sorted by time. Covered
+  by tests_bots_sidebar_tools.py (Chromium on the real page; screenshots in qa-shots).
+
+  **側欄：搜尋、只看閒置、最近回應在上，每列顯示多久前回應（開 bots 時）。** 清單上方的搜尋框
+  比對分頁名稱、它的 bot 的執掌和最新一句；「只看閒置」藏起正在跑的並改成最新的在上；「超過
+  30 分鐘」只留安靜很久的；「最近回應在上」把正在跑的放最上面，其餘依最後回應排序。每列都寫
+  多久前回應：用對話記錄最後寫入的時間（重啟後仍正確），不會把分頁重新接上時的畫面重繪當成回應。
+  這些只是檢視方式：你自己排的順序（也就是 Telegram 的 `/1` `/2`）不變，滑鼠在清單上移動時
+  列不會跳，依時間排序時拖曳也不會改順序。由 tests_bots_sidebar_tools.py 守著（在 Chromium 跑
+  真實頁面，截圖在 qa-shots）。
+
+- **`#tab name` in any conversation is a link: ⌘-click (Ctrl-click) opens that tab.**
+  Agents are asked to name tabs to a person, not sids; the primary bot now writes them
+  as `#name`. In every local terminal such a mention is underlined on hover and opens
+  the tab with ⌘ (Ctrl) held; a plain click still selects text. The longest name wins,
+  a Latin name must not run on into a word, Chinese may, and a `#` inside a URL is not
+  a mention. Covered by tests_bots_sidebar_tools.py, including a real ⌘-click on xterm.
+
+  **對話裡的 `#分頁名稱` 可以點：按住 ⌘（Ctrl）點一下就打開那個分頁。** agent 跟人講話要用分頁
+  名稱、不用 sid，主要 Bot 現在會寫成 `#名稱`。每個本機終端機裡，這種寫法滑過時有底線，按住 ⌘
+  點擊就切過去；直接點仍然是選取文字。名稱取最長的；英數結尾的名稱不能直接接英數字，中文可以；
+  網址裡的 `#` 不算。由 tests_bots_sidebar_tools.py 守著，包含在真的 xterm 上按 ⌘ 點擊。
+
+- **A hand-off nobody reports gets one reminder, then its requester is told.**
+  Whether `sfctl a2a-result` was run used to depend on the model remembering it. Now a
+  hand-off typed into a tab is followed up once: Claude Code's Stop hook (a second,
+  synchronous Stop entry, installed with the status hooks) keeps the agent going with a
+  reminder the first time it stops without reporting; on other CLIs ShellBot types the
+  same reminder after the tab sat idle a minute. Thirty minutes after the reminder, or
+  when the tab is closed first, the requester is told. A queued hand-off counts from
+  when it was typed in. Each step happens once and is in the A2A log. Covered by
+  tests_handoff_followup.py and tests_status_hooks_profiles.py.
+
+  **交辦沒人回報時，提醒一次，再通知派工方。** 以前有沒有跑 `sfctl a2a-result` 全看模型記不記得。
+  現在送進分頁的交辦會被追一次：Claude Code 第一次沒回報就要停下時，Stop hook（隨狀態 hook 一起
+  安裝的第二個、同步的 Stop 項目）會帶著提醒讓它繼續；其他 CLI 則在分頁閒置一分鐘後由 ShellBot
+  把同樣的提醒打進去。提醒後 30 分鐘還沒回報，或分頁先被關掉，就通知派工方。排隊的交辦從真正
+  送進去的時間起算。每一步都只做一次，並寫進 A2A 紀錄。由 tests_handoff_followup.py、
+  tests_status_hooks_profiles.py 守著。
+
 ### Fixes
 
 - **A message to a coordinator that lives outside ShellFrame no longer opens a tab that never becomes ready.**
@@ -146,6 +229,68 @@
   了那個 shell、等一個永遠不會出現的 AI 提示。標成外部之後改走它的 webhook；還沒設定 webhook
   時立刻拒絕，並說明要設定什麼。對外部角色 `delegate` 也改成拒絕，不再開分頁。由
   tests_bots.py 守著。
+
+- **`sfctl state`, `list` and `bots` report what the hooks say: a tab that is working no longer reads done.**
+  Reported: a tab's hook log said working while `sfctl state` answered done, so the
+  primary bot's stock-taking read busy tabs as finished. The hook state was applied
+  only to the copy pushed to the page; every command read the older guess. A timer
+  also cleared every tab's hook state every five minutes, so a long run read done
+  until its next hook event. Now the snapshot carries the hook state, and only a tab
+  whose hooks and screen have both been quiet for 90 s goes back to the screen guess.
+  Covered by tests_state_hook_overlay.py and tests_status_refresh.py.
+
+  **`sfctl state`、`list`、`bots` 以 hook 為準：正在跑的分頁不再顯示 done。** 回報：hook 記錄
+  寫著 working，`sfctl state` 卻回 done，主要 Bot 盤點時把忙碌的分頁當成做完了。原因是 hook 狀態
+  只套在推給畫面的那份，指令讀的都是舊的猜測值；另外有個計時器每五分鐘清掉所有分頁的 hook 狀態，
+  跑很久的分頁在下一個 hook 事件前都會變成 done。現在快照本身帶 hook 狀態，只有 hook 和畫面都
+  安靜 90 秒的分頁才交回畫面判斷。由 tests_state_hook_overlay.py、tests_status_refresh.py 守著。
+
+- **Tabs in a Claude account profile report their state too, and "idle for" survives a restart.**
+  A tab started under an account profile reads that profile's settings.json, which had
+  no status hooks, so its state was always a guess. The hooks now go into every profile
+  (and one created later), the settings page counts installed profiles, and a tab's
+  last activity comes from its transcript or hooks, so `idle_for_s` is not reset by a
+  restart. Tabs already open pick the hooks up when relaunched (⟳). Covered by
+  tests_status_hooks_profiles.py.
+
+  **Claude 帳號 profile 裡的分頁也會回報狀態，「閒置多久」重啟後也正確。** 在帳號 profile 底下開
+  的分頁讀的是該 profile 的 settings.json，那裡沒有狀態 hook，狀態一直是猜的。現在 hook 會裝進每個
+  profile（包括之後新建的），設定頁會列出裝了幾個；最後活動時間改從對話記錄或 hook 取，`idle_for_s`
+  不會因重啟歸零。已經開著的分頁要重開（⟳）才會載入。由 tests_status_hooks_profiles.py 守著。
+
+- **A single Chinese character typed with an input method is no longer doubled.**
+  Reported: 「主主」「的的」. The backstop that drops a doubled input-method commit
+  ignored single characters on purpose; a repeated single character within 150 ms is
+  now dropped too, and a near repeat is logged. Covered by tests_ime_backstop.py.
+
+  **用輸入法打的中文單字不再重複。** 回報：「主主」「的的」。擋重複送出的保底機制原本刻意不管
+  單字；現在 150 毫秒內重複的單字也會擋掉，接近的重複會記錄下來。由 tests_ime_backstop.py 守著。
+
+- **Handing work to a role with no open tab works again with current Claude Code.**
+  Measured: `a2a-handoff` and `delegate` to such a role opened its tab, then waited
+  45 s and gave up with "opened but never became ready". A new Claude Code
+  conversation shows a dim placeholder in its input box (`Try "how does <filepath>
+  work?"`), never the empty `❯` line the readiness check looked for. The box is now
+  read with its colours: empty or only a dim suggestion is ready. Covered by
+  tests_tab_delivery.py.
+
+  **交辦給還沒開分頁的角色，在新版 Claude Code 上又能用了。** 實測：對這類角色 `a2a-handoff`
+  或 `delegate`，會開出它的分頁，然後等 45 秒放棄，回「開起來了，但等不到它就緒」。新的 Claude
+  Code 對話一開始，輸入框裡就有灰色的提示字（`Try "how does <filepath> work?"`），從來不是就緒判斷
+  在找的空白 `❯` 列。現在讀輸入框時連顏色一起讀：空的、或只有灰色建議字，就算就緒。由
+  tests_tab_delivery.py 守著。
+
+- **A tab launched as `cd <dir> && claude …` finds its transcript, and a Pi tab's "last answer" is real.**
+  After a restart such tabs had no transcript (Claude Code names the folder after the
+  `cd` target, the lookup used the tab's own directory), so their state was a screen
+  guess and they read "now". A Pi tab, which has no transcript and redraws about once
+  a minute, now reports when it was last seen working. Covered by tests_launch_cwd.py
+  and tests_pi_provider.py.
+
+  **用 `cd 目錄 && claude …` 開的分頁找得到對話記錄，Pi 分頁的「最後回應」也正確了。** 重啟後
+  這類分頁找不到對話記錄（Claude Code 用 `cd` 的目錄命名資料夾，查找卻用分頁自己的目錄），狀態
+  只能靠畫面猜，時間一直顯示「剛剛」。Pi 沒有對話記錄、閒置時約每分鐘重繪一次，現在改報最後一次
+  看到它在跑的時間。由 tests_launch_cwd.py、tests_pi_provider.py 守著。
 
 ## v0.40.6 (2026-11-06)
 
