@@ -61,7 +61,9 @@ sfctl orphans           # tmux sessions still running with no tab (report only)
 `sid` (`s12`) is the handle for everything else. `label` is the human name shown
 on the tab, and is what a role resolves to. `position` (`#9` at the end of a `list`
 line) is where the tab sits in the tab bar, counted from 1: say "the 9th tab"
-(「第 9 個分頁」) to a person, who sees names and places, not sids.
+(「第 9 個分頁」) to a person, who sees names and places, not sids. When you name a
+tab to a person, write it as `#name` (e.g. `#sf dev`): with bots on it is a link
+they can ⌘-click to open that tab.
 
 Each row also carries `agent_state` (working / done / idle), `agent_activity`
 (one line of what it is doing) and `runs_on` (which CLI on which model). When

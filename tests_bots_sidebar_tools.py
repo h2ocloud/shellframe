@@ -238,6 +238,56 @@ with sync_playwright() as pw:
     check("while sorted by time, a drag does not reorder", page.evaluate("window.__sfHost.order()") == ORDER,
           page.evaluate("window.__sfHost.order()"))
 
+    print("#tab name links")
+    m = lambda text: page.evaluate("t => SFBots.tabMentions(t).map(h => h.sid + ':' + t.substr(h.index, h.length))", text)
+    check("#name of a tab is a mention", m("請看 #Coding 和 #研究") == ["s201:#Coding", "s202:#研究"], m("請看 #Coding 和 #研究"))
+    check("a name with a space", m("#relay 除錯 好了") == ["s207:#relay 除錯"], m("#relay 除錯 好了"))
+    check("Chinese runs on without a space (#研究結果)", m("#研究結果出來了") == ["s202:#研究"], m("#研究結果出來了"))
+    check("…but a Latin name does not run on into a word (#Codingx)", m("#Codingx") == [], m("#Codingx"))
+    check("a # inside a URL or a word is not a mention", m("https://example.com/#Coding a#Coding") == [],
+          m("https://example.com/#Coding a#Coding"))
+    check("not a tab: nothing", m("#nothing #部署") == [], m("#nothing #部署"))
+    check("the longest name wins", m("#部署檢查完成") == ["s204:#部署檢查"], m("#部署檢查完成"))
+
+    page.evaluate("window.__sfHost.switchTab('s201')")
+    page.wait_for_timeout(300)
+    page.evaluate("window.__sfHost.sessions().s201.term.write('\\r\\n\\r\\n下一步：前往 #研究 看結果\\r\\n')")
+    page.wait_for_timeout(500)
+    spot = page.evaluate("""() => {
+      const term = window.__sfHost.sessions().s201.term, buf = term.buffer.active;
+      for (let y = buf.length - 1; y >= 0; y--) {
+        const line = buf.getLine(y), text = line && line.translateToString(true);
+        if (!text || !text.includes('#研究')) continue;
+        let col = 0; const at = text.indexOf('#研究');
+        for (let i = 0; i < at; i++) { const c = line.getCell(col); col += c && c.getWidth() > 1 ? 2 : 1; }
+        const r = term.element.querySelector('.xterm-screen').getBoundingClientRect();
+        const cw = r.width / term.cols, ch = r.height / term.rows;
+        return {x: r.left + (col + 2) * cw, y: r.top + (y - buf.viewportY + 0.5) * ch};
+      }
+      return null; }""")
+    if spot:
+        page.mouse.move(spot["x"], spot["y"])
+        page.wait_for_timeout(300)
+        page.mouse.click(spot["x"], spot["y"])
+        page.wait_for_timeout(400)
+        check("a plain click on #研究 does not switch (it may be a text selection)",
+              page.evaluate("window.__sfHost.active()") == "s201", page.evaluate("window.__sfHost.active()"))
+        page.mouse.move(spot["x"] + 3, spot["y"] + 300)     # away, then back onto the name
+        page.wait_for_timeout(200)
+        page.keyboard.down("Meta")
+        page.mouse.move(spot["x"] + 3, spot["y"], steps=5)
+        page.wait_for_timeout(500)
+        page.screenshot(path=str(SHOTS / "bots-tab-link.png"),
+                        clip={"x": max(0, spot["x"] - 260), "y": spot["y"] - 40, "width": 560, "height": 80})
+        page.mouse.click(spot["x"] + 3, spot["y"])
+        page.keyboard.up("Meta")
+        page.wait_for_timeout(400)
+        check("⌘-click on #研究 opens that tab", page.evaluate("window.__sfHost.active()") == "s202",
+              page.evaluate("window.__sfHost.active()"))
+    else:
+        check("the mention was written to the terminal", False, "not found in the buffer")
+    page.evaluate("window.__sfHost.switchTab('s201')")
+
     print("remembered")
     page.reload()
     ready(page)

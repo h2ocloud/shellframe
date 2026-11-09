@@ -126,6 +126,12 @@ never the list: your own order, which is also Telegram's `/1` `/2`, stays as it 
 
 The switches are remembered per viewer (`localStorage`).
 
+In any conversation, `#name` of an open tab is a link: hold ⌘ (Ctrl on Windows)
+and click it to open that tab. The primary bot is told to write tabs this way.
+The longest name wins; a Latin name must not run on into a word (`#sf devtools` is
+not `#sf dev`), while Chinese, which has no spaces, may (`#主控收到`). A `#` inside
+a URL or a word is not a mention.
+
 ## External bots (e.g. a cloud bot with a webhook routine)
 
 Some bots live outside ShellFrame. A typical cloud bot service offers no API to

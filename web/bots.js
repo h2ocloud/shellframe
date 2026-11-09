@@ -188,6 +188,7 @@
     renderPrimary();
     renderTools();
     applyView();
+    linkTerminals();
     renderConvo();
     afterTabs(document.getElementById('tabs'));
   }
@@ -315,6 +316,67 @@
     renderTools();
     if (view.recent) applyView();
     else { try { host().renderSidebar(); } catch (_) {} }   // rebuilt in your own order
+  }
+
+  // ── `#tab name` in any conversation: ⌘/Ctrl-click opens that tab ─────────
+  // Agents write a tab as #name (the primary bot is told to): a sid would be exact
+  // but means nothing to a person, who sees names. The longest name wins, so
+  // "#主控台" is not read as "#主控" + "台"; a name ending in a letter or digit must
+  // not run on into one ("#sf devtools" is not "#sf dev"), while Chinese, which
+  // has no spaces, may ("#主控收到"). A '#' inside a URL or a word is not a mention.
+  const MENTION_AFTER = /[A-Za-z0-9\/&=?_.\-]/;
+  function tabMentions(text) {
+    const S = sessionsMap();
+    const names = Object.keys(S).filter(sid => !S[sid].isRemote && S[sid].label)
+      .map(sid => ({ sid, name: String(S[sid].label), low: String(S[sid].label).toLowerCase() }))
+      .sort((a, b) => b.name.length - a.name.length);
+    const out = [];
+    const low = String(text || '').toLowerCase();
+    for (let i = low.indexOf('#'); i !== -1; i = low.indexOf('#', i + 1)) {
+      if (i > 0 && MENTION_AFTER.test(low[i - 1])) continue;
+      const rest = low.slice(i + 1);
+      const hit = names.find(n => rest.startsWith(n.low) &&
+        !(/[a-z0-9]/.test(rest.charAt(n.low.length)) && /[a-z0-9]$/.test(n.low)));
+      if (!hit) continue;
+      out.push({ index: i, length: 1 + hit.name.length, sid: hit.sid });
+      i += hit.name.length;
+    }
+    return out;
+  }
+  const linked = new WeakSet();
+  let linkedCount = 0;
+  function linkTerminals() {
+    const S = sessionsMap();
+    Object.keys(S).forEach(sid => {
+      const term = S[sid] && S[sid].term;
+      if (!term || S[sid].isRemote || linked.has(term) || !term.registerLinkProvider) return;
+      linked.add(term);
+      linkedCount++;
+      term.registerLinkProvider({
+        provideLinks(y, callback) {
+          const line = enabled && term.buffer.active.getLine(y - 1);
+          const text = line ? line.translateToString(true) : '';
+          const hits = text.includes('#') ? tabMentions(text) : [];
+          if (!hits.length) { callback(undefined); return; }
+          const col = [];                     // character index → cell column (CJK takes two)
+          let c = 0;
+          for (let i = 0; i < text.length; i++) {
+            col.push(c);
+            const cell = line.getCell(c);
+            c += cell && cell.getWidth() > 1 ? 2 : 1;
+          }
+          col.push(c);
+          callback(hits.map(h => ({
+            range: { start: { x: col[h.index] + 1, y }, end: { x: col[h.index + h.length], y } },
+            text: text.substr(h.index, h.length),
+            activate(ev) {
+              if (ev && !(ev.metaKey || ev.ctrlKey)) return;   // a plain click still selects text
+              if (sessionsMap()[h.sid]) host().switchTab(h.sid);
+            },
+          })));
+        },
+      });
+    });
   }
 
   function applyView(opts) {
@@ -1093,13 +1155,15 @@
         const rows = document.querySelectorAll('#sidebar-sessions .sb-item[data-section="local"][data-sid]');
         const known = [...document.querySelectorAll('#sidebar-sessions .sfb-ago')].filter(a => a.textContent).length;
         api().js_debug('bots', `sidebar tools=${!!document.getElementById('sfb-tools') && enabled} rows=${rows.length} ` +
-                               `with-time=${known} view=${JSON.stringify({ idle: view.idle, long: view.long, recent: view.recent })}`);
+                               `with-time=${known} tab-links=${linkedCount} ` +
+                               `view=${JSON.stringify({ idle: view.idle, long: view.long, recent: view.recent })}`);
       } catch (_) {}
     }, 20000);
   }
 
   window.SFBots = {
     face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
+    tabMentions,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,

@@ -372,8 +372,9 @@ PRIMARY_PLAYBOOK = {
         "Taking stock: when the user asks, or right after you wake, run sfctl bots and sfctl state --all. "
         "Report at most the 3 things that need the user, most urgent first, each saying what they need to decide; "
         "sum up everything else in a line or two. No big tables.",
-        "Talking to the user: call tabs and bots by their names (e.g. \"Billing audit\"), never by sid like s314; "
-        "a sid is only something you pass to sfctl.",
+        "Talking to the user: call tabs and bots by their names, written as #name (e.g. #Billing audit), never by "
+        "sid like s314; #name is a link the user can ⌘-click to open that tab, and sfctl state gives its place as #N "
+        "(say \"the 9th tab\"). A sid is only something you pass to sfctl.",
         "Handing work out: one owner per task (the bot whose job fits best); state the goal, the scope and "
         "what done looks like. Then follow up, check the result and report to the user.",
         "Ask the user before starting a new bot or doing anything others can see "
@@ -389,7 +390,8 @@ PRIMARY_PLAYBOOK = {
         "- sfctl a2a-send <名稱> \"訊息\"：傳話；sfctl a2a-log：往來紀錄",
         "盤點：使用者說「盤點」、或你剛被叫醒時，先跑 sfctl bots 和 sfctl state --all。"
         "只列出最多 3 件需要使用者處理的事（最急的在前，每件寫清楚要他決定什麼），其他狀況用一兩句帶過，不要列大表。",
-        "跟使用者講話時，分頁和 bot 一律用名稱（例如「稽核執行-公司」），不要寫 s314 這種代碼；sid 只用在你自己下的 sfctl 指令。",
+        "跟使用者講話時，分頁和 bot 一律用名稱，寫成 #名稱（例如 #稽核執行-公司），不要寫 s314 這種代碼；"
+        "#名稱 在畫面上按住 ⌘ 點一下就會打開那個分頁，sfctl state 給的 #N 就說「第 N 個分頁」。sid 只用在你自己下的 sfctl 指令。",
         "派工：一件事只交給一個 bot（執掌最合的那個）；交辦時寫清楚目標、範圍、完成標準。派出去之後追結果、驗收，再回報使用者。",
         "要開新的 bot、或做外部看得到的事（寄信、發布、付款、刪資料）之前，先問使用者。",
     ),
