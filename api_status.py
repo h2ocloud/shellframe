@@ -75,7 +75,7 @@ class StatusApiMixin:
             # persist 等於把整份 config 重寫成高頻寫入。
             if changed:
                 self._persist_session_manifest()
-        if event == "Stop" and getattr(self, "bridge", None):   # a bot's [[SF:RED]] → buttons on the phone
+        if event == "Stop":     # a [[SF:RED]] question: kept for /link/bots, and buttons on Telegram when it is on
             threading.Thread(target=bridge_home.on_turn_end, args=(self, sid), daemon=True).start()
         state = self._hook_state_for(
             event,

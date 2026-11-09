@@ -248,6 +248,12 @@ real_end = bh.on_turn_end
 bh.on_turn_end = lambda a, sid, read_events=None: called.append(sid)
 app._on_agent_event({"sid": "s1", "event": "Stop"})
 check("the Stop hook event starts that check", wait_for(lambda: called == ["s1"]), called)
+# Measured: the call was gated on the bridge, so a computer without Telegram never kept a
+# [[SF:RED]] question, and the phone's /link/bots decision stayed empty exactly there.
+app.bridge = None
+app._on_agent_event({"sid": "s2", "event": "Stop"})
+check("…with no Telegram bridge too (the question is kept for the phone)", wait_for(lambda: called == ["s1", "s2"]), called)
+app.bridge = b
 bh.on_turn_end = real_end
 
 print("a choice counts once")
