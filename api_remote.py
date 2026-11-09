@@ -237,6 +237,8 @@ class RemoteApiMixin:
                     handoff=bool(args.get("handoff", False)),
                     summary_path=args.get("summary_path", "") or "",
                 )
+                if sid in self.sessions:     # a bot: it writes its memory, then closes itself
+                    return {"success": True, "message": f"{sid} 是 bot：正在寫記憶，寫完會自動關閉"}
                 return {"success": True, "message": f"Closed {sid}"}
             except Exception as e:
                 return {"success": False, "message": f"Failed: {e}"}

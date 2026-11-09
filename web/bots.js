@@ -710,6 +710,13 @@
       document.getElementById('btn-settings').addEventListener('click', () => setTimeout(() => { injectSettings(); syncSettings(); }, 0));
     setInterval(tick, 1500);
     setInterval(() => { if (enabled) refresh(); }, 5000);
+    // One line in the debug log, so "I see no faces" can be answered from the log.
+    setTimeout(() => {
+      try {
+        api().js_debug('bots', `enabled=${enabled} faces=${document.querySelectorAll('svg.sfb').length} ` +
+                               `primary=${st.primary || '-'} bots=${Object.keys(st.roster || {}).filter(isBot).length}`);
+      } catch (_) {}
+    }, 4000);
   }
 
   window.SFBots = {

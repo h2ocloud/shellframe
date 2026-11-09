@@ -447,7 +447,7 @@ class BotsApiMixin:
             return {"success": False, "message": f"「{label}」不是外部 bot"}
         if not ext.get("url"):
             return {"success": False,
-                    "message": f"「{label}」住在 ShellFrame 外面，但還沒設定 webhook（側欄 Bots → 它 → 編輯）"}
+                    "message": f"「{label}」住在 ShellFrame 外面，但還沒設定 webhook（在側欄點它 → 編輯，貼上 webhook）"}
         body = bots.external_payload(
             kind=payload.get("kind") or "send", msg_id=payload.get("id") or "",
             text=payload.get("text") or "", from_label=payload.get("from_label") or "",
