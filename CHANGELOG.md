@@ -365,6 +365,26 @@
   門檻沒動（跑到一半掛住；長推理時 spinner 會一直動）、或狀態不明又安靜超過門檻。做完和閒著的
   分頁只給一個數量，當作可以回收的候選。由 tests_state_query.py 守著。
 
+- **A reused tab id shows its own conversation, and a tab shows the effort it was launched with.**
+  Reported: a bot woken into s347 showed, as its activity, the "write your memory"
+  prompt that had been sent to s346, a tab closed a minute earlier in the same folder.
+  Before a new tab's first message its own transcript does not exist yet, and the
+  guess by file birth took the other tab's file; the "keep the last detail" fallback
+  then kept that line after the right file was found; and a closed tab's status was
+  never dropped, so a reused id could inherit it. Now a file born before the tab's
+  process is never its new conversation, the kept detail belongs to one conversation,
+  and closing a tab forgets its status. Also reported: a tab launched with
+  `--effort max` read xhigh, the global default; the launch command's `--effort` now
+  counts, and a `/effort` inside the conversation still wins. Covered by
+  tests_tab_id_reuse.py.
+
+  **分頁編號重複使用時，顯示的是自己的對話；分頁也會顯示啟動時指定的思考強度。** 回報：叫醒到 s347 的 bot，
+  活動欄顯示的是送給 s346 的「請先寫記憶」，那是一分鐘前在同一個資料夾關掉的分頁。新分頁送出第一則訊息之前，
+  自己的對話記錄還不存在，依檔案建立時間猜，就猜到別的分頁；之後找到正確的檔案，「沿用上一次的細節」又把那句
+  留著；關掉的分頁狀態也從來沒清，重複使用的編號會繼承到。現在比分頁程序更早建立的檔案不會被當成它的新對話，
+  沿用的細節只限同一段對話，關分頁時也會清掉它的狀態。另外回報：用 `--effort max` 啟動的分頁顯示成全域預設的
+  xhigh；現在會看啟動指令的 `--effort`，對話裡用 `/effort` 改過的仍然優先。由 tests_tab_id_reuse.py 守著。
+
 - **Handing work to a role with no open tab works again with current Claude Code.**
   Measured: `a2a-handoff` and `delegate` to such a role opened its tab, then waited
   45 s and gave up with "opened but never became ready". A new Claude Code

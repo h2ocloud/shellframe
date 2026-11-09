@@ -3674,6 +3674,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         if self.line_bridge:
             self.line_bridge.unregister_session(sid)
         s = self.sessions.pop(sid, None)
+        # Tab ids are reused: what the status side remembers per id must go with the tab,
+        # or the next tab with this id shows the old conversation's lines (measured: s347).
+        tracker = getattr(self, "_status_tracker", None)
+        for table in (getattr(tracker, "_path_cache", {}), getattr(tracker, "_last", {}), getattr(tracker, "_detail", {}),
+                      getattr(tracker, "_pmark", {}), getattr(tracker, "_last_result", {}),
+                      getattr(self, "_hook_events", {}), getattr(self, "_status_cache", {})):
+            table.pop(sid, None)
         if s:
             self._plugin_dispatch_session_close(sid)
             s.kill()

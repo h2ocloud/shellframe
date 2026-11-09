@@ -657,7 +657,8 @@ def _nearest_birth_jsonl(pattern: str, target_epoch: float, max_delta=900):
             b = os.stat(f).st_birthtime
         except (OSError, AttributeError):
             continue
-        d = abs(b - target_epoch)
+        # born before the process: not its new conversation (a resume names its uuid in the command)
+        d = abs(b - target_epoch) if b >= target_epoch - 5 else max_delta
         if d < best_d:
             best, best_d = f, d
     return best
@@ -907,12 +908,12 @@ def _parse_claude_transcript_effort(path):
     return level
 
 
-def _parse_model_flag(cmd: str):
-    """從 cmd 字串解析 --model <x> 或 --model=<x>，回 normalized model 字串或 None。
+def _parse_model_flag(cmd: str, flag: str = "--model"):
+    """從 cmd 字串解析 --model <x> 或 --model=<x>（flag 可換成 --effort），回 normalized 字串或 None。
     支援 bare alias（opus/sonnet/haiku/fable）與完整 claude-* id。"""
     if not cmd:
         return None
-    m = re.search(r"--model[= ](['\"]?)(\S+)\1", cmd)
+    m = re.search(re.escape(flag) + r"[= ](['\"]?)(\S+)\1", cmd)
     if not m:
         return None
     val = m.group(2).strip("'\"")
@@ -1028,6 +1029,7 @@ def detect_model_info(worker: dict, transcript_path=None):
             # 活躍分頁每次寫入時整檔重掃 14MB）。
             effort = _parse_claude_transcript_effort(transcript_path) \
                 if transcript_path else None
+            effort = effort or _parse_model_flag(worker.get("cmd", ""), "--effort")   # launched with --effort
             if not effort:
                 cd = _config_dir(worker)
                 glob_cfg = _cached_parse(
@@ -1893,9 +1895,10 @@ class StatusTracker:
             state = self._debounce(sid, state, now)
             action, task, narration = _detail(evs)
             # 穩定呈現：事件間隙抓不到細節時沿用上一次的非空值，卡片不閃空
-            pa, pt, pn = self._detail.get(sid, ("", "", ""))
+            pa, pt, pn, pp = self._detail.get(sid, ("", "", "", path))
+            pa, pt, pn = (pa, pt, pn) if pp == path else ("", "", "")   # another conversation: nothing carries over
             action, task, narration = action or pa, task or pt, narration or pn
-            self._detail[sid] = (action, task, narration)
+            self._detail[sid] = (action, task, narration, path)
             pm = bridge_delivery.latest_prompt_marker(evs)
             self._pmark[sid] = pm = self._pmark.get(sid) if pm is None else pm
             summary = action or narration or state
