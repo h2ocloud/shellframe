@@ -148,3 +148,31 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | 配對 modal 畫 QR | `web/index.html` |
 | TG `/link join shellframe://…` | `bridge_telegram.py` |
 | 回歸測試 | `tests_relay.py`（relay 全流程）、`tests_frame_link.py` |
+
+## Bots（v0.41.0）
+
+手機的 bot 介面從這兩條路由拿資料。兩條都要簽章，而且對方必須能操作這台；單向配對中無權的那一方回 403，手機當成「這台沒有 bot 介面」。
+
+**`GET /link/bots?rev=<上次的 rev>`**：每個 bot 和每個分頁現在的樣子，規則跟桌面一樣。
+
+- 讀的是狀態監控的快照，所以手機每幾秒問一次也不會讀對話紀錄。只有停在選單上的分頁會讀一次畫面，拿選項。
+- 內容跟上次一樣時只回 `{"success": true, "unchanged": true, "rev": N}`。正在跑的分頁 `last_at` 等於現在，這個時間不算變化。
+- bots 沒開時，`bots` 是 `[]`、`tabs` 是 `{}`。
+
+| 欄位 | 內容 |
+|---|---|
+| `v`, `rev`, `now`, `enabled`, `primary` | 版本（加欄位不升版）、內容的 hash、電腦的時間、bots 有沒有開、主要 Bot |
+| `bots[]` | `role`, `label`, `responsibility`, `runs_on`, `avatar`, `primary`, `external`, `state`（`awake`／`asleep`／`external`）, `sid`, `position`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `closing`, `decision` |
+| `tabs[sid]` | `bot`, `avatar`, `plain`, `closing`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `decision` |
+| `avatar` | 已經解析好的頭像，等於桌面 `bots.js` 的 `avatarFor`：bot 自己的、分頁自己挑的，否則是 `defaultAvatar`，用 role 或 sid 當種子。Python 版在 `bots.default_avatar`，`tests_link_bots.py` 會拿它跟真的 `web/bots.js` 對照 |
+| `activity` | `working`／`idle`／`done`／`decision`／`stuck`，等於桌面的燈號；睡著或外部的 bot 是 `""` |
+| `doing`, `latest` | 跑的時候在做什麼；最新一句的取法同桌面的 `previewOf`。bot 的分頁沒有可說的話時，用它的執掌。最多 140 字，已經遮掉憑證 |
+| `last_at` | 最後一次回應的 epoch 秒；跑的時候等於現在；0 表示不知道 |
+| `closing` | `""`／`waiting`／`writing`：關閉前正在寫記憶 |
+| `decision` | 在等人決定時是 `{"reason", "options": [{"n", "text"}]}`，否則 `null`。兩種情況：畫面上有選單（權限提示等）；或回合最後問了 `[[SF:RED]]`，有沒有開 Telegram 都一樣，之後送進那個分頁的 prompt 就算回答了。回答方式是 `POST /link/input {"sid", "data": "2\r"}` |
+
+外部 bot 的 webhook 網址和授權，都不會出現在回應裡。
+
+**`POST /link/bots/wake {"role"}`**：叫醒一個 bot，走的是桌面的 `bots_open`。回 `{"success", "details": {"sid", "existed"}}`；`existed: true` 表示它本來就醒著。外部 bot 回 `success: false` 和原因。
+
+**`/link/signals` 的 RED 事件**多了兩個欄位：`role`（哪個 bot 在問；一般分頁是 `""`）和 `options`（`[{"n", "text"}]`，解析不出來就是 `[]`）。這些事件仍然只在 Telegram 橋接開著時才有；不靠橋接的版本是上面的 `decision`。

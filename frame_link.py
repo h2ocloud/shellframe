@@ -817,6 +817,12 @@ class FrameLink:
         mode = (self.peers().get(peer_id) or {}).get("mode", "duplex")
         return mode in ("duplex", "slave")
 
+    def _bots_route(self, peer_id: str, cmd: str, args: dict):
+        """GET /link/bots, POST /link/bots/wake (the phone's bot view, docs/mobile-link.md)."""
+        if not self._peer_may_control(peer_id):
+            return 403, {"success": False, "message": "單向配對：對方無權查看這台"}
+        return 200, self._execute(cmd, args) or {"success": False, "message": "no answer"}
+
     # ── raw output streaming（無縫遠端分頁）────────────────────────────────
     STREAM_WATCH_TTL = 30       # 沒人拉 30s 就停止緩衝該分頁
     STREAM_MAX_BYTES = 262144   # 每分頁 ring buffer 上限
@@ -988,6 +994,9 @@ class FrameLink:
                         "sid": body.get("sid", ""),
                         "data": body.get("data", "")}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/bots/wake":
+                    code, res = link._bots_route(peer_id, "bots_wake", {"role": body.get("role", "")})
+                    return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/resize":
                     if not link._peer_may_control(peer_id):
                         return self._send(403, {"success": False,
@@ -1356,6 +1365,9 @@ class FrameLink:
                     events, tail = link._signals_since(since)
                     return self._send(200, {"success": True, "cursor": tail, "events": events},
                                       sign_for=peer, nonce=nonce)
+                if path == "/link/bots":
+                    code, res = link._bots_route(peer_id, "bots_link", {"rev": (q.get("rev") or [""])[0]})
+                    return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/events":
                     try:
                         since = int((q.get("since") or ["0"])[0])

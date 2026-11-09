@@ -889,6 +889,22 @@ _MENU_CHROME_RE = re.compile(r'[◉○←→]|to adjust', re.I)
 _MENU_ACTION_RE = re.compile(
     r'Action Required|Would you like|Do you want|approval|approve|permission', re.I)
 
+
+def menu_options(lines) -> list:
+    """[{"num", "text"}…] of a numbered menu waiting on screen (two items or more), else [].
+    Shared by Telegram's menu push and the phone's /link/bots decision."""
+    opts = []
+    for line in lines:
+        m = _MENU_ITEM_RE.match(line.lstrip().lstrip('❯›').lstrip())   # the ❯ cursor may sit on any item
+        if m:
+            opts.append({"num": m.group(1), "text": m.group(2).strip()})
+        elif opts:
+            if ('Esc to cancel' in line or 'Tab to' in line or not line.strip()) and len(opts) >= 2:
+                break
+            if line.strip() and not _MENU_END_RE.search(line) and not _MENU_CHROME_RE.search(line):
+                opts = []                                               # a non-menu line in the middle
+    return opts if len(opts) >= 2 else []
+
 # Rate-limit detection patterns (read from live screen, not from extract path)
 _RATE_LIMIT_RE = re.compile(
     r"hit your (?:session|usage) limit|/rate-limit-options|/usage-credits to finish",
@@ -2829,11 +2845,17 @@ class TelegramBridge(BridgeBase):
             # GET /events and respond. No-op when the API server is disabled.
             try:
                 import api_server
+                extra = {}
+                if sig_state == "RED":          # the phone answers with these (/link/signals, docs/mobile-link.md)
+                    self._detect_menu_prompt(slot)
+                    extra = {"role": bridge_home.role_of(self, slot.sid), "options": [
+                        {"n": int(o["num"]), "text": o["text"]} for o in slot.pending_menu_options or []]}
                 api_server.EVENT_BUS.push(
                     sid=slot.sid,
                     label=getattr(slot, "label", slot.sid),
                     state=sig_state,
                     reason=sig_reason,
+                    **extra,
                 )
             except Exception as e:
                 _blog(f"[signal-api] {slot.sid} failed: {e}\n")
@@ -3002,38 +3024,14 @@ class TelegramBridge(BridgeBase):
     def _detect_menu_prompt(self, slot) -> str:
         """Detect a numbered menu prompt waiting for user input.
         Returns formatted menu string or empty if none found."""
-        # Scan current screen for consecutive "N. xxx" lines (with optional ❯ cursor).
-        # Cursor ❯ may be on any line, not just the first. Codex/Claude both
-        # use this shape for approval / action-required prompts.
+        # Consecutive "N. xxx" lines on the current screen; Codex and Claude both
+        # use this shape for approval / action-required prompts (menu_options).
         lines = [l.rstrip() for l in self._slot_display(slot)]
-        screen_text = "\n".join(lines)
-        menu_lines = []
-        menu_options = []
-        for line in lines:
-            # Strip leading ❯/› cursor markers and whitespace
-            stripped = line.lstrip().lstrip('❯›').lstrip()
-            # Match "N. xxx" or "N) xxx"
-            m = _MENU_ITEM_RE.match(stripped)
-            if m:
-                num, label = m.group(1), m.group(2).strip()
-                menu_lines.append(f"{num}. {label}")
-                menu_options.append({"num": num, "text": label})
-            elif menu_lines:
-                # Hit end markers — stop collecting
-                if 'Esc to cancel' in line or 'Tab to' in line or not line.strip():
-                    if len(menu_lines) >= 2:
-                        break
-                # Non-menu line in middle — reset (false positive)
-                if (line.strip() and not _MENU_END_RE.search(line)
-                        and not _MENU_CHROME_RE.search(line)):
-                    menu_lines = []
-                    menu_options = []
-        if len(menu_lines) >= 2:
-            slot.pending_menu_options = menu_options
-            is_action = _MENU_ACTION_RE.search(screen_text)
+        slot.pending_menu_options = menu_options(lines)
+        if slot.pending_menu_options:
+            is_action = _MENU_ACTION_RE.search("\n".join(lines))
             title = "待決策：請選一個動作" if is_action else "請選一個選項"
-            return f"❓ {title}\n" + "\n".join(menu_lines)
-        slot.pending_menu_options = []
+            return f"❓ {title}\n" + "\n".join(f"{o['num']}. {o['text']}" for o in slot.pending_menu_options)
         return ""
 
     @staticmethod

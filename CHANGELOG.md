@@ -40,6 +40,29 @@
 
 ### Added
 
+- **The phone gets the bots: `GET /link/bots` and `POST /link/bots/wake` over Frame Link.**
+  Asked for by the ShellBot iOS app. One request answers with every bot (awake, asleep,
+  external) and every tab, by the desktop's own rules: the face (`bots.default_avatar` is
+  the page's `defaultAvatar` to the bit, checked against the real `web/bots.js`), the state
+  including "waiting on you" and "stuck", the last answer, the latest line as the sidebar
+  picks it, and writing-memory on close. While a tab waits on the person, the question
+  comes with its options: a menu on its screen, or an `[[SF:RED]]` its turn ended on, with
+  or without Telegram (until now a computer without the Telegram bridge sent the phone no
+  decisions at all). It reads the status monitor's snapshot, so a phone asking every few
+  seconds costs no transcript read, and `rev` lets an unchanged answer come back in a few
+  bytes. A one-way pairing gets 403, and an external bot's webhook never leaves the
+  computer. `/link/signals` RED events now also name the bot and list the options. Covered
+  by tests_link_bots.py and tests_frame_link.py.
+
+  **手機也看得到 bots：Frame Link 新增 `GET /link/bots` 和 `POST /link/bots/wake`。** ShellBot iOS App 要的。
+  一次回所有 bot（醒著、休息中、外部）和所有分頁，規則跟桌面一樣：頭像（`bots.default_avatar` 和頁面的
+  `defaultAvatar` 完全一致，拿真的 `web/bots.js` 對照過）、包含「等你決定」和「卡住」的狀態、最後回應時間、跟側欄
+  同樣取法的最新一句、關閉前寫記憶中。分頁在等人決定時，問題連同選項一起給：畫面上的選單，或回合最後問的
+  `[[SF:RED]]`，有沒有開 Telegram 都一樣（以前沒開 Telegram 橋接的電腦，手機完全收不到要決定的事）。資料讀狀態監控的
+  快照，手機每幾秒問一次也不會讀對話紀錄；內容沒變時靠 `rev` 只回幾個位元組。單向配對回 403，外部 bot 的
+  webhook 不會離開電腦。`/link/signals` 的 RED 事件也多了是哪個 bot 在問、有哪些選項。由 tests_link_bots.py、
+  tests_frame_link.py 守著。
+
 - **`sfctl bots-save` makes a role a bot from a script, `--bind <sid>` makes an open tab that bot's tab, and `sfctl bots-delete` removes one.**
   The bot editor's save, for agents: `sfctl bots-save <role> '<json>'` creates the bot
   or changes only the fields given (skills, memory and the face stay). With

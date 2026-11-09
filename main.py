@@ -3679,7 +3679,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         tracker = getattr(self, "_status_tracker", None)
         for table in (getattr(tracker, "_path_cache", {}), getattr(tracker, "_last", {}), getattr(tracker, "_detail", {}),
                       getattr(tracker, "_pmark", {}), getattr(tracker, "_last_result", {}),
-                      getattr(self, "_hook_events", {}), getattr(self, "_status_cache", {})):
+                      getattr(self, "_hook_events", {}), getattr(self, "_status_cache", {}),
+                      getattr(sys.modules.get("bridge_home"), "_red", {})):     # its last [[SF:RED]] question
             table.pop(sid, None)
         if s:
             self._plugin_dispatch_session_close(sid)

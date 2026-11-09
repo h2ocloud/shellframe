@@ -71,6 +71,7 @@ class Node:
         self.renames = []        # (sid, name) via /link/rename
         self.maint = []          # action via /link/maintenance
         self.a2a = []            # payloads via /link/a2a/send
+        self.woken = []          # roles via /link/bots/wake
 
         def execute(cmd, args):
             if cmd == "list":
@@ -119,6 +120,11 @@ class Node:
             if cmd == "a2a_deliver":
                 self.a2a.append(dict(args or {}))
                 return {"success": True, "message": "delivered"}
+            if cmd == "bots_link":
+                return {"success": True, "v": 1, "rev": 7, "bots": [], "tabs": {}, "asked": dict(args or {})}
+            if cmd == "bots_wake":
+                self.woken.append((args or {}).get("role"))
+                return {"success": True, "details": {"sid": "s20", "existed": False}}
             return {"success": False, "message": f"unknown {cmd}"}
 
         def update_config(mutator):
@@ -168,6 +174,21 @@ def signed_get(node_from, peer, path, ts=None, nonce=None, sig=None):
     url = f"http://{peer['host']}:{peer['port']}{path}"
     req = urllib.request.Request(url, headers={
         "X-SF-Peer": node_from.fid, "X-SF-Ts": ts,
+        "X-SF-Nonce": nonce, "X-SF-Sign": sig})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode() or "{}")
+
+
+def signed_post(node_from, peer, path, obj):
+    body = json.dumps(obj).encode()
+    ts, nonce = str(time.time()), os.urandom(16).hex()
+    sig = frame_link._hmac_hex(bytes.fromhex(peer["secret"]), frame_link.FrameLink._string_to_sign(
+        "POST", path, ts, nonce, frame_link._sha256_hex(body)))
+    req = urllib.request.Request(f"http://{peer['host']}:{peer['port']}{path}", data=body, method="POST", headers={
+        "Content-Type": "application/json", "X-SF-Peer": node_from.fid, "X-SF-Ts": ts,
         "X-SF-Nonce": nonce, "X-SF-Sign": sig})
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
@@ -234,6 +255,15 @@ def main():
         st, body = post_json(f"http://127.0.0.1:{a.port}/link/message",
                              {"text": "anon"})
         check("unsigned request rejected", st == 403)
+
+        # ── the phone's bot view (docs/mobile-link.md) ──
+        st, body = signed_get(b, peer_a_from_b, "/link/bots?rev=5")
+        check("/link/bots answers a signed request, the rev passed on",
+              st == 200 and body.get("rev") == 7 and body.get("asked") == {"rev": "5"})
+        st, body = signed_post(b, peer_a_from_b, "/link/bots/wake", {"role": "Coding"})
+        check("/link/bots/wake wakes the bot named", st == 200 and body.get("success") and a.woken == ["Coding"])
+        st, _ = post_json(f"http://127.0.0.1:{a.port}/link/bots/wake", {"role": "Coding"})
+        check("…not for an unsigned request", st == 403 and a.woken == ["Coding"])
 
         # ── 遠端操作 ──
         info = b.link.remote_info(a.fid)
@@ -354,6 +384,11 @@ def main():
               not (rinfo.get("details", {}).get("sessions")))
         rpk = b.link.remote_peek(a.fid, "s1")
         check("slave peek on master denied", rpk.get("success") is False)
+        peer_a_slave = b.link.peers()[a.fid]
+        st, _ = signed_get(b, peer_a_slave, "/link/bots")
+        check("slave /link/bots on master denied (403)", st == 403)
+        st, _ = signed_post(b, peer_a_slave, "/link/bots/wake", {"role": "研究"})
+        check("slave /link/bots/wake on master denied, nothing woken", st == 403 and "研究" not in a.woken)
         before_rn = len(a.renames)
         rnd = b.link.remote_rename(a.fid, "s1", "nope")
         check("slave rename on master denied",

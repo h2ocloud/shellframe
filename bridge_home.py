@@ -208,14 +208,39 @@ _answered = collections.OrderedDict()   # (chat_id, message_id) -> the option ch
 _retired = collections.OrderedDict()    # (chat_id, message_id) of a question replaced by a newer one
 _open = {}                              # sid -> {"text", "copies": [(chat_id, message_id)]}: its newest question
 KEEP = 500
+_red = {}                               # sid -> {"reason", "options", "at"}: the [[SF:RED]] its last turn ended on
 
 
-def red_block(evs):
+def role_of(bridge, sid) -> str:
+    api = _api(bridge)
+    try:
+        return api._bots_role_of(sid) if api else ""
+    except Exception:
+        return ""
+
+
+def red_pending(sid):
+    """The question a tab's last turn ended on with [[SF:RED]], with or without Telegram:
+    {"reason", "options": [(num, text)…], "at"} or None. For the phone (/link/bots), which
+    gets no RED at all from a computer without the Telegram bridge; a prompt sent to the
+    tab after `at` answers it (the caller checks)."""
+    with _lock:
+        r = _red.get(sid)
+    return dict(r) if r else None
+
+
+def forget(sid):
+    with _lock:
+        _red.pop(sid, None)
+
+
+def red_block(evs, telegram_too=False):
     """(question, [(num, text)…]) when the newest turn's last words raise [[SF:RED]]
-    and the turn did not start from Telegram (the bridge pushes those itself);
-    else None. `evs`: agent_status transcript events, oldest first."""
+    and the turn did not start from Telegram (the bridge pushes those itself; with
+    `telegram_too` they count as well); else None. `evs`: agent_status transcript
+    events, oldest first."""
     last_user = max((i for i, e in enumerate(evs or ()) if e.get("kind") == "user_msg"), default=-1)
-    if last_user >= 0 and _TG_TOKEN.search(evs[last_user].get("text") or ""):
+    if not telegram_too and last_user >= 0 and _TG_TOKEN.search(evs[last_user].get("text") or ""):
         return None
     texts = [e.get("text") or "" for e in (evs or ())[last_user + 1:] if e.get("kind") == "assistant_text"]
     if not texts:
@@ -239,17 +264,12 @@ def _recently_pushed(sid) -> bool:
 
 
 def on_turn_end(api, sid: str, read_events=None):
-    """A Claude Code turn just stopped (its Stop hook): when it is a bot's turn
-    that did not start from Telegram and it ended on [[SF:RED]], push the question
+    """A Claude Code turn just stopped (its Stop hook). A question it ended on with
+    [[SF:RED]] is kept for the phone, Telegram or not (red_pending). When it is a
+    bot's turn that did not start from Telegram, the question also goes to Telegram
     with its options as buttons. Measured: the bridge's own detection missed it
     while an earlier Telegram turn on that tab was still open in its books."""
-    bridge = getattr(api, "bridge", None)
-    if not bridge or not getattr(bridge, "active", False) or sid not in bridge.slots:
-        return
     try:
-        role = api._bots_role_of(sid)
-        if not role:
-            return
         if read_events is None:
             import agent_status
             s = api.sessions.get(sid)
@@ -257,10 +277,23 @@ def on_turn_end(api, sid: str, read_events=None):
             evs = agent_status._read_tail_events(path)[1] if path else []
         else:
             evs = read_events(sid)
-        block = red_block(evs)
+        seen = red_block(evs, telegram_too=True)
     except Exception:
         return
-    if not block or _recently_pushed(sid):
+    with _lock:
+        if seen:
+            _red[sid] = {"reason": seen[0], "options": seen[1], "at": time.time()}
+        else:
+            _red.pop(sid, None)
+    bridge = getattr(api, "bridge", None)
+    if not seen or not bridge or not getattr(bridge, "active", False) or sid not in bridge.slots:
+        return
+    try:
+        role = api._bots_role_of(sid)
+    except Exception:
+        return
+    block = red_block(evs)
+    if not role or not block or _recently_pushed(sid):
         return
     question, options = block
     slot = bridge.slots[sid]

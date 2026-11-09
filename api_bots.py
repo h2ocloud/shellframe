@@ -8,18 +8,22 @@ _bots_external_deliver / _bots_external_label (A2A to and from a bot that lives
 outside ShellFrame).
 """
 
+import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import threading
 import time
 
+import agent_status
 import bots
 import bridge_home
 import sf_lang
 import sf_notify
+import tab_delivery
 from api_host import main
 from sf_log import _dlog, _swallow
 
@@ -153,6 +157,119 @@ class BotsApiMixin:
             return state, " ".join(str(said).split())
         except Exception:
             return "", ""
+
+    # ── the phone's bot view (Frame Link GET /link/bots, POST /link/bots/wake) ────
+    LINK_V = 1
+
+    def _bots_link(self, args: dict) -> dict:
+        """What a paired phone shows (docs/mobile-link.md): every bot with its face, where
+        it is and what it is doing, and every tab's face, state, last answer and latest
+        line, by the desktop's own rules (bots.js avatarFor, previewOf, lastAt). Read
+        from the status monitor's snapshot, so a phone asking every few seconds costs no
+        transcript read; only a tab waiting on a menu has its screen read, for the
+        options. `rev` hashes all of it but the clock: a phone that sends its last rev
+        gets {"unchanged": true} back."""
+        cfg = _cfg()
+        on = (cfg.get("settings", {}) or {}).get("experimental_bots", False) is True
+        raw = (cfg.get("agent_roster") or {}) if on else {}
+        bound = cfg.get("bots_sessions") or {}
+        now = time.time()
+        tabs, awake = {}, {}
+        for sid, s in (list(self.sessions.items()) if on else []):
+            role = self._bots_role_of(sid, cfg)
+            tabs[sid] = self._link_tab(sid, s, role, bound.get(sid) or {}, raw, now)
+            if role:
+                awake.setdefault(role, sid)
+        order = self._ordered_sids(cfg) if on else []
+        primary = bots.primary_role(raw)
+        rows = []
+        for role, e in raw.items():
+            if not bots.is_bot(e):
+                continue
+            ext = bots.is_external(e)
+            sid = "" if ext else awake.get(role, "")
+            t = tabs.get(sid) or {}
+            rows.append({"role": role, "label": bots.label_of(role, e),
+                         "responsibility": str(e.get("responsibility") or ""),
+                         "runs_on": "" if ext else self._link_runs_on(sid, e),
+                         "avatar": bots.resolved_avatar((e.get("bot") or {}).get("avatar"), role),
+                         "primary": role == primary, "external": ext,
+                         "state": "external" if ext else ("awake" if sid else "asleep"),
+                         "sid": sid, "position": order.index(sid) + 1 if sid in order else 0,
+                         **{k: t.get(k, d) for k, d in (("activity", ""), ("doing", ""), ("latest", ""), ("last_at", 0),
+                                                        ("blocked", ""), ("closing", ""), ("decision", None))}})
+        body = {"enabled": on, "primary": primary, "bots": rows, "tabs": tabs}
+        calm = lambda r: dict(r, last_at=0) if r.get("activity") == "working" else r   # a working tab's last_at is the clock
+        rev = int(hashlib.sha1(json.dumps(dict(body, bots=[calm(b) for b in rows], tabs={k: calm(v) for k, v in tabs.items()}),
+                                          sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8], 16)
+        if str(args.get("rev") or "") == str(rev):
+            return {"success": True, "unchanged": True, "rev": rev}
+        return {"success": True, "v": self.LINK_V, "rev": rev, "now": now, **body}
+
+    def _link_tab(self, sid: str, s, role: str, row: dict, raw: dict, now: float) -> dict:
+        snap = self._agent_status_snapshot(sid)
+        res = (snap[0] if isinstance(snap, tuple) else snap) or {}
+        state = str(res.get("state") or "")
+        activity = state if state in ("working", "idle", "done", "decision", "stuck") else ""
+        if activity == "working":                      # bots.js previewOf
+            pick = res.get("action") or res.get("narration") or res.get("summary")
+        else:
+            pick = res.get("narration") or res.get("task") or (res.get("summary") if state not in ("", "unknown", "idle") else "")
+        latest = " ".join(re.sub(r"[`*#>_~]+", "", str(pick or "")).split()) or (
+            str((raw.get(role) or {}).get("responsibility") or "") if role else "")
+        with _CLOSING_LOCK:
+            closing = (_CLOSING.get(sid) or {}).get("phase", "")
+        out_ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
+        av = ((raw.get(role) or {}).get("bot") or {}).get("avatar") if role else row.get("avatar")
+        return {"bot": role, "avatar": bots.resolved_avatar(av, role or sid), "plain": bool(row.get("plain")),
+                "closing": closing, "activity": activity,
+                "doing": agent_status.redact(str(res.get("action") or ""), 140) if activity == "working" else "",
+                "latest": agent_status.redact(latest, 140),
+                "last_at": float(now if activity == "working" else (self._last_activity_at(sid, s, out_ts) or 0)),
+                "blocked": agent_status.redact(self._agent_blocked_for_list(sid), 140),
+                "decision": self._link_decision(sid, activity, res)}
+
+    def _link_runs_on(self, sid: str, e: dict) -> str:
+        """The model a bot runs: what its tab's transcript says, else its roster command."""
+        snap = self._agent_status_snapshot(sid) if sid else None
+        mi = ((snap[0] if isinstance(snap, tuple) else snap) or {}).get("model")
+        if isinstance(mi, dict) and mi.get("name"):
+            return mi["name"] + (f" {mi['effort']}" if mi.get("effort") else "")
+        import agent_model
+        cmd = str(e.get("cmd") or "")
+        return agent_model.describe(agent_model.apply(cmd, e["model"]) if e.get("model") else cmd)
+
+    def _link_decision(self, sid: str, activity: str, res: dict):
+        """{"reason", "options": [{"n", "text"}]} while a tab waits on the person: the menu
+        on its screen, or the question its last turn ended on with [[SF:RED]] (kept
+        whether or not Telegram is on, which /link/signals depends on). None otherwise."""
+        if activity == "working":
+            return None
+        if activity == "decision":
+            try:
+                import bridge_telegram
+                lines = [re.sub(r"^\s*│\s?|\s*│\s*$", "", ln.rstrip())          # a boxed dialog's side borders
+                         for ln in tab_delivery.screen_text(self, sid, 40).splitlines()]
+                opts = bridge_telegram.menu_options(lines)
+                at = next(i for i, ln in enumerate(lines) if opts[0]["text"] in ln
+                          and ln.lstrip().lstrip("❯›").lstrip().startswith(opts[0]["num"]))
+                reason = next((ln.strip(" ─╌") for ln in reversed(lines[:at]) if ln.strip(" ─╌")), "")
+                return {"reason": agent_status.redact(reason, 300),
+                        "options": [{"n": int(o["num"]), "text": agent_status.redact(o["text"], 120)} for o in opts[:9]]}
+            except Exception:
+                pass                                   # no menu read off the screen: maybe a RED question
+        red = bridge_home.red_pending(sid)
+        if red and red["at"] >= float(res.get("prompt_at") or 0):       # not answered since
+            return {"reason": agent_status.redact(red["reason"], 300),
+                    "options": [{"n": int(n), "text": agent_status.redact(t, 120)} for n, t in red["options"]]}
+        return None
+
+    def _bots_link_wake(self, args: dict) -> dict:
+        """POST /link/bots/wake: the phone wakes a bot (its tab opens with its memory; an awake one is found)."""
+        if not self._bots_enabled():
+            return {"success": False, "message": _("Bots are experimental: turn them on in Settings first (experimental_bots)",
+                                                  "Bots 是實驗功能，請先在設定裡打開（experimental_bots）")}
+        return json.loads(self.bots_open(str(args.get("role") or "").strip()))
 
     def bots_set_primary(self, role: str) -> str:
         """Put a bot on the top card (role) or empty the card (''). One primary at a time."""

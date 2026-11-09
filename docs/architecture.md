@@ -50,7 +50,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_status.py` | Agent status: hook events, status hook install, the status monitor thread |
 | | `api_update.py` | Version, changelog, self-update, app restart |
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
-| | `api_bots.py` | Bots: state for the page, avatars, bot editor, wake, close-with-memory, external bots over A2A; `web/bots.js` + `web/bots.css` draw the faces |
+| | `api_bots.py` | Bots: state for the page, avatars, bot editor, wake, close-with-memory, external bots over A2A, the phone's bot view (`/link/bots`); `web/bots.js` + `web/bots.css` draw the faces |
 | | `api_tmux.py` | Tab ↔ tmux bookkeeping around restore: sid resolution, background reattach of tabs that failed at startup, `sfctl orphans`, repaint after display wake |
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
 | Domain | `agent_status.py` | Screen-based agent state detection per tab |
@@ -61,7 +61,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
 | | `bots.py` | Bots (`experimental_bots`): identity, per-bot memory folder, wake-up brief, close-time summary, external-bot payloads |
 | | `agent_prompts.py`, `sf_lang.py` | The delegation and idle-summary prompts; the language every agent-facing text uses (the OS's: English or Traditional Chinese) |
-| | `bridge_home.py` | The primary bot on Telegram: a phone's messages default to it (woken if asleep), `/home`, a bot's `[[SF:RED]]` pushed as buttons from any turn, `sfctl tg-send`, quiet hours, pairing a phone with a one-time code. `bridge_telegram.py` only calls in |
+| | `bridge_home.py` | The primary bot on Telegram: a phone's messages default to it (woken if asleep), `/home`, a bot's `[[SF:RED]]` pushed as buttons from any turn (and kept for `/link/bots` with or without Telegram), `sfctl tg-send`, quiet hours, pairing a phone with a one-time code. `bridge_telegram.py` only calls in |
 | | `bridge_queue.py` | A Telegram message for a busy tab waits (turn on screen, hooks working, the user's draft) up to 30 min, with a ⚡ button to cut in; past that it is dropped and the phone is told |
 | | `launch_cmd.py` | What a tab's launch command runs: the `cd … &&` / `env …` / `VAR=…` prefix kept verbatim, the directory it starts in, and Claude Code's arguments rewritten for a relaunch (`--resume` the current conversation; no old session id, no opening prompt sent twice) |
 | | `tab_delivery.py` | Hands text to a tab without cutting into a turn, a decision menu or the user's draft: a per-tab queue (30 min, `--now` skips it) kept on disk across restarts; tells the sender when an item cannot be delivered |

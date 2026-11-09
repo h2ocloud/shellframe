@@ -157,6 +157,29 @@ def normalize_avatar(av):
     return {"shape": shape, "color": color}
 
 
+# The face a tab or bot gets when nobody picked one: web/bots.js defaultAvatar, to the
+# bit, so a phone shows the same face as the desktop (tests_link_bots.py runs both).
+DEFAULT_COLORS = ("red", "orange", "amber", "green", "teal", "sky",
+                  "blue", "indigo", "purple", "pink", "brown", "yellow")
+
+
+def default_avatar(seed) -> dict:
+    """FNV-1a 32 over the seed's code points: shape SHAPES[h % 12], colour DEFAULT_COLORS[(h >> 8) % 12]."""
+    h = 0x811C9DC5
+    for ch in str(seed or ""):
+        h = ((h ^ ord(ch)) * 0x01000193) & 0xFFFFFFFF
+    return {"shape": SHAPES[h % len(SHAPES)], "color": DEFAULT_COLORS[(h >> 8) % len(DEFAULT_COLORS)]}
+
+
+def resolved_avatar(av, seed) -> dict:
+    """web/bots.js cleanAvatar: the picked shape and colour where valid, the seed's default for the rest."""
+    d = default_avatar(seed)
+    av = av if isinstance(av, dict) else {}
+    color = str(av.get("color") or "")
+    return {"shape": av.get("shape") if av.get("shape") in SHAPES else d["shape"],
+            "color": color if color in COLORS or re.fullmatch(r"#[0-9A-Fa-f]{6}", color) else d["color"]}
+
+
 def _valid_url(url) -> bool:
     return bool(re.match(r"^https?://[^\s/]+", str(url or "")))
 

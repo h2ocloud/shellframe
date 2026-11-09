@@ -158,6 +158,16 @@ one-time QR code; `/start <code>` binds that person), send a test, and the switc
 - **Allowlist.** Empty means anyone who finds the bot can drive the computer; the
   panel says so in red. Binding the first phone locks the list to that person.
 
+## On the phone (Frame Link)
+
+The ShellBot iOS app shows the same bots and faces as the desktop. A paired phone that
+may control this computer asks `GET /link/bots`. It answers with every bot (awake,
+asleep, external) and every tab, each with its face, state, last answer, latest line
+and, while it waits on the person, the question with its options: a menu on screen, or
+an `[[SF:RED]]` a turn ended on, with or without Telegram. `POST /link/bots/wake` wakes a
+bot. Everything is read from the status monitor's snapshot, the same zero-cost rule as
+the tab list. Fields and rules: [mobile-link.md](mobile-link.md#botsv0410).
+
 ## External bots (e.g. a cloud bot with a webhook routine)
 
 Some bots live outside ShellFrame. A typical cloud bot service offers no API to
