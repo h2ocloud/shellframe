@@ -24,7 +24,7 @@ import sf_lang
 
 MAX_WAIT = 1800.0            # seconds, as tab_delivery.QUEUE_MAX_WAIT
 NOTIFY_AFTER = 8.0           # silence this long reads as "not received", so say it is queued
-POLL = 0.5
+POLL = 1.5                   # as tab_delivery: each look may read the tab's screen
 
 _lock = threading.Lock()
 _now = {}                    # token -> Event set by the ⚡ button
@@ -90,6 +90,24 @@ def wait_turn(bridge, slot, chat_id, max_wait: float = None) -> str:
     finally:
         with _lock:
             _now.pop(token, None)
+
+
+def abandon(bridge, slot, marker=None):
+    """A message given up on: its turn will not come. `_begin_turn` armed it before
+    the wait (reply marker, awaiting_response), and left like that the tab reads
+    "a Telegram turn is in flight" to A2A and sfctl send, which then wait 30 min for
+    nothing. Drop this message's marker; with no other reply on the way, stand the
+    Telegram turn down."""
+    start = (marker or {}).get("start")
+    with slot.output_lock:
+        left = [m for m in (getattr(slot, "reply_markers", None) or []) if not start or m.get("start") != start]
+        slot.reply_markers = left
+        waiting = [m for m in left if not m.get("answered")]
+        if not waiting:
+            bridge._end_marker_turn(slot)
+            slot.awaiting_response = False
+        elif start and slot.reply_start_marker == start:
+            slot.reply_start_marker, slot.reply_end_marker = waiting[-1]["start"], waiting[-1]["end"]
 
 
 def on_callback(bridge, data: str, chat_id, message_id) -> bool:

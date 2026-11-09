@@ -440,7 +440,7 @@ def notify_sender(api, from_sid: str, target_label: str, why: str, outcome: str 
             api._bots_external_deliver(from_sid[4:], {"kind": "send", "text": note, "from_label": "ShellBot"})
         elif from_sid and time.time() < _resumed_at + RESTORE_GRACE:
             _enqueue(api, [{"sid": from_sid, "text": note, "submit": True, "t0": time.time(),
-                            "from_sid": "", "what": "timeout-notice", "label": from_sid,
+                            "from_sid": "", "what": "timeout-notice", "label": from_sid, "restored": True,
                             "grace_until": _resumed_at + RESTORE_GRACE}])
         else:
             _dlog("deliver", f"could not tell {from_sid or 'an unknown sender'}: {why}")

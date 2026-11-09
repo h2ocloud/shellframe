@@ -3624,8 +3624,8 @@ class TelegramBridge(BridgeBase):
                     slot = self.slots.get(sid)
                     if not slot:
                         continue
-                    # G1 有等待中的使用者訊息（idle slot 直接出局＝等價 dirty gate）
-                    if not slot.awaiting_response:
+                    # G1 有等待中的使用者訊息（idle slot 直接出局＝等價 dirty gate）；還在排隊（沒送進去）的不算
+                    if not slot.awaiting_response or getattr(slot, "inject_pending", False):
                         continue
                     # G-quiet 使用者這輪說了「別吵」
                     if slot._hb_quiet:
@@ -6138,6 +6138,7 @@ class TelegramBridge(BridgeBase):
                 # Busy guard: writing + Enter mid-turn aborts the turn ("[Request interrupted]").
                 # Wait while it is busy, up to 30 min; ⚡ on the phone cuts in (bridge_queue).
                 if bridge_queue.wait_turn(self, slot, chat_id) == "expired":
+                    bridge_queue.abandon(self, slot, marker)   # else A2A reads the tab as busy with us
                     self._react_async(chat_id, origin_msg_id, None)
                     return False
 

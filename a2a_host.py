@@ -189,7 +189,8 @@ def handle(api, cmd: str, args: dict) -> dict:
         ctx.now = bool(args.get("now"))
         # A result is what the requester is waiting for: late beats lost (24 h unless --ttl).
         ctx.max_wait = tab_delivery.wait_limit(
-            args.get("ttl"), tab_delivery.RESULT_WAIT if cmd == "a2a_result" else None)
+            args.get("ttl"), tab_delivery.RESULT_WAIT
+            if cmd == "a2a_result" or (cmd == "a2a_deliver" and args.get("kind") == "result") else None)
         if cmd == "a2a_deliver":
             return agent_link.accept_remote(ctx, args)
         sid, label = _from(api, args)

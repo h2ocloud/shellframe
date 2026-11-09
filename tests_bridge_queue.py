@@ -157,6 +157,36 @@ check("a message for a busy tab is held: the phone hears it is queued, nothing i
 tail["s1"] = ""
 check("…and typed in once the tab is free", wait_for(lambda: any("等你忙完再看這個" in w for w in written), 8), written)
 
+print("giving up stands the Telegram turn down")
+# Without it the tab kept reading "a Telegram turn is in flight": A2A and sfctl send to it
+# waited their full 30 minutes for nothing.
+import main  # noqa: E402
+bq.MAX_WAIT = 0.3
+with slot.output_lock:                    # the earlier message's reply came: nothing else in flight
+    b._end_marker_turn(slot)
+    slot.awaiting_response = False
+tail["s1"] = BUSY_SCREEN
+sent.clear()
+b._handle_update({"update_id": 2, "message": {"message_id": 2, "text": "這則會等到放棄", "date": int(time.time()),
+                                              "from": {"id": 100, "username": "u"}, "chat": {"id": 100, "type": "private"}}})
+check("the message is given up", wait_for(lambda: any("沒有送進去" in ((p or {}).get("text") or "") for _, p in sent), 5))
+check("…and the tab no longer waits on a Telegram reply", wait_for(lambda: not slot.awaiting_response and not slot.expect_marker
+                                                                    and not slot.reply_markers, 3),
+      (slot.awaiting_response, slot.expect_marker, slot.reply_markers))
+app = main.Api.__new__(main.Api)
+app.bridge, app.line_bridge = b, None
+check("…so A2A and sfctl send see it free of Telegram again", app._bridge_session_busy("s1") is False)
+check("a heartbeat does not speak for a message that has not gone in",
+      'if not slot.awaiting_response or getattr(slot, "inject_pending", False):' in src)
+slot.reply_markers = [{"start": "[[A]]", "end": "[[/A]]", "answered": False}, {"start": "[[B]]", "end": "[[/B]]", "answered": False}]
+slot.reply_start_marker, slot.awaiting_response, slot.expect_marker = "[[B]]", True, True
+bq.abandon(b, slot, {"start": "[[B]]"})
+check("giving up one message keeps another one's reply on the way",
+      slot.awaiting_response and [m["start"] for m in slot.reply_markers] == ["[[A]]"] and slot.reply_start_marker == "[[A]]",
+      (slot.reply_markers, slot.reply_start_marker))
+bq.MAX_WAIT = 1800.0
+tail["s1"] = ""
+
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")
 sys.exit(1 if failed else 0)
