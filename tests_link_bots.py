@@ -21,12 +21,14 @@ Run: .venv/bin/python tests_link_bots.py
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -115,6 +117,10 @@ class Tab:
         self.sid, self._custom_label, self.cmd, self.alive = sid, label, "claude", True
         self._tmux_name, self._recent, self.lock = None, bytearray(), threading.Lock()
         self._last_output_activity_time = 0.0
+        self.written = []
+
+    def write(self, data):
+        self.written.append(data)
 
 
 STATUS = {
@@ -254,6 +260,62 @@ STATUS["s2"] = dict(STATUS["s2"], narration="新的一句")
 r3 = link(rev=str(r1["rev"]))
 check("a new line on a tab: a new rev and the whole answer", not r3.get("unchanged") and r3["rev"] != r1["rev"]
       and r3["tabs"]["s2"]["latest"] == "新的一句")
+
+print("answering from the phone (/link/answer)")
+# Decided: without this, after the phone answered, Telegram's old buttons could put an answer
+# into the tab's next question. /link/input stays raw keys, unchecked.
+STATUS["s3"] = {"state": "decision", "summary": "等待權限決策"}
+d = link()["tabs"]["s3"]["decision"]
+check("a decision carries an id, the same while the question stays",
+      re.fullmatch(r"[0-9a-f]{12}", d.get("id") or "") and link()["tabs"]["s3"]["decision"]["id"] == d["id"], d)
+saved = SCREENS["s3"]
+SCREENS["s3"] = saved.replace("touch notes.txt", "rm notes.txt")
+d_other = link()["tabs"]["s3"]["decision"]
+SCREENS["s3"] = saved
+check("the same words about another command are another question", d_other["id"] != d["id"]
+      and d_other["reason"] == d["reason"] and d_other["options"] == d["options"])
+tg = []
+bridge_home.SEND = lambda method, payload: tg.append((method, payload)) or {"ok": True}
+api.bridge = types.SimpleNamespace(slots={}, config=types.SimpleNamespace(bot_token="x"))
+bridge_home.opened(api.bridge, "s3", "🤖 部署檢查 需要你決定\n1. Yes\n2. No", 100, {"result": {"message_id": 7}})
+
+
+def answer(**a):
+    return api._execute_sfctl("bots_answer", a)
+
+
+tab3 = api.sessions["s3"]
+r = answer(sid="s3", n=9, id=d["id"])
+check("an option the question does not have: refused, nothing typed", r.get("code") == "no_option" and not tab3.written, r)
+r = answer(sid="s3", n=1, id="0" * 12)
+check("an id that is not the tab's question now: refused as stale, with the current one, nothing typed",
+      r.get("code") == "stale" and (r.get("decision") or {}).get("id") == d["id"] and not tab3.written, r)
+r = answer(sid="s3", n=1, id=d["id"])
+check("the right id: in go 1 and Enter, the keys Telegram's choice button sends", r.get("success") and tab3.written == ["1\r"],
+      (r, tab3.written))
+check("…the Telegram copy now says it was answered on the phone, its buttons gone",
+      any(m == "editMessageText" and p["message_id"] == 7 and p["text"].endswith("✅ 已在手機上選：1")
+          and "reply_markup" not in p for m, p in tg), tg)
+check("…and a tap on it is refused, so it cannot answer the next question",
+      bridge_home.on_choice(api.bridge, "choice:s3:2", 100, 7, "cq1") is True and tab3.written == ["1\r"])
+r = answer(sid="s3", n=1, id=d["id"])
+check("a second tap on the phone while the screen still shows the question: refused", r.get("code") == "stale"
+      and tab3.written == ["1\r"], r)
+bridge_home._answered_at.clear()
+bridge_home.opened(api.bridge, "s3", "🤖 部署檢查 需要你決定（下一題）", 100, {"result": {"message_id": 8}})
+check("Telegram answers first…", bridge_home.on_choice(api.bridge, "choice:s3:1", 100, 8, "cq2") is False)
+r = answer(sid="s3", n=2, id=d["id"])
+check("…then the phone's answer to the question still on screen is refused, nothing typed",
+      r.get("code") == "stale" and tab3.written == ["1\r"], r)
+bridge_home._answered_at.clear()
+bridge_home.on_turn_end(api, "s2", read_events=lambda sid: RED)
+d2 = link()["tabs"]["s2"]["decision"]
+r = answer(sid="s2", n=2, id=d2["id"])
+check("a RED question: 2 and Enter go in, and the question is gone at once",
+      r.get("success") and api.sessions["s2"].written == ["2\r"] and link()["tabs"]["s2"]["decision"] is None, r)
+check("a tab that is not there", answer(sid="s99", n=1, id="x").get("code") == "no_tab")
+api.bridge, bridge_home.SEND = None, None
+bridge_home._answered_at.clear()
 
 print("bots off, wake")
 fresh_config(on=False)

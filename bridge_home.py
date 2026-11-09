@@ -234,6 +234,47 @@ def forget(sid):
         _red.pop(sid, None)
 
 
+# A question answered from one place must not be answered again from another: the second
+# answer would go into whatever the tab asks next. Telegram taps and the phone's
+# /link/answer both stamp the tab; for a moment after that the screen may still show the
+# old question, so the phone may not answer it then.
+_answered_at = {}                       # sid -> when its question was last answered, on Telegram or the phone
+ANSWER_SETTLE = 3.0
+
+
+def claim_for_phone(sid, n):
+    """The phone wants to answer sid's question with option n. None when that question was
+    answered a moment ago (on Telegram, or a second tap on the phone). Otherwise, in one
+    step: the answer is stamped, the RED question is dropped, and the Telegram copies of the
+    open question count as answered (a tap on them is refused); returns (their text, copies)
+    for phone_answered to edit."""
+    with _lock:
+        if time.time() - _answered_at.get(sid, 0) < ANSWER_SETTLE:
+            return None
+        _answered_at[sid] = time.time()
+        _red.pop(sid, None)
+        cur = _open.pop(sid, None) or {"text": "", "copies": []}
+        copies = [k for k in cur["copies"] if k not in _answered]
+        for k in copies:
+            _remember(_answered, k, str(n))
+        return cur["text"], copies
+
+
+def phone_answered(api, sid, n, claimed):
+    """After the phone's answer went in: its Telegram copies say so and lose their buttons."""
+    text, copies = claimed
+    bridge = getattr(api, "bridge", None)
+    slot = (getattr(bridge, "slots", None) or {}).get(sid) if bridge else None
+    if slot is not None:
+        slot.pending_menu, slot.pending_menu_options = False, []
+    note = sf_lang.pick(f"✅ Answered on the phone: {n}", f"✅ 已在手機上選：{n}")
+    for c, m in copies if bridge else ():
+        try:      # editMessageText without reply_markup also takes the buttons away
+            _tg(bridge, "editMessageText", {"chat_id": c, "message_id": m, "text": f"{text}\n\n{note}".strip()})
+        except Exception:
+            pass
+
+
 def red_block(evs, telegram_too=False):
     """(question, [(num, text)…]) when the newest turn's last words raise [[SF:RED]]
     and the turn did not start from Telegram (the bridge pushes those itself; with
@@ -358,6 +399,7 @@ def on_choice(bridge, data: str, chat_id, message_id, cq_id) -> bool:
     with _lock:
         why = ("answered" if key in _answered else "retired" if key in _retired else "")
         if not why:
+            _answered_at[sid] = time.time()          # the phone may not answer it too (claim_for_phone)
             _remember(_answered, key, data.rsplit(":", 1)[-1])
             cur = _open.get(sid) or {"copies": []}
             copies = [k for k in cur["copies"] if k != key] if key in cur["copies"] else []

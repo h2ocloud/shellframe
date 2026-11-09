@@ -240,11 +240,15 @@ class BotsApiMixin:
         return agent_model.describe(agent_model.apply(cmd, e["model"]) if e.get("model") else cmd)
 
     def _link_decision(self, sid: str, activity: str, res: dict):
-        """{"reason", "options": [{"n", "text"}]} while a tab waits on the person: the menu
-        on its screen, or the question its last turn ended on with [[SF:RED]] (kept
-        whether or not Telegram is on, which /link/signals depends on). None otherwise."""
+        """{"id", "reason", "options": [{"n", "text"}]} while a tab waits on the person: the
+        menu on its screen, or the question its last turn ended on with [[SF:RED]] (kept
+        whether or not Telegram is on, which /link/signals depends on). None otherwise.
+        `id` fingerprints this very question, for /link/answer: a menu by its whole dialog
+        (two permission prompts with the same words differ in the command they ask about),
+        a RED question by when it was asked."""
         if activity == "working":
             return None
+        qid = lambda *parts: hashlib.sha1("\n".join((sid,) + parts).encode()).hexdigest()[:12]
         if activity == "decision":
             try:
                 import bridge_telegram
@@ -253,16 +257,56 @@ class BotsApiMixin:
                 opts = bridge_telegram.menu_options(lines)
                 at = next(i for i, ln in enumerate(lines) if opts[0]["text"] in ln
                           and ln.lstrip().lstrip("❯›").lstrip().startswith(opts[0]["num"]))
+                end = max(i for i, ln in enumerate(lines) if i >= at and opts[-1]["text"] in ln)
+                top = next((i for i in range(at - 1, max(-1, at - 16), -1)       # the rule the dialog opens with
+                            if re.fullmatch(r"\s*─{10,}\s*", lines[i])), max(0, at - 6))
                 reason = next((ln.strip(" ─╌") for ln in reversed(lines[:at]) if ln.strip(" ─╌")), "")
-                return {"reason": agent_status.redact(reason, 300),
+                return {"id": qid("menu", *(ln.strip() for ln in lines[top:end + 1])),
+                        "reason": agent_status.redact(reason, 300),
                         "options": [{"n": int(o["num"]), "text": agent_status.redact(o["text"], 120)} for o in opts[:9]]}
             except Exception:
                 pass                                   # no menu read off the screen: maybe a RED question
         red = bridge_home.red_pending(sid)
         if red and red["at"] >= float(res.get("prompt_at") or 0):       # not answered since
-            return {"reason": agent_status.redact(red["reason"], 300),
+            return {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])),
+                    "reason": agent_status.redact(red["reason"], 300),
                     "options": [{"n": int(n), "text": agent_status.redact(t, 120)} for n, t in red["options"]]}
         return None
+
+    def _bots_link_answer(self, args: dict) -> dict:
+        """POST /link/answer {"sid", "n", "id"}: the phone answers the question /link/bots
+        showed it, only while that is still the tab's question (`id`). Otherwise the answer
+        would go into whatever the tab asks next, which is also why a question answered a
+        moment ago on Telegram is refused. It goes in as Telegram's choice button sends it
+        ("n" and Enter), and the Telegram copies of the question say it was answered on the
+        phone, their buttons gone. /link/input stays as it is: raw keys, no checks."""
+        sid = str(args.get("sid") or "")
+        s = self.sessions.get(sid)
+        if not s:
+            return {"success": False, "code": "no_tab", "message": _(f"No tab {sid}", f"沒有 {sid} 這個分頁")}
+        snap = self._agent_status_snapshot(sid)
+        res = (snap[0] if isinstance(snap, tuple) else snap) or {}
+        state = str(res.get("state") or "")
+        cur = self._link_decision(sid, state if state in ("working", "idle", "done", "decision", "stuck") else "", res)
+        stale = {"success": False, "code": "stale", "decision": cur, "message": _(
+            "This question was answered already or has changed; nothing was sent",
+            "這題已經回答過了，或題目已經換了；沒有送出")}
+        if not cur or cur["id"] != str(args.get("id") or ""):
+            return stale
+        try:
+            n = int(args.get("n"))
+        except (TypeError, ValueError):
+            n = None
+        if n not in [o["n"] for o in cur["options"]]:
+            return {"success": False, "code": "no_option", "decision": cur,
+                    "message": _(f"There is no option {args.get('n')}", f"沒有選項 {args.get('n')}")}
+        claimed = bridge_home.claim_for_phone(sid, n)
+        if claimed is None:
+            return stale
+        s.write(f"{n}\r")
+        bridge_home.phone_answered(self, sid, n, claimed)
+        _dlog("bots", f"{sid}: answered {n} from the phone")
+        return {"success": True, "message": _(f"Answered {n}", f"已選 {n}")}
 
     def _bots_link_wake(self, args: dict) -> dict:
         """POST /link/bots/wake: the phone wakes a bot (its tab opens with its memory; an awake one is found)."""

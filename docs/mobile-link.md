@@ -151,7 +151,7 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 ## Bots（v0.41.0）
 
-手機的 bot 介面從這兩條路由拿資料。兩條都要簽章，而且對方必須能操作這台；單向配對中無權的那一方回 403，手機當成「這台沒有 bot 介面」。
+手機的 bot 介面用這三條路由。全部都要簽章，而且對方必須能操作這台；單向配對中無權的那一方回 403，手機當成「這台沒有 bot 介面」。
 
 **`GET /link/bots?rev=<上次的 rev>`**：每個 bot 和每個分頁現在的樣子，規則跟桌面一樣。
 
@@ -169,9 +169,20 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | `doing`, `latest` | 跑的時候在做什麼；最新一句的取法同桌面的 `previewOf`。bot 的分頁沒有可說的話時，用它的執掌。最多 140 字，已經遮掉憑證 |
 | `last_at` | 最後一次回應的 epoch 秒；跑的時候等於現在；0 表示不知道 |
 | `closing` | `""`／`waiting`／`writing`：關閉前正在寫記憶 |
-| `decision` | 在等人決定時是 `{"reason", "options": [{"n", "text"}]}`，否則 `null`。兩種情況：畫面上有選單（權限提示等）；或回合最後問了 `[[SF:RED]]`，有沒有開 Telegram 都一樣，之後送進那個分頁的 prompt 就算回答了。回答方式是 `POST /link/input {"sid", "data": "2\r"}` |
+| `decision` | 在等人決定時是 `{"id", "reason", "options": [{"n", "text"}]}`，否則 `null`。兩種情況：畫面上有選單（權限提示等）；或回合最後問了 `[[SF:RED]]`，有沒有開 Telegram 都一樣，之後送進那個分頁的 prompt 就算回答了。`id` 是這一題的指紋：選單取整個對話框的內容（同樣的問句，問的指令不同就是不同題），RED 取提問的時間。回答請用下面的 `POST /link/answer` |
 
 外部 bot 的 webhook 網址和授權，都不會出現在回應裡。
+
+**`POST /link/answer {"sid", "n", "id"}`**：回答 `/link/bots` 給的那一題。
+
+- **只在 `id` 還是那個分頁現在的題目時才送。** 送進去的是 `n` 加 Enter，跟 Telegram 的選擇按鈕一樣。成功回 `{"success": true}`。
+- **擋下來時不送任何東西**，回 `success: false` 和 `code`：
+  - `stale`：題目已經回答過，或已經換了；一併附上現在的 `decision`，可能是 `null`。
+  - `no_option`：沒有這個選項。
+  - `no_tab`：分頁不在。
+- **也會擋下來的情況：** 同一題剛在 Telegram 或手機上回答過，3 秒內再送也回 `stale`，因為畫面可能還沒更新。
+- **Telegram 那邊：** 回答之後，那一題在 Telegram 的每一則都會改成「✅ 已在手機上選：n」並拿掉按鈕；之後再按，會回「這題已經回答過了」。這樣舊按鈕不會把答案送進下一題。
+- **`/link/input` 照舊：** 原始按鍵直送，不做這些檢查。
 
 **`POST /link/bots/wake {"role"}`**：叫醒一個 bot，走的是桌面的 `bots_open`。回 `{"success", "details": {"sid", "existed"}}`；`existed: true` 表示它本來就醒著。外部 bot 回 `success: false` 和原因。
 

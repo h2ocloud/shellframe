@@ -72,6 +72,7 @@ class Node:
         self.maint = []          # action via /link/maintenance
         self.a2a = []            # payloads via /link/a2a/send
         self.woken = []          # roles via /link/bots/wake
+        self.answers = []        # bodies via /link/answer
 
         def execute(cmd, args):
             if cmd == "list":
@@ -125,6 +126,9 @@ class Node:
             if cmd == "bots_wake":
                 self.woken.append((args or {}).get("role"))
                 return {"success": True, "details": {"sid": "s20", "existed": False}}
+            if cmd == "bots_answer":
+                self.answers.append(dict(args or {}))
+                return {"success": True, "message": "answered"}
             return {"success": False, "message": f"unknown {cmd}"}
 
         def update_config(mutator):
@@ -264,6 +268,9 @@ def main():
         check("/link/bots/wake wakes the bot named", st == 200 and body.get("success") and a.woken == ["Coding"])
         st, _ = post_json(f"http://127.0.0.1:{a.port}/link/bots/wake", {"role": "Coding"})
         check("…not for an unsigned request", st == 403 and a.woken == ["Coding"])
+        st, body = signed_post(b, peer_a_from_b, "/link/answer", {"sid": "s1", "n": 2, "id": "abc123def456"})
+        check("/link/answer hands the phone's answer over whole",
+              st == 200 and body.get("success") and a.answers == [{"sid": "s1", "n": 2, "id": "abc123def456"}])
 
         # ── 遠端操作 ──
         info = b.link.remote_info(a.fid)
@@ -389,6 +396,8 @@ def main():
         check("slave /link/bots on master denied (403)", st == 403)
         st, _ = signed_post(b, peer_a_slave, "/link/bots/wake", {"role": "研究"})
         check("slave /link/bots/wake on master denied, nothing woken", st == 403 and "研究" not in a.woken)
+        st, _ = signed_post(b, peer_a_slave, "/link/answer", {"sid": "s1", "n": 1, "id": "x"})
+        check("slave /link/answer on master denied, nothing answered", st == 403 and len(a.answers) == 1)
         before_rn = len(a.renames)
         rnd = b.link.remote_rename(a.fid, "s1", "nope")
         check("slave rename on master denied",

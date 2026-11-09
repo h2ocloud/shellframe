@@ -40,6 +40,25 @@
 
 ### Added
 
+- **The phone answers a question once: `POST /link/answer`, and Telegram's copy says so.**
+  A decision in `/link/bots` now carries an `id`, a fingerprint of that very question (two
+  permission prompts with the same words differ in the command they ask about). The phone
+  answers with it, and the answer goes in ("n" and Enter, as Telegram's choice button
+  sends it) only while that is still the tab's question. An answer to one that has been
+  answered or replaced is refused, nothing typed, and so is one to a question answered on
+  Telegram or the phone a moment ago, while the screen may still show it. The Telegram
+  copies of the question then say "✅ answered on the phone: n" and lose their buttons, and a
+  tap on them is refused: until now, after the phone answered through `/link/input`,
+  Telegram's old buttons could put an answer into the tab's next question. `/link/input`
+  is unchanged. Covered by tests_link_bots.py and tests_frame_link.py.
+
+  **手機回答一題只算一次：`POST /link/answer`，Telegram 那則也會跟著標示。** `/link/bots` 的 decision 多了 `id`，
+  是這一題的指紋（同樣的問句，問的指令不同就是不同題）。手機帶著它回答，只有那一題還是分頁現在的題目時，答案才會送進去
+  （`n` 加 Enter，跟 Telegram 的選擇按鈕一樣）。已經回答過或題目換了，就拒絕，什麼都不送；剛在 Telegram 或手機上回答過、
+  畫面可能還沒更新的，也拒絕。之後 Telegram 上那一題的每一則都會改成「✅ 已在手機上選：n」並拿掉按鈕，再按也會被拒絕。
+  以前手機用 `/link/input` 回答後，Telegram 的舊按鈕可能把答案送進下一題。`/link/input` 不變。由 tests_link_bots.py、
+  tests_frame_link.py 守著。
+
 - **The phone gets the bots: `GET /link/bots` and `POST /link/bots/wake` over Frame Link.**
   Asked for by the ShellBot iOS app. One request answers with every bot (awake, asleep,
   external) and every tab, by the desktop's own rules: the face (`bots.default_avatar` is
