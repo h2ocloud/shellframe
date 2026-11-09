@@ -157,6 +157,7 @@ _save_lock = threading.Lock()
 _queues = {}                 # sid -> deque of items
 _draining = set()
 _resumed_at = 0.0            # when resume() loaded the queue after a restart
+ON_DELIVERED = []            # fn(sid, what, at) once an item is typed in (a2a_host: hand-offs)
 _KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending")
 
 
@@ -166,6 +167,14 @@ def pending(sid: str = "") -> list:
         items = [(k, it) for k, q in _queues.items() for it in q if not sid or k == sid]
     return [{"sid": k, "chars": len(it["text"]), "waited_s": int(time.time() - it["t0"]),
              "from": it.get("from_sid", "")} for k, it in items]
+
+
+def _delivered(sid: str, what: str, at: float):
+    for fn in list(ON_DELIVERED):
+        try:
+            fn(sid, what or "", at)
+        except Exception:
+            pass
 
 
 def _save():
@@ -246,6 +255,7 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
     if not reason:
         s._startup_trust_pending = False
         api._send_text_to_session(s, text, submit=submit)
+        _delivered(sid, what, time.time())
         return {"success": True, "message": f"Sent {len(text)} chars to {sid}", "queued": False}
     item = {"sid": sid, "text": text, "submit": submit, "t0": time.time(), "from_sid": from_sid,
             "what": what, "label": label or sid}
@@ -342,6 +352,7 @@ def _drain(api, sid: str):
             s._startup_trust_pending = False
             api._send_text_to_session(s, item["text"], submit=item["submit"])
             _drop(sid, item)
+            _delivered(sid, item.get("what", ""), sent_at)
             deadline = time.time() + TAKEN_WAIT
             while time.time() < deadline and not _taken(api, sid, sent_at):
                 time.sleep(0.25)

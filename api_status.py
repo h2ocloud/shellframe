@@ -122,6 +122,10 @@ class StatusApiMixin:
     def _sf_hook_command(self) -> str:
         return f'python3 "{main.APP_DIR / "sf_agent_hook.py"}"'
 
+    # The one synchronous entry: Stop asks whether an unanswered hand-off should keep
+    # the agent going (sf_agent_hook.py --stop-check, agent_link.stop_check).
+    _STOP_CHECK = "--stop-check"
+
     # A tab started under a ShellFrame account profile reads that profile's
     # settings.json as its *user* settings; ~/.claude/settings.json reaches it only
     # as project settings when the tab's working directory happens to be ~. So the
@@ -143,8 +147,9 @@ class StatusApiMixin:
             hooks = (json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}).get("hooks") or {}
         except Exception:
             return False
-        return all(any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
-                   for ev in self._HOOK_EVENTS)
+        return (all(any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
+                    for ev in self._HOOK_EVENTS)
+                and any(self._STOP_CHECK in json.dumps(g) for g in (hooks.get("Stop") or [])))
 
     def _write_status_hooks(self, p: Path, enabled: bool) -> str:
         """Install/remove the status hook entries in one settings.json. Merge is
@@ -158,11 +163,17 @@ class StatusApiMixin:
         if enabled:
             for ev in self._HOOK_EVENTS:
                 groups = hooks.setdefault(ev, [])
-                if any("sf_agent_hook.py" in json.dumps(g) for g in groups):
+                if any("sf_agent_hook.py" in json.dumps(g) and self._STOP_CHECK not in json.dumps(g)
+                       for g in groups):
                     continue
                 groups.append({"matcher": "", "hooks": [{
                     "type": "command", "command": self._sf_hook_command(),
                     "async": True, "timeout": 10}]})
+            stop = hooks.setdefault("Stop", [])
+            if not any(self._STOP_CHECK in json.dumps(g) for g in stop):
+                stop.append({"matcher": "", "hooks": [{
+                    "type": "command", "command": f"{self._sf_hook_command()} {self._STOP_CHECK}",
+                    "timeout": 5}]})
         else:
             for ev in list(hooks.keys()):
                 kept = []
@@ -234,10 +245,14 @@ class StatusApiMixin:
         """Hooks were switched on (they are in ~/.claude): make sure every account
         profile has them too, including one created since. Returns how many files
         were changed. Never removes anything."""
-        if not self._hooks_installed_in(self._CLAUDE_SETTINGS_PATH):
+        try:   # switched on = the status hooks are in ~/.claude (older installs lack the stop check)
+            main_hooks = json.loads(self._CLAUDE_SETTINGS_PATH.read_text(encoding="utf-8")).get("hooks") or {}
+        except Exception:
+            return 0
+        if not any("sf_agent_hook.py" in json.dumps(g) for g in (main_hooks.get("Stop") or [])):
             return 0
         changed = 0
-        for _label, p in self._status_hook_targets()[1:]:
+        for _label, p in self._status_hook_targets():
             if not self._hooks_installed_in(p) and not self._write_status_hooks(p, True):
                 changed += 1
         return changed

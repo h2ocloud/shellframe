@@ -5812,6 +5812,8 @@ def main():
     _patch_pywebview_cocoa_none_screen()
     api = Api()
     tab_delivery.STATE_FILE = CONFIG_DIR / "delivery_queue.json"   # the queue survives a restart
+    import a2a_host
+    a2a_host.start_followups(api)                                  # hand-offs nobody reported
     wake_watch.install(api._on_display_wake, api._on_display_sleep)
     html_path = Path(__file__).parent / "web" / "index.html"
 

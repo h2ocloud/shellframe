@@ -322,6 +322,111 @@ def remember_outbound(msg_id: str, *, origin_sid: str, target: str, from_label: 
                               "from_label": from_label})
 
 
+# ── a hand-off that is never reported ─────────────────────────────────────
+# Measured: whether a2a-result was run depended on the model remembering it. Now
+# every hand-off typed into a tab gets one reminder if it stays unanswered:
+#   * Claude Code: its Stop hook asks (stop_check) and blocks that stop once;
+#   * any CLI: a tab that sits idle NUDGE_IDLE_S without a result gets the same
+#     reminder typed in (followups);
+#   * still nothing OVERDUE_S after the reminder, or the tab closed: the
+#     requester is told.
+NUDGE_IDLE_S = 60.0
+OVERDUE_S = 1800.0
+_early_delivered = {}         # hid -> when it was typed in, before its record was written
+
+
+def note_tab_delivered(sid: str, what: str, at: float):
+    """tab_delivery typed an item in. A queued hand-off is in front of the agent
+    from now on, not from when it was sent."""
+    if not str(what or "").startswith("handoff:"):
+        return
+    hid = what.split(":", 1)[1]
+    with _lock:
+        if not _patch_handoff(hid, delivered_at=at, to_sid=sid):
+            _early_delivered[hid] = at
+
+
+def _claim_flag(hid: str, flag: str, now: float) -> bool:
+    """Set `flag` once on an unanswered hand-off. False when it was already set,
+    answered, or gone, so each reminder and notice happens at most once."""
+    with _lock:
+        data = _load_handoffs()
+        rec = data.get(hid)
+        if not rec or rec.get("answered") or rec.get(flag):
+            return False
+        rec[flag] = now
+        data[hid] = rec
+        _save_handoffs(data)
+        return True
+
+
+def reminder_text(hid: str, from_label: str, lang: str = None) -> str:
+    return sf_lang.pick(
+        f"ShellBot: you got hand-off {hid} from \"{from_label}\" and have not reported back. "
+        f"Run sfctl a2a-result {hid} \"what you did\" (add --diff if you changed files). "
+        f"If it is not finished, report where it stands and what you are waiting for. This is the only reminder.",
+        f"ShellBot：你收到「{from_label}」的交辦 {hid}，還沒回報。請執行 sfctl a2a-result {hid} \"做了什麼\""
+        f"（改了檔案就加 --diff）。還沒做完也請回報進度、在等什麼。只提醒這一次。", lang)
+
+
+def stop_check(sid: str, prompt_at: float, now: float = None, lang: str = None):
+    """Asked by Claude Code's Stop hook: may this tab stop? Not while a hand-off it
+    got before this turn began is unanswered, the first time. Returns
+    (hid, reason to keep going) or ("", "")."""
+    now = now or _now()
+    if not sid or not prompt_at:
+        return "", ""
+    with _lock:
+        data = _load_handoffs()
+    for hid, rec in sorted(data.items(), key=lambda kv: kv[1].get("at") or 0):
+        got = float(rec.get("delivered_at") or 0)
+        if rec.get("to_sid") != sid or not got or got > prompt_at + 5:
+            continue                 # not this tab's, or typed in after this turn began
+        if _claim_flag(hid, "nudged", now):
+            return hid, reminder_text(hid, rec.get("from_label") or "", lang)
+    return "", ""
+
+
+def followups(ctx, now: float = None, lang: str = None) -> list:
+    """One pass over open hand-offs (the app runs it every few seconds). Needs ctx:
+    tab_alive(sid), idle_for(sid) -> seconds or -1 while busy, remind(sid, hid, text),
+    tell_requester(rec, hid, text). Returns [(what, hid)] for the log and tests."""
+    now = now or _now()
+    with _lock:
+        data = _load_handoffs()
+    done = []
+    for hid, rec in data.items():
+        sid, got = rec.get("to_sid") or "", float(rec.get("delivered_at") or 0)
+        if not sid or not got or rec.get("answered") or rec.get("overdue_told"):
+            continue
+        name = rec.get("to_label") or sid
+        if not ctx.tab_alive(sid):
+            if _claim_flag(hid, "overdue_told", now):
+                ctx.tell_requester(rec, hid, sf_lang.pick(
+                    f"[[ShellBot: hand-off {hid} to \"{name}\" will not be reported: that tab was closed.]]",
+                    f"[[ShellBot：交給「{name}」的交辦 {hid} 不會有回報了：那個分頁已經關掉。]]", lang))
+                done.append(("closed", hid))
+            continue
+        nudged = float(rec.get("nudged") or 0)
+        if not nudged:
+            if now - got >= NUDGE_IDLE_S and ctx.idle_for(sid) >= NUDGE_IDLE_S \
+                    and _claim_flag(hid, "nudged", now):
+                ctx.remind(sid, hid, "[[" + reminder_text(hid, rec.get("from_label") or "", lang) + "]]")
+                done.append(("nudged", hid))
+        elif now - nudged >= OVERDUE_S and _claim_flag(hid, "overdue_told", now):
+            mins = int(OVERDUE_S // 60)
+            ctx.tell_requester(rec, hid, sf_lang.pick(
+                f"[[ShellBot: hand-off {hid} to \"{name}\" still has no result {mins} min after a reminder. "
+                f"Look at #{name} (sfctl state / peek) or send the next step.]]",
+                f"[[ShellBot：交給「{name}」的交辦 {hid}，提醒後 {mins} 分鐘還是沒有回報。"
+                f"請看一下 #{name}（sfctl state／peek），或送下一步。]]", lang))
+            done.append(("overdue", hid))
+    for what, hid in done:
+        record({"kind": f"follow-up:{what}", "msg_id": hid, "target": data[hid].get("target") or "",
+                "to_sid": data[hid].get("to_sid") or "", "text": ""})
+    return done
+
+
 def _drop_handoff(hid: str):
     with _lock:
         data = _load_handoffs()
@@ -418,6 +523,7 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
     if to_sid:
         try:
             ctx.sender = from_sid        # so a queue timeout can tell the sender
+            ctx.what = f"handoff:{msg_id}" if kind == "handoff" and msg_id else ""
         except Exception:
             pass
         res = ctx.send(to_sid, body) or {}
@@ -444,10 +550,16 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
     if external:
         note_delivered(f"ext:{role}", depth)   # its reply continues this chain, not a fresh one
     if (kind == "handoff" or external) and msg_id:
+        # In front of the agent once typed in: now, or (queued) when the queue says so.
+        with _lock:
+            early = _early_delivered.pop(msg_id, None)
+        delivered = early or ((0.0 if res.get("queued") else _now()) if to_sid else 0.0)
         _put_handoff(msg_id, {
             "direction": direction, "origin_sid": origin_sid or from_sid,
             "reply_peer": reply_peer, "depth": depth, "answered": False,
             "target": target_key, "from_label": from_label,
+            "to_sid": to_sid, "to_label": to_label or role or to_sid,
+            "at": _now(), "delivered_at": delivered,
         })
     record({"kind": "queued" if res.get("queued") else "message", "text": text,
             "target": target_key, "msg_id": msg_id,

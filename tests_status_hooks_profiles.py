@@ -92,8 +92,23 @@ check("other hooks and keys in ~/.claude survive", h["permissions"] == {"allow":
       and any("say done" in json.dumps(g) for g in h["hooks"]["Stop"]))
 check("syncing again changes nothing", api._sync_status_hooks_to_profiles() == 0)
 api.set_status_hooks_enabled(True)
-check("installing twice adds no duplicate", sum("sf_agent_hook.py" in json.dumps(g)
-                                                for g in load(home)["hooks"]["Stop"]) == 1)
+stop = load(home)["hooks"]["Stop"]
+check("installing twice adds no duplicate: one status entry and one stop check on Stop",
+      sum("sf_agent_hook.py" in json.dumps(g) and "--stop-check" not in json.dumps(g) for g in stop) == 1
+      and sum("--stop-check" in json.dumps(g) for g in stop) == 1, stop)
+chk = [h for g in stop for h in g.get("hooks", []) if "--stop-check" in h.get("command", "")][0]
+check("the stop check is synchronous with a short timeout (it may block a stop)",
+      not chk.get("async") and chk.get("timeout") == 5, chk)
+
+print("an older install gets the stop check")
+for path in (home, profiles / "claude-a" / "settings.json"):
+    d = load(path)
+    d["hooks"]["Stop"] = [g for g in d["hooks"]["Stop"] if "--stop-check" not in json.dumps(g)]
+    path.write_text(json.dumps(d), encoding="utf-8")
+check("without it the install counts as incomplete", not api._hooks_installed_in(home))
+check("start-up sync adds it to ~/.claude and the profile", api._sync_status_hooks_to_profiles() == 2
+      and api._hooks_installed_in(home) and api._hooks_installed_in(profiles / "claude-a" / "settings.json"))
+check("…and keeps the user's own Stop hook", any("say done" in json.dumps(g) for g in load(home)["hooks"]["Stop"]))
 
 print("partial and off")
 api._write_status_hooks(profiles / "claude-b" / "settings.json", False)

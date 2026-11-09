@@ -2,11 +2,15 @@
 
 import os
 import threading
+import time
 
 import agent_link
 import agent_route
 import tab_delivery
 import sf_lang
+
+# A queued hand-off is in front of the agent once it is typed in, not when sent.
+tab_delivery.ON_DELIVERED.append(agent_link.note_tab_delivered)
 
 
 def _enabled(api) -> bool:
@@ -72,6 +76,7 @@ class _Ctx:
 
     sender = ""         # agent_link sets the sending sid before each send
     now = False         # --now: go in even mid-turn
+    what = ""           # "handoff:<id>" for a hand-off, so its delivery time is known
 
     def send(self, sid: str, text: str) -> dict:
         """Through the per-tab queue: never into a running turn, a decision menu or
@@ -80,7 +85,31 @@ class _Ctx:
             return {"success": False, "message": f"No such session: {sid}"}
         sender, api = self.sender, self.api
         label = _label(api, sid)
-        return tab_delivery.deliver(api, sid, text, now=self.now, from_sid=sender, label=label)
+        return tab_delivery.deliver(api, sid, text, now=self.now, from_sid=sender, label=label,
+                                    what=self.what)
+
+    # ── for agent_link.followups ──
+    def tab_alive(self, sid: str) -> bool:
+        return sid in self.api.sessions
+
+    def idle_for(self, sid: str) -> float:
+        """Seconds since the tab last did anything; -1 while it is busy or unknown."""
+        s = self.api.sessions.get(sid)
+        if s is None or self.api._agent_state_for_list(sid) in ("working", "decision"):
+            return -1.0
+        out_ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
+        last = self.api._last_activity_at(sid, s, out_ts)
+        return time.time() - last if last else -1.0
+
+    def remind(self, sid: str, hid: str, text: str):
+        tab_delivery.deliver(self.api, sid, text, what=f"handoff-reminder:{hid}")
+
+    def tell_requester(self, rec: dict, hid: str, text: str):
+        origin = str(rec.get("origin_sid") or "")
+        if origin in self.api.sessions:
+            tab_delivery.deliver(self.api, origin, text, what=f"handoff-overdue:{hid}")
+        elif origin.startswith("ext:"):
+            self.api._bots_external_deliver(origin[4:], {"kind": "send", "text": text, "from_label": "ShellBot"})
 
     def delegate(self, role: str, task: str) -> dict:
         return self.api.delegate_task(role, task, from_sid=self.sender)
@@ -147,6 +176,14 @@ def handle(api, cmd: str, args: dict) -> dict:
                     "details": {"route_hint": hint}}
         if cmd == "a2a_log":
             return agent_link.log_text(int(args.get("limit") or 50))
+        if cmd == "a2a_stop_check":
+            # Claude Code's Stop hook (sf_agent_hook.py --stop-check): block this stop
+            # once when the tab sits on a hand-off it has not answered.
+            sid = str(args.get("sid") or "").strip()
+            hk = (getattr(api, "_hook_events", None) or {}).get(sid) or {}
+            hid, reason = ("", "") if not _enabled(api) else agent_link.stop_check(
+                sid, float(hk.get("prompt_at") or 0))
+            return {"success": True, "message": "", "details": {"block": bool(reason), "reason": reason, "id": hid}}
         ctx = _Ctx(api)
         ctx.now = bool(args.get("now"))
         if cmd == "a2a_deliver":
@@ -180,3 +217,25 @@ def handle(api, cmd: str, args: dict) -> dict:
         return {"success": False, "message": f"unknown {cmd}"}
     except Exception as e:
         return {"success": False, "message": f"{cmd} failed: {e}"}
+
+
+_followups = None
+
+
+def start_followups(api, every: float = 20.0):
+    """The app's one loop for hand-offs nobody reported (agent_link.followups).
+    Started by main(); tests call agent_link.followups with their own ctx."""
+    global _followups
+    if _followups is not None:
+        return
+
+    def loop():
+        while True:
+            time.sleep(every)
+            try:
+                if _enabled(api):
+                    agent_link.followups(_Ctx(api))
+            except Exception:
+                pass
+    _followups = threading.Thread(target=loop, daemon=True, name="a2a-followups")
+    _followups.start()

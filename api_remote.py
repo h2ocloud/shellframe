@@ -1267,7 +1267,7 @@ class RemoteApiMixin:
                 return {"success": False, "message": f"用量查詢失敗：{e}"}
 
         elif cmd in ("a2a_send", "a2a_handoff", "a2a_result", "a2a_next",
-                     "a2a_log", "a2a_deliver", "route_hint"):
+                     "a2a_log", "a2a_deliver", "route_hint", "a2a_stop_check"):
             return a2a_host.handle(self, cmd, args)
         elif cmd == "bots_list":
             return self._bots_list_for_sfctl()

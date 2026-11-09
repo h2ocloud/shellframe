@@ -155,6 +155,12 @@ not retarget `delegate` or rewrite the task. The suggestion is attached to
 `--tier` is `light`, `code`, `plan`, or `review`. A task that says it is a
 review is `review` even when it also talks about design.
 
+When you get a hand-off, answer it with `a2a-result`, also when it is not
+finished (say where it stands and what you wait for). If you stop without one,
+you are reminded once: Claude Code's Stop hook keeps you going with the reminder,
+and on other CLIs ShellBot types it in after you have been idle a minute. Thirty
+minutes after the reminder, or if the tab is closed first, the requester is told.
+
 `send` never types into a turn in flight. If the target is working, waiting on a
 decision menu, in the middle of a Telegram turn, or has the user's unsent text in
 its input box, the text waits in that tab's queue (first in, first out) and goes

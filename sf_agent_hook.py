@@ -11,12 +11,50 @@ Delivery is the same file IPC sfctl uses, but fire-and-forget: drop the cmd
 file and exit without waiting for a result (result_file points at a shared
 scratch path nobody reads). Never blocks or fails the agent — the hook is
 registered async and any exception here is swallowed.
+
+`--stop-check` is the one synchronous use, a separate Stop entry: when this tab
+got a hand-off it has not answered, print Claude Code's block decision once, so
+the agent reports (sfctl a2a-result) before it stops. It reads the hand-off file
+first and asks ShellFrame only when there is one, so an ordinary stop costs a
+file read; anything wrong means no output, i.e. the stop goes ahead.
 """
 import json
 import os
 import sys
 import tempfile
 import time
+
+
+# agent_link.handoff_path() with its default STATE_DIR (tests check they agree)
+HANDOFF_FILE = os.path.join(os.path.expanduser("~"), ".local", "state", "shellframe", "a2a_handoff.json")
+
+
+def _open_handoff_for(sid: str) -> bool:
+    try:
+        with open(HANDOFF_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return False
+    return any(isinstance(r, dict) and r.get("to_sid") == sid and r.get("delivered_at")
+               and not r.get("answered") and not r.get("nudged") for r in data.values())
+
+
+def stop_check():
+    sid = (os.environ.get("SF_SID") or "").strip()
+    if not sid:
+        return
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        data = {}
+    if data.get("stop_hook_active") or not _open_handoff_for(sid):
+        return                       # already continuing because of a stop hook, or nothing open
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import sfctl
+    res = sfctl._rpc("a2a_stop_check", {"sid": sid}, timeout=3) or {}
+    d = res.get("details") or {}
+    if d.get("block") and d.get("reason"):
+        sys.stdout.write(json.dumps({"decision": "block", "reason": d["reason"]}, ensure_ascii=False))
 
 
 def main():
@@ -55,6 +93,6 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        stop_check() if "--stop-check" in sys.argv[1:] else main()
     except Exception:
         pass
