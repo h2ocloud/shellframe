@@ -66,6 +66,7 @@ from api_status import StatusApiMixin
 from api_update import UpdateApiMixin
 from api_voice import VoiceApiMixin
 from api_tmux import TmuxApiMixin
+from api_bots import BotsApiMixin
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -226,6 +227,9 @@ DEFAULT_CONFIG = {
         # Off by default — sending drives several permission-bypassed agents at
         # once. Rules live in agent_group.py.
         "experimental_groups": False,
+        # Bots: avatar faces, per-bot memory written before a bot tab closes, the
+        # primary-bot card, external bots over a webhook. Rules live in bots.py.
+        "experimental_bots": False,
         # Install a pointer skill into ~/.claude/skills/shellframe/ on start, so
         # an agent in a tab discovers `sfctl skill` without being told. On by
         # default: it is a directory only ShellFrame writes, and it holds a
@@ -1897,7 +1901,7 @@ def _win_set_clipboard_text(text: str) -> None:
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
-          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin):
+          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):
@@ -2288,6 +2292,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             return {"success": False, "message": f"Unknown role: {role}. Available: {roles}"}
 
         label = entry.get("label") or resolved_role
+        if self._bots_external_target(resolved_role) is not None:   # never a local placeholder tab
+            return {"success": False, "message": f"「{label}」住在 ShellFrame 外面，用 sfctl a2a-send {resolved_role} \"…\" 找它"}
         sid, session = self._find_session_by_label(label)
         created = False
         if not session:
@@ -2308,6 +2314,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
         tagged = self._extract_tab_tags(task, exclude_sid=sid)
         prompt = self._delegate_prompt(resolved_role, entry, task, tagged=tagged)
+        if created:                         # a sleeping bot wakes with its memory
+            prompt = self._bots_first_prompt(sid, resolved_role, prompt)
         if created and not self._wait_until_ready(sid):
             # Measured: an AI CLI needs seconds to reach its prompt, and text
             # pasted before then is eaten by the startup screen — the tab exists,
@@ -3698,6 +3706,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         idle_seconds: int | None = None,
     ):
         _dlog("lifecycle", f"close_session sid={sid} reason={reason!r}")
+        if self._bots_divert_close(sid, reason):
+            return                          # a bot writes its memory first, then closes itself
         # 授權要跟著分頁一起結束。不收的話那個 sid 會永遠留在
         # glasses_allowed_sessions 裡，而 `sfctl glasses` 只走訪還活著的
         # session，所以看不到它——一個看不見的、方向朝「開」的殘留。

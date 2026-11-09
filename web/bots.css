@@ -1,0 +1,232 @@
+/* ShellFrame bots — faces, primary card, sleeping bots, pickers.
+ *
+ * Everything here is scoped under body.sfb-on, which web/bots.js sets only when
+ * settings.experimental_bots is on. With the flag off this file changes nothing.
+ *
+ * The face is drawn INSIDE the existing .busy-dot. index.html's 400 ms state loop
+ * rewrites that element's className ('busy-dot sig-working' …) and never touches
+ * its children, so the expression is pure CSS over the state classes the loop
+ * already sets: no second state machine, nothing to keep in sync.
+ *
+ *   ''                    idle      發呆：眨眼、左右看、慢慢呼吸
+ *   sig-working / on      working   運作：上下跳、眼睛來回掃
+ *   sig-decision / on.attention
+ *                         decision  拋出問號：問號氣泡＋歪頭
+ *   sig-stuck             stuck     卡住：冒汗＋偶爾抖一下
+ *   sig-done              done      完成：瞇眼笑
+ *   .sfb.is-asleep        asleep    休息中（bot 沒有開著的分頁／遠端離線）
+ *   .sfb.is-writing       writing   關閉前寫記憶
+ *
+ * Shape and colour are the identity (data-shape, --c); state is the expression.
+ * Every loop starts from its resting pose, and web/bots.js sets a negative
+ * animation-delay (--t) from the wall clock, so the sidebar rebuilding its rows
+ * every few seconds does not restart the animations visibly.
+ */
+
+:root {
+  --sfb-eye: #ffffff;
+  --sfb-q-bg: #ffffff;
+  --sfb-q-fg: #1a1b26;
+  --sfb-sweat: #8fd3ff;
+  --sfb-badge: #ff9e64;
+  --sfb-ring: #16161e;
+  --sfb-size-tab: 16px;
+  --sfb-size-row: 26px;
+  --sfb-size-card: 54px;
+}
+
+/* ── the dot becomes the avatar's box ── */
+body.sfb-on .busy-dot,
+body.sfb-on .busy-dot.on,
+body.sfb-on .busy-dot.on.attention,
+body.sfb-on .busy-dot.sig-working,
+body.sfb-on .busy-dot.sig-done,
+body.sfb-on .busy-dot.sig-decision,
+body.sfb-on .busy-dot.sig-stuck {
+  width: var(--sfb-size, var(--sfb-size-tab));
+  height: var(--sfb-size, var(--sfb-size-tab));
+  border-radius: 0; background: none; box-shadow: none; animation: none; opacity: 1;
+}
+body.sfb-on #sidebar-sessions .busy-dot { --sfb-size: var(--sfb-size-row); }
+body.sfb-on .busy-dot::after { inset: -2px; border-radius: 30%; }
+
+/* ── atom: the face ── */
+.sfb { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.sfb .body { fill: var(--c, #8b90a0); }
+.sfb .body-round { fill: var(--c, #8b90a0); stroke: var(--c, #8b90a0); stroke-linejoin: round; }
+/* A near-black bot would vanish on the dark sidebar: a soft light rim instead of
+   a stroke (a stroke would hollow out the shapes whose corners are rounded by one). */
+.sfb.ink { filter: drop-shadow(0 0 1.2px rgba(255,255,255,.55)); }
+.sfb .eye { fill: var(--sfb-eye); transform-box: fill-box; transform-origin: center; }
+.sfb .happy, .sfb .shut {
+  fill: none; stroke: var(--sfb-eye); stroke-width: 5; stroke-linecap: round; opacity: 0;
+}
+.sfb .rig { transform-origin: 50px 60px; }
+.sfb .eyes { transform-origin: 50px 50px; }
+.sfb .q, .sfb .sweat, .sfb .zz, .sfb .pen { opacity: 0; }
+.sfb .q circle { fill: var(--sfb-q-bg); }
+.sfb .q text, .sfb .zz {
+  font: 900 22px/1 -apple-system, "Helvetica Neue", Arial, sans-serif; text-anchor: middle;
+}
+.sfb .q text { fill: var(--sfb-q-fg); }
+.sfb .zz { fill: #a9b1d6; font-size: 20px; }
+.sfb .sweat { fill: var(--sfb-sweat); }
+.sfb .pen { fill: #e0af68; }
+.sfb .badge { display: none; }
+.sfb.is-primary .badge { display: inline; }
+.sfb .badge circle { fill: var(--sfb-badge); stroke: var(--sfb-ring); stroke-width: 4; }
+.sfb .badge path { fill: #fff; }
+
+/* idle（預設）：呼吸、眨眼、偶爾看旁邊 */
+.sfb .rig, .sfb .eyes, .sfb .eye, .sfb .q, .sfb .sweat, .sfb .pen {
+  animation-delay: var(--t, 0s);
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+.sfb .rig  { animation-name: sfb-breathe; animation-duration: 4.6s; }
+.sfb .eye  { animation-name: sfb-blink;   animation-duration: 5.3s; animation-timing-function: linear; }
+.sfb .eyes { animation-name: sfb-glance;  animation-duration: 9.7s; }
+
+/* working：上下跳、眼睛往下來回掃 */
+.busy-dot.sig-working .sfb .rig,
+.busy-dot.on:not(.attention) .sfb .rig { animation-name: sfb-bob; animation-duration: .64s; }
+.busy-dot.sig-working .sfb .eyes,
+.busy-dot.on:not(.attention) .sfb .eyes { animation-name: sfb-scan; animation-duration: 1.1s; }
+
+/* decision：拋出問號、歪頭、眼睛往上看問號 */
+.busy-dot.sig-decision .sfb .q,
+.busy-dot.on.attention .sfb .q { opacity: 1; animation-name: sfb-qfloat; animation-duration: 1.3s; }
+.busy-dot.sig-decision .sfb .rig,
+.busy-dot.on.attention .sfb .rig { animation-name: sfb-tilt; animation-duration: 2.6s; }
+.busy-dot.sig-decision .sfb .eyes,
+.busy-dot.on.attention .sfb .eyes { animation: none; transform: translate(3px, -4px); }
+
+/* stuck：冒汗、眼睛壓扁、偶爾抖一下 */
+.busy-dot.sig-stuck .sfb .sweat { opacity: 1; animation-name: sfb-sweat; animation-duration: 1.8s; animation-timing-function: ease-in; }
+.busy-dot.sig-stuck .sfb .rig { animation-name: sfb-shake; animation-duration: 2.8s; }
+.busy-dot.sig-stuck .sfb .eyes { animation: none; transform: translate(-2px, 2px); }
+.busy-dot.sig-stuck .sfb .eye { animation: none; transform: scaleY(.6); }
+
+/* done：瞇眼笑（靜態，重畫也不會跳） */
+.busy-dot.sig-done .sfb .eye { opacity: 0; animation: none; }
+.busy-dot.sig-done .sfb .happy { opacity: 1; }
+
+/* asleep / writing are classes on the svg itself: the state loop never rewrites them */
+.sfb.is-asleep { filter: saturate(.35) brightness(.8); }
+.sfb.is-asleep .eye { opacity: 0; animation: none; }
+.sfb.is-asleep .shut, .sfb.is-asleep .zz { opacity: 1; }
+.sfb.is-asleep .rig { animation-name: sfb-breathe; animation-duration: 6s; }
+.sfb.is-writing .pen { opacity: 1; animation-name: sfb-pen; animation-duration: .9s; }
+.sfb.is-writing .eyes { animation: none; transform: translate(0, 5px); }
+.sfb.is-writing .rig { animation-name: sfb-breathe; animation-duration: 2.2s; }
+
+@keyframes sfb-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-1px) scale(1.03); } }
+@keyframes sfb-blink   { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(.1); } }
+@keyframes sfb-glance  { 0%, 36%, 86%, 100% { transform: translate(0, 0); }
+                         42%, 56% { transform: translate(4px, 0); } 64%, 78% { transform: translate(-4px, 1px); } }
+@keyframes sfb-bob     { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes sfb-scan    { 0%, 100% { transform: translate(-3px, 4px); } 50% { transform: translate(3px, 4px); } }
+@keyframes sfb-qfloat  { 0%, 100% { transform: translateY(0) rotate(-8deg); } 50% { transform: translateY(-5px) rotate(8deg); } }
+@keyframes sfb-tilt    { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(4deg); } }
+@keyframes sfb-sweat   { 0% { transform: translateY(-3px); opacity: 0; } 25%, 75% { opacity: 1; } 100% { transform: translateY(14px); opacity: 0; } }
+@keyframes sfb-shake   { 0%, 72%, 100% { transform: rotate(0); } 77% { transform: rotate(-6deg); }
+                         83% { transform: rotate(5deg); } 89% { transform: rotate(-3deg); } 95% { transform: rotate(2deg); } }
+@keyframes sfb-pen     { 0%, 100% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(-6px, 2px) rotate(-12deg); } }
+
+@media (prefers-reduced-motion: reduce) { .sfb, .sfb * { animation: none !important; } }
+body.sfb-hidden .sfb * { animation-play-state: paused !important; }
+
+/* ── sidebar rows: name + latest line, like a chat list ── */
+body.sfb-on #sidebar-sessions .sb-item[data-section="local"],
+body.sfb-on #sidebar-sessions .sfb-sleeper { padding-top: 6px; padding-bottom: 6px; gap: 9px; }
+.sfb-two { display: flex; flex-direction: column; min-width: 0; gap: 1px; line-height: 1.25; }
+.sfb-two .sfb-name { overflow: hidden; text-overflow: ellipsis; color: #c0caf5; font-weight: 600; font-size: 12.5px; }
+.sfb-two .sfb-sub { overflow: hidden; text-overflow: ellipsis; color: #6b7089; font-size: 11px; }
+.sb-item.active .sfb-two .sfb-sub { color: #8a90ad; }
+.sfb-tag {
+  display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; vertical-align: 1px;
+  font-size: 9px; font-weight: 500; line-height: 1.5; color: #bb9af7; border: 1px solid #bb9af766;
+}
+.sfb-sleeper { display: flex; align-items: center; padding: 6px 12px; cursor: pointer; font-size: 12px;
+  color: #787c99; border-left: 2px solid transparent; white-space: nowrap; }
+.sfb-sleeper:hover { background: #1f2335; }
+.sfb-sleeper .sfb-avatar { width: var(--sfb-size-row); height: var(--sfb-size-row); flex: none; }
+.sfb-sleeper .sfb-name { color: #9aa0bd; font-weight: 600; }
+.sfb-sleeper .sfb-wake { flex: none; visibility: hidden; font-size: 10px; color: #7aa2f7;
+  border: 1px solid #3b4261; border-radius: 4px; padding: 0 6px; line-height: 1.6; }
+.sfb-sleeper:hover .sfb-wake { visibility: visible; }
+.sfb-section { padding: 10px 12px 4px; font-size: 10px; letter-spacing: .5px; color: #565f89;
+  user-select: none; display: flex; align-items: center; gap: 6px; }
+.sfb-section .sfb-add { margin-left: auto; border: 1px solid #3b4261; border-radius: 4px; background: none;
+  color: #7aa2f7; font-size: 10px; padding: 0 7px; line-height: 1.6; cursor: pointer; }
+.sfb-section .sfb-add:hover { border-color: #7aa2f7; }
+
+/* ── organism: the primary bot card at the top of the sidebar ── */
+#sfb-primary { display: none; padding: 10px 10px 4px; }
+body.sfb-on #sfb-primary { display: block; }
+.sfb-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  margin: 0 auto; max-width: 132px; padding: 10px 10px 8px; border-radius: 14px;
+  background: #1f2335; border: 1px solid #292e42; cursor: pointer; text-align: center;
+  transition: background .12s, border-color .12s;
+}
+.sfb-card:hover { background: #24283b; border-color: #3b4261; }
+.sfb-card.active { border-color: #7aa2f7; }
+.sfb-card .sfb-avatar { width: var(--sfb-size-card); height: var(--sfb-size-card); }
+.sfb-card .sfb-card-name { font-size: 12px; font-weight: 600; color: #c0caf5;
+  max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfb-card .sfb-card-sub { font-size: 10px; color: #6b7089; max-width: 112px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfb-card.empty { border-style: dashed; background: none; color: #565f89; font-size: 11px; }
+.sfb-card.empty:hover { color: #7aa2f7; border-color: #7aa2f7; }
+
+/* ── popovers & dialogs ── */
+.sfb-pop {
+  position: fixed; z-index: 500; width: 268px; padding: 12px; border-radius: 10px;
+  background: #1f2335; border: 1px solid #3b4261; box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  color: #a9b1d6; font-size: 12px;
+}
+.sfb-pop h4 { margin: 0 0 8px; font-size: 12px; color: #c0caf5; font-weight: 600; }
+.sfb-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.sfb-grid button {
+  height: 36px; border-radius: 8px; border: 1px solid transparent; background: #1a1b26;
+  cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center;
+}
+.sfb-grid button:hover { border-color: #3b4261; }
+.sfb-grid button.sel { border-color: #7aa2f7; background: #24283b; }
+.sfb-grid .sfb-avatar { width: 26px; height: 26px; }
+.sfb-swatch { width: 18px; height: 18px; border-radius: 50%; display: block;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+.sfb-preview { display: flex; justify-content: space-between; align-items: flex-end;
+  margin: 10px 0 2px; padding: 8px 6px 4px; background: #1a1b26; border-radius: 8px; }
+.sfb-preview figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.sfb-preview .busy-dot { --sfb-size: 30px; cursor: default; }
+.sfb-preview figcaption { font-size: 9px; color: #565f89; }
+.sfb-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.sfb-row .btn { font-size: 11px; padding: 3px 10px; }
+.sfb-form { display: grid; grid-template-columns: 74px 1fr; gap: 8px 10px; align-items: center; }
+.sfb-form label { font-size: 11px; color: #787c99; }
+.sfb-form input[type=text], .sfb-form textarea, .sfb-form select {
+  width: 100%; box-sizing: border-box; background: #24283b; border: 1px solid #3b4261;
+  border-radius: 4px; padding: 5px 7px; color: #c0caf5; font-size: 12px; outline: none; font-family: inherit;
+}
+.sfb-form textarea { min-height: 54px; resize: vertical; }
+.sfb-form .hint { grid-column: 2; font-size: 10px; color: #565f89; margin-top: -4px; }
+.sfb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.sfb-chips label { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px;
+  border: 1px solid #3b4261; border-radius: 10px; font-size: 10px; color: #a9b1d6; cursor: pointer; }
+.sfb-chips input { margin: 0; }
+.sfb-modal .modal { width: 440px; max-width: calc(100vw - 32px); padding: 18px 20px; }
+.sfb-modal h2 { display: flex; align-items: center; gap: 10px; font-size: 14px; margin: 0 0 12px; }
+.sfb-modal h2 .sfb-avatar { width: 34px; height: 34px; }
+.sfb-note { font-size: 11px; color: #787c99; line-height: 1.6; margin: 8px 0 0; }
+.sfb-msg { font-size: 11px; min-height: 14px; margin-top: 8px; }
+.sfb-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.sfb-list .item { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px;
+  background: #1a1b26; cursor: pointer; }
+.sfb-list .item:hover { background: #24283b; }
+.sfb-list .item .sfb-avatar { width: 24px; height: 24px; flex: none; }
+.sfb-list .item .who { flex: 1; min-width: 0; }
+.sfb-list .item .who b { display: block; font-size: 12px; color: #c0caf5; font-weight: 600; }
+.sfb-list .item .who span { display: block; font-size: 10px; color: #6b7089;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

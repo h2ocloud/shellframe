@@ -53,8 +53,20 @@ class _Ctx:
         if not entry:
             return "", ""
         label = entry.get("label") or resolved or role
+        if self.external(resolved or role):
+            return "", label        # lives outside: never type into a local tab with its name
         found, _session = self.api._find_session_by_label(label)
         return found or "", label
+
+    def _key(self, role: str) -> str:
+        resolved, _entry = self.api._resolve_agent_role(role, self.roster())
+        return resolved or role
+
+    def external(self, role: str) -> bool:
+        return self.api._bots_external_target(self._key(role)) is not None
+
+    def deliver_external(self, role: str, payload: dict) -> dict:
+        return self.api._bots_external_deliver(self._key(role), payload)
 
     def send(self, sid: str, text: str) -> dict:
         session = self.api.sessions.get(sid)
@@ -95,6 +107,17 @@ def _readings() -> dict:
 
 
 def _from(api, args: dict):
+    as_role = (args.get("as") or "").strip()
+    if as_role:
+        # An external bot (e.g. a cloud bot running sfctl through its local-command
+        # feature) speaks as itself. Only outside a tab, and only as a roster role
+        # marked external — a tab may not put on another bot's name.
+        if (args.get("from_sid") or "").strip():
+            return None, "--as 只能在 ShellFrame 分頁外面用（分頁裡的 agent 一律以自己的名字說話）"
+        label = api._bots_external_label(as_role)
+        if not label:
+            return None, f"--as {as_role}：名冊裡沒有這個外部 bot"
+        return f"ext:{as_role}", label
     sid = (args.get("from_sid") or os.environ.get("SF_SID") or "").strip()
     label = (args.get("from_label") or "").strip() or _label(api, sid)
     return sid, label
@@ -119,6 +142,8 @@ def handle(api, cmd: str, args: dict) -> dict:
         if cmd == "a2a_deliver":
             return agent_link.accept_remote(ctx, args)
         sid, label = _from(api, args)
+        if sid is None:
+            return {"success": False, "message": label}
         if cmd == "a2a_result":
             return agent_link.report_result(
                 ctx, args.get("id") or "", args.get("text") or "",

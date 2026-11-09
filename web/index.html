@@ -4,6 +4,7 @@
 <meta charset="utf-8"/>
 <title>shellframe</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
+<link rel="stylesheet" href="bots.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -1575,6 +1576,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
 <!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="bots.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -3082,6 +3084,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function closeTab(sid) {
     const s = sessions[sid];
     if (!s) return;
+    if (!s.isRemote && window.SFBots && SFBots.interceptClose(sid)) return;  // bot：先寫記憶再關
     // 遠端分頁：只是收掉這台的檢視（不殺對方的 session）
     if (s.isRemote) {
       disposeRemotePane(sid);
@@ -3137,7 +3140,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const numLabel = tgNum ? tgNum : '·';
       const numOpacity = tgNum ? '.45' : '.2';
       tab.innerHTML = `
-        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>
+        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(s.label)}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
@@ -3193,7 +3196,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tab.title = `「${peer}」的分頁「${s.label}」——鍵盤輸入會送到那台機器`;
       tab.innerHTML =
         `<span class="busy-dot${s._remoteState === 'working' ? ' on' : ''}" `
-        + `style="pointer-events:none"></span>`
+        + `style="pointer-events:none">${window.SFBots ? SFBots.face(sid) : ''}</span>`
         + `<span class="icon" style="font-size:11px;opacity:.8">⇄</span>`
         + `<span class="label"><span class="peer">${esc(peer)}</span>`
         + `·${esc(s.label)}</span>`
@@ -3306,7 +3309,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         ? `<span class="sb-bridge sb-tg off" data-action="switch-tg" data-sid="${sid}" title="這個分頁的 TG 連線已停用（自管／不受 bridge 監控）。點一下重新啟用">TG</span>`
         : `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? '再點一下＝停用這個分頁的 TG 連線' : '點一下把 TG 切到這個分頁'}">${isActiveTg ? '◀ TG' : 'TG'}</span>`);
       el.innerHTML =
-        `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）"></span>` +
+        `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>` +
         (hasAnyBridge ? `<span style="opacity:${tgOff ? '.3' : '.4'};font-size:10px;min-width:14px">${tgOff ? '·' : tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(s.label)}</span>` +
         modelBadgeHtml(s) +
@@ -3437,7 +3440,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             const stateDot = rState
               ? `<span class="busy-dot${rState === 'working' ? ' on' : ''}" `
                 + `title="${rState === 'working' ? '執行中' : '閒置'}" `
-                + `style="pointer-events:none;margin-right:4px"></span>`
+                + `style="pointer-events:none;margin-right:4px">${window.SFBots ? SFBots.remoteFace(p.name, rt.sid, rt.label) : ''}</span>`
               : '';
             // ✕ = 關閉對方的 session（跟 local 一樣，會先確認）
             row.innerHTML =
@@ -3450,6 +3453,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         });
       }
     } catch (e) { /* Frame Link 區塊壞掉不拖垮本機列表 */ }
+    try { window.SFBots && SFBots.afterSidebar(container); } catch (e) { /* bots 壞掉不拖垮側欄 */ }
     // 內容重建完才還原——瀏覽器會自己夾在可捲範圍內，清單變短時不會捲到空白。
     if (keepScroll) container.scrollTop = keepScroll;
   }
@@ -8597,6 +8601,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     labels: Object.fromEntries(
       Object.entries(sessions).map(([k, v]) => [k, v && v.label])),
   });
+  // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
+  window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
+    switchTab, renderTabs, renderSidebar };
 
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a
@@ -9447,6 +9454,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function confirmCloseTab(sid) {
     const s = sessions[sid];
     if (!s || _closeConfirmOpen) return;
+    if (!s.isRemote && window.SFBots && SFBots.interceptClose(sid)) return;
     _closeConfirmOpen = true;
     const isZh = lang === 'zh-TW';
     const overlay = document.createElement('div');

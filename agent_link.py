@@ -301,6 +301,15 @@ def _patch_handoff(hid: str, **fields) -> bool:
         return True
 
 
+def remember_outbound(msg_id: str, *, origin_sid: str, target: str, from_label: str):
+    """A message that left without going through deliver() (the user's own panel
+    writing to an external bot) can still be answered with a2a-result."""
+    if msg_id and claim_id(msg_id):
+        _put_handoff(msg_id, {"direction": "local", "origin_sid": origin_sid, "reply_peer": "",
+                              "depth": 0, "answered": False, "target": target,
+                              "from_label": from_label})
+
+
 def _drop_handoff(hid: str):
     with _lock:
         data = _load_handoffs()
@@ -386,8 +395,19 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
 
     body = (format_handoff(from_label, text, msg_id, hint) if kind == "handoff"
             else format_delivery(from_label, text))
+    # A bot that lives outside ShellFrame (a cloud bot behind a webhook) has no
+    # tab: POST it. Every message carries an id so it can answer with
+    # `sfctl a2a-result --as <role> <id>` and the answer reaches the sender's tab.
+    external = (not remote and not to_sid and role
+                and bool(getattr(ctx, "external", None) and ctx.external(role)))
+    if external and not msg_id:
+        msg_id = uuid.uuid4().hex[:12]
+        claim_id(msg_id)
     if to_sid:
         res = ctx.send(to_sid, body) or {}
+    elif external:
+        res = ctx.deliver_external(role, {"kind": kind, "id": msg_id, "text": text,
+                                          "from_sid": from_sid, "from_label": from_label}) or {}
     elif role:
         res = ctx.delegate(role, body) or {}
         to_sid = ((res.get("details") or {}).get("sid") or "")
@@ -405,7 +425,9 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
         note_delivered(to_sid, depth)
     if from_sid.startswith("peer:"):
         note_delivered(from_sid, depth)
-    if kind == "handoff" and msg_id:
+    if external:
+        note_delivered(f"ext:{role}", depth)   # its reply continues this chain, not a fresh one
+    if (kind == "handoff" or external) and msg_id:
         _put_handoff(msg_id, {
             "direction": direction, "origin_sid": origin_sid or from_sid,
             "reply_peer": reply_peer, "depth": depth, "answered": False,
@@ -594,10 +616,16 @@ def dispatch(ctx, *, target: str, text: str, from_sid: str = "", from_label: str
     return _ok(f"已交給 {target}", details)
 
 
-def _inject_result(ctx, rec: dict, text: str, from_label: str) -> dict:
+def _inject_result(ctx, rec: dict, text: str, from_label: str, hid: str = "") -> dict:
     sid = rec.get("origin_sid") or ""
     if not sid:
         return {"success": False, "message": "missing origin"}
+    if sid == "ui":
+        return {"success": True, "message": "recorded"}   # the user's own panel: the log is the thread
+    if sid.startswith("ext:") and getattr(ctx, "deliver_external", None):
+        # the hand-off came from a bot outside ShellFrame: its result goes back out
+        return ctx.deliver_external(sid[4:], {"kind": "result", "id": hid, "text": text,
+                                              "from_label": from_label}) or {}
     return ctx.send(sid, format_delivery(from_label, text)) or {}
 
 
@@ -629,7 +657,7 @@ def report_result(ctx, hid: str, text: str, from_sid: str = "", from_label: str 
             "from_sid": from_sid, "from_label": from_label or from_sid,
         }) or {}
     else:
-        res = _inject_result(ctx, rec, text, from_label or from_sid)
+        res = _inject_result(ctx, rec, text, from_label or from_sid, hid)
     if not res.get("success"):
         release_id(result_id)
         return {"success": False, "message": res.get("message") or "result failed",

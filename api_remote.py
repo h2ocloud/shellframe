@@ -1253,6 +1253,8 @@ class RemoteApiMixin:
         elif cmd in ("a2a_send", "a2a_handoff", "a2a_result", "a2a_next",
                      "a2a_log", "a2a_deliver", "route_hint"):
             return a2a_host.handle(self, cmd, args)
+        elif cmd == "bots_list":
+            return self._bots_list_for_sfctl()
 
         else:
             return {"success": False, "message": f"Unknown command: {cmd}"}

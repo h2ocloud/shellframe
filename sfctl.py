@@ -677,12 +677,16 @@ def main():
     p_delegate.add_argument("role", help="Roster role or alias, e.g. 時程信件, Coding, 研究")
     p_delegate.add_argument("task", help="Task text to send with the worker wrapper prompt")
 
+    as_help = ("Speak as this external bot (a roster role marked external). "
+               "Only outside a ShellFrame tab, e.g. a cloud bot's local command")
     p_a2a = sub.add_parser("a2a-send", help="Message a roster role, or peer/role on a paired machine")
     p_a2a.add_argument("target", help="Role, peer/role, or peer/sid")
     p_a2a.add_argument("text")
+    p_a2a.add_argument("--as", dest="as_role", default="", help=as_help)
     p_hand = sub.add_parser("a2a-handoff", help="Hand a task off; the other side reports with a2a-result")
     p_hand.add_argument("target")
     p_hand.add_argument("task")
+    p_hand.add_argument("--as", dest="as_role", default="", help=as_help)
     p_hand.add_argument("--allow-write", action="store_true",
                         help="Let a production SSH worker leave read-only mode. "
                              "Service restarts stay refused.")
@@ -691,6 +695,8 @@ def main():
     p_res.add_argument("text")
     p_res.add_argument("--diff", action="store_true",
                        help="Mark the text as a diff summary")
+    p_res.add_argument("--as", dest="as_role", default="", help=as_help)
+    sub.add_parser("bots", help="List bots: who is awake, sleeping or external (experimental_bots)")
     p_next = sub.add_parser("a2a-next", help="Send the next step of a handoff back to the same target")
     p_next.add_argument("id")
     p_next.add_argument("task")
@@ -899,17 +905,20 @@ def main():
     elif args.cmd == "a2a-send":
         _print_result(_rpc("a2a_send", {
             "target": args.target, "text": args.text,
+            "as": args.as_role,
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=30))
     elif args.cmd == "a2a-handoff":
         _print_result(_rpc("a2a_handoff", {
             "target": args.target, "text": args.task,
+            "as": args.as_role,
             "allow_write": bool(args.allow_write),
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=45))
     elif args.cmd == "a2a-result":
         _print_result(_rpc("a2a_result", {
             "id": args.id, "text": args.text, "diff": bool(args.diff),
+            "as": args.as_role,
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=30))
     elif args.cmd == "a2a-next":
@@ -920,6 +929,8 @@ def main():
         }, timeout=45))
     elif args.cmd == "a2a-log":
         _print_result(_rpc("a2a_log", {}, timeout=15))
+    elif args.cmd == "bots":
+        _print_result(_rpc("bots_list", {}, timeout=15))
     elif args.cmd == "route":
         _print_result(_rpc("route_hint", {"task": args.task, "tier": args.tier},
                            timeout=30))
