@@ -242,6 +242,26 @@ class StatusApiMixin:
                 changed += 1
         return changed
 
+    HOOK_QUIET_S = 90.0
+
+    def _quiet_hook_sids(self, now: float) -> list:
+        """Tabs whose hooks still say working but which have shown no sign of life —
+        no hook event and no screen output — for HOOK_QUIET_S. A working agent keeps
+        painting (Claude Code's spinner and elapsed timer tick while it thinks and
+        while a tool runs), so silence this long means the turn ended without a Stop
+        (an interrupt). Only those verdicts are dropped; the screen decides again."""
+        out = []
+        for sid, hk in list(self._hook_events.items()):
+            if hk.get("state") != "working":
+                continue
+            s = self.sessions.get(sid)
+            if s is None:
+                continue
+            last = max(float(hk.get("ts") or 0), float(getattr(s, "_last_output_activity_time", 0) or 0))
+            if now - last >= self.HOOK_QUIET_S:
+                out.append(sid)
+        return out
+
     def refresh_agent_status(self, sid: str = "") -> str:
         """把狀態快取與 hook 狀態清掉，強制下一輪從畫面／transcript 重算。
 
@@ -315,13 +335,14 @@ class StatusApiMixin:
             FORCE_REFRESH = 15.0   # full recompute at least this often per tab
             PUSH_HEARTBEAT = 5.0   # elapsed-only changes push at most this often
             # FORCE_REFRESH 只在「有輸出過」的分頁上重算，救不了中斷後就完全
-            # 安靜的分頁——hook 沒發 Stop、PTY 也不再動，燈號會一直停在
-            # working。每 5 分鐘連 hook 狀態一起清掉重判一次（日常使用中
-            # 2026-09-03：「有些情況我會中斷對話，這時候燈號就不會變動了」）。
-            HOOK_RESET_INTERVAL = 300.0
+            # 中斷對話時 Claude Code 不一定發 Stop，hook 會一直停在 working
+            # （2026-09-03 回報：「有些情況我會中斷對話，這時候燈號就不會變動了」）。
+            # 以前每 5 分鐘把所有分頁的 hook 狀態一起清掉；那也清掉了明明還在跑的
+            # 分頁（長思考、長指令），清完到下一個 hook 之前 `sfctl state` 都說 done
+            # （2026-11-09 實測 13:00:45 清掉、13:01 連問四次都是 done）。現在只交還
+            # 「真的安靜」的分頁：hook 停在 working，而 hook 與畫面都 HOOK_QUIET_S 沒動靜。
             cache = self._status_cache  # sid -> {out_ts, computed_at, since_ts, result}
             last_push = {"key": None, "at": 0.0}
-            last_hook_reset = time.time()
             while True:
                 try:
                     if not self._auto_status_enabled() or not self._window:
@@ -332,11 +353,12 @@ class StatusApiMixin:
                         cache.pop(stale, None)
                     for stale in [k for k in list(self._hook_events) if k not in self.sessions]:
                         self._hook_events.pop(stale, None)
-                    if now - last_hook_reset >= HOOK_RESET_INTERVAL:
-                        last_hook_reset = now
-                        cache.clear()
-                        self._hook_events.clear()
-                        main._dlog("status", "五分鐘定期重算：清掉 hook 與狀態快取")
+                    quiet = self._quiet_hook_sids(now)
+                    for qsid in quiet:
+                        self._hook_events.pop(qsid, None)
+                        cache.pop(qsid, None)
+                    if quiet:
+                        main._dlog("status", f"hook 停在 working 但已安靜：{','.join(quiet)} 交回畫面判斷")
                     out = {}
                     for sid, s in list(self.sessions.items()):
                         try:

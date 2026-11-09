@@ -105,6 +105,27 @@ api._on_agent_event({"sid": "s1", "event": "PreToolUse", "tool_name": "Bash"})
 api._hook_events["s1"]["ts"] -= api._HOOK_TTL + 5
 check("an expired hook no longer overrides", api._agent_state_for_list("s1") == "done")
 
+print("no blanket reset")
+# Measured 13:00:45: a timer cleared every tab's hook state every five minutes, so a
+# tab that was plainly still working (thinking, a long tool run) read done until its
+# next hook event. Only a tab that has gone quiet loses its working verdict now.
+now = time.time()
+tab = api.sessions["s1"]
+api._hook_events["s1"] = {"state": "working", "ts": now - 600, "since": now - 600, "tool": "Bash"}
+tab._last_output_activity_time = now - 1            # the spinner is still ticking
+check("ten minutes without a hook but still painting: kept", api._quiet_hook_sids(now) == [])
+check("…and state still says working", api._agent_state_for_list("s1") == "working")
+tab._last_output_activity_time = now - api.HOOK_QUIET_S - 5
+check("quiet in hooks and on screen (an interrupt with no Stop): released",
+      api._quiet_hook_sids(now) == ["s1"])
+api._hook_events["s1"] = {"state": "decision", "ts": now - 600, "since": now - 600}
+check("a decision verdict is not released by silence (a menu is quiet by nature)",
+      api._quiet_hook_sids(now) == [])
+src = (HERE / "api_status.py").read_text(encoding="utf-8")
+monitor = src.split("    def _start_status_monitor(self):", 1)[1]
+check("the status monitor no longer clears every tab's hooks on a timer",
+      "self._hook_events.clear()" not in monitor and "HOOK_RESET_INTERVAL" not in monitor)
+
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")
 sys.exit(1 if failed else 0)
