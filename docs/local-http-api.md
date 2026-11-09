@@ -54,6 +54,7 @@ Security, all enforced before any handler runs:
 | GET | `/status` | roster + live tab states |
 | GET | `/roster` | configured worker roles |
 | POST | `/delegate` | delegate to a role `{role, task}` |
+| POST | `/a2a` | a bot outside ShellFrame speaks A2A as itself `{kind, as, target, id, text}` |
 | GET | `/events?since=<cursor>` | poll agent signal events |
 
 Auth header: `Authorization: Bearer <token>` (or `X-API-Token: <token>`).
@@ -90,3 +91,19 @@ curl -s -H "$H" -X POST localhost:8765/sessions/s3/send \
      -d '{"text":"研究這個主題","submit":true}'
 curl -s -H "$H" "localhost:8765/events?since=0"
 ```
+
+## A2A from a bot outside ShellFrame
+
+With `experimental_bots` and `experimental_a2a` on, a roster role whose bot is
+marked **external** (for example a cloud bot behind a webhook) can talk to the
+bots here through `POST /a2a`, under the same rules as `sfctl a2a-* --as`:
+
+```bash
+curl -s -H "$H" -X POST localhost:8765/a2a \
+     -d '{"kind":"send","as":"總管","target":"Coding","text":"relay 的 timeout 改 30 秒"}'
+curl -s -H "$H" -X POST localhost:8765/a2a \
+     -d '{"kind":"result","as":"總管","id":"<message id>","text":"收到"}'
+```
+
+`as` must name an external bot; the receiving tab sees that name, the depth
+and rate limits apply per external bot, and everything lands in `sfctl a2a-log`.

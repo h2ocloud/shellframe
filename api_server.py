@@ -191,6 +191,20 @@ def _openapi_spec(version: str) -> dict:
                     "responses": {"200": ok},
                 },
             },
+            "/a2a": {
+                "post": {
+                    "summary": "A2A from a bot outside ShellFrame (roster role marked external)",
+                    "description": "Same rules as `sfctl a2a-* --as`: send to a bot, hand work off, "
+                                   "or answer a message id. The receiving tab sees the sender's name.",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                        "type": "object",
+                        "properties": {"kind": {"type": "string", "enum": ["send", "handoff", "result"]},
+                                       "as": {"type": "string"}, "target": {"type": "string"},
+                                       "id": {"type": "string"}, "text": {"type": "string"}},
+                        "required": ["kind", "as", "text"]}}}},
+                    "responses": {"200": ok},
+                },
+            },
             "/events": {
                 "get": {
                     "summary": "Poll agent signal events (RED/YELLOW/GREEN) since a cursor",
@@ -371,6 +385,19 @@ def _make_handler(execute_fn, token: str, allowed_nets, version: str):
             if path == "/delegate":
                 return self._send(200, self._exec("delegate", {
                     "role": body.get("role", ""), "task": body.get("task", "")}))
+            if path == "/a2a":
+                # A bot outside ShellFrame (a webhook caller) speaking A2A as itself:
+                # same guardrails as sfctl a2a-* (roster, depth, rate, audit), and
+                # the receiver sees who it is. Never more than /sessions/{sid}/send,
+                # which this token already grants.
+                cmd = {"send": "a2a_send", "handoff": "a2a_handoff",
+                       "result": "a2a_result"}.get(str(body.get("kind") or "send"))
+                if not cmd or not str(body.get("as") or "").strip():
+                    return self._send(400, {"success": False,
+                                            "message": "need kind (send|handoff|result) and as (an external bot)"})
+                return self._send(200, self._exec(cmd, {
+                    "as": body.get("as", ""), "target": body.get("target", ""),
+                    "id": body.get("id", ""), "text": body.get("text", ""), "from_sid": ""}))
 
             if len(parts) == 3 and parts[0] == "sessions":
                 sid, action = parts[1], parts[2]

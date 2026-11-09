@@ -431,13 +431,53 @@ r = a2a_host.handle(api, "a2a_send", {"target": "總管", "text": "在嗎", "fro
 check("no webhook yet: a clear refusal, not a stuck tab",
       not r.get("success") and "webhook" in r.get("message", "") and len(api.sessions) == n)
 
-# ── 9. index.html stays thin ───────────────────────────────────────────────
+# ── 9. the local HTTP API speaks the same A2A ──────────────────────────────
+print("http /a2a")
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+import api_server  # noqa: E402
+
+fresh_config()
+reset_a2a()
+api = make_api()
+api.sessions["s1"] = FakeSession("s1", "claude", "Coding-CLD")
+httpd, _t = api_server.start(lambda cmd, args: a2a_host.handle(api, cmd, args),
+                             host="127.0.0.1", port=0, token="tok-123")
+base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+
+def post(path, body, token="tok-123"):
+    req = urllib.request.Request(base + path, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json",
+                                          **({"Authorization": f"Bearer {token}"} if token else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+
+
+code, _ = post("/a2a", {"kind": "send", "as": "總管", "target": "Coding", "text": "hi"}, token="")
+check("POST /a2a without the token is refused", code == 401)
+code, _ = post("/a2a", {"kind": "send", "target": "Coding", "text": "hi"})
+check("…without `as` it is a 400", code == 400)
+code, res = post("/a2a", {"kind": "send", "as": "總管", "target": "Coding", "text": "從 webhook 來的"})
+check("…with both it delivers like sfctl --as", code == 200 and res.get("success")
+      and any(s == "s1" and "從 webhook 來的" in t and "總管-外部" in t for s, t in api.sent), res)
+code, res = post("/a2a", {"kind": "send", "as": "Coding", "target": "研究", "text": "冒充"})
+check("…and `as` a local bot is refused", code == 200 and not res.get("success"))
+httpd.shutdown()
+
+# ── 10. index.html stays thin ──────────────────────────────────────────────
 print("index.html")
 html = (HERE / "web" / "index.html").read_text(encoding="utf-8")
 check("bots.js and bots.css are loaded", 'src="bots.js"' in html and 'href="bots.css"' in html)
 check("every local dot hosts a face", html.count("SFBots.face(sid)") == 3)
 check("closing a tab asks the bots hook first", html.count("SFBots.interceptClose(sid)") == 2)
 check("the facade is the only coupling", "window.__sfHost = {" in html)
+called = set(re.findall(r"api\(\)\.([A-Za-z_]\w*)\(", js)) | set(re.findall(r"\ba\.([A-Za-z_]\w*)\(", js))
+missing = sorted(n for n in called if not hasattr(Api, n))
+check(f"every backend call bots.js makes exists ({len(called)})", called and not missing, missing)
 
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")

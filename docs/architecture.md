@@ -50,6 +50,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_status.py` | Agent status: hook events, status hook install, the status monitor thread |
 | | `api_update.py` | Version, changelog, self-update, app restart |
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
+| | `api_bots.py` | Bots: state for the page, avatars, bot editor, wake, close-with-memory, external bots over A2A; `web/bots.js` + `web/bots.css` draw the faces |
 | | `api_tmux.py` | Tab ↔ tmux bookkeeping around restore: sid resolution, background reattach of tabs that failed at startup, `sfctl orphans`, repaint after display wake |
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
 | Domain | `agent_status.py` | Screen-based agent state detection per tab |
@@ -58,6 +59,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `agent_route.py` | Quota hint for delegate / handoff. Suggests; does not spend or retarget |
 | | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
+| | `bots.py` | Bots (`experimental_bots`): identity, per-bot memory folder, wake-up brief, close-time summary, external-bot payloads |
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `tmux_sessions.py` | sf_* tmux sessions as data: tolerant listing, orphan report (also a read-only CLI), highest sid, client refresh |
 | | `wake_watch.py` | macOS display sleep/wake notifications → callbacks on a worker thread; memory-pressure probe |

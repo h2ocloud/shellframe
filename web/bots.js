@@ -699,6 +699,13 @@
     injectSettings();
     const s = (h.cfg().settings || {});
     setEnabled(s.experimental_bots === true);
+    // Second lines follow the status pushes as they arrive, not on the next tick.
+    const pushed = window.__sfAgentStatus;
+    if (typeof pushed === 'function' && !pushed.__sfb) {
+      const wrapped = function (payload) { pushed(payload); try { tick(); } catch (_) {} };
+      wrapped.__sfb = true;
+      window.__sfAgentStatus = wrapped;
+    }
     document.getElementById('btn-settings') &&
       document.getElementById('btn-settings').addEventListener('click', () => setTimeout(() => { injectSettings(); syncSettings(); }, 0));
     setInterval(tick, 1500);

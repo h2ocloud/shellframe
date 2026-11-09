@@ -20,9 +20,9 @@ sfctl version
 ```
 
 ```
-OK ShellFrame v0.40.2
-   version: 0.40.2
-   experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_groups": true, "experimental_loops": false}
+OK ShellFrame v0.41.0
+   version: 0.41.0
+   experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 
 The flag list is read from the live settings, so it always names every

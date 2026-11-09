@@ -6,6 +6,77 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.41.0 (2026-11-09)
+
+### Added
+
+- **Bots (experimental, Settings → Bots, off by default): every tab gets a face, and a tab can become a bot with its own memory.**
+  The status light becomes a small bot drawn in SVG and CSS. Its shape and colour
+  are its identity (12 shapes, 14 colours, right-click to change), and its expression
+  is its state: idle blinks and looks around, working bobs, a pending decision raises
+  a question mark, stuck sweats, done smiles. The expression is CSS over the state
+  classes the light already had, so nothing new decides a tab's state. Sidebar rows
+  now read like a chat list, the name plus the agent's latest line, with the primary
+  bot on a card at the top and bots without a tab listed as sleeping. A bot is a
+  roster role with a `bot` block. Waking one opens a tab and hands it one brief: its
+  duties, its skills with their SKILL.md paths, its MEMORY.md, the summary of its
+  last conversation and the other bots. Closing one (×, ⌘W, sfctl, Telegram or the
+  idle reaper) first asks the bot to write this conversation's summary and update
+  MEMORY.md in `~/.config/shellframe/bots/<name>/`; a bot that does not answer still
+  leaves the captured screen, so a close never loses the conversation. Because the
+  bot writes its own memory inside its own session, this works the same in Claude
+  Code, Codex, Grok Build, OpenCode, agy, pi and cursor-agent. `sfctl bots` lists who
+  is awake, asleep or external. Covered by tests_bots.py and tests_bots_ui.py.
+
+  **Bots（實驗功能，設定 → Bots，預設關）：每個分頁有一張臉，分頁也可以開成有自己記憶的 bot。**
+  燈號換成用 SVG／CSS 畫的小 bot：形狀和顏色是它的身分（12 種形狀、14 種顏色，右鍵可換），
+  表情是它的狀態：發呆會眨眼、運作會跳、要你決策會拋出問號、卡住會冒汗、完成會笑。表情只是
+  CSS 套在燈號原本的狀態上，沒有多一套判斷。側欄每列改成聊天清單的樣子：名稱加上它最新的
+  一句話；主要 Bot 在最上方的卡片，沒開分頁的 bot 列在「休息中」。bot 是名冊裡帶 `bot`
+  設定的角色：叫醒時開分頁並交給它一份簡報（執掌、skill 與 SKILL.md 路徑、MEMORY.md、
+  上次對話摘要、其他 bot）；關閉時（×、⌘W、sfctl、Telegram、閒置回收）先請它把這次對話
+  的摘要寫進 `~/.config/shellframe/bots/<名稱>/` 並更新 MEMORY.md，沒回應也會留下最後的
+  畫面，關閉不會弄丟對話。記憶由 bot 在自己的對話裡寫，所以 Claude Code、Codex、Grok Build、
+  OpenCode、agy、pi、cursor-agent 都一樣。`sfctl bots` 列出醒著、休息中、外部的 bot。
+  由 tests_bots.py、tests_bots_ui.py 守著。
+
+- **External bots: A2A to a bot that lives outside ShellFrame goes out through its webhook, and it answers with `sfctl --as`.**
+  A roster role can be marked external, for example a cloud bot whose routine starts
+  from a webhook. `sfctl a2a-send <it> "…"` and `[[SF:TO:…]]` POST its webhook a body
+  it can act on (kind, id, sender, text, and the exact command to answer). The bot
+  answers by running `sfctl a2a-result --as <it> <id> "…"` on this machine, and can
+  hand work to a bot here with `sfctl a2a-handoff --as <it> <bot> "…"`, whose result
+  is POSTed back to it. `--as` works only outside a ShellFrame tab and only as a role
+  marked external. The webhook URL and its Authorization value stay in this machine's
+  config and are masked in the page and in logs. The local HTTP API offers the same
+  as `POST /a2a`. This reuses the outbound-webhook sender (`sf_notify`, `sfctl notify`),
+  which ships in this release.
+
+  **外部 bot：A2A 寄給住在 ShellFrame 外面的 bot 會走它的 webhook，它用 `sfctl --as` 回覆。**
+  名冊角色可以標成外部，例如用 webhook 觸發 routine 的雲端 bot。`sfctl a2a-send <它> "…"`
+  和 `[[SF:TO:…]]` 會 POST 一包它能處理的內容（種類、編號、寄件者、內文、回覆用的指令）。
+  它在這台電腦跑 `sfctl a2a-result --as <它> <編號> "…"` 回覆，也能用
+  `sfctl a2a-handoff --as <它> <bot> "…"` 派工給這裡的 bot，結果會 POST 回去。`--as`
+  只能在 ShellFrame 分頁外面用、只能冒用標成外部的角色。webhook 網址和授權值只存在這台
+  的設定，畫面與 log 都會遮住。本機 HTTP API 也有對應的 `POST /a2a`。送出沿用這版一起
+  出貨的對外 webhook 模組（`sf_notify`、`sfctl notify`）。
+
+### Fixes
+
+- **A message to a coordinator that lives outside ShellFrame no longer opens a tab that never becomes ready.**
+  The A2A log showed deliveries to such a coordinator failing with "opened but never
+  became ready": its roster entry ran a placeholder shell, so delivery opened that
+  shell and waited for an AI prompt that would never appear. Marked external, the
+  role is now reached through its webhook, and with no webhook configured the send
+  is refused at once with a message saying what to set up. `delegate` to an external
+  role is refused instead of opening a tab. Covered by tests_bots.py.
+
+  **送給住在 ShellFrame 外面的總管，不再開一個永遠等不到就緒的分頁。** A2A 紀錄裡送給這類
+  總管的訊息都以「開起來了，但等不到它就緒」失敗：名冊裡它跑的是佔位用的 shell，交付時就開
+  了那個 shell、等一個永遠不會出現的 AI 提示。標成外部之後改走它的 webhook；還沒設定 webhook
+  時立刻拒絕，並說明要設定什麼。對外部角色 `delegate` 也改成拒絕，不再開分頁。由
+  tests_bots.py 守著。
+
 ## v0.40.6 (2026-11-06)
 
 ### Fixes
