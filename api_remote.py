@@ -722,22 +722,30 @@ class RemoteApiMixin:
                     return {"success": False, "message": "No sid provided"}
                 if sid not in self.sessions:
                     return {"success": False, "message": f"No such session: {sid}"}
-                raw = self.get_clean_history(sid, max_lines=max_lines)
-                result = json.loads(raw) if isinstance(raw, str) else raw
-                if not result.get("success"):
-                    return {"success": False, "message": result.get("reason", "peek failed")}
-                text = result.get("text", "")
-                # Keep only the last max_lines non-empty lines for master orchestration use
-                lines = [l for l in text.split("\n") if l.strip()]
+                if args.get("raw"):
+                    # The screen as it is (spinner, input box, footer): the cleaned
+                    # conversation below drops exactly the lines that say it is running.
+                    lines = tab_delivery.screen_text(self, sid, max_lines).rstrip().split("\n")
+                else:
+                    raw = self.get_clean_history(sid, max_lines=max_lines)
+                    result = json.loads(raw) if isinstance(raw, str) else raw
+                    if not result.get("success"):
+                        return {"success": False, "message": result.get("reason", "peek failed")}
+                    # Keep only the last max_lines non-empty lines for master orchestration use
+                    lines = [l for l in result.get("text", "").split("\n") if l.strip()]
                 tail = "\n".join(lines[-max_lines:])
                 # Without colours a dim suggestion in the input box reads like the
-                # user's own words; say which it is.
-                kind, box = tab_delivery.composer_state(tab_delivery.capture(self, sid))
-                note = tab_delivery.composer_note(kind, box)
+                # user's own words; say which it is. And say whether a turn is running.
+                screen = tab_delivery.capture(self, sid)
+                kind, box = tab_delivery.composer_state(screen)
+                running = tab_delivery.status_line(screen)
+                notes = [n for n in ((sf_lang.pick(f"[ShellBot] Status line: {running}", f"[ShellBot] 狀態列：{running}")
+                                      if running and not args.get("raw") else ""),
+                                     tab_delivery.composer_note(kind, box)) if n]
                 return {
                     "success": True,
                     "message": f"{len(lines)} lines",
-                    "details": {"text": tail + (f"\n{note}" if note else ""), "composer": kind},
+                    "details": {"text": "\n".join([tail] + notes), "composer": kind, "running": running},
                 }
             except Exception as e:
                 return {"success": False, "message": f"Peek failed: {e}"}

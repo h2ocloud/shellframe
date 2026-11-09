@@ -832,6 +832,8 @@ def main():
     p_peek.add_argument("sid", help="Session id")
     p_peek.add_argument("--lines", type=int, default=50,
                         help="Max lines to return (default: 50)")
+    p_peek.add_argument("--raw", action="store_true",
+                        help="The screen as it is (spinner, input box, footer), not the cleaned conversation")
 
     p_rename = sub.add_parser("rename", help="Change a session's label")
     p_rename.add_argument("sid", help="Session id")
@@ -1003,7 +1005,7 @@ def main():
             "now": bool(args.now), "ttl": args.ttl, "from_sid": os.environ.get("SF_SID", ""),
         }))
     elif args.cmd == "peek":
-        _print_result(_rpc("peek", {"sid": args.sid, "lines": args.lines}))
+        _print_result(_rpc("peek", {"sid": args.sid, "lines": args.lines, "raw": bool(args.raw)}))
     elif args.cmd == "rename":
         _print_result(_rpc("rename", {"sid": args.sid, "name": args.name}))
     elif args.cmd == "close":

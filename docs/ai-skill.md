@@ -180,7 +180,9 @@ paste) and only then submits. Prefer it over typing keystrokes. `a2a-send`,
 open use the same queue and take `--now` too: you no longer need your own polling
 loop to "wait until it is done", and it holds whatever model you run on.
 
-`peek` ends with a `[ShellBot]` line when the input box holds something: a dim
+`peek` shows the cleaned conversation; `peek --raw` shows the screen itself (spinner,
+input box, footer). Without `--raw` it ends with `[ShellBot] Status line: …` while a
+turn is running (the spinner's clock, e.g. `· Undulating… (12m 53s)`). `peek` ends with a `[ShellBot]` line when the input box holds something: a dim
 suggestion that Claude Code shows (not the user's words) or text the user typed
 and has not sent. `state` has the same as `composer`: `empty`, `suggestion`,
 `draft` or `unknown`.

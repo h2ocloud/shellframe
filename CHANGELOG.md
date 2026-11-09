@@ -378,6 +378,22 @@
   門檻沒動（跑到一半掛住；長推理時 spinner 會一直動）、或狀態不明又安靜超過門檻。做完和閒著的
   分頁只給一個數量，當作可以回收的候選。由 tests_state_query.py 守著。
 
+- **A running Claude Code turn is recognised by its spinner clock, and `sfctl peek` says whether a turn is running.**
+  Reported: for about 80 s after a restart a tab read done while its screen said
+  "Undulating… (12m 53s)": with no hook event yet the state comes from the screen, and
+  newer Claude Code no longer shows "esc to interrupt" on that line. The spinner's
+  running clock ("… (12m 53s · ↓ 1.7k tokens)") now counts as live work, while a
+  finished turn ("✻ Baked for 1s") does not. Also reported: `peek` returns the cleaned
+  conversation, which drops exactly the lines that show a turn is running. It now ends
+  with `[ShellBot] Status line: …` while one runs, and `peek --raw` returns the screen
+  itself. Covered by tests_tab_delivery.py.
+
+  **用轉圈列的計時認出 Claude Code 正在跑，`sfctl peek` 也會說是不是在跑。** 回報：重啟後約 80 秒，畫面明明是
+  「Undulating… (12m 53s)」，狀態卻是 done：還沒有 hook 事件時狀態看畫面，而新版 Claude Code 那一行已經不顯示
+  「esc to interrupt」。現在轉圈列上走動的計時（「… (12m 53s · ↓ 1.7k tokens)」）就算在跑，跑完的「✻ Baked for 1s」
+  不算。另外回報：`peek` 回的是整理過的對話，剛好少了顯示「正在跑」的那幾行。現在正在跑時，結尾會多一行
+  `[ShellBot] 狀態列：…`，`peek --raw` 則回畫面原文。由 tests_tab_delivery.py 守著。
+
 - **A reused tab id shows its own conversation, and a tab shows the effort it was launched with.**
   Reported: a bot woken into s347 showed, as its activity, the "write your memory"
   prompt that had been sent to s346, a tab closed a minute earlier in the same folder.

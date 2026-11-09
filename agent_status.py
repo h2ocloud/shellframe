@@ -1484,11 +1484,11 @@ def _screen_signals(scr):
     return {
         "spinner": any(x in scr for x in SPINNER_RE),
         "menu": any(x in scr for x in MENU_RE),
-        # "esc to interrupt" is the one unambiguous proof of LIVE work — Claude
-        # Code shows it only while a turn is actively running (tool exec, token
-        # streaming, extended thinking). A permission/decision prompt never
-        # shows it (it footers "esc to cancel").
-        "actively_working": "esc to interrupt" in scr,
+        # Proof of LIVE work: "esc to interrupt", or (newer Claude Code, which dropped it) the spinner
+        # line's running clock just above the input box, "· Undulating… (12m 53s · ↓ 1.7k tokens)".
+        # A finished turn reads "✻ Baked for 1s" (no "…", no clock), a permission prompt
+        # footers "esc to cancel"; neither matches.
+        "actively_working": "esc to interrupt" in scr or bool(re.search(r"^\s*\S\s+[A-Z][^\n…]{0,40}…\s*\((?:\d+h\s*)?(?:\d+m\s*)?\d+s\b", "\n".join(scr.splitlines()[-12:]), re.M)),
         # editable input prompt in the bottom input region (❯ / ›, with or
         # without a typed draft after it) → TUI is waiting for the user.
         "has_input_prompt": any(l.lstrip()[:1] in ("❯", "›") for l in tail_lines),

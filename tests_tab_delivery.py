@@ -242,6 +242,41 @@ check("the limit is kept on disk with the item", "max_wait" in td._KEEP)
 api.state["s2"] = ""
 wait_for(lambda: not td.pending("s2"))
 
+print("is a turn running (no hook yet, e.g. right after a restart)")
+# Measured: for 80 s after a restart s347 read done while its screen said
+# "Undulating… (12m 53s)". Newer Claude Code dropped "esc to interrupt" from that line.
+import agent_status as ag  # noqa: E402
+SCREENS = {
+    "· Dilly-dallying… (21s · ↓ 1.7k tokens)": True,
+    "✻ Undulating… (12m 53s)": True,
+    "✶ Pondering… (1h 2m 3s · ↓ 9k tokens)": True,
+    "✻ Thinking… (esc to interrupt)": True,
+    "✻ Baked for 1s · done 3:34 PM": False,
+    "Loading the list (5s)": False,
+}
+for line, want in SCREENS.items():
+    scr = "\n".join(["some conversation", line, RULE, "\x1b[39m❯\xa0", RULE, "  footer"])
+    check(f"{'running' if want else 'not running'}: {line[:30]}", bool(td.status_line(scr)) is want, td.status_line(scr))
+    check(f"…the status tracker agrees", ag._screen_signals(scr)["actively_working"] is want)
+check("compute_state from the screen alone: working",
+      ag.compute_state([], now=0, screen_tail="✻ Undulating… (12m 53s)\n" + RULE + "\n❯ \n" + RULE)[0] == "working")
+
+print("peek shows whether it is running")
+api = make_api(("s1", "coder"))
+api.get_clean_history = lambda sid, max_lines=200: json.dumps({"success": True, "text": "user: go\nassistant: on it"})
+api.screen["s1"] = "\n".join(["x", "· Dilly-dallying… (21s · ↓ 1.7k tokens)", RULE, "\x1b[39m❯\xa0", RULE])
+res = api._execute_sfctl("peek", {"sid": "s1"})
+text = (res.get("details") or {}).get("text", "")
+check("the cleaned conversation ends with the status line", text.splitlines()[-1].endswith("Dilly-dallying… (21s · ↓ 1.7k tokens)")
+      and "assistant: on it" in text and res["details"].get("running"), text)
+api.sessions["s1"]._recent = bytearray("old line\n\x1b[2m· Pondering… (3s)\x1b[0m\n❯ ".encode())
+res = api._execute_sfctl("peek", {"sid": "s1", "raw": True})
+check("--raw: the screen itself, spinner and input box included, without colour codes",
+      "· Pondering… (3s)" in res["details"]["text"] and "\x1b" not in res["details"]["text"], res["details"]["text"])
+api.screen["s1"] = ""
+res = api._execute_sfctl("peek", {"sid": "s1"})
+check("nothing running: no status line", "[ShellBot]" not in res["details"]["text"] and not res["details"].get("running"))
+
 print("a new conversation is ready")
 # Measured live: a delegate to a role with no open tab opened it, then waited 45 s
 # for an empty `❯` line that a new Claude Code conversation never shows.

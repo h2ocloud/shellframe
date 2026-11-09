@@ -108,6 +108,34 @@ def composer_state(screen_ansi: str):
     return "suggestion", text
 
 
+# The line that says a turn is running, just above the input box: "esc to interrupt", or
+# (newer Claude Code) the spinner's running clock "· Undulating… (12m 53s · ↓ 1.7k tokens)".
+# Same rule as agent_status._screen_signals["actively_working"].
+_RUNNING_CLOCK = re.compile(r"^\s*\S\s+[A-Z][^\n…]{0,40}…\s*\((?:\d+h\s*)?(?:\d+m\s*)?\d+s\b")
+
+
+def status_line(screen: str) -> str:
+    """The running-turn line near the bottom of a screen (plain or with colours), or ''."""
+    for line in reversed(_CSI.sub("", screen or "").splitlines()[-12:]):
+        if _RUNNING_CLOCK.match(line) or "esc to interrupt" in line:
+            return line.strip()
+    return ""
+
+
+def screen_text(api, sid: str, lines: int = 60) -> str:
+    """What the tab's screen shows, as plain text (tmux), for `sfctl peek --raw`."""
+    s = api.sessions.get(sid)
+    name = getattr(s, "_tmux_name", None) if s else None
+    if not name:
+        return _CSI.sub("", bytes(getattr(s, "_recent", b"") or b"").decode("utf-8", "replace")) if s else ""
+    try:
+        r = subprocess.run(["tmux", "capture-pane", "-p", "-J", "-t", name, "-S", f"-{max(lines, 40)}"],
+                           capture_output=True, text=True, timeout=3)
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def capture(api, sid: str) -> str:
     """The tab's screen with colours (tmux), or '' when it cannot be read."""
     s = api.sessions.get(sid)
