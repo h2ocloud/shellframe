@@ -30,6 +30,8 @@ HERE = Path(__file__).resolve().parent
 sys.modules["webview"] = MagicMock()
 sys.modules["bridge_telegram"] = MagicMock()
 sys.path.insert(0, str(HERE))
+import sf_log  # noqa: E402
+sf_log.DEBUG_LOG = str(Path(tempfile.mkdtemp(prefix="sf-log-")) / "shellframe_debug.log")  # fake tabs stay out of the real log
 
 import main  # noqa: E402
 from main import Api  # noqa: E402

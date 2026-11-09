@@ -14,6 +14,7 @@ ime-dup 足跡都沒留，表示那條路徑根本沒經過它（write_input 在
 跑法：.venv/bin/python tests_ime_backstop.py
 """
 import sys
+import tempfile
 import time
 import types
 from pathlib import Path
@@ -22,6 +23,8 @@ from unittest.mock import MagicMock
 sys.modules['webview'] = MagicMock()
 sys.modules['bridge_telegram'] = MagicMock()
 sys.path.insert(0, str(Path(__file__).parent))
+import sf_log  # noqa: E402
+sf_log.DEBUG_LOG = str(Path(tempfile.mkdtemp(prefix="sf-log-")) / "shellframe_debug.log")  # fake tabs stay out of the real log
 
 from main import Api  # noqa: E402
 

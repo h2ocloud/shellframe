@@ -37,6 +37,8 @@ bt = MagicMock()
 bt.load_user_instructions.return_value = ""
 sys.modules["bridge_telegram"] = bt
 sys.path.insert(0, str(HERE))
+import sf_log  # noqa: E402
+sf_log.DEBUG_LOG = str(Path(tempfile.mkdtemp(prefix="sf-log-")) / "shellframe_debug.log")  # fake tabs stay out of the real log
 
 import agent_link  # noqa: E402
 agent_link.STATE_DIR = TMP / "state"
