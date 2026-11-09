@@ -265,6 +265,7 @@ Needs `experimental_bots`. A **bot** is a roster role with a `bot` block: a face
 ```bash
 sfctl bots                          # ★ primary, awake (which tab: 第 N 個分頁, and its sid), asleep, external
 sfctl bots-save 研究 '{"memory": true, "avatar": {"shape": "drop", "color": "blue"}}'   # make a role a bot (ask the user first); fields left out keep their value
+sfctl tg-send "第 1 到 3 項完成"        # primary bot only: tell the user's phone (20/h; not in quiet hours)
 sfctl a2a-send 研究 "…"             # a sleeping bot is woken: new tab, its brief, then your message
 ```
 

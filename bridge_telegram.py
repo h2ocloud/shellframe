@@ -55,6 +55,7 @@ import pyte
 
 from bridge_base import BridgeBase, BridgeConfigBase
 import bridge_delivery
+import bridge_home   # the primary bot's place here (routing, decisions, pairing)
 
 try:
     import board  # shared task-board store (experimental)
@@ -1515,7 +1516,8 @@ class TelegramBridge(BridgeBase):
     def get_active_sid(self, user_id: int) -> str:
         """Get the active session for a user. Defaults to UI-selected or first slot."""
         self._prune_stale_slots()
-        sid = self._user_active.get(user_id)
+        # Your own pick while its tab is open, else the primary bot (also when that tab closed).
+        sid = next((x for x in (self._user_active.get(user_id), bridge_home.primary_slot(self)) if x in self.slots), "")
         if sid and sid in self.slots:
             return sid
         default = getattr(self, '_default_active_sid', None)
@@ -1610,6 +1612,7 @@ class TelegramBridge(BridgeBase):
                 })
         # Generic ops after the session list
         commands.extend([
+            {"command": "home", "description": "⭐ Back to the primary bot"},
             {"command": "fetch", "description": "Fetch latest AI reply"},
             {"command": "usage", "description": "Current tab AI usage (水位)"},
             {"command": "list", "description": "List sessions + bridge state"},
@@ -2825,6 +2828,8 @@ class TelegramBridge(BridgeBase):
         sig_state, sig_reason, kept = self._detect_signal_in_lines(new_lines)
         if sig_state and sig_state != getattr(slot, "last_signal", ""):
             slot.last_signal = sig_state
+            if sig_state == "RED" and not slot.has_user_msg:   # not a Telegram turn: push it ourselves
+                bridge_home.push_decision(self, slot, sig_reason)
             _blog(f"[signal] {slot.sid} state={sig_state} reason={sig_reason!r}\n")
             # Surface to local HTTP API clients (e.g. OpenClaw) so they can poll
             # GET /events and respond. No-op when the API server is disabled.
@@ -3326,7 +3331,7 @@ class TelegramBridge(BridgeBase):
         for uid, active_sid in list(self._user_active.items()):
             if active_sid == sid and uid in self._user_chat:
                 chats.add(self._user_chat[uid])
-        if sid == (self._slot_order[0] if self._slot_order else ""):
+        if sid == bridge_home.home_slot(self):
             for uid, chat_id in list(self._user_chat.items()):
                 if uid not in self._user_active:
                     chats.add(chat_id)
@@ -5871,7 +5876,9 @@ class TelegramBridge(BridgeBase):
                 _blog("  media-only message: all downloads failed, nothing forwarded\n")
             return
 
-        # Whitelist check
+        # Whitelist check (a live pairing code binds its sender first)
+        if bridge_home.try_pair(self, user_id, chat_id, text):
+            return
         if self.config.allowed_users and user_id not in self.config.allowed_users:
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
@@ -5900,7 +5907,7 @@ class TelegramBridge(BridgeBase):
         if text and text.startswith("/") and not file_paths and not escaped_slash:
             cmd = text.split()[0][1:].split("@")[0].lower()
             # Bridge-own commands
-            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜', 'delay', 'link', 'relaunch', 'group', 'groups') or cmd.isdigit():
+            if cmd in ('list', 'status', 'pause', 'resume', 'start', 'help', 'reload', 'close', 'new', 'restart', 'update', 'update_now', 'fetch', 'usage', '水位', 'model', 'effort', '推理', 'rename', '改名', 'break', 'stop', 'esc', 'interrupt', '中斷', '打斷', 'voice', '語音', 'quiet', '安靜', 'delay', 'link', 'relaunch', 'group', 'groups', 'home') or cmd.isdigit():
                 # Instant visual ACK — react with 👀 so user sees the bot
                 # received the command even before any sendMessage goes out.
                 # Non-blocking: reaction failures don't block command dispatch.
@@ -5924,6 +5931,8 @@ class TelegramBridge(BridgeBase):
             return
 
         # ── Forward message to active session ──
+        if bridge_home.wake_for(self, user_id, chat_id, update):
+            return
         active_sid = self.get_active_sid(user_id)
         # Ensure user is tracked in _user_active (so flush/typing can find them)
         # ——但重啟後使用者原本選的分頁還沒註冊（pending）時不要把「第一格」
@@ -6025,7 +6034,7 @@ class TelegramBridge(BridgeBase):
         else:
             payload = forwarded
 
-        if not init_prompt and master_turn_preamble_enabled() and is_master_label(slot.label):
+        if not init_prompt and master_turn_preamble_enabled() and is_master_label(slot.label) and not bridge_home.is_bot_slot(self, slot):
             master_preamble = wrap_master_turn_input(forwarded)
             track.append(master_preamble)
             if wrap_with_preamble and payload != forwarded:
@@ -6571,6 +6580,8 @@ class TelegramBridge(BridgeBase):
 
     def _handle_command(self, cmd: str, user_id: int, chat_id: int, text: str = ""):
         """Handle slash commands. `text` is the full message text (for argv parsing)."""
+        if bridge_home.handle_command(self, cmd, user_id, chat_id):   # /home, /0
+            return
 
         if cmd in ("list", "status"):
             # /status is folded into /list — show bridge state header + sessions.

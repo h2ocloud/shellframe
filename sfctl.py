@@ -723,6 +723,9 @@ def main():
     p_res.add_argument("--as", dest="as_role", default="", help=as_help)
     p_res.add_argument("--now", action="store_true", help=now_help)
     sub.add_parser("bots", help="List bots: who is awake, sleeping or external (experimental_bots)")
+    p_tgs = sub.add_parser("tg-send", help="The primary bot tells the user's phone (a milestone, a result); "
+                                           "only from the primary bot's tab, 20 an hour, not during quiet hours")
+    p_tgs.add_argument("text", help="What to send")
     p_bsave = sub.add_parser("bots-save", help="Make a roster role a bot, or change one (the bot editor's save; "
                                                "fields you leave out keep their value)")
     p_bsave.add_argument("role", help="Roster role (created if it does not exist)")
@@ -966,6 +969,8 @@ def main():
         _print_result(_rpc("a2a_log", {}, timeout=15))
     elif args.cmd == "bots":
         _print_result(_rpc("bots_list", {}, timeout=15))
+    elif args.cmd == "tg-send":
+        _print_result(_rpc("tg_send", {"text": args.text, "from_sid": os.environ.get("SF_SID", "")}, timeout=20))
     elif args.cmd == "bots-save":
         _print_result(_rpc("bots_save", {"role": args.role, "data": args.data}, timeout=15))
     elif args.cmd == "route":

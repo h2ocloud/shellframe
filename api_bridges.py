@@ -125,6 +125,7 @@ class BridgesApiMixin:
             on_input_blocked=self.startup_dialog_blocking,
             on_answer_dialog=self.answer_startup_trust,
         )
+        self.bridge.home_api = self      # bridge_home: the primary bot, pairing, decisions
 
         # Register existing sessions (skip bridge-disabled ones)
         for sid, s in self.sessions.items():

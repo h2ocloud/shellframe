@@ -4729,6 +4729,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     on_input_blocked=self.startup_dialog_blocking,
                     on_answer_dialog=self.answer_startup_trust,
                 )
+                self.bridge.home_api = self          # bridge_home
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
                 for sid, s in self.sessions.items():

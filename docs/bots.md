@@ -132,6 +132,25 @@ The longest name wins; a Latin name must not run on into a word (`#sf devtools` 
 not `#sf dev`), while Chinese, which has no spaces, may (`#主控收到`). A `#` inside
 a URL or a word is not a mention.
 
+## The primary bot on Telegram
+
+One shared Telegram bot (the existing bridge). The 📱 on the primary bot's card
+opens its panel: connect (paste the token BotFather gave you), bind a phone (scan a
+one-time QR code; `/start <code>` binds that person), send a test, and the switches.
+
+- **Where a message lands.** Your own `/N` pick while that tab is open; otherwise the
+  primary bot (also when your tab was closed); `/home` or `/0` goes back to it. If it
+  sleeps, it is woken and your message goes in once its tab is ready. Off in the
+  panel: the old fallbacks (the desktop's tab, then the first).
+- **Decisions.** When a bot prints `[[SF:RED]]` in a turn that did not start from
+  Telegram (an A2A result, the desktop), its question goes to every bound phone,
+  headed by its name; numbered options become buttons that answer that bot.
+- **`sfctl tg-send "…"`.** The primary bot's milestones and results, from its own tab
+  only, at most 20 an hour.
+- **Quiet hours** (off by default): only decisions are sent then.
+- **Allowlist.** Empty means anyone who finds the bot can drive the computer; the
+  panel says so in red. Binding the first phone locks the list to that person.
+
 ## External bots (e.g. a cloud bot with a webhook routine)
 
 Some bots live outside ShellFrame. A typical cloud bot service offers no API to

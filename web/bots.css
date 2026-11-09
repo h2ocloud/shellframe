@@ -282,3 +282,18 @@ body:not(.sfb-on) #sfb-convo { display: none; }
 .sfb-botbox b { color: #c0caf5; font-size: 12px; }
 .sfb-botbox .sfb-row { margin-top: 6px; }
 .sfb-chip { display: inline-flex; align-items: center; font-size: 11px; color: #e0af68; padding: 0 6px; }
+
+/* ── the primary bot on Telegram ── */
+.sfb-card { position: relative; }
+.sfb-card-tg { position: absolute; top: 4px; right: 4px; border: none; background: none; cursor: pointer;
+  font-size: 13px; opacity: .55; padding: 2px; line-height: 1; }
+.sfb-card-tg:hover { opacity: 1; }
+.sfb-tg .sfb-tg-qr { display: flex; gap: 12px; align-items: center; margin: 8px 0; }
+.sfb-tg .sfb-tg-qr svg { width: 120px; height: 120px; background: #fff; padding: 6px; border-radius: 6px; flex: none; }
+.sfb-tg .sfb-tg-qr a { color: #7aa2f7; word-break: break-all; font-size: 11px; }
+.sfb-tg .sfb-warn { color: #f7768e; font-size: 12px; line-height: 1.5; margin: 6px 0; }
+.sfb-tg .sfb-tg-opts { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #a9b1d6; }
+.sfb-tg .sfb-tg-opts input[type=time] { background: #24283b; border: 1px solid #3b4261; border-radius: 4px; color: #c0caf5;
+  padding: 1px 4px; font-size: 11px; }
+.sfb-tg input[type=password] { background: #24283b; border: 1px solid #3b4261; border-radius: 4px; color: #c0caf5; padding: 4px 6px; }
+.sfb-tg .sfb-chip a { color: #f7768e; text-decoration: none; }

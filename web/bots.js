@@ -497,17 +497,19 @@
       : (sid ? previewOf(sid) : t('asleep · click to wake', '休息中 · 點一下叫醒'));
     const active = sid && host() && host().active() === sid;
     const how = ext ? t('talk to it', '和它往來') : t('open its conversation', '打開它的對話');
+    const tg = ext ? '' : `<button class="sfb-card-tg" data-sfb="tg" title="${esc(t('Telegram for the primary bot', '主要 Bot 的 Telegram'))}">📱</button>`;
     el.innerHTML = `<div class="sfb-card${active ? ' active' : ''}" data-sfb="primary" ${dropLabel} ` +
       `title="${esc(t(`Click: ${how}. Drag into the list below: no longer primary`, `點一下：${how}。拖到下面的清單：不再當主要 Bot`))}">` +
       `<span class="sfb-avatar busy-dot ${cls}" style="--sfb-size:var(--sfb-size-card);cursor:pointer">` +
       `${faceSvg(e.bot.avatar, { seed: role, primary: true, asleep: !sid && !ext, writing: sid && isClosing(sid) })}</span>` +
-      `<div class="sfb-card-name">${esc(botName(role))}</div><div class="sfb-card-sub">${esc(sub)}</div></div>`;
+      `<div class="sfb-card-name">${esc(botName(role))}</div><div class="sfb-card-sub">${esc(sub)}</div>${tg}</div>`;
   }
 
   function onPrimaryClick(e) {
     const card = e.target.closest('[data-sfb]');
     if (!card) return;
     if (card.dataset.sfb === 'new-primary') { openEditor(null, { primary: true }); return; }
+    if (card.dataset.sfb === 'tg') { e.stopPropagation(); openTelegram(); return; }
     const role = st.primary;
     if (!role) return;
     if (isExternal(role)) { openExternal(role); return; }
@@ -924,6 +926,119 @@
     });
   }
 
+  // ── the primary bot on Telegram: connect, bind a phone, the switches ─────
+  async function openTelegram() {
+    const a = api();
+    if (!a || !a.tg_home_status) return;
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open sfb-modal sfb-tg';
+    ov.style.zIndex = '450';
+    const e = rosterEntry(st.primary) || {};
+    ov.innerHTML = `<div class="modal" style="width:500px">
+      <h2><span class="sfb-avatar">${faceSvg(e.bot && e.bot.avatar, { seed: st.primary, primary: true })}</span>${esc(botName(st.primary) || t('Primary bot', '主要 Bot'))} · Telegram</h2>
+      <p class="sfb-note" id="sfb-tg-state"></p>
+      <div id="sfb-tg-token" hidden>
+        <p class="sfb-note"><b>1.</b> ${t('In Telegram, open @BotFather, send /newbot and follow it; at the end it gives you a token. Paste it here.',
+          '在 Telegram 找 @BotFather，傳 /newbot 照著做，最後會拿到一串 token，貼在這裡。')}</p>
+        <div class="sfb-row"><input id="sfb-tg-tok" type="password" autocomplete="off" placeholder="123456:ABC-…" style="flex:1">
+          <button class="btn btn-primary" data-act="connect">${t('Connect', '連線')}</button></div>
+      </div>
+      <div id="sfb-tg-bind" hidden>
+        <p class="sfb-note"><b>2.</b> ${t('Bind your phone: scan the code, Telegram opens the bot, press Start.', '綁定手機：掃描 QR，Telegram 會打開 bot，按「開始」就好。')}</p>
+        <div class="sfb-row"><button class="btn btn-ghost" data-act="pair">${t('Bind a phone', '綁定手機')}</button>
+          <button class="btn btn-ghost" data-act="test">${t('3. Send a test message', '3. 送測試訊息')}</button></div>
+        <div id="sfb-tg-pair"></div>
+        <div id="sfb-tg-users"></div>
+      </div>
+      <div class="sfb-tg-opts">
+        <label><input type="checkbox" id="sfb-tg-home"> ${t('Messages from the phone go to ⭐ the primary bot (/home goes back to it)', '手機傳來的訊息預設給 ⭐ 主要 Bot（/home 隨時回到它）')}</label>
+        <label><input type="checkbox" id="sfb-tg-quiet"> ${t('Quiet hours', '勿擾時段')}
+          <input type="time" id="sfb-tg-from"> – <input type="time" id="sfb-tg-to">
+          <span class="sfb-note">${t('only "needs your decision" is sent then', '期間只推「要你決定」')}</span></label>
+      </div>
+      <div class="sfb-row" style="justify-content:flex-end"><button class="btn btn-ghost" data-act="close">${t('Close', '關閉')}</button></div>
+      <div class="sfb-msg" id="sfb-tg-msg"></div></div>`;
+    document.body.appendChild(ov);
+    const $ = id => ov.querySelector('#' + id);
+    const say = (text, ok) => { const m = $('sfb-tg-msg'); m.style.color = ok ? '#9ece6a' : '#f7768e'; m.textContent = text || ''; };
+    let s = {}, sig = '';
+    function paint() {
+      const conn = !!s.connected;
+      $('sfb-tg-state').innerHTML = conn ? `✅ ${t('Connected', '已連線')} <b>@${esc(s.bot)}</b>`
+        : (s.configured ? `⚠ ${t('Set up but not connected', '已設定，但沒有連上')}` : t('Not set up yet', '還沒設定'));
+      $('sfb-tg-token').hidden = conn;
+      $('sfb-tg-bind').hidden = !conn;
+      const p = s.pairing;
+      const pair = $('sfb-tg-pair');
+      if (p && p.link) {
+        if (pair.dataset.code !== p.code) {
+          pair.dataset.code = p.code;
+          let qr = '';
+          try { const q = qrcode(0, 'M'); q.addData(p.link); q.make(); qr = q.createSvgTag({ cellSize: 3, margin: 0, scalable: true }); } catch (_) {}
+          pair.innerHTML = `<div class="sfb-tg-qr">${qr}<div><a href="#" data-act="copy">${esc(p.link)}</a>` +
+            `<p class="sfb-note">${t('Works once, for 10 minutes.', '只能用一次，10 分鐘內有效。')}</p></div></div>`;
+        }
+      } else { pair.innerHTML = ''; pair.dataset.code = ''; }
+      const users = s.users || [];
+      $('sfb-tg-users').innerHTML = s.allow_all
+        ? `<p class="sfb-warn">${t('The allowlist is empty: anyone who finds this bot can drive this computer. After the first phone is bound, only bound people can.',
+            '允許名單是空的：任何找到這個 bot 的人都能操作這台電腦。第一次綁定之後，就只剩綁定的人可以用。')}</p>`
+        : `<p class="sfb-note">${t('Bound', '已綁定')}${t(': ', '：')}${users.map(u =>
+            `<span class="sfb-chip">${esc(u)} <a href="#" data-act="unbind" data-id="${esc(u)}" title="${esc(t('Remove', '移除'))}">×</a></span>`).join(' ')}</p>`;
+      if (document.activeElement && ov.contains(document.activeElement) && document.activeElement.type === 'time') return;
+      $('sfb-tg-home').checked = s.default_primary !== false;
+      const q = s.quiet || {};
+      $('sfb-tg-quiet').checked = !!q.on;
+      $('sfb-tg-from').value = q.from || '23:00';
+      $('sfb-tg-to').value = q.to || '08:00';
+    }
+    async function load() {
+      try {
+        const next = JSON.parse(await a.tg_home_status());
+        const k = JSON.stringify(next);
+        if (k !== sig) { sig = k; s = next; paint(); }
+      } catch (_) {}
+    }
+    const save = async () => {
+      try {
+        s = JSON.parse(await a.tg_home_set(JSON.stringify({ default_primary: $('sfb-tg-home').checked,
+          quiet: { on: $('sfb-tg-quiet').checked, from: $('sfb-tg-from').value, to: $('sfb-tg-to').value } })));
+        sig = JSON.stringify(s);
+        say(t('Saved', '已儲存'), true);
+      } catch (err) { say(String(err)); }
+    };
+    ov.addEventListener('change', ev => { if (ev.target.closest('.sfb-tg-opts')) save(); });
+    ov.addEventListener('click', async ev => {
+      if (ev.target === ov) { ov.remove(); return; }
+      const b = ev.target.closest('[data-act]');
+      if (!b) return;
+      ev.preventDefault();
+      const act = b.dataset.act;
+      try {
+        if (act === 'close') { ov.remove(); return; }
+        if (act === 'copy') { await navigator.clipboard.writeText(b.textContent); say(t('Link copied', '已複製連結'), true); return; }
+        if (act === 'connect') {
+          const tok = $('sfb-tg-tok').value.trim();
+          if (!tok) return;
+          say(t('Connecting…', '連線中…'), true);
+          const r = JSON.parse(await a.start_bridge(tok, JSON.stringify(s.users || []), true, ''));
+          say(r.success ? t('Connected', '已連線') : (r.message || t('Could not connect: check the token', '連不上，請確認 token')), r.success);
+        } else if (act === 'pair') {
+          const r = JSON.parse(await a.tg_pair_start());
+          if (!r.success) say(r.message);
+        } else if (act === 'unbind') {
+          await a.tg_unbind(b.dataset.id);
+        } else if (act === 'test') {
+          const r = JSON.parse(await a.tg_test());
+          say(r.message, r.success);
+        }
+      } catch (err) { say(String(err)); }
+      load();
+    });
+    await load();
+    const timer = setInterval(() => { if (!document.body.contains(ov)) clearInterval(timer); else load(); }, 2000);
+  }
+
   // ── settings toggle (injected next to the other experimental switches) ─
   function injectSettings() {
     if (document.getElementById('setting-experimental-bots')) return;
@@ -1163,7 +1278,7 @@
 
   window.SFBots = {
     face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
-    tabMentions,
+    tabMentions, openTelegram,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,

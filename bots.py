@@ -377,6 +377,9 @@ PRIMARY_PLAYBOOK = {
         "(say \"the 9th tab\"). A sid is only something you pass to sfctl.",
         "Handing work out: one owner per task (the bot whose job fits best); state the goal, the scope and "
         "what done looks like. Then follow up, check the result and report to the user.",
+        "The user's phone: when a milestone is done or a result is checked, run sfctl tg-send \"…\" (a sentence "
+        "or two). When they must decide, print [[SF:RED]] with numbered options instead: it reaches the phone as "
+        "buttons.",
         "Ask the user before starting a new bot or doing anything others can see "
         "(sending mail, publishing, paying, deleting data).",
     ),
@@ -393,6 +396,7 @@ PRIMARY_PLAYBOOK = {
         "跟使用者講話時，分頁和 bot 一律用名稱，寫成 #名稱（例如 #稽核執行-公司），不要寫 s314 這種代碼；"
         "#名稱 在畫面上按住 ⌘ 點一下就會打開那個分頁，sfctl state 給的 #N 就說「第 N 個分頁」。sid 只用在你自己下的 sfctl 指令。",
         "派工：一件事只交給一個 bot（執掌最合的那個）；交辦時寫清楚目標、範圍、完成標準。派出去之後追結果、驗收，再回報使用者。",
+        "使用者的手機：里程碑完成、驗收結果出來時，執行 sfctl tg-send \"…\"（一兩句話）。要他做決定時改用 [[SF:RED]] 加編號選項，手機上會變成按鈕。",
         "要開新的 bot、或做外部看得到的事（寄信、發布、付款、刪資料）之前，先問使用者。",
     ),
 }

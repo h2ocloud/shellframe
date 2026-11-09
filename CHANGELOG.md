@@ -197,6 +197,28 @@
   點擊就切過去；直接點仍然是選取文字。名稱取最長的；英數結尾的名稱不能直接接英數字，中文可以；
   網址裡的 `#` 不算。由 tests_bots_sidebar_tools.py 守著，包含在真的 xterm 上按 ⌘ 點擊。
 
+- **The primary bot on Telegram: the phone talks to it by default, decisions arrive as buttons, a phone binds with a QR code (bots on).**
+  A message from someone who has not picked a tab now goes to the primary bot, woken if
+  it sleeps (it used to land on the desktop's selected tab or the first one); `/home` or
+  `/0` goes back to it. A bot that needs a decision in a turn not started from Telegram
+  (an A2A result, the desktop) now reaches every bound phone, headed by its name, with
+  its numbered options as buttons; before, nothing was sent. The primary bot reports
+  milestones with `sfctl tg-send`. The 📱 on its card opens one panel: connect with the
+  token from BotFather, bind a phone by scanning a one-time code (`/start <code>`, no
+  user ids to type), send a test, quiet hours (off by default; then only decisions go
+  out), and the switch for the default. An empty allowlist, which lets anyone in, is
+  shown in red and is locked to the first phone that binds. Covered by
+  tests_bridge_home.py and tests_tg_home_ui.py.
+
+  **主要 Bot 上 Telegram：手機預設跟它說話，要你決定的事變成按鈕，掃 QR 就能綁定手機（開 bots 時）。**
+  沒有自己選分頁的人傳來的訊息，現在會送給主要 Bot，它在休息就先叫醒（以前會落到桌面選中的分頁或第一個）；
+  `/home` 或 `/0` 回到它。bot 在不是從 Telegram 開始的回合需要你決定時（A2A 回報、桌面），現在會推到每支
+  綁定的手機，開頭標它的名字，編號選項變成按鈕；以前什麼都不會送。主要 Bot 用 `sfctl tg-send` 回報里程碑。
+  卡片上的 📱 打開同一個面板：貼 BotFather 給的 token 連線、掃一次性 QR 綁定手機（`/start <碼>`，不用
+  輸入 user id）、送測試訊息、勿擾時段（預設關，開了只推「要你決定」）、預設對象的開關。允許名單是空的
+  （任何人都能用）時以紅字提醒，第一支綁定的手機會把名單鎖成只有它。由 tests_bridge_home.py、
+  tests_tg_home_ui.py 守著。
+
 - **A hand-off nobody reports gets one reminder, then its requester is told.**
   Whether `sfctl a2a-result` was run used to depend on the model remembering it. Now a
   hand-off typed into a tab is followed up once: Claude Code's Stop hook (a second,

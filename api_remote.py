@@ -18,6 +18,7 @@ from pathlib import Path
 import agent_cursor
 import agent_grok
 import a2a_host
+import bridge_home
 import sf_lang
 import tab_delivery
 import tmux_sessions
@@ -1283,6 +1284,8 @@ class RemoteApiMixin:
             return self._bots_list_for_sfctl()
         elif cmd == "bots_save":
             return self._bots_save_for_sfctl(args)
+        elif cmd == "tg_send":
+            return bridge_home.tg_send(self, str(args.get("text") or ""), str(args.get("from_sid") or ""))
 
         else:
             return {"success": False, "message": f"Unknown command: {cmd}"}

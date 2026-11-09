@@ -17,6 +17,7 @@ import threading
 import time
 
 import bots
+import bridge_home
 import sf_lang
 import sf_notify
 from api_host import main
@@ -46,6 +47,19 @@ class BotsApiMixin:
             return (_cfg().get("settings", {}) or {}).get("experimental_bots", False) is True
         except Exception:
             return False
+
+    def _bots_primary_tab(self, cfg: dict = None):
+        """(role, sid, label) of the primary bot, sid '' while it sleeps; ('', '', '')
+        when bots are off, there is none, or it lives outside ShellBot."""
+        if not self._bots_enabled():
+            return "", "", ""
+        cfg = cfg or _cfg()
+        raw = cfg.get("agent_roster") or {}
+        role = bots.primary_role(raw)
+        if not role or bots.is_external(raw.get(role)):
+            return "", "", ""
+        sid = next((s for s in list(self.sessions) if self._bots_role_of(s, cfg) == role), "")
+        return role, sid, bots.label_of(role, raw[role])
 
     def _bots_role_of(self, sid: str, cfg: dict = None) -> str:
         """The bot a tab belongs to: an explicit binding, else a tab whose label is a bot's label."""
@@ -321,6 +335,86 @@ class BotsApiMixin:
         merged = {k: prev[k] for k in ("avatar", "skills", "memory", "primary", "external") if k in prev}
         merged.update(data)
         return json.loads(self.bots_save(role, json.dumps(merged, ensure_ascii=False)))
+
+    # ── the primary bot on Telegram (bridge_home does the Telegram side) ─────
+    def _tg_bind_user(self, user_id: int):
+        """Add a paired person to the allowlist. Binding into an empty list (which
+        let anyone in) leaves only that person on it."""
+        def _mut(cfg):
+            b = cfg.setdefault("bridge", {})
+            users = [int(u) for u in (b.get("allowed_users") or [])]
+            if user_id not in users:
+                users.append(user_id)
+            b["allowed_users"] = users
+        _update(_mut)
+        if self.bridge and user_id not in (self.bridge.config.allowed_users or []):
+            self.bridge.config.allowed_users = list(self.bridge.config.allowed_users or []) + [user_id]
+
+    def tg_home_status(self) -> str:
+        """For the primary bot's Telegram panel: connection, who is bound, the switches."""
+        cfg = _cfg()
+        b = self.bridge
+        users = [int(u) for u in ((cfg.get("bridge") or {}).get("allowed_users") or [])]
+        bot = (getattr(b, "bot_info", None) or {}).get("username", "") if b else ""
+        pair = bridge_home.pairing()
+        if pair and bot:
+            pair["link"] = f"https://t.me/{bot}?start={pair['code']}"
+            pair["expires_in"] = max(0, int(pair.pop("until") - time.time()))
+        return json.dumps({"configured": bool((cfg.get("bridge") or {}).get("bot_token")),
+                           "connected": bool(b and getattr(b, "connected", False)), "bot": bot,
+                           "users": users, "allow_all": not users, "primary": self._bots_primary_tab(cfg)[2],
+                           "pairing": pair or None, **bridge_home.settings(self)}, ensure_ascii=False)
+
+    def tg_home_set(self, data_json: str) -> str:
+        """{default_primary: bool, quiet: {on, from, to}}: only what is given changes."""
+        try:
+            data = json.loads(data_json or "{}")
+        except ValueError:
+            return json.dumps({"success": False, "message": _("Bad data", "資料格式錯誤")})
+
+        def _mut(cfg):
+            cur = cfg.setdefault("settings", {}).setdefault("tg_home", {})
+            if "default_primary" in data:
+                cur["default_primary"] = bool(data["default_primary"])
+            if isinstance(data.get("quiet"), dict):
+                q = dict(cur.get("quiet") or {})
+                for k in ("on", "from", "to"):
+                    if k in data["quiet"]:
+                        q[k] = bool(data["quiet"][k]) if k == "on" else str(data["quiet"][k])[:5]
+                cur["quiet"] = q
+        _update(_mut)
+        return self.tg_home_status()
+
+    def tg_pair_start(self) -> str:
+        if not (self.bridge and getattr(self.bridge, "connected", False)):
+            return json.dumps({"success": False, "message": _("Connect the Telegram bot first", "請先連上 Telegram bot")})
+        bridge_home.pair_start()
+        return json.dumps(dict(json.loads(self.tg_home_status()), success=True), ensure_ascii=False)
+
+    def tg_unbind(self, user_id) -> str:
+        uid = int(user_id)
+
+        def _mut(cfg):
+            b = cfg.setdefault("bridge", {})
+            b["allowed_users"] = [int(u) for u in (b.get("allowed_users") or []) if int(u) != uid]
+        _update(_mut)
+        if self.bridge:
+            self.bridge.config.allowed_users = [u for u in (self.bridge.config.allowed_users or []) if u != uid]
+        return self.tg_home_status()
+
+    def tg_test(self) -> str:
+        b = self.bridge
+        if not (b and getattr(b, "connected", False)):
+            return json.dumps({"success": False, "message": _("Telegram is not connected", "Telegram 沒有連線")})
+        label = self._bots_primary_tab()[2] or "ShellBot"
+        n = 0
+        for chat_id in bridge_home._chats(b):
+            r = bridge_home._tg(b, "sendMessage", {"chat_id": chat_id, "text": _(
+                f"👋 This is ⭐ {label}. Write here to talk to me; /home brings you back to me.",
+                f"👋 這是 ⭐ {label}。在這裡打字就是跟我說話；/home 隨時回到我這裡。")}) or {}
+            n += 1 if r.get("ok") else 0
+        return json.dumps({"success": n > 0, "message": _(f"Sent to {n} chat(s)", f"已送到 {n} 個對話")},
+                          ensure_ascii=False)
 
     def bots_delete(self, role: str) -> str:
         out = {}
