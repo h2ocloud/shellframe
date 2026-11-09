@@ -302,6 +302,26 @@ class BotsApiMixin:
                            + _(f' "{state.get("label") or name}"', f"「{state.get('label') or name}」"),
                            "details": {"role": name, "label": state.get("label")}}, ensure_ascii=False)
 
+    def _bots_save_for_sfctl(self, args: dict) -> dict:
+        """`sfctl bots-save <role> '<json>'`: the bot editor's save, for scripts and
+        agents. The editor sends the whole form; a script names only what it
+        changes, so fields left out keep their value (skills, primary, memory…)."""
+        if not self._bots_enabled():
+            return {"success": False, "message": _("Bots are experimental: turn them on in Settings first (experimental_bots)",
+                                                  "Bots 是實驗功能，請先在設定裡打開（experimental_bots）")}
+        role = str(args.get("role") or "").strip()
+        try:
+            data = json.loads(args.get("data") or "{}")
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            return {"success": False, "message": _("data must be a JSON object", "data 要是 JSON 物件")}
+        entry = (_cfg().get("agent_roster") or {}).get(role) or {}
+        prev = entry.get("bot") if isinstance(entry.get("bot"), dict) else {}
+        merged = {k: prev[k] for k in ("avatar", "skills", "memory", "primary", "external") if k in prev}
+        merged.update(data)
+        return json.loads(self.bots_save(role, json.dumps(merged, ensure_ascii=False)))
+
     def bots_delete(self, role: str) -> str:
         out = {}
 

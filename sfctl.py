@@ -723,6 +723,12 @@ def main():
     p_res.add_argument("--as", dest="as_role", default="", help=as_help)
     p_res.add_argument("--now", action="store_true", help=now_help)
     sub.add_parser("bots", help="List bots: who is awake, sleeping or external (experimental_bots)")
+    p_bsave = sub.add_parser("bots-save", help="Make a roster role a bot, or change one (the bot editor's save; "
+                                               "fields you leave out keep their value)")
+    p_bsave.add_argument("role", help="Roster role (created if it does not exist)")
+    p_bsave.add_argument("data", nargs="?", default="{}",
+                         help='JSON: {"memory": true, "avatar": {"shape": "hex", "color": "blue"}, '
+                              '"skills": [...], "responsibility": "...", "primary": false}')
     p_next = sub.add_parser("a2a-next", help="Send the next step of a handoff back to the same target")
     p_next.add_argument("id")
     p_next.add_argument("task")
@@ -960,6 +966,8 @@ def main():
         _print_result(_rpc("a2a_log", {}, timeout=15))
     elif args.cmd == "bots":
         _print_result(_rpc("bots_list", {}, timeout=15))
+    elif args.cmd == "bots-save":
+        _print_result(_rpc("bots_save", {"role": args.role, "data": args.data}, timeout=15))
     elif args.cmd == "route":
         _print_result(_rpc("route_hint", {"task": args.task, "tier": args.tier},
                            timeout=30))

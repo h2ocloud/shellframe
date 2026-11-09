@@ -362,6 +362,25 @@ api._agent_state_for_list = lambda s: getattr(api.sessions.get(s), "state", "")
 r = json.loads(api.bots_open("總管"))
 check("an external bot cannot be woken here", not r["success"])
 
+# ── 5b. sfctl bots-save: the editor's save from a script ──────────────────
+print("bots-save")
+res = api._execute_sfctl("bots_save", {"role": "Coding", "data": json.dumps({"avatar": {"shape": "hex", "color": "green"}})})
+entry = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))["agent_roster"]["Coding"]
+check("a script changes only what it names: the face changes, skills and memory stay",
+      res.get("success") and entry["bot"]["avatar"] == {"shape": "hex", "color": "green"}
+      and entry["bot"].get("skills") == ["demo-skill"] and entry["bot"].get("memory") is True, (res, entry.get("bot")))
+plain = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))["agent_roster"]
+plain["Writer"] = {"label": "Writer-CLD", "cmd": "claude", "responsibility": "docs and release notes"}
+main.CONFIG_FILE.write_text(json.dumps(dict(json.loads(main.CONFIG_FILE.read_text(encoding="utf-8")),
+                                            agent_roster=plain)), encoding="utf-8")
+res = api._execute_sfctl("bots_save", {"role": "Writer", "data": json.dumps({"memory": True})})
+w = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))["agent_roster"]["Writer"]
+check("a plain roster role becomes a bot, keeping its label, command and job",
+      res.get("success") and bots.is_bot(w) and w["bot"]["memory"] is True and w["label"] == "Writer-CLD"
+      and w["responsibility"] == "docs and release notes" and w["cmd"] == "claude", (res, w))
+check("…and gets its memory folder", bots.bot_dir("Writer").is_dir())
+check("bad data is refused", not api._execute_sfctl("bots_save", {"role": "Writer", "data": "[1]"})["success"])
+
 # ── 6. close with memory ───────────────────────────────────────────────────
 print("close")
 before = set(bots.sessions_dir("Coding").glob("*.md"))
