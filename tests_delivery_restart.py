@@ -108,7 +108,7 @@ def on_disk(path):
 def restart_with(rows, name):
     """A fresh start: earlier queues drained, the file holds `rows`."""
     wait_for(lambda: not td.pending() and not td._draining)
-    td._resumed_at = 0.0
+    td._resumed_at, td._saved = 0.0, None
     td.STATE_FILE = TMP / f"{name}.json"
     td.STATE_FILE.write_text(json.dumps(rows), encoding="utf-8")
     return td.STATE_FILE
@@ -235,6 +235,27 @@ api.busy.clear()
 check("…delivered in order", wait_for(lambda: [t for s, t in api.sent if s == "s1"] == ["first", "second"]),
       api.sent)
 check("…and the file is empty again", wait_for(lambda: on_disk(td.STATE_FILE) == []))
+
+print("a message queued after the restart, before the resume")
+# Measured: resume() runs once every tab has reattached (17:31:20, 15 s after the restart), while
+# the queue takes messages from the first seconds. One queued at 17:31:15 was written to the file,
+# then resumed as if the previous run had left it: it went in twice. Writing it had also replaced
+# whatever the previous run left in the file.
+restart_with([{"sid": "s1", "text": "from before the restart", "submit": True, "t0": time.time() - 30,
+               "from_sid": "s2", "label": "coder"}], "early")
+api = FakeApi("s1", "s2", busy=("s1",))
+td.deliver(api, "s1", "queued during the restart", from_sid="s2")
+check("the previous run's item stays on disk next to the new one",
+      sorted(r["text"] for r in on_disk(td.STATE_FILE) or []) == ["from before the restart", "queued during the restart"],
+      on_disk(td.STATE_FILE))
+check("resume takes only the previous run's item", td.resume(api) == 1)
+check("…so each waits once", sorted(p["chars"] for p in td.pending("s1"))
+      == sorted([len("from before the restart"), len("queued during the restart")]), td.pending("s1"))
+api.busy.clear()
+s1_sent = lambda: sorted(t for s, t in api.sent if s == "s1")
+check("…and each goes in exactly once", wait_for(lambda: len(s1_sent()) >= 2) and (time.sleep(0.5) or True)
+      and s1_sent() == ["from before the restart", "queued during the restart"], api.sent)
+check("…and the file is empty again", wait_for(lambda: on_disk(td.STATE_FILE) == []), on_disk(td.STATE_FILE))
 
 restart_with([], "garbage")
 td.STATE_FILE.write_text("{not json", encoding="utf-8")

@@ -157,7 +157,8 @@
   what is left of its time, goes in only once the tabs' states have settled (right after
   a restart every tab reads "not busy"), and one that cannot be delivered (its tab did
   not come back, or it was being typed in when the app went down) is reported to the
-  sender.
+  sender. Text sent while the app is still reattaching its tabs goes in once, and does not
+  push what the previous run left waiting out of the file.
   Covered by tests_tab_delivery.py and tests_delivery_restart.py.
 
   **送給分頁的字會等分頁：`send`、A2A、`delegate` 在對方忙時排隊，重啟也不會掉。** 以前
@@ -167,7 +168,8 @@
   使用者的草稿；`sfctl peek`、`sfctl state` 會標出是哪一種。等了 30 分鐘還送不進去就放棄並通知送件方。
   佇列存在磁碟（`~/.config/shellframe/delivery_queue.json`）：重啟後每則只等原本剩下的時間，並等各分頁的
   狀態穩定後才送（剛重啟時每個分頁都會被看成「不忙」）；
-  送不到的（分頁沒回來、或送到一半 App 關了）一定通知送件方。由 tests_tab_delivery.py、
+  送不到的（分頁沒回來、或送到一半 App 關了）一定通知送件方。App 還在接回分頁時送來的訊息只送一次，
+  也不會把上一輪留下、還在等的訊息從檔案裡擠掉。由 tests_tab_delivery.py、
   tests_delivery_restart.py 守著。
 
 - **Sidebar: search, idle only, newest first, and how long ago each tab answered (bots on).**

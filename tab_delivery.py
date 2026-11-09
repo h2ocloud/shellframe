@@ -194,10 +194,11 @@ def _reason_text(reason: str, lang: str = None) -> str:
 
 # ── the queue ──────────────────────────────────────────────────────────────
 _lock = threading.Lock()
-_save_lock = threading.Lock()
+_save_lock = threading.RLock()  # resume() holds it while it queues the old items (_save re-enters)
 _queues = {}                 # sid -> deque of items
 _draining = set()
 _resumed_at = 0.0            # when resume() loaded the queue after a restart
+_saved = None                # what the previous run left in STATE_FILE (see _read_saved)
 ON_DELIVERED = []            # fn(sid, what, at) once an item is typed in (a2a_host: hand-offs)
 _KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait")
 
@@ -241,14 +242,37 @@ def _delivered(sid: str, what: str, at: float):
             pass
 
 
+def _read_saved() -> list:
+    """What the previous run left in STATE_FILE, read once, before this run first
+    writes the file. resume() runs only once every tab has reattached (measured 15 s
+    after a restart) while the queue takes messages from the first seconds; reading
+    the file then found this run's items in it and not the previous run's. Measured:
+    a message queued at 17:31:15 was resumed at 17:31:20 as an old one and went in
+    twice. Caller holds _save_lock."""
+    global _saved
+    if _saved is None:
+        try:
+            rows = json.loads(Path(STATE_FILE).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            rows = []
+        except Exception as e:
+            _dlog("deliver", f"queue file unreadable, nothing resumed: {e!r}")
+            rows = []
+        _saved = [r for r in (rows if isinstance(rows, list) else [])
+                  if isinstance(r, dict) and r.get("sid") and isinstance(r.get("text"), str)]
+    return _saved
+
+
 def _save():
     """Write the whole queue to STATE_FILE (atomically, owner-only: it holds
-    message text). Called after every change, so a restart finds it current."""
+    message text). Called after every change, so a restart finds it current.
+    Until resume() takes them, the previous run's items are written back too."""
     if not STATE_FILE:
         return
     with _save_lock:
+        old = [] if _resumed_at else _read_saved()
         with _lock:
-            rows = [{k: it[k] for k in _KEEP if k in it} for q in _queues.values() for it in q]
+            rows = old + [{k: it[k] for k in _KEEP if k in it} for q in _queues.values() for it in q]
         path = Path(STATE_FILE)
         tmp = path.with_name(path.name + ".tmp")
         try:
@@ -278,28 +302,23 @@ def _enqueue(api, items) -> int:
 
 
 def resume(api) -> int:
-    """After a restart: load what was waiting and carry on. Each item keeps its
-    original start time, so it waits only what is left of its QUEUE_MAX_WAIT,
-    and its tab gets RESTORE_GRACE to come back. Only the first call loads."""
-    global _resumed_at
+    """After a restart: carry on with what the previous run left waiting. Each
+    item keeps its original start time, so it waits only what is left of its
+    QUEUE_MAX_WAIT, and its tab gets RESTORE_GRACE to come back. It queues behind
+    anything sent since the restart. Only the first call loads."""
+    global _resumed_at, _saved
     if not STATE_FILE or _resumed_at:
         return 0
-    _resumed_at = time.time()
-    try:
-        rows = json.loads(Path(STATE_FILE).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return 0
-    except Exception as e:
-        _dlog("deliver", f"queue file unreadable, nothing resumed: {e!r}")
-        return 0
-    items = sorted(({"submit": True, "from_sid": "", "what": "", "label": r["sid"], **r,
-                     "t0": float(r.get("t0") or _resumed_at), "restored": True,
-                     "grace_until": _resumed_at + RESTORE_GRACE}
-                    for r in (rows if isinstance(rows, list) else [])
-                    if isinstance(r, dict) and r.get("sid") and isinstance(r.get("text"), str)),
-                   key=lambda it: it["t0"])
+    with _save_lock:                  # no write in between: the file never lacks them or has them twice
+        rows, _saved = list(_read_saved()), []
+        _resumed_at = time.time()     # from here _save() writes them from the queue
+        items = sorted(({"submit": True, "from_sid": "", "what": "", "label": r["sid"], **r,
+                         "t0": float(r.get("t0") or _resumed_at), "restored": True,
+                         "grace_until": _resumed_at + RESTORE_GRACE} for r in rows),
+                       key=lambda it: it["t0"])
+        if items:
+            _enqueue(api, items)
     if items:
-        _enqueue(api, items)
         _dlog("deliver", f"resumed {len(items)} queued item(s) after a restart")
     return len(items)
 
