@@ -96,6 +96,12 @@ b.home_api.screen["s1"] = "\n".join(["x", RULE, "\x1b[39m❯\xa0寫到一半", R
 check("the user's unsent text in the box (Ctrl-U would wipe it)", bq.busy(b, slot))
 b.home_api.screen["s1"] = "\n".join(["x", RULE, "\x1b[39m❯\xa0\x1b[2mTry this\x1b[0m", RULE])
 check("…but not a dim suggestion", not bq.busy(b, slot))
+b.home_api.screen["s1"] = "\n".join(["x", "✳ Undulating… (29m 32s · ↓ 158.0k tokens)", RULE, "\x1b[39m❯\xa0", RULE])
+check("no state yet (just restarted): a turn on screen is busy, though it no longer says \"esc to interrupt\"",
+      bq.busy(b, slot))
+b.home_api.state["s1"] = "done"
+check("…but once there is a state it is the one that counts", not bq.busy(b, slot))
+b.home_api.state["s1"] = ""
 b.home_api.screen["s1"] = ""
 
 print("waiting")

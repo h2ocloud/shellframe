@@ -118,8 +118,9 @@ _RUNNING_CLOCK = re.compile(r"^[·✢✳✶✻✽*] +[A-Z][^\n…]{0,40}…\s*\(
 
 
 def status_line(screen: str) -> str:
-    """The running-turn line near the bottom of a screen (plain or with colours), or ''."""
-    for line in reversed(_CSI.sub("", screen or "").splitlines()[-12:]):
+    """The running-turn line near the bottom of a screen (plain or with colours), or ''.
+    A short conversation leaves blank rows under the input box; they do not count."""
+    for line in reversed(_CSI.sub("", screen or "").rstrip().splitlines()[-12:]):
         if _RUNNING_CLOCK.match(line) or "esc to interrupt" in line:
             return line.strip()
     return ""
@@ -166,7 +167,12 @@ def busy_reason(api, sid: str) -> str:
             return "telegram"
     except Exception:
         pass
-    kind, _ = composer_state(capture(api, sid))
+    screen = capture(api, sid)
+    # No state yet: the status monitor's first look after a restart takes seconds (measured 8-20 s,
+    # the tab reads "idle 0s" meanwhile). A message sent then went straight into a running turn.
+    if not state and status_line(screen):
+        return "working"
+    kind, _ = composer_state(screen)
     return "draft" if kind == "draft" else ""
 
 

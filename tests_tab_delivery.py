@@ -138,6 +138,13 @@ api.screen["s1"] = box("\x1b[39m❯\xa0half typed")
 check("the user's draft waits", td.busy_reason(api, "s1") == "draft")
 api.screen["s1"] = box("\x1b[39m❯\xa0\x1b[2ma suggestion\x1b[0m")
 check("a suggestion does not", td.busy_reason(api, "s1") == "")
+# Measured: after a restart a running tab read "idle 0s" for 8 s, until the status monitor's
+# first look; a message sent then went straight into its turn.
+api.screen["s1"] = "\n".join(["x", "✳ Undulating… (29m 32s · ↓ 158.0k tokens)", "", RULE, "\x1b[39m❯\xa0", RULE, "  footer"])
+check("no state yet (just restarted): a turn on screen waits", td.busy_reason(api, "s1") == "working")
+api.state["s1"] = "done"
+check("…but once there is a state it is the one that counts", td.busy_reason(api, "s1") == "")
+api.state["s1"] = ""
 api.screen["s1"] = ""
 
 print("the queue")
@@ -267,6 +274,8 @@ for line, want in SCREENS.items():
     scr = "\n".join(["some conversation", line, RULE, "\x1b[39m❯\xa0", RULE, "  footer"])
     check(f"{'running' if want else 'not running'}: {line[:30]}", bool(td.status_line(scr)) is want, td.status_line(scr))
     check(f"…the status tracker agrees", ag._screen_signals(scr)["actively_working"] is want)
+check("a short conversation (blank rows under the input box) still shows its status line",
+      td.status_line("\n".join(["✳ Undulating… (3s)", RULE, "❯ ", RULE] + [""] * 20)) == "✳ Undulating… (3s)")
 check("compute_state from the screen alone: working",
       ag.compute_state([], now=0, screen_tail="✻ Undulating… (12m 53s)\n" + RULE + "\n❯ \n" + RULE)[0] == "working")
 

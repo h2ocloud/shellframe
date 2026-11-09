@@ -386,7 +386,10 @@
   finished turn ("✻ Baked for 1s") does not. Only the spinner line itself counts: it starts
   at column 0 with one of Claude Code's spinner glyphs. The same words quoted in a
   conversation (indented, bulleted, in a prompt or in another tab's peek output) would
-  otherwise make an idle tab read working, and hold every message for it. Also reported: `peek` returns the cleaned
+  otherwise make an idle tab read working, and hold every message for it. For the first
+  seconds after a restart (measured 8–20 s) no tab has a state yet and each reads "idle 0s";
+  a message sent then (A2A, `sfctl send`, Telegram) went straight into a running turn. Until
+  a tab has a state, the spinner line on its screen now holds the message. Also reported: `peek` returns the cleaned
   conversation, which drops exactly the lines that show a turn is running. It now ends
   with `[ShellBot] Status line: …` while one runs, and `peek --raw` returns the screen
   itself. Covered by tests_tab_delivery.py.
@@ -395,7 +398,9 @@
   「Undulating… (12m 53s)」，狀態卻是 done：還沒有 hook 事件時狀態看畫面，而新版 Claude Code 那一行已經不顯示
   「esc to interrupt」。現在轉圈列上走動的計時（「… (12m 53s · ↓ 1.7k tokens)」）就算在跑，跑完的「✻ Baked for 1s」
   不算。只認轉圈列本身：從第 0 欄開始、開頭是 Claude Code 的轉圈符號。對話裡引用到同樣的字（有縮排、列點、
-  在 prompt 裡或在別的分頁的 peek 輸出裡）不算，不然閒置的分頁會被當成在跑，送給它的訊息全部卡住。另外回報：`peek` 回的是整理過的對話，剛好少了顯示「正在跑」的那幾行。現在正在跑時，結尾會多一行
+  在 prompt 裡或在別的分頁的 peek 輸出裡）不算，不然閒置的分頁會被當成在跑，送給它的訊息全部卡住。重啟後最初幾秒
+  （實測 8–20 秒）每個分頁都還沒有狀態，一律顯示「idle 0s」，這時送來的訊息（A2A、`sfctl send`、Telegram）
+  會直接打進正在跑的回合。現在分頁還沒有狀態時，畫面上有轉圈列就先排隊。另外回報：`peek` 回的是整理過的對話，剛好少了顯示「正在跑」的那幾行。現在正在跑時，結尾會多一行
   `[ShellBot] 狀態列：…`，`peek --raw` 則回畫面原文。由 tests_tab_delivery.py 守著。
 
 - **A reused tab id shows its own conversation, and a tab shows the effort it was launched with.**

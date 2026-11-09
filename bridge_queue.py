@@ -44,10 +44,14 @@ def busy(bridge, slot) -> bool:
     if not api:
         return False
     try:
-        if api._agent_state_for_list(slot.sid) == "working":
+        state = api._agent_state_for_list(slot.sid)
+        if state == "working":
             return True
         import tab_delivery
-        return tab_delivery.composer_state(tab_delivery.capture(api, slot.sid))[0] == "draft"
+        screen = tab_delivery.capture(api, slot.sid)
+        if not state and tab_delivery.status_line(screen):   # not looked at yet (just restarted): the screen says
+            return True
+        return tab_delivery.composer_state(screen)[0] == "draft"
     except Exception:
         return False
 
