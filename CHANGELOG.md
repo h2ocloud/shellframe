@@ -205,7 +205,9 @@
   it sleeps (it used to land on the desktop's selected tab or the first one); `/home` or
   `/0` goes back to it. A bot that needs a decision in a turn not started from Telegram
   (an A2A result, the desktop) now reaches every bound phone, headed by its name, with
-  its numbered options as buttons; before, nothing was sent. The primary bot reports
+  its numbered options as buttons (for Claude Code read from the turn's last words when
+  it stops, since the bridge's own bookkeeping can still hold an earlier Telegram turn);
+  before, nothing was sent. The primary bot reports
   milestones with `sfctl tg-send`. The 📱 on its card opens one panel: connect with the
   token from BotFather, bind a phone by scanning a one-time code (`/start <code>`, no
   user ids to type), send a test, quiet hours (off by default; then only decisions go
@@ -216,7 +218,7 @@
   **主要 Bot 上 Telegram：手機預設跟它說話，要你決定的事變成按鈕，掃 QR 就能綁定手機（開 bots 時）。**
   沒有自己選分頁的人傳來的訊息，現在會送給主要 Bot，它在休息就先叫醒（以前會落到桌面選中的分頁或第一個）；
   `/home` 或 `/0` 回到它。bot 在不是從 Telegram 開始的回合需要你決定時（A2A 回報、桌面），現在會推到每支
-  綁定的手機，開頭標它的名字，編號選項變成按鈕；以前什麼都不會送。主要 Bot 用 `sfctl tg-send` 回報里程碑。
+  綁定的手機，開頭標它的名字，編號選項變成按鈕（Claude Code 在回合結束時讀它最後說的話，因為 bridge 自己的紀錄可能還開著上一個 Telegram 回合）；以前什麼都不會送。主要 Bot 用 `sfctl tg-send` 回報里程碑。
   卡片上的 📱 打開同一個面板：貼 BotFather 給的 token 連線、掃一次性 QR 綁定手機（`/start <碼>`，不用
   輸入 user id）、送測試訊息、勿擾時段（預設關，開了只推「要你決定」）、預設對象的開關。允許名單是空的
   （任何人都能用）時以紅字提醒，第一支綁定的手機會把名單鎖成只有它。由 tests_bridge_home.py、
@@ -236,6 +238,17 @@
   `--ttl <分鐘>`；`--ttl 0` 代表等到對方閒下來；一律最多 24 小時。`a2a-result` 沒指定時等 24 小時：交辦方
   在等它，晚到比丟掉好。排隊超過 30 分鐘才送進去的訊息，第一行會說它排了多久，讓收到的人知道內容可能過時。
   時限跟著訊息一起存在磁碟上。由 tests_tab_delivery.py 守著。
+
+- **No more "Bridge connected … Sessions: none" on the phone after every restart.**
+  Reported: each app restart and bridge reload sent every bound phone that message,
+  and "none" was wrong (the tabs are registered only after the bridge starts). Now a
+  connection is announced once, when a person connects the bot, without a sound, with
+  the right number of tabs and a pointer to `/home`; restarts and reloads say nothing.
+  Covered by tests_bridge_home.py.
+
+  **每次重啟手機都收到「Bridge connected … Sessions: none」的情況沒有了。** 回報：每次重啟 App 或重載 bridge，
+  每支綁定的手機都會收到這則，而且「none」是錯的（分頁是 bridge 啟動之後才註冊）。現在只在有人親自連上 bot
+  時通知一次，不響鈴，分頁數正確，並提示 `/home`；重啟和重載都不通知。由 tests_bridge_home.py 守著。
 
 - **A Telegram message for a busy tab waits its turn, up to 30 minutes, with "⚡ go in now".**
   The bridge used to wait at most 2 minutes for a tab's turn to end and then type the

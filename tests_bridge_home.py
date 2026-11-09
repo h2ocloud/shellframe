@@ -38,6 +38,8 @@ sf_log.DEBUG_LOG = str(TMP / "shellframe_debug.log")  # fake tabs stay out of th
 
 import bridge_home as bh  # noqa: E402
 import bridge_telegram as bt  # noqa: E402
+import bridge_telegram as _bt_log  # noqa: E402
+_bt_log._LOG_FILE = os.path.join(tempfile.mkdtemp(prefix="sf-blog-"), "shellframe_bridge.log")  # fake tabs stay out of the real bridge log
 import main  # noqa: E402
 from main import Api  # noqa: E402
 
@@ -69,6 +71,7 @@ def wait_for(cond, timeout=4.0):
 
 sent = []
 bh.CACHE_S = 0                           # every check sees the state it just set
+bh.PUSH_DEDUP_S = 0                      # the de-duplication has its own check
 bh.SEND = lambda method, payload: sent.append((method, payload)) or {"ok": True}
 bt.tg_api = lambda token, method, payload=None, **k: sent.append((method, payload)) or {"ok": True}
 SETTINGS = {"default_primary": True, "quiet": {"on": False, "from": "23:00", "to": "08:00"}}
@@ -199,7 +202,78 @@ b._detect_and_fire_signal(slot, ["[[SF:RED]]"])
 check("…and leaves a Telegram turn's to the old menu push", pushed == ["s2"], pushed)
 bh.push_decision = real_push
 
+print("a decision at the end of a turn (read from the transcript)")
+# Measured on the phone: the primary bot ended an A2A-started turn on [[SF:RED]] with two
+# options and nothing arrived; the bridge still had an earlier Telegram turn open on that tab,
+# so its own detection never looked. The Stop hook now reads the turn's last words.
+A2A = {"kind": "user_msg", "text": "[[A2A：來自「sf dev」的訊息]] 請驗收"}
+RED = {"kind": "assistant_text", "text": "驗收步驟如下。\n要先修哪個？\n[[SF:RED]]\n1. 先修按鈕\n2. 先修通知"}
+check("a turn ending on [[SF:RED]]: the question and its options",
+      bh.red_block([A2A, RED]) == ("要先修哪個？", [("1", "先修按鈕"), ("2", "先修通知")]), bh.red_block([A2A, RED]))
+check("a Telegram-started turn is left to the bridge",
+      bh.red_block([{"kind": "user_msg", "text": "請放在 [[TG_REPLY_ab12cd34]] 之間"}, RED]) is None)
+check("no [[SF:RED]]: nothing", bh.red_block([A2A, {"kind": "assistant_text", "text": "做完了。"}]) is None)
+check("RED with no options: the question alone",
+      bh.red_block([A2A, {"kind": "assistant_text", "text": "可以發布嗎？\n[[SF:RED]]"}]) == ("可以發布嗎？", []))
+check("an older turn's RED does not count", bh.red_block([A2A, RED, {"kind": "user_msg", "text": "下一步"},
+                                                          {"kind": "assistant_text", "text": "好"}]) is None)
+api = Home()
+b = make_bridge(("s1", "主控"), ("s2", "研究"), ("s4", "shell"))
+api.bridge = b
+b.home_api = api
+b.active = True
+b.config.allowed_users = [100]
+sent.clear()
+bh.on_turn_end(api, "s1", read_events=lambda sid: [A2A, RED])
+btn = [pl for m, pl in sent if m == "sendMessage" and pl.get("reply_markup")]
+check("pushed with buttons that answer that tab",
+      btn and btn[0]["text"].startswith("⭐ 主控 需要你決定") and "要先修哪個？" in btn[0]["text"]
+      and [r[0]["callback_data"] for r in btn[0]["reply_markup"]["inline_keyboard"]] == ["choice:s1:1", "choice:s1:2"],
+      sent)
+sent.clear()
+bh.on_turn_end(api, "s4", read_events=lambda sid: [A2A, RED])
+check("a plain tab: nothing", not sent)
+bh.PUSH_DEDUP_S = 30.0
+bh._pushed_at.clear()
+bh.on_turn_end(api, "s2", read_events=lambda sid: [A2A, RED])
+n = len(sent)
+bh.push_decision(b, b.slots["s2"])
+check("the same decision is not pushed twice (the turn-end path and the bridge's own)", n == 1 and len(sent) == 1, sent)
+bh.PUSH_DEDUP_S = 0
+app = Api.__new__(Api)
+app.sessions, app._hook_events, app._status_cache = {}, {}, {}
+app.bridge = b
+called = []
+real_end = bh.on_turn_end
+bh.on_turn_end = lambda a, sid, read_events=None: called.append(sid)
+app._on_agent_event({"sid": "s1", "event": "Stop"})
+check("the Stop hook event starts that check", wait_for(lambda: called == ["s1"]), called)
+bh.on_turn_end = real_end
+
+print("saying it is connected")
+b = make_bridge(("s1", "主控"), ("s2", "研究"))
+b.config.allowed_users = [100]
+b.bot_info = {"username": "demo_shellbot"}
+sent.clear()
+bh.announce_start(b)
+msgs = [pl for m, pl in sent if m == "sendMessage"]
+check("a person connecting: one quiet message with the right count and /home",
+      len(msgs) == 1 and msgs[0].get("disable_notification") and "2 個分頁" in msgs[0]["text"]
+      and "/home" in msgs[0]["text"] and "none" not in msgs[0]["text"], msgs)
+b.announce_start = False
+sent.clear()
+bh.announce_start(b)
+check("the app's own restart or a reload: nothing on the phone", not sent)
+asrc = (HERE / "api_bridges.py").read_text(encoding="utf-8")
+msrc = (HERE / "main.py").read_text(encoding="utf-8")
+check("the restore path starts the bridge without announcing, and so does a reload",
+      '"", announce=False)' in asrc and "self.bridge.announce_start = False" in msrc
+      and "Sessions: {sessions_info}" not in src)
+
 print("tg-send")
+b = make_bridge(("s1", "主控"), ("s2", "研究"))
+b._user_chat.update({100: 1100})
+b.config.allowed_users = [100, 300]
 api = Home()
 api.bridge = b
 b.home_api = api

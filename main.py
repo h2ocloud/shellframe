@@ -4730,6 +4730,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     on_answer_dialog=self.answer_startup_trust,
                 )
                 self.bridge.home_api = self          # bridge_home
+                self.bridge.announce_start = False   # a reload is not news on the phone
                 # Preserve TG polling offset so it doesn't re-process the /reload command
                 self.bridge._offset = saved_offset
                 for sid, s in self.sessions.items():

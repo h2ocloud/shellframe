@@ -28,6 +28,8 @@ sys.path.insert(0, str(HERE))
 
 import main  # noqa: E402
 import bridge_telegram as bt  # noqa: E402
+import bridge_telegram as _bt_log  # noqa: E402
+_bt_log._LOG_FILE = os.path.join(tempfile.mkdtemp(prefix="sf-blog-"), "shellframe_bridge.log")  # fake tabs stay out of the real bridge log
 import bridge_line  # noqa: E402
 
 FAILED = []

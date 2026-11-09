@@ -22,6 +22,7 @@ hangs itself on the bridge as `home_api`; without it everything is a no-op.
 """
 
 import collections
+import re
 import secrets
 import threading
 import time
@@ -195,6 +196,88 @@ def _chats(bridge) -> set:
     return set(bridge._user_chat.values()) | set(bridge.config.allowed_users or [])
 
 
+_RED_LINE = re.compile(r"^[\s>❯›⏺•*\-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?\]\]\s*$", re.I)
+_OPTION = re.compile(r"^\s*(\d)[.)、]\s+(.+?)\s*$")
+_TG_TOKEN = re.compile(r"TG_REPLY_[0-9a-fA-F]+")
+_pushed_at = {}              # sid -> when a decision was last pushed (the two paths below share it)
+PUSH_DEDUP_S = 30.0
+
+
+def red_block(evs):
+    """(question, [(num, text)…]) when the newest turn's last words raise [[SF:RED]]
+    and the turn did not start from Telegram (the bridge pushes those itself);
+    else None. `evs`: agent_status transcript events, oldest first."""
+    last_user = max((i for i, e in enumerate(evs or ()) if e.get("kind") == "user_msg"), default=-1)
+    if last_user >= 0 and _TG_TOKEN.search(evs[last_user].get("text") or ""):
+        return None
+    texts = [e.get("text") or "" for e in (evs or ())[last_user + 1:] if e.get("kind") == "assistant_text"]
+    if not texts:
+        return None
+    lines = texts[-1].splitlines()
+    at = next((i for i in range(len(lines) - 1, -1, -1) if _RED_LINE.match(lines[i])), -1)
+    if at < 0:
+        return None
+    question = next((ln.strip() for ln in reversed(lines[:at])           # the sentence, not a list item above it
+                     if ln.strip() and not _OPTION.match(ln) and not ln.lstrip().startswith(("-", "•", "*"))), "")[:300]
+    options = [(m.group(1), m.group(2)[:60]) for m in (_OPTION.match(ln) for ln in lines[at + 1:]) if m][:9]
+    return question, options
+
+
+def _recently_pushed(sid) -> bool:
+    with _lock:
+        if time.time() - _pushed_at.get(sid, 0) < PUSH_DEDUP_S:
+            return True
+        _pushed_at[sid] = time.time()
+        return False
+
+
+def on_turn_end(api, sid: str, read_events=None):
+    """A Claude Code turn just stopped (its Stop hook): when it is a bot's turn
+    that did not start from Telegram and it ended on [[SF:RED]], push the question
+    with its options as buttons. Measured: the bridge's own detection missed it
+    while an earlier Telegram turn on that tab was still open in its books."""
+    bridge = getattr(api, "bridge", None)
+    if not bridge or not getattr(bridge, "active", False) or sid not in bridge.slots:
+        return
+    try:
+        role = api._bots_role_of(sid)
+        if not role:
+            return
+        if read_events is None:
+            import agent_status
+            s = api.sessions.get(sid)
+            path = agent_status.resolve_transcript(api._worker_ctx(sid, s)) if s else None
+            evs = agent_status._read_tail_events(path)[1] if path else []
+        else:
+            evs = read_events(sid)
+        block = red_block(evs)
+    except Exception:
+        return
+    if not block or _recently_pushed(sid):
+        return
+    question, options = block
+    slot = bridge.slots[sid]
+    try:
+        import bridge_telegram
+        bridge_telegram._blog(f"[signal] {sid} state=RED (turn end) options={len(options)} → push\n")
+    except Exception:
+        pass
+    primary = role == api._bots_primary_tab()[0]
+    head = sf_lang.pick(f"{'⭐' if primary else '🤖'} {slot.label} needs your decision",
+                        f"{'⭐' if primary else '🤖'} {slot.label} 需要你決定")
+    text = "\n".join([head] + ([question] if question else []) + [f"{n}. {t}" for n, t in options])
+    payload = {"text": text}
+    if options:
+        slot.pending_menu, slot.pending_menu_options = True, [{"num": n, "text": t} for n, t in options]
+        payload["reply_markup"] = {"inline_keyboard": [[{"text": f"{n}. {t}"[:48], "callback_data": f"choice:{sid}:{n}"}]
+                                                       for n, t in options]}
+    for chat_id in _chats(bridge):
+        try:
+            _tg(bridge, "sendMessage", dict(payload, chat_id=chat_id))
+        except Exception:
+            pass
+
+
 def push_decision(bridge, slot, reason: str = ""):
     """A bot raised [[SF:RED]] in a turn not started from Telegram: its question
     goes to every bound phone, numbered options as buttons answering that bot.
@@ -207,7 +290,7 @@ def push_decision(bridge, slot, reason: str = ""):
         primary = api._bots_primary_tab()[0]
     except Exception:
         return
-    if not role:
+    if not role or _recently_pushed(slot.sid):
         return
     head = sf_lang.pick(f"{'⭐' if role == primary else '🤖'} {slot.label} needs your decision",
                         f"{'⭐' if role == primary else '🤖'} {slot.label} 需要你決定")
@@ -253,6 +336,28 @@ def tg_send(api, text: str, from_sid: str) -> dict:
         sent += 1 if r.get("ok", True) else 0
     return {"success": sent > 0, "message": sf_lang.pick(f"Sent to {sent} chat(s)", f"已送到 {sent} 個對話"),
             "details": {"chats": sent}}
+
+
+def announce_start(bridge):
+    """Said once when a person connects the bot (the panel or Settings), without a
+    sound, with the right count. Not on the app's own restarts or reloads: those put
+    "Bridge connected … Sessions: none" on the phone every time (no tab is
+    registered yet at that point) — reported as noise, and wrong."""
+    if not getattr(bridge, "announce_start", True):
+        return
+    n, bot = len(bridge._slot_order), (getattr(bridge, "bot_info", None) or {}).get("username", "?")
+    label = _primary(bridge)[2]
+    text = sf_lang.pick(
+        f"🔗 ShellBot connected (@{bot}), {n} tabs. "
+        + (f"Write here to talk to ⭐ {label}; /home goes back to it, /list shows the tabs."
+           if label else "/list shows the tabs, /1 /2 switch."),
+        f"🔗 ShellBot 已連線（@{bot}），{n} 個分頁。"
+        + (f"直接打字就是跟 ⭐ {label} 說話；/home 回到它，/list 看分頁。" if label else "/list 看分頁，/1 /2 切換。"))
+    for uid in (bridge.config.allowed_users or []):
+        try:
+            _tg(bridge, "sendMessage", {"chat_id": uid, "text": text, "disable_notification": True})
+        except Exception:
+            pass
 
 
 # ── who a bound user is: @username, else their name, with the id ────────────

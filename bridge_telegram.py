@@ -1567,14 +1567,7 @@ class TelegramBridge(BridgeBase):
 
         self._emit_status({"state": "connected", "bot": self.bot_info.get("username", "")})
 
-        # Notify allowed users that bridge is connected
-        sessions_info = ', '.join(self.slots[s].label for s in self._slot_order) if self._slot_order else 'none'
-        connect_msg = f"🔗 ShellFrame Bridge connected\nBot: @{self.bot_info.get('username', '?')}\nSessions: {sessions_info}\n\n/list to see sessions, /1 /2 to switch"
-        for uid in (self.config.allowed_users or []):
-            tg_api(self.config.bot_token, "sendMessage", {
-                "chat_id": uid,
-                "text": connect_msg,
-            })
+        bridge_home.announce_start(self)   # once, when a person connects; not on restarts
 
     def stop(self):
         self.active = False

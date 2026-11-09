@@ -11,8 +11,12 @@ dim 灰字「建議下一句」（`❯`＋不換行空白＋\\x1b[2m…），使
 """
 
 import inspect
+import os
+import tempfile
 
 import bridge_telegram
+import bridge_telegram as _bt_log  # noqa: E402
+_bt_log._LOG_FILE = os.path.join(tempfile.mkdtemp(prefix="sf-blog-"), "shellframe_bridge.log")  # fake tabs stay out of the real bridge log
 import main
 
 A = main.Api

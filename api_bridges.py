@@ -83,7 +83,7 @@ class BridgesApiMixin:
             res = self.start_bridge(token,
                                     json.dumps(saved.get("allowed_users") or []),
                                     saved.get("prefix_enabled") is not False,
-                                    "")          # no initial prompt on restore
+                                    "", announce=False)   # no initial prompt, no "connected" on restore
             ok = json.loads(res).get("success") if isinstance(res, str) else False
             main._dlog("bridge", f"autostart {'ok' if ok else 'failed'} (UI-independent)")
             # 兩條路的順序不保證：分頁若已經還原完才輪到這裡，start_bridge 已經
@@ -94,7 +94,7 @@ class BridgesApiMixin:
             main._dlog("bridge", f"autostart failed: {e}")
 
     def start_bridge(self, bot_token: str, allowed_users_json: str,
-                     prefix_enabled: bool, initial_prompt: str) -> str:
+                     prefix_enabled: bool, initial_prompt: str, announce: bool = True) -> str:
         """Start the global TG bridge. Registers all current sessions."""
         if self.bridge:
             self.bridge.stop()
@@ -126,6 +126,7 @@ class BridgesApiMixin:
             on_answer_dialog=self.answer_startup_trust,
         )
         self.bridge.home_api = self      # bridge_home: the primary bot, pairing, decisions
+        self.bridge.announce_start = announce   # the app's own restart says nothing on the phone
 
         # Register existing sessions (skip bridge-disabled ones)
         for sid, s in self.sessions.items():

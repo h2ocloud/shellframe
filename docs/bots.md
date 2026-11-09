@@ -144,7 +144,11 @@ one-time QR code; `/start <code>` binds that person), send a test, and the switc
   panel: the old fallbacks (the desktop's tab, then the first).
 - **Decisions.** When a bot prints `[[SF:RED]]` in a turn that did not start from
   Telegram (an A2A result, the desktop), its question goes to every bound phone,
-  headed by its name; numbered options become buttons that answer that bot.
+  headed by its name; numbered options become buttons that answer that bot. For
+  Claude Code the turn's last words are read when it stops (its Stop hook); other CLIs
+  rely on the bridge seeing the line. Once per decision.
+- **Connecting** says so once, quietly, with the tab count and `/home`; the app's own
+  restarts and reloads say nothing.
 - **`sfctl tg-send "…"`.** The primary bot's milestones and results, from its own tab
   only, at most 20 an hour.
 - **Quiet hours** (off by default): only decisions are sent then.

@@ -11,7 +11,9 @@
 
 跑法：.venv/bin/python tests_bridge_delivery.py
 """
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -22,6 +24,8 @@ sys.path.insert(0, str(HERE))
 
 import bridge_delivery as bd  # noqa: E402
 import bridge_telegram  # noqa: E402
+import bridge_telegram as _bt_log  # noqa: E402
+_bt_log._LOG_FILE = os.path.join(tempfile.mkdtemp(prefix="sf-blog-"), "shellframe_bridge.log")  # fake tabs stay out of the real bridge log
 
 passed = failed = 0
 

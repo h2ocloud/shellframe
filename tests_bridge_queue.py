@@ -32,6 +32,8 @@ sf_log.DEBUG_LOG = str(TMP / "shellframe_debug.log")  # fake tabs stay out of th
 
 import bridge_queue as bq  # noqa: E402
 import bridge_telegram as bt  # noqa: E402
+import bridge_telegram as _bt_log  # noqa: E402
+_bt_log._LOG_FILE = os.path.join(tempfile.mkdtemp(prefix="sf-blog-"), "shellframe_bridge.log")  # fake tabs stay out of the real bridge log
 import tab_delivery  # noqa: E402
 
 passed = failed = 0
