@@ -317,9 +317,13 @@ class BotsApiMixin:
                            "details": {"role": name, "label": state.get("label")}}, ensure_ascii=False)
 
     def _bots_save_for_sfctl(self, args: dict) -> dict:
-        """`sfctl bots-save <role> '<json>'`: the bot editor's save, for scripts and
-        agents. The editor sends the whole form; a script names only what it
-        changes, so fields left out keep their value (skills, primary, memory…)."""
+        """`sfctl bots-save <role> '<json>' [--bind <sid>]`: the bot editor's save, for
+        scripts and agents. The editor sends the whole form; a script names only what
+        it changes, so fields left out keep their value (skills, primary, memory…).
+        `--bind` makes an open tab the bot's tab, as "Make it a bot…" in the tab's own
+        settings does: the conversation goes on, the tab takes the bot's name. A script
+        does not see the page, so it may not take another bot's tab or give a bot a
+        second one."""
         if not self._bots_enabled():
             return {"success": False, "message": _("Bots are experimental: turn them on in Settings first (experimental_bots)",
                                                   "Bots 是實驗功能，請先在設定裡打開（experimental_bots）")}
@@ -330,11 +334,33 @@ class BotsApiMixin:
             data = None
         if not isinstance(data, dict):
             return {"success": False, "message": _("data must be a JSON object", "data 要是 JSON 物件")}
-        entry = (_cfg().get("agent_roster") or {}).get(role) or {}
+        cfg = _cfg()
+        bind = str(args.get("bind") or "").strip()
+        if bind:
+            if bind not in self.sessions:
+                return {"success": False, "message": _(f"No tab {bind}", f"沒有 {bind} 這個分頁")}
+            had = self._bots_role_of(bind, cfg)
+            if had and had != role:
+                return {"success": False, "message": _(
+                    f'{bind} is already the tab of "{had}"; make it a plain tab in its own settings first',
+                    f"{bind} 已經是「{had}」的分頁；要換，先在它的對話設定裡改回一般分頁")}
+            other = [s for s in self.sessions if s != bind and self._bots_role_of(s, cfg) == role]
+            if other:
+                return {"success": False, "message": _(
+                    f'"{role}" already has a tab ({other[0]}); a bot has one tab at a time',
+                    f"「{role}」已經有分頁 {other[0]}；一個 bot 同時只有一個分頁")}
+        entry = (cfg.get("agent_roster") or {}).get(role) or {}
         prev = entry.get("bot") if isinstance(entry.get("bot"), dict) else {}
         merged = {k: prev[k] for k in ("avatar", "skills", "memory", "primary", "external") if k in prev}
         merged.update(data)
-        return json.loads(self.bots_save(role, json.dumps(merged, ensure_ascii=False)))
+        return json.loads(self.bots_save(role, json.dumps(merged, ensure_ascii=False), bind))
+
+    def _bots_delete_for_sfctl(self, args: dict) -> dict:
+        """`sfctl bots-delete <role>`: the bot editor's Delete, for scripts and agents."""
+        if not self._bots_enabled():
+            return {"success": False, "message": _("Bots are experimental: turn them on in Settings first (experimental_bots)",
+                                                  "Bots 是實驗功能，請先在設定裡打開（experimental_bots）")}
+        return json.loads(self.bots_delete(str(args.get("role") or "").strip()))
 
     # ── the primary bot on Telegram (bridge_home does the Telegram side) ─────
     def _tg_bind_user(self, user_id: int):
@@ -431,6 +457,7 @@ class BotsApiMixin:
                 roster.pop(role, None)          # we made the whole role; take it all back
             else:
                 e.pop("bot", None)              # a role that existed before keeps working as a worker
+                out["kept_role"] = True
             table = cfg.get("bots_sessions") or {}
             for sid in [k for k, v in table.items() if (v or {}).get("bot") == role]:
                 table.pop(sid, None)
@@ -438,8 +465,10 @@ class BotsApiMixin:
         if out.get("missing"):
             return json.dumps({"success": False, "message": _(f'"{role}" is not a bot', f"「{role}」不是 bot")})
         self._bots_notify_ui()
+        kept = _(f'; "{role}" was in the roster before it became a bot and stays there as a plain worker role',
+                 f"；「{role}」在開成 bot 之前就在名冊裡，留下來當一般工作角色") if out.get("kept_role") else ""
         return json.dumps({"success": True, "message": _(f'Removed "{role}" (its memory folder stays at {bots.bot_dir(role)})',
-                                       f"已移除「{role}」（記憶資料夾保留在 {bots.bot_dir(role)}）")},
+                                       f"已移除「{role}」（記憶資料夾保留在 {bots.bot_dir(role)}）") + kept},
                           ensure_ascii=False)
 
     def bots_open_folder(self, role: str) -> str:

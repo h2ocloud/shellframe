@@ -737,6 +737,13 @@ def main():
     p_bsave.add_argument("data", nargs="?", default="{}",
                          help='JSON: {"memory": true, "avatar": {"shape": "hex", "color": "blue"}, '
                               '"skills": [...], "responsibility": "...", "primary": false}')
+    p_bsave.add_argument("--bind", metavar="SID", default="",
+                         help="Make this open tab the bot's tab, as \"Make it a bot…\" in its settings does: "
+                              "the conversation goes on, the tab takes the bot's name")
+    p_bdel = sub.add_parser("bots-delete", help="Remove a bot, as Delete in its editor (ask the user first): "
+                                                "its memory folder stays; a role that was in the roster before "
+                                                "it became a bot stays as a plain worker role")
+    p_bdel.add_argument("role", help="The bot's roster role")
     p_next = sub.add_parser("a2a-next", help="Send the next step of a handoff back to the same target")
     p_next.add_argument("id")
     p_next.add_argument("task")
@@ -981,7 +988,9 @@ def main():
     elif args.cmd == "tg-send":
         _print_result(_rpc("tg_send", {"text": args.text, "from_sid": os.environ.get("SF_SID", "")}, timeout=20))
     elif args.cmd == "bots-save":
-        _print_result(_rpc("bots_save", {"role": args.role, "data": args.data}, timeout=15))
+        _print_result(_rpc("bots_save", {"role": args.role, "data": args.data, "bind": args.bind}, timeout=15))
+    elif args.cmd == "bots-delete":
+        _print_result(_rpc("bots_delete", {"role": args.role}, timeout=15))
     elif args.cmd == "route":
         _print_result(_rpc("route_hint", {"task": args.task, "tier": args.tier},
                            timeout=30))

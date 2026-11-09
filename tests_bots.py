@@ -380,6 +380,44 @@ check("a plain roster role becomes a bot, keeping its label, command and job",
       and w["responsibility"] == "docs and release notes" and w["cmd"] == "claude", (res, w))
 check("…and gets its memory folder", bots.bot_dir("Writer").is_dir())
 check("bad data is refused", not api._execute_sfctl("bots_save", {"role": "Writer", "data": "[1]"})["success"])
+# --bind: until now only the page could make an open tab a bot's tab, so the primary bot
+# could not do it for the user.
+api.sessions["s71"] = FakeSession("s71", "claude --model opus", "雜務")
+res = api._execute_sfctl("bots_save", {"role": "行政", "bind": "s71", "data": json.dumps(
+    {"memory": True, "responsibility": "請假與信件", "avatar": {"shape": "cloud", "color": "sky"}, "cmd": "claude --model opus"})})
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+check("--bind: an open tab becomes the new bot's tab, and its conversation goes on",
+      res.get("success") and cfg["bots_sessions"]["s71"]["bot"] == "行政" and api._bots_role_of("s71") == "行政"
+      and api.sessions["s71"].alive, res)
+check("…it takes the bot's name", api.sessions["s71"]._custom_label == "行政")
+check("…and the role is a bot with that job and command", bots.is_memory_bot(cfg["agent_roster"]["行政"])
+      and cfg["agent_roster"]["行政"]["responsibility"] == "請假與信件"
+      and cfg["agent_roster"]["行政"]["cmd"] == "claude --model opus", cfg["agent_roster"]["行政"])
+res = api._execute_sfctl("bots_save", {"role": "行政", "data": "{}", "bind": sid})
+check("--bind does not take another bot's tab", not res.get("success") and "Coding" in res["message"]
+      and api._bots_role_of(sid) == "Coding", res)
+api.sessions["s72"] = FakeSession("s72", "claude", "另一個分頁")
+res = api._execute_sfctl("bots_save", {"role": "Coding", "data": "{}", "bind": "s72"})
+check("…nor give a bot a second tab", not res.get("success") and "Coding" in res["message"]
+      and api._bots_role_of("s72") == "", res)
+check("…nor bind a tab that is not there",
+      not api._execute_sfctl("bots_save", {"role": "行政", "data": "{}", "bind": "s99"}).get("success"))
+check("binding again to the same bot is fine", api._execute_sfctl("bots_save", {"role": "行政", "data": "{}",
+                                                                               "bind": "s71"}).get("success"))
+check("sfctl passes --bind through", '"bind": args.bind' in (HERE / "sfctl.py").read_text(encoding="utf-8"))
+# bots-delete: the editor's Delete, from a script.
+res = api._execute_sfctl("bots_delete", {"role": "行政"})
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+check("bots-delete: a bot made here goes, role and binding with it; its memory folder stays",
+      res.get("success") and "行政" not in cfg["agent_roster"] and "s71" not in (cfg.get("bots_sessions") or {})
+      and bots.bot_dir("行政").is_dir(), res)
+res = api._execute_sfctl("bots_delete", {"role": "Writer"})
+w = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))["agent_roster"].get("Writer") or {}
+check("…a role that was in the roster before stays as a plain worker, and the message says so",
+      res.get("success") and w.get("label") == "Writer-CLD" and not bots.is_bot(w) and "Writer" in res["message"]
+      and ("plain worker" in res["message"] or "一般工作角色" in res["message"]), (res, w))
+check("…and something that is not a bot is refused", not api._execute_sfctl("bots_delete", {"role": "Writer"}).get("success"))
+check("sfctl has bots-delete", '_rpc("bots_delete", {"role": args.role}' in (HERE / "sfctl.py").read_text(encoding="utf-8"))
 
 # ── 6. close with memory ───────────────────────────────────────────────────
 print("close")

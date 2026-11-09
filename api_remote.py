@@ -1293,6 +1293,8 @@ class RemoteApiMixin:
             return self._bots_list_for_sfctl()
         elif cmd == "bots_save":
             return self._bots_save_for_sfctl(args)
+        elif cmd == "bots_delete":
+            return self._bots_delete_for_sfctl(args)
         elif cmd == "tg_send":
             return bridge_home.tg_send(self, str(args.get("text") or ""), str(args.get("from_sid") or ""))
 

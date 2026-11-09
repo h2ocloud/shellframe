@@ -40,6 +40,25 @@
 
 ### Added
 
+- **`sfctl bots-save` makes a role a bot from a script, `--bind <sid>` makes an open tab that bot's tab, and `sfctl bots-delete` removes one.**
+  The bot editor's save, for agents: `sfctl bots-save <role> '<json>'` creates the bot
+  or changes only the fields given (skills, memory and the face stay). With
+  `--bind <sid>` an open tab becomes the bot's tab the way "Make it a bot…" in its own
+  settings does: the conversation goes on and the tab takes the bot's name. Until now
+  only the page could do that, so the primary bot could not do it for the user. A
+  script does not see the page, so it may not take another bot's tab or give a bot a
+  second one. `sfctl bots-delete <role>` is the editor's Delete: the memory folder stays, and
+  a role that was in the roster before it became a bot stays as a plain worker role, which
+  the message now says. Covered by tests_bots.py.
+
+  **`sfctl bots-save` 可以從指令把角色開成 bot，`--bind <sid>` 可以把開著的分頁綁給那個 bot，`sfctl bots-delete` 可以刪掉 bot。**
+  bot 編輯器的儲存，給 agent 用：`sfctl bots-save <角色> '<json>'` 建立 bot，或只改給的欄位
+  （skill、記憶、頭像照舊）。加上 `--bind <sid>`，開著的分頁會變成這個 bot 的分頁，跟在它的
+  對話設定裡按「開成 Bot…」一樣：對話照常接下去，分頁改成 bot 的名字。以前只有畫面能做，
+  主要 Bot 沒辦法替使用者處理。指令看不到畫面，所以不能搶別的 bot 的分頁，也不能讓一個 bot
+  同時有兩個分頁。`sfctl bots-delete <角色>` 就是編輯器裡的「刪除」：記憶資料夾保留；開成 bot 之前
+  就在名冊裡的角色會留下來當一般工作角色，訊息裡現在會講。由 tests_bots.py 守著。
+
 - **The primary bot is a conversation like any other bot, with a playbook for taking stock and handing work out, and you can drag bots on and off its card.**
   Clicking the primary bot's card opens its tab, the same chat as every bot. Its brief
   adds a playbook: the commands it works with (`sfctl bots`, `sfctl state --all`,
