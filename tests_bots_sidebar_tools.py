@@ -142,6 +142,15 @@ with sync_playwright() as pw:
     check("minutes", ago("s202") == "3 分前", ago("s202"))
     check("hours", ago("s203") == "2 小時前", ago("s203"))
     check("unknown (a shell with no output yet): left blank", ago("s206") == "", ago("s206"))
+    # Measured after a restart: every reattached tab redraws its screen, and read "now".
+    page.evaluate("window.__sfHost.sessions().s206._lastOutputTs = Date.now()")
+    page.wait_for_timeout(1700)
+    check("the redraw a tab sends when it is attached is not an answer", ago("s206") == "", ago("s206"))
+    page.evaluate("window.__sfHost.sessions().s206._lastOutputTs = Date.now() + 60000")
+    page.wait_for_timeout(1700)
+    check("…output well after that is", ago("s206") == "剛剛", ago("s206"))
+    page.evaluate("window.__sfHost.sessions().s206._lastOutputTs = 0")
+    page.wait_for_timeout(1700)
 
     print("search")
     check("the box is there, with a hint of what it searches",

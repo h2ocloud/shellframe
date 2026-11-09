@@ -170,6 +170,7 @@
     container.querySelectorAll('.sb-item[data-section="local"][data-sid]').forEach(row => {
       const sid = row.dataset.sid;
       const s = S[sid];
+      if (!firstSeen[sid]) firstSeen[sid] = Date.now();
       const lab = row.querySelector('.sb-label');
       if (!s || !lab || lab.classList.contains('sfb-two')) return;
       const role = botOf(sid);
@@ -214,12 +215,19 @@
     if (state && state !== 'unknown') return state === 'working';
     return !!s._busy;                         // a plain shell: its output says so
   }
-  // When the tab last answered, in seconds: the transcript's last write for an AI
-  // tab (it survives a restart), the last output for a plain shell; 0 = unknown.
+  // When the tab last answered, in seconds; 0 = unknown. The transcript's last write
+  // when there is one (it survives a restart). Otherwise the last output, but not
+  // the redraw a tab sends when it is (re)attached: measured after a restart, every
+  // reattached tab read "now" while it had been quiet for hours.
+  const REATTACH_MS = 20000;
+  const firstSeen = {};
   function lastAt(sid, now) {
     if (running(sid)) return now;
     const s = sessionsMap()[sid] || {};
-    return Number((s._serverStatus || {}).activity_at) || (s._lastOutputTs ? s._lastOutputTs / 1000 : 0);
+    const at = Number((s._serverStatus || {}).activity_at);
+    if (at) return at;
+    const out = s._lastOutputTs || 0;
+    return out && out > (firstSeen[sid] || Infinity) + REATTACH_MS ? out / 1000 : 0;
   }
   function agoText(sid) {
     const now = Date.now() / 1000;

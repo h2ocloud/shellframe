@@ -486,6 +486,24 @@ GLASSES_STATE_PATH = os.path.expanduser("~/.local/share/evenclaude/state.json")
 GLASSES_STATE_STALE_S = 120
 
 
+_LAUNCH_CD_RE = re.compile(r"""\s*cd\s+("[^"]+"|'[^']+'|[^\s;&]+)\s*(?:&&|;)""")
+
+
+def _launch_cwd(cmd: str, cwd: str = "~") -> str:
+    """The directory a tab's CLI really starts in when its command begins with
+    `cd <dir> &&` (or `;`). Claude Code names its transcript folder after that
+    directory, not after the tab's own; measured: such tabs had no transcript
+    after a restart (no hook yet to say where it was) and read screen-only.
+    '' when the command does not change directory or the directory is gone."""
+    m = _LAUNCH_CD_RE.match(cmd or "")
+    if not m:
+        return ""
+    d = os.path.expanduser(m.group(1).strip("\"'"))
+    if not os.path.isabs(d):
+        d = os.path.join(os.path.expanduser(cwd or "~"), d)
+    return d if os.path.isdir(d) else ""
+
+
 def _session_provider(cmd: str) -> str:
     """'claude' | 'codex' | whatever usage_probe knows | 'other'.
 
@@ -2815,7 +2833,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             _swallow(f"_worker_ctx:{sid}")
         return {
             "cmd": getattr(s, "cmd", ""),
-            "cwd": getattr(s, "cwd", "~"),
+            "cwd": _launch_cwd(getattr(s, "cmd", ""), getattr(s, "cwd", "~")) or getattr(s, "cwd", "~"),
             "tmux_name": getattr(s, "_tmux_name", None),
             "session_id": getattr(s, "session_id", None),
             "transcript_hint": getattr(s, "_hook_transcript_path", None),
