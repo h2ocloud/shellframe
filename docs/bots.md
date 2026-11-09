@@ -1,4 +1,4 @@
-# Bots
+# Bots (ShellBot)
 
 > 中文摘要：`experimental_bots`（預設關）。每個分頁的燈號換成會動的 bot 頭像（形狀＋顏色＝身分，
 > 表情＝狀態）；分頁可以開成 bot：叫醒時帶入執掌、skill 與記憶，關閉前由 bot 自己把這次對話寫進
@@ -86,11 +86,19 @@ as a preference; no secrets in memory; memory is not a source of truth.
 
 ## Primary bot and A2A
 
-The primary bot (`bot.primary`, else a coordinator role that is a bot) is told
-in its brief that it is the first stop for everyday work: hand off what another
-bot owns (`sfctl a2a-handoff <bot> "…"`), coordinate, verify, chase what is
-stuck, and ask the user only for decisions. Every brief lists the other bots and
-the two commands to reach them. `sfctl bots` shows who is awake, asleep or external.
+The primary bot (the one marked `bot.primary`) is a conversation like any bot:
+clicking its card opens its tab. Its brief adds a playbook (`PRIMARY_PLAYBOOK` in
+`bots.py`): the commands it works with (`sfctl bots`, `sfctl state --all`,
+`sfctl list`/`peek`, `sfctl a2a-handoff`, `sfctl a2a-send`, `sfctl a2a-log`), how to
+take stock (who is busy, stuck, waiting for a decision or idle, then a suggested
+next step), and how to hand work out (one owner per task, clear done criteria, ask
+before anything others can see). When it wakes it takes stock first. `sfctl bots`
+shows each awake bot's state and latest line, so one command answers "what is
+everyone doing".
+
+The slot is the user's to fill: drag a bot, a sleeping bot or a tab onto the card
+to make it primary (a plain tab opens the bot editor first), drag the card back into
+the list to empty it. A coordinator role is not primary unless marked.
 
 A2A itself is unchanged and keeps its guardrails (roster only, depth 4, 6/min
 per sender, 4000 chars, audit log). A message to a sleeping bot wakes it.

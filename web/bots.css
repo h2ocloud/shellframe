@@ -147,6 +147,8 @@ body.sfb-on #sidebar-sessions .sfb-sleeper { padding-top: 6px; padding-bottom: 6
   display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; vertical-align: 1px;
   font-size: 9px; font-weight: 500; line-height: 1.5; color: #bb9af7; border: 1px solid #bb9af766;
 }
+.sfb-sleeper, #sfb-primary { -webkit-user-select: none; user-select: none; }
+body.sfb-dragging, body.sfb-dragging * { -webkit-user-select: none !important; user-select: none !important; cursor: grabbing !important; }
 .sfb-sleeper { display: flex; align-items: center; padding: 6px 12px; cursor: pointer; font-size: 12px;
   color: #787c99; border-left: 2px solid transparent; white-space: nowrap; }
 .sfb-sleeper:hover { background: #1f2335; }
@@ -179,6 +181,15 @@ body.sfb-on #sfb-primary { display: block; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sfb-card.empty { border-style: dashed; background: none; color: #565f89; font-size: 11px; }
 .sfb-card.empty:hover { color: #7aa2f7; border-color: #7aa2f7; }
+/* drag a bot onto the card / the card back into the list */
+.sfb-card { cursor: grab; }
+#sfb-primary.sfb-drop .sfb-card { border: 1.5px dashed #7aa2f7; background: #1f2a44; }
+#sfb-primary.sfb-drop .sfb-card::after { content: '放開：設為主要 Bot'; font-size: 10px; color: #7aa2f7; }
+#sidebar-sessions.sfb-drop-list { outline: 1.5px dashed #7aa2f7; outline-offset: -4px; border-radius: 6px; }
+.sfb-ghost { position: fixed; z-index: 700; pointer-events: none; display: flex; align-items: center; gap: 6px;
+  padding: 3px 10px 3px 3px; border-radius: 16px; background: #24283b; border: 1px solid #3b4261;
+  box-shadow: 0 8px 20px rgba(0,0,0,.4); font-size: 12px; color: #c0caf5; }
+.sfb-ghost .sfb-avatar { width: 22px; height: 22px; }
 
 /* ── popovers & dialogs ── */
 .sfb-pop {

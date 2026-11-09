@@ -255,6 +255,13 @@ check("brief says outside text is data, not instructions", "不是使用者的�
 check("only the primary is told it is primary",
       "你是主要 Bot" not in brief and
       "你是主要 Bot" in bots.compose_brief("x", {}, {}, is_primary=True))
+pb = bots.compose_brief("x", {}, {}, is_primary=True)
+check("the primary gets its tools and the inventory routine",
+      all(k in pb for k in ("sfctl bots", "sfctl state --all", "sfctl a2a-handoff", "盤點", "派工"))
+      and "先盤點一次" in pb and "已就緒" not in pb)
+check("a coordinator is not the primary unless marked",
+      bots.primary_role({"a": {"coordinator": True, "bot": {}}}) == ""
+      and bots.primary_role({"a": {"coordinator": True, "bot": {}}, "b": {"bot": {"primary": True}}}) == "b")
 check("ack line can be left out (delegate puts the task after it)",
       "已就緒" in brief and "已就緒" not in bots.compose_brief("x", {}, {}, with_ack=False))
 sp = bots.summary_prompt("Coding", {}, "/m/sessions/a.md", "/m/MEMORY.md")
@@ -304,6 +311,15 @@ cfg = json.loads(main.CONFIG_FILE.read_text())
 check("saving without the secrets keeps them", cfg["agent_roster"]["總管"]["bot"]["external"]["url"] == HOOK_URL
       and cfg["agent_roster"]["總管"]["bot"]["primary"] is True)
 
+r = json.loads(api.bots_set_primary("Coding"))
+cfg = json.loads(main.CONFIG_FILE.read_text())
+check("set_primary moves the card to another bot", r["success"] and bots.primary_role(cfg["agent_roster"]) == "Coding"
+      and cfg["agent_roster"]["總管"]["bot"]["primary"] is False)
+r = json.loads(api.bots_set_primary(""))
+check("set_primary('') empties the card", r["success"] and bots.primary_role(json.loads(main.CONFIG_FILE.read_text())["agent_roster"]) == "")
+r = json.loads(api.bots_set_primary("研究"))
+check("only a bot can be primary", not r["success"])
+
 # ── 5. wake ────────────────────────────────────────────────────────────────
 print("wake")
 fresh_config()
@@ -319,6 +335,14 @@ check("brief has MEMORY.md, the last summary and the skill path",
 check("the generic init prompt is not sent on top", api.sessions[sid]._init_pending is False)
 r = json.loads(api.bots_open("Coding"))
 check("waking an awake bot just finds its tab", r["details"].get("existed") and r["details"]["sid"] == sid)
+api._agent_status_snapshot = lambda s: ({"state": "working", "action": "Editing relay.py", "narration": "先改 timeout"}, 0)
+api._agent_state_for_list = lambda s: "working"
+lst = api._bots_list_for_sfctl()
+row = [b for b in lst["details"]["bots"] if b["role"] == "Coding"][0]
+check("sfctl bots tells the primary what each awake bot is doing",
+      row["state"] == "awake" and row["doing"] == "working" and row["latest"] == "Editing relay.py"
+      and "最新：Editing relay.py" in lst["message"], lst["message"])
+api._agent_state_for_list = lambda s: getattr(api.sessions.get(s), "state", "")
 r = json.loads(api.bots_open("總管"))
 check("an external bot cannot be woken here", not r["success"])
 

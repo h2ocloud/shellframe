@@ -205,7 +205,7 @@
       row.innerHTML = `<span class="sfb-avatar">${faceSvg(e.bot.avatar, { seed: role, asleep: !ext })}</span>` +
         `<span class="sfb-two" style="flex:1;margin-left:9px"><span class="sfb-name">${esc(botName(role))}` +
         `${ext ? '<span class="sfb-tag">外部</span>' : ''}</span>` +
-        `<span class="sfb-sub">${ext ? '在 ShellFrame 外面' : '休息中'}${e.responsibility ? ' · ' + esc(e.responsibility) : ''}</span></span>` +
+        `<span class="sfb-sub">${ext ? '在 ShellBot 外面' : '休息中'}${e.responsibility ? ' · ' + esc(e.responsibility) : ''}</span></span>` +
         `<span class="sfb-wake">${ext ? '往來' : '叫醒'}</span>`;
       frag.appendChild(row);
     });
@@ -226,7 +226,8 @@
     if (!enabled) { el.innerHTML = ''; return; }
     const role = st.primary;
     if (!role || !rosterEntry(role)) {
-      el.innerHTML = '<div class="sfb-card empty" data-sfb="new-primary" title="主要 Bot 是日常任務的首選，負責把工作派給其他 bot">＋ 建立主要 Bot</div>';
+      el.innerHTML = '<div class="sfb-card empty" data-sfb="new-primary" title="主要 Bot 是日常任務的第一站，負責盤點與派工">' +
+        '＋ 建立主要 Bot<span class="sfb-card-sub">或把一個 bot 拖上來</span></div>';
       return;
     }
     const e = rosterEntry(role);
@@ -236,7 +237,8 @@
     const cls = s ? (s._dotClass || '') : '';
     const sub = ext ? '外部 · 點一下往來' : (sid ? previewOf(sid) : '休息中 · 點一下叫醒');
     const active = sid && host() && host().active() === sid;
-    el.innerHTML = `<div class="sfb-card${active ? ' active' : ''}" data-sfb="primary">` +
+    el.innerHTML = `<div class="sfb-card${active ? ' active' : ''}" data-sfb="primary" ` +
+      `title="點一下：${ext ? '和它往來' : '打開它的對話'}。拖到下面的清單：不再當主要 Bot">` +
       `<span class="sfb-avatar busy-dot ${cls}" style="--sfb-size:var(--sfb-size-card);cursor:pointer">` +
       `${faceSvg(e.bot.avatar, { seed: role, primary: true, asleep: !sid && !ext, writing: sid && isClosing(sid) })}</span>` +
       `<div class="sfb-card-name">${esc(botName(role))}</div><div class="sfb-card-sub">${esc(sub)}</div></div>`;
@@ -338,7 +340,7 @@
                  color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)] };
       }
       if (b.dataset.act === 'reset') next = null;
-      if (remote) { toast('遠端分頁的頭像由那台 ShellFrame 決定'); return; }
+      if (remote) { toast('遠端分頁的頭像由那台 ShellBot 決定'); return; }
       await setAvatar(sid, next);
       closePop();
       openPicker(sid, anchorFor(sid) || anchor);
@@ -410,7 +412,7 @@
         <label>主要 Bot</label><div style="display:flex;align-items:center;gap:6px"><button class="toggle-switch${primaryOn ? ' on' : ''}" id="sfb-ed-primary"></button>
           <span style="font-size:10px;color:#565f89">置頂；日常任務的首選，負責派工給其他 bot</span></div>
         <label>外部</label><div style="display:flex;align-items:center;gap:6px"><button class="toggle-switch${ext ? ' on' : ''}" id="sfb-ed-ext"></button>
-          <span style="font-size:10px;color:#565f89">住在 ShellFrame 外面（例如 Grok Bot），用 webhook 往來</span></div>
+          <span style="font-size:10px;color:#565f89">住在 ShellBot 外面（例如 Grok Bot），用 webhook 往來</span></div>
         <div id="sfb-ed-extbox" style="grid-column:1/-1;display:${ext ? 'grid' : 'none'};grid-template-columns:74px 1fr;gap:8px 10px;align-items:center">
           <label>Webhook</label><input type="text" id="sfb-ed-url" value="${esc(ext && ext.url_set ? '••••（已設定，留空不改）' : '')}" placeholder="Grok Bot routine 的 webhook URL">
           <label>授權</label><input type="text" id="sfb-ed-auth" value="${esc(ext && ext.auth_set ? '••••（已設定，留空不改）' : '')}" placeholder="Bearer <key>">
@@ -538,7 +540,7 @@
     ov.style.zIndex = '450';
     ov.innerHTML = `<div class="modal" style="width:480px">
       <h2><span class="sfb-avatar">${faceSvg(e.bot && e.bot.avatar, { seed: role, primary: role === st.primary })}</span>${esc(botName(role))}<span class="sfb-tag">外部</span></h2>
-      <p class="sfb-note">這個 bot 不在 ShellFrame 裡。分頁用 <code>sfctl a2a-send ${esc(role)} "…"</code> 找它時，ShellFrame 會 POST 到它的 webhook；
+      <p class="sfb-note">這個 bot 不在 ShellBot 裡。分頁用 <code>sfctl a2a-send ${esc(role)} "…"</code> 找它時，ShellBot 會 POST 到它的 webhook；
       它要回覆或派工，就在這台 Mac 用「本機執行」跑 <code>sfctl a2a-send --as ${esc(role)} …</code>。</p>
       <p class="sfb-note">Webhook：${ext.url_set ? `<b style="color:#9ece6a">已設定</b>（${esc(ext.url_mask || '')}）` : '<b style="color:#f7768e">還沒設定</b>：到「編輯」貼上 routine 的 webhook URL 和 key'}</p>
       <textarea id="sfb-x-text" placeholder="傳一則訊息給它（會以「使用者」身分送出）" style="width:100%;box-sizing:border-box;min-height:56px;margin-top:8px;background:#24283b;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:6px;font-size:12px"></textarea>
@@ -670,6 +672,79 @@
     if (enabled) refresh(true);
   }
 
+  // ── drag a bot onto the primary card, or the card back into the list ──
+  // Session rows already drag to reorder (index.html). That handler ignores a drop
+  // outside the list, so the card can be a second drop target without touching it.
+  let drag = null, ghost = null, swallowClickUntil = 0;
+  async function setPrimary(role) {
+    try {
+      const res = JSON.parse(await api().bots_set_primary(role || ''));
+      toast(res.message || '', !res.success);
+    } catch (err) { toast(String(err), true); }
+    await refresh(true);
+  }
+  function dragFace(d) {
+    if (d.role && rosterEntry(d.role)) return faceSvg(rosterEntry(d.role).bot.avatar, { seed: d.role });
+    return d.sid ? faceSvg(avatarFor(d.sid), { seed: d.sid }) : '';
+  }
+  function dropTarget(x, y) {
+    const over = document.elementFromPoint(x, y);
+    if (!over) return '';
+    if (drag.kind !== 'card' && over.closest('#sfb-primary')) return 'promote';
+    if (drag.kind === 'card' && over.closest('#sidebar-sessions')) return 'demote';
+    return '';
+  }
+  function paintDrop(where) {
+    const card = document.getElementById('sfb-primary');
+    const list = document.getElementById('sidebar-sessions');
+    if (card) card.classList.toggle('sfb-drop', where === 'promote');
+    if (list) list.classList.toggle('sfb-drop-list', where === 'demote');
+  }
+  document.addEventListener('mousedown', e => {
+    if (!enabled || e.button !== 0 || !e.target.closest) return;
+    // chips, ×, "+ Bot" keep their clicks; a row's face keeps click-to-cycle (the card's face is a handle)
+    if (e.target.closest('[data-action], .sfb-add, .sfb-card.empty, #sidebar-sessions .busy-dot')) return;
+    const card = e.target.closest('#sfb-primary .sfb-card');
+    const sleeper = e.target.closest('.sfb-sleeper');
+    const row = e.target.closest('#sidebar-sessions .sb-item[data-section="local"][data-sid]');
+    if (card && st.primary) drag = { kind: 'card', role: st.primary };
+    else if (sleeper) drag = { kind: 'sleeper', role: sleeper.dataset.sfbRole };
+    else if (row) drag = { kind: 'row', sid: row.dataset.sid, role: botOf(row.dataset.sid) };
+    else return;
+    Object.assign(drag, { x0: e.clientX, y0: e.clientY, moved: false });
+  }, true);
+  document.addEventListener('mousemove', e => {
+    if (!drag) return;
+    if (!drag.moved) {
+      if (Math.abs(e.clientY - drag.y0) < 9 && Math.abs(e.clientX - drag.x0) < 9) return;
+      drag.moved = true;
+      ghost = document.createElement('div');
+      ghost.className = 'sfb-ghost';
+      const name = drag.role ? botName(drag.role) : ((sessionsMap()[drag.sid] || {}).label || '');
+      ghost.innerHTML = `<span class="sfb-avatar">${dragFace(drag)}</span><span>${esc(name)}</span>`;
+      document.body.appendChild(ghost);
+      document.body.classList.add('sfb-dragging');
+      try { window.getSelection().removeAllRanges(); } catch (_) {}
+    }
+    ghost.style.left = (e.clientX + 12) + 'px';
+    ghost.style.top = (e.clientY + 10) + 'px';
+    paintDrop(dropTarget(e.clientX, e.clientY));
+  }, true);
+  document.addEventListener('mouseup', e => {
+    if (!drag) return;
+    const d = drag;
+    const where = d.moved ? dropTarget(e.clientX, e.clientY) : '';
+    drag = null;
+    if (ghost) { ghost.remove(); ghost = null; }
+    document.body.classList.remove('sfb-dragging');
+    paintDrop('');
+    if (!where) return;
+    swallowClickUntil = Date.now() + 400;
+    if (where === 'demote') { setPrimary(''); return; }
+    if (d.role) setPrimary(d.role);
+    else openEditor(null, { fromSid: d.sid, primary: true });   // a plain tab: make it a bot first
+  }, true);
+
   // Right-click an avatar anywhere (tab bar or sidebar) → picker.
   document.addEventListener('contextmenu', e => {
     if (!enabled) return;
@@ -683,6 +758,7 @@
   document.addEventListener('click', e => {
     if (pop && !pop.contains(e.target)) closePop();
     if (!enabled) return;
+    if (Date.now() < swallowClickUntil) { e.preventDefault(); e.stopPropagation(); return; }
     const add = e.target.closest && e.target.closest('[data-sfb="new"]');
     if (add) { e.preventDefault(); e.stopPropagation(); openEditor(null); return; }
     const row = e.target.closest && e.target.closest('.sfb-sleeper');
@@ -727,7 +803,7 @@
   }
 
   window.SFBots = {
-    face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh,
+    face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,

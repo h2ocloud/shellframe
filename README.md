@@ -1,15 +1,18 @@
-# ShellFrame
+# ShellBot
 
-Multi-tab GUI terminal wrapper for AI coding assistants. Wraps any CLI tool (Claude Code, Codex, Grok Build, Aider, etc.) with image paste, Telegram bridge, session persistence, and more.
+A home for your AI bots. Every CLI agent you already pay for (Claude Code, Codex, Grok Build, OpenCode, …) runs in its own tab; turn a tab into a **bot** and it gets a face, a job, its own memory that survives the tab, and colleagues it can hand work to — with a primary bot on top that takes stock and dispatches.
+
+> ShellBot is the new name of **ShellFrame**. Only the name you see changed: the command (`sfctl`), the config folder (`~/.config/shellframe`), the repo and the install URL keep the old name, so existing setups and paired machines keep working.
 
 ## Why
 
-Terminal-based AI assistants can't receive screenshots from your clipboard. ShellFrame wraps them in a native GUI window that intercepts `Cmd+V`, saves the image, and injects the file path — screenshot-to-AI in one paste. Over time it grew into a full multi-agent control panel.
+Terminal-based AI assistants can't receive screenshots from your clipboard. ShellBot (then ShellFrame) started as a native GUI window that intercepts `Cmd+V`, saves the image, and injects the file path — screenshot-to-AI in one paste. Over time it grew into a full multi-agent control panel, and now into a team of bots. See [docs/bots.md](docs/bots.md).
 
 ## Features
 
 | Feature | Description |
 |---|---|
+| **Bots** (experimental) | Every tab's light is a bot face (shape + colour = identity, expression = state). A tab can become a bot with a job, skills and memory written before it closes; a primary bot on top takes stock and dispatches; drag bots on and off the primary card. [docs/bots.md](docs/bots.md) |
 | **Image/file paste** | `Cmd+V` screenshots, Finder files, or drag & drop. Preview bar + auto-attach on Enter. |
 | **Multi-tab** | Multiple CLI sessions side by side. Named tabs, drag reorder. |
 | **tmux persistence** | Sessions run inside tmux. Close ShellFrame → reopen → all tabs and scrollback survive. |

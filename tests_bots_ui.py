@@ -107,7 +107,7 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
         {kind: 'result', from_label: '幕僚｜總管', target: 'a1b2', text: '收到，下一步做 Y'}]});
       case 'bots_open': return R({success: true, details: {sid: 's199'}});
       case 'bots_close': return R({success: true, message: 'ok'});
-      case 'bots_save': case 'bots_set_avatar': case 'bots_external_send':
+      case 'bots_save': case 'bots_set_avatar': case 'bots_external_send': case 'bots_set_primary':
         return R({success: true, message: 'ok'});
       default: return R('{}');
     }
@@ -274,6 +274,39 @@ with sync_playwright() as pw:
     check("the external primary takes a message from its panel", any(
         c[0] == "bots_external_send" and c[1] == ["總管", "今天的部署順利嗎？"] for c in page.evaluate("window.__calls")))
     page.click(".sfb-modal [data-act='close']")
+
+    print("drag")
+    def drag(src, dst):
+        a = page.locator(src).bounding_box()
+        b = page.locator(dst).bounding_box()
+        page.mouse.move(a["x"] + a["width"] / 2, a["y"] + a["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(a["x"] + a["width"] / 2, a["y"] + a["height"] / 2 + 15, steps=3)
+        page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2, steps=8)
+        return b
+
+    drag(".sfb-sleeper[data-sfb-role='日程'] .sfb-name", "#sfb-primary .sfb-card")
+    check("dragging over the card shows where it will land", page.evaluate(
+        "document.getElementById('sfb-primary').classList.contains('sfb-drop')"))
+    page.locator("#sidebar").screenshot(path=str(SHOTS / "bots-drag.png"))
+    page.mouse.up()
+    page.wait_for_timeout(300)
+    calls = lambda: [c[1] for c in page.evaluate("window.__calls") if c[0] == "bots_set_primary"]
+    check("a sleeping bot dropped on the card becomes primary", ["日程"] in calls(), calls())
+    drag("#sfb-primary .sfb-card .sfb-card-name", "#sidebar-sessions .sb-item[data-sid='s104']")
+    check("dragging the card over the list marks the list", page.evaluate(
+        "document.getElementById('sidebar-sessions').classList.contains('sfb-drop-list')"))
+    page.mouse.up()
+    page.wait_for_timeout(300)
+    check("the card dropped into the list stops being primary", [""] in calls(), calls())
+    drag("#sidebar-sessions [data-sid='s106'] .sb-label", "#sfb-primary .sfb-card")
+    page.mouse.up()
+    page.wait_for_timeout(400)
+    check("a plain tab dropped on the card opens the editor with 主要 Bot on", page.evaluate(
+        "!!document.querySelector('#sfb-ed-primary.on') && document.getElementById('sfb-ed-name').value === '文件翻譯'"))
+    page.click(".sfb-modal [data-act='cancel']")
+    check("no stray reorder from those drags", page.evaluate(
+        "[...document.querySelectorAll('#sidebar-sessions .sb-item[data-sid]')].map(r => r.dataset.sid).slice(0, 3).join()") == "s101,s102,s103")
 
     page.evaluate(SHEET)
     page.wait_for_timeout(400)

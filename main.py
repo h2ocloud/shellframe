@@ -111,6 +111,9 @@ CODEX_AUTONOMOUS_FLAGS = "--dangerously-bypass-approvals-and-sandbox --search --
 CODEX_LAUNCHER = "codex" if IS_WIN else "sf-codex"
 SHELLFRAME_CODEX_CMD = f"{CODEX_LAUNCHER} {CODEX_AUTONOMOUS_FLAGS}"
 
+# What the user sees (menu bar, window, About). Everything a machine reads keeps the
+# old name: ~/.config/shellframe, sfctl, the bundle id, tmux sf_*, Frame Link.
+APP_DISPLAY_NAME = "ShellBot"
 CONFIG_DIR = Path.home() / ".config" / "shellframe"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -1025,8 +1028,8 @@ def _apply_macos_app_identity():
     try:
         from Foundation import NSBundle
         info = NSBundle.mainBundle().infoDictionary()
-        info["CFBundleName"] = "ShellFrame"
-        info["CFBundleDisplayName"] = "ShellFrame"
+        info["CFBundleName"] = APP_DISPLAY_NAME
+        info["CFBundleDisplayName"] = APP_DISPLAY_NAME
         info["CFBundleIdentifier"] = "com.h2ocloud.shellframe"
         if icon_path is not None:
             info["CFBundleIconFile"] = str(icon_path)
@@ -1034,7 +1037,7 @@ def _apply_macos_app_identity():
         _dlog("identity", f"set bundle info failed: {e}")
     try:
         from Foundation import NSProcessInfo
-        NSProcessInfo.processInfo().setProcessName_("ShellFrame")
+        NSProcessInfo.processInfo().setProcessName_(APP_DISPLAY_NAME)
     except Exception as e:
         _dlog("identity", f"set process name failed: {e}")
     try:
@@ -2293,7 +2296,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
         label = entry.get("label") or resolved_role
         if self._bots_external_target(resolved_role) is not None:   # never a local placeholder tab
-            return {"success": False, "message": f"「{label}」住在 ShellFrame 外面，用 sfctl a2a-send {resolved_role} \"…\" 找它"}
+            return {"success": False, "message": f"「{label}」住在 ShellBot 外面，用 sfctl a2a-send {resolved_role} \"…\" 找它"}
         sid, session = self._find_session_by_label(label)
         created = False
         if not session:
@@ -5860,7 +5863,7 @@ def main():
     # first, then moving it after shown, avoids that entire failure mode.
     win_cfg = load_config().get("window", {}) or {}
     create_kwargs = dict(
-        title="shellframe",
+        title=APP_DISPLAY_NAME,
         url=str(html_path),
         js_api=api,
         width=int(win_cfg.get("width") or 1000),
@@ -6053,8 +6056,8 @@ def _write_crash_log(exc: BaseException):
             try:
                 subprocess.run([
                     "osascript", "-e",
-                    'display dialog "ShellFrame failed to start.\n\nRecover by running in Terminal:\n\ncurl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash\n\nDetails: ~/.shellframe-crash.log" '
-                    'with title "ShellFrame" buttons {"OK"} default button 1'
+                    'display dialog "ShellBot failed to start.\n\nRecover by running in Terminal:\n\ncurl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash\n\nDetails: ~/.shellframe-crash.log" '
+                    'with title "ShellBot" buttons {"OK"} default button 1'
                 ], capture_output=True, timeout=30)
             except Exception:
                 _swallow("_write_crash_log:7077")

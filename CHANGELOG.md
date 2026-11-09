@@ -8,7 +8,44 @@
 
 ## v0.41.0 (2026-11-09)
 
+### Changes
+
+- **The app is now called ShellBot.**
+  The menu bar, the window title, the About and update dialogs, the Frame Link panel
+  and the sidebar say ShellBot. Only the name a person reads changed: the command
+  (`sfctl`), the config folder (`~/.config/shellframe`), the bundle identifier, tmux
+  session names, pairing, the repository and the install URL keep the old name, so
+  existing setups, scripts and paired machines keep working. Prompts written for AI
+  agents still mention ShellFrame where they explain a command or a path, and System
+  Settings keeps listing the app as ShellFrame until it is reinstalled under the new name.
+
+  **App 改名為 ShellBot。** 選單列、視窗標題、關於與更新對話框、Frame Link 面板、側欄都改叫
+  ShellBot。改的只有看得到的名字：指令 `sfctl`、設定資料夾 `~/.config/shellframe`、bundle id、
+  tmux 名稱、配對、repo 與安裝網址都維持原名，現有設定、腳本與配對的機器照常運作。給 AI 的
+  提示在解釋指令或路徑時仍寫 ShellFrame；系統設定裡的 App 名稱要等用新名字重新安裝後才會變。
+
 ### Added
+
+- **The primary bot is a conversation like any other bot, with a playbook for taking stock and handing work out, and you can drag bots on and off its card.**
+  Clicking the primary bot's card opens its tab, the same chat as every bot. Its brief
+  adds a playbook: the commands it works with (`sfctl bots`, `sfctl state --all`,
+  `sfctl a2a-handoff`, `sfctl a2a-log`), a routine for taking stock (who is busy, stuck,
+  waiting for a decision or idle, then a suggested next step), and rules for handing
+  work out (one owner per task, clear done criteria, ask before anything others can
+  see). When it wakes it takes stock first instead of only saying it is ready.
+  `sfctl bots` now shows what each awake bot is doing and its latest line. Drag a bot,
+  a sleeping bot or a tab onto the card to make it the primary (a plain tab opens the
+  bot editor first), and drag the card back into the list to empty the slot. A
+  coordinator role is no longer the primary unless it is marked so.
+
+  **主要 Bot 跟其他 bot 一樣是一段對話，多了盤點與派工的引導，還可以把 bot 拖上拖下。**
+  點主要 Bot 的卡片就是打開它的分頁，跟每個 bot 一樣的對話。它的簡報多一份工作手冊：可用的
+  指令（`sfctl bots`、`sfctl state --all`、`sfctl a2a-handoff`、`sfctl a2a-log`）、盤點的做法
+  （誰在忙、卡住、在等決定、閒著，最後給下一步建議）、派工的規則（一件事一個負責人、寫清楚完成
+  標準、外部看得到的事先問）。叫醒時先盤點一次，而不是只回「已就緒」。`sfctl bots` 會列出每個
+  醒著的 bot 在做什麼和最新一句。把 bot、休息中的 bot 或分頁拖到卡片上就成為主要 Bot（一般分頁
+  會先開 bot 編輯器），把卡片拖回清單就清空主位。總管角色不再自動當主要 Bot，要明確設定。
+
 
 - **Bots (experimental, Settings → Bots, off by default): every tab gets a face, and a tab can become a bot with its own memory.**
   The status light becomes a small bot drawn in SVG and CSS. Its shape and colour

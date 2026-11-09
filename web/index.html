@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>shellframe</title>
+<title>ShellBot</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
 <link rel="stylesheet" href="bots.css"/>
 <style>
@@ -944,7 +944,7 @@
       <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
       <!-- 說明書放在「關於」裡面等於沒放：要有人記得去翻才會用到。這顆直接
            開到那一段，順便顯示它有沒有裝進 AI 會自己讀的地方。 -->
-      <button class="sb-footer-btn" id="btn-ai-skill" title="給 AI 的 ShellFrame 操作說明"><span style="opacity:.5">🤖</span> 給 AI 的說明</button>
+      <button class="sb-footer-btn" id="btn-ai-skill" title="給 AI 的 ShellBot 操作說明"><span style="opacity:.5">🤖</span> 給 AI 的說明</button>
     </div>
   </div>
   <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
@@ -1018,7 +1018,7 @@
     <!-- Tab: Plugin marketplace -->
     <div class="settings-tab-panel" id="settings-panel-marketplace">
       <div style="font-size:12px;color:#a9b1d6;margin-bottom:10px;line-height:1.55">
-        Install optional ShellFrame plugins. Installed plugins live in
+        Install optional ShellBot plugins. Installed plugins live in
         <code>shellframe_plugins/&lt;name&gt;/</code>.
       </div>
       <div id="settings-marketplace-list" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -1412,7 +1412,7 @@
   <div class="modal" style="width:440px">
     <div class="about-header">
       <div class="logo">&gt;_</div>
-      <div class="app-name">ShellFrame</div>
+      <div class="app-name">ShellBot</div>
       <div class="version" id="about-version">v0.1.0</div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
         <span id="check-update-result" style="font-size:11px;white-space:nowrap"></span>
@@ -1437,7 +1437,7 @@
 
     <div class="about-section" id="about-skill-section">
       <h3>給 AI 的使用說明（Skill）</h3>
-      <p>把這份說明貼給任何 AI，它就知道怎麼操作 ShellFrame：讀其他分頁、派工、
+      <p>把這份說明貼給任何 AI，它就知道怎麼操作 ShellBot：讀其他分頁、派工、
       角色群組，以及<b>跨機器操控另一台電腦的 session</b>。裡面要求 AI 先自己查版本，
       再對照功能表，避免它用到這個版本還沒有的指令。</p>
       <p style="color:#9aa5ce">分頁裡的 AI 其實不用等你貼：讓它自己跑
@@ -1515,7 +1515,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <div class="modal-overlay" id="modal-update">
   <div class="modal update-modal" style="width:400px">
     <div class="logo" style="font-size:36px;color:#7aa2f7;font-family:monospace">&gt;_</div>
-    <div style="font-size:14px;color:#c0caf5;margin:6px 0">ShellFrame</div>
+    <div style="font-size:14px;color:#c0caf5;margin:6px 0">ShellBot</div>
     <div class="version-badge" id="update-badge">v0.0.0 → v0.0.0</div>
     <div style="font-size:12px;color:#a9b1d6;margin:8px 0" id="update-msg"></div>
     <div class="changelog-preview" id="update-changelog"></div>
@@ -1636,8 +1636,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       micFfmpegReady: 'ffmpeg ready — tap the mic again to record.',
       micNeedStt: 'No STT backend is ready (local whisper / remote provider). Install local STT now? Your recording is kept and will be transcribed right after install.',
       micSttStillFail: 'STT still failed after install. Check Settings → 🎙 STT, then tap the mic to retry.',
-      micEmpty: 'No audio captured. If this is the first use, allow Microphone for ShellFrame in System Settings → Privacy, then retry.',
-      micRecordFailed: 'Recorder failed to start. Check that a microphone is available and ShellFrame has mic permission.',
+      micEmpty: 'No audio captured. If this is the first use, allow Microphone for ShellBot (listed as ShellFrame) in System Settings → Privacy, then retry.',
+      micRecordFailed: 'Recorder failed to start. Check that a microphone is available and ShellBot has mic permission.',
       micSttFail: 'Transcription returned nothing — try again, closer to the mic.',
       micNoDevice: 'No audio input device found.',
       idleCleanupTitle: 'Idle tab cleanup',
@@ -1686,14 +1686,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterLabel: 'Shift+Enter = newline',
       shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
       shiftEnterShortcut: 'Newline (no submit)',
-      tgUnbridgedDivider: 'Not bridged by ShellFrame',
-      linkBtnTitle: 'Frame Link — pair another ShellFrame (cross-machine)',
-      linkSidebarDivider: 'Other ShellFrames',
+      tgUnbridgedDivider: 'Not bridged by ShellBot',
+      linkBtnTitle: 'Frame Link — pair another ShellBot (cross-machine)',
+      linkSidebarDivider: 'Other ShellBots',
       linkPairBtn: 'Pairing code',
       linkJoinBtn: 'Join',
       linkSend: 'Send',
       linkLocalSec: 'Local',
-      tgUnbridgedTooltip: 'Sessions below are not monitored by ShellFrame\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
+      tgUnbridgedTooltip: 'Sessions below are not monitored by ShellBot\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
       tgSelfManaged: 'own',
       tgBotToken: 'Bot Token',
       tgUsers: 'Users',
@@ -1787,7 +1787,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       apiServerTitle: '本機 HTTP API',
       apiOpenDocs: 'API 文件 (Swagger)',
       apiCopyToken: '複製 token',
-      apiServerHint: '給本機外部 agent（OpenClaw／龍蝦等）驅動 ShellFrame 的 HTTP/JSON 介面 — list/peek/send/delegate，Bearer token 驗證、只綁 127.0.0.1。開關即時生效不用重啟。規格見 docs/local-http-api.md',
+      apiServerHint: '給本機外部 agent（OpenClaw／龍蝦等）驅動 ShellBot 的 HTTP/JSON 介面 — list/peek/send/delegate，Bearer token 驗證、只綁 127.0.0.1。開關即時生效不用重啟。規格見 docs/local-http-api.md',
       statusHooksTitle: '精準狀態偵測（Claude Code hooks）',
       statusHooksHint: '在 ~/.claude/settings.json 安裝輕量 async hooks，由 Claude 自己回報「工作中／回合結束／等待權限」——不再靠畫面猜。啟用後新開的 Claude tab 生效；其餘 tab 維持原本的畫面偵測 fallback。',
       settingsTelegram: 'Telegram 橋接',
@@ -1818,8 +1818,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       micFfmpegReady: 'ffmpeg 已就緒——再按一次麥克風即可錄音。',
       micNeedStt: 'STT 後端尚未就緒（本地 whisper／遠端服務都不可用）。要現在安裝本地 STT 嗎？剛剛的錄音已保留，裝完會自動轉錄。',
       micSttStillFail: '安裝後轉錄仍失敗。請到 設定 → 🎙 語音轉錄 檢查，再按麥克風重試。',
-      micEmpty: '沒有收到聲音。若是第一次使用，請到 系統設定 → 隱私權與安全性 → 麥克風 允許 ShellFrame，然後重試。',
-      micRecordFailed: '錄音啟動失敗。請確認有可用的麥克風、且 ShellFrame 有麥克風權限。',
+      micEmpty: '沒有收到聲音。若是第一次使用，請到 系統設定 → 隱私權與安全性 → 麥克風 允許 ShellBot（系統設定裡顯示為 ShellFrame），然後重試。',
+      micRecordFailed: '錄音啟動失敗。請確認有可用的麥克風、且 ShellBot 有麥克風權限。',
       micSttFail: '轉錄結果是空的——請再試一次、靠近麥克風一點。',
       micNoDevice: '找不到音訊輸入裝置。',
       idleCleanupTitle: '閒置頁籤自動清理',
@@ -1868,14 +1868,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterLabel: 'Shift+Enter 換行',
       shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
       shiftEnterShortcut: '換行（不送出）',
-      tgUnbridgedDivider: '不由 ShellFrame 橋接',
-      linkBtnTitle: 'Frame Link — 配對其他 ShellFrame（跨機連線）',
-      linkSidebarDivider: '其他 ShellFrame',
+      tgUnbridgedDivider: '不由 ShellBot 橋接',
+      linkBtnTitle: 'Frame Link — 配對其他 ShellBot（跨機連線）',
+      linkSidebarDivider: '其他 ShellBot',
       linkPairBtn: '產生配對碼',
       linkJoinBtn: '加入配對',
       linkSend: '送出',
       linkLocalSec: '本機',
-      tgUnbridgedTooltip: '下方的 session 不受 ShellFrame TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
+      tgUnbridgedTooltip: '下方的 session 不受 ShellBot TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
       tgSelfManaged: '自管',
       tgBotToken: 'Bot Token',
       tgUsers: '使用者',
@@ -3329,17 +3329,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       divider.className = 'sb-divider';
       divider.dataset.section = 'divider';
       divider.dataset.action = 'link-zone';
-      divider.title = '隔離線以下＝配對的其他 ShellFrame 的 session。點線收合／展開，點「＋ 配對」接上另一台。';
+      divider.title = '隔離線以下＝配對的其他 ShellBot 的 session。點線收合／展開，點「＋ 配對」接上另一台。';
       divider.innerHTML =
         `<span style="pointer-events:none">${zoneCollapsed ? '▸' : '▾'} 🔗 ${esc(t('linkSidebarDivider'))}${peers.length ? ` (${peers.length})` : ''}</span>` +
-        `<button class="sb-pair-btn" data-action="link-pair" title="配對另一台 ShellFrame（產生配對碼／加入配對）">＋ 配對</button>`;
+        `<button class="sb-pair-btn" data-action="link-pair" title="配對另一台 ShellBot（產生配對碼／加入配對）">＋ 配對</button>`;
       container.appendChild(divider);
 
       if (!zoneCollapsed) {
         if (!peers.length) {
           const hint = document.createElement('div');
           hint.className = 'sb-remote-hint';
-          hint.textContent = '尚未配對其他 ShellFrame——按「＋ 配對」開始';
+          hint.textContent = '尚未配對其他 ShellBot——按「＋ 配對」開始';
           container.appendChild(hint);
         }
         peers.forEach(p => {
@@ -3354,7 +3354,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             `<span style="pointer-events:none;font-size:9px;color:#565f89">${pCollapsed ? '▸' : '▾'}</span>` +
             `<span class="sb-peer-dot${p.reachable ? ' on' : ''}"></span>` +
             `<span class="sb-label" style="pointer-events:none">🌐 ${esc(p.name)}</span>` +
-            `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(p.id)}" title="斷開這台 ShellFrame（會先確認）">&times;</span>`;
+            `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(p.id)}" title="斷開這台 ShellBot（會先確認）">&times;</span>`;
           // 配對方向徽章：單向時標「主／從」
           if (p.mode && p.mode !== 'duplex') {
             const badge = document.createElement('span');
@@ -3380,7 +3380,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             // 權限最終還是由對方那端把關（單向配對會擋），這裡只是不要給一個
             // 按了必定被拒的入口。
             (p.can_control && p.reachable
-              ? `<span data-pact="maint" data-pid="${esc(p.id)}" style="cursor:pointer" title="更新／重啟這台的 ShellFrame">⟳ 維運</span>`
+              ? `<span data-pact="maint" data-pid="${esc(p.id)}" style="cursor:pointer" title="更新／重啟這台的 ShellBot">⟳ 維運</span>`
               : '');
           container.appendChild(acts);
           if (!p.reachable) {
@@ -4149,7 +4149,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           </span>
         </button>
         <div style="display:flex;align-items:center;gap:8px;margin:14px 0;color:#565f89;font-size:11px">
-          <div style="flex:1;height:1px;background:#3b4261"></div>其他 ShellFrame<div style="flex:1;height:1px;background:#3b4261"></div>
+          <div style="flex:1;height:1px;background:#3b4261"></div>其他 ShellBot<div style="flex:1;height:1px;background:#3b4261"></div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <button class="btn btn-ghost" id="pc-pair" style="padding:10px;border:1px solid #3b4261">產生配對碼<span style="opacity:.6;font-weight:400">（這台當被連端）</span></button>
@@ -4412,7 +4412,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             <div class="link-code-display" style="margin:0 0 6px">${esc2(res.code)}</div>
             <div style="font-size:11px;color:#a9b1d6;line-height:1.6">
               📱 <b>手機／iPad</b>：用 ShellFrame App 掃 QR 即配對。<br>
-              🖥 <b>另一台 ShellFrame</b>：「加入配對」輸入
+              🖥 <b>另一台 ShellBot</b>：「加入配對」輸入
               位址 <code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
               port <code style="color:#7aa2f7">${res.port}</code>，或貼上配對連結。
             </div>
@@ -4529,7 +4529,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       confirm: '會在那台執行 git pull 與依賴安裝（幾十秒）。更新完不會自動重啟。',
       hint: 'git pull ＋ 依賴安裝' },
     { action: 'restart', label: '重新啟動', icon: '🔄',
-      confirm: '會重啟那台的 ShellFrame。tmux 撐著的 session 會留下來，新的 instance 會接回去；連線會短暫中斷。',
+      confirm: '會重啟那台的 ShellBot。tmux 撐著的 session 會留下來，新的 instance 會接回去；連線會短暫中斷。',
       hint: 'session 會接回去，連線會短暫斷' },
     { action: 'reload', label: '熱重載 bridge', icon: '♻️',
       confirm: '只重建那台的 Telegram bridge，不會動到任何 session。',
@@ -5458,7 +5458,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span style="font-size:10px;color:#e0af68">後端未回報</span></div>` +
           `<div style="color:#565f89;font-size:11px;padding:5px 0">前端認得這個 CLI，` +
           `但後端沒有回它的帳號資料——通常是 app 更新後 Python 端還沒重啟。` +
-          `重啟 ShellFrame 就會出現（不是登入問題）。</div></div>`
+          `重啟 ShellBot 就會出現（不是登入問題）。</div></div>`
       ).join('');
       // Usage needs network / a codex app-server spawn, so it must not hold the
       // panel closed: rows render first, then fill in (cached ones instantly).
@@ -9047,7 +9047,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '只重整前端，最快' : 'Frontend only, fastest'}</div>
         </button>
         <button class="btn btn-ghost" id="reload-restart" style="width:100%;text-align:left;padding:10px 12px">
-          <div style="font-size:12px;color:#c0caf5;font-weight:500">⟲ ${isZh ? '重啟 ShellFrame' : 'Restart ShellFrame'}</div>
+          <div style="font-size:12px;color:#c0caf5;font-weight:500">⟲ ${isZh ? '重啟 ShellBot' : 'Restart ShellBot'}</div>
           <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '套用 Python / 核心改動，session 會保留' : 'Apply Python/core changes, sessions preserved'}</div>
         </button>
         <div style="display:flex;justify-content:flex-end;margin-top:12px">
@@ -9254,12 +9254,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.innerHTML = `
       <div class="modal" style="width:380px;padding:20px">
         <div style="text-align:center;font-size:32px;color:#7aa2f7;font-family:monospace;margin-bottom:8px">↻</div>
-        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '需要重啟 ShellFrame' : 'Restart Required'}</h2>
+        <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '需要重啟 ShellBot' : 'Restart Required'}</h2>
         <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin-bottom:6px">
           ${version ? `<div style="color:#9ece6a;margin-bottom:6px">v${version}</div>` : ''}
           ${isZh
-            ? '此次更新包含核心程式碼改動，需要重啟 ShellFrame 才能生效。'
-            : 'This update changes core code. ShellFrame needs to restart.'}
+            ? '此次更新包含核心程式碼改動，需要重啟 ShellBot 才能生效。'
+            : 'This update changes core code. ShellBot needs to restart.'}
         </div>
         <div style="font-size:11px;color:#9ece6a;background:rgba(158,206,106,.08);border-left:2px solid #9ece6a;padding:8px 10px;margin:10px 0;border-radius:3px">
           ${isZh
