@@ -250,6 +250,38 @@ check("plain /start is left to the old handler", not bh.try_pair(b, 555, 5550, "
 check("the bridge checks the code before the allowlist",
       src.index("bridge_home.try_pair(self, user_id, chat_id, text)") < src.index('"text": "Access denied.",'))
 
+print("through the bridge's own message handler")
+b = make_bridge(("s1", "主控"), ("s3", "Coding"))
+b._set_bot_commands = lambda: None
+b._react_async = lambda *a, **k: None
+b.config.allowed_users = [100]
+msg = lambda mid, text, uid: {"update_id": mid, "message": {"message_id": mid, "text": text, "date": int(time.time()),
+                                                            "from": {"id": uid, "username": f"u{uid}"},
+                                                            "chat": {"id": uid, "type": "private"}}}
+p = bh.pair_start()
+sent.clear()
+b._handle_update(msg(1, f"/start {p['code']}", 555))
+check("a stranger's /start <code> binds them, no 'Access denied'", 555 in b.config.allowed_users
+      and not any("Access denied" in str((pl or {}).get("text", "")) for _, pl in sent), sent[-2:])
+sent.clear()
+b._handle_update(msg(2, "/home", 100))
+check("/home through the handler", any("回到 ⭐ 主控" in str((pl or {}).get("text", "")) for _, pl in sent), sent[-2:])
+bh.CACHE_S = 2.0                          # as in the app: the cache is what could re-wake it
+bh._cache["at"] = 0.0
+b.home_api.primary = ("主控", "", "主控")
+b._user_active.pop(100, None)
+sent.clear()
+b._handle_update(msg(3, "盤點一下", 100))
+check("a plain message while it sleeps: it is woken and the message kept",
+      any("正在叫醒" in str((pl or {}).get("text", "")) for _, pl in sent) and wait_for(lambda: b.home_api.opened))
+b.register_session("s9", "主控", lambda text: None, cmd="claude")
+b.home_api.primary = ("主控", "s9", "主控")
+check("…once it is up the message is handled again", wait_for(lambda: b._update_queue.qsize() == 1))
+again = b._update_queue.get()
+check("…and that second pass does not wake it again (the cached 'asleep' is gone)",
+      not bh.wake_for(b, 100, 100, again) and b.get_active_sid(100) == "s9")
+bh.CACHE_S = 0
+
 print("cost")
 bh.CACHE_S = 2.0
 calls = []

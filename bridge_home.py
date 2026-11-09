@@ -154,6 +154,7 @@ def _wake(bridge, role, label, chat_id):
         sid = ""
     with _lock:
         updates = _waking.pop(role, [])
+        _cache["at"] = 0.0           # it is awake now: the next look must not see the cached "asleep"
     if sid and sid in bridge.slots:
         for u in updates:
             bridge._update_queue.put(u)

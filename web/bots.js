@@ -1021,7 +1021,7 @@
           const tok = $('sfb-tg-tok').value.trim();
           if (!tok) return;
           say(t('Connecting…', '連線中…'), true);
-          const r = JSON.parse(await a.start_bridge(tok, JSON.stringify(s.users || []), true, ''));
+          const r = JSON.parse(await a.start_bridge(tok, JSON.stringify(s.users || []), s.prefix_enabled !== false, ''));
           say(r.success ? t('Connected', '已連線') : (r.message || t('Could not connect: check the token', '連不上，請確認 token')), r.success);
         } else if (act === 'pair') {
           const r = JSON.parse(await a.tg_pair_start());

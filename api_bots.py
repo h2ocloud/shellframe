@@ -363,6 +363,7 @@ class BotsApiMixin:
         return json.dumps({"configured": bool((cfg.get("bridge") or {}).get("bot_token")),
                            "connected": bool(b and getattr(b, "connected", False)), "bot": bot,
                            "users": users, "allow_all": not users, "primary": self._bots_primary_tab(cfg)[2],
+                           "prefix_enabled": (cfg.get("bridge") or {}).get("prefix_enabled", True) is not False,
                            "pairing": pair or None, **bridge_home.settings(self)}, ensure_ascii=False)
 
     def tg_home_set(self, data_json: str) -> str:
