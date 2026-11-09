@@ -7,7 +7,9 @@ ime-dup 足跡都沒留，表示那條路徑根本沒經過它（write_input 在
 呼叫點）。write_input 是所有輸入的唯一出口，這份測試守的是那道保底。
 
 紅線（前一版會吃掉使用者剛打完的最後一個字）：**不能吃掉使用者真的
-想輸入的東西**——單字不管、ASCII 不管、超過窗口不管。
+想輸入的東西**——ASCII 不管、超過窗口不管；人連打同一個單字（「哈哈」）
+要留住。2026-11-09 起單字也擋：前端雙送的單字（「主主」「的的」，間隔 0～64ms）
+以前全部漏過去；單字窗口 150ms，人用注音連打同一個字遠超過這個間隔。
 
 跑法：.venv/bin/python tests_ime_backstop.py
 """
@@ -66,11 +68,34 @@ for _ in range(3):
     api.write_input("s1", "確認")
 check("連三送 → 仍只寫一次", written == ["確認"], f"written={written}")
 
-# 3. 紅線：單字不去重（「哈哈」這種連字要留住）
+# 3. 2026-11-09 的 bug：單字被雙送（「主主」「的的」）
+api, s, written = _api_with_session()
+api.write_input("s1", "主")
+time.sleep(0.03)
+api.write_input("s1", "主")
+api.write_input("s1", "bot ")
+api.write_input("s1", "的")
+api.write_input("s1", "的")
+check("單字 30ms 內雙送 → 只寫一次", written == ["主", "bot ", "的"], f"written={written}")
+
+# 3b. 紅線：人真的連打同一個單字（注音要組字加選字，遠超過窗口）
 api, s, written = _api_with_session()
 api.write_input("s1", "哈")
+time.sleep(0.3)
 api.write_input("s1", "哈")
-check("單字重複 → 兩個都留（不吃字）", written == ["哈", "哈"], f"written={written}")
+check("人打「哈」「哈」間隔 300ms → 兩個都留（不吃字）", written == ["哈", "哈"], f"written={written}")
+
+# 3c. 單字窗口比多字短：160ms 的單字重複不擋，但同間隔的詞組重複照擋
+api, s, written = _api_with_session()
+api.write_input("s1", "嗯")
+time.sleep(0.16)
+api.write_input("s1", "嗯")
+check("單字超過 150ms → 兩個都留", written == ["嗯", "嗯"], f"written={written}")
+api, s, written = _api_with_session()
+api.write_input("s1", "好的")
+time.sleep(0.16)
+api.write_input("s1", "好的")
+check("詞組 160ms 仍在 200ms 窗口 → 只寫一次", written == ["好的"], f"written={written}")
 
 # 4. 紅線：純 ASCII 完全不經手
 api, s, written = _api_with_session()

@@ -4062,19 +4062,22 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             # 根本沒經過它（write_input 在前端有 28 個呼叫點，onData 只是其中
             # 一條）。這裡是所有輸入的唯一出口，保底擋在這。
             #
-            # 只認 IME commit 的形狀：含非 ASCII、長度 > 1、內容完全相同、
-            # 200ms 內。人要連打出一模一樣的**詞組**，光注音加選字就要三百毫秒
-            # 以上，碰不到這個窗口；單字（len == 1）完全不管，免得吃掉「哈哈」
-            # 這種連字（實測雙送間隔 93～111ms）。
-            if len(data) > 1 and not data.isascii():
+            # 只認 IME commit 的形狀：含非 ASCII、內容完全相同、在窗口內。人要
+            # 連打出一模一樣的詞組，光注音加選字就要三百毫秒以上，碰不到窗口。
+            # 單字以前完全不管（怕吃掉「哈哈」），結果前端雙送的單字全漏過去
+            # （2026-11-09「主主」「的的」；雙送間隔實測 0～111ms）。人用注音連打
+            # 同一個字要組字加選字，遠超過 250ms，所以單字用 150ms、多字 200ms。
+            # 同一個單字 400ms 內又來、沒落在窗口的記一筆，之後用數據調門檻。
+            if not data.isascii() and data.strip():
                 prev = getattr(s, "_ime_last_chunk", "")
-                prev_ts = getattr(s, "_ime_last_ts", 0.0)
-                if data == prev and (now - prev_ts) < 0.2:
-                    _dlog("ime", f"sid={sid} 擋掉 IME 重複 "
-                                 f"gap={int((now - prev_ts) * 1000)}ms "
+                gap = now - getattr(s, "_ime_last_ts", 0.0)
+                if data == prev and gap < (0.2 if len(data) > 1 else 0.15):
+                    _dlog("ime", f"sid={sid} 擋掉 IME 重複 gap={int(gap * 1000)}ms "
                                  f"len={len(data)} preview={data[:20]!r}")
                     s._ime_last_ts = now      # 連三送也要一路擋掉
                     return
+                if data == prev and len(data) == 1 and gap < 0.4:
+                    _dlog("ime", f"sid={sid} 單字近似重複（未擋）gap={int(gap * 1000)}ms {data!r}")
                 s._ime_last_chunk = data
                 s._ime_last_ts = now
             else:
