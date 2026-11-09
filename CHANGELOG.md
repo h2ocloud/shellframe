@@ -361,6 +361,22 @@
 
 ### Fixes
 
+- **The phone's chat view keeps the message just sent, however big the records after it.**
+  Reported: a second after a message was sent from the phone, the chat showed 1 turn,
+  then none, then turns without the message. `/link/conversation` read a fixed 256 KB
+  tail, and on a 28 MB transcript 195 KB of the last 256 KB were attachment records, one
+  of them 128 KB written five seconds after the message. It now reads back from the end
+  until it has the turns asked for, up to 8 MB. Replayed at the reported moments, the old
+  read gave 7, 1, 0, 2 and 5 turns; the new one gives 80, the message among them, in about
+  17 ms. An unchanged transcript is not read again, and a grown one is read once from the
+  window that sufficed. Covered by tests_conversation_tail.py.
+
+  **手機的對話畫面不會再把剛送的訊息弄丟，後面的紀錄再大也一樣。** 回報：從手機送出一句後，對話畫面先是只剩 1 個 turn，
+  接著變成空的，再來是沒有那句的幾個 turn。`/link/conversation` 只讀紀錄檔最後 256 KB，而在一份 28 MB 的紀錄檔裡，
+  最後 256 KB 有 195 KB 是 attachment，其中一筆 128 KB 在訊息送出後 5 秒寫入。現在會從尾端往前讀，直到湊滿要的 turn
+  數，最多 8 MB。照回報的時間點重播，舊的讀法依序拿到 7、1、0、2、5 個 turn；新的拿到 80 個，那句都在裡面，約 17 毫秒。
+  紀錄檔沒變就不重讀，變長了也只從上次夠用的範圍再讀一次。由 tests_conversation_tail.py 守著。
+
 - **A message to a coordinator that lives outside ShellFrame no longer opens a tab that never becomes ready.**
   The A2A log showed deliveries to such a coordinator failing with "opened but never
   became ready": its roster entry ran a placeholder shell, so delivery opened that

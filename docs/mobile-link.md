@@ -149,6 +149,10 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | TG `/link join shellframe://…` | `bridge_telegram.py` |
 | 回歸測試 | `tests_relay.py`（relay 全流程）、`tests_frame_link.py` |
 
+## 對話畫面讀多少（v0.41.0）
+
+`/link/conversation` 從紀錄檔尾端往前讀，直到湊滿 `limit` 個 turn（預設 80，最多 400），或讀到 8 MB 為止（`api_remote.conversation_turns`）。原本固定只讀最後 256 KB，一筆大的 attachment 紀錄就能把使用者剛送的那句擠出去。紀錄檔沒變時直接用上次的結果；變長時只從上次夠用的範圍再讀一次。
+
 ## Bots（v0.41.0）
 
 手機的 bot 介面用這三條路由。全部都要簽章，而且對方必須能操作這台；單向配對中無權的那一方回 403，手機當成「這台沒有 bot 介面」。

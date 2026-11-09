@@ -17,6 +17,7 @@ from pathlib import Path
 
 import agent_cursor
 import agent_grok
+import agent_status
 import a2a_host
 import bridge_home
 import sf_lang
@@ -24,6 +25,41 @@ import tab_delivery
 import tmux_sessions
 from sf_config import CONFIG_LOCK
 from api_host import main
+
+CONVO_KINDS = ("user_msg", "assistant_text", "tool_call", "error")
+CONVO_CAP = 8 * 1024 * 1024
+_convo_cache = {}           # transcript path -> ((size, mtime_ns), window, limit, fmt, turns)
+
+
+def conversation_turns(path: str, limit: int, cap: int = CONVO_CAP):
+    """(format, turns, error): the last `limit` turns of a transcript, for the phone's chat
+    view. Reads back from the end until there are that many, or `cap` bytes. Measured on a
+    28 MB transcript: 195 KB of its last 256 KB were attachment records (one of 131 KB,
+    written a second after the user's message), so the fixed 256 KB tail held 13 records
+    and the message just sent was gone from the phone. An unchanged transcript is not
+    read again (the phone asks every 2.5 s); a grown one starts from the window that
+    sufficed last time plus what was written since."""
+    try:
+        st = os.stat(path)
+    except OSError as e:
+        return None, [], str(e)
+    key, hit = (st.st_size, st.st_mtime_ns), _convo_cache.get(path)
+    if hit and hit[0] == key and hit[2] >= limit:
+        return hit[3], hit[4][-limit:], None
+    window = 262144
+    if hit and hit[0][0] <= st.st_size:
+        window = min(cap, max(window, hit[1] + st.st_size - hit[0][0]))
+    while True:
+        fmt, evs, err = agent_status._read_tail_events(path, tail_bytes=window, max_records=1_000_000)
+        turns = [e for e in evs if e.get("kind") in CONVO_KINDS]
+        if err or len(turns) >= limit or window >= min(st.st_size, cap):
+            break
+        window = min(st.st_size, cap, window * 4)
+    if not err:
+        if len(_convo_cache) > 64:
+            _convo_cache.clear()
+        _convo_cache[path] = (key, window, limit, fmt, turns)
+    return fmt, turns[-limit:], err
 
 
 class RemoteApiMixin:
@@ -930,14 +966,11 @@ class RemoteApiMixin:
                 if not path:
                     return {"success": False,
                             "message": "這個分頁沒有可讀的對話記錄（可能還沒送出過訊息）"}
-                fmt, evs, err = main.agent_status._read_tail_events(str(path))
-                if err and not evs:
+                fmt, turns, err = conversation_turns(str(path), limit)
+                if err and not turns:
                     return {"success": False, "message": f"transcript unreadable: {err}"}
-                turns = [e for e in evs
-                         if e.get("kind") in ("user_msg", "assistant_text",
-                                              "tool_call", "error")]
                 return {"success": True, "message": f"{len(turns)} turns",
-                        "details": {"format": fmt, "turns": turns[-limit:],
+                        "details": {"format": fmt, "turns": turns,
                                     "label": getattr(s_obj, "_custom_label", None)
                                              or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
             except Exception as e:
