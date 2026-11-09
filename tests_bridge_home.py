@@ -250,6 +250,66 @@ app._on_agent_event({"sid": "s1", "event": "Stop"})
 check("the Stop hook event starts that check", wait_for(lambda: called == ["s1"]), called)
 bh.on_turn_end = real_end
 
+print("a choice counts once")
+# Measured: "choice:s344:1" was tapped twice (the decision, then an older copy while a newer
+# question was out) and "1" went into the tab twice.
+mids = iter(range(500, 600))
+real_send = bh.SEND
+calls = []
+def fake_send(method, payload):
+    calls.append((method, payload))
+    return {"ok": True, "result": {"message_id": next(mids)}} if method == "sendMessage" else {"ok": True}
+bh.SEND = fake_send
+api = Home()
+b = make_bridge(("s1", "主控"))
+api.bridge = b
+b.home_api = api
+b.active = True
+b.config.allowed_users = [100, 300]
+bh._open.clear(); bh._answered.clear(); bh._retired.clear()
+bh.on_turn_end(api, "s1", read_events=lambda sid: [A2A, RED])
+copies = bh._open["s1"]["copies"]
+check("the question went to both chats and both copies are remembered", sorted(c for c, _ in copies) == [100, 300], copies)
+(c1, m1), (c2, m2) = sorted(copies)
+calls.clear()
+check("the first tap goes in", bh.on_choice(b, "choice:s1:1", c1, m1, "q1") is False)
+check("…and the other copy loses its buttons",
+      any(m == "editMessageReplyMarkup" and p["message_id"] == m2 and p["reply_markup"] == {"inline_keyboard": []}
+          for m, p in calls), calls)
+calls.clear()
+check("a second tap on it is refused, and says why", bh.on_choice(b, "choice:s1:1", c1, m1, "q2") is True
+      and any(m == "answerCallbackQuery" and "回答過了" in p["text"] for m, p in calls), calls)
+check("…so is a tap on the other copy", bh.on_choice(b, "choice:s1:2", c2, m2, "q3") is True)
+bh.on_turn_end(api, "s1", read_events=lambda sid: [A2A, {"kind": "assistant_text", "text": "第一題的回覆"}])
+bh._pushed_at.clear()
+bh.on_turn_end(api, "s1", read_events=lambda sid: [A2A, RED])
+older = list(bh._open["s1"]["copies"])
+bh._pushed_at.clear()
+calls.clear()
+bh.on_turn_end(api, "s1", read_events=lambda sid: [A2A, {"kind": "assistant_text",
+                                                         "text": "新的題目\n[[SF:RED]]\n1. 甲\n2. 乙"}])
+check("a newer question retires the older one's buttons",
+      sum(1 for m, p in calls if m == "editMessageReplyMarkup" and (p["chat_id"], p["message_id"]) in older) == 2, calls)
+calls.clear()
+check("…and a tap on the older one is refused, saying a newer question is out",
+      bh.on_choice(b, "choice:s1:1", *older[0], "q4") is True
+      and any(m == "answerCallbackQuery" and "新的題目" in p["text"] for m, p in calls), calls)
+check("other buttons are not ours", bh.on_choice(b, "tgnow:abc", 100, 1, "q5") is False)
+bh._open.clear(); bh._answered.clear(); bh._retired.clear()
+written = []
+rb = make_bridge(("s1", "主控"))
+rb.slots["s1"].write_fn = lambda text: written.append(text)
+rb.home_api = api
+sent.clear()
+bh.SEND = real_send
+cq = lambda qid: {"id": qid, "data": "choice:s1:1", "from": {"id": 100}, "message": {"message_id": 77, "chat": {"id": 100}}}
+rb._handle_callback_query(cq("a"))
+rb._handle_callback_query(cq("b"))
+check("through the bridge: two taps on one message, one \"1\" typed in", written == ["1\r"], written)
+check("…and the second tap is told it was answered",
+      any(m == "answerCallbackQuery" and "回答過了" in str((p or {}).get("text", "")) for m, p in sent), sent[-3:])
+bh.SEND = real_send
+
 print("saying it is connected")
 b = make_bridge(("s1", "主控"), ("s2", "研究"))
 b.config.allowed_users = [100]

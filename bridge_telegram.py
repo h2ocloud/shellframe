@@ -4344,11 +4344,11 @@ class TelegramBridge(BridgeBase):
                 row = []
         if row:
             keyboard.append(row)
-        tg_api(self.config.bot_token, "sendMessage", {
+        bridge_home.opened(self, slot.sid, text, chat_id, tg_api(self.config.bot_token, "sendMessage", {
             "chat_id": chat_id,
             "text": text,
             "reply_markup": {"inline_keyboard": keyboard},
-        })
+        }))   # a choice counts once; a newer question retires this one
 
     # ── File detection & sending ──
 
@@ -5268,6 +5268,8 @@ class TelegramBridge(BridgeBase):
                 "callback_query_id": cq_id, "text": "Access denied"})
             return
 
+        if bridge_home.on_choice(self, data, chat_id, message_id, cq_id):   # a choice counts once
+            return
         # Always ack the callback so TG stops the spinner
         tg_api(self.config.bot_token, "answerCallbackQuery", {"callback_query_id": cq_id})
         if bridge_queue.on_callback(self, data, chat_id, message_id):   # ⚡ go in now

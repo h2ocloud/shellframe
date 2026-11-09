@@ -201,6 +201,13 @@ _OPTION = re.compile(r"^\s*(\d)[.)、]\s+(.+?)\s*$")
 _TG_TOKEN = re.compile(r"TG_REPLY_[0-9a-fA-F]+")
 _pushed_at = {}              # sid -> when a decision was last pushed (the two paths below share it)
 PUSH_DEDUP_S = 30.0
+# Measured: the same "choice:s344:1" was tapped twice (once on the decision, once on an
+# older copy while a newer question was out) and "1" went in twice. Every message with
+# choice buttons counts once; a newer question for the tab retires the older copies.
+_answered = collections.OrderedDict()   # (chat_id, message_id) -> the option chosen
+_retired = collections.OrderedDict()    # (chat_id, message_id) of a question replaced by a newer one
+_open = {}                              # sid -> {"text", "copies": [(chat_id, message_id)]}: its newest question
+KEEP = 500
 
 
 def red_block(evs):
@@ -273,9 +280,68 @@ def on_turn_end(api, sid: str, read_events=None):
                                                        for n, t in options]}
     for chat_id in _chats(bridge):
         try:
-            _tg(bridge, "sendMessage", dict(payload, chat_id=chat_id))
+            opened(bridge, sid, text, chat_id, _tg(bridge, "sendMessage", dict(payload, chat_id=chat_id)))
         except Exception:
             pass
+
+
+def _remember(table, key, value=True):
+    table[key] = value
+    while len(table) > KEEP:
+        table.popitem(last=False)
+
+
+def opened(bridge, sid, text, chat_id, result):
+    """A question with choice buttons went to a chat (every path that sends one calls
+    this with Telegram's reply). The same question to another chat is one more copy;
+    a different one retires the older: its buttons go and a tap on them is refused,
+    since it would be read as the answer to the new question."""
+    mid = ((result or {}).get("result") or {}).get("message_id")
+    old = []
+    with _lock:
+        cur = _open.get(sid)
+        if cur and cur["text"] != text:
+            old = [k for k in cur["copies"] if k not in _answered]
+            for key in old:
+                _remember(_retired, key)
+            cur = None
+        cur = cur or {"text": text, "copies": []}
+        if mid:
+            cur["copies"].append((chat_id, mid))
+        _open[sid] = cur
+    for c, m in old:
+        _tg(bridge, "editMessageReplyMarkup", {"chat_id": c, "message_id": m, "reply_markup": {"inline_keyboard": []}})
+
+
+def on_choice(bridge, data: str, chat_id, message_id, cq_id) -> bool:
+    """A tap on a numbered-choice button (any path that sent one). True when it must
+    not go in: that message was answered already, or a newer question replaced it.
+    The first tap goes through, and the other copies of the question lose their
+    buttons. Runs before the bridge acknowledges the tap, so the refusal shows."""
+    if not str(data or "").startswith("choice:"):
+        return False
+    key = (chat_id, message_id)
+    sid = data.split(":")[1] if data.count(":") >= 2 else ""
+    with _lock:
+        why = ("answered" if key in _answered else "retired" if key in _retired else "")
+        if not why:
+            _remember(_answered, key, data.rsplit(":", 1)[-1])
+            cur = _open.get(sid) or {"copies": []}
+            copies = [k for k in cur["copies"] if k != key] if key in cur["copies"] else []
+            if key in cur["copies"]:
+                _open.pop(sid, None)
+            for k in copies:                 # a tap racing the removal of their buttons
+                _remember(_answered, k, _answered[key])
+    if why:
+        _tg(bridge, "answerCallbackQuery", {"callback_query_id": cq_id, "text": sf_lang.pick(
+            "Already answered" if why == "answered" else "A newer question replaced this one",
+            "這題已經回答過了" if why == "answered" else "已經有新的題目，這題的按鈕不算了")})
+        _tg(bridge, "editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id,
+                                                "reply_markup": {"inline_keyboard": []}})
+        return True
+    for c, m in copies:
+        _tg(bridge, "editMessageReplyMarkup", {"chat_id": c, "message_id": m, "reply_markup": {"inline_keyboard": []}})
+    return False
 
 
 def push_decision(bridge, slot, reason: str = ""):

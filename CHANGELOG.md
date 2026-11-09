@@ -239,6 +239,19 @@
   在等它，晚到比丟掉好。排隊超過 30 分鐘才送進去的訊息，第一行會說它排了多久，讓收到的人知道內容可能過時。
   時限跟著訊息一起存在磁碟上。由 tests_tab_delivery.py 守著。
 
+- **A choice button on the phone counts once, and a newer question retires the older one's buttons.**
+  Reported: the same decision button was tapped twice and "1" went into the tab twice;
+  every question's buttons carried the same data, so an older question's button could
+  also answer a newer one. Now the first tap on a question goes in and the copies of it
+  in other chats lose their buttons; another tap is refused with "already answered"; a
+  newer question for the same tab removes the older one's buttons and a tap on them is
+  refused. Covered by tests_bridge_home.py, including the real bridge.
+
+  **手機上的選項按鈕只算一次，新題目會讓舊題的按鈕失效。** 回報：同一題按了兩次，「1」就送進分頁兩次；每一題的
+  按鈕資料都一樣，舊題的按鈕也可能被當成新題的答案。現在一題只收第一次按下，同一題在其他對話的副本會拿掉按鈕；
+  再按會回「這題已經回答過了」；同一個分頁出了新題目，舊題的按鈕會拿掉，按了也不算。由 tests_bridge_home.py 守著，
+  包含真的 bridge 路徑。
+
 - **No more "Bridge connected … Sessions: none" on the phone after every restart.**
   Reported: each app restart and bridge reload sent every bound phone that message,
   and "none" was wrong (the tabs are registered only after the bridge starts). Now a
