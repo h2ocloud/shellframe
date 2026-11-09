@@ -108,7 +108,7 @@ row = api._session_state_row("s1", _S(label="sf dev"))
 A.last_error = api.__dict__["_restore_last_error"]
 check("欄位齊全",
       set(row) == {"sid", "label", "agent_state", "agent_activity", "agent_blocked",
-                   "last_error", "last_output_at", "idle_for_s", "runs_on"},
+                   "last_error", "composer", "last_output_at", "idle_for_s", "runs_on"},
       str(sorted(row)))
 
 # 帶判斷的那一版：呼叫端不必自己重算門檻，退出碼才說得準

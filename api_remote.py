@@ -19,6 +19,7 @@ import agent_cursor
 import agent_grok
 import a2a_host
 import sf_lang
+import tab_delivery
 import tmux_sessions
 from sf_config import CONFIG_LOCK
 from api_host import main
@@ -515,12 +516,17 @@ class RemoteApiMixin:
                 submit = args.get("submit", True)
                 if not sid:
                     return {"success": False, "message": "No sid provided"}
-                s = self.sessions.get(sid)
-                if not s:
+                if sid not in self.sessions:
                     return {"success": False, "message": f"No such session: {sid}"}
-                s._startup_trust_pending = False
-                self._send_text_to_session(s, text, submit=submit)
-                return {"success": True, "message": f"Sent {len(text)} chars to {sid}"}
+                # Not into a running turn, a decision menu or the user's draft: the
+                # per-tab queue waits (up to 30 min) unless --now. See tab_delivery.
+                sender = str(args.get("from_sid") or "")
+                label = self._session_label(sid, self.sessions.get(sid))
+                res = tab_delivery.deliver(
+                    self, sid, text, submit=submit, now=bool(args.get("now")), from_sid=sender,
+                    on_timeout=lambda _r, why: tab_delivery.notify_sender(self, sender, label, why))
+                return {k: res[k] for k in ("success", "message") if k in res} | (
+                    {"details": {"queued": True, "position": res.get("position")}} if res.get("queued") else {})
             except Exception as e:
                 return {"success": False, "message": f"Send failed: {e}"}
 
@@ -711,10 +717,14 @@ class RemoteApiMixin:
                 # Keep only the last max_lines non-empty lines for master orchestration use
                 lines = [l for l in text.split("\n") if l.strip()]
                 tail = "\n".join(lines[-max_lines:])
+                # Without colours a dim suggestion in the input box reads like the
+                # user's own words; say which it is.
+                kind, box = tab_delivery.composer_state(tab_delivery.capture(self, sid))
+                note = tab_delivery.composer_note(kind, box)
                 return {
                     "success": True,
                     "message": f"{len(lines)} lines",
-                    "details": {"text": tail},
+                    "details": {"text": tail + (f"\n{note}" if note else ""), "composer": kind},
                 }
             except Exception as e:
                 return {"success": False, "message": f"Peek failed: {e}"}

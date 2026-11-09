@@ -416,6 +416,10 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
         msg_id = uuid.uuid4().hex[:12]
         claim_id(msg_id)
     if to_sid:
+        try:
+            ctx.sender = from_sid        # so a queue timeout can tell the sender
+        except Exception:
+            pass
         res = ctx.send(to_sid, body) or {}
     elif external:
         res = ctx.deliver_external(role, {"kind": kind, "id": msg_id, "text": text,
@@ -445,13 +449,17 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
             "reply_peer": reply_peer, "depth": depth, "answered": False,
             "target": target_key, "from_label": from_label,
         })
-    record({"kind": "message", "text": text, "target": target_key, "msg_id": msg_id,
+    record({"kind": "queued" if res.get("queued") else "message", "text": text,
+            "target": target_key, "msg_id": msg_id,
             "from_sid": from_sid, "from_label": from_label, "to_sid": to_sid,
             "to_role": role, "depth": depth})
     details = {"id": msg_id, "depth": depth, "target": target_key, "sid": to_sid}
     if kind == "handoff" and route_hint:
         details["route_hint"] = route_hint
     label = to_label or role or to_sid
+    if res.get("queued"):
+        details["queued"] = True
+        return _ok(res.get("message") or f"queued for {label}", details)
     return _ok(f"已交給 {label} ({to_sid or 'new'})", details)
 
 
@@ -669,6 +677,10 @@ def report_result(ctx, hid: str, text: str, from_sid: str = "", from_label: str 
             "from_sid": from_sid, "from_label": from_label or from_sid,
         }) or {}
     else:
+        try:
+            ctx.sender = from_sid        # the reporter hears about a queue timeout
+        except Exception:
+            pass
         res = _inject_result(ctx, rec, text, from_label or from_sid, hid)
     if not res.get("success"):
         release_id(result_id)

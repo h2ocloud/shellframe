@@ -5,6 +5,7 @@ import threading
 
 import agent_link
 import agent_route
+import tab_delivery
 import sf_lang
 
 
@@ -69,12 +70,19 @@ class _Ctx:
     def deliver_external(self, role: str, payload: dict) -> dict:
         return self.api._bots_external_deliver(self._key(role), payload)
 
+    sender = ""         # agent_link sets the sending sid before each send
+    now = False         # --now: go in even mid-turn
+
     def send(self, sid: str, text: str) -> dict:
-        session = self.api.sessions.get(sid)
-        if not session:
+        """Through the per-tab queue: never into a running turn, a decision menu or
+        the user's half-typed text (tab_delivery). A timeout tells the sender."""
+        if sid not in self.api.sessions:
             return {"success": False, "message": f"No such session: {sid}"}
-        self.api._send_text_to_session(session, text, submit=True)
-        return {"success": True, "message": f"Sent to {sid}"}
+        sender, api = self.sender, self.api
+        label = _label(api, sid)
+        return tab_delivery.deliver(
+            api, sid, text, now=self.now, from_sid=sender,
+            on_timeout=lambda _r, why: tab_delivery.notify_sender(api, sender, label, why))
 
     def delegate(self, role: str, task: str) -> dict:
         return self.api.delegate_task(role, task)
@@ -142,6 +150,7 @@ def handle(api, cmd: str, args: dict) -> dict:
         if cmd == "a2a_log":
             return agent_link.log_text(int(args.get("limit") or 50))
         ctx = _Ctx(api)
+        ctx.now = bool(args.get("now"))
         if cmd == "a2a_deliver":
             return agent_link.accept_remote(ctx, args)
         sid, label = _from(api, args)

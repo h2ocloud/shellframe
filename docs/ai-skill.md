@@ -150,9 +150,20 @@ not retarget `delegate` or rewrite the task. The suggestion is attached to
 `--tier` is `light`, `code`, `plan`, or `review`. A task that says it is a
 review is `review` even when it also talks about design.
 
-`send` waits for the target to be idle, pastes atomically (bracketed paste) and
-only then submits, so it does not interrupt a turn in flight or interleave with
-another writer. Prefer it over typing keystrokes.
+`send` never types into a turn in flight. If the target is working, waiting on a
+decision menu, in the middle of a Telegram turn, or has the user's unsent text in
+its input box, the text waits in that tab's queue (first in, first out) and goes
+in when that ends; the reply says `Queued`. After 30 minutes it is dropped and the
+sender's tab is told. `--now` sends at once. It pastes atomically (bracketed
+paste) and only then submits. Prefer it over typing keystrokes. `a2a-send`,
+`a2a-handoff`, `a2a-result`, `a2a-next` and `delegate` to a tab that is already
+open use the same queue and take `--now` too: you no longer need your own polling
+loop to "wait until it is done", and it holds whatever model you run on.
+
+`peek` ends with a `[ShellBot]` line when the input box holds something: a dim
+suggestion that Claude Code shows (not the user's words) or text the user typed
+and has not sent. `state` has the same as `composer`: `empty`, `suggestion`,
+`draft` or `unknown`.
 
 `delegate` is the one to reach for when you want *work done by the right agent*
 rather than a specific tab poked: it resolves the role from the roster, finds or

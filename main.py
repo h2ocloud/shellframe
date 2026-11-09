@@ -46,6 +46,7 @@ import board
 import agent_model
 import agent_prompts
 import sf_lang
+import tab_delivery
 import agent_status
 import agent_cursor
 import agent_grok
@@ -2288,10 +2289,13 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     "details": {"sid": sid, "label": label, "role": resolved_role,
                                 "created": True, "not_ready": True}}
         session._startup_trust_pending = False
-        self._send_text_to_session(session, prompt, submit=True)
+        # A tab that was already open may be mid-turn: queue, don't type into it.
+        sent = tab_delivery.deliver(self, sid, prompt) if not created else None
+        if created:
+            self._send_text_to_session(session, prompt, submit=True)
         return {
             "success": True,
-            "message": f"Delegated to {label} ({sid})",
+            "message": (sent or {}).get("message") if (sent or {}).get("queued") else f"Delegated to {label} ({sid})",
             "details": {
                 "sid": sid,
                 "label": label,
@@ -4294,6 +4298,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             "agent_blocked": agent_status.redact(
                 self._agent_blocked_for_list(sid), 120),
             "last_error": last_error,
+            # 'suggestion' is Claude Code's dim hint, not the user's text (on-demand only)
+            "composer": tab_delivery.composer_state(tab_delivery.capture(self, sid))[0] if with_error else "",
             "last_output_at": int(last_at) if last_at else 0,
             "idle_for_s": int(now - last_at) if last_at else -1,
             "runs_on": runs_on,

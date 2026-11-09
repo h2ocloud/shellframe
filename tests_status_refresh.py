@@ -75,13 +75,29 @@ api._hook_events = {}
 r = json.loads(api.refresh_agent_status(""))
 check("零分頁不炸", r["refreshed"] == 0, str(r))
 
-# 定期重算的常數要真的存在（前端按鈕只能救手動，安靜的分頁靠這個）
+# 安靜的分頁不靠按鈕也會恢復：hook 停在 working、而 hook 與畫面都安靜超過
+# HOOK_QUIET_S，監控就把 working 交回畫面判斷。這取代了以前「每五分鐘把所有
+# 分頁的 hook 一起清掉」——那也清掉了明明還在跑的分頁（長思考、長指令），
+# 清完到下一個 hook 前 sfctl state 都說 done（見 tests_state_hook_overlay.py）。
+import time  # noqa: E402
+
+
+class _Tab:
+    pass
+
+
+api = _api()
+quiet, busy = _Tab(), _Tab()
+now = time.time()
+quiet._last_output_activity_time = now - api.HOOK_QUIET_S - 10
+busy._last_output_activity_time = now - 1
+api.sessions = {"s1": quiet, "s2": busy}
+api._hook_events = {"s1": {"state": "working", "ts": now - 999},
+                    "s2": {"state": "working", "ts": now - 999}}
+check("中斷後安靜的分頁：working 交回畫面判斷", api._quiet_hook_sids(now) == ["s1"])
+check("畫面還在動的分頁（思考中、跑長指令）：working 保留", "s2" not in api._quiet_hook_sids(now))
 mono = app_source()
-m = re.search(r"HOOK_RESET_INTERVAL = (\d+(?:\.\d+)?)", mono)
-check("status monitor 有五分鐘定期重算", bool(m) and float(m.group(1)) == 300.0,
-      f"HOOK_RESET_INTERVAL={m.group(1) if m else '找不到'}")
-check("定期重算會連 hook 快取一起清",
-      "self._hook_events.clear()" in mono and "五分鐘定期重算" in mono)
+check("監控不再定期把所有分頁的 hook 一起清掉", "五分鐘定期重算" not in mono)
 
 # 前端按鈕要接到這支 API
 idx = (HERE / "web/index.html").read_text(encoding="utf-8")
