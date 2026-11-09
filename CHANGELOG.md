@@ -154,8 +154,10 @@
   draft; `sfctl peek` and `sfctl state` say which it is. After 30 minutes an item is
   dropped and its sender is told. The queue is kept on disk
   (`~/.config/shellframe/delivery_queue.json`): after a restart each item waits only
-  what is left of its time, and one that cannot be delivered (its tab did not come
-  back, or it was being typed in when the app went down) is reported to the sender.
+  what is left of its time, goes in only once the tabs' states have settled (right after
+  a restart every tab reads "not busy"), and one that cannot be delivered (its tab did
+  not come back, or it was being typed in when the app went down) is reported to the
+  sender.
   Covered by tests_tab_delivery.py and tests_delivery_restart.py.
 
   **送給分頁的字會等分頁：`send`、A2A、`delegate` 在對方忙時排隊，重啟也不會掉。** 以前
@@ -163,7 +165,8 @@
   跑、在等決定、在處理 Telegram，或輸入框有使用者還沒送出的字時，訊息會進那個分頁的佇列（先進先
   出），結束後才送；加 `--now` 立刻送。讀輸入框時連顏色一起讀，Claude Code 的灰色建議字不會被當成
   使用者的草稿；`sfctl peek`、`sfctl state` 會標出是哪一種。等了 30 分鐘還送不進去就放棄並通知送件方。
-  佇列存在磁碟（`~/.config/shellframe/delivery_queue.json`）：重啟後每則只等原本剩下的時間；
+  佇列存在磁碟（`~/.config/shellframe/delivery_queue.json`）：重啟後每則只等原本剩下的時間，並等各分頁的
+  狀態穩定後才送（剛重啟時每個分頁都會被看成「不忙」）；
   送不到的（分頁沒回來、或送到一半 App 關了）一定通知送件方。由 tests_tab_delivery.py、
   tests_delivery_restart.py 守著。
 

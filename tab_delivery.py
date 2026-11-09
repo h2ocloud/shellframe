@@ -48,6 +48,7 @@ POLL = 1.5                  # seconds between checks while waiting
 TAKEN_WAIT = 8.0            # after sending, how long to wait for the tab to take it
 STATE_FILE = None           # set by the app at start-up; None (tests) keeps the queue in memory
 RESTORE_GRACE = 180.0       # after a restart, how long an item waits for its tab to come back
+RESUME_SETTLE = 20.0        # …and how long before a restored item may go in at all (see _wait_turn)
 
 _CSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _TOKEN = re.compile(r"\x1b\[([0-9;?]*)([A-Za-z])|([^\x1b]+)|(\x1b)")
@@ -328,6 +329,12 @@ def _wait_turn(api, sid: str, item: dict) -> str:
                 time.sleep(POLL)
                 continue
             return "lost" if item.get("restored") else "closed"
+        # Measured: right after a restart no tab has a state yet (no hook event, no status
+        # snapshot), so every tab reads "not busy"; a restored item went into a tab 0.6 s
+        # after the resume, in the middle of its turn. Let the states settle first.
+        if item.get("restored") and time.time() < _resumed_at + RESUME_SETTLE:
+            time.sleep(POLL)
+            continue
         reason = busy_reason(api, sid)
         if time.time() - item["t0"] > _limit(item):
             return reason or "expired"

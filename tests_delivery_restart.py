@@ -35,6 +35,7 @@ sf_log.DEBUG_LOG = str(Path(tempfile.mkdtemp(prefix="sf-log-")) / "shellframe_de
 import tab_delivery as td  # noqa: E402
 
 td.POLL, td.TAKEN_WAIT = 0.05, 0.3
+td.RESUME_SETTLE = 0.0       # the settle wait has its own check below
 
 
 class Tab:
@@ -207,6 +208,20 @@ check("not typed in a second time", wait_for(lambda: notes_to(api, "s2"))
       and ("s1", "maybe sent") not in api.sent, api.sent)
 check("…the sender is told it may not have arrived and to look first",
       any("may not have been delivered" in t and "peek" in t for t in notes_to(api, "s2")), notes_to(api, "s2"))
+
+print("states settle before a restored item goes in")
+# Measured: 0.6 s after a resume a restored item went into a tab mid-turn: no tab had a
+# state yet, so every tab read "not busy".
+td.RESUME_SETTLE = 0.6
+restart_with([{"sid": "s1", "text": "after settling", "submit": True, "t0": time.time(),
+               "from_sid": "s2", "label": "coder"}], "settle")
+api = FakeApi("s1", "s2")
+td.resume(api)
+time.sleep(0.3)
+check("not in the first moments after the resume, even if the tab looks free",
+      ("s1", "after settling") not in api.sent, api.sent)
+check("…but once the states have settled", wait_for(lambda: ("s1", "after settling") in api.sent, 3), api.sent)
+td.RESUME_SETTLE = 0.0
 
 print("order and the file")
 restart_with([], "order")

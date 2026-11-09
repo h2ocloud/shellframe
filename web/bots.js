@@ -983,8 +983,8 @@
       $('sfb-tg-users').innerHTML = s.allow_all
         ? `<p class="sfb-warn">${t('The allowlist is empty: anyone who finds this bot can drive this computer. After the first phone is bound, only bound people can.',
             '允許名單是空的：任何找到這個 bot 的人都能操作這台電腦。第一次綁定之後，就只剩綁定的人可以用。')}</p>`
-        : `<p class="sfb-note">${t('Bound', '已綁定')}${t(': ', '：')}${users.map(u =>
-            `<span class="sfb-chip">${esc(u)} <a href="#" data-act="unbind" data-id="${esc(u)}" title="${esc(t('Remove', '移除'))}">×</a></span>`).join(' ')}</p>`;
+        : `<p class="sfb-note">${t('Bound', '已綁定')}${t(': ', '：')}${(s.users_info || users.map(u => ({ id: u, label: String(u) }))).map(u =>
+            `<span class="sfb-chip">${esc(u.label)} <a href="#" data-act="unbind" data-id="${esc(u.id)}" title="${esc(t('Remove', '移除'))}">×</a></span>`).join(' ')}</p>`;
       if (document.activeElement && ov.contains(document.activeElement) && document.activeElement.type === 'time') return;
       $('sfb-tg-home').checked = s.default_primary !== false;
       const q = s.quiet || {};
@@ -1022,7 +1022,7 @@
           if (!tok) return;
           say(t('Connecting…', '連線中…'), true);
           const r = JSON.parse(await a.start_bridge(tok, JSON.stringify(s.users || []), s.prefix_enabled !== false, ''));
-          say(r.success ? t('Connected', '已連線') : (r.message || t('Could not connect: check the token', '連不上，請確認 token')), r.success);
+          say(r.success ? '' : (r.message || t('Could not connect: check the token', '連不上，請確認 token')), r.success);   // the state line says it
         } else if (act === 'pair') {
           const r = JSON.parse(await a.tg_pair_start());
           if (!r.success) say(r.message);

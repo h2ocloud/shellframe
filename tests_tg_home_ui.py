@@ -73,6 +73,7 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
                                           expires_in: 600};
                             return R(Object.assign({success: true}, tg));
       case 'tg_unbind': tg.users = tg.users.filter(u => String(u) !== String(args[0]));
+                        tg.users_info = (tg.users_info || []).filter(u => String(u.id) !== String(args[0]));
                         tg.allow_all = !tg.users.length; return R(tg);
       case 'tg_home_set': { const d = JSON.parse(args[0]);
                             if ('default_primary' in d) tg.default_primary = d.default_primary;
@@ -113,6 +114,7 @@ with sync_playwright() as pw:
     check("connecting hands the token to the app", started and started[0][1][0] == "123456:ABC-test-token", started)
     check("connected: steps 2 and 3, and the bot's name", vis("#sfb-tg-bind") and not vis("#sfb-tg-token")
           and "@demo_shellbot" in page.text_content("#sfb-tg-state"))
+    check("…said once (no second 'connected' line under it)", "已連線" not in page.text_content("#sfb-tg-msg"))
     check("an empty allowlist shows the red warning", "任何找到這個 bot 的人" in page.text_content("#sfb-tg-users"))
 
     print("bind")
@@ -121,9 +123,10 @@ with sync_playwright() as pw:
     check("a QR code of the one-time link", page.text_content(".sfb-tg .sfb-tg-qr a")
           == "https://t.me/demo_shellbot?start=a1b2c3d4" and page.is_visible(".sfb-tg .sfb-tg-qr svg"))
     page.locator(".sfb-tg .modal").screenshot(path=str(SHOTS / "bots-telegram-pair.png"))
-    page.evaluate("Object.assign(window.__tg, {users: [555], allow_all: false, pairing: null})")
+    page.evaluate("Object.assign(window.__tg, {users: [555], allow_all: false, pairing: null, "
+                  "users_info: [{id: 555, label: '@ann_dev'}]})")
     page.wait_for_timeout(2600)                          # the panel refreshes every 2 s
-    check("bound: the warning goes, the person is listed", "555" in page.text_content("#sfb-tg-users")
+    check("bound: the warning goes, the person is listed by @username", "@ann_dev" in page.text_content("#sfb-tg-users")
           and "任何找到" not in page.text_content("#sfb-tg-users") and not page.is_visible(".sfb-tg .sfb-tg-qr"))
     page.locator(".sfb-tg .modal").screenshot(path=str(SHOTS / "bots-telegram-bound.png"))
 

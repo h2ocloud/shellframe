@@ -292,6 +292,20 @@ for _ in range(200):
 check("the reply loop asking 200 times reads the primary bot once (cached 2 s)", len(calls) == 1, len(calls))
 bh.CACHE_S = 0
 
+print("who a bound person is")
+chats = {555: {"id": 555, "first_name": "Ann", "username": "ann_dev"}, 556: {"id": 556, "first_name": "Bo", "last_name": "Li"}}
+real_send = bh.SEND
+bh.SEND = lambda method, payload: ({"ok": True, "result": chats[payload["chat_id"]]}
+                                   if method == "getChat" and payload["chat_id"] in chats else {"ok": False})
+check("@username when they have one", bh.user_label(b, 555) == "@ann_dev")
+check("their name and id when they do not", bh.user_label(b, 556) == "Bo Li · 556")
+check("the bare id when Telegram cannot say", bh.user_label(b, 557) == "557")
+calls = []
+bh.SEND = lambda method, payload: calls.append(method) or {"ok": True, "result": chats[555]}
+bh.user_label(b, 555)
+check("asked once, then remembered (the panel asks every 2 s)", calls == [])
+bh.SEND = real_send
+
 print("the app side")
 bh.settings = real_settings
 app = Api.__new__(Api)

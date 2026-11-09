@@ -255,6 +255,30 @@ def tg_send(api, text: str, from_sid: str) -> dict:
             "details": {"chats": sent}}
 
 
+# ── who a bound user is: @username, else their name, with the id ────────────
+_names = {}                  # user id -> (label, fetched_at)
+NAME_RETRY_S = 60.0          # a failed lookup is tried again after this
+
+
+def user_label(bridge, user_id) -> str:
+    """'@username', or 'First Last · <id>', or the bare id when Telegram cannot say."""
+    uid = int(user_id)
+    hit = _names.get(uid)
+    if hit and (hit[0] != str(uid) or time.time() - hit[1] < NAME_RETRY_S):
+        return hit[0]
+    label = str(uid)
+    if bridge is not None:
+        try:
+            r = _tg(bridge, "getChat", {"chat_id": uid}) or {}
+            c = r.get("result") or {}
+            name = " ".join(x for x in (c.get("first_name"), c.get("last_name")) if x)
+            label = f"@{c['username']}" if c.get("username") else (f"{name} · {uid}" if name else str(uid))
+        except Exception:
+            pass
+    _names[uid] = (label, time.time())
+    return label
+
+
 # ── pairing: a code from the settings, `/start <code>` on the phone ─────────
 def pair_start(ttl: float = PAIR_TTL_S) -> dict:
     code = secrets.token_hex(4)
