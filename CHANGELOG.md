@@ -266,6 +266,21 @@
   **用輸入法打的中文單字不再重複。** 回報：「主主」「的的」。擋重複送出的保底機制原本刻意不管
   單字；現在 150 毫秒內重複的單字也會擋掉，接近的重複會記錄下來。由 tests_ime_backstop.py 守著。
 
+- **`sfctl state --all` lists real trouble only: a finished tab that waits to be read is not a problem.**
+  Once the last-answer time became accurate, `--all` listed 20 tabs as needing
+  attention, every one finished and merely quiet for days; a fake ~45 s idle time after
+  each restart had hidden this. Needing attention is now: blocked on a person or
+  waiting on a decision, an error, stuck, a running tab whose screen has not moved past
+  the threshold (hung mid-turn; a long think keeps its spinner moving), or an unknown
+  state silent past it. Finished and idle tabs are given only as a count, candidates
+  to close. Covered by tests_state_query.py.
+
+  **`sfctl state --all` 只列真正出事的：做完在等人看的分頁不算問題。** 最後回應時間改準之後，
+  `--all` 把 20 個分頁列成需要注意，全都是做完、只是安靜了好幾天；以前重啟後那個假的約 45 秒
+  閒置把這個問題蓋住了。現在「需要注意」是：在等人回答或決定、有錯誤、卡住、說在跑但畫面超過
+  門檻沒動（跑到一半掛住；長推理時 spinner 會一直動）、或狀態不明又安靜超過門檻。做完和閒著的
+  分頁只給一個數量，當作可以回收的候選。由 tests_state_query.py 守著。
+
 - **Handing work to a role with no open tab works again with current Claude Code.**
   Measured: `a2a-handoff` and `delegate` to such a role opened its tab, then waited
   45 s and gave up with "opened but never became ready". A new Claude Code

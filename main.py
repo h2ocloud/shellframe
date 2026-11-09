@@ -4338,25 +4338,33 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         「這個分頁有事」，而那個判斷只有這裡知道門檻。
         """
         row = self._session_state_row(sid, s, now, with_error)
-        row["needs_attention"] = self._state_row_is_problem(row, stale_min)
+        out_ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
+        quiet = (now or time.time()) - out_ts if out_ts else -1.0
+        row["needs_attention"] = self._state_row_is_problem(row, stale_min, screen_quiet_s=quiet)
         return row
 
-    def _state_row_is_problem(self, row: dict, stale_min: float = 0) -> bool:
+    def _state_row_is_problem(self, row: dict, stale_min: float = 0,
+                              screen_quiet_s: float = -1) -> bool:
         """這一列需不需要人介入。
 
-        三種：在等人回答、對話裡有錯誤、或太久沒有輸出。「太久」由呼叫端給，
-        因為合理值取決於那台在跑什麼——長推理的分頁十分鐘不吭聲是正常的。
-        沒給就用預設門檻；正在 working 的分頁不算停滯，它本來就在忙。
+        在等人回答或決定、對話裡有錯誤、卡住（stuck）；說自己在跑、畫面卻停了
+        超過門檻（跑到一半掛住）；狀態不明又安靜超過門檻。做完或閒著的分頁不管
+        安靜多久都不算——那是在等人看結果，不是出事（量到：最後回應時間改準之後，
+        20 個做完很久的分頁全被列成需要注意）。跑著的分頁看的是畫面：長推理時
+        對話記錄不動，但 spinner 和計時一直在畫。門檻由呼叫端給，沒給用預設。
         """
-        if row.get("agent_blocked"):
+        if row.get("agent_blocked") or row.get("last_error"):
             return True
-        if row.get("last_error"):
+        state = row.get("agent_state") or ""
+        if state in ("stuck", "decision"):
             return True
         limit = float(stale_min or self.STATE_STALE_DEFAULT_MIN) * 60
-        idle = row.get("idle_for_s", -1)
-        if row.get("agent_state") == "working":
-            return False
-        return idle >= 0 and idle > limit
+        if state == "working":
+            return screen_quiet_s >= 0 and screen_quiet_s > limit
+        if state == "unknown":
+            idle = row.get("idle_for_s", -1)
+            return idle >= 0 and idle > limit
+        return False
 
     def _agent_state_for_list(self, sid: str) -> str:
         """給 sfctl list／Frame Link 用的單字狀態（'working' / 'done' / ''）。

@@ -572,6 +572,7 @@ def _print_state(result: dict, as_json: bool = False) -> int:
             "success": bool(result.get("success")),
             "message": result.get("message", ""),
             "checked": details.get("checked", len(states)),
+            "long_idle": details.get("long_idle", 0),
             "states": states,
         }, ensure_ascii=False))
         if not result.get("success"):
@@ -597,6 +598,8 @@ def _print_state(result: dict, as_json: bool = False) -> int:
             bits.append(f"· {st['runs_on']}")
         bits.append(f"· {_fmt_age(st.get('idle_for_s'))} 無輸出")
         print("  " + " ".join(bits))
+    if details.get("long_idle"):     # finished or idle a long time: not a problem, just a count
+        print(f"  （另有 {details['long_idle']} 個做完或閒著超過 {details.get('long_idle_min', 15)} 分鐘，不算出事）")
     # 退出碼只看「有沒有需要介入的」。單獨問一個分頁時它也要準——原本是看
     # 有沒有 checked 欄位，那等於在問「你用的是不是 --all」，不是在問狀態。
     return 1 if any(st.get("needs_attention") for st in states) else 0

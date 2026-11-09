@@ -149,15 +149,44 @@ mk = lambda **kw: {"agent_blocked": "", "last_error": "", "agent_state": "done",
                    "idle_for_s": 10, **kw}
 check("在等人 → 需要注意", api4._state_row_is_problem(mk(agent_blocked="要覆蓋嗎？")))
 check("有錯誤 → 需要注意", api4._state_row_is_problem(mk(last_error="API Error 401")))
-check("太久沒輸出 → 需要注意",
-      api4._state_row_is_problem(mk(idle_for_s=3600), stale_min=15))
-check("正在忙就不算停滯（長推理很正常）",
-      not api4._state_row_is_problem(mk(agent_state="working", idle_for_s=3600),
-                                     stale_min=15))
-check("剛有輸出 → 正常", not api4._state_row_is_problem(mk(idle_for_s=10)))
-check("沒輸出過（-1）不算停滯", not api4._state_row_is_problem(mk(idle_for_s=-1)))
-check("門檻可調", api4._state_row_is_problem(mk(idle_for_s=120), stale_min=1)
-      and not api4._state_row_is_problem(mk(idle_for_s=120), stale_min=30))
+check("卡住、在等決定 → 需要注意", api4._state_row_is_problem(mk(agent_state="stuck"))
+      and api4._state_row_is_problem(mk(agent_state="decision")))
+# 量到：最後回應時間改準之後，20 個做完很久的分頁全被列成需要注意。做完在等人看的不算出事。
+check("做完很久 → 不算出事（在等人看結果）",
+      not api4._state_row_is_problem(mk(idle_for_s=12 * 86400), stale_min=15))
+check("閒著很久 → 也不算", not api4._state_row_is_problem(mk(agent_state="idle", idle_for_s=3600)))
+check("說在跑、畫面卻停了超過門檻 → 需要注意（跑到一半掛住）",
+      api4._state_row_is_problem(mk(agent_state="working", idle_for_s=3600), stale_min=15,
+                                 screen_quiet_s=3600))
+check("說在跑、畫面還在動 → 正常（長推理時對話記錄不動，spinner 在畫）",
+      not api4._state_row_is_problem(mk(agent_state="working", idle_for_s=3600), stale_min=15,
+                                     screen_quiet_s=5))
+check("狀態不明又安靜太久 → 需要注意", api4._state_row_is_problem(mk(agent_state="unknown", idle_for_s=3600)))
+check("狀態不明但剛有動靜 → 正常", not api4._state_row_is_problem(mk(agent_state="unknown", idle_for_s=10)))
+check("沒輸出過（-1）不算停滯",
+      not api4._state_row_is_problem(mk(agent_state="unknown", idle_for_s=-1)))
+check("門檻可調", api4._state_row_is_problem(mk(agent_state="working"), stale_min=1, screen_quiet_s=120)
+      and not api4._state_row_is_problem(mk(agent_state="working"), stale_min=30, screen_quiet_s=120))
+
+# ── sfctl state --all：做完很久的只算數，不算出事 ────────────────────────────
+api5 = api_with()
+api5.sessions = {"s1": _S(label="done-long", out_ago=7200), "s2": _S(label="hung", out_ago=3600),
+                 "s3": _S(label="busy", out_ago=2)}
+api5._ordered_sids = lambda cfg=None: ["s1", "s2", "s3"]
+states5 = {"s1": "done", "s2": "working", "s3": "working"}
+api5._agent_state_for_list = lambda sid: states5[sid]
+api5._agent_activity_for_list = lambda sid: ""
+api5._agent_blocked_for_list = lambda sid: ""
+api5._last_activity_at = lambda sid, s, out_ts: out_ts
+_tdc = _main.tab_delivery.capture
+_main.tab_delivery.capture = lambda api, sid: ""
+res5 = api5._execute_sfctl("state", {"all": True})
+_main.tab_delivery.capture = _tdc
+A.last_error = api5.__dict__["_restore_last_error"]
+got5 = [r["sid"] for r in (res5.get("details") or {}).get("states", [])]
+check("--all：只有跑到一半掛住的列出來，做完很久與正在動的都不算", got5 == ["s2"], res5)
+check("…做完或閒著很久的另外給個數", (res5.get("details") or {}).get("long_idle") == 1
+      and "15" in res5.get("message", ""), res5.get("message"))
 
 # ── CLI 輸出與退出碼 ───────────────────────────────────────────────────────
 import sfctl  # noqa: E402

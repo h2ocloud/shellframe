@@ -86,7 +86,7 @@ that out costs far more and tells you less.
 sfctl state s12                    # one line
 sfctl state s12 --json             # same fields, machine-readable
 sfctl state --all                  # only tabs needing attention; healthy ones omitted
-sfctl state --all --stale-min 30   # …counting 30 minutes of silence as stalled
+sfctl state --all --stale-min 30   # …a running tab whose screen froze 30 min counts as hung
 sfctl link-state <peer> s12        # the same, for a tab on a paired computer
 ```
 
@@ -98,9 +98,12 @@ failure, a rate limit, a 5xx — empty when there is none), `last_output_at` and
 `idle_for_s` (how long it has been silent), and `runs_on` (the model actually
 answering, not the launch flag).
 
-A tab counts as needing attention when it is blocked on a person, has an error,
-or has been silent past the threshold. A tab that is *working* is never counted
-as stalled — a long reasoning turn is silent on purpose.
+A tab counts as needing attention when it is blocked on a person or waiting on a
+decision, has an error, is stuck, says it is working while its screen has not moved
+past the threshold (hung mid-turn; a long reasoning turn keeps its spinner moving),
+or its state is unknown and it has been silent past the threshold. A finished or idle
+tab is never counted, however long it has been quiet: it is waiting for someone to
+read it. `--all` gives those only as a count (`long_idle`), candidates to close.
 
 Exit code: `0` nothing to attend to, `1` something does, `2` the query itself
 failed. Prefer that over parsing the text.

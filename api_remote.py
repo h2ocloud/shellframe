@@ -381,12 +381,22 @@ class RemoteApiMixin:
                 if want_all:
                     # --all 只列有問題的：調度者要的是「誰需要我介入」，把 20 個
                     # 正常分頁一起回去只是讓它多讀 20 行。數量仍然回報，這樣
-                    # 「沒有問題」跟「沒查到分頁」分得開。
+                    # 「沒有問題」跟「沒查到分頁」分得開。做完或閒著很久的不算
+                    # 出事，只給一個數字（可以回收的候選）。
+                    mins = int(stale_min or self.STATE_STALE_DEFAULT_MIN)
+                    long_idle = sum(1 for r in rows if not r["needs_attention"]
+                                    and r.get("agent_state") in ("done", "idle")
+                                    and r.get("idle_for_s", -1) > mins * 60)
+                    note = sf_lang.pick(f"; {long_idle} more done or idle for over {mins} min",
+                                        f"；另有 {long_idle} 個做完或閒著超過 {mins} 分鐘") if long_idle else ""
                     return {
                         "success": True,
-                        "message": (f"{len(problems)}/{len(rows)} 需要注意"
-                                    if problems else f"{len(rows)} 個分頁都正常"),
-                        "details": {"states": problems, "checked": len(rows)},
+                        "message": (sf_lang.pick(f"{len(problems)}/{len(rows)} need attention",
+                                                 f"{len(problems)}/{len(rows)} 需要注意") if problems
+                                    else sf_lang.pick(f"all {len(rows)} tabs are fine",
+                                                      f"{len(rows)} 個分頁都正常")) + note,
+                        "details": {"states": problems, "checked": len(rows),
+                                    "long_idle": long_idle, "long_idle_min": mins},
                     }
                 return {"success": True, "message": rows[0].get("label") or want,
                         "details": {"states": rows}}
