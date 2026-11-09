@@ -266,6 +266,21 @@
   **用輸入法打的中文單字不再重複。** 回報：「主主」「的的」。擋重複送出的保底機制原本刻意不管
   單字；現在 150 毫秒內重複的單字也會擋掉，接近的重複會記錄下來。由 tests_ime_backstop.py 守著。
 
+- **Relaunching a tab started as `cd <dir> && claude …` or `env … claude …` no longer kills it.**
+  Reported: ⟳ (or an RPC relaunch, or the respawn after a reboot) on a tab whose command
+  began with `cd …&&` took `cd` for the program, so the command ran again unchanged,
+  with its old `--session-id` and its opening prompt; the CLI exited at once and the
+  tab died. Tabs started with `env …` came back on the conversation they were first
+  started with. The prefix (`cd … &&`, `env …`, `VAR=…`, `exec`) is now kept as
+  written and only the CLI part is rewritten to resume the current conversation; the
+  opening prompt is not sent a second time. Covered by tests_reboot_resume.py.
+
+  **用 `cd 目錄 && claude …` 或 `env … claude …` 開的分頁，重開不會再死掉。** 回報：對指令以
+  `cd …&&` 開頭的分頁按 ⟳（或用 RPC relaunch、或重開機後重建），會把 `cd` 當成執行檔，指令原封
+  不動地重跑，帶著舊的 `--session-id` 和開場 prompt，CLI 當場結束，分頁就死了；`env …` 開頭的
+  分頁則接回啟動當時的那段對話。現在前綴（`cd … &&`、`env …`、`VAR=…`、`exec`）照原樣保留，只把
+  CLI 那段改成接回目前的對話，開場 prompt 也不會再送一次。由 tests_reboot_resume.py 守著。
+
 - **`sfctl state --all` lists real trouble only: a finished tab that waits to be read is not a problem.**
   Once the last-answer time became accurate, `--all` listed 20 tabs as needing
   attention, every one finished and merely quiet for days; a fake ~45 s idle time after

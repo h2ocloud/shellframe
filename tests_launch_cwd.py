@@ -8,7 +8,7 @@ guess and the sidebar could not say when they last answered. Claude Code names
 the transcript folder after the directory it starts in, which is the `cd`
 target, while the lookup used the tab's own directory.
 
-  - _launch_cwd reads `cd <dir> &&` / `cd <dir>;`, quoted or relative
+  - launch_cwd reads `cd <dir> &&` / `cd <dir>;`, quoted or relative
   - no cd, or a directory that is gone: '' (the tab's own directory is used)
   - the tab's resolve context carries the cd target, so the transcript is found
 
@@ -27,7 +27,8 @@ sys.modules["bridge_telegram"] = MagicMock()
 sys.path.insert(0, str(HERE))
 
 import agent_status as a  # noqa: E402
-from main import Api, _launch_cwd as launch_cwd  # noqa: E402
+from launch_cmd import launch_cwd  # noqa: E402
+from main import Api  # noqa: E402
 
 passed = failed = 0
 

@@ -48,6 +48,7 @@ import agent_prompts
 import sf_lang
 import tab_delivery
 import agent_status
+import launch_cmd
 import agent_cursor
 import agent_grok
 import account_manager
@@ -484,24 +485,6 @@ def _replace_first_command(cmd: str, replacement: str) -> str:
 # here — ShellFrame never writes it and never dials the relay itself.
 GLASSES_STATE_PATH = os.path.expanduser("~/.local/share/evenclaude/state.json")
 GLASSES_STATE_STALE_S = 120
-
-
-_LAUNCH_CD_RE = re.compile(r"""\s*cd\s+("[^"]+"|'[^']+'|[^\s;&]+)\s*(?:&&|;)""")
-
-
-def _launch_cwd(cmd: str, cwd: str = "~") -> str:
-    """The directory a tab's CLI really starts in when its command begins with
-    `cd <dir> &&` (or `;`). Claude Code names its transcript folder after that
-    directory, not after the tab's own; measured: such tabs had no transcript
-    after a restart (no hook yet to say where it was) and read screen-only.
-    '' when the command does not change directory or the directory is gone."""
-    m = _LAUNCH_CD_RE.match(cmd or "")
-    if not m:
-        return ""
-    d = os.path.expanduser(m.group(1).strip("\"'"))
-    if not os.path.isabs(d):
-        d = os.path.join(os.path.expanduser(cwd or "~"), d)
-    return d if os.path.isdir(d) else ""
 
 
 def _session_provider(cmd: str) -> str:
@@ -2833,7 +2816,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             _swallow(f"_worker_ctx:{sid}")
         return {
             "cmd": getattr(s, "cmd", ""),
-            "cwd": _launch_cwd(getattr(s, "cmd", ""), getattr(s, "cwd", "~")) or getattr(s, "cwd", "~"),
+            "cwd": launch_cmd.launch_cwd(getattr(s, "cmd", ""), getattr(s, "cwd", "~")) or getattr(s, "cwd", "~"),
             "tmux_name": getattr(s, "_tmux_name", None),
             "session_id": getattr(s, "session_id", None),
             "transcript_hint": getattr(s, "_hook_transcript_path", None),
@@ -2952,9 +2935,15 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         manifest 的 uuid 為準，並把舊的 --resume / --session-id 拿掉。
 
         只處理 claude、grok 與 cursor；codex／agy／一般 shell 各有自己的續接方式，不碰。
+        `cd … &&`、`env …`、`VAR=…` 這類前綴原樣保留，只改後面真正的 CLI（見
+        launch_cmd：以前拿 `cd` 當執行檔，指令原封不動重開，分頁當場死掉）。
         """
         if not cmd or not csid:
             return cmd
+        prefix, rest = launch_cmd.split_prefix(cmd)
+        if prefix:
+            new = Api._cmd_with_resume(rest, csid)
+            return cmd if new == rest else f"{prefix} {new}"
         try:
             tokens = shlex.split(cmd)
         except ValueError:
@@ -2976,18 +2965,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     break
 
         if exe == "claude":
-            out, skip = [tokens[0], "--resume", csid], False
-            for t in tokens[1:]:
-                if skip:
-                    skip = False
-                    continue
-                if t in ("--resume", "--session-id"):
-                    skip = True
-                    continue
-                if t.startswith("--resume=") or t.startswith("--session-id="):
-                    continue
-                out.append(t)
-            return shlex.join(out)
+            out = launch_cmd.claude_resume(tokens, csid)
+            return shlex.join(out) if out else cmd
 
         if exe == "grok":
             return agent_grok.cmd_with_resume(cmd, csid)

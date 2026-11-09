@@ -179,6 +179,46 @@ for cmd, want in [
     check(f"wrapper 續接：{cmd!r}", got == want, f"得到 {got!r}")
 
 
+# ── 指令前面有 cd／env／VAR= 的分頁 ────────────────────────────────────────
+# 量到：⟳ 重開 `cd ~/work/x && claude … '<開場 prompt>' --session-id <uuid>` 時拿 `cd`
+# 當執行檔，指令原封不動重開——session id 已被占用，CLI 當場結束，分頁就死了；
+# `env -u CLAUDE_CONFIG_DIR claude …` 的分頁則接回啟動當時的舊 uuid。
+for cmd, want in [
+    (f"cd ~/work/site-check && claude --model haiku --dangerously-skip-permissions "
+     f"'請讀並完成 BRIEF.md 的任務' --session-id {OLD}",
+     f"cd ~/work/site-check && claude --resume {U} --model haiku --dangerously-skip-permissions"),
+    (f"env -u CLAUDE_CONFIG_DIR claude --permission-mode bypassPermissions --resume {OLD}",
+     f"env -u CLAUDE_CONFIG_DIR claude --resume {U} --permission-mode bypassPermissions"),
+    ("FOO=1 BAR='a b' claude --model opus", f"FOO=1 BAR='a b' claude --resume {U} --model opus"),
+    ("cd \"/tmp/dir with space\" && env -u X claude 'hi'",
+     f"cd \"/tmp/dir with space\" && env -u X claude --resume {U}"),
+    ("cd /tmp; exec claude --model sonnet", f"cd /tmp; exec claude --resume {U} --model sonnet"),
+    ("cd /tmp && codex --search", f"cd /tmp && codex resume {U} --search"),
+    ("cd /tmp && bash -l", "cd /tmp && bash -l"),
+]:
+    got = Api._cmd_with_resume(cmd, U)
+    check(f"前綴原樣保留、只改 CLI：{cmd[:46]!r}", got == want, f"得到 {got!r}")
+
+print("開場 prompt 不重送")
+for cmd, want in [
+    ("claude --model opus 'start the task'", f"claude --resume {U} --model opus"),
+    ("claude --append-system-prompt 'be brief' --model opus 'start'",
+     f"claude --resume {U} --append-system-prompt 'be brief' --model opus"),
+    ("claude --add-dir /a /b --model x", f"claude --resume {U} --add-dir /a /b --model x"),
+    ("claude -c --model x", f"claude --resume {U} --model x"),
+    (f"claude -r {OLD} --model x", f"claude --resume {U} --model x"),
+    ("claude --model=opus -- 'a prompt'", f"claude --resume {U} --model=opus"),
+    ("claude mcp list", "claude mcp list"),
+    ("claude --model x && echo done", "claude --model x && echo done"),
+]:
+    got = Api._cmd_with_resume(cmd, U)
+    check(f"claude 參數：{cmd!r}", got == want, f"得到 {got!r}")
+
+import launch_cmd  # noqa: E402
+check("沒有前綴：前綴是空的", launch_cmd.split_prefix("claude --model x") == ("", "claude --model x"))
+check("前綴與 CLI 切得開", launch_cmd.split_prefix("cd a && env -u X FOO=1 claude -c")
+      == ("cd a && env -u X FOO=1", "claude -c"))
+
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")
 sys.exit(1 if failed else 0)
