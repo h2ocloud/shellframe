@@ -168,7 +168,10 @@ minutes after the reminder, or if the tab is closed first, the requester is told
 decision menu, in the middle of a Telegram turn, or has the user's unsent text in
 its input box, the text waits in that tab's queue (first in, first out) and goes
 in when that ends; the reply says `Queued`. After 30 minutes it is dropped and the
-sender's tab is told. The queue is kept on disk: after a ShellBot restart it carries
+sender's tab is told; `--ttl <minutes>` changes how long it may wait (`--ttl 0`: until
+the tab is free; at most 24 h), and `a2a-result` waits 24 h by default, because the
+requester is waiting for it. A message that waited more than 30 minutes goes in with a
+first line saying how long. The queue is kept on disk: after a ShellBot restart it carries
 on with what is left of each item's 30 minutes, and anything that cannot be
 delivered (its tab did not come back, or it was being typed in when the app went
 down) is reported to the sender instead. `--now` sends at once. It pastes atomically (bracketed

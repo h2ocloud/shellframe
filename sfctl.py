@@ -702,16 +702,20 @@ def main():
     as_help = ("Speak as this external bot (a roster role marked external). "
                "Only outside a ShellFrame tab, e.g. a cloud bot's local command")
     now_help = ("Go in at once even if the tab is mid-turn, on a decision menu or has the user's unsent text; normally it waits in a queue (up to 30 min)")
+    ttl_help = ("Minutes it may wait in the queue (default 30; a2a-result 1440). 0 = until the tab is free; "
+                "at most 24 h. A message that waited over 30 min goes in with a line saying how long")
     p_a2a = sub.add_parser("a2a-send", help="Message a roster role, or peer/role on a paired machine")
     p_a2a.add_argument("target", help="Role, peer/role, or peer/sid")
     p_a2a.add_argument("text")
     p_a2a.add_argument("--as", dest="as_role", default="", help=as_help)
     p_a2a.add_argument("--now", action="store_true", help=now_help)
+    p_a2a.add_argument("--ttl", type=float, default=None, help=ttl_help)
     p_hand = sub.add_parser("a2a-handoff", help="Hand a task off; the other side reports with a2a-result")
     p_hand.add_argument("target")
     p_hand.add_argument("task")
     p_hand.add_argument("--as", dest="as_role", default="", help=as_help)
     p_hand.add_argument("--now", action="store_true", help=now_help)
+    p_hand.add_argument("--ttl", type=float, default=None, help=ttl_help)
     p_hand.add_argument("--allow-write", action="store_true",
                         help="Let a production SSH worker leave read-only mode. "
                              "Service restarts stay refused.")
@@ -722,6 +726,7 @@ def main():
                        help="Mark the text as a diff summary")
     p_res.add_argument("--as", dest="as_role", default="", help=as_help)
     p_res.add_argument("--now", action="store_true", help=now_help)
+    p_res.add_argument("--ttl", type=float, default=None, help=ttl_help)
     sub.add_parser("bots", help="List bots: who is awake, sleeping or external (experimental_bots)")
     p_tgs = sub.add_parser("tg-send", help="The primary bot tells the user's phone (a milestone, a result); "
                                            "only from the primary bot's tab, 20 an hour, not during quiet hours")
@@ -738,6 +743,7 @@ def main():
     p_next.add_argument("--allow-write", action="store_true",
                         help="Let a production SSH worker leave read-only mode")
     p_next.add_argument("--now", action="store_true", help=now_help)
+    p_next.add_argument("--ttl", type=float, default=None, help=ttl_help)
     sub.add_parser("a2a-log", help="Show the agent-to-agent audit log")
     p_route = sub.add_parser("route", help="Suggest an agent from remaining quota; does not send")
     p_route.add_argument("task")
@@ -759,6 +765,7 @@ def main():
     p_send.add_argument("--no-submit", dest="submit", action="store_false",
                         help="Don't append Enter after text")
     p_send.add_argument("--now", action="store_true", help=now_help)
+    p_send.add_argument("--ttl", type=float, default=None, help=ttl_help)
 
     p_notify = sub.add_parser(
         "notify",
@@ -943,26 +950,26 @@ def main():
     elif args.cmd == "a2a-send":
         _print_result(_rpc("a2a_send", {
             "target": args.target, "text": args.text,
-            "as": args.as_role, "now": bool(args.now),
+            "as": args.as_role, "now": bool(args.now), "ttl": args.ttl,
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=30))
     elif args.cmd == "a2a-handoff":
         _print_result(_rpc("a2a_handoff", {
             "target": args.target, "text": args.task,
-            "as": args.as_role, "now": bool(args.now),
+            "as": args.as_role, "now": bool(args.now), "ttl": args.ttl,
             "allow_write": bool(args.allow_write),
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=45))
     elif args.cmd == "a2a-result":
         _print_result(_rpc("a2a_result", {
             "id": args.id, "text": args.text, "diff": bool(args.diff),
-            "as": args.as_role, "now": bool(args.now),
+            "as": args.as_role, "now": bool(args.now), "ttl": args.ttl,
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=30))
     elif args.cmd == "a2a-next":
         _print_result(_rpc("a2a_next", {
             "id": args.id, "task": args.task,
-            "allow_write": bool(args.allow_write), "now": bool(args.now),
+            "allow_write": bool(args.allow_write), "now": bool(args.now), "ttl": args.ttl,
             "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=45))
     elif args.cmd == "a2a-log":
@@ -993,7 +1000,7 @@ def main():
     elif args.cmd == "send":
         _print_result(_rpc("send", {
             "sid": args.sid, "text": args.text, "submit": args.submit,
-            "now": bool(args.now), "from_sid": os.environ.get("SF_SID", ""),
+            "now": bool(args.now), "ttl": args.ttl, "from_sid": os.environ.get("SF_SID", ""),
         }))
     elif args.cmd == "peek":
         _print_result(_rpc("peek", {"sid": args.sid, "lines": args.lines}))

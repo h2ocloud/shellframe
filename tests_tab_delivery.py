@@ -203,6 +203,45 @@ check("delegate to an open busy tab is queued, not typed in", res["success"] and
 api.state["s1"] = ""
 check("…and goes in when it frees", wait_for(lambda: any(s == "s1" and "please refactor" in t for s, t in api.sent)))
 
+print("--ttl")
+check("no --ttl: 30 min; 0: until free (a day at most); 90: 90 min; huge: a day; negative: default",
+      (td.wait_limit(None), td.wait_limit(0), td.wait_limit(90), td.wait_limit(99999), td.wait_limit(-5))
+      == (1800.0, 86400.0, 5400.0, 86400.0, 1800.0))
+check("a2a-result's default is a day", td.wait_limit(None, td.RESULT_WAIT) == 86400.0)
+api = make_api(("s1", "coder"), ("s2", "boss"))
+api.state["s1"] = "working"
+told = []
+r = td.deliver(api, "s1", "short", on_timeout=lambda o, why: told.append("short"), max_wait=0.3)
+td.deliver(api, "s1", "long", on_timeout=lambda o, why: told.append("long"))
+check("each item keeps its own limit", "up to 0 min" in r["message"] and "--ttl" in r["message"], r["message"])
+check("…the short one times out on its own limit, the next keeps waiting",
+      wait_for(lambda: told == ["short"], 3) and td.pending("s1") and td.pending("s1")[0]["chars"] == 4, (told, td.pending("s1")))
+td.LATE_NOTE_S = 0.2
+time.sleep(0.3)
+api.state["s1"] = ""
+check("an item that waited past the note's limit goes in with a line saying how long",
+      wait_for(lambda: any(s == "s1" and t.splitlines()[0].startswith("[[ShellBot: this waited")
+                           and t.splitlines()[-1] == "long" for s, t in api.sent)), api.sent)
+td.LATE_NOTE_S = 1800.0
+api.sent.clear()
+api.state["s1"] = "working"
+res = api._execute_sfctl("send", {"sid": "s1", "text": "via sfctl", "ttl": 90, "from_sid": "s2"})
+check("sfctl send --ttl 90 queues it for 90 minutes", res["success"] and td._queues["s1"][-1].get("max_wait") == 5400.0,
+      res)
+res = a2a_host.handle(api, "a2a_send", {"target": "coder", "text": "a2a with ttl", "from_sid": "s2", "ttl": 0})
+check("a2a-send --ttl 0: until the tab is free (a day at most)", td._queues["s1"][-1].get("max_wait") == 86400.0, res)
+api.state["s1"] = ""
+wait_for(lambda: not td.pending("s1"))
+h = a2a_host.handle(api, "a2a_handoff", {"target": "coder", "text": "do the thing", "from_sid": "s2"})
+hid = (h.get("details") or {}).get("id")
+api.state["s2"] = "working"
+res = a2a_host.handle(api, "a2a_result", {"id": hid, "text": "done it", "from_sid": "s1"})
+check("a2a-result to a busy requester waits a day by default", res.get("success")
+      and td._queues["s2"][-1].get("max_wait") == 86400.0, (res, td.pending("s2")))
+check("the limit is kept on disk with the item", "max_wait" in td._KEEP)
+api.state["s2"] = ""
+wait_for(lambda: not td.pending("s2"))
+
 print("a new conversation is ready")
 # Measured live: a delegate to a role with no open tab opened it, then waited 45 s
 # for an empty `❯` line that a new Claude Code conversation never shows.

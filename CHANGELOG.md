@@ -219,6 +219,21 @@
   （任何人都能用）時以紅字提醒，第一支綁定的手機會把名單鎖成只有它。由 tests_bridge_home.py、
   tests_tg_home_ui.py 守著。
 
+- **`--ttl`: how long a message may wait for a busy tab; a result waits a day by default.**
+  Reported: a tab whose turns run past 30 minutes lost informational messages to the
+  queue's limit. `sfctl send`, `a2a-send`, `a2a-handoff`, `a2a-result` and `a2a-next`
+  take `--ttl <minutes>`; `--ttl 0` waits until the tab is free; everything stops at 24
+  hours. `a2a-result` waits 24 hours unless told otherwise: the requester is waiting
+  for it, and late beats lost. A message that waited more than 30 minutes goes in with
+  a first line saying how long, so its reader knows it may be stale. The limit is kept
+  with the item on disk. Covered by tests_tab_delivery.py.
+
+  **`--ttl`：訊息遇到忙碌分頁可以等多久；回報預設等一天。** 回報：回合常超過 30 分鐘的分頁，通知性的
+  訊息會因為佇列時限被丟掉。`sfctl send`、`a2a-send`、`a2a-handoff`、`a2a-result`、`a2a-next` 都可以加
+  `--ttl <分鐘>`；`--ttl 0` 代表等到對方閒下來；一律最多 24 小時。`a2a-result` 沒指定時等 24 小時：交辦方
+  在等它，晚到比丟掉好。排隊超過 30 分鐘才送進去的訊息，第一行會說它排了多久，讓收到的人知道內容可能過時。
+  時限跟著訊息一起存在磁碟上。由 tests_tab_delivery.py 守著。
+
 - **A Telegram message for a busy tab waits its turn, up to 30 minutes, with "⚡ go in now".**
   The bridge used to wait at most 2 minutes for a tab's turn to end and then type the
   message in anyway, cutting the turn off; with the primary bot as the phone's default,

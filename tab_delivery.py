@@ -40,7 +40,10 @@ from pathlib import Path
 import sf_lang
 from sf_log import _dlog
 
-QUEUE_MAX_WAIT = 1800.0     # seconds an item may wait before the sender is told
+QUEUE_MAX_WAIT = 1800.0     # seconds an item may wait before the sender is told (--ttl changes it)
+MAX_TTL = 86400.0           # --ttl 0 (until the tab is free) and any --ttl stop at a day
+RESULT_WAIT = 86400.0       # a2a-result: the requester is waiting for it, late beats lost
+LATE_NOTE_S = 1800.0        # an item that waited longer goes in with a line saying how long
 POLL = 1.5                  # seconds between checks while waiting
 TAKEN_WAIT = 8.0            # after sending, how long to wait for the tab to take it
 STATE_FILE = None           # set by the app at start-up; None (tests) keeps the queue in memory
@@ -158,7 +161,30 @@ _queues = {}                 # sid -> deque of items
 _draining = set()
 _resumed_at = 0.0            # when resume() loaded the queue after a restart
 ON_DELIVERED = []            # fn(sid, what, at) once an item is typed in (a2a_host: hand-offs)
-_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending")
+_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait")
+
+
+def wait_limit(ttl_min=None, default: float = None) -> float:
+    """`--ttl` minutes → seconds an item may wait: none given → `default` (30 min),
+    0 → until the tab is free, everything capped at MAX_TTL."""
+    default = QUEUE_MAX_WAIT if default is None else default
+    try:
+        ttl = float(ttl_min) if ttl_min not in (None, "") else None
+    except (TypeError, ValueError):
+        ttl = None
+    if ttl is None or ttl < 0:
+        return default
+    return MAX_TTL if ttl == 0 else min(ttl * 60.0, MAX_TTL)
+
+
+def _waited_text(seconds: float, lang: str = None) -> str:
+    h, m = int(seconds // 3600), int(seconds % 3600 // 60)
+    return sf_lang.pick(f"{h} h {m} min" if h else f"{m} min", f"{h} 小時 {m} 分" if h else f"{m} 分", lang)
+
+
+def late_note(waited: float, lang: str = None) -> str:
+    return sf_lang.pick(f"[[ShellBot: this waited {_waited_text(waited, lang)} in the queue before it went in]]",
+                        f"[[ShellBot：這則排隊了 {_waited_text(waited, lang)} 才送進來]]", lang)
 
 
 def pending(sid: str = "") -> list:
@@ -241,7 +267,8 @@ def resume(api) -> int:
 
 
 def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
-            from_sid: str = "", on_timeout=None, what: str = "", label: str = "") -> dict:
+            from_sid: str = "", on_timeout=None, what: str = "", label: str = "",
+            max_wait: float = None) -> dict:
     """Send `text` to tab `sid` now if it is free (or `now`), else queue it.
     An item that never goes in is reported to `from_sid` (`label` names the
     target in that note), or handed to `on_timeout(outcome, why)` instead.
@@ -259,15 +286,18 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
         return {"success": True, "message": f"Sent {len(text)} chars to {sid}", "queued": False}
     item = {"sid": sid, "text": text, "submit": submit, "t0": time.time(), "from_sid": from_sid,
             "what": what, "label": label or sid}
+    if max_wait:
+        item["max_wait"] = float(max_wait)
     if on_timeout:
         item["on_timeout"] = on_timeout
     position = _enqueue(api, [item])
     why = _reason_text(reason)
-    mins = int(QUEUE_MAX_WAIT // 60)
+    mins = int(_limit(item) // 60)
     return {"success": True, "queued": True, "position": position, "reason": reason,
             "message": sf_lang.pick(
-                f"Queued for {sid} ({why}); it goes in when that ends, up to {mins} min. --now sends it at once.",
-                f"已排隊等 {sid}（{why}）；結束後自動送出，最多等 {mins} 分鐘。要立刻送請加 --now。")}
+                f"Queued for {sid} ({why}); it goes in when that ends, up to {mins} min "
+                f"(--ttl changes that). --now sends it at once.",
+                f"已排隊等 {sid}（{why}）；結束後自動送出，最多等 {mins} 分鐘（--ttl 可改）。要立刻送請加 --now。")}
 
 
 def _taken(api, sid: str, since: float) -> bool:
@@ -284,6 +314,10 @@ def _taken(api, sid: str, since: float) -> bool:
         return False
 
 
+def _limit(item: dict) -> float:
+    return float(item.get("max_wait") or QUEUE_MAX_WAIT)
+
+
 def _wait_turn(api, sid: str, item: dict) -> str:
     """Wait until the tab can take `item`: 'send', or why it never will."""
     while True:
@@ -295,7 +329,7 @@ def _wait_turn(api, sid: str, item: dict) -> str:
                 continue
             return "lost" if item.get("restored") else "closed"
         reason = busy_reason(api, sid)
-        if time.time() - item["t0"] > QUEUE_MAX_WAIT:
+        if time.time() - item["t0"] > _limit(item):
             return reason or "expired"
         if not reason:
             return "send"
@@ -325,7 +359,8 @@ def _fail(api, item: dict, outcome: str):
         except Exception:
             pass
     elif item.get("from_sid"):
-        notify_sender(api, item["from_sid"], item.get("label") or item["sid"], why, outcome)
+        notify_sender(api, item["from_sid"], item.get("label") or item["sid"], why, outcome,
+                      mins=int(_limit(item) // 60))
 
 
 def _drain(api, sid: str):
@@ -350,7 +385,9 @@ def _drain(api, sid: str):
             item["sending"] = sent_at         # on disk while typing: a restart now cannot tell
             _save()
             s._startup_trust_pending = False
-            api._send_text_to_session(s, item["text"], submit=item["submit"])
+            waited = sent_at - item["t0"]
+            text = item["text"] if waited <= LATE_NOTE_S else late_note(waited) + "\n" + item["text"]
+            api._send_text_to_session(s, text, submit=item["submit"])
             _drop(sid, item)
             _delivered(sid, item.get("what", ""), sent_at)
             deadline = time.time() + TAKEN_WAIT
@@ -383,12 +420,12 @@ def timeout_notice(target_label: str, why: str, mins: int = None, outcome: str =
         f"要的話請再送一次，或加 --now 直接插話。]]")
 
 
-def notify_sender(api, from_sid: str, target_label: str, why: str, outcome: str = ""):
+def notify_sender(api, from_sid: str, target_label: str, why: str, outcome: str = "", mins: int = None):
     """Tell whoever sent a message that never went in. A tab gets a note (queued
     like any other text, without a notice of its own); an external bot gets it
     on its webhook; anything else is only logged. Right after a restart the
     sender's tab may not be back yet, so the note waits for it like any item."""
-    note = timeout_notice(target_label, why, outcome=outcome)
+    note = timeout_notice(target_label, why, mins=mins, outcome=outcome)
     try:
         if from_sid and from_sid in api.sessions:
             deliver(api, from_sid, note, what="timeout-notice")

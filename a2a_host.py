@@ -77,6 +77,7 @@ class _Ctx:
     sender = ""         # agent_link sets the sending sid before each send
     now = False         # --now: go in even mid-turn
     what = ""           # "handoff:<id>" for a hand-off, so its delivery time is known
+    max_wait = None     # --ttl, in seconds (tab_delivery.wait_limit)
 
     def send(self, sid: str, text: str) -> dict:
         """Through the per-tab queue: never into a running turn, a decision menu or
@@ -86,7 +87,7 @@ class _Ctx:
         sender, api = self.sender, self.api
         label = _label(api, sid)
         return tab_delivery.deliver(api, sid, text, now=self.now, from_sid=sender, label=label,
-                                    what=self.what)
+                                    what=self.what, max_wait=self.max_wait)
 
     # ── for agent_link.followups ──
     def tab_alive(self, sid: str) -> bool:
@@ -186,6 +187,9 @@ def handle(api, cmd: str, args: dict) -> dict:
             return {"success": True, "message": "", "details": {"block": bool(reason), "reason": reason, "id": hid}}
         ctx = _Ctx(api)
         ctx.now = bool(args.get("now"))
+        # A result is what the requester is waiting for: late beats lost (24 h unless --ttl).
+        ctx.max_wait = tab_delivery.wait_limit(
+            args.get("ttl"), tab_delivery.RESULT_WAIT if cmd == "a2a_result" else None)
         if cmd == "a2a_deliver":
             return agent_link.accept_remote(ctx, args)
         sid, label = _from(api, args)
