@@ -40,6 +40,25 @@
 
 ### Added
 
+- **Faces and bot settings can be changed from the phone or iPad.**
+  Asked for: there was no way to do it in the app. Frame Link gets `POST /link/bots/avatar`
+  (a tab's or a bot's face; on a bot's tab it is the bot's), `/link/bots/settings` (a bot's
+  job and model, only what is given) and `/link/bots/primary`. Each goes through the page's
+  own function (`bots_set_avatar`, the bot editor's save, `bots_set_primary`), so the phone
+  cannot do anything the desktop would not. `GET /link/bots` now lists the shapes and colours
+  that may be picked, with what each colour draws, so the phone does not keep its own copy;
+  a test holds them to `web/bots.js`. It also carries each bot's configured model, so
+  changing it changes `rev` and the phone pulls again. A one-way pairing gets 403, an
+  external bot is changed where it lives, and bots are not created or deleted from the
+  phone. Covered by tests_link_bots.py and tests_frame_link.py.
+
+  **手機和 iPad 也能改頭像和 bot 設定。** 回報：App 裡沒有入口。Frame Link 新增 `POST /link/bots/avatar`（分頁或 bot 的
+  頭像；在 bot 的分頁上改的是 bot 本身）、`/link/bots/settings`（bot 的執掌和模型，只改有給的欄位）和 `/link/bots/primary`。
+  每一條都走桌面自己的函式（`bots_set_avatar`、bot 編輯器的儲存、`bots_set_primary`），手機做不到桌面不允許的事。
+  `GET /link/bots` 現在會列出可選的形狀和顏色，以及每個顏色的色碼，手機不用自己留一份，測試會確認它們跟 `web/bots.js`
+  一致。它也帶上每個 bot 設定的模型，所以改了模型 `rev` 就會變，手機會重拉。單向配對回 403，外部 bot 要到它那邊改，
+  也不能從手機新增或刪除 bot。由 tests_link_bots.py、tests_frame_link.py 守著。
+
 - **The phone answers a question once: `POST /link/answer`, and Telegram's copy says so.**
   A decision in `/link/bots` now carries an `id`, a fingerprint of that very question (two
   permission prompts with the same words differ in the command they ask about). The phone

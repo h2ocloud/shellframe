@@ -1334,6 +1334,12 @@ class RemoteApiMixin:
             return self._bots_link_wake(args)
         elif cmd == "bots_answer":
             return self._bots_link_answer(args)
+        elif cmd == "bots_avatar":
+            return self._bots_link_avatar(args)
+        elif cmd == "bots_settings":
+            return self._bots_link_settings(args)
+        elif cmd == "bots_primary":
+            return self._bots_link_primary(args)
         elif cmd == "tg_send":
             return bridge_home.tg_send(self, str(args.get("text") or ""), str(args.get("from_sid") or ""))
 

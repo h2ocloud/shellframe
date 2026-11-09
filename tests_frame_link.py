@@ -73,6 +73,7 @@ class Node:
         self.a2a = []            # payloads via /link/a2a/send
         self.woken = []          # roles via /link/bots/wake
         self.answers = []        # bodies via /link/answer
+        self.edits = []          # (cmd, body) via /link/bots/avatar|settings|primary
 
         def execute(cmd, args):
             if cmd == "list":
@@ -129,6 +130,9 @@ class Node:
             if cmd == "bots_answer":
                 self.answers.append(dict(args or {}))
                 return {"success": True, "message": "answered"}
+            if cmd in ("bots_avatar", "bots_settings", "bots_primary"):
+                self.edits.append((cmd, dict(args or {})))
+                return {"success": True, "message": "changed"}
             return {"success": False, "message": f"unknown {cmd}"}
 
         def update_config(mutator):
@@ -271,6 +275,12 @@ def main():
         st, body = signed_post(b, peer_a_from_b, "/link/answer", {"sid": "s1", "n": 2, "id": "abc123def456"})
         check("/link/answer hands the phone's answer over whole",
               st == 200 and body.get("success") and a.answers == [{"sid": "s1", "n": 2, "id": "abc123def456"}])
+        EDITS = [("/link/bots/avatar", {"sid": "s1", "avatar": {"shape": "egg", "color": "teal"}}),
+                 ("/link/bots/settings", {"role": "Coding", "model": "opus"}), ("/link/bots/primary", {"role": "Coding"})]
+        for path, obj in EDITS:
+            signed_post(b, peer_a_from_b, path, obj)
+        check("the three edits reach the page's own functions, each with its body",
+              a.edits == [("bots_avatar", EDITS[0][1]), ("bots_settings", EDITS[1][1]), ("bots_primary", EDITS[2][1])])
 
         # ── 遠端操作 ──
         info = b.link.remote_info(a.fid)
@@ -398,6 +408,8 @@ def main():
         check("slave /link/bots/wake on master denied, nothing woken", st == 403 and "研究" not in a.woken)
         st, _ = signed_post(b, peer_a_slave, "/link/answer", {"sid": "s1", "n": 1, "id": "x"})
         check("slave /link/answer on master denied, nothing answered", st == 403 and len(a.answers) == 1)
+        codes = [signed_post(b, peer_a_slave, path, obj)[0] for path, obj in EDITS]
+        check("slave edits on master denied (403), nothing changed", codes == [403, 403, 403] and len(a.edits) == 3)
         before_rn = len(a.renames)
         rnd = b.link.remote_rename(a.fid, "s1", "nope")
         check("slave rename on master denied",

@@ -76,13 +76,19 @@ if node:
           "ctx.window.document = ctx.document; vm.createContext(ctx);"
           "vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);"
           "const seeds = JSON.parse(fs.readFileSync(0, 'utf8'));"
-          "console.log(JSON.stringify(seeds.map(s => ctx.window.SFBots.defaultAvatar(s))));")
+          "const B = ctx.window.SFBots;"
+          "console.log(JSON.stringify({avatars: seeds.map(s => B.defaultAvatar(s)), shapes: Object.keys(B.SHAPES),"
+          " palette: B.PALETTE}));")
     r = subprocess.run([node, "-e", js, str(HERE / "web" / "bots.js")], input=json.dumps(SEEDS),
                        capture_output=True, text=True, timeout=30)
-    page = json.loads(r.stdout or "[]")
+    out = json.loads(r.stdout or "{}")
+    page = out.get("avatars") or []
     mine = [bots.default_avatar(s) for s in SEEDS]
     check(f"the same face as the page's defaultAvatar for {len(SEEDS)} seeds (CJK, emoji, empty)",
           page == mine, [(s, p, m) for s, p, m in zip(SEEDS, page, mine) if p != m][:3] or r.stderr[-300:])
+    check("the shapes and colours a phone may pick are the page's, in order and colour for colour",
+          out.get("shapes") == list(bots.SHAPES) and out.get("palette") == bots.PALETTE
+          and list(bots.PALETTE) == list(bots.COLORS), (out.get("shapes"), out.get("palette")))
 else:
     print("  SKIP the page comparison (no node)")
 check("a picked face is kept; what is not valid falls back to the seed's default",
@@ -331,6 +337,74 @@ check("wake opens the bot through the page's own bots_open", r.get("success") an
 del api.bots_open
 r = api._execute_sfctl("bots_wake", {"role": "總管"})
 check("an external bot is not woken here, and says why", r.get("success") is False and r.get("message"), r)
+
+print("editing from the phone")
+# Asked for: changing faces and bot settings from a phone or iPad, through the page's own
+# functions; no creating or deleting bots there.
+choices = link()["choices"]
+check("/link/bots says what may be picked: the 12 shapes, the 14 colours and what each draws",
+      choices["shapes"] == list(bots.SHAPES) and len(choices["colors"]) == 14
+      and choices["colors"][0] == {"key": "red", "hex": "#F04E5E"} and choices["custom_color"] is True, choices)
+
+
+def edit(cmd, **a):
+    return api._execute_sfctl(cmd, a)
+
+
+def bot(role):
+    return [b for b in link()["bots"] if b["role"] == role][0]
+
+
+r0 = link()["rev"]
+r = edit("bots_avatar", sid="s3", avatar={"shape": "ghost", "color": "#12AB9F"})
+check("a plain tab's face changes", r.get("success") and link()["tabs"]["s3"]["avatar"] == {"shape": "ghost", "color": "#12AB9F"}, r)
+check("…and rev with it, so the phone pulls again", link()["rev"] != r0)
+edit("bots_avatar", sid="s3", avatar=None)
+check("…null gives it its default face back", link()["tabs"]["s3"]["avatar"] == bots.default_avatar("s3"))
+r = edit("bots_avatar", sid="s1", avatar={"shape": "star", "color": "teal"})
+check("on a bot's tab it is the bot's face", r.get("success") and bot("Coding")["avatar"] == {"shape": "star", "color": "teal"}
+      and link()["tabs"]["s1"]["avatar"] == {"shape": "star", "color": "teal"}, r)
+r = edit("bots_avatar", role="寫手", avatar={"shape": "egg", "color": "pink"})
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+check("a sleeping bot's face, by its name; the rest of the bot stays", r.get("success")
+      and bot("寫手")["avatar"] == {"shape": "egg", "color": "pink"} and cfg["agent_roster"]["寫手"]["bot"].get("memory") is True
+      and cfg["agent_roster"]["寫手"]["model"] == "sonnet", r)
+check("a shape that is not a choice: refused, nothing changed",
+      not edit("bots_avatar", role="寫手", avatar={"shape": "dragon", "color": "red"}).get("success")
+      and bot("寫手")["avatar"]["shape"] == "egg")
+check("a bot keeps a face (no null for one)", not edit("bots_avatar", role="寫手", avatar=None).get("success")
+      and not edit("bots_avatar", sid="s1", avatar=None).get("success") and bot("Coding")["avatar"]["shape"] == "star")
+check("an external bot is changed where it lives, not here",
+      not edit("bots_avatar", role="總管", avatar={"shape": "egg", "color": "pink"}).get("success")
+      and bot("總管")["avatar"] == {"shape": "star", "color": "purple"})
+r0 = link()["rev"]
+r = edit("bots_settings", role="寫手", responsibility="寫文件與發布說明")
+b = bot("寫手")
+check("settings: the job changes, the model stays, rev moves", r.get("success") and b["responsibility"] == "寫文件與發布說明"
+      and b["model"] == "sonnet" and link()["rev"] != r0, (r, b))
+r = edit("bots_settings", role="寫手", model="opus")
+b = bot("寫手")
+check("…the model, and what it will run on", r.get("success") and b["model"] == "opus" and b["runs_on"] == "claude／opus"
+      and b["responsibility"] == "寫文件與發布說明", b)
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+check("…its face, memory and command untouched", cfg["agent_roster"]["寫手"]["bot"]["avatar"] == {"shape": "egg", "color": "pink"}
+      and cfg["agent_roster"]["寫手"]["bot"].get("memory") is True and cfg["agent_roster"]["寫手"]["cmd"] == "claude --permission-mode x")
+check("nothing to change, or a model that is not one word: refused",
+      not edit("bots_settings", role="寫手").get("success")
+      and not edit("bots_settings", role="寫手", model="opus; rm -rf /").get("success") and bot("寫手")["model"] == "opus")
+check("not a bot, or an external one: refused", not edit("bots_settings", role="研究", responsibility="x").get("success")
+      and not edit("bots_settings", role="總管", responsibility="x").get("success"))
+r0 = link()["rev"]
+r = edit("bots_primary", role="寫手")
+check("the primary bot moves, and rev with it", r.get("success") and link()["primary"] == "寫手" and bot("寫手")["primary"]
+      and not bot("總管")["primary"] and link()["rev"] != r0, r)
+check("…only to a bot of this computer, and never to nobody",
+      not edit("bots_primary", role="總管").get("success") and not edit("bots_primary", role="研究").get("success")
+      and not edit("bots_primary", role="").get("success") and link()["primary"] == "寫手")
+fresh_config(on=False)
+check("bots off: no edits", not edit("bots_avatar", sid="s3", avatar={"shape": "egg", "color": "red"}).get("success")
+      and not edit("bots_settings", role="寫手", model="x").get("success") and not edit("bots_primary", role="寫手").get("success"))
+fresh_config()
 
 print("/link/signals: who asks, and the options")
 bt.tg_api = lambda *a, **k: {"ok": True, "result": {"message_id": 1}}

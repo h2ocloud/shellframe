@@ -157,6 +157,13 @@ def normalize_avatar(av):
     return {"shape": shape, "color": color}
 
 
+# What each colour name draws: web/bots.js PALETTE, for a phone that lets the user pick one
+# (/link/bots "choices"; tests_link_bots.py compares the two).
+PALETTE = {"red": "#F04E5E", "orange": "#F57C2B", "amber": "#F0A934", "yellow": "#DDBB3C",
+           "green": "#3FB97A", "teal": "#1FA99E", "sky": "#38B2E8", "blue": "#3E7BF6",
+           "indigo": "#6A5CF0", "purple": "#A15BF0", "pink": "#F0679E", "brown": "#A8714C",
+           "gray": "#8B90A0", "ink": "#23262F"}
+
 # The face a tab or bot gets when nobody picked one: web/bots.js defaultAvatar, to the
 # bit, so a phone shows the same face as the desktop (tests_link_bots.py runs both).
 DEFAULT_COLORS = ("red", "orange", "amber", "green", "teal", "sky",

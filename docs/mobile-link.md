@@ -155,7 +155,7 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 ## Bots（v0.41.0）
 
-手機的 bot 介面用這三條路由。全部都要簽章，而且對方必須能操作這台；單向配對中無權的那一方回 403，手機當成「這台沒有 bot 介面」。
+手機的 bot 介面用下面這幾條路由。全部都要簽章，而且對方必須能操作這台；單向配對中無權的那一方回 403，手機當成「這台沒有 bot 介面」。
 
 **`GET /link/bots?rev=<上次的 rev>`**：每個 bot 和每個分頁現在的樣子，規則跟桌面一樣。
 
@@ -166,7 +166,9 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | 欄位 | 內容 |
 |---|---|
 | `v`, `rev`, `now`, `enabled`, `primary` | 版本（加欄位不升版）、內容的 hash、電腦的時間、bots 有沒有開、主要 Bot |
-| `bots[]` | `role`, `label`, `responsibility`, `runs_on`, `avatar`, `primary`, `external`, `state`（`awake`／`asleep`／`external`）, `sid`, `position`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `closing`, `decision` |
+| `bots[]` | `role`, `label`, `responsibility`, `model`, `runs_on`, `avatar`, `primary`, `external`, `state`（`awake`／`asleep`／`external`）, `sid`, `position`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `closing`, `decision` |
+| `model`, `runs_on` | `model` 是 bot 設定裡填的模型，空的表示用 CLI 的預設，等於桌面 bot 編輯器的「模型」欄；`runs_on` 是它現在實際跑的模型 |
+| `choices` | 可以選的頭像：`shapes`（12 種形狀，順序同桌面）、`colors`（`[{"key", "hex"}]`，14 種顏色和它畫出來的色碼，同 `bots.js` 的 `PALETTE`）、`custom_color: true`（也接受 `#RRGGBB`）。手機不用自己寫死一份 |
 | `tabs[sid]` | `bot`, `avatar`, `plain`, `closing`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `decision` |
 | `avatar` | 已經解析好的頭像，等於桌面 `bots.js` 的 `avatarFor`：bot 自己的、分頁自己挑的，否則是 `defaultAvatar`，用 role 或 sid 當種子。Python 版在 `bots.default_avatar`，`tests_link_bots.py` 會拿它跟真的 `web/bots.js` 對照 |
 | `activity` | `working`／`idle`／`done`／`decision`／`stuck`，等於桌面的燈號；睡著或外部的 bot 是 `""` |
@@ -187,6 +189,20 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 - **也會擋下來的情況：** 同一題剛在 Telegram 或手機上回答過，3 秒內再送也回 `stale`，因為畫面可能還沒更新。
 - **Telegram 那邊：** 回答之後，那一題在 Telegram 的每一則都會改成「✅ 已在手機上選：n」並拿掉按鈕；之後再按，會回「這題已經回答過了」。這樣舊按鈕不會把答案送進下一題。
 - **`/link/input` 照舊：** 原始按鍵直送，不做這些檢查。
+
+**改頭像和 bot 設定：** 走的都是桌面現有的函式。成功回 `{"success": true, …}`，`/link/bots` 的 `rev` 會跟著變。
+
+- **不能改的：**
+  - 外部 bot 一律不能改，請到它那邊改。
+  - 不提供新增或刪除 bot。
+- **`POST /link/bots/avatar`：** 改頭像，可以用分頁或 bot 名字指定。
+  - **`{"sid", "avatar": {"shape", "color"}}`：** 一般分頁改的是它自己的頭像；`avatar: null` 會變回預設頭像。如果是 bot 的分頁，改的是 bot 本身的頭像，不接受 `null`。對應桌面的 `bots_set_avatar`。
+  - **`{"role", "avatar": {…}}`：** 休息中的 bot 用名字改，對應 bot 編輯器的儲存。
+  - `shape` 必須在 `choices.shapes` 裡；`color` 要在 `choices.colors` 裡，或是 `#RRGGBB`。
+- **`POST /link/bots/settings {"role", "responsibility"?, "model"?}`：** 只改有給的欄位，skill、記憶、頭像、啟動指令都不變。對應 bot 編輯器的儲存（`bots_save`）。
+  - `model` 是一個詞，例如 `sonnet`；空字串表示用 CLI 的預設。
+  - 兩個欄位都沒給時，會被拒絕。
+- **`POST /link/bots/primary {"role"}`：** 指定主要 Bot，對應 `bots_set_primary`。只能指定這台電腦上的 bot，不能指定外部 bot，也不能清空。
 
 **`POST /link/bots/wake {"role"}`**：叫醒一個 bot，走的是桌面的 `bots_open`。回 `{"success", "details": {"sid", "existed"}}`；`existed: true` 表示它本來就醒著。外部 bot 回 `success: false` 和原因。
 

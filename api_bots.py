@@ -190,7 +190,7 @@ class BotsApiMixin:
             sid = "" if ext else awake.get(role, "")
             t = tabs.get(sid) or {}
             rows.append({"role": role, "label": bots.label_of(role, e),
-                         "responsibility": str(e.get("responsibility") or ""),
+                         "responsibility": str(e.get("responsibility") or ""), "model": str(e.get("model") or ""),
                          "runs_on": "" if ext else self._link_runs_on(sid, e),
                          "avatar": bots.resolved_avatar((e.get("bot") or {}).get("avatar"), role),
                          "primary": role == primary, "external": ext,
@@ -198,7 +198,9 @@ class BotsApiMixin:
                          "sid": sid, "position": order.index(sid) + 1 if sid in order else 0,
                          **{k: t.get(k, d) for k, d in (("activity", ""), ("doing", ""), ("latest", ""), ("last_at", 0),
                                                         ("blocked", ""), ("closing", ""), ("decision", None))}})
-        body = {"enabled": on, "primary": primary, "bots": rows, "tabs": tabs}
+        body = {"enabled": on, "primary": primary, "bots": rows, "tabs": tabs,
+                "choices": {"shapes": list(bots.SHAPES), "colors": [{"key": c, "hex": bots.PALETTE[c]} for c in bots.COLORS],
+                            "custom_color": True}}     # what /link/bots/avatar accepts; also any #RRGGBB
         calm = lambda r: dict(r, last_at=0) if r.get("activity") == "working" else r   # a working tab's last_at is the clock
         rev = int(hashlib.sha1(json.dumps(dict(body, bots=[calm(b) for b in rows], tabs={k: calm(v) for k, v in tabs.items()}),
                                           sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8], 16)
@@ -307,6 +309,64 @@ class BotsApiMixin:
         bridge_home.phone_answered(self, sid, n, claimed)
         _dlog("bots", f"{sid}: answered {n} from the phone")
         return {"success": True, "message": _(f"Answered {n}", f"已選 {n}")}
+
+    def _link_editable(self, role: str):
+        """(roster entry, None) for a bot the phone may change, else (None, the refusal).
+        An external bot lives elsewhere and is changed there."""
+        if not self._bots_enabled():
+            return None, {"success": False, "message": _("Bots are experimental: turn them on in Settings first (experimental_bots)",
+                                                         "Bots 是實驗功能，請先在設定裡打開（experimental_bots）")}
+        e = (_cfg().get("agent_roster") or {}).get(role)
+        if not bots.is_bot(e):
+            return None, {"success": False, "message": _(f'"{role}" is not a bot', f"「{role}」不是 bot")}
+        if bots.is_external(e):
+            return None, {"success": False, "message": _(f'"{role}" lives outside ShellBot; change it there',
+                                                         f"「{role}」住在 ShellBot 外面，請到它那邊改")}
+        return e, None
+
+    def _bots_link_avatar(self, args: dict) -> dict:
+        """POST /link/bots/avatar {"sid" | "role", "avatar": {"shape", "color"}}: a face, the page's
+        own way. A tab through bots_set_avatar (on a bot's tab that is the bot's face); a sleeping
+        bot through the bot editor's save. `avatar: null` gives a plain tab its default face back."""
+        sid, role, av = str(args.get("sid") or ""), str(args.get("role") or ""), args.get("avatar")
+        clean = bots.normalize_avatar(av)
+        if av is not None and not clean:
+            return {"success": False, "message": _("Pick the shape and colour from choices in /link/bots (or a #RRGGBB colour)",
+                                                  "形狀和顏色請從 /link/bots 的 choices 裡選（顏色也可以用 #RRGGBB）")}
+        if sid:
+            if not self._bots_enabled():
+                return self._link_editable("")[1]
+            if sid not in self.sessions:
+                return {"success": False, "message": _(f"No tab {sid}", f"沒有 {sid} 這個分頁")}
+            if self._bots_role_of(sid) and not clean:
+                return {"success": False, "message": _("A bot keeps a face: pick one", "bot 一定要有頭像，請選一個")}
+            res = json.loads(self.bots_set_avatar(sid, json.dumps(clean)))
+            self._bots_notify_ui()
+            return res
+        refused = self._link_editable(role)[1] or (None if clean else {"success": False, "message": _(
+            "A bot keeps a face: pick one", "bot 一定要有頭像，請選一個")})
+        return refused or self._bots_save_for_sfctl({"role": role, "data": json.dumps({"avatar": clean})})
+
+    def _bots_link_settings(self, args: dict) -> dict:
+        """POST /link/bots/settings {"role", "responsibility"?, "model"?}: the bot editor's save
+        with only what is given; skills, memory, the face and its command stay. An empty model
+        means the CLI's default, as in the editor."""
+        role = str(args.get("role") or "").strip()
+        refused = self._link_editable(role)[1]
+        if refused:
+            return refused
+        data = {k: str(args[k]).strip() for k in ("responsibility", "model") if args.get(k) is not None}
+        if not data:
+            return {"success": False, "message": _("Nothing to change: give responsibility or model",
+                                                  "沒有要改的欄位：請給 responsibility 或 model")}
+        if len(data.get("model", "")) > 80 or re.search(r"\s", data.get("model", "")):
+            return {"success": False, "message": _("A model is one word, e.g. sonnet", "模型是一個詞，例如 sonnet")}
+        return self._bots_save_for_sfctl({"role": role, "data": json.dumps(data, ensure_ascii=False)})
+
+    def _bots_link_primary(self, args: dict) -> dict:
+        """POST /link/bots/primary {"role"}: put a bot on the top card (bots_set_primary)."""
+        role = str(args.get("role") or "").strip()
+        return self._link_editable(role)[1] or json.loads(self.bots_set_primary(role))
 
     def _bots_link_wake(self, args: dict) -> dict:
         """POST /link/bots/wake: the phone wakes a bot (its tab opens with its memory; an awake one is found)."""
