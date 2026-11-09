@@ -259,7 +259,7 @@ check("only the primary is told it is primary",
 pb = bots.compose_brief("x", {}, {}, is_primary=True)
 check("the primary gets its tools and the inventory routine",
       all(k in pb for k in ("sfctl bots", "sfctl state --all", "sfctl a2a-handoff", "盤點", "派工"))
-      and "先盤點一次" in pb and "已就緒" not in pb)
+      and "先盤點一次" in pb and "已就緒" not in pb and "最多 3 件" in pb and "不要寫 s314" in pb)
 check("a coordinator is not the primary unless marked",
       bots.primary_role({"a": {"coordinator": True, "bot": {}}}) == ""
       and bots.primary_role({"a": {"coordinator": True, "bot": {}}, "b": {"bot": {"primary": True}}}) == "b")
