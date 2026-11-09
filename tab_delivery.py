@@ -110,8 +110,11 @@ def composer_state(screen_ansi: str):
 
 # The line that says a turn is running, just above the input box: "esc to interrupt", or
 # (newer Claude Code) the spinner's running clock "· Undulating… (12m 53s · ↓ 1.7k tokens)".
+# The clock line starts at column 0 with one of Claude Code's spinner glyphs (2.1.319:
+# · ✢ ✳ ✶ ✻ ✽, and * on some platforms). Quoted in a conversation the same words are
+# indented, bulleted or behind ❯/⏺; an idle tab showing them must not read as running.
 # Same rule as agent_status._screen_signals["actively_working"].
-_RUNNING_CLOCK = re.compile(r"^\s*\S\s+[A-Z][^\n…]{0,40}…\s*\((?:\d+h\s*)?(?:\d+m\s*)?\d+s\b")
+_RUNNING_CLOCK = re.compile(r"^[·✢✳✶✻✽*] +[A-Z][^\n…]{0,40}…\s*\((?:\d+h\s*)?(?:\d+m\s*)?\d+s\b")
 
 
 def status_line(screen: str) -> str:

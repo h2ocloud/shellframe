@@ -251,8 +251,17 @@ SCREENS = {
     "✻ Undulating… (12m 53s)": True,
     "✶ Pondering… (1h 2m 3s · ↓ 9k tokens)": True,
     "✻ Thinking… (esc to interrupt)": True,
+    "✳ Undulating… (29m 32s · ↓ 158.0k tokens)                ": True,
+    "* Thinking… (4s)": True,                     # the glyph Claude Code uses on other platforms
     "✻ Baked for 1s · done 3:34 PM": False,
     "Loading the list (5s)": False,
+    # The same words quoted in a conversation are not a running turn: an idle tab that showed
+    # one would read working (and hold every message for it) until its next hook event.
+    "  - Coding tab: Undulating… (25m 9s)": False,              # a reply quoting another tab
+    "     · Undulating… (25m 9s · ↓ 131.1k tokens)": False,     # tool output, e.g. peek --raw
+    "❯ Why does it say Undulating… (12m 53s": False,           # the user's own prompt
+    "⏺ Undulating… (3s) is the spinner's verb": False,
+    "- Undulating… (3s)": False,
 }
 for line, want in SCREENS.items():
     scr = "\n".join(["some conversation", line, RULE, "\x1b[39m❯\xa0", RULE, "  footer"])
