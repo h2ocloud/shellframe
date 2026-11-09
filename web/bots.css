@@ -162,6 +162,28 @@ body.sfb-dragging, body.sfb-dragging * { -webkit-user-select: none !important; u
 .sfb-section .sfb-add { margin-left: auto; border: 1px solid #3b4261; border-radius: 4px; background: none;
   color: #7aa2f7; font-size: 10px; padding: 0 7px; line-height: 1.6; cursor: pointer; }
 .sfb-section .sfb-add:hover { border-color: #7aa2f7; }
+.sfb-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.sfb-top .sfb-name { flex: 1; min-width: 0; white-space: nowrap; }
+.sfb-ago { flex: none; font-size: 10px; font-weight: 400; color: #565f89; }
+
+/* ── sidebar tools: search, idle only, newest first ── */
+#sfb-tools { display: none; padding: 2px 10px 6px; }
+body.sfb-on #sfb-tools:not([hidden]) { display: block; }
+#sfb-tools input {
+  -webkit-appearance: none; appearance: none; width: 100%; box-sizing: border-box; height: 24px;
+  padding: 0 8px; border-radius: 6px; border: 1px solid #292e42; background: #16161e;
+  color: #c0caf5; font-size: 11.5px; outline: none;
+}
+#sfb-tools input:focus { border-color: #7aa2f7; }
+#sfb-tools input::placeholder { color: #565f89; }
+.sfb-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 5px; }
+.sfb-chips button { border: 1px solid #292e42; border-radius: 10px; background: none; color: #787c99;
+  font-size: 10px; line-height: 1.7; padding: 0 7px; cursor: pointer; }
+.sfb-chips button:hover { border-color: #3b4261; color: #a9b1d6; }
+.sfb-chips button.on { border-color: #7aa2f7; color: #7aa2f7; background: #7aa2f71a; }
+.sfb-count { margin-left: auto; font-size: 10px; color: #565f89; }
+#sidebar-sessions .sfb-hide { display: none !important; }
+.sfb-empty { padding: 14px 12px; font-size: 11px; color: #565f89; text-align: center; }
 
 /* ── organism: the primary bot card at the top of the sidebar ── */
 #sfb-primary { display: none; padding: 10px 10px 4px; }

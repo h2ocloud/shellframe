@@ -176,7 +176,8 @@
       const tag = role && memOn(role)
         ? `<span class="sfb-tag" title="${esc(t('Bot: has its own memory and writes it before closing', 'Bot：有自己的記憶，關閉前會先寫記憶'))}">Bot</span>` : '';
       lab.classList.add('sfb-two');
-      lab.innerHTML = `<span class="sfb-name">${esc(s.label)}${tag}</span>` +
+      lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(s.label)}${tag}</span>` +
+        `<span class="sfb-ago">${esc(agoText(sid))}</span></span>` +
         `<span class="sfb-sub">${esc(previewOf(sid)) || '&nbsp;'}</span>`;
       const dot = row.querySelector('.busy-dot');
       if (dot) dot.title = t('Right-click: face and bot settings. Click: change the expression by hand (the next turn takes over)',
@@ -184,8 +185,174 @@
     });
     renderSleepers(container);
     renderPrimary();
+    renderTools();
+    applyView();
     renderConvo();
     afterTabs(document.getElementById('tabs'));
+  }
+
+  // ── sidebar tools: find a tab, see who is free, newest first ──────────────
+  // A view over the list, never a change to it: your own order (which is also
+  // Telegram's /1 /2) stays as it is. Remembered per viewer in localStorage.
+  const VIEW_KEY = 'sfb-sidebar-view';
+  const LONG_IDLE_S = 30 * 60;
+  const view = { q: '', idle: false, long: false, recent: false, before: null };
+  try {
+    const saved = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
+    ['idle', 'long', 'recent'].forEach(k => { view[k] = saved[k] === true; });
+    if (typeof saved.before === 'boolean') view.before = saved.before;
+  } catch (_) {}
+  function saveView() {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(
+        { idle: view.idle, long: view.long, recent: view.recent, before: view.before }));
+    } catch (_) {}
+  }
+  function running(sid) {
+    const s = sessionsMap()[sid] || {};
+    const state = (s._serverStatus || {}).state;
+    if (state && state !== 'unknown') return state === 'working';
+    return !!s._busy;                         // a plain shell: its output says so
+  }
+  // When the tab last answered, in seconds: the transcript's last write for an AI
+  // tab (it survives a restart), the last output for a plain shell; 0 = unknown.
+  function lastAt(sid, now) {
+    if (running(sid)) return now;
+    const s = sessionsMap()[sid] || {};
+    return Number((s._serverStatus || {}).activity_at) || (s._lastOutputTs ? s._lastOutputTs / 1000 : 0);
+  }
+  function agoText(sid) {
+    const now = Date.now() / 1000;
+    const at = lastAt(sid, now);
+    if (!at) return '';
+    const s = Math.max(0, now - at);
+    if (s < 60) return t('now', '剛剛');
+    if (s < 3600) return t(`${Math.floor(s / 60)}m`, `${Math.floor(s / 60)} 分前`);
+    if (s < 86400) return t(`${Math.floor(s / 3600)}h`, `${Math.floor(s / 3600)} 小時前`);
+    return t(`${Math.floor(s / 86400)}d`, `${Math.floor(s / 86400)} 天前`);
+  }
+  function haystack(sid) {
+    const s = sessionsMap()[sid] || {};
+    const role = botOf(sid);
+    const e = role ? rosterEntry(role) : null;
+    return [s.label, sid, role, role && botName(role), e && e.responsibility, previewOf(sid)]
+      .filter(Boolean).join(' ').toLowerCase();
+  }
+  const hits = (text, words) => words.every(w => text.includes(w));
+  const filtering = () => !!view.q.trim() || view.idle || view.long;
+  const AIM_MS = 1500;          // the pointer moved over the list this recently: you are aiming
+  let aimedAt = 0;
+  document.addEventListener('mousemove', e => {
+    if (e.target.closest && e.target.closest('#sidebar-sessions')) aimedAt = Date.now();
+  }, true);
+  const sortedView = () => enabled && view.recent;
+
+  function renderTools() {
+    const list = document.getElementById('sidebar-sessions');
+    if (!list) return;
+    let el = document.getElementById('sfb-tools');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sfb-tools';
+      el.innerHTML = '<input id="sfb-q" type="search" spellcheck="false" autocomplete="off">' +
+        '<div class="sfb-chips"><button data-view="idle"></button><button data-view="long"></button>' +
+        '<button data-view="recent"></button><span class="sfb-count"></span></div>';
+      list.parentNode.insertBefore(el, list);
+      const q = el.querySelector('#sfb-q');
+      q.addEventListener('input', () => { view.q = q.value; applyView({ sort: false }); });
+      q.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        e.stopPropagation();
+        q.value = view.q = '';
+        applyView({ sort: false });
+        q.blur();
+      });
+      el.addEventListener('click', e => {
+        const b = e.target.closest('[data-view]');
+        if (b) toggleView(b.dataset.view);
+      });
+    }
+    el.hidden = !enabled;
+    el.querySelector('#sfb-q').placeholder = t('Search name, job, latest line', '搜尋名稱、執掌、最新一句');
+    const labels = {
+      idle: [t('Idle', '只看閒置'), t('Only tabs that are not running right now', '只顯示現在沒在跑的分頁')],
+      long: [t('> 30 min', '超過 30 分鐘'), t('Idle for more than 30 minutes', '閒置超過 30 分鐘')],
+      recent: [t('Recent first', '最近回應在上'),
+               t('Newest answer first. Off: your own order, which is also Telegram /1 /2',
+                 '依最後回應排序，最新的在上。關掉：回到你自己排的順序（也就是 Telegram 的 /1 /2）')],
+    };
+    el.querySelectorAll('[data-view]').forEach(b => {
+      const [label, tip] = labels[b.dataset.view];
+      b.textContent = label;
+      b.title = tip;
+      b.classList.toggle('on', !!view[b.dataset.view]);
+    });
+  }
+
+  function toggleView(k) {
+    if (k === 'recent') {
+      view.recent = !view.recent;
+      view.before = null;                     // your own choice sticks
+    } else {
+      const was = view.idle || view.long;
+      view[k] = !view[k];
+      if (k === 'long' && view.long) view.idle = true;     // over 30 minutes is idle too
+      if (k === 'idle' && !view.idle) view.long = false;
+      const idleNow = view.idle || view.long;
+      if (idleNow && !was && !view.recent) { view.recent = true; view.before = false; }  // idle: newest first
+      if (!idleNow && was && view.before === false) view.recent = false;               // …and back after
+      if (!idleNow) view.before = null;
+    }
+    saveView();
+    renderTools();
+    if (view.recent) applyView();
+    else { try { host().renderSidebar(); } catch (_) {} }   // rebuilt in your own order
+  }
+
+  function applyView(opts) {
+    const list = document.getElementById('sidebar-sessions');
+    if (!enabled || !list) return;
+    const words = view.q.toLowerCase().split(/\s+/).filter(Boolean);
+    const now = Date.now() / 1000;
+    const rows = [...list.querySelectorAll('.sb-item[data-section="local"][data-sid]')];
+    let shown = 0;
+    rows.forEach(row => {
+      const sid = row.dataset.sid;
+      const at = lastAt(sid, now);
+      const ok = (!(view.idle || view.long) || !running(sid)) &&
+                 (!view.long || !at || now - at > LONG_IDLE_S) && hits(haystack(sid), words);
+      row.classList.toggle('sfb-hide', !ok);
+      if (ok) shown++;
+    });
+    list.querySelectorAll('.sfb-sleeper').forEach(row => {
+      const role = row.dataset.sfbRole;
+      const e = rosterEntry(role) || {};
+      row.classList.toggle('sfb-hide', !hits([role, botName(role), e.responsibility].join(' ').toLowerCase(), words));
+    });
+    list.querySelectorAll('.sb-item[data-rsid]').forEach(row =>
+      row.classList.toggle('sfb-hide', !hits(row.textContent.toLowerCase(), words)));
+    // Rows only move when the order really changed, and a status tick leaves them
+    // alone while the pointer is moving over the list (see tick).
+    if (sortedView() && rows.length && (!opts || opts.sort !== false)) {
+      const order = (host() && host().order && host().order()) || [];
+      const want = rows.map(row => ({ row, at: lastAt(row.dataset.sid, now), i: order.indexOf(row.dataset.sid) }))
+        .sort((a, b) => (b.at - a.at) || (a.i - b.i)).map(x => x.row);
+      if (want.some((row, i) => row !== rows[i])) {
+        const anchor = rows[rows.length - 1].nextSibling;
+        want.forEach(row => list.insertBefore(row, anchor));
+      }
+    }
+    let empty = list.querySelector('.sfb-empty');
+    if (rows.length && !shown) {
+      if (!empty) {
+        empty = document.createElement('div');
+        empty.className = 'sfb-empty';
+        list.insertBefore(empty, list.firstChild);
+      }
+      empty.textContent = t('No tab matches', '沒有符合的分頁');
+    } else if (empty) empty.remove();
+    const count = document.querySelector('#sfb-tools .sfb-count');
+    if (count) count.textContent = filtering() ? `${shown}/${rows.length}` : '';
   }
   // Rows of another machine's tabs (Frame Link zone): same faces, seeded by
   // machine + tab so each keeps a stable look across refreshes.
@@ -325,11 +492,18 @@
   // Live bits that change without a re-render: second lines, card, writing faces.
   function tick() {
     if (!enabled) return;
-    document.querySelectorAll('#sidebar-sessions .sb-item[data-sid] .sfb-sub').forEach(sub => {
-      const sid = sub.closest('.sb-item').dataset.sid;
+    document.querySelectorAll('#sidebar-sessions .sb-item[data-sid] .sfb-two').forEach(two => {
+      const sid = two.closest('.sb-item').dataset.sid;
+      const sub = two.querySelector('.sfb-sub');
       const text = previewOf(sid) || ' ';
-      if (sub.textContent !== text) sub.textContent = text;
+      if (sub && sub.textContent !== text) sub.textContent = text;
+      const ago = two.querySelector('.sfb-ago');
+      const when = agoText(sid);
+      if (ago && ago.textContent !== when) ago.textContent = when;
     });
+    // Who is idle, and who answered last, changes as turns start and end.
+    if (sortedView() && Date.now() - aimedAt > AIM_MS) applyView();
+    else if (filtering()) applyView({ sort: false });
     const role = st.primary;
     const card = document.querySelector('#sfb-primary .sfb-card .busy-dot');
     if (card && role) {
@@ -904,10 +1078,20 @@
                                `primary=${st.primary || '-'} bots=${Object.keys(st.roster || {}).filter(isBot).length}`);
       } catch (_) {}
     }, 4000);
+    // …and once the status pushes have landed: are the sidebar tools there, and do
+    // the rows know when they last answered.
+    setTimeout(() => {
+      try {
+        const rows = document.querySelectorAll('#sidebar-sessions .sb-item[data-section="local"][data-sid]');
+        const known = [...document.querySelectorAll('#sidebar-sessions .sfb-ago')].filter(a => a.textContent).length;
+        api().js_debug('bots', `sidebar tools=${!!document.getElementById('sfb-tools') && enabled} rows=${rows.length} ` +
+                               `with-time=${known} view=${JSON.stringify({ idle: view.idle, long: view.long, recent: view.recent })}`);
+      } catch (_) {}
+    }, 20000);
   }
 
   window.SFBots = {
-    face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings,
+    face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,

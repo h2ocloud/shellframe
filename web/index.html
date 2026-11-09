@@ -935,7 +935,7 @@
     <div class="sb-section-title sb-sessions-head">
       <span data-i18n="sessions">Sessions</span>
       <!-- 中斷對話後 hook 不一定發 Stop，燈號會卡在執行中；這顆是手動重判。
-           後端另有五分鐘定期重算。 -->
+           後端在 hook 與畫面都安靜 90 秒後交回畫面判斷。 -->
       <button id="btn-refresh-status" title="重新判斷所有分頁的狀態燈號">↻</button>
     </div>
     <div id="sidebar-sessions"></div>
@@ -3718,6 +3718,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // 雙擊的第二次按下 → 完全不啟動拖曳。使用者意圖是改名，這時手抖
     // 幾 px 不該變成 reorder（改名因此永遠觸發不了）。
     if (_sbLastClickSid === sid && Date.now() - _sbLastClickTime < SB_DBLCLICK_MS) return;
+    if (window.SFBots && SFBots.sortedView && SFBots.sortedView()) return;  // sorted by time: a drop would reorder rows you cannot see
     let moved = false;
     const startY = e.clientY;
     const startX = e.clientX;
@@ -8603,7 +8604,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
   window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
-    lang: () => lang, switchTab, renderTabs, renderSidebar, renameSession };
+    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession };
 
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a

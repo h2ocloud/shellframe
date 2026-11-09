@@ -108,6 +108,24 @@ the list to empty it. A coordinator role is not primary unless marked.
 A2A itself is unchanged and keeps its guardrails (roster only, depth 4, 6/min
 per sender, 4000 chars, audit log). A message to a sleeping bot wakes it.
 
+## Finding a tab: search, idle, newest first
+
+Above the list (bots on), a search box and three switches. They change the view,
+never the list: your own order, which is also Telegram's `/1` `/2`, stays as it is.
+
+- Every row shows how long ago it last answered: the transcript's last write for an
+  AI tab (so it survives a restart), the last output for a plain shell, "now" while
+  it runs.
+- **Search** matches a tab's name, its bot's job and its latest line; several words
+  must all match. Sleeping bots are searched by name and job. Esc clears it.
+- **Idle** hides what is running right now and turns on newest first; turning it off
+  goes back to your own order. **> 30 min** keeps only tabs quiet for longer.
+- **Recent first** sorts running tabs to the top, then by the last answer. Rows move
+  only when the order changed, never while the pointer is moving over the list, and
+  dragging a row does not reorder while it is on.
+
+The switches are remembered per viewer (`localStorage`).
+
 ## External bots (e.g. a cloud bot with a webhook routine)
 
 Some bots live outside ShellFrame. A typical cloud bot service offers no API to
