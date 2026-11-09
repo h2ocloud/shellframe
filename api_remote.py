@@ -498,7 +498,8 @@ class RemoteApiMixin:
         elif cmd == "delegate":
             try:
                 return a2a_host.annotate_delegate(
-                    self.delegate_task(args.get("role", ""), args.get("task", "")),
+                    self.delegate_task(args.get("role", ""), args.get("task", ""),
+                                       from_sid=str(args.get("from_sid") or "")),
                     args.get("task", ""))
             except Exception as e:
                 return {"success": False, "message": f"Delegate failed: {e}"}
@@ -522,9 +523,8 @@ class RemoteApiMixin:
                 # per-tab queue waits (up to 30 min) unless --now. See tab_delivery.
                 sender = str(args.get("from_sid") or "")
                 label = self._session_label(sid, self.sessions.get(sid))
-                res = tab_delivery.deliver(
-                    self, sid, text, submit=submit, now=bool(args.get("now")), from_sid=sender,
-                    on_timeout=lambda _r, why: tab_delivery.notify_sender(self, sender, label, why))
+                res = tab_delivery.deliver(self, sid, text, submit=submit, now=bool(args.get("now")),
+                                           from_sid=sender, label=label)
                 return {k: res[k] for k in ("success", "message") if k in res} | (
                     {"details": {"queued": True, "position": res.get("position")}} if res.get("queued") else {})
             except Exception as e:

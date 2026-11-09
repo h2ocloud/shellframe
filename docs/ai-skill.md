@@ -154,7 +154,10 @@ review is `review` even when it also talks about design.
 decision menu, in the middle of a Telegram turn, or has the user's unsent text in
 its input box, the text waits in that tab's queue (first in, first out) and goes
 in when that ends; the reply says `Queued`. After 30 minutes it is dropped and the
-sender's tab is told. `--now` sends at once. It pastes atomically (bracketed
+sender's tab is told. The queue is kept on disk: after a ShellBot restart it carries
+on with what is left of each item's 30 minutes, and anything that cannot be
+delivered (its tab did not come back, or it was being typed in when the app went
+down) is reported to the sender instead. `--now` sends at once. It pastes atomically (bracketed
 paste) and only then submits. Prefer it over typing keystrokes. `a2a-send`,
 `a2a-handoff`, `a2a-result`, `a2a-next` and `delegate` to a tab that is already
 open use the same queue and take `--now` too: you no longer need your own polling

@@ -61,6 +61,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
 | | `bots.py` | Bots (`experimental_bots`): identity, per-bot memory folder, wake-up brief, close-time summary, external-bot payloads |
 | | `agent_prompts.py`, `sf_lang.py` | The delegation and idle-summary prompts; the language every agent-facing text uses (the OS's: English or Traditional Chinese) |
+| | `tab_delivery.py` | Hands text to a tab without cutting into a turn, a decision menu or the user's draft: a per-tab queue (30 min, `--now` skips it) kept on disk across restarts; tells the sender when an item cannot be delivered |
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `tmux_sessions.py` | sf_* tmux sessions as data: tolerant listing, orphan report (also a read-only CLI), highest sid, client refresh |
 | | `wake_watch.py` | macOS display sleep/wake notifications → callbacks on a worker thread; memory-pressure probe |

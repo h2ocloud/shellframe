@@ -15,7 +15,12 @@ every model and every CLI:
   * one tab's queue is first in, first out, and the next item waits until the
     previous one has been taken (hook UserPromptSubmit, or the tab turns busy);
   * after QUEUE_MAX_WAIT (30 min) the item is dropped and the sender is told;
-  * `now=True` (`--now`) sends at once, as before.
+  * `now=True` (`--now`) sends at once, as before;
+  * the queue is kept on disk (STATE_FILE). Measured: an item queued at 13:21:11
+    vanished with the 13:25:23 restart, never delivered and the sender never
+    told. After a restart each item carries on from its original start time;
+    one whose tab does not come back, whose time ran out, or that was being
+    typed in when the app went down is reported to the sender instead.
 
 `composer_state` is also what `sfctl peek` and `sfctl state` use to say whether
 the input box holds a suggestion or a draft.
@@ -24,16 +29,22 @@ Host-agnostic: `api` is the ShellFrame Api (duck-typed), so tests pass a fake.
 """
 
 import collections
+import json
+import os
 import re
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 import sf_lang
+from sf_log import _dlog
 
 QUEUE_MAX_WAIT = 1800.0     # seconds an item may wait before the sender is told
 POLL = 1.5                  # seconds between checks while waiting
 TAKEN_WAIT = 8.0            # after sending, how long to wait for the tab to take it
+STATE_FILE = None           # set by the app at start-up; None (tests) keeps the queue in memory
+RESTORE_GRACE = 180.0       # after a restart, how long an item waits for its tab to come back
 
 _CSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _TOKEN = re.compile(r"\x1b\[([0-9;?]*)([A-Za-z])|([^\x1b]+)|(\x1b)")
@@ -132,13 +143,21 @@ def _reason_text(reason: str, lang: str = None) -> str:
         "draft": sf_lang.pick("the user is typing in it", "輸入框有使用者還沒送出的字", lang),
         "closed": sf_lang.pick("the tab was closed", "分頁已經關了", lang),
         "queued": sf_lang.pick("messages ahead of it are still waiting", "前面還有訊息在排", lang),
+        "expired": sf_lang.pick("the waiting time ran out", "等候時間已用完", lang),
+        "lost": sf_lang.pick("ShellBot restarted and the tab did not come back",
+                             "ShellBot 重啟後，這個分頁沒有回來", lang),
+        "uncertain": sf_lang.pick("ShellBot restarted while typing it in, so it may or may not have gone in",
+                                  "ShellBot 在送進去的途中重啟，不確定有沒有送到", lang),
     }.get(reason, reason)
 
 
 # ── the queue ──────────────────────────────────────────────────────────────
 _lock = threading.Lock()
+_save_lock = threading.Lock()
 _queues = {}                 # sid -> deque of items
 _draining = set()
+_resumed_at = 0.0            # when resume() loaded the queue after a restart
+_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending")
 
 
 def pending(sid: str = "") -> list:
@@ -149,9 +168,74 @@ def pending(sid: str = "") -> list:
              "from": it.get("from_sid", "")} for k, it in items]
 
 
+def _save():
+    """Write the whole queue to STATE_FILE (atomically, owner-only: it holds
+    message text). Called after every change, so a restart finds it current."""
+    if not STATE_FILE:
+        return
+    with _save_lock:
+        with _lock:
+            rows = [{k: it[k] for k in _KEEP if k in it} for q in _queues.values() for it in q]
+        path = Path(STATE_FILE)
+        tmp = path.with_name(path.name + ".tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        except Exception as e:
+            _dlog("deliver", f"saving the queue failed: {e!r}")
+
+
+def _enqueue(api, items) -> int:
+    """Append items (oldest first) and start draining their tabs. Returns the
+    queue position of the last one."""
+    position = 0
+    with _lock:
+        for it in items:
+            q = _queues.setdefault(it["sid"], collections.deque())
+            q.append(it)
+            position = len(q)
+        start = sorted({it["sid"] for it in items} - _draining)
+        _draining.update(start)
+    _save()
+    for sid in start:
+        threading.Thread(target=_drain, args=(api, sid), daemon=True, name=f"deliver-{sid}").start()
+    return position
+
+
+def resume(api) -> int:
+    """After a restart: load what was waiting and carry on. Each item keeps its
+    original start time, so it waits only what is left of its QUEUE_MAX_WAIT,
+    and its tab gets RESTORE_GRACE to come back. Only the first call loads."""
+    global _resumed_at
+    if not STATE_FILE or _resumed_at:
+        return 0
+    _resumed_at = time.time()
+    try:
+        rows = json.loads(Path(STATE_FILE).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return 0
+    except Exception as e:
+        _dlog("deliver", f"queue file unreadable, nothing resumed: {e!r}")
+        return 0
+    items = sorted(({"submit": True, "from_sid": "", "what": "", "label": r["sid"], **r,
+                     "t0": float(r.get("t0") or _resumed_at), "restored": True,
+                     "grace_until": _resumed_at + RESTORE_GRACE}
+                    for r in (rows if isinstance(rows, list) else [])
+                    if isinstance(r, dict) and r.get("sid") and isinstance(r.get("text"), str)),
+                   key=lambda it: it["t0"])
+    if items:
+        _enqueue(api, items)
+        _dlog("deliver", f"resumed {len(items)} queued item(s) after a restart")
+    return len(items)
+
+
 def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
-            from_sid: str = "", on_timeout=None, what: str = "") -> dict:
+            from_sid: str = "", on_timeout=None, what: str = "", label: str = "") -> dict:
     """Send `text` to tab `sid` now if it is free (or `now`), else queue it.
+    An item that never goes in is reported to `from_sid` (`label` names the
+    target in that note), or handed to `on_timeout(outcome, why)` instead.
     Returns {"success", "message", "queued", "position", "reason"}."""
     s = api.sessions.get(sid)
     if not s:
@@ -163,17 +247,11 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
         s._startup_trust_pending = False
         api._send_text_to_session(s, text, submit=submit)
         return {"success": True, "message": f"Sent {len(text)} chars to {sid}", "queued": False}
-    item = {"text": text, "submit": submit, "t0": time.time(), "from_sid": from_sid,
-            "on_timeout": on_timeout, "what": what}
-    with _lock:
-        q = _queues.setdefault(sid, collections.deque())
-        q.append(item)
-        position = len(q)
-        start = sid not in _draining
-        if start:
-            _draining.add(sid)
-    if start:
-        threading.Thread(target=_drain, args=(api, sid), daemon=True, name=f"deliver-{sid}").start()
+    item = {"sid": sid, "text": text, "submit": submit, "t0": time.time(), "from_sid": from_sid,
+            "what": what, "label": label or sid}
+    if on_timeout:
+        item["on_timeout"] = on_timeout
+    position = _enqueue(api, [item])
     why = _reason_text(reason)
     mins = int(QUEUE_MAX_WAIT // 60)
     return {"success": True, "queued": True, "position": position, "reason": reason,
@@ -196,6 +274,50 @@ def _taken(api, sid: str, since: float) -> bool:
         return False
 
 
+def _wait_turn(api, sid: str, item: dict) -> str:
+    """Wait until the tab can take `item`: 'send', or why it never will."""
+    while True:
+        if item.get("sending"):          # the app went down while typing it in
+            return "uncertain"
+        if sid not in api.sessions:
+            if time.time() < item.get("grace_until", 0):   # just restarted: tab may be on its way
+                time.sleep(POLL)
+                continue
+            return "lost" if item.get("restored") else "closed"
+        reason = busy_reason(api, sid)
+        if time.time() - item["t0"] > QUEUE_MAX_WAIT:
+            return reason or "expired"
+        if not reason:
+            return "send"
+        time.sleep(POLL)
+
+
+def _drop(sid: str, item: dict):
+    with _lock:
+        q = _queues.get(sid)
+        if q and q[0] is item:
+            q.popleft()
+    _save()
+
+
+def _fail(api, item: dict, outcome: str):
+    """Report an item that never went in: to `on_timeout` if one was given,
+    else to the sender's tab or webhook."""
+    why = _reason_text(outcome)
+    if item.get("restored") and outcome not in ("lost", "uncertain"):
+        why += sf_lang.pick(" (ShellBot restarted in between)", "（期間 ShellBot 重啟過）")
+    _dlog("deliver", f"{item['sid']} not delivered ({outcome}), {len(item['text'])} chars "
+                     f"from {item.get('from_sid') or '?'}")
+    cb = item.get("on_timeout")
+    if cb:
+        try:
+            cb(outcome, why)
+        except Exception:
+            pass
+    elif item.get("from_sid"):
+        notify_sender(api, item["from_sid"], item.get("label") or item["sid"], why, outcome)
+
+
 def _drain(api, sid: str):
     try:
         while True:
@@ -206,45 +328,42 @@ def _drain(api, sid: str):
                     _draining.discard(sid)
                     return
                 item = q[0]
-            outcome = ""
-            while True:
-                if sid not in api.sessions:
-                    outcome = "closed"
-                    break
-                reason = busy_reason(api, sid)
-                if not reason:
-                    outcome = "send"
-                    break
-                if time.time() - item["t0"] > QUEUE_MAX_WAIT:
-                    outcome = reason
-                    break
-                time.sleep(POLL)
-            with _lock:
-                if _queues.get(sid) and _queues[sid][0] is item:
-                    _queues[sid].popleft()
-            if outcome == "send":
-                s = api.sessions.get(sid)
-                if s is not None:
-                    sent_at = time.time()
-                    s._startup_trust_pending = False
-                    api._send_text_to_session(s, item["text"], submit=item["submit"])
-                    deadline = time.time() + TAKEN_WAIT
-                    while time.time() < deadline and not _taken(api, sid, sent_at):
-                        time.sleep(0.25)
+            outcome = _wait_turn(api, sid, item)
+            s = api.sessions.get(sid) if outcome == "send" else None
+            if outcome == "send" and s is None:
+                outcome = "closed"
+            if outcome != "send":
+                _fail(api, item, outcome)     # first, so the note is saved before the item goes
+                _drop(sid, item)
                 continue
-            cb = item.get("on_timeout")
-            if cb:
-                try:
-                    cb(outcome, _reason_text(outcome))
-                except Exception:
-                    pass
-    except Exception:
+            sent_at = time.time()
+            item["sending"] = sent_at         # on disk while typing: a restart now cannot tell
+            _save()
+            s._startup_trust_pending = False
+            api._send_text_to_session(s, item["text"], submit=item["submit"])
+            _drop(sid, item)
+            deadline = time.time() + TAKEN_WAIT
+            while time.time() < deadline and not _taken(api, sid, sent_at):
+                time.sleep(0.25)
+    except Exception as e:
+        _dlog("deliver", f"{sid} queue stopped: {e!r}")
         with _lock:
             _draining.discard(sid)
 
 
-def timeout_notice(target_label: str, why: str, mins: int = None) -> str:
+def timeout_notice(target_label: str, why: str, mins: int = None, outcome: str = "") -> str:
     """What the sender reads when its message never went in."""
+    if outcome == "uncertain":
+        return sf_lang.pick(
+            f"[[ShellBot: your message to \"{target_label}\" may not have been delivered ({why}). "
+            f"Check with sfctl peek before sending it again.]]",
+            f"[[ShellBot：送給「{target_label}」的訊息可能沒送到（{why}）。"
+            f"請先用 sfctl peek 看一下，再決定要不要重送。]]")
+    if outcome in ("closed", "lost"):
+        return sf_lang.pick(
+            f"[[ShellBot: your message to \"{target_label}\" was not delivered ({why}). "
+            f"It was dropped; send it again if it still matters.]]",
+            f"[[ShellBot：送給「{target_label}」的訊息沒有送到（{why}），已放棄。還需要的話請再送一次。]]")
     mins = int(QUEUE_MAX_WAIT // 60) if mins is None else mins
     return sf_lang.pick(
         f"[[ShellBot: your message to \"{target_label}\" was not delivered after waiting up to {mins} min "
@@ -253,18 +372,25 @@ def timeout_notice(target_label: str, why: str, mins: int = None) -> str:
         f"要的話請再送一次，或加 --now 直接插話。]]")
 
 
-def notify_sender(api, from_sid: str, target_label: str, why: str):
+def notify_sender(api, from_sid: str, target_label: str, why: str, outcome: str = ""):
     """Tell whoever sent a message that never went in. A tab gets a note (queued
     like any other text, without a notice of its own); an external bot gets it
-    on its webhook; anything else is only logged."""
-    note = timeout_notice(target_label, why)
+    on its webhook; anything else is only logged. Right after a restart the
+    sender's tab may not be back yet, so the note waits for it like any item."""
+    note = timeout_notice(target_label, why, outcome=outcome)
     try:
         if from_sid and from_sid in api.sessions:
             deliver(api, from_sid, note, what="timeout-notice")
         elif from_sid.startswith("ext:") and hasattr(api, "_bots_external_deliver"):
             api._bots_external_deliver(from_sid[4:], {"kind": "send", "text": note, "from_label": "ShellBot"})
-    except Exception:
-        pass
+        elif from_sid and time.time() < _resumed_at + RESTORE_GRACE:
+            _enqueue(api, [{"sid": from_sid, "text": note, "submit": True, "t0": time.time(),
+                            "from_sid": "", "what": "timeout-notice", "label": from_sid,
+                            "grace_until": _resumed_at + RESTORE_GRACE}])
+        else:
+            _dlog("deliver", f"could not tell {from_sid or 'an unknown sender'}: {why}")
+    except Exception as e:
+        _dlog("deliver", f"telling {from_sid} failed: {e!r}")
 
 
 def composer_note(kind: str, text: str) -> str:

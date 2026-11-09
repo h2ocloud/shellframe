@@ -2241,7 +2241,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             time.sleep(0.4)
         return False
 
-    def delegate_task(self, role: str, task: str) -> dict:
+    def delegate_task(self, role: str, task: str, from_sid: str = "") -> dict:
         task = str(task or "").strip()
         if not task:
             return {"success": False, "message": "task required"}
@@ -2290,7 +2290,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                                 "created": True, "not_ready": True}}
         session._startup_trust_pending = False
         # A tab that was already open may be mid-turn: queue, don't type into it.
-        sent = tab_delivery.deliver(self, sid, prompt) if not created else None
+        sent = tab_delivery.deliver(self, sid, prompt, from_sid=from_sid, label=label) if not created else None
         if created:
             self._send_text_to_session(session, prompt, submit=True)
         return {
@@ -3095,6 +3095,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 self._retry_failed_attach(failed)
                 # Bridge 可能在這些分頁存在之前就啟動了（見 _sync_bridge_sessions）
                 self._sync_bridge_sessions()
+                tab_delivery.resume(self)     # what was queued before the restart
                 return json.dumps(restored)
 
         # Disk-backed fallback: recreate tabs fresh after a machine reboot
@@ -3190,6 +3191,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             self._persist_session_manifest(saved_order)
         # 同上：還原完無條件同步一次
         self._sync_bridge_sessions()
+        tab_delivery.resume(self)
         return json.dumps(restored)
 
     def _start_output_pusher(self):
@@ -5789,6 +5791,7 @@ def main():
     _apply_macos_app_identity()
     _patch_pywebview_cocoa_none_screen()
     api = Api()
+    tab_delivery.STATE_FILE = CONFIG_DIR / "delivery_queue.json"   # the queue survives a restart
     wake_watch.install(api._on_display_wake, api._on_display_sleep)
     html_path = Path(__file__).parent / "web" / "index.html"
 

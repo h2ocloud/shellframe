@@ -907,6 +907,7 @@ def main():
         _print_result(_rpc("delegate", {
             "role": args.role,
             "task": args.task,
+            "from_sid": os.environ.get("SF_SID", ""),
         }, timeout=20))
     elif args.cmd == "a2a-send":
         _print_result(_rpc("a2a_send", {

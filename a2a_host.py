@@ -80,12 +80,10 @@ class _Ctx:
             return {"success": False, "message": f"No such session: {sid}"}
         sender, api = self.sender, self.api
         label = _label(api, sid)
-        return tab_delivery.deliver(
-            api, sid, text, now=self.now, from_sid=sender,
-            on_timeout=lambda _r, why: tab_delivery.notify_sender(api, sender, label, why))
+        return tab_delivery.deliver(api, sid, text, now=self.now, from_sid=sender, label=label)
 
     def delegate(self, role: str, task: str) -> dict:
-        return self.api.delegate_task(role, task)
+        return self.api.delegate_task(role, task, from_sid=self.sender)
 
     def remote(self, peer_id: str, payload: dict) -> dict:
         return self.api._link().remote_a2a(peer_id, payload)
