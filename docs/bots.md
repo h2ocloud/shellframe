@@ -148,6 +148,9 @@ one-time QR code; `/start <code>` binds that person), send a test, and the switc
 - **`sfctl tg-send "…"`.** The primary bot's milestones and results, from its own tab
   only, at most 20 an hour.
 - **Quiet hours** (off by default): only decisions are sent then.
+- **A busy tab** (any tab): a message waits until its turn ends, up to 30 minutes; after a few seconds the
+  phone hears it is queued, with "⚡ go in now". The user's unsent text in the box also holds it (the paste
+  would wipe it). It used to be forced in after 2 minutes, cutting the turn off.
 - **Allowlist.** Empty means anyone who finds the bot can drive the computer; the
   panel says so in red. Binding the first phone locks the list to that person.
 

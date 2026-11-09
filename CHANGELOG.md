@@ -219,6 +219,22 @@
   （任何人都能用）時以紅字提醒，第一支綁定的手機會把名單鎖成只有它。由 tests_bridge_home.py、
   tests_tg_home_ui.py 守著。
 
+- **A Telegram message for a busy tab waits its turn, up to 30 minutes, with "⚡ go in now".**
+  The bridge used to wait at most 2 minutes for a tab's turn to end and then type the
+  message in anyway, cutting the turn off; with the primary bot as the phone's default,
+  and busy most of the time, that became the common case. Now a message for a tab
+  whose turn is running (on screen or by its hooks), or whose input box holds the
+  user's unsent text, waits until it is free; after a few seconds the phone hears it
+  is queued, with a ⚡ button that sends it at once. After 30 minutes it is dropped and
+  the phone is told. A decision on screen does not hold a message back, so a digit can
+  answer it. Every tab. Covered by tests_bridge_queue.py, including the real bridge.
+
+  **Telegram 傳給忙碌分頁的訊息會排隊，最多 30 分鐘，附「⚡ 立刻插話」。** 以前 bridge 最多等 2 分鐘，
+  分頁的回合還沒結束就硬打進去，把回合打斷；手機預設對象改成主要 Bot 之後，主要 Bot 又常在忙，這變成常態。
+  現在分頁正在跑（畫面或 hook 顯示），或輸入框有使用者還沒送出的字時，訊息會等它空下來才送；幾秒後手機
+  會收到「排隊中」，附一顆 ⚡ 按鈕可以立刻送。等滿 30 分鐘就放棄並告訴手機。畫面上的選單不會擋訊息，數字
+  回覆照樣送得進去。所有分頁都適用。由 tests_bridge_queue.py 守著，包含真的 bridge 路徑。
+
 - **A hand-off nobody reports gets one reminder, then its requester is told.**
   Whether `sfctl a2a-result` was run used to depend on the model remembering it. Now a
   hand-off typed into a tab is followed up once: Claude Code's Stop hook (a second,

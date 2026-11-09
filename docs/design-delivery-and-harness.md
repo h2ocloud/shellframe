@@ -528,7 +528,7 @@ HEARTBEAT_MAX_S      = 1800.0  # 上限 30 分鐘一則
 | **P0-5** | 語音下載失敗完全無 `else` | BT:4304-4309 | `if audio_path:` 補 `else:` 發「⚠ 語音檔下載失敗」 |
 | **P0-6** | `_inject()` 的 `slot.write_fn` 無例外保護，pane 死掉時例外逸散到 daemon thread | BT:4646-4654 | 包 try/except，失敗 → 清 reaction ＋ 發「⚠ 分頁已不存在／寫入失敗」 |
 | **P0-7** | `_save_offset()` 早於 `_update_queue.put()`；reload/restart 時佇列內訊息永久遺失 | BT:3278 / 3310 | offset 改在 `_dispatch_loop` 處理完該則之後才存；或 `stop()` 時把殘留佇列寫進 `_save_state()` 並於下次啟動重播 |
-| **P0-8** | busy guard 等滿 120s 仍強制注入（會打斷 agent 回合），使用者完全不知情 | BT:4620-4640 | `while` 因 deadline 退出時設旗標，注入後發「⚠ 對方回合逾時未結束，訊息已強制送入，可能打斷它上一個回合」 |
+| **P0-8** | busy guard 等滿 120s 仍強制注入（會打斷 agent 回合），使用者完全不知情 | BT:4620-4640 | `while` 因 deadline 退出時設旗標，注入後發「⚠ 對方回合逾時未結束，訊息已強制送入，可能打斷它上一個回合」。**v0.41 起改為**：排隊最多 30 分鐘、8 秒後通知並附「⚡ 立刻插話」，逾時放棄並告知（`bridge_queue.py`） |
 | P1-9 | `marker_forwarded=True` 後 fallback 永久停用；模型之後改用無 marker 回覆就再也不轉發 | BT:2593 | 改成「距上次 marker 轉發 > 180s 且有新的 AI block」時允許一次 fallback |
 | P1-10 | 新訊息 epoch 清 `pending_raw` ＋ 換 marker token，殺掉在途的前一則回覆 | BT:4495-4499 / 4572 | 清空前先跑一次 `_try_marker_extract`；舊 token 存進 `slot.prev_markers`（保留 1 組），marker 掃描時一併比對 |
 | P1-11 | `_TUI_SENTINEL_RE` 的 `\w+(ed\|ing) for \d+s` 會截斷正常句子 | BT:256 | 加行首錨定條件：只在該行**同時**含 spinner 字元或位於區塊最後 3 行時才截斷 |
@@ -1112,7 +1112,7 @@ _flush_loop (0.5s/2s)                 harness worker thread（新增，1 條）
 | 3 | 對已死掉的 pane 發訊息 | reaction 清空 ＋ 收到文字警告；**不得**靜默 |
 | 4 | 連發 3 則訊息 | 每則各自有自己的 reaction；不互相覆蓋 |
 | 5 | 把 emoji 改成不合法值（如 ✅）跑一次 | 記 `[reaction] … failed`；連 3 次後收到一次性停用通知；**訊息本身仍正常送達與回覆** |
-| 6 | busy guard 撐滿 120s | 收到「已強制送入，可能打斷上一回合」的警告 |
+| 6 | busy guard 撐滿 120s | 收到「已強制送入，可能打斷上一回合」的警告（v0.41 起：最多等 30 分鐘，可按 ⚡ 插話，逾時放棄並告知） |
 
 ## Q-A2 靜默丟訊修復（**必須用重現腳本，不可只看程式碼**）
 

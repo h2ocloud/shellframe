@@ -56,6 +56,7 @@ import pyte
 from bridge_base import BridgeBase, BridgeConfigBase
 import bridge_delivery
 import bridge_home   # the primary bot's place here (routing, decisions, pairing)
+import bridge_queue  # a message for a busy tab waits (30 min, ⚡ to cut in)
 
 try:
     import board  # shared task-board store (experimental)
@@ -5276,6 +5277,8 @@ class TelegramBridge(BridgeBase):
 
         # Always ack the callback so TG stops the spinner
         tg_api(self.config.bot_token, "answerCallbackQuery", {"callback_query_id": cq_id})
+        if bridge_queue.on_callback(self, data, chat_id, message_id):   # ⚡ go in now
+            return
 
         if data.startswith("new:"):
             choice = data[4:]
@@ -6102,7 +6105,6 @@ class TelegramBridge(BridgeBase):
             # interleave into one mangled buffer (malformed input / tool calls).
             notify_failed = False
             defer_unconfirmed = False
-            forced_after_busy = False   # P0-8：busy guard 等滿 120s 被迫注入
             write_error = ""            # P0-6：write_fn 拋例外
             with slot.write_lock:
                 # Ready the pane first: a session left in tmux copy-mode
@@ -6133,40 +6135,11 @@ class TelegramBridge(BridgeBase):
                             target=self._notify_input_blocked,
                             args=(slot, chat_id, blocked), daemon=True).start()
                         return False
-                # Busy guard: writing + Enter while Claude Code is mid-turn
-                # makes it abort the in-flight turn with "[Request interrupted]"
-                # and submit a mixed/empty buffer (this is the「貼文字變
-                # preamble / User message: [Request interrupted]」bug). Wait
-                # for the CLI to return to idle (no "esc to interrupt" footer)
-                # before injecting. Bounded so a wedged session can't block forever.
-                # 訊號源用 live screen（_live_tail）而非 PTY ring bytes：
-                # ring 是歷史，turn 結束後殘留的 footer 會把 idle 分頁誤判
-                # 成 busy，訊息卡在這裡最多 120s（「送不進去」主因之一）。
-                t_wait0 = time.time()
-                deadline = t_wait0 + 120.0
-                queued_notified = False
-                while time.time() < deadline:
-                    if not _TURN_BUSY_RE.search(self._live_tail(slot)):
-                        break
-                    # 等超過 8s 就先回報「已收到、排隊中」——這段最長 120s 的
-                    # 靜默等待正是「傳了沒反應=以為沒收到」的體感來源。通知用
-                    # 背景 thread 發，不在 write_lock 裡等 TG HTTPS。
-                    if not queued_notified and time.time() - t_wait0 >= 8.0:
-                        queued_notified = True
-                        threading.Thread(
-                            target=tg_api,
-                            args=(self.config.bot_token, "sendMessage", {
-                                "chat_id": chat_id,
-                                "text": (f"⏳ 已收到。「{slot.label}」回合進行中，"
-                                         "訊息排隊等空檔自動送入（最多 2 分鐘）。"),
-                            }),
-                            kwargs={"timeout": 5}, daemon=True,
-                        ).start()
-                    time.sleep(0.5)
-                else:
-                    # P0-8：迴圈跑完 deadline 都沒 break＝對方回合 120s 還沒結束，
-                    # 我們仍會強制注入（可能打斷它上一個回合）。舊版對此完全靜默。
-                    forced_after_busy = True
+                # Busy guard: writing + Enter mid-turn aborts the turn ("[Request interrupted]").
+                # Wait while it is busy, up to 30 min; ⚡ on the phone cuts in (bridge_queue).
+                if bridge_queue.wait_turn(self, slot, chat_id) == "expired":
+                    self._react_async(chat_id, origin_msg_id, None)
+                    return False
 
                 def _inject():
                     # P0-6：write_fn 沒有例外保護時，pane 已經死掉／tmux session
@@ -6310,18 +6283,6 @@ class TelegramBridge(BridgeBase):
                 # 對使用者來說一樣是「進去了」）。
                 self._react_async(chat_id, origin_msg_id, self.REACTION_DELIVERED)
 
-            if forced_after_busy:
-                # P0-8：等滿 120s 仍強制注入 —— 保持 👀（訊息確實送了），
-                # 但必須明講可能打斷對方上一個回合。
-                try:
-                    tg_api(self.config.bot_token, "sendMessage", {
-                        "chat_id": chat_id,
-                        "text": (f"⚠ 「{slot.label}」的回合等了 2 分鐘還沒結束，"
-                                 "訊息已強制送入——可能打斷它上一個回合。"
-                                 f"用 /{slot.index} 切過去確認狀態。"),
-                    }, timeout=10)
-                except Exception:
-                    pass
         def _send_tracked():
             # /fetch 據 inject_pending 回報「訊息排隊中、尚未送入」——
             # 沒有這個旗標，排隊期間 fetch 只會看到上一則回覆，使用者

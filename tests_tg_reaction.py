@@ -123,7 +123,11 @@ def test_delivery_warning_is_plain_text_not_reaction():
     src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "bridge_telegram.py"), encoding="utf-8").read()
     assert "無法確認訊息已送進" in src, "T2 的實質告警必須永遠送得出去（文字）"
-    assert "訊息已強制送入" in src, "P0-8：busy guard 逾時強制注入必須明講"
+    # P0-8 的要求是「逾時要講清楚」。現在忙碌的分頁不再等 2 分鐘就強制送入，而是排隊
+    # 最多 30 分鐘、可按 ⚡ 插話；逾時是放棄並告訴手機（bridge_queue）。
+    q = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge_queue.py"),
+             encoding="utf-8").read()
+    assert "沒有送進去" in q and "⚡" in q, "逾時沒送進去必須明講，並說怎麼插話"
     assert "寫入「" in src, "P0-6：write_fn 失敗必須明講，而不是靜默"
 
 
