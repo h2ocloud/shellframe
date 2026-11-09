@@ -353,6 +353,9 @@ row = [b for b in lst["details"]["bots"] if b["role"] == "Coding"][0]
 check("sfctl bots tells the primary what each awake bot is doing",
       row["state"] == "awake" and row["doing"] == "working" and row["latest"] == "Editing relay.py"
       and "最新：Editing relay.py" in lst["message"], lst["message"])
+check("…and which tab it is (the name, then 第 N 個分頁)",
+      row["position"] == api._ordered_sids().index(sid) + 1
+      and f"醒著・第 {row['position']} 個分頁 {sid}" in lst["message"], lst["message"])
 api._agent_state_for_list = lambda s: getattr(api.sessions.get(s), "state", "")
 r = json.loads(api.bots_open("總管"))
 check("an external bot cannot be woken here", not r["success"])

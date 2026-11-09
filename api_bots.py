@@ -101,6 +101,7 @@ class BotsApiMixin:
         cfg = _cfg()
         raw = cfg.get("agent_roster") or {}
         awake = {}
+        order = self._ordered_sids(cfg)
         for sid in list(self.sessions):
             role = self._bots_role_of(sid, cfg)
             if role:
@@ -113,13 +114,15 @@ class BotsApiMixin:
             where = ("external" if bots.is_external(e) else ("awake" if role in awake else "asleep"))
             sid = awake.get(role, "")
             doing, said = self._bots_live(sid) if sid else ("", "")
+            pos = order.index(sid) + 1 if sid in order else 0
             rows.append({"role": role, "label": bots.label_of(role, e), "state": where,
-                         "sid": sid, "doing": doing, "latest": said, "primary": role == primary,
+                         "sid": sid, "position": pos, "doing": doing, "latest": said, "primary": role == primary,
                          "memory": str(bots.bot_dir(role)) if bots.is_memory_bot(e) else "",
                          "responsibility": str(e.get("responsibility") or "")})
             mark = "★ " if role == primary else "  "
             tag = {"external": _("external", "外部"),
-                   "awake": _("awake", "醒著") + f" {sid}" + (f"・{doing}" if doing else ""),
+                   "awake": _("awake", "醒著") + _(f" · tab #{pos} {sid}", f"・第 {pos} 個分頁 {sid}")
+                   + (f"・{doing}" if doing else ""),
                    "asleep": _("asleep", "休息中")}[where]
             lines.append(f"{mark}{role}  [{tag}]  {str(e.get('responsibility') or '')[:60]}")
             if said:

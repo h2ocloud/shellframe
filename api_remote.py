@@ -405,6 +405,7 @@ class RemoteApiMixin:
                     continue
                 sessions_info.append({
                     "sid": sid,
+                    "position": len(sessions_info) + 1,
                     "label": getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid),
                     "cmd": s.cmd,
                     "alive": s.alive,

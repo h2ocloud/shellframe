@@ -107,7 +107,7 @@ api = api_with({"state": "working", "task": "Editing main.py",
 row = api._session_state_row("s1", _S(label="sf dev"))
 A.last_error = api.__dict__["_restore_last_error"]
 check("欄位齊全",
-      set(row) == {"sid", "label", "agent_state", "agent_activity", "agent_blocked",
+      set(row) == {"sid", "label", "position", "agent_state", "agent_activity", "agent_blocked",
                    "last_error", "composer", "last_output_at", "idle_for_s", "runs_on"},
       str(sorted(row)))
 
@@ -166,6 +166,26 @@ check("state 走專用的印法", hasattr(sfctl, "_print_state"))
 check("退出碼有被送出去",
       "sys.exit(main() or 0)" in (HERE / "sfctl.py").read_text(encoding="utf-8"),
       "main() 的回傳值沒用到，退出碼永遠是 0")
+import contextlib, io  # noqa: E401,E402
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    sfctl._print_state({"success": True, "details": {"states": [
+        {"sid": "s274", "label": "sf dev", "position": 9, "agent_state": "working", "idle_for_s": 3},
+        {"sid": "s336", "label": "網站sitemap健檢", "position": 21, "agent_state": "done", "idle_for_s": 60}]}})
+out = buf.getvalue().splitlines()
+check("state：名稱在第一欄，接著是第幾個分頁，再來才是 sid",
+      out[0].split()[:3] == ["sf", "dev", "#9"] and out[0].split()[3] == "s274", out)
+import unicodedata  # noqa: E402
+cells = lambda t: sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in t)  # noqa: E731
+check("…中文名稱也對得齊（以終端機格數計）",
+      cells(out[0][:out[0].index("#9")]) == cells(out[1][:out[1].index("#21")]), out)
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf), contextlib.suppress(SystemExit):
+    sfctl._print_result({"success": True, "message": "2 sessions", "details": {"sessions": [
+        {"sid": "s266", "label": "dev", "cmd": "claude", "alive": True, "position": 1}]}})
+line = buf.getvalue().splitlines()[1]
+check("list：原本的欄位與順序不變，第幾個分頁加在最後",
+      line.startswith("  * s266  dev  - claude") and line.endswith("#1"), line)
 for secs, want in [(5, "5s"), (90, "1m"), (7325, "2h02m"), (90000, "1d"), (-1, "沒輸出過")]:
     check(f"時間格式 {secs} → {want}", sfctl._fmt_age(secs) == want, sfctl._fmt_age(secs))
 

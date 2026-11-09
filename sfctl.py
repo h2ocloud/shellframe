@@ -93,6 +93,20 @@ def _rpc(cmd: str, args: dict = None, timeout: float = 15.0):
     return {"success": False, "message": "Timeout — ShellFrame not responding"}
 
 
+def _cells(text: str, width: int) -> str:
+    """`text` cut and padded to `width` terminal cells (a CJK character is two),
+    so a column of tab names lines up whatever language they are in."""
+    import unicodedata
+    out, used = [], 0
+    for ch in str(text or ""):
+        w = 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+        if used + w > width:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + " " * (width - used)
+
+
 def _print_result(result: dict, verbose: bool = True):
     success = result.get("success", False)
     message = result.get("message", "")
@@ -106,7 +120,10 @@ def _print_result(result: dict, verbose: bool = True):
             for s in d["sessions"]:
                 alive = "*" if s.get("alive") else "-"
                 bridge = "" if s.get("bridge_enabled", True) else " (unbridged)"
-                print(f"  {alive} {s.get('sid')}  {s.get('label')}{bridge}  - {s.get('cmd', '')[:60]}")
+                pos = f"  #{s['position']}" if s.get("position") else ""   # appended: scripts read the rest as before
+                print(f"  {alive} {s.get('sid')}  {s.get('label')}{bridge}  - {s.get('cmd', '')[:60]}{pos}")
+        elif "bots" in d and isinstance(d["bots"], list):
+            pass                            # `sfctl bots`: the message already lists them, one per line
         elif "groups" in d and isinstance(d["groups"], list):
             # Checked before "roles": group-list carries both, and its `roles`
             # is a plain list of role names rather than roster entries.
@@ -567,7 +584,9 @@ def _print_state(result: dict, as_json: bool = False) -> int:
         print(f"OK {result.get('message', '')}")
         return 0
     for st in states:
-        bits = [f"{st.get('sid', '?'):<6}", f"{(st.get('label') or '')[:18]:<18}",
+        # The name first, then which tab it is (#N in the tab bar), then the sid.
+        pos = f"#{st['position']}" if st.get("position") else ""
+        bits = [_cells(st.get("label") or "", 20), f"{pos:<4}", f"{st.get('sid', '?'):<6}",
                 f"{(st.get('agent_state') or '?'):<7}"]
         detail = st.get("agent_blocked") or st.get("agent_activity") or ""
         if detail:

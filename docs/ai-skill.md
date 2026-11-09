@@ -59,7 +59,9 @@ sfctl orphans           # tmux sessions still running with no tab (report only)
 ```
 
 `sid` (`s12`) is the handle for everything else. `label` is the human name shown
-on the tab, and is what a role resolves to.
+on the tab, and is what a role resolves to. `position` (`#9` at the end of a `list`
+line) is where the tab sits in the tab bar, counted from 1: say "the 9th tab"
+(「第 9 個分頁」) to a person, who sees names and places, not sids.
 
 Each row also carries `agent_state` (working / done / idle), `agent_activity`
 (one line of what it is doing) and `runs_on` (which CLI on which model). When
@@ -86,7 +88,8 @@ sfctl state --all --stale-min 30   # …counting 30 minutes of silence as stalle
 sfctl link-state <peer> s12        # the same, for a tab on a paired computer
 ```
 
-Fields: `sid`, `label`, `agent_state` (working / done / idle), `agent_activity`
+Each line starts with the tab's name, then `#N` (its place in the tab bar), then
+the sid. Fields: `sid`, `label`, `position`, `agent_state` (working / done / idle), `agent_activity`
 (one line), `agent_blocked` (what it is asking, when stopped on a person),
 `last_error` (the most recent error in its conversation — an authentication
 failure, a rate limit, a 5xx — empty when there is none), `last_output_at` and
@@ -249,7 +252,7 @@ Needs `experimental_bots`. A **bot** is a roster role with a `bot` block: a face
 `external` when it lives outside ShellFrame (a cloud bot behind a webhook).
 
 ```bash
-sfctl bots                          # ★ primary, awake (and its sid), asleep, external
+sfctl bots                          # ★ primary, awake (which tab: 第 N 個分頁, and its sid), asleep, external
 sfctl a2a-send 研究 "…"             # a sleeping bot is woken: new tab, its brief, then your message
 ```
 

@@ -4309,10 +4309,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         if not runs_on:
             runs_on = agent_model.describe(getattr(s, "cmd", ""))
         last_at = self._last_activity_at(sid, s, out_ts)
+        order = self._ordered_sids()
         return {
             "sid": sid,
             "label": (getattr(s, "_custom_label", None)
                       or (s.cmd.split()[0] if s.cmd else sid)),
+            "position": order.index(sid) + 1 if sid in order else 0,   # 第 N 個分頁（tab bar 順序）
             "agent_state": state,
             # 活動與阻塞同樣過一次遮蔽：活動行會帶正在跑的指令，而指令裡出現
             # 憑證不是罕見的事，這個輸出是要交給外部調度者的。
