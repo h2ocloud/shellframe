@@ -16,6 +16,7 @@ bypass permissions 在跑，所以護欄本身就是功能的主體。這支測�
 """
 
 import os
+os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"   # this file checks the Chinese wording; tests_prompt_lang.py covers English
 import sys
 import tempfile
 import time

@@ -20,6 +20,8 @@ user's setup and needs no separate file to keep in sync.
 import re
 import time
 
+import sf_lang
+
 MAX_NAME = 40
 MAX_MEMBERS = 8          # a fan-out larger than this is a script, not a chat
 MAX_GROUPS = 20
@@ -70,7 +72,7 @@ def validate(name: str, roles, roster: dict):
 
 
 def format_group_message(group: str, members: list, sender: str, text: str,
-                         a2a: bool = False) -> str:
+                         a2a: bool = False, lang: str = None) -> str:
     """What each member actually receives.
 
     Naming the other members matters: an agent that knows who else is in the
@@ -81,6 +83,12 @@ def format_group_message(group: str, members: list, sender: str, text: str,
     are members told about `[[SF:TO:…]]`; offering it while it is off would send
     them at a marker that is refused before delivery."""
     others = [m for m in members if m != sender]
+    if sf_lang.pick("en", "zh", lang) == "en":
+        roster_line = ("; also in this group: " + ", ".join(others)) if others else ""
+        handoff = (", messaging them directly with [[SF:TO:<role>|message]] if needed"
+                   if (a2a and others) else "")
+        return (f"[[GROUP:{group} | A group message, sent to {len(members)} roles at once{roster_line}. "
+                f"Do only your part; if something belongs to someone else, say so and hand it over{handoff}]]\n{text}")
     roster_line = ("；同一個群組裡還有：" + "、".join(others)) if others else ""
     handoff = ("，必要時用 [[SF:TO:<角色>|訊息]] 直接找他" if (a2a and others)
                else "")

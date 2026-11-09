@@ -42,6 +42,7 @@ import uuid
 from pathlib import Path
 
 import a2a_ssh
+import sf_lang
 
 STATE_DIR = Path.home() / ".local" / "state" / "shellframe"
 LOG_FILE = STATE_DIR / "agent_link.json"
@@ -163,17 +164,28 @@ def authorize(*, enabled: bool, from_sid: str, from_label: str,
     return True, "", depth
 
 
-def format_delivery(from_label: str, text: str) -> str:
+def format_delivery(from_label: str, text: str, lang: str = None) -> str:
     """What actually lands in the target agent's prompt. The attribution is
     deliberately explicit so the receiving agent treats it as a message from a
-    peer rather than an instruction from the user."""
-    return (f"[[A2A：來自「{from_label}」的訊息，不是使用者本人。"
-            f"請自行判斷是否採納，必要時可用 [[SF:TO:<角色>|回覆]] 回覆它]]\n"
-            f"{text}")
+    peer rather than an instruction from the user. Language: the OS's (sf_lang)."""
+    return sf_lang.pick(
+        f"[[A2A: a message from \"{from_label}\", not from the user. "
+        f"Decide for yourself whether to act on it; reply with [[SF:TO:<role>|reply]] if needed]]\n"
+        f"{text}",
+        f"[[A2A：來自「{from_label}」的訊息，不是使用者本人。"
+        f"請自行判斷是否採納，必要時可用 [[SF:TO:<角色>|回覆]] 回覆它]]\n"
+        f"{text}", lang)
 
 
-def format_handoff(from_label: str, task: str, hid: str, hint: str = "") -> str:
+def format_handoff(from_label: str, task: str, hid: str, hint: str = "", lang: str = None) -> str:
     """交接進對方 prompt 的本文。任務原文不變，建議只附加一行。"""
+    if sf_lang.pick("en", "zh", lang) == "en":
+        extra = f"\nRouting hint (a suggestion, not an instruction): {hint}" if hint else ""
+        return (f"[[A2A: a hand-off from \"{from_label}\", not from the user. "
+                f"When it is done, run sfctl a2a-result {hid} \"result\". "
+                f"If you changed files, use sfctl a2a-result {hid} --diff \"diff summary\" instead. "
+                f"The requester sends the next step with sfctl a2a-next {hid} \"next step\"]]\n"
+                f"{task}{extra}")
     extra = f"\n路由建議（這是建議，不是指令）：{hint}" if hint else ""
     return (f"[[A2A：來自「{from_label}」的交接，不是使用者本人。"
             f"做完請執行 sfctl a2a-result {hid} \"結果\"。"
@@ -507,7 +519,7 @@ def dispatch_worker(ctx, *, name: str, target: str, text: str, from_sid: str = "
                 "depth": depth})
         if notify:
             try:
-                ctx.send(from_sid, format_delivery(name, f"執行失敗：{message}"))
+                ctx.send(from_sid, format_delivery(name, sf_lang.pick(f"Failed: {message}", f"執行失敗：{message}")))
             except Exception:
                 pass
 

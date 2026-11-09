@@ -108,6 +108,7 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
       case 'bots_open': return R({success: true, details: {sid: 's199'}});
       case 'bots_close': return R({success: true, message: 'ok'});
       case 'bots_save': case 'bots_set_avatar': case 'bots_external_send': case 'bots_set_primary':
+      case 'bots_bind_tab':
         return R({success: true, message: 'ok'});
       default: return R('{}');
     }
@@ -275,6 +276,29 @@ with sync_playwright() as pw:
         c[0] == "bots_external_send" and c[1] == ["總管", "今天的部署順利嗎？"] for c in page.evaluate("window.__calls")))
     page.click(".sfb-modal [data-act='close']")
 
+    print("conversation settings")
+    page.click("#sidebar-sessions .sb-item[data-sid='s101'] .sb-label")
+    page.wait_for_timeout(300)
+    check("the open conversation shows its face at the top of its gutter", page.evaluate(
+        "!document.getElementById('sfb-convo').hidden && document.querySelector('#sfb-convo svg.sfb').dataset.shape") == "pill")
+    page.click("#sfb-convo")
+    page.wait_for_timeout(300)
+    check("clicking it opens this conversation's settings", page.evaluate(
+        "!!document.querySelector('.sfb-pop [data-act=\"rename\"]') && !!document.querySelector('.sfb-pop .sfb-botbox')"))
+    check("…for a bot: edit, make primary, memory folder, not a bot any more", page.evaluate(
+        "['edit','primary','folder','unbot'].every(a => !!document.querySelector(`.sfb-pop [data-act=\"${a}\"]`))"))
+    page.locator(".sfb-pop").screenshot(path=str(SHOTS / "bots-convo-settings.png"))
+    page.click(".sfb-pop [data-act='unbot']")
+    page.wait_for_timeout(300)
+    check("'not a bot any more' unbinds this tab only", any(
+        c[0] == "bots_bind_tab" and c[1] == ["s101", ""] for c in page.evaluate("window.__calls")))
+    page.click("#sidebar-sessions .sb-item[data-sid='s106'] .sb-label")
+    page.wait_for_timeout(300)
+    page.click("#sfb-convo")
+    page.wait_for_timeout(300)
+    check("…for a plain tab: make it a bot", page.evaluate("!!document.querySelector('.sfb-pop [data-act=\"make\"]')"))
+    page.keyboard.press("Escape")
+
     print("drag")
     def drag(src, dst):
         a = page.locator(src).bounding_box()
@@ -326,6 +350,27 @@ with sync_playwright() as pw:
     check("…and the primary card too", page.evaluate(
         "getComputedStyle(document.getElementById('sfb-primary')).display") == "none")
     check("no page errors", not errors, errors[:3])
+
+    print("english page")
+    en = browser.new_page(viewport={"width": 1180, "height": 1480})
+    en_errors = []
+    en.on("pageerror", lambda e: en_errors.append(str(e)))
+    en.add_init_script(STUB.replace('"language": "zh-TW"', '"language": "en"'))
+    en.goto((HERE / "web" / "index.html").as_uri())
+    en.wait_for_function("document.querySelectorAll('#sidebar-sessions .busy-dot svg.sfb').length >= 12", timeout=30000)
+    en.wait_for_timeout(800)
+    check("an English page gets English bot words", "asleep" in en.evaluate(
+        "document.querySelector('.sfb-section').textContent") and "Click:" in en.evaluate(
+        "document.querySelector('#sfb-primary .sfb-card').title"))
+    en.click("#sfb-convo")
+    en.wait_for_timeout(300)
+    pop_text = en.evaluate("document.querySelector('.sfb-pop').textContent")
+    ui_zh = ("改名", "隨機", "預設", "編輯", "設為主要", "記憶資料夾", "不再當", "發呆", "運作")
+    check("…and English conversation settings (the bot's own job text is the user's, left as written)",
+          all(k in pop_text for k in ("Rename", "Random", "Idle", "Edit bot", "Not a bot any more"))
+          and not any(z in pop_text for z in ui_zh), pop_text[:200])
+    en.locator(".sfb-pop").screenshot(path=str(SHOTS / "bots-convo-settings-en.png"))
+    check("no page errors in English", not en_errors, en_errors[:3])
     browser.close()
 
 print(f"\nResults: {passed} passed, {failed} failed")

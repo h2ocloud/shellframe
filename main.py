@@ -44,6 +44,8 @@ import bridge_telegram
 import bridge_line
 import board
 import agent_model
+import agent_prompts
+import sf_lang
 import agent_status
 import agent_cursor
 import agent_grok
@@ -2214,57 +2216,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
     @staticmethod
     def _delegate_prompt(role: str, entry: dict, task: str, tagged: list[dict] | None = None) -> str:
-        label = entry.get("label") or role
-        responsibility = entry.get("responsibility") or "依總控派工處理指定任務"
-        prompt = (
-            f"你是「{label}」worker。\n"
-            f"職責：{responsibility}\n\n"
-            "這是 ShellFrame 總控派工。請維持自己的職責邊界，不要主動接手其他 worker 的領域。\n\n"
-            "任務：\n"
-            f"{task.strip()}\n\n"
-        )
-        if tagged:
-            tag_lines = "\n".join(f"- #{t['label']} → sid {t['sid']}" for t in tagged)
-            prompt += (
-                "任務中用 # 標註了需要互動的 tab（其他 agent session）：\n"
-                f"{tag_lines}\n"
-                "與被標註 tab 互動是本任務的必要環節，不是可選項：\n"
-                "- 先 `sfctl peek <sid> --lines 60` 了解該 tab 目前狀態與上下文，再行動。\n"
-                "- 用 `sfctl send <sid> '<訊息>'` 對該 tab 的 agent 提問、下指令或交接；送出後再 peek 確認對方收到並回應，必要時等待或追問。\n"
-                "- 回報時務必包含與各標註 tab 的互動結果；提及 tab 用 label（#名稱），sid 只用在 sfctl 指令。\n\n"
-            )
-        prompt += (
-            "工作規則：\n"
-            "- 先確認需要的上下文與現有狀態；避免重複建立、重複送出或覆蓋。\n"
-            "- 查檔案時先限定已知專案路徑；不要廣掃整個 /Users、~/Library、~/Library/Mobile Documents、Mail、Messages、Photos 等 macOS 受保護資料夾，避免觸發系統隱私權限彈窗。找不到路徑時先回報需要總控補上下文。\n"
-            "- 若是外部可見操作，只有在使用者文字已明確授權時才送出；否則先 dry-run 或回報需要確認。\n"
-            "- 若任務需要其他 worker，回報總控改派，不要自行擴張範圍。\n"
-            "- 若產出是可直接給使用者的草稿、報告、查詢結果或操作結論，先用「可直接轉貼」格式回覆，讓總控能立即轉交，不要等其他平行工作完成。\n"
-            "- 完成後回覆：可直接轉貼內容、結果、驗證、變更/送出項目、阻塞、是否建議納入 memory/skill/docs。\n"
-            "\n燈號（自動偵測，通常不需自報）：\n"
-            "- 本 tab 燈號由 ShellFrame 從你的『實際活動』自動判定（工具呼叫、回合起訖、畫面）：執行中自動亮 🔵、回合結束自動轉 🟢。"
-            "**不需要再印 `[[SF:WORKING]]` 或 `[[SF:GREEN]]`**，專心做事即可。\n"
-            "- 只有兩個『偵測看不出來』的狀態保留為可選提示（要用時自成一行、前後不接其他文字）：\n"
-            "  - 需要使用者／總控決策 → `[[SF:RED]]` → 🔴紅，並接編號選單（選項即決策內容），讓 TG 把選項推給使用者。\n"
-            "  - 卡在『外部條件』（等人回覆、等他隊、等外部事件等偵測看不到的）→ `[[SF:YELLOW:一句話原因]]` → 🟡黃，原因推給使用者。\n"
-            "- 這兩個是提示不是狀態回報；不確定就不要印，working／done 由偵測涵蓋。決策回合仍要附編號選單供使用者選擇。\n"
-            "\n收尾規則（務必遵守）：\n"
-            "- 每次『完成任務』或『需要使用者／總控決策』時，回合最後務必輸出一個編號選項選單（搭配上面 GREEN／RED 燈號），"
-            "讓 ShellFrame 偵測為待決策、把選項以 TG 按鈕推給使用者。不要只用純文字結尾後 idle。\n"
-            "- 選單格式硬規則：至少 2 項，每項自成一行、行首為「數字.」或「數字)」，連續排列、中間不夾其他文字或空行，例如：\n"
-            "1. 回收此 tab（任務完成）\n"
-            "2. 還要調整：<說明>\n"
-            "- 『先沉澱記憶，才可被回收』：在選單提供『回收此 tab』選項前，必須先確認已把本次洞察／學習／"
-            "操作 gotcha 寫入 memory（~/.claude/projects/<專案 slug>/memory/），或在該選項旁註明「此任務無需記憶」。"
-            "這也是 GREEN 的前提——記憶沉澱完才給綠燈。\n"
-        )
-        user_prompt = bridge_telegram.load_user_instructions(max_chars=2000)
-        if user_prompt:
-            prompt += (
-                "\n## User Instructions (excerpt)\n\n"
-                f"{user_prompt}\n"
-            )
-        return prompt
+        """What a roster worker receives; the wording (English or Chinese, by OS
+        language) lives in agent_prompts.py."""
+        return agent_prompts.delegate(
+            entry.get("label") or role, entry.get("responsibility") or "", task, tagged=tagged,
+            user_prompt=bridge_telegram.load_user_instructions(max_chars=2000))
 
     def _wait_until_ready(self, sid: str, timeout: float = 45.0) -> bool:
         """Block until a just-opened AI tab can accept a pasted prompt.
@@ -2296,7 +2252,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
         label = entry.get("label") or resolved_role
         if self._bots_external_target(resolved_role) is not None:   # never a local placeholder tab
-            return {"success": False, "message": f"「{label}」住在 ShellBot 外面，用 sfctl a2a-send {resolved_role} \"…\" 找它"}
+            return {"success": False, "message": sf_lang.pick(
+                f'"{label}" lives outside ShellBot: reach it with sfctl a2a-send {resolved_role} "…"',
+                f"「{label}」住在 ShellBot 外面，用 sfctl a2a-send {resolved_role} \"…\" 找它")}
         sid, session = self._find_session_by_label(label)
         created = False
         if not session:
@@ -2424,27 +2382,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
     def _idle_summary_prompt(self, label: str, idle_sec: int, idle_cfg: dict | None = None) -> str:
         idle_cfg = idle_cfg or {}
         reflection_file = str(idle_cfg.get("reflection_file") or "").strip()
-        sediment = ""
-        if idle_cfg.get("self_sediment") and reflection_file:
-            sediment = (
-                "\n沉澱要求：若這個 session 有值得保留的流程、偏好或專案長期事實，"
-                "請在輸出總結後，追加一段精簡反思到下列共用反思主檔：\n"
-                f"{reflection_file}\n"
-                "只寫 Agent Reflections.md；不要直接改 Agent Memory Hub 或私有 memory。"
-                "若不值得沉澱，請在總結中寫 none 並用一句話說明。\n"
-            )
-        return (
-            "ShellFrame 閒置排程即將關閉這個 session。\n"
-            f"Session：{label or 'unnamed'}\n"
-            f"閒置秒數：約 {idle_sec}\n\n"
-            "請在關閉前輸出一份簡短總結與複盤，使用繁體中文。\n"
-            "請包含：\n"
-            "1. 這個 session 完成了什麼。\n"
-            "2. 尚未完成事項或風險。\n"
-            "3. 是否建議沉澱為 skill、memory 或 none，並說明原因。\n"
-            f"{sediment}"
-            "除上述共用反思主檔追加外，請不要執行其他外部可見或破壞性操作。\n"
-        )
+        return agent_prompts.idle_summary(
+            label, idle_sec, reflection_file if idle_cfg.get("self_sediment") else "")
 
     def _capture_session_summary(self, sid: str, s: Session, idle_cfg: dict) -> str:
         summary_dir = Path(str(idle_cfg.get("summary_dir") or (CONFIG_DIR / "session_summaries"))).expanduser()

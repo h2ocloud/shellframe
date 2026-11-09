@@ -184,7 +184,8 @@ body.sfb-on #sfb-primary { display: block; }
 /* drag a bot onto the card / the card back into the list */
 .sfb-card { cursor: grab; }
 #sfb-primary.sfb-drop .sfb-card { border: 1.5px dashed #7aa2f7; background: #1f2a44; }
-#sfb-primary.sfb-drop .sfb-card::after { content: '放開：設為主要 Bot'; font-size: 10px; color: #7aa2f7; }
+#sfb-primary.sfb-drop .sfb-card::after { content: attr(data-drop-label); font-size: 10px; color: #7aa2f7; }
+
 #sidebar-sessions.sfb-drop-list { outline: 1.5px dashed #7aa2f7; outline-offset: -4px; border-radius: 6px; }
 .sfb-ghost { position: fixed; z-index: 700; pointer-events: none; display: flex; align-items: center; gap: 6px;
   padding: 3px 10px 3px 3px; border-radius: 16px; background: #24283b; border: 1px solid #3b4261;
@@ -241,3 +242,21 @@ body.sfb-on #sfb-primary { display: block; }
 .sfb-list .item .who b { display: block; font-size: 12px; color: #c0caf5; font-weight: 600; }
 .sfb-list .item .who span { display: block; font-size: 10px; color: #6b7089;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── a conversation's own settings: its face at the top of the conversation's gutter ── */
+#sfb-convo {
+  position: absolute; top: 6px; left: -1px; z-index: 62; width: 19px; height: 19px; padding: 0;
+  border: 0; background: none; cursor: pointer; border-radius: 6px;
+}
+#sfb-convo:hover { background: #24283b; box-shadow: 0 0 0 3px #24283b; }
+#sfb-convo .busy-dot { --sfb-size: 19px; pointer-events: none; }
+body:not(.sfb-on) #sfb-convo { display: none; }
+.sfb-pop-head { display: flex; align-items: baseline; gap: 8px; }
+.sfb-pop-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfb-link { border: 0; background: none; color: #7aa2f7; font-size: 11px; cursor: pointer; padding: 0; }
+.sfb-link:hover { text-decoration: underline; }
+.sfb-botbox { margin-top: 10px; padding: 8px; border-radius: 8px; background: #1a1b26; border: 1px solid #292e42;
+  display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #a9b1d6; }
+.sfb-botbox b { color: #c0caf5; font-size: 12px; }
+.sfb-botbox .sfb-row { margin-top: 6px; }
+.sfb-chip { display: inline-flex; align-items: center; font-size: 11px; color: #e0af68; padding: 0 6px; }

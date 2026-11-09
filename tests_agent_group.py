@@ -8,6 +8,7 @@
 """
 
 import os
+os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"   # this file checks the Chinese wording; tests_prompt_lang.py covers English
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

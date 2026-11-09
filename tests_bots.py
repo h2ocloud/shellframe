@@ -22,6 +22,7 @@ Run: .venv/bin/python tests_bots.py
 import http.server
 import json
 import os
+os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"   # this file checks the Chinese wording; tests_prompt_lang.py covers English
 import re
 import sys
 import tempfile
@@ -311,6 +312,16 @@ cfg = json.loads(main.CONFIG_FILE.read_text())
 check("saving without the secrets keeps them", cfg["agent_roster"]["總管"]["bot"]["external"]["url"] == HOOK_URL
       and cfg["agent_roster"]["總管"]["bot"]["primary"] is True)
 
+api.sessions["s3"] = FakeSession("s3", "claude", "Coding-CLD")
+check("a tab named like a bot is that bot's tab", api._bots_role_of("s3") == "Coding")
+r = json.loads(api.bots_bind_tab("s3", ""))
+check("its own settings can make it a plain tab again, even with the bot's name",
+      r["success"] and api._bots_role_of("s3") == "" and json.loads(api.bots_state())["sessions"]["s3"].get("plain"))
+r = json.loads(api.bots_bind_tab("s3", "Coding"))
+check("…and a bot's tab once more", r["success"] and api._bots_role_of("s3") == "Coding"
+      and not json.loads(api.bots_state())["sessions"]["s3"].get("plain"))
+r = json.loads(api.bots_bind_tab("s3", "總管"))
+check("a tab cannot be an external bot", not r["success"])
 r = json.loads(api.bots_set_primary("Coding"))
 cfg = json.loads(main.CONFIG_FILE.read_text())
 check("set_primary moves the card to another bot", r["success"] and bots.primary_role(cfg["agent_roster"]) == "Coding"

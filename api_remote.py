@@ -18,6 +18,7 @@ from pathlib import Path
 import agent_cursor
 import agent_grok
 import a2a_host
+import sf_lang
 import tmux_sessions
 from sf_config import CONFIG_LOCK
 from api_host import main
@@ -238,7 +239,9 @@ class RemoteApiMixin:
                     summary_path=args.get("summary_path", "") or "",
                 )
                 if sid in self.sessions:     # a bot: it writes its memory, then closes itself
-                    return {"success": True, "message": f"{sid} 是 bot：正在寫記憶，寫完會自動關閉"}
+                    return {"success": True, "message": sf_lang.pick(
+                        f"{sid} is a bot: it is writing its memory and closes when done",
+                        f"{sid} 是 bot：正在寫記憶，寫完會自動關閉")}
                 return {"success": True, "message": f"Closed {sid}"}
             except Exception as e:
                 return {"success": False, "message": f"Failed: {e}"}

@@ -5,6 +5,7 @@ import threading
 
 import agent_link
 import agent_route
+import sf_lang
 
 
 def _enabled(api) -> bool:
@@ -113,10 +114,12 @@ def _from(api, args: dict):
         # feature) speaks as itself. Only outside a tab, and only as a roster role
         # marked external — a tab may not put on another bot's name.
         if (args.get("from_sid") or "").strip():
-            return None, "--as 只能在 ShellFrame 分頁外面用（分頁裡的 agent 一律以自己的名字說話）"
+            return None, sf_lang.pick("--as only works outside a ShellBot tab (an agent in a tab always speaks as itself)",
+                                      "--as 只能在 ShellFrame 分頁外面用（分頁裡的 agent 一律以自己的名字說話）")
         label = api._bots_external_label(as_role)
         if not label:
-            return None, f"--as {as_role}：名冊裡沒有這個外部 bot"
+            return None, sf_lang.pick(f"--as {as_role}: no external bot by that name in the roster",
+                                      f"--as {as_role}：名冊裡沒有這個外部 bot")
         return f"ext:{as_role}", label
     sid = (args.get("from_sid") or os.environ.get("SF_SID") or "").strip()
     label = (args.get("from_label") or "").strip() or _label(api, sid)

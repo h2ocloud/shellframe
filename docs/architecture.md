@@ -60,6 +60,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
 | | `bots.py` | Bots (`experimental_bots`): identity, per-bot memory folder, wake-up brief, close-time summary, external-bot payloads |
+| | `agent_prompts.py`, `sf_lang.py` | The delegation and idle-summary prompts; the language every agent-facing text uses (the OS's: English or Traditional Chinese) |
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `tmux_sessions.py` | sf_* tmux sessions as data: tolerant listing, orphan report (also a read-only CLI), highest sid, client refresh |
 | | `wake_watch.py` | macOS display sleep/wake notifications → callbacks on a worker thread; memory-pressure probe |

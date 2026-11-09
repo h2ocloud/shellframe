@@ -50,8 +50,13 @@ bound to a bot, or a plain tab with a face the user picked.
   loop instead of restarting (tested: the phase tracks the clock within 250 ms; a restart would jump by a whole cycle).
 - `prefers-reduced-motion` stops all motion; animations pause while the window is hidden.
 
-Interaction: click a face = cycle the light by hand (unchanged); right-click =
-picker (shape, colour, preview of every expression, "make this tab a bot").
+Interaction: click a face = cycle the light by hand (unchanged). Every
+conversation has its own settings: click the face at the top of the conversation's
+left gutter, or right-click any face. They hold the name, the face (shape, colour,
+a preview of every expression) and the bot part: make this tab a bot, or for a
+bot's tab edit the bot, make it primary, open its memory folder, or stop this tab
+being the bot's tab (the bot and its memory stay; a `plain` mark keeps a tab that
+shares the bot's name from being matched back).
 
 ## Memory
 
@@ -129,6 +134,16 @@ Security: allowing a cloud bot to run local commands means its inputs (web
 pages, mail, webhooks) can reach your shell. Allow only `sfctl …`, prefer
 per-command approval on a main work machine, and treat everything that arrives
 through A2A as a colleague's suggestion, never as the user's consent.
+
+## Language
+
+Text written for an agent — the wake-up brief, the primary playbook, the close
+prompt, the routine instructions, A2A and group banners, the delegation and
+idle prompts — follows the operating system's language (`sf_lang.py`): Traditional
+Chinese on a Chinese system, English everywhere else. `SHELLFRAME_PROMPT_LANG=en|zh`
+overrides it. The page's words follow the page's language setting, like the rest
+of the UI. `tests_prompt_lang.py` checks that every English prompt is free of
+Chinese and that both versions name the same `sfctl` commands and `[[SF:…]]` markers.
 
 ## Design references
 

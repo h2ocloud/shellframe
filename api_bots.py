@@ -1,6 +1,6 @@
 """Api mixin — bots (settings.experimental_bots). Rules live in bots.py.
 
-js_api: bots_state, bots_set_avatar, bots_set_primary, bots_save, bots_delete, bots_open,
+js_api: bots_state, bots_set_avatar, bots_set_primary, bots_bind_tab, bots_save, bots_delete, bots_open,
         bots_close, bots_skill_catalog, bots_open_folder, bots_external_info, bots_external_send.
 Hooks main.py and a2a_host call: _bots_first_prompt (delegate opened a bot's tab),
 _bots_divert_close (close_session for a bot tab), _bots_external_target /
@@ -17,6 +17,7 @@ import threading
 import time
 
 import bots
+import sf_lang
 import sf_notify
 from api_host import main
 from sf_log import _dlog, _swallow
@@ -26,6 +27,7 @@ SUMMARY_WAIT_SEC = 180   # then this long to write its summary before the fallba
 SELF_REASONS = ("bot-memory", "bot-skip")   # close_session reasons this module uses itself
 
 _CLOSING = {}            # sid -> {"role", "phase", "since"}; one Api per process
+_ = sf_lang.pick         # _(english, chinese): messages follow the OS language like the prompts
 _CLOSING_LOCK = threading.Lock()
 
 
@@ -49,7 +51,10 @@ class BotsApiMixin:
         """The bot a tab belongs to: an explicit binding, else a tab whose label is a bot's label."""
         cfg = cfg or _cfg()
         roster = cfg.get("agent_roster") or {}
-        bound = ((cfg.get("bots_sessions") or {}).get(sid) or {}).get("bot") or ""
+        row = (cfg.get("bots_sessions") or {}).get(sid) or {}
+        if row.get("plain"):
+            return ""                   # the user said this tab is not a bot, whatever its name
+        bound = row.get("bot") or ""
         if bound and bots.is_bot(roster.get(bound)):
             return bound
         s = self.sessions.get(sid)
@@ -72,6 +77,8 @@ class BotsApiMixin:
                 row["bot"] = e["bot"]
             if bots.normalize_avatar(e.get("avatar")):
                 row["avatar"] = e["avatar"]
+            if e.get("plain"):
+                row["plain"] = True
             with _CLOSING_LOCK:
                 ph = _CLOSING.get(sid)
             if ph:
@@ -89,7 +96,8 @@ class BotsApiMixin:
     def _bots_list_for_sfctl(self) -> dict:
         """`sfctl bots`: who is awake (and in which tab), asleep, or outside ShellFrame."""
         if not self._bots_enabled():
-            return {"success": False, "message": "Bots 是實驗功能，請先在設定裡打開（experimental_bots）"}
+            return {"success": False, "message": _("Bots are experimental: turn them on in Settings first (experimental_bots)",
+                                                  "Bots 是實驗功能，請先在設定裡打開（experimental_bots）")}
         cfg = _cfg()
         raw = cfg.get("agent_roster") or {}
         awake = {}
@@ -110,12 +118,13 @@ class BotsApiMixin:
                          "memory": str(bots.bot_dir(role)) if bots.is_memory_bot(e) else "",
                          "responsibility": str(e.get("responsibility") or "")})
             mark = "★ " if role == primary else "  "
-            tag = {"external": "外部", "awake": f"醒著 {sid}" + (f"・{doing}" if doing else ""),
-                   "asleep": "休息中"}[where]
+            tag = {"external": _("external", "外部"),
+                   "awake": _("awake", "醒著") + f" {sid}" + (f"・{doing}" if doing else ""),
+                   "asleep": _("asleep", "休息中")}[where]
             lines.append(f"{mark}{role}  [{tag}]  {str(e.get('responsibility') or '')[:60]}")
             if said:
-                lines.append(f"      最新：{said[:100]}")
-        return {"success": True, "message": "\n".join(lines) or "(還沒有 bot)", "details": {"bots": rows}}
+                lines.append(_("      latest: ", "      最新：") + said[:100])
+        return {"success": True, "message": "\n".join(lines) or _("(no bots yet)", "(還沒有 bot)"), "details": {"bots": rows}}
 
     def _bots_live(self, sid: str):
         """(state, latest line) from the status monitor's snapshot — zero cost, no transcript read."""
@@ -136,7 +145,7 @@ class BotsApiMixin:
         def _mut(cfg):
             roster = cfg.get("agent_roster") or {}
             if role and not bots.is_bot(roster.get(role)):
-                out["err"] = f"「{role}」不是 bot"
+                out["err"] = _(f'"{role}" is not a bot', f"「{role}」不是 bot")
                 return
             for r, e in roster.items():
                 if bots.is_bot(e):
@@ -146,7 +155,8 @@ class BotsApiMixin:
             return json.dumps({"success": False, "message": out["err"]}, ensure_ascii=False)
         self._bots_notify_ui()
         label = bots.label_of(role, (_cfg().get("agent_roster") or {}).get(role)) if role else ""
-        return json.dumps({"success": True, "message": f"主要 Bot：{label}" if role else "已取消主要 Bot"},
+        return json.dumps({"success": True, "message": _(f"Primary bot: {label}", f"主要 Bot：{label}") if role
+                           else _("No primary bot now", "已取消主要 Bot")},
                           ensure_ascii=False)
 
     def bots_skill_catalog(self) -> str:
@@ -169,7 +179,7 @@ class BotsApiMixin:
         except ValueError:
             av = None
         if sid not in self.sessions:
-            return json.dumps({"success": False, "message": f"沒有 {sid} 這個分頁"})
+            return json.dumps({"success": False, "message": _(f"No tab {sid}", f"沒有 {sid} 這個分頁")})
         role = self._bots_role_of(sid)
         live = set(self.sessions)
 
@@ -188,7 +198,7 @@ class BotsApiMixin:
             for k in [k for k, v in table.items() if k not in live or not v]:
                 table.pop(k, None)
         _update(_mut)
-        return json.dumps({"success": True, "message": "已更換頭像", "details": {"bot": role}})
+        return json.dumps({"success": True, "message": _("Face changed", "已更換頭像"), "details": {"bot": role}})
 
     def _bots_bind(self, sid: str, role: str):
         live = set(self.sessions)
@@ -199,11 +209,35 @@ class BotsApiMixin:
             if role:
                 row["bot"] = role
                 row.pop("avatar", None)        # the bot's own face wins
+                row.pop("plain", None)
             else:
                 row.pop("bot", None)
+                row["plain"] = True            # keep it plain even if its label matches a bot
             for k in [k for k, v in table.items() if k not in live or not v]:
                 table.pop(k, None)
         _update(_mut)
+
+    def bots_bind_tab(self, sid: str, role: str = "") -> str:
+        """From a conversation's own settings: make this tab a bot's tab (role), or
+        stop it being one (''). The bot and its memory are untouched either way."""
+        s = self.sessions.get(sid)
+        if not s:
+            return json.dumps({"success": False, "message": _(f"No tab {sid}", f"沒有 {sid} 這個分頁")})
+        role = (role or "").strip()
+        label = ""
+        if role:
+            e = (_cfg().get("agent_roster") or {}).get(role)
+            if not bots.is_memory_bot(e):
+                return json.dumps({"success": False, "message": _(f'"{role}" is not a bot this tab can be',
+                                                                  f"「{role}」不是這個分頁能當的 bot")})
+            label = bots.label_of(role, e)
+        self._bots_bind(sid, role)
+        if label and getattr(s, "_custom_label", None) != label:
+            self.rename_session(sid, label, manual=True)
+        self._bots_notify_ui()
+        return json.dumps({"success": True, "message": _(f"This tab is now {label}", f"這個分頁現在是「{label}」")
+                           if role else _("This tab is not a bot any more; the bot and its memory stay",
+                                          "這個分頁不再是 bot；bot 和它的記憶都保留")}, ensure_ascii=False)
 
     def bots_save(self, role: str, data_json: str, bind_sid: str = "") -> str:
         name = bots.clean_name(role)
@@ -213,11 +247,11 @@ class BotsApiMixin:
         try:
             data = json.loads(data_json or "{}")
         except ValueError:
-            return json.dumps({"success": False, "message": "資料格式錯誤"})
+            return json.dumps({"success": False, "message": _("Bad data", "資料格式錯誤")})
         bind_sid = (bind_sid or "").strip()
         tab = self.sessions.get(bind_sid) if bind_sid else None
         if bind_sid and not tab:
-            return json.dumps({"success": False, "message": f"沒有 {bind_sid} 這個分頁"})
+            return json.dumps({"success": False, "message": _(f"No tab {bind_sid}", f"沒有 {bind_sid} 這個分頁")})
         cmd = str(data.get("cmd") or (getattr(tab, "cmd", "") if tab else "") or "claude").strip()
         state = {}
 
@@ -261,7 +295,8 @@ class BotsApiMixin:
             self.rename_session(bind_sid, state["label"], manual=True)
         self._bots_notify_ui()
         return json.dumps({"success": True,
-                           "message": f"已{'建立' if state.get('created') else '更新'}「{state.get('label') or name}」",
+                           "message": (_("Created", "已建立") if state.get("created") else _("Updated", "已更新"))
+                           + _(f' "{state.get("label") or name}"', f"「{state.get('label') or name}」"),
                            "details": {"role": name, "label": state.get("label")}}, ensure_ascii=False)
 
     def bots_delete(self, role: str) -> str:
@@ -282,9 +317,10 @@ class BotsApiMixin:
                 table.pop(sid, None)
         _update(_mut)
         if out.get("missing"):
-            return json.dumps({"success": False, "message": f"「{role}」不是 bot"})
+            return json.dumps({"success": False, "message": _(f'"{role}" is not a bot', f"「{role}」不是 bot")})
         self._bots_notify_ui()
-        return json.dumps({"success": True, "message": f"已移除「{role}」（記憶資料夾保留在 {bots.bot_dir(role)}）"},
+        return json.dumps({"success": True, "message": _(f'Removed "{role}" (its memory folder stays at {bots.bot_dir(role)})',
+                                       f"已移除「{role}」（記憶資料夾保留在 {bots.bot_dir(role)}）")},
                           ensure_ascii=False)
 
     def bots_open_folder(self, role: str) -> str:
@@ -310,13 +346,15 @@ class BotsApiMixin:
         raw = cfg.get("agent_roster") or {}
         entry = raw.get(role)
         if not bots.is_bot(entry):
-            return json.dumps({"success": False, "message": f"「{role}」不是 bot"})
+            return json.dumps({"success": False, "message": _(f'"{role}" is not a bot', f"「{role}」不是 bot")})
         if bots.is_external(entry):
-            return json.dumps({"success": False, "message": f"「{role}」住在 ShellBot 外面，用 A2A 或 webhook 找它"})
+            return json.dumps({"success": False, "message": _(
+                f'"{role}" lives outside ShellBot: reach it with A2A or its webhook',
+                f"「{role}」住在 ShellBot 外面，用 A2A 或 webhook 找它")})
         label = bots.label_of(role, entry)
         for sid in list(self.sessions):
             if self._bots_role_of(sid, cfg) == role:
-                return json.dumps({"success": True, "message": f"「{label}」已經醒著",
+                return json.dumps({"success": True, "message": _(f'"{label}" is already awake', f"「{label}」已經醒著"),
                                    "details": {"sid": sid, "existed": True}})
         roster = self._agent_roster_config(cfg)
         cmd = (roster.get(role) or {}).get("cmd") or entry.get("cmd") or "claude"
@@ -328,7 +366,7 @@ class BotsApiMixin:
             threading.Thread(target=self._bots_wake, args=(sid, role), daemon=True,
                              name=f"bot-wake-{sid}").start()
         _dlog("bots", f"open role={role!r} sid={sid}")
-        return json.dumps({"success": True, "message": f"叫醒「{label}」", "details": {"sid": sid}},
+        return json.dumps({"success": True, "message": _(f'Waking "{label}"', f"叫醒「{label}」"), "details": {"sid": sid}},
                           ensure_ascii=False)
 
     def _bots_wake(self, sid: str, role: str):
@@ -367,14 +405,15 @@ class BotsApiMixin:
     # ── closing ─────────────────────────────────────────────────────────
     def bots_close(self, sid: str, mode: str = "save") -> str:
         if sid not in self.sessions:
-            return json.dumps({"success": False, "message": f"沒有 {sid} 這個分頁"})
+            return json.dumps({"success": False, "message": _(f"No tab {sid}", f"沒有 {sid} 這個分頁")})
         role = self._bots_role_of(sid)
         entry = (_cfg().get("agent_roster") or {}).get(role)
         if mode == "skip" or not bots.is_memory_bot(entry):
             self.close_session(sid, reason="bot-skip")
-            return json.dumps({"success": True, "message": "已關閉"})
+            return json.dumps({"success": True, "message": _("Closed", "已關閉")})
         self._bots_start_close(sid, role)
-        return json.dumps({"success": True, "message": "正在寫記憶，寫完會自動關閉"})
+        return json.dumps({"success": True, "message": _("Writing its memory; the tab closes when that is done",
+                                                          "正在寫記憶，寫完會自動關閉")})
 
     def _bots_divert_close(self, sid: str, reason: str) -> bool:
         """close_session hook: a memory bot closed from sfctl, Telegram or the idle
@@ -434,7 +473,9 @@ class BotsApiMixin:
                         break
                     time.sleep(1.0)
             if not written and sid in self.sessions:
-                why = "bot 沒有在時限內寫摘要" if self._wait_until_ready(sid, timeout=1) else "分頁沒有回到可輸入的狀態"
+                why = (_("the bot did not write a summary in time", "bot 沒有在時限內寫摘要")
+                       if self._wait_until_ready(sid, timeout=1)
+                       else _("the tab never came back to its prompt", "分頁沒有回到可輸入的狀態"))
                 path.write_text(bots.fallback_summary(bots.label_of(role, entry), sid,
                                                       self._bots_capture(s), why), encoding="utf-8")
         except Exception:
@@ -481,10 +522,12 @@ class BotsApiMixin:
         ext = self._bots_external_target(role)
         label = self._bots_external_label(role) or role
         if not ext:
-            return {"success": False, "message": f"「{label}」不是外部 bot"}
+            return {"success": False, "message": _(f'"{label}" is not an external bot', f"「{label}」不是外部 bot")}
         if not ext.get("url"):
             return {"success": False,
-                    "message": f"「{label}」住在 ShellBot 外面，但還沒設定 webhook（在側欄點它 → 編輯，貼上 webhook）"}
+                    "message": _(f'"{label}" lives outside ShellBot and has no webhook yet '
+                                 "(click it in the sidebar → Edit, paste the webhook)",
+                                 f"「{label}」住在 ShellBot 外面，但還沒設定 webhook（在側欄點它 → 編輯，貼上 webhook）")}
         body = bots.external_payload(
             kind=payload.get("kind") or "send", msg_id=payload.get("id") or "",
             text=payload.get("text") or "", from_label=payload.get("from_label") or "",
@@ -492,14 +535,15 @@ class BotsApiMixin:
         cfg = {"url": ext.get("url") or "", "auth": ext.get("auth") or ""}
         ok, info = sf_notify.send(body, cfg, timeout=8.0)
         if ok:
-            return {"success": True, "message": f"已送到「{label}」的 webhook"}
-        return {"success": False, "message": f"送不到「{label}」：{sf_notify.scrub(info, cfg)}"}
+            return {"success": True, "message": _(f"Sent to {label}'s webhook", f"已送到「{label}」的 webhook")}
+        why = sf_notify.scrub(info, cfg)
+        return {"success": False, "message": _(f"Could not reach {label}: {why}", f"送不到「{label}」：{why}")}
 
     def bots_external_info(self, role: str) -> str:
         cfg = _cfg()
         e = (cfg.get("agent_roster") or {}).get(role)
         if not bots.is_external(e):
-            return json.dumps({"success": False, "message": f"「{role}」不是外部 bot"})
+            return json.dumps({"success": False, "message": _(f'"{role}" is not an external bot', f"「{role}」不是外部 bot")})
         label = bots.label_of(role, e)
         log = []
         try:
@@ -518,19 +562,19 @@ class BotsApiMixin:
         recorded in the A2A log so both directions read as one thread."""
         text = (text or "").strip()
         if not text:
-            return json.dumps({"success": False, "message": "內容是空的"})
+            return json.dumps({"success": False, "message": _("Nothing to send", "內容是空的")})
         import uuid
         import agent_link
         msg_id = uuid.uuid4().hex[:12]
         agent_link.remember_outbound(msg_id, origin_sid="ui", target=role,
-                                     from_label="使用者（ShellBot）")
+                                     from_label=_("the user (ShellBot)", "使用者（ShellBot）"))
         res = self._bots_external_deliver(role, {"kind": "send", "id": msg_id, "text": text,
-                                                 "from_label": "使用者（ShellBot）", "from_sid": "ui"})
+                                                 "from_label": _("the user (ShellBot)", "使用者（ShellBot）"), "from_sid": "ui"})
         try:
             agent_link.record({"kind": "message" if res.get("success") else "failed",
                                "reason": "" if res.get("success") else res.get("message"),
                                "text": text[:200], "target": role, "msg_id": msg_id,
-                               "from_sid": "ui", "from_label": "使用者（ShellBot）"})
+                               "from_sid": "ui", "from_label": _("the user (ShellBot)", "使用者（ShellBot）")})
         except Exception:
             _swallow("bots:external_send_log")
         return json.dumps(res, ensure_ascii=False)

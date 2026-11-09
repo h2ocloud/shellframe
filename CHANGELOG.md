@@ -100,6 +100,37 @@
   的設定，畫面與 log 都會遮住。本機 HTTP API 也有對應的 `POST /a2a`。送出沿用這版一起
   出貨的對外 webhook 模組（`sf_notify`、`sfctl notify`）。
 
+- **Text written for agents follows the OS language: English everywhere, Traditional Chinese on a Chinese system.**
+  Every brief, playbook and prompt ShellBot writes into a tab used to be Chinese only,
+  which left the bots, A2A and delegation unusable for anyone who does not read it. The
+  wake-up brief, the primary bot's playbook, the close-time memory prompt, the routine
+  instructions for an external bot, the A2A and group banners, the delegation prompt
+  and the idle-summary prompt now exist in English too, and the OS's preferred
+  language picks one (`sf_lang.py`; `SHELLFRAME_PROMPT_LANG=en|zh` overrides it). The
+  Chinese texts are unchanged word for word. The bot screens follow the page's own
+  language setting. tests_prompt_lang.py checks that each English text has no Chinese
+  in it and names the same sfctl commands and [[SF:…]] markers as the Chinese one.
+
+  **給 agent 的文字跟著作業系統語系：其他語系一律英文，中文系統用繁體中文。**
+  ShellBot 寫進分頁的簡報、手冊與提示原本只有中文，看不懂中文的人就用不了 bots、A2A 與
+  派工。叫醒簡報、主要 Bot 的工作手冊、關閉前的記憶提示、外部 bot 的 routine 指令、A2A 與
+  群組訊息標頭、派工提示、閒置總結提示現在都有英文版，由作業系統的偏好語言決定用哪個
+  （`sf_lang.py`；`SHELLFRAME_PROMPT_LANG=en|zh` 可覆寫）。中文版一字未改。bot 相關畫面則
+  跟著介面自己的語言設定。tests_prompt_lang.py 檢查每份英文都沒有中文，且提到的 sfctl
+  指令與 [[SF:…]] 標記跟中文版一致。
+
+- **Every conversation has its own settings: its face, its name, and whether it is a bot.**
+  Click the face at the top of a conversation's left gutter, or right-click any face,
+  to rename the tab, change its face (with a preview of every expression), make it a
+  bot, or, for a bot's tab, edit the bot, make it the primary, open its memory folder
+  or stop this tab being the bot's tab. The bot and its memory stay when a tab stops
+  being its tab, and a tab that keeps the bot's name is not matched back to it.
+
+  **每個對話都有自己的設定：頭像、名稱、要不要當 bot。** 點對話左側最上方的頭像，或對任何
+  頭像按右鍵，就能改名、換頭像（附每種表情的預覽）、開成 bot；bot 的分頁則可以編輯 bot、
+  設為主要 Bot、開記憶資料夾，或讓這個分頁不再當 bot 的分頁。不再當 bot 時，bot 和它的
+  記憶都保留，分頁就算還叫那個名字也不會被自動認回去。
+
 ### Fixes
 
 - **A message to a coordinator that lives outside ShellFrame no longer opens a tab that never becomes ready.**
