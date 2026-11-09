@@ -1799,7 +1799,7 @@ class StatusTracker:
         sig = m.group(0) if m else None
         spinning = bool(_PI_WORKING_RE.search(scr))
 
-        if sig != prev_sig:          # token 數變了 → 正在產出
+        if sig != prev_sig and prev_sig is not None:   # token 數變了 → 正在產出（第一眼不算：重啟後的第一筆）
             prev_change = now
         changed_recently = (now - prev_change) < self._PI_IDLE_S if prev_change else False
 
@@ -1822,7 +1822,7 @@ class StatusTracker:
             since = now
         return {"state": state, "dot": DOT.get(state, ""), "activity": {},
                 "summary": summary, "action": "", "narration": "", "task": "",
-                "elapsed": int(now - since), "why": why,
+                "elapsed": int(now - since), "why": why, "activity_at": last_active,
                 "transcript": None, "loop": None, "model": model}
 
     def _grok_status(self, sid, worker, now, screen_tail, model):

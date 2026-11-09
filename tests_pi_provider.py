@@ -73,6 +73,18 @@ def test_settled_tokens_not_working_forever():
     assert st["state"] in ("done", "idle"), st
 
 
+# ── 4b. 最後回應時間＝最後一次看到它在跑（側欄的「多久前」）──
+#      pi 沒有 transcript，閒置時畫面約每分鐘重畫一次，所以不能拿最後輸出時間。
+def test_last_answer_is_last_seen_working():
+    tr = _tracker()
+    if not tr:
+        return
+    assert not _st(tr, IDLE, 900.0).get("activity_at"), "從沒看過它在跑：時間未知"
+    _st(tr, BUSY, 1000.0)
+    st = _st(tr, IDLE, 1000.0 + 600)
+    assert st.get("activity_at") == 1000.0, st.get("activity_at")
+
+
 # ── 5. token 還在長 → working ──
 def test_growing_tokens_is_working():
     tr = _tracker()
