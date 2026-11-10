@@ -24,6 +24,7 @@ import bot_names
 import bots
 import bridge_home
 import sf_lang
+import launch_cmd
 import sf_notify
 import tab_delivery
 from api_host import main
@@ -675,7 +676,7 @@ class BotsApiMixin:
         if self._bot_name_taken(name, cfg):
             return fail("name_taken", f'"{name}" is taken by another bot', f"「{name}」已經有別的 bot 在用",
                         suggestion=self._free_bot_name(name, cfg))
-        data = {"cmd": getattr(s, "cmd", "") or "claude",
+        data = {"cmd": launch_cmd.without_session(getattr(s, "cmd", "")) or "claude",
                 "avatar": bots.resolved_avatar(row.get("avatar"), sid)}     # the face it has, not one made from the name
         res = json.loads(self.bots_save(name, json.dumps(data, ensure_ascii=False), sid))
         if not res.get("success"):

@@ -154,6 +154,16 @@ api.sessions["s7"] = Tab("s7", "coding", "claude")
 r = api._bots_keep("s7")
 check("a name another bot has (any case): refused, with a free one to offer",
       r.get("code") == "name_taken" and r.get("suggestion") == "coding 2", r)
+UUID = "854ad0c0-2940-4d8c-a732-bc35ba7936b5"
+api.sessions["s11"] = Tab("s11", "pinned", f"claude --model haiku --session-id {UUID}")
+r = api._bots_keep("s11")
+check("a kept bot wakes in a new conversation: the session id ShellBot gave its tab is not kept",
+      r.get("success") and (main.load_config().get("agent_roster") or {}).get(r.get("role"), {}).get("cmd") == "claude --model haiku", r)
+import launch_cmd  # noqa: E402
+check("…nor --resume <uuid> or --continue; a value that is not a uuid, and a shell's -c, stay",
+      launch_cmd.without_session(f"claude --resume {UUID} --continue --model opus") == "claude --model opus"
+      and launch_cmd.without_session("claude -r notauuid") == "claude -r notauuid"
+      and launch_cmd.without_session("bash -c 'cd ~/x && claude'") == "bash -c 'cd ~/x && claude'")
 fresh(bots_on=False)
 check("bots off", code("s7") == "bots_off")
 fresh()
@@ -162,6 +172,7 @@ check("a phone reaches it: POST /link/bots/keep is routed", '"/link/bots/keep"' 
 
 print("4. a temporary bot is named from its first message")
 import time  # noqa: E402
+real_haiku_slug = main._haiku_slug          # section 8 tests the real one
 main._haiku_slug = lambda text: "weekly-report" if text else ""
 tmux_calls = []
 real_run = main.subprocess.run
@@ -335,6 +346,24 @@ check("the roster's keys and the tabs' order (Telegram's /N) are as they were",
       sorted(after["agent_roster"]) == sorted(json.loads(before)["agent_roster"])
       and after.get("session_order") == ["s1", "s3", "s4"])
 check("run again: nothing more", api._execute_sfctl("bots_migrate", {"apply": True}).get("bindings") == [])
+
+print("8. the first message's name: `claude --print` gets the time it takes")
+import subprocess  # noqa: E402
+check("the name call waits long enough (12.8 s measured on a real Mac)", main.SLUG_TIMEOUT_S >= 20)
+real_run, real_which = main.subprocess.run, main.shutil.which
+main.shutil.which = lambda name: "/usr/local/bin/claude"
+
+
+def slow(*a, **k):
+    raise subprocess.TimeoutExpired(cmd="claude", timeout=k.get("timeout"))
+
+
+main.subprocess.run = slow
+check("a call that runs out of time: no name, and the debug log says so",
+      real_haiku_slug("幫我記住一件事") == "" and "[slug] no name: TimeoutExpired" in Path(sf_log.DEBUG_LOG).read_text(encoding="utf-8"))
+main.subprocess.run = lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="code-name-blue-whale\n")
+check("an answer becomes the name", real_haiku_slug("幫我記住一件事") == "code-name-blue-whale")
+main.subprocess.run, main.shutil.which = real_run, real_which
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:

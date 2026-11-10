@@ -76,6 +76,19 @@ _CLAUDE_COMMANDS = {"config", "mcp", "doctor", "update", "install", "migrate-ins
                     "setup-token", "plugin", "plugins", "auth"}
 
 
+_UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+_PINNED = re.compile(rf"\s+(?:(?:--session-id|--resume|-r)(?:=|\s+){_UUID}|--continue)(?=\s|$)")
+
+
+def without_session(cmd: str) -> str:
+    """The command without the conversation it was pinned to: `--session-id <uuid>` (the
+    one ShellBot adds to every Claude tab), `--resume <uuid>`, `--continue`. A bot kept
+    from a tab wakes in a new conversation each time; Claude Code will not start a second
+    one under the id of the first. Only uuid values are taken, and `-c` is left alone
+    (`bash -c` is a shell's)."""
+    return _PINNED.sub("", cmd or "").strip()
+
+
 def claude_resume(tokens: list, csid: str):
     """`claude …` → [program, --resume <csid>, the options as written], or None for
     a subcommand (`claude mcp …`). The old session id goes, and so does an
