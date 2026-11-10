@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The app's new name (app_bundle.py): the macOS bundle installed as ShellBot.app, found
 under either name, an older install renamed once (LaunchServices and the Dock told), the
-update's copy of the template; the Windows desktop shortcut.
+update's copy of the template; the installer's pin of ShellBot, first in the Dock; the
+Windows desktop shortcut.
 
 The folders are temporary, the Dock's prefs are a stand-in and every system command is
 recorded, not run: nothing here touches /Applications, LaunchServices or the Dock. What
@@ -9,9 +10,13 @@ those do was measured with a throwaway app (docs: app_bundle.py's docstring).
 
 Run: .venv/bin/python tests_app_bundle.py
 """
+import contextlib
+import copy
 import hashlib
+import io
 import os
 import plistlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -222,6 +227,106 @@ done = [pin("file:///Applications/ShellBot.app/", "ShellBot")]
 check("…and one already right (its new bookmark kept): nothing to do",
       ab.dock_repin(done, moved_pairs) is False and "book" in done[0]["tile-data"])
 
+print("3b. the installer's pin: ShellBot first in the Dock (pin_dock)")
+a, _ = folders("pin")
+app = make_app(a / "ShellBot.app")
+url = app.as_uri() + "/"
+notes = pin("file:///Applications/Notes.app/", "Notes", "com.example.notes")
+mail = pin("file:///Applications/Mail.app/", "Mail", "com.example.mail")
+dock = {"persistent-apps": [notes, mail], "persistent-others": [{"tile-data": {"file-label": "Downloads"}}]}
+run, logs = Run(dock), []
+res = ab.pin_dock(app, run=run, log=logs.append)
+apps = (run.imported or {}).get("persistent-apps") or []
+tile = apps[0].get("tile-data", {}) if apps else {}
+check("pinned first, as the installer made the entry: a file tile, the label, the URL with its slash, URL type 15, the bundle id",
+      res is True and len(apps) == 3 and apps[0].get("tile-type") == "file-tile" and tile.get("file-label") == "ShellBot"
+      and tile.get("file-data") == {"_CFURLString": url, "_CFURLStringType": 15} and tile.get("bundle-identifier") == ab.BUNDLE_ID, apps[:1])
+check("…the other pins after it in their order, the rest of the Dock as it was",
+      apps[1:] == [notes, mail] and run.imported.get("persistent-others") == dock["persistent-others"], apps)
+check("…written through `defaults`, the Dock restarted once (it reads its pins only at launch), the pin read back",
+      [c[:2] for c in run.calls] == [["defaults", "export"], ["defaults", "import"], ["killall", "Dock"], ["defaults", "export"]]
+      and "pinned first" in " ".join(logs), (run.calls, logs))
+pinned_dock = run.dock
+
+stale = [pin("file:///Applications/ShellFrame.app/", "ShellFrame", "com.example.old"), notes,
+         pin("file:///Users/someone/Applications/Else.app/", "ShellBot", "com.example.else"),
+         pin("file:///Users/someone/Applications/Renamed.app/", "Renamed"),
+         pin("file:///Users/someone/Applications/ShellFrame.app", "x", "com.example.x", book=None),
+         "not a dict", {"tile-type": "spacer-tile"}, mail]
+run = Run({"persistent-apps": stale})
+ab.pin_dock(app, run=run)
+apps = run.imported["persistent-apps"]
+check("an older install's pins go (by label, by bundle id, by a URL naming either bundle); the others and the odd entries stay, in order",
+      apps[0]["tile-data"]["file-label"] == "ShellBot" and apps[1:] == [notes, "not a dict", {"tile-type": "spacer-tile"}, mail], apps)
+bad = []
+for why, old in (("label ShellFrame", pin("file:///x/a.app/", "ShellFrame", "com.example.x")),
+                 ("label ShellBot", pin("file:///x/a.app/", "ShellBot", "com.example.x")),
+                 ("bundle id", pin("file:///x/a.app/", "a")),
+                 ("a URL naming ShellFrame.app", pin("file:///x/ShellFrame.app/", "a", "com.example.x")),
+                 ("a URL naming ShellBot.app", pin("file:///x/ShellBot.app", "a", "com.example.x"))):
+    apps = [notes, old, mail]
+    if not (ab.dock_pin(apps, app) and apps[0]["tile-data"]["file-label"] == "ShellBot" and apps[1:] == [notes, mail]):
+        bad.append(why)
+check("…each of those five alone is enough to be taken for it", not bad, bad)
+lookalike = pin("file:///Applications/ShellFramework.app/", "ShellFramework", "com.example.fw")
+apps = [lookalike, notes]
+check("…and only those: an app with a similar name is kept", ab.dock_pin(apps, app) and apps[1:] == [lookalike, notes], apps)
+
+c, _ = folders("pin-race")
+capp = make_app(c / "ShellBot.app")
+run, logs = Run({"persistent-apps": [notes, pin("file:///Applications/ShellFrame.app/", "ShellFrame")]}, overwrite="once"), []
+res = ab.pin_dock(capp, run=run, log=logs.append)
+check("a Dock that writes its own pins over ours as it quits: read back, and the second try stops it unsaved (killall -KILL)",
+      res is True and [c[:2] for c in run.calls] == [["defaults", "export"], ["defaults", "import"], ["killall", "Dock"], ["defaults", "export"],
+                                                     ["defaults", "import"], ["killall", "-KILL"], ["defaults", "export"]]
+      and run.dock["persistent-apps"][0]["tile-data"]["file-data"]["_CFURLString"] == capp.as_uri() + "/"
+      and [x["tile-data"]["file-label"] for x in run.dock["persistent-apps"]] == ["ShellBot", "Notes"]
+      and "written its own" in " ".join(logs), (run.calls, logs))
+run, logs = Run({"persistent-apps": [notes]}, overwrite="always"), []
+res = ab.pin_dock(capp, run=run, log=logs.append)
+check("…one that undoes it every time: two tries, then said (pin it by hand), and False",
+      res is False and run.imports == 2 and "by hand" in " ".join(logs), (run.imports, logs))
+
+logs = []
+run = Run(pinned_dock)
+res = ab.pin_dock(app, run=run, log=logs.append)
+check("a second call changes nothing: the pins are read, nothing written, the Dock not restarted",
+      res is False and run.calls == [["defaults", "export", "com.apple.dock", "-"]] and not logs, (run.calls, logs))
+dressed = copy.deepcopy(pinned_dock)
+dressed["persistent-apps"][0]["GUID"] = 1234567
+dressed["persistent-apps"][0]["tile-data"].update({"book": b"made by the Dock", "file-mod-date": 99, "parent-mod-date": 77,
+                                                   "is-beta": False, "dock-extra": False})
+run = Run(dressed)
+check("…also once the Dock has added its own to the pin (a bookmark, a GUID, dates): still that pin, so still nothing written",
+      ab.pin_dock(app, run=run) is False and not run.ran("defaults", "import") and not run.ran("killall"), run.calls)
+later = copy.deepcopy(dressed)
+later["persistent-apps"].insert(2, pin("file:///Applications/ShellFrame.app/", "ShellFrame"))
+run = Run(later)
+res = ab.pin_dock(app, run=run)
+check("a stale pin of it further down (first one right): dropped, one pin of it left, the others in order",
+      res is True and run.imports == 1 and [x["tile-data"]["file-label"] for x in run.imported["persistent-apps"]] == ["ShellBot", "Notes", "Mail"],
+      run.imported)
+run = Run({"persistent-apps": [notes, copy.deepcopy(dressed["persistent-apps"][0]), mail]})
+res = ab.pin_dock(app, run=run)
+check("a right pin that is not first: moved up, the others in order",
+      res is True and [x["tile-data"]["file-label"] for x in run.imported["persistent-apps"]] == ["ShellBot", "Notes", "Mail"], run.imported)
+run = Run({})
+res = ab.pin_dock(app, run=run)
+check("a Dock with no pins yet: the pin is made", res is True and [x["tile-data"]["file-label"] for x in run.imported["persistent-apps"]] == ["ShellBot"],
+      run.imported)
+run, logs = Run(None), []
+check("the Dock's prefs cannot be read: nothing written, the Dock not restarted",
+      ab.pin_dock(app, run=run, log=logs.append) is False and not run.ran("defaults", "import") and not run.ran("killall"), run.calls)
+
+
+def no_defaults(args, **kw):
+    raise FileNotFoundError(args[0])
+
+
+logs = []
+check("no `defaults` to run: said, False, nothing raised (an install goes on)",
+      ab.pin_dock(app, run=no_defaults, log=logs.append) is False and "could not be read" in " ".join(logs), logs)
+
 print("4. the update's copy of the template")
 tpl = make_app(TMP / "tpl" / "ShellFrame.app", payload="new build")
 a, b = folders("refresh")
@@ -331,6 +436,39 @@ m = src["main.py"]
 body = m[m.index("def main():\n"):]
 check("the app renames after the single-instance guard, before the app is built",
       0 < body.find("    _ensure_single_instance()\n") < body.find("    app_bundle.at_start(") < body.find("    api = Api()\n"))
+sh = (HERE / "install.sh").read_text(encoding="utf-8")
+guard = re.search(r'if \[ "\$\{SHELLFRAME_SKIP_DOCK:-0\}" != "1" \]; then\n(.*?)\n  fi\n', sh, re.S)
+pin_step = guard.group(1) if guard else ""
+check("install.sh pins through app_bundle.pin_dock(): unless SHELLFRAME_SKIP_DOCK=1, and a failure there never fails the install",
+      "app_bundle.pin_dock(" in pin_step and re.search(r"python3 - <<'PY'[^\n]*\|\| true\n", pin_step + "\n") is not None, pin_step)
+# The old step wrote ~/Library/Preferences/com.apple.dock.plist and ran `killall Dock`: the prefs daemon
+# keeps its own copy of that domain, and a Dock with changes it has not saved writes them back as it quits.
+check("…and writes neither the Dock's plist nor restarts the Dock itself (the prefs daemon's copy, or a Dock saving as it quits, undoes that)",
+      not [w for w in ("com.apple.dock.plist", "plistlib", "killall") if w in sh], [w for w in ("com.apple.dock.plist", "plistlib", "killall") if w in sh])
+snippet = re.search(r"<<'PY'[^\n]*\n(.*?)\nPY\b", pin_step, re.S)
+stubbed, saved_env, saved_path, real_pin, said = [], {k: os.environ.get(k) for k in ("APP_DEST", "INSTALL_DIR")}, list(sys.path), ab.pin_dock, io.StringIO()
+ab.pin_dock = lambda path, **kw: stubbed.append((path, kw)) or False      # nothing here may reach the Dock
+os.environ.update(APP_DEST="/Applications/ShellBot.app", INSTALL_DIR=str(HERE))
+err = None if snippet else "no snippet found"
+try:
+    if snippet:
+        with contextlib.redirect_stdout(said):
+            exec(compile(snippet.group(1), "install.sh", "exec"), {"__name__": "__main__"})
+            if stubbed:
+                stubbed[0][1]["log"]("pin said this")
+except Exception as e:
+    err = repr(e)
+finally:
+    ab.pin_dock = real_pin
+    sys.path[:] = saved_path
+    for k, v in saved_env.items():
+        os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+check("…its snippet, as shipped, imports app_bundle from the install dir and pins the app it installed, with what is said shown",
+      err is None and len(stubbed) == 1 and stubbed[0][0] == "/Applications/ShellBot.app" and "Dock: pin said this" in said.getvalue(),
+      (err, stubbed, said.getvalue()))
+reads = re.findall(r'os\.environ\["(\w+)"\]', snippet.group(1)) if snippet else []
+check("…and the shell line hands it every variable it reads (a shell variable is not in its environment unless passed)",
+      sorted(reads) == ["APP_DEST", "INSTALL_DIR"] and all(f'{n}="${n}"' in pin_step.split("\n", 1)[0] for n in reads), (reads, pin_step[:120]))
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:
