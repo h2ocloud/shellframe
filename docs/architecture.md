@@ -51,6 +51,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_update.py` | Version, changelog, self-update, app restart |
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
 | | `api_bots.py` | Bots: state for the page, avatars, bot editor, wake, close-with-memory, external bots over A2A, the phone's bot view (`/link/bots`); `web/bots.js` + `web/bots.css` draw the faces |
+| | `api_chat.py` | The desktop's chat view (`settings.ui_style`): a tab's turns and question as the phone gets them, messages and answers the phone's way; `web/chat.js` + `web/chat.css` draw it. Rules in [`chat-shell.md`](chat-shell.md) |
 | | `api_tmux.py` | Tab ↔ tmux bookkeeping around restore: sid resolution, background reattach of tabs that failed at startup, `sfctl orphans`, repaint after display wake |
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
 | Domain | `agent_status.py` | Screen-based agent state detection per tab |
