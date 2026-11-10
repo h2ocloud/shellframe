@@ -59,19 +59,26 @@ _SPACE = " \t "
 
 # ── what is in the input box ───────────────────────────────────────────────
 def _chars_with_dim(line: str):
-    """[(char, dim)] for one line with ANSI escapes, tracking SGR 2 (dim)."""
-    out, dim = [], False
+    """[(char, dim, inverse)] for one line with ANSI escapes, tracking SGR 2 (dim) and
+    SGR 7 (inverse: how Claude Code draws its own cursor in a pane without focus)."""
+    out, dim, inv = [], False, False
     for m in _TOKEN.finditer(line):
         params, final, text = m.group(1), m.group(2), m.group(3)
         if text is not None:
-            out.extend((ch, dim) for ch in text)
+            out.extend((ch, dim, inv) for ch in text)
         elif final == "m":
             codes = [c for c in (params or "0").split(";") if c != ""] or ["0"]
             for c in codes:
-                if c in ("0", "22"):
+                if c == "0":
+                    dim = inv = False
+                elif c == "22":
                     dim = False
                 elif c == "2":
                     dim = True
+                elif c == "7":
+                    inv = True
+                elif c == "27":
+                    inv = False
     return out
 
 
@@ -97,13 +104,17 @@ def composer_state(screen_ansi: str):
                     k += 1
             row = row[k:]
         if chars:
-            chars.append(("\n", False))
+            chars.append(("\n", False, False))
         chars.extend(row)
-    visible = [(c, d) for c, d in chars if c not in _SPACE and c != "\n"]
-    text = "".join(c for c, _ in chars).strip(_SPACE + "\n")
+    visible = [(c, d, v) for c, d, v in chars if c not in _SPACE and c != "\n"]
+    text = "".join(c for c, _, _ in chars).strip(_SPACE + "\n")
     if not visible:
         return "empty", ""
-    if any(not d for _, d in visible):
+    plain = [x for x in visible if not x[1]]
+    # A pane without focus gets Claude Code's own cursor: an inverse block over the first
+    # character of the dim suggestion (measured: `\x1b[7mT\x1b[0;2mry …`). That one is the
+    # suggestion's too; a typed draft has more than it.
+    if plain and not (len(plain) == 1 and plain[0][2] and len(visible) > 1):
         return "draft", text
     return "suggestion", text
 

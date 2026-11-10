@@ -88,6 +88,18 @@ check("a multi-line draft", td.composer_state(box("\x1b[39m❯\xa0line one", "li
       == ("draft", "line one\nline two"))
 check("combined SGR 2;37 is dim, 22 ends it", td.composer_state(box("❯ \x1b[2;37mhint\x1b[22m"))[0] == "suggestion"
       and td.composer_state(box("❯ \x1b[2mhint\x1b[22mtyped"))[0] == "draft")
+# A pane without focus: Claude Code draws its own cursor, an inverse block over the first
+# character of the suggestion (as captured from a real tab).
+check("the cursor over a suggestion's first character is the suggestion's",
+      td.composer_state(box('\x1b[39m❯\xa0\x1b[7mT\x1b[0;2mry\x1b[0m \x1b[2m"how\x1b[0m \x1b[2mdoes\x1b[0m'))[0] == "suggestion")
+check("…but typed text with the cursor after it stays a draft",
+      td.composer_state(box("\x1b[39m❯\xa0hello\x1b[7m \x1b[0m"))[0] == "draft")
+check("…one typed character under the cursor is a draft",
+      td.composer_state(box("\x1b[39m❯\xa0\x1b[7ma\x1b[0m"))[0] == "draft")
+check("…and so is typed text with the cursor on one of its characters",
+      td.composer_state(box("\x1b[39m❯\xa0he\x1b[7ml\x1b[27mlo"))[0] == "draft")
+check("SGR 27 ends inverse, 0 ends both", [x[2] for x in td._chars_with_dim("\x1b[7ma\x1b[27mb\x1b[7;2mc\x1b[0md")]
+      == [True, False, True, False])
 check("no input box in view: unknown, assume nothing", td.composer_state("› Ask Codex\n  ready")[0] == "unknown")
 check("peek's note names a suggestion as not the user's",
       "not the user's" in td.composer_note("suggestion", "hint") and td.composer_note("empty", "") == "")
