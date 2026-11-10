@@ -14,6 +14,10 @@ Two triggers share one payload:
 - **`sfctl notify`**: an agent or script reports `DONE`, `BLOCKED`, `QUESTION` or `INFO`.
 - **auto-notify** (opt-in): the status monitor sends `DONE` / `BLOCKED` on real transitions.
 
+`sfctl notify` also hands the same event to the app, which pushes it to the paired phones
+that registered for push (kind `info`; see `mobile-link.md`), whether or not a webhook is
+configured. 同一包也會推到已註冊推播的手機。
+
 ## Configure
 
 `~/.config/shellframe/notify.json` (ShellFrame never creates or chmods it):

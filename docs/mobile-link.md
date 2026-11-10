@@ -207,3 +207,46 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 **`POST /link/bots/wake {"role"}`**：叫醒一個 bot，走的是桌面的 `bots_open`。回 `{"success", "details": {"sid", "existed"}}`；`existed: true` 表示它本來就醒著。外部 bot 回 `success: false` 和原因。
 
 **`/link/signals` 的 RED 事件**多了兩個欄位：`role`（哪個 bot 在問；一般分頁是 `""`）和 `options`（`[{"n", "text"}]`，解析不出來就是 `[]`）。這些事件仍然只在 Telegram 橋接開著時才有；不靠橋接的版本是上面的 `decision`。
+
+## 推播通知（電腦端）
+
+手機和 iPad 不用開著 App，bot 有事時會像收到訊息一樣跳出通知。電腦**直接送 APNs**，不經第三方中繼：對話內容和 key 都留在這台電腦上。iOS 端的規格見 Coding 的〈推播規格〉；這一節只寫電腦端。
+
+**設定（一次）**：Apple 開發者網站建一把 APNs Auth Key（.p8，Sandbox & Production），放在這台電腦，然後：
+
+```bash
+sfctl push-setup --key ~/.config/shellframe/apns/AuthKey_<KEYID>.p8 --key-id <KEYID> --team-id <TEAMID>
+sfctl push-status
+```
+
+- `push-setup` 會把 key 檔設成 600，存進 `~/.config/shellframe/push.json`（600），再用一個假的裝置 token 問一次 Apple：回 `400 BadDeviceToken` 代表 key 有效，`403` 代表 Key ID、team id 或 key 檔不對。
+- 送的方式：用系統的 `openssl` 簽 ES256 JWT（40 分鐘換一次），用 `curl --http2` 送；不加任何套件。token 和內容不經過命令列參數。
+- Windows 目前不支援推播，`status` 會回原因。
+
+**路由**（都要簽章；單向配對中無權的一方回 403）：
+
+| 路由 | 內容 |
+|---|---|
+| `POST /link/push/register` | `{"token", "env": "sandbox"/"production", "topic", "device_name", "prefs": {"kinds", "hide_content", "show_computer", "telegram", "done"}}`。每支手機一筆，再註冊就整筆換掉。回 `{"success": true, "details": {"registered": true, "enabled": <這台設好 key 沒>}}` |
+| `POST /link/push/unregister` | `{}`：刪掉這支手機的註冊 |
+| `GET /link/push/status` | `{"success", "enabled", "reason", "registered", "env", "prefs", "last_sent_at", "last_error"}` |
+| `POST /link/push/test` | `{}`：馬上推一則測試通知給這支手機，回 Apple 的結果 `{success, message}` |
+| `POST /link/peer/name` | `{"name"}`：手機改自己在這台電腦上的名字（最多 60 字），不用重新配對 |
+
+`prefs`：`kinds` 是 `decision`、`stuck`、`done`、`info` 要哪幾種（預設全部）；`hide_content` 隱藏內容；`show_computer` 在標題下面寫電腦名稱；`telegram` 是 `quiet`（預設）或 `both`；`done` 是 `primary`（預設，只有主要 Bot 和派工結果）或 `all`。
+
+**什麼時候推**（都不依賴 Telegram 橋接）：
+
+| kind | 來源 | 標頭 |
+|---|---|---|
+| `decision` | 回合最後問了 `[[SF:RED]]`，也就是 `/link/bots` 的 `decision`。每次回合結束電腦都會自己抓，不靠 Claude Code 的 Stop hook。`sf.qid` 就是 `/link/bots` 的 `decision.id`，鎖定畫面選的答案照常走 `/link/answer` | priority 10，collapse `q.<qid>` |
+| `stuck` | 分頁停在對話框（狀態監控的 BLOCKED），或 `[[SF:YELLOW:原因]]` | priority 10，collapse `stuck.<sid>` |
+| `done` | 回合結束（預設只有主要 Bot），以及派工結果 `a2a-result` | priority 5，collapse `done.<sid>` |
+| `info` | `sfctl notify`；標題是 bot 名稱，DONE／BLOCKED／QUESTION 會寫在標題 | priority 5，collapse `info.<sid>` |
+
+- **只推一次**：同一題（qid）只推一次，電腦重啟後也一樣（記在 `push.json`，保留 24 小時）。
+- **收回**：題目在任何地方被回答（手機、Telegram、電腦上直接打字開始下一輪）或換掉時，送一則背景推播 `{"sf": {"kind": "withdraw", "ids": ["q.<qid>"]}}` 把它拿掉。從某支手機回答時，其他手機馬上收回。
+- **節流**：同一個分頁的 `stuck`、`done` 一分鐘內再來，用同一個 collapse-id 安靜取代，不再響；每台裝置每小時最多 30 則；同時最多 4 個送出。
+- **Apple 的回應**：410 或 `BadDeviceToken` 就刪掉那筆註冊，App 下次打開會重新註冊；`InvalidProviderToken`／`ExpiredProviderToken` 會換一個新的 JWT；429 退避；其他錯誤記在 `last_error`。log 只印 token 的前 6 碼和後 4 碼，不寫內容。
+- **Telegram**：推播正常（24 小時內成功過、之後沒有錯誤）而且手機選了 `quiet` 時，Telegram 照樣傳訊息但不響。推播一出錯，Telegram 就恢復會響。橋接自己發的 🟡 YELLOW 橫幅還是會響。
+- **隱私**：`hide_content: true` 時不送題目、不送選項，本文只有「打開 ShellBot 查看」，category 用 `SF_OPEN`。文字一律先遮掉憑證，本文 180 字以內，整包 4 KB 以內。

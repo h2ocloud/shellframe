@@ -50,6 +50,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_status.py` | Agent status: hook events, status hook install, the status monitor thread |
 | | `api_update.py` | Version, changelog, self-update, app restart |
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
+| | `api_push.py` | Push to the paired phones: the `/link/push/*` and `/link/peer/name` routes, and the cues (a [[SF:RED]] question, a dialog or [[SF:YELLOW]], a finished turn, an a2a result, `sfctl notify`) the status monitor turns into pushes and withdrawals |
 | | `api_bots.py` | Bots: state for the page, avatars, bot editor, wake, close-with-memory, external bots over A2A, the phone's bot view (`/link/bots`); `web/bots.js` + `web/bots.css` draw the faces |
 | | `api_tmux.py` | Tab ↔ tmux bookkeeping around restore: sid resolution, background reattach of tabs that failed at startup, `sfctl orphans`, repaint after display wake |
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
@@ -74,6 +75,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent rules, model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |
 | Shared | `sf_log.py` | `_dlog` / `_swallow` logging primitives |
+| | `sf_push.py` | Push through APNs (leaf, stdlib plus the system's `openssl` and `curl`): `push.json`, registrations, payloads, ES256 provider token, HTTP/2 send, de-duplication and throttling; see [`mobile-link.md`](mobile-link.md) |
 | | `sf_notify.py` | Optional outbound webhook (leaf, stdlib only): config, payload, masked send, transition tracker for auto-notify. Used by `sfctl notify` and the status monitor; see [`notify-webhook.md`](notify-webhook.md) |
 
 ## 3. Data flows
