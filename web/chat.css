@@ -18,6 +18,7 @@
                "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", "Noto Sans CJK TC", system-ui, sans-serif;
   font-size: calc(14px * var(--ui-scale, 1)); line-height: 1.6;
   -webkit-user-select: text; user-select: text;
+  container: chat / inline-size;      /* the narrow layout below follows this width */
 }
 #chat-layer[hidden] { display: none; }
 #chat-layer code, #chat-layer pre, #chat-switch, .cm-call {
@@ -227,6 +228,30 @@ body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { 
   #chat-head, #chat-compose, #chat-ask { padding-left: .9em; padding-right: .9em; }
   .cm-user .cm-bubble { max-width: 90%; }
   #chat-switch button span { display: none; }
+}
+
+/* ── a narrow view: keyed to the view's own width, not the window's (the @media above).
+ * Measured on Windows: an 800px window with the sidebar at its widest leaves the view ~210px,
+ * and the title and the input box, the only parts that could shrink, took all of it: the
+ * title down to one letter beside "Terminal", the box down to its padding beside Send and
+ * the mic's room. In em, so it follows the interface size. Terminal keeps its icon (its
+ * title names it); Send goes under the box with the mic's room beside it, so the box has the
+ * whole width; a question drops its second face; file chips stay inside the view. */
+@container chat (max-width: 21em) {
+  #chat-head { gap: .5em; padding-left: .9em; padding-right: .9em; }
+  #chat-head .cm-to-term { padding: .3em .45em; }
+  #chat-head .cm-to-term span { display: none; }
+  #chat-col, #chat-ask { padding-left: .9em; padding-right: .9em; }
+  #chat-layer .cm-user .cm-bubble { max-width: 90%; }
+  #chat-ask .cm-ask-card { padding: .7em .8em; }
+  #chat-ask .cm-face { display: none; }
+  #chat-layer .cm-file { max-width: 100%; }
+  #chat-compose, #chat-layer.cm-has-mic #chat-compose { padding-left: .9em; padding-right: .9em; }
+  #chat-col-in { flex-wrap: wrap; justify-content: flex-end; }
+  #chat-input { flex-basis: 100%; }
+  #chat-input::placeholder { white-space: nowrap; }
+  #chat-layer.cm-has-mic #chat-send { margin-right: 54px; }
+  #chat-layer.cm-has-mic #chat-note { padding-right: 54px; }
 }
 
 /* ── files on their way with the next message ── */
