@@ -178,6 +178,8 @@ class BotsApiMixin:
             "enabled": (cfg.get("settings", {}) or {}).get("experimental_bots", False) is True,
             "roster": bots.public_roster(raw),
             "sessions": sessions,
+            "kinds": {sid: ("temp" if self._tab_cli(s) else "terminal")      # plan A: what a tab is when no bot's
+                      for sid, s in list(self.sessions.items())},
             "primary": bots.primary_role(raw),
             "memory_root": str(bots.memory_root()),
         }, ensure_ascii=False)

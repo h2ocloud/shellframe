@@ -147,6 +147,20 @@ body.sfb-on #sidebar-sessions .sfb-sleeper { padding-top: 6px; padding-bottom: 6
   display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; vertical-align: 1px;
   font-size: 9px; font-weight: 500; line-height: 1.5; color: #bb9af7; border: 1px solid #bb9af766;
 }
+.sfb-two .sfb-sub .sfb-temp { color: #8a90ad; font-weight: 600; }
+.sfb-keep { flex: none; align-self: center; margin-left: 5px; padding: 0 6px; border-radius: 9px; vertical-align: 1px; cursor: pointer;
+  font-size: 9.5px; line-height: 1.5; color: #7aa2f7; background: #7aa2f71a; border: 1px solid #7aa2f755; }
+.sfb-keep:hover { background: #7aa2f733; }
+.sfb-term { display: inline-flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+  font: 600 10px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #8a90ad; letter-spacing: -.5px; }
+#sfb-keep { position: fixed; z-index: 700; width: 280px; padding: 12px; border-radius: 10px; background: #1f2335;
+  border: 1px solid #3b4261; box-shadow: 0 10px 28px rgba(0,0,0,.45); font-size: 12px; color: #c0caf5; }
+#sfb-keep .sfb-keep-title { font-weight: 700; margin-bottom: 4px; }
+#sfb-keep .sfb-keep-note { color: #8a90ad; font-size: 11px; line-height: 1.45; margin-bottom: 8px; }
+#sfb-keep input { width: 100%; box-sizing: border-box; padding: 5px 8px; border-radius: 6px; border: 1px solid #3b4261;
+  background: #16161e; color: #c0caf5; font-size: 12.5px; }
+#sfb-keep .sfb-keep-msg { min-height: 14px; margin: 5px 0 2px; color: #f7768e; font-size: 11px; }
+#sfb-keep .sfb-keep-btns { display: flex; justify-content: flex-end; gap: 6px; }
 .sfb-sleeper, #sfb-primary { -webkit-user-select: none; user-select: none; }
 body.sfb-dragging, body.sfb-dragging * { -webkit-user-select: none !important; user-select: none !important; cursor: grabbing !important; }
 .sfb-sleeper { display: flex; align-items: center; padding: 6px 12px; cursor: pointer; font-size: 12px;

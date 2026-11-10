@@ -4102,33 +4102,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 s._idle_reap_state = ""
                 s._idle_summary_requested_at = 0.0
                 s._idle_close_after = 0.0
-        # Auto-slug: on first user Enter, rename tmux session to a haiku-derived slug.
-        # Runs in background so it never blocks the keystroke path. Only fires once
-        # (_slug_pending) and only when the session has a default sf_sNN tmux name.
-        if (getattr(s, '_slug_pending', False)
-                and '\r' in data
-                and getattr(s, '_tmux_name', None)
-                and s._tmux_name.startswith(TMUX_PREFIX)):
-            s._slug_pending = False
-            user_text = data.rstrip('\r\n').strip()
-            if user_text:
-                def _do_slug(sid=sid, s=s, text=user_text):
-                    slug = _haiku_slug(text)
-                    if not slug:
-                        return
-                    new_name = _unique_tmux_name(f"{TMUX_PREFIX}{slug}")
-                    old_name = s._tmux_name
-                    r = subprocess.run(
-                        ["tmux", "rename-session", "-t", old_name, new_name],
-                        capture_output=True, timeout=3,
-                    )
-                    if r.returncode == 0:
-                        s._tmux_name = new_name
-                        display_name = slug.replace('-', ' ')
-                        self.rename_session(sid, display_name)
-                        self._persist_session_manifest()
-                        _dlog("slug", f"tmux rename {old_name!r} → {new_name!r}")
-                threading.Thread(target=_do_slug, daemon=True).start()
+        if '\r' in data:
+            self._auto_name(sid, s, data.rstrip('\r\n'))
         # IME dedup：前端 _makeImeDedup 擋 xterm.onData 那條，上面的保底擋其餘路徑。
         # On the first REAL user message, inject the init prompt BEFORE it.
         #
@@ -4789,6 +4764,33 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         """JS 回呼（ui_sessions 診斷）：webview 把它眼中的 tabs/labels 存回來。"""
         self._ui_state_report = str(payload or "")
         return "ok"
+
+    def _auto_name(self, sid: str, s, text: str):
+        """A tab's name from its first message (a temporary bot's name, plan A), once, on a
+        thread: never on the keystroke path. The terminal's Enter and the chat view's send
+        both come here. With tmux the session is renamed too (only a default sf_sNN one)."""
+        if not getattr(s, "_slug_pending", False):
+            return
+        s._slug_pending = False
+        text = str(text or "").strip()
+        if not text:
+            return
+
+        def _do_slug():
+            slug = _haiku_slug(text)
+            if not slug:
+                return
+            old_name = getattr(s, "_tmux_name", None)
+            if old_name and old_name.startswith(TMUX_PREFIX):
+                new_name = _unique_tmux_name(f"{TMUX_PREFIX}{slug}")
+                r = subprocess.run(["tmux", "rename-session", "-t", old_name, new_name], capture_output=True, timeout=3)
+                if r.returncode != 0:
+                    return
+                s._tmux_name = new_name
+                _dlog("slug", f"tmux rename {old_name!r} → {new_name!r}")
+            self.rename_session(sid, slug.replace('-', ' '))
+            self._persist_session_manifest()
+        threading.Thread(target=_do_slug, daemon=True).start()
 
     def rename_session(self, sid: str, name: str, manual: bool = False) -> str:
         """Rename a session. Updates bridge label if connected. Persists to config.

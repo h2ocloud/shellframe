@@ -123,8 +123,10 @@
     if (row.bot && isBot(row.bot)) return row.bot;
     const s = sessionsMap()[sid];
     if (!s || s.isRemote) return '';
+    const S = sessionsMap();                // a bot bound to another open tab is that tab's (bot_names.role_of_tab)
+    const elsewhere = role => Object.keys(st.sessions || {}).some(x => x !== sid && S[x] && (st.sessions[x] || {}).bot === role);
     for (const role of Object.keys(st.roster || {})) {
-      if (isBot(role) && !isExternal(role) && botName(role) === s.label) return role;
+      if (isBot(role) && !isExternal(role) && botName(role) === s.label && !elsewhere(role)) return role;
     }
     return '';
   }
@@ -143,8 +145,25 @@
   }
   const isClosing = sid => !!(st.sessions[sid] || {}).closing;
 
+  // Plan A: what a tab is. A bot (its binding or its name); else the server says whether it
+  // runs an AI CLI (a temporary bot, which can be kept) or is a terminal (bots_state kinds,
+  // the same rule /link/bots uses); a tab newer than the last state is told by its command.
+  const SHELL_RE = /^(bash|zsh|sh|fish|powershell|pwsh|cmd|nu)$/;
+  function kindOf(sid) {
+    if (botOf(sid)) return 'bot';
+    const k = (st.kinds || {})[sid];
+    if (k) return k;
+    const s = sessionsMap()[sid] || {};
+    const base = String(s.cmd || '').trim().split(/\s+/)[0].split(/[\\/]/).pop().replace(/\.(exe|cmd)$/i, '').toLowerCase();
+    return !base || SHELL_RE.test(base) ? 'terminal' : 'temp';
+  }
+
   function face(sid) {
     if (!enabled) return '';
+    const s0 = sessionsMap()[sid];
+    if (s0 && !s0.isRemote && kindOf(sid) === 'terminal' && !(st.sessions[sid] || {}).avatar) {
+      return `<span class="sfb-term" title="${esc(t('Terminal', '終端機'))}">&gt;_</span>`;   // a shell is no bot
+    }
     const role = botOf(sid);
     return faceSvg(avatarFor(sid), { seed: sid, primary: !!role && role === st.primary,
                                      writing: isClosing(sid) });
@@ -164,6 +183,12 @@
     return role ? (rosterEntry(role).responsibility || '') : '';
   }
 
+  // The row's second line after the "temp" mark (tick() keeps it current).
+  function subText(sid, temp) {
+    const pv = previewOf(sid);
+    return temp ? (pv ? ' · ' + pv : '') : (pv || '\u00a0');
+  }
+
   // ── organisms: sidebar ────────────────────────────────────────────────
   function afterSidebar(container) {
     if (!enabled || !container) return;
@@ -175,13 +200,17 @@
       const lab = row.querySelector('.sb-label');
       if (!s || !lab || lab.classList.contains('sfb-two')) return;
       const role = botOf(sid);
+      const temp = !role && kindOf(sid) === 'temp' && !(st.sessions[sid] || {}).plain;
       const tag = role && memOn(role)
-        ? `<span class="sfb-tag" title="${esc(t('Bot: has its own memory and writes it before closing', 'Bot：有自己的記憶，關閉前會先寫記憶'))}">Bot</span>` : '';
+        ? `<span class="sfb-tag" title="${esc(t('Bot: has its own memory and writes it before closing', 'Bot：有自己的記憶，關閉前會先寫記憶'))}">Bot</span>`
+        : '';
+      const tempMark = temp ? `<span class="sfb-temp" title="${esc(t('A temporary bot: it forgets when it closes. Keep it to make it a bot with memory', '臨時 bot：關掉就忘了。按「記住」讓它變成有記憶的 bot'))}">${esc(t('temp', '臨時'))}</span>` : '';
+      const keep = temp ? `<button class="sfb-keep" data-keep="${esc(sid)}">${esc(t('Keep', '記住'))}</button>` : '';   // outside the name: never cut off
       lab.classList.add('sfb-two');
       const shown = window.SFChat && SFChat.label ? SFChat.label(sid, s.label) : s.label;   // chat style: display only
-      lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(shown)}${tag}</span>` +
+      lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(shown)}${tag}</span>${keep}` +
         `<span class="sfb-ago">${esc(agoText(sid))}</span></span>` +
-        `<span class="sfb-sub">${esc(previewOf(sid)) || '&nbsp;'}</span>`;
+        `<span class="sfb-sub">${tempMark}<span class="sfb-pv">${esc(subText(sid, temp))}</span></span>`;
       const dot = row.querySelector('.busy-dot');
       if (dot) dot.title = t('Right-click: face and bot settings. Click: change the expression by hand (the next turn takes over)',
                              '右鍵：頭像與 Bot 設定。點一下：手動切換表情（下次對話自動接管）');
@@ -193,6 +222,60 @@
     linkTerminals();
     renderConvo();
     afterTabs(document.getElementById('tabs'));
+  }
+
+  // ── plan A: keep a temporary bot ─────────────────────────────────────
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('.sfb-keep[data-keep]');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();          // not a click on the row (that switches tabs)
+    openKeep(b.dataset.keep);
+  }, true);
+  function closeKeep() { const old = document.getElementById('sfb-keep'); if (old) old.remove(); }
+  function openKeep(sid) {
+    closeKeep();
+    const s = sessionsMap()[sid] || {};
+    const pop = document.createElement('div');
+    pop.id = 'sfb-keep';
+    pop.innerHTML = `<div class="sfb-keep-title">${esc(t('Keep this conversation as a bot', '把這個對話記住，變成 bot'))}</div>
+      <div class="sfb-keep-note">${esc(t('It keeps its face, gets a memory folder, and writes what this conversation taught it before it closes; next time it wakes with that memory.',
+        '它會留著現在的臉、有自己的記憶資料夾，關掉前會先把這次學到的寫進記憶，下次叫醒時帶著回來。'))}</div>
+      <input id="sfb-keep-name" maxlength="40" spellcheck="false">
+      <div class="sfb-keep-msg"></div>
+      <div class="sfb-keep-btns"><button class="btn btn-ghost" data-k="cancel">${esc(t('Cancel', '取消'))}</button>` +
+      `<button class="btn" data-k="ok">${esc(t('Keep', '記住'))}</button></div>`;
+    const row = document.querySelector(`#sidebar-sessions .sb-item[data-sid="${sid}"]`);
+    const r = row ? row.getBoundingClientRect() : { left: 20, bottom: 80 };
+    pop.style.left = Math.max(8, Math.min(r.left + 8, window.innerWidth - 300)) + 'px';
+    pop.style.top = Math.max(8, Math.min(r.bottom + 4, window.innerHeight - 190)) + 'px';
+    document.body.appendChild(pop);
+    const input = pop.querySelector('#sfb-keep-name');
+    const msg = pop.querySelector('.sfb-keep-msg');
+    input.value = s.label || '';
+    input.focus(); input.select();
+    const submit = async () => {
+      const a = api();
+      if (!a || !a.bots_keep) return;
+      let res = {};
+      try { res = JSON.parse(await a.bots_keep(sid, input.value.trim())); } catch (_) {}
+      if (res.success) {
+        closeKeep();
+        toast(t(`Kept "${res.role}": it remembers from now on`, `已記住「${res.role}」：從現在起它會記得`));
+        refresh(true);
+        return;
+      }
+      msg.textContent = res.message || t('Not kept', '沒有記住');
+      if (res.code === 'name_taken' && res.suggestion) { input.value = res.suggestion; input.select(); }
+    };
+    pop.addEventListener('click', e => {
+      const k = e.target.dataset && e.target.dataset.k;
+      if (k === 'cancel') closeKeep();
+      if (k === 'ok') submit();
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); }
+      if (e.key === 'Escape') { e.preventDefault(); closeKeep(); }
+    });
   }
 
   // ── sidebar tools: find a tab, see who is free, newest first ──────────────
@@ -568,8 +651,8 @@
     if (!enabled) return;
     document.querySelectorAll('#sidebar-sessions .sb-item[data-sid] .sfb-two').forEach(two => {
       const sid = two.closest('.sb-item').dataset.sid;
-      const sub = two.querySelector('.sfb-sub');
-      const text = previewOf(sid) || ' ';
+      const sub = two.querySelector('.sfb-sub .sfb-pv') || two.querySelector('.sfb-sub');
+      const text = subText(sid, !!two.querySelector('.sfb-sub .sfb-temp'));
       if (sub && sub.textContent !== text) sub.textContent = text;
       const ago = two.querySelector('.sfb-ago');
       const when = agoText(sid);

@@ -85,6 +85,9 @@ class ChatApiMixin:
         if not text.strip():
             return json.dumps({"success": False, "code": "empty"})
         res = self._execute_sfctl("send", {"sid": sid, "text": text, "submit": True}) or {}
+        s = self.sessions.get(sid)
+        if res.get("success") and s is not None:
+            self._auto_name(sid, s, text)      # the first message names a temporary bot, as Enter in the terminal does
         details = res.get("details") or {}
         return json.dumps({"success": bool(res.get("success")), "queued": bool(details.get("queued")),
                            "position": details.get("position"), "message": res.get("message", "")},

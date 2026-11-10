@@ -157,6 +157,53 @@ fresh()
 src = (HERE / "frame_link.py").read_text(encoding="utf-8")
 check("a phone reaches it: POST /link/bots/keep is routed", '"/link/bots/keep"' in src)
 
+print("4. a temporary bot is named from its first message")
+import time  # noqa: E402
+main._haiku_slug = lambda text: "weekly-report" if text else ""
+tmux_calls = []
+real_run = main.subprocess.run
+main.subprocess.run = lambda args, **kw: (tmux_calls.append(list(args)), types.SimpleNamespace(
+    returncode=1 if "has-session" in args else 0, stdout="", stderr=""))[1]      # no such session: the name is free
+api._persist_session_manifest = lambda: None
+renamed.clear()
+
+
+def wait_renamed(sid):
+    for _ in range(40):
+        if any(r[0] == sid for r in renamed):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+t8 = api.sessions["s8"] = Tab("s8", "claude", "claude")
+t8._slug_pending = True
+api._auto_name("s8", t8, "幫我整理週報")
+check("no tmux (Windows): the tab is renamed, not left 'claude'", wait_renamed("s8")
+      and ("s8", "weekly report", False) in renamed and not tmux_calls, (renamed, tmux_calls))
+renamed.clear()
+api._auto_name("s8", t8, "再一句")
+time.sleep(0.2)
+check("only once", not renamed)
+t9 = api.sessions["s9"] = Tab("s9", "claude", "claude")
+t9._slug_pending, t9._tmux_name = True, main.TMUX_PREFIX + "s9"
+api._auto_name("s9", t9, "查一下")
+check("with tmux: its session renamed too", wait_renamed("s9") and any("rename-session" in c for c in tmux_calls)
+      and t9._tmux_name == main.TMUX_PREFIX + "weekly-report", (tmux_calls[:3], t9._tmux_name))
+main.subprocess.run = real_run
+t10 = api.sessions["s10"] = Tab("s10", "claude", "claude")
+t10._slug_pending = True
+real_exec = api._execute_sfctl
+api._execute_sfctl = lambda cmd, args=None: {"success": False, "message": "busy"}
+api.chat_send("s10", "第一句")
+time.sleep(0.2)
+check("the chat view: a send that failed names nothing", t10._slug_pending is True)
+api._execute_sfctl = lambda cmd, args=None: {"success": True, "details": {}}
+renamed.clear()
+api.chat_send("s10", "第一句")
+check("…one that went in names the tab, as Enter in the terminal does", wait_renamed("s10") and t10._slug_pending is False)
+api._execute_sfctl = real_exec
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)
