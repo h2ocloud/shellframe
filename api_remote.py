@@ -17,6 +17,7 @@ from pathlib import Path
 
 import agent_cursor
 import agent_grok
+import agent_pi
 import agent_status
 import a2a_host
 import bridge_home
@@ -960,6 +961,16 @@ class RemoteApiMixin:
                                            "（分頁標題還沒被 opencode 標上，或還沒送出過訊息）"}
                     return {"success": True, "message": f"{len(turns)} turns",
                             "details": {"format": "opencode", "turns": turns,
+                                        "label": getattr(s_obj, "_custom_label", None)
+                                                 or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
+                # pi's session file is found for its model badge but is not one of
+                # the formats the status reader parses; agent_pi turns it into turns.
+                if main._session_provider(s_obj.cmd) == "pi":
+                    turns = agent_pi.turns(worker, limit)
+                    if not turns:
+                        return {"success": False, "message": "這個 pi 分頁還沒有可讀的對話（可能還沒送出過訊息）"}
+                    return {"success": True, "message": f"{len(turns)} turns",
+                            "details": {"format": "pi", "turns": turns,
                                         "label": getattr(s_obj, "_custom_label", None)
                                                  or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
                 path = main.agent_status.resolve_transcript(worker)

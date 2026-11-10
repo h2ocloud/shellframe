@@ -44,6 +44,36 @@ def _update(mutator):
     return main.update_config(mutator)
 
 
+DIALOG_WORDS_MAX = 2000  # a decision's `detail`; past this it is cut and ends in "…"
+
+
+def dialog_words(lines: list, at: int) -> str:
+    """The words of the dialog whose options start at lines[at], whole, as the CLI drew them:
+    from the rule it opens with down to its question (the decision's `reason`), rules dropped,
+    each line masked as agent_status.redact masks (credentials and any 32+ character token, a
+    SHA say, become <redacted>; runs of spaces one). "" when no rule opens a dialog above the
+    options: what a question is about is not guessed (Codex draws none); a dialog taller than
+    the screen may start from another rule. The call a question is about is no substitute:
+    agent_status keeps a command's first line, 40 characters."""
+    rule = next((i for i in range(at - 1, -1, -1) if re.fullmatch(r"\s*─{10,}\s*", lines[i])), None)
+    if rule is None:
+        return ""
+    body = [ln.rstrip() for ln in lines[rule + 1:at] if not re.fullmatch(r"\s*[─╌]+\s*", ln)]
+    while body and not body[-1].strip():
+        body.pop()
+    body = body[:-1]                                    # the question
+    pad = min((len(ln) - len(ln.lstrip()) for ln in body if ln.strip()), default=0)
+    out = []
+    for ln in body:
+        if ln.strip():
+            ln = ln[pad:]
+            out.append(ln[:len(ln) - len(ln.lstrip())] + agent_status.redact(ln, 1000))
+        elif out and out[-1]:
+            out.append("")
+    text = "\n".join(out).strip("\n")
+    return text if len(text) <= DIALOG_WORDS_MAX else text[:DIALOG_WORDS_MAX].rstrip() + "…"
+
+
 class BotsApiMixin:
     # ── reading ─────────────────────────────────────────────────────────
     def _bots_enabled(self) -> bool:
@@ -242,8 +272,9 @@ class BotsApiMixin:
         return agent_model.describe(agent_model.apply(cmd, e["model"]) if e.get("model") else cmd)
 
     def _link_decision(self, sid: str, activity: str, res: dict):
-        """{"id", "reason", "options": [{"n", "text"}]} while a tab waits on the person: the
-        menu on its screen, or the question its last turn ended on with [[SF:RED]] (kept
+        """{"id", "kind", "reason", "options": [{"n", "text"}]} while a tab waits on the person:
+        the menu on its screen (with `detail`, its dialog's words: dialog_words), or the
+        question its last turn ended on with [[SF:RED]] (kept
         whether or not Telegram is on, which /link/signals depends on). None otherwise.
         `id` fingerprints this very question, for /link/answer: a menu by its whole dialog
         (two permission prompts with the same words differ in the command they ask about),
@@ -254,34 +285,36 @@ class BotsApiMixin:
         if activity == "decision":
             try:
                 import bridge_telegram
+                # The visible screen only, and its last menu (menu_block): an older menu in the
+                # scrollback was offered, and answered, in place of the one being asked.
                 lines = [re.sub(r"^\s*│\s?|\s*│\s*$", "", ln.rstrip())          # a boxed dialog's side borders
-                         for ln in tab_delivery.screen_text(self, sid, 40).splitlines()]
-                opts = bridge_telegram.menu_options(lines)
-                at = next(i for i, ln in enumerate(lines) if opts[0]["text"] in ln
-                          and ln.lstrip().lstrip("❯›").lstrip().startswith(opts[0]["num"]))
-                end = max(i for i, ln in enumerate(lines) if i >= at and opts[-1]["text"] in ln)
+                         for ln in tab_delivery.visible_text(self, sid).splitlines()]
+                opts, at, end = bridge_telegram.menu_block(lines)
+                if not opts:
+                    raise ValueError("no menu")
                 top = next((i for i in range(at - 1, max(-1, at - 16), -1)       # the rule the dialog opens with
                             if re.fullmatch(r"\s*─{10,}\s*", lines[i])), max(0, at - 6))
                 reason = next((ln.strip(" ─╌") for ln in reversed(lines[:at]) if ln.strip(" ─╌")), "")
-                return {"id": qid("menu", *(ln.strip() for ln in lines[top:end + 1])),
-                        "reason": agent_status.redact(reason, 300),
+                return {"id": qid("menu", *(ln.strip() for ln in lines[top:end + 1])), "kind": "menu",
+                        "reason": agent_status.redact(reason, 300), "detail": dialog_words(lines, at),
                         "options": [{"n": int(o["num"]), "text": agent_status.redact(o["text"], 120)} for o in opts[:9]]}
             except Exception:
                 pass                                   # no menu read off the screen: maybe a RED question
         red = bridge_home.red_pending(sid)
         if red and red["at"] >= float(res.get("prompt_at") or 0):       # not answered since
-            return {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])),
+            return {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])), "kind": "red",
                     "reason": agent_status.redact(red["reason"], 300),
                     "options": [{"n": int(n), "text": agent_status.redact(t, 120)} for n, t in red["options"]]}
         return None
 
-    def _bots_link_answer(self, args: dict) -> dict:
+    def _bots_link_answer(self, args: dict, via: str = "phone") -> dict:
         """POST /link/answer {"sid", "n", "id"}: the phone answers the question /link/bots
         showed it, only while that is still the tab's question (`id`). Otherwise the answer
         would go into whatever the tab asks next, which is also why a question answered a
         moment ago on Telegram is refused. It goes in as Telegram's choice button sends it
         ("n" and Enter), and the Telegram copies of the question say it was answered on the
-        phone, their buttons gone. /link/input stays as it is: raw keys, no checks."""
+        phone (`via`: or on the computer, from the desktop's chat view), their buttons gone.
+        /link/input stays as it is: raw keys, no checks."""
         sid = str(args.get("sid") or "")
         s = self.sessions.get(sid)
         if not s:
@@ -305,9 +338,9 @@ class BotsApiMixin:
         claimed = bridge_home.claim_for_phone(sid, n)
         if claimed is None:
             return stale
-        s.write(f"{n}\r")
-        bridge_home.phone_answered(self, sid, n, claimed)
-        _dlog("bots", f"{sid}: answered {n} from the phone")
+        sent = tab_delivery.answer_choice(self, sid, n, cur.get("kind", "menu"))
+        bridge_home.phone_answered(self, sid, n, claimed, where=via)
+        _dlog("bots", f"{sid}: answered {n} from the {via} ({sent!r})")
         return {"success": True, "message": _(f"Answered {n}", f"已選 {n}")}
 
     def _link_editable(self, role: str):

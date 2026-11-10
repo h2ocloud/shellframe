@@ -27,6 +27,8 @@ from urllib.parse import parse_qs, urlparse
 from bridge_base import BridgeBase, BridgeConfigBase
 from bridge_telegram import strip_ansi
 
+import sf_config
+
 _IS_WIN = _sys.platform == "win32"
 _TMP_DIR = tempfile.gettempdir() if _IS_WIN else "/tmp"
 _LOG_FILE = _os.path.join(_TMP_DIR, "shellframe_line_bridge.log")
@@ -98,7 +100,7 @@ class LineBridgeConfig(BridgeConfigBase):
 
 def _read_settings() -> dict:
     try:
-        cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
+        cfg_file = sf_config.config_file()
         if cfg_file.exists():
             return (json.loads(cfg_file.read_text(encoding="utf-8"))
                     .get("settings", {}) or {})

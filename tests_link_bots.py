@@ -162,6 +162,7 @@ def make_api():
 
 
 tab_delivery.screen_text = lambda api, sid, lines=60: SCREENS.get(sid, "")
+tab_delivery.ANSWER_SETTLE_S = 0.25
 fresh_config()
 api = make_api()
 
@@ -297,22 +298,23 @@ r = answer(sid="s3", n=1, id="0" * 12)
 check("an id that is not the tab's question now: refused as stale, with the current one, nothing typed",
       r.get("code") == "stale" and (r.get("decision") or {}).get("id") == d["id"] and not tab3.written, r)
 r = answer(sid="s3", n=1, id=d["id"])
-check("the right id: in go 1 and Enter, the keys Telegram's choice button sends", r.get("success") and tab3.written == ["1\r"],
+# The menu is still on this screen after the 1, so its Enter follows (tab_delivery.answer_choice).
+check("the right id: in go 1, then Enter as the menu is still up", r.get("success") and tab3.written == ["1", "\r"],
       (r, tab3.written))
 check("…the Telegram copy now says it was answered on the phone, its buttons gone",
       any(m == "editMessageText" and p["message_id"] == 7 and p["text"].endswith("✅ 已在手機上選：1")
           and "reply_markup" not in p for m, p in tg), tg)
 check("…and a tap on it is refused, so it cannot answer the next question",
-      bridge_home.on_choice(api.bridge, "choice:s3:2", 100, 7, "cq1") is True and tab3.written == ["1\r"])
+      bridge_home.on_choice(api.bridge, "choice:s3:2", 100, 7, "cq1") is True and tab3.written == ["1", "\r"])
 r = answer(sid="s3", n=1, id=d["id"])
 check("a second tap on the phone while the screen still shows the question: refused", r.get("code") == "stale"
-      and tab3.written == ["1\r"], r)
+      and tab3.written == ["1", "\r"], r)
 bridge_home._answered_at.clear()
 bridge_home.opened(api.bridge, "s3", "🤖 部署檢查 需要你決定（下一題）", 100, {"result": {"message_id": 8}})
 check("Telegram answers first…", bridge_home.on_choice(api.bridge, "choice:s3:1", 100, 8, "cq2") is False)
 r = answer(sid="s3", n=2, id=d["id"])
 check("…then the phone's answer to the question still on screen is refused, nothing typed",
-      r.get("code") == "stale" and tab3.written == ["1\r"], r)
+      r.get("code") == "stale" and tab3.written == ["1", "\r"], r)
 bridge_home._answered_at.clear()
 bridge_home.on_turn_end(api, "s2", read_events=lambda sid: RED)
 d2 = link()["tabs"]["s2"]["decision"]

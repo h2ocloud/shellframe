@@ -260,14 +260,16 @@ def claim_for_phone(sid, n):
         return cur["text"], copies
 
 
-def phone_answered(api, sid, n, claimed):
-    """After the phone's answer went in: its Telegram copies say so and lose their buttons."""
+def phone_answered(api, sid, n, claimed, where="phone"):
+    """After the phone's answer went in (or the desktop chat view's, `where="desktop"`): its
+    Telegram copies say so and lose their buttons."""
     text, copies = claimed
     bridge = getattr(api, "bridge", None)
     slot = (getattr(bridge, "slots", None) or {}).get(sid) if bridge else None
     if slot is not None:
         slot.pending_menu, slot.pending_menu_options = False, []
-    note = sf_lang.pick(f"✅ Answered on the phone: {n}", f"✅ 已在手機上選：{n}")
+    note = (sf_lang.pick(f"✅ Answered on the computer: {n}", f"✅ 已在電腦上選：{n}") if where == "desktop"
+            else sf_lang.pick(f"✅ Answered on the phone: {n}", f"✅ 已在手機上選：{n}"))
     for c, m in copies if bridge else ():
         try:      # editMessageText without reply_markup also takes the buttons away
             _tg(bridge, "editMessageText", {"chat_id": c, "message_id": m, "text": f"{text}\n\n{note}".strip()})

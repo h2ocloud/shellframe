@@ -77,6 +77,7 @@ from api_update import UpdateApiMixin
 from api_voice import VoiceApiMixin
 from api_tmux import TmuxApiMixin
 from api_bots import BotsApiMixin
+from api_chat import ChatApiMixin, ensure_ui_style
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -124,7 +125,7 @@ SHELLFRAME_CODEX_CMD = f"{CODEX_LAUNCHER} {CODEX_AUTONOMOUS_FLAGS}"
 # What the user sees (menu bar, window, About). Everything a machine reads keeps the
 # old name: ~/.config/shellframe, sfctl, the bundle id, tmux sf_*, Frame Link.
 APP_DISPLAY_NAME = "ShellBot"
-CONFIG_DIR = Path.home() / ".config" / "shellframe"
+CONFIG_DIR = sf_config.config_dir()        # a test run gets a folder of its own
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
 ACCOUNT_MANAGER = account_manager.AccountManager(
@@ -254,6 +255,10 @@ DEFAULT_CONFIG = {
         # the silence they were added for.
         "tg_reactions": False,
         "show_model_badge": True,
+        # What a tab opens on: the chat view ("chat", web/chat.js) or its terminal ("cli").
+        # A first launch gets this; a computer that already ran ShellBot keeps "cli"
+        # (api_chat.ensure_ui_style, from load_config).
+        "ui_style": "chat",
         # 眼鏡（Agent Relay）是外掛功能，要另外裝 bridge 才有用。
         # 預設關：沒裝的人不該在每個分頁上看到一顆按不出東西的按鈕。
         "glasses_enabled": False
@@ -724,6 +729,8 @@ def load_config():
         if _ensure_api_server_defaults(cfg):
             cfg_defaults_changed = True
         if _ensure_frame_link_defaults(cfg):
+            cfg_defaults_changed = True
+        if ensure_ui_style(cfg):
             cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
@@ -1917,7 +1924,7 @@ def _win_set_clipboard_text(text: str) -> None:
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
-          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin):
+          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, ChatApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):

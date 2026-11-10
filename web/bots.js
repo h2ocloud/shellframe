@@ -155,8 +155,9 @@
     if (isClosing(sid)) return t('Writing this conversation into memory…', '正在把這次對話寫進記憶…');
     const s = sessionsMap()[sid] || {};
     const v = s._serverStatus || {};
-    const pick = v.state === 'working' ? (v.action || v.narration || v.summary)
-      : (v.narration || v.task || (v.state && v.state !== 'unknown' && v.state !== 'idle' ? v.summary : ''));
+    const plain = window.SFChat && SFChat.sidebarLine ? SFChat.sidebarLine(sid, v) : '';   // chat style: plain words
+    const pick = plain || (v.state === 'working' ? (v.action || v.narration || v.summary)
+      : (v.narration || v.task || (v.state && v.state !== 'unknown' && v.state !== 'idle' ? v.summary : '')));
     const line = String(pick || '').replace(/[`*#>_~]+/g, '').replace(/\s+/g, ' ').trim();
     if (line) return line.slice(0, 140);
     const role = botOf(sid);
@@ -177,7 +178,8 @@
       const tag = role && memOn(role)
         ? `<span class="sfb-tag" title="${esc(t('Bot: has its own memory and writes it before closing', 'Bot：有自己的記憶，關閉前會先寫記憶'))}">Bot</span>` : '';
       lab.classList.add('sfb-two');
-      lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(s.label)}${tag}</span>` +
+      const shown = window.SFChat && SFChat.label ? SFChat.label(sid, s.label) : s.label;   // chat style: display only
+      lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(shown)}${tag}</span>` +
         `<span class="sfb-ago">${esc(agoText(sid))}</span></span>` +
         `<span class="sfb-sub">${esc(previewOf(sid)) || '&nbsp;'}</span>`;
       const dot = row.querySelector('.busy-dot');

@@ -175,13 +175,15 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | `doing`, `latest` | 跑的時候在做什麼；最新一句的取法同桌面的 `previewOf`。bot 的分頁沒有可說的話時，用它的執掌。最多 140 字，已經遮掉憑證 |
 | `last_at` | 最後一次回應的 epoch 秒；跑的時候等於現在；0 表示不知道 |
 | `closing` | `""`／`waiting`／`writing`：關閉前正在寫記憶 |
-| `decision` | 在等人決定時是 `{"id", "reason", "options": [{"n", "text"}]}`，否則 `null`。兩種情況：畫面上有選單（權限提示等）；或回合最後問了 `[[SF:RED]]`，有沒有開 Telegram 都一樣，之後送進那個分頁的 prompt 就算回答了。`id` 是這一題的指紋：選單取整個對話框的內容（同樣的問句，問的指令不同就是不同題），RED 取提問的時間。回答請用下面的 `POST /link/answer` |
+| `decision` | 在等人決定時是 `{"id", "kind", "reason", "options": [{"n", "text"}]}`，否則 `null`。`kind` 是 `menu`（畫面上的選單）或 `red`。`menu` 另有選填的 `detail`：對話框自己的文字（從開頭那條線到問句之前，照畫面原樣、去掉分隔線；每行照 `redact` 的規則遮：憑證和 32 字以上的連續英數字串，例如 SHA，都顯示成 `<redacted>`，行內連續空白合併成一個），例如權限提示要跑的完整指令；畫面上找不到對話框開頭的線就是 `""`，超過 2,000 字會截斷並以「…」結尾。畫面上的選單只看目前看得到的畫面、取最後一個，號碼要從 1 連續（讀不全的不算選單）；折到下一行的選項會接回去。兩種情況：畫面上有選單（權限提示等）；或回合最後問了 `[[SF:RED]]`，有沒有開 Telegram 都一樣，之後送進那個分頁的 prompt 就算回答了。`id` 是這一題的指紋：選單取整個對話框的內容（同樣的問句，問的指令不同就是不同題），RED 取提問的時間。回答請用下面的 `POST /link/answer` |
 
 外部 bot 的 webhook 網址和授權，都不會出現在回應裡。
 
 **`POST /link/answer {"sid", "n", "id"}`**：回答 `/link/bots` 給的那一題。
 
-- **只在 `id` 還是那個分頁現在的題目時才送。** 送進去的是 `n` 加 Enter，跟 Telegram 的選擇按鈕一樣。成功回 `{"success": true}`。
+- **只在 `id` 還是那個分頁現在的題目時才送。** 成功回 `{"success": true}`。送法跟 Telegram 的選擇按鈕一樣（`tab_delivery.answer_choice`）：
+  - 畫面上的選單：先送 `n`，0.8 秒內選單還在才補 Enter。Codex 和 Claude Code 2.1.322 按數字就直接選定，多送的 Enter 會落到下一題（實測：Codex 的更新選單選 Skip 後，那個 Enter 答掉了「信任這個資料夾？」）。
+  - `[[SF:RED]]` 的題目：`n` 加 Enter，因為它是打進輸入框的一句話。
 - **擋下來時不送任何東西**，回 `success: false` 和 `code`：
   - `stale`：題目已經回答過，或已經換了；一併附上現在的 `decision`，可能是 `null`。
   - `no_option`：沒有這個選項。

@@ -5,6 +5,7 @@
 <title>ShellBot</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
 <link rel="stylesheet" href="bots.css"/>
+<link rel="stylesheet" href="chat.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -1577,6 +1578,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="bots.js"></script>
+<script src="chat.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -2230,6 +2232,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  const shownLabel = (sid, s) => (window.SFChat && SFChat.label) ? SFChat.label(sid, s.label) : s.label;   // chat style: display only
 
   // Fit terminal to pane — always scroll to bottom unless user explicitly scrolled up
   const _fitTimers = {};
@@ -2975,7 +2978,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const el = document.getElementById('tab-hint');
     if (!el) return;
     const s = activeId && sessions[activeId];
-    const name = s ? (s.label || activeId) : '';
+    const name = s ? (shownLabel(activeId, s) || activeId) : '';
     if (!name) { el.hidden = true; return; }
     el.textContent = name;
     el.title = name;
@@ -3079,6 +3082,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       if (window.refreshPluginBadges) setTimeout(() => window.refreshPluginBadges(true), 650);
     } catch (_) {}
+    try { window.SFChat && SFChat.onSwitch(sid); } catch (_) {}   // web/chat.js: the chat view over this tab
   }
 
   async function closeTab(sid) {
@@ -3142,7 +3146,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tab.innerHTML = `
         <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
-        <span class="label">${esc(s.label)}</span>
+        <span class="label">${esc(shownLabel(sid, s))}</span>
         <span class="close-tab" data-sid="${sid}">&times;</span>
       `;
       tab.addEventListener('click', (e) => {
@@ -3311,7 +3315,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.innerHTML =
         `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>` +
         (hasAnyBridge ? `<span style="opacity:${tgOff ? '.3' : '.4'};font-size:10px;min-width:14px">${tgOff ? '·' : tgIdx}</span>` : '') +
-        `<span class="sb-label">${esc(s.label)}</span>` +
+        `<span class="sb-label">${esc(shownLabel(sid, s))}</span>` +
         modelBadgeHtml(s) +
         (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
         tgChip +
@@ -6263,6 +6267,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   function attachFile(path, dataUrl) {
+    if (window.SFChat && SFChat.covers()) { SFChat.attach(path, dataUrl); return; }   // the chat view's box, not the CLI's
     if (!activeId || !sessions[activeId]) return;
     const s = sessions[activeId];
     // 遠端 session：本機存的 path 對方讀不到。把圖片位元組送過去落地，由對方
@@ -7023,6 +7028,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let _pasteEnterListenerAttached = false;
 
   function _isStealableFocus(el) {
+    if (window.SFChat && SFChat.covers()) return false;   // the chat view's input box takes the keys, not the terminal under it
     if (!el || el === document.body || el === document.documentElement) return true;
     if (typeof el.closest !== 'function') return true;
     if (el.closest('#image-bar')) return true;
@@ -8604,7 +8610,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
   window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
-    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession };
+    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal };
 
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a

@@ -10,6 +10,37 @@ It lives in its own leaf module so the mixins and the bridge can import it
 directly (neither may import main.py). Re-entrant: save_config and the
 migrations inside load_config may run while it is held.
 """
+import os
+import sys
+import tempfile
 import threading
+from pathlib import Path
 
 CONFIG_LOCK = threading.RLock()
+
+
+def _running_tests() -> bool:
+    """A test is the program: run_tests.sh says so, or a tests_*.py was started by hand."""
+    if os.environ.get("SHELLFRAME_TESTS") == "1":
+        return True
+    entry = getattr(sys.modules.get("__main__"), "__file__", "") or (sys.argv[0] if sys.argv else "")
+    return os.path.basename(entry).startswith(("tests_", "test_"))
+
+
+def config_dir() -> Path:
+    """The app's folder: ~/.config/shellframe (config.json, account profiles, Telegram state),
+    or SHELLFRAME_CONFIG_DIR. A test never gets the real one: tests that loaded main read the
+    running app's config.json, and one migration wrote into it. Without the variable each test
+    process gets a folder of its own, and the processes it starts inherit it."""
+    env = os.environ.get("SHELLFRAME_CONFIG_DIR")
+    if env:
+        return Path(env).expanduser()
+    if _running_tests():               # one per test process, so tests cannot see each other's
+        root = os.environ.get("SHELLFRAME_TEST_ROOT") or None   # run_tests.sh removes it afterwards
+        os.environ["SHELLFRAME_CONFIG_DIR"] = tempfile.mkdtemp(prefix="shellframe-test-config-", dir=root)
+        return Path(os.environ["SHELLFRAME_CONFIG_DIR"])
+    return Path.home() / ".config" / "shellframe"
+
+
+def config_file() -> Path:
+    return config_dir() / "config.json"
