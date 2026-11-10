@@ -184,9 +184,9 @@ def worker_kind(cmd: str) -> str:
 
 
 def _cwd_slug(cwd: str) -> str:
-    """Claude Code 的 project 目錄 slug：把 / 與 . 換成 -。"""
+    """Claude Code 的 project 目錄 slug：英數以外一律換成 -（2.1.322 `replace(/[^a-zA-Z0-9]/g,"-")`）。"""
     p = os.path.realpath(os.path.expanduser(cwd or "~"))
-    return p.replace("/", "-").replace(".", "-")
+    return re.sub(r"[^A-Za-z0-9]", "-", p)
 
 
 def _tmux_pane_pid(tmux_name: str):
@@ -747,16 +747,15 @@ def resolve_transcript(worker: dict):
             # ~/.claude/projects——用全域路徑找不到，或更糟：找到別的帳號的。
             projects = claude_projects_root(worker)
             slug = _cwd_slug(worker.get("cwd", "~"))
-            sid = worker.get("session_id")
-            if sid:
-                p = os.path.join(projects, slug, f"{sid}.jsonl")
-                if os.path.exists(p):
-                    return p
-            cmd_sid = _cmd_session_uuid(worker.get("cmd", ""))
-            if cmd_sid:
-                p = os.path.join(projects, slug, f"{cmd_sid}.jsonl")
-                if os.path.exists(p):
-                    return p
+            # 有 uuid 時先找 cwd 的 slug 目錄，不在就找所有 project：uuid 不會撞，而路徑
+            # 超過 200 字元時 Claude Code 會截斷再加 hash，slug 算不出來。
+            for uid in (worker.get("session_id"), _cmd_session_uuid(worker.get("cmd", ""))):
+                if not uid:
+                    continue
+                p = os.path.join(projects, slug, f"{uid}.jsonl")
+                hits = [p] if os.path.exists(p) else glob.glob(os.path.join(projects, "*", f"{uid}.jsonl"))
+                if hits:
+                    return max(hits, key=_safe_mtime)
             pane = _tmux_pane_pid(worker.get("tmux_name"))
             if pane:
                 start = _claude_proc_start(pane) or _proc_start_epoch(pane)

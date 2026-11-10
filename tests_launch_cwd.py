@@ -81,8 +81,13 @@ ctx = api._worker_ctx("s1", tab)
 check("the resolve context carries the cd target", ctx["cwd"] == str(work), ctx["cwd"])
 check("…so the transcript in that folder is found",
       a.resolve_transcript(ctx) == str(folder / f"{uuid}.jsonl"), a.resolve_transcript(ctx))
-check("the tab's own directory would not have found it (the bug)",
-      a.resolve_transcript(dict(ctx, cwd="~")) is None)
+check("without a session uuid, the tab's own directory would not have found it (the bug)",
+      a.resolve_transcript(dict(ctx, cwd="~", session_id=None, cmd="claude --model haiku")) is None)
+check("with its uuid it is found from any directory (a path over 200 characters, a Windows drive)",
+      a.resolve_transcript(dict(ctx, cwd="~")) == str(folder / f"{uuid}.jsonl"), a.resolve_transcript(dict(ctx, cwd="~")))
+check("the folder name follows Claude Code: every character but A-Z a-z 0-9 becomes -",
+      a._cwd_slug(str(work)).endswith("-work-dir-site-check")
+      and all(c.isascii() and (c.isalnum() or c == "-") for c in a._cwd_slug(str(work))), a._cwd_slug(str(work)))
 plain = api._worker_ctx("s2", Tab("claude --model haiku"))
 check("a command without cd keeps the tab's own directory", plain["cwd"] == "~", plain["cwd"])
 
