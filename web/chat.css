@@ -25,9 +25,12 @@
 }
 
 /* ── the face: bots.js's faceSvg in a .busy-dot, so its expression follows the state ── */
+.cm-face { --sfb-size: 2em; }
+#chat-head .cm-face { --sfb-size: 2.1em; }
+.cm-ask-card .cm-face { --sfb-size: 2.2em; }
 .cm-face.busy-dot, .cm-face.busy-dot.sig-working, .cm-face.busy-dot.sig-done,
 .cm-face.busy-dot.sig-decision, .cm-face.busy-dot.sig-stuck {
-  width: 2em; height: 2em; flex: none; display: inline-block; border-radius: 0;
+  width: var(--sfb-size); height: var(--sfb-size); flex: none; display: inline-block; border-radius: 0;
   background: none; box-shadow: none; animation: none; opacity: 1; cursor: default;
 }
 .cm-face.busy-dot::after { display: none; }
@@ -38,7 +41,6 @@
   display: flex; align-items: center; gap: .7em; padding: .55em 1.1em; flex: none;
   border-bottom: 1px solid var(--cm-line); background: #16161e;
 }
-#chat-head .cm-face { width: 2.1em; height: 2.1em; }
 .cm-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
 .cm-who b { font-size: 1em; font-weight: 600; color: var(--cm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-state { font-size: .82em; color: var(--cm-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -60,9 +62,11 @@
 .cm-user .cm-bubble { max-width: min(78%, 640px); background: var(--cm-user); color: #eef1ff; border-radius: 14px 14px 4px 14px; }
 .cm-user.is-pending .cm-bubble { opacity: .65; }
 .cm-meta { font-size: .75em; color: var(--cm-dim); padding: 0 .3em; }
-.cm-bot .cm-bubble { flex: 1; max-width: calc(100% - 2.7em); background: var(--cm-raised); border: 1px solid var(--cm-line);
+.cm-bot .cm-bubble { flex: 0 1 auto; max-width: calc(100% - 2.7em); background: var(--cm-raised); border: 1px solid var(--cm-line);
                      border-radius: 4px 14px 14px 14px; }
 .cm-error > div { color: var(--cm-amber); font-size: .88em; }
+.cm-noreply > div { color: var(--cm-dim); font-size: .84em; }
+.cm-more-text.cm-inline { display: inline; margin: 0 0 0 .3em; }
 .cm-empty { margin: 3em auto; max-width: 30em; text-align: center; color: var(--cm-dim); display: flex; flex-direction: column; gap: .4em; }
 .cm-empty b { color: var(--cm-soft); font-weight: 600; }
 .cm-earlier, .cm-more-text, .cm-more {
@@ -138,12 +142,13 @@
   background: linear-gradient(180deg, rgba(224, 175, 104, .10), rgba(224, 175, 104, .04));
   border: 1px solid rgba(224, 175, 104, .45);
 }
-.cm-ask-card .cm-face { width: 2.2em; height: 2.2em; }
 .cm-ask-body { flex: 1; min-width: 0; }
 .cm-ask-title { font-size: .78em; font-weight: 700; letter-spacing: .04em; color: var(--cm-amber); }
 .cm-ask-q { margin-top: .15em; color: var(--cm-text); font-weight: 600; overflow-wrap: anywhere; }
-.cm-ask-ctx { display: block; margin-top: .35em; padding: .3em .6em; border-radius: 6px; background: #16161e;
-              color: var(--cm-soft); font-size: .8em; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6em; overflow: auto; }
+.cm-ask-ctx { display: flex; align-items: baseline; gap: .6em; margin-top: .4em; padding: .35em .65em; border-radius: 6px;
+              background: #16161e; max-height: 6em; overflow: auto; }
+.cm-ask-ctx code { color: var(--cm-soft); font-size: .82em; white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
+.cm-ask-k { flex: none; font-size: .74em; color: var(--cm-dim); }
 .cm-opts { display: flex; flex-wrap: wrap; gap: .5em; margin-top: .65em; }
 .cm-opt {
   padding: .42em .95em; border-radius: 8px; border: 1px solid var(--cm-line2); background: var(--cm-raised);
@@ -170,6 +175,7 @@
   font: inherit; font-weight: 600; cursor: pointer;
 }
 #chat-send:hover { filter: brightness(1.08); }
+#chat-layer.cm-has-mic #chat-compose { padding-right: calc(1.4em + 54px); }
 #chat-note { max-width: 880px; margin: .3em auto 0; min-height: 1.2em; font-size: .76em; color: var(--cm-dim); }
 #chat-note.warn { color: var(--cm-amber); }
 

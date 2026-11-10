@@ -41,6 +41,8 @@
     [/^Yes, and always allow access to (.+) from this project$/, 'Allow, and let this project always reach $1', '允許，而且這個專案以後都能存取 $1', 'yes'],
     [/^Yes, allow reading from (.+) from this project$/, 'Allow, and let this project always read $1', '允許，而且這個專案以後都能讀取 $1', 'yes'],
     [/^Yes, and always allow access to (.+) for this session$/, 'Allow, and let it reach $1 this session', '允許，這次工作階段都能存取 $1', 'yes'],
+    // 2.1.322 adds this to its permission prompts (with " · auto mode handles these prompts for you")
+    [/^Yes, and switch to auto mode(?: · .*)?$/, 'Allow, and switch to auto mode (it decides these itself from now on)', '允許，並切到自動模式（之後這類詢問由它自己判斷）', 'yes'],
     // Codex
     [/^Yes, proceed$/, 'Allow', '允許', 'yes'],
     [/^Yes, just this once$/, 'Allow this once', '只允許這一次', 'yes'],
@@ -87,6 +89,9 @@
   // decision: {id, reason, options: [{n, text}]} as chat_view gives it.
   // Every option known → plain words; any one unknown → every option as written.
   // `n` is always the option's own number, never its position on screen.
+  // `complete`: the numbers run 1, 2, 3… A list that starts later was read only in part
+  // (measured: an option wrapped onto a second line drops the options above it), and a
+  // choice among some of the options is not offered.
   function mapDecision(decision, lang) {
     const zh = isZh(lang);
     const d = decision || {};
@@ -96,6 +101,7 @@
     const question = mapQuestion(d.reason, zh);
     return {
       id: d.id || '',
+      complete: raw.length > 0 && raw.every((o, i) => Number(o.n) === i + 1),
       question: question || String(d.reason || ''),
       questionTranslated: !!question,
       translated,
@@ -403,6 +409,7 @@
   const HOLD_SENT_MS = 180000;             // the phone's ChatTimeline.holdFor
   const QUEUE_HOLD_MS = 30 * 60000;        // tab_delivery's longest wait
   const LONG_TEXT = 1200;                  // characters before "show all" (the phone's LongText.limit)
+  const NO_REPLY_S = 15;                   // seconds of silence after your message before the view says so
 
   function settings() {
     const h = host();
@@ -618,6 +625,8 @@
     shownFor = show ? sid : '';
     renderSwitch(sid, local);
     renderNotice(sid, want && !show);
+    const mic = document.getElementById('mic-fab');
+    layer.classList.toggle('cm-has-mic', !!(mic && getComputedStyle(mic).display !== 'none'));   // position:fixed: no offsetParent
     if (lang() !== lastLang) { lastLang = lang(); syncSettings(); if (show) renderAll(sid); }
     if (show && was !== sid) {
       renderAll(sid);
@@ -705,11 +714,17 @@
     return st.state || v.activity || '';
   }
 
+  function stickBottom(sid) {
+    if (!view(sid).atBottom) return;
+    const sc = layer.querySelector('#chat-scroll');
+    sc.scrollTop = sc.scrollHeight;
+  }
   function renderAll(sid) {
     renderHead(sid);
     renderList(sid);
     renderLive(sid);
     renderAsk(sid);
+    stickBottom(sid);
     input.placeholder = T(`Message ${displayName(sessions()[sid])} — Enter to send, Shift+Enter for a new line`,
                           `傳訊息給 ${displayName(sessions()[sid])}（Enter 送出，Shift+Enter 換行）`);
     sendBtn.textContent = T('Send', '送出');
@@ -720,8 +735,8 @@
     const state = stateOf(sid);
     const d = plainDoing(s._serverStatus, lang());
     const asks = !!((view(sid).data || {}).decision);
-    const word = d.text || (asks ? T('Waiting for you', '等你決定')
-                                 : ({ done: T('Ready', '可以說話'), idle: T('Ready', '可以說話') }[state] || ''));
+    const word = d.text ? (d.detail ? `${d.text} ${d.detail}` : d.text)
+      : (asks ? T('Waiting for you', '等你決定') : ({ done: T('Ready', '可以說話'), idle: T('Ready', '可以說話') }[state] || ''));
     const html = `${faceHtml(sid, state)}<div class="cm-who"><b>${escHtml(displayName(s))}</b>` +
       `<span class="cm-state">${escHtml(word)}</span></div>` +
       `<button class="cm-to-term" data-act="to-term" title="${escHtml(T(`Show the terminal (${KEY_LABEL})`, `看終端機（${KEY_LABEL}）`))}">` +
@@ -755,6 +770,16 @@
                            '從下面開始說吧。它回答之後這裡還是空的話，代表讀不到它的對話記錄，可以切到終端機看。'))}</span></div>`;
     }
     items.forEach((it, idx) => { html += itemHtml(sid, it, idx, items); });
+    // The last word is yours, it is not working and nothing came back: some failures
+    // (measured: Codex refusing a model it is too old for) are only on the screen.
+    const last = items[items.length - 1];
+    v.lastUserTs = last && last.type === 'user' ? last.ts || 0 : 0;
+    v.noReply = noReplyDue(sid);
+    if (v.noReply) {
+      html += `<div class="cm-row cm-noreply"><span class="cm-face-gap"></span><div>${escHtml(T(
+        'No answer came back. If something went wrong, the terminal shows it.', '它沒有回覆。如果出了錯，終端機上看得到。'))}` +
+        ` <button class="cm-more-text cm-inline" data-act="to-term">${escHtml(T('Open the terminal', '看終端機'))}</button></div></div>`;
+    }
     v.pending.forEach(p => {
       html += `<div class="cm-row cm-user is-pending"><div class="cm-bubble">${md(p.text, isZh(lang()))}</div>` +
               `<div class="cm-meta">${escHtml(p.queued ? T('Waiting for it to finish this step', '等它做完這一步就送進去') : T('Sending…', '送出中…'))}</div></div>`;
@@ -768,6 +793,12 @@
     }
   }
   let listHtml = '';
+  function noReplyDue(sid) {
+    const v = view(sid);
+    const data = v.data || {};
+    return !!(v.lastUserTs && !v.pending.length && !data.decision && !['working', 'decision'].includes(stateOf(sid)) &&
+              Date.now() / 1000 - v.lastUserTs > NO_REPLY_S);
+  }
   const itemKey = (it, idx) => `${it.type}:${it.ts || 0}:${idx}`;
   function longText(sid, key, text, cls, markdown) {
     const v = view(sid);
@@ -788,8 +819,9 @@
         (tag ? `<div class="cm-meta">${escHtml(tag)}</div>` : '') + '</div>';
     }
     if (it.type === 'bot') {
-      const prev = items[idx - 1];
-      const face = !prev || (prev.type !== 'bot' && prev.type !== 'tools') ? faceHtml(sid, '') : '<span class="cm-face-gap"></span>';
+      let j = idx - 1;
+      while (j >= 0 && items[j].type === 'tools') j--;
+      const face = j < 0 || items[j].type !== 'bot' ? faceHtml(sid, '') : '<span class="cm-face-gap"></span>';
       return `<div class="cm-row cm-bot">${face}${longText(sid, key, it.text, 'cm-bubble', true)}</div>`;
     }
     if (it.type === 'tools') {
@@ -824,7 +856,7 @@
     if (live.dataset.html !== html) {
       live.innerHTML = html;
       live.dataset.html = html;
-      if (view(sid).atBottom) { const sc = layer.querySelector('#chat-scroll'); sc.scrollTop = sc.scrollHeight; }
+      stickBottom(sid);
     }
   }
   function renderAsk(sid) {
@@ -832,16 +864,23 @@
     const data = v.data || {};
     const d = data.decision;
     let html = '';
-    if (d && (d.options || []).length) {
-      const m = mapDecision(d, lang());
+    const m = d && (d.options || []).length ? mapDecision(d, lang()) : null;
+    if (m && !m.complete) {
+      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` +
+        `<div class="cm-ask-title">${escHtml(T('Your call, in the terminal', '要你決定，請到終端機選'))}</div>` +
+        `<div class="cm-ask-q">${escHtml(T(`Only some of its options could be read (${m.options.map(o => o.n).join(', ')}), so none is offered here.`,
+                                            `這題只讀到部分選項（${m.options.map(o => o.n).join('、')}），為了不選錯，不在這裡回答。`))}</div>` +
+        `<div class="cm-opts"><button class="cm-opt" data-act="to-term">${escHtml(T('Open the terminal', '切到終端機處理'))}</button></div></div></div>`;
+    } else if (m) {
       const call = data.activity === 'decision' ? pendingCall(data.turns) : null;
       const context = !m.questionTranslated && m.question && m.translated ? m.question : '';
       const answered = v.answered && v.answered.id === d.id;
       html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` +
         `<div class="cm-ask-title">${escHtml(T('Your call', '要你決定'))}</div>` +
         `<div class="cm-ask-q">${escHtml(m.questionTranslated || !m.translated ? m.question : T('It is asking before it goes on.', '它在繼續之前先問你。'))}</div>` +
-        (context ? `<code class="cm-ask-ctx">${escHtml(context)}</code>` : '') +
-        (call && !context ? `<code class="cm-ask-ctx">${escHtml([call.tool, call.target].filter(Boolean).join('  '))}</code>` : '') +
+        (context ? `<div class="cm-ask-ctx"><code>${escHtml(context)}</code></div>` : '') +
+        (call && !context && call.target ? `<div class="cm-ask-ctx"><span class="cm-ask-k">${escHtml(callWord(call))}</span>` +
+          `<code>${escHtml(call.target)}</code></div>` : '') +
         `<div class="cm-opts">${m.options.map(o => `<button class="cm-opt${o.tone ? ' tone-' + o.tone : ''}" data-act="answer" ` +
           `data-n="${escHtml(o.n)}" data-id="${escHtml(m.id)}"${answered ? ' disabled' : ''} title="${escHtml(
             T(`Option ${o.n}: ${o.raw}`, `選項 ${o.n}：${o.raw}`))}">${escHtml(o.label)}</button>`).join('')}</div>` +
@@ -856,7 +895,14 @@
         `<div class="cm-opts"><button class="cm-opt" data-act="to-term">${escHtml(T('Open the terminal', '切到終端機處理'))}</button></div></div></div>`;
     }
     ask.hidden = !html;
-    if (ask.dataset.html !== html) { ask.innerHTML = html; ask.dataset.html = html; }
+    if (ask.dataset.html !== html) { ask.innerHTML = html; ask.dataset.html = html; stickBottom(sid); }
+  }
+
+  // What the pending call works on, named the way a person would.
+  function callWord(call) {
+    const k = toolKind(call.tool);
+    return { run: T('Command', '指令'), edit: T('File', '檔案'), read: T('File', '檔案'), web: T('Web', '網址'),
+             search: T('Looking for', '要找'), agent: T('Sub-task', '子任務'), mcp: T('Tool', '工具') }[k] || call.tool;
   }
 
   // ── actions ────────────────────────────────────────────────────────────
@@ -914,7 +960,9 @@
         v.answered = null;
         note(r.code === 'stale'
           ? T('That question was already answered or has changed; nothing was sent.', '這題已經回答過或換題了，沒有送出。')
-          : (r.message || T('Not sent.', '沒有送出。')), true);
+          : r.code === 'not_on_screen'
+            ? T('Those options are not on its screen any more; nothing was sent.', '這些選項已經不在它的畫面上，沒有送出。')
+            : (r.message || T('Not sent.', '沒有送出。')), true);
       }
     } catch (e) { note(String(e), true); }
     v.rev = '';
@@ -954,12 +1002,13 @@
     if (!sid || document.hidden) return;
     renderHead(sid);
     renderLive(sid);
+    if (noReplyDue(sid) !== !!view(sid).noReply) renderList(sid);
     refresh(sid, false);
   }
   // A working tab's second line in the sidebar (web/bots.js previewOf), in plain words
   // while the setting is on chat. '' leaves bots.js's own line.
   function sidebarLine(sid, st) {
-    if (globalStyle() !== 'chat' || !st || st.state !== 'working') return '';
+    if (globalStyle() !== 'chat' || !st || !['working', 'decision', 'stuck'].includes(st.state)) return '';
     const d = plainDoing(st, lang());
     return d.text ? (d.detail ? `${d.text} · ${d.detail}` : d.text) : '';
   }

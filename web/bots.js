@@ -156,8 +156,8 @@
     const s = sessionsMap()[sid] || {};
     const v = s._serverStatus || {};
     const plain = window.SFChat && SFChat.sidebarLine ? SFChat.sidebarLine(sid, v) : '';   // chat style: plain words
-    const pick = v.state === 'working' ? (plain || v.action || v.narration || v.summary)
-      : (v.narration || v.task || (v.state && v.state !== 'unknown' && v.state !== 'idle' ? v.summary : ''));
+    const pick = plain || (v.state === 'working' ? (v.action || v.narration || v.summary)
+      : (v.narration || v.task || (v.state && v.state !== 'unknown' && v.state !== 'idle' ? v.summary : '')));
     const line = String(pick || '').replace(/[`*#>_~]+/g, '').replace(/\s+/g, ' ').trim();
     if (line) return line.slice(0, 140);
     const role = botOf(sid);

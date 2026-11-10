@@ -245,6 +245,40 @@ phone_res = api._execute_sfctl("bots_answer", {"sid": "s3", "n": 1, "id": qid})
 check("the phone's own answer still says 'on the phone'", phone_res.get("success") and "已在手機上選：1" in tg[-1][1]["text"]
       and tab.written == ["1\r"], (phone_res, tg[-1]))
 
+print("an older menu in the scrollback is not offered")
+# Measured on a Codex tab: its start-up update menu stays in the scrollback after it is
+# answered. The shared reader takes 40 lines above the screen and returns the first menu.
+OLD_MENU = ["  ✨ Update available! 0.142.1 -> 0.167.0", "", "› 1. Update now (runs `npm install -g @openai/codex`)",
+            "  2. Skip", "  3. Skip until next version", "", "  Press enter to continue"]
+NEW_MENU = ["  Would you like to run the following command?", "", "  $ touch codex-probe.txt", "",
+            "› 1. Yes, proceed (y)", "  2. Yes, and don't ask again for this command in this session (a)",
+            "  3. No, and tell Codex what to do differently (esc)", "", "  Press enter to confirm or esc to cancel"]
+api.sessions["s6"] = Tab("s6", "codex -a untrusted")
+api.sessions["s6"]._tmux_name = "sf_s6"
+STATUS["s6"] = {"state": "decision"}
+SCREENS["s6"] = "\n".join(OLD_MENU + ["", "› count to 3", ""] + NEW_MENU)
+VISIBLE = {"s6": "\n".join(NEW_MENU)}
+api._chat_visible_screen = lambda sid: VISIBLE.get(sid)
+shared = api._link_decision("s6", "decision", {"state": "decision"}) or {}
+check("(the shared reader returns the old update menu: reported, not changed here)",
+      [o["text"] for o in shared.get("options", [])][:1] == ["Update now (runs `npm install -g @openai/codex`)"], shared)
+v6 = view("s6")
+check("the chat view does not offer it: no buttons, it says why", v6["decision"] is None
+      and v6.get("decision_hidden") == "not_on_screen" and v6["activity"] == "decision", v6.get("decision"))
+w = json.loads(api.chat_answer("s6", 2, shared.get("id", "")))
+check("…and refuses to answer it: nothing typed", w["code"] == "not_on_screen" and api.sessions["s6"].written == [], w)
+SCREENS["s6"] = "\n".join(NEW_MENU)
+on = view("s6")["decision"] or {}
+check("the menu that is on screen is offered", [o["n"] for o in on.get("options", [])] == [1, 2, 3]
+      and on.get("options", [{}])[0].get("text") == "Yes, proceed (y)", on)
+VISIBLE["s6"] = "\n".join(NEW_MENU[:5])
+check("…unless one of its options is not on screen", view("s6")["decision"] is None)
+bridge_home.on_turn_end(api, "s4", read_events=lambda sid: RED)
+STATUS["s4"] = {"state": "done"}
+VISIBLE["s4"] = "$ "
+check("a [[SF:RED]] question needs no screen", ((view("s4")["decision"] or {}).get("reason")) == "要先修哪個？")
+bridge_home.forget("s4")
+
 print("web/chat.js only calls what the backend has")
 src = (HERE / "web" / "chat.js").read_text(encoding="utf-8")
 calls = set(re.findall(r"(?:api\(\)|\ba)\.([a-z_]+)\(", src))
