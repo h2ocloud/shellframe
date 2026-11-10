@@ -731,6 +731,12 @@ def load_config():
                 _swallow("load_config:499")
         return cfg
     cfg = DEFAULT_CONFIG.copy()
+    # A first launch offers every supported CLI at once (the branch above only runs once a
+    # config file exists), without touching DEFAULT_CONFIG's own list: copy() is shallow.
+    names = {p["name"] for p in DEFAULT_CONFIG["presets"]}
+    cfg["presets"] = [dict(p) for p in DEFAULT_CONFIG["presets"]] + [
+        dict(p) for p in _DEFAULT_AI_PRESETS if p["name"] not in names]
+    cfg["_default_ai_presets_offered"] = sorted(p["name"] for p in _DEFAULT_AI_PRESETS)
     _ensure_idle_reaper_defaults(cfg)
     _ensure_agent_roster_defaults(cfg)
     _ensure_user_prompt_paths_default(cfg)
