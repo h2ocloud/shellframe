@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Windows self-restart 不會被單實例鎖擋下來自己（v0.37.7）。
+"""Windows self-restart is not blocked by its own single-instance guard (win_instance).
 
-`restart_app()` 在 Windows 上先 spawn 新行程，再讓舊行程睡 0.8 秒（cleanup_all +
-os._exit）才真正結束，為的是讓 RPC 回應先送回前端。新行程開機夠快的話，走到
-`_ensure_single_instance_windows()` 時舊行程的 mutex 還沒放掉——於是新行程判定
-「已經有一個在跑」，把舊視窗拉到前景、自己結束。使用者看到的是：點了重啟，視窗
-閃一下，畫面卻還是更新前的那個——新行程（帶著修正的那個）才是死掉的那個。
+v0.37.7 retried the mutex for 1.8 s, and its test passed, but a restart on a machine
+with 25 tabs still left nothing running. The test's fake said "free" on the fourth
+try; real Windows never would: CreateMutexW hands back a handle to the existing mutex,
+the guard never closed it, and a named kernel object lives while any handle to it is
+open. After the first collision the new process kept the mutex alive by itself.
 
-`_acquire_mutex_with_retry` 把重試/backoff 抽出來單獨測，不必碰真的 Windows handle。
+The fake kernel32 here keeps handles the way Windows does, so that bug is reproducible
+and the fix is tested against the same rule.
 
-跑法：.venv/bin/python tests_win_restart_race.py
+Run: .venv/bin/python tests_win_restart_race.py
 """
+import os
+import re
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
-sys.modules['webview'] = MagicMock()
-sys.modules['bridge_telegram'] = MagicMock()
 sys.path.insert(0, str(Path(__file__).parent))
 
-from main import _acquire_mutex_with_retry  # noqa: E402
+import win_instance as W  # noqa: E402
 
 passed = failed = 0
 
@@ -34,54 +34,176 @@ def check(name, ok, detail=""):
         print(f"  [FAIL] {name}  {detail}")
 
 
-# 1. 第一次就拿到 → 不重試、不 sleep
-sleeps = []
-calls = {"n": 0}
+class FakeKernel:
+    """Named mutexes as Windows keeps them: the object exists while any handle is open."""
+
+    def __init__(self):
+        self.open = {}          # name -> set of open handles
+        self.owner = {}         # handle -> name
+        self.next = 100
+        self.err = 0
+
+    def create_mutex(self, name):
+        existed = bool(self.open.get(name))
+        h = self.next
+        self.next += 4
+        self.open.setdefault(name, set()).add(h)
+        self.owner[h] = name
+        self.err = W.ERROR_ALREADY_EXISTS if existed else 0
+        return h
+
+    def last_error(self):
+        return self.err
+
+    def close(self, h):
+        name = self.owner.pop(h)
+        self.open[name].discard(h)
+
+    def handles(self, name=W.MUTEX_NAME):
+        return len(self.open.get(name, ()))
 
 
-def _always_free():
-    calls["n"] += 1
-    return ("handle", True)
+class Clock:
+    def __init__(self):
+        self.t = 0.0
+        self.events = []        # (time, fn): run once the clock passes time
+
+    def now(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+        for at, fn in list(self.events):
+            if self.t >= at:
+                fn()
+                self.events.remove((at, fn))
 
 
-h, ok = _acquire_mutex_with_retry(_always_free, sleep=sleeps.append)
-check("第一次就拿到：只呼叫一次、不 sleep", ok is True and calls["n"] == 1 and sleeps == [],
-      f"calls={calls['n']} sleeps={sleeps}")
-
-# 2. 模擬 restart 情境：前 3 次舊行程還沒放（模擬 0.8s 的 exit 延遲），第 4 次拿到
-calls = {"n": 0}
-sleeps = []
+# 1. The v0.37.7 guard against this model: a holder that leaves after 1 s, and it never gets in.
+k = FakeKernel()
+old_instance = k.create_mutex(W.MUTEX_NAME)
+clock = Clock()
+clock.events.append((1.0, lambda: k.close(old_instance)))
 
 
-def _busy_then_free():
-    calls["n"] += 1
-    return ("handle", calls["n"] >= 4)
+def v0377_try():                       # what main.py did: keep the handle whatever happened
+    h = k.create_mutex(W.MUTEX_NAME)
+    return h if k.last_error() != W.ERROR_ALREADY_EXISTS else None
 
 
-h, ok = _acquire_mutex_with_retry(_busy_then_free, sleep=sleeps.append)
-check("舊行程晚點才放掉 mutex：重試後仍然拿得到", ok is True and calls["n"] == 4,
-      f"calls={calls['n']}")
-check("重試之間真的有 backoff（sleep 次數 = 重試次數）", len(sleeps) == 3, str(sleeps))
+h, waited, tries = W.acquire(v0377_try, restart=False, now=clock.now, sleep=clock.sleep)
+check("the v0.37.7 guard never recovers after a collision, even once the holder is gone (the bug)",
+      h is None and k.handles() >= tries, f"h={h} tries={tries} open handles={k.handles()}")
 
-# 3. 真的有另一個在跑（一直拿不到）→ 用完重試預算後老實回報失敗
-calls = {"n": 0}
-sleeps = []
+# 2. Closing the handle of a failed try: gets the mutex once the holder leaves.
+k = FakeKernel()
+old_instance = k.create_mutex(W.MUTEX_NAME)
+clock = Clock()
+clock.events.append((1.0, lambda: k.close(old_instance)))
+h, waited, tries = W.acquire(lambda: W.try_acquire(k), restart=False, now=clock.now, sleep=clock.sleep)
+check("a failed try closes its handle, so the mutex is free once the holder leaves",
+      h is not None and k.handles() == 1, f"h={h} handles={k.handles()}")
+check("…after about the holder's exit time", 0.9 <= waited <= 1.3, f"waited={waited}")
+
+# 3. A restart whose old process needs 40 s to close its tabs: the new one waits it out.
+k = FakeKernel()
+old_instance = k.create_mutex(W.MUTEX_NAME)
+clock = Clock()
+clock.events.append((40.0, lambda: k.close(old_instance)))
+h, waited, tries = W.acquire(lambda: W.try_acquire(k), restart=True, now=clock.now, sleep=clock.sleep)
+check("a restart waits for the old process however long its tabs take (40 s)",
+      h is not None and 40.0 <= waited <= 40.5, f"h={h} waited={waited}")
+check("no handles left behind while waiting", k.handles() == 1, f"handles={k.handles()}")
+
+# 4. A second launch while the app runs: gives up after about two seconds, as before.
+k = FakeKernel()
+k.create_mutex(W.MUTEX_NAME)
+clock = Clock()
+h, waited, tries = W.acquire(lambda: W.try_acquire(k), restart=False, now=clock.now, sleep=clock.sleep)
+check("a second launch gives up after its ten tries (~1.8 s)",
+      h is None and tries == W.QUICK_ATTEMPTS and waited < 2.5, f"tries={tries} waited={waited}")
+check("…and leaves only the running instance's handle", k.handles() == 1, f"handles={k.handles()}")
+
+# 5. A restart whose old process never exits: stops waiting at the limit.
+k = FakeKernel()
+k.create_mutex(W.MUTEX_NAME)
+clock = Clock()
+h, waited, tries = W.acquire(lambda: W.try_acquire(k), restart=True, now=clock.now, sleep=clock.sleep)
+check("a restart gives up at the wait limit when the old one never leaves",
+      h is None and W.RESTART_WAIT_S <= waited <= W.RESTART_WAIT_S + 1, f"waited={waited}")
+check("the wait limit leaves room for a slow shutdown of many tabs (>= 60 s)", W.RESTART_WAIT_S >= 60)
+
+# 6. Telling a restart from a launch.
+app = os.path.join(os.sep, "apps", "shellframe")
+sep = os.pathsep
+spawned = sep.join([os.path.join(app, "bin"), "/opt/homebrew/bin", "/usr/bin"])
+check("RESTART_ENV marks a restart", W.is_restart("/usr/bin", app, {W.RESTART_ENV: "4242"}))
+check("an inherited PATH with ShellBot's bin folder first marks a restart (older versions)",
+      W.is_restart(spawned, app, {}))
+check("an ordinary PATH is a launch", not W.is_restart(sep.join(["/usr/bin", "/bin"]), app, {}))
+check("ShellBot's bin folder further down the PATH is not enough",
+      not W.is_restart(sep.join(["/usr/bin", os.path.join(app, "bin")]), app, {}))
+check("an empty PATH is a launch", not W.is_restart("", app, {}))
+
+# 7. The whole guard: restart → waits, logs, keeps the handle, and the flag does not reach tabs.
+logs = []
+k = FakeKernel()
+old_instance = k.create_mutex(W.MUTEX_NAME)
+clock = Clock()
+clock.events.append((12.0, lambda: k.close(old_instance)))
+os.environ[W.RESTART_ENV] = "4242"
+exits = []
+h = W.ensure_single_instance(app_dir=app, path_at_start="/usr/bin", log=lambda c, m: logs.append(m),
+                             k32=k, now=clock.now, sleep=clock.sleep,
+                             bring=lambda: "ShellBot", exit=exits.append)
+check("restart: the guard returns the handle once the old instance is gone", h is not None and not exits)
+check("restart: the flag is removed so tabs do not inherit it", W.RESTART_ENV not in os.environ)
+check("restart: the log says how long it waited",
+      any(re.search(r"after 12\.\ds .*\(restart\)", m) for m in logs), str(logs))
+
+logs, exits = [], []
+k = FakeKernel()
+k.create_mutex(W.MUTEX_NAME)
+clock = Clock()
+brought = []
+W.ensure_single_instance(app_dir=app, path_at_start="/usr/bin", log=lambda c, m: logs.append(m),
+                         k32=k, now=clock.now, sleep=clock.sleep,
+                         bring=lambda: brought.append(1) or "ShellBot", exit=exits.append)
+check("second launch: brings the running window forward and exits", brought and exits == [0], f"{exits}")
+check("second launch: the log says so, instead of nothing at all",
+      any("exiting" in m and "(launch)" in m and "ShellBot" in m for m in logs), str(logs))
 
 
-def _always_busy():
-    calls["n"] += 1
-    return (None, False)
+class Broken:
+    def create_mutex(self, name):
+        raise OSError("no kernel32")
 
 
-h, ok = _acquire_mutex_with_retry(_always_busy, attempts=10, delay=0.2, sleep=sleeps.append)
-check("真的有另一個實例在跑：重試預算用完後回報未取得", ok is False, str(ok))
-check("重試次數符合 attempts 設定（10 次嘗試＝9 次 sleep）", calls["n"] == 10 and len(sleeps) == 9,
-      f"calls={calls['n']} sleeps={len(sleeps)}")
+logs, exits = [], []
+h = W.ensure_single_instance(app_dir=app, path_at_start="", log=lambda c, m: logs.append(m),
+                             k32=Broken(), exit=exits.append)
+check("if the Windows calls fail, start unguarded rather than not at all",
+      h is None and not exits and any("unguarded" in m for m in logs), str(logs))
 
-# 4. 重試預算涵蓋 restart_app() 舊行程的 0.8 秒退出延遲，留有餘裕
-total_budget = 0.2 * 9  # attempts=10 → 9 次 sleep，每次 delay 秒
-check("重試總時長 > 舊行程 0.8 秒退出延遲（否則沒補到這條 race）",
-      total_budget > 0.8, f"budget={total_budget}s")
+# 8. Where the pieces live.
+here = Path(__file__).parent
+main_src = (here / "main.py").read_text(encoding="utf-8")
+cap = main_src.find('_PATH_AT_START = os.environ.get("PATH"')
+rewrite = main_src.find('os.environ["PATH"] = _session_env()["PATH"]')
+check("main.py reads the starting PATH before it rewrites it", 0 <= cap < rewrite, f"{cap} {rewrite}")
+check("the bring-forward looks for today's window title and the old one",
+      W.WINDOW_TITLES[0] == "ShellBot" and "ShellFrame" in W.WINDOW_TITLES)
+upd = (here / "api_update.py").read_text(encoding="utf-8")
+win = upd[upd.find("if main.IS_WIN:"):upd.find("if not spawned:\n                return")]
+check("both Windows relaunch paths pass the restart flag", win.count("env=restart_env") == 2,
+      str(win.count("env=restart_env")))
+check("the old instance logs how long closing its tabs took", "closed {n} tab(s) in" in upd)
+import ast  # noqa: E402
+_imports = {a.name.split(".")[0] for n in ast.walk(ast.parse((here / "win_instance.py").read_text(encoding="utf-8")))
+            if isinstance(n, ast.Import) for a in n.names}
+_imports |= {(n.module or "").split(".")[0] for n in ast.walk(ast.parse((here / "win_instance.py").read_text(encoding="utf-8")))
+             if isinstance(n, ast.ImportFrom)}
+check("win_instance stays a leaf module (no main, no api_host)", not _imports & {"main", "api_host"}, str(_imports))
 
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")

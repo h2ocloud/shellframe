@@ -18,6 +18,8 @@ import urllib.request
 from pathlib import Path
 
 from api_host import main
+import win_instance
+from sf_log import _dlog
 
 
 class UpdateApiMixin:
@@ -437,6 +439,9 @@ class UpdateApiMixin:
                             break
                     except Exception:
                         main._swallow("Api.restart_app:4914")
+                # The new process waits for this one to let go of the single-instance
+                # mutex instead of giving up after two seconds (win_instance).
+                restart_env = dict(os.environ, **{win_instance.RESTART_ENV: str(os.getpid())})
                 if bat_path:
                     try:
                         DETACHED_PROCESS = 0x00000008
@@ -447,8 +452,10 @@ class UpdateApiMixin:
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             close_fds=True,
+                            env=restart_env,
                         )
                         spawned = True
+                        _dlog("restart", f"started the new instance via {bat_path.name}")
                     except Exception as e:
                         err_msgs.append(f"shellframe.bat failed: {e}")
 
@@ -470,8 +477,10 @@ class UpdateApiMixin:
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             close_fds=True,
+                            env=restart_env,
                         )
                         spawned = True
+                        _dlog("restart", f"started the new instance via {Path(py_exe).name}")
                     except Exception as e:
                         err_msgs.append(f"pythonw relaunch failed: {e}")
             else:
@@ -562,10 +571,12 @@ class UpdateApiMixin:
                 # Schedule exit so the response can return cleanly first
                 def _exit_soon():
                     time.sleep(0.8)
+                    t0, n = time.monotonic(), len(self.sessions)
                     try:
                         self.cleanup_all()  # detaches from tmux without killing
                     except Exception:
                         main._swallow("restart_app._exit_soon:5043")
+                    _dlog("restart", f"closed {n} tab(s) in {time.monotonic() - t0:.1f}s; this instance exits")
                     os._exit(0)
                 threading.Thread(target=_exit_soon, daemon=True).start()
             return json.dumps({"success": True})

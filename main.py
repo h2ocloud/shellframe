@@ -36,6 +36,11 @@ from datetime import datetime
 from pathlib import Path
 from queue import SimpleQueue
 
+# The PATH this process started with. A few hundred lines down it is rewritten with
+# ShellBot's own bin folder first, and a process a running ShellBot spawns inherits
+# that: win_instance reads it to tell a restart from a second launch.
+_PATH_AT_START = os.environ.get("PATH", "")
+
 import webview
 
 # Add app dir to path for bridge imports
@@ -5453,78 +5458,13 @@ def _claim_pid_file():
 
 _WIN_MUTEX_HANDLE = None  # keep the mutex referenced for the process lifetime
 
-# restart_app() spawns the new process, then lets the OLD one sleep ~0.8s
-# (cleanup_all + os._exit) so its RPC response returns to the UI first. A
-# fresh process can finish Python/import startup and reach this check well
-# under that — it would see the mutex still held, decide "another instance
-# is running", raise the STALE window, and exit. The self-update silently
-# no-ops: the new (fixed/updated) process is the one that dies, and the old
-# process — carrying whatever bug the update was fixing — is what survives,
-# looking to the user like restart did nothing. Retrying for longer than the
-# old process's own exit budget closes that race; a genuine second launch
-# just waits under 2s longer before being redirected, which is unnoticeable.
-_MUTEX_RETRY_ATTEMPTS = 10
-_MUTEX_RETRY_DELAY_SEC = 0.2
-
-
-def _acquire_mutex_with_retry(try_acquire, attempts=_MUTEX_RETRY_ATTEMPTS,
-                               delay=_MUTEX_RETRY_DELAY_SEC, sleep=time.sleep):
-    """Call `try_acquire()` (→ (handle, acquired)) until it succeeds or the
-    retry budget runs out. Pulled out of _ensure_single_instance_windows so
-    the retry/backoff behaviour can be tested without real Windows handles.
-    """
-    result = try_acquire()
-    for _ in range(max(0, attempts - 1)):
-        if result[1]:
-            return result
-        sleep(delay)
-        result = try_acquire()
-    return result
-
 
 def _ensure_single_instance_windows():
-    """Windows duplicate guard — named mutex instead of the PID file.
-
-    A kernel mutex is auto-released when its owner dies, so there is no
-    stale-file case to probe. Same failure this prevents as on macOS: two
-    instances sharing one Telegram bot token → getUpdates 409 conflicts,
-    plus duplicated PTY sessions. If another instance already holds the
-    mutex, bring its window forward (best-effort, mirrors the SIGUSR1
-    summon path) and exit this process.
-    """
+    """Windows duplicate guard — a named mutex, waited for on a restart (win_instance)."""
     global _WIN_MUTEX_HANDLE
-    try:
-        import ctypes
-        # use_last_error + get_last_error: windll.GetLastError() is
-        # documented-unreliable (ctypes' own calls can clobber it) — a
-        # misread here either disables the guard or kills the only instance.
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        ERROR_ALREADY_EXISTS = 183
-
-        def _try_acquire():
-            h = kernel32.CreateMutexW(None, False, "Local\\shellframe-single-instance")
-            return h, bool(h and ctypes.get_last_error() != ERROR_ALREADY_EXISTS)
-
-        handle, acquired = _acquire_mutex_with_retry(_try_acquire)
-        if acquired:
-            _WIN_MUTEX_HANDLE = handle
-            return
-        print("[shellframe] another instance already running — "
-              "bringing it forward and exiting this one", file=sys.stderr)
-        try:
-            user32 = ctypes.windll.user32
-            hwnd = user32.FindWindowW(None, "shellframe")
-            if hwnd:
-                SW_RESTORE = 9
-                user32.ShowWindow(hwnd, SW_RESTORE)
-                user32.SetForegroundWindow(hwnd)
-        except Exception:
-            _swallow("_ensure_single_instance_windows:6612")
-        os._exit(0)
-    except Exception:
-        # ctypes/kernel32 unavailable (exotic runtime) — degrade to no guard
-        # rather than blocking startup.
-        return
+    import win_instance
+    _WIN_MUTEX_HANDLE = win_instance.ensure_single_instance(
+        app_dir=APP_DIR, path_at_start=_PATH_AT_START, log=_dlog)
 
 
 def _ensure_single_instance():
