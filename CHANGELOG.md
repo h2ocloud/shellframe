@@ -6,6 +6,42 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.41.2 (2026-11-11)
+
+### Fixes
+
+- **Restarting or updating on Windows no longer runs ShellBot on a console window.**
+  The in-app restart (after an update, `sfctl restart`, Telegram's `/restart`) started the new
+  instance with `cmd /c start "" shellframe.bat`: `python.exe` in a new, visible console window.
+  Closing that window, or pressing Ctrl+C or Ctrl+Break in it, ended ShellBot at once and left no
+  line in any log; and because `start` runs a batch file with `cmd /K`, every restart also left a
+  console window open after the old instance had gone. Measured on a Windows computer: started
+  that way, the app ended in the same second its console window was closed, and the console
+  windows of four restarts from the day before were still open. A restart (and so an update) now
+  starts the venv's `pythonw.exe main.py` directly, with no console; it falls back to
+  `shellframe.vbs`, then to `python.exe` without a window. How a restart is recognised, and
+  v0.41.1's wait for the old instance to let go of the single-instance mutex, are unchanged. The
+  debug log's first line now says which program started and whether it has a console
+  (`[lifecycle] started … exe=pythonw.exe console=no restarted_from=<old pid>`), with a warning
+  when it has one. `shellframe.bat` stays, for starting from a terminal. On that computer, three
+  restarts in a row with 25 tabs: each new instance ran `pythonw.exe` with no console, got the
+  mutex after 6.6 to 7.3 seconds (26 to 30 tries) and brought all 25 tabs back, and no console
+  window appeared. Covered by tests_win_restart_race.py.
+
+  **Windows 上重啟或更新後，ShellBot 不再掛在主控台視窗上。** App 內重啟（更新後、
+  `sfctl restart`、Telegram 的 `/restart`）用 `cmd /c start "" shellframe.bat` 開新程序：
+  `python.exe` 跑在一個新開、看得到的主控台視窗上。關掉那個視窗，或在裡面按 Ctrl+C、Ctrl+Break，
+  ShellBot 會立刻結束，任何 log 都不會留下一行；而且 `start` 用 `cmd /K` 跑 batch 檔，所以舊程序
+  結束後，每次重啟還會留下一個開著的主控台視窗。在一台 Windows 電腦上實測：用這種方式啟動，主控台
+  視窗一關，App 在同一秒內就結束了；前一天四次重啟留下的主控台視窗也都還開著。現在重啟（也就是
+  更新）直接啟動 venv 裡的 `pythonw.exe main.py`，沒有主控台；找不到時改用 `shellframe.vbs`，
+  再不行才用不開視窗的 `python.exe`。辨認是不是重啟的方式，以及 v0.41.1 等舊程序放掉單一實例
+  mutex 的做法，都沒有變。debug log 的第一行會寫出是哪個程式啟動、有沒有主控台
+  （`[lifecycle] started … exe=pythonw.exe console=no restarted_from=<舊 pid>`），有主控台時另外
+  附警告。`shellframe.bat` 留著，給從終端機啟動時用。在那台電腦上連續重啟三次、每次 25 個分頁：
+  新程序都是沒有主控台的 `pythonw.exe`，6.6 到 7.3 秒（試了 26 到 30 次）拿到 mutex，25 個分頁
+  都回來，也沒有出現主控台視窗。由 tests_win_restart_race.py 守著。
+
 ## v0.41.1 (2026-11-10)
 
 ### Fixes

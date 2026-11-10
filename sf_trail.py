@@ -3,10 +3,11 @@
 A Windows run once vanished with nothing in the debug log, no crash log and no system
 event. Ways it can go like that, and what this module writes for each:
 
-- It runs attached to a console window (an in-app restart starts it through
-  shellframe.bat, python.exe in a new console): closing that window, or Ctrl+C /
-  Ctrl+Break in it, ends the process. The start line says which exe and whether a
-  console is attached, and the console's control events are logged as they come.
+- It runs attached to a console window (started from a terminal through shellframe.bat;
+  before v0.41.2 an in-app restart did that too): closing that window, or Ctrl+C /
+  Ctrl+Break in it, ends the process. The start line (win_instance.start_line) says which
+  exe and whether a console is attached, and the console's control events are logged as
+  they come.
 - The window's loop ends (pywebview's own Ctrl+C handler, or the window closing), and
   main() goes straight to os._exit, which skips atexit: main() logs it (exiting()), and
   the window's closing / closed events are logged here.
@@ -22,13 +23,14 @@ Lines go to the debug log under "lifecycle". Nothing here changes what the app d
 import atexit
 import faulthandler
 import functools
-import ntpath
 import os
 import re
 import sys
 import threading
 import time
 import traceback
+
+import win_instance
 
 FAULT_MAX = 8 * 1024 * 1024     # faulthandler is switched off past this (see _fault_guard)
 TRAIL_MAX = 2 * 1024 * 1024     # the js_api trail rotates to .1 past this
@@ -78,28 +80,7 @@ def keep_faults():
 
 def start_line(environ=None, executable=None, console=None) -> str:
     """Which program this is and how it was started: what to read when it vanishes."""
-    environ = os.environ if environ is None else environ
-    exe = ntpath.basename(executable or sys.executable or "?")   # either separator
-    if console is None:
-        console = _has_console()
-    restart = environ.get("SHELLFRAME_RESTART_FROM_PID") or ""
-    line = (f"started pid={os.getpid()} parent={os.getppid()} exe={exe} "
-            f"console={'yes' if console else 'no' if console is False else '?'} "
-            f"restarted_from={restart or '-'}")
-    if console:
-        line += (" — attached to a console window: closing it, or Ctrl+C / Ctrl+Break in it, "
-                 "ends the app at once")
-    return line
-
-
-def _has_console():
-    if os.name != "nt":
-        return None
-    try:
-        import ctypes
-        return bool(ctypes.windll.kernel32.GetConsoleWindow())
-    except Exception:
-        return None
+    return win_instance.start_line(environ, executable, console)
 
 
 def _faulthandler():

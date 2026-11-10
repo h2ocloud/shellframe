@@ -59,6 +59,7 @@ import agent_grok
 import account_manager
 import sf_config
 import sf_trail
+import win_instance
 from api_history import HistoryApiMixin
 from api_schedules import SchedulesApiMixin
 # Api 的各領域 mixin 透過 api_host 的 late-bound `main` 取用本模組的全域；

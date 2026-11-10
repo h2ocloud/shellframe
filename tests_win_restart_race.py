@@ -206,8 +206,8 @@ check("the bring-forward looks for today's window title and the old one",
       W.WINDOW_TITLES[0] == "ShellBot" and "ShellFrame" in W.WINDOW_TITLES)
 upd = (here / "api_update.py").read_text(encoding="utf-8")
 win = upd[upd.find("if main.IS_WIN:"):upd.find("if not spawned:\n                return")]
-check("both Windows relaunch paths pass the restart flag", win.count("env=restart_env") == 2,
-      str(win.count("env=restart_env")))
+check("the Windows relaunch (one path now: win_instance.relaunch picks the program) passes the restart flag",
+      win.count("env=restart_env") == 1, win.count("env=restart_env"))
 check("the old instance logs how long closing its tabs took", "closed {n} tab(s) in" in upd)
 import ast  # noqa: E402
 _imports = {a.name.split(".")[0] for n in ast.walk(ast.parse((here / "win_instance.py").read_text(encoding="utf-8")))
@@ -219,6 +219,48 @@ _cm = _src[_src.index("def create_mutex"):_src.index("def last_error")]
 check("the last error is cleared before CreateMutexW (ctypes restores its saved 183)",
       _cm.index("set_last_error(0)") < _cm.index("CreateMutexW("), _cm)
 check("win_instance stays a leaf module (no main, no api_host)", not _imports & {"main", "api_host"}, str(_imports))
+
+print("\nrestart: the new instance never runs on a console window (v0.41.2)")
+# v0.41.1 started it through shellframe.bat (cmd /c start): python.exe in a new console
+# window. Closing that window, or Ctrl+C / Ctrl+Break in it, ended the app at once with
+# nothing in any log.
+D, P, PN = W.DETACHED_PROCESS, W.CREATE_NEW_PROCESS_GROUP, W.CREATE_NO_WINDOW
+venv, home, app = "/u/.venv/Scripts", "/u", "/u/.local/apps/shellframe"
+have = lambda *paths: (lambda p: p in paths)
+argv, flags, what = W.relaunch(app, f"{venv}/python.exe", home, have(f"{venv}/pythonw.exe"))
+check("the venv's pythonw.exe beside python.exe, detached", argv == [f"{venv}/pythonw.exe", f"{app}/main.py"]
+      and flags == D | P and what == "pythonw.exe", (argv, flags, what))
+argv, flags, what = W.relaunch(app, f"{venv}/pythonw.exe", home, have(f"{venv}/pythonw.exe"))
+check("already pythonw.exe: the same", argv[0] == f"{venv}/pythonw.exe")
+argv, flags, what = W.relaunch(app, f"{venv}/python.exe", home, have(f"{home}/.local/bin/shellframe.vbs"))
+check("no pythonw.exe: shellframe.vbs through wscript (it runs pythonw)",
+      argv == ["wscript.exe", f"{home}/.local/bin/shellframe.vbs"] and flags == D | P, (argv, flags))
+argv, flags, what = W.relaunch(app, f"{venv}/python.exe", home, have())
+check("neither: python.exe with no console window", argv == [f"{venv}/python.exe", f"{app}/main.py"]
+      and flags & PN and not flags & D, (argv, hex(flags)))
+every = [W.relaunch(app, f"{venv}/{exe}", home, have(*found))[0]
+         for exe in ("python.exe", "pythonw.exe")
+         for found in ((), (f"{venv}/pythonw.exe",), (f"{home}/.local/bin/shellframe.vbs",))]
+check("never cmd, start or a .bat", not any(a in ("cmd", "start", "/c") or str(a).lower().endswith(".bat")
+                                            for argv in every for a in argv), every)
+src = (Path(__file__).parent / "api_update.py").read_text(encoding="utf-8")
+win = src[src.find("if main.IS_WIN:", src.find("def restart_app")):src.find('if platform.system() == "Darwin":', src.find("def restart_app"))]
+check("restart_app starts it through win_instance.relaunch, marked as a restart",
+      "win_instance.relaunch(main.APP_DIR, sys.executable)" in win and "win_instance.RESTART_ENV" in win
+      and "env=restart_env" in win)
+check("…and no longer through shellframe.bat", "shellframe.bat" not in win and '"start"' not in win)
+line = W.start_line({W.RESTART_ENV: "4242"}, r"C:\u\.venv\Scripts\python.exe", True)
+check("the start line: python.exe on a console, restarted, and what ends it",
+      "exe=python.exe console=yes restarted_from=4242" in line and "ends the app at once" in line, line)
+line = W.start_line({}, r"C:\u\.venv\Scripts\pythonw.exe", False)
+check("…pythonw.exe without one: no warning", "exe=pythonw.exe console=no restarted_from=-" in line
+      and "ends the app" not in line, line)
+main_src = (Path(__file__).parent / "main.py").read_text(encoding="utf-8")
+first = main_src[main_src.index("def main():\n"):].split("\n")[1].strip()
+trail_src = (Path(__file__).parent / "sf_trail.py").read_text(encoding="utf-8")
+check("main() logs it first thing (sf_trail.start writes win_instance.start_line)",
+      first.startswith("sf_trail.start(_dlog, TMP_DIR)")
+      and "return win_instance.start_line(environ, executable, console)" in trail_src, first)
 
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")

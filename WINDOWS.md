@@ -59,7 +59,7 @@ Optional but recommended:
 | Right-click copy/paste | ✅ | `clip.exe` (write) + `Get-Clipboard -Raw` (read) |
 | Ctrl+Click file paths | ✅ | Opens via `os.startfile()` |
 | Settings preset auto-save | ✅ | Same as macOS |
-| TG `/restart` | ✅ | Spawns via `cmd /c start shellframe.bat` (detached) |
+| TG `/restart` | ✅ | Starts `pythonw.exe main.py` (no console window); the new one waits for the old to let go of the single-instance mutex |
 | TG `/update` `/update_now` | ✅ | Git pull + auto-restart |
 | Soft session persistence | ⚠️ | See limitation below |
 
@@ -117,8 +117,16 @@ You're on the no-pywinpty fallback. Run
 and restart.
 
 **`/restart` from Telegram does nothing**
-Check that `shellframe.bat` exists in `%USERPROFILE%\.local\bin`. If you
-moved the install dir, re-run `install.ps1` to recreate the launcher.
+A restart starts the venv's `pythonw.exe` (else `shellframe.vbs`, else `python.exe`
+without a window); the debug log's `[restart]` line says which. If you moved the
+install dir, re-run `install.ps1` to recreate the venv and the launchers.
+
+**ShellBot vanished without a word**
+Look at the debug log's first `[lifecycle] started …` line. `console=yes` means it
+was started on a console window (`shellframe` typed in a terminal runs
+`shellframe.bat`, `python.exe` on that console): closing that window, or Ctrl+C /
+Ctrl+Break in it, ends ShellBot at once and leaves nothing behind. The desktop
+shortcut, `shellframe.vbs` and every restart run `pythonw.exe`, with no console.
 
 **Sessions don't survive restart at all**
 Check `config.json` — there should be a `session_list` key with your sessions.
