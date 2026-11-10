@@ -43,6 +43,20 @@ PID_FILE = os.path.join(_TMP, "shellframe.pid")
 TMUX_TCC_STATE = os.path.expanduser("~/.config/shellframe/tmux_tcc.json")
 
 
+def _rpc_nowait(cmd: str, args: dict = None):
+    """Leave a command for the app and return at once, for a best-effort call whose answer
+    nobody needs. A running app takes it within half a second; one that is not running
+    ignores it later as stale (over 30 s). Same file IPC as _rpc (and sf_agent_hook)."""
+    request_id = f"{os.getpid()}-{int(time.time() * 1000)}-nw"
+    payload = {"cmd": cmd, "args": args or {}, "ts": time.time(), "request_id": request_id,
+               "result_file": os.path.join(_TMP, "shellframe_result_nowait.json")}
+    os.makedirs(CMD_DIR, exist_ok=True)
+    cmd_file = os.path.join(CMD_DIR, f"shellframe_cmd_{request_id}.json")
+    with open(cmd_file + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+    os.replace(cmd_file + ".tmp", cmd_file)
+
+
 def _rpc(cmd: str, args: dict = None, timeout: float = 15.0):
     """Send cmd to main.py via file IPC. Returns result dict."""
     request_id = f"{os.getpid()}-{int(time.time() * 1000)}"
@@ -627,6 +641,62 @@ def _tab_label(sid: str) -> str:
     return ""
 
 
+def _load_sf_push():
+    _load_sf_notify()          # puts the install directory on sys.path
+    import sf_push
+    return sf_push
+
+
+def _cmd_push_setup(args) -> int:
+    """Save which key, then ask Apple with a made-up device token: a working key gets
+    400 BadDeviceToken back (the key was accepted, the token was not), a wrong one 403."""
+    sp = _load_sf_push()
+    r = sp.setup(args.key, args.key_id, args.team_id, args.topic)
+    if not r.get("success"):
+        print(f"ERR {r.get('message')}")
+        return 1
+    why = sp.availability()
+    if why:
+        print(f"ERR saved, but this computer cannot send: {why}")
+        return 1
+    try:
+        bearer = sp.jwt_for(sp.load())
+    except Exception as e:
+        print(f"ERR saved, but openssl could not sign with that key ({type(e).__name__})")
+        return 1
+    topic = args.topic or "com.example.check"
+    code, reason = sp.curl_transport(f"{sp.HOSTS[args.env]}/3/device/{'0' * 64}",
+                                     {"authorization": f"bearer {bearer}", "apns-topic": topic,
+                                      "apns-push-type": "alert"}, b'{"aps":{"alert":"check"}}')
+    if code == 400 and reason in ("BadDeviceToken", "DeviceTokenNotForTopic", "TopicDisallowed"):
+        print(f"OK key saved; Apple accepted it ({args.env}: {reason} for a made-up device)")
+        return 0
+    if code == 403:
+        print(f"ERR key saved, but Apple refused it: {reason or 'HTTP 403'} (check the Key ID, team id and key file)")
+        return 1
+    print(f"WARN key saved; Apple's answer could not be read: {('HTTP ' + str(code)) if code else ''} {reason}".rstrip())
+    return 0
+
+
+def _cmd_push_status() -> int:
+    sp = _load_sf_push()
+    cfg = sp.load()
+    why = sp.availability(cfg)
+    print(f"push: {'ready' if not why else why}")
+    if cfg.get("key_id"):
+        print(f"  key  {cfg.get('key_id')} (team {cfg.get('team_id')})  {cfg.get('key_path')}")
+    devs = cfg.get("devices") or {}
+    if not devs:
+        print("  no phone has registered yet (the app does that after pairing)")
+    for peer, d in devs.items():
+        last = time.strftime("%m-%d %H:%M", time.localtime(d["last_sent_at"])) if d.get("last_sent_at") else "never"
+        print(f"  {d.get('device_name') or peer[:8]}  {d.get('env')}  last sent {last}"
+              + (f"  error: {d['last_error']}" if d.get("last_error") else ""))
+    quiet = sp.telegram_quiet()
+    print(f"  Telegram: {'quiet (the phones ring)' if quiet else 'rings as usual'}")
+    return 0
+
+
 def _cmd_notify(args) -> int:
     """Optional outbound webhook. Silent no-op when not configured; a failed
     delivery warns on stderr but still exits 0 — it must never block the tab
@@ -640,6 +710,13 @@ def _cmd_notify(args) -> int:
     if status not in sn.STATUSES:
         print(f"ERR --status must be one of {', '.join(sn.STATUSES)}", file=sys.stderr)
         return 2
+    if not args.dry_run:
+        try:      # the paired phones get it too (api_push); best effort, no wait, never the exit code
+            _rpc_nowait("push_notify", {"status": status, "message": args.message,
+                                        "sid": args.sid if args.sid is not None else os.environ.get("SF_SID", ""),
+                                        "label": args.label or ""})
+        except Exception:
+            pass
     try:
         cfg = sn.load_config(warn=lambda m: print(f"WARN notify: {m}", file=sys.stderr))
         if cfg is None:
@@ -787,6 +864,15 @@ def main():
     p_notify.add_argument("--dry-run", action="store_true",
                           help="Show the masked target and the payload; send nothing")
 
+    p_ps = sub.add_parser("push-setup", help="Use an APNs key (.p8) for push to the paired phones; "
+                                              "checks it with Apple right away")
+    p_ps.add_argument("--key", required=True, help="Path of the AuthKey_<KEYID>.p8 file (kept where it is, made 0600)")
+    p_ps.add_argument("--key-id", required=True, help="The key's 10-character Key ID")
+    p_ps.add_argument("--team-id", required=True, help="The Apple developer team id")
+    p_ps.add_argument("--topic", default="", help="The app's bundle id (default: what each phone registers)")
+    p_ps.add_argument("--env", default="sandbox", choices=("sandbox", "production"),
+                      help="Which APNs to check the key against (default: sandbox)")
+    sub.add_parser("push-status", help="Push to the phones: key, registered phones, last send and error")
     sub.add_parser("version", help="ShellFrame version + which experimental features are on")
     sub.add_parser("skill", help="Print the agent-facing reference for this build (read this first)")
 
@@ -1025,6 +1111,10 @@ def main():
         }))
     elif args.cmd == "notify":
         return _cmd_notify(args)
+    elif args.cmd == "push-setup":
+        return _cmd_push_setup(args)
+    elif args.cmd == "push-status":
+        return _cmd_push_status()
     elif args.cmd == "history-audit":
         _print_result(_rpc("history_audit", {"sid": args.sid}, timeout=20))
     elif args.cmd == "version":

@@ -74,6 +74,7 @@ class Node:
         self.woken = []          # roles via /link/bots/wake
         self.answers = []        # bodies via /link/answer
         self.edits = []          # (cmd, body) via /link/bots/avatar|settings|primary
+        self.pushes = []         # (cmd, body) via /link/push/* and /link/peer/name
 
         def execute(cmd, args):
             if cmd == "list":
@@ -122,6 +123,9 @@ class Node:
             if cmd == "a2a_deliver":
                 self.a2a.append(dict(args or {}))
                 return {"success": True, "message": "delivered"}
+            if cmd.startswith(("push_", "peer_")):
+                self.pushes.append((cmd, dict(args or {})))
+                return {"success": True, "message": cmd}
             if cmd == "bots_link":
                 return {"success": True, "v": 1, "rev": 7, "bots": [], "tabs": {}, "asked": dict(args or {})}
             if cmd == "bots_wake":
@@ -266,21 +270,38 @@ def main():
 
         # ── the phone's bot view (docs/mobile-link.md) ──
         st, body = signed_get(b, peer_a_from_b, "/link/bots?rev=5")
+        # The handler also learns which phone asked (peer_id: the caller's frame id).
         check("/link/bots answers a signed request, the rev passed on",
-              st == 200 and body.get("rev") == 7 and body.get("asked") == {"rev": "5"})
+              st == 200 and body.get("rev") == 7 and body.get("asked") == {"rev": "5", "peer_id": b.fid})
         st, body = signed_post(b, peer_a_from_b, "/link/bots/wake", {"role": "Coding"})
         check("/link/bots/wake wakes the bot named", st == 200 and body.get("success") and a.woken == ["Coding"])
         st, _ = post_json(f"http://127.0.0.1:{a.port}/link/bots/wake", {"role": "Coding"})
         check("…not for an unsigned request", st == 403 and a.woken == ["Coding"])
         st, body = signed_post(b, peer_a_from_b, "/link/answer", {"sid": "s1", "n": 2, "id": "abc123def456"})
         check("/link/answer hands the phone's answer over whole",
-              st == 200 and body.get("success") and a.answers == [{"sid": "s1", "n": 2, "id": "abc123def456"}])
+              st == 200 and body.get("success")
+              and a.answers == [{"sid": "s1", "n": 2, "id": "abc123def456", "peer_id": b.fid}])
         EDITS = [("/link/bots/avatar", {"sid": "s1", "avatar": {"shape": "egg", "color": "teal"}}),
                  ("/link/bots/settings", {"role": "Coding", "model": "opus"}), ("/link/bots/primary", {"role": "Coding"})]
         for path, obj in EDITS:
             signed_post(b, peer_a_from_b, path, obj)
         check("the three edits reach the page's own functions, each with its body",
-              a.edits == [("bots_avatar", EDITS[0][1]), ("bots_settings", EDITS[1][1]), ("bots_primary", EDITS[2][1])])
+              a.edits == [(c, dict(o, peer_id=b.fid)) for c, o in
+                          (("bots_avatar", EDITS[0][1]), ("bots_settings", EDITS[1][1]), ("bots_primary", EDITS[2][1]))])
+
+        # ── push to the phone, and a phone renaming itself (docs/mobile-link.md) ──
+        PUSH = [("/link/push/register", {"token": "ab" * 32, "env": "sandbox"}), ("/link/push/unregister", {}),
+                ("/link/push/test", {}), ("/link/peer/name", {"name": "iPad mini"})]
+        codes = [signed_post(b, peer_a_from_b, path, obj)[0] for path, obj in PUSH]
+        check("the push routes and the rename reach the app by name, each with the phone's id",
+              codes == [200] * 4 and a.pushes == [("push_register", dict(PUSH[0][1], peer_id=b.fid)),
+                                                  ("push_unregister", {"peer_id": b.fid}),
+                                                  ("push_test", {"peer_id": b.fid}),
+                                                  ("peer_name", {"name": "iPad mini", "peer_id": b.fid})])
+        st, body = signed_get(b, peer_a_from_b, "/link/push/status")
+        check("GET /link/push/status asks the app for push_status", st == 200 and a.pushes[-1][0] == "push_status")
+        st, _ = post_json(f"http://127.0.0.1:{a.port}/link/push/register", {"token": "ab" * 32})
+        check("…not for an unsigned request", st == 403 and len(a.pushes) == 5)
 
         # ── 遠端操作 ──
         info = b.link.remote_info(a.fid)
@@ -410,6 +431,10 @@ def main():
         check("slave /link/answer on master denied, nothing answered", st == 403 and len(a.answers) == 1)
         codes = [signed_post(b, peer_a_slave, path, obj)[0] for path, obj in EDITS]
         check("slave edits on master denied (403), nothing changed", codes == [403, 403, 403] and len(a.edits) == 3)
+        codes = [signed_post(b, peer_a_slave, path, obj)[0] for path, obj in PUSH]
+        st, _ = signed_get(b, peer_a_slave, "/link/push/status")
+        check("slave push routes and rename on master denied (403), nothing registered",
+              codes == [403] * 4 and st == 403 and len(a.pushes) == 5)
         before_rn = len(a.renames)
         rnd = b.link.remote_rename(a.fid, "s1", "nope")
         check("slave rename on master denied",

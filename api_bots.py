@@ -308,6 +308,7 @@ class BotsApiMixin:
         s.write(f"{n}\r")
         bridge_home.phone_answered(self, sid, n, claimed)
         _dlog("bots", f"{sid}: answered {n} from the phone")
+        self._push_answered(sid, cur["id"], str(args.get("peer_id") or ""))
         return {"success": True, "message": _(f"Answered {n}", f"已選 {n}")}
 
     def _link_editable(self, role: str):

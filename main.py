@@ -77,6 +77,7 @@ from api_update import UpdateApiMixin
 from api_voice import VoiceApiMixin
 from api_tmux import TmuxApiMixin
 from api_bots import BotsApiMixin
+from api_push import PushApiMixin
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -1920,7 +1921,7 @@ def _win_set_clipboard_text(text: str) -> None:
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
-          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin):
+          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, PushApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):

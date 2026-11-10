@@ -337,9 +337,10 @@ def collapse_id(kind: str, sid: str, qid: str = "") -> str:
     return f"q.{qid}" if kind == "decision" else f"{kind}.{sid}"
 
 
-def build(kind, *, frame_id, frame_name="", sid, bot, text="", qid="", options=(),
+def build(kind, *, frame_id, frame_name="", sid, bot, role="", text="", qid="", options=(),
           prefs=None, topic="", silent=False, title=None, now=None):
-    """(headers, payload) for one alert. `options` are (n, text) pairs of a decision."""
+    """(headers, payload) for one alert. `bot` is the name shown, `role` the bot behind the tab
+    ('' for a tab that is not one); `options` are (n, text) pairs of a decision."""
     prefs = clean_prefs(prefs)
     hide = prefs["hide_content"]
     now = now or time.time()
@@ -361,7 +362,7 @@ def build(kind, *, frame_id, frame_name="", sid, bot, text="", qid="", options=(
     aps = {"alert": alert, "category": category, "thread-id": f"{frame_id}:{sid}", "mutable-content": 1}
     if not silent:
         aps["sound"] = "default"
-    sf = {"v": 1, "kind": kind, "frame": frame_id, "sid": sid, "role": bot}
+    sf = {"v": 1, "kind": kind, "frame": frame_id, "sid": sid, "role": role}
     if kind == "decision":
         sf["qid"] = qid
         if not hide:
@@ -493,7 +494,7 @@ class Pusher:
             return new
         return update(fn)
 
-    def send(self, kind, *, sid, bot, frame_id, frame_name="", text="", qid="", options=(),
+    def send(self, kind, *, sid, bot, frame_id, frame_name="", role="", text="", qid="", options=(),
              primary=False, title=None, exclude=(), paired=None) -> int:
         """One cue to every registered device that wants it. How many sends were queued."""
         now = self._clock()
@@ -530,11 +531,30 @@ class Pusher:
                           f"{DEVICE_HOUR_MAX} an hour reached")
                 continue
             headers, payload = build(kind, frame_id=frame_id, frame_name=frame_name, sid=sid, bot=bot,
-                                     text=text, qid=qid, options=options, prefs=prefs,
+                                     role=role, text=text, qid=qid, options=options, prefs=prefs,
                                      topic=dev.get("topic") or cfg.get("topic") or "",
                                      silent=silent, title=title, now=now)
             queued += self._queue(peer_id, dev, headers, payload, f"{kind} sid={sid}")
         return queued
+
+    def test(self, peer_id, *, frame_id, frame_name="", text=""):
+        """/link/push/test: one info to this phone now, and Apple's answer. (ok, message)."""
+        cfg = load()
+        dev = (cfg.get("devices") or {}).get(peer_id)
+        why = availability(cfg)
+        if why:
+            return False, why
+        if not dev:
+            return False, sf_lang.pick("This phone is not registered here", "這支手機還沒在這台電腦註冊")
+        headers, payload = build("info", frame_id=frame_id, frame_name=frame_name, sid="", bot=frame_name or "ShellBot",
+                                 text=text, prefs=dev.get("prefs"), topic=dev.get("topic") or cfg.get("topic") or "")
+        headers["apns-collapse-id"] = "info.test"
+        if not self._slots.acquire(timeout=20):
+            return False, "busy"
+        code, reason = self._deliver(peer_id, dict(dev), headers, payload, "test")
+        if code == 200:
+            return True, sf_lang.pick("Sent", "已送出")
+        return False, f"HTTP {code} {reason}".strip() if code else (reason or "no answer")
 
     def withdraw(self, ids, *, frame_id, exclude=()) -> int:
         cfg = load()
@@ -562,23 +582,28 @@ class Pusher:
             return 0
 
     def _deliver(self, peer_id, dev, headers, payload, tag):
+        """Send one (the caller holds a slot). Apple's (status, reason); 0 when it never got there."""
+        code, reason = 0, ""
         try:
             cfg = load()
             dest = f"{mask_token(dev.get('token'))} ({dev.get('env')})"
             try:
                 bearer = jwt_for(cfg, sign=self._sign)
             except Exception as e:
-                self._note(peer_id, error=f"signing failed ({type(e).__name__})")
+                reason = f"signing failed ({type(e).__name__})"
+                self._note(peer_id, error=reason)
                 self._log(f"failed {tag} -> {dest}: could not sign the provider token")
-                return
+                return code, reason
             url = f"{HOSTS.get(dev.get('env'), HOSTS['sandbox'])}/3/device/{dev.get('token')}"
             body = json.dumps(payload, ensure_ascii=False).encode()
             code, reason = self._transport(url, dict(headers, authorization=f"bearer {bearer}"), body)
             self._answer(peer_id, dev, code, reason, f"{tag} -> {dest}")
         except Exception as e:
+            reason = reason or type(e).__name__
             self._log(f"failed {tag}: {type(e).__name__}")
         finally:
             self._slots.release()
+        return code, reason
 
     def _answer(self, peer_id, dev, code, reason, tag):
         now = self._clock()

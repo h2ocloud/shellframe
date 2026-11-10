@@ -841,6 +841,7 @@ import sfctl as S  # noqa: E402
 rpc_calls = []
 SESSIONS = {"details": {"sessions": [{"sid": "s7", "label": "from-app"}, {"sid": "s8", "label": ""}]}}
 real_rpc = S._rpc
+real_nowait = S._rpc_nowait
 
 
 def fake_rpc(cmd, args=None, timeout=15.0):
@@ -849,6 +850,7 @@ def fake_rpc(cmd, args=None, timeout=15.0):
 
 
 S._rpc = fake_rpc
+S._rpc_nowait = lambda cmd, args=None: rpc_calls.append((cmd, "nowait"))
 try:
     check("_tab_label：找到就回標籤", S._tab_label("s7") == "from-app")
     check("_tab_label：找不到 / 標籤空 → 空字串", S._tab_label("s99") == "" and S._tab_label("s8") == "")
@@ -865,11 +867,15 @@ try:
             rc = S._cmd_notify(ns)
         return rc, out.getvalue(), err.getvalue()
 
+    # sfctl notify 先把同一件事交給 app 推到手機（push_notify，api_push），有沒有設定 webhook
+    # 都一樣；下面這些檢查看的是「查標籤」那一個 RPC，所以先把 push_notify 濾掉。
+    label_calls = lambda: [c for c in rpc_calls if c[0] != "push_notify"]
     saved_env = {k: os.environ.get(k) for k in (N.ENV_URL, N.ENV_AUTH, "SF_SID")}
     try:
         rpc_calls.clear()
         rc, so, se = run_cmd(sid="s7")
-        check("沒設定：就算有 sid 也不查標籤（_rpc 不被呼叫）、靜默", rc == 0 and rpc_calls == [] and so == "" and se == "")
+        check("沒設定：就算有 sid 也不查標籤、靜默", rc == 0 and label_calls() == [] and so == "" and se == "")
+        check("沒設定 webhook 也先交給 app 推到手機（push_notify，不等回覆）", rpc_calls == [("push_notify", "nowait")], str(rpc_calls))
 
         os.environ[N.ENV_URL] = URL
         os.environ[N.ENV_AUTH] = SECRET_AUTH
@@ -877,21 +883,22 @@ try:
         rc, so, se = run_cmd(sid="s7")
         sent = json.loads(mock.hits[0]["body"]) if mock.hits else {}
         check("設定好、有 sid、沒給 --label → 用 list 查標籤（timeout 2 秒）",
-              rpc_calls == [("list", 2.0)] and sent.get("label") == "from-app" and rc == 0, str((rpc_calls, sent)))
+              label_calls() == [("list", 2.0)] and sent.get("label") == "from-app" and rc == 0, str((rpc_calls, sent)))
         rpc_calls.clear()
         run_cmd(sid="s7", label="given")
-        check("給了 --label 就不查", rpc_calls == [])
+        check("給了 --label 就不查", label_calls() == [])
         rpc_calls.clear()
         run_cmd(sid="")
-        check("沒有 sid 就不查", rpc_calls == [])
+        check("沒有 sid 就不查", label_calls() == [])
         os.environ["SF_SID"] = "s8"
         mock.reset()
         run_cmd()
-        check("--sid 預設取 SF_SID", json.loads(mock.hits[0]["body"])["sid"] == "s8" and rpc_calls == [("list", 2.0)])
+        check("--sid 預設取 SF_SID", json.loads(mock.hits[0]["body"])["sid"] == "s8" and label_calls() == [("list", 2.0)])
         rpc_calls.clear()
         mock.reset()
         rc, so, se = run_cmd(sid="s7", dry_run=True)
         check("--dry-run 會查標籤但不送", mock.hits == [] and "from-app" in so and clean(so, se), so)
+        check("--dry-run 也不推到手機", ("push_notify", "nowait") not in rpc_calls, str(rpc_calls))
         S._rpc = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no app"))
         mock.reset()
         rc, so, se = run_cmd(sid="s7")
@@ -904,6 +911,7 @@ try:
                 os.environ[k] = v
 finally:
     S._rpc = real_rpc
+    S._rpc_nowait = real_nowait
 
 mock.close()
 shutil.rmtree(TMP, ignore_errors=True)
