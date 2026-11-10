@@ -328,7 +328,9 @@ s = src["sfctl.py"]
 i_pid, i_mig = s.find('"ShellBot PID file not found"'), s.find("app_bundle.migrate()")
 check("sfctl restart renames only once the relaunch is its own (after the PID check)", 0 < i_pid < i_mig, (i_pid, i_mig))
 m = src["main.py"]
-check("the app renames after the single-instance guard", 0 < m.find("    _ensure_single_instance()\n    app_bundle.at_start("))
+body = m[m.index("def main():\n"):]
+check("the app renames after the single-instance guard, before the app is built",
+      0 < body.find("    _ensure_single_instance()\n") < body.find("    app_bundle.at_start(") < body.find("    api = Api()\n"))
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:
