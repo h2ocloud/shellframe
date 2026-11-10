@@ -80,6 +80,16 @@ check("two stuck: a new call is dropped at once, without a thread",
       in_thread(lambda: win.evaluate_js("x")) is None and len(calls) == n_calls)
 in_thread(lambda: win.evaluate_js("y"))
 check("…said once, not per call", sum("new ones are dropped" in m for m in LOG) == 1, LOG)
+caller = {}
+
+
+def push_output():
+    caller["name"] = threading.current_thread().name
+    return win.evaluate_js('_pushOutput("s1","text")')
+
+
+check("terminal output is never dropped: it goes straight through, on the caller's thread, even now",
+      in_thread(push_output) == 'ok:_pushOutput("s1","text")' and calls[-1][1] == caller["name"], calls[-1])
 release.set()
 time.sleep(0.3)
 check("once the stuck ones come back, calls go through again", in_thread(lambda: win.evaluate_js("z")) == "ok:z")

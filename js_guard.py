@@ -8,12 +8,17 @@ an answer back, so a call from any thread but the main one runs on a helper thre
 the caller stops waiting after LIMIT_S. A call that is still stuck keeps its helper
 thread; once MAX_STUCK of them are stuck, new calls are dropped (said once in the debug
 log) until one comes back, instead of leaving a thread behind for every push.
+
+Terminal output (`_pushOutput(...)`) is not guarded: a dropped push would be text missing
+from the terminal, where a slow page only made it late, so it waits as it always did. The
+calls dropped are the nudges (session list, bot view, status), which the page also polls.
 """
 
 import threading
 
 LIMIT_S = 5.0
 MAX_STUCK = 4
+PASS_THROUGH = ("_pushOutput(",)   # terminal output: lost if dropped, so it waits as before
 
 
 def install(window, log=lambda category, msg: None, limit: float = LIMIT_S, max_stuck: int = MAX_STUCK) -> bool:
@@ -26,7 +31,7 @@ def install(window, log=lambda category, msg: None, limit: float = LIMIT_S, max_
     state = {"stuck": 0, "said": False}
 
     def guarded(script, *args, **kwargs):
-        if threading.current_thread() is threading.main_thread():
+        if threading.current_thread() is threading.main_thread() or str(script).startswith(PASS_THROUGH):
             return orig(script, *args, **kwargs)
         with lock:
             if state["stuck"] >= max_stuck:
