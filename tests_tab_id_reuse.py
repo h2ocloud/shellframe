@@ -55,12 +55,15 @@ def check(name, ok, detail=""):
 print("guessing a new tab's transcript")
 older = TMP / "older.jsonl"
 older.write_text("{}\n", encoding="utf-8")
-born = os.stat(older).st_birthtime
-check("a file born minutes before the process started is not its conversation",
-      ag._nearest_birth_jsonl(str(TMP / "*.jsonl"), born + 400) is None)
-check("one born just around the start still is (a CLI that writes it at launch)",
-      ag._nearest_birth_jsonl(str(TMP / "*.jsonl"), born + 2) == str(older)
-      and ag._nearest_birth_jsonl(str(TMP / "*.jsonl"), born - 30) == str(older))
+born = getattr(os.stat(older), "st_birthtime", None)
+if born is None:   # Windows before Python 3.12; the guess needs a tmux pane, which Windows never has
+    print("  [SKIP] no file birth time on this platform")
+else:
+    check("a file born minutes before the process started is not its conversation",
+          ag._nearest_birth_jsonl(str(TMP / "*.jsonl"), born + 400) is None)
+    check("one born just around the start still is (a CLI that writes it at launch)",
+          ag._nearest_birth_jsonl(str(TMP / "*.jsonl"), born + 2) == str(older)
+          and ag._nearest_birth_jsonl(str(TMP / "*.jsonl"), born - 30) == str(older))
 
 print("the detail kept between looks stays with its conversation")
 a, b = TMP / "a.jsonl", TMP / "b.jsonl"

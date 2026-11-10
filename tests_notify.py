@@ -233,8 +233,10 @@ if os.name == "posix":
 check("沒給 warn callback 也不出事（靜默）",
       N.load_config(environ={}, path=write_cfg({"url": URL}, mode=0o644)) is not None)
 
+# 比路徑不比字串：Windows 的 expanduser 會得到「…\\home/.config/…」這種混合分隔符號。
 check("config_path() 跟著 HOME 走（呼叫時才展開）",
-      N.config_path() == str(HOME / ".config" / "shellframe" / "notify.json"), N.config_path())
+      os.path.normpath(N.config_path()) == os.path.normpath(str(HOME / ".config" / "shellframe" / "notify.json")),
+      N.config_path())
 check("不給 path 時讀的是暫存 HOME 底下的檔案（目前不存在 → None）", N.load_config(environ={}) is None)
 
 # ── 遮蔽 ───────────────────────────────────────────────────────────────────
@@ -342,7 +344,8 @@ check("一點一點吐的伺服器：整體期限內放棄（timeout=0.5 → 1.5
 trickle.close()
 
 dead = {"url": f"http://127.0.0.1:{closed_port()}{SECRET_PATH}?{SECRET_Q}", "auth": SECRET_AUTH}
-ok, info = N.send(body, dead, timeout=2.0)
+# Windows 不會立刻拒絕：本機沒在聽的埠要重送 SYN 約 2 秒才回 refused，2 秒期限會先到。
+ok, info = N.send(body, dead, timeout=6.0)
 check("連線被拒 → not ok，原因簡短且無秘密",
       ok is False and info == "connection refused" and clean(info), str((ok, info)))
 

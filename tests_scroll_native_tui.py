@@ -33,7 +33,8 @@ HERE = pathlib.Path(__file__).parent
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
-    if os.environ.get("_SH_NATIVE_REEXEC") != "1":
+    # Another python3 may have it. Windows has none (or the Store stub): skip there.
+    if os.environ.get("_SH_NATIVE_REEXEC") != "1" and sys.platform != "win32":
         env = dict(os.environ, _SH_NATIVE_REEXEC="1")
         sys.exit(subprocess.call(["python3", str(pathlib.Path(__file__).resolve())], env=env))
     print("SKIP  tests_scroll_native_tui.py（沒裝 playwright）\nALL PASS")

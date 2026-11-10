@@ -136,8 +136,11 @@ rows = on_disk(state) or []
 check("before the restart the item was queued and written down",
       "QUEUED 1" in out.stdout and len(rows) == 1 and rows[0]["text"] == "please review the plan",
       (out.stdout, out.stderr[-300:], rows))
-check("the file is readable by its owner only", state.exists() and (state.stat().st_mode & 0o777) == 0o600,
-      oct(state.stat().st_mode & 0o777) if state.exists() else "missing")
+if sys.platform == "win32":     # no POSIX permission bits: chmod(0o600) reads back as 0o666
+    check("the file is written (Windows: no owner-only permission bits)", state.exists())
+else:
+    check("the file is readable by its owner only", state.exists() and (state.stat().st_mode & 0o777) == 0o600,
+          oct(state.stat().st_mode & 0o777) if state.exists() else "missing")
 td.STATE_FILE = state
 api = FakeApi("s1", "s2")                       # after the restart the tab is free
 check("resume loads it", td.resume(api) == 1)
