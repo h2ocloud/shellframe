@@ -14,7 +14,7 @@ running underneath with its size unchanged, and everything that types into the t
 |---|---|
 | Routes for the page | `api_chat.py` (`ChatApiMixin`): `chat_view`, `chat_send`, `chat_answer` |
 | The screen | `web/chat.js` + `web/chat.css` (hooks: `SFChat.onSwitch`, `SFChat.covers`, `SFChat.sidebarLine`) |
-| Tests | `tests_chat_shell.py` (backend), `tests_chat_shell.js` (the rules, run in node) |
+| Tests | `tests_chat_shell.py` (backend), `tests_chat_shell.js` (the rules, run in node), `tests_chat_narrow.py` (the layout in a narrow window, in a browser) |
 
 ## Data: the phone's, not a second parser
 
@@ -99,6 +99,13 @@ running underneath with its size unchanged, and everything that types into the t
 The terminal's vertical tab label (the view has a header instead) and the sidebar's model
 badge. Command names are not shown as the conversation's name: a tab still called
 `claude`/`codex` is titled "對話/Chat".
+
+## A narrow view
+
+The view's narrow layout follows its own width, not the window's (`@container chat` in
+`web/chat.css`): an 800px window with the sidebar at its widest leaves it ~210px. Below
+21em the Terminal button keeps only its icon, Send moves under the input box beside the
+mic, and a question drops its second face, so the tab's name and the box stay usable.
 
 ## Not yet
 
