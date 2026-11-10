@@ -58,6 +58,7 @@ import agent_cursor
 import agent_grok
 import account_manager
 import sf_config
+import win_instance
 from api_history import HistoryApiMixin
 from api_schedules import SchedulesApiMixin
 # Api 的各領域 mixin 透過 api_host 的 late-bound `main` 取用本模組的全域；
@@ -5748,6 +5749,7 @@ def _ensure_mic_usage_plist():
 
 
 def main():
+    _dlog("lifecycle", win_instance.start_line())    # which exe, on a console or not
     _self_heal_venv()
     _ensure_mic_usage_plist()
     # Guard before we allocate anything expensive — if another shellframe

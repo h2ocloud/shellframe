@@ -50,6 +50,48 @@ def is_restart(path_at_start: str, app_dir, environ=None, sep: str = os.pathsep)
     return norm(first) == norm(os.path.join(str(app_dir), "bin"))
 
 
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_NO_WINDOW = 0x08000000
+
+
+def relaunch(app_dir, python_exe, home=None, exists=os.path.exists):
+    """How a restart starts the new instance: never on a console window. v0.41.1 started
+    it through shellframe.bat (`cmd /c start`), python.exe in a new console window, and
+    closing that window, or Ctrl+C / Ctrl+Break in it, ended the app at once with nothing
+    in any log. In order: the venv's pythonw.exe; shellframe.vbs through wscript (it runs
+    pythonw); python.exe with no console window. Returns (argv, creationflags, what)."""
+    main_py = os.path.join(str(app_dir), "main.py")
+    exe = str(python_exe or "")
+    folder, base = os.path.split(exe)
+    pyw = os.path.join(folder, "pythonw.exe") if base.lower() in ("python.exe", "pythonw.exe") else ""
+    if pyw and exists(pyw):
+        return [pyw, main_py], DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, "pythonw.exe"
+    vbs = os.path.join(str(home or os.path.expanduser("~")), ".local", "bin", "shellframe.vbs")
+    if exists(vbs):
+        return ["wscript.exe", vbs], DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, "shellframe.vbs"
+    return [exe or "python.exe", main_py], CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, f"{base or 'python.exe'} (no window)"
+
+
+def start_line(environ=None, executable=None, console=None) -> str:
+    """What this process is and how it started, for the debug log: on Windows a console
+    attached means closing it, or Ctrl+C / Ctrl+Break in it, ends the app at once."""
+    env = os.environ if environ is None else environ
+    exe = (executable or sys.executable or "?").replace("\\", "/").rsplit("/", 1)[-1]
+    if console is None and os.name == "nt":
+        try:
+            import ctypes
+            console = bool(ctypes.windll.kernel32.GetConsoleWindow())
+        except Exception:
+            console = None
+    line = (f"started pid={os.getpid()} parent={os.getppid()} exe={exe} "
+            f"console={'yes' if console else 'no' if console is False else '?'} "
+            f"restarted_from={str(env.get(RESTART_ENV) or '').strip() or '-'}")
+    if console:
+        line += " — attached to a console window: closing it, or Ctrl+C / Ctrl+Break in it, ends the app at once"
+    return line
+
+
 def try_acquire(k32, name: str = MUTEX_NAME):
     """The mutex handle if this process now holds the name, else None.
 
