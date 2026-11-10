@@ -58,6 +58,7 @@ import agent_cursor
 import agent_grok
 import account_manager
 import sf_config
+import sf_trail
 from api_history import HistoryApiMixin
 from api_schedules import SchedulesApiMixin
 # Api 的各領域 mixin 透過 api_host 的 late-bound `main` 取用本模組的全域；
@@ -5533,6 +5534,7 @@ def _ensure_single_instance():
     # "keeps popping to the front without me pressing the hotkey".
     # SIGUSR1 alone is the canonical wake path; if it doesn't reach,
     # the duplicate-launch loses but no loop is triggered.
+    sf_trail.exiting(f"another instance (pid={old_pid}) is running")
     os._exit(0)
 
 
@@ -5755,6 +5757,7 @@ def _ensure_mic_usage_plist():
 
 
 def main():
+    sf_trail.start(_dlog, TMP_DIR)   # how it started, and a trail for when it goes (sf_trail)
     _self_heal_venv()
     _ensure_mic_usage_plist()
     # Guard before we allocate anything expensive — if another shellframe
@@ -5763,6 +5766,7 @@ def main():
     # via hotkey / Dock click while the previous instance is still winding
     # down.
     _ensure_single_instance()
+    sf_trail.keep_faults()           # this is the instance that stays
     _prevent_app_nap()
     _apply_macos_app_identity()
     _patch_pywebview_cocoa_none_screen()
@@ -5835,6 +5839,8 @@ def main():
                   f"is off-screen — centering on primary.", file=sys.stderr)
 
     window = webview.create_window(**create_kwargs)
+    sf_trail.watch_window(window)
+    sf_trail.trail_js_api(window)
     api._window = window
 
     # Persist geometry on move/resize, debounced so rapid drag events don't
@@ -5971,6 +5977,7 @@ def main():
     webview.start(debug=("--debug" in sys.argv))
 
     # If webview.start() returns but process is still alive, force exit
+    sf_trail.exiting("webview.start() returned: the window's loop ended")
     api.cleanup_all()
     os._exit(0)
 

@@ -42,6 +42,21 @@
 - 根治：用 **Apple Developer ID 正式 codesign**（需開發者憑證）→ TCC 才能穩定記住。
 - 暫解：在「系統設定 > 隱私權與安全性 > 檔案與資料夾 / 完全取硬碟取用權」手動把 ShellFrame 加進去永久授權。
 
+## 程序無聲結束時，證據在哪裡（`sf_trail.py`）
+
+都在 debug log 那個資料夾（macOS `/tmp`，Windows `%TEMP%`）：
+
+- `shellframe_debug.log` 的 `[lifecycle]`：
+  - **啟動那一行**：`exe=`、`console=`、`restarted_from=`。Windows 寫著 `console=yes` 的，代表關掉那個主控台、或在裡面按 Ctrl+C／Ctrl+Break，App 會馬上結束。
+  - **主控台事件**、視窗的 closing／closed／shown、page loaded、WebView2 process failed；
+  - **未處理的例外**：哪個執行緒、在哪一行；
+  - **`exiting: …`**：每個 `os._exit` 前的一行。`os._exit` 會跳過 atexit，所以一定要先寫。
+- `shellframe_fault.log`：faulthandler（原生當機時所有執行緒的 Python stack）。前兩次有內容的保留成 `.1`、`.2`；超過 8 MB 就關掉，因為 Windows 上它也會記程式自己接住的 .NET 例外。
+- `shellframe_jsapi.log`：頁面呼叫 Python 的每一次進出，只記方法名和 tab id，不記內容。最後一行只有 `>`、沒有對應 `<` 的，就是消失時還在跑的那個呼叫。
+- `~/.shellframe-crash.log`：`main()` 丟出例外時寫的。
+
+**Windows 的 App 內重啟**是用 `shellframe.bat` 開新程序，跑的是 `python.exe`，會掛在一個新的主控台視窗上。那個視窗被關掉，App 就沒了，而且什麼都不會留下，只有啟動那一行的 `console=yes` 和主控台事件可以看出來。從桌面捷徑或 `shellframe.vbs` 啟動的是 `pythonw.exe`，沒有主控台。
+
 ## TG Bridge — reply 遺漏（v0.13.9 修）
 
 - reply 靠 PTY 螢幕 scrape + marker 配對（`[[TG_REPLY_xxx]]` … `[[/TG_REPLY_xxx]]`）。
