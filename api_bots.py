@@ -233,7 +233,7 @@ class BotsApiMixin:
             return "", ""
 
     # ── the phone's bot view (Frame Link GET /link/bots, POST /link/bots/wake) ────
-    LINK_V = 2                  # 2: plan A's kind/name/cli/model/tg on tabs, memory/cli/coordinator/tg on bots
+    LINK_V = 1                  # stays 1: an app sees v > 1 and turns its bot view off; plan A's fields are told by `kind`
 
     def _bots_link(self, args: dict) -> dict:
         """What a paired phone shows (docs/mobile-link.md): every bot with its face, where
@@ -456,7 +456,7 @@ class BotsApiMixin:
         refused = self._link_editable(role)[1]
         if refused:
             return refused
-        if args.get("cli") is not None or args.get("apply"):                  # v2: another CLI or model (bots_switch)
+        if args.get("cli") is not None or args.get("apply"):                  # plan A: another CLI or model (bots_switch)
             if args.get("responsibility") is not None:
                 self._bots_save_for_sfctl({"role": role, "data": json.dumps(
                     {"responsibility": str(args["responsibility"]).strip()}, ensure_ascii=False)})

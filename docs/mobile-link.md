@@ -165,11 +165,11 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 | 欄位 | 內容 |
 |---|---|
-| `v`, `rev`, `now`, `enabled`, `primary` | 版本（加欄位不升版；方案 A 的欄位是 2）、內容的 hash、電腦的時間、bots 有沒有開、主要 Bot |
-| `bots[]` | `role`, `label`, `responsibility`, `model`, `runs_on`, `avatar`, `primary`, `external`, `state`（`awake`／`asleep`／`external`）, `sid`, `position`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `closing`, `decision`；v2 加 `memory`（記住的 bot；名冊裡沒開記憶的角色也列出來，`false`）、`cli`（它的 CLI，`choices.clis` 的 key；外部是 `""`）、`coordinator`（只派工與驗收）、`tg`（醒著時分頁的 Telegram `/N`，否則 0） |
+| `v`, `rev`, `now`, `enabled`, `primary` | 版本（加欄位不升版：維持 1，App 看到大於 1 會把 bot 畫面整個關掉；方案 A 的欄位請用分頁有沒有 `kind` 判斷）、內容的 hash、電腦的時間、bots 有沒有開、主要 Bot |
+| `bots[]` | `role`, `label`, `responsibility`, `model`, `runs_on`, `avatar`, `primary`, `external`, `state`（`awake`／`asleep`／`external`）, `sid`, `position`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `closing`, `decision`；方案 A 加 `memory`（記住的 bot；名冊裡沒開記憶的角色也列出來，`false`）、`cli`（它的 CLI，`choices.clis` 的 key；外部是 `""`）、`coordinator`（只派工與驗收）、`tg`（醒著時分頁的 Telegram `/N`，否則 0） |
 | `model`, `runs_on` | `model` 是 bot 設定裡填的模型，空的表示用 CLI 的預設，等於桌面 bot 編輯器的「模型」欄；`runs_on` 是它現在實際跑的模型 |
-| `choices` | v2 加 `clis`：`[{"key", "label", "installed", "models"}]`，換 CLI 用；`models` 是能不能在指令上固定模型。可以選的頭像：`shapes`（12 種形狀，順序同桌面）、`colors`（`[{"key", "hex"}]`，14 種顏色和它畫出來的色碼，同 `bots.js` 的 `PALETTE`）、`custom_color: true`（也接受 `#RRGGBB`）。手機不用自己寫死一份 |
-| `tabs[sid]` | `bot`, `avatar`, `plain`, `closing`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `decision`；v2 加 `kind`（`bot`／`temp`：還沒記住的 AI 分頁／`terminal`）、`name`（bot 名或分頁標題）、`cli`、`model`（模型名，例如 `Sonnet 5.5`）、`tg`（Telegram 的 `/N`，不在 Telegram 是 0；號碼請用這個，不要自己數）、`position`（電腦清單上的第幾個） |
+| `choices` | 方案 A 加 `clis`：`[{"key", "label", "installed", "models"}]`，換 CLI 用；`models` 是能不能在指令上固定模型。可以選的頭像：`shapes`（12 種形狀，順序同桌面）、`colors`（`[{"key", "hex"}]`，14 種顏色和它畫出來的色碼，同 `bots.js` 的 `PALETTE`）、`custom_color: true`（也接受 `#RRGGBB`）。手機不用自己寫死一份 |
+| `tabs[sid]` | `bot`, `avatar`, `plain`, `closing`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `decision`；方案 A 加 `kind`（`bot`／`temp`：還沒記住的 AI 分頁／`terminal`）、`name`（bot 名或分頁標題）、`cli`、`model`（模型名，例如 `Sonnet 5.5`）、`tg`（Telegram 的 `/N`，不在 Telegram 是 0；號碼請用這個，不要自己數）、`position`（電腦清單上的第幾個） |
 | `avatar` | 已經解析好的頭像，等於桌面 `bots.js` 的 `avatarFor`：bot 自己的、分頁自己挑的，否則是 `defaultAvatar`，用 role 或 sid 當種子。Python 版在 `bots.default_avatar`，`tests_link_bots.py` 會拿它跟真的 `web/bots.js` 對照 |
 | `activity` | `working`／`idle`／`done`／`decision`／`stuck`，等於桌面的燈號；睡著或外部的 bot 是 `""` |
 | `doing`, `latest` | 跑的時候在做什麼；最新一句的取法同桌面的 `previewOf`。bot 的分頁沒有可說的話時，用它的執掌。最多 140 字，已經遮掉憑證 |
@@ -204,8 +204,8 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 - **`POST /link/bots/settings {"role", "responsibility"?, "model"?}`：** 只改有給的欄位，skill、記憶、頭像、啟動指令都不變。對應 bot 編輯器的儲存（`bots_save`）。
   - `model` 是一個詞，例如 `sonnet`；空字串表示用 CLI 的預設。
   - 兩個欄位都沒給時，會被拒絕。
-- **`POST /link/bots/keep {"sid", "name"?}`（v2）：** 把臨時 bot 記住：用它現在的臉、建記憶資料夾和名冊項目、分頁綁上去並改成這個名字（預設是分頁標題）。成功回 `{"success": true, "role"}`；失敗的 `code`：`bots_off`、`no_tab`、`not_ai`（終端機）、`already_bot`、`plain`（標過不是 bot）、`bad_name`、`name_taken`（附 `suggestion`，例如「查資料 2」）。對應 `bots_keep`／`sfctl bots-keep`。舊版電腦回 404，請顯示「電腦上的 ShellBot 要更新」。
-- **`POST /link/bots/settings` 的 v2 欄位：** 多收 `cli`（`choices.clis` 的 key，要是裝好的）、`model`（`""` 是 CLI 的預設；`models: false` 的 CLI 只能給 `""`）、`apply`（`next_wake` 預設；`now`）。換 CLI 時沒給 `model`，模型會清回預設。`now`：睡著的 bot 直接用新的叫醒，回 `{"success", "sid"}`；醒著的先寫記憶、關掉再叫醒，回 `{"success", "pending": true}`，之後看 `/link/bots` 的 `closing` 和新的 `sid`。名字、臉、執掌、記憶都留著，對話不會搬到新的 CLI。失敗的 `code`：`no_bot`、`external`、`bad_cli`、`model_fixed`、`bad_model`、`busy`（正在寫記憶）、`nothing`。對應 `bots_switch`／`sfctl bots-set`。
+- **`POST /link/bots/keep {"sid", "name"?}`（方案 A）：** 把臨時 bot 記住：用它現在的臉、建記憶資料夾和名冊項目、分頁綁上去並改成這個名字（預設是分頁標題）。成功回 `{"success": true, "role"}`；失敗的 `code`：`bots_off`、`no_tab`、`not_ai`（終端機）、`already_bot`、`plain`（標過不是 bot）、`bad_name`、`name_taken`（附 `suggestion`，例如「查資料 2」）。對應 `bots_keep`／`sfctl bots-keep`。舊版電腦回 404，請顯示「電腦上的 ShellBot 要更新」。
+- **`POST /link/bots/settings` 的方案 A 欄位：** 多收 `cli`（`choices.clis` 的 key，要是裝好的）、`model`（`""` 是 CLI 的預設；`models: false` 的 CLI 只能給 `""`）、`apply`（`next_wake` 預設；`now`）。換 CLI 時沒給 `model`，模型會清回預設。`now`：睡著的 bot 直接用新的叫醒，回 `{"success", "sid"}`；醒著的先寫記憶、關掉再叫醒，回 `{"success", "pending": true}`，之後看 `/link/bots` 的 `closing` 和新的 `sid`。名字、臉、執掌、記憶都留著，對話不會搬到新的 CLI。失敗的 `code`：`no_bot`、`external`、`bad_cli`、`model_fixed`、`bad_model`、`busy`（正在寫記憶）、`nothing`。對應 `bots_switch`／`sfctl bots-set`。
 - **`POST /link/bots/primary {"role"}`：** 指定主要 Bot，對應 `bots_set_primary`。只能指定這台電腦上的 bot，不能指定外部 bot，也不能清空。
 
 **`POST /link/bots/wake {"role"}`**：叫醒一個 bot，走的是桌面的 `bots_open`。回 `{"success", "details": {"sid", "existed"}}`；`existed: true` 表示它本來就醒著。外部 bot 回 `success: false` 和原因。

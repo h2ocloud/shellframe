@@ -93,7 +93,8 @@ fresh()
 print("1. GET /link/bots: version 2, what each tab is")
 res = api._execute_sfctl("bots_link", {})
 tabs = res["tabs"]
-check("v is 2", res.get("v") == 2, res.get("v"))
+check("v stays 1 (an app turns its bot view off for v > 1); plan A is told by kind on a tab",
+      res.get("v") == 1 and all("kind" in t for t in res["tabs"].values()), res.get("v"))
 check("a bound tab is a bot, named by the bot", tabs["s1"]["kind"] == "bot" and tabs["s1"]["name"] == "Coding", tabs["s1"])
 check("an AI tab nobody kept is a temporary bot, named by its title", tabs["s3"]["kind"] == "temp"
       and tabs["s3"]["name"] == "查資料", tabs["s3"])
