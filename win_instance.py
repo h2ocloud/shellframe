@@ -151,7 +151,7 @@ def ensure_single_instance(*, app_dir, path_at_start: str, log, k32=None,
         log("instance", f"no single-instance guard ({e}); starting unguarded")
         return None
     if h:
-        if tries > 1:
+        if tries > 1 or restart:      # a restart always leaves its line, even when the old one was gone already
             log("instance", f"got the single-instance mutex after {waited:.1f}s and {tries} tries ({how})")
         return h
     shown = bring()

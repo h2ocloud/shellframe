@@ -161,6 +161,17 @@ check("restart: the flag is removed so tabs do not inherit it", W.RESTART_ENV no
 check("restart: the log says how long it waited",
       any(re.search(r"after 12\.\ds .*\(restart\)", m) for m in logs), str(logs))
 
+logs = []
+os.environ[W.RESTART_ENV] = "4242"
+W.ensure_single_instance(app_dir=app, path_at_start="/usr/bin", log=lambda c, m: logs.append(m),
+                         k32=FakeKernel(), now=Clock().now, sleep=Clock().sleep, exit=exits.append)
+check("restart: the line is there even when the old instance was already gone",
+      any("after 0.0s and 1 tries (restart)" in m for m in logs), str(logs))
+logs = []
+W.ensure_single_instance(app_dir=app, path_at_start="/usr/bin", log=lambda c, m: logs.append(m),
+                         k32=FakeKernel(), now=Clock().now, sleep=Clock().sleep, exit=exits.append)
+check("an ordinary launch that gets the mutex at once writes nothing", logs == [], str(logs))
+
 logs, exits = [], []
 k = FakeKernel()
 k.create_mutex(W.MUTEX_NAME)
