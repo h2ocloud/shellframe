@@ -62,6 +62,7 @@ import app_bundle
 import bot_names
 import bots
 import sf_config
+import js_guard
 import sf_trail
 import win_instance
 from api_history import HistoryApiMixin
@@ -792,7 +793,10 @@ def _slugify(text: str, max_len: int = 22) -> str:
     text = text.encode('ascii', errors='ignore').decode()
     text = _SLUG_STRIP_RE.sub('', text).lower()
     text = _SLUG_COLLAPSE_RE.sub('-', text).strip('-')
-    return text[:max_len].rstrip('-') or 'sf'
+    if len(text) > max_len:   # end on a whole word: "remember-blue-whale", not "remember-blue-whale-te"
+        cut = text[:max_len + 1].rfind('-')
+        text = text[:cut] if cut >= max_len // 2 else text[:max_len]
+    return text.rstrip('-') or 'sf'
 
 
 def _unique_tmux_name(base: str) -> str:
@@ -4516,9 +4520,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         parts = []
         tmux_name = getattr(s, "_tmux_name", None)
         if tmux_name:
-            try:
+            try:   # what is on screen now: a trust question answered by hand stays in the
+                # scrollback, and read from there the tab never counted as ready (measured)
                 r = subprocess.run(
-                    ["tmux", "capture-pane", "-p", "-J", "-t", tmux_name, "-S", "-40"],
+                    ["tmux", "capture-pane", "-p", "-J", "-t", tmux_name],
                     capture_output=True, text=True, timeout=1)
                 if r.returncode == 0 and r.stdout:
                     parts.append(r.stdout)
@@ -5837,6 +5842,7 @@ def main():
     window = webview.create_window(**create_kwargs)
     sf_trail.watch_window(window)
     sf_trail.trail_js_api(window)
+    js_guard.install(window, _dlog)   # a call into the page from a background thread cannot hang it
     api._window = window
 
     # Persist geometry on move/resize, debounced so rapid drag events don't

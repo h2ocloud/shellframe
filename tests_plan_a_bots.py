@@ -361,6 +361,12 @@ def slow(*a, **k):
 main.subprocess.run = slow
 check("a call that runs out of time: no name, and the debug log says so",
       real_haiku_slug("幫我記住一件事") == "" and "[slug] no name: TimeoutExpired" in Path(sf_log.DEBUG_LOG).read_text(encoding="utf-8"))
+check("a long name ends on a whole word (measured: \"remember blue whale te\")",
+      main._slugify("remember-blue-whale-test") == "remember-blue-whale"
+      and main._slugify("remember blue whale tests") == "remember-blue-whale")
+check("…a word that ends right at the limit is kept, one long word is cut, a short name is left alone",
+      main._slugify("abcdefghij-klmnopqrstu-vw") == "abcdefghij-klmnopqrstu"
+      and main._slugify("x" * 30) == "x" * 22 and main._slugify("weekly-report") == "weekly-report")
 main.subprocess.run = lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="code-name-blue-whale\n")
 check("an answer becomes the name", real_haiku_slug("幫我記住一件事") == "code-name-blue-whale")
 main.subprocess.run, main.shutil.which = real_run, real_which

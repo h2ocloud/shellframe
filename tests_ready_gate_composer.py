@@ -13,6 +13,7 @@ dim 灰字「建議下一句」（`❯`＋不換行空白＋\\x1b[2m…），使
 import inspect
 import os
 import tempfile
+import types
 
 import bridge_telegram
 import bridge_telegram as _bt_log  # noqa: E402
@@ -144,6 +145,29 @@ def main_():
         check("信任對話框才給按鈕", len(offered) == 1)
     finally:
         bridge_telegram.tg_api = saved
+
+    # A trust question answered by hand scrolls up but stays in the scrollback: read from
+    # there, the tab never counted as ready (measured on a real tab). Only the screen counts.
+    trust = ("Quick safety check: Is this a project you created or one you trust?\n"
+             " ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm · Esc to cancel\n")
+    screen = f"{B}\n\x1b[39m❯\xa0\n{B}\n"
+    asked = []
+
+    def fake_run(args, **kwargs):
+        asked.append(list(args))
+        return types.SimpleNamespace(returncode=0, stdout=(trust + screen) if "-S" in args else screen)
+
+    api = A.__new__(A)
+    api.sessions = {"s1": types.SimpleNamespace(alive=True, _tmux_name="sf_s1", cmd="claude", cwd="/work",
+                                                _startup_trust_pending=False)}
+    api._auto_accept_startup_trust_prompt = lambda sid, s: None
+    saved_run = main.subprocess.run
+    main.subprocess.run = fake_run
+    try:
+        check("a trust question left in the scrollback does not block: only the screen is read",
+              api.startup_dialog_blocking("s1") == "" and asked and all("-S" not in a for a in asked))
+    finally:
+        main.subprocess.run = saved_run
 
     print()
     if FAILED:
