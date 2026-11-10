@@ -995,7 +995,7 @@ class FrameLink:
                         "data": body.get("data", "")}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path in ("/link/bots/wake", "/link/answer", "/link/bots/avatar", "/link/bots/settings",
-                            "/link/bots/primary"):     # the phone's bot view (docs/mobile-link.md)
+                            "/link/bots/primary", "/link/bots/keep"):     # the phone's bot view (docs/mobile-link.md)
                     code, res = link._bots_route(peer_id, "bots_" + path.rsplit("/", 1)[-1], body)
                     return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/resize":

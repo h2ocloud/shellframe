@@ -247,7 +247,7 @@ class RemoteApiMixin:
                     main._dlog("api", f"api_server shutdown failed: {e}")
         return self.get_api_server_info()
 
-    _NAMED_TAB_CMDS = ("send", "peek", "close_session", "state", "rename")
+    _NAMED_TAB_CMDS = ("send", "peek", "close_session", "state", "rename", "bots_keep")
 
     def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
         """Execute a sfctl command and return result dict."""
@@ -1348,6 +1348,8 @@ class RemoteApiMixin:
             return self._bots_delete_for_sfctl(args)
         elif cmd == "bots_link":
             return self._bots_link(args)
+        elif cmd == "bots_keep":
+            return self._bots_link_keep(args)
         elif cmd == "bots_wake":
             return self._bots_link_wake(args)
         elif cmd == "bots_answer":

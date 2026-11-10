@@ -176,9 +176,11 @@ t0 = time.time()
 res = link()
 by = {b["role"]: b for b in res.get("bots") or []}
 check("the answer: version, rev, the clock, bots on, the primary",
-      res.get("success") and res.get("v") == 1 and isinstance(res.get("rev"), int) and res.get("enabled") is True
+      res.get("success") and res.get("v") == 2 and isinstance(res.get("rev"), int) and res.get("enabled") is True
       and res.get("primary") == "總管" and abs(res.get("now", 0) - t0) < 5, {k: res.get(k) for k in ("v", "rev", "primary")})
-check("only bots are listed (a plain roster role is not)", sorted(by) == sorted(["Coding", "寫手", "總管"]), sorted(by))
+check("plan A: every role is listed; one without a bot block has no memory",
+      sorted(by) == sorted(["Coding", "寫手", "研究", "總管"]) and by["研究"].get("memory") is False
+      and by["Coding"].get("memory") is True and by["研究"].get("state") == "asleep", sorted(by))
 c = by.get("Coding") or {}
 check("an awake bot: its tab, its place in the tab bar, working, the model it runs",
       c.get("state") == "awake" and c.get("sid") == "s1" and c.get("position") == 2 and c.get("activity") == "working"

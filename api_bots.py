@@ -75,6 +75,34 @@ def dialog_words(lines: list, at: int) -> str:
     return text if len(text) <= DIALOG_WORDS_MAX else text[:DIALOG_WORDS_MAX].rstrip() + "…"
 
 
+_CLIS = {"at": 0.0, "list": []}
+
+
+def _cli_choices() -> list:
+    """Every CLI the app can run, for a bot's CLI picker: installed or not, and whether a
+    model can be pinned on its command line (agent_model). Cached a minute: phones ask for
+    /link/bots every few seconds."""
+    if _CLIS["list"] and time.time() - _CLIS["at"] < 60:
+        return _CLIS["list"]
+    import agent_model
+    import usage_probe
+    out = []
+    for key, spec in usage_probe.PROVIDER_SPECS.items():
+        try:
+            installed = bool(usage_probe.provider_installed(key))
+        except Exception:
+            installed = False
+        out.append({"key": key, "label": str(spec.get("label") or key), "installed": installed,
+                    "models": key in agent_model.PROVIDERS})
+    _CLIS.update(at=time.time(), list=out)
+    return out
+
+
+def _model_name(m) -> str:
+    """The status monitor's model ({"name", "effort"} or a string) as a person reads it."""
+    return str((m.get("name") if isinstance(m, dict) else m) or "")
+
+
 class BotsApiMixin:
     # ── reading ─────────────────────────────────────────────────────────
     def _bots_enabled(self) -> bool:
@@ -202,7 +230,7 @@ class BotsApiMixin:
             return "", ""
 
     # ── the phone's bot view (Frame Link GET /link/bots, POST /link/bots/wake) ────
-    LINK_V = 1
+    LINK_V = 2                  # 2: plan A's kind/name/cli/model/tg on tabs, memory/cli/coordinator/tg on bots
 
     def _bots_link(self, args: dict) -> dict:
         """What a paired phone shows (docs/mobile-link.md): every bot with its face, where
@@ -218,20 +246,27 @@ class BotsApiMixin:
         bound = cfg.get("bots_sessions") or {}
         now = time.time()
         tabs, awake = {}, {}
+        order = self._ordered_sids(cfg) if on else []
         for sid, s in (list(self.sessions.items()) if on else []):
             role = self._bots_role_of(sid, cfg)
-            tabs[sid] = self._link_tab(sid, s, role, bound.get(sid) or {}, raw, now)
+            t = self._link_tab(sid, s, role, bound.get(sid) or {}, raw, now)
+            cli = self._tab_cli(s)
+            t.update(kind="bot" if role else ("temp" if cli else "terminal"),
+                     name=role or getattr(s, "_custom_label", None) or (str(getattr(s, "cmd", "") or "").split() or [""])[0],
+                     cli=cli, tg=self._tg_number(sid), position=order.index(sid) + 1 if sid in order else 0)
+            tabs[sid] = t
             if role:
                 awake.setdefault(role, sid)
-        order = self._ordered_sids(cfg) if on else []
         primary = bots.primary_role(raw)
+        name_tabs = self._name_tabs()
         rows = []
-        for role, e in raw.items():
-            if not bots.is_bot(e):
+        for role, e in raw.items():                      # plan A: every role is a bot; memory says which remember
+            if not isinstance(e, dict):
                 continue
             ext = bots.is_external(e)
-            sid = "" if ext else awake.get(role, "")
+            sid = "" if ext else (awake.get(role) or ("" if bots.is_bot(e) else bot_names.bot_tab(role, raw, name_tabs, bound)))
             t = tabs.get(sid) or {}
+            cli = "" if ext else (agent_status.worker_kind(str(e.get("cmd") or "")).replace("other", "") or "")
             rows.append({"role": role, "label": bots.label_of(role, e),
                          "responsibility": str(e.get("responsibility") or ""), "model": str(e.get("model") or ""),
                          "runs_on": "" if ext else self._link_runs_on(sid, e),
@@ -240,10 +275,13 @@ class BotsApiMixin:
                          "state": "external" if ext else ("awake" if sid else "asleep"),
                          "sid": sid, "position": order.index(sid) + 1 if sid in order else 0,
                          **{k: t.get(k, d) for k, d in (("activity", ""), ("doing", ""), ("latest", ""), ("last_at", 0),
-                                                        ("blocked", ""), ("closing", ""), ("decision", None))}})
+                                                        ("blocked", ""), ("closing", ""), ("decision", None))},
+                         "memory": bots.is_memory_bot(e), "cli": cli, "coordinator": bool(e.get("coordinator")),
+                         "tg": t.get("tg", 0)})
         body = {"enabled": on, "primary": primary, "bots": rows, "tabs": tabs,
                 "choices": {"shapes": list(bots.SHAPES), "colors": [{"key": c, "hex": bots.PALETTE[c]} for c in bots.COLORS],
-                            "custom_color": True}}     # what /link/bots/avatar accepts; also any #RRGGBB
+                            "custom_color": True,     # what /link/bots/avatar accepts; also any #RRGGBB
+                            "clis": _cli_choices()}}  # what /link/bots/settings takes as cli
         calm = lambda r: dict(r, last_at=0) if r.get("activity") == "working" else r   # a working tab's last_at is the clock
         rev = int(hashlib.sha1(json.dumps(dict(body, bots=[calm(b) for b in rows], tabs={k: calm(v) for k, v in tabs.items()}),
                                           sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8], 16)
@@ -267,12 +305,26 @@ class BotsApiMixin:
         out_ts = float(getattr(s, "_last_output_activity_time", 0.0) or 0.0)
         av = ((raw.get(role) or {}).get("bot") or {}).get("avatar") if role else row.get("avatar")
         return {"bot": role, "avatar": bots.resolved_avatar(av, role or sid), "plain": bool(row.get("plain")),
-                "closing": closing, "activity": activity,
+                "closing": closing, "activity": activity, "model": _model_name(res.get("model")),
                 "doing": agent_status.redact(str(res.get("action") or ""), 140) if activity == "working" else "",
                 "latest": agent_status.redact(latest, 140),
                 "last_at": float(now if activity == "working" else (self._last_activity_at(sid, s, out_ts) or 0)),
                 "blocked": agent_status.redact(self._agent_blocked_for_list(sid), 140),
                 "decision": self._link_decision(sid, activity, res)}
+
+    @staticmethod
+    def _tab_cli(s) -> str:
+        """The CLI a tab runs (a provider key), "" for a terminal."""
+        kind = agent_status.worker_kind(str(getattr(s, "cmd", "") or ""))
+        return "" if kind == "other" else kind
+
+    def _tg_number(self, sid: str) -> int:
+        """The tab's /N on Telegram (the bridge's order), 0 when it is not there."""
+        try:
+            order = getattr(getattr(self, "bridge", None), "_slot_order", None) or []
+            return order.index(sid) + 1 if sid in order else 0
+        except Exception:
+            return 0
 
     def _link_runs_on(self, sid: str, e: dict) -> str:
         """The model a bot runs: what its tab's transcript says, else its roster command."""
@@ -582,6 +634,63 @@ class BotsApiMixin:
                            "message": (_("Created", "已建立") if state.get("created") else _("Updated", "已更新"))
                            + _(f' "{state.get("label") or name}"', f"「{state.get('label') or name}」"),
                            "details": {"role": name, "label": state.get("label")}}, ensure_ascii=False)
+
+    # ── plan A: a temporary bot kept ─────────────────────────────────────
+    def bots_keep(self, sid: str, name: str = "") -> str:
+        """Keep a temporary bot: the AI tab becomes a bot named `name` (its title when not
+        given) with the face it has, a memory folder and its binding, and from then on it
+        writes its memory before it closes. JSON: {"success", "role"} or {"success": false,
+        "code", "message", "suggestion"?} (codes in docs/mobile-link.md)."""
+        return json.dumps(self._bots_keep(sid, name), ensure_ascii=False)
+
+    def _bots_keep(self, sid: str, name: str = "") -> dict:
+        def fail(code, en, zh, **extra):
+            return {"success": False, "code": code, "message": _(en, zh), **extra}
+        if not self._bots_enabled():
+            return fail("bots_off", "Bots are off: turn them on in Settings first", "Bots 沒有打開：請先在設定裡打開")
+        sid = str(sid or "").strip()
+        s = self.sessions.get(sid)
+        if s is None:
+            return fail("no_tab", f"No tab {sid}", f"沒有 {sid} 這個分頁")
+        if agent_status.worker_kind(getattr(s, "cmd", "") or "") == "other":
+            return fail("not_ai", "A terminal tab is not a bot", "終端機分頁不是 bot")
+        cfg = _cfg()
+        row = (cfg.get("bots_sessions") or {}).get(sid) or {}
+        if row.get("plain"):
+            return fail("plain", "This tab was marked as not a bot", "這個分頁標過「不是 bot」")
+        if self._bots_role_of(sid, cfg):
+            return fail("already_bot", "It is a bot already", "它已經是 bot 了")
+        name = bots.clean_name(name or getattr(s, "_custom_label", "") or "")
+        err = bots.name_error(name)
+        if err:
+            return fail("bad_name", err, err)
+        if self._bot_name_taken(name, cfg):
+            return fail("name_taken", f'"{name}" is taken by another bot', f"「{name}」已經有別的 bot 在用",
+                        suggestion=self._free_bot_name(name, cfg))
+        data = {"cmd": getattr(s, "cmd", "") or "claude",
+                "avatar": bots.resolved_avatar(row.get("avatar"), sid)}     # the face it has, not one made from the name
+        res = json.loads(self.bots_save(name, json.dumps(data, ensure_ascii=False), sid))
+        if not res.get("success"):
+            return {"success": False, "code": "bad_name", "message": res.get("message", "")}
+        return {"success": True, "role": name, "message": res.get("message", "")}
+
+    @staticmethod
+    def _bot_name_taken(name: str, cfg: dict) -> bool:
+        """A bot's name is its own on this computer: no other role's key or label, any case."""
+        want = name.strip().casefold()
+        return any(want in (str(r).casefold(), bots.label_of(r, e).casefold())
+                   for r, e in (cfg.get("agent_roster") or {}).items() if isinstance(e, dict))
+
+    def _free_bot_name(self, name: str, cfg: dict) -> str:
+        for n in range(2, 100):
+            cand = f"{name} {n}"
+            if not self._bot_name_taken(cand, cfg) and not bots.name_error(cand):
+                return cand
+        return ""
+
+    def _bots_link_keep(self, args: dict) -> dict:
+        """POST /link/bots/keep {"sid", "name"?}: a phone keeps a temporary bot (bots_keep)."""
+        return self._bots_keep(str(args.get("sid") or ""), str(args.get("name") or ""))
 
     def _bots_save_for_sfctl(self, args: dict) -> dict:
         """`sfctl bots-save <role> '<json>' [--bind <sid>]`: the bot editor's save, for

@@ -741,6 +741,10 @@ def main():
     p_bsave.add_argument("--bind", metavar="SID", default="",
                          help="Make this open tab the bot's tab, as \"Make it a bot…\" in its settings does: "
                               "the conversation goes on, the tab takes the bot's name")
+    p_bkeep = sub.add_parser("bots-keep", help="Keep a temporary bot: the AI tab becomes a bot with its face, "
+                                               "a memory folder and a name (plan A)")
+    p_bkeep.add_argument("sid", help="The tab: its sid or its title")
+    p_bkeep.add_argument("name", nargs="?", default="", help="The bot's name (default: the tab's title)")
     p_bdel = sub.add_parser("bots-delete", help="Remove a bot, as Delete in its editor (ask the user first): "
                                                 "its memory folder stays; a role that was in the roster before "
                                                 "it became a bot stays as a plain worker role")
@@ -990,6 +994,8 @@ def main():
         _print_result(_rpc("tg_send", {"text": args.text, "from_sid": os.environ.get("SF_SID", "")}, timeout=20))
     elif args.cmd == "bots-save":
         _print_result(_rpc("bots_save", {"role": args.role, "data": args.data, "bind": args.bind}, timeout=15))
+    elif args.cmd == "bots-keep":
+        _print_result(_rpc("bots_keep", {"sid": args.sid, "name": args.name}, timeout=15))
     elif args.cmd == "bots-delete":
         _print_result(_rpc("bots_delete", {"role": args.role}, timeout=15))
     elif args.cmd == "route":
