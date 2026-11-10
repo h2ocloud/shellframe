@@ -22,6 +22,10 @@
   的 glob 掃會漏掉它們——所以一律走 `run_tests.sh`。
 - `tests_ime_seq.py` 需要 playwright（載真實 xterm.js 驗 IME 事件序列）。`.venv`
   裡沒裝，它會自己轉手給系統 `python3`；兩邊都沒有才 SKIP。
+- **測試碰不到這台的設定檔。** `sf_config.config_dir()` 在測試裡（`run_tests.sh` 設
+  `SHELLFRAME_TESTS=1`，或直接跑 `tests_*.py`）每個行程給一個暫存資料夾，子行程沿用；
+  `run_tests.sh` 跑完整批刪掉。要讀寫 config.json 的程式一律走 `sf_config.config_file()`，
+  不要自己拼 `~/.config/shellframe/config.json`（`tests_config_isolation.py` 會擋）。
 
 ## 版本與發布
 

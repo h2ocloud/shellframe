@@ -72,11 +72,16 @@ class _Sandbox:
         main.load_config = slow_load
         bt._read_config = slow_tg_read
         bt._Path = _P
+        self.saved_env = os.environ.get("SHELLFRAME_CONFIG_DIR")
+        os.environ["SHELLFRAME_CONFIG_DIR"] = str(cfg_dir)     # the bridge's config (sf_config.config_dir)
         return self
 
     def __exit__(self, *exc):
         (main.CONFIG_FILE, main.load_config, bt._Path, bt._read_config,
          main._LAST_GOOD_CONFIG_TEXT) = self.saved
+        os.environ["SHELLFRAME_CONFIG_DIR"] = self.saved_env or ""
+        if not self.saved_env:
+            os.environ.pop("SHELLFRAME_CONFIG_DIR", None)
         self.td.cleanup()
 
     def read(self):

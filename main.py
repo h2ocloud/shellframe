@@ -124,7 +124,7 @@ SHELLFRAME_CODEX_CMD = f"{CODEX_LAUNCHER} {CODEX_AUTONOMOUS_FLAGS}"
 # What the user sees (menu bar, window, About). Everything a machine reads keeps the
 # old name: ~/.config/shellframe, sfctl, the bundle id, tmux sf_*, Frame Link.
 APP_DISPLAY_NAME = "ShellBot"
-CONFIG_DIR = Path.home() / ".config" / "shellframe"
+CONFIG_DIR = sf_config.config_dir()        # a test run gets a folder of its own
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
 ACCOUNT_MANAGER = account_manager.AccountManager(

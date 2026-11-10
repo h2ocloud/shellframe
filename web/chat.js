@@ -90,10 +90,8 @@
   }
   // decision: {id, reason, options: [{n, text}]} as chat_view gives it.
   // Every option known → plain words; any one unknown → every option as written.
-  // `n` is always the option's own number, never its position on screen.
-  // `complete`: the numbers run 1, 2, 3… A list that starts later was read only in part
-  // (measured: an option wrapped onto a second line drops the options above it), and a
-  // choice among some of the options is not offered.
+  // `n` is always the option's own number, never its position on screen. Which menu, and
+  // whether it was read whole, is the shared reader's call (bridge_telegram.menu_block).
   function mapDecision(decision, lang) {
     const zh = isZh(lang);
     const d = decision || {};
@@ -103,7 +101,6 @@
     const question = mapQuestion(d.reason, zh);
     return {
       id: d.id || '',
-      complete: raw.length > 0 && raw.every((o, i) => Number(o.n) === i + 1),
       question: question || String(d.reason || ''),
       questionTranslated: !!question,
       translated,
@@ -923,13 +920,7 @@
     const d = data.decision;
     let html = '';
     const m = d && (d.options || []).length ? mapDecision(d, lang()) : null;
-    if (m && !m.complete) {
-      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` +
-        `<div class="cm-ask-title">${escHtml(T('Your call, in the terminal', '要你決定，請到終端機選'))}</div>` +
-        `<div class="cm-ask-q">${escHtml(T(`Only some of its options could be read (${m.options.map(o => o.n).join(', ')}), so none is offered here.`,
-                                            `這題只讀到部分選項（${m.options.map(o => o.n).join('、')}），為了不選錯，不在這裡回答。`))}</div>` +
-        `<div class="cm-opts"><button class="cm-opt" data-act="to-term">${escHtml(T('Open the terminal', '切到終端機處理'))}</button></div></div></div>`;
-    } else if (m) {
+    if (m) {
       const call = data.activity === 'decision' ? pendingCall(data.turns) : null;
       const context = !m.questionTranslated && m.question && m.translated ? m.question : '';
       const answered = v.answered && v.answered.id === d.id;
@@ -1187,9 +1178,7 @@
         v.answered = null;
         note(r.code === 'stale'
           ? T('That question was already answered or has changed; nothing was sent.', '這題已經回答過或換題了，沒有送出。')
-          : r.code === 'not_on_screen'
-            ? T('Those options are not on its screen any more; nothing was sent.', '這些選項已經不在它的畫面上，沒有送出。')
-            : (r.message || T('Not sent.', '沒有送出。')), true);
+          : (r.message || T('Not sent.', '沒有送出。')), true);
       }
     } catch (e) { note(String(e), true); }
     v.rev = '';

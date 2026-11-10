@@ -254,23 +254,24 @@ class BotsApiMixin:
         if activity == "decision":
             try:
                 import bridge_telegram
+                # The visible screen only, and its last menu (menu_block): an older menu in the
+                # scrollback was offered, and answered, in place of the one being asked.
                 lines = [re.sub(r"^\s*│\s?|\s*│\s*$", "", ln.rstrip())          # a boxed dialog's side borders
-                         for ln in tab_delivery.screen_text(self, sid, 40).splitlines()]
-                opts = bridge_telegram.menu_options(lines)
-                at = next(i for i, ln in enumerate(lines) if opts[0]["text"] in ln
-                          and ln.lstrip().lstrip("❯›").lstrip().startswith(opts[0]["num"]))
-                end = max(i for i, ln in enumerate(lines) if i >= at and opts[-1]["text"] in ln)
+                         for ln in tab_delivery.visible_text(self, sid).splitlines()]
+                opts, at, end = bridge_telegram.menu_block(lines)
+                if not opts:
+                    raise ValueError("no menu")
                 top = next((i for i in range(at - 1, max(-1, at - 16), -1)       # the rule the dialog opens with
                             if re.fullmatch(r"\s*─{10,}\s*", lines[i])), max(0, at - 6))
                 reason = next((ln.strip(" ─╌") for ln in reversed(lines[:at]) if ln.strip(" ─╌")), "")
-                return {"id": qid("menu", *(ln.strip() for ln in lines[top:end + 1])),
+                return {"id": qid("menu", *(ln.strip() for ln in lines[top:end + 1])), "kind": "menu",
                         "reason": agent_status.redact(reason, 300),
                         "options": [{"n": int(o["num"]), "text": agent_status.redact(o["text"], 120)} for o in opts[:9]]}
             except Exception:
                 pass                                   # no menu read off the screen: maybe a RED question
         red = bridge_home.red_pending(sid)
         if red and red["at"] >= float(res.get("prompt_at") or 0):       # not answered since
-            return {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])),
+            return {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])), "kind": "red",
                     "reason": agent_status.redact(red["reason"], 300),
                     "options": [{"n": int(n), "text": agent_status.redact(t, 120)} for n, t in red["options"]]}
         return None
@@ -306,9 +307,9 @@ class BotsApiMixin:
         claimed = bridge_home.claim_for_phone(sid, n)
         if claimed is None:
             return stale
-        s.write(f"{n}\r")
+        sent = tab_delivery.answer_choice(self, sid, n, cur.get("kind", "menu"))
         bridge_home.phone_answered(self, sid, n, claimed, where=via)
-        _dlog("bots", f"{sid}: answered {n} from the {via}")
+        _dlog("bots", f"{sid}: answered {n} from the {via} ({sent!r})")
         return {"success": True, "message": _(f"Answered {n}", f"已選 {n}")}
 
     def _link_editable(self, role: str):

@@ -85,10 +85,16 @@ class _HomeIn:
         bt._Path = _P
         cfg_dir = pathlib.Path(td) / ".config" / "shellframe"
         cfg_dir.mkdir(parents=True)
+        self.saved_env = os.environ.get("SHELLFRAME_CONFIG_DIR")
+        os.environ["SHELLFRAME_CONFIG_DIR"] = str(cfg_dir)     # the bridge's config (sf_config.config_dir)
         return cfg_dir / "config.json"
 
     def __exit__(self, *exc):
         bt._Path = self.saved
+        if self.saved_env:
+            os.environ["SHELLFRAME_CONFIG_DIR"] = self.saved_env
+        else:
+            os.environ.pop("SHELLFRAME_CONFIG_DIR", None)
 
 
 def test_tg_settings_write_is_atomic_and_never_blanks_the_file():

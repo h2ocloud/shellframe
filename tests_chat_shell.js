@@ -97,19 +97,14 @@ console.log('questions it does not know: as written, all of them');
   check('only a key hint is dropped, not any parenthesis', paren === null, paren);
   check('an empty list is not "translated"', !R.mapDecision({ id: 'e', reason: '', options: [] }, 'zh-TW').translated);
 }
-console.log('Claude Code 2.1.322: the auto-mode option, and a list read only in part');
+console.log('Claude Code 2.1.322: the auto-mode option');
 {
   // Measured on a real tab (80 columns): four options, the second wrapped onto two lines.
   const full = R.mapDecision({ id: 'a', reason: 'Do you want to proceed?', options: opts('Yes',
     'Yes, and always allow access to /work/app/ from this project',
     'Yes, and switch to auto mode · auto mode handles these prompts for you', 'No') }, 'zh-TW');
-  check('all four in plain words', full.translated && full.complete && same(labels(full),
+  check('all four in plain words', full.translated && same(labels(full),
     ['允許', '允許，而且這個專案以後都能存取 /work/app/', '允許，並切到自動模式（之後這類詢問由它自己判斷）', '不允許']), labels(full));
-  // What the shared screen reader returned for that screen: the options after the wrapped line.
-  const part = R.mapDecision({ id: 'b', reason: 'ork/app/ from this project',
-    options: [{ n: 3, text: 'Yes, and switch to auto mode · auto mode handles these prompts for you' }, { n: 4, text: 'No' }] }, 'zh-TW');
-  check('options 3 and 4 alone are an incomplete list (no buttons for it)', !part.complete, part);
-  check('…a list from 1 is complete', R.mapDecision({ id: 'c', reason: '', options: opts('Yes', 'No') }, 'en').complete);
 }
 console.log('the number sent is the option\'s own');
 {

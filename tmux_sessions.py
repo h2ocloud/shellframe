@@ -21,6 +21,7 @@ import sys
 import time
 from pathlib import Path
 
+import sf_config
 from sf_log import _dlog
 
 PREFIX = "sf_"
@@ -198,7 +199,7 @@ def _cli(argv: list[str]) -> int:
     every tab it shows)."""
     tmux = shutil.which("tmux") or shutil.which("tmux", path="/opt/homebrew/bin:/usr/local/bin")
     details = session_details(tmux)
-    cfg_path = Path.home() / ".config" / "shellframe" / "config.json"
+    cfg_path = sf_config.config_file()
     try:
         labels = json.loads(cfg_path.read_text(encoding="utf-8")).get("session_labels") or {}
     except (OSError, ValueError):

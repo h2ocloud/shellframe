@@ -128,7 +128,7 @@ def status_line(screen: str) -> str:
 
 def screen_text(api, sid: str, lines: int = 60) -> str:
     """What the tab's screen shows, as plain text (tmux), for `sfctl peek --raw`."""
-    s = api.sessions.get(sid)
+    s = (getattr(api, "sessions", None) or {}).get(sid)
     name = getattr(s, "_tmux_name", None) if s else None
     if not name:
         return _CSI.sub("", bytes(getattr(s, "_recent", b"") or b"").decode("utf-8", "replace")) if s else ""
@@ -138,6 +138,62 @@ def screen_text(api, sid: str, lines: int = 60) -> str:
         return r.stdout if r.returncode == 0 else ""
     except Exception:
         return ""
+
+
+def visible_text(api, sid: str) -> str:
+    """What the tab's screen shows now, without its scrollback: a menu up there may be one
+    answered long ago. tmux's pane; without tmux the Telegram slot's screen, else the recent
+    output screen_text reads (the menu reader then takes the last menu in it)."""
+    s = (getattr(api, "sessions", None) or {}).get(sid)
+    name = getattr(s, "_tmux_name", None) if s else None
+    if name:
+        try:
+            r = subprocess.run(["tmux", "capture-pane", "-p", "-J", "-t", name],
+                               capture_output=True, text=True, timeout=3)
+            return r.stdout if r.returncode == 0 else ""
+        except Exception:
+            return ""
+    slot = ((getattr(getattr(api, "bridge", None), "slots", None) or {}).get(sid)) if s else None
+    if slot is not None and getattr(slot, "screen", None) is not None:
+        try:
+            return "\n".join(slot.screen.display)
+        except Exception:
+            pass
+    return screen_text(api, sid)
+
+
+ANSWER_SETTLE_S = 0.8
+
+
+def answer_choice(api, sid: str, n, kind: str = "menu", write=None) -> str:
+    """Type option `n` for the question tab `sid` waits on; returns what went in.
+    "red": the agent's own [[SF:RED]] question at its prompt. The number is a message, and
+    Enter sends it. "menu": a numbered menu on screen. Some CLIs take the number alone and
+    move on, others need Enter, and an Enter after a menu that already moved on answers
+    whatever comes next (measured: Codex's start-up update menu answered "2", and the Enter
+    accepted the folder-trust prompt behind it). So the number, then Enter only while the
+    same menu is still on the screen."""
+    s = (getattr(api, "sessions", None) or {}).get(sid)
+    write = write or (s.write if s else None)
+    if not write:
+        return ""
+    if kind != "menu":
+        write(f"{n}\r")
+        return f"{n}\r"
+    import bridge_telegram
+
+    def menu_now():
+        return [o["text"] for o in bridge_telegram.menu_block(visible_text(api, sid).splitlines())[0]]
+    before = menu_now()
+    write(str(n))
+    gone, deadline = 0, time.time() + ANSWER_SETTLE_S
+    while time.time() < deadline:
+        time.sleep(0.1)
+        gone = gone + 1 if menu_now() != before else 0
+        if gone >= 2:                      # twice in a row, so a half-drawn screen does not count
+            return str(n)
+    write("\r")
+    return f"{n}+Enter"
 
 
 def capture(api, sid: str) -> str:

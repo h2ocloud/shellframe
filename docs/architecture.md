@@ -65,7 +65,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `bridge_home.py` | The primary bot on Telegram: a phone's messages default to it (woken if asleep), `/home`, a bot's `[[SF:RED]]` pushed as buttons from any turn (and kept for `/link/bots` with or without Telegram), `sfctl tg-send`, quiet hours, pairing a phone with a one-time code. `bridge_telegram.py` only calls in |
 | | `bridge_queue.py` | A Telegram message for a busy tab waits (turn on screen, hooks working, the user's draft) up to 30 min, with a ⚡ button to cut in; past that it is dropped and the phone is told |
 | | `launch_cmd.py` | What a tab's launch command runs: the `cd … &&` / `env …` / `VAR=…` prefix kept verbatim, the directory it starts in, and Claude Code's arguments rewritten for a relaunch (`--resume` the current conversation; no old session id, no opening prompt sent twice) |
-| | `tab_delivery.py` | Hands text to a tab without cutting into a turn, a decision menu or the user's draft: a per-tab queue (30 min, `--now` skips it) kept on disk across restarts; tells the sender when an item cannot be delivered |
+| | `tab_delivery.py` | Hands text to a tab without cutting into a turn, a decision menu or the user's draft: a per-tab queue (30 min, `--now` skips it) kept on disk across restarts; tells the sender when an item cannot be delivered. Also what is on the screen now (`visible_text`, no scrollback) and how a numbered question is answered (`answer_choice`: the number, then Enter only while the same menu is still up; a `[[SF:RED]]` question takes the number and Enter) |
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `tmux_sessions.py` | sf_* tmux sessions as data: tolerant listing, orphan report (also a read-only CLI), highest sid, client refresh |
 | | `wake_watch.py` | macOS display sleep/wake notifications → callbacks on a worker thread; memory-pressure probe |
@@ -75,6 +75,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent rules, model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |
 | Shared | `sf_log.py` | `_dlog` / `_swallow` logging primitives |
+| | `sf_config.py` | The one config.json lock, and the app's folder (`config_dir()`): `~/.config/shellframe`, `SHELLFRAME_CONFIG_DIR`, or for a test a folder of its own |
 | | `sf_notify.py` | Optional outbound webhook (leaf, stdlib only): config, payload, masked send, transition tracker for auto-notify. Used by `sfctl notify` and the status monitor; see [`notify-webhook.md`](notify-webhook.md) |
 
 ## 3. Data flows

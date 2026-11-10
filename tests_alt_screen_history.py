@@ -25,6 +25,7 @@ sys.modules['bridge_telegram'] = MagicMock()
 sys.path.insert(0, str(HERE))
 
 from main import Api  # noqa: E402
+import main  # noqa: E402
 
 passed = failed = 0
 
@@ -83,8 +84,8 @@ check("空 uuid 回 False", E("") is False)
 import glob  # noqa: E402
 import os  # noqa: E402
 found = []
-for root in (os.path.expanduser("~/.claude/projects"),
-             os.path.expanduser("~/.config/shellframe/account-profiles/*/*/projects")):
+for root in (os.path.expanduser("~/.claude/projects"),          # the profiles under main's own config folder
+             str(main.CONFIG_DIR / "account-profiles" / "*" / "*" / "projects")):
     hits = glob.glob(os.path.join(root, "*", "*.jsonl"))
     if hits:
         found.append((root, os.path.basename(hits[0])[:-6]))

@@ -20,13 +20,19 @@ running underneath with its size unchanged, and everything that types into the t
 
 - **Turns**: `chat_view` calls sfctl `conversation` (what `GET /link/conversation` gives a
   phone): `api_remote.conversation_turns` over `agent_status`'s normalisation.
-- **Questions**: `_link_decision` (the `decision` of `GET /link/bots`): a numbered menu on
-  screen, or the `[[SF:RED]]` question a turn ended on.
+- **Questions**: `_link_decision` (the `decision` of `GET /link/bots`): the last numbered
+  menu on the visible screen, or the `[[SF:RED]]` question a turn ended on. The menu
+  reader is Telegram's (`bridge_telegram.menu_block`): an option wrapped onto a second
+  line is joined back, and numbers that do not run 1, 2, 3… (the top is off the screen)
+  are not a menu. Its cases: `tests_decision_reader.py`.
 - **Sending**: `chat_send` is sfctl `send`, the phone's message box: it waits for a turn,
   a menu or the user's draft to end (queued meanwhile, up to 30 min).
 - **Answering**: `chat_answer` is `/link/answer`'s path (`_bots_link_answer`): only while
-  that very question is up (`id`), only a listed option, the option's number and Enter.
-  Telegram's copies of the question say it was answered on the computer.
+  that very question is up (`id`), only a listed option. A menu gets the option's number,
+  and Enter only if the same menu is still up a moment later (`tab_delivery.answer_choice`:
+  Codex takes the number alone and moves on); a `[[SF:RED]]` question is answered as a
+  message, the number and Enter. Telegram's copies of the question say it was answered on
+  the computer.
 
 ## Switching
 
@@ -67,12 +73,6 @@ running underneath with its size unchanged, and everything that types into the t
   option matches a known pattern (`OPTION_RULES`: Claude Code 2.1.322 and Codex 0.142.1
   wording, taken from their own strings); otherwise every option is shown as written.
   The number sent is always the option's own `n`, never its place on screen.
-- **Incomplete lists**: numbers that do not run 1, 2, 3… mean part of the menu was not
-  read; no buttons, the person is sent to the terminal.
-- **Menus not on screen**: the shared reader takes 40 lines of scrollback and returns the
-  first menu, so an older answered menu can come back. `chat_view` drops, and
-  `chat_answer` refuses, a menu whose options are not on the visible screen (tmux). A
-  `[[SF:RED]]` question is the agent's own words and needs no screen.
 - **Tool calls**: consecutive calls fold into one plain line ("查了 3 個檔案、跑了 1 個指令");
   one click shows each call's tool and target. Nothing is dropped.
 - **Working**: the face and one plain line from the status monitor's verdict

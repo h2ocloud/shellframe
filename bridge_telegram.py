@@ -581,7 +581,7 @@ DEFAULT_TG_PROMPT = _TG_PROMPT_BASE + _TG_COORD_DELEGATE
 def _read_config() -> dict:
     """Read ~/.config/shellframe/config.json without importing main.py."""
     try:
-        cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
+        cfg_file = _sf_config.config_file()
         if cfg_file.exists():
             cfg = json.loads(cfg_file.read_text(encoding='utf-8'))
             return cfg if isinstance(cfg, dict) else {}
@@ -620,7 +620,7 @@ def _update_settings(patch: dict) -> bool:
     Returns True on success. Used by TG /voice to switch refine model live."""
     with _sf_config.CONFIG_LOCK:
         try:
-            cfg_file = _Path.home() / ".config" / "shellframe" / "config.json"
+            cfg_file = _sf_config.config_file()
             cfg = _read_config()
             if not cfg and cfg_file.exists() and cfg_file.stat().st_size > 0:
                 # _read_config() 讀不懂時回 {}；照寫下去整份 config 只剩 settings。
@@ -891,19 +891,53 @@ _MENU_ACTION_RE = re.compile(
 
 
 def menu_options(lines) -> list:
-    """[{"num", "text"}…] of a numbered menu waiting on screen (two items or more), else [].
-    Shared by Telegram's menu push and the phone's /link/bots decision."""
-    opts = []
-    for line in lines:
-        m = _MENU_ITEM_RE.match(line.lstrip().lstrip('❯›').lstrip())   # the ❯ cursor may sit on any item
+    """[{"num", "text"}…] of the numbered menu waiting on screen (two items or more), else [].
+    Shared by Telegram's menu push and the phone's /link/bots decision (see menu_block)."""
+    return menu_block(lines)[0]
+
+
+def menu_block(lines):
+    """(options, first line, last line) of the menu being asked, or ([], -1, -1).
+    - The last menu on the screen: earlier text may hold an answered menu scrolled up, or a
+      numbered list in the agent's own answer (measured: Codex's update menu, offered over
+      the approval under it).
+    - A line indented under an option's text is that option, wrapped (measured: Claude Code,
+      80 columns, a long folder; read as a new line it dropped the options above it). A cut
+      at the screen's edge joins without a space, one between words with a space.
+    - Its numbers run 1, 2, 3…: a list that starts later has its top off the screen."""
+    width = max((len(ln.rstrip()) for ln in lines), default=0)
+    edge = sum(1 for ln in lines if len(ln.rstrip()) >= width - 1) >= 2   # the width is the screen's (a rule spans it)
+    best, opts, first, last, col = ([], -1, -1), [], -1, -1, 0
+
+    def done():
+        nonlocal best
+        if len(opts) >= 2 and all(int(o["num"]) == i + 1 for i, o in enumerate(opts)):
+            best = (list(opts), first, last)
+    for i, line in enumerate(lines):
+        body = line.lstrip().lstrip('❯›').lstrip()                    # the ❯ cursor may sit on any item
+        m = _MENU_ITEM_RE.match(body)
         if m:
+            if opts and m.group(1) == "1":                            # another menu starts
+                done()
+                opts = []
+            if not opts:
+                first = i
             opts.append({"num": m.group(1), "text": m.group(2).strip()})
+            last, col = i, len(line) - len(body) + len(m.group(1)) + 2
         elif opts:
-            if ('Esc to cancel' in line or 'Tab to' in line or not line.strip()) and len(opts) >= 2:
-                break
-            if line.strip() and not _MENU_END_RE.search(line) and not _MENU_CHROME_RE.search(line):
+            text = line.strip()
+            indent = len(line) - len(line.lstrip())
+            if text and indent >= col - 1 and not _MENU_END_RE.search(line):
+                cut = edge and len(lines[last].rstrip()) >= width - 1
+                opts[-1]["text"] += ("" if cut else " ") + text
+                last = i
+            elif ('Esc to cancel' in line or 'Tab to' in line or not text) and len(opts) >= 2:
+                done()
+                opts = []
+            elif text and not _MENU_END_RE.search(line) and not _MENU_CHROME_RE.search(line):
                 opts = []                                               # a non-menu line in the middle
-    return opts if len(opts) >= 2 else []
+    done()
+    return best
 
 # Rate-limit detection patterns (read from live screen, not from extract path)
 _RATE_LIMIT_RE = re.compile(
@@ -4434,7 +4468,7 @@ class TelegramBridge(BridgeBase):
     # Holds: the getUpdates offset (so /restart doesn't re-process itself) AND
     # per-user active-session routing (_user_active) so TG users return to the
     # same session after restart instead of defaulting to _slot_order[0].
-    _OFFSET_FILE = _Path.home() / ".config" / "shellframe" / "tg_offset.json"
+    _OFFSET_FILE = _sf_config.config_dir() / "tg_offset.json"
 
     @classmethod
     def _load_persisted(cls) -> dict:
@@ -4452,7 +4486,7 @@ class TelegramBridge(BridgeBase):
     # _dispatch_loop 取走的訊息，永遠不會再被 getUpdates 取回 → 永久遺失，
     # 而且一行 log 都沒有。改動 offset 時序會把重啟迴圈的舊病帶回來，所以改用
     # 「停止時把殘留佇列落盤、下次啟動重播」——純加法、不動既有 offset 語義。
-    _PENDING_FILE = _Path.home() / ".config" / "shellframe" / "tg_pending.json"
+    _PENDING_FILE = _sf_config.config_dir() / "tg_pending.json"
     _PENDING_MAX = 20
     # 重播時一律濾掉自我重啟指令，避免「重啟 → 重播 /restart → 再重啟」迴圈
     # （這正是 offset 先存的原始理由）。
@@ -5652,10 +5686,16 @@ class TelegramBridge(BridgeBase):
             self._user_chat[user_id] = chat_id
             self._user_active[user_id] = sid
             self._default_active_sid = sid
+            on_screen = bool(slot.pending_menu or slot.pending_menu_options)   # else a [[SF:RED]] question's
             slot.pending_menu = False
             slot.pending_menu_options = []
             try:
-                slot.write_fn(f"{choice}\r")
+                api = bridge_home._api(self)
+                if api is not None:     # a menu takes the number, and Enter only while it is still up
+                    import tab_delivery
+                    tab_delivery.answer_choice(api, sid, choice, "menu" if on_screen else "red", write=slot.write_fn)
+                else:
+                    slot.write_fn(f"{choice}\r")
                 with slot.output_lock:
                     slot.turn_epoch += 1   # 舊回合還在送出中的 commit 不得清掉這個
                     slot.has_user_msg = True

@@ -14,6 +14,14 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
+# Tests never touch the running app's ~/.config/shellframe (sf_config.config_dir): each
+# test process gets a config folder of its own under this run's root, removed at the end.
+export SHELLFRAME_TESTS=1
+unset SHELLFRAME_CONFIG_DIR
+SHELLFRAME_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/shellframe-tests.XXXXXX")"
+export SHELLFRAME_TEST_ROOT
+trap 'rm -rf "$SHELLFRAME_TEST_ROOT"' EXIT
+
 PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 fails=0
