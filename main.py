@@ -4783,10 +4783,14 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         text = str(text or "").strip()
         if not text:
             return
+        named = getattr(s, "_custom_label", None)
 
         def _do_slug():
             slug = _haiku_slug(text)
             if not slug:
+                return
+            if getattr(s, "_custom_label", None) != named:    # named by hand, or kept, while it waited (up to 30 s)
+                _dlog("slug", f"{sid} was named meanwhile; its name stays")
                 return
             old_name = getattr(s, "_tmux_name", None)
             if old_name and old_name.startswith(TMUX_PREFIX):

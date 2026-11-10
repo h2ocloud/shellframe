@@ -364,6 +364,22 @@ check("a call that runs out of time: no name, and the debug log says so",
 main.subprocess.run = lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="code-name-blue-whale\n")
 check("an answer becomes the name", real_haiku_slug("幫我記住一件事") == "code-name-blue-whale")
 main.subprocess.run, main.shutil.which = real_run, real_which
+stub_slug = main._haiku_slug
+t12 = api.sessions["s12"] = Tab("s12", "", "claude")
+t12._slug_pending = True
+main._haiku_slug = lambda text: (setattr(t12, "_custom_label", "手動取的名字"), "auto-made-name")[1]   # renamed while it ran
+n0 = len(renamed)
+api._auto_name("s12", t12, "第一句話")
+time.sleep(0.3)
+check("a name given by hand (or by keeping) while the name call ran stays",
+      t12._custom_label == "手動取的名字" and not any(r[1] == "auto made name" for r in renamed[n0:]), renamed[n0:])
+t13 = api.sessions["s13"] = Tab("s13", "", "claude")
+t13._slug_pending = True
+main._haiku_slug = lambda text: "auto-made-name"
+api._auto_name("s13", t13, "第一句話")
+time.sleep(0.3)
+check("…and with no such rename, the tab takes the made name", t13._custom_label == "auto made name", t13._custom_label)
+main._haiku_slug = stub_slug
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:
