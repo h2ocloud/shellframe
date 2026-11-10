@@ -1081,7 +1081,8 @@
         `<span class="cm-new-face">${aiFace(g.provider)}</span><span class="cm-new-txt"><b>${escHtml(g.title)}` +
         (i === 0 ? `<i>${escHtml(T('default', '預設'))}</i>` : '') + `</b><span>${escHtml(why)}</span></span></button>`;
     });
-    html += '</div>';
+    html += '</div>' + `<div class="cm-new-note">${escHtml(T('A new conversation is a temporary bot: it forgets when it closes. Keep it (the button beside its name) and it remembers.',
+      '新的對話是臨時 bot：關掉就忘了。按名字旁的「記住」，它就會記得。'))}</div>`;     // plan A
     if (bots.length) {
       html += `<div class="cm-new-sec">${escHtml(T('Hand it to a bot', '交給 bot'))}</div><div class="cm-new-list">` +
         bots.map((b, i) => `<button class="cm-new-item" data-act="new-bot" data-b="${i}"><span class="cm-new-face">` +

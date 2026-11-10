@@ -309,6 +309,32 @@ check("…its tab closed the bot's way (memory first), then woken on the new CLI
 r = api._bots_link_settings({"role": "研究", "cli": "codex", "apply": "next_wake"})
 check("the phone's /link/bots/settings with cli: the same switch", r.get("success") and agent_status_kind(roster()["研究"]["cmd"]) == "codex", r)
 
+print("7. the one-time tidy (sfctl bots-migrate)")
+fresh()
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+cfg["agent_roster"]["研究"] = {"label": "研究-CLD", "cmd": "claude", "bot": {"memory": True}}
+cfg["session_order"] = ["s1", "s3", "s4"]
+main.CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+api.sessions = {sid: Tab(sid, label, cmd) for sid, label, cmd in (
+    ("s1", "Coding", "codex"), ("s21", "研究-CLD", "claude"), ("s5", "研究-CLD", "claude"), ("s4", "zsh", "zsh"))}
+api.bridge = None
+main.load_config()                    # a first read fills in what an old config lacks (ui_style): not the tidy's doing
+before = main.CONFIG_FILE.read_text(encoding="utf-8")
+r = api._execute_sfctl("bots_migrate", {})
+check("a dry run lists the binding a title implies, and writes nothing",
+      r.get("bindings") == [{"sid": "s21", "title": "研究-CLD", "bot": "研究"}] and not r.get("apply")
+      and main.CONFIG_FILE.read_text(encoding="utf-8") == before, r)
+r = api._execute_sfctl("bots_migrate", {"apply": True})
+after = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+check("applied: the binding written, config.json copied first",
+      (after["bots_sessions"].get("s21") or {}).get("bot") == "研究" and Path(r.get("backup", "")).exists()
+      and Path(r["backup"]).read_text(encoding="utf-8") == before, r)
+check("a tab marked not a bot is not touched", after["bots_sessions"].get("s5") == {"plain": True})
+check("the roster's keys and the tabs' order (Telegram's /N) are as they were",
+      sorted(after["agent_roster"]) == sorted(json.loads(before)["agent_roster"])
+      and after.get("session_order") == ["s1", "s3", "s4"])
+check("run again: nothing more", api._execute_sfctl("bots_migrate", {"apply": True}).get("bindings") == [])
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

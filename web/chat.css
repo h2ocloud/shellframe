@@ -268,3 +268,4 @@ body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { 
 .cm-new-adv:hover { text-decoration: underline; }
 .cm-sent-file { margin-top: -.35em; }
 .cm-sent-file .cm-file { opacity: .85; }
+.cm-new-note { margin: 6px 2px 2px; font-size: 11px; line-height: 1.45; color: var(--cm-dim); }

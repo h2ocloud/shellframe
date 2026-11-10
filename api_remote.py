@@ -1350,6 +1350,8 @@ class RemoteApiMixin:
             return self._bots_link(args)
         elif cmd == "bots_keep":
             return self._bots_link_keep(args)
+        elif cmd == "bots_migrate":
+            return self._bots_migrate(bool(args.get("apply")))
         elif cmd == "bots_switch":
             return self._bots_switch(str(args.get("role") or ""), str(args.get("cli") or ""), args.get("model"),
                                      "now" if args.get("now") else "next_wake")

@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -785,6 +786,43 @@ class BotsApiMixin:
             self.bots_open(role)
         except Exception as e:
             _dlog("bots", f"{role}: switching now failed: {e}")
+
+    # ── plan A: the one-time tidy ────────────────────────────────────────
+    def bots_migrate(self, apply: bool = False) -> str:
+        return json.dumps(self._bots_migrate(apply), ensure_ascii=False)
+
+    def _bots_migrate(self, apply: bool = False) -> dict:
+        """Additive only: a tab a bot is taken from by its title (no binding yet) gets the
+        binding, so renaming the tab keeps it that bot's. Tabs marked "not a bot", roster
+        keys and the tabs' order (Telegram's /N) are left as they are. A dry run unless
+        apply; apply copies config.json to config.json.bak-<time> first. Run twice, it adds
+        nothing the second time."""
+        cfg = _cfg()
+        roster, bound, tabs = cfg.get("agent_roster") or {}, cfg.get("bots_sessions") or {}, self._name_tabs()
+        add = []
+        for t in tabs:
+            row = bound.get(t["sid"]) or {}
+            if row.get("plain") or row.get("bot"):
+                continue
+            role = bot_names.role_of_tab(t["sid"], roster, tabs, bound,
+                                         only=lambda r, e: bots.is_bot(e) and not bots.is_external(e))
+            if role:
+                add.append({"sid": t["sid"], "title": t["title"], "bot": role})
+        out = {"success": True, "apply": bool(apply), "bindings": add}
+        if not apply or not add:
+            return out
+        backup = main.CONFIG_FILE.with_name(f"config.json.bak-{time.strftime('%Y%m%d-%H%M%S')}")
+        shutil.copy2(main.CONFIG_FILE, backup)
+
+        def _mut(c):
+            table = c.setdefault("bots_sessions", {})
+            for a in add:
+                row = table.get(a["sid"]) or {}
+                if not row.get("plain") and not row.get("bot"):
+                    table[a["sid"]] = dict(row, bot=a["bot"])
+        _update(_mut)
+        self._bots_notify_ui()
+        return dict(out, backup=str(backup))
 
     def _bots_link_keep(self, args: dict) -> dict:
         """POST /link/bots/keep {"sid", "name"?}: a phone keeps a temporary bot (bots_keep)."""

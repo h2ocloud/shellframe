@@ -752,6 +752,9 @@ def main():
     p_bset.add_argument("--model", default=None, help="The model (empty: the CLI's default)")
     p_bset.add_argument("--now", action="store_true",
                         help="Switch now (an awake bot writes its memory and closes first); else at its next wake")
+    p_bmig = sub.add_parser("bots-migrate", help="Plan A's one-time tidy: bind each tab a bot is taken from by "
+                                                 "its title, so renaming it keeps it the bot's (a dry run without --apply)")
+    p_bmig.add_argument("--apply", action="store_true", help="Write it (config.json is copied to a .bak first)")
     p_bdel = sub.add_parser("bots-delete", help="Remove a bot, as Delete in its editor (ask the user first): "
                                                 "its memory folder stays; a role that was in the roster before "
                                                 "it became a bot stays as a plain worker role")
@@ -1006,6 +1009,8 @@ def main():
     elif args.cmd == "bots-set":
         _print_result(_rpc("bots_switch", {"role": args.role, "cli": args.cli, "model": args.model,
                                            "now": args.now}, timeout=20))
+    elif args.cmd == "bots-migrate":
+        _print_result(_rpc("bots_migrate", {"apply": args.apply}, timeout=20))
     elif args.cmd == "bots-delete":
         _print_result(_rpc("bots_delete", {"role": args.role}, timeout=15))
     elif args.cmd == "route":
