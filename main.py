@@ -805,9 +805,13 @@ def _unique_tmux_name(base: str) -> str:
     return name
 
 
+SLUG_TIMEOUT_S = 30   # `claude --print` loads its hooks and MCP servers first: 12.8 s measured on one Mac
+
+
 def _haiku_slug(prompt: str) -> str:
     """Call claude --model haiku to produce a 3-5 word slug for the prompt.
-    Returns empty string on any failure so callers fall back to sf_sNN."""
+    Returns empty string on any failure so callers fall back to sf_sNN; a failure
+    leaves a [slug] line in the debug log (never the prompt)."""
     try:
         claude_bin = shutil.which("claude")
         if not claude_bin:
@@ -818,13 +822,17 @@ def _haiku_slug(prompt: str) -> str:
         )
         r = subprocess.run(
             [claude_bin, "--model", "claude-haiku-4-5", "--print", meta_prompt],
-            capture_output=True, text=True, timeout=8,
+            capture_output=True, text=True, timeout=SLUG_TIMEOUT_S,
         )
         raw = r.stdout.strip().splitlines()
         candidate = next((l.strip() for l in reversed(raw) if l.strip()), "")
         slug = _slugify(candidate)
-        return slug if len(slug) >= 3 else ""
-    except Exception:
+        if len(slug) < 3:
+            _dlog("slug", f"no name: exit {r.returncode}, {len(candidate)} chars back")
+            return ""
+        return slug
+    except Exception as e:
+        _dlog("slug", f"no name: {type(e).__name__}")
         return ""
 
 
