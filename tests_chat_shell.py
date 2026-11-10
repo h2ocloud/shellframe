@@ -182,6 +182,10 @@ PI.write_text("\n".join(json.dumps(o, ensure_ascii=False) for o in [
     {"type": "message", "id": "d", "message": {"role": "toolResult", "content": [{"type": "text", "text": "a.txt"}]}},
     {"type": "message", "id": "e", "message": {"role": "assistant", "timestamp": 1794190845000,
                                                 "content": [{"type": "text", "text": "只有 a.txt。"}]}},
+    {"type": "message", "id": "f", "message": {"role": "user", "content": [{"type": "text", "text": "再一次"}],
+                                                "timestamp": 1794190850000}},
+    {"type": "message", "id": "g", "message": {"role": "assistant", "content": [], "stopReason": "error", "timestamp": 1794190851000,
+                                                "errorMessage": "500 upstream error, key sk-abcdefghijklmnop1234"}},
 ]) + "\n", encoding="utf-8")
 GROK = TMP / "chat_history.jsonl"
 GROK.write_text("\n".join(json.dumps(o, ensure_ascii=False) for o in [
@@ -199,8 +203,10 @@ for sid in ("s7", "s8", "s9"):
     STATUS[sid] = {"state": "done"}
 v7 = view("s7")
 check("Pi: its session read as turns (thinking and tool results left out)", v7["readable"] and v7["provider"] == "pi"
-      and [(t["kind"], t.get("tool", ""), t.get("target", "") or t.get("text", "")) for t in v7["turns"]]
+      and [(t["kind"], t.get("tool", ""), t.get("target", "") or t.get("text", "")) for t in v7["turns"]][:3]
       == [("user_msg", "", "列出檔案"), ("tool_call", "bash", "ls -la"), ("assistant_text", "", "只有 a.txt。")], v7["turns"])
+check("…a failed model call is an error turn, its key masked", v7["turns"][-1]["kind"] == "error"
+      and "500 upstream error" in v7["turns"][-1]["text"] and "sk-abcdefghijklmnop1234" not in v7["turns"][-1]["text"], v7["turns"][-1])
 check("…the same turns the phone gets from /link/conversation", v7["turns"]
       == api._execute_sfctl("conversation", {"sid": "s7", "limit": 120})["details"]["turns"])
 check("…with their times", all(t.get("ts") for t in v7["turns"]), v7["turns"])

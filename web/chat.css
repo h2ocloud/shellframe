@@ -264,3 +264,5 @@ body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { 
 .cm-new-txt span { font-size: 11.5px; color: #8089b3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-new-adv { border: 0; background: none; color: #7aa2f7; font-size: 12px; cursor: pointer; padding: 2px; display: inline-flex; gap: 4px; }
 .cm-new-adv:hover { text-decoration: underline; }
+.cm-sent-file { margin-top: -.35em; }
+.cm-sent-file .cm-file { opacity: .85; }

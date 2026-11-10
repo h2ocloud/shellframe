@@ -131,7 +131,7 @@
     write: 'edit', edit: 'edit', multiedit: 'edit', patch: 'edit', edit_file: 'edit', write_file: 'edit',
     str_replace: 'edit', str_replace_editor: 'edit', search_replace: 'edit', create_file: 'edit', delete_file: 'edit',
     grep: 'search', glob: 'search', list: 'search', ls: 'search', list_dir: 'search', list_directory: 'search',
-    file_search: 'search', codebase_search: 'search', find: 'search',
+    file_search: 'search', codebase_search: 'search', grep_search: 'search', find: 'search',
     webfetch: 'web', websearch: 'web', fetch: 'web', web_fetch: 'web', fetch_url: 'web',
     task: 'agent', todowrite: 'plan', todoread: 'plan', todo_write: 'plan',
   };
@@ -280,6 +280,10 @@
       tags.push({ kind: 'a2a', who: who[1] || who[2] || '' });
       t = t.slice(a2a[0].length);
     }
+    // Cursor Agent stores a prompt stamped and wrapped: <timestamp>…</timestamp><user_query>…</user_query>
+    t = t.replace(/^\s*<timestamp>[^<]*<\/timestamp>\s*/i, '');
+    const q = t.match(/^\s*<user_query>([\s\S]*)<\/user_query>\s*$/i);
+    if (q) t = q[1];
     if (TG_TOKEN.test(t)) {      // Telegram's reply-marker instruction is a paragraph of its own
       t = t.split(/\n{2,}/).filter(p => !TG_TOKEN.test(p)).join('\n\n');
       tags.push({ kind: 'telegram' });
@@ -316,6 +320,8 @@
         else out.push({ type: 'tools', calls: [call], ts: t.ts || 0 });
       } else if (kind === 'user_msg') {
         if (isCompaction(t)) { out.push({ type: 'compact', text: String(t.text || ''), ts: t.ts || 0 }); return; }
+        const pic = String(t.text || '').match(/^\s*\[Image: source: ([^\]\n]+)\]\s*$/);   // Claude's record of an attached picture
+        if (pic) { out.push({ type: 'file', path: pic[1].trim(), ts: t.ts || 0 }); return; }
         const u = userView(t.text);
         if (!u.text) return;               // Codex's turn-start record carries no words
         lastUser = u.text;
@@ -330,6 +336,8 @@
         if (prev && prev.type === 'bot' && prev.text === text) return;   // Codex writes each answer twice
         out.push({ type: 'bot', text, ts: t.ts || 0 });
       } else if (kind === 'error') {
+        const prev = out[out.length - 1];
+        if (prev && prev.type === 'error' && prev.text === String(t.text || '')) { prev.times = (prev.times || 1) + 1; return; }
         out.push({ type: 'error', text: String(t.text || ''), ts: t.ts || 0 });
       }
     });
@@ -884,8 +892,13 @@
         `<span class="cm-caret">${open ? '▾' : '▸'}</span>${escHtml(T('Earlier messages were folded into a summary', '較早的對話已整理成摘要'))}</button>` +
         (open ? `<div class="cm-compact-text">${md(it.text, isZh(lang()))}</div>` : '') + '</div>';
     }
+    if (it.type === 'file') {
+      return `<div class="cm-row cm-user cm-sent-file"><span class="cm-file" title="${escHtml(it.path)}">${ICON_FILE}` +
+        `<span>${escHtml(baseName(it.path))}</span></span></div>`;
+    }
     if (it.type === 'error') {
-      return `<div class="cm-row cm-error"><span class="cm-face-gap"></span><div>${escHtml(it.text)}</div></div>`;
+      const times = it.times > 1 ? T(` (${it.times} times)`, `（${it.times} 次）`) : '';
+      return `<div class="cm-row cm-error"><span class="cm-face-gap"></span><div>${escHtml(T('Error: ', '出錯了：') + it.text + times)}</div></div>`;
     }
     return '';
   }
@@ -1079,6 +1092,8 @@
     if (b.dataset.act === 'new-adv') {
       const open = box.classList.toggle('cm-adv-open');
       b.querySelector('.cm-caret').textContent = open ? '▾' : '▸';
+      const list = document.getElementById('preset-list');
+      if (open && list && list.scrollIntoView) list.scrollIntoView({ block: 'start', behavior: 'smooth' });
       return;
     }
     if (b.dataset.act === 'new-ai') {

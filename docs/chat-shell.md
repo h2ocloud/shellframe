@@ -39,9 +39,27 @@ running underneath with its size unchanged, and everything that types into the t
   `DEFAULT_CONFIG`'s `chat`. A `config.json` written before the setting existed belongs to
   a computer that already ran ShellBot: `api_chat.ensure_ui_style` writes `cli` once.
   Deleting `~/.config/shellframe` makes a computer new again.
-- Only Claude Code and Codex tabs have the view (`CHAT_PROVIDERS`). Any other tab shows its
-  terminal; in chat style a small note says why. A Claude/Codex tab with no record yet
-  shows an empty conversation with the input box.
+- The view draws the CLIs whose conversation sfctl `conversation` can read
+  (`CHAT_PROVIDERS`): Claude Code, Codex, OpenCode (its SQLite; a session is found by the
+  title OpenCode gives it), Grok and Cursor (their session files) and Pi (`agent_pi.py`).
+  Antigravity keeps its steps as protobuf and every other tab is a terminal: they show
+  their terminal, and in chat style a small note says why. A tab with no record yet shows
+  an empty conversation with the input box.
+
+## New conversation, names, files
+
+- **"+" in chat style** opens "New conversation": each AI by what it is for (the default
+  variant of each provider group from `preset_groups`, no commands shown) and, with bots
+  on, the bots. The full preset list and a typed command fold under "Advanced". In Native
+  CLI style the dialog is unchanged.
+- **Command-named tabs** (`claude`, `codex`, `bash`…) show as "Claude 對話" / "終端機" in
+  chat style (tab bar, sidebar, header), numbered when there are several. Display only:
+  the tab's name for sfctl, Telegram and A2A does not change.
+- **Files**: a picture or file pasted into the box is saved by the terminal's own calls
+  (`save_image`, `get_clipboard_files`, `save_file_from_clipboard`); a dropped one goes
+  through the page's drop path (`attachFile` hands it to the view). They go in ahead of
+  the words as their paths, as a phone sends a photo; Claude Code turns an image path
+  into `[Image #N]` itself (measured), and its record of it shows as a file chip.
 
 ## Display rules (display only; tested in `tests_chat_shell.js`)
 
@@ -76,9 +94,13 @@ The terminal's vertical tab label (the view has a header instead) and the sideba
 badge. Command names are not shown as the conversation's name: a tab still called
 `claude`/`codex` is titled "對話/Chat".
 
-## Not yet (M2)
+## Not yet
 
-Other CLIs' conversations, "＋ New conversation" (choosing a bot or a purpose instead of a
-CLI), files and images in the input box (dropping a file on the view says to use the
-terminal), remote (Frame Link) tabs, the tab bar's and sidebar's own CLI names, Windows
-verified on a real machine.
+- **Remote (Frame Link) tabs** keep their terminal. The turns (`/link/conversation`),
+  sending (`/link/send`) and the state (`/link/state`) are there; what is missing is a
+  question to answer: a peer gives one only with bots on (`/link/bots`), answering needs
+  an `/link/answer` client in `frame_link.py` (at its size limit: something has to move
+  out first), and buttons for a peer's menus should wait until the peer has the fixed
+  shared menu reader.
+- OpenCode's failed model calls are not in its record, so the view says "no answer came
+  back" rather than the error; Pi's are (an error line).

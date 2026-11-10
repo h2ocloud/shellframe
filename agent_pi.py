@@ -36,6 +36,8 @@ def norm(record):
         return [{"kind": "user_msg", "ts": ts, "text": text}] if text else []
     if role != "assistant":
         return []                                   # toolResult: the call already shows
+    if m.get("errorMessage"):                       # the model call failed; pi retries and writes each
+        return [{"kind": "error", "ts": ts, "text": agent_status.redact(m["errorMessage"], 160)}]
     out = []
     for c in content if isinstance(content, list) else []:
         if not isinstance(c, dict):

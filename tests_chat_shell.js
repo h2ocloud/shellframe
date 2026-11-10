@@ -192,6 +192,11 @@ console.log('turns');
   check("Telegram's marker instruction becomes a tag", tg.text === '幫我看一下報表' && tg.tags[0].kind === 'telegram', tg);
   const a2a = R.userView('[[A2A：來自「研究」的訊息，不是使用者本人。回覆請用 sfctl a2a-result。]]\n資料整理好了');
   check('an A2A header becomes "from 研究"', a2a.text === '資料整理好了' && a2a.tags[0].who === '研究', a2a);
+  const cur = R.userView('<timestamp>Tuesday, Nov 10, 2026, 9:55 PM (UTC+8)</timestamp><user_query>你好</user_query>');
+  check("Cursor Agent's stamp and wrapper are not shown", cur.text === '你好' && !cur.tags.length, cur);
+  const pic = R.buildTimeline([{ kind: 'user_msg', text: '[Image #1]幾根長條？' }, { kind: 'user_msg', text: '[Image: source: /tmp/w/bars.png]' }]);
+  check("Claude's record of an attached picture is a file, not a message", pic.length === 2 && pic[1].type === 'file'
+    && pic[1].path === '/tmp/w/bars.png', pic);
   check("plain text is left alone", same(R.userView('just text [[not a marker]]'), { text: 'just text [[not a marker]]', tags: [] }));
   const codex = [
     { kind: 'user_msg', text: '' },
@@ -209,6 +214,9 @@ console.log('turns');
                { kind: 'assistant_text', text: '兩個都可以。\n要先修哪個？\n[[SF:RED]]\n1. 先修按鈕\n2. 先修通知' }];
   check('[[SF:RED]]: the options fold away once they are buttons', R.buildTimeline(red, { foldRed: true })[1].text === '兩個都可以。\n要先修哪個？');
   check('…otherwise only the marker goes', R.buildTimeline(red)[1].text === '兩個都可以。\n要先修哪個？\n1. 先修按鈕\n2. 先修通知');
+  const errs = R.buildTimeline([{ kind: 'user_msg', text: 'hi' }, { kind: 'error', text: '500' }, { kind: 'error', text: '500' },
+                                 { kind: 'error', text: '500' }, { kind: 'error', text: 'other' }]);
+  check('the same error three times in a row is one line, counted', errs.length === 3 && errs[1].times === 3 && errs[2].text === 'other', errs);
   check('reply markers and green/working markers are not shown',
     R.botView('[[TG_REPLY_ab12]]好了[[/TG_REPLY_ab12]] [[SF:GREEN]]') === '好了');
   check('a yellow marker reads as a waiting note', R.botView('[[SF:YELLOW:等對方回信]]') === '⏳ 等對方回信');
