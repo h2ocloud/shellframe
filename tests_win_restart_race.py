@@ -203,6 +203,10 @@ _imports = {a.name.split(".")[0] for n in ast.walk(ast.parse((here / "win_instan
             if isinstance(n, ast.Import) for a in n.names}
 _imports |= {(n.module or "").split(".")[0] for n in ast.walk(ast.parse((here / "win_instance.py").read_text(encoding="utf-8")))
              if isinstance(n, ast.ImportFrom)}
+_src = (here / "win_instance.py").read_text(encoding="utf-8")
+_cm = _src[_src.index("def create_mutex"):_src.index("def last_error")]
+check("the last error is cleared before CreateMutexW (ctypes restores its saved 183)",
+      _cm.index("set_last_error(0)") < _cm.index("CreateMutexW("), _cm)
 check("win_instance stays a leaf module (no main, no api_host)", not _imports & {"main", "api_host"}, str(_imports))
 
 print(f"\nResults: {passed} passed, {failed} failed")

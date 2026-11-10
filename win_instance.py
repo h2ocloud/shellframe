@@ -102,6 +102,10 @@ class Kernel32:
         self._k = k
 
     def create_mutex(self, name):
+        # With use_last_error, ctypes puts its saved value (183 after a collision) back
+        # before each call, and CreateMutexW is not documented to clear it when it
+        # creates the mutex. Start from 0, or a fresh mutex could read as "exists".
+        self._ctypes.set_last_error(0)
         return self._k.CreateMutexW(None, False, name)
 
     def last_error(self):
