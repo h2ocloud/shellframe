@@ -70,7 +70,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `usage_probe.py` | Per-tab usage/quota probes |
 | | `tmux_sessions.py` | sf_* tmux sessions as data: tolerant listing, orphan report (also a read-only CLI), highest sid, client refresh |
 | | `wake_watch.py` | macOS display sleep/wake notifications → callbacks on a worker thread; memory-pressure probe |
-| | `app_bundle.py` | The app as the system shows it: the macOS bundle installed as `ShellBot.app` (the template keeps `ShellFrame.app`), found under either name (`find`), an older install renamed once with LaunchServices and the Dock told (`migrate`), the update's copy (`refresh`); the Windows desktop shortcut `ShellBot.lnk` |
+| | `app_bundle.py` | The app as the system shows it: the macOS bundle installed as `ShellBot.app` (the template keeps `ShellFrame.app`), found under either name (`find`), an older install renamed once with LaunchServices and the Dock told (`migrate`), the update's copy (`refresh`), the installer's pin of it first in the Dock (`pin_dock`: through `defaults` with a read-back, never the Dock's plist file); the Windows desktop shortcut `ShellBot.lnk` |
 | | `account_manager.py` | Profile directories and credential seeding per provider |
 | | `frame_link.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, NAT relay |
 | | `bridge_telegram.py`, `bridge_line.py`, `bridge_base.py` | Chat bridges: polling, routing, injection, reply extraction |

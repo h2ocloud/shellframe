@@ -267,50 +267,23 @@ if [ "$(uname)" = "Darwin" ]; then
   done
   "$LSREGISTER" -f "$APP_DEST" 2>/dev/null || true
 
-  # Keep ShellBot pinned in Dock by default. This is idempotent and can be
-  # skipped for scripted installs with SHELLFRAME_SKIP_DOCK=1.
+  # Keep ShellBot pinned first in the Dock by default. Not by writing the Dock's plist and
+  # restarting it: the preferences daemon holds that domain, and a Dock with changes it has
+  # not saved writes them back as it quits, so such a pin can be lost without a word.
+  # app_bundle.pin_dock() goes through `defaults`, restarts the Dock, reads the pin back and
+  # tries again if it is gone. Idempotent (a pin already first and right changes nothing, and
+  # the Dock is not restarted); best effort, it never fails the install; can be skipped for
+  # scripted installs with SHELLFRAME_SKIP_DOCK=1.
   if [ "${SHELLFRAME_SKIP_DOCK:-0}" != "1" ]; then
-    APP_DEST="$APP_DEST" python3 - <<'PY' 2>/dev/null || true
+    INSTALL_DIR="$INSTALL_DIR" APP_DEST="$APP_DEST" python3 - <<'PY' 2>/dev/null || true
 import os
-import pathlib
-import plistlib
-import time
+import sys
 
-app = pathlib.Path(os.environ["APP_DEST"])
-plist = pathlib.Path.home() / "Library/Preferences/com.apple.dock.plist"
-if plist.exists():
-    data = plistlib.loads(plist.read_bytes())
-else:
-    data = {}
+sys.path.insert(0, os.environ["INSTALL_DIR"])
+import app_bundle
 
-url = app.as_uri() + "/"
-apps = data.get("persistent-apps", [])
-filtered = []
-for item in apps:
-    tile = item.get("tile-data", {})
-    label = tile.get("file-label")
-    item_url = (tile.get("file-data") or {}).get("_CFURLString")
-    bundle_id = tile.get("bundle-identifier")
-    if label in ("ShellFrame", "ShellBot") or bundle_id == "com.h2ocloud.shellframe" or (
-            item_url and ("ShellFrame.app" in item_url or "ShellBot.app" in item_url)):
-        continue
-    filtered.append(item)
-
-entry = {
-    "tile-data": {
-        "bundle-identifier": "com.h2ocloud.shellframe",
-        "dock-extra": 0,
-        "file-data": {"_CFURLString": url, "_CFURLStringType": 15},
-        "file-label": "ShellBot",
-        "file-mod-date": int(time.time()),
-        "file-type": 41,
-    },
-    "tile-type": "file-tile",
-}
-data["persistent-apps"] = [entry] + filtered
-plist.write_bytes(plistlib.dumps(data, sort_keys=False))
+app_bundle.pin_dock(os.environ["APP_DEST"], log=lambda m: print("  Dock: " + m))
 PY
-    killall Dock 2>/dev/null || true
   fi
 
   echo "  App: $APP_DEST"

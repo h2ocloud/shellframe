@@ -16,6 +16,10 @@ bundle's bytes, the same cdhash (measured), so the permissions macOS keeps for i
   old path until told (measured), and the Dock keeps a pin's old URL and label (measured;
   it reads them only at launch, so it is restarted after they are rewritten).
 - refresh() is the update's copy of the template, now to ShellBot.app.
+- pin_dock() is the installer's pin of ShellBot, first in the Dock. install.sh used to write
+  the Dock's plist file and restart the Dock; the prefs daemon holds that domain, and a Dock
+  with changes it has not saved writes them back as it quits, so the pin could be lost with
+  no word said. It goes through `defaults` and is read back, as migrate()'s re-pin is.
 
 The old path is not kept as a symlink: LaunchServices and Spotlight ignore one, so it
 would only show in Finder as a second "ShellFrame" (measured); `open -a ShellFrame`
@@ -36,6 +40,7 @@ OLD_NAME = "ShellFrame.app"
 TEMPLATE = "ShellFrame.app"      # the repo's and install dir's copy: never renamed (see above)
 BUNDLE_ID = "com.h2ocloud.shellframe"
 LABEL = "ShellBot"
+OLD_LABEL = "ShellFrame"
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/"
               "LaunchServices.framework/Support/lsregister")
 SHORTCUT, OLD_SHORTCUT = "ShellBot.lnk", "ShellFrame.lnk"
@@ -118,6 +123,12 @@ def migrate(dirs=None, run=subprocess.run, dock=True, log=lambda m: None) -> lis
     return [new for _, new in moved]
 
 
+def _pin_url(tile: dict) -> str:
+    """The URL a Dock pin's tile points at, or "" (the tile's file-data may be missing)."""
+    data = tile.get("file-data")
+    return str(data.get("_CFURLString") or "") if isinstance(data, dict) else ""
+
+
 def dock_repin(apps: list, moved) -> bool:
     """The Dock's persistent-apps with each pin of a moved bundle pointing at its new path
     and labelled ShellBot (pure; changes `apps` in place; True when anything changed). A
@@ -133,7 +144,7 @@ def dock_repin(apps: list, moved) -> bool:
         tile = item.get("tile-data") if isinstance(item, dict) else None
         if not isinstance(tile, dict):
             continue
-        url = str((tile.get("file-data") or {}).get("_CFURLString") or "").rstrip("/")
+        url = _pin_url(tile).rstrip("/")
         new = urls.get(url)
         if new is None or (url == new.as_uri().rstrip("/") and tile.get("file-label") == LABEL):
             continue
@@ -144,28 +155,64 @@ def dock_repin(apps: list, moved) -> bool:
     return changed
 
 
-def repin_dock(moved, run=subprocess.run, log=lambda m: None, pause=time.sleep) -> bool:
-    """Point the Dock's pins of moved bundles at their new paths, through `defaults` (the
-    prefs daemon, not the file), and restart the Dock: it reads them only at launch. A Dock
-    holding changes of its own it has not saved yet writes them over ours as it quits
-    (measured: a pin made a moment before), so what it loaded is read back, and the second
-    try stops it without letting it save."""
+def _ours_pin(item) -> bool:
+    """A Dock pin of this app, made under either name: by its label, its bundle id, or a URL
+    naming either bundle (pure; an entry that is not a pin is not one of ours)."""
+    tile = item.get("tile-data") if isinstance(item, dict) else None
+    if not isinstance(tile, dict):
+        return False
+    url = _pin_url(tile)
+    return (tile.get("file-label") in (LABEL, OLD_LABEL) or tile.get("bundle-identifier") == BUNDLE_ID
+            or NAME in url or OLD_NAME in url)
+
+
+def dock_pin(apps: list, app) -> bool:
+    """The Dock's persistent-apps with this app's pin first (no I/O; changes `apps` in place;
+    True when anything changed). Every pin of the app goes, whatever it was made under
+    (_ours_pin), and a new one for `app` comes first; other pins and their order stay. A pin
+    that is first and right is left alone, and only its tile type, label, bundle id and URL
+    say so: the Dock adds a bookmark, a GUID and dates once it has loaded one, and the read-back
+    must agree with what was written."""
+    url = Path(app).as_uri() + "/"
+    ours = [i for i, item in enumerate(apps) if _ours_pin(item)]
+    if ours == [0]:
+        tile = apps[0]["tile-data"]
+        if (apps[0].get("tile-type") == "file-tile" and tile.get("file-label") == LABEL
+                and tile.get("bundle-identifier") == BUNDLE_ID and _pin_url(tile).rstrip("/") == url.rstrip("/")):
+            return False
+    pin = {"tile-data": {"bundle-identifier": BUNDLE_ID, "dock-extra": 0,
+                         "file-data": {"_CFURLString": url, "_CFURLStringType": 15},
+                         "file-label": LABEL, "file-mod-date": int(time.time()), "file-type": 41},
+           "tile-type": "file-tile"}
+    apps[:] = [pin] + [item for i, item in enumerate(apps) if i not in ours]
+    return True
+
+
+def _edit_dock(change, run, log, pause, done, kept) -> bool:
+    """Change the Dock's prefs through `defaults` (the prefs daemon, not the file) and restart
+    the Dock: it reads its pins only at launch. `change(data)` edits the exported domain in
+    place and says whether it changed anything. A Dock holding changes of its own it has not
+    saved yet writes them over ours as it quits (measured: a pin made a moment before), so what
+    it loaded is read back, and the second try stops it without letting it save. `done` is
+    logged once the change is read back, `kept` when the Dock has undone it three times. True
+    when the change was made and the Dock kept it; False when there was nothing to change, or
+    it could not be made."""
     for attempt in range(3):
         try:
             r = run(["defaults", "export", "com.apple.dock", "-"], capture_output=True, timeout=10)
             if r.returncode != 0:
                 return False
             data = plistlib.loads(r.stdout)
+            changed = change(data)
         except Exception as e:
             log(f"the Dock's pins could not be read: {e}")
             return False
-        if not dock_repin(data.get("persistent-apps") or [], moved):
+        if not changed:
             if attempt:
-                log("the Dock's pin now points at " + ", ".join(str(n) for _, n in moved)
-                    + ("" if attempt == 1 else " (the Dock had written its own over the first try)"))
+                log(done + ("" if attempt == 1 else " (the Dock had written its own over the first try)"))
             return attempt > 0
         if attempt == 2:
-            log("the Dock kept its old pin; it can be pinned again by hand")
+            log(kept)
             return False
         try:
             run(["defaults", "import", "com.apple.dock", "-"], input=plistlib.dumps(data),
@@ -177,6 +224,31 @@ def repin_dock(moved, run=subprocess.run, log=lambda m: None, pause=time.sleep) 
             return False
         pause(DOCK_SETTLE_S)
     return False
+
+
+def repin_dock(moved, run=subprocess.run, log=lambda m: None, pause=time.sleep) -> bool:
+    """Point the Dock's pins of moved bundles at their new paths (dock_repin), through
+    _edit_dock: `defaults`, a restart, a read-back and a second try that stops the Dock unsaved."""
+    return _edit_dock(lambda data: dock_repin(data.get("persistent-apps") or [], moved), run, log, pause,
+                      done="the Dock's pin now points at " + ", ".join(str(n) for _, n in moved),
+                      kept="the Dock kept its old pin; it can be pinned again by hand")
+
+
+def pin_dock(app_path, run=subprocess.run, log=lambda m: None, pause=time.sleep) -> bool:
+    """Pin the app first in the Dock, as the installer does (dock_pin), through _edit_dock:
+    the same `defaults` import, restart, read-back and second try as repin_dock. Nothing is
+    changed, and the Dock is not restarted, when its pin is already first and right. True when
+    this call pinned it and the Dock kept it; False when there was nothing to do, or it could
+    not be done (said through `log`)."""
+    app = Path(app_path)
+
+    def change(data):
+        if not isinstance(data.get("persistent-apps"), list):
+            data["persistent-apps"] = []        # a Dock with none: the pin still lands in `data`
+        return dock_pin(data["persistent-apps"], app)
+
+    return _edit_dock(change, run, log, pause, done=f"{LABEL} is pinned first in the Dock",
+                      kept=f"the Dock did not keep {LABEL}'s pin; it can be pinned again by hand")
 
 
 def refresh(template, dirs=None, run=subprocess.run, prepare=None, dock=True) -> list:
