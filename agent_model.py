@@ -30,6 +30,11 @@ PROVIDERS = {
     # 注意：grok 啟動時帶 -m／--effort 會把值寫進 ~/.grok/config.toml 的 default，
     # 等於改了使用者全域的預設，不只這個分頁。roster 角色要 pin 才這樣用。
     "grok": ("-m", ["grok-4.7", "grok-4.7-build-fast", "grok-4.6"]),
+    # Must be listed: its model names carry other vendors' names (claude-…, grok-…),
+    # and without this entry those tokens decided the provider, so pinning a model
+    # rewrote `cursor-agent --model grok-4` into `… --model grok-4 -m <model>`.
+    # Only the subscription model is offered; the others spend prepaid credit.
+    "cursor": ("--model", ["composer-2.5"]),
 }
 
 

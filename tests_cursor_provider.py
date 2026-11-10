@@ -160,7 +160,20 @@ def test_install_command():
           U.PROVIDER_SPECS["cursor"]["install"]["command"] == C.install_command(os.name == "nt"))
 
 
+def test_model_pin():
+    import agent_model as M
+    for model in ("claude-4.5-sonnet", "grok-4", "gpt-5", "composer-2.5"):
+        cmd = f"cursor-agent --model {model} --trust --force"
+        check(f"a cursor command naming {model} is still cursor", M.provider_of(cmd) == "cursor", M.provider_of(cmd))
+        got = M.apply(cmd, "composer-2.5")
+        check(f"pinning replaces --model {model} instead of adding another vendor's flag",
+              got == "cursor-agent --trust --force --model composer-2.5", got)
+    check("the Windows launcher too", M.provider_of("cursor-agent.cmd --model claude-4.5-sonnet") == "cursor")
+    check("only the subscription model is suggested", M.PROVIDERS["cursor"][1] == ["composer-2.5"])
+
+
 if __name__ == "__main__":
+    test_model_pin()
     test_detect_and_pin()
     test_install_command()
     test_store_transcript_status_and_billing()
