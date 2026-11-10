@@ -275,13 +275,14 @@ class BotsApiMixin:
                     "options": [{"n": int(n), "text": agent_status.redact(t, 120)} for n, t in red["options"]]}
         return None
 
-    def _bots_link_answer(self, args: dict) -> dict:
+    def _bots_link_answer(self, args: dict, via: str = "phone") -> dict:
         """POST /link/answer {"sid", "n", "id"}: the phone answers the question /link/bots
         showed it, only while that is still the tab's question (`id`). Otherwise the answer
         would go into whatever the tab asks next, which is also why a question answered a
         moment ago on Telegram is refused. It goes in as Telegram's choice button sends it
         ("n" and Enter), and the Telegram copies of the question say it was answered on the
-        phone, their buttons gone. /link/input stays as it is: raw keys, no checks."""
+        phone (`via`: or on the computer, from the desktop's chat view), their buttons gone.
+        /link/input stays as it is: raw keys, no checks."""
         sid = str(args.get("sid") or "")
         s = self.sessions.get(sid)
         if not s:
@@ -306,8 +307,8 @@ class BotsApiMixin:
         if claimed is None:
             return stale
         s.write(f"{n}\r")
-        bridge_home.phone_answered(self, sid, n, claimed)
-        _dlog("bots", f"{sid}: answered {n} from the phone")
+        bridge_home.phone_answered(self, sid, n, claimed, where=via)
+        _dlog("bots", f"{sid}: answered {n} from the {via}")
         return {"success": True, "message": _(f"Answered {n}", f"已選 {n}")}
 
     def _link_editable(self, role: str):

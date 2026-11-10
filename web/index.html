@@ -5,6 +5,7 @@
 <title>ShellBot</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
 <link rel="stylesheet" href="bots.css"/>
+<link rel="stylesheet" href="chat.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -1577,6 +1578,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="bots.js"></script>
+<script src="chat.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -3079,6 +3081,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       if (window.refreshPluginBadges) setTimeout(() => window.refreshPluginBadges(true), 650);
     } catch (_) {}
+    try { window.SFChat && SFChat.onSwitch(sid); } catch (_) {}   // web/chat.js: the chat view over this tab
   }
 
   async function closeTab(sid) {
@@ -7023,6 +7026,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   let _pasteEnterListenerAttached = false;
 
   function _isStealableFocus(el) {
+    if (window.SFChat && SFChat.covers()) return false;   // the chat view's input box takes the keys, not the terminal under it
     if (!el || el === document.body || el === document.documentElement) return true;
     if (typeof el.closest !== 'function') return true;
     if (el.closest('#image-bar')) return true;
@@ -8604,7 +8608,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
   window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
-    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession };
+    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm };
 
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a
