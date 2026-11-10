@@ -219,7 +219,10 @@ sfctl push-setup --key ~/.config/shellframe/apns/AuthKey_<KEYID>.p8 --key-id <KE
 sfctl push-status
 ```
 
-- `push-setup` 會把 key 檔設成 600，存進 `~/.config/shellframe/push.json`（600），再用一個假的裝置 token 問一次 Apple：回 `400 BadDeviceToken` 代表 key 有效，`403` 代表 Key ID、team id 或 key 檔不對。
+- `push-setup` 會把 key 檔設成 600，存進 `~/.config/shellframe/push.json`（600），再用一個假的裝置 token 問一次 Apple：
+  - `400 BadDeviceToken`：key 本身有效。但 Apple 先檢查裝置 token、才檢查 topic，所以綁在別的 App ID 的 Topic Specific key 也會過這一關。要確定能推這個 App，請用 App 的「傳一則測試通知」（`POST /link/push/test`）實際送一次。
+  - `400 TopicDisallowed`：這把 key 不能推這個 App 的 topic，判為失敗。
+  - `403 BadEnvironmentKeyInToken`：這把 key 沒開這個環境，例如只開了 Sandbox。其他 `403` 是 Key ID、team id 或 key 檔不對。
 - 送的方式：用系統的 `openssl` 簽 ES256 JWT（40 分鐘換一次），用 `curl --http2` 送；不加任何套件。token 和內容不經過命令列參數。
 - Windows 目前不支援推播，`status` 會回原因。
 
@@ -247,6 +250,6 @@ sfctl push-status
 - **只推一次**：同一題（qid）只推一次，電腦重啟後也一樣（記在 `push.json`，保留 24 小時）。
 - **收回**：題目在任何地方被回答（手機、Telegram、電腦上直接打字開始下一輪）或換掉時，送一則背景推播 `{"sf": {"kind": "withdraw", "ids": ["q.<qid>"]}}` 把它拿掉。從某支手機回答時，其他手機馬上收回。
 - **節流**：同一個分頁的 `stuck`、`done` 一分鐘內再來，用同一個 collapse-id 安靜取代，不再響；每台裝置每小時最多 30 則；同時最多 4 個送出。
-- **Apple 的回應**：410 或 `BadDeviceToken` 就刪掉那筆註冊，App 下次打開會重新註冊；`InvalidProviderToken`／`ExpiredProviderToken` 會換一個新的 JWT；429 退避；其他錯誤記在 `last_error`。log 只印 token 的前 6 碼和後 4 碼，不寫內容。
+- **Apple 的回應**：410 或 `BadDeviceToken` 就刪掉那筆註冊，App 下次打開會重新註冊；`InvalidProviderToken`／`ExpiredProviderToken` 會換一個新的 JWT；`TopicDisallowed` 不刪註冊（問題在 key，不在手機），`last_error` 會寫出原因；429 退避；其他錯誤記在 `last_error`。log 只印 token 的前 6 碼和後 4 碼，不寫內容。
 - **Telegram**：推播正常（24 小時內成功過、之後沒有錯誤）而且手機選了 `quiet` 時，Telegram 照樣傳訊息但不響。推播一出錯，Telegram 就恢復會響。橋接自己發的 🟡 YELLOW 橫幅還是會響。
 - **隱私**：`hide_content: true` 時不送題目、不送選項，本文只有「打開 ShellBot 查看」，category 用 `SF_OPEN`。文字一律先遮掉憑證，本文 180 字以內，整包 4 KB 以內。

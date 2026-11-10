@@ -270,6 +270,29 @@ P.unregister("phone")
 P.update(lambda c: c.pop("key_id"))
 check("without a key nothing is sent", push.send("info", sid="s1", bot="b", frame_id=FRAME) == 0)
 
+print("what a key check can and cannot tell")
+v, m = P.key_check(400, "BadDeviceToken", "sandbox")
+check("BadDeviceToken for a made-up device: the key itself is accepted…", v == "ok", m)
+check("…and the output says a topic restriction is invisible here, and how to be sure",
+      "another App ID" in m and "/link/push/test" in m, m)
+v, m = P.key_check(400, "TopicDisallowed", "sandbox")
+check("TopicDisallowed is a failure: this key may not push the app", v == "fail" and "may not push" in m, m)
+v, m = P.key_check(403, "BadEnvironmentKeyInToken", "production")
+check("BadEnvironmentKeyInToken: the key lacks that environment", v == "fail" and "environment" in m, m)
+v, m = P.key_check(403, "InvalidProviderToken", "sandbox")
+check("InvalidProviderToken: check the Key ID, team id and key file", v == "fail" and "Key ID" in m, m)
+check("no answer at all is reported as unreadable, not as a pass", P.key_check(0, "", "sandbox")[0] == "unknown")
+P.update(lambda c: c.update(key_id="TEST000001"))
+P.register("phone", {"token": TOKEN_A, "env": "sandbox", "topic": "com.example.app"})
+fake.replies = [(400, "TopicDisallowed")]
+now[0] += 7200
+push.send("info", sid="s20", bot="b", frame_id=FRAME)
+dev = P.devices().get("phone") or {}
+check("a real send refused for its topic keeps the phone's registration (the key is wrong, not the phone)",
+      bool(dev), str(P.devices()))
+check("…and the error says why, for the app's settings page", "may not push" in dev.get("last_error", ""),
+      dev.get("last_error"))
+
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")

@@ -239,6 +239,40 @@ a2a = (HERE / "a2a_host.py").read_text(encoding="utf-8")
 check("a2a-result calls the push hook only when the result went through",
       'if (res or {}).get("success") and hasattr(api, "_push_a2a_result")' in a2a)
 
+print("sfctl push-setup")
+import argparse  # noqa: E402
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import types as _types  # noqa: E402
+import sfctl as SF  # noqa: E402
+
+
+def run_setup(code, reason):
+    fake_sp = _types.SimpleNamespace(
+        setup=lambda *a: {"success": True}, availability=lambda cfg=None: "", load=lambda: {"topic": "com.example.app"},
+        jwt_for=lambda cfg: "jwt", HOSTS=sf_push.HOSTS, key_check=sf_push.key_check,
+        curl_transport=lambda url, headers, body: (code, reason))
+    real = SF._load_sf_push
+    SF._load_sf_push = lambda: fake_sp
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            rc = SF._cmd_push_setup(argparse.Namespace(key="k.p8", key_id="TEST000001", team_id="TEAM000001",
+                                                       topic="", env="sandbox"))
+    finally:
+        SF._load_sf_push = real
+    return rc, out.getvalue()
+
+
+rc, out = run_setup(400, "TopicDisallowed")
+check("push-setup: TopicDisallowed exits 1 and says the key may not push this app",
+      rc == 1 and out.startswith("ERR") and "may not push" in out, out)
+rc, out = run_setup(400, "BadDeviceToken")
+check("push-setup: BadDeviceToken exits 0, saying a real test send is still needed",
+      rc == 0 and out.startswith("OK") and "/link/push/test" in out, out)
+rc, out = run_setup(403, "BadEnvironmentKeyInToken")
+check("push-setup: a Sandbox-only key checked against production exits 1", rc == 1 and "environment" in out, out)
+
 print("Telegram")
 sent_payloads = []
 bridge_home.SEND = lambda method, payload: sent_payloads.append((method, payload))

@@ -648,8 +648,9 @@ def _load_sf_push():
 
 
 def _cmd_push_setup(args) -> int:
-    """Save which key, then ask Apple with a made-up device token: a working key gets
-    400 BadDeviceToken back (the key was accepted, the token was not), a wrong one 403."""
+    """Save which key, then ask Apple with a made-up device token. 400 BadDeviceToken means
+    the key itself was accepted; it cannot show a key that may not push this app's topic,
+    because Apple checks the device token first (sf_push.key_check says so in its output)."""
     sp = _load_sf_push()
     r = sp.setup(args.key, args.key_id, args.team_id, args.topic)
     if not r.get("success"):
@@ -664,17 +665,18 @@ def _cmd_push_setup(args) -> int:
     except Exception as e:
         print(f"ERR saved, but openssl could not sign with that key ({type(e).__name__})")
         return 1
-    topic = args.topic or "com.example.check"
+    topic = args.topic or sp.load().get("topic") or "com.example.check"
     code, reason = sp.curl_transport(f"{sp.HOSTS[args.env]}/3/device/{'0' * 64}",
                                      {"authorization": f"bearer {bearer}", "apns-topic": topic,
                                       "apns-push-type": "alert"}, b'{"aps":{"alert":"check"}}')
-    if code == 400 and reason in ("BadDeviceToken", "DeviceTokenNotForTopic", "TopicDisallowed"):
-        print(f"OK key saved; Apple accepted it ({args.env}: {reason} for a made-up device)")
+    verdict, message = sp.key_check(code, reason, args.env)
+    if verdict == "ok":
+        print(f"OK key saved. {message}")
         return 0
-    if code == 403:
-        print(f"ERR key saved, but Apple refused it: {reason or 'HTTP 403'} (check the Key ID, team id and key file)")
+    if verdict == "fail":
+        print(f"ERR key saved, but {message}")
         return 1
-    print(f"WARN key saved; Apple's answer could not be read: {('HTTP ' + str(code)) if code else ''} {reason}".rstrip())
+    print(f"WARN key saved; {message}")
     return 0
 
 

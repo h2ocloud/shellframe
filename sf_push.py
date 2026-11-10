@@ -186,6 +186,37 @@ def setup(key_path: str, key_id: str, team_id: str, topic: str = "") -> dict:
     return {"success": True, "message": "saved"}
 
 
+# ── what Apple's answers mean ───────────────────────────────────────────────
+# sfctl push-setup checks a key with a made-up device token. Apple looks at the device
+# token before the topic, so a key that may not push this app (a Topic Specific key bound
+# to another App ID) still gets BadDeviceToken there; only a real send shows TopicDisallowed.
+KEY_CHECK_LIMIT = ("This check cannot see whether the key may push this app: a key restricted to "
+                   "another App ID passes it too. Send one real notification from the app "
+                   "(its test button, POST /link/push/test) to be sure.")
+_REASONS = {
+    "TopicDisallowed": "the key may not push this app's topic (a Topic Specific key bound to another App ID?)",
+    "BadEnvironmentKeyInToken": "the key is not enabled for this APNs environment (a Sandbox-only key?)",
+    "InvalidProviderToken": "Apple does not recognise the key: check the Key ID, team id and key file",
+}
+
+
+def explain(reason: str) -> str:
+    return _REASONS.get(reason or "", "")
+
+
+def key_check(code: int, reason: str, env: str):
+    """('ok' | 'fail' | 'unknown', message) for push-setup's check with a made-up device token."""
+    if code == 400 and reason in ("BadDeviceToken", "DeviceTokenNotForTopic"):
+        return "ok", f"Apple accepted the key ({env}: {reason} for a made-up device). {KEY_CHECK_LIMIT}"
+    if code in (400, 403) and explain(reason):
+        return "fail", f"Apple refused it ({env}: {reason}): {explain(reason)}."
+    if code == 403:
+        return "fail", (f"Apple refused the key ({env}: {reason or 'HTTP 403'}): "
+                        "check the Key ID, team id and key file.")
+    seen = " ".join(x for x in (f"HTTP {code}" if code else "no answer", reason) if x)
+    return "unknown", f"Apple's answer could not be read ({env}: {seen})."
+
+
 # ── JWT (ES256, signed by openssl) ──────────────────────────────────────────
 def _b64(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
@@ -613,6 +644,8 @@ class Pusher:
             self._log(f"sent {tag}")
             return
         why = f"HTTP {code} {reason}".strip() if code else (reason or "no answer")
+        if explain(reason):
+            why += f": {explain(reason)}"
         if code == 410 or (code == 400 and reason in ("BadDeviceToken", "DeviceTokenNotForTopic")):
             def fn(cfg):
                 cur = (cfg.get("devices") or {}).get(peer_id) or {}
