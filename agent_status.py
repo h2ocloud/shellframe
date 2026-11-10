@@ -1204,7 +1204,7 @@ def _detect_format(first_line):
         return "grok"
     if agent_cursor.is_cursor_record(o):
         return "cursor"
-    if "sessionId" in o or o.get("type") in ("user", "assistant", "system", "summary"):
+    if "sessionId" in o or o.get("type") in ("user", "assistant", "system", "summary", "file-history-snapshot"):
         return "claude"
     return None
 

@@ -88,6 +88,12 @@ check("with its uuid it is found from any directory (a path over 200 characters,
 check("the folder name follows Claude Code: every character but A-Z a-z 0-9 becomes -",
       a._cwd_slug(str(work)).endswith("-work-dir-site-check")
       and all(c.isascii() and (c.isalnum() or c == "-") for c in a._cwd_slug(str(work))), a._cwd_slug(str(work)))
+snap = TMP / "starts-with-snapshot.jsonl"     # long-running sessions of older Claude Code versions
+snap.write_text('{"type":"file-history-snapshot","messageId":"m1","snapshot":{},"isSnapshotUpdate":false}\n'
+                '{"type":"user","sessionId":"x","message":{"role":"user","content":"hello"}}\n', encoding="utf-8")
+fmt, evs, err = a._read_tail_events(str(snap))
+check("a transcript whose first line is a file-history snapshot is read as Claude Code's",
+      fmt == "claude" and not err and any(e.get("kind") == "user_msg" for e in evs), (fmt, err, evs))
 plain = api._worker_ctx("s2", Tab("claude --model haiku"))
 check("a command without cd keeps the tab's own directory", plain["cwd"] == "~", plain["cwd"])
 
