@@ -10,6 +10,7 @@ Windows: Edge WebView2 + subprocess
 import atexit
 import base64
 import codecs
+import copy
 import concurrent.futures
 import ctypes
 import ctypes.util
@@ -59,6 +60,7 @@ import agent_grok
 import account_manager
 import app_bundle
 import bot_names
+import bots
 import sf_config
 import sf_trail
 from api_history import HistoryApiMixin
@@ -245,7 +247,7 @@ DEFAULT_CONFIG = {
         "experimental_groups": False,
         # Bots: avatar faces, per-bot memory written before a bot tab closes, the
         # primary-bot card, external bots over a webhook. Rules live in bots.py.
-        "experimental_bots": False,
+        "experimental_bots": True,     # a new install; one that predates it keeps off (bots.keep_old_install_bots_setting)
         # Install a pointer skill into ~/.claude/skills/shellframe/ on start, so
         # an agent in a tab discovers `sfctl skill` without being told. On by
         # default: it is a directory only ShellFrame writes, and it holds a
@@ -281,7 +283,7 @@ DEFAULT_CONFIG = {
         "handoff_to_main": True,
         "handoff_on_start": False
     },
-    "agent_roster": DEFAULT_AGENT_ROSTER,
+    "agent_roster": {},          # plan A: a new user starts with no roles; any AI tab is a temporary bot
     # Optional local HTTP API. Disabled by default. When enabled, exposes the
     # sfctl command surface over loopback so a local agent (e.g. OpenClaw) can
     # drive tabs. Loopback host + token + IP whitelist enforced. Swagger at /docs.
@@ -362,7 +364,9 @@ def _ensure_frame_link_defaults(cfg: dict) -> bool:
 
 
 def _ensure_agent_roster_defaults(cfg: dict) -> bool:
-    """Expose the manual delegation roster in config.json without hard routing."""
+    """An install that has the roles DEFAULT_AGENT_ROSTER once shipped gets the fields those
+    roles gained since. A role that is gone stays gone (it used to come back on every
+    load), and a new install gets none of them (plan A: its roles are the bots it keeps)."""
     raw = cfg.get("agent_roster")
     if not isinstance(raw, dict):
         raw = {}
@@ -370,8 +374,6 @@ def _ensure_agent_roster_defaults(cfg: dict) -> bool:
     for role, defaults in DEFAULT_AGENT_ROSTER.items():
         existing = raw.get(role)
         if not isinstance(existing, dict):
-            raw[role] = dict(defaults)
-            changed = True
             continue
         for key, value in defaults.items():
             if key not in existing:
@@ -631,7 +633,7 @@ def load_config():
     if CONFIG_FILE.exists():
         cfg = _read_config_json()
         if cfg is None:
-            return DEFAULT_CONFIG.copy()
+            return copy.deepcopy(DEFAULT_CONFIG)
         # Offer a preset for every supported AI CLI, once each. Tracking which
         # ones were already offered (rather than a single "migrated" flag) is
         # what makes supporting another CLI a one-line change: append it to
@@ -734,13 +736,15 @@ def load_config():
             cfg_defaults_changed = True
         if ensure_ui_style(cfg):
             cfg_defaults_changed = True
+        if bots.keep_old_install_bots_setting(cfg):
+            cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
                 save_config(cfg)
             except Exception:
                 _swallow("load_config:499")
         return cfg
-    cfg = DEFAULT_CONFIG.copy()
+    cfg = copy.deepcopy(DEFAULT_CONFIG)       # nothing in it may be the module's own lists or dicts
     # A first launch offers every supported CLI at once (the branch above only runs once a
     # config file exists), without touching DEFAULT_CONFIG's own list: copy() is shallow.
     names = {p["name"] for p in DEFAULT_CONFIG["presets"]}

@@ -1,9 +1,18 @@
 # Bots (ShellBot)
 
-> 中文摘要：`experimental_bots`（預設關）。每個分頁的燈號換成會動的 bot 頭像（形狀＋顏色＝身分，
+> 中文摘要：`experimental_bots`（新安裝預設開；之前就裝過、從沒設過的電腦維持關）。每個分頁的燈號換成會動的 bot 頭像（形狀＋顏色＝身分，
 > 表情＝狀態）；分頁可以開成 bot：叫醒時帶入執掌、skill 與記憶，關閉前由 bot 自己把這次對話寫進
 > `~/.config/shellframe/bots/<名稱>/`，下次叫醒自動帶回。側欄最上面是主要 Bot，負責派工；住在
 > ShellFrame 外面的 bot（例如 Grok Bot）用 webhook 送出、用 `sfctl --as` 回來。
+
+## Defaults (plan A)
+
+- A new install has bots on and no roles: its roles are the bots it keeps. A computer
+  that ran ShellBot before and never set `experimental_bots` keeps bots off
+  (`bots.keep_old_install_bots_setting`).
+- The roles older builds shipped (`DEFAULT_AGENT_ROSTER`) are no longer added on load:
+  one that was deleted stays deleted; one that is there still gets fields added since.
+- A2A (`experimental_a2a`) has its switch beside the Bots one in Settings; off by default.
 
 ## What it is
 

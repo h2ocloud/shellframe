@@ -205,6 +205,19 @@ def normalize_external(raw, previous=None):
     return {"kind": "webhook", "url": url, "auth": auth}
 
 
+def keep_old_install_bots_setting(cfg: dict) -> bool:
+    """settings.experimental_bots for a config.json that exists but never had it: that
+    computer used ShellBot with bots off, and keeps them off until someone turns them on.
+    A first launch has no config.json and gets DEFAULT_CONFIG's (on). True when written."""
+    st = cfg.get("settings")
+    if not isinstance(st, dict):
+        st = cfg["settings"] = {}
+    if isinstance(st.get("experimental_bots"), bool):
+        return False
+    st["experimental_bots"] = False
+    return True
+
+
 def normalize_bot(raw, previous=None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     prev = previous if isinstance(previous, dict) else {}
