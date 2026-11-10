@@ -60,6 +60,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `agent_route.py` | Quota hint for delegate / handoff. Suggests; does not spend or retarget |
 | | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
+| | `bot_names.py` | One name per bot, and the one way to find a bot or a tab by a name: a sid, a bot's name, a tab's title, an alias or old label, the start of exactly one; a bot's tab by its binding first. delegate, A2A, sfctl's tab commands and the bot view use it |
 | | `bots.py` | Bots (`experimental_bots`): identity, per-bot memory folder, wake-up brief, close-time summary, external-bot payloads |
 | | `agent_prompts.py`, `sf_lang.py` | The delegation and idle-summary prompts; the language every agent-facing text uses (the OS's: English or Traditional Chinese) |
 | | `bridge_home.py` | The primary bot on Telegram: a phone's messages default to it (woken if asleep), `/home`, a bot's `[[SF:RED]]` pushed as buttons from any turn (and kept for `/link/bots` with or without Telegram), `sfctl tg-send`, quiet hours, pairing a phone with a one-time code. `bridge_telegram.py` only calls in |

@@ -148,6 +148,13 @@ sfctl a2a-handoff worker:<name> "任務" --allow-write
 sfctl a2a-log
 ```
 
+**Names instead of sids.** `send`, `peek`, `close`, `rename` and `state` take a bot's
+name or a tab's title as well as a sid, and `delegate` / `a2a-send` take a bot's name,
+its old label (`研究-CLD`) or an alias, in any case. A name that matches more than one
+bot or tab is refused with the candidates listed; give the whole name. Nothing is
+guessed from the middle of a name. A bot's tab is found by its binding, so renaming
+the tab does not lose it.
+
 `route` prints one suggestion from remaining quota. Light work stays on local
 Spark. A large implementation goes to cursor-agent on the subscription model
 composer-2.5 (Grok 4.7 is also inside that subscription). Planning and review

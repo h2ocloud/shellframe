@@ -58,6 +58,7 @@ import agent_cursor
 import agent_grok
 import account_manager
 import app_bundle
+import bot_names
 import sf_config
 import sf_trail
 from api_history import HistoryApiMixin
@@ -2150,43 +2151,19 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
     @staticmethod
     def _resolve_agent_role(role: str, roster: dict) -> tuple[str | None, dict | None]:
-        wanted = str(role or "").strip()
-        if not wanted:
-            return None, None
-        if wanted in roster:
-            return wanted, roster[wanted]
-        alias = AGENT_ROLE_ALIASES.get(wanted.casefold()) or AGENT_ROLE_ALIASES.get(wanted)
-        if alias in roster:
-            return alias, roster[alias]
-        for key, entry in roster.items():
-            if wanted.casefold() == key.casefold():
-                return key, entry
-            label = str(entry.get("label") or "")
-            if wanted.casefold() == label.casefold():
-                return key, entry
-        for key, entry in roster.items():
-            label = str(entry.get("label") or "")
-            if wanted.casefold() in key.casefold() or wanted.casefold() in label.casefold():
-                return key, entry
+        """A role by its name, alias, old label or the start of exactly one (bot_names);
+        an ambiguous name finds none."""
+        res = bot_names.resolve(role, roster, [], {}, AGENT_ROLE_ALIASES)
+        if res.get("ok") and res.get("role") in roster:
+            return res["role"], roster[res["role"]]
         return None, None
 
     def _find_session_by_label(self, label: str) -> tuple[str, Session | None]:
-        wanted = str(label or "").strip()
-        if not wanted:
-            return "", None
-        for sid, session in self.sessions.items():
-            if not getattr(session, "alive", False):
-                continue
-            current = getattr(session, "_custom_label", None) or ""
-            if current == wanted:
-                return sid, session
-        for sid, session in self.sessions.items():
-            if not getattr(session, "alive", False):
-                continue
-            current = getattr(session, "_custom_label", None) or ""
-            if current.casefold() == wanted.casefold():
-                return sid, session
-        return "", None
+        """The live tab a role's name or label points at: the bot's binding first, then the
+        title (bot_names), never a tab that only starts so."""
+        res = self._resolve_name(label, prefix=False)
+        sid = res.get("sid") if res.get("ok") else ""
+        return (sid, self.sessions.get(sid)) if sid else ("", None)
 
     def _extract_tab_tags(self, text: str, exclude_sid: str = "") -> list[dict]:
         """Resolve ``#<tab-label>`` (or ``#<sid>``) tags in *text* to live sessions.
@@ -2266,6 +2243,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         roster = self._agent_roster_config(load_config())
         resolved_role, entry = self._resolve_agent_role(role, roster)
         if not entry:
+            res = bot_names.resolve(role, roster, [], {}, AGENT_ROLE_ALIASES)
+            if res.get("error") == "ambiguous":
+                return {"success": False, "message": bot_names.explain(res, role, zh=sf_lang.pick("en", "zh") == "zh")}
             roles = ", ".join(roster.keys()) or "(empty)"
             return {"success": False, "message": f"Unknown role: {role}. Available: {roles}"}
 
@@ -2284,7 +2264,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 source="delegate",
                 handoff=bool(entry.get("handoff", True)),
             )
-            renamed = json.loads(self.rename_session(sid, label))
+            renamed = json.loads(self.rename_session(sid, label, manual=True))   # its name: no auto rename on the first Enter
             if not renamed.get("success"):
                 return {"success": False, "message": f"Created {sid} but rename to {label} failed"}
             session = self.sessions.get(sid)

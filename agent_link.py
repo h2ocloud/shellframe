@@ -490,6 +490,8 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
                      from_sid=from_sid)
 
     to_sid, to_label = ctx.resolve(role, sid)
+    if role and not remote and hasattr(ctx, "role_key"):
+        role = ctx.role_key(role) or role      # its label, an alias or another case: the roster key authorize checks
     if kind == "handoff" and _is_coordinator(ctx, role, to_label):
         release_id(msg_id)
         _release_fp(fp)

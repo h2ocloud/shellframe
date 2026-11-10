@@ -686,7 +686,7 @@ def main():
         help="One line of live state for a tab (for schedulers): state, activity, "
              "blocked-on, last error, idle time, model")
     p_state.add_argument("sid", nargs="?", default="",
-                         help="Tab sid, e.g. s12. Omit with --all.")
+                         help="Tab sid (e.g. s12) or a bot's or tab's name. Omit with --all.")
     p_state.add_argument("--all", action="store_true",
                          help="Every tab that needs attention (blocked, errored, "
                               "or silent too long) — healthy tabs are omitted")
@@ -768,7 +768,7 @@ def main():
                        help="Write a short startup handoff note to the main session")
 
     p_send = sub.add_parser("send", help="Send text to a session (submits with Enter by default)")
-    p_send.add_argument("sid", help="Session id (e.g. s3) — see `sfctl list`")
+    p_send.add_argument("sid", help="Session id (e.g. s3) or a bot's or tab's name — see `sfctl list`")
     p_send.add_argument("text", help="Text to send")
     p_send.add_argument("--no-submit", dest="submit", action="store_false",
                         help="Don't append Enter after text")
@@ -837,18 +837,18 @@ def main():
     sub.add_parser("link-status", help="Paired computers and whether they are reachable")
 
     p_peek = sub.add_parser("peek", help="Read the last N lines of a session's pane (deduped)")
-    p_peek.add_argument("sid", help="Session id")
+    p_peek.add_argument("sid", help="Session id, or a bot's or tab's name")
     p_peek.add_argument("--lines", type=int, default=50,
                         help="Max lines to return (default: 50)")
     p_peek.add_argument("--raw", action="store_true",
                         help="The screen as it is (spinner, input box, footer), not the cleaned conversation")
 
     p_rename = sub.add_parser("rename", help="Change a session's label")
-    p_rename.add_argument("sid", help="Session id")
+    p_rename.add_argument("sid", help="Session id, or a bot's or tab's name")
     p_rename.add_argument("name", help="New label")
 
     p_close = sub.add_parser("close", help="Close a session")
-    p_close.add_argument("sid", help="Session id")
+    p_close.add_argument("sid", help="Session id, or a bot's or tab's name")
     p_close.add_argument("--reason", default="sfctl",
                          help="Lifecycle reason for handoff notes")
     p_close.add_argument("--handoff", action="store_true",

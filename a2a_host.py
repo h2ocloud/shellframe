@@ -68,6 +68,11 @@ class _Ctx:
         resolved, _entry = self.api._resolve_agent_role(role, self.roster())
         return resolved or role
 
+    def role_key(self, role: str) -> str:
+        """The roster key for any name of a role (agent_link.deliver authorizes by key)."""
+        resolved, _entry = self.api._resolve_agent_role(role, self.roster())
+        return resolved or ""
+
     def external(self, role: str) -> bool:
         return self.api._bots_external_target(self._key(role)) is not None
 

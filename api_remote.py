@@ -247,9 +247,16 @@ class RemoteApiMixin:
                     main._dlog("api", f"api_server shutdown failed: {e}")
         return self.get_api_server_info()
 
+    _NAMED_TAB_CMDS = ("send", "peek", "close_session", "state", "rename")
+
     def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
         """Execute a sfctl command and return result dict."""
         args = args or {}
+        if cmd in self._NAMED_TAB_CMDS and args.get("sid") and str(args["sid"]) not in self.sessions:
+            sid, why = self._sid_for(str(args["sid"]))     # a bot's or a tab's name (bot_names)
+            if why:
+                return {"success": False, "message": why}
+            args = dict(args, sid=sid)
         if cmd == "new_session":
             try:
                 preset_cmd = args.get("cmd", "claude")

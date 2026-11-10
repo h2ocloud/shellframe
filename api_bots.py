@@ -19,6 +19,7 @@ import threading
 import time
 
 import agent_status
+import bot_names
 import bots
 import bridge_home
 import sf_lang
@@ -96,22 +97,34 @@ class BotsApiMixin:
         return role, sid, bots.label_of(role, raw[role])
 
     def _bots_role_of(self, sid: str, cfg: dict = None) -> str:
-        """The bot a tab belongs to: an explicit binding, else a tab whose label is a bot's label."""
+        """The bot a tab belongs to: its binding, else a tab whose title is a bot's name or
+        label (bot_names.role_of_tab: the same rule A2A and delegate use)."""
         cfg = cfg or _cfg()
-        roster = cfg.get("agent_roster") or {}
-        row = (cfg.get("bots_sessions") or {}).get(sid) or {}
-        if row.get("plain"):
-            return ""                   # the user said this tab is not a bot, whatever its name
-        bound = row.get("bot") or ""
-        if bound and bots.is_bot(roster.get(bound)):
-            return bound
-        s = self.sessions.get(sid)
-        label = (getattr(s, "_custom_label", None) or "") if s else ""
-        if label:
-            for role, e in roster.items():
-                if bots.is_bot(e) and not bots.is_external(e) and bots.label_of(role, e) == label:
-                    return role
-        return ""
+        return bot_names.role_of_tab(sid, cfg.get("agent_roster") or {}, self._name_tabs(),
+                                     cfg.get("bots_sessions") or {},
+                                     only=lambda r, e: bots.is_bot(e) and not bots.is_external(e))
+
+    def _name_tabs(self) -> list:
+        """The live tabs as bot_names takes them."""
+        return [{"sid": sid, "title": getattr(s, "_custom_label", None) or ""}
+                for sid, s in list(self.sessions.items()) if getattr(s, "alive", True)]
+
+    def _resolve_name(self, name: str, cfg: dict = None, prefix: bool = True) -> dict:
+        """A bot or a tab by any of its names (bot_names.resolve)."""
+        cfg = cfg or _cfg()
+        return bot_names.resolve(name, cfg.get("agent_roster") or {}, self._name_tabs(),
+                                 cfg.get("bots_sessions") or {}, main.AGENT_ROLE_ALIASES, prefix=prefix)
+
+    def _sid_for(self, name: str) -> tuple:
+        """sfctl's tab commands given a name instead of a sid: (sid, "") or ("", why not)."""
+        res = self._resolve_name(name)
+        if not res.get("ok"):
+            return "", bot_names.explain(res, name, zh=_("en", "zh") == "zh")
+        if not res.get("sid"):
+            role = res.get("role")
+            return "", _(f'"{role}" is asleep: wake it first, e.g. sfctl a2a-send {role} "…"',
+                         f"「{role}」在休息：先叫醒它，例如 sfctl a2a-send {role} \"…\"")
+        return res["sid"], ""
 
     def bots_state(self) -> str:
         cfg = _cfg()
