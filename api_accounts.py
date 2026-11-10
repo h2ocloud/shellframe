@@ -14,6 +14,8 @@ import threading
 
 import agent_cursor
 import agent_grok
+import cli_install
+import usage_probe
 from sf_config import CONFIG_LOCK
 from api_host import main
 
@@ -65,9 +67,7 @@ class AccountsApiMixin:
             # "not installed" and "installed but not signed in" need different
             # advice, so the panel gets both facts instead of one blank row.
             entry["installed"] = main.usage_probe.provider_installed(provider)
-            entry["install"] = (
-                main.usage_probe.PROVIDER_SPECS.get(provider, {}).get("install") or {}
-            )
+            entry["install"] = self._install_info(provider)
         return cfg, state
 
     def account_state(self, sid: str = "") -> str:
@@ -400,7 +400,7 @@ class AccountsApiMixin:
                     name: {"label": spec["label"],
                            "binaries": list(spec["binaries"]),
                            "installed": main.usage_probe.provider_installed(name),
-                           "install": spec.get("install") or {}}
+                           "install": self._install_info(name)}
                     for name, spec in main.usage_probe.PROVIDER_SPECS.items()
                 },
                 "extra": sorted(main.OTHER_AI_CLI_TOOLS),
@@ -426,10 +426,16 @@ class AccountsApiMixin:
                 "ready": main.usage_probe.provider_installed(provider),
                 "provider": provider,
                 "label": spec.get("label", provider),
-                "install": spec.get("install") or {},
+                "install": self._install_info(provider),
             }, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"ready": True, "error": str(e)}, ensure_ascii=False)
+
+    @staticmethod
+    def _install_info(provider: str) -> dict:
+        """How to install this CLI here: on Windows never a bash pipeline (cli_install)."""
+        spec = usage_probe.PROVIDER_SPECS.get(provider) or {}
+        return cli_install.for_platform(provider, spec.get("install"), os.name == "nt")
 
     def install_provider(self, provider: str) -> str:
         """Open a shell tab and run that CLI's documented install command.
@@ -441,9 +447,9 @@ class AccountsApiMixin:
             spec = main.usage_probe.PROVIDER_SPECS.get(provider)
             if not spec:
                 raise ValueError("unknown provider")
-            command = ((spec.get("install") or {}).get("command") or "").strip()
+            command = (self._install_info(provider).get("command") or "").strip()
             if not command:
-                raise ValueError(f"{spec.get('label', provider)} 沒有內建安裝指令，請參考官方文件")
+                raise ValueError(f"{spec.get('label', provider)} 在這個平台沒有內建安裝指令，請參考官方文件")
             shell = "powershell" if main.IS_WIN else "bash"
             sid = self.new_session(shell, 120, 30, source="provider-install",
                                    inherit_accounts=False)

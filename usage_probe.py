@@ -212,8 +212,8 @@ def provider_binary_path(provider: str):
         if found:
             return found
         for directory in COMMON_BIN_DIRS:
-            candidate = os.path.join(directory, binary)
-            if os.access(candidate, os.X_OK):
+            candidate = shutil.which(binary, path=directory)   # PATHEXT on Windows: claude.exe
+            if candidate:
                 return candidate
     return None
 
