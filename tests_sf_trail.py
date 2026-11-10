@@ -133,6 +133,44 @@ LOG.clear()
 sf_trail.watch_window(object())
 check("a window without events: said, nothing raised", logged("window events not watched"))
 
+
+class Core:                         # CoreWebView2: only on the window's own thread
+    on_ui = False
+
+    def __init__(self):
+        self.ProcessFailed = Ev()
+
+
+class WebView:
+    def __init__(self):
+        self.core = Core()
+
+    @property
+    def CoreWebView2(self):
+        if not Core.on_ui:
+            raise RuntimeError("CoreWebView2 can only be accessed from the UI thread")
+        return self.core
+
+
+def on_ui(action):
+    Core.on_ui = True
+    try:
+        action()
+    finally:
+        Core.on_ui = False
+
+
+form = types.SimpleNamespace(browser=types.SimpleNamespace(webview=WebView()), Invoke=on_ui)
+sys.modules["System"] = types.SimpleNamespace(Action=lambda f: f)     # pythonnet's, a stand-in
+LOG.clear()
+check("WebView2: CoreWebView2 is read on the window's thread, and the hook says it is on",
+      sf_trail._watch_webview2(types.SimpleNamespace(native=form)) and logged("WebView2 failures watched")
+      and not logged("not watched") and len(form.browser.webview.core.ProcessFailed.handlers) == 1)
+form.browser.webview.core.ProcessFailed.handlers[0](None, types.SimpleNamespace(ProcessFailedKind="RenderProcessExited",
+                                                                                Reason="Crashed", ExitCode=-1))
+check("…and a failed WebView2 process is logged", logged("WebView2 process failed: kind=RenderProcessExited"))
+del sys.modules["System"]
+
 print("6. every call from the page, in and out")
 trail = TMP / "jsapi.log"
 

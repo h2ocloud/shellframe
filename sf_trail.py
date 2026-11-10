@@ -206,12 +206,13 @@ def watch_window(window):
 
 def _watch_webview2(window) -> bool:
     """CoreWebView2.ProcessFailed → a line (pywebview leaves it unhandled: the page goes
-    blank and the app keeps running). Added on the window's own thread; nothing raised
-    here may reach .NET."""
+    blank and the app keeps running). CoreWebView2 is read on the window's own thread
+    only: read from the thread the loaded event runs on, it raised "CoreWebView2 can only
+    be accessed from the UI thread" (measured on Windows). Nothing raised here may reach
+    .NET."""
     try:
         from System import Action           # pythonnet, under pywebview's WinForms backend
         form = window.native
-        core = form.browser.webview.CoreWebView2
 
         def failed(_sender, args):
             try:
@@ -223,7 +224,8 @@ def _watch_webview2(window) -> bool:
 
         def add():
             try:
-                core.ProcessFailed += failed
+                form.browser.webview.CoreWebView2.ProcessFailed += failed
+                _say("WebView2 failures watched")
             except Exception as e:
                 _say(f"WebView2 failures not watched: {e}")
 
