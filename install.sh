@@ -325,24 +325,24 @@ fi
 # which is the user's call to make.
 echo ""
 echo "AI CLIs:"
-MISSING_CLI=""
-check_cli() {   # name, binary, install command
-  if command -v "$2" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$2" ]; then
-    echo "  ✅ $1"
-  else
-    echo "  ⬜ $1 — not installed"
-    MISSING_CLI="${MISSING_CLI}      $3\n"
-  fi
-}
-check_cli "Claude Code" claude 'curl -fsSL https://claude.ai/install.sh | bash'
-check_cli "Codex"       codex  'npm install -g @openai/codex'
-check_cli "Antigravity" agy    'curl -fsSL https://antigravity.google/cli/install.sh | bash'
-if [ -n "$MISSING_CLI" ]; then
-  echo ""
-  echo "  To install the missing ones:"
-  printf "%b" "$MISSING_CLI"
-  echo "      (or use the ⬜ entries in ShellFrame's AI 帳號 panel)"
-fi
+# The list is the provider registry (usage_probe.PROVIDER_SPECS), the same one the
+# app uses, so a CLI ShellBot supports is never missing from it.
+.venv/bin/python - "$INSTALL_DIR" <<'PY' || echo "  (could not list them; see the AI 帳號 panel)"
+import sys
+sys.path.insert(0, sys.argv[1])
+import usage_probe as u
+missing = []
+for name, spec in u.PROVIDER_SPECS.items():
+    ok = u.provider_installed(name)
+    print(("  ✅ " if ok else "  ⬜ ") + spec["label"] + ("" if ok else " — not installed"))
+    cmd = (spec.get("install") or {}).get("command")
+    if not ok and cmd:
+        missing.append("      " + cmd)
+if missing:
+    print("\n  To install the missing ones (one is enough to start):")
+    print("\n".join(missing))
+    print("      (or use the ⬜ entries in ShellBot's AI 帳號 panel)")
+PY
 
 # ── Done ────────────────────────────────────────────────────
 VERSION=$(.venv/bin/python -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo '?')

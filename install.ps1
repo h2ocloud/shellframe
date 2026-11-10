@@ -193,6 +193,38 @@ try {
     Write-Host "  (Skipped desktop shortcut: $_)" -ForegroundColor DarkGray
 }
 
+# AI CLIs. ShellBot runs AI CLIs; with none installed its presets open tabs that
+# stop with "not recognized". Report what is missing and the Windows command for it
+# (cli_install.py picks the PowerShell installer, never a bash pipeline). A report,
+# not an install: these are third-party installers.
+Write-Host ""
+Write-Host "AI CLIs:"
+$cliReport = @'
+import sys
+sys.path.insert(0, sys.argv[1])
+import cli_install, usage_probe as u
+missing = []
+for name, spec in u.PROVIDER_SPECS.items():
+    ok = u.provider_installed(name)
+    print(("  [x] " if ok else "  [ ] ") + spec["label"] + ("" if ok else " - not installed"))
+    cmd = cli_install.for_platform(name, spec.get("install"), True).get("command")
+    if not ok and cmd:
+        missing.append("      " + cmd)
+if missing:
+    print("")
+    print("  To install the missing ones in PowerShell (one is enough to start):")
+    print("\n".join(missing))
+    print("      (or use the AI accounts panel in ShellBot)")
+'@
+try {
+    $reportFile = Join-Path $env:TEMP "shellbot-cli-report.py"
+    Set-Content -Path $reportFile -Value $cliReport -Encoding UTF8
+    & "$InstallDir\.venv\Scripts\python.exe" $reportFile $InstallDir
+    Remove-Item $reportFile -ErrorAction SilentlyContinue
+} catch {
+    Write-Host "  (could not list them; see the AI accounts panel)" -ForegroundColor DarkGray
+}
+
 # Read version
 $version = "?"
 try {
