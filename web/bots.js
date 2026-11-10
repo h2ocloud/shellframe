@@ -178,7 +178,8 @@
       const tag = role && memOn(role)
         ? `<span class="sfb-tag" title="${esc(t('Bot: has its own memory and writes it before closing', 'Bot：有自己的記憶，關閉前會先寫記憶'))}">Bot</span>` : '';
       lab.classList.add('sfb-two');
-      lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(s.label)}${tag}</span>` +
+      const shown = window.SFChat && SFChat.label ? SFChat.label(sid, s.label) : s.label;   // chat style: display only
+      lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(shown)}${tag}</span>` +
         `<span class="sfb-ago">${esc(agoText(sid))}</span></span>` +
         `<span class="sfb-sub">${esc(previewOf(sid)) || '&nbsp;'}</span>`;
       const dot = row.querySelector('.busy-dot');

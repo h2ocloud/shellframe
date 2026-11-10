@@ -22,9 +22,11 @@ import subprocess
 import agent_status
 import bridge_home
 
-# The CLIs whose conversation the view draws. Every other tab shows its terminal, with
-# a line saying why.
-CHAT_PROVIDERS = ("claude", "codex")
+# The CLIs whose conversation the view draws: the ones sfctl `conversation` can read
+# (opencode from its SQLite, pi through agent_pi, grok and cursor from their session
+# files). Antigravity keeps its steps as protobuf; it and every other tab show their
+# terminal, with a line saying why.
+CHAT_PROVIDERS = ("claude", "codex", "opencode", "grok", "cursor", "pi")
 STYLES = ("chat", "cli")
 _ACTIVITIES = ("working", "idle", "done", "decision", "stuck")
 

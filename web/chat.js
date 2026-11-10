@@ -23,7 +23,9 @@
 
   // ── rules: language ──────────────────────────────────────────────────────
   const isZh = lang => /^zh/i.test(String(lang || ''));
-  const CHAT_PROVIDERS = ['claude', 'codex'];             // api_chat.CHAT_PROVIDERS
+  const CHAT_PROVIDERS = ['claude', 'codex', 'opencode', 'grok', 'cursor', 'pi'];   // api_chat.CHAT_PROVIDERS
+  const PROVIDER_NAME = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok', pi: 'Pi',
+                          cursor: 'Cursor', agy: 'Antigravity' };
 
   // ── rules: a question and its options ────────────────────────────────────
   // A key hint at the end of an option: Claude's "(esc)" / "(shift+tab)", Codex's "(y)".
@@ -123,9 +125,20 @@
     TodoWrite: 'plan', update_plan: 'plan', ExitPlanMode: 'plan',
     AskUserQuestion: 'ask', mcp: 'mcp', image_generation_call: 'image',
   };
+  const TOOL_KIND_LC = {
+    bash: 'run', shell: 'run', run_terminal_cmd: 'run', run_terminal_command: 'run', run_command: 'run', execute: 'run',
+    read: 'read', read_file: 'read', view: 'read', cat: 'read',
+    write: 'edit', edit: 'edit', multiedit: 'edit', patch: 'edit', edit_file: 'edit', write_file: 'edit',
+    str_replace: 'edit', str_replace_editor: 'edit', search_replace: 'edit', create_file: 'edit', delete_file: 'edit',
+    grep: 'search', glob: 'search', list: 'search', ls: 'search', list_dir: 'search', list_directory: 'search',
+    file_search: 'search', codebase_search: 'search', find: 'search',
+    webfetch: 'web', websearch: 'web', fetch: 'web', web_fetch: 'web', fetch_url: 'web',
+    task: 'agent', todowrite: 'plan', todoread: 'plan', todo_write: 'plan',
+  };
   function toolKind(name) {
     if (!name) return 'other';
     if (TOOL_KIND[name]) return TOOL_KIND[name];
+    if (TOOL_KIND_LC[String(name).toLowerCase()]) return TOOL_KIND_LC[String(name).toLowerCase()];
     return /^mcp__/.test(name) ? 'mcp' : 'other';
   }
   // How many of each, in plain words: "查了 3 個檔案、跑了 1 個指令".
@@ -216,6 +229,36 @@
       case 'other': return { text: zh ? '正在用工具' : 'Using a tool', detail: act.tool || '' };
       default: return { text: zh ? '正在想…' : 'Thinking…', detail: '' };
     }
+  }
+
+  // ── rules: a tab's command ───────────────────────────────────────────────
+  // Which CLI a launch command runs, before chat_view has said (only so a bash tab does
+  // not flash the chat view; the backend's answer replaces it).
+  function guessProvider(cmd) {
+    const tail = String(cmd || '').split(/&&|;/).pop().trim();
+    const first = tail.split(/\s+/).find(w => !/^\w+=/.test(w) && w !== 'env') || '';
+    const base = first.split(/[\\/]/).pop().replace(/\.(cmd|exe|ps1)$/i, '').toLowerCase();
+    if (/claude/.test(base)) return 'claude';
+    if (/codex/.test(base)) return 'codex';
+    if (base === 'cursor-agent') return 'cursor';
+    return base;
+  }
+  const SHELLS = new Set(['bash', 'zsh', 'sh', 'fish', 'powershell', 'pwsh', 'cmd', 'nu']);
+  // A tab still called by its command ("claude", "codex", "bash"): in chat style it shows
+  // as "Claude 對話" / "終端機", numbered when there are several. Display only: the tab's
+  // own name (sfctl, Telegram, A2A) is untouched.
+  function commandNamed(label, cmd) {
+    const l = String(label || '').trim().toLowerCase();
+    if (!l) return true;
+    const tail = String(cmd || '').split(/&&|;/).pop().trim();
+    const first = (tail.split(/\s+/).find(w => !/^\w+=/.test(w) && w !== 'env') || '')
+      .split(/[\\/]/).pop().replace(/\.(cmd|exe|ps1)$/i, '').toLowerCase();
+    return l === first || l === guessProvider(cmd) || (SHELLS.has(l) && SHELLS.has(first));
+  }
+  function plainName(cmd, zh) {
+    const prov = guessProvider(cmd);
+    if (PROVIDER_NAME[prov]) return zh ? `${PROVIDER_NAME[prov]} 對話` : `${PROVIDER_NAME[prov]} chat`;
+    return zh ? '終端機' : 'Terminal';
   }
 
   // ── rules: what a turn shows ─────────────────────────────────────────────
@@ -390,7 +433,7 @@
     return html;
   }
 
-  const RULES = { isZh, CHAT_PROVIDERS, mapOption, mapQuestion, mapDecision, toolKind, toolSummary,
+  const RULES = { isZh, CHAT_PROVIDERS, guessProvider, commandNamed, plainName, mapOption, mapQuestion, mapDecision, toolKind, toolSummary,
                   plainDoing, runWords, isCompaction, userView, botView, buildTimeline, pendingCall,
                   md, inline, escHtml, OPTION_RULES, QUESTION_RULES };
   if (typeof module === 'object' && module.exports) module.exports = RULES;
@@ -435,12 +478,17 @@
     return views[sid] || (views[sid] = { rev: '', data: null, provider: '', limit: 120, pending: [],
                                          atBottom: true, open: new Set(), answered: null, note: '' });
   }
-  // Before chat_view has answered for a tab: a quick guess from its command, only so
-  // a bash tab does not flash the chat view. The backend's answer replaces it.
-  function guessProvider(cmd) {
-    const first = String(cmd || '').trim().split(/\s+/).find(w => !/^\w+=/.test(w) && w !== 'env') || '';
-    const base = first.split(/[\\/]/).pop().replace(/\.(cmd|exe|ps1)$/i, '').toLowerCase();
-    return /claude/.test(base) ? 'claude' : (/codex/.test(base) ? 'codex' : base);
+  // The name a tab shows in chat style (tab bar, sidebar, the view's header); see commandNamed.
+  function label(sid, own) {
+    const all = sessions();
+    const s = all[sid];
+    if (globalStyle() !== 'chat' || !s || s.isRemote || !commandNamed(own, s.cmd)) return own;
+    const zh = isZh(lang());
+    const base = plainName(s.cmd, zh);
+    const order = (host() && host().order && host().order()) || Object.keys(all);
+    const same = order.filter(x => all[x] && !all[x].isRemote && commandNamed(all[x].label, all[x].cmd) && plainName(all[x].cmd, zh) === base);
+    const i = same.indexOf(sid);
+    return i > 0 ? `${base} ${i + 1}` : base;
   }
   function chatCapable(sid) {
     const v = view(sid);
@@ -449,12 +497,8 @@
     return CHAT_PROVIDERS.includes(prov);
   }
   function displayName(s) {
-    const label = String((s && s.label) || '').trim();
-    const first = guessProvider(s && s.cmd);
-    if (!label || label.toLowerCase() === first || label === String((s && s.cmd) || '').split(/\s/)[0]) {
-      return T('Chat', '對話');
-    }
-    return label;
+    const sid = Object.keys(sessions()).find(k => sessions()[k] === s) || '';
+    return label(sid, String((s && s.label) || '').trim());
   }
 
   // ── DOM ────────────────────────────────────────────────────────────────
@@ -472,7 +516,7 @@
       '<div id="chat-head"></div>' +
       '<div id="chat-scroll"><div id="chat-col"><div id="chat-list"></div><div id="chat-live"></div></div></div>' +
       '<div id="chat-ask" hidden></div>' +
-      '<div id="chat-compose"><div id="chat-col-in"><textarea id="chat-input" rows="1"></textarea>' +
+      '<div id="chat-compose"><div id="chat-attach" hidden></div><div id="chat-col-in"><textarea id="chat-input" rows="1"></textarea>' +
       '<button id="chat-send"></button></div><div id="chat-note"></div></div>';
     wrap.appendChild(layer);
     headEl = layer.querySelector('#chat-head');
@@ -494,14 +538,9 @@
     });
     layer.addEventListener('click', onClick);
     notice.addEventListener('click', onClick);
-    // A file dropped here would land in the terminal's input line, out of sight, and
-    // hold every message after it as "the user's draft".
-    layer.addEventListener('drop', e => {
-      e.preventDefault(); e.stopPropagation();
-      note(T('Files cannot be dropped into the chat view yet: switch to the terminal for that.',
-             '對話畫面還不能拖放檔案，請切到終端機再拖。'), true);
-    });
-    layer.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    // Files dropped on the view go through the page's own drop path (index.html), which
+    // hands each one to attach() instead of typing it into the CLI. Pasted ones too:
+    input.addEventListener('paste', onPaste);
     input.addEventListener('keydown', e => {
       if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.isComposing || e.keyCode === 229) return;          // choosing a character, not sending
@@ -527,6 +566,7 @@
     }, true);
     mountSwitch();
     mountSettings();
+    mountNewConvo();
     return true;
   }
 
@@ -578,8 +618,8 @@
     c.classList.toggle('active', style === 'chat');
     l.classList.toggle('active', style === 'cli');
     row.querySelector('.cm-set-hint').textContent = T(
-      `What a tab opens on. Chat shows the conversation with buttons for questions; Native CLI shows the terminal as it is. Each tab can switch on its own (the switch at the top, ${KEY_LABEL}) and keeps that until it closes or this changes. Only Claude Code and Codex tabs have the chat view so far; other tabs always show their terminal.`,
-      `打開分頁時預設看到的畫面。「對話」顯示對話內容，要你決定的事會變成按鈕；「原生 CLI」就是終端機原本的樣子。每個分頁都能單獨切換（上方的切換鈕，或 ${KEY_LABEL}），會一直記在那個分頁上，直到分頁關掉或這裡改了。目前只有 Claude Code 和 Codex 分頁有對話畫面，其他分頁一律顯示終端機。`);
+      `What a tab opens on. Chat shows the conversation with buttons for questions; Native CLI shows the terminal as it is. Each tab can switch on its own (the switch at the top, ${KEY_LABEL}) and keeps that until it closes or this changes. Claude Code, Codex, OpenCode, Grok, Pi and Cursor tabs have the chat view; Antigravity and terminal tabs always show their terminal.`,
+      `打開分頁時預設看到的畫面。「對話」顯示對話內容，要你決定的事會變成按鈕；「原生 CLI」就是終端機原本的樣子。每個分頁都能單獨切換（上方的切換鈕，或 ${KEY_LABEL}），會一直記在那個分頁上，直到分頁關掉或這裡改了。Claude Code、Codex、OpenCode、Grok、Pi、Cursor 分頁有對話畫面；Antigravity 和終端機分頁一律顯示終端機。`);
   }
 
   async function setStyle(style) {
@@ -590,7 +630,7 @@
     syncSettings();
     try { await api().save_settings(JSON.stringify(st)); } catch (_) { /* the page keeps it; next save carries it */ }
     apply(true);
-    try { host().renderSidebar && host().renderSidebar(); } catch (_) {}
+    try { host().renderSidebar && host().renderSidebar(); host().renderTabs && host().renderTabs(); } catch (_) {}
   }
   function setMode(sid, mode) {
     const s = sessions()[sid];
@@ -668,9 +708,12 @@
     const key = `${sid}|${prov}|${lang()}`;
     if (notice.dataset.key === key) return;
     notice.dataset.key = key;
-    notice.innerHTML = `<span>${escHtml(known
-      ? T(`${known}'s conversation is not in the chat view yet, so this tab shows its terminal.`,
-          `${known} 的對話還沒接進對話畫面，所以這個分頁顯示終端機。`)
+    notice.innerHTML = `<span>${escHtml(prov === 'agy'
+      ? T("Antigravity keeps its conversation in a binary format nothing here can read yet, so this tab shows its terminal.",
+          'Antigravity 的對話存成二進位格式，這裡還讀不到，所以這個分頁顯示終端機。')
+      : known
+      ? T(`${known}'s conversation could not be read, so this tab shows its terminal.`,
+          `讀不到 ${known} 的對話記錄，所以這個分頁顯示終端機。`)
       : T('This is a terminal tab: there is no conversation to show, so it stays a terminal.',
           '這是終端機分頁，沒有對話可以整理，所以直接顯示終端機。'))}</span>` +
       `<button data-act="notice-close" title="${escHtml(T('Hide', '收起'))}">×</button>`;
@@ -720,6 +763,7 @@
     sc.scrollTop = sc.scrollHeight;
   }
   function renderAll(sid) {
+    renderAttach(sid);
     renderHead(sid);
     renderList(sid);
     renderLive(sid);
@@ -759,7 +803,7 @@
     // What was sent from here and is not in the record yet stays on screen (the phone's rule).
     const now = Date.now();
     v.pending = v.pending.filter(p => now - p.at < (p.queued ? QUEUE_HOLD_MS : HOLD_SENT_MS) &&
-      !items.some(it => it.type === 'user' && it.text.includes(p.text.trim())));
+      !items.some(it => it.type === 'user' && it.text.includes(String(p.key || p.text).trim())));
     let html = '';
     if ((data.turns || []).length >= v.limit && v.limit < 400) {
       html += `<button class="cm-earlier" data-act="earlier">${escHtml(T('Show earlier messages', '載入更早的對話'))}</button>`;
@@ -781,7 +825,8 @@
         ` <button class="cm-more-text cm-inline" data-act="to-term">${escHtml(T('Open the terminal', '看終端機'))}</button></div></div>`;
     }
     v.pending.forEach(p => {
-      html += `<div class="cm-row cm-user is-pending"><div class="cm-bubble">${md(p.text, isZh(lang()))}</div>` +
+      const att = (p.files || []).length ? `<div class="cm-meta">${escHtml(T('Attached: ', '附件：') + p.files.map(f => baseName(f.path)).join('、'))}</div>` : '';
+      html += `<div class="cm-row cm-user is-pending"><div class="cm-bubble">${md(p.text, isZh(lang()))}</div>${att}` +
               `<div class="cm-meta">${escHtml(p.queued ? T('Waiting for it to finish this step', '等它做完這一步就送進去') : T('Sending…', '送出中…'))}</div></div>`;
     });
     if (listHtml !== sid + html) {
@@ -898,6 +943,164 @@
     if (ask.dataset.html !== html) { ask.innerHTML = html; ask.dataset.html = html; stickBottom(sid); }
   }
 
+  // ── attachments: the page's own save calls, the paths in the message ─────
+  const baseName = p => String(p || '').split(/[\\/]/).pop();
+  const ICON_FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5l3 3v10H4z"/><path d="M9 1.5v3h3"/></svg>';
+  function attach(path, dataUrl) {
+    const sid = shownFor;
+    if (!sid || !path || /^ERROR/.test(String(path))) return;
+    const v = view(sid);
+    v.files = v.files || [];
+    if (!v.files.some(f => f.path === String(path))) {
+      v.files.push({ path: String(path), dataUrl: /^data:image\//.test(dataUrl || '') ? dataUrl : '' });
+    }
+    renderAttach(sid);
+    input.focus();
+  }
+  function renderAttach(sid) {
+    const box = layer && layer.querySelector('#chat-attach');
+    if (!box) return;
+    const files = view(sid).files || [];
+    box.hidden = !files.length;
+    box.innerHTML = files.map((f, i) => `<span class="cm-file" title="${escHtml(f.path)}">` +
+      (f.dataUrl ? `<img src="${escHtml(f.dataUrl)}" alt="">` : ICON_FILE) +
+      `<span>${escHtml(baseName(f.path))}</span><button data-act="unattach" data-i="${i}" title="${escHtml(T('Remove', '移除'))}">×</button></span>`).join('');
+  }
+  const readDataUrl = blob => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+  // A picture or a file pasted into the box: saved by the same calls the terminal's paste
+  // uses (save_image, Finder's own paths, save_file_from_clipboard). Text pastes as text.
+  async function onPaste(e) {
+    const cd = e.clipboardData;
+    if (!shownFor || !cd) return;
+    const items = Array.from(cd.items || []);
+    const images = items.filter(it => it.kind === 'file' && /^image\//.test(it.type)).map(it => it.getAsFile()).filter(Boolean);
+    if (!images.length && !Array.from(cd.types || []).includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const a = api();
+    try {
+      if (images.length) {
+        for (const blob of images) { const url = await readDataUrl(blob); attach(await a.save_image(url), url); }
+        return;
+      }
+      const paths = JSON.parse((await a.get_clipboard_files()) || '[]');
+      if (paths.length) { paths.forEach(path => attach(path, '')); return; }
+      for (const it of items) {
+        const blob = it.kind === 'file' ? it.getAsFile() : null;
+        if (blob && blob.size > 0) attach(await a.save_file_from_clipboard(await readDataUrl(blob), blob.name || 'file'), '');
+      }
+    } catch (err) { note(String(err), true); }
+  }
+
+  // ── "＋" in chat style: a new conversation, by who to talk to ──────────────
+  // The CLI list (and a typed command) stays, folded under "Advanced"; in Native CLI
+  // style the dialog is as it was.
+  const PURPOSE = {
+    claude: ['Code, documents, research: anything', '寫程式、改文件、整理資料，什麼都能聊'],
+    codex: ['Code and tests; good for a second opinion', '寫程式、跑測試，適合請它給第二意見'],
+    opencode: ['A coding assistant that can also run open models', '也能用開源模型的程式助手'],
+    grok: ["xAI's coding assistant", 'xAI 的程式助手'],
+    pi: ['A small, quick coding assistant', '輕巧的程式助手'],
+    cursor: ["Cursor's coding assistant", 'Cursor 的程式助手'],
+    agy: ["Google's coding assistant (no chat view yet: it opens on its terminal)", 'Google 的程式助手（還沒有對話畫面，會顯示終端機）'],
+  };
+  let newConvo = { ai: [], bots: [] };
+  function mountNewConvo() {
+    const modal = document.getElementById('modal-new');
+    const box = modal && modal.querySelector('.modal');
+    if (!box || document.getElementById('chat-new')) return;
+    const el = document.createElement('div');
+    el.id = 'chat-new';
+    box.insertBefore(el, box.children[1] || null);
+    el.addEventListener('click', onNewClick);
+    if (root.MutationObserver) {
+      new MutationObserver(() => { if (modal.classList.contains('open')) renderNewConvo(); })
+        .observe(modal, { attributes: true, attributeFilter: ['class'] });
+    }
+  }
+  function aiFace(provider) {
+    const B = root.SFBots;
+    try { return B && B.faceSvg ? B.faceSvg(B.defaultAvatar('ai:' + provider), { seed: provider }) : ''; } catch (_) { return ''; }
+  }
+  async function renderNewConvo() {
+    const box = document.querySelector('#modal-new .modal');
+    const el = document.getElementById('chat-new');
+    if (!box || !el) return;
+    const h2 = box.querySelector('h2');
+    const chat = globalStyle() === 'chat';
+    box.classList.toggle('cm-newconvo', chat);
+    box.classList.remove('cm-adv-open');
+    if (h2 && !h2.dataset.cmOrig) h2.dataset.cmOrig = h2.textContent;
+    if (!chat) { el.innerHTML = ''; if (h2) h2.textContent = h2.dataset.cmOrig; return; }
+    if (h2) h2.textContent = T('New conversation', '新對話');
+    let groups = [];
+    try { groups = JSON.parse(await api().preset_groups()) || []; } catch (_) { groups = []; }
+    const ai = groups.filter(g => g && g.provider && (g.items || []).length);
+    let bots = [];
+    try {
+      const st = JSON.parse(await api().bots_state());
+      if (st && st.enabled) {
+        bots = Object.entries(st.roster || {}).filter(([, e]) => e && e.bot && !e.bot.external)
+          .map(([role, e]) => ({ role, label: e.label || role, resp: e.responsibility || '', avatar: e.bot.avatar }));
+      }
+    } catch (_) { bots = []; }
+    newConvo = { ai, bots };
+    const B = root.SFBots;
+    let html = `<div class="cm-new-sec">${escHtml(T('Talk to', '找誰聊'))}</div><div class="cm-new-list">`;
+    ai.forEach((g, i) => {
+      const why = (PURPOSE[g.provider] || ['', ''])[isZh(lang()) ? 1 : 0];
+      html += `<button class="cm-new-item${i === 0 ? ' is-first' : ''}" data-act="new-ai" data-g="${i}">` +
+        `<span class="cm-new-face">${aiFace(g.provider)}</span><span class="cm-new-txt"><b>${escHtml(g.title)}` +
+        (i === 0 ? `<i>${escHtml(T('default', '預設'))}</i>` : '') + `</b><span>${escHtml(why)}</span></span></button>`;
+    });
+    html += '</div>';
+    if (bots.length) {
+      html += `<div class="cm-new-sec">${escHtml(T('Hand it to a bot', '交給 bot'))}</div><div class="cm-new-list">` +
+        bots.map((b, i) => `<button class="cm-new-item" data-act="new-bot" data-b="${i}"><span class="cm-new-face">` +
+          `${B && B.faceSvg ? B.faceSvg(b.avatar, { seed: b.role }) : ''}</span><span class="cm-new-txt"><b>${escHtml(b.label)}</b>` +
+          `<span>${escHtml(b.resp)}</span></span></button>`).join('') + '</div>';
+    }
+    html += `<button class="cm-new-adv" data-act="new-adv"><span class="cm-caret">▸</span>${escHtml(T('Advanced: pick a CLI or type a command', '進階：選 CLI 或自訂指令'))}</button>`;
+    el.innerHTML = html;
+  }
+  function waitAndSwitch(sid, tries) {
+    if (sessions()[sid]) { host().switchTab(sid); return; }
+    if ((tries || 0) < 40) setTimeout(() => waitAndSwitch(sid, (tries || 0) + 1), 250);
+  }
+  async function onNewClick(e) {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const box = document.querySelector('#modal-new .modal');
+    if (b.dataset.act === 'new-adv') {
+      const open = box.classList.toggle('cm-adv-open');
+      b.querySelector('.cm-caret').textContent = open ? '▾' : '▸';
+      return;
+    }
+    if (b.dataset.act === 'new-ai') {
+      const g = newConvo.ai[+b.dataset.g];
+      const item = g && ((g.items || []).find(it => !it.variant) || g.items[0]);
+      if (!item) return;
+      host().closeModal();
+      host().openSession(item.cmd, item.name, { askName: false });
+      return;
+    }
+    if (b.dataset.act === 'new-bot') {
+      const bot = newConvo.bots[+b.dataset.b];
+      if (!bot) return;
+      host().closeModal();
+      try {
+        const r = JSON.parse(await api().bots_open(bot.role));
+        const sid = r && r.details && r.details.sid;
+        if (sid) waitAndSwitch(sid);
+      } catch (_) { /* the tab may still come; the sidebar shows it */ }
+    }
+  }
+
   // What the pending call works on, named the way a person would.
   function callWord(call) {
     const k = toolKind(call.tool);
@@ -918,20 +1121,29 @@
   async function send() {
     const sid = shownFor;
     const text = input.value;
-    if (!sid || !text.trim()) return;
-    const v = view(sid);
-    const item = { text, at: Date.now(), queued: false };
+    const v = sid ? view(sid) : null;
+    const files = v ? (v.files || []).slice() : [];
+    if (!sid || (!text.trim() && !files.length)) return;
+    // Attached files go in as their paths, ahead of the words: what the terminal types
+    // for an attachment, and what a paired phone sends for a photo.
+    const body = files.length ? files.map(f => f.path).join('\n') + (text.trim() ? '\n\n' + text : '') : text;
+    const shown = text.trim() ? text : files.map(f => baseName(f.path)).join('\n');
+    const item = { text: shown, key: text.trim() || baseName(files[0].path), at: Date.now(), queued: false, files };
     v.pending.push(item);
+    v.files = [];
+    renderAttach(sid);
     v.atBottom = true;
     input.value = '';
     autosize();
     renderList(sid);
     note('');
     try {
-      const r = JSON.parse(await api().chat_send(sid, text));
+      const r = JSON.parse(await api().chat_send(sid, body));
       if (!r.success) {
         v.pending = v.pending.filter(p => p !== item);
         if (!input.value) { input.value = text; autosize(); }
+        v.files = files.concat(v.files || []);
+        renderAttach(sid);
         note(r.message || T('Not sent.', '沒有送出。'), true);
       } else if (r.queued) {
         item.queued = true;
@@ -980,6 +1192,7 @@
       return;
     }
     if (act === 'answer') return answer(el);
+    if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
     if (act === 'to-term') return setMode(sid, 'cli');
     if (act === 'notice-close') { noticeClosed.add(sid); renderNotice(sid, false); return; }
     if (act === 'earlier') { const v = view(sid); v.limit = Math.min(400, v.limit * 2); v.rev = ''; v.atBottom = false; refresh(sid, true); return; }
@@ -1013,7 +1226,7 @@
     return d.text ? (d.detail ? `${d.text} · ${d.detail}` : d.text) : '';
   }
 
-  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode };
+  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach };
   const boot = () => { mount(); apply(false); setInterval(tick, POLL_MS); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

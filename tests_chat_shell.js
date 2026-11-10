@@ -146,6 +146,25 @@ console.log('tool calls');
   check('…every call kept, in order', same(items[1].calls.map(c => c.tool + ':' + c.target), ['Read:a.py', 'Bash:make']), items[1].calls);
 }
 
+console.log('the other CLIs: their tool names, and tabs named after a command');
+{
+  const calls = [{ tool: 'bash', target: 'npm test' }, { tool: 'read', target: 'a.ts' }, { tool: 'edit', target: 'a.ts' },
+                 { tool: 'grep', target: 'TODO' }, { tool: 'task', target: '' }, { tool: 'webfetch', target: '' },
+                 { tool: 'read_file', target: 'b.py' }, { tool: 'run_terminal_cmd', target: 'ls' }, { tool: 'write', target: 'c.md' }];
+  check('OpenCode / Pi / Grok / Cursor tool names by kind', R.toolSummary(calls, 'zh-TW') ===
+    '查了 2 個檔案、搜尋了 1 次、查了 1 個網頁、改了 2 個檔案、跑了 2 個指令、派出 1 個子任務', R.toolSummary(calls, 'zh-TW'));
+  check('which CLI a command runs, past cd … && and VAR=…', ['claude', 'codex', 'pi', 'opencode', 'cursor', 'agy', 'grok', 'zsh']
+    .every((want, i) => R.guessProvider(['claude --model haiku', 'cd /w && codex --full-auto', 'cd /w; pi', 'OPENAI=x opencode',
+                                         '/usr/local/bin/cursor-agent', 'env FOO=1 agy', 'grok', 'zsh'][i]) === want));
+  check('a tab named after its command is renamed for display', R.commandNamed('claude', 'claude --model haiku')
+    && R.commandNamed('Claude', 'claude') && R.commandNamed('codex', 'cd /w && codex') && R.commandNamed('bash', 'zsh')
+    && R.commandNamed('', 'pi'));
+  check('…a name someone gave it is kept', !R.commandNamed('週報小幫手', 'claude') && !R.commandNamed('dev server', 'zsh')
+    && !R.commandNamed('Coding-CLD', 'claude --effort max'));
+  check('…its display name', R.plainName('claude', true) === 'Claude 對話' && R.plainName('cursor-agent', false) === 'Cursor chat'
+    && R.plainName('bash', true) === '終端機' && R.plainName('agy', true) === 'Antigravity 對話');
+}
+
 console.log('what it is doing');
 {
   const zh = st => R.plainDoing(st, 'zh-TW');

@@ -166,7 +166,52 @@ check("a bash tab: not readable, because of what it runs", not v4["readable"] an
       and v4["turns"] == [] and v4["provider"] == "other", v4)
 v5 = view("s5")
 check("a Claude tab with no record yet: says so", not v5["readable"] and v5["why"] == "no_transcript", v5)
-check("no such tab", json.loads(api.chat_view("s9", 120, "")) == {"success": False, "code": "no_tab"})
+check("no such tab", json.loads(api.chat_view("s99", 120, "")) == {"success": False, "code": "no_tab"})
+
+print("chat_view: the other CLIs (M2)")
+import agent_pi  # noqa: E402
+PI = TMP / "pi-session.jsonl"
+PI.write_text("\n".join(json.dumps(o, ensure_ascii=False) for o in [
+    {"type": "session", "id": "x", "cwd": "/work", "timestamp": "2026-11-10T10:00:00Z"},
+    {"type": "model_change", "id": "a", "modelId": "demo-model", "provider": "demo"},
+    {"type": "message", "id": "b", "message": {"role": "user", "content": [{"type": "text", "text": "列出檔案"}],
+                                                "timestamp": 1794190841953}},
+    {"type": "message", "id": "c", "message": {"role": "assistant", "timestamp": 1794190843000, "content": [
+        {"type": "thinking", "thinking": "先看一下"}, {"type": "toolCall", "id": "t1", "name": "bash",
+                                                       "arguments": {"command": "ls -la"}}]}},
+    {"type": "message", "id": "d", "message": {"role": "toolResult", "content": [{"type": "text", "text": "a.txt"}]}},
+    {"type": "message", "id": "e", "message": {"role": "assistant", "timestamp": 1794190845000,
+                                                "content": [{"type": "text", "text": "只有 a.txt。"}]}},
+]) + "\n", encoding="utf-8")
+GROK = TMP / "chat_history.jsonl"
+GROK.write_text("\n".join(json.dumps(o, ensure_ascii=False) for o in [
+    {"type": "user", "prompt_index": 0, "content": "<user_query>看一下 README</user_query>"},
+    {"type": "assistant", "content": "好。", "tool_calls": [{"name": "read_file", "arguments": json.dumps({"path": "/w/README.md"})}]},
+    {"type": "assistant", "content": "README 只有兩行。"},
+]) + "\n", encoding="utf-8")
+real_pi_file = main.agent_status._pi_session_file
+main.agent_status._pi_session_file = lambda worker: str(PI) if worker.get("sid") == "s7" else None
+api.sessions["s7"] = Tab("s7", "cd /work && pi")
+api.sessions["s8"] = Tab("s8", "agy")
+api.sessions["s9"] = Tab("s9", "grok")
+PATHS["s9"] = GROK
+for sid in ("s7", "s8", "s9"):
+    STATUS[sid] = {"state": "done"}
+v7 = view("s7")
+check("Pi: its session read as turns (thinking and tool results left out)", v7["readable"] and v7["provider"] == "pi"
+      and [(t["kind"], t.get("tool", ""), t.get("target", "") or t.get("text", "")) for t in v7["turns"]]
+      == [("user_msg", "", "列出檔案"), ("tool_call", "bash", "ls -la"), ("assistant_text", "", "只有 a.txt。")], v7["turns"])
+check("…the same turns the phone gets from /link/conversation", v7["turns"]
+      == api._execute_sfctl("conversation", {"sid": "s7", "limit": 120})["details"]["turns"])
+check("…with their times", all(t.get("ts") for t in v7["turns"]), v7["turns"])
+check("Antigravity: not readable, because of what it runs (its steps are protobuf)",
+      not view("s8")["readable"] and view("s8")["why"] == "provider" and view("s8")["provider"] == "agy")
+v9 = view("s9")
+check("Grok: read from its chat history", v9["readable"] and v9["provider"] == "grok"
+      and [t["kind"] for t in v9["turns"]] == ["user_msg", "assistant_text", "tool_call", "assistant_text"], v9["turns"])
+check("OpenCode, Grok, Cursor and Pi are drawn; Antigravity is not",
+      set(api_chat.CHAT_PROVIDERS) == {"claude", "codex", "opencode", "grok", "cursor", "pi"})
+main.agent_status._pi_session_file = real_pi_file
 
 print("chat_view: the question")
 v3 = view("s3")
@@ -216,7 +261,7 @@ check("a busy tab: queued, and the view is told", q["success"] and q["queued"] a
 n = len(sent)
 e = json.loads(api.chat_send("s1", "   \n "))
 check("nothing to send: nothing sent", e == {"success": False, "code": "empty"} and len(sent) == n, e)
-x = json.loads(api.chat_send("s9", "hi"))
+x = json.loads(api.chat_send("s99", "hi"))
 check("no such tab: refused", not x["success"] and len(sent) == n, x)
 tab_delivery.deliver = real_deliver
 
@@ -285,8 +330,9 @@ calls = set(re.findall(r"(?:api\(\)|\ba)\.([a-z_]+)\(", src))
 missing = sorted(c for c in calls if not callable(getattr(Api, c, None)))
 check(f"all {len(calls)} js_api calls exist ({', '.join(sorted(calls))})", calls and not missing, missing)
 check("the view's three routes are on the Api", all(callable(getattr(Api, m, None)) for m in ("chat_view", "chat_send", "chat_answer")))
-check("the providers the page draws are the backend's", "const CHAT_PROVIDERS = ['claude', 'codex']" in src
-      and api_chat.CHAT_PROVIDERS == ("claude", "codex"))
+page = re.search(r"const CHAT_PROVIDERS = \[([^\]]*)\]", src)
+check("the providers the page draws are the backend's", page is not None
+      and [x.strip(" '") for x in page.group(1).split(",")] == list(api_chat.CHAT_PROVIDERS), page and page.group(1))
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:

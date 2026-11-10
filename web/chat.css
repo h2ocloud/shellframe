@@ -226,3 +226,41 @@ body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { 
   .cm-user .cm-bubble { max-width: 90%; }
   #chat-switch button span { display: none; }
 }
+
+/* ── files on their way with the next message ── */
+#chat-attach { max-width: 880px; margin: 0 auto .45em; display: flex; flex-wrap: wrap; gap: .4em; }
+#chat-attach[hidden] { display: none; }
+.cm-file {
+  display: inline-flex; align-items: center; gap: .45em; max-width: 260px; padding: .25em .3em .25em .35em;
+  border-radius: 8px; background: var(--cm-panel); border: 1px solid var(--cm-line2); font-size: .8em; color: var(--cm-soft);
+}
+.cm-file img { width: 2.4em; height: 2.4em; object-fit: cover; border-radius: 5px; flex: none; }
+.cm-file svg { width: 1.6em; height: 1.6em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.2; }
+.cm-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cm-file button { border: 0; background: none; color: var(--cm-dim); cursor: pointer; font-size: 1.1em; line-height: 1; padding: 0 .2em; }
+.cm-file button:hover { color: var(--cm-text); }
+
+/* ── "＋" in chat style: a new conversation ── */
+#modal-new .modal.cm-newconvo:not(.cm-adv-open) #preset-list,
+#modal-new .modal.cm-newconvo:not(.cm-adv-open) .custom-cmd,
+#modal-new .modal.cm-newconvo:not(.cm-adv-open) #save-row,
+#modal-new .modal.cm-newconvo:not(.cm-adv-open) #btn-toggle-save { display: none !important; }
+#chat-new:empty { display: none; }
+#chat-new { margin-bottom: 10px; font-family: -apple-system, "Segoe UI", "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif; }
+.cm-new-sec { font-size: 11px; color: #565f89; margin: 4px 2px 6px; letter-spacing: .03em; }
+.cm-new-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.cm-new-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 10px; cursor: pointer;
+  background: #1f2335; border: 1px solid #292e42; color: #c0caf5; text-align: left; font: inherit;
+}
+.cm-new-item:hover { border-color: #7aa2f7; background: #232840; }
+.cm-new-item.is-first { border-color: rgba(122, 162, 247, .55); background: rgba(122, 162, 247, .08); }
+.cm-new-face { width: 30px; height: 30px; flex: none; display: inline-block; }
+.cm-new-face .sfb { width: 100%; height: 100%; }
+.cm-new-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.cm-new-txt b { font-size: 13px; font-weight: 600; }
+.cm-new-txt b i { font-style: normal; font-size: 10px; font-weight: 500; color: #7aa2f7; margin-left: 6px;
+                  border: 1px solid rgba(122, 162, 247, .5); border-radius: 4px; padding: 0 4px; vertical-align: 1px; }
+.cm-new-txt span { font-size: 11.5px; color: #8089b3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-new-adv { border: 0; background: none; color: #7aa2f7; font-size: 12px; cursor: pointer; padding: 2px; display: inline-flex; gap: 4px; }
+.cm-new-adv:hover { text-decoration: underline; }
