@@ -14,6 +14,22 @@
   one that was deleted stays deleted; one that is there still gets fields added since.
 - A2A (`experimental_a2a`) has its switch beside the Bots one in Settings; off by default.
 
+## Temporary bots, keeping one, another CLI (plan A)
+
+- Every AI tab is a bot. One nobody kept is *temporary*: the sidebar shows "臨時" and a
+  Keep button, Telegram's /list marks it and offers Keep, a phone gets `kind: "temp"`.
+  It is named from its first message (`Api._auto_name`, the terminal's Enter and the chat
+  view's send alike). A shell tab is a terminal: `>_`, never a bot.
+- Keep (`bots_keep`, `sfctl bots-keep`, `POST /link/bots/keep`): the tab becomes a bot
+  with the face it had, a memory folder and its tab named for good. A bot's name is its
+  own on this computer, in any case; a taken one is refused with a free one to offer.
+- Another CLI or model (`bots_switch`, `sfctl bots-set`, the editor's "Save and switch
+  now", `/link/bots/settings` with `cli`): the command becomes this computer's preset
+  for that CLI; the name, face, job and memory stay, the conversation does not move.
+  Next wake, or now (an awake bot writes its memory and closes first). Pi and
+  Antigravity pick their model inside them, so no model is pinned for them.
+- A bot or a tab is addressed by name everywhere (`bot_names.py`); `/N` is unchanged.
+
 ## What it is
 
 | Piece | What the user sees | Where |

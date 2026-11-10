@@ -455,6 +455,11 @@ class BotsApiMixin:
         refused = self._link_editable(role)[1]
         if refused:
             return refused
+        if args.get("cli") is not None or args.get("apply"):                  # v2: another CLI or model (bots_switch)
+            if args.get("responsibility") is not None:
+                self._bots_save_for_sfctl({"role": role, "data": json.dumps(
+                    {"responsibility": str(args["responsibility"]).strip()}, ensure_ascii=False)})
+            return self._bots_switch(role, str(args.get("cli") or ""), args.get("model"), str(args.get("apply") or "next_wake"))
         data = {k: str(args[k]).strip() for k in ("responsibility", "model") if args.get(k) is not None}
         if not data:
             return {"success": False, "message": _("Nothing to change: give responsibility or model",
@@ -689,6 +694,97 @@ class BotsApiMixin:
             if not self._bot_name_taken(cand, cfg) and not bots.name_error(cand):
                 return cand
         return ""
+
+    # ── plan A: another CLI or model for a bot ───────────────────────────
+    def bots_switch(self, role: str, cli: str = "", model=None, apply: str = "next_wake") -> str:
+        """A bot on another CLI and/or model. Its name, face, job and memory stay; the
+        conversation does not move to the new CLI. apply="next_wake" keeps it for the next
+        wake; "now" wakes it on the new one now: an awake bot writes its memory and closes
+        first (minutes; {"pending": true}), one asleep is woken at once ({"sid"})."""
+        return json.dumps(self._bots_switch(role, cli, model, apply), ensure_ascii=False)
+
+    def _cmd_for_cli(self, cli: str) -> str:
+        """How this computer runs a CLI: the first preset of it (its own flags kept), else
+        the built-in one."""
+        try:
+            for g in json.loads(self.preset_groups()) or []:
+                if g.get("provider") == cli and g.get("items"):
+                    return str(g["items"][0].get("cmd") or "")
+        except Exception:
+            _swallow("_cmd_for_cli")
+        for p in main._DEFAULT_AI_PRESETS:
+            if agent_status.worker_kind(p["cmd"]) == cli:
+                return p["cmd"]
+        return cli
+
+    def _bots_switch(self, role: str, cli: str = "", model=None, apply: str = "next_wake") -> dict:
+        def fail(code, en, zh):
+            return {"success": False, "code": code, "message": _(en, zh)}
+        role = str(role or "").strip()
+        cfg = _cfg()
+        entry = (cfg.get("agent_roster") or {}).get(role)
+        if not isinstance(entry, dict):
+            return fail("no_bot", f'No bot "{role}"', f"沒有「{role}」這個 bot")
+        if bots.is_external(entry):
+            return fail("external", "A bot outside ShellBot runs where it lives", "外部的 bot 用什麼 CLI 不歸這台管")
+        current = agent_status.worker_kind(str(entry.get("cmd") or ""))
+        cli = str(cli or "").strip()
+        data = {}
+        if cli and cli != current:
+            spec = next((c for c in _cli_choices() if c["key"] == cli), None)
+            if not spec or not spec["installed"]:
+                return fail("bad_cli", f"{cli} is not installed here", f"這台沒有裝 {cli}")
+            data["cmd"] = self._cmd_for_cli(cli)
+            if model is None:
+                model = ""                     # the last CLI's model would not fit this one
+        target = cli or current
+        if model is not None:
+            model = str(model).strip()
+            if model and not next((c["models"] for c in _cli_choices() if c["key"] == target), False):
+                return fail("model_fixed", "This CLI picks its model inside it; leave the model empty",
+                            "這個 CLI 的模型要在它裡面選，模型請留空")
+            if len(model) > 80 or re.search(r"\s", model):
+                return fail("bad_model", "A model is one word, e.g. sonnet", "模型是一個詞，例如 sonnet")
+            data["model"] = model
+        if not data and apply != "now":
+            return fail("nothing", "Nothing to change", "沒有要改的")
+        sid = next((x for x in list(self.sessions) if self._bots_role_of(x, cfg) == role
+                    or bot_names.bot_tab(role, cfg.get("agent_roster") or {}, self._name_tabs(),
+                                         cfg.get("bots_sessions") or {}) == x), "")
+        with _CLOSING_LOCK:
+            if sid and sid in _CLOSING:
+                return fail("busy", "It is writing its memory; try again when it has closed", "它正在寫記憶，關掉之後再換")
+        if data:
+            def _mut(c):
+                e = (c.get("agent_roster") or {}).get(role)
+                if isinstance(e, dict):
+                    e.update(data)             # the command and the model only: no bot block is added or changed
+            _update(_mut)
+            self._bots_notify_ui()
+        if apply != "now":
+            return {"success": True, "role": role, "applies": "next_wake"}
+        if not sid:
+            opened = json.loads(self.bots_open(role))
+            return {"success": bool(opened.get("success")), "role": role,
+                    "sid": (opened.get("details") or {}).get("sid", ""), "message": opened.get("message", "")}
+        threading.Thread(target=self._bots_switch_now, args=(role, sid), daemon=True, name="bots-switch").start()
+        return {"success": True, "role": role, "pending": True}
+
+    def _bots_switch_now(self, role: str, sid: str):
+        """Close the bot's tab the bot's way (its memory written first), then wake it on its
+        new command. Gives up, and says so in the log, if the tab is still open after the
+        close flow's own limits."""
+        try:
+            self.bots_close(sid, "save")
+            end = time.time() + BUSY_WAIT_SEC + SUMMARY_WAIT_SEC + 60
+            while sid in self.sessions and time.time() < end:
+                time.sleep(2)
+            if sid in self.sessions:
+                _dlog("bots", f"{role}: still open after the close flow; not switched now")
+                return
+            self.bots_open(role)
+        except Exception as e:
+            _dlog("bots", f"{role}: switching now failed: {e}")
 
     def _bots_link_keep(self, args: dict) -> dict:
         """POST /link/bots/keep {"sid", "name"?}: a phone keeps a temporary bot (bots_keep)."""

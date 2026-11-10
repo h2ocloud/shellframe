@@ -832,6 +832,7 @@
         <label>${t('Job', '執掌')}</label><textarea id="sfb-ed-resp" placeholder="${esc(t('What it is responsible for and where its job ends; handed to it when it wakes', '它負責什麼、邊界在哪；叫醒時會交給它'))}">${esc(existing ? existing.responsibility : '')}</textarea>
         <label>CLI</label><select id="sfb-ed-cmd">${cmdOptions.join('')}</select>
         <label>${t('Model', '模型')}</label><input type="text" id="sfb-ed-model" value="${esc(existing ? existing.model || '' : '')}" placeholder="${esc(t("Optional, e.g. sonnet; empty = the CLI's default", '選填，例如 sonnet；留空用 CLI 預設'))}">
+        ${existing ? `<div class="hint" style="grid-column:2">${t('Another CLI or model keeps its name, face, job and memory; this conversation does not move to the new CLI. It applies at the next wake, or now.', '換 CLI 或模型：名字、臉、執掌、記憶都留著；這次的對話不會搬到新的 CLI。下次叫醒時生效，或按「儲存並現在就換」。')}</div>` : ''}
         <label>Skills</label><div><div class="sfb-chips" id="sfb-ed-skills">${chips || `<span style="font-size:10px;color:#565f89">${t('No installed skills found', '找不到已安裝的 skill')}</span>`}</div>
           <input type="text" id="sfb-ed-skill-extra" value="${esc(extra)}" placeholder="${esc(t('Other skill names, comma-separated', '其他 skill 名稱，用逗號分隔'))}" style="margin-top:5px"></div>
         <label>${t('Face', '頭像')}</label><div><div class="sfb-grid" id="sfb-ed-shapes">${shapeBtns()}</div>
@@ -848,11 +849,24 @@
       <div class="sfb-row" style="justify-content:flex-end">
         ${existing ? `<button class="btn btn-ghost" data-act="folder">${t('Memory folder', '記憶資料夾')}</button><button class="btn btn-ghost" data-act="delete" style="margin-right:auto;color:#f7768e">${t('Delete', '刪除')}</button>` : ''}
         <button class="btn btn-ghost" data-act="cancel">${t('Cancel', '取消')}</button>
+        ${existing && sidOfBot(role) ? `<button class="btn btn-ghost" data-act="save-now" title="${esc(t('It writes its memory, closes, and wakes on the CLI and model above', '它會先寫記憶、關掉，再用上面的 CLI 和模型叫醒'))}">${t('Save and switch now', '儲存並現在就換')}</button>` : ''}
         <button class="btn btn-primary" data-act="save">${existing ? t('Save', '儲存') : (from ? t('Make it a bot', '開成 Bot') : t('Create', '建立'))}</button>
       </div>
       <div class="sfb-msg" id="sfb-ed-msg"></div></div>`;
     document.body.appendChild(ov);
     const $ = id => ov.querySelector('#' + id);
+    // A CLI that picks its model inside it (pi, Antigravity): nothing to pin here.
+    const fixedModel = cmd => /^(pi|sf-pi\S*|agy|antigravity)$/i.test(String(cmd || '').trim().split(/\s+/)[0].split(/[\\/]/).pop());
+    const syncModel = () => {
+      const fixed = fixedModel($('sfb-ed-cmd').value);
+      const m = $('sfb-ed-model');
+      m.disabled = fixed;
+      if (fixed) m.value = '';
+      m.placeholder = fixed ? t('This CLI picks its model inside it', '這個 CLI 的模型要在它裡面選')
+        : t("Optional, e.g. sonnet; empty = the CLI's default", '選填，例如 sonnet；留空用 CLI 預設');
+    };
+    $('sfb-ed-cmd').addEventListener('change', syncModel);
+    syncModel();
     const repaint = () => {
       $('sfb-ed-shapes').innerHTML = shapeBtns();
       $('sfb-ed-colors').innerHTML = colorBtns();
@@ -879,7 +893,7 @@
         if (res.success) { ov.remove(); await refresh(true); } else $('sfb-ed-msg').textContent = res.message;
         return;
       }
-      if (act !== 'save') return;
+      if (act !== 'save' && act !== 'save-now') return;
       const name = $('sfb-ed-name').value.trim();
       const picked = [...ov.querySelectorAll('#sfb-ed-skills input:checked')].map(i => i.value);
       const more = $('sfb-ed-skill-extra').value.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean);
@@ -902,6 +916,10 @@
         const res = JSON.parse(await api().bots_save(name, JSON.stringify(data), opts.fromSid || ''));
         msg.style.color = res.success ? '#9ece6a' : '#f7768e';
         msg.textContent = res.message || '';
+        if (res.success && act === 'save-now') {
+          const sw = JSON.parse(await api().bots_switch(role, '', null, 'now'));
+          toast(sw.success ? t('It writes its memory, then wakes on the new CLI', '它會先寫記憶，再用新的 CLI 叫醒') : (sw.message || ''), !sw.success);
+        }
         if (res.success) { ov.remove(); await refresh(true); }
       } catch (err) { msg.style.color = '#f7768e'; msg.textContent = String(err); }
     });

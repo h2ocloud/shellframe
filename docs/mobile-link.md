@@ -205,6 +205,7 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
   - `model` 是一個詞，例如 `sonnet`；空字串表示用 CLI 的預設。
   - 兩個欄位都沒給時，會被拒絕。
 - **`POST /link/bots/keep {"sid", "name"?}`（v2）：** 把臨時 bot 記住：用它現在的臉、建記憶資料夾和名冊項目、分頁綁上去並改成這個名字（預設是分頁標題）。成功回 `{"success": true, "role"}`；失敗的 `code`：`bots_off`、`no_tab`、`not_ai`（終端機）、`already_bot`、`plain`（標過不是 bot）、`bad_name`、`name_taken`（附 `suggestion`，例如「查資料 2」）。對應 `bots_keep`／`sfctl bots-keep`。舊版電腦回 404，請顯示「電腦上的 ShellBot 要更新」。
+- **`POST /link/bots/settings` 的 v2 欄位：** 多收 `cli`（`choices.clis` 的 key，要是裝好的）、`model`（`""` 是 CLI 的預設；`models: false` 的 CLI 只能給 `""`）、`apply`（`next_wake` 預設；`now`）。換 CLI 時沒給 `model`，模型會清回預設。`now`：睡著的 bot 直接用新的叫醒，回 `{"success", "sid"}`；醒著的先寫記憶、關掉再叫醒，回 `{"success", "pending": true}`，之後看 `/link/bots` 的 `closing` 和新的 `sid`。名字、臉、執掌、記憶都留著，對話不會搬到新的 CLI。失敗的 `code`：`no_bot`、`external`、`bad_cli`、`model_fixed`、`bad_model`、`busy`（正在寫記憶）、`nothing`。對應 `bots_switch`／`sfctl bots-set`。
 - **`POST /link/bots/primary {"role"}`：** 指定主要 Bot，對應 `bots_set_primary`。只能指定這台電腦上的 bot，不能指定外部 bot，也不能清空。
 
 **`POST /link/bots/wake {"role"}`**：叫醒一個 bot，走的是桌面的 `bots_open`。回 `{"success", "details": {"sid", "existed"}}`；`existed: true` 表示它本來就醒著。外部 bot 回 `success: false` 和原因。

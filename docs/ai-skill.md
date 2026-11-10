@@ -148,6 +148,13 @@ sfctl a2a-handoff worker:<name> "任務" --allow-write
 sfctl a2a-log
 ```
 
+**Bots (plan A).** Every AI tab is a bot: a *temporary* one until someone keeps it.
+`sfctl bots-keep <tab> [name]` keeps it (its face, a memory folder, its tab named for
+good); `sfctl bots-set <bot> --cli codex [--model m] [--now]` moves a bot to another CLI
+or model, keeping its name, face, job and memory (the conversation itself does not move;
+`--now` has an awake bot write its memory and close first). Name tabs by what they do,
+not by the CLI that runs them.
+
 **Names instead of sids.** `send`, `peek`, `close`, `rename` and `state` take a bot's
 name or a tab's title as well as a sid, and `delegate` / `a2a-send` take a bot's name,
 its old label (`研究-CLD`) or an alias, in any case. A name that matches more than one

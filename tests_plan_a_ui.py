@@ -51,7 +51,8 @@ STATE = {"enabled": True, "roster": ROSTER, "primary": "", "memory_root": "~/.co
          "sessions": {"s201": {"bot": "寫程式"}, "s205": {"plain": True}, "s206": {"bot": "查資料"}},
          "kinds": {"s202": "temp", "s203": "temp", "s204": "terminal", "s205": "temp"}}
 CFG = {"settings": {"experimental_bots": True, "language": "zh-TW", "sidebar_open": True, "ui_style": "cli"},
-       "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {}}
+       "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}, {"name": "Pi", "cmd": "pi", "icon": "P"}],
+       "agent_roster": {}}
 SESSIONS = [{"sid": sid, "cmd": cmd, "alive": True, "label": label, "bridge_enabled": True} for sid, label, cmd, *_ in TABS]
 STATUS = {sid: dict({"state": st, "dot": DOT[st], "summary": st}, **extra) for sid, _, _, st, extra in TABS}
 
@@ -82,6 +83,9 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
         const live = window.__sfHost && window.__sfHost.sessions()[sid]; if (live) live.label = name;
         return R({success: true, role: name, message: '已建立「' + name + '」'});
       }
+      case 'bots_skill_catalog': return R({skills: []});
+      case 'bots_save': return R({success: true, message: '已更新'});
+      case 'bots_switch': return R({success: true, role: args[0], pending: true});
       default: return R('{}');
     }
   };
@@ -93,7 +97,7 @@ setInterval(() => { try { window.__sfAgentStatus && window.__sfAgentStatus(windo
 SHOTS.mkdir(exist_ok=True)
 with sync_playwright() as pw:
     browser = pw.chromium.launch()
-    page = browser.new_page(viewport={"width": 1100, "height": 760}, device_scale_factor=2)
+    page = browser.new_page(viewport={"width": 1100, "height": 1300}, device_scale_factor=2)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.add_init_script(STUB)
@@ -146,6 +150,26 @@ with sync_playwright() as pw:
     calls = page.evaluate("window.__calls.filter(c => c[0] === 'bots_keep').map(c => c[1])")
     check("the page asked to keep it by the name in the box", calls == [["s202", "查資料"], ["s202", "查資料 2"]], calls)
     shot("plan-a-kept.png")
+
+    print("3. another CLI or model for a bot")
+    page.evaluate("window.SFBots.openSettings('s201', document.querySelector('#sidebar-sessions .sb-item[data-sid=\"s201\"] .busy-dot'))")
+    page.locator('.sfb-pop [data-act="edit"]').click()
+    page.wait_for_selector("#sfb-ed-cmd")
+    check("an awake bot's editor says what stays and offers to switch now",
+          "這次的對話不會搬到新的 CLI" in page.inner_text(".sfb-modal") and page.locator('[data-act="save-now"]').count() == 1)
+    page.select_option("#sfb-ed-cmd", value="pi")
+    check("a CLI that picks its model inside: the model box is off and empty",
+          page.locator("#sfb-ed-model").is_disabled() and page.input_value("#sfb-ed-model") == "")
+    page.select_option("#sfb-ed-cmd", value="claude")
+    page.fill("#sfb-ed-model", "sonnet")
+    check("…another one: on again", not page.locator("#sfb-ed-model").is_disabled())
+    page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / "plan-a-switch.png"))
+    page.locator('[data-act="save-now"]').click()
+    page.wait_for_function("window.__calls.some(c => c[0] === 'bots_switch')", timeout=8000)
+    saves = page.evaluate("window.__calls.filter(c => c[0] === 'bots_save').map(c => [c[1][0], JSON.parse(c[1][1]).cmd, JSON.parse(c[1][1]).model])")
+    sw = page.evaluate("window.__calls.filter(c => c[0] === 'bots_switch').map(c => c[1])")
+    check("saved with the CLI and model, then switched now", saves[-1:] == [["寫程式", "claude", "sonnet"]]
+          and sw == [["寫程式", "", None, "now"]], (saves, sw))
     check("no page errors", not errors, errors)
     browser.close()
 

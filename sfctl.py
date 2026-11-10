@@ -745,6 +745,13 @@ def main():
                                                "a memory folder and a name (plan A)")
     p_bkeep.add_argument("sid", help="The tab: its sid or its title")
     p_bkeep.add_argument("name", nargs="?", default="", help="The bot's name (default: the tab's title)")
+    p_bset = sub.add_parser("bots-set", help="Another CLI or model for a bot (plan A): its name, face, job and "
+                                             "memory stay; the conversation does not move to the new CLI")
+    p_bset.add_argument("role", help="The bot's name")
+    p_bset.add_argument("--cli", default="", help="claude, codex, opencode, grok, pi, cursor or agy")
+    p_bset.add_argument("--model", default=None, help="The model (empty: the CLI's default)")
+    p_bset.add_argument("--now", action="store_true",
+                        help="Switch now (an awake bot writes its memory and closes first); else at its next wake")
     p_bdel = sub.add_parser("bots-delete", help="Remove a bot, as Delete in its editor (ask the user first): "
                                                 "its memory folder stays; a role that was in the roster before "
                                                 "it became a bot stays as a plain worker role")
@@ -996,6 +1003,9 @@ def main():
         _print_result(_rpc("bots_save", {"role": args.role, "data": args.data, "bind": args.bind}, timeout=15))
     elif args.cmd == "bots-keep":
         _print_result(_rpc("bots_keep", {"sid": args.sid, "name": args.name}, timeout=15))
+    elif args.cmd == "bots-set":
+        _print_result(_rpc("bots_switch", {"role": args.role, "cli": args.cli, "model": args.model,
+                                           "now": args.now}, timeout=20))
     elif args.cmd == "bots-delete":
         _print_result(_rpc("bots_delete", {"role": args.role}, timeout=15))
     elif args.cmd == "route":

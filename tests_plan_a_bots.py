@@ -24,6 +24,7 @@ sys.modules["webview"] = MagicMock()
 sys.path.insert(0, str(HERE))
 import sf_log  # noqa: E402
 sf_log.DEBUG_LOG = str(TMP / "debug.log")
+import agent_status  # noqa: E402
 import api_bots  # noqa: E402
 import bots  # noqa: E402
 import main  # noqa: E402
@@ -43,6 +44,7 @@ def check(name, ok, detail=""):
 
 
 main.CONFIG_FILE = TMP / "config.json"
+agent_status_kind = agent_status.worker_kind
 
 
 def fresh(bots_on=True):
@@ -253,6 +255,59 @@ sent.clear()
 check("bots off: /list as it was", not bridge_home.after_list(bridge, 42) and bridge_home.kind_note(bridge, "s4") == "" and not sent)
 fresh()
 bridge_home.SEND = None
+
+print("6. another CLI or model for a bot")
+fresh()
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+cfg["agent_roster"]["研究"] = {"label": "研究", "cmd": "claude", "model": "opus", "bot": {"memory": True}}
+main.CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+api_bots._CLIS.update(at=time.time() + 3600, list=[
+    {"key": "claude", "label": "Claude Code", "installed": True, "models": True},
+    {"key": "codex", "label": "Codex", "installed": True, "models": True},
+    {"key": "pi", "label": "Pi", "installed": True, "models": False},
+    {"key": "agy", "label": "Antigravity", "installed": False, "models": False}])
+api.preset_groups = lambda: json.dumps([{"provider": "claude", "items": [{"cmd": "claude --permission-mode default"}]}])
+opened, closed = [], []
+api.bots_open = lambda role: (opened.append(role), json.dumps({"success": True, "details": {"sid": "s77"}}))[1]
+
+
+def close_now(sid, mode="save"):
+    closed.append((sid, mode))
+    api.sessions.pop(sid, None)
+    return json.dumps({"success": True})
+
+
+api.bots_close = close_now
+roster = lambda: json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))["agent_roster"]
+r = api._bots_switch("研究", "codex")
+check("next wake: the command for codex, and the model back to the CLI's own (opus would not fit codex)",
+      r.get("success") and r.get("applies") == "next_wake" and agent_status_kind(roster()["研究"]["cmd"]) == "codex"
+      and roster()["研究"]["model"] == "" and not opened, (r, roster()["研究"]))
+r = api._bots_switch("研究", "claude", "sonnet")
+check("back to claude: this computer's own claude preset (its flags), with the model given",
+      roster()["研究"]["cmd"] == "claude --permission-mode default" and roster()["研究"]["model"] == "sonnet", roster()["研究"])
+check("its face, job and memory stay (the bot block untouched)", roster()["研究"]["bot"] == {"memory": True})
+check("a CLI that picks its model inside: a model is refused", api._bots_switch("研究", "pi", "x").get("code") == "model_fixed")
+check("a CLI not installed here", api._bots_switch("研究", "agy").get("code") == "bad_cli")
+check("an external bot", api._bots_switch("總管", "claude").get("code") == "external")
+check("no such bot", api._bots_switch("沒有", "claude").get("code") == "no_bot")
+api._bots_switch("時程信件", "codex")
+check("a role without memory stays without: only its command changes",
+      "bot" not in roster()["時程信件"] and agent_status_kind(roster()["時程信件"]["cmd"]) == "codex", roster()["時程信件"])
+r = api._bots_switch("研究", "", None, "now")
+check("now, asleep: woken at once on its command", r.get("success") and r.get("sid") == "s77" and opened == ["研究"], r)
+opened.clear()
+r = api._execute_sfctl("bots_switch", {"role": "Coding", "cli": "claude", "now": True})
+check("now, awake (sfctl bots-set --now): pending, while it writes its memory", r.get("success") and r.get("pending"), r)
+for _ in range(60):
+    if opened:
+        break
+    time.sleep(0.1)
+check("…its tab closed the bot's way (memory first), then woken on the new CLI",
+      closed == [("s1", "save")] and opened == ["Coding"] and agent_status_kind(roster()["Coding"]["cmd"]) == "claude",
+      (closed, opened))
+r = api._bots_link_settings({"role": "研究", "cli": "codex", "apply": "next_wake"})
+check("the phone's /link/bots/settings with cli: the same switch", r.get("success") and agent_status_kind(roster()["研究"]["cmd"]) == "codex", r)
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:
