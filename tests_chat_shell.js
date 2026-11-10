@@ -260,5 +260,27 @@ console.log('markdown, safely');
   check('a long code block is kept whole, folded behind "show all"', lc.includes('is-long') && lc.includes('line 39') && lc.includes('顯示全部 40 行'), lc.slice(0, 80));
 }
 
+console.log('a question: what it is about');
+{
+  // Measured on a real Claude Code tab: the card showed the call as agent_status keeps it,
+  // "touch chat-shell-probe.txt && ls -l chat", for a command that went on.
+  const askContext = R.askContext || (() => '');
+  const d = { id: 'q9', kind: 'menu', reason: 'Do you want to proceed?', options: opts('Yes', 'No'),
+              detail: 'Bash command\nCreate probe.txt and confirm it exists\ntouch probe.txt && ls -l probe.txt\n<img src=x onerror=alert(1)>' };
+  const m = R.mapDecision(d, 'zh');
+  const call = { tool: 'Bash', target: 'touch probe.txt && ls -l pro' };
+  const h = askContext(d, m, call, 'zh');
+  check("the dialog's own words, whole and escaped",
+    h.includes('touch probe.txt &amp;&amp; ls -l probe.txt') && h.includes('Create probe.txt') && !h.includes('<img'), h);
+  check("…and not the call's cut start beside them", (h.match(/touch probe\.txt/g) || []).length === 1 && !h.includes('cm-ask-k'), h);
+  const bare = Object.assign({}, d, { detail: '' });
+  const h2 = askContext(bare, m, call, 'zh');
+  check('no words from the dialog: the call shown as its start only, the terminal offered',
+    h2.includes('指令開頭') && h2.includes('…') && h2.includes('data-act="to-term"'), h2);
+  check('the words cut by the computer: the terminal offered',
+    askContext(Object.assign({}, d, { detail: 'Bash command\necho 1…' }), m, call, 'zh').includes('data-act="to-term"'));
+  check('no words and no call: nothing', askContext(bare, m, null, 'zh') === '');
+}
+
 console.log(fails ? `\n${fails} failed, ${passes} passed` : `\nALL PASS (${passes})`);
 process.exit(fails ? 1 : 0);

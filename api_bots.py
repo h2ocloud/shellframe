@@ -44,6 +44,36 @@ def _update(mutator):
     return main.update_config(mutator)
 
 
+DIALOG_WORDS_MAX = 2000  # a decision's `detail`; past this it is cut and ends in "…"
+
+
+def dialog_words(lines: list, at: int) -> str:
+    """The words of the dialog whose options start at lines[at], whole, as the CLI drew them:
+    from the rule it opens with down to its question (the decision's `reason`), rules dropped,
+    each line masked as agent_status.redact masks (credentials and any 32+ character token, a
+    SHA say, become <redacted>; runs of spaces one). "" when no rule opens a dialog above the
+    options: what a question is about is not guessed (Codex draws none); a dialog taller than
+    the screen may start from another rule. The call a question is about is no substitute:
+    agent_status keeps a command's first line, 40 characters."""
+    rule = next((i for i in range(at - 1, -1, -1) if re.fullmatch(r"\s*─{10,}\s*", lines[i])), None)
+    if rule is None:
+        return ""
+    body = [ln.rstrip() for ln in lines[rule + 1:at] if not re.fullmatch(r"\s*[─╌]+\s*", ln)]
+    while body and not body[-1].strip():
+        body.pop()
+    body = body[:-1]                                    # the question
+    pad = min((len(ln) - len(ln.lstrip()) for ln in body if ln.strip()), default=0)
+    out = []
+    for ln in body:
+        if ln.strip():
+            ln = ln[pad:]
+            out.append(ln[:len(ln) - len(ln.lstrip())] + agent_status.redact(ln, 1000))
+        elif out and out[-1]:
+            out.append("")
+    text = "\n".join(out).strip("\n")
+    return text if len(text) <= DIALOG_WORDS_MAX else text[:DIALOG_WORDS_MAX].rstrip() + "…"
+
+
 class BotsApiMixin:
     # ── reading ─────────────────────────────────────────────────────────
     def _bots_enabled(self) -> bool:
@@ -242,8 +272,9 @@ class BotsApiMixin:
         return agent_model.describe(agent_model.apply(cmd, e["model"]) if e.get("model") else cmd)
 
     def _link_decision(self, sid: str, activity: str, res: dict):
-        """{"id", "reason", "options": [{"n", "text"}]} while a tab waits on the person: the
-        menu on its screen, or the question its last turn ended on with [[SF:RED]] (kept
+        """{"id", "kind", "reason", "options": [{"n", "text"}]} while a tab waits on the person:
+        the menu on its screen (with `detail`, its dialog's words: dialog_words), or the
+        question its last turn ended on with [[SF:RED]] (kept
         whether or not Telegram is on, which /link/signals depends on). None otherwise.
         `id` fingerprints this very question, for /link/answer: a menu by its whole dialog
         (two permission prompts with the same words differ in the command they ask about),
@@ -265,7 +296,7 @@ class BotsApiMixin:
                             if re.fullmatch(r"\s*─{10,}\s*", lines[i])), max(0, at - 6))
                 reason = next((ln.strip(" ─╌") for ln in reversed(lines[:at]) if ln.strip(" ─╌")), "")
                 return {"id": qid("menu", *(ln.strip() for ln in lines[top:end + 1])), "kind": "menu",
-                        "reason": agent_status.redact(reason, 300),
+                        "reason": agent_status.redact(reason, 300), "detail": dialog_words(lines, at),
                         "options": [{"n": int(o["num"]), "text": agent_status.redact(o["text"], 120)} for o in opts[:9]]}
             except Exception:
                 pass                                   # no menu read off the screen: maybe a RED question

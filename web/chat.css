@@ -149,6 +149,8 @@
               background: #16161e; max-height: 6em; overflow: auto; }
 .cm-ask-ctx code { color: var(--cm-soft); font-size: .82em; white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
 .cm-ask-k { flex: none; font-size: .74em; color: var(--cm-dim); }
+.cm-ask-detail { margin: .4em 0 0; padding: .45em .65em; border-radius: 6px; background: #16161e; max-height: 14em; overflow: auto;
+                 color: var(--cm-soft); font-size: .8em; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-opts { display: flex; flex-wrap: wrap; gap: .5em; margin-top: .65em; }
 .cm-opt {
   padding: .42em .95em; border-radius: 8px; border: 1px solid var(--cm-line2); background: var(--cm-raised);

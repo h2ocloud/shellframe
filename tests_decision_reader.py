@@ -11,6 +11,8 @@ Telegram's choice buttons, the desktop's chat view): three faults measured on re
   3. An answer was the number and Enter. Codex takes the number alone and moves on, so
      the Enter answered the next prompt (measured: "Skip" on the update menu, then the
      folder-trust prompt accepted with its default "Yes, continue").
+  4. What a question was about came from the tool call, its first line cut at 40
+     characters: the dialog on screen now gives its own words (`detail`).
 
 Each case is written against the reader's real entry points: menu_options, the
 `decision` the phone gets, and /link/answer's _bots_link_answer.
@@ -166,6 +168,32 @@ q = api._link_decision("r1", "done", {"state": "done"}) or {}
 r = api._bots_link_answer({"sid": "r1", "n": 2, "id": q.get("id")})
 check("a [[SF:RED]] question is answered as a message: the number and Enter", r.get("success") and red.written == ["2\r"],
       (r, red.written))
+
+print("4. what the question is about: the dialog's own words, whole")
+# Found collecting the evidence above: the desktop's card showed the call the question is
+# about as agent_status keeps it, its first line cut at 40 characters with no sign of it
+# ("touch chat-shell-probe.txt && ls -l chat" for a command that went on).
+for sid in ("d1", "d2", "d3"):
+    api.sessions[sid] = Tab(sid, "claude")
+VISIBLE["d1"] = WRAPPED
+det = decision("d1").get("detail") or ""
+check("the command as the dialog shows it, not cut short", "touch probe.txt && ls -l probe.txt" in det.splitlines(), det)
+check("…with the dialog's title and description, in screen order",
+      det.splitlines()[:1] == ["Bash command"] and 0 <= det.find("Create probe.txt") < det.find("touch probe.txt"), det)
+check("…and not its rules, or the question (that is `reason`)",
+      not set("─╌") & set(det) and "Do you want to proceed?" not in det, det)
+pw = "x" * 12
+VISIBLE["d2"] = ["─" * W, " Bash command", "╌" * W, f" curl -s https://deploy:{pw}@example.com/hook && rm -rf ./build",
+                 "╌" * W, " Do you want to proceed?", " ❯ 1. Yes", "   2. No", ""]
+det = decision("d2").get("detail") or ""
+check("a credential in it is masked, the rest of the command kept", pw not in det and "rm -rf ./build" in det, det)
+VISIBLE["d3"] = (["─" * W, " Bash command", "╌" * W] + [f" echo step {i} " + "and more " * 7 for i in range(60)]
+                 + ["╌" * W, " Do you want to proceed?", " ❯ 1. Yes", "   2. No", ""])
+det = decision("d3").get("detail") or ""
+check("a dialog too long to send whole says it was cut", det.endswith("…") and "echo step 0 " in det and len(det) <= 2001,
+      (len(det), det[-40:]))
+check("no rule opening a dialog above the menu (Codex's): no words guessed for it",
+      not decision("x1").get("detail"), decision("x1"))
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:

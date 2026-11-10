@@ -73,6 +73,12 @@ running underneath with its size unchanged, and everything that types into the t
   option matches a known pattern (`OPTION_RULES`: Claude Code 2.1.322 and Codex 0.142.1
   wording, taken from their own strings); otherwise every option is shown as written.
   The number sent is always the option's own `n`, never its place on screen.
+- **What a question is about** (`askContext`): the dialog's own words (the decision's
+  `detail`, e.g. the whole command a permission prompt asks about), never translated;
+  masked as `agent_status.redact` masks (a credential or any 32+ character token, a SHA
+  say, shows as `<redacted>`; runs of spaces as one).
+  Without them, the call it is about is shown as only its start (agent_status keeps a
+  command's first line, 40 characters), with the terminal offered.
 - **Tool calls**: consecutive calls fold into one plain line ("查了 3 個檔案、跑了 1 個指令");
   one click shows each call's tool and target. Nothing is dropped.
 - **Working**: the face and one plain line from the status monitor's verdict

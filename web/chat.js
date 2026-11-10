@@ -438,8 +438,30 @@
     return html;
   }
 
+  // A tool call's kind in a word, for the question card.
+  function callWord(call, lang) {
+    const w = { run: ['Command', '指令'], edit: ['File', '檔案'], read: ['File', '檔案'], web: ['Web', '網址'],
+                search: ['Looking for', '要找'], agent: ['Sub-task', '子任務'], mcp: ['Tool', '工具'] }[toolKind(call.tool)];
+    return w ? w[isZh(lang) ? 1 : 0] : call.tool;
+  }
+  // Under a question, what it is about: its dialog's own words when the screen gave them
+  // (`detail`: whole, as the CLI wrote them). Else the call it is about, which agent_status
+  // keeps as a command's first line, 40 characters: shown as its start, with the terminal
+  // offered. A question not put in plain words is also shown as written.
+  function askContext(d, m, call, lang) {
+    const zh = isZh(lang);
+    const toTerm = `<button class="cm-more-text" data-act="to-term">${escHtml(zh ? '完整內容看終端機' : 'See it all in the terminal')}</button>`;
+    const asked = !m.questionTranslated && m.question && m.translated
+      ? `<div class="cm-ask-ctx"><code>${escHtml(m.question)}</code></div>` : '';
+    if (d && d.detail) return `<pre class="cm-ask-detail">${escHtml(d.detail)}</pre>` + asked + (/…$/.test(d.detail) ? toTerm : '');
+    if (asked || !call || !call.target) return asked;
+    const whole = ['edit', 'read'].includes(toolKind(call.tool));       // a file is named whole
+    return `<div class="cm-ask-ctx"><span class="cm-ask-k">${escHtml(callWord(call, lang) + (whole ? '' : zh ? '開頭' : ' (start)'))}</span>` +
+      `<code>${escHtml(call.target + (whole ? '' : '…'))}</code></div>` + (whole ? '' : toTerm);
+  }
+
   const RULES = { isZh, CHAT_PROVIDERS, guessProvider, commandNamed, plainName, mapOption, mapQuestion, mapDecision, toolKind, toolSummary,
-                  plainDoing, runWords, isCompaction, userView, botView, buildTimeline, pendingCall,
+                  plainDoing, runWords, isCompaction, userView, botView, buildTimeline, pendingCall, askContext,
                   md, inline, escHtml, OPTION_RULES, QUESTION_RULES };
   if (typeof module === 'object' && module.exports) module.exports = RULES;
   if (typeof document === 'undefined' || !root) return;
@@ -922,14 +944,11 @@
     const m = d && (d.options || []).length ? mapDecision(d, lang()) : null;
     if (m) {
       const call = data.activity === 'decision' ? pendingCall(data.turns) : null;
-      const context = !m.questionTranslated && m.question && m.translated ? m.question : '';
       const answered = v.answered && v.answered.id === d.id;
       html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` +
         `<div class="cm-ask-title">${escHtml(T('Your call', '要你決定'))}</div>` +
         `<div class="cm-ask-q">${escHtml(m.questionTranslated || !m.translated ? m.question : T('It is asking before it goes on.', '它在繼續之前先問你。'))}</div>` +
-        (context ? `<div class="cm-ask-ctx"><code>${escHtml(context)}</code></div>` : '') +
-        (call && !context && call.target ? `<div class="cm-ask-ctx"><span class="cm-ask-k">${escHtml(callWord(call))}</span>` +
-          `<code>${escHtml(call.target)}</code></div>` : '') +
+        askContext(d, m, call, lang()) +
         `<div class="cm-opts">${m.options.map(o => `<button class="cm-opt${o.tone ? ' tone-' + o.tone : ''}" data-act="answer" ` +
           `data-n="${escHtml(o.n)}" data-id="${escHtml(m.id)}"${answered ? ' disabled' : ''} title="${escHtml(
             T(`Option ${o.n}: ${o.raw}`, `選項 ${o.n}：${o.raw}`))}">${escHtml(o.label)}</button>`).join('')}</div>` +
@@ -1108,12 +1127,6 @@
   }
 
   // What the pending call works on, named the way a person would.
-  function callWord(call) {
-    const k = toolKind(call.tool);
-    return { run: T('Command', '指令'), edit: T('File', '檔案'), read: T('File', '檔案'), web: T('Web', '網址'),
-             search: T('Looking for', '要找'), agent: T('Sub-task', '子任務'), mcp: T('Tool', '工具') }[k] || call.tool;
-  }
-
   // ── actions ────────────────────────────────────────────────────────────
   function note(text, warn) {
     const sid = activeSid();
