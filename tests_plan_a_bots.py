@@ -204,6 +204,56 @@ api.chat_send("s10", "第一句")
 check("…one that went in names the tab, as Enter in the terminal does", wait_renamed("s10") and t10._slug_pending is False)
 api._execute_sfctl = real_exec
 
+print("5. Telegram /list: what each tab is, the bots asleep, the temporary ones")
+import bridge_home  # noqa: E402
+fresh()
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+cfg["agent_roster"]["研究"] = {"label": "研究", "cmd": "claude", "bot": {"memory": True}}
+main.CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+for sid in ("s8", "s9", "s10"):
+    api.sessions.pop(sid, None)
+api.sessions["s3"]._custom_label = "查資料"
+bridge = types.SimpleNamespace(home_api=api, config=types.SimpleNamespace(bot_token="x"))
+sent = []
+bridge_home.SEND = lambda method, payload: sent.append((method, payload)) or {"ok": True}
+check("a terminal and a temporary bot are marked on /list; a bot is not",
+      bridge_home.kind_note(bridge, "s4") == "（終端機）" and bridge_home.kind_note(bridge, "s7") == "（臨時）"
+      and bridge_home.kind_note(bridge, "s1") == "", [bridge_home.kind_note(bridge, x) for x in ("s4", "s7", "s1")])
+sent.clear()
+check("after /list, one more message", bridge_home.after_list(bridge, 42) and len(sent) == 1)
+msg = sent[0][1] if sent else {}
+buttons = [b for row in (msg.get("reply_markup") or {}).get("inline_keyboard", []) for b in row]
+check("the bots asleep, each with Wake", "休息中：研究" in msg.get("text", "")
+      and {"text": "叫醒 研究", "callback_data": "bl:0"} in buttons, msg)
+check("the external ones, and how to reach them", "在 ShellBot 外面：總管" in msg.get("text", ""))
+check("the temporary bots, each with Keep (by name and /N, not a tab id)",
+      "臨時 bot" in msg.get("text", "") and any(b["text"].startswith("記住 ") and "coding" in b["text"] for b in buttons), buttons)
+check("every button's data is short (Telegram: 64 bytes)", all(len(b["callback_data"].encode()) <= 64 for b in buttons))
+woke = []
+real_wake = bridge_home._wake
+bridge_home._wake = lambda br, role, label, chat_id: woke.append(role)
+sent.clear()
+check("Wake: tapped, answered, and the bot is woken", bridge_home.on_list_button(bridge, "bl:0", 42, "cq1")
+      and sent[0][0] == "answerCallbackQuery" and "正在叫醒 研究" in sent[-1][1]["text"])
+time.sleep(0.2)
+check("…on a thread of its own", woke == ["研究"], woke)
+bridge_home._wake = real_wake
+bridge_home._waking.clear()
+keep_i = next(int(b["callback_data"][3:]) for b in buttons if b["text"].startswith("記住 ") and "coding" in b["text"])
+sent.clear()
+bridge_home.on_list_button(bridge, f"bl:{keep_i}", 42, "cq2")
+check("Keep: refused the way the desktop refuses it (another bot has the name), said in the chat",
+      "已經有別的 bot 在用" in sent[-1][1]["text"], sent[-1:])
+sent.clear()
+check("a button from an older list: said, nothing done", bridge_home.on_list_button(bridge, "bl:99", 42, "cq3")
+      and "舊了" in sent[0][1].get("text", ""), sent)
+check("not ours: left to the bridge", bridge_home.on_list_button(bridge, "choice:s1:1", 42, "cq4") is False)
+fresh(bots_on=False)
+sent.clear()
+check("bots off: /list as it was", not bridge_home.after_list(bridge, 42) and bridge_home.kind_note(bridge, "s4") == "" and not sent)
+fresh()
+bridge_home.SEND = None
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

@@ -5300,7 +5300,7 @@ class TelegramBridge(BridgeBase):
                 "callback_query_id": cq_id, "text": "Access denied"})
             return
 
-        if bridge_home.on_choice(self, data, chat_id, message_id, cq_id):   # a choice counts once
+        if bridge_home.on_choice(self, data, chat_id, message_id, cq_id) or bridge_home.on_list_button(self, data, chat_id, cq_id):
             return
         # Always ack the callback so TG stops the spinner
         tg_api(self.config.bot_token, "answerCallbackQuery", {"callback_query_id": cq_id})
@@ -6591,7 +6591,7 @@ class TelegramBridge(BridgeBase):
                 marker = " ◀ active" if sid == active_sid else ""
                 model = self._slot_model_suffix(slot).lstrip(" ·").strip()
                 model_tag = f"  〔{model}〕" if model else ""
-                lines.append(f"\n/{slot.index}  {slot.label}{model_tag}{marker}")
+                lines.append(f"\n/{slot.index}  {slot.label}{bridge_home.kind_note(self, sid)}{model_tag}{marker}")
                 preview = self._peek_last_response(slot)
                 if preview:
                     # Compact preview: first 3 lines, max 200 chars
@@ -6607,6 +6607,7 @@ class TelegramBridge(BridgeBase):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": "\n".join(lines),
             })
+            bridge_home.after_list(self, chat_id)      # plan A: bots asleep (Wake), temporary ones (Keep)
 
         elif cmd == "model":
             # 原生 /model 互動化：轉傳給分頁開 picker → 解析選項 → TG inline

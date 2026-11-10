@@ -192,6 +192,108 @@ def handle_command(bridge, cmd: str, user_id, chat_id) -> bool:
     return True
 
 
+# ── /list, plan A: what each tab is, the bots asleep, the temporary ones to keep ──────
+_LIST = {}                   # chat_id -> [("wake", role, label) | ("keep", sid, name)]: the last /list's buttons
+LIST_MAX = 12                # buttons per kind: a long roster is still one screen
+
+
+def _bots_on(api) -> bool:
+    try:
+        return bool(api) and api._bots_enabled()
+    except Exception:
+        return False
+
+
+def kind_note(bridge, sid: str) -> str:
+    """After a tab's name on /list: "（臨時）" for an AI tab nobody kept, "（終端機）" for a
+    shell; nothing for a bot (its name says it) or with bots off."""
+    api = _api(bridge)
+    if not _bots_on(api):
+        return ""
+    try:
+        s = api.sessions.get(sid)
+        if s is None or api._bots_role_of(sid):
+            return ""
+        if not api._tab_cli(s):
+            return sf_lang.pick(" (terminal)", "（終端機）")
+        return sf_lang.pick(" (temporary)", "（臨時）")
+    except Exception:
+        return ""
+
+
+def after_list(bridge, chat_id) -> bool:
+    """After /list: the bots asleep (a Wake button each), the external ones, and the
+    temporary bots (a Keep button each). Nothing with bots off. /N is not touched."""
+    api = _api(bridge)
+    if not _bots_on(api):
+        return False
+    try:
+        view = api._execute_sfctl("bots_link", {}) or {}
+    except Exception:
+        return False
+    asleep = [b for b in view.get("bots") or [] if b.get("state") == "asleep"][:LIST_MAX]
+    outside = [b for b in view.get("bots") or [] if b.get("state") == "external"]
+    temp = sorted(((sid, t) for sid, t in (view.get("tabs") or {}).items() if t.get("kind") == "temp" and not t.get("plain")),
+                  key=lambda kv: kv[1].get("tg") or 999)[:LIST_MAX]
+    if not (asleep or outside or temp):
+        return False
+    actions, rows, lines = [], [], []
+    if asleep:
+        lines.append(sf_lang.pick("Asleep: ", "休息中：") + "、".join(b["role"] for b in asleep))
+        for b in asleep:
+            actions.append(("wake", b["role"], b.get("label") or b["role"]))
+            rows.append([{"text": sf_lang.pick(f"Wake {b['role']}", f"叫醒 {b['role']}"), "callback_data": f"bl:{len(actions) - 1}"}])
+    if outside:
+        lines.append(sf_lang.pick("Outside ShellBot: ", "在 ShellBot 外面：") + "、".join(b["role"] for b in outside)
+                     + sf_lang.pick(" (sfctl a2a-send <name>)", "（用 sfctl a2a-send 名字 找它）"))
+    if temp:
+        lines.append(sf_lang.pick("Temporary (they forget when closed): ", "臨時 bot（關掉就忘了）：")
+                     + "、".join((f"/{t['tg']} " if t.get("tg") else "") + str(t.get("name") or sid) for sid, t in temp))
+        for sid, t in temp:
+            actions.append(("keep", sid, str(t.get("name") or sid)))
+            n = f"/{t['tg']} " if t.get("tg") else ""
+            rows.append([{"text": sf_lang.pick(f"Keep {n}{t.get('name') or sid}", f"記住 {n}{t.get('name') or sid}"),
+                          "callback_data": f"bl:{len(actions) - 1}"}])
+    with _lock:
+        _LIST[chat_id] = actions
+    payload = {"chat_id": chat_id, "text": "\n".join(lines)}
+    if rows:
+        payload["reply_markup"] = {"inline_keyboard": rows}
+    _tg(bridge, "sendMessage", payload)
+    return True
+
+
+def on_list_button(bridge, data: str, chat_id, cq_id) -> bool:
+    """A tap on a button after_list sent: wake a bot, or keep a temporary one. True when it
+    was one (and the tap is answered here)."""
+    if not str(data or "").startswith("bl:"):
+        return False
+    with _lock:
+        actions = list(_LIST.get(chat_id) or [])
+    try:
+        kind, key, name = actions[int(data.split(":", 1)[1])]
+    except (ValueError, IndexError):
+        _tg(bridge, "answerCallbackQuery", {"callback_query_id": cq_id, "text": sf_lang.pick(
+            "That list is old: send /list again", "這份清單舊了，請再送一次 /list")})
+        return True
+    _tg(bridge, "answerCallbackQuery", {"callback_query_id": cq_id})
+    api = _api(bridge)
+    if kind == "wake":
+        with _lock:
+            fresh = key not in _waking
+            if fresh:
+                _waking[key] = []
+        if fresh:
+            threading.Thread(target=_wake, args=(bridge, key, name, chat_id), daemon=True, name="tg-wake").start()
+        _tg(bridge, "sendMessage", {"chat_id": chat_id, "text": sf_lang.pick(f"⏳ Waking {name}…", f"⏳ 正在叫醒 {name}…")})
+        return True
+    res = api._bots_keep(key) if api else {"success": False, "message": "no app"}
+    _tg(bridge, "sendMessage", {"chat_id": chat_id, "text": (
+        sf_lang.pick(f"✅ Kept {res.get('role')}: it remembers from now on", f"✅ 已記住「{res.get('role')}」：從現在起它會記得")
+        if res.get("success") else "⚠ " + str(res.get("message") or ""))})
+    return True
+
+
 def _chats(bridge) -> set:
     return set(bridge._user_chat.values()) | set(bridge.config.allowed_users or [])
 
