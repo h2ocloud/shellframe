@@ -327,7 +327,7 @@ class UpdateApiMixin:
 
         Strategies (tried in order):
           macOS:   `open -n` the installed ShellBot.app → launcher → python relaunch
-          Windows: shellframe.bat in install dir → pythonw.exe main.py
+          Windows: pythonw.exe main.py (no console window; win_instance.relaunch)
           Linux:   launcher script → python relaunch
         """
         try:
@@ -394,63 +394,25 @@ class UpdateApiMixin:
                         ),
                         "preserves_sessions": False,
                     })
-                # Strategy W1: shellframe.bat from install dir / user's local bin
-                bat_candidates = [
-                    main.APP_DIR / "ShellFrame.bat",
-                    Path.home() / ".local" / "bin" / "shellframe.bat",
-                ]
-                bat_path = None
-                for c in bat_candidates:
-                    try:
-                        if c.exists():
-                            bat_path = c
-                            break
-                    except Exception:
-                        main._swallow("Api.restart_app:4914")
                 # The new process waits for this one to let go of the single-instance
-                # mutex instead of giving up after two seconds (win_instance).
+                # mutex instead of giving up after two seconds (win_instance), and it
+                # never runs on a console window: closing one ended the app without a word.
                 restart_env = dict(os.environ, **{win_instance.RESTART_ENV: str(os.getpid())})
-                if bat_path:
-                    try:
-                        DETACHED_PROCESS = 0x00000008
-                        CREATE_NEW_PROCESS_GROUP = 0x00000200
-                        subprocess.Popen(
-                            ["cmd", "/c", "start", "", str(bat_path)],
-                            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            close_fds=True,
-                            env=restart_env,
-                        )
-                        spawned = True
-                        _dlog("restart", f"started the new instance via {bat_path.name}")
-                    except Exception as e:
-                        err_msgs.append(f"shellframe.bat failed: {e}")
-
-                # Strategy W2: pythonw.exe main.py (windowless Python)
-                if not spawned:
-                    try:
-                        # Try pythonw.exe (no console) first, fall back to python.exe
-                        py_exe = sys.executable
-                        if py_exe.endswith("python.exe"):
-                            pyw = py_exe[:-10] + "pythonw.exe"
-                            if Path(pyw).exists():
-                                py_exe = pyw
-                        DETACHED_PROCESS = 0x00000008
-                        CREATE_NEW_PROCESS_GROUP = 0x00000200
-                        subprocess.Popen(
-                            [py_exe, str(main.APP_DIR / "main.py")],
-                            cwd=str(main.APP_DIR),
-                            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            close_fds=True,
-                            env=restart_env,
-                        )
-                        spawned = True
-                        _dlog("restart", f"started the new instance via {Path(py_exe).name}")
-                    except Exception as e:
-                        err_msgs.append(f"pythonw relaunch failed: {e}")
+                argv, flags, what = win_instance.relaunch(main.APP_DIR, sys.executable)
+                try:
+                    subprocess.Popen(
+                        argv,
+                        cwd=str(main.APP_DIR),
+                        creationflags=flags,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        close_fds=True,
+                        env=restart_env,
+                    )
+                    spawned = True
+                    _dlog("restart", f"started the new instance via {what}")
+                except Exception as e:
+                    err_msgs.append(f"relaunch via {what} failed: {e}")
             else:
                 if platform.system() == "Darwin":
                     app_path = _find_macos_app_path()
