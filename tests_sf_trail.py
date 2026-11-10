@@ -198,8 +198,8 @@ check("the window's events and the page's calls are watched",
       "window = webview.create_window(**create_kwargs)\n    sf_trail.watch_window(window)\n    sf_trail.trail_js_api(window)" in src)
 check("the loop ending is said before cleanup and os._exit",
       "sf_trail.exiting(\"webview.start() returned: the window's loop ended\")\n    api.cleanup_all()\n    os._exit(0)" in src)
-check("faulthandler's file only after the single-instance guard",
-      "    _ensure_single_instance()\n    sf_trail.keep_faults()" in src)
+check("faulthandler's file only after the single-instance guard, before the app is built",
+      0 < body.find("    _ensure_single_instance()\n") < body.find("    sf_trail.keep_faults()") < body.find("    api = Api()\n"))
 check("the second instance that steps aside says so",
       'sf_trail.exiting(f"another instance (pid={old_pid}) is running")\n    os._exit(0)' in src)
 
