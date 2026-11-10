@@ -195,6 +195,14 @@ check("a dialog too long to send whole says it was cut", det.endswith("…") and
 check("no rule opening a dialog above the menu (Codex's): no words guessed for it",
       not decision("x1").get("detail"), decision("x1"))
 
+print("9. a long option: cut with …")
+long_dir = "/work/" + "/".join(["deeply-nested-folder"] * 8)
+VISIBLE["L1"] = ["─" * W, " Bash command", "╌" * W, " ls " + long_dir, "╌" * W, " Do you want to proceed?",
+                 " ❯ 1. Yes", f"   2. Yes, and always allow access to {long_dir} from this project", "   3. No", ""]
+opts = {o["n"]: o["text"] for o in decision("L1").get("options", [])}
+check("a long option is cut at 120 characters and ends with …", len(opts.get(2, "")) == 120 and opts[2].endswith("…"), opts)
+check("…a short one is left whole", opts.get(1) == "Yes" and opts.get(3) == "No", opts)
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

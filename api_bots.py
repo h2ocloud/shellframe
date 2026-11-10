@@ -105,6 +105,17 @@ def _model_name(m) -> str:
     return str((m.get("name") if isinstance(m, dict) else m) or "")
 
 
+
+OPTION_MAX = 120
+
+
+def option_words(text, limit: int = OPTION_MAX) -> str:
+    """An option as the phone, the chat view and Telegram's copies show it: credentials
+    masked, one line, and a long one cut with "…" (an "always allow <folder>" option used to
+    lose the end of its path with no sign of it)."""
+    t = agent_status.redact(text, 100_000)
+    return t if len(t) <= limit else t[:limit - 1] + "…"
+
 class BotsApiMixin:
     # ── reading ─────────────────────────────────────────────────────────
     def _bots_enabled(self) -> bool:
@@ -366,14 +377,14 @@ class BotsApiMixin:
                 reason = next((ln.strip(" ─╌") for ln in reversed(lines[:at]) if ln.strip(" ─╌")), "")
                 return {"id": qid("menu", *(ln.strip() for ln in lines[top:end + 1])), "kind": "menu",
                         "reason": agent_status.redact(reason, 300), "detail": dialog_words(lines, at),
-                        "options": [{"n": int(o["num"]), "text": agent_status.redact(o["text"], 120)} for o in opts[:9]]}
+                        "options": [{"n": int(o["num"]), "text": option_words(o["text"])} for o in opts[:9]]}
             except Exception:
                 pass                                   # no menu read off the screen: maybe a RED question
         red = bridge_home.red_pending(sid)
         if red and red["at"] >= float(res.get("prompt_at") or 0):       # not answered since
             return {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])), "kind": "red",
                     "reason": agent_status.redact(red["reason"], 300),
-                    "options": [{"n": int(n), "text": agent_status.redact(t, 120)} for n, t in red["options"]]}
+                    "options": [{"n": int(n), "text": option_words(t)} for n, t in red["options"]]}
         return None
 
     def _bots_link_answer(self, args: dict, via: str = "phone") -> dict:
