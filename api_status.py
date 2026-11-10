@@ -318,6 +318,9 @@ class StatusApiMixin:
             notifier.process(out, label_of)
         except Exception:
             sf_log._swallow("_notify_transitions")
+        push = getattr(self, "_push_observe", None)   # the phones (api_push); returns at once without one
+        if push:
+            push(out)
 
     def _start_status_monitor(self):
         """Background thread: every ~600ms compute each tab's agent status from

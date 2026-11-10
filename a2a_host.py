@@ -202,9 +202,12 @@ def handle(api, cmd: str, args: dict) -> dict:
         if sid is None:
             return {"success": False, "message": label}
         if cmd == "a2a_result":
-            return agent_link.report_result(
+            res = agent_link.report_result(
                 ctx, args.get("id") or "", args.get("text") or "",
                 from_sid=sid, from_label=label, diff=bool(args.get("diff")))
+            if (res or {}).get("success") and hasattr(api, "_push_a2a_result"):
+                api._push_a2a_result(sid, label, args.get("text") or "")
+            return res
         if cmd == "a2a_next":
             task = args.get("text") or args.get("task") or ""
             hint = agent_route.hint(task, _readings())

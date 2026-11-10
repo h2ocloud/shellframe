@@ -421,6 +421,7 @@ class BotsApiMixin:
         sent = tab_delivery.answer_choice(self, sid, n, cur.get("kind", "menu"))
         bridge_home.phone_answered(self, sid, n, claimed, where=via)
         _dlog("bots", f"{sid}: answered {n} from the {via} ({sent!r})")
+        self._push_answered(sid, cur["id"], str(args.get("peer_id") or ""))
         return {"success": True, "message": _(f"Answered {n}", f"已選 {n}")}
 
     def _link_editable(self, role: str):

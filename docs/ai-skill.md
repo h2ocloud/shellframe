@@ -212,8 +212,9 @@ sfctl notify --status DONE --message "tests pass, PR is ready"
 sfctl notify --status BLOCKED --message "need the staging password"
 ```
 
-`--status` is `DONE`, `BLOCKED`, `QUESTION` or `INFO`. It posts to the webhook the person
-configured (`docs/notify-webhook.md`). With none configured it prints nothing and exits 0;
+`--status` is `DONE`, `BLOCKED`, `QUESTION` or `INFO`. The paired phones that registered for
+push get it as a notification, and it posts to the webhook the person configured
+(`docs/notify-webhook.md`). With none configured it prints nothing and exits 0;
 if delivery fails it only warns on stderr and still exits 0, so calling it at the end of
 a task can never break the task. `--dry-run` shows the (masked) target and payload and
 sends nothing.

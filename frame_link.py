@@ -821,7 +821,7 @@ class FrameLink:
         """GET /link/bots, POST /link/bots/wake (the phone's bot view, docs/mobile-link.md)."""
         if not self._peer_may_control(peer_id):
             return 403, {"success": False, "message": "單向配對：對方無權查看這台"}
-        return 200, self._execute(cmd, args) or {"success": False, "message": "no answer"}
+        return 200, self._execute(cmd, dict(args, peer_id=peer_id)) or {"success": False, "message": "no answer"}
 
     # ── raw output streaming（無縫遠端分頁）────────────────────────────────
     STREAM_WATCH_TTL = 30       # 沒人拉 30s 就停止緩衝該分頁
@@ -994,9 +994,10 @@ class FrameLink:
                         "sid": body.get("sid", ""),
                         "data": body.get("data", "")}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
-                if path in ("/link/bots/wake", "/link/answer", "/link/bots/avatar", "/link/bots/settings",
-                            "/link/bots/primary", "/link/bots/keep"):     # the phone's bot view (docs/mobile-link.md)
-                    code, res = link._bots_route(peer_id, "bots_" + path.rsplit("/", 1)[-1], body)
+                if path in ("/link/bots/wake", "/link/answer", "/link/bots/avatar", "/link/bots/settings", "/link/bots/primary",
+                            "/link/bots/keep", "/link/push/register", "/link/push/unregister", "/link/push/test", "/link/peer/name"):
+                    cmd = path[6:].replace("/", "_")            # bots_wake, bots_keep, push_register, peer_name… (docs/mobile-link.md)
+                    code, res = link._bots_route(peer_id, "bots_answer" if cmd == "answer" else cmd, body)
                     return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/resize":
                     if not link._peer_may_control(peer_id):
@@ -1366,8 +1367,9 @@ class FrameLink:
                     events, tail = link._signals_since(since)
                     return self._send(200, {"success": True, "cursor": tail, "events": events},
                                       sign_for=peer, nonce=nonce)
-                if path == "/link/bots":
-                    code, res = link._bots_route(peer_id, "bots_link", {"rev": (q.get("rev") or [""])[0]})
+                if path in ("/link/bots", "/link/push/status"):
+                    code, res = link._bots_route(peer_id, "bots_link" if path == "/link/bots" else "push_status",
+                                                 {"rev": (q.get("rev") or [""])[0]})
                     return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/events":
                     try:

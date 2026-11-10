@@ -1365,6 +1365,10 @@ class RemoteApiMixin:
             return self._bots_link_settings(args)
         elif cmd == "bots_primary":
             return self._bots_link_primary(args)
+        elif cmd in ("push_register", "push_unregister", "push_status", "push_test", "peer_name"):
+            return self._push_route(cmd, args)
+        elif cmd == "push_notify":                    # sfctl notify (api_push)
+            return self._push_notify(args)
         elif cmd == "tg_send":
             return bridge_home.tg_send(self, str(args.get("text") or ""), str(args.get("from_sid") or ""))
 

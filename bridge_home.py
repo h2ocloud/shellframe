@@ -48,6 +48,13 @@ def _api(bridge):
 
 
 def _tg(bridge, method: str, payload: dict):
+    if method == "sendMessage" and "disable_notification" not in payload:
+        try:      # the phone rings for it already (sf_push.telegram_quiet: push working, quiet asked for)
+            import sf_push
+            if sf_push.telegram_quiet():
+                payload = dict(payload, disable_notification=True)
+        except Exception:
+            pass
     if SEND:
         return SEND(method, payload)
     import bridge_telegram
@@ -425,8 +432,15 @@ def on_turn_end(api, sid: str, read_events=None):
         seen = red_block(evs, telegram_too=True)
     except Exception:
         return
+    # Called twice for one turn (the Stop hook, and the status monitor when a phone has push):
+    # the same open question keeps its time, or its id (which hashes it) would change under the
+    # phone and its lock-screen answer would be refused. Asked again after a prompt, it is new.
+    prompt_at = float(((getattr(api, "_hook_events", None) or {}).get(sid) or {}).get("prompt_at") or 0)
     with _lock:
-        if seen:
+        old = _red.get(sid)
+        if seen and old and (old["reason"], old["options"]) == (seen[0], seen[1]) and old["at"] >= prompt_at:
+            pass
+        elif seen:
             _red[sid] = {"reason": seen[0], "options": seen[1], "at": time.time()}
         else:
             _red.pop(sid, None)

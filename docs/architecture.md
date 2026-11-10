@@ -50,6 +50,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_status.py` | Agent status: hook events, status hook install, the status monitor thread |
 | | `api_update.py` | Version, changelog, self-update, app restart |
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
+| | `api_push.py` | Push to the paired phones: the `/link/push/*` and `/link/peer/name` routes, and the cues (a [[SF:RED]] question, a dialog or [[SF:YELLOW]], a finished turn, an a2a result, `sfctl notify`) the status monitor turns into pushes and withdrawals |
 | | `api_bots.py` | Bots: state for the page, avatars, bot editor, wake, close-with-memory, external bots over A2A, the phone's bot view (`/link/bots`); `web/bots.js` + `web/bots.css` draw the faces |
 | | `api_chat.py` | The desktop's chat view (`settings.ui_style`): a tab's turns and question as the phone gets them, messages and answers the phone's way; `web/chat.js` + `web/chat.css` draw it. Rules in [`chat-shell.md`](chat-shell.md) |
 | | `api_tmux.py` | Tab ↔ tmux bookkeeping around restore: sid resolution, background reattach of tabs that failed at startup, `sfctl orphans`, repaint after display wake |
@@ -77,6 +78,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent rules, model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |
 | Shared | `sf_log.py` | `_dlog` / `_swallow` logging primitives |
+| | `sf_push.py` | Push through APNs (leaf, stdlib plus the system's `openssl` and `curl`): `push.json`, registrations, payloads, ES256 provider token, HTTP/2 send, de-duplication and throttling; see [`mobile-link.md`](mobile-link.md) |
 | | `js_guard.py` | `window.evaluate_js` from a background thread, with a time limit: pywebview's WebView2 backend can wait for a script's result forever, and that hung the sfctl loop; stuck calls are counted and new ones dropped past a few |
 | | `sf_trail.py` | A trail for when the app goes: the start line (exe, console, restart), faulthandler's file, uncaught exceptions, Windows console events, the window's events, the page's js_api calls in and out (`shellframe_jsapi.log`), a line before each quiet `os._exit` |
 | | `sf_config.py` | The one config.json lock, and the app's folder (`config_dir()`): `~/.config/shellframe`, `SHELLFRAME_CONFIG_DIR`, or for a test a folder of its own |
