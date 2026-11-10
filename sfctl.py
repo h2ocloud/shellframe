@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-sfctl — ShellFrame remote control CLI.
+sfctl — ShellBot (formerly ShellFrame) remote control CLI.
 Used by AI agents running inside ShellFrame (a "master session") to
 orchestrate other sessions — create workers, dispatch tasks, peek at
 results, rename for clarity, etc.
@@ -90,7 +90,7 @@ def _rpc(cmd: str, args: dict = None, timeout: float = 15.0):
         os.unlink(result_file)
     except OSError:
         pass
-    return {"success": False, "message": "Timeout — ShellFrame not responding"}
+    return {"success": False, "message": "Timeout — ShellBot not responding"}
 
 
 def _cells(text: str, width: int) -> str:
@@ -155,33 +155,34 @@ def _print_result(result: dict, verbose: bool = True):
 
 
 def _canonical_macos_app_path() -> str:
-    candidates = [
-        "/Applications/ShellFrame.app",
-        os.path.expanduser("~/Applications/ShellFrame.app"),
-        os.path.expanduser("~/.local/apps/shellframe/ShellFrame.app"),
-    ]
-    for path in candidates:
-        if os.path.isdir(path):
-            return path
-    return ""
+    """The installed app (ShellBot.app, or an older install's ShellFrame.app), else this
+    checkout's template: app_bundle.find."""
+    import app_bundle
+    found = app_bundle.find(template_dir=os.path.dirname(os.path.abspath(__file__)))
+    return str(found) if found else ""
 
 
 def _restart_macos_direct() -> dict:
     """Restart through the canonical .app path without asking the currently
     loaded app process to choose a bundle. This matters during upgrades from
-    older builds whose in-memory restart code still preferred ~/Applications."""
-    app_path = _canonical_macos_app_path()
-    if not app_path:
-        return {"success": False, "message": "ShellFrame.app not found"}
+    older builds whose in-memory restart code still preferred ~/Applications.
+    An older build's ShellFrame.app is renamed ShellBot.app first, so the new
+    process starts under the new name; only here, once the relaunch is ours:
+    the app's own restart in an older build looks for the old name."""
     try:
         with open(PID_FILE, encoding="utf-8") as f:
             pid = int(f.read().strip())
     except Exception:
-        return {"success": False, "message": "ShellFrame PID file not found"}
+        return {"success": False, "message": "ShellBot PID file not found"}
     try:
         os.kill(pid, 0)
     except OSError:
-        return {"success": False, "message": f"ShellFrame pid {pid} is not running"}
+        return {"success": False, "message": f"ShellBot pid {pid} is not running"}
+    import app_bundle
+    renamed = app_bundle.migrate()
+    app_path = _canonical_macos_app_path()
+    if not app_path:
+        return {"success": False, "message": "ShellBot.app not found"}
 
     app_q = shlex.quote(app_path)
     script = (
@@ -201,7 +202,7 @@ def _restart_macos_direct() -> dict:
     os.kill(pid, signal.SIGTERM)
     return {
         "success": True,
-        "message": f"Restarting ShellFrame via {app_path}",
+        "message": f"Restarting ShellBot via {app_path}" + (" (renamed from ShellFrame.app)" if renamed else ""),
     }
 
 
@@ -331,16 +332,16 @@ def _tmux_fda_flow(args):
     other apps' (TCC SystemPolicyAppData) prompts."""
     sym, real = _tmux_paths()
     if not real:
-        print("找不到 tmux —— ShellFrame 在 macOS 用單一持久 tmux server 跑所有 tab。")
+        print("找不到 tmux —— ShellBot 在 macOS 用單一持久 tmux server 跑所有 tab。")
         print("請先 `brew install tmux` 再回來執行本流程。")
         return
 
     cur = _tmux_cdhash(real)
-    app = "/Applications/ShellFrame.app"
+    app = _canonical_macos_app_path() or "/Applications/ShellBot.app"
 
-    print("══ ShellFrame tmux 一次性權限索取 ══\n")
+    print("══ ShellBot tmux 一次性權限索取 ══\n")
     print("為什麼新 tab 會反覆跳「tmux 想取用其他 App 的資料」：")
-    print("  • ShellFrame 用『單一持久 tmux server』跑所有 tab（已確認，非每 tab 一個 server），")
+    print("  • ShellBot 用『單一持久 tmux server』跑所有 tab（已確認，非每 tab 一個 server），")
     print("    所有 pane 的 responsible process 都是這個 tmux server 本身。")
     print("  • 那個彈窗是 macOS TCC 的『逐資料夾』授權（SystemPolicyAppData）：")
     print("    每開一個 tab 跑的指令只要碰到一個還沒授權過的受保護資料夾，就會再問一次。")
@@ -355,7 +356,7 @@ def _tmux_fda_flow(args):
     print("  2. 點左下角鎖頭解鎖 → 點『+』。")
     print("  3. 在檔案選擇視窗按 ⌘⇧G，貼上下面這行路徑後 Enter，再選 tmux「打開」：")
     print(f"       {sym}")
-    print(f"  4. 同樣方式把 ShellFrame.app 也加進去（若已用 .app 啟動）：")
+    print(f"  4. 同樣方式把 ShellBot.app 也加進去（若已用 .app 啟動；舊安裝叫 ShellFrame.app）：")
     print(f"       {app}")
     print("  5. 確認兩者開關都是『開』。\n")
 
@@ -364,7 +365,7 @@ def _tmux_fda_flow(args):
         ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"],
         capture_output=True)
 
-    _prompt("\n加好 tmux（與 ShellFrame.app）後按 Enter 繼續…", default="")
+    _prompt("\n加好 tmux（與 ShellBot.app）後按 Enter 繼續…", default="")
 
     # Record the cdhash we just granted so we can warn on drift later.
     if cur:
@@ -670,7 +671,7 @@ def _cmd_notify(args) -> int:
 def main():
     parser = argparse.ArgumentParser(
         prog="sfctl",
-        description="ShellFrame remote control — orchestrate sessions from inside a master session.",
+        description="ShellBot (formerly ShellFrame) remote control — orchestrate sessions from inside a master session.",
     )
     sub = parser.add_subparsers(dest="cmd", required=False)
 
@@ -700,7 +701,7 @@ def main():
     p_delegate.add_argument("task", help="Task text to send with the worker wrapper prompt")
 
     as_help = ("Speak as this external bot (a roster role marked external). "
-               "Only outside a ShellFrame tab, e.g. a cloud bot's local command")
+               "Only outside a ShellBot tab, e.g. a cloud bot's local command")
     now_help = ("Go in at once even if the tab is mid-turn, on a decision menu or has the user's unsent text; normally it waits in a queue (up to 30 min)")
     ttl_help = ("Minutes it may wait in the queue (default 30; a2a-result 1440). 0 = until the tab is free; "
                 "at most 24 h. A message that waited over 30 min goes in with a line saying how long")
@@ -787,7 +788,7 @@ def main():
     p_notify.add_argument("--dry-run", action="store_true",
                           help="Show the masked target and the payload; send nothing")
 
-    sub.add_parser("version", help="ShellFrame version + which experimental features are on")
+    sub.add_parser("version", help="ShellBot version + which experimental features are on")
     sub.add_parser("skill", help="Print the agent-facing reference for this build (read this first)")
 
     # ── role groups (experimental_groups): one message, several agents ──
@@ -814,7 +815,7 @@ def main():
     p_ls.add_argument("--json", action="store_true")
     p_lm = sub.add_parser(
         "link-maintenance",
-        help="Update / restart ShellFrame on a paired computer")
+        help="Update / restart ShellBot on a paired computer")
     p_lm.add_argument("peer")
     p_lm.add_argument("action",
                       choices=["check_update", "update", "restart", "reload"])

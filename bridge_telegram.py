@@ -1627,7 +1627,7 @@ class TelegramBridge(BridgeBase):
             {"command": "usage", "description": "Current tab AI usage (水位)"},
             {"command": "list", "description": "List sessions + bridge state"},
             {"command": "restart", "description": "Full app restart (sessions preserved)"},
-            {"command": "update", "description": "Check & apply ShellFrame updates"},
+            {"command": "update", "description": "Check & apply ShellBot updates"},
             {"command": "new", "description": "New session (default: claude)"},
             {"command": "rename", "description": "Rename tab: /rename <新名> 或 /rename <編號> <新名>"},
             {"command": "effort", "description": "調推理深度（claude/codex，inline 按鈕）"},
@@ -1721,7 +1721,7 @@ class TelegramBridge(BridgeBase):
             # osascript strings is fragile. Fixed copy.
             script = (
                 f'display notification "AI reply ready — click to view" '
-                f'with title "ShellFrame" '
+                f'with title "ShellBot" '
                 f'subtitle "{label}" '
                 f'sound name "Glass"'
             )
@@ -4654,7 +4654,7 @@ class TelegramBridge(BridgeBase):
                                 try:
                                     tg_api(self.config.bot_token, "sendMessage", {
                                         "chat_id": self._user_chat.get(uid, uid),
-                                        "text": "⚠️ Bot conflict: another ShellFrame/bot is polling this token. Messages will be flaky until the other instance stops.",
+                                        "text": "⚠️ Bot conflict: another ShellBot/bot is polling this token. Messages will be flaky until the other instance stops.",
                                     })
                                 except Exception:
                                     pass
@@ -6546,7 +6546,7 @@ class TelegramBridge(BridgeBase):
             active_sid = self.get_active_sid(user_id)
             with self._slots_lock:
                 slots_snapshot = [(sid, self.slots[sid]) for sid in self._slot_order]
-            lines = [f"📋 ShellFrame — {state} @ @{bot}", ""]
+            lines = [f"📋 ShellBot — {state} @ @{bot}", ""]
             for sid, slot in slots_snapshot:
                 marker = " ◀ active" if sid == active_sid else ""
                 model = self._slot_model_suffix(slot).lstrip(" ·").strip()
@@ -6951,7 +6951,7 @@ class TelegramBridge(BridgeBase):
                 return
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
-                "text": "♻️ 重啟 ShellFrame 中… session 會自動 reattach",
+                "text": "♻️ 重啟 ShellBot 中… session 會自動 reattach",
             })
             def _do_restart():
                 try:
@@ -7177,7 +7177,7 @@ class TelegramBridge(BridgeBase):
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
                 "text": (
-                    "ShellFrame Bridge\n\n"
+                    "ShellBot Bridge\n\n"
                     "Sessions:\n"
                     "  /list — sessions + bridge state (with last-response preview)\n"
                     "  /fetch — fetch latest AI reply\n"

@@ -621,7 +621,7 @@ class LineBridge(BridgeBase):
                 self._reply_or_enqueue(
                     event.get("replyToken", ""),
                     target_id,
-                    "ShellFrame LINE bridge currently supports text messages.",
+                    "ShellBot LINE bridge currently supports text messages.",
                 )
                 continue
             source = event.get("source") or {}
@@ -633,7 +633,7 @@ class LineBridge(BridgeBase):
             if not user_id:
                 user_id = real_target_id or target_id
             if self.config.allowed_users and user_id not in self.config.allowed_users and real_target_id not in self.config.allowed_users:
-                self._reply_or_enqueue(event.get("replyToken", ""), target_id, "This LINE user/chat is not allowed for ShellFrame.")
+                self._reply_or_enqueue(event.get("replyToken", ""), target_id, "This LINE user/chat is not allowed for ShellBot.")
                 continue
             if user_id:
                 self._last_user_id = user_id
@@ -797,7 +797,7 @@ class LineBridge(BridgeBase):
         sid = self._gateway_sid(user_id, route_label)
         slot = self.slots.get(sid)
         if not slot:
-            self._reply_or_enqueue(reply_token, target_id, "No ShellFrame session is available.")
+            self._reply_or_enqueue(reply_token, target_id, "No ShellBot session is available.")
             return
         if slot.awaiting_response:
             self._reply_or_enqueue(reply_token, target_id, f"{slot.label} 還在處理上一則訊息，請稍後再送。")
@@ -826,7 +826,7 @@ class LineBridge(BridgeBase):
         end_marker = f"[[/{marker_token}]]"
         marker_prompt = f"最終要回 LINE 的文字請放在 {start_marker} 和 {end_marker} 之間。"
         gateway_prompt = (
-            f"ShellFrame gateway 已派工到 {slot.label}。"
+            f"ShellBot gateway 已派工到 {slot.label}。"
             "請只代表這個 tab 回覆這次 LINE 訊息；不要冒稱其他 agent，也不要回覆 marker 之外的文字。"
         )
         if init_prompt:
@@ -862,7 +862,7 @@ class LineBridge(BridgeBase):
 
     def _help_text(self) -> str:
         return (
-            "ShellFrame LINE bridge\n"
+            "ShellBot LINE bridge\n"
             "/list - list sessions\n"
             "/1 /2 ... - switch session\n"
             "/new [cmd] - create session\n"
@@ -873,7 +873,7 @@ class LineBridge(BridgeBase):
     def _list_text(self) -> str:
         if not self._slot_order:
             return "No sessions."
-        lines = ["ShellFrame sessions:"]
+        lines = ["ShellBot sessions:"]
         for sid in self._slot_order:
             slot = self.slots[sid]
             lines.append(f"/{slot.index} {slot.label} ({sid})")

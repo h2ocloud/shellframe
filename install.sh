@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# ShellFrame installer
+# ShellBot (formerly ShellFrame) installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
 
 INSTALL_DIR="${HOME}/.local/apps/shellframe"
 BIN_DIR="${HOME}/.local/bin"
 
-echo "Installing ShellFrame..."
+echo "Installing ShellBot..."
 
 # ── Helper ──────────────────────────────────────────────────
 # Ensure Homebrew exists on macOS; auto-install non-interactively if missing.
@@ -194,11 +194,13 @@ chmod +x "$BIN_DIR/sfctl"
 
 # ── 5. macOS .app (Spotlight + Launchpad + Finder) ──────────
 if [ "$(uname)" = "Darwin" ]; then
-  # Prefer /Applications (Launchpad visible), fall back to ~/Applications
-  if [ -w /Applications ] || [ -w /Applications/ShellFrame.app ]; then
-    APP_DEST="/Applications/ShellFrame.app"
+  # Prefer /Applications (Launchpad visible), fall back to ~/Applications. Installed as
+  # ShellBot.app: Finder, Launchpad, the Dock and ⌘-Tab show the bundle's file name. The
+  # template keeps the name ShellFrame.app (app_bundle.py says why).
+  if [ -w /Applications ] || [ -w /Applications/ShellBot.app ]; then
+    APP_DEST="/Applications/ShellBot.app"
   else
-    APP_DEST="${HOME}/Applications/ShellFrame.app"
+    APP_DEST="${HOME}/Applications/ShellBot.app"
     mkdir -p ~/Applications
   fi
 
@@ -227,7 +229,7 @@ if [ "$(uname)" = "Darwin" ]; then
       "$INSTALL_DIR/scripts/macos_app_launcher.c" \
       -o "$APP_DEST/Contents/MacOS/shellframe"
   else
-    echo "  Warning: clang not found; ShellFrame.app will use the shell launcher fallback."
+    echo "  Warning: clang not found; ShellBot.app will use the shell launcher fallback."
   fi
   chmod 755 "$APP_DEST/Contents/MacOS/shellframe" 2>/dev/null || true
   chmod 644 "$APP_DEST/Contents/Resources/shellframe.sh" 2>/dev/null || true
@@ -241,8 +243,15 @@ if [ "$(uname)" = "Darwin" ]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CURRENT_VER" "$PLIST" 2>/dev/null || true
   fi
 
-  # Clean up old ~/Applications copy if we migrated to /Applications
-  [ "$APP_DEST" = "/Applications/ShellFrame.app" ] && rm -rf "${HOME}/Applications/ShellFrame.app" 2>/dev/null
+  # Clean up other copies of this app: an older install's ShellFrame.app, and the
+  # ~/Applications one when we installed to /Applications (this bundle id only).
+  for OLD_APP in "/Applications/ShellFrame.app" "${HOME}/Applications/ShellFrame.app" "${HOME}/Applications/ShellBot.app"; do
+    [ "$OLD_APP" = "$APP_DEST" ] && continue
+    [ -d "$OLD_APP" ] && [ ! -L "$OLD_APP" ] || continue
+    if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$OLD_APP/Contents/Info.plist" 2>/dev/null)" = "com.h2ocloud.shellframe" ]; then
+      rm -rf "$OLD_APP" 2>/dev/null
+    fi
+  done
 
   # Ad-hoc code sign. Avoid --deep: it can stamp shell payloads as nested code
   # and leave LaunchServices with a broken bundle cache.
@@ -250,14 +259,15 @@ if [ "$(uname)" = "Darwin" ]; then
   codesign --force --sign - "$APP_DEST" 2>/dev/null || true
 
   # Register with Launch Services for Spotlight indexing, and clear stale
-  # ShellFrame registrations that commonly survive failed installs.
+  # registrations of this app that commonly survive failed installs or its old name.
   LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
   "$LSREGISTER" -u "${HOME}/.Trash/ShellFrame.app" 2>/dev/null || true
-  "$LSREGISTER" -u "/Applications/ShellFrame.app" 2>/dev/null || true
-  "$LSREGISTER" -u "${HOME}/Applications/ShellFrame.app" 2>/dev/null || true
+  for OLD_APP in "/Applications/ShellFrame.app" "${HOME}/Applications/ShellFrame.app" "/Applications/ShellBot.app" "${HOME}/Applications/ShellBot.app"; do
+    [ "$OLD_APP" = "$APP_DEST" ] || [ -e "$OLD_APP" ] || "$LSREGISTER" -u "$OLD_APP" 2>/dev/null || true
+  done
   "$LSREGISTER" -f "$APP_DEST" 2>/dev/null || true
 
-  # Keep ShellFrame pinned in Dock by default. This is idempotent and can be
+  # Keep ShellBot pinned in Dock by default. This is idempotent and can be
   # skipped for scripted installs with SHELLFRAME_SKIP_DOCK=1.
   if [ "${SHELLFRAME_SKIP_DOCK:-0}" != "1" ]; then
     APP_DEST="$APP_DEST" python3 - <<'PY' 2>/dev/null || true
@@ -281,7 +291,8 @@ for item in apps:
     label = tile.get("file-label")
     item_url = (tile.get("file-data") or {}).get("_CFURLString")
     bundle_id = tile.get("bundle-identifier")
-    if label == "ShellFrame" or bundle_id == "com.h2ocloud.shellframe" or (item_url and "ShellFrame.app" in item_url):
+    if label in ("ShellFrame", "ShellBot") or bundle_id == "com.h2ocloud.shellframe" or (
+            item_url and ("ShellFrame.app" in item_url or "ShellBot.app" in item_url)):
         continue
     filtered.append(item)
 
@@ -290,7 +301,7 @@ entry = {
         "bundle-identifier": "com.h2ocloud.shellframe",
         "dock-extra": 0,
         "file-data": {"_CFURLString": url, "_CFURLStringType": 15},
-        "file-label": "ShellFrame",
+        "file-label": "ShellBot",
         "file-mod-date": int(time.time()),
         "file-type": 41,
     },
@@ -347,11 +358,11 @@ PY
 # ── Done ────────────────────────────────────────────────────
 VERSION=$(.venv/bin/python -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo '?')
 echo ""
-echo "✅ ShellFrame v${VERSION} installed!"
+echo "✅ ShellBot v${VERSION} installed!"
 echo ""
 echo "  Launch:    shellframe"
-echo "  Spotlight: search \"ShellFrame\""
-echo "  Launchpad: look for ShellFrame icon"
+echo "  Spotlight: search \"ShellBot\""
+echo "  Launchpad: look for the ShellBot icon"
 echo ""
 if [ "$(uname)" = "Darwin" ]; then
   echo "  ⚙️  Run \`sfctl permissions\` once to pre-grant macOS Privacy +"

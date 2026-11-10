@@ -1726,7 +1726,7 @@ class FrameLink:
             # the caller to guess at a bare "no such route".
             if "404" in str(e):
                 return {"success": False,
-                        "message": (f"「{peer.get('name', peer_id[:8])}」的 ShellFrame "
+                        "message": (f"「{peer.get('name', peer_id[:8])}」的 ShellBot "
                                     f"還沒有這個功能（需要 0.36.0 以上，請在那台更新）")}
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}
@@ -1741,7 +1741,7 @@ class FrameLink:
                                         f"/link/a2a?limit={int(limit)}", timeout=10)
         except Exception as e:
             if "404" in str(e):
-                return {"success": False, "message": "對方的 ShellFrame 還沒有這個功能（需要 0.36.0 以上）"}
+                return {"success": False, "message": "對方的 ShellBot 還沒有這個功能（需要 0.36.0 以上）"}
             return {"success": False, "message": str(e)}
 
     def remote_groups(self, peer_id: str) -> dict:
@@ -1753,7 +1753,7 @@ class FrameLink:
             return self._signed_request(peer, "GET", "/link/groups", timeout=10)
         except Exception as e:
             if "404" in str(e):
-                return {"success": False, "message": "對方的 ShellFrame 還沒有群組功能（需要 0.37.0 以上）"}
+                return {"success": False, "message": "對方的 ShellBot 還沒有群組功能（需要 0.37.0 以上）"}
             return {"success": False, "message": str(e)}
 
     def remote_group_conversation(self, peer_id: str, name: str,
@@ -1768,7 +1768,7 @@ class FrameLink:
                 timeout=20)
         except Exception as e:
             if "404" in str(e):
-                return {"success": False, "message": "對方的 ShellFrame 還沒有群組功能（需要 0.37.0 以上）"}
+                return {"success": False, "message": "對方的 ShellBot 還沒有群組功能（需要 0.37.0 以上）"}
             return {"success": False, "message": str(e)}
 
     def remote_group_send(self, peer_id: str, name: str, text: str) -> dict:

@@ -1,4 +1,4 @@
-# ShellFrame installer for Windows
+# ShellBot (formerly ShellFrame) installer for Windows
 # Usage: irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
@@ -7,7 +7,7 @@ $InstallDir = "$env:USERPROFILE\.local\apps\shellframe"
 $BinDir = "$env:USERPROFILE\.local\bin"
 $RepoUrl = "https://github.com/h2ocloud/shellframe.git"
 
-Write-Host "Installing ShellFrame..." -ForegroundColor Cyan
+Write-Host "Installing ShellBot..." -ForegroundColor Cyan
 
 # ── Helpers ─────────────────────────────────────────────────
 function Refresh-Path {
@@ -179,13 +179,16 @@ if ($userPath -split ";" | Where-Object { $_ -eq $BinDir }) {
 # Desktop shortcut (standalone GUI, no terminal window)
 try {
     $desktopPath = [Environment]::GetFolderPath("Desktop")
-    $shortcutPath = "$desktopPath\ShellFrame.lnk"
+    $shortcutPath = "$desktopPath\ShellBot.lnk"
+    # An older install's shortcut had the app's old name (the app renames it at start too).
+    $oldShortcut = "$desktopPath\ShellFrame.lnk"
+    if (Test-Path $oldShortcut) { Remove-Item $oldShortcut -Force -ErrorAction SilentlyContinue }
     # Always recreate to pick up icon and VBS launcher changes
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = "$BinDir\shellframe.vbs"
     $shortcut.WorkingDirectory = $InstallDir
-    $shortcut.Description = "ShellFrame"
+    $shortcut.Description = "ShellBot"
     $shortcut.IconLocation = "$InstallDir\icon.ico"
     $shortcut.Save()
     Write-Host "  Desktop shortcut created (with icon)" -ForegroundColor Yellow
@@ -235,7 +238,7 @@ try {
 Pop-Location
 
 Write-Host ""
-Write-Host "ShellFrame v$version installed!" -ForegroundColor Green
+Write-Host "ShellBot v$version installed!" -ForegroundColor Green
 Write-Host "  CLI:       shellframe"
 Write-Host "  Control:   sfctl"
 Write-Host "  Path:      $InstallDir"

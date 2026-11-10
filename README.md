@@ -182,7 +182,7 @@ shellframe/
 ├── sfctl.py                # CLI remote control (file-based IPC)
 ├── filters.json            # Dynamic output filter rules for TG bridge
 ├── INIT_PROMPT.md          # Auto-injected context for AI CLI sessions
-├── ShellFrame.app/         # macOS .app bundle
+├── ShellFrame.app/         # macOS .app bundle template (installed as ShellBot.app)
 ├── install.sh              # macOS/Linux installer
 ├── install.ps1             # Windows installer
 ├── requirements.txt        # Python: pywebview, pyte, pywinpty (Windows)

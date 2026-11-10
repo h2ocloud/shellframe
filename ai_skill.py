@@ -35,10 +35,10 @@ MARK_START = "<!-- shellframe:skill:start -->"
 MARK_END = "<!-- shellframe:skill:end -->"
 
 DESCRIPTION = (
-    "在 ShellFrame 分頁裡工作時怎麼操作 ShellFrame：看/控制其他分頁、"
+    "在 ShellBot（原名 ShellFrame）分頁裡工作時怎麼操作它：看/控制其他分頁、"
     "delegate 給角色、角色群組、跨機器操控另一台電腦的 session。"
     "觸發時機：使用者要你看別的分頁、派工給其他 agent、跨機器操作，"
-    "或提到 ShellFrame / sfctl / Frame Link。"
+    "或提到 ShellBot / ShellFrame / sfctl / Frame Link。"
 )
 
 

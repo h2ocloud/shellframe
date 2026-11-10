@@ -18,6 +18,7 @@ import urllib.request
 from pathlib import Path
 
 from api_host import main
+import app_bundle
 import win_instance
 from sf_log import _dlog
 
@@ -293,35 +294,13 @@ class UpdateApiMixin:
                     })
 
             # ── Step 4: refresh .app bundle (macOS only) ────────────
+            # The template is copied as ShellBot.app; an old-named copy goes (app_bundle).
             if not main.IS_WIN:
-                src_app = main.APP_DIR / "ShellFrame.app"
-                if src_app.exists():
-                    for dest_dir in [Path("/Applications"), Path.home() / "Applications"]:
-                        dest = dest_dir / "ShellFrame.app"
-                        try:
-                            if dest.exists() or dest_dir.exists():
-                                subprocess.run(
-                                    ["rm", "-rf", str(dest)],
-                                    capture_output=True, timeout=10
-                                )
-                                subprocess.run(
-                                    ["cp", "-R", str(src_app), str(dest)],
-                                    capture_output=True, timeout=10
-                                )
-                                ok, launcher_msg = main._refresh_macos_app_launcher(dest)
-                                post_steps.append(f".app launcher: {launcher_msg}")
-                                post_steps.append(f".app copied to {dest}")
-                                if dest_dir == Path("/Applications"):
-                                    user_app = Path.home() / "Applications" / "ShellFrame.app"
-                                    subprocess.run(
-                                        ["rm", "-rf", str(user_app)],
-                                        capture_output=True, timeout=10
-                                    )
-                                    post_steps.append(f"removed stale app copy: {user_app}")
-                                break
-                        except Exception as e:
-                            post_steps.append(f".app copy to {dest} failed: {e}")
-                            # Non-fatal — src .app in APP_DIR is still usable
+                try:
+                    post_steps += app_bundle.refresh(main.APP_DIR / app_bundle.TEMPLATE,
+                                                     prepare=main._refresh_macos_app_launcher)
+                except Exception as e:
+                    post_steps.append(f".app refresh failed: {e}")   # non-fatal: the template still runs
 
             has_sessions = len(self.sessions) > 0
             return json.dumps({
@@ -347,7 +326,7 @@ class UpdateApiMixin:
         tmux-backed sessions persist; the new instance reattaches on startup.
 
         Strategies (tried in order):
-          macOS:   `open -n -a ShellFrame.app` → launcher script → python relaunch
+          macOS:   `open -n` the installed ShellBot.app → launcher → python relaunch
           Windows: shellframe.bat in install dir → pythonw.exe main.py
           Linux:   launcher script → python relaunch
         """
@@ -357,18 +336,7 @@ class UpdateApiMixin:
             in_place_restart = False
 
             def _find_macos_app_path():
-                candidates = [
-                    Path("/Applications/ShellFrame.app"),
-                    Path.home() / "Applications" / "ShellFrame.app",
-                    main.APP_DIR / "ShellFrame.app",
-                ]
-                for c in candidates:
-                    try:
-                        if c.exists():
-                            return c.resolve()
-                    except Exception:
-                        main._swallow("restart_app._find_macos_app_path:4854")
-                return None
+                return app_bundle.find(template_dir=main.APP_DIR)   # ShellBot.app, or its old name
 
             def _schedule_macos_app_relaunch(app_path: Path):
                 """Launch via the .app bundle after this PID exits.
@@ -493,7 +461,7 @@ class UpdateApiMixin:
                         except Exception as e:
                             err_msgs.append(f".app relaunch schedule failed: {e}")
                     else:
-                        err_msgs.append("ShellFrame.app not found")
+                        err_msgs.append("ShellBot.app not found")
                 else:
                     # Linux/no-.app fallback: replace the current Python
                     # process in-place after the RPC response has been written.

@@ -57,6 +57,7 @@ import launch_cmd
 import agent_cursor
 import agent_grok
 import account_manager
+import app_bundle
 import sf_config
 from api_history import HistoryApiMixin
 from api_schedules import SchedulesApiMixin
@@ -1034,11 +1035,8 @@ os.environ["PATH"] = _session_env()["PATH"]
 def _apply_macos_app_identity():
     if sys.platform != "darwin":
         return
-    icon_candidates = [
-        APP_DIR / "ShellFrame.app" / "Contents" / "Resources" / "shellframe.icns",
-        Path.home() / "Applications" / "ShellFrame.app" / "Contents" / "Resources" / "shellframe.icns",
-        Path("/Applications/ShellFrame.app/Contents/Resources/shellframe.icns"),
-    ]
+    icon_candidates = [b / "Contents" / "Resources" / "shellframe.icns"
+                       for b in [APP_DIR / app_bundle.TEMPLATE] + app_bundle.candidates()]
     icon_path = next((p for p in icon_candidates if p.exists()), None)
     try:
         from Foundation import NSBundle
@@ -5724,9 +5722,7 @@ def _ensure_mic_usage_plist():
     if sys.platform != "darwin":
         return
     desc = "ShellFrame 需要使用麥克風進行語音輸入（STT 語音轉文字）。"
-    for bundle in (Path("/Applications/ShellFrame.app"),
-                   Path.home() / "Applications" / "ShellFrame.app",
-                   APP_DIR / "ShellFrame.app"):
+    for bundle in app_bundle.candidates() + [APP_DIR / app_bundle.TEMPLATE]:
         plist = bundle / "Contents" / "Info.plist"
         if not plist.exists():
             continue
@@ -5756,6 +5752,7 @@ def main():
     # via hotkey / Dock click while the previous instance is still winding
     # down.
     _ensure_single_instance()
+    app_bundle.at_start(log=lambda m: _dlog("app", m))   # ShellFrame.app -> ShellBot.app, once
     _prevent_app_nap()
     _apply_macos_app_identity()
     _patch_pywebview_cocoa_none_screen()

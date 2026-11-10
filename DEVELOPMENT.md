@@ -36,7 +36,17 @@
 - app 目前是 **ad-hoc 簽名**（`codesign -dv` 顯示 `Signature=adhoc`、`TeamIdentifier=not set`）。
 - 後果：macOS TCC **記不住「檔案與資料夾」授權**，每次（尤其 `restart` 後）把它當新 app、反覆跳「想取用 XXX 資料夾」彈窗。頻繁 restart 會加劇。
 - 根治：用 **Apple Developer ID 正式 codesign**（需開發者憑證）→ TCC 才能穩定記住。
-- 暫解：在「系統設定 > 隱私權與安全性 > 檔案與資料夾 / 完全取硬碟取用權」手動把 ShellFrame 加進去永久授權。
+- 暫解：在「系統設定 > 隱私權與安全性 > 檔案與資料夾 / 完全取硬碟取用權」手動把 ShellBot（舊安裝是 ShellFrame）加進去永久授權。
+
+## macOS app 的名字：裝成 ShellBot.app（`app_bundle.py`）
+
+- Finder、Launchpad、Dock、⌘-Tab 顯示的是 bundle 的**檔名**，所以安裝成 `ShellBot.app`；bundle 內容一個位元都不變（bundle id、cdhash 都不變），系統權限（輔助使用、麥克風、Downloads）跟著走。
+- **repo 的樣板 `ShellFrame.app/` 不改名、內容也不要動**：每台 Mac 更新時都複製它再簽章，內容一變，裝上去的 cdhash 就變，macOS 會重新要權限。`tests_app_bundle.py` 守著樣板的指紋；真的要改，就是有意讓每台重給權限。
+- **測試用的第二個實例不會改名**：`SHELLFRAME_TESTS`、`SHELLFRAME_CONFIG_DIR` 有設，或 HOME 不是這個帳號的家目錄，`app_bundle.at_start()` 就跳過（`/Applications` 對它也是同一個，改名或重啟 Dock 會動到正在用的那隻）。
+- 找 App 一律問 `app_bundle.find()`（新名優先，舊名也認）。舊安裝的 `ShellFrame.app` 由新程式**啟動時**改名（`migrate`：`os.rename`、LaunchServices 換登記、Dock 釘選改指新路徑並重啟 Dock）；`sfctl restart` 在重開前也會先改名。舊版的 App 內重啟會開回舊名，所以那一次執行中的圖示要到下一次重啟才變。
+- **回滾到改名前的版本**：舊程式只找 `ShellFrame.app`，找不到會退到樣板（能跑，但 Dock 身分不對）。先 `mv /Applications/ShellBot.app /Applications/ShellFrame.app` 再重啟；之後再升級會自動改回來。
+- `open -a ShellFrame` 在改名後就找不到 App 了（舊路徑留 symlink 也一樣），請用 `open -a ShellBot`。
+- Windows 只有桌面捷徑改成 `ShellBot.lnk`（新安裝由 install.ps1 建；舊安裝啟動時改名）。
 
 ## TG Bridge — reply 遺漏（v0.13.9 修）
 

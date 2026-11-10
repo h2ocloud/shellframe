@@ -1104,7 +1104,7 @@ class RemoteApiMixin:
                     lines.append(f" {dot} {p['name']} — {p.get('host') or '(無位址)'}"
                                  f":{p.get('port') or ''}")
                 if not st.get("peers"):
-                    lines.append(" (尚未配對任何 ShellFrame)")
+                    lines.append(" (尚未配對任何 ShellBot)")
                 return {"success": True, "message": "\n".join(lines),
                         "details": st}
             except Exception as e:
@@ -1120,7 +1120,7 @@ class RemoteApiMixin:
                 msg = (f"🔗 配對碼：{res['code']}\n"
                        f"位址：{addrs}  port {res['port']}\n"
                        f"{res['expires_in']} 秒內、限一次，"
-                       f"在另一台 ShellFrame 選「加入配對」輸入\n"
+                       f"在另一台 ShellBot 選「加入配對」輸入\n"
                        f"📱 手機 App：點連結直接配對 → {res.get('pair_url', '')}")
                 if not res.get("relay_url"):
                     msg += "\n（尚未設定 relay：手機需與電腦同區網，或電腦有 port-forward）"
@@ -1207,7 +1207,7 @@ class RemoteApiMixin:
             keys = sorted(set(k for k in main.DEFAULT_CONFIG.get("settings", {})
                               if k.startswith("experimental_"))
                           | set(k for k in st if k.startswith("experimental_")))
-            return {"success": True, "message": f"ShellFrame v{v}",
+            return {"success": True, "message": f"ShellBot v{v}",
                     "details": {"version": v,
                                 "experimental": {k: bool(st.get(k)) for k in keys}}}
 

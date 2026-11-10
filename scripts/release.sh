@@ -82,6 +82,6 @@ if gh release view "$TAG" >/dev/null 2>&1; then
   echo "• GitHub release $TAG already exists — skipping"
 else
   printf "%s\n" "$BODY" | gh release create "$TAG" \
-    --title "ShellFrame $TAG" --notes-file -
+    --title "ShellBot $TAG" --notes-file -
   echo "✓ released $TAG"
 fi

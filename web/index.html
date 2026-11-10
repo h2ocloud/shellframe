@@ -1140,7 +1140,7 @@
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="injectInitLabel">Init prompt on first message</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch" id="setting-inject-init"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="injectInitHint">Prepend INIT_PROMPT.md (ShellFrame environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.</span>
+            <span style="font-size:11px;color:#565f89" data-i18n="injectInitHint">Prepend INIT_PROMPT.md (ShellBot environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.</span>
           </div>
         </div>
       </div>
@@ -1625,7 +1625,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       masterTurnPreamble: 'Master turn reminder',
       masterTurnPreambleHint: 'Remind master tabs to consider delegation before each AI turn',
       injectInitLabel: 'Init prompt on first message',
-      injectInitHint: 'Prepend INIT_PROMPT.md (ShellFrame environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
+      injectInitHint: 'Prepend INIT_PROMPT.md (ShellBot environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
       micButtonLabel: 'Voice input button 🎙',
       micButtonHelp: 'Show a mic at the bottom-right of the terminal: record → STT → inject into the active tab with a voice tag, no more sending voice notes through Telegram.',
       voiceApplyGateLabel: 'Confirm voice before sending (Apply)',
@@ -1636,7 +1636,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       micFfmpegReady: 'ffmpeg ready — tap the mic again to record.',
       micNeedStt: 'No STT backend is ready (local whisper / remote provider). Install local STT now? Your recording is kept and will be transcribed right after install.',
       micSttStillFail: 'STT still failed after install. Check Settings → 🎙 STT, then tap the mic to retry.',
-      micEmpty: 'No audio captured. If this is the first use, allow Microphone for ShellBot (listed as ShellFrame) in System Settings → Privacy, then retry.',
+      micEmpty: 'No audio captured. If this is the first use, allow Microphone for ShellBot (it may still be listed as ShellFrame) in System Settings → Privacy, then retry.',
       micRecordFailed: 'Recorder failed to start. Check that a microphone is available and ShellBot has mic permission.',
       micSttFail: 'Transcription returned nothing — try again, closer to the mic.',
       micNoDevice: 'No audio input device found.',
@@ -1818,7 +1818,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       micFfmpegReady: 'ffmpeg 已就緒——再按一次麥克風即可錄音。',
       micNeedStt: 'STT 後端尚未就緒（本地 whisper／遠端服務都不可用）。要現在安裝本地 STT 嗎？剛剛的錄音已保留，裝完會自動轉錄。',
       micSttStillFail: '安裝後轉錄仍失敗。請到 設定 → 🎙 語音轉錄 檢查，再按麥克風重試。',
-      micEmpty: '沒有收到聲音。若是第一次使用，請到 系統設定 → 隱私權與安全性 → 麥克風 允許 ShellBot（系統設定裡顯示為 ShellFrame），然後重試。',
+      micEmpty: '沒有收到聲音。若是第一次使用，請到 系統設定 → 隱私權與安全性 → 麥克風 允許 ShellBot（系統設定裡可能還叫 ShellFrame），然後重試。',
       micRecordFailed: '錄音啟動失敗。請確認有可用的麥克風、且 ShellBot 有麥克風權限。',
       micSttFail: '轉錄結果是空的——請再試一次、靠近麥克風一點。',
       micNoDevice: '找不到音訊輸入裝置。',
@@ -4146,7 +4146,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           <span style="font-size:20px">📱</span>
           <span>
             <div>手機／平板 App</div>
-            <div style="opacity:.7;font-weight:400;font-size:11px;margin-top:1px">立即顯示 QR code，用 ShellFrame App 掃描</div>
+            <div style="opacity:.7;font-weight:400;font-size:11px;margin-top:1px">立即顯示 QR code，用 ShellBot App 掃描</div>
           </span>
         </button>
         <div style="display:flex;align-items:center;gap:8px;margin:14px 0;color:#565f89;font-size:11px">
@@ -4412,7 +4412,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           <div style="flex:1;min-width:0">
             <div class="link-code-display" style="margin:0 0 6px">${esc2(res.code)}</div>
             <div style="font-size:11px;color:#a9b1d6;line-height:1.6">
-              📱 <b>手機／iPad</b>：用 ShellFrame App 掃 QR 即配對。<br>
+              📱 <b>手機／iPad</b>：用 ShellBot App 掃 QR 即配對。<br>
               🖥 <b>另一台 ShellBot</b>：「加入配對」輸入
               位址 <code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
               port <code style="color:#7aa2f7">${res.port}</code>，或貼上配對連結。
