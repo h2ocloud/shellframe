@@ -6,6 +6,127 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.41.1 (2026-11-10)
+
+### Fixes
+
+- **Restarting on Windows no longer leaves no ShellBot running.**
+  On a Windows computer with 25 tabs, a restart (after an update, or `sfctl restart`) ended
+  with neither the old nor the new instance: the new one quit while the old one was still
+  closing its tabs, and nothing was written to any log. The 0.37.7 retry could never help:
+  `CreateMutexW` returns a handle to the existing single-instance mutex, the guard kept it,
+  and a named kernel object lives while any handle to it is open, so after its first
+  collision the new process kept the mutex alive by itself. Now a failed try closes its
+  handle, and a process started by a restart waits up to 90 seconds for the old one to let
+  go; a second launch from the shortcut still gives up after about two seconds and brings
+  the running window forward (which it now finds under its new title, ShellBot). A restart
+  is recognised by a flag the old instance passes, or by the PATH it hands down, which also
+  covers the first restart from an older version. Both instances write what happened to the
+  debug log. Measured on that computer: the old instance closed its 25 tabs in 4.4 seconds and the new one got the mutex 6.8 seconds (28 tries) after it started, far past the old 1.8-second budget; on the real Windows kernel the 0.37.7 rule never got a mutex its holder had released (49 tries in 12 seconds), and the new rule got it 3.8 seconds in. Covered by tests_win_restart_race.py, with a fake kernel32 that
+  keeps handles the way Windows does.
+
+  **Windows 重啟後不會再兩個都沒了。** 在一台有 25 個分頁的 Windows 電腦上，重啟（更新後、或
+  `sfctl restart`）結果新舊程序都不在：舊程序還在關分頁時，新程序就自己結束了，而且任何 log 都沒
+  留下。0.37.7 的重試其實救不回來：`CreateMutexW` 遇到已存在的單一實例 mutex 時仍會給一個
+  handle，舊程式沒關；具名的 kernel 物件只要還有 handle 開著就會存在，所以第一次撞到之後，是新
+  程序自己把 mutex 撐住了。現在拿不到時會先關掉 handle；由重啟叫起來的新程序最多等 90 秒，等舊
+  程序放掉；從捷徑再開一次的話，照舊約 2 秒就放棄，並把已經在跑的視窗叫到前面（現在用新標題
+  ShellBot 找得到了）。是不是重啟，看舊程序傳下來的旗標，或它交給新程序的 PATH，所以從舊版第一
+  次重啟上來也認得。新舊程序都會把經過寫進 debug log。在那台電腦實測：舊程序關掉 25 個分頁花了 4.4 秒，新程序啟動後 6.8 秒（試了 28 次）拿到 mutex，遠超過舊版 1.8 秒的重試時間；在真的 Windows kernel 上，0.37.7 的規則在 mutex 已經被放掉之後還是拿不到（12 秒內試了 49 次），新規則 3.8 秒就拿到。 由
+  tests_win_restart_race.py 守著，裡面的假 kernel32 照 Windows 的規則保管 handle。
+
+- **Claude Code tabs find their conversation on Windows, and in folders with spaces or `~`.**
+  Claude Code names a project folder by turning every character but A–Z, a–z and 0–9 into
+  `-`; ShellBot turned only `/` and `.`. On Windows every Claude Code tab looked in a folder
+  that does not exist (`C:\…` kept its backslashes and colon), and so did tabs working in a
+  folder with spaces, `~` or `_` on macOS, such as iCloud Drive: their status came from the
+  screen alone, and the phone's chat view said there was no conversation to read. The folder
+  name now follows Claude Code's rule, checked against real folders, and a tab that knows its
+  session id also finds the conversation in any project folder (a path over 200 characters
+  gets a hashed name). On a Windows computer three Claude Code tabs went from "no conversation to read" to showing their conversation on the phone, rebuilding scroll-up history from it, and naming their real model. Covered by tests_launch_cwd.py.
+
+  **Claude Code 分頁在 Windows、以及路徑有空白或 `~` 的資料夾裡，找得到自己的對話。**
+  Claude Code 決定專案資料夾名稱時，會把英數以外的字元全部換成 `-`；ShellBot 只換了 `/` 和
+  `.`。所以 Windows 上每個 Claude Code 分頁找的都是不存在的資料夾（`C:\…` 的反斜線和冒號留著），
+  macOS 上在有空白、`~`、`_` 的資料夾（例如 iCloud 雲碟）工作的分頁也一樣：狀態只能看畫面，手機
+  的對話畫面說沒有可讀的對話。現在資料夾名稱照 Claude Code 的規則算，並拿真的資料夾比對過；知道
+  自己 session id 的分頁，也會到所有專案資料夾找那段對話（路徑超過 200 字元時，資料夾名稱會加
+  hash）。在一台 Windows 電腦上，三個 Claude Code 分頁從「沒有可讀的對話」變成手機看得到對話、上滑歷史用對話重排、模型也顯示實際的那一個。 由 tests_launch_cwd.py 守著。
+
+- **A Claude Code conversation whose first line is a file-history snapshot is read again.**
+  The format of a conversation file is decided by its first line, and long-running sessions of
+  some Claude Code versions start with a file-history-snapshot record, which carries no session
+  id: the tab got its status from the screen only and the phone said "transcript unreadable",
+  on every platform. That record now counts as Claude Code's. Covered by tests_launch_cwd.py.
+
+  **第一行是 file-history snapshot 的 Claude Code 對話，又讀得到了。** 對話檔的格式由第一行判斷，而
+  某些 Claude Code 版本開的長期 session，第一行是 file-history-snapshot 記錄，沒有 session id：那個
+  分頁的狀態只能看畫面，手機說「transcript unreadable」，每個平台都一樣。現在這種記錄也算 Claude
+  Code 的格式。由 tests_launch_cwd.py 守著。
+
+- **The install button works on Windows for Claude Code, Antigravity and Grok Build.**
+  The provider table holds one command per CLI, written for macOS and Linux (`curl … | bash`),
+  and on Windows the button opens a PowerShell tab, so those three failed. They now use their
+  own PowerShell installers (`irm … | iex`, checked against each vendor's documentation and the
+  script it serves). npm commands stay, with a note that Node.js comes first (the installer
+  does not add it); a CLI with no Windows command shows its documentation link instead of a
+  command that cannot run. Each Windows command also says to reopen ShellBot from the desktop
+  shortcut if the CLI is still not found, since Windows does not hand a changed PATH to a
+  running program, and the lookup in the usual folders now finds `.exe` files. Covered by
+  tests_cli_install.py.
+
+  **Windows 上的安裝按鈕對 Claude Code、Antigravity、Grok Build 可以用了。** CLI 清單裡每家只有一個
+  為 macOS 與 Linux 寫的指令（`curl … | bash`），而 Windows 上按鈕開的是 PowerShell 分頁，所以
+  這三家都裝不起來。現在改用各家自己的 PowerShell 安裝程式（`irm … | iex`，對過各家文件和它們提
+  供的腳本）。npm 指令照舊，並註明要先裝 Node.js（安裝程式不會裝）；沒有 Windows 指令的 CLI，只
+  顯示文件連結，不再給一個跑不起來的指令。每個 Windows 指令也會提醒：裝完還找不到時，從桌面捷徑
+  重開 ShellBot，因為 Windows 不會把新的 PATH 交給已經在跑的程式；在常見資料夾裡找 CLI 時，也認得
+  `.exe` 了。由 tests_cli_install.py 守著。
+
+- **A new user's first "+" menu offers all seven AI CLIs.**
+  With no config file yet, the menu had the shell and three AI CLIs; Pi, OpenCode, Grok Build
+  and Cursor Agent appeared only after something had saved the config once. The first launch
+  now gets the whole list. Covered by tests_first_launch.py.
+
+  **新使用者第一次的「＋」選單就有七種 AI CLI。** 還沒有設定檔時，選單只有終端機和三種 AI CLI；
+  Pi、OpenCode、Grok Build、Cursor Agent 要等設定存過一次才出現。現在第一次啟動就是完整的清單。
+  由 tests_first_launch.py 守著。
+
+- **Pinning a model on a Cursor bot no longer breaks its command.**
+  Cursor's model names carry other vendors' names, and the model pin read `cursor-agent --model
+  grok-4` as a Grok command, rewriting it to `… --model grok-4 -m <model>`. Cursor now has its
+  own `--model` entry; only the subscription model is suggested. Covered by
+  tests_cursor_provider.py.
+
+  **幫 Cursor bot 指定模型時，不會再把它的指令改壞。** Cursor 的模型名稱帶著其他廠商的名字，指定
+  模型的程式把 `cursor-agent --model grok-4` 當成 Grok 的指令，改成 `… --model grok-4 -m <模型>`。
+  現在 Cursor 有自己的 `--model`；建議清單只放訂閱內的模型。由 tests_cursor_provider.py 守著。
+
+### Changes
+
+- **Both installers list every supported AI CLI.**
+  `install.sh` checked three of the seven and `install.ps1` none. Both now print the provider
+  table the app itself uses: installed or not, and for the missing ones the command to get
+  them (on Windows the PowerShell or npm command). It is still a report, not an install.
+
+  **兩支安裝程式都會列出所有支援的 AI CLI。** `install.sh` 原本只檢查七家中的三家，`install.ps1`
+  一家都不檢查。現在兩支都印出 App 自己用的那份 CLI 清單：裝了沒有，沒裝的附上安裝指令（Windows 上
+  是 PowerShell 或 npm 指令）。一樣只是報告，不會代裝。
+
+### Internal
+
+- **Four tests no longer fail on Windows for reasons that are not ShellBot's**, and a restart
+  always writes its single-instance line to the debug log. tests_delivery_restart (no POSIX
+  permission bits), tests_tab_id_reuse (no `st_birthtime` before Python 3.12),
+  tests_scroll_native_tui (no `python3` to re-run under) and tests_notify (paths compared as
+  paths; a refused local connection can take about two seconds on Windows) guard only the platform
+  premise. These, the tests above and the new ones pass on Windows.
+
+  **四支測試不會再因為跟 ShellBot 無關的平台差異在 Windows 上失敗**，重啟時也一律會在 debug log
+  留下單一實例那一行。tests_delivery_restart（沒有 POSIX 權限位元）、tests_tab_id_reuse（Python
+  3.12 以前沒有 `st_birthtime`）、tests_scroll_native_tui（沒有 `python3` 可以重跑）、tests_notify
+  （路徑當路徑比；Windows 上本機連線被拒可能要約 2 秒）只處理平台前提。這幾支、上面提到的測試和新增的測試，在 Windows 上都通過。
+
 ## v0.41.0 (2026-11-10)
 
 ### Changes
