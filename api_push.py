@@ -33,6 +33,7 @@ import sf_push
 from api_host import main
 
 _YELLOW = re.compile(r"\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]+?)\s*\]\]")
+_MARKER = re.compile(r"\[\[\s*SF\s*:[^\]]*\]\]")      # [[SF:GREEN]], [[SF:TO:…|…]], [[SF:MEMORY:SAVED]]…
 WITHDRAW_DEDUP_S = 60.0
 
 
@@ -45,9 +46,13 @@ def yellow_reason(evs) -> str:
 
 
 def last_words(evs) -> str:
+    """The last line the person would read: a turn often ends on a marker line for ShellBot."""
     texts = [e.get("text") or "" for e in (evs or ()) if e.get("kind") == "assistant_text"]
-    lines = [ln.strip() for ln in (texts[-1].splitlines() if texts else []) if ln.strip()]
-    return lines[-1] if lines else ""
+    for line in reversed(texts[-1].splitlines() if texts else []):
+        line = _MARKER.sub("", line).strip()
+        if line:
+            return line
+    return ""
 
 
 class PushApiMixin:
@@ -111,7 +116,8 @@ class PushApiMixin:
         except Exception:
             role, raw, primary_role = "", None, ""
         s = self.sessions.get(sid) if sid else None
-        name = (bots.label_of(role, raw) if raw else "") or (getattr(s, "_custom_label", None) if s else "") or sid
+        name = ((bots.label_of(role, raw) if raw else "") or (getattr(s, "_custom_label", None) if s else "")
+                or sid or link.frame_name() or "ShellBot")
         if primary is None:
             primary = bool(role) and role == primary_role
         return self._pusher().send(kind, sid=sid, bot=name, role=role, frame_id=link.frame_id(),

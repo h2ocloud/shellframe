@@ -239,7 +239,7 @@ sfctl push-status
 
 | kind | 來源 | 標頭 |
 |---|---|---|
-| `decision` | 回合最後問了 `[[SF:RED]]`，也就是 `/link/bots` 的 `decision`。每次回合結束電腦都會自己抓，不靠 Claude Code 的 Stop hook。`sf.qid` 就是 `/link/bots` 的 `decision.id`，鎖定畫面選的答案照常走 `/link/answer` | priority 10，collapse `q.<qid>` |
+| `decision` | 回合最後問了 `[[SF:RED]]`，也就是 `/link/bots` 的 `decision`。有手機註冊推播時，每次回合結束電腦都會自己抓，不靠 Claude Code 的 Stop hook；沒有手機註冊時，`/link/bots` 的行為不變。`sf.qid` 就是 `/link/bots` 的 `decision.id`，鎖定畫面選的答案照常走 `/link/answer` | priority 10，collapse `q.<qid>` |
 | `stuck` | 分頁停在對話框（狀態監控的 BLOCKED），或 `[[SF:YELLOW:原因]]` | priority 10，collapse `stuck.<sid>` |
 | `done` | 回合結束（預設只有主要 Bot），以及派工結果 `a2a-result` | priority 5，collapse `done.<sid>` |
 | `info` | `sfctl notify`；標題是 bot 名稱，DONE／BLOCKED／QUESTION 會寫在標題 | priority 5，collapse `info.<sid>` |

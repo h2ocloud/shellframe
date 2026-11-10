@@ -212,12 +212,16 @@ run({"s1": "working"})
 run({"s1": "done"})
 check("[[SF:YELLOW:…]] is stuck with its reason", [s.get("text") for s in rec.sent if s["kind"] == "stuck"] == ["等法務簽核"], rec.sent)
 rec.sent.clear()
-EVS["now"] = [{"kind": "user_msg", "text": "整理"}, {"kind": "assistant_text", "text": "做好了。\n報告在 reports/weekly.md"}]
+EVS["now"] = [{"kind": "user_msg", "text": "整理"},
+              {"kind": "assistant_text", "text": "做好了。\n報告在 reports/weekly.md [[SF:GREEN]]\n[[SF:MEMORY:SAVED]]"}]
 run({"s1": "working"})
 run({"s1": "done"})
 done = [s for s in rec.sent if s["kind"] == "done"]
 check("a finished turn is done, with its last words (the phone decides whose)",
       len(done) == 1 and done[0]["text"] == "報告在 reports/weekly.md" and done[0]["primary"] is False, done)
+check("…the ShellBot markers at the end are not the words", "[[SF" not in done[0]["text"])
+r = api._push_notify({"sid": "", "status": "INFO", "message": "排程跑完了"})
+check("sfctl notify from outside any tab is signed by this computer", rec.sent[-1]["bot"] == "公司 Mac", rec.sent[-1])
 
 print("a delegated result, sfctl notify")
 rec.sent.clear()
