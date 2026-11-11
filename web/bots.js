@@ -190,6 +190,24 @@
                                      writing: isClosing(sid) });
   }
 
+  // The face of whoever goes by `name`: a bot (its name, label or a name it had), else an
+  // open tab with that title, else one made from the name. The chat view draws a message
+  // from another agent with it, so the sender looks as it does in the sidebar.
+  function faceForName(name) {
+    const want = String(name || '').trim().toLowerCase();
+    if (!want) return '';
+    const same = x => String(x || '').trim().toLowerCase() === want;
+    for (const role of Object.keys(st.roster || {})) {
+      const e = rosterEntry(role) || {};
+      if (isBot(role) && [role, e.label, ...(e.former_names || [])].some(same)) {
+        return faceSvg((e.bot || {}).avatar, { seed: role });
+      }
+    }
+    const S = sessionsMap();
+    for (const sid of Object.keys(S)) if (!S[sid].isRemote && same(S[sid].label)) return faceSvg(avatarFor(sid), { seed: sid });
+    return faceSvg(null, { seed: String(name) });
+  }
+
   // What the row's second line says: the agent's latest line, like a chat list.
   function previewOf(sid) {
     if (isClosing(sid)) return t('Writing this conversation into memory…', '正在把這次對話寫進記憶…');
@@ -1433,7 +1451,7 @@
 
   window.SFBots = {
     face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
-    tabMentions, openTelegram, renameBotTab,
+    tabMentions, openTelegram, renameBotTab, faceForName,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,

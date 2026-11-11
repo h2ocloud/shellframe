@@ -199,6 +199,17 @@ console.log('turns');
   check('…in English too', nestedEn.text === 'The notes are ready' && nestedEn.tags[0].who === 'research', nestedEn);
   const body = R.userView('[[A2A：來自「研究」的訊息，不是使用者本人。必要時可用 [[SF:TO:<角色>|回覆]] 回覆它]]\n請照 [[這個格式]] 寫');
   check("markers in the message itself stay: only the header goes", body.text === '請照 [[這個格式]] 寫', body);
+  const sent = '[[A2A：來自「研究」的訊息，不是使用者本人。必要時可用 [[SF:TO:<角色>|回覆]] 回覆它]]\n資料整理好了';
+  const tl = R.buildTimeline([
+    { kind: 'user_msg', text: sent, ts: 1 },
+    { kind: 'user_msg', text: sent.replace('資料整理好了', '還有一份草稿'), ts: 2 },
+    { kind: 'user_msg', text: '謝謝，我看一下', ts: 3 },
+    { kind: 'user_msg', text: 'header-less body', from: { kind: 'a2a', name: '寫程式' }, ts: 4 },
+  ]);
+  check("another agent's message is the sender's, not yours: a peer item with its name and words only",
+    tl[0].type === 'peer' && tl[0].who === '研究' && tl[0].text === '資料整理好了' && tl[1].type === 'peer', tl);
+  check("…your own words stay yours", tl[2].type === 'user' && tl[2].text === '謝謝，我看一下', tl[2]);
+  check("…the server's `from` (what a phone reads) names it too", tl[3].type === 'peer' && tl[3].who === '寫程式', tl[3]);
   check('a header that never closes is left as it is',
     same(R.userView('[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]'), { text: '[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]', tags: [] }));
   const cur = R.userView('<timestamp>Tuesday, Nov 10, 2026, 9:55 PM (UTC+8)</timestamp><user_query>你好</user_query>');

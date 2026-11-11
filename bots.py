@@ -353,6 +353,7 @@ def public_roster(raw_roster) -> dict:
             "cmd": str(e.get("cmd") or ""),
             "model": str(e.get("model") or ""),
             "coordinator": bool(e.get("coordinator")),
+            "former_names": former_names(e),
         }
         if is_bot(e):
             b = dict(e["bot"])

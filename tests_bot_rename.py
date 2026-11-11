@@ -199,6 +199,11 @@ finally:
 check("deliver (what sfctl a2a-send and [[SF:TO:助理|…]] both call) authorizes the new name",
       seen.get("to_role") == "秘書", seen.get("to_role"))
 check("sfctl's tab commands find its tab by the old name", api._sid_for("助理")[0] == "s1", api._sid_for("助理"))
+api._agent_status_snapshot = lambda sid: ({"state": "idle", "prompt_at": 0.0}, 0)
+api._agent_state_for_list = lambda sid: "idle"
+row = next((r for r in api._execute_sfctl("bots_link", {}).get("bots", []) if r.get("role") == "秘書"), {})
+check("a phone's bot view lists the old name (a message sent under it finds this bot's face)",
+      row.get("former_names") == ["助理"], row)
 
 print("6. names that are taken or not allowed")
 for name, why in (("研究", "another bot's name"), ("研究-cld", "another bot's label, another case"),

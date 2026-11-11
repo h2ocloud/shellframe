@@ -85,7 +85,12 @@ running underneath with its size unchanged, and everything that types into the t
   ("正在改 relay.py", "正在跑測試"); the sidebar's second line uses the same words in chat style.
 - **Turns**: a compaction summary (the phone's test: a user turn starting "This session is
   being continued from a previous conversation") is a folded note; Telegram's
-  reply-marker paragraph and an A2A header become a small tag; Codex's empty reasoning
+  reply-marker paragraph becomes a small tag; a message from another agent (an A2A header,
+  or the turn's `from` from the server, `agent_link.sender_of`) is drawn as that agent's:
+  on the left, its face (`SFBots.faceForName`: a bot's own, by its name, label or a name it
+  had; else an open tab's; else one made from the name) and its name above a bubble of its
+  own colour, the header left out (it can hold an `[[SF:TO:…]]` of its own, so it ends at
+  the `]]` closing its own `[[`); the same sender again shows them once. Codex's empty reasoning
   records, its own context messages and its doubled answers are left out; `[[SF:…]]`
   markers are not shown, and a `[[SF:RED]]` tail folds away while it is up as buttons.
 - **Markdown**: agent text is escaped first; then a fixed set of tags (paragraphs, lists,

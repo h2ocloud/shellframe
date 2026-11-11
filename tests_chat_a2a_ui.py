@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """A message from another agent in the chat view: web/index.html in a browser with a stand-in
 Python side, the turns built with agent_link's own headers (format_delivery). The header can
-hold an [[SF:TO:…]] of its own; the bubble used to keep its tail ("…回覆它]]").
-  - several A2A messages in a row, A2A between the user's own messages, one long A2A: no
-    bubble shows any of the header ("]]", "SF:TO", "不是使用者本人"); each A2A says who sent
-    it; the message itself is there whole
+hold an [[SF:TO:…]] of its own; the bubble used to keep its tail ("…回覆它]]"), and the message
+was drawn as the person's own (a blue bubble on the right with a small "from" under it).
+  - several A2A messages in a row, A2A between the person's own messages, one long A2A: no
+    bubble shows any of the header ("]]", "SF:TO", "不是使用者本人"); each A2A is on the left
+    with its sender's face (a bot's own, else one made from its name) and name above it; the
+    person's own words stay on the right; the message itself is there whole
 Only what is drawn changes: the CLI gets the header as it was (agent_link is not touched).
 Demo data only. Screenshots: qa-shots/chat-a2a-{row,mixed,long}.png. SF_A2A_BEFORE=<a chat.js>
 draws the same with that file instead and saves …-before.png, without checks.
@@ -75,7 +77,10 @@ CASES = {
     "long": [a2a("研究", LONG), bot("收到，我整理成三點回給你。")],
 }
 SENDERS = {"row": ["研究", "寫程式", "排程"], "mixed": ["研究"], "long": ["研究"]}
-CFG = {"settings": {"language": "zh-TW", "sidebar_open": False, "ui_style": "chat"},
+BOTS = {"enabled": True, "primary": "", "memory_root": "~/.config/shellframe/bots", "sessions": {}, "kinds": {},
+        "roster": {"研究": {"label": "研究", "cmd": "claude", "bot": {"avatar": {"shape": "hex", "color": "blue"}, "memory": True}},
+                   "寫程式": {"label": "寫程式", "cmd": "codex", "bot": {"avatar": {"shape": "pill", "color": "red"}, "memory": True}}}}
+CFG = {"settings": {"language": "zh-TW", "sidebar_open": False, "ui_style": "chat", "experimental_bots": True},
        "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {}}
 SESSIONS = [{"sid": "s401", "cmd": "claude", "alive": True, "label": "示範分頁", "bridge_enabled": True}]
 
@@ -86,7 +91,7 @@ def stub(turns):
     view = {"success": True, "readable": True, "provider": "claude", "activity": "done", "decision": None,
             "rev": "r1", "turns": turns}
     return """
-window.__cfg = %s; window.__sessions = %s; window.__view = %s;
+window.__cfg = %s; window.__sessions = %s; window.__view = %s; window.__bots = %s;
 const R = v => Promise.resolve(typeof v === 'string' ? v : JSON.stringify(v));
 window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
   if (prop === 'then') return undefined;
@@ -97,11 +102,13 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
       case 'get_active_tab': return R({sid: 's401'});
       case 'read_output': case 'plugin_sidebar_badges': return R('');
       case 'chat_view': return R(window.__view);
+      case 'bots_state': return R(window.__bots);
       default: return R('{}');
     }
   };
 }})};
-""" % (json.dumps(CFG, ensure_ascii=False), json.dumps(SESSIONS, ensure_ascii=False), json.dumps(view, ensure_ascii=False))
+""" % (json.dumps(CFG, ensure_ascii=False), json.dumps(SESSIONS, ensure_ascii=False), json.dumps(view, ensure_ascii=False),
+       json.dumps(BOTS, ensure_ascii=False))
 
 
 SHOTS.mkdir(exist_ok=True)
@@ -118,11 +125,17 @@ with sync_playwright() as pw:
         page.goto((HERE / "web" / "index.html").as_uri())
         page.wait_for_function(f"document.querySelectorAll('#chat-list .cm-row').length >= {len(turns)}", timeout=15000)
         print(f"{name}: {len(turns)} turns")
-        bubbles = page.evaluate("[...document.querySelectorAll('#chat-list .cm-user .cm-bubble')].map(b => b.innerText)")
-        metas = page.evaluate("[...document.querySelectorAll('#chat-list .cm-user .cm-meta')].map(m => m.innerText)")
+        bubbles = page.evaluate("[...document.querySelectorAll('#chat-list .cm-bubble')].map(b => b.innerText)")
+        names = page.evaluate("[...document.querySelectorAll('#chat-list .cm-peer .cm-peer-name')].map(m => m.innerText)")
+        faces = page.evaluate("[...document.querySelectorAll('#chat-list .cm-peer .cm-peer-face')].map(f => !!f.querySelector('svg'))")
+        mine = page.evaluate("[...document.querySelectorAll('#chat-list .cm-user .cm-bubble')].map(b => b.innerText)")
         leftover = [b for b in bubbles if any(x in b for x in ("]]", "SF:TO", "不是使用者本人", "回覆它"))]
         check("no bubble shows any of the A2A header", not leftover, leftover)
-        check("each A2A says who sent it", metas == [f"來自 {w}" for w in SENDERS[name]], metas)
+        if not BEFORE:
+            check("each A2A is on the left, its sender's name above it", names == SENDERS[name], names)
+            check("…with its sender's face", faces and all(faces), faces)
+            check("the person's own words stay on the right", mine == [t["text"] for t in turns if t["kind"] == "user_msg"
+                                                                       and not t["text"].startswith("[[A2A")], mine)
         bodies = [t["text"].split("\n", 1)[1] for t in turns if t["kind"] == "user_msg" and t["text"].startswith("[[A2A")]
         check("the message itself is there, from its first word",
               all(any(b.startswith(body[:12]) for b in bubbles) for body in bodies), (bodies, bubbles))

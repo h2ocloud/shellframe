@@ -165,6 +165,48 @@ def authorize(*, enabled: bool, from_sid: str, from_label: str,
     return True, "", depth
 
 
+_HEADER_OPEN = re.compile(r"^\s*\[\[A2A[:：]")
+_HEADER_WHO = re.compile(r"「([^」]+)」|\"([^\"]+)\"")
+_TG_MARK = re.compile(r"(?:\[\[|<<)/?TG_REPLY_[0-9a-fA-F]+(?:\]\]|>>)")
+
+
+def header_of(text: str):
+    """The [[A2A…]] header format_delivery / format_handoff put before a message, as
+    (inside, the message after it), or None. The header holds an [[SF:TO:…]] example of its
+    own, so it ends at the ]] that closes its own [[, not at the first one (web/chat.js
+    a2aHeader is the same rule). A header that never closes is no header."""
+    text = str(text or "")
+    m = _HEADER_OPEN.match(text)
+    if not m:
+        return None
+    depth, i = 1, m.end()
+    while i < len(text) and depth:
+        if text.startswith("[[", i):
+            depth, i = depth + 1, i + 2
+        elif text.startswith("]]", i):
+            depth, i = depth - 1, i + 2
+        else:
+            i += 1
+    if depth:
+        return None
+    return text[m.end():i - 2], text[i:].lstrip()
+
+
+def sender_of(text: str):
+    """Who a message typed into a tab came from, when ShellBot put it there: another agent
+    ({"kind": "a2a", "name": its label, "handoff": bool}) or the person through Telegram
+    ({"kind": "telegram"}). None for the person at the computer, or not known. A phone and
+    the desktop's chat view draw the sender from this, so both say the same name."""
+    head = header_of(text)
+    if head:
+        who = _HEADER_WHO.search(head[0])
+        return {"kind": "a2a", "name": (who.group(1) or who.group(2)) if who else "",
+                "handoff": "的交接" in head[0] or "a hand-off" in head[0]}
+    if _TG_MARK.search(str(text or "")):
+        return {"kind": "telegram"}
+    return None
+
+
 def format_delivery(from_label: str, text: str, lang: str = None) -> str:
     """What actually lands in the target agent's prompt. The attribution is
     deliberately explicit so the receiving agent treats it as a message from a

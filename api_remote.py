@@ -20,6 +20,7 @@ import agent_grok
 import agent_pi
 import agent_status
 import a2a_host
+import agent_link
 import bridge_home
 import sf_lang
 import tab_delivery
@@ -61,6 +62,18 @@ def conversation_turns(path: str, limit: int, cap: int = CONVO_CAP):
             _convo_cache.clear()
         _convo_cache[path] = (key, window, limit, fmt, turns)
     return fmt, turns[-limit:], err
+
+
+def with_senders(turns: list) -> list:
+    """Each user turn ShellBot typed in for someone else names them in `from`
+    (agent_link.sender_of: another agent, or the person through Telegram), so a phone and the
+    chat view say who sent it, and say it alike. The text stays as the CLI got it."""
+    for t in turns or []:
+        if isinstance(t, dict) and t.get("kind") == "user_msg" and "from" not in t:
+            who = agent_link.sender_of(t.get("text"))
+            if who:
+                t["from"] = who
+    return turns
 
 
 class RemoteApiMixin:
@@ -969,7 +982,7 @@ class RemoteApiMixin:
                                 "message": "這個 opencode 分頁還沒有可讀的對話"
                                            "（分頁標題還沒被 opencode 標上，或還沒送出過訊息）"}
                     return {"success": True, "message": f"{len(turns)} turns",
-                            "details": {"format": "opencode", "turns": turns,
+                            "details": {"format": "opencode", "turns": with_senders(turns),
                                         "label": getattr(s_obj, "_custom_label", None)
                                                  or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
                 # pi's session file is found for its model badge but is not one of
@@ -979,7 +992,7 @@ class RemoteApiMixin:
                     if not turns:
                         return {"success": False, "message": "這個 pi 分頁還沒有可讀的對話（可能還沒送出過訊息）"}
                     return {"success": True, "message": f"{len(turns)} turns",
-                            "details": {"format": "pi", "turns": turns,
+                            "details": {"format": "pi", "turns": with_senders(turns),
                                         "label": getattr(s_obj, "_custom_label", None)
                                                  or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
                 path = main.agent_status.resolve_transcript(worker)
@@ -990,7 +1003,7 @@ class RemoteApiMixin:
                 if err and not turns:
                     return {"success": False, "message": f"transcript unreadable: {err}"}
                 return {"success": True, "message": f"{len(turns)} turns",
-                        "details": {"format": fmt, "turns": turns,
+                        "details": {"format": fmt, "turns": with_senders(turns),
                                     "label": getattr(s_obj, "_custom_label", None)
                                              or (s_obj.cmd.split()[0] if s_obj.cmd else sid)}}
             except Exception as e:

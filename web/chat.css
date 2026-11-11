@@ -11,7 +11,7 @@
 #chat-layer {
   --cm-bg: #1a1b26; --cm-panel: #1f2335; --cm-raised: #24283b; --cm-line: #292e42; --cm-line2: #3b4261;
   --cm-text: #c0caf5; --cm-soft: #a9b1d6; --cm-dim: #6b7394; --cm-blue: #7aa2f7; --cm-amber: #e0af68;
-  --cm-red: #f7768e; --cm-green: #9ece6a; --cm-user: #3d59a1;
+  --cm-red: #f7768e; --cm-green: #9ece6a; --cm-user: #3d59a1; --cm-peer: #2b2642; --cm-peer-line: #4d4175;
   position: absolute; inset: 0 0 0 var(--hint-gutter, 17px); z-index: 30;
   display: flex; flex-direction: column; background: var(--cm-bg); color: var(--cm-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Hiragino Sans",
@@ -65,6 +65,11 @@
 .cm-meta { font-size: .75em; color: var(--cm-dim); padding: 0 .3em; }
 .cm-bot .cm-bubble { flex: 0 1 auto; max-width: calc(100% - 2.7em); background: var(--cm-raised); border: 1px solid var(--cm-line);
                      border-radius: 4px 14px 14px 14px; }
+/* Another agent (A2A): left, its own face and name above, a bubble of its own colour. */
+.cm-peer-face { --sfb-size: 2em; width: 2em; height: 2em; flex: none; display: inline-block; }
+.cm-peer-col { display: flex; flex-direction: column; gap: .2em; min-width: 0; max-width: calc(100% - 2.7em); }
+.cm-peer-name { font-size: .78em; font-weight: 600; color: var(--cm-soft); padding: 0 .3em; }
+.cm-peer .cm-bubble { background: var(--cm-peer); border: 1px solid var(--cm-peer-line); border-radius: 4px 14px 14px 14px; }
 .cm-error > div { color: var(--cm-amber); font-size: .88em; }
 .cm-noreply > div { color: var(--cm-dim); font-size: .84em; }
 .cm-more-text.cm-inline { display: inline; margin: 0 0 0 .3em; }

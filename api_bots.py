@@ -284,7 +284,7 @@ class BotsApiMixin:
             sid = "" if ext else (awake.get(role) or ("" if bots.is_bot(e) else bot_names.bot_tab(role, raw, name_tabs, bound)))
             t = tabs.get(sid) or {}
             cli = "" if ext else (agent_status.worker_kind(str(e.get("cmd") or "")).replace("other", "") or "")
-            rows.append({"role": role, "label": bots.label_of(role, e),
+            rows.append({"role": role, "label": bots.label_of(role, e), "former_names": bots.former_names(e),
                          "responsibility": str(e.get("responsibility") or ""), "model": str(e.get("model") or ""),
                          "runs_on": "" if ext else self._link_runs_on(sid, e),
                          "avatar": bots.resolved_avatar((e.get("bot") or {}).get("avatar"), role),

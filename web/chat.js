@@ -346,6 +346,10 @@
         const u = userView(t.text);
         if (!u.text) return;               // Codex's turn-start record carries no words
         lastUser = u.text;
+        // Another agent's message (A2A): its sender, not the person. The server names it
+        // (`from`, agent_link.sender_of, what a phone reads); the header is the same rule.
+        const peer = (t.from && t.from.kind === 'a2a') ? t.from.name : (u.tags.find(x => x.kind === 'a2a') || {}).who;
+        if (peer !== undefined) { out.push({ type: 'peer', who: peer || '', text: u.text, ts: t.ts || 0 }); return; }
         out.push({ type: 'user', text: u.text, tags: u.tags, ts: t.ts || 0 });
       } else if (kind === 'assistant_text') {
         const raw = String(t.text || '').trim();
@@ -805,6 +809,11 @@
   }
 
   // ── drawing ────────────────────────────────────────────────────────────
+  function peerFace(who) {
+    let svg = '';
+    try { svg = (root.SFBots && root.SFBots.faceForName && root.SFBots.faceForName(who)) || ''; } catch (_) { svg = ''; }
+    return `<span class="cm-face cm-peer-face">${svg}</span>`;
+  }
   function faceHtml(sid, state) {
     const B = root.SFBots;
     let svg = '';
@@ -927,6 +936,15 @@
         : T(`from ${t.who || 'another agent'}`, `來自 ${t.who || '另一個分頁'}`)).join(' · ');
       return `<div class="cm-row cm-user">${longText(sid, key, it.text, 'cm-bubble', true)}` +
         (tag ? `<div class="cm-meta">${escHtml(tag)}</div>` : '') + '</div>';
+    }
+    if (it.type === 'peer') {
+      // Another agent: on the left with its own face and name, its words in a bubble of
+      // their own colour; the same sender again shows them once.
+      const prev = items[idx - 1];
+      const again = !!prev && prev.type === 'peer' && prev.who === it.who;
+      return `<div class="cm-row cm-peer">${again ? '<span class="cm-face-gap"></span>' : peerFace(it.who)}` +
+        `<div class="cm-peer-col">${again ? '' : `<div class="cm-peer-name">${escHtml(it.who || T('Another agent', '另一個 AI'))}</div>`}` +
+        `${longText(sid, key, it.text, 'cm-bubble', true)}</div></div>`;
     }
     if (it.type === 'bot') {
       let j = idx - 1;

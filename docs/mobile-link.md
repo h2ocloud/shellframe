@@ -153,6 +153,13 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 `/link/conversation` 從紀錄檔尾端往前讀，直到湊滿 `limit` 個 turn（預設 80，最多 400），或讀到 8 MB 為止（`api_remote.conversation_turns`）。原本固定只讀最後 256 KB，一筆大的 attachment 紀錄就能把使用者剛送的那句擠出去。紀錄檔沒變時直接用上次的結果；變長時只從上次夠用的範圍再讀一次。
 
+**誰送的（v0.42.0 之後）**：使用者那一方的 turn（`user_msg`）如果是 ShellBot 幫別人打進去的，會多一個 `from`（`agent_link.sender_of`）：
+- 別的 AI 用 A2A 傳來的：`{"kind": "a2a", "name": "<寄件者的名字>", "handoff": <是不是交接>}`；
+- 使用者從 Telegram 傳的：`{"kind": "telegram"}`；
+- 使用者在電腦前自己打的：沒有這個欄位。
+
+`text` 照舊是 CLI 收到的原文，開頭那段給 AI 看的說明還在；要顯示寄件者時，用 `from.name` 找 bot 的臉（`/link/bots` 的名字、標籤或 `former_names`），找不到就用名字產生一張。桌面的對話畫面就是這樣畫的，手機照做，兩邊同一個來源就會是同一個名字。
+
 ## Bots（v0.41.0）
 
 手機的 bot 介面用下面這幾條路由。全部都要簽章，而且對方必須能操作這台；單向配對中無權的那一方回 403，手機當成「這台沒有 bot 介面」。

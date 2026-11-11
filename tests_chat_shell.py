@@ -170,6 +170,29 @@ v5 = view("s5")
 check("a Claude tab with no record yet: says so", not v5["readable"] and v5["why"] == "no_transcript", v5)
 check("no such tab", json.loads(api.chat_view("s99", 120, "")) == {"success": False, "code": "no_tab"})
 
+print("who sent a user turn: `from` (what a phone and the chat view draw the sender from)")
+import agent_link  # noqa: E402
+SENT = agent_link.format_delivery("研究", "比較表整理好了", lang="zh")
+HANDED = agent_link.format_handoff("寫程式", "幫忙看 relay 的逾時", "h1", lang="zh")
+VIA_TG = "最終要回 Telegram 的文字請放在 [[TG_REPLY_ab12cd34]] 和 [[/TG_REPLY_ab12cd34]] 之間。\n\n幫我看報表"
+FROMS = TMP / "froms.jsonl"
+FROMS.write_text("\n".join([rec("user", SENT, "2026-11-10T11:00:00Z"), rec("user", HANDED, "2026-11-10T11:00:05Z"),
+                            rec("user", VIA_TG, "2026-11-10T11:00:09Z"), rec("user", "我自己打的", "2026-11-10T11:00:12Z")])
+                 + "\n", encoding="utf-8")
+PATHS["s6"] = FROMS
+api.sessions["s6"] = Tab("s6", "claude")
+turns6 = api._execute_sfctl("conversation", {"sid": "s6", "limit": 120})["details"]["turns"]
+check("another agent's message, a hand-off, Telegram and the person's own words each say who",
+      [t.get("from") for t in turns6 if t["kind"] == "user_msg"] == [
+          {"kind": "a2a", "name": "研究", "handoff": False}, {"kind": "a2a", "name": "寫程式", "handoff": True},
+          {"kind": "telegram"}, None], [t.get("from") for t in turns6])
+check("…the text is as the CLI got it", turns6[0]["text"] == SENT and turns6[1]["text"] == HANDED)
+check("…in English too", agent_link.sender_of(agent_link.format_delivery("research", "x", lang="en"))
+      == {"kind": "a2a", "name": "research", "handoff": False}
+      and agent_link.sender_of(agent_link.format_handoff("research", "x", "h2", lang="en"))["handoff"] is True)
+check("…and the chat view gets the same turns", view("s6")["turns"] == turns6)
+check("a header that never closes names no one", agent_link.sender_of("[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]") is None)
+
 print("chat_view: the other CLIs (M2)")
 import agent_pi  # noqa: E402
 PI = TMP / "pi-session.jsonl"
