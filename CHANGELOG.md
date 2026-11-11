@@ -6,6 +6,408 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.42.0 (2026-11-11)
+
+### Changes
+
+- **The app's bundle is now ShellBot.app, so macOS shows ShellBot everywhere.**
+  v0.41.0 renamed what the app says about itself, but macOS names an app by its bundle's file
+  name (the names inside Info.plist change nothing in Finder, Launchpad, Spotlight, the Dock or
+  ⌘-Tab), so those places still said ShellFrame. The app is now installed as ShellBot.app. An
+  older ShellFrame.app is renamed once, when the app starts or by `sfctl restart` before it
+  relaunches: the same bundle is moved, so nothing inside it changes; LaunchServices is told about
+  the new path; and a Dock pin is pointed at the new path and relabelled through `defaults`, read
+  back, and tried again with the Dock stopped if the Dock wrote its old pins back as it quit. The
+  bundle identifier is unchanged, and the bundle is moved, not rebuilt, so its code signature's hash
+  (cdhash) is unchanged too. An update copies the template as ShellBot.app and removes an
+  old-named copy. On Windows the desktop shortcut is
+  ShellBot.lnk. Kept as they were: `sfctl`, the config folder, the bundle identifier, tmux session
+  names, the repository, protocol strings and the text agents read; the agent skill answers to both
+  names. `open -a ShellFrame` no longer finds the app. Measured on a Mac upgraded from a v0.41.1 build
+  with 31 open tabs: one `sfctl restart` renamed and relaunched it, all 31 tabs came back, and the cdhash
+  was the same before and after. Covered by tests_app_bundle.py.
+
+  **App 的檔名改成 ShellBot.app，macOS 各處都顯示 ShellBot。** v0.41.0 改的是 App 自己顯示的名字；
+  但 macOS 用 App 的檔名來稱呼它（改 Info.plist 裡的名字，Finder、Launchpad、Spotlight、Dock、⌘-Tab
+  都不會變），所以這些地方還是 ShellFrame。現在 App 安裝成 ShellBot.app。舊的 ShellFrame.app 會在
+  App 啟動時、或 `sfctl restart` 重開之前改名一次：同一個 App 直接搬，裡面什麼都沒變；向 LaunchServices
+  登記新路徑；Dock 上的釘選透過 `defaults` 改指向新路徑、改標籤，寫完讀回確認，Dock 結束時如果把舊的
+  釘選寫回去，就停掉 Dock 再試一次。bundle id 沒變；App 是整個搬過去、不是重建，所以程式簽章的雜湊
+  （cdhash）也沒變。更新時會把樣板複製成 ShellBot.app，並移除舊名的那份。Windows 的桌面
+  捷徑改叫 ShellBot.lnk。維持原樣的：`sfctl`、設定資料夾、bundle id、tmux 的 session 名稱、repo、
+  通訊協定裡的字串，以及給 AI 讀的文字；AI 的 skill 兩個名字都認得。`open -a ShellFrame` 會找不到 App。
+  在一台從 v0.41.1 升級、開著 31 個分頁的 Mac 上實測：一次 `sfctl restart` 就完成改名和重開，31 個分頁
+  全部回來，cdhash 前後一樣。由 tests_app_bundle.py 守著。
+
+- **A new install starts with the chat view and with bots on; a computer already in use keeps what it had.**
+  A first launch opens tabs on their conversation (Settings → Interface style → Chat) and turns bots
+  on with an empty roster: a new user's roles are the bots they keep, not the five example roles
+  older builds shipped. A computer that ran ShellBot before keeps the native terminal, and keeps bots
+  off unless it had turned them on; each of these is written once, so it does not change under anyone
+  later. A role someone deleted stays deleted: loading the roster no longer adds the defaults back,
+  while a role that is there still gets the fields added since. Settings has an A2A switch beside the
+  Bots one (off by default); before, it could only be turned on in config.json. Covered by
+  tests_plan_a_defaults.py and tests_chat_shell.py.
+
+  **新安裝預設用對話畫面、bot 預設開；已經在用的電腦維持原樣。** 第一次啟動時，分頁打開就是對話內容
+  （設定 → 介面風格 →「對話」），bot 功能打開、名單是空的：新使用者的角色就是他自己記住的 bot，不再是
+  舊版內建的五個範例角色。以前跑過 ShellBot 的電腦維持原本的終端機畫面，bot 也維持關閉（除非原本就開了）；
+  這兩項各只寫入一次，之後不會被改掉。刪掉的角色不會再出現：讀名單時不再把預設角色補回去，已有的角色仍會
+  補上後來新增的欄位。設定裡在 Bots 旁邊多了 A2A 開關（預設關）；以前只能改 config.json 才能打開。由
+  tests_plan_a_defaults.py、tests_chat_shell.py 守著。
+
+- **A bot or a tab is found by its name the same way everywhere.**
+  `sfctl send`, `peek`, `close`, `rename` and `state`, delegate, A2A and the bot view each matched
+  names their own way. A bot whose tab had been renamed by hand was not found by delegate, which then
+  opened a second tab; an A2A message to a role's label, an alias or another letter case was refused as
+  an unknown role; and the last step guessed from the middle of a name, which could pick the wrong one of
+  two names that contain each other. One resolver now takes a tab id, a bot's name, a tab's title, an
+  alias or a bot's old label, in any case, and last the start of exactly one of those; two matches are
+  refused with the candidates. A bot's tab is found through its binding first. A bot that is asleep is
+  said to be asleep, with how to wake it, and a tab opened by delegate keeps its name instead of being
+  renamed after its first message. Covered by tests_bot_names.py and tests_bot_addressing.py.
+
+  **用名字找 bot 或分頁，各處都用同一套規則。** `sfctl send`、`peek`、`close`、`rename`、`state`、
+  delegate、A2A 和 bot 畫面以前各自比對名字：分頁被手動改名後，delegate 找不到那個 bot，就再開一個分頁；
+  A2A 傳給角色的標籤、別名或大小寫不同的名字，會被當成不認得的角色擋掉；最後一步還會從名字中間猜，兩個
+  名字互相包含時可能挑錯。現在只有一個解析器：分頁 id、bot 的名字、分頁標題、別名、bot 的舊標籤都認得，
+  不分大小寫，最後才看是不是剛好只有一個名字以它開頭；有兩個符合就拒絕，並列出候選。bot 的分頁先看綁定。
+  bot 睡著時會直接說它睡著、怎麼叫醒；delegate 開的分頁會保住名字，不會在第一則訊息之後被改名。由
+  tests_bot_names.py、tests_bot_addressing.py 守著。
+
+- **Agents are asked to name a tab by what it does, without an engine code.**
+  The rule handed to agents asked for names that end in an engine code. A bot now keeps its name when
+  it moves to another CLI, so the name is just what the tab is for; which CLI suits which work is still
+  said, by the CLI's name. `sfctl bots-migrate` is a one-time tidy that only adds: a tab a bot is taken
+  from by its title gets bound to that bot, so renaming the tab later keeps it the bot's. It is a dry run
+  unless `--apply`, which backs up config.json first; it renames nothing, does not touch the tab order
+  (Telegram's /N) or a tab marked "not a bot", and a second run adds nothing. Covered by
+  tests_plan_a_bots.py.
+
+  **給 AI 的命名規則改成只寫分頁在做什麼，不加引擎代碼。** 以前的規則要名字最後帶引擎代碼；現在 bot 換
+  CLI 時名字不變，所以名字只寫分頁的用途；哪種工作適合哪個 CLI，仍用 CLI 的名字說明。`sfctl bots-migrate`
+  是一次性、只增不減的整理：靠標題對上 bot 的分頁，會綁定給那個 bot，之後改分頁名字也還是它的。沒加
+  `--apply` 只是試跑；加了會先備份 config.json。它不改任何名字，不動分頁順序（Telegram 的 /N），也不碰標成
+  「不是 bot」的分頁；跑第二次不會再加任何東西。由 tests_plan_a_bots.py 守著。
+
+### Added
+
+- **A chat view: a tab can show its conversation instead of its terminal.**
+  Settings → Interface style chooses what a tab opens on, Chat or Native CLI. Each tab can switch on
+  its own, with the switch at the top or ⌘⇧M (Ctrl+Shift+M on Windows and Linux), and keeps that
+  choice until it closes or the setting changes. The view lies over the terminal, which keeps running
+  at its own size, and it reads and answers exactly as a paired phone does, so there is one
+  implementation of each. Claude Code, Codex, OpenCode, Grok, Cursor and Pi tabs have it; an
+  Antigravity tab shows its terminal and says why (its conversation is not stored in a readable form).
+  Tool calls fold into one line. A question becomes buttons, in plain words only when every option is
+  known (otherwise as the CLI wrote them), and is always answered with the option's own number; the card
+  shows the whole command it asks about. "+" opens "New conversation": each AI by what it is for, the
+  bots when bots are on, and the CLI list or a typed command under "Advanced". Pictures and files can be
+  pasted or dropped into the box; they go into the message as their paths, the way a phone sends a
+  photo. A message from another agent is drawn as that agent's: on the left, its face and name above a
+  bubble of its own colour, not as the person's own blue bubble; the header written for the agent that
+  reads it, which holds an [[SF:TO:…]] of its own, is left out of the view (the CLI still gets it). A
+  long message goes into the tab as a paste, which Claude Code keeps wrapped (`<pasted_content …>`):
+  the header is read inside the wrapper, and neither is shown. Something you pasted among your own
+  words is one folded block in your bubble, "Pasted · 15 lines" and how it starts, with the text as
+  you pasted it one click away; the CLI keeps the text as it got it. The conversation a paired phone
+  reads carries the same sender (`from`); the phone app does not draw it yet. When a CLI shows an error only on its screen, the view says so after 15
+  seconds and offers the terminal. Switching back to the terminal gives it the keyboard: the switch
+  redraws the terminal, which hides it for a frame, and a hidden terminal cannot take the focus, so the
+  keys went nowhere; it is now focused again once the redraw is done, and a redraw gives back the focus
+  it dropped, unless the person has put it somewhere else since (a dialog keeps it). A tab started as `env -u NAME claude …` has the view too: the page read that command as no AI at all, and its Chat button stayed greyed. In a narrow view (an 800px window with the sidebar at its widest) the Terminal button keeps
+  only its icon and Send moves under the input box, so the tab's name stays readable and there is room to
+  type: the title went from 24 to 100px wide and the input box from 28 to 181px, and wider views do not
+  change. The narrow rules follow the view's own width, not the window's, because the sidebar, not the
+  window, is what makes it narrow. Covered by tests_chat_shell.py, tests_chat_shell.js,
+  tests_chat_narrow.py, tests_chat_a2a_ui.py, tests_chat_switch_focus.py and tests_chat_switch_enabled.py (screenshots in qa-shots/).
+
+  **對話畫面：分頁可以改看對話內容，不用看終端機。** 設定 → 介面風格，決定分頁打開時看到什麼：「對話」
+  或「原生 CLI」。每個分頁都能單獨切換（上方的切換鈕，或 ⌘⇧M，Windows 和 Linux 是 Ctrl+Shift+M），會一直
+  記在那個分頁上，直到分頁關掉或設定改了。對話畫面蓋在終端機上面，終端機照常在原本的大小跑；讀和回答的
+  方式跟配對的手機完全一樣，所以兩邊只有一套做法。Claude Code、Codex、OpenCode、Grok、Cursor、Pi 的分頁
+  都有對話畫面；Antigravity 的分頁顯示終端機，並說明原因（它的對話沒有存成讀得懂的格式）。工具呼叫收成
+  一行。要你決定的事會變成按鈕：只有每個選項都認得時才翻成白話，否則照 CLI 原本的寫法；回答一律送那個選項
+  自己的號碼；卡片上會顯示它問的完整指令。按「+」打開「新對話」：依用途列出各個 AI，bot 開著時也列出 bot；
+  CLI 清單和自己輸入指令收在「進階」裡。圖片和檔案可以貼上或拖進輸入框，會以路徑放進訊息，跟手機傳照片
+  一樣。別的 AI 傳來的訊息畫成那個 AI 說的：放在左邊，上面有它的臉和名字，泡泡用它自己的顏色，不再畫成
+  你自己的藍色泡泡；寫給接收方 AI 看的那段開頭（裡面還有一段 [[SF:TO:…]]）不顯示，CLI 收到的原文不變。
+  長的訊息是用貼上的方式送進分頁的，Claude Code 會把它包在 `<pasted_content …>` 裡存起來：開頭在包裝裡面
+  也認得出來，兩者都不顯示。夾在你自己的字中間貼上的內容，收成泡泡裡的一塊「貼上的內容 · 15 行」，顯示它的
+  開頭，點開才是貼上的原文；CLI 收到的原文不變。
+  手機讀的對話資料也帶著同一個寄件者（`from`），手機 App 還沒畫出來。CLI 只在畫面上顯示錯誤時，15 秒沒有回應，對話畫面會說明，並提供切回終端機。
+  切回終端機後，鍵盤會回到終端機：切換時終端機會重排，重排的那一個畫格它是隱藏的，隱藏的終端機接不了焦點，
+  打的字就不見了；現在等重排完會再聚焦一次，重排弄掉的焦點也會還回去，但使用者已經移到別的地方（例如
+  對話框）就不搶。用 `env -u 名稱 claude …` 開的分頁也有對話畫面：以前這種指令被認成不是 AI，對話鈕一直是灰的。對話畫面變窄時（800px
+  的視窗、側欄拉到最寬），Terminal 按鈕只留圖示，Send 移到輸入框下面，分頁名字看得清楚，也有空間打字：
+  標題寬度從 24px 變成 100px，輸入框從 28px 變成 181px；比較寬時完全不變。窄版規則看的是對話畫面自己的
+  寬度，不是視窗寬度，因為讓它變窄的是側欄，不是視窗。由 tests_chat_shell.py、tests_chat_shell.js、
+  tests_chat_narrow.py、tests_chat_a2a_ui.py、tests_chat_switch_focus.py、tests_chat_switch_enabled.py 守著（截圖在 qa-shots/）。
+
+- **Every AI tab is a bot, and a temporary one can be kept.**
+  The sidebar says what each tab is. A bot keeps its tag; an AI tab nobody has kept shows "temp" on its
+  second line and a Keep button; a shell tab shows >_ instead of a face. Keep (or `sfctl bots-keep`)
+  turns the tab into a bot named by its title or by the name given, with the face it had, a memory
+  folder and the tab bound to it; a name another bot has is refused and a free one is offered. A
+  temporary bot is named from its first message wherever it is typed, in the chat view or in the
+  terminal, Windows tabs included. A kept bot wakes in a new conversation: keeping drops the
+  conversation id ShellBot pins on every Claude tab, which Claude Code would refuse for a conversation
+  that exists. A bot can move to another CLI or model and keep its name, face, job and memory
+  (`sfctl bots-set`, or "Save and switch now" in the bot's editor): by default from its next wake;
+  "now" wakes a sleeping bot at once and has an awake one write its memory and close first. Switching
+  CLI without naming a model clears the model, since the last CLI's would not fit; Pi and Antigravity
+  pick their model inside them, so their model box is off. A bot has one name wherever it is renamed:
+  its tab's rename dialog, its editor, `sfctl rename` on its tab, `sfctl bots-rename` or a phone; the
+  dialog and the editor ask first. Its roster entry, the tabs bound to it, its groups and its memory
+  folder take the new name, and the old name stays with it, so A2A messages and [[SF:TO:…]] markers sent
+  to the old name still arrive and no other bot can take that name. On Telegram, /list marks a temporary bot and
+  a terminal, and with bots on a second message lists the bots asleep, each with a button to wake it,
+  and the temporary ones, each with a button to keep it; before, a bot asleep did not appear on Telegram
+  at all. For phones, /link/bots stays at version 1 and only adds fields (each tab's kind, name, CLI,
+  model, Telegram number and position; every role; the CLIs this computer has), because the phone app
+  turns its bot view off for a higher version. Covered by tests_plan_a_bots.py, tests_plan_a_ui.py
+  (Playwright, demo data), tests_link_bots.py, tests_bot_rename.py and tests_bot_rename_ui.py
+  (Playwright, demo data).
+
+  **每個 AI 分頁都是 bot，臨時的可以「記住」。** 側欄會說明每個分頁是什麼：bot 保留它的標籤；還沒人記住的
+  AI 分頁，第二行顯示「臨時」，旁邊有「記住」按鈕；終端機分頁用 >_ 代替臉。按「記住」（或
+  `sfctl bots-keep`）會把分頁變成一個 bot：名字用分頁標題或你給的名字，臉沿用，建立記憶資料夾，並把分頁
+  綁給它；名字跟別的 bot 重複時會被拒絕，並提供一個沒人用的名字。臨時 bot 不管第一則訊息是在對話畫面還是
+  終端機打的，都會用它來命名，Windows 的分頁也一樣。記住的 bot 醒來時是新的對話：記住時會拿掉 ShellBot
+  釘在每個 Claude 分頁上的對話 id，否則 Claude Code 會因為那個對話已經存在而拒絕。bot 可以換到別的 CLI
+  或模型，名字、臉、工作和記憶都留著（`sfctl bots-set`，或 bot 編輯畫面的「儲存並現在就換」）：預設是下次
+  醒來時換；選「現在」時，睡著的 bot 會立刻醒來，醒著的會先寫好記憶、關掉，再用新的設定醒來。換 CLI 卻沒
+  指定模型時，模型會清掉，因為上一個 CLI 的模型不適用；Pi 和 Antigravity 在自己裡面選模型，所以它們的
+  模型欄是關的。bot 只有一個名字，不管從哪裡改：分頁的改名對話框、bot 編輯頁、對它的分頁下
+  `sfctl rename`、`sfctl bots-rename` 或手機；對話框和編輯頁會先問。名冊、綁定的分頁、群組和記憶資料夾
+  都換成新名字；舊名字留在它身上，用舊名字送的 A2A 和 [[SF:TO:…]] 照樣送得到，別的 bot 也不能拿去用。
+  Telegram 的 /list 會標出臨時 bot 和終端機；bot 開著時會再多一則訊息，列出睡著的 bot 和
+  臨時 bot，各附一個按鈕，可以叫醒或記住；以前睡著的 bot 在 Telegram 上完全看不到。給手機的 /link/bots
+  版本維持 1，只加欄位（每個分頁的種類、名字、CLI、模型、Telegram 編號和位置；所有角色；這台電腦有的
+  CLI），因為手機 App 看到更高的版本會關掉 bot 畫面。由 tests_plan_a_bots.py、tests_plan_a_ui.py
+  （Playwright，示範資料）、tests_link_bots.py、tests_bot_rename.py、tests_bot_rename_ui.py（Playwright，
+  示範資料）守著。
+
+- **Push notifications to the paired phone and iPad app (an Apple push key has to be set up first).**
+  Set it up once with `sfctl push-setup --key … --key-id … --team-id …`, using an APNs key from an
+  Apple Developer account; `sfctl push-status` shows the key, the registered phones and Telegram's
+  mode. Nothing is sent until a paired phone registers. Four kinds: a bot's question (a turn that ends
+  on [[SF:RED]], answerable from the lock screen), a tab stuck on a dialog or on [[SF:YELLOW]], a
+  finished turn (the primary bot's, or every bot's if the phone asks) or a delegated task's result, and
+  `sfctl notify`. A new turn takes the open question off the phones, an answer from one phone takes it
+  off the others, and a restart does not push the same question again. Limits: a stuck or done
+  notice for the same tab within a minute quietly replaces the last one, at most 30 an hour go to a
+  device, at most 4 sends run at once; Apple's 429 backs off, and 410 or BadDeviceToken removes the
+  phone's registration. A phone can ask for content to be hidden (no question or options in the
+  notification), and while push works for a phone that asked for it, Telegram messages go out silently;
+  a failing push makes them ring again. The check in `push-setup` sends to a made-up device token, which
+  Apple answers before it looks at what the key may push, so it cannot tell whether the key works for
+  this app: it now says so, and fails TopicDisallowed (a key bound to another app) and
+  BadEnvironmentKeyInToken (a sandbox-only key) with what they mean; one real send from the phone's
+  test button is the way to be sure. macOS only; on Windows push says it is not available. Covered by
+  tests_push.py (a throwaway key and a stand-in for APNs), tests_push_app.py and tests_frame_link.py.
+
+  **推播到配對的手機和 iPad App（要先設定 Apple 的推播金鑰）。** 用 Apple Developer 帳號的 APNs 金鑰，
+  跑一次 `sfctl push-setup --key … --key-id … --team-id …` 設定；`sfctl push-status` 會顯示金鑰、已
+  登記的手機和 Telegram 的模式。手機登記之前什麼都不會送。通知有四種：bot 的提問（以 [[SF:RED]] 結束的
+  一輪，可以在鎖定畫面回答）、卡在對話框或 [[SF:YELLOW]] 的分頁、完成的一輪（主 bot 的，或手機要求時每個
+  bot 的）或 delegate 出去的工作結果，以及 `sfctl notify`。新的一輪開始時，未答的提問會從手機上收回；一支
+  手機答了，其他手機上的也會收回；重啟後不會重送同一題。限制：同一個分頁一分鐘內的卡住或完成通知，新的會
+  安靜地取代舊的；每支裝置每小時最多 30 則；同時最多送 4 則；Apple 回 429 時退避，回 410 或
+  BadDeviceToken 時刪掉那支手機的登記。手機可以要求隱藏內容（通知裡不放題目和選項）；推播對要求安靜的
+  手機正常運作時，Telegram 訊息改成靜音送出，推播失敗就恢復響鈴。`push-setup` 的檢查是送到一個假的裝置
+  token，Apple 會先回 token 的錯誤、不看金鑰能推哪個 App，所以它看不出這把金鑰能不能推這個 App：現在會
+  明講這一點；TopicDisallowed（金鑰綁在別的 App）和 BadEnvironmentKeyInToken（只能用在 sandbox 的金鑰）
+  會判失敗並說明原因；要確定，就用手機上的測試按鈕真的送一則。只支援 macOS；Windows 上會說推播不可用。
+  由 tests_push.py（用拋棄式金鑰和假的 APNs）、tests_push_app.py、tests_frame_link.py 守著。
+
+### Fixes
+
+- **A message sent from the chat view is no longer lost behind a draft in the terminal.**
+  Reported in daily use: with text left in the terminal's input box (a right-click had pasted it
+  there), a message sent from the chat view said it was queued and never went in. It waited behind
+  the draft, which the chat view does not show, and after 30 minutes the queue dropped it without
+  telling anyone; the bubble that said it was waiting went away on its own. Now, when the terminal's
+  box holds a draft, the chat view sends nothing and shows a card with the draft's first words:
+  "Clear it and send" empties the box (one Ctrl+C once the tab is not working, which in Claude Code
+  empties a draft of any length) and sends; "Not now" keeps the message in the box. A queued message
+  follows the real queue: its bubble says why it waits, and if it is given up it says "Not sent" and
+  why, with "Send again" and "Remove", and stays until one is pressed. The draft is read from Claude
+  Code's box through tmux; on Windows there is no card yet, and a message goes in after whatever is
+  in the box, as before. Covered by tests_chat_draft_send.py and tests_chat_draft_ui.py.
+
+  **在對話畫面送出的訊息，不會再因為終端機裡有草稿而不見。** 回報：終端機的輸入框裡留著一段字（右鍵時被
+  自動貼上的），在對話畫面送出的訊息顯示「排隊中」，結果一直沒有進去。它排在那段草稿後面，而對話畫面看不到
+  草稿；30 分鐘後佇列把它丟掉，沒有告訴任何人，「等待中」的泡泡也自己消失了。現在終端機的輸入框有草稿時，
+  對話畫面什麼都不送，改出一張卡，顯示草稿的開頭：「清掉後送出」會清空輸入框（分頁沒在跑時按一次 Ctrl+C，
+  Claude Code 不管草稿多長都會清掉）再送出；「先不送」把訊息留在輸入框。排隊中的訊息跟著真正的佇列：泡泡
+  寫出它在等什麼；如果被放棄，會標「沒送出」和原因，附「重送」「移除」，按了才會消失。草稿是透過 tmux 從
+  Claude Code 的輸入框讀的；Windows 上目前還沒有這張卡，訊息會照舊接在輸入框原有的字後面送出。由
+  tests_chat_draft_send.py、tests_chat_draft_ui.py 守著。
+
+- **"Waiting on you" questions are read from the screen as a whole and answered with one key.**
+  The reader the phone, Telegram and the desktop share had three faults, each measured on a real tab.
+  An option that wrapped onto a second line dropped every option above it. It read 40 lines of
+  scrollback and took the first menu there, so a menu already answered, or a numbered list in the
+  agent's reply, was offered instead of the dialog on screen. And it answered with the number and
+  Enter, while Codex and Claude Code take the number alone, so the Enter answered whatever came next
+  (measured: Codex's update menu got "Skip", then the extra Enter accepted its folder-trust prompt). It
+  now reads only the visible screen and takes the last menu, does not treat a list whose numbers do not
+  run 1, 2, 3… as a menu, joins a wrapped line to its option, and sends Enter after the number only
+  while the same menu is still up ([[SF:RED]] questions still get the number and Enter). A permission
+  question also carries the whole command it asks about: the card showed the first 40 characters of a
+  command's first line with no sign of the cut, so a command whose first line was harmless looked
+  harmless. It now carries the dialog's own words, up to 2,000 characters, with credentials and long
+  tokens masked. Covered by tests_decision_reader.py (11 of its 13 checks failed before).
+
+  **「等你決定」的題目改成從畫面整個讀、一個鍵回答。** 手機、Telegram 和桌面共用的讀取器有三個問題，
+  都在真實分頁上量到：選項換到第二行時，上面的選項全部掉了；它讀 40 行捲動歷史、取第一個選單，所以已經
+  答過的選單，或 AI 回覆裡的編號清單，會蓋過畫面上真正的對話框；它回答時送號碼加 Enter，但 Codex 和
+  Claude Code 只要號碼，多的 Enter 會答掉下一題（實測：Codex 的更新選單選了 Skip，接著資料夾信任的提示
+  被那個 Enter 答成接受）。現在只讀看得到的畫面、取最後一個選單；號碼不是 1、2、3… 連下去的清單不算選單；
+  換行的部分接回原本那個選項；只有同一個選單還在時，才在號碼後面補 Enter（[[SF:RED]] 的提問照舊送號碼加
+  Enter）。權限詢問也會帶上它問的完整指令：以前卡片只顯示指令第一行的前 40 個字，而且看不出被截斷，第一行
+  無害的指令看起來就無害；現在帶的是對話框自己的文字，最多 2,000 字，憑證和長 token 會遮掉。由
+  tests_decision_reader.py 守著（改之前 13 項有 11 項失敗）。
+
+- **A long option ends with "…" instead of being cut without a sign.**
+  On the phone, in the chat view and on Telegram, an option was cut at 120 characters with no mark, so
+  an option that always allows a folder could lose the end of its path without anyone seeing it.
+  Credentials are still masked first; a longer option is now cut to 119 characters and "…". Covered by
+  tests_decision_reader.py.
+
+  **太長的選項結尾加「…」，不再無聲截斷。** 手機、對話畫面和 Telegram 上的選項，超過 120 字會直接截掉，
+  沒有任何記號，所以「一律允許某個資料夾」這類選項，路徑後段不見了也看不出來。現在一樣先遮憑證，超過的
+  截成 119 字再加「…」。由 tests_decision_reader.py 守著。
+
+- **A tab whose input box shows only Claude Code's suggestion counts as ready.**
+  In a pane without focus Claude Code draws its cursor as an inverse block over the first character of
+  the dim suggestion. The input-box reader knew only dim text, read that one character as typed, and
+  called the box a draft, so the tab never counted as ready and a bot's opening brief or a memory
+  request waited for good. A lone inverse character among dim ones is now part of the suggestion; typed
+  text, with the cursor after it or on one of its characters, is still a draft. Read on the 31 tabs of a
+  running app: none showed it, and the fixed reader gives the same result for every one. Covered by
+  tests_tab_delivery.py.
+
+  **輸入框只有 Claude Code 建議字的分頁，會算就緒。** 分頁沒有焦點時，Claude Code 會把游標畫成反白方塊，
+  蓋在灰色建議字的第一個字上。輸入框的讀取器只認得灰字，把那一個字當成打進去的字、判成草稿，分頁就一直
+  不算就緒，bot 的開場說明或寫記憶的請求就一直等下去。現在灰字中間只有一個反白字時，算是建議字的一部分；
+  真的打了字，不管游標在字後面還是在某個字上，都還是草稿。在一個正在跑的 App 的 31 個分頁上唯讀量過：沒有
+  一個遇到，修正後的判斷結果也全部一樣。由 tests_tab_delivery.py 守著。
+
+- **A trust question answered by hand no longer keeps a tab from being ready.**
+  After the folder-trust question was answered in the terminal, it scrolled up but stayed within the 40
+  lines of scrollback the startup-dialog check read, so the tab never counted as ready and pasted
+  messages waited for good. The check now reads only what is on screen. Covered by
+  tests_ready_gate_composer.py (the old check fails it).
+
+  **手動回答過的信任提示，不會再讓分頁一直不就緒。** 在終端機回答資料夾信任的提問後，它往上捲，但還在
+  啟動對話框檢查讀的 40 行捲動歷史裡，所以分頁一直不算就緒，貼進去的訊息就一直等。現在檢查只讀畫面上看得
+  到的部分。由 tests_ready_gate_composer.py 守著（舊的寫法會失敗）。
+
+- **A tab named from its first message gets its name, ending on a whole word.**
+  The name comes from a `claude --print` call, which waited 8 seconds. On a Mac whose Claude Code loads
+  hooks and MCP servers first, that call took 12.8 seconds, so the tab kept no name, and keeping it as a
+  bot then failed for want of one. The call now waits 30 seconds on its own thread; a call that gives no
+  name leaves a line in the debug log, without the message; and a name given by hand or by Keep while
+  the call runs is the one that stays. A made name longer than 22 characters was cut mid-word; it now
+  ends on the last whole word, and only a single long word is cut. A call that fails names nothing, so
+  the tab keeps its name (measured while testing this release: logged out, a tab was named "failed to
+  authenticate"). Measured on real tabs: named 13 seconds after the first message. Covered by
+  tests_plan_a_bots.py.
+
+  **用第一則訊息命名的分頁，一定拿得到名字，而且結尾是完整的詞。** 名字是呼叫 `claude --print` 產生的，
+  原本只等 8 秒；在 Claude Code 會先載入 hooks 和 MCP server 的 Mac 上，這個呼叫要 12.8 秒，所以分頁一直
+  沒有名字，要把它記住成 bot 時也會因為沒有名字而失敗。現在在自己的執行緒上最多等 30 秒；沒拿到名字時，
+  debug log 會留一行，不含訊息內容；呼叫進行中如果分頁被手動改名、或用「記住」取了名字，留下的是那個名字。
+  超過 22 個字元的名字以前會從詞的中間切斷，現在切在最後一個完整的詞後面，只有一整個長字時才硬切。呼叫失敗
+  時不取名，分頁保留原本的名字（這版測試時量到：沒登入的電腦上，分頁被命名成「failed to authenticate」）。在
+  真實分頁上量到：第一則訊息後 13 秒取好名字。由 tests_plan_a_bots.py 守著。
+
+- **On Windows, closing a tab no longer leaves every sfctl command hanging.**
+  On a Windows computer, after a tab was closed (it had its chat view open and a question unanswered;
+  which of these matters is not known), the loop that runs sfctl commands stopped: the tab's settings
+  were all written, and then no further command ran, so sfctl and remote commands hung until the app
+  was restarted. No stack was captured. In pywebview 6.2.1's source, WebView2's `evaluate_js` waits for its
+  result on a semaphore with no time limit, and the close ends by calling into the page, which fits
+  what was seen. Calls into the page from a background thread now run on a helper thread and stop waiting after
+  5 seconds, with a line in the debug log; once 4 are stuck, new ones are dropped until one comes back.
+  The main thread calls straight through, and terminal output into the page is never dropped (a dropped
+  push would be text missing from the terminal; at worst it is late, as before). What can be dropped
+  are nudges the page also polls for: the tab list, the bot view, status. The answers to the page's own
+  calls go straight through too: pywebview sends them back the same way, and one dropped left that call
+  waiting for good (measured while testing this release: the tab list stopped following renames, new
+  tabs and closes until the app restarted). Covered by tests_js_guard.py.
+
+  **Windows 上關掉分頁，不會再讓所有 sfctl 指令卡住。** 在一台 Windows 電腦上，關掉一個分頁之後（它開著
+  對話畫面、還有一題沒答；是哪個條件造成的還不知道），處理 sfctl 指令的迴圈就停了：分頁的設定都寫完了，
+  之後就沒有再執行任何指令，sfctl 和遠端指令都卡住，直到 App 重開。當時沒有抓到堆疊。在 pywebview 6.2.1 的
+  原始碼裡，WebView2 的 `evaluate_js` 用沒有時限的 semaphore 等結果，而關閉流程最後會呼叫頁面，這跟看到的情況
+  吻合。現在背景執行緒對頁面的呼叫交給輔助執行緒跑，最多等 5 秒，並在 debug log 留一行；卡住的累積到
+  4 個，就先丟掉新的呼叫，直到有一個回來。主執行緒照舊直接呼叫；終端機輸出永遠不丟（丟了就是終端機少了字，
+  頂多跟以前一樣慢一點）。可能被丟的只有頁面本來就會自己輪詢補回的通知：分頁清單、bot 畫面、狀態。頁面
+  自己呼叫之後的回傳值也一律直接送：pywebview 是走同一條路送回去的，丟掉一個，那次呼叫就永遠等不到（這版
+  測試時量到：分頁清單不再跟著改名、新分頁、關分頁更新，直到 App 重開）。由 tests_js_guard.py 守著。
+
+- **An install keeps ShellBot pinned in the Dock.**
+  install.sh pinned the app by rewriting the Dock's preferences file and then restarting the Dock. That
+  raced two ways: the preferences daemon keeps its own copy of the Dock's settings, and a Dock holding
+  changes it has not saved writes its own state back as it quits. Either could put the old pins back,
+  and nothing said so. The pin now goes through `defaults export` and `defaults import`, as the
+  rename's re-pin does: the app is put first, the Dock restarted and the setting read back, and if the
+  Dock wrote its own pins over it, the second try stops the Dock without letting it save; after three
+  tries it says so. A pin that is already right changes nothing, and the Dock is not restarted. Covered
+  by tests_app_bundle.py, with a stand-in for `defaults` and the Dock throughout.
+
+  **安裝後 ShellBot 會留在 Dock 上。** install.sh 以前是直接改寫 Dock 的設定檔，再重啟 Dock。這有兩種
+  競爭：系統的設定服務自己留著一份 Dock 設定；Dock 結束時，也會把它還沒存的狀態寫回去。兩者都可能把舊的
+  釘選蓋回來，而且什麼都不會說。現在釘選改走 `defaults export` 和 `defaults import`，跟改名時重新釘選用的
+  是同一套：把 App 放在第一個、重啟 Dock、讀回設定確認；如果 Dock 把自己的釘選寫回去，第二次會直接停掉
+  Dock，讓它來不及存；試三次都不行就明講。釘選本來就對時什麼都不改，也不重啟 Dock。由
+  tests_app_bundle.py 守著，全程用假的 `defaults` 和 Dock。
+
+### Internal
+
+- **A trail for when the app goes away without a word.**
+  sf_trail writes how the app started (the program, whether a console is attached, the instance it was
+  restarted from); Windows console events, before Windows acts on them; uncaught exceptions on any
+  thread; faulthandler output into its own file (the last two runs kept, off past 8 MB); the window's
+  closing, closed, shown and page-loaded events and, on Windows, a failed WebView2 process, which
+  pywebview leaves unhandled (that hook is now set up on the window's own thread, so it no longer
+  reports "not watched" at every start); every call from the page into Python, in and out, to a rotated
+  log with the method and tab only, never the arguments; and a line before each quiet exit. Nothing
+  here changes what the app does. Covered by tests_sf_trail.py.
+
+  **App 無聲消失時有跡可循。** sf_trail 會記下：App 怎麼啟動的（哪個程式、有沒有掛在主控台上、從哪個舊
+  程序重啟而來）；Windows 的主控台事件，在 Windows 動手之前先記；任何執行緒上沒接住的例外；faulthandler
+  的輸出寫到自己的檔案（保留最近兩次，超過 8 MB 就關掉）；視窗的關閉中、已關閉、顯示、頁面載入，以及
+  Windows 上 WebView2 程序掛掉，這件事 pywebview 沒有處理（這個監看現在改在視窗自己的執行緒上設定，啟動
+  時不會再寫「沒有監看」）；頁面對 Python 的每一次呼叫，進和出都記到會輪替的 log，只記方法和分頁，不記
+  參數；以及每一次安靜結束前的一行。這些都不會改變 App 的行為。由 tests_sf_trail.py 守著。
+
+- **Tests no longer touch the running app, its settings, the paired phones or the drag pasteboard.**
+  The settings folder is decided in one place; each test process gets a folder of its own, and the app,
+  the Telegram and LINE bridges, the tmux restore and push.json go through it. A test run's sfctl leaves
+  no command for the ShellBot running on the computer (a test's `sfctl notify` had it push to the
+  paired phone), a test logs into its own run's folder instead of the app's debug log and keeps its own
+  A2A log (the suite's refusals had filled half of the real one), and the drop test reads a stand-in
+  drag pasteboard instead of the system's. Covered by tests_config_isolation.py.
+
+  **測試不再碰正在跑的 App、它的設定、配對的手機和拖放剪貼簿。** 設定資料夾只在一個地方決定；每個測試程序
+  有自己的資料夾；App、Telegram 和 LINE 的橋接、tmux 還原和 push.json 都透過它。跑測試時 sfctl 不會把指令
+  丟給這台電腦上正在跑的 ShellBot（以前測試的 `sfctl notify` 會讓它推播到配對的手機）；測試的 log 寫在
+  自己這次執行的資料夾，不寫進 App 的 debug log；A2A 紀錄也用測試自己的（以前真的紀錄有一半是測試寫的拒絕）；拖放的測試讀假的剪貼簿，不讀系統的。由
+  tests_config_isolation.py 守著。
+
+- **Docs.**
+  docs/chat-shell.md (the chat view's rules), docs/bots.md and docs/mobile-link.md (temporary bots,
+  keeping, switching, the fields phones read, push from the computer's side), docs/architecture.md (the
+  new modules) and docs/ai-skill.md (what agents can use in 0.42).
+
+  **文件。** docs/chat-shell.md（對話畫面的規則）、docs/bots.md 和 docs/mobile-link.md（臨時 bot、記住、
+  換 CLI、手機讀的欄位、推播在電腦這一端的做法）、docs/architecture.md（新模組）、docs/ai-skill.md（AI 在
+  0.42 能用的功能）。
+
 ## v0.41.2 (2026-11-11)
 
 ### Fixes

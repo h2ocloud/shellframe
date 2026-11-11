@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellFrame v0.41.0
-   version: 0.41.0
+OK ShellBot v0.42.0
+   version: 0.42.0
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -335,6 +335,9 @@ external. `delegate` to an external bot is refused: it has no tab here.
 | Coordinator role, and headless `worker:<name>` via SSH (`--allow-write`, production stays read-only) | 0.40.1 |
 | `sfctl orphans`: tmux sessions still running with no tab, report only | 0.40.2 |
 | Bots (`experimental_bots`): faces, per-bot memory, primary bot, `sfctl bots`, external bots, `a2a-* --as` | 0.41.0 |
+| Every AI tab is a bot: `kind` (`bot` / `temp` / `terminal`) per tab, `sfctl bots-keep`, `bots-set` (another CLI or model, `--now`), `bots-rename`, `bots-migrate`; one name resolver for `send` / `peek` / `close` / `rename` / `state`, delegate and A2A, a bot's former names included | 0.42.0 |
+| Chat view (`ui_style`); "waiting on you" read from the visible screen and answered with the number alone; a menu decision's `detail`; in `conversation`, a turn ShellBot typed in for another agent or for Telegram carries `from` | 0.42.0 |
+| Push to paired phones: `sfctl push-setup` (needs an APNs key) / `push-status`; `sfctl notify` reaches the phones too | 0.42.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
