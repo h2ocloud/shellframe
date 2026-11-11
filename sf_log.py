@@ -17,7 +17,21 @@ IS_WIN = sys.platform == "win32"
 # Cross-platform temp dir — keep /tmp on Unix for continuity with existing
 # installs, fall back to %TEMP% on Windows
 TMP_DIR = Path("/tmp") if not IS_WIN else Path(_tempfile.gettempdir())
-DEBUG_LOG = str(TMP_DIR / "shellframe_debug.log")
+
+
+def _debug_log_path() -> str:
+    """The app's log; a test process writes its own, in its run's folder (run_tests.sh
+    removes it), so a test's lines never land in the log of the ShellBot running on that
+    computer, where they read as the app's own (an unreadable config, a Traceback)."""
+    import sf_config
+    if sf_config._running_tests():
+        root = os.environ.get("SHELLFRAME_TEST_ROOT")
+        return str(Path(root) / f"shellframe_debug-{os.getpid()}.log") if root \
+            else str(Path(_tempfile.gettempdir()) / "shellframe_debug-tests.log")
+    return str(TMP_DIR / "shellframe_debug.log")
+
+
+DEBUG_LOG = _debug_log_path()
 
 _LOG_MAX_BYTES = 1 * 1024 * 1024  # 1MB — auto-truncate to prevent unbounded growth
 

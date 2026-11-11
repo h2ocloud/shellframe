@@ -69,6 +69,29 @@ for p in sorted(HERE.glob("*.py")):
             offenders.append(f"{p.name}:{n}")
 check("no module spells out config.json's path itself", not offenders, offenders)
 
+# Push and the debug log: measured before, every run of the suite sent a dozen notices to
+# Apple with this computer's key and phone (sf_push read the real push.json), and wrote the
+# tests' lines (an "unreadable config.json", the paths on the real drag pasteboard) into the
+# log of the ShellBot running on it.
+import sf_log  # noqa: E402
+import sf_push  # noqa: E402
+os.environ.pop(sf_push.PATH_ENV, None)
+check("push.json is the test's own, not this computer's", Path(sf_push.config_path()).parent == here
+      and not Path(sf_push.config_path()).is_relative_to(REAL), sf_push.config_path())
+check("…so nothing is configured and nothing is pushed", sf_push.load().get("key_path") in (None, ""))
+check("the debug log is the test's own, not the running app's",
+      Path(sf_log.DEBUG_LOG) != sf_log.TMP_DIR / "shellframe_debug.log", sf_log.DEBUG_LOG)
+import sfctl  # noqa: E402
+os.environ["SHELLFRAME_TESTS"] = "1"
+before = set(os.listdir(sfctl.CMD_DIR)) if os.path.isdir(sfctl.CMD_DIR) else set()
+sfctl._rpc_nowait("push_notify", {"message": "from a test"})
+after = set(os.listdir(sfctl.CMD_DIR)) if os.path.isdir(sfctl.CMD_DIR) else set()
+check("a test's sfctl leaves no command for the running app", after - before == set(), after - before)
+check("…and asks it nothing", sfctl._rpc("version", timeout=1).get("success") is False)
+drop = (HERE / "tests_drop_paths.py").read_text(encoding="utf-8")
+check("tests_drop_paths.py reads a stand-in drag pasteboard, not this computer's",
+      drop.count('_patch.dict(sys.modules, {"AppKit": FAKE_APPKIT})') == 2)
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

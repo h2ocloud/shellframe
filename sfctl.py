@@ -43,10 +43,18 @@ PID_FILE = os.path.join(_TMP, "shellframe.pid")
 TMUX_TCC_STATE = os.path.expanduser("~/.config/shellframe/tmux_tcc.json")
 
 
+def _tests_running() -> bool:
+    """run_tests.sh's runs never reach the ShellBot running on this computer: the command
+    files are shared, and a test's `sfctl notify` was a real notice to its phones."""
+    return os.environ.get("SHELLFRAME_TESTS") == "1"
+
+
 def _rpc_nowait(cmd: str, args: dict = None):
     """Leave a command for the app and return at once, for a best-effort call whose answer
     nobody needs. A running app takes it within half a second; one that is not running
     ignores it later as stale (over 30 s). Same file IPC as _rpc (and sf_agent_hook)."""
+    if _tests_running():
+        return
     request_id = f"{os.getpid()}-{int(time.time() * 1000)}-nw"
     payload = {"cmd": cmd, "args": args or {}, "ts": time.time(), "request_id": request_id,
                "result_file": os.path.join(_TMP, "shellframe_result_nowait.json")}
@@ -59,6 +67,8 @@ def _rpc_nowait(cmd: str, args: dict = None):
 
 def _rpc(cmd: str, args: dict = None, timeout: float = 15.0):
     """Send cmd to main.py via file IPC. Returns result dict."""
+    if _tests_running():
+        return {"success": False, "message": "A test run does not talk to the running ShellBot"}
     request_id = f"{os.getpid()}-{int(time.time() * 1000)}"
     result_file = os.path.join(_TMP, f"shellframe_result_{request_id}.json")
     if os.path.exists(result_file):

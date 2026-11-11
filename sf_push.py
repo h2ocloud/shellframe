@@ -73,7 +73,13 @@ _tools = {}
 
 # ── the file ────────────────────────────────────────────────────────────────
 def config_path() -> str:
-    return os.path.expanduser(os.environ.get(PATH_ENV) or CONFIG_PATH)
+    """SHELLFRAME_PUSH_FILE, else push.json in the folder sf_config decides: a test process
+    gets a folder of its own, so no test pushes with this computer's key to its phones."""
+    env = os.environ.get(PATH_ENV)
+    if env:
+        return os.path.expanduser(env)
+    import sf_config
+    return str(sf_config.config_dir() / "push.json")
 
 
 def load() -> dict:

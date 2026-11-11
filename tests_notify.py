@@ -741,7 +741,8 @@ def make_home(cfg=None, mode=0o600):
 
 def sfctl(args, home, env_extra=None):
     env = {k: v for k, v in os.environ.items() if k not in ("SF_SID", N.ENV_URL, N.ENV_AUTH)}
-    env.update({"HOME": home, "USERPROFILE": home, "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"})
+    env.update({"HOME": home, "USERPROFILE": home, "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost",
+                "SHELLFRAME_TESTS": "1"})          # never the running app: its push hand-off reached the real phones
     env.update(env_extra or {})
     p = subprocess.run([sys.executable, str(HERE / "sfctl.py"), "notify", *args],
                        capture_output=True, text=True, env=env, cwd=str(HERE), timeout=60)

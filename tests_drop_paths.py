@@ -47,14 +47,43 @@ check("空輸入回空 list", json.loads(api.paths_exist("")) == [])
 
 os.unlink(real)
 
-# drag_pasteboard_paths：非 darwin 回空；darwin 回 JSON list（內容依當下
-# pasteboard，不驗值只驗形狀與不炸）
+# drag_pasteboard_paths：非 darwin 回空；darwin 讀 drag pasteboard。測試用假的
+# pasteboard（示範資料），不讀這台電腦真的那塊：它留著使用者上一次拖曳的檔案路徑。
+import types as _types
 from unittest.mock import patch as _patch
+
+
+class _Item:
+    def __init__(self, url):
+        self.url = url
+
+    def stringForType_(self, kind):
+        return self.url if kind == "public.file-url" else None
+
+
+class _Board:
+    def __init__(self, urls, change):
+        self.urls, self.change = urls, change
+
+    def pasteboardItems(self):
+        return [_Item(u) for u in self.urls]
+
+    def changeCount(self):
+        return self.change
+
+
+BOARD = _Board(["file:///tmp/demo/%E7%B0%A1%E5%A0%B1.pptx", "file:///tmp/demo/notes.md"], 7)
+if sys.platform == "darwin":
+    import Foundation  # noqa: E402,F401  loaded first: patch.dict drops what it sees loaded, and pyobjc cannot load twice
+FAKE_APPKIT = _types.SimpleNamespace(NSPasteboard=_types.SimpleNamespace(
+    pasteboardWithName_=lambda name: BOARD if name == "Apple CFPasteboard drag" else None))
 with _patch("sys.platform", "linux"):
     check("非 darwin 回空 list", json.loads(api.drag_pasteboard_paths()) == [])
 if sys.platform == "darwin":
-    r = json.loads(api.drag_pasteboard_paths())
-    check("darwin 回 JSON list 不炸", isinstance(r, list))
+    with _patch.dict(sys.modules, {"AppKit": FAKE_APPKIT}):
+        r = json.loads(api.drag_pasteboard_paths())
+    check("darwin 讀 drag pasteboard 的檔案 URL，解回真實路徑（含 CJK）",
+          r == ["/tmp/demo/簡報.pptx", "/tmp/demo/notes.md"])
 
 # drag_pasteboard_snapshot：多帶 changeCount。drag pasteboard 會留著上一次拖曳
 # 的內容（實測沒有拖曳進行中仍讀得到十分鐘前那個檔案），前端要靠 changeCount
@@ -63,13 +92,13 @@ with _patch("sys.platform", "linux"):
     r = json.loads(api.drag_pasteboard_snapshot())
     check("非 darwin snapshot 回 paths=[] change=-1", r == {"paths": [], "change": -1})
 if sys.platform == "darwin":
-    r = json.loads(api.drag_pasteboard_snapshot())
-    check("darwin snapshot 形狀正確",
-          isinstance(r.get("paths"), list) and isinstance(r.get("change"), int))
-    check("snapshot 與 paths 版路徑一致",
-          r["paths"] == json.loads(api.drag_pasteboard_paths()))
-    check("changeCount 連兩次讀相同（沒人寫入就不遞增）",
-          json.loads(api.drag_pasteboard_snapshot())["change"] == r["change"])
+    with _patch.dict(sys.modules, {"AppKit": FAKE_APPKIT}):
+        r = json.loads(api.drag_pasteboard_snapshot())
+        same_paths = json.loads(api.drag_pasteboard_paths())
+        again = json.loads(api.drag_pasteboard_snapshot())
+    check("darwin snapshot 帶路徑和 changeCount", r == {"paths": ["/tmp/demo/簡報.pptx", "/tmp/demo/notes.md"], "change": 7})
+    check("snapshot 與 paths 版路徑一致", r["paths"] == same_paths)
+    check("changeCount 連兩次讀相同（沒人寫入就不遞增）", again["change"] == r["change"])
     check("drag_mark 不炸（非 darwin 回 skip）", api.drag_mark() in ("ok", "already"))
 
 print(f"\nResults: {passed} passed, {failed} failed")
