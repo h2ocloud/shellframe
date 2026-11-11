@@ -719,9 +719,17 @@
         if (!document.querySelector('.modal-overlay.open')) input.focus();
       } else if (was && local && moveFocus) {
         try { host().fitTerm && host().fitTerm(sid); } catch (_) {}
-        try { s.term.focus(); } catch (_) {}
+        focusTerminal(sid, s);
       }
     }
+  }
+  // The terminal is redrawn as the view goes (fitTerm hides its screen for a frame), and a
+  // hidden textarea takes no focus: the keys went nowhere. Focus it now and again once the
+  // redraw is done, unless the person has moved on by then.
+  function focusTerminal(sid, s) {
+    const go = () => { if (!covers() && activeSid() === sid) { try { s.term.focus(); } catch (_) {} } };
+    go();
+    requestAnimationFrame(() => requestAnimationFrame(go));
   }
   function renderSwitch(sid, local) {
     if (!sw) return;
