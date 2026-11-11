@@ -336,6 +336,24 @@ page = re.search(r"const CHAT_PROVIDERS = \[([^\]]*)\]", src)
 check("the providers the page draws are the backend's", page is not None
       and [x.strip(" '") for x in page.group(1).split(",")] == list(api_chat.CHAT_PROVIDERS), page and page.group(1))
 
+print("the A2A header as agent_link writes it: the bubble shows the message and who sent it")
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import agent_link  # noqa: E402
+node = shutil.which("node")
+if not node:
+    print("  SKIP  no node: web/chat.js's userView not run on the real headers")
+else:
+    for lang in ("zh", "en"):
+        for what, text in (("message", agent_link.format_delivery("研究", "資料整理好了", lang=lang)),
+                           ("hand-off", agent_link.format_handoff("研究", "資料整理好了", "h1", lang=lang))):
+            out = subprocess.run([node, "-e", "const R = require(process.argv[1]); "
+                                  "console.log(JSON.stringify(R.userView(process.argv[2])))",
+                                  str(HERE / "web" / "chat.js"), text], capture_output=True, text=True, timeout=20)
+            got = json.loads(out.stdout or "{}")
+            check(f"{lang} {what}: only the words in the bubble, the sender in its tag",
+                  got.get("text") == "資料整理好了" and (got.get("tags") or [{}])[0].get("who") == "研究", (out.stderr, got))
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

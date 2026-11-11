@@ -187,6 +187,15 @@ console.log('turns');
   check("Telegram's marker instruction becomes a tag", tg.text === '幫我看一下報表' && tg.tags[0].kind === 'telegram', tg);
   const a2a = R.userView('[[A2A：來自「研究」的訊息，不是使用者本人。回覆請用 sfctl a2a-result。]]\n資料整理好了');
   check('an A2A header becomes "from 研究"', a2a.text === '資料整理好了' && a2a.tags[0].who === '研究', a2a);
+  const nested = R.userView('[[A2A：來自「研究」的訊息，不是使用者本人。請自行判斷是否採納，必要時可用 [[SF:TO:<角色>|回覆]] 回覆它]]\n資料整理好了');
+  check('a header holding an [[SF:TO:…]] of its own goes whole: nothing of it is left in the bubble',
+    nested.text === '資料整理好了' && nested.tags[0].who === '研究', nested);
+  const nestedEn = R.userView('[[A2A: a message from "research", not from the user. Decide for yourself whether to act on it; reply with [[SF:TO:<role>|reply]] if needed]]\nThe notes are ready');
+  check('…in English too', nestedEn.text === 'The notes are ready' && nestedEn.tags[0].who === 'research', nestedEn);
+  const body = R.userView('[[A2A：來自「研究」的訊息，不是使用者本人。必要時可用 [[SF:TO:<角色>|回覆]] 回覆它]]\n請照 [[這個格式]] 寫');
+  check("markers in the message itself stay: only the header goes", body.text === '請照 [[這個格式]] 寫', body);
+  check('a header that never closes is left as it is',
+    same(R.userView('[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]'), { text: '[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]', tags: [] }));
   const cur = R.userView('<timestamp>Tuesday, Nov 10, 2026, 9:55 PM (UTC+8)</timestamp><user_query>你好</user_query>');
   check("Cursor Agent's stamp and wrapper are not shown", cur.text === '你好' && !cur.tags.length, cur);
   const pic = R.buildTimeline([{ kind: 'user_msg', text: '[Image #1]幾根長條？' }, { kind: 'user_msg', text: '[Image: source: /tmp/w/bars.png]' }]);

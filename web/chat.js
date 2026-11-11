@@ -267,15 +267,30 @@
   const CODEX_CONTEXT = /^\s*(?:<environment_context>|<user_instructions>|<permissions instructions>|# AGENTS\.md instructions)/;
   const RED_MARK = /^[\s>❯›⏺•*-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?\]\]\s*$/i;     // bridge_home._RED_LINE
 
+  // The [[A2A…]] header an agent message starts with (agent_link.format_delivery /
+  // format_handoff). It can hold a [[SF:TO:…]] of its own, so it ends at the ]] that
+  // closes its own [[, not at the first one. null when there is none, or it never closes.
+  function a2aHeader(t) {
+    const open = t.match(/^\s*\[\[A2A[:：]/);
+    if (!open) return null;
+    let depth = 1, i = open[0].length;
+    while (i < t.length && depth) {
+      if (t.startsWith('[[', i)) { depth++; i += 2; } else if (t.startsWith(']]', i)) { depth--; i += 2; } else i++;
+    }
+    if (depth) return null;
+    const rest = t.slice(i).replace(/^\s+/, '');
+    return { inner: t.slice(open[0].length, i - 2), length: t.length - rest.length };
+  }
+
   // A user turn: the words, minus what ShellBot itself put around them.
   function userView(text) {
     let t = String(text || '');
     const tags = [];
-    const a2a = t.match(/^\s*\[\[A2A[:：]([\s\S]*?)\]\]\s*/);
+    const a2a = a2aHeader(t);
     if (a2a) {
-      const who = a2a[1].match(/「([^」]+)」|"([^"]+)"/) || [];
+      const who = a2a.inner.match(/「([^」]+)」|"([^"]+)"/) || [];
       tags.push({ kind: 'a2a', who: who[1] || who[2] || '' });
-      t = t.slice(a2a[0].length);
+      t = t.slice(a2a.length);
     }
     // Cursor Agent stores a prompt stamped and wrapped: <timestamp>…</timestamp><user_query>…</user_query>
     t = t.replace(/^\s*<timestamp>[^<]*<\/timestamp>\s*/i, '');
