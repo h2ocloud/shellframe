@@ -10,6 +10,7 @@ the switch button; a redraw while the terminal had focus also took its focus awa
   - the switch button, while the terminal is being redrawn: the same
   - ⌘⇧M there and back while it is being redrawn: the same
   - the terminal keeps its focus through a redraw of its own
+Run in Chromium, and in WebKit (the Mac app's engine) when playwright has it installed.
 Demo data only. Needs playwright; SKIP without it. Run: .venv/bin/python tests_chat_switch_focus.py
 """
 import json
@@ -70,8 +71,8 @@ REDRAW_THEN = ("(what) => { window.__sfHost.fitTerm('s501'); requestAnimationFra
                " if (what === 'button') document.querySelector('#chat-switch button[data-mode=\"cli\"]').click();"
                " else window.SFChat.setMode('s501', what); }); }")
 
-with sync_playwright() as pw:
-    browser = pw.chromium.launch()
+
+def run(browser, engine):
     page = browser.new_page(viewport={"width": 1100, "height": 800})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -93,14 +94,14 @@ with sync_playwright() as pw:
         page.wait_for_function(SHOWN)
         page.wait_for_timeout(300)
 
-    print("1. the switch button, the page still")
+    print(f"[{engine}] 1. the switch button, the page still")
     page.locator('#chat-switch button[data-mode="cli"]').click()
     page.wait_for_function(HIDDEN)
     page.wait_for_timeout(200)
     check("the terminal has the focus", focused())
     check("the keys reach the CLI", typed("abc") == 3)
 
-    print("2. the switch button while the terminal is being redrawn")
+    print(f"[{engine}] 2. the switch button while the terminal is being redrawn")
     back_to_chat()
     page.evaluate(REDRAW_THEN, "button")
     page.wait_for_function(HIDDEN)
@@ -110,7 +111,7 @@ with sync_playwright() as pw:
     check("the terminal has the focus once the redraw is done", focused())
     check("the keys reach the CLI", typed("xyz") == 3)
 
-    print("3. ⌘⇧M back to the terminal while it is being redrawn (setMode, what the shortcut calls)")
+    print(f"[{engine}] 3. ⌘⇧M back to the terminal while it is being redrawn (setMode, what the shortcut calls)")
     back_to_chat()
     page.evaluate(REDRAW_THEN, "cli")
     page.wait_for_function(HIDDEN)
@@ -118,13 +119,25 @@ with sync_playwright() as pw:
     check("the terminal has the focus", focused())
     check("the keys reach the CLI", typed("123") == 3)
 
-    print("4. a redraw of the terminal itself")
+    print(f"[{engine}] 4. a redraw of the terminal itself")
     page.evaluate("window.__sfHost.fitTerm('s501')")
     page.wait_for_timeout(200)
     check("the terminal keeps its focus", focused())
     check("the keys still reach the CLI", typed("ok") == 2)
     check("no page errors", not errors, errors)
-    browser.close()
+
+
+with sync_playwright() as pw:
+    for engine in ("chromium", "webkit"):
+        try:
+            browser = getattr(pw, engine).launch()
+        except Exception as e:                       # webkit is optional: `playwright install webkit`
+            print(f"SKIP  {engine}: {str(e).splitlines()[0][:80]}")
+            continue
+        try:
+            run(browser, engine)
+        finally:
+            browser.close()
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:
