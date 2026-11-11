@@ -42,9 +42,10 @@ import uuid
 from pathlib import Path
 
 import a2a_ssh
+import sf_config
 import sf_lang
 
-STATE_DIR = Path.home() / ".local" / "state" / "shellframe"
+STATE_DIR = sf_config.state_dir()
 LOG_FILE = STATE_DIR / "agent_link.json"
 
 MAX_DEPTH = 4            # hops in one causal chain before it is cut

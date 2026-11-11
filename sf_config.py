@@ -44,3 +44,12 @@ def config_dir() -> Path:
 
 def config_file() -> Path:
     return config_dir() / "config.json"
+
+
+def state_dir() -> Path:
+    """~/.local/state/shellframe: what the app keeps between runs (the A2A log, handoffs). A test
+    gets a folder inside its own config folder: the suite wrote its refusals into the real A2A
+    log, where `sfctl a2a-log` showed them as the app's own."""
+    if _running_tests():
+        return config_dir() / "state"
+    return Path.home() / ".local" / "state" / "shellframe"

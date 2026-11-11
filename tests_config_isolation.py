@@ -81,6 +81,10 @@ check("push.json is the test's own, not this computer's", Path(sf_push.config_pa
 check("…so nothing is configured and nothing is pushed", sf_push.load().get("key_path") in (None, ""))
 check("the debug log is the test's own, not the running app's",
       Path(sf_log.DEBUG_LOG) != sf_log.TMP_DIR / "shellframe_debug.log", sf_log.DEBUG_LOG)
+# The A2A log too: the suite's "refused … stopped by the test" filled half of the real one.
+import agent_link  # noqa: E402
+check("the A2A log is the test's own, not the running app's",
+      not Path(agent_link.LOG_FILE).is_relative_to(Path.home() / ".local" / "state"), agent_link.LOG_FILE)
 import sfctl  # noqa: E402
 os.environ["SHELLFRAME_TESTS"] = "1"
 before = set(os.listdir(sfctl.CMD_DIR)) if os.path.isdir(sfctl.CMD_DIR) else set()
