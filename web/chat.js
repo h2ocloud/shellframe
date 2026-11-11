@@ -231,10 +231,21 @@
   // ── rules: a tab's command ───────────────────────────────────────────────
   // Which CLI a launch command runs, before chat_view has said (only so a bash tab does
   // not flash the chat view; the backend's answer replaces it).
+  // The program it starts: past `cd … &&`, VAR=… and env with its options
+  // (`env -u CLAUDE_CONFIG_DIR claude --resume …` starts claude).
+  function launched(cmd) {
+    const words = String(cmd || '').split(/&&|;/).pop().trim().split(/\s+/);
+    let i = 0;
+    for (let env = false; i < words.length; i++) {
+      const w = words[i];
+      if (/(^|\/)env$/.test(w)) env = true;
+      else if (env && /^(-[uCPS]|--unset|--chdir)$/.test(w)) i++;      // its value is the next word
+      else if (!(env && w.startsWith('-')) && !/^\w+=/.test(w)) break;
+    }
+    return (words[i] || '').split(/[\\/]/).pop().replace(/\.(cmd|exe|ps1)$/i, '').toLowerCase();
+  }
   function guessProvider(cmd) {
-    const tail = String(cmd || '').split(/&&|;/).pop().trim();
-    const first = tail.split(/\s+/).find(w => !/^\w+=/.test(w) && w !== 'env') || '';
-    const base = first.split(/[\\/]/).pop().replace(/\.(cmd|exe|ps1)$/i, '').toLowerCase();
+    const base = launched(cmd);
     if (/claude/.test(base)) return 'claude';
     if (/codex/.test(base)) return 'codex';
     if (base === 'cursor-agent') return 'cursor';
@@ -247,9 +258,7 @@
   function commandNamed(label, cmd) {
     const l = String(label || '').trim().toLowerCase();
     if (!l) return true;
-    const tail = String(cmd || '').split(/&&|;/).pop().trim();
-    const first = (tail.split(/\s+/).find(w => !/^\w+=/.test(w) && w !== 'env') || '')
-      .split(/[\\/]/).pop().replace(/\.(cmd|exe|ps1)$/i, '').toLowerCase();
+    const first = launched(cmd);
     return l === first || l === guessProvider(cmd) || (SHELLS.has(l) && SHELLS.has(first));
   }
   function plainName(cmd, zh) {
@@ -699,7 +708,8 @@
     const local = !!s && !s.isRemote;
     const want = local && modeOf(sid) === 'chat';
     const show = want && chatCapable(sid);
-    if (want && !show && !view(sid).provider) refresh(sid, true);
+    // the guess only says no: ask the server once, or the Chat button stays greyed for good
+    if (local && !chatCapable(sid) && !view(sid).provider) refresh(sid, true);
     document.body.classList.toggle('sf-chat-style', globalStyle() === 'chat');
     document.body.classList.toggle('sf-chat-shown', show);
     const was = shownFor;

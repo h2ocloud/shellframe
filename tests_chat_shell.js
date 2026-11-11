@@ -151,7 +151,12 @@ console.log('the other CLIs: their tool names, and tabs named after a command');
   check('which CLI a command runs, past cd … && and VAR=…', ['claude', 'codex', 'pi', 'opencode', 'cursor', 'agy', 'grok', 'zsh']
     .every((want, i) => R.guessProvider(['claude --model haiku', 'cd /w && codex --full-auto', 'cd /w; pi', 'OPENAI=x opencode',
                                          '/usr/local/bin/cursor-agent', 'env FOO=1 agy', 'grok', 'zsh'][i]) === want));
+  // reported: a tab started as `env -u CLAUDE_CONFIG_DIR claude --resume …` read as "-u", its Chat button greyed for good
+  check('…past env and its options', ['claude', 'codex', 'claude', 'pi'].every((want, i) => R.guessProvider([
+    'env -u CLAUDE_CONFIG_DIR claude --resume 0e1f', '/usr/bin/env -i HOME=/h codex', 'env --unset CLAUDE_CONFIG_DIR -- claude',
+    'cd /w && env -C /w pi'][i]) === want), ['env -u X claude', '/usr/bin/env -i HOME=/h codex'].map(R.guessProvider));
   check('a tab named after its command is renamed for display', R.commandNamed('claude', 'claude --model haiku')
+    && R.commandNamed('claude', 'env -u CLAUDE_CONFIG_DIR claude --resume 0e1f')
     && R.commandNamed('Claude', 'claude') && R.commandNamed('codex', 'cd /w && codex') && R.commandNamed('bash', 'zsh')
     && R.commandNamed('', 'pi'));
   check('…a name someone gave it is kept', !R.commandNamed('週報小幫手', 'claude') && !R.commandNamed('dev server', 'zsh')
