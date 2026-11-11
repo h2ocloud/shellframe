@@ -124,6 +124,20 @@ def run(browser, engine):
     page.wait_for_timeout(200)
     check("the terminal keeps its focus", focused())
     check("the keys still reach the CLI", typed("ok") == 2)
+
+    print(f"[{engine}] 5. a dialog opened during a redraw keeps the keyboard")
+    # the dialog opens between the redraw's two frames: after it noted the terminal's focus, before it gives it back
+    page.evaluate("() => { window.__sfHost.fitTerm('s501'); requestAnimationFrame(() => window.__sfHost.renameSession('s501')); }")
+    page.wait_for_timeout(300)
+    check("the dialog's box still has the focus once the redraw is done",
+          page.evaluate("document.activeElement && document.activeElement.id") == "rename-input",
+          page.evaluate("document.activeElement && (document.activeElement.id || document.activeElement.className)"))
+    before = writes()
+    page.keyboard.type("xy")
+    page.wait_for_timeout(200)
+    check("…the keys go into the dialog, not to the CLI", writes() == before and page.input_value("#rename-input") == "xy",
+          (writes() - before, page.input_value("#rename-input")))
+    page.keyboard.press("Escape")
     check("no page errors", not errors, errors)
 
 

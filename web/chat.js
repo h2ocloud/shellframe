@@ -725,9 +725,14 @@
   }
   // The terminal is redrawn as the view goes (fitTerm hides its screen for a frame), and a
   // hidden textarea takes no focus: the keys went nowhere. Focus it now and again once the
-  // redraw is done, unless the person has moved on by then.
+  // redraw is done, unless the person has moved on by then (another tab, the view back, or
+  // focus somewhere of its own, a dialog say: only nowhere or the switch itself is ours).
   function focusTerminal(sid, s) {
-    const go = () => { if (!covers() && activeSid() === sid) { try { s.term.focus(); } catch (_) {} } };
+    const go = () => {
+      const el = document.activeElement;
+      const loose = !el || el === document.body || !!(el.closest && el.closest('#chat-switch'));
+      if (!covers() && activeSid() === sid && loose) { try { s.term.focus(); } catch (_) {} }
+    };
     go();
     requestAnimationFrame(() => requestAnimationFrame(go));
   }

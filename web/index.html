@@ -2275,7 +2275,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
 
       // Restore paint on next frame (after scroll position is settled)
-      requestAnimationFrame(() => { if (screen) screen.style.visibility = ''; if (hadFocus && activeId === sid) s.term.focus(); });
+      requestAnimationFrame(() => { if (screen) screen.style.visibility = '';                // focus the hide dropped, not one taken since
+        if (hadFocus && activeId === sid && (!document.activeElement || document.activeElement === document.body)) s.term.focus(); });
 
       pywebview.api.resize(sid, s.term.cols, s.term.rows);
     });

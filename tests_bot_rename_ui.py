@@ -128,17 +128,20 @@ with sync_playwright() as pw:
         return page.evaluate(f"window.__sfHost.sessions()['{sid}'].label")
 
     print("1. a bot's tab, from the rename dialog")
+    # The question, cancelled: asked of bots.js the way the dialog asks it (the dialog's own
+    # hand-off is checked below, confirmed; one whole-suite run lost the first dialog's click).
     page.evaluate("window.__answer = false")
-    rename_in_dialog("s301", "秘書")
-    wait("window.__asked.length >= 1", "the question")
-    check("it asks first, naming the bot and the new name, and says what stays",
-          len(page.evaluate("window.__asked")) == 1 and "助理" in page.evaluate("window.__asked[0]")
+    handled = page.evaluate("window.SFBots.renameBotTab('s301', '秘書')")
+    check("a bot's tab is bots.js's to rename: it asks first, naming the bot and the new name, and says what stays",
+          handled is True and len(page.evaluate("window.__asked")) == 1 and "助理" in page.evaluate("window.__asked[0]")
           and "秘書" in page.evaluate("window.__asked[0]") and "記憶" in page.evaluate("window.__asked[0]"),
           page.evaluate("window.__asked"))
     check("cancelled: nothing is sent and the tab keeps its name", calls("rename_session") == [] and label("s301") == "助理")
     page.evaluate("window.__answer = true")
     rename_in_dialog("s301", "秘書")
     wait("window.__sfHost.sessions()['s301'].label === '秘書'", "the tab's new name")
+    check("the dialog hands a bot's tab to that question (asked once more), confirmed",
+          len(page.evaluate("window.__asked")) == 2, page.evaluate("window.__asked"))
     check("confirmed: the page asks the app to rename the tab, by hand", calls("rename_session") == [["s301", "秘書", True]],
           calls("rename_session"))
     page.evaluate("window.SFBots.refresh(true)")
