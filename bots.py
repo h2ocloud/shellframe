@@ -264,6 +264,74 @@ def label_of(role, entry) -> str:
     return str((entry or {}).get("label") or role)
 
 
+# ── renaming a bot ─────────────────────────────────────────────────────────
+def former_names(entry) -> list:
+    """The names a bot had before it was renamed. They still reach it (bot_names.resolve,
+    so A2A to an old name gets there) and no other bot may take them."""
+    return [str(n) for n in ((entry or {}).get("former_names") or []) if str(n).strip()]
+
+
+def rename_in_config(cfg: dict, old: str, new: str) -> list:
+    """Bot `old` is called `new` everywhere the config keeps a bot's name: its roster key
+    (in its place in the order) and label, the tabs bound to it, the groups it is in and
+    idle_reaper's keep list. The old name and label join its former names. Returns them."""
+    roster = cfg.get("agent_roster") or {}
+    entry = roster[old]
+    old_label = label_of(old, entry)
+    formers, seen = [], {new.casefold()}
+    for n in former_names(entry) + [old, old_label]:
+        if n.casefold() not in seen:
+            seen.add(n.casefold())
+            formers.append(n)
+    entry["label"] = new
+    entry["former_names"] = formers
+    cfg["agent_roster"] = {(new if r == old else r): e for r, e in roster.items()}
+    for row in (cfg.get("bots_sessions") or {}).values():
+        if isinstance(row, dict) and row.get("bot") == old:
+            row["bot"] = new
+    for g in (cfg.get("groups") or {}).values():
+        if isinstance(g, dict) and isinstance(g.get("roles"), list):
+            g["roles"] = [new if r == old else r for r in g["roles"]]
+    reaper = cfg.get("idle_reaper")
+    if isinstance(reaper, dict) and isinstance(reaper.get("keep_labels"), list):
+        olds = {old.casefold(), old_label.casefold()}
+        reaper["keep_labels"] = [new if str(x).casefold() in olds else x for x in reaper["keep_labels"]]
+    return formers
+
+
+def move_dir(old, new) -> str:
+    """The bot's memory folder renamed with the bot. "" when moved or nothing to move;
+    "folder_taken" when another folder already has the new name. A link is left at the old
+    path (and links an earlier rename left are pointed on), so a bot still awake that
+    writes where its brief said lands in the new folder. No link on Windows, where one
+    needs rights a user may not have."""
+    src, dst = bot_dir(old), bot_dir(new)
+    if src == dst or not src.is_dir() or src.is_symlink():
+        return ""
+    if dst.exists() or dst.is_symlink():
+        if dst.is_symlink() and dst.resolve() == src.resolve():
+            dst.unlink()                           # back to a name it had: the link it left goes
+        elif dst.exists() and not dst.is_symlink() and os.path.samefile(src, dst):
+            pass                                   # only the case changes, on a disk that ignores case
+        elif dst.is_dir() and not dst.is_symlink() and not any(dst.iterdir()):
+            dst.rmdir()
+        else:
+            return "folder_taken"
+    os.rename(src, dst)
+    if os.name == "nt":
+        return ""
+    for link in memory_root().iterdir():
+        if link.is_symlink() and os.readlink(link) == src.name:
+            link.unlink()
+            os.symlink(dst.name, link)
+    if src.name.casefold() != dst.name.casefold():
+        try:
+            os.symlink(dst.name, src)
+        except OSError:
+            pass
+    return ""
+
+
 # ── what the UI may see ────────────────────────────────────────────────────
 def mask_url(url) -> str:
     m = re.match(r"^(https?://)([^/\s?#@]*@)?([^/\s?#]+)(.*)$", str(url or ""))

@@ -29,6 +29,18 @@
   Next wake, or now (an awake bot writes its memory and closes first). Pi and
   Antigravity pick their model inside them, so no model is pinned for them.
 - A bot or a tab is addressed by name everywhere (`bot_names.py`); `/N` is unchanged.
+- Renaming (`bots_rename`, `sfctl bots-rename`, the editor's name, and renaming a bot's
+  tab anywhere: the tab's rename dialog, `sfctl rename`, a phone's `/link/rename`): one
+  bot has one name, so renaming a tab bound to a bot renames the bot (the dialog and the
+  editor ask first). One path for all of them (`api_bots._bots_rename`): the roster key
+  (in its place) and label, the tabs bound to it, its groups, the idle reaper's keep list
+  and its memory folder take the new name (`bots.rename_in_config`, `bots.move_dir`; a link
+  is left at the old folder's path, not on Windows). The old name and label go into the
+  bot's `former_names`: A2A, `[[SF:TO:…]]`, delegate and sfctl still reach it by them
+  (`bot_names` step 4), and no other bot can take them; the bot itself can go back to one.
+  Refused: a name another bot has or had, `/` or `:`, a bot outside ShellBot (named where
+  it lives), a bot writing its memory, a folder already there with the new name. A
+  temporary bot's or a terminal's rename changes only the title.
 
 ## What it is
 

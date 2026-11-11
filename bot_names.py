@@ -5,7 +5,8 @@ in the order the steps win:
   1. a tab id: s12;
   2. a bot's name, which is its roster key: any case;
   3. a tab's title: any case;
-  4. an alias (AGENT_ROLE_ALIASES) or a bot's old label ("研究-CLD"): any case;
+  4. an alias (AGENT_ROLE_ALIASES), a bot's old label ("研究-CLD") or a name it had before it
+     was renamed (former_names): any case;
   5. the start of exactly one of the names above.
 Two matches at the step that decides is an error that lists them; nothing is guessed from
 the middle of a name. (The old last step looked for the name inside every role's key and
@@ -29,6 +30,11 @@ def _fold(text) -> str:
 
 def label_of(role: str, entry: dict) -> str:
     return str((entry or {}).get("label") or role)
+
+
+def _other_names(role: str, entry: dict) -> list:
+    """What else a bot answers to: its label and the names it had before a rename."""
+    return [label_of(role, entry)] + [str(n) for n in ((entry or {}).get("former_names") or []) if str(n).strip()]
 
 
 def bot_tab(role: str, roster: dict, tabs: list, bindings: dict) -> str:
@@ -118,7 +124,7 @@ def resolve(name: str, roster: dict, tabs: list, bindings: dict, aliases: dict =
             hit["candidates"] = [f"{_title(tabs, s)} ({s})" for s in titled]
         return hit
     aliased = {aliases.get(want)} - {None, ""}
-    aliased |= {r for r, e in roster.items() if _fold(label_of(r, e)) == want}
+    aliased |= {r for r, e in roster.items() if any(_fold(n) == want for n in _other_names(r, e))}
     hit = pick(sorted(r for r in aliased if r in roster), of_role, "alias")
     if hit:
         return hit
@@ -126,7 +132,7 @@ def resolve(name: str, roster: dict, tabs: list, bindings: dict, aliases: dict =
         return {"ok": False, "error": "not_found", "candidates": []}
     targets = {}
     for r, e in roster.items():
-        for n in (r, label_of(r, e)):
+        for n in [r] + _other_names(r, e):
             if _fold(n).startswith(want):
                 targets[("role", r)] = r
     for a, r in aliases.items():

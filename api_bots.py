@@ -1,9 +1,11 @@
 """Api mixin — bots (settings.experimental_bots). Rules live in bots.py.
 
 js_api: bots_state, bots_set_avatar, bots_set_primary, bots_bind_tab, bots_save, bots_delete, bots_open,
-        bots_close, bots_skill_catalog, bots_open_folder, bots_external_info, bots_external_send.
+        bots_close, bots_skill_catalog, bots_open_folder, bots_external_info, bots_external_send,
+        bots_rename.
 Hooks main.py and a2a_host call: _bots_first_prompt (delegate opened a bot's tab),
-_bots_divert_close (close_session for a bot tab), _bots_external_target /
+_bots_divert_close (close_session for a bot tab), _bots_rename_via_tab (rename_session
+on a bot's tab renames the bot), _bots_external_target /
 _bots_external_deliver / _bots_external_label (A2A to and from a bot that lives
 outside ShellFrame).
 """
@@ -696,11 +698,14 @@ class BotsApiMixin:
         return {"success": True, "role": name, "message": res.get("message", "")}
 
     @staticmethod
-    def _bot_name_taken(name: str, cfg: dict) -> bool:
-        """A bot's name is its own on this computer: no other role's key or label, any case."""
+    def _bot_name_taken(name: str, cfg: dict, but: str = "") -> bool:
+        """A bot's name is its own on this computer: no other role's key, label or former
+        name (they still reach that bot), any case. `but` is a bot being renamed: its own
+        names are free to it."""
         want = name.strip().casefold()
-        return any(want in (str(r).casefold(), bots.label_of(r, e).casefold())
-                   for r, e in (cfg.get("agent_roster") or {}).items() if isinstance(e, dict))
+        return any(want in {str(r).casefold(), bots.label_of(r, e).casefold(),
+                            *(n.casefold() for n in bots.former_names(e))}
+                   for r, e in (cfg.get("agent_roster") or {}).items() if isinstance(e, dict) and r != but)
 
     def _free_bot_name(self, name: str, cfg: dict) -> str:
         for n in range(2, 100):
@@ -708,6 +713,83 @@ class BotsApiMixin:
             if not self._bot_name_taken(cand, cfg) and not bots.name_error(cand):
                 return cand
         return ""
+
+    # ── plan A: a bot renamed ────────────────────────────────────────────
+    def bots_rename(self, role: str, name: str) -> str:
+        """A bot gets another name: from its editor, from its tab (rename_session), from
+        sfctl or a phone, one path for all. Its face, job, memory, CLI and tab stay, and the
+        old name still reaches it. JSON: {"success", "role", "former"} or {"success": false,
+        "code", "message", "suggestion"?}; codes in docs/mobile-link.md."""
+        return json.dumps(self._bots_rename(role, name), ensure_ascii=False)
+
+    def _bots_rename(self, role: str, name: str) -> dict:
+        def fail(code, en, zh, **extra):
+            return {"success": False, "code": code, "message": _(en, zh), **extra}
+        if not self._bots_enabled():
+            return fail("bots_off", "Bots are off: turn them on in Settings first", "Bots 沒有打開：請先在設定裡打開")
+        cfg = _cfg()
+        roster, bound = cfg.get("agent_roster") or {}, cfg.get("bots_sessions") or {}
+        role = str(role or "").strip()
+        entry = roster.get(role)
+        if not bots.is_bot(entry):
+            return fail("no_bot", f'No bot "{role}"', f"沒有「{role}」這個 bot")
+        if bots.is_external(entry):
+            return fail("external", "A bot outside ShellBot is named where it lives", "外部的 bot，名字要在它那邊改")
+        name = bots.clean_name(name)
+        err = bots.name_error(name)
+        if err:
+            return fail("bad_name", err, err)
+        if name == role:
+            return {"success": True, "role": role, "former": role, "message": _("The name is the same", "名字沒變")}
+        if self._bot_name_taken(name, cfg, but=role):
+            return fail("name_taken", f'"{name}" is taken by another bot', f"「{name}」已經有別的 bot 在用",
+                        suggestion=self._free_bot_name(name, cfg))
+        live = bot_names.bot_tab(role, roster, self._name_tabs(), bound)      # its tab, bound or by its title
+        sids = sorted({s for s, row in bound.items() if (row or {}).get("bot") == role and s in self.sessions}
+                      | ({live} if live else set()))
+        with _CLOSING_LOCK:
+            if any(s in _CLOSING for s in sids):
+                return fail("busy", "It is writing its memory; rename it when it has closed",
+                            "它正在寫記憶，關掉之後再改名")
+        if bots.move_dir(role, name):
+            return fail("folder_taken", f"A folder {bots.bot_dir(name)} is already there; move it away first",
+                        f"已經有 {bots.bot_dir(name)} 這個資料夾，請先把它移開")
+        state = {}
+
+        def _mut(c):
+            table = c.setdefault("bots_sessions", {})
+            for s in sids:                     # a tab that was its by title keeps being its, by binding
+                table.setdefault(s, {})["bot"] = role
+            state["formers"] = bots.rename_in_config(c, role, name)
+        try:
+            _update(_mut)
+        except Exception as e:
+            bots.move_dir(name, role)
+            return fail("failed", f"Not renamed: {e}", f"沒有改名：{e}")
+        for s in sids:
+            self.rename_session(s, name, manual=True)      # the tab, Telegram, LINE and the page
+        self._bots_notify_ui()
+        _dlog("bots", f"renamed {role!r} -> {name!r}; still reached as {state.get('formers')}")
+        return {"success": True, "role": name, "former": role,
+                "message": _(f'"{role}" is now "{name}"; the old name still reaches it',
+                             f"「{role}」改名為「{name}」；用舊名字也還找得到它")}
+
+    def _bots_rename_via_tab(self, sid: str, name: str):
+        """rename_session on a tab bound to a bot renames the bot: one name per bot, and its
+        tab carries it. None when the tab is no bot's (a temporary bot, a terminal, a tab
+        marked not a bot) or the name is the bot's own: then only the tab's title changes."""
+        if not self._bots_enabled():
+            return None
+        cfg = _cfg()
+        row = (cfg.get("bots_sessions") or {}).get(sid) or {}
+        role = "" if row.get("plain") else str(row.get("bot") or "")
+        entry = (cfg.get("agent_roster") or {}).get(role) if role else None
+        if not bots.is_bot(entry) or bots.is_external(entry):
+            return None
+        name = bots.clean_name(name)
+        if name in (role, bots.label_of(role, entry)):
+            return None
+        return json.dumps(self._bots_rename(role, name), ensure_ascii=False)
 
     # ── plan A: another CLI or model for a bot ───────────────────────────
     def bots_switch(self, role: str, cli: str = "", model=None, apply: str = "next_wake") -> str:

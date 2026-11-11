@@ -3494,7 +3494,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       overlay.remove();
       if (save) {
         const val = input.value.trim();
-        if (val && val !== s.label) {
+        if (val && val !== s.label && window.SFBots && SFBots.renameBotTab && SFBots.renameBotTab(sid, val)) {
+          // a bot's tab: the bot gets the name (bots.js asks first; the server sends the label back)
+        } else if (val && val !== s.label) {
           s.label = val;
           renderTabs();
           // Flash the tab to confirm rename

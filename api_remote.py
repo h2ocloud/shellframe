@@ -802,6 +802,8 @@ class RemoteApiMixin:
                     return {"success": False, "message": "sid and name required"}
                 result_json = self.rename_session(sid, name)
                 result = json.loads(result_json) if isinstance(result_json, str) else result_json
+                if result.get("former") or result.get("code"):
+                    return result                                  # a bot's tab: the bot was (or was not) renamed
                 if result.get("success"):
                     return {"success": True, "message": f"Renamed {sid} to {name}"}
                 return {"success": False, "message": "Rename failed"}
@@ -1355,6 +1357,9 @@ class RemoteApiMixin:
         elif cmd == "bots_switch":
             return self._bots_switch(str(args.get("role") or ""), str(args.get("cli") or ""), args.get("model"),
                                      "now" if args.get("now") else "next_wake")
+        elif cmd == "bots_rename":
+            res = self._resolve_name(str(args.get("role") or ""), prefix=False)   # its name, an old one, any case
+            return self._bots_rename(res.get("role") or str(args.get("role") or ""), str(args.get("name") or ""))
         elif cmd == "bots_wake":
             return self._bots_link_wake(args)
         elif cmd == "bots_answer":

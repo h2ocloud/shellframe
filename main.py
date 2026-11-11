@@ -4823,6 +4823,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         s = self.sessions.get(sid)
         if not s:
             return json.dumps({"success": False})
+        renamed = self._bots_rename_via_tab(sid, name)    # a bot's tab: the bot gets the name
+        if renamed is not None:
+            return renamed
         s._custom_label = name
         # 使用者自己取的名字不該再被 auto-slug 蓋掉。auto-slug 是在第一次送出
         # 訊息時用 haiku 依內容命名——新分頁一建立就跳命名 popup 之後，這個覆蓋

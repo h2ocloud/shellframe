@@ -135,6 +135,27 @@
     for (const sid of Object.keys(S)) if (!S[sid].isRemote && botOf(sid) === role) return sid;
     return '';
   }
+
+  // ── renaming a bot: its tab's name is the bot's name (one name per bot) ────
+  const askRename = (role, name) => confirm(t(
+    `Rename the bot ${q(botName(role))} to ${q(name)}? Its face, memory and job stay, and the old name still reaches it.`,
+    `把 bot${q(botName(role))}改名成${q(name)}？臉、記憶、執掌都會留著，用舊名字也還找得到它。`));
+  // The tab's rename dialog hands over here: true when the tab is bound to a bot (the
+  // server renames that bot: api_bots._bots_rename_via_tab), false for any other tab.
+  function renameBotTab(sid, name) {
+    const role = enabled && (st.sessions[sid] || {}).bot;
+    if (!role || (st.sessions[sid] || {}).plain || !isBot(role) || isExternal(role)) return false;
+    if (name === role || name === botName(role)) return false;
+    if (!askRename(role, name)) return true;
+    (async () => {
+      let res = {};
+      try { res = JSON.parse(await api().rename_session(sid, name, true)); } catch (_) {}
+      if (res.success) toast(res.message || t('Renamed', '已改名'));
+      else toast(res.message || t('Not renamed', '沒有改名'), true);
+      refresh(true);
+    })();
+    return true;
+  }
   function avatarFor(sid) {
     const role = botOf(sid);
     if (role) return cleanAvatar(rosterEntry(role).bot.avatar, role);
@@ -828,7 +849,7 @@
     ov.innerHTML = `<div class="modal">
       <h2><span class="sfb-avatar" id="sfb-ed-face">${faceSvg(av, { primary: primaryOn })}</span>${title}</h2>
       <div class="sfb-form">
-        <label>${t('Name', '名稱')}</label><input type="text" id="sfb-ed-name" value="${esc(existing ? role : (from ? from.label : ''))}" ${existing ? 'readonly' : ''} placeholder="${esc(t('e.g. research, coding, calendar', '例如：研究、Coding、日程'))}">
+        <label>${t('Name', '名稱')}</label><input type="text" id="sfb-ed-name" value="${esc(existing ? role : (from ? from.label : ''))}" ${existing && isExternal(role) ? 'readonly' : ''}placeholder="${esc(t('e.g. research, coding, calendar', '例如：研究、Coding、日程'))}">
         <label>${t('Job', '執掌')}</label><textarea id="sfb-ed-resp" placeholder="${esc(t('What it is responsible for and where its job ends; handed to it when it wakes', '它負責什麼、邊界在哪；叫醒時會交給它'))}">${esc(existing ? existing.responsibility : '')}</textarea>
         <label>CLI</label><select id="sfb-ed-cmd">${cmdOptions.join('')}</select>
         <label>${t('Model', '模型')}</label><input type="text" id="sfb-ed-model" value="${esc(existing ? existing.model || '' : '')}" placeholder="${esc(t("Optional, e.g. sonnet; empty = the CLI's default", '選填，例如 sonnet；留空用 CLI 預設'))}">
@@ -910,14 +931,27 @@
         external: extOn ? { kind: 'webhook', url: keep($('sfb-ed-url').value), auth: keep($('sfb-ed-auth').value) } : null,
       };
       const msg = $('sfb-ed-msg');
+      const renaming = !!(existing && name && name !== role);
+      if (renaming && !askRename(role, name)) return;
       msg.style.color = '#a9b1d6';
       msg.textContent = t('Saving…', '儲存中…');
       try {
-        const res = JSON.parse(await api().bots_save(name, JSON.stringify(data), opts.fromSid || ''));
+        let saveAs = name;
+        if (renaming) {                  // the same rename as the tab's (api_bots._bots_rename), then the rest
+          const rn = JSON.parse(await api().bots_rename(role, name));
+          if (!rn.success) {
+            msg.style.color = '#f7768e';
+            msg.textContent = rn.message || '';
+            if (rn.code === 'name_taken' && rn.suggestion) $('sfb-ed-name').value = rn.suggestion;
+            return;
+          }
+          saveAs = rn.role || name;
+        }
+        const res = JSON.parse(await api().bots_save(saveAs, JSON.stringify(data), opts.fromSid || ''));
         msg.style.color = res.success ? '#9ece6a' : '#f7768e';
         msg.textContent = res.message || '';
         if (res.success && act === 'save-now') {
-          const sw = JSON.parse(await api().bots_switch(role, '', null, 'now'));
+          const sw = JSON.parse(await api().bots_switch(saveAs, '', null, 'now'));
           toast(sw.success ? t('It writes its memory, then wakes on the new CLI', '它會先寫記憶，再用新的 CLI 叫醒') : (sw.message || ''), !sw.success);
         }
         if (res.success) { ov.remove(); await refresh(true); }
@@ -1399,7 +1433,7 @@
 
   window.SFBots = {
     face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
-    tabMentions, openTelegram,
+    tabMentions, openTelegram, renameBotTab,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,

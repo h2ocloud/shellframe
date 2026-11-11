@@ -831,6 +831,10 @@ def main():
     p_bset.add_argument("--model", default=None, help="The model (empty: the CLI's default)")
     p_bset.add_argument("--now", action="store_true",
                         help="Switch now (an awake bot writes its memory and closes first); else at its next wake")
+    p_bren = sub.add_parser("bots-rename", help="Give a bot another name (plan A): its face, job, memory and tab "
+                                                "stay, and its old name still reaches it")
+    p_bren.add_argument("role", help="The bot's name (or a name it had)")
+    p_bren.add_argument("name", help="Its new name")
     p_bmig = sub.add_parser("bots-migrate", help="Plan A's one-time tidy: bind each tab a bot is taken from by "
                                                  "its title, so renaming it keeps it the bot's (a dry run without --apply)")
     p_bmig.add_argument("--apply", action="store_true", help="Write it (config.json is copied to a .bak first)")
@@ -1097,6 +1101,8 @@ def main():
     elif args.cmd == "bots-set":
         _print_result(_rpc("bots_switch", {"role": args.role, "cli": args.cli, "model": args.model,
                                            "now": args.now}, timeout=20))
+    elif args.cmd == "bots-rename":
+        _print_result(_rpc("bots_rename", {"role": args.role, "name": args.name}, timeout=15))
     elif args.cmd == "bots-migrate":
         _print_result(_rpc("bots_migrate", {"apply": args.apply}, timeout=20))
     elif args.cmd == "bots-delete":
