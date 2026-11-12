@@ -443,11 +443,12 @@ def run(browser, engine):
 
     print(f"[{engine}] 9. the last step of making a bot says where to change it")
     page, errors = open_page(browser)
+    page.set_viewport_size({"width": 1100, "height": 1100})        # tall enough that the whole editor, buttons included, is in the shot
     page.locator("#sidebar-sessions .sfb-add").click()
     page.wait_for_selector(".sfb-modal #sfb-ed-name")
     note = page.inner_text(".sfb-modal .sfb-where")
-    check("the creation editor ends with where it is changed later: the face, the row's Edit, Settings → Bots",
-          "點它的頭像" in note and "側欄那一列的「編輯」" in note and "設定 → Bots" in note, note)
+    check("the creation editor ends with where it is changed later: the row's Edit (the card's ✎), a right-click on the face, Settings → Bots",
+          "側欄那一列的「編輯」" in note and "卡片的 ✎" in note and "右鍵它的頭像" in note and "設定 → Bots" in note, note)
     page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / f"botset-create-note{tag}.png"))
     page.fill("#sfb-ed-name", "新的助手")
     page.click(".sfb-modal [data-act='save']")

@@ -869,10 +869,11 @@
   }
 
   // Where a bot's settings are changed afterwards: said at the end of every way to make one (the editor,
-  // Keep, a toast), so nobody has to hunt for it. All of it, name to skills, in any of these:
+  // Keep, a toast), so nobody has to hunt for it. All of it, name to skills, in any of these. (A click on a
+  // face in the sidebar changes its light and a click on the card wakes the bot, so the words say right-click.)
   const whereWords = () => t(
-    'You can change all of this later: click its face, press Edit on its row in the sidebar, or open Settings → Bots.',
-    '之後都可以再改：點它的頭像、側欄那一列的「編輯」，或到 設定 → Bots。');
+    'You can change all of this later: Edit on its row in the sidebar (the ✎ on the card for the primary bot), right-click its face, or open Settings → Bots.',
+    '之後都可以再改：側欄那一列的「編輯」（主要 Bot 在卡片的 ✎）、右鍵它的頭像，或到 設定 → Bots。');
 
   // ── the model: picked from the CLI's own list ─────────────────────────────
   // The lists (and what each launch command can pin) come from Python (bots_model_info, built from
