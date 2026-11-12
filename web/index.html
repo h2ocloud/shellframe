@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
 <link rel="stylesheet" href="bots.css"/>
 <link rel="stylesheet" href="chat.css"/>
+<link rel="stylesheet" href="schedules.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -809,31 +810,7 @@
   }
   .loop-group:first-child { padding-top: 4px; }
   .loop-group-n { color: #7aa2f7; text-transform: none; }
-  .sched-row {
-    display: flex; align-items: center; gap: 8px; padding: 7px 4px;
-    border-bottom: 1px solid #1a1b26; border-left: 2px solid #9ece6a; padding-left: 8px;
-  }
-  .sched-row.off { border-left-color: #3b4261; }
-  .sched-num {
-    flex-shrink: 0; width: 15px; text-align: right; font-size: 10px;
-    color: #565f89; font-variant-numeric: tabular-nums;
-  }
-  .sched-edit {
-    flex-shrink: 0; background: none; border: 1px solid #3b4261; color: #7aa2f7;
-    border-radius: 4px; font-size: 10px; cursor: pointer; padding: 1px 7px; line-height: 1.5;
-  }
-  .sched-edit:hover { border-color: #7aa2f7; background: rgba(122,162,247,.1); }
-  .sched-info { flex: 1; min-width: 0; }
-  .sched-title { font-size: 11px; color: #c0caf5; font-weight: 500; }
-  .sched-row.off .sched-title { color: #787c99; }
-  .sched-freq { font-size: 9px; color: #e0af68; margin-left: 6px; font-weight: 400; }
-  .sched-row.off .sched-freq { color: #565f89; }
-  .sched-fail { font-size: 9px; color: #f7768e; margin-left: 6px; font-weight: 500; }
-  .sched-cmd {
-    font-size: 9px; color: #565f89; margin-top: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .sched-toggle { flex-shrink: 0; }
+  /* the schedule rows (.sched-*) are in web/schedules.css */
 
   /* ── Code block copy button ── */
   .code-copy-btn {
@@ -1579,6 +1556,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="bots.js"></script>
 <script src="chat.js"></script>
+<script src="schedules.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -1764,6 +1742,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       boardBtnTitle: 'Loops — scheduled conversations (experimental)',
       loopsPanelTitle: 'Loops · Scheduled',
       loopsEmpty: 'No scheduled conversations',
+      loopsActive: 'Active loops',
       experimentalLoopsLabel: 'Loops panel — scheduled conversations (experimental)',
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       modelBadgeLabel: 'Model badge on sessions (experimental)',
@@ -1946,6 +1925,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       boardBtnTitle: 'Loops — 排程對話收納（實驗性）',
       loopsPanelTitle: 'Loops · 排程對話',
       loopsEmpty: '目前沒有排程中的對話',
+      loopsActive: '進行中的 Loop',
       experimentalLoopsLabel: 'Loops 排程對話面板（實驗性）',
       experimentalLoopsHint: '右側面板收納「有排程的對話」：正在跑 /loop、建了 cron routine、或被 scheduler 啟動的頁籤——顯示下次喚醒倒數與各自在等什麼。預設關閉。',
       usagePaceLabel: '用量膠囊顯示 token 配速',
@@ -4861,30 +4841,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return h + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
   }
 
-  // Managed schedules = the user's own LaunchAgents (cron-like jobs). Fetched
-  // from the Python side; each can be flipped on/off (launchctl) right here.
-  let _schedules = [];
+  // Managed schedules = the user's own LaunchAgents (cron-like jobs). The rows
+  // come from the Python side (sched_view.py) and web/schedules.js draws them;
+  // each can be flipped on/off (launchctl) right here, except a one-off, which
+  // is armed by asking the agent.
+  let _schedData = { schedules: [] };
   let _schedulesLoaded = false;
   async function loadSchedules() {
     if (!loopsEnabled() || !window.pywebview || !pywebview.api) return;
     try {
-      const r = JSON.parse(await pywebview.api.schedules_list());
-      _schedules = r.schedules || [];
+      _schedData = JSON.parse(await pywebview.api.schedules_list());
       _schedulesLoaded = true;
       renderLoops();
     } catch (_) {}
   }
   async function toggleSchedule(id) {
-    const it = _schedules.find(s => s.id === id);
+    const it = (_schedData.schedules || []).find(s => s.id === id);
     if (!it) return;
     const want = !it.enabled;
-    it.enabled = want; renderLoops();              // optimistic
+    it.enabled = it.active = want; renderLoops();   // optimistic
     try {
       const r = JSON.parse(await pywebview.api.schedule_set_enabled(id, want));
       // Settle on what launchd reports, not what we asked for.
-      it.enabled = (r && typeof r.enabled === 'boolean') ? r.enabled : !want;
+      it.enabled = it.active = (r && typeof r.enabled === 'boolean') ? r.enabled : !want;
       if (it.enabled !== want) renderLoops();
-    } catch (_) { it.enabled = !want; renderLoops(); }
+    } catch (_) { it.enabled = it.active = !want; renderLoops(); }
   }
   // Edit shortcut: collect this schedule's paths/command into a prompt and
   // drop it into the CURRENT tab's composer (no new tab), so the user can
@@ -4944,33 +4925,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `</div></div>`;
       }).join('');
 
-      // ── Managed schedules (LaunchAgents) ──
-      const onCount = _schedules.filter(s => s.enabled).length;
-      const schedHtml = _schedules.map((s, i) =>
-        `<div class="sched-row${s.enabled ? '' : ' off'}">` +
-          `<span class="sched-num">${i + 1}</span>` +
-          `<div class="sched-info">` +
-            `<div class="sched-title">${esc(s.title)}<span class="sched-freq">${esc(s.freq)}</span>` +
-              (s.enabled && s.last_exit ? `<span class="sched-fail" title="上次執行失敗（exit ${s.last_exit}）">上次失敗</span>` : '') +
-            `</div>` +
-            (s.cmd ? `<div class="sched-cmd" title="${esc(s.cmd)}">${esc(s.cmd)}</div>` : '') +
-          `</div>` +
-          `<button class="sched-edit" data-id="${esc(s.id)}" title="把這個排程的資訊帶進目前對話，讓你直接請 AI 調整">編輯</button>` +
-          `<button class="toggle-switch sched-toggle${s.enabled ? ' on' : ''}" ` +
-            `data-id="${esc(s.id)}" title="${s.enabled ? '點擊停用' : '點擊啟用'}"></button>` +
-        `</div>`).join('');
-
-      const html =
-        `<div class="loop-group">排程<span class="loop-group-n">${onCount}/${_schedules.length} 開</span></div>` +
-        (schedHtml || `<div class="feed-empty">${_schedulesLoaded ? '沒有偵測到排程' : '載入中…'}</div>`) +
-        `<div class="loop-group">進行中的 Loop${rows.length ? `<span class="loop-group-n">${rows.length}</span>` : ''}</div>` +
+      // ── Managed schedules (LaunchAgents): web/schedules.js draws them ──
+      const sch = window.SFSched ? SFSched.section(_schedData, _schedulesLoaded) : { html: '', on: 0, total: 0 };
+      const html = sch.html +
+        `<div class="loop-group">${esc(t('loopsActive'))}${rows.length ? `<span class="loop-group-n">${rows.length}</span>` : ''}</div>` +
         (loopHtml || `<div class="feed-empty">${esc(t('loopsEmpty'))}</div>`);
 
       if (html !== renderLoops._html) { list.innerHTML = html; renderLoops._html = html; }
       const ov = document.getElementById('feed-overview');
       if (ov) {
         const parts = [];
-        if (_schedules.length) parts.push(`<span class="ov-sched">⏰ ${onCount}/${_schedules.length}</span>`);
+        if (sch.total) parts.push(`<span class="ov-sched">⏰ ${sch.on}/${sch.total}</span>`);
         if (c.loop) parts.push(`<span class="ov-working">🔁 ${c.loop}</span>`);
         const ovHtml = parts.join(' · ');
         if (ovHtml !== renderLoops._ovHtml) { ov.innerHTML = ovHtml; renderLoops._ovHtml = ovHtml; }

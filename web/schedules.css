@@ -1,0 +1,74 @@
+/* Loops panel — the LaunchAgent schedule rows (web/schedules.js draws them from
+ * the rows sched_view.py builds). The rest of the Loops panel is in index.html. */
+
+.sched-row {
+  display: flex; align-items: flex-start; gap: 8px; padding: 7px 4px 7px 8px;
+  border-bottom: 1px solid #1a1b26; border-left: 2px solid #9ece6a;
+}
+.sched-row.off { border-left-color: #3b4261; }
+/* a warning on the row (a one-off that will repeat next year, a job missing from a group) */
+.sched-row.warn { border-left-color: #e0af68; }
+/* a resident job that is not running and keeps failing */
+.sched-row.bad { border-left-color: #f7768e; }
+.sched-num {
+  flex-shrink: 0; width: 15px; text-align: right; font-size: 10px; margin-top: 4px;
+  color: #565f89; font-variant-numeric: tabular-nums;
+}
+.sched-info { flex: 1; min-width: 0; }
+/* the name and the buttons on one line; everything else gets the full width below */
+.sched-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sched-title {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; color: #c0caf5; font-weight: 500; line-height: 1.5;
+}
+.sched-row.off .sched-title { color: #787c99; }
+.sched-n { flex-shrink: 0; font-size: 9px; color: #565f89; font-weight: 400; }
+.sched-edit {
+  flex-shrink: 0; margin-left: auto; background: none; border: 1px solid #3b4261; color: #7aa2f7;
+  border-radius: 4px; font-size: 10px; cursor: pointer; padding: 1px 7px; line-height: 1.5; white-space: nowrap;
+}
+.sched-edit:hover { border-color: #7aa2f7; background: rgba(122,162,247,.1); }
+.sched-toggle { flex-shrink: 0; }
+.sched-noswitch { flex-shrink: 0; width: 36px; height: 20px; }   /* where a one-off has no switch */
+.sched-line { margin-top: 0; font-size: 9px; line-height: 1.5; }
+.sched-freq { font-size: 9px; color: #e0af68; font-weight: 400; }
+.sched-row.off .sched-freq { color: #565f89; }
+/* a one-off says where it stands: armed = green, ran = muted, not armed = dim */
+.sched-row.st-armed .sched-freq { color: #9ece6a; }
+.sched-row.st-ran .sched-freq { color: #787c99; }
+.sched-row.st-unarmed .sched-freq { color: #565f89; }
+.sched-row.st-partial .sched-freq, .sched-row.st-failing .sched-freq { color: #e0af68; }
+.sched-fail { font-size: 9px; color: #f7768e; margin-left: 6px; font-weight: 500; white-space: nowrap; }
+.sched-run {
+  display: inline-block; font-size: 9px; margin-left: 6px; padding: 0 5px; border-radius: 6px;
+  color: #7aa2f7; border: 1px solid currentColor; white-space: nowrap; line-height: 1.3; vertical-align: 1px;
+}
+.sched-note { font-size: 9px; color: #e0af68; margin-top: 2px; line-height: 1.4; }
+.sched-detail { font-size: 9px; color: #565f89; margin-top: 2px; line-height: 1.4; }
+.sched-cmd {
+  font-size: 9px; color: #565f89; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* a group of one-offs: the members, one line each, in the order they fire */
+.sched-members { margin-top: 3px; }
+.sched-member {
+  display: flex; align-items: baseline; gap: 6px; font-size: 10px; line-height: 1.5;
+  color: #787c99; min-width: 0;
+}
+.sched-mt { flex-shrink: 0; color: #c0caf5; font-variant-numeric: tabular-nums; }
+.sched-row.off .sched-mt { color: #787c99; }
+.sched-mn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-ms { flex-shrink: 0; font-size: 9px; color: #565f89; }
+.sched-member.st-armed .sched-ms { color: #9ece6a; }
+/* "not loaded" is only a warning where its neighbours are loaded; in a group nothing is armed it is just the rest state */
+.sched-row.st-partial .sched-member.st-unarmed .sched-ms { color: #e0af68; }
+
+/* what the section says instead of rows */
+.sched-msg {
+  color: #787c99; font-size: 10px; line-height: 1.5; padding: 10px 8px; text-align: left;
+  word-break: break-word;
+}
+.sched-msg.warn { color: #e0af68; }
+.sched-msg.bad { color: #f7768e; }
+.sched-msg code { color: #9ece6a; font-size: 10px; }
