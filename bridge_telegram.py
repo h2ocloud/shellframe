@@ -56,6 +56,7 @@ import pyte
 from bridge_base import BridgeBase, BridgeConfigBase
 import bridge_delivery
 import bridge_home   # the primary bot's place here (routing, decisions, pairing)
+import bridge_menu   # the command menu is sent off the thread that changed the tabs
 import bridge_queue  # a message for a busy tab waits (30 min, ⚡ to cut in)
 
 try:
@@ -1716,9 +1717,8 @@ class TelegramBridge(BridgeBase):
         return f" · {mi['name']} · {eff}" if eff else f" · {mi['name']}"
 
     def refresh_commands(self):
-        """Re-register commands after sessions change."""
-        if self.active:
-            self._set_bot_commands()
+        """Re-register commands after sessions change: returns at once, bridge_menu sends them."""
+        bridge_menu.request(self)
 
     # ── Output capture (PTY → TG) ──
 
