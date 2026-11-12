@@ -1330,7 +1330,8 @@
   }
   function autosize() {
     input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+    // The height is border-box: add the borders, or a single line overflows by 2px and shows a bar.
+    input.style.height = Math.min(input.scrollHeight + input.offsetHeight - input.clientHeight, 180) + 'px';
   }
   // `clearDraft`: the person answered the draft card with "clear it and send".
   async function send(clearDraft) {

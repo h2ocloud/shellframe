@@ -72,7 +72,12 @@ def run(browser, engine):
     page.wait_for_function("document.querySelectorAll('#chat-list .cm-row').length >= 20", timeout=15000)
     page.wait_for_timeout(800)
     print(f"[{engine}] 1. the input box")
-    check("a short message: no bar", page.evaluate(BAR, "#chat-input") == 0, page.evaluate(BAR, "#chat-input"))
+    check("an empty box: no bar", page.evaluate(BAR, "#chat-input") == 0, page.evaluate(BAR, "#chat-input"))
+    page.fill("#chat-input", "一行字")
+    page.wait_for_timeout(150)
+    # measured: the box grew to its scrollHeight, but its height is border-box, so one line
+    # overflowed by its 2px of border and showed a bar once the bar was drawn
+    check("one line: no bar either", page.evaluate(BAR, "#chat-input") == 0, page.evaluate(BAR, "#chat-input"))
     page.fill("#chat-input", "\n".join(f"第 {i} 行草稿" for i in range(1, 16)))
     page.wait_for_timeout(200)
     w = page.evaluate(BAR, "#chat-input")
