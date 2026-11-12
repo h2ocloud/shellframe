@@ -46,3 +46,7 @@ ios/qa/report.html
 ios/qa/small/
 *.xcuserstate
 xcuserdata/
+# The bot settings test shoots both engines; the repo keeps WebKit's (the Mac app's), plus the two only Chromium takes
+qa-shots/botset-*-chromium.png
+!qa-shots/botset-keep-note-chromium.png
+!qa-shots/botset-model-flagged-en-chromium.png
