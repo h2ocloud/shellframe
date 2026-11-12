@@ -366,6 +366,7 @@
   // <system-reminder>) are not words. opts.agent: the text is an agent's own words (only its markers go);
   // opts.lang: 'zh…' or not. Not redacted, markdown left alone: that is for the caller.
   const NOISE_LINE = ['---', '[[SF:', '<', '[Image'];
+  const NOTICE = /^\[\[ShellBot[:：].*\]\]$/;     // ShellBot's own line ("this waited 2 h in the queue"): words only when alone
   const READ_MAX = 20000;      // characters read: a line of at most `limit` never depends on more, and a paste can be megabytes
   function preview(text, limit, opts) {
     const o = opts || {};
@@ -381,8 +382,10 @@
       const a = u.tags.find(x => x.kind === 'a2a');
       if (a) { who = a.who || ''; blocked = !!a.blocked; }
       words = u.parts ? u.parts.map(x => (x.paste !== undefined ? pastedLabel(x.paste.split('\n').length, zh) : x.text)).join('\n') : u.text;
-      words = words.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').split('\n').map(l => l.trim())
-        .filter(l => l && !NOISE_LINE.some(n => l.startsWith(n)) && !l.includes('system-reminder')).join('\n');
+      const lines = words.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').split('\n').map(l => l.trim())
+        .filter(l => l && !NOISE_LINE.some(n => l.startsWith(n)) && !l.includes('system-reminder'));
+      const plain = lines.filter(l => !NOTICE.test(l));
+      words = (plain.length ? plain : lines.map(l => l.slice(2, -2))).join('\n');
     }
     let line = words.replace(/\s+/g, ' ').trim();
     if (who !== null) {

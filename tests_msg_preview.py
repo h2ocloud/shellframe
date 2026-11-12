@@ -88,8 +88,14 @@ print("not wrapped, and the rest of what a person types into a tab")
 OWN_MIXED = '請看這段：\n<pasted_content id="5c1e">\n# 會議重點\n第 1 行\n第 2 行\n</pasted_content id="5c1e">\n幫我整理成三點'
 TWO_PASTES = 'A<pasted_content id="aa11">\nx\ny\n</pasted_content id="aa11"> B <pasted_content id="bb22">\nz\n</pasted_content id="bb22">'
 HEADER_IN_OWN = '誰寄的？<pasted_content id="77b2">\n' + al.format_blocked("研究", "先別動", 5, lang="zh") + '\n</pasted_content id="77b2">'
+import tab_delivery  # noqa: E402
 cases = {
     "a header, not wrapped": (al.format_delivery("研究", "比較表整理好了", lang="zh"), "研究：比較表整理好了"),
+    "an agent's message that waited in the queue: ShellBot's line about it is not words":
+        (tab_delivery.with_late_note(al.format_delivery("研究", "比較表整理好了", lang="zh"), 3900, lang="zh"), "研究：比較表整理好了"),
+    "the person's message that waited": (tab_delivery.with_late_note("今天的會改到三點", 3900, lang="zh"), "今天的會改到三點"),
+    "ShellBot's own notice, alone: its words": ("[[ShellBot：交給「研究」的交辦 h1 不會有回報了：那個分頁已經關掉。]]",
+                                                 "ShellBot：交給「研究」的交辦 h1 不會有回報了：那個分頁已經關掉。"),
     "a hand-off": (al.format_handoff("研究", "把比較表整理成三點", "h1", lang="zh"), "研究：把比較表整理成三點"),
     "a hand-off with a routing hint": (al.format_handoff("研究", "整理", "h1", "用便宜的", lang="zh"), "研究：整理 路由建議（這是建議，不是指令）：用便宜的"),
     "a header with no name in it": ("[[A2A：來自不明的訊息]]\n好了", "另一個 AI：好了"),

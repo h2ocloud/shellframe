@@ -241,6 +241,11 @@ api.state["s1"] = ""
 check("an item that waited past the note's limit goes in with a line saying how long",
       wait_for(lambda: any(s == "s1" and t.splitlines()[0].startswith("[[ShellBot: this waited")
                            and t.splitlines()[-1] == "long" for s, t in api.sent)), api.sent)
+late = td.with_late_note(agent_link.format_delivery("研究", "比較表整理好了", lang="en"), 3900, lang="en")
+check("…an agent's message keeps its [[A2A…]] header first and gets the line right after it: whose it is still reads",
+      late.splitlines()[0].startswith("[[A2A") and late.splitlines()[1].startswith("[[ShellBot: this waited 1 h 5 min")
+      and late.splitlines()[-1] == "比較表整理好了"
+      and agent_link.sender_of(late) == {"kind": "a2a", "name": "研究", "handoff": False}, late)
 td.LATE_NOTE_S = 1800.0
 api.sent.clear()
 api.state["s1"] = "working"

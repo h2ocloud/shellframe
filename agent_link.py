@@ -285,6 +285,7 @@ _RED_MARK = re.compile(r"^[\s>❯›⏺•*-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?
 _SF_QUIET = re.compile(r"\[\[\s*SF\s*:\s*(?:GREEN|WORKING)\s*\]\]", re.I)
 _SF_YELLOW = re.compile(r"\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]", re.I)
 _NOISE_LINE = ("---", "[[SF:", "<", "[Image")   # a line the harness typed, or the placeholder of a picture: not words
+_NOTICE = re.compile(r"\[\[ShellBot[:：].*\]\]")   # ShellBot's own line ("this waited 2 h in the queue"): words only when alone
 _READ_MAX = 20000      # characters read: a line of at most `limit` never depends on more, and a paste can be megabytes
 
 
@@ -377,8 +378,9 @@ def preview_of(text, limit: int = 140, *, agent: bool = False, lang: str = None)
     text = str(text or "")[:_READ_MAX]
     who, blocked, words = (None, False, _bot_words(text)) if agent else _user_words(text, lang)
     if not agent:
-        words = "\n".join(x for x in (y.strip() for y in _drop_reminders(words).split("\n"))
-                          if x and not x.startswith(_NOISE_LINE) and "system-reminder" not in x)
+        lines = [x for x in (y.strip() for y in _drop_reminders(words).split("\n"))
+                 if x and not x.startswith(_NOISE_LINE) and "system-reminder" not in x]
+        words = "\n".join([x for x in lines if not _NOTICE.fullmatch(x)] or [x[2:-2] for x in lines])
     line = " ".join(words.split())
     if who is not None:
         name = (who or sf_lang.pick("Another agent", "另一個 AI", lang)) + (

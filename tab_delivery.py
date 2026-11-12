@@ -42,6 +42,7 @@ import time
 import uuid
 from pathlib import Path
 
+import agent_link
 import sf_lang
 from sf_log import _dlog
 
@@ -296,6 +297,17 @@ def wait_limit(ttl_min=None, default: float = None) -> float:
 def _waited_text(seconds: float, lang: str = None) -> str:
     h, m = int(seconds // 3600), int(seconds % 3600 // 60)
     return sf_lang.pick(f"{h} h {m} min" if h else f"{m} min", f"{h} 小時 {m} 分" if h else f"{m} 分", lang)
+
+
+def with_late_note(text: str, waited: float, lang: str = None) -> str:
+    """`text` with late_note in front of its words: after the [[A2A…]] header when it starts with one,
+    so the header stays first, where agent_link.sender_of, the chat view and a phone look for whose
+    message it is (in front of the header, a long-queued agent message read as the person's)."""
+    note, parts = late_note(waited, lang), agent_link.header_parts(text)
+    rest = parts[2] if parts else ""
+    if not parts or (rest and not text.endswith(rest)):
+        return note + "\n" + text
+    return text[:len(text) - len(rest)].rstrip() + "\n" + note + ("\n" + rest if rest else "")
 
 
 def late_note(waited: float, lang: str = None) -> str:
@@ -589,7 +601,7 @@ def _drain(api, sid: str):
             _save()
             s._startup_trust_pending = False
             waited = sent_at - item["t0"]
-            text = item["text"] if waited <= LATE_NOTE_S else late_note(waited) + "\n" + item["text"]
+            text = item["text"] if waited <= LATE_NOTE_S else with_late_note(item["text"], waited)
             api._send_text_to_session(s, text, submit=item["submit"])
             _drop(sid, item)
             _delivered(sid, item.get("what", ""), sent_at)
