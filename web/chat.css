@@ -116,6 +116,7 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
 }
 .cm-bubble:hover > .cm-copy, .cm-code:hover > .cm-copy, .cm-copy:focus-visible, .cm-copy.done { opacity: 1; }
 .cm-copy:hover { color: var(--cm-text); border-color: var(--cm-blue); }
+.cm-copy::after { content: attr(data-label); }        /* the word is not the bubble's text (innerText, a copy) */
 .cm-copy.done { color: var(--cm-green); }
 .cm-bubble > .cm-copy + * { margin-top: 0; }
 .cm-code:hover > .cm-code-lang { visibility: hidden; }

@@ -82,7 +82,7 @@ MEASURE = """() => {
   const label = document.querySelector('.cm-to-term span');
   return {layer: box('#chat-layer'), title: box('.cm-who b'), titleText: document.querySelector('.cm-who b').textContent,
           btn: box('.cm-to-term'), btnName: document.querySelector('.cm-to-term').title, labelShown: !!(label && label.offsetWidth),
-          input: box('#chat-input'), send: box('#chat-send'), mic: box('#btn-mic'), out, wide};
+          input: box('#chat-input'), send: box('#chat-send'), mic: box('#chat-mic'), out, wide};
 }"""
 
 
@@ -109,7 +109,7 @@ with sync_playwright() as pw:
     page.add_init_script(STUB)
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_function("(() => { const l = document.getElementById('chat-layer'), b = document.querySelector('.cm-who b');"
-                           " return l && !l.hidden && l.classList.contains('cm-has-mic') && b && b.textContent"
+                           " return l && !l.hidden && !document.getElementById('chat-mic').hidden && b && b.textContent"
                            " && document.querySelectorAll('#chat-list .cm-row').length >= 2; })()", timeout=15000)
 
     def measure(width, shot=None):

@@ -119,9 +119,10 @@ def run(browser, engine):
     btn.click()
     page.wait_for_timeout(200)
     check("it copies the whole message, as written", page.evaluate("window.__copied.slice(-1)[0]") == REPLY)
-    check("…and says so", "已複製" in (btn.text_content() or ""))
+    check("…and says so", "已複製" in (btn.get_attribute("data-label") or ""))
     page.wait_for_timeout(1700)
-    check("…then goes back to 「複製」", (btn.text_content() or "").strip() == "複製")
+    check("…then goes back to 「複製」", btn.get_attribute("data-label") == "複製")
+    check("the button's word is not in the bubble's text", "複製" not in bubble.inner_text())
     code = page.locator(f"{BOT} .cm-code").first
     code.hover()
     page.wait_for_timeout(200)

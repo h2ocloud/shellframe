@@ -435,7 +435,7 @@
     const more = zh ? `顯示全部 ${lines.length} 行` : `Show all ${lines.length} lines`;
     return `<div class="cm-code${long ? ' is-long' : ''}">` +
       (lang ? `<span class="cm-code-lang">${escHtml(lang)}</span>` : '') +
-      `<button class="cm-copy" data-act="copy-code">${zh ? '複製' : 'Copy'}</button>` +
+      `<button class="cm-copy" data-act="copy-code" data-label="${zh ? '複製' : 'Copy'}" aria-label="${zh ? '複製程式碼' : 'Copy the code'}"></button>` +
       `<pre><code>${escHtml(body)}</code></pre>` +
       (long ? `<button class="cm-more" data-act="code-more">${more}</button>` : '') + '</div>';
   }
@@ -1059,8 +1059,8 @@
     let copy = '';
     if (cls === 'cm-bubble') {             // the whole message, even while it shows only its start
       (v.copy || (v.copy = {}))[key] = text;
-      copy = `<button class="cm-copy" data-act="copy" data-key="${escHtml(key)}" title="${escHtml(T(
-        'Copy this message', '複製這則訊息'))}">${escHtml(T('Copy', '複製'))}</button>`;
+      copy = `<button class="cm-copy" data-act="copy" data-key="${escHtml(key)}" data-label="${escHtml(T('Copy', '複製'))}" ` +
+        `aria-label="${escHtml(T('Copy this message', '複製這則訊息'))}" title="${escHtml(T('Copy this message', '複製這則訊息'))}"></button>`;
     }
     return `<div class="${cls}">${copy}${markdown ? md(shown, isZh(lang())) : escHtml(shown)}` +
       (text.length > LONG_TEXT ? `<button class="cm-more-text" data-act="open" data-key="${escHtml(key)}">${escHtml(
@@ -1392,10 +1392,10 @@
     let ok = false;
     try { ok = (await api().copy_text(text, 'chat-view')) === 'ok'; } catch (_) { ok = false; }
     if (!ok) { try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {} }
-    if (!btn.dataset.label) btn.dataset.label = btn.textContent;
-    btn.textContent = ok ? T('Copied ✓', '已複製 ✓') : T('Could not copy', '複製失敗');
+    if (!btn.dataset.base) btn.dataset.base = btn.dataset.label;     // its word is CSS (::after), out of the bubble's text
+    btn.dataset.label = ok ? T('Copied ✓', '已複製 ✓') : T('Could not copy', '複製失敗');
     btn.classList.add('done');
-    setTimeout(() => { btn.textContent = btn.dataset.label; btn.classList.remove('done'); }, 1500);
+    setTimeout(() => { btn.dataset.label = btn.dataset.base; btn.classList.remove('done'); }, 1500);
   }
 
   // ── the microphone, in the input row ─────────────────────────────────────
