@@ -244,6 +244,16 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
   font: inherit; font-weight: 600; cursor: pointer;
 }
 #chat-send:hover { filter: brightness(1.08); }
+/* The microphone beside Send (chat.js); the floating one is for the terminal, so it hides here. */
+#chat-mic {
+  flex: none; padding: .55em .75em; border-radius: 10px; border: 1px solid var(--cm-line2); background: var(--cm-panel);
+  color: var(--cm-text); font: inherit; line-height: 1.5; cursor: pointer; white-space: nowrap;
+}
+#chat-mic:hover { border-color: var(--cm-blue); }
+#chat-mic.rec { background: var(--cm-red); border-color: var(--cm-red); color: #11131c; font-weight: 600; }
+#chat-mic.busy { opacity: .7; cursor: progress; }
+#chat-mic[hidden] { display: none; }
+body.sf-chat-shown #mic-fab { display: none !important; }
 #chat-layer.cm-has-mic #chat-compose { padding-right: calc(1.4em + 54px); }
 #chat-note { max-width: 880px; margin: .3em auto 0; min-height: 1.2em; font-size: .76em; color: var(--cm-dim); }
 #chat-note.warn { color: var(--cm-amber); }

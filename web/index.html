@@ -7862,7 +7862,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } else if (micIv) { clearInterval(micIv); micIv = null; }
   }
 
-  async function micGuide(r) {
+  async function micGuide(r, onText) {   // onText: the chat view's mic takes a retry's words for its input box
     // 依失敗原因引導：裝 ffmpeg / 裝 STT（裝完自動重轉剛剛那段錄音）
     if (r.reason === 'no_ffmpeg') {
       if (confirm(t('micNeedFfmpeg'))) {
@@ -7877,8 +7877,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         micSet('busy');
         try { await pywebview.api.stt_install_local(); } catch (_) {}
         try {
-          const rr = JSON.parse(await pywebview.api.mic_retry_transcribe(activeId || ''));
-          if (rr.ok) return;
+          const rr = JSON.parse(await pywebview.api.mic_retry_transcribe(onText ? '' : (activeId || '')));
+          if (rr.ok) { if (onText && rr.text) onText(rr.text); return; }
         } catch (_) {}
         alert(t('micSttStillFail'));
       }
@@ -8614,7 +8614,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
   window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
-    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal };
+    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal, micGuide };
 
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a

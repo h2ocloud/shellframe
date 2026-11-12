@@ -602,7 +602,7 @@
       '<div id="chat-scroll"><div id="chat-col"><div id="chat-list"></div><div id="chat-live"></div></div></div>' +
       '<div id="chat-ask" hidden></div>' +
       '<div id="chat-compose"><div id="chat-attach" hidden></div><div id="chat-col-in"><textarea id="chat-input" rows="1"></textarea>' +
-      '<button id="chat-send"></button></div><div id="chat-note"></div></div>';
+      '<button id="chat-mic"></button><button id="chat-send"></button></div><div id="chat-note"></div></div>';
     wrap.appendChild(layer);
     headEl = layer.querySelector('#chat-head');
     list = layer.querySelector('#chat-list');
@@ -634,6 +634,13 @@
     });
     input.addEventListener('input', autosize);
     sendBtn.addEventListener('click', () => send());
+    micBtn = layer.querySelector('#chat-mic');
+    micBtn.addEventListener('click', micClick);
+    document.addEventListener('keydown', e => {          // Esc while recording: throw the recording away
+      if (e.key !== 'Escape' || micState !== 'rec' || !covers()) return;
+      e.preventDefault(); e.stopPropagation();
+      micCancel();
+    }, true);
     // Something focused the terminal hidden under the view (switchTab, a closing
     // dialog): keys would go into the CLI unseen, so the input box takes it instead.
     document.addEventListener('focusin', e => {
@@ -933,6 +940,7 @@
     input.placeholder = T(`Message ${displayName(sessions()[sid])} — Enter to send, Shift+Enter for a new line`,
                           `傳訊息給 ${displayName(sessions()[sid])}（Enter 送出，Shift+Enter 換行）`);
     sendBtn.textContent = T('Send', '送出');
+    renderMic();
     noteEl.textContent = view(sid).note || '';
   }
   // What a header says under the tab's name: what it is doing, or that it is waiting or ready.
@@ -1332,6 +1340,70 @@
     input.style.height = 'auto';
     // The height is border-box: add the borders, or a single line overflows by 2px and shows a bar.
     input.style.height = Math.min(input.scrollHeight + input.offsetHeight - input.clientHeight, 180) + 'px';
+  }
+
+  // ── the microphone, in the input row ─────────────────────────────────────
+  // The page's own recording (mic_record_start/stop: its permission, its speech-to-text), but
+  // asked without a tab, so the words come back instead of being typed into the CLI: they go
+  // into the input box to be read before sending. Esc throws a recording away; it stops by
+  // itself at 5 minutes, as the backend does. The floating mic hides while the view shows.
+  let micBtn = null, micState = 'idle', micT0 = 0, micIv = null;      // idle | rec | busy
+  function micSet(state) {
+    micState = state;
+    if (micIv) { clearInterval(micIv); micIv = null; }
+    micBtn.classList.toggle('rec', state === 'rec');
+    micBtn.classList.toggle('busy', state === 'busy');
+    const show = () => {
+      const sec = Math.floor((Date.now() - micT0) / 1000);
+      micBtn.textContent = `⏹ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+      if (sec >= 300) micClick();
+    };
+    if (state === 'rec') { micT0 = Date.now(); show(); micIv = setInterval(show, 500); }
+    else micBtn.textContent = state === 'busy' ? '⏳' : '🎙';
+    micBtn.title = state === 'rec' ? T('Recording: press again to stop, Esc to cancel', '錄音中：再按一次停止，Esc 取消')
+      : T('Voice input: the words go into the box, not sent', '語音輸入：轉出來的字放進輸入框，不會直接送出');
+    note(state === 'rec' ? T('Recording… press 🎙 again to stop, Esc to cancel', '錄音中…再按一次停止，Esc 取消')
+      : state === 'busy' ? T('Turning it into words…', '正在轉成文字…') : '');
+  }
+  function micPut(text) {                     // into the box where the cursor is, for a read before sending
+    const t = String(text || '').trim();
+    if (!t) return;
+    const a = input.selectionStart ?? input.value.length, b = input.selectionEnd ?? a;
+    const before = input.value.slice(0, a), after = input.value.slice(b);
+    const pad = /[A-Za-z0-9]$/.test(before) && /^[A-Za-z0-9]/.test(t) ? ' ' : '';     // words, not 中文, get a space
+    input.value = before + pad + t + after;
+    const at = (before + pad + t).length;
+    input.focus();
+    input.setSelectionRange(at, at);
+    autosize();
+  }
+  async function micClick() {
+    const a = api();
+    if (!a || micState === 'busy') return;
+    let r = {};
+    if (micState === 'idle') {
+      try { r = JSON.parse(await a.mic_record_start()); } catch (_) { return; }
+      if (r.ok) { micSet('rec'); return; }
+    } else {
+      micSet('busy');
+      try { r = JSON.parse(await a.mic_record_stop('')); } catch (_) { micSet('idle'); return; }
+      if (r.ok) { micSet('idle'); micPut(r.text); return; }
+    }
+    micSet('busy');
+    try { await host().micGuide(r, micPut); } catch (_) {}      // install ffmpeg / STT, or say why
+    micSet('idle');
+  }
+  async function micCancel() {
+    micSet('busy');
+    try { await api().mic_record_stop('', true); } catch (_) {}
+    micSet('idle');
+  }
+  function renderMic() {                       // on each draw: shown or not, and its idle face in this language
+    if (!micBtn) return;
+    micBtn.hidden = ((settings() || {}).stt_mic_button === false);       // the same setting as the floating one
+    if (micState !== 'idle') return;
+    micBtn.textContent = '🎙';
+    micBtn.title = T('Voice input: the words go into the box, not sent', '語音輸入：轉出來的字放進輸入框，不會直接送出');
   }
   // `clearDraft`: the person answered the draft card with "clear it and send".
   async function send(clearDraft) {
