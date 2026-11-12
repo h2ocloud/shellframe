@@ -124,6 +124,19 @@ check("Telegram's menu reader agrees", [o["num"] for o in opts] == ["1", "2", "3
 word = bt.menu_options([" ❯ 1. Yes, and always allow access to the very long folder name that",
                         "      wraps here", "   2. No", ""])
 check("a wrap between words keeps its space", word and word[0]["text"].endswith("name that wraps here"), word)
+# 1b. Claude Code 2.1.322 in manual mode, the same 80 columns: an edit's option 2 wraps, and its
+#     second line holds "(shift+tab)". Measured: that "tab" read as the menu's footer, and the
+#     option was cut at "…common file", so the chat view did not recognise it.
+VISIBLE["c1"] = ["─" * W, " Create file", " hello.txt", "╌" * W, "  1 hi", "╌" * W, " Do you want to create hello.txt?",
+                 " ❯ 1. Yes", "   2. Yes, and switch to accept edits (auto-approve file edits and common file",
+                 "      commands) for this session (shift+tab)", "   3. No", "", " Esc to cancel · Tab to amend"]
+d = decision("c1")
+check("a wrapped line holding \"(shift+tab)\" is the option's, not the footer",
+      [o.get("text") for o in d.get("options", [])] == ["Yes", "Yes, and switch to accept edits (auto-approve file edits "
+                                                        "and common file commands) for this session (shift+tab)", "No"],
+      d.get("options"))
+word = bt.menu_options([" ❯ 1. Keep the long", "      description of it", "   2. No", "", " Esc to cancel"])
+check("…nor a word that only holds one (\"description\")", word and word[0]["text"] == "Keep the long description of it", word)
 
 print("2. an older menu, or a numbered list, above the one on screen")
 SCROLL["x1"] = UPDATE + ["", "› count to 3", "", "• 1 2 3", ""] + APPROVAL

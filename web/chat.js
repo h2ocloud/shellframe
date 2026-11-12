@@ -38,6 +38,9 @@
     [/^No$/, "Don't allow", '不允許', 'no'],
     [/^No, and tell Claude what to do differently$/, "Don't allow, and tell it what to do instead", '不允許，告訴它要怎麼改', 'no'],
     [/^Yes, allow all edits during this session$/, 'Allow, and allow every edit this session', '允許，這次工作階段的修改都不再問', 'yes'],
+    // 2.1.322 in manual mode, an edit's second option (it wraps on an 80-column tab)
+    [/^Yes, and switch to accept edits \(auto-approve file edits and common file commands\) for this session$/,
+      'Allow, and allow edits and common file commands this session', '允許，這次工作階段的修改和常用檔案指令都不再問', 'yes'],
     [/^Yes, and don't ask again for (.+) commands in (.+)$/, "Allow, and don't ask again for $1 commands in $2", '允許，之後在 $2 執行 $1 指令都不再問', 'yes'],
     [/^Yes, and don't ask again for (.+) commands on (.+)$/, "Allow, and don't ask again for $1 commands on $2", '允許，之後在 $2 執行 $1 指令都不再問', 'yes'],
     [/^Yes, and always allow access to (.+) from this project$/, 'Allow, and let this project always reach $1', '允許，而且這個專案以後都能存取 $1', 'yes'],

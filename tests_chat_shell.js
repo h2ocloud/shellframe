@@ -55,6 +55,11 @@ console.log('questions: Claude Code');
     && same(labels(m), ['允許', '允許，這次工作階段的修改都不再問', '不允許，告訴它要怎麼改']), [m.question, labels(m)]);
   const c = R.mapDecision({ id: 'q4', reason: 'Do you want to create notes.md?', options: opts('Yes', 'No') }, 'en');
   check('creating a file', c.question === 'Let it create notes.md?' && same(labels(c), ['Allow', "Don't allow"]), c);
+  // 2.1.322 in manual mode words an edit's second option this way (measured; it wraps on 80 columns)
+  const a = R.mapDecision({ id: 'q5', reason: 'Do you want to create hello.txt?', options: opts('Yes',
+    'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)', 'No') }, 'zh-TW');
+  check('manual mode: the edit prompt in plain Chinese too', a.translated && same(labels(a),
+    ['允許', '允許，這次工作階段的修改和常用檔案指令都不再問', '不允許']), labels(a));
 }
 console.log('questions: Codex');
 {

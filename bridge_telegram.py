@@ -883,6 +883,8 @@ _NUMBERED_ITEM_RE = re.compile(r'\d+\.?\s')
 _USERNAME_PREFIX_RE = re.compile(r'^(\w+):\s')
 _MENU_ITEM_RE = re.compile(r'^(\d+)[\.\)]\s+(.+)$')
 _MENU_END_RE = re.compile(r'esc|cancel|tab|enter', re.I)
+_MENU_END_WORD_RE = re.compile(r'\b(?:esc|cancel|tab|enter)\b', re.I)     # in a wrapped option: whole words only
+_KEY_HINT_TAIL_RE = re.compile(r'\s*\((?:esc|tab|shift\+tab|enter|[a-z])\)\s*$', re.I)   # its "(shift+tab)"
 # Picker chrome（如 /model 的「◉ xHigh effort ←/→ to adjust」）不是選項也不是
 # 結尾，但也不該把已收集的選項 reset 掉——那正是 /model 選單偵測不到的原因。
 _MENU_CHROME_RE = re.compile(r'[◉○←→]|to adjust', re.I)
@@ -903,7 +905,8 @@ def menu_block(lines):
       the approval under it).
     - A line indented under an option's text is that option, wrapped (measured: Claude Code,
       80 columns, a long folder; read as a new line it dropped the options above it). A cut
-      at the screen's edge joins without a space, one between words with a space.
+      at the screen's edge joins without a space, one between words with a space. Its own
+      words may hold "(shift+tab)" or "description": only a footer's whole word ends it.
     - Its numbers run 1, 2, 3…: a list that starts later has its top off the screen."""
     width = max((len(ln.rstrip()) for ln in lines), default=0)
     edge = sum(1 for ln in lines if len(ln.rstrip()) >= width - 1) >= 2   # the width is the screen's (a rule spans it)
@@ -927,7 +930,7 @@ def menu_block(lines):
         elif opts:
             text = line.strip()
             indent = len(line) - len(line.lstrip())
-            if text and indent >= col - 1 and not _MENU_END_RE.search(line):
+            if text and indent >= col - 1 and not _MENU_END_WORD_RE.search(_KEY_HINT_TAIL_RE.sub("", line)):
                 cut = edge and len(lines[last].rstrip()) >= width - 1
                 opts[-1]["text"] += ("" if cut else " ") + text
                 last = i
