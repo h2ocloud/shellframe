@@ -902,9 +902,24 @@
     const red = !!(data.decision && data.decision.id && String(data.decision.id) && data.activity !== 'decision');
     const items = buildTimeline(data.turns, { foldRed: red });
     // What was sent from here and is not in the record yet stays on screen (the phone's rule).
+    // A queued one follows the server's queue (chat_view `queue`): while its id waits it says
+    // why; once given up it says "not sent" and stays until resent or removed, never just
+    // vanishing; once it leaves the queue it went in, and waits for the record like any send.
     const now = Date.now();
-    v.pending = v.pending.filter(p => now - p.at < (p.queued ? QUEUE_HOLD_MS : HOLD_SENT_MS) &&
-      !items.some(it => it.type === 'user' && it.text.includes(String(p.key || p.text).trim())));
+    const q = data.queue || {};
+    const waiting = new Set(q.queued || []);
+    const gone = new Map((q.given_up || []).map(g => [g.id, g]));
+    v.pending.forEach(p => {
+      if (!p.id || p.failed !== undefined) return;
+      if (gone.has(p.id)) { p.failed = String(gone.get(p.id).why || ''); note(''); }   // the "it is busy" line no longer holds
+      else if (waiting.has(p.id)) p.seen = true;
+      // Gone from a queue that listed it: it went in. Not before it was listed: the view's
+      // data can be older than the send (measured: the bubble said "sending" at once).
+      else if (p.queued && p.seen) { p.queued = false; p.at = now; }
+    });
+    v.pending = v.pending.filter(p => p.failed !== undefined ||
+      (now - p.at < (p.queued ? QUEUE_HOLD_MS : HOLD_SENT_MS) &&
+       !items.some(it => it.type === 'user' && it.text.includes(String(p.key || p.text).trim()))));
     let html = '';
     if ((data.turns || []).length >= v.limit && v.limit < 400) {
       html += `<button class="cm-earlier" data-act="earlier">${escHtml(T('Show earlier messages', '載入更早的對話'))}</button>`;
@@ -927,8 +942,12 @@
     }
     v.pending.forEach(p => {
       const att = (p.files || []).length ? `<div class="cm-meta">${escHtml(T('Attached: ', '附件：') + p.files.map(f => baseName(f.path)).join('、'))}</div>` : '';
-      html += `<div class="cm-row cm-user is-pending"><div class="cm-bubble">${md(p.text, isZh(lang()))}</div>${att}` +
-              `<div class="cm-meta">${escHtml(p.queued ? T('Waiting for it to finish this step', '等它做完這一步就送進去') : T('Sending…', '送出中…'))}</div></div>`;
+      const meta = p.failed !== undefined
+        ? `<div class="cm-meta cm-failed">${escHtml(p.failed ? T(`Not sent: ${p.failed}`, `沒送出：${p.failed}`) : T('Not sent', '沒送出'))}` +
+          ` <button class="cm-more-text cm-inline" data-act="resend" data-key="${escHtml(p.uid)}">${escHtml(T('Send again', '重送'))}</button>` +
+          ` <button class="cm-more-text cm-inline" data-act="dismiss" data-key="${escHtml(p.uid)}">${escHtml(T('Remove', '移除'))}</button></div>`
+        : `<div class="cm-meta">${escHtml(p.queued ? waitWords(p) : T('Sending…', '送出中…'))}</div>`;
+      html += `<div class="cm-row cm-user is-pending${p.failed !== undefined ? ' is-failed' : ''}"><div class="cm-bubble">${md(p.text, isZh(lang()))}</div>${att}${meta}</div>`;
     });
     if (listHtml !== sid + html) {
       const keep = scroller.scrollTop;
@@ -1059,6 +1078,7 @@
                                             '這個畫面讀不到選項，所以不會從這裡替你選。'))}</div>` +
         `<div class="cm-opts"><button class="cm-opt" data-act="to-term">${escHtml(T('Open the terminal', '切到終端機處理'))}</button></div></div></div>`;
     }
+    html = draftCardHtml(sid) + html;
     ask.hidden = !html;
     if (ask.dataset.html !== html) { ask.innerHTML = html; ask.dataset.html = html; stickBottom(sid); }
   }
@@ -1235,7 +1255,8 @@
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 180) + 'px';
   }
-  async function send() {
+  // `clearDraft`: the person answered the draft card with "clear it and send".
+  async function send(clearDraft) {
     const sid = shownFor;
     const text = input.value;
     const v = sid ? view(sid) : null;
@@ -1245,26 +1266,43 @@
     // for an attachment, and what a paired phone sends for a photo.
     const body = files.length ? files.map(f => f.path).join('\n') + (text.trim() ? '\n\n' + text : '') : text;
     const shown = text.trim() ? text : files.map(f => baseName(f.path)).join('\n');
-    const item = { text: shown, key: text.trim() || baseName(files[0].path), at: Date.now(), queued: false, files };
-    v.pending.push(item);
     v.files = [];
     renderAttach(sid);
-    v.atBottom = true;
     input.value = '';
     autosize();
+    const r = await sendBody(sid, { text: shown, body, key: text.trim() || baseName(files[0].path), files }, !!clearDraft);
+    if (!r || !r.success) {                                     // nothing went in: the words stay in the box
+      if (!input.value) { input.value = text; autosize(); }
+      v.files = files.concat(v.files || []);
+      renderAttach(sid);
+    }
+  }
+  // One send: a pending bubble until the record has it. The server may say the terminal's
+  // input box holds a draft (the card asks what to do), or that it queued the text (its id
+  // is followed in chat_view's `queue`: still waiting, or given up → "not sent", resend).
+  async function sendBody(sid, msg, clearDraft) {
+    const v = view(sid);
+    const item = { text: msg.text, body: msg.body, key: msg.key, files: msg.files || [], at: Date.now(),
+                   queued: false, uid: Math.random().toString(36).slice(2) };
+    v.pending.push(item);
+    v.draftCard = null;
+    renderAsk(sid);
+    v.atBottom = true;
     renderList(sid);
     note('');
+    let r = null;
     try {
-      const r = JSON.parse(await api().chat_send(sid, body));
-      if (!r.success) {
+      r = JSON.parse(await api().chat_send(sid, msg.body, !!clearDraft));
+      if (r.code === 'draft') {
         v.pending = v.pending.filter(p => p !== item);
-        if (!input.value) { input.value = text; autosize(); }
-        v.files = files.concat(v.files || []);
-        renderAttach(sid);
+        v.draftCard = { draft: String(r.draft || '') };
+        renderAsk(sid);
+      } else if (!r.success) {
+        v.pending = v.pending.filter(p => p !== item);
         note(r.message || T('Not sent.', '沒有送出。'), true);
       } else if (r.queued) {
-        item.queued = true;
-        note(T('It is busy: your message goes in as soon as it finishes this step.', '它正在忙，這一步做完就會收到你的訊息。'));
+        Object.assign(item, { queued: true, id: r.id || '', reason: r.reason || '' });
+        note(waitWords(item, true));
       }
     } catch (e) {
       v.pending = v.pending.filter(p => p !== item);
@@ -1272,6 +1310,31 @@
     }
     renderList(sid);
     refresh(sid, true);
+    return r;
+  }
+  // Why a queued message has not gone in yet, in plain words (tab_delivery.busy_reason).
+  function waitWords(p, long) {
+    switch (p.reason) {
+      case 'decision': return T('Waiting for you to answer its question first', '等你先回答它的問題，再送進去');
+      case 'telegram': return T('Waiting for the message from Telegram to be taken', '等 Telegram 那一則處理完再送進去');
+      case 'queued': return T('In line behind an earlier message', '排在前一則訊息後面');
+      case 'draft': return T('Waiting for the draft in the terminal to be cleared', '等終端機裡的草稿清掉再送進去');
+      default: return long ? T('It is busy: your message goes in as soon as it finishes this step.', '它正在忙，這一步做完就會收到你的訊息。')
+                           : T('Waiting for it to finish this step', '等它做完這一步就送進去');
+    }
+  }
+  // The card for a draft in the terminal: what it says, and clear-and-send or not now.
+  function draftCardHtml(sid) {
+    const c = view(sid).draftCard;
+    if (!c) return '';
+    return `<div class="cm-ask-card cm-draft-card">${faceHtml(sid, '')}<div class="cm-ask-body">` +
+      `<div class="cm-ask-title">${escHtml(T('Not sent yet', '還沒送出'))}</div>` +
+      `<div class="cm-ask-q">${escHtml(T('The terminal has text that was never sent:', '終端機裡有一段還沒送出的字：'))}</div>` +
+      `<div class="cm-ask-ctx"><code>${escHtml(c.draft)}</code></div>` +
+      `<div class="cm-ask-note">${escHtml(T('Your message would wait behind it. Clear it and send yours, or keep yours here for now.',
+                                            '你的訊息會一直排在它後面。要清掉它再送出你的，還是先把你的留在這裡？'))}</div>` +
+      `<div class="cm-opts"><button class="cm-opt" data-act="draft-clear">${escHtml(T('Clear it and send', '清掉後送出'))}</button>` +
+      `<button class="cm-opt" data-act="draft-keep">${escHtml(T('Not now', '先不送'))}</button></div></div></div>`;
   }
   async function answer(btn) {
     const sid = shownFor;
@@ -1307,6 +1370,16 @@
       return;
     }
     if (act === 'answer') return answer(el);
+    if (act === 'draft-clear') return send(true);
+    if (act === 'draft-keep') { view(sid).draftCard = null; renderAsk(sid); input.focus(); return; }
+    if (act === 'resend' || act === 'dismiss') {
+      const v = view(sid);
+      const p = v.pending.find(x => x.uid === el.dataset.key);
+      v.pending = v.pending.filter(x => x !== p);
+      if (p && act === 'resend') return sendBody(sid, p, false);
+      renderList(sid);
+      return;
+    }
     if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
     if (act === 'to-term') return setMode(sid, 'cli');
     if (act === 'notice-close') { noticeClosed.add(sid); renderNotice(sid, false); return; }

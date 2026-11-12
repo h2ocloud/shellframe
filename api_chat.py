@@ -18,6 +18,7 @@ import hashlib
 import json
 
 import agent_status
+import tab_delivery
 
 # The CLIs whose conversation the view draws: the ones sfctl `conversation` can read
 # (opencode from its SQLite, pi through agent_pi, grok and cursor from their session
@@ -71,27 +72,41 @@ class ChatApiMixin:
             else:
                 body["why"] = "no_transcript"
         body["decision"] = self._link_decision(sid, activity, res)
+        body["queue"] = tab_delivery.queue_state(sid)     # its own sends: still waiting, or given up
         stamp = hashlib.sha1(json.dumps(body, sort_keys=True, ensure_ascii=False,
                                         default=str).encode()).hexdigest()[:12]
         if rev and str(rev) == stamp:
             return json.dumps({"success": True, "unchanged": True, "rev": stamp})
         return json.dumps({"success": True, "rev": stamp, **body}, ensure_ascii=False, default=str)
 
-    def chat_send(self, sid: str, text: str) -> str:
+    def chat_send(self, sid: str, text: str, clear_draft: bool = False) -> str:
         """Type `text` into tab `sid` and submit it, the way a paired phone's message box
-        does. {"success", "queued", "reason"}: queued means the tab was busy and the text
-        goes in when that ends."""
+        does. {"success", "queued", "reason", "id"}: queued means the tab was busy and the
+        text goes in when that ends; `id` is how chat_view's `queue` names it.
+
+        Text the person left unsent in the terminal's input box is not something the chat
+        view can see, and the send would wait behind it for good (measured: queued, then
+        dropped after 30 min with a debug line only). So that answers {"code": "draft",
+        "draft": its first 60 characters} and sends nothing: the view asks whether to clear
+        it. `clear_draft`: the person said yes; it is cleared, then the text goes in."""
         text = str(text or "")
         if not text.strip():
             return json.dumps({"success": False, "code": "empty"})
-        res = self._execute_sfctl("send", {"sid": sid, "text": text, "submit": True}) or {}
+        draft = "" if clear_draft else tab_delivery.draft_of(self, sid)
+        if draft:
+            flat = " ".join(draft.split())
+            return json.dumps({"success": False, "code": "draft",
+                               "draft": flat[:60] + ("…" if len(flat) > 60 else "")}, ensure_ascii=False)
+        res = self._execute_sfctl("send", {"sid": sid, "text": text, "submit": True, "what": "chat",
+                                           "clear_draft": bool(clear_draft)}) or {}
         s = self.sessions.get(sid)
         if res.get("success") and s is not None:
             self._auto_name(sid, s, text)      # the first message names a temporary bot, as Enter in the terminal does
         details = res.get("details") or {}
         return json.dumps({"success": bool(res.get("success")), "queued": bool(details.get("queued")),
-                           "position": details.get("position"), "message": res.get("message", "")},
-                          ensure_ascii=False)
+                           "position": details.get("position"), "id": details.get("id"),
+                           "reason": details.get("reason"), "code": res.get("code"),
+                           "message": res.get("message", "")}, ensure_ascii=False)
 
     def chat_answer(self, sid: str, n, qid: str) -> str:
         """Answer the question chat_view showed with option `n`, only while `qid` is still the

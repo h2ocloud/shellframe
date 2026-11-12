@@ -310,7 +310,9 @@ tab_delivery.deliver = fake_deliver
 r = json.loads(api.chat_send("s1", "幫我\n看一下"))
 check("into tab_delivery, as typed, submitted, not cutting in",
       sent and sent[-1][0] == "s1" and sent[-1][1] == "幫我\n看一下" and sent[-1][2].get("submit") is True
-      and sent[-1][2].get("now") is False and r == {"success": True, "queued": False, "position": None, "message": "sent"}, (sent, r))
+      and sent[-1][2].get("now") is False and sent[-1][2].get("what") == "chat"
+      and r == {"success": True, "queued": False, "position": None, "id": None, "reason": None, "code": None,
+                "message": "sent"}, (sent, r))
 q = json.loads(api.chat_send("s2", "等一下做這個"))
 check("a busy tab: queued, and the view is told", q["success"] and q["queued"] and q["position"] == 1, q)
 n = len(sent)

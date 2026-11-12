@@ -25,8 +25,19 @@ running underneath with its size unchanged, and everything that types into the t
   reader is Telegram's (`bridge_telegram.menu_block`): an option wrapped onto a second
   line is joined back, and numbers that do not run 1, 2, 3… (the top is off the screen)
   are not a menu. Its cases: `tests_decision_reader.py`.
-- **Sending**: `chat_send` is sfctl `send`, the phone's message box: it waits for a turn,
-  a menu or the user's draft to end (queued meanwhile, up to 30 min).
+- **Sending**: `chat_send` is sfctl `send`, the phone's message box: it waits for a turn or
+  a menu to end (queued meanwhile, up to 30 min). Text left unsent in the terminal's input box
+  is different: the view cannot show it, and a send would wait behind it for good (measured:
+  queued, then dropped after 30 min with only a debug line). So `chat_send` sends nothing and
+  answers `{"code": "draft", "draft": first 60 characters}`; the view shows a card with the
+  draft, "clear it and send" (`chat_send(sid, text, true)`: one Ctrl+C once the tab is not
+  working, `tab_delivery.clear_draft_now`) and "not now" (the message stays in the box). Only
+  Claude Code's box is read (`tab_delivery.composer_state`); other CLIs get no card.
+- **Queued sends**: a queued send has an `id`; `chat_view`'s `queue` lists the ids still
+  waiting and the ones given up (`{"id", "why", "outcome"}`, for two hours,
+  `tab_delivery.queue_state`). The bubble says why it waits (its turn, your answer to its
+  question, an earlier message); once given up it says "not sent" and why, with "send again"
+  and "remove", and stays until one is pressed.
 - **Answering**: `chat_answer` is `/link/answer`'s path (`_bots_link_answer`): only while
   that very question is up (`id`), only a listed option. A menu gets the option's number,
   and Enter only if the same menu is still up a moment later (`tab_delivery.answer_choice`:

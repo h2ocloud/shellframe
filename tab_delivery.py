@@ -15,6 +15,10 @@ every model and every CLI:
   * one tab's queue is first in, first out, and the next item waits until the
     previous one has been taken (hook UserPromptSubmit, or the tab turns busy);
   * after QUEUE_MAX_WAIT (30 min) the item is dropped and the sender is told;
+    a send from the chat view has no sender tab: it is kept in GIVEN_UP for the
+    view (queue_state), which marks the bubble "not sent" with a resend. Measured
+    before: a chat send queued behind a draft in the terminal was dropped after
+    30 min with a debug line only, and the bubble that said "waiting" went away;
   * `now=True` (`--now`) sends at once, as before;
   * the queue is kept on disk (STATE_FILE). Measured: an item queued at 13:21:11
     vanished with the 13:25:23 restart, never delivered and the sender never
@@ -35,6 +39,7 @@ import re
 import subprocess
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import sf_lang
@@ -49,6 +54,10 @@ TAKEN_WAIT = 8.0            # after sending, how long to wait for the tab to tak
 STATE_FILE = None           # set by the app at start-up; None (tests) keeps the queue in memory
 RESTORE_GRACE = 180.0       # after a restart, how long an item waits for its tab to come back
 RESUME_SETTLE = 20.0        # …and how long before a restored item may go in at all (see _wait_turn)
+GIVEN_UP_KEEP = 7200.0      # how long the chat view can still see a send that never went in
+CLEAR_KEY = "\x03"         # Ctrl+C: measured in Claude Code 2.1, it empties a draft of any length
+                            # (Ctrl+U takes only the cursor's line); once, never twice: a second
+                            # one within a few seconds quits the CLI ("Press Ctrl-C again to exit")
 
 _CSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _TOKEN = re.compile(r"\x1b\[([0-9;?]*)([A-Za-z])|([^\x1b]+)|(\x1b)")
@@ -267,7 +276,8 @@ _draining = set()
 _resumed_at = 0.0            # when resume() loaded the queue after a restart
 _saved = None                # what the previous run left in STATE_FILE (see _read_saved)
 ON_DELIVERED = []            # fn(sid, what, at) once an item is typed in (a2a_host: hand-offs)
-_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait")
+_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait", "id", "clear_draft")
+GIVEN_UP = {}                # sid -> deque of {"id", "why", "outcome", "at"}: chat sends that never went in
 
 
 def wait_limit(ttl_min=None, default: float = None) -> float:
@@ -299,6 +309,51 @@ def pending(sid: str = "") -> list:
         items = [(k, it) for k, q in _queues.items() for it in q if not sid or k == sid]
     return [{"sid": k, "chars": len(it["text"]), "waited_s": int(time.time() - it["t0"]),
              "from": it.get("from_sid", "")} for k, it in items]
+
+
+def queue_state(sid: str) -> dict:
+    """For the chat view: the ids of its sends still waiting for tab `sid`, and the
+    ones given up in the last GIVEN_UP_KEEP seconds ({"id", "why", "outcome"})."""
+    now = time.time()
+    with _lock:
+        waiting = [it["id"] for it in _queues.get(sid, ()) if it.get("id")]
+        gone = [{k: g[k] for k in ("id", "why", "outcome")} for g in GIVEN_UP.get(sid, ())
+                if now - g["at"] < GIVEN_UP_KEEP]
+    return {"queued": waiting, "given_up": gone}
+
+
+def draft_of(api, sid: str) -> str:
+    """The text the person left unsent in tab `sid`'s input box, or ''. A dim
+    suggestion is not a draft. Only CLIs whose box composer_state reads (Claude
+    Code's); others say ''."""
+    kind, text = composer_state(capture(api, sid))
+    return text if kind == "draft" else ""
+
+
+def clear_draft_now(api, sid: str) -> bool:
+    """Empty the input box of tab `sid` with one CLEAR_KEY, only while the tab is not
+    working or asking (Ctrl+C would stop its turn), and only when a draft is there.
+    True once the box holds no draft."""
+    s = api.sessions.get(sid)
+    if not s:
+        return False
+    try:
+        state = api._agent_state_for_list(sid) or ""
+    except Exception:
+        state = ""
+    if state in ("working", "decision"):
+        return False
+    if not draft_of(api, sid):
+        return True
+    s.write(CLEAR_KEY)
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        time.sleep(0.2)
+        if not draft_of(api, sid):
+            _dlog("deliver", f"{sid}: cleared the draft in the input box, as asked")
+            return True
+    _dlog("deliver", f"{sid}: the draft in the input box did not clear")
+    return False
 
 
 def _delivered(sid: str, what: str, at: float):
@@ -392,24 +447,34 @@ def resume(api) -> int:
 
 def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
             from_sid: str = "", on_timeout=None, what: str = "", label: str = "",
-            max_wait: float = None) -> dict:
+            max_wait: float = None, clear_draft: bool = False) -> dict:
     """Send `text` to tab `sid` now if it is free (or `now`), else queue it.
     An item that never goes in is reported to `from_sid` (`label` names the
     target in that note), or handed to `on_timeout(outcome, why)` instead.
-    Returns {"success", "message", "queued", "position", "reason"}."""
+    `clear_draft`: the person chose to drop the draft in the input box (the chat
+    view's card); it is cleared once the tab is not working, then the text goes in.
+    Returns {"success", "message", "queued", "position", "reason", "id"}."""
     s = api.sessions.get(sid)
     if not s:
         return {"success": False, "message": f"No such session: {sid}", "queued": False}
     with _lock:
         waiting = bool(_queues.get(sid))
     reason = "" if now else ("queued" if waiting else busy_reason(api, sid))
+    if reason == "draft" and clear_draft:
+        if not clear_draft_now(api, sid):
+            return {"success": False, "code": "draft_stuck", "queued": False, "message": sf_lang.pick(
+                "The draft in the terminal did not clear; nothing was sent.",
+                "終端機裡的草稿沒有清掉，所以沒有送出。")}
+        reason = busy_reason(api, sid)
     if not reason:
         s._startup_trust_pending = False
         api._send_text_to_session(s, text, submit=submit)
         _delivered(sid, what, time.time())
         return {"success": True, "message": f"Sent {len(text)} chars to {sid}", "queued": False}
     item = {"sid": sid, "text": text, "submit": submit, "t0": time.time(), "from_sid": from_sid,
-            "what": what, "label": label or sid}
+            "what": what, "label": label or sid, "id": uuid.uuid4().hex[:12]}
+    if clear_draft:
+        item["clear_draft"] = True
     if max_wait:
         item["max_wait"] = float(max_wait)
     if on_timeout:
@@ -417,7 +482,7 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
     position = _enqueue(api, [item])
     why = _reason_text(reason)
     mins = int(_limit(item) // 60)
-    return {"success": True, "queued": True, "position": position, "reason": reason,
+    return {"success": True, "queued": True, "position": position, "reason": reason, "id": item["id"],
             "message": sf_lang.pick(
                 f"Queued for {sid} ({why}); it goes in when that ends, up to {mins} min "
                 f"(--ttl changes that). --now sends it at once.",
@@ -459,6 +524,10 @@ def _wait_turn(api, sid: str, item: dict) -> str:
             time.sleep(POLL)
             continue
         reason = busy_reason(api, sid)
+        if reason == "draft" and item.get("clear_draft") and not item.get("cleared"):
+            item["cleared"] = True            # one Ctrl+C at most: a second one quits the CLI
+            if clear_draft_now(api, sid):
+                reason = busy_reason(api, sid)
         if time.time() - item["t0"] > _limit(item):
             return reason or "expired"
         if not reason:
@@ -482,6 +551,10 @@ def _fail(api, item: dict, outcome: str):
         why += sf_lang.pick(" (ShellBot restarted in between)", "（期間 ShellBot 重啟過）")
     _dlog("deliver", f"{item['sid']} not delivered ({outcome}), {len(item['text'])} chars "
                      f"from {item.get('from_sid') or '?'}")
+    if item.get("what") == "chat" and item.get("id"):
+        with _lock:
+            GIVEN_UP.setdefault(item["sid"], collections.deque(maxlen=20)).append(
+                {"id": item["id"], "why": why, "outcome": outcome, "at": time.time()})
     cb = item.get("on_timeout")
     if cb:
         try:

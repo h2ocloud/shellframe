@@ -594,9 +594,12 @@ class RemoteApiMixin:
                 label = self._session_label(sid, self.sessions.get(sid))
                 res = tab_delivery.deliver(self, sid, text, submit=submit, now=bool(args.get("now")),
                                            from_sid=sender, label=label,
-                                           max_wait=tab_delivery.wait_limit(args.get("ttl")))
-                return {k: res[k] for k in ("success", "message") if k in res} | (
-                    {"details": {"queued": True, "position": res.get("position")}} if res.get("queued") else {})
+                                           max_wait=tab_delivery.wait_limit(args.get("ttl")),
+                                           what=str(args.get("what") or ""),
+                                           clear_draft=bool(args.get("clear_draft")))
+                return {k: res[k] for k in ("success", "message", "code") if k in res} | (
+                    {"details": {"queued": True, "position": res.get("position"), "id": res.get("id"),
+                                 "reason": res.get("reason")}} if res.get("queued") else {})
             except Exception as e:
                 return {"success": False, "message": f"Send failed: {e}"}
 
