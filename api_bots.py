@@ -1156,6 +1156,11 @@ class BotsApiMixin:
                           ensure_ascii=False)
 
     def bots_delete(self, role: str) -> str:
+        with _CLOSING_LOCK:
+            writing = any(v.get("role") == role for v in _CLOSING.values())
+        if writing:     # its tab is writing the memory this moment, into the folder the roster entry is for
+            return json.dumps({"success": False, "code": "busy", "message": _(
+                "It is writing its memory; delete it when that is done", "正在寫記憶，寫完再刪")}, ensure_ascii=False)
         out = {}
 
         def _mut(cfg):
@@ -1309,6 +1314,13 @@ class BotsApiMixin:
     def _bots_busy(self, sid: str) -> bool:
         return self._agent_state_for_list(sid) == "working"
 
+    @staticmethod
+    def _bots_memory_wanted(role: str) -> bool:
+        """Is `role` still a bot that keeps a memory? What a closing bot writes goes into its own
+        folder, which is made again by whatever writes there: a bot deleted while its tab was
+        closing must not get one back (#46)."""
+        return bots.is_memory_bot((_cfg().get("agent_roster") or {}).get(role))
+
     def _bots_close_flow(self, sid: str, role: str):
         written = False
         path = None
@@ -1319,9 +1331,9 @@ class BotsApiMixin:
             s = self.sessions.get(sid)
             if not s:
                 return
-            raw = _cfg().get("agent_roster") or {}
-            entry = raw.get(role) or {}
-            bots.ensure_dirs(role)
+            entry = (_cfg().get("agent_roster") or {}).get(role) or {}
+            if not bots.is_memory_bot(entry):        # deleted while it waited: a memory would make its folder again (#46)
+                return
             path = bots.new_session_file(role, sid)
             with _CLOSING_LOCK:
                 if sid in _CLOSING:
@@ -1329,16 +1341,19 @@ class BotsApiMixin:
             self._bots_notify_ui()
             if self._wait_until_ready(sid, timeout=30):
                 s._startup_trust_pending = False
-                self._send_text_to_session(
-                    s, bots.summary_prompt(role, entry, path, bots.memory_file(role)), submit=True)
-                deadline = time.monotonic() + SUMMARY_WAIT_SEC
-                while time.monotonic() < deadline and sid in self.sessions:
-                    if path.exists() and path.stat().st_size > 0:
-                        written = True
-                        time.sleep(3)       # MEMORY.md is usually written right after
-                        break
-                    time.sleep(1.0)
-            if not written and sid in self.sessions:
+                if self._bots_memory_wanted(role):   # asked again after the wait; the folder is made only now
+                    bots.ensure_dirs(role)
+                    self._send_text_to_session(
+                        s, bots.summary_prompt(role, entry, path, bots.memory_file(role)), submit=True)
+                    deadline = time.monotonic() + SUMMARY_WAIT_SEC
+                    while time.monotonic() < deadline and sid in self.sessions:
+                        if path.exists() and path.stat().st_size > 0:
+                            written = True
+                            time.sleep(3)       # MEMORY.md is usually written right after
+                            break
+                        time.sleep(1.0)
+            if not written and sid in self.sessions and self._bots_memory_wanted(role):
+                bots.ensure_dirs(role)
                 why = (_("the bot did not write a summary in time", "bot 沒有在時限內寫摘要")
                        if self._wait_until_ready(sid, timeout=1)
                        else _("the tab never came back to its prompt", "分頁沒有回到可輸入的狀態"))
@@ -1351,7 +1366,7 @@ class BotsApiMixin:
             with _CLOSING_LOCK:
                 _CLOSING.pop(sid, None)
             if sid in self.sessions:
-                self.close_session(sid, reason="bot-memory", summary_path=str(path or ""))
+                self.close_session(sid, reason="bot-memory", summary_path=str(path) if path and path.exists() else "")
             self._bots_notify_ui()
 
     def _bots_capture(self, s) -> str:
