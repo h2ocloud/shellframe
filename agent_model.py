@@ -129,7 +129,7 @@ def apply(cmd: str, model: str) -> str:
     Replaces an existing flag rather than appending a second one — two `--model`
     flags is a launch error on some CLIs and silently ambiguous on others."""
     cmd = (cmd or "").strip()
-    model = (model or "").strip()
+    model = ("" if model is None else str(model)).strip()
     flag = flag_for(cmd)
     if not flag:
         return cmd
@@ -210,7 +210,7 @@ def check(cmd: str, model: str) -> dict:
       code "unknown_model" a word the table does not know (`suggestion`: the likely one)
     Plain refusals: a model the check does not know is never saved, because the CLI would
     ignore it or refuse to start with it."""
-    model = (model or "").strip()
+    model = ("" if model is None else str(model)).strip()      # a hand-edited config may hold a number
     provider = provider_of(cmd)
     out = {"ok": True, "code": "", "kind": "default", "provider": provider, "suggestion": ""}
     if not model:
@@ -227,7 +227,8 @@ def check(cmd: str, model: str) -> dict:
 
 def pinned(cmd: str, model: str) -> dict:
     """What a role's command will run on: the role's `model`, else the one already pinned in its
-    command, and whether the check knows it. {"model", "ok", "code", "kind", "provider", "suggestion"}.
+    command, and whether the check knows it. {"model", "label", "ok", "code", "kind", "provider", "suggestion"}.
     A stored key that fails the check is what the editor flags as "may not take effect"."""
-    model = (model or "").strip() or current_model(cmd)
-    return dict(check(cmd, model), model=model)
+    model = ("" if model is None else str(model)).strip() or current_model(cmd)
+    res = check(cmd, model)
+    return dict(res, model=model, label=label_of(res["provider"], model) if model else "")

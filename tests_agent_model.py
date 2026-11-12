@@ -137,6 +137,10 @@ bad = M.pinned("pi", "gpt-5")
 check("a model kept on a CLI that takes none is flagged: it does nothing", bad["ok"] is False and bad["code"] == "model_fixed", bad)
 check("a good stored key is ok", M.pinned("codex", "gpt-5-codex")["ok"] is True and M.pinned("codex", "gpt-5-codex")["kind"] == "listed")
 
+check("a model that is not text (a hand-edited config) is read as text, never an error",
+      M.apply("claude", 5) == "claude --model 5" and M.check("claude", 5)["code"] == "unknown_model"
+      and M.pinned("claude", None)["model"] == "" and M.check("claude", None)["kind"] == "default")
+
 print("6. one place to change")
 src = (HERE / "agent_model.py").read_text(encoding="utf-8")
 check("the module says where a new model goes", "this table is the one place to change" in src and '("key", "Label")' in src)

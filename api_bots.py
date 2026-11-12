@@ -190,8 +190,12 @@ class BotsApiMixin:
             if row:
                 sessions[sid] = row
         roster = bots.public_roster(raw)
+        names = {c["key"]: c["label"] for c in _cli_choices()}
         for role, row in roster.items():       # what the role runs on, and whether ShellBot knows it (the editor flags the rest)
-            row["pin"] = agent_model.pinned(str((raw.get(role) or {}).get("cmd") or ""), row.get("model"))
+            cmd = str((raw.get(role) or {}).get("cmd") or "")
+            row["pin"] = agent_model.pinned(cmd, row.get("model"))
+            kind = agent_status.worker_kind(cmd)
+            row["cli"] = {"key": "" if kind == "other" else kind, "label": names.get(kind, "")}
         return json.dumps({
             "enabled": (cfg.get("settings", {}) or {}).get("experimental_bots", False) is True,
             "roster": roster,
@@ -629,7 +633,7 @@ class BotsApiMixin:
         had = had if isinstance(had, dict) else {}
         if "model" in data:                  # picked or typed: a model ShellBot does not know is never saved
             refused = self._model_refusal(str(data.get("cmd") or had.get("cmd") or cmd), data.get("model"),
-                                          had.get("model"), str(had.get("cmd") or ""))
+                                          self._model_had(had), str(had.get("cmd") or ""))
             if refused:
                 return json.dumps(refused, ensure_ascii=False)
         state = {}
@@ -820,7 +824,7 @@ class BotsApiMixin:
     def bots_model_info(self, cmds_json: str = "[]") -> str:
         """For the bot editor's model picker: what each launch command it offers can pin.
         {"choices": {provider: [{"key", "label"}…]}, "by_cmd": {cmd: {"provider", "pinnable",
-        "reason", "pinned"}}}. One list per CLI, from agent_model's table, the same the phone gets in
+        "flag", "reason", "pinned"}}}. One list per CLI, from agent_model's table, the same the phone gets in
         /link/bots `choices.models`. `reason` says why a command takes no model ("fixed": the CLI
         picks it inside; "unknown": a command ShellBot does not know); `pinned` is the model
         already on the command."""
@@ -833,6 +837,7 @@ class BotsApiMixin:
         for cmd in cmds:
             prov = agent_model.provider_of(cmd)
             by_cmd[cmd] = {"provider": prov, "pinnable": bool(prov), "pinned": agent_model.current_model(cmd),
+                           "flag": agent_model.flag_for(cmd),
                            "reason": "" if prov else ("unknown" if agent_status.worker_kind(cmd) == "other" else "fixed")}
             lists.setdefault(prov, agent_model.choices(prov, zh))
         return json.dumps({"choices": lists, "by_cmd": by_cmd}, ensure_ascii=False)
@@ -861,6 +866,11 @@ class BotsApiMixin:
                   f'{" (" + ", ".join(keys) + ")" if keys else ""}.{hint}',
                   f'不認得這個模型「{model}」（{res.get("provider")}）：存了也不會生效。請從清單選'
                   f'{"（" + "、".join(keys) + "）" if keys else ""}。{hint}'))
+
+    @staticmethod
+    def _model_had(entry: dict):
+        """The model a stored role runs on: its own, else the one in its command; None for no role yet."""
+        return (str(entry.get("model") or "") or agent_model.current_model(str(entry.get("cmd") or ""))) if entry else None
 
     def _model_refusal(self, cmd: str, model, had_model=None, had_cmd: str = ""):
         """None when `model` may be saved on the command `cmd`, else the refusal every way in gets
@@ -927,7 +937,7 @@ class BotsApiMixin:
             if len(model) > 80 or re.search(r"\s", model):
                 return fail("bad_model", "A model is one word, e.g. sonnet", "模型是一個詞，例如 sonnet")
             refused = self._model_refusal(str(data.get("cmd") or entry.get("cmd") or ""), model,
-                                          entry.get("model"), str(entry.get("cmd") or ""))
+                                          self._model_had(entry), str(entry.get("cmd") or ""))
             if refused:
                 return refused
             data["model"] = model

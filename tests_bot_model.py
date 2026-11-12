@@ -138,9 +138,9 @@ check("the listed models are the table's, by name and key (Claude Code)",
 check("a CLI that takes a model on its command line says so in clis, and its list agrees",
       all((c["models"] is True) == (len(choices["models"][c["key"]]) > 1) for c in choices["clis"]))
 info = json.loads(api.bots_model_info(json.dumps(["claude --model haiku --x", "pi", "my-wrapper --y", CMD["codex"]])))
-check("…bots_model_info: provider, pinnable, the pin already on the command, why a command takes none",
-      info["by_cmd"]["claude --model haiku --x"] == {"provider": "claude", "pinnable": True, "pinned": "haiku", "reason": ""}
-      and info["by_cmd"]["pi"] == {"provider": "", "pinnable": False, "pinned": "", "reason": "fixed"}
+check("…bots_model_info: provider, pinnable, the flag and the pin already on the command, why a command takes none",
+      info["by_cmd"]["claude --model haiku --x"] == {"provider": "claude", "pinnable": True, "pinned": "haiku", "flag": "--model", "reason": ""}
+      and info["by_cmd"]["pi"] == {"provider": "", "pinnable": False, "pinned": "", "flag": "", "reason": "fixed"}
       and info["by_cmd"]["my-wrapper --y"]["reason"] == "unknown" and info["by_cmd"][CMD["codex"]]["provider"] == "codex", info["by_cmd"])
 check("…and the list per provider is the table's", info["choices"]["claude"][1:-1] == choices["models"]["claude"][1:-1]
       and [c["key"] for c in info["choices"][""]] == [""], info["choices"].keys())
@@ -245,12 +245,19 @@ phone = {b["role"]: b for b in link()["bots"]}
 check("the phone's /link/bots: model_ok false, why, and the likely key",
       phone["壞的"]["model_ok"] is False and phone["壞的"]["model_code"] == "unknown_model"
       and phone["壞的"]["model_suggestion"] == "sonnet" and phone["固定"]["model_code"] == "model_fixed", phone["壞的"])
+check("the page's roster also names each role's CLI and the model as a person reads it",
+      roster["壞的"]["cli"] == {"key": "claude", "label": "Claude Code"} and roster["固定"]["cli"] == {"key": "pi", "label": "Pi"}
+      and roster["好的"]["pin"]["label"] == "GPT-5 Codex" and roster["指令裡"]["pin"]["label"] == "Haiku"
+      and roster["預設"]["pin"]["label"] == "", (roster["壞的"]["cli"], roster["好的"]["pin"]))
 check("…true for the rest, with nothing to say; an outside bot runs where it lives, so it is ok",
       all(phone[r]["model_ok"] is True and phone[r]["model_code"] == "" for r in ("好的", "指令裡", "預設", "外部")))
 r = save("壞的", responsibility="新的執掌", model="sonet")
 check("editing only the job, with the stored key sent back unchanged: saved, the key is kept and still flagged",
       r.get("success") and stored()["壞的"]["responsibility"] == "新的執掌" and stored()["壞的"]["model"] == "sonet"
       and json.loads(api.bots_state())["roster"]["壞的"]["pin"]["ok"] is False, r)
+r = save("大寫", responsibility="只在指令裡的舊 key", model="Opus")
+check("a wrong key that is only in the command (--model Opus) counts as stored too: editing the job is not blocked by it",
+      r.get("success") and stored()["大寫"]["responsibility"] == "只在指令裡的舊 key", r)
 r = save("壞的", model="sonet2")
 check("…but a different wrong key is refused", r.get("code") == "unknown_model" and stored()["壞的"]["model"] == "sonet", r)
 r = save("壞的", cmd=CMD["codex"], model="sonet")
@@ -274,6 +281,13 @@ check("…and the command is what the table gives, not something quietly differe
 config({"好的": {"label": "好的", "cmd": CMD["codex"], "model": "gpt-5-codex", "bot": {"memory": True}}})
 r = json.loads(api.bots_open("好的"))
 check("a good model: no warning", r["success"] and "model_warning" not in r["details"], r)
+
+config({"數字": {"label": "數字", "cmd": CMD["claude"], "model": 5, "bot": {"memory": True}},
+        "空": {"label": "空", "cmd": CMD["claude"], "model": None, "bot": {"memory": True}}})
+check("a model that is not text (a hand-edited config) is read as text: flagged, and nothing breaks for the others",
+      json.loads(api.bots_state())["roster"]["數字"]["pin"]["code"] == "unknown_model"
+      and {b["role"]: b for b in link()["bots"]}["數字"]["model_ok"] is False
+      and {b["role"]: b for b in link()["bots"]}["空"]["model_ok"] is True)
 
 print("5. through sfctl, as an AI would")
 config({"寫手": {"label": "寫手", "cmd": CMD["claude"], "bot": {"memory": True}}})
