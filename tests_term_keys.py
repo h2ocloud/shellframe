@@ -6,6 +6,7 @@ nothing typed reached the CLI in the app: no write_input at all. Playwright kept
 is tested where the keyboard is left on something else:
   - the keyboard on a button (the switch just clicked): the keys go to the active terminal, which takes
     the focus, and one debug line says what had the keyboard
+  - after switching tabs (the sidebar, the tab bar), the new tab's terminal gets the keys
   - a visible text box (the sidebar's search) keeps its keys
   - with the chat view up, nothing is taken
 Demo data only. Needs playwright; SKIP without it. Run: .venv/bin/python tests_term_keys.py
@@ -75,6 +76,7 @@ def run(browser, engine):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.add_init_script(STUB)
+    page.add_init_script("window.__sessions.push({sid: 's502', cmd: 'claude', alive: true, label: '示範二', bridge_enabled: true})")
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_function(SHOWN, timeout=15000)
     page.wait_for_timeout(1500)
@@ -100,7 +102,19 @@ def run(browser, engine):
     check("…and a debug line says what had the keyboard",
           len(rescued()) >= 1 and '"from":"' in rescued()[0][1][1] and '"from":null' not in rescued()[0][1][1], rescued())
 
-    print(f"[{engine}] 2. a visible text box keeps its keys")
+    print(f"[{engine}] 2. after switching tabs, the new tab's terminal gets the keys")
+    for how, sel, sid in (("the sidebar", "#sidebar-sessions [data-sid='s502']", "s502"),
+                          ("the tab bar", "#tab-bar [data-sid='s501']", "s501")):
+        page.locator(sel).first.click()
+        page.wait_for_timeout(500)
+        before = [c for c in page.evaluate("window.__calls") if c[0] == "write_input" and c[1][0] == sid]
+        page.keyboard.type("ok")
+        page.wait_for_timeout(300)
+        after = [c for c in page.evaluate("window.__calls") if c[0] == "write_input" and c[1][0] == sid]
+        check(f"switched from {how}: the keys reach {sid}", "".join(c[1][1] for c in after[len(before):]) == "ok",
+              after[len(before):])
+
+    print(f"[{engine}] 2b. a visible text box keeps its keys")
     box = page.locator("#sidebar input[type=search], #sidebar input").first
     if box.count():
         box.click()
