@@ -678,6 +678,18 @@
     // Files dropped on the view go through the page's own drop path (index.html), which
     // hands each one to attach() instead of typing it into the CLI. Pasted ones too:
     input.addEventListener('paste', onPaste);
+    pickEl = document.createElement('div');
+    pickEl.id = 'chat-pick';
+    pickEl.hidden = true;
+    layer.querySelector('#chat-col-in').appendChild(pickEl);              // over the box, its left edge on the box's
+    pickEl.addEventListener('mousedown', e => e.preventDefault());      // the box keeps the caret
+    pickEl.addEventListener('click', e => { const it = e.target.closest('[data-i]'); if (it) pickInsert(+it.dataset.i); });
+    input.addEventListener('keydown', onPickKey);
+    input.addEventListener('input', e => { if (!e.isComposing) pickUpdate(); });
+    input.addEventListener('compositionend', () => setTimeout(pickUpdate, 0));
+    input.addEventListener('click', pickUpdate);
+    input.addEventListener('keyup', e => { if (/^(Arrow(Left|Right)|Home|End)$/.test(e.key)) pickUpdate(); });
+    input.addEventListener('blur', () => setTimeout(pickClose, 120));
     input.addEventListener('keydown', e => {
       if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.isComposing || e.keyCode === 229) return;          // choosing a character, not sending
@@ -1504,6 +1516,79 @@
     btn.dataset.label = ok ? T('Copied ✓', '已複製 ✓') : T('Could not copy', '複製失敗');
     btn.classList.add('done');
     setTimeout(() => { btn.dataset.label = btn.dataset.base; btn.classList.remove('done'); }, 1500);
+  }
+
+  // ── # in the input box: name a bot or a tab, as the terminal's # does ─────
+  // Typing # opens a list of the other tabs and the bots (asleep too, bots.js mentionables);
+  // letters filter it, ↑↓ move, Enter or Tab puts "#name " in, Esc closes. What is sent is
+  // that text, as from the terminal: the agent reading it hands the work over, and its
+  // delegate wakes a sleeping bot. A # after a letter, a digit or a URL's characters (bots.js
+  // MENTION_AFTER), with a space after it (a Markdown heading) or inside `code` opens nothing;
+  // while the input method is choosing characters its keys are its own. ＃ works as #.
+  const MENTION_AFTER = /[A-Za-z0-9\/&=?_.\-]/;
+  let pickEl = null, pick = null;            // pick: {start, items, sel} while the list is open
+  function mentionToken() {
+    const caret = input.selectionStart;
+    if (caret !== input.selectionEnd) return null;
+    const before = input.value.slice(0, caret);
+    const m = before.match(/[#＃]([^\s#＃]*)$/);
+    if (!m) return null;
+    const start = caret - m[0].length;
+    if (start > 0 && MENTION_AFTER.test(before[start - 1])) return null;
+    if ((before.match(/^```/gm) || []).length % 2) return null;                       // in a code fence
+    if ((before.slice(before.lastIndexOf('\n') + 1, start).match(/`/g) || []).length % 2) return null;   // in `code`
+    return { start, filter: m[1].toLowerCase() };
+  }
+  function mentionCandidates(filter) {
+    const B = root.SFBots;
+    const sid = shownFor;
+    let all = B && B.mentionables ? B.mentionables(sid) : [];
+    if (!B || !B.mentionables) {
+      all = Object.keys(sessions()).filter(x => x !== sid && !sessions()[x].isRemote && sessions()[x].label)
+        .map(x => ({ name: sessions()[x].label, sid: x, state: 'tab', face: '', also: [] }));
+    }
+    return all.filter(c => !filter || [c.name, ...(c.also || [])].some(n => String(n || '').toLowerCase().includes(filter)))
+      .slice(0, 8);
+  }
+  function pickUpdate() {
+    const tok = layer && covers() ? mentionToken() : null;
+    const items = tok ? mentionCandidates(tok.filter) : [];
+    if (!items.length) return pickClose();
+    const keep = pick && pick.start === tok.start ? pick.sel : 0;
+    pick = { start: tok.start, items, sel: Math.min(keep, items.length - 1) };
+    const word = { awake: T('awake', '醒著'), asleep: T('asleep: it will be woken', '休息中，會叫醒'),
+                   external: T('external', '外部'), tab: T('tab', '分頁') };
+    pickEl.innerHTML = items.map((c, i) => `<div class="cm-pick-item${i === pick.sel ? ' sel' : ''}" data-i="${i}">` +
+        `<span class="cm-face busy-dot">${c.face || ''}</span><b>${escHtml(c.name)}</b><span class="cm-pick-sub">${escHtml(word[c.state] || '')}</span></div>`)
+      .join('') + `<div class="cm-pick-hint">${escHtml(T('↑↓ choose · Enter put in · Esc close', '↑↓ 選擇 · Enter 放進去 · Esc 收起'))}</div>`;
+    pickEl.hidden = false;
+    const sel = pickEl.querySelector('.cm-pick-item.sel');
+    if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
+  }
+  function pickClose() { pick = null; if (pickEl) pickEl.hidden = true; }
+  function pickInsert(i) {
+    const c = pick && pick.items[i];
+    if (!c) return pickClose();
+    const tag = '#' + c.name + ' ';
+    const caret = input.selectionStart;
+    input.value = input.value.slice(0, pick.start) + tag + input.value.slice(caret);
+    const at = pick.start + tag.length;
+    pickClose();
+    input.focus();
+    input.setSelectionRange(at, at);
+    autosize();
+  }
+  function onPickKey(e) {
+    if (!pick || e.isComposing || e.keyCode === 229) return;       // the input method is choosing: its keys
+    const n = pick.items.length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      pick.sel = (pick.sel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+      pickEl.querySelectorAll('.cm-pick-item').forEach((el, i) => el.classList.toggle('sel', i === pick.sel));
+    } else if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') pickInsert(pick.sel);
+    else if (e.key === 'Escape') pickClose();
+    else return;
+    e.preventDefault();
+    e.stopImmediatePropagation();                                  // Enter here picks, it does not send
   }
 
   // ── the microphone, in the input row ─────────────────────────────────────

@@ -99,6 +99,14 @@ running underneath with its size unchanged, and everything that types into the t
   A failure goes to the page's guide (install ffmpeg or speech-to-text); a retry after
   installing hands its words to the box too. The floating mic hides while the view shows,
   and `stt_mic_button` turns both off.
+- **# names a bot or a tab**, as the terminal's # picker does: # in the box lists the other
+  tabs, then the bots asleep, then the external ones (bots.js `mentionables`, with faces and
+  states; a bot's other names filter too); ↑↓, Enter or Tab put `#name ` in, Esc closes, and
+  Enter on the list picks rather than sends. What goes out is that text, as from the
+  terminal: the agent reading it hands the work over (its delegate wakes a sleeping bot).
+  No list after a letter, a digit or a URL's characters (`MENTION_AFTER`), in `code` or a
+  fence, or for `# ` (a heading); ＃ works as #; while the input method is choosing
+  characters its keys are its own. With bots off it lists the open tabs.
 - **Copying**: ⌘C / Ctrl+C on a selection writes plain text of the view's making on the
   page's copy event (a list item "• text", inline code as text, a code block as its lines,
   messages a blank line apart; no buttons, faces or labels); the input box keeps its own.

@@ -218,6 +218,34 @@
     return faceSvg(null, { seed: String(name) });
   }
 
+  // Who a message can name with #, for the chat view's picker: the open tabs in their order (a
+  // bot's tab under the bot's name), then the bots asleep, then the external ones; each once,
+  // with its face, its state and the other names it answers to. `except` is the tab writing.
+  function mentionables(except) {
+    const out = [], held = new Set();
+    const S = sessionsMap();
+    const order = (host() && host().order && host().order()) || Object.keys(S);
+    for (const sid of order) {
+      const s = S[sid];
+      if (!s || s.isRemote || sid === except || !s.label) continue;
+      const role = enabled ? botOf(sid) : '';
+      const e = role ? rosterEntry(role) || {} : {};
+      if (role) held.add(role);
+      out.push({ name: role ? botName(role) : s.label, role, sid, state: role ? 'awake' : 'tab', face: face(sid),
+                 also: role ? [role, e.label, ...(e.former_names || [])] : [] });
+    }
+    if (!enabled) return out;
+    const sleepers = [], outside = [];
+    for (const role of Object.keys(st.roster || {})) {
+      if (!isBot(role) || held.has(role) || (except && botOf(except) === role)) continue;
+      const e = rosterEntry(role) || {};
+      const ext = isExternal(role);
+      (ext ? outside : sleepers).push({ name: botName(role), role, sid: '', state: ext ? 'external' : 'asleep',
+        face: faceSvg((e.bot || {}).avatar, { seed: role, asleep: !ext }), also: [role, e.label, ...(e.former_names || [])] });
+    }
+    return out.concat(sleepers, outside);
+  }
+
   // What the row's second line says: the agent's latest line, like a chat list.
   function previewOf(sid) {
     if (isClosing(sid)) return t('Writing this conversation into memory…', '正在把這次對話寫進記憶…');
@@ -1660,7 +1688,7 @@
 
   window.SFBots = {
     face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
-    tabMentions, openTelegram, renameBotTab, faceForName,
+    tabMentions, openTelegram, renameBotTab, faceForName, mentionables,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,
