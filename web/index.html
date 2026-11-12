@@ -8481,9 +8481,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // 號碼，套用前確認沒有比自己新的已經套用過。
   let _syncSeq = 0;
   let _syncAppliedSeq = 0;
+  // list_sessions 的回答沒回來（Windows 上量過：回傳值被丟掉，或頁面卡住），這一輪等
+  // SYNC_WAIT_MS 就放掉，下一輪重問。不放的話 _syncInflight 永遠卡在它身上，之後每一輪
+  // 都排在它後面：分頁清單不再跟著改名、新分頁、關分頁更新，只有重開才會好。
+  const SYNC_WAIT_MS = 10000;
+  let _syncTimeouts = 0;
+  function _answerWithin(p, ms) {
+    return new Promise((ok, no) => {
+      const t = setTimeout(() => { _syncTimeouts++; no(new Error(`no answer in ${ms} ms`)); }, ms);
+      p.then(v => { clearTimeout(t); ok(v); }, e => { clearTimeout(t); no(e); });
+    });
+  }
   window.__sfSyncStats = () => ({ rev: _sessionsRev, inflight: !!_syncInflight,
                                   pending: _syncPending, seq: _syncSeq,
-                                  applied: _syncAppliedSeq });
+                                  applied: _syncAppliedSeq, timeouts: _syncTimeouts });
 
   async function syncSessionsFromBackend() {
     if (_syncInflight) { _syncPending = true; return _syncInflight; }
@@ -8509,7 +8520,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       const revAtStart = _sessionsRev;
       const mySeq = ++_syncSeq;
-      const raw = await pywebview.api.list_sessions();
+      const raw = await _answerWithin(pywebview.api.list_sessions(), SYNC_WAIT_MS);
       if (mySeq < _syncAppliedSeq) return false;       // 有更新的已經套用過
       if (_sessionsRev !== revAtStart) return false;   // 成員在等待期間變了
       _syncAppliedSeq = mySeq;
@@ -8590,6 +8601,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
       return changed;
     } catch(e) {
+      if (/^no answer in/.test(e && e.message)) {          // _answerWithin gave up on list_sessions
+        try { pywebview.api.js_debug('sync', `list_sessions: ${e.message}; the next round asks again`); } catch (_) {}
+      }
       return false;
     }
   }

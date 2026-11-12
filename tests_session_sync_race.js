@@ -44,9 +44,10 @@ function check(name, ok, detail) {
   else { failed++; console.log('  [FAIL] ' + name + '  ' + (detail || '')); }
 }
 
-function makeCtx(backendRounds) {
+function makeCtx(backendRounds, waitMs) {
   const pending = [];
   const reconnects = [];
+  const jsDebug = [];
   const ctx = {
     _uiCreatingSession: 0,
     _syncDeferred: false,
@@ -57,13 +58,16 @@ function makeCtx(backendRounds) {
     isRemoteSid: () => false,
     renderTabs: () => {},
     switchTab: (sid) => { ctx.activeId = sid; },
-    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    // the page's 10 s limit on list_sessions must not hold node open after the checks
+    setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); if (ms >= 1000) t.unref(); return t; },
+    clearTimeout: (t) => clearTimeout(t),
     console,
     window: {},
     JSON,
     Date,
     pywebview: { api: {
       list_sessions: () => new Promise(resolve => pending.push(resolve)),
+      js_debug: (tag, msg) => { jsDebug.push(tag + ': ' + msg); return Promise.resolve('ok'); },
     }},
     Map,
     // 建 pane 的替身：故意在寫入 sessions[sid] 之前 await，這正是真實函式的
@@ -78,8 +82,13 @@ function makeCtx(backendRounds) {
     },
   };
   vm.createContext(ctx);
-  vm.runInContext(RECONNECT_GUARD + '\n' + SYNC, ctx);
-  return { ctx, pending, reconnects };
+  let sync = SYNC;
+  if (waitMs) {                     // the real code with a shorter limit, so a test waits ms, not 10 s
+    sync = SYNC.replace('const SYNC_WAIT_MS = 10000;', 'const SYNC_WAIT_MS = ' + waitMs + ';');
+    if (sync === SYNC) throw new Error('index.html 找不到 SYNC_WAIT_MS = 10000');
+  }
+  vm.runInContext(RECONNECT_GUARD + '\n' + sync, ctx);
+  return { ctx, pending, reconnects, jsDebug };
 }
 
 const BACKEND = ['s1', 's2', 's3'].map(sid => ({
@@ -162,6 +171,29 @@ const BACKEND = ['s1', 's2', 's3'].map(sid => ({
     await new Promise(r => setTimeout(r, 30));
     check('這一輪結束後補跑了一次（session 變動不會沒人對帳）',
           pending.length === 2, 'list_sessions 共 ' + pending.length + ' 次');
+  }
+
+  // ── 5. 一次回答永遠沒回來（Windows 上量過：回傳值被丟掉）：這一輪放掉，下一輪重問 ──
+  {
+    const { ctx, pending, jsDebug } = makeCtx(undefined, 40);
+    const first = ctx.syncSessionsFromBackend();      // pending[0] is never answered
+    await first;
+    const st = ctx.window.__sfSyncStats();
+    check('沒回來的那一輪，時限一到就放掉（不再卡住後面每一輪）',
+          st.inflight === false && st.timeouts === 1, JSON.stringify(st));
+    check('…debug log 記一行', jsDebug.length === 1 && /list_sessions: no answer in 40 ms/.test(jsDebug[0]),
+          JSON.stringify(jsDebug));
+    const second = ctx.syncSessionsFromBackend();
+    check('下一輪重新問', pending.length === 2, 'list_sessions 共 ' + pending.length + ' 次');
+    pending[1](JSON.stringify(BACKEND));
+    await second;
+    await new Promise(r => setTimeout(r, 30));
+    check('…這次有回答，分頁照常建起來', Object.keys(ctx.sessions).sort().join(',') === 's1,s2,s3',
+          JSON.stringify(Object.keys(ctx.sessions)));
+    pending[0](JSON.stringify([]));                  // the lost answer turns up late, saying "no tabs"
+    await new Promise(r => setTimeout(r, 30));
+    check('晚到的那一份不會被套用（沒有把分頁清掉）', Object.keys(ctx.sessions).length === 3,
+          JSON.stringify(Object.keys(ctx.sessions)));
   }
 
   console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
