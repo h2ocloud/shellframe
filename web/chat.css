@@ -61,6 +61,16 @@ body.sf-chat-shown #chat-layer { --hint-gutter: 0px; }
 
 /* ── the conversation ── */
 #chat-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* Scrollbars: thin and dark like the app's dialogs, on the list, the input box and the code
+   blocks alike; overflow stays auto, so a bar shows only where there is more to see. Only the
+   ::-webkit-scrollbar rules, which WebKit (the Mac app) and WebView2 both draw the same way:
+   the standard scrollbar-width would switch WebView2 to its own thin bar. Colours are written
+   out: WebKit leaves var() unresolved in a scrollbar's pseudo-elements, and the thumb vanished. */
+#chat-layer ::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+#chat-layer ::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 8px;
+  border: 2px solid transparent; background-clip: padding-box; min-height: 28px; }
+#chat-layer ::-webkit-scrollbar-thumb:hover { background-color: #565f89; }
+#chat-layer ::-webkit-scrollbar-track, #chat-layer ::-webkit-scrollbar-corner { background: transparent; }
 #chat-col { max-width: 880px; margin: 0 auto; padding: 1em 1.4em 1.2em; }
 .cm-row { display: flex; gap: .7em; margin: .75em 0; align-items: flex-start; }
 .cm-bubble { min-width: 0; padding: .55em .9em; border-radius: 14px; overflow-wrap: anywhere; }
