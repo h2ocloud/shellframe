@@ -816,7 +816,10 @@ class RemoteApiMixin:
                 name = args.get("name", "")
                 if not sid or not name:
                     return {"success": False, "message": "sid and name required"}
-                result_json = self.rename_session(sid, name)
+                # A name somebody gave (sfctl rename and new --label, Telegram's /rename, the HTTP
+                # API, a paired machine) is a choice, as the page's rename dialog is: manual turns
+                # the first message's automatic name off for this tab, or it renames it right back.
+                result_json = self.rename_session(sid, name, manual=True)
                 result = json.loads(result_json) if isinstance(result_json, str) else result_json
                 if result.get("former") or result.get("code"):
                     return result                                  # a bot's tab: the bot was (or was not) renamed

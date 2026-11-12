@@ -148,6 +148,9 @@ sfctl a2a-handoff worker:<name> "任務" --allow-write
 sfctl a2a-log
 ```
 
+A name you give a tab (`new --label`, `rename`, and so Telegram's `/rename`) is kept: the tab's
+first message does not rename it. Only a tab nobody named gets a name made from its first message.
+
 **Bots (plan A).** Every AI tab is a bot: a *temporary* one until someone keeps it.
 `sfctl bots-keep <tab> [name]` keeps it (its face, a memory folder, its tab named for
 good); `sfctl bots-set <bot> --cli codex [--model m] [--now]` moves a bot to another CLI

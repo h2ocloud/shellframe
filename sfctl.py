@@ -1132,8 +1132,9 @@ def main():
         if result.get("success") and args.label:
             sid = result.get("details", {}).get("sid", "")
             if sid:
-                _rpc("rename", {"sid": sid, "name": args.label}, timeout=5)
-                result["message"] = f"Created {sid} as '{args.label}'"
+                named = _rpc("rename", {"sid": sid, "name": args.label}, timeout=5)
+                result["message"] = (f"Created {sid} as '{args.label}'" if named.get("success") else
+                                     f"Created {sid}, but its name '{args.label}' was not confirmed: {named.get('message', '')}")
         _print_result(result)
     elif args.cmd == "send":
         _print_result(_rpc("send", {
