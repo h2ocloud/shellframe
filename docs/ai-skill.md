@@ -388,6 +388,8 @@ configure there.
 | Chat view (`ui_style`); "waiting on you" read from the visible screen and answered with the number alone; a menu decision's `detail`; in `conversation`, a turn ShellBot typed in for another agent or for Telegram carries `from` | 0.42.0 |
 | Push to paired phones: `sfctl push-setup` (needs an APNs key) / `push-status`; `sfctl notify` reaches the phones too | 0.42.0 |
 | The Loops panel's schedule list reads the user's label prefixes from `schedules.json` (nothing listed without one), shows a month-and-day plist as a one-off with its yearly-repeat warning, groups one-offs, lists KeepAlive jobs, and says "not supported yet" off macOS | 0.42.1 |
+| A2A: the first message past the chain limit, to an open tab, goes in marked "not passed on" (data, not a task) and its sender gets `ERR Blocked …`; the person writing to a tab (Enter, the chat view, Telegram) starts its next message at layer 1; a message from another computer carries its own layer | 0.42.1 |
+| `bots-set` / `bots-save` refuse a model ShellBot does not know (`unknown_model`, with a suggestion); `/link/bots` `choices.models`; a name from `new --label` / `rename` survives the first message; `bots-delete` answers `busy` while the bot writes its memory | 0.42.1 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

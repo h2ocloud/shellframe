@@ -6,6 +6,163 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.42.1 (2026-11-13)
+
+### Fixes
+
+- **An agent's messages no longer pile up against the chain limit because nothing reset it.**
+  The limit (4 layers) stops two agents answering each other forever, but nothing reset a tab's count
+  when the person wrote to it: a tab that once got a deep message stayed at the cap, and every message
+  from one paired computer counted as one chain that only grew, so its fifth message of any kind was
+  stopped. Now Enter in a tab's terminal, a send from the chat view or a Telegram message starts what
+  that tab sends next at layer 1, and a message from another computer carries its own layer.
+  Covered by tests_a2a_chain_reset.py and tests_agent_link.py.
+
+  **AI 之間的訊息不再因為層數從不歸零而被擋。** 上限（4 層）是為了讓兩個 AI 不會一直互相回覆，
+  但使用者對分頁說話時，層數從來沒有歸零：一個分頁只要收過一則很深的訊息，之後寄的都卡在上限；
+  同一台配對電腦來的訊息也全算成同一條只會變長的鏈，第 5 則起一律被擋。現在在分頁的終端機按 Enter、
+  從對話畫面送出、或在 Telegram 說話，那個分頁接下來寄的就從第 1 層算；別台電腦來的訊息用它自己帶的
+  層數。由 tests_a2a_chain_reset.py、tests_agent_link.py 守著。
+
+- **A message the chain limit stops still reaches the tab it was for, as data.** Reported: an agent's
+  correction ("do not delete that yet") was dropped at the limit, the recipient never knew, and acted on
+  what it had. Now the first message past the limit, to a tab that is open, goes in marked "not passed
+  on": for reference only, not a task, not to be forwarded. Its sender reads a plain bounce (`ERR Blocked
+  (chain depth 5, limit 4): the recipient has it, as reference only.`, exit 1), `a2a-log` records it, and
+  the chat view and a phone (`from.blocked`) tag the bubble. Deeper messages are still refused.
+
+  **被層數上限擋下的訊息，照樣送到對方分頁，當作資料。** 回報：一個 AI 的更正（「那個先別刪」）在
+  上限被丟掉，收件者完全不知道，照舊的資訊做了。現在超過上限的第一則，如果對方分頁開著，會標「未轉達」
+  送進去：只供參考，不是任務，也不要轉發。寄件者會收到明確的退件（`ERR Blocked …`，結束碼 1），
+  `a2a-log` 記一筆，對話畫面和手機（`from.blocked`）在泡泡上標出來。更深的照舊拒絕。
+
+- **A message from an agent that waited in the queue still shows as that agent's.** A message that
+  waited over 30 minutes gets a line saying so; it came in front of the agent's `[[A2A…]]` header, so
+  the chat view, a phone and every preview took it for the person's own. The line now goes after the
+  header.
+
+  **排隊很久的 AI 訊息，照樣顯示成那個 AI 寄的。** 排隊超過 30 分鐘的訊息會多一行說明；這行原本加在
+  `[[A2A…]]` 標頭前面，對話畫面、手機和摘要都把它當成使用者自己的訊息。現在這行放在標頭後面。
+
+- **Reading the config could put back an older copy and lose what was just saved.** When a read had a
+  migration to save (a new CLI preset to offer, a default to add), it saved the copy it had read without
+  the lock. Measured: a bot saved at that moment vanished from the roster. Migrations are now saved from
+  a fresh read under the lock. Covered by tests_config_migration_race.py.
+
+  **讀設定時，可能把舊的那份存回去，蓋掉剛存的東西。** 讀設定遇到要遷移（補新的 CLI 預設、補預設值）
+  時，會把它在鎖外讀到的那份存回去。實測：同一時間存進去的 bot 從名冊消失。現在遷移一律在鎖裡重新讀
+  一次再存。由 tests_config_migration_race.py 守著。
+
+- **Two starts of the Telegram bridge at once leave one poller.** At a cold start the app's own
+  autostart and the page's restore could both start the bridge; the orphan kept polling and Telegram
+  answered 409 Conflict until the app quit. Starts and stops now take turns, a start finds a running
+  bridge and keeps it, and the bridge log has timestamps. Covered by tests_bridge_start_race.py.
+
+  **Telegram 橋接同時被啟動兩次，只會留下一個。** 冷啟動時，App 的自動啟動和畫面的還原可能同時啟動
+  橋接，多出來的那個一直輪詢，Telegram 一直回 409 Conflict，直到 App 結束。現在啟動和停止一次只跑一個，
+  橋接已經在跑就保留，橋接 log 每行加上時間。由 tests_bridge_start_race.py 守著。
+
+- **The tab list keeps following the app when one answer never comes back.** If the page waited for
+  `list_sessions` forever (measured on Windows), renames, new tabs and closed tabs stopped showing. The
+  page now gives up on a round after 10 seconds and asks again.
+
+  **一次回答沒回來，分頁清單也不會停住。** 畫面如果一直等不到 `list_sessions`（在 Windows 上量到），
+  改名、新分頁、關分頁都不再更新。現在等 10 秒就放掉這一輪，再問一次。
+
+- **A right-click no longer pastes by itself.** Selected text is copied as before; with nothing
+  selected a menu opens and Paste is yours to pick (files copied in Finder or Explorer paste from it
+  too). A redraw that cleared the selection used to turn a copy into a paste, leaving text in the CLI's
+  input box. In the chat view a right-click used to paste the clipboard into the terminal underneath;
+  it now copies the selection, or opens the menu and pastes into the chat box.
+
+  **右鍵不再自己貼上。** 有選字照樣複製；沒選字會開一個選單，點「貼上」才貼（Finder、檔案總管複製的
+  檔案也從這裡貼）。以前畫面重繪讓選取消失，複製就變成貼上，CLI 的輸入框多一段字。對話畫面裡的右鍵
+  以前會把剪貼簿貼進底下的終端機；現在有選字就複製，沒有就開選單、貼進對話框。
+
+- **Names and focus stay where the person put them.** A name given by `sfctl new --label`, `sfctl
+  rename` or Telegram's `/rename` is kept after the tab's first message (the automatic name used to
+  overwrite it). The window getting focus back no longer takes the keyboard from an open dialog or
+  another text box. A renamed tab's name is in the chat box's hint at once.
+
+  **名字和焦點留在使用者放的地方。** 用 `sfctl new --label`、`sfctl rename` 或 Telegram `/rename`
+  取的名字，第一句話之後不會再被自動取名蓋掉。視窗重新取得焦點時，不會把鍵盤從開著的對話框或別的
+  輸入框搶走。分頁改名後，對話框的提示字馬上換。
+
+- **sfctl no longer waits on Telegram.** `sfctl new`, `rename`, `close` and `bots-keep` updated the
+  Telegram bot's command menu on the thread that runs every sfctl command (three calls, 35 s each), so a
+  slow Telegram made them time out and held up every other command. The menu is now sent in the
+  background, once for a burst of changes.
+
+  **sfctl 不再等 Telegram。** `sfctl new`、`rename`、`close`、`bots-keep` 會更新 Telegram bot 的指令
+  選單，而且是在處理所有 sfctl 指令的那條執行緒上做（3 次呼叫，每次最多 35 秒），Telegram 一慢就逾時，
+  其他指令也全部排在後面。現在選單改在背景送，連續的變動只送一次。
+
+- **A bot that is writing its memory cannot be deleted.** Deleting it then let the memory being written
+  recreate its folder as an orphan. It now says to wait, and a bot deleted any other way gets no folder
+  back.
+
+  **正在寫記憶的 bot 不能刪。** 以前這時刪掉，寫完的記憶會把資料夾重建成孤兒。現在會說等它寫完再刪；
+  用別的方式刪掉的 bot，也不會再長回資料夾。
+
+- **The window decides how wide the sidebar may be.** At 125% scaling with the widest sidebar the
+  terminal or the chat view was squeezed to a sliver; the sidebar now shows no wider than leaves the main
+  column 400 px. The saved width is not changed.
+
+  **側欄最寬由視窗決定。** 125% 縮放、側欄拉到最寬時，終端機或對話畫面會被擠得很窄；現在側欄最寬只
+  到主欄還留 400 px 的地方。存起來的寬度不變。
+
+- **Confirmations are the app's own dialog.** On Windows a native confirm or alert was titled
+  "127.0.0.1:port says"; all 34 of them are now drawn by the page (Enter, Esc and the keyboard work).
+
+  **確認框改成 App 自己的。** 在 Windows 上，原生的確認框和提示框標題會是「127.0.0.1:port 說」；
+  34 處現在都由頁面自己畫（Enter、Esc、鍵盤都能用）。
+
+- **A one-line preview shows a message's words, not what it arrived in.** A sidebar card, a phone's
+  list, Telegram's `/list` and heartbeat, and a notification printed an agent's `[[A2A…]]` header, a
+  paste's tags and the Telegram reply markers as they were. They now read "研究: …", "Pasted · N lines"
+  and the person's words, by one rule (`agent_link.preview_of`, and `preview` in the page).
+
+  **一行摘要顯示訊息的內容，不是它的包裝。** 側欄卡片、手機清單、Telegram 的 `/list` 和心跳、通知，
+  以前會把 AI 訊息的 `[[A2A…]]` 標頭、貼上的標籤、Telegram 的回覆標記原樣印出來。現在顯示成
+  「研究：…」「貼上的內容 · N 行」和使用者的話，全部用同一套規則。
+
+### Changes
+
+- **The chat view, round 2.** Copying works like a chat app: clean text, and a copy button on each
+  message and code block. The microphone sits beside Send and what it hears goes into the box to read
+  first. Scrollbars are thin and only where there is more to see. In the chat style the sidebar lists
+  the tabs (no tab bar) and a terminal gets a header; the conversation's own face opens its settings.
+  An option that wraps keeps its second line.
+
+  **對話畫面第 2 輪。** 複製像聊天 App：乾淨的文字，每則訊息和程式碼區塊都有複製鈕。麥克風在「送出」
+  旁邊，聽到的字先放進輸入框，看過再送。捲軸變細，只在有更多內容時出現。對話風格改由側欄列出分頁
+  （沒有分頁列），終端機有自己的標題；點對話標題的大頭像開設定。折成兩行的選項，第二行不再被截掉。
+
+- **The schedules panel reads launchd the way launchd does.** A cadence is described as launchd runs it;
+  a month-and-day job is a one-off ("ran 11/10", "armed for 11/13 09:05", "not armed"), with a warning
+  that launchd repeats it next year; KeepAlive programs have a section of their own. Which labels are
+  yours now lives in `schedules.json` in the config folder, not in the code: until it names a prefix the
+  panel is empty and says how to set it. Other platforms say the panel is macOS only.
+
+  **排程面板照 launchd 的方式描述排程。** 頻率照 launchd 實際的跑法寫；有月有日的排程是單次排程
+  （「11/10 已執行」「已排 11/13 09:05」「未排」），並提醒 launchd 隔年同一天會再跑；常駐程式另外一區。
+  哪些排程算你的，改放在設定資料夾的 `schedules.json`，不寫在程式裡：還沒設定前綴時面板是空的，
+  會說怎麼設。其他平台會說這個面板目前只支援 macOS。
+
+### Added
+
+- **A bot's settings can be found and changed after it is made.** Before, only an awake bot's face led
+  to its editor, so a sleeping bot (the primary one most often) could not be edited. Now: the card's ✎ or
+  a right-click, Edit on a bot's row, and a new Settings → Bots tab. The model is picked from a list for
+  the bot's CLI ("CLI default" first); one typed under Other is checked on the spot, and a model ShellBot
+  does not know is never saved, from the editor, `sfctl bots-set`/`bots-save` or a phone. `/link/bots`
+  gains `choices.models`.
+
+  **bot 建好之後，設定找得到、改得了。** 以前只有醒著的 bot 的頭像能進編輯器，睡著的 bot（最常見的
+  是主要 bot）根本改不了。現在：卡片上的 ✎ 或右鍵、側欄那一列的「編輯」、新的「設定 → Bots」分頁。
+  模型改成依 CLI 的下拉選單（第一個是「CLI 預設」）；選「其他」自己打的會當場驗證，ShellBot 不認得的
+  模型不管從編輯器、`sfctl bots-set`／`bots-save` 還是手機都不會存。`/link/bots` 多了 `choices.models`。
+
 ## v0.42.0 (2026-11-11)
 
 ### Changes
@@ -6668,7 +6825,7 @@ main.py 有動 → 需 `sfctl restart`。
 ## v0.21.0 (2026-06-29)
 
 ### Features
-- **Loops 排程面板（實驗性，預設關閉）**：右側面板從「Agents 即時動態」改版成排程管理，收納「有排程的對話」。(1) 你自己的 LaunchAgent（scrum 早晚排卡、plaud、femas 打卡、tech-digest、tmux-groom、telegram 接線…）逐條顯示**編號、頻率、執行指令、開關**——開關直接 `launchctl enable/disable`（只允許 `com.howard.`／`com.neux.`／`com.claude.`／`com.h2ocloud.` 前綴、檔案存在的 agent）；每條一個「編輯」鈕，點了會開（或聚焦）一個 AI 分頁、把該排程的 plist + 腳本路徑當開場 prompt 帶進去，方便直接請 AI 調整，分頁用的 CLI 跟著你最近在用的（claude／codex）走、不寫死。(2) in-session `/loop`：讀 transcript 的 `ScheduleWakeup` 標記，顯示下次喚醒倒數、在等什麼、已跑幾輪；loop 停掉自動消失。後端走 `agent_status.detect_schedules` + `Api.schedules_list/schedule_set_enabled/schedule_edit`。Settings → General 的「Loops 排程對話面板」控制，預設關閉。
+- **Loops 排程面板（實驗性，預設關閉）**：右側面板從「Agents 即時動態」改版成排程管理，收納「有排程的對話」。(1) 你自己的 LaunchAgent（排程腳本、常駐程式…）逐條顯示**編號、頻率、執行指令、開關**——開關直接 `launchctl enable/disable`（只允許使用者自己的前綴底下、檔案存在的 agent）；每條一個「編輯」鈕，點了會開（或聚焦）一個 AI 分頁、把該排程的 plist + 腳本路徑當開場 prompt 帶進去，方便直接請 AI 調整，分頁用的 CLI 跟著你最近在用的（claude／codex）走、不寫死。(2) in-session `/loop`：讀 transcript 的 `ScheduleWakeup` 標記，顯示下次喚醒倒數、在等什麼、已跑幾輪；loop 停掉自動消失。後端走 `agent_status.detect_schedules` + `Api.schedules_list/schedule_set_enabled/schedule_edit`。Settings → General 的「Loops 排程對話面板」控制，預設關閉。
 - **語音輸入 AI 整理（Typeless 風格）**：透過 Telegram 發語音時，過去是 whisper 逐字稿直接送進 session——口語贅字（嗯／那個／就是／這樣子）、重複、同音辨識錯字、沒標點全部原樣帶入。現在 STT 之後、送進 session 之前，多一層本機 LLM 整理：把逐字稿改寫成「使用者真正要講的通順文字」，修錯字、去贅字、補標點分段，**完整保留原意與具體資訊，不摘要、不回答、不加料**。TG 回顯改為顯示整理後版本，內容若有更動會附上 `🎙 原稿：` 縮略對照。
   - 引擎預設打本機 LM Studio／Ollama 的 OpenAI 相容端點 `http://127.0.0.1:1234/v1/chat/completions`，自動挑一個非 embedding 的 chat model（實測 `gpt-oss-20b`，warm ~3s）——零成本、留在本機。端點不可達或逾時就**原樣 fallback 逐字稿**，整理掛掉不會吞訊息。
   - `~/.config/shellframe/config.json` 的 `settings` 可調：`voice_refine`（預設 true，設 false 關閉回到純逐字稿）、`voice_refine_url`、`voice_refine_model`（留空＝自動挑）、`voice_refine_style`（`clean` 保守整理＝預設／`summary` 重組成一句重點＋條列）。
