@@ -78,10 +78,11 @@ bound to a bot, or a plain tab with a face the user picked.
 Everything creating a bot asks for (name, face, job, CLI, model, skills) is changed afterwards in the one editor
 (`openEditor` in `web/bots.js`), and there are three ways in, for the primary bot and any other, asleep or awake:
 
-1. **The card and the face.** The primary card has an **✎** (and a right-click). A click on the card itself still opens
-   the bot's conversation and wakes it: that is the card's own work. With the bot's tab open, the face at the top of
-   the conversation (the chat view's header, or the small one at the top of the terminal's gutter), a right-click on any
-   bot's face and a right-click on the card open the conversation's settings, with **Edit bot…** at the top of them.
+1. **The card and the face.** The primary card has an **✎**, and a right-click on it opens the editor (with the bot's
+   tab open, the conversation's settings instead). A click on the card itself still opens the bot's conversation and wakes
+   it: that is the card's own work. The conversation's settings also open from the face at the top of the conversation (the
+   chat view's header, or the small one at the top of the terminal's gutter) and from a right-click on any bot's face;
+   **Edit bot…** is at the top of them.
 2. **Edit on the bot's row in the sidebar.** An awake bot's row ends its second line with it, a sleeping bot's row has it
    beside its name; a click on a sleeping bot's row still wakes it, and a right-click on it opens the editor.
 3. **Settings → Bots.** The tab holds the Bots and A2A switches and every bot, the primary first, with the CLI and model it
