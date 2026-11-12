@@ -634,6 +634,20 @@ def _read_config_json():
 
 
 def load_config():
+    """The config, with every migration and default applied. An ordinary read takes no lock and
+    writes nothing. When a migration changes something, it is saved under _CONFIG_LOCK from a fresh
+    read: saving the copy read without the lock could write back a stale one over what another
+    thread saved in between (measured: a bot saved through update_config was dropped by a reader
+    thread whose preset migration had read the file just before)."""
+    pending = []
+    cfg = _load_config_pass(pending.append)
+    if not pending:
+        return cfg
+    with _CONFIG_LOCK:
+        return _load_config_pass(save_config)
+
+
+def _load_config_pass(save):
     if CONFIG_FILE.exists():
         cfg = _read_config_json()
         if cfg is None:
@@ -667,7 +681,7 @@ def load_config():
             cfg["_default_ai_presets_offered"] = sorted(offered)
             cfg["_default_ai_presets_migrated"] = True   # kept for older builds
             try:
-                save_config(cfg)
+                save(cfg)
             except Exception:
                 _swallow("load_config:428")
         # One-shot migration: fix em/en-dash typos introduced by macOS smart
@@ -682,7 +696,7 @@ def load_config():
             cfg["_dash_normalized_v1"] = True
             if changed:
                 try:
-                    save_config(cfg)
+                    save(cfg)
                 except Exception:
                     _swallow("load_config:443")
         # One-shot migration: ShellFrame is often driven remotely (e.g. through
@@ -704,7 +718,7 @@ def load_config():
             cfg["_autonomous_ai_presets_v1"] = True
             if changed:
                 try:
-                    save_config(cfg)
+                    save(cfg)
                 except Exception:
                     _swallow("load_config:465")
         # Ongoing cleanup for installs that already passed the one-shot
@@ -722,7 +736,7 @@ def load_config():
                 changed = True
         if changed:
             try:
-                save_config(cfg)
+                save(cfg)
             except Exception:
                 _swallow("load_config:483")
         cfg_defaults_changed = False
@@ -744,7 +758,7 @@ def load_config():
             cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
-                save_config(cfg)
+                save(cfg)
             except Exception:
                 _swallow("load_config:499")
         return cfg
