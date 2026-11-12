@@ -3,7 +3,7 @@
 side and the real xterm.
 
 Reported on Windows (WebView2): the native confirm() and alert() are titled with the page's address,
-"127.0.0.1:47342 says" (the 4060 smoke test, the rename question). The page now asks through its own
+"127.0.0.1:47342 says" (the Windows smoke test, the rename question). The page now asks through its own
 dialog, which returns a Promise.
   - confirm: Enter says yes, Esc no, the buttons and a click on the dim area do what they say; the OK
     button has the keyboard when it opens; Tab and Shift+Tab stay inside it; Enter on Cancel is no
@@ -151,6 +151,13 @@ def run(browser, engine):
     gone(page)
     check("Cancel is no, OK is yes, a click on the dim area is no",
           answers(page)[-3:] == [["cancel", False], ["ok", True], ["dim", False]], answers(page))
+
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    ask(page, "alert", "Nothing had the keyboard.", tag="nobody")
+    page.keyboard.press("Enter")
+    gone(page)
+    page.wait_for_timeout(100)
+    check("nothing had the keyboard before: the terminal has it after", term_focused(page), page.evaluate("document.activeElement && document.activeElement.tagName"))
 
     print(f"{tag} 2. the keyboard inside it")
     ask(page, "confirm", "Sure?", tag="tab")

@@ -73,10 +73,10 @@
         doc.removeEventListener('focusin', onFocusIn, true);
         if (ov.parentNode) ov.parentNode.removeChild(ov);
         // after this turn, so the keystroke that closed it does not reach what has the keyboard next:
-        // back to where it was (the terminal, a dialog this one was asked from); if that is gone from
-        // the page (the rename box that asked), the terminal, unless another dialog is up
+        // back to where it was (the terminal, a dialog this one was asked from); if nothing had it, or
+        // that is gone from the page (the rename box that asked), the terminal, unless another dialog is up
         setTimeout(() => {
-          if (prev && prev.isConnected && typeof prev.focus === 'function') {
+          if (prev && prev !== doc.body && prev.isConnected && typeof prev.focus === 'function') {
             try { prev.focus({ preventScroll: true }); } catch (_) { /* nothing to do */ }
           } else if (!doc.querySelector('.modal-overlay.open')) {
             const h = root.__sfHost, s = h && h.sessions && h.sessions()[h.active && h.active()];

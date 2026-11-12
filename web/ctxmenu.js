@@ -92,7 +92,8 @@
         e.stopPropagation();
         const i = buttons.indexOf(doc.activeElement);
         const n = buttons.length;
-        buttons[(i + (e.key === 'ArrowDown' ? 1 : n - 1) + (i < 0 ? 1 : 0)) % n].focus();
+        const down = e.key === 'ArrowDown';
+        buttons[i < 0 ? (down ? 0 : n - 1) : (i + (down ? 1 : n - 1)) % n].focus();
       } else if (e.key === 'Tab') {
         e.preventDefault();
         close('escape');

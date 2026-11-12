@@ -85,6 +85,9 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `sf_trail.py` | A trail for when the app goes: the start line (exe, console, restart), faulthandler's file, uncaught exceptions, Windows console events, the window's events, the page's js_api calls in and out (`shellframe_jsapi.log`), a line before each quiet `os._exit` |
 | | `sf_config.py` | The one config.json lock, and the app's folder (`config_dir()`): `~/.config/shellframe`, `SHELLFRAME_CONFIG_DIR`, or for a test a folder of its own |
 | | `sf_notify.py` | Optional outbound webhook (leaf, stdlib only): config, payload, masked send, transition tracker for auto-notify. Used by `sfctl notify` and the status monitor; see [`notify-webhook.md`](notify-webhook.md) |
+| Page | `web/ctxmenu.js` + `ctxmenu.css` | The small pop-up menu at the pointer (`SFMenu.open`). The terminal's right-click opens it when nothing is selected; Paste runs when it is picked, never from the click itself |
+| | `web/dialog.js` + `dialog.css` | The app's own confirm and alert (`SFDialog.confirm` / `SFDialog.alert`, Promises): a native one is titled with the page's address in WebView2. `tests_no_native_dialogs.py` keeps a native call out of the page |
+| | `web/layout.js` | How wide the sidebar may show for the window it is in (`--sidebar-cap`); the saved width is never touched. `web/index.html` is size-budgeted, so new page code goes in a file of its own |
 
 ## 3. Data flows
 

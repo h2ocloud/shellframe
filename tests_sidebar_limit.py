@@ -4,7 +4,7 @@ Python side. Only what is drawn is limited; the saved width is never touched.
 
 Measured on Windows at 125% scaling: the window stops at 800px, which is 640 CSS pixels; with the
 sidebar dragged to its widest (448 saved, 480 is the most) the chat view had ~150px, its title and
-its input box a few letters wide. Evidence: the 4060 smoke test's "6-" screenshots.
+its input box a few letters wide. Evidence: the Windows smoke test's screenshots of the narrow window.
   - 640 CSS px (an 800px window at 125%), 448 saved: the main column keeps its minimum, the sidebar
     shows narrower, and the chat view's title and input box are readable
   - the saved width is not changed (settings, --sidebar-w, no save): the window widened again, the
