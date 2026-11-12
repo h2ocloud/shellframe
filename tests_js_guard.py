@@ -90,6 +90,18 @@ def push_output():
 
 check("terminal output is never dropped: it goes straight through, on the caller's thread, even now",
       in_thread(push_output) == 'ok:_pushOutput("s1","text")' and calls[-1][1] == caller["name"], calls[-1])
+# pywebview's own script for a page call's answer (webview/util.py, js_bridge_call), as it sends it
+ANSWER = 'window.pywebview._returnValuesCallbacks["list_sessions"]["8190"]({value: \'[]\'})'
+
+
+def answer():
+    caller["name"] = threading.current_thread().name
+    return win.evaluate_js(ANSWER)
+
+
+check("the answer to a page call is never dropped either: straight through, even now "
+      "(dropped, the page's call never returns and its tab list stops for good)",
+      in_thread(answer) == "ok:" + ANSWER and calls[-1][1] == caller["name"], calls[-1])
 release.set()
 time.sleep(0.3)
 check("once the stuck ones come back, calls go through again", in_thread(lambda: win.evaluate_js("z")) == "ok:z")

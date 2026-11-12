@@ -12,13 +12,23 @@ log) until one comes back, instead of leaving a thread behind for every push.
 Terminal output (`_pushOutput(...)`) is not guarded: a dropped push would be text missing
 from the terminal, where a slow page only made it late, so it waits as it always did. The
 calls dropped are the nudges (session list, bot view, status), which the page also polls.
+
+Nor are the answers to the page's own calls. pywebview runs each `pywebview.api.<name>()` on a
+thread of its own and hands the result back with evaluate_js
+(`window.pywebview._returnValuesCallbacks[...]`). Dropped, that call never returns in the page,
+and whatever awaits it waits for good: on a Windows computer the page's tab list stopped
+following renames, new tabs and closes after one `list_sessions` answer was dropped, until the
+app restarted. They wait as they did before this guard, on pywebview's thread for that call.
 """
 
 import threading
 
 LIMIT_S = 5.0
 MAX_STUCK = 4
-PASS_THROUGH = ("_pushOutput(",)   # terminal output: lost if dropped, so it waits as before
+PASS_THROUGH = (
+    "_pushOutput(",                               # terminal output: lost if dropped, so it waits as before
+    "window.pywebview._returnValuesCallbacks[",   # the answer to a page call: dropped, the page waits for good
+)
 
 
 def install(window, log=lambda category, msg: None, limit: float = LIMIT_S, max_stuck: int = MAX_STUCK) -> bool:
