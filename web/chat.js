@@ -435,6 +435,7 @@
     const more = zh ? `顯示全部 ${lines.length} 行` : `Show all ${lines.length} lines`;
     return `<div class="cm-code${long ? ' is-long' : ''}">` +
       (lang ? `<span class="cm-code-lang">${escHtml(lang)}</span>` : '') +
+      `<button class="cm-copy" data-act="copy-code">${zh ? '複製' : 'Copy'}</button>` +
       `<pre><code>${escHtml(body)}</code></pre>` +
       (long ? `<button class="cm-more" data-act="code-more">${more}</button>` : '') + '</div>';
   }
@@ -634,6 +635,7 @@
     });
     input.addEventListener('input', autosize);
     sendBtn.addEventListener('click', () => send());
+    document.addEventListener('copy', onCopy);
     micBtn = layer.querySelector('#chat-mic');
     micBtn.addEventListener('click', micClick);
     document.addEventListener('keydown', e => {          // Esc while recording: throw the recording away
@@ -1054,7 +1056,13 @@
     const v = view(sid);
     const long = text.length > LONG_TEXT && !v.open.has(key);
     const shown = long ? text.slice(0, LONG_TEXT).replace(/\s+\S*$/, '') + ' …' : text;
-    return `<div class="${cls}">${markdown ? md(shown, isZh(lang())) : escHtml(shown)}` +
+    let copy = '';
+    if (cls === 'cm-bubble') {             // the whole message, even while it shows only its start
+      (v.copy || (v.copy = {}))[key] = text;
+      copy = `<button class="cm-copy" data-act="copy" data-key="${escHtml(key)}" title="${escHtml(T(
+        'Copy this message', '複製這則訊息'))}">${escHtml(T('Copy', '複製'))}</button>`;
+    }
+    return `<div class="${cls}">${copy}${markdown ? md(shown, isZh(lang())) : escHtml(shown)}` +
       (text.length > LONG_TEXT ? `<button class="cm-more-text" data-act="open" data-key="${escHtml(key)}">${escHtml(
         v.open.has(key) ? T('Show less', '收合') : T(`Show all (${text.length} characters)`, `顯示全部（${text.length} 字）`))}</button>` : '') +
       '</div>';
@@ -1342,6 +1350,54 @@
     input.style.height = Math.min(input.scrollHeight + input.offsetHeight - input.clientHeight, 180) + 'px';
   }
 
+  // ── copying ──────────────────────────────────────────────────────────────
+  // A selection in the conversation as plain text, the way a chat app copies: a list item as
+  // "• text" or "1. text", a code block as its lines, blocks on lines of their own, messages
+  // apart; no buttons, faces, names or labels. ⌘C (the Mac menu's copy:) and Ctrl+C (WebView2)
+  // both raise the page's copy event; the input box keeps its own copy.
+  function plainOf(node) {
+    let out = '';
+    const nl = () => { if (out && !out.endsWith('\n')) out += '\n'; };
+    const walk = n => {
+      if (n.nodeType === 3) { out += n.nodeValue; return; }
+      if (n.nodeType === 1) {
+        if (n.matches('button, svg, .cm-code-lang, .cm-meta, .cm-face, .cm-face-gap, .cm-peer-name')) return;
+        if (n.tagName === 'BR') { out += '\n'; return; }
+        if (n.matches('.cm-mark')) { out += n.textContent + ' '; return; }
+        if (n.matches('td, th') && n.previousElementSibling) out += '\t';
+      } else if (n.nodeType !== 11) return;
+      const block = n.nodeType === 1 && n.matches('p, div, blockquote, pre, tr');
+      if (block) nl();
+      n.childNodes.forEach(walk);
+      if (block) nl();
+      if (n.nodeType === 1 && n.matches('.cm-row')) out += '\n';          // a blank line between messages
+    };
+    walk(node);
+    return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function onCopy(e) {
+    const sel = root.getSelection && root.getSelection();
+    if (!covers() || !sel || sel.isCollapsed || !sel.rangeCount || !e.clipboardData) return;
+    const range = sel.getRangeAt(0);
+    if (!layer.querySelector('#chat-scroll').contains(range.commonAncestorContainer)) return;
+    const text = plainOf(range.cloneContents());
+    if (!text) return;
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+  }
+  // A message's or a code block's own button: through the app (copy_text, as the terminal's
+  // copy does), the browser's clipboard if that fails; the button says what happened.
+  async function copyOut(text, btn) {
+    if (!text) return;
+    let ok = false;
+    try { ok = (await api().copy_text(text, 'chat-view')) === 'ok'; } catch (_) { ok = false; }
+    if (!ok) { try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {} }
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+    btn.textContent = ok ? T('Copied ✓', '已複製 ✓') : T('Could not copy', '複製失敗');
+    btn.classList.add('done');
+    setTimeout(() => { btn.textContent = btn.dataset.label; btn.classList.remove('done'); }, 1500);
+  }
+
   // ── the microphone, in the input row ─────────────────────────────────────
   // The page's own recording (mic_record_start/stop: its permission, its speech-to-text), but
   // asked without a tab, so the words come back instead of being typed into the CLI: they go
@@ -1533,6 +1589,8 @@
     if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
     if (act === 'to-term') return setMode(sid, 'cli');
     if (act === 'sidebar') { const b = document.getElementById('btn-sidebar'); if (b) b.click(); return; }
+    if (act === 'copy') return copyOut((view(sid).copy || {})[el.dataset.key] || '', el);
+    if (act === 'copy-code') { const c = el.closest('.cm-code'); return copyOut(c ? c.querySelector('pre').textContent : '', el); }
     if (act === 'settings') {        // the header's face: this conversation's settings (bots.js), open past bots.js's outside-click
       e.stopPropagation();
       if (root.SFBots && root.SFBots.openSettings) root.SFBots.openSettings(sid, el);
