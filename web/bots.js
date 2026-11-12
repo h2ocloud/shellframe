@@ -117,6 +117,16 @@
   const memOn = role => isBot(role) && rosterEntry(role).bot.memory !== false && !isExternal(role);
   const botName = role => (rosterEntry(role) && rosterEntry(role).label) || role;
 
+  // What a bot runs on, as a person reads it: its CLI, then the model by name ("CLI default" when none is pinned).
+  function runsLine(role) {
+    const e = rosterEntry(role) || {};
+    const pin = e.pin || {};
+    return [(e.cli && e.cli.label) || '', pin.model ? (pin.label || pin.model) : t('CLI default', 'CLI 預設')].filter(Boolean).join(' · ');
+  }
+  // A model ShellBot does not know for the CLI the bot runs on (typed before, or left by a CLI change): it may not take effect.
+  const modelBad = role => !!(rosterEntry(role) && rosterEntry(role).pin && rosterEntry(role).pin.ok === false);
+  const modelBadWords = role => t('This model may not take effect', '這個模型可能沒生效') + ` (${((rosterEntry(role) || {}).pin || {}).model || ''})`;
+
   function botOf(sid) {
     const row = st.sessions[sid] || {};
     if (row.plain) return '';              // the user said this tab is not a bot
@@ -245,11 +255,13 @@
         : '';
       const tempMark = temp ? `<span class="sfb-temp" title="${esc(t('A temporary bot: it forgets when it closes. Keep it to make it a bot with memory', '臨時 bot：關掉就忘了。按「記住」讓它變成有記憶的 bot'))}">${esc(t('temp', '臨時'))}</span>` : '';
       const keep = temp ? `<button class="sfb-keep" data-keep="${esc(sid)}">${esc(t('Keep', '記住'))}</button>` : '';   // outside the name: never cut off
+      const edit = role ? editButton(role) : '';
       lab.classList.add('sfb-two');
       const shown = window.SFChat && SFChat.label ? SFChat.label(sid, s.label) : s.label;   // chat style: display only
       lab.innerHTML = `<span class="sfb-top"><span class="sfb-name">${esc(shown)}${tag}</span>${keep}` +
         `<span class="sfb-ago">${esc(agoText(sid))}</span></span>` +
-        `<span class="sfb-sub">${tempMark}<span class="sfb-pv">${esc(subText(sid, temp))}</span></span>`;
+        `<span class="sfb-sub">${tempMark}<span class="sfb-pv">${esc(subText(sid, temp))}</span></span>${edit}`;
+      if (edit) lab.classList.add('has-edit');
       const dot = row.querySelector('.busy-dot');
       if (dot) dot.title = t('Right-click: face and bot settings. Click: change the expression by hand (the next turn takes over)',
                              '右鍵：頭像與 Bot 設定。點一下：手動切換表情（下次對話自動接管）');
@@ -262,6 +274,20 @@
     renderConvo();
     afterTabs(document.getElementById('tabs'));
   }
+
+  // ── Edit: on every bot's row (awake or asleep), on the primary card, and in Settings → Bots ──
+  // One button, one editor (openEditor): name, face, job, CLI, model, skills. It sits outside the name so a
+  // long name never hides it, and its click is not a click on the row (that switches tabs) or the sleeper (that wakes it).
+  const editButton = role => `<button class="sfb-edit" data-sfb-edit="${esc(role)}" title="${esc(t(
+    'Edit this bot: name, face, job, CLI, model, skills', '編輯這個 Bot：名字、頭像、執掌、CLI、模型、skill'))}" ` +
+    `aria-label="${esc(t('Edit bot', '編輯 Bot'))} ${esc(botName(role))}">${esc(t('Edit', '編輯'))}</button>`;
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-sfb-edit]');
+    if (!b || !enabled) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    closePop();
+    openEditor(b.dataset.sfbEdit);
+  }, true);
 
   // ── plan A: keep a temporary bot ─────────────────────────────────────
   document.addEventListener('click', e => {
@@ -278,7 +304,9 @@
     pop.id = 'sfb-keep';
     pop.innerHTML = `<div class="sfb-keep-title">${esc(t('Keep this conversation as a bot', '把這個對話記住，變成 bot'))}</div>
       <div class="sfb-keep-note">${esc(t('It keeps its face, gets a memory folder, and writes what this conversation taught it before it closes; next time it wakes with that memory.',
-        '它會留著現在的臉、有自己的記憶資料夾，關掉前會先把這次學到的寫進記憶，下次叫醒時帶著回來。'))}</div>
+        '它會留著現在的臉、有自己的記憶資料夾，關掉前會先把這次學到的寫進記憶，下次叫醒時帶著回來。'))}
+        ${esc(t('Its job, CLI, model and skills are empty for now: add them later from Edit on its row, or Settings → Bots.',
+        '執掌、CLI、模型、skill 先空著，之後在側欄那一列的「編輯」或 設定 → Bots 補上。'))}</div>
       <input id="sfb-keep-name" maxlength="40" spellcheck="false">
       <div class="sfb-keep-msg"></div>
       <div class="sfb-keep-btns"><button class="btn btn-ghost" data-k="cancel">${esc(t('Cancel', '取消'))}</button>` +
@@ -299,7 +327,8 @@
       try { res = JSON.parse(await a.bots_keep(sid, input.value.trim())); } catch (_) {}
       if (res.success) {
         closeKeep();
-        toast(t(`Kept "${res.role}": it remembers from now on`, `已記住「${res.role}」：從現在起它會記得`));
+        toast(t(`Kept "${res.role}": it remembers from now on. Add its job, model and skills with Edit on its row, or in Settings → Bots.`,
+                `已記住「${res.role}」：從現在起它會記得。要補執掌、模型、skill，按側欄那一列的「編輯」，或到 設定 → Bots。`), false, 7000);
         refresh(true);
         return;
       }
@@ -581,8 +610,8 @@
       row.title = ext ? t('External bot: click to see how to reach it', '外部 bot：點一下看怎麼跟它往來')
                       : t('Click to wake: opens a tab and hands it its memory', '點一下叫醒：開一個分頁並帶入它的記憶');
       row.innerHTML = `<span class="sfb-avatar">${faceSvg(e.bot.avatar, { seed: role, asleep: !ext })}</span>` +
-        `<span class="sfb-two" style="flex:1;margin-left:9px"><span class="sfb-name">${esc(botName(role))}` +
-        `${ext ? `<span class="sfb-tag">${t('external', '外部')}</span>` : ''}</span>` +
+        `<span class="sfb-two" style="flex:1;margin-left:9px"><span class="sfb-top"><span class="sfb-name">${esc(botName(role))}` +
+        `${ext ? `<span class="sfb-tag">${t('external', '外部')}</span>` : ''}</span>${editButton(role)}</span>` +
         `<span class="sfb-sub">${ext ? t('outside ShellBot', '在 ShellBot 外面') : t('asleep', '休息中')}` +
         `${e.responsibility ? ' · ' + esc(e.responsibility) : ''}</span></span>` +
         `<span class="sfb-wake">${ext ? t('Talk', '往來') : t('Wake', '叫醒')}</span>`;
@@ -622,11 +651,13 @@
     const active = sid && host() && host().active() === sid;
     const how = ext ? t('talk to it', '和它往來') : t('open its conversation', '打開它的對話');
     const tg = ext ? '' : `<button class="sfb-card-tg" data-sfb="tg" title="${esc(t('Telegram for the primary bot', '主要 Bot 的 Telegram'))}">📱</button>`;
+    const editBtn = `<button class="sfb-card-edit" data-sfb="edit" title="${esc(t(
+      'Edit this bot: name, face, job, CLI, model, skills', '編輯這個 Bot：名字、頭像、執掌、CLI、模型、skill'))}" aria-label="${esc(t('Edit bot', '編輯 Bot'))}">✎</button>`;
     el.innerHTML = `<div class="sfb-card${active ? ' active' : ''}" data-sfb="primary" ${dropLabel} ` +
       `title="${esc(t(`Click: ${how}. Drag into the list below: no longer primary`, `點一下：${how}。拖到下面的清單：不再當主要 Bot`))}">` +
       `<span class="sfb-avatar busy-dot ${cls}" style="--sfb-size:var(--sfb-size-card);cursor:pointer">` +
       `${faceSvg(e.bot.avatar, { seed: role, primary: true, asleep: !sid && !ext, writing: sid && isClosing(sid) })}</span>` +
-      `<div class="sfb-card-name">${esc(botName(role))}</div><div class="sfb-card-sub">${esc(sub)}</div>${tg}</div>`;
+      `<div class="sfb-card-name">${esc(botName(role))}</div><div class="sfb-card-sub">${esc(sub)}</div>${tg}${editBtn}</div>`;
   }
 
   function onPrimaryClick(e) {
@@ -634,6 +665,7 @@
     if (!card) return;
     if (card.dataset.sfb === 'new-primary') { openEditor(null, { primary: true }); return; }
     if (card.dataset.sfb === 'tg') { e.stopPropagation(); openTelegram(); return; }
+    if (card.dataset.sfb === 'edit') { e.stopPropagation(); if (st.primary) openEditor(st.primary); return; }
     const role = st.primary;
     if (!role) return;
     if (isExternal(role)) { openExternal(role); return; }
@@ -651,6 +683,10 @@
       const sid = (res.details || {}).sid;
       await refresh();
       if (sid) waitAndSwitch(sid);
+      if ((res.details || {}).model_warning) {          // the bot's model is one ShellBot does not know: said once, where to fix it
+        toast(t(`${q(botName(role))} woke, but its model may not take effect: ShellBot does not know it. Press Edit on its row to pick one.`,
+                `${q(botName(role))}醒了，但它的模型可能沒生效：ShellBot 不認得它。按那一列的「編輯」重選。`), true, 7000);
+      }
     } catch (err) { toast(String(err), true); }
   }
   function waitAndSwitch(sid, tries = 0) {
@@ -746,6 +782,7 @@
         const primary = st.primary === role;
         botPart = `<div class="sfb-botbox"><b>Bot · ${esc(botName(role))}</b>` +
           `<span>${esc(e.responsibility || t('(no job written yet)', '（還沒寫執掌）'))}</span>` +
+          `<span class="sfb-runs">${esc(runsLine(role))}${modelBad(role) ? ` <b class="sfb-warn-mark" title="${esc(modelBadWords(role))}">⚠</b>` : ''}</span>` +
           `<div class="sfb-row" style="margin-top:6px">` +
           `<button class="btn btn-ghost" data-act="edit">${t('Edit bot…', '編輯 Bot…')}</button>` +
           (primary ? `<span class="sfb-chip">★ ${t('Primary bot', '主要 Bot')}</span>`
@@ -760,6 +797,7 @@
       }
     }
     pop.innerHTML = `<h4 class="sfb-pop-head"><span>${esc(s.label)}</span>` +
+      (role && !remote ? `<button class="sfb-link" data-act="edit-top">${t('Edit bot…', '編輯 Bot…')}</button>` : '') +
       (remote ? '' : `<button class="sfb-link" data-act="rename">${t('Rename', '改名')}</button>`) + `</h4>` +
       (remote ? `<p class="sfb-note" style="margin:0 0 8px">${t("Another machine's tab: its face is set over there", '另一台的分頁：頭像由那台決定')}</p>` : '') +
       `<div class="sfb-grid">${shapes}</div><div class="sfb-grid" style="margin-top:8px">${colors}</div>` +
@@ -777,7 +815,7 @@
       if (!b) return;
       const act = b.dataset.act;
       if (act === 'make') { closePop(); openEditor(null, { fromSid: sid }); return; }
-      if (act === 'edit') { closePop(); openEditor(role); return; }
+      if (act === 'edit' || act === 'edit-top') { closePop(); openEditor(role); return; }
       if (act === 'rename') { closePop(); try { host().renameSession(sid); } catch (_) {} return; }
       if (act === 'folder') { api().bots_open_folder(role); return; }
       if (act === 'primary') { closePop(); setPrimary(role); return; }
@@ -830,6 +868,31 @@
     return catalog;
   }
 
+  // Where a bot's settings are changed afterwards: said at the end of every way to make one (the editor,
+  // Keep, a toast), so nobody has to hunt for it. All of it, name to skills, in any of these:
+  const whereWords = () => t(
+    'You can change all of this later: click its face, press Edit on its row in the sidebar, or open Settings → Bots.',
+    '之後都可以再改：點它的頭像、側欄那一列的「編輯」，或到 設定 → Bots。');
+
+  // ── the model: picked from the CLI's own list ─────────────────────────────
+  // The lists (and what each launch command can pin) come from Python (bots_model_info, built from
+  // agent_model.py's table): the page keeps no list of its own. A key typed under "Other (custom)" is
+  // checked there too (bots_model_check), on the spot; a key ShellBot does not know is never saved.
+  const CUSTOM = '__custom__';
+  async function modelInfo(cmds) {
+    let data = {};
+    try { data = JSON.parse(await api().bots_model_info(JSON.stringify(cmds))) || {}; } catch (_) { data = {}; }
+    return { choices: data.choices || {}, by_cmd: data.by_cmd || {} };
+  }
+  // What a refused key says, in the page's language (Python sends the code). `kept`: the bot's own old key.
+  function modelWords(res, v, kept) {
+    if (res.code === 'unknown_model' && kept) return t(`ShellBot does not know ${q(v)} for this CLI.`, `ShellBot 不認得${q(v)}。`);
+    if (res.code === 'unknown_model') return t(`Unknown model ${q(v)}: it would not take effect.`, `不認得這個模型${q(v)}：存了也不會生效。`);
+    if (res.code === 'bad_model') return t('A model is one word, e.g. sonnet.', '模型是一個詞，例如 sonnet。');
+    return t('This CLI takes no model here.', '這個 CLI 不能在這裡指定模型。');
+  }
+  const didYouMean = key => key ? ` ${t('Did you mean', '是不是要')} <a href="#" data-use-model="${esc(key)}">${esc(key)}</a>${t('?', '？')}` : '';
+
   async function openEditor(role, opts) {
     opts = opts || {};
     const existing = role ? rosterEntry(role) : null;
@@ -847,6 +910,7 @@
       cmdOptions.unshift(`<option value="${esc(curCmd)}" selected>${esc(which)}: ${esc(curCmd.slice(0, 40))}</option>`);
     }
     const skills = await skillCatalog();
+    const mi = await modelInfo([...new Set(presets.map(p => p.cmd).concat(curCmd ? [curCmd] : []))]);
     const chosen = new Set(bot.skills || []);
     const chips = skills.slice(0, 60).map(k =>
       `<label title="${esc(k.description || '')}"><input type="checkbox" value="${esc(k.name)}"${chosen.has(k.name) ? ' checked' : ''}>${esc(k.name)}</label>`).join('');
@@ -872,7 +936,9 @@
         <label>${t('Name', '名稱')}</label><input type="text" id="sfb-ed-name" value="${esc(existing ? role : (from ? from.label : ''))}" ${existing && isExternal(role) ? 'readonly' : ''}placeholder="${esc(t('e.g. research, coding, calendar', '例如：研究、Coding、日程'))}">
         <label>${t('Job', '執掌')}</label><textarea id="sfb-ed-resp" placeholder="${esc(t('What it is responsible for and where its job ends; handed to it when it wakes', '它負責什麼、邊界在哪；叫醒時會交給它'))}">${esc(existing ? existing.responsibility : '')}</textarea>
         <label>CLI</label><select id="sfb-ed-cmd">${cmdOptions.join('')}</select>
-        <label>${t('Model', '模型')}</label><input type="text" id="sfb-ed-model" value="${esc(existing ? existing.model || '' : '')}" placeholder="${esc(t("Optional, e.g. sonnet; empty = the CLI's default", '選填，例如 sonnet；留空用 CLI 預設'))}">
+        <label>${t('Model', '模型')}</label><div class="sfb-model"><select id="sfb-ed-model"></select>
+          <input type="text" id="sfb-ed-model-custom" hidden spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="${esc(t('The model key, e.g. claude-opus-4-8', '模型的 key，例如 claude-opus-4-8'))}">
+          <div class="sfb-model-note" id="sfb-ed-model-note" aria-live="polite"></div></div>
         ${existing ? `<div class="hint" style="grid-column:2">${t('Another CLI or model keeps its name, face, job and memory; this conversation does not move to the new CLI. It applies at the next wake, or now.', '換 CLI 或模型：名字、臉、執掌、記憶都留著；這次的對話不會搬到新的 CLI。下次叫醒時生效，或按「儲存並現在就換」。')}</div>` : ''}
         <label>Skills</label><div><div class="sfb-chips" id="sfb-ed-skills">${chips || `<span style="font-size:10px;color:#565f89">${t('No installed skills found', '找不到已安裝的 skill')}</span>`}</div>
           <input type="text" id="sfb-ed-skill-extra" value="${esc(extra)}" placeholder="${esc(t('Other skill names, comma-separated', '其他 skill 名稱，用逗號分隔'))}" style="margin-top:5px"></div>
@@ -887,6 +953,7 @@
           <div class="hint" style="grid-column:2">${t("The URL and key stay in this machine's config and are masked in the page and in logs.", 'URL 和 key 只存在這台的設定檔，畫面與 log 都會遮住。')}</div>
         </div>
       </div>
+      ${existing ? '' : `<p class="sfb-note sfb-where">${esc(whereWords())}</p>`}
       <div class="sfb-row" style="justify-content:flex-end">
         ${existing ? `<button class="btn btn-ghost" data-act="folder">${t('Memory folder', '記憶資料夾')}</button><button class="btn btn-ghost" data-act="delete" style="margin-right:auto;color:#f7768e">${t('Delete', '刪除')}</button>` : ''}
         <button class="btn btn-ghost" data-act="cancel">${t('Cancel', '取消')}</button>
@@ -896,18 +963,74 @@
       <div class="sfb-msg" id="sfb-ed-msg"></div></div>`;
     document.body.appendChild(ov);
     const $ = id => ov.querySelector('#' + id);
-    // A CLI that picks its model inside it (pi, Antigravity): nothing to pin here.
-    const fixedModel = cmd => /^(pi|sf-pi\S*|agy|antigravity)$/i.test(String(cmd || '').trim().split(/\s+/)[0].split(/[\\/]/).pop());
-    const syncModel = () => {
-      const fixed = fixedModel($('sfb-ed-cmd').value);
-      const m = $('sfb-ed-model');
-      m.disabled = fixed;
-      if (fixed) m.value = '';
-      m.placeholder = fixed ? t('This CLI picks its model inside it', '這個 CLI 的模型要在它裡面選')
-        : t("Optional, e.g. sonnet; empty = the CLI's default", '選填，例如 sonnet；留空用 CLI 預設');
-    };
-    $('sfb-ed-cmd').addEventListener('change', syncModel);
-    syncModel();
+    // The model field: a list for the CLI the command runs (Python's table), "Other (custom)" last, greyed
+    // for a CLI that picks its model inside it. What is stored is what the bot runs on now: its model, else
+    // the one already in its command. A stored key ShellBot does not know is shown and flagged, never hidden.
+    const pick = $('sfb-ed-model'), custom = $('sfb-ed-model-custom'), note = $('sfb-ed-model-note');
+    const noInfo = { provider: '', pinnable: false, pinned: '', flag: '', reason: 'unknown' };
+    const infoOf = cmd => mi.by_cmd[cmd] || noInfo;
+    const pin = (existing && existing.pin) || null;
+    const storedBad = pin && !pin.ok && pin.model ? pin : null;       // what bots_state flagged about the stored key
+    let provider = '', modelOk = true, seq = 0;
+    const modelValue = () => (pick.disabled ? '' : (pick.value === CUSTOM ? custom.value.trim() : pick.value));
+    const setNote = (kind, html) => { note.className = 'sfb-model-note' + (kind ? ' ' + kind : ''); note.innerHTML = html; };
+    async function showModel() {
+      const cmd = $('sfb-ed-cmd').value, i = infoOf(cmd), mine = ++seq;
+      custom.hidden = pick.value !== CUSTOM;
+      modelOk = true;
+      if (!i.pinnable) {
+        const why = i.reason === 'fixed' ? t('This CLI picks its model inside it.', '這個 CLI 的模型要在它裡面選。')
+          : t("ShellBot can't set a model on this command.", 'ShellBot 沒辦法在這個指令上指定模型。');
+        setNote(storedBad && storedBad.model ? 'warn' : '', esc(why) + (storedBad && storedBad.model
+          ? ' ' + esc(t(`The saved model ${q(storedBad.model)} does nothing here; saving clears it.`, `存著的模型${q(storedBad.model)}在這裡不會生效；儲存會把它清掉。`)) : ''));
+        return;
+      }
+      if (pick.value === CUSTOM) {
+        const v = custom.value.trim();
+        if (!v) { modelOk = false; setNote('bad', esc(t('Type the model key, or pick one from the list.', '請輸入模型的 key，或從清單選一個。'))); return; }
+        let res = { ok: true };
+        try { res = JSON.parse(await api().bots_model_check(cmd, v)); } catch (_) { /* the server checks again on save */ }
+        if (mine !== seq) return;                                 // a newer keystroke took over
+        if (res.ok) { setNote('ok', `✓ ${esc(t('ShellBot recognises this model', 'ShellBot 認得這個模型'))} · <code>${esc(i.flag)} ${esc(v)}</code>`); return; }
+        if (storedBad && v === storedBad.model && i.provider === storedBad.provider) {     // the bot's own old key: flagged, saving is not blocked
+          setNote('warn', `⚠ ${esc(t('This model may not take effect', '這個模型可能沒生效'))}: ${esc(modelWords(res, v, true))}${didYouMean(res.suggestion)}`);
+          return;
+        }
+        modelOk = false;
+        setNote('bad', esc(modelWords(res, v)) + didYouMean(res.suggestion));
+        return;
+      }
+      setNote('', pick.value ? `${esc(t('Sent as', '送出'))} <code>${esc(i.flag)} ${esc(pick.value)}</code>`
+        : esc(t("The CLI's own default: nothing is pinned.", '用 CLI 自己的預設：不指定模型。')));
+    }
+    function fillModel(cmd, want) {
+      const i = infoOf(cmd);
+      const list = mi.choices[i.provider] || mi.choices[''] || [{ key: '', label: '' }];
+      provider = i.provider;
+      pick.innerHTML = list.map(c => `<option value="${esc(c.key)}">${esc(c.key === '' ? t('CLI default', 'CLI 預設')
+        : (c.custom ? t('Other (custom)…', '其他（自訂）…') : c.label))}</option>`).join('');
+      pick.disabled = !i.pinnable;
+      const listed = list.some(c => !c.custom && c.key === want);
+      pick.value = !i.pinnable || !want ? '' : (listed ? want : CUSTOM);
+      if (i.pinnable && want && !listed) custom.value = want;
+      showModel();
+    }
+    $('sfb-ed-cmd').addEventListener('change', () => {          // another preset of the same CLI keeps the choice; another CLI starts over
+      const cmd = $('sfb-ed-cmd').value, i = infoOf(cmd);
+      fillModel(cmd, i.pinnable && i.provider === provider ? modelValue() : i.pinned);
+    });
+    pick.addEventListener('change', () => { if (pick.value === CUSTOM) custom.focus(); showModel(); });
+    let typing = 0;
+    custom.addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(showModel, 220); });
+    note.addEventListener('click', e => {                       // "Did you mean sonnet?" takes the key
+      const a = e.target.closest('a[data-use-model]');
+      if (!a) return;
+      e.preventDefault();
+      const list = mi.choices[infoOf($('sfb-ed-cmd').value).provider] || [];
+      if (list.some(c => !c.custom && c.key === a.dataset.useModel)) pick.value = a.dataset.useModel; else custom.value = a.dataset.useModel;
+      showModel();
+    });
+    fillModel($('sfb-ed-cmd').value, existing ? (pin ? pin.model : existing.model || '') : infoOf($('sfb-ed-cmd').value).pinned);
     const repaint = () => {
       $('sfb-ed-shapes').innerHTML = shapeBtns();
       $('sfb-ed-colors').innerHTML = colorBtns();
@@ -943,7 +1066,7 @@
       const data = {
         responsibility: $('sfb-ed-resp').value.trim(),
         cmd: $('sfb-ed-cmd').value,
-        model: $('sfb-ed-model').value.trim(),
+        model: modelValue(),
         skills: [...new Set(picked.concat(more))],
         avatar: av,
         memory: $('sfb-ed-mem').classList.contains('on'),
@@ -951,6 +1074,12 @@
         external: extOn ? { kind: 'webhook', url: keep($('sfb-ed-url').value), auth: keep($('sfb-ed-auth').value) } : null,
       };
       const msg = $('sfb-ed-msg');
+      if (!modelOk) {            // a typed model ShellBot does not know: nothing is saved until it is fixed
+        msg.style.color = '#f7768e';
+        msg.textContent = t('Fix the model first: pick one from the list, or correct the key.', '請先處理模型：從清單選一個，或改成正確的 key。');
+        custom.focus();
+        return;
+      }
       const renaming = !!(existing && name && name !== role);
       if (renaming && !askRename(role, name)) return;
       msg.style.color = '#a9b1d6';
@@ -974,7 +1103,11 @@
           const sw = JSON.parse(await api().bots_switch(saveAs, '', null, 'now'));
           toast(sw.success ? t('It writes its memory, then wakes on the new CLI', '它會先寫記憶，再用新的 CLI 叫醒') : (sw.message || ''), !sw.success);
         }
-        if (res.success) { ov.remove(); await refresh(true); }
+        if (res.success) {
+          ov.remove();
+          await refresh(true);
+          if (!existing) toast(`${(res.details || {}).label ? q(res.details.label) : ''} ${t('is ready.', '建好了。')} ${whereWords()}`.trim(), false, 7000);
+        }
       } catch (err) { msg.style.color = '#f7768e'; msg.textContent = String(err); }
     });
   }
@@ -1196,12 +1329,66 @@
     const timer = setInterval(() => { if (!document.body.contains(ov)) clearInterval(timer); else load(); }, 2000);
   }
 
+  // ── Settings → Bots: its own tab (the switches, and every bot with Edit on it) ─
+  // The third way in to a bot's settings, beside the face and the Edit on its row in the sidebar. The tab is
+  // made here, not in index.html (which has no room for it), the way the plugins' tabs are.
+  function settingsPanel() {
+    let panel = document.getElementById('settings-panel-bots');
+    if (panel) return panel;
+    const bar = document.getElementById('settings-tabs-bar');
+    const modal = document.querySelector('#modal-settings .modal');
+    if (!bar || !modal) return null;
+    const tab = document.createElement('button');
+    tab.className = 'settings-tab';
+    tab.dataset.tab = 'bots';
+    tab.textContent = 'Bots';
+    const general = bar.querySelector('[data-tab="general"]');
+    bar.insertBefore(tab, general ? general.nextSibling : bar.firstChild);
+    panel = document.createElement('div');
+    panel.className = 'settings-tab-panel';
+    panel.id = 'settings-panel-bots';
+    modal.insertBefore(panel, modal.querySelector('.modal-footer'));
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#modal-settings .settings-tab, #modal-settings .settings-tab-panel')
+        .forEach(x => x.classList.remove('active'));
+      tab.classList.add('active');
+      panel.classList.add('active');
+      syncSettings();
+    });
+    return panel;
+  }
+
+  // Every bot with the CLI and model it runs on, a warning where the model may not take effect, and Edit.
+  function renderSettingsList() {
+    const box = document.getElementById('sfb-settings-list');
+    if (!box) return;
+    if (!enabled) { box.innerHTML = ''; return; }
+    const awake = new Set();
+    const S = sessionsMap();
+    Object.keys(S).forEach(sid => { if (!S[sid].isRemote) { const r = botOf(sid); if (r) awake.add(r); } });
+    const roles = Object.keys(st.roster || {}).filter(isBot).sort((a, b) => (b === st.primary) - (a === st.primary));
+    box.innerHTML = `<div class="sfb-bl-head">${esc(t('Your bots', '你的 Bots'))}${roles.length ? ` · ${roles.length}` : ''}</div>` +
+      (roles.length ? roles.map(role => {
+        const e = rosterEntry(role), ext = isExternal(role);
+        const state = ext ? t('outside ShellBot', '在 ShellBot 外面') : (awake.has(role) ? t('awake', '醒著') : t('asleep', '休息中'));
+        return `<div class="sfb-bl-row" data-sfb-role="${esc(role)}">` +
+          `<span class="sfb-avatar">${faceSvg(e.bot.avatar, { seed: role, primary: role === st.primary, asleep: !ext && !awake.has(role) })}</span>` +
+          `<span class="sfb-bl-main"><span class="sfb-bl-name">${esc(botName(role))}` +
+          `${role === st.primary ? `<span class="sfb-chip">★ ${esc(t('Primary bot', '主要 Bot'))}</span>` : ''}` +
+          `<span class="sfb-bl-state">${esc(state)}</span></span>` +
+          `<span class="sfb-bl-sub">${esc(ext ? t('Reached through a webhook', '用 webhook 往來') : runsLine(role))}` +
+          `${e.responsibility ? ' — ' + esc(e.responsibility) : ''}</span>` +
+          (!ext && modelBad(role) ? `<span class="sfb-bl-warn">⚠ ${esc(modelBadWords(role))}</span>` : '') + `</span>` +
+          `<button class="btn btn-ghost sfb-bl-edit" data-sfb-edit="${esc(role)}">${esc(t('Edit', '編輯'))}</button></div>`;
+      }).join('') : `<div class="sfb-bl-empty">${esc(t('No bots yet. Keep a conversation (the Keep button on its row) and it becomes one, or create one here.',
+        '還沒有 bot。把一個對話「記住」（它那一列的按鈕）就會變成 bot，也可以在這裡建立。'))}</div>`);
+  }
+
   // ── settings toggle (injected next to the other experimental switches) ─
   function injectSettings() {
     if (document.getElementById('setting-experimental-bots')) return;
-    const anchor = document.getElementById('setting-experimental-loops');
-    const block = anchor && anchor.closest('div') && anchor.closest('div').parentElement;
-    if (!block || !block.parentElement) return;
+    const panel = settingsPanel();
+    if (!panel) return;
     const wrap = document.createElement('div');
     wrap.innerHTML = `<label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">${t('Bots: faces, memory, primary bot (experimental)', 'Bots — 頭像表情、獨立記憶、主要 Bot（實驗）')}</label>
       <div style="display:flex;align-items:center;gap:6px">
@@ -1218,8 +1405,9 @@
       <div id="sfb-settings-more" style="display:none;margin-top:6px;gap:6px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-ghost" id="sfb-settings-new" style="font-size:11px;padding:2px 10px">${t('＋ Create a bot', '＋ 建立 Bot')}</button>
         <span style="font-size:10px;color:#565f89" id="sfb-settings-root"></span>
-      </div>`;
-    block.parentElement.insertBefore(wrap, block);
+      </div>
+      <div id="sfb-settings-list"></div>`;
+    panel.appendChild(wrap);
     const btn = wrap.querySelector('#setting-experimental-bots');
     btn.addEventListener('click', async () => {
       const cfg = host() && host().cfg();
@@ -1252,11 +1440,12 @@
     if (more) more.style.display = enabled ? 'flex' : 'none';
     const root = document.getElementById('sfb-settings-root');
     if (root) root.textContent = st.memory_root ? t('Memory folder: ', '記憶資料夾：') + st.memory_root : '';
+    renderSettingsList();
   }
 
   // ── plumbing ──────────────────────────────────────────────────────────
   let toastEl = null, toastTimer = 0;
-  function toast(text, bad) {
+  function toast(text, bad, ms) {
     if (!toastEl) {
       toastEl = document.createElement('div');
       toastEl.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:600;' +
@@ -1268,7 +1457,7 @@
     toastEl.textContent = text;
     toastEl.style.display = 'block';
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastEl.style.display = 'none'; }, 3200);
+    toastTimer = setTimeout(() => { toastEl.style.display = 'none'; }, ms || 3200);
   }
 
   let lastSig = '';
@@ -1386,6 +1575,17 @@
   // Right-click a face anywhere (tab bar or sidebar) → that conversation's settings.
   document.addEventListener('contextmenu', e => {
     if (!enabled) return;
+    // The primary card has no tab behind it while its bot sleeps, and a sleeping bot's row has none either:
+    // their right-click opens the bot's editor; with the tab open the card shows the conversation's settings.
+    const card = e.target.closest && e.target.closest('#sfb-primary .sfb-card[data-sfb="primary"]');
+    const sleeper = !card && e.target.closest && e.target.closest('.sfb-sleeper[data-sfb-role]');
+    if (card && st.primary) {
+      e.preventDefault(); e.stopPropagation();
+      const sid = sidOfBot(st.primary), face = card.querySelector('.busy-dot');
+      if (sid && face) openSettings(sid, face); else openEditor(st.primary);
+      return;
+    }
+    if (sleeper) { e.preventDefault(); e.stopPropagation(); openEditor(sleeper.dataset.sfbRole); return; }
     const dot = e.target.closest && e.target.closest('.busy-dot');
     const holder = dot && dot.closest('[data-sid]');
     if (!holder) return;

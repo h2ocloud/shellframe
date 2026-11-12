@@ -12,6 +12,7 @@ Run: .venv/bin/python tests_plan_a_ui.py
 import json
 import pathlib
 import sys
+from unittest.mock import MagicMock
 
 HERE = pathlib.Path(__file__).resolve().parent
 SHOTS = HERE / "qa-shots"
@@ -33,6 +34,12 @@ try:
 except ImportError:
     print("SKIP  tests_plan_a_ui.py（沒裝 playwright）")
     sys.exit(0)
+
+sys.modules["webview"] = MagicMock()
+sys.path.insert(0, str(HERE))
+from main import Api  # noqa: E402
+
+backend = Api.__new__(Api)       # the editor's model lists come from the real Api.bots_model_info
 
 TABS = [  # sid, label, cmd, state, line
     ("s201", "寫程式", "claude", "working", {"action": "Editing relay.py"}),
@@ -84,6 +91,8 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
         return R({success: true, role: name, message: '已建立「' + name + '」'});
       }
       case 'bots_skill_catalog': return R({skills: []});
+      case 'bots_model_info': return window.__model_info(args[0]);
+      case 'bots_model_check': return window.__model_check(args[0], args[1]);
       case 'bots_save': return R({success: true, message: '已更新'});
       case 'bots_switch': return R({success: true, role: args[0], pending: true});
       default: return R('{}');
@@ -100,6 +109,8 @@ with sync_playwright() as pw:
     page = browser.new_page(viewport={"width": 1100, "height": 1300}, device_scale_factor=2)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
+    page.expose_function("__model_info", backend.bots_model_info)
+    page.expose_function("__model_check", backend.bots_model_check)
     page.add_init_script(STUB)
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_function("document.querySelectorAll('#sidebar-sessions .sb-item[data-sid] .sfb-two').length >= 6",
@@ -158,10 +169,10 @@ with sync_playwright() as pw:
     check("an awake bot's editor says what stays and offers to switch now",
           "這次的對話不會搬到新的 CLI" in page.inner_text(".sfb-modal") and page.locator('[data-act="save-now"]').count() == 1)
     page.select_option("#sfb-ed-cmd", value="pi")
-    check("a CLI that picks its model inside: the model box is off and empty",
+    check("a CLI that picks its model inside: the model list is off, on the default",
           page.locator("#sfb-ed-model").is_disabled() and page.input_value("#sfb-ed-model") == "")
     page.select_option("#sfb-ed-cmd", value="claude")
-    page.fill("#sfb-ed-model", "sonnet")
+    page.select_option("#sfb-ed-model", value="sonnet")
     check("…another one: on again", not page.locator("#sfb-ed-model").is_disabled())
     page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / "plan-a-switch.png"))
     page.locator('[data-act="save-now"]').click()

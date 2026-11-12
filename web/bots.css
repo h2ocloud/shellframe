@@ -311,3 +311,45 @@ body:not(.sfb-on) #sfb-convo { display: none; }
   padding: 1px 4px; font-size: 11px; }
 .sfb-tg input[type=password] { background: #24283b; border: 1px solid #3b4261; border-radius: 4px; color: #c0caf5; padding: 4px 6px; }
 .sfb-tg .sfb-chip a { color: #f7768e; text-decoration: none; }
+
+/* ── Edit: on every bot's row, on the primary card, and in Settings → Bots ── */
+.sfb-edit { flex: none; align-self: center; margin-left: 5px; padding: 0 6px; border-radius: 9px; cursor: pointer;
+  font-size: 9.5px; line-height: 1.5; color: #8a90ad; background: none; border: 1px solid #3b4261; }
+.sfb-edit:hover, .sfb-edit:focus-visible { color: #7aa2f7; border-color: #7aa2f7; background: #7aa2f71a; outline: none; }
+.sfb-sleeper .sfb-edit { margin: 0; }          /* on the first line of a sleeping bot's row, so its second line keeps its job */
+/* on an awake bot's row Edit sits at the end of the second line: the latest line gives way (it is cut with "…"
+   anyway), the name and the chips on the first line stay whole */
+.sfb-two.has-edit { position: relative; }
+.sfb-two.has-edit .sfb-sub { padding-right: 46px; }
+.sfb-two.has-edit .sfb-edit { position: absolute; right: 0; bottom: 0; margin: 0; }
+.sfb-card-edit { position: absolute; top: 4px; left: 4px; border: none; background: none; cursor: pointer;
+  font-size: 13px; opacity: .55; padding: 2px 3px; line-height: 1; color: #a9b1d6; }
+.sfb-card-edit:hover, .sfb-card-edit:focus-visible { opacity: 1; color: #7aa2f7; outline: none; }
+.sfb-botbox .sfb-runs { color: #787c99; font-size: 10.5px; }
+.sfb-warn-mark { color: #e0af68; cursor: help; }
+.sfb-where { margin: 10px 0 8px; padding: 6px 8px; border-radius: 6px; background: #1a1b26; border: 1px solid #292e42; }
+
+/* ── the editor's model: a list for the CLI, "Other (custom)" last ── */
+.sfb-model { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.sfb-model select:disabled { opacity: .5; cursor: not-allowed; }
+.sfb-model input[hidden] { display: none; }
+.sfb-model-note { font-size: 10.5px; line-height: 1.45; color: #787c99; min-height: 14px; }
+.sfb-model-note code { font-size: 10.5px; background: #16161e; padding: 0 4px; border-radius: 3px; color: #a9b1d6; }
+.sfb-model-note.ok { color: #9ece6a; }
+.sfb-model-note.bad { color: #f7768e; }
+.sfb-model-note.warn { color: #e0af68; }
+.sfb-model-note a { color: #7aa2f7; }
+
+/* ── Settings → Bots: every bot with its CLI and model, and Edit ── */
+#sfb-settings-list { margin-top: 14px; }
+.sfb-bl-head { font-size: 11px; color: #565f89; letter-spacing: .3px; margin-bottom: 6px; }
+.sfb-bl-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; background: #24283b; margin-bottom: 5px; }
+.sfb-bl-row .sfb-avatar { width: 30px; height: 30px; flex: none; }
+.sfb-bl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sfb-bl-name { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: #c0caf5; }
+.sfb-bl-state { font-size: 10px; font-weight: 400; color: #565f89; }
+.sfb-bl-sub { font-size: 11px; color: #787c99; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfb-bl-warn { font-size: 11px; color: #e0af68; }
+.sfb-bl-edit { flex: none; font-size: 11px; padding: 2px 12px; border: 1px solid #3b4261; }
+.sfb-bl-edit:hover { border-color: #7aa2f7; }
+.sfb-bl-empty { font-size: 11px; color: #565f89; padding: 8px 0; }

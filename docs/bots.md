@@ -3,7 +3,9 @@
 > 中文摘要：`experimental_bots`（新安裝預設開；之前就裝過、從沒設過的電腦維持關）。每個分頁的燈號換成會動的 bot 頭像（形狀＋顏色＝身分，
 > 表情＝狀態）；分頁可以開成 bot：叫醒時帶入執掌、skill 與記憶，關閉前由 bot 自己把這次對話寫進
 > `~/.config/shellframe/bots/<名稱>/`，下次叫醒自動帶回。側欄最上面是主要 Bot，負責派工；住在
-> ShellFrame 外面的 bot（例如 Grok Bot）用 webhook 送出、用 `sfctl --as` 回來。
+> ShellFrame 外面的 bot（例如 Grok Bot）用 webhook 送出、用 `sfctl --as` 回來。事後要改設定（名字、
+> 頭像、執掌、CLI、模型、skill）有三個入口，開的都是同一個編輯器：卡片的 ✎、側欄 bot 那一列的「編輯」、
+> 設定 → Bots 的清單；睡著的 bot 也一樣。模型用下拉選，不用打字。
 
 ## Defaults (plan A)
 
@@ -71,6 +73,25 @@ and the user has one list of "who does what", not two.
 Per-tab state is `bots_sessions: {sid: {"bot": role, "avatar": {...}}}` — a tab
 bound to a bot, or a plain tab with a face the user picked.
 
+## Changing a bot later
+
+Everything creating a bot asks for (name, face, job, CLI, model, skills) is changed afterwards in the one editor
+(`openEditor` in `web/bots.js`), and there are three ways in, for the primary bot and any other, asleep or awake:
+
+1. **The card and the face.** The primary card has an **✎** (and a right-click). A click on the card itself still opens
+   the bot's conversation and wakes it: that is the card's own work. With the bot's tab open, the face at the top of
+   the conversation (the chat view's header, or the small one at the top of the terminal's gutter), a right-click on any
+   bot's face and a right-click on the card open the conversation's settings, with **Edit bot…** at the top of them.
+2. **Edit on the bot's row in the sidebar.** An awake bot's row ends its second line with it, a sleeping bot's row has it
+   beside its name; a click on a sleeping bot's row still wakes it, and a right-click on it opens the editor.
+3. **Settings → Bots.** The tab holds the Bots and A2A switches and every bot, the primary first, with the CLI and model it
+   runs on, a warning where the model may not take effect, and an **Edit** on each.
+
+The last step of making a bot says where this is: the editor's note and the message after **Create**, the Keep box and
+the message after **Keep**, Telegram's reply to `/list` → Keep, and what a phone's keep answers. A bot made from Telegram
+or a phone starts with a name, the face it had and the CLI of its tab only; its job, model and skills are added from the
+editor (a phone can also change the job, model and CLI: [mobile-link.md](mobile-link.md#botsv0410)).
+
 ## The model
 
 A bot's model is **picked from a list**, not typed (a key that was not exactly the CLI's was stored,
@@ -130,11 +151,13 @@ A CLI that is not in the table at all is a new provider: see [`adding-a-provider
 
 Interaction: click a face = cycle the light by hand (unchanged). Every
 conversation has its own settings: click the face at the top of the conversation's
-left gutter, or right-click any face. They hold the name, the face (shape, colour,
+left gutter (or the header's, in the chat view), or right-click any face. They hold the name, the face (shape, colour,
 a preview of every expression) and the bot part: make this tab a bot, or for a
 bot's tab edit the bot, make it primary, open its memory folder, or stop this tab
 being the bot's tab (the bot and its memory stay; a `plain` mark keeps a tab that
-shares the bot's name from being matched back).
+shares the bot's name from being matched back). A bot with no tab open (asleep) has
+no conversation to show settings for: its editor opens from its **Edit**, a right-click
+on its row or on the primary card, or Settings → Bots, see [Changing a bot later](#changing-a-bot-later).
 
 ## Memory
 

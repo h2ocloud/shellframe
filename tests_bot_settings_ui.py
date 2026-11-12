@@ -152,9 +152,10 @@ def open_page(browser, style="cli", lang="zh-TW", awake_primary=False, width=110
     page.add_init_script(build(style, lang, awake_primary))
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_function("document.querySelectorAll('#sidebar-sessions .sb-item[data-sid] .sfb-two').length >= 2", timeout=20000)
-    page.wait_for_function("(document.querySelector('#sidebar-sessions .sb-item[data-sid=\"s2\"] .sfb-pv') || {}).textContent === 'Editing relay.py'",
-                           timeout=15000)
-    page.wait_for_timeout(500)
+    if style == "cli":                      # the chat style words the line its own way
+        page.wait_for_function("(document.querySelector('#sidebar-sessions .sb-item[data-sid=\"s2\"] .sfb-pv') || {}).textContent === 'Editing relay.py'",
+                               timeout=15000)
+    page.wait_for_timeout(600)
     return page, errors
 
 
@@ -228,8 +229,9 @@ def run(browser, engine):
 
     print(f"[{engine}] 3. a bot's row in the sidebar")
     page, errors = open_page(browser)
-    row_edit = page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-sub .sfb-edit')
-    check("an awake bot's row has Edit, at the end of its second line", row_edit.count() == 1 and row_edit.inner_text() == "編輯")
+    row_edit = page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-edit')
+    check("an awake bot's row has Edit, at the end of its second line (the latest line is still the line's own text)", row_edit.count() == 1 and row_edit.inner_text() == "編輯"
+          and page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-sub').inner_text() == "Editing relay.py")
     check("…its name and the Bot tag are still whole", page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-name').inner_text() == "寫程式Bot"
           and page.evaluate("(() => { const n = document.querySelector('#sidebar-sessions .sb-item[data-sid=\"s2\"] .sfb-name');"
                             " return n.scrollWidth <= n.clientWidth + 1; })()"))
@@ -366,7 +368,7 @@ def run(browser, engine):
           page.locator("#sfb-ed-model-custom").is_visible() and page.input_value("#sfb-ed-model-custom") == ""
           and "請輸入模型的 key" in page.inner_text("#sfb-ed-model-note"))
     page.fill("#sfb-ed-model-custom", "sonet")
-    page.wait_for_function("document.getElementById('sfb-ed-model-note').classList.contains('bad')", timeout=5000)
+    page.wait_for_function("document.getElementById('sfb-ed-model-note').innerText.includes('不認得這個模型')", timeout=5000)
     note = page.inner_text("#sfb-ed-model-note")
     check("a key ShellBot does not know: 不認得這個模型, and it would not take effect", "不認得這個模型" in note and "sonet" in note and "不會生效" in note, note)
     check("…with the likely key to take", "是不是要 sonnet" in note and page.locator("#sfb-ed-model-note a[data-use-model]").inner_text() == "sonnet", note)
@@ -410,7 +412,7 @@ def run(browser, engine):
           and page.input_value("#sfb-ed-model-custom") == "sonet")
     page.wait_for_function("document.getElementById('sfb-ed-model-note').classList.contains('warn')", timeout=5000)
     note = page.inner_text("#sfb-ed-model-note")
-    check("…flagged 這個模型可能沒生效, with why and the likely key", "這個模型可能沒生效" in note and "不認得這個模型" in note
+    check("…flagged 這個模型可能沒生效, with why and the likely key", "這個模型可能沒生效" in note and "ShellBot 不認得「sonet」" in note
           and page.locator("#sfb-ed-model-note a[data-use-model]").inner_text() == "sonnet", note)
     page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / f"botset-model-flagged{tag}.png"))
     page.evaluate("window.__calls.length = 0")
@@ -446,7 +448,7 @@ def run(browser, engine):
     note = page.inner_text(".sfb-modal .sfb-where")
     check("the creation editor ends with where it is changed later: the face, the row's Edit, Settings → Bots",
           "點它的頭像" in note and "側欄那一列的「編輯」" in note and "設定 → Bots" in note, note)
-    page.screenshot(path=str(SHOTS / f"botset-create-note{tag}.png"), clip={"x": 300, "y": 20, "width": 520, "height": 820})
+    page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / f"botset-create-note{tag}.png"))
     page.fill("#sfb-ed-name", "新的助手")
     page.click(".sfb-modal [data-act='save']")
     page.wait_for_function("window.__calls.some(c => c[0] === 'bots_save')", timeout=5000)
@@ -458,7 +460,8 @@ def run(browser, engine):
     page.wait_for_selector("#sfb-keep")
     check("the Keep box says its job, CLI, model and skills are for later, and where",
           "之後在側欄那一列的「編輯」或 設定 → Bots 補上" in page.inner_text("#sfb-keep"), page.inner_text("#sfb-keep"))
-    page.locator("#sfb-keep").screenshot(path=str(SHOTS / f"botset-keep-note{tag}.png"))
+    if engine == "chromium":
+        page.locator("#sfb-keep").screenshot(path=str(SHOTS / "botset-keep-note-chromium.png"))
     page.click('#sfb-keep [data-k="ok"]')
     page.wait_for_timeout(500)
     toast = page.evaluate("(() => [...document.querySelectorAll('body > div')].filter(d => d.style.position === 'fixed' && d.style.display === 'block')"
@@ -487,11 +490,12 @@ def run(browser, engine):
     page.wait_for_selector("#sfb-ed-model")
     page.wait_for_function("document.getElementById('sfb-ed-model-note').classList.contains('warn')", timeout=5000)
     check("the flag and the model words in English", "This model may not take effect" in page.inner_text("#sfb-ed-model-note")
-          and "Unknown model" in page.inner_text("#sfb-ed-model-note") and "Did you mean sonnet?" in page.inner_text("#sfb-ed-model-note"),
+          and 'ShellBot does not know "sonet"' in page.inner_text("#sfb-ed-model-note") and "Did you mean sonnet?" in page.inner_text("#sfb-ed-model-note"),
           page.inner_text("#sfb-ed-model-note"))
     check("…and the list's first and last", [o[1] for o in model_options(page)][0] == "CLI default"
           and [o[1] for o in model_options(page)][-1] == "Other (custom)…", model_options(page))
-    page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / f"botset-model-flagged-en{tag}.png"))
+    if engine == "chromium":
+        page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / "botset-model-flagged-en-chromium.png"))
     close_editor(page)
     page.click("#btn-settings")
     page.click('#settings-tabs-bar [data-tab="bots"]')

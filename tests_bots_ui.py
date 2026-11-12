@@ -339,8 +339,9 @@ with sync_playwright() as pw:
 
     print("switch off")
     page.click("#btn-settings")
+    page.click('#settings-tabs-bar [data-tab="bots"]')        # Settings → Bots holds the switch, with the list of bots
     page.wait_for_timeout(400)
-    check("the switch is in settings and on", page.evaluate(
+    check("the switch is in settings (the Bots tab) and on", page.evaluate(
         "!!document.getElementById('setting-experimental-bots') && document.getElementById('setting-experimental-bots').classList.contains('on')"))
     page.click("#setting-experimental-bots")
     page.wait_for_timeout(600)
