@@ -14,7 +14,8 @@ without them (userView, botView); this is the same rule for one line:
   - the Telegram instruction paragraph and its markers are gone from a message typed into the tab; an agent's
     own words (agent=True) lose the markers and keep the reply: [[TG_REPLY_…]] and [[SF:GREEN]] go, a
     [[SF:RED]] line goes with its options kept, [[SF:YELLOW:why]] is "⏳ why"
-  - whitespace is one space; at most `limit` characters, the last one "…" when it was cut
+  - whitespace is one space; at most `limit` characters, the last one "…" when it was cut; only the first 20,000
+    characters of a message are read (a paste can be megabytes, and a line never depends on more)
 
 Every shape measured on a real tab (_paste_shapes.py) goes through both languages and both languages must say
 the same string; the line must also be what the chat view draws as that message's words. Demo words only.
@@ -144,6 +145,18 @@ check("a limit of 1 is the …, 0 is nothing", pv("字字字", 1) == "…" and p
 check("a character outside the BMP counts as one", pv("😀" * 10, 5) == "😀" * 4 + "…", pv("😀" * 10, 5))
 check("what is already a line comes back as it is (the page runs the rule on what the server sent)",
       all(pv(pv(t, 90), 90) == pv(t, 90) for _, t, _, _ in ps.SHAPES) and all(pv(pv(t, 140), 140) == pv(t, 140) for _, t in [(0, TWO_PASTES), (1, OWN_MIXED)]))
+print("a very long message is read for its start only, and spam does not stall the status monitor")
+check("only the first 20,000 characters are read: a header at the start of a 300 KB message still names its sender",
+      pv(al.format_delivery("研究", "字" * 300000, lang="zh"), 20) == "研究：" + "字" * 16 + "…")
+check("…a paste that runs past them reads as the start of what was pasted", pv(ps.wrap("e1e1", "# 標題\n" + "字" * 40000), 20).startswith("# 標題 字字"))
+for what, text, kw in (("400 KB of paste openers with no closer", '<pasted_content id="a">x ' * 16000, {}),
+                       ("…a closer first, then openers", '</pasted_content id="a"> ' + '<pasted_content id="a">x ' * 16000, {}),
+                       ("400 KB of <system-reminder> openers with no closer", "<system-reminder> x " * 20000, {}),
+                       ("400 KB of [[SF:YELLOW: openers with no closer (an agent's words)", "[[SF:YELLOW:x " * 30000, {"agent": True}),
+                       ("400 KB of A2A headers that never close", "[[A2A：來自「研究」的訊息 " * 15000, {})):
+    t0 = time.time()
+    pv(text, 90, **kw)
+    check(f"{what}: {int((time.time() - t0) * 1000)} ms", time.time() - t0 < 0.5)
 big = ps.wrap("ffff", "\n".join(f"第 {i} 行，" + "字" * 80 for i in range(4000)))
 t0 = time.time()
 pv(big, 90)
@@ -170,12 +183,28 @@ else:
             jobs.append({"text": text, "limit": 140, "agent": True, "lang": lang})
     jobs += [{"text": "字" * 300, "limit": n, "agent": a, "lang": "zh"} for n in (0, 1, 2, 90) for a in (False, True)]
     jobs += [{"text": "😀" * 10, "limit": 5, "agent": False, "lang": "zh"}, {"text": "字字 " + "字" * 50, "limit": 4, "agent": False, "lang": "zh"}]
+    jobs += [{"text": al.format_delivery("研究", "字" * 30000, lang="zh"), "limit": 40, "agent": False, "lang": "zh"},
+             {"text": ps.wrap("e1e1", "# 標題\n" + "字" * 40000), "limit": 40, "agent": False, "lang": "en"},
+             {"text": "😀" * 25000, "limit": 40, "agent": False, "lang": "en"}]
+    # random messages built from the pieces a message is made of (seeded): wrappers, markers, noise lines, blanks, words
+    import random
+    rnd = random.Random(20261112)
+    PIECES = ['<pasted_content id="a1b2">', '</pasted_content id="a1b2">', "<pasted_content>", "</pasted_content>", "\n", "\n\n", " ", "\t", "研究", "好了", "第 1 行",
+              al.format_delivery("研究", "比較表", lang="zh").split("\n")[0], al.format_blocked("排程", "x", 5, lang="en").split("\n")[0], "[[A2A：", "]]",
+              "[[TG_REPLY_ab12cd34]]", "[[/TG_REPLY_ab12cd34]]", "<<TG_REPLY_ab12cd34>>", ps.TG_ASK, "[[SF:GREEN]]", "[[SF:WORKING]]", "[[SF:RED]]",
+              "[[SF:YELLOW:等一下]]", "[[SF:TO:研究|x]]", "<system-reminder>", "</system-reminder>", "---", "[Image #1]", "<env>", "<user_query>", "</user_query>",
+              "<timestamp>t</timestamp>", "❯ ", "1. 先修", "😀", "a b  c", "\u00a0", "…"]
+    STARTS = ["", "", "", al.format_delivery("研究", "", lang="zh"), al.format_blocked("排程", "", 5, lang="en"), '<pasted_content id="a1b2">\n',
+              '<pasted_content id="a1b2">\n' + al.format_delivery("研究", "", lang="en"), ps.TG_ASK + "\n\n", "[Image #1]\n"]
+    fuzz = [rnd.choice(STARTS) + "".join(rnd.choice(PIECES) for _ in range(rnd.randint(1, 14))) for _ in range(700)]
+    for text in fuzz:
+        jobs.append({"text": text, "limit": rnd.choice((8, 40, 90)), "agent": rnd.random() < 0.4, "lang": rnd.choice(("zh", "en"))})
     out = subprocess.run([node, "-e", RUN, CHAT], input=json.dumps(jobs, ensure_ascii=False), capture_output=True, text=True, timeout=60)
     js = json.loads(out.stdout or "[]")
     check(f"one answer for each of {len(jobs)} messages ({out.stderr[-200:]})", len(js) == len(jobs))
     bad = [(j["text"][:40], j["limit"], j["agent"], j["lang"], a, b) for j, a, b in zip(
         jobs, js, [al.preview_of(j["text"], j["limit"], agent=j["agent"], lang=j["lang"]) for j in jobs]) if a != b]
-    check(f"Python and JS say the same string for all {len(jobs)} (both languages, both sides, three limits)", not bad, bad[:3])
+    check(f"Python and JS say the same string for all {len(jobs)} (both languages, both sides, three limits, 700 random messages)", not bad, bad[:3])
 
     turns = [{"kind": "user_msg", "text": t} for _, t, _, _ in ps.SHAPES]
     out = subprocess.run([node, "-e", "const R = require(process.argv[1]); const t = JSON.parse(require('fs').readFileSync(0, 'utf8'));"

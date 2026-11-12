@@ -277,15 +277,15 @@ def sender_of(text: str):
 # conversation draws as a message's words is what a card says of it. The wrappers ShellBot and the CLI put
 # around a message are never part of the line: an agent's A2A header, Claude Code's paste wrapper, the
 # Telegram reply-marker instruction and its markers, [[SF:…]] signals.
-_PASTE_BLOCK = re.compile(r"<pasted_content(?:\s[^>]*)?>\n?(.*?)\n?</pasted_content(?:\s[^>]*)?>", re.S)
+_PASTE_CLOSE = re.compile(r"</pasted_content(?:\s[^>]*)?>")
 _PASTE_TAG = re.compile(r"<pasted_content(?:\s[^>]*)?>\n?|\n?</pasted_content(?:\s[^>]*)?>")
 _CURSOR_STAMP = re.compile(r"^\s*<timestamp>[^<]*</timestamp>\s*", re.I)       # Cursor Agent stores a prompt
 _CURSOR_QUERY = re.compile(r"^\s*<user_query>(.*)</user_query>\s*$", re.I | re.S)  # stamped and wrapped
 _RED_MARK = re.compile(r"^[\s>❯›⏺•*-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?\]\]\s*$", re.I)
 _SF_QUIET = re.compile(r"\[\[\s*SF\s*:\s*(?:GREEN|WORKING)\s*\]\]", re.I)
 _SF_YELLOW = re.compile(r"\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]", re.I)
-_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 _NOISE_LINE = ("---", "[[SF:", "<", "[Image")   # a line the harness typed, or the placeholder of a picture: not words
+_READ_MAX = 20000      # characters read: a line of at most `limit` never depends on more, and a paste can be megabytes
 
 
 def _paste_parts(t: str):
@@ -296,14 +296,34 @@ def _paste_parts(t: str):
     if not opens or whole:
         return (whole.group(1) if whole else t), None
     parts, at = [], 0
-    for m in _PASTE_BLOCK.finditer(t):
+    for m in _PASTE_OPEN.finditer(t):          # a block runs from its opener to the first closer after it (chat.js PASTE_BLOCK)
+        if m.start() < at:
+            continue                           # an opener inside the block before it
+        end = _PASTE_CLOSE.search(t, m.end())
+        if not end:
+            break                              # no closer here, so none after a later opener: a regex would try them all
+        body = t[m.end():end.start()]
+        body = body[1:] if body.startswith("\n") else body
+        body = body[:-1] if body.endswith("\n") else body
         if t[at:m.start()].strip():
             parts.append((False, t[at:m.start()].strip()))
-        parts.append((True, m.group(1)))
-        at = m.end()
+        parts.append((True, body))
+        at = end.end()
     if t[at:].strip():
         parts.append((False, t[at:].strip()))
     return _PASTE_TAG.sub("", t), (parts if any(p for p, _ in parts) else None)
+
+
+def _drop_reminders(s: str) -> str:
+    """s without its <system-reminder>…</system-reminder> blocks (an opener with no closer stays)."""
+    out, at = [], 0
+    while True:
+        i = s.find("<system-reminder>", at)
+        j = s.find("</system-reminder>", i + 17) if i >= 0 else -1
+        if j < 0:
+            return "".join(out) + s[at:]
+        out.append(s[at:i])
+        at = j + 18
 
 
 def _user_words(text, lang=None):
@@ -351,12 +371,13 @@ def preview_of(text, limit: int = 140, *, agent: bool = False, lang: str = None)
     instruction and the [[TG_REPLY_…]] markers are gone, and so are the lines the harness typed (a rule, a
     <tag>, a picture's placeholder, a <system-reminder>). `agent=True`: the text is an agent's own words: only
     its markers go. Whitespace is one space. The words are not redacted and their markdown is left as it is:
-    that is for the caller (agent_status.redact)."""
+    that is for the caller (agent_status.redact). Only the first 20,000 characters are read."""
     if limit <= 0:
         return ""
+    text = str(text or "")[:_READ_MAX]
     who, blocked, words = (None, False, _bot_words(text)) if agent else _user_words(text, lang)
     if not agent:
-        words = "\n".join(x for x in (y.strip() for y in _REMINDER.sub("", words).split("\n"))
+        words = "\n".join(x for x in (y.strip() for y in _drop_reminders(words).split("\n"))
                           if x and not x.startswith(_NOISE_LINE) and "system-reminder" not in x)
     line = " ".join(words.split())
     if who is not None:

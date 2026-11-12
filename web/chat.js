@@ -366,10 +366,13 @@
   // <system-reminder>) are not words. opts.agent: the text is an agent's own words (only its markers go);
   // opts.lang: 'zh…' or not. Not redacted, markdown left alone: that is for the caller.
   const NOISE_LINE = ['---', '[[SF:', '<', '[Image'];
+  const READ_MAX = 20000;      // characters read: a line of at most `limit` never depends on more, and a paste can be megabytes
   function preview(text, limit, opts) {
     const o = opts || {};
     const zh = isZh(o.lang);
     if (!(limit > 0)) return '';
+    text = String(text || '');
+    if (text.length > READ_MAX) text = Array.from(text).slice(0, READ_MAX).join('');     // code points, as Python counts them
     let who = null, blocked = false, words;
     if (o.agent) {
       words = botView(text, false);
