@@ -311,7 +311,8 @@ body.sf-chat-shown #mic-fab { display: none !important; }
 .cm-set-hint { margin-top: 6px; font-size: 11px; color: #565f89; line-height: 1.5; }
 
 /* ── what chat style hides elsewhere ── */
-body.sf-chat-shown #tab-hint { display: none; }
+body.sf-chat-shown #tab-hint, body.sf-chat-style #tab-hint { display: none; }   /* chat style: the headers name the tab */
+body.sf-chat-style { --hint-gutter: 0px; }              /* …so the gutter that label and the small face stood in goes too */
 body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { display: none; }
 
 @media (max-width: 760px) {

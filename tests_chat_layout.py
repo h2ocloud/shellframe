@@ -136,6 +136,9 @@ def run(browser, engine):
           abs(pane[1] - head[4]) <= 1.5, (head, pane))
     check(f"…as tall as the chat view's ({head[3]:.0f} / {chat_head_h:.0f}px)", abs(head[3] - chat_head_h) <= 1.5)
     check("the terminal keeps its size in both modes (no resize when switching)", pane == pane_chat, (pane, pane_chat))
+    wrap = page.evaluate(RECT, "#terminal-wrap")
+    check("no vertical tab label, no gutter for it: the header names the tab",
+          not page.evaluate(VISIBLE, "#tab-hint") and abs(pane[0] - wrap[0]) <= 1, (pane[0], wrap[0]))
     if engine == "webkit":
         page.screenshot(path=str(HERE / "qa-shots" / "chat-layout-terminal.png"))
     page.click('#chat-switch button[data-mode="chat"]')
@@ -153,6 +156,7 @@ def run(browser, engine):
     page.wait_for_timeout(300)
     check("the terminal starts at the top again", abs(page.evaluate(RECT, ".term-pane.active")[1]
                                                      - page.evaluate(RECT, "#terminal-wrap")[1]) <= 1.5)
+    check("…with its gutter back", page.evaluate(RECT, ".term-pane.active")[0] - page.evaluate(RECT, "#terminal-wrap")[0] >= 10)
     check("no page errors", not errors, errors)
     page.close()
 

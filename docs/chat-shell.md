@@ -48,8 +48,8 @@ running underneath with its size unchanged, and everything that types into the t
 ## Switching
 
 - **Settings → Interface style** (`settings.ui_style`: `chat` | `cli`) is what a tab opens on.
-- **Per tab**: the switch in the tab bar, the view's own "Terminal" button, or
-  ⌘⇧M / Ctrl+Shift+M. The choice stays on that tab (switching tabs does not undo it)
+- **Per tab**: the Chat/Terminal switch (in the tab bar, or in chat style in the terminal's
+  header), the view's own "Terminal" button, or ⌘⇧M / Ctrl+Shift+M. The choice stays on that tab (switching tabs does not undo it)
   until the tab closes or the setting changes, which puts every tab back on the setting.
   It is kept with the tab's object, so a reused tab id starts from the setting.
 - **New or existing computer**: a first launch has no `config.json` and gets
@@ -63,6 +63,26 @@ running underneath with its size unchanged, and everything that types into the t
   their terminal, and in chat style a small note says why. A tab with no record yet shows
   an empty conversation with the input box.
 
+## The window in chat style (`chat.js` layout)
+
+- **No tab bar.** The sidebar is the tab list, with 「＋ 新對話」 on top (it opens the same
+  picker as the bar's +). The bar's other controls are moved, as the same elements, to the
+  sidebar's foot (`#sb-dock`): usage, Telegram, loops. ☰ at the left of a header shows or
+  hides the sidebar. Going by the setting, not by what the current tab shows, keeps the
+  window still: going by the tab, it jumped 38px at each switch between a chat tab and a
+  terminal tab.
+- **The terminal gets a header** (`#term-head`) of the view's height (`--cm-head-h`, 50px
+  times the interface size): face, name, what it is doing, and the Chat/Terminal switch.
+  The terminal starts under it, never under a control laid over its text (one that covered
+  the first characters typed was turned down before), and a tab keeps one size in both
+  modes, so switching never resizes the CLI. The vertical tab label and its gutter go: the
+  headers name the tab.
+- **Back in the CLI style** every moved element returns to its place, in its order (a
+  comment node marks where each lived), and the terminal's header and gutter are as before.
+- **The face opens the settings.** A header's face (the view's and the terminal's) opens
+  bots.js's settings for that conversation; the small face in the terminal's gutter
+  (`#sfb-convo`) shows only in the CLI style's terminal, where nothing else stands for it.
+
 ## New conversation, names, files
 
 - **"+" in chat style** opens "New conversation": each AI by what it is for (the default
@@ -72,6 +92,20 @@ running underneath with its size unchanged, and everything that types into the t
 - **Command-named tabs** (`claude`, `codex`, `bash`…) show as "Claude 對話" / "終端機" in
   chat style (tab bar, sidebar, header), numbered when there are several. Display only:
   the tab's name for sfctl, Telegram and A2A does not change.
+- **The microphone** sits beside Send: the page's own recording and speech-to-text
+  (`mic_record_start` / `mic_record_stop`, the same permission), asked without a tab so the
+  words come back instead of being typed into the CLI; they go into the box at the cursor,
+  to be read before sending. Esc throws a recording away; it stops by itself at 5 minutes.
+  A failure goes to the page's guide (install ffmpeg or speech-to-text); a retry after
+  installing hands its words to the box too. The floating mic hides while the view shows,
+  and `stt_mic_button` turns both off.
+- **Copying**: ⌘C / Ctrl+C on a selection writes plain text of the view's making on the
+  page's copy event (a list item "• text", inline code as text, a code block as its lines,
+  messages a blank line apart; no buttons, faces or labels); the input box keeps its own.
+  Each message and code block has a 「複製」 button on hover (`copy_text`, the whole message
+  even while it shows only its start).
+- **Scrollbars** are the view's own, thin and dark (`::-webkit-scrollbar`, drawn the same by
+  WebKit and WebView2), and only where something overflows.
 - **Files**: a picture or file pasted into the box is saved by the terminal's own calls
   (`save_image`, `get_clipboard_files`, `save_file_from_clipboard`); a dropped one goes
   through the page's drop path (`attachFile` hands it to the view). They go in ahead of
@@ -119,8 +153,9 @@ running underneath with its size unchanged, and everything that types into the t
 
 ## Hidden in chat style
 
-The terminal's vertical tab label (the view has a header instead) and the sidebar's model
-badge. Command names are not shown as the conversation's name: a tab still called
+The tab bar (see above), the terminal's vertical tab label and its gutter (the headers name
+the tab), the small face in the gutter, the floating mic while the view shows, and the
+sidebar's model badge. Command names are not shown as the conversation's name: a tab still called
 `claude`/`codex` is titled "對話/Chat".
 
 ## A narrow view
