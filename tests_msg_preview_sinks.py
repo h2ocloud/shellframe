@@ -11,7 +11,9 @@ person's last message, and `narration`, the agent's last words), so a line that 
   - the transcript → events → _detail (a string or a list of text blocks as `content`)
   - the phone's GET /link/bots `latest`, the list's `agent_activity` (/link/info, /link/state), `sfctl bots`
   - Telegram: the heartbeat's status line, /list under a tab (a screen as Claude Code draws it, through the
-    real _peek_last_response), the primary bot's line
+    real _peek_last_response)
+  - a [[SF:RED]] question (bridge_home.red_block): the phone's `decision` and the Telegram buttons, when the
+    reply it sits in opens with its [[TG_REPLY_…]] on the question's line or closes on an option's
   - a push notification's body (the last words of a turn that ended on a Telegram reply)
   - the webhook's "Turn finished: …"
 
@@ -210,6 +212,26 @@ kind, text = push_text([user("幫我整理週報"), bot(TG_REPLY)])
 check("the cue _push_turn_end sends is a done cue with those words", kind == "done" and text == "週報整理好了，放在 reports/weekly.md", (kind, text))
 kind, text = push_text([user(A2A_SHORT), bot("[[SF:GREEN]]")])
 check("a turn with no words of its own falls back to the task, plain: who asked, and what", kind == "done" and text.startswith("研究：比較表整理好了") and clean(text), (kind, text))
+
+print("a [[SF:RED]] question in a Telegram reply: the question and its options, on the phone and for the buttons")
+RED_WANT = ("要先修哪個？", [("1", "先修按鈕"), ("2", "先修通知")])
+RED_CASES = {
+    "the start marker on the question's own line": "[[TG_REPLY_ab12cd34]]要先修哪個？\n[[SF:RED]]\n1. 先修按鈕\n2. 先修通知\n[[/TG_REPLY_ab12cd34]]",
+    "the end marker on the last option's line": "要先修哪個？\n[[SF:RED]]\n1. 先修按鈕\n2. 先修通知[[/TG_REPLY_ab12cd34]]",
+    "markers on lines of their own": "[[TG_REPLY_ab12cd34]]\n要先修哪個？\n[[SF:RED]]\n1. 先修按鈕\n2. 先修通知\n[[/TG_REPLY_ab12cd34]]",
+    "a marker-only line right above [[SF:RED]]": "要先修哪個？\n[[TG_REPLY_ab12cd34]]\n[[SF:RED]]\n1. 先修按鈕\n2. 先修通知",
+}
+for name, text in RED_CASES.items():
+    evs = [user("幫我看一下"), bot(text)]
+    check(f"{name}: red_block's question and options", bridge_home.red_block(evs, telegram_too=True) == RED_WANT, bridge_home.red_block(evs, telegram_too=True))
+    api = make_api(status_of(evs, "done"))
+    bridge_home.on_turn_end(api, "s1", read_events=lambda sid, e=evs: e)
+    d = api._execute_sfctl("bots_link", {})["tabs"]["s1"].get("decision") or {}
+    bridge_home.forget("s1")
+    check(f"{name}: the phone's decision", d.get("kind") == "red" and d.get("reason") == RED_WANT[0]
+          and d.get("options") == [{"n": 1, "text": "先修按鈕"}, {"n": 2, "text": "先修通知"}] and clean(json.dumps(d, ensure_ascii=False)), d)
+check("a question with no markers is as it was (the sentence above the marker, not a list item)",
+      bridge_home.red_block([user("x"), bot("兩個方案都可以。\n- 方案甲\n要先修哪個？\n[[SF:RED]]\n1. 先修按鈕")], telegram_too=True) == ("要先修哪個？", [("1", "先修按鈕")]))
 
 print("Telegram /list: a screen as Claude Code draws it, through the real _peek_last_response")
 RULE = "─" * 40

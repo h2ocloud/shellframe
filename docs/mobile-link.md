@@ -190,6 +190,8 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | `closing` | `""`／`waiting`／`writing`：關閉前正在寫記憶 |
 | `decision` | 在等人決定時是 `{"id", "kind", "reason", "options": [{"n", "text"}]}`，否則 `null`。`kind` 是 `menu`（畫面上的選單）或 `red`。`menu` 另有選填的 `detail`：對話框自己的文字（從開頭那條線到問句之前，照畫面原樣、去掉分隔線；每行照 `redact` 的規則遮：憑證和 32 字以上的連續英數字串，例如 SHA，都顯示成 `<redacted>`，行內連續空白合併成一個），例如權限提示要跑的完整指令；畫面上找不到對話框開頭的線就是 `""`，超過 2,000 字會截斷並以「…」結尾。畫面上的選單只看目前看得到的畫面、取最後一個，號碼要從 1 連續（讀不全的不算選單）；折到下一行的選項會接回去。兩種情況：畫面上有選單（權限提示等）；或回合最後問了 `[[SF:RED]]`，有沒有開 Telegram 都一樣，之後送進那個分頁的 prompt 就算回答了。`id` 是這一題的指紋：選單取整個對話框的內容（同樣的問句，問的指令不同就是不同題），RED 取提問的時間。回答請用下面的 `POST /link/answer` |
 
+`decision.reason` 和 `options[].text` 也是給人看的字（v0.42.1 起）：AI 的回覆夾在 Telegram 的 `[[TG_REPLY_…]]` 標記中間時，開頭標記可能和問句在同一行、結尾標記可能接在最後一個選項後面，這些標記不會出現在 `reason` 和 `options` 裡。
+
 外部 bot 的 webhook 網址和授權，都不會出現在回應裡。
 
 **`POST /link/answer {"sid", "n", "id"}`**：回答 `/link/bots` 給的那一題。

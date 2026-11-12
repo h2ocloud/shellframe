@@ -414,9 +414,12 @@ def red_block(evs, telegram_too=False):
     at = next((i for i in range(len(lines) - 1, -1, -1) if _RED_LINE.match(lines[i])), -1)
     if at < 0:
         return None
-    question = next((ln.strip() for ln in reversed(lines[:at])           # the sentence, not a list item above it
-                     if ln.strip() and not _OPTION.match(ln) and not ln.lstrip().startswith(("-", "•", "*"))), "")[:300]
-    options = [(m.group(1), m.group(2)[:60]) for m in (_OPTION.match(ln) for ln in lines[at + 1:]) if m][:9]
+    # What the person reads is the agent's words without ShellBot's markers (agent_link.preview_of): a Telegram reply
+    # may open with its [[TG_REPLY_…]] on the question's own line, and close with its end marker on the last option's.
+    question = next((q for q in (agent_link.preview_of(ln, 300, agent=True) for ln in reversed(lines[:at])   # the sentence, not a list item above it
+                                 if not _OPTION.match(ln) and not ln.lstrip().startswith(("-", "•", "*"))) if q), "")
+    options = [(m.group(1), agent_link.preview_of(m.group(2), 60, agent=True) or m.group(2)[:60])
+               for m in (_OPTION.match(ln) for ln in lines[at + 1:]) if m][:9]
     return question, options
 
 
