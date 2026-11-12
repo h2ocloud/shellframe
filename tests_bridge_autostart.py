@@ -53,11 +53,20 @@ def main():
     js = ui.read_text(encoding="utf-8")
     guarded = "bs.exists && bs.active" in js
     check("UI restore returns early when the bridge already runs", guarded)
+    restore = js[js.find("async function restoreSavedBridge"):]
+    restore = restore[:restore.find("\n  }\n")]
+    check("…and when the autostart is still starting it, asks to keep it (if_idle)",
+          "start_bridge(" in restore and "true    // if_idle" in restore)
 
-    # 5. start_bridge stops any existing bridge first, so even a race cannot
-    #    leave two pollers on one token.
+    # 5. Stopping the old bridge first is not enough: a start that came in while the
+    #    other was inside TelegramBridge.start() left a poller nobody could stop (409
+    #    until the app quit, a Windows cold start). One start at a time, and the
+    #    autostart keeps a running bridge. The race itself: tests_bridge_start_race.py.
     check("start_bridge replaces rather than duplicates a running bridge",
           "if self.bridge:" in src and "self.bridge.stop()" in src)
+    check("…one start, reload or stop at a time",
+          src.count("with self._bridge_lock:") >= 3 and "_bridge_lock = threading.RLock()" in src)
+    check("…and the autostart keeps a bridge that is already running", "if_idle=True" in src)
 
     print()
     if FAILED:

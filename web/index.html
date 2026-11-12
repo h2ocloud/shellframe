@@ -9868,7 +9868,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           saved.bot_token,
           JSON.stringify(saved.allowed_users || []),
           saved.prefix_enabled !== false,
-          ''  // skip initial_prompt on restore
+          '',     // skip initial_prompt on restore
+          true,   // announce, as before
+          true    // if_idle: the autostart may be starting it right now; it waits for that one and keeps it
         );
         const result = JSON.parse(raw);
         if (result.success) {

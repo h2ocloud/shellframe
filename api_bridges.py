@@ -15,6 +15,8 @@ from api_host import main
 
 
 class BridgesApiMixin:
+    _bridge_lock = threading.RLock()   # one start, reload or stop of the TG bridge at a time (start_bridge)
+
     def _sync_bridge_sessions(self):
         """把目前所有存活的分頁補進 bridge，缺哪個補哪個。
 
@@ -83,7 +85,8 @@ class BridgesApiMixin:
             res = self.start_bridge(token,
                                     json.dumps(saved.get("allowed_users") or []),
                                     saved.get("prefix_enabled") is not False,
-                                    "", announce=False)   # no initial prompt, no "connected" on restore
+                                    "", announce=False,    # no initial prompt, no "connected" on restore
+                                    if_idle=True)          # the page's restore may have started it
             ok = json.loads(res).get("success") if isinstance(res, str) else False
             main._dlog("bridge", f"autostart {'ok' if ok else 'failed'} (UI-independent)")
             # 兩條路的順序不保證：分頁若已經還原完才輪到這裡，start_bridge 已經
@@ -94,8 +97,25 @@ class BridgesApiMixin:
             main._dlog("bridge", f"autostart failed: {e}")
 
     def start_bridge(self, bot_token: str, allowed_users_json: str,
-                     prefix_enabled: bool, initial_prompt: str, announce: bool = True) -> str:
-        """Start the global TG bridge. Registers all current sessions."""
+                     prefix_enabled: bool, initial_prompt: str, announce: bool = True,
+                     if_idle: bool = False) -> str:
+        """Start the global TG bridge. Registers all current sessions.
+
+        At launch two callers come at once: the autostart thread and the page's restore.
+        One start at a time (_bridge_lock, which a reload and a stop take too), and after
+        the old bridge is stopped the new one is used by name, not as `self.bridge`. A start
+        that found no bridge yet used to build its own while the other was still inside
+        TelegramBridge.start(); that one then cleared its stop flag and polled on with
+        nobody to stop it, and every poll got 409 Conflict until the app quit (a Windows
+        cold start whose autostart took 25 s). `if_idle` (the autostart, the page's
+        restore): a bridge that is already running is kept, not started again."""
+        with self._bridge_lock:
+            if if_idle and self.bridge and getattr(self.bridge, "active", False):
+                return json.dumps({"success": True, "kept": True, **self.bridge.get_status()})
+            return self._start_bridge_locked(bot_token, allowed_users_json, prefix_enabled,
+                                             initial_prompt, announce)
+
+    def _start_bridge_locked(self, bot_token, allowed_users_json, prefix_enabled, initial_prompt, announce):
         if self.bridge:
             self.bridge.stop()
 
@@ -111,7 +131,7 @@ class BridgesApiMixin:
             stt_backend=bridge_cfg.get("stt_backend", "auto"),
         )
 
-        self.bridge = main.TelegramBridge(
+        bridge = self.bridge = main.TelegramBridge(
             bridge_id="tg",
             config=config,
             on_reload=self.hot_reload_bridge,
@@ -125,8 +145,8 @@ class BridgesApiMixin:
             on_input_blocked=self.startup_dialog_blocking,
             on_answer_dialog=self.answer_startup_trust,
         )
-        self.bridge.home_api = self      # bridge_home: the primary bot, pairing, decisions
-        self.bridge.announce_start = announce   # the app's own restart says nothing on the phone
+        bridge.home_api = self      # bridge_home: the primary bot, pairing, decisions
+        bridge.announce_start = announce   # the app's own restart says nothing on the phone
 
         # Register existing sessions (skip bridge-disabled ones)
         for sid, s in self.sessions.items():
@@ -135,7 +155,7 @@ class BridgesApiMixin:
             if not getattr(s, '_bridge_enabled', True):
                 continue
             label = getattr(s, '_custom_label', None) or (s.cmd.split()[0] if s.cmd else sid)
-            self.bridge.register_session(
+            bridge.register_session(
                 sid, label,
                 lambda text, _s=s: _s.write(text),
                 peek_fn=lambda _s=s: bytes(_s._recent).decode('utf-8', errors='replace'),
@@ -144,13 +164,13 @@ class BridgesApiMixin:
                 cols=getattr(s, 'cols', 0), rows=getattr(s, 'rows', 0),
             )
 
-        self.bridge.start()
+        bridge.start()
 
         # Send initial prompt to first session (delayed to let CLI load)
         if initial_prompt and self.sessions:
             first_sid = list(self.sessions.keys())[0]
             # Track in sent_texts so echo gets filtered
-            slot = self.bridge.slots.get(first_sid)
+            slot = bridge.slots.get(first_sid)
             if slot:
                 slot.sent_texts.append(initial_prompt)
             def _send_prompt(sid=first_sid, text=initial_prompt):
@@ -180,19 +200,20 @@ class BridgesApiMixin:
             main.save_config(cfg)
         self._persist_session_manifest()
 
-        return json.dumps({"success": self.bridge.connected, **self.bridge.get_status()})
+        return json.dumps({"success": bridge.connected, **bridge.get_status()})
 
     def stop_bridge(self) -> str:
-        if self.bridge:
-            self.bridge.stop()
-            self.bridge = None
-            # Remove from config
-            with CONFIG_LOCK:
-                cfg = main.load_config()
-                cfg.pop("bridge", None)
-                main.save_config(cfg)
-            return json.dumps({"success": True})
-        return json.dumps({"success": False, "message": "No bridge running"})
+        with self._bridge_lock:
+            if self.bridge:
+                self.bridge.stop()
+                self.bridge = None
+                # Remove from config
+                with CONFIG_LOCK:
+                    cfg = main.load_config()
+                    cfg.pop("bridge", None)
+                    main.save_config(cfg)
+                return json.dumps({"success": True})
+            return json.dumps({"success": False, "message": "No bridge running"})
 
     # ── LINE bridge plugin ──
     def start_line_bridge(self, channel_access_token: str, channel_secret: str,

@@ -4674,7 +4674,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
     def hot_reload_bridge(self) -> str:
         """Hot-reload bridge_telegram module without restarting the app.
-        Preserves PTY sessions — only restarts the TG bridge with new code."""
+        Preserves PTY sessions — only restarts the TG bridge with new code.
+        Never alongside a start or a stop (api_bridges.start_bridge)."""
+        with self._bridge_lock:
+            return self._hot_reload_bridge_locked()
+
+    def _hot_reload_bridge_locked(self) -> str:
         global bridge_telegram, TelegramBridge, TelegramBridgeConfig
         try:
             # Save current bridge config + user routing state

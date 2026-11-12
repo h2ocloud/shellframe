@@ -21,6 +21,7 @@ Run: .venv/bin/python tests_bridge_home.py
 """
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -333,7 +334,7 @@ check("the app's own restart or a reload: nothing on the phone", not sent)
 asrc = (HERE / "api_bridges.py").read_text(encoding="utf-8")
 msrc = (HERE / "main.py").read_text(encoding="utf-8")
 check("the restore path starts the bridge without announcing, and so does a reload",
-      '"", announce=False)' in asrc and "self.bridge.announce_start = False" in msrc
+      re.search(r'"",\s*announce=False', asrc) and "self.bridge.announce_start = False" in msrc
       and "Sessions: {sessions_info}" not in src)
 
 print("tg-send")

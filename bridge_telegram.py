@@ -37,7 +37,7 @@ def _blog(msg: str):
         if not msg.endswith('\n'):
             msg = msg + '\n'
         with open(_LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(msg)
+            f.write(time.strftime("%m-%d %H:%M:%S ") + msg)   # when: a 409 or a second [restore] is read by its time
         _log_write_count += 1
         if _log_write_count % 200 == 0:  # check size every 200 writes
             try:
