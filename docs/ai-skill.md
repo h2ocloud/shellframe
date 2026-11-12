@@ -152,7 +152,10 @@ sfctl a2a-log
 `sfctl bots-keep <tab> [name]` keeps it (its face, a memory folder, its tab named for
 good); `sfctl bots-set <bot> --cli codex [--model m] [--now]` moves a bot to another CLI
 or model, keeping its name, face, job and memory (the conversation itself does not move;
-`--now` has an awake bot write its memory and close first). Name tabs by what they do,
+`--now` has an awake bot write its memory and close first). A model is one of the CLI's own
+keys (`opus`, `sonnet`, `haiku`, `fable` for Claude Code; `--model ""` is its default): a key
+ShellBot does not know is refused, with the likely one offered and the keys there are, and
+nothing is written, here and in `sfctl bots-save` alike. Name tabs by what they do,
 not by the CLI that runs them. `sfctl bots-rename <bot> <new name>` renames a bot (so
 does `sfctl rename` on a bot's tab: a bot has one name, and its tab carries it); its old
 name keeps reaching it through A2A and `[[SF:TO:…]]`, and no other bot can take it.

@@ -166,6 +166,12 @@ protobuf blob, a log file) needs its own reader (`grok` keeps a session
 directory per conversation and has `agent_grok.py`). Skipping this only costs you
 the dot and the badge.
 
+**Model picker** (`agent_model.py`) — a bot's model is picked from a list and a typed
+one is checked. If your CLI takes a model on its command line, add one `_TABLE` entry:
+the `flag`, the `models` (key and name), and the shapes of its ids. Without an entry the
+CLI's picker has only "CLI default" and its field is greyed (as Pi's and Antigravity's
+are). Updating the list for a new model is in [`bots.md`](bots.md#updating-the-model-list).
+
 **Startup-trust auto-accept** (`STARTUP_TRUST_AI_TOOLS` in `main.py`) — add your
 CLI only if you have verified what its first-run prompt looks like.
 
@@ -175,7 +181,8 @@ CLI only if you have verified what its first-run prompt looks like.
 2. `probe` / `account` adapters registered.
 3. A fetcher that caches, and reports reasons instead of guessing.
 4. `_pace_meta()` wherever you know a window's reset and length.
-5. Optional: `_DEFAULT_AI_PRESETS` entry in `main.py` for the `+` menu.
+5. Optional: `_DEFAULT_AI_PRESETS` entry in `main.py` for the `+` menu; an
+   `agent_model._TABLE` entry if it takes a model flag.
 6. Tests in `tests_usage_probe.py` — mock the network or subprocess, never call
    a real API. Cover: a good reading, an auth failure, and a cached entry
    written by an older build still loading.

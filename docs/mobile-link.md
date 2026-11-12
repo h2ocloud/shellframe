@@ -173,9 +173,9 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | 欄位 | 內容 |
 |---|---|
 | `v`, `rev`, `now`, `enabled`, `primary` | 版本（加欄位不升版：維持 1，App 看到大於 1 會把 bot 畫面整個關掉；方案 A 的欄位請用分頁有沒有 `kind` 判斷）、內容的 hash、電腦的時間、bots 有沒有開、主要 Bot |
-| `bots[]` | `role`, `label`, `responsibility`, `model`, `runs_on`, `avatar`, `primary`, `external`, `state`（`awake`／`asleep`／`external`）, `sid`, `position`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `closing`, `decision`；方案 A 加 `memory`（記住的 bot；名冊裡沒開記憶的角色也列出來，`false`）、`cli`（它的 CLI，`choices.clis` 的 key；外部是 `""`）、`coordinator`（只派工與驗收）、`tg`（醒著時分頁的 Telegram `/N`，否則 0） |
+| `bots[]` | `role`, `label`, `responsibility`, `model`, `runs_on`, `avatar`, `primary`, `external`, `state`（`awake`／`asleep`／`external`）, `sid`, `position`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `closing`, `decision`；方案 A 加 `memory`（記住的 bot；名冊裡沒開記憶的角色也列出來，`false`）、`cli`（它的 CLI，`choices.clis` 的 key；外部是 `""`）、`coordinator`（只派工與驗收）、`tg`（醒著時分頁的 Telegram `/N`，否則 0）；v0.42.1 加 `model_ok`、`model_code`、`model_suggestion`（見下方〈模型清單〉） |
 | `model`, `runs_on` | `model` 是 bot 設定裡填的模型，空的表示用 CLI 的預設，等於桌面 bot 編輯器的「模型」欄；`runs_on` 是它現在實際跑的模型 |
-| `choices` | 方案 A 加 `clis`：`[{"key", "label", "installed", "models"}]`，換 CLI 用；`models` 是能不能在指令上固定模型。可以選的頭像：`shapes`（12 種形狀，順序同桌面）、`colors`（`[{"key", "hex"}]`，14 種顏色和它畫出來的色碼，同 `bots.js` 的 `PALETTE`）、`custom_color: true`（也接受 `#RRGGBB`）。手機不用自己寫死一份 |
+| `choices` | 方案 A 加 `clis`：`[{"key", "label", "installed", "models"}]`，換 CLI 用；`models` 是能不能在指令上固定模型；v0.42.1 加 `models`：`{cli 的 key: [{"key", "label"}…]}`，每個 CLI 的模型下拉選單（見下方〈模型清單〉）。可以選的頭像：`shapes`（12 種形狀，順序同桌面）、`colors`（`[{"key", "hex"}]`，14 種顏色和它畫出來的色碼，同 `bots.js` 的 `PALETTE`）、`custom_color: true`（也接受 `#RRGGBB`）。手機不用自己寫死一份 |
 | `tabs[sid]` | `bot`, `avatar`, `plain`, `closing`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `decision`；方案 A 加 `kind`（`bot`／`temp`：還沒記住的 AI 分頁／`terminal`）、`name`（bot 名或分頁標題）、`cli`、`model`（模型名，例如 `Sonnet 5.5`）、`tg`（Telegram 的 `/N`，不在 Telegram 是 0；號碼請用這個，不要自己數）、`position`（電腦清單上的第幾個） |
 | `avatar` | 已經解析好的頭像，等於桌面 `bots.js` 的 `avatarFor`：bot 自己的、分頁自己挑的，否則是 `defaultAvatar`，用 role 或 sid 當種子。Python 版在 `bots.default_avatar`，`tests_link_bots.py` 會拿它跟真的 `web/bots.js` 對照 |
 | `activity` | `working`／`idle`／`done`／`decision`／`stuck`，等於桌面的燈號；睡著或外部的 bot 是 `""` |
@@ -209,12 +209,40 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
   - **`{"role", "avatar": {…}}`：** 休息中的 bot 用名字改，對應 bot 編輯器的儲存。
   - `shape` 必須在 `choices.shapes` 裡；`color` 要在 `choices.colors` 裡，或是 `#RRGGBB`。
 - **`POST /link/bots/settings {"role", "responsibility"?, "model"?}`：** 只改有給的欄位，skill、記憶、頭像、啟動指令都不變。對應 bot 編輯器的儲存（`bots_save`）。
-  - `model` 是一個詞，例如 `sonnet`；空字串表示用 CLI 的預設。
+  - `model` 要是 `choices.models[cli]` 裡的 `key`，或是電腦認得的自訂 key（見下方〈模型清單〉）；空字串表示用 CLI 的預設。電腦認不得的 key 不會存，回 `success: false` 和 `code`（`unknown_model`，附 `suggestion`；`bad_model`；`model_fixed`）。
   - 兩個欄位都沒給時，會被拒絕。
 - **`POST /link/bots/keep {"sid", "name"?}`（方案 A）：** 把臨時 bot 記住：用它現在的臉、建記憶資料夾和名冊項目、分頁綁上去並改成這個名字（預設是分頁標題）。成功回 `{"success": true, "role"}`；失敗的 `code`：`bots_off`、`no_tab`、`not_ai`（終端機）、`already_bot`、`plain`（標過不是 bot）、`bad_name`、`name_taken`（附 `suggestion`，例如「查資料 2」）。對應 `bots_keep`／`sfctl bots-keep`。舊版電腦回 404，請顯示「電腦上的 ShellBot 要更新」。
 - **`POST /link/bots/settings` 的方案 A 欄位：** 多收 `cli`（`choices.clis` 的 key，要是裝好的）、`model`（`""` 是 CLI 的預設；`models: false` 的 CLI 只能給 `""`）、`apply`（`next_wake` 預設；`now`）。換 CLI 時沒給 `model`，模型會清回預設。`now`：睡著的 bot 直接用新的叫醒，回 `{"success", "sid"}`；醒著的先寫記憶、關掉再叫醒，回 `{"success", "pending": true}`，之後看 `/link/bots` 的 `closing` 和新的 `sid`。名字、臉、執掌、記憶都留著，對話不會搬到新的 CLI。失敗的 `code`：`no_bot`、`external`、`bad_cli`、`model_fixed`、`bad_model`、`busy`（正在寫記憶）、`nothing`。對應 `bots_switch`／`sfctl bots-set`。
 - **`POST /link/bots/primary {"role"}`：** 指定主要 Bot，對應 `bots_set_primary`。只能指定這台電腦上的 bot，不能指定外部 bot，也不能清空。
 - **改名（方案 A）：** 一個 bot 只有一個名字。`POST /link/rename` 改的如果是綁了 bot 的分頁，就是幫那個 bot 改名，跟桌面的 `bots_rename`、`sfctl bots-rename` 走同一條路：名冊、綁定、群組、記憶資料夾一起改；舊名字放進這個 bot 的 `former_names`，A2A 用舊名字照樣送得到，別的 bot 也不能拿去用。成功回 `{"success": true, "role", "former", "message"}`；失敗的 `code`：`bots_off`、`no_bot`、`external`、`bad_name`、`name_taken`（附 `suggestion`）、`busy`（正在寫記憶）、`folder_taken`（新名字的資料夾已經有東西）。臨時 bot 和終端機的分頁改名只改標題，回應跟以前一樣。
+
+### 模型清單（v0.42.1）
+
+bot 的模型不用打字，用下拉選。清單來自電腦自己的對照表（`agent_model.py`），手機**不要自己寫死一份**：電腦更新了清單，下次 `GET /link/bots` 就跟著變。
+
+**`choices.models`**：`{cli 的 key: [{"key", "label"}…]}`，一個 CLI 一份，key 就是 `choices.clis[].key`（`claude`、`codex`、`pi`、`opencode`、`agy`、`grok`、`cursor`）。每一份：
+
+| 位置 | 內容 |
+|---|---|
+| 第一個 | `{"key": "", "label": "CLI 預設"}`：值是 `""`，代表用 CLI 自己的預設。每個 CLI 都有，一定在最前面 |
+| 中間 | 這個 CLI 的模型：`key` 是送出去的值（原樣放進 `model`），`label` 是給人看的名字（例如 `{"key": "sonnet", "label": "Sonnet"}`），兩個分開 |
+| 最後一個 | `{"key": "__custom__", "label": "其他（自訂）", "custom": true}`：**它不是模型**。選了它就顯示一個文字欄，把打的字原樣當 `model` 送；電腦收到時驗證（見下）。只有 `models: true` 的 CLI 有 |
+
+- **`models: false` 的 CLI**（Pi、Antigravity 自己在裡面選模型）：清單只有第一個。欄位請變灰，`model` 不要送，或送 `""`；送別的會被擋（`model_fixed`）。
+- 兩個特別的字（`CLI 預設`、`其他（自訂）`）依電腦的語言給；App 可以用自己的語言換掉，認的是 `key == ""` 和 `custom: true`。
+- `bots[].model` 是設定裡存的值。它不在 `choices.models[cli]` 的 key 裡不一定是錯：可能是電腦認得、但清單沒列的完整 id（例如 `claude-opus-4-8`），這時請顯示成「其他（自訂）」加上那個字。
+
+**自訂的 key 怎麼驗**：電腦拿它跟對照表、和那個 CLI 的模型 id 的樣子比對，**不會為了驗證去啟動任何 CLI**。認不得的 `POST /link/bots/settings` 直接擋下，什麼都不存，回：
+
+```json
+{"success": false, "code": "unknown_model", "suggestion": "sonnet", "message": "不認得這個模型「sonet」…"}
+```
+
+`code`：`unknown_model`（認不得；`suggestion` 是最像的那個，可能是 `""`）、`bad_model`（不是一個詞：有空白、符號，或超過 80 字）、`model_fixed`（這個 CLI 不能指定模型）。`message` 依電腦的語言，可直接顯示。手機沒有另外的「先檢查」路由：送出 `POST /link/bots/settings` 時驗證，被擋就把 `message` 顯示在欄位旁邊，使用者改了再送。
+
+**以前存下來的錯 key**：`bots[]` 每個 bot 多三個欄位：`model_ok`（`false` 表示這個模型可能沒生效）、`model_code`（同上面的 `code`，`ok` 時是 `""`）、`model_suggestion`。桌面的編輯頁標「這個模型可能沒生效」；手機請照做，並讓使用者重選。只改執掌時，原樣送回去的舊 key 不會被擋（桌面也是）；換成另一個認不得的才擋。
+
+**更新清單**：新模型上市後，改電腦端 `agent_model.py` 裡那個 CLI 的 `models`，不用改 App。方法見 [`bots.md`](bots.md#updating-the-model-list)。
 
 **`POST /link/bots/wake {"role"}`**：叫醒一個 bot，走的是桌面的 `bots_open`。回 `{"success", "details": {"sid", "existed"}}`；`existed: true` 表示它本來就醒著。外部 bot 回 `success: false` 和原因。
 

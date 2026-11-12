@@ -28,6 +28,7 @@
   for that CLI; the name, face, job and memory stay, the conversation does not move.
   Next wake, or now (an awake bot writes its memory and closes first). Pi and
   Antigravity pick their model inside them, so no model is pinned for them.
+  The model is chosen from a list, see [The model](#the-model).
 - A bot or a tab is addressed by name everywhere (`bot_names.py`); `/N` is unchanged.
 - Renaming (`bots_rename`, `sfctl bots-rename`, the editor's name, and renaming a bot's
   tab anywhere: the tab's rename dialog, `sfctl rename`, a phone's `/link/rename`): one
@@ -69,6 +70,46 @@ and the user has one list of "who does what", not two.
 
 Per-tab state is `bots_sessions: {sid: {"bot": role, "avatar": {...}}}` — a tab
 bound to a bot, or a plain tab with a face the user picked.
+
+## The model
+
+A bot's model is **picked from a list**, not typed (a key that was not exactly the CLI's was stored,
+pinned on the command line, and did nothing). The list is built from `agent_model.py`'s table for the CLI
+the bot runs on:
+
+- **CLI default** first (the value is `""`: nothing is pinned), then the CLI's models by their names
+  (Opus, Sonnet…) while the key the CLI is given (`opus`, `sonnet`…) is a separate thing, shown under the
+  picker as what is sent (`--model sonnet`), and **Other (custom)** last, for a key the list does not have.
+- A CLI that picks its model inside it (Pi, Antigravity) or a command ShellBot does not know has only the
+  default, and the field is greyed: there is no flag to pin on.
+- A custom key is checked on the spot against the table and the shapes of the ids its families come in
+  (`claude-opus-4-8`, `gpt-5.1-codex-max`, OpenCode's `provider/model`). **"Unknown model" is shown, and it is
+  never saved**: not by the editor, `sfctl bots-set`/`bots-save` or a phone. The check starts no CLI. It also offers
+  the key that was likely meant (`sonet` → `sonnet`). A model the bot already had, on the same CLI, is not refused
+  again when only something else is edited.
+- A bot whose stored model is not one ShellBot knows (typed before this, or left behind by a CLI change) is
+  flagged in its editor and in Settings → Bots as **"This model may not take effect"**, and on the phone as
+  `model_ok: false` (docs/mobile-link.md). Waking it writes a line to the debug log (`[bots] open role=…: model … is not
+  one ShellBot knows`) and tells the person. ShellBot does not read the CLI's own complaint off its screen: each CLI
+  and version words it differently, and an unknown key may be ignored in silence, which a screen scrape would miss.
+- Choosing "CLI default" takes any `--model` already in the bot's command off it, so the choice really is the default.
+
+### Updating the model list
+
+When a new model ships, `agent_model.py` is the one place to change; the picker, the check, the phone's
+`choices.models` and the pin all follow from it.
+
+1. Open `agent_model.py`, find the CLI in `_TABLE`, and add `("key", "Label")` to its `models`:
+   the **key** is exactly what the CLI takes after its flag (`claude --model <key>`, `codex -m <key>`), the **label**
+   is the name people read. The order is the picker's order.
+2. A new **family** of ids (say Claude Code gets a family `nova`): its key goes in `models` too (it is also the alias),
+   and the check then knows `claude-nova-5` from the shape in `ids`. A key the CLI takes that the picker should not
+   list goes in `also`. A new id shape goes in `ids` (a regex matched whole).
+3. Run `./run_tests.sh` (`tests_agent_model.py` lists every CLI's picker and a launch command for every listed model, so
+   a new line shows up there and the numbers change on purpose).
+4. Nothing else: no page, phone or doc edit. A phone gets the new list from the next `GET /link/bots`.
+
+A CLI that is not in the table at all is a new provider: see [`adding-a-provider.md`](adding-a-provider.md).
 
 ## Faces (atomic design)
 
