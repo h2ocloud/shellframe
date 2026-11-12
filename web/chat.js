@@ -990,11 +990,26 @@
     renderLive(sid);
     renderAsk(sid);
     stickBottom(sid);
-    input.placeholder = T(`Message ${displayName(sessions()[sid])} — Enter to send, Shift+Enter for a new line`,
-                          `傳訊息給 ${displayName(sessions()[sid])}（Enter 送出，Shift+Enter 換行）`);
+    renderHint(sid);
     sendBtn.textContent = T('Send', '送出');
     renderMic();
     noteEl.textContent = view(sid).note || '';
+  }
+  // The box's hint names the tab (or the bot). It follows the name as it changes: it was set only
+  // when the view was drawn for a tab, so after a rename it kept the old name until the tab was left
+  // and come back to. Written only when it differs, so a person's focus or selection is not touched.
+  function renderHint(sid) {
+    const name = displayName(sessions()[sid]);
+    const hint = T(`Message ${name} — Enter to send, Shift+Enter for a new line`,
+                   `傳訊息給 ${name}（Enter 送出，Shift+Enter 換行）`);
+    if (input.placeholder !== hint) input.placeholder = hint;
+  }
+  // A tab was renamed (the dialog, the app's push, a bot's rename): what shows its name follows now,
+  // not at the next tick.
+  function relabel() {
+    if (!layer || !shownFor) return;
+    renderHead(shownFor);
+    renderHint(shownFor);
   }
   // What a header says under the tab's name: what it is doing, or that it is waiting or ready.
   function stateWord(sid) {
@@ -1708,6 +1723,7 @@
     const sid = shownFor;
     if (!sid || document.hidden) return;
     renderHead(sid);
+    renderHint(sid);
     renderLive(sid);
     if (noReplyDue(sid) !== !!view(sid).noReply) renderList(sid);
     refresh(sid, false);
@@ -1720,7 +1736,7 @@
     return d.text ? (d.detail ? `${d.text} · ${d.detail}` : d.text) : '';
   }
 
-  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert };
+  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert, relabel };
   const boot = () => { mount(); apply(false); setInterval(tick, POLL_MS); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

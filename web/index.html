@@ -3115,6 +3115,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   function renderTabs() {
+    try { window.SFChat && SFChat.relabel(); } catch (_) {}   // the chat view's header and box hint carry the name too
     $tabs.innerHTML = '';
     const hasBridge = bridgeState && bridgeState.active;
     sessionOrder.forEach((sid) => {
