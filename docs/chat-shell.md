@@ -90,10 +90,14 @@ running underneath with its size unchanged, and everything that types into the t
   on the left, its face (`SFBots.faceForName`: a bot's own, by its name, label or a name it
   had; else an open tab's; else one made from the name) and its name above a bubble of its
   own colour, the header left out (it can hold an `[[SF:TO:…]]` of its own, so it ends at
-  the `]]` closing its own `[[`); the same sender again shows them once. A message of several
-  lines goes into a tab as a paste, and Claude Code keeps every paste wrapped
-  (`<pasted_content id="…">…</pasted_content id="…">`): the wrapper is not shown, and the header
-  is read inside it (`agent_link.unwrap_paste` is the same rule). Codex's empty reasoning
+  the `]]` closing its own `[[`); the same sender again shows them once. ShellBot types a long
+  message into a tab as a paste, and Claude Code keeps every paste wrapped
+  (`<pasted_content id="…">…</pasted_content id="…">`). A wrapper that is the whole message is only
+  how it went in: its words are the message, and an agent's header is read inside it. Something the
+  person pasted among their own words is one folded block in their bubble ("貼上的內容 · 15 行" and
+  how it starts); a click shows it as it was pasted. The tags are never shown, and the CLI keeps the
+  text as it got it (`chat.js pasteParts`; `agent_link.unwrap_paste` is the same rule for who sent
+  it). Codex's empty reasoning
   records, its own context messages and its doubled answers are left out; `[[SF:…]]`
   markers are not shown, and a `[[SF:RED]]` tail folds away while it is up as buttons.
 - **Markdown**: agent text is escaped first; then a fixed set of tags (paragraphs, lists,

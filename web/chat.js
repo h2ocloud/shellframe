@@ -275,10 +275,31 @@
   // Context Codex writes as a message of its own, not something anyone said.
   const CODEX_CONTEXT = /^\s*(?:<environment_context>|<user_instructions>|<permissions instructions>|# AGENTS\.md instructions)/;
   const RED_MARK = /^[\s>❯›⏺•*-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?\]\]\s*$/i;     // bridge_home._RED_LINE
-  // Claude Code keeps a pasted block as <pasted_content id="…">…</pasted_content id="…">, and a
-  // message of several lines goes into a tab as a paste: the tags go, what was pasted stays
-  // (agent_link._PASTE_TAG is the same rule).
+  // Claude Code keeps a pasted block as <pasted_content id="…">…</pasted_content id="…">. ShellBot
+  // types a long message into a tab as a paste (another agent's, one from Telegram, the chat view's
+  // own send), so a wrapper that is the whole message is only how it went in: its words are the
+  // message. A wrapper among the person's own words is something they pasted: a folded block of its
+  // own. The tags are never shown, and the CLI keeps the text as it got it. (agent_link.unwrap_paste
+  // is the same rule for who sent a message.)
   const PASTE_TAG = /<pasted_content(?:\s[^>]*)?>\n?|\n?<\/pasted_content(?:\s[^>]*)?>/g;
+  const PASTE_OPEN = /<pasted_content(?:\s[^>]*)?>/g;
+  const PASTE_BLOCK = /<pasted_content(?:\s[^>]*)?>\n?([\s\S]*?)\n?<\/pasted_content(?:\s[^>]*)?>/g;
+  const PASTE_WHOLE = /^\s*<pasted_content(?:\s[^>]*)?>\n?([\s\S]*?)\n?<\/pasted_content(?:\s[^>]*)?>\s*$/;
+  // → { inner: the words without tags, parts: [{text} | {paste}] when something was pasted among them }
+  function pasteParts(t) {
+    const opens = (t.match(PASTE_OPEN) || []).length;
+    const whole = opens === 1 && t.match(PASTE_WHOLE);
+    if (!opens || whole) return { inner: whole ? whole[1] : t, parts: null };
+    const parts = [];
+    let at = 0;
+    for (const m of t.matchAll(PASTE_BLOCK)) {
+      if (t.slice(at, m.index).trim()) parts.push({ text: t.slice(at, m.index).trim() });
+      parts.push({ paste: m[1] });
+      at = m.index + m[0].length;
+    }
+    if (t.slice(at).trim()) parts.push({ text: t.slice(at).trim() });
+    return { inner: t.replace(PASTE_TAG, ''), parts: parts.some(x => x.paste !== undefined) ? parts : null };
+  }
 
   // The [[A2A…]] header an agent message starts with (agent_link.format_delivery /
   // format_handoff). It can hold a [[SF:TO:…]] of its own, so it ends at the ]] that
@@ -297,9 +318,10 @@
 
   // A user turn: the words, minus what ShellBot itself put around them.
   function userView(text) {
-    let t = String(text || '').replace(PASTE_TAG, '');
+    const pasted = pasteParts(String(text || ''));
+    let t = pasted.inner;
     const tags = [];
-    const a2a = a2aHeader(t);
+    const a2a = pasted.parts ? null : a2aHeader(t);     // a header in something the person pasted is theirs
     if (a2a) {
       const who = a2a.inner.match(/「([^」]+)」|"([^"]+)"/) || [];
       tags.push({ kind: 'a2a', who: who[1] || who[2] || '' });
@@ -313,7 +335,7 @@
       t = t.split(/\n{2,}/).filter(p => !TG_TOKEN.test(p)).join('\n\n');
       tags.push({ kind: 'telegram' });
     }
-    return { text: t.trim(), tags };
+    return pasted.parts ? { text: t.trim(), tags, parts: pasted.parts } : { text: t.trim(), tags };
   }
   // An agent's words, minus ShellBot's protocol markers. `foldRed`: the [[SF:RED]]
   // question at the end is on screen as buttons, so its tail is left out.
@@ -354,7 +376,8 @@
         // (`from`, agent_link.sender_of, what a phone reads); the header is the same rule.
         const peer = (t.from && t.from.kind === 'a2a') ? t.from.name : (u.tags.find(x => x.kind === 'a2a') || {}).who;
         if (peer !== undefined) { out.push({ type: 'peer', who: peer || '', text: u.text, ts: t.ts || 0 }); return; }
-        out.push({ type: 'user', text: u.text, tags: u.tags, ts: t.ts || 0 });
+        out.push(u.parts ? { type: 'user', text: u.text, tags: u.tags, parts: u.parts, ts: t.ts || 0 }
+                         : { type: 'user', text: u.text, tags: u.tags, ts: t.ts || 0 });
       } else if (kind === 'assistant_text') {
         const raw = String(t.text || '').trim();
         if (!raw || CODEX_CONTEXT.test(raw)) return;           // reasoning, or Codex's own context
@@ -932,14 +955,28 @@
         v.open.has(key) ? T('Show less', '收合') : T(`Show all (${text.length} characters)`, `顯示全部（${text.length} 字）`))}</button>` : '') +
       '</div>';
   }
+  // Something the person pasted among their own words: one folded block in their bubble, how many
+  // lines and how it starts; the text itself, as it was pasted, one click away.
+  function pasteHtml(sid, key, text) {
+    const open = view(sid).open.has(key);
+    const n = text.split('\n').length;
+    const peek = (text.split('\n').find(l => l.trim()) || '').trim();
+    return `<div class="cm-paste${open ? ' is-open' : ''}"><button class="cm-paste-sum" data-act="open" data-key="${escHtml(key)}">` +
+      `<span class="cm-caret">${open ? '▾' : '▸'}</span><span>${escHtml(T(`Pasted · ${n} ${n === 1 ? 'line' : 'lines'}`, `貼上的內容 · ${n} 行`))}</span>` +
+      (open ? '' : `<span class="cm-paste-peek">${escHtml(peek)}</span>`) + '</button>' +
+      (open ? `<div class="cm-paste-text">${escHtml(text)}</div>` : '') + '</div>';
+  }
   function itemHtml(sid, it, idx, items) {
     const v = view(sid);
     const key = itemKey(it, idx);
     if (it.type === 'user') {
       const tag = it.tags.map(t => t.kind === 'telegram' ? T('from Telegram', '來自 Telegram')
         : T(`from ${t.who || 'another agent'}`, `來自 ${t.who || '另一個分頁'}`)).join(' · ');
-      return `<div class="cm-row cm-user">${longText(sid, key, it.text, 'cm-bubble', true)}` +
-        (tag ? `<div class="cm-meta">${escHtml(tag)}</div>` : '') + '</div>';
+      const bubble = it.parts
+        ? `<div class="cm-bubble">${it.parts.map((p, n) => p.paste !== undefined ? pasteHtml(sid, `${key}:paste${n}`, p.paste)
+                                                                                : md(p.text, isZh(lang()))).join('')}</div>`
+        : longText(sid, key, it.text, 'cm-bubble', true);
+      return `<div class="cm-row cm-user">${bubble}` + (tag ? `<div class="cm-meta">${escHtml(tag)}</div>` : '') + '</div>';
     }
     if (it.type === 'peer') {
       // Another agent: on the left with its own face and name, its words in a bubble of

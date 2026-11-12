@@ -169,14 +169,19 @@ _HEADER_OPEN = re.compile(r"^\s*\[\[A2A[:：]")
 _HEADER_WHO = re.compile(r"「([^」]+)」|\"([^\"]+)\"")
 _TG_MARK = re.compile(r"(?:\[\[|<<)/?TG_REPLY_[0-9a-fA-F]+(?:\]\]|>>)")
 # Claude Code keeps a pasted block in its record as <pasted_content id="…">…</pasted_content id="…">,
-# and a message of several lines goes into a tab as a paste, so a header can sit inside one
-# (web/chat.js PASTE_TAG is the same rule).
-_PASTE_TAG = re.compile(r"<pasted_content(?:\s[^>]*)?>\n?|\n?</pasted_content(?:\s[^>]*)?>")
+# and ShellBot types a long message into a tab as a paste, so a header can sit inside one
+# (web/chat.js pasteParts is the same rule).
+_PASTE_OPEN = re.compile(r"<pasted_content(?:\s[^>]*)?>")
+_PASTE_WHOLE = re.compile(r"\s*<pasted_content(?:\s[^>]*)?>\n?(.*?)\n?</pasted_content(?:\s[^>]*)?>\s*", re.S)
 
 
 def unwrap_paste(text: str) -> str:
-    """The text without Claude Code's paste wrappers; what was pasted stays."""
-    return _PASTE_TAG.sub("", str(text or ""))
+    """The words of a message that went in as one paste: when one wrapper is the whole message,
+    what is inside it. A wrapper among the person's own words is something they pasted, so such a
+    text comes back as it is, and is the person's."""
+    text = str(text or "")
+    whole = len(_PASTE_OPEN.findall(text)) == 1 and _PASTE_WHOLE.fullmatch(text)
+    return whole.group(1) if whole else text
 
 
 def header_of(text: str):
@@ -184,7 +189,7 @@ def header_of(text: str):
     (inside, the message after it), or None. The header holds an [[SF:TO:…]] example of its
     own, so it ends at the ]] that closes its own [[, not at the first one (web/chat.js
     a2aHeader is the same rule). A header that never closes is no header. A message that
-    went in as a paste is read without its wrapper: one of several lines always does."""
+    went in as one paste is read inside its wrapper (unwrap_paste): a long one always does."""
     text = unwrap_paste(text)
     m = _HEADER_OPEN.match(text)
     if not m:

@@ -117,6 +117,16 @@
 .cm-bubble p { margin: .45em 0; }
 .cm-bubble code { background: rgba(122, 162, 247, .13); border-radius: 4px; padding: .05em .35em; font-size: .9em; }
 .cm-user .cm-bubble code { background: rgba(255, 255, 255, .16); }
+/* something the person pasted among their words: a folded block in their bubble (chat.js pasteHtml) */
+.cm-paste { margin: .4em 0; border-radius: 8px; background: rgba(255, 255, 255, .12); min-width: 0; }
+.cm-paste:first-child { margin-top: 0; }
+.cm-paste:last-child { margin-bottom: 0; }
+.cm-paste-sum { display: flex; align-items: center; gap: .5em; width: 100%; min-width: 0; border: 0; background: none;
+                cursor: pointer; color: inherit; font: inherit; font-size: .88em; padding: .35em .65em; text-align: left; }
+.cm-paste-sum .cm-caret { color: inherit; opacity: .75; }
+.cm-paste-sum > span:nth-child(2) { flex: none; font-weight: 600; }
+.cm-paste-peek { opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cm-paste-text { padding: .15em .75em .65em; white-space: pre-wrap; font-size: .88em; max-height: 22em; overflow-y: auto; }
 .cm-bubble a.cm-link, .cm-compact-text a.cm-link { color: #9ab8ff; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .cm-user .cm-bubble a.cm-link { color: #fff; }
 .cm-h { font-weight: 700; margin: .7em 0 .3em; color: var(--cm-text); }

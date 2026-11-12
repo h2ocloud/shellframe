@@ -7,12 +7,14 @@ was drawn as the person's own (a blue bubble on the right with a small "from" un
     bubble shows any of the header ("]]", "SF:TO", "不是使用者本人"); each A2A is on the left
     with its sender's face (a bot's own, else one made from its name) and name above it; the
     person's own words stay on the right; the message itself is there whole
-  - an A2A message of several lines goes in as a paste, and Claude Code keeps every paste
-    wrapped (<pasted_content id=…>…</pasted_content id=…>): drawn the same, no wrapper shown;
-    a paste of the person's own shows what was pasted, not the wrapper
-Only what is drawn changes: the CLI gets the header as it was (agent_link is not touched).
-Demo data only. Screenshots: qa-shots/chat-a2a-{row,mixed,long,pasted}.png. SF_A2A_BEFORE=<a chat.js>
-draws the same with that file instead and saves …-before.png, without checks.
+  - a long A2A message goes in as a paste, and Claude Code keeps every paste wrapped
+    (<pasted_content id=…>…</pasted_content id=…>): drawn the same, no wrapper shown. What the
+    person pasted among their own words is one folded block in their bubble ("貼上的內容 · 15 行"
+    and how it starts), the pasted text as it was one click away. The turns are the shapes
+    measured on a real tab (_paste_shapes.py), with demo words.
+Only what is drawn changes: the CLI gets the text as it was.
+Demo data only. Screenshots: qa-shots/chat-a2a-{row,mixed,long,pasted,pasted-open}.png.
+SF_A2A_BEFORE=<a chat.js> draws the same with that file instead and saves …-before.png, without checks.
 Needs playwright; SKIP without it. Run: .venv/bin/python tests_chat_a2a_ui.py
 """
 import json
@@ -24,6 +26,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 SHOTS = HERE / "qa-shots"
 sys.path.insert(0, str(HERE))
 import agent_link  # noqa: E402
+import _paste_shapes as ps  # noqa: E402
 
 passed = failed = 0
 BEFORE = os.environ.get("SF_A2A_BEFORE", "")
@@ -52,10 +55,9 @@ def a2a(who, text):
     return {"kind": "user_msg", "text": agent_link.format_delivery(who, text, lang="zh")}
 
 
-def pasted(who, text, pid):
-    """An A2A message of several lines: it goes in as a paste, which Claude Code keeps wrapped."""
-    return {"kind": "user_msg", "text": f'<pasted_content id="{pid}">\n' + agent_link.format_delivery(who, text, lang="zh")
-            + f'\n</pasted_content id="{pid}">'}
+def shaped(n):
+    """The n-th of the measured shapes (_paste_shapes.SHAPES), as a turn."""
+    return {"kind": "user_msg", "text": ps.SHAPES[n][1]}
 
 
 def you(text):
@@ -84,11 +86,11 @@ CASES = {
               bot("研究說做好了，在 docs/compare.md。"),
               you("好，謝謝")],
     "long": [a2a("研究", LONG), bot("收到，我整理成三點回給你。")],
-    "pasted": [pasted("研究", "比較表整理好了，在 docs/compare.md。\n第二段：出處在表格最後一欄。", "9f2a"),
-               you('照這個格式寫 <pasted_content id="77b1">\n第一行：標題\n第二行：內容\n</pasted_content id="77b1">'),
-               bot("收到，我照這個格式整理比較表。")],
+    "pasted": [shaped(1),                                   # an A2A message, wrapped whole, 12 lines
+               shaped(3),                                   # the person's own: three pictures, then a paste
+               bot("收到，我照筆記的格式整理。")],
 }
-SENDERS = {"row": ["研究", "寫程式", "排程"], "mixed": ["研究"], "long": ["研究"], "pasted": ["研究"]}
+SENDERS = {"row": ["研究", "寫程式", "排程"], "mixed": ["研究"], "long": ["研究"], "pasted": ["寫程式"]}
 BOTS = {"enabled": True, "primary": "", "memory_root": "~/.config/shellframe/bots", "sessions": {}, "kinds": {},
         "roster": {"研究": {"label": "研究", "cmd": "claude", "bot": {"avatar": {"shape": "hex", "color": "blue"}, "memory": True}},
                    "寫程式": {"label": "寫程式", "cmd": "codex", "bot": {"avatar": {"shape": "pill", "color": "red"}, "memory": True}}}}
@@ -148,13 +150,26 @@ with sync_playwright() as pw:
         if not BEFORE:
             check("each A2A is on the left, its sender's name above it", names == SENDERS[name], names)
             check("…with its sender's face", faces and all(faces), faces)
-            check("the person's own words stay on the right", mine == [agent_link.unwrap_paste(t) for t in sent
-                                                                       if t not in agents], mine)
+            plain = [agent_link.unwrap_paste(t) for t in sent if t not in agents and "<pasted_content" not in agent_link.unwrap_paste(t)]
+            check("the person's own words stay on the right", [b for b in mine if "貼上的內容" not in b] == plain, mine)
         bodies = [agent_link.header_of(t)[1] for t in agents]
         check("the message itself is there, from its first word",
               all(any(b.startswith(body[:12]) for b in bubbles) for body in bodies), (bodies, bubbles))
+        if name == "pasted" and not BEFORE:
+            sums = page.evaluate("[...document.querySelectorAll('#chat-list .cm-user .cm-paste-sum')].map(b => b.innerText)")
+            check("what the person pasted is one folded block: how many lines, how it starts",
+                  len(sums) == 1 and "貼上的內容 · 15 行" in sums[0] and "# 會議重點" in sums[0], sums)
+            check("…in their bubble, after their own words", mine and mine[0].startswith("[Image #1] [Image #2] [Image #3]")
+                  and not page.evaluate("!!document.querySelector('#chat-list .cm-paste-text')"), mine)
+            page.locator("#chat-layer").screenshot(path=str(SHOTS / "chat-a2a-pasted.png"))
+            page.click("#chat-list .cm-paste-sum")
+            page.wait_for_timeout(250)
+            shown = page.evaluate("(document.querySelector('#chat-list .cm-paste-text') || {}).innerText")
+            check("…one click shows it, as it was pasted", shown == ps.NOTES, shown)
+            page.locator("#chat-layer").screenshot(path=str(SHOTS / "chat-a2a-pasted-open.png"))
         check("no page errors", not errors, errors)
-        page.locator("#chat-layer").screenshot(path=str(SHOTS / f"chat-a2a-{name}{'-before' if BEFORE else ''}.png"))
+        if name != "pasted" or BEFORE:
+            page.locator("#chat-layer").screenshot(path=str(SHOTS / f"chat-a2a-{name}{'-before' if BEFORE else ''}.png"))
         page.close()
     browser.close()
 

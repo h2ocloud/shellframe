@@ -203,6 +203,20 @@ check("…in English too", agent_link.sender_of(agent_link.format_delivery("rese
 check("…and the chat view gets the same turns", view("s6")["turns"] == turns6)
 check("a header that never closes names no one", agent_link.sender_of("[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]") is None)
 
+print("pasted messages in the shapes measured on a real tab (_paste_shapes.py): who sent each")
+import _paste_shapes as ps  # noqa: E402
+SHAPED = TMP / "shapes.jsonl"
+SHAPED.write_text("\n".join(rec("user", text, f"2026-11-12T10:{i:02d}:00Z") for i, (_, text, _, _) in enumerate(ps.SHAPES))
+                  + "\n", encoding="utf-8")
+PATHS["s10"] = SHAPED
+api.sessions["s10"] = Tab("s10", "claude")
+turns10 = [t for t in api._execute_sfctl("conversation", {"sid": "s10", "limit": 120})["details"]["turns"]
+           if t["kind"] == "user_msg"]
+check(f"all {len(ps.SHAPES)} come back as user turns", len(turns10) == len(ps.SHAPES), len(turns10))
+for (name, text, frm, _), t in zip(ps.SHAPES, turns10):
+    check(f"{name}: `from` is {frm}, the text as the CLI got it", t.get("from") == frm and t["text"] == text,
+          (t.get("from"), t["text"][:60]))
+
 print("chat_view: the other CLIs (M2)")
 import agent_pi  # noqa: E402
 PI = TMP / "pi-session.jsonl"
@@ -395,6 +409,22 @@ else:
           (out.stderr, got[0]))
     check("…the person's words around a pasted header: theirs, with what was pasted but not its wrapper",
           got[1].get("tags") == [] and got[1].get("text") == "這則是誰寄的？" + SENT, (out.stderr, got[1]))
+    check("…and what they pasted is a block of its own",
+          got[1].get("parts") == [{"text": "這則是誰寄的？"}, {"paste": SENT}], (out.stderr, got[1].get("parts")))
+
+    print("the same shapes in the chat view (web/chat.js buildTimeline, on the server's turns)")
+    out = subprocess.run([node, "-e", "const R = require(process.argv[1]); "
+                          "console.log(JSON.stringify(R.buildTimeline(JSON.parse(require('fs').readFileSync(0, 'utf8')))))",
+                          str(HERE / "web" / "chat.js")], input=json.dumps(turns10, ensure_ascii=False),
+                         capture_output=True, text=True, timeout=20)
+    items = json.loads(out.stdout or "[]")
+    check(f"one item each ({len(items)})", len(items) == len(ps.SHAPES), (out.stderr, items))
+    for (name, _, _, want), it in zip(ps.SHAPES, items):
+        got = {k: it.get(k) for k in want}
+        check(f"{name}: drawn as {want['type']}" + (f" from {want['who']}" if want.get("who") else "")
+              + (", what was pasted in a block" if want.get("parts") else ""), got == want, (got, want))
+    check("no item holds a wrapper's tag or an A2A header", not any(
+        "pasted_content" in json.dumps(it, ensure_ascii=False) or "[[A2A" in json.dumps(it, ensure_ascii=False) for it in items))
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:
