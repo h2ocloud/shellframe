@@ -369,6 +369,9 @@ check("…a word that ends right at the limit is kept, one long word is cut, a s
       and main._slugify("x" * 30) == "x" * 22 and main._slugify("weekly-report") == "weekly-report")
 main.subprocess.run = lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="code-name-blue-whale\n")
 check("an answer becomes the name", real_haiku_slug("幫我記住一件事") == "code-name-blue-whale")
+main.subprocess.run = lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="Failed to authenticate. API Error: 401\n")
+check("a call that fails (measured, logged out: a tab was named \"failed to authenticate\"): no name",
+      real_haiku_slug("幫我記住一件事") == "" and "[slug] no name: exit 1" in Path(sf_log.DEBUG_LOG).read_text(encoding="utf-8"))
 main.subprocess.run, main.shutil.which = real_run, real_which
 stub_slug = main._haiku_slug
 t12 = api.sessions["s12"] = Tab("s12", "", "claude")

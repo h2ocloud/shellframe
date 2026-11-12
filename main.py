@@ -830,6 +830,9 @@ def _haiku_slug(prompt: str) -> str:
             [claude_bin, "--model", "claude-haiku-4-5", "--print", meta_prompt],
             capture_output=True, text=True, timeout=SLUG_TIMEOUT_S,
         )
+        if r.returncode != 0:      # its error is no name (measured, logged out: "failed to authenticate")
+            _dlog("slug", f"no name: exit {r.returncode}")
+            return ""
         raw = r.stdout.strip().splitlines()
         candidate = next((l.strip() for l in reversed(raw) if l.strip()), "")
         slug = _slugify(candidate)
