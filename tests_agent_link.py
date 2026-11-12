@@ -259,17 +259,187 @@ def main():
     reset()
     fake = Fake()
     hops = 0
-    reason = ""
+    stopped = {}
     for i in range(agent_link.MAX_DEPTH + 3):
         sender, role = ("sA", "Coding") if i % 2 == 0 else ("sB", "研究")
         res = agent_link.dispatch(fake, target=role, text=f"ping-{i}",
                                   from_sid=sender, from_label=sender)
         if not res["success"]:
-            reason = res["message"]
+            stopped = res
             break
         hops += 1
     check("dispatch stops a back-and-forth at MAX_DEPTH",
-          hops == agent_link.MAX_DEPTH and "depth" in reason)
+          hops == agent_link.MAX_DEPTH and (stopped.get("details") or {}).get("blocked") is True
+          and (stopped.get("details") or {}).get("depth") == agent_link.MAX_DEPTH + 1)
+
+    # ── 超過上限一層：照樣送進已開的分頁，但是當資料；寄件者收到退件 ──
+    sent_to_b = [t for sid, t in fake.sent if sid == "sB"]
+    last = sent_to_b[-1]
+    det = stopped.get("details") or {}
+    check("the message that went one past the cap still reaches the open tab, as data",
+          len(sent_to_b) == 3 and last.startswith("[[A2A（未轉達）：來自「sA」的訊息")
+          and "（5／4）" in last and "只供參考" in last and last.endswith("ping-4")
+          and det.get("delivered") is True and det.get("sid") == "sB")
+    check("…its sender is bounced in words: stopped (5 of 4), the other side has it, reference only",
+          stopped["success"] is False and "被擋下（轉發層數 5，上限 4）" in stopped["message"]
+          and "對方已經收到，只當參考" in stopped["message"])
+    check("…the header is read back as the sender's, blocked; the words after it are the message",
+          agent_link.sender_of(last) == {"kind": "a2a", "name": "sA", "handoff": False, "blocked": True}
+          and agent_link.header_of(last)[1] == "ping-4")
+    entry = agent_link.history(1)[0]
+    check("…the log says so: one `blocked` entry, delivered, with the depth and the reason",
+          entry["kind"] == "blocked" and entry["delivered"] is True and entry["depth"] == 5
+          and entry["reason"] == "chain depth 5 over limit 4" and entry["text"] == "ping-4")
+    check("…a2a-log prints it as blocked → delivered as data",
+          "blocked sA -> Coding chain depth 5 over limit 4（擋下 → 以資料送達）"
+          in agent_link.log_text(5)["message"])
+    check("…no hop: the sender's count stays, the recipient is booked at the end of the chain",
+          agent_link._inbound_depth["sA"] == agent_link.MAX_DEPTH
+          and agent_link._inbound_depth["sB"] == agent_link.MAX_DEPTH + 1)
+    sent_before, slots_before = len(fake.sent), len(agent_link._recent.get("sB", []))
+    reply = agent_link.dispatch(fake, target="研究", text="收到，我回你", from_sid="sB", from_label="sB")
+    check("…so the recipient's reply is refused, not a new chain and not data again: nothing is sent",
+          reply["success"] is False and reply["details"].get("blocked") is True
+          and reply["details"].get("delivered") is False and reply["details"].get("depth") == 6
+          and "沒有送達" in reply["message"] and len(fake.sent) == sent_before
+          and agent_link.history(1)[0]["kind"] == "refused")
+    check("…and that refusal costs no rate slot",
+          len(agent_link._recent.get("sB", [])) == slots_before)
+    more = [agent_link.dispatch(fake, target="Coding", text=f"ping-4{c}", from_sid="sA", from_label="sA")
+            for c in "bcd"]
+    check("the sender can still reach it with more (each as data), its count unmoved",
+          all(r["success"] is False and r["details"].get("delivered") is True for r in more)
+          and len([1 for sid, _t in fake.sent if sid == "sB"]) == 6
+          and agent_link._inbound_depth["sA"] == agent_link.MAX_DEPTH)
+    flood = agent_link.dispatch(fake, target="Coding", text="ping-4e", from_sid="sA", from_label="sA")
+    check("the rate limit still applies to data: the seventh in a minute is refused as a rate limit",
+          flood["success"] is False and "rate limit" in flood["message"]
+          and flood["details"].get("blocked") is None and len(fake.sent) == sent_before + 3)
+
+    reset()
+    fake = Fake()
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH
+    hand = agent_link.dispatch(fake, target="Coding", text="做這件", from_sid="sA", from_label="研究",
+                               kind="handoff", msg_id="hb1", hint="建議用訂閱模型")
+    body = fake.sent[-1][1]
+    check("a hand-off past the cap arrives as data too: no task, no hand-off id, nothing to report back",
+          hand["success"] is False and hand["details"]["delivered"] is True
+          and body.startswith("[[A2A（未轉達）：") and "a2a-result" not in body and "路由建議" not in body
+          and agent_link.header_of(body)[1] == "做這件"
+          and agent_link._get_handoff("hb1") is None and getattr(fake, "what", None) == "")
+    check("…and its sender is told that no a2a-result will come",
+          "不會有 a2a-result 回來" in hand["message"] and "被擋下（轉發層數 5，上限 4）" in hand["message"])
+    agent_link._seen_ids.clear()
+    check("…the id counts as sent for good: after a restart it is not delivered twice",
+          agent_link.claim_id("hb1") is False)
+
+    # 不是「已開的分頁」的目標：照舊拒絕（不開分頁、不叫醒、不 POST、不 ssh），寄件者收到「沒有送達」
+    reset()
+    fake = Fake()
+    fake.sessions.pop("sB")                       # Coding has no tab: delegate would open one
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH
+    closed = agent_link.dispatch(fake, target="Coding", text="開新分頁給我", from_sid="sA", from_label="研究")
+    check("past the cap, a role with no open tab is not opened for the message: refused, nothing sent",
+          closed["success"] is False and closed["details"].get("delivered") is False
+          and "沒有送達" in closed["message"] and fake.sent == []
+          and agent_link.history(1)[0]["kind"] == "refused" and agent_link._recent.get("sA", []) == [])
+    fake.external = lambda role: True
+    fake.posted = []
+    fake.deliver_external = lambda role, payload: fake.posted.append(payload) or {"success": True}
+    outside = agent_link.dispatch(fake, target="Coding", text="給外部 bot", from_sid="sA", from_label="研究")
+    check("…nor POSTed to a bot that lives outside",
+          outside["success"] is False and outside["details"].get("delivered") is False and fake.posted == [])
+    reset()
+    fake = Fake()
+    fake.workers_map = {"spark": a2a_ssh.normalize("spark", {"target": "spark-box", "shell": "posix"})}
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH
+    ran = agent_link.dispatch(fake, target="worker:spark", text="查一下 log", from_sid="sA",
+                              from_label="總管", kind="handoff")
+    check("…nor run over ssh: a worker has no prompt to hold a reference",
+          ran["success"] is False and ran["details"].get("delivered") is False
+          and "沒有送達" in ran["message"] and fake.ssh_calls == [])
+    reset()
+    fake = Fake()
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH + 1       # holds data of a chain that is over
+    deeper = agent_link.dispatch(fake, target="Coding", text="再一層", from_sid="sA", from_label="研究")
+    check("past the cap by more than one layer (it holds data of an over chain itself): refused",
+          deeper["success"] is False and deeper["details"].get("depth") == 6
+          and deeper["details"].get("delivered") is False and fake.sent == [])
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH
+    own = agent_link.dispatch(fake, target="研究", text="自言自語", from_sid="sA", from_label="研究")
+    check("a tab still may not message itself, at the cap too",
+          own["success"] is False and "itself" in own["message"] and fake.sent == [])
+
+    # ── 跨機器：收件端自己也走同一條路；寄件端在上限那一層照送、並讀懂對方的回答 ──
+    reset()
+    fake = Fake()
+    first = agent_link.accept_remote(fake, {
+        "kind": "send", "id": "rb1", "target": "Coding", "text": "遠端說的", "from_sid": "s9",
+        "from_label": "遠端", "depth": agent_link.MAX_DEPTH + 1, "source_peer": "abc"})
+    second = agent_link.accept_remote(fake, {
+        "kind": "send", "id": "rb2", "target": "Coding", "text": "遠端又說", "from_sid": "s9",
+        "from_label": "遠端", "depth": agent_link.MAX_DEPTH + 1, "source_peer": "abc"})
+    check("across machines: a message stopped at the cap is handed to the open tab as data",
+          first["success"] is False and first["details"]["delivered"] is True
+          and fake.sent[0][0] == "sB" and fake.sent[0][1].startswith("[[A2A（未轉達）：來自「遠端」的訊息")
+          and second["details"]["delivered"] is True and len(fake.sent) == 2)
+    check("…the peer's own count is not pushed on by it (its next message can still be data)",
+          agent_link._inbound_depth["peer:abc"] == agent_link.MAX_DEPTH
+          and agent_link._inbound_depth["sB"] == agent_link.MAX_DEPTH + 1)
+
+    reset()
+    fake = Fake()
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH
+    fake.remote = lambda peer_id, payload: fake.remote_calls.append((peer_id, payload)) or {
+        "success": False, "message": "…", "details": {"blocked": True, "delivered": True, "depth": 5}}
+    far = agent_link.dispatch(fake, target="otherbox/Coding", text="給另一台", from_sid="sA",
+                              from_label="研究", kind="handoff", msg_id="pb1")
+    check("sending to a peer one layer past the cap: it goes out carrying that depth",
+          len(fake.remote_calls) == 1 and fake.remote_calls[0][1]["depth"] == agent_link.MAX_DEPTH + 1
+          and fake.remote_calls[0][1]["kind"] == "handoff")
+    check("…the peer's answer (data delivered) is the sender's bounce: not a failure, no hand-off, id kept",
+          far["success"] is False and far["details"]["delivered"] is True and far["details"]["peer"] == "abc"
+          and "不會有 a2a-result 回來" in far["message"] and agent_link._get_handoff("pb1") is None
+          and agent_link.claim_id("pb1") is False
+          and [e["kind"] for e in agent_link.history(5)][-1] == "blocked"
+          and not any(e["kind"] == "failed" for e in agent_link.history(5)))
+    reset()
+    fake = Fake()
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH
+    fake.remote = lambda peer_id, payload: {"success": False, "message": "chain depth 5 over limit 4"}
+    old = agent_link.dispatch(fake, target="otherbox/Coding", text="給舊版", from_sid="sA", from_label="研究")
+    check("a peer that does not know the new header refuses it as depth: the sender hears it was not delivered",
+          old["success"] is False and old["details"]["delivered"] is False
+          and "被擋下（轉發層數 5，上限 4）；沒有送達" in old["message"])
+    agent_link._inbound_depth["sA"] = agent_link.MAX_DEPTH + 1
+    fake.remote = lambda peer_id, payload: fake.remote_calls.append(peer_id) or {"success": True}
+    over = agent_link.dispatch(fake, target="otherbox/Coding", text="太深了", from_sid="sA", from_label="研究")
+    check("…and one more than a layer past the cap is not sent to the peer at all",
+          over["success"] is False and over["details"]["delivered"] is False and fake.remote_calls == [])
+
+    # ── 標頭：兩種語言、貼上包裝裡也認得；沒被擋的訊息沒有 blocked ──
+    zh_head = agent_link.format_blocked("研究-CLD", "把這段查一下", 5, lang="zh")
+    en_head = agent_link.format_blocked("research", "look at this", 5, lang="en")
+    check("the not-passed-on header: who, the numbers, reference only, and no way to reply",
+          zh_head.startswith("[[A2A（未轉達）：來自「研究-CLD」的訊息") and "（5／4）" in zh_head
+          and "只供參考" in zh_head and "SF:TO" not in zh_head and zh_head.endswith("]]\n把這段查一下")
+          and en_head.startswith('[[A2A (not passed on): a message from "research"') and "(5/4)" in en_head
+          and "for reference only" in en_head and "SF:TO" not in en_head and en_head.endswith("]]\nlook at this"))
+    wrapped = '<pasted_content id="ab12">\n' + zh_head + '\n</pasted_content id="ab12">'
+    check("header_of and sender_of read it: Chinese, English, and inside a paste wrapper",
+          agent_link.sender_of(zh_head) == {"kind": "a2a", "name": "研究-CLD", "handoff": False, "blocked": True}
+          and agent_link.sender_of(en_head) == {"kind": "a2a", "name": "research", "handoff": False, "blocked": True}
+          and agent_link.sender_of(wrapped) == agent_link.sender_of(zh_head)
+          and agent_link.header_of(wrapped) == agent_link.header_of(zh_head)
+          and agent_link.header_of(en_head)[1] == "look at this")
+    check("…a message that was not stopped has no `blocked` key (the shape a phone already reads)",
+          agent_link.sender_of(agent_link.format_delivery("研究", "x", lang="zh"))
+          == {"kind": "a2a", "name": "研究", "handoff": False}
+          and agent_link.sender_of(agent_link.format_handoff("研究", "x", "h1", lang="en"))["handoff"] is True)
+    check("…only that exact opener counts; one that never closes, or another word, is no header",
+          agent_link.sender_of("[[A2A（未轉達）：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]") is None
+          and agent_link.sender_of("[[A2A（已轉達）：來自「研究」的訊息]]\nx") is None
+          and agent_link.sender_of("[[A2A (not passed on) : a message from \"r\"]]\nx")["blocked"] is True)
 
     reset()
     fake = Fake()
