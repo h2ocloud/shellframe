@@ -66,7 +66,7 @@ tab to a person, write it as `#name` (e.g. `#sf dev`): with bots on it is a link
 they can ⌘-click to open that tab.
 
 Each row also carries `agent_state` (working / done / idle), `agent_activity`
-(one line of what it is doing) and `runs_on` (which CLI on which model). When
+(one line of what it is doing; for a tab that has not answered yet, the message it was sent as its words: a message from another agent leads with its sender, `research: …`, and says `(not passed on)` after the name when the chain limit stopped it; something pasted is `Pasted · N lines`; never the `[[A2A…]]` header) and `runs_on` (which CLI on which model). When
 `agent_blocked` is non-empty the tab is **stopped on a dialog waiting for a
 person**, and its text is what is being asked. Do not send into a blocked tab and
 do not read its silence as finished — say who is stuck and what it is asking.
@@ -92,7 +92,7 @@ sfctl link-state <peer> s12        # the same, for a tab on a paired computer
 
 Each line starts with the tab's name, then `#N` (its place in the tab bar), then
 the sid. Fields: `sid`, `label`, `position`, `agent_state` (working / done / idle), `agent_activity`
-(one line), `agent_blocked` (what it is asking, when stopped on a person),
+(one plain line, as above), `agent_blocked` (what it is asking, when stopped on a person),
 `last_error` (the most recent error in its conversation — an authentication
 failure, a rate limit, a 5xx — empty when there is none), `last_output_at` and
 `idle_for_s` (how long it has been silent), and `runs_on` (the model actually
