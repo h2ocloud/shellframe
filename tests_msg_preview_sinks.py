@@ -200,6 +200,17 @@ for name, text, want in (("a Telegram reply", TG_REPLY, "週報整理好了，�
     check(f"{name}: sfctl bots", api._bots_live("s1")[1] == want, api._bots_live("s1"))
     check(f"{name}: the heartbeat's status line", clean(heartbeat_line(res)) and want in heartbeat_line(res), heartbeat_line(res))
 
+print("a push notification's body: the last line of the turn, not the Telegram marker that closes it")
+check("last_words on a turn that ended with [[/TG_REPLY_…]] on a line of its own",
+      api_push.last_words([bot(TG_REPLY)]) == "週報整理好了，放在 reports/weekly.md", api_push.last_words([bot(TG_REPLY)]))
+check("…and with the marker inline", api_push.last_words([bot("好了，放在 reports/weekly.md[[/TG_REPLY_ab12cd34]]")]) == "好了，放在 reports/weekly.md")
+check("…[[SF:…]] lines still go", api_push.last_words([bot("做完了\n[[SF:GREEN]]\n[[SF:MEMORY:SAVED]]")]) == "做完了")
+check("…a reply that is only markers has no last words", api_push.last_words([bot("[[TG_REPLY_ab12cd34]]\n[[/TG_REPLY_ab12cd34]]")]) == "")
+kind, text = push_text([user("幫我整理週報"), bot(TG_REPLY)])
+check("the cue _push_turn_end sends is a done cue with those words", kind == "done" and text == "週報整理好了，放在 reports/weekly.md", (kind, text))
+kind, text = push_text([user(A2A_SHORT), bot("[[SF:GREEN]]")])
+check("a turn with no words of its own falls back to the task, plain: who asked, and what", kind == "done" and text.startswith("研究：比較表整理好了") and clean(text), (kind, text))
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

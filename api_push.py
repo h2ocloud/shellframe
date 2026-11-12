@@ -23,6 +23,7 @@ import re
 import threading
 import time
 
+import agent_link
 import agent_status
 import bots
 import bridge_home
@@ -46,10 +47,11 @@ def yellow_reason(evs) -> str:
 
 
 def last_words(evs) -> str:
-    """The last line the person would read: a turn often ends on a marker line for ShellBot."""
+    """The last line the person would read: a turn often ends on a marker line for ShellBot,
+    [[SF:…]] or the Telegram reply's closing [[/TG_REPLY_…]] (agent_link.preview_of takes that one off)."""
     texts = [e.get("text") or "" for e in (evs or ()) if e.get("kind") == "assistant_text"]
     for line in reversed(texts[-1].splitlines() if texts else []):
-        line = _MARKER.sub("", line).strip()
+        line = agent_link.preview_of(_MARKER.sub("", line), 400, agent=True)
         if line:
             return line
     return ""
