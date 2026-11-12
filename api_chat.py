@@ -17,6 +17,7 @@ is display only and lives in web/chat.js; see docs/chat-shell.md.
 import hashlib
 import json
 
+import agent_link
 import agent_status
 import tab_delivery
 
@@ -97,6 +98,7 @@ class ChatApiMixin:
             flat = " ".join(draft.split())
             return json.dumps({"success": False, "code": "draft",
                                "draft": flat[:60] + ("…" if len(flat) > 60 else "")}, ensure_ascii=False)
+        agent_link.clear_chain(sid)          # the person wrote this: what the tab sends next starts a fresh A2A chain
         res = self._execute_sfctl("send", {"sid": sid, "text": text, "submit": True, "what": "chat",
                                            "clear_draft": bool(clear_draft)}) or {}
         s = self.sessions.get(sid)

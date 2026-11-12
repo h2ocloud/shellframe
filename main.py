@@ -49,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
 import bridge_line
 import board
+import agent_link
 import agent_model
 import agent_prompts
 import sf_lang
@@ -3950,7 +3951,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         prepare_fn). A pane left in tmux copy-mode — scrolled-back terminal,
         stray PageUp — consumes pasted bytes as copy-mode keystrokes, so a
         bridged message vanishes without a trace. Exit the mode first.
-        Returns True when a recovery action was taken."""
+        Returns True when a recovery action was taken. The bridge calls it only
+        before typing the person's own message, so the tab also starts a fresh
+        A2A chain here (agent_link.clear_chain)."""
+        agent_link.clear_chain(s.sid)
         tn = getattr(s, "_tmux_name", None)
         if not tn or IS_WIN or not shutil.which("tmux"):
             return False
@@ -4120,6 +4124,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 s._idle_summary_requested_at = 0.0
                 s._idle_close_after = 0.0
         if '\r' in data:
+            agent_link.clear_chain(sid)      # the person pressed Enter here: what the tab sends next starts a fresh A2A chain
             self._auto_name(sid, s, data.rstrip('\r\n'))
         # IME dedup：前端 _makeImeDedup 擋 xterm.onData 那條，上面的保底擋其餘路徑。
         # On the first REAL user message, inject the init prompt BEFORE it.
