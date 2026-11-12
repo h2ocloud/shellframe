@@ -29,6 +29,7 @@ import re
 import agent_cursor
 import bridge_delivery
 import agent_grok
+import agent_link
 import usage_probe
 
 # ── 狀態機門檻（秒）──
@@ -1438,6 +1439,8 @@ def _detail(evs):
       action    most recent tool call  ("Editing main.py")
       task      most recent real user instruction (what it's on)
       narration most recent assistant text line (what it just said)
+    task and narration are one plain line each (agent_link.preview_of): another agent's header, a
+    paste wrapper and Telegram's markers are not what a card, the phone's list or a heartbeat says.
     """
     action = task = narration = ""
     for e in reversed(evs):
@@ -1446,16 +1449,9 @@ def _detail(evs):
             verb = VERB.get(e.get("tool"), e.get("tool") or "")
             action = f"{verb} {e.get('target', '')}".strip()
         elif not narration and k == "assistant_text" and e.get("text"):
-            line = e["text"].strip().splitlines()[0].strip() if e["text"].strip() else ""
-            if line:
-                narration = line[:90]
+            narration = agent_link.preview_of(e["text"], 90, agent=True)
         elif not task and k == "user_msg" and e.get("text"):
-            for line in e["text"].splitlines():
-                line = line.strip()
-                if (line and not line.startswith(("---", "[[SF:", "<", "[Image"))
-                        and "system-reminder" not in line):
-                    task = line[:90]
-                    break
+            task = agent_link.preview_of(e["text"], 90)
         if action and task and narration:
             break
     return action, task, narration
