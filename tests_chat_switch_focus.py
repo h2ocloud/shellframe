@@ -6,10 +6,12 @@ Reported in daily use: after switching a tab from the chat view back to its term
 did nothing. Measured: the switch redraws the terminal (fitTerm hides .xterm-screen for a
 frame), a hidden textarea takes no focus, so term.focus() did nothing and the keys went to
 the switch button; a redraw while the terminal had focus also took its focus away.
-  - the switch button, when the page is still: the keys reach the CLI (write_input)
+  - the switch button (in the chat style the header's 「終端機」), when the page is still: the keys
+    reach the CLI (write_input)
   - the switch button, while the terminal is being redrawn: the same
   - ⌘⇧M there and back while it is being redrawn: the same
   - the terminal keeps its focus through a redraw of its own
+  - the CLI style: the tab bar's switch
 Run in Chromium, and in WebKit (the Mac app's engine) when playwright has it installed.
 Demo data only. Needs playwright; SKIP without it. Run: .venv/bin/python tests_chat_switch_focus.py
 """
@@ -68,7 +70,7 @@ SHOWN = "(() => { const l = document.getElementById('chat-layer'); return l && !
 HIDDEN = "(() => { const l = document.getElementById('chat-layer'); return l && l.hidden; })()"
 REDRAW_THEN = ("(what) => { window.__sfHost.fitTerm('s501'); requestAnimationFrame(() => {"
                " window.__hiddenAtSwitch = getComputedStyle(document.querySelector('.xterm-helper-textarea')).visibility;"
-               " if (what === 'button') document.querySelector('#chat-switch button[data-mode=\"cli\"]').click();"
+               " if (what === 'button') document.querySelector('#chat-head .cm-to-term').click();"
                " else window.SFChat.setMode('s501', what); }); }")
 
 
@@ -95,7 +97,7 @@ def run(browser, engine):
         page.wait_for_timeout(300)
 
     print(f"[{engine}] 1. the switch button, the page still")
-    page.locator('#chat-switch button[data-mode="cli"]').click()
+    page.locator('#chat-head .cm-to-term').click()       # chat style: the header's 「終端機」 (the tab bar is gone)
     page.wait_for_function(HIDDEN)
     page.wait_for_timeout(200)
     check("the terminal has the focus", focused())
@@ -138,6 +140,17 @@ def run(browser, engine):
     check("…the keys go into the dialog, not to the CLI", writes() == before and page.input_value("#rename-input") == "xy",
           (writes() - before, page.input_value("#rename-input")))
     page.keyboard.press("Escape")
+
+    print(f"[{engine}] 6. the CLI style: the tab bar's switch")
+    page.evaluate("window.SFChat.setStyle('cli')")
+    page.evaluate("window.SFChat.setMode('s501', 'chat')")
+    page.wait_for_function(SHOWN)
+    page.wait_for_timeout(300)
+    page.locator('#tab-bar #chat-switch button[data-mode="cli"]').click()
+    page.wait_for_function(HIDDEN)
+    page.wait_for_timeout(200)
+    check("the terminal has the focus", focused())
+    check("the keys reach the CLI", typed("cli") == 3)
     check("no page errors", not errors, errors)
 
 

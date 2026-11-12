@@ -8,7 +8,7 @@ terminal's gutter) goes, the view takes the gutter back, and the header's face o
 settings; the terminal keeps its small face, the only one it has.
   - chat view: no small face, no gutter; the header's face is a button with a hint
   - clicking it, or Enter on it, opens the settings, next to it, and they stay open
-  - the terminal: the small face is back
+  - the terminal: in the chat style its header has the face; in the CLI style the small one is back
   - bots off: the face is only a face
 Run in Chromium, and in WebKit (the Mac app's engine) when playwright has it installed.
 Demo data only. Needs playwright; SKIP without it. Run: .venv/bin/python tests_chat_head_settings.py
@@ -129,7 +129,15 @@ def run(browser, engine):
     print(f"[{engine}] 4. back to the terminal")
     page.evaluate("window.SFChat.setMode('s501', 'cli')")
     page.wait_for_timeout(400)
-    check("the terminal has its small face again", page.evaluate(SMALL_SHOWN))
+    check("chat style: the terminal's header has the face, not the gutter",
+          not page.evaluate(SMALL_SHOWN) and page.locator("#term-head [data-sfb-settings]").count() == 1)
+    page.locator("#term-head [data-sfb-settings]").click()
+    page.wait_for_timeout(300)
+    check("…and it opens the settings too", page.evaluate(POP_OPEN))
+    page.mouse.click(700, 400)
+    page.evaluate("window.SFChat.setStyle('cli')")
+    page.wait_for_timeout(400)
+    check("the CLI style: the terminal has its small face again", page.evaluate(SMALL_SHOWN))
     check("no page errors", not errors, errors)
     page.close()
 

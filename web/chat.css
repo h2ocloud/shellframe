@@ -8,15 +8,18 @@
  * Chinese conversation does not fall back to a mismatched face.
  */
 
-#chat-layer {
+#chat-layer, #term-head {
   --cm-bg: #1a1b26; --cm-panel: #1f2335; --cm-raised: #24283b; --cm-line: #292e42; --cm-line2: #3b4261;
   --cm-text: #c0caf5; --cm-soft: #a9b1d6; --cm-dim: #6b7394; --cm-blue: #7aa2f7; --cm-amber: #e0af68;
   --cm-red: #f7768e; --cm-green: #9ece6a; --cm-user: #3d59a1; --cm-peer: #2b2642; --cm-peer-line: #4d4175;
-  position: absolute; inset: 0 0 0 var(--hint-gutter, 17px); z-index: 30;
-  display: flex; flex-direction: column; background: var(--cm-bg); color: var(--cm-text);
+  color: var(--cm-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Hiragino Sans",
                "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", "Noto Sans CJK TC", system-ui, sans-serif;
   font-size: calc(14px * var(--ui-scale, 1)); line-height: 1.6;
+}
+#chat-layer {
+  position: absolute; inset: 0 0 0 var(--hint-gutter, 17px); z-index: 30;
+  display: flex; flex-direction: column; background: var(--cm-bg);
   -webkit-user-select: text; user-select: text;
   container: chat / inline-size;      /* the narrow layout below follows this width */
 }
@@ -44,8 +47,37 @@
 }
 /* The face opens the conversation's settings, so the small face in the terminal's gutter goes,
    and with it the gutter the view used to leave for it. */
-body.sf-chat-shown #sfb-convo { display: none; }
+body.sf-chat-shown #sfb-convo, body.sf-chat-style #sfb-convo { display: none; }   /* chat style: #term-head has it */
 body.sf-chat-shown #chat-layer { --hint-gutter: 0px; }
+
+/* Chat style: the tab bar goes (chat.js layout). The sidebar lists the tabs, with 「＋ 新對話」 on
+   top and the bar's usage, Telegram and loops controls in #sb-dock at its foot. A tab's terminal
+   sits under a header of the view's height, so nothing covers its text and a tab keeps one size
+   whether it shows the view or the terminal. */
+:root { --cm-head-h: calc(50px * var(--ui-scale, 1)); }
+body.sf-chat-style #tab-bar { display: none; }
+body.sf-chat-style .term-pane { top: var(--cm-head-h); }
+body.sf-chat-style #chat-head { box-sizing: border-box; height: var(--cm-head-h); }
+#term-head { display: none; }
+body.sf-chat-style #term-head {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 25; box-sizing: border-box; height: var(--cm-head-h);
+  display: flex; align-items: center; gap: .7em; padding: 0 1.1em; border-bottom: 1px solid var(--cm-line); background: #16161e;
+}
+#term-head .cm-th-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: .7em; }
+#term-head .cm-face { --sfb-size: 2.1em; }
+#term-head #chat-switch { flex: none; }
+.cm-side-btn { flex: none; width: 1.9em; height: 1.9em; padding: 0; border: 0; border-radius: .45em; background: none;
+  color: var(--cm-dim); font-size: 1em; line-height: 1; cursor: pointer; }
+.cm-side-btn:hover { background: var(--cm-raised); color: var(--cm-text); }
+#sb-new-convo { display: none; }
+body.sf-chat-style #sb-new-convo {
+  display: block; box-sizing: border-box; width: calc(100% - 20px); margin: 10px 10px 4px; padding: 7px 10px;
+  border: 1px solid #3b4261; border-radius: 8px; background: #24283b; color: #c0caf5;
+  font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.4; text-align: left; cursor: pointer;
+}
+body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
+#sb-dock { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px 8px; }
+#sb-dock:empty { display: none; }
 .cm-face-btn { flex: none; padding: 0; border: 0; background: none; border-radius: .55em; line-height: 0; cursor: pointer; }
 .cm-face-btn:hover, .cm-face-btn:focus-visible { background: var(--cm-raised); box-shadow: 0 0 0 .3em var(--cm-raised); outline: none; }
 .cm-face-btn .cm-face.busy-dot { cursor: pointer; }

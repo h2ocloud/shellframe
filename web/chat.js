@@ -750,6 +750,7 @@
     layer.hidden = !show;
     shownFor = show ? sid : '';
     renderSwitch(sid, local);
+    layout(sid);
     renderNotice(sid, want && !show);
     const mic = document.getElementById('mic-fab');
     layer.classList.toggle('cm-has-mic', !!(mic && getComputedStyle(mic).display !== 'none'));   // position:fixed: no offsetParent
@@ -794,6 +795,62 @@
     c.title = capable ? T(`Show this tab as a conversation (${KEY_LABEL})`, `這個分頁看對話（${KEY_LABEL}）`)
                       : T('This tab has no conversation to show: it is a terminal', '這個分頁沒有對話可以顯示：它是終端機');
     l.title = T(`Show this tab's terminal (${KEY_LABEL})`, `這個分頁看終端機（${KEY_LABEL}）`);
+  }
+
+  // ── chat style: no tab bar ───────────────────────────────────────────────
+  // The sidebar is the tab list, with 「＋ 新對話」 on top and the bar's other controls (usage,
+  // Telegram, loops) at its foot. A tab's terminal gets a header like the view's, holding the
+  // Chat/Terminal switch: nothing is laid over the terminal's text, and a tab has one size in
+  // both modes, so switching never resizes the CLI. Back in the CLI style all goes home.
+  let termHead = null, termLeft = null, dock = null, newBtn = null, lastStyle = '';
+  const marks = {};
+  function park(el, parent, before) {                  // move el, leaving a mark where it lived
+    if (!el || !parent || el.parentNode === parent) return;
+    if (!marks[el.id]) { marks[el.id] = document.createComment(el.id); el.parentNode.insertBefore(marks[el.id], el); }
+    parent.insertBefore(el, before || null);
+  }
+  function unpark(el) {
+    const m = el && marks[el.id];
+    if (m && m.parentNode && el.nextSibling !== m) m.parentNode.insertBefore(el, m);
+  }
+  function layout(sid) {
+    const chat = globalStyle() === 'chat';
+    const sb = document.getElementById('sidebar');
+    const foot = document.getElementById('sidebar-footer');
+    if (chat && sb && !newBtn) {
+      newBtn = document.createElement('button');
+      newBtn.id = 'sb-new-convo';
+      sb.insertBefore(newBtn, sb.firstChild);
+      newBtn.addEventListener('click', () => { const b = document.getElementById('btn-new-tab'); if (b) b.click(); });
+    }
+    if (newBtn) newBtn.textContent = T('＋ New conversation', '＋ 新對話');
+    if (chat && foot && !dock) {
+      dock = document.createElement('div');
+      dock.id = 'sb-dock';
+      foot.insertBefore(dock, foot.firstChild);
+    }
+    if (!termHead) {
+      termHead = document.createElement('div');
+      termHead.id = 'term-head';
+      termHead.innerHTML = '<div class="cm-th-left"></div>';
+      termLeft = termHead.firstChild;
+      document.getElementById('terminal-wrap').appendChild(termHead);
+      termHead.addEventListener('click', onClick);
+    }
+    for (const id of ['btn-board', 'usage-brief', 'btn-bridge']) {
+      const el = document.getElementById(id);
+      if (chat) park(el, dock); else unpark(el);
+    }
+    if (chat) park(sw, termHead); else unpark(sw);
+    if (chat && sid) {
+      const html = headLeft(sid);
+      if (termLeft.dataset.key !== sid + '|' + html) { termLeft.innerHTML = html; termLeft.dataset.key = sid + '|' + html; }
+    }
+    const style = chat ? 'chat' : 'cli';
+    if (lastStyle && style !== lastStyle && sid) {       // the terminal's height changed with the style
+      try { host().fitTerm && host().fitTerm(sid); } catch (_) {}
+    }
+    lastStyle = style;
   }
   // Chat style, but this tab has no conversation the view can draw: say why, once per tab.
   const noticeClosed = new Set();
@@ -878,21 +935,32 @@
     sendBtn.textContent = T('Send', '送出');
     noteEl.textContent = view(sid).note || '';
   }
-  function renderHead(sid) {
+  // What a header says under the tab's name: what it is doing, or that it is waiting or ready.
+  function stateWord(sid) {
     const s = sessions()[sid] || {};
     const state = stateOf(sid);
     const d = plainDoing(s._serverStatus, lang());
     const asks = !!((view(sid).data || {}).decision);
-    const word = d.text ? (d.detail ? `${d.text} ${d.detail}` : d.text)
+    return d.text ? (d.detail ? `${d.text} ${d.detail}` : d.text)
       : (asks ? T('Waiting for you', '等你決定') : ({ done: T('Ready', '可以說話'), idle: T('Ready', '可以說話') }[state] || ''));
-    // With bots on, the face is where this conversation's settings open (the gutter's small face is hidden here).
+  }
+  // A header's left end: in chat style the sidebar's ☰ (the tab bar is gone), then the face, the
+  // name and stateWord. With bots on the face opens this conversation's settings.
+  function headLeft(sid) {
+    const s = sessions()[sid] || {};
+    const state = stateOf(sid);
     const B = root.SFBots;
     const face = B && B.enabled && B.enabled() && B.openSettings
       ? `<button class="cm-face-btn" data-act="settings" data-sfb-settings title="${escHtml(T(
           "This conversation's settings: face, name, bot", '這個對話的設定：頭像、名稱、Bot'))}">${faceHtml(sid, state)}</button>`
       : faceHtml(sid, state);
-    const html = `${face}<div class="cm-who"><b>${escHtml(displayName(s))}</b>` +
-      `<span class="cm-state">${escHtml(word)}</span></div>` +
+    const side = globalStyle() === 'chat'
+      ? `<button class="cm-side-btn" data-act="sidebar" title="${escHtml(T('Show or hide the sidebar', '顯示或收起側欄'))}">☰</button>` : '';
+    return `${side}${face}<div class="cm-who"><b>${escHtml(displayName(s))}</b>` +
+      `<span class="cm-state">${escHtml(stateWord(sid))}</span></div>`;
+  }
+  function renderHead(sid) {
+    const html = headLeft(sid) +
       `<button class="cm-to-term" data-act="to-term" title="${escHtml(T(`Show the terminal (${KEY_LABEL})`, `看終端機（${KEY_LABEL}）`))}">` +
       `${ICON_TERM}<span>${escHtml(T('Terminal', '終端機'))}</span></button>`;
     if (headEl.dataset.key !== sid + '|' + html) { headEl.innerHTML = html; headEl.dataset.key = sid + '|' + html; }
@@ -1391,6 +1459,7 @@
     }
     if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
     if (act === 'to-term') return setMode(sid, 'cli');
+    if (act === 'sidebar') { const b = document.getElementById('btn-sidebar'); if (b) b.click(); return; }
     if (act === 'settings') {        // the header's face: this conversation's settings (bots.js), open past bots.js's outside-click
       e.stopPropagation();
       if (root.SFBots && root.SFBots.openSettings) root.SFBots.openSettings(sid, el);
