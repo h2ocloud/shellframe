@@ -60,7 +60,9 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
       case 'list_sessions': return R(window.__sessions);
       case 'get_active_tab': return R({sid: 's501'});
       case 'read_output': case 'plugin_sidebar_badges': return R('');
-      case 'chat_view': return R(window.__view);
+      // as the real one: nothing new since `rev` is {unchanged} (a face's --t differs at each draw, so
+      // a fresh copy each poll redrew the list, and the button's 「已複製」 with it)
+      case 'chat_view': return R(args[2] === window.__view.rev ? {success: true, unchanged: true, rev: args[2]} : window.__view);
       case 'copy_text': window.__copied.push(args[0]); return Promise.resolve('ok');
       default: return R('{}');
     }
