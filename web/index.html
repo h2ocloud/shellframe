@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="chat.css"/>
 <link rel="stylesheet" href="schedules.css"/>
 <link rel="stylesheet" href="ctxmenu.css"/>
+<link rel="stylesheet" href="dialog.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -1556,6 +1557,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
 <!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="dialog.js"></script>
 <script src="bots.js"></script>
 <script src="chat.js"></script>
 <script src="schedules.js"></script>
@@ -2575,9 +2577,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (action === 'install') {
           try {
             const r = JSON.parse(await pywebview.api.install_provider(info.provider) || '{}');
-            if (!r.success && r.message) alert(r.message);
+            if (!r.success && r.message) await SFDialog.alert(r.message);
           } catch (e) {
-            alert((e && e.message) || '安裝指令送出失敗');
+            await SFDialog.alert((e && e.message) || '安裝指令送出失敗');
           }
         }
         resolve(false);                  // 不論如何都不開這個 AI 分頁
@@ -3654,7 +3656,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const p = ((linkState && linkState.peers) || []).find(x => x.id === remoteRow.dataset.pid);
       if (!p) return;
       if (!p.can_control) {
-        alert(`「${p.name}」是單向配對的主控端，這台無權操作它的 session。`);
+        SFDialog.alert(`「${p.name}」是單向配對的主控端，這台無權操作它的 session。`);
         return;
       }
       // 用快取裡的完整 rt（含 cols/rows），才能把遠端 pane 尺寸鎖成對方的
@@ -4281,8 +4283,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           size: undefined,
         });
       }
-      if (!res.success && !res.queued) alert('傳檔失敗：' + (res.message || ''));
-    } catch (e) { alert('傳檔失敗：' + e); }
+      if (!res.success && !res.queued) SFDialog.alert('傳檔失敗：' + (res.message || ''));
+    } catch (e) { SFDialog.alert('傳檔失敗：' + e); }
   }
 
   // 面板內開檔（收到的檔案點一下用系統開啟）
@@ -4314,7 +4316,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
     } catch (_) {}
     if (!paths.length) {
-      alert('拿不到檔案路徑——請改用「選擇檔案」按鈕');
+      SFDialog.alert('拿不到檔案路徑——請改用「選擇檔案」按鈕');
       return;
     }
     paths.forEach(p => sendLinkFile(linkView.peerId, p));
@@ -4334,12 +4336,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       try {
         const res = JSON.parse(await pywebview.api.link_remote_send(
           linkView.peerId, linkView.sid, text, true));
-        if (!res.success && !res.queued) alert('送出失敗：' + (res.message || ''));
-      } catch (e) { alert('送出失敗：' + e); }
+        if (!res.success && !res.queued) SFDialog.alert('送出失敗：' + (res.message || ''));
+      } catch (e) { SFDialog.alert('送出失敗：' + e); }
     } else if (linkView.type === 'messages') {
       try {
         await pywebview.api.link_message(linkView.peerId, text);
-      } catch (e) { alert('送出失敗：' + e); }
+      } catch (e) { SFDialog.alert('送出失敗：' + e); }
       // 樂觀 append —— 後端也會推 _sfLinkEvent，用 ts 去重太小題大作，
       // 這裡直接靠 dir=out 的事件不重複 append（見 _sfLinkEvent）。
     }
@@ -4382,14 +4384,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     mode = mode || 'duplex';
     let res;
     try { res = JSON.parse(await pywebview.api.link_pair_begin(mode)); }
-    catch (e) { alert('產生配對碼失敗：' + e); return; }
+    catch (e) { SFDialog.alert('產生配對碼失敗：' + e); return; }
     if (!res.success) {
       // listener 沒開 → 順手開起來再重試一次
       try {
         const st = JSON.parse(await pywebview.api.link_set_enabled(true));
         if (st.running) { showPairModal(mode); return; }
       } catch (e) {}
-      alert(res.message || '產生配對碼失敗');
+      SFDialog.alert(res.message || '產生配對碼失敗');
       return;
     }
     const modeLabel = { duplex: '🔄 雙向', host_controls: '➡️ 這台當主',
@@ -4563,7 +4565,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       btn.innerHTML = `${item.icon} ${esc2(item.label)}`
         + `<span style="color:#565f89;font-size:11px;margin-left:8px">${esc2(item.hint)}</span>`;
       btn.addEventListener('click', async () => {
-        if (item.confirm && !window.confirm(
+        if (item.confirm && !await SFDialog.confirm(
               `在「${peer.name}」執行「${item.label}」？\n\n${item.confirm}`)) return;
         list.querySelectorAll('button').forEach(b => { b.disabled = true; });
         out.style.color = '#a9b1d6';
@@ -7842,31 +7844,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function micGuide(r, onText) {   // onText: the chat view's mic takes a retry's words for its input box
     // 依失敗原因引導：裝 ffmpeg / 裝 STT（裝完自動重轉剛剛那段錄音）
     if (r.reason === 'no_ffmpeg') {
-      if (confirm(t('micNeedFfmpeg'))) {
+      if (await SFDialog.confirm(t('micNeedFfmpeg'))) {
         micSet('busy');
         try {
           const ir = JSON.parse(await pywebview.api.mic_install_ffmpeg());
-          alert(ir.success ? t('micFfmpegReady') : (ir.message || 'install failed'));
-        } catch (e) { alert('install error: ' + e); }
+          await SFDialog.alert(ir.success ? t('micFfmpegReady') : (ir.message || 'install failed'));
+        } catch (e) { await SFDialog.alert('install error: ' + e); }
       }
     } else if (r.reason === 'no_backend') {
-      if (confirm(t('micNeedStt'))) {
+      if (await SFDialog.confirm(t('micNeedStt'))) {
         micSet('busy');
         try { await pywebview.api.stt_install_local(); } catch (_) {}
         try {
           const rr = JSON.parse(await pywebview.api.mic_retry_transcribe(onText ? '' : (activeId || '')));
           if (rr.ok) { if (onText && rr.text) onText(rr.text); return; }
         } catch (_) {}
-        alert(t('micSttStillFail'));
+        await SFDialog.alert(t('micSttStillFail'));
       }
     } else if (r.reason === 'empty_audio') {
-      alert(t('micEmpty'));
+      await SFDialog.alert(t('micEmpty'));
     } else if (r.reason === 'record_failed') {
-      alert(t('micRecordFailed') + (r.detail ? '\n' + r.detail : ''));
+      await SFDialog.alert(t('micRecordFailed') + (r.detail ? '\n' + r.detail : ''));
     } else if (r.reason === 'stt_failed') {
-      alert(t('micSttFail'));
+      await SFDialog.alert(t('micSttFail'));
     } else if (r.reason === 'no_mic_device') {
-      alert(t('micNoDevice'));
+      await SFDialog.alert(t('micNoDevice'));
     }
   }
 
@@ -7899,7 +7901,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
   document.getElementById('btn-settings-bridge-connect').addEventListener('click', async () => {
     const token = document.getElementById('settings-bridge-token').value.trim();
-    if (!token) { alert(t('tgMissingToken')); return; }
+    if (!token) { SFDialog.alert(t('tgMissingToken')); return; }
 
     const usersStr = document.getElementById('settings-bridge-users').value.trim();
     const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -7915,7 +7917,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       renderTabs();
       syncSettingsBridge();
     } else {
-      alert(result.message || t('connectionFailed'));
+      SFDialog.alert(result.message || t('connectionFailed'));
     }
   });
 
@@ -7932,7 +7934,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const secret = document.getElementById('settings-line-secret').value.trim();
     const mode = document.getElementById('settings-line-mode').value || 'poll';
     if (mode === 'push' && (!token || !secret)) {
-      alert(t('lineMissingCredentials'));
+      SFDialog.alert(t('lineMissingCredentials'));
       return;
     }
     const usersStr = document.getElementById('settings-line-users').value.trim();
@@ -7951,9 +7953,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       lineBridgeState = result;
       syncSettingsLineBridge();
       renderTabs();
-      alert(t('lineStarted') + (result.webhook_url || lineLocalWebhookUrl()));
+      SFDialog.alert(t('lineStarted') + (result.webhook_url || lineLocalWebhookUrl()));
     } else {
-      alert(result.message || t('lineFailed'));
+      SFDialog.alert(result.message || t('lineFailed'));
     }
   });
 
@@ -8421,7 +8423,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       renderTabs();
       $modalBridge.classList.remove('open');
     } else {
-      alert(result.message || 'Bridge connection failed');
+      SFDialog.alert(result.message || 'Bridge connection failed');
     }
   });
 
@@ -9435,7 +9437,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         pywebview.api.relaunch_session(sid).then((raw) => {
           try {
             const r = JSON.parse(raw || '{}');
-            if (!r.success && r.message) alert(r.message);
+            if (!r.success && r.message) SFDialog.alert(r.message);
           } catch (_) {}
         }).catch(() => {});
       } else {
@@ -9538,7 +9540,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (activeId && sessions[activeId]) {
         const t = sessions[activeId].term;
         const b = t.buffer.active;
-        alert(
+        SFDialog.alert(
           `xterm.js buffer debug (${activeId}):\n` +
           `  rows (visible): ${t.rows}\n` +
           `  scrollback setting: ${t.options.scrollback}\n` +
@@ -10111,10 +10113,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       try {
         const raw = await pywebview.api.plugin_action(pluginName, action, JSON.stringify(args));
         const res = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw;
-        alert(res.message || (res.ok ? 'OK' : 'Failed'));
+        SFDialog.alert(res.message || (res.ok ? 'OK' : 'Failed'));
         await refreshPluginBadges(true);
       } catch (e) {
-        alert(String(e));
+        SFDialog.alert(String(e));
       } finally {
         btn.disabled = false;
       }
@@ -10203,11 +10205,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                     ? await pywebview.api.marketplace_enable(p.name, false)
                     : await pywebview.api.marketplace_install(p.name, p.repo_url);
               const res = JSON.parse(raw);
-              alert(res.message || (res.ok ? 'OK' : 'Failed'));
+              await SFDialog.alert(res.message || (res.ok ? 'OK' : 'Failed'));
               if (res.ok) window.location.reload();
               else await renderMarketplace();
             } catch (e) {
-              alert(String(e));
+              SFDialog.alert(String(e));
             } finally {
               btn.disabled = false;
             }

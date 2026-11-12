@@ -163,8 +163,8 @@ for act in ("update", "restart", "reload"):
     seg = maint.split(f"action: '{act}'")[1].split("},")[0]
     check(f"{act} 有確認文案", "confirm:" in seg and "confirm: null" not in seg, seg)
 panel = idx.split("function showPeerMaintenance(peer)")[1].split("\n  }\n")[0]
-check("確認框裡有寫出是哪一台",
-      "peer.name" in panel and "window.confirm" in panel, panel[:400])
+check("確認框裡有寫出是哪一台（頁內的確認框，不是會顯示網址的原生 confirm）",
+      "peer.name" in panel and "SFDialog.confirm" in panel and "window.confirm" not in panel, panel[:400])
 check("執行中會把按鈕停用（不讓連點兩次更新）",
       "b.disabled = true" in panel, panel[:800])
 check("失敗時會把對方的復原指令顯示出來", "recovery" in panel, panel[:1200])

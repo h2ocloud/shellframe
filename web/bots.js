@@ -147,7 +147,7 @@
   }
 
   // ── renaming a bot: its tab's name is the bot's name (one name per bot) ────
-  const askRename = (role, name) => confirm(t(
+  const askRename = (role, name) => SFDialog.confirm(t(
     `Rename the bot ${q(botName(role))} to ${q(name)}? Its face, memory and job stay, and the old name still reaches it.`,
     `把 bot${q(botName(role))}改名成${q(name)}？臉、記憶、執掌都會留著，用舊名字也還找得到它。`));
   // The tab's rename dialog hands over here: true when the tab is bound to a bot (the
@@ -156,8 +156,8 @@
     const role = enabled && (st.sessions[sid] || {}).bot;
     if (!role || (st.sessions[sid] || {}).plain || !isBot(role) || isExternal(role)) return false;
     if (name === role || name === botName(role)) return false;
-    if (!askRename(role, name)) return true;
     (async () => {
+      if (!(await askRename(role, name))) return;      // the question is the page's own: this has already said it is handled
       let res = {};
       try { res = JSON.parse(await api().rename_session(sid, name, true)); } catch (_) {}
       if (res.success) toast(res.message || t('Renamed', '已改名'));
@@ -1059,7 +1059,7 @@
       if (act === 'cancel') { ov.remove(); return; }
       if (act === 'folder') { api().bots_open_folder(role); return; }
       if (act === 'delete') {
-        if (!confirm(t(`Delete ${q(botName(role))}? Its memory folder is kept.`, `刪除${q(botName(role))}？記憶資料夾會留著，不會刪。`))) return;
+        if (!(await SFDialog.confirm(t(`Delete ${q(botName(role))}? Its memory folder is kept.`, `刪除${q(botName(role))}？記憶資料夾會留著，不會刪。`)))) return;
         const res = JSON.parse(await api().bots_delete(role));
         if (res.success) { ov.remove(); await refresh(true); } else $('sfb-ed-msg').textContent = res.message;
         return;
@@ -1088,7 +1088,7 @@
         return;
       }
       const renaming = !!(existing && name && name !== role);
-      if (renaming && !askRename(role, name)) return;
+      if (renaming && !(await askRename(role, name))) return;
       msg.style.color = '#a9b1d6';
       msg.textContent = t('Saving…', '儲存中…');
       try {

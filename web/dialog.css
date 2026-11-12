@@ -1,0 +1,16 @@
+/* The app's own confirm and alert (web/dialog.js). It is the app's modal (index.html .modal and
+ * .btn), above every other dialog, since a confirm can be asked from inside one (the bot editor's
+ * Delete). The app has one theme, the dark one: the colours are written here.
+ * index.html's own <style> comes after this file and sets .modal-overlay and .modal, so the rules
+ * here name two classes to win over them. */
+
+.modal-overlay.sf-dialog { z-index: 1000; }
+.sf-dialog .sf-dialog-box { width: 360px; max-width: calc(100vw - 32px); padding: 20px; }
+.sf-dialog .sf-dialog-box h2 { font-size: 14px; margin-bottom: 10px; }
+.sf-dialog .sf-dialog-msg {
+  font-size: 12px; line-height: 1.6; color: #a9b1d6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.sf-dialog .sf-dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.sf-dialog .btn:focus { outline: none; }
+.sf-dialog .btn:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
