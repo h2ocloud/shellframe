@@ -892,7 +892,7 @@
     if (res.code === 'bad_model') return t('A model is one word, e.g. sonnet.', '模型是一個詞，例如 sonnet。');
     return t('This CLI takes no model here.', '這個 CLI 不能在這裡指定模型。');
   }
-  const didYouMean = key => key ? ` ${t('Did you mean', '是不是要')} <a href="#" data-use-model="${esc(key)}">${esc(key)}</a>${t('?', '？')}` : '';
+  const didYouMean = key => key ? `${t(' Did you mean ', '是不是要 ')}<a href="#" data-use-model="${esc(key)}">${esc(key)}</a>${t('?', '？')}` : '';
 
   async function openEditor(role, opts) {
     opts = opts || {};
