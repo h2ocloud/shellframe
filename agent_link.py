@@ -119,8 +119,9 @@ def depth_for(from_sid: str) -> int:
 
 
 def clear_chain(sid: str):
-    """The user typed into this tab, so whatever follows is a fresh chain, not a
-    continuation of an agent-to-agent one."""
+    """The person wrote to this tab (Enter in its terminal, a send from the chat view, a Telegram
+    message), so whatever it sends next starts a fresh chain, not a continuation of an
+    agent-to-agent one. Without it a tab that once got a deep message stayed at the cap for good."""
     with _lock:
         _inbound_depth.pop(sid, None)
 
@@ -128,7 +129,7 @@ def clear_chain(sid: str):
 _DEPTH_REASON = re.compile(r"chain depth (\d+) over limit (\d+)")
 
 
-def reference_only(from_sid: str, tab_open: bool) -> bool:
+def reference_only(from_sid: str, tab_open: bool, depth: int = None) -> bool:
     """True when what `from_sid` sends now is exactly one layer past MAX_DEPTH and goes to a tab
     that is open: it is delivered as data (format_blocked) instead of being refused, so the tab
     does not go on with what it knew before. Anything else past the cap stays refused: a message
@@ -146,20 +147,22 @@ def reference_only(from_sid: str, tab_open: bool) -> bool:
       * only exactly MAX_DEPTH+1 is data. Deeper means the sender itself holds data from a chain that
         is already over, so it is refused, and that is what ends an exchange of data;
       * the sender's own count does not move, and the text is delivered with no hand-off record:
-        nothing is asked of the recipient and nothing is reported back."""
-    return bool(tab_open) and depth_for(from_sid) == MAX_DEPTH + 1
+        nothing is asked of the recipient and nothing is reported back.
+    `depth`: the message's own, when it came with one (from another machine)."""
+    return bool(tab_open) and (depth_for(from_sid) if depth is None else int(depth)) == MAX_DEPTH + 1
 
 
 def authorize(*, enabled: bool, from_sid: str, from_label: str,
               to_role: str, to_sid: str, text: str, roster: dict,
-              remote: bool = False, skip_depth: bool = False) -> tuple:
+              remote: bool = False, skip_depth: bool = False, depth: int = None) -> tuple:
     """Decide whether one tab may message another.
 
     Returns (ok: bool, reason: str, depth: int). `reason` is empty when ok, and
     is recorded verbatim in the audit log when it is not.
 
     remote=True 略過 roster（目標在別台）。skip_depth=True 用在回報結果：
-    深度 4 的交接仍要回得來。兩者的預設都不改變既有呼叫。"""
+    深度 4 的交接仍要回得來。兩者的預設都不改變既有呼叫。
+    depth：訊息自己帶的層數（別台送來的）；沒給就照寄件分頁算（depth_for）。"""
     if not enabled:
         return False, "experimental_a2a is off", 0
     text = (text or "").strip()
@@ -178,7 +181,7 @@ def authorize(*, enabled: bool, from_sid: str, from_label: str,
     if to_sid and to_sid == from_sid:
         return False, "refusing to message itself", 0
 
-    depth = depth_for(from_sid)
+    depth = depth_for(from_sid) if depth is None else int(depth)
     if not skip_depth and depth > MAX_DEPTH:
         return False, f"chain depth {depth} over limit {MAX_DEPTH}", depth
 
@@ -320,7 +323,7 @@ def blocked_notice(depth: int, *, delivered: bool, queued: bool = False, handoff
     if not delivered:
         return sf_lang.pick(
             f"Blocked (chain depth {depth}, limit {limit}): not delivered. Tell the person; they decide.",
-            f"被擋下（轉發層數 {depth}，上限 {limit}）；沒有送達。請告訴使用者，由他來決定。", lang)
+            f"被擋下（轉發層數 {depth}，上限 {limit}）；沒有送達。請告訴使用者，由使用者決定。", lang)
     if handoff:
         more_en = " It is not a task for them and no a2a-result will come back; tell the person."
         more_zh = "對方不會把它當成任務，也不會有 a2a-result 回來；請告訴使用者。"
@@ -630,8 +633,8 @@ def _is_coordinator(ctx, role: str, to_label: str) -> bool:
 def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: str,
             kind: str = "send", msg_id: str = None, hint: str = "",
             route_hint=None, remote: bool = False, direction: str = "local",
-            reply_peer: str = "", origin_sid: str = "", target_key: str = ""):
-    """本機交付。remote=True 是別台送來的，不再往外送。
+            reply_peer: str = "", origin_sid: str = "", target_key: str = "", depth: int = None):
+    """本機交付。remote=True 是別台送來的，不再往外送；depth 是它自己帶的層數。
 
     轉發層數剛好超過上限、且目標是一個已開的分頁時（reference_only），照樣送進去，但是以
     「未轉達」的資料（format_blocked）；回傳 success=False，details 的 blocked/delivered 說明
@@ -664,11 +667,11 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
     # One layer past the cap, into a tab that is open: it still gets the text, as data. Decided
     # before authorize, so only that path skips the depth check and spends a rate slot; a plain
     # refusal (deeper, or no tab open) stays free, as before.
-    refer = reference_only(from_sid, bool(to_sid))
+    refer = reference_only(from_sid, bool(to_sid), depth)
     ok, reason, depth = authorize(
         enabled=True, from_sid=from_sid, from_label=from_label,
         to_role=role or sid or "remote", to_sid="" if remote else to_sid,
-        text=text, roster=roster, remote=remote, skip_depth=refer)
+        text=text, roster=roster, remote=remote, skip_depth=refer, depth=depth)
     if not ok:
         release_id(msg_id)
         return _fail(reason, text=text, target=target_key, msg_id=msg_id,
@@ -733,8 +736,6 @@ def deliver(ctx, *, role: str, sid: str, text: str, from_sid: str, from_label: s
 
     if to_sid:
         note_delivered(to_sid, depth)
-    if from_sid.startswith("peer:"):
-        note_delivered(from_sid, depth)
     if external:
         note_delivered(f"ext:{role}", depth)   # its reply continues this chain, not a fresh one
     if (kind == "handoff" or external) and msg_id:
@@ -1058,21 +1059,20 @@ def accept_remote(ctx, payload: dict) -> dict:
     else:
         role, sid = target, ""
     rate_sid = f"peer:{source}" if source else (payload.get("from_sid") or "")
+    # Its depth is the one it carries: the sending machine counts it for the tab that sent it, the
+    # way this one counts its own tabs. Not kept per machine: one count for all of a machine's
+    # tabs, raised by every message and never lowered, stopped its fifth message of any kind.
     try:
         claimed = int(payload.get("depth") or 0)
     except (TypeError, ValueError):
         claimed = 0
-    if claimed:
-        with _lock:
-            prev = int(_inbound_depth.get(rate_sid, 0))
-            _inbound_depth[rate_sid] = max(prev, claimed - 1)
     return deliver(
         ctx, role=role, sid=sid, text=payload.get("text") or "",
         from_sid=rate_sid, from_label=payload.get("from_label") or source,
         kind="handoff" if kind == "handoff" else "send",
         msg_id=payload.get("id") or None, hint=payload.get("hint") or "",
         remote=True, direction="in", reply_peer=source,
-        origin_sid=payload.get("from_sid") or "", target_key=target)
+        origin_sid=payload.get("from_sid") or "", target_key=target, depth=max(1, claimed))
 
 
 def log_text(limit: int = 50) -> dict:

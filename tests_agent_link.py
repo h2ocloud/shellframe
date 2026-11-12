@@ -383,9 +383,30 @@ def main():
           first["success"] is False and first["details"]["delivered"] is True
           and fake.sent[0][0] == "sB" and fake.sent[0][1].startswith("[[A2A（未轉達）：來自「遠端」的訊息")
           and second["details"]["delivered"] is True and len(fake.sent) == 2)
-    check("…the peer's own count is not pushed on by it (its next message can still be data)",
-          agent_link._inbound_depth["peer:abc"] == agent_link.MAX_DEPTH
+    check("…no count is kept for the machine (its next message carries its own depth), the tab sits at the end",
+          "peer:abc" not in agent_link._inbound_depth
           and agent_link._inbound_depth["sB"] == agent_link.MAX_DEPTH + 1)
+
+    # One count per machine, raised by every message and never lowered, stopped its fifth message
+    # of any kind (measured on v0.42.0: the 5th, 6th and 7th were "chain depth 5 over limit 4").
+    reset()
+    fake = Fake()
+    many = []
+    for i in range(1, 8):
+        agent_link._recent.clear()          # minutes apart: the per-minute cap is not what this is about
+        many.append(agent_link.accept_remote(fake, {
+            "kind": "send", "id": f"pm{i}", "target": "Coding", "text": f"第 {i} 則", "from_sid": "s9",
+            "from_label": "遠端", "depth": 1, "source_peer": "abc"}))
+    check("across machines: seven fresh messages from one machine all go in, none stopped",
+          all(r["success"] for r in many) and len(fake.sent) == 7
+          and all(not t.startswith("[[A2A（未轉達）") for _sid, t in fake.sent))
+    reset()
+    fake = Fake()
+    deep = agent_link.accept_remote(fake, {
+        "kind": "send", "id": "pd3", "target": "Coding", "text": "第三層", "from_sid": "s9",
+        "from_label": "遠端", "depth": 3, "source_peer": "abc"})
+    check("…a message's depth is the one it carries: its recipient continues from it",
+          deep["success"] and deep["details"]["depth"] == 3 and agent_link._inbound_depth["sB"] == 3)
 
     reset()
     fake = Fake()
