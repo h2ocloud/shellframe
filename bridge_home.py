@@ -27,6 +27,7 @@ import secrets
 import threading
 import time
 
+import agent_link
 import sf_lang
 
 SEND = None                  # tests replace the Telegram call
@@ -226,6 +227,15 @@ def kind_note(bridge, sid: str) -> str:
         return sf_lang.pick(" (temporary)", "（臨時）")
     except Exception:
         return ""
+
+
+def list_snippet(raw: str, limit: int = 220) -> str:
+    """The line under a tab's name on /list: the first lines of the last thing on its screen as one plain
+    line (agent_link.preview_of). A tab that has not answered yet and has just been sent a message by
+    another agent shows that message ("研究：…"), not its [[A2A…]] header."""
+    text = "\n".join([x for x in str(raw or "").split("\n") if x.strip()][:3])
+    line = agent_link.preview_of(text, limit, agent=not agent_link.header_parts(text))
+    return "   " + (line or "(no recent activity)")
 
 
 def after_list(bridge, chat_id) -> bool:

@@ -211,6 +211,51 @@ check("the cue _push_turn_end sends is a done cue with those words", kind == "do
 kind, text = push_text([user(A2A_SHORT), bot("[[SF:GREEN]]")])
 check("a turn with no words of its own falls back to the task, plain: who asked, and what", kind == "done" and text.startswith("研究：比較表整理好了") and clean(text), (kind, text))
 
+print("Telegram /list: a screen as Claude Code draws it, through the real _peek_last_response")
+RULE = "─" * 40
+EMPTY_SCREEN = types.SimpleNamespace(history=types.SimpleNamespace(top=[]), columns=80, display=[])   # pyte, when tmux has nothing
+SCREENS = {
+    "the agent answered a Telegram message": (
+        "\n".join(["❯ " + ps.TG_ASK, "", "  週報做好了嗎", "", "⏺ [[TG_REPLY_ab12cd34]]", "  週報整理好了，放在 reports/weekly.md",
+                   "  [[/TG_REPLY_ab12cd34]]", "", RULE, "❯ ", RULE, "  ? for shortcuts"]),
+        "   週報整理好了，放在 reports/weekly.md"),
+    "another agent just sent a message and nothing has answered it yet": (
+        "\n".join(["❯ " + agent_link.format_delivery("研究", "比較表整理好了，第 1 行。", lang="zh").split("\n")[0],
+                   "  比較表整理好了，第 1 行。", "  比較表整理好了，第 2 行。", "", "✻ Thinking…", "", RULE, "❯ ", RULE]),
+        "   研究：比較表整理好了，第 1 行。 比較表整理好了，第 2 行。"),
+    "a plain answer, four lines": (
+        "\n".join(["❯ 幫我整理週報", "", "⏺ 週報整理好了，放在 reports/weekly.md", "  第二行", "  第三行", "  第四行", "", RULE, "❯ ", RULE]),
+        "   週報整理好了，放在 reports/weekly.md 第二行 第三行"),
+    "an empty tab": ("", "   (no recent activity)"),
+}
+for name, (screen, want) in SCREENS.items():
+    br = object.__new__(bt.TelegramBridge)
+    br._tmux_capture = lambda sid, s=screen: s
+    slot = types.SimpleNamespace(sid="s1", peek_fn=None, index=1, label="示範分頁", screen=EMPTY_SCREEN)
+    got = bridge_home.list_snippet(br._peek_last_response(slot))
+    check(f"{name}: {want.strip()!r}", got == want and clean(got), got)
+check("one line, at most 220 characters and a 3-space indent", "\n" not in bridge_home.list_snippet("字\n" * 500)
+      and len(bridge_home.list_snippet("字" * 900)) == 223 and bridge_home.list_snippet("字" * 900).startswith("   字"))
+
+print("…and the whole /list message")
+for name, screen_want in (("the answer", SCREENS["the agent answered a Telegram message"]), ("a message just sent", SCREENS["another agent just sent a message and nothing has answered it yet"])):
+    screen, want = screen_want
+    br = object.__new__(bt.TelegramBridge)
+    br._slots_lock = threading.Lock()
+    br._tmux_capture = lambda sid, s=screen: s
+    slot = types.SimpleNamespace(sid="s1", peek_fn=None, index=1, label="示範分頁", screen=EMPTY_SCREEN)
+    br.slots, br._slot_order, br._user_active = {"s1": slot}, ["s1"], {}
+    br._last_prune_ts = time.time()
+    br._prune_stale_slots = lambda force=False: None
+    br.paused, br.bot_info = False, {"username": "demo_bot"}
+    br.config = types.SimpleNamespace(bot_token="TEST", allowed_users=[])
+    br._on_model_info = lambda sid: None
+    sent = []
+    bt.tg_api = lambda tok, m, p, timeout=35: sent.append((m, p)) or {}
+    br._handle_command("list", 111, 222)
+    text = next((p["text"] for m, p in sent if m == "sendMessage"), "")
+    check(f"{name}: the tab's row and one plain line under it", "/1  示範分頁" in text and want in text.split("\n") and clean(text), text)
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

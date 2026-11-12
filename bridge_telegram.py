@@ -6595,16 +6595,7 @@ class TelegramBridge(BridgeBase):
                 model = self._slot_model_suffix(slot).lstrip(" ·").strip()
                 model_tag = f"  〔{model}〕" if model else ""
                 lines.append(f"\n/{slot.index}  {slot.label}{bridge_home.kind_note(self, sid)}{model_tag}{marker}")
-                preview = self._peek_last_response(slot)
-                if preview:
-                    # Compact preview: first 3 lines, max 200 chars
-                    plines = [l for l in preview.split('\n') if l.strip()][:3]
-                    snippet = '\n'.join(f"   {l}" for l in plines)
-                    if len(snippet) > 220:
-                        snippet = snippet[:220] + "…"
-                    lines.append(snippet)
-                else:
-                    lines.append("   (no recent activity)")
+                lines.append(bridge_home.list_snippet(self._peek_last_response(slot)))   # one plain line, no [[A2A…]] header
             if not slots_snapshot:
                 lines.append("  (no sessions)")
             tg_api(self.config.bot_token, "sendMessage", {
