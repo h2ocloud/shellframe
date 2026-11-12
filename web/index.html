@@ -521,7 +521,8 @@
   /* ── Sidebar ── */
   #app-body { flex: 1; display: flex; min-height: 0; }
   #sidebar {
-    width: var(--sidebar-w, 220px); background: #16161e; border-right: 1px solid #292e42;
+    /* the saved width, and no wider than the window allows (--sidebar-cap, web/layout.js) */
+    width: min(var(--sidebar-w, 220px), var(--sidebar-cap, 100vw)); background: #16161e; border-right: 1px solid #292e42;
     display: flex; flex-direction: column; flex-shrink: 0;
     transition: width .15s ease; overflow: hidden;
   }
@@ -1559,6 +1560,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="chat.js"></script>
 <script src="schedules.js"></script>
 <script src="ctxmenu.js"></script>
+<script src="layout.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -5472,7 +5474,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   // Generic drag-to-resize for a side panel; persists the width to config.
-  function setupResizer(resizerId, panelId, widthVar, cfgKey, side, minW, maxW) {
+  function setupResizer(resizerId, panelId, widthVar, cfgKey, side, minW, maxW, capFn) {
     const resizer = document.getElementById(resizerId);
     const panel = document.getElementById(panelId);
     resizer.addEventListener('mousedown', (e) => {
@@ -5486,10 +5488,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       panel.classList.add('resizing');
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-      let raf = 0, lastW = startW;
+      // what the window allows (the sidebar's cap): a drag past it would show nothing more
+      const hi = capFn ? Math.min(maxW, Math.max(minW, capFn())) : maxW;
+      let raf = 0, lastW = startW, moved = false;
       const onMove = (ev) => {
         const dx = (ev.clientX - startX) / scale;
-        lastW = Math.max(minW, Math.min(maxW, side === 'left' ? startW + dx : startW - dx));
+        lastW = Math.max(minW, Math.min(hi, side === 'left' ? startW + dx : startW - dx));
+        moved = true;
         panel.style.setProperty(widthVar, lastW + 'px');
         if (!raf) raf = requestAnimationFrame(() => {
           raf = 0;
@@ -5503,9 +5508,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         panel.classList.remove('resizing');
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        config.settings = config.settings || {};
-        config.settings[cfgKey] = Math.round(lastW);
-        try { pywebview.api.save_settings(JSON.stringify(config.settings)); } catch (_) {}
+        if (moved) {        // a click on the handle is no new width: the saved one is not overwritten by what is shown
+          config.settings = config.settings || {};
+          config.settings[cfgKey] = Math.round(lastW);
+          try { pywebview.api.save_settings(JSON.stringify(config.settings)); } catch (_) {}
+        }
         if (activeId) fitTerm(activeId);
       };
       document.addEventListener('mousemove', onMove);
@@ -5513,7 +5520,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
   }
 
-  setupResizer('sidebar-resizer', 'sidebar', '--sidebar-w', 'sidebar_width', 'left', 140, 480);
+  setupResizer('sidebar-resizer', 'sidebar', '--sidebar-w', 'sidebar_width', 'left', 140, 480,
+    () => (window.SFLayout ? SFLayout.sidebarCap() : Infinity));
   setupResizer('board-resizer', 'board-panel', '--board-w', 'board_width', 'right', 180, 560);
   updateResizerVisibility();
 

@@ -11,6 +11,8 @@ beside Send and the mic.
   - …a window 16px narrower still
   - 1280 wide, the same tab: the layout it always had (Terminal with its word, Send on the
     input box's line) and the same holds
+The sidebar's own limit (web/layout.js) keeps the view from being this narrow beside it now; the layout rules for
+a narrow view still hold (the right panel open, a small window), so this measures them with that limit off.
 Demo data only. Screenshots: qa-shots/chat-narrow-800.png and qa-shots/chat-narrow-1280.png
 (qa-shots/chat-narrow-800-before.png is the 800 one before the fix). Needs playwright; SKIP without it.
 Run: .venv/bin/python tests_chat_narrow.py
@@ -108,6 +110,10 @@ with sync_playwright() as pw:
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.add_init_script(STUB)
     page.goto((HERE / "web" / "index.html").as_uri())
+    # The sidebar now shows no wider than the window allows (web/layout.js, tests_sidebar_limit.py), which keeps the
+    # chat view from being this narrow on its own. The rules for a narrow view are still there (the right panel
+    # open, a small window), so they are measured with that limit off: the sidebar at the width it was saved.
+    page.add_style_tag(content="#sidebar { width: var(--sidebar-w, 220px) !important; }")
     page.wait_for_function("(() => { const l = document.getElementById('chat-layer'), b = document.querySelector('.cm-who b');"
                            " return l && !l.hidden && !document.getElementById('chat-mic').hidden && b && b.textContent"
                            " && document.querySelectorAll('#chat-list .cm-row').length >= 2; })()", timeout=15000)
