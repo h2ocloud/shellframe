@@ -156,13 +156,14 @@ check("capture is taken BEFORE the copy's await (a quick 2nd right-click keeps i
       and h.index("_pendingSel = '';") < h.index("await copySelection"))
 check("selection is cleared only after a confirmed write",
       re.search(r"if \(await copySelection\(sel, 'live-rightclick'\)\) term\.clearSelection\(\)", h) is not None)
-# 一次右鍵只做一件事：有選取只複製。決策本身（含「複製後 1.5 秒內不貼」、沒選取
-# 就貼上）由 tests_right_click.js 跑真的函式驗證；這裡只守「複製分支不會走到貼上」。
+# 一次右鍵只做一件事：有選取只複製。決策本身（含「複製後 1.5 秒內不開選單」、沒選取
+# 只開選單）由 tests_right_click.js 跑真的函式驗證；這裡只守「複製分支不會走到貼上」。
 i_copy = h.find("action === 'copy'")
-i_paste = h.find("action === 'paste'")
-check("the copy branch is separate from the paste branch",
-      i_copy != -1 and i_paste != -1 and i_copy < i_paste
-      and "_rightClickPaste()" not in h[i_copy:i_paste])
+i_menu = h.find("action === 'menu'")
+check("the copy branch is separate from the menu branch, and neither pastes by itself",
+      i_copy != -1 and i_menu != -1 and i_copy < i_menu
+      and "_rightClickPaste" not in h[i_copy:i_menu]
+      and "onSelect" in h[i_menu:])
 md = re.search(r"\$wrap\.addEventListener\('mousedown'.*?\n  \}\);", html, re.S)
 check("ctrl+click (macOS secondary click) captures the selection too",
       bool(md) and "e.ctrlKey" in md.group(0) and "getSelection()" in md.group(0))

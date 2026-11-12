@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="bots.css"/>
 <link rel="stylesheet" href="chat.css"/>
 <link rel="stylesheet" href="schedules.css"/>
+<link rel="stylesheet" href="ctxmenu.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -1557,6 +1558,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="bots.js"></script>
 <script src="chat.js"></script>
 <script src="schedules.js"></script>
+<script src="ctxmenu.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -1639,7 +1641,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         'Paste screenshots with <span class="kbd">Cmd/Ctrl+V</span> — preview appears above terminal (supports multiple images at once)',
         'Drag & drop files or screenshots into window to attach',
         'Press <span class="kbd">Enter</span> to send; <span class="kbd">Shift+Enter</span> inserts a newline without sending (useful for multi-line prompts)',
-        'Select text and <b>right-click</b> to copy; right-click with no selection to paste (Windows CMD style). On Windows <span class="kbd">Ctrl+C</span> also copies when text is selected — without a selection it interrupts, as in any terminal',
+        'Select text and <b>right-click</b> to copy. Right-click with nothing selected opens a small menu: pick <b>Paste</b> to paste (a right-click never pastes by itself). On Windows <span class="kbd">Ctrl+C</span> also copies when text is selected — without a selection it interrupts, as in any terminal',
         'Scroll up at the top of a tab to open a deduped history overlay — scroll to the bottom, press Esc, or type to return',
         '<span class="kbd">Cmd/Ctrl+W</span> close tab (confirms first) · <span class="kbd">Ctrl+Tab</span>, <span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span> (mac) or <span class="kbd">Ctrl+PgDn</span>/<span class="kbd">PgUp</span> (win) switch tabs',
         'Open Settings (<span class="kbd">Cmd/Ctrl+,</span>) to manage presets, Telegram bridge, and session prompt',
@@ -1822,7 +1824,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         '<span class="kbd">Cmd/Ctrl+V</span> 直接貼上截圖 — 預覽會出現在終端機上方（可一次貼多張）',
         '拖拉檔案 / 截圖進視窗即可附加',
         '<span class="kbd">Enter</span> 送出；<span class="kbd">Shift+Enter</span> 換行但不送出（寫多行 prompt 超好用）',
-        '反白文字後<b>按右鍵</b>即可複製；沒選字時按右鍵=貼上（Windows CMD 風格）。Windows 上有反白時 <span class="kbd">Ctrl+C</span> 也是複製——沒反白才是中斷，跟一般終端機一樣',
+        '反白文字後<b>按右鍵</b>即可複製；沒選字時按右鍵會跳出小選單，點「<b>貼上</b>」才會貼（右鍵不會自己貼上）。Windows 上有反白時 <span class="kbd">Ctrl+C</span> 也是複製——沒反白才是中斷，跟一般終端機一樣',
         '分頁頂端往上滾會自動打開去重後的歷史 overlay — 滾到底、按 Esc 或開始打字就關閉',
         '<span class="kbd">Cmd/Ctrl+W</span> 關分頁（會先確認）· <span class="kbd">Ctrl+Tab</span>、<span class="kbd">Cmd+]</span>/<span class="kbd">Cmd+[</span>（mac）或 <span class="kbd">Ctrl+PgDn</span>/<span class="kbd">PgUp</span>（win）切分頁',
         '<span class="kbd">Cmd/Ctrl+,</span> 開 Settings 管理 presets、Telegram bridge 和 session prompt',
@@ -9589,17 +9591,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
-  // ── Right-click: selection → copy; no selection → paste. One click, ONE action. ──
-  // The two never combine: a click that copies must not also paste. The selection
-  // can be gone by the time contextmenu fires (the TUI redraws under it, a
-  // ctrl-click arrives as button 0, one click can raise two contextmenu events),
-  // so a click that follows a copy within RIGHT_CLICK_QUIET_MS is that same click
-  // or its twin, never a request to paste.
+  // ── Right-click: a selection → copy; nothing selected → a menu, and Paste is yours to pick. ──
+  // One click, ONE action, and never a paste by itself. It used to paste when nothing was
+  // selected, and the selection is often gone by the time the click arrives (a TUI redraw drops
+  // it: xterm clears a selection when the screen buffer switches), so a copy turned into text
+  // nobody meant to send, left in the CLI's input box. Now that click only opens the menu.
+  // A click that follows a copy within RIGHT_CLICK_QUIET_MS is that same click or its twin (a
+  // ctrl-click arrives as button 0, one click can raise two contextmenu events): no menu.
+  // In the chat view the selection is the page's and Paste goes into the view's own box.
   const RIGHT_CLICK_QUIET_MS = 1500;
   function _rightClickAction(sel, now, lastCopyAt) {
     if (sel) return 'copy';
     if (now - lastCopyAt < RIGHT_CLICK_QUIET_MS) return 'none';
-    return 'paste';
+    return 'menu';
   }
   function _logRightClick(action, sel, sinceCopyMs) {
     // 只記決策，不記內容。「複製又貼上」這類回報靠這行才分得出走了哪條路。
@@ -9609,10 +9613,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Capture selection on mousedown because xterm.js clears it before contextmenu fires
   let _pendingSel = '';
   let _lastRightClickCopyAt = 0;
+  const _chatShown = () => !!(window.SFChat && SFChat.covers());
   $wrap.addEventListener('mousedown', (e) => {
     // macOS turns ctrl+click into a secondary click: button 0 + ctrlKey.
     if ((e.button === 2 || (e.button === 0 && e.ctrlKey)) && activeId && sessions[activeId]) {
-      _pendingSel = sessions[activeId].term.getSelection() || '';
+      _pendingSel = _chatShown() ? SFChat.selectedText() : (sessions[activeId].term.getSelection() || '');
     }
   });
   $wrap.addEventListener('contextmenu', async (e) => {
@@ -9631,13 +9636,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       _lastRightClickCopyAt = now;
       // Drop the highlight only once the copy is confirmed; on failure keep it
       // so the next right-click retries instead of silently losing it.
-      if (await copySelection(sel, 'live-rightclick')) term.clearSelection();
-    } else if (action === 'paste') {
-      // Right-click paste mirrors Cmd+V: image / file in clipboard goes
-      // through the attach pipeline, not raw text. The browser's
-      // synthetic ClipboardEvent only fires for keyboard / menu paste,
-      // so we drive the same machinery here ourselves.
-      _rightClickPaste();
+      if (_chatShown()) await copySelection(sel, 'chat-rightclick');
+      else if (await copySelection(sel, 'live-rightclick')) term.clearSelection();
+    } else if (action === 'menu') {
+      // The menu's Paste mirrors Cmd+V: image / file in clipboard goes through the attach
+      // pipeline, not raw text. The browser's synthetic ClipboardEvent only fires for
+      // keyboard / menu paste, so we drive the same machinery ourselves, when it is picked.
+      SFMenu.open(e.clientX, e.clientY, [{
+        label: lang === 'zh-TW' ? '貼上' : 'Paste', hint: IS_MAC ? '⌘V' : 'Ctrl+V',
+        onSelect: () => { _logRightClick('menu-paste', '', -1); _rightClickPaste(); },
+      }], { onClose: why => { if (why !== 'outside') _refocusActive(); } });
     }
   });
 
@@ -9720,6 +9728,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try {
       const text = await pywebview.api.paste_text();
       if (!text || text.startsWith('ERROR')) return;
+      if (_chatShown()) { SFChat.insert(text); return; }   // the view's own box, never the CLI under it
       const lines = text.split('\n').length;
       if (text.length >= PASTE_CONFIRM_CHARS || lines >= PASTE_CONFIRM_LINES) {
         _armPasteConfirm(text, activeId);

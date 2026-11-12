@@ -1,0 +1,18 @@
+/* The pop-up menu at the pointer (web/ctxmenu.js). The app has one theme, the dark one, so the
+ * colours are written here, the same ones the modals use (index.html .modal). */
+
+.sf-menu {
+  position: fixed; z-index: 450; min-width: 150px; padding: 4px;
+  background: #1f2335; border: 1px solid #3b4261; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  font-size: 13px; line-height: 1.2; color: #c0caf5;
+  user-select: none; -webkit-user-select: none;
+}
+.sf-menu-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  width: 100%; padding: 7px 10px; border: none; border-radius: 5px;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.sf-menu-item:hover { background: #292e42; }
+.sf-menu-item:focus { outline: none; background: #292e42; box-shadow: inset 0 0 0 1px #7aa2f7; }
+.sf-menu-hint { color: #565f89; font-size: 11px; }

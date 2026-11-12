@@ -20,7 +20,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **AI busy indicator** | Pulsing orange dot when a session is actively working. Pink dot when waiting on a permission dialog. |
 | **Session rename** | Double-click tab or sidebar to name sessions. Syncs to TG `/list`. |
 | **Ctrl+Click file paths** | Click local file paths in terminal output to open in default app. |
-| **Right-click copy/paste** | Windows CMD-style: select → right-click = copy; no selection → right-click = paste. |
+| **Right-click copy/paste** | Select → right-click = copy. Nothing selected → right-click opens a small menu, and Paste pastes only when you pick it (a right-click never pastes by itself). |
 | **Presets** | Saved commands with emoji icons. Drag to reorder. |
 | **Settings tabs** | General (font, UI scale S/M/L, language) and Telegram Bridge (connection, STT providers). |
 | **Two-tier reload** | UI changes → hot reload. Python changes → full restart with session preservation notice. |
@@ -77,7 +77,7 @@ shellframe            # GUI with session picker
 | Settings | `Cmd+,` | `Ctrl+,` |
 | Copy selection | `Cmd+C` | `Ctrl+C` (only with a selection — otherwise it interrupts, as in any terminal) |
 | Open file path in default app | `Cmd+Click` / `Ctrl+Click` | `Ctrl+Click` |
-| Copy / paste | Right-click (with / without selection) | Right-click (with / without selection) |
+| Copy / paste | Right-click: copies a selection; with none, a menu whose Paste you pick | Same |
 | Clear input line (plain terminal) | `Esc` | `Esc` |
 | Rename session | Double-click tab | Double-click tab |
 

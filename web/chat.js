@@ -1433,15 +1433,49 @@
     walk(node);
     return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   }
-  function onCopy(e) {
+  // The conversation's selection, null when nothing of it is selected (the input box is not it).
+  // A triple-click on the last message ends its range at the start of the next block, which is
+  // outside the conversation: that range is cut back to what is inside it.
+  function selectedRange() {
     const sel = root.getSelection && root.getSelection();
-    if (!covers() || !sel || sel.isCollapsed || !sel.rangeCount || !e.clipboardData) return;
+    if (!covers() || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const scroll = layer.querySelector('#chat-scroll');
     const range = sel.getRangeAt(0);
-    if (!layer.querySelector('#chat-scroll').contains(range.commonAncestorContainer)) return;
+    if (scroll.contains(range.commonAncestorContainer)) return range;
+    if (!range.intersectsNode(scroll)) return null;
+    const cut = range.cloneRange();
+    if (!scroll.contains(cut.startContainer)) cut.setStart(scroll, 0);
+    if (!scroll.contains(cut.endContainer)) cut.setEnd(scroll, scroll.childNodes.length);
+    return cut;
+  }
+  function onCopy(e) {
+    const range = selectedRange();
+    if (!range || !e.clipboardData) return;
     const text = plainOf(range.cloneContents());
     if (!text) return;
     e.clipboardData.setData('text/plain', text);
     e.preventDefault();
+  }
+  // What a right-click copies: what ⌘C would take, the conversation's selection as plain text
+  // or the input box's own; '' when nothing is selected or the view is not showing.
+  function selectedText() {
+    if (!covers()) return '';
+    if (document.activeElement === input && input.selectionStart !== input.selectionEnd) {
+      return input.value.slice(input.selectionStart, input.selectionEnd);
+    }
+    const range = selectedRange();
+    return range ? plainOf(range.cloneContents()) : '';
+  }
+  // A paste from the right-click's menu: into the input box at its cursor, as it is. The
+  // terminal under the view never gets it (nobody would see a draft left there).
+  function insert(text) {
+    const t = String(text == null ? '' : text);
+    if (!t || !input) return;
+    input.focus();
+    const a = input.selectionStart ?? input.value.length, b = input.selectionEnd ?? a;
+    input.value = input.value.slice(0, a) + t + input.value.slice(b);
+    input.setSelectionRange(a + t.length, a + t.length);
+    autosize();
   }
   // A message's or a code block's own button: through the app (copy_text, as the terminal's
   // copy does), the browser's clipboard if that fails; the button says what happened.
@@ -1686,7 +1720,7 @@
     return d.text ? (d.detail ? `${d.text} · ${d.detail}` : d.text) : '';
   }
 
-  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach };
+  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert };
   const boot = () => { mount(); apply(false); setInterval(tick, POLL_MS); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
