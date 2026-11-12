@@ -253,7 +253,8 @@ SCREENS = {
 for name, (screen, want) in SCREENS.items():
     br = object.__new__(bt.TelegramBridge)
     br._tmux_capture = lambda sid, s=screen: s
-    slot = types.SimpleNamespace(sid="s1", peek_fn=None, index=1, label="示範分頁", screen=EMPTY_SCREEN)
+    slot = types.SimpleNamespace(sid="s1", peek_fn=None, index=1, label="示範分頁", screen=EMPTY_SCREEN,
+                                _feed_gen=0, _display_cache=None, _display_cache_gen=-1)
     got = bridge_home.list_snippet(br._peek_last_response(slot))
     check(f"{name}: {want.strip()!r}", got == want and clean(got), got)
 check("one line, at most 220 characters and a 3-space indent", "\n" not in bridge_home.list_snippet("字\n" * 500)
@@ -265,7 +266,8 @@ for name, screen_want in (("the answer", SCREENS["the agent answered a Telegram 
     br = object.__new__(bt.TelegramBridge)
     br._slots_lock = threading.Lock()
     br._tmux_capture = lambda sid, s=screen: s
-    slot = types.SimpleNamespace(sid="s1", peek_fn=None, index=1, label="示範分頁", screen=EMPTY_SCREEN)
+    slot = types.SimpleNamespace(sid="s1", peek_fn=None, index=1, label="示範分頁", screen=EMPTY_SCREEN,
+                                _feed_gen=0, _display_cache=None, _display_cache_gen=-1)
     br.slots, br._slot_order, br._user_active = {"s1": slot}, ["s1"], {}
     br._last_prune_ts = time.time()
     br._prune_stale_slots = lambda force=False: None

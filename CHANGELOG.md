@@ -6,7 +6,7 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
-## v0.42.1 (2026-11-13)
+## v0.42.1 (2026-11-12)
 
 ### Fixes
 

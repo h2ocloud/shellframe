@@ -125,7 +125,7 @@ def run(browser, engine):
               (writes()[before:], box.input_value()))
         box.fill("")
     else:
-        print("  SKIP no sidebar text box in this layout")
+        print("  (no sidebar text box in this layout: 2b not run)")
 
     print(f"[{engine}] 3. the chat view is up")
     page.evaluate("window.SFChat.setMode('s501', 'chat')")
