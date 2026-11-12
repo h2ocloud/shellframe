@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 
+import agent_model
 import agent_status
 import bot_names
 import bots
@@ -88,7 +89,6 @@ def _cli_choices() -> list:
     /link/bots every few seconds."""
     if _CLIS["list"] and time.time() - _CLIS["at"] < 60:
         return _CLIS["list"]
-    import agent_model
     import usage_probe
     out = []
     for key, spec in usage_probe.PROVIDER_SPECS.items():
@@ -189,9 +189,12 @@ class BotsApiMixin:
                 row["closing"] = ph.get("phase") or "writing"
             if row:
                 sessions[sid] = row
+        roster = bots.public_roster(raw)
+        for role, row in roster.items():       # what the role runs on, and whether ShellBot knows it (the editor flags the rest)
+            row["pin"] = agent_model.pinned(str((raw.get(role) or {}).get("cmd") or ""), row.get("model"))
         return json.dumps({
             "enabled": (cfg.get("settings", {}) or {}).get("experimental_bots", False) is True,
-            "roster": bots.public_roster(raw),
+            "roster": roster,
             "sessions": sessions,
             "kinds": {sid: ("temp" if self._tab_cli(s) else "terminal")      # plan A: what a tab is when no bot's
                       for sid, s in list(self.sessions.items())},
@@ -294,11 +297,12 @@ class BotsApiMixin:
                          **{k: t.get(k, d) for k, d in (("activity", ""), ("doing", ""), ("latest", ""), ("last_at", 0),
                                                         ("blocked", ""), ("closing", ""), ("decision", None))},
                          "memory": bots.is_memory_bot(e), "cli": cli, "coordinator": bool(e.get("coordinator")),
-                         "tg": t.get("tg", 0)})
+                         "tg": t.get("tg", 0), **self._link_model(e, ext)})
         body = {"enabled": on, "primary": primary, "bots": rows, "tabs": tabs,
                 "choices": {"shapes": list(bots.SHAPES), "colors": [{"key": c, "hex": bots.PALETTE[c]} for c in bots.COLORS],
                             "custom_color": True,     # what /link/bots/avatar accepts; also any #RRGGBB
-                            "clis": _cli_choices()}}  # what /link/bots/settings takes as cli
+                            "clis": _cli_choices(),   # what /link/bots/settings takes as cli
+                            "models": {c["key"]: agent_model.choices(c["key"], _("en", "zh") == "zh") for c in _cli_choices()}}}
         calm = lambda r: dict(r, last_at=0) if r.get("activity") == "working" else r   # a working tab's last_at is the clock
         rev = int(hashlib.sha1(json.dumps(dict(body, bots=[calm(b) for b in rows], tabs={k: calm(v) for k, v in tabs.items()}),
                                           sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8], 16)
@@ -343,13 +347,22 @@ class BotsApiMixin:
         except Exception:
             return 0
 
+    @staticmethod
+    def _link_model(e: dict, external: bool) -> dict:
+        """Whether the model a bot is set to will take effect, as the editor flags it: `model_ok`
+        false means ShellBot does not know the key for that CLI (`model_code` says why, `model_suggestion`
+        the key that was likely meant). An external bot runs where it lives, so it is always ok."""
+        if external:
+            return {"model_ok": True, "model_code": "", "model_suggestion": ""}
+        pin = agent_model.pinned(str(e.get("cmd") or ""), e.get("model"))
+        return {"model_ok": pin["ok"], "model_code": pin["code"], "model_suggestion": pin["suggestion"]}
+
     def _link_runs_on(self, sid: str, e: dict) -> str:
         """The model a bot runs: what its tab's transcript says, else its roster command."""
         snap = self._agent_status_snapshot(sid) if sid else None
         mi = ((snap[0] if isinstance(snap, tuple) else snap) or {}).get("model")
         if isinstance(mi, dict) and mi.get("name"):
             return mi["name"] + (f" {mi['effort']}" if mi.get("effort") else "")
-        import agent_model
         cmd = str(e.get("cmd") or "")
         return agent_model.describe(agent_model.apply(cmd, e["model"]) if e.get("model") else cmd)
 
@@ -612,6 +625,13 @@ class BotsApiMixin:
         if bind_sid and not tab:
             return json.dumps({"success": False, "message": _(f"No tab {bind_sid}", f"沒有 {bind_sid} 這個分頁")})
         cmd = str(data.get("cmd") or (getattr(tab, "cmd", "") if tab else "") or "claude").strip()
+        had = (_cfg().get("agent_roster") or {}).get(name)
+        had = had if isinstance(had, dict) else {}
+        if "model" in data:                  # picked or typed: a model ShellBot does not know is never saved
+            refused = self._model_refusal(str(data.get("cmd") or had.get("cmd") or cmd), data.get("model"),
+                                          had.get("model"), str(had.get("cmd") or ""))
+            if refused:
+                return json.dumps(refused, ensure_ascii=False)
         state = {}
 
         def _mut(cfg):
@@ -620,6 +640,7 @@ class BotsApiMixin:
             created = not isinstance(entry, dict)
             if created:
                 entry = {"label": name, "cmd": cmd, "agent_code": "BOT", "handoff": True}
+            old_cmd = str(entry.get("cmd") or "")
             prev = entry.get("bot") if isinstance(entry.get("bot"), dict) else {}
             payload = dict(data)
             payload["created_by_bots"] = created or prev.get("created_by_bots", False)
@@ -630,6 +651,10 @@ class BotsApiMixin:
                 entry["cmd"] = cmd
             if "model" in data:
                 entry["model"] = str(data.get("model") or "").strip()
+                if not entry["model"]:       # "CLI default" is the default: no pin left on the command either
+                    entry["cmd"] = agent_model.apply(str(entry.get("cmd") or cmd), "")
+            elif data.get("cmd") and agent_model.provider_of(cmd) != agent_model.provider_of(old_cmd):
+                entry["model"] = ""          # the last CLI's model would not fit this one
             if entry["bot"].get("primary"):
                 for r, e in roster.items():
                     if r != name and isinstance(e, dict) and isinstance(e.get("bot"), dict):
@@ -791,6 +816,65 @@ class BotsApiMixin:
             return None
         return json.dumps(self._bots_rename(role, name), ensure_ascii=False)
 
+    # ── a bot's model: the picker's list, and what may be saved ───────────
+    def bots_model_info(self, cmds_json: str = "[]") -> str:
+        """For the bot editor's model picker: what each launch command it offers can pin.
+        {"choices": {provider: [{"key", "label"}…]}, "by_cmd": {cmd: {"provider", "pinnable",
+        "reason", "pinned"}}}. One list per CLI, from agent_model's table, the same the phone gets in
+        /link/bots `choices.models`. `reason` says why a command takes no model ("fixed": the CLI
+        picks it inside; "unknown": a command ShellBot does not know); `pinned` is the model
+        already on the command."""
+        try:
+            cmds = [str(c) for c in (json.loads(cmds_json or "[]") or [])]
+        except (ValueError, TypeError):
+            cmds = []
+        zh = _("en", "zh") == "zh"
+        lists, by_cmd = {}, {}
+        for cmd in cmds:
+            prov = agent_model.provider_of(cmd)
+            by_cmd[cmd] = {"provider": prov, "pinnable": bool(prov), "pinned": agent_model.current_model(cmd),
+                           "reason": "" if prov else ("unknown" if agent_status.worker_kind(cmd) == "other" else "fixed")}
+            lists.setdefault(prov, agent_model.choices(prov, zh))
+        return json.dumps({"choices": lists, "by_cmd": by_cmd}, ensure_ascii=False)
+
+    def bots_model_check(self, cmd: str, model: str = "") -> str:
+        """The editor's live check of a model typed under "Other (custom)": agent_model.check, with the
+        words for the answer. Nothing is started and nothing is saved."""
+        res = agent_model.check(cmd, model)
+        return json.dumps(dict(res, message=self._model_words(cmd, str(model or "").strip(), res)), ensure_ascii=False)
+
+    @staticmethod
+    def _model_words(cmd: str, model: str, res: dict) -> str:
+        """What a refused model says (the check's answer `res`), in the computer's language."""
+        code, sug = res.get("code"), res.get("suggestion")
+        if not code:
+            return ""
+        if code == "model_fixed":
+            return (_("ShellBot cannot set a model on this command; leave the model empty", "ShellBot 沒辦法在這個指令上指定模型，模型請留空")
+                    if agent_status.worker_kind(cmd) == "other"
+                    else _("This CLI picks its model inside it; leave the model empty", "這個 CLI 的模型要在它裡面選，模型請留空"))
+        hint = _(f' Did you mean "{sug}"?', f"是不是要「{sug}」？") if sug else ""
+        if code == "bad_model":
+            return _("A model is one word, e.g. sonnet", "模型是一個詞，例如 sonnet") + (" · " + hint.strip() if hint else "")
+        keys = [c["key"] for c in agent_model.choices(res.get("provider") or "")[1:-1]]
+        return (_(f'Unknown model "{model}" for {res.get("provider")}: it would not take effect. Pick one from the list'
+                  f'{" (" + ", ".join(keys) + ")" if keys else ""}.{hint}',
+                  f'不認得這個模型「{model}」（{res.get("provider")}）：存了也不會生效。請從清單選'
+                  f'{"（" + "、".join(keys) + "）" if keys else ""}。{hint}'))
+
+    def _model_refusal(self, cmd: str, model, had_model=None, had_cmd: str = ""):
+        """None when `model` may be saved on the command `cmd`, else the refusal every way in gets
+        (the editor, a phone, sfctl): {"success": False, "code", "message", "suggestion"}. A model a bot
+        already had, on the same CLI, passes unchanged: it is flagged where it is shown (the editor,
+        /link/bots `model_ok`) and not refused again when only the job is edited."""
+        model = str(model if model is not None else "").strip()
+        res = agent_model.check(cmd, model)
+        if res["ok"] or (had_model is not None and model == str(had_model).strip()
+                         and agent_model.provider_of(cmd) == agent_model.provider_of(had_cmd)):
+            return None
+        return {"success": False, "code": res["code"], "message": self._model_words(cmd, model, res),
+                "suggestion": res["suggestion"]}
+
     # ── plan A: another CLI or model for a bot ───────────────────────────
     def bots_switch(self, role: str, cli: str = "", model=None, apply: str = "next_wake") -> str:
         """A bot on another CLI and/or model. Its name, face, job and memory stay; the
@@ -825,6 +909,7 @@ class BotsApiMixin:
             return fail("external", "A bot outside ShellBot runs where it lives", "外部的 bot 用什麼 CLI 不歸這台管")
         current = agent_status.worker_kind(str(entry.get("cmd") or ""))
         cli = str(cli or "").strip()
+        unpin = model is not None and not str(model).strip()     # the caller asked for the CLI's default: no pin left
         data = {}
         if cli and cli != current:
             spec = next((c for c in _cli_choices() if c["key"] == cli), None)
@@ -841,6 +926,10 @@ class BotsApiMixin:
                             "這個 CLI 的模型要在它裡面選，模型請留空")
             if len(model) > 80 or re.search(r"\s", model):
                 return fail("bad_model", "A model is one word, e.g. sonnet", "模型是一個詞，例如 sonnet")
+            refused = self._model_refusal(str(data.get("cmd") or entry.get("cmd") or ""), model,
+                                          entry.get("model"), str(entry.get("cmd") or ""))
+            if refused:
+                return refused
             data["model"] = model
         if not data and apply != "now":
             return fail("nothing", "Nothing to change", "沒有要改的")
@@ -855,6 +944,8 @@ class BotsApiMixin:
                 e = (c.get("agent_roster") or {}).get(role)
                 if isinstance(e, dict):
                     e.update(data)             # the command and the model only: no bot block is added or changed
+                    if unpin:
+                        e["cmd"] = agent_model.apply(str(e.get("cmd") or ""), "")
             _update(_mut)
             self._bots_notify_ui()
         if apply != "now":
@@ -1113,6 +1204,13 @@ class BotsApiMixin:
                                    "details": {"sid": sid, "existed": True}})
         roster = self._agent_roster_config(cfg)
         cmd = (roster.get(role) or {}).get("cmd") or entry.get("cmd") or "claude"
+        # A model ShellBot does not know may be ignored by the CLI, or stop it from starting: say so
+        # before the tab is opened (its screen is not read for the CLI's own complaint; wordings differ per CLI and version).
+        pin = agent_model.pinned(str(entry.get("cmd") or ""), entry.get("model"))
+        warn = "" if pin["ok"] else self._model_words(str(entry.get("cmd") or ""), pin["model"], pin)
+        if warn:
+            _dlog("bots", f"open role={role!r}: model {pin['model']!r} is not one ShellBot knows ({pin['code']}); "
+                          f"the CLI may ignore it or refuse to start")
         sid = self.new_session(cmd, 200, 50, source="bot", handoff=False)
         self.rename_session(sid, label, manual=True)
         self._bots_bind(sid, role)
@@ -1121,8 +1219,8 @@ class BotsApiMixin:
             threading.Thread(target=self._bots_wake, args=(sid, role), daemon=True,
                              name=f"bot-wake-{sid}").start()
         _dlog("bots", f"open role={role!r} sid={sid}")
-        return json.dumps({"success": True, "message": _(f'Waking "{label}"', f"叫醒「{label}」"), "details": {"sid": sid}},
-                          ensure_ascii=False)
+        return json.dumps({"success": True, "message": _(f'Waking "{label}"', f"叫醒「{label}」"),
+                           "details": dict({"sid": sid}, **({"model_warning": warn} if warn else {}))}, ensure_ascii=False)
 
     def _bots_wake(self, sid: str, role: str):
         if not self._wait_until_ready(sid, timeout=90):
