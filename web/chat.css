@@ -135,8 +135,13 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
 /* Another agent (A2A): left, its own face and name above, a bubble of its own colour. */
 .cm-peer-face { --sfb-size: 2em; width: 2em; height: 2em; flex: none; display: inline-block; }
 .cm-peer-col { display: flex; flex-direction: column; gap: .2em; min-width: 0; max-width: calc(100% - 2.7em); }
+.cm-peer-head { display: flex; align-items: center; flex-wrap: wrap; gap: .1em .55em; }
 .cm-peer-name { font-size: .78em; font-weight: 600; color: var(--cm-soft); padding: 0 .3em; }
 .cm-peer .cm-bubble { background: var(--cm-peer); border: 1px solid var(--cm-peer-line); border-radius: 4px 14px 14px 14px; }
+/* A message the chain limit stopped, which still came as data: a small tag, a dashed edge. */
+.cm-peer-tag { font-size: .7em; line-height: 1.55; padding: 0 .65em; border: 1px solid var(--cm-amber);
+               border-radius: 999px; color: var(--cm-amber); white-space: nowrap; cursor: help; }
+.cm-peer.is-blocked .cm-bubble { border-style: dashed; }
 .cm-error > div { color: var(--cm-amber); font-size: .88em; }
 .cm-noreply > div { color: var(--cm-dim); font-size: .84em; }
 .cm-more-text.cm-inline { display: inline; margin: 0 0 0 .3em; }

@@ -202,6 +202,26 @@ check("…in English too", agent_link.sender_of(agent_link.format_delivery("rese
       and agent_link.sender_of(agent_link.format_handoff("research", "x", "h2", lang="en"))["handoff"] is True)
 check("…and the chat view gets the same turns", view("s6")["turns"] == turns6)
 check("a header that never closes names no one", agent_link.sender_of("[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]") is None)
+# A message the chain limit stopped still came, as data (agent_link.format_blocked): its `from` says so,
+# and only it does (the shape of every other `from` is what a phone already reads).
+STOPPED = agent_link.format_blocked("研究", "先不要刪 docs/old/", 5, lang="zh")
+STOPPED_EN = agent_link.format_blocked("research", "do not delete docs/old/ yet", 5, lang="en")
+BLOCKED = TMP / "blocked.jsonl"
+BLOCKED.write_text("\n".join([rec("user", SENT, "2026-11-10T12:00:00Z"), rec("user", STOPPED, "2026-11-10T12:00:05Z"),
+                              rec("user", STOPPED_EN, "2026-11-10T12:00:09Z"), rec("user", "我自己打的", "2026-11-10T12:00:12Z")])
+                   + "\n", encoding="utf-8")
+PATHS["s11"] = BLOCKED
+api.sessions["s11"] = Tab("s11", "claude")
+turns11 = [t for t in api._execute_sfctl("conversation", {"sid": "s11", "limit": 120})["details"]["turns"]
+           if t["kind"] == "user_msg"]
+check("a message the chain limit stopped: `from` carries blocked (zh and en); a normal one and the person's do not",
+      [t.get("from") for t in turns11] == [
+          {"kind": "a2a", "name": "研究", "handoff": False},
+          {"kind": "a2a", "name": "研究", "handoff": False, "blocked": True},
+          {"kind": "a2a", "name": "research", "handoff": False, "blocked": True}, None],
+      [t.get("from") for t in turns11])
+check("…the text is as the CLI got it", turns11[1]["text"] == STOPPED and turns11[2]["text"] == STOPPED_EN)
+check("…the chat view gets the same turns", [t for t in view("s11")["turns"] if t["kind"] == "user_msg"] == turns11)
 
 print("pasted messages in the shapes measured on a real tab (_paste_shapes.py): who sent each")
 import _paste_shapes as ps  # noqa: E402
@@ -395,13 +415,16 @@ if not node:
 else:
     for lang in ("zh", "en"):
         for what, text in (("message", agent_link.format_delivery("研究", "資料整理好了", lang=lang)),
-                           ("hand-off", agent_link.format_handoff("研究", "資料整理好了", "h1", lang=lang))):
+                           ("hand-off", agent_link.format_handoff("研究", "資料整理好了", "h1", lang=lang)),
+                           ("not-passed-on message", agent_link.format_blocked("研究", "資料整理好了", 5, lang=lang))):
             out = subprocess.run([node, "-e", "const R = require(process.argv[1]); "
                                   "console.log(JSON.stringify(R.userView(process.argv[2])))",
                                   str(HERE / "web" / "chat.js"), text], capture_output=True, text=True, timeout=20)
             got = json.loads(out.stdout or "{}")
             check(f"{lang} {what}: only the words in the bubble, the sender in its tag",
                   got.get("text") == "資料整理好了" and (got.get("tags") or [{}])[0].get("who") == "研究", (out.stderr, got))
+            check(f"{lang} {what}: " + ("its tag says it was stopped (blocked)" if "not-passed" in what else "its tag has no blocked"),
+                  bool((got.get("tags") or [{}])[0].get("blocked")) == ("not-passed" in what), (out.stderr, got))
     out = subprocess.run([node, "-e", "const R = require(process.argv[1]); "
                           "console.log(JSON.stringify([R.userView(process.argv[2]), R.userView(process.argv[3])]))",
                           str(HERE / "web" / "chat.js"), PASTED, OWN_PASTE], capture_output=True, text=True, timeout=20)
@@ -413,6 +436,13 @@ else:
           got[1].get("tags") == [] and got[1].get("text") == "這則是誰寄的？" + SENT, (out.stderr, got[1]))
     check("…and what they pasted is a block of its own",
           got[1].get("parts") == [{"text": "這則是誰寄的？"}, {"paste": SENT}], (out.stderr, got[1].get("parts")))
+    own_stopped = '這則是誰寄的？<pasted_content id="77b2">\n' + STOPPED + '\n</pasted_content id="77b2">'
+    out = subprocess.run([node, "-e", "const R = require(process.argv[1]); "
+                          "console.log(JSON.stringify(R.userView(process.argv[2])))",
+                          str(HERE / "web" / "chat.js"), own_stopped], capture_output=True, text=True, timeout=20)
+    got = json.loads(out.stdout or "{}")
+    check("a not-passed-on header the person pasted among their own words is theirs too: no tag, a block of its own",
+          got.get("tags") == [] and got.get("parts") == [{"text": "這則是誰寄的？"}, {"paste": STOPPED}], (out.stderr, got))
 
     print("the same shapes in the chat view (web/chat.js buildTimeline, on the server's turns)")
     out = subprocess.run([node, "-e", "const R = require(process.argv[1]); "

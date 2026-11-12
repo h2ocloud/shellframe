@@ -12,8 +12,11 @@ was drawn as the person's own (a blue bubble on the right with a small "from" un
     person pasted among their own words is one folded block in their bubble ("貼上的內容 · 15 行"
     and how it starts), the pasted text as it was one click away. The turns are the shapes
     measured on a real tab (_paste_shapes.py), with demo words.
+  - a message the chain limit stopped still came, for reference only (agent_link.format_blocked): the
+    same sender's bubble, the header left out, and a small tag "未轉達・只供參考" ("not passed on · for
+    reference") on every such bubble and on no other; the same in English, and when it went in as a paste.
 Only what is drawn changes: the CLI gets the text as it was.
-Demo data only. Screenshots: qa-shots/chat-a2a-{row,mixed,long,pasted,pasted-open}.png.
+Demo data only. Screenshots: qa-shots/chat-a2a-{row,mixed,long,pasted,pasted-open,blocked,blocked-en}.png.
 SF_A2A_BEFORE=<a chat.js> draws the same with that file instead and saves …-before.png, without checks.
 Needs playwright; SKIP without it. Run: .venv/bin/python tests_chat_a2a_ui.py
 """
@@ -55,6 +58,11 @@ def a2a(who, text):
     return {"kind": "user_msg", "text": agent_link.format_delivery(who, text, lang="zh")}
 
 
+def stopped(who, text, lang="zh"):
+    """A message the chain limit stopped, as the tab it still reached got it (agent_link.format_blocked)."""
+    return {"kind": "user_msg", "text": agent_link.format_blocked(who, text, agent_link.MAX_DEPTH + 1, lang=lang)}
+
+
 def shaped(n):
     """The n-th of the measured shapes (_paste_shapes.SHAPES), as a turn."""
     return {"kind": "user_msg", "text": ps.SHAPES[n][1]}
@@ -89,8 +97,17 @@ CASES = {
     "pasted": [shaped(1),                                   # an A2A message, wrapped whole, 12 lines
                shaped(3),                                   # the person's own: three pictures, then a paste
                bot("收到，我照筆記的格式整理。")],
+    "blocked": [a2a("研究", "比較表整理好了，在 docs/compare.md。"),
+                stopped("研究", "先不要刪 docs/old/，我還在用。"),
+                stopped("研究", "compare.md 第三欄之後還會改，先別照它做。"),
+                {"kind": "user_msg", "text": next(t for n, t, _, _ in ps.SHAPES if "chain limit" in n)},   # wrapped whole
+                bot("收到。後面三則只當參考：我先不動 docs/old/，等你說了算。")],
+    "blocked-en": [stopped("research", "Hold off on deleting docs/old/, I still use it.", "en"),
+                   bot("Noted. That one is for reference only, so I leave docs/old/ alone until you say.")],
 }
-SENDERS = {"row": ["研究", "寫程式", "排程"], "mixed": ["研究"], "long": ["研究"], "pasted": ["寫程式"]}
+SENDERS = {"row": ["研究", "寫程式", "排程"], "mixed": ["研究"], "long": ["研究"], "pasted": ["寫程式"],
+           "blocked": ["研究", "排程"], "blocked-en": ["research"]}
+TAG = {"blocked": "未轉達・只供參考", "blocked-en": "not passed on · for reference"}
 BOTS = {"enabled": True, "primary": "", "memory_root": "~/.config/shellframe/bots", "sessions": {}, "kinds": {},
         "roster": {"研究": {"label": "研究", "cmd": "claude", "bot": {"avatar": {"shape": "hex", "color": "blue"}, "memory": True}},
                    "寫程式": {"label": "寫程式", "cmd": "codex", "bot": {"avatar": {"shape": "pill", "color": "red"}, "memory": True}}}}
@@ -99,7 +116,9 @@ CFG = {"settings": {"language": "zh-TW", "sidebar_open": False, "ui_style": "cha
 SESSIONS = [{"sid": "s401", "cmd": "claude", "alive": True, "label": "示範分頁", "bridge_enabled": True}]
 
 
-def stub(turns):
+def stub(turns, language="zh-TW"):
+    cfg = dict(CFG, settings=dict(CFG["settings"], language=language))
+    tabs = [dict(SESSIONS[0], label="Demo tab")] if language == "en" else SESSIONS
     for i, t in enumerate(turns):
         t["ts"] = 1794190800 + i * 20
     view = {"success": True, "readable": True, "provider": "claude", "activity": "done", "decision": None,
@@ -121,7 +140,7 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
     }
   };
 }})};
-""" % (json.dumps(CFG, ensure_ascii=False), json.dumps(SESSIONS, ensure_ascii=False), json.dumps(view, ensure_ascii=False),
+""" % (json.dumps(cfg, ensure_ascii=False), json.dumps(tabs, ensure_ascii=False), json.dumps(view, ensure_ascii=False),
        json.dumps(BOTS, ensure_ascii=False))
 
 
@@ -135,7 +154,7 @@ with sync_playwright() as pw:
         if BEFORE:
             old = pathlib.Path(BEFORE).read_text(encoding="utf-8")
             page.route("**/chat.js", lambda route: route.fulfill(status=200, content_type="text/javascript", body=old))
-        page.add_init_script(stub(turns))
+        page.add_init_script(stub(turns, "en" if name.endswith("-en") else "zh-TW"))
         page.goto((HERE / "web" / "index.html").as_uri())
         page.wait_for_function(f"document.querySelectorAll('#chat-list .cm-row').length >= {len(turns)}", timeout=15000)
         print(f"{name}: {len(turns)} turns")
@@ -155,6 +174,17 @@ with sync_playwright() as pw:
         bodies = [agent_link.header_of(t)[1] for t in agents]
         check("the message itself is there, from its first word",
               all(any(b.startswith(body[:12]) for b in bubbles) for body in bodies), (bodies, bubbles))
+        if name.startswith("blocked") and not BEFORE:
+            tags = page.evaluate("[...document.querySelectorAll('#chat-list .cm-peer .cm-peer-tag')].map(t => t.innerText)")
+            flagged = page.evaluate("[...document.querySelectorAll('#chat-list .cm-peer')].map(r => r.classList.contains('is-blocked'))")
+            want = [bool((agent_link.sender_of(t) or {}).get("blocked")) for t in sent if agent_link.header_of(t)]
+            check(f"each message the chain limit stopped has the small tag \"{TAG[name]}\", and no other has one",
+                  tags == [TAG[name]] * sum(want) and flagged == want, (tags, flagged, want))
+            check("…the tag explains itself on hover", page.evaluate(
+                "[...document.querySelectorAll('#chat-list .cm-peer-tag')].every(t => t.title.length > 20)"))
+            check("…it stays on the sender's side: still on the left, still no header in the bubble",
+                  page.evaluate("!document.querySelector('#chat-list .cm-user')")
+                  and all("A2A" not in b for b in bubbles), bubbles)
         if name == "pasted" and not BEFORE:
             sums = page.evaluate("[...document.querySelectorAll('#chat-list .cm-user .cm-paste-sum')].map(b => b.innerText)")
             check("what the person pasted is one folded block: how many lines, how it starts",

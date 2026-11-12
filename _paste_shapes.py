@@ -8,8 +8,9 @@ closing one. ShellBot types a long message into a tab as a paste. Measured:
     its [[SF:TO:…]], on the first line inside, then 2 to 30-odd lines (1 short, 11 middling, 2 long);
   - 1 message of the person's own: three attached pictures, a blank line, then a paste of about 15
     lines that starts with a heading, and nothing after it.
-Two more that the same rule covers: the person's own long message wrapped whole (typed in the chat
-view, or pasted on its own), and a long message from Telegram, wrapped whole.
+Three more that the same rule covers: the person's own long message wrapped whole (typed in the chat
+view, or pasted on its own), a long message from Telegram, wrapped whole, and a message the chain
+limit stopped (agent_link.format_blocked: it still came, for reference only), wrapped whole.
 
 Used by tests_chat_shell.py (the server's `from`, and the view's timeline) and tests_chat_a2a_ui.py.
 """
@@ -28,6 +29,10 @@ def lines(n: int, word: str) -> str:
 
 def a2a(pid: str, who: str, words: str) -> str:
     return wrap(pid, agent_link.format_delivery(who, words, lang="zh"))
+
+
+def blocked(pid: str, who: str, words: str) -> str:
+    return wrap(pid, agent_link.format_blocked(who, words, agent_link.MAX_DEPTH + 1, lang="zh"))
 
 
 SHORT, MIDDLING, LONG = lines(3, "比較表整理好了"), lines(12, "測試都跑完了"), lines(31, "週報草稿")
@@ -51,4 +56,7 @@ SHAPES = [
      None, {"type": "user", "text": OWN_WHOLE}),
     ("a long message from Telegram, wrapped whole", wrap("b210", TG_ASK + "\n\n" + FROM_PHONE),
      {"kind": "telegram"}, {"type": "user", "text": FROM_PHONE, "tags": [{"kind": "telegram"}]}),
+    ("a message the chain limit stopped, wrapped whole, 3 lines", blocked("c9a2", "排程", SHORT),
+     {"kind": "a2a", "name": "排程", "handoff": False, "blocked": True},
+     {"type": "peer", "who": "排程", "text": SHORT, "blocked": True}),
 ]

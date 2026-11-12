@@ -305,10 +305,12 @@
   }
 
   // The [[A2A…]] header an agent message starts with (agent_link.format_delivery /
-  // format_handoff). It can hold a [[SF:TO:…]] of its own, so it ends at the ]] that
-  // closes its own [[, not at the first one. null when there is none, or it never closes.
+  // format_handoff, or format_blocked: `[[A2A（未轉達）：` / `[[A2A (not passed on):`, a message the
+  // chain limit stopped, which still came, for reference only). It can hold a [[SF:TO:…]] of its own,
+  // so it ends at the ]] that closes its own [[, not at the first one. null when there is none, or it
+  // never closes. (agent_link.header_parts is the same rule.)
   function a2aHeader(t) {
-    const open = t.match(/^\s*\[\[A2A[:：]/);
+    const open = t.match(/^\s*\[\[A2A(?:[:：]|\s*[（(](?:未轉達|not passed on)[)）]\s*[:：])/);
     if (!open) return null;
     let depth = 1, i = open[0].length;
     while (i < t.length && depth) {
@@ -316,7 +318,7 @@
     }
     if (depth) return null;
     const rest = t.slice(i).replace(/^\s+/, '');
-    return { inner: t.slice(open[0].length, i - 2), length: t.length - rest.length };
+    return { inner: t.slice(open[0].length, i - 2), length: t.length - rest.length, blocked: /未轉達|not passed on/.test(open[0]) };
   }
 
   // A user turn: the words, minus what ShellBot itself put around them.
@@ -327,7 +329,9 @@
     const a2a = pasted.parts ? null : a2aHeader(t);     // a header in something the person pasted is theirs
     if (a2a) {
       const who = a2a.inner.match(/「([^」]+)」|"([^"]+)"/) || [];
-      tags.push({ kind: 'a2a', who: who[1] || who[2] || '' });
+      const tag = { kind: 'a2a', who: who[1] || who[2] || '' };
+      if (a2a.blocked) tag.blocked = true;                // came as data: the chain limit stopped it
+      tags.push(tag);
       t = t.slice(a2a.length);
     }
     // Cursor Agent stores a prompt stamped and wrapped: <timestamp>…</timestamp><user_query>…</user_query>
@@ -377,8 +381,15 @@
         lastUser = u.text;
         // Another agent's message (A2A): its sender, not the person. The server names it
         // (`from`, agent_link.sender_of, what a phone reads); the header is the same rule.
-        const peer = (t.from && t.from.kind === 'a2a') ? t.from.name : (u.tags.find(x => x.kind === 'a2a') || {}).who;
-        if (peer !== undefined) { out.push({ type: 'peer', who: peer || '', text: u.text, ts: t.ts || 0 }); return; }
+        // `blocked`: the chain limit stopped it and it came as data only, so it says so.
+        const a2aTag = u.tags.find(x => x.kind === 'a2a') || {};
+        const peer = (t.from && t.from.kind === 'a2a') ? t.from.name : a2aTag.who;
+        if (peer !== undefined) {
+          const item = { type: 'peer', who: peer || '', text: u.text, ts: t.ts || 0 };
+          if ((t.from && t.from.kind === 'a2a' && t.from.blocked) || a2aTag.blocked) item.blocked = true;
+          out.push(item);
+          return;
+        }
         out.push(u.parts ? { type: 'user', text: u.text, tags: u.tags, parts: u.parts, ts: t.ts || 0 }
                          : { type: 'user', text: u.text, tags: u.tags, ts: t.ts || 0 });
       } else if (kind === 'assistant_text') {
@@ -1092,11 +1103,18 @@
     }
     if (it.type === 'peer') {
       // Another agent: on the left with its own face and name, its words in a bubble of
-      // their own colour; the same sender again shows them once.
+      // their own colour; the same sender again shows them once. A message the chain limit
+      // stopped (it came as data only) carries a small tag, on every such bubble.
       const prev = items[idx - 1];
       const again = !!prev && prev.type === 'peer' && prev.who === it.who;
-      return `<div class="cm-row cm-peer">${again ? '<span class="cm-face-gap"></span>' : peerFace(it.who)}` +
-        `<div class="cm-peer-col">${again ? '' : `<div class="cm-peer-name">${escHtml(it.who || T('Another agent', '另一個 AI'))}</div>`}` +
+      const name = again ? '' : `<div class="cm-peer-name">${escHtml(it.who || T('Another agent', '另一個 AI'))}</div>`;
+      const tag = it.blocked
+        ? `<span class="cm-peer-tag" title="${escHtml(T('Stopped by the chain limit: the agent that got it was told it is for reference only and not to pass it on',
+                                                       '轉發層數超過上限：收到的一方被告知這只供參考，不要再轉發'))}">` +
+          `${escHtml(T('not passed on · for reference', '未轉達・只供參考'))}</span>`
+        : '';
+      return `<div class="cm-row cm-peer${it.blocked ? ' is-blocked' : ''}">${again ? '<span class="cm-face-gap"></span>' : peerFace(it.who)}` +
+        `<div class="cm-peer-col">${name || tag ? `<div class="cm-peer-head">${name}${tag}</div>` : ''}` +
         `${longText(sid, key, it.text, 'cm-bubble', true)}</div></div>`;
     }
     if (it.type === 'bot') {
