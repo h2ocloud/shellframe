@@ -321,6 +321,8 @@
     return { inner: t.slice(open[0].length, i - 2), length: t.length - rest.length, blocked: /未轉達|not passed on/.test(open[0]) };
   }
 
+  const pastedLabel = (n, zh) => (zh ? `貼上的內容 · ${n} 行` : `Pasted · ${n} ${n === 1 ? 'line' : 'lines'}`);
+
   // A user turn: the words, minus what ShellBot itself put around them.
   function userView(text) {
     const pasted = pasteParts(String(text || ''));
@@ -354,6 +356,38 @@
       .replace(/\[\[\s*SF\s*:\s*(?:GREEN|WORKING)\s*\]\]/gi, '')
       .replace(/\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]/gi, (_, why) => `⏳ ${why.trim()}`)
       .trim();
+  }
+
+  // One line for a card, a list row or a notification (agent_link.preview_of is the same rule): the words of a
+  // message as this view draws them (userView, botView), whitespace folded to one space, at most `limit`
+  // characters, the last one "…" when it was cut. A message from another agent leads with its sender
+  // ("研究：…", "排程（未轉達）：…" when the chain limit stopped it); something pasted among the person's own words
+  // is "貼上的內容 · N 行"; the lines the harness typed (a rule, a <tag>, a picture's placeholder, a
+  // <system-reminder>) are not words. opts.agent: the text is an agent's own words (only its markers go);
+  // opts.lang: 'zh…' or not. Not redacted, markdown left alone: that is for the caller.
+  const NOISE_LINE = ['---', '[[SF:', '<', '[Image'];
+  function preview(text, limit, opts) {
+    const o = opts || {};
+    const zh = isZh(o.lang);
+    if (!(limit > 0)) return '';
+    let who = null, blocked = false, words;
+    if (o.agent) {
+      words = botView(text, false);
+    } else {
+      const u = userView(text);
+      const a = u.tags.find(x => x.kind === 'a2a');
+      if (a) { who = a.who || ''; blocked = !!a.blocked; }
+      words = u.parts ? u.parts.map(x => (x.paste !== undefined ? pastedLabel(x.paste.split('\n').length, zh) : x.text)).join('\n') : u.text;
+      words = words.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').split('\n').map(l => l.trim())
+        .filter(l => l && !NOISE_LINE.some(n => l.startsWith(n)) && !l.includes('system-reminder')).join('\n');
+    }
+    let line = words.replace(/\s+/g, ' ').trim();
+    if (who !== null) {
+      const name = (who || (zh ? '另一個 AI' : 'Another agent')) + (blocked ? (zh ? '（未轉達）' : ' (not passed on)') : '');
+      line = line ? name + (zh ? '：' : ': ') + line : name;
+    }
+    const chars = Array.from(line);                       // code points, as Python counts them
+    return chars.length <= limit ? line : chars.slice(0, limit - 1).join('').trimEnd() + '…';
   }
 
   // turns (chat_view) → what the view draws, in order:
@@ -531,7 +565,7 @@
   }
 
   const RULES = { isZh, CHAT_PROVIDERS, guessProvider, commandNamed, plainName, mapOption, mapQuestion, mapDecision, toolKind, toolSummary,
-                  plainDoing, runWords, isCompaction, userView, botView, buildTimeline, pendingCall, askContext,
+                  plainDoing, runWords, isCompaction, userView, botView, preview, pastedLabel, buildTimeline, pendingCall, askContext,
                   md, inline, escHtml, OPTION_RULES, QUESTION_RULES };
   if (typeof module === 'object' && module.exports) module.exports = RULES;
   if (typeof document === 'undefined' || !root) return;
@@ -1085,7 +1119,7 @@
     const n = text.split('\n').length;
     const peek = (text.split('\n').find(l => l.trim()) || '').trim();
     return `<div class="cm-paste${open ? ' is-open' : ''}"><button class="cm-paste-sum" data-act="open" data-key="${escHtml(key)}">` +
-      `<span class="cm-caret">${open ? '▾' : '▸'}</span><span>${escHtml(T(`Pasted · ${n} ${n === 1 ? 'line' : 'lines'}`, `貼上的內容 · ${n} 行`))}</span>` +
+      `<span class="cm-caret">${open ? '▾' : '▸'}</span><span>${escHtml(pastedLabel(n, isZh(lang())))}</span>` +
       (open ? '' : `<span class="cm-paste-peek">${escHtml(peek)}</span>`) + '</button>' +
       (open ? `<div class="cm-paste-text">${escHtml(text)}</div>` : '') + '</div>';
   }

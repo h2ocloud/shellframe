@@ -225,7 +225,11 @@ def header_parts(text: str):
     closes its own [[, not at the first one (web/chat.js a2aHeader is the same rule). A header
     that never closes is no header. A message that went in as one paste is read inside its
     wrapper (unwrap_paste): a long one always does."""
-    text = unwrap_paste(text)
+    return _header_at(unwrap_paste(text))
+
+
+def _header_at(text: str):
+    """header_parts on a text that is already unwrapped."""
     m = _HEADER_OPEN.match(text)
     if not m:
         return None
@@ -266,6 +270,100 @@ def sender_of(text: str):
     if _TG_MARK.search(str(text or "")):
         return {"kind": "telegram"}
     return None
+
+
+# ── one line of a message: a card's second line, a list row, a notification ──────────────────
+# web/chat.js `preview` is the same rule, and both are the chat view's own (userView, botView): what the
+# conversation draws as a message's words is what a card says of it. The wrappers ShellBot and the CLI put
+# around a message are never part of the line: an agent's A2A header, Claude Code's paste wrapper, the
+# Telegram reply-marker instruction and its markers, [[SF:…]] signals.
+_PASTE_BLOCK = re.compile(r"<pasted_content(?:\s[^>]*)?>\n?(.*?)\n?</pasted_content(?:\s[^>]*)?>", re.S)
+_PASTE_TAG = re.compile(r"<pasted_content(?:\s[^>]*)?>\n?|\n?</pasted_content(?:\s[^>]*)?>")
+_CURSOR_STAMP = re.compile(r"^\s*<timestamp>[^<]*</timestamp>\s*", re.I)       # Cursor Agent stores a prompt
+_CURSOR_QUERY = re.compile(r"^\s*<user_query>(.*)</user_query>\s*$", re.I | re.S)  # stamped and wrapped
+_RED_MARK = re.compile(r"^[\s>❯›⏺•*-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?\]\]\s*$", re.I)
+_SF_QUIET = re.compile(r"\[\[\s*SF\s*:\s*(?:GREEN|WORKING)\s*\]\]", re.I)
+_SF_YELLOW = re.compile(r"\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]", re.I)
+_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+_NOISE_LINE = ("---", "[[SF:", "<", "[Image")   # a line the harness typed, or the placeholder of a picture: not words
+
+
+def _paste_parts(t: str):
+    """(the words without the wrapper tags, [(pasted?, text)…] when something was pasted among the person's
+    own words, else None): web/chat.js pasteParts."""
+    opens = len(_PASTE_OPEN.findall(t))
+    whole = opens == 1 and _PASTE_WHOLE.fullmatch(t)
+    if not opens or whole:
+        return (whole.group(1) if whole else t), None
+    parts, at = [], 0
+    for m in _PASTE_BLOCK.finditer(t):
+        if t[at:m.start()].strip():
+            parts.append((False, t[at:m.start()].strip()))
+        parts.append((True, m.group(1)))
+        at = m.end()
+    if t[at:].strip():
+        parts.append((False, t[at:].strip()))
+    return _PASTE_TAG.sub("", t), (parts if any(p for p, _ in parts) else None)
+
+
+def _user_words(text, lang=None):
+    """(who, blocked, words) of a message typed into a tab (web/chat.js userView, the same steps in the same
+    order): `who` is the sender's label when another agent sent it (None otherwise), `blocked` the chain limit
+    stopped it, `words` what is left without the wrappers. Something pasted among the person's own words
+    is one "Pasted · N lines" line in `words`."""
+    inner, parts = _paste_parts(str(text or ""))
+    who, blocked = None, False
+    head = None if parts else _header_at(inner)        # a header inside something the person pasted is theirs
+    if head:
+        blocked, inside, inner = head
+        m = _HEADER_WHO.search(inside)
+        who = (m.group(1) or m.group(2)) if m else ""
+    inner = _CURSOR_STAMP.sub("", inner)
+    q = _CURSOR_QUERY.match(inner)
+    inner = q.group(1) if q else inner
+    if _TG_MARK.search(inner):                          # Telegram's reply-marker instruction is a paragraph of its own
+        inner = "\n\n".join(x for x in re.split(r"\n{2,}", inner) if not _TG_MARK.search(x))
+    if parts:
+        n = lambda x: len(x.split("\n"))
+        return who, blocked, "\n".join(
+            sf_lang.pick(f"Pasted · {n(x)} {'line' if n(x) == 1 else 'lines'}", f"貼上的內容 · {n(x)} 行", lang)
+            if pasted else x for pasted, x in parts)
+    return who, blocked, inner.strip()
+
+
+def _bot_words(text) -> str:
+    """An agent's words without ShellBot's protocol markers (web/chat.js botView): the Telegram reply markers,
+    a [[SF:RED]] line (its options stay), [[SF:GREEN]] and [[SF:WORKING]]; [[SF:YELLOW:why]] is "⏳ why"."""
+    lines = _TG_MARK.sub("", str(text or "")).split("\n")
+    red = next((i for i, x in enumerate(lines) if _RED_MARK.match(x)), -1)
+    if red >= 0:
+        del lines[red]
+    out = _SF_QUIET.sub("", "\n".join(lines))
+    return _SF_YELLOW.sub(lambda m: "⏳ " + m.group(1).strip(), out).strip()
+
+
+def preview_of(text, limit: int = 140, *, agent: bool = False, lang: str = None) -> str:
+    """One line a person can read for a message, at most `limit` characters (the last one "…" when it was cut).
+
+    A message typed into a tab (the default) reads as its words: another agent's A2A message leads with its
+    sender ("研究：比較表整理好了", "排程（未轉達）：…" when the chain limit stopped it), a message that went in as one
+    paste is what is inside, something pasted among the person's own words is "貼上的內容 · N 行", the Telegram
+    instruction and the [[TG_REPLY_…]] markers are gone, and so are the lines the harness typed (a rule, a
+    <tag>, a picture's placeholder, a <system-reminder>). `agent=True`: the text is an agent's own words: only
+    its markers go. Whitespace is one space. The words are not redacted and their markdown is left as it is:
+    that is for the caller (agent_status.redact)."""
+    if limit <= 0:
+        return ""
+    who, blocked, words = (None, False, _bot_words(text)) if agent else _user_words(text, lang)
+    if not agent:
+        words = "\n".join(x for x in (y.strip() for y in _REMINDER.sub("", words).split("\n"))
+                          if x and not x.startswith(_NOISE_LINE) and "system-reminder" not in x)
+    line = " ".join(words.split())
+    if who is not None:
+        name = (who or sf_lang.pick("Another agent", "另一個 AI", lang)) + (
+            sf_lang.pick(" (not passed on)", "（未轉達）", lang) if blocked else "")
+        line = name + sf_lang.pick(": ", "：", lang) + line if line else name
+    return line if len(line) <= limit else line[:limit - 1].rstrip() + "…"
 
 
 def format_delivery(from_label: str, text: str, lang: str = None) -> str:
