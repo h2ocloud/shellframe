@@ -135,7 +135,10 @@ running underneath with its size unchanged, and everything that types into the t
   on the left, its face (`SFBots.faceForName`: a bot's own, by its name, label or a name it
   had; else an open tab's; else one made from the name) and its name above a bubble of its
   own colour, the header left out (it can hold an `[[SF:TO:…]]` of its own, so it ends at
-  the `]]` closing its own `[[`); the same sender again shows them once. ShellBot types a long
+  the `]]` closing its own `[[`); the same sender again shows them once. A message the chain
+  limit stopped, which still reached the tab as data (`[[A2A（未轉達）：…]]` /
+  `[[A2A (not passed on): …]]`, `from.blocked`), is that sender's bubble too, with a dashed edge and
+  a small amber tag "未轉達・只供參考" / "not passed on · for reference" on every such bubble. ShellBot types a long
   message into a tab as a paste, and Claude Code keeps every paste wrapped
   (`<pasted_content id="…">…</pasted_content id="…">`). A wrapper that is the whole message is only
   how it went in: its words are the message, and an agent's header is read inside it. Something the

@@ -107,3 +107,7 @@ curl -s -H "$H" -X POST localhost:8765/a2a \
 
 `as` must name an external bot; the receiving tab sees that name, the depth
 and rate limits apply per external bot, and everything lands in `sfctl a2a-log`.
+A message one layer past the depth limit still reaches an open tab, as data it may
+not act on, and the answer is `success: false` with `details.blocked` and
+`details.delivered: true` (`delivered: false` when nothing reached a tab); see
+`docs/ai-skill.md`, "A message the chain limit stops".

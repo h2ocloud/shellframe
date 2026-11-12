@@ -155,6 +155,12 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 **誰送的（v0.42.0 之後）**：使用者那一方的 turn（`user_msg`）如果是 ShellBot 幫別人打進去的，會多一個 `from`（`agent_link.sender_of`）：
 - 別的 AI 用 A2A 傳來的：`{"kind": "a2a", "name": "<寄件者的名字>", "handoff": <是不是交接>}`；
+  - 被轉發層數上限擋下、卻照樣送到分頁當資料的（只供參考，對方被告知不要照做、不要再轉發），多一個 `"blocked": true`：
+    `{"kind": "a2a", "name": "…", "handoff": false, "blocked": true}`。`text` 開頭是 `[[A2A（未轉達）：…]]`（英文系統是
+    `[[A2A (not passed on): …]]`），`agent_link.header_parts` 讀得懂，也讀得進貼上的包裝裡。**沒被擋的訊息沒有這個欄位**
+    （不是 `false`），所以舊版手機看到的形狀不變。這種訊息沒有交接，不會有 `a2a-result`，`handoff` 一律是 `false`。
+    桌面畫成寄件者的泡泡（一樣的臉和名字），再加一個小標籤「未轉達・只供參考」（英文 "not passed on · for reference"），
+    手機照做：每一則被擋下的泡泡都有，同一個寄件者連著幾則也每則都有；
 - 使用者從 Telegram 傳的：`{"kind": "telegram"}`；
 - 使用者在電腦前自己打的：沒有這個欄位。
 
