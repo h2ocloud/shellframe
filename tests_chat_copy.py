@@ -37,7 +37,7 @@ except ImportError:
     print("SKIP  tests_chat_copy.py（沒裝 playwright）")
     sys.exit(0)
 
-REPLY = ("接下來還在等你的：\n\n- 驗收第一批 1–8、第二批 1–6，做完回我一行；\n- 新的推播 key：`ShellBot APNs 2`；\n"
+REPLY = ("接下來還在等你的：\n\n- 看完第一章和第二章，回我一行；\n- 新的設定名稱：`Demo Profile 2`；\n"
          "- 測試機的 `/login`；\n\n```bash\necho 一\necho 二\n```")
 LONG = "長訊息：" + "這一段很長的說明，" * 200 + "最後一句。"
 TURNS = [{"kind": "user_msg", "text": "還有哪些在等我？"}, {"kind": "assistant_text", "text": REPLY},
@@ -94,7 +94,7 @@ def run(browser, engine):
 
     print(f"[{engine}] 1. ⌘C on a selection")
     got = page.evaluate(COPY_SELECTION, BOT)
-    want = ("接下來還在等你的：\n• 驗收第一批 1–8、第二批 1–6，做完回我一行；\n• 新的推播 key：ShellBot APNs 2；\n"
+    want = ("接下來還在等你的：\n• 看完第一章和第二章，回我一行；\n• 新的設定名稱：Demo Profile 2；\n"
             "• 測試機的 /login；\necho 一\necho 二")
     check("a message: list items as \"• text\", inline code as text, the code block's lines", got["text"] == want, got)
     check("…no button, no label in it", "複製" not in got["text"] and "bash" not in got["text"])
