@@ -255,7 +255,8 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
 #chat-compose { flex: none; padding: .55em 1.4em .8em; border-top: 1px solid var(--cm-line); background: #16161e; }
 #chat-col-in { max-width: 880px; margin: 0 auto; display: flex; gap: .6em; align-items: flex-end; }
 #chat-input {
-  flex: 1; min-width: 0; resize: none; max-height: 180px; padding: .55em .8em; border-radius: 10px;
+  flex: 1; min-width: 0; resize: none; max-height: 180px; overflow-x: hidden;   /* it wraps: no sideways bar (seen in a narrow WebView2) */
+  padding: .55em .8em; border-radius: 10px;
   border: 1px solid var(--cm-line2); background: var(--cm-panel); color: var(--cm-text); font: inherit; line-height: 1.5; outline: none;
 }
 #chat-input:focus { border-color: var(--cm-blue); }

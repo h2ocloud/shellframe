@@ -2135,7 +2135,10 @@ class TelegramBridge(BridgeBase):
         cache = slot._display_cache
         if cache is not None and slot._display_cache_gen == gen:
             return cache
-        disp = list(slot.screen.display)
+        try:
+            disp = list(slot.screen.display)
+        except (IndexError, KeyError):   # read mid-feed (lock-free): pyte raised; the last one, re-read next tick
+            return cache or []
         slot._display_cache = disp
         slot._display_cache_gen = gen
         return disp
@@ -3212,7 +3215,7 @@ class TelegramBridge(BridgeBase):
             for hist_line in history[-200:]:
                 text = "".join(hist_line[col].data for col in range(cols)).rstrip()
                 all_lines.append(text)
-            for line in slot.screen.display:
+            for line in self._slot_display(slot):
                 all_lines.append(line.rstrip())
 
         # Find AI response blocks (same logic as _extract_new_text)

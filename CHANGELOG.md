@@ -117,6 +117,16 @@
   **確認框改成 App 自己的。** 在 Windows 上，原生的確認框和提示框標題會是「127.0.0.1:port 說」；
   34 處現在都由頁面自己畫（Enter、Esc、鍵盤都能用）。
 
+- **The Telegram bridge no longer stops forwarding when a screen read fails.** pyte could raise while a
+  tab's screen was read during new output, and the thread that sends every tab's output to Telegram
+  died until the app restarted (measured once, right after a start). That read now keeps the last good
+  screen and tries again on the next tick. In a narrow window the chat box no longer shows a sideways
+  scrollbar.
+
+  **畫面讀取失敗，Telegram 橋接不會再停止轉送。** 新輸出寫進來的同時讀分頁畫面，pyte 可能出錯，
+  負責把所有分頁輸出送到 Telegram 的那條執行緒就整條掛掉，直到 App 重開（實測在一次啟動後不久發生）。
+  現在讀取失敗時沿用上一份畫面，下一輪再讀。窄視窗時，對話框也不再出現橫向捲軸。
+
 - **A one-line preview shows a message's words, not what it arrived in.** A sidebar card, a phone's
   list, Telegram's `/list` and heartbeat, and a notification printed an agent's `[[A2A…]]` header, a
   paste's tags and the Telegram reply markers as they were. They now read "研究: …", "Pasted · N lines"
