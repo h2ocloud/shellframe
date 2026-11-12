@@ -882,7 +882,13 @@
     const asks = !!((view(sid).data || {}).decision);
     const word = d.text ? (d.detail ? `${d.text} ${d.detail}` : d.text)
       : (asks ? T('Waiting for you', '等你決定') : ({ done: T('Ready', '可以說話'), idle: T('Ready', '可以說話') }[state] || ''));
-    const html = `${faceHtml(sid, state)}<div class="cm-who"><b>${escHtml(displayName(s))}</b>` +
+    // With bots on, the face is where this conversation's settings open (the gutter's small face is hidden here).
+    const B = root.SFBots;
+    const face = B && B.enabled && B.enabled() && B.openSettings
+      ? `<button class="cm-face-btn" data-act="settings" data-sfb-settings title="${escHtml(T(
+          "This conversation's settings: face, name, bot", '這個對話的設定：頭像、名稱、Bot'))}">${faceHtml(sid, state)}</button>`
+      : faceHtml(sid, state);
+    const html = `${face}<div class="cm-who"><b>${escHtml(displayName(s))}</b>` +
       `<span class="cm-state">${escHtml(word)}</span></div>` +
       `<button class="cm-to-term" data-act="to-term" title="${escHtml(T(`Show the terminal (${KEY_LABEL})`, `看終端機（${KEY_LABEL}）`))}">` +
       `${ICON_TERM}<span>${escHtml(T('Terminal', '終端機'))}</span></button>`;
@@ -1382,6 +1388,11 @@
     }
     if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
     if (act === 'to-term') return setMode(sid, 'cli');
+    if (act === 'settings') {        // the header's face: this conversation's settings (bots.js), open past bots.js's outside-click
+      e.stopPropagation();
+      if (root.SFBots && root.SFBots.openSettings) root.SFBots.openSettings(sid, el);
+      return;
+    }
     if (act === 'notice-close') { noticeClosed.add(sid); renderNotice(sid, false); return; }
     if (act === 'earlier') { const v = view(sid); v.limit = Math.min(400, v.limit * 2); v.rev = ''; v.atBottom = false; refresh(sid, true); return; }
     if (act === 'code-more') { el.parentNode.classList.toggle('is-open'); return; }

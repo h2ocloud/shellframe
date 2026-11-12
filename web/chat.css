@@ -42,6 +42,13 @@
   display: flex; align-items: center; gap: .7em; padding: .55em 1.1em; flex: none;
   border-bottom: 1px solid var(--cm-line); background: #16161e;
 }
+/* The face opens the conversation's settings, so the small face in the terminal's gutter goes,
+   and with it the gutter the view used to leave for it. */
+body.sf-chat-shown #sfb-convo { display: none; }
+body.sf-chat-shown #chat-layer { --hint-gutter: 0px; }
+.cm-face-btn { flex: none; padding: 0; border: 0; background: none; border-radius: .55em; line-height: 0; cursor: pointer; }
+.cm-face-btn:hover, .cm-face-btn:focus-visible { background: var(--cm-raised); box-shadow: 0 0 0 .3em var(--cm-raised); outline: none; }
+.cm-face-btn .cm-face.busy-dot { cursor: pointer; }
 .cm-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
 .cm-who b { font-size: 1em; font-weight: 600; color: var(--cm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-state { font-size: .82em; color: var(--cm-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

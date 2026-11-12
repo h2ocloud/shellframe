@@ -807,8 +807,10 @@
     });
   }
   function anchorFor(sid) {
-    const convo = document.getElementById('sfb-convo');
-    if (convo && !convo.hidden && host() && host().active() === sid) return convo;
+    if (host() && host().active() === sid) {       // the chat view's face, or the gutter's: whichever is on screen
+      for (const el of document.querySelectorAll('#chat-head [data-sfb-settings], #sfb-convo'))
+        if (!el.hidden && el.getClientRects().length) return el;
+    }
     return document.querySelector(`#sidebar-sessions .sb-item[data-sid="${sid}"] .busy-dot`)
         || document.querySelector(`.tab[data-sid="${sid}"] .busy-dot`);
   }
@@ -1392,7 +1394,7 @@
     openSettings(holder.dataset.sid, dot);
   }, true);
   document.addEventListener('click', e => {
-    if (pop && !pop.contains(e.target) && !(e.target.closest && e.target.closest('#sfb-convo'))) closePop();
+    if (pop && !pop.contains(e.target) && !(e.target.closest && e.target.closest('#sfb-convo, [data-sfb-settings]'))) closePop();
     if (!enabled) return;
     if (Date.now() < swallowClickUntil) { e.preventDefault(); e.stopPropagation(); return; }
     const add = e.target.closest && e.target.closest('[data-sfb="new"]');
