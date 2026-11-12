@@ -724,7 +724,10 @@ class BotsApiMixin:
         res = json.loads(self.bots_save(name, json.dumps(data, ensure_ascii=False), sid))
         if not res.get("success"):
             return {"success": False, "code": "bad_name", "message": res.get("message", "")}
-        return {"success": True, "role": name, "message": res.get("message", "")}
+        return {"success": True, "role": name, "message": _(f'Kept "{name}".', f"已記住「{name}」。") + " " + _(
+            "Its job, CLI, model and skills are empty for now: change them in this app (the bot's settings) or in ShellBot on "
+            "the computer (Edit on its row in the sidebar, or Settings → Bots).",
+            "執掌、CLI、模型、skill 先空著：用這個 App 裡 bot 的設定補上，或到電腦上的 ShellBot（側欄那一列的「編輯」，或 設定 → Bots）。")}
 
     @staticmethod
     def _bot_name_taken(name: str, cfg: dict, but: str = "") -> bool:

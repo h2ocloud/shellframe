@@ -137,6 +137,9 @@ check("…with the face it had (not one made from its name), its command, memory
       bots.resolved_avatar((entry.get("bot") or {}).get("avatar"), "查資料") == face
       and entry.get("cmd") == "claude --model sonnet" and bots.is_memory_bot(entry), entry)
 check("…and a memory folder", (TMP / "bots").exists() and any((TMP / "bots").iterdir()))
+check("the answer says where to change the rest: its settings in the app, or Edit on its row / Settings → Bots on the computer",
+      "已記住「查資料」" in r.get("message", "") and "側欄那一列的「編輯」" in r["message"] and "設定 → Bots" in r["message"]
+      and "App" in r["message"], r.get("message"))
 check("its tab keeps the name, for good", ("s3", "查資料", True) in renamed or api.sessions["s3"]._custom_label == "查資料")
 check("now the view says bot", api._execute_sfctl("bots_link", {})["tabs"]["s3"]["kind"] == "bot")
 
@@ -258,6 +261,16 @@ sent.clear()
 bridge_home.on_list_button(bridge, f"bl:{keep_i}", 42, "cq2")
 check("Keep: refused the way the desktop refuses it (another bot has the name), said in the chat",
       "已經有別的 bot 在用" in sent[-1][1]["text"], sent[-1:])
+api.sessions["s7"]._custom_label = "新點子"
+sent.clear()
+bridge_home.after_list(bridge, 42)
+buttons = [b for row in (sent[0][1].get("reply_markup") or {}).get("inline_keyboard", []) for b in row]
+keep_i = next(int(b["callback_data"][3:]) for b in buttons if b["text"].startswith("記住 ") and "新點子" in b["text"])
+sent.clear()
+bridge_home.on_list_button(bridge, f"bl:{keep_i}", 42, "cq5")
+check("Keep, done: said in the chat, with where its job, CLI, model and skills are filled in afterwards",
+      "已記住「新點子」" in sent[-1][1]["text"] and "側欄那一列的「編輯」" in sent[-1][1]["text"]
+      and "設定 → Bots" in sent[-1][1]["text"] and "手機 App" in sent[-1][1]["text"], sent[-1:])
 sent.clear()
 check("a button from an older list: said, nothing done", bridge_home.on_list_button(bridge, "bl:99", 42, "cq3")
       and "舊了" in sent[0][1].get("text", ""), sent)

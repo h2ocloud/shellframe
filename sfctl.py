@@ -838,7 +838,8 @@ def main():
                                              "memory stay; the conversation does not move to the new CLI")
     p_bset.add_argument("role", help="The bot's name")
     p_bset.add_argument("--cli", default="", help="claude, codex, opencode, grok, pi, cursor or agy")
-    p_bset.add_argument("--model", default=None, help="The model (empty: the CLI's default)")
+    p_bset.add_argument("--model", default=None, help="One of the CLI's own model keys (empty: the CLI's default); "
+                                                      "a key ShellBot does not know is refused, with the keys there are")
     p_bset.add_argument("--now", action="store_true",
                         help="Switch now (an awake bot writes its memory and closes first); else at its next wake")
     p_bren = sub.add_parser("bots-rename", help="Give a bot another name (plan A): its face, job, memory and tab "

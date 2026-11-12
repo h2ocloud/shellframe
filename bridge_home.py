@@ -296,7 +296,10 @@ def on_list_button(bridge, data: str, chat_id, cq_id) -> bool:
         return True
     res = api._bots_keep(key) if api else {"success": False, "message": "no app"}
     _tg(bridge, "sendMessage", {"chat_id": chat_id, "text": (
-        sf_lang.pick(f"✅ Kept {res.get('role')}: it remembers from now on", f"✅ 已記住「{res.get('role')}」：從現在起它會記得")
+        sf_lang.pick(f"✅ Kept {res.get('role')}: it remembers from now on.", f"✅ 已記住「{res.get('role')}」：從現在起它會記得。")
+        + sf_lang.pick(" Its job, CLI, model and skills are empty for now: add them in ShellBot on the computer (Edit on its row in the sidebar, "
+                       "or Settings → Bots), or in the phone app.",
+                       " 執掌、CLI、模型、skill 先空著：到電腦上的 ShellBot 補上（側欄那一列的「編輯」，或 設定 → Bots），或用手機 App。")
         if res.get("success") else "⚠ " + str(res.get("message") or ""))})
     return True
 
