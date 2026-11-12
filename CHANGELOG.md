@@ -82,11 +82,11 @@
 - **Names and focus stay where the person put them.** A name given by `sfctl new --label`, `sfctl
   rename` or Telegram's `/rename` is kept after the tab's first message (the automatic name used to
   overwrite it). The window getting focus back no longer takes the keyboard from an open dialog or
-  another text box. A renamed tab's name is in the chat box's hint at once.
+  another text box, and keys typed while the terminal is on screen reach it even when something else kept the keyboard (a hidden chat box, a button just clicked). A renamed tab's name is in the chat box's hint at once.
 
   **名字和焦點留在使用者放的地方。** 用 `sfctl new --label`、`sfctl rename` 或 Telegram `/rename`
   取的名字，第一句話之後不會再被自動取名蓋掉。視窗重新取得焦點時，不會把鍵盤從開著的對話框或別的
-  輸入框搶走。分頁改名後，對話框的提示字馬上換。
+  輸入框搶走；終端機在畫面上時打的字，就算鍵盤留在別的地方（藏起來的對話框、剛按過的按鈕），也會送進終端機。分頁改名後，對話框的提示字馬上換。
 
 - **sfctl no longer waits on Telegram.** `sfctl new`, `rename`, `close` and `bots-keep` updated the
   Telegram bot's command menu on the thread that runs every sfctl command (three calls, 35 s each), so a

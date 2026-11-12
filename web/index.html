@@ -1563,6 +1563,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="schedules.js"></script>
 <script src="ctxmenu.js"></script>
 <script src="layout.js"></script>
+<script src="termkeys.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -10011,6 +10012,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (document.querySelector('.modal-overlay.open, .sfb-pop, .sf-menu')) return true;
     const el = document.activeElement;
     return !!(el && el !== document.body && !el.classList.contains('xterm-helper-textarea') &&
+      el.getClientRects().length > 0 &&      // a hidden one (the chat view's, once hidden) has no keyboard to keep
       el.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
   }
   window.addEventListener('focus', () => {
