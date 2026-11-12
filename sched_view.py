@@ -27,8 +27,9 @@ launchd facts the rules rest on:
   interval is the shortest gap, not a promise.
 
 What this cannot know: `launchctl list` gives a pid and the last exit status, no
-history. "One-off, ran 11/10" means 11/10 has passed while launchd had the job
-loaded; it cannot tell a run from a time that passed while the machine was off.
+history. "One-off, ran 11/10" means 11/10 has passed and launchd has the job
+loaded now; it cannot tell a run from a time that passed while the machine was
+off, or before the job was loaded.
 A run history is a later phase.
 
 Which agents are listed (`prefixes`), their titles and any explicit groups of
@@ -321,9 +322,10 @@ def _once_row(rec: dict, entries, loaded, now: datetime) -> None:
     else:
         d = _md(info["last"].month, info["last"].day)
         rec["when"] = L(f"One-off · ran {d}", f"單次・{d} 已執行")
-        rec["tip"] = L("Ran means that time has passed while launchd had the job loaded. "
-                       "Whether it succeeded is in the job's own log.",
-                       "已執行是指那個時間點過了、而且 launchd 當時有載入。成功與否要看這個工作自己的紀錄。")
+        rec["tip"] = L("Ran means that time has passed and launchd has the job loaded now. Whether it "
+                       "really ran, and how it went, is in the job's own log.",
+                       "已執行是指那個時間點已經過了、而且 launchd 現在有載入它。有沒有真的跑、結果如何，"
+                       "要看這個工作自己的紀錄。")
     rec["notes"].append(_repeat_note(md))
 
 
