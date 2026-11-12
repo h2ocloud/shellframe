@@ -158,7 +158,7 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 - 使用者從 Telegram 傳的：`{"kind": "telegram"}`；
 - 使用者在電腦前自己打的：沒有這個欄位。
 
-`text` 照舊是 CLI 收到的原文，開頭那段給 AI 看的說明還在；要顯示寄件者時，用 `from.name` 找 bot 的臉（`/link/bots` 的名字、標籤或 `former_names`），找不到就用名字產生一張。桌面的對話畫面就是這樣畫的，手機照做，兩邊同一個來源就會是同一個名字。
+`text` 照舊是 CLI 收到的原文，開頭那段給 AI 看的說明還在。超過一行的訊息是用貼上的方式送進分頁的，Claude Code 會把每一段貼上的內容包成 `<pasted_content id="…">…</pasted_content id="…">` 存起來，所以這種訊息的 `text` 開頭是這個標籤；`from` 已經看過裡面，顯示時把標籤拿掉、內容留著（`agent_link.unwrap_paste`）。要顯示寄件者時，用 `from.name` 找 bot 的臉（`/link/bots` 的名字、標籤或 `former_names`），找不到就用名字產生一張。桌面的對話畫面就是這樣畫的，手機照做，兩邊同一個來源就會是同一個名字。
 
 ## Bots（v0.41.0）
 

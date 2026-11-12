@@ -168,14 +168,24 @@ def authorize(*, enabled: bool, from_sid: str, from_label: str,
 _HEADER_OPEN = re.compile(r"^\s*\[\[A2A[:：]")
 _HEADER_WHO = re.compile(r"「([^」]+)」|\"([^\"]+)\"")
 _TG_MARK = re.compile(r"(?:\[\[|<<)/?TG_REPLY_[0-9a-fA-F]+(?:\]\]|>>)")
+# Claude Code keeps a pasted block in its record as <pasted_content id="…">…</pasted_content id="…">,
+# and a message of several lines goes into a tab as a paste, so a header can sit inside one
+# (web/chat.js PASTE_TAG is the same rule).
+_PASTE_TAG = re.compile(r"<pasted_content(?:\s[^>]*)?>\n?|\n?</pasted_content(?:\s[^>]*)?>")
+
+
+def unwrap_paste(text: str) -> str:
+    """The text without Claude Code's paste wrappers; what was pasted stays."""
+    return _PASTE_TAG.sub("", str(text or ""))
 
 
 def header_of(text: str):
     """The [[A2A…]] header format_delivery / format_handoff put before a message, as
     (inside, the message after it), or None. The header holds an [[SF:TO:…]] example of its
     own, so it ends at the ]] that closes its own [[, not at the first one (web/chat.js
-    a2aHeader is the same rule). A header that never closes is no header."""
-    text = str(text or "")
+    a2aHeader is the same rule). A header that never closes is no header. A message that
+    went in as a paste is read without its wrapper: one of several lines always does."""
+    text = unwrap_paste(text)
     m = _HEADER_OPEN.match(text)
     if not m:
         return None

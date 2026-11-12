@@ -212,6 +212,15 @@ console.log('turns');
   check("…the server's `from` (what a phone reads) names it too", tl[3].type === 'peer' && tl[3].who === '寫程式', tl[3]);
   check('a header that never closes is left as it is',
     same(R.userView('[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]'), { text: '[[A2A：來自「研究」的訊息 [[SF:TO:<角色>|回覆]]', tags: [] }));
+  // A message of several lines goes into a tab as a paste; Claude Code keeps every paste wrapped.
+  const pasted = R.buildTimeline([
+    { kind: 'user_msg', text: '<pasted_content id="9f2a">\n' + sent + '\n第二段\n</pasted_content id="9f2a">', ts: 5 },
+    { kind: 'user_msg', text: '看這段 <pasted_content id="77b1">\n第一行\n第二行\n</pasted_content id="77b1">', ts: 6 },
+  ]);
+  check("an agent's message that went in as a paste is the sender's too: no wrapper, no header",
+    pasted[0].type === 'peer' && pasted[0].who === '研究' && pasted[0].text === '資料整理好了\n第二段', pasted[0]);
+  check("…a paste of your own shows what you pasted, not its wrapper",
+    pasted[1].type === 'user' && pasted[1].text === '看這段 第一行\n第二行', pasted[1]);
   const cur = R.userView('<timestamp>Tuesday, Nov 10, 2026, 9:55 PM (UTC+8)</timestamp><user_query>你好</user_query>');
   check("Cursor Agent's stamp and wrapper are not shown", cur.text === '你好' && !cur.tags.length, cur);
   const pic = R.buildTimeline([{ kind: 'user_msg', text: '[Image #1]幾根長條？' }, { kind: 'user_msg', text: '[Image: source: /tmp/w/bars.png]' }]);

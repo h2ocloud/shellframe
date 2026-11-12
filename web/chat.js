@@ -275,6 +275,10 @@
   // Context Codex writes as a message of its own, not something anyone said.
   const CODEX_CONTEXT = /^\s*(?:<environment_context>|<user_instructions>|<permissions instructions>|# AGENTS\.md instructions)/;
   const RED_MARK = /^[\s>❯›⏺•*-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?\]\]\s*$/i;     // bridge_home._RED_LINE
+  // Claude Code keeps a pasted block as <pasted_content id="…">…</pasted_content id="…">, and a
+  // message of several lines goes into a tab as a paste: the tags go, what was pasted stays
+  // (agent_link._PASTE_TAG is the same rule).
+  const PASTE_TAG = /<pasted_content(?:\s[^>]*)?>\n?|\n?<\/pasted_content(?:\s[^>]*)?>/g;
 
   // The [[A2A…]] header an agent message starts with (agent_link.format_delivery /
   // format_handoff). It can hold a [[SF:TO:…]] of its own, so it ends at the ]] that
@@ -293,7 +297,7 @@
 
   // A user turn: the words, minus what ShellBot itself put around them.
   function userView(text) {
-    let t = String(text || '');
+    let t = String(text || '').replace(PASTE_TAG, '');
     const tags = [];
     const a2a = a2aHeader(t);
     if (a2a) {

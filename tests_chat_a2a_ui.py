@@ -7,8 +7,11 @@ was drawn as the person's own (a blue bubble on the right with a small "from" un
     bubble shows any of the header ("]]", "SF:TO", "不是使用者本人"); each A2A is on the left
     with its sender's face (a bot's own, else one made from its name) and name above it; the
     person's own words stay on the right; the message itself is there whole
+  - an A2A message of several lines goes in as a paste, and Claude Code keeps every paste
+    wrapped (<pasted_content id=…>…</pasted_content id=…>): drawn the same, no wrapper shown;
+    a paste of the person's own shows what was pasted, not the wrapper
 Only what is drawn changes: the CLI gets the header as it was (agent_link is not touched).
-Demo data only. Screenshots: qa-shots/chat-a2a-{row,mixed,long}.png. SF_A2A_BEFORE=<a chat.js>
+Demo data only. Screenshots: qa-shots/chat-a2a-{row,mixed,long,pasted}.png. SF_A2A_BEFORE=<a chat.js>
 draws the same with that file instead and saves …-before.png, without checks.
 Needs playwright; SKIP without it. Run: .venv/bin/python tests_chat_a2a_ui.py
 """
@@ -49,6 +52,12 @@ def a2a(who, text):
     return {"kind": "user_msg", "text": agent_link.format_delivery(who, text, lang="zh")}
 
 
+def pasted(who, text, pid):
+    """An A2A message of several lines: it goes in as a paste, which Claude Code keeps wrapped."""
+    return {"kind": "user_msg", "text": f'<pasted_content id="{pid}">\n' + agent_link.format_delivery(who, text, lang="zh")
+            + f'\n</pasted_content id="{pid}">'}
+
+
 def you(text):
     return {"kind": "user_msg", "text": text}
 
@@ -75,8 +84,11 @@ CASES = {
               bot("研究說做好了，在 docs/compare.md。"),
               you("好，謝謝")],
     "long": [a2a("研究", LONG), bot("收到，我整理成三點回給你。")],
+    "pasted": [pasted("研究", "比較表整理好了，在 docs/compare.md。\n第二段：出處在表格最後一欄。", "9f2a"),
+               you('照這個格式寫 <pasted_content id="77b1">\n第一行：標題\n第二行：內容\n</pasted_content id="77b1">'),
+               bot("收到，我照這個格式整理比較表。")],
 }
-SENDERS = {"row": ["研究", "寫程式", "排程"], "mixed": ["研究"], "long": ["研究"]}
+SENDERS = {"row": ["研究", "寫程式", "排程"], "mixed": ["研究"], "long": ["研究"], "pasted": ["研究"]}
 BOTS = {"enabled": True, "primary": "", "memory_root": "~/.config/shellframe/bots", "sessions": {}, "kinds": {},
         "roster": {"研究": {"label": "研究", "cmd": "claude", "bot": {"avatar": {"shape": "hex", "color": "blue"}, "memory": True}},
                    "寫程式": {"label": "寫程式", "cmd": "codex", "bot": {"avatar": {"shape": "pill", "color": "red"}, "memory": True}}}}
@@ -129,14 +141,16 @@ with sync_playwright() as pw:
         names = page.evaluate("[...document.querySelectorAll('#chat-list .cm-peer .cm-peer-name')].map(m => m.innerText)")
         faces = page.evaluate("[...document.querySelectorAll('#chat-list .cm-peer .cm-peer-face')].map(f => !!f.querySelector('svg'))")
         mine = page.evaluate("[...document.querySelectorAll('#chat-list .cm-user .cm-bubble')].map(b => b.innerText)")
-        leftover = [b for b in bubbles if any(x in b for x in ("]]", "SF:TO", "不是使用者本人", "回覆它"))]
-        check("no bubble shows any of the A2A header", not leftover, leftover)
+        leftover = [b for b in bubbles if any(x in b for x in ("]]", "SF:TO", "不是使用者本人", "回覆它", "pasted_content"))]
+        check("no bubble shows any of the A2A header, or a paste's wrapper", not leftover, leftover)
+        sent = [t["text"] for t in turns if t["kind"] == "user_msg"]
+        agents = [t for t in sent if agent_link.header_of(t)]
         if not BEFORE:
             check("each A2A is on the left, its sender's name above it", names == SENDERS[name], names)
             check("…with its sender's face", faces and all(faces), faces)
-            check("the person's own words stay on the right", mine == [t["text"] for t in turns if t["kind"] == "user_msg"
-                                                                       and not t["text"].startswith("[[A2A")], mine)
-        bodies = [t["text"].split("\n", 1)[1] for t in turns if t["kind"] == "user_msg" and t["text"].startswith("[[A2A")]
+            check("the person's own words stay on the right", mine == [agent_link.unwrap_paste(t) for t in sent
+                                                                       if t not in agents], mine)
+        bodies = [agent_link.header_of(t)[1] for t in agents]
         check("the message itself is there, from its first word",
               all(any(b.startswith(body[:12]) for b in bubbles) for body in bodies), (bodies, bubbles))
         check("no page errors", not errors, errors)

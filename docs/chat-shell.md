@@ -90,7 +90,10 @@ running underneath with its size unchanged, and everything that types into the t
   on the left, its face (`SFBots.faceForName`: a bot's own, by its name, label or a name it
   had; else an open tab's; else one made from the name) and its name above a bubble of its
   own colour, the header left out (it can hold an `[[SF:TO:…]]` of its own, so it ends at
-  the `]]` closing its own `[[`); the same sender again shows them once. Codex's empty reasoning
+  the `]]` closing its own `[[`); the same sender again shows them once. A message of several
+  lines goes into a tab as a paste, and Claude Code keeps every paste wrapped
+  (`<pasted_content id="…">…</pasted_content id="…">`): the wrapper is not shown, and the header
+  is read inside it (`agent_link.unwrap_paste` is the same rule). Codex's empty reasoning
   records, its own context messages and its doubled answers are left out; `[[SF:…]]`
   markers are not shown, and a `[[SF:RED]]` tail folds away while it is up as buttons.
 - **Markdown**: agent text is escaped first; then a fixed set of tags (paragraphs, lists,

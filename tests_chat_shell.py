@@ -175,18 +175,28 @@ import agent_link  # noqa: E402
 SENT = agent_link.format_delivery("研究", "比較表整理好了", lang="zh")
 HANDED = agent_link.format_handoff("寫程式", "幫忙看 relay 的逾時", "h1", lang="zh")
 VIA_TG = "最終要回 Telegram 的文字請放在 [[TG_REPLY_ab12cd34]] 和 [[/TG_REPLY_ab12cd34]] 之間。\n\n幫我看報表"
+# A message of several lines goes into a tab as a paste, and Claude Code keeps it wrapped, as it
+# does any paste. The person's own words around a pasted header are still the person's.
+PASTED = ('<pasted_content id="9f2a">\n' + agent_link.format_delivery("研究", "比較表整理好了\n第二段：附上來源", lang="zh")
+          + '\n</pasted_content id="9f2a">')
+OWN_PASTE = '這則是誰寄的？<pasted_content id="77b1">\n' + SENT + '\n</pasted_content id="77b1">'
 FROMS = TMP / "froms.jsonl"
 FROMS.write_text("\n".join([rec("user", SENT, "2026-11-10T11:00:00Z"), rec("user", HANDED, "2026-11-10T11:00:05Z"),
-                            rec("user", VIA_TG, "2026-11-10T11:00:09Z"), rec("user", "我自己打的", "2026-11-10T11:00:12Z")])
+                            rec("user", VIA_TG, "2026-11-10T11:00:09Z"), rec("user", "我自己打的", "2026-11-10T11:00:12Z"),
+                            rec("user", PASTED, "2026-11-10T11:00:15Z"), rec("user", OWN_PASTE, "2026-11-10T11:00:18Z")])
                  + "\n", encoding="utf-8")
 PATHS["s6"] = FROMS
 api.sessions["s6"] = Tab("s6", "claude")
 turns6 = api._execute_sfctl("conversation", {"sid": "s6", "limit": 120})["details"]["turns"]
 check("another agent's message, a hand-off, Telegram and the person's own words each say who",
-      [t.get("from") for t in turns6 if t["kind"] == "user_msg"] == [
+      [t.get("from") for t in turns6 if t["kind"] == "user_msg"][:4] == [
           {"kind": "a2a", "name": "研究", "handoff": False}, {"kind": "a2a", "name": "寫程式", "handoff": True},
           {"kind": "telegram"}, None], [t.get("from") for t in turns6])
-check("…the text is as the CLI got it", turns6[0]["text"] == SENT and turns6[1]["text"] == HANDED)
+check("…an agent's message that went in as a paste too; the person's words around a pasted one stay theirs",
+      [t.get("from") for t in turns6 if t["kind"] == "user_msg"][4:] == [
+          {"kind": "a2a", "name": "研究", "handoff": False}, None], [t.get("from") for t in turns6])
+check("…the text is as the CLI got it", turns6[0]["text"] == SENT and turns6[1]["text"] == HANDED
+      and turns6[4]["text"] == PASTED)
 check("…in English too", agent_link.sender_of(agent_link.format_delivery("research", "x", lang="en"))
       == {"kind": "a2a", "name": "research", "handoff": False}
       and agent_link.sender_of(agent_link.format_handoff("research", "x", "h2", lang="en"))["handoff"] is True)
@@ -376,6 +386,15 @@ else:
             got = json.loads(out.stdout or "{}")
             check(f"{lang} {what}: only the words in the bubble, the sender in its tag",
                   got.get("text") == "資料整理好了" and (got.get("tags") or [{}])[0].get("who") == "研究", (out.stderr, got))
+    out = subprocess.run([node, "-e", "const R = require(process.argv[1]); "
+                          "console.log(JSON.stringify([R.userView(process.argv[2]), R.userView(process.argv[3])]))",
+                          str(HERE / "web" / "chat.js"), PASTED, OWN_PASTE], capture_output=True, text=True, timeout=20)
+    got = json.loads(out.stdout or "[{}, {}]")
+    check("an agent's message that went in as a paste: no wrapper, no header, the sender in its tag",
+          got[0].get("text") == "比較表整理好了\n第二段：附上來源" and (got[0].get("tags") or [{}])[0].get("who") == "研究",
+          (out.stderr, got[0]))
+    check("…the person's words around a pasted header: theirs, with what was pasted but not its wrapper",
+          got[1].get("tags") == [] and got[1].get("text") == "這則是誰寄的？" + SENT, (out.stderr, got[1]))
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:
