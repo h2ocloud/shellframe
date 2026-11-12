@@ -224,8 +224,14 @@
     const s = sessionsMap()[sid] || {};
     const v = s._serverStatus || {};
     const plain = window.SFChat && SFChat.sidebarLine ? SFChat.sidebarLine(sid, v) : '';   // chat style: plain words
-    const pick = plain || (v.state === 'working' ? (v.action || v.narration || v.summary)
-      : (v.narration || v.task || (v.state && v.state !== 'unknown' && v.state !== 'idle' ? v.summary : '')));
+    // One plain line whatever the text came from: the server's are already one, and this keeps an A2A header, a
+    // paste wrapper or a Telegram marker off a card if one ever gets here (the chat view's rule, SFChat.rules.preview).
+    // Before the markdown strip below, which would eat the underscores of a marker. `task` is the person's
+    // message; the rest is the agent's own words.
+    const rules = window.SFChat && SFChat.rules && SFChat.rules.preview ? SFChat.rules : null;
+    const one = (x, agent) => (rules ? rules.preview(x, 140, { agent, lang: isZh() ? 'zh' : 'en' }) : String(x || ''));
+    const pick = plain || (v.state === 'working' ? one(v.action || v.narration || v.summary, true)
+      : (one(v.narration, true) || one(v.task, false) || (v.state && v.state !== 'unknown' && v.state !== 'idle' ? one(v.summary, true) : '')));
     const line = String(pick || '').replace(/[`*#>_~]+/g, '').replace(/\s+/g, ' ').trim();
     if (line) return line.slice(0, 140);
     const role = botOf(sid);

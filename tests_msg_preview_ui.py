@@ -130,7 +130,7 @@ WRAPPERS = ["[[A2A", "pasted_content", "TG_REPLY", "TGREPLY", "[[SF:", "不是�
 
 
 def stub(tabs, state, language):
-    cfg = {"settings": {"experimental_bots": True, "language": language, "sidebar_open": True},
+    cfg = {"settings": {"experimental_bots": True, "language": language, "sidebar_open": True, "sidebar_width": 440},   # wide: a line shows more of itself
            "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {}}
     sessions = [{"sid": sid, "cmd": cmd, "alive": True, "label": label, "bridge_enabled": True} for sid, label, cmd, *_ in tabs]
     status = {sid: st for sid, _, _, st, *_ in tabs}
@@ -157,8 +157,9 @@ setInterval(() => { try { window.__sfAgentStatus && window.__sfAgentStatus(windo
        json.dumps(status, ensure_ascii=False), tabs[0][0])
 
 
+# a tab nobody kept is marked 臨時 / temp, and its line follows the mark after a " · "
 ROWS = """() => Object.fromEntries([...document.querySelectorAll('#sidebar-sessions .sb-item[data-section="local"][data-sid]')]
-  .map(r => [r.dataset.sid, ((r.querySelector('.sfb-pv') || {}).textContent || '').replace(/\\u00a0/g, '')]))"""
+  .map(r => [r.dataset.sid, ((r.querySelector('.sfb-pv') || {}).textContent || '').replace(/\\u00a0/g, '').replace(/^\\s*·\\s*/, '')]))"""
 VISIBLE = """() => [...document.querySelectorAll('#sidebar-sessions .sb-item[data-section="local"][data-sid]')]
   .filter(r => !r.classList.contains('sfb-hide')).map(r => r.dataset.sid)"""
 
