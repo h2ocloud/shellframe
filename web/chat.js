@@ -1105,6 +1105,7 @@
     if (listHtml !== sid + html) {
       const keep = scroller.scrollTop;
       list.innerHTML = html;
+      decoratePaths(list);
       listHtml = sid + html;
       if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       else scroller.scrollTop = keep;
@@ -1168,7 +1169,7 @@
                                                        '轉發層數超過上限：收到的一方被告知這只供參考，不要再轉發'))}">` +
           `${escHtml(T('not passed on · for reference', '未轉達・只供參考'))}</span>`
         : '';
-      return `<div class="cm-row cm-peer${it.blocked ? ' is-blocked' : ''}">${again ? '<span class="cm-face-gap"></span>' : peerFace(it.who)}` +
+      return `<div class="cm-row cm-peer${it.blocked ? ' is-blocked' : ''}" data-who="${escHtml(it.who || '')}">${again ? '<span class="cm-face-gap"></span>' : peerFace(it.who)}` +
         `<div class="cm-peer-col">${name || tag ? `<div class="cm-peer-head">${name}${tag}</div>` : ''}` +
         `${longText(sid, key, it.text, 'cm-bubble', true)}</div></div>`;
     }
@@ -1568,6 +1569,28 @@
     micBtn.textContent = '🎙';
     micBtn.title = T('Voice input: the words go into the box, not sent', '語音輸入：轉出來的字放進輸入框，不會直接送出');
   }
+  // A right-click's "Reply": the message under the pointer, its sender and its first lines, quoted into the
+  // box as "> " lines above what is there, the cursor after them.
+  function quoteOf(target) {
+    const bubble = target && target.closest && target.closest('#chat-list .cm-bubble');      // on a message, not beside it
+    const row = bubble && bubble.closest('.cm-row.cm-user, .cm-row.cm-peer, .cm-row.cm-bot');
+    const text = row ? bubble.innerText.trim() : '';
+    if (!text) return null;
+    const who = row.classList.contains('cm-peer') ? (row.dataset.who || T('Another agent', '另一個 AI'))
+      : row.classList.contains('cm-bot') ? displayName(sessions()[shownFor]) : T('Me', '我');
+    return { who, text };
+  }
+  function reply(q) {
+    if (!q || !input) return false;
+    const lines = q.text.split('\n').map(l => l.trim()).filter(Boolean);
+    const quote = [`> ${q.who}${T(': ', '：')}`, ...lines.slice(0, 6).map(l => '> ' + l), ...(lines.length > 6 ? ['> …'] : [])]
+      .join('\n') + '\n\n';
+    input.value = quote + input.value;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    autosize();
+    return true;
+  }
   // `clearDraft`: the person answered the draft card with "clear it and send".
   async function send(clearDraft) {
     const sid = shownFor;
@@ -1672,7 +1695,60 @@
     renderAsk(sid);
     refresh(sid, true);
   }
+  // ── a path in a message ───────────────────────────────────────────────
+  // An inline `code` that is a path (/…, ~/…, C:\…) becomes a link: a picture shows under it as a thumbnail
+  // (a click shows it full size), anything else is shown in Finder / Explorer. Each path is asked about
+  // once; the answer is kept, so a redraw does not read the file again.
+  const PATH_RE = /^(?:~\/|\/|[A-Za-z]:\\)[^\s<>"'`|]+$/;
+  const IMG_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+  const pathInfo = new Map();
+  const infoOf = p => {
+    if (!pathInfo.has(p)) pathInfo.set(p, Promise.resolve(api().chat_file_preview(p)).then(r => JSON.parse(r)).catch(() => ({})));
+    return pathInfo.get(p);
+  };
+  const IS_WIN = /Win/.test(navigator.platform || '');
+  function decoratePaths(root) {
+    root.querySelectorAll('.cm-bubble code').forEach(code => {
+      const p = code.textContent.trim();
+      if (code.closest('pre') || !PATH_RE.test(p)) return;
+      code.dataset.path = p;
+      code.classList.add('cm-path');
+      code.title = IMG_RE.test(p) ? T('Click to see it full size', '點一下看大圖')
+        : IS_WIN ? T('Show in Explorer', '在檔案總管中顯示') : T('Show in Finder', '在 Finder 中顯示');
+      if (!IMG_RE.test(p)) return;
+      infoOf(p).then(info => {
+        const bubble = code.closest('.cm-bubble');
+        if (!info || info.kind !== 'image' || !bubble || !bubble.isConnected) return;
+        let row = bubble.querySelector(':scope > .cm-thumbs');          // the pictures go under the words, not in them
+        if (!row) { row = document.createElement('div'); row.className = 'cm-thumbs'; bubble.appendChild(row); }
+        if ([...row.children].some(x => x.dataset.path === p)) return;
+        const img = document.createElement('img');
+        Object.assign(img, { className: 'cm-thumb', src: info.data, alt: info.name || '', title: code.title });
+        img.dataset.path = p;
+        row.appendChild(img);
+      });
+    });
+  }
+  async function openPath(p) {
+    const info = IMG_RE.test(p) ? await infoOf(p) : null;
+    if (info && info.kind === 'image') {
+      const ov = document.createElement('div');
+      ov.className = 'cm-lightbox';
+      ov.innerHTML = `<img src="${info.data}" alt="">`;
+      const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); };
+      const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+      ov.addEventListener('click', close);
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(ov);
+      return;
+    }
+    let r = {};
+    try { r = JSON.parse(await api().chat_reveal(p)); } catch (_) { /* no backend */ }
+    if (!r.success) note(r.code === 'missing' ? T('That file is not there', '找不到這個檔案') : (r.message || ''), true);
+  }
   function onClick(e) {
+    const pathEl = e.target.closest('.cm-path, .cm-thumb');
+    if (pathEl && pathEl.dataset.path) { e.preventDefault(); openPath(pathEl.dataset.path); return; }
     const el = e.target.closest('[data-act], .cm-link');
     if (!el) return;
     e.preventDefault();
@@ -1736,7 +1812,7 @@
     return d.text ? (d.detail ? `${d.text} · ${d.detail}` : d.text) : '';
   }
 
-  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert, relabel };
+  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert, relabel, quoteOf, reply };
   const boot = () => { mount(); apply(false); setInterval(tick, POLL_MS); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

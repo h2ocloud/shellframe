@@ -9655,7 +9655,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // The menu's Paste mirrors Cmd+V: image / file in clipboard goes through the attach
       // pipeline, not raw text. The browser's synthetic ClipboardEvent only fires for
       // keyboard / menu paste, so we drive the same machinery ourselves, when it is picked.
-      SFMenu.open(e.clientX, e.clientY, [{
+      const q = _chatShown() && SFChat.quoteOf ? SFChat.quoteOf(e.target) : null;    // a message under the pointer: Reply to it
+      SFMenu.open(e.clientX, e.clientY, [...(q ? [{ label: lang === 'zh-TW' ? '回覆' : 'Reply', onSelect: () => SFChat.reply(q) }] : []), {
         label: lang === 'zh-TW' ? '貼上' : 'Paste', hint: IS_MAC ? '⌘V' : 'Ctrl+V',
         onSelect: () => { _logRightClick('menu-paste', '', -1); _rightClickPaste(); },
       }], { onClose: why => { if (why !== 'outside') _refocusActive(); } });

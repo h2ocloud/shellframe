@@ -127,6 +127,15 @@
   負責把所有分頁輸出送到 Telegram 的那條執行緒就整條掛掉，直到 App 重開（實測在一次啟動後不久發生）。
   現在讀取失敗時沿用上一份畫面，下一輪再讀。窄視窗時，對話框也不再出現橫向捲軸。
 
+- **A tab dragged in the sidebar stays where it was dropped.** Reported: a bot moved to the top kept
+  jumping back. The drag was saved, but the page takes the app's tab order a few seconds later (so a
+  phone's drag shows up), and the app gave it in the order the tabs were opened. It now gives the saved
+  order. Covered by tests_list_order.py.
+
+  **側欄拖過的分頁會留在放下的位置。** 回報：把 bot 拖到第一個，一直被換回來。拖曳其實存好了，但畫面
+  幾秒後會改用 App 給的分頁順序（這樣手機上的拖曳才看得到），而 App 給的是分頁開啟的順序。現在給的是
+  存好的順序。由 tests_list_order.py 守著。
+
 - **A one-line preview shows a message's words, not what it arrived in.** A sidebar card, a phone's
   list, Telegram's `/list` and heartbeat, and a notification printed an agent's `[[A2A…]]` header, a
   paste's tags and the Telegram reply markers as they were. They now read "研究: …", "Pasted · N lines"
@@ -159,7 +168,26 @@
   哪些排程算你的，改放在設定資料夾的 `schedules.json`，不寫在程式裡：還沒設定前綴時面板是空的，
   會說怎麼設。其他平台會說這個面板目前只支援 macOS。
 
+- **More room where it was tight.** A bot's row shows a small ✎ only on the row under the pointer and
+  on the current tab's (always there, it crowded the time and the chips). The bot editor uses the width
+  the window has, with roomier rows and the skills in columns that scroll in their own box. The chat
+  box no longer sits on the window's bottom edge.
+
+  **擠的地方留出空間。** bot 那一列的 ✎ 只在滑過那一列、或那一列是目前分頁時才出現（一直顯示會擠到時間
+  和標籤）。bot 編輯頁照視窗寬度展開，欄位留白加大，skill 改成多欄、在自己的框裡捲動。對話輸入框不再
+  貼著視窗底邊。
+
 ### Added
+
+- **Reply to a message, and see what a message points at.** In the chat view a right-click on a
+  message offers Reply, which quotes its sender and first lines into the box. A path in a message
+  (`/…`, `~/…`) is a link: a picture shows as a thumbnail under the message and full size on a click,
+  any other file is shown in Finder (Explorer on Windows). Covered by tests_chat_reply.py and
+  tests_chat_paths.py.
+
+  **回覆某一則訊息、直接看訊息裡提到的檔案。** 對話畫面裡對某則訊息按右鍵，可以「回覆」，會把寄件者和
+  前幾行引用進輸入框。訊息裡的路徑（`/…`、`~/…`）變成連結：圖片在訊息下面顯示縮圖，點一下看大圖；
+  其他檔案點了會在 Finder（Windows 是檔案總管）打開。由 tests_chat_reply.py、tests_chat_paths.py 守著。
 
 - **A bot's settings can be found and changed after it is made.** Before, only an awake bot's face led
   to its editor, so a sleeping bot (the primary one most often) could not be edited. Now: the card's ✎ or

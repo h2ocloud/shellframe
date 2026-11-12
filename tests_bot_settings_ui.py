@@ -156,6 +156,8 @@ def open_page(browser, style="cli", lang="zh-TW", awake_primary=False, width=110
         page.wait_for_function("(document.querySelector('#sidebar-sessions .sb-item[data-sid=\"s2\"] .sfb-pv') || {}).textContent === 'Editing relay.py'",
                                timeout=15000)
     page.wait_for_timeout(600)
+    # The row's ✎ shows only on the row under the pointer (bots.css); what it opens is tested here, so it stays shown
+    page.add_style_tag(content=".sfb-edit { visibility: visible !important; }")
     return page, errors
 
 
@@ -230,7 +232,9 @@ def run(browser, engine):
     print(f"[{engine}] 3. a bot's row in the sidebar")
     page, errors = open_page(browser)
     row_edit = page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-edit')
-    check("an awake bot's row has Edit, at the end of its second line (the latest line is still the line's own text)", row_edit.count() == 1 and row_edit.inner_text() == "編輯"
+    check("an awake bot's row has a hidden ✎ that shows when the row is under the pointer (the latest line is still the line's own text)",
+          row_edit.count() == 1 and row_edit.inner_text() == "✎"
+          and (page.locator('#sidebar-sessions .sb-item[data-sid="s2"]').hover() or row_edit.is_visible())
           and page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-sub').inner_text() == "Editing relay.py")
     check("…its name and the Bot tag are still whole", page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-name').inner_text() == "寫程式Bot"
           and page.evaluate("(() => { const n = document.querySelector('#sidebar-sessions .sb-item[data-sid=\"s2\"] .sfb-name');"
@@ -242,6 +246,7 @@ def run(browser, engine):
     active = page.evaluate("document.querySelector('#sidebar-sessions .sb-item.active').dataset.sid")
     page.locator('#sidebar-sessions .sb-item[data-sid="s3"]').click()          # another tab is the open one
     page.wait_for_timeout(200)
+    page.locator('#sidebar-sessions .sb-item[data-sid="s2"]').hover()     # the ✎ shows on the row under the pointer
     row_edit.click()
     page.wait_for_selector(".sfb-modal #sfb-ed-name")
     check("Edit opens that bot's editor, and the click did not switch tabs",
@@ -249,7 +254,7 @@ def run(browser, engine):
           and page.evaluate("document.querySelector('#sidebar-sessions .sb-item.active').dataset.sid") == "s3" and active in ("s2", "s3"))
     close_editor(page)
     sleeper_edit = page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-edit')
-    check("a sleeping bot's row has Edit beside Wake", sleeper_edit.count() == 1 and sleeper_edit.inner_text() == "編輯"
+    check("a sleeping bot's row has Edit beside Wake", sleeper_edit.count() == 1 and sleeper_edit.inner_text() == "✎"
           and page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-wake').count() == 1)
     page.evaluate("window.__calls.length = 0")
     sleeper_edit.click()
@@ -317,6 +322,7 @@ def run(browser, engine):
 
     print(f"[{engine}] 6. the model: a list for the CLI")
     page, errors = open_page(browser)
+    page.locator('#sidebar-sessions .sb-item[data-sid="s2"]').hover()      # the ✎ shows on the row under the pointer
     page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-edit').click()
     page.wait_for_selector("#sfb-ed-model")
     opts = model_options(page)
@@ -361,6 +367,7 @@ def run(browser, engine):
 
     print(f"[{engine}] 7. Other (custom): checked on the spot, never saved wrong")
     page, errors = open_page(browser)
+    page.locator('#sidebar-sessions .sb-item[data-sid="s2"]').hover()      # the ✎ shows on the row under the pointer
     page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-edit').click()
     page.wait_for_selector("#sfb-ed-model")
     page.select_option("#sfb-ed-model", value="__custom__")
@@ -406,6 +413,7 @@ def run(browser, engine):
 
     print(f"[{engine}] 8. a key already stored that ShellBot does not know")
     page, errors = open_page(browser)
+    page.locator('.sfb-sleeper[data-sfb-role="舊設定"]').hover()
     page.locator('.sfb-sleeper[data-sfb-role="舊設定"] .sfb-edit').click()
     page.wait_for_selector("#sfb-ed-model")
     check("it is shown, not hidden: under Other (custom), as stored", page.input_value("#sfb-ed-model") == "__custom__"
@@ -422,6 +430,7 @@ def run(browser, engine):
     sent = json.loads(calls(page, "bots_save")[-1][1])
     check("editing only the job is not blocked by it: the key goes back as it was", sent["model"] == "sonet"
           and sent["responsibility"] == "改了執掌，模型沒動", sent)
+    page.locator('.sfb-sleeper[data-sfb-role="舊設定"]').hover()
     page.locator('.sfb-sleeper[data-sfb-role="舊設定"] .sfb-edit').click()
     page.wait_for_selector("#sfb-ed-model")
     page.fill("#sfb-ed-model-custom", "sonet2")
@@ -485,8 +494,9 @@ def run(browser, engine):
     page, errors = open_page(browser, lang="en")
     check("the card's Edit and the rows' Edit read in English",
           "Edit this bot" in (page.locator("#sfb-primary .sfb-card-edit").get_attribute("title") or "")
-          and page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-edit').inner_text() == "Edit"
-          and page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-edit').inner_text() == "Edit")
+          and "Edit" in (page.locator('#sidebar-sessions .sb-item[data-sid="s2"] .sfb-edit').get_attribute("title") or "")
+          and "Edit" in (page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-edit').get_attribute("title") or ""))
+    page.locator('.sfb-sleeper[data-sfb-role="舊設定"]').hover()
     page.locator('.sfb-sleeper[data-sfb-role="舊設定"] .sfb-edit').click()
     page.wait_for_selector("#sfb-ed-model")
     page.wait_for_function("document.getElementById('sfb-ed-model-note').classList.contains('warn')", timeout=5000)

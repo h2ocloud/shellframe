@@ -286,7 +286,7 @@
   // long name never hides it, and its click is not a click on the row (that switches tabs) or the sleeper (that wakes it).
   const editButton = role => `<button class="sfb-edit" data-sfb-edit="${esc(role)}" title="${esc(t(
     'Edit this bot: name, face, job, CLI, model, skills', '編輯這個 Bot：名字、頭像、執掌、CLI、模型、skill'))}" ` +
-    `aria-label="${esc(t('Edit bot', '編輯 Bot'))} ${esc(botName(role))}">${esc(t('Edit', '編輯'))}</button>`;
+    `aria-label="${esc(t('Edit bot', '編輯 Bot'))} ${esc(botName(role))}">✎</button>`;
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-sfb-edit]');
     if (!b || !enabled) return;

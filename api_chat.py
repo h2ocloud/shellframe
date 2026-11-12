@@ -14,8 +14,13 @@ What the page does with them (wording, grouping, which options it dares to trans
 is display only and lives in web/chat.js; see docs/chat-shell.md.
 """
 
+import base64
 import hashlib
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import agent_link
 import agent_status
@@ -109,6 +114,47 @@ class ChatApiMixin:
                            "position": details.get("position"), "id": details.get("id"),
                            "reason": details.get("reason"), "code": res.get("code"),
                            "message": res.get("message", "")}, ensure_ascii=False)
+
+    # A path in a message: a picture is shown (at most this size, read as one data: URL), anything else
+    # is shown in Finder or Explorer. Only the one file asked for is read.
+    _PREVIEW_IMG = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+                    ".webp": "image/webp", ".bmp": "image/bmp"}
+    _PREVIEW_MAX = 12 * 1024 * 1024
+
+    @staticmethod
+    def _chat_path(path) -> Path:
+        return Path(os.path.expanduser(str(path or "").strip().strip("`'\""))).resolve()
+
+    def chat_file_preview(self, path: str) -> str:
+        """{"success", "kind": "image" | "file" | "dir", "name", "data" (a picture's data: URL)}; "missing"."""
+        try:
+            p = self._chat_path(path)
+            if not p.exists():
+                return json.dumps({"success": False, "code": "missing"})
+            mime = None if p.is_dir() else self._PREVIEW_IMG.get(p.suffix.lower())
+            if not mime or p.stat().st_size > self._PREVIEW_MAX:
+                return json.dumps({"success": True, "kind": "dir" if p.is_dir() else "file", "name": p.name}, ensure_ascii=False)
+            data = f"data:{mime};base64," + base64.b64encode(p.read_bytes()).decode("ascii")
+            return json.dumps({"success": True, "kind": "image", "name": p.name, "data": data}, ensure_ascii=False)
+        except OSError as e:
+            return json.dumps({"success": False, "code": "error", "message": str(e)}, ensure_ascii=False)
+
+    def chat_reveal(self, path: str) -> str:
+        """Show a path from a message in Finder (Explorer on Windows), selected."""
+        p = self._chat_path(path)
+        if not p.exists():
+            return json.dumps({"success": False, "code": "missing"})
+        if sys.platform == "darwin":
+            cmd = ["open", "-R", str(p)]
+        elif sys.platform.startswith("win"):
+            cmd = ["explorer", f"/select,{p}"]
+        else:
+            cmd = ["xdg-open", str(p if p.is_dir() else p.parent)]
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as e:
+            return json.dumps({"success": False, "code": "error", "message": str(e)}, ensure_ascii=False)
+        return json.dumps({"success": True})
 
     def chat_answer(self, sid: str, n, qid: str) -> str:
         """Answer the question chat_view showed with option `n`, only while `qid` is still the

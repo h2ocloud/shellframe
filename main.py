@@ -3523,10 +3523,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         return json.dumps(cfg)
 
     def list_sessions(self) -> str:
-        """Return list of active sessions (for reconnect after page reload)."""
+        """Active sessions (for reconnect after page reload), in the saved tab order: the page adopts
+        this order a few seconds after a drag, so the dict's own order used to put a dragged tab back."""
         result = []
-        for sid, s in self.sessions.items():
-            if s.alive:
+        for sid in self._ordered_sids():
+            s = self.sessions.get(sid)
+            if s is not None and s.alive:
                 result.append({"sid": sid, "cmd": s.cmd, "alive": True,
                                "bridge_enabled": getattr(s, '_bridge_enabled', True),
                                "glasses_enabled": getattr(s, '_glasses_enabled', False),

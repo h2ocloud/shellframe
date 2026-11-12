@@ -252,7 +252,7 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
 .cm-ask-note { margin-top: .45em; font-size: .76em; color: var(--cm-dim); }
 
 /* ── the input box ── */
-#chat-compose { flex: none; padding: .55em 1.4em .8em; border-top: 1px solid var(--cm-line); background: #16161e; }
+#chat-compose { flex: none; padding: .8em 1.4em 1.5em; border-top: 1px solid var(--cm-line); background: #16161e; }   /* room under the box: it sat on the window's edge */
 #chat-col-in { max-width: 880px; margin: 0 auto; display: flex; gap: .6em; align-items: flex-end; }
 #chat-input {
   flex: 1; min-width: 0; resize: none; max-height: 180px; overflow-x: hidden;   /* it wraps: no sideways bar (seen in a narrow WebView2) */
@@ -393,3 +393,13 @@ body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { 
 .cm-sent-file { margin-top: -.35em; }
 .cm-sent-file .cm-file { opacity: .85; }
 .cm-new-note { margin: 6px 2px 2px; font-size: 11px; line-height: 1.45; color: var(--cm-dim); }
+
+/* A path in a message: a link; a picture's thumbnail under it, and the full size over the page */
+.cm-path { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.cm-path:hover { color: #7aa2f7; }
+.cm-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.cm-thumb { display: block; max-width: min(320px, 100%); max-height: 200px; border-radius: 8px;
+  border: 1px solid var(--cm-line); cursor: zoom-in; }
+.cm-lightbox { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 10, 16, .86); cursor: zoom-out; }
+.cm-lightbox img { max-width: 94vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 10px 40px rgba(0, 0, 0, .6); }
