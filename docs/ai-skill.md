@@ -318,6 +318,43 @@ command), and starts work with `sfctl a2a-send --as <external> <bot> "…"` or
 `--as` is refused inside a ShellFrame tab, and only names a roster role marked
 external. `delegate` to an external bot is refused: it has no tab here.
 
+## 4.7 The Loops panel's schedule list (macOS, needs `experimental_loops`)
+
+The Loops panel lists the person's own LaunchAgents: timers and KeepAlive jobs. Which
+ones are *theirs* is their data, in `schedules.json` in ShellBot's config folder
+(`~/.config/shellframe/`). ShellBot only reads it, on every refresh; you write it when
+the person asks to see their schedules in the panel:
+
+```json
+{
+  "prefixes": ["demo."],
+  "titles": {"demo.backup": "Nightly backup", "punch": "Punch cards"},
+  "groups": {"punch": ["demo.punch-in", "demo.punch-out-early", "demo.punch-out"]}
+}
+```
+
+- `prefixes`: the start of the labels to list. Nothing is listed without one, and a prefix
+  of fewer than four characters before its last dot (`co.`) is ignored, so the panel can
+  never reach a vendor's agents by accident. Ask the person; do not guess it from the folder.
+- `titles` (optional): a label, or a group id, to the name shown. Without one the row is
+  named for the last part of the label.
+- `groups` (optional): one-offs that are armed together. Without it, one-offs that run the
+  same script on the same month and day are grouped by themselves.
+
+**A one-off is a kind of its own.** A plist whose `StartCalendarInterval` has a Month and
+a Day (and no Weekday) is shown as "One-off · ran 11/10" (loaded, the time has passed),
+"One-off · armed 11/13 09:05" or "One-off · not armed (waiting for you)" (not loaded:
+launchd will not run it), never as "every day". It has no on/off switch; it is armed by
+asking you. launchd keeps a month-and-day schedule **every year**, so a one-off that stays
+loaded fires again on the same day next year: when you arm one, tell the person it has to
+be unloaded after it runs; when you meet a loaded one whose day has passed, say so (the
+panel marks it "Fires again on 11/10 next year"). Do not change a schedule the person did
+not ask about; the panel's Edit button pastes the schedule's plist, script and command into
+the current tab for exactly that request.
+
+Other platforms: the panel says "not supported yet" (launchd only); there is nothing to
+configure there.
+
 ## 5. Which build has what
 
 `sfctl version` first, then:
@@ -346,6 +383,7 @@ external. `delegate` to an external bot is refused: it has no tab here.
 | Every AI tab is a bot: `kind` (`bot` / `temp` / `terminal`) per tab, `sfctl bots-keep`, `bots-set` (another CLI or model, `--now`), `bots-rename`, `bots-migrate`; one name resolver for `send` / `peek` / `close` / `rename` / `state`, delegate and A2A, a bot's former names included | 0.42.0 |
 | Chat view (`ui_style`); "waiting on you" read from the visible screen and answered with the number alone; a menu decision's `detail`; in `conversation`, a turn ShellBot typed in for another agent or for Telegram carries `from` | 0.42.0 |
 | Push to paired phones: `sfctl push-setup` (needs an APNs key) / `push-status`; `sfctl notify` reaches the phones too | 0.42.0 |
+| The Loops panel's schedule list reads the user's label prefixes from `schedules.json` (nothing listed without one), shows a month-and-day plist as a one-off with its yearly-repeat warning, groups one-offs, lists KeepAlive jobs, and says "not supported yet" off macOS | 0.42.1 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

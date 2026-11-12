@@ -127,6 +127,27 @@ check("原始碼不含客戶／內部代號", not client_hits,
       "\n".join(sorted(set(client_hits))) + "\n測試資料請用中性名稱")
 check("引號裡沒有原始 prompt 的口語", not quote_hits,
       "\n".join(sorted(set(quote_hits))) + "\n請翻譯成客觀症狀描述")
+# 排程面板（api_schedules.py、sched_view.py、web/schedules.*）與它的測試不准寫死 LaunchAgent
+# label。上面的 IDENTIFIER_RE 把 `com.<name>.*` 整串豁免（bundle id 與 label 本來就沒得改），
+# 結果一整份某人的排程清單——前綴、標題、哪幾個一組——就這樣躺在公開程式碼裡沒被擋。
+# 對這幾個檔案把豁免收回：要列哪些 label、叫什麼、哪幾個一組，是使用者的 schedules.json
+# （見 sched_view.py）；測試用 demo.* 這種示範名稱。
+SCHEDULE_FILE_RE = re.compile(r"^(api_schedules\.py|sched_view\.py|web/schedules\.(js|css)|tests_sched_[a-z_]+\.(py|js))$")
+LABEL_LITERAL_RE = re.compile(r"\bcom\.[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+")
+label_hits, sched_files = [], 0
+for rel, path in tracked_files():
+    if not SCHEDULE_FILE_RE.match(rel):
+        continue
+    sched_files += 1
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        m = LABEL_LITERAL_RE.search(line)
+        if m:
+            label_hits.append(f"{rel}:{lineno}  {m.group(0)}")
+check(f"排程面板的程式與測試（{sched_files} 個檔案）不寫死 LaunchAgent label", sched_files >= 5 and not label_hits,
+      "\n".join(label_hits) + "\n前綴、標題、分組是使用者的 schedules.json（見 sched_view.py）；測試請用 demo.* 示範名稱"
+      if label_hits else f"只掃到 {sched_files} 個排程檔案（檔名規則對不上？）")
+check("…這條規則認得 label，放過示範名稱",
+      bool(LABEL_LITERAL_RE.search("x = 'com.example.job'")) and not LABEL_LITERAL_RE.search("demo.backup demo.punch-in"))
 check(f"規範文件存在（{GUIDE}）", (HERE / GUIDE).exists())
 
 print(f"\nResults: {passed} passed, {failed} failed")

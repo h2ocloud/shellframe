@@ -46,7 +46,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_history.py` | Scroll-back history overlay (transcript → pyte → tmux capture) |
 | | `api_link.py` | Frame Link panel: pairing, remote tabs, remote input/stream/files |
 | | `api_remote.py` | sfctl command watcher and the `_execute_sfctl` dispatcher; local HTTP API server |
-| | `api_schedules.py` | The Loops panel (user LaunchAgents) |
+| | `api_schedules.py` | The Loops panel's schedule list (user LaunchAgents): reads the plist folder and `launchctl list`, toggles a job, builds the edit prompt. Which labels are the user's own comes from `schedules.json` in the config folder, never from code; on a platform without launchd it says so |
 | | `api_status.py` | Agent status: hook events, status hook install, the status monitor thread |
 | | `api_update.py` | Version, changelog, self-update, app restart |
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
@@ -69,6 +69,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `launch_cmd.py` | What a tab's launch command runs: the `cd … &&` / `env …` / `VAR=…` prefix kept verbatim, the directory it starts in, and Claude Code's arguments rewritten for a relaunch (`--resume` the current conversation; no old session id, no opening prompt sent twice) |
 | | `tab_delivery.py` | Hands text to a tab without cutting into a turn, a decision menu or the user's draft: a per-tab queue (30 min, `--now` skips it) kept on disk across restarts; tells the sender when an item cannot be delivered. Also what is on the screen now (`visible_text`, no scrollback) and how a numbered question is answered (`answer_choice`: the number, then Enter only while the same menu is still up; a `[[SF:RED]]` question takes the number and Enter) |
 | | `usage_probe.py` | Per-tab usage/quota probes |
+| | `sched_view.py` | What a LaunchAgent looks like on the Loops panel: pure functions over a plist and a clock, no launchctl and no `import main`. Cadence text in English and Traditional Chinese (weekdays merged: Mon–Fri 09:50 / 12:30), a month-and-day plist as a one-off of its own (ran / armed / not armed, the warning that launchd repeats it next year, one-offs on one script grouped), KeepAlive jobs, and the user's `schedules.json` (prefixes, titles, groups). `web/schedules.js` + `web/schedules.css` draw its rows |
 | | `tmux_sessions.py` | sf_* tmux sessions as data: tolerant listing, orphan report (also a read-only CLI), highest sid, client refresh |
 | | `wake_watch.py` | macOS display sleep/wake notifications → callbacks on a worker thread; memory-pressure probe |
 | | `app_bundle.py` | The app as the system shows it: the macOS bundle installed as `ShellBot.app` (the template keeps `ShellFrame.app`), found under either name (`find`), an older install renamed once with LaunchServices and the Dock told (`migrate`), the update's copy (`refresh`), the installer's pin of it first in the Dock (`pin_dock`: through `defaults` with a read-back, never the Dock's plist file); the Windows desktop shortcut `ShellBot.lnk` |

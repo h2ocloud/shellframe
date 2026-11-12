@@ -94,7 +94,7 @@ check(f"有足量英文內容（{en} 詞）", en >= 60,
 # 人名改成**全檔**檢查：導入規範時已把舊條目一併清乾淨（55 處），所以這條
 # 可以守全檔而不只是最新版——留一個乾淨的基線，之後任何一版寫進人名都會紅燈。
 # 檢查前剝掉 inline code：技術識別字裡本來就可能帶名字（LaunchAgent 的
-# `com.howard.` label 前綴就是一例），那不是人名引用。
+# label 前綴就是一例），那不是人名引用。
 text_prose = re.sub(r"`[^`]*`", " ", text)
 hits = [n for n in NAME_BLACKLIST if n in text_prose]
 check("全檔不含人名", not hits,
