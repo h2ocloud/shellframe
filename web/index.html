@@ -3498,8 +3498,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // keystroke (Escape / Enter) bubbles into the now-focused xterm
       // helper textarea and gets sent to the CLI as raw input, which
       // Claude interprets as "interrupt" (Esc) or "submit" (Enter).
+      // (not when the rename opened a question of its own, a bot's "rename it?": that has the keyboard)
       setTimeout(() => {
-        if (activeId && sessions[activeId]) sessions[activeId].term.focus();
+        if (activeId && sessions[activeId] && !document.querySelector('.modal-overlay.open')) sessions[activeId].term.focus();
       }, 0);
     }
     document.getElementById('rename-ok').addEventListener('click', () => finish(true));
@@ -9992,10 +9993,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Re-focus xterm textarea when window regains focus (e.g. Cmd+Tab back).
   // Delayed so the system can settle focus naturally first; skipped
   // entirely during IME composition to avoid resetting 注音 state.
+  // Not while the keyboard is somewhere of its own: a dialog, popover or menu is up (the rename
+  // box, Settings, the bot editor, a confirm), or a text box other than the terminal's has it
+  // (the chat view's, the sidebar's search). Taking it sent what was typed there to the CLI.
+  function _keyboardElsewhere() {
+    if (document.querySelector('.modal-overlay.open, .sfb-pop, .sf-menu')) return true;
+    const el = document.activeElement;
+    return !!(el && el !== document.body && !el.classList.contains('xterm-helper-textarea') &&
+      el.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
+  }
   window.addEventListener('focus', () => {
     setTimeout(() => {
       if (_imeComposing) return;
       if (!activeId || !sessions[activeId]) return;
+      if (_keyboardElsewhere()) return;
       const ta = sessions[activeId].pane &&
                  sessions[activeId].pane.querySelector('textarea.xterm-helper-textarea');
       if (ta && document.activeElement !== ta) {
