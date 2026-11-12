@@ -27,6 +27,7 @@ qa-shots/right-click-menu-chat-webkit.png. Needs playwright; SKIP without it.
 Run: .venv/bin/python tests_right_click_menu.py
 """
 import json
+import re
 import pathlib
 import sys
 
@@ -184,7 +185,7 @@ def run(browser, engine):
 
     print(f"{tag} 3. Paste picked from the menu")
     right_click(page)
-    page.click(f"{MENU} .sf-menu-item")
+    page.locator(f"{MENU} .sf-menu-item", has_text=re.compile("Paste|貼上")).click()   # the chat view also offers Reply
     page.wait_for_timeout(400)
     check("the menu is gone", not menu_open(page))
     check("the text went in once, as a bracketed paste",
@@ -208,7 +209,7 @@ def run(browser, engine):
     page, errors = open_page(browser)
     page.evaluate("window.__clip.text = 'a long line of demo text. '.repeat(60)")
     right_click(page)
-    page.click(f"{MENU} .sf-menu-item")
+    page.locator(f"{MENU} .sf-menu-item", has_text=re.compile("Paste|貼上")).click()   # the chat view also offers Reply
     page.wait_for_timeout(400)
     check("the large-paste bar is up and nothing is written yet",
           page.evaluate("getComputedStyle(document.getElementById('paste-confirm-bar')).display") != "none" and writes(page) == [],
@@ -244,7 +245,7 @@ def run(browser, engine):
     page, errors = open_page(browser)
     page.evaluate("window.__clip.files = ['/demo/a.txt', '/demo/b.txt']")
     right_click(page)
-    page.click(f"{MENU} .sf-menu-item")
+    page.locator(f"{MENU} .sf-menu-item", has_text=re.compile("Paste|貼上")).click()   # the chat view also offers Reply
     page.wait_for_timeout(500)
     check("an AI tab attaches them: a bracketed path each, and two chips",
           writes(page) == [["s501", " \x1b[200~/demo/a.txt\x1b[201~"], ["s501", " \x1b[200~/demo/b.txt\x1b[201~"]]
@@ -254,7 +255,7 @@ def run(browser, engine):
     page.wait_for_timeout(500)
     before = len(writes(page))
     right_click(page)
-    page.click(f"{MENU} .sf-menu-item")
+    page.locator(f"{MENU} .sf-menu-item", has_text=re.compile("Paste|貼上")).click()   # the chat view also offers Reply
     page.wait_for_timeout(500)
     check("a plain terminal gets the paths typed",
           writes(page)[before:] == [["s502", "/demo/a.txt /demo/b.txt"]], writes(page)[before:])
@@ -311,7 +312,7 @@ def run(browser, engine):
     if engine == "webkit":
         page.screenshot(path=str(SHOTS / "right-click-menu-chat-webkit.png"),
                         clip={"x": 240, "y": 100, "width": 700, "height": 360})
-    page.click(f"{MENU} .sf-menu-item")
+    page.locator(f"{MENU} .sf-menu-item", has_text=re.compile("Paste|貼上")).click()   # the chat view also offers Reply
     page.wait_for_timeout(400)
     check("Paste went into the chat's input box", page.input_value("#chat-input") == "demo clipboard text", page.input_value("#chat-input"))
     check("…and the CLI under the view got nothing", writes(page) == [], writes(page))
