@@ -160,6 +160,7 @@ td.capture = lambda api, sid: api.screen.get(sid, "")
 def reset():
     """Fresh bot folders, no state left from an earlier case, the demo config."""
     import shutil
+    wait_for(lambda: not bm._flight, 8.0)       # a request an earlier case started has ended (its fake bot writes into the folder removed next)
     shutil.rmtree(TMP / "bots", ignore_errors=True)
     bm._flight.clear()
     bm._state.clear()
@@ -326,7 +327,7 @@ check("…the request ends when the bot's turn does", wait_for(lambda: "s1" not 
 check("the bot wrote its summary and MEMORY.md", sess_file.read_text(encoding="utf-8").startswith("# summary")
       and "short notes" in bots.memory_file("alpha").read_text(encoding="utf-8"))
 log = LOG.read_text(encoding="utf-8") if LOG.exists() else ""
-line = next((ln for ln in log.splitlines() if "autosave sid=s1" in ln and "written=" in ln), "")
+line = next((ln for ln in log.splitlines() if "autosave sid=s1" in ln and "written=" in ln and sess_file.name in ln), "")
 check("the log says what was written", "written=" in line and sess_file.name in line and "MEMORY.md" in line, log[-400:])
 print("     log:", line.split("] ", 1)[-1][:200])
 api.state["s1"] = ""
@@ -365,7 +366,7 @@ api.bot_writes = False
 api.sessions["s1"]._last_user_activity_time = LONG_AGO
 bm.tick(api, cfg(), now=NOW)
 check("the bot does not write: the request still ends, and it is logged as nothing written",
-      wait_for(lambda: "s1" not in bm._flight) and "written=nothing" in LOG.read_text(encoding="utf-8").splitlines()[-1], LOG.read_text(encoding="utf-8")[-300:])
+      wait_for(lambda: "s1" not in bm._flight) and "written=nothing" in LOG.read_text(encoding="utf-8").splitlines()[-1], LOG.read_text(encoding="utf-8").splitlines()[-3:])
 check("…and the tab is not asked again until there is new work", why(api, now=time.time() + 3 * 3600) in ("saved", "nothing_new"))
 
 print("9. the thread")
