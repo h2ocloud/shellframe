@@ -28,6 +28,8 @@ LOG = []
 eng_mod._dlog = lambda cat, msg: LOG.append(f"{cat}: {msg}")
 
 
+ALL_AUTO = ["claude", "codex", "agy", "grok"]   # the programs ShellBot sets up itself; asked for by name (the default is Claude only)
+
 def check(name, ok, detail=""):
     global passed, failed
     if ok:
@@ -69,7 +71,7 @@ class Rig:
 def connect_local(r):
     """The local route from start to connected."""
     r.engine.start("demo", route="local")
-    r.engine.step("demo", "act", {"action": "add_server"})
+    r.engine.step("demo", "act", {"action": "add_server", "clis": ALL_AUTO})
     r.engine.step("demo", "act", {"action": "signin"})
     return r.engine.test("demo")
 
@@ -108,7 +110,7 @@ check("the step shows what to enter by hand for the programs ShellBot cannot set
       sorted(m["cli"] for m in v["manual"]) == ["cursor", "opencode", "pi"], str(v.get("manual")))
 check("a manual entry has the command and the plain env, never a value from the key store",
       all(m["command"] == ["demo-mcp", "--serve"] and m["env"] == {"DEMO_PROFILE": "shellbot"} and m["env_secret_names"] == [] for m in v["manual"]))
-res = r.engine.step("demo", "act", {"action": "add_server"})
+res = r.engine.step("demo", "act", {"action": "add_server", "clis": ALL_AUTO})
 by_cli = {c[0].rsplit("/", 1)[-1]: [x[2] for x in r.runner.calls if x[0] == c[0]] for c in r.runner.calls}
 check("add ran 'remove ours' then 'add ours' for each auto program",
       all(by_cli[c] == ["remove", "add"] for c in ("claude", "codex", "agy", "grok")), str(by_cli))
@@ -138,7 +140,7 @@ check("when the check after the action does not pass the step stays, with the ac
 # a restart in the middle: the person gets back to the same place
 r2 = Rig()
 r2.engine.start("demo", route="local")
-r2.engine.step("demo", "act", {"action": "add_server"})
+r2.engine.step("demo", "act", {"action": "add_server", "clis": ALL_AUTO})
 check("test while a step is still open is refused", r2.engine.test("demo")["code"] == "test_not_ready")
 mid = r2.st()
 r2.engine = r2.boot()
@@ -153,7 +155,7 @@ check("a restart turns 'verifying' back into 'waiting for you' and forgets the o
 # ── the test comes in three kinds ──────────────────────────────────────────
 r = Rig()
 r.engine.start("demo", route="local")
-r.engine.step("demo", "act", {"action": "add_server"})
+r.engine.step("demo", "act", {"action": "add_server", "clis": ALL_AUTO})
 r.engine.step("demo", "act", {"action": "signin"})
 r.adapter.test_script = [{"state": "running", "handle": "h-1", "phase": "asking"}, {"state": "needs_user", "handle": "h-1", "code": "allow"},
                          {"state": "done", "ok": True}]
@@ -229,7 +231,7 @@ check("an entry gone from an AI program is needs_reconnect (cli_entry_missing)",
 r.runner.calls.clear()
 res = r.engine.start("demo")
 check("reconnect then redoes the add step", res["status"]["step"]["id"] == "add" and res["view"]["steps"][1]["state"] == "waiting_user")
-r.engine.step("demo", "act", {"action": "add_server"})
+r.engine.step("demo", "act", {"action": "add_server", "clis": ALL_AUTO})
 check("and the entry is back", "shellbot-demo" in r.runner.entries["claude"])
 r.engine.step("demo", "act", {"action": "signin"})
 r.runner.timeout_get.add("claude")
@@ -269,7 +271,7 @@ r = Rig()
 r.engine.start("demo", route="key")
 r.engine.step("demo", "act", {"action": "save", "value": SECRET})
 r.backend.delete("demo", "api_key")
-res = r.engine.step("demo", "act", {"action": "add_server"})
+res = r.engine.step("demo", "act", {"action": "add_server", "clis": ALL_AUTO})
 check("add without its key says the key is missing", res["view"]["step"]["result"]["code"] == "secret_missing" and not r.runner.calls)
 
 # ── disconnect: only what ShellBot added ───────────────────────────────────
@@ -292,7 +294,7 @@ check("disconnect deletes the key it stored", r.backend.get("demo", "api_key") i
 # ── switching route, busy, errors ──────────────────────────────────────────
 r = Rig()
 r.engine.start("demo", route="local")
-r.engine.step("demo", "act", {"action": "add_server"})
+r.engine.step("demo", "act", {"action": "add_server", "clis": ALL_AUTO})
 res = r.engine.step("demo", "route", {"route": "connector"})
 check("changing the way removes what the old way added and starts the new one",
       res["status"]["route"] == "connector" and r.runner.entries["claude"] == set() and res["status"]["step"]["id"] in ("open", "authorize"), str(res["status"]))
@@ -352,6 +354,10 @@ check("a field that looks like a secret is refused at save", not leaked)
 check("and the refused write left the file as it was", Path(r.path).read_text(encoding="utf-8") == raw)
 Path(r.path).write_text("{ broken", encoding="utf-8")
 check("a damaged state file reads as nothing started (no crash)", r.engine.status("demo")["state"] == "not_started" and len(r.engine.list()) == 1)
+
+_route = {"clis": {c: {"via": "mcp"} for c in ALL_AUTO}}
+check("unless more are asked for, an add goes to Claude only; asked, to those", r.engine._targets(_route, {}) == ["claude"]
+      and r.engine._targets(_route, {"clis": ["codex", "grok"]}) == ["codex", "grok"])
 
 print(f"\nResults: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

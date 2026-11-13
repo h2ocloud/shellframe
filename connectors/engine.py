@@ -508,7 +508,9 @@ class Engine:
     def _targets(self, route, args) -> list:
         want = args.get("clis")
         pool = [c for c in clis_mod.CLI_IDS if (route.get("clis", {}).get(c) or {}).get("via") == "mcp"]
-        return [c for c in (want if isinstance(want, list) else pool) if c in pool]
+        if not isinstance(want, list):     # unless asked for more: the one CLI people use most, never all of them at once
+            want = ["claude"] if "claude" in pool else pool[:1]
+        return [c for c in want if c in pool]
 
     def _record_clis(self, service, results) -> None:
         def fn(x):
@@ -629,6 +631,10 @@ class Engine:
             h = str(res.get("handle") or "")
             out["handle"] = h if HANDLE_OK.match(h) else ""
             out["phase" if res["state"] == "running" else "code"] = reg_mod.clean_line(res.get("phase") or res.get("code") or "", 40)
+        if isinstance(res.get("calls"), int) and not isinstance(res.get("calls"), bool):
+            out["calls"] = res["calls"]                    # how many times the service's tool was used: a count, no content
+        if re.fullmatch(r"s\d+", str(res.get("sid") or "")):
+            out["sid"] = res["sid"]                        # the test tab, for "look at the test"
         return out
 
     def _apply_test(self, service, desc, route, res, was) -> dict:

@@ -205,6 +205,8 @@ print("== B7: the sign-in command asks Google for the mailbox only ==")
 ro = gmail.auth_command(True, False)
 rw = gmail.auth_command(False, False)
 win = gmail.auth_command(True, True)
+core = lambda d: {k: v for k, v in (d or {}).items() if k not in ("calls", "sid")}   # a test result past its count and its tab
+
 check("read-only sign-in: services=gmail and READ_ONLY=true", "GOOGLE_WORKSPACE_SERVICES=gmail" in ro and "GOOGLE_WORKSPACE_READ_ONLY=true" in ro, ro)
 check("read-write sign-in: services=gmail, no READ_ONLY", "GOOGLE_WORKSPACE_SERVICES=gmail" in rw and "READ_ONLY" not in rw, rw)
 check("the sign-in names the shellbot profile on the command line", ro.endswith("npx -y @dguido/google-workspace-mcp auth --profile shellbot"), ro)
@@ -691,8 +693,8 @@ check("local: the core's cli_add runs `claude mcp add` once, user scope, the she
       len(adds) == 1 and "shellbot-gmail" in args_ and args_[args_.index("--scope") + 1] == "user" and args_[-3:] == ["npx", "-y", gmail.PACKAGE], adds)
 check("local B7: the server's settings carry services=gmail and READ_ONLY=true (the mailbox only), nothing else of Google's",
       sorted(env_pairs) == ["GOOGLE_WORKSPACE_MCP_PROFILE=shellbot", "GOOGLE_WORKSPACE_READ_ONLY=true", "GOOGLE_WORKSPACE_SERVICES=gmail"], env_pairs)
-check("local: it was added to the AIs ShellBot can set up, and the person's own entry was left alone",
-      res["status"]["clis"].get("claude") == "connected" and res["status"]["clis"].get("codex") == "connected"
+check("local: it was added to Claude only (others when the person picks them), and the person's own entry was left alone",
+      res["status"]["clis"].get("claude") == "connected" and res["status"]["clis"].get("codex") != "connected"
       and "shellbot-gmail" in r.runner.entries["claude"] and "my-other-server" in r.runner.entries["claude"], res["status"]["clis"])
 check("local: after the add the sign-in step is open", sid_of(res) == "b7", str(res["status"]))
 res = r.step("act", action="auth_tab", options={"readonly": True})
@@ -710,11 +712,11 @@ check("local: the test opens one temporary tab and asks once; the status says ve
 r.snap = {"alive": True, "state": "decision", "events": [user, tool("ToolSearch")]}
 res = r.engine.test("gmail", h)
 check("local: the test tab waits for the person's OK -> needs_user, the service waits for you (not a failure)",
-      res["result"] == {"state": "needs_user", "handle": h, "code": "needs_allow"} and res["status"]["state"] == "waiting_user" and not res["status"]["attention"], str(res)[:300])
+      core(res["result"]) == {"state": "needs_user", "handle": h, "code": "needs_allow"} and res["status"]["state"] == "waiting_user" and not res["status"]["attention"], str(res)[:300])
 r.snap = {"alive": True, "state": "", "events": test_events}
 res = r.engine.test("gmail", h)
 check("local: the test passes -> connected, with the time and the least permission (read)",
-      res["result"] == {"state": "done", "ok": True} and res["status"]["state"] == "connected" and res["status"]["scopes"] == ["read"]
+      core(res["result"]) == {"state": "done", "ok": True} and res["status"]["state"] == "connected" and res["status"]["scopes"] == ["read"]
       and res["status"]["connected_at"] == 2_000_000, str(res)[:300])
 check("local: what the person sees of the test is codes (no sender, no subject)", SENDER not in json.dumps(res) and SUBJECT not in json.dumps(res))
 r.clock[0] += 400
