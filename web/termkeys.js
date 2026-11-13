@@ -73,6 +73,7 @@
 
   // A click in the terminal gives it the keyboard. With a CLI that reports the mouse (full-screen Claude
   // Code), xterm passes the click on to the CLI; the page must still be typing into that terminal after it.
+  let unfocusedAt = 0;
   doc.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     const h = host(), sid = h && h.active && h.active(), s = sid && h.sessions && h.sessions()[sid];
@@ -80,6 +81,12 @@
     setTimeout(() => {
       const ta = s.pane.querySelector('textarea.xterm-helper-textarea');
       if (ta && doc.activeElement !== ta) { try { ta.focus({ preventScroll: true }); } catch (_) { /* hidden for a frame */ } }
+      // Clicked, and still the page has no keyboard: another app's window holds it (seen: a full-screen overlay
+      // of a mouse driver's helper at the top layer). One line a minute, so the log can tell it from a page bug.
+      if (!doc.hasFocus() && Date.now() - unfocusedAt > 60000) {
+        unfocusedAt = Date.now();
+        try { root.pywebview.api.js_debug('window-unfocused', JSON.stringify({ sid })); } catch (_) { /* no backend */ }
+      }
     }, 0);
   }, true);
 })(typeof window !== 'undefined' ? window : globalThis);
