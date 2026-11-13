@@ -1,0 +1,1633 @@
+{
+  "schema": 1,
+  "id": "gmail",
+  "name": {
+    "en": "Gmail",
+    "zh": "Gmail"
+  },
+  "icon": "mail",
+  "summary": {
+    "en": "Let your bots read your Gmail",
+    "zh": "讓 bot 可以讀你的 Gmail"
+  },
+  "adapter": "connectors.services.gmail",
+  "scopes": [
+    {
+      "id": "read",
+      "label": {
+        "en": "Read your mail",
+        "zh": "讀信"
+      },
+      "required": true
+    },
+    {
+      "id": "send",
+      "label": {
+        "en": "Send and change mail (only if you untick \"Read mail only\")",
+        "zh": "寄信、改信（只有取消「只讀信」才會要）"
+      },
+      "required": false
+    }
+  ],
+  "routes": [
+    {
+      "id": "connector",
+      "kind": "claude_connector",
+      "name": {
+        "en": "Use your Claude account's connector",
+        "zh": "用 Claude 帳號的連接器"
+      },
+      "blurb": {
+        "en": "The simplest way. Connect once on claude.ai and every Claude tab on that account can use Gmail. A browser is all you need: nothing to install.",
+        "zh": "最簡單。在 claude.ai 連一次，這個帳號的 Claude 分頁都能用。只要瀏覽器，不用裝任何東西。"
+      },
+      "recommended": true,
+      "minutes": 2,
+      "needs": [
+        {
+          "en": "Claude tabs signed in with a claude.ai account",
+          "zh": "Claude 分頁用 claude.ai 帳號登入"
+        }
+      ],
+      "scopes": [
+        "read"
+      ],
+      "clis": {
+        "claude": {
+          "via": "connector",
+          "note": {
+            "en": "Claude tabs signed in with a claude.ai account see the connector.",
+            "zh": "用 claude.ai 帳號登入的 Claude 分頁拿得到這個連接器。"
+          }
+        },
+        "codex": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Every other AI tab can use the same local Gmail server instead: that is the advanced way.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。其他 AI 分頁改用同一個本機 Gmail 伺服器，也就是「進階」那一條。"
+          }
+        },
+        "opencode": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Every other AI tab can use the same local Gmail server instead: that is the advanced way.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。其他 AI 分頁改用同一個本機 Gmail 伺服器，也就是「進階」那一條。"
+          }
+        },
+        "agy": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Every other AI tab can use the same local Gmail server instead: that is the advanced way.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。其他 AI 分頁改用同一個本機 Gmail 伺服器，也就是「進階」那一條。"
+          }
+        },
+        "grok": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Every other AI tab can use the same local Gmail server instead: that is the advanced way.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。其他 AI 分頁改用同一個本機 Gmail 伺服器，也就是「進階」那一條。"
+          }
+        },
+        "cursor": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Every other AI tab can use the same local Gmail server instead: that is the advanced way.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。其他 AI 分頁改用同一個本機 Gmail 伺服器，也就是「進階」那一條。"
+          }
+        },
+        "pi": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Every other AI tab can use the same local Gmail server instead: that is the advanced way.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。其他 AI 分頁改用同一個本機 Gmail 伺服器，也就是「進階」那一條。"
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "a1",
+          "title": {
+            "en": "Check how Claude is signed in",
+            "zh": "確認 Claude 是怎麼登入的"
+          },
+          "how": [
+            {
+              "en": "ShellBot looks at the account label it already keeps (the plan only: it never opens a login file).",
+              "zh": "ShellBot 會看它自己記下的帳號標籤（只有方案，不會打開任何登入檔）。"
+            },
+            {
+              "en": "If it says you are signed in with a claude.ai account, press \"I did it\". If it cannot tell, type /status in a Claude tab and read the line that says how you are signed in.",
+              "zh": "寫著用 claude.ai 帳號登入，就按「我做好了」。看不出來的話，在 Claude 分頁打 /status，看說明登入方式的那一行。"
+            }
+          ],
+          "see": {
+            "en": "The card below says you are signed in with a claude.ai account, with its plan. On a plain API key the connector does not show up.",
+            "zh": "下面那一格寫著用 claude.ai 帳號登入，還有方案。用單純的 API key 登入的話，連接器不會出現。"
+          },
+          "check": {
+            "id": "claude_account",
+            "on": "enter",
+            "pass": [
+              "claude_ai"
+            ],
+            "states": {
+              "claude_ai": {
+                "tone": "ok",
+                "text": {
+                  "en": "Signed in with a claude.ai account ({plan})",
+                  "zh": "用 claude.ai 帳號登入（{plan}）"
+                }
+              },
+              "unknown": {
+                "tone": "warn",
+                "text": {
+                  "en": "ShellBot cannot tell how Claude is signed in on this computer.",
+                  "zh": "ShellBot 看不出這台電腦的 Claude 是怎麼登入的。"
+                },
+                "hint": {
+                  "en": "Type /status in a Claude tab and read the login line.",
+                  "zh": "在 Claude 分頁打 /status，看登入方式那一行。"
+                }
+              }
+            }
+          },
+          "stuck": [
+            {
+              "id": "cant-tell",
+              "q": {
+                "en": "ShellBot says it cannot tell",
+                "zh": "ShellBot 說它看不出來"
+              },
+              "a": {
+                "en": "That is normal on a computer where ShellBot has not opened a Claude tab yet. Open a Claude tab, type /status, and read the line about how you are signed in. If it names a Claude account (a subscription), carry on: press \"I did it\".",
+                "zh": "這台電腦上 ShellBot 還沒開過 Claude 分頁的話，這很正常。開一個 Claude 分頁，打 /status，看說明登入方式的那一行。寫的是 Claude 帳號（訂閱），就繼續，按「我做好了」。"
+              }
+            },
+            {
+              "id": "api-key",
+              "q": {
+                "en": "Claude is signed in with an API key or a long-lived token",
+                "zh": "Claude 是用 API key 或長效 token 登入的"
+              },
+              "a": {
+                "en": "Connectors only reach Claude tabs that are signed in with a claude.ai account. In a Claude tab type /login and pick the Claude account (subscription) option. Or go back to the first question and pick the local way, which works whatever way Claude is signed in.",
+                "zh": "連接器只有用 claude.ai 帳號登入的 Claude 分頁才拿得到。在 Claude 分頁打 /login，選 Claude 帳號（訂閱）那一項。或者回到第一題，改選本機的接法，那一條不管 Claude 怎麼登入都能用。"
+              }
+            },
+            {
+              "id": "no-account",
+              "q": {
+                "en": "I do not have a claude.ai account",
+                "zh": "我沒有 claude.ai 帳號"
+              },
+              "a": {
+                "en": "The connector needs one. Sign up at claude.ai, then type /login in a Claude tab and pick the Claude account option. If you would rather not, go back to the first question and pick the local way.",
+                "zh": "連接器需要有 claude.ai 帳號。到 claude.ai 註冊後，在 Claude 分頁打 /login，選 Claude 帳號那一項。不想註冊的話，回到第一題改選本機的接法。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open claude.ai",
+                    "zh": "打開 claude.ai"
+                  },
+                  "url": "https://claude.ai/"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "a2",
+          "title": {
+            "en": "Connect Gmail on claude.ai",
+            "zh": "在 claude.ai 連上 Gmail"
+          },
+          "how": [
+            {
+              "en": "Press \"Open page\" below. Your browser opens the connectors page on claude.ai (sign in with the same claude.ai account if it asks).",
+              "zh": "按下面的「打開頁面」，瀏覽器會開 claude.ai 的連接器頁（它要你登入的話，用同一個 claude.ai 帳號）。"
+            },
+            {
+              "en": "Find Gmail in the list and press Connect.",
+              "zh": "在清單裡找到 Gmail，按 Connect。"
+            },
+            {
+              "en": "In Google's window pick the account you want Claude to read, look at what it asks for, then press Allow.",
+              "zh": "Google 的視窗：選你要讓 Claude 讀的那個帳號，看完權限再按允許。"
+            }
+          ],
+          "url": "https://claude.ai/customize/connectors",
+          "see": {
+            "en": "Back on claude.ai, the button on the Gmail row changes from Connect to Disconnect.",
+            "zh": "回到 claude.ai，Gmail 那一格的按鈕從 Connect 變成 Disconnect。"
+          },
+          "stuck": [
+            {
+              "id": "not-listed",
+              "q": {
+                "en": "Gmail is not in the list",
+                "zh": "清單裡沒有 Gmail"
+              },
+              "a": {
+                "en": "On a company plan (Team or Enterprise) an owner has to turn the Gmail connector on in the organization settings first. Ask them, then come back to this step.",
+                "zh": "公司方案（Team、Enterprise）要先由管理員在組織設定裡開啟 Gmail 連接器。請管理員開好再回來。"
+              }
+            },
+            {
+              "id": "blocked",
+              "q": {
+                "en": "Google says \"access blocked\" or \"needs admin review\"",
+                "zh": "Google 說「存取遭封鎖，需要管理員審查」"
+              },
+              "a": {
+                "en": "Your Google Workspace administrator has to mark Claude as a trusted app. It usually takes effect within about 15 minutes. Ask them, wait, then press Connect again.",
+                "zh": "Google Workspace 管理員要先把 Claude 設成信任的應用程式，通常約 15 分鐘後生效。請管理員處理，等一下再按 Connect。"
+              }
+            },
+            {
+              "id": "failed",
+              "q": {
+                "en": "I pressed Connect and it failed, or it keeps spinning",
+                "zh": "按了 Connect 之後失敗，或一直轉圈"
+              },
+              "a": {
+                "en": "Press Disconnect, then Connect again. If it still fails, open your Google account's list of connected apps, remove Claude from it, and connect again from the start.",
+                "zh": "先按 Disconnect，再按一次 Connect。還是不行的話，打開 Google 帳號的「已連結的應用程式」頁面，把 Claude 刪掉，再從頭連一次。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open Google connected apps",
+                    "zh": "打開 Google 已連結的應用程式"
+                  },
+                  "url": "https://myaccount.google.com/connections"
+                }
+              ]
+            },
+            {
+              "id": "wrong-account",
+              "q": {
+                "en": "I picked the wrong Google account",
+                "zh": "選錯了 Google 帳號"
+              },
+              "a": {
+                "en": "Press Disconnect on the Gmail row, then Connect again and pick the right account.",
+                "zh": "在 Gmail 那一格按 Disconnect，再按 Connect，這次選對帳號。"
+              }
+            },
+            {
+              "id": "which-login",
+              "q": {
+                "en": "claude.ai asks me to sign in and I do not know which account",
+                "zh": "claude.ai 要我登入，不知道用哪個帳號"
+              },
+              "a": {
+                "en": "Use the account your Claude tabs are signed in with: connectors follow that account. Type /status in a Claude tab to see which one it is.",
+                "zh": "用你的 Claude 分頁登入的那個帳號：連接器是跟著這個帳號走的。在 Claude 分頁打 /status 就看得到是哪一個。"
+              }
+            }
+          ],
+          "redo_on_reconnect": true
+        },
+        {
+          "id": "a3",
+          "kind": "test",
+          "title": {
+            "en": "Test that it works",
+            "zh": "測試接通"
+          },
+          "intro": {
+            "en": "ShellBot opens a temporary Claude tab and asks it for the sender and subject of your newest email, nothing else. Only that tab sees your mail: ShellBot does not read, keep or log it.",
+            "zh": "ShellBot 會開一個臨時的 Claude 分頁，請它查最新一封信的寄件者和標題，不做別的事。只有那個分頁看得到信：ShellBot 不讀、不存、不記錄。"
+          }
+        }
+      ],
+      "test": {
+        "via": {
+          "en": "Gmail connector",
+          "zh": "Gmail 連接器"
+        },
+        "verdicts": {
+          "starting": {
+            "text": {
+              "en": "Opening a temporary Claude tab…",
+              "zh": "正在開臨時的 Claude 分頁…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "waiting_ready": {
+            "text": {
+              "en": "Waiting for the tab to be ready…",
+              "zh": "等分頁準備好…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "asking": {
+            "text": {
+              "en": "Asking it to look up your newest email…",
+              "zh": "請它查最新一封信…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "reading": {
+            "text": {
+              "en": "Gmail is answering…",
+              "zh": "Gmail 回應中…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "needs_allow": {
+            "text": {
+              "en": "The test tab is asking for your OK",
+              "zh": "測試分頁在等你按允許"
+            },
+            "next": {
+              "en": "It wants to use a Gmail tool, and Claude asks before it does. Open the test conversation and choose Allow. The test goes on by itself afterwards.",
+              "zh": "它要用 Gmail 工具，Claude 會先問你。打開測試對話，選允許。之後測試會自己繼續。"
+            }
+          },
+          "pass": {
+            "text": {
+              "en": "It works! Gmail is connected.",
+              "zh": "通了！Gmail 已經接上。"
+            },
+            "next": {
+              "en": "The temporary test tab used the Gmail connector {n} time(s) to look up your newest email. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory. A Claude tab that was already open before you connected Gmail may need to be reopened before it sees Gmail (not confirmed).",
+              "zh": "臨時的測試分頁用 Gmail 連接器 查了 {n} 次最新一封信。 信的內容精靈不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。 連接之前就開著的 Claude 分頁，可能要重開才看得到 Gmail（尚未證實）。"
+            }
+          },
+          "said_ok": {
+            "text": {
+              "en": "This one does not count. The test tab said it worked but never called a Gmail tool, so it proves nothing.",
+              "zh": "這次不算：測試分頁說成功了，卻沒有叫過任何 Gmail 工具，這樣不能算數。"
+            },
+            "next": {
+              "en": "What to do: Run the test again. Press \"Test again\". If it happens again, open the test conversation and see what the tab did.",
+              "zh": "怎麼辦：再測一次。按「重新測試」。再發生的話，打開測試對話看看分頁做了什麼。"
+            }
+          },
+          "timeout": {
+            "text": {
+              "en": "It took too long. After 3 minutes the test tab had not finished.",
+              "zh": "等太久了：3 分鐘了，測試分頁還沒做完。"
+            },
+            "next": {
+              "en": "Most likely: It is waiting for you. Open the test conversation: Claude may be asking you to allow a tool, or sitting on a sign-in screen.",
+              "zh": "最可能：它在等你。打開測試對話看看：Claude 可能在問你要不要允許某個工具，或停在登入畫面。"
+            }
+          },
+          "unclear": {
+            "text": {
+              "en": "No clear answer. The test tab used Gmail, but it did not end with a clear result line.",
+              "zh": "沒有明確的結果：測試分頁用了 Gmail，但最後沒有留下明確的結果那一行。"
+            },
+            "next": {
+              "en": "What to do: Look, then test again. Open the test conversation to see how it ended, then press \"Test again\".",
+              "zh": "怎麼辦：看一下，再測一次。打開測試對話看它怎麼結束的，再按「重新測試」。"
+            }
+          },
+          "not_ready": {
+            "text": {
+              "en": "The test tab did not get ready. It never reached its prompt, so nothing was asked.",
+              "zh": "測試分頁沒有準備好：它一直沒有走到可以輸入的畫面，所以什麼都沒問。"
+            },
+            "next": {
+              "en": "Most likely: Claude is not signed in. Open the test conversation: if it shows a sign-in screen, sign in with a claude.ai account there, then test again.",
+              "zh": "最可能：Claude 還沒登入。打開測試對話：如果停在登入畫面，在那裡用 claude.ai 帳號登入，再測一次。"
+            }
+          },
+          "closed": {
+            "text": {
+              "en": "The test tab was closed. The test tab went away before it finished.",
+              "zh": "測試分頁被關掉了：測試分頁沒做完就不見了。"
+            },
+            "next": {
+              "en": "What to do: Run the test again. Press \"Test again\".",
+              "zh": "怎麼辦：再測一次。按「重新測試」。"
+            }
+          },
+          "start_failed": {
+            "text": {
+              "en": "Could not open the test tab. ShellBot could not start a Claude tab for the test.",
+              "zh": "開不了測試分頁：ShellBot 沒辦法為測試開一個 Claude 分頁。"
+            },
+            "next": {
+              "en": "What to do: Check that Claude opens. Open a Claude tab yourself from the + button. If that works, press \"Test again\".",
+              "zh": "怎麼辦：確認 Claude 開得起來。自己用 + 按鈕開一個 Claude 分頁。開得起來的話，再按「重新測試」。"
+            }
+          },
+          "needs_auth": {
+            "text": {
+              "en": "The connector is not authorized yet. The test tab found the Gmail connector, but it asked to be authorized first.",
+              "zh": "連接器還沒授權好：測試分頁找得到 Gmail 連接器，但它說要先授權。"
+            },
+            "next": {
+              "en": "Most likely: Gmail is not connected on claude.ai yet. Go back to step 2: press Disconnect, then Connect again, and allow it in Google's window.",
+              "zh": "最可能：Gmail 在 claude.ai 上還沒連好。回到第 2 步：先按 Disconnect，再按 Connect，在 Google 的視窗按允許。"
+            }
+          },
+          "no_tools": {
+            "text": {
+              "en": "Not yet. The test tab did not find any Gmail tool.",
+              "zh": "還沒通：測試分頁沒有找到任何 Gmail 工具。"
+            },
+            "next": {
+              "en": "Most likely: The Gmail row has not changed to Disconnect. Go back to step 2 and connect Gmail on claude.ai. Next: Claude is not signed in with a claude.ai account. Claude signed in with an API key or a long-lived token cannot see connectors. Type /status in a Claude tab to check; use /login to pick the Claude account, or take the local way. Also: The connector may be switched off. In the test tab type /mcp. If claude.ai Gmail is folded under unused connectors or turned off, it was never connected or it is off.",
+              "zh": "最可能：Gmail 那一格還沒變成 Disconnect。回到第 2 步，在 claude.ai 把 Gmail 連上。 其次：這台的 Claude 不是用 claude.ai 帳號登入。用 API key 或長效 token 登入的 Claude 看不到連接器。在 Claude 分頁打 /status 看登入方式，需要的話用 /login 改選 Claude 帳號，或改走本機的接法。 另外：連接器可能被關掉了。在測試分頁打 /mcp。如果 claude.ai Gmail 被收在沒用到的連接器底下，或被關掉，表示沒連過或被關了。"
+            }
+          },
+          "failed": {
+            "text": {
+              "en": "Gmail answered with an error. The test tab called Gmail, but the answer ended in a failure.",
+              "zh": "Gmail 回了錯誤：測試分頁叫了 Gmail，但結果是失敗。"
+            },
+            "next": {
+              "en": "Most likely: A short-lived limit or a timeout. Wait a few minutes and test again. If it keeps failing: Connect again. Go back to step 2, press Disconnect, then Connect again.",
+              "zh": "最可能：暫時的額度或逾時。等幾分鐘再測一次。 一直失敗的話：重新連一次。回到第 2 步，先按 Disconnect，再按 Connect。"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "local",
+      "kind": "local_mcp",
+      "name": {
+        "en": "Use a Gmail server on this computer",
+        "zh": "用本機的 Gmail MCP"
+      },
+      "blurb": {
+        "en": "You make a Google Cloud sign-in client yourself and the permission is kept on this computer. For Claude tabs that are not signed in with a claude.ai account, or if you want to manage the permission yourself.",
+        "zh": "自己在 Google Cloud 建一個 OAuth 用戶端，授權存在這台電腦。適合不是用 claude.ai 帳號登入的分頁，或想自己管授權的人。"
+      },
+      "recommended": false,
+      "minutes": 20,
+      "needs": [
+        {
+          "en": "Node.js 22 or newer",
+          "zh": "Node.js 22 以上"
+        }
+      ],
+      "scopes": [
+        "read"
+      ],
+      "clis": {
+        "claude": {
+          "via": "mcp",
+          "note": {
+            "en": "ShellBot adds it for you in the step \"Add the server to Claude\", with the same account folder your Claude tabs use.",
+            "zh": "ShellBot 在「把伺服器加進 Claude」那一步幫你加，用的是 Claude 分頁同一個帳號資料夾。"
+          }
+        },
+        "codex": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.codex/config.toml. Add it with the command below, or write a [mcp_servers.shellbot-gmail] section in the settings file. Codex has a one-click Gmail plugin too; its documentation does not say whether the command-line version can use it, so this is the sure way.",
+            "zh": "設定檔：~/.codex/config.toml。 用下面的指令加，或在設定檔裡寫一段 [mcp_servers.shellbot-gmail]。 Codex 也有一鍵的 Gmail plugin；文件沒寫指令列版能不能用，所以這是比較有把握的做法。"
+          }
+        },
+        "opencode": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: opencode.json. Run opencode mcp add and answer its questions: a local server, the command and arguments above, and the three environment lines. Or add it under \"mcp\" in opencode.json.",
+            "zh": "設定檔：opencode.json。 跑 opencode mcp add 回答它的問題：本機伺服器、上面的指令和參數、三行環境變數。或自己加在 opencode.json 的 \"mcp\" 底下。"
+          }
+        },
+        "agy": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.gemini/config/mcp_config.json. Add it with the command below (flags go before the name). Google's Workspace plugin for it does not include Gmail.",
+            "zh": "設定檔：~/.gemini/config/mcp_config.json。 用下面的指令加（旗標要放在名稱前面）。 Google 給它的 Workspace plugin 不含 Gmail。"
+          }
+        },
+        "grok": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.grok/config.toml. Add it with the command below. Grok Build also reads the Claude settings file, so a server added there may show up in it too.",
+            "zh": "設定檔：~/.grok/config.toml。 用下面的指令加。Grok Build 也會讀 Claude 的設定檔，所以加在那裡的伺服器它可能也看得到。"
+          }
+        },
+        "cursor": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.cursor/mcp.json. It has no add command: write the server into the settings file yourself (the command, arguments and environment above), then run cursor-agent mcp enable shellbot-gmail. The Cursor editor has a Gmail plugin; whether the command-line version can install it is not documented.",
+            "zh": "設定檔：~/.cursor/mcp.json。 它沒有 add 指令：自己把伺服器寫進設定檔（上面的指令、參數和環境變數），再跑 cursor-agent mcp enable shellbot-gmail。 Cursor 編輯器有 Gmail plugin；指令列版能不能裝，文件沒寫。"
+          }
+        },
+        "pi": {
+          "via": "none",
+          "note": {
+            "en": "Settings file: ~/.pi/agent/mcp.json. MCP is built into Pi from version 0.99; older versions cannot run an MCP server. Check with pi --version, update, then put the server in the settings file.",
+            "zh": "設定檔：~/.pi/agent/mcp.json。 Pi 從 0.99 版起內建 MCP，更舊的版本跑不了 MCP 伺服器。用 pi --version 看版本，更新後把伺服器寫進設定檔。"
+          }
+        }
+      },
+      "mcp": {
+        "server": "shellbot-gmail",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@dguido/google-workspace-mcp"
+        ],
+        "win_command": [
+          "cmd",
+          "/c",
+          "npx",
+          "-y",
+          "@dguido/google-workspace-mcp"
+        ],
+        "env": {
+          "GOOGLE_WORKSPACE_MCP_PROFILE": "shellbot",
+          "GOOGLE_WORKSPACE_SERVICES": "gmail",
+          "GOOGLE_WORKSPACE_READ_ONLY": "true"
+        }
+      },
+      "steps": [
+        {
+          "id": "b0",
+          "title": {
+            "en": "Check that Node.js is installed",
+            "zh": "確認有裝 Node.js"
+          },
+          "how": [
+            {
+              "en": "The local Gmail server runs on Node.js 22 or newer. ShellBot checks the version for you.",
+              "zh": "本機的 Gmail 伺服器要 Node.js 22 以上才跑得起來。ShellBot 會幫你看版本。"
+            },
+            {
+              "en": "If it is missing or older, press \"Open page\", install the current LTS version, then press \"Check again\".",
+              "zh": "沒有或太舊的話，按「打開頁面」，裝目前的 LTS 版本，再按「再檢查一次」。"
+            }
+          ],
+          "url": "https://nodejs.org/en/download",
+          "see": {
+            "en": "The card below shows your Node.js version, 22 or newer.",
+            "zh": "下面那一格顯示你的 Node.js 版本，22 以上。"
+          },
+          "check": {
+            "id": "node",
+            "on": "enter",
+            "gate": true,
+            "pass": [
+              "ok"
+            ],
+            "states": {
+              "ok": {
+                "tone": "ok",
+                "text": {
+                  "en": "Node.js {version} is installed",
+                  "zh": "已安裝 Node.js {version}"
+                }
+              },
+              "old": {
+                "tone": "bad",
+                "text": {
+                  "en": "Node.js {version} is too old: 22 or newer is needed",
+                  "zh": "Node.js {version} 太舊了：要 22 以上"
+                }
+              },
+              "missing": {
+                "tone": "bad",
+                "text": {
+                  "en": "ShellBot cannot find Node.js",
+                  "zh": "ShellBot 找不到 Node.js"
+                },
+                "hint": {
+                  "en": "Install it from nodejs.org, then reopen ShellBot and check again.",
+                  "zh": "到 nodejs.org 安裝，再把 ShellBot 關掉重開，重新檢查。"
+                }
+              }
+            }
+          },
+          "stuck": [
+            {
+              "id": "missing",
+              "q": {
+                "en": "ShellBot cannot find Node.js",
+                "zh": "ShellBot 找不到 Node.js"
+              },
+              "a": {
+                "en": "Install the LTS version from nodejs.org. Afterwards quit and reopen ShellBot so its tabs can see it, then press \"Check again\".",
+                "zh": "到 nodejs.org 裝 LTS 版本。裝好後把 ShellBot 關掉再開，分頁才找得到它，再按「再檢查一次」。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open the Node.js download page",
+                    "zh": "打開 Node.js 下載頁"
+                  },
+                  "url": "https://nodejs.org/en/download"
+                }
+              ]
+            },
+            {
+              "id": "old",
+              "q": {
+                "en": "Node.js is too old",
+                "zh": "Node.js 版本太舊"
+              },
+              "a": {
+                "en": "Install the current LTS version (22 or newer) over it from nodejs.org, then reopen ShellBot and check again.",
+                "zh": "到 nodejs.org 裝目前的 LTS 版本（22 以上）蓋過去，再把 ShellBot 關掉重開，重新檢查。"
+              }
+            },
+            {
+              "id": "manager",
+              "q": {
+                "en": "I installed it but ShellBot still cannot find it",
+                "zh": "我裝了，但 ShellBot 還是找不到"
+              },
+              "a": {
+                "en": "If you use a version manager (nvm, fnm or similar), its Node.js can be hidden from apps that were not started from a terminal. Installing from nodejs.org puts it where every app can see it. Then reopen ShellBot.",
+                "zh": "如果你用版本管理工具（nvm、fnm 之類），它裝的 Node.js 可能不讓不是從終端機開的 App 看到。從 nodejs.org 安裝的會放在每個 App 都找得到的位置。裝好後重開 ShellBot。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b1",
+          "title": {
+            "en": "Create a Google Cloud project",
+            "zh": "建一個 Google Cloud 專案"
+          },
+          "how": [
+            {
+              "en": "Press \"Open page\" and sign in with the Google account you will use to manage this.",
+              "zh": "按「打開頁面」，用你要拿來管理這件事的 Google 帳號登入。"
+            },
+            {
+              "en": "Give the project a name, for example \"ShellBot Gmail\", and press Create.",
+              "zh": "專案取個名字，例如「ShellBot Gmail」，按 Create（建立）。"
+            }
+          ],
+          "url": "https://console.cloud.google.com/projectcreate",
+          "see": {
+            "en": "The project picker at the top of the page now shows your new project.",
+            "zh": "頁面上方的專案選單變成你剛建的專案。"
+          },
+          "stuck": [
+            {
+              "id": "terms",
+              "q": {
+                "en": "It asks me to agree to terms",
+                "zh": "它要我同意條款"
+              },
+              "a": {
+                "en": "The first time you use Google Cloud it asks you to agree to its terms of service. Agree, then carry on: it is asked once.",
+                "zh": "第一次用 Google Cloud 會要你同意服務條款。同意之後繼續，只會問這一次。"
+              }
+            },
+            {
+              "id": "company",
+              "q": {
+                "en": "My company account cannot create a project",
+                "zh": "公司帳號不能建專案"
+              },
+              "a": {
+                "en": "Some company Google accounts are not allowed to create projects. Use a personal Google account for the project, or ask your IT team to create one for you.",
+                "zh": "有些公司的 Google 帳號不能建專案。改用個人 Google 帳號來建，或請 IT 幫你建一個。"
+              }
+            },
+            {
+              "id": "not-shown",
+              "q": {
+                "en": "The project does not show at the top",
+                "zh": "上方沒有出現這個專案"
+              },
+              "a": {
+                "en": "Open the project picker at the top and choose it from the list. Every later step needs this project to be the selected one.",
+                "zh": "打開上方的專案選單，從清單裡選它。之後每一步都要選著這個專案。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b2",
+          "title": {
+            "en": "Turn on the Gmail API",
+            "zh": "啟用 Gmail API"
+          },
+          "how": [
+            {
+              "en": "Press \"Open page\". Check that the project name at the top is the one you just made.",
+              "zh": "按「打開頁面」。確認上方的專案名稱是你剛建的那一個。"
+            },
+            {
+              "en": "Press Enable.",
+              "zh": "按 Enable（啟用）。"
+            }
+          ],
+          "url": "https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com",
+          "see": {
+            "en": "The page says the Gmail API is enabled for your project (the wording may differ a little).",
+            "zh": "頁面說這個專案已經啟用 Gmail API（字樣可能有些不同）。"
+          },
+          "stuck": [
+            {
+              "id": "wrong-project",
+              "q": {
+                "en": "The wrong project is selected at the top",
+                "zh": "上方選到的是別的專案"
+              },
+              "a": {
+                "en": "Open the project picker at the top, choose the project from the step before, and press Enable again.",
+                "zh": "打開上方的專案選單，選上一步建的專案，再按一次 Enable。"
+              }
+            },
+            {
+              "id": "billing",
+              "q": {
+                "en": "It asks for billing",
+                "zh": "它要我設定付款方式"
+              },
+              "a": {
+                "en": "The Gmail API is free to use and normally needs no billing. If Google asks for it, check that the project at the top is the one from the step before.",
+                "zh": "Gmail API 免費，一般不用設定付款。如果 Google 要你設定，先確認上方是上一步建的專案。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b3",
+          "title": {
+            "en": "Set up the consent screen",
+            "zh": "設定同意畫面"
+          },
+          "how": [
+            {
+              "en": "Press \"Open page\". If you see Get Started, press it.",
+              "zh": "按「打開頁面」。看到 Get Started 就按它。"
+            },
+            {
+              "en": "App name: any name, for example \"ShellBot Gmail\". Support email: your own address.",
+              "zh": "應用程式名稱：隨你取，例如「ShellBot Gmail」。支援 email：你自己的信箱。"
+            },
+            {
+              "en": "Audience: choose Internal if your mailbox belongs to a company Google Workspace, or External for a personal Gmail address.",
+              "zh": "目標對象：信箱屬於公司的 Google Workspace 選 Internal，個人 Gmail 選 External。"
+            },
+            {
+              "en": "Contact email: your own address. Agree to the policy and press Create.",
+              "zh": "聯絡 email：你自己的信箱。同意政策後按 Create。"
+            },
+            {
+              "en": "If you chose External: open the Audience page, find Test users, press Add users and add your own address.",
+              "zh": "選了 External 的話：到 Audience 頁，找到 Test users，按 Add users，加入你自己的信箱。"
+            }
+          ],
+          "url": "https://console.developers.google.com/auth/branding",
+          "see": {
+            "en": "The Branding page shows your app name.",
+            "zh": "Branding 頁面顯示你的應用程式名稱。"
+          },
+          "stuck": [
+            {
+              "id": "testing",
+              "q": {
+                "en": "External, and the app is \"in testing\"",
+                "zh": "選了 External，應用程式是「測試中」"
+              },
+              "a": {
+                "en": "While an External app is in testing, Google ends the permission after 7 days and you have to sign in again. Either publish the app (Audience, then Publish app) or use Internal if your mailbox is in a Workspace.",
+                "zh": "External 的應用程式還在測試中時，Google 會在 7 天後讓授權失效，你得再登入一次。要嘛發布應用程式（Audience → Publish app），要嘛信箱在 Workspace 的話改用 Internal。"
+              }
+            },
+            {
+              "id": "warning",
+              "q": {
+                "en": "Google shows an \"unverified app\" warning later",
+                "zh": "之後 Google 顯示「未經驗證的應用程式」警告"
+              },
+              "a": {
+                "en": "After you publish an app Google has not verified, the sign-in shows a warning page the first time. It is your own app, so you can go on (the link is usually under Advanced). The wording may differ.",
+                "zh": "發布了 Google 沒驗證過的應用程式後，第一次登入會先看到警告頁。這是你自己的應用程式，可以繼續（連結通常在 Advanced 底下）。字樣可能有些不同。"
+              }
+            },
+            {
+              "id": "no-internal",
+              "q": {
+                "en": "I cannot choose Internal",
+                "zh": "我選不了 Internal"
+              },
+              "a": {
+                "en": "Internal is only offered for a Google Workspace account. With a personal Gmail address choose External.",
+                "zh": "Internal 只有 Google Workspace 帳號才有。個人 Gmail 請選 External。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b4",
+          "title": {
+            "en": "Create the sign-in client and download its file",
+            "zh": "建立用戶端並下載檔案"
+          },
+          "how": [
+            {
+              "en": "Press \"Open page\", then Create client.",
+              "zh": "按「打開頁面」，再按 Create client。"
+            },
+            {
+              "en": "Application type: Desktop app. Give it a name and press Create.",
+              "zh": "應用程式類型選 Desktop app（電腦版應用程式）。取個名字，按 Create。"
+            },
+            {
+              "en": "Right away press the download button (Download JSON). Google shows the client secret only now.",
+              "zh": "馬上按下載按鈕（Download JSON）。Google 只在這時候顯示 client secret。"
+            }
+          ],
+          "url": "https://console.developers.google.com/auth/clients",
+          "see": {
+            "en": "A .json file appears in your Downloads folder.",
+            "zh": "你的下載資料夾多了一個 .json 檔。"
+          },
+          "note": {
+            "en": "Google deletes a sign-in client that has not been used for six months (it emails you 30 days before). After that the server cannot sign in and you make a new client.",
+            "zh": "Google 會刪掉半年沒用過的用戶端（刪之前 30 天會寄信通知）。刪了之後伺服器就登入不了，要重建一個。"
+          },
+          "stuck": [
+            {
+              "id": "not-saved",
+              "q": {
+                "en": "I closed it before downloading",
+                "zh": "我沒下載就關掉了"
+              },
+              "a": {
+                "en": "The client secret is shown only when it is created. Open the client's page and press Add Secret to make a new one and download that, or delete the client and create it again.",
+                "zh": "client secret 只有建立的當下看得到。打開那個用戶端的頁面，按 Add Secret 產生新的並下載；或把用戶端刪掉重建。"
+              }
+            },
+            {
+              "id": "web-app",
+              "q": {
+                "en": "I chose Web application",
+                "zh": "我選成了「網頁應用程式」"
+              },
+              "a": {
+                "en": "The sign-in will fail with \"redirect_uri_mismatch\". Create a new client with the type Desktop app.",
+                "zh": "登入時會失敗，出現 redirect_uri_mismatch。請重新建一個類型是 Desktop app 的用戶端。"
+              }
+            },
+            {
+              "id": "no-create",
+              "q": {
+                "en": "I do not see Create client",
+                "zh": "我沒看到 Create client"
+              },
+              "a": {
+                "en": "Check that the project at the top is the one you created earlier, and that the consent screen is finished (the step before): the client can only be made after it.",
+                "zh": "確認上方選的是你先前建的專案，而且同意畫面已經設好（上一步）：要先有同意畫面才能建用戶端。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b5",
+          "title": {
+            "en": "Put the file where the server looks for it",
+            "zh": "把檔案放進伺服器找得到的資料夾"
+          },
+          "how": [
+            {
+              "en": "Press \"Open the folder\". ShellBot makes it and opens it.",
+              "zh": "按「打開資料夾」。ShellBot 會建好並打開它。"
+            },
+            {
+              "en": "Drag the .json file you downloaded into it and rename it to credentials.json.",
+              "zh": "把下載的 .json 檔拖進去，改名成 credentials.json。"
+            },
+            {
+              "en": "Press \"Check again\". ShellBot only checks that the file is there: it never opens it.",
+              "zh": "按「再檢查一次」。ShellBot 只看檔案在不在，不會打開它。"
+            }
+          ],
+          "see": {
+            "en": "The card below says credentials.json is in place.",
+            "zh": "下面那一格說 credentials.json 已經放好。"
+          },
+          "check": {
+            "id": "credentials",
+            "on": "done",
+            "gate": true,
+            "pass": [
+              "ok"
+            ],
+            "states": {
+              "ok": {
+                "tone": "ok",
+                "text": {
+                  "en": "credentials.json is in place",
+                  "zh": "credentials.json 已經放好了"
+                }
+              },
+              "no_folder": {
+                "tone": "warn",
+                "text": {
+                  "en": "The folder does not exist yet",
+                  "zh": "資料夾還不存在"
+                },
+                "hint": {
+                  "en": "Press \"Open the folder\" first.",
+                  "zh": "先按「打開資料夾」。"
+                }
+              },
+              "missing": {
+                "tone": "bad",
+                "text": {
+                  "en": "credentials.json is not in the folder yet",
+                  "zh": "資料夾裡還沒有 credentials.json"
+                }
+              },
+              "empty": {
+                "tone": "bad",
+                "text": {
+                  "en": "credentials.json is there but empty",
+                  "zh": "credentials.json 在，但是空的"
+                },
+                "hint": {
+                  "en": "Download the file again in the step before.",
+                  "zh": "回上一步重新下載一次。"
+                }
+              },
+              "double_ext": {
+                "tone": "bad",
+                "text": {
+                  "en": "The file is called credentials.json.json",
+                  "zh": "檔名變成 credentials.json.json"
+                },
+                "hint": {
+                  "en": "Remove the second .json from its name.",
+                  "zh": "把名字後面多的那個 .json 拿掉。"
+                }
+              },
+              "downloaded_name": {
+                "tone": "warn",
+                "text": {
+                  "en": "A downloaded client_secret….json is there",
+                  "zh": "資料夾裡是下載來的 client_secret….json"
+                },
+                "hint": {
+                  "en": "Rename it to credentials.json.",
+                  "zh": "把它改名成 credentials.json。"
+                }
+              }
+            }
+          },
+          "actions": [
+            {
+              "id": "open_folder",
+              "label": {
+                "en": "Open the folder",
+                "zh": "打開資料夾"
+              },
+              "builtin": null,
+              "after": "check",
+              "results": {
+                "opened": {
+                  "tone": "ok",
+                  "text": {
+                    "en": "Opened {path}",
+                    "zh": "已打開 {path}"
+                  }
+                },
+                "error": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "ShellBot could not open the folder.",
+                    "zh": "ShellBot 打不開這個資料夾。"
+                  }
+                }
+              }
+            }
+          ],
+          "stuck": [
+            {
+              "id": "double",
+              "q": {
+                "en": "The name became credentials.json.json",
+                "zh": "檔名變成 credentials.json.json"
+              },
+              "a": {
+                "en": "Your system is hiding file extensions, so \".json\" was added twice. Turn on \"show file extensions\" in Finder or Explorer, or rename the file to credentials only and let the system add .json. ShellBot tells you when the name is doubled.",
+                "zh": "系統把副檔名藏起來了，所以 .json 被加了兩次。在 Finder 或檔案總管打開「顯示副檔名」，或只改成 credentials 讓系統自己補 .json。名字重複的話 ShellBot 會告訴你。"
+              }
+            },
+            {
+              "id": "where",
+              "q": {
+                "en": "I cannot find the file I downloaded",
+                "zh": "找不到我下載的檔案"
+              },
+              "a": {
+                "en": "It is usually in your Downloads folder, named like client_secret_….json. Your browser's download list shows where it went.",
+                "zh": "通常在下載資料夾，名字像 client_secret_….json。瀏覽器的下載清單會告訴你它在哪。"
+              }
+            },
+            {
+              "id": "lost",
+              "q": {
+                "en": "I lost the file",
+                "zh": "檔案不見了"
+              },
+              "a": {
+                "en": "Go back to the step before: on the client's page press Add Secret to make a new one and download it.",
+                "zh": "回到上一步：在那個用戶端的頁面按 Add Secret 產生新的，再下載一次。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Go to the download step",
+                    "zh": "回到下載那一步"
+                  },
+                  "step": "b4"
+                }
+              ]
+            },
+            {
+              "id": "paste",
+              "q": {
+                "en": "Do I paste the secret somewhere?",
+                "zh": "要把 secret 貼到哪裡嗎？"
+              },
+              "a": {
+                "en": "No. Never paste the client secret into ShellBot, into a chat or into a terminal command: those keep a record of what you type. Only drag the file in.",
+                "zh": "不用，也不要貼。不要把 client secret 貼進 ShellBot、對話或終端機指令：那些地方都會留下紀錄。只要把檔案拖進資料夾。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b6",
+          "title": {
+            "en": "Add the server to Claude",
+            "zh": "把伺服器加進 Claude"
+          },
+          "how": [
+            {
+              "en": "Leave \"Read mail only\" ticked unless you want your bots to send mail too.",
+              "zh": "「只讀信」維持勾選，除非你要讓 bot 也能寄信。"
+            },
+            {
+              "en": "Press \"Add it for me\". ShellBot runs one command with the same account folder your Claude tabs use, so they can see the server.",
+              "zh": "按「幫我加進去」。ShellBot 會用 Claude 分頁同一個帳號資料夾跑一個指令，分頁才看得到這個伺服器。"
+            },
+            {
+              "en": "The command is shown under the button. There is no secret in it.",
+              "zh": "指令會顯示在按鈕下面，裡面沒有任何祕密。"
+            }
+          ],
+          "see": {
+            "en": "The card below says shellbot-gmail was added.",
+            "zh": "下面那一格說 shellbot-gmail 已經加進去了。"
+          },
+          "actions": [
+            {
+              "id": "cli_add",
+              "label": {
+                "en": "Add it for me",
+                "zh": "幫我加進去"
+              },
+              "builtin": "cli_add",
+              "after": null,
+              "results": {
+                "added": {
+                  "tone": "ok",
+                  "text": {
+                    "en": "Added shellbot-gmail to Claude",
+                    "zh": "已把 shellbot-gmail 加進 Claude"
+                  }
+                },
+                "replaced": {
+                  "tone": "ok",
+                  "text": {
+                    "en": "Replaced the old shellbot-gmail entry with these choices",
+                    "zh": "已用這次的選擇換掉舊的 shellbot-gmail"
+                  }
+                },
+                "no_claude": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "ShellBot cannot find the claude command",
+                    "zh": "ShellBot 找不到 claude 指令"
+                  }
+                },
+                "failed": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "Claude did not accept the command (exit code {code})",
+                    "zh": "Claude 沒有接受這個指令（結束碼 {code}）"
+                  }
+                },
+                "error": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "ShellBot could not run the command.",
+                    "zh": "ShellBot 沒辦法執行這個指令。"
+                  }
+                }
+              }
+            }
+          ],
+          "options": [
+            {
+              "id": "readonly",
+              "label": {
+                "en": "Read mail only (recommended)",
+                "zh": "只讀信（建議）"
+              },
+              "default": true
+            }
+          ],
+          "stuck": [
+            {
+              "id": "no-claude",
+              "q": {
+                "en": "ShellBot cannot find claude",
+                "zh": "ShellBot 找不到 claude"
+              },
+              "a": {
+                "en": "Claude Code has to be installed: it is the claude command your Claude tabs run. Install it, reopen ShellBot, and press the button again.",
+                "zh": "要先裝 Claude Code：Claude 分頁跑的就是 claude 指令。裝好後重開 ShellBot，再按一次按鈕。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open the Claude Code docs",
+                    "zh": "打開 Claude Code 說明"
+                  },
+                  "url": "https://code.claude.com/docs/en/overview"
+                }
+              ]
+            },
+            {
+              "id": "terminal",
+              "q": {
+                "en": "I ran the command myself in a terminal",
+                "zh": "我自己在終端機跑了這個指令"
+              },
+              "a": {
+                "en": "That writes to the default Claude settings, and the Claude tabs here may use another account folder, so they do not see it. Use the button: it uses the same folder the tabs do.",
+                "zh": "那會寫到預設的 Claude 設定，而這裡的 Claude 分頁可能用另一個帳號資料夾，所以看不到。請用這個按鈕：它用的是分頁同一個資料夾。"
+              }
+            },
+            {
+              "id": "exists",
+              "q": {
+                "en": "It says it already exists",
+                "zh": "它說已經存在"
+              },
+              "a": {
+                "en": "ShellBot replaces its own shellbot-gmail entry with the choices you made here. It touches no other entry in your settings.",
+                "zh": "ShellBot 會用你現在的選擇換掉它自己的 shellbot-gmail。你設定裡的其他項目都不會動。"
+              }
+            },
+            {
+              "id": "readonly",
+              "q": {
+                "en": "What does \"Read mail only\" do?",
+                "zh": "「只讀信」是什麼？"
+              },
+              "a": {
+                "en": "The server is started in read-only mode and, in the next step, Google is asked only for permission to read mail. Untick it only if you want your bots to send or change mail.",
+                "zh": "伺服器會用唯讀模式啟動，下一步向 Google 要的也只是讀信的權限。除非你要讓 bot 寄信或改信，不然別取消勾選。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b7",
+          "title": {
+            "en": "Sign in to Google",
+            "zh": "登入 Google 授權"
+          },
+          "how": [
+            {
+              "en": "Press \"Open the sign-in tab\". ShellBot opens a tab that runs the server's Google sign-in.",
+              "zh": "按「打開登入分頁」。ShellBot 會開一個分頁，跑伺服器的 Google 登入。"
+            },
+            {
+              "en": "Your browser opens Google: pick the mailbox, look at what it asks for, then press Allow.",
+              "zh": "瀏覽器會自己打開 Google：選信箱，看完要的權限再按允許。"
+            },
+            {
+              "en": "The tab ends by itself. Press \"Check again\": ShellBot only checks that the permission file appeared, it never opens it.",
+              "zh": "分頁會自己結束。按「再檢查一次」：ShellBot 只看授權檔出現了沒有，不會打開它。"
+            }
+          ],
+          "see": {
+            "en": "The card below says the sign-in is done.",
+            "zh": "下面那一格說登入授權完成了。"
+          },
+          "note": {
+            "en": "If Google ever takes the permission back, or deletes the client, the server deletes its own permission file. ShellBot keeps this server's files in a profile of its own (shellbot), so another program's files are not touched by it.",
+            "zh": "Google 一旦收回授權，或把用戶端刪了，伺服器會把它自己的授權檔刪掉。ShellBot 把這個伺服器的檔案放在自己的設定檔（shellbot），所以不會動到別的程式的檔案。"
+          },
+          "check": {
+            "id": "tokens",
+            "on": "done",
+            "gate": true,
+            "pass": [
+              "ok"
+            ],
+            "states": {
+              "ok": {
+                "tone": "ok",
+                "text": {
+                  "en": "The sign-in is done",
+                  "zh": "登入授權完成了"
+                }
+              },
+              "missing": {
+                "tone": "warn",
+                "text": {
+                  "en": "The sign-in is not finished yet",
+                  "zh": "登入授權還沒完成"
+                },
+                "hint": {
+                  "en": "Finish it in your browser, then check again.",
+                  "zh": "到瀏覽器完成授權，再檢查一次。"
+                }
+              }
+            }
+          },
+          "actions": [
+            {
+              "id": "auth_tab",
+              "label": {
+                "en": "Open the sign-in tab",
+                "zh": "打開登入分頁"
+              },
+              "builtin": null,
+              "after": null,
+              "results": {
+                "opened": {
+                  "tone": "ok",
+                  "text": {
+                    "en": "The sign-in tab is open. Finish in your browser.",
+                    "zh": "登入分頁開了。到瀏覽器完成授權。"
+                  }
+                },
+                "error": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "ShellBot could not open the tab.",
+                    "zh": "ShellBot 打不開分頁。"
+                  }
+                }
+              }
+            }
+          ],
+          "options": [
+            {
+              "id": "readonly",
+              "label": {
+                "en": "Read mail only (same as the step before)",
+                "zh": "只讀信（跟上一步一樣）"
+              },
+              "default": true
+            }
+          ],
+          "stuck": [
+            {
+              "id": "denied",
+              "q": {
+                "en": "Google says access denied",
+                "zh": "Google 說存取遭拒"
+              },
+              "a": {
+                "en": "If you chose External, your own address has to be in the Test users list. Add it there, then open the sign-in tab again.",
+                "zh": "選了 External 的話，你自己的信箱要在 Test users 清單裡。加進去之後，再開一次登入分頁。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Go to the consent screen step",
+                    "zh": "回到同意畫面那一步"
+                  },
+                  "step": "b3"
+                }
+              ]
+            },
+            {
+              "id": "no-browser",
+              "q": {
+                "en": "The browser did not open",
+                "zh": "瀏覽器沒有打開"
+              },
+              "a": {
+                "en": "Click the web address printed in the sign-in tab, or copy it into your browser.",
+                "zh": "點分頁裡印出來的網址，或把它複製到瀏覽器。"
+              }
+            },
+            {
+              "id": "mismatch",
+              "q": {
+                "en": "It says \"redirect_uri_mismatch\"",
+                "zh": "它說 redirect_uri_mismatch"
+              },
+              "a": {
+                "en": "The client type is wrong: it has to be Desktop app. Create the client again with that type, replace the file in the folder and sign in again.",
+                "zh": "用戶端類型不對：必須是 Desktop app。用這個類型重建用戶端，換掉資料夾裡的檔案，再登入一次。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Go to the client step",
+                    "zh": "回到建立用戶端那一步"
+                  },
+                  "step": "b4"
+                }
+              ]
+            },
+            {
+              "id": "api-off",
+              "q": {
+                "en": "It says the Gmail API is not enabled",
+                "zh": "它說 Gmail API 沒有啟用"
+              },
+              "a": {
+                "en": "Go back and turn on the Gmail API for the project that owns your client.",
+                "zh": "回去，在建了用戶端的那個專案裡啟用 Gmail API。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Go to the Gmail API step",
+                    "zh": "回到啟用 Gmail API 那一步"
+                  },
+                  "step": "b2"
+                }
+              ]
+            },
+            {
+              "id": "unverified",
+              "q": {
+                "en": "Google shows an \"unverified app\" page",
+                "zh": "Google 顯示「未經驗證的應用程式」頁面"
+              },
+              "a": {
+                "en": "It is your own app: you can go on (the link is usually under Advanced). The wording may differ.",
+                "zh": "這是你自己的應用程式，可以繼續（連結通常在 Advanced 底下）。字樣可能有些不同。"
+              }
+            }
+          ],
+          "redo_on_reconnect": true
+        },
+        {
+          "id": "b8",
+          "kind": "test",
+          "title": {
+            "en": "Test that it works",
+            "zh": "測試接通"
+          },
+          "intro": {
+            "en": "ShellBot opens a temporary Claude tab and asks it for the sender and subject of your newest email, nothing else. Only that tab sees your mail: ShellBot does not read, keep or log it.",
+            "zh": "ShellBot 會開一個臨時的 Claude 分頁，請它查最新一封信的寄件者和標題，不做別的事。只有那個分頁看得到信：ShellBot 不讀、不存、不記錄。"
+          }
+        }
+      ],
+      "test": {
+        "via": {
+          "en": "local Gmail server",
+          "zh": "本機 Gmail 伺服器"
+        },
+        "verdicts": {
+          "starting": {
+            "text": {
+              "en": "Opening a temporary Claude tab…",
+              "zh": "正在開臨時的 Claude 分頁…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "waiting_ready": {
+            "text": {
+              "en": "Waiting for the tab to be ready…",
+              "zh": "等分頁準備好…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "asking": {
+            "text": {
+              "en": "Asking it to look up your newest email…",
+              "zh": "請它查最新一封信…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "reading": {
+            "text": {
+              "en": "Gmail is answering…",
+              "zh": "Gmail 回應中…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your mail.",
+              "zh": "通常約一分鐘。信只有測試分頁看得到。"
+            }
+          },
+          "needs_allow": {
+            "text": {
+              "en": "The test tab is asking for your OK",
+              "zh": "測試分頁在等你按允許"
+            },
+            "next": {
+              "en": "It wants to use a Gmail tool, and Claude asks before it does. Open the test conversation and choose Allow. The test goes on by itself afterwards.",
+              "zh": "它要用 Gmail 工具，Claude 會先問你。打開測試對話，選允許。之後測試會自己繼續。"
+            }
+          },
+          "pass": {
+            "text": {
+              "en": "It works! Gmail is connected.",
+              "zh": "通了！Gmail 已經接上。"
+            },
+            "next": {
+              "en": "The temporary test tab used the local Gmail server {n} time(s) to look up your newest email. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory. A Claude tab that was already open before you connected Gmail may need to be reopened before it sees Gmail (not confirmed).",
+              "zh": "臨時的測試分頁用 本機 Gmail 伺服器 查了 {n} 次最新一封信。 信的內容精靈不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。 連接之前就開著的 Claude 分頁，可能要重開才看得到 Gmail（尚未證實）。"
+            }
+          },
+          "said_ok": {
+            "text": {
+              "en": "This one does not count. The test tab said it worked but never called a Gmail tool, so it proves nothing.",
+              "zh": "這次不算：測試分頁說成功了，卻沒有叫過任何 Gmail 工具，這樣不能算數。"
+            },
+            "next": {
+              "en": "What to do: Run the test again. Press \"Test again\". If it happens again, open the test conversation and see what the tab did.",
+              "zh": "怎麼辦：再測一次。按「重新測試」。再發生的話，打開測試對話看看分頁做了什麼。"
+            }
+          },
+          "timeout": {
+            "text": {
+              "en": "It took too long. After 3 minutes the test tab had not finished.",
+              "zh": "等太久了：3 分鐘了，測試分頁還沒做完。"
+            },
+            "next": {
+              "en": "Most likely: It is waiting for you. Open the test conversation: Claude may be asking you to allow a tool, or sitting on a sign-in screen.",
+              "zh": "最可能：它在等你。打開測試對話看看：Claude 可能在問你要不要允許某個工具，或停在登入畫面。"
+            }
+          },
+          "unclear": {
+            "text": {
+              "en": "No clear answer. The test tab used Gmail, but it did not end with a clear result line.",
+              "zh": "沒有明確的結果：測試分頁用了 Gmail，但最後沒有留下明確的結果那一行。"
+            },
+            "next": {
+              "en": "What to do: Look, then test again. Open the test conversation to see how it ended, then press \"Test again\".",
+              "zh": "怎麼辦：看一下，再測一次。打開測試對話看它怎麼結束的，再按「重新測試」。"
+            }
+          },
+          "not_ready": {
+            "text": {
+              "en": "The test tab did not get ready. It never reached its prompt, so nothing was asked.",
+              "zh": "測試分頁沒有準備好：它一直沒有走到可以輸入的畫面，所以什麼都沒問。"
+            },
+            "next": {
+              "en": "Most likely: Claude is not signed in. Open the test conversation: if it shows a sign-in screen, sign in there, then test again.",
+              "zh": "最可能：Claude 還沒登入。打開測試對話：如果停在登入畫面，先在那裡登入，再測一次。"
+            }
+          },
+          "closed": {
+            "text": {
+              "en": "The test tab was closed. The test tab went away before it finished.",
+              "zh": "測試分頁被關掉了：測試分頁沒做完就不見了。"
+            },
+            "next": {
+              "en": "What to do: Run the test again. Press \"Test again\".",
+              "zh": "怎麼辦：再測一次。按「重新測試」。"
+            }
+          },
+          "start_failed": {
+            "text": {
+              "en": "Could not open the test tab. ShellBot could not start a Claude tab for the test.",
+              "zh": "開不了測試分頁：ShellBot 沒辦法為測試開一個 Claude 分頁。"
+            },
+            "next": {
+              "en": "What to do: Check that Claude opens. Open a Claude tab yourself from the + button. If that works, press \"Test again\".",
+              "zh": "怎麼辦：確認 Claude 開得起來。自己用 + 按鈕開一個 Claude 分頁。開得起來的話，再按「重新測試」。"
+            }
+          },
+          "no_tools": {
+            "text": {
+              "en": "Not yet. The test tab did not find any Gmail tool from the local server.",
+              "zh": "還沒通：測試分頁沒有找到本機伺服器的任何 Gmail 工具。"
+            },
+            "next": {
+              "en": "Most likely: The server was not added for the account your Claude tabs use. Go back to that step and press \"Add it for me\". A command typed in an ordinary terminal goes to a different settings file, which these tabs may not read. Next: The server could not start: Node.js is missing or too old. Check Node.js again. The server needs version 22 or newer.",
+              "zh": "最可能：伺服器沒有加進 Claude 分頁用的那個帳號設定。回到那一步，按「幫我加進去」。在一般終端機打的指令會寫到別的設定檔，這些分頁不一定讀得到。 其次：伺服器起不來：沒有 Node.js 或版本太舊。再檢查一次 Node.js。伺服器要 22 以上。"
+            }
+          },
+          "failed": {
+            "text": {
+              "en": "Gmail answered with an error. The test tab called the local server, but the answer ended in a failure.",
+              "zh": "Gmail 回了錯誤：測試分頁叫了本機伺服器，但結果是失敗。"
+            },
+            "next": {
+              "en": "Most likely: The permission has expired, was taken back, or was never finished. Go back to that step and sign in again. Also: The Gmail API is not turned on for the project. Go back to that step and turn it on for the project that owns your client.",
+              "zh": "最可能：授權過期、被收回，或當初沒有做完。回到那一步，重新登入授權一次。 另外：這個專案沒有啟用 Gmail API。回到那一步，在建了用戶端的那個專案裡啟用它。"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "faq": [
+    {
+      "id": "which-way",
+      "q": {
+        "en": "Which way do you want to connect Gmail?",
+        "zh": "要用哪一種方式接上 Gmail？"
+      },
+      "a": {
+        "en": "Not sure? Pick the first one. You can start over any time from Settings → Connections → Gmail.",
+        "zh": "不確定就選第一個。之後想換，隨時可以從「設定 → 連線 → Gmail」重來。"
+      }
+    },
+    {
+      "id": "others-overview",
+      "q": {
+        "en": "How do other AI tabs connect to Gmail?",
+        "zh": "其他 AI 分頁怎麼接 Gmail？"
+      },
+      "a": {
+        "en": "The claude.ai connector only reaches Claude tabs. Every other AI tab can use the same local Gmail server instead: that is the advanced way. The steps are the same except one: instead of adding the server to Claude, you add it to that AI's own settings. Do the Node.js check, the Google Cloud steps, the folder and the Google sign-in first. ShellBot does not write other AIs' settings for you. Below: what to enter, where each AI keeps its settings, and the command it offers if it has one.",
+        "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。其他 AI 分頁改用同一個本機 Gmail 伺服器，也就是「進階」那一條。 步驟只差一步：不是把伺服器加進 Claude，而是加進那個 AI 自己的設定。先做完 Node.js 檢查、Google Cloud 那幾步、放檔案的資料夾，和 Google 登入。 ShellBot 不會替你改其他 AI 的設定。下面列出要填什麼、各個 AI 的設定放在哪，和它有沒有現成的指令。"
+      }
+    },
+    {
+      "id": "others-enter",
+      "q": {
+        "en": "What do I enter in another AI's settings?",
+        "zh": "在其他 AI 的設定裡要填什麼？"
+      },
+      "a": {
+        "en": "Command: npx. Arguments: -y @dguido/google-workspace-mcp. Environment: GOOGLE_WORKSPACE_MCP_PROFILE=shellbot, GOOGLE_WORKSPACE_SERVICES=gmail, GOOGLE_WORKSPACE_READ_ONLY=true. No secret goes in any of these: the client file stays in the shellbot profile folder. Keep the read-only line if you signed in read-only.",
+        "zh": "指令：npx。參數：-y @dguido/google-workspace-mcp。環境變數：GOOGLE_WORKSPACE_MCP_PROFILE=shellbot、GOOGLE_WORKSPACE_SERVICES=gmail、GOOGLE_WORKSPACE_READ_ONLY=true。這些裡面都沒有祕密：用戶端的檔案留在 shellbot 設定檔的資料夾裡。登入時選了只讀信的話，這裡也留著只讀那一行。"
+      }
+    },
+    {
+      "id": "test-basis",
+      "q": {
+        "en": "What does the connection test look at?",
+        "zh": "連線測試看什麼？"
+      },
+      "a": {
+        "en": "The names of the tools the test tab called, and its last line. ShellBot did not read what the tools returned. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory.",
+        "zh": "測試分頁叫過哪些工具（只看名稱），和它最後一行。ShellBot 沒有讀工具傳回的內容。 信的內容精靈不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。"
+      }
+    },
+    {
+      "id": "disconnect",
+      "q": {
+        "en": "How do I take Gmail back?",
+        "zh": "要怎麼收回 Gmail？"
+      },
+      "a": {
+        "en": "Disconnect in ShellBot only removes the entry ShellBot added to the AIs' settings (shellbot-gmail) and forgets its progress. The permission itself stays with Google: take it back on your Google account's connected-apps page (myaccount.google.com/connections). For the connector, press Disconnect on the Gmail row on claude.ai. Files in the shellbot profile folder are yours and are not deleted.",
+        "zh": "在 ShellBot 按中斷，只會移掉 ShellBot 加進各 AI 設定的項目（shellbot-gmail）並清掉進度。授權本身在 Google 那邊：到 Google 帳號的「已連結的應用程式」頁面（myaccount.google.com/connections）收回。連接器的話，到 claude.ai 把 Gmail 那一格按 Disconnect。shellbot 設定檔資料夾裡的檔案是你的，不會被刪。"
+      }
+    }
+  ],
+  "problems": {
+    "revoked": {
+      "text": {
+        "en": "Google took the Gmail permission back, or the sign-in client was deleted.",
+        "zh": "Google 把 Gmail 的授權收回了，或登入用的用戶端被刪了。"
+      },
+      "next": {
+        "en": "Sign in again in the Google sign-in step. If the client is gone, make a new one first.",
+        "zh": "到 Google 登入那一步再登入一次。用戶端不見了的話，先重建一個。"
+      }
+    },
+    "expired": {
+      "text": {
+        "en": "The Gmail permission has expired.",
+        "zh": "Gmail 的授權過期了。"
+      },
+      "next": {
+        "en": "Sign in again. An External app left in testing loses the permission after 7 days: publish the app, or use Internal if your mailbox is in a Workspace.",
+        "zh": "再登入一次。External 的應用程式還在測試中，授權 7 天就會失效：發布應用程式，或信箱在 Workspace 的話改用 Internal。"
+      }
+    }
+  },
+  "health": {
+    "ttl_s": 300
+  }
+}
