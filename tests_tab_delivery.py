@@ -178,6 +178,29 @@ api.state["s1"] = "working"
 check("--now goes in mid-turn", td.deliver(api, "s1", "urgent", now=True)["queued"] is False
       and api.sent == [("s1", "urgent")])
 
+print("queue=False: now or not at all")
+api.sent.clear()
+api.state["s1"] = "working"
+r = td.deliver(api, "s1", "memory request", what="bot-memory", queue=False)
+check("a busy tab is left alone: refused with the reason, nothing queued, nothing typed",
+      r["success"] is False and r["code"] == "busy" and r["reason"] == "working" and not r["queued"]
+      and not td.pending("s1") and not api.sent, r)
+api.state["s1"] = ""
+api.screen["s1"] = box("\x1b[39m❯\xa0half typed")
+r = td.deliver(api, "s1", "memory request", queue=False)
+check("the user's draft is not written over, and not waited behind", r["reason"] == "draft" and not td.pending("s1") and not api.sent, r)
+api.screen["s1"] = ""
+api.state["s1"] = "working"
+td.deliver(api, "s1", "someone's message")
+api.state["s1"] = ""
+r = td.deliver(api, "s1", "memory request", queue=False)
+check("texts waiting for the tab come first: it does not jump the line", r["reason"] == "queued" and len(td.pending("s1")) == 1, r)
+check("…that one goes in as it always did", wait_for(lambda: api.sent == [("s1", "someone's message")]) and wait_for(lambda: not td.pending("s1")))
+api.sent.clear()
+r = td.deliver(api, "s1", "memory request", queue=False)
+check("a free tab gets it at once", r["success"] and not r["queued"] and api.sent == [("s1", "memory request")], r)
+api.state["s1"] = "working"
+
 print("timeouts")
 api.sent.clear()
 td.QUEUE_MAX_WAIT = 0.3

@@ -459,8 +459,12 @@ def resume(api) -> int:
 
 def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
             from_sid: str = "", on_timeout=None, what: str = "", label: str = "",
-            max_wait: float = None, clear_draft: bool = False) -> dict:
+            max_wait: float = None, clear_draft: bool = False, queue: bool = True) -> dict:
     """Send `text` to tab `sid` now if it is free (or `now`), else queue it.
+    `queue=False`: only ever now. A tab that is not free (or has texts waiting ahead) is
+    left alone and nothing is queued, so a text that may as well wait for the caller's
+    next look (a periodic memory save) never holds up the ones people and agents sent:
+    {"success": False, "code": "busy", "reason": why}.
     An item that never goes in is reported to `from_sid` (`label` names the
     target in that note), or handed to `on_timeout(outcome, why)` instead.
     `clear_draft`: the person chose to drop the draft in the input box (the chat
@@ -472,6 +476,9 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
     with _lock:
         waiting = bool(_queues.get(sid))
     reason = "" if now else ("queued" if waiting else busy_reason(api, sid))
+    if reason and not queue:
+        return {"success": False, "code": "busy", "queued": False, "reason": reason,
+                "message": _reason_text(reason)}
     if reason == "draft" and clear_draft:
         if not clear_draft_now(api, sid):
             return {"success": False, "code": "draft_stuck", "queued": False, "message": sf_lang.pick(
