@@ -7,6 +7,7 @@ is tested where the keyboard is left on something else:
   - the keyboard on a button (the switch just clicked): the keys go to the active terminal, which takes
     the focus, and one debug line says what had the keyboard
   - after switching tabs (the sidebar, the tab bar), the new tab's terminal gets the keys
+  - a click in the terminal gives it the keyboard, also when the CLI reports the mouse
   - a visible text box (the sidebar's search) keeps its keys
   - with the chat view up, nothing is taken
 Demo data only. Needs playwright; SKIP without it. Run: .venv/bin/python tests_term_keys.py
@@ -113,6 +114,18 @@ def run(browser, engine):
         after = [c for c in page.evaluate("window.__calls") if c[0] == "write_input" and c[1][0] == sid]
         check(f"switched from {how}: the keys reach {sid}", "".join(c[1][1] for c in after[len(before):]) == "ok",
               after[len(before):])
+
+    print(f"[{engine}] 2a. a click in the terminal, even one that reports the mouse")
+    page.evaluate("window._pushOutput('s501', '\\x1b[?1049h\\x1b[?1003h\\x1b[?1006h')")   # a full-screen TUI that reports the mouse
+    page.locator("#tab-bar [data-sid='s501']").first.click()
+    page.wait_for_timeout(300)
+    page.evaluate("document.querySelector('#tab-bar #chat-switch button[data-mode=\\\"cli\\\"]').focus()")
+    box = page.locator(".xterm-screen:visible").first.bounding_box()
+    page.mouse.click(box["x"] + 120, box["y"] + 60)
+    page.wait_for_timeout(200)
+    check("the click gives the terminal the keyboard",
+          page.evaluate("document.activeElement && document.activeElement.classList.contains('xterm-helper-textarea')"))
+    page.evaluate("window._pushOutput('s501', '\\x1b[?1003l\\x1b[?1006l\\x1b[?1049l')")
 
     print(f"[{engine}] 2b. a visible text box keeps its keys")
     box = page.locator("#sidebar input[type=search], #sidebar input").first

@@ -3433,11 +3433,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             const rState = rt.agent_state || '';
             // 同一份狀態也給頂部的 chip 用，不另外拉一次
             if (sessions[rmt]) sessions[rmt]._remoteState = rState;
-            const stateDot = rState
-              ? `<span class="busy-dot${rState === 'working' ? ' on' : ''}" `
-                + `title="${rState === 'working' ? '執行中' : '閒置'}" `
-                + `style="pointer-events:none;margin-right:4px">${window.SFBots ? SFBots.remoteFace(p.name, rt.sid, rt.label) : ''}</span>`
-              : '';
+            // 燈（bots 開著時燈裡是頭像）每一列都畫：頭像在本機依「機器＋分頁名」
+            // 決定，不靠對方回報、也不靠對方的版本。對方沒有狀態快照的分頁都回 ''，
+            // 以前只有回報了狀態的列才畫，同一台底下一半有頭像一半沒有，名稱也跟著
+            // 左右錯開。沒回報時燈不亮（.busy-dot 預設透明），只是佔住位置。
+            const stateDot =
+              `<span class="busy-dot${rState === 'working' ? ' on' : ''}" `
+              + `title="${rState === 'working' ? '執行中' : rState ? '閒置' : '對方沒有回報狀態'}" `
+              + `style="pointer-events:none;margin-right:4px">${window.SFBots ? SFBots.remoteFace(p.name, rt.sid, rt.label) : ''}</span>`;
             // ✕ = 關閉對方的 session（跟 local 一樣，會先確認）
             row.innerHTML =
               stateDot +
