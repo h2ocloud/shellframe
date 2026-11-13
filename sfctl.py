@@ -818,6 +818,15 @@ def main():
     p_res.add_argument("--now", action="store_true", help=now_help)
     p_res.add_argument("--ttl", type=float, default=None, help=ttl_help)
     sub.add_parser("bots", help="List bots: who is awake, sleeping or external (experimental_bots)")
+    p_con = sub.add_parser("connect", help="Connections to services (mail, files, chat…): list; status|start|test|disconnect <service>. "
+                                           "start begins or goes on, and says which step is next; test says it works or which step did not; "
+                                           "disconnect removes only what ShellBot added")
+    p_con.add_argument("action", choices=["list", "status", "start", "test", "disconnect"])
+    p_con.add_argument("service", nargs="?", default="", help="Service id (see `sfctl connect list`)")
+    p_con.add_argument("--route", default="", help="start: the way to connect (default: the recommended one)")
+    p_con.add_argument("--reconnect", action="store_true", help="start: begin again after a service needs connecting again")
+    p_con.add_argument("--refresh", action="store_true", help="status: run the health check first")
+    p_con.add_argument("--json", action="store_true", help="Print the answer as JSON")
     p_tgs = sub.add_parser("tg-send", help="The primary bot tells the user's phone (a milestone, a result); "
                                            "only from the primary bot's tab, 20 an hour, not during quiet hours")
     p_tgs.add_argument("text", help="What to send")
@@ -1103,6 +1112,9 @@ def main():
         _print_result(_rpc("a2a_log", {}, timeout=15))
     elif args.cmd == "bots":
         _print_result(_rpc("bots_list", {}, timeout=15))
+    elif args.cmd == "connect":
+        _print_result(_rpc("connect", {"action": args.action, "service": args.service, "route": args.route, "reconnect": args.reconnect,
+                                       "refresh": args.refresh, "json": args.json}, timeout=60))
     elif args.cmd == "tg-send":
         _print_result(_rpc("tg_send", {"text": args.text, "from_sid": os.environ.get("SF_SID", "")}, timeout=20))
     elif args.cmd == "bots-save":

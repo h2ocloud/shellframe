@@ -148,7 +148,8 @@ def mode_for(cli: str, kind: str) -> str:
 
 class Clis:
     """The AI programs on this computer, reached through `runner(argv, timeout, env) -> Result` and
-    `finder(cli) -> path | None` (both replaceable), with `env` as the child environment."""
+    `finder(cli) -> path | None` (both replaceable), with `env` as the child environment (a dict, or a
+    function `env(cli) -> dict` so each program runs with its own account folder)."""
 
     def __init__(self, runner=None, finder=None, env=None, win: bool = False, timeout: float = TIMEOUT_S):
         self.runner = runner or default_runner
@@ -176,15 +177,16 @@ class Clis:
             return {"state": "missing", "cli": cli, "server": server}
         return None
 
-    def _run(self, argv):
-        return self.runner(argv, self.timeout, self.env)
+    def _run(self, argv, cli=None):
+        env = self.env(cli) if callable(self.env) else self.env       # a program's own account folder: env(cli) -> dict
+        return self.runner(argv, self.timeout, env)
 
     def remove(self, cli: str, server: str) -> dict:
         """{"state": "removed" | "absent" | "missing" | "manual" | "unsupported" | "failed"}."""
         why = self._gate(cli, server)
         if why:
             return why
-        r = self._run(_argv(cli, "remove", self.finder(cli), server))
+        r = self._run(_argv(cli, "remove", self.finder(cli), server), cli)
         if r.rc == 0:
             return {"state": "removed", "cli": cli, "server": server}
         return {"state": "absent" if r.rc > 0 else "failed", "cli": cli, "server": server}
@@ -199,10 +201,10 @@ class Clis:
             return why
         binary = self.finder(cli)
         env = {**(mcp.get("env") or {}), **(extra_env or {})}
-        gone = self._run(_argv(cli, "remove", binary, server))
+        gone = self._run(_argv(cli, "remove", binary, server), cli)
         argv = _argv(cli, "add", binary, server, server_command(mcp, self.win), env)
         shown = secrets.mask(" ".join(argv), known=(extra_env or {}).values())
-        r = self._run(argv)
+        r = self._run(argv, cli)
         if r.rc != 0:
             return {"state": "failed", "cli": cli, "server": server, "shown": shown}
         return {"state": "replaced" if gone.rc == 0 else "added", "cli": cli, "server": server, "shown": shown}
@@ -214,7 +216,7 @@ class Clis:
         if why:
             return why
         op = _lookup_op(cli)
-        r = self._run(_argv(cli, op, self.finder(cli), server))
+        r = self._run(_argv(cli, op, self.finder(cli), server), cli)
         if r.rc == -2:
             return {"state": "unknown", "cli": cli, "server": server}
         present = (r.rc == 0) if op == "get" else (r.rc == 0 and _has_name(r.out, server))

@@ -192,6 +192,11 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 `decision.reason` 和 `options[].text` 也是給人看的字（v0.42.1 起）：AI 的回覆夾在 Telegram 的 `[[TG_REPLY_…]]` 標記中間時，開頭標記可能和問句在同一行、結尾標記可能接在最後一個選項後面，這些標記不會出現在 `reason` 和 `options` 裡。
 
+**連接（v0.44.0，新增欄位，舊欄位一個都沒動，`v` 維持 1）**
+
+- `/link/bots` 多一個頂層欄位 `connections`：每個服務一筆短狀態 `{"id", "name": {"en", "zh"}, "icon", "state", "attention", "step"}`。`state` 是 `not_started`／`waiting_user`／`verifying`／`connected`／`failed`／`needs_reconnect`；`attention` 為 true（`failed`、`needs_reconnect`）就是「需要重新接上」，手機可以畫一張卡；`step` 是「第幾步／共幾步」（例如 `"2/4"`），沒在接就是 `""`。內容裡沒有任何金鑰、token 或服務的資料。要接上請回到電腦的「設定 → 連接」。沒有這個欄位的舊電腦照舊，App 沒讀到就不畫。
+- 分頁的 `decision`（`kind: "red"`）在 bot 寫了 `[[SF:RED:connect:<服務>]]` 時多一個 `connect`：`{"service", "name": {"en", "zh"}, "state"}`；其餘欄位（`reason`、`options`）照舊。
+
 外部 bot 的 webhook 網址和授權，都不會出現在回應裡。
 
 **`POST /link/answer {"sid", "n", "id"}`**：回答 `/link/bots` 給的那一題。

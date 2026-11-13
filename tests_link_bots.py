@@ -238,6 +238,24 @@ bridge_home.on_turn_end(api, "s2", read_events=lambda sid: RED)          # no Te
 d2 = link()["tabs"]["s2"].get("decision") or {}
 check("a question a turn ended on with [[SF:RED]] comes with its options, with no Telegram bridge",
       d2.get("reason") == "要先修哪個？" and d2.get("options") == [{"n": 1, "text": "先修按鈕"}, {"n": 2, "text": "先修通知"}], d2)
+# a bot asks for a connection: [[SF:RED:connect:<service>]] (connectors/, docs/connectors.md). A made-up service, no program run.
+import _connectors_fake as _cf  # noqa: E402
+from connectors import clis as _cclis, engine as _ceng, registry as _creg  # noqa: E402
+_creg_demo = _creg.Registry(dirs=[])
+_creg_demo.register(_cf.demo(), adapter=_cf.FakeAdapter())
+api._connect_engine = _ceng.Engine(registry=_creg_demo, path=str(TMP / "connectors.json"),
+                                   clis=_cclis.Clis(runner=_cf.FakeRunner(), finder=_cf.finder()), backend=_cf.backend())
+CONNECT_RED = [RED[0], {"kind": "assistant_text", "text": "我需要接上 Demo 才能繼續。\n[[SF:RED:connect:demo]]\n1. 現在去接\n2. 先不要"}]
+bridge_home.on_turn_end(api, "s2", read_events=lambda sid: CONNECT_RED)
+d3 = link()["tabs"]["s2"].get("decision") or {}
+check("a connect tag adds `connect` (the service, its name, where it is) to the decision; the old fields are as they were",
+      d3.get("connect") == {"service": "demo", "name": {"en": "Demo", "zh": "Demo (zh)"}, "state": "not_started"}
+      and d3.get("kind") == "red" and d3.get("reason") == "我需要接上 Demo 才能繼續。" and d3.get("options") == [{"n": 1, "text": "現在去接"}, {"n": 2, "text": "先不要"}], d3)
+check("a plain RED has no `connect`", "connect" not in (d2 or {}))
+check("/link/bots carries `connections` (a new field, the version stays 1)",
+      link().get("connections") == [{"id": "demo", "name": {"en": "Demo", "zh": "Demo (zh)"}, "icon": "plug", "state": "not_started", "attention": False, "step": ""}]
+      and link().get("v") == 1, str(link().get("connections")))
+bridge_home.on_turn_end(api, "s2", read_events=lambda sid: RED)
 TG_RED = [{"kind": "user_msg", "text": "請放在 [[TG_REPLY_ab12cd34]] 之間"}, RED[1]]
 bridge_home.on_turn_end(api, "s2", read_events=lambda sid: TG_RED)
 check("…also when the turn started from Telegram", (link()["tabs"]["s2"].get("decision") or {}).get("options"))

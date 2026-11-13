@@ -216,6 +216,10 @@ class Engine:
             return {"state": "__error__"}
 
     # ── reading ────────────────────────────────────────────────────────────
+    def snapshot(self, service: str) -> dict:
+        """{"success", "status", "view"} for a service as it is now (a failure with a code for an unknown one)."""
+        return self._reply(service) if self.registry.get(service) else self._fail(service, "unknown_service")
+
     def status(self, service: str):
         desc = self.registry.get(service)
         return health.build(desc, self.store.get(service)) if desc else None

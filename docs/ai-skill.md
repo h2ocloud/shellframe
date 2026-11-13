@@ -331,6 +331,28 @@ command), and starts work with `sfctl a2a-send --as <external> <bot> "…"` or
 `--as` is refused inside a ShellFrame tab, and only names a roster role marked
 external. `delegate` to an external bot is refused: it has no tab here.
 
+## 4.8 Connections (a service the user wants your tab to use)
+
+A service (mail, files, chat…) has to be connected once before a tab can use it. ShellBot does the steps with the
+user on the Settings → Connections page; you do not walk them through it in the terminal and you never ask for, or
+handle, a key or token.
+
+```bash
+sfctl connect list                       # every service and where it is: not connected, waiting for you, connected, needs to be connected again
+sfctl connect status <service> [--refresh]   # one service (--refresh runs the health check first)
+sfctl connect start <service>            # begin, or go on where it was left; says which step is next
+sfctl connect test <service>             # "it works", or which step did not; it never reads the service's content
+sfctl connect disconnect <service>       # removes only what ShellBot added (ask the user first)
+```
+
+**When to ask**: you need a service's tools and `sfctl connect status <service>` is not `connected` (or the tools are simply
+not there). Say in one sentence what you need it for and ask whether to open the connection page. Then end your turn with a
+last line that holds only the marker `[[SF:RED:connect:<service>]]` (the service id is in `sfctl connect list`; that is the
+whole line, and it goes after your question, like a plain `[[SF:RED]]`). ShellBot shows the user a card whose button opens
+the steps, and the phone and Telegram get one sentence saying where to connect. When the user is done they tell you, or you
+check `sfctl connect status`. A service that **needs to be connected again** (it expired or was revoked) is the same: ask the
+same way. Do not try to fix a connection by editing an AI program's settings: ShellBot only changes its own `shellbot-…` entries.
+
 ## 4.7 The Loops panel's schedule list (macOS, needs `experimental_loops`)
 
 The Loops panel lists the person's own LaunchAgents: timers and KeepAlive jobs. Which
@@ -400,6 +422,7 @@ configure there.
 | A2A: the first message past the chain limit, to an open tab, goes in marked "not passed on" (data, not a task) and its sender gets `ERR Blocked …`; the person writing to a tab (Enter, the chat view, Telegram) starts its next message at layer 1; a message from another computer carries its own layer | 0.42.1 |
 | `bots-set` / `bots-save` refuse a model ShellBot does not know (`unknown_model`, with a suggestion); `/link/bots` `choices.models`; a name from `new --label` / `rename` survives the first message; `bots-delete` answers `busy` while the bot writes its memory | 0.42.1 |
 | A bot's own skills (`bots/<bot>/skills/`), listed before the shared ones; a bot that stays open is asked to save its memory after real conversation and 45 idle minutes (`bot_memory_autosave`, `bot_memory_idle_min`) | 0.43.0 |
+| Connections: `sfctl connect list` / `status` / `start` / `test` / `disconnect <service>` (§4.8); a bot's `[[SF:RED:connect:<service>]]` opens the connection card; `/link/bots` `connections` and `decision.connect` | 0.44.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

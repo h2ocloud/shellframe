@@ -399,11 +399,9 @@ def phone_answered(api, sid, n, claimed, where="phone"):
             pass
 
 
-def red_block(evs, telegram_too=False):
-    """(question, [(num, text)…]) when the newest turn's last words raise [[SF:RED]]
-    and the turn did not start from Telegram (the bridge pushes those itself; with
-    `telegram_too` they count as well); else None. `evs`: agent_status transcript
-    events, oldest first."""
+def _red_lines(evs, telegram_too=False):
+    """(lines, at) of the newest turn's last words and the index of its [[SF:RED]] line, or None when
+    that turn has none (or started from Telegram, which the bridge pushes itself, unless `telegram_too`)."""
     last_user = max((i for i, e in enumerate(evs or ()) if e.get("kind") == "user_msg"), default=-1)
     if not telegram_too and last_user >= 0 and _TG_TOKEN.search(evs[last_user].get("text") or ""):
         return None
@@ -412,8 +410,18 @@ def red_block(evs, telegram_too=False):
         return None
     lines = texts[-1].splitlines()
     at = next((i for i in range(len(lines) - 1, -1, -1) if _RED_LINE.match(lines[i])), -1)
-    if at < 0:
+    return (lines, at) if at >= 0 else None
+
+
+def red_block(evs, telegram_too=False):
+    """(question, [(num, text)…]) when the newest turn's last words raise [[SF:RED]]
+    and the turn did not start from Telegram (the bridge pushes those itself; with
+    `telegram_too` they count as well); else None. `evs`: agent_status transcript
+    events, oldest first."""
+    found = _red_lines(evs, telegram_too)
+    if not found:
         return None
+    lines, at = found
     # What the person reads is the agent's words without ShellBot's markers (agent_link.preview_of): a Telegram reply
     # may open with its [[TG_REPLY_…]] on the question's own line, and close with its end marker on the last option's.
     question = next((q for q in (agent_link.preview_of(ln, 300, agent=True) for ln in reversed(lines[:at])   # the sentence, not a list item above it
@@ -421,6 +429,17 @@ def red_block(evs, telegram_too=False):
     options = [(m.group(1), agent_link.preview_of(m.group(2), 60, agent=True) or m.group(2)[:60])
                for m in (_OPTION.match(ln) for ln in lines[at + 1:]) if m][:9]
     return question, options
+
+
+_RED_REASON = re.compile(r"\[\[\s*SF\s*:\s*RED\s*:\s*([^\]]*?)\s*\]\]", re.I)
+
+
+def red_tag(evs, telegram_too=True) -> str:
+    """The reason written inside the newest [[SF:RED:<reason>]] ("connect:<service>" asks for a connection:
+    connectors.registry.parse_connect_tag reads it), or "". Only the marker's own text."""
+    found = _red_lines(evs, telegram_too)
+    m = _RED_REASON.search(found[0][found[1]]) if found else None
+    return (m.group(1) if m else "")[:80]
 
 
 def _recently_pushed(sid) -> bool:
@@ -457,7 +476,7 @@ def on_turn_end(api, sid: str, read_events=None):
         if seen and old and (old["reason"], old["options"]) == (seen[0], seen[1]) and old["at"] >= prompt_at:
             pass
         elif seen:
-            _red[sid] = {"reason": seen[0], "options": seen[1], "at": time.time()}
+            _red[sid] = {"reason": seen[0], "options": seen[1], "at": time.time(), "tag": red_tag(evs)}
         else:
             _red.pop(sid, None)
     bridge = getattr(api, "bridge", None)
@@ -480,7 +499,12 @@ def on_turn_end(api, sid: str, read_events=None):
     primary = role == api._bots_primary_tab()[0]
     head = sf_lang.pick(f"{'⭐' if primary else '🤖'} {slot.label} needs your decision",
                         f"{'⭐' if primary else '🤖'} {slot.label} 需要你決定")
-    text = "\n".join([head] + ([question] if question else []) + [f"{n}. {t}" for n, t in options])
+    asks = ""
+    try:
+        asks = api._connect_line(red_tag(evs))              # [[SF:RED:connect:<service>]]: one sentence on where to connect it
+    except Exception:
+        pass
+    text = "\n".join([head] + ([question] if question else []) + ([asks] if asks else []) + [f"{n}. {t}" for n, t in options])
     payload = {"text": text}
     if options:
         slot.pending_menu, slot.pending_menu_options = True, [{"num": n, "text": t} for n, t in options]

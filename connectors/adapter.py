@@ -45,7 +45,8 @@ class Ctx:
     lang: str = "en"
     run: Optional[Callable[..., Any]] = None         # run(argv, timeout=40, env=None) -> Result(rc, out): replaceable, tests use a stand-in
     find: Optional[Callable[[str], Any]] = None      # find(binary) -> path | None, as a tab would find it
-    open_tab: Optional[Callable[[str, str], str]] = None     # open_tab(cmd, title) -> sid: a tab of the wizard's own, not a bot
+    open_tab: Optional[Callable[[str, str], str]] = None     # open_tab(cmd, title) -> sid: a tab of ShellBot's own, not a bot
+    tabs: Any = None                                 # a temporary AI tab for a connection test: open / ask / phase / read / close (connect_tabs.TabKit)
     open_path: Optional[Callable[[str], None]] = None        # show a folder in Finder / Explorer
     secrets: Any = None                              # bound to this service: get / set / delete / has (name)
     cancel: bool = False

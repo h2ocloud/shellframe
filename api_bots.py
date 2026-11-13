@@ -303,7 +303,7 @@ class BotsApiMixin:
                                                         ("blocked", ""), ("closing", ""), ("decision", None))},
                          "memory": bots.is_memory_bot(e), "cli": cli, "coordinator": bool(e.get("coordinator")),
                          "tg": t.get("tg", 0), **self._link_model(e, ext)})
-        body = {"enabled": on, "primary": primary, "bots": rows, "tabs": tabs,
+        body = {"enabled": on, "primary": primary, "bots": rows, "tabs": tabs, "connections": self._connect_compact(),
                 "choices": {"shapes": list(bots.SHAPES), "colors": [{"key": c, "hex": bots.PALETTE[c]} for c in bots.COLORS],
                             "custom_color": True,     # what /link/bots/avatar accepts; also any #RRGGBB
                             "clis": _cli_choices(),   # what /link/bots/settings takes as cli
@@ -402,9 +402,13 @@ class BotsApiMixin:
                 pass                                   # no menu read off the screen: maybe a RED question
         red = bridge_home.red_pending(sid)
         if red and red["at"] >= float(res.get("prompt_at") or 0):       # not answered since
-            return {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])), "kind": "red",
-                    "reason": agent_status.redact(red["reason"], 300),
-                    "options": [{"n": int(n), "text": option_words(t)} for n, t in red["options"]]}
+            out = {"id": qid("red", red["reason"], repr(red["options"]), repr(red["at"])), "kind": "red",
+                   "reason": agent_status.redact(red["reason"], 300),
+                   "options": [{"n": int(n), "text": option_words(t)} for n, t in red["options"]]}
+            ask = self._connect_decision(red.get("tag") or "")        # [[SF:RED:connect:<service>]]: which service (a new field)
+            if ask:
+                out["connect"] = ask
+            return out
         return None
 
     def _bots_link_answer(self, args: dict, via: str = "phone") -> dict:

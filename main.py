@@ -87,6 +87,7 @@ from api_bots import BotsApiMixin
 from api_bot_memory import BotMemoryApiMixin
 from api_chat import ChatApiMixin, ensure_ui_style
 from api_push import PushApiMixin
+from api_connect import ConnectApiMixin
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -1967,7 +1968,8 @@ def _win_set_clipboard_text(text: str) -> None:
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
-          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin):
+          UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
+          ConnectApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):

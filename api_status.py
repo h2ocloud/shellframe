@@ -370,6 +370,7 @@ class StatusApiMixin:
                         time.sleep(1.0)
                         continue
                     now = time.time()
+                    getattr(self, "_connect_tick", lambda _n: None)(now)       # connections: the hourly health check (api_connect)
                     for stale in [k for k in list(cache) if k not in self.sessions]:
                         cache.pop(stale, None)
                     for stale in [k for k in list(self._hook_events) if k not in self.sessions]:
