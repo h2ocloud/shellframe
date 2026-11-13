@@ -12,7 +12,7 @@ running underneath with its size unchanged, and everything that types into the t
 
 | Piece | Where |
 |---|---|
-| Routes for the page | `api_chat.py` (`ChatApiMixin`): `chat_view`, `chat_send`, `chat_answer` |
+| Routes for the page | `api_chat.py` (`ChatApiMixin`): `chat_view`, `chat_send`, `chat_send_now`, `chat_answer` |
 | The screen | `web/chat.js` + `web/chat.css` (hooks: `SFChat.onSwitch`, `SFChat.covers`, `SFChat.sidebarLine`) |
 | Tests | `tests_chat_shell.py` (backend), `tests_chat_shell.js` (the rules, run in node), `tests_chat_narrow.py` (the layout in a narrow window, in a browser) |
 
@@ -35,8 +35,12 @@ running underneath with its size unchanged, and everything that types into the t
   Claude Code's box is read (`tab_delivery.composer_state`); other CLIs get no card.
 - **Queued sends**: a queued send has an `id`; `chat_view`'s `queue` lists the ids still
   waiting and the ones given up (`{"id", "why", "outcome"}`, for two hours,
-  `tab_delivery.queue_state`). The bubble says why it waits (its turn, your answer to its
-  question, an earlier message); once given up it says "not sent" and why, with "send again"
+  `tab_delivery.queue_state`). While any wait, `queue.busy` says what holds them now
+  (`{"reason", "since"}`: `tab_delivery.busy_reason`, and when the tab's current turn was
+  taken). The bubble and the line under the box say it in plain words, e.g. "示範分頁還在處理
+  上一則（從 Telegram 來的，已經 4 分鐘），處理完會接著送。", with "send now" and what it does
+  (`chat_send_now(sid, id)`: out of the queue and typed in at once, as `sfctl send --now`; it
+  may interrupt the tab's work). Once given up it says "not sent" and why, with "send again"
   and "remove", and stays until one is pressed.
 - **Answering**: `chat_answer` is `/link/answer`'s path (`_bots_link_answer`): only while
   that very question is up (`id`), only a listed option. A menu gets the option's number,

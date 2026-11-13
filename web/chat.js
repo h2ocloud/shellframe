@@ -1083,6 +1083,7 @@
     const now = Date.now();
     const q = data.queue || {};
     const waiting = new Set(q.queued || []);
+    v.busy = q.busy || null;                     // what holds them now, and since when (waitWords)
     const gone = new Map((q.given_up || []).map(g => [g.id, g]));
     v.pending.forEach(p => {
       if (!p.id || p.failed !== undefined) return;
@@ -1092,6 +1093,9 @@
       // data can be older than the send (measured: the bubble said "sending" at once).
       else if (p.queued && p.seen) { p.queued = false; p.at = now; }
     });
+    const held = v.pending.find(p => p.queued && p.failed === undefined);
+    if (v.note && v.note === v.waitNote && sid === activeSid())        // the minutes go on; once it went in, the line goes
+      note(v.waitNote = held ? waitWords(held, true, sid) : '');
     v.pending = v.pending.filter(p => p.failed !== undefined ||
       (now - p.at < (p.queued ? QUEUE_HOLD_MS : HOLD_SENT_MS) &&
        !items.some(it => it.type === 'user' && it.text.includes(String(p.key || p.text).trim()))));
@@ -1121,7 +1125,9 @@
         ? `<div class="cm-meta cm-failed">${escHtml(p.failed ? T(`Not sent: ${p.failed}`, `沒送出：${p.failed}`) : T('Not sent', '沒送出'))}` +
           ` <button class="cm-more-text cm-inline" data-act="resend" data-key="${escHtml(p.uid)}">${escHtml(T('Send again', '重送'))}</button>` +
           ` <button class="cm-more-text cm-inline" data-act="dismiss" data-key="${escHtml(p.uid)}">${escHtml(T('Remove', '移除'))}</button></div>`
-        : `<div class="cm-meta">${escHtml(p.queued ? waitWords(p) : T('Sending…', '送出中…'))}</div>`;
+        : `<div class="cm-meta">${escHtml(p.queued ? waitWords(p, false, sid) : T('Sending…', '送出中…'))}</div>` +
+          (p.queued && p.id ? `<div class="cm-now"><span>${escHtml(NOW_TIP())}</span>` +
+            `<button class="cm-now-btn" data-act="send-now" data-key="${escHtml(p.uid)}">${escHtml(T('Send now', '插隊送出'))}</button></div>` : '');
       html += `<div class="cm-row cm-user is-pending${p.failed !== undefined ? ' is-failed' : ''}"><div class="cm-bubble">${md(p.text, isZh(lang()))}</div>${att}${meta}</div>`;
     });
     if (listHtml !== sid + html) {
@@ -1750,7 +1756,7 @@
         note(r.message || T('Not sent.', '沒有送出。'), true);
       } else if (r.queued) {
         Object.assign(item, { queued: true, id: r.id || '', reason: r.reason || '' });
-        note(waitWords(item, true));
+        note(v.waitNote = waitWords(item, true, sid));
       }
     } catch (e) {
       v.pending = v.pending.filter(p => p !== item);
@@ -1760,9 +1766,24 @@
     refresh(sid, true);
     return r;
   }
-  // Why a queued message has not gone in yet, in plain words (tab_delivery.busy_reason).
-  function waitWords(p, long) {
-    switch (p.reason) {
+  // Why a queued message has not gone in yet, in plain words: what holds it now (chat_view's queue.busy,
+  // tab_delivery.busy_reason) and for how long its turn has run, else why it was queued.
+  function waitWords(p, long, sid) {
+    const b = (sid && view(sid).busy) || {};
+    const reason = b.reason || p.reason;
+    if (reason === 'telegram' || reason === 'working') {
+      const who = displayName(sessions()[sid]) || T('It', '它');
+      const mins = b.since ? Math.floor((Date.now() / 1000 - b.since) / 60) : 0;
+      const bits = [reason === 'telegram' ? T('from Telegram', '從 Telegram 來的') : '',
+                    mins >= 1 ? T(`${mins} min so far`, `已經 ${mins} 分鐘`) : ''].filter(Boolean);
+      return reason === 'telegram'
+        ? T(`${who} is still on the previous message (${bits.join(', ')}); yours goes in right after.`,
+            `${who}還在處理上一則（${bits.join('，')}），處理完會接著送。`)
+        : T(`${who} is still working${bits.length ? ` (${bits.join(', ')})` : ''}; yours goes in right after.`,
+            `${who}還在做上一件事${bits.length ? `（${bits.join('，')}）` : ''}，做完會接著送。`);
+    }
+    switch (reason) {
+      case 'model': return T('Waiting for its model switch to finish', '等它換完模型再送進去');
       case 'decision': return T('Waiting for you to answer its question first', '等你先回答它的問題，再送進去');
       case 'telegram': return T('Waiting for the message from Telegram to be taken', '等 Telegram 那一則處理完再送進去');
       case 'queued': return T('In line behind an earlier message', '排在前一則訊息後面');
@@ -1770,6 +1791,19 @@
       default: return long ? T('It is busy: your message goes in as soon as it finishes this step.', '它正在忙，這一步做完就會收到你的訊息。')
                            : T('Waiting for it to finish this step', '等它做完這一步就送進去');
     }
+  }
+  const NOW_TIP = () => T('Send now types it in at once and may interrupt what it is doing.',
+                          '插隊會馬上送進去，可能打斷它手上正在做的事。');
+  // The bubble's "send now" (sfctl send --now): out of the queue and into the tab at once.
+  async function sendNow(sid, key) {
+    const p = view(sid).pending.find(x => x.uid === key);
+    if (!p || !p.queued || !p.id) return;
+    let r;
+    try { r = JSON.parse(await api().chat_send_now(sid, p.id)); } catch (e) { r = { success: false, message: String(e) }; }
+    if (r.success) { p.queued = false; p.at = Date.now(); note(''); }
+    else note(r.message || T('Not sent.', '沒有送出。'), true);
+    renderList(sid);
+    refresh(sid, true);
   }
   // The card for a draft in the terminal: what it says, and clear-and-send or not now.
   function draftCardHtml(sid) {
@@ -1877,6 +1911,7 @@
     }
     if (act === 'draft-clear') return send(true);
     if (act === 'draft-keep') { view(sid).draftCard = null; renderAsk(sid); input.focus(); return; }
+    if (act === 'send-now') return sendNow(sid, el.dataset.key);
     if (act === 'resend' || act === 'dismiss') {
       const v = view(sid);
       const p = v.pending.find(x => x.uid === el.dataset.key);

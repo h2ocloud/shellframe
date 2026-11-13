@@ -340,18 +340,23 @@ def queue_state(sid: str) -> dict:
     return {"queued": waiting, "given_up": gone}
 
 
-def cancel(sid: str, item_id: str) -> bool:
-    """Take the waiting item `item_id` of tab `sid` out of its queue (not one being typed in now).
-    True when it was there."""
+def take(sid: str, item_id: str):
+    """Take the waiting item `item_id` of tab `sid` out of its queue (not one being typed in now)
+    and return it; None when it is not there (gone in, given up, or being typed)."""
     with _lock:
         q = _queues.get(sid)
         hit = next((it for it in (q or ()) if it.get("id") == item_id and not it.get("sending")), None)
         if hit is None:
-            return False
+            return None
         q.remove(hit)
         hit["cancelled"] = True           # _wait_turn may be polling it right now
     _save()
-    return True
+    return hit
+
+
+def cancel(sid: str, item_id: str) -> bool:
+    """Take the waiting item `item_id` of tab `sid` out of its queue. True when it was there."""
+    return take(sid, item_id) is not None
 
 
 def draft_of(api, sid: str) -> str:

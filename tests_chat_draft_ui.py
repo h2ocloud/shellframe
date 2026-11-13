@@ -108,7 +108,7 @@ def run(browser, engine):
     calls = page.evaluate("window.__calls")
     check("sent again, asking for the clear", calls[-1] == {"text": "這週的筆記也幫我分類", "clear": True}, calls)
     pend = page.inner_text("#chat-list .is-pending")
-    check("…queued: the bubble says why it waits", "等它做完這一步就送進去" in pend and "這週的筆記也幫我分類" in pend, pend)
+    check("…queued: the bubble says why it waits", "示範分頁還在做上一件事，做完會接著送" in pend and "這週的筆記也幫我分類" in pend, pend)
 
     print(f"[{engine}] 3. given up")
     page.evaluate("window.__queue = {queued: [], given_up: [{id: 'q1', why: '它正在跑', outcome: 'working'}]}")

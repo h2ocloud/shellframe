@@ -17,6 +17,20 @@
   **睡著的 bot，編輯畫面也有「儲存並現在就換」。** 之前只有醒著的 bot 才有這顆按鈕。睡著的 bot 會用剛存好的
   CLI 和模型馬上叫醒；醒著的照舊先寫記憶、關掉再叫醒。由 tests_plan_a_ui.py 守著。
 
+- **A message waiting in the chat view says what it waits for, and can go in now.** Reported: a message
+  sat for minutes under "Waiting for the message from Telegram to be taken" and the view looked stuck;
+  the tab was answering a message from Telegram. The bubble and the line under the box now say who is
+  still on what, where it came from and for how long, e.g. "it is still on the previous message (from
+  Telegram, 4 min so far); yours goes in right after", and "Send now" types it in at once (as
+  `sfctl send --now`), saying that this may interrupt what the tab is doing. Covered by
+  tests_chat_queue_now.py and tests_chat_shell.py.
+
+  **對話畫面裡排隊的訊息會說它在等什麼，也可以插隊送出。** 回報：一則訊息在「等 Telegram 那一則處理完再
+  送進去」下面等了好幾分鐘，畫面看起來像卡住；其實分頁正在處理一則從 Telegram 來的訊息。現在泡泡和輸入框
+  下方會寫清楚誰還在處理什麼、從哪來、已經多久，例如「還在處理上一則（從 Telegram 來的，已經 4 分鐘），
+  處理完會接著送」；旁邊的「插隊送出」會馬上送進去（等於 `sfctl send --now`），並註明可能打斷它手上正在
+  做的事。由 tests_chat_queue_now.py 和 tests_chat_shell.py 守著。
+
 ### Added
 
 - **A phone can rename an asleep bot.** `POST /link/bots/rename {"role", "name"}` renames a bot by its

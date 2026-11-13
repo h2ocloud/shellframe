@@ -340,6 +340,28 @@ e = json.loads(api.chat_send("s1", "   \n "))
 check("nothing to send: nothing sent", e == {"success": False, "code": "empty"} and len(sent) == n, e)
 x = json.loads(api.chat_send("s99", "hi"))
 check("no such tab: refused", not x["success"] and len(sent) == n, x)
+
+print("a queued send: what holds it, and sending it now (sfctl send --now)")
+import collections  # noqa: E402
+import time  # noqa: E402
+with tab_delivery._lock:
+    tab_delivery._queues.setdefault("s2", collections.deque()).append(
+        {"sid": "s2", "text": "插隊這則", "submit": True, "t0": time.time(), "id": "qnow1", "what": "chat", "label": "s2"})
+real_reason, real_snap = tab_delivery.busy_reason, api._agent_status_snapshot
+tab_delivery.busy_reason = lambda api_, sid: "telegram"
+api._agent_status_snapshot = lambda sid: ({"state": "working", "prompt_at": 1794190000.5}, None)
+qv = json.loads(api.chat_view("s2"))["queue"]
+check("chat_view says what holds it and since when its turn runs",
+      qv["queued"] == ["qnow1"] and qv.get("busy") == {"reason": "telegram", "since": 1794190000}, qv)
+tab_delivery.busy_reason, api._agent_status_snapshot = real_reason, real_snap
+n = len(sent)
+r = json.loads(api.chat_send_now("s2", "qnow1"))
+check("send now: out of the queue and typed in at once",
+      r["success"] and sent[-1][1] == "插隊這則" and sent[-1][2].get("now") is True
+      and tab_delivery.queue_state("s2")["queued"] == [], (r, sent[-1:]))
+g = json.loads(api.chat_send_now("s2", "qnow1"))
+check("…pressed again: it is gone, nothing sent twice", g.get("code") == "gone" and len(sent) == n + 1, g)
+check("…and with nothing waiting, chat_view names no holder", "busy" not in json.loads(api.chat_view("s2"))["queue"])
 tab_delivery.deliver = real_deliver
 
 print("chat_answer: /link/answer's path")

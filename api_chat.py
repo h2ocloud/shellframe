@@ -9,6 +9,7 @@ reads and answers the way the phone answers, so each of these has one implementa
   chat_send    text for the tab (sfctl `send`, as POST /link/send: it waits for a turn,
                a menu or the user's draft to end, and is queued meanwhile)
   chat_answer  a question answered by its option number (as POST /link/answer)
+  chat_send_now  a queued send typed in at once (sfctl send --now), into what the tab is doing
 
 What the page does with them (wording, grouping, which options it dares to translate)
 is display only and lives in web/chat.js; see docs/chat-shell.md.
@@ -24,6 +25,7 @@ from pathlib import Path
 
 import agent_link
 import agent_status
+import sf_lang
 import tab_delivery
 
 # The CLIs whose conversation the view draws: the ones sfctl `conversation` can read
@@ -78,7 +80,10 @@ class ChatApiMixin:
             else:
                 body["why"] = "no_transcript"
         body["decision"] = self._link_decision(sid, activity, res)
-        body["queue"] = tab_delivery.queue_state(sid)     # its own sends: still waiting, or given up
+        q = body["queue"] = tab_delivery.queue_state(sid)     # its own sends: still waiting, or given up
+        why = tab_delivery.busy_reason(self, sid) if q["queued"] else ""
+        if why:              # what holds them now, and since when its turn runs: the bubble says so (chat.js waitWords)
+            q["busy"] = {"reason": why, "since": int(float(res.get("prompt_at") or 0))}
         stamp = hashlib.sha1(json.dumps(body, sort_keys=True, ensure_ascii=False,
                                         default=str).encode()).hexdigest()[:12]
         if rev and str(rev) == stamp:
@@ -114,6 +119,20 @@ class ChatApiMixin:
                            "position": details.get("position"), "id": details.get("id"),
                            "reason": details.get("reason"), "code": res.get("code"),
                            "message": res.get("message", "")}, ensure_ascii=False)
+
+    def chat_send_now(self, sid: str, qid: str) -> str:
+        """The queued bubble's "send now": take chat send `qid` out of tab `sid`'s queue and type
+        it in at once (sfctl send --now), into whatever the tab is doing. {"success"}; "gone"
+        when it already went in, is being typed in, or was given up."""
+        item = tab_delivery.take(sid, str(qid or ""))
+        if item is None:
+            return json.dumps({"success": False, "code": "gone", "message": sf_lang.pick(
+                "It has already gone in, or was given up.", "它已經送進去了，或已經放棄。")}, ensure_ascii=False)
+        if item.get("clear_draft") and not item.get("cleared"):
+            tab_delivery.clear_draft_now(self, sid)          # the person chose to drop the draft before it waited
+        res = self._execute_sfctl("send", {"sid": sid, "text": item["text"], "submit": True, "what": "chat",
+                                           "now": True}) or {}
+        return json.dumps({"success": bool(res.get("success")), "message": res.get("message", "")}, ensure_ascii=False)
 
     # A path in a message: a picture is shown (at most this size, read as one data: URL), anything else
     # is shown in Finder or Explorer. Only the one file asked for is read.

@@ -130,6 +130,11 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
 .cm-user.is-failed .cm-bubble { opacity: 1; outline: 1px dashed rgba(247, 118, 142, .75); outline-offset: 2px; }
 .cm-meta.cm-failed { color: #f7768e; }
 .cm-meta { font-size: .75em; color: var(--cm-dim); padding: 0 .3em; }
+/* a queued send's "send now" (sfctl send --now), with what it does */
+.cm-now { display: flex; align-items: center; justify-content: flex-end; gap: .6em; font-size: .75em; color: var(--cm-dim); padding: .15em .3em 0; }
+.cm-now-btn { font: inherit; font-size: 1.05em; color: var(--cm-blue); background: transparent; border: 1px solid var(--cm-line2);
+  border-radius: 6px; padding: .15em .7em; cursor: pointer; white-space: nowrap; }
+.cm-now-btn:hover { border-color: var(--cm-blue); background: var(--cm-raised); }
 .cm-bot .cm-bubble { flex: 0 1 auto; max-width: calc(100% - 2.7em); background: var(--cm-raised); border: 1px solid var(--cm-line);
                      border-radius: 4px 14px 14px 14px; }
 /* Another agent (A2A): left, its own face and name above, a bubble of its own colour. */
