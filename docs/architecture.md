@@ -93,6 +93,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `sf_notify.py` | Optional outbound webhook (leaf, stdlib only): config, payload, masked send, transition tracker for auto-notify. Used by `sfctl notify` and the status monitor; see [`notify-webhook.md`](notify-webhook.md) |
 | Page | `web/ctxmenu.js` + `ctxmenu.css` | The small pop-up menu at the pointer (`SFMenu.open`). The terminal's right-click opens it when nothing is selected; Paste runs when it is picked, never from the click itself |
 | | `web/dialog.js` + `dialog.css` | The app's own confirm and alert (`SFDialog.confirm` / `SFDialog.alert`, Promises): a native one is titled with the page's address in WebView2. `tests_no_native_dialogs.py` keeps a native call out of the page |
+| | `web/connect.js` + `connect.css` | Settings → Connect, the connection wizard card, the sidebar's "needs reconnecting" card and the chat view's `[[SF:RED:connect:<service>]]` card (`SFConnect`). It draws what `connect_list` / `connect_describe` / `connect_status` and the `view` of `connect_start` / `connect_step` / `connect_test` hand it and sends the clicks back; it holds no fact about a service and names none. `tests_connect_ui.py` runs it against a stand-in Python side |
 | | `web/layout.js` | How wide the sidebar may show for the window it is in (`--sidebar-cap`); the saved width is never touched. `web/index.html` is size-budgeted, so new page code goes in a file of its own |
 
 ## 3. Data flows

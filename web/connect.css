@@ -1,0 +1,179 @@
+/* ShellBot connections (web/connect.js): Settings → Connect, the wizard card, the sidebar card.
+ *
+ * The size follows the bot editor (bots.css): at most 640px wide with room around it, text 12-13px,
+ * so the card never fills the window. It sits in a .modal-overlay, so the interface size (--ui-scale)
+ * zooms it with the other dialogs; sizes are px. Colours are the page's own dark theme. The font stack
+ * names the Traditional Chinese fonts of macOS and Windows so a Chinese card does not fall back to a
+ * mismatched face. Everything is scoped under .cn-*; the page's own styles are untouched.
+ */
+
+/* ── Settings → Connect ── */
+.cn-panel .cn-intro { margin: 0 0 10px; font-size: 12px; line-height: 1.55; color: #a9b1d6; }
+.cn-panel .cn-empty { margin: 8px 0; font-size: 12px; color: #565f89; }
+.cn-list { display: flex; flex-direction: column; gap: 8px; }
+.cn-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #24283b; border-radius: 8px; border: 1px solid transparent; }
+.cn-row.attn { border-color: rgba(247, 118, 142, .55); background: rgba(247, 118, 142, .07); }
+.cn-ico, .cn-head-ico { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: #1a1b26; color: #7aa2f7; }
+.cn-ico svg, .cn-head-ico svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.cn-row.tone-ok .cn-ico { color: #9ece6a; }
+.cn-row.attn .cn-ico { color: #f7768e; }
+.cn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; line-height: 1.45; }
+.cn-main b { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #c0caf5; }
+.cn-main span { font-size: 12px; color: #a9b1d6; overflow-wrap: anywhere; }
+.cn-main small { font-size: 11px; color: #787c99; }
+.cn-flag { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 7px; line-height: 17px; border-radius: 999px; background: rgba(247, 118, 142, .2); color: #f7768e; }
+.cn-dot { display: inline-block; flex: none; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: #565f89; vertical-align: 1px; }
+.cn-dot.ok { background: #9ece6a; }
+.cn-dot.warn { background: #e0af68; }
+.cn-dot.bad { background: #f7768e; }
+.cn-dot.busy { background: #7aa2f7; animation: cn-pulse 1s ease-in-out infinite; }
+@keyframes cn-pulse { 50% { opacity: .25; } }
+
+/* ── the card ── */
+.modal-overlay.cn-overlay { z-index: 120; }                       /* above Settings, which opens it */
+.cn-card {
+  --c-bg: #1f2335; --c-head: #1a1d2d; --c-raised: #24283b; --c-line: #292e42; --c-line2: #3b4261;
+  --c-text: #c0caf5; --c-soft: #a9b1d6; --c-dim: #787c99; --c-blue: #7aa2f7; --c-amber: #e0af68; --c-green: #9ece6a; --c-red: #f7768e;
+  width: min(640px, calc(100vw - 96px)); max-height: min(84vh, 760px); display: flex; flex-direction: column; overflow: hidden; outline: none;
+  background: var(--c-bg); border: 1px solid var(--c-line); border-radius: 12px; color: var(--c-text);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .5);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Hiragino Sans",
+               "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", "Noto Sans CJK TC", system-ui, sans-serif;
+  font-size: 12.5px; line-height: 1.6;
+}
+.cn-card code { font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, "Microsoft JhengHei UI", monospace; font-size: 11.5px; }
+.cn-card button { font: inherit; }
+
+.cn-head { display: flex; align-items: center; gap: 10px; padding: 12px 18px 11px 20px; background: var(--c-head); border-bottom: 1px solid var(--c-line); flex: none; }
+.cn-head-ico { width: 28px; height: 28px; border-radius: 8px; }
+.cn-head-ico svg { width: 16px; height: 16px; }
+.cn-head h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--c-text); }
+.cn-sub { flex: 1; min-width: 0; font-size: 12px; color: var(--c-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cn-x { border: 0; background: none; color: var(--c-dim); font-size: 20px; line-height: 1; padding: 0 4px; cursor: pointer; border-radius: 6px; }
+.cn-x:hover { color: var(--c-text); }
+.cn-prog { display: flex; align-items: center; gap: 9px; padding: 12px 20px 0; flex: none; }
+.cn-back { border: 0; background: none; color: var(--c-soft); font-size: 20px; line-height: 1; padding: 0 5px 2px 0; cursor: pointer; }
+.cn-back:hover:not(:disabled) { color: var(--c-blue); }
+.cn-segs { display: flex; gap: 5px; }
+.cn-segs i { position: relative; display: block; width: 28px; height: 12px; }
+.cn-segs i::after { content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 4px; border-radius: 2px; background: var(--c-line2); }
+.cn-segs i.done::after { background: var(--c-green); }
+.cn-segs i.now::after { background: var(--c-blue); }
+.cn-segs i.bad::after { background: var(--c-red); }
+.cn-segs i[data-act] { cursor: pointer; }
+.cn-prog-label { font-size: 12px; color: var(--c-dim); }
+
+.cn-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 14px; scrollbar-width: thin; scrollbar-color: var(--c-line2) transparent; }
+.cn-title { margin: 12px 0 10px; font-size: 14px; line-height: 1.4; font-weight: 600; color: var(--c-text); }
+.cn-lead { margin: 10px 0; color: var(--c-soft); }
+.cn-note { margin: 10px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--c-dim); }
+.cn-note code { background: #16161e; padding: 1px 6px; border-radius: 5px; color: var(--c-soft); font-family: inherit; font-size: 11.5px; }
+.cn-dim { color: var(--c-dim); }
+.cn-how { margin: 0 0 12px; padding-left: 20px; }
+.cn-how li { margin: 4px 0; }
+.cn-see { border: 1px solid rgba(158, 206, 106, .4); background: rgba(158, 206, 106, .06); border-radius: 8px; padding: 8px 12px 10px; margin-top: 10px; }
+.cn-see b { font-size: 11.5px; font-weight: 600; color: var(--c-green); }
+.cn-see p { margin: 2px 0 0; color: var(--c-text); }
+.cn-fyi { margin-top: 10px; padding: 8px 12px 10px; border: 1px solid var(--c-line2); background: rgba(122, 162, 247, .05); border-radius: 8px; }
+.cn-fyi b { font-size: 11.5px; font-weight: 600; color: var(--c-blue); }
+.cn-fyi p { margin: 2px 0 0; color: var(--c-soft); }
+
+/* a result or an error, in one line with its reason */
+.cn-msg { display: flex; align-items: flex-start; gap: 0; margin-top: 10px; padding: 8px 12px; border: 1px solid var(--c-line2); background: var(--c-raised); border-radius: 8px; }
+.cn-msg .cn-dot { margin-top: 7px; }
+.cn-msg > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cn-msg small { display: block; color: var(--c-dim); font-size: 11.5px; line-height: 1.5; }
+.cn-msg.bad { border-color: rgba(247, 118, 142, .5); background: rgba(247, 118, 142, .06); }
+.cn-msg.warn { border-color: rgba(224, 175, 104, .5); background: rgba(224, 175, 104, .06); }
+.cn-msg .cn-btn { margin-left: 10px; flex: none; }
+
+/* a button that does one thing for you, and the tick boxes it takes */
+.cn-acts { margin: 0 0 4px; display: flex; flex-direction: column; gap: 8px; }
+.cn-acts-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.cn-opt { display: flex; align-items: center; gap: 8px; width: fit-content; padding: 1px 0; border: 0; background: none; color: var(--c-soft); cursor: pointer; text-align: left; }
+.cn-box { flex: none; position: relative; width: 14px; height: 14px; border: 1.5px solid var(--c-dim); border-radius: 4px; }
+.cn-opt.on .cn-box { background: var(--c-blue); border-color: var(--c-blue); }
+.cn-opt.on .cn-box::after { content: ''; position: absolute; left: 3.5px; top: 0; width: 3.5px; height: 8px; border: solid #16161e; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+
+/* the first question: one card per way */
+.cn-routes { display: flex; flex-direction: column; gap: 8px; }
+.cn-route { display: flex; gap: 11px; width: 100%; text-align: left; padding: 10px 14px; color: inherit; cursor: pointer; background: var(--c-raised); border: 1.5px solid var(--c-line2); border-radius: 10px; }
+.cn-route:hover { border-color: #55608c; }
+.cn-route.on { border-color: var(--c-blue); background: rgba(122, 162, 247, .08); }
+.cn-radio { position: relative; flex: none; width: 14px; height: 14px; margin-top: 4px; border: 2px solid var(--c-dim); border-radius: 50%; }
+.cn-route.on .cn-radio { border-color: var(--c-blue); }
+.cn-route.on .cn-radio::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--c-blue); }
+.cn-route-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cn-route-head { display: flex; align-items: center; gap: 8px; }
+.cn-route-head b { font-size: 13px; font-weight: 600; }
+.cn-route-blurb { color: var(--c-soft); }
+.cn-route-for { font-size: 11.5px; color: var(--c-dim); }
+.cn-badge { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 8px; line-height: 17px; border-radius: 999px; background: rgba(122, 162, 247, .22); color: var(--c-blue); }
+.cn-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 1px; }
+.cn-chips i { font-style: normal; font-size: 11px; padding: 0 8px; line-height: 19px; border-radius: 6px; background: var(--c-line); color: var(--c-soft); }
+
+/* "I'm stuck": the usual problems at this step */
+.cn-stuck { border: 1px solid rgba(224, 175, 104, .45); background: rgba(224, 175, 104, .05); border-radius: 10px; padding: 10px 14px 12px; }
+.cn-stuck-head { font-size: 11.5px; font-weight: 600; color: var(--c-amber); padding-bottom: 5px; border-bottom: 1px solid var(--c-line); }
+.cn-prob { border-bottom: 1px solid var(--c-line); }
+.cn-prob-q { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 7px 0; text-align: left; border: 0; background: none; color: var(--c-text); font-weight: 600; cursor: pointer; }
+.cn-caret { flex: none; width: 0; height: 0; border-left: 5px solid var(--c-amber); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .15s; }
+.cn-prob.on .cn-caret { transform: rotate(90deg); }
+.cn-prob-a { padding: 0 0 9px 13px; color: var(--c-soft); }
+.cn-prob-a p { margin: 0; }
+.cn-prob-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; }
+.cn-stuck-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* the test: where it is, and what it came to */
+.cn-run { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border: 1px solid var(--c-line2); background: var(--c-raised); border-radius: 8px; }
+.cn-run small { display: block; color: var(--c-dim); font-size: 11.5px; }
+.cn-spin { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--c-line2); border-top-color: var(--c-blue); animation: cn-spin .9s linear infinite; }
+@keyframes cn-spin { to { transform: rotate(360deg); } }
+.cn-warn { border: 1px solid rgba(224, 175, 104, .45); background: rgba(224, 175, 104, .06); border-radius: 10px; padding: 10px 14px 12px; }
+.cn-warn b { color: var(--c-amber); }
+.cn-warn p { margin: 3px 0 0; color: var(--c-soft); }
+.cn-result { display: flex; align-items: center; gap: 12px; margin: 12px 0 4px; }
+.cn-result h4 { margin: 0; font-size: 14px; line-height: 1.4; font-weight: 600; }
+.cn-result p { margin: 1px 0 0; font-size: 12px; color: var(--c-soft); }
+.cn-big { flex: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; border: 2px solid; font-style: normal; font-size: 19px; line-height: 1; }
+.cn-big.ok { color: var(--c-green); border-color: rgba(158, 206, 106, .7); background: rgba(158, 206, 106, .1); }
+.cn-big.bad { color: var(--c-red); border-color: rgba(247, 118, 142, .7); background: rgba(247, 118, 142, .1); }
+.cn-sect { margin-top: 12px; }
+.cn-sect > b { display: block; margin-bottom: 4px; font-size: 11.5px; font-weight: 600; color: var(--c-blue); }
+.cn-kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--c-line); }
+.cn-kv > span:first-child { color: var(--c-soft); }
+
+/* ── footer and buttons ── */
+.cn-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 20px; background: var(--c-head); border-top: 1px solid var(--c-line); flex: none; }
+.cn-foot-l, .cn-foot-r { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cn-btn { padding: 5px 14px; border-radius: 7px; border: 1px solid var(--c-line2, #3b4261); background: #24283b; color: #c0caf5; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s; }
+.cn-btn:hover:not(:disabled) { border-color: #55608c; }
+.cn-btn:disabled { opacity: .5; cursor: default; }
+.cn-btn.primary { background: #7aa2f7; border-color: #7aa2f7; color: #16161e; font-weight: 600; }
+.cn-btn.primary:hover:not(:disabled) { background: #89b4fa; border-color: #89b4fa; }
+.cn-btn.warn { border-color: rgba(224, 175, 104, .6); color: #e0af68; background: rgba(224, 175, 104, .06); }
+.cn-btn.ghost { background: transparent; }
+.cn-btn.small { padding: 1px 10px; font-size: 12px; }
+.cn-link { padding: 1px 0; border: 0; background: none; color: #7aa2f7; font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.cn-prog-label .cn-link { font-size: 12px; }
+.cn-btn:focus-visible, .cn-link:focus-visible, .cn-route:focus-visible, .cn-prob-q:focus-visible, .cn-x:focus-visible, .cn-back:focus-visible, .cn-opt:focus-visible {
+  outline: 2px solid #7aa2f7; outline-offset: 2px;
+}
+
+/* ── the sidebar card: a service needs reconnecting ── */
+#cn-side { padding: 0 8px; }
+#cn-side[hidden] { display: none; }
+.cn-sc { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 4px 6px; margin: 6px 0 2px; padding: 8px 6px 8px 10px; background: rgba(247, 118, 142, .08); border: 1px solid rgba(247, 118, 142, .45); border-radius: 8px; }
+.cn-sc-dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #f7768e; vertical-align: 1px; }
+.cn-sc-text { min-width: 0; display: flex; flex-direction: column; line-height: 1.4; }
+.cn-sc-text b { font-size: 12px; font-weight: 600; color: #c0caf5; }
+.cn-sc-text span { font-size: 11px; color: #787c99; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cn-sc .cn-btn.small { grid-column: 1; justify-self: start; padding: 1px 10px; font-size: 11.5px; }
+.cn-sc-x { grid-column: 2; grid-row: 1; border: 0; background: none; color: #565f89; font-size: 15px; line-height: 1; padding: 0 2px; cursor: pointer; }
+.cn-sc-x:hover { color: #c0caf5; }
+.cn-sc-more { margin: 2px 2px 0; font-size: 11px; color: #787c99; }
+
+@media (max-width: 520px) {
+  .cn-segs i { width: 18px; }
+  .cn-body { padding-left: 14px; padding-right: 14px; }
+}
