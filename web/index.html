@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <title>ShellBot</title>
+<script src="storage_shim.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"/>
 <link rel="stylesheet" href="bots.css"/>
 <link rel="stylesheet" href="chat.css"/>
@@ -9359,7 +9360,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch(e) { return false; }
   }
 
-  document.getElementById('btn-release-ok').addEventListener('click', () => $modalRelease.classList.remove('open'));
+  // With no tab open, closing the notes goes on to the tab launcher: a first launch shows them instead of it.
+  document.getElementById('btn-release-ok').addEventListener('click', () => { $modalRelease.classList.remove('open');
+    if (Object.keys(sessions).length === 0) { $modal.classList.add('open'); $customCmd.focus(); } });
 
   // Periodic update check (every 5 minutes)
   setInterval(async () => {
