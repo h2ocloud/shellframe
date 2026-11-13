@@ -1252,10 +1252,16 @@
     const d = data.decision;
     let html = '';
     const m = d && (d.options || []).length ? mapDecision(d, lang()) : null;
-    if (m) {
+    // ✕ puts the card away for this question (handled in the terminal, or the state is late); the next
+    // question shows again, and so does this one once the tab is no longer waiting
+    const askKey = m ? 'q:' + m.id : (data.activity === 'decision' ? 'term' : '');
+    if (!askKey) v.askDismissed = '';
+    if (askKey && v.askDismissed === askKey) {
+      // put away
+    } else if (m) {
       const call = data.activity === 'decision' ? pendingCall(data.turns) : null;
       const answered = v.answered && v.answered.id === d.id;
-      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` +
+      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` + `<button class="cm-ask-x" data-act="ask-dismiss" data-key="${escHtml(askKey)}" title="${escHtml(T('Handled: put it away', '已處理，收起來'))}">✕</button>` +
         `<div class="cm-ask-title">${escHtml(T('Your call', '要你決定'))}</div>` +
         `<div class="cm-ask-q">${escHtml(m.questionTranslated || !m.translated ? m.question : T('It is asking before it goes on.', '它在繼續之前先問你。'))}</div>` +
         askContext(d, m, call, lang()) +
@@ -1266,7 +1272,7 @@
         (!m.translated ? `<div class="cm-ask-note">${escHtml(T('Shown as the CLI wrote it.', '照 CLI 的原文顯示。'))}</div>` : '') +
         '</div></div>';
     } else if (data.activity === 'decision') {
-      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` +
+      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` + `<button class="cm-ask-x" data-act="ask-dismiss" data-key="${escHtml(askKey)}" title="${escHtml(T('Handled: put it away', '已處理，收起來'))}">✕</button>` +
         `<div class="cm-ask-title">${escHtml(T('It is waiting for you in the terminal', '它在終端機上等你決定'))}</div>` +
         `<div class="cm-ask-q">${escHtml(T('This screen could not read the choices, so nothing is answered from here.',
                                             '這個畫面讀不到選項，所以不會從這裡替你選。'))}</div>` +
@@ -1872,6 +1878,7 @@
     }
     if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
     if (act === 'to-term') return setMode(sid, 'cli');
+    if (act === 'ask-dismiss') { view(sid).askDismissed = el.dataset.key; return renderAsk(sid); }
     if (act === 'sidebar') { const b = document.getElementById('btn-sidebar'); if (b) b.click(); return; }
     if (act === 'copy') return copyOut((view(sid).copy || {})[el.dataset.key] || '', el);
     if (act === 'copy-code') { const c = el.closest('.cm-code'); return copyOut(c ? c.querySelector('pre').textContent : '', el); }

@@ -423,3 +423,9 @@ body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { 
 .cm-lightbox { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
   background: rgba(10, 10, 16, .86); cursor: zoom-out; }
 .cm-lightbox img { max-width: 94vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 10px 40px rgba(0, 0, 0, .6); }
+
+/* ✕ on a question card: put it away (handled in the terminal) */
+.cm-ask-body { position: relative; }
+.cm-ask-x { position: absolute; top: -.2em; right: -.1em; border: none; background: none; color: var(--cm-dim); cursor: pointer;
+  font-size: .9em; padding: .1em .35em; border-radius: 5px; }
+.cm-ask-x:hover { color: var(--cm-text); background: var(--cm-raised); }
