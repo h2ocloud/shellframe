@@ -10,7 +10,7 @@ What the description cannot say for itself lives here: the checks (is Node.js th
 how is Claude signed in), the actions the core does not have (open the profile folder, open the sign-in
 tab) and the connection test. The core's own `cli_add` adds the server to the AIs' settings; this file
 never writes a CLI's settings and never starts a program by itself: every program goes through
-`ctx.run`, every tab through `ctx.open_tab`.
+`ctx.run`, every tab through `ctx.open_tab` or `ctx.tabs`.
 
 The rules this file keeps:
 
@@ -23,11 +23,9 @@ The rules this file keeps:
 
 import os
 import re
-import shlex
 import threading
 import uuid
 
-import sf_config
 import sf_lang
 from connectors.adapter import Adapter
 
@@ -171,17 +169,14 @@ def action_auth_tab(ctx, args: dict) -> dict:
 # ── the connection test ───────────────────────────────────────────────────────
 # A temporary Claude tab is asked to look up the newest e-mail's sender and subject. The adapter judges
 # from two things it can already see and nothing else: which tools the tab called (the names) and the last
-# line it wrote. Beyond the core's Ctx so far it asks of ctx four tab calls (the app binds them):
-#   ctx.tab_ready(sid, timeout) -> bool    wait until the tab is at its prompt (blocks: run in a thread)
-#   ctx.send(sid, text) -> bool            type one line into the tab and press Enter
-#   ctx.tab_events(sid) -> {"alive", "state", "events"}   the transcript's events, oldest first, and the
-#                                          tab's state ("decision": it waits for the person to allow a tool)
-#   ctx.close_tab(sid)
+# line it wrote. The tab is `ctx.tabs` (the core's TabKit): open / command / ask / phase / read / close.
+# The core makes a new TabKit for every call and the kit keeps each tab's phase in itself, so the kit that
+# opened the tab is kept with the test and used for every later poll.
 TEST_MARK = "GMAIL-TEST"
 PREFIX = {"connector": "mcp__claude_ai_Gmail__", "local": f"mcp__{SERVER}__"}      # a tool's name starts with this
 AUTH_TOOL = "mcp__claude_ai_Gmail__authenticate"       # the connector is there but has not been authorized
 TEST_TIMEOUT_S = 180.0                                  # from the prompt going in, not counting a wait for the person's OK
-READY_TIMEOUT_S = 90.0                                  # the tab getting to its prompt
+READY_TIMEOUT_S = 90.0                                  # the tab getting to its prompt (the kit waits this long)
 # Which step to send the person back to, per route and verdict (the description has the words).
 FAILED_STEP = {"connector": {"needs_auth": "a2", "no_tools": "a2", "not_ready": "a1"},
                "local": {"no_tools": "b6", "failed": "b7"}}
@@ -251,25 +246,11 @@ def judge(route: str, events: list, tab_state: str = "", elapsed: float = 0.0) -
     return {"state": "done", "verdict": verdict, "calls": len(calls)}
 
 
-def test_folder() -> str:
-    """The folder the test tab starts in: an empty one of ShellBot's own, so the test conversation does not
-    land in the person's home folder's history and no project file of theirs is in its way."""
-    folder = str(sf_config.config_dir() / "connect-test-gmail")
-    os.makedirs(folder, exist_ok=True)
-    return folder
-
-
-def test_cmd(folder: str, win: bool = False) -> str:
-    """What the test tab runs: `cd <folder> && claude` where there is a shell that reads it; a plain
-    `claude` on Windows (the tab starts in the home folder: `cd … &&` is not what its shell reads)."""
-    return "claude" if win else f"cd {shlex.quote(folder)} && claude"
-
-
 _RUNS = {}                       # handle -> one test (a temporary tab). One process, so a module-level table
 _LOCK = threading.Lock()
 
 
-def _forget_tabs(ctx):
+def _forget_tabs():
     """Close every test tab of ours that is still open (a test left from before, a cancel, a disconnect)."""
     with _LOCK:
         left = [r for r in _RUNS.values() if not r["closed"]]
@@ -279,20 +260,9 @@ def _forget_tabs(ctx):
             _RUNS.pop(h, None)
     for r in left:
         try:
-            ctx.close_tab(r["sid"])
+            r["kit"].close(r["sid"])
         except Exception:        # a tab that is already gone is what we wanted
             pass
-
-
-def _ask_when_ready(ctx, rec: dict):
-    """In a thread: wait for the tab's prompt, then put the one question in. The poll reads `phase`."""
-    if not ctx.tab_ready(rec["sid"], READY_TIMEOUT_S):
-        rec["phase"] = "not_ready"
-        return
-    if rec["closed"]:
-        return
-    rec["sent_at"] = rec["last_poll"] = ctx.now()
-    rec["phase"] = "asking" if ctx.send(rec["sid"], test_prompt()) else "send_failed"
 
 
 def _fail(code: str, route: str = "", sid: str = "", calls: int = 0) -> dict:
@@ -316,36 +286,43 @@ class GmailAdapter(Adapter):
     def _start(self, ctx, route: str) -> dict:
         if route not in PREFIX:
             return _fail("start_failed")
-        _forget_tabs(ctx)
+        _forget_tabs()
+        kit = ctx.tabs
         try:
-            sid = ctx.open_tab(test_cmd(test_folder(), bool(ctx.win)), sf_lang.pick("Gmail test", "Gmail 測試"))
+            sid = kit.open(kit.command("claude"), sf_lang.pick("Gmail test", "Gmail 測試"))
+            kit.ask(sid, test_prompt(), READY_TIMEOUT_S)       # waits for the prompt in a thread of the kit's, then types the one line
         except Exception:
             return _fail("start_failed", route)
         handle = uuid.uuid4().hex[:10]
-        rec = {"handle": handle, "route": route, "sid": sid, "phase": "waiting_ready", "closed": False,
+        rec = {"handle": handle, "route": route, "sid": sid, "kit": kit, "closed": False,
                "sent_at": 0.0, "paused": 0.0, "last_poll": 0.0}
         with _LOCK:
             _RUNS[handle] = rec
-        threading.Thread(target=_ask_when_ready, args=(ctx, rec), daemon=True, name=f"connect-test-gmail-{sid}").start()
         return {"state": "running", "handle": handle, "phase": "starting", "calls": 0, "sid": sid}
 
     def _poll(self, ctx, route: str, handle: str) -> dict:
         rec = _RUNS.get(handle)
         if not rec or rec["closed"]:
             return _fail("closed", route)
-        sid = rec["sid"]
+        sid, kit = rec["sid"], rec["kit"]
         if ctx.cancel:                                   # stopped on purpose: the core puts the service back as it was
-            _forget_tabs(ctx)
+            _forget_tabs()
             return _fail("test_cancelled", route, sid)
-        snap = ctx.tab_events(sid) or {}
+        phase = kit.phase(sid)
+        if phase == "closed":
+            rec["closed"] = True
+            return _fail("closed", route, sid)
+        if phase in ("not_ready", "send_failed"):
+            return _fail("not_ready", route, sid)
+        if phase != "asking":
+            return {"state": "running", "handle": handle, "phase": "waiting_ready", "calls": 0, "sid": sid}
+        snap = kit.read(sid) or {}
         if not snap.get("alive", False):
             rec["closed"] = True
             return _fail("closed", route, sid)
-        if rec["phase"] in ("not_ready", "send_failed"):
-            return _fail("not_ready", route, sid)
-        if rec["phase"] != "asking":
-            return {"state": "running", "handle": handle, "phase": rec["phase"], "calls": 0, "sid": sid}
         now = ctx.now()
+        if not rec["sent_at"]:                           # the question went in since the last poll: the clock starts now
+            rec["sent_at"] = rec["last_poll"] = now
         tab_state = str(snap.get("state") or "")
         if tab_state == "decision":                      # waiting for the person's OK: that time does not count
             rec["paused"] += now - rec["last_poll"]
@@ -373,7 +350,7 @@ class GmailAdapter(Adapter):
         """The core removes the CLI entries it added. This closes a test tab left open. The permission on
         Google's side, the profile folder and its files are the person's and stay where they are (the
         FAQ says how to take the permission back)."""
-        _forget_tabs(ctx)
+        _forget_tabs()
         return {"state": "done"}
 
 

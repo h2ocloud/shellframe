@@ -21,9 +21,9 @@ import os
 import re
 import stat
 import sys
+import shlex
 import tempfile
 import types
-import threading
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -61,11 +61,96 @@ SENDER, SUBJECT = "demo-sender@example.invalid", "Demo subject line 0000"      #
 CLIENT_SECRET, TOKEN = "demo-client-secret-not-real", "demo-token-not-real"      # what the login files would hold: never opened
 
 
-class FakeCtx:
-    """What the core hands an adapter (SA9's Ctx) plus the tab calls the adapter asks of it: tab_ready, send,
-    tab_events, close_tab. Every program the adapter asks for is answered from `answers`; none is run."""
+class World:
+    """The tabs of a stand-in app: what was opened, what was typed into them, what was closed, what a tab shows."""
 
-    def __init__(self, home, xdg=None, bins=None, answers=None, cfg=None, win=False):
+    def __init__(self, win=False):
+        self.opened, self.sent, self.closed, self.alive = [], [], [], set()
+        self.snap = {"alive": True, "state": "", "events": []}
+        self.ready, self.defer, self.fail_open, self.win = True, False, False, win
+        self.folder = "/fake/config/connect-test"
+
+
+class FakeTabKit:
+    """connect_tabs.TabKit (open / folder / command / ask / phase / read / close). Like the real one, each
+    tab's phase lives in the instance, and the app makes a new TabKit for every Ctx."""
+
+    def __init__(self, world):
+        self.w, self._phase = world, {}
+
+    def folder(self):
+        return self.w.folder
+
+    def command(self, cli="claude"):
+        return cli if self.w.win else f"cd {shlex.quote(self.w.folder)} && {cli}"
+
+    def open(self, cmd, title):
+        if self.w.fail_open:
+            raise OSError("no pty")
+        self.w.opened.append((cmd, title))
+        sid = f"s{len(self.w.opened)}"
+        self.w.alive.add(sid)
+        self._phase[sid] = "waiting_ready"
+        return sid
+
+    def ask(self, sid, text, ready_timeout=90.0):
+        if self.w.defer:
+            return
+        if not self.w.ready:
+            self._phase[sid] = "not_ready"
+            return
+        self.w.sent.append((sid, text))
+        self._phase[sid] = "asking"
+
+    def phase(self, sid):
+        return "closed" if sid not in self.w.alive else self._phase.get(sid, "closed")
+
+    def read(self, sid):
+        return dict(self.w.snap) if sid in self.w.alive else {"alive": False, "state": "", "events": []}
+
+    def close(self, sid):
+        self.w.closed.append(sid)
+        self.w.alive.discard(sid)
+        self._phase.pop(sid, None)
+
+
+class _WorldView:
+    """What a test reads off a ctx or a rig: the world's lists, and the two things a test sets."""
+
+    @property
+    def opened(self):
+        return self.world.opened
+
+    @property
+    def sent(self):
+        return self.world.sent
+
+    @property
+    def closed(self):
+        return self.world.closed
+
+    @property
+    def snap(self):
+        return self.world.snap
+
+    @snap.setter
+    def snap(self, v):
+        self.world.snap = v
+
+    @property
+    def ready(self):
+        return self.world.ready
+
+    @ready.setter
+    def ready(self, v):
+        self.world.ready = v
+
+
+class FakeCtx(_WorldView):
+    """What the core hands an adapter (connectors.adapter.Ctx): run, find, open_tab, open_path, tabs, now, cancel.
+    Every program the adapter asks for is answered from `answers`; none is run."""
+
+    def __init__(self, home, xdg=None, bins=None, answers=None, cfg=None, win=False, world=None):
         self.service, self.route, self.lang, self.win, self.cancel = "gmail", "", "en", win, False
         self.cfg = cfg if cfg is not None else {}
         self.env = {"HOME": str(home), "PATH": "/nowhere"}
@@ -73,10 +158,10 @@ class FakeCtx:
             self.env["XDG_CONFIG_HOME"] = str(xdg)
         self.bins = dict(bins or {})
         self.answers = dict(answers or {})
-        self.runs, self.tabs, self.paths, self.closed, self.sent = [], [], [], [], []
+        self.runs, self.paths = [], []
         self.t = 1000.0
-        self.snap = {"alive": True, "state": "", "events": []}
-        self.ready = True
+        self.world = world or World(win)
+        self.tabs = FakeTabKit(self.world)
 
     def run(self, argv, timeout, env=None):
         self.runs.append((list(argv), timeout))
@@ -86,8 +171,7 @@ class FakeCtx:
         return self.bins.get(binary)
 
     def open_tab(self, cmd, title):
-        self.tabs.append((cmd, title))
-        return f"s{len(self.tabs)}"
+        return FakeTabKit(self.world).open(cmd, title)
 
     def open_path(self, path):
         self.paths.append(path)
@@ -95,32 +179,6 @@ class FakeCtx:
     def now(self):
         return self.t
 
-    def tab_ready(self, sid, timeout):
-        return self.ready
-
-    def send(self, sid, text):
-        self.sent.append((sid, text))
-        return True
-
-    def tab_events(self, sid):
-        return dict(self.snap)
-
-    def close_tab(self, sid):
-        self.closed.append(sid)
-
-
-class SyncThread:
-    """threading.Thread that runs its target at start(), so a test is not about timing."""
-
-    def __init__(self, target=None, args=(), **kw):
-        self._t, self._a = target, args
-
-    def start(self):
-        self._t(*self._a)
-
-
-_real_threading = gmail.threading
-gmail.threading = types.SimpleNamespace(Thread=SyncThread, Lock=threading.Lock)
 
 OPENED = []
 _real_open = builtins.open
@@ -242,17 +300,18 @@ for label, args, win_, want_ro in (("default", {}, False, True), ("options ticke
                                    ("flat unticked", {"readonly": False}, False, False), ("Windows", {}, True, True)):
     c3 = FakeCtx(home, xdg, win=win_)
     r3 = gmail.ADAPTER.actions["auth_tab"](c3, args)
-    cmd = c3.tabs[0][0]
+    cmd = c3.opened[0][0]
     ok = (r3 == {"state": "opened", "sid": "s1"} and cmd == gmail.auth_command(want_ro, win_)
           and ("READ_ONLY" in cmd) == want_ro and "GOOGLE_WORKSPACE_SERVICES" in cmd)
     check(f"auth_tab ({label}): opens a tab with the {'read-only ' if want_ro else ''}sign-in", ok, (r3, cmd))
-check("the sign-in tab is named for what it does", c3.tabs[0][1] == "Gmail sign-in", c3.tabs)
+check("the sign-in tab is named for what it does", c3.opened[0][1] == "Gmail sign-in", c3.opened)
 
 print("== the adapter is a plain module: no login file, no program of its own ==")
 src = (SERVICES_DIR / "gmail.py").read_text(encoding="utf-8")
 code = "\n".join(ln for ln in src.splitlines() if not ln.lstrip().startswith("#"))
-check("it does not run programs itself (everything goes through ctx.run)", "subprocess" not in code and "os.system" not in code and "Popen" not in code)
-check("it never opens or reads a file", not re.search(r"\bopen\(|read_text|read_bytes|json\.load", code))
+check("it does not run programs or threads itself (programs go through ctx.run, the tab kit waits in its own thread)",
+      "subprocess" not in code and "os.system" not in code and "Popen" not in code and "threading.Thread" not in code)
+check("it never opens or reads a file", not re.search(r"(?<![\w.])open\(|read_text|read_bytes|json\.load", code))
 check("it does not read the environment of the app (ctx.env only)", "os.environ" not in code and "getenv" not in code)
 check("no key or token value is written in it", not re.search(r"sk-ant|Bearer ", code))
 
@@ -441,14 +500,14 @@ def poll(ctx, route, r0, events, state=""):
 ctx, r0 = started("connector")
 check("start: running, with a handle and the test tab's id, nothing asked of ctx.run",
       r0["state"] == "running" and r0["handle"] and r0["sid"] == "s1" and ctx.runs == [], r0)
-check("start: one temporary Claude tab in a folder of ShellBot's own", len(ctx.tabs) == 1 and ctx.tabs[0][0].startswith("cd ")
-      and ctx.tabs[0][0].endswith(" && claude") and "connect-test-gmail" in ctx.tabs[0][0] and ctx.tabs[0][1] == "Gmail test", ctx.tabs)
+check("start: one temporary Claude tab, started the way the core's tab kit says (an empty folder of ShellBot's own)",
+      len(ctx.opened) == 1 and ctx.opened[0] == (ctx.tabs.command("claude"), "Gmail test") and "connect-test" in ctx.opened[0][0], ctx.opened)
 check("the one question went in, once: names GMAIL-TEST, asks sender and subject only, no body, no sending",
       len(ctx.sent) == 1 and ctx.sent[0][0] == "s1" and "GMAIL-TEST: OK" in ctx.sent[0][1] and "do not open the body" in ctx.sent[0][1].lower()
       and "\n" not in ctx.sent[0][1], ctx.sent)
 wctx = FakeCtx(*new_pc("tw"), win=True)
 gmail.ADAPTER.test(wctx, "local")
-check("Windows: the test tab runs a plain claude", wctx.tabs[0][0] == "claude", wctx.tabs)
+check("Windows: the test tab runs what the kit says (a plain claude)", wctx.opened[0][0] == "claude", wctx.opened)
 
 CASES = [
     # (name, route, events, tab state, want)
@@ -489,9 +548,11 @@ for name, route, events, tab_state, want in CASES:
 
 print("== time: 3 minutes, and the wait for your OK does not count ==")
 ctx, r0 = started("connector")
+poll(ctx, "connector", r0, [user])                       # the first poll that sees the question in: the clock starts
 ctx.t += 181
 check("no answer after 3 minutes -> timeout", poll(ctx, "connector", r0, [user])["code"] == "timeout")
 ctx, r0 = started("connector")
+poll(ctx, "connector", r0, [user])
 ctx.t += 170
 a = poll(ctx, "connector", r0, [user, tool("ToolSearch")], "decision")
 ctx.t += 100
@@ -509,7 +570,7 @@ out = poll(ctx, "connector", r0, [])
 check("the tab never got to its prompt -> not_ready (back to the sign-in check), nothing was asked",
       out == {"state": "done", "ok": False, "code": "not_ready", "failed_step": "a1", "calls": 0, "sid": "s1"} and ctx.sent == [], out)
 ctx, r0 = started("local")
-ctx.snap = {"alive": False, "state": "", "events": []}
+ctx.world.alive.clear()
 out = gmail.ADAPTER.test(ctx, "local", r0["handle"])
 check("the person closed the test tab -> closed", out["code"] == "closed" and out["ok"] is False, out)
 ctx, r0 = started("connector")
@@ -521,27 +582,20 @@ check("an unknown handle (after a restart) -> closed, not an error", gmail.ADAPT
 check("an unknown route -> start_failed", gmail.ADAPTER.test(FakeCtx(*new_pc("ur")), "nope")["code"] == "start_failed")
 
 
-class _NoTab(FakeCtx):
-    def open_tab(self, cmd, title):
-        raise OSError("no pty")
-
-
-check("a tab that cannot be opened -> start_failed, not an exception", gmail.ADAPTER.test(_NoTab(*new_pc("nt")), "connector")["code"] == "start_failed")
+nt_ctx = FakeCtx(*new_pc("nt"))
+nt_ctx.world.fail_open = True
+check("a tab that cannot be opened -> start_failed, not an exception", gmail.ADAPTER.test(nt_ctx, "connector")["code"] == "start_failed")
 ctx, r0 = started("connector")
 ctx2 = FakeCtx(*new_pc("again"))
 gmail.ADAPTER.test(ctx2, "local")
-check("a new test closes the test tab left from before", ctx2.closed == ["s1"], ctx2.closed)
+check("a new test closes the test tab left from before (through the kit that opened it)", ctx.closed == ["s1"] and ctx2.closed == [], (ctx.closed, ctx2.closed))
 gmail.ADAPTER.disconnect(ctx2, "local")
-check("disconnect closes a test tab that is still open", ctx2.closed == ["s1", "s1"], ctx2.closed)
+check("disconnect closes a test tab that is still open", ctx2.closed == ["s1"], ctx2.closed)
 check("disconnect answers done and leaves Google's side alone (no program run)", gmail.ADAPTER.disconnect(ctx2, "local") == {"state": "done"} and ctx2.runs == [])
 
 phase_ctx = FakeCtx(*new_pc("wr"))
-_sync_threading = gmail.threading
-gmail.threading = types.SimpleNamespace(Thread=type("NoRun", (), {"__init__": lambda self, **kw: None, "start": lambda self: None}), Lock=threading.Lock)
-try:
-    r0 = gmail.ADAPTER.test(phase_ctx, "connector")
-finally:
-    gmail.threading = _sync_threading
+phase_ctx.world.defer = True                              # the tab is open but not at its prompt: nothing asked yet
+r0 = gmail.ADAPTER.test(phase_ctx, "connector")
 out = poll(phase_ctx, "connector", r0, [])
 check("the tab is not at its prompt yet -> running, waiting_ready", out["state"] == "running" and out["phase"] == "waiting_ready" and phase_ctx.sent == [], out)
 
@@ -561,7 +615,7 @@ print("== the real engine: each route from the first step to connected, expired,
 eng_mod._dlog = lambda cat, msg: None
 
 
-class Rig:
+class Rig(_WorldView):
     """The core's engine over a temp state file, the description and the adapter as shipped, stand-ins for every
     AI program (a recording runner), the key store and the tabs. The person's own entry in Claude's settings
     ("my-other-server") must survive everything."""
@@ -572,8 +626,7 @@ class Rig:
         self.runner = fake.FakeRunner()
         self.runner.entries["claude"] = {"my-other-server"}
         self.clock = [2_000_000.0]
-        self.tabs, self.closed, self.paths, self.sent = [], [], [], []
-        self.snap = {"alive": True, "state": "", "events": []}
+        self.world, self.paths = World(), []
         self.state_file = self.home.parent / "connectors.json"
         cl = clis_mod.Clis(runner=self.runner, finder=fake.finder())
         self.engine = eng_mod.Engine(registry=registry.Registry(dirs=[SERVICES_DIR]), path=str(self.state_file), clis=cl,
@@ -585,11 +638,8 @@ class Rig:
         c.find = lambda b: NODE if b == "node" else None
         c.run = lambda argv, timeout=40, env=None: Result(0, "v22.17.1") if list(argv) == [NODE, "--version"] else Result(1, "")
         c.open_path = self.paths.append
-        c.open_tab = lambda cmd, title: (self.tabs.append((cmd, title)), f"t{len(self.tabs)}")[1]
-        c.tab_ready = lambda sid, timeout: True
-        c.send = lambda sid, text: (self.sent.append((sid, text)), True)[1]
-        c.tab_events = lambda sid: dict(self.snap)
-        c.close_tab = self.closed.append
+        c.open_tab = FakeTabKit(self.world).open
+        c.tabs = FakeTabKit(self.world)                    # a new kit for every Ctx, as the app makes
         return c
 
     def step(self, op, **args):
@@ -645,7 +695,7 @@ check("local: it was added to the AIs ShellBot can set up, and the person's own 
       and "shellbot-gmail" in r.runner.entries["claude"] and "my-other-server" in r.runner.entries["claude"], res["status"]["clis"])
 check("local: after the add the sign-in step is open", sid_of(res) == "b7", str(res["status"]))
 res = r.step("act", action="auth_tab", options={"readonly": True})
-check("local B7: the sign-in tab runs the Gmail-only, read-only command", r.tabs[-1] == (gmail.auth_command(True, False), "Gmail sign-in") and res["view"]["step"]["result"]["code"] == "opened", r.tabs)
+check("local B7: the sign-in tab runs the Gmail-only, read-only command", r.opened[-1] == (gmail.auth_command(True, False), "Gmail sign-in") and res["view"]["step"]["result"]["code"] == "opened", r.opened)
 res = r.step("done")
 check("local: the sign-in step is gated until the permission file is there", sid_of(res) == "b7" and res["view"]["step"]["check"]["code"] == "missing")
 (r.prof / "tokens.json").write_text(TOKEN)
@@ -655,7 +705,7 @@ test_events = [user, tool("ToolSearch"), tool(LOCAL_TOOL), mail, say(f"{SENDER}:
 res = r.engine.test("gmail")
 h = res["result"]["handle"]
 check("local: the test opens one temporary tab and asks once; the status says verifying",
-      res["result"]["state"] == "running" and res["status"]["state"] == "verifying" and len(r.sent) == 1 and r.tabs[-1][1] == "Gmail test", str(res)[:300])
+      res["result"]["state"] == "running" and res["status"]["state"] == "verifying" and len(r.sent) == 1 and r.opened[-1][1] == "Gmail test", str(res)[:300])
 r.snap = {"alive": True, "state": "decision", "events": [user, tool("ToolSearch")]}
 res = r.engine.test("gmail", h)
 check("local: the test tab waits for the person's OK -> needs_user, the service waits for you (not a failure)",
@@ -700,7 +750,7 @@ check("disconnect: ShellBot's own shellbot-gmail entries are gone, the person's 
       all("shellbot-gmail" not in v for v in r.runner.entries.values()) and "my-other-server" in r.runner.entries["claude"], r.runner.entries)
 check("disconnect: the open test tab is closed; the progress is forgotten; the person's files stay where they are",
       len(r.closed) == 2 and r.status()["state"] == "not_started" and (r.prof / "credentials.json").exists() and (r.prof / "tokens.json").exists(), (r.closed, r.status()["state"]))
-everything = json.dumps([r.runner.calls, r.tabs, r.sent, r.paths]) + (r.state_file.read_text(encoding="utf-8") if r.state_file.exists() else "")
+everything = json.dumps([r.runner.calls, r.opened, r.sent, r.paths]) + (r.state_file.read_text(encoding="utf-8") if r.state_file.exists() else "")
 check("no client secret, token, sender or subject in any command, tab, prompt, path or in connectors.json",
       not any(x in everything for x in (CLIENT_SECRET, TOKEN, SENDER, SUBJECT)))
 
@@ -737,7 +787,7 @@ res = r.engine.test("gmail")
 h = res["result"]["handle"]
 res = r.engine.test("gmail", h, cancel=True)
 check("cancel: the test tab is closed and the service goes back to waiting (not failed)",
-      res["result"]["code"] == "test_cancelled" and r.closed == ["t1"] and res["status"]["state"] == "waiting_user" and not res["status"]["attention"], str(res)[:300])
+      res["result"]["code"] == "test_cancelled" and r.closed == ["s1"] and res["status"]["state"] == "waiting_user" and not res["status"]["attention"], str(res)[:300])
 
 if __name__ == "__main__":
     print(f"\nResults: {passed} passed, {failed} failed")
