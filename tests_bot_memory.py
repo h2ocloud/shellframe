@@ -134,11 +134,11 @@ def make_api(*tabs):
             time.sleep(0.15)
             if api.bot_writes:
                 import re
-                m = re.search(r"to (\S+\.md) \(", text)
+                m = re.search(r"1\. (\S+\.md)[:：]", text)
                 if m:
                     Path(m.group(1)).parent.mkdir(parents=True, exist_ok=True)
                     Path(m.group(1)).write_text("# summary\n- tidied the checklist\n", encoding="utf-8")
-                mm = re.search(r"memory (\S+MEMORY\.md) \(", text)
+                mm = re.search(r"2\. (\S+MEMORY\.md)[:：]", text)
                 if mm:
                     Path(mm.group(1)).write_text("- the person likes short notes\n", encoding="utf-8")
             api.state[s.sid] = "done"
@@ -188,12 +188,13 @@ print("2. the request")
 api = reset()
 mine = bm.prompt("alpha", ROSTER["alpha"], "/x/sessions/a.md", "/x/MEMORY.md", lang="en")
 check("it starts with the line the chat view folds the round on, then plain words", mine.splitlines()[0] == bm.MARK
-      and mine.splitlines()[1].startswith("ShellBot asks you to save your memory now"), mine)
+      and mine.splitlines()[1].startswith("ShellBot: save your memory now"), mine)
 check("it names the summary file, MEMORY.md, the size it must keep and the saved marker",
       "/x/sessions/a.md" in mine and "/x/MEMORY.md" in mine and str(bots.MEMORY_CAP) in mine and bots.SAVED_MARK in mine)
 check("what came from outside is not stored: said as at close (other bots, webhooks, Telegram)",
-      "other bots, webhooks or Telegram" in mine and "never store it" in mine and "do nothing else besides" in mine)
-check("it says this is not the end, and not to report it to the user", "not the end" in mine and "not from the user" in mine)
+      "other bots, webhooks or Telegram" in mine and "never store it" in mine and "Nothing else" in mine)
+check("it says the conversation goes on, and asks only for the saved marker back", "the conversation goes on" in mine
+      and f"reply only {bots.SAVED_MARK}" in mine and len(mine) < 600)
 zh = bm.prompt("alpha", ROSTER["alpha"], "/x/sessions/a.md", "/x/MEMORY.md", lang="zh")
 check("in Chinese too, with the same line first", zh.splitlines()[0] == bm.MARK and "其他 bot、webhook、Telegram" in zh and "不是使用者" in zh)
 check("the CLI's paste wrapper does not hide it", bm.is_request(f'<pasted_content id="1">\n{mine}\n</pasted_content id="1">') and bm.is_request(mine)
@@ -317,7 +318,7 @@ before_user, before_act = api.sessions["s1"]._last_user_activity_time, api.sessi
 res = bm.tick(api, cfg(), now=NOW)
 check("the request went in, to the bot's tab, once", res == [("s1", "alpha", "asked")] and len(api.sent) == 1 and api.sent[0][0] == "s1", (res, api.sent))
 text = api.sent[0][1]
-sess_file = Path(__import__("re").search(r"to (\S+\.md) \(", text).group(1))
+sess_file = Path(__import__("re").search(r"1\. (\S+\.md)[:：]", text).group(1))
 check("the summary goes to the bot's own sessions folder, named by time and tab",
       sess_file.parent == bots.sessions_dir("alpha") and sess_file.name.endswith("-s1.md"), sess_file)
 check("what is sent is the request, MEMORY.md is the bot's", text.startswith(bm.MARK) and str(bots.memory_file("alpha")) in text)
@@ -343,7 +344,7 @@ res = bm.tick(api, cfg(), now=later)
 check("new work and another quiet spell: asked again", res == [("s1", "alpha", "asked")] and len(api.sent) == 1, res)
 text2 = api.sent[0][1]
 check("…into the same summary file (one per conversation, not one a day)",
-      __import__("re").search(r"to (\S+\.md) \(", text2).group(1) == str(sess_file))
+      __import__("re").search(r"1\. (\S+\.md)[:：]", text2).group(1) == str(sess_file))
 wait_for(lambda: "s1" not in bm._flight)
 
 print("7. never over the person, never in a queue")
