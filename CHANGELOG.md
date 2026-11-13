@@ -6,6 +6,41 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.43.0 (2026-11-13)
+
+### Added
+
+- **`#` in the chat view names a bot or a tab.** Typing `#` in the chat view's input box lists the
+  bots (asleep ones too) and the open tabs to pick from, by name, job or former name, the way `#` works
+  in the terminal; the pick is inserted as `#name`. Covered by tests_chat_mention.py.
+
+  **對話畫面打 `#` 就能叫 bot 或分頁。** 在對話畫面的輸入框打 `#`，會列出 bot（包括睡著的）和開著的
+  分頁，可以用名字、執掌或舊名字找，跟終端機裡的 `#` 一樣；選了就插入 `#名字`。由 tests_chat_mention.py 守著。
+
+- **A bot can have skills of its own.** A skill in `bots/<bot>/skills/<skill>/SKILL.md` is only that
+  bot's: waking it lists its own skills before the shared ones it was given (its own wins on the same
+  name), whichever CLI it runs. The bot editor lists them, adds one (blank, or a copy of a shared one),
+  opens the folder and deletes one after asking. They move with the bot when it is renamed or changes
+  CLI. Covered by tests_bot_skills.py and tests_bot_skills_ui.py.
+
+  **bot 可以有自己的 skill。** 放在 `bots/<bot>/skills/<skill>/SKILL.md` 的 skill 只給這個 bot：叫醒時
+  先列它自己的，再列指定給它的共用 skill（同名時自己的優先），不管它跑哪家 CLI。bot 編輯頁可以看到它的
+  skill，可以新增（空白的，或從共用的複製一份）、打開資料夾、確認後刪除。bot 改名或換 CLI 時 skill 會跟著走。
+  由 tests_bot_skills.py、tests_bot_skills_ui.py 守著。
+
+- **A bot that stays open saves its memory too.** Before, a bot wrote its memory only when it was
+  closed, so one that is always open had none. Now, after real conversation and 45 quiet minutes
+  (Settings → Bots: on by default, the minutes adjustable), the bot is asked to update its MEMORY.md
+  and a session summary. Never while it works, while a question waits for the person, while a save is
+  still being written, or when its input box holds unsent words or cannot be read; it never waits in
+  the queue ahead of anyone. The chat view shows that turn as one line, "Memory updated". Each save is
+  one turn of the bot's own. Covered by tests_bot_memory.py.
+
+  **一直開著的 bot 也會存記憶。** 以前只有關掉 bot 時才寫記憶，所以一直開著的 bot 沒有記憶。現在有實質
+  對話、而且閒置 45 分鐘後（設定 → Bots：預設開，分鐘數可以調），會請 bot 更新 MEMORY.md 和一份對話摘要。
+  它正在跑、有題目在等人回答、上一次還沒寫完、輸入框有沒送出的字或讀不到輸入框時，都不會觸發；也不會排在
+  別人的訊息前面。對話畫面把那一輪收成一行「已更新記憶」。每次存記憶會用掉一輪對話。由 tests_bot_memory.py 守著。
+
 ## v0.42.1 (2026-11-12)
 
 ### Fixes

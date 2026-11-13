@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.42.0
-   version: 0.42.0
+OK ShellBot v0.43.0
+   version: 0.43.0
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -399,6 +399,7 @@ configure there.
 | The Loops panel's schedule list reads the user's label prefixes from `schedules.json` (nothing listed without one), shows a month-and-day plist as a one-off with its yearly-repeat warning, groups one-offs, lists KeepAlive jobs, and says "not supported yet" off macOS | 0.42.1 |
 | A2A: the first message past the chain limit, to an open tab, goes in marked "not passed on" (data, not a task) and its sender gets `ERR Blocked …`; the person writing to a tab (Enter, the chat view, Telegram) starts its next message at layer 1; a message from another computer carries its own layer | 0.42.1 |
 | `bots-set` / `bots-save` refuse a model ShellBot does not know (`unknown_model`, with a suggestion); `/link/bots` `choices.models`; a name from `new --label` / `rename` survives the first message; `bots-delete` answers `busy` while the bot writes its memory | 0.42.1 |
+| A bot's own skills (`bots/<bot>/skills/`), listed before the shared ones; a bot that stays open is asked to save its memory after real conversation and 45 idle minutes (`bot_memory_autosave`, `bot_memory_idle_min`) | 0.43.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
