@@ -66,6 +66,7 @@ bm.POLL, bm.TAKE_WAIT, bm.ATTEMPT_WAIT = 0.03, 0.5, 3.0
 td.POLL = 0.03
 RULE = "─" * 40
 box = lambda *rows: "\n".join(["some conversation", RULE, *rows, RULE, "  footer"])
+EMPTY = box("\x1b[39m❯\xa0")          # an input box seen to be empty: the only one a save goes into
 NOW = time.time()
 LONG_AGO = NOW - 3 * 3600
 
@@ -116,7 +117,7 @@ def make_api(*tabs):
     api.bridge = api.line_bridge = None
     api._window = None
     api.state = {sid: "" for sid, _, _ in tabs}
-    api.screen = {sid: "" for sid, _, _ in tabs}
+    api.screen = {sid: EMPTY for sid, _, _ in tabs}
     api.turns = {sid: list(WORK) for sid, _, _ in tabs}
     api.activity = {sid: LONG_AGO + 30 for sid, _, _ in tabs}
     api.sent = []
@@ -280,7 +281,7 @@ check("the person's draft in the input box: not asked", why(api) == "draft")
 check("…the draft is read the way tab_delivery reads it", td.draft_of(api, "s1").startswith("half a message"))
 api.screen["s1"] = box("\x1b[39m❯\xa0\x1b[2mTry something\x1b[0m")
 check("a dim suggestion is not the person's draft", why(api) == "")
-api.screen["s1"] = ""
+api.screen["s1"] = EMPTY
 td._queues["s1"] = __import__("collections").deque([{"sid": "s1", "text": "x", "t0": time.time()}])
 check("texts queued for the tab: not asked (it would jump the line)", why(api) == "queued")
 td._queues.clear()
@@ -350,7 +351,11 @@ api = reset()
 api.screen["s1"] = box("\x1b[39m❯\xa0unsent words")
 res = bm.tick(api, cfg(), now=NOW)
 check("a draft: nothing typed, nothing queued, and it waits for the next look", res == [("s1", "alpha", "draft")] and not api.sent and not td.pending("s1"))
-api.screen["s1"] = ""
+api.screen["s1"] = ""            # a box ShellBot cannot read (Windows, or a CLI whose box it does not know)
+res = bm.tick(api, cfg(), now=NOW)
+check("a box that cannot be read: not asked (a draft there would go out joined to the request)",
+      res == [("s1", "alpha", "box_unread")] and not api.sent)
+api.screen["s1"] = EMPTY
 res = bm.tick(api, cfg(), now=NOW)
 check("…which asks when the draft is gone", res == [("s1", "alpha", "asked")] and len(api.sent) == 1)
 wait_for(lambda: "s1" not in bm._flight)

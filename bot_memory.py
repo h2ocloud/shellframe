@@ -253,6 +253,10 @@ def why_not(api, sid, s, role, entry, idle_min, now=None) -> str:
     reason = tab_delivery.busy_reason(api, sid)     # a turn, a menu, Telegram, the person's draft
     if reason:
         return reason
+    # Only into a box seen to be empty: where it cannot be read (Windows has no tmux, Codex's box is not
+    # one ShellBot reads) a draft could be there, and the request would go out joined to it (#35).
+    if tab_delivery.composer_state(tab_delivery.capture(api, sid))[0] not in ("empty", "suggestion"):
+        return "box_unread"
     if tab_delivery.pending(sid):
         return "queued"
     turns = _turns(api, sid)

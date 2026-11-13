@@ -216,6 +216,7 @@ once a minute at most per tab, when **both** hold:
   nor does anything before the last save (the newer of `MEMORY.md`, the newest summary and the end of the last
   request) or before the last message ShellBot itself sent;
 - the tab has been idle for `settings.bot_memory_idle_min` (45 min; 5 to 1440).
+- its input box is seen to be empty. Where the box cannot be read (Windows has no tmux; Codex's box is not one ShellBot reads), a draft could be there, so those bots save only when they close.
 
 It is never asked while a turn is running, a menu or the bot's own `[[SF:RED]]` question waits for the person
 (the question is answered once a turn of the person comes after it), the person's unsent text is in the input box,
