@@ -1816,12 +1816,27 @@ class Session:
                 fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
             except OSError:
                 _swallow("Session.resize:1167")
-            # Also resize the tmux window so it doesn't clip
+            # Also resize the tmux window (window-size manual: nothing else will). Off the caller's thread,
+            # retried: a busy tmux server (right after a restart, every tab restoring) timed the one call
+            # out, the window stayed at 80x24 and the tab drew in its top-left corner until the next resize.
             if self._tmux_name:
-                subprocess.run(
-                    ["tmux", "resize-window", "-t", self._tmux_name,
-                     "-x", str(cols), "-y", str(rows)],
-                    capture_output=True, timeout=3)
+                self._tmux_want = (int(cols), int(rows))
+                threading.Thread(target=self._tmux_resize, daemon=True, name=f"tmux-resize-{self.sid}").start()
+
+    def _tmux_resize(self):
+        for attempt in range(4):
+            want = getattr(self, "_tmux_want", None)
+            if not want or not self._tmux_name:
+                return
+            try:
+                r = subprocess.run(["tmux", "resize-window", "-t", self._tmux_name, "-x", str(want[0]), "-y", str(want[1])],
+                                   capture_output=True, timeout=5)
+                if r.returncode == 0 and getattr(self, "_tmux_want", None) == want:
+                    return
+            except (subprocess.TimeoutExpired, OSError):
+                _swallow("Session._tmux_resize")
+            time.sleep(1.0 + attempt)
+        _dlog("resize", f"sid={self.sid} tmux window still not {want[0]}x{want[1]} after 4 tries")
 
     def kill(self, kill_tmux=True):
         """Kill the session. If kill_tmux=False, only detach (tmux session stays alive)."""

@@ -8,6 +8,27 @@
 
 ## v0.44.0 (2026-11-13)
 
+### Fixes
+
+- **A tab's terminal fills its space after a restart, even when tmux is slow.** Reported: right after a
+  restart a tab drew only in the top-left part of its terminal. Its tmux window had stayed at the
+  restart's 80×24: the one call that sizes it timed out while every tab was restoring, and nothing tried
+  again. The call now runs in the background and is retried, the newest size winning. Covered by
+  tests_tmux_resize_retry.py.
+
+  **重啟後分頁的終端機會撐滿，tmux 很忙時也一樣。** 回報：重啟後，分頁只畫在終端機的左上角。原因是它的
+  tmux 視窗停在重啟時的 80×24：負責調整大小的那一次呼叫，在所有分頁同時恢復時逾時了，之後也沒有再試。
+  現在這個呼叫改在背景執行並會重試，以最新要求的尺寸為準。由 tests_tmux_resize_retry.py 守著。
+
+- **A click in a terminal gives it the keyboard,** also when the CLI reports the mouse (full-screen
+  Claude Code). A key that does not reach the terminal while it is on screen is logged with where the
+  keyboard was, and a click that leaves the window without the keyboard (another app holding it) is
+  logged too. Remote tabs in the sidebar all keep their face and line up.
+
+  **點一下終端機，鍵盤就交給它**，CLI 開了滑鼠回報（全螢幕的 Claude Code）時也一樣。終端機在畫面上、
+  按鍵卻沒進去時，log 會記下鍵盤當時在哪；點了之後整個視窗仍然沒有鍵盤（被別的 App 拿走）也會記一行。
+  側欄裡遠端分頁的頭像都會畫出來，名字也對齊。
+
 ### Added
 
 - **Connections: one way to connect a service, for every service.** A connector core
