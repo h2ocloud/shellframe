@@ -231,8 +231,13 @@ def capture(api, sid: str) -> str:
         return ""
 
 
+HOLD = {}                    # sid -> reason: a tab that is being driven key by key (tab_model's menus) takes no text
+
+
 def busy_reason(api, sid: str) -> str:
     """'' when text can go in now; otherwise why it should wait."""
+    if sid in HOLD:
+        return HOLD[sid]
     try:
         state = api._agent_state_for_list(sid) or ""
     except Exception:
@@ -258,6 +263,7 @@ def _reason_text(reason: str, lang: str = None) -> str:
         "working": sf_lang.pick("it is in the middle of a turn", "它正在跑", lang),
         "decision": sf_lang.pick("it is waiting on a decision", "它在等人做決定", lang),
         "telegram": sf_lang.pick("a Telegram message to it is in flight", "它正在處理 Telegram 的訊息", lang),
+        "model": sf_lang.pick("it is switching its model", "它正在換模型", lang),
         "draft": sf_lang.pick("the user is typing in it", "輸入框有使用者還沒送出的字", lang),
         "closed": sf_lang.pick("the tab was closed", "分頁已經關了", lang),
         "queued": sf_lang.pick("messages ahead of it are still waiting", "前面還有訊息在排", lang),
@@ -334,6 +340,20 @@ def queue_state(sid: str) -> dict:
     return {"queued": waiting, "given_up": gone}
 
 
+def cancel(sid: str, item_id: str) -> bool:
+    """Take the waiting item `item_id` of tab `sid` out of its queue (not one being typed in now).
+    True when it was there."""
+    with _lock:
+        q = _queues.get(sid)
+        hit = next((it for it in (q or ()) if it.get("id") == item_id and not it.get("sending")), None)
+        if hit is None:
+            return False
+        q.remove(hit)
+        hit["cancelled"] = True           # _wait_turn may be polling it right now
+    _save()
+    return True
+
+
 def draft_of(api, sid: str) -> str:
     """The text the person left unsent in tab `sid`'s input box, or ''. A dim
     suggestion is not a draft. Only CLIs whose box composer_state reads (Claude
@@ -393,7 +413,8 @@ def _read_saved() -> list:
             _dlog("deliver", f"queue file unreadable, nothing resumed: {e!r}")
             rows = []
         _saved = [r for r in (rows if isinstance(rows, list) else [])
-                  if isinstance(r, dict) and r.get("sid") and isinstance(r.get("text"), str)]
+                  if isinstance(r, dict) and r.get("sid") and isinstance(r.get("text"), str)
+                  and not str(r.get("what") or "").startswith("model:")]    # a model switch is not carried over: nothing would drive its menu
     return _saved
 
 
@@ -529,6 +550,8 @@ def _limit(item: dict) -> float:
 def _wait_turn(api, sid: str, item: dict) -> str:
     """Wait until the tab can take `item`: 'send', or why it never will."""
     while True:
+        if item.get("cancelled"):
+            return "cancelled"
         if item.get("sending"):          # the app went down while typing it in
             return "uncertain"
         if sid not in api.sessions:
@@ -599,6 +622,8 @@ def _drain(api, sid: str):
             s = api.sessions.get(sid) if outcome == "send" else None
             if outcome == "send" and s is None:
                 outcome = "closed"
+            if outcome == "cancelled":
+                continue
             if outcome != "send":
                 _fail(api, item, outcome)     # first, so the note is saved before the item goes
                 _drop(sid, item)

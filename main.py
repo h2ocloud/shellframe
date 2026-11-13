@@ -85,6 +85,7 @@ from api_voice import VoiceApiMixin
 from api_tmux import TmuxApiMixin
 from api_bots import BotsApiMixin
 from api_bot_memory import BotMemoryApiMixin
+from api_tab_model import TabModelApiMixin
 from api_chat import ChatApiMixin, ensure_ui_style
 from api_push import PushApiMixin
 from api_connect import ConnectApiMixin
@@ -1984,7 +1985,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
-          ConnectApiMixin):
+          ConnectApiMixin, TabModelApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):
