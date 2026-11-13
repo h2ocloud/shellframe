@@ -19,7 +19,8 @@ Per-tab state lives in config `bots_sessions`: {sid: {"bot": role, "avatar": {..
 Memory is one folder per bot under ~/.config/shellframe/bots/<slug>/:
 
     MEMORY.md                   long-term memory the bot curates itself (capped)
-    sessions/<stamp>-<sid>.md   one summary per closed conversation
+    sessions/<stamp>-<sid>.md   one summary per closed conversation (and per quiet spell, bot_memory.py)
+    skills/<name>/SKILL.md      skills only this bot gets (bot_skills.py manages them)
 
 Waking a bot opens a tab and hands it one brief: identity, 執掌, skills, MEMORY.md,
 the latest summary and the other bots. Closing asks the bot to write its own
@@ -85,6 +86,12 @@ def sessions_dir(role) -> Path:
     return bot_dir(role) / "sessions"
 
 
+def skills_dir(role) -> Path:
+    """The skills only this bot gets: skills/<name>/SKILL.md. Moves with the folder when the bot
+    is renamed, and is the same whatever CLI the bot runs on."""
+    return bot_dir(role) / "skills"
+
+
 def new_session_file(role, sid, now=None) -> Path:
     stamp = datetime.fromtimestamp(now or time.time()).strftime("%Y%m%d-%H%M%S")
     tab = re.sub(r"[^A-Za-z0-9_-]", "", str(sid or "")) or "tab"
@@ -97,7 +104,8 @@ ROOT_README = {
 Each folder is one bot's memory:
 
 - `MEMORY.md`: long-term memory the bot curates itself (handed over when it wakes, capped)
-- `sessions/`: the summary the bot wrote before each conversation closed (the newest is handed over when it wakes)
+- `sessions/`: the summary the bot wrote before each conversation closed, or after a quiet spell (the newest is handed over when it wakes)
+- `skills/<name>/SKILL.md`: skills only this bot gets (listed in its wake-up brief; where a shared skill has the same name, the bot's own is used)
 
 Edit these files freely; the next time the bot wakes it uses what you wrote.
 """,
@@ -106,18 +114,29 @@ Edit these files freely; the next time the bot wakes it uses what you wrote.
 每個資料夾是一個 bot 的記憶：
 
 - `MEMORY.md`：bot 自己整理的長期記憶（叫醒時帶入，有字數上限）
-- `sessions/`：每次關閉對話前，bot 寫下的那次對話摘要（最新一份會在叫醒時帶入）
+- `sessions/`：每次關閉對話前、或對話安靜一陣子之後，bot 寫下的對話摘要（最新一份會在叫醒時帶入）
+- `skills/<名稱>/SKILL.md`：只有這個 bot 拿得到的 skill（叫醒時列在 brief 裡；跟共用 skill 同名時用 bot 自己的）
 
 可以直接編輯這些檔案；下次叫醒 bot 時就會用新的內容。
 """,
 }
+_OLD_README = (   # what an earlier version wrote: still replaced, as long as nobody edited it
+    "# ShellBot bots\n\nEach folder is one bot's memory:\n\n"
+    "- `MEMORY.md`: long-term memory the bot curates itself (handed over when it wakes, capped)\n"
+    "- `sessions/`: the summary the bot wrote before each conversation closed (the newest is handed over when it wakes)\n\n"
+    "Edit these files freely; the next time the bot wakes it uses what you wrote.\n",
+    "# ShellBot bots\n\n每個資料夾是一個 bot 的記憶：\n\n"
+    "- `MEMORY.md`：bot 自己整理的長期記憶（叫醒時帶入，有字數上限）\n"
+    "- `sessions/`：每次關閉對話前，bot 寫下的那次對話摘要（最新一份會在叫醒時帶入）\n\n"
+    "可以直接編輯這些檔案；下次叫醒 bot 時就會用新的內容。\n",
+)
 
 
 def ensure_dirs(role) -> Path:
     root = memory_root()
     root.mkdir(parents=True, exist_ok=True)
     readme = root / "README.md"
-    if not readme.exists():
+    if not readme.exists() or _read(readme) in _OLD_README:
         try:
             readme.write_text(ROOT_README[sf_lang.prompt_lang()], encoding="utf-8")
         except OSError:
@@ -464,6 +483,42 @@ def resolve_skills(names, roots=None) -> list:
     return out
 
 
+def own_skill_catalog(role) -> list:
+    """The skills in this bot's own folder (skills/<folder>/SKILL.md), by name:
+    [{"name", "folder", "description", "path"}]. A skill's name is the one in its front matter, else
+    its folder's; a folder that is a link to a skill elsewhere counts. Anything without a SKILL.md,
+    and hidden folders, are not skills."""
+    root = skills_dir(role)
+    try:
+        dirs = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError:
+        return []
+    out, seen = [], set()
+    for d in dirs:
+        md = d / "SKILL.md"
+        if not md.is_file():
+            continue
+        fm = _frontmatter(md)
+        name = clean_name(fm.get("name") or d.name)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append({"name": name, "folder": d.name, "description": (fm.get("description") or "")[:200],
+                    "path": str(md)})
+    return sorted(out, key=lambda k: k["name"].casefold())[:SKILLS_MAX]
+
+
+def brief_skills(role, names, roots=None):
+    """([(name, path)] of the bot's own skills, [(name, path-or-'')] of the shared ones it was given).
+    Where a shared skill has the name (or folder) of one of its own, the bot's own is the one: the
+    shared one is left out. Both lists are what compose_brief prints, so a CLI that loads skills by
+    itself and one that does not are told the same thing."""
+    own = own_skill_catalog(role)
+    taken = {k["name"] for k in own} | {k["folder"] for k in own}
+    shared = resolve_skills([n for n in names or [] if n not in taken], roots)
+    return [(k["name"], k["path"]) for k in own], shared
+
+
 # Everything below is text an agent reads. Each piece exists in English and in
 # Traditional Chinese; sf_lang.prompt_lang() (the OS language) picks one, so the
 # same build works for anyone. Keep the two versions saying the same thing.
@@ -520,6 +575,7 @@ _BRIEF = {
         "job": "Your job: {resp}",
         "no_job": "(not written yet: ask the user what you are responsible for, then save the answer to your memory)",
         "skills": "Skills (read the SKILL.md before using one):",
+        "own_skills": "Your own skills (only you have these; they live in {dir}; read the SKILL.md before using one):",
         "skill_sep": ": ",
         "folder": "Memory folder: {dir}",
         "memory": "── Your long-term memory (MEMORY.md) ──",
@@ -540,6 +596,8 @@ _BRIEF = {
                   "3. When the user needs to decide, print [[SF:RED]] on its own line, followed by numbered options.",
                   "4. Before this tab closes, ShellBot will ask you to write this conversation into your memory.",
                   "5. When you mention a tab or a bot to the user, use its name, not its sid."),
+        "rule4_auto": "4. ShellBot will ask you to write this conversation into your memory: before this tab closes, "
+                      "and also when it has gone quiet for a while after real work.",
         "ack_primary": "Once you have read this, take stock once (sfctl bots, sfctl state --all), report the "
                        "things that need the user as described above, then wait for instructions.",
         "ack": "Once you have read this, reply with one line, \"{label} is ready\", then wait for instructions.",
@@ -549,6 +607,7 @@ _BRIEF = {
         "job": "執掌：{resp}",
         "no_job": "（還沒寫——先問使用者你負責什麼，再把答案寫進記憶）",
         "skills": "Skills（需要時先讀 SKILL.md 再做）：",
+        "own_skills": "你自己的 skill（只有你有，放在 {dir}；需要時先讀 SKILL.md 再做）：",
         "skill_sep": "：",
         "folder": "記憶資料夾：{dir}",
         "memory": "── 你的長期記憶（MEMORY.md）──",
@@ -566,14 +625,15 @@ _BRIEF = {
                   "3. 需要使用者決定時，單獨一行印 [[SF:RED]]，再接編號選項。",
                   "4. 這個分頁關閉前，ShellBot 會請你把這次對話寫進記憶。",
                   "5. 跟使用者提到分頁或 bot 時用名稱，不要用 sid。"),
+        "rule4_auto": "4. ShellBot 會請你把這次對話寫進記憶：這個分頁關閉前，以及做完實質的事、安靜了一陣子之後。",
         "ack_primary": "讀完先盤點一次（sfctl bots、sfctl state --all），照上面的方式回報需要使用者處理的事，然後等待指示。",
         "ack": "讀完只回一行：「{label} 已就緒」，然後等待指示。",
     },
 }
 
 
-def compose_brief(role, entry, roster, *, memory="", last="", last_name="", skills=(),
-                  is_primary=False, with_ack=True, lang=None) -> str:
+def compose_brief(role, entry, roster, *, memory="", last="", last_name="", skills=(), own_skills=(),
+                  is_primary=False, with_ack=True, autosave=False, lang=None) -> str:
     lang = lang or sf_lang.prompt_lang()
     T = _BRIEF[lang]
     label = label_of(role, entry)
@@ -581,9 +641,10 @@ def compose_brief(role, entry, roster, *, memory="", last="", last_name="", skil
     lines = [T["head"].format(label=label), T["job"].format(resp=resp or T["no_job"])]
     if is_primary:
         lines.extend(PRIMARY_PLAYBOOK[lang])
-    if skills:
-        lines.append(T["skills"])
-        lines.extend(f"- {n}" + (f"{T['skill_sep']}{p}" if p else "") for n, p in skills)
+    for head, rows in ((T["own_skills"].format(dir=skills_dir(role)), own_skills), (T["skills"], skills)):
+        if rows:                      # its own first: where a name is in both, brief_skills left the shared one out
+            lines.append(head)
+            lines.extend(f"- {n}" + (f"{T['skill_sep']}{p}" if p else "") for n, p in rows)
     lines.append(T["folder"].format(dir=bot_dir(role)))
     lines.append("")
     lines.append(T["memory"])
@@ -603,7 +664,7 @@ def compose_brief(role, entry, roster, *, memory="", last="", last_name="", skil
         lines.append(T["others"])
         lines.extend(others[:30])
     lines.append("")
-    lines.extend(T["rules"])
+    lines.extend(T["rule4_auto"] if autosave and r.startswith("4.") else r for r in T["rules"])
     if with_ack:
         lines.append("")
         lines.append(T["ack_primary"] if is_primary else T["ack"].format(label=label))

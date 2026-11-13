@@ -97,6 +97,9 @@ def fresh(bots_on=True):
     d = bots.ensure_dirs("助理")
     (d / "MEMORY.md").write_text("記得：使用者最喜歡的鯨魚是藍鯨", encoding="utf-8")
     (d / "sessions" / "20261111-090000-s1.md").write_text("上次在整理發版清單", encoding="utf-8")
+    sk = d / "skills" / "發版清單"                 # one of its own skills (bots.skills_dir)
+    sk.mkdir(parents=True)
+    (sk / "SKILL.md").write_text("---\nname: 發版清單\ndescription: 發版前逐項檢查\n---\n\n# 發版清單\n", encoding="utf-8")
 
 
 def cfg():
@@ -275,6 +278,23 @@ if POSIX:
     (BOTS / "助理" / "MEMORY.md").write_text("寫在舊的路徑", encoding="utf-8")
     check("a bot still awake that writes where its brief said lands in the new folder",
           (BOTS / "秘書" / "MEMORY.md").read_text(encoding="utf-8") == "寫在舊的路徑")
+
+print("8b. its own skills come along (they live in its folder)")
+check("a skill of its own is in the new folder", (BOTS / "秘書" / "skills" / "發版清單" / "SKILL.md").is_file())
+own, shared = bots.brief_skills("秘書", [])
+check("…and is listed under the new name, at the new path",
+      [(n, p) for n, p in own] == [("發版清單", str(BOTS / "秘書" / "skills" / "發版清單" / "SKILL.md"))], own)
+brief = bots.compose_brief("秘書", c["agent_roster"]["秘書"], c["agent_roster"], memory=mem, last=last, own_skills=own)
+check("the brief it wakes with lists that skill with the new path", "發版清單" in brief
+      and str(BOTS / "秘書" / "skills") in brief and str(BOTS / "助理") not in brief)
+if POSIX:
+    check("the old name's link reaches the skill too (an awake bot with the old path)",
+          (BOTS / "助理" / "skills" / "發版清單" / "SKILL.md").is_file())
+fresh()
+api.bots_rename("助理", "秘書")
+api.bots_rename("秘書", "助理")                  # and back to a name it had
+check("renamed back, the skill is where it was", (BOTS / "助理" / "skills" / "發版清單" / "SKILL.md").is_file()
+      and not (BOTS / "助理").is_symlink())
 
 print("9. both ways in, in the page")
 js = (HERE / "web" / "bots.js").read_text(encoding="utf-8")

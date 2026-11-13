@@ -1199,9 +1199,9 @@ class BotsApiMixin:
     # ── waking ──────────────────────────────────────────────────────────
     def _bots_brief(self, role: str, entry: dict, raw_roster: dict, with_ack: bool = True) -> str:
         mem, last, last_name = bots.read_memory(role)
-        skills = bots.resolve_skills((entry.get("bot") or {}).get("skills") or [])
+        own, skills = bots.brief_skills(role, (entry.get("bot") or {}).get("skills") or [])
         return bots.compose_brief(role, entry, raw_roster, memory=mem, last=last, last_name=last_name,
-                                  skills=skills, is_primary=bots.primary_role(raw_roster) == role,
+                                  skills=skills, own_skills=own, is_primary=bots.primary_role(raw_roster) == role,
                                   with_ack=with_ack)
 
     def bots_open(self, role: str) -> str:
