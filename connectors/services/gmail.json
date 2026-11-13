@@ -132,7 +132,7 @@
             ],
             "states": {
               "claude_ai": {
-                "tone": "ok",
+                "tone": "good",
                 "text": {
                   "en": "Signed in with a claude.ai account ({plan})",
                   "zh": "用 claude.ai 帳號登入（{plan}）"
@@ -527,7 +527,7 @@
           }
         },
         "pi": {
-          "via": "none",
+          "via": "mcp",
           "note": {
             "en": "Settings file: ~/.pi/agent/mcp.json. MCP is built into Pi from version 0.99; older versions cannot run an MCP server. Check with pi --version, update, then put the server in the settings file.",
             "zh": "設定檔：~/.pi/agent/mcp.json。 Pi 從 0.99 版起內建 MCP，更舊的版本跑不了 MCP 伺服器。用 pi --version 看版本，更新後把伺服器寫進設定檔。"
@@ -585,7 +585,7 @@
             ],
             "states": {
               "ok": {
-                "tone": "ok",
+                "tone": "good",
                 "text": {
                   "en": "Node.js {version} is installed",
                   "zh": "已安裝 Node.js {version}"
@@ -926,7 +926,7 @@
             ],
             "states": {
               "ok": {
-                "tone": "ok",
+                "tone": "good",
                 "text": {
                   "en": "credentials.json is in place",
                   "zh": "credentials.json 已經放好了"
@@ -996,7 +996,7 @@
               "after": "check",
               "results": {
                 "opened": {
-                  "tone": "ok",
+                  "tone": "good",
                   "text": {
                     "en": "Opened {path}",
                     "zh": "已打開 {path}"
@@ -1071,8 +1071,8 @@
         {
           "id": "b6",
           "title": {
-            "en": "Add the server to Claude",
-            "zh": "把伺服器加進 Claude"
+            "en": "Add the server to your AIs",
+            "zh": "把伺服器加進你的 AI"
           },
           "how": [
             {
@@ -1080,12 +1080,16 @@
               "zh": "「只讀信」維持勾選，除非你要讓 bot 也能寄信。"
             },
             {
-              "en": "Press \"Add it for me\". ShellBot runs one command with the same account folder your Claude tabs use, so they can see the server.",
-              "zh": "按「幫我加進去」。ShellBot 會用 Claude 分頁同一個帳號資料夾跑一個指令，分頁才看得到這個伺服器。"
+              "en": "Press \"Add it for me\". ShellBot adds the server to every AI program it finds that it can set up by itself (Claude, Codex, Antigravity, Grok). Claude gets it with the same account folder your Claude tabs use, so they can see the server.",
+              "zh": "按「幫我加進去」。ShellBot 會把伺服器加進它找得到、又能自己設定的每一個 AI 程式（Claude、Codex、Antigravity、Grok）。Claude 用的是分頁同一個帳號資料夾，分頁才看得到這個伺服器。"
             },
             {
               "en": "The command is shown under the button. There is no secret in it.",
               "zh": "指令會顯示在按鈕下面，裡面沒有任何祕密。"
+            },
+            {
+              "en": "AIs that have to be set up by hand (OpenCode, Cursor Agent) are listed under the button with what to enter.",
+              "zh": "要自己設定的 AI（OpenCode、Cursor Agent）會列在按鈕下面，附上要填的內容。"
             }
           ],
           "see": {
@@ -1103,38 +1107,38 @@
               "after": null,
               "results": {
                 "added": {
-                  "tone": "ok",
+                  "tone": "good",
                   "text": {
-                    "en": "Added shellbot-gmail to Claude",
-                    "zh": "已把 shellbot-gmail 加進 Claude"
+                    "en": "Added shellbot-gmail to your AIs",
+                    "zh": "已把 shellbot-gmail 加進你的 AI"
                   }
                 },
                 "replaced": {
-                  "tone": "ok",
+                  "tone": "good",
                   "text": {
                     "en": "Replaced the old shellbot-gmail entry with these choices",
                     "zh": "已用這次的選擇換掉舊的 shellbot-gmail"
                   }
                 },
-                "no_claude": {
+                "manual": {
+                  "tone": "warn",
+                  "text": {
+                    "en": "Done for the AIs ShellBot can set up. The others are listed below with what to enter.",
+                    "zh": "ShellBot 能自己設定的都加好了。其他的列在下面，附上要填的內容。"
+                  }
+                },
+                "no_cli": {
                   "tone": "bad",
                   "text": {
-                    "en": "ShellBot cannot find the claude command",
-                    "zh": "ShellBot 找不到 claude 指令"
+                    "en": "ShellBot cannot find an AI program to add it to (is the claude command installed?)",
+                    "zh": "ShellBot 找不到可以加的 AI 程式（有裝 claude 指令嗎？）"
                   }
                 },
                 "failed": {
                   "tone": "bad",
                   "text": {
-                    "en": "Claude did not accept the command (exit code {code})",
-                    "zh": "Claude 沒有接受這個指令（結束碼 {code}）"
-                  }
-                },
-                "error": {
-                  "tone": "bad",
-                  "text": {
-                    "en": "ShellBot could not run the command.",
-                    "zh": "ShellBot 沒辦法執行這個指令。"
+                    "en": "An AI program did not accept the change",
+                    "zh": "有 AI 程式沒有接受這個設定"
                   }
                 }
               }
@@ -1243,7 +1247,7 @@
             ],
             "states": {
               "ok": {
-                "tone": "ok",
+                "tone": "good",
                 "text": {
                   "en": "The sign-in is done",
                   "zh": "登入授權完成了"
@@ -1273,7 +1277,7 @@
               "after": null,
               "results": {
                 "opened": {
-                  "tone": "ok",
+                  "tone": "good",
                   "text": {
                     "en": "The sign-in tab is open. Finish in your browser.",
                     "zh": "登入分頁開了。到瀏覽器完成授權。"

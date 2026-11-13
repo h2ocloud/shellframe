@@ -12,7 +12,7 @@ tab) and the connection test. The core's own `cli_add` adds the server to the AI
 never writes a CLI's settings and never starts a program by itself: every program goes through
 `ctx.run`, every tab through `ctx.open_tab`.
 
-The rules this file keeps (docs/connectors.md):
+The rules this file keeps:
 
   * It never reads, stores, logs or shows a login file, a token or a client secret. A check asks whether a
     file exists and how big it is; none is ever opened.
@@ -171,8 +171,12 @@ def action_auth_tab(ctx, args: dict) -> dict:
 # ── the connection test ───────────────────────────────────────────────────────
 # A temporary Claude tab is asked to look up the newest e-mail's sender and subject. The adapter judges
 # from two things it can already see and nothing else: which tools the tab called (the names) and the last
-# line it wrote. Needs from ctx (SA10 progress file lists them for the core): tab_ready, send,
-# tab_events, close_tab.
+# line it wrote. Beyond the core's Ctx so far it asks of ctx four tab calls (the app binds them):
+#   ctx.tab_ready(sid, timeout) -> bool    wait until the tab is at its prompt (blocks: run in a thread)
+#   ctx.send(sid, text) -> bool            type one line into the tab and press Enter
+#   ctx.tab_events(sid) -> {"alive", "state", "events"}   the transcript's events, oldest first, and the
+#                                          tab's state ("decision": it waits for the person to allow a tool)
+#   ctx.close_tab(sid)
 TEST_MARK = "GMAIL-TEST"
 PREFIX = {"connector": "mcp__claude_ai_Gmail__", "local": f"mcp__{SERVER}__"}      # a tool's name starts with this
 AUTH_TOOL = "mcp__claude_ai_Gmail__authenticate"       # the connector is there but has not been authorized
@@ -330,9 +334,9 @@ class GmailAdapter(Adapter):
         if not rec or rec["closed"]:
             return _fail("closed", route)
         sid = rec["sid"]
-        if ctx.cancel:
+        if ctx.cancel:                                   # stopped on purpose: the core puts the service back as it was
             _forget_tabs(ctx)
-            return _fail("closed", route, sid)
+            return _fail("test_cancelled", route, sid)
         snap = ctx.tab_events(sid) or {}
         if not snap.get("alive", False):
             rec["closed"] = True

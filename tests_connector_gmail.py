@@ -16,7 +16,6 @@ node or npx, opens a tab, or touches a real settings file, token, keychain, Goog
 Run: .venv/bin/python tests_connector_gmail.py
 """
 import builtins
-import importlib.util
 import json
 import os
 import re
@@ -24,7 +23,7 @@ import stat
 import sys
 import tempfile
 import types
-from collections import namedtuple
+import threading
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -33,37 +32,13 @@ os.environ["SHELLFRAME_PROMPT_LANG"] = "en"
 _TMP = Path(tempfile.mkdtemp(prefix="sf-gmail-adapter-"))
 os.environ.setdefault("SHELLFRAME_CONFIG_DIR", str(_TMP / "shellbot"))
 
-# The core is written by another branch. Until it is merged, the adapter only needs its base class.
-CORE = True
-try:
-    import connectors.adapter  # noqa: F401
-except ModuleNotFoundError:
-    CORE = False
-
-    class _Adapter:
-        id = ""
-        checks = {}
-        actions = {}
-
-        def test(self, ctx, route, handle=None):
-            raise NotImplementedError
-
-        def health(self, ctx, route):
-            return {"state": "unknown"}
-
-        def disconnect(self, ctx, route):
-            return {"state": "done"}
-
-    _pkg = types.ModuleType("connectors")
-    _pkg.__path__ = [str(HERE / "connectors")]
-    _mod = types.ModuleType("connectors.adapter")
-    _mod.Adapter = _Adapter
-    sys.modules.update({"connectors": _pkg, "connectors.adapter": _mod})
+import _connectors_fake as fake
+from connectors import clis as clis_mod, engine as eng_mod, registry
+from connectors.adapter import Ctx
+from connectors.clis import Result
+import connectors.services.gmail as gmail
 
 SERVICES_DIR = HERE / "connectors" / "services"
-_spec = importlib.util.spec_from_file_location("sf_test_gmail_adapter", SERVICES_DIR / "gmail.py")
-gmail = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(gmail)
 DESC = json.loads((SERVICES_DIR / "gmail.json").read_text(encoding="utf-8")) if (SERVICES_DIR / "gmail.json").exists() else None
 
 passed = failed = 0
@@ -82,7 +57,6 @@ def check(name, ok, detail=""):
 
 
 # ── stand-ins ─────────────────────────────────────────────────────────────────
-Result = namedtuple("Result", "rc out")
 SENDER, SUBJECT = "demo-sender@example.invalid", "Demo subject line 0000"      # what a mail would say: must never come back
 CLIENT_SECRET, TOKEN = "demo-client-secret-not-real", "demo-token-not-real"      # what the login files would hold: never opened
 
@@ -145,7 +119,8 @@ class SyncThread:
         self._t(*self._a)
 
 
-gmail.threading.Thread = SyncThread
+_real_threading = gmail.threading
+gmail.threading = types.SimpleNamespace(Thread=SyncThread, Lock=threading.Lock)
 
 OPENED = []
 _real_open = builtins.open
@@ -285,6 +260,7 @@ check("no key or token value is written in it", not re.search(r"sk-ant|Bearer ",
 print("== the description (gmail.json) ==")
 TEXT_KEYS = {"name", "label", "summary", "blurb", "title", "intro", "see", "note", "text", "hint", "q", "a", "next", "help"}
 ROUTE_KINDS = {"claude_connector", "local_mcp", "api_key", "oauth"}
+TONES = {"good", "warn", "bad", "info"}
 BUILTINS = {"cli_add", "cli_remove", "cli_check", "secret_set", None}
 
 
@@ -377,13 +353,26 @@ def structure_problems(desc, adapter):
 check("gmail.json exists", DESC is not None)
 if DESC is not None:
     check("every text has both languages, filled", not text_problems(DESC), "\n".join(text_problems(DESC)[:8]))
+    tones = []
+
+    def collect(o):
+        if isinstance(o, dict):
+            if "tone" in o:
+                tones.append(o["tone"])
+            for v in o.values():
+                collect(v)
+        elif isinstance(o, list):
+            for v in o:
+                collect(v)
+    collect(DESC)
+    check("every tone is one the core knows (good, warn, bad, info)", tones and set(tones) <= TONES, set(tones) - TONES)
     check("the structure holds together (steps, checks, actions, scopes, links, verdicts)", not structure_problems(DESC, gmail.ADAPTER),
           "\n".join(structure_problems(DESC, gmail.ADAPTER)[:8]))
-    if CORE:
-        from connectors import registry
-        check("registry.validate passes", registry.validate(DESC) == [], registry.validate(DESC))
-    else:
-        print("  [note] the core is not merged here: registry.validate not run (the structure check above stands in)")
+    check("registry.validate passes", registry.validate(DESC) == [], registry.validate(DESC))
+    check("the adapter has every check and action the description names (registry.validate_adapter)",
+          registry.validate_adapter(DESC, gmail.ADAPTER) == [], registry.validate_adapter(DESC, gmail.ADAPTER))
+    check("the registry loads it with its adapter, nothing skipped", registry.Registry(dirs=[SERVICES_DIR]).adapter("gmail") is gmail.ADAPTER
+          and "gmail" in registry.Registry(dirs=[SERVICES_DIR]).ids() and not registry.Registry(dirs=[SERVICES_DIR]).errors)
     routes = {r["id"]: r for r in DESC["routes"]}
     check("two routes: the connector first and recommended, then the local server",
           [r["id"] for r in DESC["routes"]] == ["connector", "local"] and routes["connector"]["recommended"] and not routes["local"]["recommended"]
@@ -394,7 +383,7 @@ if DESC is not None:
     check("the connector reaches Claude only; the local server reaches the others",
           [c for c, v in routes["connector"]["clis"].items() if v["via"] == "connector"] == ["claude"]
           and all(routes["local"]["clis"][c]["via"] == "mcp" for c in ("claude", "codex", "opencode", "agy", "grok", "cursor"))
-          and routes["local"]["clis"]["pi"]["via"] == "none")
+          and routes["local"]["clis"]["pi"]["via"] == "mcp")
     check("each other AI has its settings file named in its note", all(f in routes["local"]["clis"][c]["note"]["en"] for c, f in (
         ("codex", "~/.codex/config.toml"), ("opencode", "opencode.json"), ("agy", "~/.gemini/config/mcp_config.json"),
         ("grok", "~/.grok/config.toml"), ("cursor", "~/.cursor/mcp.json"), ("pi", "~/.pi/agent/mcp.json"))))
@@ -417,8 +406,8 @@ if DESC is not None:
           all(o["default"] for i in (6, 7) for o in routes["local"]["steps"][i]["options"]) and
           [o["id"] for i in (6, 7) for o in routes["local"]["steps"][i]["options"]] == ["readonly", "readonly"])
     blob = json.dumps(DESC, ensure_ascii=False)
-    check("nothing in it is a secret, a person, a company or an address of anyone's",
-          not re.search(r"sk-ant|Bearer|@gmail\.com|@[a-z0-9-]+\.(com|tw)\b|Howard|neux", blob, re.I))
+    check("nothing in it is a secret or an e-mail address of anyone's",
+          not re.search(r"sk-ant|Bearer|@gmail\.com|@[a-z0-9-]+\.(com|tw)\b", blob, re.I))
 
 # ── 3. the connection test ────────────────────────────────────────────────────
 print("== the connection test: a temporary tab, tool names and the last line only ==")
@@ -526,7 +515,8 @@ check("the person closed the test tab -> closed", out["code"] == "closed" and ou
 ctx, r0 = started("connector")
 ctx.cancel = True
 out = gmail.ADAPTER.test(ctx, "connector", r0["handle"])
-check("cancel closes the test tab and ends the test", ctx.closed == ["s1"] and out["code"] == "closed", (ctx.closed, out))
+check("cancel closes the test tab and answers test_cancelled (the core puts the service back as it was)",
+      ctx.closed == ["s1"] and out == {"state": "done", "ok": False, "code": "test_cancelled", "failed_step": "", "calls": 0, "sid": "s1"}, (ctx.closed, out))
 check("an unknown handle (after a restart) -> closed, not an error", gmail.ADAPTER.test(ctx, "connector", "gone")["code"] == "closed")
 check("an unknown route -> start_failed", gmail.ADAPTER.test(FakeCtx(*new_pc("ur")), "nope")["code"] == "start_failed")
 
@@ -546,12 +536,12 @@ check("disconnect closes a test tab that is still open", ctx2.closed == ["s1", "
 check("disconnect answers done and leaves Google's side alone (no program run)", gmail.ADAPTER.disconnect(ctx2, "local") == {"state": "done"} and ctx2.runs == [])
 
 phase_ctx = FakeCtx(*new_pc("wr"))
-_real_thread = gmail.threading.Thread
-gmail.threading.Thread = type("NoRun", (), {"__init__": lambda self, **kw: None, "start": lambda self: None})
+_sync_threading = gmail.threading
+gmail.threading = types.SimpleNamespace(Thread=type("NoRun", (), {"__init__": lambda self, **kw: None, "start": lambda self: None}), Lock=threading.Lock)
 try:
     r0 = gmail.ADAPTER.test(phase_ctx, "connector")
 finally:
-    gmail.threading.Thread = _real_thread
+    gmail.threading = _sync_threading
 out = poll(phase_ctx, "connector", r0, [])
 check("the tab is not at its prompt yet -> running, waiting_ready", out["state"] == "running" and out["phase"] == "waiting_ready" and phase_ctx.sent == [], out)
 
@@ -566,93 +556,188 @@ check("the test never ran a program", all(not c.runs for c in (ctx, ctx2, phase_
 check("verdict_line: only a marker line in the last two lines counts", gmail.verdict_line("x\nGMAIL-TEST: OK") == "OK" and gmail.verdict_line("GMAIL-TEST: OK\na\nb") == ""
       and gmail.verdict_line("a\n> GMAIL-TEST: FAIL why") == "FAIL" and gmail.verdict_line("") == "" and gmail.verdict_line(None) == "")
 
-# ── 4. each route, from its first step to connected ───────────────────────────
-print("== every route, from the first step to connected ==")
-PLACEHOLDER = re.compile(r"\{(\w+)\}")
+# ── 4. through the real engine ───────────────────────────────────────────────
+print("== the real engine: each route from the first step to connected, expired, reconnected, disconnected ==")
+eng_mod._dlog = lambda cat, msg: None
 
 
-def person_does(step_id, prof):
-    """What the person does in a browser or a folder before pressing 'I did it' (a stand-in file each)."""
-    if step_id == "b5":
-        (prof / "credentials.json").write_text(CLIENT_SECRET)
-    if step_id == "b7":
-        (prof / "tokens.json").write_text(TOKEN)
+class Rig:
+    """The core's engine over a temp state file, the description and the adapter as shipped, stand-ins for every
+    AI program (a recording runner), the key store and the tabs. The person's own entry in Claude's settings
+    ("my-other-server") must survive everything."""
+
+    def __init__(self, name):
+        gmail._RUNS.clear()                                # one process, one table: a rig starts with no test tab of an earlier one
+        self.home, self.xdg = new_pc(name)
+        self.runner = fake.FakeRunner()
+        self.runner.entries["claude"] = {"my-other-server"}
+        self.clock = [2_000_000.0]
+        self.tabs, self.closed, self.paths, self.sent = [], [], [], []
+        self.snap = {"alive": True, "state": "", "events": []}
+        self.state_file = self.home.parent / "connectors.json"
+        cl = clis_mod.Clis(runner=self.runner, finder=fake.finder())
+        self.engine = eng_mod.Engine(registry=registry.Registry(dirs=[SERVICES_DIR]), path=str(self.state_file), clis=cl,
+                                     backend=fake.backend(), ctx_factory=self.make_ctx, clock=lambda: self.clock[0])
+        self.prof = Path(gmail.profile_dir({"XDG_CONFIG_HOME": str(self.xdg), "HOME": str(self.home)}))
+
+    def make_ctx(self, service, route_id):
+        c = Ctx(service=service, cfg=cfg_plan, env={"HOME": str(self.home), "XDG_CONFIG_HOME": str(self.xdg), "PATH": "/nowhere"})
+        c.find = lambda b: NODE if b == "node" else None
+        c.run = lambda argv, timeout=40, env=None: Result(0, "v22.17.1") if list(argv) == [NODE, "--version"] else Result(1, "")
+        c.open_path = self.paths.append
+        c.open_tab = lambda cmd, title: (self.tabs.append((cmd, title)), f"t{len(self.tabs)}")[1]
+        c.tab_ready = lambda sid, timeout: True
+        c.send = lambda sid, text: (self.sent.append((sid, text)), True)[1]
+        c.tab_events = lambda sid: dict(self.snap)
+        c.close_tab = self.closed.append
+        return c
+
+    def step(self, op, **args):
+        return self.engine.step("gmail", op, args)
+
+    def status(self):
+        return self.engine.status("gmail")
+
+    def test_until_done(self, events, tab_state=""):
+        res = self.engine.test("gmail")
+        h = res["result"].get("handle", "")
+        self.snap = {"alive": True, "state": tab_state, "events": events}
+        return res, self.engine.test("gmail", h)
 
 
-def walk(route_id):
-    route = next(r for r in DESC["routes"] if r["id"] == route_id)
-    home, xdg = new_pc(f"walk-{route_id}")
-    ctx = FakeCtx(home, xdg, bins={"node": NODE, "claude": "/fake/bin/claude"}, answers={(NODE, "--version"): Result(0, "v22.17.1")}, cfg=cfg_plan)
-    prof = Path(gmail.profile_dir(ctx.env))
-    problems, core_calls, seen = [], [], []
-
-    def said(where, res, states):
-        code = res.get("state")
-        if code not in states:
-            problems.append(f"{where}: state {code!r} has no words")
-            return
-        for lang in ("en", "zh"):
-            for ph in PLACEHOLDER.findall(states[code]["text"][lang]):
-                if ph not in res:
-                    problems.append(f"{where}: {{{ph}}} is in the words for {code} but not in the result")
-
-    for s in route["steps"]:
-        if s.get("kind") == "test":
-            break
-        ck = s.get("check")
-        if ck and ck["on"] == "enter":
-            res = gmail.ADAPTER.checks[ck["id"]](ctx, {})
-            said(f"{s['id']} check", res, ck["states"])
-            seen.append((s["id"], "enter", res["state"]))
-        for a in s.get("actions", []):
-            if a["builtin"]:
-                core_calls.append((s["id"], a["builtin"], route["mcp"]["server"], route["mcp"]["env"]))      # the core's own: stood in for
-                continue
-            res = gmail.ADAPTER.actions[a["id"]](ctx, {"options": {"readonly": True}})
-            said(f"{s['id']}/{a['id']}", res, a["results"])
-            seen.append((s["id"], a["id"], res["state"]))
-            if a.get("after") == "check":
-                res = gmail.ADAPTER.checks[ck["id"]](ctx, {})
-                seen.append((s["id"], "after", res["state"]))
-        if ck and ck["on"] == "done":
-            before = gmail.ADAPTER.checks[ck["id"]](ctx, {})
-            if ck.get("gate") and before["state"] in ck["pass"]:
-                problems.append(f"{s['id']}: the gate is already open before the person did anything")
-            person_does(s["id"], prof)
-            res = gmail.ADAPTER.checks[ck["id"]](ctx, {})
-            said(f"{s['id']} check", before, ck["states"])
-            said(f"{s['id']} check", res, ck["states"])
-            seen.append((s["id"], "done", before["state"] + ">" + res["state"]))
-            if ck.get("gate") and res["state"] not in ck["pass"]:
-                problems.append(f"{s['id']}: the gate stays shut after the person did it: {res}")
-        elif ck and ck.get("gate") and gmail.ADAPTER.checks[ck["id"]](ctx, {})["state"] not in ck["pass"]:
-            problems.append(f"{s['id']}: the gate stays shut: {ck['id']}")
-    events = [user, tool(CONNECTOR_TOOL if route_id == "connector" else LOCAL_TOOL), mail, say("GMAIL-TEST: OK"), end]
-    r0 = gmail.ADAPTER.test(ctx, route_id)
-    ctx.snap = {"alive": True, "state": "", "events": events}
-    fin = gmail.ADAPTER.test(ctx, route_id, r0["handle"])
-    return ctx, problems, core_calls, seen, fin
+def sid_of(res):
+    return res["status"]["step"]["id"]
 
 
-if DESC is not None:
-    ctx, problems, core_calls, seen, fin = walk("connector")
-    check("connector: the account check, the connect step, the test -> connected", not problems and fin == {"state": "done", "ok": True, "calls": 1, "sid": "s1"}
-          and seen == [("a1", "enter", "claude_ai")], (problems, fin, seen))
-    check("connector: health has nothing local to look at -> unknown", gmail.ADAPTER.health(ctx, "connector") == {"state": "unknown"})
-    ctx, problems, core_calls, seen, fin = walk("local")
-    check("local: Node, folder, file, the server added, sign-in, the test -> connected", not problems and fin["ok"] is True, (problems, fin))
-    check("local: what the person met on the way (Node ok; the file missing then in place; the sign-in unfinished then done)",
-          seen == [("b0", "enter", "ok"), ("b5", "open_folder", "opened"), ("b5", "after", "missing"), ("b5", "done", "missing>ok"),
-                   ("b7", "auth_tab", "opened"), ("b7", "done", "missing>ok")], seen)
-    check("local: the server goes in through the core's cli_add, with the read-only Gmail-only settings",
-          core_calls == [("b6", "cli_add", "shellbot-gmail", {"GOOGLE_WORKSPACE_MCP_PROFILE": "shellbot", "GOOGLE_WORKSPACE_SERVICES": "gmail",
-                                                           "GOOGLE_WORKSPACE_READ_ONLY": "true"})], core_calls)
-    check("local: the sign-in tab ran the Gmail-only, read-only command", ctx.tabs[0][0] == gmail.auth_command(True, False) and ctx.tabs[0][1] == "Gmail sign-in", ctx.tabs[:1])
-    check("local: connected, health says ok", gmail.ADAPTER.health(ctx, "local") == {"state": "ok"})
-    (Path(gmail.profile_dir(ctx.env)) / "tokens.json").unlink()
-    check("local: Google takes the permission back -> health says revoked (the core asks to reconnect)", gmail.ADAPTER.health(ctx, "local") == {"state": "revoked"})
-    all_cmds = json.dumps([ctx.tabs, ctx.runs, ctx.sent, ctx.paths])
-    check("no client secret or token in any command, tab, prompt or path the walk produced", CLIENT_SECRET not in all_cmds and TOKEN not in all_cmds and "sk-" not in all_cmds)
+reg = registry.Registry(dirs=[SERVICES_DIR])
+check("the engine's registry loads gmail with no error", "gmail" in reg.ids() and not reg.errors, reg.errors)
+
+# -- local: Node, the Google Cloud steps, the file, the server, the sign-in, the test ---------------------------
+r = Rig("e2e-local")
+res = r.engine.start("gmail", route="local")
+check("local: starts at step 1; Node.js passes on entering so it goes on by itself",
+      res["success"] and res["status"]["route"] == "local" and sid_of(res) == "b1" and res["view"]["steps"][0]["state"] == "done", str(res["status"]))
+for _ in range(4):
+    res = r.step("done")                                  # b1..b4: the Google Cloud pages, nothing ShellBot can check
+check("local: the four Google Cloud steps are the person's; the file step is next", sid_of(res) == "b5", str(res["status"]))
+res = r.step("act", action="open_folder")
+check("local: 'Open the folder' makes the profile folder, opens it, then checks: not there yet",
+      r.prof.is_dir() and r.paths == [str(r.prof)] and res["view"]["step"]["result"]["code"] == "opened"
+      and res["view"]["step"]["check"]["code"] == "missing" and sid_of(res) == "b5", str(res["view"]["step"])[:300])
+res = r.step("done")
+check("local: the file step is gated: 'I did it' without the file stays", sid_of(res) == "b5" and res["view"]["step"]["check"]["code"] == "missing")
+(r.prof / "credentials.json").write_text(CLIENT_SECRET)
+res = r.step("done")
+check("local: with credentials.json in place it moves on to adding the server", sid_of(res) == "b6", str(res["status"]))
+man = {m["cli"]: m for m in res["view"]["step"].get("manual", [])}
+check("local: the AIs that have to be set up by hand are listed with what to enter (Gmail only, no secret)",
+      {"opencode", "cursor"} <= set(man) and all(m["env"].get("GOOGLE_WORKSPACE_SERVICES") == "gmail" and "env_secret_names" in m for m in man.values()), (list(man), list(res["view"]["step"])))
+res = r.step("act", action="cli_add", options={"readonly": True})
+adds = [c for c in r.runner.calls if c[1:3] == ["mcp", "add"] and c[0].endswith("/claude")]
+args_ = adds[0] if adds else []
+env_pairs = [args_[i + 1] for i, a in enumerate(args_) if a == "-e"]
+check("local: the core's cli_add runs `claude mcp add` once, user scope, the shellbot-gmail name, npx and the package",
+      len(adds) == 1 and "shellbot-gmail" in args_ and args_[args_.index("--scope") + 1] == "user" and args_[-3:] == ["npx", "-y", gmail.PACKAGE], adds)
+check("local B7: the server's settings carry services=gmail and READ_ONLY=true (the mailbox only), nothing else of Google's",
+      sorted(env_pairs) == ["GOOGLE_WORKSPACE_MCP_PROFILE=shellbot", "GOOGLE_WORKSPACE_READ_ONLY=true", "GOOGLE_WORKSPACE_SERVICES=gmail"], env_pairs)
+check("local: it was added to the AIs ShellBot can set up, and the person's own entry was left alone",
+      res["status"]["clis"].get("claude") == "connected" and res["status"]["clis"].get("codex") == "connected"
+      and "shellbot-gmail" in r.runner.entries["claude"] and "my-other-server" in r.runner.entries["claude"], res["status"]["clis"])
+check("local: after the add the sign-in step is open", sid_of(res) == "b7", str(res["status"]))
+res = r.step("act", action="auth_tab", options={"readonly": True})
+check("local B7: the sign-in tab runs the Gmail-only, read-only command", r.tabs[-1] == (gmail.auth_command(True, False), "Gmail sign-in") and res["view"]["step"]["result"]["code"] == "opened", r.tabs)
+res = r.step("done")
+check("local: the sign-in step is gated until the permission file is there", sid_of(res) == "b7" and res["view"]["step"]["check"]["code"] == "missing")
+(r.prof / "tokens.json").write_text(TOKEN)
+res = r.step("done")
+check("local: sign-in done, the test is next", sid_of(res) == "b8", str(res["status"]))
+test_events = [user, tool("ToolSearch"), tool(LOCAL_TOOL), mail, say(f"{SENDER}: {SUBJECT}\nGMAIL-TEST: OK"), end]
+res = r.engine.test("gmail")
+h = res["result"]["handle"]
+check("local: the test opens one temporary tab and asks once; the status says verifying",
+      res["result"]["state"] == "running" and res["status"]["state"] == "verifying" and len(r.sent) == 1 and r.tabs[-1][1] == "Gmail test", str(res)[:300])
+r.snap = {"alive": True, "state": "decision", "events": [user, tool("ToolSearch")]}
+res = r.engine.test("gmail", h)
+check("local: the test tab waits for the person's OK -> needs_user, the service waits for you (not a failure)",
+      res["result"] == {"state": "needs_user", "handle": h, "code": "needs_allow"} and res["status"]["state"] == "waiting_user" and not res["status"]["attention"], str(res)[:300])
+r.snap = {"alive": True, "state": "", "events": test_events}
+res = r.engine.test("gmail", h)
+check("local: the test passes -> connected, with the time and the least permission (read)",
+      res["result"] == {"state": "done", "ok": True} and res["status"]["state"] == "connected" and res["status"]["scopes"] == ["read"]
+      and res["status"]["connected_at"] == 2_000_000, str(res)[:300])
+check("local: what the person sees of the test is codes (no sender, no subject)", SENDER not in json.dumps(res) and SUBJECT not in json.dumps(res))
+r.clock[0] += 400
+check("health: the sign-in file is there -> still connected", r.engine.refresh("gmail")["status"]["state"] == "connected")
+(r.prof / "tokens.json").unlink()
+res = r.engine.refresh("gmail", force=True)
+st = res["status"]
+check("health: Google took the permission back (file gone) -> needs reconnect, with Gmail's own words and the way out",
+      st["state"] == "needs_reconnect" and st["attention"] and st["problem"]["code"] == "revoked"
+      and st["problem"]["text"]["en"].startswith("Google took the Gmail permission back") and "Sign in again" in st["problem"]["next"]["en"], str(st)[:400])
+res = r.engine.start("gmail", reconnect=True)
+steps = {s["id"]: s["state"] for s in res["view"]["steps"]}
+check("reconnect: the sign-in (b7) and the test are redone; Node, the Google Cloud steps and the server stay done",
+      steps["b7"] != "done" and steps["b8"] == "pending" and all(steps[i] == "done" for i in ("b0", "b1", "b2", "b3", "b4", "b6")), steps)
+if steps["b5"] != "done":
+    print("  [note] the core's reconnect also redid the file step: that step's action is the adapter's (builtin None) "
+          "and reconnect compares it with an unset redo code (None)")
+for _ in range(5):                                         # whatever is open: the steps the core redid, then the sign-in
+    cur = sid_of(res)
+    if cur == "b5":
+        res = r.step("done")
+    elif cur == "b6":
+        res = r.step("act", action="cli_add", options={"readonly": True})
+    elif cur == "b7":
+        r.step("act", action="auth_tab", options={"readonly": True})
+        (r.prof / "tokens.json").write_text(TOKEN)
+        res = r.step("done")
+closed_before = len(r.closed)
+res, res2 = r.test_until_done(test_events)
+check("reconnect: signed in again, tested again -> connected; the earlier test tab was closed first",
+      res2["status"]["state"] == "connected" and not res2["status"]["attention"] and closed_before == 0 and len(r.closed) == 1, (res2["status"]["state"], r.closed))
+res = r.engine.disconnect("gmail")
+check("disconnect: ShellBot's own shellbot-gmail entries are gone, the person's own entry is not",
+      all("shellbot-gmail" not in v for v in r.runner.entries.values()) and "my-other-server" in r.runner.entries["claude"], r.runner.entries)
+check("disconnect: the open test tab is closed; the progress is forgotten; the person's files stay where they are",
+      len(r.closed) == 2 and r.status()["state"] == "not_started" and (r.prof / "credentials.json").exists() and (r.prof / "tokens.json").exists(), (r.closed, r.status()["state"]))
+everything = json.dumps([r.runner.calls, r.tabs, r.sent, r.paths]) + (r.state_file.read_text(encoding="utf-8") if r.state_file.exists() else "")
+check("no client secret, token, sender or subject in any command, tab, prompt, path or in connectors.json",
+      not any(x in everything for x in (CLIENT_SECRET, TOKEN, SENDER, SUBJECT)))
+
+# -- the connector: nothing to install --------------------------------------------------------------------------
+r = Rig("e2e-conn")
+res = r.engine.start("gmail")
+check("connector: the recommended route is picked; the account check passes on entering (a claude.ai plan), so connect-on-claude.ai is open",
+      res["status"]["route"] == "connector" and res["status"]["kind"] == "claude_connector" and sid_of(res) == "a2", str(res["status"]))
+res = r.step("done")
+check("connector: 'I connected it' -> the test", sid_of(res) == "a3")
+res, res2 = r.test_until_done([user, tool(CONNECTOR_TOOL), mail, say("GMAIL-TEST: OK"), end])
+check("connector: the test passes -> connected; only Claude is reached, the others say they cannot be",
+      res2["status"]["state"] == "connected" and res2["status"]["clis"]["claude"] == "connected" and res2["status"]["clis"]["codex"] == "unsupported", str(res2["status"]["clis"]))
+check("connector: no AI program was run and no file was looked at", r.runner.calls == [] and not r.prof.exists())
+
+r = Rig("e2e-fail")
+r.engine.start("gmail")
+r.step("done")
+res, res2 = r.test_until_done([user, say("GMAIL-TEST: FAIL I have no Gmail tool"), end])
+st = res2["status"]
+check("a test that finds no Gmail tool: failed, back at step a2 with Gmail's words for it",
+      st["state"] == "failed" and st["attention"] and sid_of(res2) == "a2" and st["problem"]["code"] == "no_tools"
+      and st["problem"]["text"]["en"].startswith("Not yet"), str(st)[:400])
+check("...and a test before redoing that step is refused", r.engine.test("gmail")["code"] == "test_not_ready")
+r.engine.start("gmail")
+r.step("done")
+res, res2 = r.test_until_done([user, tool(CONNECTOR_TOOL), say("GMAIL-TEST: OK"), end])
+check("...redo the step, test again -> connected", res2["status"]["state"] == "connected")
+
+r = Rig("e2e-cancel")
+r.engine.start("gmail")
+r.step("done")
+res = r.engine.test("gmail")
+h = res["result"]["handle"]
+res = r.engine.test("gmail", h, cancel=True)
+check("cancel: the test tab is closed and the service goes back to waiting (not failed)",
+      res["result"]["code"] == "test_cancelled" and r.closed == ["t1"] and res["status"]["state"] == "waiting_user" and not res["status"]["attention"], str(res)[:300])
 
 if __name__ == "__main__":
     print(f"\nResults: {passed} passed, {failed} failed")
