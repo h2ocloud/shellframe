@@ -938,21 +938,22 @@ offer_ai_clis() {
 report_ai_clis() {
   [ -x "$VENV_PY" ] || return 0
   echo ""
-  "$VENV_PY" - "$INSTALL_DIR" <<'PY' || echo "  (could not list them; see the AI 帳號 panel)"
+  "$VENV_PY" - "$INSTALL_DIR" "$UI_LANG" <<'PY' || say "  (could not list them; see ShellBot's AI accounts panel)" "  （列不出來，請看 ShellBot 的「AI 帳號」面板）"
 import sys
 sys.path.insert(0, sys.argv[1])
+zh = sys.argv[2] == "zh"
 import usage_probe as u
 missing = []
 for name, spec in u.PROVIDER_SPECS.items():
     ok = u.provider_installed(name)
-    print(("  ✅ " if ok else "  ⬜ ") + spec["label"] + ("" if ok else " — not installed"))
+    print(("  ✅ " if ok else "  ⬜ ") + spec["label"] + ("" if ok else (" — 還沒裝" if zh else " — not installed")))
     cmd = (spec.get("install") or {}).get("command")
     if not ok and cmd:
         missing.append("      " + cmd)
 if missing:
-    print("\n  To install the missing ones (one is enough to start):")
+    print("\n  " + ("想用哪一個再裝（裝一個就能開始）：" if zh else "To install the missing ones (one is enough to start):"))
     print("\n".join(missing))
-    print("      (or use the ⬜ entries in ShellBot's AI 帳號 panel)")
+    print("      " + ("（也可以在 ShellBot 的「AI 帳號」面板點 ⬜ 那幾項來裝）" if zh else "(or use the ⬜ entries in ShellBot's AI accounts panel)"))
 PY
 }
 
