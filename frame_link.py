@@ -995,8 +995,8 @@ class FrameLink:
                         "data": body.get("data", "")}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path in ("/link/bots/wake", "/link/answer", "/link/bots/avatar", "/link/bots/settings", "/link/bots/primary",
-                            "/link/bots/keep", "/link/push/register", "/link/push/unregister", "/link/push/test", "/link/peer/name"):
-                    cmd = path[6:].replace("/", "_")            # bots_wake, bots_keep, push_register, peer_name… (docs/mobile-link.md)
+                            "/link/bots/keep", "/link/bots/rename", "/link/push/register", "/link/push/unregister", "/link/push/test", "/link/peer/name"):
+                    cmd = path[6:].replace("/", "_")            # bots_wake, bots_keep, bots_rename, push_register, peer_name… (docs/mobile-link.md)
                     code, res = link._bots_route(peer_id, "bots_answer" if cmd == "answer" else cmd, body)
                     return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/resize":

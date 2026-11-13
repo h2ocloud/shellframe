@@ -995,7 +995,7 @@
       <div class="sfb-row" style="justify-content:flex-end">
         ${existing ? `<button class="btn btn-ghost" data-act="folder">${t('Memory folder', '記憶資料夾')}</button><button class="btn btn-ghost" data-act="delete" style="margin-right:auto;color:#f7768e">${t('Delete', '刪除')}</button>` : ''}
         <button class="btn btn-ghost" data-act="cancel">${t('Cancel', '取消')}</button>
-        ${existing && sidOfBot(role) ? `<button class="btn btn-ghost" data-act="save-now" title="${esc(t('It writes its memory, closes, and wakes on the CLI and model above', '它會先寫記憶、關掉，再用上面的 CLI 和模型叫醒'))}">${t('Save and switch now', '儲存並現在就換')}</button>` : ''}
+        ${existing && !ext ? `<button class="btn btn-ghost" data-act="save-now" title="${esc(sidOfBot(role) ? t('It writes its memory, closes, and wakes on the CLI and model above', '它會先寫記憶、關掉，再用上面的 CLI 和模型叫醒') : t('It is asleep: it wakes now on the CLI and model above', '它在睡：現在就用上面的 CLI 和模型叫醒'))}">${t('Save and switch now', '儲存並現在就換')}</button>` : ''}
         <button class="btn btn-primary" data-act="save">${existing ? t('Save', '儲存') : (from ? t('Make it a bot', '開成 Bot') : t('Create', '建立'))}</button>
       </div>
       <div class="sfb-msg" id="sfb-ed-msg"></div></div>`;
@@ -1140,7 +1140,8 @@
         msg.textContent = res.message || '';
         if (res.success && act === 'save-now') {
           const sw = JSON.parse(await api().bots_switch(saveAs, '', null, 'now'));
-          toast(sw.success ? t('It writes its memory, then wakes on the new CLI', '它會先寫記憶，再用新的 CLI 叫醒') : (sw.message || ''), !sw.success);
+          toast(!sw.success ? (sw.message || '') : sw.pending ? t('It writes its memory, then wakes on the new CLI', '它會先寫記憶，再用新的 CLI 叫醒')
+            : t('Woken on the CLI and model above', '已用上面的 CLI 和模型叫醒'), !sw.success);   // asleep: woken at once ({sid})
         }
         if (res.success) {
           ov.remove();

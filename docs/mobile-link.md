@@ -229,6 +229,7 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 - **`POST /link/bots/settings` 的方案 A 欄位：** 多收 `cli`（`choices.clis` 的 key，要是裝好的）、`model`（`""` 是 CLI 的預設；`models: false` 的 CLI 只能給 `""`）、`apply`（`next_wake` 預設；`now`）。換 CLI 時沒給 `model`，模型會清回預設。`now`：睡著的 bot 直接用新的叫醒，回 `{"success", "sid"}`；醒著的先寫記憶、關掉再叫醒，回 `{"success", "pending": true}`，之後看 `/link/bots` 的 `closing` 和新的 `sid`。名字、臉、執掌、記憶都留著，對話不會搬到新的 CLI。失敗的 `code`：`no_bot`、`external`、`bad_cli`、`model_fixed`、`bad_model`、`busy`（正在寫記憶）、`nothing`。對應 `bots_switch`／`sfctl bots-set`。
 - **`POST /link/bots/primary {"role"}`：** 指定主要 Bot，對應 `bots_set_primary`。只能指定這台電腦上的 bot，不能指定外部 bot，也不能清空。
 - **改名（方案 A）：** 一個 bot 只有一個名字。`POST /link/rename` 改的如果是綁了 bot 的分頁，就是幫那個 bot 改名，跟桌面的 `bots_rename`、`sfctl bots-rename` 走同一條路：名冊、綁定、群組、記憶資料夾一起改；舊名字放進這個 bot 的 `former_names`，A2A 用舊名字照樣送得到，別的 bot 也不能拿去用。成功回 `{"success": true, "role", "former", "message"}`；失敗的 `code`：`bots_off`、`no_bot`、`external`、`bad_name`、`name_taken`（附 `suggestion`）、`busy`（正在寫記憶）、`folder_taken`（新名字的資料夾已經有東西）。臨時 bot 和終端機的分頁改名只改標題，回應跟以前一樣。
+- **`POST /link/bots/rename {"role", "name"}`（v0.44.2）：** 以 bot 為單位改名，睡著的 bot 也能改（`/link/rename` 只收分頁，睡著的 bot 沒有分頁）。`role` 是 bot 現在的名字，舊名字（`former_names`）和大小寫不同也認得。跟上面那條、桌面的 `bots_rename`、`sfctl bots-rename` 是同一條路，成功和失敗的回應、`code` 都和上面一樣。醒著的 bot 用這條也可以，分頁標題會跟著改。`/link/rename` 不變，舊版 App 照舊；舊版電腦回 404，請顯示「電腦上的 ShellBot 要更新」。
 
 ### 模型清單（v0.42.1）
 

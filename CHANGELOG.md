@@ -6,6 +6,28 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.44.2 (2026-11-13)
+
+### Fixes
+
+- **An asleep bot's editor has "Save and switch now" too.** It was offered only while the bot was
+  awake. Asleep, the bot is woken at once on the CLI and model just saved; awake, it still writes its
+  memory and closes first. Covered by tests_plan_a_ui.py.
+
+  **睡著的 bot，編輯畫面也有「儲存並現在就換」。** 之前只有醒著的 bot 才有這顆按鈕。睡著的 bot 會用剛存好的
+  CLI 和模型馬上叫醒；醒著的照舊先寫記憶、關掉再叫醒。由 tests_plan_a_ui.py 守著。
+
+### Added
+
+- **A phone can rename an asleep bot.** `POST /link/bots/rename {"role", "name"}` renames a bot by its
+  name, the same rename as the desktop editor's and `sfctl bots-rename`, so an asleep bot (which has no
+  tab) can be renamed too. `/link/rename`, which takes a tab, is unchanged, so older apps work as before.
+  `docs/mobile-link.md` has the details. Covered by tests_frame_link.py.
+
+  **手機可以幫睡著的 bot 改名。** 新增 `POST /link/bots/rename {"role", "name"}`，以 bot 為單位改名，跟桌面
+  編輯畫面、`sfctl bots-rename` 走同一條路，所以沒有分頁的睡著的 bot 也能改。原本以分頁為單位的
+  `/link/rename` 不變，舊版 App 照舊。細節寫在 `docs/mobile-link.md`。由 tests_frame_link.py 守著。
+
 ## v0.44.1 (2026-11-13)
 
 ### Added

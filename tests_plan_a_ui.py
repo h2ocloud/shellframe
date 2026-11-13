@@ -94,7 +94,9 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
       case 'bots_model_info': return window.__model_info(args[0]);
       case 'bots_model_check': return window.__model_check(args[0], args[1]);
       case 'bots_save': return R({success: true, message: '已更新'});
-      case 'bots_switch': return R({success: true, role: args[0], pending: true});
+      case 'bots_switch':      // as the app does: an awake bot closes first (pending), one asleep is woken at once
+        return R(Object.values(window.__bots.sessions).some(r => r.bot === args[0])
+          ? {success: true, role: args[0], pending: true} : {success: true, role: args[0], sid: 's299'});
       default: return R('{}');
     }
   };
@@ -181,6 +183,25 @@ with sync_playwright() as pw:
     sw = page.evaluate("window.__calls.filter(c => c[0] === 'bots_switch').map(c => c[1])")
     check("saved with the CLI and model, then switched now", saves[-1:] == [["寫程式", "claude", "sonnet"]]
           and sw == [["寫程式", "", None, "now"]], (saves, sw))
+
+    print("4. an asleep bot can be saved and switched now too (it is woken at once)")
+    page.evaluate("""() => { window.__bots.roster['看文件'] = {label: '看文件', responsibility: '讀規格', cmd: 'claude',
+                                    bot: {avatar: {shape: 'egg', color: 'teal'}, memory: true}};
+                   document.body.insertAdjacentHTML('beforeend', '<button id="t-edit-asleep" data-sfb-edit="看文件">✎</button>'); }""")
+    page.evaluate("window.SFBots.refresh && window.SFBots.refresh(true)")
+    page.wait_for_timeout(300)
+    page.click("#t-edit-asleep")
+    page.wait_for_selector('.sfb-modal [data-act="save-now"]', timeout=5000)
+    btn = page.locator('.sfb-modal [data-act="save-now"]')
+    check("an asleep bot's editor offers 'save and switch now', saying it wakes it",
+          btn.count() == 1 and "它在睡" in (btn.get_attribute("title") or ""), btn.get_attribute("title"))
+    page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / "plan-a-switch-asleep.png"))
+    btn.click()
+    page.wait_for_function("window.__calls.filter(c => c[0] === 'bots_switch').length >= 2", timeout=8000)
+    sw = page.evaluate("window.__calls.filter(c => c[0] === 'bots_switch').map(c => c[1])")
+    check("…saved, then woken now on the new settings", sw[-1] == ["看文件", "", None, "now"], sw)
+    check("…and the toast says it was woken, not that it writes its memory first",
+          page.wait_for_function("document.body.innerText.includes('已用上面的 CLI 和模型叫醒')", timeout=3000) is not None)
     check("no page errors", not errors, errors)
     browser.close()
 

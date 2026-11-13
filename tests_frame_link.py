@@ -134,7 +134,7 @@ class Node:
             if cmd == "bots_answer":
                 self.answers.append(dict(args or {}))
                 return {"success": True, "message": "answered"}
-            if cmd in ("bots_avatar", "bots_settings", "bots_primary"):
+            if cmd in ("bots_avatar", "bots_settings", "bots_primary", "bots_rename"):
                 self.edits.append((cmd, dict(args or {})))
                 return {"success": True, "message": "changed"}
             return {"success": False, "message": f"unknown {cmd}"}
@@ -288,6 +288,10 @@ def main():
         check("the three edits reach the page's own functions, each with its body",
               a.edits == [(c, dict(o, peer_id=b.fid)) for c, o in
                           (("bots_avatar", EDITS[0][1]), ("bots_settings", EDITS[1][1]), ("bots_primary", EDITS[2][1]))])
+        st, body = signed_post(b, peer_a_from_b, "/link/bots/rename", {"role": "Coding", "name": "寫程式"})
+        check("/link/bots/rename renames a bot by its name (asleep too: /link/rename takes only a tab)",
+              st == 200 and a.edits[-1] == ("bots_rename", {"role": "Coding", "name": "寫程式", "peer_id": b.fid}))
+        del a.edits[-1]
 
         # ── push to the phone, and a phone renaming itself (docs/mobile-link.md) ──
         PUSH = [("/link/push/register", {"token": "ab" * 32, "env": "sandbox"}), ("/link/push/unregister", {}),
@@ -431,6 +435,8 @@ def main():
         check("slave /link/answer on master denied, nothing answered", st == 403 and len(a.answers) == 1)
         codes = [signed_post(b, peer_a_slave, path, obj)[0] for path, obj in EDITS]
         check("slave edits on master denied (403), nothing changed", codes == [403, 403, 403] and len(a.edits) == 3)
+        st, _ = signed_post(b, peer_a_slave, "/link/bots/rename", {"role": "Coding", "name": "x"})
+        check("slave /link/bots/rename on master denied, nothing renamed", st == 403 and len(a.edits) == 3)
         codes = [signed_post(b, peer_a_slave, path, obj)[0] for path, obj in PUSH]
         st, _ = signed_get(b, peer_a_slave, "/link/push/status")
         check("slave push routes and rename on master denied (403), nothing registered",
