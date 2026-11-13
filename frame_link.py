@@ -972,10 +972,10 @@ class FrameLink:
                         return self._send(403, {"success": False,
                             "message": "單向配對：這台是主控端，對方無權操作"},
                             sign_for=peer, nonce=nonce)
-                    res = link._local_send(body.get("sid", ""),
-                                           body.get("text", ""),
-                                           bool(body.get("submit", True)),
-                                           source_peer=peer_id)
+                    res = link._local_send(body.get("sid", ""), body.get("text", ""),
+                                           bool(body.get("submit", True)), source_peer=peer_id,
+                                           ask_draft=bool(body.get("ask_draft")),       # docs/mobile-link.md (v0.44.2)
+                                           clear_draft=bool(body.get("clear_draft")))
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/a2a/send":
                     if not link._peer_may_control(peer_id):
@@ -1407,10 +1407,10 @@ class FrameLink:
 
     # ── local actions on behalf of a peer ─────────────────────────────────
     def _local_send(self, sid: str, text: str, submit: bool,
-                    source_peer: str) -> dict:
+                    source_peer: str, ask_draft: bool = False, clear_draft: bool = False) -> dict:
         peer_name = (self.peers().get(source_peer) or {}).get("name", "peer")
-        res = self._execute("send", {"sid": sid, "text": text,
-                                     "submit": submit}) or {}
+        res = self._execute("send", {"sid": sid, "text": text, "submit": submit,
+                                     "ask_draft": ask_draft, "clear_draft": clear_draft}) or {}
         self._record_inbox({"kind": "remote_send", "peer_id": source_peer,
                             "peer_name": peer_name, "sid": sid,
                             "chars": len(text),

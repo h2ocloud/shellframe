@@ -91,6 +91,7 @@ class Node:
             if cmd == "send":
                 self.sent.append((args.get("sid"), args.get("text"),
                                   args.get("submit")))
+                self.send_opts = (args.get("ask_draft"), args.get("clear_draft"))
                 return {"success": True, "message": "sent"}
             if cmd == "raw_input":
                 self.raw.append((args.get("sid"), args.get("data")))
@@ -318,6 +319,12 @@ def main():
         sent = b.link.remote_send(a.fid, "s2", "hello from B")
         check("remote_send lands in A's tab",
               sent.get("success") and a.sent == [("s2", "hello from B", True)])
+        check("…an older sender asks nothing about a draft (queued behind it, as before)", a.send_opts == (False, False))
+        st, _ = signed_post(b, peer_a_from_b, "/link/send", {"sid": "s2", "text": "x", "ask_draft": True})
+        check("/link/send passes ask_draft on (a draft is asked about, not waited behind)", st == 200 and a.send_opts == (True, False))
+        signed_post(b, peer_a_from_b, "/link/send", {"sid": "s2", "text": "x", "clear_draft": True})
+        check("…and clear_draft", a.send_opts == (False, True))
+        del a.sent[1:]
         a2a = b.link.remote_a2a(a.fid, {"id": "h1", "text": "ping", "target": "Coding"})
         check("remote_a2a lands in a2a_deliver",
               a2a.get("success") and a.a2a and a.a2a[-1].get("text") == "ping"

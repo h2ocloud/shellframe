@@ -35,6 +35,13 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
     切回照電腦尺寸時會把原尺寸還回去。
 - 訊息框（💬）：走 `/link/send`，也就是 Telegram 訊息那條注入路徑（等 AI 空檔、
   tmux bracketed paste、再 Enter），長 prompt 比逐字敲穩。
+  - **輸入框有還沒送出的字（v0.44.2）：** 以前只會排隊（`details.reason: "draft"`），最多等 30 分鐘就丟掉。
+    `POST /link/send` 多收兩個欄位，跟桌面對話畫面的卡片一樣：
+    - `ask_draft: true`：輸入框有草稿時不排隊，回 `{"success": false, "code": "draft", "draft", "message"}`；
+      `draft` 是草稿的前 60 個字（壓成一行，太長以 `…` 結尾），拿來顯示「清掉後送出／先不送」兩個按鈕。沒有草稿就照常送或排隊。
+    - `clear_draft: true`：清掉輸入框（分頁不在跑時按一次 Ctrl+C）再送；分頁正在跑就排隊，輪到時先清再送。
+      清不掉回 `code: "draft_stuck"`，什麼都沒送。
+    - 舊版電腦不認得這兩個欄位，會照舊排隊（`reason: "draft"`），手機看不到 `code: "draft"` 就維持排隊加提示。
 - 「要你決定」：`/link/signals` 讀 agent 的 `[[SF:RED/YELLOW]]`，側欄該 session
   會亮橘色驚嘆號。
 - 多台電腦：每台是獨立 peer、獨立金鑰；側欄一台一區。

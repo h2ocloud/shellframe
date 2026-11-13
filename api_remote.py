@@ -590,6 +590,13 @@ class RemoteApiMixin:
                     return {"success": False, "message": f"No such session: {sid}"}
                 # Not into a running turn, a decision menu or the user's draft: the
                 # per-tab queue waits (up to 30 min) unless --now. See tab_delivery.
+                # `ask_draft` (a phone's /link/send): text left unsent in the input box is asked
+                # about instead of waited behind, as the chat view's card; `clear_draft` clears it.
+                draft = tab_delivery.draft_preview(self, sid) if args.get("ask_draft") and not args.get("clear_draft") else ""
+                if draft:
+                    return {"success": False, "code": "draft", "draft": draft, "message": sf_lang.pick(
+                        "The input box holds text that was never sent; clear it and send (clear_draft), or not now.",
+                        "輸入框裡有一段還沒送出的字；要清掉後送出（clear_draft），還是先不送。")}
                 sender = str(args.get("from_sid") or "")
                 label = self._session_label(sid, self.sessions.get(sid))
                 res = tab_delivery.deliver(self, sid, text, submit=submit, now=bool(args.get("now")),

@@ -42,6 +42,18 @@
   編輯畫面、`sfctl bots-rename` 走同一條路，所以沒有分頁的睡著的 bot 也能改。原本以分頁為單位的
   `/link/rename` 不變，舊版 App 照舊。細節寫在 `docs/mobile-link.md`。由 tests_frame_link.py 守著。
 
+- **A phone's message can ask about text left in the input box instead of waiting behind it.** A
+  message sent from a phone to a tab whose input box held unsent text waited behind it and was
+  dropped after 30 minutes. `POST /link/send` now takes `ask_draft` (answer `code: "draft"` with the
+  draft's first words and queue nothing) and `clear_draft` (clear it, then send), as the desktop chat
+  view's card does; an older phone sends neither and is queued as before. Covered by
+  tests_chat_draft_send.py and tests_frame_link.py.
+
+  **手機送的訊息遇到輸入框裡沒送出的字，可以先問，不用一直排在後面。** 手機送到某個分頁的訊息，若那個分頁的
+  輸入框有還沒送出的字，會一直排在後面，30 分鐘後被丟掉。現在 `POST /link/send` 多收 `ask_draft`（回
+  `code: "draft"` 和草稿開頭幾個字，不排隊）和 `clear_draft`（清掉後送出），跟桌面對話畫面的卡片一樣；
+  舊版手機不帶這兩個欄位，照舊排隊。由 tests_chat_draft_send.py 和 tests_frame_link.py 守著。
+
 ## v0.44.1 (2026-11-13)
 
 ### Added

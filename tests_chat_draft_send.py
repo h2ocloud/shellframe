@@ -203,6 +203,26 @@ check("what='chat' and clear_draft reach the queue", got.get("what") == "chat" a
 check("…and the id and the reason come back", out.get("details") == {"queued": True, "position": 1,
                                                                      "id": "abc123abc123", "reason": "working"}, out)
 
+print("6. a phone's /link/send asks about a draft too (ask_draft), or clears it (clear_draft)")
+got.clear()
+td.deliver = fake_deliver
+remote.screens = {"s4": box("\x1b[39m❯\xa0" + DRAFT)}
+out = api_remote.RemoteApiMixin._execute_sfctl(remote, "send", {"sid": "s4", "text": "手機的訊息", "ask_draft": True})
+check("ask_draft with a draft in the box: nothing queued, the draft comes back to show",
+      out.get("code") == "draft" and out.get("draft") == DRAFT and out.get("success") is False and not got, (out, got))
+out = api_remote.RemoteApiMixin._execute_sfctl(remote, "send", {"sid": "s4", "text": "手機的訊息", "ask_draft": True,
+                                                                "clear_draft": True})
+check("…clear_draft: it goes to the queue, asking for the clear", got.get("clear_draft") is True and out.get("success"), got)
+got.clear()
+remote.screens = {"s4": EMPTY}
+out = api_remote.RemoteApiMixin._execute_sfctl(remote, "send", {"sid": "s4", "text": "手機的訊息", "ask_draft": True})
+check("…no draft: sent as usual", got.get("clear_draft") is False and out.get("success"), (out, got))
+got.clear()
+remote.screens = {"s4": box("\x1b[39m❯\xa0" + DRAFT)}
+api_remote.RemoteApiMixin._execute_sfctl(remote, "send", {"sid": "s4", "text": "舊版手機"})
+check("without ask_draft (an older phone): queued behind the draft as before", "clear_draft" in got, got)
+td.deliver = real_deliver
+
 print(f"\n{passed} passed, {failed} failed")
 if failed:
     sys.exit(1)

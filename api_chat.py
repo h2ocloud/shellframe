@@ -103,11 +103,9 @@ class ChatApiMixin:
         text = str(text or "")
         if not text.strip():
             return json.dumps({"success": False, "code": "empty"})
-        draft = "" if clear_draft else tab_delivery.draft_of(self, sid)
+        draft = "" if clear_draft else tab_delivery.draft_preview(self, sid)
         if draft:
-            flat = " ".join(draft.split())
-            return json.dumps({"success": False, "code": "draft",
-                               "draft": flat[:60] + ("…" if len(flat) > 60 else "")}, ensure_ascii=False)
+            return json.dumps({"success": False, "code": "draft", "draft": draft}, ensure_ascii=False)
         agent_link.clear_chain(sid)          # the person wrote this: what the tab sends next starts a fresh A2A chain
         res = self._execute_sfctl("send", {"sid": sid, "text": text, "submit": True, "what": "chat",
                                            "clear_draft": bool(clear_draft)}) or {}

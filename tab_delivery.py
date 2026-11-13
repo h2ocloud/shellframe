@@ -367,6 +367,13 @@ def draft_of(api, sid: str) -> str:
     return text if kind == "draft" else ""
 
 
+def draft_preview(api, sid: str) -> str:
+    """The draft in tab `sid`'s input box as one line of at most 60 characters, or '': what the chat
+    view's card and a phone's /link/send (ask_draft) show before asking to clear it."""
+    flat = " ".join(draft_of(api, sid).split())
+    return flat[:60] + ("…" if len(flat) > 60 else "")
+
+
 def clear_draft_now(api, sid: str) -> bool:
     """Empty the input box of tab `sid` with one CLEAR_KEY, only while the tab is not
     working or asking (Ctrl+C would stop its turn), and only when a draft is there.
