@@ -128,9 +128,10 @@ class TabModelApiMixin:
         cur = self._tm_current(sid)
         bot = None
         try:
-            role = self._bots_role_of(sid)
+            cfg = main.load_config()               # once: this is asked every second for the shown tab
+            role = self._bots_role_of(sid, cfg)
             if role:
-                entry = (main.load_config().get("agent_roster") or {}).get(role) or {}
+                entry = (cfg.get("agent_roster") or {}).get(role) or {}
                 bot = {"role": role, "label": str(entry.get("label") or role),
                        "can_save": bool(agent_model.provider_of(cmd))}
         except Exception:

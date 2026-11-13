@@ -217,8 +217,8 @@
     if (act === 'restart') {
       const i = info[sid];
       const label = (i.models.find(m => m.key === u.model) || {}).label || u.model;
-      const ok = root.SFDialog ? await root.SFDialog.confirm(T(`Save ${label} as ${i.bot.label}'s model and restart the tab now? It writes its memory first.`,
-        `把「${i.bot.label}」的模型存成 ${label}，並現在重開分頁？它會先寫好記憶。`), { title: T('Switch now', '現在就換') }) : true;
+      const ok = await SFDialog.confirm(T(`Save ${label} as ${i.bot.label}'s model and restart the tab now? It writes its memory first.`,
+        `把「${i.bot.label}」的模型存成 ${label}，並現在重開分頁？它會先寫好記憶。`), { title: T('Switch now', '現在就換') });
       if (!ok) return;
       const r = await call('bots_switch', i.bot.role, '', u.model, 'now');
       u.note = r.success ? T('Switching: the tab closes and wakes up again.', '正在換：分頁會關掉再叫醒。') : (r.message || T('Could not switch', '沒辦法換'));
