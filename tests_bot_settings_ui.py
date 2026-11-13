@@ -74,7 +74,7 @@ def row(label, cmd, model, job, avatar, primary=False):
 ROSTER = {
     "助理": row("助理", CLAUDE, "sonnet", "日常任務的第一站，盤點與派工", {"shape": "star", "color": "purple"}, primary=True),
     "寫程式": row("寫程式", CLAUDE, "opus", "程式、測試、部署", {"shape": "pill", "color": "red"}),
-    "研究": row("研究", CODEX, "gpt-5-codex", "資料調研與彙整", {"shape": "hex", "color": "blue"}),
+    "研究": row("研究", CODEX, "gpt-5.4", "資料調研與彙整", {"shape": "hex", "color": "blue"}),
     "舊設定": row("舊設定", CLAUDE, "sonet", "以前手打的模型，少了一個 n", {"shape": "cloud", "color": "green"}),
 }
 TABS = [("s2", "寫程式", CLAUDE, "working", {"action": "Editing relay.py"}),
@@ -260,7 +260,7 @@ def run(browser, engine):
     sleeper_edit.click()
     page.wait_for_selector(".sfb-modal #sfb-ed-name")
     check("…Edit opens its editor and does not wake it", page.input_value("#sfb-ed-name") == "研究"
-          and page.input_value("#sfb-ed-cmd") == CODEX and page.input_value("#sfb-ed-model") == "gpt-5-codex"
+          and page.input_value("#sfb-ed-cmd") == CODEX and page.input_value("#sfb-ed-model") == "gpt-5.4"
           and "bots_open" not in page.evaluate(CALLS), page.evaluate(CALLS))
     close_editor(page)
     page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-avatar').click(button="right")
@@ -289,7 +289,7 @@ def run(browser, engine):
     check("every bot is listed, the primary first", names == ["助理", "寫程式", "研究", "舊設定"], names)
     rows = page.evaluate("Object.fromEntries([...document.querySelectorAll('#sfb-settings-list .sfb-bl-row')].map(r => [r.dataset.sfbRole, r.innerText.replace(/\\s+/g, ' ')]))")
     check("…each with its CLI and model", "Claude Code · Sonnet" in rows["助理"] and "★ 主要 Bot" in rows["助理"]
-          and "Claude Code · Opus" in rows["寫程式"] and "Codex · GPT-5 Codex" in rows["研究"], rows)
+          and "Claude Code · Opus" in rows["寫程式"] and "Codex · GPT-5.4" in rows["研究"], rows)
     check("…awake or asleep", "醒著" in rows["寫程式"] and "休息中" in rows["研究"], rows)
     check("…a model ShellBot does not know is flagged on its row",
           "這個模型可能沒生效" in rows["舊設定"] and "sonet" in rows["舊設定"] and "可能沒生效" not in rows["助理"], rows["舊設定"])
@@ -338,7 +338,7 @@ def run(browser, engine):
     page.wait_for_timeout(300)
     opts = model_options(page)
     check("another CLI starts the choice over, from that CLI's own list (opus is no Codex model)",
-          [o[0] for o in opts] == ["", "gpt-5.5", "gpt-5-codex", "gpt-5", "o3", "__custom__"] and page.input_value("#sfb-ed-model") == "", opts)
+          [o[0] for o in opts] == ["", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2", "__custom__"] and page.input_value("#sfb-ed-model") == "", opts)
     page.select_option("#sfb-ed-model", value="gpt-5.5")
     check("a Codex model is sent as -m", "-m gpt-5.5" in page.inner_text("#sfb-ed-model-note"))
     page.select_option("#sfb-ed-cmd", value="grok")

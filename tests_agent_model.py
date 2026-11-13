@@ -50,7 +50,7 @@ claude = M.choices("claude")
 check("Claude Code: CLI default, Opus, Sonnet, Haiku, Fable, then Other",
       [c["key"] for c in claude] == ["", "opus", "sonnet", "haiku", "fable", M.CUSTOM]
       and [c["label"] for c in claude][:5] == ["CLI default", "Opus", "Sonnet", "Haiku", "Fable"], claude)
-check("Codex", [c["key"] for c in M.choices("codex")] == ["", "gpt-5.5", "gpt-5-codex", "gpt-5", "o3", M.CUSTOM])
+check("Codex", [c["key"] for c in M.choices("codex")] == ["", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2", M.CUSTOM])
 check("Grok Build", [c["key"] for c in M.choices("grok")] == ["", "grok-4.7", "grok-4.7-build-fast", "grok-4.6", M.CUSTOM])
 check("Cursor Agent", [c["key"] for c in M.choices("cursor")] == ["", "composer-2.5", M.CUSTOM])
 check("OpenCode names a model provider/model and has no list of its own: the default and Other",
@@ -106,7 +106,7 @@ REFUSE = [("claude", "sonet", "unknown_model", "sonnet"), ("claude", "Sonnet", "
           ("claude", "OPUS", "unknown_model", "opus"), ("claude", "claude-sonet-4", "unknown_model", ""),
           ("claude", "gpt-5", "unknown_model", ""), ("claude", "claude-sonnet", "unknown_model", "sonnet"),
           ("claude", "sonnet[2m]", "unknown_model", "sonnet"),
-          ("codex", "opus", "unknown_model", ""), ("codex", "gpt5", "unknown_model", "gpt-5"),
+          ("codex", "opus", "unknown_model", ""), ("codex", "gpt5", "unknown_model", "gpt-5.5"),
           ("grok", "grok4.7", "unknown_model", "grok-4.7"), ("grok", "sonnet", "unknown_model", ""),
           ("cursor-agent", "banana", "unknown_model", ""), ("cursor-agent", "opus", "unknown_model", ""),
           ("opencode", "sonnet", "unknown_model", ""),
@@ -135,7 +135,7 @@ bad = M.pinned("claude --model Opus", "")
 check("…also when it is only in the command", bad["ok"] is False and bad["model"] == "Opus", bad)
 bad = M.pinned("pi", "gpt-5")
 check("a model kept on a CLI that takes none is flagged: it does nothing", bad["ok"] is False and bad["code"] == "model_fixed", bad)
-check("a good stored key is ok", M.pinned("codex", "gpt-5-codex")["ok"] is True and M.pinned("codex", "gpt-5-codex")["kind"] == "listed")
+check("a good stored key is ok", M.pinned("codex", "gpt-5.4")["ok"] is True and M.pinned("codex", "gpt-5.4")["kind"] == "listed")
 
 check("a model that is not text (a hand-edited config) is read as text, never an error",
       M.apply("claude", 5) == "claude --model 5" and M.check("claude", 5)["code"] == "unknown_model"

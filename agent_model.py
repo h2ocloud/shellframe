@@ -54,7 +54,8 @@ _TABLE = {
     },
     "codex": {
         "flag": "-m",
-        "models": [("gpt-5.5", "GPT-5.5"), ("gpt-5-codex", "GPT-5 Codex"), ("gpt-5", "GPT-5"), ("o3", "o3")],
+        "models": [("gpt-5.5", "GPT-5.5"), ("gpt-5.4", "GPT-5.4"), ("gpt-5.4-mini", "GPT-5.4 mini"), ("gpt-5.3-codex", "GPT-5.3 Codex"),
+                   ("gpt-5.2", "GPT-5.2")],          # Codex 0.142.1's own /model menu, measured
         "ids": (r"gpt-\d+(?:\.\d+)?(?:-[a-z0-9]+(?:\.\d+)?)*",     # gpt-5.1-codex-max
                 r"o\d+(?:-[a-z0-9]+)*",                            # o4-mini
                 r"codex-[a-z0-9]+(?:[.\-][a-z0-9]+)*"),            # codex-mini-latest

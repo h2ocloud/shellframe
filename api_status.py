@@ -16,6 +16,7 @@ import agent_status
 import bridge_home
 import sf_log
 import sf_notify
+import tab_delivery
 from api_host import main
 
 
@@ -386,8 +387,10 @@ class StatusApiMixin:
                         try:
                             out_ts = getattr(s, "_last_output_activity_time", 0.0)
                             c = cache.get(sid)
-                            if (c and c["out_ts"] == out_ts
-                                    and now - c["computed_at"] < FORCE_REFRESH):
+                            # ShellBot is driving the tab's own menu (a model switch, tab_model): its last state
+                            # stands, so the menu is not read as a question for the person
+                            if c and (sid in tab_delivery.HOLD or (c["out_ts"] == out_ts
+                                                                   and now - c["computed_at"] < FORCE_REFRESH)):
                                 result = dict(c["result"])
                                 result["elapsed"] = int(now - c["since_ts"])
                             else:

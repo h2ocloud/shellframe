@@ -38,6 +38,9 @@ def _send(bridge, method, payload):
 
 def busy(bridge, slot) -> bool:
     import bridge_telegram
+    import tab_delivery
+    if slot.sid in tab_delivery.HOLD:       # ShellBot is driving the tab's own menu (a model switch): a text typed now picks in it
+        return True
     if bridge_telegram._TURN_BUSY_RE.search(bridge._live_tail(slot)):
         return True
     api = getattr(bridge, "home_api", None)

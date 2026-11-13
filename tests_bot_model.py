@@ -205,8 +205,8 @@ check("a CLI that picks its model inside it takes none", r.get("code") == "model
 r = api._bots_switch("寫手", "codex", "sonnet")
 check("…and the model is checked against the CLI the bot is moving to (sonnet is no Codex model)",
       r.get("code") == "unknown_model" and stored()["寫手"]["cmd"] == CMD["claude"], r)
-r = api._bots_switch("寫手", "codex", "gpt-5-codex")
-check("…a Codex model is fine there", r.get("success") and stored()["寫手"]["model"] == "gpt-5-codex"
+r = api._bots_switch("寫手", "codex", "gpt-5.4")
+check("…a Codex model is fine there", r.get("success") and stored()["寫手"]["model"] == "gpt-5.4"
       and agent_model.provider_of(stored()["寫手"]["cmd"]) == "codex", (r, stored()["寫手"]))
 r = api._bots_switch("寫手", "claude")
 check("a switch that names no model drops the last CLI's, and keeps the new command's own pin",
@@ -225,7 +225,7 @@ print("4. a wrong key that is already stored")
 config({"壞的": {"label": "壞的", "cmd": CMD["claude"], "model": "sonet", "responsibility": "舊的", "bot": {"memory": True}},
         "大寫": {"label": "大寫", "cmd": "claude --model Opus", "bot": {"memory": True}},
         "固定": {"label": "固定", "cmd": "pi", "model": "gpt-5", "bot": {"memory": True}},
-        "好的": {"label": "好的", "cmd": CMD["codex"], "model": "gpt-5-codex", "bot": {"memory": True}},
+        "好的": {"label": "好的", "cmd": CMD["codex"], "model": "gpt-5.4", "bot": {"memory": True}},
         "指令裡": {"label": "指令裡", "cmd": "claude --model haiku", "bot": {"memory": True}},
         "預設": {"label": "預設", "cmd": "claude", "bot": {"memory": True}},
         "外部": {"label": "外部", "cmd": "zsh", "model": "whatever",
@@ -247,7 +247,7 @@ check("the phone's /link/bots: model_ok false, why, and the likely key",
       and phone["壞的"]["model_suggestion"] == "sonnet" and phone["固定"]["model_code"] == "model_fixed", phone["壞的"])
 check("the page's roster also names each role's CLI and the model as a person reads it",
       roster["壞的"]["cli"] == {"key": "claude", "label": "Claude Code"} and roster["固定"]["cli"] == {"key": "pi", "label": "Pi"}
-      and roster["好的"]["pin"]["label"] == "GPT-5 Codex" and roster["指令裡"]["pin"]["label"] == "Haiku"
+      and roster["好的"]["pin"]["label"] == "GPT-5.4" and roster["指令裡"]["pin"]["label"] == "Haiku"
       and roster["預設"]["pin"]["label"] == "", (roster["壞的"]["cli"], roster["好的"]["pin"]))
 check("…true for the rest, with nothing to say; an outside bot runs where it lives, so it is ok",
       all(phone[r]["model_ok"] is True and phone[r]["model_code"] == "" for r in ("好的", "指令裡", "預設", "外部")))
@@ -278,7 +278,7 @@ check("waking it: the tab opens, the person is told, and the log says it",
       and any(t == "bots" and "sonet" in m and "unknown_model" in m for t, m in logged), (r, logged[-2:]))
 check("…and the command is what the table gives, not something quietly different",
       api.launched[-1][1] == agent_model.apply(CMD["claude"], "sonet"), api.launched)
-config({"好的": {"label": "好的", "cmd": CMD["codex"], "model": "gpt-5-codex", "bot": {"memory": True}}})
+config({"好的": {"label": "好的", "cmd": CMD["codex"], "model": "gpt-5.4", "bot": {"memory": True}}})
 r = json.loads(api.bots_open("好的"))
 check("a good model: no warning", r["success"] and "model_warning" not in r["details"], r)
 

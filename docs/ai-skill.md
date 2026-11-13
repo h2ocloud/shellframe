@@ -192,8 +192,8 @@ anything else: the other side may have the text only as reference (§7, "A messa
 the chain limit stops"). Do not resend it.
 
 `send` never types into a turn in flight. If the target is working, waiting on a
-decision menu, in the middle of a Telegram turn, or has the user's unsent text in
-its input box, the text waits in that tab's queue (first in, first out) and goes
+decision menu, in the middle of a Telegram turn, has the user's unsent text in
+its input box, or is having its model switched from the screen (a few seconds), the text waits in that tab's queue (first in, first out) and goes
 in when that ends; the reply says `Queued`. After 30 minutes it is dropped and the
 sender's tab is told; `--ttl <minutes>` changes how long it may wait (`--ttl 0`: until
 the tab is free; at most 24 h), and `a2a-result` waits 24 h by default, because the

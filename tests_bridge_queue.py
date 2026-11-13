@@ -92,6 +92,10 @@ check("the hooks say working", bq.busy(b, slot))
 b.home_api.state["s1"] = "decision"
 check("a decision on screen does not hold a message back (a digit must answer it)", not bq.busy(b, slot))
 b.home_api.state["s1"] = ""
+import tab_delivery  # noqa: E402
+tab_delivery.HOLD["s1"] = "model"
+check("ShellBot is driving the tab's model menu: a message waits (typed now it would pick in the menu)", bq.busy(b, slot))
+tab_delivery.HOLD.pop("s1", None)
 b.home_api.screen["s1"] = "\n".join(["x", RULE, "\x1b[39m❯\xa0寫到一半", RULE])
 check("the user's unsent text in the box (Ctrl-U would wipe it)", bq.busy(b, slot))
 b.home_api.screen["s1"] = "\n".join(["x", RULE, "\x1b[39m❯\xa0\x1b[2mTry this\x1b[0m", RULE])
