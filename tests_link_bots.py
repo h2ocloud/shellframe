@@ -255,6 +255,9 @@ check("a plain RED has no `connect`", "connect" not in (d2 or {}))
 check("/link/bots carries `connections` (a new field, the version stays 1)",
       link().get("connections") == [{"id": "demo", "name": {"en": "Demo", "zh": "Demo (zh)"}, "icon": "plug", "state": "not_started", "attention": False, "step": ""}]
       and link().get("v") == 1, str(link().get("connections")))
+api.sessions["s2"]._lifecycle_source = "connect"           # a connection's test tab
+check("a connection's test tab is not in the phone's list (its words may name a mail or a file)", "s2" not in link()["tabs"])
+api.sessions["s2"]._lifecycle_source = ""
 bridge_home.on_turn_end(api, "s2", read_events=lambda sid: RED)
 TG_RED = [{"kind": "user_msg", "text": "請放在 [[TG_REPLY_ab12cd34]] 之間"}, RED[1]]
 bridge_home.on_turn_end(api, "s2", read_events=lambda sid: TG_RED)

@@ -273,6 +273,8 @@ class BotsApiMixin:
         tabs, awake = {}, {}
         order = self._ordered_sids(cfg) if on else []
         for sid, s in (list(self.sessions.items()) if on else []):
+            if getattr(s, "_lifecycle_source", "") == "connect":
+                continue          # a connection's test tab: its words may name a mail or a file, not for the phone's list
             role = self._bots_role_of(sid, cfg)
             t = self._link_tab(sid, s, role, bound.get(sid) or {}, raw, now)
             cli = self._tab_cli(s)

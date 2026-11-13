@@ -3,7 +3,7 @@ reach the connector core (connectors/, rules in docs/connectors.md) through here
 
 js_api: connect_list, connect_describe, connect_status, connect_start, connect_step, connect_test,
         connect_disconnect, connect_signal.
-Also: connect_refresh_hourly (the status monitor calls `_connect_tick` once a pass; it starts a
+Also: _connect_refresh_now (the status monitor calls `_connect_tick` once a pass; it starts a
 one-shot thread at most once an hour), `_connect_sfctl` (sfctl connect list|status|start|test|disconnect),
 `_connect_compact` (the phone's /link/bots `connections`), `_connect_line` (one sentence for a RED tag).
 
@@ -249,7 +249,7 @@ class ConnectApiMixin:
         if now:
             _dlog("connect", "needs attention: " + ", ".join(sorted({i for i, _ in now})))
 
-    def connect_refresh_hourly(self) -> str:
+    def _connect_refresh_now(self) -> str:
         """The same check on demand (what the monitor does once an hour): {"success", "checked", "attention"}."""
         return _answer(success=True, **self._connect().refresh_all(force=True))
 

@@ -245,7 +245,7 @@ for _ in range(100):
     time.sleep(0.02)
 check("when due it refreshes on a thread of its own and the next one is an hour on",
       calls == [False] and api._connect_next > 1000.0 + api_connect.HOURLY_S)
-r = j(api.connect_refresh_hourly())
+r = j(api._connect_refresh_now())
 check("the same check on demand", r["success"] and r["attention"] == [{"id": "demo"}] and calls[-1] is True)
 
 # Telegram hears once about a service that needs attention
