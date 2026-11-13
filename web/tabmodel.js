@@ -266,6 +266,7 @@
   }
   function tick() {
     if (doc.hidden) return;
+    if (root.SFQuiet && root.SFQuiet.still()) return;     // nobody looking (web/quiet.js): asked again on wake
     const sid = activeSid();
     if (sid) refresh(sid, false);
     else paintBar();
@@ -275,6 +276,6 @@
   });
 
   root.SFTabModel = { chipHtml, open, close, refresh, info: sid => info[sid] || null };
-  const boot = () => { setInterval(tick, 1000); tick(); };
+  const boot = () => { setInterval(tick, 1000); tick(); if (root.SFQuiet) root.SFQuiet.onWake(tick); };
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', boot); else boot();
 })(typeof window !== 'undefined' ? window : null);

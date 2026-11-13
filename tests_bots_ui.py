@@ -4,7 +4,7 @@ for the Python side, so every hook index.html calls is exercised for real.
 
   - the flag on: every tab's light is a face, the second line shows the agent's
     latest line, the primary card sits on top, sleeping bots are listed
-  - each state shows its own expression (idle / working / question / stuck / done)
+  - each state shows its own expression (idle / working / question / stuck / done); an idle face keeps still
   - a sidebar rebuild does not restart the animations (wall-clock phase)
   - click on a face still cycles the manual light; right-click opens the picker
   - closing a bot tab asks to write memory first; a plain tab gets the old confirm
@@ -170,13 +170,18 @@ with sync_playwright() as pw:
         "document.querySelector('#sidebar-sessions [data-sid=\"s101\"] svg.sfb').dataset.shape") == "pill")
     style = """([sid, sel, prop]) => { const el = document.querySelector(`#sidebar-sessions [data-sid="${sid}"] svg.sfb ${sel}`);
                 return el ? getComputedStyle(el)[prop] : null; }"""
-    check("working: it bobs", page.evaluate(style, ["s101", ".rig", "animationName"]) == "sfb-bob")
-    check("question: the ? is shown", page.evaluate(style, ["s102", ".q", "opacity"]) == "1")
-    check("stuck: it sweats", page.evaluate(style, ["s105", ".sweat", "animationName"]) == "sfb-sweat")
+    # Only the whole face moves (the svg: the compositor moves it without repainting the page) and
+    # only while something happens; the parts inside hold a pose (tests_idle_power.py has why).
+    check("working: it bobs", page.evaluate(style, ["s101", "", "animationName"]) == "sfb-bob")
+    check("question: the ? is shown, the head tilts", page.evaluate(style, ["s102", ".q", "opacity"]) == "1"
+          and page.evaluate(style, ["s102", "", "animationName"]) == "sfb-tilt")
+    check("stuck: it sweats and shakes", page.evaluate(style, ["s105", ".sweat", "opacity"]) == "1"
+          and page.evaluate(style, ["s105", "", "animationName"]) == "sfb-shake")
     check("done: it smiles", page.evaluate(style, ["s104", ".happy", "opacity"]) == "1"
           and page.evaluate(style, ["s104", ".eye", "opacity"]) == "0")
-    check("idle: it breathes and blinks", page.evaluate(style, ["s106", ".rig", "animationName"]) == "sfb-breathe"
-          and page.evaluate(style, ["s106", ".eye", "animationName"]) == "sfb-blink")
+    check("idle: it keeps still, eyes open", page.evaluate(style, ["s106", "", "animationName"]) == "none"
+          and page.evaluate(style, ["s106", ".eye", "animationName"]) == "none"
+          and page.evaluate(style, ["s106", ".eye", "opacity"]) == "1")
     check("the old coloured light is gone", page.evaluate(style, ["s101", "", "boxShadow"]) in (None, "none")
           and page.evaluate("getComputedStyle(document.querySelector('#sidebar-sessions [data-sid=\"s101\"] .busy-dot')).boxShadow") == "none")
 

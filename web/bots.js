@@ -1843,7 +1843,9 @@
     document.getElementById('btn-settings') &&
       document.getElementById('btn-settings').addEventListener('click', () => setTimeout(() => { injectSettings(); syncSettings(); }, 0));
     setInterval(tick, 1500);
-    setInterval(() => { if (enabled) { refresh(); refreshPeers(); } }, 5000);
+    // bots_state and the paired machines' bots: every 20 s instead while nobody is looking (web/quiet.js)
+    const slow = (window.SFQuiet && window.SFQuiet.slow) || (fn => fn);
+    setInterval(slow(() => { if (enabled) { refresh(); refreshPeers(); } }, 20000), 5000);
     // One line in the debug log, so "I see no faces" can be answered from the log.
     setTimeout(() => {
       try {

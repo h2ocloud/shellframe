@@ -1561,6 +1561,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="dialog.js"></script>
+<script src="quiet.js"></script>
 <script src="bots.js"></script>
 <script src="chat.js"></script>
 <script src="schedules.js"></script>
@@ -1674,7 +1675,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: 'Cancel',
       sessions: 'Sessions',
       dropToAttach: 'Drop file to attach',
-      processExited: '[process exited]',
       shiftEnterLabel: 'Shift+Enter = newline',
       shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
       shiftEnterShortcut: 'Newline (no submit)',
@@ -1857,7 +1857,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: '取消',
       sessions: '分頁',
       dropToAttach: '放開以附加檔案',
-      processExited: '[程序已結束]',
       shiftEnterLabel: 'Shift+Enter 換行',
       shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
       shiftEnterShortcut: '換行（不送出）',
@@ -2771,19 +2770,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // they can browse the real scrollback stored in tmux's pane buffer.
     setupScrollHistory(sid, pane);
 
-    // Process alive check (output is pushed from Python, no polling needed)
-    (async function aliveLoop() {
-      while (sessions[sid]) {
-        try {
-          const alive = await pywebview.api.is_alive(sid);
-          if (!alive) {
-            term.write('\r\n\x1b[90m[process exited]\x1b[0m\r\n');
-            break;
-          }
-        } catch(e) {}
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    })();
+    // No per-tab is_alive loop: 35 tabs made it ~17 calls a second, a thread each in Python. A tab
+    // whose process ended drops out of list_sessions, and the 1.5 s sync below takes it away.
 
     switchTab(sid);
     renderTabs();
@@ -2940,19 +2928,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     setupScrollHistory(sid, pane);
 
-    // Process alive check (output is pushed from Python)
-    (async function aliveLoop() {
-      while (sessions[sid]) {
-        try {
-          const alive = await pywebview.api.is_alive(sid);
-          if (!alive) {
-            term.write('\r\n\x1b[90m' + t('processExited') + '\x1b[0m\r\n');
-            break;
-          }
-        } catch(e) {}
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    })();
 
     renderTabs();
   }
@@ -8621,10 +8596,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a
   // background command watcher thread, so keep reconciliation periodic too.
-  setInterval(() => { syncSessionsFromBackend(); }, 1500);
+  // Every 6 s instead while nobody is looking (web/quiet.js); Python's nudges still land at once.
+  const slowWhenStill = (window.SFQuiet && SFQuiet.slow) || (fn => fn);
+  setInterval(slowWhenStill(() => { syncSessionsFromBackend(); }, 6000), 1500);
 
   // Poll bridge status periodically
-  setInterval(async () => {
+  setInterval(slowWhenStill(async () => {
     try {
       const raw = await pywebview.api.get_bridge_status();
       const result = JSON.parse(raw);
@@ -8642,7 +8619,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         }
       }
     } catch(e) {}
-  }, 1500);
+  }, 6000), 1500);
 
   // ── Busy indicator tick ──
   // Two complementary detection paths:
@@ -10146,6 +10123,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
     });
 
+    // sid -> [html, when]: a sidebar rebuild makes new rows, and each one asked Python again (1.5 calls/s measured)
+    const badgeOf = {};
     const paintBadges = async (force = false) => {
       if (!pywebview.api.plugin_sidebar_badges) return;
       const rows = document.querySelectorAll('#sidebar-sessions .sb-item[data-sid]');
@@ -10153,7 +10132,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const sid = row.dataset.sid;
         if (!sid || (!force && row.dataset.pluginBadgesPainted === sid)) continue;
         try {
-          const html = await pywebview.api.plugin_sidebar_badges(sid);
+          let hit = badgeOf[sid];
+          if (force || !hit || Date.now() - hit[1] > 30000) hit = badgeOf[sid] = [await pywebview.api.plugin_sidebar_badges(sid), Date.now()];
+          const html = hit[0];
           row.querySelectorAll('.sf-plugin-badges').forEach(n => n.remove());
           if (html) {
             const wrap = document.createElement('span');
