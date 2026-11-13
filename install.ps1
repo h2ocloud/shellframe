@@ -133,6 +133,7 @@ function Say-Uac {
 # registered yet; registering it is quiet and needs no admin.
 function Find-Winget {
     if (Have-Command winget) { return $true }
+    if ($DryRun) { Write-Host "    [dry-run] Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe"; return $false }
     try {
         Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop
         Refresh-Path
