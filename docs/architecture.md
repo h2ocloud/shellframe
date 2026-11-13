@@ -52,6 +52,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_voice.py` | Speech-to-text settings and the in-app microphone |
 | | `api_push.py` | Push to the paired phones: the `/link/push/*` and `/link/peer/name` routes, and the cues (a [[SF:RED]] question, a dialog or [[SF:YELLOW]], a finished turn, an a2a result, `sfctl notify`) the status monitor turns into pushes and withdrawals |
 | | `api_bots.py` | Bots: state for the page, avatars, bot editor, wake, close-with-memory, external bots over A2A, the phone's bot view (`/link/bots`); `web/bots.js` + `web/bots.css` draw the faces |
+| | `api_bot_memory.py` | What a bot keeps in its folder besides its memory file: the bot editor's calls for its own skills (`bots_own_skills`, `bots_skill_new/copy/delete/open`) and the thread that has `bot_memory.tick` look at the open bots once a minute |
 | | `api_chat.py` | The desktop's chat view (`settings.ui_style`): a tab's turns and question as the phone gets them, messages and answers the phone's way; `web/chat.js` + `web/chat.css` draw it. Rules in [`chat-shell.md`](chat-shell.md) |
 | | `api_tmux.py` | Tab ↔ tmux bookkeeping around restore: sid resolution, background reattach of tabs that failed at startup, `sfctl orphans`, repaint after display wake |
 | | `api_host.py` | Late-bound `main` handle the mixins use for main.py globals (see §5) |
@@ -61,6 +62,8 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `agent_route.py` | Quota hint for delegate / handoff. Suggests; does not spend or retarget |
 | | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |
+| | `bot_skills.py` | A bot's own skills (`bots/<bot>/skills/<skill>/SKILL.md`): a blank one, a copy of a shared skill's folder (size cap, no links), delete, the folder to open; a skill's folder name is checked and its path kept inside the bot's skills folder. Reading them for the wake-up brief is `bots.own_skill_catalog` / `bots.brief_skills` |
+| | `bot_memory.py` | An open bot saves its memory after real work and a quiet spell: when to ask (real conversation since the last save, idle for `bot_memory_idle_min`, and no running turn, question, draft, queue, close or request in flight), the request, and watching it end. Sent through `tab_delivery.deliver(queue=False)` |
 | | `bot_names.py` | One name per bot, and the one way to find a bot or a tab by a name: a sid, a bot's name, a tab's title, an alias or old label, the start of exactly one; a bot's tab by its binding first. delegate, A2A, sfctl's tab commands and the bot view use it |
 | | `bots.py` | Bots (`experimental_bots`): identity, per-bot memory folder, wake-up brief, close-time summary, external-bot payloads |
 | | `agent_prompts.py`, `sf_lang.py` | The delegation and idle-summary prompts; the language every agent-facing text uses (the OS's: English or Traditional Chinese) |
