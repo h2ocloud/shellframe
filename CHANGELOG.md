@@ -6,6 +6,42 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.44.0 (2026-11-13)
+
+### Added
+
+- **Connections: one way to connect a service, for every service.** A connector core
+  (`connectors/`) holds what any service needs: a description of the service as data (how it is
+  connected, the least permissions it asks for, how each CLI takes it, the steps and their common
+  problems), a step-by-step wizard that survives a restart and says in plain words what went wrong and
+  what to do next, one status for the settings page, the sidebar, `sfctl`, a phone and Telegram, and a
+  card that asks to reconnect when access expired or was revoked. A service adds a description and,
+  where code is needed, a small adapter; the core names no service (a stand-in service is run end to
+  end in the tests to keep it so). `docs/connectors.md` says how to add one.
+
+  **連接：所有服務共用同一套接法。** 新增連接器核心（`connectors/`），放任何服務都用得到的東西：用資料
+  描述一個服務（怎麼接、只要哪些最小權限、各家 CLI 怎麼接上、步驟和常見問題）；一步一步的精靈，App 重啟
+  後可以接著走，出錯時用白話說哪裡不對、下一步做什麼；同一份狀態給設定頁、側欄、`sfctl`、手機和 Telegram
+  用；權限過期或被撤銷時出「需要重新接上」的卡片。新增一個服務只要一份描述，需要程式時再加一支小 adapter；
+  核心裡沒有任何服務的名字，測試裡用一個假服務從頭跑到尾來守著。怎麼新增寫在 `docs/connectors.md`。
+
+- **Gmail is the first service on it.** Settings → Connections lists the services and where each
+  stands; Gmail can be connected through the Claude account's connector or a local MCP server, and
+  other CLIs get instructions of their own. The local server asks Google for the mailbox only, read
+  only. A test checks that the AI can reach the mail without ShellBot reading any of it: the answer is
+  only "it works" or which step did not. A bot can ask for a connection with
+  `[[SF:RED:connect:<service>]]`, and `sfctl connect list|status|start|test|disconnect <service>` does
+  the same from a terminal. ShellBot adds its own entry to Claude only unless more CLIs are picked,
+  touches no MCP entry but its own (`shellbot-…`), and keeps a key in the system keychain, never in
+  its config or logs.
+
+  **Gmail 是第一個用它的服務。** 設定 →「連接」列出所有服務和各自的狀態；Gmail 可以走 Claude 帳號的
+  連接器，或本機的 MCP 伺服器，其他 CLI 有各自的說明。本機伺服器只跟 Google 要信箱、而且唯讀。測試會確認
+  AI 讀得到信，但 ShellBot 不讀任何信件內容，結果只有「通了」或「哪一步沒通」。bot 可以用
+  `[[SF:RED:connect:<服務>]]` 請你接上，終端機也可以用 `sfctl connect list|status|start|test|disconnect <服務>`。
+  ShellBot 只把自己的項目加到 Claude，要加到其他 CLI 時由你勾選；只動自己的項目（`shellbot-…` 開頭）；
+  金鑰放在系統的鑰匙圈，不進設定檔，也不進 log。
+
 ## v0.43.0 (2026-11-13)
 
 ### Fixes
