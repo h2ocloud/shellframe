@@ -35,4 +35,37 @@ What this means for the design:
 
 ## 2. How ShellBot does it
 
-*(filled in as the code lands)*
+| Piece | Where | What it does |
+|---|---|---|
+| The chip | `web/tabmodel.js`, `tabmodel.css` | Chat view header, terminal header (chat style), tab bar (native CLI style). Names the model the tab runs, "unknown" when it cannot be read. Click: the table's models, the thinking levels, a box for a name the list lacks, the questions below. |
+| The Python side | `api_tab_model.py` | `tab_model_info(sid)`, `tab_model_set(sid, {model, effort, custom, draft, unreadable_ok})`, `tab_model_cancel`, `tab_model_dismiss`, `tab_model_save_bot`. A switch is a job: `waiting` (queued behind a turn or a draft), `switching`, then `ok`, `failed` or `unconfirmed`; `tab_model_info(sid).job` carries it for 3 minutes. |
+| What each CLI takes | `tab_model.py` (`SWITCH`, the screen readers, `drive()`) | Section 1 as code. `drive()` only presses a key the screen has just shown to be there; anything else closes the menu with Esc and says so. |
+| The opening line | `tab_delivery.deliver(..., what="model:<id>")` | `/model` (`/models` for OpenCode, `/model <name> [level]` for Grok, `/model <name>` for Cursor). Waits for a tab in a turn, on a question, with Telegram in flight or with text in its box; 10 minutes at most. A switch that is still queued is not carried over a restart (nothing would drive its menu). |
+| Holding the tab | `tab_delivery.HOLD` | While the menu is driven (seconds), any other text for that tab waits ("it is switching its model"). |
+
+The rules the page and the Python side keep:
+
+1. **A tab in a turn is never cut into.** The switch queues; the chip says "switching when it is done", with Cancel.
+2. **Text in the input box is never written over.** It is asked about: "switch after I send it" (queue behind the draft) or "clear it and switch" (one Ctrl+C, only while the tab is not working), or cancel.
+3. **A box ShellBot cannot read is asked about first** (`composer_state` finds the box by its two `────` rules: Codex and OpenCode have none, and on Windows the screen is not read): "Switch anyway" or cancel. Nothing is typed before the person says so.
+4. **The answer is read back.** Success shows what the CLI reported (`Opus 5.5 · max`), and a level the model did not take is said ("it is on high, not xhigh"). A failure shows its reason (`not_listed`, `no_menu`, `no_confirm`, `no_match`, `ambiguous`, `no_session_only`, …). Grok and Cursor, which were not measured, say "sent, not confirmed" when their files show nothing.
+5. **The chip shows the switch's own answer until the status monitor reads something else.** Claude Code's transcript has no new assistant message until the next prompt, so the monitor keeps the old model after `/model`.
+6. **A CLI that cannot switch inside a tab** (Antigravity, a command ShellBot does not know) says "this one has to be restarted to change"; for a remembered bot that has a model list, the existing "save and switch now" (`bots_switch(role, '', key, 'now')`) is offered.
+7. **A remembered bot is asked, never assumed**: after a switch, "also keep this as the bot's model?" (`bots_switch(..., 'next_wake')`). Not saved unless yes.
+8. **The list is `agent_model`'s table**, nothing else. A model the CLI's own menu lacks is reported as not listed (the table's Codex list is older than Codex's menu: `gpt-5-codex`, `gpt-5`, `o3` are launch-only there; a newer one such as `gpt-5.4` is typed under "Other"). OpenCode and Pi have no list in the table: the page has only the name box (OpenCode searches the names as it shows them, Pi the ids; part of a name is enough, the first match is taken; Pi refuses when several match).
+
+Windows: the same code path, but `visible_text` falls back to the Telegram slot's screen or the recent output, which does not hold a menu reliably. Not verified on a Windows machine (outside this work); expect "the menu did not open" rather than a wrong switch.
+
+`/link`: `tabs[sid].model`, `model_effort` and `switch` (`in_session`, `efforts`, `unverified`, `persists`) next to `choices.models`; see [`mobile-link.md`](mobile-link.md#分頁的模型v0431資料結構先留好手機這版不做).
+
+## 3. Measuring a CLI again
+
+When a CLI updates its menu, run the real thing in a tmux server of its own, never a person's tab:
+
+```
+tmux -L probe new -d -s t -x 150 -y 45 -c "$(mktemp -d)" "claude --model haiku"   # a cheap model; type only /model, never a prompt
+tmux -L probe send-keys -t t "/model" Enter ; tmux -L probe capture-pane -p -t t
+tmux -L probe kill-server
+```
+
+Back up the CLI's settings file first and compare after: Claude Code (`settings.json`), Codex (`config.toml`), Pi (`settings.json`) and OpenCode (`state/opencode/model.json`) all write the pick as the default. Then put the new screen into `tests_tab_model.py`.

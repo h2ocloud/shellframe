@@ -31,6 +31,7 @@ import sf_lang
 import launch_cmd
 import sf_notify
 import tab_delivery
+import tab_model
 from api_host import main
 from sf_log import _dlog, _swallow
 
@@ -338,7 +339,9 @@ class BotsApiMixin:
                 "latest": agent_status.redact(latest, 140),
                 "last_at": float(now if activity == "working" else (self._last_activity_at(sid, s, out_ts) or 0)),
                 "blocked": agent_status.redact(self._agent_blocked_for_list(sid), 140),
-                "decision": self._link_decision(sid, activity, res)}
+                "decision": self._link_decision(sid, activity, res),
+                "model_effort": str((res.get("model") or {}).get("effort") or ""),
+                "switch": tab_model.link_fields(str(getattr(s, "cmd", "") or ""))}   # docs/tab-model.md: can it change inside the tab
 
     @staticmethod
     def _tab_cli(s) -> str:

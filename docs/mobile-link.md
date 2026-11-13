@@ -183,6 +183,7 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 | `model`, `runs_on` | `model` 是 bot 設定裡填的模型，空的表示用 CLI 的預設，等於桌面 bot 編輯器的「模型」欄；`runs_on` 是它現在實際跑的模型 |
 | `choices` | 方案 A 加 `clis`：`[{"key", "label", "installed", "models"}]`，換 CLI 用；`models` 是能不能在指令上固定模型；v0.42.1 加 `models`：`{cli 的 key: [{"key", "label"}…]}`，每個 CLI 的模型下拉選單（見下方〈模型清單〉）。可以選的頭像：`shapes`（12 種形狀，順序同桌面）、`colors`（`[{"key", "hex"}]`，14 種顏色和它畫出來的色碼，同 `bots.js` 的 `PALETTE`）、`custom_color: true`（也接受 `#RRGGBB`）。手機不用自己寫死一份 |
 | `tabs[sid]` | `bot`, `avatar`, `plain`, `closing`, `activity`, `doing`, `latest`, `last_at`, `blocked`, `decision`；方案 A 加 `kind`（`bot`／`temp`：還沒記住的 AI 分頁／`terminal`）、`name`（bot 名或分頁標題）、`cli`、`model`（模型名，例如 `Sonnet 5.5`）、`tg`（Telegram 的 `/N`，不在 Telegram 是 0；號碼請用這個，不要自己數）、`position`（電腦清單上的第幾個） |
+| `tabs[sid].model_effort`、`tabs[sid].switch` | v0.43.1 加，只讀，舊欄位不動。`model_effort`：這個分頁現在的思考強度（讀不到是 `""`；`model` 是名稱）。`switch`：`{"in_session", "efforts", "unverified", "persists"}`——`in_session`：這個分頁的 CLI 能不能在對話中換模型（`false` = 要重開才能換，例如 Antigravity；手機請顯示「要重開才能換」，不要給選單）；`efforts`：它收的思考強度 key，依 CLI 自己的順序（`[]` = 沒有）；`unverified`：這家還沒在真的分頁上量過，換完結果可能讀不到；`persists`：CLI 自己會把選的存成新分頁的預設（`null` = 不知道）。模型清單不重複放：用 `choices.models[tabs[sid].cli]`（同桌面的下拉，沒有清單的 CLI 要讓使用者打名稱）。桌面的實作和每家 CLI 實際怎麼切見 [`tab-model.md`](tab-model.md) |
 | `avatar` | 已經解析好的頭像，等於桌面 `bots.js` 的 `avatarFor`：bot 自己的、分頁自己挑的，否則是 `defaultAvatar`，用 role 或 sid 當種子。Python 版在 `bots.default_avatar`，`tests_link_bots.py` 會拿它跟真的 `web/bots.js` 對照 |
 | `activity` | `working`／`idle`／`done`／`decision`／`stuck`，等於桌面的燈號；睡著或外部的 bot 是 `""` |
 | `doing`, `latest` | 跑的時候在做什麼；最新一句的取法同桌面的 `previewOf`。bot 的分頁沒有可說的話時，用它的執掌。最多 140 字，已經遮掉憑證。**v0.42.1 起 `latest` 是一行給人看的字，不再帶 ShellBot 打進分頁的包裝**（欄位名稱和型別都沒變）：別的 AI 用 A2A 傳來的訊息是「寄件者：內容」（被轉發層數擋下的是「寄件者（未轉達）：內容」；英文系統是 `sender: …`、`sender (not passed on): …`），整則是貼上的就是裡面的字，混在使用者自己的字裡的貼上是「貼上的內容 · N 行」（`Pasted · N lines`），Telegram 傳來的訊息只剩使用者的字，AI 的 Telegram 回覆沒有 `[[TG_REPLY_…]]`、`[[SF:GREEN]]` 這些標記。規則同對話畫面（`agent_link.preview_of`、`web/chat.js` 的 `preview`）。手機自己組的一行摘要（例如用 `/link/conversation` 的 `text`）請照同一條規則，不要把標頭和包裝原樣顯示 |
@@ -254,6 +255,14 @@ bot 的模型不用打字，用下拉選。清單來自電腦自己的對照表�
 `code`：`unknown_model`（認不得；`suggestion` 是最像的那個，可能是 `""`）、`bad_model`（不是一個詞：有空白、符號，或超過 80 字）、`model_fixed`（這個 CLI 不能指定模型）。`message` 依電腦的語言，可直接顯示。手機沒有另外的「先檢查」路由：送出 `POST /link/bots/settings` 時驗證，被擋就把 `message` 顯示在欄位旁邊，使用者改了再送。
 
 **以前存下來的錯 key**：`bots[]` 每個 bot 多三個欄位：`model_ok`（`false` 表示這個模型可能沒生效）、`model_code`（同上面的 `code`，`ok` 時是 `""`）、`model_suggestion`。桌面的編輯頁標「這個模型可能沒生效」；手機請照做，並讓使用者重選。只改執掌時，原樣送回去的舊 key 不會被擋（桌面也是）；換成另一個認不得的才擋。
+
+### 分頁的模型（v0.43.1：資料結構先留好，手機這版不做）
+
+桌面每個 AI 分頁上方有模型標籤，點下去選模型和思考強度，ShellBot 代替使用者在那個分頁裡打 CLI 自己的切換操作（`tab_model_set`，細節在 [`tab-model.md`](tab-model.md)）。手機之後接，要的資料都在 `/link/bots`：
+
+- 目前的模型：`tabs[sid].model`、`tabs[sid].model_effort`；`""` 就是「未知」，請照實顯示，不要猜。
+- 能不能在對話中換：`tabs[sid].switch.in_session`；可選的思考強度：`switch.efforts`；模型清單：`choices.models[tabs[sid].cli]`。
+- 要送的東西（保留，還沒開成路由）：`POST /link/tab/model {"sid", "model": key|null, "effort": level|null, "custom": bool}`，對應桌面的 `tab_model_set`；它會先排隊等那個分頁做完、輸入框有字或讀不到輸入框時先問（回 `code: draft`／`unreadable`），所以手機要有「等一下再換」的狀態：回 `state: waiting`，之後看 `/link/bots` 的分頁狀態。**這條路由這版沒有**，不要呼叫。
 
 **更新清單**：新模型上市後，改電腦端 `agent_model.py` 裡那個 CLI 的 `models`，不用改 App。方法見 [`bots.md`](bots.md#updating-the-model-list)。
 

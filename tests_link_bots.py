@@ -213,6 +213,9 @@ check("latest, as the page's previewOf picks it: what it said, markdown gone",
       tabs["s2"]["latest"] == "週報整理好了，放在 reports/weekly.md", tabs["s2"]["latest"])
 check("…what it runs while it runs", tabs["s1"]["latest"].startswith("Running curl"), tabs["s1"]["latest"])
 check("…an idle summary is no line", tabs["s4"]["latest"] == "", tabs["s4"]["latest"])
+check("every tab says whether its model can change inside it, the levels it takes and what the CLI keeps (docs/tab-model.md)",
+      all(set(t["switch"]) == {"in_session", "efforts", "unverified", "persists"} and isinstance(t["model_effort"], str) for t in tabs.values())
+      and tabs["s1"]["switch"]["in_session"] is True and tabs["s1"]["switch"]["efforts"][0] == "low", tabs["s1"].get("switch"))
 STATUS["s1"] = {"state": "done", "task": "改好了"}
 check("…a bot's tab with nothing to say: its job", link()["tabs"]["s1"]["latest"] == "改好了"
       and (STATUS.__setitem__("s1", {"state": "idle"}) or link()["tabs"]["s1"]["latest"] == "程式與測試"))
