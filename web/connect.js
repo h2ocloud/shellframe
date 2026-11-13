@@ -523,6 +523,7 @@
   }
   async function pickRoute() {
     if (!S.pick) return;
+    if (S.pick === (S.status && S.status.route) && vstep()) { S.mode = 'step'; return enter(); }    // the way it is already on: nothing to restart
     const me = S;
     S.busy = 'route'; render();
     const has = S.status && S.status.route && S.view && S.view.step;
@@ -689,6 +690,8 @@
         if (go) open(go.dataset.cnSide, { reconnect: (L.by[go.dataset.cnSide] || {}).state === 'needs_reconnect' });
       });
     }
+    const now = new Set(attention().map(s => s.service));
+    dismissed.forEach(k => { if (!now.has(k.split(':')[0])) dismissed.delete(k); });      // it recovered: the next trouble is news again
     const items = attention().filter(s => !dismissed.has(s.service + ':' + s.state));
     const html = items.slice(0, 2).map(s => {
       const name = pick(s.name) || s.service;

@@ -296,6 +296,14 @@ def run(browser):
     shot(page, "connect-step-zh-webkit.png", "#cn-card")
     b2 = card_box(page)
     check("the card keeps its width from step to step", abs(b2["w"] - b["w"]) < 1, (b2["w"], b["w"]))
+    starts = len(calls(page, "connect_start"))
+    page.click('#cn-card [data-act="reroute"]')
+    page.wait_for_selector("#cn-card .cn-route")
+    page.click('#cn-card [data-act="route-go"]')
+    page.wait_for_selector("#cn-card .cn-how")
+    check("Change way, then Next on the way it is already on, goes back to the step without starting over",
+          len(calls(page, "connect_start")) == starts and "第 1 步，共 3 步" in page.locator("#cn-card .cn-prog-label").inner_text()
+          and page.locator("#cn-card .cn-msg.ok").count() == 1, (starts, len(calls(page, "connect_start"))))
 
     print("4. I'm stuck")
     page.click('#cn-card [data-act="stuck"]')
@@ -411,6 +419,13 @@ def run(browser):
     page.wait_for_selector("#cn-side .cn-sc", timeout=5000)
     page.click("#cn-side .cn-sc-x")
     check("a card closed by the person stays closed until the state changes", page.locator("#cn-side").is_hidden())
+    page.evaluate("Object.assign(window.__svc, {state: 'connected', problem: null})")
+    page.evaluate("SFConnect.poll()")
+    page.wait_for_timeout(300)
+    page.evaluate("Object.assign(window.__svc, {state: 'needs_reconnect'})")
+    page.evaluate("SFConnect.poll()")
+    page.wait_for_selector("#cn-side .cn-sc", timeout=5000)
+    check("…but when it recovers and breaks again, it is news again", page.locator("#cn-side .cn-sc").count() == 1)
     page.close()
 
     print("7. the chat view's [[SF:RED:connect:demo]] question")
