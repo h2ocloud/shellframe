@@ -122,7 +122,7 @@
         return t(`Setting up${s ? `, step ${s.index} of ${s.total}` : ''}`, `設定中${s ? `，第 ${s.index} 步，共 ${s.total} 步` : ''}`);
       }
       case 'verifying': return t('Verifying it works…', '正在驗證通不通…');
-      case 'connected': return [t('Connected', '已接上'), rn, st.connected_at ? dateOf(st.connected_at) : ''].filter(Boolean).join(' · ');
+      case 'connected': return [t('Connected', '已接上'), rn, st.connected_at ? dateOf(st.connected_at) : '', pick(st.problem && st.problem.text)].filter(Boolean).join(' · ');
       case 'failed': return pick(st.problem && st.problem.text) || t('It did not connect', '沒接成功');
       case 'needs_reconnect': return pick(st.problem && st.problem.text) || t('It stopped working. Connect it again', '用不了了，需要重新接上');
       default: return d ? pick(d.summary) : t('Not connected yet', '還沒接上');
@@ -320,9 +320,9 @@
     S.test = { state: 'running', handle: '', stopped: false };
     S.busy = '';
     render();
-    const mine = S.test;
+    const mine = S.test, me = S;
     const res = await call('connect_test', S.service, '{}');
-    if (S.test !== mine || mine.stopped) { if (res && res.result && res.result.handle) call('connect_test', S.service, json({ handle: res.result.handle, cancel: true })); return; }
+    if (S !== me || S.test !== mine || mine.stopped) { if (res && res.result && res.result.handle) call('connect_test', S.service, json({ handle: res.result.handle, cancel: true })); return; }
     gotTest(res);
   }
   function gotTest(res) {
@@ -341,8 +341,9 @@
   async function pollTest() {
     const tt = S && S.open && S.test;
     if (!tt || tt.stopped || tt.state === 'done') return;
+    const me = S;
     const res = await call('connect_test', S.service, json({ handle: tt.handle }));
-    if (!S || S.test !== tt || tt.stopped) return;
+    if (S !== me || S.test !== tt || tt.stopped) return;
     gotTest(res);
   }
   async function stopTest() {
@@ -406,7 +407,7 @@
   function progress() {
     if (S.mode !== 'step') return '';
     const steps = vsteps(), cur = stepIdx();
-    const back = `<button type="button" class="cn-back" data-act="back" aria-label="${esc(t('Back', '上一步'))}" title="${esc(t('Back', '上一步'))}"${S.busy ? ' disabled' : ''}>‹</button>`;
+    const back = `<button type="button" class="cn-back" data-act="back" aria-label="${esc(t('Back', '上一步'))}" title="${esc(t('Back', '上一步'))}"${S.busy || (cur <= 0 && routes().length <= 1) ? ' disabled' : ''}>‹</button>`;
     const passed = !!(S.test && S.test.ok);
     const segs = steps.map((s, i) => {
       const cls = /fail|bad/.test(String(s.state || '')) ? 'bad' : (passed || i < cur) ? 'done' : i === cur ? 'now' : '';
@@ -470,30 +471,34 @@
     if (step && step.check && step.check.on === 'enter' && !step.result && !S.checked[step.id]) { S.checked[step.id] = true; return runCheck(); }
   }
   async function step(op, args, busy) {
+    const me = S;
     S.busy = busy || op;
     render();
     const res = await call('connect_step', S.service, op, json(args));
+    if (S !== me) return Object.assign({}, res, { success: false, closed: true });       // closed meanwhile: nothing to draw
     S.busy = '';
-    if (!S || !S.open) return res;
     absorb(res);
     return res;
   }
   async function runCheck() {
-    const sid = (vstep() || {}).id;
+    const me = S, sid = (vstep() || {}).id;
     await step('check', null, 'check');
-    if (vstep() && vstep().id === sid) render();
+    if (S === me && vstep() && vstep().id === sid) render();
   }
   async function runAction(id) {
     const s = vstep();
     const a = ((s && s.actions) || []).find(x => x.id === id);
     if (!a) return;
+    const me = S;
     const res = await step('act', { action: id, options: S.opts }, 'act:' + id);
+    if (S !== me) return;
     if (res && res.success !== false && a.after === 'check' && s.check) return runCheck();
     render();
   }
   async function didIt() {
-    const before = (vstep() || {}).id;
+    const me = S, before = (vstep() || {}).id;
     const res = await step('done', null);
+    if (S !== me) return;
     if (res.success !== false && (vstep() || {}).id !== before) { S.checked[before] = true; return enter(); }
     render();
   }
@@ -502,24 +507,28 @@
       if (routes().length > 1) { S.pick = (S.view && S.view.route && S.view.route.id) || S.pick; S.mode = 'route'; S.err = null; return render(); }
       return;
     }
+    const me = S;
     await step('back', null);
-    enter();
+    if (S === me) enter();
   }
   async function gotoStep(id) {                           // the Python side has `back`, so go back until the step is on screen
-    const target = vsteps().findIndex(x => x.id === id);
-    for (let guard = 0; target >= 0 && stepIdx() > target && guard < 20; guard++) {
+    const me = S, target = vsteps().findIndex(x => x.id === id);
+    for (let guard = 0; target >= 0 && S === me && stepIdx() > target && guard < 20; guard++) {
       const res = await step('back', null);
       if (res.success === false) break;
     }
+    if (S !== me) return;
     S.test = null;
     enter();
   }
   async function pickRoute() {
     if (!S.pick) return;
+    const me = S;
     S.busy = 'route'; render();
     const has = S.status && S.status.route && S.view && S.view.step;
     const res = has && S.pick !== S.status.route ? await call('connect_step', S.service, 'route', json({ route: S.pick }))
       : await call('connect_start', S.service, json({ route: S.pick }));
+    if (S !== me) return;
     S.busy = '';
     absorb(res);
     if (res.success === false || !vstep()) return render();
@@ -527,8 +536,10 @@
     enter();
   }
   async function reconnect() {
+    const me = S;
     S.busy = 'reconnect'; render();
     const res = await call('connect_start', S.service, json({ reconnect: true }));
+    if (S !== me) return;
     S.busy = '';
     absorb(res);
     S.test = null;
@@ -537,9 +548,10 @@
     enter();
   }
   async function askBot() {
-    const from = S.from || (host() && host().active && host().active()) || '';
+    const me = S, from = S.from || (host() && host().active && host().active()) || '';
     S.busy = 'ask'; render();
     const res = await call('connect_step', S.service, 'stuck', json({ problem: S.prob, from_sid: from }));
+    if (S !== me) return;
     S.busy = '';
     const sid = res && (res.sid || (res.details && res.details.sid));
     if (res && res.success !== false && sid) {
@@ -555,9 +567,11 @@
     const ask = root.SFDialog && root.SFDialog.confirm;
     const yes = ask ? await ask(t(`Disconnect ${name}? Bots lose access to it; you can connect it again any time.`, `要中斷 ${name} 嗎？bot 會用不了它，之後隨時可以再接上。`),
       { title: t('Disconnect', '中斷連接'), ok: t('Disconnect', '中斷連接'), cancel: t('Keep it', '保留') }) : false;
-    if (!yes) return;
+    const me = S;
+    if (!yes || S !== me) return;
     S.busy = 'disconnect'; render();
     const res = await call('connect_disconnect', S.service, '{}');
+    if (S !== me) return;
     S.busy = '';
     if (res && res.success === false) { S.err = res.message || null; return render(); }
     close();

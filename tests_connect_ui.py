@@ -368,6 +368,17 @@ def run(browser):
     page.keyboard.press("Escape")
     check("Esc closes the card and leaves Settings open", not page.locator("#modal-connect.open").count() and page.locator("#modal-settings.open").count() == 1)
 
+    page.locator("#settings-panel-connect .cn-row button").click()
+    page.wait_for_selector("#cn-card .cn-kv")
+    page.evaluate("window.__calls.length = 0")
+    page.click('#cn-card [data-act="test-start"]')
+    page.wait_for_selector("#cn-card .cn-spin", timeout=3000)
+    check("a connected service can be tested again from its card", "正在實際測試" in page.locator("#cn-card").inner_text())
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    check("closing the card while a test runs stops the test (cancel) and raises no error",
+          any(json.loads(c[1]).get("cancel") for c in calls(page, "connect_test")) and not errors, (calls(page, "connect_test"), errors))
+
     print("6. a service that needs reconnecting")
     page.evaluate("Object.assign(window.__svc, {state: 'needs_reconnect', problem: {code: 'expired', text: {en: 'Its sign-in ran out.', zh: '它的登入過期了。'}, next: {en: 'Connect it again.', zh: '重新接上就好。'}}})")
     page.evaluate("window.__calls.length = 0")
