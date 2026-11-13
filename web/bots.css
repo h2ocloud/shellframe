@@ -284,6 +284,22 @@ body.sfb-on #sfb-primary { display: block; }
 .sfb-modal .modal:has(#sfb-ed-name) #sfb-ed-skills label { font-size: 11px; padding: 2px 7px; border-radius: 6px; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sfb-modal h2 .sfb-avatar { width: 34px; height: 34px; }
+.sfb-sub { font-size: 11px; color: #787c99; margin: 0 0 5px; }
+/* a bot's own skills, in the editor's Skills cell */
+.sfb-own { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.sfb-own-list { border: 1px solid #292e42; border-radius: 6px; background: #1a1b26; max-height: 176px; overflow: auto; }
+.sfb-own-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid #24283b; }
+.sfb-own-row:last-child { border-bottom: 0; }
+.sfb-own-row .who { flex: 1; min-width: 0; }
+.sfb-own-row .who b { display: block; font-size: 12px; color: #c0caf5; font-weight: 600; }
+.sfb-own-row .who span { display: block; font-size: 10.5px; color: #6b7089; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfb-own-row .tag { flex: none; font-size: 10px; color: #e0af68; border: 1px solid #e0af6855; border-radius: 8px; padding: 0 6px; }
+.sfb-own-row .btn, .sfb-own-add .btn { flex: none; font-size: 11px; padding: 3px 9px; }
+.sfb-own .sfb-danger { color: #f7768e; }
+.sfb-own-empty { padding: 10px 8px; font-size: 11px; color: #565f89; line-height: 1.5; }
+.sfb-own-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.sfb-own-add input[type=text], .sfb-own-add select { width: auto; flex: 1 1 140px; min-width: 0; }
+.sfb-own .hint { grid-column: auto; font-size: 10.5px; color: #565f89; line-height: 1.5; margin: 0; }
 .sfb-note { font-size: 11px; color: #787c99; line-height: 1.6; margin: 8px 0 0; }
 .sfb-msg { font-size: 11px; min-height: 14px; margin-top: 8px; }
 .sfb-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }

@@ -975,11 +975,14 @@
           <input type="text" id="sfb-ed-model-custom" hidden spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="${esc(t('The model key, e.g. claude-opus-4-8', '模型的 key，例如 claude-opus-4-8'))}">
           <div class="sfb-model-note" id="sfb-ed-model-note" aria-live="polite"></div></div>
         ${existing ? `<div class="hint" style="grid-column:2">${t('Another CLI or model keeps its name, face, job and memory; this conversation does not move to the new CLI. It applies at the next wake, or now.', '換 CLI 或模型：名字、臉、執掌、記憶都留著；這次的對話不會搬到新的 CLI。下次叫醒時生效，或按「儲存並現在就換」。')}</div>` : ''}
-        <label>Skills</label><div><div class="sfb-chips" id="sfb-ed-skills">${chips || `<span style="font-size:10px;color:#565f89">${t('No installed skills found', '找不到已安裝的 skill')}</span>`}</div>
-          <input type="text" id="sfb-ed-skill-extra" value="${esc(extra)}" placeholder="${esc(t('Other skill names, comma-separated', '其他 skill 名稱，用逗號分隔'))}" style="margin-top:5px"></div>
+        <label>Skills</label><div><div class="sfb-sub">${t('Shared: the ones installed on this computer, given to this bot', '共用：這台電腦裝的 skill，指定給這個 bot')}</div>
+          <div class="sfb-chips" id="sfb-ed-skills">${chips || `<span style="font-size:10px;color:#565f89">${t('No installed skills found', '找不到已安裝的 skill')}</span>`}</div>
+          <input type="text" id="sfb-ed-skill-extra" value="${esc(extra)}" placeholder="${esc(t('Other skill names, comma-separated', '其他 skill 名稱，用逗號分隔'))}" style="margin-top:5px">
+          <div class="sfb-sub" style="margin-top:12px">${t('Its own: only this bot gets them', '它自己的：只有這個 bot 拿得到')}</div>
+          <div class="sfb-own" id="sfb-ed-own" data-role="${esc(existing && !isExternal(role) ? role : '')}"></div></div>
         <label>${t('Face', '頭像')}</label><div><div class="sfb-grid" id="sfb-ed-shapes">${shapeBtns()}</div>
           <div class="sfb-grid" id="sfb-ed-colors" style="margin-top:6px">${colorBtns()}</div></div>
-        <label>${t('Memory', '記憶')}</label>${toggle('sfb-ed-mem', bot.memory !== false, t('Writes its memory before closing; brought back when it wakes', '關閉前先寫記憶，下次叫醒自動帶回'))}
+        <label>${t('Memory', '記憶')}</label>${toggle('sfb-ed-mem', bot.memory !== false, t('Writes its memory before closing, and after a quiet spell while it is open; brought back when it wakes', '關閉前先寫記憶，開著安靜一陣子也會存；下次叫醒自動帶回'))}
         <label>${t('Primary', '主要 Bot')}</label>${toggle('sfb-ed-primary', primaryOn, t('On top: the first stop for everyday work; hands work to the other bots', '置頂；日常任務的首選，負責派工給其他 bot'))}
         <label>${t('External', '外部')}</label>${toggle('sfb-ed-ext', !!ext, t('Lives outside ShellBot (e.g. Grok Bot), reached through a webhook', '住在 ShellBot 外面（例如 Grok Bot），用 webhook 往來'))}
         <div id="sfb-ed-extbox" style="grid-column:1/-1;display:${ext ? 'grid' : 'none'};grid-template-columns:74px 1fr;gap:8px 10px;align-items:center">
@@ -998,6 +1001,7 @@
       <div class="sfb-msg" id="sfb-ed-msg"></div></div>`;
     document.body.appendChild(ov);
     const $ = id => ov.querySelector('#' + id);
+    ownSkillsSection(ov, existing && !isExternal(role) ? role : '', skills);
     // The model field: a list for the CLI the command runs (Python's table), "Other (custom)" last, greyed
     // for a CLI that picks its model inside it. What is stored is what the bot runs on now: its model, else
     // the one already in its command. A stored key ShellBot does not know is shown and flagged, never hidden.
@@ -1146,6 +1150,68 @@
       } catch (err) { msg.style.color = '#f7768e'; msg.textContent = String(err); }
     });
   }
+
+  // ── the bot's own skills (the editor's Skills section) ───────────────────
+  // Skills only this bot gets: bots/<bot>/skills/<skill>/SKILL.md, kept by Python (bot_skills.py). The list,
+  // a blank one, a copy of a shared one, the folder, delete; each call answers {success, message}.
+  // `role` '' = a bot that does not exist yet (or lives outside ShellBot): nothing to keep them in.
+  function ownSkillsSection(ov, role, shared) {
+    const box = ov.querySelector('#sfb-ed-own');
+    const say = (text, bad) => { const m = ov.querySelector('#sfb-ed-msg'); if (m) { m.style.color = bad ? '#f7768e' : '#9ece6a'; m.textContent = text || ''; } };
+    if (!role) {
+      box.innerHTML = `<div class="sfb-own-empty">${esc(isExternalNow(ov)
+        ? t('A bot outside ShellBot keeps its skills where it lives.', '外部的 bot，skill 放在它自己那邊。')
+        : t('Save the bot first; its own skills are added here afterwards.', '先儲存這個 bot，之後在這裡加它自己的 skill。'))}</div>`;
+      return;
+    }
+    const call = async (name, ...args) => { try { return JSON.parse(await api()[name](role, ...args)); } catch (err) { return { success: false, message: String(err) }; } };
+    async function render() {
+      const data = await call('bots_own_skills');
+      const rows = data.skills || [];
+      const dir = data.dir || '';
+      const list = rows.length ? rows.map(k => `<div class="sfb-own-row" data-folder="${esc(k.folder)}">` +
+          `<div class="who"><b>${esc(k.name)}</b><span title="${esc(k.path)}">${esc(k.description || k.folder)}</span></div>` +
+          (k.shadows ? `<span class="tag" title="${esc(t('A shared skill has the same name; this bot is told about its own', '有一個共用 skill 同名；這個 bot 會用它自己的'))}">${esc(t('replaces the shared one', '蓋過共用的'))}</span>` : '') +
+          `<button class="btn btn-ghost" data-own="open" data-folder="${esc(k.folder)}">${esc(t('Open folder', '開資料夾'))}</button>` +
+          `<button class="btn btn-ghost sfb-danger" data-own="delete" data-folder="${esc(k.folder)}" data-name="${esc(k.name)}">${esc(t('Delete', '刪除'))}</button></div>`).join('')
+        : `<div class="sfb-own-empty">${esc(t('None yet. Add a blank one, or copy a shared skill and make it its own.', '還沒有。可以開一個空白的，或從共用的複製一份再改成它自己的。'))}</div>`;
+      const options = (shared || []).map(k => `<option value="${esc(k.name)}">${esc(k.name)}</option>`).join('');
+      box.innerHTML = `<div class="sfb-own-list" id="sfb-own-list">${list}</div>` +
+        `<div class="sfb-own-add"><input type="text" id="sfb-own-name" spellcheck="false" autocomplete="off" placeholder="${esc(t('Name of a new skill', '新 skill 的名字'))}">` +
+        `<button class="btn btn-ghost" data-own="new">${esc(t('＋ Blank', '＋ 空白'))}</button>` +
+        `<select id="sfb-own-from"><option value="">${esc(t('Copy a shared skill…', '從共用的複製…'))}</option>${options}</select>` +
+        `<button class="btn btn-ghost" data-own="copy">${esc(t('＋ Copy', '＋ 複製'))}</button>` +
+        `<button class="btn btn-ghost" data-own="folder">${esc(t('Open skills folder', '開 skills 資料夾'))}</button></div>` +
+        `<div class="hint">${esc(t(`Kept in ${dir}. Only this bot is told about them when it wakes; where a shared skill has the same name, its own is used. They follow the bot when it is renamed or moves to another CLI.`,
+          `放在 ${dir}。只有這個 bot 叫醒時會被告知；跟共用 skill 同名時用它自己的。改名或換 CLI，它們都跟著走。`))}</div>`;
+    }
+    box.addEventListener('click', async e => {
+      const b = e.target.closest('button[data-own]');
+      if (!b) return;
+      e.stopPropagation();
+      const act = b.dataset.own;
+      let res = null;
+      if (act === 'folder') res = await call('bots_skill_open', '');
+      else if (act === 'open') res = await call('bots_skill_open', b.dataset.folder);
+      else if (act === 'new') {
+        const name = box.querySelector('#sfb-own-name').value.trim();
+        if (!name) { say(t('Type a name for the new skill first.', '先輸入新 skill 的名字。'), true); box.querySelector('#sfb-own-name').focus(); return; }
+        res = await call('bots_skill_new', name, '');
+      } else if (act === 'copy') {
+        const from = box.querySelector('#sfb-own-from').value;
+        if (!from) { say(t('Pick a shared skill to copy first.', '先選一個要複製的共用 skill。'), true); return; }
+        res = await call('bots_skill_copy', from);
+      } else if (act === 'delete') {
+        if (!(await SFDialog.confirm(t(`Delete the skill ${q(b.dataset.name)}? Its folder and everything in it is removed.`,
+                                       `刪除 skill${q(b.dataset.name)}？它的資料夾和裡面的東西都會刪掉。`)))) return;
+        res = await call('bots_skill_delete', b.dataset.folder);
+      }
+      if (res) say(act === 'open' || act === 'folder' ? '' : res.message, !res.success);
+      if (res && res.success && !/^(open|folder)$/.test(act)) await render();
+    });
+    render();
+  }
+  const isExternalNow = ov => !!(ov.querySelector('#sfb-ed-ext') && ov.querySelector('#sfb-ed-ext').classList.contains('on'));
 
   // ── close with memory ─────────────────────────────────────────────────
   function interceptClose(sid) {
@@ -1431,6 +1497,16 @@
         <span style="font-size:11px;color:#565f89">${t('Lights become animated bot faces (idle, working, question, stuck, done). A tab can become a bot that wakes with its job, skills and memory, and writes its memory before it closes. On for a new install.',
           '燈號換成會動的 bot 頭像（發呆／運作／問號／卡住／完成）；分頁可以開成 bot：叫醒時帶入執掌、skill 與記憶，關閉前先寫記憶。新安裝預設打開。')}</span>
       </div>
+      <div id="sfb-memsave" style="display:none">
+        <label style="font-size:11px;color:#565f89;display:block;margin:10px 0 4px">${t('Save a bot’s memory while it stays open', '開著的 Bot 也定期存記憶')}</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="toggle-switch" id="setting-bot-memory-autosave"></button>
+          <span style="font-size:11px;color:#565f89">${t('After real work, once a bot has been idle for', '做完實質的事之後，Bot 閒置')}
+            <input type="number" id="setting-bot-memory-idle" min="5" max="1440" step="5" style="width:58px;font-size:11px;padding:1px 4px;background:#24283b;border:1px solid #3b4261;border-radius:4px;color:#c0caf5">
+            ${t('minutes, it is asked to update its memory (MEMORY.md and a summary in its folder), so one that is never closed still remembers. Each time is one turn of the bot’s own conversation and uses your quota like any message; nothing is sent while it is working, waiting for your answer, or while you have unsent text in its input box. Off: memory is written only when its tab closes.',
+              '分鐘，就會請它更新記憶（它資料夾裡的 MEMORY.md 和一份摘要），一直開著不關的 Bot 也記得住。每次是 Bot 自己的一輪對話，跟你傳一則訊息一樣會用掉額度；它在跑、在等你回答、或輸入框有你還沒送出的字時，都不會送。關掉：只有分頁關閉時才寫記憶。')}</span>
+        </div>
+      </div>
       <label style="font-size:11px;color:#565f89;display:block;margin:10px 0 4px">${t('A2A: bots message each other by name (experimental)', 'A2A：bot 之間用名字互相傳話（實驗）')}</label>
       <div style="display:flex;align-items:center;gap:6px">
         <button class="toggle-switch" id="setting-experimental-a2a"></button>
@@ -1454,6 +1530,22 @@
       setEnabled(on);
     });
     wrap.querySelector('#sfb-settings-new').addEventListener('click', () => openEditor(null));
+    // Saving memory while a bot stays open (bot_memory.py): both settings live in settings, like the toggles above.
+    const memOn = wrap.querySelector('#setting-bot-memory-autosave'), memMin = wrap.querySelector('#setting-bot-memory-idle');
+    const saveSettings = async patch => {
+      const cfg = host() && host().cfg();
+      if (!cfg) return;
+      cfg.settings = Object.assign(cfg.settings || {}, patch);
+      await api().save_settings(JSON.stringify(cfg.settings));
+      syncSettings();
+    };
+    memOn.addEventListener('click', () => saveSettings({ bot_memory_autosave: !memOn.classList.contains('on') }));
+    memMin.addEventListener('change', () => {
+      const raw = memMin.value.trim(), n = Math.round(Number(raw));
+      const mins = raw === '' || !Number.isFinite(n) ? 45 : Math.max(5, Math.min(1440, n));
+      memMin.value = mins;                                  // the box shows what was kept (it has the focus: syncSettings leaves it alone)
+      saveSettings({ bot_memory_idle_min: mins });
+    });
     const a2a = wrap.querySelector('#setting-experimental-a2a');
     a2a.addEventListener('click', async () => {
       const cfg = host() && host().cfg();
@@ -1473,6 +1565,17 @@
     if (a2a) a2a.classList.toggle('on', !!(cfg && cfg.settings && cfg.settings.experimental_a2a === true));
     const more = document.getElementById('sfb-settings-more');
     if (more) more.style.display = enabled ? 'flex' : 'none';
+    const memBox = document.getElementById('sfb-memsave');
+    if (memBox) {
+      memBox.style.display = enabled ? 'block' : 'none';
+      const set = (cfg && cfg.settings) || {};
+      const on = set.bot_memory_autosave !== false;                  // on unless turned off (bot_memory.settings)
+      document.getElementById('setting-bot-memory-autosave').classList.toggle('on', on);
+      const inp = document.getElementById('setting-bot-memory-idle');
+      const mins = Number(set.bot_memory_idle_min);
+      if (document.activeElement !== inp) inp.value = set.bot_memory_idle_min == null || !Number.isFinite(mins) ? 45 : Math.max(5, Math.min(1440, Math.round(mins)));
+      inp.disabled = !on;
+    }
     const root = document.getElementById('sfb-settings-root');
     if (root) root.textContent = st.memory_root ? t('Memory folder: ', '記憶資料夾：') + st.memory_root : '';
     renderSettingsList();
