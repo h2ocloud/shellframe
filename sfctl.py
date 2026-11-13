@@ -324,7 +324,15 @@ def _save_tmux_tcc_state(state: dict):
 def _tmux_tcc_check() -> int:
     """Report whether the granted tmux binary still matches what's on disk.
     Returns 0 if matched / no prior grant, 1 if cdhash drifted (re-grant
-    needed). Pure read — opens no Privacy pane."""
+    needed) or a tab cannot read Documents/Desktop/Downloads. Opens no Privacy
+    pane. The folder check runs first: it is what people notice (tcc_check.py)."""
+    import tcc_check
+    app, placed = tcc_check.app_placed()
+    folders, lines = tcc_check.report(tcc_check.probe(), tcc_check.server_started(), app, placed)
+    print("\n".join(lines))
+    print()
+    if folders in ("stale-server", "not-granted"):
+        return 1
     sym, real = _tmux_paths()
     if not real:
         print("找不到 tmux（不在 PATH）。略過 TCC 檢查。")
@@ -365,8 +373,9 @@ def _tmux_fda_flow(args):
 
     print("══ ShellBot tmux 一次性權限索取 ══\n")
     print("為什麼新 tab 會反覆跳「tmux 想取用其他 App 的資料」：")
-    print("  • ShellBot 用『單一持久 tmux server』跑所有 tab（已確認，非每 tab 一個 server），")
-    print("    所有 pane 的 responsible process 都是這個 tmux server 本身。")
+    print("  • ShellBot 用『單一持久 tmux server』跑所有 tab（已確認，非每 tab 一個 server）。")
+    print("  • 分頁讀不到「文件／桌面／下載項目」不是這裡要處理的事：macOS 判斷那些權限時看的是")
+    print("    「啟動 tmux server 的那份 ShellBot.app」，不是 tmux。請先跑 `sfctl permissions --check`。")
     print("  • 那個彈窗是 macOS TCC 的『逐資料夾』授權（SystemPolicyAppData）：")
     print("    每開一個 tab 跑的指令只要碰到一個還沒授權過的受保護資料夾，就會再問一次。")
     print("  • 解法：一次給 tmux『完全取用磁碟(FDA)』，蓋掉所有逐資料夾詢問 —— 點一次，永久不再跳。\n")
@@ -1030,9 +1039,9 @@ def main():
                              "one-shot grant flow (silences the 'tmux wants to "
                              "access data from other apps' prompts)")
     p_perm.add_argument("--check", action="store_true",
-                        help="macOS only: report whether the granted tmux "
-                             "binary still matches (detects brew-upgrade drift); "
-                             "opens no Privacy pane")
+                        help="macOS only: whether tabs can read Documents, Desktop and "
+                             "Downloads (and why not), and whether the granted tmux "
+                             "binary still matches; opens no Privacy pane")
     p_perm.add_argument("--panes", action="store_true",
                         help="macOS only: open the generic Privacy panes walk, "
                              "skip firewall")
