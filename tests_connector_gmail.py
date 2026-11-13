@@ -420,6 +420,240 @@ if DESC is not None:
     check("nothing in it is a secret, a person, a company or an address of anyone's",
           not re.search(r"sk-ant|Bearer|@gmail\.com|@[a-z0-9-]+\.(com|tw)\b|Howard|neux", blob, re.I))
 
+# ── 3. the connection test ────────────────────────────────────────────────────
+print("== the connection test: a temporary tab, tool names and the last line only ==")
+CONNECTOR_TOOL = "mcp__claude_ai_Gmail__search_threads"
+LOCAL_TOOL = "mcp__shellbot-gmail__search_emails"
+AUTH = "mcp__claude_ai_Gmail__authenticate"
+user = {"kind": "user_msg", "text": gmail.test_prompt()}
+tool = lambda n: {"kind": "tool_call", "tool": n}
+mail = {"kind": "tool_result", "text": f"From: {SENDER} Subject: {SUBJECT}"}
+say = lambda t: {"kind": "assistant_text", "text": t}
+end = {"kind": "turn_end"}
+ALLOWED_KEYS = {"state", "ok", "code", "failed_step", "handle", "phase", "calls", "sid"}
+ALL_RETURNS = []
+
+
+def started(route, **kw):
+    home, xdg = new_pc(f"t{len(ALL_RETURNS)}")
+    ctx = FakeCtx(home, xdg, **kw)
+    r0 = gmail.ADAPTER.test(ctx, route)
+    ALL_RETURNS.append(r0)
+    return ctx, r0
+
+
+def poll(ctx, route, r0, events, state=""):
+    ctx.snap = {"alive": True, "state": state, "events": events}
+    out = gmail.ADAPTER.test(ctx, route, r0["handle"])
+    ALL_RETURNS.append(out)
+    return out
+
+
+ctx, r0 = started("connector")
+check("start: running, with a handle and the test tab's id, nothing asked of ctx.run",
+      r0["state"] == "running" and r0["handle"] and r0["sid"] == "s1" and ctx.runs == [], r0)
+check("start: one temporary Claude tab in a folder of ShellBot's own", len(ctx.tabs) == 1 and ctx.tabs[0][0].startswith("cd ")
+      and ctx.tabs[0][0].endswith(" && claude") and "connect-test-gmail" in ctx.tabs[0][0] and ctx.tabs[0][1] == "Gmail test", ctx.tabs)
+check("the one question went in, once: names GMAIL-TEST, asks sender and subject only, no body, no sending",
+      len(ctx.sent) == 1 and ctx.sent[0][0] == "s1" and "GMAIL-TEST: OK" in ctx.sent[0][1] and "do not open the body" in ctx.sent[0][1].lower()
+      and "\n" not in ctx.sent[0][1], ctx.sent)
+wctx = FakeCtx(*new_pc("tw"), win=True)
+gmail.ADAPTER.test(wctx, "local")
+check("Windows: the test tab runs a plain claude", wctx.tabs[0][0] == "claude", wctx.tabs)
+
+CASES = [
+    # (name, route, events, tab state, want)
+    ("connector: a Gmail tool was called and it said OK -> works", "connector", [user, tool(CONNECTOR_TOOL), mail, say(f"{SENDER}: {SUBJECT}\n**GMAIL-TEST: OK**"), end],
+     "", {"state": "done", "ok": True, "calls": 1}),
+    ("local: the same, through the local server's tool -> works", "local", [user, tool("ToolSearch"), tool(LOCAL_TOOL), tool(LOCAL_TOOL), mail, say("`GMAIL-TEST: OK`"), end],
+     "", {"state": "done", "ok": True, "calls": 2}),
+    ("connector: only the authenticate tool -> not authorized (go back to the connect step)", "connector", [user, tool(AUTH), say("GMAIL-TEST: FAIL needs auth"), end],
+     "", {"state": "done", "ok": False, "code": "needs_auth", "failed_step": "a2", "calls": 0}),
+    ("connector: no Gmail tool at all -> not yet (connect step)", "connector", [user, say("GMAIL-TEST: FAIL I have no Gmail tool"), end],
+     "", {"state": "done", "ok": False, "code": "no_tools", "failed_step": "a2", "calls": 0}),
+    ("local: no Gmail tool -> back to 'add the server'", "local", [user, say("GMAIL-TEST: FAIL none"), end],
+     "", {"state": "done", "ok": False, "code": "no_tools", "failed_step": "b6", "calls": 0}),
+    ("local: the other route's tool does not count", "local", [user, tool(CONNECTOR_TOOL), say("GMAIL-TEST: OK"), end],
+     "", {"state": "done", "ok": False, "code": "said_ok", "failed_step": "", "calls": 0}),
+    ("said OK without calling any Gmail tool -> does not count", "connector", [user, say("GMAIL-TEST: OK"), end],
+     "", {"state": "done", "ok": False, "code": "said_ok", "failed_step": "", "calls": 0}),
+    ("connector: a Gmail tool, then FAIL -> an error answer (no step to blame)", "connector", [user, tool(CONNECTOR_TOOL), say("GMAIL-TEST: FAIL 500"), end],
+     "", {"state": "done", "ok": False, "code": "failed", "failed_step": "", "calls": 1}),
+    ("local: a Gmail tool, then FAIL -> back to the sign-in step", "local", [user, tool(LOCAL_TOOL), say("GMAIL-TEST: FAIL invalid_grant"), end],
+     "", {"state": "done", "ok": False, "code": "failed", "failed_step": "b7", "calls": 1}),
+    ("a Gmail tool but no result line -> unclear", "connector", [user, tool(CONNECTOR_TOOL), say("Here you go."), end],
+     "", {"state": "done", "ok": False, "code": "unclear", "failed_step": "", "calls": 1}),
+    ("a mail that says GMAIL-TEST: OK cannot make a pass (tool results are not read)", "connector",
+     [user, tool(CONNECTOR_TOOL), {"kind": "tool_result", "text": "GMAIL-TEST: OK"}, end],
+     "", {"state": "done", "ok": False, "code": "unclear", "failed_step": "", "calls": 1}),
+    ("still asking: the prompt is not in the transcript yet", "connector", [], "", {"state": "running", "phase": "asking", "calls": 0}),
+    ("still asking: the prompt is in, no tool yet", "connector", [user], "", {"state": "running", "phase": "asking", "calls": 0}),
+    ("reading: a tool was called, the turn is not over", "local", [user, tool(LOCAL_TOOL)], "", {"state": "running", "phase": "reading", "calls": 1}),
+    ("waiting for the person's OK (the tab asks to allow a tool) -> needs the user", "connector", [user, tool("ToolSearch")], "decision",
+     {"state": "needs_user", "code": "needs_allow", "calls": 0}),
+]
+for name, route, events, tab_state, want in CASES:
+    ctx, r0 = started(route)
+    got = poll(ctx, route, r0, events, tab_state)
+    shape = {k: v for k, v in got.items() if k not in ("handle", "sid")}
+    check(name, shape == want and got.get("sid") == "s1" and (want["state"] in ("done",) or got.get("handle") == r0["handle"]), got)
+
+print("== time: 3 minutes, and the wait for your OK does not count ==")
+ctx, r0 = started("connector")
+ctx.t += 181
+check("no answer after 3 minutes -> timeout", poll(ctx, "connector", r0, [user])["code"] == "timeout")
+ctx, r0 = started("connector")
+ctx.t += 170
+a = poll(ctx, "connector", r0, [user, tool("ToolSearch")], "decision")
+ctx.t += 100
+b = poll(ctx, "connector", r0, [user, tool("ToolSearch")], "")
+ctx.t += 100
+c = poll(ctx, "connector", r0, [user, tool("ToolSearch")], "")
+check("170 s of waiting for the person is not counted: still running at 270 s", a["state"] == "needs_user" and b["state"] == "running", (a, b))
+check("...and the clock runs again after: 370 s with 170 s paused is over 180 -> timeout", c.get("code") == "timeout", c)
+
+print("== a test that did not work out ==")
+ctx = FakeCtx(*new_pc("nr"))
+ctx.ready = False
+r0 = gmail.ADAPTER.test(ctx, "connector")
+out = poll(ctx, "connector", r0, [])
+check("the tab never got to its prompt -> not_ready (back to the sign-in check), nothing was asked",
+      out == {"state": "done", "ok": False, "code": "not_ready", "failed_step": "a1", "calls": 0, "sid": "s1"} and ctx.sent == [], out)
+ctx, r0 = started("local")
+ctx.snap = {"alive": False, "state": "", "events": []}
+out = gmail.ADAPTER.test(ctx, "local", r0["handle"])
+check("the person closed the test tab -> closed", out["code"] == "closed" and out["ok"] is False, out)
+ctx, r0 = started("connector")
+ctx.cancel = True
+out = gmail.ADAPTER.test(ctx, "connector", r0["handle"])
+check("cancel closes the test tab and ends the test", ctx.closed == ["s1"] and out["code"] == "closed", (ctx.closed, out))
+check("an unknown handle (after a restart) -> closed, not an error", gmail.ADAPTER.test(ctx, "connector", "gone")["code"] == "closed")
+check("an unknown route -> start_failed", gmail.ADAPTER.test(FakeCtx(*new_pc("ur")), "nope")["code"] == "start_failed")
+
+
+class _NoTab(FakeCtx):
+    def open_tab(self, cmd, title):
+        raise OSError("no pty")
+
+
+check("a tab that cannot be opened -> start_failed, not an exception", gmail.ADAPTER.test(_NoTab(*new_pc("nt")), "connector")["code"] == "start_failed")
+ctx, r0 = started("connector")
+ctx2 = FakeCtx(*new_pc("again"))
+gmail.ADAPTER.test(ctx2, "local")
+check("a new test closes the test tab left from before", ctx2.closed == ["s1"], ctx2.closed)
+gmail.ADAPTER.disconnect(ctx2, "local")
+check("disconnect closes a test tab that is still open", ctx2.closed == ["s1", "s1"], ctx2.closed)
+check("disconnect answers done and leaves Google's side alone (no program run)", gmail.ADAPTER.disconnect(ctx2, "local") == {"state": "done"} and ctx2.runs == [])
+
+phase_ctx = FakeCtx(*new_pc("wr"))
+_real_thread = gmail.threading.Thread
+gmail.threading.Thread = type("NoRun", (), {"__init__": lambda self, **kw: None, "start": lambda self: None})
+try:
+    r0 = gmail.ADAPTER.test(phase_ctx, "connector")
+finally:
+    gmail.threading.Thread = _real_thread
+out = poll(phase_ctx, "connector", r0, [])
+check("the tab is not at its prompt yet -> running, waiting_ready", out["state"] == "running" and out["phase"] == "waiting_ready" and phase_ctx.sent == [], out)
+
+print("== what comes back: codes and numbers, never the mail ==")
+blob = json.dumps(ALL_RETURNS)
+check("no sender, no subject, no reply text anywhere in a result", SENDER not in blob and SUBJECT not in blob and "Here you go" not in blob and "invalid_grant" not in blob)
+check("every result is a plain dict with only the agreed fields", all(set(r) <= ALLOWED_KEYS for r in ALL_RETURNS) and all(
+    isinstance(v, (str, int, float, bool)) for r in ALL_RETURNS for v in r.values()), [r for r in ALL_RETURNS if set(r) - ALLOWED_KEYS])
+check("a verdict is always one the description has words for", DESC is not None and all(
+    r["code"] in DESC["routes"][0]["test"]["verdicts"] or r["code"] in DESC["routes"][1]["test"]["verdicts"] for r in ALL_RETURNS if "code" in r))
+check("the test never ran a program", all(not c.runs for c in (ctx, ctx2, phase_ctx)))
+check("verdict_line: only a marker line in the last two lines counts", gmail.verdict_line("x\nGMAIL-TEST: OK") == "OK" and gmail.verdict_line("GMAIL-TEST: OK\na\nb") == ""
+      and gmail.verdict_line("a\n> GMAIL-TEST: FAIL why") == "FAIL" and gmail.verdict_line("") == "" and gmail.verdict_line(None) == "")
+
+# ── 4. each route, from its first step to connected ───────────────────────────
+print("== every route, from the first step to connected ==")
+PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
+def person_does(step_id, prof):
+    """What the person does in a browser or a folder before pressing 'I did it' (a stand-in file each)."""
+    if step_id == "b5":
+        (prof / "credentials.json").write_text(CLIENT_SECRET)
+    if step_id == "b7":
+        (prof / "tokens.json").write_text(TOKEN)
+
+
+def walk(route_id):
+    route = next(r for r in DESC["routes"] if r["id"] == route_id)
+    home, xdg = new_pc(f"walk-{route_id}")
+    ctx = FakeCtx(home, xdg, bins={"node": NODE, "claude": "/fake/bin/claude"}, answers={(NODE, "--version"): Result(0, "v22.17.1")}, cfg=cfg_plan)
+    prof = Path(gmail.profile_dir(ctx.env))
+    problems, core_calls, seen = [], [], []
+
+    def said(where, res, states):
+        code = res.get("state")
+        if code not in states:
+            problems.append(f"{where}: state {code!r} has no words")
+            return
+        for lang in ("en", "zh"):
+            for ph in PLACEHOLDER.findall(states[code]["text"][lang]):
+                if ph not in res:
+                    problems.append(f"{where}: {{{ph}}} is in the words for {code} but not in the result")
+
+    for s in route["steps"]:
+        if s.get("kind") == "test":
+            break
+        ck = s.get("check")
+        if ck and ck["on"] == "enter":
+            res = gmail.ADAPTER.checks[ck["id"]](ctx, {})
+            said(f"{s['id']} check", res, ck["states"])
+            seen.append((s["id"], "enter", res["state"]))
+        for a in s.get("actions", []):
+            if a["builtin"]:
+                core_calls.append((s["id"], a["builtin"], route["mcp"]["server"], route["mcp"]["env"]))      # the core's own: stood in for
+                continue
+            res = gmail.ADAPTER.actions[a["id"]](ctx, {"options": {"readonly": True}})
+            said(f"{s['id']}/{a['id']}", res, a["results"])
+            seen.append((s["id"], a["id"], res["state"]))
+            if a.get("after") == "check":
+                res = gmail.ADAPTER.checks[ck["id"]](ctx, {})
+                seen.append((s["id"], "after", res["state"]))
+        if ck and ck["on"] == "done":
+            before = gmail.ADAPTER.checks[ck["id"]](ctx, {})
+            if ck.get("gate") and before["state"] in ck["pass"]:
+                problems.append(f"{s['id']}: the gate is already open before the person did anything")
+            person_does(s["id"], prof)
+            res = gmail.ADAPTER.checks[ck["id"]](ctx, {})
+            said(f"{s['id']} check", before, ck["states"])
+            said(f"{s['id']} check", res, ck["states"])
+            seen.append((s["id"], "done", before["state"] + ">" + res["state"]))
+            if ck.get("gate") and res["state"] not in ck["pass"]:
+                problems.append(f"{s['id']}: the gate stays shut after the person did it: {res}")
+        elif ck and ck.get("gate") and gmail.ADAPTER.checks[ck["id"]](ctx, {})["state"] not in ck["pass"]:
+            problems.append(f"{s['id']}: the gate stays shut: {ck['id']}")
+    events = [user, tool(CONNECTOR_TOOL if route_id == "connector" else LOCAL_TOOL), mail, say("GMAIL-TEST: OK"), end]
+    r0 = gmail.ADAPTER.test(ctx, route_id)
+    ctx.snap = {"alive": True, "state": "", "events": events}
+    fin = gmail.ADAPTER.test(ctx, route_id, r0["handle"])
+    return ctx, problems, core_calls, seen, fin
+
+
+if DESC is not None:
+    ctx, problems, core_calls, seen, fin = walk("connector")
+    check("connector: the account check, the connect step, the test -> connected", not problems and fin == {"state": "done", "ok": True, "calls": 1, "sid": "s1"}
+          and seen == [("a1", "enter", "claude_ai")], (problems, fin, seen))
+    check("connector: health has nothing local to look at -> unknown", gmail.ADAPTER.health(ctx, "connector") == {"state": "unknown"})
+    ctx, problems, core_calls, seen, fin = walk("local")
+    check("local: Node, folder, file, the server added, sign-in, the test -> connected", not problems and fin["ok"] is True, (problems, fin))
+    check("local: what the person met on the way (Node ok; the file missing then in place; the sign-in unfinished then done)",
+          seen == [("b0", "enter", "ok"), ("b5", "open_folder", "opened"), ("b5", "after", "missing"), ("b5", "done", "missing>ok"),
+                   ("b7", "auth_tab", "opened"), ("b7", "done", "missing>ok")], seen)
+    check("local: the server goes in through the core's cli_add, with the read-only Gmail-only settings",
+          core_calls == [("b6", "cli_add", "shellbot-gmail", {"GOOGLE_WORKSPACE_MCP_PROFILE": "shellbot", "GOOGLE_WORKSPACE_SERVICES": "gmail",
+                                                           "GOOGLE_WORKSPACE_READ_ONLY": "true"})], core_calls)
+    check("local: the sign-in tab ran the Gmail-only, read-only command", ctx.tabs[0][0] == gmail.auth_command(True, False) and ctx.tabs[0][1] == "Gmail sign-in", ctx.tabs[:1])
+    check("local: connected, health says ok", gmail.ADAPTER.health(ctx, "local") == {"state": "ok"})
+    (Path(gmail.profile_dir(ctx.env)) / "tokens.json").unlink()
+    check("local: Google takes the permission back -> health says revoked (the core asks to reconnect)", gmail.ADAPTER.health(ctx, "local") == {"state": "revoked"})
+    all_cmds = json.dumps([ctx.tabs, ctx.runs, ctx.sent, ctx.paths])
+    check("no client secret or token in any command, tab, prompt or path the walk produced", CLIENT_SECRET not in all_cmds and TOKEN not in all_cmds and "sk-" not in all_cmds)
+
 if __name__ == "__main__":
     print(f"\nResults: {passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
