@@ -1256,8 +1256,13 @@
     // question shows again, and so does this one once the tab is no longer waiting
     const askKey = m ? 'q:' + m.id : (data.activity === 'decision' ? 'term' : '');
     if (!askKey) v.askDismissed = '';
+    // [[SF:RED:connect:<service>]] (decision.tag): web/connect.js draws the card, "" for any other question
+    const conn = d && root.SFConnect ? root.SFConnect.chatCard(d, { face: faceHtml(sid, 'decision'), options: m ? m.options : [],
+      answered: v.answered && v.answered.id === d.id ? T(`Sent: ${v.answered.label}`, `已送出：${v.answered.label}`) : '' }) : '';
     if (askKey && v.askDismissed === askKey) {
       // put away
+    } else if (conn) {
+      html = conn;
     } else if (m) {
       const call = data.activity === 'decision' ? pendingCall(data.turns) : null;
       const answered = v.answered && v.answered.id === d.id;
@@ -1866,6 +1871,10 @@
       return;
     }
     if (act === 'answer') return answer(el);
+    if (act === 'connect') {                               // open the wizard, and tell the bot option 1 so it waits
+      try { root.SFConnect.openFromChat(el.dataset.service, { tag: el.dataset.tag, from_sid: sid }); } catch (_) { /* the answer still goes */ }
+      return /^\d+$/.test(el.dataset.n || '') ? answer(el) : undefined;
+    }
     if (act === 'draft-clear') return send(true);
     if (act === 'draft-keep') { view(sid).draftCard = null; renderAsk(sid); input.focus(); return; }
     if (act === 'resend' || act === 'dismiss') {
