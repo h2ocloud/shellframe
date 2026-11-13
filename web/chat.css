@@ -174,6 +174,11 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
 .cm-compact-text { margin-top: .5em; padding: .7em 1em; max-width: 100%; border-radius: 10px; background: var(--cm-panel);
                    color: var(--cm-soft); font-size: .86em; max-height: 22em; overflow-y: auto; }
 
+/* a memory round the bot wrote for itself: one quiet line */
+.cm-memory { justify-content: center; margin: .35em 0; }
+.cm-memory-line { display: inline-flex; align-items: center; gap: .4em; color: var(--cm-dim); font-size: .8em; padding: .1em .7em; }
+.cm-memory-line svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
 /* working: the face and one plain line */
 .cm-live { align-items: center; }
 .cm-live-text { display: flex; align-items: center; gap: .55em; min-width: 0; color: var(--cm-soft); }

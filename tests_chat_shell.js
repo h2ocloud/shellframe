@@ -355,5 +355,35 @@ console.log('a question: what it is about');
   check('no words and no call: nothing', askContext(bare, m, null, 'zh') === '');
 }
 
+console.log('a bot saving its memory while its tab stays open');
+{
+  const MARK = '[[ShellBot: memory autosave]]';
+  const ask = `${MARK}\nShellBot asks you to save your memory now: a quiet spell, not the end of this conversation.\nDo two things…`;
+  const u = (text, ts) => ({ kind: 'user_msg', text, ts });
+  const bot = (text, ts) => ({ kind: 'assistant_text', text, ts });
+  const call = (ts) => ({ kind: 'tool_call', tool: 'Write', target: '/x/MEMORY.md', ts });
+  const types = tl => tl.map(i => i.type).join(',');
+  const round = [u('tidy the list', 1), call(2), bot('done', 3), u(ask, 4), call(5), call(6), bot('[[SF:MEMORY:SAVED]]', 7),
+                 u('and the other one', 8), bot('ok', 9)];
+  const tl = R.buildTimeline(round);
+  check('the round is one line: the request, its tool calls and its saved marker are not drawn',
+    types(tl) === 'user,tools,bot,memory,user,bot', types(tl));
+  check('…the next message of the person is drawn as ever, and so is what came before',
+    tl[4].text === 'and the other one' && tl[5].text === 'ok' && tl[2].text === 'done');
+  check('…the line has its time', tl[3].ts === 4);
+  const wrapped = R.buildTimeline([u(`<pasted_content id="1">\n${ask}\n</pasted_content id="1">`, 4), bot('[[SF:MEMORY:SAVED]]', 5)]);
+  check('a request the CLI recorded as a paste is the same line', types(wrapped) === 'memory', types(wrapped));
+  const mid = R.buildTimeline([u(ask, 4), call(5), u('wait, one more thing', 6), bot('sure', 7)]);
+  check('a message from the person during the round ends it, and what follows is theirs', types(mid) === 'memory,user,bot', types(mid));
+  const err = R.buildTimeline([u(ask, 4), { kind: 'error', text: 'rate limited', ts: 5 }]);
+  check('an error in the round is still shown', types(err) === 'memory,error', types(err));
+  const twice = R.buildTimeline([u('a', 1), bot('b', 2), u(ask, 3), bot('x', 4), u('c', 5), bot('d', 6), u(ask, 7), bot('y', 8)]);
+  check('every round is a line of its own', types(twice) === 'user,bot,memory,user,bot,memory', types(twice));
+  const quoted = R.buildTimeline([u(`please explain what ${MARK} does`, 1), bot('it saves memory', 2)]);
+  check('words that only mention the line are an ordinary message', types(quoted) === 'user,bot', types(quoted));
+  check('a request alone is a memory line',
+    R.buildTimeline([u(ask, 1)])[0].type === 'memory');
+}
+
 console.log(fails ? `\n${fails} failed, ${passes} passed` : `\nALL PASS (${passes})`);
 process.exit(fails ? 1 : 0);

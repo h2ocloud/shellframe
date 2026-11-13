@@ -353,7 +353,7 @@
     const red = lines.findIndex(l => RED_MARK.test(l));
     if (red >= 0) lines = foldRed ? lines.slice(0, red) : lines.filter((_, i) => i !== red);
     return lines.join('\n')
-      .replace(/\[\[\s*SF\s*:\s*(?:GREEN|WORKING)\s*\]\]/gi, '')
+      .replace(/\[\[\s*SF\s*:\s*(?:GREEN|WORKING|MEMORY\s*:\s*SAVED)\s*\]\]/gi, '')
       .replace(/\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]/gi, (_, why) => `⏳ ${why.trim()}`)
       .trim();
   }
@@ -365,6 +365,10 @@
   // is "貼上的內容 · N 行"; the lines the harness typed (a rule, a <tag>, a picture's placeholder, a
   // <system-reminder>) are not words. opts.agent: the text is an agent's own words (only its markers go);
   // opts.lang: 'zh…' or not. Not redacted, markdown left alone: that is for the caller.
+  // The first line of what ShellBot asks an open bot to save its memory with (bot_memory.MARK). The round it
+  // starts (that message, the bot's tool calls and words after it, up to the next message) is one line in the
+  // conversation (buildTimeline), and the request is no message a card or a list has anything to say about.
+  const MEMORY_MARK = '[[ShellBot: memory autosave]]';
   const NOISE_LINE = ['---', '[[SF:', '<', '[Image'];
   const NOTICE = /^\[\[ShellBot[:：].*\]\]$/;     // ShellBot's own line ("this waited 2 h in the queue"): words only when alone
   const READ_MAX = 20000;      // characters read: a line of at most `limit` never depends on more, and a paste can be megabytes
@@ -379,6 +383,7 @@
       words = botView(text, false);
     } else {
       const u = userView(text);
+      if (u.text.startsWith(MEMORY_MARK)) return '';        // ShellBot's own request to a bot: nobody said it
       const a = u.tags.find(x => x.kind === 'a2a');
       if (a) { who = a.who || ''; blocked = !!a.blocked; }
       words = u.parts ? u.parts.map(x => (x.paste !== undefined ? pastedLabel(x.paste.split('\n').length, zh) : x.text)).join('\n') : u.text;
@@ -398,15 +403,19 @@
 
   // turns (chat_view) → what the view draws, in order:
   //   {type:'user', text, tags} {type:'bot', text} {type:'tools', calls} {type:'compact', text} {type:'error', text}
+  //   {type:'memory'}
   // Consecutive tool calls become one 'tools' item; nothing is dropped from it.
   function buildTimeline(turns, opts) {
     const o = opts || {};
     const out = [];
     let lastUser = '';
+    let saving = false;                  // inside a memory round: the bot's calls and words are not drawn
     const list = turns || [];
     const lastBot = (() => { for (let i = list.length - 1; i >= 0; i--) if (list[i].kind === 'assistant_text' && String(list[i].text || '').trim()) return i; return -1; })();
     list.forEach((t, i) => {
       const kind = t && t.kind;
+      if (saving && (kind === 'tool_call' || kind === 'assistant_text')) return;
+      if (kind === 'user_msg') saving = false;
       if (kind === 'tool_call') {
         const prev = out[out.length - 1];
         const call = { tool: t.tool || '', target: t.target || '', ts: t.ts || 0 };
@@ -418,6 +427,7 @@
         if (pic) { out.push({ type: 'file', path: pic[1].trim(), ts: t.ts || 0 }); return; }
         const u = userView(t.text);
         if (!u.text) return;               // Codex's turn-start record carries no words
+        if (u.text.startsWith(MEMORY_MARK)) { saving = true; out.push({ type: 'memory', ts: t.ts || 0 }); return; }
         lastUser = u.text;
         // Another agent's message (A2A): its sender, not the person. The server names it
         // (`from`, agent_link.sender_of, what a phone reads); the header is the same rule.
@@ -1206,6 +1216,11 @@
         `<span class="cm-caret">${open ? '▾' : '▸'}</span>${escHtml(T('Earlier messages were folded into a summary', '較早的對話已整理成摘要'))}</button>` +
         (open ? `<div class="cm-compact-text">${md(it.text, isZh(lang()))}</div>` : '') + '</div>';
     }
+    if (it.type === 'memory') {
+      const live = idx === items.length - 1 && !!v.data && v.data.activity === 'working';     // still writing
+      return `<div class="cm-row cm-memory"><span class="cm-memory-line">${ICON_MEMORY}` +
+        `<span>${escHtml(live ? T('Saving memory…', '正在更新記憶…') : T('Memory updated', '已更新記憶'))}</span></span></div>`;
+    }
     if (it.type === 'file') {
       return `<div class="cm-row cm-user cm-sent-file"><span class="cm-file" title="${escHtml(it.path)}">${ICON_FILE}` +
         `<span>${escHtml(baseName(it.path))}</span></span></div>`;
@@ -1264,6 +1279,7 @@
 
   // ── attachments: the page's own save calls, the paths in the message ─────
   const baseName = p => String(p || '').split(/[\\/]/).pop();
+  const ICON_MEMORY = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5"/></svg>';
   const ICON_FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5l3 3v10H4z"/><path d="M9 1.5v3h3"/></svg>';
   function attach(path, dataUrl) {
     const sid = shownFor;

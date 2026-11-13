@@ -282,7 +282,8 @@ _PASTE_TAG = re.compile(r"<pasted_content(?:\s[^>]*)?>\n?|\n?</pasted_content(?:
 _CURSOR_STAMP = re.compile(r"^\s*<timestamp>[^<]*</timestamp>\s*", re.I)       # Cursor Agent stores a prompt
 _CURSOR_QUERY = re.compile(r"^\s*<user_query>(.*)</user_query>\s*$", re.I | re.S)  # stamped and wrapped
 _RED_MARK = re.compile(r"^[\s>❯›⏺•*-]*\[\[\s*SF\s*:\s*RED\s*(?::[^\]]*)?\]\]\s*$", re.I)
-_SF_QUIET = re.compile(r"\[\[\s*SF\s*:\s*(?:GREEN|WORKING)\s*\]\]", re.I)
+_SF_QUIET = re.compile(r"\[\[\s*SF\s*:\s*(?:GREEN|WORKING|MEMORY\s*:\s*SAVED)\s*\]\]", re.I)
+MEMORY_MARK = "[[ShellBot: memory autosave]]"   # first line of the request that has an open bot save its memory (bot_memory.py)
 _SF_YELLOW = re.compile(r"\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]", re.I)
 _NOISE_LINE = ("---", "[[SF:", "<", "[Image")   # a line the harness typed, or the placeholder of a picture: not words
 _NOTICE = re.compile(r"\[\[ShellBot[:：].*\]\]")   # ShellBot's own line ("this waited 2 h in the queue"): words only when alone
@@ -354,7 +355,7 @@ def _user_words(text, lang=None):
 
 def _bot_words(text) -> str:
     """An agent's words without ShellBot's protocol markers (web/chat.js botView): the Telegram reply markers,
-    a [[SF:RED]] line (its options stay), [[SF:GREEN]] and [[SF:WORKING]]; [[SF:YELLOW:why]] is "⏳ why"."""
+    a [[SF:RED]] line (its options stay), [[SF:GREEN]], [[SF:WORKING]] and [[SF:MEMORY:SAVED]]; [[SF:YELLOW:why]] is "⏳ why"."""
     lines = _TG_MARK.sub("", str(text or "")).split("\n")
     red = next((i for i, x in enumerate(lines) if _RED_MARK.match(x)), -1)
     if red >= 0:
@@ -377,6 +378,8 @@ def preview_of(text, limit: int = 140, *, agent: bool = False, lang: str = None)
         return ""
     text = str(text or "")[:_READ_MAX]
     who, blocked, words = (None, False, _bot_words(text)) if agent else _user_words(text, lang)
+    if not agent and words.lstrip().startswith(MEMORY_MARK):
+        return ""                      # ShellBot's own request to a bot: nobody said it, so a card has nothing to show
     if not agent:
         lines = [x for x in (y.strip() for y in _drop_reminders(words).split("\n"))
                  if x and not x.startswith(_NOISE_LINE) and "system-reminder" not in x]
