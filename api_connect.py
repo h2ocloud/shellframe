@@ -80,12 +80,21 @@ class ConnectApiMixin:
                 _swallow("connect:env")
         return env
 
+    def _connect_tabs(self) -> TabKit:
+        """One TabKit for the app: a test asks in one call and is asked how it is going in the next, and the
+        kit remembers where each temporary tab is (a new one per call would forget)."""
+        kit = getattr(self, "_connect_tabkit", None)
+        if kit is None:
+            with _LOCK:
+                kit = self.__dict__.setdefault("_connect_tabkit", TabKit(self))
+        return kit
+
     def _connect_ctx(self, service: str, route: str) -> Ctx:
         return Ctx(service=service, route=route, cfg=main.load_config(), env=self._connect_cli_env("claude"),
-                   win=sys.platform == "win32", open_tab=self._connect_open_tab, open_path=_open_path, tabs=TabKit(self))
+                   win=sys.platform == "win32", open_tab=self._connect_open_tab, open_path=_open_path, tabs=self._connect_tabs())
 
     def _connect_open_tab(self, cmd: str, title: str) -> str:
-        return TabKit(self).open(cmd, title)
+        return self._connect_tabs().open(cmd, title)
 
     # ── js_api ─────────────────────────────────────────────────────────────
     def connect_list(self) -> str:

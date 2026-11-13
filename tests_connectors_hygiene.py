@@ -27,8 +27,8 @@ def check(name, ok, detail=""):
         print(f"  [FAIL] {name}  {detail}")
 
 
-core = sorted(p for p in (HERE / "connectors").glob("*.py")) + [HERE / "api_connect.py"]
-check("the core files exist", len(core) >= 7 and all(p.exists() for p in core[:-1]), str(core))
+core = sorted(p for p in (HERE / "connectors").glob("*.py")) + [HERE / "api_connect.py", HERE / "connect_tabs.py"]
+check("the core files exist", len(core) >= 8 and all(p.exists() for p in core), str(core))
 for p in core:
     if not p.exists():
         continue

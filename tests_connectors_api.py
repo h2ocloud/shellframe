@@ -88,6 +88,9 @@ class Api(api_connect.ConnectApiMixin):
     def rename_session(self, sid, name, manual=False):
         self.renamed.append((sid, name))
 
+    def set_session_bridge(self, sid, enabled):
+        self.bridge_off = getattr(self, "bridge_off", []) + [sid]
+
     def _wait_until_ready(self, sid, timeout=45):
         return True
 
@@ -272,6 +275,54 @@ api2.clock[0] += 5000
 api2._connect_hourly_run()
 check("…and then told", len(told) == 2)
 check("the real function sends nothing with no bridge", __import__("importlib").reload(bridge_home).tell_all(type("A", (), {})(), "x") == 0)
+
+# one TabKit for the app: a test asks in one call and is asked how it is going in the next
+api = Api()
+c1, c2 = api._connect_ctx("demo", "local"), api._connect_ctx("demo", "local")
+check("every adapter call gets the same TabKit (a new one per call would forget which tab is which)", c1.tabs is c2.tabs and c1.tabs is api._connect_tabs())
+sid = c1.open_tab("claude", "Demo test")
+check("a tab opened through one ctx is known to the next", c2.tabs.phase(sid) == "waiting_ready", c2.tabs.phase(sid))
+check("the temporary tab is not a bot and its Telegram forwarding is off", api.opened[-1][2] == "connect" and api.bridge_off == [sid] and api.renamed[-1] == (sid, "Demo test"))
+check("a tab that is not there is closed", c2.tabs.phase("s999") == "closed")
+import connect_tabs  # noqa: E402
+api.sessions[sid]._startup_trust_pending, api.sessions[sid]._init_pending = True, True
+api._wait_until_ready = lambda sid, timeout=45: True
+kit = c2.tabs
+kit.ask(sid, "Is the way through open? Answer in one line.", 5)
+for _ in range(100):
+    if kit.phase(sid) == "asking":
+        break
+    time.sleep(0.02)
+check("ask waits for the tab, then puts the text in, with no opening prompt in front of it",
+      kit.phase(sid) == "asking" and ("paste", "Is the way through open? Answer in one line.") in api.sent
+      and api.sessions[sid]._startup_trust_pending is False and api.sessions[sid]._init_pending is False)
+api._wait_until_ready = lambda sid, timeout=45: False
+api.sessions["s60"] = Tab("claude")
+kit._phase["s60"] = "waiting_ready"
+kit.ask("s60", "x", 1)
+for _ in range(100):
+    if kit.phase("s60") == "not_ready":
+        break
+    time.sleep(0.02)
+check("a tab that never gets ready is 'not_ready'", kit.phase("s60") == "not_ready")
+api._agent_status_snapshot = lambda sid: ({"state": "decision"}, 0)
+api._worker_ctx = lambda sid, s: {}
+connect_tabs.agent_status = type("AS", (), {"resolve_transcript": staticmethod(lambda w: "/x"),
+                                           "_read_tail_events": staticmethod(lambda p, tail_bytes=0, max_records=0: (None, [{"kind": "tool_call", "tool": "t"}], None))})()
+rd = kit.read(sid)
+check("read gives the tab's state and its transcript events", rd == {"alive": True, "state": "decision", "events": [{"kind": "tool_call", "tool": "t"}]}, str(rd))
+check("read of a tab that is gone says so", kit.read("s999") == {"alive": False, "state": "", "events": []})
+closed = []
+api.close_session = lambda sid, reason="": closed.append((sid, reason))
+CONFIG_CHANGES.clear()
+kit.close(sid)
+cfg = {"bridge_disabled_sessions": [sid, "s1"]}
+CONFIG_CHANGES[-1](cfg)
+check("close closes the tab and forgets its 'no Telegram' entry in the config", closed == [(sid, "connect-test")] and cfg["bridge_disabled_sessions"] == ["s1"] and kit.phase(sid) == "closed", str((closed, cfg)))
+check("the ctx carries what an adapter may use", c1.service == "demo" and c1.route == "local" and "ANTHROPIC_API_KEY" not in c1.env and callable(c1.open_path))
+from connectors.adapter import claude_login  # noqa: E402
+check("claude_login reads only the plan label in the config", claude_login({"accounts": {"global": {"claude": "p1"}, "profiles": {"claude": [{"id": "p1", "plan": "max", "email": "a@b.c"}]}}}) == {"state": "claude_ai", "plan": "Max"}
+      and claude_login({"accounts": {"global": {"claude": "p1"}, "profiles": {"claude": [{"id": "p1"}]}}}) == {"state": "unknown"} and claude_login({}) == {"state": "unknown"})
 
 # ── what the page needs to find ────────────────────────────────────────────
 src = (HERE / "api_connect.py").read_text(encoding="utf-8")

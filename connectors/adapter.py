@@ -70,3 +70,23 @@ class Adapter:
         """The service's own clean-up on disconnect (the core already removes the CLI entries and the
         secrets it stored). Return {"state": "done"}."""
         return {"state": "done"}
+
+
+_PLAN_NAMES = {"free": "Free", "pro": "Pro", "max": "Max", "team": "Team", "enterprise": "Enterprise"}
+
+
+def claude_login(cfg: dict) -> dict:
+    """How the Claude a new tab would use is signed in, from what ShellBot already keeps in its own config:
+    {"state": "claude_ai", "plan": "Max"} when the account has a subscription plan on record (a claude.ai
+    login, which is what the Claude-account connector needs), else {"state": "unknown"}. It reads the plan
+    label only, never a login file or a token, and does not ask the account manager (that reads the key
+    store). An account with no plan could be a Console (API) one, so it is not claimed. For a route of kind
+    `claude_connector`; not tied to any service."""
+    accounts = (cfg or {}).get("accounts") or {}
+    ref = ((accounts.get("global") or {}).get("claude"))
+    profiles = ((accounts.get("profiles") or {}).get("claude")) or []
+    item = next((p for p in profiles if isinstance(p, dict) and ref and p.get("id") == ref), None)
+    plan = str((item or {}).get("plan") or "").strip()
+    if item and plan:
+        return {"state": "claude_ai", "plan": _PLAN_NAMES.get(plan.lower(), plan.capitalize())}
+    return {"state": "unknown"}
