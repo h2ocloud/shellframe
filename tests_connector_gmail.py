@@ -65,18 +65,19 @@ class World:
     """The tabs of a stand-in app: what was opened, what was typed into them, what was closed, what a tab shows."""
 
     def __init__(self, win=False):
-        self.opened, self.sent, self.closed, self.alive = [], [], [], set()
+        self.opened, self.sent, self.closed, self.alive, self.phase = [], [], [], set(), {}
         self.snap = {"alive": True, "state": "", "events": []}
         self.ready, self.defer, self.fail_open, self.win = True, False, False, win
         self.folder = "/fake/config/connect-test"
 
 
 class FakeTabKit:
-    """connect_tabs.TabKit (open / folder / command / ask / phase / read / close). Like the real one, each
-    tab's phase lives in the instance, and the app makes a new TabKit for every Ctx."""
+    """connect_tabs.TabKit (open / folder / command / ask / phase / read / close). The app has one for the
+    whole app, so each tab's phase lives in the world, not in the instance."""
 
     def __init__(self, world):
-        self.w, self._phase = world, {}
+        self.w = world
+        self._phase = world.phase
 
     def folder(self):
         return self.w.folder
@@ -586,11 +587,11 @@ nt_ctx = FakeCtx(*new_pc("nt"))
 nt_ctx.world.fail_open = True
 check("a tab that cannot be opened -> start_failed, not an exception", gmail.ADAPTER.test(nt_ctx, "connector")["code"] == "start_failed")
 ctx, r0 = started("connector")
-ctx2 = FakeCtx(*new_pc("again"))
+ctx2 = FakeCtx(*new_pc("again"), world=ctx.world)         # the same app: one world of tabs
 gmail.ADAPTER.test(ctx2, "local")
-check("a new test closes the test tab left from before (through the kit that opened it)", ctx.closed == ["s1"] and ctx2.closed == [], (ctx.closed, ctx2.closed))
+check("a new test closes the test tab left from before", ctx2.closed == ["s1"], ctx2.closed)
 gmail.ADAPTER.disconnect(ctx2, "local")
-check("disconnect closes a test tab that is still open", ctx2.closed == ["s1"], ctx2.closed)
+check("disconnect closes a test tab that is still open", ctx2.closed == ["s1", "s2"], ctx2.closed)
 check("disconnect answers done and leaves Google's side alone (no program run)", gmail.ADAPTER.disconnect(ctx2, "local") == {"state": "done"} and ctx2.runs == [])
 
 phase_ctx = FakeCtx(*new_pc("wr"))
@@ -639,7 +640,7 @@ class Rig(_WorldView):
         c.run = lambda argv, timeout=40, env=None: Result(0, "v22.17.1") if list(argv) == [NODE, "--version"] else Result(1, "")
         c.open_path = self.paths.append
         c.open_tab = FakeTabKit(self.world).open
-        c.tabs = FakeTabKit(self.world)                    # a new kit for every Ctx, as the app makes
+        c.tabs = FakeTabKit(self.world)
         return c
 
     def step(self, op, **args):

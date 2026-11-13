@@ -27,7 +27,7 @@ import threading
 import uuid
 
 import sf_lang
-from connectors.adapter import Adapter
+from connectors.adapter import Adapter, claude_login
 
 ID = "gmail"
 
@@ -86,26 +86,6 @@ def shown_path(path: str, home: str = "") -> str:
     return norm(p)
 
 
-# ── how Claude Code is signed in, from what ShellBot already keeps ────────────
-_PLAN_NAMES = {"free": "Free", "pro": "Pro", "max": "Max", "team": "Team", "enterprise": "Enterprise"}
-
-
-def claude_login(cfg: dict) -> dict:
-    """{"state": "claude_ai", "plan": "Max"} when the account a new Claude tab would use has a subscription
-    plan on record, else {"state": "unknown"}. Reads only the account labels ShellBot keeps in its own
-    config (the plan: never a token, not the e-mail either); it opens no login file. A plan on record
-    means a claude.ai subscription login; an account with no plan could be a Console (API) one, so it is
-    not claimed."""
-    accounts = (cfg or {}).get("accounts") or {}
-    ref = ((accounts.get("global") or {}).get("claude"))
-    profiles = ((accounts.get("profiles") or {}).get("claude")) or []
-    item = next((p for p in profiles if isinstance(p, dict) and ref and p.get("id") == ref), None)
-    plan = str((item or {}).get("plan") or "").strip()
-    if item and plan:
-        return {"state": "claude_ai", "plan": _PLAN_NAMES.get(plan.lower(), plan.capitalize())}
-    return {"state": "unknown"}
-
-
 # ── checks and actions: fn(ctx, args) -> {"state": <code>, …} ────────────────
 def _readonly(args: dict) -> bool:
     """The person's "Read mail only" choice (default on). It arrives as args["options"] or flat in args."""
@@ -114,6 +94,7 @@ def _readonly(args: dict) -> bool:
 
 
 def check_claude_account(ctx, args: dict) -> dict:
+    """How Claude is signed in, from the account label ShellBot keeps (the core's claude_login): the plan only."""
     return claude_login(ctx.cfg)
 
 
@@ -169,9 +150,8 @@ def action_auth_tab(ctx, args: dict) -> dict:
 # ── the connection test ───────────────────────────────────────────────────────
 # A temporary Claude tab is asked to look up the newest e-mail's sender and subject. The adapter judges
 # from two things it can already see and nothing else: which tools the tab called (the names) and the last
-# line it wrote. The tab is `ctx.tabs` (the core's TabKit): open / command / ask / phase / read / close.
-# The core makes a new TabKit for every call and the kit keeps each tab's phase in itself, so the kit that
-# opened the tab is kept with the test and used for every later poll.
+# line it wrote. The tab is `ctx.tabs` (the core's TabKit, one for the whole app): open / command / ask /
+# phase / read / close.
 TEST_MARK = "GMAIL-TEST"
 PREFIX = {"connector": "mcp__claude_ai_Gmail__", "local": f"mcp__{SERVER}__"}      # a tool's name starts with this
 AUTH_TOOL = "mcp__claude_ai_Gmail__authenticate"       # the connector is there but has not been authorized
@@ -250,7 +230,7 @@ _RUNS = {}                       # handle -> one test (a temporary tab). One pro
 _LOCK = threading.Lock()
 
 
-def _forget_tabs():
+def _forget_tabs(ctx):
     """Close every test tab of ours that is still open (a test left from before, a cancel, a disconnect)."""
     with _LOCK:
         left = [r for r in _RUNS.values() if not r["closed"]]
@@ -260,7 +240,7 @@ def _forget_tabs():
             _RUNS.pop(h, None)
     for r in left:
         try:
-            r["kit"].close(r["sid"])
+            ctx.tabs.close(r["sid"])
         except Exception:        # a tab that is already gone is what we wanted
             pass
 
@@ -286,7 +266,7 @@ class GmailAdapter(Adapter):
     def _start(self, ctx, route: str) -> dict:
         if route not in PREFIX:
             return _fail("start_failed")
-        _forget_tabs()
+        _forget_tabs(ctx)
         kit = ctx.tabs
         try:
             sid = kit.open(kit.command("claude"), sf_lang.pick("Gmail test", "Gmail 測試"))
@@ -294,7 +274,7 @@ class GmailAdapter(Adapter):
         except Exception:
             return _fail("start_failed", route)
         handle = uuid.uuid4().hex[:10]
-        rec = {"handle": handle, "route": route, "sid": sid, "kit": kit, "closed": False,
+        rec = {"handle": handle, "route": route, "sid": sid, "closed": False,
                "sent_at": 0.0, "paused": 0.0, "last_poll": 0.0}
         with _LOCK:
             _RUNS[handle] = rec
@@ -304,9 +284,9 @@ class GmailAdapter(Adapter):
         rec = _RUNS.get(handle)
         if not rec or rec["closed"]:
             return _fail("closed", route)
-        sid, kit = rec["sid"], rec["kit"]
+        sid, kit = rec["sid"], ctx.tabs
         if ctx.cancel:                                   # stopped on purpose: the core puts the service back as it was
-            _forget_tabs()
+            _forget_tabs(ctx)
             return _fail("test_cancelled", route, sid)
         phase = kit.phase(sid)
         if phase == "closed":
@@ -350,7 +330,7 @@ class GmailAdapter(Adapter):
         """The core removes the CLI entries it added. This closes a test tab left open. The permission on
         Google's side, the profile folder and its files are the person's and stay where they are (the
         FAQ says how to take the permission back)."""
-        _forget_tabs()
+        _forget_tabs(ctx)
         return {"state": "done"}
 
 
