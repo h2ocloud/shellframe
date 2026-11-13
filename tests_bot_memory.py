@@ -371,14 +371,14 @@ check("…and the tab is not asked again until there is new work", why(api, now=
 print("9. the thread")
 api = reset()
 calls = []
-real_tick = bm.tick
 bm.tick = lambda api_, cfg_, now=None: calls.append(1) or []
 bm.TICK_SEC = 0.05
 api._bot_memory_start()
 api._bot_memory_start()
 check("it looks again and again, one thread", wait_for(lambda: len(calls) >= 3) and sum(
     1 for t in threading.enumerate() if t.name == "bot-memory") == 1)
-bm.tick = real_tick
+bm.tick = lambda api_, cfg_, now=None: []      # the thread goes on looking, at nothing: no real tick is left running against a fake tab
+bm.TICK_SEC = 3600
 
 print("10. what the chat view and the push read")
 js = (HERE / "web" / "chat.js").read_text(encoding="utf-8")
