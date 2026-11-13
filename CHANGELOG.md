@@ -33,6 +33,19 @@
 
 ### Added
 
+- **`sfctl relaunch <tab> [--if-idle]`, and "Restart (keep conversation)" on a face's right-click.** A
+  running AI CLI keeps its old version after an update until its process restarts. ShellBot could
+  already restart one and resume its conversation (the sidebar's ⟳); now sfctl can too, and with
+  `--if-idle` it refuses a tab that is not free right before the restart (a turn, a question, a draft
+  in its input box, a Telegram turn), so many tabs can be moved to a new version without cutting a
+  conversation. The answer names the conversation it resumed. Covered by tests_relaunch_if_idle.py.
+
+  **`sfctl relaunch <分頁> [--if-idle]`，以及右鍵頭像的「重新啟動（保留對話）」。** AI CLI 更新後，正在跑
+  的行程要重開才會換成新版。ShellBot 本來就能重開並接回對話（側欄的 ⟳），現在 sfctl 也可以；加上
+  `--if-idle` 時，會在重開前一刻確認分頁是空的（沒在跑、沒有題目在等、輸入框沒有草稿、沒有 Telegram 那一輪），
+  不空就拒絕，所以可以把很多分頁換到新版而不打斷任何對話。回覆裡會寫接回的是哪一段對話。由
+  tests_relaunch_if_idle.py 守著。
+
 - **A phone can rename an asleep bot.** `POST /link/bots/rename {"role", "name"}` renames a bot by its
   name, the same rename as the desktop editor's and `sfctl bots-rename`, so an asleep bot (which has no
   tab) can be renamed too. `/link/rename`, which takes a tab, is unchanged, so older apps work as before.

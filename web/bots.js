@@ -832,7 +832,9 @@
     }
     pop.innerHTML = `<h4 class="sfb-pop-head"><span>${esc(s.label)}</span>` +
       (role && !remote ? `<button class="sfb-link" data-act="edit-top">${t('Edit bot…', '編輯 Bot…')}</button>` : '') +
-      (remote ? '' : `<button class="sfb-link" data-act="rename">${t('Rename', '改名')}</button>`) + `</h4>` +
+      (remote ? '' : `<button class="sfb-link" data-act="rename">${t('Rename', '改名')}</button>`) +
+      (remote || kindOf(sid) === 'terminal' ? '' : `<button class="sfb-link" data-act="relaunch" title="${esc(t(
+        'Restart its CLI on the updated version and resume the same conversation', '用更新後的 CLI 重開，接回同一段對話'))}">${t('Restart (keep conversation)', '重新啟動（保留對話）')}</button>`) + `</h4>` +
       (remote ? `<p class="sfb-note" style="margin:0 0 8px">${t("Another machine's tab: its face is set over there", '另一台的分頁：頭像由那台決定')}</p>` : '') +
       `<div class="sfb-grid">${shapes}</div><div class="sfb-grid" style="margin-top:8px">${colors}</div>` +
       `<div class="sfb-preview">${preview}</div>` +
@@ -851,6 +853,7 @@
       if (act === 'make') { closePop(); openEditor(null, { fromSid: sid }); return; }
       if (act === 'edit' || act === 'edit-top') { closePop(); openEditor(role); return; }
       if (act === 'rename') { closePop(); try { host().renameSession(sid); } catch (_) {} return; }
+      if (act === 'relaunch') { closePop(); try { host().confirmRelaunchTab(sid); } catch (_) {} return; }
       if (act === 'folder') { api().bots_open_folder(role); return; }
       if (act === 'primary') { closePop(); setPrimary(role); return; }
       if (act === 'unbot') {

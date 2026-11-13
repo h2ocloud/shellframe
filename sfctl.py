@@ -973,6 +973,12 @@ def main():
     p_rename.add_argument("sid", help="Session id, or a bot's or tab's name")
     p_rename.add_argument("name", help="New label")
 
+    p_rl = sub.add_parser("relaunch", help="Restart a tab's CLI on its updated version, resuming the same conversation")
+    p_rl.add_argument("sid", help="Session id, or a bot's or tab's name")
+    p_rl.add_argument("--if-idle", action="store_true",
+                      help="Only when it is free: no turn running, no question waiting, no draft in its input box, "
+                           "no Telegram turn (checked right before the restart)")
+
     p_close = sub.add_parser("close", help="Close a session")
     p_close.add_argument("sid", help="Session id, or a bot's or tab's name")
     p_close.add_argument("--reason", default="sfctl",
@@ -1157,6 +1163,9 @@ def main():
         _print_result(_rpc("peek", {"sid": args.sid, "lines": args.lines, "raw": bool(args.raw)}))
     elif args.cmd == "rename":
         _print_result(_rpc("rename", {"sid": args.sid, "name": args.name}))
+    elif args.cmd == "relaunch":
+        _print_result(_rpc("relaunch", {"sid": args.sid, "if_idle": bool(args.if_idle)}, timeout=30))
+
     elif args.cmd == "close":
         _print_result(_rpc("close_session", {
             "sid": args.sid,

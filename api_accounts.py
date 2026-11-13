@@ -9,6 +9,7 @@ provider 安裝與就緒檢查、用量探針。
 import concurrent.futures
 import json
 import os
+import re
 import subprocess
 import threading
 
@@ -312,12 +313,14 @@ class AccountsApiMixin:
             except Exception:
                 provider = None
             self._restart_session_for_account(sid, dict(getattr(old, "account_refs", {})))
-            label = getattr(self.sessions.get(sid), "_custom_label", None) or sid
+            new = self.sessions.get(sid)
+            label = getattr(new, "_custom_label", None) or sid
+            m = re.search(r"--resume[ =]([0-9A-Za-z-]{8,})", getattr(new, "cmd", "") or "")
             msg = (f"已重啟「{label}」的 CLI 並套用更新"
                    + ("（已 --resume 接回對話）" if provider in ("claude", "codex")
                       else ""))
             return json.dumps({"success": True, "sid": sid, "provider": provider or "",
-                               "message": msg}, ensure_ascii=False)
+                               "resumed": m.group(1) if m else "", "message": msg}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
 

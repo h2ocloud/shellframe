@@ -260,7 +260,7 @@ class RemoteApiMixin:
                     main._dlog("api", f"api_server shutdown failed: {e}")
         return self.get_api_server_info()
 
-    _NAMED_TAB_CMDS = ("send", "peek", "close_session", "state", "rename", "bots_keep")
+    _NAMED_TAB_CMDS = ("send", "peek", "close_session", "state", "rename", "bots_keep", "relaunch")
 
     def _execute_sfctl(self, cmd: str, args: dict = None) -> dict:
         """Execute a sfctl command and return result dict."""
@@ -310,6 +310,13 @@ class RemoteApiMixin:
                 sid = args.get("sid", "")
                 if not sid:
                     return {"success": False, "message": "No sid provided"}
+                # --if-idle (a rolling update of many tabs): checked here, right before the process
+                # goes, so a turn, a question, a draft or a Telegram turn that began since is not cut.
+                why = tab_delivery.busy_reason(self, sid) if args.get("if_idle") and sid in self.sessions else ""
+                if why:
+                    return {"success": False, "code": "busy", "reason": why, "message": sf_lang.pick(
+                        f"{sid} is not free ({tab_delivery._reason_text(why, 'en')}); not relaunched",
+                        f"{sid} 現在不空（{tab_delivery._reason_text(why, 'zh')}），沒有重啟")}
                 raw = self.relaunch_session(sid)
                 res = json.loads(raw) if isinstance(raw, str) else raw
                 return {"success": res.get("success", False),

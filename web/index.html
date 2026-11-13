@@ -8615,7 +8615,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
   window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
-    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal, micGuide };
+    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal, micGuide, confirmRelaunchTab };
 
   // Safety net for non-UI session changes. pywebview evaluate_js nudges can be
   // missed while the WebView is busy or while Python creates a session from a

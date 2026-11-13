@@ -136,6 +136,7 @@ sfctl send s12 "研究這個主題"         # inject a prompt and press Enter
 sfctl new claude --label research-1   # open a tab
 sfctl rename s12 research-done
 sfctl close s12
+sfctl relaunch s12 --if-idle               # restart its CLI on the updated version, same conversation; only when free
 sfctl delegate 研究 "把這份資料整理成摘要"   # route work to a role, opening its tab if needed
 sfctl route "把這份資料整理成摘要"            # suggestion only; does not send or spend
 sfctl a2a-send Coding "看一下這段"            # needs experimental_a2a
@@ -424,7 +425,7 @@ configure there.
 | A bot's own skills (`bots/<bot>/skills/`), listed before the shared ones; a bot that stays open is asked to save its memory after real conversation and 45 idle minutes (`bot_memory_autosave`, `bot_memory_idle_min`) | 0.43.0 |
 | Connections: `sfctl connect list` / `status` / `start` / `test` / `disconnect <service>` (§4.8); a bot's `[[SF:RED:connect:<service>]]` opens the connection card; `/link/bots` `connections` and `decision.connect` | 0.44.0 |
 | A tab's model can be switched from its chip (ShellBot types the CLI's own commands; Claude Code: this tab only); a send waits while that runs; `/link/bots` tabs carry `model_effort` and `switch` | 0.44.1 |
-| An asleep bot can be saved and switched now (woken at once); a phone renames a bot, asleep too, with `POST /link/bots/rename` | 0.44.2 |
+| An asleep bot can be saved and switched now (woken at once); a phone renames a bot, asleep too, with `POST /link/bots/rename`; `sfctl relaunch <tab> [--if-idle]` restarts a tab's CLI on its updated version, resuming the same conversation | 0.44.2 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
