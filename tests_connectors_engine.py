@@ -328,6 +328,16 @@ out = r.engine.refresh_all()
 check("the hourly hook says which services need attention", out["checked"] == ["demo"] and [a["id"] for a in out["attention"]] == ["demo"], str(out))
 check("the hourly hook starts no thread of its own", threading.active_count() <= 2)
 
+# a description that changed under a saved record
+r = Rig()
+r.engine.start("demo", route="local")
+r.engine.store.update("demo", lambda x: x.update(step="a-step-that-no-longer-exists"))
+res = r.engine.start("demo")
+check("a saved step that no longer exists starts the route again instead of sticking", res["success"] and res["status"]["step"]["id"] == "add", str(res["status"]))
+r.engine.store.update("demo", lambda x: x.update(route="a-route-that-no-longer-exists"))
+res = r.engine.start("demo")
+check("a saved route that no longer exists goes to the default", res["success"] and res["status"]["route"] == "connector", str(res["status"]))
+
 # ── the state file ─────────────────────────────────────────────────────────
 r = Rig()
 r.engine.start("demo", route="key")

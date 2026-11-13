@@ -219,13 +219,26 @@ class ConnectApiMixin:
 
     def _connect_hourly_run(self):
         try:
-            out = self._connect().refresh_all()
-            if out["attention"]:
-                _dlog("connect", "needs attention: " + ", ".join(a["id"] for a in out["attention"]))
+            self._connect_tell(self._connect().refresh_all())
         except Exception:
             _swallow("connect:hourly")
         finally:
             self._connect_busy = False
+
+    def _connect_tell(self, out: dict) -> None:
+        """Telegram hears once about each service that needs attention (and again only if it comes back to
+        needing it after being fine). Quiet hours and an off bridge leave it for the next hour."""
+        import bridge_home
+        eng, told = self._connect(), self.__dict__.setdefault("_connect_told", set())
+        now = {(a["id"], a["state"]) for a in out["attention"]}
+        told.intersection_update(now)                       # one that is fine again may be told about again
+        for sid, state in sorted(now - told):
+            st = eng.status(sid)
+            text = "🔌 " + health.words(st) + "\n" + sf_lang.pick("Open ShellBot: Settings → Connections.", "請到 ShellBot 的「設定 → 連接」。")
+            if bridge_home.tell_all(self, text):
+                told.add((sid, state))
+        if now:
+            _dlog("connect", "needs attention: " + ", ".join(sorted({i for i, _ in now})))
 
     def connect_refresh_hourly(self) -> str:
         """The same check on demand (what the monitor does once an hour): {"success", "checked", "attention"}."""

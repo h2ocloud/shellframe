@@ -292,9 +292,13 @@ class Engine:
         try:
             rec = self.store.get(service)
             r = self.registry.route(service, route or rec.get("route"))
+            if not r and not route:                          # the way it was left on is gone (the description changed): the default
+                r = self.registry.route(service)
             if not r:
                 return self._fail(service, "unknown_route")
             switching = bool(rec.get("route")) and rec["route"] != r["id"]
+            if not switching and rec.get("route") and rec.get("step") not in [s["id"] for s in r["steps"]]:
+                switching = True                              # the steps changed under a saved record: begin again on this route
             if rec.get("state") == "connected" and not reconnect and not switching:
                 return self._reply(service)
             if switching and rec.get("route"):

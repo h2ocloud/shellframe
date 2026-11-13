@@ -244,6 +244,35 @@ check("when due it refreshes on a thread of its own and the next one is an hour 
 r = j(api.connect_refresh_hourly())
 check("the same check on demand", r["success"] and r["attention"] == [{"id": "demo"}] and calls[-1] is True)
 
+# Telegram hears once about a service that needs attention
+api = Api()
+told = []
+bridge_home.tell_all = lambda a, text: told.append(text) or 1
+api.connect_start("demo", json.dumps({"route": "connector"}))
+api.connect_step("demo", "done")
+api.connect_test("demo")
+api.clock[0] += 5000
+api.adapter.health_answer = {"state": "expired"}
+api._connect_hourly_run()
+check("an expired connection is told to Telegram once, in words, with where to go", len(told) == 1 and "Demo" in told[0] and "Settings → Connections" in told[0], str(told))
+api.clock[0] += 5000
+api._connect_hourly_run()
+check("…and not again the next hour", len(told) == 1)
+bridge_home.tell_all = lambda a, text: 0                     # Telegram off, or quiet hours: nothing sent, so not marked as told
+api2 = Api()
+api2.connect_start("demo", json.dumps({"route": "connector"}))
+api2.connect_step("demo", "done")
+api2.connect_test("demo")
+api2.clock[0] += 5000
+api2.adapter.health_answer = {"state": "revoked"}
+api2._connect_hourly_run()
+check("when nothing could be sent it is tried again later", ("demo", "needs_reconnect") not in api2.__dict__.get("_connect_told", set()))
+bridge_home.tell_all = lambda a, text: told.append(text) or 1
+api2.clock[0] += 5000
+api2._connect_hourly_run()
+check("…and then told", len(told) == 2)
+check("the real function sends nothing with no bridge", __import__("importlib").reload(bridge_home).tell_all(type("A", (), {})(), "x") == 0)
+
 # ── what the page needs to find ────────────────────────────────────────────
 src = (HERE / "api_connect.py").read_text(encoding="utf-8")
 names = ["connect_list", "connect_describe", "connect_status", "connect_start", "connect_step", "connect_test", "connect_disconnect", "connect_signal"]

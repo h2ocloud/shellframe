@@ -69,7 +69,9 @@ left the key store (`secret_missing`); both need reconnecting.
 `engine.refresh(service)` keeps its own ttl (`health.ttl_s`, default 300 s). Nothing in `connectors/` starts a
 thread: the Settings page asks with `connect_status(refresh)` while it is open, and the status monitor calls
 `Api._connect_tick(now)` on every pass, which starts a one-shot thread once an hour (the first one two minutes after
-the app starts). `sfctl connect status <service> --refresh` runs it on demand.
+the app starts). `sfctl connect status <service> --refresh` runs it on demand. A service that comes out of that check needing
+attention is told to Telegram once, in one line with where to go (`bridge_home.tell_all`; nothing in quiet hours or with the bridge
+off, tried again the next hour), and again only if it needs attention again after having been fine.
 
 Reconnecting (`start(service, reconnect=True)`, or `start` on a `needs_reconnect` service) keeps what is still true:
 a done step stays done unless it is marked `redo_on_reconnect`, its check no longer passes, or it is the step the

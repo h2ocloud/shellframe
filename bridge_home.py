@@ -605,6 +605,21 @@ def push_decision(bridge, slot, reason: str = ""):
             pass
 
 
+def tell_all(api, text: str) -> int:
+    """A plain notice to every Telegram chat (a connection that has to be connected again): nothing when
+    Telegram is off or inside the quiet hours (the caller tries again later). How many chats got it."""
+    bridge = getattr(api, "bridge", None)
+    if not bridge or not getattr(bridge, "active", False) or quiet_now(api):
+        return 0
+    sent = 0
+    for chat_id in _chats(bridge):
+        try:
+            sent += 1 if (_tg(bridge, "sendMessage", {"chat_id": chat_id, "text": text[:3900]}) or {}).get("ok", True) else 0
+        except Exception:
+            pass
+    return sent
+
+
 def tg_send(api, text: str, from_sid: str) -> dict:
     """`sfctl tg-send`: the primary bot tells the phone (milestones, results)."""
     bridge = getattr(api, "bridge", None)
