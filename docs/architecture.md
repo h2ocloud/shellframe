@@ -99,6 +99,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `web/connect.js` + `connect.css` | Settings → Connect, the connection wizard card, the sidebar's "needs reconnecting" card and the chat view's `[[SF:RED:connect:<service>]]` card (`SFConnect`). It draws what `connect_list` / `connect_describe` / `connect_status` and the `view` of `connect_start` / `connect_step` / `connect_test` hand it and sends the clicks back; it holds no fact about a service and names none. `tests_connect_ui.py` runs it against a stand-in Python side |
 | | `web/tabmodel.js` + `tabmodel.css` | The model chip (`SFTabModel.chipHtml`, drawn by `chat.js` in its headers, and in the tab bar in the native CLI style) and its pop-up: the table's models, thinking levels, the questions (a draft, a box that cannot be read, keep it for the bot) |
 | | `web/layout.js` | How wide the sidebar may show for the window it is in (`--sidebar-cap`); the saved width is never touched. `web/index.html` is size-budgeted, so new page code goes in a file of its own |
+| | `web/quiet.js` | When the page is still (the window hidden, in the background, or untouched for a minute): `body.sf-still` stops every CSS animation, `SFQuiet.slow(fn, ms)` thins a poller to once every `ms`, `SFQuiet.onWake` catches up at once. A face moves only while its tab works, asks or is stuck, and only as a whole (`bots.css`): one animation on a part inside an SVG made WebKit repaint the page every frame. `tests_idle_power.py` |
 
 ## 3. Data flows
 

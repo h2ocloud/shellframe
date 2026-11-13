@@ -20,16 +20,43 @@ import tab_delivery
 from api_host import main
 
 
+_AUTO_STATUS = [0.0, True]     # [read at, value]: the monitor asks every 0.6 s; config.json is read at most every 5 s
+
+
 class StatusApiMixin:
     @staticmethod
     def _auto_status_enabled() -> bool:
         # Feature flag — default ON; set settings.auto_status_detect=false to
         # disable and fall back to the browser-side heuristic + [[SF:]] markers.
+        now = time.time()
+        if now - _AUTO_STATUS[0] < 5.0:
+            return _AUTO_STATUS[1]
         try:
             settings = main.load_config().get("settings", {}) or {}
-            return settings.get("auto_status_detect", True) is not False
+            val = settings.get("auto_status_detect", True) is not False
         except Exception:
-            return True
+            val = True
+        _AUTO_STATUS[:] = [now, val]
+        return val
+
+    # A tab's verdict stands while it prints nothing new. One that is working, deciding or stuck is
+    # worked out again at least every FORCE_REFRESH: its wall-clock steps (the quiet spell before
+    # done, a pending tool's age) need it. One that is idle or done has nothing to wait for, so every
+    # SETTLED_REFRESH; new output and hook events still land on the next pass. Measured: a fleet of
+    # quiet tabs cost a tmux fork and two 256 KB transcript reads per tab every 15 s (the fork is
+    # gone: the screen is reused). SETTLED_REFRESH stays under 30 s: the Telegram heartbeat line and
+    # its hook check drop a StatusTracker reading older than that (HEARTBEAT_STATUS_MAX_AGE_S).
+    STATUS_FORCE_REFRESH = 15.0
+    STATUS_SETTLED_REFRESH = 25.0
+    _SETTLED_STATES = ("idle", "done", "", None)       # not "unknown": a read error is tried again sooner
+
+    @classmethod
+    def _status_reusable(cls, c, out_ts: float, now: float) -> bool:
+        """The cached verdict `c` still stands: nothing printed since, and not due yet."""
+        if not c or c["out_ts"] != out_ts:
+            return False
+        settled = (c.get("result") or {}).get("state") in cls._SETTLED_STATES
+        return now - c["computed_at"] < (cls.STATUS_SETTLED_REFRESH if settled else cls.STATUS_FORCE_REFRESH)
 
     @staticmethod
     def _hook_state_for(event: str, notification_type: str = "", message: str = "") -> str | None:
@@ -353,8 +380,8 @@ class StatusApiMixin:
             # idle tabs this removes ~17 tmux capture-pane forks plus ~17
             # 256KB transcript tail-reads PER SECOND from the steady state.
             # Wall-clock-dependent transitions (pending-tool age guard,
-            # debounce) still land within FORCE_REFRESH.
-            FORCE_REFRESH = 15.0   # full recompute at least this often per tab
+            # debounce) still land within STATUS_FORCE_REFRESH (see _status_reusable;
+            # an idle or done tab: STATUS_SETTLED_REFRESH).
             PUSH_HEARTBEAT = 5.0   # elapsed-only changes push at most this often
             # FORCE_REFRESH 只在「有輸出過」的分頁上重算，救不了中斷後就完全
             # 中斷對話時 Claude Code 不一定發 Stop，hook 會一直停在 working
@@ -363,7 +390,7 @@ class StatusApiMixin:
             # 分頁（長思考、長指令），清完到下一個 hook 之前 `sfctl state` 都說 done
             # （2026-11-09 實測 13:00:45 清掉、13:01 連問四次都是 done）。現在只交還
             # 「真的安靜」的分頁：hook 停在 working，而 hook 與畫面都 HOOK_QUIET_S 沒動靜。
-            cache = self._status_cache  # sid -> {out_ts, computed_at, since_ts, result}
+            cache = self._status_cache  # sid -> {out_ts, computed_at, since_ts, result, screen}
             last_push = {"key": None, "at": 0.0}
             while True:
                 try:
@@ -389,8 +416,7 @@ class StatusApiMixin:
                             c = cache.get(sid)
                             # ShellBot is driving the tab's own menu (a model switch, tab_model): its last state
                             # stands, so the menu is not read as a question for the person
-                            if c and (sid in tab_delivery.HOLD or (c["out_ts"] == out_ts
-                                                                   and now - c["computed_at"] < FORCE_REFRESH)):
+                            if c and (sid in tab_delivery.HOLD or self._status_reusable(c, out_ts, now)):
                                 result = dict(c["result"])
                                 result["elapsed"] = int(now - c["since_ts"])
                             else:
@@ -401,7 +427,10 @@ class StatusApiMixin:
                                 # away stays in it and false-triggers "decision".
                                 screen_tail = ""
                                 tn = getattr(s, "_tmux_name", None)
-                                if tn:
+                                if c and c["out_ts"] == out_ts and c.get("screen"):
+                                    # nothing printed since the last read: the screen is that one (no fork)
+                                    screen_tail = c["screen"]
+                                elif tn:
                                     try:
                                         r = subprocess.run(
                                             ["tmux", "capture-pane", "-t", tn, "-p"],
@@ -430,6 +459,7 @@ class StatusApiMixin:
                                     "computed_at": now,
                                     "since_ts": now - result["elapsed"],
                                     "result": result,
+                                    "screen": screen_tail,
                                 }
                             # Hook events (Claude Code hooks → sf_agent_hook.py)
                             # are exact turn/permission transitions — while

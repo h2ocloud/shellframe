@@ -142,13 +142,17 @@ A CLI that is not in the table at all is a new provider: see [`adding-a-provider
 - **Expression = state, by CSS only.** The face lives inside the existing
   `.busy-dot`; index.html's 400 ms loop keeps rewriting that element's class
   (`sig-working`, `sig-decision`, `sig-stuck`, `sig-done`, `on attention`, empty),
-  and `bots.css` maps each class to an expression: idle blinks and looks around,
-  working bobs and scans, decision raises a `?`, stuck sweats, done smiles.
+  and `bots.css` maps each class to an expression: idle keeps still with its eyes open,
+  working bobs with its eyes down, decision tilts under a `?`, stuck shakes with a drop of
+  sweat, done smiles. Only the whole face moves (the animation is on the `<svg>`, which the
+  compositor moves without repainting): an animation on a part inside the SVG made WebKit redo
+  style, layout and paint of the page every frame, ~10% of a core for one face (`web/quiet.js`).
   `is-asleep` and `is-writing` sit on the SVG itself, which the loop never touches.
 - The sidebar rebuilds its rows every few seconds. Each face gets a negative
   `animation-delay` from the wall clock, so a rebuilt face continues the same
   loop instead of restarting (tested: the phase tracks the clock within 250 ms; a restart would jump by a whole cycle).
-- `prefers-reduced-motion` stops all motion; animations pause while the window is hidden.
+- `prefers-reduced-motion` stops all motion; every face rests while the window is hidden, in the
+  background or untouched for a minute (`body.sf-still`, `web/quiet.js`; `tests_idle_power.py`).
 
 Interaction: click a face = cycle the light by hand (unchanged). Every
 conversation has its own settings: click the face at the top of the conversation's
