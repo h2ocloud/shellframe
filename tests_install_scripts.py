@@ -133,6 +133,7 @@ with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
         check(f"…announces 正在裝 {name} with the reason", re.search(rf"正在裝 {re.escape(name)}（.+）", out), out)
     check("…tells what to click in the Command Line Tools window and that it waits by itself",
           "請按「安裝」" in out and "裝好後自動繼續" in out, out)
+    check("…prints the Command Line Tools installer it would open", "[dry-run] xcode-select --install" in out, out)
     check("…prints the brew installs it would run", "[dry-run] brew install -q python@3.12" in out
           and "[dry-run] brew install -q tmux" in out, out)
     check("…with no terminal, the AI CLI offer is skipped with a note, not asked",

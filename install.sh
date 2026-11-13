@@ -255,8 +255,9 @@ install_clt_with_dialog() {
       "      請按「安裝」，再按「同意」。下載安裝大約 5 到 15 分鐘，"
   say "      this installer waits and goes on by itself when it is done." \
       "      這裡會一直等，裝好後自動繼續，不用回來按任何鍵。"
-  run xcode-select --install >/dev/null 2>&1 || true
-  [ "$DRY_RUN" = "1" ] && return 0
+  if [ "$DRY_RUN" = "1" ]; then run xcode-select --install; return 0; fi
+  LAST_CMD="xcode-select --install"
+  xcode-select --install >/dev/null 2>&1 || true
   wait_for_clt
 }
 
@@ -473,6 +474,8 @@ linux_dependencies() {
     [ -n "$entry" ] || continue
     pkg="${entry%%|*}"
     if pkg_installed "$pkg"; then continue; fi
+    # A command that is there counts, whatever package brought it (Fedora: curl-minimal).
+    case "$pkg" in curl|git|tmux) if have "$pkg"; then continue; fi ;; esac
     entry="${entry#*|}"
     installing "$pkg" "${entry%%|*}" "${entry#*|}"
     missing="$missing $pkg"
