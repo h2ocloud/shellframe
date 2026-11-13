@@ -81,9 +81,35 @@ CORE = {
                        "next": _t("Press Test to run it again.", "按「測試」再跑一次。")},
     "needs_user": {"text": _t("The test is waiting for you.", "測試在等你操作。"),
                    "next": _t("Do what the test asks, and it goes on by itself.", "照測試要求的做，它會自己繼續。")},
+    "busy": {"text": _t("ShellBot is still working on the last request.", "ShellBot 還在處理上一個要求。"),
+             "next": _t("Wait a moment, then try again.", "等一下再試。")},
     # ShellBot's own file
     "state_write_failed": {"text": _t("ShellBot could not save where you are in these steps.", "ShellBot 存不了你做到哪一步。"),
                            "next": _t("Check that the disk is not full, then try again.", "確認磁碟沒滿，再試一次。")},
+}
+
+# What a core action came to (the engine's own buttons: add to the AI programs, save a key, …), as a result line.
+RESULTS = {
+    "added": ("good", _t("Added to the AI programs.", "已加到 AI 程式裡。")),
+    "replaced": ("good", _t("Added to the AI programs (replacing ShellBot's earlier entry).", "已加到 AI 程式裡（換掉 ShellBot 之前加的那一項）。")),
+    "failed": ("bad", _t("An AI program refused the change.", "有 AI 程式沒有接受這個設定。")),
+    "no_cli": ("warn", _t("No AI program that ShellBot can set up was found on this computer.", "這台電腦上找不到 ShellBot 能設定的 AI 程式。")),
+    "manual": ("warn", _t("Some AI programs have to be set up by hand: see what to enter below.", "有些 AI 程式要自己設定：下面列出要填的內容。")),
+    "removed": ("good", _t("Removed ShellBot's entries.", "已移除 ShellBot 加的項目。")),
+    "present": ("good", _t("It is in the AI programs' settings.", "AI 程式的設定裡有它。")),
+    "absent": ("warn", _t("It is not in the AI programs' settings.", "AI 程式的設定裡沒有它。")),
+    "unknown": ("info", _t("An AI program did not answer in time.", "有 AI 程式沒有及時回答。")),
+    "saved": ("good", _t("The key is saved in the system's key store.", "金鑰已存進系統的金鑰圈。")),
+    "empty": ("bad", _t("Nothing was entered.", "沒有輸入任何東西。")),
+    "unsupported": ("bad", _t("This computer has no safe place for a key.", "這台電腦沒有能安全放金鑰的地方。")),
+    "secret_missing": ("bad", _t("The key is not in the system's key store.", "金鑰不在系統的金鑰圈裡。")),
+}
+
+# Notes the engine adds to a step by itself.
+NOTES = {
+    "secret_in_cli": _t("The key is kept in the system's key store. To run the connection, each AI program is handed it "
+                        "and keeps it in its own settings file; ShellBot never shows it, logs it or saves it in its own files.",
+                        "金鑰存在系統的金鑰圈。為了讓連線能跑，每個 AI 程式會拿到一份，放在它自己的設定檔裡；ShellBot 不會顯示、記錄它，也不存在自己的檔案裡。"),
 }
 
 GENERIC = {"text": _t("Something did not work.", "有地方沒成功。"),

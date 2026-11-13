@@ -8,9 +8,10 @@
   * A test never reaches the real key store: with SHELLFRAME_TESTS set, the default backend is a
     refusing one, and a test passes `MemoryBackend()` (or a fake `security` program) in.
 
-The macOS path writes through `security -i` (commands on stdin), so the value is not in the argument
-list (`ps` shows arguments) and is read back with `find-generic-password -w` (stdout). Written and
-exercised against a fake `security` program only; never run against a real key store by the tests.
+The macOS path writes through `security -i` (commands on stdin) with the value as hex (`-X`), so it is
+neither in the argument list (`ps` shows arguments) nor subject to the command line's quoting; it is read
+back with `find-generic-password -w` (stdout). Exercised against a fake `security` program only, never a
+real key store: the first real use should be looked at once on a Mac with a throwaway name.
 The Windows path is written, not run on Windows yet.
 """
 
@@ -152,7 +153,8 @@ def _service(account: str) -> str:
 
 
 def _quote(v: str) -> str:
-    """A value inside the double quotes `security -i` reads: backslash and quote escaped."""
+    """A plain word for `security -i`'s command line: in double quotes, backslash and quote escaped.
+    Only ShellBot's own service and account names go through here (the secret travels as hex)."""
     return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
@@ -169,7 +171,7 @@ class MacKeychain(Backend):
         return r.stdout.rstrip("\n") if r.returncode == 0 else None
 
     def set(self, account, name, value):
-        line = f"add-generic-password -U -s {_quote(_service(account))} -a {_quote(name)} -w {_quote(value)}\n"
+        line = f"add-generic-password -U -s {_quote(_service(account))} -a {_quote(name)} -X {str(value).encode('utf-8').hex()}\n"
         r = self._run([self.bin, "-i"], line)            # the value goes by stdin, not by argument
         if r.returncode != 0:
             raise OSError("keychain write failed")

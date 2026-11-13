@@ -227,3 +227,18 @@ class Clis:
         return {"cli": cli, "where": SUPPORT[cli]["where"], "note": SUPPORT[cli]["note"], "server": mcp["server"],
                 "command": server_command(mcp, self.win),
                 "env": {k: v for k, v in (mcp.get("env") or {}).items()}, "env_secret_names": secret_names}
+
+
+def find_binary(name: str, env: dict = None):
+    """The path of a program as a tab would find it: on PATH, else in the usual install folders (the app is
+    started from the desktop and may have been handed a short PATH). None when not found."""
+    import shutil
+    import usage_probe
+    found = shutil.which(name, path=(env or {}).get("PATH") or None)
+    if found:
+        return found
+    for d in usage_probe.COMMON_BIN_DIRS:
+        found = shutil.which(name, path=d)
+        if found:
+            return found
+    return None
