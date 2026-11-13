@@ -6,6 +6,115 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.44.4 (2026-11-13)
+
+### Fixes
+
+- **An idle window no longer keeps the laptop from charging.** Reported: with the app idle and ~35 tabs
+  open, the web process used about half a core and its GPU process nearly as much, and the battery would not
+  charge. Every bot face ran three or four endless CSS animations on parts inside its SVG (blinking, glancing,
+  breathing; 244 across the tab bar and the sidebar), and in WebKit a single such animation makes the page redo
+  style, layout and paint every frame, which the GPU process and WindowServer then draw. The page also called
+  Python about 20 times a second, mostly one `is_alive` loop per tab, each call a new thread on the Python side.
+  Now a face moves only while its tab works, asks or is stuck, and only as a whole (the `<svg>` itself, which
+  the compositor moves without repainting). While the window is hidden, in the background or untouched for a
+  minute (`web/quiet.js`), nothing moves and the page polls far less (tab list and bridge status every 6 s, bots
+  every 20 s, the model chip waits); a key, a click, the pointer or the window coming back catches up at once.
+  The per-tab `is_alive` loops are gone: a tab whose process ended already drops out of the 1.5 s tab-list sync.
+  Plugin badges are kept per tab for 30 s instead of fetched again for every row after each sidebar rebuild.
+  Measured offline (WebKit, 35 tabs): web process 27–61% → 2–4% of a core with nothing happening, 35–59% →
+  12–18% with four tabs streaming output; calls to Python 20/s → 2.7/s, 0.3–0.5/s while still. Covered by
+  `tests_idle_power.py` (Chromium and WebKit).
+
+  **閒置的視窗不再讓筆電充不進電。** 回報：App 閒置、開著約 35 個分頁時，網頁行程吃掉約半顆核心、GPU 行程也差不多，
+  電池充不上去。每張 bot 臉都在 SVG 內部的零件上跑三到四個無限循環的 CSS 動畫（眨眼、左右看、呼吸；分頁列加側欄共
+  244 個），而在 WebKit 裡只要一個這種動畫，整頁每一格畫面都要重算樣式、版面並重畫，再交給 GPU 行程和 WindowServer
+  去畫。頁面每秒還呼叫 Python 約 20 次，大多是每個分頁各一條的 `is_alive` 輪詢，每次在 Python 端都要開一條執行緒。
+  現在只有分頁在工作、問問題或卡住時臉才會動，而且只整張臉一起動（動畫放在 `<svg>` 本身，合成器直接搬移、不必重畫）。
+  視窗被隱藏、在背景，或一分鐘沒被碰時（`web/quiet.js`），什麼都不動、輪詢也大幅放慢（分頁清單與 bridge 狀態每 6 秒、
+  bots 每 20 秒、模型 chip 暫停），一按鍵、點擊、移動滑鼠或視窗回到前景就立刻補抓。每個分頁一條的 `is_alive` 輪詢拿掉了：
+  程序結束的分頁本來就會從每 1.5 秒的分頁清單同步中消失。plugin 的側欄標記每個分頁保留 30 秒，不再在側欄每次重建時
+  逐列重抓。離線量測（WebKit、35 個分頁）：沒事發生時網頁行程從 27–61% 降到 2–4%，四個分頁持續輸出時從 35–59% 降到
+  12–18%；呼叫 Python 從每秒 20 次降到 2.7 次，靜止時 0.3–0.5 次。由 `tests_idle_power.py`（Chromium 與 WebKit）守著。
+
+- **The status monitor leaves quiet tabs alone.** Every 0.6 s it checked each tab and, for one that had printed
+  nothing, still worked its state out again from scratch at least every 15 s: a `tmux capture-pane` fork from a
+  large, many-threaded process (mostly system time) and two 256 KB transcript reads; it also read config.json on
+  every pass. Now a refresh with nothing printed reuses the screen read last time (no fork), an idle or done tab
+  is refreshed every 25 s (working, asking or stuck ones still every 15 s; 25 s keeps every reading under the
+  30 s after which the Telegram heartbeat drops it), and config.json is read at most every 5 s. Measured offline
+  (24 quiet tabs): forks 2.0/s → 0.4/s, transcript reads 1.6/s → 0.8/s, config reads 1.6/s → 0.2/s. Covered by
+  `tests_status_backoff.py`.
+
+  **狀態監看不再一直打擾沒動靜的分頁。** 它每 0.6 秒看一次每個分頁；就算分頁什麼都沒輸出，至少每 15 秒還是從頭重算：
+  從一個龐大、執行緒很多的行程 fork 一次 `tmux capture-pane`（大多耗在系統時間），再讀兩次 256 KB 的對話紀錄；而且每一輪
+  都重讀 config.json。現在到期重算時若沒有新輸出，就沿用上次讀到的畫面（不 fork）；閒置或完成的分頁改每 25 秒重算
+  （工作中、問問題、卡住的仍每 15 秒；25 秒讓每筆讀數都在 Telegram 心跳會丟棄的 30 秒以內）；config.json 最多每 5 秒讀
+  一次。離線量測（24 個安靜分頁）：fork 從每秒 2.0 次降到 0.4 次、對話紀錄讀取從 1.6 降到 0.8 次、設定檔讀取從 1.6 降到
+  0.2 次。由 `tests_status_backoff.py` 守著。
+
+- **The one-line install now goes from a new computer to ShellBot open.**
+  On a new Mac the installer stopped at Homebrew: it ran Homebrew's installer non-interactively under `curl | bash`, where sudo cannot ask for the password, and its git and python3 checks passed on Apple's `/usr/bin` stubs. On Ubuntu/Debian it stopped at a missing git, then at a missing `python3-venv`, and even with both the window could not open: the venv had no GTK/WebKit bindings. On Windows it required winget (absent in Windows Sandbox, LTSC and Server), and a failing pip still ended in "installed!". install.sh and install.ps1 now detect and install what is missing — Homebrew (Enter and the password asked on the terminal), Apple's Command Line Tools (or their install window, waited for), Python 3.12 and tmux; on Linux git, python3-venv, tmux, PyGObject, GTK 3 and WebKit2GTK with a venv that sees them; on Windows Git, Python (per user) and WebView2 through winget or the official installers directly. Each step says what it installs and why, in the system's language; every password prompt, system window or UAC prompt is announced first, and a failure names the step, the command and how to finish by hand. Prompts read the terminal even under `curl | bash` and take the default when there is none; running the line again skips what is there. Verified from scratch in Ubuntu 24.04/22.04, Debian 12 and Fedora 45 containers (root, a sudo user, and a password sudo at a real terminal); macOS and Windows were tried as dry runs only. `tests_install_scripts.py`.
+
+  **一行安裝現在真的能從新電腦裝到 ShellBot 打開。** 新 Mac 上安裝程式會卡在 Homebrew：它在 `curl | bash` 底下用非互動模式跑 Homebrew 安裝程式，sudo 問不了密碼；git、python3 的檢查也會被 Apple `/usr/bin` 裡的空殼騙過。Ubuntu／Debian 上先卡在沒有 git，再卡在沒有 `python3-venv`；就算都有，venv 裡也沒有 GTK／WebKit，視窗開不起來。Windows 上一定要有 winget（Windows Sandbox、LTSC、Server 都沒有），pip 失敗了最後還是印「installed!」。install.sh 和 install.ps1 現在會偵測並安裝缺的東西——Homebrew（在終端機問 Enter 和密碼）、Apple 命令列工具（或它的安裝視窗，會等裝完）、Python 3.12、tmux；Linux 的 git、python3-venv、tmux、PyGObject、GTK 3、WebKit2GTK，並讓 venv 看得到；Windows 的 Git、Python（只裝給目前帳號）、WebView2，用 winget 或直接下載官方安裝程式。每一步都用系統的語言說明裝什麼、為什麼；要密碼、會跳系統視窗或 UAC 之前先講；失敗時講明停在哪一步、哪個指令、怎麼手動補。即使是 `curl | bash` 也從終端機讀答案，沒有終端機就用預設值；重跑會跳過已裝好的。驗證：Ubuntu 24.04／22.04、Debian 12、Fedora 45 乾淨容器（root、sudo 使用者、在真終端機輸入 sudo 密碼）；macOS 與 Windows 目前只做過試跑。`tests_install_scripts.py`。
+
+- **On Linux the first window offers a tab instead of staying empty.**
+  pywebview's private mode on WebKitGTK leaves `localStorage` undefined; on a fresh config `init()` read it for the sidebar state, threw, and never restored tabs or opened the launcher. `web/storage_shim.js`, loaded first, gives such a page an in-memory one and does nothing where one exists (macOS, Windows). Closing the first launch's "What's new" with no tab open now goes on to the launcher instead of an empty window. Tests: `tests_first_window.py` (Chromium and WebKit, no localStorage, fresh config), `tests_storage_shim.js`.
+
+  **Linux 第一次打開的視窗會給你開分頁，不再一片空白。** pywebview 的 private mode 在 WebKitGTK 上沒有 `localStorage`；新設定檔下 `init()` 讀它來還原側欄狀態時拋錯中斷，分頁不會還原、選單也不會出現。先載入的 `web/storage_shim.js` 補一個記憶體版的，已經有 localStorage 的平台（macOS、Windows）不受影響。另外第一次啟動先跳的「What's new」在沒有分頁時按掉，會接著打開開分頁的選單，不再留下空白視窗。測試：`tests_first_window.py`（Chromium 與 WebKit、無 localStorage、全新設定）、`tests_storage_shim.js`。
+
+### Changes
+
+- **An idle bot face keeps still; only the whole face moves.** Motion now means something is happening: an
+  idle, done or asleep face no longer breathes, blinks or glances; a working face bobs with its eyes down (they
+  no longer scan side to side), a question tilts with the `?` shown (it no longer floats), a stuck face shakes
+  with a drop of sweat (it no longer falls), a face writing its memory breathes with the pen out. All motion
+  stops while the window is in the background or untouched for a minute, except the microphone's recording
+  pulse. `tests_bots_ui.py` follows the new poses.
+
+  **閒置的 bot 臉保持靜止；只有整張臉會動。** 現在「有在動」代表有事在發生：閒置、完成、休息中的臉不再呼吸、眨眼、
+  左右看；工作中的臉上下跳、眼睛往下看（不再左右掃），問問題的臉歪頭並顯示 `?`（不再飄動），卡住的臉發抖並掛一滴汗
+  （不再往下流），寫記憶的臉帶著筆慢慢呼吸。視窗在背景或一分鐘沒被碰時所有動作都停下，只有麥克風錄音中的脈動不停。
+  `tests_bots_ui.py` 跟著新的樣子更新。
+
+### Added
+
+- **`sfctl permissions --check` says whether tabs can read Documents, Desktop and Downloads, and why not.**
+  Reported: programs in tabs got "Operation not permitted" on `~/Documents`, `~/Desktop` and `~/Downloads`,
+  and `--check` only compared tmux's cdhash. Measured with a byte-identical copy of the app starting a private
+  tmux server: macOS judges a tab's programs as the app that started the tmux server, and follows that app's
+  file through a rename; once the file is gone (an update replaced the bundle) and its path too (the rename to
+  ShellBot.app), tccd logs "Failed to fetch responsible file descriptor" and refuses everything, Apple's own
+  tools without even asking; a copy back at the old path makes it allowed again. So a tmux server started
+  before the rename, with an update in between, loses these folders, and granting anything does not help. The
+  check now lists the three folders from a short session on the tabs' tmux server (what a tab sees, wherever
+  sfctl runs), tells a server older than the app (quit ShellBot, `tmux kill-server`, reopen: tabs resume) from
+  the app's own permissions (Files and Folders), prints those steps and exits 1 when a tab is refused. The
+  `--tmux` text no longer says the tabs are judged as tmux. `tcc_check.py`, `tests_tcc_check.py` (the probe on
+  a private tmux server).
+
+  **`sfctl permissions --check` 會告訴你分頁能不能讀文件、桌面、下載項目，不能的話原因是什麼。** 回報：分頁裡的程式讀
+  `~/Documents`、`~/Desktop`、`~/Downloads` 都得到「Operation not permitted」，而 `--check` 只比對 tmux 的 cdhash。
+  用一份位元組完全相同的 App 副本起獨立的 tmux server 實測：macOS 把分頁裡的程式算在「啟動 tmux server 的那份 App」頭上，
+  App 改名時會跟著檔案走；但檔案不在了（更新把整份 App 換掉）、原路徑也沒了（改名成 ShellBot.app）時，tccd 記下
+  「Failed to fetch responsible file descriptor」並一律拒絕，Apple 自己的指令連問都不問；在舊路徑放回一份就又放行。所以改名前
+  就起的 tmux server，中間又經過一次更新，就會失去這幾個資料夾，給什麼權限都沒用。現在的檢查會從分頁所在的 tmux server
+  開一個短暫的 session 去讀這三個資料夾（看到的就是分頁看到的，不管 sfctl 在哪裡跑），分辨「tmux server 比 App 還舊」
+  （結束 ShellBot、`tmux kill-server`、重新打開，分頁會接回原對話）與「App 本身沒授權」（檔案與資料夾），印出步驟，
+  有分頁被擋時以 exit 1 結束。`--tmux` 的說明不再說分頁都算在 tmux 頭上。`tcc_check.py`、`tests_tcc_check.py`
+  （探測跑在獨立的 tmux server 上）。
+
+- **The installers offer Claude Code and Codex, and can be previewed.**
+  At the end, "Also install Claude Code? / Codex?" (default no; with no terminal, skipped with a note) installs through each CLI's own installer from the provider registry, Node.js only when Codex is chosen, and says the next step is logging in. `SHELLFRAME_DRY_RUN=1` prints what would be installed and changes nothing (on Windows it no longer registers App Installer either); `SHELLFRAME_REF` / `SHELLFRAME_REPO` install a branch or a local repository; `SHELLFRAME_NONINTERACTIVE`, `SHELLFRAME_INSTALL_CLIS`, `SHELLFRAME_NO_LAUNCH` and `SHELLFRAME_LANG` are honoured by both scripts. A first install opens ShellBot when it is done.
+
+  **安裝程式會詢問要不要順便裝 Claude Code、Codex，也可以先試跑。** 結尾問「要順便安裝 Claude Code／Codex 嗎？」（預設不裝；沒有終端機就略過並提示），選了就用 provider 清單裡各 CLI 官方的安裝方式，只有選 Codex 才裝 Node.js，裝完說明下一步是登入。`SHELLFRAME_DRY_RUN=1` 只印會裝什麼、不改任何東西（Windows 上也不再順手註冊 App Installer）；`SHELLFRAME_REF`／`SHELLFRAME_REPO` 可從分支或本機 repo 安裝；兩支腳本都支援 `SHELLFRAME_NONINTERACTIVE`、`SHELLFRAME_INSTALL_CLIS`、`SHELLFRAME_NO_LAUNCH`、`SHELLFRAME_LANG`。第一次安裝完會自動打開 ShellBot。
+
+### Internal
+
+- **The in-app repair runs install.sh without questions and without a second window.** `main._run_install_sh` passes `SHELLFRAME_NONINTERACTIVE=1` and `SHELLFRAME_NO_LAUNCH=1`. A paired machine's sidebar rows keep a test of their own: `tests_remote_sidebar_faces.py` (faces on and off, names aligned whether or not the other machine reports a state for the row).
+
+  **App 內的修復流程呼叫 install.sh 時不問問題、也不再開第二個視窗。** `main._run_install_sh` 會帶 `SHELLFRAME_NONINTERACTIVE=1` 與 `SHELLFRAME_NO_LAUNCH=1`。配對電腦的側欄列也有了自己的測試：`tests_remote_sidebar_faces.py`（頭像開／關、不論對方有沒有回報該列狀態，名稱都對齊）。
+
 ## v0.44.3 (2026-11-13)
 
 ### Fixes
