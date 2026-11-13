@@ -17,10 +17,17 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import mac_keyboard
 from api_host import main
 
 
 class DesktopApiMixin:
+
+    def keyboard_check(self, reason: str = "") -> str:
+        """The page found itself without the keyboard right after a click in a terminal: log who holds it and
+        hand it back to the web view (macOS; see mac_keyboard)."""
+        mac_keyboard.check_and_take(str(reason or "")[:40])
+        return "{}"
     def open_local_file(self, path: str) -> str:
         """Open a file (or directory) in the OS default app.
         Used by the terminal Ctrl+Click handler."""

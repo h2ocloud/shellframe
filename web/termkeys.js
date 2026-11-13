@@ -83,9 +83,15 @@
       if (ta && doc.activeElement !== ta) { try { ta.focus({ preventScroll: true }); } catch (_) { /* hidden for a frame */ } }
       // Clicked, and still the page has no keyboard: another app's window holds it (seen: a full-screen overlay
       // of a mouse driver's helper at the top layer). One line a minute, so the log can tell it from a page bug.
-      if (!doc.hasFocus() && Date.now() - unfocusedAt > 60000) {
-        unfocusedAt = Date.now();
-        try { root.pywebview.api.js_debug('window-unfocused', JSON.stringify({ sid })); } catch (_) { /* no backend */ }
+      if (!doc.hasFocus()) {
+        // The web view is not the window's first responder (or the window is not key): focus() cannot fix
+        // that from here, so the app logs who holds the keyboard and hands it to the web view (mac_keyboard)
+        try { root.pywebview.api.keyboard_check('click'); } catch (_) { /* no backend */ }
+        if (Date.now() - unfocusedAt > 60000) {
+          unfocusedAt = Date.now();
+          try { root.pywebview.api.js_debug('window-unfocused', JSON.stringify({ sid })); } catch (_) { /* no backend */ }
+        }
+        setTimeout(() => { try { if (ta && doc.activeElement !== ta) ta.focus({ preventScroll: true }); } catch (_) { /* gone */ } }, 120);
       }
     }, 0);
   }, true);

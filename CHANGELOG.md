@@ -23,10 +23,11 @@
 - **A click in a terminal gives it the keyboard,** also when the CLI reports the mouse (full-screen
   Claude Code). A key that does not reach the terminal while it is on screen is logged with where the
   keyboard was, and a click that leaves the window without the keyboard (another app holding it) is
-  logged too. Remote tabs in the sidebar all keep their face and line up.
+  logged too; on macOS the app then hands the keyboard back to the page (the window's first responder had
+  been something else). Remote tabs in the sidebar all keep their face and line up.
 
   **點一下終端機，鍵盤就交給它**，CLI 開了滑鼠回報（全螢幕的 Claude Code）時也一樣。終端機在畫面上、
-  按鍵卻沒進去時，log 會記下鍵盤當時在哪；點了之後整個視窗仍然沒有鍵盤（被別的 App 拿走）也會記一行。
+  按鍵卻沒進去時，log 會記下鍵盤當時在哪；點了之後頁面仍然沒有鍵盤也會記一行，macOS 上 App 會把鍵盤交回頁面（原本視窗裡接鍵盤的是別的元件）。
   側欄裡遠端分頁的頭像都會畫出來，名字也對齊。
 
 ### Added

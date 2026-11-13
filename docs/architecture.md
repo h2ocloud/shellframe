@@ -159,3 +159,4 @@ From the 0.38 architecture review; each needs its own change and tests.
 - `_execute_sfctl` is a 1,000-line `if/elif` chain; a table of handlers would let
   sfctl help, the HTTP API and allowlists come from one place.
 - `web/index.html` is one 8.5k-line IIFE with ad-hoc RPC calls and polling.
+| | `mac_keyboard.py` | macOS: who holds the window's keyboard (key window, first responder), and handing it back to the web view after a click that left the page without focus |
