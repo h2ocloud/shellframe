@@ -2,6 +2,8 @@
 
 js_api (the bot editor's Skills section, web/bots.js): bots_own_skills, bots_skill_new,
         bots_skill_copy, bots_skill_delete, bots_skill_open.
+Hook main.py calls once the window is up: _bot_memory_start (the thread that asks an open bot to
+save its memory after a quiet spell).
 
 The rules are in bot_skills.py (a bot's own skills) and bot_memory.py (when to save); this only
 checks the name is a bot of this app's and hands the result to the page.
@@ -11,11 +13,15 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 
+import bot_memory
 import bot_skills
 import bots
 import sf_lang
 from api_host import main
+from sf_log import _dlog, _swallow
 
 _ = sf_lang.pick
 
@@ -68,3 +74,23 @@ class BotMemoryApiMixin:
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
         return json.dumps({"success": True, "message": str(path)}, ensure_ascii=False)
+
+    # ── asking an open bot to save its memory ───────────────────────────
+    def _bot_memory_start(self):
+        """Start the thread that looks at the open bots once a minute (bot_memory.tick). Once."""
+        if self.__dict__.get("_bot_memory_started"):
+            return
+        self._bot_memory_started = True
+
+        def _loop():
+            time.sleep(bot_memory.TICK_SEC)          # the tabs have been restored by the first look
+            while True:
+                try:
+                    for sid, role, why in bot_memory.tick(self, main.load_config()):
+                        if why == "asked":
+                            _dlog("bots", f"autosave asked sid={sid} role={role!r}")
+                except Exception:
+                    _swallow("bot_memory:tick")
+                time.sleep(bot_memory.TICK_SEC)
+
+        threading.Thread(target=_loop, daemon=True, name="bot-memory").start()

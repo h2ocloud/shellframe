@@ -25,6 +25,7 @@ import time
 
 import agent_link
 import agent_status
+import bot_memory
 import bots
 import bridge_home
 import sf_lang
@@ -226,6 +227,8 @@ class PushApiMixin:
             s = self.sessions.get(sid)
             path = agent_status.resolve_transcript(self._worker_ctx(sid, s)) if s else None
             evs = agent_status._read_tail_events(path)[1] if path else []
+            if bot_memory.ended_by_request(evs):
+                return                       # a bot saving its memory: nobody is told it finished
             bridge_home.on_turn_end(self, sid, read_events=lambda _sid: evs)
             if bridge_home.red_pending(sid):
                 return

@@ -253,6 +253,10 @@ DEFAULT_CONFIG = {
         # Bots: avatar faces, per-bot memory written before a bot tab closes, the
         # primary-bot card, external bots over a webhook. Rules live in bots.py.
         "experimental_bots": True,     # a new install; one that predates it keeps off (bots.keep_old_install_bots_setting)
+        # An open bot saves its memory after real work and a quiet spell (bot_memory.py): one turn of
+        # the bot's own quota each time. Off = only when its tab closes. Idle minutes: 5 to 1440.
+        "bot_memory_autosave": True,
+        "bot_memory_idle_min": 45,
         # Install a pointer skill into ~/.claude/skills/shellframe/ on start, so
         # an agent in a tab discovers `sfctl skill` without being told. On by
         # default: it is a directory only ShellFrame writes, and it holds a
@@ -6005,6 +6009,7 @@ def main():
     api._start_api_server()
     api._start_frame_link()
     api._start_delay_scheduler()
+    api._bot_memory_start()
     # Telegram must not depend on the window rendering: a dialog or a stalled
     # load would otherwise cut off remote access entirely. Started on a thread
     # so a slow network cannot hold up the window either.

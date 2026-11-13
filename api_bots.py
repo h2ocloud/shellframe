@@ -23,6 +23,7 @@ import time
 
 import agent_model
 import agent_status
+import bot_memory
 import bot_names
 import bots
 import bridge_home
@@ -1200,9 +1201,10 @@ class BotsApiMixin:
     def _bots_brief(self, role: str, entry: dict, raw_roster: dict, with_ack: bool = True) -> str:
         mem, last, last_name = bots.read_memory(role)
         own, skills = bots.brief_skills(role, (entry.get("bot") or {}).get("skills") or [])
+        autosave = bot_memory.settings(_cfg())[0]
         return bots.compose_brief(role, entry, raw_roster, memory=mem, last=last, last_name=last_name,
                                   skills=skills, own_skills=own, is_primary=bots.primary_role(raw_roster) == role,
-                                  with_ack=with_ack)
+                                  with_ack=with_ack, autosave=autosave)
 
     def bots_open(self, role: str) -> str:
         """Wake a bot: focus its tab if it has one, else open one and hand it its brief."""
@@ -1313,6 +1315,11 @@ class BotsApiMixin:
 
     def _bots_busy(self, sid: str) -> bool:
         return self._agent_state_for_list(sid) == "working"
+
+    def _bots_closing(self, sid: str) -> bool:
+        """Is this tab writing its memory to close (bot_memory leaves it alone)?"""
+        with _CLOSING_LOCK:
+            return sid in _CLOSING
 
     @staticmethod
     def _bots_memory_wanted(role: str) -> bool:
