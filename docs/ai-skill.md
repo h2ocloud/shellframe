@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.44.0
-   version: 0.44.0
+OK ShellBot v0.44.1
+   version: 0.44.1
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -423,6 +423,7 @@ configure there.
 | `bots-set` / `bots-save` refuse a model ShellBot does not know (`unknown_model`, with a suggestion); `/link/bots` `choices.models`; a name from `new --label` / `rename` survives the first message; `bots-delete` answers `busy` while the bot writes its memory | 0.42.1 |
 | A bot's own skills (`bots/<bot>/skills/`), listed before the shared ones; a bot that stays open is asked to save its memory after real conversation and 45 idle minutes (`bot_memory_autosave`, `bot_memory_idle_min`) | 0.43.0 |
 | Connections: `sfctl connect list` / `status` / `start` / `test` / `disconnect <service>` (§4.8); a bot's `[[SF:RED:connect:<service>]]` opens the connection card; `/link/bots` `connections` and `decision.connect` | 0.44.0 |
+| A tab's model can be switched from its chip (ShellBot types the CLI's own commands; Claude Code: this tab only); a send waits while that runs; `/link/bots` tabs carry `model_effort` and `switch` | 0.44.1 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

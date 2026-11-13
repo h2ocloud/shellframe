@@ -6,6 +6,31 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.44.1 (2026-11-13)
+
+### Added
+
+- **Switch a running AI tab's model from the screen.** Every AI tab has a model chip, in the chat
+  view's header and above the terminal. A click lists that CLI's models (and thinking levels where the
+  CLI has them); a pick has ShellBot type the CLI's own commands into the tab, so the conversation goes
+  on, then reads the screen to confirm the switch or says why it did not take. It waits while the tab
+  is working, asks first when the input box holds unsent words or cannot be read, and a CLI that cannot
+  switch in a conversation says so and offers the restart. For a kept bot it asks whether to make the
+  model its default (not by default). Measured on each CLI: Claude Code switches for this tab only (its
+  `/model <name>` would change the global default); Codex takes no name after `/model`, so its menu is
+  driven; Codex, OpenCode and Pi save the pick as their own default, which the chip says. While a menu
+  is driven, Telegram messages wait and the tab is not shown as asking the person anything. Codex's
+  model list follows Codex's own menu. `/link/bots` carries each tab's model for a phone.
+
+  **在畫面上直接幫正在跑的 AI 分頁換模型。** 每個 AI 分頁都有一個模型標籤，在對話畫面的標題列和終端機上方。
+  點下去會列出這家 CLI 的模型（有的話也列出思考強度）；選了之後，ShellBot 把這家 CLI 自己的指令打進分頁，
+  對話不用重開，接著讀畫面確認有沒有換成功，沒成功就說明原因。分頁正在跑時會等它做完；輸入框有沒送出的字或
+  讀不到時會先問你；不能在對話中換的 CLI 會照實說，並提供重開的做法。記住的 bot 換完會問要不要存成它的預設
+  模型（預設不存）。各家 CLI 都實際量過：Claude Code 只換這個分頁（它的 `/model <名稱>` 會改到全域預設）；
+  Codex 的 `/model` 後面不能帶名稱，所以改成操作它的選單；Codex、OpenCode、Pi 會把選的存成它們自己的預設，
+  標籤上會說明。操作選單的那幾秒，Telegram 訊息會等，分頁也不會被當成在等你回答。Codex 的模型清單改成跟它
+  自己的選單一致。`/link/bots` 帶上每個分頁的模型，給手機用。
+
 ## v0.44.0 (2026-11-13)
 
 ### Fixes
