@@ -1552,8 +1552,9 @@
   }
 
   // ── # in the input box: name a bot or a tab, as the terminal's # does ─────
-  // Typing # opens a list of the other tabs and the bots (asleep too, bots.js mentionables);
-  // letters filter it, ↑↓ move, Enter or Tab puts "#name " in, Esc closes. What is sent is
+  // Typing # opens a list of the other tabs and the bots (asleep too, and those on the paired
+  // machines, bots.js mentionables); letters filter it (a machine's name too), ↑↓ move, Enter or Tab
+  // puts "#name " in ("#<machine>/<bot> " for a bot over there), Esc closes. What is sent is
   // that text, as from the terminal: the agent reading it hands the work over, and its
   // delegate wakes a sleeping bot. A # after a letter, a digit or a URL's characters (bots.js
   // MENTION_AFTER), with a space after it (a Markdown heading) or inside `code` opens nothing;
@@ -1581,7 +1582,7 @@
         .map(x => ({ name: sessions()[x].label, sid: x, state: 'tab', face: '', also: [] }));
     }
     return all.filter(c => !filter || [c.name, ...(c.also || [])].some(n => String(n || '').toLowerCase().includes(filter)))
-      .slice(0, 8);
+      .slice(0, 60);                          // the list scrolls: another machine's bots come after this one's
   }
   function pickUpdate() {
     const tok = layer && covers() ? mentionToken() : null;
@@ -1592,7 +1593,9 @@
     const word = { awake: T('awake', '醒著'), asleep: T('asleep: it will be woken', '休息中，會叫醒'),
                    external: T('external', '外部'), tab: T('tab', '分頁') };
     pickEl.innerHTML = items.map((c, i) => `<div class="cm-pick-item${i === pick.sel ? ' sel' : ''}" data-i="${i}">` +
-        `<span class="cm-face busy-dot">${c.face || ''}</span><b>${escHtml(c.name)}</b><span class="cm-pick-sub">${escHtml(word[c.state] || '')}</span></div>`)
+        `<span class="cm-face busy-dot">${c.face || ''}</span><b>${c.machine ? escHtml(c.label) +    // a bot on another machine: its name, then the machine's, dimmer
+          `<span class="cm-pick-machine"> · ${escHtml(c.machine)}</span>` : escHtml(c.name)}</b><span class="cm-pick-sub">` +
+        `${escHtml((c.primary ? '★ ' + T('primary', '主要') + ' · ' : '') + (word[c.state] || ''))}</span></div>`)
       .join('') + `<div class="cm-pick-hint">${escHtml(T('↑↓ choose · Enter put in · Esc close', '↑↓ 選擇 · Enter 放進去 · Esc 收起'))}</div>`;
     pickEl.hidden = false;
     const sel = pickEl.querySelector('.cm-pick-item.sel');
@@ -1602,7 +1605,7 @@
   function pickInsert(i) {
     const c = pick && pick.items[i];
     if (!c) return pickClose();
-    const tag = '#' + c.name + ' ';
+    const tag = '#' + (c.insert || c.name) + ' ';    // another machine's bot: #<machine>/<bot>, the A2A target
     const caret = input.selectionStart;
     input.value = input.value.slice(0, pick.start) + tag + input.value.slice(caret);
     const at = pick.start + tag.length;

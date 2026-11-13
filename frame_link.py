@@ -1733,18 +1733,16 @@ class FrameLink:
             self._mark_status(peer_id, False, str(e))
             return {"success": False, "message": str(e)}
 
-    def remote_a2a(self, peer_id: str, limit: int = 100) -> dict:
-        """Agent-to-agent audit log from the peer."""
+    def remote_bots(self, peer_id: str, rev: str = "") -> dict:
+        """The peer's GET /link/bots (its bots, primary and tab faces) for link_bots.PeerBots.
+        A peer the poll loop finds offline is not asked; a refusal keeps its HTTP status as `code`."""
         peer, err = self._peer_or_err(peer_id)
-        if err:
-            return err
+        if err or not self._peer_status.get(peer_id, {}).get("reachable"):
+            return err or {"success": False, "code": "offline", "message": "offline"}
         try:
-            return self._signed_request(peer, "GET",
-                                        f"/link/a2a?limit={int(limit)}", timeout=10)
+            return self._signed_request(peer, "GET", f"/link/bots?rev={quote(str(rev or ''))}", timeout=6)
         except Exception as e:
-            if "404" in str(e):
-                return {"success": False, "message": "對方的 ShellBot 還沒有這個功能（需要 0.36.0 以上）"}
-            return {"success": False, "message": str(e)}
+            return {"success": False, "code": getattr(e, "status", 0), "message": str(e)}
 
     def remote_groups(self, peer_id: str) -> dict:
         """Role groups defined on the peer (experimental feature there)."""

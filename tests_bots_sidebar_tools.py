@@ -248,6 +248,8 @@ with sync_playwright() as pw:
           m("https://example.com/#Coding a#Coding"))
     check("not a tab: nothing", m("#nothing #部署") == [], m("#nothing #部署"))
     check("the longest name wins", m("#部署檢查完成") == ["s204:#部署檢查"], m("#部署檢查完成"))
+    check("#<machine>/<bot> is a bot on a paired machine, not this tab (#研究/總管)", m("交給 #研究/總管 吧") == [],
+          m("交給 #研究/總管 吧"))
 
     page.evaluate("window.__sfHost.switchTab('s201')")
     page.wait_for_timeout(300)

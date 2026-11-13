@@ -578,7 +578,9 @@ MASTER_TURN_PREAMBLE = (
     "names an existing tab the task must interact with: keep those #tags verbatim "
     "in the delegate task text — ShellFrame auto-resolves them and attaches "
     "sfctl peek/send interaction instructions for the worker. If you handle the "
-    "task yourself instead, interact with the tagged tabs via sfctl directly."
+    "task yourself instead, interact with the tagged tabs via sfctl directly. "
+    "A #<machine>/<name> tag names a bot on a paired machine: reach it with "
+    "`sfctl a2a-handoff <machine>/<name> \"task\"` (or a2a-send), not delegate."
 )
 
 
@@ -2259,6 +2261,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 if pos < 0:
                     break
                 end = pos + len(target)
+                if lowered[end:end + 1] == "/":      # #<machine>/<bot>: a bot on a paired machine, not this tab
+                    start = pos + 1
+                    continue
                 if sid not in seen and not any(pos < e and s < end for s, e in consumed):
                     seen.add(sid)
                     consumed.append((pos, end))

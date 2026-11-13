@@ -63,7 +63,10 @@ on the tab, and is what a role resolves to. `position` (`#9` at the end of a `li
 line) is where the tab sits in the tab bar, counted from 1: say "the 9th tab"
 (「第 9 個分頁」) to a person, who sees names and places, not sids. When you name a
 tab to a person, write it as `#name` (e.g. `#sf dev`): with bots on it is a link
-they can ⌘-click to open that tab.
+they can ⌘-click to open that tab. A `#machine/name` (the chat view's `#` list puts
+one in for a bot on a paired machine) names that machine's bot: reach it with
+`sfctl a2a-handoff machine/name "…"` or `a2a-send`, written as it is (`delegate`
+is for this machine's tabs only).
 
 Each row also carries `agent_state` (working / done / idle), `agent_activity`
 (one line of what it is doing; for a tab that has not answered yet, the message it was sent as its words: a message from another agent leads with its sender, `research: …`, and says `(not passed on)` after the name when the chain limit stopped it; something pasted is `Pasted · N lines`; never the `[[A2A…]]` header) and `runs_on` (which CLI on which model). When
@@ -426,6 +429,7 @@ configure there.
 | Connections: `sfctl connect list` / `status` / `start` / `test` / `disconnect <service>` (§4.8); a bot's `[[SF:RED:connect:<service>]]` opens the connection card; `/link/bots` `connections` and `decision.connect` | 0.44.0 |
 | A tab's model can be switched from its chip (ShellBot types the CLI's own commands; Claude Code: this tab only); a send waits while that runs; `/link/bots` tabs carry `model_effort` and `switch` | 0.44.1 |
 | An asleep bot can be saved and switched now (woken at once); a phone renames a bot, asleep too, with `POST /link/bots/rename`; `sfctl relaunch <tab> [--if-idle]` restarts a tab's CLI on its updated version, resuming the same conversation | 0.44.2 |
+| The chat view's `#` lists the bots on paired machines and puts in `#machine/name` (the A2A target); the desktop reads a paired machine's `/link/bots` for its tabs' faces and its primary bot | 0.44.3 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

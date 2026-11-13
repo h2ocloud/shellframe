@@ -44,7 +44,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `api_extensions.py` | Plugin loading and events, plugin marketplace, AI skill install |
 | | `api_glasses.py` | Glasses relay: which tabs are exposed, status and transcript reporting |
 | | `api_history.py` | Scroll-back history overlay (transcript → pyte → tmux capture) |
-| | `api_link.py` | Frame Link panel: pairing, remote tabs, remote input/stream/files |
+| | `api_link.py` | Frame Link panel: pairing, remote tabs, remote input/stream/files; `link_peer_bots` (the paired machines' bots, kept by `link_bots`) |
 | | `api_remote.py` | sfctl command watcher and the `_execute_sfctl` dispatcher; local HTTP API server |
 | | `api_schedules.py` | The Loops panel's schedule list (user LaunchAgents): reads the plist folder and `launchctl list`, toggles a job, builds the edit prompt. Which labels are the user's own comes from `schedules.json` in the config folder, never from code; on a platform without launchd it says so |
 | | `api_status.py` | Agent status: hook events, status hook install, the status monitor thread |
@@ -84,6 +84,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `app_bundle.py` | The app as the system shows it: the macOS bundle installed as `ShellBot.app` (the template keeps `ShellFrame.app`), found under either name (`find`), an older install renamed once with LaunchServices and the Dock told (`migrate`), the update's copy (`refresh`), the installer's pin of it first in the Dock (`pin_dock`: through `defaults` with a read-back, never the Dock's plist file); the Windows desktop shortcut `ShellBot.lnk` |
 | | `account_manager.py` | Profile directories and credential seeding per provider |
 | | `frame_link.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, NAT relay |
+| | `link_bots.py` | Another machine's bots for this desktop: each paired desktop this one may control is asked for its `GET /link/bots` in the background (`PeerBots`, with `rev`, at most every 15 s; offline / 403 / 404 give nothing), and the page gets that machine's tab faces, its primary bot and its bots for `#` (`#<machine>/<bot>`, the A2A target; `addresses` picks a name or the id so it always resolves). `web/bots.js` draws them |
 | | `bridge_telegram.py`, `bridge_line.py`, `bridge_base.py` | Chat bridges: polling, routing, injection, reply extraction |
 | | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent rules (and how a message reads as one line, `agent_link.preview_of`, the same rule as `web/chat.js` `preview`), model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |

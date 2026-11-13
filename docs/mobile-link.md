@@ -207,6 +207,10 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 外部 bot 的 webhook 網址和授權，都不會出現在回應裡。
 
+**桌面也會讀這條（v0.44.3）**：配對的另一台 ShellBot（桌面）會在背景、最多 15 秒一次、帶上次的 `rev` 問
+`GET /link/bots`（`link_bots.py`），拿那台分頁的臉（`tabs[sid].avatar`、`kind`）、主要 Bot（`primary`）和
+bot 名單（`bots[]`，給對話畫面的 `#` 用，放進去的是 A2A 的 `<電腦>/<bot>`）。回應的形狀沒有變；手機不用改任何東西。
+
 **`POST /link/answer {"sid", "n", "id"}`**：回答 `/link/bots` 給的那一題。
 
 - **只在 `id` 還是那個分頁現在的題目時才送。** 成功回 `{"success": true}`。送法跟 Telegram 的選擇按鈕一樣（`tab_delivery.answer_choice`）：

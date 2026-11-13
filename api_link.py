@@ -8,6 +8,7 @@ js_api 對 frame_link.FrameLink 的薄包裝：配對、遠端分頁瀏覽/輸�
 
 import json
 
+import link_bots
 from api_host import main
 
 
@@ -115,6 +116,16 @@ class LinkApiMixin:
 
     def link_remote_tabs(self, peer_id: str) -> str:
         return json.dumps(self._link().remote_info(peer_id), ensure_ascii=False)
+
+    def link_peer_bots(self) -> str:
+        """Each paired machine's bots and tab faces as kept by link_bots (bots.js draws them and
+        lists them under #). Returns at once; stale machines are asked again in the background."""
+        try:
+            if getattr(self, "_peer_bots", None) is None:
+                self._peer_bots = link_bots.PeerBots(self._link)
+            return json.dumps(self._peer_bots.view(), ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"peers": {}, "pending": 0, "error": str(e)})
 
     def link_remote_peek(self, peer_id: str, sid: str, lines: int = 120) -> str:
         return json.dumps(self._link().remote_peek(peer_id, sid, lines),

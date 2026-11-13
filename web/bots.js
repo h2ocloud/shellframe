@@ -167,12 +167,16 @@
     return true;
   }
   function avatarFor(sid) {
+    const s = sessionsMap()[sid];
+    if (s && s.isRemote) {                  // another machine's tab: the face that machine gives it
+      const tb = peerTab(s.peerId, s.rsid);
+      return tb && tb.avatar && tb.avatar.shape ? cleanAvatar(tb.avatar, sid) : defaultAvatar(`${s.peerName || ''}/${s.label || sid}`);
+    }
     const role = botOf(sid);
     if (role) return cleanAvatar(rosterEntry(role).bot.avatar, role);
     const own = (st.sessions[sid] || {}).avatar;
     if (own) return cleanAvatar(own, sid);
-    const s = sessionsMap()[sid];
-    return defaultAvatar(s && s.isRemote ? `${s.peerName || ''}/${s.label || sid}` : sid);
+    return defaultAvatar(sid);
   }
   const isClosing = sid => !!(st.sessions[sid] || {}).closing;
 
@@ -192,7 +196,8 @@
   function face(sid) {
     if (!enabled) return '';
     const s0 = sessionsMap()[sid];
-    if (s0 && !s0.isRemote && kindOf(sid) === 'terminal' && !(st.sessions[sid] || {}).avatar) {
+    if (s0 && s0.isRemote) return remoteFace(s0.peerName, s0.rsid, s0.label, s0.peerId);
+    if (s0 && kindOf(sid) === 'terminal' && !(st.sessions[sid] || {}).avatar) {
       return `<span class="sfb-term" title="${esc(t('Terminal', '終端機'))}">&gt;_</span>`;   // a shell is no bot
     }
     const role = botOf(sid);
@@ -219,8 +224,9 @@
   }
 
   // Who a message can name with #, for the chat view's picker: the open tabs in their order (a
-  // bot's tab under the bot's name), then the bots asleep, then the external ones; each once,
-  // with its face, its state and the other names it answers to. `except` is the tab writing.
+  // bot's tab under the bot's name), then the bots asleep, then the external ones, then the bots on
+  // the paired machines (peerMentionables); each once, with its face, its state and the other names
+  // it answers to. `except` is the tab writing.
   function mentionables(except) {
     const out = [], held = new Set();
     const S = sessionsMap();
@@ -232,7 +238,7 @@
       const e = role ? rosterEntry(role) || {} : {};
       if (role) held.add(role);
       out.push({ name: role ? botName(role) : s.label, role, sid, state: role ? 'awake' : 'tab', face: face(sid),
-                 also: role ? [role, e.label, ...(e.former_names || [])] : [] });
+                 primary: !!role && role === st.primary, also: role ? [role, e.label, ...(e.former_names || [])] : [] });
     }
     if (!enabled) return out;
     const sleepers = [], outside = [];
@@ -241,9 +247,10 @@
       const e = rosterEntry(role) || {};
       const ext = isExternal(role);
       (ext ? outside : sleepers).push({ name: botName(role), role, sid: '', state: ext ? 'external' : 'asleep',
-        face: faceSvg((e.bot || {}).avatar, { seed: role, asleep: !ext }), also: [role, e.label, ...(e.former_names || [])] });
+        primary: role === st.primary, face: faceSvg((e.bot || {}).avatar, { seed: role, asleep: !ext, primary: role === st.primary }),
+        also: [role, e.label, ...(e.former_names || [])] });
     }
-    return out.concat(sleepers, outside);
+    return out.concat(sleepers, outside, peerMentionables());
   }
 
   // What the row's second line says: the agent's latest line, like a chat list.
@@ -301,6 +308,7 @@
                              '右鍵：頭像與 Bot 設定。點一下：手動切換表情（下次對話自動接管）');
     });
     renderSleepers(container);
+    markPeerRows(container);
     renderPrimary();
     renderTools();
     applyView();
@@ -522,7 +530,7 @@
     for (let i = low.indexOf('#'); i !== -1; i = low.indexOf('#', i + 1)) {
       if (i > 0 && MENTION_AFTER.test(low[i - 1])) continue;
       const rest = low.slice(i + 1);
-      const hit = names.find(n => rest.startsWith(n.low) &&
+      const hit = names.find(n => rest.startsWith(n.low) && rest.charAt(n.low.length) !== '/' &&   // #<machine>/<bot> is not this tab
         !(/[a-z0-9]/.test(rest.charAt(n.low.length)) && /[a-z0-9]$/.test(n.low)));
       if (!hit) continue;
       out.push({ index: i, length: 1 + hit.name.length, sid: hit.sid });
@@ -611,11 +619,74 @@
     const count = document.querySelector('#sfb-tools .sfb-count');
     if (count) count.textContent = filtering() ? `${shown}/${rows.length}` : '';
   }
-  // Rows of another machine's tabs (Frame Link zone): same faces, seeded by
-  // machine + tab so each keeps a stable look across refreshes.
-  function remoteFace(peer, rsid, label) {
+  // ── another machine's bots (Frame Link) ─────────────────────────────────
+  // link_bots.py keeps what each paired machine this one may control says on GET /link/bots:
+  // its primary bot, its bots, every tab's face. `peers[pid]`: {name, addr, primary, bots, tabs}.
+  // A machine that gives nothing (offline, one-way pairing, an older version) is not in it.
+  let peers = {}, peersSig = '', peersAgain = null;
+  const peerTab = (pid, rsid) => ((peers[pid] || {}).tabs || {})[rsid] || null;
+  async function refreshPeers() {
+    const a = api();
+    if (!a || !a.link_peer_bots || !enabled) return;
+    let res = {};
+    try { res = JSON.parse(await a.link_peer_bots()) || {}; } catch (_) { return; }
+    const next = res.peers || {};
+    const sig = JSON.stringify(next);
+    if (sig !== peersSig) {
+      peersSig = sig;
+      peers = next;
+      const h = host();
+      try { h && h.renderTabs(); } catch (_) {}        // renderTabs redraws the sidebar too
+    }
+    // A machine being asked for the first time answers in a moment: look again soon, once.
+    clearTimeout(peersAgain);
+    if (res.pending) peersAgain = setTimeout(refreshPeers, 1500);
+  }
+  // Rows of another machine's tabs (Frame Link zone): the face that machine gives the tab, its
+  // primary bot marked as here; a terminal is >_ as it is over there. A machine that says nothing
+  // gets one made from machine + tab name, stable across refreshes.
+  function remoteFace(peer, rsid, label, pid) {
     if (!enabled) return '';
-    return faceSvg(defaultAvatar(`${peer || ''}/${label || rsid}`), { seed: `${peer}/${rsid}` });
+    const p = peers[pid] || {}, tb = peerTab(pid, rsid);
+    if (tb && tb.kind === 'terminal' && !tb.bot) {
+      return `<span class="sfb-term" title="${esc(t('Terminal', '終端機'))}">&gt;_</span>`;
+    }
+    const av = tb && tb.avatar && tb.avatar.shape ? tb.avatar : defaultAvatar(`${peer || ''}/${label || rsid}`);
+    return faceSvg(av, { seed: `${peer}/${rsid}`, primary: !!(tb && tb.bot && tb.bot === p.primary) });
+  }
+  const peerPrimary = (pid, rsid) => { const tb = peerTab(pid, rsid); return !!(tb && tb.bot && tb.bot === (peers[pid] || {}).primary); };
+  // The Frame Link zone's rows: a ★ tag on the other machine's primary bot, as the primary card says it here.
+  function markPeerRows(container) {
+    container.querySelectorAll('.sb-item.sb-remote[data-rsid]').forEach(row => {
+      if (!peerPrimary(row.dataset.pid, row.dataset.rsid) || row.querySelector('.sfb-peer-primary')) return;
+      const tag = document.createElement('span');
+      tag.className = 'sfb-tag sfb-peer-primary';
+      tag.textContent = '★ ' + t('Primary', '主要');
+      const machine = (peers[row.dataset.pid] || {}).name || '';
+      tag.title = t(`The primary bot on ${machine}`, `${machine} 的主要 Bot`);
+      row.insertBefore(tag, row.querySelector('.sb-close'));
+      row.classList.add('sfb-peer-is-primary');
+    });
+  }
+  // Who # can name on the other machines, after this one's: each machine's bots, awake and asleep
+  // (primary first), labelled with the machine. What goes in is `#<machine>/<bot>`, the target
+  // `sfctl a2a-send` / `a2a-handoff` take; `addr` is the machine's name, or its id when the name
+  // is shared or has a space (link_bots.addresses).
+  function peerMentionables() {
+    const out = [];
+    for (const pid of Object.keys(peers)) {
+      const p = peers[pid] || {};
+      const machine = p.name || pid.slice(0, 8), addr = p.addr || pid;
+      const rank = b => (b.primary ? 0 : b.state === 'awake' ? 1 : 2);
+      (p.bots || []).filter(b => b.state === 'awake' || b.state === 'asleep').sort((a, b) => rank(a) - rank(b)).forEach(b => {
+        const label = b.label || b.role;
+        out.push({ name: `${label} · ${machine}`, label, role: b.role, sid: '', peer: pid, machine, state: b.state,
+                   primary: !!b.primary, insert: `${addr}/${b.role}`,
+                   face: faceSvg(b.avatar, { seed: `${machine}/${b.role}`, asleep: b.state === 'asleep', primary: !!b.primary }),
+                   also: [b.role, label, ...(b.former_names || []), machine, `${addr}/${b.role}`] });
+      });
+    }
+    return out;
   }
   function afterTabs(container) {
     if (!enabled || !container) return;
@@ -1638,7 +1709,7 @@
     document.body.classList.toggle('sfb-on', enabled);
     if (!enabled) closePop();
     rerender();
-    if (enabled) refresh(true);
+    if (enabled) { refresh(true); refreshPeers(); }
   }
 
   // ── drag a bot onto the primary card, or the card back into the list ──
@@ -1772,7 +1843,7 @@
     document.getElementById('btn-settings') &&
       document.getElementById('btn-settings').addEventListener('click', () => setTimeout(() => { injectSettings(); syncSettings(); }, 0));
     setInterval(tick, 1500);
-    setInterval(() => { if (enabled) refresh(); }, 5000);
+    setInterval(() => { if (enabled) { refresh(); refreshPeers(); } }, 5000);
     // One line in the debug log, so "I see no faces" can be answered from the log.
     setTimeout(() => {
       try {
@@ -1795,7 +1866,7 @@
 
   window.SFBots = {
     face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
-    tabMentions, openTelegram, renameBotTab, faceForName, mentionables,
+    tabMentions, openTelegram, renameBotTab, faceForName, mentionables, refreshPeers, peerBots: () => peers,
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,
