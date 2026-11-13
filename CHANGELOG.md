@@ -6,6 +6,75 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.44.3 (2026-11-13)
+
+### Fixes
+
+- **The usage strip at the sidebar's foot stays inside the sidebar.** Reported: on a fresh install
+  the chat style's usage and pace strip (`5h 31%  pc 52%▼  wk 80%  pc 81%`) ran past the sidebar's
+  right edge and was cut off. The pill keeps the tab bar's `white-space: nowrap`, so at the sidebar's
+  default 220px it was wider than the room it had. In the sidebar it now wraps: a window (5h, wk) and
+  its pace stay together on one line, and a window splits only when the sidebar is narrower still. The
+  tab bar's pill is unchanged. Covered by tests_peer_bots_ui.py at 220px and 140px (no element's right
+  edge past the sidebar's, nothing scrolls sideways).
+
+  **側欄下方的用量列不再超出側欄。** 回報：全新安裝時，對話樣式側欄左下角的用量／配速列
+  （`5h 31%  pc 52%▼  wk 80%  pc 81%`）超出側欄右緣、被切掉。這顆用量膠囊沿用上方分頁列的
+  `white-space: nowrap`，在側欄預設的 220px 寬裡放不下。現在放在側欄時會換行：一個窗口（5h、wk）和它的
+  配速放在同一行，側欄再窄時才把同一個窗口拆開。上方分頁列的用量膠囊不變。由 tests_peer_bots_ui.py 在
+  220px 和 140px 兩種寬度守著（沒有元素超出側欄右緣、不會出現橫向捲動）。
+
+### Added
+
+- **`#` in the chat view finds the bots on a paired computer.** Reported: with two computers paired, the
+  chat view's `#` list only had this computer's tabs and bots. It now lists, after them, the bots of each
+  paired computer this one may control (awake and asleep, its primary first), labelled with the computer,
+  e.g. "Coordinator · desk-b", with that computer's faces; letters filter by the computer's name too.
+  Picking one puts in `#<computer>/<bot>`, the target `sfctl a2a-send` and `a2a-handoff` already take, and
+  a bot reading it is told (wake-up brief, master-turn reminder, `docs/ai-skill.md`) to reach that bot with
+  A2A. The computer's name is used when it is one word and no other paired device or this computer has it,
+  otherwise its id, so the address always reaches the same computer. A computer that is offline, a one-way
+  pairing where this side may not control it, or a version without `/link/bots` lists nothing. Neither
+  the delegate tag reader nor the terminal's ⌘-click links read `#desk-b/…` as a local tab called
+  "desk-b". Covered by
+  tests_link_peer_bots.py and tests_peer_bots_ui.py.
+
+  **對話畫面的 `#` 找得到配對的另一台電腦上的 bot。** 回報：兩台電腦配對後，對話畫面打 `#` 只列出這台的
+  分頁和 bot。現在本機的之後，會列出每一台「這台可以操作」的配對電腦上的 bot（醒著和休息中的，主要 Bot
+  在最前面），標上是哪一台，例如「總管 · desk-b」，臉用那台給的；打字篩選也比對電腦名稱。選了之後放進去的是
+  `#<電腦>/<bot>`，也就是 `sfctl a2a-send`、`a2a-handoff` 本來就收的對象；收到訊息的 bot 會被告知（叫醒時的
+  說明、主控回合提醒、`docs/ai-skill.md`）用 A2A 找那個 bot。電腦名稱是一個詞、而且沒有其他配對裝置或這台
+  同名時用名稱，否則用它的 id，所以這個位址一定找得到同一台。離線的電腦、單向配對中這台無權操作的、或是
+  還沒有 `/link/bots` 的舊版，都不會列出來。派工讀 `#標籤`、終端機裡 ⌘ 點的連結，也都不再把 `#desk-b/…`
+  當成本機一個叫「desk-b」的分頁。由 tests_link_peer_bots.py 和 tests_peer_bots_ui.py 守著。
+
+- **A paired computer's tabs show the faces that computer gives them, and its primary bot is marked.**
+  Reported: the sidebar's Frame Link zone drew the other computer's primary bot as a yellow egg, while
+  that computer shows it as a red star with the primary badge. The zone made every remote face up from
+  the computer's and the tab's names. The desktop now asks each paired computer it may control for its
+  `GET /link/bots` (the same signed route the phone uses; in the background, with `rev`, at most every
+  15 s; a refusal or an older version is asked again only after 5 minutes) and draws each remote tab
+  with the face given there, a terminal there as `>_`, and that computer's primary bot with the face's
+  badge and a "★ Primary" tag. An opened remote tab has the same face. A computer that gives nothing
+  keeps the old made-up face. Covered by tests_link_peer_bots.py and tests_peer_bots_ui.py.
+
+  **配對電腦的分頁用那台給的臉，那台的主要 Bot 也會標出來。** 回報：側欄 Frame Link 區把另一台的主要 Bot
+  畫成一顆黃色的蛋，那台自己畫的卻是帶主要徽章的紅色星星。原因是這一區的遠端頭像都是用電腦名稱和分頁名稱
+  在本機猜出來的。現在桌面會向每一台「這台可以操作」的配對電腦要它的 `GET /link/bots`（手機用的同一條簽章
+  路由；在背景問、帶 `rev`、最多 15 秒問一次；被拒或是舊版，5 分鐘後才再問），遠端分頁用那台給的臉，那台
+  的終端機畫成 `>_`，那台的主要 Bot 臉上有徽章、旁邊有「★ 主要」標籤。打開的遠端分頁也是同一張臉。那台
+  什麼都沒給時，維持原本猜的臉。由 tests_link_peer_bots.py 和 tests_peer_bots_ui.py 守著。
+
+### Internal
+
+- **`link_bots.py`** keeps the paired computers' bots for the page (`PeerBots`, js_api `link_peer_bots`);
+  `FrameLink.remote_bots` asks one computer. The first of two `FrameLink.remote_a2a` definitions (the
+  audit-log reader, shadowed by the later A2A sender and never reachable) is removed.
+
+  **`link_bots.py`** 替頁面保管各台配對電腦的 bot（`PeerBots`，js_api `link_peer_bots`）；
+  `FrameLink.remote_bots` 問一台。`FrameLink.remote_a2a` 有兩個定義，前一個（讀稽核紀錄的）被後面送 A2A 的
+  那個蓋掉、從來呼叫不到，這次移除。
+
 ## v0.44.2 (2026-11-13)
 
 ### Fixes
