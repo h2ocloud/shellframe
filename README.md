@@ -52,6 +52,8 @@ Paste it into a terminal on a brand-new computer and it gets to ShellBot open: w
 | tmux | `tmux` | `tmux` |
 | The window | built in (WebKit) | GTK 3, WebKit2GTK, PyGObject (`python3-gi`, `gir1.2-webkit2-4.1`, …) |
 
+Linux was tried from scratch on Ubuntu 22.04 and 24.04, Debian 12 and Fedora 45; Arch (pacman) is supported but not yet tried.
+
 Then ShellBot itself in `~/.local/apps/shellframe`, its Python packages, the `shellframe` and `sfctl` commands, and ShellBot.app (macOS) or an app-menu entry (Linux). A first install opens ShellBot when it is done.
 
 **What may need you** (each is announced before it happens):
@@ -61,7 +63,7 @@ Then ShellBot itself in `~/.local/apps/shellframe`, its Python packages, the `sh
 - **Linux:** `sudo` asks for your password once, for the system packages.
 - **At the end, optional:** "Also install Claude Code? / Codex?" (`y` or Enter to skip). If you say yes, the next step is logging in the first time you open that tab.
 
-**How long:** a Linux desktop about 2–5 minutes (most of it the GTK/WebKit packages); a Mac that already has Homebrew 1–3 minutes; a brand-new Mac about 10–20 minutes, most of it Apple's Command Line Tools download. Running the line again updates ShellBot and skips what is already there. `curl … | SHELLFRAME_DRY_RUN=1 bash` only prints what it would install.
+**How long:** Linux about 1½–4 minutes from a bare system (most of it the GTK/WebKit packages; a desktop already has many of them). Estimates, not yet timed on a clean machine: a Mac that already has Homebrew 1–3 minutes; a brand-new Mac about 10–20 minutes, most of it Apple's Command Line Tools download. Running the line again updates ShellBot and skips what is already there. `curl … | SHELLFRAME_DRY_RUN=1 bash` only prints what it would install.
 
 ### Windows
 
@@ -71,7 +73,7 @@ irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
 
 Run in **PowerShell**. When missing, it installs Git, Python 3.12 (for your account only) and the WebView2 runtime, with `winget`; where winget is not available (Windows Sandbox, LTSC, Server) it downloads the same official installers directly. Then ShellBot, its Python packages, the `shellframe` / `sfctl` commands and a **ShellBot** desktop shortcut, and it opens ShellBot.
 
-**What may need you:** Windows may ask *"Do you want to allow this app to make changes to your device?"* while Git or WebView2 installs: click **Yes**. At the end, optional: Claude Code / Codex. Usually 3–8 minutes on a new PC.
+**What may need you:** Windows may ask *"Do you want to allow this app to make changes to your device?"* while Git or WebView2 installs: click **Yes**. At the end, optional: Claude Code / Codex. About 3–8 minutes on a new PC (an estimate, not yet timed).
 
 ### Requirements
 
