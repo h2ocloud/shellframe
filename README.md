@@ -40,7 +40,28 @@ Prefer to copy directly:
 curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
 ```
 
-The installer auto-installs Homebrew (if missing), Python 3.12, and tmux.
+Some Linux desktops (Ubuntu's among them) come without `curl`; there, use `wget -qO- https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash`.
+
+Paste it into a terminal on a brand-new computer and it gets to ShellBot open: whatever is missing it installs, whatever is there it leaves alone. Each step says what it installs and why.
+
+| Missing piece | macOS | Linux (apt / dnf / pacman) |
+|---|---|---|
+| Package manager | Homebrew | the system's own |
+| git, a C compiler | Apple's Command Line Tools (Homebrew brings them) | `git` |
+| Python 3.10+ with venv | Python 3.12 from Homebrew (not Apple's: its privacy permissions would not stick) | `python3`, `python3-venv` |
+| tmux | `tmux` | `tmux` |
+| The window | built in (WebKit) | GTK 3, WebKit2GTK, PyGObject (`python3-gi`, `gir1.2-webkit2-4.1`, …) |
+
+Then ShellBot itself in `~/.local/apps/shellframe`, its Python packages, the `shellframe` and `sfctl` commands, and ShellBot.app (macOS) or an app-menu entry (Linux). A first install opens ShellBot when it is done.
+
+**What may need you** (each is announced before it happens):
+
+- **macOS without Homebrew:** press **Enter** when Homebrew asks, then type your **login password** (nothing shows while you type). Your account must be an administrator.
+- **macOS, if the Command Line Tools still are not there:** a macOS window asks to install them: click **Install**, then **Agree**. The installer waits and continues by itself.
+- **Linux:** `sudo` asks for your password once, for the system packages.
+- **At the end, optional:** "Also install Claude Code? / Codex?" (`y` or Enter to skip). If you say yes, the next step is logging in the first time you open that tab.
+
+**How long:** a Linux desktop about 2–5 minutes (most of it the GTK/WebKit packages); a Mac that already has Homebrew 1–3 minutes; a brand-new Mac about 10–20 minutes, most of it Apple's Command Line Tools download. Running the line again updates ShellBot and skips what is already there. `curl … | SHELLFRAME_DRY_RUN=1 bash` only prints what it would install.
 
 ### Windows
 
@@ -48,14 +69,19 @@ The installer auto-installs Homebrew (if missing), Python 3.12, and tmux.
 irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
 ```
 
-Run in **PowerShell**. The installer auto-installs Git, Python, and the WebView2 runtime via `winget` when missing. If `iex` is blocked, first run `Set-ExecutionPolicy -Scope Process Bypass -Force`.
+Run in **PowerShell**. When missing, it installs Git, Python 3.12 (for your account only) and the WebView2 runtime, with `winget`; where winget is not available (Windows Sandbox, LTSC, Server) it downloads the same official installers directly. Then ShellBot, its Python packages, the `shellframe` / `sfctl` commands and a **ShellBot** desktop shortcut, and it opens ShellBot.
+
+**What may need you:** Windows may ask *"Do you want to allow this app to make changes to your device?"* while Git or WebView2 installs: click **Yes**. At the end, optional: Claude Code / Codex. Usually 3–8 minutes on a new PC.
 
 ### Requirements
 
-- **Python 3.12+** (3.9+ should work; 3.12 is what install.sh pins and tests against)
-- **tmux** — for session persistence (macOS: `brew install tmux`; Linux: `apt install tmux`; Windows: not needed, uses soft persistence)
-- **pywebview** + **pyte** — auto-installed via `requirements.txt`
+The installers above take care of these:
+
+- **Python 3.10+** (3.12 is what the installers install and test against)
+- **tmux** — for session persistence (macOS / Linux; Windows uses soft persistence)
+- **pywebview** + **pyte** — auto-installed via `requirements.txt`; on Linux pywebview draws with the distribution's GTK + WebKit2GTK
 - **pywinpty** (Windows only) — auto-installed, provides ConPTY for TUI apps
+- AI CLIs (Claude Code, Codex, …) are optional and installed separately; the installer offers Claude Code and Codex, and ShellBot's AI accounts panel offers the rest
 
 ## Usage
 

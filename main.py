@@ -5045,7 +5045,9 @@ def _run_install_sh():
         )
         r = subprocess.run(
             ["bash", "-c", cmd],
-            capture_output=True, text=True, timeout=600
+            capture_output=True, text=True, timeout=600,
+            # No one is at a terminal here: ask nothing, and do not open a second app.
+            env=dict(os.environ, SHELLFRAME_NONINTERACTIVE="1", SHELLFRAME_NO_LAUNCH="1"),
         )
         if r.returncode == 0:
             # Last line of install.sh output usually has the version summary

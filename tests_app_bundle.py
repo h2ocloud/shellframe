@@ -440,7 +440,7 @@ sh = (HERE / "install.sh").read_text(encoding="utf-8")
 guard = re.search(r'if \[ "\$\{SHELLFRAME_SKIP_DOCK:-0\}" != "1" \]; then\n(.*?)\n  fi\n', sh, re.S)
 pin_step = guard.group(1) if guard else ""
 check("install.sh pins through app_bundle.pin_dock(): unless SHELLFRAME_SKIP_DOCK=1, and a failure there never fails the install",
-      "app_bundle.pin_dock(" in pin_step and re.search(r"python3 - <<'PY'[^\n]*\|\| true\n", pin_step + "\n") is not None, pin_step)
+      "app_bundle.pin_dock(" in pin_step and re.search(r"(?:python3|\"\$VENV_PY\") - <<'PY'[^\n]*\|\| true\n", pin_step + "\n") is not None, pin_step)
 # The old step wrote ~/Library/Preferences/com.apple.dock.plist and ran `killall Dock`: the prefs daemon
 # keeps its own copy of that domain, and a Dock with changes it has not saved writes them back as it quits.
 check("…and writes neither the Dock's plist nor restarts the Dock itself (the prefs daemon's copy, or a Dock saving as it quits, undoes that)",
