@@ -1,0 +1,65 @@
+/* The model chip on an AI tab and its pop-up (web/tabmodel.js, docs/tab-model.md). */
+.tm-chip {
+  flex: none; display: inline-flex; align-items: center; gap: .35em; max-width: 15em; padding: .22em .65em; margin: 0 .3em;
+  border-radius: 999px; border: 1px solid #3b4261; background: #24283b; color: #a9b1d6; font: inherit; font-size: .82em; line-height: 1.3; cursor: pointer;
+}
+.tm-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-chip i { font-style: normal; font-size: .8em; opacity: .7; }
+.tm-chip:hover, .tm-chip:focus-visible { border-color: #7aa2f7; color: #c0caf5; outline: none; }
+.tm-chip.tm-unknown { color: #6b7394; border-style: dashed; }
+.tm-chip.tm-wait, .tm-chip.tm-busy, .tm-chip.tm-warn { border-color: #e0af68; color: #e0af68; }
+.tm-chip.tm-bad { border-color: #f7768e; color: #f7768e; }
+#tm-slot { display: inline-flex; align-items: center; flex: none; }
+#tm-slot:empty { display: none; }
+
+#tm-pop {
+  position: fixed; z-index: 600; width: 320px; max-width: calc(100vw - 16px); max-height: min(70vh, 560px); overflow-y: auto; box-sizing: border-box;
+  padding: 12px; border-radius: 10px; background: #1f2335; border: 1px solid #3b4261; box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  color: #a9b1d6; font-size: 12px; line-height: 1.45;
+}
+#tm-pop[hidden] { display: none; }
+#tm-pop button { font: inherit; cursor: pointer; }
+#tm-pop .tm-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+#tm-pop .tm-h b { color: #c0caf5; font-size: 13px; }
+#tm-pop .tm-h span { flex: 1; color: #6b7394; }
+#tm-pop .tm-x { border: 0; background: none; color: #6b7394; font-size: 16px; line-height: 1; padding: 0 2px; }
+#tm-pop .tm-x:hover { color: #c0caf5; }
+#tm-pop .tm-opts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+#tm-pop .tm-opt {
+  text-align: left; padding: 6px 10px; border-radius: 7px; border: 1px solid #292e42; background: #24283b; color: #c0caf5;
+}
+#tm-pop .tm-opt:hover { border-color: #7aa2f7; }
+#tm-pop .tm-opt.on { border-color: #7aa2f7; background: #2f3a5e; }
+#tm-pop .tm-opt.cur { color: #9ece6a; }
+#tm-pop .tm-custom {
+  box-sizing: border-box; width: 100%; margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; border: 1px solid #3b4261;
+  background: #1a1b26; color: #c0caf5; font: inherit;
+}
+#tm-pop .tm-custom:focus { outline: none; border-color: #7aa2f7; }
+#tm-pop .tm-lab { margin: 2px 0 4px; color: #6b7394; }
+#tm-pop .tm-seg { display: flex; gap: 4px; margin-bottom: 8px; }
+#tm-pop .tm-seg button { flex: 1; padding: 5px 0; border-radius: 6px; border: 1px solid #292e42; background: #24283b; color: #a9b1d6; }
+#tm-pop .tm-seg button.on { border-color: #7aa2f7; background: #2f3a5e; color: #c0caf5; }
+#tm-pop .tm-seg button.cur:not(.on) { color: #9ece6a; }
+#tm-pop .tm-row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; flex-wrap: wrap; }
+#tm-pop .tm-row button, #tm-pop .tm-job button, #tm-pop .tm-ask button {
+  padding: 5px 12px; border-radius: 7px; border: 1px solid #3b4261; background: #24283b; color: #c0caf5;
+}
+#tm-pop .tm-row button:hover, #tm-pop .tm-job button:hover, #tm-pop .tm-ask button:hover { border-color: #7aa2f7; }
+#tm-pop .tm-go { background: #3d59a1; border-color: #3d59a1; color: #fff; }
+#tm-pop .tm-go:disabled { opacity: .4; cursor: default; }
+#tm-pop .tm-quiet { background: none !important; color: #a9b1d6 !important; }
+#tm-pop .tm-hint { margin: 2px 0 6px; color: #6b7394; font-size: 11.5px; }
+#tm-pop .tm-note { color: #c0caf5; margin-bottom: 6px; }
+#tm-pop .tm-job, #tm-pop .tm-ask, #tm-pop .tm-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; padding: 7px 9px; border-radius: 8px;
+  border: 1px solid #3b4261; background: #24283b;
+}
+#tm-pop .tm-card { flex-direction: column; align-items: stretch; }
+#tm-pop .tm-card q { display: block; margin: 4px 0; padding: 4px 8px; border-left: 2px solid #3b4261; color: #c0caf5; quotes: none; word-break: break-word; }
+#tm-pop .tm-job.tm-ok { border-color: #9ece6a; }
+#tm-pop .tm-job.tm-wait, #tm-pop .tm-job.tm-busy, #tm-pop .tm-job.tm-warn { border-color: #e0af68; }
+#tm-pop .tm-job.tm-bad, #tm-pop .tm-card.tm-bad { border-color: #f7768e; }
+#tm-pop .tm-ask span { display: flex; gap: 4px; flex: none; }
+@media (max-width: 560px) { .tm-chip { max-width: 8em; } }
+body.sf-chat-shown #tm-slot { display: none; }   /* the chat view's header has the chip */

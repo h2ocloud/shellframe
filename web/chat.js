@@ -1055,7 +1055,7 @@
     const side = globalStyle() === 'chat'
       ? `<button class="cm-side-btn" data-act="sidebar" title="${escHtml(T('Show or hide the sidebar', '顯示或收起側欄'))}">☰</button>` : '';
     return `${side}${face}<div class="cm-who"><b>${escHtml(displayName(s))}</b>` +
-      `<span class="cm-state">${escHtml(stateWord(sid))}</span></div>`;
+      `<span class="cm-state">${escHtml(stateWord(sid))}</span></div>${root.SFTabModel ? root.SFTabModel.chipHtml(sid) : ''}`;   // web/tabmodel.js
   }
   function renderHead(sid) {
     const html = headLeft(sid) +
@@ -1887,6 +1887,7 @@
     }
     if (act === 'unattach') { const v = view(sid); (v.files || []).splice(+el.dataset.i, 1); renderAttach(sid); return; }
     if (act === 'to-term') return setMode(sid, 'cli');
+    if (act === 'model') { if (root.SFTabModel) root.SFTabModel.open(sid, el); return; }
     if (act === 'ask-dismiss') { view(sid).askDismissed = el.dataset.key; return renderAsk(sid); }
     if (act === 'sidebar') { const b = document.getElementById('btn-sidebar'); if (b) b.click(); return; }
     if (act === 'copy') return copyOut((view(sid).copy || {})[el.dataset.key] || '', el);
