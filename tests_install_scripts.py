@@ -103,7 +103,7 @@ check("failures are trapped: set -E, an ERR trap and an EXIT trap that names the
 installs = [ln.strip() for ln in src.splitlines()
             if re.search(r"\b(apt-get install|apt-get update|dnf install|pacman -S|brew\"? install)\b", ln)
             and not ln.strip().startswith("#") and "hint " not in ln and "請執行" not in ln and "Run:" not in ln]
-bad = [ln for ln in installs if not re.match(r"(\w+\) )?(root_run|run) ", ln)]
+bad = [ln for ln in installs if not re.match(r"(\w+\) )?(quiet_root_run|root_run|run) ", ln)]
 check("every package install goes through run/root_run, so a dry run shows it instead of doing it",
       installs and not bad, bad or "no install lines found")
 check("Homebrew's installer reads the terminal, not the pipe (it asks for Enter and the password)",
@@ -112,6 +112,9 @@ check("answers are read from /dev/tty, never from stdin (which is the script)",
       "read -r ans </dev/tty" in src and not re.search(r"\bread -r? ?\w+ *$", src, re.M))
 check("the macOS checks do not trust /usr/bin/git or /usr/bin/python3 (stubs on a new Mac)",
       'xcode-select -p' in src and '"$p/usr/bin/git"' in src and "|/usr/bin/*|" in src)
+glued = [m.group(0) for m in re.finditer(r"\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7f])", src)]
+check("no $name runs straight into Chinese text (bash in a UTF-8 locale reads those bytes as part of the name)",
+      not glued, glued)
 shellcheck = shutil.which("shellcheck")
 if shellcheck:
     r = subprocess.run([shellcheck, "-s", "bash", "-S", "warning", str(SH)], capture_output=True, text=True)
@@ -124,7 +127,7 @@ with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
     tmp = Path(d)
     b = fake_env(tmp, "Darwin")
     stub(b, "xcode-select", "exit 2")          # no Command Line Tools
-    rc, out, err = run_sh(tmp, b, lang="zh")
+    rc, out, err = run_sh(tmp, b, lang="zh", extra={"LC_ALL": "en_US.UTF-8"})
     check("new Mac, dry run: finishes (exit 0), without waiting for an answer", rc == 0, f"rc={rc}\n{out}\n{err}")
     for name in ("Homebrew", "Command Line Tools", "Python 3.12", "tmux"):
         check(f"…announces 正在裝 {name} with the reason", re.search(rf"正在裝 {re.escape(name)}（.+）", out), out)
@@ -173,7 +176,7 @@ with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
     for pkg in ("git", "python3-venv", "tmux", "python3-gi", "gir1.2-gtk-3.0", "gir1.2-webkit2-4.1"):
         check(f"…announces Installing {pkg} with the reason", re.search(rf"Installing {re.escape(pkg)} \(.+\)", out), out)
     check("…one apt-get install with all of them, through sudo -n when nobody can type a password",
-          re.search(r"\[dry-run\] sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -q .*python3-venv.*gir1.2-webkit2-4.1", out),
+          re.search(r"\[dry-run\] sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y .*python3-venv.*gir1.2-webkit2-4.1", out),
           out)
     check("…and nothing is written to HOME", home_untouched(tmp))
 
@@ -307,6 +310,18 @@ if pwsh:
                        capture_output=True, text=True, timeout=120)
     check("install.ps1 parses in PowerShell (no syntax errors)", r.stdout.strip().splitlines()[:1] == ["0"],
           r.stdout + r.stderr)
+    # A dry run through irm | iex's path (the text into Invoke-Expression). Off Windows nothing
+    # is found (no winget, no registry), so every install step is announced; the window survives.
+    with tempfile.TemporaryDirectory(prefix="sf-inst-ps-") as d:
+        env = dict(os.environ, USERPROFILE=d, TEMP=d, SHELLFRAME_DRY_RUN="1", SHELLFRAME_LANG="en")
+        r = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command",
+                            f"Get-Content -Raw -Encoding UTF8 '{PS1}' | Invoke-Expression; 'window-still-open'"],
+                           capture_output=True, text=True, timeout=120, env=env)
+        out = r.stdout
+        check("install.ps1 dry run (pwsh): announces each missing piece, finishes, leaves the window open",
+              "Installing Python 3.12 (" in out and "Installing WebView2 Runtime (" in out
+              and "Dry run finished" in out and out.rstrip().endswith("window-still-open")
+              and not any(Path(d).iterdir()), out + r.stderr)
 else:
     print("  [info] pwsh is not on PATH; install.ps1 was checked statically only")
 

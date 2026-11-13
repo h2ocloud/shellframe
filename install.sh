@@ -107,6 +107,19 @@ root_run() {
   run $ROOT_CMD "$@"
 }
 
+# A long, chatty package install: its output goes to a log, shown only if it fails.
+quiet_root_run() {
+  local log rc=0
+  if [ "$DRY_RUN" = "1" ]; then root_run "$@"; return; fi
+  log="$(mktemp "${TMPDIR:-/tmp}/shellbot-install.XXXXXX")"
+  note "(this can take a few minutes; the details go to $log)" "（可能要幾分鐘；詳細過程記在 ${log}）"
+  root_run "$@" >"$log" 2>&1 || rc=$?
+  if [ "$rc" != "0" ]; then
+    tail -n 25 "$log" >&2
+    return "$rc"
+  fi
+}
+
 on_err() { LAST_CMD="${BASH_COMMAND}"; }
 on_exit() {
   local rc=$?
@@ -295,7 +308,7 @@ install_homebrew() {
       die "Homebrew could not install without a terminal to ask for your password in." \
           "沒有可以輸入密碼的終端機，Homebrew 無法安裝。"
     fi
-    die "The Homebrew installer stopped (exit $rc)." "Homebrew 安裝程式中途停止（exit $rc）。"
+    die "The Homebrew installer stopped (exit $rc)." "Homebrew 安裝程式中途停止（exit ${rc}）。"
   fi
   use_brew || die "Homebrew reported success but brew is not found." "Homebrew 說裝好了，卻找不到 brew。"
   persist_brew_env
@@ -470,14 +483,14 @@ linux_dependencies() {
     # shellcheck disable=SC2086  # $missing is a list of package names
     case "$PM" in
       apt)
-        root_run env DEBIAN_FRONTEND=noninteractive apt-get update -q </dev/null
+        quiet_root_run env DEBIAN_FRONTEND=noninteractive apt-get update </dev/null
         # Older releases (Debian 11, Ubuntu 20.04) only have WebKit2GTK 4.0.
         if [ -n "$webkit" ] && [ "$DRY_RUN" != "1" ] && ! apt-cache show gir1.2-webkit2-4.1 >/dev/null 2>&1; then
           missing="${missing/gir1.2-webkit2-4.1/gir1.2-webkit2-4.0}"
         fi
-        root_run env DEBIAN_FRONTEND=noninteractive apt-get install -y -q $missing </dev/null ;;
-      dnf) root_run dnf install -y $missing </dev/null ;;
-      pacman) root_run pacman -S --needed --noconfirm $missing </dev/null ;;
+        quiet_root_run env DEBIAN_FRONTEND=noninteractive apt-get install -y $missing </dev/null ;;
+      dnf) quiet_root_run dnf install -y $missing </dev/null ;;
+      pacman) quiet_root_run pacman -S --needed --noconfirm $missing </dev/null ;;
     esac
   fi
 
@@ -521,7 +534,7 @@ get_root() {
 
 fetch_source() {
   local cur backup
-  step "ShellBot ($REF)" "ShellBot 本體（$REF）"
+  step "ShellBot ($REF)" "ShellBot 本體（${REF}）"
   hint "Check the network, then paste the install line again. To start over, move $INSTALL_DIR aside first." \
        "請確認網路後再貼一次安裝指令。若要重新開始，先把 $INSTALL_DIR 移到別處。"
   if [ -d "$INSTALL_DIR/.git" ]; then
@@ -835,9 +848,9 @@ ensure_node() {
     Linux)
       get_root soft || return 1
       case "$PM" in
-        apt) root_run env DEBIAN_FRONTEND=noninteractive apt-get install -y -q nodejs npm </dev/null ;;
-        dnf) root_run dnf install -y nodejs npm </dev/null ;;
-        pacman) root_run pacman -S --needed --noconfirm nodejs npm </dev/null ;;
+        apt) quiet_root_run env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm </dev/null ;;
+        dnf) quiet_root_run dnf install -y nodejs npm </dev/null ;;
+        pacman) quiet_root_run pacman -S --needed --noconfirm nodejs npm </dev/null ;;
       esac ;;
   esac
   [ "$DRY_RUN" = "1" ] && return 0
@@ -998,7 +1011,7 @@ main() {
     if [ -d "$INSTALL_DIR/.git" ]; then
       note "[dry-run] would update $INSTALL_DIR to $REF" "[dry-run] 會把 $INSTALL_DIR 更新到 $REF"
     else
-      note "[dry-run] would clone $REPO_URL ($REF) into $INSTALL_DIR" "[dry-run] 會把 $REPO_URL（$REF）下載到 $INSTALL_DIR"
+      note "[dry-run] would clone $REPO_URL ($REF) into $INSTALL_DIR" "[dry-run] 會把 ${REPO_URL}（${REF}）下載到 $INSTALL_DIR"
     fi
     note "[dry-run] would create $INSTALL_DIR/.venv with $PYTHON and pip install -r requirements.txt" \
          "[dry-run] 會用 $PYTHON 建立 $INSTALL_DIR/.venv，並 pip install -r requirements.txt"

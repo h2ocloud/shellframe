@@ -57,7 +57,7 @@ function Step([string]$en, [string]$zh) {
     Write-Host "==> $($S.Step)" -ForegroundColor Cyan
 }
 function Installing([string]$name, [string]$whyEn, [string]$whyZh) {
-    Write-Host ("    " + (T "Installing $name ($whyEn)" "正在裝 $name（$whyZh）")) -ForegroundColor Yellow
+    Write-Host ("    " + (T "Installing $name ($whyEn)" "正在裝 ${name}（${whyZh}）")) -ForegroundColor Yellow
     $S.Installed += $name
 }
 function Fail([string]$en, [string]$zh) { throw (T $en $zh) }
@@ -176,7 +176,7 @@ function Ensure-Git {
         $file = Join-Path $env:TEMP $asset.name
         Download $asset.browser_download_url $file
         $code = Start-Installer $file @("/VERYSILENT", "/NORESTART", "/NOCANCEL", "/SP-", "/SUPPRESSMSGBOXES")
-        if ($code -ne 0) { Fail "The Git installer stopped (exit $code)." "Git 安裝程式中途停止（exit $code）。" }
+        if ($code -ne 0) { Fail "The Git installer stopped (exit $code)." "Git 安裝程式中途停止（exit ${code}）。" }
     } elseif ($DryRun -and -not $S.Winget) {
         Write-Host "    [dry-run] download Git for Windows (latest, from github.com/git-for-windows) and run it /VERYSILENT"
     }
@@ -225,11 +225,11 @@ function Ensure-Python {
     [void](Winget-Install "Python.Python.3.12" @("--scope", "user"))
     if (-not $DryRun) { $S.Python = Find-Python }
     if (-not $S.Python -and -not $DryRun) {
-        Note "Downloading Python $PythonVersion from python.org..." "從 python.org 下載 Python $PythonVersion…"
+        Note "Downloading Python $PythonVersion from python.org..." "從 python.org 下載 Python ${PythonVersion}…"
         $file = Join-Path $env:TEMP "python-$PythonVersion-$(Arch).exe"
         Download "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-$(Arch).exe" $file
         $code = Start-Installer $file @("/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0", "Include_launcher=0")
-        if ($code -ne 0) { Fail "The Python installer stopped (exit $code)." "Python 安裝程式中途停止（exit $code）。" }
+        if ($code -ne 0) { Fail "The Python installer stopped (exit $code)." "Python 安裝程式中途停止（exit ${code}）。" }
         Refresh-Path
         $S.Python = Find-Python
     } elseif ($DryRun -and -not $S.Winget) {
@@ -272,7 +272,7 @@ function Ensure-WebView2 {
         $file = Join-Path $env:TEMP "MicrosoftEdgeWebview2Setup.exe"
         Download "https://go.microsoft.com/fwlink/p/?LinkId=2124703" $file
         $code = Start-Installer $file @("/silent", "/install")
-        if ($code -ne 0 -and -not (WebView2-Ok)) { Fail "The WebView2 installer stopped (exit $code)." "WebView2 安裝程式中途停止（exit $code）。" }
+        if ($code -ne 0 -and -not (WebView2-Ok)) { Fail "The WebView2 installer stopped (exit $code)." "WebView2 安裝程式中途停止（exit ${code}）。" }
     }
     if (-not (WebView2-Ok)) {
         Warn "WebView2 is not detected yet. If ShellBot's window stays blank, install it from the link above." `
@@ -284,11 +284,11 @@ function Ensure-WebView2 {
 
 function Git-Run([string[]]$ArgList, [string]$en, [string]$zh) {
     $code = Invoke-Tool "git" $ArgList
-    if ($code -ne 0) { Fail "$en (git exit $code)" "$zh（git exit $code）" }
+    if ($code -ne 0) { Fail "$en (git exit $code)" "${zh}（git exit ${code}）" }
 }
 
 function Fetch-Source {
-    Step "ShellBot ($Ref)" "ShellBot 本體（$Ref）"
+    Step "ShellBot ($Ref)" "ShellBot 本體（${Ref}）"
     Hint "Check the network, then paste the install line again. To start over, move $InstallDir aside first." `
          "請確認網路後再貼一次安裝指令。若要重新開始，先把 $InstallDir 移到別處。"
     if (Test-Path "$InstallDir\.git") {
@@ -342,17 +342,17 @@ function Setup-Venv {
     if (-not (Test-Path "$InstallDir\.venv")) {
         Say "    Creating the virtual environment with $($S.Python)..." "    用 $($S.Python) 建立虛擬環境…"
         $code = Invoke-Tool $S.Python @("-m", "venv", "$InstallDir\.venv")
-        if ($code -ne 0) { Fail "Could not create the virtual environment (exit $code)." "無法建立虛擬環境（exit $code）。" }
+        if ($code -ne 0) { Fail "Could not create the virtual environment (exit $code)." "無法建立虛擬環境（exit ${code}）。" }
     }
     Say "    Installing Python packages (pywebview, pyte, pywinpty)..." "    安裝 Python 套件（pywebview、pyte、pywinpty）…"
     [void](Invoke-Tool $venvPy @("-m", "pip", "install", "-q", "--upgrade", "pip"))
     $code = Invoke-Tool $venvPy @("-m", "pip", "install", "-q", "-r", "$InstallDir\requirements.txt")
-    if ($code -ne 0) { Fail "pip could not install ShellBot's packages (exit $code)." "pip 無法安裝 ShellBot 的套件（exit $code）。" }
+    if ($code -ne 0) { Fail "pip could not install ShellBot's packages (exit $code)." "pip 無法安裝 ShellBot 的套件（exit ${code}）。" }
 
     Step "Checking that ShellBot can open its window" "確認 ShellBot 開得了視窗"
     Hint "Run: $venvPy -c `"import webview`" to see the error." "請執行 $venvPy -c `"import webview`" 看錯誤訊息。"
     $code = Invoke-Tool $venvPy @("-c", "import webview, pyte, winpty, clr")
-    if ($code -ne 0) { Fail "ShellBot's packages do not import (exit $code)." "ShellBot 的套件無法載入（exit $code）。" }
+    if ($code -ne 0) { Fail "ShellBot's packages do not import (exit $code)." "ShellBot 的套件無法載入（exit ${code}）。" }
     Note "OK" "沒問題"
 }
 
@@ -469,7 +469,7 @@ function Install-Cli([string]$name) {
         }
         if ($code -ne 0) { throw "exit $code" }
     } catch {
-        Warn "$label did not install ($_). Run it yourself later: $cmd" "$label 沒有裝成功（$_）。之後可以自己執行：$cmd"
+        Warn "$label did not install ($_). Run it yourself later: $cmd" "$label 沒有裝成功（${_}）。之後可以自己執行：$cmd"
         return
     }
     Refresh-Path
