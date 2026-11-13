@@ -8,6 +8,16 @@
 
 ## v0.43.0 (2026-11-13)
 
+### Fixes
+
+- **A question card in the chat view can be put away.** Reported: the "waiting for you in the
+  terminal" card could not be closed after the question was answered in the terminal, while the tab's
+  state was late to change. ✕ puts it away for that question; the next one shows again. Covered by
+  tests_chat_ask_dismiss.py.
+
+  **對話畫面的提問卡片可以收起來。** 回報：在終端機回答完之後，「它在終端機上等你決定」的卡片關不掉，
+  因為分頁狀態還沒跟上。按 ✕ 就收起這一題；下一題來了會再出現。由 tests_chat_ask_dismiss.py 守著。
+
 ### Added
 
 - **`#` in the chat view names a bot or a tab.** Typing `#` in the chat view's input box lists the
