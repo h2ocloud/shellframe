@@ -35,6 +35,14 @@
 - **多台同步**：維護者多台機器都會在線推版。改動前先 `git fetch` / 確認 `origin/main`，**別自己 bump 撞到別台的版號**；改完就 `commit` + `push origin main`（SF 慣例直推 main、靠推版同步多台）。
 - WIP 不要混進無關 commit：working tree 可能同時有別的開發中改動，commit 時只 `git add` 自己要發的檔，別 `git add .` 把半成品一起推。
 
+## 一行安裝程式（install.sh / install.ps1）
+
+- 目標是「新電腦貼一行就裝到打開」：缺什麼裝什麼（macOS：Homebrew、命令列工具、Python 3.12、tmux；Linux：git、python3-venv、tmux、PyGObject、GTK 3、WebKit2GTK；Windows：Git、Python、WebView2，沒有 winget 就直接下載官方安裝程式），可重跑。
+- `install.sh` 全部包在 `main()`、最後一行才呼叫：`curl | bash` 時 stdin 是腳本本身，任何會讀 stdin 的子程序都要給 `</dev/null` 或 `</dev/tty`；問問題一律讀 `/dev/tty`，沒有終端機就用預設值。要跑在 macOS 的 bash 3.2 上；`$變數` 後面直接接中文要寫成 `${變數}`（UTF-8 locale 下會把中文位元組讀進變數名）。
+- `install.ps1` 包在 `& { }` 裡、不准用 `exit`（`irm | iex` 下會關掉使用者的視窗）；原生程式失敗在 PowerShell 5.1 不會丟例外，一律走 `Invoke-Tool` 檢查 exit code。
+- 試跑：`SHELLFRAME_DRY_RUN=1`（兩支都有）只印會裝什麼。`SHELLFRAME_REF`／`SHELLFRAME_REPO` 讓它從分支或本機 bare repo 安裝，可以在乾淨容器裡驗證：`docker run --rm ubuntu:24.04`，把 install.sh 和一份 bare clone 掛進去，`cat install.sh | SHELLFRAME_REPO=… SHELLFRAME_REF=… SHELLFRAME_NO_LAUNCH=1 bash`。
+- 回歸：`tests_install_scripts.py`（假 PATH 下的試跑、失敗訊息、pty 下的問答、install.ps1 靜態檢查；有 pwsh 時再加解析與試跑）。
+
 ## macOS codesign / TCC 權限（反覆跳權限彈窗的根因）
 
 - app 目前是 **ad-hoc 簽名**（`codesign -dv` 顯示 `Signature=adhoc`、`TeamIdentifier=not set`）。

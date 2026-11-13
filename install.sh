@@ -76,6 +76,7 @@ hint() { HINT="$(t "$1" "$2")"; }
 step() {
   STEP="$(t "$1" "$2")"
   HINT=""
+  LAST_CMD=""
   printf '\n==> %s\n' "$STEP"
 }
 # installing <name> <why, English> <why, Chinese>
@@ -108,19 +109,24 @@ root_run() {
 }
 
 # A long, chatty package install: its output goes to a log, shown only if it fails.
+PKG_LOG=""
 quiet_root_run() {
-  local log rc=0
+  local rc=0
   if [ "$DRY_RUN" = "1" ]; then root_run "$@"; return; fi
-  log="$(mktemp "${TMPDIR:-/tmp}/shellbot-install.XXXXXX")"
-  note "(this can take a few minutes; the details go to $log)" "（可能要幾分鐘；詳細過程記在 ${log}）"
-  root_run "$@" >"$log" 2>&1 || rc=$?
+  if [ -z "$PKG_LOG" ]; then
+    PKG_LOG="$(mktemp "${TMPDIR:-/tmp}/shellbot-install.XXXXXX")"
+    note "(this can take a few minutes; the details go to $PKG_LOG)" "（可能要幾分鐘；詳細過程記在 ${PKG_LOG}）"
+  fi
+  root_run "$@" >>"$PKG_LOG" 2>&1 || rc=$?
   if [ "$rc" != "0" ]; then
-    tail -n 25 "$log" >&2
+    tail -n 25 "$PKG_LOG" >&2
     return "$rc"
   fi
 }
 
-on_err() { LAST_CMD="${BASH_COMMAND}"; }
+# The command named on failure: the one this step last ran, written out with its values
+# (run and the steps set it); only when there is none, the line that failed, as written.
+on_err() { [ -n "$LAST_CMD" ] || LAST_CMD="${BASH_COMMAND}"; }
 on_exit() {
   local rc=$?
   [ "$DONE" = "1" ] && return 0
@@ -312,6 +318,8 @@ install_homebrew() {
   fi
   use_brew || die "Homebrew reported success but brew is not found." "Homebrew 說裝好了，卻找不到 brew。"
   persist_brew_env
+  note "Homebrew is installed. Its \"Next steps\" above are done for you; nothing to type." \
+       "Homebrew 裝好了。它上面列的「Next steps」這裡已經幫你做好，不用照著打。"
 }
 
 ensure_clt() {
@@ -342,9 +350,11 @@ good_python() {
 }
 
 find_python() {
-  local p c
+  local p c prefixes="${SHELLFRAME_BREW_PREFIXES:-/opt/homebrew /usr/local}"
   if [ "$OS" = "Darwin" ]; then
-    for p in ${SHELLFRAME_BREW_PREFIXES:-/opt/homebrew /usr/local}; do
+    # The Homebrew in use first, wherever it lives.
+    case "$BREW" in */bin/brew) prefixes="$(dirname "$(dirname "$BREW")") $prefixes" ;; esac
+    for p in $prefixes; do
       for c in python3 python3.12 python3.13 python3.14 python3.11 python3.10; do
         if good_python "$p/bin/$c"; then printf '%s\n' "$p/bin/$c"; return 0; fi
       done

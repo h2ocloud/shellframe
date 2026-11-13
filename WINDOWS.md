@@ -17,13 +17,22 @@ If `iex` is blocked by execution policy, first run
 `Set-ExecutionPolicy -Scope Process Bypass -Force` in the same window.
 
 The installer:
-1. Auto-installs **Git**, **Python**, and the **WebView2 runtime** via `winget`
-   if they're missing (skips the Microsoft Store python stub)
+1. Installs **Git**, **Python 3.12** (for your account only) and the **WebView2
+   runtime** if they're missing (skips the Microsoft Store python stub), with
+   `winget`; where winget is not available (Windows Sandbox, LTSC, Server) it
+   downloads the same official installers directly. Windows may ask "Do you want
+   to allow this app to make changes to your device?" for Git or WebView2: click
+   **Yes** (the installer says so before it happens)
 2. Clones the repo to `%USERPROFILE%\.local\apps\shellframe`
-3. Creates a Python venv and installs `pywebview`, `pyte`, `pywinpty`
+3. Creates a Python venv, installs `pywebview`, `pyte`, `pywinpty`, and checks
+   that they import
 4. Drops `shellframe.bat` and `sfctl.bat` into `%USERPROFILE%\.local\bin` and
    adds it to your user PATH
-5. Creates a desktop shortcut
+5. Creates a desktop shortcut, offers Claude Code / Codex (optional), and opens
+   ShellBot after a first install
+
+If a step fails it says which one, the command, and how to finish it by hand;
+`$env:SHELLFRAME_DRY_RUN = "1"` before the line only prints what it would install.
 
 Re-running the command updates in place (auto-stashes local changes, falls back
 to a hard sync if history diverged). Open a **new** terminal afterward so the
@@ -34,7 +43,7 @@ shortcut.
 
 ## Requirements
 
-- **Python 3.9+** (3.10 or newer recommended) on PATH
+- **Python 3.10+** on PATH (the installer installs 3.12 when there is none)
 - **Git** on PATH (for self-update via `/update_now`)
 - **`pywinpty`** is auto-installed via `requirements.txt`. It's the binding to
   Windows ConPTY (the modern Windows pseudo-terminal). Without it ShellFrame
