@@ -387,7 +387,7 @@ class Engine:
         done = [s for s in route["steps"] if (rec.get("steps") or {}).get(s["id"], {}).get("state") == "done"]
         for s in done:
             keep = (s.get("kind") != "test" and not s.get("redo_on_reconnect")
-                    and not any(a.get("builtin") == redo_builtin for a in s.get("actions", [])))
+                    and not (redo_builtin and any(a.get("builtin") == redo_builtin for a in s.get("actions", []))))
             if keep and s.get("check"):
                 keep, _ = self._run_check(service, route, s, record=False)
             if not keep:

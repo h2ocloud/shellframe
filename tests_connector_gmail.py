@@ -731,9 +731,8 @@ res = r.engine.start("gmail", reconnect=True)
 steps = {s["id"]: s["state"] for s in res["view"]["steps"]}
 check("reconnect: the sign-in (b7) and the test are redone; Node, the Google Cloud steps and the server stay done",
       steps["b7"] != "done" and steps["b8"] == "pending" and all(steps[i] == "done" for i in ("b0", "b1", "b2", "b3", "b4", "b6")), steps)
-if steps["b5"] != "done":
-    print("  [note] the core's reconnect also redid the file step: that step's action is the adapter's (builtin None) "
-          "and reconnect compares it with an unset redo code (None)")
+check("reconnect: the file step stays done too (its action is the adapter's, not a builtin the problem asks to redo)",
+      steps["b5"] == "done", steps)
 for _ in range(5):                                         # whatever is open: the steps the core redid, then the sign-in
     cur = sid_of(res)
     if cur == "b5":
