@@ -2425,6 +2425,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         return active
 
     def _bridge_session_busy(self, sid: str) -> bool:
+        """True while a message from Telegram or LINE is on its way in or not answered yet.
+        Only a bridged message counts (has_user_msg): text pasted in the tab with its Enter
+        arms awaiting_response for completion notices (_arm_awaiting_response) and nothing
+        clears it outside a bridged turn, and a marker reply already forwarded keeps
+        expect_marker for follow-ups. Counting those left a tab "busy with Telegram" for
+        hours, every A2A and chat send to it queued and given up (measured)."""
         for bridge in (self.bridge, self.line_bridge):
             if not bridge:
                 continue
@@ -2433,9 +2439,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             except Exception:
                 slot = None
             if slot and (
-                getattr(slot, "awaiting_response", False)
-                or getattr(slot, "expect_marker", False)
+                getattr(slot, "inject_pending", False)
                 or getattr(slot, "pending_target_id", "")
+                or (getattr(slot, "has_user_msg", False) and not getattr(slot, "marker_forwarded", False)
+                    and (getattr(slot, "awaiting_response", False) or getattr(slot, "expect_marker", False)))
             ):
                 return True
         return False

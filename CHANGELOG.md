@@ -10,6 +10,20 @@
 
 ### Fixes
 
+- **A tab no longer looks "busy with Telegram" when no Telegram message is anywhere.** Reported:
+  messages to a tab waited under "Waiting for the message from Telegram to be taken" and were given up
+  after 30 minutes, for hours, while the tab sat idle. Text pasted in the tab together with its Enter
+  marked it as waiting for a reply (for the done notice), and only a Telegram turn ever cleared that; a
+  reply already sent to Telegram also kept the tab listening for follow-ups, which counted as busy too.
+  Now only a Telegram or LINE message on its way in or not answered yet holds other messages back.
+  Covered by tests_tg_busy_local_paste.py.
+
+  **沒有任何 Telegram 訊息時，分頁不會再被當成「在處理 Telegram」。** 回報：送給某個分頁的訊息一直停在「等
+  Telegram 那一則處理完再送進去」，30 分鐘後被放棄，持續了好幾個小時，那個分頁其實閒著。原因是在分頁裡貼上
+  文字連同 Enter 時，會把它標成「在等回覆」（用來發完成通知），而這個標記只有 Telegram 那一輪才會清掉；已經
+  回給 Telegram 的分頁還在聽後續訊息，也被算成忙碌。現在只有正在送進去、或還沒回覆的 Telegram／LINE 訊息，
+  才會讓其他訊息等。由 tests_tg_busy_local_paste.py 守著。
+
 - **An asleep bot's editor has "Save and switch now" too.** It was offered only while the bot was
   awake. Asleep, the bot is woken at once on the CLI and model just saved; awake, it still writes its
   memory and closes first. Covered by tests_plan_a_ui.py.
