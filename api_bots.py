@@ -1190,6 +1190,7 @@ class BotsApiMixin:
         _update(_mut)
         if out.get("missing"):
             return json.dumps({"success": False, "message": _(f'"{role}" is not a bot', f"「{role}」不是 bot")})
+        bots.drop_links_to(role)
         self._bots_notify_ui()
         kept = _(f'; "{role}" was in the roster before it became a bot and stays there as a plain worker role',
                  f"；「{role}」在開成 bot 之前就在名冊裡，留下來當一般工作角色") if out.get("kept_role") else ""

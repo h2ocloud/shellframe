@@ -296,6 +296,23 @@ api.bots_rename("秘書", "助理")                  # and back to a name it had
 check("renamed back, the skill is where it was", (BOTS / "助理" / "skills" / "發版清單" / "SKILL.md").is_file()
       and not (BOTS / "助理").is_symlink())
 
+print("8c. deleted after a rename: the old names' links go, the folder stays")
+if POSIX:
+    fresh()
+    api.bots_rename("助理", "秘書")
+    (BOTS / "別的").mkdir()
+    os.symlink("別的", BOTS / "別的舊名")            # another bot's old name
+    r = json.loads(api.bots_delete("秘書"))
+    check("deleted; its folder stays, the link at its old name is gone", r.get("success")
+          and (BOTS / "秘書" / "MEMORY.md").is_file() and not (BOTS / "助理").is_symlink() and not (BOTS / "助理").exists(), r)
+    check("…another bot's old-name link is left alone", (BOTS / "別的舊名").is_symlink())
+    fresh()
+    api.bots_rename("助理", "秘書")
+    shutil.rmtree(BOTS / "秘書")                  # the folder moved away by hand: the old name's link leads nowhere
+    d = bots.ensure_dirs("助理")
+    check("a new bot with an old name whose link leads nowhere gets a folder of its own",
+          d.is_dir() and not d.is_symlink() and (d / "sessions").is_dir())
+
 print("9. both ways in, in the page")
 js = (HERE / "web" / "bots.js").read_text(encoding="utf-8")
 html = (HERE / "web" / "index.html").read_text(encoding="utf-8")

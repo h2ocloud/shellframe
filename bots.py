@@ -142,6 +142,8 @@ def ensure_dirs(role) -> Path:
         except OSError:
             pass
     d = bot_dir(role)
+    if d.is_symlink() and not d.exists():
+        d.unlink()                     # an old name's link to a folder no longer there: a new bot gets its own
     (d / "sessions").mkdir(parents=True, exist_ok=True)
     return d
 
@@ -349,6 +351,22 @@ def move_dir(old, new) -> str:
         except OSError:
             pass
     return ""
+
+
+def drop_links_to(role) -> int:
+    """The links renames left at a deleted bot's old names. Its folder stays, but an old name
+    must not lead a new bot of that name into it (or, the folder moved away, to nothing)."""
+    if os.name == "nt":
+        return 0
+    target, n = slug(role), 0
+    try:
+        for link in memory_root().iterdir():
+            if link.is_symlink() and os.readlink(link) == target:
+                link.unlink()
+                n += 1
+    except OSError:
+        pass
+    return n
 
 
 # ── what the UI may see ────────────────────────────────────────────────────
