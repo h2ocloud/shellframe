@@ -604,6 +604,8 @@ class RemoteApiMixin:
                     return {"success": False, "code": "draft", "draft": draft, "message": sf_lang.pick(
                         "The input box holds text that was never sent; clear it and send (clear_draft), or not now.",
                         "輸入框裡有一段還沒送出的字；要清掉後送出（clear_draft），還是先不送。")}
+                if args.get("from_phone"):     # the person wrote it on a phone (frame_link: a peer of kind "ios")
+                    agent_link.clear_chain(sid)
                 sender = str(args.get("from_sid") or "")
                 label = self._session_label(sid, self.sessions.get(sid))
                 res = tab_delivery.deliver(self, sid, text, submit=submit, now=bool(args.get("now")),
@@ -626,6 +628,8 @@ class RemoteApiMixin:
                 s = self.sessions.get(sid)
                 if not s:
                     return {"success": False, "message": f"No such session: {sid}"}
+                if agent_link.answers(data):   # only a person's keys come this way: a fresh A2A chain
+                    agent_link.clear_chain(sid)
                 s.write(data)
                 return {"success": True}
             except Exception as e:
@@ -1031,7 +1035,6 @@ class RemoteApiMixin:
 
         elif cmd == "a2a_history":
             try:
-                import agent_link
                 return {"success": True,
                         "details": {"entries": agent_link.history(int(args.get("limit") or 100)),
                                     "enabled": bool((main.load_config().get("settings") or {})

@@ -119,11 +119,20 @@ def depth_for(from_sid: str) -> int:
 
 
 def clear_chain(sid: str):
-    """The person wrote to this tab (Enter in its terminal, a send from the chat view, a Telegram
-    message), so whatever it sends next starts a fresh chain, not a continuation of an
-    agent-to-agent one. Without it a tab that once got a deep message stayed at the cap for good."""
+    """The person wrote to this tab or answered its question (Enter or an option's number in its
+    terminal or a remote one, a send from the chat view or a phone, a Telegram or LINE message, an
+    option button on the desktop, a phone or Telegram), so whatever it sends next starts a fresh
+    chain, not a continuation of an agent-to-agent one. Without it a tab that once got a deep
+    message stayed at the cap for good; an answer by button missed it until v0.44.5."""
     with _lock:
         _inbound_depth.pop(sid, None)
+
+
+def answers(data: str) -> bool:
+    """Keys from the person that send or answer something: Enter, or an option's number pressed
+    alone (a numbered menu takes the digit and moves on, no Enter). Either clears the tab's chain."""
+    d = data or ""
+    return "\r" in d or (len(d) == 1 and d in "123456789")
 
 
 _DEPTH_REASON = re.compile(r"chain depth (\d+) over limit (\d+)")

@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlparse
 
 from bridge_base import BridgeBase, BridgeConfigBase
 from bridge_telegram import strip_ansi
+import agent_link
 
 import sf_config
 
@@ -854,6 +855,7 @@ class LineBridge(BridgeBase):
         slot.reply_end_marker = end_marker
         slot.pending_user_id = user_id
         slot.pending_target_id = target_id
+        agent_link.clear_chain(sid)   # the person wrote this: the tab's A2A chain starts over, as on Telegram
         # Some full-screen TUIs treat a large paste ending with CR as text entry
         # only. Send Enter as a separate keystroke so LINE messages submit.
         slot.write_fn(payload)

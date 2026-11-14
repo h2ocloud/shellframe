@@ -5312,6 +5312,7 @@ class TelegramBridge(BridgeBase):
         tg_api(self.config.bot_token, "answerCallbackQuery", {"callback_query_id": cq_id})
         if bridge_queue.on_callback(self, data, chat_id, message_id):   # ⚡ go in now
             return
+        bridge_home.person_tapped(self, data)      # an answer from the person: the tab's A2A chain starts over
 
         if data.startswith("new:"):
             choice = data[4:]

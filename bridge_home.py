@@ -545,6 +545,21 @@ def opened(bridge, sid, text, chat_id, result):
         _tg(bridge, "editMessageReplyMarkup", {"chat_id": c, "message_id": m, "reply_markup": {"inline_keyboard": []}})
 
 
+ANSWER_TAPS = ("choice:", "mchoice:", "efchoice:", "rlchoice:", "trust:")
+
+
+def person_tapped(bridge, data: str):
+    """A Telegram tap that answers a tab's question or menu (an option, a model, an effort level,
+    the usage-limit menu, folder trust): the person answered, so the tab starts a fresh A2A chain,
+    as when they type to it. A tap refused as stale never gets here (on_choice)."""
+    if not str(data or "").startswith(ANSWER_TAPS):
+        return
+    slots = getattr(bridge, "slots", None) or {}
+    sid = next((p for p in str(data).split(":")[1:3] if p in slots), "")
+    if sid:
+        agent_link.clear_chain(sid)
+
+
 def on_choice(bridge, data: str, chat_id, message_id, cq_id) -> bool:
     """A tap on a numbered-choice button (any path that sent one). True when it must
     not go in: that message was answered already, or a newer question replaced it.

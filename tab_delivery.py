@@ -198,6 +198,7 @@ def answer_choice(api, sid: str, n, kind: str = "menu", write=None) -> str:
     write = write or (s.write if s else None)
     if not write:
         return ""
+    agent_link.clear_chain(sid)            # the person answered: what the tab sends next starts a fresh A2A chain
     if kind != "menu":
         write(f"{n}\r")
         return f"{n}\r"

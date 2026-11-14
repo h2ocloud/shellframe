@@ -4174,8 +4174,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 s._idle_reap_state = ""
                 s._idle_summary_requested_at = 0.0
                 s._idle_close_after = 0.0
+        if agent_link.answers(data):         # the person pressed Enter or an option's number here
+            agent_link.clear_chain(sid)      # what the tab sends next starts a fresh A2A chain
         if '\r' in data:
-            agent_link.clear_chain(sid)      # the person pressed Enter here: what the tab sends next starts a fresh A2A chain
             self._auto_name(sid, s, data.rstrip('\r\n'))
         # IME dedup：前端 _makeImeDedup 擋 xterm.onData 那條，上面的保底擋其餘路徑。
         # On the first REAL user message, inject the init prompt BEFORE it.

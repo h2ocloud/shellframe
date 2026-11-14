@@ -1392,8 +1392,9 @@ class FrameLink:
     # ── local actions on behalf of a peer ─────────────────────────────────
     def _local_send(self, sid: str, text: str, submit: bool,
                     source_peer: str, ask_draft: bool = False, clear_draft: bool = False) -> dict:
-        peer_name = (self.peers().get(source_peer) or {}).get("name", "peer")
-        res = self._execute("send", {"sid": sid, "text": text, "submit": submit,
+        peer = self.peers().get(source_peer) or {}
+        peer_name = peer.get("name", "peer")
+        res = self._execute("send", {"sid": sid, "text": text, "submit": submit, "from_phone": peer.get("kind") == "ios",
                                      "ask_draft": ask_draft, "clear_draft": clear_draft}) or {}
         self._record_inbox({"kind": "remote_send", "peer_id": source_peer,
                             "peer_name": peer_name, "sid": sid,
