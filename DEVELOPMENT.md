@@ -102,7 +102,7 @@
   `TEST_RUNNER_SF_QA_SID=<sid> TEST_RUNNER_SF_QA_OUT=<dir> xcodebuild test -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iPhone 16 Pro' …`
   模擬器沒相機，配對用 QA 掛鉤 `SIMCTL_CHILD_SF_QA_PAIR_URL=<pair_url> xcrun simctl launch …`
   （`simctl openurl` 會跳系統的「要在 ShellFrame 打開嗎？」點不掉）。
-- `frame_link.py` / `link_relay.py` / `relay_server.py` 改動：`sfctl restart`（不是 reload）。
+- `frame_link.py` / `link_records.py` / `link_relay.py` / `relay_server.py` 改動：`sfctl restart`（不是 reload）。
   回歸：`tests_frame_link.py`、`tests_relay.py`（同 process 起 relay + 兩個 instance）。
 - relay 是「電腦出站長輪詢」，跟 TG bridge 一樣不用開 port；relay 看得到明文，自架＋TLS。
 

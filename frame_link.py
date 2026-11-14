@@ -53,6 +53,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, quote
 
+import link_records
 try:
     import link_relay            # relay (NAT-friendly) transport, optional
 except ImportError:          # pragma: no cover
@@ -222,30 +223,7 @@ def parse_pair_url(url: str):
     return obj if isinstance(obj, dict) and obj.get("code") else None
 
 
-class _JsonStore:
-    """Tiny locked JSON file persistence (inbox log / outbox queues)."""
-
-    def __init__(self, path: Path, default):
-        self._path = path
-        self._lock = threading.Lock()
-        self._default = default
-
-    def load(self):
-        with self._lock:
-            try:
-                return json.loads(self._path.read_text(encoding="utf-8"))
-            except Exception:
-                return json.loads(json.dumps(self._default))
-
-    def save(self, data):
-        with self._lock:
-            try:
-                self._path.parent.mkdir(parents=True, exist_ok=True)
-                tmp = self._path.with_suffix(".tmp")
-                tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-                tmp.replace(self._path)
-            except Exception:
-                pass
+_JsonStore = link_records.JsonStore
 
 
 class _HeaderView(dict):
@@ -297,7 +275,7 @@ class FrameLink:
         self._pairing_lock = threading.Lock()
         self._nonces = {}               # nonce -> ts (replay cache)
         self._nonce_lock = threading.Lock()
-        self._refused_logged = {}       # (peer, reason) -> ts of the last log line about it
+        self._audit = link_records.LinkAudit(lambda m: self._log(m), self.peers)   # refused / accepted requests in the log
         self._peer_status = {}          # peer_id -> {reachable,last_ok,last_err}
         self._cursor_lock = threading.Lock()
 
@@ -776,29 +754,9 @@ class FrameLink:
         return "\n".join([method.upper(), path_qs, ts, nonce, body_hash]).encode()
 
     def _verify_request(self, handler, body: bytes):
-        """Returns (peer_id, peer_dict, request_nonce) or (None, error_msg, None).
-        A refused request is logged (who, which route, why), at most once a minute per peer and
-        reason: a phone whose messages never arrived used to leave no trace at all (v0.44.5)."""
+        """(peer_id, peer_dict, request_nonce), or (None, why, None) with the refusal logged (link_records)."""
         res = self._check_request(handler, body)
-        if not res[0]:
-            self._note_refused(handler, res[1])
-        return res
-
-    def _note_refused(self, handler, why: str):
-        claimed = handler.headers.get("X-SF-Peer") or ""
-        key, now = (claimed, why), _now()
-        with self._nonce_lock:
-            if now - self._refused_logged.get(key, 0) < 60:
-                return
-            self._refused_logged[key] = now
-        name = (self.peers().get(claimed) or {}).get("name", "")
-        who = (claimed[:8] or "?") + (f" ({name})" if name else "")
-        self._log(f"[link] refused {handler.command} {urlparse(handler.path).path} "
-                  f"from peer {who}: {why}")
-
-    def peer_label(self, peer_id: str) -> str:
-        name = (self.peers().get(peer_id) or {}).get("name", "")
-        return (peer_id[:8] or "?") + (f" ({name})" if name else "")
+        return res if res[0] else (self._audit.refused(handler, res[1]) or res)
 
     def _check_request(self, handler, body: bytes):
         peer_id = handler.headers.get("X-SF-Peer") or ""
@@ -991,10 +949,7 @@ class FrameLink:
                 if not peer_id:
                     return self._send(403, {"success": False, "message": peer})
                 body = self._body_json(raw)
-                if path not in ("/link/input", "/link/resize"):      # those come per keystroke / per resize
-                    sid = str(body.get("sid") or body.get("name") or "")[:40]
-                    link._log(f"[link] {path} from peer {link.peer_label(peer_id)}"
-                              + (f" → {sid}" if sid else ""))
+                link._audit.accepted(path, peer_id, body)
 
                 if path == "/link/send":
                     if not link._peer_may_control(peer_id):
