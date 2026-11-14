@@ -6,6 +6,68 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.44.5 (2026-11-14)
+
+### Fixes
+
+- **Answering a tab's question by button lets it send A2A again.** Reported in daily use: a tab received an
+  A2A message five layers deep (delivered as "not passed on"), then asked the person a question with
+  `[[SF:RED]]` options; the person pressed 1 in the desktop's chat view, and the tab's next `sfctl a2a-send`
+  was still layer 6, over the limit of 4, and was not delivered. The person writing to a tab is meant to start
+  its next message at layer 1, but that reset only ran for Enter in the terminal, a send from the chat view and
+  a Telegram message. Every option button (the desktop chat view's, a phone's `/link/answer`, Telegram's)
+  types its answer through one function straight into the terminal, and a numbered menu takes the digit alone,
+  with no Enter, so none of them reset the chain. Now the chain starts over whenever the person answers or
+  writes: any option button; Telegram's model, effort, usage-limit and folder-trust buttons; an option's
+  number pressed alone in the terminal or sent as raw keys from a phone's terminal or a remote pane; a send
+  from a phone; a LINE message. What an agent sends (`sfctl send`, `link-send` from another computer, an A2A
+  delivery) still keeps the layer it was given. Covered by `tests_a2a_chain_menu_answer.py`, which fails on
+  the previous build with the reported refusal (layer 6, limit 4, not delivered).
+
+  **用按鈕回答分頁的問題之後，它又能送 A2A 了。** 日常使用中回報：某個分頁收到一則第 5 層的 A2A（以「未轉達」送進去），
+  接著用 `[[SF:RED]]` 列出選項問使用者；使用者在桌面的對話畫面按了 1，分頁下一次 `sfctl a2a-send` 仍是第 6 層，超過上限 4，
+  沒有送達。照設計，使用者對分頁說話，它下一則就從第 1 層重新算；但這個歸零只在終端機按 Enter、對話畫面送出和 Telegram
+  訊息時會做。所有選項按鈕（桌面對話畫面、手機的 `/link/answer`、Telegram）都經同一個函式直接把答案打進終端機，而編號選單
+  只收數字、不用 Enter，所以都沒有歸零。現在只要使用者回答或說話就會重新算：任何選項按鈕；Telegram 的模型、effort、用量上限、
+  資料夾信任按鈕；在終端機單按選項數字，或從手機的終端機畫面、遠端分頁送來的原始按鍵；手機送出的訊息；LINE 訊息。agent
+  送的東西（`sfctl send`、別台電腦的 `link-send`、A2A 交付）仍保留原本的層數。由 `tests_a2a_chain_menu_answer.py` 守著：
+  它在上一版會重現回報的拒絕（第 6 層、上限 4、未送達）。
+
+- **Deleting a renamed bot also removes the links its old names left.** Renaming a bot leaves a link at its old
+  folder name so a bot still running keeps writing into the new folder. Deleting the bot kept those links: a
+  new bot later given an old name read the deleted bot's memory, and when that folder had been moved away by
+  hand, the link led nowhere and the new bot got no memory folder at all. Deleting a bot now removes the links
+  that point at its folder (the folder itself stays, as before), and a link that leads nowhere is replaced with
+  a real folder when a bot needs one. Covered by `tests_bot_rename.py`.
+
+  **刪掉改過名的 bot 時，舊名字留下的連結也一起清掉。** bot 改名時會在舊資料夾名稱留一個連結，讓還在執行的 bot 繼續寫進新資料夾。
+  刪除 bot 時這些連結沒有清掉：之後新建的 bot 若用了舊名字，會讀到被刪 bot 的記憶；那個資料夾若已被手動搬走，連結就指向不存在
+  的地方，新 bot 連記憶資料夾都建不起來。現在刪除 bot 會移除指向它資料夾的連結（資料夾本身照舊保留），需要資料夾時若遇到指向
+  不存在之處的連結，會換成真的資料夾。由 `tests_bot_rename.py` 守著。
+
+### Added
+
+- **Frame Link writes refused requests to the log.** Reported in daily use: a tablet's messages reached neither
+  paired computer, and neither computer had any trace, because a request that failed verification was answered
+  403 and forgotten. Now a refused request leaves one line with its route, the peer it claims to be (id prefix
+  and name) and the reason, at most once a minute per peer and reason, since a phone retries every few seconds;
+  an accepted POST leaves its route, peer and tab (not `/link/input` or `/link/resize`, which come per keystroke
+  and per resize). Signatures, nonces and message text never appear. Covered by `tests_link_refused_log.py`.
+
+  **Frame Link 會把被拒絕的請求寫進 log。** 日常使用中回報：平板送出的訊息兩台配對的電腦都沒收到，兩邊也都沒有任何紀錄，因為
+  驗證失敗的請求回 403 之後就沒有留下痕跡。現在被拒的請求會留一行：路由、它自稱的裝置（id 前 8 碼與名稱）和原因；同一裝置、
+  同一原因每分鐘最多一行，因為手機每幾秒就會重試。接受的 POST 會留下路由、裝置與分頁（`/link/input`、`/link/resize` 不記，
+  它們是每個按鍵、每次調整大小各一次）。簽章、nonce 和訊息內容一律不寫。由 `tests_link_refused_log.py` 守著。
+
+### Internal
+
+- Frame Link's JSON stores (inbox, outbox, cursors) and its request log moved to `link_records.py`, keeping
+  `frame_link.py` within its size budget. A local `import agent_link` inside `_execute_sfctl` made the name
+  local to the whole function; it is gone, since the module already imports it.
+
+  Frame Link 的 JSON 儲存（收件、寄件、游標）和請求 log 搬到 `link_records.py`，讓 `frame_link.py` 維持在行數預算內。
+  `_execute_sfctl` 裡有一行區域的 `import agent_link`，會讓這個名稱在整個函式裡都變成區域變數；模組本來就有匯入，所以拿掉了。
+
 ## v0.44.4 (2026-11-13)
 
 ### Fixes
