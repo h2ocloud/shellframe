@@ -15,13 +15,18 @@ Run: .venv/bin/python tests_pty_child_fds.py
 """
 import ast
 import os
-import pty
-import select
 import sys
-import tempfile
-import time
-from pathlib import Path
-from unittest.mock import MagicMock
+
+if os.name == "nt":
+    print("SKIP  no pty.fork on Windows (its tabs run under ConPTY / winpty)")
+    sys.exit(0)
+
+import pty  # noqa: E402
+import select  # noqa: E402
+import tempfile  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="sf-pty-fds-"))
