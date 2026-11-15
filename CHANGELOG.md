@@ -6,6 +6,62 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.44.6 (2026-11-15)
+
+### Fixes
+
+- **The terminal and Telegram no longer stop after a restart that reattaches many tabs.** Reported in daily
+  use: after a restart, every tab's terminal froze on the minute of the restart and showed nothing typed
+  (reloading the page left it blank), and the Telegram bridge forwarded no reply. A tab it was waiting on
+  counted as busy with Telegram, so every A2A to it was queued for 30 minutes and given up, for 18 hours. The
+  one loop that hands every tab's output to the page and to the bridges was stuck in a `tmux capture-pane`
+  call made while reading a new tab's startup trust prompt. `Popen` waits for the child to exec on a pipe of
+  its own, and that wait has no timeout. Every tab's `tmux attach` is forked with `pty.fork()` and inherited
+  each descriptor ShellBot had open without close-on-exec; macOS has no `pipe2`, so a pipe subprocess is
+  creating is inheritable for a moment. A `tmux attach` forked in that moment (the restart reattached 20 tabs)
+  kept that pipe open until its tab closed. Measured: two thread samples 16 hours apart show the loop's thread
+  in the same `os.read` under `Popen.__init__`; a stand-alone repro (one thread running `Popen` while another
+  forks pty children) holds `Popen` for exactly as long as the child lives, past `timeout=1`; each running
+  `tmux attach` held up to 23 of ShellBot's descriptors. A forked tab now closes every descriptor but its
+  terminal before `execve`. Covered by `tests_pty_child_fds.py`, which shows the held pipe without the fix.
+
+  **重啟時接回很多分頁之後，終端機和 Telegram 不會再停住。** 日常使用中回報：重啟後，每個分頁的終端機都凍在重啟那一分鐘，
+  打字也看不到（重新載入頁面只會變成白畫面），Telegram bridge 也沒有轉出任何回覆。bridge 正在等回覆的那個分頁一直被算成
+  「正在處理 Telegram」，送給它的 A2A 每則都排 30 分鐘後放棄，持續 18 小時。負責把所有分頁輸出交給頁面和 bridge 的那唯一一個
+  迴圈，卡在一次 `tmux capture-pane`（讀新分頁的啟動信任提示時呼叫的）。`Popen` 會用一根自己的管線等子程序 exec，這段等待
+  沒有逾時。每個分頁的 `tmux attach` 都是用 `pty.fork()` 開的，會繼承 ShellBot 所有沒設 close-on-exec 的描述子；macOS 沒有
+  `pipe2`，subprocess 剛建的管線有一小段時間是可繼承的。剛好在那一刻 fork 出來的 `tmux attach`（那次重啟接回 20 個分頁）
+  就把這根管線一直開著，直到分頁關掉。量測：相隔 16 小時的兩次執行緒取樣，這個迴圈的執行緒都停在 `Popen.__init__` 底下的
+  同一個 `os.read`；獨立重現（一條執行緒跑 `Popen`，另一條 fork pty 子程序）讓 `Popen` 卡住的時間正好等於子程序活著的時間，
+  超過 `timeout=1`；每個執行中的 `tmux attach` 最多帶著 ShellBot 的 23 個描述子。現在 fork 出來的分頁在 `execve` 前會關掉
+  終端機以外的所有描述子。由 `tests_pty_child_fds.py` 守著，沒有修正時它會重現被佔住的管線。
+
+- **One stuck call no longer stops the whole output path.** Tab output now goes through three loops: collect
+  (reads the tabs, hands output to the bridges and Frame Link), push (into the page) and feed (each bridge), so
+  a page or a bridge that does not answer holds up only its own loop. A startup trust prompt is read on a
+  thread of its own, and output that arrives during that check gets one more check. A watchdog replaces a loop
+  silent for 30 s, writes where it was stuck to the debug log (`[pump]`) and every thread's stack to the fault
+  log, and redraws the visible tab; at most 6 replacements per loop an hour. Before, the same stall left
+  nothing in any log. Covered by `tests_output_pump.py`.
+
+  **一個卡住的呼叫不會再讓整條輸出停住。** 分頁輸出現在分三個迴圈：collect（讀分頁、交給 bridge 和 Frame Link）、push
+  （送進頁面）、feed（交給各 bridge）。頁面或 bridge 沒回應時，只會卡住它自己那個迴圈。啟動信任提示改在自己的執行緒上讀，
+  檢查期間進來的輸出會再檢查一次。看門狗發現某個迴圈 30 秒沒動，就換一個新的上來，把卡住的位置寫進 debug log（`[pump]`），
+  把所有執行緒的 stack 寫進 fault log，並重畫目前看得到的分頁；每個迴圈每小時最多換 6 次。之前同樣的卡住在任何 log 裡都
+  看不到。由 `tests_output_pump.py` 守著。
+
+- **A tab whose Telegram turn ended is no longer busy forever when the bridge missed the reply.** When the
+  tab's hooks say the turn that took the Telegram message ended more than 2 minutes ago and the bridge still
+  has no reply, A2A and chat-view sends go in again (said once in the debug log). The turn must have started
+  after the message went in; a message being typed in, a LINE message waiting, or a tab without hooks counts
+  as before. The missed reply itself is not sent to Telegram afterwards. Covered by
+  `tests_tg_busy_turn_over.py`.
+
+  **bridge 漏接回覆時，Telegram 那一輪已經結束的分頁不會再永遠算成忙碌。** 分頁的 hook 顯示收到 Telegram 訊息的那一輪已經
+  結束超過 2 分鐘、bridge 卻還沒拿到回覆時，A2A 和對話畫面的訊息就照常送進去（debug log 記一次）。那一輪必須是訊息送進去
+  之後才開始的；訊息正在打進去、LINE 訊息在等回覆，或分頁沒有 hook 時，判斷照舊。漏接的那則回覆不會事後補送到 Telegram。
+  由 `tests_tg_busy_turn_over.py` 守著。
+
 ## v0.44.5 (2026-11-14)
 
 ### Fixes
