@@ -83,6 +83,11 @@ def start_line(environ=None, executable=None, console=None) -> str:
     return win_instance.start_line(environ, executable, console)
 
 
+def fault_file():
+    """The open fault log (faulthandler's file), or None: for a stack dump the app asks for."""
+    return _fault_file
+
+
 def _faulthandler():
     """faulthandler into a file of its own; the last two runs' stacks kept."""
     global _fault_file

@@ -64,6 +64,7 @@ import bot_names
 import bots
 import sf_config
 import js_guard
+import output_pump
 import sf_trail
 import win_instance
 from api_history import HistoryApiMixin
@@ -1311,6 +1312,27 @@ def _list_tmux_sessions() -> list[dict]:
     return tmux_sessions.list_sf_sessions(_tmux_bin(), TMUX_PREFIX)
 
 
+def _fd_ceiling() -> int:
+    try:
+        n = os.sysconf("SC_OPEN_MAX")
+    except (AttributeError, ValueError, OSError):
+        n = 0
+    return n if 0 < n <= 65536 else 65536     # unlimited or huge: this app never holds that many
+
+
+_FD_CEILING = _fd_ceiling()
+
+
+def close_inherited_fds():
+    """In a pty.fork() child, just before execve: the tab's process keeps its terminal (0-2)
+    and nothing else of ShellBot's. It used to inherit every descriptor without close-on-exec,
+    and macOS has no pipe2: a pipe another thread is creating gets close-on-exec a moment after
+    it exists. A `tmux attach` forked in that moment held subprocess's exec-error pipe, and that
+    thread's Popen waited for the tab to close, past any timeout (measured 2026-11-14: the
+    output loop stopped for 21 hours after a restart reattached 20 tabs)."""
+    os.closerange(3, _FD_CEILING)
+
+
 class Session:
     """One PTY tab session."""
 
@@ -1610,6 +1632,7 @@ class Session:
             env["COLORTERM"] = "truecolor"
             env.setdefault("LANG", "en_US.UTF-8")
             tmux = shutil.which("tmux", path=env.get("PATH"))
+            close_inherited_fds()
             os.execve(tmux, ["tmux", "attach-session", "-t", self._tmux_name], env)
         else:
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
@@ -1640,7 +1663,7 @@ class Session:
                 os.chdir(self.cwd)
             except Exception:
                 _swallow("Session._start_unix:998")
-
+            close_inherited_fds()
             if exe:
                 os.execve(exe, args, env)
             else:
@@ -2443,14 +2466,40 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 slot = bridge.slots.get(sid)
             except Exception:
                 slot = None
-            if slot and (
-                getattr(slot, "inject_pending", False)
-                or getattr(slot, "pending_target_id", "")
-                or (getattr(slot, "has_user_msg", False) and not getattr(slot, "marker_forwarded", False)
-                    and (getattr(slot, "awaiting_response", False) or getattr(slot, "expect_marker", False)))
-            ):
+            if not slot:
+                continue
+            if getattr(slot, "inject_pending", False) or getattr(slot, "pending_target_id", ""):
+                return True
+            if (getattr(slot, "has_user_msg", False) and not getattr(slot, "marker_forwarded", False)
+                    and (getattr(slot, "awaiting_response", False) or getattr(slot, "expect_marker", False))
+                    and not self._bridged_turn_over(sid, slot)):
                 return True
         return False
+
+    _BRIDGED_TURN_GRACE_S = 120.0
+
+    def _bridged_turn_over(self, sid: str, slot) -> bool:
+        """The tab's hooks say the bridged message's turn ended more than a grace period ago,
+        and the bridge still has no reply. Measured 2026-11-14: the bridge stopped receiving
+        output, the tab answered in 39 s and every A2A to it was given up for 18 hours. The
+        grace leaves the bridge its own fallback (30 s after a turn). Only a turn that started
+        after the message went in counts; a tab without hooks keeps waiting as before."""
+        sent = float(getattr(slot, "msg_sent_ts", 0.0) or 0.0)
+        hk = (getattr(self, "_hook_events", None) or {}).get(sid) or {}
+        prompt_at, since = float(hk.get("prompt_at") or 0.0), float(hk.get("since") or 0.0)
+        if not sent or hk.get("state") != "done" or prompt_at < sent or since < prompt_at:
+            return False
+        ended = time.time() - since
+        if ended < self._BRIDGED_TURN_GRACE_S:
+            return False
+        said = getattr(self, "_bridged_turn_said", None)
+        if said is None:
+            said = self._bridged_turn_said = {}
+        if said.get(sid) != sent:
+            said[sid] = sent
+            _dlog("deliver", f"{sid}: the bridged message's turn ended {int(ended)}s ago (hooks), "
+                             f"no reply seen by the bridge; not counted busy")
+        return True
 
     def _idle_summary_prompt(self, label: str, idle_sec: int, idle_cfg: dict | None = None) -> str:
         idle_cfg = idle_cfg or {}
@@ -3260,90 +3309,21 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         return json.dumps(restored)
 
     def _start_output_pusher(self):
-        """Background threads that push PTY output to frontend via evaluate_js.
-        Event-driven: reader threads signal _output_event so pusher wakes instantly."""
+        """Tab output to the page, the bridges and Frame Link, in loops that cannot stop one
+        another, with a watchdog: output_pump.py."""
         if self._pusher_started:
             return
         self._pusher_started = True
-        pending = {}  # sid -> str
-        bg_last_push = {}  # sid -> 上次 push 時間（背景 tab 節流用）
-        BG_PUSH_INTERVAL = 0.25  # 背景(非當前顯示)tab 最多 4Hz push webview；當前 tab 全速
-        MAX_PUSH_CHARS = 65536  # 單次推 webview 的字元上限，防爆量輸出(大檔/base64/長log)一次 evaluate_js 灌爆主執行緒凍住 UI
 
-        def pusher():
-            while True:
-                self._output_event.clear()
-                pushed = False
-                throttled = False  # 有背景 tab 的 pending 還沒到節流窗口
-                now = time.time()
-                active = self._active_sid
-                for sid, s in list(self.sessions.items()):
-                    data = s.read()
-                    if data:
-                        self._auto_accept_startup_trust_prompt(sid, s)
-                        if (self.bridge or self.line_bridge) and getattr(s, '_bridge_enabled', True):
-                            self._bridge_queue.put_nowait((sid, data))
-                        # Frame Link：把原始輸出餵給正在被遠端串流的分頁（無縫
-                        # 遠端畫面）。feed_output 只緩衝有人在看的分頁，平時零成本。
-                        fl = getattr(self, "frame_link", None)
-                        if fl is not None:
-                            try:
-                                fl.feed_output(sid, data)
-                            except Exception:
-                                pass
-                        pending[sid] = pending.get(sid, "") + data
-                    chunk = pending.get(sid)
-                    if chunk and self._window:
-                        # 背景 tab(非當前顯示)節流：未到 4Hz 窗口就先留著 pending 不 push，
-                        # 切回該 tab 時 set_active_tab 會喚醒立刻刷出 → 不掉字、不卡主緒。
-                        # active 為空(尚未設定)時視同全速，退化為原行為。
-                        is_active = (not active) or (sid == active)
-                        if not is_active and (now - bg_last_push.get(sid, 0.0)) < BG_PUSH_INTERVAL:
-                            throttled = True
-                            continue
-                        # 防 webview 被爆量輸出灌爆主執行緒：單次推送超過上限只送尾端，
-                        # 從換行邊界切避免截斷 ANSI escape，前面標一行說明略過量。
-                        if len(chunk) > MAX_PUSH_CHARS:
-                            dropped = len(chunk) - MAX_PUSH_CHARS
-                            cut = chunk.find("\n", dropped)
-                            chunk = chunk[cut + 1:] if cut != -1 else chunk[-MAX_PUSH_CHARS:]
-                            chunk = f"\x1b[2m…[已略過 {dropped} 字元的大量輸出]…\x1b[0m\r\n" + chunk
-                        escaped = json.dumps(chunk)
-                        try:
-                            # evaluate_js 會等主執行緒排程＋等 JS 跑完（xterm.write
-                            # 連渲染一起算）。UI 凍結時就是卡在這裡，但以前沒有任何
-                            # 數據——凍結是間歇性的，事後 sample 抓不到。超過 400ms
-                            # 的推送留一筆，才知道是哪個分頁、多大的 chunk 造成的。
-                            _t0 = time.time()
-                            self._window.evaluate_js(f'_pushOutput("{sid}",{escaped})')
-                            _dt = time.time() - _t0
-                            if _dt > 0.4:
-                                _dlog("perf", f"evaluate_js 慢 {int(_dt * 1000)}ms "
-                                              f"sid={sid} chunk={len(chunk)}字元 "
-                                              f"tabs={len(self.sessions)}")
-                            pending.pop(sid, None)
-                            bg_last_push[sid] = now
-                            pushed = True
-                        except Exception:
-                            _swallow("_start_output_pusher.pusher:2072")
-                # Event-driven: reader threads set _output_event on every new
-                # chunk, so the idle wait is just a safety net — not a polling
-                # interval. 0.5s idle floor cuts the steady-state from 66 to 2
-                # wakes/s (each wake iterates every session under its lock).
-                # 串流中(剛 push 過)用 5ms 把殘餘 pending 排乾；有節流中的背景
-                # pending 用 0.1s 醒來等下個 4Hz 窗口。
-                self._output_event.wait(0.005 if pushed else (0.1 if throttled else 0.5))
+        def repaint():
+            s = self.sessions.get(self._active_sid or "")
+            if s is not None and getattr(s, "_tmux_name", None):
+                tmux_sessions.refresh_client(_tmux_bin(), s._tmux_name, s.child_pid)
+            self._output_event.set()
 
-        def bridge_feeder():
-            while True:
-                sid, data = self._bridge_queue.get()
-                if self.bridge:
-                    self.bridge.feed_output(sid, data)
-                if self.line_bridge:
-                    self.line_bridge.feed_output(sid, data)
-
-        threading.Thread(target=pusher, daemon=True).start()
-        threading.Thread(target=bridge_feeder, daemon=True).start()
+        self._output_pump = output_pump.OutputPump(self, _dlog, _swallow, repaint=repaint,
+                                                   fault_file=sf_trail.fault_file)
+        self._output_pump.start()
 
     # ── Hook-driven agent status (exact, event-based) ────────────────────
     _HOOK_TTL = 1800.0   # hook state stays authoritative this long after the last event

@@ -91,6 +91,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | Shared | `sf_log.py` | `_dlog` / `_swallow` logging primitives |
 | | `sf_push.py` | Push through APNs (leaf, stdlib plus the system's `openssl` and `curl`): `push.json`, registrations, payloads, ES256 provider token, HTTP/2 send, de-duplication and throttling; see [`mobile-link.md`](mobile-link.md) |
 | | `js_guard.py` | `window.evaluate_js` from a background thread, with a time limit: pywebview's WebView2 backend can wait for a script's result forever, and that hung the sfctl loop; stuck calls are counted and new ones dropped past a few |
+| | `output_pump.py` | A tab's output to the page, the bridges and Frame Link in three loops (collect, push, bridge feed) that cannot stop one another, and a watchdog that replaces a stuck loop and logs its stack |
 | | `sf_trail.py` | A trail for when the app goes: the start line (exe, console, restart), faulthandler's file, uncaught exceptions, Windows console events, the window's events, the page's js_api calls in and out (`shellframe_jsapi.log`), a line before each quiet `os._exit` |
 | | `sf_config.py` | The one config.json lock, and the app's folder (`config_dir()`): `~/.config/shellframe`, `SHELLFRAME_CONFIG_DIR`, or for a test a folder of its own |
 | | `sf_notify.py` | Optional outbound webhook (leaf, stdlib only): config, payload, masked send, transition tracker for auto-notify. Used by `sfctl notify` and the status monitor; see [`notify-webhook.md`](notify-webhook.md) |
@@ -107,10 +108,16 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
   `Api.write_input` (backend dedup, init-prompt / preamble injection) → `Session.write`.
   pywebview runs each js_api call on its own thread, so input has no ordering
   guarantee across calls.
-- **PTY → UI.** Per-session reader thread fills `Session.buffer` → one pusher thread
-  (`_start_output_pusher`) decodes, feeds the bridge queue and Frame Link, throttles
-  background tabs and calls `evaluate_js('_pushOutput(...)')`. A slow
-  `evaluate_js` delays every consumer of that loop.
+- **PTY → UI.** Per-session reader thread fills `Session.buffer` → `output_pump.py`:
+  the collect loop decodes and hands output to the bridge queue and Frame Link and keeps
+  the page's share; the push loop calls `evaluate_js('_pushOutput(...)')`, throttling
+  background tabs; the feed loop calls each bridge's `feed_output`. A slow page or bridge
+  holds up only its own loop. A startup trust prompt is read on a thread of its own. A
+  watchdog replaces a loop silent for 30 s and logs where it was stuck (debug log, and
+  every thread in the fault log).
+- **Forking a tab.** `pty.fork()` children call `close_inherited_fds()` before `execve`:
+  macOS has no pipe2, and a `tmux attach` that inherited subprocess's exec-error pipe once
+  held a `Popen` (and the whole output path) for 21 hours.
 - **External injection.** sfctl and agent hooks drop command files that the watcher
   (`api_remote`) executes one at a time; the HTTP API and Frame Link call
   `_execute_sfctl` directly; the Telegram bridge types into the tab
@@ -122,7 +129,8 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 
 ## 4. Threads and shared state
 
-Background threads: one reader per session, the output pusher, the status
+Background threads: one reader per session, the output loops (collect, push, bridge feed)
+and their watchdog, the status
 monitor, the sfctl watcher, the delay scheduler, the idle reaper, per-tab
 startup-trust watchers, and the bridges' poll/dispatch/flush threads. Rules:
 
