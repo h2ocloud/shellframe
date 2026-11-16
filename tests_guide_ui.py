@@ -42,6 +42,7 @@ except ImportError:
     sys.exit(0)
 
 DATA = guide.load()
+DESK = [f for f in DATA["features"] if "desktop" in f["surfaces"]]   # the phone's entries are the app's
 VERSION = guide.app_version()
 
 
@@ -102,7 +103,7 @@ def shot(page, engine, name):
 
 
 def run(browser, engine):
-    zh = {f["id"]: f["title"]["zh"] for f in DATA["features"]}
+    zh = {f["id"]: f["title"]["zh"] for f in DESK}
     print(f"[{engine}] 1. a first launch: the tour")
     page = browser.new_page(viewport={"width": 1100, "height": 720})
     errors = []
@@ -150,7 +151,7 @@ def run(browser, engine):
     page.wait_for_selector("#btn-guide .sfg-badge", timeout=15000)
     page.wait_for_timeout(800)
     check("nothing pops up", not page.query_selector(".sfg-layer"))
-    n = len(DATA["features"])
+    n = len(DESK)
     check(f"the Guide button counts what is new since 0.44.5 ({n})", page.inner_text("#btn-guide .sfg-badge") == str(n),
           page.inner_text("#btn-guide .sfg-badge"))
     page.click("#btn-guide")
@@ -186,7 +187,7 @@ def run(browser, engine):
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_selector(".sfg-card", timeout=15000)
     page.wait_for_timeout(400)
-    en = {f["id"]: f["title"]["en"] for f in DATA["features"]}
+    en = {f["id"]: f["title"]["en"] for f in DESK}
     check("the words are English", title(page).startswith(en["new-tab"]) and "Next" in page.inner_text(".sfg-card"), title(page))
     check("the card is inside a 640×520 window", inside(page))
     page.click(".sfg-card .sfg-btn:not(.primary)")       # Skip

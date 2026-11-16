@@ -46,6 +46,16 @@ added rather than written once and left.
 `tours.first_run` lists the tour's steps in order. A step not on the page at that moment (no tab
 yet, a button that appears later) is left out.
 
+## The phone app's entries
+
+The app's own screens have their own entries: ids `app-*`, `"surfaces": ["ios"]`, no `since`
+(the app's versions are its own, and it counts nothing new yet), and their tours named `app_*`
+(`app_first_run`). Where a feature is differs between the two (the desktop shows a pairing QR
+code, the app scans it), so an entry never serves both. The app keeps a copy of these entries
+in its own repo, copied by its `scripts/sync_guide.py` with the source commit recorded, marks
+its views with `.guide("app-…")`, and checks both ways in its own tests; it fails when its copy
+differs from this file, so change the words here and copy them over.
+
 ## What the test holds you to
 
 - Every desktop entry has its `data-guide` mark on the page, and every mark has an entry.

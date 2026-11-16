@@ -59,9 +59,14 @@ for f in features:
             if not txt or len(txt) > most:
                 short.append(f"{f['id']}.{key}.{lang}={len(txt)}")
 check("both languages written, title ≤ 40 and body ≤ 260 characters", not short, short)
-bad = [f["id"] for f in features if not re.fullmatch(r"\d+\.\d+\.\d+", f.get("since") or "")
+bad = [f["id"] for f in desktop if not re.fullmatch(r"\d+\.\d+\.\d+", f.get("since") or "")
        or guide.newer(f["since"], version)]
-check(f"`since` is a version, not past this build's {version}", not bad, bad)
+check(f"a desktop entry's `since` is a version, not past this build's {version}", not bad, bad)
+bad = [f["id"] for f in features if "since" in f and "desktop" not in f["surfaces"]]
+check("a phone-only entry has no `since` (the app's versions are its own; it counts nothing new yet)", not bad, bad)
+phone = [f for f in features if "ios" in (f.get("surfaces") or [])]
+check("phone entries are app-*, so where-it-is words never serve both surfaces",
+      all(f["id"].startswith("app-") and f["surfaces"] == ["ios"] for f in phone), [f["id"] for f in phone])
 
 print("the page and guide.json name the same places")
 web = "\n".join(p.read_text(encoding="utf-8") for p in sorted((HERE / "web").glob("*.js")) + [HERE / "web" / "index.html"]
@@ -80,9 +85,13 @@ tabs = set(re.findall(r'class="settings-tab[^"]*" data-tab="([a-z]+)"', html)) |
 bad = [f["id"] for f in features if f.get("open") and (not re.fullmatch(r"settings:([a-z]+)", f["open"])
                                                        or f["open"].split(":")[1] not in tabs)]
 check(f"every `open` is a settings tab that exists ({sorted(tabs)})", not bad, bad)
-tour_ids = [i for t in (data.get("tours") or {}).values() for i in t]
+tours = data.get("tours") or {}
+tour_ids = [i for name, t in tours.items() if not name.startswith("app_") for i in t]
 bad = [i for i in tour_ids if i not in {f["id"] for f in desktop}]
-check("the tours name desktop features", tour_ids and not bad, bad)
+check("the desktop's tours name desktop features", tour_ids and not bad, bad)
+app_ids = [i for name, t in tours.items() if name.startswith("app_") for i in t]
+bad = [i for i in app_ids if i not in {f["id"] for f in features if "ios" in f["surfaces"]}]
+check("the app's tours (app_*) name phone features (the app checks its own marks)", not bad, bad)
 check("there is a first-run tour", bool((data.get("tours") or {}).get("first_run")))
 
 print("a new switch or a new feature needs its entry")
