@@ -589,6 +589,21 @@
   // ════════════════════════════ the screen ════════════════════════════════
   const host = () => root.__sfHost || null;
   const api = () => (root.pywebview && root.pywebview.api) || null;
+  // A tab on another computer is shown the same way: the same calls go to that computer (link_chat →
+  // its POST /link/chat → its chat_<action>). Arguments travel by name.
+  const REMOTE_ARGS = { view: ['limit', 'rev'], send: ['text', 'clear_draft'], send_now: ['qid'],
+                        answer: ['n', 'qid'], login: ['action', 'code'] };
+  function call(sid, action, ...args) {
+    const a = api();
+    const s = (sessions() || {})[sid];
+    if (s && s.isRemote) {
+      const named = {};
+      (REMOTE_ARGS[action] || []).forEach((n, i) => { named[n] = args[i]; });
+      return a.link_chat(s.peerId, s.rsid, action, JSON.stringify(named));
+    }
+    return a['chat_' + action](sid, ...args);
+  }
+  const remoteOf = sid => { const s = (sessions() || {})[sid]; return s && s.isRemote ? (s.peerName || T('another computer', '另一台電腦')) : ''; };
   const lang = () => (host() && host().lang && host().lang()) || 'en';
   const T = (en, cn) => (isZh(lang()) ? cn : en);
   const sessions = () => (host() && host().sessions && host().sessions()) || {};
@@ -802,7 +817,7 @@
   }
   function setMode(sid, mode) {
     const s = sessions()[sid];
-    if (!s || s.isRemote || (mode !== 'chat' && mode !== 'cli')) return;
+    if (!s || (mode !== 'chat' && mode !== 'cli')) return;
     tabChoice.set(sid, { mode, obj: s });
     apply(true);
   }
@@ -822,7 +837,7 @@
     if (!mount()) return;
     const sid = activeSid();
     const s = sessions()[sid];
-    const local = !!s && !s.isRemote;
+    const local = !!s;                          // this computer's tab or another's (sfctl link-*): the same view
     const want = local && modeOf(sid) === 'chat';
     const show = want && chatCapable(sid);
     // the guess only says no: ask the server once, or the Chat button stays greyed for good
@@ -943,6 +958,15 @@
     notice.hidden = !show;
     if (!show) return;
     const prov = view(sid).provider || guessProvider((sessions()[sid] || {}).cmd);
+    if (view(sid).oldPeer) {
+      const key = `${sid}|old|${lang()}`;
+      if (notice.dataset.key === key) return;
+      notice.dataset.key = key;
+      notice.innerHTML = `<span>${escHtml(T(`${remoteOf(sid)} runs an older ShellBot: update it to 0.46.1 or later to see its tabs as a conversation. Its terminal shows meanwhile.`,
+        `${remoteOf(sid)} 的 ShellBot 比較舊：更新到 0.46.1 以上，才能用對話模式看它的分頁。先顯示終端機。`))}</span>` +
+        `<button data-act="notice-close" title="${escHtml(T('Hide', '收起'))}">×</button>`;
+      return;
+    }
     const known = { opencode: 'OpenCode', grok: 'Grok Build', pi: 'Pi', cursor: 'Cursor Agent', agy: 'Antigravity' }[prov];
     const key = `${sid}|${prov}|${lang()}`;
     if (notice.dataset.key === key) return;
@@ -966,7 +990,13 @@
     if (v.loading) return;
     v.loading = true;
     try {
-      const r = JSON.parse(await a.chat_view(sid, v.limit, force ? '' : v.rev));
+      const r = JSON.parse(await call(sid, 'view', v.limit, force ? '' : v.rev));
+      if (r && r.code === 'old_peer') {          // a computer whose ShellBot has no /link/chat: its terminal, and why
+        v.oldPeer = true;
+        if (!v.provider) v.provider = 'old_peer';
+        apply();
+        return;
+      }
       if (!r || r.success === false) return;
       if (r.unchanged) return;
       v.rev = r.rev;
@@ -1023,8 +1053,11 @@
   // and come back to. Written only when it differs, so a person's focus or selection is not touched.
   function renderHint(sid) {
     const name = displayName(sessions()[sid]);
-    const hint = T(`Message ${name} — Enter to send, Shift+Enter for a new line`,
-                   `傳訊息給 ${name}（Enter 送出，Shift+Enter 換行）`);
+    const away = remoteOf(sid);
+    const hint = away ? T(`Message ${name} on ${away} — Enter to send, Shift+Enter for a new line`,
+                          `傳訊息給 ${away} 上的 ${name}（Enter 送出，Shift+Enter 換行）`)
+      : T(`Message ${name} — Enter to send, Shift+Enter for a new line`,
+          `傳訊息給 ${name}（Enter 送出，Shift+Enter 換行）`);
     if (input.placeholder !== hint) input.placeholder = hint;
   }
   // A tab was renamed (the dialog, the app's push, a bot's rename): what shows its name follows now,
@@ -1055,7 +1088,10 @@
       : faceHtml(sid, state);
     const side = globalStyle() === 'chat'
       ? `<button class="cm-side-btn" data-act="sidebar" title="${escHtml(T('Show or hide the sidebar', '顯示或收起側欄'))}">☰</button>` : '';
-    return `${side}${face}<div class="cm-who"><b>${escHtml(displayName(s))}</b>` +
+    const away = remoteOf(sid);
+    const chip = away ? `<span class="cm-remote" title="${escHtml(T(`This tab runs on ${away}, not on this computer`,
+      `這個分頁在 ${away} 上跑，不是這台電腦`))}">${escHtml(T('Remote', '遠端'))} · ${escHtml(away)}</span>` : '';
+    return `${side}${face}<div class="cm-who"><span class="cm-name-row"><b>${escHtml(displayName(s))}</b>${chip}</span>` +
       `<span class="cm-state">${escHtml(stateWord(sid))}</span></div>${root.SFTabModel ? root.SFTabModel.chipHtml(sid) : ''}`;   // web/tabmodel.js
   }
   function renderHead(sid) {
@@ -1751,7 +1787,7 @@
     note('');
     let r = null;
     try {
-      r = JSON.parse(await api().chat_send(sid, msg.body, !!clearDraft));
+      r = JSON.parse(await call(sid, 'send', msg.body, !!clearDraft));
       if (r.code === 'draft') {
         v.pending = v.pending.filter(p => p !== item);
         v.draftCard = { draft: String(r.draft || '') };
@@ -1804,7 +1840,7 @@
     const p = view(sid).pending.find(x => x.uid === key);
     if (!p || !p.queued || !p.id) return;
     let r;
-    try { r = JSON.parse(await api().chat_send_now(sid, p.id)); } catch (e) { r = { success: false, message: String(e) }; }
+    try { r = JSON.parse(await call(sid, 'send_now', p.id)); } catch (e) { r = { success: false, message: String(e) }; }
     if (r.success) { p.queued = false; p.at = Date.now(); note(''); }
     else note(r.message || T('Not sent.', '沒有送出。'), true);
     renderList(sid);
@@ -1831,7 +1867,7 @@
     const v = view(sid);
     ask.querySelectorAll('.cm-opt').forEach(b => { b.disabled = true; });
     try {
-      const r = JSON.parse(await api().chat_answer(sid, n, id));
+      const r = JSON.parse(await call(sid, 'answer', n, id));
       if (r.success) {
         v.answered = { id, n, label: btn.textContent };
         note('');
@@ -1859,6 +1895,7 @@
   };
   const IS_WIN = /Win/.test(navigator.platform || '');
   function decoratePaths(root) {
+    if (remoteOf(shownFor)) return;               // a path on another computer: nothing here to show
     root.querySelectorAll('.cm-bubble code').forEach(code => {
       const p = code.textContent.trim();
       if (code.closest('pre') || !PATH_RE.test(p)) return;
@@ -1973,7 +2010,7 @@
     return d.text ? (d.detail ? `${d.text} · ${d.detail}` : d.text) : '';
   }
 
-  root.SFChat = { onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert, relabel, quoteOf, reply };
+  root.SFChat = { call, onSwitch, covers, sidebarLine, apply, rules: RULES, modeOf, setStyle, setMode, label, attach, selectedText, insert, relabel, quoteOf, reply };
   const boot = () => { mount(); apply(false); setInterval(tick, POLL_MS); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
