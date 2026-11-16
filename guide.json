@@ -21,7 +21,9 @@
     ]
   },
   "no_guide": {},
-  "added_without_guide": {},
+  "added_without_guide": {
+    "0.45.3": "Frame Link routes for the phone app (usage and pace, a queued message sent now or withdrawn, pictures sent with a message); nothing new on the desktop's screen. The app's own guide entries come with its build."
+  },
   "features": [
     {
       "id": "new-tab",

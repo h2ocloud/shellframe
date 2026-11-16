@@ -6,6 +6,49 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.45.3 (2026-11-16)
+
+### Fixes
+
+- **A picture sent from the phone reaches the tab.** Reported: a picture attached in the app never showed up, and
+  nothing said so. Measured in the debug log: the computer refused the upload with "bad signature". It stopped
+  reading a request past 2 MB and checked the signature against an empty body; a phone screenshot is 2-5 MB once
+  encoded. It now takes up to 24 MB, and past that answers "too large" with what to do (after reading the request
+  off, so the phone gets the answer). Covered by `tests_link_paste_queue.py`.
+
+  **從手機傳的圖片會送到分頁。** 回報：在 App 夾的圖片一直沒出現，也沒有任何提示。從 debug log 量到：電腦以「簽章不符」拒收
+  上傳。原因是它讀請求超過 2 MB 就不讀了，改用空的內容去驗簽章；手機截圖編碼後有 2～5 MB。現在上限是 24 MB，超過會回
+  「太大了」並說明怎麼做（先把請求讀完，手機才收得到這個回答）。由 `tests_link_paste_queue.py` 守著。
+
+### Changes
+
+- **Code nothing reaches is removed, the experimental task board with it.** Asked for: remove what is not used. About
+  1,330 lines: methods and commands nothing calls, unused page words and styles, an old proof-of-concept and stray
+  files. The task board (`sfctl board-*`, the `[[SF:TASK]]` marker, the `experimental_board` switch) goes too: it
+  had no switch on screen and nothing had written to it for four months. A leftover setting is ignored and its saved
+  data is left in place.
+
+  **刪掉沒有人用到的程式，實驗性的任務看板也一起拿掉。** 需求：沒在用的就刪。大約 1,330 行：沒有人呼叫的方法和指令、頁面
+  沒用到的文字和樣式、一份舊的概念驗證和幾個零散檔案。任務看板（`sfctl board-*`、`[[SF:TASK]]` 標記、`experimental_board`
+  開關）也拿掉了：它在畫面上沒有開關，四個月沒有寫入過。留在設定裡的舊開關會被忽略，存下的資料原地保留。
+
+### Added
+
+- **For the phone app: usage and pace, a queued message sent now or withdrawn, and pictures sent with a message.**
+  Asked for: see each subscription's usage and pace on the phone; and a queued message should be sent at once or
+  taken back instead of waiting. `GET /link/usage` gives every signed-in account's allowance with the pace worked
+  out (how far ahead of it, and when it would run out at that rate). `POST /link/send/now` and `/link/send/cancel`
+  push a queued message in or withdraw it. `/link/send` takes pictures with the words, typed in together when the
+  message goes in, so a queued, sent-now or withdrawn message carries its pictures with it. The app's screens for
+  these come with its next build. Covered by `tests_link_usage.py`, `tests_link_paste_queue.py` and
+  `tests_send_images.py`.
+
+  **給手機 App：用量與配速、排隊訊息可以立刻送出或收回、圖片跟著訊息一起送。** 需求：在手機上看每個訂閱的用量和配速；
+  排隊的訊息要能立刻送出或收回，不要乾等。`GET /link/usage` 提供每個登入帳號的額度，配速已經算好（超前多少、照這個
+  速度什麼時候用完）。`POST /link/send/now` 和 `/link/send/cancel` 把排隊中的訊息立刻送進去或收回。`/link/send` 可以連
+  圖帶字一起送，等訊息真的送進去時才一起打進去，所以排隊、立刻送出或收回時，圖片都跟著同一則訊息。App 對應的畫面在下一
+  個 build。由 `tests_link_usage.py`、`tests_link_paste_queue.py`、`tests_send_images.py` 守著。
+
 ## v0.45.2 (2026-11-16)
 
 ### Fixes
