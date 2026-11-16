@@ -675,7 +675,6 @@ def load_user_instructions(max_chars: int | None = None) -> str:
 @dataclass
 class TelegramBridgeConfig(BridgeConfigBase):
     bot_token: str = ""
-    initial_prompt: str = ""
     stt_backend: str = "auto"   # auto / plugin / local / remote / off
 
 

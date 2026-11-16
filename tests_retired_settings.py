@@ -14,6 +14,8 @@ rewrites the file):
         and sends nothing to Telegram
   - the first-message init prompt and its text (inject_init_prompt, ui_prompt): a new AI
     tab's first message, typed or from Telegram, goes in as it is
+  - Settings → Telegram's System Prompt (bridge.initial_prompt): Connect types nothing into a
+    tab, whatever the page sends in that argument's place; a saved one stays in the file, unread
 
 Run: .venv/bin/python tests_retired_settings.py
 """
@@ -192,6 +194,47 @@ api.save_idle_reaper(json.dumps({"enabled": True, "idle_sec": 3600, "summary_gra
 idle = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))["idle_reaper"]
 check("the three cleanup values are saved", (idle["enabled"], idle["idle_sec"], idle["summary_grace_sec"]) == (True, 3600, 300), idle)
 check("handoff_to_main is neither written from the page nor removed from the file", idle.get("handoff_to_main") is True, idle)
+
+print("Connect types nothing into a tab (the retired System Prompt)")
+
+
+class FakeBridge:
+    def __init__(self, bridge_id, config, **callbacks):
+        self.bridge_id, self.config, self.slots = bridge_id, config, {}
+        self.active = self.connected = False
+
+    def register_session(self, sid, label, write_fn, **kw):
+        self.slots[sid] = types.SimpleNamespace(sent_texts=[])
+
+    def start(self):
+        self.active = self.connected = True
+
+    def stop(self):
+        self.active = self.connected = False
+
+    def get_status(self):
+        return {"bridge_id": self.bridge_id, "active": self.active}
+
+
+built = []
+main.TelegramBridge = FakeBridge
+main.TelegramBridgeConfig = lambda **kw: built.append(kw) or types.SimpleNamespace(**kw)
+for name, prev in (("a saved System Prompt from before", {"initial_prompt": "OLD SAVED PROMPT"}), ("none saved", {})):
+    main.CONFIG_FILE.write_text(json.dumps({"settings": {}, "bridge": dict({"bot_token": "000:demo"}, **prev)}), encoding="utf-8")
+    api = Api.__new__(Api)
+    api.bridge = api.line_bridge = None
+    api._persist_session_manifest = lambda *a, **k: None
+    api._prepare_pane_for_input = lambda s: None
+    first = Tab()
+    first._custom_label = "第一個分頁"
+    api.sessions = {"s1": first}
+    r = json.loads(api.start_bridge("000:demo", "[]", True, "You are running inside ShellBot with a Telegram bridge", True, False))
+    time.sleep(3.6)                                   # the old one typed it 3 s after Connect
+    saved = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))["bridge"]
+    check(f"{name}: connected, and the first tab got nothing typed", r.get("success") and first.writes == [], first.writes)
+    check(f"{name}: the bridge's config carries no prompt", "initial_prompt" not in built[-1], built[-1])
+    check(f"{name}: config.json keeps what was there and adds nothing",
+          saved.get("initial_prompt") == prev.get("initial_prompt") and ("initial_prompt" in saved) == bool(prev), saved)
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:

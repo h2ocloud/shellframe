@@ -1176,10 +1176,6 @@
           <button class="toggle-switch on" id="settings-bridge-prefix"></button>
           <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
         </div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="bridgeSystemPrompt">System Prompt</label>
-          <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
-        </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-primary" id="btn-settings-bridge-connect" data-i18n="connect">Connect</button>
           <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
@@ -1476,10 +1472,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <button class="toggle-switch on" id="bridge-prefix-toggle"></button>
         <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
       </div>
-      <div class="bridge-field" style="align-items:flex-start">
-        <label data-i18n="bridgeSystemPrompt">System Prompt</label>
-        <textarea id="bridge-prompt">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
-      </div>
     </div>
     <div class="modal-footer" style="margin-top:14px">
       <button class="btn btn-ghost" id="btn-bridge-cancel" data-i18n="cancel">Cancel</button>
@@ -1613,7 +1605,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgAllowedUsersPlaceholder: 'User IDs (comma separated), empty = allow all',
       bridgePrefix: 'Prefix',
       tgPrefixHint: '[TG @user]: message',
-      bridgeSystemPrompt: 'System Prompt',
       tgAdvancedTitle: 'Telegram Bridge Advanced',
       showTgWrapperLabel: 'Show TG Wrapper tag',
       showTgWrapperHelp: 'Show the [SF-TG wrapper] prefix when TG messages are injected into the local terminal',
@@ -1767,7 +1758,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgAllowedUsersPlaceholder: 'User ID（逗號分隔）；留空代表全部允許',
       bridgePrefix: '前綴',
       tgPrefixHint: '[TG @使用者]: 訊息',
-      bridgeSystemPrompt: '系統提示',
       tgAdvancedTitle: 'Telegram Bridge 進階',
       showTgWrapperLabel: '顯示 TG Wrapper 標記',
       showTgWrapperHelp: 'TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴',
@@ -7521,11 +7511,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const tokenEl = document.getElementById('settings-bridge-token');
         const usersEl = document.getElementById('settings-bridge-users');
         const prefixEl = document.getElementById('settings-bridge-prefix');
-        const promptEl = document.getElementById('settings-bridge-prompt');
         if (!tokenEl.value) tokenEl.value = saved.bot_token || '';
         if (!usersEl.value) usersEl.value = (saved.allowed_users || []).join(', ');
         prefixEl.classList.toggle('on', saved.prefix_enabled !== false);
-        if (saved.initial_prompt) promptEl.value = saved.initial_prompt;
       }
     } catch(e) {}
 
@@ -7760,9 +7748,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const usersStr = document.getElementById('settings-bridge-users').value.trim();
     const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
     const prefix = document.getElementById('settings-bridge-prefix').classList.contains('on');
-    const prompt = document.getElementById('settings-bridge-prompt').value.trim();
 
-    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, prompt);
+    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, '');   // nothing is typed into a tab
     const result = JSON.parse(raw);
 
     if (result.success !== false) {
@@ -8237,7 +8224,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           document.getElementById('bridge-token').value = saved.bot_token || '';
           document.getElementById('bridge-users').value = (saved.allowed_users || []).join(', ');
           document.getElementById('bridge-prefix-toggle').classList.toggle('on', saved.prefix_enabled !== false);
-          if (saved.initial_prompt) document.getElementById('bridge-prompt').value = saved.initial_prompt;
         }
       } catch(e) {}
       $modalBridge.classList.add('open');
@@ -8267,9 +8253,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const usersStr = document.getElementById('bridge-users').value.trim();
     const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
     const prefix = $bridgePrefix.classList.contains('on');
-    const prompt = document.getElementById('bridge-prompt').value.trim();
 
-    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, prompt);
+    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, '');   // nothing is typed into a tab
     const result = JSON.parse(raw);
 
     if (result.success !== false) {
@@ -9721,7 +9706,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           saved.bot_token,
           JSON.stringify(saved.allowed_users || []),
           saved.prefix_enabled !== false,
-          '',     // skip initial_prompt on restore
+          '',     // the retired System Prompt's place: ignored
           true,   // announce, as before
           true    // if_idle: the autostart may be starting it right now; it waits for that one and keeps it
         );

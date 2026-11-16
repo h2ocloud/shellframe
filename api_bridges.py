@@ -8,7 +8,6 @@
 
 import json
 import threading
-import time
 
 from sf_config import CONFIG_LOCK
 from api_host import main
@@ -108,14 +107,16 @@ class BridgesApiMixin:
         TelegramBridge.start(); that one then cleared its stop flag and polled on with
         nobody to stop it, and every poll got 409 Conflict until the app quit (a Windows
         cold start whose autostart took 25 s). `if_idle` (the autostart, the page's
-        restore): a bridge that is already running is kept, not started again."""
+        restore): a bridge that is already running is kept, not started again.
+
+        `initial_prompt` keeps its place among the arguments and is ignored: Settings →
+        Telegram's System Prompt, typed into the first tab 3 s after Connect, was retired."""
         with self._bridge_lock:
             if if_idle and self.bridge and getattr(self.bridge, "active", False):
                 return json.dumps({"success": True, "kept": True, **self.bridge.get_status()})
-            return self._start_bridge_locked(bot_token, allowed_users_json, prefix_enabled,
-                                             initial_prompt, announce)
+            return self._start_bridge_locked(bot_token, allowed_users_json, prefix_enabled, announce)
 
-    def _start_bridge_locked(self, bot_token, allowed_users_json, prefix_enabled, initial_prompt, announce):
+    def _start_bridge_locked(self, bot_token, allowed_users_json, prefix_enabled, announce):
         if self.bridge:
             self.bridge.stop()
 
@@ -127,7 +128,6 @@ class BridgesApiMixin:
             bot_token=bot_token,
             allowed_users=[int(u) for u in allowed],
             prefix_enabled=prefix_enabled,
-            initial_prompt=initial_prompt,
             stt_backend=bridge_cfg.get("stt_backend", "auto"),
         )
 
@@ -165,37 +165,19 @@ class BridgesApiMixin:
 
         bridge.start()
 
-        # Send initial prompt to first session (delayed to let CLI load)
-        if initial_prompt and self.sessions:
-            first_sid = list(self.sessions.keys())[0]
-            # Track in sent_texts so echo gets filtered
-            slot = bridge.slots.get(first_sid)
-            if slot:
-                slot.sent_texts.append(initial_prompt)
-            def _send_prompt(sid=first_sid, text=initial_prompt):
-                time.sleep(3)
-                s = self.sessions.get(sid)
-                if s:
-                    s.write(text)
-                    time.sleep(0.3)
-                    s.write("\r")
-            threading.Thread(target=_send_prompt, daemon=True).start()
-
         # Persist bridge config (preserve existing STT settings)
         with CONFIG_LOCK:
             cfg = main.load_config()
             prev_bridge = cfg.get("bridge", {})
-            persisted_initial_prompt = initial_prompt
-            if not persisted_initial_prompt and prev_bridge.get("initial_prompt"):
-                persisted_initial_prompt = prev_bridge.get("initial_prompt", "")
             cfg["bridge"] = {
                 "bot_token": bot_token,
                 "allowed_users": [int(u) for u in allowed],
                 "prefix_enabled": prefix_enabled,
-                "initial_prompt": persisted_initial_prompt,
                 "stt_backend": prev_bridge.get("stt_backend", "auto"),
                 "stt_providers": prev_bridge.get("stt_providers", []),
             }
+            if "initial_prompt" in prev_bridge:      # the retired System Prompt: unread, but not deleted
+                cfg["bridge"]["initial_prompt"] = prev_bridge["initial_prompt"]
             main.save_config(cfg)
         self._persist_session_manifest()
 
