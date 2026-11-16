@@ -62,7 +62,6 @@ def bridge(responder):
     br._maybe_auto_compact = lambda slot: None
     br._send_typing = lambda sid: None
     br._maybe_notify_completion = lambda slot: None
-    br._detect_and_apply_board = lambda slot, lines: lines
     br._detect_and_fire_signal = lambda slot, lines: lines
     br._extract_file_paths = lambda text: []
     br._live_tail = lambda slot, rows=6: ""      # the CLI's turn has ended

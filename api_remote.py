@@ -1095,42 +1095,6 @@ class RemoteApiMixin:
             except Exception as e:
                 return {"success": False, "message": f"Update failed: {e}"}
 
-        elif cmd == "board_list":
-            tasks = main.board.list_tasks()
-            return {
-                "success": True,
-                "message": f"{len(tasks)} tasks",
-                "details": {"enabled": self._board_enabled(), "tasks": tasks},
-            }
-
-        elif cmd == "board_add":
-            try:
-                task = main.board.add_task(
-                    args.get("title", ""),
-                    assignee=args.get("assignee", "unassigned"),
-                    status=args.get("status", "todo"),
-                    difficulty=args.get("difficulty", "medium"),
-                    notes=args.get("notes", ""),
-                )
-                return {"success": True, "message": f"Added {task['id']}", "details": {"task": task}}
-            except Exception as e:
-                return {"success": False, "message": f"board_add failed: {e}"}
-
-        elif cmd == "board_update":
-            try:
-                task_id = args.get("id", "")
-                fields = {k: args[k] for k in ("title", "assignee", "status", "difficulty", "notes") if k in args}
-                task = main.board.update_task(task_id, **fields)
-                if task is None:
-                    return {"success": False, "message": f"No such task: {task_id}"}
-                return {"success": True, "message": f"Updated {task_id}", "details": {"task": task}}
-            except Exception as e:
-                return {"success": False, "message": f"board_update failed: {e}"}
-
-        elif cmd == "board_remove":
-            ok = main.board.remove_task(args.get("id", ""))
-            return {"success": ok, "message": "Removed" if ok else "No such task"}
-
         elif cmd == "link_status":
             # Frame Link（跨機配對）狀態：listener + peers 可達性。
             try:

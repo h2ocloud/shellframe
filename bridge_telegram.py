@@ -60,11 +60,6 @@ import bridge_menu   # the command menu is sent off the thread that changed the 
 import bridge_queue  # a message for a busy tab waits (30 min, ⚡ to cut in)
 
 try:
-    import board  # shared task-board store (experimental)
-except Exception:
-    board = None
-
-try:
     import agent_link  # agent-to-agent messaging rules (experimental)
 except Exception:
     agent_link = None
@@ -2930,33 +2925,10 @@ class TelegramBridge(BridgeBase):
                 kept.append(line)
         return state, reason, kept
 
-    # Task-board markers (experimental). Agents maintain todo/認領 via inject:
-    #   [[SF:TASK:add|title=接 webhook 線|difficulty=medium|notes=...]]
-    #   [[SF:TASK:claim|id=ab12cd34]]                  → assignee=<tab label>, in_progress
-    #   [[SF:TASK:update|id=ab12cd34|status=done]]
-    #   [[SF:TASK:done|id=ab12cd34]]
-    #   [[SF:TASK:remove|id=ab12cd34]]
-    _BOARD_RE = re.compile(
-        r'^[\s>❯›⏺•*\-]*\[\[\s*SF\s*:\s*TASK\s*:\s*([^\]]*?)\s*\]\]\s*$',
-        re.IGNORECASE)
     # [[SF:TO:<role>|<message>]] — one agent addressing another by roster role.
     _A2A_RE = re.compile(
         r'^[\s>❯›⏺•*\-]*\[\[\s*SF\s*:\s*TO\s*:\s*([^|\]]+?)\s*\|\s*(.+?)\s*\]\]\s*$',
         re.IGNORECASE | re.DOTALL)
-
-    @staticmethod
-    def _parse_board_marker(body: str):
-        """Parse '<action>|key=value|key=value' → (action, {kv}). None if no action."""
-        parts = [p.strip() for p in body.split("|") if p.strip()]
-        if not parts:
-            return None, {}
-        action = parts[0].lower()
-        kv = {}
-        for p in parts[1:]:
-            if "=" in p:
-                k, _, v = p.partition("=")
-                kv[k.strip().lower()] = v.strip()
-        return action, kv
 
     def _detect_and_route_a2a(self, slot, new_lines):
         """Scan freshly extracted lines for [[SF:TO:role|text]] markers and hand
@@ -3003,56 +2975,6 @@ class TelegramBridge(BridgeBase):
             }, timeout=30.0)
         except Exception as e:
             _blog(f"[a2a] {from_sid} route failed: {e}\n")
-
-    def _detect_and_apply_board(self, slot, new_lines):
-        """Scan freshly extracted lines for [[SF:TASK:...]] markers, apply them
-        to the shared board store, and return new_lines with marker lines
-        stripped (never forwarded to TG as noise). Gated by the experimental
-        flag; a no-op otherwise."""
-        if board is None or not new_lines:
-            return new_lines
-        try:
-            if not (_read_settings().get("experimental_board", False)):
-                return new_lines
-        except Exception:
-            return new_lines
-        kept = []
-        actor = getattr(slot, "label", None) or getattr(slot, "sid", "") or "unassigned"
-        for line in new_lines:
-            m = self._BOARD_RE.match(line)
-            if not m:
-                kept.append(line)
-                continue
-            action, kv = self._parse_board_marker(m.group(1))
-            try:
-                if action == "add":
-                    t = board.add_task(
-                        kv.get("title", ""),
-                        assignee=kv.get("assignee", "unassigned"),
-                        status=kv.get("status", "todo"),
-                        difficulty=kv.get("difficulty", "medium"),
-                        notes=kv.get("notes", ""))
-                    _blog(f"[board] {slot.sid} add {t['id']} {t['title']!r}\n")
-                elif action == "claim":
-                    board.update_task(kv.get("id", ""),
-                                      assignee=kv.get("assignee", actor),
-                                      status=kv.get("status", "in_progress"))
-                    _blog(f"[board] {slot.sid} claim {kv.get('id')} by {actor}\n")
-                elif action == "update":
-                    board.update_task(kv.get("id", ""), **{
-                        k: v for k, v in kv.items() if k != "id"})
-                    _blog(f"[board] {slot.sid} update {kv.get('id')} {kv}\n")
-                elif action == "done":
-                    board.update_task(kv.get("id", ""), status="done")
-                    _blog(f"[board] {slot.sid} done {kv.get('id')}\n")
-                elif action == "remove":
-                    board.remove_task(kv.get("id", ""))
-                    _blog(f"[board] {slot.sid} remove {kv.get('id')}\n")
-                else:
-                    _blog(f"[board] {slot.sid} unknown action {action!r}\n")
-            except Exception as e:
-                _blog(f"[board] {slot.sid} marker failed: {e}\n")
-        return kept
 
     def _detect_menu_prompt(self, slot) -> str:
         """Detect a numbered menu prompt waiting for user input.
@@ -3780,9 +3702,8 @@ class TelegramBridge(BridgeBase):
                             self._perf_end("extract_new_text", _t_ex)
                             try:
                                 _t_b = self._perf_t()
-                                drained = self._detect_and_apply_board(slot, drained)
                                 drained = self._detect_and_route_a2a(slot, drained)
-                                self._perf_end("detect_board", _t_b)
+                                self._perf_end("detect_a2a", _t_b)
                                 _t_s = self._perf_t()
                                 self._detect_and_fire_signal(slot, drained)
                                 self._perf_end("detect_signal", _t_s)
@@ -3958,24 +3879,23 @@ class TelegramBridge(BridgeBase):
                 else:
                     continue
 
-                # Apply [[SF:TASK:...]] board markers, then fire desktop + TG
+                # Route [[SF:TO:...]] markers, then fire desktop + TG
                 # banner on a [[SF:STATE]] transition; both strip their raw
                 # marker lines out of the forwarded text. Guarded like the drain
-                # path (2467) — a board/signal error must not kill the flush
+                # path (2467) — an a2a/signal error must not kill the flush
                 # thread (would stop auto-reply for ALL tabs).
                 try:
                     _t_b = self._perf_t()
-                    new_lines = self._detect_and_apply_board(slot, new_lines)
                     new_lines = self._detect_and_route_a2a(slot, new_lines)
-                    self._perf_end("detect_board", _t_b)
+                    self._perf_end("detect_a2a", _t_b)
                     _t_s = self._perf_t()
                     new_lines = self._detect_and_fire_signal(slot, new_lines)
                     self._perf_end("detect_signal", _t_s)
                 except Exception as e:
-                    _blog(f"[flush] {sid} board/signal detect failed "
+                    _blog(f"[flush] {sid} a2a/signal detect failed "
                           f"(loop survives): {type(e).__name__}: {e}\n")
                 if not new_lines:
-                    # 整段被 board/signal 吃掉（例如純 [[SF:GREEN]] 行）：沒有東西
+                    # 整段被 a2a/signal 吃掉（例如純 [[SF:GREEN]] 行）：沒有東西
                     # 要送，但內容確實**已經處理過**——必須進去重集合，否則下一波
                     # 輸出會把同一段重抽一次。這不是 P0-3 的「送出失敗」情境。
                     for _t in dedup_pending:

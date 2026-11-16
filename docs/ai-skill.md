@@ -22,7 +22,7 @@ sfctl version
 ```
 OK ShellBot v0.45.0
    version: 0.45.0
-   experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
+   experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 
 The flag list is read from the live settings, so it always names every
@@ -466,13 +466,6 @@ forwarded to Telegram.
 
 `RED` and `YELLOW` push a notification to the user's phone and desktop, so use
 them when you genuinely need them and not as progress chatter.
-
-With `experimental_board` on:
-
-```
-[[SF:TASK:add|title=修 relay timeout|assignee=Coding|difficulty=medium]]
-[[SF:TASK:claim|id=t3]]      [[SF:TASK:done|id=t3]]
-```
 
 With `experimental_a2a` on — message another agent by **role**, or a paired
 machine with `peer/role` or `peer/sid` (the first `/` is the separator):

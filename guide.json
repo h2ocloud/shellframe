@@ -20,9 +20,7 @@
       "app-settings"
     ]
   },
-  "no_guide": {
-    "experimental_board": "No switch on any screen: the task board is turned on in config.json only, for testing."
-  },
+  "no_guide": {},
   "added_without_guide": {},
   "features": [
     {

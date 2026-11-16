@@ -47,7 +47,6 @@ import webview
 # Add app dir to path for bridge imports
 sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
-import board
 import agent_link
 import agent_model
 import agent_prompts
@@ -244,7 +243,6 @@ DEFAULT_CONFIG = {
         "fontSize": 14,
         "language": "en",
         "master_turn_preamble_enabled": True,
-        "experimental_board": False,
         "experimental_loops": False,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
@@ -3386,45 +3384,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 "variant": self._preset_variant(name, group["title"]),
             })
         return json.dumps(groups, ensure_ascii=False)
-
-    @staticmethod
-    def _board_enabled() -> bool:
-        return bool((load_config().get("settings", {}) or {}).get("experimental_board", False))
-
-    def board_list(self) -> str:
-        """Return {enabled, tasks} for the experimental task board."""
-        return json.dumps({"enabled": self._board_enabled(), "tasks": board.list_tasks()})
-
-    def board_add(self, title: str, assignee: str = "unassigned",
-                  status: str = "todo", difficulty: str = "medium", notes: str = "") -> str:
-        try:
-            task = board.add_task(title, assignee=assignee, status=status,
-                                  difficulty=difficulty, notes=notes)
-            return json.dumps({"success": True, "task": task})
-        except Exception as e:
-            return json.dumps({"success": False, "message": str(e)})
-
-    def board_update(self, task_id: str, fields_json: str = "{}") -> str:
-        try:
-            fields = json.loads(fields_json) if fields_json else {}
-            task = board.update_task(task_id, **fields)
-            if task is None:
-                return json.dumps({"success": False, "message": "task not found"})
-            return json.dumps({"success": True, "task": task})
-        except Exception as e:
-            return json.dumps({"success": False, "message": str(e)})
-
-    def board_remove(self, task_id: str) -> str:
-        ok = board.remove_task(task_id)
-        return json.dumps({"success": ok})
-
-
-
-
-
-
-
-
 
     def get_saved_bridge(self) -> str:
         """Return saved bridge config (for restoring on startup)."""

@@ -24,7 +24,7 @@ boundary moves. Gotchas and release mechanics live in
  └──────────────┬─────────────────────────────┘
                 ▼
  domain modules: agent_status, usage_probe, account_manager, frame_link,
-                 bridge_telegram, bridge_line, plugin_sdk, board, agent_*
+                 bridge_telegram, bridge_line, plugin_sdk, agent_*
                 ▼
  OS adapters:    tmux (macOS/Linux) · pty · winpty/ConPTY (Windows) · pasteboard
 ```
@@ -88,7 +88,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `frame_link.py`, `link_records.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, what a link keeps (inbox, outbox, request log), NAT relay |
 | | `link_bots.py` | Another machine's bots for this desktop: each paired desktop this one may control is asked for its `GET /link/bots` in the background (`PeerBots`, with `rev`, at most every 15 s; offline / 403 / 404 give nothing), and the page gets that machine's tab faces, its primary bot and its bots for `#` (`#<machine>/<bot>`, the A2A target; `addresses` picks a name or the id so it always resolves). `web/bots.js` draws them |
 | | `bridge_telegram.py`, `bridge_line.py`, `bridge_base.py` | Chat bridges: polling, routing, injection, reply extraction |
-| | `plugin_sdk.py`, `board.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, task board, role groups, agent-to-agent rules (and how a message reads as one line, `agent_link.preview_of`, the same rule as `web/chat.js` `preview`), model pins, AI skill |
+| | `plugin_sdk.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, role groups, agent-to-agent rules (and how a message reads as one line, `agent_link.preview_of`, the same rule as `web/chat.js` `preview`), model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |
 | Shared | `sf_log.py` | `_dlog` / `_swallow` logging primitives |
 | | `sf_push.py` | Push through APNs (leaf, stdlib plus the system's `openssl` and `curl`): `push.json`, registrations, payloads, ES256 provider token, HTTP/2 send, de-duplication and throttling; see [`mobile-link.md`](mobile-link.md) |

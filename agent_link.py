@@ -10,7 +10,7 @@ with who sent it. The reply travels the same way. The user watches the whole
 exchange as one conversation rather than switching tabs to relay messages by
 hand.
 
-Why this module exists separately (mirrors `board.py`):
+Why this module exists separately:
 
   * Delivery is an *autonomous write into another agent's prompt*, and every tab
     runs with permissions bypassed. That is a real blast radius, so the rules

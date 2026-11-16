@@ -8,7 +8,7 @@
 | 改到的檔 | 生效方式 |
 |---|---|
 | `bridge_telegram.py` / `filters.json` | `sfctl reload`（hot-reload） |
-| `main.py` / `api_*.py` / `web/index.html` / `sfctl.py` / 新模組（如 `board.py`） | **`sfctl restart`（必須）** |
+| `main.py` / `api_*.py` / `web/index.html` / `sfctl.py` / 新模組（如 `agent_link.py`） | **`sfctl restart`（必須）** |
 
 - `sfctl reload` → `hot_reload_bridge()`：`importlib.reload(bridge_telegram)` + **重建 `TelegramBridge` instance**，保留 PTY sessions、polling offset、per-slot 狀態（`sent_texts` / `sent_responses` / pending_menu）。
 - ⚠️ 改了 `main.py` / `web` / 新 import 的模組卻只 `reload`，**不會生效**——一定要 `restart`。`restart` 時 tmux sessions 會留著。
@@ -109,4 +109,4 @@
 ## 持久化 / state
 
 - json 持久化仿 `_persist`（main.py ~1157）+ soft-session 機制；state 放 `~/.local/state/shellframe/`。
-- agent signal marker `[[SF:WORKING|GREEN|RED|YELLOW]]` 由 `_SIGNAL_RE` 偵測（line-anchored，wrapper 內文提到不會誤觸）；新增 harness marker（如看板 `[[BOARD:...]]`）照這個 pattern 寫。
+- agent signal marker `[[SF:WORKING|GREEN|RED|YELLOW]]` 由 `_SIGNAL_RE` 偵測（line-anchored，wrapper 內文提到不會誤觸）；新增 harness marker（如 `[[SF:TO:...]]`）照這個 pattern 寫。
