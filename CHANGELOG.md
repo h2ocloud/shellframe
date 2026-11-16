@@ -6,6 +6,55 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.47.0 (2026-11-16)
+
+### Added
+
+- **Settings → Connect is a catalog of apps, with one click for the Claude account's connectors.** Asked for:
+  connecting Google Drive and the like should look like an app catalog and be extendable, and should not walk people
+  through Google Cloud. The page now has a search box, categories, what needs your attention at the top, a
+  recommended row (Gmail, Google Calendar, Google Drive, Notion) and a "This Mac" row. New services: Google Drive,
+  Google Calendar, Notion and Slack, through the Claude account's connectors (Claude tabs). Pressing Connect opens that
+  service's own page on claude.ai, and when you come back to ShellBot the connection is tested by itself; Gmail works
+  the same way, with the local route under "another way". "N connected" counts only what works; what needs fixing is
+  counted apart. Reminders and Calendar on a Mac have a beta route (a local server that asks before every change);
+  it has not been tried on a real Mac yet and macOS may not ask for access; Messages and Notes are listed as not
+  available yet. A new service is one description file. Covered by `tests_connect_catalog_ui.py`,
+  `tests_connect_oneclick_ui.py` and `tests_connector_claude_apps.py`.
+
+  **設定 →「連結」變成應用程式目錄，Claude 帳號的連接器按一下就連。** 需求：Google Drive 這類串接要像應用程式目錄、可以一直擴充，
+  而且不要帶人去操作 Google Cloud。現在這頁有搜尋框、分類、最上面是需要你處理的，接著是推薦（Gmail、Google 日曆、Google Drive、
+  Notion）和「這台 Mac」。新增 Google Drive、Google 日曆、Notion、Slack，都透過 Claude 帳號的連接器（Claude 分頁可用）。按「連結」
+  直接打開 claude.ai 上那個服務的頁面，回到 ShellBot 時自動測試；Gmail 也一樣，本機路線收在「換方式」。「已連結 N 個」只算真的
+  通的，要處理的另外算。Mac 的提醒事項和行事曆有測試版路線（本機伺服器，每次修改前都會先問）；還沒在真的 Mac 上試過，macOS 可能
+  不會跳出授權；訊息和備忘錄標成「還不能連結」。新增一個服務只要一份描述檔。由 `tests_connect_catalog_ui.py`、
+  `tests_connect_oneclick_ui.py`、`tests_connector_claude_apps.py` 守著。
+
+### Changes
+
+- **Settings are shorter: experiments nobody used are gone, and rarely changed ones moved to Advanced.** Asked
+  for: retire the leftovers of past experiments. Removed: the coordinator (總控) set (its turn reminder, custom text,
+  auto-delegation, hand-off to the main tab), the first-message init prompt and its session prompt, Telegram's System
+  Prompt (Connect no longer types into the first tab), the glasses switch and its per-tab button, and the Plugins tab
+  with its marketplace. Each now behaves as its default "off" did; values left in the settings file are ignored, not
+  deleted. Shift+Enter always makes a new line (no switch). Bots is no longer marked experimental. Auto /compact, the
+  model badge, the local HTTP API, precise status hooks, idle-tab clean-up and the Telegram and LINE wrappers moved to a
+  new Advanced tab, working as before. One change to note: tabs named like a coordinator used to get a "consider
+  delegating" line before each message by default; it is gone. Covered by `tests_retired_settings.py` and
+  `tests_settings_ui.py`.
+
+  **設定變短了：沒人用的實驗拿掉，很少改的收進「進階」。** 需求：版本迭代留下來的實驗該淘汰。拿掉：「總控派工」一整套（回合提醒、
+  自訂文字、自動派工、寫交接給主分頁）、第一則訊息附 Init prompt 和它的 Session prompt、Telegram 的 System Prompt（按「連線」
+  不會再往第一個分頁打字）、眼鏡開關和每個分頁的眼鏡按鈕、Plugins 分頁和外掛市集。每一項都照原本預設的「關」運作；設定檔裡留著的值
+  會被忽略，不會被刪。Shift+Enter 一律換行（不再有開關）。Bots 不再標成實驗。自動 /compact、模型標籤、本機 HTTP API、精準狀態
+  hooks、閒置分頁清理、Telegram 和 LINE 的包裝設定，搬到新的「進階」分頁，作用跟以前一樣。要注意的一點：名稱像「總控」的分頁，
+  以前預設每則訊息前面會加一段「考慮派工」的提示，現在沒有了。由 `tests_retired_settings.py`、`tests_settings_ui.py` 守著。
+
+- **One word, "連結" (connect), everywhere a service's connection is named:** the settings tab, the states, the steps,
+  the sidebar and chat cards, Telegram's sentence and `sfctl connect`.
+
+  **服務的連線一律叫「連結」**：設定分頁、狀態、步驟、側欄和對話卡片、Telegram 的那句話、`sfctl connect` 都一樣。
+
 ## v0.46.2 (2026-11-16)
 
 ### Fixes

@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.46.0
-   version: 0.46.0
+OK ShellBot v0.47.0
+   version: 0.47.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -494,6 +494,7 @@ configure there.
 | Tasks across sessions and bots: `sfctl task add` / `list` / `mine` / `show` / `update` / `note` / `done` / `drop` / `stuck` (§4.9), kept in `state.db`; `a2a-send` / `a2a-handoff --for-task N` (the result comes back onto the task); a bot's wake-up brief lists its open tasks | 0.46.0 |
 | A bot's name, 執掌 and folder in its CLI's system prompt (Claude Code, pi); a paired computer's tab in the chat view (`POST /link/chat`), marked remote | 0.46.1 |
 | A bot's persona also on a relaunch and a restore after a restart (so /new keeps it); a pi tab relaunched goes on with its conversation (`--session`) | 0.46.2 |
+| Settings → Connect (連結) is a catalog: Google Drive, Google Calendar, Notion, Slack through the Claude account's connectors (one click), Reminders/Calendar on a Mac (beta), Messages/Notes listed as not available; retired settings (coordinator set, init prompt, Telegram system prompt, glasses, plugin marketplace) and a new Advanced tab | 0.47.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.46",
+  "reviewed_for": "0.47",
   "tours": {
     "first_run": [
       "new-tab",
@@ -282,7 +282,7 @@
       "surfaces": [
         "desktop"
       ],
-      "since": "0.45.4",
+      "since": "0.47.0",
       "open": "settings:connect",
       "title": {
         "en": "Connect apps",
