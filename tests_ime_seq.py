@@ -98,7 +98,8 @@ const IME_LEAK_RE = /^(?:[\u3105-\u312F\u31A0-\u31BF\u02C7\u02CA\u02CB\u02D9\s]+
 term.onData(d => {
   window.RAW.push(d);
   if (_cs.s1 && IME_LEAK_RE.test(d)) return;   // 組字中漏出的半成品
-  if (!dedup.shouldDrop(d)) window.OUT.push(d);
+  const r = dedup.rewrite(d);                  // 跟 index.html 一樣：null＝丟掉，否則送改寫後的
+  if (r !== null) window.OUT.push(r);
 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -154,7 +155,24 @@ window.pickFromCandidates = async function (commit, switchKeyCode) {
 window.__emit = function (d) {
   window.RAW.push(d);
   if (_cs.s1 && IME_LEAK_RE.test(d)) return;
-  if (!dedup.shouldDrop(d)) window.OUT.push(d);
+  const r = dedup.rewrite(d);
+  if (r !== null) window.OUT.push(r);
+};
+// 組字中按 CapsLock 切英文（2026-11-16 回報的形狀）：xterm 先把當下的組字內容
+// （preedit，可能還帶著沒選字的注音）送出去，過一下 macOS 才確認選字。
+window.capsMid = async function (preedit, commit, gap) {
+  ta.focus(); ta.value = '';
+  ta.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+  ta.dispatchEvent(new CompositionEvent('compositionupdate', { data: preedit, bubbles: true }));
+  ta.value = preedit;
+  await sleep(5);
+  ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'CapsLock', keyCode: 20, bubbles: true }));
+  ta.dispatchEvent(new KeyboardEvent('keyup', { key: 'CapsLock', keyCode: 20, bubbles: true }));
+  await sleep(gap);
+  ta.value = commit;
+  ta.dispatchEvent(new CompositionEvent('compositionend', { data: commit, bubbles: true }));
+  ta.dispatchEvent(new InputEvent('input', { data: commit, inputType: 'insertText', composed: true, bubbles: true }));
+  await sleep(60);
 };
 window.reset = function () { window.RAW.length = 0; window.OUT.length = 0; window.DROPPED.length = 0; ta.value = ''; };
 </script>"""
@@ -211,6 +229,33 @@ with sync_playwright() as pw:
     check("D 多字 commit：雙送擋成一次",
           page.evaluate("window.RAW") == ["你好", "你好"] and page.evaluate("window.OUT") == ["你好"],
           f"raw={page.evaluate('window.RAW')} out={page.evaluate('window.OUT')}")
+
+    # M — 組字中按 CapsLock 切英文：xterm 先送 preedit，再把 commit 送兩次。
+    #     回報的三種形狀，最後進 PTY 的（套用退格之後）都只能有一份。
+    def typed(out):
+        buf = []
+        for chunk in out:
+            for ch in chunk:
+                if ch == "\x7f":
+                    if buf:
+                        buf.pop()
+                else:
+                    buf.append(ch)
+        return "".join(buf)
+
+    for name, pre, com in (("M1 整段都選好了才切英文", "但感覺還是要引導使用者去操作", "但感覺還是要引導使用者去操作"),
+                           ("M2 最後一個字還是注音，選字後是「了」", "然後我的打字又會重複ㄜ", "然後我的打字又會重複了"),
+                           ("M3 最後的注音被丟掉", "然後我的打字又會重複ㄜ", "然後我的打字又會重複"),
+                           ("M4 注音後面還跟著不換行空白", "有沒有辦法更順ㄋㄜ\u00a0", "有沒有辦法更順呢")):
+        page.evaluate("window.reset()")
+        page.evaluate("([a, b]) => window.capsMid(a, b, 40)", [pre, com])
+        raw, out = page.evaluate("window.RAW"), page.evaluate("window.OUT")
+        check(f"{name}：xterm 真的送了不只一份", len(raw) >= 2 and raw[0] == pre, f"raw={raw}")
+        check(f"{name}：進 PTY 的只有一份「{com}」", typed(out) == com, f"out={out} typed={typed(out)!r}")
+    page.evaluate("window.reset()")
+    page.evaluate("async () => { await window.capsMid('好', '好', 40); await window.typeCJK('好', false); }")
+    check("M5 切英文之後再正常打同一個字 → 兩個都留", page.evaluate("window.OUT").count("好") == 2,
+          page.evaluate("window.OUT"))
 
     # G — 純 ASCII 一律不經手（終端每個按鍵都走這條路）
     page.evaluate("window.reset()")

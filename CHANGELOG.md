@@ -6,6 +6,79 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.46.0 (2026-11-16)
+
+### Added
+
+- **Tasks that outlive a session, kept in one database on this computer.** Asked for: schedules, work a bot keeps on
+  with, and work handed between bots should be kept in a structured way instead of conversations and loose files. A
+  bot now keeps what it is doing as tasks (`sfctl task add`, `update`, `note`, `done`, `drop`): who owns it, its next
+  step, a due date, what it waits for, and every change as a line of history. `sfctl task mine` shows a bot its open
+  tasks and what other bots wait on it; `--decision` puts a question only you can answer on your own list
+  (`sfctl task list --decisions`); `sfctl task stuck` lists what nothing has happened to for too long. Who acts is
+  always the asking tab's bot. Everything sits in `state.db` (SQLite) in the app's state folder: one file, backed up
+  daily (seven kept), keys and tokens masked before they are written; if the file cannot be read, ShellBot goes on
+  as before and says so. Covered by `tests_state_store.py` and `tests_api_tasks.py`.
+
+  **任務可以跨對話保存，記在這台電腦的一個資料庫裡。** 需求：排程、bot 持續在做的事、bot 之間交辦的事，要用結構化的方式保存，
+  不要只留在對話和零散的檔案裡。現在 bot 會把手上的事記成任務（`sfctl task add`、`update`、`note`、`done`、`drop`）：誰負責、
+  下一步、期限、在等誰，每一次變動都留一行紀錄。`sfctl task mine` 讓 bot 看到自己還沒做完的任務，以及別的 bot 在等它的；
+  `--decision` 會把只有你能決定的事放進你的清單（`sfctl task list --decisions`）；`sfctl task stuck` 列出太久沒有動靜的任務。
+  動作的人一律是發指令那個分頁的 bot。全部存在 App 狀態資料夾裡的 `state.db`（SQLite）：一個檔案、每天備份（留七份）、
+  寫入前先遮掉金鑰和 token；檔案讀不了時，ShellBot 照常運作並說明原因。由 `tests_state_store.py`、`tests_api_tasks.py` 守著。
+
+- **A hand-off can belong to a task, and its result comes back onto it.** Asked for: follow one piece of work across
+  bots, who got it and whether they answered. `sfctl a2a-handoff <bot> "…" --for-task N` (and `a2a-send`) records
+  the hand-off on task N, which then waits on that bot; the message tells the other side which task it is part of.
+  The answer (`a2a-result`, from this computer or a paired one) is written on the task, which goes back to its owner.
+  A missing or finished task is refused before anything is sent. A bot that wakes up now reads its open tasks in its
+  first message. Covered by `tests_tasks_a2a.py`.
+
+  **交辦可以掛在任務底下，對方的結果會記回同一件任務。** 需求：一件事交給幾個 bot 時，要能追到誰接了、回了沒。
+  `sfctl a2a-handoff <bot> "…" --for-task N`（`a2a-send` 也可以）會把這次交辦記在任務 N 上，任務改成「在等那個 bot」；
+  訊息裡會告訴對方這是哪件任務的一部分。對方的回覆（`a2a-result`，這台或配對的另一台都算）會寫回任務，任務回到負責人手上。
+  任務不存在或已經結束，會在送出之前就擋下。bot 被叫醒時，第一則訊息裡就會列出它還沒做完的任務。由 `tests_tasks_a2a.py` 守著。
+
+### Changes
+
+- **The sidebar's foot is one row.** Reported: Settings, About, Guide and "For the AI" stacked in four rows at the
+  bottom left read as clutter. Settings keeps its word; the guide, the AI's manual and About are icons at its right
+  that say their name when you point at them. They open what they opened before, and the guide's count of new
+  features sits on its icon. Covered by `tests_sidebar_footer_ui.py`.
+
+  **側欄底部收成一列。** 回報：左下角「設定、關於、導覽、給 AI 的說明」四列疊在一起，看起來很雜。現在「設定」保留文字，
+  導覽、給 AI 的說明、關於改成右邊的小圖示，滑鼠移上去會顯示名稱。按下去打開的東西跟以前一樣，導覽的新功能數字標在它的
+  圖示上。由 `tests_sidebar_footer_ui.py` 守著。
+
+### Fixes
+
+- **Typing Chinese no longer doubles a phrase when you switch to English mid-phrase.** Reported: typing into a tab
+  from another computer's sidebar doubled whole phrases ("…去操作…去操作gcp") and left a stray Bopomofo symbol
+  ("…重複ㄜ…重複了"). Measured in the debug log: the same chunk arrived twice, 40-60 ms apart, each time right before
+  an English word. Reproduced with the real terminal: pressing Caps Lock while a phrase is still being composed makes
+  the terminal send it at once, with any syllable not yet picked; the input method then confirms the phrase and the
+  terminal sends it twice more, and the old check only knew about those two. Now what was already sent is matched
+  against the confirmed phrase: the copy is dropped, and an unpicked syllable is erased and replaced by the character
+  chosen. This applies to local tabs and to another computer's tabs. The computer receiving the keys also drops the
+  same phrase arriving twice within 0.4 s, so typing from a computer still on an older version is fixed too. Covered
+  by `tests_ime_seq.py`, `tests_ime_dedup.js` and `tests_remote_input_repeat.py`.
+
+  **打中文途中切英文，不會再整段重複。** 回報：從另一台電腦的側欄在這台的分頁打字，整段會重複（「…去操作…去操作gcp」），
+  還會留下沒選字的注音（「…重複ㄜ…重複了」）。從 debug log 量到：同一段字送進來兩次，相隔 40～60 毫秒，而且都在要打英文
+  之前。用真的終端機元件重現：一段字還在組字時按 Caps Lock，終端機會立刻把它送出去，連同還沒選字的注音；輸入法接著確認
+  這段字，終端機又送兩次，而舊的檢查只認得後面那兩次。現在會拿已經送出去的內容去比對確認後的字：重複的那份丟掉，還沒選字
+  的注音會先刪掉、換成選好的字。本機分頁和另一台電腦的分頁都適用。收按鍵的這台也會把 0.4 秒內重複送來的同一段字丟掉，
+  所以從還沒更新的電腦打過來也不會重複。由 `tests_ime_seq.py`、`tests_ime_dedup.js`、`tests_remote_input_repeat.py` 守著。
+
+- **A usage window whose reset time has passed shows no pace.** Measured on the phone's usage route: two accounts
+  read 74 % and 53 % with a reset already in the past, and the pace (past 100 %, clamped) called them "26 % to
+  spare". Those numbers are the last window's: they are now marked as such, with no pace and no "ahead". Covered by
+  `tests_link_usage.py`.
+
+  **重置時間已經過了的用量時段，不再顯示配速。** 在手機的用量路由量到：兩個帳號顯示 74 % 和 53 %，重置時間卻已經過了，
+  配速（超過 100 % 被截成 100 %）把它們算成「還有 26 % 餘裕」。這些數字其實是上一個週期的，現在會標成舊數字，不給配速也不給
+  「超前」。由 `tests_link_usage.py` 守著。
+
 ## v0.45.4 (2026-11-16)
 
 ### Added

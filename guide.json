@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.45",
+  "reviewed_for": "0.46",
   "tours": {
     "first_run": [
       "new-tab",
@@ -23,7 +23,8 @@
   "no_guide": {},
   "added_without_guide": {
     "0.45.3": "Frame Link routes for the phone app (usage and pace, a queued message sent now or withdrawn, pictures sent with a message); nothing new on the desktop's screen. The app's own guide entries come with its build.",
-    "0.45.4": "The sign-in card shows only in a conversation whose last turn says the sign-in expired, and it explains each step itself; there is no fixed place on the screen to point at."
+    "0.45.4": "The sign-in card shows only in a conversation whose last turn says the sign-in expired, and it explains each step itself; there is no fixed place on the screen to point at.",
+    "0.46.0": "Tasks are commands for the AI tabs (`sfctl task`, `--for-task`); nothing new on the desktop's screen yet. A page for them comes with its own entry."
   },
   "features": [
     {

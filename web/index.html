@@ -2672,7 +2672,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           } catch (_) {}
           return;
         }
-        if (imeDedup.shouldDrop(data)) return;
+        data = imeDedup.rewrite(data);
+        if (data === null) return;
         // Enter / single control chars → send immediately (skip microbatch).
         // The setTimeout(0) microbatch helps for rapid multi-char input
         // (IME, paste bursts) but adds a full event-loop tick + possible
@@ -2843,7 +2844,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           } catch (_) {}
           return;
         }
-        if (imeDedup.shouldDrop(data)) return;
+        data = imeDedup.rewrite(data);
+        if (data === null) return;
         if (data === '\r' || data === '\n' || data.length === 1) {
           if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
           if ((data === '\r' || data === '\n') && pastePending > 0) {
@@ -3819,7 +3821,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.onData(data => {
       const info = parseRemoteSid(sid);
       if (!info) return;
-      if (!imeGuard.keep(data)) return;
+      data = imeGuard.pass(data);
+      if (data === null) return;
       pywebview.api.link_remote_input(info.peerId, info.rsid, data).catch(() => {});
     });
     // pane 尺寸變了（視窗縮放、側欄開合）→ 重新 fit 並推給對方
@@ -6853,9 +6856,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // compositionstart 清空。人要打出同一個字必然經過新的 compositionstart，
   // 所以連打「好好」不會被吃掉——第一版用 150ms 時間窗口就是這樣吃掉字的
   // （實測兩次送出只差 ≤0.8ms，150ms 大了兩個數量級）。
+  // ── 組字中被提早送出的那段，跟最後的 commit 對帳 ──
+  // 回報（2026-11-16，從另一台電腦的遠端分頁打字）：「但感覺還是要引導使用者去
+  // 操作但感覺還是要引導使用者去操作gcp」「…又會重複ㄜ…又會重複了」。用真實
+  // xterm 重現：組字中按 CapsLock 切英文，CompositionHelper.keydown(20) 走
+  // _finalizeComposition(false)，把當下的組字內容（可能還帶著沒選字的注音）先
+  // 送出去；接著 macOS 確認選字，compositionend 之後 xterm 又把 commit 送兩次。
+  // 舊的 expect 規則只認 compositionend 之後的那兩次，於是第一次被當成「這次
+  // commit 的第一份」放行，畫面上就多一段。
+  // 做法：記下這次組字已經送出去的文字（sent）；之後來的同一段一律丟掉，若只差
+  // 結尾還沒選字的注音／空白，就送退格把它們刪掉，再補上後面多出來的字。
+  // 對不上的（真的是新內容）照舊送。
   function _makeImeDedup() {
+    const IME_TAIL_RE = /[\u3105-\u312F\u31A0-\u31BF\u02C7\u02CA\u02CB\u02D9\s\u00a0]+$/;
+    function _imeReconcile(sent, next) {
+      if (!sent) return null;
+      if (next === sent) return '';                                  // 已經在畫面上了
+      const head = sent.replace(IME_TAIL_RE, '');
+      if (!head || !next.startsWith(head)) return null;              // 不是同一段，照舊處理
+      const tail = Array.from(sent.slice(head.length)).length;       // 要刪掉的注音／空白
+      return '\x7f'.repeat(tail) + next.slice(head.length);
+    }
     let expect = '', expectSent = false, expectUntil = 0;
     let lastSent = '', lastTime = 0;
+    let composing = false, sent = '', sentUntil = 0;   // 這次組字已經送出去的（見 _imeReconcile）
     const drop = (why, data, extra) => {
       try {
         pywebview.api.js_debug('ime-dup', JSON.stringify(
@@ -6864,13 +6888,36 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       return true;
     };
     return {
-      started() { expect = ''; expectSent = false; expectUntil = 0; },
+      started() { expect = ''; expectSent = false; expectUntil = 0; composing = true; sent = ''; sentUntil = 0; },
       composed(data) {
         expect = data || '';
         expectSent = false;
         // 純保險：實測兩次送出間隔 ≤0.8ms，60ms 有七十幾倍餘裕；而人打完下一
         // 個字最快也要兩百毫秒以上，所以這個上限不會擦到真的輸入。
         expectUntil = Date.now() + 60;
+        composing = false;
+        sentUntil = Date.now() + 400;      // commit 的那幾份跟提早送出的那段對帳，之後就放掉
+      },
+      // 要送進 PTY 的文字：原樣、改寫過的（退格＋補字）、或 null（丟掉）。
+      // 所有輸入路徑都走這個；shouldDrop 是它的舊規則部分。
+      rewrite(data) {
+        if (/^[\x00-\x7f]*$/.test(data)) return data;            // 純 ASCII 不經手
+        const now = Date.now();
+        if (composing || (sent && now < sentUntil)) {
+          const fix = _imeReconcile(sent, data);
+          if (fix !== null) {
+            sent = data;
+            if (data === expect) { expectSent = true; lastSent = data; lastTime = now; }
+            if (!fix) { drop('compose-early-dup', data, { sent }); return null; }
+            drop('compose-early-fix', data, { fix: fix.length });
+            return fix;
+          }
+          if (this.shouldDrop(data)) return null;
+          sent += data;
+          return data;
+        }
+        sent = '';
+        return this.shouldDrop(data) ? null : data;
       },
       shouldDrop(data) {
         if (/^[\x00-\x7f]*$/.test(data)) return false;   // 純 ASCII 不經手
@@ -6927,12 +6974,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         _imeComposing = false;
         dedup.composed(data);
       },
-      // true = 送出；false = 丟掉。
-      keep(data) {
-        if (data === '\r' || data === '\n') return true;   // Enter 永不丟
-        if (composing && IME_LEAK_RE.test(data)) return false;  // 組字漏出的注音/選字鍵
-        if (dedup.shouldDrop(data)) return false;          // 同一次 commit 送兩次
-        return true;
+      // 要送出的文字，或 null（丟掉）。提早送出過的那段會改成「退格＋補字」。
+      pass(data) {
+        if (data === '\r' || data === '\n') return data;   // Enter 永不丟
+        if (composing && IME_LEAK_RE.test(data)) return null;  // 組字漏出的注音/選字鍵
+        return dedup.rewrite(data);                        // 同一次 commit 送兩次 → null；提早送出的 → 退格＋補字
       },
     };
   }

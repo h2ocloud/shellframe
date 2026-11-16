@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.45.0
-   version: 0.45.0
+OK ShellBot v0.46.0
+   version: 0.46.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 

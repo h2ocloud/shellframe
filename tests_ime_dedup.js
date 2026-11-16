@@ -105,24 +105,24 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     // 一次 commit（compositionstart → compositionend('還是要用')）只放行一次，
     // 第二次同內容擋掉——這正是「還是要用還是要用」重複的修法。
     g.start(); g.end('還是要用');
-    check('遠端守門：commit 第一次放行', g.keep('還是要用') === true);
-    check('遠端守門：同一次 commit 第二次 → 擋', g.keep('還是要用') === false);
+    check('遠端守門：commit 第一次放行', g.pass('還是要用') !== null);
+    check('遠端守門：同一次 commit 第二次 → 擋', g.pass('還是要用') === null);
   }
   {
     const g = _makeImeInputGuard('rmt:peer:s1');
     g.start();                                  // 組字中
-    check('遠端守門：組字中漏出的純注音 → 擋', g.keep('ㄨㄛ') === false);
-    check('遠端守門：組字中漏出的空白（叫候選）→ 擋', g.keep(' ') === false);
-    check('遠端守門：組字中漏出的選字數字 → 擋', g.keep('3') === false);
-    check('遠端守門：組字中真的漢字 commit → 放行', g.keep('我') === true);
+    check('遠端守門：組字中漏出的純注音 → 擋', g.pass('ㄨㄛ') === null);
+    check('遠端守門：組字中漏出的空白（叫候選）→ 擋', g.pass(' ') === null);
+    check('遠端守門：組字中漏出的選字數字 → 擋', g.pass('3') === null);
+    check('遠端守門：組字中真的漢字 commit → 放行', g.pass('我') !== null);
     g.end('我');
   }
   {
     const g = _makeImeInputGuard('rmt:peer:s1');
-    check('遠端守門：Enter 永遠放行', g.keep('\r') === true);
-    check('遠端守門：純 ASCII 打字不擋', g.keep('o') && g.keep('p') && g.keep('e'));
+    check('遠端守門：Enter 永遠放行', g.pass('\r') !== null);
+    check('遠端守門：純 ASCII 打字不擋', g.pass('o') === 'o' && g.pass('p') === 'p' && g.pass('e') === 'e');
     // 非組字狀態下的空白不該被當漏字擋掉（英文句子要能打空白）
-    check('遠端守門：非組字時空白照送', g.keep(' ') === true);
+    check('遠端守門：非組字時空白照送', g.pass(' ') !== null);
   }
 
   // ── compositionend 沒帶回 commit 內容時，單字也不能重複（v0.35.17）────────

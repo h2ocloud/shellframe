@@ -13,6 +13,8 @@ import shutil
 import subprocess
 import threading
 import time
+
+from sf_log import _dlog
 from pathlib import Path
 
 import agent_cursor
@@ -89,6 +91,26 @@ def _tmux_cursor(tmux: str, target: str) -> str:
         return f"\x1b[{int(cy) + 1};{int(cx) + 1}H"
     except Exception:
         return ""
+
+REPEAT_CHUNK_S = 0.4
+
+
+def _repeat_ime_chunk(api, sid: str, data: str) -> bool:
+    """The same multi-character non-ASCII chunk again for this tab within 0.4 s: a computer whose page
+    still sends an IME commit twice (switching to English mid-phrase did; fixed in the page in 0.46.0,
+    and an older one keeps doing it). Nobody types the same phrase twice that fast; ASCII and single
+    characters are never touched (a key held down, the same character typed twice)."""
+    now = time.time()
+    last = getattr(api, "_raw_input_last", None)
+    if last is None:
+        last = api._raw_input_last = {}
+    prev = last.get(sid)
+    last[sid] = (data, now)
+    if len(data) > 1 and not data.isascii() and prev and prev[0] == data and now - prev[1] < REPEAT_CHUNK_S:
+        _dlog("link", f"repeat IME chunk dropped sid={sid} len={len(data)}")
+        return True
+    return False
+
 
 class RemoteApiMixin:
     def sfctl_call(self, cmd: str, args_json: str = "{}") -> str:
@@ -643,6 +665,8 @@ class RemoteApiMixin:
                 s = self.sessions.get(sid)
                 if not s:
                     return {"success": False, "message": f"No such session: {sid}"}
+                if _repeat_ime_chunk(self, sid, data):
+                    return {"success": True, "dropped": "repeat"}
                 if agent_link.answers(data):   # only a person's keys come this way: a fresh A2A chain
                     agent_link.clear_chain(sid)
                 s.write(data)
