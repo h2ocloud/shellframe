@@ -1568,7 +1568,7 @@
     const wrap = document.createElement('div');
     wrap.innerHTML = `<label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">${t('Bots: faces, memory, primary bot (experimental)', 'Bots — 頭像表情、獨立記憶、主要 Bot（實驗）')}</label>
       <div style="display:flex;align-items:center;gap:6px">
-        <button class="toggle-switch" id="setting-experimental-bots"></button>
+        <button class="toggle-switch" id="setting-experimental-bots" data-guide="bots"></button>
         <span style="font-size:11px;color:#565f89">${t('Lights become animated bot faces (idle, working, question, stuck, done). A tab can become a bot that wakes with its job, skills and memory, and writes its memory before it closes. On for a new install.',
           '燈號換成會動的 bot 頭像（發呆／運作／問號／卡住／完成）；分頁可以開成 bot：叫醒時帶入執掌、skill 與記憶，關閉前先寫記憶。新安裝預設打開。')}</span>
       </div>
@@ -1584,7 +1584,7 @@
       </div>
       <label style="font-size:11px;color:#565f89;display:block;margin:10px 0 4px">${t('A2A: bots message each other by name (experimental)', 'A2A：bot 之間用名字互相傳話（實驗）')}</label>
       <div style="display:flex;align-items:center;gap:6px">
-        <button class="toggle-switch" id="setting-experimental-a2a"></button>
+        <button class="toggle-switch" id="setting-experimental-a2a" data-guide="a2a"></button>
         <span style="font-size:11px;color:#565f89">${t('The AI in a tab can send work or a note to another bot by its name (sfctl a2a-send, [[SF:TO:name|…]]), here or on a paired computer, and hand off a task that reports back. Off by default.',
           '分頁裡的 AI 可以用名字把工作或訊息交給另一個 bot（sfctl a2a-send、[[SF:TO:名字|…]]），這台或配對的電腦都可以，也能交辦一件事、做完回報。預設關閉。')}</span>
       </div>

@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="tabmodel.css"/>
 <link rel="stylesheet" href="ctxmenu.css"/>
 <link rel="stylesheet" href="dialog.css"/>
+<link rel="stylesheet" href="guide.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -876,10 +877,10 @@
 <div id="tab-bar">
   <button class="tab-action" id="btn-sidebar" title="Toggle sidebar" style="font-size:14px">☰</button>
   <div id="tabs"></div>
-  <button id="btn-new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
+  <button id="btn-new-tab" data-guide="new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
-  <button id="usage-brief" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
+  <button id="usage-brief" data-guide="usage" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
@@ -917,7 +918,7 @@
 <!-- Main content -->
 <div id="app-body">
   <div id="sidebar" class="collapsed">
-    <div class="sb-section-title sb-sessions-head">
+    <div class="sb-section-title sb-sessions-head" data-guide="sessions">
       <span data-i18n="sessions">Sessions</span>
       <!-- 中斷對話後 hook 不一定發 Stop，燈號會卡在執行中；這顆是手動重判。
            後端在 hook 與畫面都安靜 90 秒後交回畫面判斷。 -->
@@ -925,11 +926,12 @@
     </div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
-      <button class="sb-footer-btn" id="btn-settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
+      <button class="sb-footer-btn" id="btn-settings" data-guide="settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
       <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
+      <button class="sb-footer-btn" id="btn-guide" data-guide="guide"><span style="opacity:.5">✦</span> <span data-i18n="guideBtn">Guide</span></button>
       <!-- 說明書放在「關於」裡面等於沒放：要有人記得去翻才會用到。這顆直接
            開到那一段，順便顯示它有沒有裝進 AI 會自己讀的地方。 -->
-      <button class="sb-footer-btn" id="btn-ai-skill" title="給 AI 的 ShellBot 操作說明"><span style="opacity:.5">🤖</span> 給 AI 的說明</button>
+      <button class="sb-footer-btn" id="btn-ai-skill" data-guide="ai-skill" title="給 AI 的 ShellBot 操作說明"><span style="opacity:.5">🤖</span> 給 AI 的說明</button>
     </div>
   </div>
   <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
@@ -969,7 +971,7 @@
 
 <!-- New tab modal -->
 <div class="modal-overlay" id="modal-new">
-  <div class="modal">
+  <div class="modal" data-guide="new-tab">
     <h2 data-i18n="newSession">New Session</h2>
     <div class="preset-list" id="preset-list"></div>
     <div class="custom-cmd">
@@ -995,9 +997,9 @@
 
     <div class="settings-tabs" id="settings-tabs-bar">
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
-      <button class="settings-tab" data-tab="bridge" data-i18n="settingsTelegram">Telegram Bridge</button>
-      <button class="settings-tab" data-tab="line" data-i18n="settingsLine">LINE</button>
-      <button class="settings-tab" data-tab="marketplace" title="Browse and install plugins">🧩 Plugins</button>
+      <button class="settings-tab" data-tab="bridge" data-guide="telegram" data-i18n="settingsTelegram">Telegram Bridge</button>
+      <button class="settings-tab" data-tab="line" data-guide="line" data-i18n="settingsLine">LINE</button>
+      <button class="settings-tab" data-tab="marketplace" data-guide="plugins" title="Browse and install plugins">🧩 Plugins</button>
     </div>
 
     <!-- Tab: Plugin marketplace -->
@@ -1079,7 +1081,7 @@
         <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">角色群組 — 一則訊息送給多個角色（實驗性）</label>
           <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-experimental-groups"></button>
+            <button class="toggle-switch" id="setting-experimental-groups" data-guide="groups"></button>
             <span style="font-size:11px;color:#565f89">把名冊裡的角色組成群，一次送給全部成員，回覆合併成一條對話。手機 App 與 TG <code>/group</code> 都可用。預設關閉。</span>
           </div>
           <div id="groups-editor" style="display:none;margin-top:8px;padding:8px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px">
@@ -1096,7 +1098,7 @@
         <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="experimentalLoopsLabel">Loops panel — scheduled conversations (experimental)</label>
           <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-experimental-loops"></button>
+            <button class="toggle-switch" id="setting-experimental-loops" data-guide="loops"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="experimentalLoopsHint">Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab. Off by default.</span>
           </div>
         </div>
@@ -1571,6 +1573,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="layout.js"></script>
 <script src="tabmodel.js"></script>
 <script src="termkeys.js"></script>
+<script src="guide.js"></script>
 <script>
 (function() {
   const THEME = {
@@ -1646,6 +1649,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       sessionPrompt: 'Session prompt',
       sessionPromptHelp: 'Injected into new AI sessions (Claude Code, Codex...) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.',
       about: 'About',
+      guideBtn: 'Guide',
       aboutDesc: 'Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.',
       usage: 'Usage',
       usageItems: [
@@ -1828,6 +1832,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       sessionPrompt: '工作階段提示',
       sessionPromptHelp: '新 AI 工作階段（Claude Code、Codex...）收到第一則使用者訊息時會注入這段提示。留空會使用內建預設（說明 shellframe + sfctl）。修改會套用到儲存後開啟的新工作階段。',
       about: '關於',
+      guideBtn: '導覽',
       aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
       usage: '使用方式',
       usageItems: [
@@ -3291,7 +3296,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
         tgChip +
         (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
-        (isAiSession(sid) ? `<span class="sb-relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">⟳</span>` : '') +
+        (isAiSession(sid) ? `<span class="sb-relaunch" data-guide="relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">⟳</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
       container.appendChild(el);
     });
@@ -3307,7 +3312,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       divider.title = '隔離線以下＝配對的其他 ShellBot 的 session。點線收合／展開，點「＋ 配對」接上另一台。';
       divider.innerHTML =
         `<span style="pointer-events:none">${zoneCollapsed ? '▸' : '▾'} 🔗 ${esc(t('linkSidebarDivider'))}${peers.length ? ` (${peers.length})` : ''}</span>` +
-        `<button class="sb-pair-btn" data-action="link-pair" title="配對另一台 ShellBot（產生配對碼／加入配對）">＋ 配對</button>`;
+        `<button class="sb-pair-btn" data-guide="pair" data-action="link-pair" title="配對另一台 ShellBot（產生配對碼／加入配對）">＋ 配對</button>`;
       container.appendChild(divider);
 
       if (!zoneCollapsed) {
