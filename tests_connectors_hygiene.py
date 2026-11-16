@@ -49,6 +49,9 @@ for sid in reg.ids():
     needs_code = any(st.get("check") or any(not a.get("builtin") for a in st.get("actions") or [])
                      for r in desc["routes"] for st in r["steps"])
     check(f"{sid}: its adapter has every check and action it names", not miss or (ad is None and not needs_code), str(miss[:3]))
+# the catalog's bubbles come from the descriptions: one category id is one bubble, so one name
+conflicts = registry.category_conflicts([reg.get(i) for i in reg.ids()])
+check("every shipped description names a category the way the others do", not conflicts, "; ".join(conflicts))
 
 print(f"\nResults: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

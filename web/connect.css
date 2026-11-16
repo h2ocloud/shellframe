@@ -29,11 +29,55 @@
 .cn-dot.busy { background: #7aa2f7; animation: cn-pulse 1s ease-in-out infinite; }
 @keyframes cn-pulse { 50% { opacity: .25; } }
 
+/* ── the catalog (Settings → Connect): search, bubbles, sections of two-column rows ── */
+#modal-settings .modal.cn-wide { width: min(720px, calc(100vw - 48px)) !important; }   /* two columns need room; other tabs keep 560px */
+.cg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 2px; }
+.cg-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--c-text); }
+.cg-count { border: 0; background: none; padding: 2px 4px; color: var(--c-soft); font-size: 12px; cursor: pointer; border-radius: 6px; white-space: nowrap; }
+.cg-count:hover, .cg-count.on { color: var(--c-blue); }
+.cg-head-r { display: flex; align-items: baseline; gap: 10px; }
+.cg-fix { border: 0; background: rgba(247, 118, 142, .14); padding: 1px 9px; color: var(--c-red); font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 999px; white-space: nowrap; }
+.cg-fix:hover, .cg-fix.on { background: rgba(247, 118, 142, .26); }
+.cg-fix[hidden] { display: none; }
+.cn-badge.cg-beta { background: rgba(224, 175, 104, .18); color: var(--c-amber, #e0af68); }
+.cg-row .cn-main b .cg-beta { font-size: 10.5px; }
+.cg-search { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 10px; height: 32px; background: var(--c-head); border: 1px solid var(--c-line2); border-radius: 8px; color: var(--c-dim); }
+.cg-search:focus-within { border-color: var(--c-blue); }
+.cg-search svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.cg-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; color: var(--c-text); font: inherit; font-size: 12.5px; }
+.cg-search input::placeholder { color: var(--c-dim); }
+.cg-pills { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.cg-pill { padding: 3px 12px; border-radius: 999px; border: 1px solid var(--c-line2); background: transparent; color: var(--c-soft); font-size: 12px; line-height: 18px; cursor: pointer; white-space: nowrap; }
+.cg-pill:hover { border-color: #55608c; color: var(--c-text); }
+.cg-pill.on { background: var(--c-blue); border-color: var(--c-blue); color: #16161e; font-weight: 600; }
+.cg-more-list { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; padding: 6px 0 0; }
+.cg-sec { margin-top: 12px; }
+.cg-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 6px; }
+.cg-sec-head h4 { margin: 0; font-size: 12px; font-weight: 600; color: var(--c-dim); letter-spacing: .02em; }
+.cg-sec[data-sec="attn"] .cg-sec-head h4 { color: var(--c-red); }
+.cg-sec-head .cn-link { font-size: 12px; }
+.cg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cg-row { min-width: 0; padding: 9px 10px 9px 11px; gap: 10px; }
+.cg-row .cn-main b { font-size: 12.5px; }
+.cg-row .cn-main > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 11.5px; color: var(--c-dim); }
+.cg-row .cn-btn { flex: none; padding: 4px 12px; font-size: 12px; }
+.cg-row .cn-btn.cg-done { color: var(--c-green); border-color: rgba(158, 206, 106, .45); }
+.cg-row.cg-off .cn-ico { color: var(--c-dim); opacity: .7; }
+.cg-row.cg-off .cn-main b { color: var(--c-soft); }
+.cg-off-btn { border-style: dashed !important; background: transparent !important; color: var(--c-dim) !important; }
+.cg-why { display: block; margin-top: 3px; font-size: 11px; line-height: 1.5; color: var(--c-soft) !important; }
+.cg-pill:focus-visible, .cg-count:focus-visible, .cg-fix:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
+@media (max-width: 700px) {
+  .cg-grid { grid-template-columns: 1fr; }
+}
+
 /* ── the card ── */
 .modal-overlay.cn-overlay { z-index: 120; }                       /* above Settings, which opens it */
-.cn-card {
+.cn-card, .cn-panel {                                              /* the theme's colours, shared by the card and the catalog */
   --c-bg: #1f2335; --c-head: #1a1d2d; --c-raised: #24283b; --c-line: #292e42; --c-line2: #3b4261;
   --c-text: #c0caf5; --c-soft: #a9b1d6; --c-dim: #787c99; --c-blue: #7aa2f7; --c-amber: #e0af68; --c-green: #9ece6a; --c-red: #f7768e;
+}
+.cn-card {
   width: min(640px, calc(100vw - 96px)); max-height: min(84vh, 760px); display: flex; flex-direction: column; overflow: hidden; outline: none;
   background: var(--c-bg); border: 1px solid var(--c-line); border-radius: 12px; color: var(--c-text);
   box-shadow: 0 18px 60px rgba(0, 0, 0, .5);

@@ -170,7 +170,7 @@ def test_prompt() -> str:
           "sender and the subject of the newest email. Do not open the body, do not send anything and do not "
           f"change anything. Report it in one line. Then write a last line on its own: {TEST_MARK}: OK, or "
           f"{TEST_MARK}: FAIL followed by the reason.")
-    zh = ("這是 Gmail 連線測試。先用 ToolSearch 載入 Gmail 工具，只查最新一封信的寄件者和標題，不開內文、"
+    zh = ("這是 Gmail 連結測試。先用 ToolSearch 載入 Gmail 工具，只查最新一封信的寄件者和標題，不開內文、"
           f"不寄信、不改任何東西。用一行回報。最後單獨一行寫 {TEST_MARK}: OK，失敗就寫 {TEST_MARK}: FAIL 加原因。")
     return sf_lang.pick(en, zh)
 

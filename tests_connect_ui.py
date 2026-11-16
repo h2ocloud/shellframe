@@ -7,6 +7,7 @@ The stand-in follows the interface the connector core fixed (connect_list / conn
 connect_status / connect_start / connect_step / connect_test / connect_disconnect / connect_signal and the
 status and `view` shapes), so what is checked here is the page's side of it:
   1. Settings has a Connect tab; a service not started shows as a row with a "Connect" button, no mark
+     (a Python side without the catalog's fields: the catalog itself is tests_connect_catalog_ui.py)
   2. the card opens on the choice of a way (the recommended one picked), at a moderate size: at most 640px
      wide, text 12-13px, room around it, and it is the same size on every step
   3. a step: its words and link, a tick box and a button that does one thing, the check that runs on
@@ -75,7 +76,7 @@ STEP_SIGN = {"id": "sign", "title": T("Sign in once", "登入一次"), "how": [T
              "check": {"id": "signed", "on": "done", "gate": True, "pass": ["ok"], "states": {
                  "ok": {"tone": "ok", "text": T("Signed in", "已登入"), "hint": T("", "")},
                  "no": {"tone": "warn", "text": T("Not signed in", "還沒登入"), "hint": T("", "")}}}}
-STEP_TEST = {"id": "test", "kind": "test", "title": T("Test the connection", "測試連線"),
+STEP_TEST = {"id": "test", "kind": "test", "title": T("Test the connection", "測試連結"),
              "intro": T("ShellBot asks a temporary tab to use it once.", "ShellBot 會請一個暫時的分頁實際用一次。")}
 STEP_KEY = {"id": "key", "title": T("Paste the key", "貼上金鑰"), "how": [T("Paste it into the box in the next window.", "貼進下一個視窗的欄位。")]}
 DESC = {
@@ -183,7 +184,7 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
       case 'read_output': case 'plugin_sidebar_badges': return R('');
       case 'open_url': window.__opened = args[0]; return R('ok');
       case 'chat_view': return R({success: true, readable: true, provider: 'claude', activity: 'done', decision: window.__decision, rev: 'r' + JSON.stringify(window.__decision) + window.__answers.length,
-                                  turns: [{kind: 'user_msg', ts: 1794190841, text: '幫我看一下今天的備忘'}, {kind: 'assistant_text', ts: 1794190843, text: '我需要先接上示範服務才能讀。'}], queue: {queued: [], given_up: []}});
+                                  turns: [{kind: 'user_msg', ts: 1794190841, text: '幫我看一下今天的備忘'}, {kind: 'assistant_text', ts: 1794190843, text: '我需要先連結示範服務才能讀。'}], queue: {queued: [], given_up: []}});
       case 'bots_link_answer': window.__answers.push(args); return R({success: true});
       default: return R('{}');
     }
@@ -250,7 +251,7 @@ def run(browser):
     row = page.locator("#settings-panel-connect .cn-row")
     check("one row per service: its name, a sentence on where it stands, a Connect button",
           row.count() == 1 and "示範服務" in row.inner_text() and "讓 bot 讀取、寄出示範備忘" in row.inner_text()
-          and row.locator("button").inner_text() == "開始連接", row.inner_text())
+          and row.locator("button").inner_text() == "連結", row.inner_text())
     check("…and no mark on it, since nothing needs the person", row.locator(".cn-flag").count() == 0 and "attn" not in (row.get_attribute("class") or ""))
     shot(page, "connect-list-zh-webkit.png", "#modal-settings .modal")
 
@@ -339,7 +340,7 @@ def run(browser):
           and "登入一次" in page.locator("#cn-card .cn-title").inner_text())
     page.evaluate("window.__signNext = true")
     page.click('#cn-card [data-act="did"]')
-    page.wait_for_selector("#cn-card .cn-title:has-text('測試連線')")
+    page.wait_for_selector("#cn-card .cn-title:has-text('測試連結')")
     check("when it goes through, the last step is the test, with a Start button", page.locator('#cn-card [data-act="test-start"]').count() == 1
           and "第 3 步，共 3 步" in page.locator("#cn-card .cn-prog-label").inner_text())
     page.evaluate("window.__svc.testFail = true")
@@ -358,19 +359,19 @@ def run(browser):
     page.click('#cn-card [data-act="did"]')
     page.wait_for_selector("#cn-card .cn-title:has-text('登入一次')")
     page.click('#cn-card [data-act="did"]')
-    page.wait_for_selector("#cn-card .cn-title:has-text('測試連線')")
+    page.wait_for_selector("#cn-card .cn-title:has-text('測試連結')")
     page.click('#cn-card [data-act="test-start"]')
     page.wait_for_selector("#cn-card .cn-result.ok", timeout=8000)
     check("a passed test says Connected and the status follows (connected)",
-          "已接上" in page.locator("#cn-card .cn-result").inner_text() and "透過小幫手" in page.locator("#cn-card .cn-result").inner_text()
-          and page.evaluate("SFConnect.list().by.demo.state") == "connected" and page.locator("#cn-card .cn-sub").inner_text() == "已接上")
+          "已連結" in page.locator("#cn-card .cn-result").inner_text() and "透過小幫手" in page.locator("#cn-card .cn-result").inner_text()
+          and page.evaluate("SFConnect.list().by.demo.state") == "connected" and page.locator("#cn-card .cn-sub").inner_text() == "已連結")
     shot(page, "connect-done-zh-webkit.png", "#cn-card")
     page.click('#cn-card [data-act="finish"]')
     page.wait_for_function("!document.querySelector('#modal-connect.open')")
     open_settings_tab(page)
-    check("the row says Connected, with the way and the date, and the button is Manage",
-          "已接上" in page.locator("#settings-panel-connect .cn-row").inner_text() and "透過 ShellBot 的小幫手" in page.locator("#settings-panel-connect .cn-row").inner_text()
-          and page.locator("#settings-panel-connect .cn-row button").inner_text() == "管理")
+    check("the row says Connected, with the way and the date, and its button says so (it opens the card)",
+          "已連結" in page.locator("#settings-panel-connect .cn-row").inner_text() and "透過 ShellBot 的小幫手" in page.locator("#settings-panel-connect .cn-row").inner_text()
+          and page.locator("#settings-panel-connect .cn-row button").inner_text() == "✓ 已連結")
     page.locator("#settings-panel-connect .cn-row button").click()
     page.wait_for_selector("#cn-card .cn-kv")
     check("a connected service opens on what it is: each AI's state and what it may do",
@@ -390,7 +391,7 @@ def run(browser):
           any(json.loads(c[1]).get("cancel") for c in calls(page, "connect_test")) and not errors, (calls(page, "connect_test"), errors))
 
     print("6. a service that needs reconnecting")
-    page.evaluate("Object.assign(window.__svc, {state: 'needs_reconnect', problem: {code: 'expired', text: {en: 'Its sign-in ran out.', zh: '它的登入過期了。'}, next: {en: 'Connect it again.', zh: '重新接上就好。'}}})")
+    page.evaluate("Object.assign(window.__svc, {state: 'needs_reconnect', problem: {code: 'expired', text: {en: 'Its sign-in ran out.', zh: '它的登入過期了。'}, next: {en: 'Connect it again.', zh: '重新連結就好。'}}})")
     page.evaluate("window.__calls.length = 0")
     page.click('#settings-tabs-bar [data-tab="general"]')
     page.click('#settings-tabs-bar [data-tab="connect"]')
@@ -399,14 +400,14 @@ def run(browser):
           any(json.loads(c[1]).get("refresh") for c in calls(page, "connect_status")), calls(page, "connect_status"))
     r = page.locator("#settings-panel-connect .cn-row")
     check("the row is marked: Needs you, its reason and what to do, a Reconnect button; the tab carries a dot",
-          "要處理" in r.inner_text() and "它的登入過期了" in r.inner_text() and "重新接上就好" in r.inner_text() and r.locator("button").inner_text() == "重新接上"
+          "要處理" in r.inner_text() and "它的登入過期了" in r.inner_text() and "重新連結就好" in r.inner_text() and r.locator("button").inner_text() == "重新連結"
           and page.locator('#settings-tabs-bar [data-tab="connect"]').inner_text().endswith("●"))
     page.click("#btn-close-settings")
     page.evaluate("window.__calls.length = 0")
     page.evaluate("SFConnect.poll()")
     page.wait_for_selector("#cn-side .cn-sc", timeout=5000)
     check("a small card in the sidebar says so, with a Reconnect button",
-          "示範服務 需要重新接上" in page.locator("#cn-side .cn-sc").inner_text() and "它的登入過期了" in page.locator("#cn-side .cn-sc").inner_text())
+          "示範服務 需要重新連結" in page.locator("#cn-side .cn-sc").inner_text() and "它的登入過期了" in page.locator("#cn-side .cn-sc").inner_text())
     check("…and the sidebar poll asks connect_list and never connect_status(refresh)",
           calls(page, "connect_list") != [] and not [c for c in calls(page, "connect_status") if json.loads(c[1]).get("refresh")])
     shot(page, "connect-sidebar-zh-webkit.png", "#sidebar")
@@ -432,10 +433,10 @@ def run(browser):
 
     print("7. the chat view's [[SF:RED:connect:demo]] question")
     page, errors = open_page(browser)
-    page.evaluate("window.__decision = {id: 'd1', kind: 'red', tag: 'connect:demo', reason: '要讀今天的備忘，需要先接上示範服務。', options: [{n: 1, text: '好，我去接上'}, {n: 2, text: '先不要，之後再說'}]}")
+    page.evaluate("window.__decision = {id: 'd1', kind: 'red', tag: 'connect:demo', reason: '要讀今天的備忘，需要先連結示範服務。', options: [{n: 1, text: '好，我去連結'}, {n: 2, text: '先不要，之後再說'}]}")
     page.wait_for_selector("#chat-ask .cm-opt[data-act='connect']", timeout=8000)
     check("it is a card: what is asked, and a button that connects step by step; the other option stays an option",
-          "需要接上 示範服務" in page.locator("#chat-ask").inner_text() and "要讀今天的備忘" in page.locator("#chat-ask").inner_text()
+          "需要連結 示範服務" in page.locator("#chat-ask").inner_text() and "要讀今天的備忘" in page.locator("#chat-ask").inner_text()
           and page.locator("#chat-ask .cm-opt[data-act='answer']").count() == 1)
     shot(page, "connect-chat-zh-webkit.png", "#chat-ask")
     page.click("#chat-ask .cm-opt[data-act='connect']")

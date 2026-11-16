@@ -203,7 +203,7 @@ r.adapter.health_answer = {"state": "expired"}
 res = r.engine.refresh("demo", force=True)
 check("expired means needs_reconnect, with attention", res["status"]["state"] == "needs_reconnect" and res["status"]["attention"] and res["status"]["problem"]["code"] == "expired", str(res["status"]))
 check("the problem has words and a next step", res["status"]["problem"]["text"]["zh"] and res["status"]["problem"]["next"]["zh"])
-check("health words say it needs to be connected again", "again" in health.words(res["status"], "en") and "重新接上" in health.words(res["status"], "zh"))
+check("health words say it needs to be connected again", "again" in health.words(res["status"], "en") and "重新連結" in health.words(res["status"], "zh"))
 check("the compact form for the phone", health.compact(res["status"]) == {"id": "demo", "name": fake.demo()["name"], "icon": "plug", "state": "needs_reconnect", "attention": True, "step": "3/4"} or health.compact(res["status"])["attention"] is True)
 r.adapter.found["signed_in"] = "missing"
 r.runner.calls.clear()
@@ -358,6 +358,60 @@ check("a damaged state file reads as nothing started (no crash)", r.engine.statu
 _route = {"clis": {c: {"via": "mcp"} for c in ALL_AUTO}}
 check("unless more are asked for, an add goes to Claude only; asked, to those", r.engine._targets(_route, {}) == ["claude"]
       and r.engine._targets(_route, {"clis": ["codex", "grok"]}) == ["codex", "grok"])
+
+# ── the words of a result say the values it came back with ({plan}, {version}, {path}) ─────────
+print("words that name a value")
+d = fake.demo()
+d["routes"][0]["steps"][0]["check"]["states"] = {
+    "ok": {"tone": "good", "text": fake.T("Signed in ({plan})"), "hint": fake.T("Plan {plan}, seen {count} times")},
+    "missing": {"tone": "warn", "text": fake.T("Not signed in ({plan})")}}
+ad = fake.FakeAdapter()
+ad.checks["account_ok"] = lambda ctx, args: {"state": "ok", "plan": "Max", "count": 2, "token": "sk-abcdefghijklmnopqrstuv"}
+reg = registry.Registry(dirs=[])
+reg.register(d, adapter=ad)
+eng = eng_mod.Engine(registry=reg, path=os.path.join(tempfile.mkdtemp(prefix="connect-words-"), "connectors.json"),
+                     clis=clis.Clis(runner=fake.FakeRunner(), finder=fake.finder()), backend=fake.backend())
+eng.start("demo", route="connector")
+eng.step("demo", "back")
+chk = eng.view("demo")["step"]["check"]
+check("a check's words say the value it found, in both languages", chk["text"] == {"en": "Signed in (Max)", "zh": "Signed in (Max) (zh)"}
+      and chk["hint"]["en"] == "Plan Max, seen 2 times", chk)
+saved = eng.store.get("demo")["steps"]["open"]["check"]
+check("…only the values the words name are kept, never anything else the adapter said", saved.get("fields") == {"count": 2, "plan": "Max"}, saved)
+ad.checks["account_ok"] = lambda ctx, args: {"state": "missing"}
+eng.step("demo", "check")
+chk = eng.view("demo")["step"]["check"]
+check("a value that did not come back is taken out with its brackets, never shown as {plan}",
+      chk["text"]["en"] == "Not signed in" and "{plan}" not in json.dumps(chk), chk)
+
+# ── a service the catalog lists that cannot be connected here ────────────────
+later = fake.demo()
+later.update(id="later", routes=[], local_app=True, platforms=["mac"],
+             unavailable={"text": fake.T("Not yet: no server to recommend"), "next": fake.T("It comes later")})
+elsewhere = fake.demo()
+elsewhere.update(id="elsewhere", platforms=["windows"])
+reg = registry.Registry(dirs=[])
+reg.register(later)
+reg.register(elsewhere, adapter=fake.FakeAdapter())
+runner = fake.FakeRunner()
+e = eng_mod.Engine(registry=reg, path=os.path.join(tempfile.mkdtemp(prefix="connect-later-"), "connectors.json"),
+                   clis=clis.Clis(runner=runner, finder=fake.finder()), backend=fake.backend(), platform="mac")
+res = e.start("later")
+check("starting one that is not available yet says so, in its own words, and starts nothing",
+      res["success"] is False and res["code"] == "not_available" and res["message"]["text"] == later["unavailable"]["text"]
+      and e.store.get("later") == {} and runner.calls == [], res)
+check("…its status: not connected, not available, the reason as its problem, no attention",
+      res["status"]["state"] == "not_started" and res["status"]["available"] is False and res["status"]["attention"] is False
+      and res["status"]["problem"]["code"] == "not_available", res["status"])
+check("…a step or a test on it is refused too", e.step("later", "done")["code"] == "not_started" and e.test("later")["code"] == "not_started")
+res = e.start("elsewhere")
+check("one made for another kind of computer: not_on_platform, nothing started", res["code"] == "not_on_platform" and e.store.get("elsewhere") == {}, res)
+check("one line for sfctl and Telegram says it cannot be connected here",
+      health.words(e.status("later"), "en").startswith("Demo: cannot be connected here yet") and "Not yet" in health.words(e.status("later"), "en"),
+      health.words(e.status("later"), "en"))
+e_win = eng_mod.Engine(registry=reg, path=os.path.join(tempfile.mkdtemp(prefix="connect-win-"), "connectors.json"),
+                       clis=clis.Clis(runner=fake.FakeRunner(), finder=fake.finder()), backend=fake.backend(), platform="windows")
+check("on the computer it is made for, it starts", e_win.start("elsewhere")["success"] is True and e_win.status("elsewhere")["available"] is True)
 
 print(f"\nResults: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

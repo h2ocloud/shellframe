@@ -51,6 +51,8 @@ SUPPORT = {
     "cursor": {"label": "Cursor Agent", "mcp": "manual", "connector": False, "where": "~/.cursor/mcp.json",
                "note": _t("No add command: write the server into the file, then run `cursor-agent mcp enable <name>`.",
                           "沒有 add 指令：自己把伺服器寫進設定檔，再跑 `cursor-agent mcp enable <名稱>`。")},
+    # Pi: MCP is a built-in extension from v0.99.0 (the project's release notes, 2026-09-29); `pi mcp add/remove` came
+    # with 1.x. ShellBot still only shows what to enter for it (manual).
     "pi": {"label": "Pi", "mcp": "manual", "connector": False, "where": "~/.pi/agent/mcp.json",
            "note": _t("MCP is built in from Pi 0.99; an older Pi cannot run an MCP server. Check with `pi --version`.",
                       "Pi 從 0.99 版起內建 MCP，更舊的版本跑不了 MCP 伺服器。用 `pi --version` 看版本。")},

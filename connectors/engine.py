@@ -36,6 +36,7 @@ from . import SCHEMA, clis as clis_mod, health, problems, registry as reg_mod, s
 from .adapter import Ctx
 
 HANDLE_OK = re.compile(r"^[A-Za-z0-9_.:\-]{1,64}$")
+PLACE = re.compile(r"\{([a-z_]{1,20})\}")                 # {plan}, {version}: a value a check or an action came back with
 CLI_STATE = {"added": "connected", "replaced": "connected", "failed": "failed", "missing": "missing",
              "manual": "manual", "unsupported": "unsupported"}
 
@@ -53,7 +54,7 @@ def stuck_message(service: str, route: str, n, total, step: str, problem: str = 
     en = (f"I'm connecting {service} with ShellBot (way: {route}) and I'm stuck at {where_en}."
           + (f" What goes wrong: \"{problem}\"." if problem else "")
           + " Please help me look at it. This message has no password, token or code from a web address.")
-    zh = (f"我在用 ShellBot 接 {service}（接法：{route}），卡在{where_zh}。"
+    zh = (f"我在用 ShellBot 連結 {service}（連結方式：{route}），卡在{where_zh}。"
           + (f"遇到的問題：「{problem}」。" if problem else "")
           + "請幫我看看。這則訊息不含密碼、token，也沒有網址裡的代碼。")
     return sf_lang.pick(en, zh, lang)
@@ -61,8 +62,8 @@ def stuck_message(service: str, route: str, n, total, step: str, problem: str = 
 
 def connect_words(name: str, lang: str = None) -> str:
     """The one sentence a phone, a banner or a Telegram chat gets for a bot's [[SF:RED:connect:<service>]]."""
-    return sf_lang.pick(f"Needs {name} connected: open ShellBot on the computer (Settings → Connections)",
-                        f"需要接上 {name}：請到電腦上的 ShellBot 接（設定 → 連接）", lang)
+    return sf_lang.pick(f"Needs {name} connected: open ShellBot on the computer (Settings → Connect)",
+                        f"需要連結 {name}：請到電腦上的 ShellBot 連結（設定 → 連結）", lang)
 
 
 class Store:
@@ -127,6 +128,29 @@ class Store:
                 self._write(data)
 
 
+def _fields(table, code, res) -> dict:
+    """The values a result's words name ({plan}, {version}, {path}), from the adapter's (already masked) answer: only
+    the names those words use, only plain values. They are kept with the result so the words can say them."""
+    words = (table or {}).get(code) or {}
+    names = {m for part in ("text", "hint") for t in [words.get(part) or {}] for lang in ("en", "zh")
+             for m in PLACE.findall(str(t.get(lang) or "") if isinstance(t, dict) else "")}
+    return {k: res[k] for k in sorted(names) if isinstance(res.get(k), (str, int, float)) and not isinstance(res.get(k), bool)}
+
+
+def _fill(text, fields) -> dict:
+    """A {en, zh} text with its {name}s filled in; a name with no value is taken out (with brackets around it)."""
+    if not isinstance(text, dict):
+        return text
+    out = {}
+    for lang, s in text.items():
+        s = str(s or "")
+        for k, v in (fields or {}).items():
+            s = s.replace("{" + k + "}", str(v))
+        s = re.sub(r"\s*[（(]\{[a-z_]{1,20}\}[）)]", "", s)
+        out[lang] = PLACE.sub("", s)
+    return out
+
+
 def _safe_result(res) -> dict:
     """An adapter's answer, kept to plain values: a `state` string and scalars (masked), nothing nested."""
     if not isinstance(res, dict) or not isinstance(res.get("state"), str):
@@ -145,8 +169,9 @@ def _safe_result(res) -> dict:
 
 
 class Engine:
-    def __init__(self, registry=None, path=None, clis=None, backend=None, ctx_factory=None, clock=time.time):
+    def __init__(self, registry=None, path=None, clis=None, backend=None, ctx_factory=None, clock=time.time, platform=None):
         self.registry = registry or reg_mod.default()
+        self.platform = platform                     # mac | windows | linux; None: this computer (a test names one)
         self.store = Store(path)
         self.clis = clis or clis_mod.Clis()
         self.backend = backend
@@ -197,13 +222,13 @@ class Engine:
         p = problems.explain(code, desc, route)
         out = {"success": False, "code": code, "message": {"text": p["text"], "next": p["next"]}, **extra}
         if desc:
-            out["status"] = health.build(desc, rec)
+            out["status"] = health.build(desc, rec, platform=self.platform)
         return out
 
     def _reply(self, service, **extra) -> dict:
         desc = self.registry.get(service)
         rec = self.store.get(service)
-        return {"success": True, "status": health.build(desc, rec), "view": self.view(service), **extra}
+        return {"success": True, "status": health.build(desc, rec, platform=self.platform), "view": self.view(service), **extra}
 
     def _route_of(self, desc, rec):
         return next((r for r in desc["routes"] if r["id"] == rec.get("route")), None)
@@ -222,16 +247,16 @@ class Engine:
 
     def status(self, service: str):
         desc = self.registry.get(service)
-        return health.build(desc, self.store.get(service)) if desc else None
+        return health.build(desc, self.store.get(service), platform=self.platform) if desc else None
 
     def list(self) -> list:
         saved = self.store.all()
-        return [health.build(self.registry.get(s), saved.get(s) or {}) for s in self.registry.ids()]
+        return [health.build(self.registry.get(s), saved.get(s) or {}, platform=self.platform) for s in self.registry.ids()]
 
-    def _step_words(self, table, code, fallback_tone="warn") -> dict:
+    def _step_words(self, table, code, fallback_tone="warn", fields=None) -> dict:
         hit = (table or {}).get(code)
         if hit:
-            return {"tone": hit["tone"], "text": hit["text"], "hint": hit.get("hint")}
+            return {"tone": hit["tone"], "text": _fill(hit["text"], fields), "hint": _fill(hit.get("hint"), fields)}
         if code in problems.RESULTS:
             tone, text = problems.RESULTS[code]
             return {"tone": tone, "text": text, "hint": None}
@@ -261,10 +286,12 @@ class Engine:
             step["state"] = sr.get("state", "pending")
             res = sr.get("result")
             action = next((a for a in cur.get("actions", []) if res and a["id"] == res.get("action")), None)
-            step["result"] = {"action": res["action"], "code": res["code"], **self._step_words((action or {}).get("results"), res["code"])} if res else None
+            step["result"] = ({"action": res["action"], "code": res["code"],
+                               **self._step_words((action or {}).get("results"), res["code"], fields=res.get("fields"))} if res else None)
             chk = sr.get("check")
             step["check"] = ({"code": chk["code"], "passed": bool(chk.get("passed")),
-                              **self._step_words((cur.get("check") or {}).get("states"), chk["code"], "info" if chk.get("passed") else "warn")}
+                              **self._step_words((cur.get("check") or {}).get("states"), chk["code"], "info" if chk.get("passed") else "warn",
+                                                 fields=chk.get("fields"))}
                              if chk and cur.get("check") else None)
             prob = rec.get("problem") or {}
             step["message"] = (health.build(desc, rec, route)["problem"]
@@ -286,6 +313,9 @@ class Engine:
         desc = self.registry.get(service)
         if not desc:
             return self._fail(service, "unknown_service")
+        why = reg_mod.available(desc, self.platform)         # listed but not connectable here: say so, start nothing
+        if why:
+            return self._fail(service, why)
         lock = self._op(service)
         if not lock.acquire(blocking=False):
             return self._fail(service, "busy")
@@ -375,7 +405,8 @@ class Engine:
             code = "adapter_error" if res["state"] == "__error__" else res["state"]
             passed = code in chk["pass"]
         if record:
-            self._mark(service, step["id"], check={"code": code, "passed": passed})
+            fields = _fields(chk.get("states"), code, res) if fn else {}
+            self._mark(service, step["id"], check={"code": code, "passed": passed, **({"fields": fields} if fields else {})})
         return passed, code
 
     # ── reconnect: keep what is still true ─────────────────────────────────
@@ -491,7 +522,8 @@ class Engine:
             res = self._call(service, route["id"], fn, {**{k: v for k, v in args.items() if k not in ("value",)}, "options": opts})
         if res["state"] == "__error__":
             return self._fail(service, "adapter_error")
-        self._mark(service, step["id"], result={"action": action_id, "code": res["state"]})
+        fields = _fields(action.get("results"), res["state"], res)
+        self._mark(service, step["id"], result={"action": action_id, "code": res["state"], **({"fields": fields} if fields else {})})
         _dlog("connect", f"act {service}/{step['id']}/{action_id}: {res['state']}")
         extra = {k: v for k, v in res.items() if k != "state"}
         done = False
@@ -746,10 +778,27 @@ class Engine:
         return out
 
     # ── disconnect ─────────────────────────────────────────────────────────
+    def _sharing(self, service, server) -> list:
+        """The other services that use the same server entry and have added it to an AI program: an entry two
+        services share (one local server for both) stays until the last of them that added it lets it go. One
+        that was started but never added it holds nothing."""
+        out = []
+        for other, orec in self.store.all().items():
+            odesc = self.registry.get(other)
+            if other == service or not odesc or "connected" not in (orec.get("clis") or {}).values():
+                continue
+            oroute = self._route_of(odesc, orec)
+            if oroute and (oroute.get("mcp") or {}).get("server") == server:
+                out.append(other)
+        return sorted(out)
+
     def _forget_entries(self, service, desc, rec) -> dict:
         route = self._route_of(desc, rec)
         removed = {"clis": {}, "secrets": []}
-        if route and route.get("mcp"):
+        kept = self._sharing(service, route["mcp"]["server"]) if route and route.get("mcp") else []
+        if kept:
+            removed["kept_for"] = kept                       # another service still uses this entry
+        elif route and route.get("mcp"):
             for cli in self._targets(route, {}):                 # only ours (shellbot-…), whatever the record says
                 removed["clis"][cli] = self.clis.remove(cli, route["mcp"]["server"])["state"]
         names = sorted(set(rec.get("secrets") or {}) | {s["id"] for s in (route or {}).get("secrets", [])})

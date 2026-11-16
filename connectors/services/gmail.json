@@ -10,6 +10,14 @@
     "en": "Let your bots read your Gmail",
     "zh": "讓 bot 可以讀你的 Gmail"
   },
+  "category": {
+    "id": "communication",
+    "name": {
+      "en": "Communication",
+      "zh": "通訊"
+    }
+  },
+  "recommended": true,
   "adapter": "connectors.services.gmail",
   "scopes": [
     {
@@ -107,19 +115,23 @@
         {
           "id": "a1",
           "title": {
-            "en": "Check how Claude is signed in",
-            "zh": "確認 Claude 是怎麼登入的"
+            "en": "Is Claude signed in with a claude.ai account?",
+            "zh": "Claude 是用 claude.ai 帳號登入的嗎？"
           },
           "how": [
             {
-              "en": "ShellBot looks at the account label it already keeps (the plan only: it never opens a login file).",
-              "zh": "ShellBot 會看它自己記下的帳號標籤（只有方案，不會打開任何登入檔）。"
+              "en": "ShellBot could not tell from what it keeps (it never opens a login file). With a Claude subscription it is: press Yes.",
+              "zh": "ShellBot 從它記下的資料看不出來（它不會打開任何登入檔）。用的是 Claude 訂閱的話就是：按「是」。"
             },
             {
-              "en": "If it says you are signed in with a claude.ai account, press \"I did it\". If it cannot tell, type /status in a Claude tab and read the line that says how you are signed in.",
-              "zh": "寫著用 claude.ai 帳號登入，就按「我做好了」。看不出來的話，在 Claude 分頁打 /status，看說明登入方式的那一行。"
+              "en": "Not sure? Type /status in a Claude tab and read the line that says how you are signed in.",
+              "zh": "不確定的話，在 Claude 分頁打 /status，看說明登入方式的那一行。"
             }
           ],
+          "done_label": {
+            "en": "Yes, a claude.ai account",
+            "zh": "是，用 claude.ai 帳號"
+          },
           "see": {
             "en": "The card below says you are signed in with a claude.ai account, with its plan. On a plain API key the connector does not show up.",
             "zh": "下面那一格寫著用 claude.ai 帳號登入，還有方案。用單純的 API key 登入的話，連接器不會出現。"
@@ -171,7 +183,7 @@
               },
               "a": {
                 "en": "Connectors only reach Claude tabs that are signed in with a claude.ai account. In a Claude tab type /login and pick the Claude account (subscription) option. Or go back to the first question and pick the local way, which works whatever way Claude is signed in.",
-                "zh": "連接器只有用 claude.ai 帳號登入的 Claude 分頁才拿得到。在 Claude 分頁打 /login，選 Claude 帳號（訂閱）那一項。或者回到第一題，改選本機的接法，那一條不管 Claude 怎麼登入都能用。"
+                "zh": "連接器只有用 claude.ai 帳號登入的 Claude 分頁才拿得到。在 Claude 分頁打 /login，選 Claude 帳號（訂閱）那一項。或者回到第一題，改選本機的連結方式，那一條不管 Claude 怎麼登入都能用。"
               }
             },
             {
@@ -182,7 +194,7 @@
               },
               "a": {
                 "en": "The connector needs one. Sign up at claude.ai, then type /login in a Claude tab and pick the Claude account option. If you would rather not, go back to the first question and pick the local way.",
-                "zh": "連接器需要有 claude.ai 帳號。到 claude.ai 註冊後，在 Claude 分頁打 /login，選 Claude 帳號那一項。不想註冊的話，回到第一題改選本機的接法。"
+                "zh": "連接器需要有 claude.ai 帳號。到 claude.ai 註冊後，在 Claude 分頁打 /login，選 Claude 帳號那一項。不想註冊的話，回到第一題改選本機的連結方式。"
               },
               "links": [
                 {
@@ -200,28 +212,49 @@
           "id": "a2",
           "title": {
             "en": "Connect Gmail on claude.ai",
-            "zh": "在 claude.ai 連上 Gmail"
+            "zh": "在 claude.ai 連結 Gmail"
           },
           "how": [
             {
-              "en": "Press \"Open page\" below. Your browser opens the connectors page on claude.ai (sign in with the same claude.ai account if it asks).",
-              "zh": "按下面的「打開頁面」，瀏覽器會開 claude.ai 的連接器頁（它要你登入的話，用同一個 claude.ai 帳號）。"
-            },
-            {
-              "en": "Find Gmail in the list and press Connect.",
-              "zh": "在清單裡找到 Gmail，按 Connect。"
+              "en": "Your browser opened Gmail's page on claude.ai (sign in with the same claude.ai account if it asks). Press Connect there.",
+              "zh": "瀏覽器已打開 claude.ai 上 Gmail 的頁面（它要你登入的話，用同一個 claude.ai 帳號）。在那裡按「連結」（Connect）。"
             },
             {
               "en": "In Google's window pick the account you want Claude to read, look at what it asks for, then press Allow.",
               "zh": "Google 的視窗：選你要讓 Claude 讀的那個帳號，看完權限再按允許。"
+            },
+            {
+              "en": "Come back to ShellBot: it tests the connection by itself.",
+              "zh": "回到 ShellBot：它會自己測試通不通。"
             }
           ],
-          "url": "https://claude.ai/customize/connectors",
+          "url": "https://claude.ai/directory/2701e52f-b826-4aaf-8b25-11f2a97c98b0",
+          "in_browser": true,
           "see": {
-            "en": "Back on claude.ai, the button on the Gmail row changes from Connect to Disconnect.",
-            "zh": "回到 claude.ai，Gmail 那一格的按鈕從 Connect 變成 Disconnect。"
+            "en": "Back on claude.ai, Gmail shows as connected.",
+            "zh": "回到 claude.ai，Gmail 顯示已連結。"
           },
           "stuck": [
+            {
+              "id": "no-page",
+              "q": {
+                "en": "The page did not open, or it says the page is not there",
+                "zh": "頁面沒打開，或說找不到頁面"
+              },
+              "a": {
+                "en": "Open the connectors page instead and find Gmail in the list.",
+                "zh": "改開連接器頁，在清單裡找 Gmail。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open the connectors page",
+                    "zh": "打開連接器頁"
+                  },
+                  "url": "https://claude.ai/customize/connectors"
+                }
+              ]
+            },
             {
               "id": "not-listed",
               "q": {
@@ -361,11 +394,11 @@
           "pass": {
             "text": {
               "en": "It works! Gmail is connected.",
-              "zh": "通了！Gmail 已經接上。"
+              "zh": "通了！Gmail 已經連結。"
             },
             "next": {
-              "en": "The temporary test tab used the Gmail connector {n} time(s) to look up your newest email. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory. A Claude tab that was already open before you connected Gmail may need to be reopened before it sees Gmail (not confirmed).",
-              "zh": "臨時的測試分頁用 Gmail 連接器 查了 {n} 次最新一封信。 信的內容精靈不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。 連接之前就開著的 Claude 分頁，可能要重開才看得到 Gmail（尚未證實）。"
+              "en": "The temporary test tab used the Gmail connector to look up your newest email. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory. A Claude tab that was already open before you connected Gmail may need to be reopened before it sees Gmail (not confirmed).",
+              "zh": "臨時的測試分頁用 Gmail 連接器查了最新一封信。 信的內容 ShellBot 不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。 連結之前就開著的 Claude 分頁，可能要重開才看得到 Gmail（尚未證實）。"
             }
           },
           "said_ok": {
@@ -445,7 +478,7 @@
             },
             "next": {
               "en": "Most likely: The Gmail row has not changed to Disconnect. Go back to step 2 and connect Gmail on claude.ai. Next: Claude is not signed in with a claude.ai account. Claude signed in with an API key or a long-lived token cannot see connectors. Type /status in a Claude tab to check; use /login to pick the Claude account, or take the local way. Also: The connector may be switched off. In the test tab type /mcp. If claude.ai Gmail is folded under unused connectors or turned off, it was never connected or it is off.",
-              "zh": "最可能：Gmail 那一格還沒變成 Disconnect。回到第 2 步，在 claude.ai 把 Gmail 連上。 其次：這台的 Claude 不是用 claude.ai 帳號登入。用 API key 或長效 token 登入的 Claude 看不到連接器。在 Claude 分頁打 /status 看登入方式，需要的話用 /login 改選 Claude 帳號，或改走本機的接法。 另外：連接器可能被關掉了。在測試分頁打 /mcp。如果 claude.ai Gmail 被收在沒用到的連接器底下，或被關掉，表示沒連過或被關了。"
+              "zh": "最可能：Gmail 那一格還沒變成 Disconnect。回到第 2 步，在 claude.ai 把 Gmail 連結。 其次：這台的 Claude 不是用 claude.ai 帳號登入。用 API key 或長效 token 登入的 Claude 看不到連接器。在 Claude 分頁打 /status 看登入方式，需要的話用 /login 改選 Claude 帳號，或改走本機的連結方式。 另外：連接器可能被關掉了。在測試分頁打 /mcp。如果 claude.ai Gmail 被收在沒用到的連接器底下，或被關掉，表示沒連過或被關了。"
             }
           },
           "failed": {
@@ -1461,11 +1494,11 @@
           "pass": {
             "text": {
               "en": "It works! Gmail is connected.",
-              "zh": "通了！Gmail 已經接上。"
+              "zh": "通了！Gmail 已經連結。"
             },
             "next": {
-              "en": "The temporary test tab used the local Gmail server {n} time(s) to look up your newest email. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory. A Claude tab that was already open before you connected Gmail may need to be reopened before it sees Gmail (not confirmed).",
-              "zh": "臨時的測試分頁用 本機 Gmail 伺服器 查了 {n} 次最新一封信。 信的內容精靈不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。 連接之前就開著的 Claude 分頁，可能要重開才看得到 Gmail（尚未證實）。"
+              "en": "The temporary test tab used the local Gmail server to look up your newest email. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory. A Claude tab that was already open before you connected Gmail may need to be reopened before it sees Gmail (not confirmed).",
+              "zh": "臨時的測試分頁用本機 Gmail 伺服器查了最新一封信。 信的內容 ShellBot 不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。 連結之前就開著的 Claude 分頁，可能要重開才看得到 Gmail（尚未證實）。"
             }
           },
           "said_ok": {
@@ -1557,11 +1590,11 @@
       "id": "which-way",
       "q": {
         "en": "Which way do you want to connect Gmail?",
-        "zh": "要用哪一種方式接上 Gmail？"
+        "zh": "要用哪一種方式連結 Gmail？"
       },
       "a": {
-        "en": "Not sure? Pick the first one. You can start over any time from Settings → Connections → Gmail.",
-        "zh": "不確定就選第一個。之後想換，隨時可以從「設定 → 連線 → Gmail」重來。"
+        "en": "Not sure? Pick the first one. You can start over any time from Settings → Connect → Gmail.",
+        "zh": "不確定就選第一個。之後想換，隨時可以從「設定 → 連結 → Gmail」重來。"
       }
     },
     {
@@ -1590,11 +1623,11 @@
       "id": "test-basis",
       "q": {
         "en": "What does the connection test look at?",
-        "zh": "連線測試看什麼？"
+        "zh": "連結測試看什麼？"
       },
       "a": {
         "en": "The names of the tools the test tab called, and its last line. ShellBot did not read what the tools returned. ShellBot does not read, keep or log what is in your mail: the sender and the subject are only in the test tab's own conversation. The test tab is not a bot, so closing it leaves nothing in any bot's memory.",
-        "zh": "測試分頁叫過哪些工具（只看名稱），和它最後一行。ShellBot 沒有讀工具傳回的內容。 信的內容精靈不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。"
+        "zh": "測試分頁叫過哪些工具（只看名稱），和它最後一行。ShellBot 沒有讀工具傳回的內容。 信的內容 ShellBot 不讀、不存、不記錄：寄件者和標題只在測試分頁自己的對話裡。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。"
       }
     },
     {

@@ -450,7 +450,7 @@ if DESC is not None:
         ("codex", "~/.codex/config.toml"), ("opencode", "opencode.json"), ("agy", "~/.gemini/config/mcp_config.json"),
         ("grok", "~/.grok/config.toml"), ("cursor", "~/.cursor/mcp.json"), ("pi", "~/.pi/agent/mcp.json"))))
     n_stuck = sum(len(s.get("stuck", [])) for r in DESC["routes"] for s in r["steps"])
-    check("SA4's questions are all kept (35 'I am stuck' entries)", n_stuck == 35, n_stuck)
+    check("SA4's questions are all kept (35 'I am stuck' entries, and one for a page that did not open)", n_stuck == 36, n_stuck)
     mcp = routes["local"]["mcp"]
     check("the server's settings: shellbot- name, npx, the package, a Windows form",
           mcp["server"] == gmail.SERVER and mcp["server"].startswith("shellbot-") and mcp["command"] == "npx"

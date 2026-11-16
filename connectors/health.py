@@ -53,9 +53,12 @@ def _cli_states(desc: dict, route: dict, rec: dict) -> dict:
     return out
 
 
-def build(desc: dict, rec: dict, route: dict = None) -> dict:
-    """The status of one service. `rec` is its saved record ({} when never started)."""
+def build(desc: dict, rec: dict, route: dict = None, platform: str = None) -> dict:
+    """The status of one service. `rec` is its saved record ({} when never started). `available` is false for
+    a service the catalog lists that cannot be connected here (registry.available: not yet, or not on this
+    kind of computer), with the reason as its `problem`; it then never needs attention."""
     rec = rec or {}
+    why = registry.available(desc, platform)
     state = rec.get("state") if rec.get("state") in STATES else "not_started"
     if route is None and rec.get("route"):
         route = next((r for r in desc["routes"] if r["id"] == rec["route"]), None)
@@ -67,13 +70,16 @@ def build(desc: dict, rec: dict, route: dict = None) -> dict:
     if rec.get("problem") and rec["problem"].get("code"):
         p = problems.explain(rec["problem"]["code"], desc, route)
         problem = {"code": p["code"], "text": p["text"], "next": p["next"], "step": rec["problem"].get("step", "")}
+    elif why and state == "not_started":
+        p = problems.explain(why, desc)
+        problem = {"code": p["code"], "text": p["text"], "next": p["next"], "step": ""}
     return {
         "service": desc["id"], "name": desc["name"], "icon": desc.get("icon", ""),
         "kind": (route or {}).get("kind", ""), "state": state, "route": (route or {}).get("id", ""),
         "step": step, "clis": _cli_states(desc, route, rec) if route else {},
         "scopes": list((route or {}).get("scopes") or []),
         "connected_at": int(rec.get("connected_at") or 0), "checked_at": int(rec.get("checked_at") or 0),
-        "problem": problem, "attention": state in ATTENTION,
+        "problem": problem, "attention": state in ATTENTION, "available": not why,
     }
 
 
@@ -85,12 +91,13 @@ def compact(status: dict) -> dict:
 
 
 _WORDS = {
-    "not_started": ("not connected", "還沒接上"),
-    "waiting_user": ("waiting for you{at}", "等你操作{at}"),
+    "not_started": ("not connected", "還沒連結"),
+    "waiting_user": ("waiting for you{at}", "連結中，等你操作{at}"),
     "verifying": ("checking…", "驗證中…"),
-    "connected": ("connected", "已接上"),
-    "failed": ("did not connect", "沒接成功"),
-    "needs_reconnect": ("needs to be connected again", "需要重新接上"),
+    "connected": ("connected", "已連結"),
+    "failed": ("did not connect", "沒連結成功"),
+    "needs_reconnect": ("needs to be connected again", "需要重新連結"),
+    "unavailable": ("cannot be connected here yet", "這裡還不能連結"),
 }
 
 
@@ -98,7 +105,7 @@ def words(status: dict, lang: str = None) -> str:
     """One line: "<name>: <state>", plus the problem's sentence and what to do when there is one."""
     import sf_lang
     lang = lang or sf_lang.prompt_lang()
-    en, zh = _WORDS[status["state"]]
+    en, zh = _WORDS["unavailable" if status.get("available") is False and status["state"] == "not_started" else status["state"]]
     st = status.get("step")
     at = (f" (step {st['index']}/{st['total']})", f"（第 {st['index']}/{st['total']} 步）") if st else ("", "")
     head = (zh if lang == "zh" else en).format(at=at[1] if lang == "zh" else at[0])
