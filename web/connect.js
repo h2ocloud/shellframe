@@ -185,7 +185,7 @@
     const tab = doc.createElement('button');
     tab.className = 'settings-tab';
     tab.dataset.tab = 'connect';
-    bar.insertBefore(tab, bar.querySelector('[data-tab="marketplace"]'));          // after LINE, before Plugins
+    bar.insertBefore(tab, bar.querySelector('[data-tab="advanced"]'));             // after LINE, before Advanced
     panel = doc.createElement('div');
     panel.className = 'settings-tab-panel cn-panel';
     panel.id = 'settings-panel-connect';

@@ -67,7 +67,6 @@ class TabKit:
             self._set(sid, "closed")
             return
         s._startup_trust_pending = False
-        s._init_pending = False                    # the generic opening prompt must not go in front of the question
         self._set(sid, "asking" if self.api._send_text_to_session(s, text, submit=True) else "send_failed")
 
     def phase(self, sid: str) -> str:

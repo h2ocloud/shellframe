@@ -1264,7 +1264,6 @@ class BotsApiMixin:
         if not s or not bots.is_bot(entry):
             return
         s._startup_trust_pending = False
-        s._init_pending = False                 # the brief replaces the generic init prompt
         text = self._bots_brief(role, entry, raw) if bots.is_memory_bot(entry) else bots.persona_text(role, entry)
         self._send_text_to_session(s, text, submit=True)
 
@@ -1282,9 +1281,6 @@ class BotsApiMixin:
                 return prompt
             self._bots_bind(sid, role)
             bots.ensure_dirs(role)
-            s = self.sessions.get(sid)
-            if s:
-                s._init_pending = False
             return self._bots_brief(role, entry, raw, with_ack=False) + "\n\n---\n\n" + prompt
         except Exception:
             _swallow("bots:first_prompt")

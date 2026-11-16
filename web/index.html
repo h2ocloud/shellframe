@@ -512,6 +512,8 @@
   .bridge-field input:focus, .bridge-field textarea:focus { border-color: #7aa2f7; }
   .bridge-field textarea { min-height: 50px; resize: vertical; }
   .bridge-help { font-size: 10px; color: #565f89; line-height: 1.4; margin: -4px 0 8px 92px; }
+  .line-details { margin: 2px 0 4px; }
+  .line-details > summary { cursor: pointer; font-size: 11px; color: #7aa2f7; margin-bottom: 8px; user-select: none; }
   .toggle-switch {
     width: 36px; height: 20px; border-radius: 10px; background: #3b4261;
     cursor: pointer; position: relative; border: none; transition: background .2s;
@@ -652,11 +654,6 @@
   .sb-bridge:hover { border-color: #7aa2f7; color: #7aa2f7; }
   .sb-bridge.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
   .sb-bridge.active-bridge { border-color: #7aa2f7; color: #7aa2f7; background: rgba(122,162,247,.1); }
-  /* Glasses permission. Off is deliberately near-invisible and on is loud:
-     "on" means a voice command from outside the house runs here. */
-  .sb-glasses { opacity: .3; }
-  .sb-glasses:hover { opacity: 1; }
-  .sb-glasses.on { opacity: 1; border-color: #e0af68; color: #e0af68; background: rgba(224,175,104,.12); }
   .sb-line { margin-left: -4px; }
   .sb-divider {
     display: flex; align-items: center; gap: 6px; padding: 8px 12px;
@@ -970,16 +967,7 @@
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
       <button class="settings-tab" data-tab="bridge" data-guide="telegram" data-i18n="settingsTelegram">Telegram Bridge</button>
       <button class="settings-tab" data-tab="line" data-guide="line" data-i18n="settingsLine">LINE</button>
-      <button class="settings-tab" data-tab="marketplace" data-guide="plugins" title="Browse and install plugins">🧩 Plugins</button>
-    </div>
-
-    <!-- Tab: Plugin marketplace -->
-    <div class="settings-tab-panel" id="settings-panel-marketplace">
-      <div style="font-size:12px;color:#a9b1d6;margin-bottom:10px;line-height:1.55">
-        Install optional ShellBot plugins. Installed plugins live in
-        <code>shellframe_plugins/&lt;name&gt;/</code>.
-      </div>
-      <div id="settings-marketplace-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <button class="settings-tab" data-tab="advanced" data-i18n="settingsAdvanced">Advanced</button>
     </div>
 
     <!-- Tab: General -->
@@ -1012,20 +1000,6 @@
           <button class="toggle-switch" id="setting-autoupdate"></button>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="shiftEnterLabel">Shift+Enter = newline</label>
-          <button class="toggle-switch on" id="setting-shift-enter"></button>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoCompactClaude">Auto /compact (Claude)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-auto-compact"></button>
-            <span style="font-size:11px;color:#565f89">≤</span>
-            <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
-                   style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
-            <span style="font-size:11px;color:#565f89" data-i18n="percentLeft">% left</span>
-          </div>
-        </div>
-        <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="globalHotkey">Global hotkey</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-global-hotkey"></button>
@@ -1040,13 +1014,6 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-complete-notify"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="completionNotificationsHint">Notify when an AI reply finishes while shellframe is not in the foreground</span>
-          </div>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="masterTurnPreamble">Master turn reminder</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-master-preamble"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="masterTurnPreambleHint">Remind master tabs to consider delegation before each AI turn</span>
           </div>
         </div>
         <div>
@@ -1074,116 +1041,16 @@
           </div>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="modelBadgeLabel">Model badge on sessions (experimental)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-model-badge"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
-          </div>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="glassesLabel">Glasses control (Agent Relay add-on)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-glasses"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="glassesHint">Shows a per-tab switch that lets Even Realities G2 glasses type into that tab. Needs the separate Agent Relay bridge — off by default, and turning it on grants nothing on its own.</span>
-          </div>
-        </div>
-        <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="usagePaceLabel">Token pacing on the usage pill</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-usage-pace"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="usagePaceHint">Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.</span>
           </div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="injectInitLabel">Init prompt on first message</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-inject-init"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="injectInitHint">Prepend INIT_PROMPT.md (ShellBot environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.</span>
-          </div>
-        </div>
       </div>
 
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="apiServerTitle">Local HTTP API</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button class="toggle-switch" id="setting-api-server"></button>
-          <span id="api-server-status" style="font-size:11px;color:#565f89"></span>
-          <button class="btn btn-ghost" id="btn-api-docs" style="display:none" data-i18n="apiOpenDocs">API docs (Swagger)</button>
-          <button class="btn btn-ghost" id="btn-api-copy-token" style="display:none" data-i18n="apiCopyToken">Copy token</button>
-        </div>
-        <div class="bridge-help" style="margin-top:6px" data-i18n="apiServerHint">Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart.</div>
-      </div>
-
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="statusHooksTitle">Exact agent status (Claude Code hooks)</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button class="toggle-switch" id="setting-status-hooks"></button>
-          <span id="status-hooks-state" style="font-size:11px;color:#565f89"></span>
-        </div>
-        <div class="bridge-help" style="margin-top:6px" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div>
-      </div>
-
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="delegationTitle">Delegation</div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="masterPreambleTextLabel">自訂派工提示文字</label>
-          <textarea id="setting-master-turn-preamble" rows="6" style="font-size:11px" data-i18n-placeholder="masterPreambleTextPlaceholder" placeholder="[ShellFrame — Master Delegation Protocol]&#10;Before responding, evaluate whether this task should be delegated:&#10;1. Understand the user's intent — what outcome do they actually need?&#10;2. Check available workers: `sfctl list`&#10;3. Delegate when the task is: non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.&#10;4. Handle directly only if: it's a quick answer, a clarification, or coordination that requires master context.&#10;5. To delegate: `sfctl delegate <Role> &quot;<task description>&quot;`&#10;Do NOT hard-route by keywords. Prefer delegation over doing everything yourself."></textarea>
-        </div>
-        <div class="bridge-help" data-i18n="masterPreambleTextHelp">留空使用內建預設</div>
-        <div class="bridge-field">
-          <label data-i18n="autoDelegateLabel">自動派工（實驗性）</label>
-          <button class="toggle-switch" id="setting-auto-delegate"></button>
-        </div>
-        <div class="bridge-help" data-i18n="autoDelegateHelp">啟用後，總控自動將研究/分析/排查任務 delegate 給 worker。預設關閉。</div>
-      </div>
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
-        💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
-      </div>
-
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
-          <div>
-            <div style="font-size:12px;color:#c0caf5;font-weight:700" data-i18n="idleCleanupTitle">Idle tab cleanup</div>
-            <div style="font-size:10px;color:#565f89;margin-top:2px" data-i18n="idleCleanupDesc">Automatically summarize and close idle AI tabs. Protected/main tabs are kept.</div>
-          </div>
-          <button class="toggle-switch" id="setting-idle-enabled"></button>
-        </div>
-        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="idleAfter">Idle after</label>
-            <div style="display:flex;gap:6px">
-              <input type="number" id="setting-idle-value" class="sf-bright-spin" min="1" max="24" step="1" value="30"
-                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
-              <select id="setting-idle-unit" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none">
-                <option value="minutes" data-i18n="minutes">minutes</option>
-                <option value="hours" data-i18n="hours">hours</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="summaryWait">Summary wait</label>
-            <div style="display:flex;gap:6px;align-items:center">
-              <input type="number" id="setting-idle-grace" class="sf-bright-spin" min="1" max="30" step="1" value="2"
-                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
-              <span style="font-size:11px;color:#565f89" data-i18n="minutes">minutes</span>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="writeHandoffToMaster">Write handoff to master</label>
-            <button class="toggle-switch on" id="setting-idle-handoff"></button>
-          </div>
-          <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
-          <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
-        </div>
-      </div>
-
-      <!-- Session init prompt (sent once when an AI CLI tool becomes ready) -->
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="sessionPrompt">Session prompt</label>
-        <textarea id="setting-ui-prompt" style="width:100%;min-height:90px;font-size:11px;font-family:monospace;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:6px;resize:vertical" placeholder="Shown to the AI once at session start. Empty = use shellframe default."></textarea>
-        <div style="font-size:10px;color:#565f89;margin-top:4px;line-height:1.4" data-i18n="sessionPromptHelp">
-          Injected into new AI sessions (Claude Code, Codex…) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.
-        </div>
+        💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.
       </div>
 
       <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
@@ -1211,33 +1078,10 @@
           <label data-i18n="tgUsers">Users</label>
           <input type="text" id="settings-bridge-users" data-i18n-placeholder="tgUsersPlaceholder" placeholder="User IDs (comma separated), empty = all"/>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="bridgePrefix">Prefix</label>
-          <button class="toggle-switch on" id="settings-bridge-prefix"></button>
-          <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
-        </div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="bridgeSystemPrompt">System Prompt</label>
-          <textarea id="settings-bridge-prompt" style="font-size:11px">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
-        </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-primary" id="btn-settings-bridge-connect" data-i18n="connect">Connect</button>
           <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
-      </div>
-
-      <div class="bridge-setup" style="margin-top:10px">
-        <h4 data-i18n="tgAdvancedTitle">Telegram Bridge 進階</h4>
-        <div class="bridge-field">
-          <label data-i18n="showTgWrapperLabel">顯示 TG Wrapper 標記</label>
-          <button class="toggle-switch on" id="setting-show-tg-wrapper"></button>
-        </div>
-        <div class="bridge-help" data-i18n="showTgWrapperHelp">TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴</div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="tgPromptLabel">自訂 TG Prompt</label>
-          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPromptPlaceholder" placeholder="[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c"></textarea>
-        </div>
-        <div class="bridge-help" data-i18n="tgPromptHelp">每輪 TG 訊息的格式/協作提示。留空使用內建預設</div>
       </div>
 
       <!-- STT (voice transcription) -->
@@ -1306,54 +1150,163 @@
           <label data-i18n="lineAllowedIds">Allowed IDs</label>
           <input type="text" id="settings-line-users" data-i18n-placeholder="lineAllowedIdsPlaceholder" placeholder="LINE userId/groupId, comma separated; empty = allow all"/>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineDeliveryMode">Reply mode</label>
-          <select id="settings-line-mode" style="flex:1">
-            <option value="poll" data-i18n="lineModePoll">Forward + poll outbox</option>
-            <option value="push" data-i18n="lineModePush">Direct LINE Messaging API</option>
-          </select>
+        <!-- The webhook's technical fields: folded until LINE is connected or someone opens them -->
+        <details id="settings-line-details" class="line-details">
+          <summary data-i18n="lineDetailsSummary">Connection details: reply mode, local server, public URL, forward key</summary>
+          <div class="bridge-field">
+            <label data-i18n="lineDeliveryMode">Reply mode</label>
+            <select id="settings-line-mode" style="flex:1">
+              <option value="poll" data-i18n="lineModePoll">Forward + poll outbox</option>
+              <option value="push" data-i18n="lineModePush">Direct LINE Messaging API</option>
+            </select>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="lineLocalServer">Local server</label>
+            <input type="number" id="settings-line-port" value="8787" min="1024" max="65535" style="width:90px;flex:0 0 auto"/>
+            <input type="text" id="settings-line-path" value="/line/webhook" style="font-family:monospace"/>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="linePollPath">Poll path</label>
+            <input type="text" id="settings-line-poll-path" value="/line/poll" style="font-family:monospace"/>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="linePublicUrl">Public URL</label>
+            <input type="text" id="settings-line-public-url" data-i18n-placeholder="linePublicUrlPlaceholder" placeholder="https://your-tunnel.example.com/line/webhook"/>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="lineForwardSecret">Forward key</label>
+            <input type="password" id="settings-line-forward-secret" data-i18n-placeholder="lineForwardSecretPlaceholder" placeholder="Optional shared key for company webhook"/>
+          </div>
+          <div id="settings-line-help" style="font-size:11px;color:#787c99;line-height:1.55;background:#1f2335;border:1px solid #2f354d;border-radius:6px;padding:10px;margin-top:8px">
+            <div><b data-i18n="lineSetupTitle">Setup</b></div>
+            <div data-i18n="lineSetupStep1">1. Company webhook forwards LINE events to the local endpoint below.</div>
+            <div data-i18n="lineSetupStep2">2. In Forward + poll mode, your webhook polls the poll endpoint for responses.</div>
+            <div data-i18n="lineSetupStep3">3. Direct mode still supports LINE signature verification and Messaging API push/reply.</div>
+            <div><span data-i18n="lineSetupStep4Prefix">4. Local endpoint:</span> <code id="settings-line-local-url">http://127.0.0.1:8787/line/webhook</code></div>
+            <div><span data-i18n="lineSetupPollPrefix">5. Poll endpoint:</span> <code id="settings-line-poll-url">http://127.0.0.1:8787/line/poll</code></div>
+          </div>
+          <div style="margin-top:8px">
+            <button class="btn btn-ghost" id="btn-settings-line-copy-url" data-i18n="lineCopyUrl">Copy local URL</button>
+          </div>
+        </details>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="btn-settings-line-connect" data-i18n="lineConnect">Connect LINE</button>
+          <button class="btn btn-ghost" id="btn-settings-line-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineLocalServer">Local server</label>
-          <input type="number" id="settings-line-port" value="8787" min="1024" max="65535" style="width:90px;flex:0 0 auto"/>
-          <input type="text" id="settings-line-path" value="/line/webhook" style="font-family:monospace"/>
+      </div>
+    </div>
+
+    <!-- Tab: Advanced. What few people change, moved here from General, Telegram and LINE with the same
+         ids, keys and defaults; each saves (or is read on Connect) as it did. tests_settings_ui.py -->
+    <div class="settings-tab-panel" id="settings-panel-advanced">
+      <div style="font-size:11px;color:#787c99;margin-bottom:10px;line-height:1.5" data-i18n="advancedIntro">Settings most people never change. Each one works as it did before it moved here.</div>
+      <div style="display:flex;gap:16px;margin-bottom:10px;padding:12px;background:#24283b;border-radius:8px;flex-wrap:wrap">
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoCompactClaude">Auto /compact (Claude)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-auto-compact"></button>
+            <span style="font-size:11px;color:#565f89">≤</span>
+            <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
+                   style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
+            <span style="font-size:11px;color:#565f89" data-i18n="percentLeft">% left</span>
+          </div>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="linePollPath">Poll path</label>
-          <input type="text" id="settings-line-poll-path" value="/line/poll" style="font-family:monospace"/>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="modelBadgeLabel">Model badge on sessions (experimental)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-model-badge"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
+          </div>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="linePublicUrl">Public URL</label>
-          <input type="text" id="settings-line-public-url" data-i18n-placeholder="linePublicUrlPlaceholder" placeholder="https://your-tunnel.example.com/line/webhook"/>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="apiServerTitle">Local HTTP API</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="toggle-switch" id="setting-api-server"></button>
+          <span id="api-server-status" style="font-size:11px;color:#565f89"></span>
+          <button class="btn btn-ghost" id="btn-api-docs" style="display:none" data-i18n="apiOpenDocs">API docs (Swagger)</button>
+          <button class="btn btn-ghost" id="btn-api-copy-token" style="display:none" data-i18n="apiCopyToken">Copy token</button>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineForwardSecret">Forward key</label>
-          <input type="password" id="settings-line-forward-secret" data-i18n-placeholder="lineForwardSecretPlaceholder" placeholder="Optional shared key for company webhook"/>
+        <div class="bridge-help" style="margin-top:6px" data-i18n="apiServerHint">Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart.</div>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="statusHooksTitle">Exact agent status (Claude Code hooks)</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="toggle-switch" id="setting-status-hooks"></button>
+          <span id="status-hooks-state" style="font-size:11px;color:#565f89"></span>
         </div>
+        <div class="bridge-help" style="margin-top:6px" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+          <div>
+            <div style="font-size:12px;color:#c0caf5;font-weight:700" data-i18n="idleCleanupTitle">Idle tab cleanup</div>
+            <div style="font-size:10px;color:#565f89;margin-top:2px" data-i18n="idleCleanupDesc">Automatically summarize and close idle AI tabs. Protected/main tabs are kept.</div>
+          </div>
+          <button class="toggle-switch" id="setting-idle-enabled"></button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div>
+            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="idleAfter">Idle after</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="setting-idle-value" class="sf-bright-spin" min="1" max="24" step="1" value="30"
+                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
+              <select id="setting-idle-unit" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none">
+                <option value="minutes" data-i18n="minutes">minutes</option>
+                <option value="hours" data-i18n="hours">hours</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="summaryWait">Summary wait</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" id="setting-idle-grace" class="sf-bright-spin" min="1" max="30" step="1" value="2"
+                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
+              <span style="font-size:11px;color:#565f89" data-i18n="minutes">minutes</span>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
+          <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
+        </div>
+      </div>
+
+      <div class="bridge-setup" style="margin-bottom:10px">
+        <h4 data-i18n="tgAdvancedTitle">Telegram</h4>
+        <div class="bridge-field">
+          <label data-i18n="bridgePrefix">Prefix</label>
+          <button class="toggle-switch on" id="settings-bridge-prefix"></button>
+          <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
+        </div>
+        <div class="bridge-help" data-i18n="bridgePrefixOnConnect">Takes effect the next time Telegram connects (Telegram tab → Connect).</div>
+        <div class="bridge-field">
+          <label data-i18n="showTgWrapperLabel">顯示 TG Wrapper 標記</label>
+          <button class="toggle-switch on" id="setting-show-tg-wrapper"></button>
+        </div>
+        <div class="bridge-help" data-i18n="showTgWrapperHelp">TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴</div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label data-i18n="tgPromptLabel">自訂 TG Prompt</label>
+          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPromptPlaceholder" placeholder="[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c"></textarea>
+        </div>
+        <div class="bridge-help" data-i18n="tgPromptHelp">每輪 TG 訊息的格式/協作提示。留空使用內建預設</div>
+      </div>
+
+      <div class="bridge-setup">
+        <h4 data-i18n="lineAdvancedTitle">LINE</h4>
         <div class="bridge-field">
           <label data-i18n="bridgePrefix">Prefix</label>
           <button class="toggle-switch on" id="settings-line-prefix"></button>
           <span style="font-size:11px;color:#565f89" data-i18n="linePrefixHint">[LINE userId]: message</span>
         </div>
+        <div class="bridge-help" data-i18n="linePrefixOnConnect">Takes effect the next time LINE connects (LINE tab → Connect LINE).</div>
         <div class="bridge-field" style="align-items:flex-start">
           <label data-i18n="linePerTurnPreamble">Wrapper prompt</label>
           <textarea id="setting-line-prompt" style="font-size:11px" data-i18n-placeholder="linePreamblePlaceholder" placeholder="Prepended to every LINE message sent to the AI. Leave empty to turn off."></textarea>
         </div>
         <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4" data-i18n="linePreambleHelp">
           Every non-command LINE message is wrapped with this prompt so agents reply in a LINE-friendly format. Empty = off.
-        </div>
-        <div id="settings-line-help" style="font-size:11px;color:#787c99;line-height:1.55;background:#1f2335;border:1px solid #2f354d;border-radius:6px;padding:10px;margin-top:8px">
-          <div><b data-i18n="lineSetupTitle">Setup</b></div>
-          <div data-i18n="lineSetupStep1">1. Company webhook forwards LINE events to the local endpoint below.</div>
-          <div data-i18n="lineSetupStep2">2. In Forward + poll mode, your webhook polls the poll endpoint for responses.</div>
-          <div data-i18n="lineSetupStep3">3. Direct mode still supports LINE signature verification and Messaging API push/reply.</div>
-          <div><span data-i18n="lineSetupStep4Prefix">4. Local endpoint:</span> <code id="settings-line-local-url">http://127.0.0.1:8787/line/webhook</code></div>
-          <div><span data-i18n="lineSetupPollPrefix">5. Poll endpoint:</span> <code id="settings-line-poll-url">http://127.0.0.1:8787/line/poll</code></div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-primary" id="btn-settings-line-connect" data-i18n="lineConnect">Connect LINE</button>
-          <button class="btn btn-ghost" id="btn-settings-line-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
-          <button class="btn btn-ghost" id="btn-settings-line-copy-url" data-i18n="lineCopyUrl">Copy local URL</button>
         </div>
       </div>
     </div>
@@ -1516,10 +1469,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <button class="toggle-switch on" id="bridge-prefix-toggle"></button>
         <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
       </div>
-      <div class="bridge-field" style="align-items:flex-start">
-        <label data-i18n="bridgeSystemPrompt">System Prompt</label>
-        <textarea id="bridge-prompt">You are running inside ShellFrame with a Telegram bridge active. User messages appear as "username: message". Photos/files are downloaded and the local path is appended. Reply as plain text only — never use MCP/TG tools. Keep responses concise and mobile-friendly.</textarea>
-      </div>
     </div>
     <div class="modal-footer" style="margin-top:14px">
       <button class="btn btn-ghost" id="btn-bridge-cancel" data-i18n="cancel">Cancel</button>
@@ -1579,6 +1528,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       statusHooksHint: 'Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to Claude tabs opened after enabling; others keep the heuristic fallback.',
       settingsTelegram: 'Telegram Bridge',
       settingsLine: 'LINE',
+      settingsAdvanced: 'Advanced',
+      advancedIntro: 'Settings most people never change. Each one works as it did before it moved here.',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
       addPreset: 'Add',
       fontSize: 'Terminal font',
@@ -1591,10 +1542,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: 'show/hide',
       completionNotifications: 'Completion notifications',
       completionNotificationsHint: 'Notify when an AI reply finishes while shellframe is not in the foreground',
-      masterTurnPreamble: 'Master turn reminder',
-      masterTurnPreambleHint: 'Remind master tabs to consider delegation before each AI turn',
-      injectInitLabel: 'Init prompt on first message',
-      injectInitHint: 'Prepend INIT_PROMPT.md (ShellBot environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
       micButtonLabel: 'Voice input button 🎙',
       micButtonHelp: 'Show a mic at the bottom-right of the terminal: record → STT → inject into the active tab with a voice tag, no more sending voice notes through Telegram.',
       voiceApplyGateLabel: 'Confirm voice before sending (Apply)',
@@ -1615,11 +1562,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       minutes: 'minutes',
       hours: 'hours',
       summaryWait: 'Summary wait',
-      writeHandoffToMaster: 'Write handoff to master',
       saveCleanup: 'Save cleanup',
       cleanupSaved: 'Saved',
-      sessionPrompt: 'Session prompt',
-      sessionPromptHelp: 'Injected into new AI sessions (Claude Code, Codex...) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.',
       about: 'About',
       guideBtn: 'Guide',
       aiSkillBtn: 'What the AI reads',
@@ -1648,8 +1592,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: 'Cancel',
       sessions: 'Sessions',
       dropToAttach: 'Drop file to attach',
-      shiftEnterLabel: 'Shift+Enter = newline',
-      shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
+      shiftEnterHint: '💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.',
       shiftEnterShortcut: 'Newline (no submit)',
       linkSidebarDivider: 'Other ShellBots',
       linkSend: 'Send',
@@ -1660,19 +1603,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgAllowedUsersPlaceholder: 'User IDs (comma separated), empty = allow all',
       bridgePrefix: 'Prefix',
       tgPrefixHint: '[TG @user]: message',
-      bridgeSystemPrompt: 'System Prompt',
-      delegationTitle: 'Delegation',
-      tgAdvancedTitle: 'Telegram Bridge Advanced',
+      tgAdvancedTitle: 'Telegram Bridge',
+      lineAdvancedTitle: 'LINE',
+      bridgePrefixOnConnect: 'Takes effect the next time Telegram connects (Telegram Bridge tab → Connect).',
+      linePrefixOnConnect: 'Takes effect the next time LINE connects (LINE tab → Connect LINE).',
+      lineDetailsSummary: 'Connection details: reply mode, local server, public URL, forward key',
       showTgWrapperLabel: 'Show TG Wrapper tag',
       showTgWrapperHelp: 'Show the [SF-TG wrapper] prefix when TG messages are injected into the local terminal',
-      masterPreambleTextLabel: 'Custom delegation prompt',
-      masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
-      masterPreambleTextHelp: 'Leave empty to use the built-in default',
       tgPromptLabel: 'Custom TG Prompt',
       tgPromptPlaceholder: "[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c",
       tgPromptHelp: 'Formatting and collaboration prompt for each TG message. Leave empty to use the built-in default',
-      autoDelegateLabel: 'Auto delegate (experimental)',
-      autoDelegateHelp: 'When enabled, the master automatically delegates research, analysis, and debugging tasks to workers. Default is off.',
       connect: 'Connect',
       disconnect: 'Disconnect',
       connected: 'Connected',
@@ -1720,8 +1660,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       modelBadgeLabel: 'Model badge on sessions (experimental)',
       modelBadgeHint: "Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.",
-      glassesLabel: 'Glasses control (Agent Relay add-on)',
-      glassesHint: "Shows a per-tab switch that lets Even Realities G2 glasses type into that tab. Needs the separate Agent Relay bridge — off by default, and turning it on grants nothing on its own.",
       usagePaceLabel: 'Token pacing on the usage pill',
       usagePaceHint: 'Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.',
       releaseNotesTitle: "What's new",
@@ -1746,6 +1684,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       statusHooksHint: '在 ~/.claude/settings.json 安裝輕量 async hooks，由 Claude 自己回報「工作中／回合結束／等待權限」——不再靠畫面猜。啟用後新開的 Claude tab 生效；其餘 tab 維持原本的畫面偵測 fallback。',
       settingsTelegram: 'Telegram 橋接',
       settingsLine: 'LINE',
+      settingsAdvanced: '進階',
+      advancedIntro: '大多數人用不到、很少改的設定。搬到這裡之後，每一項的作用都跟原本一樣。',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
       addPreset: '新增',
       fontSize: '終端字型',
@@ -1758,10 +1698,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: '顯示/隱藏',
       completionNotifications: '完成通知',
       completionNotificationsHint: 'AI 回覆完成且 shellframe 不在前景時通知',
-      masterTurnPreamble: '總控每輪提醒',
-      masterTurnPreambleHint: '每次總控送出 AI 輸入前提醒先判斷是否派工',
-      injectInitLabel: '首次訊息注入 INIT 提示',
-      injectInitHint: '新 AI 分頁的第一則訊息前自動前置 INIT_PROMPT.md（環境說明＋sfctl 指南）。切換後對新開的分頁生效。預設關閉。',
       micButtonLabel: '介面錄音按鈕 🎙',
       micButtonHelp: '在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。',
       voiceApplyGateLabel: '語音送出前先確認（Apply）',
@@ -1782,11 +1718,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       minutes: '分鐘',
       hours: '小時',
       summaryWait: '摘要等待',
-      writeHandoffToMaster: '回寫交接給總控',
       saveCleanup: '儲存清理設定',
       cleanupSaved: '已儲存',
-      sessionPrompt: '工作階段提示',
-      sessionPromptHelp: '新 AI 工作階段（Claude Code、Codex...）收到第一則使用者訊息時會注入這段提示。留空會使用內建預設（說明 shellframe + sfctl）。修改會套用到儲存後開啟的新工作階段。',
       about: '關於',
       guideBtn: '導覽',
       aiSkillBtn: '給 AI 的說明',
@@ -1815,8 +1748,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: '取消',
       sessions: '分頁',
       dropToAttach: '放開以附加檔案',
-      shiftEnterLabel: 'Shift+Enter 換行',
-      shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
+      shiftEnterHint: '💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> 一律換行、不送出（Claude Code、Codex），方便輸入多行 prompt。',
       shiftEnterShortcut: '換行（不送出）',
       linkSidebarDivider: '其他 ShellBot',
       linkSend: '送出',
@@ -1827,19 +1759,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgAllowedUsersPlaceholder: 'User ID（逗號分隔）；留空代表全部允許',
       bridgePrefix: '前綴',
       tgPrefixHint: '[TG @使用者]: 訊息',
-      bridgeSystemPrompt: '系統提示',
-      delegationTitle: '派工設定',
-      tgAdvancedTitle: 'Telegram Bridge 進階',
+      tgAdvancedTitle: 'Telegram 橋接',
+      lineAdvancedTitle: 'LINE',
+      bridgePrefixOnConnect: '下次在「Telegram 橋接」分頁按「連線」時生效。',
+      linePrefixOnConnect: '下次在「LINE」分頁按「連線 LINE」時生效。',
+      lineDetailsSummary: '連線細節：回覆模式、本機伺服器、公開網址、轉送金鑰',
       showTgWrapperLabel: '顯示 TG Wrapper 標記',
       showTgWrapperHelp: 'TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴',
-      masterPreambleTextLabel: '自訂派工提示文字',
-      masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
-      masterPreambleTextHelp: '留空使用內建預設',
       tgPromptLabel: '自訂 TG Prompt',
       tgPromptPlaceholder: "[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c",
       tgPromptHelp: '每輪 TG 訊息的格式/協作提示。留空使用內建預設',
-      autoDelegateLabel: '自動派工（實驗性）',
-      autoDelegateHelp: '啟用後，總控自動將研究/分析/排查任務 delegate 給 worker。預設關閉。',
       connect: '連線',
       disconnect: '斷線',
       connected: '已連線',
@@ -1889,8 +1818,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       usagePaceHint: '在 wk 旁邊加一段 pc：把週額度平均攤到整個週期，也就是「今天應該用到幾 %」才會剛好用完。▲ 表示燒太快、▼ 表示額度用不完。滑過膠囊看細節（第幾天／落後或超前幾天的量）。',
       modelBadgeLabel: 'Session 顯示模型標籤（實驗性）',
       modelBadgeHint: '自動偵測每個分頁的模型與 thinking effort（Claude / Codex 都支援），顯示在左側 session 列。偵測屬盡力而為，可能有誤——不想看就在這裡關掉。',
-      glassesLabel: '眼鏡操控（Agent Relay 外掛）',
-      glassesHint: '在每個分頁顯示一個開關，開了之後 Even Realities G2 眼鏡就能對那個分頁打字。需要另外安裝 Agent Relay bridge 才有用，預設關閉；打開這裡只是把開關顯示出來，本身不授權任何分頁。',
       releaseNotesTitle: '本次更新',
       releaseNotesGotIt: '知道了',
     }
@@ -2076,7 +2003,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     lang = s.language || (/^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en');
     currentFontSize = s.fontSize || 14;
     autoUpdateEnabled = s.autoUpdate === true; // default OFF (opt-in). 開啟也只「通知」不靜默拉取。
-    shiftEnterNewline = s.shiftEnterNewline !== false; // default true
     // Apply UI scale (interface size)
     const uiScale = s.uiScale || 1;
     document.documentElement.style.setProperty('--ui-scale', uiScale);
@@ -2606,7 +2532,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }, 3500);
       return;
     }
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
     // Persist the preset's display name so it survives restart. Without
@@ -2786,7 +2712,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.attachCustomWheelEventHandler(ev => _xtermTakesWheel(term, ev));
 
     const label = customLabel || cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
     setupAttachKeyHandler(sid, term);
@@ -3165,11 +3091,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Model + thinking-effort badge for a session row. Auto-detected on the
   // Python side (claude: transcript's latest assistant model + global
   // effortLevel; codex: rollout turn_context) and pushed with agent status.
-  /* 眼鏡（Agent Relay）是外掛：沒裝 bridge 的人不該看到這顆按鈕。
-     預設關，設定裡打開才出現。 */
-  function glassesUiEnabled() {
-    return !!(config && config.settings && config.settings.glasses_enabled === true);
-  }
   function showModelBadge() {
     return !(config && config.settings && config.settings.show_model_badge === false);
   }
@@ -3236,7 +3157,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (hasAnyBridge ? `<span style="opacity:${tgOff ? '.3' : '.4'};font-size:10px;min-width:14px">${tgOff ? '·' : tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(shownLabel(sid, s))}</span>` +
         modelBadgeHtml(s) +
-        (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
         tgChip +
         (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
         (isAiSession(sid) ? `<span class="sb-relaunch" data-guide="relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">⟳</span>` : '') +
@@ -3492,16 +3412,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       confirmRelaunchTab(relaunchBtn.dataset.sid);
       return;
     }
-    // Glasses badge click → grant / revoke the Agent Relay bridge for this tab
-    const glassesAction = e.target.closest('[data-action="toggle-glasses"]');
-    if (glassesAction) {
-      e.preventDefault();
-      e.stopPropagation();
-      const sid = glassesAction.dataset.sid;
-      if (sessions[sid]?.glassesEnabled) toggleSessionGlasses(sid, false);
-      else confirmGlassesAllow(sid);
-      return;
-    }
     // TG badge click → switch TG active session.
     // 三態（2026-09-05 定案）：停用中的暗 chip 點一下＝重新啟用；已是 active
     // 的分頁再點一下＝停用（列留原位變暗，不搬區）；其餘＝切 active。
@@ -3727,14 +3637,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
-  async function toggleSessionGlasses(sid, enabled) {
-    try {
-      const result = JSON.parse(await pywebview.api.set_session_glasses(sid, enabled, 'ui'));
-      if (result.success && sessions[sid]) sessions[sid].glassesEnabled = result.enabled;
-      renderSidebar();
-    } catch (err) { console.warn('glasses toggle error:', err); }
-  }
-
   // ── Frame Link（跨機配對）────────────────────────────────────────────
   // 配對入口在側欄隔離線；遠端 session 在主終端區無縫開啟（ensureRemotePane/
   // startRemoteStream），訊息／檔案走底部面板（openLinkMessages/openLinkFiles）。
@@ -3838,7 +3740,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       label: (rt && rt.label) || (rt && rt.sid) || sid,
       isRemote: true, peerId: peer.id, rsid: (rt && rt.sid) || '',
       peerName: peer.name, attachments: [], attachCounter: 0,
-      bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false,
+      bridgeEnabled: true, _userScrolledUp: false,
       _lastOutputTs: 0, _busy: false, _streamSeq: -1,
       _lastCols: 0, _lastRows: 0, _ro: ro,
     };
@@ -4682,51 +4584,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // 面板不再自動開——它現在只在點 💬／📁 時彈出
   }
 
-  /* Opening a tab to the glasses is not a preference, it is a grant: every tab
-     runs with --dangerously-skip-permissions, so from that moment anything
-     said into the G2 mic runs on this machine. One tab at a time, always
-     an explicit yes, and never a bulk switch. */
-  let _glassesConfirmOpen = false;
-  function confirmGlassesAllow(sid) {
-    const s = sessions[sid];
-    if (!s || _glassesConfirmOpen) return;
-    _glassesConfirmOpen = true;
-    const isZh = lang === 'zh-TW';
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay open';
-    overlay.style.zIndex = '400';
-    overlay.innerHTML = `
-      <div class="modal" style="width:380px;padding:20px">
-        <h2 style="font-size:14px;margin-bottom:10px">${isZh ? '開放眼鏡對這個分頁下指令？' : 'Let the glasses drive this tab?'}</h2>
-        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
-          ${isZh
-            ? `之後從 G2 眼鏡說出來的話，會直接變成「${esc(s.label)}」的輸入並執行。<br>這個分頁跑的是 <code>--dangerously-skip-permissions</code>，不會再問你第二次。`
-            : `Anything spoken into the G2 then runs as input to “${esc(s.label)}”.<br>This tab runs <code>--dangerously-skip-permissions</code>; nothing will ask again.`}
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
-          <button class="btn btn-ghost" id="glasses-cancel">${isZh ? '取消' : 'Cancel'}</button>
-          <button class="btn btn-primary" id="glasses-confirm">${isZh ? '開放' : 'Allow'}</button>
-        </div>
-      </div>`;
-    document.body.appendChild(overlay);
-    const done = (allow) => {
-      document.removeEventListener('keydown', onKey, true);
-      overlay.remove();
-      _glassesConfirmOpen = false;
-      if (allow) toggleSessionGlasses(sid, true);
-      else { try { sessions[sid] && sessions[sid].term.focus(); } catch (_) {} }
-    };
-    const onKey = (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
-      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
-    };
-    document.addEventListener('keydown', onKey, true);
-    overlay.querySelector('#glasses-confirm').addEventListener('click', () => done(true));
-    overlay.querySelector('#glasses-cancel').addEventListener('click', () => done(false));
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
-    overlay.querySelector('#glasses-confirm').focus();
-  }
-
   document.getElementById('btn-sidebar').addEventListener('click', () => {
     const sb = document.getElementById('sidebar');
     sb.classList.toggle('collapsed');
@@ -5475,7 +5332,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   refreshBoard();
 
   // ── Attach: intercept Enter/Shift+Enter before xterm ──
-  let shiftEnterNewline = true; // default on; toggled in Settings
   // 把原始位元組送進某個 session。本機走 PTY，遠端走 Frame Link——呼叫端不必
   // 知道差別。少了這層，任何「合成按鍵」的處理（Shift+Enter、Esc 清行）都只有
   // 本機分頁吃得到：遠端 pane 的按鍵是裸送給 xterm 的，Shift+Enter 因此變成
@@ -5527,7 +5383,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         sendKeysToSession(sid, '\x15'); // Ctrl+U = line kill
         return false;
       }
-      // Shift+Enter → 換行但不送出。
+      // Shift+Enter → 換行但不送出。一律如此，設定頁沒有開關（舊 config 的 shiftEnterNewline 不讀）。
       //
       // 這裡一定要攔：實測 xterm.js 5.5.0 對 Shift+Enter 一律送 `\r`，跟純
       // Enter 完全一樣，即使應用程式已經開了 modifyOtherKeys 也是——終端本身
@@ -5539,7 +5395,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       //                 keyboard_modes::EnableModifyOtherKeys），那個模式下
       //                 Shift+Enter 的編碼是 `CSI 27;2;13~`。裸 `\n` 在
       //                 crossterm 那邊會被讀成普通的 Enter，所以換不了行。
-      if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey && shiftEnterNewline) {
+      if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
         ev.preventDefault();
         sendKeysToSession(
           sid, isCodexSession(sid) ? '\x1b[27;2;13~' : '\n');
@@ -7164,7 +7020,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('fontsize-val').textContent = currentFontSize;
     document.getElementById('setting-lang').value = lang;
     $autoUpdateToggle.classList.toggle('on', autoUpdateEnabled);
-    document.getElementById('setting-shift-enter').classList.toggle('on', shiftEnterNewline);
     // Sync UI scale buttons
     const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
     document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => {
@@ -7173,9 +7028,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Load editable prompts. Empty textarea means "use built-in default";
     // see bridge_telegram prompt helpers for resolution order.
     const s = config.settings || {};
-    document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
     document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
-    document.getElementById('setting-master-turn-preamble').value = s.master_turn_preamble ?? '';
     document.getElementById('setting-line-prompt').value = s.line_prompt ?? '';
     // Auto /compact (Claude) — default on; threshold default 15 (%)
     document.getElementById('setting-auto-compact').classList.toggle(
@@ -7193,13 +7046,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-complete-notify').classList.toggle(
       'on', s.completion_notifications !== false,
     );
-    // Master turn preamble — default on
-    setMasterPreambleToggleState(s.master_turn_preamble_enabled !== false);
     document.getElementById('setting-show-tg-wrapper').classList.toggle(
       'on', s.show_tg_wrapper !== false,
-    );
-    document.getElementById('setting-auto-delegate').classList.toggle(
-      'on', s.auto_delegate_enabled === true,
     );
     document.getElementById('setting-experimental-loops').classList.toggle(
       'on', s.experimental_loops === true,
@@ -7213,14 +7061,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-model-badge').classList.toggle(
       'on', s.show_model_badge !== false,
     );
-    document.getElementById('setting-glasses').classList.toggle(
-      'on', s.glasses_enabled === true,
-    );
     document.getElementById('setting-usage-pace').classList.toggle(
       'on', s.usage_pace !== false,          // default on
-    );
-    document.getElementById('setting-inject-init').classList.toggle(
-      'on', s.inject_init_prompt === true,
     );
     document.getElementById('setting-mic-button').classList.toggle(
       'on', s.stt_mic_button !== false,
@@ -7240,22 +7082,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings = config.settings || {};
       config.settings.completion_notifications = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
-    });
-
-  function setMasterPreambleToggleState(on) {
-    document.getElementById('setting-master-preamble').classList.toggle('on', on);
-  }
-
-  async function saveMasterPreambleEnabled(on) {
-    setMasterPreambleToggleState(on);
-    config.settings = config.settings || {};
-    config.settings.master_turn_preamble_enabled = on;
-    await pywebview.api.save_settings(JSON.stringify(config.settings));
-  }
-
-  document.getElementById('setting-master-preamble')
-    .addEventListener('click', async function() {
-      await saveMasterPreambleEnabled(!this.classList.contains('on'));
     });
 
   document.getElementById('setting-show-tg-wrapper')
@@ -7347,15 +7173,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       renderSidebar();
     });
 
-  document.getElementById('setting-glasses')
-    .addEventListener('click', async function() {
-      this.classList.toggle('on');
-      config.settings = config.settings || {};
-      config.settings.glasses_enabled = this.classList.contains('on');
-      await pywebview.api.save_settings(JSON.stringify(config.settings));
-      renderSidebar();
-    });
-
   // Shared by the settings toggle and the accounts-panel switch, so both entry
   // points stay in sync and both repaint immediately.
   async function saveUsagePaceEnabled(on) {
@@ -7376,14 +7193,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       saveUsagePaceEnabled(!this.classList.contains('on'));
     });
 
-  document.getElementById('setting-inject-init')
-    .addEventListener('click', async function() {
-      this.classList.toggle('on');
-      config.settings = config.settings || {};
-      config.settings.inject_init_prompt = this.classList.contains('on');
-      await pywebview.api.save_settings(JSON.stringify(config.settings));
-    });
-
   document.getElementById('setting-mic-button')
     .addEventListener('click', async function() {
       this.classList.toggle('on');
@@ -7398,14 +7207,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       this.classList.toggle('on');
       config.settings = config.settings || {};
       config.settings.voice_apply_gate = this.classList.contains('on');
-      await pywebview.api.save_settings(JSON.stringify(config.settings));
-    });
-
-  document.getElementById('setting-auto-delegate')
-    .addEventListener('click', async function() {
-      this.classList.toggle('on');
-      config.settings = config.settings || {};
-      config.settings.auto_delegate_enabled = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
     });
 
@@ -7461,15 +7262,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       1,
       Math.round(Number(idle.summary_grace_sec || 120) / 60),
     );
-    document.getElementById('setting-idle-handoff')
-      .classList.toggle('on', idle.handoff_to_main !== false);
     document.getElementById('setting-idle-status').textContent = '';
   }
 
   async function saveIdleReaperSettings() {
     const enabled = document.getElementById('setting-idle-enabled')
-      .classList.contains('on');
-    const handoff = document.getElementById('setting-idle-handoff')
       .classList.contains('on');
     let value = parseInt(document.getElementById('setting-idle-value').value, 10);
     if (!Number.isFinite(value) || value < 1) value = 30;
@@ -7481,7 +7278,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       enabled,
       idle_sec: idleSec,
       summary_grace_sec: graceMin * 60,
-      handoff_to_main: handoff,
     };
     const result = await pywebview.api.save_idle_reaper(JSON.stringify(payload));
     config = JSON.parse(result);
@@ -7495,10 +7291,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   document.getElementById('setting-idle-enabled')
-    .addEventListener('click', function() {
-      this.classList.toggle('on');
-    });
-  document.getElementById('setting-idle-handoff')
     .addEventListener('click', function() {
       this.classList.toggle('on');
     });
@@ -7518,14 +7310,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     config.settings[key] = next;
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   }
-  document.getElementById('setting-ui-prompt').addEventListener('blur', (e) => {
-    _savePromptField('ui_prompt', e.target);
-  });
   document.getElementById('setting-tg-prompt').addEventListener('blur', (e) => {
     _savePromptField('tg_prompt', e.target);
-  });
-  document.getElementById('setting-master-turn-preamble').addEventListener('blur', (e) => {
-    _savePromptField('master_turn_preamble', e.target);
   });
   document.getElementById('setting-line-prompt').addEventListener('blur', (e) => {
     _savePromptField('line_prompt', e.target);
@@ -7610,6 +7396,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const result = JSON.parse(raw);
       if (result.exists && result.active) {
         lineBridgeState = result;
+        document.getElementById('settings-line-details').open = true;   // connected: its details are shown
         statusEl.textContent = result.paused ? `⏸ ${t('paused')}` : `● ${t('connected')} (${result.delivery_mode || 'line'})`;
         statusEl.style.color = result.paused ? '#e0af68' : '#9ece6a';
         connectBtn.style.display = 'none';
@@ -7644,11 +7431,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         const tokenEl = document.getElementById('settings-bridge-token');
         const usersEl = document.getElementById('settings-bridge-users');
         const prefixEl = document.getElementById('settings-bridge-prefix');
-        const promptEl = document.getElementById('settings-bridge-prompt');
         if (!tokenEl.value) tokenEl.value = saved.bot_token || '';
         if (!usersEl.value) usersEl.value = (saved.allowed_users || []).join(', ');
         prefixEl.classList.toggle('on', saved.prefix_enabled !== false);
-        if (saved.initial_prompt) promptEl.value = saved.initial_prompt;
       }
     } catch(e) {}
 
@@ -7883,9 +7668,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const usersStr = document.getElementById('settings-bridge-users').value.trim();
     const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
     const prefix = document.getElementById('settings-bridge-prefix').classList.contains('on');
-    const prompt = document.getElementById('settings-bridge-prompt').value.trim();
 
-    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, prompt);
+    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, '');   // nothing is typed into a tab
     const result = JSON.parse(raw);
 
     if (result.success !== false) {
@@ -7983,16 +7767,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   });
 
-  // Shift+Enter toggle
-  document.getElementById('setting-shift-enter').addEventListener('click', async function() {
-    this.classList.toggle('on');
-    shiftEnterNewline = this.classList.contains('on');
-    config.settings = config.settings || {};
-    config.settings.shiftEnterNewline = shiftEnterNewline;
-    await pywebview.api.save_settings(JSON.stringify(config.settings));
-  });
-
-  // ── Local HTTP API (Settings → General) ──
+  // ── Local HTTP API (Settings → Advanced) ──
   const $apiToggle = document.getElementById('setting-api-server');
   const $apiStatus = document.getElementById('api-server-status');
   const $apiDocsBtn = document.getElementById('btn-api-docs');
@@ -8023,7 +7798,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   $apiDocsBtn.addEventListener('click', () => { if (_apiInfo) pywebview.api.open_url(_apiInfo.docs_url); });
 
-  // ── Exact agent status hooks (Settings → General) ──
+  // ── Exact agent status hooks (Settings → Advanced) ──
   const $hooksToggle = document.getElementById('setting-status-hooks');
   const $hooksState = document.getElementById('status-hooks-state');
   function renderStatusHooks(info) {
@@ -8360,7 +8135,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           document.getElementById('bridge-token').value = saved.bot_token || '';
           document.getElementById('bridge-users').value = (saved.allowed_users || []).join(', ');
           document.getElementById('bridge-prefix-toggle').classList.toggle('on', saved.prefix_enabled !== false);
-          if (saved.initial_prompt) document.getElementById('bridge-prompt').value = saved.initial_prompt;
         }
       } catch(e) {}
       $modalBridge.classList.add('open');
@@ -8390,9 +8164,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const usersStr = document.getElementById('bridge-users').value.trim();
     const users = usersStr ? usersStr.split(',').map(s => s.trim()).filter(Boolean) : [];
     const prefix = $bridgePrefix.classList.contains('on');
-    const prompt = document.getElementById('bridge-prompt').value.trim();
 
-    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, prompt);
+    const raw = await pywebview.api.start_bridge(token, JSON.stringify(users), prefix, '');   // nothing is typed into a tab
     const result = JSON.parse(raw);
 
     if (result.success !== false) {
@@ -8513,7 +8286,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           await reconnectSession(s.sid, s.cmd, s.label || null);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
-            sessions[s.sid].glassesEnabled = s.glasses_enabled === true;
           }
           bumpSessionsRev();
           changed = true;
@@ -8526,11 +8298,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
           if (sessions[s.sid].bridgeEnabled !== nextBridgeEnabled) {
             sessions[s.sid].bridgeEnabled = nextBridgeEnabled;
-            changed = true;
-          }
-          const nextGlasses = s.glasses_enabled === true;
-          if (sessions[s.sid].glassesEnabled !== nextGlasses) {
-            sessions[s.sid].glassesEnabled = nextGlasses;
             changed = true;
           }
         }
@@ -9844,7 +9611,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           saved.bot_token,
           JSON.stringify(saved.allowed_users || []),
           saved.prefix_enabled !== false,
-          '',     // skip initial_prompt on restore
+          '',     // the retired System Prompt's place: ignored
           true,   // announce, as before
           true    // if_idle: the autostart may be starting it right now; it waits for that one and keeps it
         );
@@ -9925,7 +9692,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           await reconnectSession(s.sid, s.cmd, customLabel);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
-            sessions[s.sid].glassesEnabled = s.glasses_enabled === true;
           }
         }
         // Auto-restore chat bridges if config was saved
@@ -10011,7 +9777,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
-  // ── Plugin panels / marketplace (best-effort; never blocks ShellFrame) ──
+  // ── Plugin panels (best-effort; never blocks ShellFrame). The marketplace UI was retired; an
+  // enabled plugin in shellframe_plugins/ still gets its tab, sidebar badge and actions here. ──
   async function initPlugins() {
     try { await waitApi(); } catch (e) { return; }
     if (!window.pywebview || !pywebview.api || !pywebview.api.list_plugin_panels) return;
@@ -10142,68 +9909,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       new MutationObserver(() => paintBadges()).observe(sidebar, {childList: true, subtree: true});
     }
   }
-
-  async function renderMarketplace() {
-    const list = document.getElementById('settings-marketplace-list');
-    if (!list || !pywebview.api.marketplace_list) return;
-    list.innerHTML = '<div style="color:#565f89;font-size:12px">Loading...</div>';
-    try {
-      const data = JSON.parse(await pywebview.api.marketplace_list());
-      const items = data.plugins || [];
-      if (!items.length) {
-        list.innerHTML = '<div style="color:#565f89;font-size:12px">No plugins listed.</div>';
-        return;
-      }
-      list.innerHTML = '';
-      items.forEach(p => {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #3b4261;border-radius:8px;background:#1f2335';
-        const status = p.installed
-          ? (p.enabled ? 'Enabled' : 'Installed, disabled')
-          : (p.bundled ? 'Available' : 'Not installed');
-        row.innerHTML = `
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;color:#c0caf5">${esc(p.name || '')} <span style="color:#565f89;font-size:11px">${esc(p.installed_version || p.version || '')}</span></div>
-            <div style="font-size:12px;color:#a9b1d6">${esc(p.description || '')}</div>
-            <div style="font-size:11px;color:${p.enabled ? '#9ece6a' : '#565f89'};margin-top:4px">${esc(status)}</div>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-            ${p.installed
-              ? `<button class="btn btn-ghost" data-plugin-action="${p.enabled ? 'disable' : 'enable'}">${p.enabled ? 'Disable' : 'Enable'}</button>
-                 <button class="btn btn-ghost" data-plugin-action="uninstall">Uninstall</button>`
-              : `<button class="btn btn-ghost" data-plugin-action="install">${p.bundled ? 'Install / Enable' : 'Install'}</button>`}
-          </div>`;
-        row.querySelectorAll('button[data-plugin-action]').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            try {
-              const action = btn.dataset.pluginAction;
-              const raw = action === 'uninstall'
-                ? await pywebview.api.marketplace_uninstall(p.name)
-                : action === 'enable'
-                  ? await pywebview.api.marketplace_enable(p.name, true)
-                  : action === 'disable'
-                    ? await pywebview.api.marketplace_enable(p.name, false)
-                    : await pywebview.api.marketplace_install(p.name, p.repo_url);
-              const res = JSON.parse(raw);
-              await SFDialog.alert(res.message || (res.ok ? 'OK' : 'Failed'));
-              if (res.ok) window.location.reload();
-              else await renderMarketplace();
-            } catch (e) {
-              SFDialog.alert(String(e));
-            } finally {
-              btn.disabled = false;
-            }
-          });
-        });
-        list.appendChild(row);
-      });
-    } catch (e) {
-      list.innerHTML = `<div style="color:#f7768e;font-size:12px">${esc(String(e))}</div>`;
-    }
-  }
-
-  document.querySelector('[data-tab="marketplace"]')?.addEventListener('click', renderMarketplace);
 
   init();
   initPlugins();

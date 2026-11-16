@@ -33,7 +33,7 @@ Once your entry is in the registry:
 | Top-bar usage pill | `5h` / `wk` segments, colour thresholds, stale marking, click-to-panel |
 | Token pacing | The `pc` segment — as long as you report the window's reset instant and length |
 | `/usage` slash command | The in-tab water-level text block |
-| AI-tab semantics | Init-prompt injection, mic/STT tagging and other AI-only affordances (`AI_CLI_TOOLS` is derived from the registry) |
+| AI-tab semantics | Completion notices, mic/STT tagging and other AI-only affordances (`AI_CLI_TOOLS` is derived from the registry) |
 | `+` menu preset | Add one line to `_DEFAULT_AI_PRESETS` in `main.py`; existing installs pick it up on next launch |
 | Front-end mapping | `web/index.html` reads the registry through `pywebview.api.ai_providers()` |
 

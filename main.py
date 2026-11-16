@@ -76,7 +76,6 @@ from api_accounts import AccountsApiMixin
 from api_bridges import BridgesApiMixin
 from api_desktop import DesktopApiMixin
 from api_extensions import ExtensionsApiMixin
-from api_glasses import GlassesApiMixin
 from api_link import LinkApiMixin
 from api_remote import RemoteApiMixin
 from api_status import StatusApiMixin
@@ -243,7 +242,6 @@ DEFAULT_CONFIG = {
     "settings": {
         "fontSize": 14,
         "language": "en",
-        "master_turn_preamble_enabled": True,
         "experimental_loops": False,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
@@ -274,10 +272,7 @@ DEFAULT_CONFIG = {
         # What a tab opens on: the chat view ("chat", web/chat.js) or its terminal ("cli").
         # A first launch gets this; a computer that already ran ShellBot keeps "cli"
         # (api_chat.ensure_ui_style, from load_config).
-        "ui_style": "chat",
-        # 眼鏡（Agent Relay）是外掛功能，要另外裝 bridge 才有用。
-        # 預設關：沒裝的人不該在每個分頁上看到一顆按不出東西的按鈕。
-        "glasses_enabled": False
+        "ui_style": "chat"
     },
     # The guide (guide.json, web/guide.js): a first launch gets the tour once; a computer that
     # already ran ShellBot gets "skip" (guide.keep_old_install). `seen`: a version. Not in settings.
@@ -294,9 +289,7 @@ DEFAULT_CONFIG = {
         "close_ai_only": True,
         "summary_dir": str(CONFIG_DIR / "session_summaries"),
         "self_sediment": False,
-        "reflection_file": "",
-        "handoff_to_main": True,
-        "handoff_on_start": False
+        "reflection_file": ""
     },
     "agent_roster": {},          # plan A: a new user starts with no roles; any AI tab is a temporary bot
     # Optional local HTTP API. Disabled by default. When enabled, exposes the
@@ -424,20 +417,8 @@ def _installed_plugin_dirs() -> list[str]:
     return names
 
 
-def _rokid_has_existing_setup() -> bool:
-    return (
-        (Path.home() / "Library" / "LaunchAgents" / "com.h2ocloud.rokid-bridge-listener.plist").exists()
-        or (Path.home() / ".claude" / "channels" / "rokid-bridge").exists()
-    )
-
-
 def _legacy_enabled_plugins_for_migration() -> list[str]:
-    names = []
-    for name in _installed_plugin_dirs():
-        if name == "rokid-bridge" and not _rokid_has_existing_setup():
-            continue
-        names.append(name)
-    return names
+    return _installed_plugin_dirs()
 
 
 def _ensure_plugins_defaults(cfg: dict) -> bool:
@@ -511,12 +492,6 @@ def _replace_first_command(cmd: str, replacement: str) -> str:
     return leading + replacement + suffix
 
 
-# Where the glasses bridge (Agent Relay) drops its heartbeat. Read-only from
-# here — ShellFrame never writes it and never dials the relay itself.
-GLASSES_STATE_PATH = os.path.expanduser("~/.local/share/evenclaude/state.json")
-GLASSES_STATE_STALE_S = 120
-
-
 def _session_provider(cmd: str) -> str:
     """'claude' | 'codex' | whatever usage_probe knows | 'other'.
 
@@ -570,22 +545,6 @@ def _canonical_cmd(cmd: str) -> str:
     return _autonomous_cmd(cmd)
 
 _DASH_RE = re.compile(r'(^|\s)[—–](?=\S)')
-MASTER_TURN_PREAMBLE = (
-    "ShellFrame master turn reminder: first understand the user's request. "
-    "If the task is non-trivial, parallelizable, or better handled by a worker, "
-    "run `sfctl list` and consider `sfctl delegate`; do not hard-route by keywords. "
-    "When reporting to the user, always refer to a worker by its tab label "
-    "(e.g.「點裝備優化」), never by sid (e.g. s48) — sid is only for your own "
-    "sfctl calls. If a handoff/report or sfctl output gives only a sid, run "
-    "`sfctl list` to map it to the tab label before relaying it. "
-    "If the user's message contains #<tab-label> tags (e.g. #研究-CLD), each tag "
-    "names an existing tab the task must interact with: keep those #tags verbatim "
-    "in the delegate task text — ShellFrame auto-resolves them and attaches "
-    "sfctl peek/send interaction instructions for the worker. If you handle the "
-    "task yourself instead, interact with the tagged tabs via sfctl directly. "
-    "A #<machine>/<name> tag names a bot on a paired machine: reach it with "
-    "`sfctl a2a-handoff <machine>/<name> \"task\"` (or a2a-send), not delegate."
-)
 
 
 def _normalize_dashes(cmd: str) -> str:
@@ -2011,7 +1970,7 @@ def _win_set_clipboard_text(text: str) -> None:
 
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
-          GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
+          LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
           ConnectApiMixin, TabModelApiMixin, GuideApiMixin, TasksApiMixin):
     """JS <-> Python bridge."""
@@ -2094,8 +2053,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 cfg = load_config()
                 labels = cfg.get("session_labels", {}) or {}
                 disabled = set(cfg.get("bridge_disabled_sessions", []) or [])
-                prev_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
-                glasses_allowed = set(prev_allowed)
                 order = self._ordered_sids(cfg, preferred_order)
                 manifest = []
                 for idx, sid in enumerate(order):
@@ -2108,28 +2065,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                         disabled.add(sid)
                     else:
                         disabled.discard(sid)
-                    # Allow list, not a deny list: a tab that is missing from the
-                    # manifest must come back with the glasses OFF, never ON.
-                    #
-                    # The sentinel matters. Reading this with a `False` default and
-                    # then discarding means **any** code path that builds a Session
-                    # without setting the flag silently revokes that tab — the
-                    # authorisation quietly disappears and looks like a bug in the
-                    # glasses instead. `None` = "this object never had an opinion",
-                    # and an object with no opinion must not overrule the file.
-                    glasses_flag = getattr(s, '_glasses_enabled', None)
-                    if glasses_flag is True:
-                        glasses_allowed.add(sid)
-                    elif glasses_flag is False:
-                        glasses_allowed.discard(sid)
-                    glasses_enabled = sid in glasses_allowed
                     entry = {
                         "sid": sid,
                         "cmd": _canonical_cmd(s.cmd),
                         "tmux_name": getattr(s, '_tmux_name', None) or "",
                         "account_refs": dict(getattr(s, "account_refs", {}) or {}),
                         "bridge_enabled": bool(bridge_enabled),
-                        "glasses_enabled": bool(glasses_enabled),
                         "order": idx,
                         "updated_at": int(time.time()),
                     }
@@ -2162,8 +2103,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     lifecycle_source = getattr(s, "_lifecycle_source", "") or ""
                     if lifecycle_source:
                         entry["lifecycle_source"] = lifecycle_source
-                    if getattr(s, "_lifecycle_handoff", False):
-                        entry["lifecycle_handoff"] = True
                     if label:
                         entry["label"] = label
                         labels[sid] = label
@@ -2172,13 +2111,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 cfg["session_order"] = [e["sid"] for e in manifest]
                 cfg["session_labels"] = labels
                 cfg["bridge_disabled_sessions"] = sorted(disabled)
-                # Tripwire. Emptying the allow list is a legitimate thing for a deny
-                # to do, but it should never be a side effect of persisting the tab
-                # list — and if it ever is again, this is the line that says so.
-                if prev_allowed and not glasses_allowed:
-                    _dlog("glasses", f"allow list emptied while persisting manifest: "
-                                     f"was {sorted(prev_allowed)}, sessions seen={len(order)}")
-                cfg["glasses_allowed_sessions"] = sorted(glasses_allowed)
                 save_config(cfg)
         except Exception as e:
             _dlog("lifecycle", f"persist manifest failed: {e}")
@@ -2550,60 +2482,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             _swallow("Api._session_label:1691")
         return sid
 
-    def _master_turn_preamble_enabled(self) -> bool:
-        try:
-            settings = load_config().get("settings", {}) or {}
-            return settings.get("master_turn_preamble_enabled", True) is not False
-        except Exception:
-            return True
-
-    def _is_master_session(self, sid: str, s: Session | None = None) -> bool:
-        label = self._session_label(sid, s).strip()
-        folded = label.casefold()
-        return (
-            label.startswith("總控")
-            or folded.startswith("master")
-            or folded.startswith("user-facing")
-            or "user-facing" in folded
-        )
-
-    def _should_prepend_master_turn_preamble(self, sid: str, s: Session, data: str) -> bool:
-        if "\r" not in (data or ""):
-            return False
-        if not (data or "").rstrip("\r\n").strip():
-            return False
-        return (
-            self._master_turn_preamble_enabled()
-            and self._is_master_session(sid, s)
-            and self._should_inject_init(getattr(s, "cmd", ""))
-        )
-
-    def _wrap_master_turn_input(self, user_text: str) -> str:
-        preamble = MASTER_TURN_PREAMBLE
-        if self.bridge:
-            try:
-                from bridge_telegram import get_master_turn_preamble
-                preamble = get_master_turn_preamble()
-            except Exception:
-                _swallow("Api._wrap_master_turn_input:1729")
-        show_tag = True
-        if self.bridge:
-            try:
-                from bridge_telegram import show_tg_wrapper
-                show_tag = show_tg_wrapper()
-            except Exception:
-                _swallow("Api._wrap_master_turn_input:1736")
-        tagged = self._extract_tab_tags(user_text)
-        if tagged:
-            mapping = "、".join(f"#{t['label']}={t['sid']}" for t in tagged)
-            preamble += (
-                f"\n[SF tab tags] 本則訊息標註了 tab：{mapping}。"
-                "派工時請在 task 文字中原樣保留這些 #tag（delegate 會自動為 worker 附上互動指示）；"
-                "若由你直接處理，請自行用 sfctl peek/send 與這些 tab 互動。"
-            )
-        tag = "[SF delegation prompt ↓]\n" if show_tag else ""
-        return f"{tag}{preamble}\n\n---\nUser message: {user_text}"
-
     def _arm_awaiting_response(self, sid: str, data: str):
         """Tell the bridge this session is awaiting an AI response so
         completion notifications fire for local (non-TG) input too."""
@@ -2621,87 +2499,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 slot.last_write_ts = time.time()
                 slot.stall_warned = False
 
-    def _handoff_target_sid(self, exclude_sids: set[str] | None = None) -> str:
-        exclude_sids = exclude_sids or set()
-        try:
-            cfg = load_config()
-            idle_cfg = self._idle_reaper_config(cfg)
-        except Exception:
-            cfg = {}
-            idle_cfg = {}
-        labels = cfg.get("session_labels", {}) or {}
-        ordered = self._ordered_sids(cfg)
-        preferred = []
-        main_sid = self._main_session_sid(cfg, idle_cfg)
-        if main_sid:
-            preferred.append(main_sid)
-        preferred.extend([
-            sid for sid, s in self.sessions.items()
-            if "總控" in (getattr(s, "_custom_label", None) or labels.get(sid, "") or "")
-        ])
-        preferred.extend(ordered)
-        preferred.extend(self.sessions.keys())
-        seen = set()
-        for sid in preferred:
-            if sid in seen or sid in exclude_sids:
-                continue
-            seen.add(sid)
-            s = self.sessions.get(sid)
-            if s and getattr(s, "alive", False):
-                return sid
-        return ""
-
-    def _write_lifecycle_handoff(self, title: str, bullets: list[str], exclude_sids: set[str] | None = None):
-        try:
-            idle_cfg = self._idle_reaper_config(load_config())
-            if idle_cfg.get("handoff_to_main") is False:
-                return
-            target_sid = self._handoff_target_sid(exclude_sids)
-            target = self.sessions.get(target_sid)
-            if not target:
-                return
-            lines = ["[ShellFrame 交接]", title]
-            lines.extend(f"- {b}" for b in bullets if b)
-            text = "\n".join(lines).rstrip() + "\n"
-            _dlog("handoff", f"target={target_sid} title={title!r} bullets={len(bullets)}")
-            # Only inject into terminal when bridge is NOT active (local-only mode).
-            # When TG bridge is running, _bridge_send_handoff already delivers the
-            # notification; injecting multi-line text into the PTY input causes it to
-            # pile up in the user's input box without being submitted.
-            bridge_active = bool(self.bridge and getattr(self.bridge, "active", False))
-            if not bridge_active:
-                compact = " | ".join(line for line in lines if line.strip())
-                # 用 bracketed-paste + 分離 Enter 的可靠提交（_send_text_to_session），
-                # 取代 naive write(text+"\r")——後者在 TUI（總控 mid-turn / 輸入殘留）
-                # 會卡在輸入框沒送出（使用者 2026-06-27 實際踩到）。
-                self._send_text_to_session(target, compact, submit=True)
-            self._bridge_send_handoff(text)
-        except Exception as e:
-            _dlog("handoff", f"write failed: {e}")
-
-    def _bridge_send_handoff(self, text: str):
-        """Send lifecycle handoff message via Telegram bridge."""
-        try:
-            bridge = self.bridge
-            if not bridge or not getattr(bridge, "active", False):
-                return
-            token = bridge.config.bot_token
-            if not token:
-                return
-            chat_ids = set((bridge._user_chat or {}).values())
-            if not chat_ids:
-                chat_ids = set(bridge.config.allowed_users or [])
-            if not chat_ids:
-                return
-            from bridge_telegram import tg_api
-            for chat_id in chat_ids:
-                tg_api(token, "sendMessage", {
-                    "chat_id": chat_id,
-                    "text": text.strip(),
-                }, timeout=5)
-            _dlog("handoff", f"TG handoff sent to {len(chat_ids)} chats")
-        except Exception as e:
-            _dlog("handoff", f"TG send failed: {e}")
 
     # ── 延遲送出佇列（TG /delay）──────────────────────────────────────────
     @staticmethod
@@ -3142,7 +2939,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         default_account_refs = ACCOUNT_MANAGER.session_refs(cfg)
         saved_labels = cfg.get("session_labels", {})
         bridge_disabled = set(cfg.get("bridge_disabled_sessions", []))
-        glasses_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
         manifest = self._manifest_entries(cfg)
         manifest_by_sid = {str(e.get("sid")): e for e in manifest}
         manifest_by_tmux = {str(e.get("tmux_name")): e for e in manifest if e.get("tmux_name")}
@@ -3188,8 +2984,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 self.sessions[sid] = session
                 # Restore bridge enabled/disabled state from config
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
-                session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
-                session._init_pending = False
                 # 這裡**不要**關掉 _startup_trust_pending。開機／重開 app 時
                 # tmux 裡那些 `claude --resume` 是剛長出來的行程，一樣會停在
                 # 資料夾信任對話框上，而且游標預設在 No, exit——沒人來答就是
@@ -3198,7 +2992,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 # 接手，照它的判斷走，並把 watcher 掛起來。
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
-                session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
                 self._start_startup_trust_watcher(sid, session)
                 # Restore custom label
@@ -3285,13 +3078,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                                   claude_home=claude_home)
                 self.sessions[sid] = session
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
-                session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
-                session._init_pending = False
                 # soft restore 是**重新 spawn** 一個行程（機器重開、tmux 沒
                 # 了），信任對話框百分之百會出現，更不能關掉 watcher。
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
-                session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
                 # codex 沒有 hook 可以回報，manifest 的 uuid 就是它重開之後
                 # 唯一的精確錨點——蓋回 session，解析不必等 lsof 命中。
@@ -3470,10 +3260,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 current.get("summary_grace_sec", 120),
                 10,
             )
-            current["handoff_to_main"] = _bool(
-                "handoff_to_main",
-                current.get("handoff_to_main", True),
-            )
             cfg["idle_reaper"] = current
             save_config(cfg)
         return json.dumps(cfg)
@@ -3510,7 +3296,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             if s is not None and s.alive:
                 result.append({"sid": sid, "cmd": s.cmd, "alive": True,
                                "bridge_enabled": getattr(s, '_bridge_enabled', True),
-                               "glasses_enabled": getattr(s, '_glasses_enabled', False),
                                "provider": _session_provider(s.cmd),
                                "label": getattr(s, '_custom_label', None)})
         return json.dumps(result)
@@ -3527,6 +3312,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
     def new_session(self, cmd: str, cols: int, rows: int, source: str = "manual",
                     handoff: bool = False, inherit_accounts: bool = True) -> str:
+        """`handoff` is accepted and ignored: notes to the main tab when a tab opens or closes
+        were retired with the delegation settings, and callers and older sfctl scripts still pass it."""
         cmd = _canonical_cmd(cmd)
         with _CONFIG_LOCK:
             cfg = load_config()
@@ -3540,7 +3327,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set,
                           account_refs=account_refs)
         session._lifecycle_source = source or ""
-        session._lifecycle_handoff = bool(handoff or source in {"scheduler", "scheduled", "auto"})
         self.sessions[sid] = session
         def _remember_account_refs(current):
             accounts = current.setdefault("accounts", account_manager._empty_accounts())
@@ -3548,9 +3334,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         update_config(_remember_account_refs)
         self._start_startup_trust_watcher(sid, session)
         session._bridge_enabled = True
-        # Glasses stay off until someone explicitly opens this tab. See
-        # Api.set_session_glasses for why there is no enable-all.
-        session._glasses_enabled = False
         # Soft persistence (Windows / no-tmux fallback): record this session
         # so the next startup can recreate it
         self._save_soft_session(sid, cmd)
@@ -3575,24 +3358,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
             )
 
-        # Mark session for init prompt — only for AI CLI tools, not shells/editors/etc.
-        session._init_pending = self._inject_init_prompt_enabled() and self._should_inject_init(cmd)
         # Nudge the UI to reconcile immediately (don't wait for 1.5s bridge poll).
         # Covers sessions created via TG /new, sfctl, or any non-UI path.
         self._plugin_dispatch_session_open(sid, cmd.split()[0] if cmd else sid)
         self._notify_ui_sessions_changed()
-        idle_cfg = self._idle_reaper_config(load_config())
-        if getattr(session, "_lifecycle_handoff", False) and idle_cfg.get("handoff_on_start", False):
-            label = getattr(session, "_custom_label", None) or (cmd.split()[0] if cmd else sid)
-            self._write_lifecycle_handoff(
-                "排程已啟動頁籤",
-                [
-                    f"{label} ({sid})",
-                    f"來源：{source or 'unknown'}",
-                    f"指令：{cmd}",
-                ],
-                exclude_sids={sid},
-            )
         return sid
 
     def _notify_ui_sessions_changed(self):
@@ -3603,21 +3372,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         except Exception:
             _swallow("Api._notify_ui_sessions_changed:2751")
 
-    @staticmethod
-    def _inject_init_prompt_enabled() -> bool:
-        """首次訊息前置 INIT_PROMPT 的全域開關，預設關（回報 2026-07-14：
-        觸發時機不對、內容已非必要）。只 gate `_init_pending` 的武裝——
-        `_should_inject_init` 本身另被 master preamble 與完成通知
-        （_arm_awaiting_response）借用為「AI 分頁」判定，不能在那裡關。
-        切換後對新開的分頁生效。"""
-        try:
-            return (load_config().get("settings", {}) or {}).get(
-                "inject_init_prompt", False) is True
-        except Exception:
-            return False
-
     def _should_inject_init(self, cmd: str) -> bool:
-        """Decide whether a session command should receive the init prompt.
+        """Whether a tab's command is an AI CLI (its turns arm completion notices; a shell,
+        an editor or a REPL does not). The name is from the retired first-message init
+        prompt; a preset's "inject_init" field still decides it.
 
         Logic:
         1. If the preset has an explicit "inject_init" field, honour it.
@@ -3642,20 +3400,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 return True
         return False
 
-    def _get_init_prompt(self) -> str:
-        """Load init prompt, strip TG section if bridge not active."""
-        prompt = bridge_telegram.get_ui_prompt()
-        if not prompt:
-            return ""
-        if not self.bridge or not self.bridge.active:
-            marker = "\n## Telegram Bridge"
-            idx = prompt.find(marker)
-            if idx > 0:
-                prompt = prompt[:idx].rstrip()
-                prompt += "\n\nAcknowledge briefly and wait for the user's first message."
-        prompt = bridge_telegram.append_user_instructions(prompt)
-        return prompt
-
     def close_session(
         self,
         sid: str,
@@ -3664,23 +3408,11 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         summary_path: str = "",
         idle_seconds: int | None = None,
     ):
+        """`handoff`, `summary_path` and `idle_seconds` are accepted and ignored: they made the
+        note to the main tab, retired with the delegation settings; callers still pass them."""
         _dlog("lifecycle", f"close_session sid={sid} reason={reason!r}")
         if self._bots_divert_close(sid, reason):
             return                          # a bot writes its memory first, then closes itself
-        # 授權要跟著分頁一起結束。不收的話那個 sid 會永遠留在
-        # glasses_allowed_sessions 裡，而 `sfctl glasses` 只走訪還活著的
-        # session，所以看不到它——一個看不見的、方向朝「開」的殘留。
-        # sid 單調遞增不會重複用，所以目前危害有限，但方向錯了就是錯了。
-        if sid in self.sessions and getattr(self.sessions[sid], "_glasses_enabled", False):
-            try:
-                self.set_session_glasses(sid, False, "close")
-            except Exception:
-                _swallow(f"close_session:glasses:{sid}")
-        s = self.sessions.get(sid)
-        label = self._session_label(sid, s)
-        cmd = s.cmd if s else ""
-        lifecycle_source = getattr(s, "_lifecycle_source", "") if s else ""
-        lifecycle_handoff = bool(getattr(s, "_lifecycle_handoff", False)) if s else False
         # Unregister from bridge
         if self.bridge:
             self.bridge.unregister_session(sid)
@@ -3719,19 +3451,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             update_config(_drop_account_ref)
             self._persist_session_manifest()
         self._notify_ui_sessions_changed()
-        if s and (handoff or lifecycle_handoff):
-            bullets = [f"已關閉：{label} ({sid})"]
-            if lifecycle_source:
-                bullets.append(f"來源：{lifecycle_source}")
-            if reason:
-                bullets.append(f"原因：{reason}")
-            if idle_seconds is not None:
-                bullets.append(f"閒置：約 {idle_seconds} 秒")
-            if summary_path:
-                bullets.append(f"摘要檔：{summary_path}")
-            if cmd:
-                bullets.append(f"指令：{cmd}")
-            self._write_lifecycle_handoff("頁籤已關閉交接", bullets, exclude_sids={sid})
 
     # Patterns in CLI output that indicate the AI tool is ready for conversation
     # (not in login/setup/auth flow). Checked after stripping ANSI escapes.
@@ -4056,22 +3775,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 s.write("\r")
         return False
 
-    @staticmethod
-    def _is_user_content(data: str) -> bool:
-        """True when this PTY-input chunk carries real typed/pasted text, as
-        opposed to a bare Enter, a control key, or an escape sequence (arrow /
-        function keys). xterm delivers a message's text and the Enter that
-        submits it in separate write_input calls, so init-prompt injection must
-        key off the first content chunk rather than the trailing '\\r'."""
-        d = data or ""
-        if not d:
-            return False
-        if '\x1b[200~' in d:          # bracketed paste always carries content
-            return True
-        if d.startswith('\x1b'):      # escape seq (arrows, F-keys) — not content
-            return False
-        return any(ch >= ' ' for ch in d)  # any printable (non-C0) char
-
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
         if not s:
@@ -4122,52 +3825,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         if '\r' in data:
             self._auto_name(sid, s, data.rstrip('\r\n'))
         # IME dedup：前端 _makeImeDedup 擋 xterm.onData 那條，上面的保底擋其餘路徑。
-        # On the first REAL user message, inject the init prompt BEFORE it.
-        #
-        # xterm.js delivers the message text and the Enter that submits it in
-        # SEPARATE write_input calls — each typed key / paste flushes on its own
-        # and Enter arrives as a bare '\r'. The old guard `'\r' in data` fired
-        # only on that bare Enter, by which point the user's text had already
-        # been written to the PTY; the prompt was then appended after it (with an
-        # empty user_text), landing INIT_PROMPT in the middle / after the user
-        # message. Trigger instead on the first content-bearing chunk and prepend
-        # the prompt to it, so INIT_PROMPT is always first and the user's text
-        # (and its later bare '\r') flow naturally after.
-        #
-        # SLASH COMMANDS ARE NOT A FIRST MESSAGE (使用者: 新分頁打 /model 被
-        # inject 一大段、指令直接壞掉). A chunk whose line starts with '/' is a
-        # CLI command (/model, /compact…) — never spend the init prompt on it.
-        # Because input arrives per-keystroke, a lone '/' must also HOLD the
-        # gate for the rest of that line (otherwise the next key 'm' would
-        # inject mid-command); the hold releases when the line is submitted.
-        if getattr(s, '_init_pending', False):
-            decision = self._init_inject_decision(s, data)
-            if decision == "inject":
-                # Check if CLI output looks like an AI tool ready for
-                # conversation (not a login screen, auth flow, shell prompt)
-                with s.lock:
-                    tail = bytes(s._recent).decode('utf-8', errors='replace')
-                clean = self._ANSI_RE.sub('', tail) if tail else ""
-                if self._AI_READY_RE.search(clean):
-                    # AI tool is ready — inject init prompt ahead of this chunk.
-                    s._init_pending = False
-                    prompt = self._get_init_prompt()
-                    if prompt:
-                        if self.bridge:
-                            slot = self.bridge.slots.get(sid)
-                            if slot:
-                                slot.sent_texts.append(prompt)
-                        s.write(prompt + "\n\n---\nUser's first message: " + data)
-                        self._arm_awaiting_response(sid, data)
-                        return
-                # Not ready yet (login/auth flow) — pass through, keep _init_pending
-        should = self._should_prepend_master_turn_preamble(sid, s, data)
-        _dlog("preamble", f"sid={sid} should={should} label={self._session_label(sid, s)!r} is_master={self._is_master_session(sid, s)} inject_init={self._should_inject_init(getattr(s, 'cmd', ''))} enabled={self._master_turn_preamble_enabled()} data={data!r:.60}")
-        if should:
-            user_text = data.rstrip('\r\n')
-            s.write(self._wrap_master_turn_input(user_text) + "\r")
-            self._arm_awaiting_response(sid, data)
-            return
         s.write(data)
         self._arm_awaiting_response(sid, data)
 
@@ -4384,48 +4041,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             res = self._apply_hook_state(res, hk, time.time())
         return (dict(res, prompt_at=(hk or {}).get("prompt_at", 0.0)), age)
 
-    @staticmethod
-    def _init_inject_decision(s, data: str) -> str:
-        """State machine for the web-UI init-prompt gate. Returns:
-          'inject' — first chunk of a real message: safe to prepend INIT_PROMPT
-          'pass'   — control/enter chunk, or slash-command line in progress
-        Slash-command handling: a content chunk whose line starts with '/'
-        sets _init_hold so per-keystroke follow-ups ('m','o','d'…) don't
-        inject mid-command; the hold clears once that line submits (\\r/\\n),
-        keeping _init_pending armed for the NEXT real message."""
-        submits = ('\r' in data) or ('\n' in data)
-        if getattr(s, '_init_hold', False):
-            if submits:
-                s._init_hold = False
-            return "pass"
-        if not Api._is_user_content(data):
-            return "pass"
-        if data.lstrip().startswith("/"):
-            if not submits:          # pasted "/cmd\r" completes in one chunk
-                s._init_hold = True  # typed '/': hold until the line submits
-            return "pass"
-        return "inject"
-
-    def consume_init_prompt_if_ready(self, sid: str) -> str:
-        """If session has pending init prompt AND CLI looks ready, consume and return it.
-        Used by TG bridge to inject init prompt on the first forwarded message
-        (web UI path does this inline in write_input). Returns "" if not ready
-        or no init pending, leaving state untouched so next message retries."""
-        s = self.sessions.get(sid)
-        if not s or not getattr(s, '_init_pending', False):
-            return ""
-        with s.lock:
-            tail = bytes(s._recent).decode('utf-8', errors='replace')
-        clean = self._ANSI_RE.sub('', tail) if tail else ""
-        if not self._AI_READY_RE.search(clean):
-            return ""
-        prompt = self._get_init_prompt()
-        if not prompt:
-            s._init_pending = False
-            return ""
-        s._init_pending = False
-        return prompt
-
     def is_session_ready_for_bridge(self, sid: str) -> bool:
         """Return True when a bridged AI tab is ready to receive pasted input."""
         s = self.sessions.get(sid)
@@ -4636,23 +4251,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
     # 三平台同一條路，且轉出 16kHz mono WAV 正好是 whisper 要的格式。
     _MIC_MAX_SEC = 300
 
-    # ---------------------------------------------------------- glasses ---
-    # The Agent Relay bridge (G2 glasses -> relay -> this Mac) can inject text
-    # into a tab as if it were typed. Every tab here runs with
-    # --dangerously-skip-permissions, so opening a tab to the glasses means
-    # "anything I say out loud, on the street, runs on this machine". Hence:
-    # allow list not deny list, off by default, and every change is recorded.
-    #
-    # Note what is NOT claimed: that many tabs cannot be opened at once. They
-    # can — `sfctl glasses allow` takes several sids, and a shell loop would
-    # work even if it did not. What holds is that no single control opens
-    # everything, and that each grant lands in `config.glasses_audit` with its
-    # source, so a mass grant is visible after the fact even though it is not
-    # prevented. (2026-08-31: eleven tabs were opened in five seconds and the
-    # only trace was a debug log that rolls.)
-
-    _glasses_transcript_cache: dict = {}
-
     def reorder_sessions(self, order_json: str) -> str:
         """Reorder sessions. Updates TG bridge /1 /2 commands to match."""
         order = json.loads(order_json)
@@ -4722,7 +4320,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     on_restart=self.restart_app,
                     on_check_update=self.check_update,
                     on_new_session=lambda c: self.new_session(c, 200, 50),
-                    on_consume_init=self.consume_init_prompt_if_ready,
                     on_model_info=self.get_session_model_info,
                     on_agent_status=self._agent_status_snapshot,
                     on_input_blocked=self.startup_dialog_blocking,

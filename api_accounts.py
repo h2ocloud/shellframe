@@ -242,9 +242,7 @@ class AccountsApiMixin:
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)
         bridge_enabled = getattr(old, "_bridge_enabled", True)
-        glasses_enabled = getattr(old, "_glasses_enabled", False)
         lifecycle_source = getattr(old, "_lifecycle_source", "")
-        lifecycle_handoff = getattr(old, "_lifecycle_handoff", False)
         if self.bridge:
             self.bridge.unregister_session(sid)
         if self.line_bridge:
@@ -254,12 +252,9 @@ class AccountsApiMixin:
                           tmux_name=tmux_name, account_refs=account_refs,
                           account_refs_authoritative=True, claude_home=claude_home)
         session._bridge_enabled = bridge_enabled
-        session._glasses_enabled = glasses_enabled
-        session._init_pending = False
         # 換帳號＝把行程砍掉重開，等同全新啟動，信任對話框會再問一次。
         session._slug_pending = False
         session._lifecycle_source = lifecycle_source
-        session._lifecycle_handoff = lifecycle_handoff
         if label:
             session._custom_label = label
         self.sessions[sid] = session

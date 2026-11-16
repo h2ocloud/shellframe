@@ -103,7 +103,6 @@ class FakeSession:
         self._recent = bytearray(b"last screen line\n")
         self._tmux_name = None
         self._startup_trust_pending = True
-        self._init_pending = True
 
 
 def fresh_config(extra_roster=None):
@@ -345,7 +344,6 @@ check("the brief arrives once the tab is ready",
 text = [t for s, t in api.sent if s == sid][0]
 check("brief has MEMORY.md, the last summary and the skill path",
       "使用者偏好：條列" in text and "最新摘要內容" in text and "demo-skill" in text and "SKILL.md" in text)
-check("the generic init prompt is not sent on top", api.sessions[sid]._init_pending is False)
 r = json.loads(api.bots_open("Coding"))
 check("waking an awake bot just finds its tab", r["details"].get("existed") and r["details"]["sid"] == sid)
 api._agent_status_snapshot = lambda s: ({"state": "working", "action": "Editing relay.py", "narration": "先改 timeout"}, 0)

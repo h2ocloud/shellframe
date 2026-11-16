@@ -309,8 +309,7 @@ class RemoteApiMixin:
                 cols = args.get("cols", 200)
                 rows = args.get("rows", 50)
                 source = args.get("source", "sfctl")
-                handoff = bool(args.get("handoff", False))
-                sid = self.new_session(preset_cmd, cols, rows, source=source, handoff=handoff)
+                sid = self.new_session(preset_cmd, cols, rows, source=source)   # an old sfctl's "handoff" is ignored
                 return {
                     "success": True,
                     "message": f"Created session {sid}",
@@ -327,7 +326,6 @@ class RemoteApiMixin:
                 self.close_session(
                     sid,
                     reason=args.get("reason", "sfctl"),
-                    handoff=bool(args.get("handoff", False)),
                     summary_path=args.get("summary_path", "") or "",
                 )
                 if sid in self.sessions:     # a bot: it writes its memory, then closes itself
@@ -518,7 +516,6 @@ class RemoteApiMixin:
                     "cmd": s.cmd,
                     "alive": s.alive,
                     "bridge_enabled": getattr(s, '_bridge_enabled', True),
-                    "glasses_enabled": getattr(s, '_glasses_enabled', False),
                     "provider": main._session_provider(s.cmd),
                     # 遠端檢視端的狀態燈。用 status monitor 算好的快照
                     #（唯讀、零額外成本）。同步頻率就是 peer 拉 /link/info
@@ -535,52 +532,13 @@ class RemoteApiMixin:
                     # （claude/codex）才不會因 cols/rows 不同而畫面錯位。
                     "cols": getattr(s, 'cols', 0),
                     "rows": getattr(s, 'rows', 0),
-                    # the glasses bridge needs this to find a codex rollout:
-                    # codex has no --session-id, so the only reliable link from
-                    # tab to transcript is the fd the process holds open.
-                    # Resolved here (cached) rather than in the bridge so the
-                    # lsof logic lives in exactly one place, and only for tabs
-                    # that are actually open to the glasses — normally zero.
                     "tmux_name": getattr(s, '_tmux_name', None) or "",
-                    "transcript": (self._glasses_transcript(sid)
-                                   if getattr(s, '_glasses_enabled', False) else ""),
                 })
             return {
                 "success": True,
                 "message": f"{len(sessions_info)} sessions",
                 "details": {"sessions": sessions_info},
             }
-
-        elif cmd == "glasses_status":
-            st = json.loads(self.get_glasses_status())
-            return {"success": True,
-                    "message": f"{len(st.get('allowed') or [])} allowed",
-                    "details": st}
-
-        elif cmd == "glasses":
-            action = str(args.get("action") or "status").lower()
-            sids = [x for x in (args.get("sids") or []) if x]
-            if action in ("allow", "deny"):
-                if not sids:
-                    return {"success": False, "message": f"glasses {action} 需要至少一個 sid"}
-                changed, missing = [], []
-                source = str(args.get("source") or "sfctl")
-                for sid in sids:
-                    r = json.loads(self.set_session_glasses(sid, action == "allow", source))
-                    (changed if r.get("success") else missing).append(sid)
-                if not changed:
-                    return {"success": False,
-                            "message": f"沒有這些分頁：{', '.join(missing)}"}
-                verb = "開放" if action == "allow" else "收回"
-                msg = f"{verb} {', '.join(changed)}"
-                if missing:
-                    msg += f"（略過不存在的 {', '.join(missing)}）"
-            elif action == "status":
-                msg = "glasses status"
-            else:
-                return {"success": False, "message": f"unknown action {action!r}"}
-            return {"success": True, "message": msg,
-                    "details": {"text": self._glasses_report()}}
 
         elif cmd == "roster":
             roster = self._agent_roster_config(main.load_config())

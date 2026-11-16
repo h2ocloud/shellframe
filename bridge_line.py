@@ -230,7 +230,7 @@ class LineBridge(BridgeBase):
     PLATFORM = "line"
 
     def __init__(self, bridge_id: str, config: LineBridgeConfig, on_status_change=None,
-                 on_new_session=None, on_close_session=None, on_consume_init=None,
+                 on_new_session=None, on_close_session=None,
                  on_rename_session=None, on_session_ready=None,
                  gateway_worker_cmd: str = ""):
         super().__init__(bridge_id, config, write_fn=None, on_status_change=on_status_change)
@@ -250,7 +250,6 @@ class LineBridge(BridgeBase):
         self._ui_active_sid = ""
         self._on_new_session = on_new_session
         self._on_close_session = on_close_session
-        self._on_consume_init = on_consume_init
         self._on_rename_session = on_rename_session
         self._on_session_ready = on_session_ready
         self._gateway_worker_cmd = (
@@ -802,12 +801,6 @@ class LineBridge(BridgeBase):
             )
             return
         line_text = f"[LINE {user_id}]: {text}" if self.config.prefix_enabled else text
-        init_prompt = ""
-        if self._on_consume_init:
-            try:
-                init_prompt = self._on_consume_init(sid) or ""
-            except Exception:
-                init_prompt = ""
         payload = line_text
         marker_token = f"LINE_REPLY_{uuid.uuid4().hex[:8]}"
         start_marker = f"[[{marker_token}]]"
@@ -817,14 +810,10 @@ class LineBridge(BridgeBase):
             f"ShellBot gateway 已派工到 {slot.label}。"
             "請只代表這個 tab 回覆這次 LINE 訊息；不要冒稱其他 agent，也不要回覆 marker 之外的文字。"
         )
-        if init_prompt:
-            payload = init_prompt + "\n\n" + gateway_prompt + "\n\n" + marker_prompt + "\n\n---\nUser's first LINE message: " + line_text
-            slot.sent_texts.append(init_prompt)
-        else:
-            preamble = get_line_prompt()
-            if preamble:
-                payload = preamble + "\n\n" + gateway_prompt + "\n\n" + marker_prompt + "\n\n" + line_text
-                slot.sent_texts.append(preamble)
+        preamble = get_line_prompt()
+        if preamble:
+            payload = preamble + "\n\n" + gateway_prompt + "\n\n" + marker_prompt + "\n\n" + line_text
+            slot.sent_texts.append(preamble)
         slot.sent_texts.append(line_text)
         if len(slot.sent_texts) > 30:
             slot.sent_texts = slot.sent_texts[-30:]

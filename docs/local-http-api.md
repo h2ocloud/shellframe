@@ -9,7 +9,7 @@ It is a thin wrapper over the existing `sfctl` command dispatch
 
 ## Enable
 
-**Settings → General → Local HTTP API** — flip the toggle (effective immediately,
+**Settings → Advanced → Local HTTP API** — flip the toggle (effective immediately,
 no restart; the token is auto-generated on first enable and the panel has
 "Copy token" / "API docs (Swagger)" buttons).
 

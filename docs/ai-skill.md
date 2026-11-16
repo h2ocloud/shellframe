@@ -490,7 +490,7 @@ scraping the screen to fake it.
 reachable as JSON, which matters when you want structured output:
 
 - **Locally**: the optional HTTP API (`docs/local-http-api.md`), off by default.
-  Enable it in Settings → General, then `GET /sessions`, `POST /sessions/{sid}/send`,
+  Enable it in Settings → Advanced, then `GET /sessions`, `POST /sessions/{sid}/send`,
   `GET /events` for agent signals.
 - **From a paired computer**: the `/link/*` routes in `docs/frame-link.md`.
 

@@ -28,8 +28,8 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "web/vendor", "dist", "build"}
 # 這支自己與 CHANGELOG 守門都必須寫出被禁的字才能檢查，跳過它們自身。
 SELF = {"tests_repo_hygiene.py", "tests_changelog_format.py"}
 
-# 人名。維護者的名字只在「署名」處合法（README 作者欄、About 對話框、授權條款、
-# plugin marketplace 的 author 欄）——那是姓名全稱，不是把回報者寫進註解。
+# 人名。維護者的名字只在「署名」處合法（README 作者欄、About 對話框、授權條款）
+# ——那是姓名全稱，不是把回報者寫進註解。
 PERSON_NAMES = ("Howard", "howard", "HOWARD", "Warren", "Vivian")
 ATTRIBUTION_RE = re.compile(r"Howard Wu")
 

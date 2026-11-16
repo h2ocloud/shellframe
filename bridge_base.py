@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 class BridgeConfigBase:
     """Base configuration shared by all bridges."""
     prefix_enabled: bool = True
-    initial_prompt: str = ""
     auto_resume_on_message: bool = True
     allowed_users: list = field(default_factory=list)
 

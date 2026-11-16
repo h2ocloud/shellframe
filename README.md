@@ -14,7 +14,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 |---|---|
 | **Chat view** | A tab can show a conversation instead of a terminal: replies line up one by one, tool calls collapse into a single line, and what needs your decision becomes buttons. Drop images and files into the input box. What you write here or on a phone goes into the tab at once, even while it is working; so do messages from other bots and computers. Each tab has a Chat / Terminal switch (`Cmd+Shift+M`); Settings → Interface style sets the default. |
 | **Signing in again** | When a Claude Code tab's sign-in expires, the chat view shows a card that takes you through signing in again, with buttons only: it types `/login`, offers the subscription or the API account, opens the sign-in page on the computer you are at, takes the code if the page gives one, and then offers to send your last message again. |
-| **Bots** (experimental) | Every AI tab starts as a temporary bot; press **Keep** and it becomes a bot with a name, a face, a job, skills and a memory folder it writes before it closes. Switch its CLI or model later and the name, face and memory stay. A bot knows who it is from its first word: where the program takes added standing instructions (Claude Code, pi and launchers named after them), its name, what it looks after and where its memory is go in there; other programs get them as the first message. [docs/bots.md](docs/bots.md) |
+| **Bots** | Every AI tab starts as a temporary bot; press **Keep** and it becomes a bot with a name, a face, a job, skills and a memory folder it writes before it closes. Switch its CLI or model later and the name, face and memory stay. A bot knows who it is from its first word: where the program takes added standing instructions (Claude Code, pi and launchers named after them), its name, what it looks after and where its memory is go in there; other programs get them as the first message. [docs/bots.md](docs/bots.md) |
 | **Faces** | Shape and colour are who a bot is (12 shapes, 14 colours); the expression is what it is doing: working, waiting on you (`?`), stuck, done, writing memory, resting. |
 | **Primary bot** | The card at the top of the sidebar: it takes stock of who is busy, stuck or waiting on you, and hands the work to the right bot. Dispatching needs bot-to-bot messaging (A2A), an experimental switch that is off by default. While a bot is primary it appears only on that card, not again in the list. |
 | **"Needs your decision"** | A bot's question and its numbered options reach your phone or Telegram; one tap answers that bot. |
@@ -47,7 +47,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 |---|---|
 | **對話畫面** | 分頁可以改看對話而不是終端機：AI 的回覆一則一則排好，工具呼叫收成一行，要你決定的事變成按鈕。圖片和檔案可以直接拖進輸入框。你在這裡或手機上寫的訊息，分頁正在跑也會直接送進去，其他 bot 和電腦送來的訊息也一樣。每個分頁有「對話／終端機」切換鈕（`Cmd+Shift+M`），設定 → 介面風格決定預設。 |
 | **重新登入** | Claude Code 分頁的登入過期時，對話畫面會出現一張卡片帶你重新登入，只要按按鈕：它替你送出 `/login`，讓你選訂閱帳號或 API 帳號，在你眼前這台電腦打開登入頁，登入頁給了代碼就收下，最後問你要不要把剛才那則訊息再送一次。 |
-| **Bots**（實驗） | 每個 AI 分頁一開就是臨時 bot；按「記住」就變成有名字、有臉、有執掌和 skill、有自己記憶資料夾的 bot，關閉前會自己寫記憶。之後換 CLI 或模型，名字、臉和記憶都留著。bot 從第一句話起就知道自己是誰：程式有提供額外常駐指示的地方（Claude Code、pi，以及用它們名字命名的啟動器），名字、負責什麼、記憶放在哪裡就放在那裡；其他程式則當第一則訊息交給它。[docs/bots.md](docs/bots.md) |
+| **Bots** | 每個 AI 分頁一開就是臨時 bot；按「記住」就變成有名字、有臉、有執掌和 skill、有自己記憶資料夾的 bot，關閉前會自己寫記憶。之後換 CLI 或模型，名字、臉和記憶都留著。bot 從第一句話起就知道自己是誰：程式有提供額外常駐指示的地方（Claude Code、pi，以及用它們名字命名的啟動器），名字、負責什麼、記憶放在哪裡就放在那裡；其他程式則當第一則訊息交給它。[docs/bots.md](docs/bots.md) |
 | **臉** | 形狀和顏色是 bot 的身分（12 種形狀、14 種顏色），表情是它在做什麼：做事、等你決定（`?`）、卡住、做完、寫記憶、休息。 |
 | **主要 bot** | 側欄最上面那張卡片：先盤點誰在忙、誰卡住、誰在等你，再把工作派給對的 bot。派工要用到「bot 之間傳話（A2A）」，這是預設關閉的實驗開關。當主要 bot 的時候，它只出現在那張卡片，清單裡不再重複。 |
 | **「要你決定」** | bot 的提問連同編號選項送到手機或 Telegram，一按就回答那個 bot。 |
@@ -160,15 +160,13 @@ Bare `Ctrl` chords that terminals rely on are not hijacked: on macOS app shortcu
 
 ### Idle Tab Cleanup
 
-Open Settings → General → Idle tab cleanup to control ShellFrame's automatic
+Open Settings → Advanced → Idle tab cleanup to control ShellFrame's automatic
 AI tab cleanup.
 
 - **Idle after** controls how long an AI tab can sit without user input before
   ShellFrame asks it for a short summary.
 - **Summary wait** controls how long ShellFrame waits after asking for that
   summary before closing the tab.
-- **Write handoff to master** writes a short `[ShellFrame 交接]` note to the
-  master tab when an orchestrated or idle-cleaned tab is closed.
 
 The same values live in `~/.config/shellframe/config.json`:
 
@@ -176,9 +174,7 @@ The same values live in `~/.config/shellframe/config.json`:
 "idle_reaper": {
   "enabled": true,
   "idle_sec": 1800,
-  "summary_grace_sec": 120,
-  "handoff_to_main": true,
-  "handoff_on_start": false
+  "summary_grace_sec": 120
 }
 ```
 
@@ -256,7 +252,6 @@ shellframe/
 ├── web/index.html          # Frontend: xterm.js + tabs + sidebar + modals + i18n
 ├── sfctl.py                # CLI remote control (file-based IPC)
 ├── filters.json            # Dynamic output filter rules for TG bridge
-├── INIT_PROMPT.md          # Auto-injected context for AI CLI sessions
 ├── ShellFrame.app/         # macOS .app bundle template (installed as ShellBot.app)
 ├── install.sh              # macOS/Linux installer
 ├── install.ps1             # Windows installer

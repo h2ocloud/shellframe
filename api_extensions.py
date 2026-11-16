@@ -1,19 +1,16 @@
 """Api mixin — 外掛與 AI skill 域（God-class 分批拆解 第二批）.
 
-plugin_sdk 外掛載入/事件分派/側欄面板、外掛市集安裝與啟停、
-ShellFrame AI skill 安裝。
+plugin_sdk 外掛載入/事件分派/側欄面板、ShellFrame AI skill 安裝。外掛市集
+（設定頁的 Plugins 分頁、安裝／啟停／移除）已在設定整理時移除；
+shellframe_plugins/ 裡、config 的 plugins.enabled 有列的外掛照常載入。
 
 行為與搬家前相同（僅搬家）；main.py 的全域經 api_host 的 late-bound `main` 取得。
 """
 
 import importlib
 import json
-import re
-import shutil
-import subprocess
 from pathlib import Path
 
-from sf_config import CONFIG_LOCK
 from api_host import main
 
 
@@ -107,119 +104,6 @@ class ExtensionsApiMixin:
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception as e:
             return json.dumps({"ok": False, "message": str(e)}, ensure_ascii=False)
-
-    def marketplace_list(self) -> str:
-        """List curated plugins and mark installed versions."""
-        try:
-            mk_path = main.APP_DIR / "shellframe_plugins" / "_marketplace.json"
-            data = json.loads(mk_path.read_text(encoding="utf-8")) if mk_path.exists() else {"plugins": []}
-            cfg = main.load_config()
-            plugin_cfg = main._plugins_config(cfg)
-            installed_cfg = set(plugin_cfg.get("installed") or [])
-            enabled_cfg = set(plugin_cfg.get("enabled") or [])
-            installed = {
-                p.manifest.name: p.manifest.version
-                for p in (self._plugins.plugins if self._plugins else [])
-            }
-            for p in data.get("plugins", []):
-                name = p.get("name")
-                target = main.APP_DIR / "shellframe_plugins" / re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
-                local_manifest = target / "manifest.json"
-                local_version = ""
-                if local_manifest.exists():
-                    try:
-                        local_version = json.loads(local_manifest.read_text(encoding="utf-8")).get("version", "")
-                    except Exception:
-                        local_version = ""
-                bundled = bool(p.get("bundled"))
-                p["installed"] = name in installed_cfg or (not bundled and local_manifest.exists())
-                p["enabled"] = name in enabled_cfg
-                p["installed_version"] = installed.get(name) or local_version
-            return json.dumps(data, ensure_ascii=False)
-        except Exception as e:
-            return json.dumps({"error": str(e), "plugins": []}, ensure_ascii=False)
-
-    def _marketplace_plugin_entry(self, name: str) -> dict:
-        mk_path = main.APP_DIR / "shellframe_plugins" / "_marketplace.json"
-        data = json.loads(mk_path.read_text(encoding="utf-8")) if mk_path.exists() else {"plugins": []}
-        for p in data.get("plugins", []):
-            if p.get("name") == name:
-                return p
-        return {}
-
-    def _set_plugin_installed_enabled(self, name: str, installed: bool | None = None, enabled: bool | None = None) -> dict:
-        with CONFIG_LOCK:
-            cfg = main.load_config()
-            main._ensure_plugins_defaults(cfg)
-            plugin_cfg = main._plugins_config(cfg)
-            installed_set = {str(v) for v in (plugin_cfg.get("installed") or [])}
-            enabled_set = {str(v) for v in (plugin_cfg.get("enabled") or [])}
-            if installed is not None:
-                (installed_set.add if installed else installed_set.discard)(name)
-            if enabled is not None:
-                (enabled_set.add if enabled else enabled_set.discard)(name)
-            if enabled is True:
-                installed_set.add(name)
-            plugin_cfg["installed"] = sorted(installed_set)
-            plugin_cfg["enabled"] = sorted(enabled_set)
-            cfg["plugins"] = plugin_cfg
-            main.save_config(cfg)
-        return cfg
-
-    def marketplace_install(self, name: str, repo_url: str) -> str:
-        """Install a plugin by cloning it into shellframe_plugins/<name>."""
-        safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
-        if not safe_name or safe_name != name:
-            return json.dumps({"ok": False, "message": "invalid plugin name"})
-        target = main.APP_DIR / "shellframe_plugins" / safe_name
-        if target.exists():
-            if not (target / "manifest.json").exists():
-                return json.dumps({"ok": False, "message": f"{safe_name} already exists but is not a plugin"})
-            self._set_plugin_installed_enabled(safe_name, installed=True, enabled=True)
-            self._plugins_reload()
-            return json.dumps({"ok": True, "message": f"enabled {safe_name}"})
-        try:
-            subprocess.check_output(
-                ["git", "clone", "--depth", "1", repo_url, str(target)],
-                stderr=subprocess.STDOUT,
-                timeout=60,
-            )
-            self._set_plugin_installed_enabled(safe_name, installed=True, enabled=True)
-            self._plugins_reload()
-            return json.dumps({"ok": True, "message": f"installed {safe_name}"})
-        except subprocess.CalledProcessError as e:
-            return json.dumps({"ok": False, "message": e.output.decode("utf-8", errors="replace")[-400:]})
-        except Exception as e:
-            return json.dumps({"ok": False, "message": str(e)})
-
-    def marketplace_enable(self, name: str, enabled: bool) -> str:
-        safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
-        if not safe_name or safe_name != name:
-            return json.dumps({"ok": False, "message": "invalid plugin name"})
-        target = main.APP_DIR / "shellframe_plugins" / safe_name
-        if not target.exists() or not (target / "manifest.json").exists():
-            return json.dumps({"ok": False, "message": f"{safe_name} not installed"})
-        self._set_plugin_installed_enabled(safe_name, installed=True, enabled=bool(enabled))
-        self._plugins_reload()
-        return json.dumps({"ok": True, "message": f"{'enabled' if enabled else 'disabled'} {safe_name}"})
-
-    def marketplace_uninstall(self, name: str) -> str:
-        safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", name or "")
-        if not safe_name or safe_name != name:
-            return json.dumps({"ok": False, "message": "invalid plugin name"})
-        target = main.APP_DIR / "shellframe_plugins" / safe_name
-        entry = self._marketplace_plugin_entry(safe_name)
-        bundled = bool(entry.get("bundled"))
-        if not bundled and (not target.exists() or not target.is_dir()):
-            return json.dumps({"ok": False, "message": f"{safe_name} not installed"})
-        try:
-            self._set_plugin_installed_enabled(safe_name, installed=False, enabled=False)
-            if target.exists() and target.is_dir() and not bundled:
-                shutil.rmtree(target)
-            self._plugins_reload()
-            return json.dumps({"ok": True, "message": f"removed {safe_name}"})
-        except Exception as e:
-            return json.dumps({"ok": False, "message": str(e)})
 
     def _autoinstall_ai_skill(self):
         """Keep ~/.claude/skills/shellframe/SKILL.md in step with this install.
