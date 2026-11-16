@@ -997,10 +997,6 @@
           <button class="toggle-switch" id="setting-autoupdate"></button>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="shiftEnterLabel">Shift+Enter = newline</label>
-          <button class="toggle-switch on" id="setting-shift-enter"></button>
-        </div>
-        <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoCompactClaude">Auto /compact (Claude)</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-auto-compact"></button>
@@ -1088,7 +1084,7 @@
       </div>
 
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
-        💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
+        💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.
       </div>
 
       <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
@@ -1571,8 +1567,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: 'Cancel',
       sessions: 'Sessions',
       dropToAttach: 'Drop file to attach',
-      shiftEnterLabel: 'Shift+Enter = newline',
-      shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
+      shiftEnterHint: '💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.',
       shiftEnterShortcut: 'Newline (no submit)',
       linkSidebarDivider: 'Other ShellBots',
       linkSend: 'Send',
@@ -1722,8 +1717,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: '取消',
       sessions: '分頁',
       dropToAttach: '放開以附加檔案',
-      shiftEnterLabel: 'Shift+Enter 換行',
-      shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
+      shiftEnterHint: '💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> 一律換行、不送出（Claude Code、Codex），方便輸入多行 prompt。',
       shiftEnterShortcut: '換行（不送出）',
       linkSidebarDivider: '其他 ShellBot',
       linkSend: '送出',
@@ -1974,7 +1968,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     lang = s.language || (/^zh\b/i.test(navigator.language) ? 'zh-TW' : 'en');
     currentFontSize = s.fontSize || 14;
     autoUpdateEnabled = s.autoUpdate === true; // default OFF (opt-in). 開啟也只「通知」不靜默拉取。
-    shiftEnterNewline = s.shiftEnterNewline !== false; // default true
     // Apply UI scale (interface size)
     const uiScale = s.uiScale || 1;
     document.documentElement.style.setProperty('--ui-scale', uiScale);
@@ -5304,7 +5297,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   refreshBoard();
 
   // ── Attach: intercept Enter/Shift+Enter before xterm ──
-  let shiftEnterNewline = true; // default on; toggled in Settings
   // 把原始位元組送進某個 session。本機走 PTY，遠端走 Frame Link——呼叫端不必
   // 知道差別。少了這層，任何「合成按鍵」的處理（Shift+Enter、Esc 清行）都只有
   // 本機分頁吃得到：遠端 pane 的按鍵是裸送給 xterm 的，Shift+Enter 因此變成
@@ -5356,7 +5348,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         sendKeysToSession(sid, '\x15'); // Ctrl+U = line kill
         return false;
       }
-      // Shift+Enter → 換行但不送出。
+      // Shift+Enter → 換行但不送出。一律如此，設定頁沒有開關（舊 config 的 shiftEnterNewline 不讀）。
       //
       // 這裡一定要攔：實測 xterm.js 5.5.0 對 Shift+Enter 一律送 `\r`，跟純
       // Enter 完全一樣，即使應用程式已經開了 modifyOtherKeys 也是——終端本身
@@ -5368,7 +5360,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       //                 keyboard_modes::EnableModifyOtherKeys），那個模式下
       //                 Shift+Enter 的編碼是 `CSI 27;2;13~`。裸 `\n` 在
       //                 crossterm 那邊會被讀成普通的 Enter，所以換不了行。
-      if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey && shiftEnterNewline) {
+      if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
         ev.preventDefault();
         sendKeysToSession(
           sid, isCodexSession(sid) ? '\x1b[27;2;13~' : '\n');
@@ -6993,7 +6985,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('fontsize-val').textContent = currentFontSize;
     document.getElementById('setting-lang').value = lang;
     $autoUpdateToggle.classList.toggle('on', autoUpdateEnabled);
-    document.getElementById('setting-shift-enter').classList.toggle('on', shiftEnterNewline);
     // Sync UI scale buttons
     const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
     document.querySelectorAll('#setting-uiscale .ui-scale-btn').forEach(b => {
@@ -7737,15 +7728,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     autoUpdateEnabled = this.classList.contains('on');
     config.settings = config.settings || {};
     config.settings.autoUpdate = autoUpdateEnabled;
-    await pywebview.api.save_settings(JSON.stringify(config.settings));
-  });
-
-  // Shift+Enter toggle
-  document.getElementById('setting-shift-enter').addEventListener('click', async function() {
-    this.classList.toggle('on');
-    shiftEnterNewline = this.classList.contains('on');
-    config.settings = config.settings || {};
-    config.settings.shiftEnterNewline = shiftEnterNewline;
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   });
 

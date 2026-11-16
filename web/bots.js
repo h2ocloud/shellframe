@@ -1583,7 +1583,7 @@
     const panel = settingsPanel();
     if (!panel) return;
     const wrap = document.createElement('div');
-    wrap.innerHTML = `<label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">${t('Bots: faces, memory, primary bot (experimental)', 'Bots — 頭像表情、獨立記憶、主要 Bot（實驗）')}</label>
+    wrap.innerHTML = `<label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">${t('Bots: faces, memory, primary bot', 'Bots — 頭像表情、獨立記憶、主要 Bot')}</label>
       <div style="display:flex;align-items:center;gap:6px">
         <button class="toggle-switch" id="setting-experimental-bots" data-guide="bots"></button>
         <span style="font-size:11px;color:#565f89">${t('Lights become animated bot faces (idle, working, question, stuck, done). A tab can become a bot that wakes with its job, skills and memory, and writes its memory before it closes. On for a new install.',
