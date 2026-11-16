@@ -779,12 +779,13 @@ class Engine:
 
     # ── disconnect ─────────────────────────────────────────────────────────
     def _sharing(self, service, server) -> list:
-        """The other services that use the same server entry and are not left at "not started": an entry two
-        services share (one local server for both) stays until the last of them lets it go."""
+        """The other services that use the same server entry and have added it to an AI program: an entry two
+        services share (one local server for both) stays until the last of them that added it lets it go. One
+        that was started but never added it holds nothing."""
         out = []
         for other, orec in self.store.all().items():
             odesc = self.registry.get(other)
-            if other == service or not odesc or orec.get("state") in (None, "", "not_started"):
+            if other == service or not odesc or "connected" not in (orec.get("clis") or {}).values():
                 continue
             oroute = self._route_of(odesc, orec)
             if oroute and (oroute.get("mcp") or {}).get("server") == server:

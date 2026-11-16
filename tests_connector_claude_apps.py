@@ -307,6 +307,14 @@ res = eng3.disconnect("mac_calendar")
 removes = [c for c in runner3.calls if c[1:3] == ["mcp", "remove"]][removes_before:]
 check("disconnecting the last one removes it, and only ShellBot's own entry",
       len(removes) == 1 and "shellbot-apple-events" in removes[0] and "shellbot-apple-events" not in runner3.entries.get("claude", set()), removes)
+eng3.start("mac_reminders")
+eng3.step("mac_reminders", "act", {"action": "add_server"})
+eng3.start("mac_calendar")                       # started, but it never added the server
+n0 = len([c for c in runner3.calls if c[1:3] == ["mcp", "remove"]])
+res = eng3.disconnect("mac_reminders")
+removes = [c for c in runner3.calls if c[1:3] == ["mcp", "remove"]][n0:]
+check("a service that was started but never added the entry does not hold it", len(removes) == 1 and not res["removed"].get("kept_for"),
+      (removes, res["removed"]))
 
 # ── the core's other paths over every shipped service (the hourly check must not stop on one with no routes) ──
 print("the health check and disconnect over the shipped services")

@@ -656,7 +656,9 @@
   async function runCheck() {
     const me = S, sid = (vstep() || {}).id;
     await step('check', null, 'check');
-    if (S === me && vstep() && vstep().id === sid) render();
+    if (S !== me) return;
+    if (vstep() && vstep().id !== sid) { S.checked[sid] = true; return enter(); }   // it passed and the next step is up
+    render();
   }
   async function runAction(id) {
     const s = vstep();

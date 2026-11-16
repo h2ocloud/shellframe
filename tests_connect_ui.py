@@ -76,7 +76,7 @@ STEP_SIGN = {"id": "sign", "title": T("Sign in once", "登入一次"), "how": [T
              "check": {"id": "signed", "on": "done", "gate": True, "pass": ["ok"], "states": {
                  "ok": {"tone": "ok", "text": T("Signed in", "已登入"), "hint": T("", "")},
                  "no": {"tone": "warn", "text": T("Not signed in", "還沒登入"), "hint": T("", "")}}}}
-STEP_TEST = {"id": "test", "kind": "test", "title": T("Test the connection", "測試連線"),
+STEP_TEST = {"id": "test", "kind": "test", "title": T("Test the connection", "測試連結"),
              "intro": T("ShellBot asks a temporary tab to use it once.", "ShellBot 會請一個暫時的分頁實際用一次。")}
 STEP_KEY = {"id": "key", "title": T("Paste the key", "貼上金鑰"), "how": [T("Paste it into the box in the next window.", "貼進下一個視窗的欄位。")]}
 DESC = {
@@ -338,7 +338,7 @@ def run(browser):
           and "登入一次" in page.locator("#cn-card .cn-title").inner_text())
     page.evaluate("window.__signNext = true")
     page.click('#cn-card [data-act="did"]')
-    page.wait_for_selector("#cn-card .cn-title:has-text('測試連線')")
+    page.wait_for_selector("#cn-card .cn-title:has-text('測試連結')")
     check("when it goes through, the last step is the test, with a Start button", page.locator('#cn-card [data-act="test-start"]').count() == 1
           and "第 3 步，共 3 步" in page.locator("#cn-card .cn-prog-label").inner_text())
     page.evaluate("window.__svc.testFail = true")
@@ -357,7 +357,7 @@ def run(browser):
     page.click('#cn-card [data-act="did"]')
     page.wait_for_selector("#cn-card .cn-title:has-text('登入一次')")
     page.click('#cn-card [data-act="did"]')
-    page.wait_for_selector("#cn-card .cn-title:has-text('測試連線')")
+    page.wait_for_selector("#cn-card .cn-title:has-text('測試連結')")
     page.click('#cn-card [data-act="test-start"]')
     page.wait_for_selector("#cn-card .cn-result.ok", timeout=8000)
     check("a passed test says Connected and the status follows (connected)",

@@ -121,6 +121,7 @@ class Api(api_connect.ConnectApiMixin):
     """The real js_api over a real engine, for the made-up service only."""
 
     def __init__(self, cfg):
+        self.cfg = cfg                        # what ShellBot keeps about the Claude account (a test may change it)
         self.sessions = {}
         self.kit = Kit()
         self.adapter = ConnectorAdapter("demo_files", tool="Demo_Files", mark="DEMO-TEST", name=("Demo Files", "示範檔案櫃"))
@@ -129,7 +130,7 @@ class Api(api_connect.ConnectApiMixin):
         self._connect_engine = eng_mod.Engine(
             registry=reg, path=os.path.join(tempfile.mkdtemp(prefix="connect-oneclick-"), "connectors.json"),
             clis=clis.Clis(runner=fake.FakeRunner(), finder=fake.finder()), backend=fake.backend(), platform="mac",
-            ctx_factory=lambda s, r: Ctx(service=s, route=r, cfg=cfg, tabs=self.kit))
+            ctx_factory=lambda s, r: Ctx(service=s, route=r, cfg=self.cfg, tabs=self.kit))
 
     def pass_test(self, ok=True, auth_only=False):
         """What the test tab's transcript says: the question went in, a tool was called, the marker line."""
@@ -233,6 +234,20 @@ def run(browser):
     page.click('#cn-card [data-act="did"]')
     page.wait_for_function("window.__opened.length === 1", timeout=5000)
     check("Yes goes on to step 2 and opens the page", page.evaluate("window.__opened") == [URL] and "第 2 步" in page.inner_text("#cn-card .cn-prog-label"))
+    check("no page errors", not errors, errors)
+    page.close()
+
+    print("2b. ShellBot could not tell, then can: Check again goes on by itself")
+    api = Api({})
+    page, errors = open_page(browser, api)
+    page.click('#settings-panel-connect .cg-row[data-service="demo_files"] button')
+    page.wait_for_selector('#cn-card [data-act="check"]', timeout=5000)
+    api.cfg.update(SIGNED_IN)                  # signed in meanwhile (the account label now has a plan)
+    page.click('#cn-card [data-act="check"]')
+    page.wait_for_function("window.__opened.length === 1", timeout=5000)
+    check("the check passes, step 2 is up and its page opened (the card did not freeze)",
+          "第 2 步" in page.inner_text("#cn-card .cn-prog-label") and page.locator("#cn-card button[disabled]").count() == 0,
+          page.inner_text("#cn-card"))
     check("no page errors", not errors, errors)
     page.close()
 
