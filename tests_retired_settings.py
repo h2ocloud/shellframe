@@ -262,6 +262,33 @@ rows = json.loads(api.list_sessions())
 check("the page's tab list has no glasses field", rows and all("glasses_enabled" not in r for r in rows), rows)
 r = subprocess.run([sys.executable, str(HERE / "sfctl.py"), "glasses"], capture_output=True, text=True, timeout=30)
 check("`sfctl glasses` is not a command any more", r.returncode == 2 and "invalid choice" in r.stderr, r.stderr[-200:])
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+import api_server  # noqa: E402
+asked = []
+httpd, _ = api_server.start(lambda cmd, args: asked.append(cmd) or {"success": True, "details": {"sessions": []}},
+                            port=0, token="demo-token", allowed_ips=["127.0.0.1"])
+
+
+def http(method, path):
+    req = urllib.request.Request(f"http://127.0.0.1:{httpd.server_address[1]}{path}", method=method,
+                                 data=b"{}" if method == "POST" else None,
+                                 headers={"Authorization": "Bearer demo-token", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+codes = {p: http(m, p) for m, p in (("GET", "/glasses"), ("POST", "/sessions/s1/glasses-allow"),
+                                    ("POST", "/sessions/s1/glasses-deny"), ("GET", "/sessions"))}
+check("HTTP API: /glasses and the per-tab glasses routes are 404, /sessions still answers",
+      codes == {"/glasses": 404, "/sessions/s1/glasses-allow": 404, "/sessions/s1/glasses-deny": 404, "/sessions": 200}
+      and asked == ["list"], (codes, asked))
+check("…and the API docs (Swagger) list no glasses route",
+      not [p for p in api_server._openapi_spec("0")["paths"] if "glasses" in p])
+httpd.shutdown()
 
 print("plugins: the marketplace is gone; an enabled plugin still loads")
 check("Api: no marketplace calls", not any(hasattr(Api, n) for n in (
