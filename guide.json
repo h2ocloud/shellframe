@@ -56,6 +56,21 @@
       }
     },
     {
+      "id": "filters",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.45.2",
+      "title": {
+        "en": "Find a tab",
+        "zh": "找分頁"
+      },
+      "body": {
+        "en": "Search by name, job or latest line. The chips show only bots or only the other tabs, only idle ones or the ones quiet for 30 minutes, and can put the latest answer first.",
+        "zh": "用名稱、執掌或最新一句搜尋。下面的泡泡可以只看 Bot 或一般分頁、只看閒置或超過 30 分鐘沒動靜的，也可以把最近回應的排在上面。"
+      }
+    },
+    {
       "id": "bots",
       "surfaces": [
         "desktop"

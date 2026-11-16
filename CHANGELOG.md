@@ -6,6 +6,20 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.45.2 (2026-11-16)
+
+### Added
+
+- **The sidebar's chips filter by kind: 「Bot」 or 「分頁」.** Asked for: the filter chips should also filter by
+  session and by bot. 「Bot」 shows only bots (their tabs, and the ones asleep); 「分頁」 shows only the other tabs
+  (temporary ones and terminals). One or the other; they add to the search and to the idle chips, and the
+  choice is remembered with the rest of the sidebar's view. The guide has an entry for the search and its chips.
+  Covered by `tests_sidebar_kind_filter.py`.
+
+  **側欄的泡泡可以依種類篩選：「Bot」或「分頁」。** 需求：既有的篩選泡泡也要能用分頁和 bot 來過濾。「Bot」只顯示 bot
+  （醒著的分頁和休息中的都算）；「分頁」只顯示一般分頁（臨時的和終端機）。兩個擇一；可以和搜尋、閒置泡泡一起用，選擇會
+  跟側欄其他檢視設定一起記住。導覽也加了搜尋和泡泡的說明。由 `tests_sidebar_kind_filter.py` 守著。
+
 ## v0.45.1 (2026-11-16)
 
 ### Fixes

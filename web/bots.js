@@ -393,16 +393,18 @@
   // Telegram's /1 /2) stays as it is. Remembered per viewer in localStorage.
   const VIEW_KEY = 'sfb-sidebar-view';
   const LONG_IDLE_S = 30 * 60;
-  const view = { q: '', idle: false, long: false, recent: false, before: null };
+  // kind: '' everything, 'bots' only bots (awake or asleep), 'tabs' only the other tabs (temporary ones and terminals).
+  const view = { q: '', idle: false, long: false, recent: false, before: null, kind: '' };
   try {
     const saved = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
     ['idle', 'long', 'recent'].forEach(k => { view[k] = saved[k] === true; });
     if (typeof saved.before === 'boolean') view.before = saved.before;
+    if (saved.kind === 'bots' || saved.kind === 'tabs') view.kind = saved.kind;
   } catch (_) {}
   function saveView() {
     try {
       localStorage.setItem(VIEW_KEY, JSON.stringify(
-        { idle: view.idle, long: view.long, recent: view.recent, before: view.before }));
+        { idle: view.idle, long: view.long, recent: view.recent, before: view.before, kind: view.kind }));
     } catch (_) {}
   }
   function running(sid) {
@@ -458,8 +460,10 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'sfb-tools';
+      el.setAttribute('data-guide', 'filters');
       el.innerHTML = '<input id="sfb-q" type="search" spellcheck="false" autocomplete="off">' +
-        '<div class="sfb-chips"><button data-view="idle"></button><button data-view="long"></button>' +
+        '<div class="sfb-chips"><button data-view="bots"></button><button data-view="tabs"></button>' +
+        '<button data-view="idle"></button><button data-view="long"></button>' +
         '<button data-view="recent"></button><span class="sfb-count"></span></div>';
       list.parentNode.insertBefore(el, list);
       const q = el.querySelector('#sfb-q');
@@ -479,6 +483,8 @@
     el.hidden = !enabled;
     el.querySelector('#sfb-q').placeholder = t('Search name, job, latest line', '搜尋名稱、執掌、最新一句');
     const labels = {
+      bots: [t('Bots', 'Bot'), t('Only bots: the ones with a memory of their own, awake or asleep', '只顯示 bot：有自己記憶的，醒著或休息中都算')],
+      tabs: [t('Tabs', '分頁'), t('Only the other tabs: temporary ones and terminals', '只顯示一般分頁：臨時的和終端機')],
       idle: [t('Idle', '只看閒置'), t('Only tabs that are not running right now', '只顯示現在沒在跑的分頁')],
       long: [t('> 30 min', '超過 30 分鐘'), t('Idle for more than 30 minutes', '閒置超過 30 分鐘')],
       recent: [t('Recent first', '最近回應在上'),
@@ -489,12 +495,15 @@
       const [label, tip] = labels[b.dataset.view];
       b.textContent = label;
       b.title = tip;
-      b.classList.toggle('on', !!view[b.dataset.view]);
+      const k = b.dataset.view;
+      b.classList.toggle('on', k === 'bots' || k === 'tabs' ? view.kind === k : !!view[k]);
     });
   }
 
   function toggleView(k) {
-    if (k === 'recent') {
+    if (k === 'bots' || k === 'tabs') {
+      view.kind = view.kind === k ? '' : k;       // one or the other, or neither
+    } else if (k === 'recent') {
       view.recent = !view.recent;
       view.before = null;                     // your own choice sticks
     } else {
@@ -586,8 +595,10 @@
     rows.forEach(row => {
       const sid = row.dataset.sid;
       const at = lastAt(sid, now);
+      const isBot = kindOf(sid) === 'bot';
       const ok = (!(view.idle || view.long) || !running(sid)) &&
-                 (!view.long || !at || now - at > LONG_IDLE_S) && hits(haystack(sid), words);
+                 (!view.long || !at || now - at > LONG_IDLE_S) && hits(haystack(sid), words) &&
+                 (view.kind !== 'bots' || isBot) && (view.kind !== 'tabs' || !isBot);
       const dup = !!prim && botOf(sid) === prim;
       row.classList.toggle('sfb-primary-dup', dup);
       row.classList.toggle('sfb-hide', !ok);
@@ -597,7 +608,8 @@
       const role = row.dataset.sfbRole;
       const e = rosterEntry(role) || {};
       row.classList.toggle('sfb-primary-dup', !!prim && role === prim);
-      row.classList.toggle('sfb-hide', !hits([role, botName(role), e.responsibility].join(' ').toLowerCase(), words));
+      row.classList.toggle('sfb-hide', view.kind === 'tabs' ||
+        !hits([role, botName(role), e.responsibility].join(' ').toLowerCase(), words));
     });
     list.querySelectorAll('.sb-item[data-rsid]').forEach(row =>
       row.classList.toggle('sfb-hide', !hits(row.textContent.toLowerCase(), words)));
