@@ -6,6 +6,27 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.46.2 (2026-11-16)
+
+### Fixes
+
+- **A bot keeps knowing who it is after /new, a relaunch or a restart of the computer.** Reported: after /new in a
+  tab, the agent no longer knew who it was; a bot running on a small local model still did not know its role. Since
+  0.46.1 a bot woken up starts with its name and what it looks after in its standing instructions, but only when it
+  was woken: a tab started again (Relaunch, Telegram /relaunch, a restore after the computer restarted) started its
+  program without them, and tabs opened before the update had never had them, so /new, which clears the
+  conversation, cleared the only place they were. Now every start of a bot's program carries them, and a relaunch
+  of a pi tab goes on with the conversation it was in instead of starting a new one. The words lead with the name
+  and the job in the first two lines, and say the bot is not the program it runs on, for models that read little.
+  Tabs already open get them the next time they are started again. Covered by `tests_bot_persona.py`.
+
+  **按了 /new、重新啟動或電腦重開之後，bot 還是知道自己是誰。** 回報：在分頁按 /new 之後，agent 就不知道自己是誰；跑地端小模型的
+  bot 也還是不知道自己的角色。0.46.1 起，bot 被叫醒時會把名字和負責什麼放進常駐指示，但只有「叫醒」這條路會放：分頁重新啟動
+  （重啟 CLI、Telegram 的 /relaunch、電腦重開後接回）時，程式啟動時沒有帶上；更新前就開著的分頁也從來沒有帶過，所以 /new 清掉對話
+  時，連唯一放著它們的地方也一起清掉了。現在 bot 的程式每次啟動都會帶上；pi 分頁重新啟動時，也會接著原本的對話，不再開新的。
+  文字把名字和執掌放在最前面兩行，並寫明 bot 不是它跑在上面的那個程式，讓讀得少的模型也抓得到。已經開著的分頁，下次重新啟動時
+  就會帶上。由 `tests_bot_persona.py` 守著。
+
 ## v0.46.1 (2026-11-16)
 
 ### Changes

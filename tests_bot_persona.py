@@ -66,9 +66,12 @@ check("the flag and its file are added, quoted", toks[:3] == ["claude", "--model
 check("the file says its name, its 執掌, its folder, and to read its memory and tasks",
       "「示範秘書」" in text and "替使用者整理每週筆記、追蹤待辦" in text and str(ROOT / role) in text
       and "MEMORY.md" in text and "sfctl task mine" in text, text)
-check("…and to answer 'who are you' with that first", "先講上面的名字和執掌" in text)
+check("…and to answer 'who are you' with that first, by name", "第一句就回答：「我是示範秘書，負責" in text, text)
 check("no 執掌 written: it says so", "還沒寫" in bots.persona_text("x", {"label": "x"}, lang="zh"))
-check("in English when the prompts are", 'You are "示範秘書"' in bots.persona_text(role, ENTRY, lang="en"))
+check("in English when the prompts are", 'Your name is "示範秘書"' in bots.persona_text(role, ENTRY, lang="en"))
+check("the first line says it is not the program it runs on (a small model reads that much)",
+      text.splitlines()[0].startswith("你的名字是「示範秘書」") and "不是你跑在上面的那個程式本身" in text.splitlines()[0])
+check("…and after /new or /clear it reads its memory again", "/new" in text and "MEMORY.md" in text)
 check("a command that takes none is left as it was", bots.with_persona("codex --search", role, ENTRY) == "codex --search")
 check("…and so is one that already has the flag",
       bots.with_persona(out, role, ENTRY) == out)
@@ -83,11 +86,12 @@ check("--resume keeps --append-system-prompt-file and its path",
 
 print("waking, delegating")
 import api_bots  # noqa: E402
+import api_bot_memory  # noqa: E402
 
 sent, opened = [], []
 
 
-class App(api_bots.BotsApiMixin):
+class App(api_bots.BotsApiMixin, api_bot_memory.BotMemoryApiMixin):
     def __init__(self, roster):
         self.sessions = {}
         self.roster = roster
@@ -100,6 +104,7 @@ roster = {"示範秘書": dict(ENTRY, cmd="claude"),
           "示範助理": {"label": "示範助理", "responsibility": "回答問題", "bot": {"memory": False}, "cmd": "codex"},
           "示範工程師": {"label": "示範工程師", "responsibility": "寫程式", "bot": {"memory": False}, "cmd": "pi"}}
 app = App(roster)
+api_bot_memory.main = types.SimpleNamespace(load_config=lambda: {"agent_roster": roster})
 cmd = app._bots_launch_cmd("示範秘書", roster["示範秘書"], "claude")
 check("a bot's launch command carries its persona", "--append-system-prompt-file" in cmd, cmd)
 check("an external bot's does not (it has no tab)",
@@ -122,6 +127,31 @@ check("waking a bot opens its tab with the persona command, and wakes it when it
       and "is_memory_bot(entry) or launch == cmd" in opened_src)
 main_src = (HERE / "main.py").read_text(encoding="utf-8")
 check("a delegate that opens a bot's tab launches it with the persona", "self._bots_launch_cmd(resolved_role, entry" in main_src)
+
+print("started again: a relaunch, a restore after the computer restarted")
+check("an open bot tab started again gets its persona",
+      "--append-system-prompt-file" in App(roster)._bots_launch_cmd("示範秘書", roster["示範秘書"], "claude --resume 11111111-2222-3333-4444-555555555555"))
+app2 = App(roster)
+app2._bots_role_of = lambda sid: {"s1": "示範秘書"}.get(sid, "")
+check("_bots_tab_launch_cmd: a bot's tab gets it, any other tab keeps its command",
+      "--append-system-prompt-file" in app2._bots_tab_launch_cmd("s1", "claude")
+      and app2._bots_tab_launch_cmd("s9", "claude") == "claude")
+acc = (HERE / "api_accounts.py").read_text(encoding="utf-8")
+restart = acc.split("def _restart_session_for_account", 1)[1].split("old.kill()", 1)[0]
+check("a relaunch (sfctl relaunch, Telegram /relaunch) asks for it before the CLI starts again",
+      "_bots_tab_launch_cmd" in restart)
+main_src = (HERE / "main.py").read_text(encoding="utf-8")
+check("a tab started again after the computer restarted asks for it too",
+      "cmd = self._bots_tab_launch_cmd(sid, cmd)" in main_src)
+print("pi goes on with its own conversation when it is started again")
+f = "/x/.pi/agent/sessions/--w--/2026-11-16T10-00-00-000Z_abc.jsonl"
+check("pi → pi --session <its file>", launch_cmd.pi_with_session("pi", f) == f"pi --session {f}")
+check("an sf-pi launcher and its other arguments are kept; other ways of picking a session go",
+      launch_cmd.pi_with_session("sf-pi-spark --model x --continue --session old.jsonl --append-system-prompt /p.md", f)
+      == f"sf-pi-spark --model x --append-system-prompt /p.md --session {f}")
+check("a cd prefix stays", launch_cmd.pi_with_session("cd ~/w && pi -r", f) == f"cd ~/w && pi --session {f}")
+check("a path with a space is quoted", "'/a b/s.jsonl'" in launch_cmd.pi_with_session("pi", "/a b/s.jsonl"))
+check("the relaunch uses it for pi", "launch_cmd.pi_with_session(cmd, pfile)" in restart)
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:

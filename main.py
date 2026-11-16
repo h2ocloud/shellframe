@@ -3277,6 +3277,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                         elif home and not _same_dir(home, self._claude_config_dir_for(account_refs)):
                             _claude_ensure_transcript_in(
                                 csid, self._claude_config_dir_for(account_refs))
+                cmd = self._bots_tab_launch_cmd(sid, cmd)        # a bot started again keeps its persona
                 session = Session(sid, cmd, cols, rows,
                                   on_data=self._output_event.set,
                                   tmux_name=tmux_name,

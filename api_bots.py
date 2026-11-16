@@ -1268,17 +1268,6 @@ class BotsApiMixin:
         text = self._bots_brief(role, entry, raw) if bots.is_memory_bot(entry) else bots.persona_text(role, entry)
         self._send_text_to_session(s, text, submit=True)
 
-    def _bots_launch_cmd(self, role: str, entry: dict, cmd: str = "") -> str:
-        """The command a bot's tab starts with: its persona file added to the CLI's system prompt where the
-        CLI takes one (bots.with_persona), else the command as it was. Never fails a wake."""
-        cmd = cmd or str((entry or {}).get("cmd") or "claude")
-        try:
-            if self._bots_enabled() and bots.is_bot(entry) and not bots.is_external(entry):
-                return bots.with_persona(cmd, role, entry)
-        except Exception:
-            _swallow("bots:persona")
-        return cmd
-
     def _bots_first_prompt(self, sid: str, role: str, prompt: str) -> str:
         """delegate (and A2A to a sleeping bot) just opened this role's tab: put the
         bot's brief in front of the task, in the same message, and bind the tab."""

@@ -94,3 +94,26 @@ class BotMemoryApiMixin:
                 time.sleep(bot_memory.TICK_SEC)
 
         threading.Thread(target=_loop, daemon=True, name="bot-memory").start()
+
+    # ── a bot's persona on its launch command (bots.with_persona) ─────────
+    def _bots_tab_launch_cmd(self, sid: str, cmd: str) -> str:
+        """The command an existing tab's CLI is started again with (a relaunch, a restore after the
+        computer restarted): a bot's tab gets its persona, as a bot woken now does; anything else as it was."""
+        try:
+            role = self._bots_role_of(sid)
+            entry = (main.load_config().get("agent_roster") or {}).get(role) if role else None
+            return self._bots_launch_cmd(role, entry, cmd) if entry else cmd
+        except Exception:
+            _swallow("bots:tab-persona")
+            return cmd
+
+    def _bots_launch_cmd(self, role: str, entry: dict, cmd: str = "") -> str:
+        """The command a bot's tab starts with: its persona file added to the CLI's system prompt where the
+        CLI takes one (bots.with_persona), else the command as it was. Never fails a wake."""
+        cmd = cmd or str((entry or {}).get("cmd") or "claude")
+        try:
+            if self._bots_enabled() and bots.is_bot(entry) and not bots.is_external(entry):
+                return bots.with_persona(cmd, role, entry)
+        except Exception:
+            _swallow("bots:persona")
+        return cmd

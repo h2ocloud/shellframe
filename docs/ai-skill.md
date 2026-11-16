@@ -478,6 +478,7 @@ configure there.
 | The chat view takes a person through signing a tab in again (a card for each step of `/login`); phones: `POST /link/login` | 0.45.4 |
 | Tasks across sessions and bots: `sfctl task add` / `list` / `mine` / `show` / `update` / `note` / `done` / `drop` / `stuck` (§4.9), kept in `state.db`; `a2a-send` / `a2a-handoff --for-task N` (the result comes back onto the task); a bot's wake-up brief lists its open tasks | 0.46.0 |
 | A bot's name, 執掌 and folder in its CLI's system prompt (Claude Code, pi); a paired computer's tab in the chat view (`POST /link/chat`), marked remote | 0.46.1 |
+| A bot's persona also on a relaunch and a restore after a restart (so /new keeps it); a pi tab relaunched goes on with its conversation (`--session`) | 0.46.2 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

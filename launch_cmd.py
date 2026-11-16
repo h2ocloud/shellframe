@@ -10,6 +10,7 @@ Measured: relaunching `cd ~/work/x && claude --model haiku … '<opening prompt>
 was: the CLI exited at once (that session id was taken) and the tab died. Tabs
 started with `env …` came back on the uuid they were first started with.
 """
+import shlex
 
 import os
 import re
@@ -125,3 +126,36 @@ def claude_resume(tokens: list, csid: str):
             return None                             # `claude mcp …`: not a conversation
         i += 1                                      # a positional: the opening prompt
     return out
+
+
+_PI_SESSION_FLAGS = {"--session", "--fork", "--session-dir"}    # take a value
+_PI_PICK_FLAGS = {"--continue", "-c", "--resume", "-r", "--no-session"}
+
+
+def pi_with_session(cmd: str, path: str) -> str:
+    """`pi …` (or an sf-pi-… launcher) started again on the session file it was writing: the other
+    ways of choosing a session go (--session/--fork <x>, --continue, --resume, --no-session), the
+    rest stays as written, and `--session <path>` is added."""
+    prefix, rest = split_prefix(cmd or "")
+    try:
+        tokens = shlex.split(rest)
+    except ValueError:
+        return cmd
+    if not tokens:
+        return cmd
+    out, i = [tokens[0]], 1
+    while i < len(tokens):
+        t = tokens[i]
+        name = t.split("=", 1)[0]
+        if name in _PI_SESSION_FLAGS:
+            i += 1 if "=" in t else 2
+            continue
+        if t in _PI_PICK_FLAGS:
+            i += 1
+            continue
+        out.append(t)
+        i += 1
+    out += ["--session", path]
+    new = shlex.join(out)
+    return f"{prefix} {new}" if prefix else new
+

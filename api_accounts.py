@@ -14,8 +14,10 @@ import subprocess
 import threading
 
 import agent_cursor
+import agent_status
 import agent_grok
 import cli_install
+import launch_cmd
 import usage_probe
 from sf_config import CONFIG_LOCK
 from api_host import main
@@ -225,6 +227,17 @@ class AccountsApiMixin:
                     or agent_cursor.session_id(self._worker_ctx(sid, old)) or "")
             if csid:
                 cmd = self._cmd_with_resume(cmd, csid)
+        elif provider == "pi":
+            # pi keeps no session open for lsof; the file it is writing is found by its start time
+            # (agent_status._pi_session_file). Started again with --session on it, the conversation
+            # goes on, as --resume does for Claude; without one it would be a new conversation.
+            try:
+                pfile = agent_status._pi_session_file(self._worker_ctx(sid, old)) or ""
+            except Exception:
+                pfile = ""
+            if pfile:
+                cmd = launch_cmd.pi_with_session(cmd, pfile)
+        cmd = getattr(self, "_bots_tab_launch_cmd", lambda _s, c: c)(sid, cmd)   # a bot keeps knowing who it is
         cols, rows = old.cols, old.rows
         tmux_name = old._tmux_name
         label = getattr(old, "_custom_label", None)
