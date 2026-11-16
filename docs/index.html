@@ -337,7 +337,7 @@ details.tb.wide{margin-top:16px}
     <div class="top-row">
       <a class="brand" href="#overview" aria-label="ShellBot overview" data-zh-aria="ShellBot 總覽">
         <svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g></svg>
-        <span>ShellBot <small><span class="en">formerly ShellFrame · Desktop v0.47.0</span><span class="zh">原名 ShellFrame · 桌面版 v0.47.0</span></small></span>
+        <span>ShellBot <small><span class="en">formerly ShellFrame · Desktop v0.47.1</span><span class="zh">原名 ShellFrame · 桌面版 v0.47.1</span></small></span>
       </a>
       <span class="spacer"></span>
       <button class="lang-btn" id="lang-btn" type="button" aria-label="Switch language" data-zh-aria="切換語言"><span class="en" lang="zh-Hant">繁體中文</span><span class="zh" lang="en">English</span></button>
@@ -636,7 +636,7 @@ details.tb.wide{margin-top:16px}
       <h4><span class="en">Open your first bot</span><span class="zh">開第一個 bot</span></h4>
       <p><span class="en">Bots is <b>on by default on a new install</b>, and the list starts empty: an AI tab you “Keep” is your bot. Computers that already ran ShellBot keep their old setting (if it was off, it stays off); to switch it, go to <b>Settings → Bots</b>.</span><span class="zh">Bots 功能<b>新安裝預設是打開的</b>，名單一開始是空的：你自己「記住」的 AI 分頁，就是你的 bot。以前跑過 ShellBot 的電腦維持原本的設定（原本沒開的還是關著）；要開關，到 <b>設定 → Bots</b>。</span></p>
       <p><span class="en">To create one: every AI tab starts as a temporary bot (the second line in the sidebar says “temp”); press Keep beside it and it becomes a named bot. Or use “＋ Create a primary bot” or “＋ Bot” in the sidebar and fill in a name and a job. Details under “Bots &amp; tabs”.</span><span class="zh">建立方式：AI 分頁一開就是臨時 bot（側欄第二行寫「臨時」），按旁邊的「記住」就變成有名字的 bot；或用側欄的「＋ 建立主要 Bot」或「＋ Bot」，填名字和執掌。細節見「Bot 與分頁」。</span></p>
-      <p><span class="en"><b>For the primary bot to hand work to other bots, also turn on “bot-to-bot messaging (A2A)”.</b> It is a separate experimental feature, off by default, with its switch next to Bots in Settings. With it off, the primary bot's dispatch is blocked.</span><span class="zh"><b>要讓主要 bot 派工給別的 bot，還要打開「bot 之間傳話（A2A）」</b>。這是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊。沒打開時，主要 bot 一派工就會被擋。</span></p>
+      <p><span class="en"><b>For the primary bot to hand work to other bots, also turn on “bot-to-bot messaging (A2A)”.</b> It is still an experimental feature, off by default, with its switch next to Bots in Settings. With it off, the primary bot's dispatch is blocked.</span><span class="zh"><b>要讓主要 bot 派工給別的 bot，還要打開「bot 之間傳話（A2A）」</b>。這還是實驗功能，預設關，開關在設定裡 Bots 的旁邊。沒打開時，主要 bot 一派工就會被擋。</span></p>
     </li>
     <li class="opt">
       <h4><span class="en">(Optional) Telegram</span><span class="zh">（選擇性）Telegram</span></h4>
@@ -815,7 +815,7 @@ details.tb.wide{margin-top:16px}
           <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu</span><span class="zh">「＋」選單內建</span></span></td>
           <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m part">△</span><span class="n"><span class="en">Reads the screen only</span><span class="zh">只看畫面</span></span></td>
           <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m no">✗</span><span class="n"><span class="en">Depends on the model provider you connect</span><span class="zh">看你接的模型供應商</span></span></td>
-          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m no">✗</span><span class="n"><span class="en">Pick the model inside the CLI; the model field in bot settings is disabled</span><span class="zh">在 CLI 自己裡面選模型，bot 設定的模型欄是關的</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m ok">✓</span><span class="n"><span class="en">Pick a model in the bot's settings, from the list pi defines on that computer</span><span class="zh">bot 設定從那台電腦上 pi 定義的清單選模型</span></span></td>
           <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m part">△</span><span class="n"><span class="en">Terminal view only</span><span class="zh">只有終端機畫面</span></span></td>
           <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m ok">✓</span></td>
           <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m part">△</span><span class="n"><span class="en">Waking not verified yet</span><span class="zh">叫醒還沒驗證</span></span></td>
@@ -857,11 +857,11 @@ details.tb.wide{margin-top:16px}
       </tbody>
     </table>
   </div>
-  <p class="muted small"><span class="en">As of ShellBot v0.47.0.<br>
+  <p class="muted small"><span class="en">As of ShellBot v0.47.1.<br>
   · “Chat view on desktop” is the desktop chat screen (Settings → Interface style, or the switch on each tab); the next column, “Chat on the phone”, is the phone app's screen. Read them separately.<br>
   · “Chat on the phone” has two layers: every tab can show its terminal on the phone and take typing; “chat view” is the version tidied into chat bubbles, which needs ShellBot to understand that CLI's log format.<br>
   · “Can become a bot”: an AI tab starts as a temporary bot and Keep turns it into a named bot; a plain terminal tab is not a bot. A bot writes its memory in its own conversation. A bot can switch CLI or model; see <a href="#model">Bots &amp; tabs</a>. Waking waits until the tab is ready before handing over the briefing, and that check has so far been written only for Claude Code and Codex; the others are not verified.<br>
-  · The Linux install has been tried on several clean systems; daily use (the CLIs, bots) has not; see the platform limits on the <a href="#install">Install</a> tab.</span><span class="zh">依 ShellBot v0.47.0 整理。<br>
+  · The Linux install has been tried on several clean systems; daily use (the CLIs, bots) has not; see the platform limits on the <a href="#install">Install</a> tab.</span><span class="zh">依 ShellBot v0.47.1 整理。<br>
   ・「電腦對話畫面」是桌面版的聊天畫面（設定 → 介面風格，或每個分頁的切換鈕）；下一欄「手機上看得到對話」是手機 App 的畫面，兩邊分開看。<br>
   ・「手機上看得到對話」分兩層：所有分頁都能在手機上看終端機畫面、直接打字；「對話畫面」是整理成聊天泡泡的版本，要 ShellBot 讀得懂那家 CLI 的紀錄格式。<br>
   ・「能變成 bot」：AI 分頁一開就是臨時 bot，按「記住」變成有名字的 bot；一般終端機分頁不是 bot。記憶由 bot 在自己的對話裡寫。bot 可以換 CLI 或模型，見「<a href="#model">Bot 與分頁</a>」。叫醒時要等分頁準備好才交簡報，這段判斷目前只為 Claude Code 和 Codex 寫過，其他家還沒驗證。<br>
@@ -887,7 +887,7 @@ details.tb.wide{margin-top:16px}
 <section class="panel" id="panel-model" data-panel="model" role="tabpanel" aria-label="Bots and tabs" data-zh-aria="Bot 與分頁">
   <div class="eyebrow"><span class="en">Bots &amp; tabs</span><span class="zh">Bot 與分頁</span></div>
   <h2 class="sec"><span class="en">Tabs, bots, the primary bot: how it works today</span><span class="zh">分頁、bot、主要 bot：現在是這樣運作的</span></h2>
-  <p class="lead"><span class="en">First, six terms. This is how v0.47.0 works: every AI tab starts as a bot, a temporary one; press “Keep” and it becomes a bot with a name, a face and a memory of its own. Bot-to-bot messaging (A2A) is a separate experimental feature, off by default, with its switch next to Bots in Settings; the primary bot needs it to dispatch work.</span><span class="zh">先講清楚六個名詞。這是 v0.47.0 的做法：每個 AI 分頁一開就是一個 bot，先是臨時的；你按「記住」，它才變成有名字、有臉、有自己記憶的 bot。bot 之間傳話（A2A）是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊，主要 bot 派工會用到它。</span></p>
+  <p class="lead"><span class="en">First, six terms. This is how v0.47.1 works: every AI tab starts as a bot, a temporary one; press “Keep” and it becomes a bot with a name, a face and a memory of its own. Bot-to-bot messaging (A2A) is still an experimental feature, off by default, with its switch next to Bots in Settings; the primary bot needs it to dispatch work.</span><span class="zh">先講清楚六個名詞。這是 v0.47.1 的做法：每個 AI 分頁一開就是一個 bot，先是臨時的；你按「記住」，它才變成有名字、有臉、有自己記憶的 bot。bot 之間傳話（A2A）還是實驗功能，預設關，開關在設定裡 Bots 的旁邊，主要 bot 派工會用到它。</span></p>
 
   <div class="split" style="margin-top:18px">
     <div class="grid gloss" style="grid-template-columns:minmax(0,1fr)">
@@ -997,7 +997,7 @@ details.tb.wide{margin-top:16px}
   <div class="grid two" style="margin-top:14px">
     <div class="card">
       <h4><span class="en">Switching CLI or model</span><span class="zh">換 CLI 或模型</span></h4>
-      <p><span class="en">A bot can move to a different CLI or model, for example from Claude to Codex; its name, face, job and memory stay, but this conversation does not move to the new CLI. Change it in the bot's editor: “Save” applies at the next wake, and “Save and switch now” switches immediately (a sleeping bot wakes at once; an awake one first writes its memory and closes, then wakes with the new settings). Switching CLI without choosing a model clears the model, because the previous CLI's model does not apply. Pi and Antigravity pick their model inside the CLI, so the model field is disabled. The model is chosen from the list this CLI supports, the first entry being “CLI default”; a model ShellBot does not recognise is not saved. A bot's settings can be changed at any time, even while it sleeps: ✎ on the card or right-click, “Edit” on the bot's row, or Settings → Bots.</span><span class="zh">一個 bot 可以換到別的 CLI 或模型，例如從 Claude 換成 Codex；名字、臉、工作和記憶都留著，但這次的對話不會搬到新的 CLI。在 bot 的編輯畫面改：按「儲存」是下次叫醒時換，按「儲存並現在就換」就立刻換（睡著的立刻醒來；醒著的先寫好記憶、關掉，再用新設定醒來）。換 CLI 卻沒指定模型時，模型會清掉，因為上一個 CLI 的模型不適用。Pi 和 Antigravity 在 CLI 自己裡面選模型，所以模型欄是關的。模型從這個 CLI 支援的清單裡選，第一個是「CLI 預設」；ShellBot 認不得的模型不會被存下來。bot 的設定隨時改得到，睡著的也行：卡片上的 ✎ 或右鍵、bot 那一列的「編輯」，或 設定 → Bots。</span></p>
+      <p><span class="en">A bot can move to a different CLI or model, for example from Claude to Codex; its name, face, job and memory stay, but this conversation does not move to the new CLI. Change it in the bot's editor: “Save” applies at the next wake, and “Save and switch now” switches immediately (a sleeping bot wakes at once; an awake one first writes its memory and closes, then wakes with the new settings). Switching CLI without choosing a model clears the model, because the previous CLI's model does not apply. Antigravity picks its model inside the CLI, so the model field is disabled. The model is chosen from the list this CLI supports, the first entry being “CLI default”; a model ShellBot does not recognise is not saved. For pi there is no fixed list: the field lists the models pi defines on that computer (its models.json; only the ids and provider names are read, never the keys), and a model is kept only when the provider the command starts on (its own --provider, or the one its launcher passes) has it, so another provider's model, or one the file does not list, is refused when you save (a provider the file does not define takes any id). A pi tab started again on its conversation still uses the model last chosen with /model; the model in bot settings is where a new conversation starts. A bot's settings can be changed at any time, even while it sleeps: ✎ on the card or right-click, “Edit” on the bot's row, or Settings → Bots.</span><span class="zh">一個 bot 可以換到別的 CLI 或模型，例如從 Claude 換成 Codex；名字、臉、工作和記憶都留著，但這次的對話不會搬到新的 CLI。在 bot 的編輯畫面改：按「儲存」是下次叫醒時換，按「儲存並現在就換」就立刻換（睡著的立刻醒來；醒著的先寫好記憶、關掉，再用新設定醒來）。換 CLI 卻沒指定模型時，模型會清掉，因為上一個 CLI 的模型不適用。Antigravity 在 CLI 自己裡面選模型，所以模型欄是關的。模型從這個 CLI 支援的清單裡選，第一個是「CLI 預設」；ShellBot 認不得的模型不會被存下來。Pi 沒有固定清單：欄位列出那台電腦上 pi 自己定義的模型（它的 models.json，只讀 id 和供應商名稱，不讀 key），而且只有指令原本用的供應商（它自己的 --provider，或啟動器帶的那個）底下有的模型才存得進去，選了別家的、或檔案裡沒有的，按儲存時就會擋下（檔案沒定義的供應商，任何 id 都收）。pi 分頁接回對話重開時，仍用那段對話最後一次 /model 切的模型；bot 設定的模型是新對話的起點。bot 的設定隨時改得到，睡著的也行：卡片上的 ✎ 或右鍵、bot 那一列的「編輯」，或 設定 → Bots。</span></p>
     </div>
     <div class="card">
       <h4><span class="en">One name only</span><span class="zh">只有一個名字</span></h4>
@@ -1045,8 +1045,8 @@ details.tb.wide{margin-top:16px}
 <footer class="foot">
   <div class="wrap">
     <span class="en">ShellBot (formerly ShellFrame) is an open-source project under the MIT license. Source: <a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
-    Based on the release notes of desktop v0.47.0 (2026-11-17); all screenshots use demo data.</span><span class="zh">ShellBot（原名 ShellFrame）是開源專案，MIT 授權。原始碼：<a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
-    內容依桌面版 v0.47.0 的發布說明整理（2026-11-17）；截圖皆為示範資料。</span>
+    Based on the release notes of desktop v0.47.1 (2026-11-17); all screenshots use demo data.</span><span class="zh">ShellBot（原名 ShellFrame）是開源專案，MIT 授權。原始碼：<a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
+    內容依桌面版 v0.47.1 的發布說明整理（2026-11-17）；截圖皆為示範資料。</span>
   </div>
 </footer>
 
