@@ -211,6 +211,36 @@ def test_picks_this_process_newest_file():
         restore()
 
 
+# ── 9. 新開的 pi 分頁還沒寫任何檔：不拿同一個 cwd 裡別的對話（回報：對話模式新增一個
+#      pi agent，帶進了其他對話的內容）──
+def test_new_tab_without_its_file_reads_no_other_conversation():
+    worker, restore = _pi_session_dir([
+        ("1970-01-11T00-00-00-000Z_other.jsonl", _pi_records("other-conversation")),
+    ], start=1_000_000.0)
+    try:
+        # 那個檔的建立與最後寫入都早於這個 process（_pi_session_dir 把 mtime 設在 start 附近，往前撥）
+        path = _os.path.join(A.PI_SESSIONS, A._pi_cwd_slug(worker["cwd"]), "1970-01-11T00-00-00-000Z_other.jsonl")
+        _os.utime(path, (900_000.0, 900_000.0))
+        assert A._pi_session_file(worker) is None
+        import agent_pi
+        assert agent_pi.turns(worker) == []
+    finally:
+        restore()
+
+
+def test_resumed_session_written_after_start_is_its_own():
+    worker, restore = _pi_session_dir([
+        ("1970-01-11T00-00-00-000Z_resumed.jsonl", _pi_records("resumed-model")),
+    ], start=1_000_000.0)
+    try:
+        path = _os.path.join(A.PI_SESSIONS, A._pi_cwd_slug(worker["cwd"]), "1970-01-11T00-00-00-000Z_resumed.jsonl")
+        _os.utime(path, (1_000_100.0, 1_000_100.0))      # created before, written after this process started
+        got = A._pi_session_file(worker)
+        assert got and got.endswith("_resumed.jsonl"), got
+    finally:
+        restore()
+
+
 if __name__ == "__main__":
     fails = []
     for name, fn in sorted(globals().items()):

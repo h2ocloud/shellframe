@@ -70,6 +70,17 @@
   的注音會先刪掉、換成選好的字。本機分頁和另一台電腦的分頁都適用。收按鍵的這台也會把 0.4 秒內重複送來的同一段字丟掉，
   所以從還沒更新的電腦打過來也不會重複。由 `tests_ime_seq.py`、`tests_ime_dedup.js`、`tests_remote_input_repeat.py` 守著。
 
+- **A new Pi tab shows only its own conversation.** Reported: a Pi agent opened in the chat view showed another
+  conversation's messages. Until a new pi tab has written its own session file, ShellBot used to take the newest file
+  in the same folder, which belonged to another conversation. Now a tab reads only a file created, or written, after
+  its own program started; before that the conversation is simply empty. Two pi tabs in the same folder that are both
+  writing still cannot be told apart (pi does not say which file is whose). Covered by `tests_pi_provider.py`.
+
+  **新開的 Pi 分頁只顯示自己的對話。** 回報：在對話模式新增一個 Pi agent，畫面帶進了別的對話內容。新的 pi 分頁還沒寫出自己的
+  對話檔之前，ShellBot 會拿同一個資料夾裡最新的檔，而那是別的對話的。現在只認這個分頁的程式啟動之後才建立、或之後才寫過的
+  檔；在那之前對話就是空的。同一個資料夾裡有兩個 pi 分頁同時在寫時，仍然分不出誰是誰（pi 不會告訴我們哪個檔是誰的）。
+  由 `tests_pi_provider.py` 守著。
+
 - **A usage window whose reset time has passed shows no pace.** Measured on the phone's usage route: two accounts
   read 74 % and 53 % with a reset already in the past, and the pace (past 100 %, clamped) called them "26 % to
   spare". Those numbers are the last window's: they are now marked as such, with no pace and no "ahead". Covered by

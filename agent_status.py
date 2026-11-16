@@ -289,8 +289,9 @@ def _pi_session_file(worker: dict):
     檔名裡的建立時刻——pi 開 session 就用當下時間命名，對得上該 process 的啟動
     時間。先只留「這個 pi process 起來之後才建立」的檔（session 中途重開會再
     生一個，取其中最新寫入的），拿不到 process 起始時間才退回整個 slug 目錄
-    取最新。⚠️ 同一個 cwd 開兩個 pi 分頁時分不出來——那要 pi 自己吐 session id
-    才有解，目前它不吐。
+    取最新。process 起來之後沒有建立也沒有寫過任何檔＝還沒開始對話，回 None，不拿
+    別的對話的檔。⚠️ 同一個 cwd 開兩個 pi 分頁、而且兩個都在寫時分不出來——那要 pi
+    自己吐 session id 才有解，目前它不吐。
     """
     files = glob.glob(os.path.join(
         PI_SESSIONS, _pi_cwd_slug(worker.get("cwd")), "*.jsonl"))
@@ -301,12 +302,22 @@ def _pi_session_file(worker: dict):
     pool = files
     if start:
         # 5 秒寬限：檔名時刻由 pi 自己蓋，與 process 起始差幾百 ms 是常態。
-        own = [f for f in files
-               if (_pi_file_epoch(os.path.basename(f)) or 0) >= start - 5]
-        pool = own or files
+        # 算這個 process 的：它起來之後才建立的檔，或它起來之後才寫過的檔（--resume
+        # 接著寫舊檔）。兩樣都沒有＝這個分頁還沒開始對話，回 None。以前這裡退回
+        # 「整個 slug 目錄最新的」，新開的 pi 分頁就顯示別的對話（回報：對話模式新增
+        # 一個 pi agent，帶進了其他對話的內容）。
+        def mine(f):
+            try:
+                written = os.path.getmtime(f)
+            except OSError:
+                return False
+            return (_pi_file_epoch(os.path.basename(f)) or 0) >= start - 5 or written >= start - 5
+        pool = [f for f in files if mine(f)]
+        if not pool:
+            return None
     try:
         return max(pool, key=os.path.getmtime)
-    except OSError:
+    except (OSError, ValueError):
         return None
 
 
