@@ -165,7 +165,7 @@ check("red_block is unchanged by the tag", bridge_home.red_block(EVS, telegram_t
 import re  # noqa: E402
 import bridge_telegram  # noqa: E402
 bad = []
-for doc in sorted((HERE / "docs").glob("*.md")) + [HERE / "INIT_PROMPT.md"]:
+for doc in sorted((HERE / "docs").glob("*.md")):
     for n, ln in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
         if bridge_home._RED_LINE.match(ln) or bridge_telegram.TelegramBridge._SIGNAL_RE.match(ln):
             bad.append(f"{doc.name}:{n}")
@@ -286,7 +286,7 @@ check("a tab opened through one ctx is known to the next", c2.tabs.phase(sid) ==
 check("the temporary tab is not a bot and its Telegram forwarding is off", api.opened[-1][2] == "connect" and api.bridge_off == [sid] and api.renamed[-1] == (sid, "Demo test"))
 check("a tab that is not there is closed", c2.tabs.phase("s999") == "closed")
 import connect_tabs  # noqa: E402
-api.sessions[sid]._startup_trust_pending, api.sessions[sid]._init_pending = True, True
+api.sessions[sid]._startup_trust_pending = True
 api._wait_until_ready = lambda sid, timeout=45: True
 kit = c2.tabs
 kit.ask(sid, "Is the way through open? Answer in one line.", 5)
@@ -296,7 +296,7 @@ for _ in range(100):
     time.sleep(0.02)
 check("ask waits for the tab, then puts the text in, with no opening prompt in front of it",
       kit.phase(sid) == "asking" and ("paste", "Is the way through open? Answer in one line.") in api.sent
-      and api.sessions[sid]._startup_trust_pending is False and api.sessions[sid]._init_pending is False)
+      and api.sessions[sid]._startup_trust_pending is False)
 api._wait_until_ready = lambda sid, timeout=45: False
 api.sessions["s60"] = Tab("claude")
 kit._phase["s60"] = "waiting_ready"

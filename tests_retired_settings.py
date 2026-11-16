@@ -12,6 +12,8 @@ rewrites the file):
       * a tab named like a master tab gets what was typed, nothing in front of it
       * closing a tab (a scheduled one, or with --handoff) writes nothing into another tab
         and sends nothing to Telegram
+  - the first-message init prompt and its text (inject_init_prompt, ui_prompt): a new AI
+    tab's first message, typed or from Telegram, goes in as it is
 
 Run: .venv/bin/python tests_retired_settings.py
 """
@@ -55,6 +57,8 @@ OLD_SETTINGS = {
     "master_turn_preamble_enabled": True,
     "master_turn_preamble": "MY DELEGATION PROTOCOL",
     "auto_delegate_enabled": True,
+    "inject_init_prompt": True,
+    "ui_prompt": "MY INIT PROMPT",
 }
 OLD_IDLE = {"enabled": False, "idle_sec": 1800, "summary_grace_sec": 120,
             "handoff_to_main": True, "handoff_on_start": True}
@@ -118,6 +122,24 @@ with mock.patch.object(main, "load_config", return_value=json.loads(json.dumps(O
         api.write_input("s1", "看一下今天的信\r")
         check(f"「{label}」: exactly the typed text reaches the CLI", written == ["看一下今天的信\r"], written)
 
+
+print("a new AI tab's first message goes in as it is")
+with mock.patch.object(main, "load_config", return_value=json.loads(json.dumps(OLD_CFG))):
+    api, written = api_with_tab("研究")
+    api.sessions["s1"]._init_pending = True          # what the old new_session armed, on a tab already ready
+    api.write_input("s1", "先")
+    api.write_input("s1", "整理一下\r")
+    check("typed: exactly the keys reach the CLI, no init prompt in front", written == ["先", "整理一下\r"], written)
+check("the init prompt's helpers are gone from Api",
+      not any(hasattr(Api, n) for n in ("consume_init_prompt_if_ready", "_get_init_prompt", "_inject_init_prompt_enabled",
+                                        "_init_inject_decision", "_is_user_content")))
+check("…and from the bridge (no INIT_PROMPT.md, no ui_prompt)",
+      not any(hasattr(bt, n) for n in ("get_ui_prompt", "load_init_prompt", "DEFAULT_UI_PROMPT", "_INIT_PROMPT_FILE"))
+      and not (HERE / "INIT_PROMPT.md").exists())
+bt_settings(dict(OLD_SETTINGS))
+tgb = bt.TelegramBridge("tg", bt.TelegramBridgeConfig(bot_token="x", allowed_users=[]), on_consume_init=lambda sid: "INIT")
+check("Telegram: a running app's on_consume_init is still accepted (sfctl reload before a restart) and kept nowhere",
+      not hasattr(tgb, "_on_consume_init"))
 
 print("closing a tab writes no note to the main tab")
 

@@ -112,7 +112,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 ## 3. Data flows
 
 - **Keystroke → PTY.** xterm `onData` → IME dedup → `pywebview.api.write_input` →
-  `Api.write_input` (backend dedup, init-prompt injection) → `Session.write`.
+  `Api.write_input` (backend dedup) → `Session.write`.
   pywebview runs each js_api call on its own thread, so input has no ordering
   guarantee across calls.
 - **PTY → UI.** Per-session reader thread fills `Session.buffer` → `output_pump.py`:

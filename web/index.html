@@ -1087,13 +1087,6 @@
             <span style="font-size:11px;color:#565f89" data-i18n="usagePaceHint">Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.</span>
           </div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="injectInitLabel">Init prompt on first message</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-inject-init"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="injectInitHint">Prepend INIT_PROMPT.md (ShellBot environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.</span>
-          </div>
-        </div>
       </div>
 
       <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
@@ -1150,15 +1143,6 @@
           </div>
           <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
           <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
-        </div>
-      </div>
-
-      <!-- Session init prompt (sent once when an AI CLI tool becomes ready) -->
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="sessionPrompt">Session prompt</label>
-        <textarea id="setting-ui-prompt" style="width:100%;min-height:90px;font-size:11px;font-family:monospace;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:6px;resize:vertical" placeholder="Shown to the AI once at session start. Empty = use shellframe default."></textarea>
-        <div style="font-size:10px;color:#565f89;margin-top:4px;line-height:1.4" data-i18n="sessionPromptHelp">
-          Injected into new AI sessions (Claude Code, Codex…) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.
         </div>
       </div>
 
@@ -1567,8 +1551,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: 'show/hide',
       completionNotifications: 'Completion notifications',
       completionNotificationsHint: 'Notify when an AI reply finishes while shellframe is not in the foreground',
-      injectInitLabel: 'Init prompt on first message',
-      injectInitHint: 'Prepend INIT_PROMPT.md (ShellBot environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
       micButtonLabel: 'Voice input button 🎙',
       micButtonHelp: 'Show a mic at the bottom-right of the terminal: record → STT → inject into the active tab with a voice tag, no more sending voice notes through Telegram.',
       voiceApplyGateLabel: 'Confirm voice before sending (Apply)',
@@ -1591,8 +1573,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       summaryWait: 'Summary wait',
       saveCleanup: 'Save cleanup',
       cleanupSaved: 'Saved',
-      sessionPrompt: 'Session prompt',
-      sessionPromptHelp: 'Injected into new AI sessions (Claude Code, Codex...) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.',
       about: 'About',
       guideBtn: 'Guide',
       aiSkillBtn: 'What the AI reads',
@@ -1725,8 +1705,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: '顯示/隱藏',
       completionNotifications: '完成通知',
       completionNotificationsHint: 'AI 回覆完成且 shellframe 不在前景時通知',
-      injectInitLabel: '首次訊息注入 INIT 提示',
-      injectInitHint: '新 AI 分頁的第一則訊息前自動前置 INIT_PROMPT.md（環境說明＋sfctl 指南）。切換後對新開的分頁生效。預設關閉。',
       micButtonLabel: '介面錄音按鈕 🎙',
       micButtonHelp: '在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。',
       voiceApplyGateLabel: '語音送出前先確認（Apply）',
@@ -1749,8 +1727,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       summaryWait: '摘要等待',
       saveCleanup: '儲存清理設定',
       cleanupSaved: '已儲存',
-      sessionPrompt: '工作階段提示',
-      sessionPromptHelp: '新 AI 工作階段（Claude Code、Codex...）收到第一則使用者訊息時會注入這段提示。留空會使用內建預設（說明 shellframe + sfctl）。修改會套用到儲存後開啟的新工作階段。',
       about: '關於',
       guideBtn: '導覽',
       aiSkillBtn: '給 AI 的說明',
@@ -7131,7 +7107,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     // Load editable prompts. Empty textarea means "use built-in default";
     // see bridge_telegram prompt helpers for resolution order.
     const s = config.settings || {};
-    document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
     document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
     document.getElementById('setting-line-prompt').value = s.line_prompt ?? '';
     // Auto /compact (Claude) — default on; threshold default 15 (%)
@@ -7170,9 +7145,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     );
     document.getElementById('setting-usage-pace').classList.toggle(
       'on', s.usage_pace !== false,          // default on
-    );
-    document.getElementById('setting-inject-init').classList.toggle(
-      'on', s.inject_init_prompt === true,
     );
     document.getElementById('setting-mic-button').classList.toggle(
       'on', s.stt_mic_button !== false,
@@ -7312,14 +7284,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       saveUsagePaceEnabled(!this.classList.contains('on'));
     });
 
-  document.getElementById('setting-inject-init')
-    .addEventListener('click', async function() {
-      this.classList.toggle('on');
-      config.settings = config.settings || {};
-      config.settings.inject_init_prompt = this.classList.contains('on');
-      await pywebview.api.save_settings(JSON.stringify(config.settings));
-    });
-
   document.getElementById('setting-mic-button')
     .addEventListener('click', async function() {
       this.classList.toggle('on');
@@ -7437,9 +7401,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     config.settings[key] = next;
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   }
-  document.getElementById('setting-ui-prompt').addEventListener('blur', (e) => {
-    _savePromptField('ui_prompt', e.target);
-  });
   document.getElementById('setting-tg-prompt').addEventListener('blur', (e) => {
     _savePromptField('tg_prompt', e.target);
   });

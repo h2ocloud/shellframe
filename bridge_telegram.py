@@ -446,65 +446,10 @@ def tg_api(token: str, method: str, data=None, timeout: float = 35) -> dict:
         return {"ok": False, "description": str(e)}
 
 
-_INIT_PROMPT_FILE = _Path(__file__).parent / "INIT_PROMPT.md"
 _DEFAULT_USER_PROMPT_PATHS = ["~/.claude/CLAUDE.md"]
 
-# Built-in defaults for the two user-editable prompts. Users override via
-# Settings UI; values persist in ~/.config/shellframe/config.json under
-# settings.{ui_prompt, tg_prompt}. Missing or empty values fall through to
-# these defaults.
-DEFAULT_UI_PROMPT = (
-    "You are running inside ShellFrame — a tabbed GUI terminal "
-    "(pywebview + xterm.js + PTY via tmux). Source lives at "
-    "`~/.local/apps/shellframe/`; you can edit it directly when the user "
-    "asks for a feature / fix / tune.\n\n"
-    "Apply changes with:\n"
-    "  • `sfctl reload` — hot-reload bridge_telegram.py / filters.json\n"
-    "  • `sfctl restart` — full restart for main.py / web/index.html / "
-    "sfctl.py (tmux sessions survive)\n"
-    "Bump `version.json` + CHANGELOG.md for anything user-visible.\n\n"
-    "Orchestration from this session via `sfctl`:\n"
-    "  • `sfctl list` / `sfctl roster`\n"
-    "  • `sfctl delegate <role> \"<task>\"` — create/reuse a configured worker and send a wrapper prompt\n"
-    "  • `sfctl new <cmd> --label X --source orchestrator --handoff`\n"
-    "  • `sfctl send <sid> \"<text>\"` / `sfctl peek <sid>`\n"
-    "  • `sfctl rename <sid> <name>` / `sfctl close <sid> --reason done --handoff`\n\n"
-    "Master / worker operating contract:\n"
-    "Treat the tab labeled `總控-*` as the master session. The master keeps "
-    "the user-facing conversation coherent, decides whether to split work, "
-    "dispatches to workers, polls them, merges results, and closes or renames "
-    "workers when done. Do not make the user manually coordinate worker tabs. "
-    "Do not hard-route user messages by keyword; first understand the request, "
-    "then use `sfctl delegate` when the task belongs in a worker.\n"
-    "Before substantial work, run `sfctl list` and decide: handle small or "
-    "dialog-heavy tasks in the master; use `CDX` workers for coding, repo "
-    "edits, local shell operations, tests, ShellFrame fixes, Jenkins/build/"
-    "debug work; use `CLD` workers for research, writing, long-context "
-    "synthesis, meeting/transcript summarization, Notion/Obsidian knowledge "
-    "organization, and ambiguous planning. Use multiple workers only for "
-    "genuinely independent subtasks.\n"
-    "Name tabs by what they do, one name with no engine code, e.g. `RFP調研`, "
-    "`LINE串接`, `時程信件` (a bot keeps its name on another CLI). Start orchestrated workers with "
-    "`--source orchestrator --handoff`. The first message to every worker "
-    "must include role, goal, inputs/paths, constraints, expected output, "
-    "what not to touch, and when to stop. Ask workers to finish with result "
-    "summary, changed files or sources checked, verification, blockers, and "
-    "whether anything should be added to memory/skill/docs. Poll with "
-    "`sfctl peek` every 20–60s and aggregate in the master before replying. "
-    "When a worker finishes, keep the tab by default for follow-up; do not "
-    "close it unless the user explicitly asks, it is broken/noisy, or tab "
-    "pressure is harming the session. Idle reaper will summarize and close "
-    "unused workers later.\n"
-    "Persistence: this prompt is injected into new AI sessions, and "
-    "ShellFrame's manifest persists labels/order/lifecycle metadata. Keep "
-    "labels meaningful. Durable workflow learnings should go to shared "
-    "project docs or Obsidian first, then mirrored into Codex/Claude memory "
-    "only when needed.\n\n"
-    "Files pasted via Cmd+V save to `~/.claude/tmp/` and the path is "
-    "appended to your input — you can Read them directly.\n\n"
-    "Acknowledge briefly and wait for the user's first message."
-)
-
+# The built-in Telegram per-message prompt; settings.tg_prompt (Settings → Advanced) replaces
+# it, and a missing or empty one falls back to this.
 _TG_PROMPT_BASE = (
     "[TG] Replying to Telegram mobile — keep responses short and "
     "skimmable: bullets > paragraphs, fence code blocks, no tables (TG "
@@ -690,15 +635,6 @@ def voice_apply_gate() -> bool:
     return _read_settings().get("voice_apply_gate", True) is not False
 
 
-def get_ui_prompt() -> str:
-    """UI-side session init prompt. User config > INIT_PROMPT.md > built-in."""
-    settings = _read_settings()
-    if "ui_prompt" in settings:
-        return (settings.get("ui_prompt") or "").strip()
-    disk = _load_init_prompt_raw()
-    return disk or DEFAULT_UI_PROMPT
-
-
 def get_tg_prompt() -> str:
     """TG per-turn preamble. User config > built-in. Empty string = built-in.
 
@@ -736,40 +672,11 @@ def load_user_instructions(max_chars: int | None = None) -> str:
     return combined
 
 
-def append_user_instructions(prompt: str, max_chars: int | None = None) -> str:
-    user_prompt = load_user_instructions(max_chars=max_chars)
-    if not user_prompt:
-        return (prompt or "").strip()
-    base = (prompt or "").strip()
-    if not base:
-        return f"## User Instructions\n\n{user_prompt}"
-    return f"{base}\n\n## User Instructions\n\n{user_prompt}"
-
-
-def _load_init_prompt_raw() -> str:
-    """Raw INIT_PROMPT.md read. Kept for migration / backward compat until
-    all callers switch to get_ui_prompt(). Empty on failure."""
-    try:
-        return _INIT_PROMPT_FILE.read_text(encoding='utf-8').strip()
-    except Exception:
-        return ""
-
-
-def load_init_prompt() -> str:
-    """Back-compat alias. Returns the resolved UI prompt (config > disk >
-    built-in default) so existing callers keep working without edits."""
-    return append_user_instructions(get_ui_prompt())
-
-
 @dataclass
 class TelegramBridgeConfig(BridgeConfigBase):
     bot_token: str = ""
     initial_prompt: str = ""
     stt_backend: str = "auto"   # auto / plugin / local / remote / off
-
-    def __post_init__(self):
-        if not self.initial_prompt:
-            self.initial_prompt = load_init_prompt()
 
 
 # ── Precompiled hot-path patterns (item 2) ──
@@ -1107,7 +1014,8 @@ class TelegramBridge(BridgeBase):
         self._on_restart = on_restart  # callback for full app restart from TG
         self._on_check_update = on_check_update  # callback for update check from TG
         self._on_new_session = on_new_session  # callback(cmd) -> sid, create new session
-        self._on_consume_init = on_consume_init  # callback(sid) -> str, init prompt if ready
+        # on_consume_init is still accepted (an app that has not restarted passes it on `sfctl
+        # reload`) and ignored: the first-message init prompt was retired.
         self._on_model_info = on_model_info  # callback(sid) -> {name,effort,provider}|None
         # callback(sid) -> (status_dict, age_s)|None — **唯讀** StatusTracker 快取。
         # 心跳的狀態行用它，禁止在裡面呼叫 status_for()（會觸發 transcript 解析）。
@@ -5876,21 +5784,7 @@ class TelegramBridge(BridgeBase):
         # Track what we send so we can filter echo from output
         track.append(forwarded)
 
-        # Inject init prompt if CLI just became ready (first user message path).
-        # Mirrors write_input's web-UI injection so TG-created AI sessions get
-        # the same system prompt. Slash commands (/model, /compact…) are NOT a
-        # first message — don't spend the init prompt on them; it stays armed
-        # for the next real message (same rule as the web-UI gate).
-        init_prompt = ""
-        if self._on_consume_init and not forwarded.lstrip().startswith("/"):
-            try:
-                init_prompt = self._on_consume_init(active_sid) or ""
-            except Exception:
-                init_prompt = ""
-        if init_prompt:
-            track.append(init_prompt)
-            payload = init_prompt + "\n\n---\nUser's first message: " + forwarded
-        elif wrap_with_preamble:
+        if wrap_with_preamble:
             preamble = get_tg_prompt()
             if preamble:
                 # Record preamble in sent_texts so echo-filter + prefix-strip
@@ -5923,10 +5817,7 @@ class TelegramBridge(BridgeBase):
                     "「讓我先讀…」這類過程說明請寫在標記外，不要包進標記，"
                     "否則手機會收到一堆半成品訊息。一個任務完成才包一次。"
                 )
-            if init_prompt:
-                payload = init_prompt + "\n\n" + marker_prompt + "\n\n---\nUser's first message: " + forwarded
-            else:
-                payload = marker_prompt + "\n\n" + payload
+            payload = marker_prompt + "\n\n" + payload
             track.append(marker_prompt)
             marker = {"start": start_marker, "end": end_marker, "prompt": marker_prompt}
         else:

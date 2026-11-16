@@ -3033,7 +3033,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 # Restore bridge enabled/disabled state from config
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
-                session._init_pending = False
                 # 這裡**不要**關掉 _startup_trust_pending。開機／重開 app 時
                 # tmux 裡那些 `claude --resume` 是剛長出來的行程，一樣會停在
                 # 資料夾信任對話框上，而且游標預設在 No, exit——沒人來答就是
@@ -3128,7 +3127,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 self.sessions[sid] = session
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
                 session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
-                session._init_pending = False
                 # soft restore 是**重新 spawn** 一個行程（機器重開、tmux 沒
                 # 了），信任對話框百分之百會出現，更不能關掉 watcher。
                 session._slug_pending = False
@@ -3413,8 +3411,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 peek_fn=lambda _s=session: bytes(_s._recent).decode('utf-8', errors='replace'),
             )
 
-        # Mark session for init prompt — only for AI CLI tools, not shells/editors/etc.
-        session._init_pending = self._inject_init_prompt_enabled() and self._should_inject_init(cmd)
         # Nudge the UI to reconcile immediately (don't wait for 1.5s bridge poll).
         # Covers sessions created via TG /new, sfctl, or any non-UI path.
         self._plugin_dispatch_session_open(sid, cmd.split()[0] if cmd else sid)
@@ -3429,21 +3425,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         except Exception:
             _swallow("Api._notify_ui_sessions_changed:2751")
 
-    @staticmethod
-    def _inject_init_prompt_enabled() -> bool:
-        """首次訊息前置 INIT_PROMPT 的全域開關，預設關（回報 2026-07-14：
-        觸發時機不對、內容已非必要）。只 gate `_init_pending` 的武裝——
-        `_should_inject_init` 本身另被 master preamble 與完成通知
-        （_arm_awaiting_response）借用為「AI 分頁」判定，不能在那裡關。
-        切換後對新開的分頁生效。"""
-        try:
-            return (load_config().get("settings", {}) or {}).get(
-                "inject_init_prompt", False) is True
-        except Exception:
-            return False
-
     def _should_inject_init(self, cmd: str) -> bool:
-        """Decide whether a session command should receive the init prompt.
+        """Whether a tab's command is an AI CLI (its turns arm completion notices; a shell,
+        an editor or a REPL does not). The name is from the retired first-message init
+        prompt; a preset's "inject_init" field still decides it.
 
         Logic:
         1. If the preset has an explicit "inject_init" field, honour it.
@@ -3467,20 +3452,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             if base in AI_CLI_TOOLS:
                 return True
         return False
-
-    def _get_init_prompt(self) -> str:
-        """Load init prompt, strip TG section if bridge not active."""
-        prompt = bridge_telegram.get_ui_prompt()
-        if not prompt:
-            return ""
-        if not self.bridge or not self.bridge.active:
-            marker = "\n## Telegram Bridge"
-            idx = prompt.find(marker)
-            if idx > 0:
-                prompt = prompt[:idx].rstrip()
-                prompt += "\n\nAcknowledge briefly and wait for the user's first message."
-        prompt = bridge_telegram.append_user_instructions(prompt)
-        return prompt
 
     def close_session(
         self,
@@ -3866,22 +3837,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 s.write("\r")
         return False
 
-    @staticmethod
-    def _is_user_content(data: str) -> bool:
-        """True when this PTY-input chunk carries real typed/pasted text, as
-        opposed to a bare Enter, a control key, or an escape sequence (arrow /
-        function keys). xterm delivers a message's text and the Enter that
-        submits it in separate write_input calls, so init-prompt injection must
-        key off the first content chunk rather than the trailing '\\r'."""
-        d = data or ""
-        if not d:
-            return False
-        if '\x1b[200~' in d:          # bracketed paste always carries content
-            return True
-        if d.startswith('\x1b'):      # escape seq (arrows, F-keys) — not content
-            return False
-        return any(ch >= ' ' for ch in d)  # any printable (non-C0) char
-
     def write_input(self, sid: str, data: str):
         s = self.sessions.get(sid)
         if not s:
@@ -3932,45 +3887,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         if '\r' in data:
             self._auto_name(sid, s, data.rstrip('\r\n'))
         # IME dedup：前端 _makeImeDedup 擋 xterm.onData 那條，上面的保底擋其餘路徑。
-        # On the first REAL user message, inject the init prompt BEFORE it.
-        #
-        # xterm.js delivers the message text and the Enter that submits it in
-        # SEPARATE write_input calls — each typed key / paste flushes on its own
-        # and Enter arrives as a bare '\r'. The old guard `'\r' in data` fired
-        # only on that bare Enter, by which point the user's text had already
-        # been written to the PTY; the prompt was then appended after it (with an
-        # empty user_text), landing INIT_PROMPT in the middle / after the user
-        # message. Trigger instead on the first content-bearing chunk and prepend
-        # the prompt to it, so INIT_PROMPT is always first and the user's text
-        # (and its later bare '\r') flow naturally after.
-        #
-        # SLASH COMMANDS ARE NOT A FIRST MESSAGE (使用者: 新分頁打 /model 被
-        # inject 一大段、指令直接壞掉). A chunk whose line starts with '/' is a
-        # CLI command (/model, /compact…) — never spend the init prompt on it.
-        # Because input arrives per-keystroke, a lone '/' must also HOLD the
-        # gate for the rest of that line (otherwise the next key 'm' would
-        # inject mid-command); the hold releases when the line is submitted.
-        if getattr(s, '_init_pending', False):
-            decision = self._init_inject_decision(s, data)
-            if decision == "inject":
-                # Check if CLI output looks like an AI tool ready for
-                # conversation (not a login screen, auth flow, shell prompt)
-                with s.lock:
-                    tail = bytes(s._recent).decode('utf-8', errors='replace')
-                clean = self._ANSI_RE.sub('', tail) if tail else ""
-                if self._AI_READY_RE.search(clean):
-                    # AI tool is ready — inject init prompt ahead of this chunk.
-                    s._init_pending = False
-                    prompt = self._get_init_prompt()
-                    if prompt:
-                        if self.bridge:
-                            slot = self.bridge.slots.get(sid)
-                            if slot:
-                                slot.sent_texts.append(prompt)
-                        s.write(prompt + "\n\n---\nUser's first message: " + data)
-                        self._arm_awaiting_response(sid, data)
-                        return
-                # Not ready yet (login/auth flow) — pass through, keep _init_pending
         s.write(data)
         self._arm_awaiting_response(sid, data)
 
@@ -4186,48 +4102,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         if hk and time.time() - hk.get("ts", 0) <= self._HOOK_TTL:
             res = self._apply_hook_state(res, hk, time.time())
         return (dict(res, prompt_at=(hk or {}).get("prompt_at", 0.0)), age)
-
-    @staticmethod
-    def _init_inject_decision(s, data: str) -> str:
-        """State machine for the web-UI init-prompt gate. Returns:
-          'inject' — first chunk of a real message: safe to prepend INIT_PROMPT
-          'pass'   — control/enter chunk, or slash-command line in progress
-        Slash-command handling: a content chunk whose line starts with '/'
-        sets _init_hold so per-keystroke follow-ups ('m','o','d'…) don't
-        inject mid-command; the hold clears once that line submits (\\r/\\n),
-        keeping _init_pending armed for the NEXT real message."""
-        submits = ('\r' in data) or ('\n' in data)
-        if getattr(s, '_init_hold', False):
-            if submits:
-                s._init_hold = False
-            return "pass"
-        if not Api._is_user_content(data):
-            return "pass"
-        if data.lstrip().startswith("/"):
-            if not submits:          # pasted "/cmd\r" completes in one chunk
-                s._init_hold = True  # typed '/': hold until the line submits
-            return "pass"
-        return "inject"
-
-    def consume_init_prompt_if_ready(self, sid: str) -> str:
-        """If session has pending init prompt AND CLI looks ready, consume and return it.
-        Used by TG bridge to inject init prompt on the first forwarded message
-        (web UI path does this inline in write_input). Returns "" if not ready
-        or no init pending, leaving state untouched so next message retries."""
-        s = self.sessions.get(sid)
-        if not s or not getattr(s, '_init_pending', False):
-            return ""
-        with s.lock:
-            tail = bytes(s._recent).decode('utf-8', errors='replace')
-        clean = self._ANSI_RE.sub('', tail) if tail else ""
-        if not self._AI_READY_RE.search(clean):
-            return ""
-        prompt = self._get_init_prompt()
-        if not prompt:
-            s._init_pending = False
-            return ""
-        s._init_pending = False
-        return prompt
 
     def is_session_ready_for_bridge(self, sid: str) -> bool:
         """Return True when a bridged AI tab is ready to receive pasted input."""
@@ -4525,7 +4399,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     on_restart=self.restart_app,
                     on_check_update=self.check_update,
                     on_new_session=lambda c: self.new_session(c, 200, 50),
-                    on_consume_init=self.consume_init_prompt_if_ready,
                     on_model_info=self.get_session_model_info,
                     on_agent_status=self._agent_status_snapshot,
                     on_input_blocked=self.startup_dialog_blocking,

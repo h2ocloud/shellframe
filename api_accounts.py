@@ -241,7 +241,6 @@ class AccountsApiMixin:
                           account_refs_authoritative=True, claude_home=claude_home)
         session._bridge_enabled = bridge_enabled
         session._glasses_enabled = glasses_enabled
-        session._init_pending = False
         # 換帳號＝把行程砍掉重開，等同全新啟動，信任對話框會再問一次。
         session._slug_pending = False
         session._lifecycle_source = lifecycle_source
