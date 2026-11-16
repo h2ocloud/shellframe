@@ -12,12 +12,19 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 
 | Feature | Description |
 |---|---|
-| **Bots** (experimental) | Every tab's light is a bot face (shape + colour = identity, expression = state). A tab can become a bot with a job, skills and memory written before it closes; a primary bot on top takes stock and dispatches; drag bots on and off the primary card. [docs/bots.md](docs/bots.md) |
+| **Chat view** | A tab can show a conversation instead of a terminal: replies line up one by one, tool calls collapse into a single line, and what needs your decision becomes buttons. Drop images and files into the input box. Each tab has a Chat / Terminal switch (`Cmd+Shift+M`); Settings → Interface style sets the default. |
+| **Bots** (experimental) | Every AI tab starts as a temporary bot; press **Keep** and it becomes a bot with a name, a face, a job, skills and a memory folder it writes before it closes. Switch its CLI or model later and the name, face and memory stay. [docs/bots.md](docs/bots.md) |
+| **Faces** | Shape and colour are who a bot is (12 shapes, 14 colours); the expression is what it is doing: working, waiting on you (`?`), stuck, done, writing memory, resting. |
+| **Primary bot** | The card at the top of the sidebar: it takes stock of who is busy, stuck or waiting on you, and hands the work to the right bot. Dispatching needs bot-to-bot messaging (A2A), an experimental switch that is off by default. |
+| **"Needs your decision"** | A bot's question and its numbered options reach your phone or Telegram; one tap answers that bot. |
+| **iPhone / iPad app** | Pairs with your computer through Frame Link (Tailscale when you are off your network): bot list, chat view, one-tap answers. Not on the App Store; developer install only. [docs/mobile-link.md](docs/mobile-link.md) |
+| **Supported CLIs** | Claude Code, Codex, Grok Build, OpenCode, Pi, Cursor and Antigravity are built in; any other terminal command opens as a tab too. Usage display for most of them. |
+| **Connect** | Settings → Connect lists which services are linked. Gmail links through a Claude account connector or a local MCP with the minimum read-only permission; ShellBot itself neither reads nor stores any mail. [docs/connectors.md](docs/connectors.md) |
 | **Image/file paste** | `Cmd+V` screenshots, Finder files, or drag & drop. Preview bar + auto-attach on Enter. |
 | **Multi-tab** | Multiple CLI sessions side by side. Named tabs, drag reorder. |
-| **tmux persistence** | Sessions run inside tmux. Close ShellFrame → reopen → all tabs and scrollback survive. |
+| **tmux persistence** | Sessions run inside tmux. Close ShellBot → reopen → all tabs and scrollback survive. (Windows restores the tab list; Claude Code and Codex reattach to their conversation, scrollback is not kept.) |
 | **Telegram bridge** | One TG bot routes across all sessions. `/list`, `/1 /2` to switch, voice messages (STT), file/photo forwarding. |
-| **AI busy indicator** | Pulsing orange dot when a session is actively working. Pink dot when waiting on a permission dialog. |
+| **Status lights** | Each AI tab shows whether it is working, waiting on you, stuck or done, read from the CLI's own conversation log and the screen. |
 | **Session rename** | Double-click tab or sidebar to name sessions. Syncs to TG `/list`. |
 | **Ctrl+Click file paths** | Click local file paths in terminal output to open in default app. |
 | **Right-click copy/paste** | Select → right-click = copy. Nothing selected → right-click opens a small menu, and Paste pastes only when you pick it (a right-click never pastes by itself). |
@@ -28,9 +35,39 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **Auto-update** | Startup check + one-click update. TG `/update` and `/update_now` for remote management. |
 | **i18n** | English + 繁體中文. Auto-detects OS language. |
 
+<details>
+<summary>繁體中文</summary>
+
+| 功能 | 說明 |
+|---|---|
+| **對話畫面** | 分頁可以改看對話而不是終端機：AI 的回覆一則一則排好，工具呼叫收成一行，要你決定的事變成按鈕。圖片和檔案可以直接拖進輸入框。每個分頁有「對話／終端機」切換鈕（`Cmd+Shift+M`），設定 → 介面風格決定預設。 |
+| **Bots**（實驗） | 每個 AI 分頁一開就是臨時 bot；按「記住」就變成有名字、有臉、有執掌和 skill、有自己記憶資料夾的 bot，關閉前會自己寫記憶。之後換 CLI 或模型，名字、臉和記憶都留著。[docs/bots.md](docs/bots.md) |
+| **臉** | 形狀和顏色是 bot 的身分（12 種形狀、14 種顏色），表情是它在做什麼：做事、等你決定（`?`）、卡住、做完、寫記憶、休息。 |
+| **主要 bot** | 側欄最上面那張卡片：先盤點誰在忙、誰卡住、誰在等你，再把工作派給對的 bot。派工要用到「bot 之間傳話（A2A）」，這是預設關閉的實驗開關。 |
+| **「要你決定」** | bot 的提問連同編號選項送到手機或 Telegram，一按就回答那個 bot。 |
+| **iPhone／iPad App** | 透過 Frame Link 和你的電腦配對（不在同一個網路時用 Tailscale）：bot 清單、對話畫面、一按就回答。還沒上 App Store，目前只能由開發者安裝。[docs/mobile-link.md](docs/mobile-link.md) |
+| **支援的 CLI** | 內建 Claude Code、Codex、Grok Build、OpenCode、Pi、Cursor、Antigravity；其他終端機指令也能開成分頁。大部分有額度顯示。 |
+| **連接** | 設定 →「連接」列出每個服務接上了沒。Gmail 可以用 Claude 帳號的連接器或本機 MCP 接，只要讀信的最小權限；ShellBot 本身不讀、不存任何信件。[docs/connectors.md](docs/connectors.md) |
+| **圖片／檔案貼上** | `Cmd+V` 貼截圖、Finder 檔案，或拖放。預覽列顯示，按 Enter 時自動附上。 |
+| **多分頁** | 多個 CLI 工作階段並排。分頁可命名、拖曳排序。 |
+| **tmux 持久化** | 工作階段跑在 tmux 裡。關掉 ShellBot 再打開，所有分頁和捲動紀錄都還在。（Windows 保留分頁清單，Claude Code、Codex 會接回對話，捲動紀錄不會留。） |
+| **Telegram 橋接** | 一個 Telegram bot 串起所有工作階段：`/list`、`/1 /2` 切換、語音訊息（STT）、檔案和照片轉傳。 |
+| **狀態燈** | 每個 AI 分頁顯示它是在做事、等你、卡住還是做完，從 CLI 自己的對話紀錄和畫面判斷。 |
+| **工作階段改名** | 雙擊分頁或側欄命名，同步到 TG `/list`。 |
+| **Ctrl+點擊檔案路徑** | 點終端機輸出裡的本機檔案路徑，用預設程式打開。 |
+| **右鍵複製／貼上** | 選取後右鍵 = 複製。沒有選取時右鍵會開一個小選單，要選「貼上」才會貼（右鍵本身不會貼）。 |
+| **預設指令** | 帶 emoji 圖示的常用指令，可拖曳排序。 |
+| **設定分頁** | 一般（字型、介面大小 S/M/L、語言）和 Telegram 橋接（連線、STT 供應商）。 |
+| **兩段式重載** | 改介面 → 熱重載；改 Python → 完整重啟並提示分頁已保留。 |
+| **跨平台** | macOS（WKWebView）、Windows（Edge WebView2）、Linux（GTK WebView）。 |
+| **自動更新** | 啟動時檢查，一鍵更新。Telegram 用 `/update`、`/update_now` 遠端管理。 |
+| **多語系** | 英文＋繁體中文，依作業系統語言自動切換。 |
+
+</details>
+
 ## Install
 
-**One URL, any device** — open **https://h2ocloud.github.io/shellframe/**. It detects your OS and shows the right command with a copy button. Re-running the same command later updates ShellFrame in place.
+**One URL, any device** — open **https://h2ocloud.github.io/shellframe/#install** (the product page, in English and 繁體中文). It detects your OS and shows the right command with a copy button. Re-running the same command later updates ShellBot in place.
 
 Prefer to copy directly:
 

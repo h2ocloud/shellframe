@@ -6,7 +6,7 @@ a couple of macOS-only conveniences have to settle for less. This page is the
 
 ## Install
 
-Easiest: open **https://h2ocloud.github.io/shellframe/** and copy the Windows
+Easiest: open **https://h2ocloud.github.io/shellframe/#install** and copy the Windows
 command. Or run directly in **PowerShell**:
 
 ```powershell

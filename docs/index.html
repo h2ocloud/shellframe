@@ -1,227 +1,1179 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en" data-lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ShellFrame — 安裝</title>
-<meta name="description" content="ShellFrame：AI coding 助手的多分頁 GUI 終端機。一個指令完成安裝與更新。">
+<title>ShellBot — your AI CLIs as a team of bots</title>
+<meta name="description" content="ShellBot (formerly ShellFrame) runs every AI CLI in its own tab, lets you work with them like a chat, and turns tabs into bots with a face, a memory and a primary bot that dispatches. Features, supported CLIs and a one-line install for macOS, Windows and Linux.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ShellBot — your AI CLIs as a team of bots">
+<meta property="og:description" content="Every AI CLI in its own tab, chat view, bots with faces and memory, a primary bot that dispatches. One-line install for macOS, Windows and Linux.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23A15BF0' stroke='%23A15BF0' stroke-width='14' stroke-linejoin='round' d='M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z'/%3E%3Crect x='38' y='47.5' width='8' height='15' rx='4' fill='%23fff'/%3E%3Crect x='54' y='47.5' width='8' height='15' rx='4' fill='%23fff'/%3E%3C/svg%3E">
 <style>
-  :root{
-    --bg:#0d1017; --panel:#151a23; --panel2:#1b2230; --line:#262e3d;
-    --fg:#e6e9ef; --dim:#9aa4b6; --accent:#ff8a3d; --accent2:#5ec8ff;
-    --ok:#5fd28a; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+:root{
+  --bg:#f5f6fa; --bg2:#eceff5; --panel:#ffffff; --panel2:#f3f5f9; --line:#dfe3ec;
+  --fg:#161a22; --dim:#555e70; --faint:#868fa2;
+  --accent:#d9660f; --accent-soft:#fdebdc; --accent-ink:#ffffff; --accent2:#1b6fc2;
+  --ok:#167a43; --ok-bg:#dff3e7; --part:#9a5f00; --part-bg:#fbefd2; --no:#b0303a; --no-bg:#fae3e4;
+  --term:#0f131b; --term-fg:#e3e8f1; --term-line:#283042; --term-dim:#8d97aa;
+  --q-ring:#d4d9e4; --shadow:0 14px 34px -22px rgba(25,35,70,.45);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei","Noto Sans TC",Roboto,Helvetica,Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1017; --bg2:#111520; --panel:#151a23; --panel2:#1b2230; --line:#262e3d;
+    --fg:#e6e9ef; --dim:#9aa4b6; --faint:#6f7a8e;
+    --accent:#ff8a3d; --accent-soft:#33210f; --accent-ink:#1a1205; --accent2:#5ec8ff;
+    --ok:#5fd28a; --ok-bg:#15301f; --part:#f0b44c; --part-bg:#33280f; --no:#ff7a82; --no-bg:#3a1a1e;
+    --term:#0a0d13; --term-fg:#dfe6f1; --term-line:#262e3d; --term-dim:#8d97aa;
+    --q-ring:#3a4356; --shadow:0 18px 50px -28px rgba(0,0,0,.85);
+    color-scheme:dark;
   }
-  *{box-sizing:border-box}
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC",Roboto,Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;line-height:1.6}
-  a{color:var(--accent2);text-decoration:none}
-  a:hover{text-decoration:underline}
-  .wrap{max-width:760px;margin:0 auto;padding:56px 22px 72px}
-  header{text-align:center;margin-bottom:34px}
-  .logo{font-size:40px;font-weight:800;letter-spacing:-.02em}
-  .logo .br{color:var(--accent)}
-  .tag{color:var(--dim);margin-top:8px;font-size:16px}
-  .os-detect{margin:30px 0 14px;text-align:center;color:var(--dim);font-size:14px}
-  .os-detect b{color:var(--fg)}
-  .tabs{display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
-  .tab{background:var(--panel);border:1px solid var(--line);color:var(--dim);
-    padding:9px 18px;border-radius:999px;cursor:pointer;font-size:14px;font-weight:600;
-    transition:.15s}
-  .tab:hover{color:var(--fg)}
-  .tab.active{background:var(--accent);border-color:var(--accent);color:#1a1205}
-  .cmdbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-    padding:18px 18px 16px;box-shadow:0 18px 50px -28px rgba(0,0,0,.8)}
-  .cmd-row{display:flex;align-items:stretch;gap:10px}
-  .cmd{flex:1;min-width:0;background:#0a0d13;border:1px solid var(--line);border-radius:10px;
-    padding:14px 16px;font-family:var(--mono);font-size:13.5px;color:#dfe6f1;
-    overflow-x:auto;white-space:nowrap}
-  .cmd .pr{color:var(--accent);user-select:none}
-  .copy{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--fg);
-    border-radius:10px;padding:0 18px;cursor:pointer;font-weight:700;font-size:13.5px;
-    min-width:78px;transition:.15s}
-  .copy:hover{border-color:var(--accent2)}
-  .copy.done{background:var(--ok);border-color:var(--ok);color:#06210f}
-  .hint{margin-top:12px;color:var(--dim);font-size:13px;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
-  .hint code{font-family:var(--mono);background:#0a0d13;border:1px solid var(--line);
-    padding:1px 6px;border-radius:6px;color:#cdd6e4;font-size:12px}
-  .update-note{margin:22px 0 0;background:var(--panel2);border:1px solid var(--line);
-    border-left:3px solid var(--accent);border-radius:10px;padding:13px 16px;color:var(--dim);font-size:14px}
-  .update-note b{color:var(--fg)}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:30px}
-  @media(max-width:560px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-  .card h3{margin:0 0 8px;font-size:14px;color:var(--accent2);font-weight:700;letter-spacing:.02em}
-  .card ul{margin:0;padding-left:18px;color:var(--dim);font-size:13.5px}
-  .card li{margin:5px 0}
-  details{margin-top:26px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:4px 18px}
-  details[open]{padding-bottom:14px}
-  summary{cursor:pointer;padding:14px 0;font-weight:700;font-size:15px;list-style:none}
-  summary::-webkit-details-marker{display:none}
-  summary::before{content:"›";color:var(--accent);margin-right:10px;display:inline-block;transition:.15s}
-  details[open] summary::before{transform:rotate(90deg)}
-  .tb{font-size:13.5px;color:var(--dim)}
-  .tb b{color:var(--fg)}
-  .tb p{margin:10px 0}
-  .tb code{font-family:var(--mono);background:#0a0d13;border:1px solid var(--line);
-    padding:1px 6px;border-radius:6px;color:#cdd6e4;font-size:12px}
-  footer{text-align:center;margin-top:40px;color:var(--dim);font-size:13px}
-  .hide{display:none}
+}
+:root[data-theme="dark"]{
+  --bg:#0d1017; --bg2:#111520; --panel:#151a23; --panel2:#1b2230; --line:#262e3d;
+  --fg:#e6e9ef; --dim:#9aa4b6; --faint:#6f7a8e;
+  --accent:#ff8a3d; --accent-soft:#33210f; --accent-ink:#1a1205; --accent2:#5ec8ff;
+  --ok:#5fd28a; --ok-bg:#15301f; --part:#f0b44c; --part-bg:#33280f; --no:#ff7a82; --no-bg:#3a1a1e;
+  --term:#0a0d13; --term-fg:#dfe6f1; --term-line:#262e3d; --term-dim:#8d97aa;
+  --q-ring:#3a4356; --shadow:0 18px 50px -28px rgba(0,0,0,.85);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent2);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:var(--mono);font-size:.88em;background:var(--panel2);border:1px solid var(--line);padding:1px 6px;border-radius:6px;word-break:break-word}
+h1,h2,h3,h4{line-height:1.3;margin:0}
+p{margin:.5em 0}
+.wrap{max-width:1100px;margin:0 auto;padding:0 24px}
+.hide{display:none!important}
+
+/* ── header & tabs ── */
+header.top{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+@supports (backdrop-filter:blur(8px)){header.top{background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(12px)}}
+.top-row{display:flex;align-items:center;gap:12px;min-height:58px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--fg);font-weight:800;font-size:19px;letter-spacing:-.01em}
+.brand:hover{text-decoration:none}
+.brand .face{width:32px;height:32px}
+.brand small{font-weight:500;color:var(--dim);font-size:12.5px;letter-spacing:0}
+.spacer{flex:1}
+.theme-btn{flex:none;background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:999px;height:34px;padding:0 12px;font:600 13px var(--sans);cursor:pointer;display:flex;align-items:center;gap:6px}
+.theme-btn:hover{border-color:var(--accent2)}
+nav.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:0 0 10px}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs a{flex:none;padding:7px 15px;border-radius:999px;color:var(--dim);font-weight:650;font-size:14.5px;white-space:nowrap;border:1px solid transparent}
+nav.tabs a:hover{color:var(--fg);text-decoration:none;border-color:var(--line)}
+nav.tabs a[aria-selected="true"]{background:var(--fg);color:var(--bg)}
+
+/* ── panels ── */
+.panel{display:none;padding:30px 0 64px}
+.panel.on{display:block}
+.eyebrow{font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.04em}
+h2.sec{font-size:clamp(24px,3.4vw,32px);letter-spacing:-.01em;margin:4px 0 10px}
+h3.sub{font-size:20px;margin:40px 0 12px}
+.lead{font-size:17px;color:var(--dim);max-width:760px}
+.muted{color:var(--dim)}
+.small{font-size:13.5px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))}
+.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow);min-width:0}
+.card h4{font-size:16.5px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.card p,.card li{color:var(--dim);font-size:14.5px}
+.card ul,.card ol{margin:6px 0 0;padding-left:20px}
+.card li{margin:5px 0}
+.card .face{width:34px;height:34px;flex:none}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.pill.warn{background:var(--part-bg);color:var(--part);border-color:transparent}
+.pill.good{background:var(--ok-bg);color:var(--ok);border-color:transparent}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:0 6px;border-radius:5px;margin-right:4px;vertical-align:1px;line-height:18px}
+.tag.off{background:var(--ok-bg);color:var(--ok)}
+.tag.judge{background:var(--part-bg);color:var(--part)}
+.tag.self{background:var(--accent-soft);color:var(--accent)}
+.note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;padding:13px 16px;color:var(--dim);font-size:14.5px;margin:16px 0}
+.note b{color:var(--fg)}
+.note.blue{border-left-color:var(--accent2)}
+
+/* ── hero ── */
+.hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:28px;align-items:center;padding:12px 0 8px}
+.hero h1{font-size:clamp(32px,5.2vw,52px);letter-spacing:-.02em;margin:6px 0 14px}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.hero .lead{font-size:18px}
+.cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:12px;font-weight:700;font-size:15px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+.btn:hover{text-decoration:none;border-color:var(--accent2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.troupe{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:22px 18px 16px;box-shadow:var(--shadow)}
+.troupe-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 6px;justify-items:center}
+.troupe-row figure{margin:0;text-align:center}
+.troupe-row .face{width:clamp(48px,9vw,74px);height:clamp(48px,9vw,74px)}
+.troupe-row figcaption{font-size:12.5px;color:var(--dim);margin-top:2px}
+.troupe .primary-face{display:flex;flex-direction:column;align-items:center;margin-bottom:10px}
+.troupe .primary-face .face{width:clamp(70px,13vw,104px);height:clamp(70px,13vw,104px)}
+.troupe .primary-face b{font-size:14px}
+.troupe .primary-face span{font-size:12px;color:var(--dim)}
+
+/* ── face (decorative, inline SVG) ── */
+.face{display:block;overflow:visible}
+.face .eyes rect,.face .lid{fill:#fff}
+.face .arc{fill:none;stroke:#fff;stroke-width:5;stroke-linecap:round}
+.face .q circle{fill:#fff;stroke:var(--q-ring);stroke-width:2}
+.face .q text{fill:#1a1b26;font:900 22px/1 -apple-system,"Helvetica Neue",Arial,sans-serif;text-anchor:middle}
+.face .zz{fill:#a9b1d6;font:900 20px/1 -apple-system,"Helvetica Neue",Arial,sans-serif;text-anchor:middle}
+.face .sweat{fill:#8fd3ff}
+.face .pen{fill:#e0af68}
+.face .badge circle{fill:#ff9e64;stroke:var(--panel);stroke-width:4}
+.face .badge path{fill:#fff}
+.face .eyes{transform-box:fill-box;transform-origin:center;animation:blink 5.2s infinite}
+.face.working .rig{animation:bob .95s ease-in-out infinite}
+.face.working .eyes{animation:scan 1.9s ease-in-out infinite}
+.face.decision .q{transform-box:fill-box;transform-origin:center;animation:qpop 2.4s ease-in-out infinite}
+.face.stuck .sweat{animation:drip 2.2s ease-in infinite}
+.face.stuck .rig{animation:shiver 3.4s infinite}
+.face.asleep .zz{animation:zz 2.8s ease-in-out infinite}
+.face.asleep .rig{opacity:.62}
+.face.writing .pen{transform-box:fill-box;transform-origin:left center;animation:scribble .7s ease-in-out infinite alternate}
+.face.done .rig{animation:bob 2.6s ease-in-out infinite}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.12)}}
+@keyframes scan{0%,100%{transform:translateX(-3px)}50%{transform:translateX(3px)}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes qpop{0%,100%{transform:scale(1) rotate(0)}50%{transform:scale(1.12) rotate(8deg)}}
+@keyframes drip{0%{transform:translateY(-3px);opacity:0}25%{opacity:1}100%{transform:translateY(10px);opacity:0}}
+@keyframes shiver{0%,88%,100%{transform:translateX(0)}90%{transform:translateX(-2px)}94%{transform:translateX(2px)}}
+@keyframes zz{0%,100%{transform:translateY(0);opacity:.35}50%{transform:translateY(-6px);opacity:1}}
+@keyframes scribble{from{transform:rotate(-4deg)}to{transform:rotate(6deg)}}
+@media (prefers-reduced-motion: reduce){.face *{animation:none!important}}
+
+/* ── feature list ── */
+.features{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));margin-top:30px}
+.feature{display:flex;gap:14px;align-items:flex-start}
+.feature .ico{flex:none;width:44px;height:44px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center}
+.feature .ico .face{width:30px;height:30px}
+.feature h4{font-size:16px;margin:0 0 3px;display:block}
+.feature p{margin:0}
+
+/* ── screenshots ── */
+.shots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin-top:18px;align-items:start}
+.shot{margin:0;min-width:0}
+.shot .frame{display:block;aspect-ratio:1/2;overflow:hidden;border-radius:26px;border:1px solid var(--line);background:var(--panel2);box-shadow:var(--shadow)}
+.shot .frame.desk{border-radius:14px;background:#1a1b26}
+.shot img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
+.shot figcaption{font-size:13.5px;color:var(--dim);margin-top:10px;line-height:1.55}
+.shot figcaption b{color:var(--fg)}
+.shot .kind{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--accent2);margin-bottom:2px}
+.inline-shot{margin:0;max-width:340px}
+.inline-shot img{display:block;width:100%;height:auto;border-radius:16px;border:1px solid var(--line);box-shadow:var(--shadow)}
+.inline-shot figcaption{font-size:13px;color:var(--dim);margin-top:8px}
+.split{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:26px;align-items:start}
+
+/* ── install ── */
+.os-detect{color:var(--dim);font-size:14.5px;margin:18px 0 10px}
+.os-detect b{color:var(--fg)}
+.ostabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.ostab{background:var(--panel);border:1px solid var(--line);color:var(--dim);padding:8px 18px;border-radius:999px;cursor:pointer;font:650 14px var(--sans)}
+.ostab:hover{color:var(--fg)}
+.ostab.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.cmdbox{background:var(--term);border:1px solid var(--term-line);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
+.cmd-row{display:flex;align-items:stretch;gap:10px}
+.cmd{flex:1;min-width:0;background:rgba(255,255,255,.03);border:1px solid var(--term-line);border-radius:10px;padding:13px 15px;font-family:var(--mono);font-size:13.5px;color:var(--term-fg);overflow-x:auto;white-space:nowrap}
+.cmd .pr{color:#ff8a3d;user-select:none;-webkit-user-select:none}
+.copy{flex:none;background:#1b2230;border:1px solid var(--term-line);color:#e6e9ef;border-radius:10px;padding:0 18px;cursor:pointer;font:700 14px var(--sans);min-width:84px}
+.copy:hover{border-color:#5ec8ff}
+.copy.done{background:#5fd28a;border-color:#5fd28a;color:#06210f}
+.hint{margin-top:11px;color:var(--term-dim);font-size:13.5px}
+.hint code{background:rgba(255,255,255,.06);border-color:var(--term-line);color:var(--term-fg)}
+.hint b{color:var(--term-fg)}
+.steps{list-style:none;padding:0;margin:14px 0 0;counter-reset:s}
+.steps>li{position:relative;padding:0 0 18px 50px;counter-increment:s}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-weight:800;display:grid;place-items:center;font-size:15px}
+.steps>li::after{content:"";position:absolute;left:15px;top:36px;bottom:4px;width:2px;background:var(--line)}
+.steps>li:last-child::after{display:none}
+.steps>li.opt::before{background:var(--panel2);color:var(--dim);border:1px solid var(--line)}
+.steps h4{font-size:16px;margin:4px 0 2px}
+.steps p{margin:2px 0;color:var(--dim);font-size:14.5px}
+details.tb{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:2px 18px}
+details.tb[open]{padding-bottom:12px}
+details.tb summary{cursor:pointer;padding:12px 0;font-weight:700;list-style:none}
+details.tb summary::-webkit-details-marker{display:none}
+details.tb summary::before{content:"›";color:var(--accent);margin-right:10px;display:inline-block;transition:.15s}
+details.tb[open] summary::before{transform:rotate(90deg)}
+details.tb p{font-size:14px;color:var(--dim);margin:8px 0}
+details.tb b{color:var(--fg)}
+
+/* ── tables ── */
+.tbl-wrap{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+table.t{width:100%;border-collapse:collapse;font-size:14.5px}
+table.t th,table.t td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.t thead th{background:var(--panel2);font-size:13px;color:var(--dim);font-weight:700}
+table.t tbody tr:last-child td,table.t tbody tr:last-child th{border-bottom:none}
+table.t tbody th{font-weight:750;white-space:nowrap}
+table.t tbody th small{display:block;font-weight:500;color:var(--faint);font-size:12px;white-space:normal}
+table.t td .n{display:block;color:var(--dim);font-size:12.5px;line-height:1.45;margin-top:3px}
+.m{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;font-weight:800;font-size:13px;vertical-align:-5px}
+.m.ok{background:var(--ok-bg);color:var(--ok)}
+.m.part{background:var(--part-bg);color:var(--part)}
+.m.no{background:var(--no-bg);color:var(--no)}
+.m.unk{background:var(--panel2);color:var(--dim);border:1px solid var(--line)}
+tr.other th,tr.other td{background:var(--panel2)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px;color:var(--dim);margin-top:12px}
+table.cmp td{width:42%}
+table.cmp tbody th{width:16%;white-space:normal}
+table.cmp td .n{font-size:12.5px}
+@media (max-width:860px){
+  table.t thead{display:none}
+  table.t,table.t tbody,table.t tr,table.t th,table.t td{display:block;width:auto!important}
+  table.t tr{border-bottom:1px solid var(--line);padding:6px 0}
+  table.t tbody tr:last-child{border-bottom:none}
+  table.t th,table.t td{border-bottom:none;padding:5px 16px}
+  table.t tbody th{font-size:16px;padding-top:12px;white-space:normal}
+  table.t td{position:relative;padding-left:calc(16px + 7.4em)}
+  html[data-lang="en"] table.t td::before{content:attr(data-l-en)}
+  html[data-lang="zh"] table.t td::before{content:attr(data-l-zh)}
+  table.t td::before{position:absolute;left:16px;top:6px;width:6.8em;color:var(--faint);font-size:12.5px;font-weight:700;line-height:1.4}
+  table.t td .m{float:left;margin:1px 8px 0 0}
+  table.t td .n{overflow:hidden;margin-top:2px;font-size:13px}
+  table.t td::after{content:"";display:block;clear:both}
+  table.cmp td{padding-left:calc(16px + 5.6em)}
+  table.cmp td::before{width:5em}
+}
+
+/* ── comparison cards ── */
+.pc{border-top:4px solid var(--line)}
+.pc.grok{border-top-color:#8b90a0}
+.pc.sb{border-top-color:var(--accent)}
+.pc h4 .who{font-size:12px;font-weight:700;color:var(--dim)}
+.pc ul{list-style:none;padding:0}
+.pc li{padding-left:22px;position:relative}
+.pc li::before{position:absolute;left:0;top:0;font-weight:800}
+.pc.plus li::before{content:"＋";color:var(--ok)}
+.pc.minus li::before{content:"－";color:var(--no)}
+blockquote.quote{margin:22px 0;padding:18px 20px;background:var(--accent-soft);border-radius:16px;font-size:16.5px;line-height:1.75;color:var(--fg)}
+blockquote.quote cite{display:block;font-style:normal;font-size:13px;color:var(--dim);margin-top:8px}
+
+/* ── diagrams ── */
+.dg{display:block;width:100%;height:auto;max-width:440px;margin:0 auto}
+.dg text{fill:var(--fg);font:600 13.5px var(--sans)}
+.dg .t-sub{fill:var(--dim);font-weight:500;font-size:12px}
+.dg .t-dim{fill:var(--faint);font-weight:600;font-size:11.5px}
+.dg .t-acc{fill:var(--accent);font-weight:700}
+.dg .t-acc2{fill:var(--accent2);font-weight:700;font-size:12px}
+.dg .box{fill:var(--panel);stroke:var(--line);stroke-width:1.5}
+.dg .box2{fill:var(--panel2);stroke:var(--line);stroke-width:1.5}
+.dg .box-acc{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.dg .box-cloud{fill:var(--panel2);stroke:var(--faint);stroke-width:1.5;stroke-dasharray:5 4}
+.dg .chip{fill:var(--panel);stroke:var(--line);stroke-width:1.2}
+.dg .ln{stroke:var(--accent2);stroke-width:2;fill:none}
+.dg .ln-dash{stroke:var(--faint);stroke-width:1.6;fill:none;stroke-dasharray:4 4}
+.dg .ln-acc{stroke:var(--accent);stroke-width:2;fill:none}
+.dg .ah{fill:var(--accent2)}
+.dg .ah-acc{fill:var(--accent)}
+.diagram-card{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 14px;box-shadow:var(--shadow)}
+.diagram-card figcaption{font-size:13px;color:var(--dim);margin-top:10px;text-align:center}
+
+/* ── glossary ── */
+.gloss .card h4{font-size:17px}
+.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.flow>div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;position:relative;min-width:0}
+.flow b{display:block;font-size:15px;margin-bottom:4px}
+.flow span{font-size:13.5px;color:var(--dim)}
+.flow .face{width:30px;height:30px;margin-bottom:6px}
+.wip{margin-top:36px;border:1.5px dashed var(--accent);border-radius:16px;padding:18px 20px;background:var(--accent-soft)}
+.wip h4{font-size:17px;margin-bottom:4px}
+.wip p{margin:0;color:var(--fg)}
+
+footer.foot{border-top:1px solid var(--line);padding:22px 0 36px;color:var(--dim);font-size:13px}
+footer.foot a{color:var(--dim);text-decoration:underline}
+
+@media (max-width:900px){
+  .hero{grid-template-columns:minmax(0,1fr)}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .flow{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:760px){
+  .shots{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 16px;gap:14px;padding-bottom:8px;margin-left:-16px;margin-right:-16px;padding-left:16px;padding-right:16px}
+  .shot{flex:0 0 74%;scroll-snap-align:start}
+  .swipe-hint{display:block!important}
+}
+@media (max-width:600px){
+  .wrap{padding:0 16px}
+  body{font-size:15.5px}
+  .brand small{display:none}
+  .theme-btn .lbl{display:none}
+  .cmd-row{flex-direction:column}
+  .copy{min-height:42px}
+  .card{padding:16px}
+  .steps>li{padding-left:44px}
+  .flow{grid-template-columns:minmax(0,1fr)}
+  .inline-shot{max-width:100%}
+}
+.swipe-hint{display:none;font-size:12.5px;color:var(--faint);margin-top:4px}
+
+/* ── language switch: every visible string is written twice, once per language ── */
+html[data-lang="en"] .zh{display:none!important}
+html[data-lang="zh"] .en{display:none!important}
+.lang-btn{flex:none;background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:999px;height:34px;padding:0 14px;font:700 13px var(--sans);cursor:pointer}
+.lang-btn:hover{border-color:var(--accent2)}
+.shots.two{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px}
+html[data-lang="en"] .hero h1{font-size:clamp(30px,4.4vw,44px)}
+html[data-lang="en"] .os-detect b{margin-left:.35em}
+@media (max-width:860px){
+  table.t td{min-height:44px}
+  html[data-lang="en"] table.t td{padding-left:calc(16px + 9.4em)}
+  html[data-lang="en"] table.t td::before{width:8.6em}
+}
+.more .card h4{margin-bottom:4px}
+.more .card p{margin:0}
+details.tb.wide{margin-top:16px}
+
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="logo">Shell<span class="br">Frame</span></div>
-    <div class="tag">AI coding 助手的多分頁 GUI 終端機 · 截圖貼上、Telegram 橋接、session 持久化</div>
-  </header>
+<header class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <a class="brand" href="#overview" aria-label="ShellBot overview" data-zh-aria="ShellBot 總覽">
+        <svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g></svg>
+        <span>ShellBot <small><span class="en">formerly ShellFrame · Desktop v0.44.6</span><span class="zh">原名 ShellFrame · 桌面版 v0.44.6</span></small></span>
+      </a>
+      <span class="spacer"></span>
+      <button class="lang-btn" id="lang-btn" type="button" aria-label="Switch language" data-zh-aria="切換語言"><span class="en" lang="zh-Hant">繁體中文</span><span class="zh" lang="en">English</span></button>
+      <button class="theme-btn" id="theme-btn" type="button" aria-label="Switch dark / light" data-zh-aria="切換深色／淺色"><span aria-hidden="true">◐</span><span class="lbl"><span class="en">Theme</span><span class="zh">深淺色</span></span></button>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Page sections" data-zh-aria="頁面分頁">
+      <a href="#overview" role="tab" data-tab="overview"><span class="en">Overview</span><span class="zh">總覽</span></a>
+      <a href="#install" role="tab" data-tab="install"><span class="en">Install</span><span class="zh">安裝</span></a>
+      <a href="#cli" role="tab" data-tab="cli"><span class="en">Supported CLIs</span><span class="zh">支援的 CLI</span></a>
+      <a href="#model" role="tab" data-tab="model"><span class="en">Bots &amp; tabs</span><span class="zh">Bot 與分頁</span></a>
+    </nav>
+  </div>
+</header>
 
-  <div class="os-detect">偵測到你的系統：<b id="os-name">…</b></div>
+<main class="wrap">
 
-  <div class="tabs">
-    <button class="tab" data-os="unix">macOS / Linux</button>
-    <button class="tab" data-os="win">Windows</button>
+<!-- ═════════════ Overview ═════════════ -->
+<section class="panel" id="panel-overview" data-panel="overview" role="tabpanel" aria-label="Overview" data-zh-aria="總覽">
+  <div class="hero">
+    <div>
+      <div class="eyebrow"><span class="en">Open-source desktop app</span><span class="zh">開源桌面 App</span></div>
+      <h1><span class="en">The AI CLIs you already use, turned into <em>bots that report back</em></span><span class="zh">你已經在用的 AI CLI，<br>變成一組<em>會回報的 bot</em></span></h1>
+      <p class="lead"><span class="en">ShellBot is a desktop app. Every AI CLI runs in its own tab, and you can read and answer it like a chat. A new AI tab starts as a temporary bot; press “Keep” and it becomes a bot with a name, a face and a memory, while one primary bot takes stock and hands out the work. Away from your computer, you can follow progress and answer their questions from your phone or Telegram.</span><span class="zh">ShellBot 是一個桌面 App：每個 AI CLI 跑在自己的分頁裡，可以改用聊天的方式看和回答。每個 AI 分頁一開就是臨時 bot，按「記住」就變成有名字、有臉、有記憶的 bot，由一個主要 bot 負責盤點和派工。人不在電腦前，也能從手機或 Telegram 看進度、回答它們的問題。</span></p>
+      <div class="cta">
+        <a class="btn primary" href="#install"><span class="en">Install with one line →</span><span class="zh">一行指令安裝 →</span></a>
+        <a class="btn" href="#cli"><span class="en">Supported CLIs</span><span class="zh">支援哪些 CLI</span></a>
+        <a class="btn" href="#model"><span class="en">How bots work</span><span class="zh">Bot 怎麼運作</span></a>
+      </div>
+      <div class="facts">
+        <span class="pill"><span class="en">macOS · Windows · Linux (install tested)</span><span class="zh">macOS · Windows · Linux（安裝已實測）</span></span>
+        <span class="pill"><span class="en">7 AI CLIs built in, any other CLI opens too</span><span class="zh">內建 7 種 AI CLI，其他 CLI 也能開</span></span>
+        <span class="pill"><span class="en">Open source · MIT</span><span class="zh">開源 MIT</span></span>
+        <span class="pill warn"><span class="en">iPhone / iPad app: developer install</span><span class="zh">iOS／iPad App：開發者安裝</span></span>
+      </div>
+    </div>
+    <div class="troupe" aria-label="ShellBot's faces: shape and colour are identity, expression is state" data-zh-aria="ShellBot 的臉：形狀與顏色是身分，表情是狀態">
+      <div class="primary-face">
+        <svg class="face decision" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g><g class="q"><circle cx="83" cy="15" r="15"/><text x="83" y="23">?</text></g></svg>
+        <b><span class="en">Primary bot</span><span class="zh">主要 bot</span></b><span><span class="en">Waiting on your call</span><span class="zh">有事要你決定</span></span>
+      </div>
+      <div class="troupe-row">
+        <figure><svg class="face working" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F04E5E"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><figcaption><span class="en">Working</span><span class="zh">在做事</span></figcaption></figure>
+        <figure><svg class="face stuck" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#F0A934" stroke="#F0A934" stroke-width="14" stroke-linejoin="round" d="M50 16L88 80L12 80Z"/><g class="eyes"><rect x="38" y="57" width="8" height="10" rx="4"/><rect x="54" y="57" width="8" height="10" rx="4"/></g></g><path class="sweat" d="M17 15c3 5 6.5 8.5 6.5 12a6.5 6.5 0 0 1-13 0c0-3.5 3.5-7 6.5-12z"/></svg><figcaption><span class="en">Stuck</span><span class="zh">卡住了</span></figcaption></figure>
+        <figure><svg class="face done" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><rect x="6" y="26" width="88" height="50" rx="25" fill="#3FB97A"/><path class="arc" d="M42.5 54Q47 42 51.5 54M58.5 54Q63 42 67.5 54"/></g></svg><figcaption><span class="en">Done</span><span class="zh">做完了</span></figcaption></figure>
+        <figure><svg class="face writing" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#6A5CF0" d="M16 50a34 34 0 0 1 68 0v34q-5.67 6-11.33 0t-11.33 0t-11.33 0t-11.33 0t-11.33 0t-11.35 0z"/><g class="eyes"><rect x="42" y="39.5" width="8" height="15" rx="4"/><rect x="58" y="39.5" width="8" height="15" rx="4"/></g></g><rect class="pen" x="66" y="70" width="26" height="7" rx="2" transform="rotate(-35 79 73)"/></svg><figcaption><span class="en">Writing memory</span><span class="zh">寫記憶</span></figcaption></figure>
+        <figure><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#38B2E8" stroke="#38B2E8" stroke-width="12" stroke-linejoin="round" transform="rotate(-8 50 50)" d="M50 13L82 31.5L82 68.5L50 87L18 68.5L18 31.5Z"/><g class="eyes"><rect x="41" y="42.5" width="8" height="15" rx="4"/><rect x="57" y="42.5" width="8" height="15" rx="4"/></g></g></svg><figcaption><span class="en">Idle</span><span class="zh">閒著</span></figcaption></figure>
+        <figure><svg class="face asleep" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#1FA99E" d="M50 9C57 25 82 44 82 63a32 32 0 0 1-64 0C18 44 43 25 50 9z"/><path class="arc" d="M39.5 62Q44 69 48.5 62M55.5 62Q60 69 64.5 62"/></g><text class="zz" x="85" y="22">z</text></svg><figcaption><span class="en">Resting</span><span class="zh">休息中</span></figcaption></figure>
+      </div>
+    </div>
   </div>
 
+  <div class="features">
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><rect x="10" y="11" width="80" height="80" rx="25" fill="#1FA99E"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg></div>
+      <div><h4><span class="en">Chat view: work with the AI like a conversation</span><span class="zh">對話畫面：像聊天一樣和 AI 工作</span></h4><p><span class="en">A tab can show a conversation instead of a terminal: the AI's replies line up one by one, tool calls collapse into a single line, and anything that needs your decision becomes buttons you press once. Drop images and files straight into the input box.</span><span class="zh">分頁可以改看對話，不用盯著終端機：AI 的回覆一則一則排好，工具呼叫收成一行，要你決定的事變成按鈕，按一下就好。圖片和檔案可以直接拖進輸入框。</span></p></div>
+    </div>
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><path fill="#38B2E8" stroke="#38B2E8" stroke-width="12" stroke-linejoin="round" transform="rotate(-8 50 50)" d="M50 13L82 31.5L82 68.5L50 87L18 68.5L18 31.5Z"/><g class="eyes"><rect x="41" y="42.5" width="8" height="15" rx="4"/><rect x="57" y="42.5" width="8" height="15" rx="4"/></g></g></svg></div>
+      <div><h4><span class="en">The app is now called ShellBot</span><span class="zh">App 改名 ShellBot</span></h4><p><span class="en">Finder, Dock, ⌘-Tab and Spotlight now show ShellBot. Updating from an older version renames it for you; your tabs and settings stay.</span><span class="zh">Finder、Dock、⌘-Tab、Spotlight 現在都顯示 ShellBot。從舊版更新時會自動改名，原本的分頁和設定都留著。</span></p></div>
+    </div>
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><rect x="10" y="11" width="80" height="80" rx="25" fill="#E8A33A"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg></div>
+      <div><h4><span class="en">Connect: Gmail, one step at a time</span><span class="zh">連接：一步一步接上 Gmail</span></h4><p><span class="en">Settings → Connect lists each service and whether it is linked. Gmail can be linked through a Claude account connector or a local MCP, with only the minimum read-only permission. When it gets stuck it says in plain words which step it is on and what to do next, and it reminds you to link again when access expires. The AI can read your mail; ShellBot itself neither reads nor stores any mail.</span><span class="zh">設定 →「連接」列出每個服務接上了沒。Gmail 可以用 Claude 帳號的連接器或本機 MCP 接，只要讀信的最小權限；卡住時用白話說是哪一步、下一步做什麼，過期會提醒你重新接上。AI 讀得到信，ShellBot 本身不讀、不存任何信件。</span></p></div>
+    </div>
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><rect x="10" y="11" width="80" height="80" rx="25" fill="#3E7BF6"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg></div>
+      <div><h4><span class="en">Use the CLIs you already pay for</span><span class="zh">用你已經付費的 CLI，不用另外買</span></h4><p><span class="en">Claude Code, Codex, Grok Build, OpenCode, Pi, Cursor and Antigravity open right in a tab and use your existing subscriptions and logins. ShellBot itself is free and open source.</span><span class="zh">Claude Code、Codex、Grok Build、OpenCode、Pi、Cursor、Antigravity 直接開在分頁裡，用的是你原本的訂閱和登入。ShellBot 本身免費開源。</span></p></div>
+    </div>
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><ellipse cx="50" cy="52" rx="41" ry="33" transform="rotate(-24 50 52)" fill="#A8714C"/><g class="eyes"><rect x="41" y="40.5" width="8" height="15" rx="4"/><rect x="57" y="40.5" width="8" height="15" rx="4"/></g></g></svg></div>
+      <div><h4><span class="en">Your code and data stay on your computer</span><span class="zh">程式碼和資料留在自己的電腦</span></h4><p><span class="en">Bots run on your own computer, and you can have several. The phone only shows the screen and sends messages; the work still happens on the original machine.</span><span class="zh">bot 跑在你自己的電腦上，可以好幾台。手機只是遠端看畫面、送訊息，工作還是在原本那台機器上做。</span></p></div>
+    </div>
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face working" viewBox="0 0 100 100"><g class="rig"><path fill="#F0679E" d="M51 8c22 0 41 15 41 40 0 27-18 44-43 44C25 92 8 76 8 52 8 27 28 8 51 8z"/><g class="eyes"><rect x="42" y="39.5" width="8" height="15" rx="4"/><rect x="58" y="39.5" width="8" height="15" rx="4"/></g></g></svg></div>
+      <div><h4><span class="en">Bots with faces: the expression is the state</span><span class="zh">有臉的 bot：表情就是狀態</span></h4><p><span class="en">12 shapes and 14 colours: shape and colour say who it is, the expression says what it is doing. Working bobs, waiting on you shows a “?”, stuck breaks a sweat, done smiles, resting closes its eyes. One glance shows who needs you.</span><span class="zh">12 種形狀、14 種顏色，形狀和顏色是它是誰，表情是它在幹嘛：做事會跳、要你決定頭上有「?」、卡住冒汗、做完會笑、休息閉眼。一眼掃過去就知道誰需要你。</span></p></div>
+    </div>
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g></svg></div>
+      <div><h4><span class="en">A primary bot dispatches the work</span><span class="zh">主要 bot 負責派工</span></h4><p><span class="en">Hand everyday things to the primary bot first: it takes stock of who is busy, who is stuck and who is waiting on you, then gives the work to the right bot, one owner per task. <span class="small muted">(Dispatching uses “bot-to-bot messaging (A2A)”; see Install → Your first bot.)</span></span><span class="zh">日常的事先丟給主要 bot：它先盤點誰在忙、誰卡住、誰在等你，再把工作派給對的 bot，一件事一個負責人。<span class="small muted">（派工要用到「bot 之間傳話（A2A）」，見「安裝 → 開第一個 bot」。）</span></span></p></div>
+    </div>
+    <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face decision" viewBox="0 0 100 100"><g class="rig"><path fill="#F57C2B" stroke="#F57C2B" stroke-width="12" stroke-linejoin="round" transform="rotate(-8 50 50)" d="M50 13L82 31.5L82 68.5L50 87L18 68.5L18 31.5Z"/><g class="eyes"><rect x="41" y="42.5" width="8" height="15" rx="4"/><rect x="57" y="42.5" width="8" height="15" rx="4"/></g></g><g class="q"><circle cx="83" cy="15" r="15"/><text x="83" y="23">?</text></g></svg></div>
+      <div><h4><span class="en">“Needs your decision”: one tap from your phone or Telegram</span><span class="zh">「要你決定」：手機或 Telegram 一按就回</span></h4><p><span class="en">When a bot reaches something only you can decide, the question goes to your phone with numbered options; one tap sends the answer back to that bot. A question counts once, so an old button never answers the next one. <span class="small muted">To receive a bot's questions on the phone, first turn on “Exact agent status (Claude Code hooks)” in Settings; for now that works with Claude Code only. Permission prompts raised by the CLI itself don't need it.</span></span><span class="zh">bot 卡在需要你拍板的地方，問題連同編號選項送到手機；按一下，答案就回到那個 bot。同一題只算一次，舊按鈕不會答到下一題。<span class="small muted">手機收到 bot 的提問，目前要先在設定打開「精準狀態偵測」，而且只支援 Claude Code；CLI 自己跳出的權限確認不需要。</span></span></p></div>
+    </div>
+  </div>
+
+  <h3 class="sub"><span class="en">And the rest</span><span class="zh">還有這些</span></h3>
+  <div class="grid more">
+    <div class="card"><h4><span class="en">Paste screenshots and files</span><span class="zh">貼上截圖和檔案</span></h4><p><span class="en">Paste a screenshot or a Finder file with ⌘V (Ctrl+V on Windows), or drag and drop. A preview bar shows it and it attaches when you press Enter.</span><span class="zh">用 ⌘V（Windows 是 Ctrl+V）貼上截圖或 Finder 的檔案，或直接拖進來。預覽列會顯示，按 Enter 時自動附上。</span></p></div>
+    <div class="card"><h4><span class="en">Tabs that survive a restart</span><span class="zh">重開 App，分頁還在</span></h4><p><span class="en">On macOS and Linux every session runs inside tmux: close ShellBot, reopen it, and the tabs and their scrollback are back. Windows brings back the tab list; Claude Code and Codex reattach to their conversation, scrollback is not kept.</span><span class="zh">macOS／Linux 每個分頁都跑在 tmux 裡：關掉 ShellBot 再打開，分頁和捲動紀錄都還在。Windows 保留分頁清單，Claude Code、Codex 會接回對話，捲動紀錄不會留。</span></p></div>
+    <div class="card"><h4><span class="en">Telegram bridge</span><span class="zh">Telegram 橋接</span></h4><p><span class="en">One Telegram bot routes across all your sessions: <code>/list</code>, <code>/1</code> <code>/2</code> to switch, voice messages with speech-to-text, and file and photo forwarding.</span><span class="zh">一個 Telegram bot 串起所有分頁：<code>/list</code> 列出分頁、<code>/1</code> <code>/2</code> 切換、語音訊息轉文字、檔案和照片轉傳。</span></p></div>
+    <div class="card"><h4><span class="en">Usage at a glance</span><span class="zh">額度一眼看</span></h4><p><span class="en">Claude Code and Codex show 5-hour and weekly usage, with several accounts each; Grok Build and Antigravity show weekly usage. When a CLI exposes no number, ShellBot says “no data” rather than guess.</span><span class="zh">Claude Code、Codex 顯示 5 小時和每週用量，可多帳號；Grok Build、Antigravity 顯示每週用量。CLI 沒有可讀的數字時，ShellBot 寧可寫「沒有資料」，也不估一個百分比。</span></p></div>
+    <div class="card"><h4><span class="en">Several computers, one list</span><span class="zh">好幾台電腦，一份清單</span></h4><p><span class="en">Pair another ShellBot (Frame Link) or your phone, and the bots on paired computers appear in your list, labelled with the machine they run on.</span><span class="zh">配對另一台 ShellBot（Frame Link）或手機之後，配對電腦上的 bot 也會出現在你的清單裡，標上是哪一台。</span></p></div>
+    <div class="card"><h4><span class="en">English and 繁體中文</span><span class="zh">英文和繁體中文</span></h4><p><span class="en">The app follows your operating system's language and speaks both.</span><span class="zh">App 跟著作業系統的語言走，英文和繁體中文都支援。</span></p></div>
+  </div>
+
+  <details class="tb wide">
+    <summary><span class="en">More about the chat view</span><span class="zh">對話畫面的更多細節</span></summary>
+    <p><b><span class="en">Open and switch:</span><span class="zh">怎麼開、怎麼切：</span></b><span class="en">Settings → Interface style → “Chat”. New installs start in chat view; computers that already ran ShellBot keep the terminal view until you turn it on. Each tab has a Chat / Terminal switch at the top, or press ⌘⇧M (Ctrl+Shift+M on Windows and Linux); switching affects only that tab.</span><span class="zh">設定 → 介面風格 →「對話」。新安裝預設就是對話畫面；原本在用的電腦維持終端機畫面，想用再打開。每個分頁上方有「對話／終端機」切換鈕，或按 ⌘⇧M（Windows、Linux 是 Ctrl+Shift+M），切換只影響那一個分頁。</span></p>
+    <p><b><span class="en">Supported CLIs:</span><span class="zh">支援的 CLI：</span></b><span class="en">Claude Code, Codex, OpenCode, Grok Build, Cursor and Pi. An Antigravity tab shows the terminal.</span><span class="zh">Claude Code、Codex、OpenCode、Grok Build、Cursor、Pi；Antigravity 的分頁會顯示終端機。</span></p>
+    <p><b><span class="en">In the conversation:</span><span class="zh">對話裡：</span></b><span class="en">Right-click a message to reply. Image paths in a message show as thumbnails; other files reveal themselves in Finder (File Explorer on Windows) when clicked. Type <code>#</code> in the input box to list bots (sleeping ones too) and open tabs, plus the bots on a paired computer (labelled with which machine; A2A must be on at both ends), and pick one to call it. A card waiting for your decision can be dismissed with ✕.</span><span class="zh">對某則訊息按右鍵可以「回覆」；訊息裡的圖片路徑會直接顯示縮圖，其他檔案點一下會在 Finder（Windows 是檔案總管）標出來。在輸入框打 <code>#</code> 會列出 bot（包括睡著的）和開著的分頁，也會列出配對電腦上的 bot（標上是哪一台，兩台都要開 A2A），選了就叫它；等你決定的卡片可以按 ✕ 收起來。</span></p>
+    <p><b><span class="en">Model and queue:</span><span class="zh">模型與排隊：</span></b><span class="en">Click the model label above a tab to change the model; ShellBot types the command for you, so there is no need to reopen the tab. A message that has to wait says who it is waiting for and for how long, and can be sent ahead of the queue.</span><span class="zh">分頁上方的模型標籤點一下就能換模型，ShellBot 幫你把指令打進去，不用重開分頁。訊息在排隊時會寫清楚在等誰、等多久，也可以「插隊送出」。</span></p>
+  </details>
+
+  <h3 class="sub"><span class="en">What it looks like</span><span class="zh">長這樣</span></h3>
+  <p class="muted small"><span class="en">All screenshots use demo data. The app is shown in Traditional Chinese; it also runs in English.</span><span class="zh">截圖都是示範資料。</span></p>
+  <div class="shots two">
+    <figure class="shot">
+      <a class="frame desk" href="img/bots-temp-keep-sidebar.png" target="_blank" rel="noopener"><img src="img/bots-temp-keep-sidebar.png" alt="Desktop sidebar: every tab has a face with its latest line under the name; a temporary bot has a Keep button beside it, and a terminal tab shows &gt;_ instead of a face" data-zh-alt="桌面版側欄：每個分頁一張臉，名稱下面是它最新的一句話；臨時 bot 旁邊有「記住」按鈕，終端機分頁用 &gt;_ 代替臉" width="440" height="1120" loading="lazy"></a>
+      <figcaption><span class="kind"><span class="en">DESKTOP</span><span class="zh">桌面版</span></span><br><span class="en"><b>One face per tab, like a chat list.</b> A temporary bot has “Keep” beside it; press it and it becomes your bot. A terminal tab shows &gt;_ instead of a face.</span><span class="zh"><b>每個分頁一張臉，像聊天清單。</b>臨時 bot 旁邊有「記住」，按了就變成你的 bot；終端機分頁用 &gt;_ 代替臉。</span></figcaption>
+    </figure>
+    <figure class="shot">
+      <a class="frame" href="img/ios-face-legend.jpg" target="_blank" rel="noopener"><img src="img/ios-face-legend.jpg" alt="iPhone app settings, 'Avatar expressions': working, waiting for your decision, stuck, writing memory, done, idle, resting and primary bot, each with its face" data-zh-alt="iPhone App 設定裡的「頭貼的表情」說明：正在做事、等你決定、卡住、寫記憶、做完、閒著、休息中、主要 bot" width="600" height="1304" loading="lazy"></a>
+      <figcaption><span class="kind"><span class="en">IPHONE APP</span><span class="zh">iPhone App</span></span><br><span class="en"><b>The same faces on the phone.</b> A small dot in the corner shows the state, and the app's settings explain each expression.</span><span class="zh"><b>手機上也是同一套臉：</b>角落的小點標狀態，App 設定裡有說明。</span></figcaption>
+    </figure>
+  </div>
+  <p class="swipe-hint"><span class="en">← swipe for more screenshots →</span><span class="zh">← 左右滑動看更多截圖 →</span></p>
+
+  <h3 class="sub"><span class="en">Chat view on the desktop</span><span class="zh">桌面版的對話畫面</span></h3>
+  <figure class="inline-shot" style="max-width:none">
+    <img src="img/chat-view-1280.png" alt="Desktop chat view: a Chat / Terminal switch at the top right; chat bubbles in the middle with the AI's reply on the left, carrying its face; an input box and Send button below; the tab list on the left" data-zh-alt="桌面版對話畫面：右上角有「Chat／Terminal」切換鈕；中間是一來一往的聊天泡泡，AI 的回覆在左邊、帶著臉；下方是輸入框和送出鈕；左邊是分頁清單" width="1280" height="800" loading="lazy">
+    <figcaption><span class="en"><b>A tab turned into a chat</b>: the Chat / Terminal switch is at the top right, and each tab switches on its own (demo data).</span><span class="zh"><b>分頁改成聊天的樣子</b>：右上角是「對話／終端機」切換鈕，每個分頁各切各的（示範資料）。</span></figcaption>
+  </figure>
+</section>
+
+
+<!-- ═════════════ Install ═════════════ -->
+<section class="panel" id="panel-install" data-panel="install" role="tabpanel" aria-label="Install" data-zh-aria="安裝">
+  <div class="eyebrow"><span class="en">Install</span><span class="zh">安裝</span></div>
+  <h2 class="sec"><span class="en">One line to install; run the same line again to update</span><span class="zh">一行指令裝好，重跑同一行就是更新</span></h2>
+  <p class="lead"><span class="en">Open a terminal (PowerShell on Windows) and paste the line below. It installs whatever is missing, downloads ShellBot, sets up the launch commands, and on a first install opens ShellBot when it is done.</span><span class="zh">打開終端機（Windows 用 PowerShell），貼上下面這一行。缺什麼它自己裝，再下載 ShellBot、建好啟動指令，第一次裝完會自動打開 ShellBot。</span></p>
+
+  <div class="os-detect"><span class="en">Detected system:</span><span class="zh">偵測到你的系統：</span><b id="os-name">…</b><span id="os-mobile" class="hide">　<span class="en">You opened this page on a phone: the desktop app installs on a computer. The phone app is further down.</span><span class="zh">這頁是在手機上開的，桌面版要在電腦上裝；手機 App 見下方。</span></span></div>
+  <div class="ostabs" role="group" aria-label="Choose an operating system" data-zh-aria="選擇作業系統">
+    <button class="ostab" type="button" data-os="mac">macOS</button>
+    <button class="ostab" type="button" data-os="win">Windows</button>
+    <button class="ostab" type="button" data-os="linux">Linux</button>
+  </div>
   <div class="cmdbox">
     <div class="cmd-row">
       <div class="cmd" id="cmd"><span class="pr" id="prompt">$</span> <span id="cmd-text"></span></div>
-      <button class="copy" id="copy">複製</button>
+      <button class="copy" id="copy" type="button">Copy</button>
     </div>
     <div class="hint" id="hint"></div>
   </div>
 
-  <div class="update-note">
-    <b>更新方式</b>：重跑同一條指令即可自動更新到最新版（會原地 git pull / 重建）。
-    也可在 App 內按更新，或從 Telegram 送 <code>/update_now</code>。
+  <div class="note blue"><span class="en"><b>The command and the URL still say shellframe, on purpose.</b> ShellBot is the new name of ShellFrame. The app itself (Finder, Launchpad, Spotlight, Dock, ⌘-Tab) now shows ShellBot, and so does the Windows desktop shortcut; updating from an older version renames it automatically and keeps your tabs and settings. The install URL, the <code>shellframe</code> and <code>sfctl</code> commands and the settings folder keep the old name, so existing setups and paired machines keep working.</span><span class="zh"><b>指令和網址還叫 shellframe，是故意的。</b>ShellBot 是 ShellFrame 的新名字。App 本身（Finder、Launchpad、Spotlight、Dock、⌘-Tab）現在都顯示 ShellBot，Windows 的桌面捷徑也叫 ShellBot；從舊版更新時會自動改名，原本的分頁和設定都留著。安裝網址、<code>shellframe</code>／<code>sfctl</code> 兩個指令、設定資料夾都沿用舊名，所以舊的設定和配對過的機器照常能用。</span></div>
+
+  <div class="grid" style="margin-top:6px">
+    <div class="card os-only" data-os="mac">
+      <h4><span class="en">What gets installed (macOS)</span><span class="zh">會裝什麼（macOS）</span></h4>
+      <ul>
+        <li><span class="en">Only what is missing: Homebrew, Apple's Command Line Tools (git), Python 3.12 (from Homebrew, not Apple's) and tmux (keeps tabs alive after the app closes)</span><span class="zh">缺的才裝：Homebrew、Apple 命令列工具（git）、Python 3.12（用 Homebrew 裝，不用 Apple 內建的）、tmux（讓分頁在 App 關掉後還活著）</span></li>
+        <li><span class="en">ShellBot itself and its own Python environment, in your user folder</span><span class="zh">ShellBot 本體和它自己的 Python 環境，裝在你的使用者資料夾</span></li>
+        <li><span class="en">The <code>shellframe</code> and <code>sfctl</code> commands</span><span class="zh"><code>shellframe</code>、<code>sfctl</code> 兩個指令</span></li>
+        <li><span class="en">The app in your Applications folder, pinned to the Dock</span><span class="zh">應用程式資料夾裡的 App，並釘到 Dock</span></li>
+      </ul>
+      <p class="small"><span class="en">No git? That is fine: the installer deals with it, and may open Apple's installer window (see “What may need you” below).</span><span class="zh">沒有 git 也沒關係：安裝器會自己處理，必要時會跳出 Apple 的安裝視窗（見下面「需要你動手的地方」）。</span></p>
+    </div>
+    <div class="card os-only hide" data-os="win">
+      <h4><span class="en">What gets installed (Windows)</span><span class="zh">會裝什麼（Windows）</span></h4>
+      <ul>
+        <li><span class="en">Only what is missing: Git, Python 3.12 (for your account only, no administrator needed) and WebView2. It uses winget when there is one; where there is none (Windows Sandbox or LTSC, for example) it downloads the official installers directly</span><span class="zh">缺的才裝：Git、Python 3.12（只裝給目前這個帳號，不用管理員）、WebView2。有 winget 就用 winget；沒有（例如 Windows Sandbox、LTSC）就直接下載官方安裝程式</span></li>
+        <li><span class="en">ShellBot itself and its own Python environment, in your user folder</span><span class="zh">ShellBot 本體和它自己的 Python 環境，裝在你的使用者資料夾</span></li>
+        <li><span class="en">The <code>shellframe</code> and <code>sfctl</code> commands, added to your user PATH</span><span class="zh"><code>shellframe</code>、<code>sfctl</code> 兩個指令，加進使用者 PATH</span></li>
+        <li><span class="en">A desktop shortcut named ShellBot</span><span class="zh">桌面捷徑（名字是 ShellBot）</span></li>
+      </ul>
+      <p class="small"><span class="en">Windows has no tmux: reopening the app brings back your tabs, but the scrollback is not kept.</span><span class="zh">Windows 沒有 tmux：重開 App 會回到原本的分頁，但捲動紀錄不會留。</span></p>
+    </div>
+    <div class="card os-only hide" data-os="linux">
+      <h4><span class="en">What gets installed (Linux)</span><span class="zh">會裝什麼（Linux）</span></h4>
+      <ul>
+        <li><span class="en">Only what is missing (apt on Ubuntu and Debian, dnf on Fedora; pacman for Arch is written but not tried): git, Python 3 and venv, tmux, and the window components (GTK and WebKit). Needs sudo</span><span class="zh">缺的才裝（Ubuntu／Debian 用 apt，Fedora 用 dnf；也寫了 Arch 的 pacman，但還沒實測）：git、Python 3 和 venv、tmux、視窗元件（GTK／WebKit）。要 sudo</span></li>
+        <li><span class="en">ShellBot itself and its own Python environment, in your user folder</span><span class="zh">ShellBot 本體和它自己的 Python 環境，裝在你的使用者資料夾</span></li>
+        <li><span class="en">The <code>shellframe</code> and <code>sfctl</code> commands</span><span class="zh"><code>shellframe</code>、<code>sfctl</code> 兩個指令</span></li>
+        <li><span class="en">A ShellBot entry in the application menu</span><span class="zh">應用程式選單裡的 ShellBot 項目</span></li>
+      </ul>
+      <p class="small"><span class="en">Chinese fonts are installed only when the system language is Chinese and no Chinese font is present.</span><span class="zh">系統是中文、又沒有中文字型時，才會多裝中文字型。</span></p>
+    </div>
+    <div class="card">
+      <h4><span class="en">How long it takes</span><span class="zh">要多久</span></h4>
+      <p class="os-only" data-os="mac"><span class="en">About 1–3 minutes if Homebrew is already there; a brand-new Mac takes about 10–20 minutes, mostly Apple's Command Line Tools download. <b>Not yet timed on a clean machine</b>: this is an estimate.</span><span class="zh">約 1～3 分鐘（已經有 Homebrew）；全新的 Mac 約 10～20 分鐘，大多花在下載 Apple 命令列工具。<b>還沒在全新的電腦上實測</b>，這是估計。</span></p>
+      <p class="os-only hide" data-os="win"><span class="en">About 3–8 minutes. <b>Not yet timed on a clean PC</b>: this is an estimate.</span><span class="zh">約 3～8 分鐘。<b>還沒在全新的電腦上實測</b>，這是估計。</span></p>
+      <p class="os-only hide" data-os="linux"><span class="en">About 1.5–4 minutes (tried from scratch on clean Ubuntu 24.04, Ubuntu 22.04, Debian 12 and Fedora). Pasting the same line again is an update and takes about a second.</span><span class="zh">約 1.5～4 分鐘（已在 Ubuntu 24.04、22.04、Debian 12、Fedora 的乾淨環境實測）。再貼一次同一行就是更新，約 1 秒。</span></p>
+      <h4 style="margin-top:12px"><span class="en">What may need you</span><span class="zh">需要你動手的地方</span></h4>
+      <ul class="os-only" data-os="mac">
+        <li><span class="en">Press Enter once and type your login password (the account must be an administrator): that is Homebrew asking.</span><span class="zh">按一次 Enter、輸入開機密碼（帳號要是管理員），這是 Homebrew 在要；</span></li>
+        <li><span class="en">Apple may open a window: click Install, then Agree.</span><span class="zh">可能會跳出 Apple 的視窗，按「安裝」，再按「同意」。</span></li>
+      </ul>
+      <ul class="os-only hide" data-os="win">
+        <li><span class="en">When Windows asks “Do you want to allow this app to make changes to your device?”, click Yes (Git and WebView2 may each ask once).</span><span class="zh">遇到「是否允許此 App 變更您的裝置？」按「是」（Git、WebView2 可能各跳一次）。</span></li>
+      </ul>
+      <ul class="os-only hide" data-os="linux">
+        <li><span class="en">Type your sudo password once.</span><span class="zh">輸入一次 sudo 密碼。</span></li>
+      </ul>
+      <p class="small"><span class="en">Before each step, the installer says in plain words what it is about to do.</span><span class="zh">每一步做之前，安裝器都會先用白話說明。</span></p>
+      <h4 style="margin-top:12px"><span class="en">AI CLIs: asked at the very end</span><span class="zh">AI CLI：最後問你要不要裝</span></h4>
+      <p><span class="en">At the end it asks whether to also install <b>Claude Code</b> and <b>Codex</b> (the default is no; press <code>y</code> to install; ones already installed are skipped). If you pick Codex and the computer has no Node.js, Node.js is installed too. After that, sign in the first time you open the tab.</span><span class="zh">安裝的最後會問要不要順便裝 <b>Claude Code</b>、<b>Codex</b>（預設是不裝，按 <code>y</code> 才裝；已經裝了的會跳過）。選了 Codex、電腦又沒有 Node.js 時，會一併裝 Node.js。裝完後，第一次開分頁時登入即可。</span></p>
+      <p class="small"><span class="en">The others are not installed automatically: the installer ends by listing which of the 7 AI CLIs are already installed and, for the missing ones, the install command for your platform. Which to install and which account to sign in with is up to you.</span><span class="zh">其他幾家不會自動裝：安裝器最後會列出 7 種 AI CLI 哪些已經裝了，缺的附上那個平台的安裝指令。要裝哪家、登入哪個帳號，由你決定。</span></p>
+    </div>
   </div>
 
-  <div class="grid">
-    <div class="card" id="req-unix">
-      <h3>需求 — macOS / Linux</h3>
-      <ul>
-        <li>git（macOS：缺會引導 <code>xcode-select --install</code>）</li>
-        <li>Python 3.12+（缺則自動以 Homebrew / apt 安裝）</li>
-        <li>tmux（session 持久化，安裝器自動裝）</li>
-        <li>其餘 pip 套件自動安裝</li>
-      </ul>
+  <h3 class="sub"><span class="en">First things to do after installing</span><span class="zh">裝完第一次要做的事</span></h3>
+  <ol class="steps">
+    <li>
+      <h4><span class="en">Open ShellBot</span><span class="zh">打開 ShellBot</span></h4>
+      <p class="os-only" data-os="mac"><span class="en">Search “ShellBot” in Launchpad or Spotlight, or type <code>shellframe</code> in a terminal. It helps to run <code>sfctl permissions</code> once first: it grants the privacy permissions and firewall rules up front, so no permission window interrupts you later.</span><span class="zh">在 Launchpad 或 Spotlight 搜尋「ShellBot」，或在終端機輸入 <code>shellframe</code>。建議先跑一次 <code>sfctl permissions</code>，預先開好隱私權限和防火牆，免得用到一半跳權限視窗。</span></p>
+      <p class="os-only hide" data-os="win"><span class="en">Click the ShellBot shortcut on the desktop, or type <code>shellframe</code> in a terminal. You can run <code>sfctl permissions</code> once first to add the firewall rule up front, so the first launch does not ask to “allow network access”.</span><span class="zh">點桌面的「ShellBot」捷徑，或在終端機輸入 <code>shellframe</code>。可以先跑一次 <code>sfctl permissions</code>，預先加好防火牆規則，第一次啟動就不會跳「允許網路存取」。</span></p>
+      <p class="os-only hide" data-os="linux"><span class="en">Find “ShellBot” in the application menu, or type <code>shellframe</code> in a terminal. On a first install the installer opens it for you (a desktop session is needed).</span><span class="zh">在應用程式選單找「ShellBot」，或在終端機輸入 <code>shellframe</code>。第一次裝完，安裝器會自己打開它（要有桌面畫面）。</span></p>
+    </li>
+    <li>
+      <h4><span class="en">Pick a CLI and open your first tab</span><span class="zh">選一個 CLI，開第一個分頁</span></h4>
+      <p><span class="en">With no tabs open, the “new tab” picker appears by itself (if an update notice shows first, it appears after you close that). The menu lists 7 AI CLIs and a plain terminal. In chat view, ＋ opens a new-chat panel: the AIs listed by purpose, and the bots too when Bots is on; the CLI list and typing your own command are tucked under Advanced.</span><span class="zh">沒有分頁時，「開新分頁」會自動跳出來（如果先跳出更新提示，關掉之後才會出現）。選單裡有 7 種 AI CLI 和一般終端機。在對話畫面裡按「＋」會打開「新對話」：依用途列出各個 AI，bot 開著時也列出 bot；CLI 清單和自己輸入指令收在「進階」裡。</span></p>
+    </li>
+    <li>
+      <h4><span class="en">CLI not installed? Install it and sign in inside the tab</span><span class="zh">CLI 還沒裝？在分頁裡裝、在分頁裡登入</span></h4>
+      <p><span class="en">Pick a CLI that is not installed and ShellBot says so; press “install in a new tab” and it runs that vendor's official install command<span class="os-only hide" data-os="win"> (on Windows: Claude Code, Antigravity, Grok Build and Cursor run their own PowerShell install commands; Codex and Pi need Node.js first; for OpenCode follow its website. If it is still not found afterwards, reopen ShellBot from the desktop shortcut)</span>. Then sign in inside the tab the way that CLI does it, for example <code>grok login</code> for Grok Build. ShellBot does not sign in for you: it uses your own login and subscription. Claude Code and Codex can keep several accounts in the AI accounts panel.</span><span class="zh">選了沒裝的 CLI，會跳「尚未安裝」，按「在新分頁安裝」就會跑那家官方的安裝指令<span class="os-only hide" data-os="win">（Windows 上：Claude Code、Antigravity、Grok Build、Cursor 跑的是各家的 PowerShell 安裝指令；Codex、Pi 要先裝 Node.js；OpenCode 請照官網說明裝。裝完還是找不到的話，從桌面捷徑重開 ShellBot）</span>。裝好後在分頁裡照那家 CLI 自己的流程登入，例如 Grok Build 用 <code>grok login</code>；ShellBot 不代登入，用的就是你這份登入和訂閱。Claude Code 和 Codex 可以在「AI 帳號」面板管理好幾個帳號。</span></p>
+    </li>
+    <li>
+      <h4><span class="en">Open your first bot</span><span class="zh">開第一個 bot</span></h4>
+      <p><span class="en">Bots is <b>on by default on a new install</b>, and the list starts empty: an AI tab you “Keep” is your bot. Computers that already ran ShellBot keep their old setting (if it was off, it stays off); to switch it, go to <b>Settings → Bots</b>.</span><span class="zh">Bots 功能<b>新安裝預設是打開的</b>，名單一開始是空的：你自己「記住」的 AI 分頁，就是你的 bot。以前跑過 ShellBot 的電腦維持原本的設定（原本沒開的還是關著）；要開關，到 <b>設定 → Bots</b>。</span></p>
+      <p><span class="en">To create one: every AI tab starts as a temporary bot (the second line in the sidebar says “temp”); press Keep beside it and it becomes a named bot. Or use “＋ Create a primary bot” or “＋ Bot” in the sidebar and fill in a name and a job. Details under “Bots &amp; tabs”.</span><span class="zh">建立方式：AI 分頁一開就是臨時 bot（側欄第二行寫「臨時」），按旁邊的「記住」就變成有名字的 bot；或用側欄的「＋ 建立主要 Bot」或「＋ Bot」，填名字和執掌。細節見「Bot 與分頁」。</span></p>
+      <p><span class="en"><b>For the primary bot to hand work to other bots, also turn on “bot-to-bot messaging (A2A)”.</b> It is a separate experimental feature, off by default, with its switch next to Bots in Settings. With it off, the primary bot's dispatch is blocked.</span><span class="zh"><b>要讓主要 bot 派工給別的 bot，還要打開「bot 之間傳話（A2A）」</b>。這是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊。沒打開時，主要 bot 一派工就會被擋。</span></p>
+    </li>
+    <li class="opt">
+      <h4><span class="en">(Optional) Telegram</span><span class="zh">（選擇性）Telegram</span></h4>
+      <p><span class="en">Go to <b>Settings → Telegram</b>, paste the bot token Telegram's BotFather gave you and fill in who is allowed to use it; the 📱 on the primary bot's card opens the same thing and can bind by scanning a QR code with your phone. With an empty allow list, anyone who finds the bot can operate your computer, so always fill it in.</span><span class="zh">到 <b>設定 → Telegram</b>，貼上 Telegram BotFather 給你的 bot 代碼、填允許使用的人；主要 bot 卡片上的 📱 也能打開同一件事，可以用手機掃 QR 綁定。允許名單空著時，任何找到這個 bot 的人都能操作電腦，記得一定要填。</span></p>
+    </li>
+    <li class="opt">
+      <h4><span class="en">(Optional) Pair your phone</span><span class="zh">（選擇性）配對手機</span></h4>
+      <p><span class="en">To see bots and answer questions on an iPhone or iPad, see the app and the pairing steps below.</span><span class="zh">想在 iPhone／iPad 上看 bot、回答問題，見下面的 App 與配對步驟。</span></p>
+    </li>
+  </ol>
+
+  <h3 class="sub"><span class="en">iPhone / iPad app</span><span class="zh">iPhone／iPad App</span></h3>
+  <div class="split">
+    <div>
+      <div class="card">
+        <h4><span class="en">Developer install only for now</span><span class="zh">目前只能用開發者方式安裝</span> <span class="pill warn"><span class="en">Not on the App Store</span><span class="zh">尚未上架</span></span></h4>
+        <p><span class="en">ShellBot's iOS / iPad app is not on the App Store; for now a developer installs it directly onto a device.</span><span class="zh">ShellBot 的 iOS／iPad App 還沒上 App Store，目前只能由開發者直接裝到裝置上。</span></p>
+        <p><span class="en">What the app does: the home screen is the bot list, with the primary bot's question coming out from under its face; one tap answers “needs your decision”; you can switch between several paired computers; chat bubbles render bold text, lists and code properly. To see bots on the phone, Bots has to be on at the computer.</span><span class="zh">App 裡能做的事：首頁就是 bot 清單，主要 bot 的問題直接從臉下面冒出來；一按就回答「要你決定」；切換配對過的好幾台電腦；對話泡泡會正常顯示粗體、清單、程式碼。手機上要看到 bot，電腦那邊要先打開 Bots。</span></p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4><span class="en">Pair your phone (once)</span><span class="zh">手機配對（一次就好）</span></h4>
+        <ol>
+          <li><span class="en">Install <b>Tailscale</b> on both the computer and the phone, sign in to the <b>same account</b> and keep it connected. That way the phone can reach the computer from outside (another Wi-Fi, mobile data).</span><span class="zh">電腦和手機都裝 <b>Tailscale</b>，登入<b>同一個帳號</b>，保持連線。這樣手機在外面（不同 Wi-Fi、行動網路）也連得回電腦。</span></li>
+          <li><span class="en">In ShellBot on the computer, press the pairing button in the sidebar (Frame Link) to make a pairing code; a QR code appears.</span><span class="zh">在電腦的 ShellBot 側欄按「＋ 配對」（Frame Link），產生配對碼，畫面會出現 QR code。</span></li>
+          <li><span class="en">In the phone app, tap ＋ at the top right, then “Add a computer”, and scan the QR with the camera. Once it scans, you are paired; there is nothing to type.</span><span class="zh">手機 App 右上「＋」→「加一台電腦」，用相機掃 QR。掃到就配對好了，不用打字。</span></li>
+        </ol>
+        <p class="small"><span class="en">A pairing code works once and is valid for 120 seconds. After pairing, each side keeps its own key, so there is nothing more to enter; the QR carries the address Tailscale gave the computer, so it still connects when you change networks.</span><span class="zh">配對碼只能用一次、120 秒內有效。配對後雙方各自保存一把金鑰，之後不用再輸入任何東西；QR 裡會帶上 Tailscale 給這台電腦的位址，換網路也連得到。</span></p>
+      </div>
     </div>
-    <div class="card hide" id="req-win">
-      <h3>需求 — Windows</h3>
+    <figure class="inline-shot">
+      <img src="img/ios-pairing.jpg" alt="The iPhone app's pairing screen: three steps — open ShellBot on that computer, press the pairing button in the sidebar and a QR code appears, scan it with the camera; below it, a reminder to install Tailscale on both and sign in to the same account" data-zh-alt="iPhone App 的配對畫面：三步說明，在那台電腦打開 ShellBot、側欄按「＋ 配對」出現 QR code、用相機掃描；下方提醒兩邊都裝 Tailscale 並登入同一個帳號" width="600" height="597" loading="lazy">
+      <figcaption><span class="en">The app's “Add a computer” steps (demo screen).</span><span class="zh">App 裡「加一台電腦」的三步說明（示範畫面）。</span></figcaption>
+    </figure>
+  </div>
+
+  <h3 class="sub"><span class="en">Updating</span><span class="zh">更新</span></h3>
+  <div class="grid">
+    <div class="card"><h4><span class="en">Run the same line again</span><span class="zh">重跑同一行指令</span></h4><p><span class="en">It updates in place to the latest version; any files you changed locally are stashed automatically first.</span><span class="zh">會原地更新到最新版；你本機改過的檔案會先自動暫存起來。</span></p></div>
+    <div class="card"><h4><span class="en">Or update from inside the app</span><span class="zh">或用 App 裡的更新</span></h4><p><span class="en">Check for updates in the app's About; when there is a new version, press “Update now”. The check on startup is off by default and can be turned on in Settings; even then it only notifies you and never applies anything by itself. Away from the computer, send <code>/update_now</code> from Telegram.</span><span class="zh">在 App 的「關於」裡檢查更新，有新版就按「立即更新」。啟動時自動檢查預設是關的，可以在設定裡打開；打開了也只會提示，不會自己套用。人不在電腦前，也可以從 Telegram 送 <code>/update_now</code>。</span></p></div>
+  </div>
+
+  <h3 class="sub"><span class="en">Known limits by platform</span><span class="zh">各平台的已知限制</span></h3>
+  <p class="muted small"><span class="en">Written plainly: what you are likely to meet on day one.</span><span class="zh">照實寫：哪些是第一天就會碰到的。</span></p>
+  <div class="grid two">
+    <div class="card">
+      <h4><span class="en">All platforms</span><span class="zh">所有平台</span></h4>
       <ul>
-        <li>Python 3.10+、git（缺則自動以 winget 安裝）</li>
-        <li>WebView2 Runtime（Win10/11 內建；安裝器會檢查）</li>
-        <li>pywinpty 等 pip 套件自動安裝</li>
-        <li>若 <code>iex</code> 被擋，見下方疑難排解</li>
+        <li><span class="en"><b>Whether Bots is on depends on your computer:</b> Bots is still marked “experimental” in Settings. A new install has it on; a computer that already ran ShellBot keeps its old setting, so if it was off you turn it on in Settings.</span><span class="zh"><b>Bots 要不要打開，看你的電腦：</b>Bots 在設定裡還標著「實驗」。新安裝預設打開；以前跑過 ShellBot 的電腦維持原本的設定，原本關著的要到設定打開。</span></li>
+        <li><span class="en">Chat view supports Claude Code, Codex, OpenCode, Grok Build, Cursor and Pi; an Antigravity tab shows the terminal and says why (its conversations are not saved in a readable format).</span><span class="zh">對話畫面支援 Claude Code、Codex、OpenCode、Grok Build、Cursor、Pi；Antigravity 的分頁顯示終端機，並說明原因（它的對話沒有存成讀得懂的格式）。</span></li>
+        <li><span class="en">Waking a bot waits until the tab is “ready”, and that check has so far been written only for Claude Code and Codex; waking bots on other CLIs has not been verified and may hand over the briefing too early or not at all.</span><span class="zh">bot 叫醒時判斷「分頁準備好了沒」只為 Claude Code 和 Codex 寫過；其他 CLI 的 bot 叫醒還沒驗證過，可能等不到就沒把簡報交進去。</span></li>
       </ul>
     </div>
     <div class="card">
-      <h3>安裝後</h3>
+      <h4>macOS</h4>
       <ul>
-        <li>啟動：終端機輸入 <code>shellframe</code></li>
-        <li>macOS：Spotlight / Launchpad 搜尋 ShellFrame</li>
-        <li>Windows：桌面捷徑或 <code>shellframe</code></li>
-        <li>AI 代理人控制：<code>sfctl</code></li>
+        <li><span class="en">Without Homebrew, the installer installs it inside the terminal, which needs you to press Enter and type your login password, and the account must be an administrator; if it is not, or there is no terminal to type into, the installer explains why and stops instead of forcing it.</span><span class="zh">沒有 Homebrew 時，安裝器會在終端機裡裝，要你按 Enter、輸入開機密碼，帳號要是管理員；不是管理員，或沒有終端機可以輸入密碼時，它會說明原因後停下，不會硬裝。</span></li>
+        <li><span class="en">The first time you use hotkeys, the microphone or the Downloads folder, macOS asks for permission; <code>sfctl permissions</code> grants them all at once.</span><span class="zh">第一次用熱鍵、麥克風、下載資料夾時會跳系統權限視窗；跑 <code>sfctl permissions</code> 可以一次給完。</span></li>
+        <li><span class="en">When you send from chat view and the terminal's input box still holds unsent text, a card asks: “send after clearing” or “don't send yet”. The draft is read from Claude Code's input box.</span><span class="zh">對話畫面送出訊息時，如果終端機的輸入框留著沒送出的字，會跳一張卡：「清掉後送出」或「先不送」。草稿是從 Claude Code 的輸入框讀的。</span></li>
+        <li><span class="en">After the rename, <code>open -a ShellFrame</code> no longer finds the app (it is called ShellBot now).</span><span class="zh">App 改名後，<code>open -a ShellFrame</code> 找不到 App 了（它現在叫 ShellBot）。</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Windows</h4>
+      <ul>
+        <li><span class="en"><b>The in-app “install CLI” button:</b> Claude Code, Antigravity, Grok Build and Cursor run their own PowerShell install commands; Codex and Pi need Node.js first (the one-line installer only installs it when you pick Codex); OpenCode has no official Windows command, so it only links to instructions.</span><span class="zh"><b>App 內「安裝 CLI」按鈕：</b>Claude Code、Antigravity、Grok Build、Cursor 跑各家的 PowerShell 安裝指令；Codex、Pi 要先有 Node.js（一行安裝器只在你選了 Codex 時才裝）；OpenCode 沒有官方的 Windows 指令，只給說明連結。</span></li>
+        <li><span class="en">After installing a CLI, a ShellBot that is already running cannot see the new PATH: reopen it from the desktop shortcut (the in-app restart does not help).</span><span class="zh">裝完 CLI 之後，正在跑的 ShellBot 拿不到新的 PATH，要從桌面捷徑重開（App 內的重啟也不行）。</span></li>
+        <li><span class="en">No tmux: reopening the app rebuilds the tabs from settings, and the scrollback and any half-finished turn are lost; Claude Code and Codex reattach to their conversation.</span><span class="zh">沒有 tmux：重開 App 會照設定重建分頁，捲動紀錄和進行到一半的回合會不見；Claude Code、Codex 會接回原本的對話。</span></li>
+        <li><span class="en">The status lights for Antigravity and OpenCode read the screen only; OpenCode has no chat view on the phone.</span><span class="zh">Antigravity、OpenCode 的狀態燈只看畫面；OpenCode 在手機上看不到對話畫面。</span></li>
+        <li><span class="en">The first launch asks once to “allow network access” in the firewall.</span><span class="zh">第一次啟動會跳一次防火牆「允許網路存取」。</span></li>
+        <li><span class="en">It cannot read the draft in the terminal's input box, so the “send after clearing” card does not appear: if the input box already holds text, a message sent from chat view is still sent after that text.</span><span class="zh">讀不到終端機輸入框裡的草稿，所以不會跳「清掉後送出」那張卡：如果輸入框原本就有字，在對話畫面送出的訊息會照舊接在那些字後面送出。</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Linux</h4>
+      <ul>
+        <li><span class="en">Installed from scratch up to a running ShellBot on clean Ubuntu 24.04, Ubuntu 22.04, Debian 12 and Fedora; nobody has yet confirmed how it looks on a real Linux desktop. Arch (pacman) has not been tried.</span><span class="zh">已在 Ubuntu 24.04、22.04、Debian 12、Fedora 的乾淨環境從零裝到 ShellBot 打開；真正的 Linux 桌面上看起來的樣子，還沒有人實際確認過。Arch（pacman）還沒實測。</span></li>
+        <li><span class="en">Adding system packages needs sudo. If the account has no sudo rights, the installer stops and lists the commands to ask an administrator to run; run them, then paste the install line again.</span><span class="zh">補裝系統套件要 sudo。帳號沒有 sudo 權限時，安裝器會停下來，列出要請管理員執行的指令，執行完再貼一次安裝指令。</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>iPhone / iPad</h4>
+      <ul>
+        <li><span class="en">Developer install only; it is not on the App Store.</span><span class="zh">只能開發者安裝，沒有 App Store 版。</span></li>
+        <li><span class="en">The first pairing is done from the computer with the pairing button; when the two are not on the same network, both need Tailscale.</span><span class="zh">第一次配對要在電腦上按「＋ 配對」；不在同一個網路時，兩邊都要裝 Tailscale。</span></li>
+        <li><span class="en">The bot screens on the phone need Bots to be on at the computer.</span><span class="zh">手機上的 bot 畫面，要電腦先打開 Bots。</span></li>
       </ul>
     </div>
   </div>
 
-  <details id="tb-unix">
-    <summary>疑難排解 — macOS / Linux</summary>
-    <div class="tb">
-      <p><b>權限彈窗一直卡住</b>：裝完跑一次 <code>sfctl permissions</code>，預先授予隱私權限與防火牆，避免全域熱鍵失效。</p>
-      <p><b>git 不存在</b>（macOS）：先 <code>xcode-select --install</code> 裝好 Command Line Tools 再重跑。</p>
-      <p><b>沒有 Homebrew</b>：安裝器會自動嘗試安裝；若失敗，手動裝 <a href="https://brew.sh">brew</a> 後重跑。</p>
-      <p><b>App 開啟被 Gatekeeper 擋</b>：在「系統設定 → 隱私權與安全性」按一次「仍要打開」，或重跑安裝器（會重簽 ad-hoc 簽章）。</p>
-    </div>
+  <details class="tb os-only" data-os="mac linux">
+    <summary><span class="en">Troubleshooting: macOS / Linux</span><span class="zh">疑難排解：macOS／Linux</span></summary>
+    <p><span class="en"><b>Permission windows keep appearing</b>: run <code>sfctl permissions</code> once to grant the privacy permissions and firewall rules up front.</span><span class="zh"><b>權限視窗一直卡住</b>：跑一次 <code>sfctl permissions</code>，預先授予隱私權限與防火牆。</span></p>
+    <p><span class="en"><b>A “install the command line developer tools” window appears</b> (macOS): click Install, then Agree, and wait for it to finish; the installer carries on by itself.</span><span class="zh"><b>跳出「安裝命令列開發者工具」視窗</b>（macOS）：按「安裝」，再按「同意」，等它裝完；安裝器會自己接著往下做。</span></p>
+    <p><span class="en"><b>Stuck at the Homebrew step</b> (macOS): follow the on-screen note, install it by hand from <a href="https://brew.sh" target="_blank" rel="noopener">brew.sh</a>, then paste the install line again.</span><span class="zh"><b>停在 Homebrew 那一步</b>（macOS）：照畫面上的說明，先到 <a href="https://brew.sh" target="_blank" rel="noopener">brew.sh</a> 手動裝好，再重貼安裝指令。</span></p>
+    <p><span class="en"><b>No sudo rights</b> (Linux): the installer lists the commands to ask an administrator to run; once they are run, paste the install line again.</span><span class="zh"><b>沒有 sudo 權限</b>（Linux）：安裝器會列出要請管理員執行的指令，跑完再貼一次安裝指令。</span></p>
+    <p><span class="en"><b>“<code>curl</code> not found” after pasting</b> (Linux): use the <code>wget</code> line shown under the command box instead.</span><span class="zh"><b>貼了指令說找不到 <code>curl</code></b>（Linux）：改用上面指令框下方的 <code>wget</code> 那一行。</span></p>
+    <p><span class="en"><b>The app is blocked by Gatekeeper</b>: in System Settings → Privacy &amp; Security press “Open Anyway” once, or run the install line again.</span><span class="zh"><b>App 被 Gatekeeper 擋</b>：到「系統設定 → 隱私權與安全性」按一次「仍要打開」，或重跑安裝指令。</span></p>
   </details>
-
-  <details id="tb-win" class="hide">
-    <summary>疑難排解 — Windows</summary>
-    <div class="tb">
-      <p><b><code>iex</code> 被執行原則擋住</b>：先在同一個 PowerShell 視窗執行
-      <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code>，再貼安裝指令。</p>
-      <p><b><code>python</code> 打開 Microsoft Store</b>：那是假殼。安裝器會用 winget 裝真正的 Python；若仍失敗，到 設定 → 應用程式 → 應用程式執行別名，關掉 python 的別名。</p>
-      <p><b>TUI 工具（Claude Code 等）顯示亂碼</b>：缺 pywinpty。執行
-      <code>%USERPROFILE%\.local\apps\shellframe\.venv\Scripts\pip install pywinpty</code> 後重啟。</p>
-      <p><b>視窗白畫面 / 開不起來</b>：缺 WebView2 Runtime，到
-      <a href="https://developer.microsoft.com/microsoft-edge/webview2/">Microsoft</a> 裝 Evergreen 版。</p>
-    </div>
+  <details class="tb os-only hide" data-os="win">
+    <summary><span class="en">Troubleshooting: Windows</span><span class="zh">疑難排解：Windows</span></summary>
+    <p><span class="en"><b><code>iex</code> is blocked by the execution policy</b>: in the same PowerShell window run <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code>, then paste the install line.</span><span class="zh"><b><code>iex</code> 被執行原則擋住</b>：在同一個 PowerShell 視窗先執行 <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code>，再貼安裝指令。</span></p>
+    <p><span class="en"><b>Typing <code>python</code> opens the Microsoft Store</b>: that is a stub, not Python. The installer installs the real one (winget if there is one, otherwise straight from python.org); if it still does not work, go to Settings → Apps → App execution aliases and turn off the python alias.</span><span class="zh"><b>打 <code>python</code> 跳出 Microsoft Store</b>：那是假的 Python。安裝器會裝真的（有 winget 用 winget，沒有就直接從 python.org 下載）；還是不行的話，到「設定 → 應用程式 → 應用程式執行別名」關掉 python 的別名。</span></p>
+    <p><span class="en"><b>Full-screen tools such as Claude Code show garbled text</b>: run the install line again to put back the missing package, then reopen the app.</span><span class="zh"><b>Claude Code 這類全螢幕工具顯示亂碼</b>：重跑安裝指令，把缺的套件補回來後重開 App。</span></p>
+    <p><span class="en"><b>The window is blank and will not open</b>: WebView2 is missing; install the Evergreen version from <a href="https://developer.microsoft.com/microsoft-edge/webview2/" target="_blank" rel="noopener">Microsoft's site</a>.</span><span class="zh"><b>視窗一片白、開不起來</b>：缺 WebView2，到 <a href="https://developer.microsoft.com/microsoft-edge/webview2/" target="_blank" rel="noopener">Microsoft 官網</a>裝 Evergreen 版。</span></p>
+    <p><span class="en"><b>The <code>shellframe</code> command is not found</b>: open a <b>new</b> terminal window so the PATH takes effect.</span><span class="zh"><b>找不到 <code>shellframe</code> 指令</b>：開一個<b>新的</b>終端機視窗，PATH 才會生效。</span></p>
   </details>
+</section>
 
-  <footer>
-    原始碼與說明文件：<a href="https://github.com/h2ocloud/shellframe" id="repo-link">github.com/h2ocloud/shellframe</a>
-  </footer>
-</div>
+<!-- ═════════════ Supported CLIs ═════════════ -->
+<section class="panel" id="panel-cli" data-panel="cli" role="tabpanel" aria-label="Supported CLIs" data-zh-aria="支援的 CLI">
+  <div class="eyebrow"><span class="en">Supported CLIs</span><span class="zh">支援的 CLI</span></div>
+  <h2 class="sec"><span class="en">Seven CLIs built in; any other CLI opens too</span><span class="zh">七種 CLI 內建，其他 CLI 也開得起來</span></h2>
+  <p class="lead"><span class="en">ShellBot is not tied to any one vendor: any terminal command can open as a tab. The seven below are built in: ShellBot understands their status, and for most of them it can read the usage as well.</span><span class="zh">ShellBot 不綁任何一家：任何終端機指令都能開成分頁。下面七種是內建的，ShellBot 讀得懂它們的狀態，大部分也讀得到額度。</span></p>
+
+  <div class="legend"><span><span class="m ok">✓</span> <span class="en">supported</span><span class="zh">支援</span></span><span><span class="m part">△</span> <span class="en">yes, with conditions</span><span class="zh">有，但有條件</span></span><span><span class="m no">✗</span> <span class="en">none</span><span class="zh">沒有</span></span><span><span class="m unk">？</span> <span class="en">not tried yet</span><span class="zh">還沒實測</span></span></div>
+  <div class="tbl-wrap">
+    <table class="t">
+      <thead><tr>
+        <th>CLI</th>
+        <th><span class="en">Opens as a tab</span><span class="zh">能開成分頁</span></th>
+        <th><span class="en">Status light</span><span class="zh">狀態燈</span></th>
+        <th><span class="en">Usage display</span><span class="zh">額度顯示</span></th>
+        <th><span class="en">Pick a model</span><span class="zh">指定模型</span></th>
+        <th><span class="en">Chat on the phone</span><span class="zh">手機上看得到對話</span></th>
+        <th><span class="en">Chat view on desktop</span><span class="zh">電腦對話畫面</span></th>
+        <th><span class="en">Can become a bot</span><span class="zh">能變成 bot</span></th>
+        <th>Windows</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <th>Claude Code</th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu</span><span class="zh">「＋」選單內建</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m ok">✓</span><span class="n"><span class="en">Reads the conversation log and the screen</span><span class="zh">讀對話紀錄＋畫面</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m ok">✓</span><span class="n"><span class="en">5-hour and weekly, several accounts</span><span class="zh">5 小時＋每週，可多帳號</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m ok">✓</span><span class="n"><span class="en">Pick a model from a list in the bot's settings, e.g. sonnet</span><span class="zh">bot 設定從清單選模型，例如 sonnet</span></span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m ok">✓</span><span class="n"><span class="en">Chat view and terminal view</span><span class="zh">對話畫面＋終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m ok">✓</span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m ok">✓</span><span class="n"><span class="en">The full set</span><span class="zh">全套</span></span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="m ok">✓</span><span class="n"><span class="en">Tried on a real Windows machine: restart, status light and phone chat</span><span class="zh">有實機紀錄：重啟、狀態燈、手機對話都在 Windows 實測過</span></span></td>
+        </tr>
+        <tr>
+          <th>Codex</th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu</span><span class="zh">「＋」選單內建</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m ok">✓</span><span class="n"><span class="en">Reads the conversation log and the screen</span><span class="zh">讀對話紀錄＋畫面</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m ok">✓</span><span class="n"><span class="en">5-hour and weekly, several accounts</span><span class="zh">5 小時＋每週，可多帳號</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m ok">✓</span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m ok">✓</span><span class="n"><span class="en">Chat view and terminal view</span><span class="zh">對話畫面＋終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m ok">✓</span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m ok">✓</span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="m ok">✓</span><span class="n"><span class="en">Supported on Windows; installing needs Node.js first</span><span class="zh">有 Windows 支援；安裝要先有 Node.js</span></span></td>
+        </tr>
+        <tr>
+          <th>Grok Build<small><span class="en">xAI's coding CLI</span><span class="zh">xAI 的程式 CLI</span></small></th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu</span><span class="zh">「＋」選單內建</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m ok">✓</span><span class="n"><span class="en">Reads its event log and the screen</span><span class="zh">讀它的事件紀錄＋畫面</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m part">△</span><span class="n"><span class="en">Weekly only, no 5-hour window</span><span class="zh">只有每週，沒有 5 小時</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m ok">✓</span><span class="n"><span class="en">Note: this also changes Grok Build's own default model</span><span class="zh">注意：會一起改掉 Grok Build 自己的預設模型</span></span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m ok">✓</span><span class="n"><span class="en">Chat view and terminal view</span><span class="zh">對話畫面＋終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m ok">✓</span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m part">△</span><span class="n"><span class="en">Waking not verified yet</span><span class="zh">叫醒還沒驗證</span></span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="m unk">？</span><span class="n"><span class="en">Not tried; a PowerShell install command exists</span><span class="zh">未測；有 PowerShell 安裝指令</span></span></td>
+        </tr>
+        <tr>
+          <th>OpenCode</th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu</span><span class="zh">「＋」選單內建</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m ok">✓</span><span class="n"><span class="en">Reads its session database and the screen</span><span class="zh">讀它的 session 資料庫＋畫面</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m no">✗</span><span class="n"><span class="en">Depends on the model provider you connect</span><span class="zh">看你接的模型供應商</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m ok">✓</span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m ok">✓</span><span class="n"><span class="en">Chat view and terminal view</span><span class="zh">對話畫面＋終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m ok">✓</span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m part">△</span><span class="n"><span class="en">Waking not verified yet</span><span class="zh">叫醒還沒驗證</span></span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="m unk">？</span><span class="n"><span class="en">Not tried; the status light reads the screen only and there is no chat view on the phone; no official Windows install command</span><span class="zh">未測；狀態燈只看畫面、手機沒有對話畫面；沒有官方 Windows 安裝指令</span></span></td>
+        </tr>
+        <tr>
+          <th>Pi</th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu</span><span class="zh">「＋」選單內建</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m part">△</span><span class="n"><span class="en">Reads the screen only</span><span class="zh">只看畫面</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m no">✗</span><span class="n"><span class="en">Depends on the model provider you connect</span><span class="zh">看你接的模型供應商</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m no">✗</span><span class="n"><span class="en">Pick the model inside the CLI; the model field in bot settings is disabled</span><span class="zh">在 CLI 自己裡面選模型，bot 設定的模型欄是關的</span></span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m part">△</span><span class="n"><span class="en">Terminal view only</span><span class="zh">只有終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m ok">✓</span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m part">△</span><span class="n"><span class="en">Waking not verified yet</span><span class="zh">叫醒還沒驗證</span></span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="m unk">？</span><span class="n"><span class="en">Not tried; installing needs Node.js 22.19 or newer</span><span class="zh">未測；安裝要 Node.js 22.19 以上</span></span></td>
+        </tr>
+        <tr>
+          <th>Cursor<small>Cursor Agent CLI</small></th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu; defaults to a model included in your subscription</span><span class="zh">「＋」選單內建；預設用訂閱內的模型</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m ok">✓</span><span class="n"><span class="en">The screen and the conversation log</span><span class="zh">畫面＋對話紀錄</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m no">✗</span><span class="n"><span class="en">Cannot be read locally; ShellBot only marks whether a model counts as subscription or paid</span><span class="zh">本機讀不到；只標出模型算訂閱還是付費</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m ok">✓</span><span class="n"><span class="en">Pick a model from a list in the bot's settings</span><span class="zh">bot 設定從清單選模型</span></span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m ok">✓</span><span class="n"><span class="en">Chat view and terminal view</span><span class="zh">對話畫面＋終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m ok">✓</span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m part">△</span><span class="n"><span class="en">Waking not verified yet</span><span class="zh">叫醒還沒驗證</span></span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="m part">△</span><span class="n"><span class="en">A Windows install command and tests exist; no real-machine record</span><span class="zh">有 Windows 安裝指令和測試，沒有實機紀錄</span></span></td>
+        </tr>
+        <tr>
+          <th>Antigravity</th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Built into the ＋ menu</span><span class="zh">「＋」選單內建</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m ok">✓</span><span class="n"><span class="en">Reads its conversation database and the screen</span><span class="zh">讀它的對話資料庫＋畫面</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m ok">✓</span><span class="n"><span class="en">Weekly, split by model family</span><span class="zh">每週，依模型族群分開</span></span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m no">✗</span><span class="n"><span class="en">Pick the model inside the CLI; the model field in bot settings is disabled</span><span class="zh">在 CLI 自己裡面選模型，bot 設定的模型欄是關的</span></span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m part">△</span><span class="n"><span class="en">Terminal view only</span><span class="zh">只有終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m no">✗</span><span class="n"><span class="en">Shows the terminal and says why: its conversations are not saved in a readable format</span><span class="zh">顯示終端機，並說明原因：它的對話沒有存成讀得懂的格式</span></span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m part">△</span><span class="n"><span class="en">Waking not verified yet</span><span class="zh">叫醒還沒驗證</span></span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="m unk">？</span><span class="n"><span class="en">Not tried; the status light reads the screen only; a PowerShell install command exists</span><span class="zh">未測；狀態燈只看畫面；有 PowerShell 安裝指令</span></span></td>
+        </tr>
+        <tr class="other">
+          <th><span class="en">Any other CLI</span><span class="zh">其他任何 CLI</span><small><span class="en">for example aider, Gemini CLI, or your own tool</span><span class="zh">例如 aider、Gemini CLI，或你自己的工具</span></small></th>
+          <td data-l-en="Opens as a tab" data-l-zh="能開成分頁"><span class="m ok">✓</span><span class="n"><span class="en">Add an entry in the ＋ menu yourself</span><span class="zh">在「＋」選單自己加一筆</span></span></td>
+          <td data-l-en="Status light" data-l-zh="狀態燈"><span class="m part">△</span><span class="n"><span class="en">Only generic text on the screen: an approximation</span><span class="zh">只看畫面上的通用字樣，是近似值</span></span></td>
+          <td data-l-en="Usage display" data-l-zh="額度顯示"><span class="m no">✗</span></td>
+          <td data-l-en="Pick a model" data-l-zh="指定模型"><span class="m no">✗</span><span class="n"><span class="en">Put it in the launch command yourself</span><span class="zh">自己寫進啟動指令</span></span></td>
+          <td data-l-en="Chat on the phone" data-l-zh="手機上看對話"><span class="m part">△</span><span class="n"><span class="en">Terminal view only</span><span class="zh">只有終端機畫面</span></span></td>
+          <td data-l-en="Chat view on desktop" data-l-zh="電腦對話畫面"><span class="m no">✗</span><span class="n"><span class="en">Not among the six that are supported</span><span class="zh">不在支援的六家內</span></span></td>
+          <td data-l-en="Can become a bot" data-l-zh="能變成 bot"><span class="m part">△</span><span class="n"><span class="en">It gets a face; memory depends on whether it writes files by itself</span><span class="zh">有臉；記憶要看它會不會自己寫檔</span></span></td>
+          <td data-l-en="Windows" data-l-zh="Windows"><span class="n"><span class="en">Depends on that CLI itself</span><span class="zh">看那家 CLI 本身</span></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small"><span class="en">As of ShellBot v0.44.6.<br>
+  · “Chat view on desktop” is the desktop chat screen (Settings → Interface style, or the switch on each tab); the next column, “Chat on the phone”, is the phone app's screen. Read them separately.<br>
+  · “Chat on the phone” has two layers: every tab can show its terminal on the phone and take typing; “chat view” is the version tidied into chat bubbles, which needs ShellBot to understand that CLI's log format.<br>
+  · “Can become a bot”: an AI tab starts as a temporary bot and Keep turns it into a named bot; a plain terminal tab is not a bot. A bot writes its memory in its own conversation. A bot can switch CLI or model; see <a href="#model">Bots &amp; tabs</a>. Waking waits until the tab is ready before handing over the briefing, and that check has so far been written only for Claude Code and Codex; the others are not verified.<br>
+  · The Linux install has been tried on several clean systems; daily use (the CLIs, bots) has not; see the platform limits on the <a href="#install">Install</a> tab.</span><span class="zh">依 ShellBot v0.44.6 整理。<br>
+  ・「電腦對話畫面」是桌面版的聊天畫面（設定 → 介面風格，或每個分頁的切換鈕）；下一欄「手機上看得到對話」是手機 App 的畫面，兩邊分開看。<br>
+  ・「手機上看得到對話」分兩層：所有分頁都能在手機上看終端機畫面、直接打字；「對話畫面」是整理成聊天泡泡的版本，要 ShellBot 讀得懂那家 CLI 的紀錄格式。<br>
+  ・「能變成 bot」：AI 分頁一開就是臨時 bot，按「記住」變成有名字的 bot；一般終端機分頁不是 bot。記憶由 bot 在自己的對話裡寫。bot 可以換 CLI 或模型，見「<a href="#model">Bot 與分頁</a>」。叫醒時要等分頁準備好才交簡報，這段判斷目前只為 Claude Code 和 Codex 寫過，其他家還沒驗證。<br>
+  ・Linux 的安裝已在幾種乾淨系統實測過；日常使用（各家 CLI、bot）還沒實測，見「<a href="#install">安裝</a>」頁的平台限制。</span></p>
+
+  <h3 class="sub"><span class="en">Which ones have no usage number, and why</span><span class="zh">哪幾家沒有額度數字，為什麼</span></h3>
+  <div class="grid">
+    <div class="card"><h4><span class="en">OpenCode, Pi</span><span class="zh">OpenCode、Pi</span></h4><p><span class="en">They run on whichever model provider you connect, even a model on your own machine. Money and usage are kept on each provider's side, so there is no single number to read.</span><span class="zh">它們跑的是你自己接的模型供應商，甚至是自己機器上的模型。錢和額度記在各個供應商那邊，沒有一個數字可以讀。</span></p></div>
+    <div class="card"><h4>Cursor</h4><p><span class="en">There is no usage data to read locally. ShellBot would rather say “no data” than estimate a percentage for you.</span><span class="zh">本機沒有可以讀的額度資料。ShellBot 寧可寫「沒有資料」，也不估一個百分比給你。</span></p></div>
+    <div class="card"><h4><span class="en">Grok Build (only half)</span><span class="zh">Grok Build（只有一半）</span></h4><p><span class="en">Its account quota is counted by the week, so ShellBot shows weekly usage and pace; it never had a 5-hour window.</span><span class="zh">它的帳號額度是以週計算，ShellBot 顯示每週用量和配速；它本來就沒有 5 小時的窗口。</span></p></div>
+    <div class="card"><h4><span class="en">Other CLIs</span><span class="zh">其他 CLI</span></h4><p><span class="en">Not connected. To read usage, a reader has to be written for that CLI; see below.</span><span class="zh">沒有對接。要讀額度，得替那家 CLI 寫一個讀取程式，請看下面。</span></p></div>
+  </div>
+
+  <h3 class="sub"><span class="en">Want to add a CLI?</span><span class="zh">想加一家 CLI？</span></h3>
+  <div class="grid two">
+    <div class="card"><h4><span class="en">Just opening a tab: no code</span><span class="zh">只是要開分頁：不用寫程式</span></h4><p><span class="en">Add an entry in the ＋ menu and fill in the launch command. It can become a bot, and its status light judges from the text on the screen.</span><span class="zh">在「＋」選單新增一筆，填上啟動指令就好。它可以開成 bot，狀態燈會看畫面上的字判斷。</span></p></div>
+    <div class="card"><h4><span class="en">To read usage: add a registry entry</span><span class="zh">要讀額度：加一筆登錄</span></h4><p><span class="en">Add one CLI entry and two reader functions in ShellBot's code, and you get the usage display, the “not installed” notice, the install command and the ＋ menu preset. How: <a href="https://github.com/h2ocloud/shellframe/blob/main/docs/adding-a-provider.md" target="_blank" rel="noopener">adding-a-provider.md</a> on GitHub.</span><span class="zh">在 ShellBot 的程式裡加一筆 CLI 登錄和兩個讀取函式，就會有額度顯示、未安裝提示、安裝指令和「＋」選單預設。做法見 GitHub 上的 <a href="https://github.com/h2ocloud/shellframe/blob/main/docs/adding-a-provider.md" target="_blank" rel="noopener">adding-a-provider.md</a>。</span></p></div>
+    <div class="card"><h4><span class="en">Status, and a chat view on the phone: more code</span><span class="zh">要讀狀態、要有手機對話畫面：另外寫程式</span></h4><p><span class="en">A status light that judges from the conversation log, a phone view tidied into chat bubbles, picking the model, knowing it is ready when it wakes: each needs separate code for that CLI to read its log and make the call.</span><span class="zh">燈號要從對話紀錄判斷、手機要整理成聊天泡泡、要能指定模型、叫醒時要知道它準備好了，這些都要替那家 CLI 另外寫讀紀錄和判斷的程式。</span></p></div>
+  </div>
+</section>
+
+<!-- ═════════════ Bots & tabs ═════════════ -->
+<section class="panel" id="panel-model" data-panel="model" role="tabpanel" aria-label="Bots and tabs" data-zh-aria="Bot 與分頁">
+  <div class="eyebrow"><span class="en">Bots &amp; tabs</span><span class="zh">Bot 與分頁</span></div>
+  <h2 class="sec"><span class="en">Tabs, bots, the primary bot: how it works today</span><span class="zh">分頁、bot、主要 bot：現在是這樣運作的</span></h2>
+  <p class="lead"><span class="en">First, six terms. This is how v0.44.6 works: every AI tab starts as a bot, a temporary one; press “Keep” and it becomes a bot with a name, a face and a memory of its own. Bot-to-bot messaging (A2A) is a separate experimental feature, off by default, with its switch next to Bots in Settings; the primary bot needs it to dispatch work.</span><span class="zh">先講清楚六個名詞。這是 v0.44.6 的做法：每個 AI 分頁一開就是一個 bot，先是臨時的；你按「記住」，它才變成有名字、有臉、有自己記憶的 bot。bot 之間傳話（A2A）是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊，主要 bot 派工會用到它。</span></p>
+
+  <div class="split" style="margin-top:18px">
+    <div class="grid gloss" style="grid-template-columns:minmax(0,1fr)">
+      <div class="card">
+        <h4><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><rect x="10" y="11" width="80" height="80" rx="25" fill="#8B90A0"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><span class="en">Tab</span><span class="zh">分頁</span></h4>
+        <p><span class="en">A running CLI, or a plain terminal. Every tab has a face whose expression changes; a terminal tab shows &gt;_ in place of a face and is not a bot, while every AI tab is. Close the app and open it again: on macOS and Linux the tabs and their scrollback are still there; Windows keeps the tab list, Claude Code and Codex reattach to their conversation, and the scrollback is not kept.</span><span class="zh">一個正在跑的 CLI，或一般的終端機。每個分頁都有表情會變的臉；終端機分頁用 &gt;_ 代替臉，它不是 bot，每個 AI 分頁都是 bot。關掉 App 再打開，macOS／Linux 的分頁和捲動紀錄都還在；Windows 保留分頁清單，Claude Code、Codex 會接回對話，捲動紀錄不會留。</span></p>
+      </div>
+      <div class="card">
+        <h4><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#8B90A0"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><span class="en">Temporary bot</span><span class="zh">臨時 bot</span></h4>
+        <p><span class="en">A newly opened AI tab starts as a temporary bot and is named automatically from your first message, whether you typed it in chat view or in the terminal. The second line in the sidebar says “temp”, with a Keep button beside it. If you don't keep it, it forgets when it closes.</span><span class="zh">新開的 AI 分頁先是臨時 bot，用你的第一句話自動取名字，不管那句話是在對話畫面還是終端機打的。側欄第二行寫「臨時」，旁邊有「記住」按鈕。不記住，關掉就忘了。</span></p>
+      </div>
+      <div class="card">
+        <h4><svg class="face working" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F04E5E"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><span class="en">Bot (kept)</span><span class="zh">Bot（記住的）</span></h4>
+        <p><span class="en">A temporary bot after you press Keep: it has a name, a face and its own memory folder, and it can have a job and skills, including skills only it uses (when names clash its own wins, whichever CLI it runs on). While awake it has one tab running, only ever one at a time; after it sleeps, waking it starts a new conversation that comes back with its memory. You can switch its CLI or model, and its name, face and memory stay. If the name is already another bot's, ShellBot refuses and suggests a free one.</span><span class="zh">按「記住」之後的臨時 bot：有名字、有臉、有自己的記憶資料夾，也可以有執掌和 skill，包括只給它自己用的 skill（同名時自己的優先，不管它跑哪家 CLI）。醒著的時候它有一個分頁在跑，同一時間只有一個；睡著後再叫醒，是一段新的對話，帶著記憶回來。想換 CLI 或模型也可以，名字、臉和記憶都留著。名字跟別的 bot 重複時，ShellBot 會拒絕並建議一個沒人用的。</span></p>
+      </div>
+      <div class="card">
+        <h4><svg class="face asleep" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#1FA99E" d="M50 9C57 25 82 44 82 63a32 32 0 0 1-64 0C18 44 43 25 50 9z"/><path class="arc" d="M39.5 62Q44 69 48.5 62M55.5 62Q60 69 64.5 62"/></g><text class="zz" x="85" y="22">z</text></svg><span class="en">Resting bot</span><span class="zh">休息中的 bot</span></h4>
+        <p><span class="en">A bot with no tab open sits at the bottom of the list with its eyes closed. Click it, hand it work, or have another bot message it (A2A must be on), and it opens a new tab and wakes up with its last memory.</span><span class="zh">沒有開著分頁的 bot，排在清單最下面、閉著眼。你點一下、有人派工給它、或別的 bot 傳話給它（要打開 A2A），它就開一個新分頁，帶著上次的記憶醒來。</span></p>
+      </div>
+      <div class="card">
+        <h4><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g></svg><span class="en">Primary bot</span><span class="zh">主要 bot</span></h4>
+        <p><span class="en">The card at the top of the sidebar, with a star on its face. Take everyday things to it first: it takes stock of who is busy, who is stuck and who is waiting on your decision, then hands the work to the right bot. Telegram messages (when you have not picked a tab with /N) go to it by default. Drag another bot onto the card to change who holds the role.</span><span class="zh">側欄最上面那張卡片，臉上有星星。日常的事先找它：它先盤點誰在忙、誰卡住、誰在等你決定，再把工作派給對的 bot。Telegram 傳來的訊息（沒先用 /N 選分頁時）預設也交給它。把別的 bot 拖到卡片上就換人當。</span></p>
+      </div>
+      <div class="card">
+        <h4><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><g fill="#3E7BF6"><circle cx="30" cy="58" r="20"/><circle cx="52" cy="44" r="25"/><circle cx="72" cy="58" r="20"/><rect x="30" y="54" width="42" height="24"/></g><g class="eyes"><rect x="43" y="49.5" width="8" height="15" rx="4"/><rect x="59" y="49.5" width="8" height="15" rx="4"/></g></g></svg><span class="en">External bot</span><span class="zh">外部 bot</span></h4>
+        <p><span class="en">A bot that lives outside ShellBot, for example a cloud-hosted agent. It has no tab on this computer: ShellBot sends messages to it by webhook, and it replies or hands out work by running <code>sfctl</code> on your computer.</span><span class="zh">住在 ShellBot 外面的 bot，例如雲端的 agent。它在這台電腦上沒有分頁：ShellBot 用 webhook 把訊息送過去，它在你的電腦上執行 <code>sfctl</code> 回覆或派工。</span></p>
+      </div>
+    </div>
+    <figure class="diagram-card">
+            <svg class="dg" viewBox="0 0 360 636" role="img" aria-label="Relationship diagram: bots on the left, tabs on the right. The primary bot and a regular bot each connect to a tab while awake; a resting bot has no tab; an AI tab starts as a temporary bot and only becomes a named bot after you press Keep; a terminal tab is not a bot; an external bot lives outside and talks by webhook" data-zh-aria="關係圖：左邊是 bot，右邊是分頁。主要 bot 和一般 bot 醒著時各連到一個分頁；休息中的 bot 沒有分頁；AI 分頁一開就是臨時 bot，按「記住」才變成有名字的 bot；終端機分頁不是 bot；外部 bot 住在外面，用 webhook 往來">
+        <defs>
+          <marker id="ahC" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+        </defs>
+        <text class="zh t-sub" x="78" y="20" text-anchor="middle">Bot（誰負責什麼）</text><text class="en t-sub" x="78" y="20" text-anchor="middle">Bots (who owns what)</text>
+        <text class="zh t-sub" x="282" y="20" text-anchor="middle">分頁（正在跑的 CLI）</text><text class="en t-sub" x="282" y="20" text-anchor="middle">Tabs (the running CLI)</text>
+        <!-- primary -->
+        <rect class="box-acc" x="8" y="34" width="140" height="64" rx="14"/>
+        <path fill="#A15BF0" stroke="#A15BF0" stroke-width="5" stroke-linejoin="round" transform="translate(16 46) scale(.36)" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/>
+        <circle cx="45.5" cy="77.5" r="5.5" fill="#ff9e64"/>
+        <text class="zh" x="58" y="62">主要 bot</text><text class="en" x="58" y="62">Primary bot</text>
+        <text class="zh t-sub" x="58" y="81">盤點、派工</text><text class="en t-sub" x="58" y="81">Dispatches</text>
+        <rect class="chip" x="212" y="40" width="140" height="52" rx="12"/>
+        <text class="zh" x="282" y="62" text-anchor="middle">分頁 1</text><text class="en" x="282" y="62" text-anchor="middle">Tab 1</text>
+        <text class="t-sub" x="282" y="80" text-anchor="middle">Claude Code</text>
+        <path class="ln" d="M150 66H208"/>
+        <text class="zh t-dim" x="179" y="58" text-anchor="middle">醒著</text><text class="en t-dim" x="179" y="58" text-anchor="middle">Awake</text>
+        <path class="ln-dash" d="M78 100V126" marker-end="url(#ahC)"/>
+        <text class="zh t-acc2" x="86" y="118">派工</text><text class="en t-acc2" x="86" y="118">Dispatch</text>
+        <!-- bot A -->
+        <rect class="box" x="8" y="130" width="140" height="64" rx="14"/>
+        <circle cx="34" cy="162" r="16" fill="#F04E5E"/>
+        <text x="58" y="158">Bot A</text>
+        <text class="zh t-sub" x="58" y="177">寫程式</text><text class="en t-sub" x="58" y="177">Writes code</text>
+        <rect class="chip" x="212" y="136" width="140" height="52" rx="12"/>
+        <text class="zh" x="282" y="158" text-anchor="middle">分頁 2</text><text class="en" x="282" y="158" text-anchor="middle">Tab 2</text>
+        <text class="t-sub" x="282" y="176" text-anchor="middle">Codex</text>
+        <path class="ln" d="M150 162H208"/>
+        <text class="zh t-dim" x="179" y="154" text-anchor="middle">醒著</text><text class="en t-dim" x="179" y="154" text-anchor="middle">Awake</text>
+        <!-- bot B asleep -->
+        <rect class="box2" x="8" y="214" width="140" height="64" rx="14" style="stroke-dasharray:5 4"/>
+        <circle cx="34" cy="246" r="16" fill="#1FA99E" opacity=".55"/>
+        <text x="58" y="242">Bot B</text>
+        <text class="zh t-sub" x="58" y="261">休息中</text><text class="en t-sub" x="58" y="261">Asleep</text>
+        <text class="zh t-dim" x="282" y="242" text-anchor="middle">沒有分頁</text><text class="en t-dim" x="282" y="242" text-anchor="middle">No tab</text>
+        <text class="zh t-dim" x="282" y="260" text-anchor="middle">點一下就開新分頁醒來</text><text class="en t-dim" x="282" y="260" text-anchor="middle">Click to wake</text>
+        <!-- temporary bot -->
+        <rect class="box2" x="8" y="304" width="140" height="64" rx="14" style="stroke-dasharray:5 4"/>
+        <circle cx="34" cy="336" r="16" fill="#8B90A0"/>
+        <text class="zh" x="58" y="332">臨時 bot</text><text class="en" x="58" y="332">Temp bot</text>
+        <text class="zh t-sub" x="58" y="351">按「記住」</text><text class="en t-sub" x="58" y="351">Press Keep</text>
+        <rect class="chip" x="212" y="310" width="140" height="52" rx="12"/>
+        <text class="zh" x="282" y="332" text-anchor="middle">分頁 3</text><text class="en" x="282" y="332" text-anchor="middle">Tab 3</text>
+        <text class="zh t-sub" x="282" y="350" text-anchor="middle">第一句話自動取名</text><text class="en t-sub" x="282" y="350" text-anchor="middle">Auto-named</text>
+        <path class="ln" d="M150 336H208"/>
+        <path class="ln-dash" d="M78 372V396" marker-end="url(#ahC)"/>
+        <text class="zh t-acc2" x="86" y="389">記住</text><text class="en t-acc2" x="86" y="389">Keep</text>
+        <!-- terminal tab -->
+        <text class="zh t-dim" x="78" y="426" text-anchor="middle">（不是 bot）</text><text class="en t-dim" x="78" y="426" text-anchor="middle">(not a bot)</text>
+        <rect class="chip" x="212" y="400" width="140" height="52" rx="12"/>
+        <text class="zh" x="282" y="422" text-anchor="middle">分頁 4</text><text class="en" x="282" y="422" text-anchor="middle">Tab 4</text>
+        <text class="zh t-sub" x="282" y="440" text-anchor="middle">終端機，用 &gt;_ 代替臉</text><text class="en t-sub" x="282" y="440" text-anchor="middle">Terminal (&gt;_, no face)</text>
+        <path class="ln-dash" d="M150 426H208"/>
+        <!-- memory -->
+        <rect class="box2" x="8" y="468" width="344" height="64" rx="14"/>
+        <text class="zh" x="180" y="493" text-anchor="middle">每個記住的 bot 的記憶</text><text class="en" x="180" y="493" text-anchor="middle">Memory of every kept bot</text>
+        <text class="zh t-sub" x="180" y="513" text-anchor="middle">關分頁前自己寫摘要，下次叫醒帶回</text><text class="en t-sub" x="180" y="513" text-anchor="middle">Writes a summary before closing; back on wake</text>
+        <!-- external -->
+        <rect class="box-cloud" x="8" y="556" width="140" height="74" rx="18"/>
+        <circle cx="34" cy="593" r="16" fill="#3E7BF6"/>
+        <text class="zh" x="58" y="588">外部 bot</text><text class="en" x="58" y="588">External bot</text>
+        <text class="zh t-sub" x="58" y="607">住在雲端</text><text class="en t-sub" x="58" y="607">In the cloud</text>
+        <path class="ln" d="M150 593H208" marker-start="url(#ahC)" marker-end="url(#ahC)"/>
+        <text class="zh t-acc2" x="282" y="588" text-anchor="middle">webhook 往來</text><text class="en t-acc2" x="282" y="588" text-anchor="middle">Talks by webhook</text>
+        <text class="zh t-dim" x="282" y="607" text-anchor="middle">這台電腦上沒有它的分頁</text><text class="en t-dim" x="282" y="607" text-anchor="middle">No tab here</text>
+      </svg>
+      <figcaption><span class="en">Relationship diagram: an AI tab starts as a temporary bot and only becomes a named bot when you press Keep; a terminal tab is not a bot.</span><span class="zh">關係圖：AI 分頁一開就是臨時 bot，按「記住」才變成有名字的 bot；終端機分頁不是 bot。</span></figcaption>
+    </figure>
+  </div>
+
+  <h3 class="sub"><span class="en">From temporary to your bot</span><span class="zh">從臨時到你的 bot</span></h3>
+  <div class="flow">
+    <div><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#8B90A0"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><b><span class="en">1. Open a tab</span><span class="zh">1. 開分頁</span></b><span><span class="en">An AI tab starts as a temporary bot; the second line in the sidebar says “temp”.</span><span class="zh">AI 分頁一開就是臨時 bot，側欄第二行寫「臨時」。</span></span></div>
+    <div><svg class="face working" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#8B90A0"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><b><span class="en">2. Auto-named</span><span class="zh">2. 自動取名</span></b><span><span class="en">Named from the first thing you say, whether typed in chat view or in the terminal.</span><span class="zh">用你說的第一句話取名字，打在對話畫面或終端機都一樣。</span></span></div>
+    <div><svg class="face writing" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F57C2B"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g><rect class="pen" x="66" y="70" width="26" height="7" rx="2" transform="rotate(-35 79 73)"/></svg><b><span class="en">3. Press Keep</span><span class="zh">3. 按「記住」</span></b><span><span class="en">It becomes a bot with a name, a face and a memory folder. Don't press it, and it is forgotten when it closes.</span><span class="zh">變成有名字、有臉、有記憶資料夾的 bot。不按，關掉就忘了。</span></span></div>
+    <div><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F57C2B"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><b><span class="en">4. Switch if you like</span><span class="zh">4. 想換就換</span></b><span><span class="en">Change the CLI or model; the name, face and memory stay.</span><span class="zh">換 CLI 或模型，名字、臉、記憶都留著。</span></span></div>
+  </div>
+  <div class="grid two" style="margin-top:14px">
+    <div class="card">
+      <h4><span class="en">Switching CLI or model</span><span class="zh">換 CLI 或模型</span></h4>
+      <p><span class="en">A bot can move to a different CLI or model, for example from Claude to Codex; its name, face, job and memory stay, but this conversation does not move to the new CLI. Change it in the bot's editor: “Save” applies at the next wake, and “Save and switch now” switches immediately (a sleeping bot wakes at once; an awake one first writes its memory and closes, then wakes with the new settings). Switching CLI without choosing a model clears the model, because the previous CLI's model does not apply. Pi and Antigravity pick their model inside the CLI, so the model field is disabled. The model is chosen from the list this CLI supports, the first entry being “CLI default”; a model ShellBot does not recognise is not saved. A bot's settings can be changed at any time, even while it sleeps: ✎ on the card or right-click, “Edit” on the bot's row, or Settings → Bots.</span><span class="zh">一個 bot 可以換到別的 CLI 或模型，例如從 Claude 換成 Codex；名字、臉、工作和記憶都留著，但這次的對話不會搬到新的 CLI。在 bot 的編輯畫面改：按「儲存」是下次叫醒時換，按「儲存並現在就換」就立刻換（睡著的立刻醒來；醒著的先寫好記憶、關掉，再用新設定醒來）。換 CLI 卻沒指定模型時，模型會清掉，因為上一個 CLI 的模型不適用。Pi 和 Antigravity 在 CLI 自己裡面選模型，所以模型欄是關的。模型從這個 CLI 支援的清單裡選，第一個是「CLI 預設」；ShellBot 認不得的模型不會被存下來。bot 的設定隨時改得到，睡著的也行：卡片上的 ✎ 或右鍵、bot 那一列的「編輯」，或 設定 → Bots。</span></p>
+    </div>
+    <div class="card">
+      <h4><span class="en">One name only</span><span class="zh">只有一個名字</span></h4>
+      <p><span class="en">A bot has a single name, and it is the same wherever you change it: the tab's rename dialog, the bot's editor, or the phone. After a rename, the roster, the bound tab, groups and the memory folder all take the new name. The old name stays attached to it: messages sent to the old name still arrive, and no other bot can take that old name.</span><span class="zh">bot 只有一個名字，在哪裡改都一樣：分頁的改名對話框、bot 的編輯頁、手機都行。改了之後，名冊、綁定的分頁、群組和記憶資料夾都換成新名字。舊名字還留在它身上：用舊名字傳給它的訊息照樣送得到，別的 bot 也不能拿舊名字去用。</span></p>
+    </div>
+  </div>
+
+  <h3 class="sub"><span class="en">A bot's day</span><span class="zh">一個 bot 的一天</span></h3>
+  <div class="flow">
+    <div><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F57C2B"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><b><span class="en">1. Wake</span><span class="zh">1. 叫醒</span></b><span><span class="en">Opens a tab and hands it a briefing: its job, its skills, its long-term memory, the last summary, and who the other bots are and how to reach them.</span><span class="zh">開一個分頁，交給它一份簡報：執掌、skill、長期記憶、上次的摘要、其他 bot 是誰怎麼找。</span></span></div>
+    <div><svg class="face working" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F57C2B"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg><b><span class="en">2. Work</span><span class="zh">2. 工作</span></b><span><span class="en">Works in its own tab; when it needs your decision a “?” appears over its head and the question goes to your phone.</span><span class="zh">在自己的分頁裡做事；需要你決定時頭上冒「?」，問題送到手機。</span></span></div>
+    <div><svg class="face writing" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F57C2B"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g><rect class="pen" x="66" y="70" width="26" height="7" rx="2" transform="rotate(-35 79 73)"/></svg><b><span class="en">3. Writes memory before closing</span><span class="zh">3. 關閉前寫記憶</span></b><span><span class="en">It writes this session's summary and tidies its long-term memory. If it cannot finish, the last screen is kept, so closing never loses the conversation. A bot left open does not have to wait for closing: after a substantive conversation and 45 idle minutes (switch it off or change the minutes in Settings → Bots) it saves once as well; it does not trigger while it is working, has a question waiting for you, or you have unsent text in its input box. Each memory save uses one turn of the conversation.</span><span class="zh">它自己寫這次的摘要、整理長期記憶。沒寫完也會留下最後的畫面，關閉不會弄丟對話。一直開著的 bot 不用等關閉：有實質對話、閒置 45 分鐘後（設定 → Bots 可以關或調分鐘數）也會存一次；它正在做事、有題目等你回答、或輸入框有你沒送出的字時都不會觸發。每次存記憶會用掉一輪對話。</span></span></div>
+    <div><svg class="face asleep" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><circle cx="50" cy="51" r="42" fill="#F57C2B"/><path class="arc" d="M41.5 47Q46 54 50.5 47M57.5 47Q62 54 66.5 47"/></g><text class="zz" x="85" y="22">z</text></svg><b><span class="en">4. Resting</span><span class="zh">4. 休息中</span></b><span><span class="en">Back to the bottom of the list. At the next wake, its memory comes back with it.</span><span class="zh">回到清單下方。下次叫醒，記憶跟著回來。</span></span></div>
+  </div>
+  <p class="small muted" style="margin-top:12px"><span class="en">Memory lives in this computer's settings folder, one folder per bot. Text that comes from other bots, webhooks or Telegram is treated as data only and is never recorded as your preference; no passwords go into memory. Bot-to-bot messages are limited to bots in the roster, with caps on hand-off depth and rate, and all of it is logged; as soon as you answer (button presses included) or speak, the depth count starts over.</span><span class="zh">記憶放在這台電腦的設定資料夾，每個 bot 一個資料夾。從別的 bot、webhook、Telegram 來的文字只當資料，不會被記成你的偏好；記憶裡不放密碼。bot 之間傳話只限名冊裡的 bot，有轉手層數和頻率上限，全部留紀錄；你一回答（包括按選項按鈕）或說話，層數就從頭算。</span></p>
+
+  <h3 class="sub"><span class="en">On screen</span><span class="zh">畫面上長這樣</span></h3>
+  <div class="grid">
+    <figure class="inline-shot" style="max-width:none">
+      <img src="img/bots-temp-keep-sidebar.png" alt="Desktop sidebar: one row per AI tab; a tab that is not kept yet says “temp” on its second line with a Keep button beside it; kept ones carry a Bot label; a terminal tab shows &gt;_ instead of a face" data-zh-alt="桌面版側欄：每個 AI 分頁一列；還沒記住的分頁第二行寫「臨時」，旁邊有「記住」按鈕；已記住的有「Bot」標籤；終端機分頁用 &gt;_ 代替臉" width="440" height="1120" loading="lazy">
+      <figcaption><span class="en"><b>Easy to tell apart in the sidebar</b>: “temp” has a Keep button beside it; kept ones carry a Bot label; a terminal tab shows &gt;_ instead of a face.</span><span class="zh"><b>側欄一眼分得出來</b>：「臨時」旁邊有「記住」按鈕；已記住的有「Bot」標籤；終端機分頁用 &gt;_ 代替臉。</span></figcaption>
+    </figure>
+    <figure class="inline-shot" style="max-width:none">
+      <img src="img/bots-keep-dialog.png" alt="The window that opens when you press Keep: keep this conversation and turn it into a bot; it keeps its current face and gets its own memory folder; the name field defaults to the tab title, with Cancel and Keep below" data-zh-alt="按「記住」跳出的視窗：把這個對話記住，變成 bot；它會留著現在的臉、有自己的記憶資料夾；名字欄預設是分頁標題，下面有「取消」和「記住」" width="580" height="450" loading="lazy">
+      <figcaption><span class="en"><b>Pressing Keep</b>: the name defaults to the tab title and can be changed; the face carries over and a memory folder is created.</span><span class="zh"><b>按「記住」</b>：名字預設是分頁標題，可以自己改；臉沿用，並建立記憶資料夾。</span></figcaption>
+    </figure>
+    <figure class="inline-shot" style="max-width:none">
+      <img src="img/bots-switch-cli.png" alt="Desktop Edit Bot window: name, job, CLI, model; underneath a note that switching CLI or model keeps the name, face, job and memory but the current conversation does not move to the new CLI; “Save and switch now” at the bottom" data-zh-alt="桌面版編輯 Bot 視窗：名稱、執掌、CLI、模型；下方說明「換 CLI 或模型：名字、臉、執掌、記憶都留著；這次的對話不會搬到新的 CLI」；底部有「儲存並現在就換」" width="640" height="992" loading="lazy">
+      <figcaption><span class="en"><b>Switching CLI or model</b>: name, face, job and memory stay; “Save and switch now” takes effect at once.</span><span class="zh"><b>換 CLI 或模型</b>：名字、臉、執掌、記憶都留著；按「儲存並現在就換」立刻生效。</span></figcaption>
+    </figure>
+    <figure class="inline-shot" style="max-width:none">
+      <img src="img/desktop-bot-editor.png" alt="Desktop Create Bot window: name, job, CLI, model, skills, avatar shape and colour, and switches for memory, primary bot and external" data-zh-alt="桌面版「建立 Bot」視窗：名稱、執掌、CLI、模型、Skills、頭像形狀與顏色、記憶開關、主要 Bot 開關、外部開關" width="640" height="951" loading="lazy">
+      <figcaption><span class="en"><b>Create a bot</b>: a name, a job, which CLI, a model, skills, a face, and three switches: memory, primary and external.</span><span class="zh"><b>建立 Bot</b>：名字、執掌、用哪個 CLI、模型、skill、臉，以及記憶、主要、外部三個開關。</span></figcaption>
+    </figure>
+    <figure class="inline-shot" style="max-width:none">
+      <img src="img/desktop-faces.png" alt="The 12 face shapes, each in seven expressions: idle, working, question mark, stuck, done, resting and writing memory" data-zh-alt="12 種臉的形狀，每一種各有發呆、運作、問號、卡住、完成、休息、寫記憶七種表情" width="720" height="1053" loading="lazy">
+      <figcaption><span class="en"><b>12 shapes × 7 expressions</b>: idle, working, question mark, stuck, done, resting, writing memory.</span><span class="zh"><b>12 種形狀 × 7 種表情</b>：發呆、運作、問號、卡住、完成、休息、寫記憶。</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span class="en">ShellBot (formerly ShellFrame) is an open-source project under the MIT license. Source: <a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
+    Based on the release notes of desktop v0.44.6 (2026-11-15); all screenshots use demo data.</span><span class="zh">ShellBot（原名 ShellFrame）是開源專案，MIT 授權。原始碼：<a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
+    內容依桌面版 v0.44.6 的發布說明整理（2026-11-15）；截圖皆為示範資料。</span>
+  </div>
+</footer>
 
 <script>
+/* Language: every visible string is written in the page twice (.en / .zh); this picks which one shows.
+   Order: ?lang=en|zh in the URL, then the choice remembered in this browser, then the browser language. */
+var SB_LANG = (function(){
+  var root = document.documentElement, KEY = "shellbot-lang";
+  var META = {
+    en: {
+      title: "ShellBot — your AI CLIs as a team of bots",
+      desc: "ShellBot (formerly ShellFrame) runs every AI CLI in its own tab, lets you work with them like a chat, and turns tabs into bots with a face, a memory and a primary bot that dispatches. Features, supported CLIs and a one-line install for macOS, Windows and Linux.",
+      ogdesc: "Every AI CLI in its own tab, chat view, bots with faces and memory, a primary bot that dispatches. One-line install for macOS, Windows and Linux."
+    },
+    zh: {
+      title: "ShellBot — 功能介紹與安裝",
+      desc: "ShellBot（原名 ShellFrame）：每個 AI CLI 跑在自己的分頁裡，可以用對話畫面像聊天一樣和 AI 工作；AI 分頁一開就是臨時 bot，按「記住」變成有名字、有臉、有記憶的 bot，由主要 bot 盤點和派工。功能介紹、支援的 CLI，以及 macOS、Windows、Linux 的一行指令安裝。",
+      ogdesc: "每個 AI CLI 跑在自己的分頁、對話畫面、有臉有記憶的 bot、由主要 bot 派工。macOS、Windows、Linux 一行指令安裝。"
+    }
+  };
+  var current = "en", listeners = [];
+
+  function initial(){
+    var q = /[?&]lang=(en|zh)\b/.exec(location.search);
+    if(q) return q[1];
+    try { var s = localStorage.getItem(KEY); if(s === "en" || s === "zh") return s; } catch(e){}
+    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || "";
+    return /^zh/i.test(nav) ? "zh" : "en";
+  }
+  function setMeta(sel, attr, val){ var el = document.querySelector(sel); if(el) el.setAttribute(attr, val); }
+  function attrSwap(zhAttr, target, lang){
+    document.querySelectorAll("[" + zhAttr + "]").forEach(function(el){
+      var enAttr = "data-en-" + target;
+      if(!el.hasAttribute(enAttr)) el.setAttribute(enAttr, el.getAttribute(target) || "");
+      el.setAttribute(target, el.getAttribute(lang === "zh" ? zhAttr : enAttr));
+    });
+  }
+  function set(lang, persist){
+    current = lang === "zh" ? "zh" : "en";
+    root.setAttribute("data-lang", current);
+    root.setAttribute("lang", current === "zh" ? "zh-Hant" : "en");
+    document.title = META[current].title;
+    setMeta('meta[name="description"]', "content", META[current].desc);
+    setMeta('meta[property="og:title"]', "content", META[current].title);
+    setMeta('meta[property="og:description"]', "content", META[current].ogdesc);
+    attrSwap("data-zh-alt", "alt", current);
+    attrSwap("data-zh-aria", "aria-label", current);
+    if(persist){ try { localStorage.setItem(KEY, current); } catch(e){} }
+    listeners.forEach(function(fn){ fn(current); });
+  }
+  document.getElementById("lang-btn").addEventListener("click", function(){
+    set(current === "zh" ? "en" : "zh", true);
+  });
+  return {
+    get: function(){ return current; },
+    on: function(fn){ listeners.push(fn); },
+    start: function(){ set(initial(), false); }
+  };
+})();
+
+/* Tabs: the #hash picks the visible panel, so #install, #cli and #model can be linked to directly. */
+(function(){
+  var TABS = ["overview","install","cli","model"];
+  var panels = document.querySelectorAll("[data-panel]");
+  var links = document.querySelectorAll("nav.tabs a[data-tab]");
+  function current(){
+    var h = (location.hash || "").replace(/^#/, "");
+    return TABS.indexOf(h) >= 0 ? h : "overview";
+  }
+  function show(id, scroll){
+    panels.forEach(function(p){ p.classList.toggle("on", p.dataset.panel === id); });
+    links.forEach(function(a){
+      var on = a.dataset.tab === id;
+      a.setAttribute("aria-selected", on ? "true" : "false");
+      if(on){
+        var nav = a.parentNode;
+        var l = a.offsetLeft - 16, r = a.offsetLeft + a.offsetWidth + 16;
+        if(l < nav.scrollLeft) nav.scrollLeft = l;
+        else if(r > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = r - nav.clientWidth;
+      }
+    });
+    if(scroll) window.scrollTo(0, 0);
+  }
+  window.addEventListener("hashchange", function(){ show(current(), true); });
+  show(current(), false);
+})();
+
+/* Light / dark: follows the system; the button switches and the choice is remembered in this browser. */
+(function(){
+  var root = document.documentElement, KEY = "shellbot-theme";
+  try { var saved = localStorage.getItem(KEY); if(saved === "light" || saved === "dark") root.setAttribute("data-theme", saved); } catch(e){}
+  document.getElementById("theme-btn").addEventListener("click", function(){
+    var now = root.getAttribute("data-theme") ||
+      (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var next = now === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+})();
+
+/* Install command: detect the OS, show the matching command, copy button. */
 (function(){
   var REPO = "h2ocloud/shellframe";
+  var UNIX = "curl -fsSL https://raw.githubusercontent.com/"+REPO+"/main/install.sh | bash";
+  var WGET = "wget -qO- https://raw.githubusercontent.com/"+REPO+"/main/install.sh | bash";
   var CMDS = {
-    unix: { prompt:"$",  text:"curl -fsSL https://raw.githubusercontent.com/"+REPO+"/main/install.sh | bash" },
-    win:  { prompt:"PS>", text:"irm https://raw.githubusercontent.com/"+REPO+"/main/install.ps1 | iex" }
+    mac:   { prompt:"$",   text:UNIX },
+    win:   { prompt:"PS>", text:"irm https://raw.githubusercontent.com/"+REPO+"/main/install.ps1 | iex" },
+    linux: { prompt:"$",   text:UNIX }
   };
   var HINTS = {
-    unix: 'macOS 與 Linux 共用此指令。終端機（Terminal / iTerm）貼上即可。',
-    win:  '在 <b>PowerShell</b> 視窗執行（不是 cmd）。'
+    en: {
+      mac:   'Open Terminal (or iTerm), paste, and press Enter. macOS and Linux use the same line. One or two steps need you; see “What may need you” below.',
+      win:   'Run it in a <b>PowerShell</b> window (not cmd). If <code>iex</code> is blocked, first run <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code> in the same window.',
+      linux: 'Paste it in a terminal and press Enter. Missing git, Python, tmux and window components are installed for you, and it asks for your sudo password once. No curl (common on Ubuntu desktop)? Paste this line instead: <code>'+WGET+'</code>'
+    },
+    zh: {
+      mac:   '打開「終端機」（Terminal 或 iTerm），貼上後按 Enter。macOS 和 Linux 用同一行指令。中間有一兩個地方要你動手，見下面「需要你動手的地方」。',
+      win:   '在 <b>PowerShell</b> 視窗執行（不是 cmd）。如果 <code>iex</code> 被擋，先在同一個視窗執行 <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code>。',
+      linux: '在終端機貼上後按 Enter。缺的 git、Python、tmux、視窗元件會自動裝，會要你輸入一次 sudo 密碼。沒有 curl 的話（Ubuntu 桌面版常見），改貼這一行：<code>'+WGET+'</code>'
+    }
+  };
+  var STR = {
+    en: { copy:"Copy", copied:"Copied", unknown:"Unknown (showing macOS first)", phone:"iPhone / iPad", android:"Android" },
+    zh: { copy:"複製", copied:"已複製", unknown:"未知（先顯示 macOS）", phone:"iPhone／iPad", android:"Android" }
   };
 
   function detectOS(){
-    var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
     var ua = navigator.userAgent || "";
-    if(/Win/i.test(p) || /Windows/i.test(ua)) return "win";
-    return "unix"; // mac + linux 共用 install.sh
-  }
-  function osLabel(){
-    var ua = navigator.userAgent || "", p = navigator.platform || "";
-    if(/Win/i.test(p)||/Windows/i.test(ua)) return "Windows";
-    if(/Mac/i.test(p)||/Mac OS X/i.test(ua)) return "macOS";
-    if(/Linux/i.test(p)||/Linux/i.test(ua)) return "Linux";
-    return "未知（預設顯示 macOS / Linux）";
+    var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    if(/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return {os:"mac", label:"phone", mobile:true};
+    if(/Android/i.test(ua)) return {os:"mac", label:"android", mobile:true};
+    if(/Windows/i.test(ua)) return {os:"win", label:"Windows"};
+    if(/Mac OS X|Macintosh/i.test(ua)) return {os:"mac", label:"macOS"};
+    if(/Linux|X11|CrOS/i.test(ua)) return {os:"linux", label:"Linux"};
+    if(/Win/i.test(p)) return {os:"win", label:"Windows"};
+    if(/Mac/i.test(p)) return {os:"mac", label:"macOS"};
+    if(/Linux/i.test(p)) return {os:"linux", label:"Linux"};
+    return {os:"mac", label:"unknown"};
   }
 
-  var current = detectOS();
+  var found = detectOS();
+  var current = found.os;
+  var copied = false, copiedTimer = null;
   var elText = document.getElementById("cmd-text");
   var elPrompt = document.getElementById("prompt");
   var elHint = document.getElementById("hint");
   var elCopy = document.getElementById("copy");
+  var elName = document.getElementById("os-name");
 
+  function lang(){ return SB_LANG.get(); }
+  function paintCopy(){
+    elCopy.classList.toggle("done", copied);
+    elCopy.textContent = copied ? STR[lang()].copied : STR[lang()].copy;
+  }
+  function paintName(){
+    var l = found.label;
+    elName.textContent = (l === "phone" || l === "android" || l === "unknown") ? STR[lang()][l] : l;
+  }
   function render(os){
     current = os;
     elText.textContent = CMDS[os].text;
     elPrompt.textContent = CMDS[os].prompt;
-    elHint.innerHTML = HINTS[os];
-    document.querySelectorAll(".tab").forEach(function(t){
+    elHint.innerHTML = HINTS[lang()][os];
+    document.querySelectorAll(".ostab").forEach(function(t){
       t.classList.toggle("active", t.dataset.os === os);
+      t.setAttribute("aria-pressed", t.dataset.os === os ? "true" : "false");
     });
-    document.getElementById("req-unix").classList.toggle("hide", os!=="unix");
-    document.getElementById("req-win").classList.toggle("hide", os!=="win");
-    document.getElementById("tb-unix").classList.toggle("hide", os!=="unix");
-    document.getElementById("tb-win").classList.toggle("hide", os!=="win");
-    elCopy.classList.remove("done"); elCopy.textContent="複製";
+    document.querySelectorAll("#panel-install .os-only").forEach(function(el){
+      el.classList.toggle("hide", (el.dataset.os || "").split(" ").indexOf(os) < 0);
+    });
+    copied = false; paintCopy();
   }
 
-  document.getElementById("os-name").textContent = osLabel();
-  document.querySelectorAll(".tab").forEach(function(t){
+  if(found.mobile) document.getElementById("os-mobile").classList.remove("hide");
+  document.querySelectorAll(".ostab").forEach(function(t){
     t.addEventListener("click", function(){ render(t.dataset.os); });
   });
 
   elCopy.addEventListener("click", function(){
     var txt = CMDS[current].text;
-    var done = function(){ elCopy.classList.add("done"); elCopy.textContent="已複製";
-      setTimeout(function(){ elCopy.classList.remove("done"); elCopy.textContent="複製"; },1600); };
+    var done = function(){
+      copied = true; paintCopy();
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(function(){ copied = false; paintCopy(); }, 1600);
+    };
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(txt).then(done, function(){ fallback(txt); done(); });
     } else { fallback(txt); done(); }
   });
   function fallback(txt){
-    var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta);
-    ta.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta);
+    var ta = document.createElement("textarea"); ta.value = txt;
+    ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch(e){}
+    document.body.removeChild(ta);
   }
 
-  document.getElementById("repo-link").href = "https://github.com/"+REPO;
+  SB_LANG.on(function(){ paintName(); elHint.innerHTML = HINTS[lang()][current]; paintCopy(); });
+  SB_LANG.start();   // decides the language, then calls the listener above
   render(current);
 })();
+
 </script>
 </body>
 </html>
