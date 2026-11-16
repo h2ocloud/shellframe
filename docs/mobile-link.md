@@ -44,6 +44,12 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
     - `clear_draft: true`：清掉輸入框（分頁不在跑時按一次 Ctrl+C）再送；分頁正在跑就排隊，輪到時先清再送。
       清不掉回 `code: "draft_stuck"`，什麼都沒送。
     - 舊版電腦不認得這兩個欄位，會照舊排隊（`reason: "draft"`），手機看不到 `code: "draft"` 就維持排隊加提示。
+- 用量與配速（設定頁，v0.45.3 起）：`GET /link/usage[?refresh=1]` → `{"success", "details": {"accounts": [...], "at", "refreshed"}}`。
+  每個帳號：`provider`、`label`、`account`、`current`、`stale`、`checked`，讀不到時有 `error`（`auth_required`／`rate_limited`／`no_data`…）
+  與 `error_message`，不給數字；有額度時 `five_hr`／`week` 各是 `{pct, reset, reset_epoch?, pace?, ahead?, full_at?}`：
+  `pace` 是這個時段已經過了多少（%），`ahead` = 已用 − pace（正的就是比配速快），`full_at` 是照目前速度用完的時間（只在重置前）。
+  另外的額度（例如 Antigravity 分 Gemini／Claude）在 `groups`。清單已經照「最該注意」排好。`refresh=1` 每分鐘最多重讀一次。
+  舊電腦回 404：手機要說「這台的 ShellBot 要更新到 0.45.3 以上」。
 - 「要你決定」：`/link/signals` 讀 agent 的 `[[SF:RED/YELLOW]]`，側欄該 session
   會亮橘色驚嘆號。
 - 多台電腦：每台是獨立 peer、獨立金鑰；側欄一台一區。

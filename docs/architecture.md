@@ -87,6 +87,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | | `account_manager.py` | Profile directories and credential seeding per provider |
 | | `frame_link.py`, `link_records.py`, `link_relay.py`, `relay_server.py` | Cross-machine pairing, signed peer requests, what a link keeps (inbox, outbox, request log), NAT relay |
 | | `link_bots.py` | Another machine's bots for this desktop: each paired desktop this one may control is asked for its `GET /link/bots` in the background (`PeerBots`, with `rev`, at most every 15 s; offline / 403 / 404 give nothing), and the page gets that machine's tab faces, its primary bot and its bots for `#` (`#<machine>/<bot>`, the A2A target; `addresses` picks a name or the id so it always resolves). `web/bots.js` draws them |
+| | `link_usage.py` | What a phone's Settings → 用量與配速 shows (`GET /link/usage`, the command `usage_accounts`): every account's allowance from `Api.account_usage_all`, with its pace, how far ahead of it, and when it would run out, worked out here; refresh at most once a minute. Stdlib and usage_probe only |
 | | `bridge_telegram.py`, `bridge_line.py`, `bridge_base.py` | Chat bridges: polling, routing, injection, reply extraction |
 | | `plugin_sdk.py`, `agent_group.py`, `agent_link.py`, `agent_model.py`, `ai_skill.py` | Plugins, role groups, agent-to-agent rules (and how a message reads as one line, `agent_link.preview_of`, the same rule as `web/chat.js` `preview`), model pins, AI skill |
 | Ingress | `sfctl.py`, `api_server.py`, `sf_agent_hook.py` | CLI, HTTP API, Claude Code hook |

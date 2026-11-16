@@ -1236,6 +1236,13 @@ class FrameLink:
                         lines = 120
                     res = link._execute("peek", {"sid": sid, "lines": lines}) or {}
                     return self._send(200, res, sign_for=peer, nonce=nonce)
+                if path == "/link/usage":
+                    # Settings → 用量與配速 on a phone: every account's allowance and pace (link_usage).
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False, "message": "單向配對：對方無權查看這台"},
+                                          sign_for=peer, nonce=nonce)
+                    res = link._execute("usage_accounts", {"refresh": (q.get("refresh") or [""])[0] in ("1", "true")})
+                    return self._send(200, res or {"success": False}, sign_for=peer, nonce=nonce)
                 if path == "/link/state":
                     # 跨機的低成本狀態查詢。跟 /link/info 分開：info 是週期性
                     # 拉的完整清單，state 是「問一次某個分頁現在怎麼了」，可以

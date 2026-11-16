@@ -23,6 +23,7 @@ import a2a_host
 import agent_link
 import bridge_home
 import sf_lang
+import link_usage
 import tab_delivery
 import tmux_sessions
 from sf_config import CONFIG_LOCK
@@ -1304,6 +1305,19 @@ class RemoteApiMixin:
                 return {"success": True, "message": f"已斷開 {target}"}
             except Exception as e:
                 return {"success": False, "message": f"link unpair failed: {e}"}
+
+        elif cmd == "usage_accounts":
+            # A paired phone's Settings → 用量與配速 (GET /link/usage): every signed-in account's
+            # allowance with its pace worked out (link_usage). `refresh`: at most once a minute.
+            try:
+                force = bool(args.get("refresh")) and link_usage.refresh_allowed()
+                raw = json.loads(self.account_usage_all(force) or "{}")
+                if not raw.get("success"):
+                    return {"success": False, "message": raw.get("message") or "usage failed"}
+                return {"success": True, "details": {"accounts": link_usage.phone_accounts(raw.get("providers")),
+                                                     "at": int(time.time()), "refreshed": force}}
+            except Exception as e:
+                return {"success": False, "message": f"usage failed: {e}"}
 
         elif cmd == "usage":
             # Per-tab AI usage water-level. Detects claude/codex from the
