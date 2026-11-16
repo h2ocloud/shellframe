@@ -8,6 +8,26 @@
 
 ## v0.45.2 (2026-11-16)
 
+### Fixes
+
+- **A message whose Enter did not take no longer holds a tab's queue for good, and nobody is left waiting
+  unaware.** Reported: messages to one tab waited 21 hours. Measured in the debug log: on 11/15 at 12:25 a
+  message was typed into the tab (paste, then Enter), no prompt followed, and the words stayed in its input
+  box; the draft check read them as the person typing, so every later message waited behind them and their
+  senders were told only when theirs was given up. After typing a message in, ShellBot now checks that the tab
+  took it; when the words are still in the box, it presses Enter once more, and when that does not take either,
+  the sender is told the message is stuck there. Words ShellBot typed in earlier that are still in the box get
+  their Enter instead of holding the queue. The person's own unsent words still hold it, and after 10 minutes
+  the sender is told what is waiting and why, once. Covered by `tests_stuck_paste.py`, which reproduces the
+  held queue without the fix.
+
+  **Enter 沒生效的訊息不會再一直卡住整個佇列，等的人也會知道。** 回報：送給某個分頁的訊息卡了 21 小時。從 debug log 量到：
+  11/15 12:25 一則訊息貼進分頁（貼上後按 Enter），之後沒有開始處理，字停在輸入框；草稿檢查把它當成使用者正在打字，之後
+  所有訊息都排在它後面，送件人要等到逾時放棄才收到通知。現在 ShellBot 把訊息送進去之後會確認分頁有收到；字還在輸入框
+  就再按一次 Enter，還是沒用就告訴送件人訊息卡在對方的輸入框。輸入框裡如果是 ShellBot 之前貼進去、還沒送出的字，會幫它
+  補按 Enter，不會擋住佇列。使用者自己沒送出的字照樣會擋，但超過 10 分鐘會告訴送件人在等什麼、為什麼，只說一次。由
+  `tests_stuck_paste.py` 守著，沒有修正時它會重現被擋住的佇列。
+
 ### Added
 
 - **The sidebar's chips filter by kind: 「Bot」 or 「分頁」.** Asked for: the filter chips should also filter by

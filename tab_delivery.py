@@ -57,6 +57,8 @@ RESULT_WAIT = 86400.0       # a2a-result: the requester is waiting for it, late 
 LATE_NOTE_S = 1800.0        # an item that waited longer goes in with a line saying how long
 POLL = 1.5                  # seconds between checks while waiting
 TAKEN_WAIT = 8.0            # after sending, how long to wait for the tab to take it
+DRAFT_ALERT_S = 600.0       # held by words in the input box this long: the sender is told, once
+PASTED_KEEP_S = 3600.0      # how long ShellBot remembers what it typed into a tab (see _ours)
 STATE_FILE = None           # set by the app at start-up; None (tests) keeps the queue in memory
 RESTORE_GRACE = 180.0       # after a restart, how long an item waits for its tab to come back
 RESUME_SETTLE = 20.0        # …and how long before a restored item may go in at all (see _wait_turn)
@@ -552,8 +554,13 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
         reason = busy_reason(api, sid)
     if not reason:
         s._startup_trust_pending = False
+        sent_at = time.time()
+        if submit:
+            _remember(sid, text)
         api._send_text_to_session(s, text, submit=submit)
-        _delivered(sid, what, time.time())
+        _delivered(sid, what, sent_at)
+        if submit:
+            _confirm_later(api, sid, sent_at, from_sid, label)
         return {"success": True, "message": f"Sent {len(text)} chars to {sid}", "queued": False}
     item = {"sid": sid, "text": text, "submit": submit, "t0": time.time(), "from_sid": from_sid,
             "what": what, "label": label or sid, "id": uuid.uuid4().hex[:12]}
@@ -571,6 +578,77 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
                 f"Queued for {sid} ({why}); it goes in when that ends, up to {mins} min "
                 f"(--ttl changes that). --now sends it at once.",
                 f"已排隊等 {sid}（{why}）；結束後自動送出，最多等 {mins} 分鐘（--ttl 可改）。要立刻送請加 --now。")}
+
+
+# What ShellBot itself last typed into each tab with an Enter: sid -> (its words, squeezed; when).
+# Measured 2026-11-15 12:25: a message typed into a tab whose Enter did not take stayed in the input
+# box; the draft check read it as the person typing, and every message to that tab waited behind it
+# for 21 hours with nobody told. Words ShellBot put there are not the person's draft.
+_pasted = {}
+
+
+def _squeeze(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _remember(sid: str, text: str):
+    if text:
+        _pasted[sid] = (_squeeze(text)[:600], time.time())
+
+
+def _ours(sid: str, draft: str) -> bool:
+    """The input box holds what ShellBot typed in (recently), not the person's words. A long paste
+    shows as Claude Code's `[Pasted text #1 +N lines]` chip, which is ours too when we just pasted."""
+    words, at = _pasted.get(sid, ("", 0.0))
+    if not words or time.time() - at > PASTED_KEEP_S:
+        return False
+    d = _squeeze(draft)
+    if not d:
+        return False
+    if d.startswith("[Pasted text"):
+        return True
+    head = d[:40]
+    return head in words or words[:40] in d
+
+
+def _wait_taken(api, sid: str, since: float, wait: float) -> bool:
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        if _taken(api, sid, since):
+            return True
+        time.sleep(0.25)
+    return _taken(api, sid, since)
+
+
+def confirm(api, sid: str, sent_at: float, from_sid: str = "", label: str = "") -> str:
+    """After text went in with its Enter: 'taken', or the Enter is pressed once more when the
+    input box still holds those words ('retried'), or the sender is told it is stuck there
+    ('stuck'). 'unknown': the box shows none of it (a CLI without hooks, or the hook is late)."""
+    if _wait_taken(api, sid, sent_at, TAKEN_WAIT):
+        _pasted.pop(sid, None)
+        return "taken"
+    kind, draft = composer_state(capture(api, sid))
+    if kind != "draft" or not _ours(sid, draft):
+        return "unknown"
+    s = api.sessions.get(sid)
+    _dlog("deliver", f"{sid}: its Enter did not take, the words are still in the input box: pressing Enter again")
+    if s is not None:
+        again = time.time()
+        api._send_text_to_session(s, "", submit=True)
+        if _wait_taken(api, sid, again, TAKEN_WAIT):
+            _pasted.pop(sid, None)
+            return "retried"
+    _dlog("deliver", f"{sid}: still not taken after a second Enter; the words stay in its input box")
+    if from_sid:
+        notify_sender(api, from_sid, label or sid, sf_lang.pick(
+            "it was typed in but its Enter did not take; it is still in their input box",
+            "已經貼進去，但 Enter 沒有生效，訊息還停在對方的輸入框"), outcome="stuck")
+    return "stuck"
+
+
+def _confirm_later(api, sid: str, sent_at: float, from_sid: str, label: str):
+    threading.Thread(target=confirm, args=(api, sid, sent_at, from_sid, label),
+                     name=f"deliver-confirm-{sid}", daemon=True).start()
 
 
 def _taken(api, sid: str, since: float) -> bool:
@@ -610,6 +688,26 @@ def _wait_turn(api, sid: str, item: dict) -> str:
             time.sleep(POLL)
             continue
         reason = busy_reason(api, sid)
+        if reason == "draft":
+            kind, draft = composer_state(capture(api, sid))
+            if kind == "draft" and _ours(sid, draft) and time.time() - item.get("entered", 0) > 30:
+                item["entered"] = time.time()     # ShellBot's own words whose Enter did not take: not a draft
+                s = api.sessions.get(sid)
+                _dlog("deliver", f"{sid}: the input box holds words ShellBot typed in; pressing their Enter")
+                if s is not None:
+                    api._send_text_to_session(s, "", submit=True)
+                    if _wait_taken(api, sid, item["entered"], TAKEN_WAIT):
+                        _pasted.pop(sid, None)
+                        continue
+            elif (time.time() - item["t0"] > DRAFT_ALERT_S and not item.get("draft_told")
+                  and item.get("from_sid")):
+                item["draft_told"] = True         # waiting on the person's words: say so, once
+                _dlog("deliver", f"{sid}: held by unsent words in its input box for {int(DRAFT_ALERT_S // 60)} min")
+                notify_sender(api, item["from_sid"], item.get("label") or sid, sf_lang.pick(
+                    f"still waiting: their input box has unsent words (\"{_squeeze(draft)[:40]}\"); "
+                    "it goes in once they are sent or cleared",
+                    f"還在等：對方的輸入框有一段沒送出的字（「{_squeeze(draft)[:40]}」），送出或清掉後才會送進去"),
+                    outcome="waiting")
         if reason == "draft" and item.get("clear_draft") and not item.get("cleared"):
             item["cleared"] = True            # one Ctrl+C at most: a second one quits the CLI
             if clear_draft_now(api, sid):
@@ -678,12 +776,13 @@ def _drain(api, sid: str):
             s._startup_trust_pending = False
             waited = sent_at - item["t0"]
             text = item["text"] if waited <= LATE_NOTE_S else with_late_note(item["text"], waited)
+            if item["submit"]:
+                _remember(sid, text)
             api._send_text_to_session(s, text, submit=item["submit"])
             _drop(sid, item)
             _delivered(sid, item.get("what", ""), sent_at)
-            deadline = time.time() + TAKEN_WAIT
-            while time.time() < deadline and not _taken(api, sid, sent_at):
-                time.sleep(0.25)
+            if item["submit"]:          # the next one waits until this one is taken (or said to be stuck)
+                confirm(api, sid, sent_at, item.get("from_sid", ""), item.get("label", ""))
     except Exception as e:
         _dlog("deliver", f"{sid} queue stopped: {e!r}")
         with _lock:
@@ -698,6 +797,15 @@ def timeout_notice(target_label: str, why: str, mins: int = None, outcome: str =
             f"Check with sfctl peek before sending it again.]]",
             f"[[ShellBot：送給「{target_label}」的訊息可能沒送到（{why}）。"
             f"請先用 sfctl peek 看一下，再決定要不要重送。]]")
+    if outcome == "stuck":
+        return sf_lang.pick(
+            f"[[ShellBot: your message to \"{target_label}\" may not have gone in: {why}. "
+            f"Check with sfctl peek; it needs its Enter there, or send it again.]]",
+            f"[[ShellBot：送給「{target_label}」的訊息可能沒送出：{why}。"
+            f"請用 sfctl peek 看一下，在那裡補按 Enter，或再送一次。]]")
+    if outcome == "waiting":
+        return sf_lang.pick(f"[[ShellBot: your message to \"{target_label}\" is still queued: {why}.]]",
+                            f"[[ShellBot：送給「{target_label}」的訊息還在排隊：{why}。]]")
     if outcome in ("closed", "lost"):
         return sf_lang.pick(
             f"[[ShellBot: your message to \"{target_label}\" was not delivered ({why}). "

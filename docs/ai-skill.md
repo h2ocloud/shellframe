@@ -206,7 +206,9 @@ requester is waiting for it. A message that waited more than 30 minutes goes in 
 first line saying how long. The queue is kept on disk: after a ShellBot restart it carries
 on with what is left of each item's 30 minutes, and anything that cannot be
 delivered (its tab did not come back, or it was being typed in when the app went
-down) is reported to the sender instead. `--now` sends at once. It pastes atomically (bracketed
+down) is reported to the sender instead. If its Enter does not take (the words are still in the target's input box), ShellBot
+presses Enter once more, then tells you it is stuck there; held 10 minutes by the person's
+unsent words, you are told what it waits on. `--now` sends at once. It pastes atomically (bracketed
 paste) and only then submits. Prefer it over typing keystrokes. `a2a-send`,
 `a2a-handoff`, `a2a-result`, `a2a-next` and `delegate` to a tab that is already
 open use the same queue and take `--now` too: you no longer need your own polling
