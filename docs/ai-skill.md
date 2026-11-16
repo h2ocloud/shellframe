@@ -477,6 +477,7 @@ configure there.
 | `send` and A2A go into a working tab too (a menu, a model switch, the person's unsent words or a bridged message still hold them); a send whose Enter did not take is pressed again or reported; `sfctl board-*` and the `[[SF:TASK]]` marker are gone; phones get `GET /link/usage`, `POST /link/send/now`, `/link/send/cancel` and `images` on `/link/send` | 0.45.3 |
 | The chat view takes a person through signing a tab in again (a card for each step of `/login`); phones: `POST /link/login` | 0.45.4 |
 | Tasks across sessions and bots: `sfctl task add` / `list` / `mine` / `show` / `update` / `note` / `done` / `drop` / `stuck` (§4.9), kept in `state.db`; `a2a-send` / `a2a-handoff --for-task N` (the result comes back onto the task); a bot's wake-up brief lists its open tasks | 0.46.0 |
+| A bot's name, 執掌 and folder in its CLI's system prompt (Claude Code, pi); a paired computer's tab in the chat view (`POST /link/chat`), marked remote | 0.46.1 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

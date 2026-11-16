@@ -6,6 +6,38 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.46.1 (2026-11-16)
+
+### Changes
+
+- **A bot knows who it is from its first word to its last.** Reported: a bot asked about its settings described
+  the program it runs on and nothing of its name or what it looks after, and colleagues found bots no different from
+  a plain tab. A bot's name, what it looks after and where its memory is used to arrive only as its first message:
+  weaker than its standing instructions, lost when a long conversation was compacted, and never sent to a bot without
+  memory. Now, where the program takes added standing instructions (Claude Code, pi, and launchers named after them),
+  a bot starts with them there, and asked who it is, it answers with its name and what it looks after first. Other
+  programs still get them as the first message, bots without memory too. Checked on Claude Code with a small model.
+  Covered by `tests_bot_persona.py`.
+
+  **bot 從頭到尾都知道自己是誰。** 回報：問 bot 它的設定，它只講自己跑在哪個程式上，完全沒提名字和負責什麼；同事也覺得 bot
+  跟一般分頁沒兩樣。bot 的名字、執掌和記憶在哪裡，以前只在第一則訊息送進去：比常駐的指示弱，長對話被壓縮後會不見，沒開記憶的
+  bot 更是完全收不到。現在只要程式接受額外的常駐指示（Claude Code、pi，以及以它們命名的啟動器），bot 一開始就帶著這些，被問到
+  是誰時會先講名字和執掌。其他程式照舊放在第一則訊息，沒開記憶的 bot 也會收到。用 Claude Code 搭小模型實測過。由
+  `tests_bot_persona.py` 守著。
+
+- **Another computer's tabs are shown the way this computer shows its own, and say they are remote.** Asked for: a
+  tab opened from the other-computer section of the sidebar should follow this computer's mode (the chat view or the
+  terminal) and remind you it runs elsewhere. In chat style it now opens as a conversation, read from that computer;
+  messages, answers to its questions, "send now" and signing in again go to it. Its name carries "Remote · <machine>",
+  in the chat view and the terminal alike, and the message box names the machine. Both computers need this version: an
+  older one shows its terminal with a line saying to update it. Covered by `tests_link_chat.py` and
+  `tests_remote_chat_ui.py`.
+
+  **另一台電腦的分頁，會照這台的方式顯示，並標出它在遠端。** 需求：從側欄「其他電腦」打開的分頁，要跟著這台現在的模式（對話
+  或終端機）顯示，並提醒它在別台跑。現在對話模式下它會以對話打開，內容從那台讀；送訊息、回答它的問題、「立刻送入」、重新登入，
+  都送到那台。它的名字旁邊會標「遠端 · 機器名」，對話畫面和終端機都有，輸入框也會寫出是哪台。兩台都要是這個版本：對方較舊時，
+  會顯示它的終端機並說明要更新。由 `tests_link_chat.py`、`tests_remote_chat_ui.py` 守著。
+
 ## v0.46.0 (2026-11-16)
 
 ### Added
