@@ -621,7 +621,8 @@ class RemoteApiMixin:
                     agent_link.clear_chain(sid)
                 sender = str(args.get("from_sid") or "")
                 label = self._session_label(sid, self.sessions.get(sid))
-                res = tab_delivery.deliver(self, sid, text, submit=submit, now=bool(args.get("now")),
+                images = [str(p) for p in (args.get("images") or []) if p]
+                res = tab_delivery.deliver(self, sid, text, submit=submit, now=bool(args.get("now")), images=images,
                                            from_sid=sender, label=label,
                                            max_wait=tab_delivery.wait_limit(args.get("ttl")),
                                            what=str(args.get("what") or ""),
@@ -1321,7 +1322,8 @@ class RemoteApiMixin:
             if item.get("clear_draft") and not item.get("cleared"):
                 tab_delivery.clear_draft_now(self, sid)
             res = tab_delivery.deliver(self, sid, item["text"], submit=item.get("submit", True), now=True,
-                                       what=item.get("what", ""), label=item.get("label", ""))
+                                       what=item.get("what", ""), label=item.get("label", ""),
+                                       images=item.get("images") or [])
             return {k: res[k] for k in ("success", "message") if k in res}
 
         elif cmd == "usage_accounts":

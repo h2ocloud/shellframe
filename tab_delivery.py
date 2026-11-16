@@ -319,7 +319,8 @@ _draining = set()
 _resumed_at = 0.0            # when resume() loaded the queue after a restart
 _saved = None                # what the previous run left in STATE_FILE (see _read_saved)
 ON_DELIVERED = []            # fn(sid, what, at) once an item is typed in (a2a_host: hand-offs)
-_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait", "id", "clear_draft", "idle")
+_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait", "id", "clear_draft", "idle",
+         "images")
 GIVEN_UP = {}                # sid -> deque of {"id", "why", "outcome", "at"}: chat sends that never went in
 
 
@@ -529,10 +530,12 @@ def resume(api) -> int:
 def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
             from_sid: str = "", on_timeout=None, what: str = "", label: str = "",
             max_wait: float = None, clear_draft: bool = False, queue: bool = True,
-            person: bool = False, idle: bool = False) -> dict:
+            person: bool = False, idle: bool = False, images=None) -> dict:
     """Send `text` to tab `sid` now if it is free (or `now`), else queue it.
     `person`: the person wrote it; it does not wait behind what agents queued for the tab.
     `idle`: it must wait for the turn to end too (a model switch types `/model` and then drives a menu).
+    `images`: paths of pictures saved on this computer, typed in just before the words (_type_in), so a
+    message with pictures queues, goes in now or is withdrawn as one.
     A turn in flight holds nobody's text (TYPES_INTO); a menu, a model switch, a draft and a
     bridged message do.
     `queue=False`: only ever now. A tab that is not free (or has texts waiting ahead) is
@@ -567,8 +570,8 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
         s._startup_trust_pending = False
         sent_at = time.time()
         if submit:
-            _remember(sid, text)
-        api._send_text_to_session(s, text, submit=submit)
+            _remember(sid, text, bool(images))
+        _type_in(api, s, text, images, submit)
         _delivered(sid, what, sent_at)
         if submit:
             _confirm_later(api, sid, sent_at, from_sid, label)
@@ -577,6 +580,8 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
             "what": what, "label": label or sid, "id": uuid.uuid4().hex[:12]}
     if idle:
         item["idle"] = True
+    if images:
+        item["images"] = list(images)
     if clear_draft:
         item["clear_draft"] = True
     if max_wait:
@@ -604,9 +609,22 @@ def _squeeze(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def _remember(sid: str, text: str):
-    if text:
-        _pasted[sid] = (_squeeze(text)[:600], time.time())
+IMAGE_SETTLE = 0.4          # after a picture's path is pasted, before the next: Claude Code turns it into [Image #N]
+
+
+def _type_in(api, s, text: str, images=None, submit: bool = True):
+    """The pictures first, each as a bracketed paste of its path (as a picture dropped or pasted in the
+    terminal), then the words and their Enter."""
+    for p in images or ():
+        if hasattr(s, "write"):
+            s.write(" \x1b[200~" + p + "\x1b[201~")
+            time.sleep(IMAGE_SETTLE)
+    api._send_text_to_session(s, text, submit=submit)
+
+
+def _remember(sid: str, text: str, images: bool = False):
+    if text or images:
+        _pasted[sid] = (_squeeze(text)[:600] + (" [Image" if images else ""), time.time())
 
 
 def _ours(sid: str, draft: str) -> bool:
@@ -618,7 +636,7 @@ def _ours(sid: str, draft: str) -> bool:
     d = _squeeze(draft)
     if not d:
         return False
-    if d.startswith("[Pasted text"):
+    if d.startswith("[Pasted text") or (d.startswith("[Image") and "[Image" in words):
         return True
     head = d[:40]
     return head in words or words[:40] in d
@@ -792,8 +810,8 @@ def _drain(api, sid: str):
             waited = sent_at - item["t0"]
             text = item["text"] if waited <= LATE_NOTE_S else with_late_note(item["text"], waited)
             if item["submit"]:
-                _remember(sid, text)
-            api._send_text_to_session(s, text, submit=item["submit"])
+                _remember(sid, text, bool(item.get("images")))
+            _type_in(api, s, text, item.get("images"), item["submit"])
             _drop(sid, item)
             _delivered(sid, item.get("what", ""), sent_at)
             if item["submit"]:          # the next one waits until this one is taken (or said to be stuck)

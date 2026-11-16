@@ -950,7 +950,7 @@ class FrameLink:
                 if path == "/link/voice":
                     return self._recv_voice()
 
-                raw = self._body(cap=PASTE_MAX_BYTES if path == "/link/paste" else 2 * 1024 * 1024)
+                raw = self._body(cap=PASTE_MAX_BYTES if path in ("/link/paste", "/link/send") else 2 * 1024 * 1024)
                 if raw is None:          # over the cap: said so, not "bad signature" over an empty body
                     return self._send(413, {"success": False, "message": "太大了：圖片請先縮小再傳"
                                             if path == "/link/paste" else "request body too large"})
@@ -968,7 +968,7 @@ class FrameLink:
                     res = link._local_send(body.get("sid", ""), body.get("text", ""),
                                            bool(body.get("submit", True)), source_peer=peer_id,
                                            ask_draft=bool(body.get("ask_draft")),       # docs/mobile-link.md (v0.44.2)
-                                           clear_draft=bool(body.get("clear_draft")))
+                                           clear_draft=bool(body.get("clear_draft")), images=body.get("images") or [])
                     return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/a2a/send":
                     if not link._peer_may_control(peer_id):
@@ -1413,12 +1413,21 @@ class FrameLink:
         return Handler
 
     # ── local actions on behalf of a peer ─────────────────────────────────
-    def _local_send(self, sid: str, text: str, submit: bool,
-                    source_peer: str, ask_draft: bool = False, clear_draft: bool = False) -> dict:
+    def _local_send(self, sid: str, text: str, submit: bool, source_peer: str, ask_draft: bool = False,
+                    clear_draft: bool = False, images=()) -> dict:
+        """`images` ([{filename, data_b64}], v0.45.3): saved here, and typed in with the words when the message
+        goes in, so it queues, goes in now or is withdrawn as one message (docs/mobile-link.md)."""
         peer = self.peers().get(source_peer) or {}
         peer_name = peer.get("name", "peer")
+        paths = []
+        for im in list(images or [])[:6]:
+            saved = self._execute("save_paste", {"filename": (im or {}).get("filename", "photo.jpg"),
+                                                 "data_b64": (im or {}).get("data_b64", "")}) or {}
+            if not saved.get("success"):
+                return {"success": False, "code": "image", "message": saved.get("message") or "圖片存不下來"}
+            paths.append((saved.get("details") or {}).get("path", ""))
         res = self._execute("send", {"sid": sid, "text": text, "submit": submit, "from_phone": peer.get("kind") == "ios",
-                                     "ask_draft": ask_draft, "clear_draft": clear_draft}) or {}
+                                     "ask_draft": ask_draft, "clear_draft": clear_draft, "images": paths}) or {}
         self._record_inbox({"kind": "remote_send", "peer_id": source_peer,
                             "peer_name": peer_name, "sid": sid,
                             "chars": len(text),

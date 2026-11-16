@@ -47,6 +47,11 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
 - 排隊中的訊息（v0.45.3 起）：`POST /link/send` 回 `details.queued` 和 `id` 時，手機可以 `POST /link/send/now {sid, id}`
   立刻送進去（插話，不管分頁在做什麼），或 `POST /link/send/cancel {sid, id}` 收回。已經送進去、正在打進去或已放棄的回
   `{"success": false, "code": "gone"}`。單向配對兩個都不行（403）。
+- 夾圖送出（v0.45.3 起，建議用這個）：`POST /link/send` 多收 `images: [{filename, data_b64}]`（最多 6 張，本文上限 24 MB）。
+  電腦先存檔；等這則真的送進分頁時，依序把每張圖貼成路徑（Claude Code 顯示成 [Image #N]），再貼文字、按 Enter。排隊、
+  立刻送出、收回都以整則為單位，圖不會先卡在輸入框。只送圖不打字：`text` 給空字串即可。有圖存不下來時，回
+  `{"success": false, "code": "image"}`，什麼都沒送。舊電腦會忽略 `images`：先看 `/link/info` 的 `version`，0.45.3 以上
+  才用這條，舊的照舊先 `/link/paste` 再送字。
 - 貼圖 `POST /link/paste`：本文上限 24 MB（base64 後）。超過回 413「太大了：圖片請先縮小再傳」。v0.45.3 以前上限是 2 MB，
   超過會被當成空本文驗簽章，回 403 `bad signature`；手機傳之前請先縮小（例如長邊 2048、JPEG），並把失敗說出來。
 - 用量與配速（設定頁，v0.45.3 起）：`GET /link/usage[?refresh=1]` → `{"success", "details": {"accounts": [...], "at", "refreshed"}}`。
