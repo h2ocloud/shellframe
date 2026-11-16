@@ -92,8 +92,14 @@ def _check_text(errs, where, t, optional=False):
             errs.append(f"{where}.{lang}: looks like a secret")
 
 
+# A listing's id in a link's path (a UUID, 8-4-4-4-12 hex) names a page, it is not a key: a directory page that
+# opens one service directly has one. Only a whole path segment counts; a query string is checked as it is.
+_LISTING_ID = re.compile(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=/|$)", re.I)
+
+
 def _check_url(errs, where, url):
-    if not (isinstance(url, str) and url.startswith("https://") and " " not in url and not secrets.looks_secret(url)):
+    plain = _LISTING_ID.sub("/id", url) if isinstance(url, str) and "?" not in url else url
+    if not (isinstance(url, str) and url.startswith("https://") and " " not in url and not secrets.looks_secret(plain)):
         errs.append(f"{where}: an https link with nothing private in it")
 
 
@@ -124,6 +130,12 @@ def _validate_step(errs, w, st, route, ids, is_last):
         errs.append(f"{w}: a route ends with a step of kind 'test'")
     for i, h in enumerate(st.get("how") or []):
         _check_text(errs, f"{w}.how[{i}]", h)
+    _check_text(errs, f"{w}.done_label", st.get("done_label"), optional=True)
+    if "in_browser" in st:
+        if not isinstance(st["in_browser"], bool):
+            errs.append(f"{w}.in_browser: true or false")
+        elif st["in_browser"] and not st.get("url"):
+            errs.append(f"{w}.in_browser: a step done in the browser needs its url")
     _check_text(errs, f"{w}.see", st.get("see"), optional=True)
     _check_text(errs, f"{w}.note", st.get("note"), optional=True)
     if st.get("url") is not None:
@@ -272,6 +284,8 @@ def validate(desc) -> list:
             errs.append(f"{w}.kind: one of {KINDS}")
         _check_text(errs, f"{w}.name", r.get("name"))
         _check_text(errs, f"{w}.blurb", r.get("blurb"), optional=True)
+        if "beta" in r and not isinstance(r["beta"], bool):
+            errs.append(f"{w}.beta: true or false")
         for i, n in enumerate(r.get("needs") or []):
             _check_text(errs, f"{w}.needs[{i}]", n)
         rs = r.get("scopes") or []
@@ -363,10 +377,13 @@ def catalog_entry(desc: dict, platform: str = None) -> dict:
     whether it can be connected here (with the reason when it cannot). Nothing else about the service."""
     cat = desc.get("category") if isinstance(desc.get("category"), dict) else None
     why = available(desc, platform)
+    routes = desc.get("routes") or []
+    first = next((r for r in routes if r.get("recommended")), routes[0] if routes else {})
     return {"id": desc["id"], "summary": desc.get("summary"),
             "category": {"id": cat["id"], "name": cat["name"]} if cat else None,
             "recommended": bool(desc.get("recommended")), "local_app": bool(desc.get("local_app")),
-            "platforms": list(desc.get("platforms") or PLATFORMS), "available": not why, "why": why or None}
+            "platforms": list(desc.get("platforms") or PLATFORMS), "available": not why, "why": why or None,
+            "beta": bool(first.get("beta"))}
 
 
 def category_conflicts(descs) -> list:

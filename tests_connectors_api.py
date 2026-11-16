@@ -151,7 +151,7 @@ check("[[SF:RED:connect:demo]] starts the same flow as connect_start", r["succes
 check("any other reason is refused", j(api.connect_signal("Which one?"))["code"] == "unknown_service" and j(api.connect_signal("connect:zzz"))["code"] == "unknown_service"
       and j(api.connect_signal("connect:../x"))["code"] == "unknown_service")
 check("the sentence for a phone or Telegram names the service and where to go", "Needs Demo connected" in api._connect_line("connect:demo") and api._connect_line("connect:zzz") == "" and api._connect_line("Which one?") == "")
-check("on a Chinese system it is Chinese", "需要接上 Demo" in api._connect_line("connect:demo", "zh"))
+check("on a Chinese system it is Chinese", "需要連結 Demo" in api._connect_line("connect:demo", "zh"))
 check("the phone's decision gets the service and its state", api._connect_decision("connect:demo") == {"service": "demo", "name": fake.demo()["name"], "state": "waiting_user"} and api._connect_decision("") is None)
 check("the phone's list is the short form", api._connect_compact() == [{"id": "demo", "name": fake.demo()["name"], "icon": "plug", "state": "waiting_user", "attention": False, "step": "2/3"}], str(api._connect_compact()))
 # the catalog: connect_list carries each service's catalog entry and the computer's platform
@@ -167,7 +167,7 @@ check("connect_list carries the catalog (one entry per service) and the platform
       lst["success"] and lst.get("platform") == "mac" and set(cat) == {"demo", "later"} and [s["service"] for s in lst["services"]] == ["demo", "later"], lst.get("catalog"))
 check("…an entry has the bubble, the section and whether it can be connected here, nothing else",
       cat["later"] == {"id": "later", "summary": later["summary"], "category": later["category"], "recommended": False, "local_app": True,
-                       "platforms": ["mac"], "available": False, "why": "not_available"} and cat["demo"]["available"] is True, cat)
+                       "platforms": ["mac"], "available": False, "why": "not_available", "beta": False} and cat["demo"]["available"] is True, cat)
 check("a service that cannot be connected here is left out of the phone's list (it can do nothing with it)",
       [c["id"] for c in api2._connect_compact()] == ["demo"], api2._connect_compact())
 sig = json.loads(api2.connect_signal("connect:later"))
@@ -223,7 +223,7 @@ check("sfctl connect list: one line per service", out["success"] and out["messag
 out = api._connect_sfctl({"action": "status", "service": "demo"})
 check("sfctl connect status", out["success"] and "Demo: not connected" in out["message"])
 out = api._connect_sfctl({"action": "start", "service": "demo", "route": "local"})
-check("sfctl connect start says which step is next and where to go on", out["success"] and "Now: Add to the AIs" in out["message"] and "Settings → Connections" in out["message"], out["message"])
+check("sfctl connect start says which step is next and where to go on", out["success"] and "Now: Add to the AIs" in out["message"] and "Settings → Connect" in out["message"], out["message"])
 check("a route that does not exist is a plain-words failure", not api._connect_sfctl({"action": "start", "service": "demo", "route": "x"})["success"])
 out = api._connect_sfctl({"action": "status", "service": "demo", "json": True})
 check("--json prints JSON", json.loads(out["message"])["status"]["service"] == "demo")
@@ -279,7 +279,7 @@ api.connect_test("demo")
 api.clock[0] += 5000
 api.adapter.health_answer = {"state": "expired"}
 api._connect_hourly_run()
-check("an expired connection is told to Telegram once, in words, with where to go", len(told) == 1 and "Demo" in told[0] and "Settings → Connections" in told[0], str(told))
+check("an expired connection is told to Telegram once, in words, with where to go", len(told) == 1 and "Demo" in told[0] and "Settings → Connect" in told[0], str(told))
 api.clock[0] += 5000
 api._connect_hourly_run()
 check("…and not again the next hour", len(told) == 1)

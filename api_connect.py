@@ -248,7 +248,7 @@ class ConnectApiMixin:
         told.intersection_update(now)                       # one that is fine again may be told about again
         for sid, state in sorted(now - told):
             st = eng.status(sid)
-            text = "🔌 " + health.words(st) + "\n" + sf_lang.pick("Open ShellBot: Settings → Connections.", "請到 ShellBot 的「設定 → 連接」。")
+            text = "🔌 " + health.words(st) + "\n" + sf_lang.pick("Open ShellBot: Settings → Connect.", "請到 ShellBot 的「設定 → 連結」。")
             if bridge_home.tell_all(self, text):
                 told.add((sid, state))
         if now:
@@ -288,7 +288,7 @@ class ConnectApiMixin:
             text = line(res["status"])
             if step and res["status"]["state"] != "connected":
                 text += "\n" + sf_lang.pick("Now: ", "現在：") + reg_mod.pick(step["title"], lang)
-                text += "\n" + sf_lang.pick("Continue in ShellBot: Settings → Connections.", "請到 ShellBot 的「設定 → 連接」繼續。")
+                text += "\n" + sf_lang.pick("Continue in ShellBot: Settings → Connect.", "請到 ShellBot 的「設定 → 連結」繼續。")
             return done(True, text, res)
         if action == "test":
             res = eng.test(service)

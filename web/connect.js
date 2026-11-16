@@ -13,7 +13,10 @@
  *                        be connected here and why not) and its statuses. While the tab is open it asks
  *                        connect_status(refresh) every 60 s. A row's button opens the wizard below.
  *   the wizard card      a route to pick, the steps (words, a link, buttons, options, a check, "I'm stuck"),
- *                        the test, and what it came to. Errors say message.text and message.next.
+ *                        the test, and what it came to. Errors say message.text and message.next. It asks as little
+ *                        as it can: one way (or the Claude account's connector recommended) starts without the choice;
+ *                        a step marked `in_browser` opens its page at once, and the window getting the focus back
+ *                        finishes it and starts the test.
  *   the sidebar card     a small card while a service needs reconnecting (connect_list every 60 s, no refresh)
  *   the chat card        [[SF:RED:connect:<service>]] arrives as decision.tag; chat.js asks chatCard() for
  *                        the card, and the button opens the same wizard through connect_signal
@@ -48,16 +51,16 @@
 
   // The states of a connection (health.status), in words: [English, 中文, tone, button English, button 中文]
   const STATES = {
-    not_started:     ['Not connected', '還沒接上', 'idle', 'Connect', '連結'],
-    waiting_user:    ['Setting up', '設定中', 'busy', 'Continue', '繼續'],
+    not_started:     ['Not connected', '還沒連結', 'idle', 'Connect', '連結'],
+    waiting_user:    ['Connecting', '連結中', 'busy', 'Continue', '繼續'],
     verifying:       ['Verifying…', '驗證中…', 'busy', 'View', '查看'],
-    connected:       ['Connected', '已接上', 'ok', 'Connected', '已連結'],
-    failed:          ['Did not connect', '沒接成功', 'bad', 'Try again', '重試'],
-    needs_reconnect: ['Needs reconnecting', '需要重新接上', 'bad', 'Reconnect', '重新接上'],
+    connected:       ['Connected', '已連結', 'ok', 'Connected', '已連結'],
+    failed:          ['Did not connect', '沒連結成功', 'bad', 'Try again', '重試'],
+    needs_reconnect: ['Needs reconnecting', '需要重新連結', 'bad', 'Reconnect', '重新連結'],
   };
   const stateOf = st => STATES[st && st.state] || STATES.not_started;
   const CLI_STATE = {
-    connected: ['Connected', '已接上', 'ok'], missing: ['Not added yet', '還沒加入', 'idle'],
+    connected: ['Connected', '已連結', 'ok'], missing: ['Not added yet', '還沒加入', 'idle'],
     manual: ['Set up by hand', '要手動設定', 'warn'], unsupported: ['Not supported', '不支援', 'idle'], unknown: ['Not known', '不明', 'idle'],
   };
   const NOAPI = () => ({ success: false, code: 'no_api', message: { text: t('This version cannot do that here.', '這個版本在這裡做不到。'), next: '' } });
@@ -128,13 +131,13 @@
     switch (st.state) {
       case 'waiting_user': {
         const s = st.step;
-        return t(`Setting up${s ? `, step ${s.index} of ${s.total}` : ''}`, `設定中${s ? `，第 ${s.index} 步，共 ${s.total} 步` : ''}`);
+        return t(`Connecting${s ? `, step ${s.index} of ${s.total}` : ''}`, `連結中${s ? `，第 ${s.index} 步，共 ${s.total} 步` : ''}`);
       }
       case 'verifying': return t('Verifying it works…', '正在驗證通不通…');
-      case 'connected': return [t('Connected', '已接上'), rn, st.connected_at ? dateOf(st.connected_at) : '', pick(st.problem && st.problem.text)].filter(Boolean).join(' · ');
-      case 'failed': return pick(st.problem && st.problem.text) || t('It did not connect', '沒接成功');
-      case 'needs_reconnect': return pick(st.problem && st.problem.text) || t('It stopped working. Connect it again', '用不了了，需要重新接上');
-      default: return d ? pick(d.summary) : t('Not connected yet', '還沒接上');
+      case 'connected': return [t('Connected', '已連結'), rn, st.connected_at ? dateOf(st.connected_at) : '', pick(st.problem && st.problem.text)].filter(Boolean).join(' · ');
+      case 'failed': return pick(st.problem && st.problem.text) || t('It did not connect', '沒連結成功');
+      case 'needs_reconnect': return pick(st.problem && st.problem.text) || t('It stopped working. Connect it again', '用不了了，需要重新連結');
+      default: return d ? pick(d.summary) : t('Not connected yet', '還沒連結');
     }
   }
   const routeOf = (d, id) => ((d && d.routes) || []).find(r => r.id === id) || null;
@@ -163,7 +166,8 @@
   // A Python side from before the catalog sends no `catalog`: every service is then connectable and has no bubble.
   const entry = id => L.catalog[id] || { id, summary: null, category: null, recommended: false, local_app: false, available: true, why: null };
   const nameOf = id => pick((L.by[id] || {}).name) || id;
-  const linked = id => ['connected', 'needs_reconnect'].includes((L.by[id] || {}).state);
+  const linked = id => (L.by[id] || {}).state === 'connected';                 // "N connected": the ones that work
+  const needy = id => !!(L.by[id] || {}).attention;                            // "N to fix": failed, needs reconnecting
   const elsewhere = id => entry(id).why === 'not_on_platform';             // made for another kind of computer
   const hereName = () => (L.platform === 'mac' ? t('This Mac', '這台 Mac') : L.platform === 'windows' ? t('This PC', '這台電腦') : t('This computer', '這台電腦'));
   const hereBubble = () => (L.platform === 'mac' ? 'Mac' : hereName());
@@ -188,6 +192,8 @@
     const q = C.q.trim();
     if (q) return [{ key: 'search', title: t('Results', '搜尋結果'), ids: byName(all.filter(id => matches(id, q))),
       empty: t(`Nothing matches “${q}”.`, `找不到符合「${q}」的服務。`) }];
+    if (C.view === 'attention') return [{ key: 'attention', title: t('To fix', '要處理'), back: true, ids: byName(all.filter(needy)),
+      empty: t('Nothing needs fixing.', '沒有要處理的。') }];
     if (C.view === 'connected') return [{ key: 'connected', title: t('Connected', '已連結'), back: true, ids: byName(all.filter(linked)),
       empty: t('Nothing is connected yet.', '還沒有連結任何服務。') }];
     if (C.view === 'all') return [{ key: 'all', title: t('All services', '所有服務'), back: true, ids: byName(all) }];
@@ -219,7 +225,7 @@
       const p = st.problem || {};
       line = pick(e.summary) || pick(p.text);
       button = `<button type="button" class="cn-btn cg-off-btn" data-cn="why" data-service="${esc(id)}" aria-expanded="${C.why === id}">` +
-        `${esc(elsewhere(id) ? t('Not on this computer', '這台不能用') : t('Not yet', '還不能接'))}</button>`;
+        `${esc(elsewhere(id) ? t('Not on this computer', '這台不能用') : t('Not yet', '還不能連結'))}</button>`;
       if (C.why === id) sub = `<small class="cg-why">${esc(pick(p.text))}${p.next ? ' ' + esc(pick(p.next)) : ''}</small>`;
     } else {
       if (st.state === 'not_started') line = pick(e.summary) || line;
@@ -230,11 +236,12 @@
     }
     return `<div class="cn-row cg-row${bad ? ' attn' : ''}${off ? ' cg-off' : ''} tone-${s[2]}" data-service="${esc(id)}">` +
       `<div class="cn-ico">${icon(st.icon)}</div>` +
-      `<div class="cn-main"><b>${esc(nameOf(id))}${bad ? `<i class="cn-flag">${esc(t('Needs you', '要處理'))}</i>` : ''}</b>` +
+      `<div class="cn-main"><b>${esc(nameOf(id))}${e.beta && !off ? `<i class="cn-badge cg-beta">${esc(t('Beta', '測試版'))}</i>` : ''}` +
+      `${bad ? `<i class="cn-flag">${esc(t('Needs you', '要處理'))}</i>` : ''}</b>` +
       `<span>${off || st.state === 'not_started' ? '' : `<i class="cn-dot ${s[2]}"></i>`}${esc(line)}</span>${sub}</div>${button}</div>`;
   }
   function bodyHtml() {
-    if (!L.order.length) return `<p class="cn-empty">${esc(L.loaded ? t('No services to connect yet.', '目前沒有可以連接的服務。') : t('Reading…', '讀取中…'))}</p>`;
+    if (!L.order.length) return `<p class="cn-empty">${esc(L.loaded ? t('No services to connect yet.', '目前沒有可以連結的服務。') : t('Reading…', '讀取中…'))}</p>`;
     return sections().map(sec => {
       const right = sec.back ? `<button type="button" class="cn-link" data-cg="home">‹ ${esc(t('Back', '返回'))}</button>`
         : sec.all ? `<button type="button" class="cn-link" data-cg="all">${esc(t('See all', '查看全部'))}</button>` : '';
@@ -258,7 +265,8 @@
   function renderList() {
     if (!panel) return;
     if (!panel.querySelector('.cg-body')) {          // the frame once: the search box keeps its focus and words across redraws
-      panel.innerHTML = `<div class="cg-head"><h3>${esc(t('Connect apps', '連結應用程式'))}</h3><button type="button" class="cg-count" data-cg="connected"></button></div>` +
+      panel.innerHTML = `<div class="cg-head"><h3>${esc(t('Connect apps', '連結應用程式'))}</h3><span class="cg-head-r"><button type="button" class="cg-fix" data-cg="attention" hidden></button>` +
+        '<button type="button" class="cg-count" data-cg="connected"></button></span></div>' +
         '<p class="cn-intro"></p>' +
         `<label class="cg-search">${icon('search')}<input type="search" autocomplete="off" spellcheck="false"></label>` +
         '<div class="cg-pills" role="group"></div><div class="cg-body"></div>';
@@ -266,20 +274,23 @@
       box.addEventListener('input', () => { C.q = box.value; C.why = ''; renderList(); });
       box.addEventListener('keydown', e => { if (e.key === 'Escape' && box.value) { e.preventDefault(); e.stopPropagation(); box.value = ''; C.q = ''; renderList(); } });
     }
-    const n = L.order.filter(linked).length;
-    const count = panel.querySelector('.cg-count');
+    const n = L.order.filter(linked).length, k = L.order.filter(needy).length;
+    const count = panel.querySelector('.cg-count'), fix = panel.querySelector('.cg-fix');
     count.textContent = t(`${n} connected ›`, `已連結 ${n} 個 ›`);
     count.classList.toggle('on', C.view === 'connected');
+    fix.hidden = !k;
+    fix.textContent = t(`${k} to fix ›`, `${k} 個要處理 ›`);
+    fix.classList.toggle('on', C.view === 'attention');
     const box = panel.querySelector('.cg-search input');
     box.placeholder = t('Search apps', '搜尋應用程式');
     box.setAttribute('aria-label', box.placeholder);
     panel.querySelector('.cg-head h3').textContent = t('Connect apps', '連結應用程式');
     panel.querySelector('.cn-intro').textContent = t('Services your bots can use. Press Connect and ShellBot walks you through it, and checks later that it still works.',
-      '讓 bot 能用的外部服務。按「連結」，ShellBot 一步一步帶你接上，之後也會檢查它還通不通。');
+      '讓 bot 能用的外部服務。按「連結」，ShellBot 一步一步帶你連結，之後也會檢查它還通不通。');
     panel.querySelector('.cg-pills').innerHTML = pillsHtml();
     panel.querySelector('.cg-body').innerHTML = bodyHtml();
     const tab = doc.querySelector('#settings-tabs-bar [data-tab="connect"]');
-    if (tab) tab.textContent = t('Connect', '連接') + (attention().length ? ' ●' : '');
+    if (tab) tab.textContent = t('Connect', '連結') + (attention().length ? ' ●' : '');
   }
   function onCatalog(e) {
     const g = e.target.closest('[data-cg]');
@@ -287,7 +298,7 @@
       const what = g.dataset.cg;
       if (what === 'pill') { C.cat = g.dataset.id; C.view = 'home'; C.more = C.more && categories().slice(PILL_MAX).some(c => c.id === C.cat); }
       else if (what === 'more') C.more = !C.more;
-      else if (what === 'connected') C.view = C.view === 'connected' ? 'home' : 'connected';
+      else if (what === 'connected' || what === 'attention') C.view = C.view === what ? 'home' : what;
       else if (what === 'all') C.view = 'all';
       else if (what === 'home') C.view = 'home';
       if (what !== 'more') { C.q = ''; const box = panel.querySelector('.cg-search input'); if (box) box.value = ''; }
@@ -351,8 +362,11 @@
   // handle and timer. Where the person is (route, step, results) is the Python side's: `view`.
   let S = null, card = null, lastFocus = null, pollTimer = 0;
   const fresh = (service, from) => ({ open: true, service, desc: null, status: null, view: null, mode: 'load', pick: '', stuck: false,
-    prob: '', busy: '', err: null, test: null, from: from || '', checked: {}, opts: {}, optsFor: '', note: '' });
+    prob: '', busy: '', err: null, test: null, from: from || '', checked: {}, opts: {}, optsFor: '', note: '', opened: {}, away: 0 });
   const routes = () => (S.desc && S.desc.routes) || [];
+  // Start without the choice of a way: there is one way, or the recommended one is the Claude account's connector
+  // (a browser and a click: the other ways stay one "Change way" away).
+  const quick = () => routes().length === 1 || ((routes().find(r => r.id === S.pick) || {}).kind === 'claude_connector');
   const vstep = () => (S.view && S.view.step) || null;
   const vsteps = () => (S.view && S.view.steps) || [];
   const stepIdx = () => { const s = vstep(); return s ? vsteps().findIndex(x => x.id === s.id) : -1; };
@@ -382,9 +396,14 @@
     return `<div class="cn-msg bad" role="alert"><span class="cn-dot bad"></span><span>${esc(pick(m.text))}` +
       (m.next ? `<small>${esc(pick(m.next))}</small>` : '') + '</span></div>';
   };
+  // The check as the description defines it (when it runs, its states) and what it came to. The Python side's
+  // `view` puts the check's result (code, tone, words filled in) in step.check; an older side put the definition there.
+  const stepDef = id => ((curRoute() || {}).steps || []).find(x => x.id === id) || null;
   function resultBox(step) {
-    const r = step.result;
-    const c = step.check;
+    const def = stepDef(step.id);
+    const got = step.check && step.check.code !== undefined && !step.check.on ? step.check : null;
+    const r = step.result || got;
+    const c = (def && def.check) || (got ? null : step.check);
     if (!r) {
       if (!c) return '';
       if (S.busy === 'check') return `<div class="cn-msg"><span class="cn-dot busy"></span><span>${esc(t('Checking…', '檢查中…'))}</span></div>`;
@@ -392,7 +411,7 @@
     }
     const st = c && c.states && c.states[r.code];
     const text = pick(r.text) || (st && pick(st.text)) || '';
-    const hint = st && st.hint ? pick(st.hint) : '';
+    const hint = r.hint ? pick(r.hint) : st && st.hint ? pick(st.hint) : '';
     return `<div class="cn-msg ${tone(r.tone || (st && st.tone))}" data-code="${esc(r.code || '')}"><span class="cn-dot ${tone(r.tone || (st && st.tone))}"></span>` +
       `<span>${esc(text)}${hint ? `<small>${esc(hint)}</small>` : ''}</span>${c ? btn('check', t('Check again', '再檢查一次'), 'ghost small') : ''}</div>`;
   }
@@ -437,7 +456,7 @@
       return `<div class="cn-warn"><b>${esc(pick(v.text) || t('It is waiting for you', '它在等你處理'))}</b>${v.next ? `<p>${esc(pick(v.next))}</p>` : ''}</div>`;
     }
     if (tt.ok) {
-      return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已接上'))}</h4>` +
+      return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
         `<p>${esc(t('The test passed', '測試通過了'))}${via ? ' · ' + esc(via) : ''}</p></div></div>`;
     }
     const v = verdictOf(tt.code) || (tt.message ? tt.message : null) || { text: t('The test did not pass', '測試沒有通過'), next: '' };
@@ -506,12 +525,13 @@
         .concat((r.needs || []).map(pick)).filter(Boolean);
       return `<button type="button" class="cn-route${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-act="pick" data-route="${esc(r.id)}">` +
         `<span class="cn-radio"></span><span class="cn-route-main"><span class="cn-route-head"><b>${esc(pick(r.name))}</b>` +
-        (r.recommended ? `<i class="cn-badge">${esc(t('Recommended', '推薦'))}</i>` : '') + '</span>' +
+        (r.recommended ? `<i class="cn-badge">${esc(t('Recommended', '推薦'))}</i>` : '') +
+        (r.beta ? `<i class="cn-badge cg-beta">${esc(t('Beta', '測試版'))}</i>` : '') + '</span>' +
         `<span class="cn-route-blurb">${esc(pick(r.blurb))}</span>` +
         `<span class="cn-chips">${chips.map(c => `<i>${esc(c)}</i>`).join('')}</span>` +
         (cliKeys.length ? `<span class="cn-route-for">${esc(t('For: ', '適用：'))}${esc(cliKeys.map(cliName).join(t(', ', '、')))}</span>` : '') + '</span></button>';
     }).join('');
-    return `<h3 class="cn-title" id="cn-title">${esc(t('How do you want to connect it?', '想用哪一種方式接上？'))}</h3>` +
+    return `<h3 class="cn-title" id="cn-title">${esc(t('How do you want to connect it?', '想用哪一種方式連結？'))}</h3>` +
       `<div class="cn-routes" role="radiogroup">${cards}</div>`;
   }
   function stepBody() {
@@ -537,7 +557,7 @@
       return `<i>${esc(sc ? pick(sc.label) : id)}</i>`;
     }).join('');
     const warn = st.problem ? `<div class="cn-msg warn"><span class="cn-dot warn"></span><span>${esc(pick(st.problem.text))}${st.problem.next ? `<small>${esc(pick(st.problem.next))}</small>` : ''}</span></div>` : '';
-    return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已接上'))}</h4>` +
+    return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
       `<p>${esc([route ? pick(route.name) : '', st.connected_at ? dateOf(st.connected_at) : ''].filter(Boolean).join(' · '))}</p></div></div>` + warn +
       (S.test ? testBlock(null) : '') + errBox() +
       (clis ? `<div class="cn-sect"><b>${esc(t('Your AIs', '各個 AI'))}</b>${clis}</div>` : '') +
@@ -563,16 +583,17 @@
       return `<div class="cn-foot-l"></div><div class="cn-foot-r">${btn('close', t('Cancel', '取消'), 'ghost')}${btn('route-go', t('Next', '下一步'), 'primary')}</div>`;
     }
     if (S.mode === 'connected') {
-      return `<div class="cn-foot-l">${btn('disconnect', t('Disconnect', '中斷連接'), 'ghost')}</div><div class="cn-foot-r">` +
+      return `<div class="cn-foot-l">${btn('disconnect', t('Disconnect', '中斷連結'), 'ghost')}</div><div class="cn-foot-r">` +
         (S.test && S.test.state !== 'done' ? btn('test-stop', t('Stop the test', '停止測試'), 'ghost')
           : btn('test-start', t('Test again', '重新測試'), 'ghost')) +
-        btn('reconnect', t('Connect again', '重新接上'), 'ghost') + btn('finish', t('Done', '完成'), 'primary') + '</div>';
+        btn('reconnect', t('Connect again', '重新連結'), 'ghost') + btn('finish', t('Done', '完成'), 'primary') + '</div>';
     }
     const step = vstep();
     if (!step) return `<div class="cn-foot-l"></div><div class="cn-foot-r">${btn('close', t('Close', '關閉'), 'ghost')}</div>`;
     if (isTest(step)) return testFoot(step);
-    const open = httpsOnly(step.url) ? btn('open', t('Open page', '打開頁面') + ' ↗', 'ghost', ` data-url="${esc(step.url)}"`) : '';
-    return `<div class="cn-foot-l">${open}</div><div class="cn-foot-r">${S.stuck ? '' : btn('stuck', t("I'm stuck", '卡住了'), 'warn')}${btn('did', t('I did it', '我做好了'), 'primary')}</div>`;
+    const open = httpsOnly(step.url) ? btn('open', (step.in_browser ? t('Open it again', '再打開一次') : t('Open page', '打開頁面')) + ' ↗', 'ghost', ` data-url="${esc(step.url)}"`) : '';
+    const did = step.done_label ? pick(step.done_label) : step.in_browser ? t('Done, test it', '連好了，測試') : t('I did it', '我做好了');
+    return `<div class="cn-foot-l">${open}</div><div class="cn-foot-r">${S.stuck ? '' : btn('stuck', t("I'm stuck", '卡住了'), 'warn')}${btn('did', did, 'primary')}</div>`;
   }
 
   const keyOf = el => [el.dataset.act, el.dataset.id, el.dataset.route].join('|');
@@ -607,8 +628,20 @@
       S.optsFor = step.id;
     }
     if (!isTest(step) && S.test && S.mode === 'step') { clearTimeout(pollTimer); S.test = null; }
+    if (step && step.in_browser && httpsOnly(step.url) && !S.opened[step.id]) {    // done in the browser: open it now
+      S.opened[step.id] = true;
+      S.away = Date.now();
+      openUrl(step.url);
+    }
     render();
     if (step && step.check && step.check.on === 'enter' && !step.result && !S.checked[step.id]) { S.checked[step.id] = true; return runCheck(); }
+  }
+  // Back from the browser: the step that was done there counts as done, and the test runs (didIt starts it).
+  function cameBack() {
+    const st = S && S.open && S.mode === 'step' ? vstep() : null;
+    if (!st || !st.in_browser || !S.away || S.busy || S.stuck || Date.now() - S.away < 1500) return;
+    S.away = 0;
+    didIt();
   }
   async function step(op, args, busy) {
     const me = S;
@@ -636,10 +669,16 @@
     render();
   }
   async function didIt() {
-    const me = S, before = (vstep() || {}).id;
+    const me = S, was = vstep() || {}, before = was.id;
+    S.away = 0;
     const res = await step('done', null);
     if (S !== me) return;
-    if (res.success !== false && (vstep() || {}).id !== before) { S.checked[before] = true; return enter(); }
+    if (res.success !== false && (vstep() || {}).id !== before) {
+      S.checked[before] = true;
+      enter();
+      if (was.in_browser && isTest(vstep()) && !S.test) startTest();      // back from the browser: test it at once
+      return;
+    }
     render();
   }
   async function goBack() {
@@ -653,6 +692,9 @@
   }
   async function gotoStep(id) {                           // the Python side has `back`, so go back until the step is on screen
     const me = S, target = vsteps().findIndex(x => x.id === id);
+    const now = await call('connect_status', S.service, '{}');   // a failed test may already have moved it there: start from where it is
+    if (S !== me) return;
+    if (now && now.success && now.view) { S.status = now.status || S.status; S.view = now.view; }
     for (let guard = 0; target >= 0 && S === me && stepIdx() > target && guard < 20; guard++) {
       const res = await step('back', null);
       if (res.success === false) break;
@@ -706,8 +748,8 @@
   async function disconnect() {
     const name = pick((S.desc && S.desc.name) || '') || S.service;
     const ask = root.SFDialog && root.SFDialog.confirm;
-    const yes = ask ? await ask(t(`Disconnect ${name}? Bots lose access to it; you can connect it again any time.`, `要中斷 ${name} 嗎？bot 會用不了它，之後隨時可以再接上。`),
-      { title: t('Disconnect', '中斷連接'), ok: t('Disconnect', '中斷連接'), cancel: t('Keep it', '保留') }) : false;
+    const yes = ask ? await ask(t(`Disconnect ${name}? Bots lose access to it; you can connect it again any time.`, `要中斷 ${name} 嗎？bot 會用不了它，之後隨時可以再連結。`),
+      { title: t('Disconnect', '中斷連結'), ok: t('Disconnect', '中斷連結'), cancel: t('Keep it', '保留') }) : false;
     const me = S;
     if (!yes || S !== me) return;
     S.busy = 'disconnect'; render();
@@ -767,6 +809,8 @@
     card = el.querySelector('#cn-card');
     el.addEventListener('click', onClick);
     doc.addEventListener('keydown', onKey, true);
+    root.addEventListener('focus', cameBack);
+    doc.addEventListener('visibilitychange', () => { if (!doc.hidden) cameBack(); });
     return true;
   }
 
@@ -791,12 +835,17 @@
     if (!d || !S.status) { S.mode = 'load'; if (!S.err) S.err = { text: t('This service is not available here.', '這個服務在這裡不能用。'), next: '' }; return render(), true; }
     if (!routes().length) {                             // listed before it can be connected: say why, open no step
       S.mode = 'load';
-      S.err = S.err || (d.unavailable ? { text: d.unavailable.text, next: d.unavailable.next || '' } : { text: t('This service cannot be connected yet.', '這個服務還不能接。'), next: '' });
+      S.err = S.err || (d.unavailable ? { text: d.unavailable.text, next: d.unavailable.next || '' } : { text: t('This service cannot be connected yet.', '這個服務還不能連結。'), next: '' });
       return render(), true;
     }
     const state = S.status.state;
     S.pick = ((routes().find(r => r.recommended) || routes()[0]) || {}).id || '';
     if (o.tag || o.reconnect) S.mode = 'step';
+    else if (state === 'not_started' && quick()) {        // nothing to choose: start the way at once
+      const r = await call('connect_start', service, json({ route: S.pick }));
+      if (S !== mine || !S.open) return true;
+      absorb(r); S.mode = 'step';
+    }
     else if (state === 'not_started') S.mode = 'route';
     else if (state === 'connected') S.mode = 'connected';
     else if (state === 'needs_reconnect') { const r = await call('connect_start', service, json({ reconnect: true })); absorb(r); S.mode = 'step'; }
@@ -841,11 +890,11 @@
     const html = items.slice(0, 2).map(s => {
       const name = pick(s.name) || s.service;
       const key = esc(s.service + ':' + s.state);
-      return `<div class="cn-sc" role="alert"><div class="cn-sc-text"><b><i class="cn-sc-dot"></i>${esc(s.state === 'failed' ? t(`${name} did not connect`, `${name} 沒接成功`) : t(`${name} needs reconnecting`, `${name} 需要重新接上`))}</b>` +
+      return `<div class="cn-sc" role="alert"><div class="cn-sc-text"><b><i class="cn-sc-dot"></i>${esc(s.state === 'failed' ? t(`${name} did not connect`, `${name} 沒連結成功`) : t(`${name} needs reconnecting`, `${name} 需要重新連結`))}</b>` +
         `<span>${esc(pick(s.problem && s.problem.text) || t('Bots cannot use it right now.', 'bot 現在用不了它。'))}</span></div>` +
         `<button type="button" class="cn-sc-x" data-cn-dismiss="${key}" aria-label="${esc(t('Hide', '先不要'))}" title="${esc(t('Hide until it changes', '先收起來，狀況有變再提醒'))}">×</button>` +
-        `<button type="button" class="cn-btn small primary" data-cn-side="${esc(s.service)}">${esc(s.state === 'failed' ? t('Fix it', '處理') : t('Reconnect', '重新接上'))}</button></div>`;
-    }).join('') + (items.length > 2 ? `<div class="cn-sc-more">${esc(t(`${items.length - 2} more in Settings → Connect`, `另外 ${items.length - 2} 項，到 設定 › 連接 看`))}</div>` : '');
+        `<button type="button" class="cn-btn small primary" data-cn-side="${esc(s.service)}">${esc(s.state === 'failed' ? t('Fix it', '處理') : t('Reconnect', '重新連結'))}</button></div>`;
+    }).join('') + (items.length > 2 ? `<div class="cn-sc-more">${esc(t(`${items.length - 2} more in Settings → Connect`, `另外 ${items.length - 2} 項，到 設定 › 連結 看`))}</div>` : '');
     if (sideEl.dataset.html !== html) { sideEl.innerHTML = html; sideEl.dataset.html = html; }
     sideEl.hidden = !html;
   }
@@ -874,13 +923,13 @@
     const go = opts.find(x => Number(x.n) === 1) || opts[0] || null;     // option 1 connects, whatever order the bot printed them in
     const off = o.answered ? ' disabled' : '';
     return `<div class="cm-ask-card">${o.face || ''}<div class="cm-ask-body">` +
-      `<div class="cm-ask-title">${esc(t('Your call · ', '要你決定 · ') + t(`${name} needs connecting`, `需要接上 ${name}`))}</div>` +
-      `<div class="cm-ask-q">${esc(d.reason || t(`This tab has no ${name} tools. Connect it now?`, `這個分頁沒有 ${name} 的工具。要不要現在接上？`))}</div>` +
+      `<div class="cm-ask-title">${esc(t('Your call · ', '要你決定 · ') + t(`${name} needs connecting`, `需要連結 ${name}`))}</div>` +
+      `<div class="cm-ask-q">${esc(d.reason || t(`This tab has no ${name} tools. Connect it now?`, `這個分頁沒有 ${name} 的工具。要不要現在連結？`))}</div>` +
       `<div class="cm-opts"><button class="cm-opt tone-yes" data-act="connect" data-service="${esc(id)}" data-tag="${esc(d.tag)}" ` +
-      `data-n="${esc(go ? go.n : '')}" data-id="${esc(d.id)}"${off}>${esc(t(`Connect ${name} step by step`, `一步一步接上 ${name}`))}</button>` +
+      `data-n="${esc(go ? go.n : '')}" data-id="${esc(d.id)}"${off}>${esc(t(`Connect ${name} step by step`, `一步一步連結 ${name}`))}</button>` +
       opts.filter(x => x !== go).map(x => `<button class="cm-opt" data-act="answer" data-n="${esc(x.n)}" data-id="${esc(d.id)}"${off}>${esc(x.label)}</button>`).join('') + '</div>' +
       `<div class="cm-ask-note">${esc(t('"Step by step" opens the wizard and answers the bot with option 1, so it waits for you.',
-        '「一步一步接上」會打開精靈，同時回覆 bot 選項 1，請它先等你。'))}</div>` +
+        '「一步一步連結」會打開精靈，同時回覆 bot 選項 1，請它先等你。'))}</div>` +
       (o.answered ? `<div class="cm-ask-note">${esc(o.answered)}</div>` : '') + '</div></div>';
   }
   const openFromChat = (service, o) => open(service, { tag: (o && o.tag) || 'connect:' + service, from_sid: o && o.from_sid });

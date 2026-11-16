@@ -51,7 +51,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **「要你決定」** | bot 的提問連同編號選項送到手機或 Telegram，一按就回答那個 bot。 |
 | **iPhone／iPad App** | 透過 Frame Link 和你的電腦配對（不在同一個網路時用 Tailscale）：bot 清單、對話畫面、一按就回答。還沒上 App Store，目前只能由開發者安裝。[docs/mobile-link.md](docs/mobile-link.md) |
 | **支援的 CLI** | 內建 Claude Code、Codex、Grok Build、OpenCode、Pi、Cursor、Antigravity；其他終端機指令也能開成分頁。大部分有額度顯示。 |
-| **連接** | 設定 →「連接」列出每個服務接上了沒。Gmail 可以用 Claude 帳號的連接器或本機 MCP 接，只要讀信的最小權限；ShellBot 本身不讀、不存任何信件。[docs/connectors.md](docs/connectors.md) |
+| **連結** | 設定 →「連結」列出每個服務連結了沒。Gmail 可以用 Claude 帳號的連接器或本機 MCP 連結，只要讀信的最小權限；ShellBot 本身不讀、不存任何信件。[docs/connectors.md](docs/connectors.md) |
 | **導覽** | 第一次開 ShellBot 會走一段功能導覽（下一步、上一步、略過）。側欄的「導覽」按鈕列出每個功能做什麼、在哪裡，「指給我看」會打開它所在的設定分頁並指出位置，上次看過之後的新功能會在按鈕上顯示數量。導覽時其餘畫面會壓暗，指到的地方有一圈亮框。已經在用 ShellBot 的電腦不會跳出導覽。[docs/guide.md](docs/guide.md) |
 | **找分頁** | 側欄的搜尋用名稱、執掌或最新一句來找。下面的泡泡可以只看 Bot 或只看分頁（臨時的和終端機），也可以只看閒置、超過 30 分鐘沒動靜、最近回應排在上面；選的狀態會記住。 |
 | **圖片／檔案貼上** | `Cmd+V` 貼截圖、Finder 檔案，或拖放。預覽列顯示，按 Enter 時自動附上。 |

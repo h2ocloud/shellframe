@@ -342,7 +342,7 @@ external. `delegate` to an external bot is refused: it has no tab here.
 ## 4.8 Connections (a service the user wants your tab to use)
 
 A service (mail, files, chat…) has to be connected once before a tab can use it. ShellBot does the steps with the
-user on the Settings → Connections page; you do not walk them through it in the terminal and you never ask for, or
+user on the Settings → Connect page; you do not walk them through it in the terminal and you never ask for, or
 handle, a key or token.
 
 ```bash
@@ -370,7 +370,8 @@ same way. Do not try to fix a connection by editing an AI program's settings: Sh
 | `google_calendar` | Google Calendar | Claude tabs only, the same way (`mcp__claude_ai_Google_Calendar__…`) |
 | `notion` | Notion | Claude tabs only, the same way (`mcp__claude_ai_Notion__…`) |
 | `slack` | Slack | Claude tabs only, the same way (`mcp__claude_ai_Slack__…`) |
-| `mac_messages`, `mac_notes`, `mac_reminders`, `mac_calendar` | Messages, Notes, Reminders, Calendar on a Mac | not yet: listed in Settings → Connect, but ShellBot has no way to connect them; `sfctl connect start` says so. Do not ask the user to connect these |
+| `mac_reminders`, `mac_calendar` | Reminders, Calendar on a Mac (beta) | a local server, one entry for both (`shellbot-apple-events`, tools `mcp__shellbot-apple-events__reminders_…` / `…calendar_…`). Every change it would make is put to the user in a confirmation form first; if you cannot show that form, you can only read. The first use asks the user in macOS |
+| `mac_messages`, `mac_notes` | Messages, Notes on a Mac | not yet: listed in Settings → Connect, but ShellBot has no way to connect them; `sfctl connect start` says so. Do not ask the user to connect these |
 
 A connector-only service is not reachable from a Codex, Antigravity, Grok Build, OpenCode, Cursor Agent or Pi tab through
 ShellBot; say so rather than asking the user to connect it there.

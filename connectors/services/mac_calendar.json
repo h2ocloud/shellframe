@@ -7,8 +7,8 @@
   },
   "icon": "calendar",
   "summary": {
-    "en": "See events in the Calendar app",
-    "zh": "查看「行事曆」App 裡的活動"
+    "en": "See and add events in the Calendar app",
+    "zh": "查看、新增「行事曆」App 裡的活動"
   },
   "category": {
     "id": "productivity",
@@ -21,15 +21,411 @@
     "mac"
   ],
   "local_app": true,
-  "unavailable": {
-    "text": {
-      "en": "Not yet: there is a maintained local server for Calendar, kept by one person; ShellBot has not checked it enough to recommend it.",
-      "zh": "還不能接：有一個持續維護的「行事曆」本機伺服器，但只有一個人在維護，ShellBot 還沒驗證到可以推薦。"
+  "recommended": false,
+  "adapter": "connectors.services.mac_calendar",
+  "scopes": [
+    {
+      "id": "read",
+      "label": {
+        "en": "Read your your calendar events",
+        "zh": "讀你的行事曆活動"
+      },
+      "required": true
     },
-    "next": {
-      "en": "ShellBot will add a way once there is one it can stand behind; nothing needs doing now.",
-      "zh": "等有 ShellBot 信得過的接法就會加上；現在不用做什麼。"
+    {
+      "id": "write",
+      "label": {
+        "en": "Add and change your calendar events, each change asked of you first",
+        "zh": "新增、修改行事曆活動，每一筆都先問你"
+      },
+      "required": false
     }
-  },
-  "routes": []
+  ],
+  "routes": [
+    {
+      "id": "local",
+      "kind": "local_mcp",
+      "beta": true,
+      "name": {
+        "en": "A local server on this Mac (beta)",
+        "zh": "這台 Mac 上的本機伺服器（測試版）"
+      },
+      "blurb": {
+        "en": "A small server on this Mac reads Calendar through macOS itself; nothing leaves the computer. Every change it would make is asked of you first. The first time, macOS asks whether ShellBot may use Calendar.",
+        "zh": "這台 Mac 上的小伺服器透過 macOS 本身讀行事曆，資料不離開電腦。它要改的每一筆都會先問你。第一次用時，macOS 會問要不要讓 ShellBot 使用行事曆。"
+      },
+      "recommended": true,
+      "minutes": 3,
+      "needs": [
+        {
+          "en": "Node.js 20 or newer",
+          "zh": "Node.js 20 以上"
+        }
+      ],
+      "scopes": [
+        "read",
+        "write"
+      ],
+      "clis": {
+        "claude": {
+          "via": "mcp",
+          "note": {
+            "en": "ShellBot adds it for you in the step \"Add it to Claude\".",
+            "zh": "ShellBot 在「加進 Claude」那一步幫你加。"
+          }
+        },
+        "codex": {
+          "via": "mcp",
+          "note": {
+            "en": "Each change it would make in Calendar is put to you first in the program's confirmation form; a program that cannot show that form can only read. Not tried with this program.",
+            "zh": "它要改行事曆的每一筆都會先在程式的確認表單問你；顯示不了那個表單的程式就只能讀。還沒用這個程式試過。"
+          }
+        },
+        "agy": {
+          "via": "mcp",
+          "note": {
+            "en": "Each change it would make in Calendar is put to you first in the program's confirmation form; a program that cannot show that form can only read. Not tried with this program.",
+            "zh": "它要改行事曆的每一筆都會先在程式的確認表單問你；顯示不了那個表單的程式就只能讀。還沒用這個程式試過。"
+          }
+        },
+        "grok": {
+          "via": "mcp",
+          "note": {
+            "en": "Each change it would make in Calendar is put to you first in the program's confirmation form; a program that cannot show that form can only read. Not tried with this program.",
+            "zh": "它要改行事曆的每一筆都會先在程式的確認表單問你；顯示不了那個表單的程式就只能讀。還沒用這個程式試過。"
+          }
+        },
+        "opencode": {
+          "via": "mcp",
+          "note": {
+            "en": "Each change it would make in Calendar is put to you first in the program's confirmation form; a program that cannot show that form can only read. Not tried with this program.",
+            "zh": "它要改行事曆的每一筆都會先在程式的確認表單問你；顯示不了那個表單的程式就只能讀。還沒用這個程式試過。"
+          }
+        },
+        "cursor": {
+          "via": "mcp",
+          "note": {
+            "en": "Each change it would make in Calendar is put to you first in the program's confirmation form; a program that cannot show that form can only read. Not tried with this program.",
+            "zh": "它要改行事曆的每一筆都會先在程式的確認表單問你；顯示不了那個表單的程式就只能讀。還沒用這個程式試過。"
+          }
+        },
+        "pi": {
+          "via": "mcp",
+          "note": {
+            "en": "Each change it would make in Calendar is put to you first in the program's confirmation form; a program that cannot show that form can only read. Not tried with this program.",
+            "zh": "它要改行事曆的每一筆都會先在程式的確認表單問你；顯示不了那個表單的程式就只能讀。還沒用這個程式試過。"
+          }
+        }
+      },
+      "mcp": {
+        "server": "shellbot-apple-events",
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-server-apple-events@1.6.2",
+          "--require-write-confirmation"
+        ]
+      },
+      "steps": [
+        {
+          "id": "b1",
+          "title": {
+            "en": "Node.js 20 or newer",
+            "zh": "Node.js 20 以上"
+          },
+          "how": [
+            {
+              "en": "The server runs on Node.js. ShellBot looks for it on this Mac.",
+              "zh": "伺服器要用 Node.js 跑。ShellBot 會在這台 Mac 上找。"
+            },
+            {
+              "en": "If it is missing or too old, install the LTS version from nodejs.org, then press \"I did it\".",
+              "zh": "沒有或太舊的話，到 nodejs.org 裝 LTS 版，再按「我做好了」。"
+            }
+          ],
+          "url": "https://nodejs.org/en/download",
+          "check": {
+            "id": "node",
+            "on": "enter",
+            "gate": true,
+            "pass": [
+              "ok"
+            ],
+            "states": {
+              "ok": {
+                "tone": "good",
+                "text": {
+                  "en": "Node.js {version} is installed",
+                  "zh": "已安裝 Node.js {version}"
+                }
+              },
+              "old": {
+                "tone": "warn",
+                "text": {
+                  "en": "Node.js {version} is too old: 20 or newer is needed",
+                  "zh": "Node.js {version} 太舊了：要 20 以上"
+                }
+              },
+              "missing": {
+                "tone": "bad",
+                "text": {
+                  "en": "Node.js was not found on this Mac",
+                  "zh": "這台 Mac 上找不到 Node.js"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "b2",
+          "title": {
+            "en": "Add it to Claude",
+            "zh": "加進 Claude"
+          },
+          "how": [
+            {
+              "en": "Press the button: ShellBot adds one entry of its own, shellbot-apple-events, to Claude's settings. It runs mcp-server-apple-events version 1.6.2, which asks you before every change.",
+              "zh": "按下面的按鈕：ShellBot 在 Claude 的設定裡加一個它自己的項目 shellbot-apple-events。它跑的是 mcp-server-apple-events 1.6.2 版，每次要改東西前都會先問你。"
+            },
+            {
+              "en": "The same server serves Reminders and Calendar, so Claude can see Reminders through it too; macOS still asks for each separately.",
+              "zh": "同一個伺服器管提醒事項和行事曆，所以 Claude 也能透過它看到提醒事項；macOS 還是會分開問。"
+            }
+          ],
+          "actions": [
+            {
+              "id": "add_server",
+              "label": {
+                "en": "Add it to Claude",
+                "zh": "幫我加進 Claude"
+              },
+              "builtin": "cli_add",
+              "results": {
+                "added": {
+                  "tone": "good",
+                  "text": {
+                    "en": "Added to Claude",
+                    "zh": "已加進 Claude"
+                  }
+                },
+                "replaced": {
+                  "tone": "good",
+                  "text": {
+                    "en": "Added to Claude (replacing ShellBot's earlier entry)",
+                    "zh": "已加進 Claude（換掉 ShellBot 之前加的那一項）"
+                  }
+                },
+                "failed": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "Claude refused the change",
+                    "zh": "Claude 沒有接受這個設定"
+                  }
+                }
+              }
+            }
+          ],
+          "note": {
+            "en": "Not tried on a real Mac yet: whether macOS asks ShellBot for access the first time.",
+            "zh": "還沒在真的 Mac 上試過：macOS 第一次會不會問 ShellBot 要不要給權限。"
+          }
+        },
+        {
+          "id": "b3",
+          "kind": "test",
+          "title": {
+            "en": "Test it, and allow it in macOS",
+            "zh": "測試，並在 macOS 允許"
+          },
+          "intro": {
+            "en": "ShellBot opens a temporary Claude tab and asks it to list your calendars: it only counts. The first time, macOS asks whether ShellBot may use Calendar: choose Allow (OK). If nothing asks, open System Settings → Privacy & Security → Calendars and turn ShellBot on.",
+            "zh": "ShellBot 會開一個臨時的 Claude 分頁，請它列出行事曆：只數筆數。第一次 macOS 會問要不要讓 ShellBot 使用行事曆：選「好」（允許）。沒有跳出來的話，打開「系統設定 → 隱私權與安全性 → 行事曆」，把 ShellBot 打開。"
+          }
+        }
+      ],
+      "test": {
+        "via": {
+          "en": "the local Calendar server",
+          "zh": "本機行事曆伺服器"
+        },
+        "verdicts": {
+          "starting": {
+            "text": {
+              "en": "Opening a temporary Claude tab…",
+              "zh": "正在開臨時的 Claude 分頁…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "waiting_ready": {
+            "text": {
+              "en": "Waiting for the tab to be ready…",
+              "zh": "等分頁準備好…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "asking": {
+            "text": {
+              "en": "Asking it for one small lookup in Calendar…",
+              "zh": "請它在 行事曆 做一次小查詢…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "reading": {
+            "text": {
+              "en": "Calendar is answering…",
+              "zh": "行事曆 回應中…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "needs_allow": {
+            "text": {
+              "en": "The test tab is asking for your OK",
+              "zh": "測試分頁在等你按允許"
+            },
+            "next": {
+              "en": "It wants to use a Calendar tool, and Claude asks before it does. Open the test conversation and choose Allow. The test goes on by itself afterwards.",
+              "zh": "它要用 行事曆 的工具，Claude 會先問你。打開測試對話，選允許。之後測試會自己繼續。"
+            }
+          },
+          "pass": {
+            "text": {
+              "en": "It works! Calendar is connected.",
+              "zh": "通了！行事曆 已連結。"
+            },
+            "next": {
+              "en": "The temporary test tab used the local Calendar server. ShellBot does not read, keep or log what came back: it is only in the test tab's own conversation. A Claude tab that was already open before you connected Calendar may need to be reopened before it sees it (not confirmed).",
+              "zh": "臨時的測試分頁用了本機行事曆伺服器。回來的內容 ShellBot 不讀、不存、不記錄：只在測試分頁自己的對話裡。連結之前就開著的 Claude 分頁，可能要重開才看得到 行事曆（尚未證實）。"
+            }
+          },
+          "said_ok": {
+            "text": {
+              "en": "This one does not count. The test tab said it worked but never called a Calendar tool.",
+              "zh": "這次不算：測試分頁說成功了，卻沒有叫過任何 行事曆 工具。"
+            },
+            "next": {
+              "en": "Press \"Test again\". If it happens again, open the test conversation and see what the tab did.",
+              "zh": "按「重新測試」。再發生的話，打開測試對話看看分頁做了什麼。"
+            }
+          },
+          "timeout": {
+            "text": {
+              "en": "It took too long. After 3 minutes the test tab had not finished.",
+              "zh": "等太久了：3 分鐘了，測試分頁還沒做完。"
+            },
+            "next": {
+              "en": "Most likely it is waiting for you. Open the test conversation: Claude may be asking you to allow a tool, or sitting on a sign-in screen.",
+              "zh": "最可能是在等你。打開測試對話看看：Claude 可能在問你要不要允許某個工具，或停在登入畫面。"
+            }
+          },
+          "unclear": {
+            "text": {
+              "en": "No clear answer. The test tab used Calendar, but it did not end with a clear result line.",
+              "zh": "沒有明確的結果：測試分頁用了 行事曆，但最後沒有留下明確的結果那一行。"
+            },
+            "next": {
+              "en": "Open the test conversation to see how it ended, then press \"Test again\".",
+              "zh": "打開測試對話看它怎麼結束的，再按「重新測試」。"
+            }
+          },
+          "not_ready": {
+            "text": {
+              "en": "The test tab did not get ready. It never reached its prompt, so nothing was asked.",
+              "zh": "測試分頁沒有準備好：它一直沒有走到可以輸入的畫面，所以什麼都沒問。"
+            },
+            "next": {
+              "en": "Most likely Claude is not signed in. Open the test conversation: if it shows a sign-in screen, sign in there, then test again.",
+              "zh": "最可能是 Claude 還沒登入。打開測試對話：如果停在登入畫面，在那裡登入，再測一次。"
+            }
+          },
+          "closed": {
+            "text": {
+              "en": "The test tab was closed before it finished.",
+              "zh": "測試分頁沒做完就被關掉了。"
+            },
+            "next": {
+              "en": "Press \"Test again\".",
+              "zh": "按「重新測試」。"
+            }
+          },
+          "start_failed": {
+            "text": {
+              "en": "Could not open the test tab.",
+              "zh": "開不了測試分頁。"
+            },
+            "next": {
+              "en": "Open a Claude tab yourself from the + button. If that works, press \"Test again\".",
+              "zh": "自己用 + 按鈕開一個 Claude 分頁。開得起來的話，再按「重新測試」。"
+            }
+          },
+          "failed": {
+            "text": {
+              "en": "Calendar answered with an error: most likely macOS did not allow it.",
+              "zh": "行事曆回了錯誤：最可能是 macOS 沒有允許。"
+            },
+            "next": {
+              "en": "Open System Settings → Privacy & Security → Calendars, turn ShellBot on (Full access for Calendar), then test again. If ShellBot is not in the list, macOS never asked: that is the part of this beta not tried yet; press \"I'm stuck\".",
+              "zh": "打開「系統設定 → 隱私權與安全性 → 行事曆」，把 ShellBot 打開（行事曆要「完整取用權」），再測一次。清單裡沒有 ShellBot 的話，表示 macOS 沒問過：這正是測試版還沒試過的部分，請按「卡住了」。"
+            }
+          },
+          "no_tools": {
+            "text": {
+              "en": "Not yet. The test tab did not find the Calendar tools.",
+              "zh": "還沒通：測試分頁沒有找到行事曆的工具。"
+            },
+            "next": {
+              "en": "Go back to step 2 and add it to Claude again. Next: type /mcp in the test tab and see whether shellbot-apple-events failed to start (Node.js, or the first download).",
+              "zh": "回到第 2 步再加一次。其次：在測試分頁打 /mcp，看 shellbot-apple-events 是不是啟動失敗（Node.js，或第一次下載）。"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "faq": [
+    {
+      "id": "beta",
+      "q": {
+        "en": "Why is this a beta?",
+        "zh": "為什麼是測試版？"
+      },
+      "a": {
+        "en": "Everything up to the test runs as on any other service, but nobody has yet clicked through macOS's question on a real Mac with ShellBot. If macOS never asks, ShellBot does not show up under Privacy & Security and the test cannot pass.",
+        "zh": "測試之前的步驟都跟其他服務一樣，但還沒有人在真的 Mac 上用 ShellBot 點過 macOS 的那個問題。如果 macOS 一直不問，「隱私權與安全性」裡不會出現 ShellBot，測試就過不了。"
+      }
+    },
+    {
+      "id": "both",
+      "q": {
+        "en": "Why can Claude also see Reminders?",
+        "zh": "為什麼 Claude 也看得到提醒事項？"
+      },
+      "a": {
+        "en": "One server serves Reminders and Calendar, and there is no switch to serve only one. Connecting either adds the same entry; it is removed when neither is connected any more.",
+        "zh": "同一個伺服器同時管提醒事項和行事曆，沒有只開一個的選項。連結任何一個都加同一個項目；兩個都中斷之後才會移掉。"
+      }
+    },
+    {
+      "id": "changes",
+      "q": {
+        "en": "Can it change things without asking?",
+        "zh": "它會不會沒問就改東西？"
+      },
+      "a": {
+        "en": "It is started with --require-write-confirmation: every change is put to you first in the program's confirmation form, and a program that cannot show that form can only read. Deleting or inviting can notify other people, so read the form before you allow it.",
+        "zh": "它是用 --require-write-confirmation 啟動的：每次要改東西都會先在程式的確認表單問你，顯示不了表單的程式只能讀。刪除或邀請可能會通知別人，所以允許前請看清楚表單。"
+      }
+    }
+  ]
 }

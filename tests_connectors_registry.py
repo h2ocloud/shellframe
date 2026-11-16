@@ -106,7 +106,7 @@ old = fake.demo()
 check("a description without the catalog's fields is valid, and its entry says so plainly",
       registry.validate(old) == [] and registry.catalog_entry(old, "mac") == {
           "id": "demo", "summary": old["summary"], "category": None, "recommended": False, "local_app": False,
-          "platforms": list(registry.PLATFORMS), "available": True, "why": None})
+          "platforms": list(registry.PLATFORMS), "available": True, "why": None, "beta": False})
 full = fake.demo()
 full.update(category={"id": "productivity", "name": fake.T("Productivity")}, recommended=True, platforms=["mac", "windows"])
 e = registry.catalog_entry(full, "mac")
@@ -141,6 +141,24 @@ a, b = fake.demo(), fake.demo()
 a["category"] = {"id": "files", "name": fake.T("Files")}
 b.update(id="other", category={"id": "files", "name": fake.T("Documents")})
 check("one category id named two ways is found", registry.category_conflicts([a, b]) != [] and registry.category_conflicts([a, a]) == [])
+listing = "https://example.com/directory/0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e"
+ok = fake.demo()
+ok["routes"][0]["steps"][0].update(url=listing, in_browser=True, done_label=fake.T("Yes"))
+ok["routes"][0]["beta"] = True
+check("a step done in the browser on a listing's own page, its button's words, a beta way: all valid",
+      registry.validate(ok) == [] and registry.catalog_entry(ok, "mac")["beta"] is True, registry.validate(ok))
+ok, e = bad(lambda d: d["routes"][0]["steps"][0].update(url=listing + "?k=0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e"), "https link")
+check("…but an id in a query string is still refused (it may be a key)", ok, e)
+ok, e = bad(lambda d: d["routes"][0]["steps"][0].update(url="https://example.com/" + "a1b2c3d4" * 6), "https link")
+check("…and so is a long token-like run in a path", ok, e)
+ok, e = bad(lambda d: d["routes"][0]["steps"][1].update(in_browser=True), "needs its url")
+check("in_browser needs the step's url", ok, e)
+ok, e = bad(lambda d: d["routes"][0]["steps"][0].update(in_browser="yes"), "in_browser: true or false")
+check("in_browser is true or false", ok, e)
+ok, e = bad(lambda d: d["routes"][0]["steps"][0].update(done_label={"en": "Yes"}), "done_label")
+check("done_label is a text in both languages", ok, e)
+ok, e = bad(lambda d: d["routes"][0].update(beta=1), "beta: true or false")
+check("beta is true or false", ok, e)
 reg3 = registry.Registry(dirs=[])
 reg3.register(soon())
 reg3.register(full)

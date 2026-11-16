@@ -24,11 +24,11 @@
   "unavailable": {
     "text": {
       "en": "Not yet: no local server for Notes that ShellBot can recommend. The ones that exist are each kept by one person and cannot be limited to reading.",
-      "zh": "還不能接：還沒有 ShellBot 能推薦的「備忘錄」本機伺服器。現有的都只有一個人在維護，也沒辦法限制成只能讀。"
+      "zh": "還不能連結：還沒有 ShellBot 能推薦的「備忘錄」本機伺服器。現有的都只有一個人在維護，也沒辦法限制成只能讀。"
     },
     "next": {
       "en": "ShellBot will add a way once there is one it can stand behind; nothing needs doing now.",
-      "zh": "等有 ShellBot 信得過的接法就會加上；現在不用做什麼。"
+      "zh": "等有 ShellBot 信得過的連結方式就會加上；現在不用做什麼。"
     }
   },
   "routes": []

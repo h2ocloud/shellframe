@@ -24,7 +24,7 @@
       "id": "account",
       "label": {
         "en": "What you allow on claude.ai (its page lists it when you connect)",
-        "zh": "你在 claude.ai 上允許的事（連接時頁面會列出來）"
+        "zh": "你在 claude.ai 上允許的事（連結時頁面會列出來）"
       },
       "required": true
     }
@@ -39,7 +39,7 @@
       },
       "blurb": {
         "en": "Connect once on claude.ai and every Claude tab on that account can use Google Calendar. A browser is all you need: nothing to install. What it may do is set by the connector on claude.ai, not by ShellBot.",
-        "zh": "在 claude.ai 連一次，這個帳號的 Claude 分頁都能用 Google 日曆。只要瀏覽器，不用裝任何東西。它能做哪些事由 claude.ai 上的連接器決定，不是 ShellBot。"
+        "zh": "在 claude.ai 連結一次，這個帳號的 Claude 分頁都能用 Google 日曆。只要瀏覽器，不用裝任何東西。它能做哪些事由 claude.ai 上的連接器決定，不是 ShellBot。"
       },
       "recommended": true,
       "minutes": 2,
@@ -98,8 +98,8 @@
         "pi": {
           "via": "none",
           "note": {
-            "en": "The claude.ai connector only reaches Claude tabs. ShellBot has no way for this program yet.",
-            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。ShellBot 目前沒有給這個程式的接法。"
+            "en": "The claude.ai connector only reaches Claude tabs. Google's own Calendar MCP server is in developer preview (a Google Cloud project and an OAuth client of your own); ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Google 自己的 Calendar MCP 伺服器還在開發者預覽（要自己的 Google Cloud 專案和 OAuth 用戶端）；ShellBot 不幫你設定。"
           }
         }
       },
@@ -107,22 +107,22 @@
         {
           "id": "a1",
           "title": {
-            "en": "Check how Claude is signed in",
-            "zh": "確認 Claude 是怎麼登入的"
+            "en": "Is Claude signed in with a claude.ai account?",
+            "zh": "Claude 是用 claude.ai 帳號登入的嗎？"
           },
           "how": [
             {
-              "en": "ShellBot looks at the account label it already keeps (the plan only: it never opens a login file).",
-              "zh": "ShellBot 會看它自己記下的帳號標籤（只有方案，不會打開任何登入檔）。"
+              "en": "ShellBot could not tell from what it keeps (it never opens a login file). With a Claude subscription it is: press Yes.",
+              "zh": "ShellBot 從它記下的資料看不出來（它不會打開任何登入檔）。用的是 Claude 訂閱的話就是：按「是」。"
             },
             {
-              "en": "If it says you are signed in with a claude.ai account, press \"I did it\". If it cannot tell, type /status in a Claude tab and read the line that says how you are signed in.",
-              "zh": "寫著用 claude.ai 帳號登入，就按「我做好了」。看不出來的話，在 Claude 分頁打 /status，看說明登入方式的那一行。"
+              "en": "Not sure? Type /status in a Claude tab and read the line that says how you are signed in.",
+              "zh": "不確定的話，在 Claude 分頁打 /status，看說明登入方式的那一行。"
             }
           ],
-          "see": {
-            "en": "The card below says you are signed in with a claude.ai account. On a plain API key the connector does not show up.",
-            "zh": "下面那一格寫著用 claude.ai 帳號登入。用單純的 API key 登入的話，連接器不會出現。"
+          "done_label": {
+            "en": "Yes, a claude.ai account",
+            "zh": "是，用 claude.ai 帳號"
           },
           "check": {
             "id": "claude_account",
@@ -134,8 +134,8 @@
               "claude_ai": {
                 "tone": "good",
                 "text": {
-                  "en": "Signed in with a claude.ai account",
-                  "zh": "用 claude.ai 帳號登入"
+                  "en": "Signed in with a claude.ai account ({plan})",
+                  "zh": "用 claude.ai 帳號登入（{plan}）"
                 }
               },
               "unknown": {
@@ -152,17 +152,6 @@
             }
           },
           "stuck": [
-            {
-              "id": "cant-tell",
-              "q": {
-                "en": "ShellBot says it cannot tell",
-                "zh": "ShellBot 說它看不出來"
-              },
-              "a": {
-                "en": "That is normal on a computer where ShellBot has not opened a Claude tab yet. Open a Claude tab, type /status, and read the line about how you are signed in. If it names a Claude account (a subscription), carry on: press \"I did it\".",
-                "zh": "這台電腦上 ShellBot 還沒開過 Claude 分頁的話，這很正常。開一個 Claude 分頁，打 /status，看說明登入方式的那一行。寫的是 Claude 帳號（訂閱），就繼續，按「我做好了」。"
-              }
-            },
             {
               "id": "api-key",
               "q": {
@@ -200,37 +189,58 @@
           "id": "a2",
           "title": {
             "en": "Connect Google Calendar on claude.ai",
-            "zh": "在 claude.ai 連上 Google 日曆"
+            "zh": "在 claude.ai 連結 Google 日曆"
           },
           "how": [
             {
-              "en": "Press \"Open page\" below. Your browser opens the connectors page on claude.ai (sign in with the same claude.ai account if it asks).",
-              "zh": "按下面的「打開頁面」，瀏覽器會開 claude.ai 的連接器頁（它要你登入的話，用同一個 claude.ai 帳號）。"
-            },
-            {
-              "en": "Find Google Calendar in the list and press Connect.",
-              "zh": "在清單裡找到 Google 日曆（Google Calendar），按 Connect。"
+              "en": "Your browser opened Google Calendar's page on claude.ai (sign in with the same claude.ai account if it asks). Press Connect there.",
+              "zh": "瀏覽器已打開 claude.ai 上 Google 日曆 的頁面（它要你登入的話，用同一個 claude.ai 帳號）。在那裡按「連結」（Connect）。"
             },
             {
               "en": "In Google's window pick the account whose calendar Claude may reach, look at what it asks for, then press Allow.",
               "zh": "Google 的視窗：選你要讓 Claude 看行程的那個帳號，看完權限再按允許。"
+            },
+            {
+              "en": "Come back to ShellBot: it tests the connection by itself.",
+              "zh": "回到 ShellBot：它會自己測試通不通。"
             }
           ],
-          "url": "https://claude.ai/customize/connectors",
+          "url": "https://claude.ai/directory/2a838eaa-f7b4-4bc2-bd47-c326f3c813c5",
+          "in_browser": true,
           "see": {
-            "en": "Back on claude.ai, the Google Calendar row says it is connected.",
-            "zh": "回到 claude.ai，Google 日曆 那一格顯示已連上。"
+            "en": "Back on claude.ai, Google Calendar shows as connected.",
+            "zh": "回到 claude.ai，Google 日曆 顯示已連結。"
           },
           "stuck": [
             {
-              "id": "not-listed",
+              "id": "no-page",
               "q": {
-                "en": "Google Calendar is not in the list",
-                "zh": "清單裡沒有 Google 日曆"
+                "en": "The page did not open, or it says the page is not there",
+                "zh": "頁面沒打開，或說找不到頁面"
               },
               "a": {
-                "en": "On a company plan (Team or Enterprise) an owner has to turn the Google Calendar connector on in the organization settings first. Ask them, then come back to this step.",
-                "zh": "公司方案（Team、Enterprise）要先由管理員在組織設定裡開啟 Google 日曆 連接器。請管理員開好再回來。"
+                "en": "Open the connectors page instead and find Google Calendar in the list.",
+                "zh": "改開連接器頁，在清單裡找 Google 日曆。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open the connectors page",
+                    "zh": "打開連接器頁"
+                  },
+                  "url": "https://claude.ai/customize/connectors"
+                }
+              ]
+            },
+            {
+              "id": "not-listed",
+              "q": {
+                "en": "There is no Connect button for Google Calendar",
+                "zh": "Google 日曆 沒有「連結」按鈕"
+              },
+              "a": {
+                "en": "On a company plan (Team or Enterprise) an owner has to turn the Google Calendar connector on in the organization settings first; a member may see Request instead. Ask them, then come back to this step.",
+                "zh": "公司方案（Team、Enterprise）要先由管理員在組織設定裡開啟 Google 日曆 連接器；成員看到的可能是「Request」。請管理員開好再回來。"
               }
             },
             {
@@ -248,11 +258,11 @@
               "id": "failed",
               "q": {
                 "en": "I pressed Connect and it failed, or it keeps spinning",
-                "zh": "按了 Connect 之後失敗，或一直轉圈"
+                "zh": "按了連結之後失敗，或一直轉圈"
               },
               "a": {
-                "en": "Press Disconnect on the Google Calendar row, then Connect again.",
-                "zh": "在 Google 日曆 那一格先按 Disconnect，再按一次 Connect。"
+                "en": "Disconnect Google Calendar on claude.ai, then connect it again.",
+                "zh": "在 claude.ai 先中斷 Google 日曆，再連結一次。"
               }
             },
             {
@@ -262,8 +272,8 @@
                 "zh": "Google 說「存取遭封鎖，需要管理員審查」"
               },
               "a": {
-                "en": "Your Google Workspace administrator has to mark Claude as a trusted app. Ask them, wait a while, then press Connect again.",
-                "zh": "Google Workspace 管理員要先把 Claude 設成信任的應用程式。請管理員處理，等一下再按 Connect。"
+                "en": "Your Google Workspace administrator has to mark Claude as a trusted app. Ask them, wait a while, then connect again.",
+                "zh": "Google Workspace 管理員要先把 Claude 設成信任的應用程式。請管理員處理，等一下再連結一次。"
               }
             },
             {
@@ -273,8 +283,8 @@
                 "zh": "選錯了 Google 帳號"
               },
               "a": {
-                "en": "Press Disconnect on the row, then Connect again and pick the right account. Google's list of connected apps is where the permission itself is taken back.",
-                "zh": "在那一格按 Disconnect，再按 Connect，這次選對帳號。要收回授權本身，到 Google 帳號的「已連結的應用程式」。"
+                "en": "Disconnect it on claude.ai, then connect again and pick the right account. Google's list of connected apps is where the permission itself is taken back.",
+                "zh": "在 claude.ai 先中斷，再連結一次，這次選對帳號。要收回授權本身，到 Google 帳號的「已連結的應用程式」。"
               },
               "links": [
                 {
@@ -294,7 +304,7 @@
           "kind": "test",
           "title": {
             "en": "Test that it works",
-            "zh": "測試接通"
+            "zh": "測試通不通"
           },
           "intro": {
             "en": "ShellBot opens a temporary Claude tab and asks it for one small lookup in Google Calendar that only reads, reporting only how many items came back. Only that tab sees the result: ShellBot does not read, keep or log it.",
@@ -361,11 +371,11 @@
           "pass": {
             "text": {
               "en": "It works! Google Calendar is connected.",
-              "zh": "通了！Google 日曆 已經接上。"
+              "zh": "通了！Google 日曆 已連結。"
             },
             "next": {
               "en": "The temporary test tab used the Google Calendar connector. ShellBot does not read, keep or log what came back: it is only in the test tab's own conversation. A Claude tab that was already open before you connected Google Calendar may need to be reopened before it sees it (not confirmed).",
-              "zh": "臨時的測試分頁用了 Google 日曆 連接器。回來的內容 ShellBot 不讀、不存、不記錄：只在測試分頁自己的對話裡。連接之前就開著的 Claude 分頁，可能要重開才看得到 Google 日曆（尚未證實）。"
+              "zh": "臨時的測試分頁用了 Google 日曆 連接器。回來的內容 ShellBot 不讀、不存、不記錄：只在測試分頁自己的對話裡。連結之前就開著的 Claude 分頁，可能要重開才看得到 Google 日曆（尚未證實）。"
             }
           },
           "said_ok": {
@@ -404,8 +414,8 @@
               "zh": "測試分頁沒有準備好：它一直沒有走到可以輸入的畫面，所以什麼都沒問。"
             },
             "next": {
-              "en": "Most likely Claude is not signed in. Open the test conversation: if it shows a sign-in screen, sign in with a claude.ai account there, then test again.",
-              "zh": "最可能是 Claude 還沒登入。打開測試對話：如果停在登入畫面，在那裡用 claude.ai 帳號登入，再測一次。"
+              "en": "Most likely Claude is not signed in. Open the test conversation: if it shows a sign-in screen, sign in there, then test again.",
+              "zh": "最可能是 Claude 還沒登入。打開測試對話：如果停在登入畫面，在那裡登入，再測一次。"
             }
           },
           "closed": {
@@ -428,14 +438,24 @@
               "zh": "自己用 + 按鈕開一個 Claude 分頁。開得起來的話，再按「重新測試」。"
             }
           },
+          "failed": {
+            "text": {
+              "en": "Google Calendar answered with an error. The test tab called Google Calendar, but the answer ended in a failure.",
+              "zh": "Google 日曆 回了錯誤：測試分頁叫了 Google 日曆，但結果是失敗。"
+            },
+            "next": {
+              "en": "Most likely a short-lived limit or a timeout: wait a few minutes and test again. If it keeps failing, go back to step 2 and connect it again.",
+              "zh": "最可能是暫時的額度或逾時：等幾分鐘再測一次。一直失敗的話，回到第 2 步重新連結一次。"
+            }
+          },
           "needs_auth": {
             "text": {
               "en": "The connector is not authorized yet. The test tab found the Google Calendar connector, but it asked to be authorized first.",
               "zh": "連接器還沒授權好：測試分頁找得到 Google 日曆 連接器，但它說要先授權。"
             },
             "next": {
-              "en": "Go back to step 2: on claude.ai press Disconnect on the Google Calendar row, then Connect again and allow it.",
-              "zh": "回到第 2 步：在 claude.ai 的 Google 日曆 那一格先按 Disconnect，再按 Connect 並允許。"
+              "en": "Go back to step 2: on claude.ai disconnect Google Calendar, then connect it again and allow it.",
+              "zh": "回到第 2 步：在 claude.ai 先中斷 Google 日曆，再連結一次並允許。"
             }
           },
           "no_tools": {
@@ -445,17 +465,7 @@
             },
             "next": {
               "en": "Most likely Google Calendar is not connected on claude.ai yet: go back to step 2. Next: Claude is not signed in with a claude.ai account (an API key cannot see connectors); type /status in a Claude tab. Also: in the test tab type /mcp and see whether the claude.ai Google Calendar connector is turned off.",
-              "zh": "最可能：Google 日曆 在 claude.ai 上還沒連好，回到第 2 步。其次：這台的 Claude 不是用 claude.ai 帳號登入（API key 看不到連接器），在 Claude 分頁打 /status 確認。另外：在測試分頁打 /mcp，看 claude.ai 的 Google 日曆 連接器是不是被關掉了。"
-            }
-          },
-          "failed": {
-            "text": {
-              "en": "Google Calendar answered with an error. The test tab called Google Calendar, but the answer ended in a failure.",
-              "zh": "Google 日曆 回了錯誤：測試分頁叫了 Google 日曆，但結果是失敗。"
-            },
-            "next": {
-              "en": "Most likely a short-lived limit or a timeout: wait a few minutes and test again. If it keeps failing, go back to step 2 and connect it again.",
-              "zh": "最可能是暫時的額度或逾時：等幾分鐘再測一次。一直失敗的話，回到第 2 步重新連一次。"
+              "zh": "最可能：Google 日曆 在 claude.ai 上還沒連結，回到第 2 步。其次：這台的 Claude 不是用 claude.ai 帳號登入（API key 看不到連接器），在 Claude 分頁打 /status 確認。另外：在測試分頁打 /mcp，看 claude.ai 的 Google 日曆 連接器是不是被關掉了。"
             }
           }
         }
@@ -467,7 +477,7 @@
       "id": "test-basis",
       "q": {
         "en": "What does the connection test look at?",
-        "zh": "連線測試看什麼？"
+        "zh": "連結測試看什麼？"
       },
       "a": {
         "en": "The names of the tools the test tab called, and its last line. ShellBot does not read what the tools returned; the test tab is not a bot, so closing it leaves nothing in any bot's memory.",
@@ -481,8 +491,8 @@
         "zh": "要怎麼收回 Google 日曆？"
       },
       "a": {
-        "en": "Disconnect in ShellBot only forgets its progress: it added nothing to the AIs' settings for this way. The connector itself is on claude.ai: press Disconnect on the Google Calendar row there.",
-        "zh": "在 ShellBot 按中斷，只會忘掉它記下的進度：這種接法 ShellBot 沒有改任何 AI 的設定。連接器本身在 claude.ai：到那裡的 Google 日曆 那一格按 Disconnect。"
+        "en": "Disconnect in ShellBot only forgets its progress: it added nothing to the AIs' settings for this way. The connector itself is on claude.ai: disconnect Google Calendar there.",
+        "zh": "在 ShellBot 按中斷，只會忘掉它記下的進度：這種連結方式 ShellBot 沒有改任何 AI 的設定。連接器本身在 claude.ai：到那裡中斷 Google 日曆。"
       }
     },
     {
@@ -493,7 +503,7 @@
       },
       "a": {
         "en": "Not through this connector: it only reaches Claude tabs. What each other program offers on its own is noted per program; ShellBot does not set those up.",
-        "zh": "不能透過這個連接器：它只有 Claude 的分頁拿得到。其他程式自己有沒有接法，各自記在那個程式底下；ShellBot 不幫你設定那些。"
+        "zh": "不能透過這個連接器：它只有 Claude 的分頁拿得到。其他程式自己有沒有連結方式，各自記在那個程式底下；ShellBot 不幫你設定那些。"
       }
     }
   ]

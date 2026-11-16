@@ -4,7 +4,8 @@ browser with a stand-in Python side whose connect_list carries the catalog (each
 recommended, local_app, whether it can be connected here and why not) for a dozen made-up services.
 
 What is checked is the page's side:
-  1. the frame: the title, "N connected ›" counted from the statuses, the search box, one bubble per category
+  1. the frame: the title, "N connected ›" (the ones that work) and "N to fix ›" counted from the statuses, the
+     search box, one bubble per category
      (fullest first, past four under "More ▾"), a bubble for this computer's apps; Settings is wider while
      the tab shows, two columns, and back to its own width on another tab
   2. the home list: "Needs you" first (red, Reconnect), "Recommended for you" with "See all", "This Mac",
@@ -12,10 +13,11 @@ What is checked is the page's side:
   3. search: by name in either language, by a line or a category's name; nothing found says so; Esc clears it
   4. the bubbles: a category, this computer's apps, one from "More ▾"; "See all" lists every service,
      one made for another kind of computer included and marked
-  5. "N connected ›" lists the connected ones and needs-reconnecting ones, and goes back
+  5. "N connected ›" lists the connected ones; "N to fix ›" the ones that need reconnecting; each goes back
   6. a service that cannot be connected yet: "Not yet" opens its reason in the row, never the wizard; opened
      anyway (a bot's tag), the card says why and shows no step
-  7. "Connect" opens the same wizard (connect_status, the route, connect_start); "Reconnect" starts again
+  7. "Connect" on a service with one way starts it at once (connect_start with that way, no card to choose);
+     "Reconnect" starts again
   8. English; a narrow window has one column; no page errors
 WebKit (the Mac app's engine), headless. Made-up services only. Screenshots: qa-shots/connect-catalog-*.png.
 Needs playwright; SKIP without it. Run: .venv/bin/python tests_connect_catalog_ui.py
@@ -86,7 +88,7 @@ def status(row):
     sid, name, icon, _s, _c, _r, _l, state, avail, why = row
     problem = None
     if state == "needs_reconnect":
-        problem = {"code": "expired", "text": T("Its sign-in ran out.", "它的登入過期了。"), "next": T("Connect it again.", "重新接上就好。"), "step": ""}
+        problem = {"code": "expired", "text": T("Its sign-in ran out.", "它的登入過期了。"), "next": T("Connect it again.", "重新連結就好。"), "step": ""}
     elif not avail:
         problem = {"code": why, "text": WHY[why][0], "next": WHY[why][1], "step": ""}
     return {"service": sid, "name": name, "icon": icon, "kind": "claude_connector" if state != "not_started" else "", "state": state,
@@ -99,7 +101,7 @@ def catalog(row):
     sid, _n, _i, summary, category, rec, local, _st, avail, why = row
     return {"id": sid, "summary": summary, "category": category, "recommended": rec, "local_app": local,
             "platforms": ["windows"] if why == "not_on_platform" else ["mac"] if local else ["mac", "windows", "linux"],
-            "available": avail, "why": why}
+            "available": avail, "why": why, "beta": sid == "demo_todo"}
 
 
 def descriptor(row):
@@ -234,9 +236,11 @@ def run(browser):
     print("1. the frame")
     page, errors = open_page(browser)
     panel = page.locator("#settings-panel-connect")
-    check("the title and the count of what is connected (connected and needs-reconnecting: 2)",
-          panel.locator(".cg-head h3").inner_text() == "連結應用程式" and panel.locator(".cg-count").inner_text() == "已連結 2 個 ›",
+    check("the title, the count of what works (1) and, apart, the count of what needs fixing (1)",
+          panel.locator(".cg-head h3").inner_text() == "連結應用程式" and panel.locator(".cg-count").inner_text() == "已連結 1 個 ›"
+          and panel.locator(".cg-fix").is_visible() and panel.locator(".cg-fix").inner_text() == "1 個要處理 ›",
           panel.locator(".cg-head").inner_text())
+    check("the tab is called 連結", page.locator('#settings-tabs-bar [data-tab="connect"]').inner_text().startswith("連結"))
     check("a search box that says what it searches", panel.locator(".cg-search input").get_attribute("placeholder") == "搜尋應用程式")
     p = pills(page)
     check("bubbles: All, this Mac's apps, then the categories from the descriptions, fullest first, four of them, then More ▾",
@@ -257,8 +261,8 @@ def run(browser):
     check("sections: Needs you, Recommended for you, This Mac, More services", keys == ["attn", "rec", "local", "rest"], keys)
     attn = sec(page, "attn")
     check("Needs you: the service that needs reconnecting, marked, with its reason and a Reconnect button",
-          names(attn) == ["示範看板"] and "它的登入過期了" in attn.inner_text() and "重新接上就好" in attn.inner_text()
-          and attn.locator(".cg-row.attn button.primary").inner_text() == "重新接上", attn.inner_text())
+          names(attn) == ["示範看板"] and "它的登入過期了" in attn.inner_text() and "重新連結就好" in attn.inner_text()
+          and attn.locator(".cg-row.attn button.primary").inner_text() == "重新連結", attn.inner_text())
     rec = sec(page, "rec")
     check("Recommended for you: the recommended ones not shown above, with See all",
           names(rec) == ["示範檔案櫃", "示範行程表", "示範筆記本", "示範聊天室", "示範信箱"] and rec.locator('[data-cg="all"]').inner_text() == "查看全部", names(rec))
@@ -269,8 +273,10 @@ def run(browser):
     local = sec(page, "local")
     check("This Mac: the computer's own apps, the ones that cannot be connected yet marked Not yet",
           local.locator("h4").inner_text() == "這台 Mac" and names(local) == ["示範訊息", "示範備忘", "示範待辦"]
-          and local.locator(".cg-off").count() == 2 and local.locator('.cg-row[data-service="demo_texts"] button').inner_text() == "還不能接"
+          and local.locator(".cg-off").count() == 2 and local.locator('.cg-row[data-service="demo_texts"] button').inner_text() == "還不能連結"
           and local.locator('.cg-row[data-service="demo_todo"] button').inner_text() == "連結", local.inner_text())
+    check("a service whose way is a beta says so on its row", local.locator('.cg-row[data-service="demo_todo"] .cg-beta').inner_text() == "測試版"
+          and page.locator("#settings-panel-connect .cg-beta").count() == 1)
     check("More services: the rest; one made for another kind of computer is not on the home list",
           names(sec(page, "rest")) == ["示範設計稿", "示範相簿", "示範表單", "示範商機"], names(sec(page, "rest")))
     shot(page, "connect-catalog-home-zh.png")
@@ -315,10 +321,16 @@ def run(browser):
 
     print("5. N connected ›")
     panel.locator(".cg-count").click()
-    check("lists the connected and the needs-reconnecting ones", sorted(names(sec(page, "connected"))) == sorted(["示範信箱", "示範看板"]), names(sec(page, "connected")))
+    check("N connected lists only the ones that work", names(sec(page, "connected")) == ["示範信箱"], names(sec(page, "connected")))
     shot(page, "connect-catalog-connected-zh.png")
     panel.locator(".cg-count").click()
     check("pressed again, it goes home", sec(page, "rec").count() == 1)
+    panel.locator(".cg-fix").click()
+    check("N to fix lists the ones that need reconnecting, with Reconnect", names(sec(page, "attention")) == ["示範看板"]
+          and sec(page, "attention").locator("button.primary").inner_text() == "重新連結", names(sec(page, "attention")))
+    shot(page, "connect-catalog-tofix-zh.png")
+    panel.locator('.cg-sec[data-sec="attention"] [data-cg="home"]').click()
+    check("Back goes home", sec(page, "rec").count() == 1)
 
     print("6. a service that cannot be connected yet")
     page.evaluate("window.__calls.length = 0")
@@ -340,13 +352,11 @@ def run(browser):
     print("7. Connect and Reconnect open the same wizard")
     page.evaluate("window.__calls.length = 0")
     sec(page, "rec").locator('.cg-row[data-service="demo_pages"] button').click()
-    page.wait_for_selector("#cn-card .cn-route", timeout=5000)
-    check("Connect opens the wizard on its way to connect (connect_status of that service)",
-          calls(page, "connect_status")[0][0] == "demo_pages" and "示範筆記本" in page.locator("#cn-card .cn-head").inner_text())
-    page.click('#cn-card [data-act="route-go"]')
     page.wait_for_selector("#cn-card .cn-how", timeout=5000)
-    check("…and Next starts it (connect_start with the route): step 1", [c for c in calls(page, "connect_start") if c[0] == "demo_pages"] != []
-          and "打開示範頁面" in page.locator("#cn-card .cn-title").inner_text())
+    check("Connect on a service with one way starts it at once: no card to choose a way, step 1 is up",
+          calls(page, "connect_status")[0][0] == "demo_pages" and "示範筆記本" in page.locator("#cn-card .cn-head").inner_text()
+          and [json.loads(c[1]) for c in calls(page, "connect_start") if c[0] == "demo_pages"] == [{"route": "app"}]
+          and page.locator("#cn-card .cn-route").count() == 0 and "打開示範頁面" in page.locator("#cn-card .cn-title").inner_text())
     shot(page, "connect-catalog-wizard-zh.png")
     page.keyboard.press("Escape")
     page.wait_for_function("!document.querySelector('#modal-connect.open')")
@@ -363,7 +373,8 @@ def run(browser):
     print("8. English, a narrow window")
     page, errors = open_page(browser, "en")
     panel = page.locator("#settings-panel-connect")
-    check("the frame in English", panel.locator(".cg-head h3").inner_text() == "Connect apps" and panel.locator(".cg-count").inner_text() == "2 connected ›"
+    check("the frame in English", panel.locator(".cg-head h3").inner_text() == "Connect apps" and panel.locator(".cg-count").inner_text() == "1 connected ›"
+          and panel.locator(".cg-fix").inner_text() == "1 to fix ›"
           and panel.locator(".cg-search input").get_attribute("placeholder") == "Search apps")
     check("…sections and buttons in English", sec(page, "rec").locator("h4").inner_text() == "Recommended for you" and sec(page, "local").locator("h4").inner_text() == "This Mac"
           and sec(page, "local").locator('.cg-row[data-service="demo_texts"] button').inner_text() == "Not yet"
@@ -386,15 +397,22 @@ def run(browser):
     recommended = sorted(i for i in reg.ids() if desc[i].get("recommended") and not desc[i].get("local_app"))
     local = sorted(i for i in reg.ids() if desc[i].get("local_app"))
     check("Recommended for you: every recommended service, each with a Connect button",
-          sorted(ids("rec")) == recommended and len(recommended) >= 5
+          sorted(ids("rec")) == recommended and len(recommended) == 4 and "slack" not in recommended
           and all(b == "連結" for b in sec(page, "rec").locator("button.cn-btn").all_inner_texts()), (ids("rec"), recommended))
-    check("This Mac: the Mac apps, each marked Not yet (nothing to connect them with yet)",
-          sorted(ids("local")) == local and len(local) == 4 and sec(page, "local").locator(".cg-off").count() == 4
-          and set(sec(page, "local").locator("button.cn-btn").all_inner_texts()) == {"還不能接"}, ids("local"))
+    beta = sorted(i for i in local if any(r.get("beta") for r in desc[i]["routes"]))
+    later = sorted(i for i in local if desc[i].get("unavailable"))
+    check("This Mac: the four Mac apps; the two with a way (a beta) say Connect and Beta, the others Not yet",
+          sorted(ids("local")) == local and len(local) == 4 and len(beta) == 2 and len(later) == 2
+          and sorted(sec(page, "local").locator(".cg-off").evaluate_all("els => els.map(e => e.dataset.service)")) == later
+          and all(sec(page, "local").locator(f'.cg-row[data-service="{i}"] button').inner_text() == "連結"
+                  and sec(page, "local").locator(f'.cg-row[data-service="{i}"] .cg-beta').inner_text() == "測試版" for i in beta)
+          and all(sec(page, "local").locator(f'.cg-row[data-service="{i}"] button').inner_text() == "還不能連結" for i in later), ids("local"))
     check("the bubbles are the descriptions' categories", pills(page) == ["全部", "Mac", "生產力", "通訊"], pills(page))
+    check("a service that is not recommended is under More services, and in its category's bubble",
+          "slack" in ids("rest") and desc["slack"]["category"]["id"] == "communication")
     check("nothing connected: 0", page.locator("#settings-panel-connect .cg-count").inner_text() == "已連結 0 個 ›")
-    sec(page, "local").locator(".cg-row button").first.click()
-    check("a Mac app's reason is its description's words", pick_zh(desc[local[0]]["unavailable"]["text"]) in sec(page, "local").inner_text())
+    sec(page, "local").locator(f'.cg-row[data-service="{later[0]}"] button').click()
+    check("a Mac app's reason is its description's words", pick_zh(desc[later[0]]["unavailable"]["text"]) in sec(page, "local").inner_text())
     check("no page errors", not errors, errors)
     page.close()
 
@@ -405,7 +423,8 @@ def run(browser):
     check("no This PC section and no bubble for it: the Mac apps are not this computer's",
           "local" not in keys and pills(page) == ["全部", "生產力", "通訊"], (keys, pills(page)))
     home = page.locator("#settings-panel-connect .cg-row").evaluate_all("els => els.map(e => e.dataset.service)")
-    check("…and the home list does not show them anywhere", not set(home) & set(local) and len(home) == len(recommended), home)
+    check("…and the home list does not show them anywhere", not set(home) & set(local)
+          and sorted(home) == sorted(i for i in reg.ids() if i not in local), home)
     page.locator('#settings-panel-connect [data-cg="all"]').click()
     marked = sec(page, "all").locator(".cg-row.cg-off").evaluate_all("els => els.map(e => e.dataset.service)")
     check("See all lists them, each marked Not on this computer", sorted(marked) == local

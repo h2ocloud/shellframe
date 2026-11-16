@@ -91,13 +91,13 @@ def compact(status: dict) -> dict:
 
 
 _WORDS = {
-    "not_started": ("not connected", "還沒接上"),
-    "waiting_user": ("waiting for you{at}", "等你操作{at}"),
+    "not_started": ("not connected", "還沒連結"),
+    "waiting_user": ("waiting for you{at}", "連結中，等你操作{at}"),
     "verifying": ("checking…", "驗證中…"),
-    "connected": ("connected", "已接上"),
-    "failed": ("did not connect", "沒接成功"),
-    "needs_reconnect": ("needs to be connected again", "需要重新接上"),
-    "unavailable": ("cannot be connected here yet", "這裡還不能接"),
+    "connected": ("connected", "已連結"),
+    "failed": ("did not connect", "沒連結成功"),
+    "needs_reconnect": ("needs to be connected again", "需要重新連結"),
+    "unavailable": ("cannot be connected here yet", "這裡還不能連結"),
 }
 
 
