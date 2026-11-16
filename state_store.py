@@ -228,6 +228,19 @@ def listing(*, owner=None, requester=None, status="open", kind=None, limit: int 
         con.close()
 
 
+def find_by_ref(kind: str, ref: str, path=None):
+    """The task an event of this kind and ref belongs to (e.g. the hand-off whose id is ref), or None."""
+    if not ref:
+        return None
+    con = _open(path)
+    try:
+        r = con.execute("SELECT task_id FROM events WHERE kind=? AND ref=? AND task_id IS NOT NULL ORDER BY id DESC LIMIT 1",
+                        (kind, _clean(ref, 200))).fetchone()
+        return r[0] if r else None
+    finally:
+        con.close()
+
+
 def stuck(now: float = None, *, limits: dict = None, path=None) -> list:
     """Open tasks whose last event is older than the limit for their status, oldest first,
     each with `idle_s` (seconds since anything happened to it)."""

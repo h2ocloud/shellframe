@@ -601,6 +601,7 @@ _BRIEF = {
         "last": "── Summary of your last conversation{name} ──",
         "last_name": " ({name})",
         "no_last": "(none)",
+        "tasks": "── Your open tasks (sfctl task mine; keep them current with sfctl task update / note / done) ──",
         "others": "── Other bots (message one: sfctl a2a-send <name> \"message\"; "
                   "hand off: sfctl a2a-handoff <name> \"task\") ──",
         "external": " (external)",
@@ -635,6 +636,7 @@ _BRIEF = {
         "last": "── 上一次對話的摘要{name} ──",
         "last_name": "（{name}）",
         "no_last": "（沒有）",
+        "tasks": "── 你未完成的任務（sfctl task mine；進度用 sfctl task update / note / done 更新）──",
         "others": "── 其他 bot（找它：sfctl a2a-send <名稱> \"訊息\"；交辦：sfctl a2a-handoff <名稱> \"任務\"）──",
         "external": "（外部）",
         "other_sep": "：",
@@ -654,7 +656,7 @@ _BRIEF = {
 
 
 def compose_brief(role, entry, roster, *, memory="", last="", last_name="", skills=(), own_skills=(),
-                  is_primary=False, with_ack=True, autosave=False, lang=None) -> str:
+                  is_primary=False, with_ack=True, autosave=False, lang=None, tasks="") -> str:
     lang = lang or sf_lang.prompt_lang()
     T = _BRIEF[lang]
     label = label_of(role, entry)
@@ -673,6 +675,10 @@ def compose_brief(role, entry, roster, *, memory="", last="", last_name="", skil
     lines.append("")
     lines.append(T["last"].format(name=T["last_name"].format(name=last_name) if last_name else ""))
     lines.append(last or T["no_last"])
+    if tasks:                         # its open tasks and what other bots wait on it (api_tasks._tasks_brief)
+        lines.append("")
+        lines.append(T["tasks"])
+        lines.append(tasks)
     others = []
     for r, e in (roster or {}).items():
         if r == role or not is_bot(e):

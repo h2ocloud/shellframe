@@ -197,7 +197,10 @@ def handle(api, cmd: str, args: dict) -> dict:
             args.get("ttl"), tab_delivery.RESULT_WAIT
             if cmd == "a2a_result" or (cmd == "a2a_deliver" and args.get("kind") == "result") else None)
         if cmd == "a2a_deliver":
-            return agent_link.accept_remote(ctx, args)
+            res = agent_link.accept_remote(ctx, args)
+            if args.get("kind") == "result" and hasattr(api, "_tasks_link_result"):   # a result from another computer
+                api._tasks_link_result(args.get("id") or "", "", args.get("from_label") or "", args.get("text") or "", res)
+            return res
         sid, label = _from(api, args)
         if sid is None:
             return {"success": False, "message": label}
@@ -207,6 +210,8 @@ def handle(api, cmd: str, args: dict) -> dict:
                 from_sid=sid, from_label=label, diff=bool(args.get("diff")))
             if (res or {}).get("success") and hasattr(api, "_push_a2a_result"):
                 api._push_a2a_result(sid, label, args.get("text") or "")
+            if hasattr(api, "_tasks_link_result"):      # the hand-off's task hears the result (api_tasks)
+                api._tasks_link_result(args.get("id") or "", sid, label, args.get("text") or "", res)
             return res
         if cmd == "a2a_next":
             task = args.get("text") or args.get("task") or ""
@@ -217,16 +222,25 @@ def handle(api, cmd: str, args: dict) -> dict:
                 allow_write=bool(args.get("allow_write")))
         if cmd in ("a2a_send", "a2a_handoff"):
             kind = "handoff" if cmd == "a2a_handoff" else "send"
+            target = args.get("target") or ""
+            text = args.get("text") or args.get("task") or ""
+            task_id = None
+            if args.get("for_task") not in (None, "") and hasattr(api, "_tasks_link_check"):
+                task_id, why = api._tasks_link_check(args.get("for_task"))
+                if task_id is None:
+                    return {"success": False, "message": why}
+                text = text.rstrip() + api._tasks_link_line(task_id, remote="/" in target)
             hint = {}
             if kind == "handoff":
-                hint = agent_route.hint(args.get("text") or args.get("task") or "",
-                                        _readings())
-            return agent_link.dispatch(
-                ctx, target=args.get("target") or "",
-                text=args.get("text") or args.get("task") or "",
+                hint = agent_route.hint(text, _readings())
+            res = agent_link.dispatch(
+                ctx, target=target, text=text,
                 from_sid=sid, from_label=label, kind=kind,
                 hint=hint.get("text") or "", route_hint=hint or None,
                 allow_write=bool(args.get("allow_write")))
+            if task_id is not None:
+                api._tasks_link_sent(task_id, kind, target, res, sid)
+            return res
         return {"success": False, "message": f"unknown {cmd}"}
     except Exception as e:
         return {"success": False, "message": f"{cmd} failed: {e}"}

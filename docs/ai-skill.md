@@ -372,7 +372,9 @@ sfctl task mine                               # your open tasks, and the ones ot
 sfctl task add "整理這週的筆記" --next "先列出標題" [--due +2d|2026-11-20] [--owner <bot>] [--parent N] [--after N,M]
 sfctl task add "要不要換排程方式" --decision    # a decision only the user can make (owner: user)
 sfctl task update N --status doing --next "…"  # todo | doing | waiting | done | dropped
-sfctl task update N --waiting-on <bot>         # you handed part of it on: the task shows whom it waits for
+sfctl a2a-handoff <bot> "…" --for-task N       # hand part of it on: noted on N, which waits on <bot> until its a2a-result
+sfctl a2a-send <bot> "…" --for-task N          # a message about it: noted on N (the message says which task)
+sfctl task update N --waiting-on <bot>         # waiting on someone without a hand-off (sets waiting; none clears)
 sfctl task note N "標題列好了，等確認"           # something happened, nothing else changed
 sfctl task done N "已寄出"                      # or: drop N "why"
 sfctl task show N                             # the task and everything that happened to it
@@ -381,11 +383,15 @@ sfctl task stuck                              # open tasks nothing happened to f
 ```
 
 **When to use it** (if you never do, nobody can follow your work):
-- At the start of a conversation, and after your context was compacted: `sfctl task mine`, and carry on from there.
+- At the start of a conversation, and after your context was compacted: `sfctl task mine`, and carry on from there. A
+  bot's wake-up brief already lists its open tasks and what other bots wait on it.
 - The user gives you work that will not be finished in this turn: `add` it, with the next step.
 - You start, change course or hit a wall: `update --status` / `--next`, or a `note`.
-- You hand part of it to another bot (`a2a-send` / `a2a-handoff`): `update N --waiting-on <bot>`, and put `#N` in
-  your message so the other bot can `note` on it.
+- You hand part of it to another bot: `a2a-handoff <bot> "…" --for-task N`. The task records the hand-off and waits on
+  that bot; its `a2a-result` is written on the task and the task comes back to you (doing), from another computer too.
+- You **received** a message that says it is part of task #N (on this computer): `sfctl task show N` to see it whole,
+  `sfctl task note N "…"` for progress, and answer the hand-off with `a2a-result` as usual. A task on another computer
+  is not in your list: just answer with `a2a-result`.
 - Only the user can decide something: `add --decision` (it lands on the user's list) and ask them in your reply as well.
 - It is finished or abandoned: `done` / `drop` with one line saying the result or why.
 
@@ -470,7 +476,7 @@ configure there.
 | The person's own messages (the chat view, a paired phone's `/link/send`) go into a working tab at once, as typing does; agents' `send` / A2A still queue. The guide: `guide.json` (one entry per feature, `data-guide` marks on the page), a first-run tour on a new install, the sidebar's Guide button | 0.45.0 |
 | `send` and A2A go into a working tab too (a menu, a model switch, the person's unsent words or a bridged message still hold them); a send whose Enter did not take is pressed again or reported; `sfctl board-*` and the `[[SF:TASK]]` marker are gone; phones get `GET /link/usage`, `POST /link/send/now`, `/link/send/cancel` and `images` on `/link/send` | 0.45.3 |
 | The chat view takes a person through signing a tab in again (a card for each step of `/login`); phones: `POST /link/login` | 0.45.4 |
-| Tasks across sessions and bots: `sfctl task add` / `list` / `mine` / `show` / `update` / `note` / `done` / `drop` / `stuck` (§4.9), kept in `state.db` | 0.46.0 |
+| Tasks across sessions and bots: `sfctl task add` / `list` / `mine` / `show` / `update` / `note` / `done` / `drop` / `stuck` (§4.9), kept in `state.db`; `a2a-send` / `a2a-handoff --for-task N` (the result comes back onto the task); a bot's wake-up brief lists its open tasks | 0.46.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

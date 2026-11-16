@@ -1214,7 +1214,8 @@ class BotsApiMixin:
         autosave = bot_memory.settings(_cfg())[0]
         return bots.compose_brief(role, entry, raw_roster, memory=mem, last=last, last_name=last_name,
                                   skills=skills, own_skills=own, is_primary=bots.primary_role(raw_roster) == role,
-                                  with_ack=with_ack, autosave=autosave)
+                                  with_ack=with_ack, autosave=autosave,
+                                  tasks=getattr(self, "_tasks_brief", lambda _r: "")(role))
 
     def bots_open(self, role: str) -> str:
         """Wake a bot: focus its tab if it has one, else open one and hand it its brief."""

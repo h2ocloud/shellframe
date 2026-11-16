@@ -212,6 +212,79 @@ class TasksApiMixin:
 
         raise ValueError(_(f"unknown action: {action}", f"不認得的動作：{action}"))
 
+    # ── hand-offs tied to a task (a2a_host calls these; none of them may break A2A) ──
+    def _tasks_link_check(self, task_id):
+        """Before an A2A message `--for-task N` goes: (int id, "") or (None, why not)."""
+        try:
+            n = int(str(task_id).lstrip("#"))
+            t = ss.get(n, events=False)
+        except (ValueError, TypeError):
+            return None, _(f"--for-task: {task_id} is not a task number", f"--for-task：{task_id} 不是任務編號")
+        except ss.NotFound:
+            return None, _(f"--for-task: no task #{task_id}", f"--for-task：沒有 #{task_id} 這件任務")
+        except ss.Unavailable as e:
+            return None, _(e.en, e.zh)
+        if t["status"] in ss.CLOSED:
+            return None, _(f"--for-task: #{n} is closed ({t['status']})", f"--for-task：#{n} 已經結束（{_status(t['status'])}）")
+        return n, ""
+
+    def _tasks_link_line(self, task_id: int, remote: bool) -> str:
+        """The line the message carries, so the other side can write on the same task."""
+        if remote:      # the task lives on this computer; the other side reports with a2a-result
+            return _(f"\n\n(Part of task #{task_id} on the sender's computer; report back with a2a-result.)",
+                     f"\n\n（這是對方電腦上任務 #{task_id} 的一部分；用 a2a-result 回報即可。）")
+        return _(f"\n\n(Part of task #{task_id}: `sfctl task show {task_id}` to see it, "
+                 f"`sfctl task note {task_id} \"…\"` to write progress on it.)",
+                 f"\n\n（這是任務 #{task_id} 的一部分：`sfctl task show {task_id}` 看全貌，"
+                 f"`sfctl task note {task_id} \"…\"` 把進度記上去。）")
+
+    def _tasks_link_sent(self, task_id: int, kind: str, target: str, res: dict, from_sid: str) -> None:
+        """A message went out for a task: one event (its id as ref, so the result finds the task),
+        and a hand-off makes the task wait on whoever got it."""
+        try:
+            d = (res or {}).get("details") or {}
+            if not ((res or {}).get("success") or d.get("delivered")):
+                return
+            actor = self._tasks_actor(from_sid)
+            who = self._tasks_name(target, actor) if "/" not in target else target
+            ss.note(task_id, _(f"{kind} to {who}", f"{'交辦給' if kind == 'handoff' else '傳訊給'} {who}"),
+                    actor=actor, kind=kind, ref=str(d.get("id") or ""))
+            if kind == "handoff":
+                ss.update(task_id, actor=actor, waiting_on=who, status="waiting")
+        except Exception:
+            _swallow("tasks:link-sent")
+
+    def _tasks_link_result(self, handoff_id: str, from_sid: str, from_label: str, text: str, res: dict) -> None:
+        """A hand-off's result came back: written on its task, which goes back to its owner (doing)."""
+        try:
+            if not (res or {}).get("success"):
+                return
+            n = ss.find_by_ref("handoff", handoff_id)
+            if not n:
+                return
+            actor = self._tasks_actor(from_sid) if from_sid else (from_label or "a2a")
+            ss.note(n, str(text or "")[:ss.TEXT_MAX] or _("(empty result)", "（空的結果）"), actor=actor,
+                    kind="result", ref=handoff_id)
+            t = ss.get(n, events=False)
+            if t["status"] == "waiting":
+                ss.update(n, actor=actor, waiting_on="", status="doing")
+        except Exception:
+            _swallow("tasks:link-result")
+
+    def _tasks_brief(self, role: str, limit: int = 12) -> str:
+        """For a waking bot's brief: its open tasks and what other bots wait on it; "" when none or the
+        store is unavailable."""
+        try:
+            mine = ss.listing(owner=role, limit=limit)
+            waiting = [t for t in ss.listing(status="open", limit=200) if t["waiting_on"] == role and t["owner"] != role]
+        except Exception:
+            return ""
+        rows = [line(t) for t in mine]
+        if waiting:
+            rows.append(_("Waiting on you:", "在等你的："))
+            rows.extend(line(t) for t in waiting[:limit])
+        return "\n".join(rows)
+
     # ── upkeep ────────────────────────────────────────────────────────────
     def _tasks_tick(self, now: float) -> None:
         """Called by the status monitor on every pass: cheap, never raises. The first upkeep runs a few

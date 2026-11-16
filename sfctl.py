@@ -828,12 +828,15 @@ def main():
     p_a2a.add_argument("--as", dest="as_role", default="", help=as_help)
     p_a2a.add_argument("--now", action="store_true", help=now_help)
     p_a2a.add_argument("--ttl", type=float, default=None, help=ttl_help)
+    p_a2a.add_argument("--for-task", dest="for_task", default=None, help="Part of task N (sfctl task): noted on it")
     p_hand = sub.add_parser("a2a-handoff", help="Hand a task off; the other side reports with a2a-result")
     p_hand.add_argument("target")
     p_hand.add_argument("task")
     p_hand.add_argument("--as", dest="as_role", default="", help=as_help)
     p_hand.add_argument("--now", action="store_true", help=now_help)
     p_hand.add_argument("--ttl", type=float, default=None, help=ttl_help)
+    p_hand.add_argument("--for-task", dest="for_task", default=None,
+                        help="Part of task N (sfctl task): it waits on the target until the result comes back")
     p_hand.add_argument("--allow-write", action="store_true",
                         help="Let a production SSH worker leave read-only mode. "
                              "Service restarts stay refused.")
@@ -1119,14 +1122,14 @@ def main():
         _print_result(_rpc("a2a_send", {
             "target": args.target, "text": args.text,
             "as": args.as_role, "now": bool(args.now), "ttl": args.ttl,
-            "from_sid": os.environ.get("SF_SID", ""),
+            "from_sid": os.environ.get("SF_SID", ""), "for_task": args.for_task,
         }, timeout=30))
     elif args.cmd == "a2a-handoff":
         _print_result(_rpc("a2a_handoff", {
             "target": args.target, "text": args.task,
             "as": args.as_role, "now": bool(args.now), "ttl": args.ttl,
             "allow_write": bool(args.allow_write),
-            "from_sid": os.environ.get("SF_SID", ""),
+            "from_sid": os.environ.get("SF_SID", ""), "for_task": args.for_task,
         }, timeout=45))
     elif args.cmd == "a2a-result":
         _print_result(_rpc("a2a_result", {
