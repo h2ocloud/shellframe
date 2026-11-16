@@ -84,7 +84,7 @@
 
 ## Prompt 注入順序
 
-- `INIT_PROMPT` / `master_turn_preamble` 必須排在第一則 user 內容**之前**。
+- `INIT_PROMPT` 必須排在第一則 user 內容**之前**。
 - web 路徑（`main.py.write_input`）：xterm.js 把訊息文字與送出的 Enter 拆成不同 `write_input` 呼叫；注入要在**第一個帶內容的 chunk**（`_is_user_content()`）觸發、前置 prompt，而非等尾端 bare `\r`（v0.13.8 修）。
 - TG / delegate 路徑（`bridge_telegram` consume/concat、`_send_text_to_session` tmux paste-buffer）本就 prompt 在前。
 - TG→master 貼文字污染（變 preamble / malformed）：靠 write 序列化 + bracketed paste + busy 守門解（v0.13.5–0.13.7）。

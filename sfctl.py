@@ -929,9 +929,9 @@ def main():
     p_new.add_argument("--label", default=None,
                        help="Optional custom label (defaults to command name)")
     p_new.add_argument("--source", default="sfctl",
-                       help="Lifecycle source label for handoff notes (e.g. scheduler)")
+                       help="Where the tab came from, kept with it (e.g. scheduler)")
     p_new.add_argument("--handoff", action="store_true",
-                       help="Write a short startup handoff note to the main session")
+                       help=argparse.SUPPRESS)      # retired (no note to the main tab); accepted so old scripts run
 
     p_send = sub.add_parser("send", help="Send text to a session (submits with Enter by default)")
     p_send.add_argument("sid", help="Session id (e.g. s3) or a bot's or tab's name — see `sfctl list`")
@@ -1031,9 +1031,9 @@ def main():
     p_close = sub.add_parser("close", help="Close a session")
     p_close.add_argument("sid", help="Session id, or a bot's or tab's name")
     p_close.add_argument("--reason", default="sfctl",
-                         help="Lifecycle reason for handoff notes")
+                         help="Why it is closed (kept in the debug log)")
     p_close.add_argument("--handoff", action="store_true",
-                         help="Write a short close handoff note to the main session")
+                         help=argparse.SUPPRESS)    # retired (no note to the main tab); accepted so old scripts run
 
     p_audit = sub.add_parser(
         "history-audit",
@@ -1176,7 +1176,6 @@ def main():
             "cols": 200,
             "rows": 50,
             "source": args.source,
-            "handoff": args.handoff,
         }, timeout=20)
         if result.get("success") and args.label:
             sid = result.get("details", {}).get("sid", "")
@@ -1201,7 +1200,6 @@ def main():
         _print_result(_rpc("close_session", {
             "sid": args.sid,
             "reason": args.reason,
-            "handoff": args.handoff,
         }))
     elif args.cmd == "notify":
         return _cmd_notify(args)

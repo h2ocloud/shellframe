@@ -163,8 +163,6 @@ AI tab cleanup.
   ShellFrame asks it for a short summary.
 - **Summary wait** controls how long ShellFrame waits after asking for that
   summary before closing the tab.
-- **Write handoff to master** writes a short `[ShellFrame 交接]` note to the
-  master tab when an orchestrated or idle-cleaned tab is closed.
 
 The same values live in `~/.config/shellframe/config.json`:
 
@@ -172,9 +170,7 @@ The same values live in `~/.config/shellframe/config.json`:
 "idle_reaper": {
   "enabled": true,
   "idle_sec": 1800,
-  "summary_grace_sec": 120,
-  "handoff_to_main": true,
-  "handoff_on_start": false
+  "summary_grace_sec": 120
 }
 ```
 

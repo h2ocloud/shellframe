@@ -1043,13 +1043,6 @@
           </div>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="masterTurnPreamble">Master turn reminder</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-master-preamble"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="masterTurnPreambleHint">Remind master tabs to consider delegation before each AI turn</span>
-          </div>
-        </div>
-        <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">角色群組 — 一則訊息送給多個角色（實驗性）</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch" id="setting-experimental-groups" data-guide="groups"></button>
@@ -1123,19 +1116,6 @@
         <div class="bridge-help" style="margin-top:6px" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div>
       </div>
 
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="delegationTitle">Delegation</div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="masterPreambleTextLabel">自訂派工提示文字</label>
-          <textarea id="setting-master-turn-preamble" rows="6" style="font-size:11px" data-i18n-placeholder="masterPreambleTextPlaceholder" placeholder="[ShellFrame — Master Delegation Protocol]&#10;Before responding, evaluate whether this task should be delegated:&#10;1. Understand the user's intent — what outcome do they actually need?&#10;2. Check available workers: `sfctl list`&#10;3. Delegate when the task is: non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.&#10;4. Handle directly only if: it's a quick answer, a clarification, or coordination that requires master context.&#10;5. To delegate: `sfctl delegate <Role> &quot;<task description>&quot;`&#10;Do NOT hard-route by keywords. Prefer delegation over doing everything yourself."></textarea>
-        </div>
-        <div class="bridge-help" data-i18n="masterPreambleTextHelp">留空使用內建預設</div>
-        <div class="bridge-field">
-          <label data-i18n="autoDelegateLabel">自動派工（實驗性）</label>
-          <button class="toggle-switch" id="setting-auto-delegate"></button>
-        </div>
-        <div class="bridge-help" data-i18n="autoDelegateHelp">啟用後，總控自動將研究/分析/排查任務 delegate 給 worker。預設關閉。</div>
-      </div>
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
         💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.
       </div>
@@ -1167,10 +1147,6 @@
                      style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
               <span style="font-size:11px;color:#565f89" data-i18n="minutes">minutes</span>
             </div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="writeHandoffToMaster">Write handoff to master</label>
-            <button class="toggle-switch on" id="setting-idle-handoff"></button>
           </div>
           <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
           <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
@@ -1591,8 +1567,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: 'show/hide',
       completionNotifications: 'Completion notifications',
       completionNotificationsHint: 'Notify when an AI reply finishes while shellframe is not in the foreground',
-      masterTurnPreamble: 'Master turn reminder',
-      masterTurnPreambleHint: 'Remind master tabs to consider delegation before each AI turn',
       injectInitLabel: 'Init prompt on first message',
       injectInitHint: 'Prepend INIT_PROMPT.md (ShellBot environment + sfctl guide) to the first message of new AI tabs. Applies to tabs opened after toggling. Off by default.',
       micButtonLabel: 'Voice input button 🎙',
@@ -1615,7 +1589,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       minutes: 'minutes',
       hours: 'hours',
       summaryWait: 'Summary wait',
-      writeHandoffToMaster: 'Write handoff to master',
       saveCleanup: 'Save cleanup',
       cleanupSaved: 'Saved',
       sessionPrompt: 'Session prompt',
@@ -1661,18 +1634,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       bridgePrefix: 'Prefix',
       tgPrefixHint: '[TG @user]: message',
       bridgeSystemPrompt: 'System Prompt',
-      delegationTitle: 'Delegation',
       tgAdvancedTitle: 'Telegram Bridge Advanced',
       showTgWrapperLabel: 'Show TG Wrapper tag',
       showTgWrapperHelp: 'Show the [SF-TG wrapper] prefix when TG messages are injected into the local terminal',
-      masterPreambleTextLabel: 'Custom delegation prompt',
-      masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
-      masterPreambleTextHelp: 'Leave empty to use the built-in default',
       tgPromptLabel: 'Custom TG Prompt',
       tgPromptPlaceholder: "[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c",
       tgPromptHelp: 'Formatting and collaboration prompt for each TG message. Leave empty to use the built-in default',
-      autoDelegateLabel: 'Auto delegate (experimental)',
-      autoDelegateHelp: 'When enabled, the master automatically delegates research, analysis, and debugging tasks to workers. Default is off.',
       connect: 'Connect',
       disconnect: 'Disconnect',
       connected: 'Connected',
@@ -1758,8 +1725,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: '顯示/隱藏',
       completionNotifications: '完成通知',
       completionNotificationsHint: 'AI 回覆完成且 shellframe 不在前景時通知',
-      masterTurnPreamble: '總控每輪提醒',
-      masterTurnPreambleHint: '每次總控送出 AI 輸入前提醒先判斷是否派工',
       injectInitLabel: '首次訊息注入 INIT 提示',
       injectInitHint: '新 AI 分頁的第一則訊息前自動前置 INIT_PROMPT.md（環境說明＋sfctl 指南）。切換後對新開的分頁生效。預設關閉。',
       micButtonLabel: '介面錄音按鈕 🎙',
@@ -1782,7 +1747,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       minutes: '分鐘',
       hours: '小時',
       summaryWait: '摘要等待',
-      writeHandoffToMaster: '回寫交接給總控',
       saveCleanup: '儲存清理設定',
       cleanupSaved: '已儲存',
       sessionPrompt: '工作階段提示',
@@ -1828,18 +1792,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       bridgePrefix: '前綴',
       tgPrefixHint: '[TG @使用者]: 訊息',
       bridgeSystemPrompt: '系統提示',
-      delegationTitle: '派工設定',
       tgAdvancedTitle: 'Telegram Bridge 進階',
       showTgWrapperLabel: '顯示 TG Wrapper 標記',
       showTgWrapperHelp: 'TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴',
-      masterPreambleTextLabel: '自訂派工提示文字',
-      masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
-      masterPreambleTextHelp: '留空使用內建預設',
       tgPromptLabel: '自訂 TG Prompt',
       tgPromptPlaceholder: "[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c",
       tgPromptHelp: '每輪 TG 訊息的格式/協作提示。留空使用內建預設',
-      autoDelegateLabel: '自動派工（實驗性）',
-      autoDelegateHelp: '啟用後，總控自動將研究/分析/排查任務 delegate 給 worker。預設關閉。',
       connect: '連線',
       disconnect: '斷線',
       connected: '已連線',
@@ -7175,7 +7133,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = config.settings || {};
     document.getElementById('setting-ui-prompt').value = s.ui_prompt ?? '';
     document.getElementById('setting-tg-prompt').value = s.tg_prompt ?? '';
-    document.getElementById('setting-master-turn-preamble').value = s.master_turn_preamble ?? '';
     document.getElementById('setting-line-prompt').value = s.line_prompt ?? '';
     // Auto /compact (Claude) — default on; threshold default 15 (%)
     document.getElementById('setting-auto-compact').classList.toggle(
@@ -7193,13 +7150,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-complete-notify').classList.toggle(
       'on', s.completion_notifications !== false,
     );
-    // Master turn preamble — default on
-    setMasterPreambleToggleState(s.master_turn_preamble_enabled !== false);
     document.getElementById('setting-show-tg-wrapper').classList.toggle(
       'on', s.show_tg_wrapper !== false,
-    );
-    document.getElementById('setting-auto-delegate').classList.toggle(
-      'on', s.auto_delegate_enabled === true,
     );
     document.getElementById('setting-experimental-loops').classList.toggle(
       'on', s.experimental_loops === true,
@@ -7240,22 +7192,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       config.settings = config.settings || {};
       config.settings.completion_notifications = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
-    });
-
-  function setMasterPreambleToggleState(on) {
-    document.getElementById('setting-master-preamble').classList.toggle('on', on);
-  }
-
-  async function saveMasterPreambleEnabled(on) {
-    setMasterPreambleToggleState(on);
-    config.settings = config.settings || {};
-    config.settings.master_turn_preamble_enabled = on;
-    await pywebview.api.save_settings(JSON.stringify(config.settings));
-  }
-
-  document.getElementById('setting-master-preamble')
-    .addEventListener('click', async function() {
-      await saveMasterPreambleEnabled(!this.classList.contains('on'));
     });
 
   document.getElementById('setting-show-tg-wrapper')
@@ -7401,14 +7337,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       await pywebview.api.save_settings(JSON.stringify(config.settings));
     });
 
-  document.getElementById('setting-auto-delegate')
-    .addEventListener('click', async function() {
-      this.classList.toggle('on');
-      config.settings = config.settings || {};
-      config.settings.auto_delegate_enabled = this.classList.contains('on');
-      await pywebview.api.save_settings(JSON.stringify(config.settings));
-    });
-
   // Global hotkey toggle — saves immediately; main.py re-registers the
   // NSEvent monitor on next save_settings call so no restart needed.
   document.getElementById('setting-global-hotkey')
@@ -7461,15 +7389,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       1,
       Math.round(Number(idle.summary_grace_sec || 120) / 60),
     );
-    document.getElementById('setting-idle-handoff')
-      .classList.toggle('on', idle.handoff_to_main !== false);
     document.getElementById('setting-idle-status').textContent = '';
   }
 
   async function saveIdleReaperSettings() {
     const enabled = document.getElementById('setting-idle-enabled')
-      .classList.contains('on');
-    const handoff = document.getElementById('setting-idle-handoff')
       .classList.contains('on');
     let value = parseInt(document.getElementById('setting-idle-value').value, 10);
     if (!Number.isFinite(value) || value < 1) value = 30;
@@ -7481,7 +7405,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       enabled,
       idle_sec: idleSec,
       summary_grace_sec: graceMin * 60,
-      handoff_to_main: handoff,
     };
     const result = await pywebview.api.save_idle_reaper(JSON.stringify(payload));
     config = JSON.parse(result);
@@ -7495,10 +7418,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   }
 
   document.getElementById('setting-idle-enabled')
-    .addEventListener('click', function() {
-      this.classList.toggle('on');
-    });
-  document.getElementById('setting-idle-handoff')
     .addEventListener('click', function() {
       this.classList.toggle('on');
     });
@@ -7523,9 +7442,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   document.getElementById('setting-tg-prompt').addEventListener('blur', (e) => {
     _savePromptField('tg_prompt', e.target);
-  });
-  document.getElementById('setting-master-turn-preamble').addEventListener('blur', (e) => {
-    _savePromptField('master_turn_preamble', e.target);
   });
   document.getElementById('setting-line-prompt').addEventListener('blur', (e) => {
     _savePromptField('line_prompt', e.target);

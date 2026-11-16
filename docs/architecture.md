@@ -37,7 +37,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 
 | Layer | Module | Responsibility |
 |---|---|---|
-| Composition root | `main.py` | `Session` (one PTY/tmux pane), the `Api` core: session lifecycle, input and paste, startup-dialog/readiness gating, delegation and master-turn preamble, restore after restart, config load/save |
+| Composition root | `main.py` | `Session` (one PTY/tmux pane), the `Api` core: session lifecycle, input and paste, startup-dialog/readiness gating, delegation, restore after restart, config load/save |
 | js_api domains | `api_accounts.py` | Claude/Codex account profiles, switching (carries the transcript, resumes the conversation), login capture, provider install, usage |
 | | `api_bridges.py` | Start/stop the Telegram and LINE bridges, register tabs, keep bridge slots in sync |
 | | `api_desktop.py` | Open files/URLs, clipboard text/images/files, drag-and-drop pasteboard |
@@ -112,7 +112,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 ## 3. Data flows
 
 - **Keystroke → PTY.** xterm `onData` → IME dedup → `pywebview.api.write_input` →
-  `Api.write_input` (backend dedup, init-prompt / preamble injection) → `Session.write`.
+  `Api.write_input` (backend dedup, init-prompt injection) → `Session.write`.
   pywebview runs each js_api call on its own thread, so input has no ordering
   guarantee across calls.
 - **PTY → UI.** Per-session reader thread fills `Session.buffer` → `output_pump.py`:

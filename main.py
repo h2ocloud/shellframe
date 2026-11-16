@@ -243,7 +243,6 @@ DEFAULT_CONFIG = {
     "settings": {
         "fontSize": 14,
         "language": "en",
-        "master_turn_preamble_enabled": True,
         "experimental_loops": False,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
@@ -294,9 +293,7 @@ DEFAULT_CONFIG = {
         "close_ai_only": True,
         "summary_dir": str(CONFIG_DIR / "session_summaries"),
         "self_sediment": False,
-        "reflection_file": "",
-        "handoff_to_main": True,
-        "handoff_on_start": False
+        "reflection_file": ""
     },
     "agent_roster": {},          # plan A: a new user starts with no roles; any AI tab is a temporary bot
     # Optional local HTTP API. Disabled by default. When enabled, exposes the
@@ -570,22 +567,6 @@ def _canonical_cmd(cmd: str) -> str:
     return _autonomous_cmd(cmd)
 
 _DASH_RE = re.compile(r'(^|\s)[—–](?=\S)')
-MASTER_TURN_PREAMBLE = (
-    "ShellFrame master turn reminder: first understand the user's request. "
-    "If the task is non-trivial, parallelizable, or better handled by a worker, "
-    "run `sfctl list` and consider `sfctl delegate`; do not hard-route by keywords. "
-    "When reporting to the user, always refer to a worker by its tab label "
-    "(e.g.「點裝備優化」), never by sid (e.g. s48) — sid is only for your own "
-    "sfctl calls. If a handoff/report or sfctl output gives only a sid, run "
-    "`sfctl list` to map it to the tab label before relaying it. "
-    "If the user's message contains #<tab-label> tags (e.g. #研究-CLD), each tag "
-    "names an existing tab the task must interact with: keep those #tags verbatim "
-    "in the delegate task text — ShellFrame auto-resolves them and attaches "
-    "sfctl peek/send interaction instructions for the worker. If you handle the "
-    "task yourself instead, interact with the tagged tabs via sfctl directly. "
-    "A #<machine>/<name> tag names a bot on a paired machine: reach it with "
-    "`sfctl a2a-handoff <machine>/<name> \"task\"` (or a2a-send), not delegate."
-)
 
 
 def _normalize_dashes(cmd: str) -> str:
@@ -2162,8 +2143,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     lifecycle_source = getattr(s, "_lifecycle_source", "") or ""
                     if lifecycle_source:
                         entry["lifecycle_source"] = lifecycle_source
-                    if getattr(s, "_lifecycle_handoff", False):
-                        entry["lifecycle_handoff"] = True
                     if label:
                         entry["label"] = label
                         labels[sid] = label
@@ -2550,60 +2529,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             _swallow("Api._session_label:1691")
         return sid
 
-    def _master_turn_preamble_enabled(self) -> bool:
-        try:
-            settings = load_config().get("settings", {}) or {}
-            return settings.get("master_turn_preamble_enabled", True) is not False
-        except Exception:
-            return True
-
-    def _is_master_session(self, sid: str, s: Session | None = None) -> bool:
-        label = self._session_label(sid, s).strip()
-        folded = label.casefold()
-        return (
-            label.startswith("總控")
-            or folded.startswith("master")
-            or folded.startswith("user-facing")
-            or "user-facing" in folded
-        )
-
-    def _should_prepend_master_turn_preamble(self, sid: str, s: Session, data: str) -> bool:
-        if "\r" not in (data or ""):
-            return False
-        if not (data or "").rstrip("\r\n").strip():
-            return False
-        return (
-            self._master_turn_preamble_enabled()
-            and self._is_master_session(sid, s)
-            and self._should_inject_init(getattr(s, "cmd", ""))
-        )
-
-    def _wrap_master_turn_input(self, user_text: str) -> str:
-        preamble = MASTER_TURN_PREAMBLE
-        if self.bridge:
-            try:
-                from bridge_telegram import get_master_turn_preamble
-                preamble = get_master_turn_preamble()
-            except Exception:
-                _swallow("Api._wrap_master_turn_input:1729")
-        show_tag = True
-        if self.bridge:
-            try:
-                from bridge_telegram import show_tg_wrapper
-                show_tag = show_tg_wrapper()
-            except Exception:
-                _swallow("Api._wrap_master_turn_input:1736")
-        tagged = self._extract_tab_tags(user_text)
-        if tagged:
-            mapping = "、".join(f"#{t['label']}={t['sid']}" for t in tagged)
-            preamble += (
-                f"\n[SF tab tags] 本則訊息標註了 tab：{mapping}。"
-                "派工時請在 task 文字中原樣保留這些 #tag（delegate 會自動為 worker 附上互動指示）；"
-                "若由你直接處理，請自行用 sfctl peek/send 與這些 tab 互動。"
-            )
-        tag = "[SF delegation prompt ↓]\n" if show_tag else ""
-        return f"{tag}{preamble}\n\n---\nUser message: {user_text}"
-
     def _arm_awaiting_response(self, sid: str, data: str):
         """Tell the bridge this session is awaiting an AI response so
         completion notifications fire for local (non-TG) input too."""
@@ -2621,87 +2546,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 slot.last_write_ts = time.time()
                 slot.stall_warned = False
 
-    def _handoff_target_sid(self, exclude_sids: set[str] | None = None) -> str:
-        exclude_sids = exclude_sids or set()
-        try:
-            cfg = load_config()
-            idle_cfg = self._idle_reaper_config(cfg)
-        except Exception:
-            cfg = {}
-            idle_cfg = {}
-        labels = cfg.get("session_labels", {}) or {}
-        ordered = self._ordered_sids(cfg)
-        preferred = []
-        main_sid = self._main_session_sid(cfg, idle_cfg)
-        if main_sid:
-            preferred.append(main_sid)
-        preferred.extend([
-            sid for sid, s in self.sessions.items()
-            if "總控" in (getattr(s, "_custom_label", None) or labels.get(sid, "") or "")
-        ])
-        preferred.extend(ordered)
-        preferred.extend(self.sessions.keys())
-        seen = set()
-        for sid in preferred:
-            if sid in seen or sid in exclude_sids:
-                continue
-            seen.add(sid)
-            s = self.sessions.get(sid)
-            if s and getattr(s, "alive", False):
-                return sid
-        return ""
-
-    def _write_lifecycle_handoff(self, title: str, bullets: list[str], exclude_sids: set[str] | None = None):
-        try:
-            idle_cfg = self._idle_reaper_config(load_config())
-            if idle_cfg.get("handoff_to_main") is False:
-                return
-            target_sid = self._handoff_target_sid(exclude_sids)
-            target = self.sessions.get(target_sid)
-            if not target:
-                return
-            lines = ["[ShellFrame 交接]", title]
-            lines.extend(f"- {b}" for b in bullets if b)
-            text = "\n".join(lines).rstrip() + "\n"
-            _dlog("handoff", f"target={target_sid} title={title!r} bullets={len(bullets)}")
-            # Only inject into terminal when bridge is NOT active (local-only mode).
-            # When TG bridge is running, _bridge_send_handoff already delivers the
-            # notification; injecting multi-line text into the PTY input causes it to
-            # pile up in the user's input box without being submitted.
-            bridge_active = bool(self.bridge and getattr(self.bridge, "active", False))
-            if not bridge_active:
-                compact = " | ".join(line for line in lines if line.strip())
-                # 用 bracketed-paste + 分離 Enter 的可靠提交（_send_text_to_session），
-                # 取代 naive write(text+"\r")——後者在 TUI（總控 mid-turn / 輸入殘留）
-                # 會卡在輸入框沒送出（使用者 2026-06-27 實際踩到）。
-                self._send_text_to_session(target, compact, submit=True)
-            self._bridge_send_handoff(text)
-        except Exception as e:
-            _dlog("handoff", f"write failed: {e}")
-
-    def _bridge_send_handoff(self, text: str):
-        """Send lifecycle handoff message via Telegram bridge."""
-        try:
-            bridge = self.bridge
-            if not bridge or not getattr(bridge, "active", False):
-                return
-            token = bridge.config.bot_token
-            if not token:
-                return
-            chat_ids = set((bridge._user_chat or {}).values())
-            if not chat_ids:
-                chat_ids = set(bridge.config.allowed_users or [])
-            if not chat_ids:
-                return
-            from bridge_telegram import tg_api
-            for chat_id in chat_ids:
-                tg_api(token, "sendMessage", {
-                    "chat_id": chat_id,
-                    "text": text.strip(),
-                }, timeout=5)
-            _dlog("handoff", f"TG handoff sent to {len(chat_ids)} chats")
-        except Exception as e:
-            _dlog("handoff", f"TG send failed: {e}")
 
     # ── 延遲送出佇列（TG /delay）──────────────────────────────────────────
     @staticmethod
@@ -3198,7 +3042,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 # 接手，照它的判斷走，並把 watcher 掛起來。
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
-                session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
                 self._start_startup_trust_watcher(sid, session)
                 # Restore custom label
@@ -3290,7 +3133,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 # 了），信任對話框百分之百會出現，更不能關掉 watcher。
                 session._slug_pending = False
                 session._lifecycle_source = entry.get("lifecycle_source", "")
-                session._lifecycle_handoff = bool(entry.get("lifecycle_handoff", False))
                 self._restore_transcript_hint(session, entry)
                 # codex 沒有 hook 可以回報，manifest 的 uuid 就是它重開之後
                 # 唯一的精確錨點——蓋回 session，解析不必等 lsof 命中。
@@ -3469,10 +3311,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 current.get("summary_grace_sec", 120),
                 10,
             )
-            current["handoff_to_main"] = _bool(
-                "handoff_to_main",
-                current.get("handoff_to_main", True),
-            )
             cfg["idle_reaper"] = current
             save_config(cfg)
         return json.dumps(cfg)
@@ -3526,6 +3364,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
 
     def new_session(self, cmd: str, cols: int, rows: int, source: str = "manual",
                     handoff: bool = False, inherit_accounts: bool = True) -> str:
+        """`handoff` is accepted and ignored: notes to the main tab when a tab opens or closes
+        were retired with the delegation settings, and callers and older sfctl scripts still pass it."""
         cmd = _canonical_cmd(cmd)
         with _CONFIG_LOCK:
             cfg = load_config()
@@ -3539,7 +3379,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         session = Session(sid, cmd, cols, rows, on_data=self._output_event.set,
                           account_refs=account_refs)
         session._lifecycle_source = source or ""
-        session._lifecycle_handoff = bool(handoff or source in {"scheduler", "scheduled", "auto"})
         self.sessions[sid] = session
         def _remember_account_refs(current):
             accounts = current.setdefault("accounts", account_manager._empty_accounts())
@@ -3580,18 +3419,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         # Covers sessions created via TG /new, sfctl, or any non-UI path.
         self._plugin_dispatch_session_open(sid, cmd.split()[0] if cmd else sid)
         self._notify_ui_sessions_changed()
-        idle_cfg = self._idle_reaper_config(load_config())
-        if getattr(session, "_lifecycle_handoff", False) and idle_cfg.get("handoff_on_start", False):
-            label = getattr(session, "_custom_label", None) or (cmd.split()[0] if cmd else sid)
-            self._write_lifecycle_handoff(
-                "排程已啟動頁籤",
-                [
-                    f"{label} ({sid})",
-                    f"來源：{source or 'unknown'}",
-                    f"指令：{cmd}",
-                ],
-                exclude_sids={sid},
-            )
         return sid
 
     def _notify_ui_sessions_changed(self):
@@ -3663,6 +3490,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         summary_path: str = "",
         idle_seconds: int | None = None,
     ):
+        """`handoff`, `summary_path` and `idle_seconds` are accepted and ignored: they made the
+        note to the main tab, retired with the delegation settings; callers still pass them."""
         _dlog("lifecycle", f"close_session sid={sid} reason={reason!r}")
         if self._bots_divert_close(sid, reason):
             return                          # a bot writes its memory first, then closes itself
@@ -3675,11 +3504,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 self.set_session_glasses(sid, False, "close")
             except Exception:
                 _swallow(f"close_session:glasses:{sid}")
-        s = self.sessions.get(sid)
-        label = self._session_label(sid, s)
-        cmd = s.cmd if s else ""
-        lifecycle_source = getattr(s, "_lifecycle_source", "") if s else ""
-        lifecycle_handoff = bool(getattr(s, "_lifecycle_handoff", False)) if s else False
         # Unregister from bridge
         if self.bridge:
             self.bridge.unregister_session(sid)
@@ -3718,19 +3542,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             update_config(_drop_account_ref)
             self._persist_session_manifest()
         self._notify_ui_sessions_changed()
-        if s and (handoff or lifecycle_handoff):
-            bullets = [f"已關閉：{label} ({sid})"]
-            if lifecycle_source:
-                bullets.append(f"來源：{lifecycle_source}")
-            if reason:
-                bullets.append(f"原因：{reason}")
-            if idle_seconds is not None:
-                bullets.append(f"閒置：約 {idle_seconds} 秒")
-            if summary_path:
-                bullets.append(f"摘要檔：{summary_path}")
-            if cmd:
-                bullets.append(f"指令：{cmd}")
-            self._write_lifecycle_handoff("頁籤已關閉交接", bullets, exclude_sids={sid})
 
     # Patterns in CLI output that indicate the AI tool is ready for conversation
     # (not in login/setup/auth flow). Checked after stripping ANSI escapes.
@@ -4160,13 +3971,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                         self._arm_awaiting_response(sid, data)
                         return
                 # Not ready yet (login/auth flow) — pass through, keep _init_pending
-        should = self._should_prepend_master_turn_preamble(sid, s, data)
-        _dlog("preamble", f"sid={sid} should={should} label={self._session_label(sid, s)!r} is_master={self._is_master_session(sid, s)} inject_init={self._should_inject_init(getattr(s, 'cmd', ''))} enabled={self._master_turn_preamble_enabled()} data={data!r:.60}")
-        if should:
-            user_text = data.rstrip('\r\n')
-            s.write(self._wrap_master_turn_input(user_text) + "\r")
-            self._arm_awaiting_response(sid, data)
-            return
         s.write(data)
         self._arm_awaiting_response(sid, data)
 

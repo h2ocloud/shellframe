@@ -309,8 +309,7 @@ class RemoteApiMixin:
                 cols = args.get("cols", 200)
                 rows = args.get("rows", 50)
                 source = args.get("source", "sfctl")
-                handoff = bool(args.get("handoff", False))
-                sid = self.new_session(preset_cmd, cols, rows, source=source, handoff=handoff)
+                sid = self.new_session(preset_cmd, cols, rows, source=source)   # an old sfctl's "handoff" is ignored
                 return {
                     "success": True,
                     "message": f"Created session {sid}",
@@ -327,7 +326,6 @@ class RemoteApiMixin:
                 self.close_session(
                     sid,
                     reason=args.get("reason", "sfctl"),
-                    handoff=bool(args.get("handoff", False)),
                     summary_path=args.get("summary_path", "") or "",
                 )
                 if sid in self.sessions:     # a bot: it writes its memory, then closes itself
