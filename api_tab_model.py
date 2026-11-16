@@ -185,7 +185,7 @@ class TabModelApiMixin:
         self._tm_hook()
         r = tab_delivery.deliver(
             self, sid, p["opener"], submit=bool(p["opener"]), what=f"model:{jid}", label=sid, max_wait=WAIT_MAX,
-            clear_draft=(kind == "draft" and draft == "clear"),
+            clear_draft=(kind == "draft" and draft == "clear"), idle=True,   # /model then its menu: not mid-turn
             on_timeout=lambda outcome, why: self._tm_end(sid, jid, False, outcome, _(
                 f"Not switched: {why}", f"沒有換：{why}")))
         if not r.get("success"):

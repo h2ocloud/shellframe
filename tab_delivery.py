@@ -319,7 +319,7 @@ _draining = set()
 _resumed_at = 0.0            # when resume() loaded the queue after a restart
 _saved = None                # what the previous run left in STATE_FILE (see _read_saved)
 ON_DELIVERED = []            # fn(sid, what, at) once an item is typed in (a2a_host: hand-offs)
-_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait", "id", "clear_draft")
+_KEEP = ("sid", "text", "submit", "t0", "from_sid", "what", "label", "sending", "max_wait", "id", "clear_draft", "idle")
 GIVEN_UP = {}                # sid -> deque of {"id", "why", "outcome", "at"}: chat sends that never went in
 
 
@@ -529,9 +529,10 @@ def resume(api) -> int:
 def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
             from_sid: str = "", on_timeout=None, what: str = "", label: str = "",
             max_wait: float = None, clear_draft: bool = False, queue: bool = True,
-            person: bool = False) -> dict:
+            person: bool = False, idle: bool = False) -> dict:
     """Send `text` to tab `sid` now if it is free (or `now`), else queue it.
     `person`: the person wrote it; it does not wait behind what agents queued for the tab.
+    `idle`: it must wait for the turn to end too (a model switch types `/model` and then drives a menu).
     A turn in flight holds nobody's text (TYPES_INTO); a menu, a model switch, a draft and a
     bridged message do.
     `queue=False`: only ever now. A tab that is not free (or has texts waiting ahead) is
@@ -552,7 +553,7 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
         reason = ""
     else:
         reason = busy_reason(api, sid) if person or not waiting else "queued"   # the person: not behind agents
-        reason = _goes_in(api, sid, reason, queue=queue, clear_draft=clear_draft)
+        reason = _goes_in(api, sid, reason, queue=queue and not idle, clear_draft=clear_draft)
     if reason and not queue:
         return {"success": False, "code": "busy", "queued": False, "reason": reason,
                 "message": _reason_text(reason)}
@@ -574,6 +575,8 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
         return {"success": True, "message": f"Sent {len(text)} chars to {sid}", "queued": False}
     item = {"sid": sid, "text": text, "submit": submit, "t0": time.time(), "from_sid": from_sid,
             "what": what, "label": label or sid, "id": uuid.uuid4().hex[:12]}
+    if idle:
+        item["idle"] = True
     if clear_draft:
         item["clear_draft"] = True
     if max_wait:
@@ -722,7 +725,8 @@ def _wait_turn(api, sid: str, item: dict) -> str:
             item["cleared"] = True            # one Ctrl+C at most: a second one quits the CLI
             if clear_draft_now(api, sid):
                 reason = busy_reason(api, sid)
-        reason = _goes_in(api, sid, reason, clear_draft=bool(item.get("clear_draft")))   # a turn in flight holds nobody
+        reason = _goes_in(api, sid, reason, queue=not item.get("idle"),
+                          clear_draft=bool(item.get("clear_draft")))   # a turn in flight holds nobody but an idle-only item
         if time.time() - item["t0"] > _limit(item):
             return reason or "expired"
         if not reason:
