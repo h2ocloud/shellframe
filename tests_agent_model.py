@@ -6,16 +6,20 @@ Asked for: a bot's model is chosen from a list built from ShellBot's own table i
 (a typed key that was not exactly the CLI's key was stored, pinned, and silently did nothing).
   - one table: the picker's list, the old PROVIDERS shape, the check and the pin all come from it
   - every CLI's list: "CLI default" first (key ""), its models, "Other (custom)" last; a CLI that
-    takes no pin on its command line (Pi, Antigravity, a command ShellBot does not know) has only the default
+    takes no pin on its command line (Antigravity, a command ShellBot does not know) has only the default;
+    pi lists what its models.json defines on the computer (tests_pi_roster_model.py)
   - choosing a model puts exactly that key on the launch command, once, for every listed model
   - a custom key is checked against the table and the ids its families come in, never by starting
     a CLI; one it does not know is refused, with the likely one offered
 Run: .venv/bin/python tests_agent_model.py
 """
+import os
 import pathlib
 import sys
+import tempfile
 
-import agent_model as M
+os.environ["PI_CODING_AGENT_DIR"] = tempfile.mkdtemp()     # no models.json: pi lists nothing here
+import agent_model as M  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
 passed = failed = 0
@@ -38,7 +42,8 @@ FLAG = {"claude": "--model", "codex": "-m", "opencode": "--model", "grok": "-m",
 print("1. one table")
 check("the old shape is derived from it: provider -> (flag, keys)",
       all(M.PROVIDERS[p] == (FLAG[p], [c["key"] for c in M.choices(p)[1:-1]]) for p in CMD), M.PROVIDERS)
-check("…the providers are the five that pin a model", sorted(M.PROVIDERS) == sorted(CMD), sorted(M.PROVIDERS))
+check("…the providers are the five that pin a model, and pi (its list is the computer's own)",
+      sorted(M.PROVIDERS) == sorted(list(CMD) + ["pi"]) and M.PROVIDERS["pi"] == ("--model", []), sorted(M.PROVIDERS))
 check("Cursor still offers only its subscription model (the others spend prepaid credit)",
       M.PROVIDERS["cursor"][1] == ["composer-2.5"])
 check("every listed model has a name a person reads, apart from its key",
@@ -60,9 +65,9 @@ for cli in CMD:
     check(f"{cli}: the first is the CLI's default (key \"\"), the last is Other, flagged custom, and no other is",
           got[0] == {"key": "", "label": "CLI default"} and got[-1].get("custom") is True and got[-1]["key"] == M.CUSTOM
           and not any(c.get("custom") for c in got[:-1]), got)
-check("a CLI that picks its model inside it (Pi, Antigravity): only the default, so the field is greyed",
-      M.choices("pi") == [{"key": "", "label": "CLI default"}] and M.choices("agy") == M.choices("pi"))
-check("a command ShellBot does not know: the same", M.choices("") == M.choices("pi") and M.choices("my-wrapper") == M.choices("pi"))
+check("a CLI that picks its model inside it (Antigravity): only the default, so the field is greyed",
+      M.choices("agy") == [{"key": "", "label": "CLI default"}])
+check("a command ShellBot does not know: the same", M.choices("") == M.choices("agy") and M.choices("my-wrapper") == M.choices("agy"))
 check("the two words that are not models read in Chinese on request",
       M.choices("claude", zh=True)[0]["label"] == "CLI 預設" and M.choices("claude", zh=True)[-1]["label"] == "其他（自訂）"
       and M.choices("claude", zh=True)[1:-1] == claude[1:-1])
@@ -82,7 +87,7 @@ check("the default takes the pin off: the CLI's own model again",
       M.apply("claude --model opus --x", "") == "claude --x" and M.apply("grok -m grok-4.7 --effort high", "") == "grok --effort high")
 check("a key with brackets is quoted for the shell and read back whole",
       M.apply("claude", "sonnet[1m]") == "claude --model 'sonnet[1m]'" and M.current_model(M.apply("claude", "sonnet[1m]")) == "sonnet[1m]")
-check("a command that takes no pin is left alone", M.apply("pi", "x") == "pi" and M.apply("agy --foo", "gpt-5") == "agy --foo")
+check("a command that takes no pin is left alone", M.apply("my-wrapper", "x") == "my-wrapper" and M.apply("agy --foo", "gpt-5") == "agy --foo")
 check("pinned: the role's model, else what its command already pins",
       M.pinned("claude --model haiku", "")["model"] == "haiku" and M.pinned("claude --model haiku", "opus")["model"] == "opus"
       and M.pinned("claude", "")["model"] == "" and M.pinned("claude", "")["ok"] is True)
@@ -113,7 +118,7 @@ REFUSE = [("claude", "sonet", "unknown_model", "sonnet"), ("claude", "Sonnet", "
           ("claude", "Sonnet 4.5", "bad_model", "sonnet"), ("claude", "opus; rm -rf /", "bad_model", ""),
           ("claude", "$(id)", "bad_model", ""), ("claude", "opus\nsonnet", "bad_model", "sonnet"), ("claude", "a" * 81, "bad_model", ""),
           ("claude", "'opus'", "bad_model", "opus"),
-          ("pi", "gpt-5", "model_fixed", ""), ("agy", "gemini", "model_fixed", ""), ("my-wrapper --x", "opus", "model_fixed", ""),
+          ("agy", "gemini", "model_fixed", ""), ("my-wrapper --x", "opus", "model_fixed", ""),
           ("", "opus", "model_fixed", "")]
 for cmd, key, code, hint in REFUSE:
     r = M.check(cmd, key)
@@ -133,7 +138,7 @@ check("an unknown stored key is not ok, and says which one was meant",
       bad["ok"] is False and bad["code"] == "unknown_model" and bad["suggestion"] == "sonnet" and bad["model"] == "sonet", bad)
 bad = M.pinned("claude --model Opus", "")
 check("…also when it is only in the command", bad["ok"] is False and bad["model"] == "Opus", bad)
-bad = M.pinned("pi", "gpt-5")
+bad = M.pinned("agy", "gpt-5")
 check("a model kept on a CLI that takes none is flagged: it does nothing", bad["ok"] is False and bad["code"] == "model_fixed", bad)
 check("a good stored key is ok", M.pinned("codex", "gpt-5.4")["ok"] is True and M.pinned("codex", "gpt-5.4")["kind"] == "listed")
 

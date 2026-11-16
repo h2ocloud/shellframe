@@ -10,11 +10,16 @@ Demo data only. Screenshots go to qa-shots/plan-a-*.png. Needs playwright; SKIP 
 Run: .venv/bin/python tests_plan_a_ui.py
 """
 import json
+import os
 import pathlib
 import sys
+import tempfile
 from unittest.mock import MagicMock
 
 HERE = pathlib.Path(__file__).resolve().parent
+_PI = pathlib.Path(tempfile.mkdtemp(prefix="sf-plan-a-pi-"))     # pi lists the computer's models.json: demo ids
+(_PI / "models.json").write_text(json.dumps({"providers": {"local": {"models": [{"id": "local-fast"}]}}}))
+os.environ["PI_CODING_AGENT_DIR"] = str(_PI)
 SHOTS = HERE / "qa-shots"
 passed = failed = 0
 
@@ -171,8 +176,10 @@ with sync_playwright() as pw:
     check("an awake bot's editor says what stays and offers to switch now",
           "這次的對話不會搬到新的 CLI" in page.inner_text(".sfb-modal") and page.locator('[data-act="save-now"]').count() == 1)
     page.select_option("#sfb-ed-cmd", value="pi")
-    check("a CLI that picks its model inside: the model list is off, on the default",
-          page.locator("#sfb-ed-model").is_disabled() and page.input_value("#sfb-ed-model") == "")
+    page.wait_for_timeout(300)
+    check("pi: its list is the computer's own models, starting on the default",
+          not page.locator("#sfb-ed-model").is_disabled() and page.input_value("#sfb-ed-model") == ""
+          and "local-fast" in page.inner_html("#sfb-ed-model"))
     page.select_option("#sfb-ed-cmd", value="claude")
     page.select_option("#sfb-ed-model", value="sonnet")
     check("…another one: on again", not page.locator("#sfb-ed-model").is_disabled())

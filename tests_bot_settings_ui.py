@@ -48,6 +48,11 @@ except ImportError:
 
 sys.modules["webview"] = MagicMock()
 sys.path.insert(0, str(HERE))
+import os  # noqa: E402
+import tempfile  # noqa: E402
+_PI = pathlib.Path(tempfile.mkdtemp(prefix="sf-botset-pi-"))          # pi's list is the computer's models.json: demo ids
+(_PI / "models.json").write_text(json.dumps({"providers": {"local": {"models": [{"id": "local-fast"}, {"id": "local-think"}]}}}))
+os.environ["PI_CODING_AGENT_DIR"] = str(_PI)
 import agent_model  # noqa: E402
 import agent_status  # noqa: E402
 from main import Api  # noqa: E402
@@ -59,7 +64,7 @@ CLI_NAMES = {"claude": "Claude Code", "codex": "Codex", "pi": "Pi", "opencode": 
              "grok": "Grok Build", "cursor": "Cursor Agent"}
 PRESETS = [{"name": "Claude Code", "cmd": CLAUDE, "icon": "C"}, {"name": "Codex", "cmd": CODEX, "icon": "X"},
            {"name": "Grok Build", "cmd": "grok", "icon": "G"}, {"name": "Pi", "cmd": "pi", "icon": "P"},
-           {"name": "OpenCode", "cmd": "opencode", "icon": "O"}]
+           {"name": "OpenCode", "cmd": "opencode", "icon": "O"}, {"name": "Antigravity", "cmd": "agy", "icon": "A"}]
 
 
 def row(label, cmd, model, job, avatar, primary=False):
@@ -348,6 +353,14 @@ def run(browser, engine):
     page.wait_for_timeout(300)
     check("OpenCode has no list of its own: the default and Other", [o[0] for o in model_options(page)] == ["", "__custom__"])
     page.select_option("#sfb-ed-cmd", value="pi")
+    page.wait_for_timeout(300)
+    check("pi: the models this computer's pi defines, by id",
+          not page.locator("#sfb-ed-model").is_disabled()
+          and [o[0] for o in model_options(page)] == ["", "local-fast", "local-think", "__custom__"], model_options(page))
+    page.select_option("#sfb-ed-model", value="local-think")
+    check("…sent as --model", "--model local-think" in page.inner_text("#sfb-ed-model-note"), page.inner_text("#sfb-ed-model-note"))
+    page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / f"botset-model-pi{tag}.png"))
+    page.select_option("#sfb-ed-cmd", value="agy")
     page.wait_for_timeout(300)
     check("a CLI that picks its model inside it: the field is greyed, on the default, and says why",
           page.locator("#sfb-ed-model").is_disabled() and page.input_value("#sfb-ed-model") == ""

@@ -874,7 +874,7 @@ class BotsApiMixin:
         hint = _(f' Did you mean "{sug}"?', f"是不是要「{sug}」？") if sug else ""
         if code == "bad_model":
             return _("A model is one word, e.g. sonnet", "模型是一個詞，例如 sonnet") + (" · " + hint.strip() if hint else "")
-        keys = [c["key"] for c in agent_model.choices(res.get("provider") or "")[1:-1]]
+        keys = res.get("keys") or [c["key"] for c in agent_model.choices(res.get("provider") or "")[1:-1]]
         return (_(f'Unknown model "{model}" for {res.get("provider")}: it would not take effect. Pick one from the list'
                   f'{" (" + ", ".join(keys) + ")" if keys else ""}.{hint}',
                   f'不認得這個模型「{model}」（{res.get("provider")}）：存了也不會生效。請從清單選'

@@ -20,6 +20,7 @@ HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="sf-plan-a-bots-"))
 os.environ["SHELLFRAME_BOTS_DIR"] = str(TMP / "bots")
 os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"
+os.environ["PI_CODING_AGENT_DIR"] = str(TMP / "pi")         # no models.json: pi takes no model here
 sys.modules["webview"] = MagicMock()
 sys.path.insert(0, str(HERE))
 import sf_log  # noqa: E402
@@ -123,7 +124,7 @@ clis = {c["key"]: c for c in res["choices"]["clis"]}
 check("the CLI picker: every CLI with its label, installed or not, and whether a model can be pinned",
       {"claude", "codex", "pi", "opencode", "agy", "grok", "cursor"} <= set(clis)
       and all(isinstance(c["installed"], bool) for c in clis.values())
-      and clis["claude"]["models"] is True and clis["pi"]["models"] is False and clis["agy"]["models"] is False,
+      and clis["claude"]["models"] is True and clis["pi"]["models"] is True and clis["agy"]["models"] is False,
       clis)
 
 print("3. keeping a temporary bot")
@@ -289,7 +290,7 @@ main.CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8
 api_bots._CLIS.update(at=time.time() + 3600, list=[
     {"key": "claude", "label": "Claude Code", "installed": True, "models": True},
     {"key": "codex", "label": "Codex", "installed": True, "models": True},
-    {"key": "pi", "label": "Pi", "installed": True, "models": False},
+    {"key": "pi", "label": "Pi", "installed": True, "models": True},
     {"key": "agy", "label": "Antigravity", "installed": False, "models": False}])
 api.preset_groups = lambda: json.dumps([{"provider": "claude", "items": [{"cmd": "claude --permission-mode default"}]}])
 opened, closed = [], []
@@ -312,7 +313,8 @@ r = api._bots_switch("研究", "claude", "sonnet")
 check("back to claude: this computer's own claude preset (its flags), with the model given",
       roster()["研究"]["cmd"] == "claude --permission-mode default" and roster()["研究"]["model"] == "sonnet", roster()["研究"])
 check("its face, job and memory stay (the bot block untouched)", roster()["研究"]["bot"] == {"memory": True})
-check("a CLI that picks its model inside: a model is refused", api._bots_switch("研究", "pi", "x").get("code") == "model_fixed")
+_r = api._bots_switch("研究", "pi", "x")
+check("pi: a model its models.json does not define is refused", _r.get("code") == "unknown_model", _r)
 check("a CLI not installed here", api._bots_switch("研究", "agy").get("code") == "bad_cli")
 check("an external bot", api._bots_switch("總管", "claude").get("code") == "external")
 check("no such bot", api._bots_switch("沒有", "claude").get("code") == "no_bot")

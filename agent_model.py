@@ -30,8 +30,13 @@ picker, the check, the phone's `choices.models` and the pin all follow from it.
 
 import difflib
 import functools
+import json
+import os
 import re
 import shlex
+import shutil
+
+import launch_cmd
 
 # provider -> what its CLI takes. One table; everything below is derived from it.
 #   flag    the command-line flag that pins a model
@@ -77,6 +82,14 @@ _TABLE = {
     # and without this entry those tokens decided the provider, so pinning a model
     # rewrote `cursor-agent --model grok-4` into `… --model grok-4 -m <model>`.
     # Only the subscription model is offered; the others spend prepaid credit.
+    # pi: its list is the machine's own (models.json, `pi_models`), not this table's. Only a model of
+    # the provider the command starts on is pinned: pi exits on an id it cannot place, and a pin is
+    # applied at every wake, so a wrong one would be a bot that dies each time it opens.
+    "pi": {
+        "flag": "--model",
+        "models": [],
+        "ids": (r"[A-Za-z0-9][\w.:\-]*",),
+    },
     "cursor": {
         "flag": "--model",
         "models": [("composer-2.5", "Composer 2.5")],
@@ -94,11 +107,25 @@ MODEL_MAX = 80                                       # a model is one short word
 _SHAPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+=,\[\]\-]*")
 
 
+def _program(cmd: str) -> str:
+    """The program a command runs (its basename), past a `cd …&&` / env prefix."""
+    try:
+        tokens = shlex.split(launch_cmd.split_prefix(cmd or "")[1])
+    except ValueError:
+        return ""
+    return tokens[0].rsplit("/", 1)[-1] if tokens else ""
+
+
 def provider_of(cmd: str) -> str:
     """Which CLI a launch command runs, by the first recognisable token.
 
     Wrappers matter here: `sf-codex` and `sf-opencode-home` are shell scripts
-    that launch a CLI, so the name is matched as a prefix rather than exactly."""
+    that launch a CLI, so the name is matched as a prefix rather than exactly.
+    pi only by the program itself (`pi`, `sf-pi…`): "pi-" is too common a start
+    for a folder or file in the rest of a command."""
+    prog = _program(cmd)
+    if prog == "pi" or prog.startswith("sf-pi"):
+        return "pi"
     try:
         tokens = shlex.split(cmd or "")
     except ValueError:
@@ -106,9 +133,87 @@ def provider_of(cmd: str) -> str:
     for tok in tokens:
         base = tok.rsplit("/", 1)[-1]
         for name in PROVIDERS:
+            if name == "pi":
+                continue
             if base == name or base.startswith(f"sf-{name}") or base.startswith(f"{name}-"):
                 return name
     return ""
+
+
+# ── pi: the machine's own model list ──────────────────────────────────────
+LAUNCHER_PEEK = 64 * 1024
+_PI_CACHE = {"key": None, "models": []}
+_PROVIDER_FLAG = re.compile(r"--provider(?:=|\s+)[\"']?([A-Za-z0-9][\w.\-]*)")
+
+
+def _pi_dir() -> str:
+    return os.environ.get("PI_CODING_AGENT_DIR") or os.path.expanduser("~/.pi/agent")
+
+
+def pi_models() -> list:
+    """[(provider, id)] that pi's models.json defines, in its order; [] when there is none.
+    Only provider names and ids are taken: the file also holds each provider's key, and nothing
+    else from it is kept, shown or logged. Read again only when the file changes."""
+    path = os.path.join(_pi_dir(), "models.json")
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return []
+    if _PI_CACHE["key"] == key:
+        return _PI_CACHE["models"]
+    out = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            providers = (json.load(f) or {}).get("providers") or {}
+        for prov, spec in providers.items() if isinstance(providers, dict) else ():
+            for m in (spec.get("models") or []) if isinstance(spec, dict) else ():
+                mid = m.get("id") if isinstance(m, dict) else None
+                if isinstance(mid, str) and len(mid) <= MODEL_MAX and _SHAPE.fullmatch(mid) and (str(prov), mid) not in out:
+                    out.append((str(prov), mid))
+    except (OSError, ValueError, AttributeError):
+        out = []
+    _PI_CACHE.update(key=key, models=out)
+    return out
+
+
+def launcher_head(exe: str):
+    """The first bytes of a launcher script found on PATH (or at its path), or None when it cannot
+    be read. Read for the flags it gives its CLI; never shown."""
+    path = shutil.which(exe) or (exe if os.path.isfile(os.path.expanduser(exe)) else "")
+    if not path:
+        return None
+    try:
+        with open(os.path.expanduser(path), "rb") as f:
+            return f.read(LAUNCHER_PEEK)
+    except OSError:
+        return None
+
+
+def pi_provider(cmd: str) -> str:
+    """The provider a pi command starts on: its own `--provider`, else its launcher's; "" when
+    neither says (pi's default)."""
+    try:
+        tokens = shlex.split(launch_cmd.split_prefix(cmd or "")[1])
+    except ValueError:
+        return ""
+    for i, t in enumerate(tokens):
+        if t.startswith("--provider="):
+            return t.split("=", 1)[1]
+        if t == "--provider" and i + 1 < len(tokens):
+            return tokens[i + 1]
+    if not tokens or tokens[0].rsplit("/", 1)[-1] == "pi":
+        return ""
+    head = launcher_head(tokens[0])
+    if not head or b"\0" in head:
+        return ""
+    m = _PROVIDER_FLAG.search(head.decode("utf-8", "replace"))
+    return m.group(1) if m else ""
+
+
+def _pi_ids(cmd: str) -> list:
+    """The ids a pi command may be pinned to: its provider's, or every one when it names none."""
+    prov = pi_provider(cmd)
+    return [i for p, i in pi_models() if not prov or p == prov]
 
 
 def flag_for(cmd: str) -> str:
@@ -159,12 +264,19 @@ def label_of(provider: str, key: str) -> str:
 def choices(provider: str, zh: bool = False) -> list:
     """What a model picker for *provider* lists, as [{"key", "label"}]: "CLI default" first (key
     ""), then the table's models, and last "Other (custom)" (key CUSTOM, "custom": true: a text
-    box, checked by `check`). A CLI that takes no model pin on its command line (pi, Antigravity,
-    a command ShellBot does not know) has only "CLI default": grey the field out."""
+    box, checked by `check`). A CLI that takes no model pin on its command line (Antigravity, a
+    command ShellBot does not know) has only "CLI default": grey the field out. pi lists the models
+    its models.json defines on this computer ("id · provider")."""
     out = [{"key": "", "label": "CLI 預設" if zh else "CLI default"}]
     spec = _TABLE.get(provider)
     if not spec:
         return out
+    if provider == "pi":
+        seen = set()
+        for prov, mid in pi_models():
+            if mid not in seen:
+                seen.add(mid)
+                out.append({"key": mid, "label": f"{mid} · {prov}"})
     out += [{"key": k, "label": lab} for k, lab in spec["models"]]
     out.append({"key": CUSTOM, "label": "其他（自訂）" if zh else "Other (custom)", "custom": True})
     return out
@@ -206,7 +318,11 @@ def check(cmd: str, model: str) -> dict:
       ok, kind "default"   no model: the CLI's own
       ok, kind "listed"    one of the table's models
       ok, kind "known"     not in the picker, but a key or id shape this CLI takes
-      code "model_fixed"   this command takes no model pin (pi, Antigravity, an unknown command)
+      code "model_fixed"   this command takes no model pin (Antigravity, an unknown command)
+      pi: a model of the provider the command starts on, as this computer's models.json defines it
+          ("listed"); refused otherwise (`keys`: the ids it may take), since pi exits on one it
+          cannot place. A provider models.json does not define (pi's built-in ones) takes any id
+          shape ("known").
       code "bad_model"     not one short word of letters, digits and . _ : / - [ ] (`suggestion` as below)
       code "unknown_model" a word the table does not know (`suggestion`: the likely one)
     Plain refusals: a model the check does not know is never saved, because the CLI would
@@ -220,6 +336,14 @@ def check(cmd: str, model: str) -> dict:
         return dict(out, ok=False, code="model_fixed", kind="")
     if len(model) > MODEL_MAX or not _SHAPE.fullmatch(model):
         return dict(out, ok=False, code="bad_model", kind="", suggestion=suggest(provider, model))
+    if provider == "pi":
+        prov, ids = pi_provider(cmd), _pi_ids(cmd)
+        if model in ids:
+            return dict(out, kind="listed")
+        if prov and prov not in {p for p, _ in pi_models()} and any(p.fullmatch(model) for p in _shapes("pi")):
+            return dict(out, kind="known")
+        close = difflib.get_close_matches(model, ids, n=1, cutoff=0.6)
+        return dict(out, ok=False, code="unknown_model", kind="", suggestion=close[0] if close else "", keys=ids)
     kind = _kind(provider, model)
     if kind:
         return dict(out, kind=kind)

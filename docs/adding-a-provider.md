@@ -169,8 +169,9 @@ the dot and the badge.
 **Model picker** (`agent_model.py`) — a bot's model is picked from a list and a typed
 one is checked. If your CLI takes a model on its command line, add one `_TABLE` entry:
 the `flag`, the `models` (key and name), and the shapes of its ids. Without an entry the
-CLI's picker has only "CLI default" and its field is greyed (as Pi's and Antigravity's
-are). Updating the list for a new model is in [`bots.md`](bots.md#updating-the-model-list).
+CLI's picker has only "CLI default" and its field is greyed (as Antigravity's is). A CLI
+whose models are the computer's own (pi) lists them from its config instead
+(`agent_model.pi_models`). Updating the list for a new model is in [`bots.md`](bots.md#updating-the-model-list).
 
 **Startup-trust auto-accept** (`STARTUP_TRUST_AI_TOOLS` in `main.py`) — add your
 CLI only if you have verified what its first-run prompt looks like.

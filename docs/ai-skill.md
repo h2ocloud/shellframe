@@ -495,6 +495,7 @@ configure there.
 | A bot's name, 執掌 and folder in its CLI's system prompt (Claude Code, pi); a paired computer's tab in the chat view (`POST /link/chat`), marked remote | 0.46.1 |
 | A bot's persona also on a relaunch and a restore after a restart (so /new keeps it); a pi tab relaunched goes on with its conversation (`--session`) | 0.46.2 |
 | Settings → Connect (連結) is a catalog: Google Drive, Google Calendar, Notion, Slack through the Claude account's connectors (one click), Reminders/Calendar on a Mac (beta), Messages/Notes listed as not available; retired settings (coordinator set, init prompt, Telegram system prompt, glasses, plugin marketplace) and a new Advanced tab; a pi tab relaunched stays on the model its conversation was last switched to (`--model` after a launcher's; not across providers when the launcher passes `--api-key`) | 0.47.0 |
+| A pi bot's model in its bot settings: the models pi defines on that computer (`models.json`), pinned as `--model <id>` on the provider its command starts on; another provider's or an unknown id is refused at save | 0.47.1 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

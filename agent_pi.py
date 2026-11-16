@@ -12,13 +12,12 @@ phone's chat view and the desktop's read the same thing.
 import json
 import os
 import shlex
-import shutil
 
+import agent_model
 import agent_status
 import launch_cmd
 
 TAIL_BYTES = 4 * 1024 * 1024
-LAUNCHER_PEEK = 64 * 1024                           # how much of a launcher script is read for --api-key
 
 
 def _ts(record, message):
@@ -134,15 +133,8 @@ def _without_pins(tokens):
 def _launcher_passes_key(exe):
     """Whether the launcher script *exe* gives pi a key on its command line. A launcher that cannot
     be read, or is not a text script, counts as one that does: the safe side."""
-    path = shutil.which(exe) or (exe if os.path.isfile(os.path.expanduser(exe)) else "")
-    if not path:
-        return True
-    try:
-        with open(os.path.expanduser(path), "rb") as f:
-            data = f.read(LAUNCHER_PEEK)
-    except OSError:
-        return True
-    return b"\0" in data or b"--api-key" in data
+    head = agent_model.launcher_head(exe)
+    return head is None or b"\0" in head or b"--api-key" in head
 
 
 def keep_model(cmd, path):

@@ -6,6 +6,33 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.47.1 (2026-11-17)
+
+### Changes
+
+- **A pi bot's model is set in its bot settings, like any other CLI's.** Asked for: the model field should work for
+  pi too; it was greyed ("pi picks its model inside it"). pi has no fixed list: the field now lists the models pi
+  defines on that computer (its `models.json`), each as "id · provider". Only the ids and provider names are read
+  from that file, which also holds each provider's key. The pin is `--model <id>` only, never `--provider`, so it
+  stays on the provider the command starts on (its own `--provider`, or the one its launcher passes); a launcher
+  that passes its own `--api-key` keeps that key on its own provider. A model is kept only when that provider has
+  it: pi exits on an id it cannot place and a pin is applied at every wake, so another provider's id, or one the
+  file does not define, is refused when you save, with the ones it can take. A provider the file does not define
+  (pi's built-in ones) takes any id. A pi tab relaunched on its conversation still stays on its last `/model`
+  (0.47.0); the pin is what a new conversation starts on ("Save and switch now" starts one). pi is recognised by the
+  program the command runs (`pi`, `sf-pi…`), not by a "pi-" folder elsewhere in it. Covered by
+  `tests_pi_roster_model.py`; the editor's picture for pi is in `tests_bot_settings_ui.py`.
+
+  **pi bot 的模型可以在 bot 設定裡指定，跟其他 CLI 一樣。** 需求：bot 設定的模型欄位，pi 也要能用；以前是灰的（「pi 的模型要在它裡面
+  選」）。pi 沒有固定清單：這個欄位現在列出那台電腦上 pi 自己定義的模型（它的 `models.json`），顯示成「id · provider」。那個檔案只讀
+  id 和 provider 名稱，檔案裡每個 provider 的 key 不讀。指定的方式只有 `--model <id>`，不會加 `--provider`，所以一定留在指令原本的
+  provider（指令自己的 `--provider`，或啟動器帶的那個）；自己帶 `--api-key` 的啟動器，key 也留在自己的 provider。只有那個 provider
+  底下有的模型才存得進去：pi 遇到對不上的 id 會直接結束，而 bot 的模型每次叫醒都會套用，所以別家 provider 的 id、檔案裡沒有的 id，
+  按儲存時就會擋下，並列出可以選的。檔案沒定義的 provider（pi 內建的那些）任何 id 都收。pi 分頁接回對話重開時，仍留在那段對話最後
+  用 `/model` 切的模型（0.47.0）；bot 設定的模型是新對話的起點（「儲存並現在就換」會開新對話）。認 pi 只看指令實際執行的程式
+  （`pi`、`sf-pi…`），指令其他地方有「pi-」開頭的資料夾不算。由 `tests_pi_roster_model.py` 守著；pi 的編輯畫面截圖在
+  `tests_bot_settings_ui.py`。
+
 ## v0.47.0 (2026-11-17)
 
 ### Fixes

@@ -35,6 +35,7 @@ HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="sf-tabmodel-"))
 os.environ["SHELLFRAME_PROMPT_LANG"] = "en"
 os.environ["SHELLFRAME_BOTS_DIR"] = str(TMP / "bots")
+os.environ["PI_CODING_AGENT_DIR"] = str(TMP / "pi")         # no models.json here: pi lists nothing
 sys.modules["webview"] = MagicMock()
 bt = MagicMock()
 bt.load_user_instructions.return_value = ""
@@ -639,7 +640,7 @@ saved = []
 api.bots_switch = lambda role, cli, model, apply: json.dumps(saved.append((role, cli, model, apply)) or {"success": True})
 r = json.loads(api.tab_model_save_bot("s1", "opus"))
 check("'also keep it for the bot' takes it from its next wake on, and nothing saved before the person says yes", r["success"] and saved == [("助理", "", "opus", "next_wake")])
-check("Pi has no pin on its command, so there is nothing to save for its bot",
+check("Pi without a models.json lists nothing, and switches inside the tab",
       json.loads(make_api(cmd="pi").tab_model_info("s1"))["models"] == [] and tm.link_fields("pi")["in_session"] is True)
 
 print("a switch does not outlive the app")

@@ -279,7 +279,8 @@ bot 的模型不用打字，用下拉選。清單來自電腦自己的對照表�
 | 中間 | 這個 CLI 的模型：`key` 是送出去的值（原樣放進 `model`），`label` 是給人看的名字（例如 `{"key": "sonnet", "label": "Sonnet"}`），兩個分開 |
 | 最後一個 | `{"key": "__custom__", "label": "其他（自訂）", "custom": true}`：**它不是模型**。選了它就顯示一個文字欄，把打的字原樣當 `model` 送；電腦收到時驗證（見下）。只有 `models: true` 的 CLI 有 |
 
-- **`models: false` 的 CLI**（Pi、Antigravity 自己在裡面選模型）：清單只有第一個。欄位請變灰，`model` 不要送，或送 `""`；送別的會被擋（`model_fixed`）。
+- **`models: false` 的 CLI**（Antigravity 自己在裡面選模型）：清單只有第一個。欄位請變灰，`model` 不要送，或送 `""`；送別的會被擋（`model_fixed`）。
+- **Pi**（v0.47.1 起 `models: true`）：中間那幾個是電腦上 pi 自己定義的模型（`label` 是 `id · provider`）；清單是那台電腦的，換電腦會不同。只收這個 bot 的啟動指令所用 provider 底下的 id，別的會被擋（`unknown_model`）。
 - 兩個特別的字（`CLI 預設`、`其他（自訂）`）依電腦的語言給；App 可以用自己的語言換掉，認的是 `key == ""` 和 `custom: true`。
 - `bots[].model` 是設定裡存的值。它不在 `choices.models[cli]` 的 key 裡不一定是錯：可能是電腦認得、但清單沒列的完整 id（例如 `claude-opus-4-8`），這時請顯示成「其他（自訂）」加上那個字。
 

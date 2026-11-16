@@ -102,8 +102,20 @@ the bot runs on:
 - **CLI default** first (the value is `""`: nothing is pinned), then the CLI's models by their names
   (Opus, Sonnet…) while the key the CLI is given (`opus`, `sonnet`…) is a separate thing, shown under the
   picker as what is sent (`--model sonnet`), and **Other (custom)** last, for a key the list does not have.
-- A CLI that picks its model inside it (Pi, Antigravity) or a command ShellBot does not know has only the
+- A CLI that picks its model inside it (Antigravity) or a command ShellBot does not know has only the
   default, and the field is greyed: there is no flag to pin on.
+- **pi** has no list of its own in the table: it lists what pi defines on that computer (`models.json` under
+  `PI_CODING_AGENT_DIR`, else `~/.pi/agent`), shown as `id · provider`. Only the ids and provider names are read;
+  the file also holds each provider's key, and nothing else from it is kept or shown. The pin is `--model <id>`
+  and never `--provider`, so it stays on the provider the command starts on: its own `--provider`, else the one
+  its launcher (an `sf-pi-…` script) passes. A model is kept only when that provider has it — another provider's
+  id is refused at save, as is one models.json does not define, because pi exits on an id it cannot place and a
+  pin is applied at every wake. A provider models.json does not define (pi's built-in ones) takes any id shape.
+- **pi and a conversation taken back up:** a pin is what a new conversation starts on. A pi tab relaunched on
+  its conversation stays on the model that conversation was last switched to with `/model`
+  (`agent_pi.keep_model`), even when the bot's pin is another; never switched, it stays on the pin it started
+  on. Claude Code differs: a relaunch with `--resume` runs on the pin. To move a pi bot to its new pin now, use
+  "Save and switch now", which starts a new conversation.
 - A custom key is checked on the spot against the table and the shapes of the ids its families come in
   (`claude-opus-4-8`, `gpt-5.1-codex-max`, OpenCode's `provider/model`). **"Unknown model" is shown, and it is
   never saved**: not by the editor, `sfctl bots-set`/`bots-save` or a phone. The check starts no CLI. It also offers

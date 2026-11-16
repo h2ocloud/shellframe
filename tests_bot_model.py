@@ -30,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="sf-bot-model-"))
 os.environ["SHELLFRAME_BOTS_DIR"] = str(TMP / "bots")
 os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"
+os.environ["PI_CODING_AGENT_DIR"] = str(TMP / "pi")         # no models.json: pi lists nothing here (tests_pi_roster_model.py)
 sys.modules["webview"] = MagicMock()
 sys.path.insert(0, str(HERE))
 import sf_log  # noqa: E402
@@ -145,10 +146,10 @@ check("the listed models are the table's, by name and key (Claude Code)",
       == [("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku"), ("fable", "Fable")])
 check("a CLI that takes a model on its command line says so in clis, and its list agrees",
       all((c["models"] is True) == (len(choices["models"][c["key"]]) > 1) for c in choices["clis"]))
-info = json.loads(api.bots_model_info(json.dumps(["claude --model haiku --x", "pi", "my-wrapper --y", CMD["codex"]])))
+info = json.loads(api.bots_model_info(json.dumps(["claude --model haiku --x", "agy", "my-wrapper --y", CMD["codex"]])))
 check("…bots_model_info: provider, pinnable, the flag and the pin already on the command, why a command takes none",
       info["by_cmd"]["claude --model haiku --x"] == {"provider": "claude", "pinnable": True, "pinned": "haiku", "flag": "--model", "reason": ""}
-      and info["by_cmd"]["pi"] == {"provider": "", "pinnable": False, "pinned": "", "flag": "", "reason": "fixed"}
+      and info["by_cmd"]["agy"] == {"provider": "", "pinnable": False, "pinned": "", "flag": "", "reason": "fixed"}
       and info["by_cmd"]["my-wrapper --y"]["reason"] == "unknown" and info["by_cmd"][CMD["codex"]]["provider"] == "codex", info["by_cmd"])
 check("…and the list per provider is the table's", info["choices"]["claude"][1:-1] == choices["models"]["claude"][1:-1]
       and [c["key"] for c in info["choices"][""]] == [""], info["choices"].keys())
@@ -191,7 +192,7 @@ check("another CLI with no model given: the last CLI's model is dropped (sonnet 
 
 print("3. a key ShellBot does not know is refused, everywhere, and nothing is written")
 config({"寫手": {"label": "寫手", "cmd": CMD["claude"], "model": "sonnet", "responsibility": "寫文件", "bot": {"memory": True}},
-        "查": {"label": "查", "cmd": CMD["pi"], "bot": {"memory": True}}})
+        "查": {"label": "查", "cmd": CMD["agy"], "bot": {"memory": True}}})
 before = json.dumps(stored(), sort_keys=True, ensure_ascii=False)
 for what, key, code in (("a typo", "sonet", "unknown_model"), ("another CLI's model", "gpt-5", "unknown_model"),
                         ("the wrong case", "Sonnet", "unknown_model"), ("two words", "Sonnet 4.5", "bad_model"),
@@ -234,7 +235,7 @@ check("…a command ShellBot does not know takes none, and says so", r["code"] =
 print("4. a wrong key that is already stored")
 config({"壞的": {"label": "壞的", "cmd": CMD["claude"], "model": "sonet", "responsibility": "舊的", "bot": {"memory": True}},
         "大寫": {"label": "大寫", "cmd": "claude --model Opus", "bot": {"memory": True}},
-        "固定": {"label": "固定", "cmd": "pi", "model": "gpt-5", "bot": {"memory": True}},
+        "固定": {"label": "固定", "cmd": "agy", "model": "gpt-5", "bot": {"memory": True}},
         "好的": {"label": "好的", "cmd": CMD["codex"], "model": "gpt-5.4", "bot": {"memory": True}},
         "指令裡": {"label": "指令裡", "cmd": "claude --model haiku", "bot": {"memory": True}},
         "預設": {"label": "預設", "cmd": "claude", "bot": {"memory": True}},
@@ -256,7 +257,7 @@ check("the phone's /link/bots: model_ok false, why, and the likely key",
       phone["壞的"]["model_ok"] is False and phone["壞的"]["model_code"] == "unknown_model"
       and phone["壞的"]["model_suggestion"] == "sonnet" and phone["固定"]["model_code"] == "model_fixed", phone["壞的"])
 check("the page's roster also names each role's CLI and the model as a person reads it",
-      roster["壞的"]["cli"] == {"key": "claude", "label": "Claude Code"} and roster["固定"]["cli"] == {"key": "pi", "label": "Pi"}
+      roster["壞的"]["cli"] == {"key": "claude", "label": "Claude Code"} and roster["固定"]["cli"] == {"key": "agy", "label": "Antigravity"}
       and roster["好的"]["pin"]["label"] == "GPT-5.4" and roster["指令裡"]["pin"]["label"] == "Haiku"
       and roster["預設"]["pin"]["label"] == "", (roster["壞的"]["cli"], roster["好的"]["pin"]))
 check("…true for the rest, with nothing to say; an outside bot runs where it lives, so it is ok",
