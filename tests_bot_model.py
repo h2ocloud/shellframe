@@ -16,6 +16,7 @@ that was not exactly the CLI's was stored and silently did nothing.
 Demo roster and tabs. Run: .venv/bin/python tests_bot_model.py
 """
 import json
+import re
 import os
 import sys
 import tempfile
@@ -87,6 +88,12 @@ api.sessions = {}
 api.bridge = api.line_bridge = None
 api._window = None
 api.launched = []                                              # (sid, command the tab was started with)
+api.personas = []                                              # the commands as started, persona flag included
+
+
+def _without_persona(cmd):
+    """The command without the bot's persona file (bots.with_persona appends it last)."""
+    return re.sub(r" --append-system-prompt(?:-file)? (?:'[^']*'|\S+)$", "", cmd)
 counter = [100]
 
 
@@ -94,7 +101,8 @@ def new_session(cmd, cols, rows, source="manual", handoff=False, inherit_account
     counter[0] += 1
     sid = f"s{counter[0]}"
     api.sessions[sid] = Tab(sid, cmd)
-    api.launched.append((sid, cmd))
+    api.launched.append((sid, _without_persona(cmd)))   # the persona flag is tests_bot_persona.py's; the model is this file's
+    api.personas.append(cmd)
     return sid
 
 
@@ -163,6 +171,8 @@ config()
 save("預設", cmd=CMD["claude"], model="", memory=True)
 api.launched.clear()
 api.bots_open("預設")
+check("…and the bot's persona file is added after the model (tests_bot_persona.py)",
+      any("--append-system-prompt-file" in c and c.rstrip("'").endswith("persona.md") for c in api.personas), api.personas[-1:])
 check("CLI default: nothing is pinned on the command", api.launched[-1][1] == CMD["claude"] and stored()["預設"]["model"] == "", api.launched)
 config()
 save("省", cmd=CMD["claude"] + " --model haiku", memory=True)
