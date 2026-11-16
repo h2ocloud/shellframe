@@ -108,10 +108,10 @@ notes = lambda api: [t[1] for t in api.typed if t[0] == "s9" and t[1]]
 
 print("a queued message whose Enter did not take (the 11/15 case)")
 api = Api("s1", "s9")
-api.state["s1"] = "working"
+api.state["s1"] = "decision"                # held: a menu (a turn in flight lets it in)
 api.enters_lost["s1"] = 1
 r = td.deliver(api, "s1", "離線打字互傳做完了，請看一下結果", from_sid="s9", label="M4")
-check("queued while the tab works", r["queued"])
+check("queued while a menu is up", r["queued"])
 api.state["s1"] = "done"
 check("its Enter is pressed again once the box still holds it", wait_for(lambda: len(enters(api, "s1")) == 1), api.typed)
 check("…and the tab takes it", wait_for(lambda: api.prompt_at["s1"] > 0))

@@ -94,7 +94,7 @@ class ChatApiMixin:
         """Type `text` into tab `sid` and submit it, the way a paired phone's message box
         does. {"success", "queued", "reason", "id"}. The person wrote it, so a turn in flight
         does not hold it: the CLI takes it when the turn ends, as text typed in the terminal
-        (tab_delivery.PERSON_TYPES_INTO). queued means something typing would get wrong holds it
+        (tab_delivery.TYPES_INTO). queued means something typing would get wrong holds it
         (a menu, a model switch, a bridged reply) and it goes in when that ends; `id` is how
         chat_view's `queue` names it.
 

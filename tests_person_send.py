@@ -6,9 +6,9 @@ until the tab's turn ended (up to 30 min), though the AI CLIs keep a message sub
 themselves. Measured in Claude Code 2.1.325: a message pasted with its Enter during a 15 s tool
 call showed as queued and was taken right after that tool call, inside the same turn; that turn
 never wrote its own last reply.
-  - the person's message (chat view, a phone's /link/send): a working tab gets it at once,
-    and it does not wait behind what agents queued for that tab
-  - an agent's (A2A, sfctl send, another computer's link-send): queued while the tab works, as before
+  - the person's message (chat view, a phone's /link/send): a working tab gets it at once
+  - an agent's too, since v0.45.2 (asked for: the queue was mostly unnecessary); never over the
+    person's own words in the input box, and a memory save (queue=False) still waits for a free tab
   - still held for the person: a decision menu (its keys would pick an option), a model being
     switched from the screen, a draft to clear (a Ctrl+C would stop the turn), a bridged message
     being typed in, a LINE message waiting for its reply (the LINE bridge sends the tab's next
@@ -99,17 +99,22 @@ def slot(**kw):
     return types.SimpleNamespace(**base)
 
 
-print("the person's message and a working tab")
+print("a working tab")
 api = make_api()
 api.state["s1"] = "working"
 r = td.deliver(api, "s1", "from the phone", person=True)
-check("a working tab gets it at once", r["success"] and not r["queued"] and api.sent == ["from the phone"], (r, api.sent))
+check("the person's message goes in at once", r["success"] and not r["queued"] and api.sent == ["from the phone"], (r, api.sent))
 r = td.deliver(api, "s1", "from an agent")
-check("an agent's message to the same tab is queued, as before", r["queued"] and r["reason"] == "working", r)
-r = td.deliver(api, "s1", "the person again", person=True)
-check("…and the person's next one does not wait behind it",
-      not r["queued"] and api.sent == ["from the phone", "the person again"], (r, api.sent))
+check("an agent's too (v0.45.2: chosen for every message)", not r["queued"] and api.sent[-1] == "from an agent", r)
+api.screen["s1"] = "\n".join(["x", "─" * 40, "\x1b[39m❯\xa0我正在打的字", "─" * 40, "  footer"])
+r = td.deliver(api, "s1", "another agent message")
+check("…but not over the person's own words while it works: those first", r["queued"] and r["reason"] == "draft"
+      and api.sent[-1] == "from an agent", r)
 clear_queue()
+r = td.deliver(api, "s1", "memory save", queue=False)
+api.screen["s1"] = ""
+r = td.deliver(api, "s1", "memory save", queue=False)
+check("a memory save (queue=False) still waits for a free tab", r["success"] is False and r["reason"] == "working", r)
 
 print("what still holds the person's message")
 cases = []

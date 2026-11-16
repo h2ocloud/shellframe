@@ -54,7 +54,7 @@ class FakeApi:
         self.prompt_at = {}
 
     def _agent_state_for_list(self, sid):
-        return "working" if sid in self.busy else ""
+        return "decision" if sid in self.busy else ""      # a menu up: it holds a message (a turn in flight does not)
 
     def _bridge_session_busy(self, sid):
         return False
@@ -158,7 +158,7 @@ td.resume(api)
 check("still busy: it times out after what was left (~1 s), not a fresh 100 s",
       wait_for(lambda: notes_to(api, "s2"), timeout=4.0), api.sent)
 check("…the note says why, and that ShellBot restarted",
-      any("in the middle of a turn" in t and "restarted" in t for t in notes_to(api, "s2")), notes_to(api, "s2"))
+      any("waiting on a decision" in t and "restarted" in t for t in notes_to(api, "s2")), notes_to(api, "s2"))
 check("…and the text never went in", not any(s == "s1" for s, _ in api.sent))
 
 restart_with([{"sid": "s1", "text": "too late", "submit": True, "t0": time.time() - 500.0,

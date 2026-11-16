@@ -9,7 +9,8 @@ read like the user's own words once the colours were stripped.
 
   - the input box is read with its colours: dim (SGR 2) = Claude Code's suggestion,
     plain = the user's draft (both shapes captured from live tabs)
-  - a working / deciding / Telegram-busy / drafting tab gets the text queued
+  - a working tab gets the text at once (v0.45.2: the CLI holds it); a deciding / Telegram-busy /
+    drafting tab gets it queued
   - one tab's queue is first in, first out; the next waits until the last is taken
   - --now goes in at once; a timeout or a closed tab tells the sender
   - sfctl send, A2A and delegate to an open tab all go through the queue
@@ -159,17 +160,24 @@ check("…but once there is a state it is the one that counts", td.busy_reason(a
 api.state["s1"] = ""
 api.screen["s1"] = ""
 
-print("the queue")
+print("a turn in flight")
 api.sent.clear()
 api.state["s1"] = "working"
+r = td.deliver(api, "s1", "mid-turn")
+check("a working tab gets it at once (the CLI holds it until its next step)", not r["queued"] and api.sent == [("s1", "mid-turn")], r)
+api.state["s1"] = ""
+
+print("the queue")
+api.sent.clear()
+api.state["s1"] = "decision"
 r1 = td.deliver(api, "s1", "first")
 r2 = td.deliver(api, "s1", "second")
-check("busy: queued, in order", r1["queued"] and r1["position"] == 1 and r2["position"] == 2 and not api.sent,
+check("held (a decision menu): queued, in order", r1["queued"] and r1["position"] == 1 and r2["position"] == 2 and not api.sent,
       (r1, r2))
 check("…and the reply says how to skip the line", "--now" in r1["message"])
 check("pending() shows what waits", [p["chars"] for p in td.pending("s1")] == [5, 6])
 api.state["s1"] = ""
-check("when the turn ends, the first goes in", wait_for(lambda: api.sent[:1] == [("s1", "first")]))
+check("when the menu is answered, the first goes in", wait_for(lambda: api.sent[:1] == [("s1", "first")]))
 check("…then the second, after the first was taken", wait_for(lambda: api.sent == [("s1", "first"), ("s1", "second")]))
 check("nothing left waiting", wait_for(lambda: not td.pending("s1")))
 
@@ -190,7 +198,7 @@ api.screen["s1"] = box("\x1b[39m❯\xa0half typed")
 r = td.deliver(api, "s1", "memory request", queue=False)
 check("the user's draft is not written over, and not waited behind", r["reason"] == "draft" and not td.pending("s1") and not api.sent, r)
 api.screen["s1"] = ""
-api.state["s1"] = "working"
+api.state["s1"] = "decision"
 td.deliver(api, "s1", "someone's message")
 api.state["s1"] = ""
 r = td.deliver(api, "s1", "memory request", queue=False)
@@ -203,10 +211,11 @@ api.state["s1"] = "working"
 
 print("timeouts")
 api.sent.clear()
+api.state["s1"] = "decision"            # held: a menu (a turn in flight lets text in)
 td.QUEUE_MAX_WAIT = 0.3
 told = []
 td.deliver(api, "s1", "never", from_sid="s2", on_timeout=lambda r, why: told.append((r, why)))
-check("a timeout tells the sender why", wait_for(lambda: told == [("working", td._reason_text("working"))]), told)
+check("a timeout tells the sender why", wait_for(lambda: told == [("decision", td._reason_text("decision"))]), told)
 check("…and the text never went in", ("s1", "never") not in api.sent)
 td.notify_sender(api, "s2", "coder", "it is in the middle of a turn")
 check("the sender's tab gets a note", wait_for(lambda: any(s == "s2" and "not delivered" in t for s, t in api.sent)))
@@ -219,17 +228,17 @@ td.QUEUE_MAX_WAIT = 1800.0
 
 print("every way in")
 api = make_api(("s1", "coder"), ("s2", "boss"))
-api.state["s1"] = "working"
+api.state["s1"] = "decision"
 res = api._execute_sfctl("send", {"sid": "s1", "text": "from sfctl", "from_sid": "s2"})
 check("sfctl send to a busy tab is queued", res["success"] and (res.get("details") or {}).get("queued"), res)
 api.state["s1"] = ""
 check("…and goes in when it frees", wait_for(lambda: ("s1", "from sfctl") in api.sent))
-api.state["s1"] = "working"
+api.state["s1"] = "decision"
 res = api._execute_sfctl("send", {"sid": "s1", "text": "now please", "now": True})
 check("sfctl send --now goes in at once", ("s1", "now please") in api.sent and not (res.get("details") or {}).get("queued"))
 
 api.sent.clear()
-api.state["s1"] = "working"
+api.state["s1"] = "decision"
 res = a2a_host.handle(api, "a2a_send", {"target": "coder", "text": "a2a hello", "from_sid": "s2"})
 check("A2A to a busy tab is queued", res.get("success") and (res.get("details") or {}).get("queued"), res)
 check("…and logged as queued", any(e.get("kind") == "queued" for e in agent_link.history(20)))
@@ -237,7 +246,7 @@ api.state["s1"] = ""
 check("…and delivered when the turn ends", wait_for(lambda: any(s == "s1" and "a2a hello" in t for s, t in api.sent)))
 
 api.sent.clear()
-api.state["s1"] = "working"
+api.state["s1"] = "decision"
 api._wait_until_ready = lambda sid, timeout=45.0: True
 res = api.delegate_task("coder", "please refactor")
 check("delegate to an open busy tab is queued, not typed in", res["success"] and "Queued" in res["message"]
@@ -251,7 +260,7 @@ check("no --ttl: 30 min; 0: until free (a day at most); 90: 90 min; huge: a day;
       == (1800.0, 86400.0, 5400.0, 86400.0, 1800.0))
 check("a2a-result's default is a day", td.wait_limit(None, td.RESULT_WAIT) == 86400.0)
 api = make_api(("s1", "coder"), ("s2", "boss"))
-api.state["s1"] = "working"
+api.state["s1"] = "decision"
 told = []
 r = td.deliver(api, "s1", "short", on_timeout=lambda o, why: told.append("short"), max_wait=0.3)
 td.deliver(api, "s1", "long", on_timeout=lambda o, why: told.append("long"))
@@ -271,7 +280,7 @@ check("…an agent's message keeps its [[A2A…]] header first and gets the line
       and agent_link.sender_of(late) == {"kind": "a2a", "name": "研究", "handoff": False}, late)
 td.LATE_NOTE_S = 1800.0
 api.sent.clear()
-api.state["s1"] = "working"
+api.state["s1"] = "decision"
 res = api._execute_sfctl("send", {"sid": "s1", "text": "via sfctl", "ttl": 90, "from_sid": "s2"})
 check("sfctl send --ttl 90 queues it for 90 minutes", res["success"] and td._queues["s1"][-1].get("max_wait") == 5400.0,
       res)
@@ -281,7 +290,7 @@ api.state["s1"] = ""
 wait_for(lambda: not td.pending("s1"))
 h = a2a_host.handle(api, "a2a_handoff", {"target": "coder", "text": "do the thing", "from_sid": "s2"})
 hid = (h.get("details") or {}).get("id")
-api.state["s2"] = "working"
+api.state["s2"] = "decision"
 res = a2a_host.handle(api, "a2a_result", {"id": hid, "text": "done it", "from_sid": "s1"})
 check("a2a-result to a busy requester waits a day by default", res.get("success")
       and td._queues["s2"][-1].get("max_wait") == 86400.0, (res, td.pending("s2")))

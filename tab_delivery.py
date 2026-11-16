@@ -7,8 +7,11 @@ documentation said `send` waited for the tab to be idle. An agent that promised
 different model simply didn't. Waiting is now ShellBot's job, so it holds for
 every model and every CLI:
 
-  * the tab is working, waiting on a decision, or a Telegram turn is in flight
-    → the text waits in a per-tab queue and goes in when that ends;
+  * the tab is working → the text goes in, as typing does: the CLI holds a message submitted
+    mid-turn and takes it at its next step (TYPES_INTO). Asked for 2026-11-16, for the person's
+    messages and then for agents' too ("排隊的機制很沒有必要");
+  * the tab is waiting on a decision, its model is being switched, or a Telegram or LINE message
+    is in flight → the text waits in a per-tab queue and goes in when that ends;
   * the input box holds text the user typed and has not sent → it waits too.
     A dim (SGR 2) suggestion that Claude Code paints in the box is *not* the
     user's: measured on live tabs, `❯ \\x1b[2m<suggestion>\\x1b[0m` vs plain text;
@@ -20,11 +23,8 @@ every model and every CLI:
     before: a chat send queued behind a draft in the terminal was dropped after
     30 min with a debug line only, and the bubble that said "waiting" went away;
   * `now=True` (`--now`) sends at once, as before;
-  * `person=True`: the person wrote it (the chat view, a paired phone). It goes in while
-    the tab is working, as text typed in the terminal does: the CLI holds it and takes it
-    at its next step. It still waits on a decision menu (its keys would pick an option), a
-    model switch driven from the screen, a draft that has to be cleared with Ctrl+C, and a
-    Telegram or LINE message in flight (PERSON_TYPES_INTO, _bridge_holds);
+  * `person=True`: the person wrote it (the chat view, a paired phone): it does not wait behind
+    what agents queued for that tab;
   * the queue is kept on disk (STATE_FILE). Measured: an item queued at 13:21:11
     vanished with the 13:25:23 restart, never delivered and the sender never
     told. After a restart each item carries on from its original start time;
@@ -63,12 +63,23 @@ STATE_FILE = None           # set by the app at start-up; None (tests) keeps the
 RESTORE_GRACE = 180.0       # after a restart, how long an item waits for its tab to come back
 RESUME_SETTLE = 20.0        # …and how long before a restored item may go in at all (see _wait_turn)
 GIVEN_UP_KEEP = 7200.0      # how long the chat view can still see a send that never went in
-# What a person's message is typed in through (deliver(person=True)): a turn in flight, as text
-# typed in the terminal. Measured in Claude Code 2.1.325: a message pasted with its Enter during a
+# What a message is typed in through: a turn in flight, as text typed in the terminal (the person's
+# from v0.45.0, everyone's from v0.45.2). Measured in Claude Code 2.1.325: a message pasted with its Enter during a
 # 15 s tool call showed as queued ("Press up to edit queued messages") and was taken right after
 # that tool call, inside the same turn. Still held: a menu ("decision"), a model switch ("model"),
 # a draft, and a bridged message (_bridge_holds).
-PERSON_TYPES_INTO = ("working",)
+TYPES_INTO = ("working",)
+
+
+def _goes_in(api, sid: str, reason: str, queue: bool = True, clear_draft: bool = False) -> str:
+    """`reason` once a turn in flight holds nobody: '' when the text can go in now. Still held: a
+    bridged message (_bridge_holds), a memory save (queue=False waits for a free tab), a draft to
+    clear (a Ctrl+C would stop the turn), and the person typing while the tab works (their words
+    would go in with this text's Enter)."""
+    if reason not in TYPES_INTO or not queue or clear_draft or _bridge_holds(api, sid):
+        return reason
+    kind, _ = composer_state(capture(api, sid))
+    return "draft" if kind == "draft" else ""
 
 
 def _bridge_holds(api, sid: str) -> bool:
@@ -520,7 +531,9 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
             max_wait: float = None, clear_draft: bool = False, queue: bool = True,
             person: bool = False) -> dict:
     """Send `text` to tab `sid` now if it is free (or `now`), else queue it.
-    `person`: the person wrote it; a turn in flight does not hold it (PERSON_TYPES_INTO).
+    `person`: the person wrote it; it does not wait behind what agents queued for the tab.
+    A turn in flight holds nobody's text (TYPES_INTO); a menu, a model switch, a draft and a
+    bridged message do.
     `queue=False`: only ever now. A tab that is not free (or has texts waiting ahead) is
     left alone and nothing is queued, so a text that may as well wait for the caller's
     next look (a periodic memory save) never holds up the ones people and agents sent:
@@ -537,12 +550,9 @@ def deliver(api, sid: str, text: str, *, submit: bool = True, now: bool = False,
         waiting = bool(_queues.get(sid))
     if now:
         reason = ""
-    elif person:                                   # not behind what agents queued, nor a turn in flight
-        reason = busy_reason(api, sid)
-        if reason in PERSON_TYPES_INTO and not clear_draft and not _bridge_holds(api, sid):
-            reason = ""                            # (clearing a draft is a Ctrl+C: it would stop the turn)
     else:
-        reason = "queued" if waiting else busy_reason(api, sid)
+        reason = busy_reason(api, sid) if person or not waiting else "queued"   # the person: not behind agents
+        reason = _goes_in(api, sid, reason, queue=queue, clear_draft=clear_draft)
     if reason and not queue:
         return {"success": False, "code": "busy", "queued": False, "reason": reason,
                 "message": _reason_text(reason)}
@@ -712,6 +722,7 @@ def _wait_turn(api, sid: str, item: dict) -> str:
             item["cleared"] = True            # one Ctrl+C at most: a second one quits the CLI
             if clear_draft_now(api, sid):
                 reason = busy_reason(api, sid)
+        reason = _goes_in(api, sid, reason, clear_draft=bool(item.get("clear_draft")))   # a turn in flight holds nobody
         if time.time() - item["t0"] > _limit(item):
             return reason or "expired"
         if not reason:

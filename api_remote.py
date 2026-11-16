@@ -605,7 +605,7 @@ class RemoteApiMixin:
                         "The input box holds text that was never sent; clear it and send (clear_draft), or not now.",
                         "輸入框裡有一段還沒送出的字；要清掉後送出（clear_draft），還是先不送。")}
                 # The person wrote it: on a phone (frame_link: a peer of kind "ios") or in the chat view.
-                # It goes in while the tab works, as typed text does (tab_delivery.PERSON_TYPES_INTO).
+                # It goes in while the tab works, as typed text does (tab_delivery.TYPES_INTO).
                 person = bool(args.get("from_phone") or args.get("person"))
                 if args.get("from_phone"):
                     agent_link.clear_chain(sid)

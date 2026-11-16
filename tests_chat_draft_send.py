@@ -130,19 +130,19 @@ check("a draft that does not clear: nothing sent, one Ctrl+C and no second",
 
 print("3. a queued send is followed, and never just gone")
 app = FakeApi("s2")
-app.busy.add("s2")
+td.HOLD["s2"] = "model"                       # held: its model is being switched (a turn in flight lets it in)
 r = td.deliver(app, "s2", "排隊的訊息", what="chat", max_wait=0.3)
 check("queued with an id", r.get("queued") and len(r.get("id") or "") == 12, r)
 check("…chat_view's queue lists it while it waits", td.queue_state("s2")["queued"] == [r["id"]], td.queue_state("s2"))
 given = wait_for(lambda: td.queue_state("s2")["given_up"])
 st = td.queue_state("s2")
 check("…once its time runs out it is given up, with why, and no longer waiting",
-      given and st["queued"] == [] and st["given_up"][0]["id"] == r["id"] and st["given_up"][0]["why"] == td._reason_text("working"), st)
+      given and st["queued"] == [] and st["given_up"][0]["id"] == r["id"] and st["given_up"][0]["why"] == td._reason_text("model"), st)
 r2 = td.deliver(app, "s2", "sfctl 送的", max_wait=0.3)
 time.sleep(0.8)
 check("…a send from sfctl or A2A is told to its sender as before, not listed for the view",
       [g["id"] for g in td.queue_state("s2")["given_up"]] == [r["id"]], td.queue_state("s2"))
-app.busy.discard("s2")
+td.HOLD.pop("s2", None)
 
 print("4. chat_send")
 

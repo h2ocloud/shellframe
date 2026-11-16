@@ -193,10 +193,10 @@ check("…and the log line", "blocked boss -> coder chain depth 5 over limit 4 (
       in a2a_host.handle(api, "a2a_log", {})["message"])
 os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"
 
-print("a busy tab: queued, and it goes in as data when the turn ends")
+print("a held tab (a menu up): queued, and it goes in as data when it is answered")
 reset()
 agent_link._inbound_depth["s2"] = agent_link.MAX_DEPTH
-api.state["s1"] = "working"
+api.state["s1"] = "decision"                 # a turn in flight lets text in (v0.45.2); a menu holds it
 res = send(target="coder", text="這則要排隊")
 check("nothing is typed into the running turn; the bounce says it is queued, as reference only",
       api.sent == [] and res["success"] is False and res["details"].get("queued") is True and res["details"].get("delivered") is True

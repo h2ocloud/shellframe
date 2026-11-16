@@ -195,11 +195,12 @@ print `ERR Blocked (chain depth 5, limit 4): …` and exit 1. Read it before you
 anything else: the other side may have the text only as reference (§7, "A message
 the chain limit stops"). Do not resend it.
 
-`send` never types into a turn in flight (the person's own messages from the chat view or a
-paired phone do, as typing in the terminal does; yours and other agents' wait as below). If the target is working, waiting on a
-decision menu, in the middle of a Telegram turn, has the user's unsent text in
-its input box, or is having its model switched from the screen (a few seconds), the text waits in that tab's queue (first in, first out) and goes
-in when that ends; the reply says `Queued`. After 30 minutes it is dropped and the
+`send` types into a tab that is working, as a person typing does (v0.45.2): the CLI holds a
+message that arrives mid-turn and takes it at its next step (Claude Code shows it as queued), so
+it may be read before the turn you interrupted has written its last reply. If the target is
+waiting on a decision menu, in the middle of a Telegram or LINE turn, has the user's unsent text
+in its input box, or is having its model switched from the screen (a few seconds), the text
+waits in that tab's queue (first in, first out) and goes in when that ends; the reply says `Queued`. After 30 minutes it is dropped and the
 sender's tab is told; `--ttl <minutes>` changes how long it may wait (`--ttl 0`: until
 the tab is free; at most 24 h), and `a2a-result` waits 24 h by default, because the
 requester is waiting for it. A message that waited more than 30 minutes goes in with a

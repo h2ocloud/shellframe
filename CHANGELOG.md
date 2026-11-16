@@ -28,6 +28,24 @@
   補按 Enter，不會擋住佇列。使用者自己沒送出的字照樣會擋，但超過 10 分鐘會告訴送件人在等什麼、為什麼，只說一次。由
   `tests_stuck_paste.py` 守著，沒有修正時它會重現被擋住的佇列。
 
+### Changes
+
+- **Messages between bots go into a working tab too, as yours do.** Asked for: queueing them was mostly
+  unnecessary, since the AI CLIs keep a message that arrives mid-turn. A2A, hand-offs, results, `sfctl send`
+  and messages from another computer now go in while the tab works, as the person's have since v0.45.0. They
+  still wait while the tab shows a menu, while its model is being switched, while the person has unsent words
+  in its input box (also while it works: those words would go in with this message's Enter), and while a
+  Telegram or LINE message is in flight. A memory save still waits for a free tab. Measured in Claude Code
+  2.1.325: a message that arrives mid-turn is taken after the running tool call, and the turn it joins may not
+  write its own last reply. Covered by `tests_person_send.py` and `tests_tab_delivery.py`.
+
+  **Bot 之間的訊息也會直接送進正在跑的分頁，跟你的訊息一樣。** 需求：AI CLI 本身就會把跑到一半收到的訊息先記下來，
+  排隊大多沒有必要。A2A、交辦、回報結果、`sfctl send`、另一台電腦送來的訊息，現在分頁在跑也直接送進去，跟 v0.45.0 起
+  你自己的訊息一樣。以下情況還是會先等：分頁正在顯示選單、正在換模型、輸入框有使用者還沒送出的字（分頁在跑時也一樣：
+  那些字會被這則訊息的 Enter 一起送出）、Telegram 或 LINE 的訊息還在處理。存記憶的請求照舊等分頁閒下來。在 Claude Code
+  2.1.325 實測：跑到一半收到的訊息會在當下的工具跑完後接著處理，被插進來的那一輪可能不會寫出它自己的最後回覆。由
+  `tests_person_send.py` 和 `tests_tab_delivery.py` 守著。
+
 ### Added
 
 - **The sidebar's chips filter by kind: 「Bot」 or 「分頁」.** Asked for: the filter chips should also filter by

@@ -114,7 +114,7 @@ check("a hand-off to a free tab goes in", res.get("success") and any(s == "s1" f
 check("…and its record names the tab and when it was in front of the agent",
       rec(hid).get("to_sid") == "s1" and rec(hid).get("delivered_at", 0) > 0, rec(hid))
 
-api.state["s1"] = "working"
+api.state["s1"] = "decision"                 # held by a menu (a turn in flight lets it in, v0.45.2)
 res = a2a_host.handle(api, "a2a_handoff", {"target": "coder", "text": "and the tests", "from_sid": "s2"})
 qid = (res.get("details") or {}).get("id")
 check("to a busy tab it is queued, and not yet in front of the agent",
