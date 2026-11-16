@@ -1233,12 +1233,12 @@ class RemoteApiMixin:
             except Exception:
                 v = "0"
             st = (main.load_config().get("settings") or {})
-            # Enumerated from the settings themselves, not a hard-coded list: a
-            # new experimental flag must show up here the day it is added, or an
-            # agent reading this has no way to learn the feature exists.
-            keys = sorted(set(k for k in main.DEFAULT_CONFIG.get("settings", {})
-                              if k.startswith("experimental_"))
-                          | set(k for k in st if k.startswith("experimental_")))
+            # Enumerated from DEFAULT_CONFIG, not a hard-coded list: a new experimental
+            # flag shows up here the day it is added. Only those: a switch whose feature
+            # was removed stays in old config files (experimental_board after 0.45.3),
+            # and listing it told agents a feature that is gone was on.
+            keys = sorted(k for k in main.DEFAULT_CONFIG.get("settings", {})
+                          if k.startswith("experimental_"))
             return {"success": True, "message": f"ShellBot v{v}",
                     "details": {"version": v,
                                 "experimental": {k: bool(st.get(k)) for k in keys}}}

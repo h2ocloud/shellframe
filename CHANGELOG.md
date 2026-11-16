@@ -81,6 +81,13 @@
   檔；在那之前對話就是空的。同一個資料夾裡有兩個 pi 分頁同時在寫時，仍然分不出誰是誰（pi 不會告訴我們哪個檔是誰的）。
   由 `tests_pi_provider.py` 守著。
 
+- **The AI's manual no longer says a removed feature is on.** `sfctl version` and the header of `sfctl skill` listed
+  every experimental switch found in the settings file, so a computer that once used the task board (removed in
+  0.45.3) still told its AI tabs it was on. They now list only the switches this version has.
+
+  **給 AI 的說明不會再說已移除的功能是開著的。** `sfctl version` 和 `sfctl skill` 的開頭，原本會列出設定檔裡所有實驗性開關，
+  所以用過任務看板（0.45.3 已移除）的電腦，還會告訴 AI 分頁它是開著的。現在只列這個版本真的有的開關。
+
 - **A usage window whose reset time has passed shows no pace.** Measured on the phone's usage route: two accounts
   read 74 % and 53 % with a reset already in the past, and the pace (past 100 %, clamped) called them "26 % to
   spare". Those numbers are the last window's: they are now marked as such, with no pace and no "ahead". Covered by
