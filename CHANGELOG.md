@@ -6,6 +6,47 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.45.0 (2026-11-16)
+
+### Added
+
+- **A guide that walks a new install through the features, and stays bound to them.** Asked for: a tutorial
+  module in the app, each feature with its own help, kept up as features are added. A first launch now gets a
+  short tour: a spotlight on each feature on the page (opening a tab, your tabs, usage, pairing a phone or
+  computer, Telegram, settings), with Next, Back and Skip. The sidebar has a Guide button: every feature with
+  what it does and where it is, "show me" (opens the Settings tab it is on and points at it), features behind
+  a switch that is off marked so, and what is new since you last looked, counted on the button. A computer
+  that already ran ShellBot gets no popup. The words live in one file, `guide.json`, which the phone app will
+  read too; `tests_guide.py` fails when a feature and its entry drift apart (a button without an entry, an
+  entry whose button is gone, a new experimental switch or a release with new features but no entry). Covered
+  by `tests_guide.py` and `tests_guide_ui.py`.
+
+  **導覽：新安裝會帶著走一遍功能，而且跟功能綁在一起。** 需求：App 要有教學模組，每個功能有對應的說明，之後補功能時會跟著
+  維護。現在第一次開 ShellBot 會走一段簡短導覽：頁面上每個功能依序打光（開分頁、你的分頁、用量、配對手機或電腦、
+  Telegram、設定），可以下一步、上一步、略過。側欄多了「導覽」按鈕：列出每個功能做什麼、在哪裡，「指給我看」會打開它所在的
+  設定分頁並指出位置；需要開關、但開關沒開的功能會標出來；上次看過之後的新功能會在按鈕上顯示數量。已經在用 ShellBot 的電腦
+  不會跳出導覽。文字都在 `guide.json` 一個檔裡，手機 App 之後也讀同一份；功能和說明對不上時（按鈕沒有說明、說明指到的按鈕
+  不見了、新增實驗開關或發版有新功能卻沒寫說明）`tests_guide.py` 會失敗。由 `tests_guide.py` 和 `tests_guide_ui.py` 守著。
+
+### Changes
+
+- **What you write in the chat view or on a phone goes in while the tab is working.** Asked for: a message from
+  the phone or the chat view waited in ShellBot's queue until the tab's turn ended (up to 30 minutes), though
+  the AI CLIs keep a message sent mid-turn themselves. Measured in Claude Code 2.1.325: a message pasted with
+  its Enter during a 15-second tool call showed as queued and was taken right after that tool call, inside the
+  same turn. Your own messages now go in at once, as typing in the terminal does. They still wait while the tab
+  shows a menu (the keys would pick an option), while its model is being switched, while a draft has to be
+  cleared, and while a Telegram or LINE message is in flight: in the same measurement the turn the message
+  joined never wrote its own last reply, so the bridge would miss its answer. Messages from agents (A2A,
+  `sfctl send`, another computer) queue as before. Covered by `tests_person_send.py`.
+
+  **在對話畫面或手機上寫的訊息，分頁正在跑也會直接送進去。** 需求：手機或對話畫面的訊息會在 ShellBot 的佇列裡等到分頁那一輪
+  結束（最多 30 分鐘），但 AI CLI 本身就會把跑到一半送進來的訊息先記下來。在 Claude Code 2.1.325 實測：一個 15 秒的工具
+  執行期間貼上訊息再按 Enter，畫面顯示它在排隊，工具一跑完就接著處理，仍在同一輪裡。現在你自己寫的訊息會立刻送進去，跟在
+  終端機打字一樣。以下情況還是會先等：分頁正在顯示選單（按鍵會被當成選了某個選項）、正在換模型、輸入框的草稿要先清掉、
+  Telegram 或 LINE 的訊息還在處理中（同一次實測裡，被插進訊息的那一輪沒有寫出它自己的最後回覆，bridge 會收不到答案）。
+  其他 agent 送來的訊息（A2A、`sfctl send`、另一台電腦）照舊排隊。由 `tests_person_send.py` 守著。
+
 ## v0.44.6 (2026-11-15)
 
 ### Fixes

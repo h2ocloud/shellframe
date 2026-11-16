@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.44.2
-   version: 0.44.2
+OK ShellBot v0.45.0
+   version: 0.45.0
    experimental: {"experimental_a2a": true, "experimental_board": false, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
 ```
 
@@ -432,6 +432,7 @@ configure there.
 | An asleep bot can be saved and switched now (woken at once); a phone renames a bot, asleep too, with `POST /link/bots/rename`; `sfctl relaunch <tab> [--if-idle]` restarts a tab's CLI on its updated version, resuming the same conversation | 0.44.2 |
 | The chat view's `#` lists the bots on paired machines and puts in `#machine/name` (the A2A target); the desktop reads a paired machine's `/link/bots` for its tabs' faces and its primary bot | 0.44.3 |
 | A2A: the person answering a tab's question by button (desktop chat view, phone, Telegram) or by an option's number also starts its next message at layer 1; Frame Link logs refused requests (route, peer, reason); `bots-delete` removes the links a rename left at the bot's old names | 0.44.5 |
+| The person's own messages (the chat view, a paired phone's `/link/send`) go into a working tab at once, as typing does; agents' `send` / A2A still queue. The guide: `guide.json` (one entry per feature, `data-guide` marks on the page), a first-run tour on a new install, the sidebar's Guide button | 0.45.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

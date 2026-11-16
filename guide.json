@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.44",
+  "reviewed_for": "0.45",
   "tours": {
     "first_run": ["new-tab", "sessions", "chat-view", "usage", "pair", "telegram", "settings", "guide"]
   },
@@ -173,7 +173,7 @@
     {
       "id": "guide",
       "surfaces": ["desktop"],
-      "since": "0.44.6",
+      "since": "0.45.0",
       "title": {"en": "This guide", "zh": "導覽"},
       "body": {
         "en": "Open it again any time: every feature with where to find it, and what is new since you last looked.",
