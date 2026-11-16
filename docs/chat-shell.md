@@ -191,13 +191,17 @@ The view's narrow layout follows its own width, not the window's (`@container ch
 21em the Terminal button keeps only its icon, Send moves under the input box beside the
 mic, and a question drops its second face, so the tab's name and the box stay usable.
 
+## Another computer's tabs (v0.46.1)
+
+A tab from the sidebar's other-computer section follows the same mode as this computer's tabs: the chat
+view in chat style (the switch works the same), with "遠端 · <machine>" next to its name in the chat view's
+header and the terminal's, and the machine named in the message box. The view's calls go to that computer:
+`call(sid, action, …)` in `chat.js` sends a remote tab's `view` / `send` / `send_now` / `answer` / `login`
+through `link_chat` → its `POST /link/chat`, which runs the same `chat_*` there (`api_chat._chat_remote`, only
+those five). A path in a remote tab's messages is not previewed (it is on the other computer). A computer
+without `/link/chat` answers 404: its terminal shows, with a line saying to update it to 0.46.1.
+
 ## Not yet
 
-- **Remote (Frame Link) tabs** keep their terminal. The turns (`/link/conversation`),
-  sending (`/link/send`) and the state (`/link/state`) are there; what is missing is a
-  question to answer: a peer gives one only with bots on (`/link/bots`), answering needs
-  an `/link/answer` client in `frame_link.py` (at its size limit: something has to move
-  out first), and buttons for a peer's menus should wait until the peer has the fixed
-  shared menu reader.
 - OpenCode's failed model calls are not in its record, so the view says "no answer came
   back" rather than the error; Pi's are (an error line).

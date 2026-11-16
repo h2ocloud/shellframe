@@ -90,6 +90,11 @@ body.sf-chat-style #sb-new-convo:hover { border-color: #7aa2f7; color: #fff; }
 .cm-face-btn .cm-face.busy-dot { cursor: pointer; }
 .cm-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
 .cm-who b { font-size: 1em; font-weight: 600; color: var(--cm-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A tab on another computer: the reminder next to its name (chat.js headLeft) */
+.cm-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cm-name-row b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-remote { flex: none; font-size: .74em; font-weight: 600; line-height: 1.5; padding: 0 7px;
+  border-radius: 8px; color: #1a1b26; background: #e0af68; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .cm-state { font-size: .82em; color: var(--cm-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-to-term {
   display: inline-flex; align-items: center; gap: .35em; padding: .3em .7em; border-radius: 7px;

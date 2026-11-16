@@ -48,6 +48,9 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
   step 是 `expired`（最後一則說登入過期）／`starting`／`menu`／`browser`（有 `url`）／`code`／`done`，沒有登入流程時 `login` 是 `{}`。
   其他 action 會按下那一步：`start`（送 /login）、`subscription`、`console`、`code`（帶 `code`）、`finish`、`cancel`。
   手機的「打開登入頁」要在手機上開 `url`，登入頁如果給代碼就貼回 `code`。
+- 另一台電腦的對話畫面（v0.46.1 起，桌面版用）：`POST /link/chat {sid, action, args}`，`action` 只能是 `view`（`args: {limit, rev}`）、
+  `send`（`{text, clear_draft}`）、`send_now`（`{qid}`）、`answer`（`{n, qid}`）、`login`（`{action, code}`），回的就是這台
+  `chat_<action>` 的答案（同 `chat_view` 等）；其他 action 回 `code: "unknown_action"`。要能操作這台的配對才行。舊版電腦回 404。
 - 排隊中的訊息（v0.45.3 起）：`POST /link/send` 回 `details.queued` 和 `id` 時，手機可以 `POST /link/send/now {sid, id}`
   立刻送進去（插話，不管分頁在做什麼），或 `POST /link/send/cancel {sid, id}` 收回。已經送進去、正在打進去或已放棄的回
   `{"success": false, "code": "gone"}`。單向配對兩個都不行（403）。

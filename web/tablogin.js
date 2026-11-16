@@ -90,7 +90,8 @@
     }
     el.closest('.cm-ask-body').querySelectorAll('button').forEach(b => { b.disabled = true; });
     let r = {};
-    try { r = JSON.parse(await a.chat_login(sid, act, code)); } catch (_) { r = {}; }
+    const go = root.SFChat && root.SFChat.call ? root.SFChat.call(sid, 'login', act, code) : a.chat_login(sid, act, code);   // another computer's tab too
+    try { r = JSON.parse(await go); } catch (_) { r = {}; }
     if (act === 'finish') after[sid] = { text: lastWords(data && data.turns) };
     done(r.login);
   }

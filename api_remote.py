@@ -1429,6 +1429,8 @@ class RemoteApiMixin:
             return self._push_notify(args)
         elif cmd == "tg_send":
             return bridge_home.tg_send(self, str(args.get("text") or ""), str(args.get("from_sid") or ""))
+        elif cmd == "chat_remote":                    # POST /link/chat: a paired computer's chat view (api_chat)
+            return self._chat_remote(args)
         elif cmd == "connect":                        # sfctl connect list|status|start|test|disconnect (api_connect)
             return self._connect_sfctl(args)
         elif cmd == "task":                           # sfctl task add|list|mine|show|update|note|done|drop|stuck (api_tasks)

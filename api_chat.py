@@ -123,6 +123,48 @@ class ChatApiMixin:
                            "reason": details.get("reason"), "code": res.get("code"),
                            "message": res.get("message", "")}, ensure_ascii=False)
 
+    # ── a paired computer's chat view ─────────────────────────────────────
+    # Asked for: a tab on another computer shown the way this one shows its own (the chat view or the
+    # terminal), with a reminder that it is another computer's. The viewer's page calls link_chat; this
+    # computer runs the same chat_* call on its tab (POST /link/chat → _chat_remote). Only these, with
+    # their arguments by name: a file preview or "show in Finder" is a path on the other computer.
+    _REMOTE_CHAT = {"view": ("limit", "rev"), "send": ("text", "clear_draft"), "send_now": ("qid",),
+                    "answer": ("n", "qid"), "login": ("action", "code")}
+
+    def _chat_remote(self, args: dict) -> dict:
+        args = args or {}
+        action, sid = str(args.get("action") or ""), str(args.get("sid") or "")
+        names = self._REMOTE_CHAT.get(action)
+        if names is None:
+            return {"success": False, "code": "unknown_action"}
+        given = args.get("args") if isinstance(args.get("args"), dict) else {}
+        try:
+            return json.loads(getattr(self, "chat_" + action)(sid, *[given.get(n) for n in names]))
+        except Exception as e:                      # one tab's trouble is an answer, not a dropped request
+            return {"success": False, "code": "error", "message": str(e)[:200]}
+
+    def link_chat(self, peer_id: str, sid: str, action: str, args_json: str = "{}") -> str:
+        """The page's chat view on a paired computer's tab `sid`: the answer that computer's chat_<action>
+        gives, or {"success": false, "code": "old_peer"} when it is a version without /link/chat."""
+        from frame_link import LinkHTTPError
+        try:
+            args = json.loads(args_json or "{}")
+        except ValueError:
+            args = {}
+        link = self._link()
+        peer = link._peer(peer_id)
+        if not peer or not link._addressable(peer):
+            return json.dumps({"success": False, "code": "unreachable"})
+        body = json.dumps({"sid": sid, "action": action, "args": args}).encode()
+        try:
+            res = link._signed_request(peer, "POST", "/link/chat", body, timeout=20)
+        except LinkHTTPError as e:
+            res = {"success": False, "code": "old_peer" if e.status == 404 else "refused",
+                   "message": str(e)[:200]}
+        except Exception as e:
+            res = {"success": False, "code": "unreachable", "message": str(e)[:200]}
+        return json.dumps(res, ensure_ascii=False, default=str)
+
     def chat_login(self, sid: str, action: str, code: str = "") -> str:
         """The sign-in card's buttons (tab_login.act): start, subscription, console, code, finish, cancel.
         {"success", "login": the step it is at now}."""
