@@ -66,6 +66,7 @@ NONCE_TTL = 300              # replay-cache retention (s)
 MAX_FILE_BYTES = 512 * 1024 * 1024
 POLL_INTERVAL = 15           # peer ping + outbox pull cadence (s)
 INBOX_KEEP = 200             # rolling inbox log entries
+PASTE_MAX_BYTES = 24 * 1024 * 1024   # a pasted picture, base64 in JSON (a phone screenshot is 2-5 MB)
 OUTBOX_KEEP = 200            # queued events per peer
 
 # No I/L/O/0/1 — the code gets read out loud / retyped between machines.
@@ -912,13 +913,21 @@ class FrameLink:
                     n = int(self.headers.get("Content-Length") or 0)
                 except ValueError:
                     n = 0
-                if n <= 0 or n > cap:
+                if n > cap:              # read it off first (up to 4x), so the sender gets the answer, not a broken pipe
+                    left = n if n <= 4 * cap else 0
+                    while left > 0:
+                        got = self.rfile.read(min(1 << 20, left))
+                        if not got:
+                            break
+                        left -= len(got)
+                    return None
+                if n <= 0:
                     return b""
                 return self.rfile.read(n)
 
             def _body_json(self, raw: bytes) -> dict:
                 try:
-                    return json.loads(raw.decode("utf-8") or "{}")
+                    return json.loads((raw or b"").decode("utf-8") or "{}")
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     return {}
 
@@ -941,7 +950,10 @@ class FrameLink:
                 if path == "/link/voice":
                     return self._recv_voice()
 
-                raw = self._body()
+                raw = self._body(cap=PASTE_MAX_BYTES if path == "/link/paste" else 2 * 1024 * 1024)
+                if raw is None:          # over the cap: said so, not "bad signature" over an empty body
+                    return self._send(413, {"success": False, "message": "太大了：圖片請先縮小再傳"
+                                            if path == "/link/paste" else "request body too large"})
                 peer_id, peer, nonce = link._verify_request(self, raw)
                 if not peer_id:
                     return self._send(403, {"success": False, "message": peer})
@@ -1084,6 +1096,13 @@ class FrameLink:
                         "data": " \x1b[200~" + rpath + "\x1b[201~"})
                     return self._send(200, {"success": True, "path": rpath},
                                       sign_for=peer, nonce=nonce)
+                if path in ("/link/send/now", "/link/send/cancel"):
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False, "message": "單向配對：對方無權操作這台"},
+                                          sign_for=peer, nonce=nonce)
+                    res = link._execute("queued_send", {"sid": body.get("sid", ""), "id": body.get("id", ""),
+                                                        "mode": path.rsplit("/", 1)[1]}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path == "/link/message":
                     res = link._local_message(peer_id, str(body.get("text", "")))
                     return self._send(200, res, sign_for=peer, nonce=nonce)

@@ -44,6 +44,11 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
     - `clear_draft: true`：清掉輸入框（分頁不在跑時按一次 Ctrl+C）再送；分頁正在跑就排隊，輪到時先清再送。
       清不掉回 `code: "draft_stuck"`，什麼都沒送。
     - 舊版電腦不認得這兩個欄位，會照舊排隊（`reason: "draft"`），手機看不到 `code: "draft"` 就維持排隊加提示。
+- 排隊中的訊息（v0.45.3 起）：`POST /link/send` 回 `details.queued` 和 `id` 時，手機可以 `POST /link/send/now {sid, id}`
+  立刻送進去（插話，不管分頁在做什麼），或 `POST /link/send/cancel {sid, id}` 收回。已經送進去、正在打進去或已放棄的回
+  `{"success": false, "code": "gone"}`。單向配對兩個都不行（403）。
+- 貼圖 `POST /link/paste`：本文上限 24 MB（base64 後）。超過回 413「太大了：圖片請先縮小再傳」。v0.45.3 以前上限是 2 MB，
+  超過會被當成空本文驗簽章，回 403 `bad signature`；手機傳之前請先縮小（例如長邊 2048、JPEG），並把失敗說出來。
 - 用量與配速（設定頁，v0.45.3 起）：`GET /link/usage[?refresh=1]` → `{"success", "details": {"accounts": [...], "at", "refreshed"}}`。
   每個帳號：`provider`、`label`、`account`、`current`、`stale`、`checked`，讀不到時有 `error`（`auth_required`／`rate_limited`／`no_data`…）
   與 `error_message`，不給數字；有額度時 `five_hr`／`week` 各是 `{pct, reset, reset_epoch?, pace?, ahead?, full_at?}`：

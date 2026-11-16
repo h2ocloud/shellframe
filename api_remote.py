@@ -1306,6 +1306,24 @@ class RemoteApiMixin:
             except Exception as e:
                 return {"success": False, "message": f"link unpair failed: {e}"}
 
+        elif cmd == "queued_send":
+            # A paired phone's queued message (POST /link/send/now, /link/send/cancel): `now` types it in at
+            # once, into whatever the tab is doing; `cancel` withdraws it. Asked for: a queued message only
+            # cost time and tokens, with no way to push it in or take it back. {"success"}; "gone": it
+            # already went in, is being typed in, or was given up.
+            sid, qid, mode = str(args.get("sid") or ""), str(args.get("id") or ""), str(args.get("mode") or "")
+            item = tab_delivery.take(sid, qid) if mode in ("now", "cancel") else None
+            if item is None:
+                return {"success": False, "code": "gone", "message": sf_lang.pick(
+                    "It has already gone in, or was given up.", "它已經送進去了，或已經放棄。")}
+            if mode == "cancel":
+                return {"success": True, "message": sf_lang.pick("Withdrawn.", "已收回。")}
+            if item.get("clear_draft") and not item.get("cleared"):
+                tab_delivery.clear_draft_now(self, sid)
+            res = tab_delivery.deliver(self, sid, item["text"], submit=item.get("submit", True), now=True,
+                                       what=item.get("what", ""), label=item.get("label", ""))
+            return {k: res[k] for k in ("success", "message") if k in res}
+
         elif cmd == "usage_accounts":
             # A paired phone's Settings → 用量與配速 (GET /link/usage): every signed-in account's
             # allowance with its pace worked out (link_usage). `refresh`: at most once a minute.
