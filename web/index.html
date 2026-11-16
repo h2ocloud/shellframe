@@ -711,6 +711,14 @@
     border-radius: 4px; white-space: nowrap; transition: all .1s;
   }
   .sb-footer-btn:hover { background: #1f2335; color: #a9b1d6; }
+  #sb-footer-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+  #sb-footer-row #btn-settings { flex: 1; min-width: 0; overflow: hidden; }
+  .sb-footer-btn.sb-footer-ico { flex: none; position: relative; width: 28px; height: 28px; padding: 0; justify-content: center; gap: 0; }
+  .sb-footer-ico .sb-ico { opacity: .6; font-size: 13px; line-height: 1; }
+  .sb-footer-ico:hover .sb-ico { opacity: 1; }
+  .sb-footer-ico .sb-ico-ai { font-size: 9px; font-weight: 700; letter-spacing: .02em; border: 1px solid currentColor; border-radius: 3px; padding: 1px 2px; }
+  .sb-footer-ico .sb-ico-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sb-footer-ico .sfg-badge { position: absolute; top: -5px; right: -7px; margin: 0; min-width: 14px; padding: 0 3px; font-size: 9px; line-height: 14px; }
 
   /* ── Task board panel (experimental, right side — mirrors #sidebar) ── */
   #board-panel {
@@ -884,12 +892,17 @@
     </div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
-      <button class="sb-footer-btn" id="btn-settings" data-guide="settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
-      <button class="sb-footer-btn" id="btn-about"><span style="opacity:.5">?</span> <span data-i18n="about">About</span></button>
-      <button class="sb-footer-btn" id="btn-guide" data-guide="guide"><span style="opacity:.5">✦</span> <span data-i18n="guideBtn">Guide</span></button>
-      <!-- 說明書放在「關於」裡面等於沒放：要有人記得去翻才會用到。這顆直接
-           開到那一段，順便顯示它有沒有裝進 AI 會自己讀的地方。 -->
-      <button class="sb-footer-btn" id="btn-ai-skill" data-guide="ai-skill" title="給 AI 的 ShellBot 操作說明"><span style="opacity:.5">🤖</span> 給 AI 的說明</button>
+      <!-- One row: Settings keeps its word; the guide, the AI's manual and About are icons with their
+           names on hover (four stacked rows read as clutter at the sidebar's foot). Same ids and
+           data-guide marks as before, so their handlers and the guide's pointers are unchanged. -->
+      <div id="sb-footer-row">
+        <button class="sb-footer-btn" id="btn-settings" data-guide="settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
+        <button class="sb-footer-btn sb-footer-ico" id="btn-guide" data-guide="guide" data-i18n-title="guideBtn" aria-label="Guide" title="Guide"><span class="sb-ico">✦</span><span class="sb-ico-label" data-i18n="guideBtn">Guide</span></button>
+        <!-- 說明書放在「關於」裡面等於沒放：要有人記得去翻才會用到。這顆直接
+             開到那一段，順便顯示它有沒有裝進 AI 會自己讀的地方。 -->
+        <button class="sb-footer-btn sb-footer-ico" id="btn-ai-skill" data-guide="ai-skill" data-i18n-title="aiSkillBtn" aria-label="What the AI reads" title="What the AI reads"><span class="sb-ico sb-ico-ai">AI</span><span class="sb-ico-label" data-i18n="aiSkillBtn">What the AI reads</span></button>
+        <button class="sb-footer-btn sb-footer-ico" id="btn-about" data-i18n-title="about" aria-label="About" title="About"><span class="sb-ico">?</span><span class="sb-ico-label" data-i18n="about">About</span></button>
+      </div>
     </div>
   </div>
   <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
@@ -1609,6 +1622,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       sessionPromptHelp: 'Injected into new AI sessions (Claude Code, Codex...) on their first user message. Leave empty to use the built-in default (explains shellframe + sfctl). Changes apply to sessions you open after saving.',
       about: 'About',
       guideBtn: 'Guide',
+      aiSkillBtn: 'What the AI reads',
       aboutDesc: 'Lightweight multi-tab GUI terminal wrapper with clipboard image paste support. Works with any CLI tool — Claude Code, Codex, and more.',
       usage: 'Usage',
       usageItems: [
@@ -1775,6 +1789,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       sessionPromptHelp: '新 AI 工作階段（Claude Code、Codex...）收到第一則使用者訊息時會注入這段提示。留空會使用內建預設（說明 shellframe + sfctl）。修改會套用到儲存後開啟的新工作階段。',
       about: '關於',
       guideBtn: '導覽',
+      aiSkillBtn: '給 AI 的說明',
       aboutDesc: '輕量多分頁 GUI 終端機，支援剪貼簿圖片貼上。可搭配任何 CLI 工具 — Claude Code、Codex 等。',
       usage: '使用方式',
       usageItems: [
@@ -2088,6 +2103,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     });
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
       el.title = t(el.dataset.i18nTitle);
+      if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title);   // icon-only buttons say their name
     });
     // Update about usage list
     const usageList = document.getElementById('about-usage-list');
