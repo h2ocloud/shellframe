@@ -10,6 +10,19 @@
 
 ### Fixes
 
+- **On another computer's tab, what you type appears in its input box, not on the last line.** Reported with a
+  screenshot: in a cross-computer tab, typed text (and often the text after pasting a picture) landed on the
+  screen's last line, under the CLI's input box. The remote tab pastes the other computer's screen when it opens
+  (and again after a resize, or when the output outran its buffer), then draws what the CLI echoes from where its
+  cursor is; that screen came without the cursor's position, so the cursor stayed after its last line. It comes
+  with it now, as the phones' screen already did. Covered by `tests_remote_cursor.py`, which shows the cursor
+  left at the end without the fix.
+
+  **在另一台電腦的分頁打字，字會出現在它的輸入框，不會跑到最後一行。** 回報（附截圖）：跨電腦的分頁裡，打的字（貼圖之後
+  也常發生）跑到畫面最後一行、CLI 輸入框的下面。遠端分頁打開時（以及調整尺寸後、輸出超過緩衝時）會先貼上對方的畫面，
+  之後 CLI 回顯的字從游標所在的位置開始畫；那張畫面沒有附上游標位置，游標就停在最後一行後面。現在會附上，跟手機拿到的
+  畫面一樣。由 `tests_remote_cursor.py` 守著，沒有修正時它會顯示游標停在最後面。
+
 - **The guide's tour no longer stops on a dark screen, and it stands out.** Reported: taken again from the
   Guide button on a computer in use, it said "1 / 8", and after the fifth step the screen stayed dimmed with
   no card until Esc. A step's place could be off screen (a sidebar button scrolled away) or not there yet (a

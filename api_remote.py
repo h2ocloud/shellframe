@@ -76,6 +76,18 @@ def with_senders(turns: list) -> list:
     return turns
 
 
+
+def _tmux_cursor(tmux: str, target: str) -> str:
+    """CUP to where tmux has the pane's cursor (''; when it cannot say): a pasted screen must
+    leave the cursor there, or what the CLI echoes next is drawn wherever the paste ended."""
+    try:
+        cur = subprocess.run([tmux, "display-message", "-p", "-t", target, "#{cursor_x},#{cursor_y}"],
+                             capture_output=True, text=True, timeout=2)
+        cx, cy = cur.stdout.strip().split(",")
+        return f"\x1b[{int(cy) + 1};{int(cx) + 1}H"
+    except Exception:
+        return ""
+
 class RemoteApiMixin:
     def sfctl_call(self, cmd: str, args_json: str = "{}") -> str:
         """Let the web UI reach a dispatch command directly.
@@ -677,8 +689,11 @@ class RemoteApiMixin:
                         capture_output=True, text=True, timeout=3)
                     if out.returncode == 0:
                         screen = out.stdout.rstrip("\n").replace("\n", "\r\n")
+                        # The cursor back where the tab has it. Reported: on a remote tab what was typed
+                        # landed on the screen's last line; without this the pasted screen left the cursor
+                        # after its last line, and the CLI's echo (drawn from where its cursor is) went there.
                         return {"success": True,
-                                "details": {"screen": "\x1b[2J\x1b[H" + screen}}
+                                "details": {"screen": "\x1b[2J\x1b[H" + screen + _tmux_cursor(tmux, tn)}}
                 # 非 tmux session：退回 cleaned history（至少有內容）
                 raw = self.get_clean_history(sid, max_lines=200)
                 res = json.loads(raw) if isinstance(raw, str) else raw
@@ -724,15 +739,7 @@ class RemoteApiMixin:
                 lines = r.stdout.decode("utf-8", errors="replace").split("\n")
                 if lines and lines[-1] == "":
                     lines.pop()
-                ansi = "\x1b[0m" + "\r\n".join(lines)
-                try:
-                    cur = subprocess.run(["tmux", "display-message", "-p", "-t", tmux_name,
-                                          "#{cursor_x},#{cursor_y}"],
-                                         capture_output=True, timeout=2)
-                    cx, cy = cur.stdout.decode().strip().split(",")
-                    ansi += f"\x1b[{int(cy) + 1};{int(cx) + 1}H"
-                except Exception:
-                    pass
+                ansi = "\x1b[0m" + "\r\n".join(lines) + _tmux_cursor("tmux", tmux_name)
                 return {"success": True, "message": f"{len(lines)} rows",
                         "details": {"ansi": ansi, "cols": getattr(s, "cols", 0),
                                     "rows": getattr(s, "rows", 0)}}
