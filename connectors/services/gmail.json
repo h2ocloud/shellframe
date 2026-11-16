@@ -10,6 +10,14 @@
     "en": "Let your bots read your Gmail",
     "zh": "讓 bot 可以讀你的 Gmail"
   },
+  "category": {
+    "id": "communication",
+    "name": {
+      "en": "Communication",
+      "zh": "通訊"
+    }
+  },
+  "recommended": true,
   "adapter": "connectors.services.gmail",
   "scopes": [
     {

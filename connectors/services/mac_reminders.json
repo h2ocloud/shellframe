@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "id": "mac_reminders",
+  "name": {
+    "en": "Reminders",
+    "zh": "提醒事項"
+  },
+  "icon": "checklist",
+  "summary": {
+    "en": "See and add to-dos in Reminders",
+    "zh": "查看、新增「提醒事項」的待辦"
+  },
+  "category": {
+    "id": "productivity",
+    "name": {
+      "en": "Productivity",
+      "zh": "生產力"
+    }
+  },
+  "platforms": [
+    "mac"
+  ],
+  "local_app": true,
+  "unavailable": {
+    "text": {
+      "en": "Not yet: there is a maintained local server for Reminders, kept by one person; ShellBot has not checked it enough to recommend it.",
+      "zh": "還不能接：有一個持續維護的「提醒事項」本機伺服器，但只有一個人在維護，ShellBot 還沒驗證到可以推薦。"
+    },
+    "next": {
+      "en": "ShellBot will add a way once there is one it can stand behind; nothing needs doing now.",
+      "zh": "等有 ShellBot 信得過的接法就會加上；現在不用做什麼。"
+    }
+  },
+  "routes": []
+}

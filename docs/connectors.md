@@ -124,6 +124,67 @@ How a step moves:
 - `stuck` entries are what "I'm stuck" offers; the chosen one's question goes into the line sent to a bot
   (`engine.stuck_message`: service, route, step, problem, and a promise that nothing secret is in it).
 
+## The catalog: where a service sits on Settings → Connect
+
+> 中文摘要：設定 → 連接是一個「應用程式目錄」：搜尋框、分類泡泡、為你推薦、這台 Mac、已連結 N 個。這些全部由描述裡的
+> 選填欄位算出來（`category`、`recommended`、`platforms`、`local_app`、`unavailable`），核心與頁面都不認得任何服務名。
+> 舊的描述沒有這些欄位也照樣能讀。還不能接的服務一樣列出來，寫清楚為什麼（規則 7）。
+
+Five optional fields at the top of a description; an older description without them still reads (it has no bubble, is
+not recommended, is connectable everywhere).
+
+```jsonc
+{ …,
+  "category": {"id": "productivity", "name": T},  // one bubble per id; the same id carries the same name in every description
+  "recommended": true,                             // listed under "Recommended for you"
+  "platforms": ["mac"],                            // mac | windows | linux; left out = everywhere
+  "local_app": true,                               // an app on this computer: the "This Mac" / "This PC" section and bubble
+  "unavailable": {"text": T, "next": T},           // listed before it can be connected: then "routes": [] and no adapter
+  "routes": [] }
+```
+
+- `registry.validate` checks each field when it is there: a kebab-case category id with a name in both languages, true or
+  false, known platforms (each once, at least one), and `unavailable` only with `"routes": []` (no routes is refused
+  without it). `registry.category_conflicts` finds one id named two ways; `tests_connectors_hygiene.py` runs it on the
+  shipped descriptions.
+- `registry.available(desc, platform)` is `''`, `not_available` (it has `unavailable`) or `not_on_platform` (its
+  `platforms` leave this computer out). `engine.start` (and so `connect_signal`, `sfctl connect start`) answers that code
+  and starts nothing; `problems.explain("not_available", desc)` says the description's own `unavailable` words. The
+  status gets `available` (false: the reason is its `problem`, and it never needs attention); `health.words` says it
+  "cannot be connected here yet". The phone's `connections` leaves such a service out.
+- `connect_list` also answers `catalog` (one `registry.catalog_entry` per service: `id, summary, category, recommended,
+  local_app, platforms, available, why`) and `platform`. The page draws the catalog from it and the statuses, without
+  asking for each description: a search box (name in either language, the one line, the category's name), the bubbles
+  (All, this computer's apps, the categories fullest first, past four under "More ▾"), and the sections: "Needs you"
+  (failed, needs reconnecting), "Recommended for you" (up to six, "See all" lists every service), "This Mac", then the
+  rest. "N connected ›" counts connected and needs-reconnecting services and lists them. A row's button says where it
+  stands (Connect, Continue, ✓ Connected, Reconnect) and opens the same wizard; a service that cannot be connected here
+  shows "Not yet" (or "Not on this computer"), which opens its reason in the row and never the wizard.
+
+### A service through the Claude account's connector
+
+Most of a `claude_connector` route is the same from service to service: a check of how Claude is signed in, the
+person's part on claude.ai, and a test in a temporary Claude tab. `connectors/services/_claude_connector.py` is that
+adapter once (`ConnectorAdapter(service_id, tool, mark, name)`: the connector's part of the tool names
+`mcp__claude_ai_<tool>__…`, the word of the test's last line, the service's name for the question). A service then has a
+two-line `<id>.py` and its own `<id>.json` (steps `a1`, `a2`, `a3`). Each adapter keeps its own test tabs, so one
+service's clean-up never closes another's. The file starts with `_`, so the registry never takes it for a service.
+
+### The services that ship
+
+| id | Name | Way | Other AI programs | Checked |
+|---|---|---|---|---|
+| `gmail` | Gmail | the connector, or a local MCP server | the local server for every program (see `gmail.json`) | as before |
+| `google_drive` | Google Drive | the connector | `none` (noted: Codex's own Google Drive plugin; Google's own MCP server is a developer preview) | descriptions, adapter and engine with stand-ins; the tool names as a Claude Code session lists them |
+| `google_calendar` | Google Calendar | the connector | `none` (noted: Google's own MCP server is a developer preview) | the same |
+| `notion` | Notion | the connector | `none` (noted: Notion's own hosted MCP server, which Codex, Antigravity, Grok Build and OpenCode can add themselves) | the same |
+| `slack` | Slack | the connector | `none` (Slack's own MCP server takes only the clients Slack lists) | the same |
+| `mac_messages`, `mac_notes`, `mac_reminders`, `mac_calendar` | Messages, Notes, Reminders, Calendar | none yet (`unavailable`) | — | listed with the reason; nothing to run |
+
+The Mac apps wait for a local server ShellBot can stand behind (2026-11: the ones that exist are each kept by one
+person, and most cannot be limited to reading). When one is chosen, its route is a JSON change: take `unavailable`
+out and add a `local_mcp` route with its `mcp` (a pinned version), as Gmail's local route does.
+
 ## The adapter (`connectors/services/<id>.py`)
 
 ```python
@@ -201,3 +262,8 @@ it names. A route that needs a key: `"kind": "api_key"`, `secrets`, `env_from_se
   in an argument); look at it once on a Mac with a throwaway name. The Windows Credential Manager backend (advapi32) was not
   run on Windows; neither was `cmd /c` for a server's command.
 - Pi, OpenCode and Cursor Agent are `manual`: ShellBot shows what to enter, it writes none of their files.
+- Google Drive, Google Calendar, Notion and Slack: the tool names (`mcp__claude_ai_Google_Drive__…`, `…Google_Calendar__…`,
+  `…Notion__…`, `…Slack__…`, and `authenticate` / `complete_authentication` before a connector is authorized) are as a
+  Claude Code session signed in with a claude.ai account lists them (2026-11). No connection test was run against a real
+  account; the steps on claude.ai follow Gmail's, and what each other program offers is from the vendors' own pages
+  (2026-11), set up by none of ShellBot's code.

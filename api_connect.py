@@ -98,10 +98,13 @@ class ConnectApiMixin:
 
     # ── js_api ─────────────────────────────────────────────────────────────
     def connect_list(self) -> str:
-        """{"success", "services": [status…], "clis": [the support table], "store": {supported, store}}."""
+        """{"success", "services": [status…], "clis": [the support table], "store": {supported, store},
+        "catalog": [registry.catalog_entry…] (one line, bubble, section, can it be connected here), "platform"}."""
         eng = self._connect()
+        plat = eng.platform or reg_mod.this_platform()
         return _answer(success=True, services=eng.list(), clis=eng.clis.table("local_mcp"),
-                       store=secrets.platform_support(eng.backend), broken=sorted(eng.registry.errors))
+                       store=secrets.platform_support(eng.backend), broken=sorted(eng.registry.errors),
+                       catalog=eng.registry.catalog(plat), platform=plat)
 
     def connect_describe(self, service: str) -> str:
         """{"success", "descriptor"}: the service's whole description (every text in both languages), which the
@@ -189,9 +192,11 @@ class ConnectApiMixin:
 
     # ── the phone, a bot's RED tag, Telegram ───────────────────────────────
     def _connect_compact(self) -> list:
-        """What /link/bots carries as `connections`: the short status of every service (a new field; the old ones are untouched)."""
+        """What /link/bots carries as `connections`: the short status of every service that can be connected here
+        (a new field; the old ones are untouched). One the catalog only lists (not yet, another kind of computer)
+        is left out: a phone can do nothing with it."""
         try:
-            return [health.compact(s) for s in self._connect().list()]
+            return [health.compact(s) for s in self._connect().list() if s.get("available", True)]
         except Exception:
             _swallow("connect:compact")
             return []

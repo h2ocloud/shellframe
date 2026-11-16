@@ -6,8 +6,12 @@
  * `view` of connect_start / connect_step / connect_test hand it, and sends the person's clicks back.
  * It knows no service by name: a service is an icon key and words from its descriptor.
  *
- *   Settings → Connect   one row per service: icon, name, one line on where it stands, a mark when it
- *                        needs the person. While the tab is open it asks connect_status(refresh) every 60 s.
+ *   Settings → Connect   the catalog ("Connect apps"): a search box, one bubble per category, sections
+ *                        (needs you, recommended, this computer's apps, the rest), "N connected ›"; one row per
+ *                        service: icon, name, one line, a button that says where it stands. All of it comes
+ *                        from connect_list's `catalog` (each service's category, recommended, local_app, can it
+ *                        be connected here and why not) and its statuses. While the tab is open it asks
+ *                        connect_status(refresh) every 60 s. A row's button opens the wizard below.
  *   the wizard card      a route to pick, the steps (words, a link, buttons, options, a check, "I'm stuck"),
  *                        the test, and what it came to. Errors say message.text and message.next.
  *   the sidebar card     a small card while a service needs reconnecting (connect_list every 60 s, no refresh)
@@ -44,10 +48,10 @@
 
   // The states of a connection (health.status), in words: [English, 中文, tone, button English, button 中文]
   const STATES = {
-    not_started:     ['Not connected', '還沒接上', 'idle', 'Connect', '開始連接'],
+    not_started:     ['Not connected', '還沒接上', 'idle', 'Connect', '連結'],
     waiting_user:    ['Setting up', '設定中', 'busy', 'Continue', '繼續'],
     verifying:       ['Verifying…', '驗證中…', 'busy', 'View', '查看'],
-    connected:       ['Connected', '已接上', 'ok', 'Manage', '管理'],
+    connected:       ['Connected', '已接上', 'ok', 'Connected', '已連結'],
     failed:          ['Did not connect', '沒接成功', 'bad', 'Try again', '重試'],
     needs_reconnect: ['Needs reconnecting', '需要重新接上', 'bad', 'Reconnect', '重新接上'],
   };
@@ -78,7 +82,7 @@
   }
 
   // ── what the page knows about the services ───────────────────────────────
-  const L = { order: [], by: {}, clis: [], loaded: false };
+  const L = { order: [], by: {}, clis: [], catalog: {}, platform: '', loaded: false };
   const descs = {};                                   // service -> Promise of its descriptor (or null)
   const descDone = {};                                // service -> descriptor, once it arrived
   function describe(id) {
@@ -109,6 +113,11 @@
     chat: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3.5V16A2.5 2.5 0 0 1 4 13.5z"/>',
     key: '<circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H21M17 12v3M20 12v2"/>',
     plug: '<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0zM12 17v4"/>',
+    doc: '<path d="M6.5 3.5h7.5l4 4v13h-11.5z"/><path d="M13.5 3.5v4.5h4.5M9 12h6M9 15.5h6"/>',
+    note: '<rect x="4.5" y="3.5" width="15" height="17" rx="2.5"/><path d="M4.5 8h15M8.5 12h7M8.5 15.5h4.5"/>',
+    message: '<path d="M12 4.5c4.7 0 8.5 3 8.5 6.8s-3.8 6.7-8.5 6.7c-1 0-2-.1-2.9-.4L5 19.5l1.2-3.6c-1.7-1.2-2.7-2.8-2.7-4.6 0-3.8 3.8-6.8 8.5-6.8z"/>',
+    checklist: '<path d="M4 6.5l1.6 1.6L8.5 5.2M4 12.5l1.6 1.6 2.9-2.9M4 18.5l1.6 1.6 2.9-2.9M11.5 7h8.5M11.5 13h8.5M11.5 19h8.5"/>',
+    search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
   };
   const icon = key => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[key] || ICONS.plug}</svg>`;
 
@@ -130,8 +139,13 @@
   }
   const routeOf = (d, id) => ((d && d.routes) || []).find(r => r.id === id) || null;
 
-  // ── the list: Settings → Connect ─────────────────────────────────────────
+  // ── the catalog: Settings → Connect ──────────────────────────────────────
+  // UI-only state: the search words, the bubble, which list (home / every service / the connected ones), the
+  // overflow bubbles shown, the row whose "why not" is open. Every fact about a service is L's.
   let panel = null, settingsTimer = 0;
+  const C = { q: '', cat: 'all', view: 'home', more: false, why: '' };
+  const REC_MAX = 6;                                  // rows under "Recommended" before "See all"
+  const PILL_MAX = 4;                                 // category bubbles before "More ▾"
   async function refreshList() {
     const r = await call('connect_list');
     if (r && r.success && Array.isArray(r.services)) {
@@ -139,26 +153,151 @@
       L.by = {};
       r.services.forEach(take);
       L.clis = Array.isArray(r.clis) ? r.clis : [];
+      L.catalog = {};
+      (Array.isArray(r.catalog) ? r.catalog : []).forEach(e => { if (e && e.id) L.catalog[e.id] = e; });
+      L.platform = String(r.platform || '');
       L.loaded = true;
     }
     return r;
   }
+  // A Python side from before the catalog sends no `catalog`: every service is then connectable and has no bubble.
+  const entry = id => L.catalog[id] || { id, summary: null, category: null, recommended: false, local_app: false, available: true, why: null };
+  const nameOf = id => pick((L.by[id] || {}).name) || id;
+  const linked = id => ['connected', 'needs_reconnect'].includes((L.by[id] || {}).state);
+  const elsewhere = id => entry(id).why === 'not_on_platform';             // made for another kind of computer
+  const hereName = () => (L.platform === 'mac' ? t('This Mac', '這台 Mac') : L.platform === 'windows' ? t('This PC', '這台電腦') : t('This computer', '這台電腦'));
+  const hereBubble = () => (L.platform === 'mac' ? 'Mac' : hereName());
+  function categories() {                              // one bubble per category id, the fullest first
+    const seen = {};
+    L.order.forEach(id => {
+      const c = entry(id).category;
+      if (!c || !c.id || elsewhere(id)) return;
+      (seen[c.id] = seen[c.id] || { id: c.id, name: c.name, n: 0 }).n += 1;
+    });
+    return Object.values(seen).sort((a, b) => b.n - a.n || String((a.name || {}).en || a.id).localeCompare(String((b.name || {}).en || b.id)));
+  }
+  function matches(id, q) {
+    const e = entry(id), st = L.by[id] || {}, c = e.category || {};
+    const hay = [id, (st.name || {}).en, (st.name || {}).zh, (e.summary || {}).en, (e.summary || {}).zh, (c.name || {}).en, (c.name || {}).zh]
+      .filter(Boolean).join(' ').toLowerCase();
+    return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+  }
+  const byName = ids => ids.slice().sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  function sections() {
+    const all = L.order.filter(id => L.by[id]);
+    const q = C.q.trim();
+    if (q) return [{ key: 'search', title: t('Results', '搜尋結果'), ids: byName(all.filter(id => matches(id, q))),
+      empty: t(`Nothing matches “${q}”.`, `找不到符合「${q}」的服務。`) }];
+    if (C.view === 'connected') return [{ key: 'connected', title: t('Connected', '已連結'), back: true, ids: byName(all.filter(linked)),
+      empty: t('Nothing is connected yet.', '還沒有連結任何服務。') }];
+    if (C.view === 'all') return [{ key: 'all', title: t('All services', '所有服務'), back: true, ids: byName(all) }];
+    const here = all.filter(id => !elsewhere(id));
+    if (C.cat === 'local') return [{ key: 'local', title: hereName(), ids: here.filter(id => entry(id).local_app) }];
+    if (C.cat !== 'all') {
+      const c = categories().find(x => x.id === C.cat);
+      return [{ key: 'cat', title: c ? pick(c.name) : '', ids: here.filter(id => (entry(id).category || {}).id === C.cat) }];
+    }
+    const shown = new Set(), out = [];
+    const add = (key, title, ids, extra) => {
+      ids = ids.filter(id => !shown.has(id));
+      if (!ids.length) return;
+      ids.forEach(id => shown.add(id));
+      out.push(Object.assign({ key, title, ids }, extra || {}));
+    };
+    add('attn', t('Needs you', '需要你處理'), here.filter(id => (L.by[id] || {}).attention));
+    add('rec', t('Recommended for you', '為你推薦'), here.filter(id => entry(id).recommended && !entry(id).local_app).slice(0, REC_MAX), { all: true });
+    add('local', hereName(), here.filter(id => entry(id).local_app));
+    add('rest', out.length ? t('More services', '更多服務') : t('Services', '服務'), here);
+    return out;
+  }
+  function rowHtml(id) {
+    const st = L.by[id], e = entry(id), d = descDone[id];
+    const off = !e.available && st.state === 'not_started';           // listed, but it cannot be connected here
+    const s = stateOf(st), bad = !!st.attention;
+    let line = lineOf(st, d), sub = '', button;
+    if (off) {
+      const p = st.problem || {};
+      line = pick(e.summary) || pick(p.text);
+      button = `<button type="button" class="cn-btn cg-off-btn" data-cn="why" data-service="${esc(id)}" aria-expanded="${C.why === id}">` +
+        `${esc(elsewhere(id) ? t('Not on this computer', '這台不能用') : t('Not yet', '還不能接'))}</button>`;
+      if (C.why === id) sub = `<small class="cg-why">${esc(pick(p.text))}${p.next ? ' ' + esc(pick(p.next)) : ''}</small>`;
+    } else {
+      if (st.state === 'not_started') line = pick(e.summary) || line;
+      if (bad && st.problem && st.problem.next) sub = `<small>${esc(pick(st.problem.next))}</small>`;
+      const cls = bad || st.state === 'failed' ? ' primary' : st.state === 'connected' ? ' ghost cg-done' : '';
+      const label = st.state === 'connected' ? '✓ ' + t(s[3], s[4]) : t(s[3], s[4]);
+      button = `<button type="button" class="cn-btn${cls}" data-cn="open" data-service="${esc(id)}">${esc(label)}</button>`;
+    }
+    return `<div class="cn-row cg-row${bad ? ' attn' : ''}${off ? ' cg-off' : ''} tone-${s[2]}" data-service="${esc(id)}">` +
+      `<div class="cn-ico">${icon(st.icon)}</div>` +
+      `<div class="cn-main"><b>${esc(nameOf(id))}${bad ? `<i class="cn-flag">${esc(t('Needs you', '要處理'))}</i>` : ''}</b>` +
+      `<span>${off || st.state === 'not_started' ? '' : `<i class="cn-dot ${s[2]}"></i>`}${esc(line)}</span>${sub}</div>${button}</div>`;
+  }
+  function bodyHtml() {
+    if (!L.order.length) return `<p class="cn-empty">${esc(L.loaded ? t('No services to connect yet.', '目前沒有可以連接的服務。') : t('Reading…', '讀取中…'))}</p>`;
+    return sections().map(sec => {
+      const right = sec.back ? `<button type="button" class="cn-link" data-cg="home">‹ ${esc(t('Back', '返回'))}</button>`
+        : sec.all ? `<button type="button" class="cn-link" data-cg="all">${esc(t('See all', '查看全部'))}</button>` : '';
+      const rows = sec.ids.map(rowHtml).join('');
+      return `<section class="cg-sec" data-sec="${esc(sec.key)}"><div class="cg-sec-head"><h4>${esc(sec.title)}</h4>${right}</div>` +
+        (rows ? `<div class="cg-grid">${rows}</div>` : `<p class="cn-empty">${esc(sec.empty || t('Nothing here yet.', '這裡還沒有服務。'))}</p>`) + '</section>';
+    }).join('');
+  }
+  function pillsHtml() {
+    const searching = !!C.q.trim();
+    const pill = (id, label, extra) => `<button type="button" class="cg-pill${!searching && C.view === 'home' && C.cat === id ? ' on' : ''}" ` +
+      `data-cg="pill" data-id="${esc(id)}" aria-pressed="${!searching && C.view === 'home' && C.cat === id}"${extra || ''}>${esc(label)}</button>`;
+    const cats = categories();
+    const head = cats.slice(0, PILL_MAX), rest = cats.slice(PILL_MAX);
+    const hasLocal = L.order.some(id => entry(id).local_app && !elsewhere(id));
+    const inRest = rest.some(c => c.id === C.cat);
+    return pill('all', t('All', '全部')) + (hasLocal ? pill('local', hereBubble()) : '') + head.map(c => pill(c.id, pick(c.name))).join('') +
+      (rest.length ? `<button type="button" class="cg-pill cg-more${inRest && !searching ? ' on' : ''}" data-cg="more" aria-expanded="${C.more}">${esc(t('More', '更多'))} ▾</button>` +
+        (C.more ? `<div class="cg-more-list">${rest.map(c => pill(c.id, pick(c.name))).join('')}</div>` : '') : '');
+  }
   function renderList() {
     if (!panel) return;
-    const rows = L.order.map(id => {
-      const st = L.by[id], d = descDone[id], s = stateOf(st), bad = !!st.attention;
-      const sub = bad && st.problem && st.problem.next ? `<small>${esc(pick(st.problem.next))}</small>` : '';
-      return `<div class="cn-row${bad ? ' attn' : ''} tone-${s[2]}" data-service="${esc(id)}">` +
-        `<div class="cn-ico">${icon(st.icon)}</div>` +
-        `<div class="cn-main"><b>${esc(pick(st.name) || id)}${bad ? `<i class="cn-flag">${esc(t('Needs you', '要處理'))}</i>` : ''}</b>` +
-        `<span><i class="cn-dot ${s[2]}"></i>${esc(lineOf(st, d))}</span>${sub}</div>` +
-        `<button type="button" class="cn-btn${bad ? ' primary' : st.state === 'connected' ? ' ghost' : ''}" data-cn="open" data-service="${esc(id)}">${esc(t(s[3], s[4]))}</button></div>`;
-    }).join('');
-    panel.innerHTML = `<p class="cn-intro">${esc(t('Services your bots can use. Pick one and ShellBot walks you through connecting it, and checks later that it still works.',
-      '讓 bot 能用的外部服務。點一個服務，ShellBot 一步一步帶你接上，之後也會檢查它還通不通。'))}</p>` +
-      (rows ? `<div class="cn-list">${rows}</div>` : `<p class="cn-empty">${esc(L.loaded ? t('No services to connect yet.', '目前沒有可以連接的服務。') : t('Reading…', '讀取中…'))}</p>`);
+    if (!panel.querySelector('.cg-body')) {          // the frame once: the search box keeps its focus and words across redraws
+      panel.innerHTML = `<div class="cg-head"><h3>${esc(t('Connect apps', '連結應用程式'))}</h3><button type="button" class="cg-count" data-cg="connected"></button></div>` +
+        '<p class="cn-intro"></p>' +
+        `<label class="cg-search">${icon('search')}<input type="search" autocomplete="off" spellcheck="false"></label>` +
+        '<div class="cg-pills" role="group"></div><div class="cg-body"></div>';
+      const box = panel.querySelector('.cg-search input');
+      box.addEventListener('input', () => { C.q = box.value; C.why = ''; renderList(); });
+      box.addEventListener('keydown', e => { if (e.key === 'Escape' && box.value) { e.preventDefault(); e.stopPropagation(); box.value = ''; C.q = ''; renderList(); } });
+    }
+    const n = L.order.filter(linked).length;
+    const count = panel.querySelector('.cg-count');
+    count.textContent = t(`${n} connected ›`, `已連結 ${n} 個 ›`);
+    count.classList.toggle('on', C.view === 'connected');
+    const box = panel.querySelector('.cg-search input');
+    box.placeholder = t('Search apps', '搜尋應用程式');
+    box.setAttribute('aria-label', box.placeholder);
+    panel.querySelector('.cg-head h3').textContent = t('Connect apps', '連結應用程式');
+    panel.querySelector('.cn-intro').textContent = t('Services your bots can use. Press Connect and ShellBot walks you through it, and checks later that it still works.',
+      '讓 bot 能用的外部服務。按「連結」，ShellBot 一步一步帶你接上，之後也會檢查它還通不通。');
+    panel.querySelector('.cg-pills').innerHTML = pillsHtml();
+    panel.querySelector('.cg-body').innerHTML = bodyHtml();
     const tab = doc.querySelector('#settings-tabs-bar [data-tab="connect"]');
     if (tab) tab.textContent = t('Connect', '連接') + (attention().length ? ' ●' : '');
+  }
+  function onCatalog(e) {
+    const g = e.target.closest('[data-cg]');
+    if (g) {
+      const what = g.dataset.cg;
+      if (what === 'pill') { C.cat = g.dataset.id; C.view = 'home'; C.more = C.more && categories().slice(PILL_MAX).some(c => c.id === C.cat); }
+      else if (what === 'more') C.more = !C.more;
+      else if (what === 'connected') C.view = C.view === 'connected' ? 'home' : 'connected';
+      else if (what === 'all') C.view = 'all';
+      else if (what === 'home') C.view = 'home';
+      if (what !== 'more') { C.q = ''; const box = panel.querySelector('.cg-search input'); if (box) box.value = ''; }
+      C.why = '';
+      return renderList();
+    }
+    const w = e.target.closest('[data-cn="why"]');
+    if (w) { C.why = C.why === w.dataset.service ? '' : w.dataset.service; return renderList(); }
+    const b = e.target.closest('[data-cn="open"]');
+    if (b) open(b.dataset.service, {});
   }
   const panelShown = () => !!(panel && panel.classList.contains('active') && $('modal-settings') && $('modal-settings').classList.contains('open'));
   async function refreshStatuses() {                    // the health of what is connected: connect_status(refresh=true)
@@ -173,7 +312,7 @@
     await refreshList();
     renderList();
     renderSide();
-    L.order.forEach(id => describe(id).then(() => renderList()));
+    L.order.forEach(id => { if (entry(id).available) describe(id).then(() => renderList()); });
     clearInterval(settingsTimer);
     refreshStatuses();
     settingsTimer = setInterval(() => { if (panelShown()) refreshStatuses(); else clearInterval(settingsTimer); }, 60000);
@@ -185,11 +324,15 @@
     const tab = doc.createElement('button');
     tab.className = 'settings-tab';
     tab.dataset.tab = 'connect';
+    tab.setAttribute('data-guide', 'connect');
     bar.insertBefore(tab, bar.querySelector('[data-tab="marketplace"]'));          // after LINE, before Plugins
     panel = doc.createElement('div');
     panel.className = 'settings-tab-panel cn-panel';
     panel.id = 'settings-panel-connect';
     modal.insertBefore(panel, modal.querySelector('.modal-footer'));
+    // Two columns need room: Settings is wider while this tab shows, and back to its own width on any other tab.
+    if (root.MutationObserver) new root.MutationObserver(() => modal.classList.toggle('cn-wide', panel.classList.contains('active')))
+      .observe(panel, { attributes: true, attributeFilter: ['class'] });
     tab.addEventListener('click', () => {
       modal.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active'));
       modal.querySelectorAll('.settings-tab-panel').forEach(x => x.classList.remove('active'));
@@ -197,10 +340,7 @@
       panel.classList.add('active');
       showList();
     });
-    panel.addEventListener('click', e => {
-      const b = e.target.closest('[data-cn="open"]');
-      if (b) open(b.dataset.service, {});
-    });
+    panel.addEventListener('click', onCatalog);
     const gear = $('btn-settings');
     if (gear) gear.addEventListener('click', renderList);                          // the label follows the page's language
     renderList();
@@ -649,6 +789,11 @@
     absorb(first);
     if (first && first.service && first.service !== service) S.service = first.service;
     if (!d || !S.status) { S.mode = 'load'; if (!S.err) S.err = { text: t('This service is not available here.', '這個服務在這裡不能用。'), next: '' }; return render(), true; }
+    if (!routes().length) {                             // listed before it can be connected: say why, open no step
+      S.mode = 'load';
+      S.err = S.err || (d.unavailable ? { text: d.unavailable.text, next: d.unavailable.next || '' } : { text: t('This service cannot be connected yet.', '這個服務還不能接。'), next: '' });
+      return render(), true;
+    }
     const state = S.status.state;
     S.pick = ((routes().find(r => r.recommended) || routes()[0]) || {}).id || '';
     if (o.tag || o.reconnect) S.mode = 'step';

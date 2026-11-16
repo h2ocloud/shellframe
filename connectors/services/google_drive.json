@@ -1,0 +1,500 @@
+{
+  "schema": 1,
+  "id": "google_drive",
+  "name": {
+    "en": "Google Drive",
+    "zh": "Google 雲端硬碟"
+  },
+  "icon": "folder",
+  "summary": {
+    "en": "Let your bots find and read files in your Google Drive",
+    "zh": "讓 bot 找、讀你 Google 雲端硬碟裡的檔案"
+  },
+  "category": {
+    "id": "productivity",
+    "name": {
+      "en": "Productivity",
+      "zh": "生產力"
+    }
+  },
+  "recommended": true,
+  "adapter": "connectors.services.google_drive",
+  "scopes": [
+    {
+      "id": "account",
+      "label": {
+        "en": "What you allow on claude.ai (its page lists it when you connect)",
+        "zh": "你在 claude.ai 上允許的事（連接時頁面會列出來）"
+      },
+      "required": true
+    }
+  ],
+  "routes": [
+    {
+      "id": "connector",
+      "kind": "claude_connector",
+      "name": {
+        "en": "Use your Claude account's connector",
+        "zh": "用 Claude 帳號的連接器"
+      },
+      "blurb": {
+        "en": "Connect once on claude.ai and every Claude tab on that account can use Google Drive. A browser is all you need: nothing to install. What it may do is set by the connector on claude.ai, not by ShellBot.",
+        "zh": "在 claude.ai 連一次，這個帳號的 Claude 分頁都能用 Google 雲端硬碟。只要瀏覽器，不用裝任何東西。它能做哪些事由 claude.ai 上的連接器決定，不是 ShellBot。"
+      },
+      "recommended": true,
+      "minutes": 2,
+      "needs": [
+        {
+          "en": "Claude tabs signed in with a claude.ai account",
+          "zh": "Claude 分頁用 claude.ai 帳號登入"
+        }
+      ],
+      "scopes": [
+        "account"
+      ],
+      "clis": {
+        "claude": {
+          "via": "connector",
+          "note": {
+            "en": "Claude tabs signed in with a claude.ai account see the connector.",
+            "zh": "用 claude.ai 帳號登入的 Claude 分頁拿得到這個連接器。"
+          }
+        },
+        "codex": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Codex lists a Google Drive plugin under /plugins (it depends on your plan and your admin); ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Codex 的 /plugins 裡有 Google Drive 外掛（看你的方案和管理員設定）；ShellBot 不幫你設定。"
+          }
+        },
+        "agy": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Google's own Drive MCP server is in developer preview (a Google Cloud project and an OAuth client of your own); ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Google 自己的 Drive MCP 伺服器還在開發者預覽（要自己的 Google Cloud 專案和 OAuth 用戶端）；ShellBot 不幫你設定。"
+          }
+        },
+        "grok": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Google's own Drive MCP server is in developer preview (a Google Cloud project and an OAuth client of your own); ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Google 自己的 Drive MCP 伺服器還在開發者預覽（要自己的 Google Cloud 專案和 OAuth 用戶端）；ShellBot 不幫你設定。"
+          }
+        },
+        "opencode": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Google's own Drive MCP server is in developer preview (a Google Cloud project and an OAuth client of your own); ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Google 自己的 Drive MCP 伺服器還在開發者預覽（要自己的 Google Cloud 專案和 OAuth 用戶端）；ShellBot 不幫你設定。"
+          }
+        },
+        "cursor": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. Google's own Drive MCP server is in developer preview (a Google Cloud project and an OAuth client of your own); ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Google 自己的 Drive MCP 伺服器還在開發者預覽（要自己的 Google Cloud 專案和 OAuth 用戶端）；ShellBot 不幫你設定。"
+          }
+        },
+        "pi": {
+          "via": "none",
+          "note": {
+            "en": "The claude.ai connector only reaches Claude tabs. ShellBot has no way for this program yet.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。ShellBot 目前沒有給這個程式的接法。"
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "a1",
+          "title": {
+            "en": "Check how Claude is signed in",
+            "zh": "確認 Claude 是怎麼登入的"
+          },
+          "how": [
+            {
+              "en": "ShellBot looks at the account label it already keeps (the plan only: it never opens a login file).",
+              "zh": "ShellBot 會看它自己記下的帳號標籤（只有方案，不會打開任何登入檔）。"
+            },
+            {
+              "en": "If it says you are signed in with a claude.ai account, press \"I did it\". If it cannot tell, type /status in a Claude tab and read the line that says how you are signed in.",
+              "zh": "寫著用 claude.ai 帳號登入，就按「我做好了」。看不出來的話，在 Claude 分頁打 /status，看說明登入方式的那一行。"
+            }
+          ],
+          "see": {
+            "en": "The card below says you are signed in with a claude.ai account. On a plain API key the connector does not show up.",
+            "zh": "下面那一格寫著用 claude.ai 帳號登入。用單純的 API key 登入的話，連接器不會出現。"
+          },
+          "check": {
+            "id": "claude_account",
+            "on": "enter",
+            "pass": [
+              "claude_ai"
+            ],
+            "states": {
+              "claude_ai": {
+                "tone": "good",
+                "text": {
+                  "en": "Signed in with a claude.ai account",
+                  "zh": "用 claude.ai 帳號登入"
+                }
+              },
+              "unknown": {
+                "tone": "warn",
+                "text": {
+                  "en": "ShellBot cannot tell how Claude is signed in on this computer.",
+                  "zh": "ShellBot 看不出這台電腦的 Claude 是怎麼登入的。"
+                },
+                "hint": {
+                  "en": "Type /status in a Claude tab and read the login line.",
+                  "zh": "在 Claude 分頁打 /status，看登入方式那一行。"
+                }
+              }
+            }
+          },
+          "stuck": [
+            {
+              "id": "cant-tell",
+              "q": {
+                "en": "ShellBot says it cannot tell",
+                "zh": "ShellBot 說它看不出來"
+              },
+              "a": {
+                "en": "That is normal on a computer where ShellBot has not opened a Claude tab yet. Open a Claude tab, type /status, and read the line about how you are signed in. If it names a Claude account (a subscription), carry on: press \"I did it\".",
+                "zh": "這台電腦上 ShellBot 還沒開過 Claude 分頁的話，這很正常。開一個 Claude 分頁，打 /status，看說明登入方式的那一行。寫的是 Claude 帳號（訂閱），就繼續，按「我做好了」。"
+              }
+            },
+            {
+              "id": "api-key",
+              "q": {
+                "en": "Claude is signed in with an API key or a long-lived token",
+                "zh": "Claude 是用 API key 或長效 token 登入的"
+              },
+              "a": {
+                "en": "Connectors only reach Claude tabs that are signed in with a claude.ai account. In a Claude tab type /login and pick the Claude account (subscription) option.",
+                "zh": "連接器只有用 claude.ai 帳號登入的 Claude 分頁才拿得到。在 Claude 分頁打 /login，選 Claude 帳號（訂閱）那一項。"
+              }
+            },
+            {
+              "id": "no-account",
+              "q": {
+                "en": "I do not have a claude.ai account",
+                "zh": "我沒有 claude.ai 帳號"
+              },
+              "a": {
+                "en": "The connector needs one. Sign up at claude.ai, then type /login in a Claude tab and pick the Claude account option.",
+                "zh": "連接器需要有 claude.ai 帳號。到 claude.ai 註冊後，在 Claude 分頁打 /login，選 Claude 帳號那一項。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open claude.ai",
+                    "zh": "打開 claude.ai"
+                  },
+                  "url": "https://claude.ai/"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "a2",
+          "title": {
+            "en": "Connect Google Drive on claude.ai",
+            "zh": "在 claude.ai 連上 Google 雲端硬碟"
+          },
+          "how": [
+            {
+              "en": "Press \"Open page\" below. Your browser opens the connectors page on claude.ai (sign in with the same claude.ai account if it asks).",
+              "zh": "按下面的「打開頁面」，瀏覽器會開 claude.ai 的連接器頁（它要你登入的話，用同一個 claude.ai 帳號）。"
+            },
+            {
+              "en": "Find Google Drive in the list and press Connect.",
+              "zh": "在清單裡找到 Google 雲端硬碟（Google Drive），按 Connect。"
+            },
+            {
+              "en": "In Google's window pick the account whose files Claude may reach, look at what it asks for, then press Allow.",
+              "zh": "Google 的視窗：選你要讓 Claude 讀檔案的那個帳號，看完權限再按允許。"
+            }
+          ],
+          "url": "https://claude.ai/customize/connectors",
+          "see": {
+            "en": "Back on claude.ai, the Google Drive row says it is connected.",
+            "zh": "回到 claude.ai，Google 雲端硬碟 那一格顯示已連上。"
+          },
+          "stuck": [
+            {
+              "id": "not-listed",
+              "q": {
+                "en": "Google Drive is not in the list",
+                "zh": "清單裡沒有 Google 雲端硬碟"
+              },
+              "a": {
+                "en": "On a company plan (Team or Enterprise) an owner has to turn the Google Drive connector on in the organization settings first. Ask them, then come back to this step.",
+                "zh": "公司方案（Team、Enterprise）要先由管理員在組織設定裡開啟 Google 雲端硬碟 連接器。請管理員開好再回來。"
+              }
+            },
+            {
+              "id": "which-login",
+              "q": {
+                "en": "claude.ai asks me to sign in and I do not know which account",
+                "zh": "claude.ai 要我登入，不知道用哪個帳號"
+              },
+              "a": {
+                "en": "Use the account your Claude tabs are signed in with: connectors follow that account. Type /status in a Claude tab to see which one it is.",
+                "zh": "用你的 Claude 分頁登入的那個帳號：連接器是跟著這個帳號走的。在 Claude 分頁打 /status 就看得到是哪一個。"
+              }
+            },
+            {
+              "id": "failed",
+              "q": {
+                "en": "I pressed Connect and it failed, or it keeps spinning",
+                "zh": "按了 Connect 之後失敗，或一直轉圈"
+              },
+              "a": {
+                "en": "Press Disconnect on the Google Drive row, then Connect again.",
+                "zh": "在 Google 雲端硬碟 那一格先按 Disconnect，再按一次 Connect。"
+              }
+            },
+            {
+              "id": "blocked",
+              "q": {
+                "en": "Google says \"access blocked\" or \"needs admin review\"",
+                "zh": "Google 說「存取遭封鎖，需要管理員審查」"
+              },
+              "a": {
+                "en": "Your Google Workspace administrator has to mark Claude as a trusted app. Ask them, wait a while, then press Connect again.",
+                "zh": "Google Workspace 管理員要先把 Claude 設成信任的應用程式。請管理員處理，等一下再按 Connect。"
+              }
+            },
+            {
+              "id": "wrong-account",
+              "q": {
+                "en": "I picked the wrong Google account",
+                "zh": "選錯了 Google 帳號"
+              },
+              "a": {
+                "en": "Press Disconnect on the row, then Connect again and pick the right account. Google's list of connected apps is where the permission itself is taken back.",
+                "zh": "在那一格按 Disconnect，再按 Connect，這次選對帳號。要收回授權本身，到 Google 帳號的「已連結的應用程式」。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open Google connected apps",
+                    "zh": "打開 Google 已連結的應用程式"
+                  },
+                  "url": "https://myaccount.google.com/connections"
+                }
+              ]
+            }
+          ],
+          "redo_on_reconnect": true
+        },
+        {
+          "id": "a3",
+          "kind": "test",
+          "title": {
+            "en": "Test that it works",
+            "zh": "測試接通"
+          },
+          "intro": {
+            "en": "ShellBot opens a temporary Claude tab and asks it for one small lookup in Google Drive that only reads, reporting only how many items came back. Only that tab sees the result: ShellBot does not read, keep or log it.",
+            "zh": "ShellBot 會開一個臨時的 Claude 分頁，請它在 Google 雲端硬碟 做一次唯讀的小查詢，只回報找到幾筆。結果只有那個分頁看得到：ShellBot 不讀、不存、不記錄。"
+          }
+        }
+      ],
+      "test": {
+        "via": {
+          "en": "Google Drive connector",
+          "zh": "Google 雲端硬碟 連接器"
+        },
+        "verdicts": {
+          "starting": {
+            "text": {
+              "en": "Opening a temporary Claude tab…",
+              "zh": "正在開臨時的 Claude 分頁…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "waiting_ready": {
+            "text": {
+              "en": "Waiting for the tab to be ready…",
+              "zh": "等分頁準備好…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "asking": {
+            "text": {
+              "en": "Asking it for one small lookup in Google Drive…",
+              "zh": "請它在 Google 雲端硬碟 做一次小查詢…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "reading": {
+            "text": {
+              "en": "Google Drive is answering…",
+              "zh": "Google 雲端硬碟 回應中…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees what comes back.",
+              "zh": "通常約一分鐘。結果只有測試分頁看得到。"
+            }
+          },
+          "needs_allow": {
+            "text": {
+              "en": "The test tab is asking for your OK",
+              "zh": "測試分頁在等你按允許"
+            },
+            "next": {
+              "en": "It wants to use a Google Drive tool, and Claude asks before it does. Open the test conversation and choose Allow. The test goes on by itself afterwards.",
+              "zh": "它要用 Google 雲端硬碟 的工具，Claude 會先問你。打開測試對話，選允許。之後測試會自己繼續。"
+            }
+          },
+          "pass": {
+            "text": {
+              "en": "It works! Google Drive is connected.",
+              "zh": "通了！Google 雲端硬碟 已經接上。"
+            },
+            "next": {
+              "en": "The temporary test tab used the Google Drive connector. ShellBot does not read, keep or log what came back: it is only in the test tab's own conversation. A Claude tab that was already open before you connected Google Drive may need to be reopened before it sees it (not confirmed).",
+              "zh": "臨時的測試分頁用了 Google 雲端硬碟 連接器。回來的內容 ShellBot 不讀、不存、不記錄：只在測試分頁自己的對話裡。連接之前就開著的 Claude 分頁，可能要重開才看得到 Google 雲端硬碟（尚未證實）。"
+            }
+          },
+          "said_ok": {
+            "text": {
+              "en": "This one does not count. The test tab said it worked but never called a Google Drive tool.",
+              "zh": "這次不算：測試分頁說成功了，卻沒有叫過任何 Google 雲端硬碟 工具。"
+            },
+            "next": {
+              "en": "Press \"Test again\". If it happens again, open the test conversation and see what the tab did.",
+              "zh": "按「重新測試」。再發生的話，打開測試對話看看分頁做了什麼。"
+            }
+          },
+          "timeout": {
+            "text": {
+              "en": "It took too long. After 3 minutes the test tab had not finished.",
+              "zh": "等太久了：3 分鐘了，測試分頁還沒做完。"
+            },
+            "next": {
+              "en": "Most likely it is waiting for you. Open the test conversation: Claude may be asking you to allow a tool, or sitting on a sign-in screen.",
+              "zh": "最可能是在等你。打開測試對話看看：Claude 可能在問你要不要允許某個工具，或停在登入畫面。"
+            }
+          },
+          "unclear": {
+            "text": {
+              "en": "No clear answer. The test tab used Google Drive, but it did not end with a clear result line.",
+              "zh": "沒有明確的結果：測試分頁用了 Google 雲端硬碟，但最後沒有留下明確的結果那一行。"
+            },
+            "next": {
+              "en": "Open the test conversation to see how it ended, then press \"Test again\".",
+              "zh": "打開測試對話看它怎麼結束的，再按「重新測試」。"
+            }
+          },
+          "not_ready": {
+            "text": {
+              "en": "The test tab did not get ready. It never reached its prompt, so nothing was asked.",
+              "zh": "測試分頁沒有準備好：它一直沒有走到可以輸入的畫面，所以什麼都沒問。"
+            },
+            "next": {
+              "en": "Most likely Claude is not signed in. Open the test conversation: if it shows a sign-in screen, sign in with a claude.ai account there, then test again.",
+              "zh": "最可能是 Claude 還沒登入。打開測試對話：如果停在登入畫面，在那裡用 claude.ai 帳號登入，再測一次。"
+            }
+          },
+          "closed": {
+            "text": {
+              "en": "The test tab was closed before it finished.",
+              "zh": "測試分頁沒做完就被關掉了。"
+            },
+            "next": {
+              "en": "Press \"Test again\".",
+              "zh": "按「重新測試」。"
+            }
+          },
+          "start_failed": {
+            "text": {
+              "en": "Could not open the test tab.",
+              "zh": "開不了測試分頁。"
+            },
+            "next": {
+              "en": "Open a Claude tab yourself from the + button. If that works, press \"Test again\".",
+              "zh": "自己用 + 按鈕開一個 Claude 分頁。開得起來的話，再按「重新測試」。"
+            }
+          },
+          "needs_auth": {
+            "text": {
+              "en": "The connector is not authorized yet. The test tab found the Google Drive connector, but it asked to be authorized first.",
+              "zh": "連接器還沒授權好：測試分頁找得到 Google 雲端硬碟 連接器，但它說要先授權。"
+            },
+            "next": {
+              "en": "Go back to step 2: on claude.ai press Disconnect on the Google Drive row, then Connect again and allow it.",
+              "zh": "回到第 2 步：在 claude.ai 的 Google 雲端硬碟 那一格先按 Disconnect，再按 Connect 並允許。"
+            }
+          },
+          "no_tools": {
+            "text": {
+              "en": "Not yet. The test tab did not find any Google Drive tool.",
+              "zh": "還沒通：測試分頁沒有找到任何 Google 雲端硬碟 工具。"
+            },
+            "next": {
+              "en": "Most likely Google Drive is not connected on claude.ai yet: go back to step 2. Next: Claude is not signed in with a claude.ai account (an API key cannot see connectors); type /status in a Claude tab. Also: in the test tab type /mcp and see whether the claude.ai Google Drive connector is turned off.",
+              "zh": "最可能：Google 雲端硬碟 在 claude.ai 上還沒連好，回到第 2 步。其次：這台的 Claude 不是用 claude.ai 帳號登入（API key 看不到連接器），在 Claude 分頁打 /status 確認。另外：在測試分頁打 /mcp，看 claude.ai 的 Google 雲端硬碟 連接器是不是被關掉了。"
+            }
+          },
+          "failed": {
+            "text": {
+              "en": "Google Drive answered with an error. The test tab called Google Drive, but the answer ended in a failure.",
+              "zh": "Google 雲端硬碟 回了錯誤：測試分頁叫了 Google 雲端硬碟，但結果是失敗。"
+            },
+            "next": {
+              "en": "Most likely a short-lived limit or a timeout: wait a few minutes and test again. If it keeps failing, go back to step 2 and connect it again.",
+              "zh": "最可能是暫時的額度或逾時：等幾分鐘再測一次。一直失敗的話，回到第 2 步重新連一次。"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "faq": [
+    {
+      "id": "test-basis",
+      "q": {
+        "en": "What does the connection test look at?",
+        "zh": "連線測試看什麼？"
+      },
+      "a": {
+        "en": "The names of the tools the test tab called, and its last line. ShellBot does not read what the tools returned; the test tab is not a bot, so closing it leaves nothing in any bot's memory.",
+        "zh": "測試分頁叫過哪些工具（只看名稱），和它最後一行。ShellBot 不讀工具傳回的內容；測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。"
+      }
+    },
+    {
+      "id": "disconnect",
+      "q": {
+        "en": "How do I take Google Drive back?",
+        "zh": "要怎麼收回 Google 雲端硬碟？"
+      },
+      "a": {
+        "en": "Disconnect in ShellBot only forgets its progress: it added nothing to the AIs' settings for this way. The connector itself is on claude.ai: press Disconnect on the Google Drive row there.",
+        "zh": "在 ShellBot 按中斷，只會忘掉它記下的進度：這種接法 ShellBot 沒有改任何 AI 的設定。連接器本身在 claude.ai：到那裡的 Google 雲端硬碟 那一格按 Disconnect。"
+      }
+    },
+    {
+      "id": "others",
+      "q": {
+        "en": "Can other AI tabs use Google Drive?",
+        "zh": "其他 AI 分頁能用 Google 雲端硬碟 嗎？"
+      },
+      "a": {
+        "en": "Not through this connector: it only reaches Claude tabs. What each other program offers on its own is noted per program; ShellBot does not set those up.",
+        "zh": "不能透過這個連接器：它只有 Claude 的分頁拿得到。其他程式自己有沒有接法，各自記在那個程式底下；ShellBot 不幫你設定那些。"
+      }
+    }
+  ]
+}

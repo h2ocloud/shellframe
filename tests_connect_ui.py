@@ -7,6 +7,7 @@ The stand-in follows the interface the connector core fixed (connect_list / conn
 connect_status / connect_start / connect_step / connect_test / connect_disconnect / connect_signal and the
 status and `view` shapes), so what is checked here is the page's side of it:
   1. Settings has a Connect tab; a service not started shows as a row with a "Connect" button, no mark
+     (a Python side without the catalog's fields: the catalog itself is tests_connect_catalog_ui.py)
   2. the card opens on the choice of a way (the recommended one picked), at a moderate size: at most 640px
      wide, text 12-13px, room around it, and it is the same size on every step
   3. a step: its words and link, a tick box and a button that does one thing, the check that runs on
@@ -248,7 +249,7 @@ def run(browser):
     row = page.locator("#settings-panel-connect .cn-row")
     check("one row per service: its name, a sentence on where it stands, a Connect button",
           row.count() == 1 and "示範服務" in row.inner_text() and "讓 bot 讀取、寄出示範備忘" in row.inner_text()
-          and row.locator("button").inner_text() == "開始連接", row.inner_text())
+          and row.locator("button").inner_text() == "連結", row.inner_text())
     check("…and no mark on it, since nothing needs the person", row.locator(".cn-flag").count() == 0 and "attn" not in (row.get_attribute("class") or ""))
     shot(page, "connect-list-zh-webkit.png", "#modal-settings .modal")
 
@@ -366,9 +367,9 @@ def run(browser):
     page.click('#cn-card [data-act="finish"]')
     page.wait_for_function("!document.querySelector('#modal-connect.open')")
     open_settings_tab(page)
-    check("the row says Connected, with the way and the date, and the button is Manage",
+    check("the row says Connected, with the way and the date, and its button says so (it opens the card)",
           "已接上" in page.locator("#settings-panel-connect .cn-row").inner_text() and "透過 ShellBot 的小幫手" in page.locator("#settings-panel-connect .cn-row").inner_text()
-          and page.locator("#settings-panel-connect .cn-row button").inner_text() == "管理")
+          and page.locator("#settings-panel-connect .cn-row button").inner_text() == "✓ 已連結")
     page.locator("#settings-panel-connect .cn-row button").click()
     page.wait_for_selector("#cn-card .cn-kv")
     check("a connected service opens on what it is: each AI's state and what it may do",

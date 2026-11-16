@@ -145,8 +145,9 @@ def _safe_result(res) -> dict:
 
 
 class Engine:
-    def __init__(self, registry=None, path=None, clis=None, backend=None, ctx_factory=None, clock=time.time):
+    def __init__(self, registry=None, path=None, clis=None, backend=None, ctx_factory=None, clock=time.time, platform=None):
         self.registry = registry or reg_mod.default()
+        self.platform = platform                     # mac | windows | linux; None: this computer (a test names one)
         self.store = Store(path)
         self.clis = clis or clis_mod.Clis()
         self.backend = backend
@@ -197,13 +198,13 @@ class Engine:
         p = problems.explain(code, desc, route)
         out = {"success": False, "code": code, "message": {"text": p["text"], "next": p["next"]}, **extra}
         if desc:
-            out["status"] = health.build(desc, rec)
+            out["status"] = health.build(desc, rec, platform=self.platform)
         return out
 
     def _reply(self, service, **extra) -> dict:
         desc = self.registry.get(service)
         rec = self.store.get(service)
-        return {"success": True, "status": health.build(desc, rec), "view": self.view(service), **extra}
+        return {"success": True, "status": health.build(desc, rec, platform=self.platform), "view": self.view(service), **extra}
 
     def _route_of(self, desc, rec):
         return next((r for r in desc["routes"] if r["id"] == rec.get("route")), None)
@@ -222,11 +223,11 @@ class Engine:
 
     def status(self, service: str):
         desc = self.registry.get(service)
-        return health.build(desc, self.store.get(service)) if desc else None
+        return health.build(desc, self.store.get(service), platform=self.platform) if desc else None
 
     def list(self) -> list:
         saved = self.store.all()
-        return [health.build(self.registry.get(s), saved.get(s) or {}) for s in self.registry.ids()]
+        return [health.build(self.registry.get(s), saved.get(s) or {}, platform=self.platform) for s in self.registry.ids()]
 
     def _step_words(self, table, code, fallback_tone="warn") -> dict:
         hit = (table or {}).get(code)
@@ -286,6 +287,9 @@ class Engine:
         desc = self.registry.get(service)
         if not desc:
             return self._fail(service, "unknown_service")
+        why = reg_mod.available(desc, self.platform)         # listed but not connectable here: say so, start nothing
+        if why:
+            return self._fail(service, why)
         lock = self._op(service)
         if not lock.acquire(blocking=False):
             return self._fail(service, "busy")

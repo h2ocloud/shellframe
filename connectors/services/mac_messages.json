@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "id": "mac_messages",
+  "name": {
+    "en": "Messages",
+    "zh": "訊息"
+  },
+  "icon": "message",
+  "summary": {
+    "en": "Read and send iMessage and SMS in the Messages app",
+    "zh": "讀取、傳送「訊息」App 裡的 iMessage 和簡訊"
+  },
+  "category": {
+    "id": "communication",
+    "name": {
+      "en": "Communication",
+      "zh": "通訊"
+    }
+  },
+  "platforms": [
+    "mac"
+  ],
+  "local_app": true,
+  "unavailable": {
+    "text": {
+      "en": "Not yet: no local server for Messages that ShellBot can recommend. The ones that exist are each kept by one person, and those that can send have no switch to stop it.",
+      "zh": "還不能接：還沒有 ShellBot 能推薦的「訊息」本機伺服器。現有的都只有一個人在維護，能傳訊息的那些也沒有辦法關掉傳送。"
+    },
+    "next": {
+      "en": "ShellBot will add a way once there is one it can stand behind; nothing needs doing now.",
+      "zh": "等有 ShellBot 信得過的接法就會加上；現在不用做什麼。"
+    }
+  },
+  "routes": []
+}

@@ -154,6 +154,27 @@ check("the sentence for a phone or Telegram names the service and where to go", 
 check("on a Chinese system it is Chinese", "需要接上 Demo" in api._connect_line("connect:demo", "zh"))
 check("the phone's decision gets the service and its state", api._connect_decision("connect:demo") == {"service": "demo", "name": fake.demo()["name"], "state": "waiting_user"} and api._connect_decision("") is None)
 check("the phone's list is the short form", api._connect_compact() == [{"id": "demo", "name": fake.demo()["name"], "icon": "plug", "state": "waiting_user", "attention": False, "step": "2/3"}], str(api._connect_compact()))
+# the catalog: connect_list carries each service's catalog entry and the computer's platform
+later = fake.demo()
+later.update(id="later", routes=[], local_app=True, platforms=["mac"], category={"id": "productivity", "name": fake.T("Productivity")},
+             unavailable={"text": fake.T("Not yet: no server to recommend"), "next": fake.T("It comes later")})
+api2 = Api()
+api2._connect_engine.registry.register(later)
+api2._connect_engine.platform = "mac"
+lst = json.loads(api2.connect_list())
+cat = {c["id"]: c for c in lst.get("catalog") or []}
+check("connect_list carries the catalog (one entry per service) and the platform",
+      lst["success"] and lst.get("platform") == "mac" and set(cat) == {"demo", "later"} and [s["service"] for s in lst["services"]] == ["demo", "later"], lst.get("catalog"))
+check("…an entry has the bubble, the section and whether it can be connected here, nothing else",
+      cat["later"] == {"id": "later", "summary": later["summary"], "category": later["category"], "recommended": False, "local_app": True,
+                       "platforms": ["mac"], "available": False, "why": "not_available"} and cat["demo"]["available"] is True, cat)
+check("a service that cannot be connected here is left out of the phone's list (it can do nothing with it)",
+      [c["id"] for c in api2._connect_compact()] == ["demo"], api2._connect_compact())
+sig = json.loads(api2.connect_signal("connect:later"))
+check("a bot's tag for it answers not_available with its words, and starts nothing",
+      sig["success"] is False and sig["code"] == "not_available" and sig["message"]["text"] == later["unavailable"]["text"], sig)
+desc = json.loads(api2.connect_describe("later"))
+check("its description is there for the card (the reason, no routes)", desc["success"] and desc["descriptor"]["routes"] == [] and desc["descriptor"]["unavailable"])
 
 EVS = [{"kind": "user_msg", "text": "hi"}, {"kind": "assistant_text", "text": "I need your mail connected.\n[[SF:RED:connect:demo]]"}]
 check("bridge_home reads the tag out of the RED line", bridge_home.red_tag(EVS) == "connect:demo")

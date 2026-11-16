@@ -293,6 +293,22 @@
       }
     },
     {
+      "id": "connect",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.45.4",
+      "open": "settings:connect",
+      "title": {
+        "en": "Connect apps",
+        "zh": "連結應用程式"
+      },
+      "body": {
+        "en": "Settings → Connect lists the services your bots can use: search, pick a kind, see what is recommended and what is on this Mac. Press Connect and ShellBot walks you through it, then checks it still works.",
+        "zh": "設定 → 連接列出 bot 能用的服務：可以搜尋、按類別挑、看推薦的和這台 Mac 上的。按「連結」，ShellBot 一步一步帶你接上，之後也會檢查它還通不通。"
+      }
+    },
+    {
       "id": "app-bots",
       "surfaces": [
         "ios"

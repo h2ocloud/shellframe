@@ -27,6 +27,10 @@ CORE = {
                     "next": _t("Close the card and open it again.", "關掉卡片再重開。")},
     "not_started": {"text": _t("This service is not being connected yet.", "這個服務還沒開始接。"),
                     "next": _t("Press Connect to start.", "按「連接」開始。")},
+    "not_available": {"text": _t("This service cannot be connected through ShellBot yet.", "這個服務還不能透過 ShellBot 接上。"),
+                      "next": _t("It is listed so you know it is coming; nothing needs doing now.", "列出來是讓你知道之後會有；現在不用做什麼。")},
+    "not_on_platform": {"text": _t("This service cannot be connected on this kind of computer.", "這種電腦上接不了這個服務。"),
+                        "next": _t("Connect it from a computer it is made for.", "請在它支援的電腦上接。")},
     "no_adapter": {"text": _t("This step needs a part of ShellBot that is not installed.", "這一步需要的 ShellBot 元件沒有裝到。"),
                    "next": _t("Update ShellBot, then try again.", "更新 ShellBot 後再試一次。")},
     "adapter_error": {"text": _t("This step stopped because of a problem inside ShellBot.", "這一步在 ShellBot 裡面出了問題，停住了。"),
@@ -120,7 +124,8 @@ def explain(code: str, desc: dict = None, route: dict = None) -> dict:
     """{"code", "text": {en, zh}, "next": {en, zh}} for a code. A route's test verdicts win over the
     service's `problems`, which win over the core's words; an unknown code gets the generic sentence."""
     code = str(code or "")
-    for source in ((route or {}).get("test", {}).get("verdicts"), (desc or {}).get("problems"), CORE):
+    own = {"not_available": (desc or {}).get("unavailable")} if (desc or {}).get("unavailable") else None
+    for source in ((route or {}).get("test", {}).get("verdicts"), own, (desc or {}).get("problems"), CORE):
         hit = (source or {}).get(code)
         if isinstance(hit, dict) and hit.get("text"):
             return {"code": code, "text": hit["text"], "next": hit.get("next") or GENERIC["next"]}

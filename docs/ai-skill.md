@@ -361,6 +361,20 @@ the steps, and the phone and Telegram get one sentence saying where to connect. 
 check `sfctl connect status`. A service that **needs to be connected again** (it expired or was revoked) is the same: ask the
 same way. Do not try to fix a connection by editing an AI program's settings: ShellBot only changes its own `shellbot-…` entries.
 
+**The services** (the id is what `sfctl connect` and the marker take; `sfctl connect list` is the live list):
+
+| id | What | How it reaches your tab |
+|---|---|---|
+| `gmail` | Gmail | Claude tabs: the Claude account's connector; any AI tab: a local MCP server (`shellbot-gmail`) |
+| `google_drive` | Google Drive | Claude tabs only, through the Claude account's connector (tools `mcp__claude_ai_Google_Drive__…`) |
+| `google_calendar` | Google Calendar | Claude tabs only, the same way (`mcp__claude_ai_Google_Calendar__…`) |
+| `notion` | Notion | Claude tabs only, the same way (`mcp__claude_ai_Notion__…`) |
+| `slack` | Slack | Claude tabs only, the same way (`mcp__claude_ai_Slack__…`) |
+| `mac_messages`, `mac_notes`, `mac_reminders`, `mac_calendar` | Messages, Notes, Reminders, Calendar on a Mac | not yet: listed in Settings → Connect, but ShellBot has no way to connect them; `sfctl connect start` says so. Do not ask the user to connect these |
+
+A connector-only service is not reachable from a Codex, Antigravity, Grok Build, OpenCode, Cursor Agent or Pi tab through
+ShellBot; say so rather than asking the user to connect it there.
+
 ## 4.7 The Loops panel's schedule list (macOS, needs `experimental_loops`)
 
 The Loops panel lists the person's own LaunchAgents: timers and KeepAlive jobs. Which

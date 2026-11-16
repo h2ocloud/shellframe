@@ -9,12 +9,19 @@ it by name and never looks at which service it is.
 
 `validate()` returns the list of what is wrong; a description is usable only when it is `[]`. The
 registry skips a broken description (and says which, in `Registry.errors`) rather than refusing to start.
+
+A description also says where it sits in the Settings page's catalog (all optional, so an older description
+still reads): its `category` ({id, name}: one bubble per id), whether it is `recommended`, the `platforms` it
+can be connected on, whether it is an app on this computer (`local_app`: the "This Mac" section), and,
+for a service listed before it can be connected, `unavailable` ({text, next}) with no routes.
+`catalog_entry()` is what the page gets for each; `available()` says whether it can be started here.
 """
 
 import importlib
 import json
 import os
 import re
+import sys
 import threading
 from pathlib import Path
 
@@ -29,6 +36,8 @@ VIAS = ("connector", "mcp", "none")
 TONES = ("good", "warn", "bad", "info")
 BUILTINS = ("cli_add", "cli_remove", "cli_check", "secret_set")
 CHECK_ON = ("enter", "done")
+PLATFORMS = ("mac", "windows", "linux")
+CATEGORY_ID = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f  ]")
 _MARK = re.compile(r"\[\[|\]\]")
 LINE_MAX = 120
@@ -199,6 +208,32 @@ def _validate_mcp(errs, w, mcp, route):
             errs.append(f"{w}.env_from_secret.{k}: no secret '{sid}' on this route")
 
 
+def _validate_catalog(errs, desc):
+    """The catalog fields: all optional, each checked only when it is there."""
+    cat = desc.get("category")
+    if cat is not None:
+        if not isinstance(cat, dict) or not CATEGORY_ID.match(str(cat.get("id") or "")):
+            errs.append("category: {\"id\": kebab-case, \"name\": text}")
+        else:
+            _check_text(errs, "category.name", cat.get("name"))
+    for key in ("recommended", "local_app"):
+        if key in desc and not isinstance(desc[key], bool):
+            errs.append(f"{key}: true or false")
+    plats = desc.get("platforms")
+    if plats is not None and not (isinstance(plats, list) and plats and len(set(plats)) == len(plats)
+                                  and all(p in PLATFORMS for p in plats)):
+        errs.append(f"platforms: a list of {PLATFORMS}, each once")
+    un = desc.get("unavailable")
+    if un is not None:
+        if not isinstance(un, dict):
+            errs.append("unavailable: {\"text\", \"next\"}")
+        else:
+            _check_text(errs, "unavailable.text", un.get("text"))
+            _check_text(errs, "unavailable.next", un.get("next"), optional=True)
+        if desc.get("routes") != []:
+            errs.append("unavailable: a service that cannot be connected yet has \"routes\": []")
+
+
 def validate(desc) -> list:
     """What is wrong with a description, one line each; `[]` when it is fine."""
     errs = []
@@ -212,6 +247,7 @@ def validate(desc) -> list:
     _check_text(errs, "summary", desc.get("summary"), optional=True)
     if not isinstance(desc.get("icon"), str) or not desc.get("icon"):
         errs.append("icon: an icon key")
+    _validate_catalog(errs, desc)
     scope_ids, required = set(), set()
     for s in desc.get("scopes") or []:
         if not isinstance(s, dict) or not isinstance(s.get("id"), str) or not s["id"] or s["id"] in scope_ids:
@@ -222,8 +258,8 @@ def validate(desc) -> list:
         if s.get("required"):
             required.add(s["id"])
     routes = desc.get("routes")
-    if not isinstance(routes, list) or not routes:
-        errs.append("routes: at least one")
+    if not isinstance(routes, list) or (not routes and desc.get("unavailable") is None):
+        errs.append("routes: at least one (or none, with `unavailable` saying why)")
         routes = []
     rids = set()
     for r in routes:
@@ -304,6 +340,47 @@ def validate_adapter(desc: dict, adapter) -> list:
     return errs
 
 
+# ── the catalog ────────────────────────────────────────────────────────────
+def this_platform() -> str:
+    """mac | windows | linux: the computer ShellBot runs on, in the words `platforms` uses."""
+    return "mac" if sys.platform == "darwin" else "windows" if sys.platform == "win32" else "linux"
+
+
+def available(desc: dict, platform: str = None) -> str:
+    """'' when the service can be started here, else why not: `not_available` (listed, nothing to connect
+    it with yet: its `unavailable` says why) or `not_on_platform` (its `platforms` leave this computer out)."""
+    if (desc or {}).get("unavailable") is not None or not (desc or {}).get("routes"):
+        return "not_available"
+    plats = (desc or {}).get("platforms")
+    if plats and (platform or this_platform()) not in plats:
+        return "not_on_platform"
+    return ""
+
+
+def catalog_entry(desc: dict, platform: str = None) -> dict:
+    """What the catalog draws for one service besides its status: one line, its bubble, its section, and
+    whether it can be connected here (with the reason when it cannot). Nothing else about the service."""
+    cat = desc.get("category") if isinstance(desc.get("category"), dict) else None
+    why = available(desc, platform)
+    return {"id": desc["id"], "summary": desc.get("summary"),
+            "category": {"id": cat["id"], "name": cat["name"]} if cat else None,
+            "recommended": bool(desc.get("recommended")), "local_app": bool(desc.get("local_app")),
+            "platforms": list(desc.get("platforms") or PLATFORMS), "available": not why, "why": why or None}
+
+
+def category_conflicts(descs) -> list:
+    """Category ids that two descriptions name differently: one bubble cannot carry two names."""
+    seen, out = {}, []
+    for d in descs:
+        cat = (d or {}).get("category")
+        if not isinstance(cat, dict) or not cat.get("id"):
+            continue
+        first = seen.setdefault(cat["id"], (d.get("id"), cat.get("name")))
+        if first[1] != cat.get("name"):
+            out.append(f"category {cat['id']}: {first[0]} and {d.get('id')} name it differently")
+    return out
+
+
 # ── the registry ───────────────────────────────────────────────────────────
 def builtin_dir() -> Path:
     return Path(__file__).resolve().parent / "services"
@@ -353,10 +430,16 @@ class Registry:
         with self._lock:
             return self._desc.get(str(service))
 
+    def catalog(self, platform: str = None) -> list:
+        """`catalog_entry` of every service, in id order (the order `list` uses)."""
+        with self._lock:
+            descs = [self._desc[i] for i in sorted(self._desc)]
+        return [catalog_entry(d, platform) for d in descs]
+
     def route(self, service: str, route_id: str = None):
         """The route `route_id` of a service; without an id, the recommended one (else the first)."""
         d = self.get(service)
-        if not d:
+        if not d or not d["routes"]:                     # a service listed before it can be connected has none
             return None
         routes = d["routes"]
         if route_id:
