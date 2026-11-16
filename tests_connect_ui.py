@@ -243,9 +243,9 @@ def run(browser):
     print("1. Settings → Connect: the row of a service not started")
     page, errors = open_page(browser)
     tabs = page.evaluate("[...document.querySelectorAll('#settings-tabs-bar .settings-tab')].map(b => b.dataset.tab)")
-    check("the Connect tab is in Settings, right after LINE (and before Advanced, when there is one)",
+    check("the Connect tab is in Settings, after LINE and right before Advanced",
           "connect" in tabs and tabs.index("connect") == tabs.index("line") + 1
-          and ("advanced" not in tabs or tabs.index("advanced") == tabs.index("connect") + 1), tabs)
+          and tabs.index("advanced") == tabs.index("connect") + 1, tabs)
     open_settings_tab(page)
     row = page.locator("#settings-panel-connect .cn-row")
     check("one row per service: its name, a sentence on where it stands, a Connect button",

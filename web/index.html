@@ -512,6 +512,8 @@
   .bridge-field input:focus, .bridge-field textarea:focus { border-color: #7aa2f7; }
   .bridge-field textarea { min-height: 50px; resize: vertical; }
   .bridge-help { font-size: 10px; color: #565f89; line-height: 1.4; margin: -4px 0 8px 92px; }
+  .line-details { margin: 2px 0 4px; }
+  .line-details > summary { cursor: pointer; font-size: 11px; color: #7aa2f7; margin-bottom: 8px; user-select: none; }
   .toggle-switch {
     width: 36px; height: 20px; border-radius: 10px; background: #3b4261;
     cursor: pointer; position: relative; border: none; transition: background .2s;
@@ -965,6 +967,7 @@
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
       <button class="settings-tab" data-tab="bridge" data-guide="telegram" data-i18n="settingsTelegram">Telegram Bridge</button>
       <button class="settings-tab" data-tab="line" data-guide="line" data-i18n="settingsLine">LINE</button>
+      <button class="settings-tab" data-tab="advanced" data-i18n="settingsAdvanced">Advanced</button>
     </div>
 
     <!-- Tab: General -->
@@ -995,16 +998,6 @@
         <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoUpdate">Update notify</label>
           <button class="toggle-switch" id="setting-autoupdate"></button>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoCompactClaude">Auto /compact (Claude)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-auto-compact"></button>
-            <span style="font-size:11px;color:#565f89">≤</span>
-            <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
-                   style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
-            <span style="font-size:11px;color:#565f89" data-i18n="percentLeft">% left</span>
-          </div>
         </div>
         <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="globalHotkey">Global hotkey</label>
@@ -1048,13 +1041,6 @@
           </div>
         </div>
         <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="modelBadgeLabel">Model badge on sessions (experimental)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-model-badge"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
-          </div>
-        </div>
-        <div>
           <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="usagePaceLabel">Token pacing on the usage pill</label>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-usage-pace"></button>
@@ -1063,61 +1049,8 @@
         </div>
       </div>
 
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="apiServerTitle">Local HTTP API</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button class="toggle-switch" id="setting-api-server"></button>
-          <span id="api-server-status" style="font-size:11px;color:#565f89"></span>
-          <button class="btn btn-ghost" id="btn-api-docs" style="display:none" data-i18n="apiOpenDocs">API docs (Swagger)</button>
-          <button class="btn btn-ghost" id="btn-api-copy-token" style="display:none" data-i18n="apiCopyToken">Copy token</button>
-        </div>
-        <div class="bridge-help" style="margin-top:6px" data-i18n="apiServerHint">Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart.</div>
-      </div>
-
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="statusHooksTitle">Exact agent status (Claude Code hooks)</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button class="toggle-switch" id="setting-status-hooks"></button>
-          <span id="status-hooks-state" style="font-size:11px;color:#565f89"></span>
-        </div>
-        <div class="bridge-help" style="margin-top:6px" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div>
-      </div>
-
       <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
         💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.
-      </div>
-
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
-          <div>
-            <div style="font-size:12px;color:#c0caf5;font-weight:700" data-i18n="idleCleanupTitle">Idle tab cleanup</div>
-            <div style="font-size:10px;color:#565f89;margin-top:2px" data-i18n="idleCleanupDesc">Automatically summarize and close idle AI tabs. Protected/main tabs are kept.</div>
-          </div>
-          <button class="toggle-switch" id="setting-idle-enabled"></button>
-        </div>
-        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="idleAfter">Idle after</label>
-            <div style="display:flex;gap:6px">
-              <input type="number" id="setting-idle-value" class="sf-bright-spin" min="1" max="24" step="1" value="30"
-                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
-              <select id="setting-idle-unit" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none">
-                <option value="minutes" data-i18n="minutes">minutes</option>
-                <option value="hours" data-i18n="hours">hours</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="summaryWait">Summary wait</label>
-            <div style="display:flex;gap:6px;align-items:center">
-              <input type="number" id="setting-idle-grace" class="sf-bright-spin" min="1" max="30" step="1" value="2"
-                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
-              <span style="font-size:11px;color:#565f89" data-i18n="minutes">minutes</span>
-            </div>
-          </div>
-          <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
-          <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
-        </div>
       </div>
 
       <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
@@ -1145,29 +1078,10 @@
           <label data-i18n="tgUsers">Users</label>
           <input type="text" id="settings-bridge-users" data-i18n-placeholder="tgUsersPlaceholder" placeholder="User IDs (comma separated), empty = all"/>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="bridgePrefix">Prefix</label>
-          <button class="toggle-switch on" id="settings-bridge-prefix"></button>
-          <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
-        </div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-primary" id="btn-settings-bridge-connect" data-i18n="connect">Connect</button>
           <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
-      </div>
-
-      <div class="bridge-setup" style="margin-top:10px">
-        <h4 data-i18n="tgAdvancedTitle">Telegram Bridge 進階</h4>
-        <div class="bridge-field">
-          <label data-i18n="showTgWrapperLabel">顯示 TG Wrapper 標記</label>
-          <button class="toggle-switch on" id="setting-show-tg-wrapper"></button>
-        </div>
-        <div class="bridge-help" data-i18n="showTgWrapperHelp">TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴</div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="tgPromptLabel">自訂 TG Prompt</label>
-          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPromptPlaceholder" placeholder="[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c"></textarea>
-        </div>
-        <div class="bridge-help" data-i18n="tgPromptHelp">每輪 TG 訊息的格式/協作提示。留空使用內建預設</div>
       </div>
 
       <!-- STT (voice transcription) -->
@@ -1236,54 +1150,163 @@
           <label data-i18n="lineAllowedIds">Allowed IDs</label>
           <input type="text" id="settings-line-users" data-i18n-placeholder="lineAllowedIdsPlaceholder" placeholder="LINE userId/groupId, comma separated; empty = allow all"/>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineDeliveryMode">Reply mode</label>
-          <select id="settings-line-mode" style="flex:1">
-            <option value="poll" data-i18n="lineModePoll">Forward + poll outbox</option>
-            <option value="push" data-i18n="lineModePush">Direct LINE Messaging API</option>
-          </select>
+        <!-- The webhook's technical fields: folded until LINE is connected or someone opens them -->
+        <details id="settings-line-details" class="line-details">
+          <summary data-i18n="lineDetailsSummary">Connection details: reply mode, local server, public URL, forward key</summary>
+          <div class="bridge-field">
+            <label data-i18n="lineDeliveryMode">Reply mode</label>
+            <select id="settings-line-mode" style="flex:1">
+              <option value="poll" data-i18n="lineModePoll">Forward + poll outbox</option>
+              <option value="push" data-i18n="lineModePush">Direct LINE Messaging API</option>
+            </select>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="lineLocalServer">Local server</label>
+            <input type="number" id="settings-line-port" value="8787" min="1024" max="65535" style="width:90px;flex:0 0 auto"/>
+            <input type="text" id="settings-line-path" value="/line/webhook" style="font-family:monospace"/>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="linePollPath">Poll path</label>
+            <input type="text" id="settings-line-poll-path" value="/line/poll" style="font-family:monospace"/>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="linePublicUrl">Public URL</label>
+            <input type="text" id="settings-line-public-url" data-i18n-placeholder="linePublicUrlPlaceholder" placeholder="https://your-tunnel.example.com/line/webhook"/>
+          </div>
+          <div class="bridge-field">
+            <label data-i18n="lineForwardSecret">Forward key</label>
+            <input type="password" id="settings-line-forward-secret" data-i18n-placeholder="lineForwardSecretPlaceholder" placeholder="Optional shared key for company webhook"/>
+          </div>
+          <div id="settings-line-help" style="font-size:11px;color:#787c99;line-height:1.55;background:#1f2335;border:1px solid #2f354d;border-radius:6px;padding:10px;margin-top:8px">
+            <div><b data-i18n="lineSetupTitle">Setup</b></div>
+            <div data-i18n="lineSetupStep1">1. Company webhook forwards LINE events to the local endpoint below.</div>
+            <div data-i18n="lineSetupStep2">2. In Forward + poll mode, your webhook polls the poll endpoint for responses.</div>
+            <div data-i18n="lineSetupStep3">3. Direct mode still supports LINE signature verification and Messaging API push/reply.</div>
+            <div><span data-i18n="lineSetupStep4Prefix">4. Local endpoint:</span> <code id="settings-line-local-url">http://127.0.0.1:8787/line/webhook</code></div>
+            <div><span data-i18n="lineSetupPollPrefix">5. Poll endpoint:</span> <code id="settings-line-poll-url">http://127.0.0.1:8787/line/poll</code></div>
+          </div>
+          <div style="margin-top:8px">
+            <button class="btn btn-ghost" id="btn-settings-line-copy-url" data-i18n="lineCopyUrl">Copy local URL</button>
+          </div>
+        </details>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="btn-settings-line-connect" data-i18n="lineConnect">Connect LINE</button>
+          <button class="btn btn-ghost" id="btn-settings-line-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineLocalServer">Local server</label>
-          <input type="number" id="settings-line-port" value="8787" min="1024" max="65535" style="width:90px;flex:0 0 auto"/>
-          <input type="text" id="settings-line-path" value="/line/webhook" style="font-family:monospace"/>
+      </div>
+    </div>
+
+    <!-- Tab: Advanced. What few people change, moved here from General, Telegram and LINE with the same
+         ids, keys and defaults; each saves (or is read on Connect) as it did. tests_settings_ui.py -->
+    <div class="settings-tab-panel" id="settings-panel-advanced">
+      <div style="font-size:11px;color:#787c99;margin-bottom:10px;line-height:1.5" data-i18n="advancedIntro">Settings most people never change. Each one works as it did before it moved here.</div>
+      <div style="display:flex;gap:16px;margin-bottom:10px;padding:12px;background:#24283b;border-radius:8px;flex-wrap:wrap">
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoCompactClaude">Auto /compact (Claude)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-auto-compact"></button>
+            <span style="font-size:11px;color:#565f89">≤</span>
+            <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
+                   style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
+            <span style="font-size:11px;color:#565f89" data-i18n="percentLeft">% left</span>
+          </div>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="linePollPath">Poll path</label>
-          <input type="text" id="settings-line-poll-path" value="/line/poll" style="font-family:monospace"/>
+        <div>
+          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="modelBadgeLabel">Model badge on sessions (experimental)</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="toggle-switch on" id="setting-model-badge"></button>
+            <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
+          </div>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="linePublicUrl">Public URL</label>
-          <input type="text" id="settings-line-public-url" data-i18n-placeholder="linePublicUrlPlaceholder" placeholder="https://your-tunnel.example.com/line/webhook"/>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="apiServerTitle">Local HTTP API</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="toggle-switch" id="setting-api-server"></button>
+          <span id="api-server-status" style="font-size:11px;color:#565f89"></span>
+          <button class="btn btn-ghost" id="btn-api-docs" style="display:none" data-i18n="apiOpenDocs">API docs (Swagger)</button>
+          <button class="btn btn-ghost" id="btn-api-copy-token" style="display:none" data-i18n="apiCopyToken">Copy token</button>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineForwardSecret">Forward key</label>
-          <input type="password" id="settings-line-forward-secret" data-i18n-placeholder="lineForwardSecretPlaceholder" placeholder="Optional shared key for company webhook"/>
+        <div class="bridge-help" style="margin-top:6px" data-i18n="apiServerHint">Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart.</div>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="statusHooksTitle">Exact agent status (Claude Code hooks)</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="toggle-switch" id="setting-status-hooks"></button>
+          <span id="status-hooks-state" style="font-size:11px;color:#565f89"></span>
         </div>
+        <div class="bridge-help" style="margin-top:6px" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div>
+      </div>
+
+      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+          <div>
+            <div style="font-size:12px;color:#c0caf5;font-weight:700" data-i18n="idleCleanupTitle">Idle tab cleanup</div>
+            <div style="font-size:10px;color:#565f89;margin-top:2px" data-i18n="idleCleanupDesc">Automatically summarize and close idle AI tabs. Protected/main tabs are kept.</div>
+          </div>
+          <button class="toggle-switch" id="setting-idle-enabled"></button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div>
+            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="idleAfter">Idle after</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="setting-idle-value" class="sf-bright-spin" min="1" max="24" step="1" value="30"
+                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
+              <select id="setting-idle-unit" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none">
+                <option value="minutes" data-i18n="minutes">minutes</option>
+                <option value="hours" data-i18n="hours">hours</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="summaryWait">Summary wait</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" id="setting-idle-grace" class="sf-bright-spin" min="1" max="30" step="1" value="2"
+                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
+              <span style="font-size:11px;color:#565f89" data-i18n="minutes">minutes</span>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
+          <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
+        </div>
+      </div>
+
+      <div class="bridge-setup" style="margin-bottom:10px">
+        <h4 data-i18n="tgAdvancedTitle">Telegram</h4>
+        <div class="bridge-field">
+          <label data-i18n="bridgePrefix">Prefix</label>
+          <button class="toggle-switch on" id="settings-bridge-prefix"></button>
+          <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
+        </div>
+        <div class="bridge-help" data-i18n="bridgePrefixOnConnect">Takes effect the next time Telegram connects (Telegram tab → Connect).</div>
+        <div class="bridge-field">
+          <label data-i18n="showTgWrapperLabel">顯示 TG Wrapper 標記</label>
+          <button class="toggle-switch on" id="setting-show-tg-wrapper"></button>
+        </div>
+        <div class="bridge-help" data-i18n="showTgWrapperHelp">TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴</div>
+        <div class="bridge-field" style="align-items:flex-start">
+          <label data-i18n="tgPromptLabel">自訂 TG Prompt</label>
+          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPromptPlaceholder" placeholder="[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c"></textarea>
+        </div>
+        <div class="bridge-help" data-i18n="tgPromptHelp">每輪 TG 訊息的格式/協作提示。留空使用內建預設</div>
+      </div>
+
+      <div class="bridge-setup">
+        <h4 data-i18n="lineAdvancedTitle">LINE</h4>
         <div class="bridge-field">
           <label data-i18n="bridgePrefix">Prefix</label>
           <button class="toggle-switch on" id="settings-line-prefix"></button>
           <span style="font-size:11px;color:#565f89" data-i18n="linePrefixHint">[LINE userId]: message</span>
         </div>
+        <div class="bridge-help" data-i18n="linePrefixOnConnect">Takes effect the next time LINE connects (LINE tab → Connect LINE).</div>
         <div class="bridge-field" style="align-items:flex-start">
           <label data-i18n="linePerTurnPreamble">Wrapper prompt</label>
           <textarea id="setting-line-prompt" style="font-size:11px" data-i18n-placeholder="linePreamblePlaceholder" placeholder="Prepended to every LINE message sent to the AI. Leave empty to turn off."></textarea>
         </div>
         <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4" data-i18n="linePreambleHelp">
           Every non-command LINE message is wrapped with this prompt so agents reply in a LINE-friendly format. Empty = off.
-        </div>
-        <div id="settings-line-help" style="font-size:11px;color:#787c99;line-height:1.55;background:#1f2335;border:1px solid #2f354d;border-radius:6px;padding:10px;margin-top:8px">
-          <div><b data-i18n="lineSetupTitle">Setup</b></div>
-          <div data-i18n="lineSetupStep1">1. Company webhook forwards LINE events to the local endpoint below.</div>
-          <div data-i18n="lineSetupStep2">2. In Forward + poll mode, your webhook polls the poll endpoint for responses.</div>
-          <div data-i18n="lineSetupStep3">3. Direct mode still supports LINE signature verification and Messaging API push/reply.</div>
-          <div><span data-i18n="lineSetupStep4Prefix">4. Local endpoint:</span> <code id="settings-line-local-url">http://127.0.0.1:8787/line/webhook</code></div>
-          <div><span data-i18n="lineSetupPollPrefix">5. Poll endpoint:</span> <code id="settings-line-poll-url">http://127.0.0.1:8787/line/poll</code></div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-primary" id="btn-settings-line-connect" data-i18n="lineConnect">Connect LINE</button>
-          <button class="btn btn-ghost" id="btn-settings-line-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
-          <button class="btn btn-ghost" id="btn-settings-line-copy-url" data-i18n="lineCopyUrl">Copy local URL</button>
         </div>
       </div>
     </div>
@@ -1505,6 +1528,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       statusHooksHint: 'Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to Claude tabs opened after enabling; others keep the heuristic fallback.',
       settingsTelegram: 'Telegram Bridge',
       settingsLine: 'LINE',
+      settingsAdvanced: 'Advanced',
+      advancedIntro: 'Settings most people never change. Each one works as it did before it moved here.',
       settingsDesc: 'Manage presets — edit name, command, or icon. Changes save automatically.',
       addPreset: 'Add',
       fontSize: 'Terminal font',
@@ -1578,7 +1603,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgAllowedUsersPlaceholder: 'User IDs (comma separated), empty = allow all',
       bridgePrefix: 'Prefix',
       tgPrefixHint: '[TG @user]: message',
-      tgAdvancedTitle: 'Telegram Bridge Advanced',
+      tgAdvancedTitle: 'Telegram Bridge',
+      lineAdvancedTitle: 'LINE',
+      bridgePrefixOnConnect: 'Takes effect the next time Telegram connects (Telegram Bridge tab → Connect).',
+      linePrefixOnConnect: 'Takes effect the next time LINE connects (LINE tab → Connect LINE).',
+      lineDetailsSummary: 'Connection details: reply mode, local server, public URL, forward key',
       showTgWrapperLabel: 'Show TG Wrapper tag',
       showTgWrapperHelp: 'Show the [SF-TG wrapper] prefix when TG messages are injected into the local terminal',
       tgPromptLabel: 'Custom TG Prompt',
@@ -1655,6 +1684,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       statusHooksHint: '在 ~/.claude/settings.json 安裝輕量 async hooks，由 Claude 自己回報「工作中／回合結束／等待權限」——不再靠畫面猜。啟用後新開的 Claude tab 生效；其餘 tab 維持原本的畫面偵測 fallback。',
       settingsTelegram: 'Telegram 橋接',
       settingsLine: 'LINE',
+      settingsAdvanced: '進階',
+      advancedIntro: '大多數人用不到、很少改的設定。搬到這裡之後，每一項的作用都跟原本一樣。',
       settingsDesc: '管理預設指令 — 編輯名稱、指令或圖示。修改即時儲存。',
       addPreset: '新增',
       fontSize: '終端字型',
@@ -1728,7 +1759,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tgAllowedUsersPlaceholder: 'User ID（逗號分隔）；留空代表全部允許',
       bridgePrefix: '前綴',
       tgPrefixHint: '[TG @使用者]: 訊息',
-      tgAdvancedTitle: 'Telegram Bridge 進階',
+      tgAdvancedTitle: 'Telegram 橋接',
+      lineAdvancedTitle: 'LINE',
+      bridgePrefixOnConnect: '下次在「Telegram 橋接」分頁按「連線」時生效。',
+      linePrefixOnConnect: '下次在「LINE」分頁按「連線 LINE」時生效。',
+      lineDetailsSummary: '連線細節：回覆模式、本機伺服器、公開網址、轉送金鑰',
       showTgWrapperLabel: '顯示 TG Wrapper 標記',
       showTgWrapperHelp: 'TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴',
       tgPromptLabel: '自訂 TG Prompt',
@@ -7361,6 +7396,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const result = JSON.parse(raw);
       if (result.exists && result.active) {
         lineBridgeState = result;
+        document.getElementById('settings-line-details').open = true;   // connected: its details are shown
         statusEl.textContent = result.paused ? `⏸ ${t('paused')}` : `● ${t('connected')} (${result.delivery_mode || 'line'})`;
         statusEl.style.color = result.paused ? '#e0af68' : '#9ece6a';
         connectBtn.style.display = 'none';
@@ -7731,7 +7767,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     await pywebview.api.save_settings(JSON.stringify(config.settings));
   });
 
-  // ── Local HTTP API (Settings → General) ──
+  // ── Local HTTP API (Settings → Advanced) ──
   const $apiToggle = document.getElementById('setting-api-server');
   const $apiStatus = document.getElementById('api-server-status');
   const $apiDocsBtn = document.getElementById('btn-api-docs');
@@ -7762,7 +7798,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   });
   $apiDocsBtn.addEventListener('click', () => { if (_apiInfo) pywebview.api.open_url(_apiInfo.docs_url); });
 
-  // ── Exact agent status hooks (Settings → General) ──
+  // ── Exact agent status hooks (Settings → Advanced) ──
   const $hooksToggle = document.getElementById('setting-status-hooks');
   const $hooksState = document.getElementById('status-hooks-state');
   function renderStatusHooks(info) {

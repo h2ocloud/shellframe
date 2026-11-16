@@ -156,7 +156,7 @@ Bare `Ctrl` chords that terminals rely on are not hijacked: on macOS app shortcu
 
 ### Idle Tab Cleanup
 
-Open Settings → General → Idle tab cleanup to control ShellFrame's automatic
+Open Settings → Advanced → Idle tab cleanup to control ShellFrame's automatic
 AI tab cleanup.
 
 - **Idle after** controls how long an AI tab can sit without user input before

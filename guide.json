@@ -243,8 +243,8 @@
         "zh": "設定"
       },
       "body": {
-        "en": "Language, font size, what the + menu offers, Telegram and LINE, and the experimental features.",
-        "zh": "語言、字級、＋ 選單裡有哪些、Telegram 和 LINE，還有實驗性功能。"
+        "en": "Language, font size, what the + menu offers, Telegram and LINE, the experimental features, and under Advanced the ones few people change (local HTTP API, idle tab cleanup).",
+        "zh": "語言、字級、＋ 選單裡有哪些、Telegram 和 LINE、實驗性功能；很少動的（本機 HTTP API、閒置分頁清理）在「進階」。"
       }
     },
     {
