@@ -2348,7 +2348,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         created = False
         if not session:
             sid = self.new_session(
-                entry.get("cmd", "claude"),
+                self._bots_launch_cmd(resolved_role, entry, entry.get("cmd", "claude")),   # a bot: its persona too
                 200,
                 50,
                 source="delegate",

@@ -1242,11 +1242,12 @@ class BotsApiMixin:
         if warn:
             _dlog("bots", f"open role={role!r}: model {pin['model']!r} is not one ShellBot knows ({pin['code']}); "
                           f"the CLI may ignore it or refuse to start")
-        sid = self.new_session(cmd, 200, 50, source="bot", handoff=False)
+        launch = self._bots_launch_cmd(role, entry, cmd)
+        sid = self.new_session(launch, 200, 50, source="bot", handoff=False)
         self.rename_session(sid, label, manual=True)
         self._bots_bind(sid, role)
         bots.ensure_dirs(role)
-        if bots.is_memory_bot(entry):
+        if bots.is_memory_bot(entry) or launch == cmd:      # its memory; or who it is, when the CLI took no persona
             threading.Thread(target=self._bots_wake, args=(sid, role), daemon=True,
                              name=f"bot-wake-{sid}").start()
         _dlog("bots", f"open role={role!r} sid={sid}")
@@ -1264,7 +1265,19 @@ class BotsApiMixin:
             return
         s._startup_trust_pending = False
         s._init_pending = False                 # the brief replaces the generic init prompt
-        self._send_text_to_session(s, self._bots_brief(role, entry, raw), submit=True)
+        text = self._bots_brief(role, entry, raw) if bots.is_memory_bot(entry) else bots.persona_text(role, entry)
+        self._send_text_to_session(s, text, submit=True)
+
+    def _bots_launch_cmd(self, role: str, entry: dict, cmd: str = "") -> str:
+        """The command a bot's tab starts with: its persona file added to the CLI's system prompt where the
+        CLI takes one (bots.with_persona), else the command as it was. Never fails a wake."""
+        cmd = cmd or str((entry or {}).get("cmd") or "claude")
+        try:
+            if self._bots_enabled() and bots.is_bot(entry) and not bots.is_external(entry):
+                return bots.with_persona(cmd, role, entry)
+        except Exception:
+            _swallow("bots:persona")
+        return cmd
 
     def _bots_first_prompt(self, sid: str, role: str, prompt: str) -> str:
         """delegate (and A2A to a sleeping bot) just opened this role's tab: put the
@@ -1275,6 +1288,8 @@ class BotsApiMixin:
             raw = _cfg().get("agent_roster") or {}
             entry = raw.get(role)
             if not bots.is_memory_bot(entry):
+                if bots.is_bot(entry) and not bots.persona_flag(str(entry.get("cmd") or "claude")):
+                    return bots.persona_text(role, entry) + "\n\n---\n\n" + prompt   # who it is, the CLI took no persona
                 return prompt
             self._bots_bind(sid, role)
             bots.ensure_dirs(role)

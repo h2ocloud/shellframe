@@ -655,6 +655,73 @@ _BRIEF = {
 }
 
 
+# ── persona: who the bot is, in the CLI's system prompt ─────────────────────────
+# Reported: a bot asked "what are your settings" described its CLI (pi's own prompt) and nothing of
+# its name or 執掌; colleagues found bots no different from a plain tab. The brief arrives as a first
+# message: weaker than the system prompt, gone after a compaction, and never sent to a bot without
+# memory. Where the CLI takes an added system prompt at launch (Claude Code, pi; their sf-* launchers
+# pass arguments on), the bot's name and 執掌 go there, from a file in its folder written at each wake.
+PERSONA_FLAGS = {"claude": "--append-system-prompt-file", "pi": "--append-system-prompt"}
+_PERSONA = {
+    "en": ("You are \"{label}\", a bot in ShellBot (a desktop app that runs AI agents in tabs).\n"
+           "Your responsibility: {resp}\n"
+           "Act as this bot: introduce yourself, decide what is yours to take on, and report by this "
+           "responsibility. Work outside it: say so, and suggest which bot it belongs to (`sfctl bots`).\n"
+           "Your folder: {dir} (MEMORY.md, sessions/). At the start of a conversation and after your context "
+           "was compacted, read MEMORY.md and run `sfctl task mine`.\n"
+           "Asked who you are or what your settings are: first this name and responsibility, then which program "
+           "and model you run on."),
+    "zh": ("你是「{label}」，ShellBot（在分頁裡跑 AI agent 的桌面 App）裡的一個 bot。\n"
+           "你的執掌：{resp}\n"
+           "用這個身份說話和做事：自我介紹、判斷一件事該不該由你接、回報進度，都以這個執掌為準。"
+           "不屬於你執掌的事，說明並建議交給哪個 bot（`sfctl bots` 看其他 bot）。\n"
+           "你的資料夾：{dir}（MEMORY.md、sessions/）。對話開始時、以及 context 被壓縮之後，先讀 MEMORY.md "
+           "並跑 `sfctl task mine`。\n"
+           "被問到你是誰或你的設定時，先講上面的名字和執掌，再講你跑在哪個程式和模型。"),
+}
+_NO_RESP = {"en": "(not written yet: ask the user what you should look after)",
+            "zh": "（還沒寫：問使用者你該負責什麼）"}
+
+
+def persona_text(role, entry, lang=None) -> str:
+    lang = "zh" if (lang or sf_lang.prompt_lang()) == "zh" else "en"
+    resp = str((entry or {}).get("responsibility") or "").strip()[:RESP_MAX]
+    return _PERSONA[lang].format(label=label_of(role, entry), resp=resp or _NO_RESP[lang], dir=bot_dir(role))
+
+
+def persona_file(role) -> Path:
+    return bot_dir(role) / "persona.md"
+
+
+def persona_flag(cmd: str) -> str:
+    """The flag that adds a file to this command's system prompt, or "" when its CLI takes none ShellBot
+    knows. The program is read after any `cd …&&` / `env …` prefix; an sf-<cli>-… launcher counts as
+    that CLI (they pass their arguments on, as the Codex preset's do)."""
+    import launch_cmd
+    import shlex
+    _, rest = launch_cmd.split_prefix(cmd or "")
+    try:
+        prog = shlex.split(rest)[0] if rest.strip() else ""
+    except ValueError:
+        return ""
+    base = os.path.basename(prog)
+    m = re.match(r"^sf-([a-z]+)(?:-|$)", base)
+    return PERSONA_FLAGS.get(m.group(1) if m else base, "")
+
+
+def with_persona(cmd: str, role, entry, lang=None) -> str:
+    """`cmd` with the bot's persona file added to its system prompt (the file written now), or `cmd` as
+    it was when its CLI takes no such flag, or the flag is already there."""
+    flag = persona_flag(cmd)
+    if not flag or flag in (cmd or ""):
+        return cmd
+    import shlex
+    path = persona_file(role)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(persona_text(role, entry, lang) + "\n", encoding="utf-8")
+    return f"{cmd} {flag} {shlex.quote(str(path))}"
+
+
 def compose_brief(role, entry, roster, *, memory="", last="", last_name="", skills=(), own_skills=(),
                   is_primary=False, with_ack=True, autosave=False, lang=None, tasks="") -> str:
     lang = lang or sf_lang.prompt_lang()

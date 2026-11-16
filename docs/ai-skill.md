@@ -313,7 +313,7 @@ sfctl tg-send "第 1 到 3 項完成"        # primary bot only: tell the user's
 sfctl a2a-send 研究 "…"             # a sleeping bot is woken: new tab, its brief, then your message
 ```
 
-**If you are a bot**, your tab started with a brief: 執掌, your own skills (the
+**If you are a bot**, who you are (your name, your 執掌, your folder) is in your system prompt when your CLI takes one (Claude Code, pi); answer "who are you" with that. Your tab also started with a brief: 執掌, your own skills (the
 ones in your folder's `skills/<name>/SKILL.md`, only you have them; where a shared
 skill has the same name, yours is the one) and the shared skills you were given (each
 with the SKILL.md path to read), your `MEMORY.md`, the summary of your last
