@@ -118,7 +118,7 @@ def descriptor(row):
 
 
 STUB = r"""
-window.__calls = []; window.__cfg = %(cfg)s; window.__rows = %(rows)s; window.__cat = %(cat)s; window.__desc = %(desc)s;
+window.__calls = []; window.__cfg = %(cfg)s; window.__rows = %(rows)s; window.__cat = %(cat)s; window.__desc = %(desc)s; window.__platform = %(platform)s;
 window.__state = {};
 const R = v => Promise.resolve(typeof v === 'string' ? v : JSON.stringify(v));
 const st = id => Object.assign({}, window.__rows.find(r => r.service === id), window.__state[id] || {});
@@ -132,7 +132,7 @@ const view = id => {
 const ok = (id, extra) => Object.assign({success: true, status: st(id), view: view(id)}, extra || {});
 window.__api = {
   connect_list: () => ({success: true, services: window.__rows.map(r => st(r.service)), clis: [{id: 'alpha', name: {en: 'Alpha CLI', zh: 'Alpha CLI'}}],
-                        catalog: window.__cat, platform: 'mac'}),
+                        catalog: window.__cat, platform: window.__platform}),
   connect_describe: (id) => ({success: true, descriptor: window.__desc[id]}),
   connect_status: (id) => ok(id),
   connect_start: (id, a) => {
@@ -167,17 +167,17 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
 """
 
 
-def stub(lang, data=None):
+def stub(lang, data=None, platform="mac"):
     """The stand-in page side; `data` = (statuses, catalog, descriptors) instead of the made-up services."""
     cfg = {"settings": {"language": lang, "sidebar_open": True}, "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {}}
     rows, cat_, desc = data or ([status(r) for r in SERVICES], [catalog(r) for r in SERVICES], {r[0]: descriptor(r) for r in SERVICES})
     return STUB % {"cfg": json.dumps(cfg, ensure_ascii=False), "rows": json.dumps(rows, ensure_ascii=False),
-                   "cat": json.dumps(cat_, ensure_ascii=False), "desc": json.dumps(desc, ensure_ascii=False)}
+                   "cat": json.dumps(cat_, ensure_ascii=False), "desc": json.dumps(desc, ensure_ascii=False), "platform": json.dumps(platform)}
 
 
-def shipped():
-    """What the Python side lists for the services that ship, on a Mac with nothing connected: the real
-    registry and engine (stand-in programs, a state file of its own). No screenshot is taken of it."""
+def shipped(platform="mac"):
+    """What the Python side lists for the services that ship, on a computer of that kind with nothing connected:
+    the real registry and engine (stand-in programs, a state file of its own). No screenshot is taken of it."""
     import os
     import tempfile
     sys.path.insert(0, str(HERE))
@@ -186,19 +186,19 @@ def shipped():
     from connectors import clis, engine, registry
     reg = registry.Registry()
     eng = engine.Engine(registry=reg, path=os.path.join(tempfile.mkdtemp(prefix="catalog-ui-"), "connectors.json"),
-                        clis=clis.Clis(runner=fake.FakeRunner(), finder=fake.finder()), backend=fake.backend(), platform="mac")
-    return eng.list(), reg.catalog("mac"), {i: reg.get(i) for i in reg.ids()}, reg
+                        clis=clis.Clis(runner=fake.FakeRunner(), finder=fake.finder()), backend=fake.backend(), platform=platform)
+    return eng.list(), reg.catalog(platform), {i: reg.get(i) for i in reg.ids()}, reg
 
 
 def calls(page, name):
     return page.evaluate("(n) => window.__calls.filter(c => c[0] === n).map(c => c[1])", name)
 
 
-def open_page(browser, lang="zh-TW", width=1100, height=820, data=None):
+def open_page(browser, lang="zh-TW", width=1100, height=820, data=None, platform="mac"):
     page = browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=2)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.add_init_script(stub(lang, data))
+    page.add_init_script(stub(lang, data, platform))
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_function("window.SFConnect && SFConnect.list().loaded", timeout=15000)
     page.click("#btn-settings")
@@ -395,6 +395,21 @@ def run(browser):
     check("nothing connected: 0", page.locator("#settings-panel-connect .cg-count").inner_text() == "已連結 0 個 ›")
     sec(page, "local").locator(".cg-row button").first.click()
     check("a Mac app's reason is its description's words", pick_zh(desc[local[0]]["unavailable"]["text"]) in sec(page, "local").inner_text())
+    check("no page errors", not errors, errors)
+    page.close()
+
+    print("10. the same services on a Windows computer")
+    rows, cat_, desc, reg = shipped("windows")
+    page, errors = open_page(browser, data=(rows, cat_, desc), platform="windows")
+    keys = page.locator("#settings-panel-connect .cg-sec").evaluate_all("els => els.map(e => e.dataset.sec)")
+    check("no This PC section and no bubble for it: the Mac apps are not this computer's",
+          "local" not in keys and pills(page) == ["全部", "生產力", "通訊"], (keys, pills(page)))
+    home = page.locator("#settings-panel-connect .cg-row").evaluate_all("els => els.map(e => e.dataset.service)")
+    check("…and the home list does not show them anywhere", not set(home) & set(local) and len(home) == len(recommended), home)
+    page.locator('#settings-panel-connect [data-cg="all"]').click()
+    marked = sec(page, "all").locator(".cg-row.cg-off").evaluate_all("els => els.map(e => e.dataset.service)")
+    check("See all lists them, each marked Not on this computer", sorted(marked) == local
+          and set(sec(page, "all").locator(".cg-off button").all_inner_texts()) == {"這台不能用"}, marked)
     check("no page errors", not errors, errors)
     page.close()
 

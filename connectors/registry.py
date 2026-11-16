@@ -347,13 +347,14 @@ def this_platform() -> str:
 
 
 def available(desc: dict, platform: str = None) -> str:
-    """'' when the service can be started here, else why not: `not_available` (listed, nothing to connect
-    it with yet: its `unavailable` says why) or `not_on_platform` (its `platforms` leave this computer out)."""
-    if (desc or {}).get("unavailable") is not None or not (desc or {}).get("routes"):
-        return "not_available"
+    """'' when the service can be started here, else why not: `not_on_platform` (its `platforms` leave this
+    computer out; asked first, so a Mac app is never listed as this PC's) or `not_available` (listed, nothing
+    to connect it with yet: its `unavailable` says why)."""
     plats = (desc or {}).get("platforms")
     if plats and (platform or this_platform()) not in plats:
         return "not_on_platform"
+    if (desc or {}).get("unavailable") is not None or not (desc or {}).get("routes"):
+        return "not_available"
     return ""
 
 

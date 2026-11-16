@@ -77,15 +77,15 @@
         "grok": {
           "via": "none",
           "note": {
-            "en": "The claude.ai connector only reaches Claude tabs. Notion runs its own MCP server (mcp.notion.com) that this program can add itself; ShellBot does not set it up yet.",
-            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Notion 有自己的 MCP 伺服器（mcp.notion.com），這個程式可以自己加；ShellBot 目前不幫你設定。"
+            "en": "The claude.ai connector only reaches Claude tabs. Notion runs its own MCP server (mcp.notion.com); Notion's docs do not list this program, though its own docs say it takes remote MCP servers. ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Notion 有自己的 MCP 伺服器（mcp.notion.com）；Notion 的文件沒列這個程式，但它自己的文件說可以加遠端 MCP 伺服器。ShellBot 不幫你設定。"
           }
         },
         "opencode": {
           "via": "none",
           "note": {
-            "en": "The claude.ai connector only reaches Claude tabs. Notion runs its own MCP server (mcp.notion.com) that this program can add itself; ShellBot does not set it up yet.",
-            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Notion 有自己的 MCP 伺服器（mcp.notion.com），這個程式可以自己加；ShellBot 目前不幫你設定。"
+            "en": "The claude.ai connector only reaches Claude tabs. Notion runs its own MCP server (mcp.notion.com); Notion's docs do not list this program, though its own docs say it takes remote MCP servers. ShellBot does not set it up.",
+            "zh": "claude.ai 的連接器只有 Claude 的分頁拿得到。Notion 有自己的 MCP 伺服器（mcp.notion.com）；Notion 的文件沒列這個程式，但它自己的文件說可以加遠端 MCP 伺服器。ShellBot 不幫你設定。"
           }
         },
         "cursor": {

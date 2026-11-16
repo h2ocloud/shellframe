@@ -147,8 +147,8 @@ not recommended, is connectable everywhere).
   false, known platforms (each once, at least one), and `unavailable` only with `"routes": []` (no routes is refused
   without it). `registry.category_conflicts` finds one id named two ways; `tests_connectors_hygiene.py` runs it on the
   shipped descriptions.
-- `registry.available(desc, platform)` is `''`, `not_available` (it has `unavailable`) or `not_on_platform` (its
-  `platforms` leave this computer out). `engine.start` (and so `connect_signal`, `sfctl connect start`) answers that code
+- `registry.available(desc, platform)` is `''`, `not_on_platform` (its `platforms` leave this computer out; asked
+  first, so a Mac app never shows as this PC's) or `not_available` (it has `unavailable`). `engine.start` (and so `connect_signal`, `sfctl connect start`) answers that code
   and starts nothing; `problems.explain("not_available", desc)` says the description's own `unavailable` words. The
   status gets `available` (false: the reason is its `problem`, and it never needs attention); `health.words` says it
   "cannot be connected here yet". The phone's `connections` leaves such a service out.
@@ -177,7 +177,7 @@ service's clean-up never closes another's. The file starts with `_`, so the regi
 | `gmail` | Gmail | the connector, or a local MCP server | the local server for every program (see `gmail.json`) | as before |
 | `google_drive` | Google Drive | the connector | `none` (noted: Codex's own Google Drive plugin; Google's own MCP server is a developer preview) | descriptions, adapter and engine with stand-ins; the tool names as a Claude Code session lists them |
 | `google_calendar` | Google Calendar | the connector | `none` (noted: Google's own MCP server is a developer preview) | the same |
-| `notion` | Notion | the connector | `none` (noted: Notion's own hosted MCP server, which Codex, Antigravity, Grok Build and OpenCode can add themselves) | the same |
+| `notion` | Notion | the connector | `none` (noted: Notion's own hosted MCP server; Notion's docs give steps for Codex and Antigravity, and Grok Build and OpenCode take remote MCP servers by their own docs) | the same |
 | `slack` | Slack | the connector | `none` (Slack's own MCP server takes only the clients Slack lists) | the same |
 | `mac_messages`, `mac_notes`, `mac_reminders`, `mac_calendar` | Messages, Notes, Reminders, Calendar | none yet (`unavailable`) | — | listed with the reason; nothing to run |
 

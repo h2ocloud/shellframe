@@ -220,5 +220,23 @@ for sid in MAC:
           and res["message"]["text"] == d["unavailable"]["text"] and eng.store.get(sid) == {})
     check("sfctl's line says it cannot be connected here yet", "cannot be connected here yet" in health.words(eng.status(sid), "en"))
 
+# ── the core's other paths over every shipped service (the hourly check must not stop on one with no routes) ──
+print("the health check and disconnect over the shipped services")
+try:
+    out = eng.refresh_all(force=True)
+    raised = ""
+except Exception as exc:                 # the hourly thread swallows this: it would stop the check for every service
+    out, raised = {}, repr(exc)
+check("refresh_all over every shipped service raises nothing, and none of these needs attention",
+      not raised and not [a for a in out.get("attention", []) if a["id"] in set(CONNECTOR) | set(MAC)], raised or out)
+res = eng.refresh("mac_notes", force=True)
+check("a health check of a Mac app answers, starts nothing and keeps it not connected",
+      res["success"] and res["status"]["state"] == "not_started" and eng.store.get("mac_notes") == {}, res)
+res = eng.disconnect("mac_notes")
+check("disconnecting a Mac app answers and changes nothing", res["success"] and eng.status("mac_notes")["state"] == "not_started", res)
+res = eng.disconnect("notion")
+check("disconnecting a connector service forgets it and touches no AI program's settings",
+      res["success"] and eng.status("notion")["state"] == "not_started" and runner.calls == [], (res, runner.calls))
+
 print(f"\nResults: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

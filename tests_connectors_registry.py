@@ -115,8 +115,10 @@ check("category, recommended and platforms are read", registry.validate(full) ==
 check("…on a computer its platforms leave out: not available, and why", registry.catalog_entry(full, "linux")["available"] is False
       and registry.catalog_entry(full, "linux")["why"] == "not_on_platform" and registry.available(full, "linux") == "not_on_platform")
 check("a service listed before it can be connected is valid with no routes", registry.validate(soon()) == [], registry.validate(soon()))
-check("…and not available, wherever it is", registry.available(soon(), "mac") == "not_available"
+check("…and not available on the computer it is for", registry.available(soon(), "mac") == "not_available"
       and registry.catalog_entry(soon(), "mac")["why"] == "not_available" and registry.catalog_entry(soon(), "mac")["local_app"] is True)
+check("…and on another kind of computer it is that computer's reason first (a Mac app is never listed as this PC's)",
+      registry.available(soon(), "windows") == "not_on_platform" and registry.catalog_entry(soon(), "linux")["why"] == "not_on_platform")
 ok, e = bad(lambda d: d.update(routes=[]), "routes: at least one")
 check("no routes without `unavailable` saying why is refused", ok, e)
 ok, e = bad(lambda d: d.update(unavailable={"text": fake.T("x"), "next": fake.T("y")}), "has \"routes\": []")
