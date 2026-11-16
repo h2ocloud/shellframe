@@ -6,6 +6,26 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.45.4 (2026-11-16)
+
+### Added
+
+- **When a tab's sign-in expired, the chat view takes you through signing in again, with buttons only.**
+  Asked for: "Login expired · Please run /login" means nothing to someone who knows neither the product nor the
+  CLI. A card now says the sign-in expired and offers Sign in; it types `/login`, offers the subscription (most
+  people) or the API account, opens the sign-in page on the computer you are at (the URL read from the tab's
+  screen), takes a code the page may give, presses Continue when it says "Login successful", and then offers to
+  send your last message again. The steps are read in Claude Code's own words; the menu was checked on a live tab.
+  Phones get the same steps (`POST /link/login`); the app's card comes with its next build. Covered by
+  `tests_tab_login.py` and `tests_tab_login_ui.py`.
+
+  **分頁的登入過期時，對話畫面會一步一步帶你重新登入，只要按按鈕。** 需求：「Login expired · Please run /login」對不熟
+  產品也不懂 CLI 的人沒有意義。現在會出現一張卡片，說明登入過期了並提供「重新登入」：它會送出 `/login`，讓你選訂閱帳號
+  （大多數人）或 API 帳號，在你眼前這台電腦打開登入頁（網址從分頁畫面讀出來），收下登入頁可能給的代碼，看到「Login
+  successful」時替你按「繼續」，最後問你要不要把剛才那則訊息再送一次。每一步都照 Claude Code 的原文判斷，選單在真的分頁
+  上確認過。手機也有同樣的步驟（`POST /link/login`），App 的卡片在下一個 build。由 `tests_tab_login.py`、
+  `tests_tab_login_ui.py` 守著。
+
 ## v0.45.3 (2026-11-16)
 
 ### Fixes
