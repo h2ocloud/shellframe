@@ -559,7 +559,6 @@
   }
   #link-panel.open { display: flex; }
   #link-panel.resizing { transition: none; }
-  .link-empty { padding: 4px 10px 4px 24px; font-size: 11px; color: #3b4261; }
   .link-act {
     background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px;
     color: #a9b1d6; font-size: 11px; padding: 4px 8px; cursor: pointer;
@@ -666,8 +665,6 @@
   .sb-divider::before, .sb-divider::after {
     content: ''; flex: 1; height: 1px; background: #292e42;
   }
-  .sb-divider.drag-over { color: #7aa2f7; background: rgba(122,162,247,.06); border-radius: 4px; }
-  .sb-divider.drag-over::before, .sb-divider.drag-over::after { background: #7aa2f7; }
   /* TG 停用的 session 留在原位、整列暗掉（不再搬到隔離線下面——那區改屬
      其他電腦的 session）。hover 恢復可讀，功能照常。 */
   .sb-item.unbridged { opacity: .45; }
@@ -733,51 +730,12 @@
   #board-list::-webkit-scrollbar { width: 4px; }
   #board-list::-webkit-scrollbar-thumb { background: #3b4261; border-radius: 2px; }
 
-  /* ── Live agent activity feed (right panel) ── */
+  /* ── Loops panel: overview line and empty state ── */
   #feed-overview { font-size: 10px; color: #565f89; letter-spacing: .3px; margin-left: auto; }
   #feed-overview .ov-working { color: #7aa2f7; }
-  #feed-overview .ov-decision { color: #f7768e; font-weight: 600; }
-  #feed-overview .ov-stuck { color: #ff9e64; }
-  .feed-row {
-    display: flex; align-items: flex-start; gap: 7px; padding: 7px 4px;
-    border-bottom: 1px solid #1a1b26; border-left: 2px solid transparent;
-    padding-left: 8px; transition: opacity .6s;
-  }
-  .feed-row.st-working { border-left-color: #7aa2f7; }
-  .feed-row.st-decision { border-left-color: #f7768e; }
-  .feed-row.st-stuck { border-left-color: #ff9e64; }
-  .feed-row.st-done { border-left-color: #9ece6a; opacity: .4; }
-  .feed-dot {
-    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px;
-    background: #3b4261;
-  }
-  .feed-row.st-working .feed-dot { background: #7aa2f7; box-shadow: 0 0 6px #7aa2f7; animation: busy-pulse 1.1s ease-in-out infinite; }
-  .feed-row.st-decision .feed-dot { background: #f7768e; box-shadow: 0 0 6px #f7768e; animation: busy-pulse .7s ease-in-out infinite; }
-  .feed-row.st-stuck .feed-dot { background: #ff9e64; box-shadow: 0 0 6px #ff9e64; }
-  .feed-row.st-done .feed-dot { background: #9ece6a; }
-  .feed-body { flex: 1; min-width: 0; }
-  .feed-label { font-size: 11px; color: #c0caf5; font-weight: 500; }
-  .feed-row.st-done .feed-label { color: #787c99; }
-  .feed-act {
-    font-size: 10px; color: #787c99; margin-top: 2px; line-height: 1.3;
-    word-break: break-word;
-  }
-  .feed-row.st-working .feed-act { color: #9aa5ce; }
-  .feed-tag {
-    font-size: 9px; margin-left: 6px; padding: 0 5px; border-radius: 6px;
-    vertical-align: middle; border: 1px solid currentColor;
-  }
-  .feed-row.st-decision .feed-tag { color: #f7768e; }
-  .feed-row.st-stuck .feed-tag { color: #ff9e64; }
-  .feed-task {
-    font-size: 10px; color: #565f89; margin-top: 3px; line-height: 1.3;
-    word-break: break-word; font-style: italic;
-  }
-  .feed-dur { font-size: 9px; color: #565f89; float: right; margin-top: 1px; }
   .feed-empty { color: #3b4261; font-size: 11px; text-align: center; padding: 16px 8px; }
 
   /* ── Loops / scheduled conversations panel (right) ── */
-  #feed-overview .ov-cron { color: #bb9af7; }
   #feed-overview .ov-sched { color: #9ece6a; }
   .loop-row {
     display: flex; align-items: flex-start; gap: 7px; padding: 7px 4px;
@@ -1666,14 +1624,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       author: 'Author',
       license: 'License',
       checkingUpdate: 'Checking for updates...',
-      upToDate: 'Up to date',
-      updateAvailable: 'Update available',
-      updateNow: 'Update now',
       updating: 'Updating...',
       updateDone: 'Updated! Restart to apply.',
       updateFailed: 'Update failed',
-      screenshotAttached: 'Screenshot attached',
-      fileAttached: 'File attached',
       nameNewSession: 'Name this session',
       sessionName: 'Session Name',
       skip: 'Skip',
@@ -1683,15 +1636,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterLabel: 'Shift+Enter = newline',
       shiftEnterHint: '💡 Tip: Press <span class="kbd" style="font-size:10px">Shift+Enter</span> to insert a new line without submitting. Useful for multi-line prompts in Claude Code / Codex.',
       shiftEnterShortcut: 'Newline (no submit)',
-      tgUnbridgedDivider: 'Not bridged by ShellBot',
-      linkBtnTitle: 'Frame Link — pair another ShellBot (cross-machine)',
       linkSidebarDivider: 'Other ShellBots',
-      linkPairBtn: 'Pairing code',
-      linkJoinBtn: 'Join',
       linkSend: 'Send',
-      linkLocalSec: 'Local',
-      tgUnbridgedTooltip: 'Sessions below are not monitored by ShellBot\'s TG bridge.\nIdeal for agents with their own TG connection\n(e.g., claude --channels plugin:telegram)\nto avoid both sides polling the same bot.\nDrag sessions here to disable bridging; drag back up to re-enable.',
-      tgSelfManaged: 'own',
       tgBotToken: 'Bot Token',
       tgUsers: 'Users',
       tgUsersPlaceholder: 'User IDs (comma separated), empty = all',
@@ -1700,15 +1646,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       bridgePrefix: 'Prefix',
       tgPrefixHint: '[TG @user]: message',
       bridgeSystemPrompt: 'System Prompt',
-      tgPerTurnPreamble: 'Per-turn preamble',
-      tgPreamblePlaceholder: 'Prepended to every TG message sent to the AI. Leave empty to use the built-in default.',
-      tgPreambleHelp: 'Every non-command TG message is wrapped with this preamble before hitting the AI. Leave empty to use the built-in default.',
       delegationTitle: 'Delegation',
       tgAdvancedTitle: 'Telegram Bridge Advanced',
       showTgWrapperLabel: 'Show TG Wrapper tag',
       showTgWrapperHelp: 'Show the [SF-TG wrapper] prefix when TG messages are injected into the local terminal',
-      masterPreambleEnabledLabel: 'Enable delegation prompt',
-      masterPreambleEnabledHelp: 'Inject the master turn preamble on every TG message to remind the AI to use sfctl delegate',
       masterPreambleTextLabel: 'Custom delegation prompt',
       masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
       masterPreambleTextHelp: 'Leave empty to use the built-in default',
@@ -1849,14 +1790,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       author: '作者',
       license: '授權',
       checkingUpdate: '檢查更新中...',
-      upToDate: '已是最新版',
-      updateAvailable: '有新版本',
-      updateNow: '立即更新',
       updating: '更新中...',
       updateDone: '更新完成！重啟後生效。',
       updateFailed: '更新失敗',
-      screenshotAttached: '已附加截圖',
-      fileAttached: '已附加檔案',
       nameNewSession: '為這個分頁命名',
       sessionName: '分頁名稱',
       skip: '跳過',
@@ -1866,15 +1802,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       shiftEnterLabel: 'Shift+Enter 換行',
       shiftEnterHint: '💡 提示：按 <span class="kbd" style="font-size:10px">Shift+Enter</span> 可以換行但不送出。適合在 Claude Code / Codex 中輸入多行 prompt。',
       shiftEnterShortcut: '換行（不送出）',
-      tgUnbridgedDivider: '不由 ShellBot 橋接',
-      linkBtnTitle: 'Frame Link — 配對其他 ShellBot（跨機連線）',
       linkSidebarDivider: '其他 ShellBot',
-      linkPairBtn: '產生配對碼',
-      linkJoinBtn: '加入配對',
       linkSend: '送出',
-      linkLocalSec: '本機',
-      tgUnbridgedTooltip: '下方的 session 不受 ShellBot TG bridge 監控。\n適合已有自己 TG 連線的 agent（如 claude --channels plugin:telegram），\n避免兩邊同時 polling 同一個 bot 造成衝突。\n拖拉 session 到這裡來關閉橋接，拖回上方重新啟用。',
-      tgSelfManaged: '自管',
       tgBotToken: 'Bot Token',
       tgUsers: '使用者',
       tgUsersPlaceholder: 'User ID（逗號分隔）；留空代表全部允許',
@@ -1883,15 +1812,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       bridgePrefix: '前綴',
       tgPrefixHint: '[TG @使用者]: 訊息',
       bridgeSystemPrompt: '系統提示',
-      tgPerTurnPreamble: '每則訊息前綴提示',
-      tgPreamblePlaceholder: '送進 AI 前加在每則 TG 訊息前。留空使用內建預設。',
-      tgPreambleHelp: '每則非指令 TG 訊息送進 AI 前，會先包上這段提示。留空使用內建預設。',
       delegationTitle: '派工設定',
       tgAdvancedTitle: 'Telegram Bridge 進階',
       showTgWrapperLabel: '顯示 TG Wrapper 標記',
       showTgWrapperHelp: 'TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴',
-      masterPreambleEnabledLabel: '啟用派工提示',
-      masterPreambleEnabledHelp: '每輪 TG 訊息注入 master turn preamble（提醒 AI 使用 sfctl delegate）',
       masterPreambleTextLabel: '自訂派工提示文字',
       masterPreambleTextPlaceholder: '[ShellFrame — Master Delegation Protocol]\nBefore responding, evaluate whether this task should be delegated:\n1. Understand the user\'s intent — what outcome do they actually need?\n2. Check available workers: `sfctl list`\n3. Delegate when non-trivial, parallelizable, research-heavy, or better suited to a specialist worker.\n4. Handle directly only if: quick answer, clarification, or coordination requiring master context.\n5. To delegate: `sfctl delegate <Role> "<task description>"`\nDo NOT hard-route by keywords. Prefer delegation over doing everything yourself.',
       masterPreambleTextHelp: '留空使用內建預設',
@@ -8589,14 +8513,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     renderTabs();
     try { renderSidebar(); } catch (_) {}
   };
-  // ui_sessions 診斷用：sessions/sessionOrder 是 script 作用域變數，
-  // evaluate_js 的全域看不到——這裡用 closure 曝露快照。
-  window.__sfUiState = () => JSON.stringify({
-    order: sessionOrder,
-    active: activeId,
-    labels: Object.fromEntries(
-      Object.entries(sessions).map(([k, v]) => [k, v && v.label])),
-  });
   // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
   window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
     lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal, micGuide, confirmRelaunchTab };

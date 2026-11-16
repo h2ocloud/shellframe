@@ -16,7 +16,7 @@ import unicodedata
 from pathlib import Path
 
 import agent_status
-from sf_log import _dlog, _swallow  # noqa: F401
+from sf_log import _swallow  # noqa: F401
 
 
 class HistoryApiMixin:
@@ -1509,92 +1509,3 @@ class HistoryApiMixin:
             return json.dumps({"success": False, "reason": "only current screen",
                                "text": ""})
         return json.dumps({"success": False, "reason": "no history", "text": ""})
-
-    def enter_scroll_history(self, sid: str) -> str:
-        """Enter tmux copy-mode for scrollable history.
-        xterm.js scrollback is always empty for TUI apps (Claude/Codex) that
-        use cursor-positioning instead of line-feeds. tmux's own pane buffer
-        has the real scrollback. This triggers copy-mode + PageUp so the user
-        sees old conversation. Press q to exit."""
-        s = self.sessions.get(sid)
-        if not s or not s._tmux_name:
-            return json.dumps({"success": False, "reason": "no tmux"})
-        try:
-            subprocess.run(["tmux", "copy-mode", "-t", s._tmux_name],
-                           capture_output=True, timeout=3)
-            # Immediate PageUp so the user sees history right away
-            subprocess.run(["tmux", "send-keys", "-t", s._tmux_name, "PageUp"],
-                           capture_output=True, timeout=3)
-            return json.dumps({"success": True})
-        except Exception as e:
-            return json.dumps({"success": False, "reason": str(e)})
-
-    def scroll_history(self, sid: str, direction: str, lines: int = 3) -> str:
-        """Scroll within tmux copy-mode. Enters copy-mode automatically if
-        needed. On first entry parks the cursor at top-line so the very next
-        scroll-up walks straight into scrollback (no wasted cursor motion
-        across the visible rows). Auto-exits when scrolling reaches the live
-        bottom — also forces cursor to bottom-line on exit so the live view
-        is fully visible. Returns whether still in copy-mode after scrolling."""
-        _dlog("scroll", f"sid={sid} direction={direction} lines={lines}")
-        s = self.sessions.get(sid)
-        if not s or not s._tmux_name:
-            return json.dumps({"success": False, "inCopyMode": False})
-        lines = max(1, min(lines, 15))
-        t = s._tmux_name
-        try:
-            r = subprocess.run(
-                ["tmux", "display-message", "-t", t, "-p", "#{pane_in_mode}"],
-                capture_output=True, text=True, timeout=3)
-            in_mode = r.stdout.strip() == "1"
-            _dlog("scroll", f"  in_mode={in_mode}")
-
-            if direction == "up":
-                if not in_mode:
-                    subprocess.run(["tmux", "copy-mode", "-t", t],
-                                   capture_output=True, timeout=3)
-                    # Park cursor at the very top of the visible area so the
-                    # next cursor-up motion immediately scrolls into history
-                    # rather than walking down→up across visible rows.
-                    subprocess.run(
-                        ["tmux", "send-keys", "-t", t, "-X", "top-line"],
-                        capture_output=True, timeout=3)
-                # Use semantic copy-mode command (works under both vi/emacs)
-                for _ in range(lines):
-                    subprocess.run(
-                        ["tmux", "send-keys", "-t", t, "-X", "cursor-up"],
-                        capture_output=True, timeout=3)
-            elif direction == "down" and in_mode:
-                # Park cursor at the bottom of the visible area first, so the
-                # subsequent cursor-down keys actually scroll the SCREEN
-                # (driving the scrollbar back toward live) instead of just
-                # walking the cursor across visible rows.
-                subprocess.run(
-                    ["tmux", "send-keys", "-t", t, "-X", "bottom-line"],
-                    capture_output=True, timeout=3)
-                for _ in range(lines):
-                    subprocess.run(
-                        ["tmux", "send-keys", "-t", t, "-X", "cursor-down"],
-                        capture_output=True, timeout=3)
-                # Check scroll position — at bottom (0) → exit cleanly
-                rp = subprocess.run(
-                    ["tmux", "display-message", "-t", t, "-p", "#{scroll_position}"],
-                    capture_output=True, text=True, timeout=3)
-                try:
-                    scroll_pos = int(rp.stdout.strip() or "0")
-                except (ValueError, TypeError):
-                    scroll_pos = 0
-                if scroll_pos == 0:
-                    subprocess.run(
-                        ["tmux", "send-keys", "-t", t, "-X", "cancel"],
-                        capture_output=True, timeout=3)
-
-            r2 = subprocess.run(
-                ["tmux", "display-message", "-t", t, "-p", "#{pane_in_mode}"],
-                capture_output=True, text=True, timeout=3)
-            still_in = r2.stdout.strip() == "1"
-            _dlog("scroll", f"  done sid={sid} still_in_copy_mode={still_in}")
-            return json.dumps({"success": True, "inCopyMode": still_in})
-        except Exception as e:
-            _dlog("scroll", f"  ERROR sid={sid} {e}")
-            return json.dumps({"success": False, "inCopyMode": False, "reason": str(e)})

@@ -73,9 +73,6 @@ _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 _CODE_LEN = 10               # 10 chars of 32-alphabet ≈ 50 bits
 
 STATE_DIR = Path.home() / ".local" / "state" / "shellframe"
-FILES_DIR = STATE_DIR / "frame_link_files"      # staged outbox files
-INBOX_FILE = STATE_DIR / "frame_link_inbox.json"
-OUTBOX_FILE = STATE_DIR / "frame_link_outbox.json"
 DOWNLOADS_DIR = Path.home() / "Downloads" / "ShellFrame"
 VOICE_MAX_BYTES = 16 * 1024 * 1024       # one voice note through /link/voice
 PAIR_URL_SCHEME = "shellframe"          # shellframe://pair?d=<base64url json> (QR + deep link)
@@ -1728,46 +1725,6 @@ class FrameLink:
             return self._signed_request(peer, "GET", f"/link/bots?rev={quote(str(rev or ''))}", timeout=6)
         except Exception as e:
             return {"success": False, "code": getattr(e, "status", 0), "message": str(e)}
-
-    def remote_groups(self, peer_id: str) -> dict:
-        """Role groups defined on the peer (experimental feature there)."""
-        peer, err = self._peer_or_err(peer_id)
-        if err:
-            return err
-        try:
-            return self._signed_request(peer, "GET", "/link/groups", timeout=10)
-        except Exception as e:
-            if "404" in str(e):
-                return {"success": False, "message": "對方的 ShellBot 還沒有群組功能（需要 0.37.0 以上）"}
-            return {"success": False, "message": str(e)}
-
-    def remote_group_conversation(self, peer_id: str, name: str,
-                                  limit: int = 120) -> dict:
-        peer, err = self._peer_or_err(peer_id)
-        if err:
-            return err
-        try:
-            return self._signed_request(
-                peer, "GET",
-                f"/link/group/conversation?name={quote(name)}&limit={int(limit)}",
-                timeout=20)
-        except Exception as e:
-            if "404" in str(e):
-                return {"success": False, "message": "對方的 ShellBot 還沒有群組功能（需要 0.37.0 以上）"}
-            return {"success": False, "message": str(e)}
-
-    def remote_group_send(self, peer_id: str, name: str, text: str) -> dict:
-        peer, err = self._peer_or_err(peer_id)
-        if err:
-            return err
-        try:
-            body = json.dumps({"name": name, "text": text}).encode()
-            # A member with no tab open is opened and waited for, so this is
-            # measured in tens of seconds, not the few a plain send takes.
-            return self._signed_request(peer, "POST", "/link/group/send", body,
-                                        timeout=180)
-        except Exception as e:
-            return {"success": False, "message": str(e)}
 
     def remote_rename(self, peer_id: str, sid: str, name: str) -> dict:
         """Rename one of the peer's tabs (phone app). Goes through the peer's own

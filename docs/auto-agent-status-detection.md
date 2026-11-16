@@ -1,6 +1,6 @@
 # ShellFrame 自動偵測 agent 狀態 — 研究 + 方案 + POC 報告
 
-> 分支：`feat/auto-agent-status-detect`　|　POC：`docs/poc/agent_state_detector.py`
+> 分支：`feat/auto-agent-status-detect`　|　實作：`agent_status.py`（原 POC 檔已移除）
 > 目標：右側欄 agent 狀態從「agent 自報 `[[SF:GREEN]]`」改成「**從實際活動科學偵測**」。
 > 兩層、同一偵測：**燈號**＝是否在動 + 四態；**右側細節**＝正在忙什麼。涵蓋 Claude 與 Codex。
 

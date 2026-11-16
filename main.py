@@ -47,7 +47,6 @@ import webview
 # Add app dir to path for bridge imports
 sys.path.insert(0, str(Path(__file__).parent))
 import bridge_telegram
-import bridge_line
 import board
 import agent_link
 import agent_model
@@ -1391,14 +1390,12 @@ class Session:
         self._idle_reap_state = ""
         self._idle_summary_requested_at = 0.0
         self._idle_close_after = 0.0
-        self._idle_summary_path = ""
         self._slug_pending = True   # True until first user Enter triggers tmux auto-rename
         self._recent = bytearray()  # ring buffer for peeking/startup checks (last 8KB), not consumed by read()
         self._on_data = on_data     # callback to signal new data (e.g. threading.Event.set)
         self._tmux_name = tmux_name  # tmux session name (None = no tmux)
         self._startup_trust_pending = _should_auto_accept_startup_trust(cmd, self.cwd)
         self._startup_trust_deadline = time.monotonic() + 45 if self._startup_trust_pending else 0
-        self._startup_trust_answered = False
         # Stateful UTF-8 decoder — carries incomplete multi-byte sequences
         # across read() calls so CJK / box-drawing chars never get split
         # into U+FFFD replacement characters (the "─���─" garble).
@@ -2538,7 +2535,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             f"sid: {sid}\nlabel: {label}\ncmd: {s.cmd}\nclosed_at: {datetime.now().isoformat()}\n\n{text}",
             encoding="utf-8",
         )
-        s._idle_summary_path = str(path)
         return str(path)
 
     def _session_label(self, sid: str, s: Session | None = None) -> str:
@@ -3981,7 +3977,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             s._startup_trust_pending = True
             return
         s._startup_trust_pending = False
-        s._startup_trust_answered = True
         _dlog("trust", f"auto-accepted startup trust prompt sid={sid} cwd={getattr(s, 'cwd', '')!r}")
 
     def _prepare_pane_for_input(self, s: Session) -> bool:
@@ -4589,7 +4584,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     and self.answer_startup_trust(sid, trust=True)):
                 time.sleep(0.6)
                 s._startup_trust_pending = False
-                s._startup_trust_answered = True
                 return ""
             return "啟動信任對話框"
         if self._STARTUP_EXIT_OPTION_RE.search(clean):
@@ -4609,13 +4603,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             second = m.group(2).strip()[:70]
             return f"等你選：{first} ／ {second}"
         return ""
-
-    def read_output(self, sid: str) -> str:
-        """Read buffered output. Used only during reconnect — normal output is pushed."""
-        s = self.sessions.get(sid)
-        if not s:
-            return ""
-        return s.read()
 
     def is_alive(self, sid: str) -> bool:
         s = self.sessions.get(sid)
@@ -4826,11 +4813,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             import traceback
             traceback.print_exc()
             return json.dumps({"success": False, "message": f"Reload failed: {e}"})
-
-    def report_ui_state(self, payload: str) -> str:
-        """JS 回呼（ui_sessions 診斷）：webview 把它眼中的 tabs/labels 存回來。"""
-        self._ui_state_report = str(payload or "")
-        return "ok"
 
     def _auto_name(self, sid: str, s, text: str):
         """A tab's name from its first message (a temporary bot's name, plan A), once, on a

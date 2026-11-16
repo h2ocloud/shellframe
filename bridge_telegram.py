@@ -576,8 +576,6 @@ _TG_COORD_MANUAL = (
     "other tabs is always fine."
 )
 
-DEFAULT_TG_PROMPT = _TG_PROMPT_BASE + _TG_COORD_DELEGATE
-
 
 def _read_config() -> dict:
     """Read ~/.config/shellframe/config.json without importing main.py."""
@@ -1123,10 +1121,6 @@ class SessionSlot:
         # Completion notification: last time we posted a macOS banner for
         # this slot's AI reply. Cooldown prevents multi-chunk spam.
         self.last_notify_ts = 0.0
-        # Rate-limit detection: True once we have fired the TG alert for the
-        # current rate-limit episode; cleared when the screen no longer shows
-        # rate-limit signals so the next episode re-notifies.
-        self.rate_limit_notified = False
         # Virtual terminal for screen-based text extraction
         # Use HistoryScreen to keep scrollback — 50-line screen loses long responses
         # history 由 3000 降至 800：兼顧長回應擷取與 per-tab 記憶體/掃描成本（撐 10+ tab）
@@ -2153,7 +2147,7 @@ class TelegramBridge(BridgeBase):
 
     # Per-turn TG preamble is loaded dynamically from config via
     # get_tg_prompt() — users edit it in Settings → TG Bridge → Per-turn
-    # preamble. See module-level DEFAULT_TG_PROMPT for the built-in text.
+    # preamble. get_tg_prompt() builds the built-in text.
 
     # Claude Code status-bar token gauge:
     #   Sonnet 4.6 (1M context) · Claude Max · 12% left
@@ -2561,7 +2555,6 @@ class TelegramBridge(BridgeBase):
                 # 每則新訊息都清 buffer + 重置輸出時鐘：新 epoch 從乾淨開始，避免
                 # 舊 block 與 stale first_output_time 混進來（v0.29.22 的「剛送出
                 # 就重送上一則」根因之一）。
-                slot.output_buf = ""
                 slot.pending_raw = ""
                 slot.first_output_time = 0
                 slot.last_output_time = 0
@@ -3703,7 +3696,6 @@ class TelegramBridge(BridgeBase):
                         continue
                     if info is not None:
                         sig = self._rate_limit_signature(info)
-                        slot.rate_limit_notified = True
                         if self._rate_limit_seen.get(sid) != sig:
                             self._rate_limit_seen[sid] = sig
                             self._save_state()
@@ -3715,7 +3707,6 @@ class TelegramBridge(BridgeBase):
                     else:
                         # Signal gone (limit reset / user acted) — forget the
                         # episode so the next one announces itself.
-                        slot.rate_limit_notified = False
                         if self._rate_limit_seen.pop(sid, None) is not None:
                             self._save_state()
 
@@ -5662,9 +5653,8 @@ class TelegramBridge(BridgeBase):
             label_text = label_map.get(choice, choice)
             try:
                 slot.write_fn(f"{choice}\r")
-                # Clear the notified state so if the same limit reappears we
+                # Forget the episode so if the same limit reappears we
                 # don't stay silent (shouldn't happen, but cheap insurance).
-                slot.rate_limit_notified = False
                 self._rate_limit_seen.pop(sid, None)
                 self._save_state()
             except Exception as e:

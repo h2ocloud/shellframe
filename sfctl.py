@@ -32,9 +32,7 @@ import time
 
 # Cross-platform temp dir — must match main.py + bridge_telegram.py
 _TMP = tempfile.gettempdir() if sys.platform == "win32" else "/tmp"
-CMD_FILE = os.path.join(_TMP, "shellframe_cmd.json")
 CMD_DIR = os.path.join(_TMP, "shellframe_cmds")
-RESULT_FILE = os.path.join(_TMP, "shellframe_result.json")
 PID_FILE = os.path.join(_TMP, "shellframe.pid")
 
 # Records the tmux binary path + cdhash that was last walked through the

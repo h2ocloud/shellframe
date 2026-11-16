@@ -39,35 +39,6 @@ class UpdateApiMixin:
         except:
             return ""
 
-    def get_latest_release_notes(self) -> str:
-        """Return the current version + the top (latest) CHANGELOG section as
-        markdown, for the startup 'what's new' popup. Body is just the first
-        '## ...' block so we don't ship the whole 240KB changelog to JS."""
-        try:
-            version = json.loads(main.VERSION_FILE.read_text(encoding='utf-8')).get("version", "")
-        except Exception:
-            version = ""
-        body, heading = "", ""
-        try:
-            text = (main.APP_DIR / "CHANGELOG.md").read_text(encoding='utf-8')
-            lines = text.splitlines()
-            start = None
-            for i, ln in enumerate(lines):
-                if ln.startswith("## "):
-                    start = i
-                    break
-            if start is not None:
-                heading = lines[start][3:].strip()
-                section = []
-                for ln in lines[start + 1:]:
-                    if ln.startswith("## "):
-                        break
-                    section.append(ln)
-                body = "\n".join(section).strip()
-        except Exception:
-            main._swallow("Api.get_latest_release_notes:4601")
-        return json.dumps({"version": version, "heading": heading, "body": body})
-
     def check_update(self) -> str:
         """Check GitHub for latest version. Returns JSON with local, remote, update_available."""
         try:

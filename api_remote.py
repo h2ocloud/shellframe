@@ -213,9 +213,6 @@ class RemoteApiMixin:
         except Exception as e:
             main._dlog("api", f"api_server import failed: {e}")
             return
-        # Stamp the live event bus onto the bridge so signal transitions
-        # (RED/YELLOW/GREEN) surface to API clients via GET /events.
-        self.api_event_bus = api_server.EVENT_BUS
         try:
             ver = json.loads((Path(__file__).parent / "version.json").read_text()).get("version", "0")
         except Exception:
@@ -1066,28 +1063,6 @@ class RemoteApiMixin:
                 return result if isinstance(result, dict) else {"success": True}
             except Exception as e:
                 return {"success": False, "message": f"Reorder failed: {e}"}
-
-        elif cmd == "ui_sessions":
-            # 診斷用：回傳 webview「眼中」的 tabs/labels。專治「後端說有、
-            # 畫面沒有」各說各話——直接問 UI 而不是用後端狀態推論。
-            # 注意：evaluate_js 的「回傳值」在背景 thread 會卡死（WKWebView
-            # round-trip 不回來），所以走 fire-and-forget＋JS 回呼
-            # report_ui_state 存值、這裡輪詢取件。
-            try:
-                if not self._window:
-                    return {"success": False, "message": "no window"}
-                self._ui_state_report = None
-                self._window.evaluate_js(
-                    'try { pywebview.api.report_ui_state('
-                    'window.__sfUiState ? __sfUiState() : "{}"); } catch(e) {}')
-                deadline = time.time() + 3.0
-                while time.time() < deadline:
-                    if self._ui_state_report is not None:
-                        return {"success": True, "message": self._ui_state_report}
-                    time.sleep(0.1)
-                return {"success": False, "message": "UI 未回報（webview 無回應）"}
-            except Exception as e:
-                return {"success": False, "message": f"ui_sessions failed: {e}"}
 
         elif cmd == "history_audit":
             try:

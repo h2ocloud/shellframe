@@ -47,12 +47,10 @@ def _tick(bridge, slot):
     info = bridge._detect_rate_limit(slot)
     if info is not None:
         sig = bridge._rate_limit_signature(info)
-        slot.rate_limit_notified = True
         if bridge._rate_limit_seen.get(slot.sid) != sig:
             bridge._rate_limit_seen[slot.sid] = sig
             bridge._notify_rate_limit(slot, info)
     else:
-        slot.rate_limit_notified = False
         bridge._rate_limit_seen.pop(slot.sid, None)
     return info
 
@@ -71,7 +69,6 @@ def _make_slot(screen_lines):
     slot = object.__new__(_bt.SessionSlot)
     slot.sid = "test"
     slot.label = "test-tab"
-    slot.rate_limit_notified = False
     slot.screen = _FakeScreen(screen_lines)
     slot._feed_gen = 0
     slot._display_cache = None
@@ -169,7 +166,7 @@ def test_dedup_survives_bridge_restart():
         first_count = len(_sent_messages)
         assert first_count >= 1
 
-        # 重啟：slot 全新（rate_limit_notified=False），signature map 從磁碟回來
+        # 重啟：slot 全新，signature map 從磁碟回來
         fresh = _make_slot(lines)
         _tick(_BR, fresh)
         assert len(_sent_messages) == first_count, (

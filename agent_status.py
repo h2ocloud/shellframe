@@ -14,7 +14,7 @@ P1：獨立、可測試的 server 端模組。main.py 在 P2 才接線。
 worker 是個 dict（main.py 用 Session 屬性填）：
   {sid, cmd, cwd, tmux_name, session_id(optional)}
 
-狀態機與解析邏輯同 docs/poc/agent_state_detector.py（已對真實 log 驗證）。
+狀態機與解析邏輯來自最初的 POC（已對真實 log 驗證；POC 檔已移除，本模組即為其落地版本）。
 """
 from __future__ import annotations
 
@@ -93,9 +93,7 @@ def claude_projects_root(worker: dict) -> str:
 # SQLite file, and the live process holds an open lock naming that conversation
 # — which is how a tab is matched to it (same lsof trick codex needs).
 AGY_HOME = os.path.expanduser("~/.gemini/antigravity-cli")
-AGY_PRESENCE_DIR = os.path.join(AGY_HOME, "presence")
 AGY_CONVERSATIONS_DIR = os.path.join(AGY_HOME, "conversations")
-AGY_LOG_DIR = os.path.join(AGY_HOME, "log")
 # steps.status values, established by sampling a live run: a step sits at 8
 # while the agent works on it and settles to 3 when it is finished.
 AGY_STEP_RUNNING = 8
@@ -670,21 +668,6 @@ def _safe_mtime(path: str) -> float:
         return os.path.getmtime(path)
     except OSError:
         return 0.0
-
-
-def _newest_jsonl(pattern: str, within_s=3600):
-    cutoff = time.time() - within_s
-    best, best_m = None, 0.0
-    for f in glob.glob(pattern):
-        try:
-            m = os.path.getmtime(f)
-        except OSError:
-            continue
-        if m < cutoff:
-            continue
-        if m > best_m:
-            best, best_m = f, m
-    return best
 
 
 def resolve_transcript(worker: dict):
@@ -1912,7 +1895,6 @@ class StatusTracker:
 # 模組自測：python3 agent_status.py
 if __name__ == "__main__":
     import sys
-    tr = StatusTracker()
     # 掃所有近期 active worker（用 fallback 對應，不需 main.py）
     seen = set()
     rows = []

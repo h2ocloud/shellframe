@@ -316,7 +316,6 @@ def opencode_current(lines):
 _PI_ROW = re.compile(r"^\s*(?P<cur>→)?\s*(?P<id>\S+)\s+\[(?P<prov>[^\]]+)\](?P<now>\s*✓)?\s*$")
 _PI_FOOT = re.compile(r"\s{2,}(?P<model>\S+)(?:\s+•\s+(?P<level>thinking off|[a-z]+))?\s*$")
 _PI_MODEL = re.compile(r"^\s*Model:\s*(?P<id>\S+)\s*$")
-_PI_LEVEL = re.compile(r"^\s*Thinking level:\s*(?P<level>\w+)\s*$")
 
 
 def pi_selector(lines):

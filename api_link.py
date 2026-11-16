@@ -71,12 +71,6 @@ class LinkApiMixin:
             fl.stop()
         return self.link_status()
 
-    def link_set_name(self, name: str) -> str:
-        def fn(cfg):
-            cfg.setdefault("frame_link", {})["frame_name"] = str(name or "").strip()[:60]
-        main.update_config(fn)
-        return self.link_status()
-
     def link_pair_begin(self, mode: str = "duplex") -> str:
         return json.dumps(self._link().pairing_begin(mode), ensure_ascii=False)
 
@@ -85,10 +79,6 @@ class LinkApiMixin:
 
     def link_join(self, host: str, port: int, code: str) -> str:
         return json.dumps(self._link().join(host, port, code), ensure_ascii=False)
-
-    def link_join_url(self, url: str) -> str:
-        """Join from a pairing QR / shellframe:// deep link (tries hosts, then relay)."""
-        return json.dumps(self._link().join_url(url), ensure_ascii=False)
 
     def link_unpair(self, peer_id: str) -> str:
         return json.dumps(self._link().unpair(peer_id))
@@ -127,19 +117,9 @@ class LinkApiMixin:
         except Exception as e:
             return json.dumps({"peers": {}, "pending": 0, "error": str(e)})
 
-    def link_remote_peek(self, peer_id: str, sid: str, lines: int = 120) -> str:
-        return json.dumps(self._link().remote_peek(peer_id, sid, lines),
-                          ensure_ascii=False)
-
     def link_remote_maintenance(self, peer_id: str, action: str) -> str:
         return json.dumps(self._link().remote_maintenance(peer_id, action),
                           ensure_ascii=False)
-
-    def link_remote_state(self, peer_id: str, sid: str = "",
-                          all_tabs: bool = False, stale_min: float = 0) -> str:
-        return json.dumps(
-            self._link().remote_state(peer_id, sid, all_tabs, stale_min),
-            ensure_ascii=False)
 
     def link_remote_history(self, peer_id: str, sid: str, cols: int = 0) -> str:
         return json.dumps(self._link().remote_history(peer_id, sid, cols),

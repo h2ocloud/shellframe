@@ -31,8 +31,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-HEALTH_STATES = ("ok", "expired", "revoked", "unreachable", "unknown")
-
 
 @dataclass
 class Ctx:

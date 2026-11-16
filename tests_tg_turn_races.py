@@ -96,7 +96,6 @@ def new_message(br, slot, start, end, text="next question"):
         return br._begin_turn(slot, {"start": start, "end": end, "prompt": ""}, [text])
     # 0.38.0 receive path, field by field
     with slot.output_lock:
-        slot.output_buf = ""
         slot.pending_raw = ""
         slot.first_output_time = 0
         slot.last_output_time = 0

@@ -110,19 +110,6 @@ def highest_sid(names, prefix: str = PREFIX) -> int:
     return best
 
 
-def name_taken(tmux: str | None, name: str) -> bool:
-    """True when a tmux session with this exact name exists. Unknown (tmux
-    missing or too slow) counts as free, which is the old behaviour."""
-    if not tmux:
-        return False
-    try:
-        r = subprocess.run([tmux, "has-session", "-t", f"={name}"],
-                           capture_output=True, timeout=3)
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    return r.returncode == 0
-
-
 def refresh_client(tmux: str | None, name: str, client_pid: int | None) -> bool:
     """Make tmux redraw the whole screen for the client ShellFrame attached to
     `name` (the one whose pid is ours). Returns True when a client was found."""

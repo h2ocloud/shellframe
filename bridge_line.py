@@ -59,10 +59,6 @@ LINE_GATEWAY_ROUTES = (
     )),
 )
 
-GENERIC_SESSION_LABELS = {
-    "bash", "zsh", "sh", "claude", "codex", "sf-codex", "python", "python3",
-}
-
 
 def _llog(msg: str):
     try:
@@ -224,11 +220,9 @@ class LineSessionSlot:
         self.sent_texts = []
         self.awaiting_response = False
         self.last_input_time = 0.0
-        self.last_activity_time = time.time()
         self.expect_marker = False
         self.reply_start_marker = ""
         self.reply_end_marker = ""
-        self.pending_user_id = ""
         self.pending_target_id = ""
 
 
@@ -695,15 +689,6 @@ class LineBridge(BridgeBase):
                 return label
         return "LINE-Gateway"
 
-    @staticmethod
-    def _is_generic_label(label: str, sid: str) -> bool:
-        normalized = (label or "").strip().casefold()
-        if not normalized:
-            return True
-        if sid and normalized == sid.casefold():
-            return True
-        return normalized in GENERIC_SESSION_LABELS
-
     def _rename_slot(self, sid: str, label: str):
         slot = self.slots.get(sid)
         if not slot or slot.label == label:
@@ -849,11 +834,9 @@ class LineBridge(BridgeBase):
         slot.has_user_msg = True
         slot.awaiting_response = True
         slot.last_input_time = time.time()
-        slot.last_activity_time = slot.last_input_time
         slot.expect_marker = True
         slot.reply_start_marker = start_marker
         slot.reply_end_marker = end_marker
-        slot.pending_user_id = user_id
         slot.pending_target_id = target_id
         agent_link.clear_chain(sid)   # the person wrote this: the tab's A2A chain starts over, as on Telegram
         # Some full-screen TUIs treat a large paste ending with CR as text entry
@@ -940,9 +923,7 @@ class LineBridge(BridgeBase):
                         slot.last_output_time = 0
                         slot.awaiting_response = False
                         slot.expect_marker = False
-                        slot.pending_user_id = ""
                         slot.pending_target_id = ""
-                        slot.last_activity_time = time.time()
                     clean = clean_line_response(marked_raw or strip_ansi(raw, sent_texts=slot.sent_texts))
                     if slot.reply_start_marker and clean in {"和", "and"}:
                         continue
