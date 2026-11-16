@@ -6,7 +6,30 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
-## v0.47.0 (2026-11-16)
+## v0.47.0 (2026-11-17)
+
+### Fixes
+
+- **A pi tab started again stays on the model its conversation was on.** Reported: a pi bot relaunched went on
+  with its conversation (0.46.2) but on its launcher's default model; the `/model` switch made in the conversation was
+  gone, and that default pointed at a server that was down, so the first reply was an HTTP 500. A launcher that runs
+  `exec pi --provider … --model … "$@"` pins a model, and pi takes a model given on the command line over the one a
+  conversation was on. A relaunch now reads the last model switch in the conversation's file and adds `--model` after
+  the launcher's (pi takes the last one given); one added on an earlier relaunch is replaced, not stacked. When the
+  switch was to another provider, `--provider` is added too, except when the command or its launcher passes
+  `--api-key`: pi ties that key to the provider the command line ends on, so it would go to the other one. That case
+  stays on the launcher's model and the debug log says why. Plain `pi` with no model on its command line is left
+  as it was (it already puts a conversation back on its model). Measured on pi 0.74.2 with a launcher of that shape:
+  before, the relaunched conversation answered on the launcher's default; after, on the model it was switched to.
+  Covered by `tests_pi_keep_model.py`.
+
+  **pi 分頁重開後，留在對話原本用的模型。** 回報：pi bot 重開後有接回原本的對話（0.46.2），但模型回到啟動器的預設，對話裡用
+  `/model` 切過的不見了；那個預設指向一台已經停掉的伺服器，所以第一句就回 HTTP 500。啟動器如果寫成
+  `exec pi --provider … --model … "$@"` 就是釘死模型，而 pi 會讓指令列上的模型優先於對話記住的模型。現在重開時會讀對話檔裡最後
+  一次切換的模型，在啟動器的參數後面補上 `--model`（pi 以最後一個為準）；前一次重開補的會被換掉，不會越疊越多。切到別的
+  provider 時會一併補 `--provider`，但指令或啟動器帶了 `--api-key` 的除外：pi 會把那把 key 綁到指令列最後的 provider，等於送給
+  別家。這種情況維持啟動器的模型，debug log 會寫原因。指令列沒有指定模型的一般 `pi` 照舊（它本來就會接回對話的模型）。用同樣
+  寫法的啟動器實測：修正前，重開後的對話用啟動器的預設回答；修正後，用切換過的模型回答。由 `tests_pi_keep_model.py` 守著。
 
 ### Added
 

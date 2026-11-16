@@ -62,6 +62,7 @@ paths, `ACCOUNT_MANAGER`, platform flags, the `Session` class) and builds one
 | Domain | `agent_status.py` | Screen-based agent state detection per tab |
 | | `agent_grok.py` | Grok Build's session files: which session a tab owns, turn status, transcript, model and usage |
 | | `agent_cursor.py` | Cursor Agent (`cursor-agent` only): session pin, store.db, transcript, billing class |
+| | `agent_pi.py` | pi: its session JSONL as conversation turns, and `keep_model` (a relaunched tab stays on the model its conversation was last switched to, after a launcher's own `--model`) |
 | | `agent_route.py` | Quota hint for delegate / handoff. Suggests; does not spend or retarget |
 | | `a2a_host.py` | sfctl A2A verbs over the existing Frame Link transport |
 | | `a2a_ssh.py` | SSH executor for a headless cursor-agent on a host without ShellFrame |

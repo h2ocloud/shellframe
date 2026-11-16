@@ -14,6 +14,7 @@ import subprocess
 import threading
 
 import agent_cursor
+import agent_pi
 import agent_status
 import agent_grok
 import cli_install
@@ -237,6 +238,10 @@ class AccountsApiMixin:
                 pfile = ""
             if pfile:
                 cmd = launch_cmd.pi_with_session(cmd, pfile)
+                # a launcher's own --model would put the conversation back on its default
+                cmd, note = agent_pi.keep_model(cmd, pfile)
+                if note:
+                    main._dlog("account", f"relaunch {sid}: pi {note}")
         cmd = getattr(self, "_bots_tab_launch_cmd", lambda _s, c: c)(sid, cmd)   # a bot keeps knowing who it is
         cols, rows = old.cols, old.rows
         tmux_name = old._tmux_name
