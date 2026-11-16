@@ -27,6 +27,7 @@ import agent_link
 import agent_status
 import sf_lang
 import tab_delivery
+import tab_login
 
 # The CLIs whose conversation the view draws: the ones sfctl `conversation` can read
 # (opencode from its SQLite, pi through agent_pi, grok and cursor from their session
@@ -80,6 +81,7 @@ class ChatApiMixin:
             else:
                 body["why"] = "no_transcript"
         body["decision"] = self._link_decision(sid, activity, res)
+        body["login"] = tab_login.view(self, sid, body["turns"])       # signing in again, step by step (chat.js)
         q = body["queue"] = tab_delivery.queue_state(sid)     # its own sends: still waiting, or given up
         why = tab_delivery.busy_reason(self, sid) if q["queued"] else ""
         if why:              # what holds them now, and since when its turn runs: the bubble says so (chat.js waitWords)
@@ -120,6 +122,13 @@ class ChatApiMixin:
                            "position": details.get("position"), "id": details.get("id"),
                            "reason": details.get("reason"), "code": res.get("code"),
                            "message": res.get("message", "")}, ensure_ascii=False)
+
+    def chat_login(self, sid: str, action: str, code: str = "") -> str:
+        """The sign-in card's buttons (tab_login.act): start, subscription, console, code, finish, cancel.
+        {"success", "login": the step it is at now}."""
+        if action == "start":
+            agent_link.clear_chain(sid)        # the person asked for it
+        return json.dumps(tab_login.act(self, sid, str(action or ""), str(code or "")), ensure_ascii=False)
 
     def chat_send_now(self, sid: str, qid: str) -> str:
         """The queued bubble's "send now": take chat send `qid` out of tab `sid`'s queue and type

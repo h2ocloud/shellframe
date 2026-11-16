@@ -46,6 +46,12 @@ running underneath with its size unchanged, and everything that types into the t
   (`chat_send_now(sid, id)`: out of the queue and typed in at once, as `sfctl send --now`; it
   may interrupt the tab's work). Once given up it says "not sent" and why, with "send again"
   and "remove", and stays until one is pressed.
+- **Signing in again** (`tab_login.py`, `web/tablogin.js`): when the last turn says the sign-in expired
+  ("Login expired · Please run /login"), `chat_view`'s `login` gives the step and a card takes the person
+  through it with buttons only: sign in (types `/login`), the subscription or the API account (the menu's first
+  or second choice), open the sign-in page here (its URL read from the screen with wrapped lines joined) and paste
+  a code back, Continue (the Enter after "Login successful"), then the last message again. The steps are read in
+  Claude Code's own words (from its 2.1.325 binary; the menu measured live). `chat_login(sid, action, code)`.
 - **Answering**: `chat_answer` is `/link/answer`'s path (`_bots_link_answer`): only while
   that very question is up (`id`), only a listed option. A menu gets the option's number,
   and Enter only if the same menu is still up a moment later (`tab_delivery.answer_choice`:

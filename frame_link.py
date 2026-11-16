@@ -1096,6 +1096,12 @@ class FrameLink:
                         "data": " \x1b[200~" + rpath + "\x1b[201~"})
                     return self._send(200, {"success": True, "path": rpath},
                                       sign_for=peer, nonce=nonce)
+                if path == "/link/login":
+                    if not link._peer_may_control(peer_id):
+                        return self._send(403, {"success": False, "message": "單向配對：對方無權操作這台"},
+                                          sign_for=peer, nonce=nonce)
+                    res = link._execute("tab_login", {k: body.get(k, "") for k in ("sid", "action", "code")}) or {}
+                    return self._send(200, res, sign_for=peer, nonce=nonce)
                 if path in ("/link/send/now", "/link/send/cancel"):
                     if not link._peer_may_control(peer_id):
                         return self._send(403, {"success": False, "message": "單向配對：對方無權操作這台"},

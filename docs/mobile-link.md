@@ -44,6 +44,10 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
     - `clear_draft: true`：清掉輸入框（分頁不在跑時按一次 Ctrl+C）再送；分頁正在跑就排隊，輪到時先清再送。
       清不掉回 `code: "draft_stuck"`，什麼都沒送。
     - 舊版電腦不認得這兩個欄位，會照舊排隊（`reason: "draft"`），手機看不到 `code: "draft"` 就維持排隊加提示。
+- 重新登入（v0.45.4 起）：`POST /link/login {sid, action, code?}`。`action: "step"` 只讀現在在哪一步，回 `{"success", "login": {step, url?}}`；
+  step 是 `expired`（最後一則說登入過期）／`starting`／`menu`／`browser`（有 `url`）／`code`／`done`，沒有登入流程時 `login` 是 `{}`。
+  其他 action 會按下那一步：`start`（送 /login）、`subscription`、`console`、`code`（帶 `code`）、`finish`、`cancel`。
+  手機的「打開登入頁」要在手機上開 `url`，登入頁如果給代碼就貼回 `code`。
 - 排隊中的訊息（v0.45.3 起）：`POST /link/send` 回 `details.queued` 和 `id` 時，手機可以 `POST /link/send/now {sid, id}`
   立刻送進去（插話，不管分頁在做什麼），或 `POST /link/send/cancel {sid, id}` 收回。已經送進去、正在打進去或已放棄的回
   `{"success": false, "code": "gone"}`。單向配對兩個都不行（403）。

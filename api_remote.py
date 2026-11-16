@@ -25,6 +25,7 @@ import bridge_home
 import sf_lang
 import link_usage
 import tab_delivery
+import tab_login
 import tmux_sessions
 from sf_config import CONFIG_LOCK
 from api_host import main
@@ -1306,6 +1307,15 @@ class RemoteApiMixin:
                 return {"success": True, "message": f"已斷開 {target}"}
             except Exception as e:
                 return {"success": False, "message": f"link unpair failed: {e}"}
+
+        elif cmd == "tab_login":
+            # A paired phone's sign-in card (POST /link/login): `step` only reads where it is; any other action presses
+            # it (tab_login.act). {"success", "login"}.
+            sid, action = str(args.get("sid") or ""), str(args.get("action") or "step")
+            if action == "step":
+                conv = self._execute_sfctl("conversation", {"sid": sid, "limit": 4}) or {}
+                return {"success": True, "login": tab_login.view(self, sid, (conv.get("details") or {}).get("turns"))}
+            return tab_login.act(self, sid, action, str(args.get("code") or ""))
 
         elif cmd == "queued_send":
             # A paired phone's queued message (POST /link/send/now, /link/send/cancel): `now` types it in at

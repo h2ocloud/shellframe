@@ -1290,7 +1290,8 @@
                                             '這個畫面讀不到選項，所以不會從這裡替你選。'))}</div>` +
         `<div class="cm-opts"><button class="cm-opt" data-act="to-term">${escHtml(T('Open the terminal', '切到終端機處理'))}</button></div></div></div>`;
     }
-    html = draftCardHtml(sid) + html;
+    // Signing in again, step by step, when the tab's sign-in expired (web/tablogin.js, tab_login.py)
+    html = (root.SFLogin ? root.SFLogin.card(sid, data, faceHtml(sid, '')) : '') + draftCardHtml(sid) + html;
     ask.hidden = !html;
     if (ask.dataset.html !== html) { ask.innerHTML = html; ask.dataset.html = html; stickBottom(sid); }
   }
@@ -1912,6 +1913,9 @@
     if (act === 'connect') {                               // open the wizard, and tell the bot option 1 so it waits
       try { root.SFConnect.openFromChat(el.dataset.service, { tag: el.dataset.tag, from_sid: sid }); } catch (_) { /* the answer still goes */ }
       return /^\d+$/.test(el.dataset.n || '') ? answer(el) : undefined;
+    }
+    if (act && act.startsWith('login-') && root.SFLogin) {
+      return root.SFLogin.click(el, sid, view(sid).data, () => { view(sid).rev = ''; renderAsk(sid); refresh(sid, true); });
     }
     if (act === 'draft-clear') return send(true);
     if (act === 'draft-keep') { view(sid).draftCard = null; renderAsk(sid); input.focus(); return; }
