@@ -182,22 +182,6 @@
       }
     },
     {
-      "id": "plugins",
-      "surfaces": [
-        "desktop"
-      ],
-      "since": "0.44.6",
-      "open": "settings:marketplace",
-      "title": {
-        "en": "Plugins",
-        "zh": "外掛"
-      },
-      "body": {
-        "en": "Browse and install plugins that add features to ShellBot.",
-        "zh": "瀏覽和安裝替 ShellBot 加功能的外掛。"
-      }
-    },
-    {
       "id": "a2a",
       "surfaces": [
         "desktop"
@@ -259,8 +243,8 @@
         "zh": "設定"
       },
       "body": {
-        "en": "Language, font size, what the + menu offers, Telegram and LINE, plugins, and the experimental features.",
-        "zh": "語言、字級、＋ 選單裡有哪些、Telegram 和 LINE、外掛，還有實驗性功能。"
+        "en": "Language, font size, what the + menu offers, Telegram and LINE, and the experimental features.",
+        "zh": "語言、字級、＋ 選單裡有哪些、Telegram 和 LINE，還有實驗性功能。"
       }
     },
     {

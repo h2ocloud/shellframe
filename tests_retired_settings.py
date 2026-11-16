@@ -16,11 +16,16 @@ rewrites the file):
     tab's first message, typed or from Telegram, goes in as it is
   - Settings → Telegram's System Prompt (bridge.initial_prompt): Connect types nothing into a
     tab, whatever the page sends in that argument's place; a saved one stays in the file, unread
+  - the glasses (glasses_enabled, the per-tab grant, `sfctl glasses`, the HTTP routes): no tab
+    is written down as open to them; an old allow list and audit stay in the file, unread
+  - the Plugins tab (the marketplace): gone, while a plugin enabled in config.plugins still
+    loads and gives its settings panel and sidebar badge
 
 Run: .venv/bin/python tests_retired_settings.py
 """
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import threading
@@ -235,6 +240,48 @@ for name, prev in (("a saved System Prompt from before", {"initial_prompt": "OLD
     check(f"{name}: the bridge's config carries no prompt", "initial_prompt" not in built[-1], built[-1])
     check(f"{name}: config.json keeps what was there and adds nothing",
           saved.get("initial_prompt") == prev.get("initial_prompt") and ("initial_prompt" in saved) == bool(prev), saved)
+
+print("the glasses: nothing grants them a tab or writes them down")
+check("DEFAULT_CONFIG: no glasses_enabled", "glasses_enabled" not in main.DEFAULT_CONFIG["settings"])
+check("Api: no glasses calls", not any(hasattr(Api, n) for n in (
+    "set_session_glasses", "get_glasses_status", "_glasses_report", "_glasses_transcript")))
+OLD_GLASSES = {"settings": {"glasses_enabled": True}, "glasses_allowed_sessions": ["s1"],
+               "glasses_audit": [{"ts": 1, "sid": "s1", "enabled": True, "source": "ui"}]}
+main.CONFIG_FILE.write_text(json.dumps(OLD_GLASSES), encoding="utf-8")
+api = Api.__new__(Api)
+api.bridge = api.line_bridge = None
+api.sessions = {"s1": Tab()}
+api.sessions["s1"]._glasses_enabled = True              # what an old build left on a Session
+api._persist_session_manifest()
+cfg = json.loads(main.CONFIG_FILE.read_text(encoding="utf-8"))
+check("a tab's manifest entry has no glasses field",
+      cfg.get("session_manifest") and all("glasses_enabled" not in e for e in cfg["session_manifest"]), cfg.get("session_manifest"))
+check("the old allow list and audit stay in the file as they were",
+      cfg.get("glasses_allowed_sessions") == ["s1"] and cfg.get("glasses_audit") == OLD_GLASSES["glasses_audit"], cfg)
+rows = json.loads(api.list_sessions())
+check("the page's tab list has no glasses field", rows and all("glasses_enabled" not in r for r in rows), rows)
+r = subprocess.run([sys.executable, str(HERE / "sfctl.py"), "glasses"], capture_output=True, text=True, timeout=30)
+check("`sfctl glasses` is not a command any more", r.returncode == 2 and "invalid choice" in r.stderr, r.stderr[-200:])
+
+print("plugins: the marketplace is gone; an enabled plugin still loads")
+check("Api: no marketplace calls", not any(hasattr(Api, n) for n in (
+    "marketplace_list", "marketplace_install", "marketplace_enable", "marketplace_uninstall")))
+check("no bundled plugins or marketplace list in the repo", not (HERE / "shellframe_plugins").exists())
+app = TMP / "app"
+plug = app / "shellframe_plugins" / "demo-plugin"
+plug.mkdir(parents=True)
+(plug / "manifest.json").write_text(json.dumps({"name": "demo-plugin", "version": "1.0.0", "description": "a demo"}), encoding="utf-8")
+(plug / "settings.html").write_text("<p>demo settings</p>", encoding="utf-8")
+(plug / "plugin.py").write_text("from plugin_sdk import SFPlugin\n\n\nclass Plugin(SFPlugin):\n"
+                                "    def sidebar_badge(self, sid):\n        return '<span>demo</span>'\n", encoding="utf-8")
+main.CONFIG_FILE.write_text(json.dumps({"settings": {}, "plugins": {"installed": ["demo-plugin"], "enabled": ["demo-plugin"]}}),
+                            encoding="utf-8")
+with mock.patch.object(main, "APP_DIR", app):
+    api._plugins_reload()
+panels = json.loads(api.list_plugin_panels())
+check("an enabled plugin gets its settings panel", [x["name"] for x in panels] == ["demo-plugin"]
+      and panels[0]["html"] == "<p>demo settings</p>", panels)
+check("…and its sidebar badge", api.plugin_sidebar_badges("s1") == "<span>demo</span>", api.plugin_sidebar_badges("s1"))
 
 print(f"\n{passed} passed, {failed} failed")
 if failed:

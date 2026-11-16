@@ -1043,12 +1043,6 @@ def main():
     p_audit.add_argument("sid", nargs="?", default="",
                          help="Session id (default: first session)")
 
-    p_glasses = sub.add_parser(
-        "glasses", help="Agent Relay 眼鏡橋接：看狀態 / 開放或收回某個分頁")
-    p_glasses.add_argument("action", nargs="?", default="status",
-                           choices=["status", "allow", "deny"])
-    p_glasses.add_argument("sid", nargs="*", help="分頁 sid，例如 s88（allow/deny 用）")
-
     p_perm = sub.add_parser(
         "permissions",
         help="Pre-grant OS permissions (macOS Privacy panes + firewall; "
@@ -1108,8 +1102,6 @@ def main():
     elif args.cmd == "orphans":
         _print_result(_rpc("orphans"), verbose=False)
 
-    elif args.cmd == "glasses":
-        _print_result(_rpc("glasses", {"action": args.action, "sids": args.sid}))
     elif args.cmd == "roster":
         _print_result(_rpc("roster"))
     elif args.cmd == "delegate":

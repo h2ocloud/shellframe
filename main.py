@@ -76,7 +76,6 @@ from api_accounts import AccountsApiMixin
 from api_bridges import BridgesApiMixin
 from api_desktop import DesktopApiMixin
 from api_extensions import ExtensionsApiMixin
-from api_glasses import GlassesApiMixin
 from api_link import LinkApiMixin
 from api_remote import RemoteApiMixin
 from api_status import StatusApiMixin
@@ -273,10 +272,7 @@ DEFAULT_CONFIG = {
         # What a tab opens on: the chat view ("chat", web/chat.js) or its terminal ("cli").
         # A first launch gets this; a computer that already ran ShellBot keeps "cli"
         # (api_chat.ensure_ui_style, from load_config).
-        "ui_style": "chat",
-        # 眼鏡（Agent Relay）是外掛功能，要另外裝 bridge 才有用。
-        # 預設關：沒裝的人不該在每個分頁上看到一顆按不出東西的按鈕。
-        "glasses_enabled": False
+        "ui_style": "chat"
     },
     # The guide (guide.json, web/guide.js): a first launch gets the tour once; a computer that
     # already ran ShellBot gets "skip" (guide.keep_old_install). `seen`: a version. Not in settings.
@@ -421,20 +417,8 @@ def _installed_plugin_dirs() -> list[str]:
     return names
 
 
-def _rokid_has_existing_setup() -> bool:
-    return (
-        (Path.home() / "Library" / "LaunchAgents" / "com.h2ocloud.rokid-bridge-listener.plist").exists()
-        or (Path.home() / ".claude" / "channels" / "rokid-bridge").exists()
-    )
-
-
 def _legacy_enabled_plugins_for_migration() -> list[str]:
-    names = []
-    for name in _installed_plugin_dirs():
-        if name == "rokid-bridge" and not _rokid_has_existing_setup():
-            continue
-        names.append(name)
-    return names
+    return _installed_plugin_dirs()
 
 
 def _ensure_plugins_defaults(cfg: dict) -> bool:
@@ -506,12 +490,6 @@ def _replace_first_command(cmd: str, replacement: str) -> str:
     parts = rest.split(None, 1)
     suffix = f" {parts[1]}" if len(parts) > 1 else ""
     return leading + replacement + suffix
-
-
-# Where the glasses bridge (Agent Relay) drops its heartbeat. Read-only from
-# here — ShellFrame never writes it and never dials the relay itself.
-GLASSES_STATE_PATH = os.path.expanduser("~/.local/share/evenclaude/state.json")
-GLASSES_STATE_STALE_S = 120
 
 
 def _session_provider(cmd: str) -> str:
@@ -1992,7 +1970,7 @@ def _win_set_clipboard_text(text: str) -> None:
 
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
-          GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
+          LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
           ConnectApiMixin, TabModelApiMixin, GuideApiMixin, TasksApiMixin):
     """JS <-> Python bridge."""
@@ -2075,8 +2053,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 cfg = load_config()
                 labels = cfg.get("session_labels", {}) or {}
                 disabled = set(cfg.get("bridge_disabled_sessions", []) or [])
-                prev_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
-                glasses_allowed = set(prev_allowed)
                 order = self._ordered_sids(cfg, preferred_order)
                 manifest = []
                 for idx, sid in enumerate(order):
@@ -2089,28 +2065,12 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                         disabled.add(sid)
                     else:
                         disabled.discard(sid)
-                    # Allow list, not a deny list: a tab that is missing from the
-                    # manifest must come back with the glasses OFF, never ON.
-                    #
-                    # The sentinel matters. Reading this with a `False` default and
-                    # then discarding means **any** code path that builds a Session
-                    # without setting the flag silently revokes that tab — the
-                    # authorisation quietly disappears and looks like a bug in the
-                    # glasses instead. `None` = "this object never had an opinion",
-                    # and an object with no opinion must not overrule the file.
-                    glasses_flag = getattr(s, '_glasses_enabled', None)
-                    if glasses_flag is True:
-                        glasses_allowed.add(sid)
-                    elif glasses_flag is False:
-                        glasses_allowed.discard(sid)
-                    glasses_enabled = sid in glasses_allowed
                     entry = {
                         "sid": sid,
                         "cmd": _canonical_cmd(s.cmd),
                         "tmux_name": getattr(s, '_tmux_name', None) or "",
                         "account_refs": dict(getattr(s, "account_refs", {}) or {}),
                         "bridge_enabled": bool(bridge_enabled),
-                        "glasses_enabled": bool(glasses_enabled),
                         "order": idx,
                         "updated_at": int(time.time()),
                     }
@@ -2151,13 +2111,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 cfg["session_order"] = [e["sid"] for e in manifest]
                 cfg["session_labels"] = labels
                 cfg["bridge_disabled_sessions"] = sorted(disabled)
-                # Tripwire. Emptying the allow list is a legitimate thing for a deny
-                # to do, but it should never be a side effect of persisting the tab
-                # list — and if it ever is again, this is the line that says so.
-                if prev_allowed and not glasses_allowed:
-                    _dlog("glasses", f"allow list emptied while persisting manifest: "
-                                     f"was {sorted(prev_allowed)}, sessions seen={len(order)}")
-                cfg["glasses_allowed_sessions"] = sorted(glasses_allowed)
                 save_config(cfg)
         except Exception as e:
             _dlog("lifecycle", f"persist manifest failed: {e}")
@@ -2986,7 +2939,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         default_account_refs = ACCOUNT_MANAGER.session_refs(cfg)
         saved_labels = cfg.get("session_labels", {})
         bridge_disabled = set(cfg.get("bridge_disabled_sessions", []))
-        glasses_allowed = set(cfg.get("glasses_allowed_sessions", []) or [])
         manifest = self._manifest_entries(cfg)
         manifest_by_sid = {str(e.get("sid")): e for e in manifest}
         manifest_by_tmux = {str(e.get("tmux_name")): e for e in manifest if e.get("tmux_name")}
@@ -3032,7 +2984,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 self.sessions[sid] = session
                 # Restore bridge enabled/disabled state from config
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
-                session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
                 # 這裡**不要**關掉 _startup_trust_pending。開機／重開 app 時
                 # tmux 裡那些 `claude --resume` 是剛長出來的行程，一樣會停在
                 # 資料夾信任對話框上，而且游標預設在 No, exit——沒人來答就是
@@ -3126,7 +3077,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                                   claude_home=claude_home)
                 self.sessions[sid] = session
                 session._bridge_enabled = bool(entry.get("bridge_enabled", sid not in bridge_disabled))
-                session._glasses_enabled = bool(entry.get("glasses_enabled", sid in glasses_allowed))
                 # soft restore 是**重新 spawn** 一個行程（機器重開、tmux 沒
                 # 了），信任對話框百分之百會出現，更不能關掉 watcher。
                 session._slug_pending = False
@@ -3345,7 +3295,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             if s is not None and s.alive:
                 result.append({"sid": sid, "cmd": s.cmd, "alive": True,
                                "bridge_enabled": getattr(s, '_bridge_enabled', True),
-                               "glasses_enabled": getattr(s, '_glasses_enabled', False),
                                "provider": _session_provider(s.cmd),
                                "label": getattr(s, '_custom_label', None)})
         return json.dumps(result)
@@ -3384,9 +3333,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         update_config(_remember_account_refs)
         self._start_startup_trust_watcher(sid, session)
         session._bridge_enabled = True
-        # Glasses stay off until someone explicitly opens this tab. See
-        # Api.set_session_glasses for why there is no enable-all.
-        session._glasses_enabled = False
         # Soft persistence (Windows / no-tmux fallback): record this session
         # so the next startup can recreate it
         self._save_soft_session(sid, cmd)
@@ -3466,15 +3412,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         _dlog("lifecycle", f"close_session sid={sid} reason={reason!r}")
         if self._bots_divert_close(sid, reason):
             return                          # a bot writes its memory first, then closes itself
-        # 授權要跟著分頁一起結束。不收的話那個 sid 會永遠留在
-        # glasses_allowed_sessions 裡，而 `sfctl glasses` 只走訪還活著的
-        # session，所以看不到它——一個看不見的、方向朝「開」的殘留。
-        # sid 單調遞增不會重複用，所以目前危害有限，但方向錯了就是錯了。
-        if sid in self.sessions and getattr(self.sessions[sid], "_glasses_enabled", False):
-            try:
-                self.set_session_glasses(sid, False, "close")
-            except Exception:
-                _swallow(f"close_session:glasses:{sid}")
         # Unregister from bridge
         if self.bridge:
             self.bridge.unregister_session(sid)
@@ -4312,23 +4249,6 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
     # WKWebView getUserMedia——TCC 歸屬清楚（掛在 ShellFrame.app 下）、
     # 三平台同一條路，且轉出 16kHz mono WAV 正好是 whisper 要的格式。
     _MIC_MAX_SEC = 300
-
-    # ---------------------------------------------------------- glasses ---
-    # The Agent Relay bridge (G2 glasses -> relay -> this Mac) can inject text
-    # into a tab as if it were typed. Every tab here runs with
-    # --dangerously-skip-permissions, so opening a tab to the glasses means
-    # "anything I say out loud, on the street, runs on this machine". Hence:
-    # allow list not deny list, off by default, and every change is recorded.
-    #
-    # Note what is NOT claimed: that many tabs cannot be opened at once. They
-    # can — `sfctl glasses allow` takes several sids, and a shell loop would
-    # work even if it did not. What holds is that no single control opens
-    # everything, and that each grant lands in `config.glasses_audit` with its
-    # source, so a mass grant is visible after the fact even though it is not
-    # prevented. (2026-08-31: eleven tabs were opened in five seconds and the
-    # only trace was a debug log that rolls.)
-
-    _glasses_transcript_cache: dict = {}
 
     def reorder_sessions(self, order_json: str) -> str:
         """Reorder sessions. Updates TG bridge /1 /2 commands to match."""

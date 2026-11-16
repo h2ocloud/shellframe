@@ -32,7 +32,7 @@ LEGACY_MAX = {              # oversized files that predate the budget: may shrin
 # Moving a helper out of main.py into a module the mixin can import lowers these.
 SEAM_MAX = {
     "api_accounts.py": 69, "api_bridges.py": 22, "api_desktop.py": 22,
-    "api_extensions.py": 23, "api_glasses.py": 16, "api_history.py": 0,
+    "api_extensions.py": 11, "api_history.py": 0,
     "api_link.py": 12, "api_remote.py": 45, "api_schedules.py": 0,
     "api_status.py": 11, "api_update.py": 44, "api_voice.py": 21,
 }

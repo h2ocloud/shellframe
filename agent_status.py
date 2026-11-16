@@ -176,9 +176,8 @@ def _sf_launcher_provider(cmd: str):
 
 
 def worker_kind(cmd: str) -> str:
-    """Public alias for `_worker_kind` — the glasses bridge needs the same
-    claude/codex/other classification main.py uses, and duplicating the
-    wrapped-command handling in a second place is how the two drift apart."""
+    """Public alias for `_worker_kind`, for the modules outside this one (main.py, the bots,
+    the chat view): one place handles wrapped commands, so copies cannot drift apart."""
     return _worker_kind(cmd)
 
 

@@ -1,5 +1,9 @@
 # ShellFrame 擴充機制 + 自有 Harness 規劃
 
+> 2026-11 更新：設定整理時移除了外掛市集（設定頁的 Plugins 分頁、`marketplace_*`）、內建的
+> `rokid-bridge` 外掛與眼鏡控制；下面 A 節是當時的紀錄。外掛執行機制（`plugin_sdk.py`、
+> `config.plugins.enabled` 列出的外掛）保留。
+
 2026-08-15 起草。對應四項需求：眼鏡外掛卸載根治、擴充 SDK/skill、
 自有 harness（疑難雜症/調度）、地端 AI 入口明朗化。
 

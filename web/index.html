@@ -652,11 +652,6 @@
   .sb-bridge:hover { border-color: #7aa2f7; color: #7aa2f7; }
   .sb-bridge.on { border-color: #9ece6a; color: #9ece6a; background: rgba(158,206,106,.08); }
   .sb-bridge.active-bridge { border-color: #7aa2f7; color: #7aa2f7; background: rgba(122,162,247,.1); }
-  /* Glasses permission. Off is deliberately near-invisible and on is loud:
-     "on" means a voice command from outside the house runs here. */
-  .sb-glasses { opacity: .3; }
-  .sb-glasses:hover { opacity: 1; }
-  .sb-glasses.on { opacity: 1; border-color: #e0af68; color: #e0af68; background: rgba(224,175,104,.12); }
   .sb-line { margin-left: -4px; }
   .sb-divider {
     display: flex; align-items: center; gap: 6px; padding: 8px 12px;
@@ -970,16 +965,6 @@
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
       <button class="settings-tab" data-tab="bridge" data-guide="telegram" data-i18n="settingsTelegram">Telegram Bridge</button>
       <button class="settings-tab" data-tab="line" data-guide="line" data-i18n="settingsLine">LINE</button>
-      <button class="settings-tab" data-tab="marketplace" data-guide="plugins" title="Browse and install plugins">🧩 Plugins</button>
-    </div>
-
-    <!-- Tab: Plugin marketplace -->
-    <div class="settings-tab-panel" id="settings-panel-marketplace">
-      <div style="font-size:12px;color:#a9b1d6;margin-bottom:10px;line-height:1.55">
-        Install optional ShellBot plugins. Installed plugins live in
-        <code>shellframe_plugins/&lt;name&gt;/</code>.
-      </div>
-      <div id="settings-marketplace-list" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
 
     <!-- Tab: General -->
@@ -1071,13 +1056,6 @@
           <div style="display:flex;align-items:center;gap:6px">
             <button class="toggle-switch on" id="setting-model-badge"></button>
             <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
-          </div>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="glassesLabel">Glasses control (Agent Relay add-on)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-glasses"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="glassesHint">Shows a per-tab switch that lets Even Realities G2 glasses type into that tab. Needs the separate Agent Relay bridge — off by default, and turning it on grants nothing on its own.</span>
           </div>
         </div>
         <div>
@@ -1658,8 +1636,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       experimentalLoopsHint: 'Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab — shows next-wake countdown and what each is waiting on. Off by default.',
       modelBadgeLabel: 'Model badge on sessions (experimental)',
       modelBadgeHint: "Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.",
-      glassesLabel: 'Glasses control (Agent Relay add-on)',
-      glassesHint: "Shows a per-tab switch that lets Even Realities G2 glasses type into that tab. Needs the separate Agent Relay bridge — off by default, and turning it on grants nothing on its own.",
       usagePaceLabel: 'Token pacing on the usage pill',
       usagePaceHint: 'Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.',
       releaseNotesTitle: "What's new",
@@ -1813,8 +1789,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       usagePaceHint: '在 wk 旁邊加一段 pc：把週額度平均攤到整個週期，也就是「今天應該用到幾 %」才會剛好用完。▲ 表示燒太快、▼ 表示額度用不完。滑過膠囊看細節（第幾天／落後或超前幾天的量）。',
       modelBadgeLabel: 'Session 顯示模型標籤（實驗性）',
       modelBadgeHint: '自動偵測每個分頁的模型與 thinking effort（Claude / Codex 都支援），顯示在左側 session 列。偵測屬盡力而為，可能有誤——不想看就在這裡關掉。',
-      glassesLabel: '眼鏡操控（Agent Relay 外掛）',
-      glassesHint: '在每個分頁顯示一個開關，開了之後 Even Realities G2 眼鏡就能對那個分頁打字。需要另外安裝 Agent Relay bridge 才有用，預設關閉；打開這裡只是把開關顯示出來，本身不授權任何分頁。',
       releaseNotesTitle: '本次更新',
       releaseNotesGotIt: '知道了',
     }
@@ -2530,7 +2504,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }, 3500);
       return;
     }
-    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label: label || cmd.split(/\s/)[0], attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
     // Persist the preset's display name so it survives restart. Without
@@ -2710,7 +2684,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     term.attachCustomWheelEventHandler(ev => _xtermTakesWheel(term, ev));
 
     const label = customLabel || cmd.split(/\s/)[0];
-    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
+    sessions[sid] = { term, fitAddon, pane, cmd, label, customLabel: null, attachments: [], attachCounter: 0, bridgeEnabled: true, _userScrolledUp: false, _lastOutputTs: 0, _busy: false };
     if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     flushPendingOutput(sid);
     setupAttachKeyHandler(sid, term);
@@ -3089,11 +3063,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // Model + thinking-effort badge for a session row. Auto-detected on the
   // Python side (claude: transcript's latest assistant model + global
   // effortLevel; codex: rollout turn_context) and pushed with agent status.
-  /* 眼鏡（Agent Relay）是外掛：沒裝 bridge 的人不該看到這顆按鈕。
-     預設關，設定裡打開才出現。 */
-  function glassesUiEnabled() {
-    return !!(config && config.settings && config.settings.glasses_enabled === true);
-  }
   function showModelBadge() {
     return !(config && config.settings && config.settings.show_model_badge === false);
   }
@@ -3160,7 +3129,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (hasAnyBridge ? `<span style="opacity:${tgOff ? '.3' : '.4'};font-size:10px;min-width:14px">${tgOff ? '·' : tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(shownLabel(sid, s))}</span>` +
         modelBadgeHtml(s) +
-        (glassesUiEnabled() ? `<span class="sb-bridge sb-glasses${s.glassesEnabled ? ' on' : ''}" data-action="toggle-glasses" data-sid="${sid}" title="${s.glassesEnabled ? '眼鏡（Agent Relay）可以對這個分頁下指令 —— 點一下收回' : '眼鏡目前送不進這個分頁。點一下開放（會再問一次）'}">\u{1F453}</span>` : '') +
         tgChip +
         (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
         (isAiSession(sid) ? `<span class="sb-relaunch" data-guide="relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">⟳</span>` : '') +
@@ -3416,16 +3384,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       confirmRelaunchTab(relaunchBtn.dataset.sid);
       return;
     }
-    // Glasses badge click → grant / revoke the Agent Relay bridge for this tab
-    const glassesAction = e.target.closest('[data-action="toggle-glasses"]');
-    if (glassesAction) {
-      e.preventDefault();
-      e.stopPropagation();
-      const sid = glassesAction.dataset.sid;
-      if (sessions[sid]?.glassesEnabled) toggleSessionGlasses(sid, false);
-      else confirmGlassesAllow(sid);
-      return;
-    }
     // TG badge click → switch TG active session.
     // 三態（2026-09-05 定案）：停用中的暗 chip 點一下＝重新啟用；已是 active
     // 的分頁再點一下＝停用（列留原位變暗，不搬區）；其餘＝切 active。
@@ -3651,14 +3609,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   }
 
-  async function toggleSessionGlasses(sid, enabled) {
-    try {
-      const result = JSON.parse(await pywebview.api.set_session_glasses(sid, enabled, 'ui'));
-      if (result.success && sessions[sid]) sessions[sid].glassesEnabled = result.enabled;
-      renderSidebar();
-    } catch (err) { console.warn('glasses toggle error:', err); }
-  }
-
   // ── Frame Link（跨機配對）────────────────────────────────────────────
   // 配對入口在側欄隔離線；遠端 session 在主終端區無縫開啟（ensureRemotePane/
   // startRemoteStream），訊息／檔案走底部面板（openLinkMessages/openLinkFiles）。
@@ -3762,7 +3712,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       label: (rt && rt.label) || (rt && rt.sid) || sid,
       isRemote: true, peerId: peer.id, rsid: (rt && rt.sid) || '',
       peerName: peer.name, attachments: [], attachCounter: 0,
-      bridgeEnabled: true, glassesEnabled: false, _userScrolledUp: false,
+      bridgeEnabled: true, _userScrolledUp: false,
       _lastOutputTs: 0, _busy: false, _streamSeq: -1,
       _lastCols: 0, _lastRows: 0, _ro: ro,
     };
@@ -4604,51 +4554,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   function linkUiInit() {
     refreshLinkStatus(false);
     // 面板不再自動開——它現在只在點 💬／📁 時彈出
-  }
-
-  /* Opening a tab to the glasses is not a preference, it is a grant: every tab
-     runs with --dangerously-skip-permissions, so from that moment anything
-     said into the G2 mic runs on this machine. One tab at a time, always
-     an explicit yes, and never a bulk switch. */
-  let _glassesConfirmOpen = false;
-  function confirmGlassesAllow(sid) {
-    const s = sessions[sid];
-    if (!s || _glassesConfirmOpen) return;
-    _glassesConfirmOpen = true;
-    const isZh = lang === 'zh-TW';
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay open';
-    overlay.style.zIndex = '400';
-    overlay.innerHTML = `
-      <div class="modal" style="width:380px;padding:20px">
-        <h2 style="font-size:14px;margin-bottom:10px">${isZh ? '開放眼鏡對這個分頁下指令？' : 'Let the glasses drive this tab?'}</h2>
-        <div style="font-size:12px;color:#a9b1d6;line-height:1.6">
-          ${isZh
-            ? `之後從 G2 眼鏡說出來的話，會直接變成「${esc(s.label)}」的輸入並執行。<br>這個分頁跑的是 <code>--dangerously-skip-permissions</code>，不會再問你第二次。`
-            : `Anything spoken into the G2 then runs as input to “${esc(s.label)}”.<br>This tab runs <code>--dangerously-skip-permissions</code>; nothing will ask again.`}
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
-          <button class="btn btn-ghost" id="glasses-cancel">${isZh ? '取消' : 'Cancel'}</button>
-          <button class="btn btn-primary" id="glasses-confirm">${isZh ? '開放' : 'Allow'}</button>
-        </div>
-      </div>`;
-    document.body.appendChild(overlay);
-    const done = (allow) => {
-      document.removeEventListener('keydown', onKey, true);
-      overlay.remove();
-      _glassesConfirmOpen = false;
-      if (allow) toggleSessionGlasses(sid, true);
-      else { try { sessions[sid] && sessions[sid].term.focus(); } catch (_) {} }
-    };
-    const onKey = (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
-      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
-    };
-    document.addEventListener('keydown', onKey, true);
-    overlay.querySelector('#glasses-confirm').addEventListener('click', () => done(true));
-    overlay.querySelector('#glasses-cancel').addEventListener('click', () => done(false));
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
-    overlay.querySelector('#glasses-confirm').focus();
   }
 
   document.getElementById('btn-sidebar').addEventListener('click', () => {
@@ -7130,9 +7035,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('setting-model-badge').classList.toggle(
       'on', s.show_model_badge !== false,
     );
-    document.getElementById('setting-glasses').classList.toggle(
-      'on', s.glasses_enabled === true,
-    );
     document.getElementById('setting-usage-pace').classList.toggle(
       'on', s.usage_pace !== false,          // default on
     );
@@ -7241,15 +7143,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       this.classList.toggle('on');
       config.settings = config.settings || {};
       config.settings.show_model_badge = this.classList.contains('on');
-      await pywebview.api.save_settings(JSON.stringify(config.settings));
-      renderSidebar();
-    });
-
-  document.getElementById('setting-glasses')
-    .addEventListener('click', async function() {
-      this.classList.toggle('on');
-      config.settings = config.settings || {};
-      config.settings.glasses_enabled = this.classList.contains('on');
       await pywebview.api.save_settings(JSON.stringify(config.settings));
       renderSidebar();
     });
@@ -8375,7 +8268,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           await reconnectSession(s.sid, s.cmd, s.label || null);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
-            sessions[s.sid].glassesEnabled = s.glasses_enabled === true;
           }
           bumpSessionsRev();
           changed = true;
@@ -8388,11 +8280,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
           if (sessions[s.sid].bridgeEnabled !== nextBridgeEnabled) {
             sessions[s.sid].bridgeEnabled = nextBridgeEnabled;
-            changed = true;
-          }
-          const nextGlasses = s.glasses_enabled === true;
-          if (sessions[s.sid].glassesEnabled !== nextGlasses) {
-            sessions[s.sid].glassesEnabled = nextGlasses;
             changed = true;
           }
         }
@@ -9787,7 +9674,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           await reconnectSession(s.sid, s.cmd, customLabel);
           if (sessions[s.sid]) {
             sessions[s.sid].bridgeEnabled = s.bridge_enabled !== false;
-            sessions[s.sid].glassesEnabled = s.glasses_enabled === true;
           }
         }
         // Auto-restore chat bridges if config was saved
@@ -9873,7 +9759,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
   });
 
-  // ── Plugin panels / marketplace (best-effort; never blocks ShellFrame) ──
+  // ── Plugin panels (best-effort; never blocks ShellFrame). The marketplace UI was retired; an
+  // enabled plugin in shellframe_plugins/ still gets its tab, sidebar badge and actions here. ──
   async function initPlugins() {
     try { await waitApi(); } catch (e) { return; }
     if (!window.pywebview || !pywebview.api || !pywebview.api.list_plugin_panels) return;
@@ -10004,68 +9891,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       new MutationObserver(() => paintBadges()).observe(sidebar, {childList: true, subtree: true});
     }
   }
-
-  async function renderMarketplace() {
-    const list = document.getElementById('settings-marketplace-list');
-    if (!list || !pywebview.api.marketplace_list) return;
-    list.innerHTML = '<div style="color:#565f89;font-size:12px">Loading...</div>';
-    try {
-      const data = JSON.parse(await pywebview.api.marketplace_list());
-      const items = data.plugins || [];
-      if (!items.length) {
-        list.innerHTML = '<div style="color:#565f89;font-size:12px">No plugins listed.</div>';
-        return;
-      }
-      list.innerHTML = '';
-      items.forEach(p => {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #3b4261;border-radius:8px;background:#1f2335';
-        const status = p.installed
-          ? (p.enabled ? 'Enabled' : 'Installed, disabled')
-          : (p.bundled ? 'Available' : 'Not installed');
-        row.innerHTML = `
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;color:#c0caf5">${esc(p.name || '')} <span style="color:#565f89;font-size:11px">${esc(p.installed_version || p.version || '')}</span></div>
-            <div style="font-size:12px;color:#a9b1d6">${esc(p.description || '')}</div>
-            <div style="font-size:11px;color:${p.enabled ? '#9ece6a' : '#565f89'};margin-top:4px">${esc(status)}</div>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-            ${p.installed
-              ? `<button class="btn btn-ghost" data-plugin-action="${p.enabled ? 'disable' : 'enable'}">${p.enabled ? 'Disable' : 'Enable'}</button>
-                 <button class="btn btn-ghost" data-plugin-action="uninstall">Uninstall</button>`
-              : `<button class="btn btn-ghost" data-plugin-action="install">${p.bundled ? 'Install / Enable' : 'Install'}</button>`}
-          </div>`;
-        row.querySelectorAll('button[data-plugin-action]').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            try {
-              const action = btn.dataset.pluginAction;
-              const raw = action === 'uninstall'
-                ? await pywebview.api.marketplace_uninstall(p.name)
-                : action === 'enable'
-                  ? await pywebview.api.marketplace_enable(p.name, true)
-                  : action === 'disable'
-                    ? await pywebview.api.marketplace_enable(p.name, false)
-                    : await pywebview.api.marketplace_install(p.name, p.repo_url);
-              const res = JSON.parse(raw);
-              await SFDialog.alert(res.message || (res.ok ? 'OK' : 'Failed'));
-              if (res.ok) window.location.reload();
-              else await renderMarketplace();
-            } catch (e) {
-              SFDialog.alert(String(e));
-            } finally {
-              btn.disabled = false;
-            }
-          });
-        });
-        list.appendChild(row);
-      });
-    } catch (e) {
-      list.innerHTML = `<div style="color:#f7768e;font-size:12px">${esc(String(e))}</div>`;
-    }
-  }
-
-  document.querySelector('[data-tab="marketplace"]')?.addEventListener('click', renderMarketplace);
 
   init();
   initPlugins();
