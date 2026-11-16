@@ -61,7 +61,7 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
 - 用量與配速（設定頁，v0.45.3 起）：`GET /link/usage[?refresh=1]` → `{"success", "details": {"accounts": [...], "at", "refreshed"}}`。
   每個帳號：`provider`、`label`、`account`、`current`、`stale`、`checked`，讀不到時有 `error`（`auth_required`／`rate_limited`／`no_data`…）
   與 `error_message`，不給數字；有額度時 `five_hr`／`week` 各是 `{pct, reset, reset_epoch?, pace?, ahead?, full_at?}`：
-  `pace` 是這個時段已經過了多少（%），`ahead` = 已用 − pace（正的就是比配速快），`full_at` 是照目前速度用完的時間（只在重置前）。
+  `pace` 是這個時段已經過了多少（%），`ahead` = 已用 − pace（正的就是比配速快），`full_at` 是照目前速度用完的時間（只在重置前）。重置時間已經過了的時段有 `reset_passed: true`、沒有 pace，數字是上個週期的，要標成舊的。
   另外的額度（例如 Antigravity 分 Gemini／Claude）在 `groups`。清單已經照「最該注意」排好。`refresh=1` 每分鐘最多重讀一次。
   舊電腦回 404：手機要說「這台的 ShellBot 要更新到 0.45.3 以上」。
 - 「要你決定」：`/link/signals` 讀 agent 的 `[[SF:RED/YELLOW]]`，側欄該 session
