@@ -580,18 +580,23 @@
     const words = view.q.toLowerCase().split(/\s+/).filter(Boolean);
     const now = Date.now() / 1000;
     const rows = [...list.querySelectorAll('.sb-item[data-section="local"][data-sid]')];
+    // The primary bot is on its card above the list: its row would say the same thing twice.
+    const prim = st.primary && rosterEntry(st.primary) ? st.primary : '';
     let shown = 0;
     rows.forEach(row => {
       const sid = row.dataset.sid;
       const at = lastAt(sid, now);
       const ok = (!(view.idle || view.long) || !running(sid)) &&
                  (!view.long || !at || now - at > LONG_IDLE_S) && hits(haystack(sid), words);
+      const dup = !!prim && botOf(sid) === prim;
+      row.classList.toggle('sfb-primary-dup', dup);
       row.classList.toggle('sfb-hide', !ok);
-      if (ok) shown++;
+      if (ok && !dup) shown++;
     });
     list.querySelectorAll('.sfb-sleeper').forEach(row => {
       const role = row.dataset.sfbRole;
       const e = rosterEntry(role) || {};
+      row.classList.toggle('sfb-primary-dup', !!prim && role === prim);
       row.classList.toggle('sfb-hide', !hits([role, botName(role), e.responsibility].join(' ').toLowerCase(), words));
     });
     list.querySelectorAll('.sb-item[data-rsid]').forEach(row =>

@@ -8193,8 +8193,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     }
     if (sid !== tagPicker.sid) { tagPickerClose(); return false; }
     const n = tagPicker.matches.length;
-    if (data === '\x1b[A') { tagPicker.sel = (tagPicker.sel + n - 1) % n; tagPickerRefresh(); return true; }
-    if (data === '\x1b[B') { tagPicker.sel = (tagPicker.sel + 1) % n; tagPickerRefresh(); return true; }
+    // ↑↓ in both cursor modes: a full-screen CLI (Claude Code) turns on application cursor keys, and xterm
+    // then sends ESC O A / ESC O B, which used to close the picker and move the CLI's own history instead.
+    if (data === '\x1b[A' || data === '\x1bOA') { tagPicker.sel = (tagPicker.sel + n - 1) % n; tagPickerRefresh(); return true; }
+    if (data === '\x1b[B' || data === '\x1bOB') { tagPicker.sel = (tagPicker.sel + 1) % n; tagPickerRefresh(); return true; }
     if (data === '\r' || data === '\n' || data === '\t') { tagPickerSelect(); return true; }
     if (data === '\x1b') { tagPickerClose(); return true; }
     if (data === '\x7f' || data === '\b') {

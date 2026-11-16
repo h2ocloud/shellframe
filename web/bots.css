@@ -390,3 +390,5 @@ body:not(.sfb-on) #sfb-convo { display: none; }
 .sfb-bl-edit { flex: none; font-size: 11px; padding: 2px 12px; border: 1px solid #3b4261; }
 .sfb-bl-edit:hover { border-color: #7aa2f7; }
 .sfb-bl-empty { font-size: 11px; color: #565f89; padding: 8px 0; }
+/* The primary bot's row: it is on the card above the list (bots.js applyView). */
+.sfb-primary-dup { display: none !important; }

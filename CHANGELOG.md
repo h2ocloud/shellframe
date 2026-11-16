@@ -6,6 +6,30 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.45.1 (2026-11-16)
+
+### Fixes
+
+- **In the terminal, ↑↓ move the `#` picker again while a full-screen CLI runs.** Reported in daily use: typing
+  `#` in a terminal to pick a bot or a conversation, the arrow keys went to the terminal instead. Claude Code
+  turns on application cursor keys, and the terminal then sends ↑↓ as `ESC O A` / `ESC O B`; the picker knew
+  only `ESC [ A` / `ESC [ B`, so an arrow closed it and moved the CLI's own input history. It takes both now.
+  Covered by `tests_tag_picker_keys.py`, which reproduces the stray keys without the fix.
+
+  **終端機裡用 `#` 挑 bot 或對話時，CLI 在跑也能用 ↑↓ 選。** 日常使用中回報：在終端機打 `#` 要挑 bot 或對話，上下鍵卻被
+  終端機吃掉。Claude Code 會打開「應用程式游標鍵」模式，這時終端機送出的上下鍵是 `ESC O A` / `ESC O B`；選單只認得
+  `ESC [ A` / `ESC [ B`，所以一按就把選單關掉，變成在翻 CLI 自己的輸入歷史。現在兩種都認得。由 `tests_tag_picker_keys.py`
+  守著，沒有修正時它會重現按鍵跑進終端機。
+
+### Changes
+
+- **The primary bot is shown once, on its card.** Asked for: the sidebar showed the primary bot twice, as the
+  card on top and as a row further down. Its row is left out of the list while it is the primary bot (awake or
+  asleep), and comes back when another bot becomes primary. Covered by `tests_sidebar_primary_dup.py`.
+
+  **主要 Bot 只顯示一次，在上方的卡片。** 需求：側欄的主要 Bot 出現兩次，上方一張卡片，下面清單又一列。現在它是主要 Bot 時
+  （醒著或休息中），清單裡不再列出它；換成別的 Bot 當主要 Bot 時，它會回到清單。由 `tests_sidebar_primary_dup.py` 守著。
+
 ## v0.45.0 (2026-11-16)
 
 ### Added
