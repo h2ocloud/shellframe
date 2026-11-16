@@ -18,6 +18,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **Faces** | Shape and colour are who a bot is (12 shapes, 14 colours); the expression is what it is doing: working, waiting on you (`?`), stuck, done, writing memory, resting. |
 | **Primary bot** | The card at the top of the sidebar: it takes stock of who is busy, stuck or waiting on you, and hands the work to the right bot. Dispatching needs bot-to-bot messaging (A2A), an experimental switch that is off by default. While a bot is primary it appears only on that card, not again in the list. |
 | **"Needs your decision"** | A bot's question and its numbered options reach your phone or Telegram; one tap answers that bot. |
+| **Tasks** | A bot keeps what it is doing as tasks (`sfctl task add`, `update`, `note`, `done`, `drop`): owner, next step, due date, what it waits for, and a line of history for every change. `sfctl task mine` shows a bot its open tasks and what other bots wait on it; `--decision` puts a question only you can answer on your own list (`sfctl task list --decisions`); `sfctl task stuck` lists what nothing has happened to for too long. A hand-off can belong to a task (`--for-task N`) and its answer comes back onto it. Everything is one database file on your computer, backed up daily (seven kept), with keys and tokens masked before they are written. |
 | **iPhone / iPad app** | Pairs with your computer through Frame Link (Tailscale when you are off your network): bot list, chat view, one-tap answers. Not on the App Store; developer install only. [docs/mobile-link.md](docs/mobile-link.md) |
 | **Supported CLIs** | Claude Code, Codex, Grok Build, OpenCode, Pi, Cursor and Antigravity are built in; any other terminal command opens as a tab too. Usage display for most of them. |
 | **Connect** | Settings → Connect lists which services are linked. Gmail links through a Claude account connector or a local MCP with the minimum read-only permission; ShellBot itself neither reads nor stores any mail. [docs/connectors.md](docs/connectors.md) |
@@ -49,6 +50,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **臉** | 形狀和顏色是 bot 的身分（12 種形狀、14 種顏色），表情是它在做什麼：做事、等你決定（`?`）、卡住、做完、寫記憶、休息。 |
 | **主要 bot** | 側欄最上面那張卡片：先盤點誰在忙、誰卡住、誰在等你，再把工作派給對的 bot。派工要用到「bot 之間傳話（A2A）」，這是預設關閉的實驗開關。當主要 bot 的時候，它只出現在那張卡片，清單裡不再重複。 |
 | **「要你決定」** | bot 的提問連同編號選項送到手機或 Telegram，一按就回答那個 bot。 |
+| **任務** | bot 把正在做的事記成任務（`sfctl task add`、`update`、`note`、`done`、`drop`）：誰負責、下一步、到期日、在等什麼，每次變動留一行紀錄。`sfctl task mine` 讓 bot 看到自己手上的任務和別的 bot 在等它的事；加上 `--decision`，只有你能回答的問題會放到你自己的清單（`sfctl task list --decisions`）；`sfctl task stuck` 列出太久沒動靜的任務。交辦可以掛在任務底下（`--for-task N`），回覆會寫回同一件任務。全部存在你這台電腦的一個資料庫檔案裡，每天備份（留七份），金鑰和 token 寫進去之前先遮掉。 |
 | **iPhone／iPad App** | 透過 Frame Link 和你的電腦配對（不在同一個網路時用 Tailscale）：bot 清單、對話畫面、一按就回答。還沒上 App Store，目前只能由開發者安裝。[docs/mobile-link.md](docs/mobile-link.md) |
 | **支援的 CLI** | 內建 Claude Code、Codex、Grok Build、OpenCode、Pi、Cursor、Antigravity；其他終端機指令也能開成分頁。大部分有額度顯示。 |
 | **連接** | 設定 →「連接」列出每個服務接上了沒。Gmail 可以用 Claude 帳號的連接器或本機 MCP 接，只要讀信的最小權限；ShellBot 本身不讀、不存任何信件。[docs/connectors.md](docs/connectors.md) |
