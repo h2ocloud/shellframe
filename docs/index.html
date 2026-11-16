@@ -337,7 +337,7 @@ details.tb.wide{margin-top:16px}
     <div class="top-row">
       <a class="brand" href="#overview" aria-label="ShellBot overview" data-zh-aria="ShellBot 總覽">
         <svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g></svg>
-        <span>ShellBot <small><span class="en">formerly ShellFrame · Desktop v0.45.0</span><span class="zh">原名 ShellFrame · 桌面版 v0.45.0</span></small></span>
+        <span>ShellBot <small><span class="en">formerly ShellFrame · Desktop v0.45.1</span><span class="zh">原名 ShellFrame · 桌面版 v0.45.1</span></small></span>
       </a>
       <span class="spacer"></span>
       <button class="lang-btn" id="lang-btn" type="button" aria-label="Switch language" data-zh-aria="切換語言"><span class="en" lang="zh-Hant">繁體中文</span><span class="zh" lang="en">English</span></button>
@@ -442,7 +442,7 @@ details.tb.wide{margin-top:16px}
     <summary><span class="en">More about the chat view</span><span class="zh">對話畫面的更多細節</span></summary>
     <p><b><span class="en">Open and switch:</span><span class="zh">怎麼開、怎麼切：</span></b><span class="en">Settings → Interface style → “Chat”. New installs start in chat view; computers that already ran ShellBot keep the terminal view until you turn it on. Each tab has a Chat / Terminal switch at the top, or press ⌘⇧M (Ctrl+Shift+M on Windows and Linux); switching affects only that tab.</span><span class="zh">設定 → 介面風格 →「對話」。新安裝預設就是對話畫面；原本在用的電腦維持終端機畫面，想用再打開。每個分頁上方有「對話／終端機」切換鈕，或按 ⌘⇧M（Windows、Linux 是 Ctrl+Shift+M），切換只影響那一個分頁。</span></p>
     <p><b><span class="en">Supported CLIs:</span><span class="zh">支援的 CLI：</span></b><span class="en">Claude Code, Codex, OpenCode, Grok Build, Cursor and Pi. An Antigravity tab shows the terminal.</span><span class="zh">Claude Code、Codex、OpenCode、Grok Build、Cursor、Pi；Antigravity 的分頁會顯示終端機。</span></p>
-    <p><b><span class="en">In the conversation:</span><span class="zh">對話裡：</span></b><span class="en">Right-click a message to reply. Image paths in a message show as thumbnails; other files reveal themselves in Finder (File Explorer on Windows) when clicked. Type <code>#</code> in the input box to list bots (sleeping ones too) and open tabs, plus the bots on a paired computer (labelled with which machine; A2A must be on at both ends), and pick one to call it. A card waiting for your decision can be dismissed with ✕.</span><span class="zh">對某則訊息按右鍵可以「回覆」；訊息裡的圖片路徑會直接顯示縮圖，其他檔案點一下會在 Finder（Windows 是檔案總管）標出來。在輸入框打 <code>#</code> 會列出 bot（包括睡著的）和開著的分頁，也會列出配對電腦上的 bot（標上是哪一台，兩台都要開 A2A），選了就叫它；等你決定的卡片可以按 ✕ 收起來。</span></p>
+    <p><b><span class="en">In the conversation:</span><span class="zh">對話裡：</span></b><span class="en">Right-click a message to reply. Image paths in a message show as thumbnails; other files reveal themselves in Finder (File Explorer on Windows) when clicked. Type <code>#</code> in the input box to list bots (sleeping ones too) and open tabs, plus the bots on a paired computer (labelled with which machine; A2A must be on at both ends), and pick one to call it. In a terminal tab, typing <code>#</code> picks a bot or a conversation too, and ↑↓ move the picker even while a full-screen CLI such as Claude Code is running. A card waiting for your decision can be dismissed with ✕.</span><span class="zh">對某則訊息按右鍵可以「回覆」；訊息裡的圖片路徑會直接顯示縮圖，其他檔案點一下會在 Finder（Windows 是檔案總管）標出來。在輸入框打 <code>#</code> 會列出 bot（包括睡著的）和開著的分頁，也會列出配對電腦上的 bot（標上是哪一台，兩台都要開 A2A），選了就叫它；在終端機分頁打 <code>#</code> 也能挑 bot 或對話，就算 Claude Code 這類全螢幕 CLI 正在跑，↑↓ 也能移動選單；等你決定的卡片可以按 ✕ 收起來。</span></p>
     <p><b><span class="en">Sending, queue and model:</span><span class="zh">送出、排隊與模型：</span></b><span class="en">What you write in the chat view or on a phone goes into the tab at once, even while it is working, as typing in the terminal does. It still waits while the tab shows a menu (the keys would pick an option), while its model is being switched, while a draft has to be cleared, and while a Telegram or LINE message is in flight. Messages from other agents (A2A, <code>sfctl send</code>, another computer) queue as before. A message that has to wait says who it is waiting for and for how long, and can be sent ahead of the queue. Click the model label above a tab to change the model; ShellBot types the command for you, so there is no need to reopen the tab.</span><span class="zh">在對話畫面或手機上寫的訊息，分頁正在跑也會直接送進去，跟在終端機打字一樣。以下情況還是會先等：分頁正在顯示選單（按鍵會被當成選了某個選項）、正在換模型、輸入框的草稿要先清掉、Telegram 或 LINE 的訊息還在處理中。其他 agent 送來的訊息（A2A、<code>sfctl send</code>、另一台電腦）照舊排隊。要等的訊息會寫清楚在等誰、等多久，也可以「插隊送出」。分頁上方的模型標籤點一下就能換模型，ShellBot 幫你把指令打進去，不用重開分頁。</span></p>
   </details>
 
@@ -789,11 +789,11 @@ details.tb.wide{margin-top:16px}
       </tbody>
     </table>
   </div>
-  <p class="muted small"><span class="en">As of ShellBot v0.45.0.<br>
+  <p class="muted small"><span class="en">As of ShellBot v0.45.1.<br>
   · “Chat view on desktop” is the desktop chat screen (Settings → Interface style, or the switch on each tab); the next column, “Chat on the phone”, is the phone app's screen. Read them separately.<br>
   · “Chat on the phone” has two layers: every tab can show its terminal on the phone and take typing; “chat view” is the version tidied into chat bubbles, which needs ShellBot to understand that CLI's log format.<br>
   · “Can become a bot”: an AI tab starts as a temporary bot and Keep turns it into a named bot; a plain terminal tab is not a bot. A bot writes its memory in its own conversation. A bot can switch CLI or model; see <a href="#model">Bots &amp; tabs</a>. Waking waits until the tab is ready before handing over the briefing, and that check has so far been written only for Claude Code and Codex; the others are not verified.<br>
-  · The Linux install has been tried on several clean systems; daily use (the CLIs, bots) has not; see the platform limits on the <a href="#install">Install</a> tab.</span><span class="zh">依 ShellBot v0.45.0 整理。<br>
+  · The Linux install has been tried on several clean systems; daily use (the CLIs, bots) has not; see the platform limits on the <a href="#install">Install</a> tab.</span><span class="zh">依 ShellBot v0.45.1 整理。<br>
   ・「電腦對話畫面」是桌面版的聊天畫面（設定 → 介面風格，或每個分頁的切換鈕）；下一欄「手機上看得到對話」是手機 App 的畫面，兩邊分開看。<br>
   ・「手機上看得到對話」分兩層：所有分頁都能在手機上看終端機畫面、直接打字；「對話畫面」是整理成聊天泡泡的版本，要 ShellBot 讀得懂那家 CLI 的紀錄格式。<br>
   ・「能變成 bot」：AI 分頁一開就是臨時 bot，按「記住」變成有名字的 bot；一般終端機分頁不是 bot。記憶由 bot 在自己的對話裡寫。bot 可以換 CLI 或模型，見「<a href="#model">Bot 與分頁</a>」。叫醒時要等分頁準備好才交簡報，這段判斷目前只為 Claude Code 和 Codex 寫過，其他家還沒驗證。<br>
@@ -819,7 +819,7 @@ details.tb.wide{margin-top:16px}
 <section class="panel" id="panel-model" data-panel="model" role="tabpanel" aria-label="Bots and tabs" data-zh-aria="Bot 與分頁">
   <div class="eyebrow"><span class="en">Bots &amp; tabs</span><span class="zh">Bot 與分頁</span></div>
   <h2 class="sec"><span class="en">Tabs, bots, the primary bot: how it works today</span><span class="zh">分頁、bot、主要 bot：現在是這樣運作的</span></h2>
-  <p class="lead"><span class="en">First, six terms. This is how v0.45.0 works: every AI tab starts as a bot, a temporary one; press “Keep” and it becomes a bot with a name, a face and a memory of its own. Bot-to-bot messaging (A2A) is a separate experimental feature, off by default, with its switch next to Bots in Settings; the primary bot needs it to dispatch work.</span><span class="zh">先講清楚六個名詞。這是 v0.45.0 的做法：每個 AI 分頁一開就是一個 bot，先是臨時的；你按「記住」，它才變成有名字、有臉、有自己記憶的 bot。bot 之間傳話（A2A）是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊，主要 bot 派工會用到它。</span></p>
+  <p class="lead"><span class="en">First, six terms. This is how v0.45.1 works: every AI tab starts as a bot, a temporary one; press “Keep” and it becomes a bot with a name, a face and a memory of its own. Bot-to-bot messaging (A2A) is a separate experimental feature, off by default, with its switch next to Bots in Settings; the primary bot needs it to dispatch work.</span><span class="zh">先講清楚六個名詞。這是 v0.45.1 的做法：每個 AI 分頁一開就是一個 bot，先是臨時的；你按「記住」，它才變成有名字、有臉、有自己記憶的 bot。bot 之間傳話（A2A）是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊，主要 bot 派工會用到它。</span></p>
 
   <div class="split" style="margin-top:18px">
     <div class="grid gloss" style="grid-template-columns:minmax(0,1fr)">
@@ -841,7 +841,7 @@ details.tb.wide{margin-top:16px}
       </div>
       <div class="card">
         <h4><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g></svg><span class="en">Primary bot</span><span class="zh">主要 bot</span></h4>
-        <p><span class="en">The card at the top of the sidebar, with a star on its face. Take everyday things to it first: it takes stock of who is busy, who is stuck and who is waiting on your decision, then hands the work to the right bot. Telegram messages (when you have not picked a tab with /N) go to it by default. Drag another bot onto the card to change who holds the role.</span><span class="zh">側欄最上面那張卡片，臉上有星星。日常的事先找它：它先盤點誰在忙、誰卡住、誰在等你決定，再把工作派給對的 bot。Telegram 傳來的訊息（沒先用 /N 選分頁時）預設也交給它。把別的 bot 拖到卡片上就換人當。</span></p>
+        <p><span class="en">The card at the top of the sidebar, with a star on its face. Take everyday things to it first: it takes stock of who is busy, who is stuck and who is waiting on your decision, then hands the work to the right bot. Telegram messages (when you have not picked a tab with /N) go to it by default. Drag another bot onto the card to change who holds the role. While a bot holds the role it is shown only on that card, not again in the list; it comes back to the list when another bot takes over.</span><span class="zh">側欄最上面那張卡片，臉上有星星。日常的事先找它：它先盤點誰在忙、誰卡住、誰在等你決定，再把工作派給對的 bot。Telegram 傳來的訊息（沒先用 /N 選分頁時）預設也交給它。把別的 bot 拖到卡片上就換人當。它當主要 bot 的時候，只顯示在這張卡片上，清單裡不再重複列出；換成別的 bot 當，它才回到清單。</span></p>
       </div>
       <div class="card">
         <h4><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><g fill="#3E7BF6"><circle cx="30" cy="58" r="20"/><circle cx="52" cy="44" r="25"/><circle cx="72" cy="58" r="20"/><rect x="30" y="54" width="42" height="24"/></g><g class="eyes"><rect x="43" y="49.5" width="8" height="15" rx="4"/><rect x="59" y="49.5" width="8" height="15" rx="4"/></g></g></svg><span class="en">External bot</span><span class="zh">外部 bot</span></h4>
@@ -977,8 +977,8 @@ details.tb.wide{margin-top:16px}
 <footer class="foot">
   <div class="wrap">
     <span class="en">ShellBot (formerly ShellFrame) is an open-source project under the MIT license. Source: <a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
-    Based on the release notes of desktop v0.45.0 (2026-11-16); all screenshots use demo data.</span><span class="zh">ShellBot（原名 ShellFrame）是開源專案，MIT 授權。原始碼：<a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
-    內容依桌面版 v0.45.0 的發布說明整理（2026-11-16）；截圖皆為示範資料。</span>
+    Based on the release notes of desktop v0.45.1 (2026-11-16); all screenshots use demo data.</span><span class="zh">ShellBot（原名 ShellFrame）是開源專案，MIT 授權。原始碼：<a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
+    內容依桌面版 v0.45.1 的發布說明整理（2026-11-16）；截圖皆為示範資料。</span>
   </div>
 </footer>
 
