@@ -10,7 +10,8 @@ own and two phones never disagree:
     (positive: faster than the pace); `full_at`: when, at the rate so far, it reaches 100 %, given
     only when that is before the reset
   - an account it cannot read says why (`error`: auth_required, rate_limited, no_data …), never a guess
-  - a stale reading (the last good one; the refresh failed) is marked stale
+  - a stale reading (the last good one; the refresh failed) is marked stale; a window whose reset has passed
+    is marked reset_passed and gets no pace (its numbers are the last window's)
 
 `refresh=1` re-reads every account, at most once a minute from phones (the providers rate-limit).
 
@@ -42,6 +43,11 @@ def window(w: dict, now: float) -> dict:
     epoch, minutes = w.get("reset_epoch"), w.get("window_minutes")
     if epoch:
         out["reset_epoch"] = epoch
+    if epoch and float(epoch) <= now:
+        # The reset has passed: this is the last window's reading, not this one's. Measured on 11/16: two
+        # Codex accounts read 74 % and 53 % with a reset in the past, and their pace (100 %) said "26 % to spare".
+        out["reset_passed"] = True
+        return out
     if epoch and minutes:
         span = float(minutes) * 60.0
         gone = span - (float(epoch) - now)
