@@ -361,6 +361,38 @@ the steps, and the phone and Telegram get one sentence saying where to connect. 
 check `sfctl connect status`. A service that **needs to be connected again** (it expired or was revoked) is the same: ask the
 same way. Do not try to fix a connection by editing an AI program's settings: ShellBot only changes its own `shellbot-…` entries.
 
+## 4.9 Tasks (work that outlives this turn)
+
+ShellBot keeps tasks in one database on this computer (`state.db`), so the next session, another bot and the user can
+see who is doing what, how far it got and what it waits for, without reading a conversation. You act as your tab's bot
+(the app knows which); `user` is the person.
+
+```bash
+sfctl task mine                               # your open tasks, and the ones other bots wait on you for
+sfctl task add "整理這週的筆記" --next "先列出標題" [--due +2d|2026-11-20] [--owner <bot>] [--parent N] [--after N,M]
+sfctl task add "要不要換排程方式" --decision    # a decision only the user can make (owner: user)
+sfctl task update N --status doing --next "…"  # todo | doing | waiting | done | dropped
+sfctl task update N --waiting-on <bot>         # you handed part of it on: the task shows whom it waits for
+sfctl task note N "標題列好了，等確認"           # something happened, nothing else changed
+sfctl task done N "已寄出"                      # or: drop N "why"
+sfctl task show N                             # the task and everything that happened to it
+sfctl task list [--owner <bot>|user] [--decisions] [--all]
+sfctl task stuck                              # open tasks nothing happened to for too long
+```
+
+**When to use it** (if you never do, nobody can follow your work):
+- At the start of a conversation, and after your context was compacted: `sfctl task mine`, and carry on from there.
+- The user gives you work that will not be finished in this turn: `add` it, with the next step.
+- You start, change course or hit a wall: `update --status` / `--next`, or a `note`.
+- You hand part of it to another bot (`a2a-send` / `a2a-handoff`): `update N --waiting-on <bot>`, and put `#N` in
+  your message so the other bot can `note` on it.
+- Only the user can decide something: `add --decision` (it lands on the user's list) and ask them in your reply as well.
+- It is finished or abandoned: `done` / `drop` with one line saying the result or why.
+
+A task's words are kept as one line; a key or token in them is masked. Do not store conversation content or secrets in
+a task: it is a record of the state of the work. "Stuck" is not a status you set: a task nothing happened to for a while
+(waiting 2 h, doing 24 h, to do 7 days) shows up in `sfctl task stuck`.
+
 ## 4.7 The Loops panel's schedule list (macOS, needs `experimental_loops`)
 
 The Loops panel lists the person's own LaunchAgents: timers and KeepAlive jobs. Which
@@ -438,6 +470,7 @@ configure there.
 | The person's own messages (the chat view, a paired phone's `/link/send`) go into a working tab at once, as typing does; agents' `send` / A2A still queue. The guide: `guide.json` (one entry per feature, `data-guide` marks on the page), a first-run tour on a new install, the sidebar's Guide button | 0.45.0 |
 | `send` and A2A go into a working tab too (a menu, a model switch, the person's unsent words or a bridged message still hold them); a send whose Enter did not take is pressed again or reported; `sfctl board-*` and the `[[SF:TASK]]` marker are gone; phones get `GET /link/usage`, `POST /link/send/now`, `/link/send/cancel` and `images` on `/link/send` | 0.45.3 |
 | The chat view takes a person through signing a tab in again (a card for each step of `/login`); phones: `POST /link/login` | 0.45.4 |
+| Tasks across sessions and bots: `sfctl task add` / `list` / `mine` / `show` / `update` / `note` / `done` / `drop` / `stuck` (§4.9), kept in `state.db` | 0.46.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

@@ -90,6 +90,7 @@ from api_chat import ChatApiMixin, ensure_ui_style
 from api_push import PushApiMixin
 from api_connect import ConnectApiMixin
 from api_guide import GuideApiMixin
+from api_tasks import TasksApiMixin
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -2012,7 +2013,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
-          ConnectApiMixin, TabModelApiMixin, GuideApiMixin):
+          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, TasksApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):

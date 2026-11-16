@@ -764,6 +764,27 @@ def _cmd_notify(args) -> int:
     return 0
 
 
+def _cmd_task(args) -> int:
+    """sfctl task …: the app does the work (it knows which bot this tab is); see api_tasks.py."""
+    words = list(args.words or [])
+    payload = {"action": args.action, "from_sid": os.environ.get("SF_SID", ""),
+               "owner": args.owner, "decision": args.decision, "due": args.due, "next": args.next,
+               "parent": args.parent, "after": args.after, "status": args.status, "waiting_on": args.waiting_on,
+               "title": args.title, "all": args.all, "closed": args.closed, "decisions": args.decisions,
+               "limit": args.limit}
+    if args.action == "add":
+        payload["title"] = " ".join(words)
+    elif args.action in ("show", "update", "note", "done", "drop"):
+        payload["id"] = words[0] if words else ""
+        payload["text"] = " ".join(words[1:])
+    r = _rpc("task", payload, timeout=20)
+    if args.json:
+        print(json.dumps(r.get("details") or {}, ensure_ascii=False, indent=1))
+    else:
+        print(f"{'OK' if r.get('success') else 'ERR'} {r.get('message', '')}")
+    return 0 if r.get("success") else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="sfctl",
@@ -834,6 +855,24 @@ def main():
     p_con.add_argument("--reconnect", action="store_true", help="start: begin again after a service needs connecting again")
     p_con.add_argument("--refresh", action="store_true", help="status: run the health check first")
     p_con.add_argument("--json", action="store_true", help="Print the answer as JSON")
+    p_task = sub.add_parser("task", help="Tasks kept across sessions and bots (state.db): add \"title\"; list; mine; show N; "
+                                          "update N; note N \"text\"; done N [\"result\"]; drop N [\"why\"]; stuck")
+    p_task.add_argument("action", choices=["add", "list", "mine", "show", "update", "note", "done", "drop", "stuck"])
+    p_task.add_argument("words", nargs="*", help="add: the title; show/update/note/done/drop: the task number, then the text")
+    p_task.add_argument("--owner", default=None, help="Who does it: a bot's name, me, or user (the person). add: default me")
+    p_task.add_argument("--decision", action="store_true", help="add: a decision for the person (owner user)")
+    p_task.add_argument("--due", default=None, help="2026-11-20, '2026-11-20 18:00', +3h, +2d; none clears it")
+    p_task.add_argument("--next", default=None, help="The next step, one line")
+    p_task.add_argument("--parent", type=int, default=None, help="add: part of task N")
+    p_task.add_argument("--after", default="", help="add: waits for tasks N,M")
+    p_task.add_argument("--status", choices=["todo", "doing", "waiting", "done", "dropped"], default=None)
+    p_task.add_argument("--waiting-on", dest="waiting_on", default=None, help="update: who it waits for (sets waiting); none clears")
+    p_task.add_argument("--title", default=None, help="update: a new title")
+    p_task.add_argument("--all", action="store_true", help="list: closed ones too")
+    p_task.add_argument("--closed", action="store_true", help="list: only closed ones")
+    p_task.add_argument("--decisions", action="store_true", help="list: the decisions waiting for the person")
+    p_task.add_argument("--limit", type=int, default=50)
+    p_task.add_argument("--json", action="store_true", help="Print the answer as JSON")
     p_tgs = sub.add_parser("tg-send", help="The primary bot tells the user's phone (a milestone, a result); "
                                            "only from the primary bot's tab, 20 an hour, not during quiet hours")
     p_tgs.add_argument("text", help="What to send")
@@ -1108,6 +1147,8 @@ def main():
     elif args.cmd == "connect":
         _print_result(_rpc("connect", {"action": args.action, "service": args.service, "route": args.route, "reconnect": args.reconnect,
                                        "refresh": args.refresh, "json": args.json}, timeout=60))
+    elif args.cmd == "task":
+        return _cmd_task(args)
     elif args.cmd == "tg-send":
         _print_result(_rpc("tg_send", {"text": args.text, "from_sid": os.environ.get("SF_SID", "")}, timeout=20))
     elif args.cmd == "bots-save":
