@@ -196,6 +196,46 @@ def run(browser, engine):
     check("no page errors", not errors, errors)
     page.close()
 
+    print(f"[{engine}] 5. a computer in use, a long sidebar, a step that goes away (reported: '1 / 8', dark after 5)")
+    tabs = [{"sid": f"s7{i:02d}", "cmd": "claude", "alive": True, "label": f"示範分頁 {i}"} for i in range(1, 19)]
+    page = browser.new_page(viewport={"width": 1100, "height": 620})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.add_init_script(stub("zh-TW", "skip", VERSION, tabs, {"sidebar_open": True}))
+    page.goto((HERE / "web" / "index.html").as_uri())
+    page.wait_for_function("document.querySelectorAll('#sidebar-sessions .sb-item[data-sid]').length >= 18", timeout=20000)
+    page.wait_for_timeout(800)
+    page.evaluate("window.SFGuide.reload().then(() => window.SFGuide.tour('first_run'))")
+    page.wait_for_selector(".sfg-card", timeout=6000)
+    page.evaluate("(() => { const u = document.getElementById('usage-brief'); if (u) u.style.display = 'none'; })()")
+    shown, totals, dark = 0, [], False
+    for _ in range(14):
+        ok = page.wait_for_function("!!document.querySelector('.sfg-card') || !document.querySelector('.sfg-layer')", timeout=4000)
+        if not page.query_selector(".sfg-layer"):
+            break
+        if not page.query_selector(".sfg-card"):
+            dark = True
+            break
+        shown += 1
+        step = page.inner_text(".sfg-card .sfg-step")
+        totals.append(int(step.split("/")[1]))
+        check(f"step {step}: its card is inside the window", inside(page))
+        btn = page.query_selector(".sfg-card .sfg-btn.primary")
+        last = btn.inner_text() == "完成"
+        btn.click()
+        if last:
+            break
+        page.wait_for_function("(s) => !document.querySelector('.sfg-layer') || !document.querySelector('.sfg-busy')"
+                               " && (document.querySelector('.sfg-card .sfg-step') || {}).textContent !== s", arg=step, timeout=5000)
+        check("…the card waits greyed out while the next one is found, then it is the next step",
+              page.inner_text(".sfg-card .sfg-step") != step if page.query_selector(".sfg-card") else True)
+    check("never a dimmed screen without a card", not dark)
+    check("the count it shows is the steps it shows (one that went away is taken off)",
+          shown >= 5 and totals[-1] == shown, (shown, totals))
+    check("it ends, nothing left over the page", not page.query_selector(".sfg-layer"))
+    check("no page errors", not errors, errors)
+    page.close()
+
 
 WEBKIT = False
 with sync_playwright() as pw:

@@ -10,6 +10,22 @@
 
 ### Fixes
 
+- **The guide's tour no longer stops on a dark screen, and it stands out.** Reported: taken again from the
+  Guide button on a computer in use, it said "1 / 8", and after the fifth step the screen stayed dimmed with
+  no card until Esc. A step's place could be off screen (a sidebar button scrolled away) or not there yet (a
+  Settings tab opening), and the card went with it. Each step is now brought into view and waited for; one
+  that is not on the page is dropped and the count says so; the card is never left out. While the next step
+  is found the card waits greyed out. Also reported: on a dark page the dim and the dark card did not stand
+  out. The rest is dimmed harder, the lit place has a bright ring that breathes (still with Reduce Motion),
+  and the card is light. Covered by `tests_guide_ui.py` (a computer in use with a long sidebar).
+
+  **導覽不會再停在一片暗的畫面，也更顯眼。** 回報：在用了一陣子的電腦上從「導覽」按鈕再看一次，顯示「1 / 8」，第五步之後
+  畫面一直是暗的、沒有卡片，要按 Esc 才出來。某一步要指的地方可能在畫面外（側欄按鈕被捲走了），或還沒出現（設定分頁
+  正在打開），卡片就跟著跑到看不到的地方。現在每一步都會先捲進畫面、等它出現；不在頁面上的那一步會拿掉，步數也跟著
+  更新；卡片一定會出現。找下一步的時候卡片先變淡等著。另外回報：介面本來就是深色，壓暗的效果和深色卡片都不明顯。現在
+  背景壓得更暗、打光處有一圈會呼吸的亮框（開了減少動態效果就不動）、卡片改成淺色。由 `tests_guide_ui.py`（用了一陣子、
+  側欄很長的電腦）守著。
+
 - **A message whose Enter did not take no longer holds a tab's queue for good, and nobody is left waiting
   unaware.** Reported: messages to one tab waited 21 hours. Measured in the debug log: on 11/15 at 12:25 a
   message was typed into the tab (paste, then Enter), no prompt followed, and the words stayed in its input

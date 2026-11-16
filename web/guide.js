@@ -47,6 +47,27 @@
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
   }
+  function onScreen(el) {
+    const r = el.getBoundingClientRect();
+    return r.bottom > 4 && r.right > 4 && r.top < innerHeight - 4 && r.left < innerWidth - 4;
+  }
+  // Where a step is, brought into view (a sidebar button may be scrolled away), once it is there: a step in
+  // Settings appears only after the panel opened. null after `ms` without it.
+  function reach(id, ms) {
+    return new Promise(done => {
+      const end = Date.now() + ms;
+      const look = () => {
+        const el = anchor(id);
+        if (el) {
+          try { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
+          if (onScreen(el)) { done(el); return; }
+        }
+        if (Date.now() > end) { done(null); return; }
+        setTimeout(look, 60);
+      };
+      look();
+    });
+  }
   function anchor(id) {
     return Array.from(document.querySelectorAll(`[data-guide="${id}"]`)).find(visible) || null;
   }
@@ -107,7 +128,7 @@
       const vw = window.innerWidth, vh = window.innerHeight, pad = 6, gap = 12, m = 12;
       const cw = Math.min(340, vw - 2 * m);
       card.style.width = cw + 'px';
-      if (!el || !visible(el)) {
+      if (!el || !visible(el) || !onScreen(el)) {
         card.style.left = Math.max(m, (vw - cw) / 2) + 'px';
         card.style.top = Math.max(m, (vh - card.offsetHeight) / 2) + 'px';
         return;
@@ -169,25 +190,38 @@
     // first launch does not have yet (a tab's ⟳, the chat switch with no tab) is left out.
     const steps = ((data.tours && data.tours[name]) || []).map(byId)
       .filter(f => f && (f.open || anchor(f.id) || (f.id === 'new-tab' && noTab())));
-    let i = 0;
+    let i = 0, turn = 0;
+    // While the next step is being found (a Settings tab opening, a button scrolled into view), the card
+    // waits greyed out: a second press would start the search over.
+    const busy = () => { if (layer) layer.root.classList.add('sfg-busy'); };
     const end = () => {
+      turn++;
       clear(); unreveal();
       mark({ tour: 'done', seen: true });
       if (noTab()) launcher(true);
     };
-    const go = (dir) => {
-      for (; i >= 0 && i < steps.length; i += dir) {
+    // One step at a time: a step that is not on the page now (a button scrolled away and still not
+    // reachable, a Settings tab that did not open) is dropped from the count, so "3 / 7" stays true and
+    // the screen is never left dimmed without a card (reported: "1 / 8", then a dark screen after 5).
+    const go = async (dir) => {
+      const mine = ++turn;
+      while (i >= 0 && i < steps.length) {
         const f = steps[i];
         if (noTab()) launcher(f.id === 'new-tab');
         if (f.open) reveal(f); else unreveal();
-        const el = anchor(f.id);
-        if (!el) continue;
+        const el = await reach(f.id, f.open ? 1500 : 600);
+        if (mine !== turn) return;                 // Next/Back was pressed again meanwhile
+        if (!el) {
+          steps.splice(i, 1);
+          if (dir < 0) i--;
+          continue;
+        }
         const at = i, last = at === steps.length - 1;
         show(f, el, `${at + 1} / ${steps.length}`, [
           { label: t('Skip', '略過'), run: end },
-          ...(at > 0 ? [{ label: t('Back', '上一步'), back: true, run: () => { i = at - 1; go(-1); } }] : []),
+          ...(at > 0 ? [{ label: t('Back', '上一步'), back: true, run: () => { busy(); i = at - 1; go(-1); } }] : []),
           { label: last ? t('Done', '完成') : t('Next', '下一步'), primary: true,
-            run: () => { if (last) end(); else { i = at + 1; go(1); } } },
+            run: () => { if (last) end(); else { busy(); i = at + 1; go(1); } } },
         ], end);
         return;
       }

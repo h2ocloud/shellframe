@@ -1,17 +1,35 @@
-/* The guide (web/guide.js): the tour's spotlight and card, and the help list. Above every modal. */
+/* The guide (web/guide.js): the tour's spotlight and card, and the help list. Above every modal.
+   Reported: on a page that is dark already, a light dim and a dark card did not stand out. The rest is
+   dimmed hard, the lit place gets a bright ring that breathes (still with Reduce Motion), the card is light. */
 .sfg-layer { position: fixed; inset: 0; z-index: 10000; }
 .sfg-spot {
-  position: fixed; border-radius: 8px; pointer-events: none;
-  box-shadow: 0 0 0 9999px rgba(10, 11, 18, 0.62), 0 0 0 2px #7aa2f7;
+  position: fixed; border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(4, 5, 9, 0.82), 0 0 0 3px #7dcfff, 0 0 26px 8px rgba(125, 207, 255, 0.55);
   transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease;
 }
-.sfg-spot.none { left: 50%; top: 50%; width: 0; height: 0; box-shadow: 0 0 0 9999px rgba(10, 11, 18, 0.62); }
-.sfg-card {
-  position: fixed; box-sizing: border-box; padding: 14px 16px 12px;
-  background: #1f2335; color: #c0caf5; border: 1px solid #3b4261; border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .45); font-size: 13px; line-height: 1.55;
+.sfg-spot::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 12px; border: 3px solid #7dcfff;
+  animation: sfg-breathe 1.6s ease-in-out infinite;
 }
-.sfg-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+@keyframes sfg-breathe { 0%, 100% { opacity: .9; transform: scale(1); } 50% { opacity: .25; transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .sfg-spot { transition: none; } .sfg-spot::after { animation: none; opacity: .6; } }
+.sfg-spot.none { left: 50%; top: 50%; width: 0; height: 0; box-shadow: 0 0 0 9999px rgba(4, 5, 9, 0.82); }
+.sfg-spot.none::after { display: none; }
+.sfg-card {
+  position: fixed; box-sizing: border-box; padding: 16px 18px 14px;
+  background: #f4f6fe; color: #1f2335; border: 2px solid #7dcfff; border-radius: 12px;
+  box-shadow: 0 0 0 6px rgba(125, 207, 255, 0.18), 0 18px 40px rgba(0, 0, 0, .6); font-size: 13.5px; line-height: 1.6;
+}
+.sfg-title { font-weight: 700; font-size: 16px; color: #16161e; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.sfg-card .sfg-body { color: #2b3049; }
+.sfg-card .sfg-body code { background: #e1e6f7; color: #1f2335; }
+.sfg-card .sfg-hint { color: #8a4b00; }
+.sfg-card .sfg-step { color: #4d5577; font-weight: 600; }
+.sfg-card .sfg-btn { color: #2b3049; border-color: #9aa5ce; background: #ffffff; }
+.sfg-card .sfg-btn:hover { border-color: #3d59a1; color: #16161e; }
+.sfg-card .sfg-btn.primary { background: #3d59a1; border-color: #3d59a1; color: #ffffff; }
+.sfg-card .sfg-btn.primary:hover { background: #2e4687; }
+.sfg-card .sfg-chip.off { background: #dfe3f2; color: #3b4261; }
 .sfg-body code, .sfg-row-body code { background: #24283b; padding: 0 4px; border-radius: 3px; font-size: 12px; }
 .sfg-hint { margin-top: 6px; color: #e0af68; font-size: 12px; }
 .sfg-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 8px; }
@@ -54,3 +72,4 @@
 .sfg-row-title { font-weight: 600; flex: 1; min-width: 0; }
 .sfg-row-body { color: #a9b1d6; margin-top: 2px; }
 .sfg-show { flex-shrink: 0; }
+.sfg-busy .sfg-card { opacity: .6; pointer-events: none; }
