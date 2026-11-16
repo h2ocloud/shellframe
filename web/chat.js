@@ -742,6 +742,7 @@
     if (!bar || document.getElementById('chat-switch')) return;
     sw = document.createElement('div');
     sw.id = 'chat-switch';
+    sw.setAttribute('data-guide', 'chat-view');
     sw.innerHTML = `<button data-mode="chat">${ICON_CHAT}<span></span></button>` +
                    `<button data-mode="cli">${ICON_TERM}<span></span></button>`;
     const spacer = bar.querySelector('.tab-spacer');

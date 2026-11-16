@@ -1,0 +1,184 @@
+{
+  "schema": 1,
+  "reviewed_for": "0.44",
+  "tours": {
+    "first_run": ["new-tab", "sessions", "chat-view", "usage", "pair", "telegram", "settings", "guide"]
+  },
+  "no_guide": {
+    "experimental_board": "No switch on any screen: the task board is turned on in config.json only, for testing."
+  },
+  "added_without_guide": {},
+  "features": [
+    {
+      "id": "new-tab",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "Open a tab", "zh": "開分頁"},
+      "body": {
+        "en": "Start Claude Code, Codex or another AI CLI, or a plain terminal. On macOS and Linux a tab keeps running when ShellBot restarts.",
+        "zh": "開 Claude Code、Codex 或其他 AI CLI，也可以開一般終端機。在 macOS 和 Linux 上，ShellBot 重啟時分頁會繼續跑。"
+      }
+    },
+    {
+      "id": "sessions",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "Your tabs", "zh": "你的分頁"},
+      "body": {
+        "en": "Every tab is listed here. Click one to switch to it, double-click to rename it. ↻ checks every tab's state again.",
+        "zh": "所有分頁都列在這裡。點一下切換，點兩下改名。↻ 會重新判斷每個分頁的狀態。"
+      }
+    },
+    {
+      "id": "bots",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "flag": "experimental_bots",
+      "open": "settings:bots",
+      "title": {"en": "Bots", "zh": "Bot"},
+      "body": {
+        "en": "A tab's light becomes a face: idle, working, a question for you, stuck, done. A tab can become a bot that wakes with its job, skills and memory, and writes its memory before it closes.",
+        "zh": "分頁的燈號變成 bot 的臉：發呆、運作中、有問題要問你、卡住、完成。分頁可以開成 bot，叫醒時帶著執掌、skill 和記憶，關閉前先把記憶寫好。"
+      }
+    },
+    {
+      "id": "chat-view",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "Chat or terminal", "zh": "對話或終端機"},
+      "body": {
+        "en": "Read a tab as a conversation, or switch to its live terminal.",
+        "zh": "分頁可以用對話的樣子看，也可以切回即時的終端機。"
+      }
+    },
+    {
+      "id": "relaunch",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "Restart a CLI", "zh": "重啟 CLI"},
+      "body": {
+        "en": "⟳ on an AI tab restarts its CLI to pick up an update. Claude Code and Codex come back to the same conversation.",
+        "zh": "AI 分頁上的 ⟳ 會重啟它的 CLI、套用更新。Claude Code 和 Codex 會接回同一段對話。"
+      }
+    },
+    {
+      "id": "usage",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "Usage", "zh": "用量"},
+      "body": {
+        "en": "How much of each AI account's 5-hour and weekly allowance is used. Click for the details and the pace.",
+        "zh": "每個 AI 帳號的 5 小時和每週額度用了多少。點開看細節和用量速度。"
+      }
+    },
+    {
+      "id": "pair",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "Pair a phone or computer", "zh": "配對手機或電腦"},
+      "body": {
+        "en": "Shows a pairing code and a QR code. Scan it with the ShellBot app on an iPhone or iPad, or enter the code on another computer, to see and drive these tabs from there.",
+        "zh": "顯示配對碼和 QR code。用 iPhone、iPad 上的 ShellBot App 掃，或在另一台電腦輸入配對碼，就能從那邊看、操作這裡的分頁。"
+      }
+    },
+    {
+      "id": "telegram",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "open": "settings:bridge",
+      "title": {"en": "Telegram", "zh": "Telegram"},
+      "body": {
+        "en": "Talk to your tabs from Telegram: paste a bot token here and connect. Messages go to the primary bot, which can pass work to the others.",
+        "zh": "從 Telegram 跟分頁對話：在這裡貼上 bot token 再連線。訊息會送給主要 bot，它可以再把工作交給其他 bot。"
+      }
+    },
+    {
+      "id": "line",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "open": "settings:line",
+      "title": {"en": "LINE", "zh": "LINE"},
+      "body": {
+        "en": "The same for a LINE Official Account: its channel token and secret here, then connect.",
+        "zh": "LINE 官方帳號也可以：在這裡填 channel token 和 secret，再連線。"
+      }
+    },
+    {
+      "id": "plugins",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "open": "settings:marketplace",
+      "title": {"en": "Plugins", "zh": "外掛"},
+      "body": {
+        "en": "Browse and install plugins that add features to ShellBot.",
+        "zh": "瀏覽和安裝替 ShellBot 加功能的外掛。"
+      }
+    },
+    {
+      "id": "a2a",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "flag": "experimental_a2a",
+      "open": "settings:bots",
+      "title": {"en": "Bots messaging each other", "zh": "Bot 互相傳話"},
+      "body": {
+        "en": "The AI in a tab can send work or a note to another bot by its name, here or on a paired computer, and hand off a task that reports back. Off by default.",
+        "zh": "分頁裡的 AI 可以用名字把工作或訊息交給另一個 bot，這台或配對的電腦都可以，也能交辦一件事、做完回報。預設關閉。"
+      }
+    },
+    {
+      "id": "groups",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "flag": "experimental_groups",
+      "open": "settings:general",
+      "title": {"en": "Role groups", "zh": "角色群組"},
+      "body": {
+        "en": "Put roles in a group and send one message to all of them; the replies come back as one conversation. Off by default.",
+        "zh": "把角色組成群組，一則訊息送給全部成員，回覆合成一段對話。預設關閉。"
+      }
+    },
+    {
+      "id": "loops",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "flag": "experimental_loops",
+      "open": "settings:general",
+      "title": {"en": "Scheduled conversations", "zh": "排程對話"},
+      "body": {
+        "en": "A side panel with the conversations that run on a schedule (/loop, cron routines, scheduled tabs): when each wakes next and what it waits on. Off by default.",
+        "zh": "側邊面板列出按排程跑的對話（/loop、cron routine、排程開的分頁）：下次什麼時候醒、在等什麼。預設關閉。"
+      }
+    },
+    {
+      "id": "settings",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "Settings", "zh": "設定"},
+      "body": {
+        "en": "Language, font size, what the + menu offers, Telegram and LINE, plugins, and the experimental features.",
+        "zh": "語言、字級、＋ 選單裡有哪些、Telegram 和 LINE、外掛，還有實驗性功能。"
+      }
+    },
+    {
+      "id": "ai-skill",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "What the AI reads", "zh": "給 AI 的說明"},
+      "body": {
+        "en": "The AI in your tabs learns how to use ShellBot (open tabs, read other tabs, message them) from `sfctl skill`. This shows what it reads.",
+        "zh": "分頁裡的 AI 從 `sfctl skill` 學會怎麼用 ShellBot（開分頁、看別的分頁、傳訊息）。這裡看得到它讀的內容。"
+      }
+    },
+    {
+      "id": "guide",
+      "surfaces": ["desktop"],
+      "since": "0.44.6",
+      "title": {"en": "This guide", "zh": "導覽"},
+      "body": {
+        "en": "Open it again any time: every feature with where to find it, and what is new since you last looked.",
+        "zh": "隨時可以再打開：每個功能在哪裡、怎麼用，還有上次看過之後的新功能。"
+      }
+    }
+  ]
+}

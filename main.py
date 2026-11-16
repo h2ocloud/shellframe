@@ -62,6 +62,7 @@ import account_manager
 import app_bundle
 import bot_names
 import bots
+import guide
 import sf_config
 import js_guard
 import output_pump
@@ -90,6 +91,7 @@ from api_tab_model import TabModelApiMixin
 from api_chat import ChatApiMixin, ensure_ui_style
 from api_push import PushApiMixin
 from api_connect import ConnectApiMixin
+from api_guide import GuideApiMixin
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -279,6 +281,9 @@ DEFAULT_CONFIG = {
         # 預設關：沒裝的人不該在每個分頁上看到一顆按不出東西的按鈕。
         "glasses_enabled": False
     },
+    # The guide (guide.json, web/guide.js): a first launch gets the tour once; a computer that
+    # already ran ShellBot gets "skip" (guide.keep_old_install). `seen`: a version. Not in settings.
+    "guide": {"tour": "pending", "seen": ""},
     "idle_reaper": {
         "enabled": False,
         "review_sec": 300,
@@ -765,6 +770,8 @@ def _load_config_pass(save):
         if ensure_ui_style(cfg):
             cfg_defaults_changed = True
         if bots.keep_old_install_bots_setting(cfg):
+            cfg_defaults_changed = True
+        if guide.keep_old_install(cfg):
             cfg_defaults_changed = True
         if cfg_defaults_changed:
             try:
@@ -2010,7 +2017,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           GlassesApiMixin, LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
-          ConnectApiMixin, TabModelApiMixin):
+          ConnectApiMixin, TabModelApiMixin, GuideApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):

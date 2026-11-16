@@ -1,0 +1,56 @@
+/* The guide (web/guide.js): the tour's spotlight and card, and the help list. Above every modal. */
+.sfg-layer { position: fixed; inset: 0; z-index: 10000; }
+.sfg-spot {
+  position: fixed; border-radius: 8px; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(10, 11, 18, 0.62), 0 0 0 2px #7aa2f7;
+  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease;
+}
+.sfg-spot.none { left: 50%; top: 50%; width: 0; height: 0; box-shadow: 0 0 0 9999px rgba(10, 11, 18, 0.62); }
+.sfg-card {
+  position: fixed; box-sizing: border-box; padding: 14px 16px 12px;
+  background: #1f2335; color: #c0caf5; border: 1px solid #3b4261; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45); font-size: 13px; line-height: 1.55;
+}
+.sfg-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.sfg-body code, .sfg-row-body code { background: #24283b; padding: 0 4px; border-radius: 3px; font-size: 12px; }
+.sfg-hint { margin-top: 6px; color: #e0af68; font-size: 12px; }
+.sfg-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 8px; }
+.sfg-step { color: #565f89; font-size: 12px; white-space: nowrap; }
+.sfg-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.sfg-btn {
+  background: transparent; color: #a9b1d6; border: 1px solid #3b4261; border-radius: 5px;
+  padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.sfg-btn:hover { border-color: #7aa2f7; color: #c0caf5; }
+.sfg-btn.primary { background: #7aa2f7; border-color: #7aa2f7; color: #1a1b26; font-weight: 600; }
+.sfg-btn.primary:hover { background: #89b4fa; }
+.sfg-btn:focus-visible { outline: 2px solid #bb9af7; outline-offset: 1px; }
+.sfg-chip { font-size: 11px; font-weight: 500; padding: 0 6px; border-radius: 8px; line-height: 17px; }
+.sfg-chip.new { background: #9ece6a; color: #1a1b26; }
+.sfg-chip.off { background: #3b4261; color: #a9b1d6; }
+.sfg-badge {
+  display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 6px; border-radius: 8px;
+  background: #9ece6a; color: #1a1b26; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+.sfg-help-veil {
+  position: fixed; inset: 0; z-index: 9999; background: rgba(10, 11, 18, 0.55);
+  display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;
+}
+.sfg-help {
+  width: min(560px, 100%); max-height: min(78vh, 720px); overflow: auto; box-sizing: border-box;
+  background: #1f2335; color: #c0caf5; border: 1px solid #3b4261; border-radius: 10px; padding: 0 0 12px;
+  font-size: 13px; line-height: 1.55; box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.sfg-help-head {
+  position: sticky; top: 0; display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  background: #1f2335; border-bottom: 1px solid #292e42; font-weight: 600; font-size: 14px;
+}
+.sfg-help-head > span { flex: 1; }
+.sfg-x { background: none; border: none; color: #565f89; font-size: 20px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.sfg-x:hover { color: #c0caf5; }
+.sfg-sec { padding: 12px 16px 4px; color: #565f89; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.sfg-row { padding: 8px 16px; border-top: 1px solid #24283b; }
+.sfg-row-head { display: flex; align-items: center; gap: 8px; }
+.sfg-row-title { font-weight: 600; flex: 1; min-width: 0; }
+.sfg-row-body { color: #a9b1d6; margin-top: 2px; }
+.sfg-show { flex-shrink: 0; }

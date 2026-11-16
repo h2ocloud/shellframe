@@ -13,6 +13,9 @@ PTY or tmux session.
 - **Release:** `python3 scripts/bump_version.py`, add a `## vX.Y.Z` section to
   `CHANGELOG.md` following [`docs/changelog-guide.md`](docs/changelog-guide.md),
   commit with a message starting `vX.Y.Z`, then `scripts/release.sh`.
+- **A user-visible feature gets its guide entry:** an entry in `guide.json` and
+  `data-guide="<id>"` on its element ([`docs/guide.md`](docs/guide.md)); `tests_guide.py`
+  fails until both are there.
 - **Public repo:** no personal names, private hosts or credentials in code,
   comments, tests or docs (`tests_repo_hygiene.py` checks this).
 - **Do not** import `main` from a mixin, write `config.json` outside
