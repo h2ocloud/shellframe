@@ -337,7 +337,7 @@ details.tb.wide{margin-top:16px}
     <div class="top-row">
       <a class="brand" href="#overview" aria-label="ShellBot overview" data-zh-aria="ShellBot 總覽">
         <svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#A15BF0" stroke="#A15BF0" stroke-width="14" stroke-linejoin="round" d="M50 16L65.9 32.2L86.1 42.3L75.7 62.3L72.3 84.7L50 81L27.7 84.7L24.3 62.3L13.9 42.3L34.1 32.2Z"/><g class="eyes"><rect x="38" y="47.5" width="8" height="15" rx="4"/><rect x="54" y="47.5" width="8" height="15" rx="4"/></g></g><g class="badge"><circle cx="82" cy="82" r="14"/><path d="M82 74.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z"/></g></svg>
-        <span>ShellBot <small><span class="en">formerly ShellFrame · Desktop v0.45.4</span><span class="zh">原名 ShellFrame · 桌面版 v0.45.4</span></small></span>
+        <span>ShellBot <small><span class="en">formerly ShellFrame · Desktop v0.46.0</span><span class="zh">原名 ShellFrame · 桌面版 v0.46.0</span></small></span>
       </a>
       <span class="spacer"></span>
       <button class="lang-btn" id="lang-btn" type="button" aria-label="Switch language" data-zh-aria="切換語言"><span class="en" lang="zh-Hant">繁體中文</span><span class="zh" lang="en">English</span></button>
@@ -427,6 +427,10 @@ details.tb.wide{margin-top:16px}
       <div><h4><span class="en">“Needs your decision”: one tap from your phone or Telegram</span><span class="zh">「要你決定」：手機或 Telegram 一按就回</span></h4><p><span class="en">When a bot reaches something only you can decide, the question goes to your phone with numbered options; one tap sends the answer back to that bot. A question counts once, so an old button never answers the next one. <span class="small muted">To receive a bot's questions on the phone, first turn on “Exact agent status (Claude Code hooks)” in Settings; for now that works with Claude Code only. Permission prompts raised by the CLI itself don't need it.</span></span><span class="zh">bot 卡在需要你拍板的地方，問題連同編號選項送到手機；按一下，答案就回到那個 bot。同一題只算一次，舊按鈕不會答到下一題。<span class="small muted">手機收到 bot 的提問，目前要先在設定打開「精準狀態偵測」，而且只支援 Claude Code；CLI 自己跳出的權限確認不需要。</span></span></p></div>
     </div>
     <div class="card feature">
+      <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><rect x="10" y="11" width="80" height="80" rx="25" fill="#6A5CF0"/><g class="eyes"><rect x="42" y="40.5" width="8" height="15" rx="4"/><rect x="58" y="40.5" width="8" height="15" rx="4"/></g></g></svg></div>
+      <div><h4><span class="en">Tasks that outlive a session: a bot keeps its work in one place</span><span class="zh">任務跨對話保存：bot 把手上的事記在同一個地方</span></h4><p><span class="en">A bot keeps what it is doing as tasks (<code>sfctl task add</code>, <code>update</code>, <code>note</code>, <code>done</code>, <code>drop</code>): who owns it, the next step, a due date, what it waits for, and every change as a line of history. <code>sfctl task mine</code> shows a bot its open tasks and what other bots are waiting on it; <code>--decision</code> puts a question only you can answer on your own list (<code>sfctl task list --decisions</code>); <code>sfctl task stuck</code> lists what nothing has happened to for too long. A hand-off can belong to a task (<code>--for-task N</code>): the task then waits on that bot, the answer is written onto the task, and the task goes back to its owner. A bot that wakes up gets its open tasks in its first message. Everything sits in one database file on your computer, backed up daily (seven kept), with keys and tokens masked before they are written.</span><span class="zh">bot 把正在做的事記成任務（<code>sfctl task add</code>、<code>update</code>、<code>note</code>、<code>done</code>、<code>drop</code>）：誰負責、下一步、到期日、在等什麼，每次變動都留一行紀錄。<code>sfctl task mine</code> 讓 bot 看到自己手上的任務和別的 bot 在等它的事；加上 <code>--decision</code>，只有你能回答的問題會放到你自己的清單（<code>sfctl task list --decisions</code>）；<code>sfctl task stuck</code> 列出太久沒動靜的任務。交辦可以掛在任務底下（<code>--for-task N</code>）：任務就改成等那個 bot，對方的回覆寫回同一件任務，任務再回到負責人手上。叫醒 bot 時，第一則訊息就會帶上它手上還開著的任務。全部存在你這台電腦的一個資料庫檔案裡，每天備份（留七份），金鑰和 token 在寫進去之前就先遮掉。</span></p></div>
+    </div>
+    <div class="card feature">
       <div class="ico" aria-hidden="true"><svg class="face" viewBox="0 0 100 100"><g class="rig"><rect x="6" y="30" width="88" height="46" rx="23" fill="#F57C2B"/><g class="eyes"><rect x="38" y="43.5" width="8" height="15" rx="4"/><rect x="54" y="43.5" width="8" height="15" rx="4"/></g></g></svg></div>
       <div><h4><span class="en">A guide that walks you through it</span><span class="zh">導覽：新安裝會帶著走一遍功能</span></h4><p><span class="en">A first launch gets a short tour: a spotlight on each feature on the page (opening a tab, your tabs, usage, pairing a phone or computer, Telegram, settings), with Next, Back and Skip. The sidebar's Guide button lists every feature with what it does and where it is; “show me” opens the Settings tab it lives on and points at it, a feature behind a switch that is off is marked so, and what is new since you last looked is counted on the button. During the tour the rest of the screen is dimmed, the place it points at gets a bright ring, and the explanation sits on a light card. A computer that already ran ShellBot gets no popup.</span><span class="zh">第一次開 ShellBot 會走一段簡短導覽：頁面上每個功能依序打光（開分頁、你的分頁、用量、配對手機或電腦、Telegram、設定），可以下一步、上一步、略過。側欄的「導覽」按鈕列出每個功能做什麼、在哪裡，「指給我看」會打開它所在的設定分頁並指出位置；需要開關、但開關沒開的功能會標出來；上次看過之後的新功能會在按鈕上顯示數量。導覽時其餘畫面會壓暗，指到的地方有一圈亮框，說明寫在淺色卡片上。已經在用 ShellBot 的電腦不會跳出導覽。</span></p></div>
     </div>
@@ -439,6 +443,8 @@ details.tb.wide{margin-top:16px}
 
   <h3 class="sub"><span class="en">And the rest</span><span class="zh">還有這些</span></h3>
   <div class="grid more">
+    <div class="card"><h4><span class="en">The sidebar's foot is one row</span><span class="zh">側欄底部收成一列</span></h4><p><span class="en">Settings keeps its word; the guide, the AI's manual and About are icons at its right that say their name when you point at them, and the guide's count of new features sits on its icon.</span><span class="zh">「設定」留著字；導覽、給 AI 的說明、關於變成它右邊的小圖示，指上去會顯示名稱，導覽上的新功能數量就掛在它的圖示上。</span></p>
+      <figure class="inline-shot" style="margin-top:10px;max-width:220px"><img src="img/sidebar-footer.png" alt="The foot of the sidebar in one row: Settings with its word, and at its right three icons: the guide with a green count of new features, the AI's manual, and About" data-zh-alt="側欄底部的一列：左邊是「設定」，右邊三個圖示：導覽（上面有綠色的新功能數量）、給 AI 的說明、關於" width="220" height="120" loading="lazy"></figure></div>
     <div class="card"><h4><span class="en">Paste screenshots and files</span><span class="zh">貼上截圖和檔案</span></h4><p><span class="en">Paste a screenshot or a Finder file with ⌘V (Ctrl+V on Windows), or drag and drop. A preview bar shows it and it attaches when you press Enter.</span><span class="zh">用 ⌘V（Windows 是 Ctrl+V）貼上截圖或 Finder 的檔案，或直接拖進來。預覽列會顯示，按 Enter 時自動附上。</span></p></div>
     <div class="card"><h4><span class="en">Tabs that survive a restart</span><span class="zh">重開 App，分頁還在</span></h4><p><span class="en">On macOS and Linux every session runs inside tmux: close ShellBot, reopen it, and the tabs and their scrollback are back. Windows brings back the tab list; Claude Code and Codex reattach to their conversation, scrollback is not kept.</span><span class="zh">macOS／Linux 每個分頁都跑在 tmux 裡：關掉 ShellBot 再打開，分頁和捲動紀錄都還在。Windows 保留分頁清單，Claude Code、Codex 會接回對話，捲動紀錄不會留。</span></p></div>
     <div class="card"><h4><span class="en">Telegram bridge</span><span class="zh">Telegram 橋接</span></h4><p><span class="en">One Telegram bot routes across all your sessions: <code>/list</code>, <code>/1</code> <code>/2</code> to switch, voice messages with speech-to-text, and file and photo forwarding.</span><span class="zh">一個 Telegram bot 串起所有分頁：<code>/list</code> 列出分頁、<code>/1</code> <code>/2</code> 切換、語音訊息轉文字、檔案和照片轉傳。</span></p></div>
@@ -830,11 +836,11 @@ details.tb.wide{margin-top:16px}
       </tbody>
     </table>
   </div>
-  <p class="muted small"><span class="en">As of ShellBot v0.45.4.<br>
+  <p class="muted small"><span class="en">As of ShellBot v0.46.0.<br>
   · “Chat view on desktop” is the desktop chat screen (Settings → Interface style, or the switch on each tab); the next column, “Chat on the phone”, is the phone app's screen. Read them separately.<br>
   · “Chat on the phone” has two layers: every tab can show its terminal on the phone and take typing; “chat view” is the version tidied into chat bubbles, which needs ShellBot to understand that CLI's log format.<br>
   · “Can become a bot”: an AI tab starts as a temporary bot and Keep turns it into a named bot; a plain terminal tab is not a bot. A bot writes its memory in its own conversation. A bot can switch CLI or model; see <a href="#model">Bots &amp; tabs</a>. Waking waits until the tab is ready before handing over the briefing, and that check has so far been written only for Claude Code and Codex; the others are not verified.<br>
-  · The Linux install has been tried on several clean systems; daily use (the CLIs, bots) has not; see the platform limits on the <a href="#install">Install</a> tab.</span><span class="zh">依 ShellBot v0.45.4 整理。<br>
+  · The Linux install has been tried on several clean systems; daily use (the CLIs, bots) has not; see the platform limits on the <a href="#install">Install</a> tab.</span><span class="zh">依 ShellBot v0.46.0 整理。<br>
   ・「電腦對話畫面」是桌面版的聊天畫面（設定 → 介面風格，或每個分頁的切換鈕）；下一欄「手機上看得到對話」是手機 App 的畫面，兩邊分開看。<br>
   ・「手機上看得到對話」分兩層：所有分頁都能在手機上看終端機畫面、直接打字；「對話畫面」是整理成聊天泡泡的版本，要 ShellBot 讀得懂那家 CLI 的紀錄格式。<br>
   ・「能變成 bot」：AI 分頁一開就是臨時 bot，按「記住」變成有名字的 bot；一般終端機分頁不是 bot。記憶由 bot 在自己的對話裡寫。bot 可以換 CLI 或模型，見「<a href="#model">Bot 與分頁</a>」。叫醒時要等分頁準備好才交簡報，這段判斷目前只為 Claude Code 和 Codex 寫過，其他家還沒驗證。<br>
@@ -860,7 +866,7 @@ details.tb.wide{margin-top:16px}
 <section class="panel" id="panel-model" data-panel="model" role="tabpanel" aria-label="Bots and tabs" data-zh-aria="Bot 與分頁">
   <div class="eyebrow"><span class="en">Bots &amp; tabs</span><span class="zh">Bot 與分頁</span></div>
   <h2 class="sec"><span class="en">Tabs, bots, the primary bot: how it works today</span><span class="zh">分頁、bot、主要 bot：現在是這樣運作的</span></h2>
-  <p class="lead"><span class="en">First, six terms. This is how v0.45.4 works: every AI tab starts as a bot, a temporary one; press “Keep” and it becomes a bot with a name, a face and a memory of its own. Bot-to-bot messaging (A2A) is a separate experimental feature, off by default, with its switch next to Bots in Settings; the primary bot needs it to dispatch work.</span><span class="zh">先講清楚六個名詞。這是 v0.45.4 的做法：每個 AI 分頁一開就是一個 bot，先是臨時的；你按「記住」，它才變成有名字、有臉、有自己記憶的 bot。bot 之間傳話（A2A）是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊，主要 bot 派工會用到它。</span></p>
+  <p class="lead"><span class="en">First, six terms. This is how v0.46.0 works: every AI tab starts as a bot, a temporary one; press “Keep” and it becomes a bot with a name, a face and a memory of its own. Bot-to-bot messaging (A2A) is a separate experimental feature, off by default, with its switch next to Bots in Settings; the primary bot needs it to dispatch work.</span><span class="zh">先講清楚六個名詞。這是 v0.46.0 的做法：每個 AI 分頁一開就是一個 bot，先是臨時的；你按「記住」，它才變成有名字、有臉、有自己記憶的 bot。bot 之間傳話（A2A）是另一個實驗功能，預設關，開關在設定裡 Bots 的旁邊，主要 bot 派工會用到它。</span></p>
 
   <div class="split" style="margin-top:18px">
     <div class="grid gloss" style="grid-template-columns:minmax(0,1fr)">
@@ -1018,8 +1024,8 @@ details.tb.wide{margin-top:16px}
 <footer class="foot">
   <div class="wrap">
     <span class="en">ShellBot (formerly ShellFrame) is an open-source project under the MIT license. Source: <a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
-    Based on the release notes of desktop v0.45.4 (2026-11-16); all screenshots use demo data.</span><span class="zh">ShellBot（原名 ShellFrame）是開源專案，MIT 授權。原始碼：<a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
-    內容依桌面版 v0.45.4 的發布說明整理（2026-11-16）；截圖皆為示範資料。</span>
+    Based on the release notes of desktop v0.46.0 (2026-11-16); all screenshots use demo data.</span><span class="zh">ShellBot（原名 ShellFrame）是開源專案，MIT 授權。原始碼：<a href="https://github.com/h2ocloud/shellframe" target="_blank" rel="noopener">github.com/h2ocloud/shellframe</a><br>
+    內容依桌面版 v0.46.0 的發布說明整理（2026-11-16）；截圖皆為示範資料。</span>
   </div>
 </footer>
 
