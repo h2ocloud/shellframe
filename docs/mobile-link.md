@@ -33,8 +33,10 @@ QR／連結內容 = `{fid, name, hosts[], port, code, mode, relay?}` 的 base64u
   - **撐滿這台裝置**（iPad 預設）：把手機／iPad 的可視格數推給電腦
     （`/link/resize`），電腦上該分頁會跟著 reflow——跟桌面版遠端分頁一樣。
     切回照電腦尺寸時會把原尺寸還回去。
-- 訊息框（💬）：走 `/link/send`，也就是 Telegram 訊息那條注入路徑（等 AI 空檔、
-  tmux bracketed paste、再 Enter），長 prompt 比逐字敲穩。
+- 訊息框（💬）：走 `/link/send`（tmux bracketed paste、再 Enter），長 prompt 比逐字敲穩。
+  - **分頁正在跑也直接送：** 配對的手機（peer kind `ios`）送來的算「本人」，跟在終端機裡打字一樣直接送進去，
+    由 CLI 自己排（Claude Code 會先記著，在當下的工具跑完後接著處理）。只有這幾種會先排隊：分頁在等人選選項、
+    正在從畫面換模型、Telegram 或 LINE 的訊息還在處理。另一台電腦的 `link-send` 不算本人，照舊排隊。
   - **輸入框有還沒送出的字（v0.44.2）：** 以前只會排隊（`details.reason: "draft"`），最多等 30 分鐘就丟掉。
     `POST /link/send` 多收兩個欄位，跟桌面對話畫面的卡片一樣：
     - `ask_draft: true`：輸入框有草稿時不排隊，回 `{"success": false, "code": "draft", "draft", "message"}`；

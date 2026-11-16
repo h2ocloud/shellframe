@@ -92,8 +92,11 @@ class ChatApiMixin:
 
     def chat_send(self, sid: str, text: str, clear_draft: bool = False) -> str:
         """Type `text` into tab `sid` and submit it, the way a paired phone's message box
-        does. {"success", "queued", "reason", "id"}: queued means the tab was busy and the
-        text goes in when that ends; `id` is how chat_view's `queue` names it.
+        does. {"success", "queued", "reason", "id"}. The person wrote it, so a turn in flight
+        does not hold it: the CLI takes it when the turn ends, as text typed in the terminal
+        (tab_delivery.PERSON_TYPES_INTO). queued means something typing would get wrong holds it
+        (a menu, a model switch, a bridged reply) and it goes in when that ends; `id` is how
+        chat_view's `queue` names it.
 
         Text the person left unsent in the terminal's input box is not something the chat
         view can see, and the send would wait behind it for good (measured: queued, then
@@ -108,7 +111,7 @@ class ChatApiMixin:
             return json.dumps({"success": False, "code": "draft", "draft": draft}, ensure_ascii=False)
         agent_link.clear_chain(sid)          # the person wrote this: what the tab sends next starts a fresh A2A chain
         res = self._execute_sfctl("send", {"sid": sid, "text": text, "submit": True, "what": "chat",
-                                           "clear_draft": bool(clear_draft)}) or {}
+                                           "clear_draft": bool(clear_draft), "person": True}) or {}
         s = self.sessions.get(sid)
         if res.get("success") and s is not None:
             self._auto_name(sid, s, text)      # the first message names a temporary bot, as Enter in the terminal does

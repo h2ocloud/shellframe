@@ -195,7 +195,8 @@ print `ERR Blocked (chain depth 5, limit 4): …` and exit 1. Read it before you
 anything else: the other side may have the text only as reference (§7, "A message
 the chain limit stops"). Do not resend it.
 
-`send` never types into a turn in flight. If the target is working, waiting on a
+`send` never types into a turn in flight (the person's own messages from the chat view or a
+paired phone do, as typing in the terminal does; yours and other agents' wait as below). If the target is working, waiting on a
 decision menu, in the middle of a Telegram turn, has the user's unsent text in
 its input box, or is having its model switched from the screen (a few seconds), the text waits in that tab's queue (first in, first out) and goes
 in when that ends; the reply says `Queued`. After 30 minutes it is dropped and the

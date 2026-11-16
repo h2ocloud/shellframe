@@ -6,7 +6,7 @@
  *
  *   reads   chat_view    the phone's data: sfctl `conversation` turns and the
  *                        `_link_decision` question (api_chat.py)
- *   sends   chat_send    the phone's message box (`send`: waits for a turn to end)
+ *   sends   chat_send    the phone's message box (`send` as the person's: goes in while the tab works)
  *           chat_answer  the phone's /link/answer, with the option's own number
  *
  * Words are swapped for display only. An option is answered with the number the CLI

@@ -604,7 +604,10 @@ class RemoteApiMixin:
                     return {"success": False, "code": "draft", "draft": draft, "message": sf_lang.pick(
                         "The input box holds text that was never sent; clear it and send (clear_draft), or not now.",
                         "輸入框裡有一段還沒送出的字；要清掉後送出（clear_draft），還是先不送。")}
-                if args.get("from_phone"):     # the person wrote it on a phone (frame_link: a peer of kind "ios")
+                # The person wrote it: on a phone (frame_link: a peer of kind "ios") or in the chat view.
+                # It goes in while the tab works, as typed text does (tab_delivery.PERSON_TYPES_INTO).
+                person = bool(args.get("from_phone") or args.get("person"))
+                if args.get("from_phone"):
                     agent_link.clear_chain(sid)
                 sender = str(args.get("from_sid") or "")
                 label = self._session_label(sid, self.sessions.get(sid))
@@ -612,7 +615,7 @@ class RemoteApiMixin:
                                            from_sid=sender, label=label,
                                            max_wait=tab_delivery.wait_limit(args.get("ttl")),
                                            what=str(args.get("what") or ""),
-                                           clear_draft=bool(args.get("clear_draft")))
+                                           clear_draft=bool(args.get("clear_draft")), person=person)
                 return {k: res[k] for k in ("success", "message", "code") if k in res} | (
                     {"details": {"queued": True, "position": res.get("position"), "id": res.get("id"),
                                  "reason": res.get("reason")}} if res.get("queued") else {})

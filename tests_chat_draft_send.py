@@ -171,14 +171,15 @@ app.screens["s3"] = box("\x1b[39m❯\xa0" + long)
 res = json.loads(host.chat_send("s3", "對話畫面的訊息"))
 check("…its first 60 characters, cut with …", res["draft"] == long[:60] + "…", res["draft"])
 res = json.loads(host.chat_send("s3", "對話畫面的訊息", True))
-check("clear it and send: the send goes on, marked as the chat view's, asking for the clear",
+check("clear it and send: the send goes on, marked as the chat view's and the person's, asking for the clear",
       res["success"] and host.calls[-1] == ("send", {"sid": "s3", "text": "對話畫面的訊息", "submit": True,
-                                                    "what": "chat", "clear_draft": True}), host.calls)
+                                                    "what": "chat", "clear_draft": True, "person": True}), host.calls)
 app.screens["s3"] = EMPTY
 host.calls.clear()
 json.loads(host.chat_send("s3", "沒有草稿"))
 check("no draft (a dim suggestion): sent as usual, nothing to clear",
-      host.calls == [("send", {"sid": "s3", "text": "沒有草稿", "submit": True, "what": "chat", "clear_draft": False})],
+      host.calls == [("send", {"sid": "s3", "text": "沒有草稿", "submit": True, "what": "chat", "clear_draft": False,
+                        "person": True})],
       host.calls)
 
 print("5. the send command passes them on")

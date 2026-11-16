@@ -25,8 +25,12 @@ running underneath with its size unchanged, and everything that types into the t
   reader is Telegram's (`bridge_telegram.menu_block`): an option wrapped onto a second
   line is joined back, and numbers that do not run 1, 2, 3… (the top is off the screen)
   are not a menu. Its cases: `tests_decision_reader.py`.
-- **Sending**: `chat_send` is sfctl `send`, the phone's message box: it waits for a turn or
-  a menu to end (queued meanwhile, up to 30 min). Text left unsent in the terminal's input box
+- **Sending**: `chat_send` is sfctl `send`, the phone's message box, marked as the person's
+  (`person`): a turn in flight does not hold it; it is typed in with its Enter, as in the
+  terminal, and the CLI takes it at its next step (measured in Claude Code 2.1.325: shown as
+  queued, taken right after the running tool call, inside the same turn). It waits (queued, up
+  to 30 min) only for a decision menu, a model switch driven from the screen, or a Telegram or
+  LINE message in flight (`tab_delivery.PERSON_TYPES_INTO`, `_bridge_holds`). Text left unsent in the terminal's input box
   is different: the view cannot show it, and a send would wait behind it for good (measured:
   queued, then dropped after 30 min with only a debug line). So `chat_send` sends nothing and
   answers `{"code": "draft", "draft": first 60 characters}`; the view shows a card with the
