@@ -220,6 +220,23 @@ def _validate_mcp(errs, w, mcp, route):
             errs.append(f"{w}.env_from_secret.{k}: no secret '{sid}' on this route")
 
 
+def _validate_detect(errs, w, det, route):
+    """How a route already set up on this computer is recognized (detect.py): the name Claude lists a connector
+    under, or the packages a local server's command runs. Optional; detect.py has a default for each."""
+    if not isinstance(det, dict) or not det or set(det) - {"connector", "packages"}:
+        errs.append(f"{w}: {{\"connector\": <name>}} or {{\"packages\": [<package>]}}")
+        return
+    if "connector" in det:
+        name = det["connector"]
+        if route.get("kind") != "claude_connector" or not (isinstance(name, str) and name.strip() and len(name) <= 80):
+            errs.append(f"{w}.connector: the name Claude lists the connector under, on a claude_connector route")
+    if "packages" in det:
+        pk = det["packages"]
+        if not route.get("mcp") or not (isinstance(pk, list) and pk and all(isinstance(p, str) and p.strip() and " " not in p.strip()
+                                                                              and len(p) <= 120 for p in pk)):
+            errs.append(f"{w}.packages: package or program names (no spaces), on a route with an mcp server")
+
+
 def _validate_catalog(errs, desc):
     """The catalog fields: all optional, each checked only when it is there."""
     cat = desc.get("category")
@@ -308,6 +325,8 @@ def validate(desc) -> list:
             _check_text(errs, f"{w}.clis.{cli}.note", (spec or {}).get("note"), optional=True)
         if r.get("mcp") is not None:
             _validate_mcp(errs, f"{w}.mcp", r["mcp"], r)
+        if r.get("detect") is not None:
+            _validate_detect(errs, f"{w}.detect", r["detect"], r)
         for s in r.get("secrets") or []:
             if not isinstance(s, dict) or not isinstance(s.get("id"), str) or not s["id"]:
                 errs.append(f"{w}.secrets: each needs an id")

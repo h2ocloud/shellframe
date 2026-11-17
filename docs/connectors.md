@@ -18,6 +18,7 @@ connectors/clis.py       MCP add / remove / check in claude, codex, agy, grok; m
 connectors/adapter.py    Adapter (what a service's code implements) and Ctx (what the core hands it)
 connectors/engine.py     the steps: start / step / test / disconnect / refresh; connectors.json in the state folder
 connectors/health.py     the one status; its short form for the phone; one sentence for Telegram and sfctl
+connectors/detect.py     what already works: each AI program's own server list, matched per route from the descriptions
 connectors/services/     one <id>.json (+ <id>.py when it needs code) per service
 api_connect.py           js_api, sfctl connect, the phone's `connections`, a bot's connect tag, the hourly check
 connect_tabs.py          a temporary AI tab for an adapter's connection test
@@ -57,7 +58,8 @@ connect_tabs.py          a temporary AI tab for an adapter's connection test
 ```
 
 `T` is `{"en": …, "zh": …}`. `attention` is true for `failed` and `needs_reconnect`: the "needs to be connected
-again" card. The same dict feeds the Settings page, the sidebar card, `sfctl`, the phone's `/link/bots`
+again" card. Three more fields say what already works (next section): `via`, `protocols`, `detected_at`. `route`, `kind`,
+`step`, `clis` and `scopes` still describe ShellBot's own steps (the wizard), as before. The same dict feeds the Settings page, the sidebar card, `sfctl`, the phone's `/link/bots`
 (`connections`, the short form `{id, name, icon, state, attention, step: "i/n"}`) and Telegram (`health.words`).
 
 An adapter's health answer becomes a state in one place (`health.apply_health`):
@@ -76,6 +78,97 @@ off, tried again the next hour), and again only if it needs attention again afte
 Reconnecting (`start(service, reconnect=True)`, or `start` on a `needs_reconnect` service) keeps what is still true:
 a done step stays done unless it is marked `redo_on_reconnect`, its check no longer passes, or it is the step the
 loss points at (the add step after `cli_entry_missing`, the key step after `secret_missing`). The test always runs again.
+
+## What already works: recognized per route (detect.py)
+
+> 中文摘要：連結頁會認得「已經能用、但不是在 ShellBot 設定的」連線，按協定（route）分開看：Claude 帳號連接器看
+> `claude mcp list`（用 Claude 分頁的帳號資料夾跑，「✔ Connected」就是測過能通）；本機 MCP 看 ShellBot 自己的
+> `shellbot-…` 項目，或使用者自己加的項目（指令裡跑的是描述檔寫的套件）；Codex 的 `codex mcp list --json` 只能說「找到」。
+> 每條協定是 ✅ checked、🟡 found、⚠ broken 或沒有。任何一條 checked，服務就是 connected，`via` 說走哪條、是不是使用者自己的設定；
+> 停在一半的精靈不會蓋掉能用的那條。使用者自己的項目只用不改，中斷連結也不會刪。偵測在背景跑、結果只放記憶體，不留任何指令、參數或環境值。
+
+A person may have a connection working before ShellBot ever walked them through it: a connector authorized on claude.ai,
+an MCP server they added to Claude Code or Codex themselves. Settings → Connect counts those, per route (protocol), and
+says which one a service works through.
+
+**Where it looks** (read-only; `detect.scan`, through the same `Clis` runner, finder and per-program environment as
+everything else, so Claude is asked with the account folder the Claude tabs use):
+
+| Program | Command | What it says |
+|---|---|---|
+| Claude Code | `claude mcp list` | one line per server, ending in Claude's own check: `claude.ai <Name>: <url> - ✔ Connected` (a Claude account connector), `… - ! Needs authentication`, `<name>: <command> - ✔ Connected` (a local server), `… - ✘ Failed to connect`, `… - ⏸ Pending approval`. It starts every server to answer (10–20 s) |
+| Codex | `codex mcp list --json` | each server's name, transport (`stdio` command and args, or a URL), `enabled`, `auth_status`. Codex does not check its servers |
+
+Antigravity, Grok Build, OpenCode, Cursor Agent and Pi are not looked in yet.
+
+**How a route is recognized** comes from its description, never from a service's name in the core:
+
+```jsonc
+route.detect = { "connector": "<Name>" }      // claude_connector: the whole name after "claude.ai " (case and spacing aside);
+                                              //   default: the service's English name
+route.detect = { "packages": ["@scope/pkg"] } // local_mcp: a person's own entry (any name that is not shellbot-…) whose command
+                                              //   runs one of these (version left off; a path into the package's folder counts);
+                                              //   default: the route's command when it is not a launcher (npx, node, uvx…) and
+                                              //   the packages its args pin (@scope/name, name@version)
+```
+
+ShellBot's own entry is recognized by its exact `mcp.server` name. A connector route is looked for only in Claude, a
+local route only in the programs its `clis` reach with `"via": "mcp"`. `registry.validate` checks `detect` (a connector
+name only on a `claude_connector` route, packages only on a route with `mcp`); `tests_connectors_detect.py` checks that
+each shipped connector's name agrees with its adapter's tool names (`mcp__claude_ai_<Name with _>__…`).
+
+**What each route comes to** (`protocols[i].state`):
+
+| | When |
+|---|---|
+| `checked` ✅ | Claude checked it: `✔ Connected`. ShellBot's own `shellbot-…` entry counts only once ShellBot's steps on that route are done (before that its server starts but its sign-in is not known: `found`, why `unfinished`). A route ShellBot connected and tested, which no program reported, is `checked` (why `tested`) |
+| `found` 🟡 | the entry is there and nothing checked it: Codex's list, `Pending approval` |
+| `broken` ⚠ | found, and its check failed: `Needs authentication` (`auth`), `Failed to connect` (`failed`), turned off in Codex (`off`), Codex not signed in to it (`auth`) |
+| `none` ⚪ | nothing matches |
+
+A route's state is its best place's (checked, then broken, then found); `places` lists each program and entry.
+
+**The status** gains:
+
+```
+"via": {"route", "kind", "adopted": bool, "detected": bool, "cli", "entry"} | null,
+"protocols": [{"id", "kind", "state": checked | found | broken | none, "why", "own", "adopted", "cli", "entry",
+               "places": [{"cli", "entry", "state", "why", "own", "adopted"}],
+               "setup": {"state", "step": {"id", "index", "total"} | null} | null}],     // where ShellBot's own steps are on it
+"detected_at": epoch                                                                     // 0: not looked yet
+```
+
+- ShellBot's own steps connected the service: `state` connected, `via` that route (`detected` false), as before.
+- Otherwise, a `checked` route makes the service `connected` through it (`detected` true): ShellBot's own route first, then
+  the recommended one, then the description's order. A wizard left half way (`waiting_user`, `failed`, …) on another
+  route does not hide it: its progress is that route's `setup`, and "Continue it" on the card goes on from there. `step`
+  is then null, `attention` false and `problem` null (the wizard's problem stays on its own route's view).
+- `found` and `broken` alone change nothing: the service is still `not_started` (no attention, no Telegram line); the
+  catalog row adds one short line ("⚠ Found, not working: Claude account connector") and the button still says Connect.
+  A connector that needs authorizing is listed by Claude for every connector an account has turned on, so it is not
+  a reason to tell anyone.
+- A service that cannot be connected on this computer is never made connected by a look.
+- An entry a person made (`adopted`) is used as it is and never changed or removed: `clis.own` refuses its name before
+  any program runs, and `disconnect` forgets only ShellBot's record and its own entries; its answer names the person's
+  entries it left (`removed.yours`), and the status after it still says what works through them. The card says so, and
+  that what such an entry may do is the person's setting (it may not be read-only).
+- `health.words` says the way: `Gmail: connected (the Claude account's connector: Claude tabs only)`,
+  `…connected (a local MCP server "my-mail", your own setting, in Claude Code)`. The phone's short form
+  (`/link/bots` `connections`) keeps exactly its keys; `connected` there now also means "works on this computer".
+
+**When it looks.** Nothing in `connectors/` starts a thread: `Engine.detect()` runs one look on the caller's thread
+(seconds) and keeps the answer in memory (`Engine.detected`; never in `connectors.json`), and every status after it uses
+it. `api_connect` starts a one-shot thread for it: on the first `connect_list` (or `sfctl connect`), from the Connect page
+(`connect_list` with `{"detect": true}`, when the open page asks every minute) at most every `DETECT_EVERY_S` (300 s), on
+"Look again" (`connect_detect`, at most every `DETECT_FLOOR_S`, 15 s), and before the hourly check (so the phone and
+Telegram count what works). One look at a time; no call waits for it. `connect_list` answers `detect: {"running", "at"}`,
+and the page asks again every 2.5 s while it runs. A program that does not answer (timeout, an error, output that cannot be
+read) keeps what the last look found (`read: unknown`); one that is not installed is `missing`.
+
+**What is kept**: per program, per match, the service, the route, the entry's name (one line, masked), the finding, why
+(a code) and own/adopted. A command line, an argument, an environment value or a URL is looked at while matching and
+dropped: Codex's JSON carries environment values, and a command line can carry a key (`tests_connectors_detect.py` puts a
+made-up one in each and checks the snapshot, the statuses and the log).
 
 ## A description (`connectors/services/<id>.json`, schema 1)
 
@@ -100,7 +193,8 @@ route = { "id", "kind": "claude_connector" | "local_mcp" | "api_key" | "oauth",
                     "env": {"K": "plain value"}, "env_from_secret": {"ENV_NAME": "<secret id>"} },
           "secrets": [ {"id", "label": T, "help": T} ],       // what the person pastes; kept in the key store
           "steps": [ step, …, {"id": "test", "kind": "test", "title": T, "intro": T} ],   // ends with the test
-          "test": {"via": T, "verdicts": { "<code>": {"text": T, "next": T} }} }          // words for what a test comes to
+          "test": {"via": T, "verdicts": { "<code>": {"text": T, "next": T} }},          // words for what a test comes to
+          "detect": {"connector": "<Name>"} | {"packages": ["<package>"]} }               // optional: how it is recognized when already set up
 
 step = { "id", "title": T, "how": [T], "url": "https://…", "see": T, "note": T,
          "check":   {"id", "on": "enter" | "done", "gate": bool, "pass": ["ok"], "states": {"<code>": {"tone", "text": T, "hint": T}}},
@@ -285,8 +379,9 @@ it names. A route that needs a key: `"kind": "api_key"`, `secrets`, `env_from_se
 
 ## How a person and a bot reach it
 
-- **Settings → Connect** (the page, SA11): `connect_list`, `connect_describe`, `connect_status`, `connect_start`,
-  `connect_step`, `connect_test`, `connect_disconnect` (js_api, all answer JSON with `success`; a failure has `code` and
+- **Settings → Connect** (the page, SA11): `connect_list` (`{"detect": true}`: look again when the last look is old),
+  `connect_describe`, `connect_status`, `connect_start`, `connect_step`, `connect_test`, `connect_disconnect`, `connect_detect`
+  ("Look again", in the background) (js_api, all answer JSON with `success`; a failure has `code` and
   `message` {text, next}). `connect_step` ops: `check`, `act` (`action`, `options`, a key's `value`), `done`, `back`, `route`,
   `stuck` (`problem`, `from_sid`: the line goes to the tab asked from, else the primary bot, else a new Claude tab).
 - **`sfctl connect list|status|start|test|disconnect <service>`** (`--json`, `--route`, `--reconnect`, `--refresh`).
@@ -297,6 +392,12 @@ it names. A route that needs a key: `"kind": "api_key"`, `secrets`, `env_from_se
 - **The phone**: `/link/bots` has a new top-level `connections` (the short status of every service); old fields untouched.
 
 ## Not verified (said, not hidden)
+
+- What already works: the lines of `claude mcp list` (Claude Code 2.1.326) and the fields of `codex mcp list --json` (Codex
+  0.142.1) were looked at once, shape only, on one Mac (2026-11-17); the tests use made-up lines in that shape. Claude's
+  list is asked in the app's own folder: a server scoped to one project folder (`.mcp.json`, a local scope) shows only
+  for that folder, so it may be missed. `✔ Connected` means Claude started the server and it answered, not that the
+  service behind it accepted a sign-in. Codex's `auth_status` values other than `not_logged_in` are taken as found.
 
 - The AI programs' commands are from each one's own `mcp --help` (2026-11); no real account's settings were changed to
   check them. `claude mcp get` starts the server to answer, so a health check can take seconds; a program that does not

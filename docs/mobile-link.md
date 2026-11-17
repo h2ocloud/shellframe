@@ -227,7 +227,7 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 
 **連結（v0.44.0，新增欄位，舊欄位一個都沒動，`v` 維持 1）**
 
-- `/link/bots` 多一個頂層欄位 `connections`：每個服務一筆短狀態 `{"id", "name": {"en", "zh"}, "icon", "state", "attention", "step"}`。`state` 是 `not_started`／`waiting_user`／`verifying`／`connected`／`failed`／`needs_reconnect`；`attention` 為 true（`failed`、`needs_reconnect`）就是「需要重新連結」，手機可以畫一張卡；`step` 是「第幾步／共幾步」（例如 `"2/4"`），沒在連結就是 `""`。內容裡沒有任何金鑰、token 或服務的資料。要連結請回到電腦的「設定 → 連結」。沒有這個欄位的舊電腦照舊，App 沒讀到就不畫。電腦上能列出、但這台還不能連結的服務（例如還沒有連結方式的 Mac App）不會出現在 `connections` 裡。
+- `/link/bots` 多一個頂層欄位 `connections`：每個服務一筆短狀態 `{"id", "name": {"en", "zh"}, "icon", "state", "attention", "step"}`。`state` 是 `not_started`／`waiting_user`／`verifying`／`connected`／`failed`／`needs_reconnect`；`attention` 為 true（`failed`、`needs_reconnect`）就是「需要重新連結」，手機可以畫一張卡；`step` 是「第幾步／共幾步」（例如 `"2/4"`），沒在連結就是 `""`。內容裡沒有任何金鑰、token 或服務的資料。要連結請回到電腦的「設定 → 連結」。沒有這個欄位的舊電腦照舊，App 沒讀到就不畫。電腦上能列出、但這台還不能連結的服務（例如還沒有連結方式的 Mac App）不會出現在 `connections` 裡。`connected` 的意思不變（它能用）：較新的電腦上，服務已經在這台電腦上能用（例如在 claude.ai 連好的連接器、使用者自己加的 MCP 伺服器，由電腦在背景查各 AI 程式自己的伺服器清單認出來），即使沒走過 ShellBot 的連結步驟、或步驟停在一半，也會是 `connected`，`step` 是 `""`；欄位與其他值都沒變。
 - 分頁的 `decision`（`kind: "red"`）在 bot 寫了 `[[SF:RED:connect:<服務>]]` 時多一個 `connect`：`{"service", "name": {"en", "zh"}, "state"}`；其餘欄位（`reason`、`options`）照舊。
 
 外部 bot 的 webhook 網址和授權，都不會出現在回應裡。

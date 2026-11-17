@@ -52,6 +52,9 @@
       "scopes": [
         "account"
       ],
+      "detect": {
+        "connector": "Google Drive"
+      },
       "clis": {
         "claude": {
           "via": "connector",

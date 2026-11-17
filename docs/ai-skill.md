@@ -376,6 +376,15 @@ same way. Do not try to fix a connection by editing an AI program's settings: Sh
 A connector-only service is not reachable from a Codex, Antigravity, Grok Build, OpenCode, Cursor Agent or Pi tab through
 ShellBot; say so rather than asking the user to connect it there.
 
+**Connected, and which way.** A service also counts as connected when it already works on this computer without
+ShellBot's steps (the user set it up on claude.ai, or added their own MCP server): ShellBot looks in each AI program's
+own server list in the background. The line then says which way, for example `Gmail: connected (the Claude account's
+connector: Claude tabs only)` or `…connected (a local MCP server "my-mail", your own setting, in Claude Code)`. If the way is
+the Claude account's connector and your tab is not a Claude tab, the service is not reachable from your tab: say so. With
+`--json` the status has `via` ({route, kind, adopted, detected, cli, entry}: the way it works, and whether it is the user's
+own setting) and `protocols` (every way, each `checked` / `found` / `broken` / `none`). Never change or remove the user's
+own entry: `sfctl connect disconnect` does not either.
+
 ## 4.9 Tasks (work that outlives this turn)
 
 ShellBot keeps tasks in one database on this computer (`state.db`), so the next session, another bot and the user can

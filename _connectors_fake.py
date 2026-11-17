@@ -26,7 +26,7 @@ DEMO = {
     "problems": {"demo_down": {"text": T("The demo service is down"), "next": T("Try again later")}},
     "routes": [
         {"id": "connector", "kind": "claude_connector", "name": T("Account connector"), "recommended": True, "minutes": 3,
-         "scopes": ["read"],
+         "scopes": ["read"], "detect": {"connector": "Demo"},
          "clis": {"claude": {"via": "connector"}, "codex": {"via": "none", "note": T("Not reachable")}},
          "steps": [
              {"id": "open", "title": T("Open the page"), "how": [T("Open it")], "url": "https://example.com/connect",
@@ -111,13 +111,17 @@ class FakeAdapter(Adapter):
 
 class FakeRunner:
     """Stands in for every AI program: records each argument list, answers from a table, runs nothing.
-    `entries[cli]` is the set of server names that program 'has'."""
+    `entries[cli]` is the set of server names that program 'has'. `listing[cli]`, when set, is what that program's
+    own list answers instead (`claude mcp list`'s lines, `codex mcp list --json`'s JSON: made-up servers only);
+    a cli in `timeout_list` does not answer its list in time."""
 
     def __init__(self):
         self.calls = []
         self.entries = {}
         self.fail_add = set()
         self.timeout_get = set()
+        self.listing = {}
+        self.timeout_list = set()
 
     def __call__(self, argv, timeout=40, env=None):
         self.calls.append(list(argv))
@@ -141,6 +145,10 @@ class FakeRunner:
                 return Result(-2, "")
             return Result(0 if name in have else 1, name if name in have else "not found")
         if op == "list":
+            if cli in self.timeout_list:
+                return Result(-2, "")
+            if cli in self.listing:
+                return Result(0, self.listing[cli])
             return Result(0, "\n".join(sorted(have)))
         return Result(1, "unknown")
 

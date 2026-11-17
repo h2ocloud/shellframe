@@ -7,6 +7,11 @@ a file or asks a program: it is the same answer wherever it is asked.
 States: not_started, waiting_user, verifying, connected, failed, needs_reconnect.
 `attention` is true for failed and needs_reconnect: the "needs to be connected again" card.
 
+What already works counts (detect.py): a service with a route its program checked (✔) is connected through that
+route even when ShellBot's own steps never ran there, or stopped half way on another route. `via` says which route
+works and whether it is the person's own setting (`adopted`); `protocols` lists every route with what was found.
+`route`, `kind`, `step`, `clis` and `scopes` still describe ShellBot's own steps (the wizard), as before.
+
 What an adapter's health check (`adapter.health()`) says becomes a state like this, written once here:
 
     ok           -> connected
@@ -17,7 +22,7 @@ What an adapter's health check (`adapter.health()`) says becomes a state like th
 """
 
 from . import clis as clis_mod
-from . import problems, registry
+from . import detect, problems, registry
 
 STATES = ("not_started", "waiting_user", "verifying", "connected", "failed", "needs_reconnect")
 ATTENTION = ("failed", "needs_reconnect")
@@ -53,21 +58,67 @@ def _cli_states(desc: dict, route: dict, rec: dict) -> dict:
     return out
 
 
-def build(desc: dict, rec: dict, route: dict = None, platform: str = None) -> dict:
+def _step_of(route: dict, rec: dict):
+    ids = [s["id"] for s in (route or {}).get("steps") or []]
+    cur = rec.get("step") if rec.get("step") in ids else ""
+    return {"id": cur, "index": ids.index(cur) + 1, "total": len(ids)} if cur else None
+
+
+def protocols(desc: dict, rec: dict, detected: dict = None) -> list:
+    """Every route of a service with what is known about it: what the last look found (detect.findings) and
+    where ShellBot's own steps are on it. ShellBot's own entry (shellbot-…) that its program checked counts as
+    checked only once ShellBot's steps on that route are done: before that its server starts, but whether it is
+    signed in is not known (`found`, why `unfinished`). A route ShellBot connected and tested, which no program
+    reported, is `checked` (why `tested`)."""
+    out = []
+    for r in desc.get("routes") or []:
+        mine = rec.get("route") == r["id"] and rec.get("state") == "connected"
+        places = []
+        for p in ((detected or {}).get(r["id"]) or {}).get("places") or []:
+            if p.get("own") and p.get("state") == "checked" and not mine:
+                p = dict(p, state="found", why="unfinished")
+            places.append(dict(p))
+        item = detect.best({"places": places})
+        if item["state"] == "none" and mine:
+            item.update(state="checked", why="tested")
+        setup = None
+        if rec.get("route") == r["id"] and rec.get("state") in STATES and rec["state"] != "not_started":
+            setup = {"state": rec["state"], "step": _step_of(r, rec) if rec["state"] != "connected" else None}
+        out.append({"id": r["id"], "kind": r.get("kind", ""), **item, "setup": setup})
+    return out
+
+
+def _pick(protos: list, desc: dict, rec: dict):
+    """The route a service works through, of those checked: ShellBot's own first, then the recommended, then the
+    description's order."""
+    ok = [p for p in protos if p["state"] == "checked"]
+    rec_id = rec.get("route")
+    first = next((r["id"] for r in desc.get("routes") or [] if r.get("recommended")), "")
+    return min(ok, key=lambda p: (p["id"] != rec_id, p["id"] != first, protos.index(p))) if ok else None
+
+
+def build(desc: dict, rec: dict, route: dict = None, platform: str = None, detected: dict = None, detected_at: int = 0) -> dict:
     """The status of one service. `rec` is its saved record ({} when never started). `available` is false for
     a service the catalog lists that cannot be connected here (registry.available: not yet, or not on this
-    kind of computer), with the reason as its `problem`; it then never needs attention."""
+    kind of computer), with the reason as its `problem`; it then never needs attention. `detected` is what the
+    last look found for it (detect.findings), `detected_at` when that look was (0: not yet)."""
     rec = rec or {}
     why = registry.available(desc, platform)
     state = rec.get("state") if rec.get("state") in STATES else "not_started"
     if route is None and rec.get("route"):
         route = next((r for r in desc["routes"] if r["id"] == rec["route"]), None)
-    steps = (route or {}).get("steps") or []
-    ids = [s["id"] for s in steps]
-    cur = rec.get("step") if rec.get("step") in ids else ""
-    step = {"id": cur, "index": ids.index(cur) + 1, "total": len(ids)} if cur and state not in ("connected", "not_started") else None
+    protos = protocols(desc, rec, detected)
+    via, found_way = None, False
+    if state == "connected" and route:
+        via = {"route": route["id"], "kind": route.get("kind", ""), "adopted": False, "detected": False, "cli": "", "entry": ""}
+    elif not why:
+        p = _pick(protos, desc, rec)
+        if p:                      # it works another way (or ShellBot's steps on it never ran): connected through that one
+            state, found_way = "connected", True
+            via = {"route": p["id"], "kind": p["kind"], "adopted": p["adopted"], "detected": True, "cli": p["cli"], "entry": p["entry"]}
+    step = _step_of(route, rec) if state not in ("connected", "not_started") else None
     problem = None
-    if rec.get("problem") and rec["problem"].get("code"):
+    if rec.get("problem") and rec["problem"].get("code") and not found_way:
         p = problems.explain(rec["problem"]["code"], desc, route)
         problem = {"code": p["code"], "text": p["text"], "next": p["next"], "step": rec["problem"].get("step", "")}
     elif why and state == "not_started":
@@ -80,6 +131,7 @@ def build(desc: dict, rec: dict, route: dict = None, platform: str = None) -> di
         "scopes": list((route or {}).get("scopes") or []),
         "connected_at": int(rec.get("connected_at") or 0), "checked_at": int(rec.get("checked_at") or 0),
         "problem": problem, "attention": state in ATTENTION, "available": not why,
+        "via": via, "protocols": protos, "detected_at": int(detected_at or 0),
     }
 
 
@@ -101,14 +153,40 @@ _WORDS = {
 }
 
 
+# A route's kind in a few words: what a connected service's line says it goes through.
+KIND_WORDS = {
+    "claude_connector": ("the Claude account's connector: Claude tabs only", "Claude 帳號連接器：只有 Claude 分頁能用"),
+    "local_mcp": ("a local MCP server", "本機 MCP 伺服器"),
+    "api_key": ("an API key", "API 金鑰"),
+    "oauth": ("a sign-in", "登入授權"),
+}
+
+
+def via_words(via, lang: str = "en") -> str:
+    """How a connected service is reached, in a few words: "(a local MCP server "x", your own setting, in Claude Code)"."""
+    if not via or not via.get("kind"):
+        return ""
+    en, zh = KIND_WORDS.get(via["kind"], (via["kind"], via["kind"]))
+    entry = registry.clean_line(via.get("entry") or "", 60)
+    where = (clis_mod.SUPPORT.get(via.get("cli") or "") or {}).get("label", "")
+    if lang == "zh":
+        return "（" + "，".join(x for x in (zh + (f" {entry}" if entry else ""), "你自己的設定" if via.get("adopted") else "",
+                                              f"在 {where} 裡" if where and via["kind"] != "claude_connector" else "") if x) + "）"
+    return " (" + ", ".join(x for x in (en + (f' "{entry}"' if entry else ""), "your own setting" if via.get("adopted") else "",
+                                        f"in {where}" if where and via["kind"] != "claude_connector" else "") if x) + ")"
+
+
 def words(status: dict, lang: str = None) -> str:
-    """One line: "<name>: <state>", plus the problem's sentence and what to do when there is one."""
+    """One line: "<name>: <state>", plus the problem's sentence and what to do when there is one. A connected
+    service says which way it is reached (and whether that is the person's own setting)."""
     import sf_lang
     lang = lang or sf_lang.prompt_lang()
     en, zh = _WORDS["unavailable" if status.get("available") is False and status["state"] == "not_started" else status["state"]]
     st = status.get("step")
     at = (f" (step {st['index']}/{st['total']})", f"（第 {st['index']}/{st['total']} 步）") if st else ("", "")
     head = (zh if lang == "zh" else en).format(at=at[1] if lang == "zh" else at[0])
+    if status["state"] == "connected":
+        head += via_words(status.get("via"), lang)
     line = f"{registry.pick(status['name'], lang)}：{head}" if lang == "zh" else f"{registry.pick(status['name'], lang)}: {head}"
     p = status.get("problem")
     if p:

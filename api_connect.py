@@ -2,10 +2,15 @@
 reach the connector core (connectors/, rules in docs/connectors.md) through here.
 
 js_api: connect_list, connect_describe, connect_status, connect_start, connect_step, connect_test,
-        connect_disconnect, connect_signal.
+        connect_disconnect, connect_signal, connect_detect.
 Also: _connect_refresh_now (the status monitor calls `_connect_tick` once a pass; it starts a
 one-shot thread at most once an hour), `_connect_sfctl` (sfctl connect list|status|start|test|disconnect),
 `_connect_compact` (the phone's /link/bots `connections`), `_connect_line` (one sentence for a RED tag).
+
+What already works (connectors/detect.py: each AI program's own `mcp list`, 10–20 s) is looked for on a one-shot
+thread started here: on the first connect_list, then at most every DETECT_EVERY_S while the Connect page asks
+(`connect_list` with {"detect": true}), on demand (`connect_detect`, not more often than DETECT_FLOOR_S), and with
+the hourly check. No call waits for it; `connect_list` says whether a look is running and when the last one was.
 
 Every method answers a JSON string with `success`; a failure has a `code` and `message` {text, next}
 (both languages: the page has its own language setting). Nothing secret is ever in an answer, a log
@@ -29,6 +34,8 @@ from sf_log import _dlog, _swallow
 
 HOURLY_S = 3600.0
 FIRST_TICK_S = 120.0
+DETECT_EVERY_S = 300.0         # the Connect page looks again at most this often
+DETECT_FLOOR_S = 15.0          # "Look again" no more often than this
 _LOCK = threading.Lock()
 
 
@@ -97,14 +104,25 @@ class ConnectApiMixin:
         return self._connect_tabs().open(cmd, title)
 
     # ── js_api ─────────────────────────────────────────────────────────────
-    def connect_list(self) -> str:
+    def connect_list(self, args: str = "") -> str:
         """{"success", "services": [status…], "clis": [the support table], "store": {supported, store},
-        "catalog": [registry.catalog_entry…] (one line, bubble, section, can it be connected here), "platform"}."""
+        "catalog": [registry.catalog_entry…] (one line, bubble, section, can it be connected here), "platform",
+        "detect": {"running", "at"}}. The first call starts a look for what already works; `args.detect` (the
+        Connect page while it shows) starts another when the last is older than DETECT_EVERY_S. Never waits for it."""
         eng = self._connect()
+        if eng.detected is None or _args(args).get("detect"):
+            self._connect_detect_kick()
         plat = eng.platform or reg_mod.this_platform()
+        detect = self._connect_detect_state()                 # before the list: "not running" then means the list has it
         return _answer(success=True, services=eng.list(), clis=eng.clis.table("local_mcp"),
                        store=secrets.platform_support(eng.backend), broken=sorted(eng.registry.errors),
-                       catalog=eng.registry.catalog(plat), platform=plat)
+                       catalog=eng.registry.catalog(plat), platform=plat, detect=detect)
+
+    def connect_detect(self, args: str = "") -> str:
+        """Look again now, in the background, for connections already set up in the AI programs ("Look again").
+        {"success", "detect": {"running", "at"}}: ask connect_list until `running` is false."""
+        self._connect_detect_kick(force=True)
+        return _answer(success=True, detect=self._connect_detect_state())
 
     def connect_describe(self, service: str) -> str:
         """{"success", "descriptor"}: the service's whole description (every text in both languages), which the
@@ -218,6 +236,39 @@ class ConnectApiMixin:
         st = eng.status(sid)
         return {"service": sid, "name": st["name"], "state": st["state"]}
 
+    # ── what already works (a one-shot thread; connectors/ starts none) ───
+    def _connect_detect_claim(self, force: bool = False) -> bool:
+        """Take the one look's turn: False while a look runs, or when the last ended less than DETECT_EVERY_S ago
+        (DETECT_FLOOR_S when `force`)."""
+        with _LOCK:
+            if getattr(self, "_connect_detecting", False):
+                return False
+            last = getattr(self, "_connect_detect_last", 0.0)
+            if last and time.time() - last < (DETECT_FLOOR_S if force else DETECT_EVERY_S):
+                return False
+            self._connect_detecting = True
+            return True
+
+    def _connect_detect_kick(self, force: bool = False) -> bool:
+        if not self._connect_detect_claim(force):
+            return False
+        threading.Thread(target=self._connect_detect_run, daemon=True, name="connect-detect").start()
+        return True
+
+    def _connect_detect_run(self) -> None:
+        """One look (the caller holds the turn: _connect_detect_claim)."""
+        try:
+            self._connect().detect()
+        except Exception:
+            _swallow("connect:detect")
+        finally:
+            self._connect_detect_last = time.time()
+            self._connect_detecting = False
+
+    def _connect_detect_state(self) -> dict:
+        snap = self._connect().detected or {}
+        return {"running": bool(getattr(self, "_connect_detecting", False)), "at": int(snap.get("at") or 0)}
+
     # ── the hourly health check ────────────────────────────────────────────
     def _connect_tick(self, now: float) -> None:
         """Called by the status monitor on every pass: cheap. Once an hour (first one a couple of minutes
@@ -233,6 +284,8 @@ class ConnectApiMixin:
 
     def _connect_hourly_run(self):
         try:
+            if self._connect_detect_claim(force=True):        # what already works first: the phone and Telegram count it
+                self._connect_detect_run()
             self._connect_tell(self._connect().refresh_all())
         except Exception:
             _swallow("connect:hourly")
@@ -270,6 +323,8 @@ class ConnectApiMixin:
         def done(ok, text, payload):
             return {"success": ok, "message": json.dumps(payload, ensure_ascii=False) if as_json else text}
 
+        if eng.detected is None:                              # nothing looked for yet: start a look; this answer does not wait for it
+            self._connect_detect_kick()
         if action == "list":
             rows = eng.list()
             return done(True, "\n".join(line(s) for s in rows) or sf_lang.pick("(no services)", "（沒有服務）"),
@@ -286,7 +341,7 @@ class ConnectApiMixin:
                 return done(False, reg_mod.pick(res["message"]["text"], lang) + " " + reg_mod.pick(res["message"]["next"], lang), res)
             step = (res["view"] or {}).get("step")
             text = line(res["status"])
-            if step and res["status"]["state"] != "connected":
+            if step and eng.store.get(service).get("state") != "connected":    # ShellBot's own steps (connected another way or not)
                 text += "\n" + sf_lang.pick("Now: ", "現在：") + reg_mod.pick(step["title"], lang)
                 text += "\n" + sf_lang.pick("Continue in ShellBot: Settings → Connect.", "請到 ShellBot 的「設定 → 連結」繼續。")
             return done(True, text, res)

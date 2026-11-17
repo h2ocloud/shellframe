@@ -52,6 +52,9 @@
       "scopes": [
         "account"
       ],
+      "detect": {
+        "connector": "Google Calendar"
+      },
       "clis": {
         "claude": {
           "via": "connector",

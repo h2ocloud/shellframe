@@ -60,6 +60,11 @@
       "scopes": [
         "read"
       ],
+      "detect": {
+        "packages": [
+          "@dguido/google-workspace-mcp"
+        ]
+      },
       "clis": {
         "claude": {
           "via": "mcp",
@@ -1155,6 +1160,9 @@
       "scopes": [
         "read"
       ],
+      "detect": {
+        "connector": "Gmail"
+      },
       "clis": {
         "claude": {
           "via": "connector",

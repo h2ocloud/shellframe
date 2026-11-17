@@ -12,6 +12,10 @@
  *                        from connect_list's `catalog` (each service's category, recommended, local_app, can it
  *                        be connected here and why not) and its statuses. While the tab is open it asks
  *                        connect_status(refresh) every 60 s. A row's button opens the wizard below.
+ *                        Connections already set up on this computer count (the Python side looks in each AI
+ *                        program's own list, in the background: connect_list's `detect`, connect_detect for
+ *                        "Look again"): a connected row says through which way (status `via`, the person's own
+ *                        setting or not), and the card lists every way with what was found (status `protocols`).
  *   the wizard card      a route to pick, the steps (words, a link, buttons, options, a check, "I'm stuck"),
  *                        the test, and what it came to. Errors say message.text and message.next. It asks as little
  *                        as it can: one way (or the Claude account's connector recommended) starts without the choice;
@@ -63,6 +67,34 @@
     connected: ['Connected', '已連結', 'ok'], missing: ['Not added yet', '還沒加入', 'idle'],
     manual: ['Set up by hand', '要手動設定', 'warn'], unsupported: ['Not supported', '不支援', 'idle'], unknown: ['Not known', '不明', 'idle'],
   };
+  // The kinds of way (route) a service is reached by, in a few words: what a connected row says it goes through.
+  const KIND = {
+    claude_connector: ['Claude account connector', 'Claude 帳號連接器'], local_mcp: ['Local MCP', '本機 MCP'],
+    api_key: ['API key', 'API 金鑰'], oauth: ['Sign-in', '登入授權'],
+  };
+  const kindName = k => (KIND[k] ? t(KIND[k][0], KIND[k][1]) : '');
+  const yours = () => t(' (your own setting)', '（你自己的設定）');
+  const viaName = v => (v && v.kind ? kindName(v.kind) + (v.adopted ? yours() : '') : '');
+  // What was found for one way on this computer: [mark, English, 中文, tone]
+  const FOUND = {
+    checked: ['✅', 'Checked, it works', '測過能通', 'ok'], found: ['🟡', 'Found, not tested', '找到了，還沒測', 'warn'],
+    broken: ['⚠', 'Found, not working', '找到但連不上', 'bad'], none: ['⚪', 'Not set up', '沒有設定', 'idle'],
+  };
+  const WHY = {
+    auth: ['it needs signing in or allowing', '要先登入或授權'], failed: ['its check failed', '檢查沒通過'],
+    off: ['it is turned off', '被關掉了'], pending: ['waiting to be approved', '還沒被核准'],
+    unfinished: ["ShellBot's setup is not finished", 'ShellBot 的設定還沒做完'], tested: ["ShellBot's test passed", 'ShellBot 測過了'],
+  };
+  const protos = st => (st && Array.isArray(st.protocols) ? st.protocols : []);
+  const detectedVia = st => !!(st && st.state === 'connected' && st.via && st.via.detected);   // works a way ShellBot did not set up
+  // A way found on this computer that does not count as connected (yet): one short line for the row.
+  function foundHint(st) {
+    const ps = protos(st).filter(p => p.state === 'found' || p.state === 'broken');
+    const p = ps.find(x => x.state === 'found') || ps[0];
+    if (!p) return '';
+    const f = FOUND[p.state];
+    return `${f[0]} ${t(f[1], f[2])}${t(': ', '：')}${kindName(p.kind)}${p.adopted ? yours() : ''}`;
+  }
   const NOAPI = () => ({ success: false, code: 'no_api', message: { text: t('This version cannot do that here.', '這個版本在這裡做不到。'), next: '' } });
 
   // ── the Python side ──────────────────────────────────────────────────────
@@ -85,7 +117,7 @@
   }
 
   // ── what the page knows about the services ───────────────────────────────
-  const L = { order: [], by: {}, clis: [], catalog: {}, platform: '', loaded: false };
+  const L = { order: [], by: {}, clis: [], catalog: {}, platform: '', loaded: false, detect: null };
   const descs = {};                                   // service -> Promise of its descriptor (or null)
   const descDone = {};                                // service -> descriptor, once it arrived
   function describe(id) {
@@ -134,7 +166,8 @@
         return t(`Connecting${s ? `, step ${s.index} of ${s.total}` : ''}`, `連結中${s ? `，第 ${s.index} 步，共 ${s.total} 步` : ''}`);
       }
       case 'verifying': return t('Verifying it works…', '正在驗證通不通…');
-      case 'connected': return [t('Connected', '已連結'), rn, st.connected_at ? dateOf(st.connected_at) : '', pick(st.problem && st.problem.text)].filter(Boolean).join(' · ');
+      case 'connected': return [t('Connected', '已連結'), st.via ? viaName(st.via) : rn, st.connected_at && !detectedVia(st) ? dateOf(st.connected_at) : '',
+        pick(st.problem && st.problem.text)].filter(Boolean).join(' · ');
       case 'failed': return pick(st.problem && st.problem.text) || t('It did not connect', '沒連結成功');
       case 'needs_reconnect': return pick(st.problem && st.problem.text) || t('It stopped working. Connect it again', '用不了了，需要重新連結');
       default: return d ? pick(d.summary) : t('Not connected yet', '還沒連結');
@@ -149,9 +182,10 @@
   const C = { q: '', cat: 'all', view: 'home', more: false, why: '' };
   const REC_MAX = 6;                                  // rows under "Recommended" before "See all"
   const PILL_MAX = 4;                                 // category bubbles before "More ▾"
-  async function refreshList() {
-    const r = await call('connect_list');
+  async function refreshList(args) {
+    const r = await call('connect_list', json(args));
     if (r && r.success && Array.isArray(r.services)) {
+      L.detect = r.detect && typeof r.detect === 'object' ? r.detect : null;
       L.order = r.services.map(s => s.service);
       L.by = {};
       r.services.forEach(take);
@@ -230,6 +264,7 @@
     } else {
       if (st.state === 'not_started') line = pick(e.summary) || line;
       if (bad && st.problem && st.problem.next) sub = `<small>${esc(pick(st.problem.next))}</small>`;
+      else if (st.state !== 'connected' && foundHint(st)) sub = `<small class="cg-found">${esc(foundHint(st))}</small>`;
       const cls = bad || st.state === 'failed' ? ' primary' : st.state === 'connected' ? ' ghost cg-done' : '';
       const label = st.state === 'connected' ? '✓ ' + t(s[3], s[4]) : t(s[3], s[4]);
       button = `<button type="button" class="cn-btn${cls}" data-cn="open" data-service="${esc(id)}">${esc(label)}</button>`;
@@ -267,7 +302,7 @@
     if (!panel.querySelector('.cg-body')) {          // the frame once: the search box keeps its focus and words across redraws
       panel.innerHTML = `<div class="cg-head"><h3>${esc(t('Connect apps', '連結應用程式'))}</h3><span class="cg-head-r"><button type="button" class="cg-fix" data-cg="attention" hidden></button>` +
         '<button type="button" class="cg-count" data-cg="connected"></button></span></div>' +
-        '<p class="cn-intro"></p>' +
+        '<p class="cn-intro"></p><p class="cg-detect" hidden><span></span> <button type="button" class="cn-link" data-cg="detect"></button></p>' +
         `<label class="cg-search">${icon('search')}<input type="search" autocomplete="off" spellcheck="false"></label>` +
         '<div class="cg-pills" role="group"></div><div class="cg-body"></div>';
       const box = panel.querySelector('.cg-search input');
@@ -287,6 +322,16 @@
     panel.querySelector('.cg-head h3').textContent = t('Connect apps', '連結應用程式');
     panel.querySelector('.cn-intro').textContent = t('Services your bots can use. Press Connect and ShellBot walks you through it, and checks later that it still works.',
       '讓 bot 能用的外部服務。按「連結」，ShellBot 一步一步帶你連結，之後也會檢查它還通不通。');
+    const det = panel.querySelector('.cg-detect'), D = L.detect;
+    det.hidden = !D || (!D.running && !D.at);
+    if (D) {
+      const at = D.at ? new Date(D.at * 1000).toLocaleTimeString(isZh() ? 'zh-TW' : undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+      det.querySelector('span').textContent = D.running ? t('Looking for connections already set up on this computer…', '正在找這台電腦上已經設好的連線…')
+        : t(`Connections already set up on this computer are counted (looked at ${at}).`, `這台電腦上已經設好的連線也算在內（${at} 找過）。`);
+      const again = det.querySelector('button');
+      again.hidden = !!D.running;
+      again.textContent = t('Look again', '重新找');
+    }
     panel.querySelector('.cg-pills').innerHTML = pillsHtml();
     panel.querySelector('.cg-body').innerHTML = bodyHtml();
     const tab = doc.querySelector('#settings-tabs-bar [data-tab="connect"]');
@@ -301,6 +346,7 @@
       else if (what === 'connected' || what === 'attention') C.view = C.view === what ? 'home' : what;
       else if (what === 'all') C.view = 'all';
       else if (what === 'home') C.view = 'home';
+      else if (what === 'detect') return lookAgain();
       if (what !== 'more') { C.q = ''; const box = panel.querySelector('.cg-search input'); if (box) box.value = ''; }
       C.why = '';
       return renderList();
@@ -320,13 +366,37 @@
   }
   async function showList() {
     renderList();
-    await refreshList();
+    await refreshList({ detect: true });                // also: look for what is already set up, when the last look is old
     renderList();
     renderSide();
+    watchDetect(true);
     L.order.forEach(id => { if (entry(id).available) describe(id).then(() => renderList()); });
     clearInterval(settingsTimer);
     refreshStatuses();
-    settingsTimer = setInterval(() => { if (panelShown()) refreshStatuses(); else clearInterval(settingsTimer); }, 60000);
+    settingsTimer = setInterval(() => {
+      if (!panelShown()) return clearInterval(settingsTimer);
+      refreshList({ detect: true }).then(() => { watchDetect(true); refreshStatuses(); });
+    }, 60000);
+  }
+  // While the Python side looks for connections already set up, ask again every 2.5 s (a minute at most), then
+  // redraw: the catalog, the sidebar, and the card when it shows a service.
+  let detectTimer = 0, detectTries = 0;
+  function watchDetect(fresh) {
+    clearTimeout(detectTimer);
+    if (fresh) detectTries = 0;
+    if (!(L.detect && L.detect.running) || ++detectTries > 24) return;
+    detectTimer = setTimeout(async () => {
+      await refreshList();
+      renderList(); renderSide();
+      if (!(L.detect && L.detect.running)) cardFound();
+      watchDetect();
+    }, 2500);
+  }
+  async function lookAgain() {
+    await call('connect_detect', '{}');
+    await refreshList();                                // a quick look may be over already: take the list as it is now
+    renderList(); renderSide(); cardFound();
+    watchDetect(true);
   }
   function mountSettingsTab() {
     const bar = $('settings-tabs-bar');
@@ -515,6 +585,36 @@
     if (tt.handle) await call('connect_test', S.service, json({ handle: tt.handle, cancel: true }));
   }
 
+  // What was found on this computer for one way, as a chip on its card in the choice of a way.
+  function foundChip(id) {
+    const p = protos(S.status).find(x => x.id === id);
+    if (!p || p.state === 'none') return '';
+    const f = FOUND[p.state] || FOUND.none;
+    return `<span class="cn-route-found tone-${f[3]}" data-found="${esc(p.state)}">${f[0]} ${esc(t(f[1], f[2]))}${p.adopted ? esc(yours()) : ''}</span>`;
+  }
+  // Every way to connect the service, with what was found for it on this computer and where ShellBot's own steps are.
+  function protocolsBox(st) {
+    const ps = protos(st);
+    if (!ps.length) return '';
+    const rows = ps.map(p => {
+      const r = routeOf(S.desc, p.id) || {};
+      const f = FOUND[p.state] || FOUND.none;
+      const inUse = st.state === 'connected' && st.via && st.via.route === p.id;
+      const where = (p.places || []).map(x => cliName(x.cli) + (x.entry ? t(': ', '：') + x.entry : '') + (x.adopted ? yours() : '')).join(t('; ', '；'));
+      const why = p.why && WHY[p.why] && p.state !== 'checked' ? t(WHY[p.why][0], WHY[p.why][1]) : '';
+      const su = p.setup && p.setup.state !== 'connected' ? p.setup : null;
+      const setup = !su ? '' : su.step ? t(`ShellBot's setup: step ${su.step.index} of ${su.step.total}`, `ShellBot 的設定：做到第 ${su.step.index} 步（共 ${su.step.total} 步）`)
+        : t(`ShellBot's setup: ${stateOf(su)[0].toLowerCase()}`, `ShellBot 的設定：${stateOf(su)[1]}`);
+      const go = su && !inUse && st.state === 'connected' ? link('resume', t('Continue it', '接著做') + ' ›', ` data-route="${esc(p.id)}"`) : '';
+      return `<div class="cn-proto tone-${f[3]}${inUse ? ' on' : ''}" data-route="${esc(p.id)}" data-found="${esc(p.state)}">` +
+        `<span class="cn-proto-mark" aria-hidden="true">${f[0]}</span>` +
+        `<span class="cn-proto-main"><b>${esc(kindName(p.kind) || pick(r.name))}${inUse ? `<i class="cn-badge">${esc(t('In use', '使用中'))}</i>` : ''}</b>` +
+        `<small>${esc([pick(r.name), where, why, setup].filter(Boolean).join(' · '))}</small>${go}</span>` +
+        `<span class="cn-proto-state">${esc(t(f[1], f[2]))}</span></div>`;
+    }).join('');
+    return `<div class="cn-sect cn-protos"><b>${esc(t('Ways to connect it', '連線方式'))}</b>${rows}</div>`;
+  }
+
   // route choice
   function routeBody() {
     const list = routes();
@@ -527,7 +627,7 @@
         `<span class="cn-radio"></span><span class="cn-route-main"><span class="cn-route-head"><b>${esc(pick(r.name))}</b>` +
         (r.recommended ? `<i class="cn-badge">${esc(t('Recommended', '推薦'))}</i>` : '') +
         (r.beta ? `<i class="cn-badge cg-beta">${esc(t('Beta', '測試版'))}</i>` : '') + '</span>' +
-        `<span class="cn-route-blurb">${esc(pick(r.blurb))}</span>` +
+        `<span class="cn-route-blurb">${esc(pick(r.blurb))}</span>` + foundChip(r.id) +
         `<span class="cn-chips">${chips.map(c => `<i>${esc(c)}</i>`).join('')}</span>` +
         (cliKeys.length ? `<span class="cn-route-for">${esc(t('For: ', '適用：'))}${esc(cliKeys.map(cliName).join(t(', ', '、')))}</span>` : '') + '</span></button>';
     }).join('');
@@ -547,6 +647,7 @@
   }
   function connectedBody() {
     const st = S.status || {};
+    if (detectedVia(st)) return foundBody(st);
     const route = routeOf(S.desc, st.route);
     const clis = Object.keys(st.clis || {}).map(k => {
       const c = CLI_STATE[st.clis[k]] || CLI_STATE.unknown;
@@ -558,10 +659,24 @@
     }).join('');
     const warn = st.problem ? `<div class="cn-msg warn"><span class="cn-dot warn"></span><span>${esc(pick(st.problem.text))}${st.problem.next ? `<small>${esc(pick(st.problem.next))}</small>` : ''}</span></div>` : '';
     return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
-      `<p>${esc([route ? pick(route.name) : '', st.connected_at ? dateOf(st.connected_at) : ''].filter(Boolean).join(' · '))}</p></div></div>` + warn +
+      `<p>${esc([st.via ? viaName(st.via) : route ? pick(route.name) : '', st.connected_at ? dateOf(st.connected_at) : ''].filter(Boolean).join(' · '))}</p></div></div>` + warn +
       (S.test ? testBlock(null) : '') + errBox() +
       (clis ? `<div class="cn-sect"><b>${esc(t('Your AIs', '各個 AI'))}</b>${clis}</div>` : '') +
-      (scopes ? `<div class="cn-sect"><b>${esc(t('What it may do', '它能做的事'))}</b><div class="cn-chips">${scopes}</div></div>` : '');
+      (scopes ? `<div class="cn-sect"><b>${esc(t('What it may do', '它能做的事'))}</b><div class="cn-chips">${scopes}</div></div>` : '') +
+      protocolsBox(st);
+  }
+  // Connected through a way found on this computer (ShellBot did not set it up): which one, whose setting, every way.
+  function foundBody(st) {
+    const v = st.via, where = cliName(v.cli);
+    const note = v.adopted
+      ? t(`ShellBot found "${v.entry}" in ${where} and uses it as it is: it never changes or removes it. What it may do is up to your setting; it may not be read-only.`,
+        `ShellBot 在 ${where} 裡找到「${v.entry}」，照原樣使用：不會改它，也不會刪它。它能做哪些事由你的設定決定，不一定是唯讀。`)
+      : t(`${where} reports it as connected. It was not set up in ShellBot.`, `${where} 回報它已經連上；不是在 ShellBot 裡設定的。`) +
+        (v.kind === 'claude_connector' ? t(' Only Claude tabs can use it.', '只有 Claude 分頁用得到。') : '');
+    return `<div class="cn-result ok"><i class="cn-big ok" aria-hidden="true">✓</i><div><h4>${esc(t('Connected', '已連結'))}</h4>` +
+      `<p>${esc(viaName(v))}</p></div></div>` +
+      `<div class="cn-fyi"><b>${esc(v.adopted ? t('Your own setting', '你自己的設定') : t('Found on this computer', '在這台電腦上找到的'))}</b><p>${esc(note)}</p></div>` +
+      errBox() + protocolsBox(st);
   }
 
   function progress() {
@@ -581,6 +696,10 @@
   function foot() {
     if (S.mode === 'route') {
       return `<div class="cn-foot-l"></div><div class="cn-foot-r">${btn('close', t('Cancel', '取消'), 'ghost')}${btn('route-go', t('Next', '下一步'), 'primary')}</div>`;
+    }
+    if (S.mode === 'connected' && detectedVia(S.status)) {      // nothing of ShellBot's to test or remove on this way
+      return `<div class="cn-foot-l">${S.status.route ? btn('disconnect', t("Clear ShellBot's setup", '清掉 ShellBot 的設定'), 'ghost') : ''}</div>` +
+        `<div class="cn-foot-r">${btn('detect', S.busy === 'detect' ? t('Looking…', '找中…') : t('Look again', '重新找'), 'ghost')}${btn('finish', t('Done', '完成'), 'primary')}</div>`;
     }
     if (S.mode === 'connected') {
       return `<div class="cn-foot-l">${btn('disconnect', t('Disconnect', '中斷連結'), 'ghost')}</div><div class="cn-foot-r">` +
@@ -750,8 +869,13 @@
   async function disconnect() {
     const name = pick((S.desc && S.desc.name) || '') || S.service;
     const ask = root.SFDialog && root.SFDialog.confirm;
-    const yes = ask ? await ask(t(`Disconnect ${name}? Bots lose access to it; you can connect it again any time.`, `要中斷 ${name} 嗎？bot 會用不了它，之後隨時可以再連結。`),
-      { title: t('Disconnect', '中斷連結'), ok: t('Disconnect', '中斷連結'), cancel: t('Keep it', '保留') }) : false;
+    const own = protos(S.status).flatMap(p => (p.places || []).filter(x => x.adopted).map(x => x.entry)).filter((x, i, a) => x && a.indexOf(x) === i);
+    const keep = own.length ? t(` Your own setting (${own.join(', ')}) stays as it is: ShellBot never removes it.`, `你自己的設定（${own.join('、')}）會照原樣留著：ShellBot 不會刪它。`) : '';
+    const text = detectedVia(S.status)
+      ? t(`Clear ShellBot's own setup for ${name}? Only what ShellBot added goes; it keeps working the way it does now.`, `要清掉 ShellBot 為 ${name} 做的設定嗎？只拿掉 ShellBot 加的東西，現在能用的照樣能用。`)
+      : t(`Disconnect ${name}? Bots lose access to it; you can connect it again any time.`, `要中斷 ${name} 嗎？bot 會用不了它，之後隨時可以再連結。`);
+    const yes = ask ? await ask(text + keep,
+      { title: t('Disconnect', '中斷連結'), ok: detectedVia(S.status) ? t('Clear it', '清掉') : t('Disconnect', '中斷連結'), cancel: t('Keep it', '保留') }) : false;
     const me = S;
     if (!yes || S !== me) return;
     S.busy = 'disconnect'; render();
@@ -760,6 +884,47 @@
     S.busy = '';
     if (res && res.success === false) { S.err = res.message || null; return render(); }
     close();
+  }
+
+  // "Continue it": go on with ShellBot's own steps on a way that is not the one in use.
+  async function resume(routeId) {
+    const me = S;
+    S.busy = 'resume'; render();
+    const res = await call('connect_start', S.service, json({ route: routeId }));
+    if (S !== me) return;
+    S.busy = '';
+    absorb(res);
+    if (res.success === false || !vstep()) return render();
+    S.mode = 'step'; S.test = null;
+    enter();
+  }
+  // "Look again" on the card: the Python side looks in the background; ask until it is done, then redraw this service.
+  async function cardLookAgain() {
+    const me = S;
+    S.busy = 'detect'; render();
+    await call('connect_detect', '{}');
+    await refreshList();
+    for (let i = 0; i < 40 && S === me && L.detect && L.detect.running; i++) {
+      await new Promise(ok => setTimeout(ok, 1500));
+      await refreshList();
+    }
+    if (S !== me) return;
+    S.busy = '';
+    renderList(); renderSide();
+    const now = await call('connect_status', S.service, '{}');
+    if (S !== me) return;
+    absorb(now);
+    if (S.status && S.status.state !== 'connected') return open(S.service, {});
+    render();
+  }
+  // A look finished while the card shows a service: take its new status (the card is not moved off a step).
+  async function cardFound() {
+    if (!S || !S.open || !['connected', 'route'].includes(S.mode) || S.busy) return;
+    const me = S, now = await call('connect_status', S.service, '{}');
+    if (S !== me || !now || !now.success) return;
+    S.status = now.status; take(now.status);
+    if (S.mode === 'route' && S.status.state === 'connected') S.mode = 'connected';
+    render();
   }
 
   async function onClick(e) {
@@ -785,6 +950,8 @@
     if (act === 'test-stop') return stopTest();
     if (act === 'reconnect') return reconnect();
     if (act === 'disconnect') return disconnect();
+    if (act === 'resume') return resume(el.dataset.route);
+    if (act === 'detect') return cardLookAgain();
   }
   function onKey(e) {
     if (!S || !S.open) return;

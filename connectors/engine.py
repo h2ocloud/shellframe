@@ -13,6 +13,7 @@ not_started, waiting_user, verifying, connected, failed, needs_reconnect (health
     test(service, handle=None, cancel=False)      the adapter's connection test
     disconnect(service)                           take away only what ShellBot added
     refresh(service) / refresh_all()              the health check (nothing runs by itself: the caller decides when)
+    detect()                                      look for what already works (detect.py): seconds, on the caller's thread
 
 Every answer is a dict with `success`; on `success: false`, a `code`, and `message` = {text, next}.
 Checks, actions and tests run outside the file's lock. Each service has one operation at a time; a second
@@ -32,7 +33,7 @@ import sf_config
 import sf_lang
 from sf_log import _dlog
 
-from . import SCHEMA, clis as clis_mod, health, problems, registry as reg_mod, secrets
+from . import SCHEMA, clis as clis_mod, detect as detect_mod, health, problems, registry as reg_mod, secrets
 from .adapter import Ctx
 
 HANDLE_OK = re.compile(r"^[A-Za-z0-9_.:\-]{1,64}$")
@@ -179,6 +180,7 @@ class Engine:
         self.clock = clock
         self._ops = {}
         self._ops_lock = threading.Lock()
+        self.detected = None                         # the last look for what already works (detect.scan), kept in memory only
         self._settle()
 
     # ── plumbing ───────────────────────────────────────────────────────────
@@ -222,13 +224,19 @@ class Engine:
         p = problems.explain(code, desc, route)
         out = {"success": False, "code": code, "message": {"text": p["text"], "next": p["next"]}, **extra}
         if desc:
-            out["status"] = health.build(desc, rec, platform=self.platform)
+            out["status"] = self._build(desc, rec)
         return out
 
     def _reply(self, service, **extra) -> dict:
         desc = self.registry.get(service)
         rec = self.store.get(service)
-        return {"success": True, "status": health.build(desc, rec, platform=self.platform), "view": self.view(service), **extra}
+        return {"success": True, "status": self._build(desc, rec), "view": self.view(service), **extra}
+
+    def _build(self, desc, rec) -> dict:
+        """The status, with what the last look found for this service (none yet: as before)."""
+        snap = self.detected
+        found = detect_mod.findings(snap, desc["id"]) if snap else None
+        return health.build(desc, rec, platform=self.platform, detected=found, detected_at=(snap or {}).get("at", 0))
 
     def _route_of(self, desc, rec):
         return next((r for r in desc["routes"] if r["id"] == rec.get("route")), None)
@@ -247,11 +255,21 @@ class Engine:
 
     def status(self, service: str):
         desc = self.registry.get(service)
-        return health.build(desc, self.store.get(service), platform=self.platform) if desc else None
+        return self._build(desc, self.store.get(service)) if desc else None
 
     def list(self) -> list:
         saved = self.store.all()
-        return [health.build(self.registry.get(s), saved.get(s) or {}, platform=self.platform) for s in self.registry.ids()]
+        return [self._build(self.registry.get(s), saved.get(s) or {}) for s in self.registry.ids()]
+
+    # ── what already works ─────────────────────────────────────────────────
+    def detect(self) -> dict:
+        """Look, once, for the routes already set up in the AI programs (detect.scan: their own `mcp list`, with the
+        account folders the tabs use) and keep the answer for every status after it. Synchronous and slow (seconds):
+        the caller runs it on a thread of its own; nothing here starts one. {"at", "read": {cli: ok | missing | unknown}}"""
+        snap = detect_mod.scan(self.clis, self.registry, prev=self.detected, now=self.clock)
+        self.detected = snap
+        _dlog("connect", "detect: " + ", ".join(f"{c} {p['read']} {len(p['hits'])}" for c, p in sorted(snap["clis"].items())))
+        return {"at": snap["at"], "read": {c: p["read"] for c, p in snap["clis"].items()}}
 
     def _step_words(self, table, code, fallback_tone="warn", fields=None) -> dict:
         hit = (table or {}).get(code)
@@ -825,7 +843,9 @@ class Engine:
 
     def disconnect(self, service: str) -> dict:
         """Remove what ShellBot added (its own `shellbot-*` entries, the keys it stored), let the adapter
-        clean up on the service's side, and forget the progress. Nothing else is touched."""
+        clean up on the service's side, and forget the progress. Nothing else is touched: an entry the person made
+        that serves this service (adopted, detect.py) stays, and is named in `removed.yours`. The status after it
+        still says what works on this computer through the person's own settings."""
         desc = self.registry.get(service)
         if not desc:
             return self._fail(service, "unknown_service")
@@ -836,6 +856,10 @@ class Engine:
             rec = self.store.get(service)
             route = self._route_of(desc, rec)
             removed = self._forget_entries(service, desc, rec)
+            found = detect_mod.findings(self.detected, service) if self.detected else {}
+            yours = [{"route": rid, "cli": p["cli"], "entry": p["entry"]} for rid, f in sorted(found.items()) for p in f["places"] if p["adopted"]]
+            if yours:
+                removed["yours"] = yours                     # the person's own entries: used, never removed (clis.own refuses them)
             ad = self.registry.adapter(service)
             if ad is not None and route:
                 try:

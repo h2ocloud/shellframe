@@ -52,6 +52,9 @@
       "scopes": [
         "account"
       ],
+      "detect": {
+        "connector": "Slack"
+      },
       "clis": {
         "claude": {
           "via": "connector",

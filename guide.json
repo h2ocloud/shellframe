@@ -309,8 +309,8 @@
         "zh": "連結應用程式"
       },
       "body": {
-        "en": "Settings → Connect lists the services your bots can use: search, pick a kind, see what is recommended and what is on this Mac. Press Connect: the service's page opens, and back here ShellBot tests it.",
-        "zh": "設定 → 連結列出 bot 能用的服務：可以搜尋、按類別挑、看推薦的和這台 Mac 上的。按「連結」會打開那個服務的頁面，回到這裡 ShellBot 就自己測試。"
+        "en": "Settings → Connect lists the services your bots can use: search, pick a kind, see what is recommended and what is on this Mac. Press Connect: the service's page opens, and back here ShellBot tests it. What you already set up counts too; its row says which way.",
+        "zh": "設定 → 連結列出 bot 能用的服務：可以搜尋、按類別挑、看推薦的和這台 Mac 上的。按「連結」會打開那個服務的頁面，回到這裡 ShellBot 就自己測試。你自己已經設好的也算，那一列會寫走哪種方式。"
       }
     },
     {

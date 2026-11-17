@@ -41,6 +41,10 @@
 .cg-fix[hidden] { display: none; }
 .cn-badge.cg-beta { background: rgba(224, 175, 104, .18); color: var(--c-amber, #e0af68); }
 .cg-row .cn-main b .cg-beta { font-size: 10.5px; }
+.cn-panel .cg-detect { margin: -4px 0 10px; font-size: 11.5px; line-height: 1.5; color: var(--c-dim); }
+.cn-panel .cg-detect[hidden], .cn-panel .cg-detect .cn-link[hidden] { display: none; }
+.cn-panel .cg-detect .cn-link { font-size: 11.5px; }
+.cg-row .cn-main small.cg-found { color: var(--c-soft); }
 .cg-search { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 10px; height: 32px; background: var(--c-head); border: 1px solid var(--c-line2); border-radius: 8px; color: var(--c-dim); }
 .cg-search:focus-within { border-color: var(--c-blue); }
 .cg-search svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
@@ -183,6 +187,23 @@
 .cn-big.ok { color: var(--c-green); border-color: rgba(158, 206, 106, .7); background: rgba(158, 206, 106, .1); }
 .cn-big.bad { color: var(--c-red); border-color: rgba(247, 118, 142, .7); background: rgba(247, 118, 142, .1); }
 .cn-sect { margin-top: 12px; }
+/* the ways to connect a service, with what was found on this computer for each */
+.cn-protos { display: flex; flex-direction: column; gap: 6px; }
+.cn-proto { display: flex; align-items: flex-start; gap: 9px; padding: 7px 10px; border: 1px solid var(--c-line2); border-radius: 8px; background: var(--c-raised, #1f2335); }
+.cn-proto.on { border-color: rgba(158, 206, 106, .55); background: rgba(158, 206, 106, .06); }
+.cn-proto-mark { flex: none; width: 18px; font-size: 13px; line-height: 19px; text-align: center; }
+.cn-proto-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; line-height: 1.45; }
+.cn-proto-main b { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--c-text); }
+.cn-proto-main small { font-size: 11.5px; color: var(--c-dim); overflow-wrap: anywhere; }
+.cn-proto-main .cn-link { align-self: flex-start; font-size: 12px; }
+.cn-proto-state { flex: none; font-size: 11.5px; line-height: 19px; white-space: nowrap; color: var(--c-soft); }
+.cn-proto.tone-ok .cn-proto-state { color: var(--c-green); }
+.cn-proto.tone-warn .cn-proto-state { color: var(--c-amber); }
+.cn-proto.tone-bad .cn-proto-state { color: var(--c-red); }
+.cn-route-found { font-size: 11.5px; color: var(--c-soft); }
+.cn-route-found.tone-ok { color: var(--c-green); }
+.cn-route-found.tone-warn { color: var(--c-amber); }
+.cn-route-found.tone-bad { color: var(--c-red); }
 .cn-sect > b { display: block; margin-bottom: 4px; font-size: 11.5px; font-weight: 600; color: var(--c-blue); }
 .cn-kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--c-line); }
 .cn-kv > span:first-child { color: var(--c-soft); }

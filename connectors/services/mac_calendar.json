@@ -66,6 +66,11 @@
         "read",
         "write"
       ],
+      "detect": {
+        "packages": [
+          "mcp-server-apple-events"
+        ]
+      },
       "clis": {
         "claude": {
           "via": "mcp",

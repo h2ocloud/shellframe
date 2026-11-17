@@ -52,6 +52,9 @@
       "scopes": [
         "account"
       ],
+      "detect": {
+        "connector": "Notion"
+      },
       "clis": {
         "claude": {
           "via": "connector",
