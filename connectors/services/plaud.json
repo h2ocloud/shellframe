@@ -1,0 +1,921 @@
+{
+  "schema": 1,
+  "id": "plaud",
+  "name": {
+    "en": "Plaud",
+    "zh": "Plaud"
+  },
+  "icon": "note",
+  "summary": {
+    "en": "Let your bots read your Plaud recordings, notes and transcripts",
+    "zh": "讓 bot 可以讀你的 Plaud 錄音、筆記和逐字稿"
+  },
+  "category": {
+    "id": "productivity",
+    "name": {
+      "en": "Productivity",
+      "zh": "生產力"
+    }
+  },
+  "adapter": "connectors.services.plaud",
+  "scopes": [
+    {
+      "id": "read",
+      "label": {
+        "en": "Read your recordings, notes and transcripts",
+        "zh": "讀你的錄音、筆記和逐字稿"
+      },
+      "required": true
+    }
+  ],
+  "routes": [
+    {
+      "id": "local",
+      "kind": "local_mcp",
+      "name": {
+        "en": "Use Plaud's own server on this computer (any AI)",
+        "zh": "用 Plaud 官方的本機伺服器（每種 AI 都能用）"
+      },
+      "blurb": {
+        "en": "Works with Claude, Codex and the others alike. ShellBot adds Plaud's own MCP server to the AI your primary bot runs on, then you sign in to Plaud in the browser on this computer. Your bots can then read your recordings, notes and transcripts; they cannot change anything.",
+        "zh": "Claude、Codex 和其他 AI 都能用。ShellBot 把 Plaud 官方的 MCP 伺服器加進你主 bot 用的那個 AI，你再到這台電腦的瀏覽器登入 Plaud。之後 bot 就能讀你的錄音、筆記和逐字稿；它們改不了任何東西。"
+      },
+      "recommended": true,
+      "minutes": 3,
+      "needs": [
+        {
+          "en": "Node.js 20 or newer",
+          "zh": "Node.js 20 以上"
+        },
+        {
+          "en": "A Plaud account",
+          "zh": "一個 Plaud 帳號"
+        },
+        {
+          "en": "A browser on this computer",
+          "zh": "這台電腦上的瀏覽器"
+        }
+      ],
+      "scopes": [
+        "read"
+      ],
+      "target": "primary",
+      "detect": {
+        "packages": [
+          "@plaud-ai/mcp"
+        ]
+      },
+      "clis": {
+        "claude": {
+          "via": "mcp",
+          "note": {
+            "en": "ShellBot adds it for you in the step \"Add the server to your primary bot's AI\", with the same account folder your Claude tabs use.",
+            "zh": "ShellBot 在「把伺服器加進主 bot 用的 AI」那一步幫你加，用的是 Claude 分頁同一個帳號資料夾。"
+          }
+        },
+        "codex": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.codex/config.toml. Add it with the command below, or write a [mcp_servers.shellbot-plaud] section in the settings file.",
+            "zh": "設定檔：~/.codex/config.toml。 用下面的指令加，或在設定檔裡寫一段 [mcp_servers.shellbot-plaud]。"
+          }
+        },
+        "opencode": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: opencode.json. Run opencode mcp add and answer its questions: a local server, the command and arguments above, and the two environment lines. Or add it under \"mcp\" in opencode.json.",
+            "zh": "設定檔：opencode.json。 跑 opencode mcp add 回答它的問題：本機伺服器、上面的指令和參數、兩行環境變數。或自己加在 opencode.json 的 \"mcp\" 底下。"
+          }
+        },
+        "agy": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.gemini/config/mcp_config.json. Add it with the command below (flags go before the name).",
+            "zh": "設定檔：~/.gemini/config/mcp_config.json。 用下面的指令加（旗標要放在名稱前面）。"
+          }
+        },
+        "grok": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.grok/config.toml. Add it with the command below. Grok Build also reads the Claude settings file, so a server added there may show up in it too.",
+            "zh": "設定檔：~/.grok/config.toml。 用下面的指令加。Grok Build 也會讀 Claude 的設定檔，所以加在那裡的伺服器它可能也看得到。"
+          }
+        },
+        "cursor": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.cursor/mcp.json. It has no add command: write the server into the settings file yourself (the command, arguments and environment above), then run cursor-agent mcp enable shellbot-plaud.",
+            "zh": "設定檔：~/.cursor/mcp.json。 它沒有 add 指令：自己把伺服器寫進設定檔（上面的指令、參數和環境變數），再跑 cursor-agent mcp enable shellbot-plaud。"
+          }
+        },
+        "pi": {
+          "via": "mcp",
+          "note": {
+            "en": "Settings file: ~/.pi/agent/mcp.json. MCP is built into Pi from version 0.99; older versions cannot run an MCP server. Check with pi --version, update, then put the server in the settings file.",
+            "zh": "設定檔：~/.pi/agent/mcp.json。 Pi 從 0.99 版起內建 MCP，更舊的版本跑不了 MCP 伺服器。用 pi --version 看版本，更新後把伺服器寫進設定檔。"
+          }
+        }
+      },
+      "mcp": {
+        "server": "shellbot-plaud",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@plaud-ai/mcp@0.3.14"
+        ],
+        "win_command": [
+          "cmd",
+          "/c",
+          "npx",
+          "-y",
+          "@plaud-ai/mcp@0.3.14"
+        ],
+        "env": {
+          "PLAUD_TELEMETRY_DISABLED": "1",
+          "DO_NOT_TRACK": "1"
+        }
+      },
+      "test": {
+        "via": {
+          "en": "Plaud server",
+          "zh": "Plaud 伺服器"
+        },
+        "verdicts": {
+          "starting": {
+            "text": {
+              "en": "Opening a temporary tab…",
+              "zh": "正在開臨時分頁…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your recordings.",
+              "zh": "通常約一分鐘。錄音只有測試分頁看得到。"
+            }
+          },
+          "waiting_ready": {
+            "text": {
+              "en": "Waiting for the tab to be ready…",
+              "zh": "等分頁準備好…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your recordings.",
+              "zh": "通常約一分鐘。錄音只有測試分頁看得到。"
+            }
+          },
+          "asking": {
+            "text": {
+              "en": "Asking it to list one recording…",
+              "zh": "請它列一筆錄音…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your recordings.",
+              "zh": "通常約一分鐘。錄音只有測試分頁看得到。"
+            }
+          },
+          "reading": {
+            "text": {
+              "en": "Plaud is answering…",
+              "zh": "Plaud 回應中…"
+            },
+            "next": {
+              "en": "This usually takes about a minute. Only the test tab sees your recordings.",
+              "zh": "通常約一分鐘。錄音只有測試分頁看得到。"
+            }
+          },
+          "needs_allow": {
+            "text": {
+              "en": "The test tab is asking for your OK",
+              "zh": "測試分頁在等你按允許"
+            },
+            "next": {
+              "en": "It wants to use a Plaud tool, and the AI asks before it does. Open the test conversation and choose Allow. The test goes on by itself afterwards.",
+              "zh": "它要用 Plaud 的工具，AI 會先問你。打開測試對話，選允許。之後測試會自己繼續。"
+            }
+          },
+          "pass": {
+            "text": {
+              "en": "It works! Plaud is connected.",
+              "zh": "通了！Plaud 已經連結。"
+            },
+            "next": {
+              "en": "The temporary test tab used the Plaud server to list one recording. ShellBot does not read, keep or log what is in your recordings. The test tab is not a bot, so closing it leaves nothing in any bot's memory. A tab that was already open before you connected Plaud may need to be reopened before it sees Plaud (not confirmed).",
+              "zh": "臨時的測試分頁用 Plaud 伺服器列了一筆錄音。錄音裡的內容 ShellBot 不讀、不存、不記錄。測試分頁不是 bot，關掉它不會留在任何 bot 的記憶裡。連結之前就開著的分頁，可能要重開才看得到 Plaud（尚未證實）。"
+            }
+          },
+          "said_ok": {
+            "text": {
+              "en": "This one does not count. The test tab said it worked but never called a Plaud tool, so it proves nothing.",
+              "zh": "這次不算：測試分頁說成功了，卻沒有叫過任何 Plaud 工具，這樣不能算數。"
+            },
+            "next": {
+              "en": "Run the test again. Press \"Test again\". If it happens again, open the test conversation and see what the tab did.",
+              "zh": "再測一次。按「重新測試」。再發生的話，打開測試對話看看分頁做了什麼。"
+            }
+          },
+          "timeout": {
+            "text": {
+              "en": "It took too long. After 3 minutes the test tab had not finished.",
+              "zh": "等太久了：3 分鐘了，測試分頁還沒做完。"
+            },
+            "next": {
+              "en": "Most likely it is waiting for you. Open the test conversation: the AI may be asking you to allow a tool, or sitting on a sign-in screen.",
+              "zh": "最可能是它在等你。打開測試對話看看：AI 可能在問你要不要允許某個工具，或停在登入畫面。"
+            }
+          },
+          "unclear": {
+            "text": {
+              "en": "No clear answer. The test tab used Plaud, but it did not end with a clear result line.",
+              "zh": "沒有明確的結果：測試分頁用了 Plaud，但最後沒有留下明確的結果那一行。"
+            },
+            "next": {
+              "en": "Open the test conversation to see how it ended, then press \"Test again\".",
+              "zh": "打開測試對話看它怎麼結束的，再按「重新測試」。"
+            }
+          },
+          "not_ready": {
+            "text": {
+              "en": "The test tab did not get ready. It never reached its prompt, so nothing was asked.",
+              "zh": "測試分頁沒有準備好：它一直沒有走到可以輸入的畫面，所以什麼都沒問。"
+            },
+            "next": {
+              "en": "Most likely the AI is not signed in. Open the test conversation: if it shows a sign-in screen, sign in there, then test again.",
+              "zh": "最可能是 AI 還沒登入。打開測試對話：如果停在登入畫面，先在那裡登入，再測一次。"
+            }
+          },
+          "closed": {
+            "text": {
+              "en": "The test tab was closed. It went away before it finished.",
+              "zh": "測試分頁被關掉了：測試分頁沒做完就不見了。"
+            },
+            "next": {
+              "en": "Run the test again. Press \"Test again\".",
+              "zh": "再測一次。按「重新測試」。"
+            }
+          },
+          "start_failed": {
+            "text": {
+              "en": "Could not open the test tab. ShellBot could not start a tab for the test.",
+              "zh": "開不了測試分頁：ShellBot 沒辦法為測試開分頁。"
+            },
+            "next": {
+              "en": "Check that your primary bot's AI opens: open a tab of it yourself from the + button. If that works, press \"Test again\".",
+              "zh": "確認你主 bot 的 AI 開得起來：自己用 + 按鈕開一個分頁。開得起來的話，再按「重新測試」。"
+            }
+          },
+          "no_tools": {
+            "text": {
+              "en": "Not yet. The test tab did not find any Plaud tool.",
+              "zh": "還沒通：測試分頁沒有找到任何 Plaud 工具。"
+            },
+            "next": {
+              "en": "Most likely the server was not added for the AI your primary bot runs on, or for the account folder its tabs use. Go back to that step and press \"Add it for me\". Otherwise the server could not start: Node.js is missing or too old (20 or newer).",
+              "zh": "最可能是伺服器沒有加進你主 bot 用的那個 AI，或沒加進它分頁用的帳號資料夾。回到那一步，按「幫我加進去」。不然就是伺服器起不來：沒有 Node.js 或版本太舊（要 20 以上）。"
+            }
+          },
+          "needs_auth": {
+            "text": {
+              "en": "The test tab had to sign in to Plaud. The login is missing or has expired.",
+              "zh": "測試分頁得先登入 Plaud：登入不見了或過期了。"
+            },
+            "next": {
+              "en": "Go back to the sign-in step and sign in again.",
+              "zh": "回到登入那一步，再登入一次。"
+            }
+          },
+          "failed": {
+            "text": {
+              "en": "Plaud answered with an error. The test tab called the server, but the answer ended in a failure.",
+              "zh": "Plaud 回了錯誤：測試分頁叫了伺服器，但結果是失敗。"
+            },
+            "next": {
+              "en": "Most likely the sign-in has expired or was taken back. Go back to the sign-in step and sign in again.",
+              "zh": "最可能是登入過期或被收回了。回到登入那一步，再登入一次。"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "p0",
+          "title": {
+            "en": "Check that Node.js is installed",
+            "zh": "確認有裝 Node.js"
+          },
+          "how": [
+            {
+              "en": "The Plaud server runs on Node.js 20 or newer. ShellBot checks the version for you.",
+              "zh": "Plaud 的伺服器要 Node.js 20 以上才跑得起來。ShellBot 會幫你看版本。"
+            },
+            {
+              "en": "If it is missing or older, press \"Open page\", install the current LTS version, then press \"Check again\".",
+              "zh": "沒有或太舊的話，按「打開頁面」，裝目前的 LTS 版本，再按「再檢查一次」。"
+            }
+          ],
+          "url": "https://nodejs.org/en/download",
+          "see": {
+            "en": "The card below shows your Node.js version, 20 or newer.",
+            "zh": "下面那一格顯示你的 Node.js 版本，20 以上。"
+          },
+          "check": {
+            "id": "node",
+            "on": "enter",
+            "gate": true,
+            "pass": [
+              "ok"
+            ],
+            "states": {
+              "ok": {
+                "tone": "good",
+                "text": {
+                  "en": "Node.js {version} is installed",
+                  "zh": "已安裝 Node.js {version}"
+                }
+              },
+              "old": {
+                "tone": "bad",
+                "text": {
+                  "en": "Node.js {version} is too old: 20 or newer is needed",
+                  "zh": "Node.js {version} 太舊了：要 20 以上"
+                }
+              },
+              "missing": {
+                "tone": "bad",
+                "text": {
+                  "en": "ShellBot cannot find Node.js",
+                  "zh": "ShellBot 找不到 Node.js"
+                },
+                "hint": {
+                  "en": "Install it from nodejs.org, then reopen ShellBot and check again.",
+                  "zh": "到 nodejs.org 安裝，再把 ShellBot 關掉重開，重新檢查。"
+                }
+              }
+            }
+          },
+          "stuck": [
+            {
+              "id": "missing",
+              "q": {
+                "en": "ShellBot cannot find Node.js",
+                "zh": "ShellBot 找不到 Node.js"
+              },
+              "a": {
+                "en": "Install the LTS version from nodejs.org. Afterwards quit and reopen ShellBot so its tabs can see it, then press \"Check again\".",
+                "zh": "到 nodejs.org 裝 LTS 版本。裝好後把 ShellBot 關掉再開，分頁才找得到它，再按「再檢查一次」。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open the Node.js download page",
+                    "zh": "打開 Node.js 下載頁"
+                  },
+                  "url": "https://nodejs.org/en/download"
+                }
+              ]
+            },
+            {
+              "id": "old",
+              "q": {
+                "en": "Node.js is too old",
+                "zh": "Node.js 版本太舊"
+              },
+              "a": {
+                "en": "Install the current LTS version (20 or newer) over it from nodejs.org, then reopen ShellBot and check again.",
+                "zh": "到 nodejs.org 裝目前的 LTS 版本（20 以上）蓋過去，再把 ShellBot 關掉重開，重新檢查。"
+              }
+            },
+            {
+              "id": "manager",
+              "q": {
+                "en": "I installed it but ShellBot still cannot find it",
+                "zh": "我裝了，但 ShellBot 還是找不到"
+              },
+              "a": {
+                "en": "If you use a version manager (nvm, fnm or similar), its Node.js can be hidden from apps that were not started from a terminal. Installing from nodejs.org puts it where every app can see it. Then reopen ShellBot.",
+                "zh": "如果你用版本管理工具（nvm、fnm 之類），它裝的 Node.js 可能不讓不是從終端機開的 App 看到。從 nodejs.org 安裝的會放在每個 App 都找得到的位置。裝好後重開 ShellBot。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "p1",
+          "title": {
+            "en": "Add the server to your primary bot's AI",
+            "zh": "把伺服器加進主 bot 用的 AI"
+          },
+          "how": [
+            {
+              "en": "Press \"Add it for me\". ShellBot adds the server to the AI your primary bot runs on (Claude Code or Codex, for example). Claude gets it with the same account folder your Claude tabs use, so they can see the server.",
+              "zh": "按「幫我加進去」。ShellBot 會把伺服器加進你主 bot 用的那個 AI（例如 Claude Code 或 Codex）。Claude 用的是分頁同一個帳號資料夾，分頁才看得到這個伺服器。"
+            },
+            {
+              "en": "The command is shown under the button. There is no secret in it. ShellBot turns the package's usage reporting off (two settings in that command).",
+              "zh": "指令會顯示在按鈕下面，裡面沒有任何祕密。ShellBot 會把這個套件的使用回報關掉（指令裡有兩個設定）。"
+            },
+            {
+              "en": "Another AI that should read Plaud too: its settings are listed under the button with what to enter.",
+              "zh": "還有別的 AI 也要讀 Plaud 的話：按鈕下面列出它的設定要填什麼。"
+            }
+          ],
+          "see": {
+            "en": "The card below says shellbot-plaud was added.",
+            "zh": "下面那一格說 shellbot-plaud 已經加進去了。"
+          },
+          "actions": [
+            {
+              "id": "cli_add",
+              "label": {
+                "en": "Add it for me",
+                "zh": "幫我加進去"
+              },
+              "builtin": "cli_add",
+              "after": null,
+              "results": {
+                "added": {
+                  "tone": "good",
+                  "text": {
+                    "en": "Added shellbot-plaud to your AIs",
+                    "zh": "已把 shellbot-plaud 加進你的 AI"
+                  }
+                },
+                "replaced": {
+                  "tone": "good",
+                  "text": {
+                    "en": "Replaced the old shellbot-plaud entry with these choices",
+                    "zh": "已用這次的選擇換掉舊的 shellbot-plaud"
+                  }
+                },
+                "manual": {
+                  "tone": "warn",
+                  "text": {
+                    "en": "Done for the AIs ShellBot can set up. The others are listed below with what to enter.",
+                    "zh": "ShellBot 能自己設定的都加好了。其他的列在下面，附上要填的內容。"
+                  }
+                },
+                "no_cli": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "ShellBot cannot find an AI program to add it to (is the claude command installed?)",
+                    "zh": "ShellBot 找不到可以加的 AI 程式（有裝 claude 指令嗎？）"
+                  }
+                },
+                "failed": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "An AI program did not accept the change",
+                    "zh": "有 AI 程式沒有接受這個設定"
+                  }
+                }
+              }
+            }
+          ],
+          "stuck": [
+            {
+              "id": "no-claude",
+              "q": {
+                "en": "ShellBot cannot find claude",
+                "zh": "ShellBot 找不到 claude"
+              },
+              "a": {
+                "en": "Claude Code has to be installed: it is the claude command your Claude tabs run. Install it, reopen ShellBot, and press the button again.",
+                "zh": "要先裝 Claude Code：Claude 分頁跑的就是 claude 指令。裝好後重開 ShellBot，再按一次按鈕。"
+              },
+              "links": [
+                {
+                  "label": {
+                    "en": "Open the Claude Code docs",
+                    "zh": "打開 Claude Code 說明"
+                  },
+                  "url": "https://code.claude.com/docs/en/overview"
+                }
+              ]
+            },
+            {
+              "id": "terminal",
+              "q": {
+                "en": "I ran the command myself in a terminal",
+                "zh": "我自己在終端機跑了這個指令"
+              },
+              "a": {
+                "en": "That writes to the default Claude settings, and the Claude tabs here may use another account folder, so they do not see it. Use the button: it uses the same folder the tabs do.",
+                "zh": "那會寫到預設的 Claude 設定，而這裡的 Claude 分頁可能用另一個帳號資料夾，所以看不到。請用這個按鈕：它用的是分頁同一個資料夾。"
+              }
+            },
+            {
+              "id": "exists",
+              "q": {
+                "en": "It says it already exists",
+                "zh": "它說已經存在"
+              },
+              "a": {
+                "en": "ShellBot replaces its own shellbot-plaud entry with the choices you made here. It touches no other entry in your settings.",
+                "zh": "ShellBot 會用你現在的選擇換掉它自己的 shellbot-plaud。你設定裡的其他項目都不會動。"
+              }
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "title": {
+            "en": "Sign in to Plaud",
+            "zh": "登入 Plaud"
+          },
+          "how": [
+            {
+              "en": "Press \"Sign in to Plaud\". ShellBot starts the server's own sign-in, and your browser opens Plaud's page ON THIS COMPUTER.",
+              "zh": "按「登入 Plaud」。ShellBot 會啟動伺服器自己的登入，你的瀏覽器會在這台電腦上打開 Plaud 的頁面。"
+            },
+            {
+              "en": "In the browser, sign in to the Plaud account whose recordings your bots should read, and press Allow. You have two minutes.",
+              "zh": "在瀏覽器裡登入要讓 bot 讀錄音的那個 Plaud 帳號，再按允許。有兩分鐘。"
+            },
+            {
+              "en": "Come back here: this card follows the sign-in by itself and moves on when it is done. If you are on your phone or in Telegram, finish it at the computer.",
+              "zh": "回到這裡：這張卡會自己跟著登入的進度，好了就往下走。如果你人在手機或 Telegram 上，要到這台電腦前完成。"
+            }
+          ],
+          "see": {
+            "en": "The card below says you are signed in to Plaud.",
+            "zh": "下面那一格說已登入 Plaud。"
+          },
+          "note": {
+            "en": "The login is kept by the Plaud server itself, in ~/.plaud on this computer. ShellBot only checks that the file is there: it never opens it. The separate Plaud command-line tool keeps its own login in another file, so signing in there does not count.",
+            "zh": "登入資料由 Plaud 伺服器自己存在這台電腦的 ~/.plaud。ShellBot 只看檔案在不在，不會打開它。另外那個 Plaud 指令列工具的登入存在別的檔案，所以在那邊登入不算。"
+          },
+          "check": {
+            "id": "tokens",
+            "on": "done",
+            "gate": true,
+            "pass": [
+              "ok"
+            ],
+            "states": {
+              "ok": {
+                "tone": "good",
+                "text": {
+                  "en": "You are signed in to Plaud",
+                  "zh": "已登入 Plaud"
+                }
+              },
+              "waiting": {
+                "tone": "info",
+                "text": {
+                  "en": "Waiting for you to finish in the browser",
+                  "zh": "在等你到瀏覽器完成"
+                },
+                "hint": {
+                  "en": "The browser is open on this computer. You have up to two minutes.",
+                  "zh": "瀏覽器是開在這台電腦上。最多等兩分鐘。"
+                }
+              },
+              "missing": {
+                "tone": "warn",
+                "text": {
+                  "en": "The sign-in is not done yet",
+                  "zh": "還沒登入"
+                },
+                "hint": {
+                  "en": "Press \"Sign in to Plaud\" and finish it in the browser.",
+                  "zh": "按「登入 Plaud」，到瀏覽器完成。"
+                }
+              },
+              "timeout": {
+                "tone": "bad",
+                "text": {
+                  "en": "The sign-in timed out: nobody finished it in two minutes",
+                  "zh": "登入逾時：兩分鐘內沒有人完成"
+                },
+                "hint": {
+                  "en": "Press \"Sign in to Plaud\" again, and finish it in the browser on this computer.",
+                  "zh": "再按一次「登入 Plaud」，到這台電腦的瀏覽器完成。"
+                }
+              },
+              "denied": {
+                "tone": "bad",
+                "text": {
+                  "en": "Plaud said the access was not allowed",
+                  "zh": "Plaud 說沒有允許存取"
+                },
+                "hint": {
+                  "en": "Press \"Sign in to Plaud\" again and choose Allow.",
+                  "zh": "再按一次「登入 Plaud」，選允許。"
+                }
+              },
+              "port_busy": {
+                "tone": "warn",
+                "text": {
+                  "en": "Another Plaud sign-in is still running",
+                  "zh": "還有另一個 Plaud 登入在跑"
+                },
+                "hint": {
+                  "en": "Wait two minutes for it to end, then try again.",
+                  "zh": "等兩分鐘讓它結束，再試一次。"
+                }
+              },
+              "failed": {
+                "tone": "bad",
+                "text": {
+                  "en": "The sign-in did not work",
+                  "zh": "登入沒有成功"
+                },
+                "hint": {
+                  "en": "Try again. If it keeps happening, press \"I'm stuck\".",
+                  "zh": "再試一次。一直這樣就按「卡住了」。"
+                }
+              },
+              "no_node": {
+                "tone": "bad",
+                "text": {
+                  "en": "ShellBot cannot find Node.js",
+                  "zh": "ShellBot 找不到 Node.js"
+                },
+                "hint": {
+                  "en": "Go back to the Node.js step.",
+                  "zh": "回到 Node.js 那一步。"
+                }
+              }
+            }
+          },
+          "actions": [
+            {
+              "id": "login",
+              "label": {
+                "en": "Sign in to Plaud",
+                "zh": "登入 Plaud"
+              },
+              "builtin": null,
+              "after": null,
+              "results": {
+                "waiting": {
+                  "tone": "info",
+                  "text": {
+                    "en": "The sign-in is open in the browser on this computer. Finish it there.",
+                    "zh": "登入已在這台電腦的瀏覽器打開。到那邊完成。"
+                  },
+                  "poll": "login_wait"
+                },
+                "no_node": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "ShellBot cannot find Node.js, so it cannot start the Plaud sign-in.",
+                    "zh": "ShellBot 找不到 Node.js，沒辦法開始 Plaud 登入。"
+                  }
+                },
+                "ok": {
+                  "tone": "good",
+                  "text": {
+                    "en": "Signed in to Plaud.",
+                    "zh": "已登入 Plaud。"
+                  }
+                },
+                "timeout": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "Nobody finished the sign-in within two minutes.",
+                    "zh": "兩分鐘內沒有人完成登入。"
+                  }
+                },
+                "denied": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "Plaud said the access was not allowed.",
+                    "zh": "Plaud 說沒有允許存取。"
+                  }
+                },
+                "port_busy": {
+                  "tone": "warn",
+                  "text": {
+                    "en": "Another Plaud sign-in is still running on this computer.",
+                    "zh": "這台電腦上還有另一個 Plaud 登入在跑。"
+                  }
+                },
+                "failed": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "The sign-in did not work.",
+                    "zh": "登入沒有成功。"
+                  }
+                },
+                "missing": {
+                  "tone": "warn",
+                  "text": {
+                    "en": "The sign-in has not been done yet.",
+                    "zh": "還沒登入。"
+                  }
+                }
+              }
+            },
+            {
+              "id": "login_wait",
+              "label": {
+                "en": "Check whether it worked",
+                "zh": "看登入好了沒"
+              },
+              "builtin": null,
+              "after": "check",
+              "results": {
+                "waiting": {
+                  "tone": "info",
+                  "text": {
+                    "en": "The sign-in is open in the browser on this computer. Finish it there.",
+                    "zh": "登入已在這台電腦的瀏覽器打開。到那邊完成。"
+                  },
+                  "poll": "login_wait"
+                },
+                "no_node": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "ShellBot cannot find Node.js, so it cannot start the Plaud sign-in.",
+                    "zh": "ShellBot 找不到 Node.js，沒辦法開始 Plaud 登入。"
+                  }
+                },
+                "ok": {
+                  "tone": "good",
+                  "text": {
+                    "en": "Signed in to Plaud.",
+                    "zh": "已登入 Plaud。"
+                  }
+                },
+                "timeout": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "Nobody finished the sign-in within two minutes.",
+                    "zh": "兩分鐘內沒有人完成登入。"
+                  }
+                },
+                "denied": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "Plaud said the access was not allowed.",
+                    "zh": "Plaud 說沒有允許存取。"
+                  }
+                },
+                "port_busy": {
+                  "tone": "warn",
+                  "text": {
+                    "en": "Another Plaud sign-in is still running on this computer.",
+                    "zh": "這台電腦上還有另一個 Plaud 登入在跑。"
+                  }
+                },
+                "failed": {
+                  "tone": "bad",
+                  "text": {
+                    "en": "The sign-in did not work.",
+                    "zh": "登入沒有成功。"
+                  }
+                },
+                "missing": {
+                  "tone": "warn",
+                  "text": {
+                    "en": "The sign-in has not been done yet.",
+                    "zh": "還沒登入。"
+                  }
+                }
+              }
+            }
+          ],
+          "stuck": [
+            {
+              "id": "no-browser",
+              "q": {
+                "en": "No browser opened",
+                "zh": "瀏覽器沒有打開"
+              },
+              "a": {
+                "en": "It opens on this computer, not on the phone or the chat you are using. Look at the computer's screen. If nothing opened, press \"Sign in to Plaud\" again. ShellBot does not show the address (only the server knows it), so there is nothing to copy.",
+                "zh": "它是開在這台電腦上，不是你用的手機或聊天視窗。看一下電腦的螢幕。沒有開的話，再按一次「登入 Plaud」。ShellBot 看不到網址（只有伺服器知道），所以沒有網址可以複製。"
+              }
+            },
+            {
+              "id": "port-busy",
+              "q": {
+                "en": "It says another sign-in is still running",
+                "zh": "它說還有另一個登入在跑"
+              },
+              "a": {
+                "en": "The sign-in listens on a fixed local port (8199), so only one can run. Wait two minutes for the earlier one to end, or finish it in its browser tab, then press \"Sign in to Plaud\" again. Something else on this computer using that port has the same effect.",
+                "zh": "登入會用一個固定的本機連接埠（8199），所以同時只能跑一個。等兩分鐘讓前一個結束，或到它的瀏覽器分頁完成它，再按「登入 Plaud」。這台電腦上別的程式佔用那個連接埠也會這樣。"
+              }
+            },
+            {
+              "id": "wrong-account",
+              "q": {
+                "en": "It signed in to the wrong Plaud account",
+                "zh": "登入到錯的 Plaud 帳號了"
+              },
+              "a": {
+                "en": "Sign out of Plaud in the browser, then press \"Sign in to Plaud\" again and use the right account. If this step already counts as done, go back to it first. ShellBot does not call the server's sign-out: it would take back the permission at Plaud.",
+                "zh": "先在瀏覽器登出 Plaud，再按一次「登入 Plaud」，用對的帳號。這一步已經算完成的話，先回到這一步。ShellBot 不會叫伺服器登出：那會把 Plaud 那邊的授權收回。"
+              }
+            },
+            {
+              "id": "sso",
+              "q": {
+                "en": "My company signs in with single sign-on",
+                "zh": "我們公司用單一登入（SSO）"
+              },
+              "a": {
+                "en": "Use the same way you sign in to Plaud in the browser; the page the server opens is Plaud's own. If your company has to approve the access first, ask them, then try again.",
+                "zh": "照你平常在瀏覽器登入 Plaud 的方式登入；伺服器打開的是 Plaud 自己的頁面。公司要先核准存取的話，先請他們核准，再試一次。"
+              }
+            },
+            {
+              "id": "away",
+              "q": {
+                "en": "I am not at the computer",
+                "zh": "我人不在這台電腦前"
+              },
+              "a": {
+                "en": "The browser opens on this computer, so the sign-in has to be finished there. Start it when you are in front of it; the two minutes begin when you press the button.",
+                "zh": "瀏覽器是開在這台電腦上，所以登入要在那裡完成。等你人在電腦前再開始；兩分鐘從按下按鈕才開始算。"
+              }
+            }
+          ],
+          "redo_on_reconnect": true
+        },
+        {
+          "id": "p3",
+          "kind": "test",
+          "title": {
+            "en": "Test that it works",
+            "zh": "測試接通"
+          },
+          "intro": {
+            "en": "ShellBot opens a temporary tab of your primary bot's AI and asks it to list one recording, and nothing else. It is asked not to repeat any title or content, and ShellBot does not read, keep or log what comes back.",
+            "zh": "ShellBot 會開一個臨時分頁（用你主 bot 的 AI），請它列出一筆錄音，不做別的事。它被要求不要重複任何標題或內容，ShellBot 也不讀、不存、不記錄回來的東西。"
+          }
+        }
+      ]
+    }
+  ],
+  "faq": [
+    {
+      "id": "what-it-does",
+      "q": {
+        "en": "What can my bots do with Plaud?",
+        "zh": "bot 能用 Plaud 做什麼？"
+      },
+      "a": {
+        "en": "Read: who you are signed in as, the list of your recordings, one recording's details, its note and its transcript. Nothing else: the server has no tool that creates, edits or deletes a recording.",
+        "zh": "讀：你登入的是誰、錄音清單、單一錄音的資料、它的筆記和逐字稿。僅此而已：這個伺服器沒有任何新增、修改或刪除錄音的工具。"
+      }
+    },
+    {
+      "id": "where-login",
+      "q": {
+        "en": "Where is my Plaud login kept?",
+        "zh": "我的 Plaud 登入存在哪裡？"
+      },
+      "a": {
+        "en": "On this computer, in the ~/.plaud folder, in a file the Plaud server writes and refreshes by itself. ShellBot only checks that the file exists; it never opens, copies or logs it. Nothing about your login goes to ShellBot's own files.",
+        "zh": "存在這台電腦的 ~/.plaud 資料夾，是 Plaud 伺服器自己寫、自己更新的檔案。ShellBot 只看檔案在不在，不會打開、複製或記錄它。你的登入資料不會進 ShellBot 自己的檔案。"
+      }
+    },
+    {
+      "id": "telemetry",
+      "q": {
+        "en": "Does the Plaud server report what I do?",
+        "zh": "Plaud 伺服器會回報我的使用嗎？"
+      },
+      "a": {
+        "en": "The package can send usage events, including who you are, to an analytics service. ShellBot starts it with PLAUD_TELEMETRY_DISABLED=1 and DO_NOT_TRACK=1, which turn that off. They are in the command shown in the add step. If you add the server yourself, add the same two settings.",
+        "zh": "這個套件預設會把使用事件（包含你是誰）送到分析服務。ShellBot 啟動它時帶 PLAUD_TELEMETRY_DISABLED=1 和 DO_NOT_TRACK=1，把這個關掉。這兩個設定就在「加進去」那一步顯示的指令裡。你自己加伺服器的話，也要加同樣兩個。"
+      }
+    },
+    {
+      "id": "which-way",
+      "q": {
+        "en": "Why is the sign-in on this computer's browser?",
+        "zh": "為什麼登入要在這台電腦的瀏覽器？"
+      },
+      "a": {
+        "en": "The server's sign-in is a local page: it listens on this computer (port 8199) and opens the browser here. So from a phone or Telegram you can start the steps, but the sign-in itself is finished at the computer.",
+        "zh": "伺服器的登入是個本機頁面：它在這台電腦（連接埠 8199）上等著，並在這裡打開瀏覽器。所以用手機或 Telegram 可以開始這些步驟，但登入本身要在電腦前完成。"
+      }
+    },
+    {
+      "id": "disconnect",
+      "q": {
+        "en": "How do I disconnect Plaud?",
+        "zh": "怎麼中斷 Plaud？"
+      },
+      "a": {
+        "en": "Press Disconnect. ShellBot removes only its own shellbot-plaud entry from the AI settings and stops a sign-in that is still waiting. The login file stays in ~/.plaud, and so does the permission at Plaud: to take that back, sign out or remove the access in Plaud itself.",
+        "zh": "按「中斷連結」。ShellBot 只會把它自己的 shellbot-plaud 從 AI 的設定裡拿掉，並停掉還在等的登入。登入檔會留在 ~/.plaud，Plaud 那邊的授權也還在：要收回，到 Plaud 本身登出或移除這個存取。"
+      }
+    }
+  ],
+  "problems": {
+    "revoked": {
+      "text": {
+        "en": "The Plaud sign-in is gone: its login file is missing.",
+        "zh": "Plaud 的登入不見了：登入檔不在了。"
+      },
+      "next": {
+        "en": "Sign in again in the sign-in step.",
+        "zh": "到登入那一步再登入一次。"
+      }
+    }
+  },
+  "health": {
+    "ttl_s": 300
+  }
+}

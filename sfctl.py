@@ -849,11 +849,15 @@ def main():
     p_res.add_argument("--now", action="store_true", help=now_help)
     p_res.add_argument("--ttl", type=float, default=None, help=ttl_help)
     sub.add_parser("bots", help="List bots: who is awake, sleeping or external (experimental_bots)")
-    p_con = sub.add_parser("connect", help="Connections to services (mail, files, chat…): list; status|start|test|disconnect <service>. "
-                                           "start begins or goes on, and says which step is next; test says it works or which step did not; "
+    p_con = sub.add_parser("connect", help="Connections to services (mail, files, chat…): list; status|start|step|test|disconnect <service>. "
+                                           "start begins or goes on, and says which step is next; step <service> check|act|done|back [--action ID] "
+                                           "moves that step (the ones ShellBot can do itself); test says it works or which step did not; "
                                            "disconnect removes only what ShellBot added")
-    p_con.add_argument("action", choices=["list", "status", "start", "test", "disconnect"])
+    p_con.add_argument("action", choices=["list", "status", "start", "step", "test", "disconnect"])
     p_con.add_argument("service", nargs="?", default="", help="Service id (see `sfctl connect list`)")
+    p_con.add_argument("op", nargs="?", default="", choices=["", "check", "act", "done", "back"],
+                       help="step: what to do with the step in front of the person (act needs --action)")
+    p_con.add_argument("--action", dest="act_id", default="", help="step act: the id of the action to run (`sfctl connect status <service>` lists them)")
     p_con.add_argument("--route", default="", help="start: the way to connect (default: the recommended one)")
     p_con.add_argument("--reconnect", action="store_true", help="start: begin again after a service needs connecting again")
     p_con.add_argument("--refresh", action="store_true", help="status: run the health check first")
@@ -1141,7 +1145,7 @@ def main():
         _print_result(_rpc("bots_list", {}, timeout=15))
     elif args.cmd == "connect":
         _print_result(_rpc("connect", {"action": args.action, "service": args.service, "route": args.route, "reconnect": args.reconnect,
-                                       "refresh": args.refresh, "json": args.json}, timeout=60))
+                                       "refresh": args.refresh, "json": args.json, "op": args.op, "act": args.act_id}, timeout=60))
     elif args.cmd == "task":
         return _cmd_task(args)
     elif args.cmd == "tg-send":

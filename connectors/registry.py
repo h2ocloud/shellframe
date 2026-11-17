@@ -170,6 +170,9 @@ def _validate_step(errs, w, st, route, ids, is_last):
         if a.get("after") not in (None, "check"):
             errs.append(f"{aw}.after: 'check' or nothing")
         _check_states(errs, f"{aw}.results", a.get("results") or {})
+        for code, rs in (a.get("results") or {}).items():          # a result may say "ask again with this action" (the page does, while a sign-in waits)
+            if isinstance(rs, dict) and "poll" in rs and rs["poll"] not in {x.get("id") for x in st.get("actions") or [] if isinstance(x, dict)}:
+                errs.append(f"{aw}.results.{code}.poll: the id of an action of this step")
     oids = set()
     for o in st.get("options") or []:
         if not isinstance(o, dict) or not isinstance(o.get("id"), str) or not o["id"] or o["id"] in oids:

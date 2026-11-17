@@ -28,6 +28,7 @@ import uuid
 
 import sf_lang
 from connectors.adapter import Adapter, claude_login
+from connectors.services._local_mcp import node_check
 
 ID = "gmail"
 
@@ -100,14 +101,7 @@ def check_claude_account(ctx, args: dict) -> dict:
 
 def check_node(ctx, args: dict) -> dict:
     """The version of the node a tab would find. {"state": "ok" | "old" | "missing", "version"}."""
-    node = ctx.find("node")
-    if not node:
-        return {"state": "missing"}
-    r = ctx.run([node, "--version"], 10)
-    m = re.search(r"v?(\d+)\.(\d+)\.(\d+)", r.out or "") if r.rc == 0 else None
-    if not m:
-        return {"state": "missing"}
-    return {"state": "ok" if int(m.group(1)) >= NODE_MIN else "old", "version": ".".join(m.groups())}
+    return node_check(ctx, NODE_MIN)
 
 
 def check_credentials(ctx, args: dict) -> dict:

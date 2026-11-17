@@ -17,8 +17,7 @@ Like every adapter: no file is opened, nothing secret is touched, and the test j
 a temporary Claude tab called and its last line, never from what they returned.
 """
 
-import re
-
+from connectors.services._local_mcp import node_check
 from connectors.services._tab_test import TabTestAdapter
 
 SERVER = "shellbot-apple-events"
@@ -30,14 +29,7 @@ FAILED_STEP = {"no_tools": "b2", "not_ready": ""}    # no tools: the server is n
 
 def check_node(ctx, args: dict) -> dict:
     """The version of the node a tab would find. {"state": "ok" | "old" | "missing", "version"}."""
-    node = ctx.find("node")
-    if not node:
-        return {"state": "missing"}
-    r = ctx.run([node, "--version"], 10)
-    m = re.search(r"v?(\d+)\.(\d+)\.(\d+)", r.out or "") if r.rc == 0 else None
-    if not m:
-        return {"state": "missing"}
-    return {"state": "ok" if int(m.group(1)) >= NODE_MIN else "old", "version": ".".join(m.groups())}
+    return node_check(ctx, NODE_MIN)
 
 
 class AppleEventsAdapter(TabTestAdapter):

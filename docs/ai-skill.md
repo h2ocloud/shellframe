@@ -342,13 +342,14 @@ external. `delegate` to an external bot is refused: it has no tab here.
 ## 4.8 Connections (a service the user wants your tab to use)
 
 A service (mail, files, chat…) has to be connected once before a tab can use it. ShellBot does the steps with the
-user on the Settings → Connect page; you do not walk them through it in the terminal and you never ask for, or
-handle, a key or token.
+user on the Settings → Connect page, and you may also drive the steps ShellBot can do by itself (below), so a connection
+can be finished inside the conversation. You never ask for, or handle, a key or token.
 
 ```bash
 sfctl connect list                       # every service and where it is: not connected, waiting for you, connected, needs to be connected again
 sfctl connect status <service> [--refresh]   # one service (--refresh runs the health check first)
-sfctl connect start <service>            # begin, or go on where it was left; says which step is next
+sfctl connect start <service>            # begin, or go on where it was left; says which step is next (its id, its actions)
+sfctl connect step <service> check|act|done|back [--action <id>]   # move the step in front of the person (see "Driving the steps")
 sfctl connect test <service>             # "it works", or which step did not; it never reads the service's content
 sfctl connect disconnect <service>       # removes only what ShellBot added (ask the user first)
 ```
@@ -361,11 +362,31 @@ the steps, and the phone and Telegram get one sentence saying where to connect. 
 check `sfctl connect status`. A service that **needs to be connected again** (it expired or was revoked) is the same: ask the
 same way. Do not try to fix a connection by editing an AI program's settings: ShellBot only changes its own `shellbot-…` entries.
 
+**Driving the steps.** `sfctl connect start` and `status` print the step in front of the person: `Step id`, the actions
+ShellBot can do for it (`<id> (<label>)`), what the last action and the check said, and how to move it. Then:
+
+- `sfctl connect step <service> check` runs the step's check (is Node.js there, is the login file there) and moves on when it passes.
+- `sfctl connect step <service> act --action <id>` runs one of the step's actions: the "add it for me" kind (adds ShellBot's own
+  `shellbot-…` entry to the AI the primary bot runs on), or a sign-in action that **opens the browser on this computer**. The
+  answer says what the action did (`Did: …`) and the step it is on now. A sign-in answers at once with "waiting": the person
+  finishes it in the browser; follow it with `step <service> check` (or the step's own "check whether it worked" action) every
+  few seconds until it says it passed or names why not (timed out, denied, another sign-in still running). A failed one is
+  retried by running the sign-in action again.
+- `sfctl connect step <service> done` is the person's "I did it". **Never press `done` for a step that only the person can do**
+  (something made in a web console, a file put in a folder, a choice) until the person has said they did it. A step with a check
+  is verified by `check`: use that, not `done`. `back` goes to the step before.
+- The last step is the test: `step` is refused there, run `sfctl connect test <service>`.
+
+Tell the person in one sentence what they have to do in the browser (for example "A Plaud page opened on this computer: sign in
+and press Allow, you have two minutes"). If they are on a phone or in Telegram, say the browser opened on the computer and the
+sign-in has to be finished there. Never ask for, repeat or paste a token, a code or a password, and do not read the login files.
+
 **The services** (the id is what `sfctl connect` and the marker take; `sfctl connect list` is the live list):
 
 | id | What | How it reaches your tab |
 |---|---|---|
 | `gmail` | Gmail | recommended: a local MCP server (`shellbot-gmail`), added to the CLI the primary bot runs on (Claude Code, Codex…); Claude tabs only: the Claude account's connector |
+| `plaud` | Plaud (recordings, notes, transcripts; read-only) | a local MCP server (`shellbot-plaud`, the official `@plaud-ai/mcp`, usage reporting turned off), added to the CLI the primary bot runs on. Steps: Node.js 20+ (`check`), add the server (`act --action cli_add`), sign in (`act --action login`, opens the browser on this computer, then `check`), test. Tools `mcp__shellbot-plaud__list_files`, `get_file`, `get_note`, `get_transcript`; never call its `login`/`logout` yourself |
 | `google_drive` | Google Drive | Claude tabs only, through the Claude account's connector (tools `mcp__claude_ai_Google_Drive__…`) |
 | `google_calendar` | Google Calendar | Claude tabs only, the same way (`mcp__claude_ai_Google_Calendar__…`) |
 | `notion` | Notion | Claude tabs only, the same way (`mcp__claude_ai_Notion__…`) |

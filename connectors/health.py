@@ -192,3 +192,32 @@ def words(status: dict, lang: str = None) -> str:
     if p:
         line += f" — {registry.pick(p['text'], lang)} {registry.pick(p['next'], lang)}"
     return line
+
+
+def step_words(service: str, view, lang: str = None, with_result: bool = True) -> str:
+    """For a bot that drives the steps (`sfctl connect step`): the step in front of the person, as lines. Its id, the
+    actions ShellBot can do for it, what the last action and the check came to (their own words from the description,
+    nothing the service said), and the calls that move it. '' when there is no step."""
+    import sf_lang
+    lang = lang or sf_lang.prompt_lang()
+    step = (view or {}).get("step")
+    if not step:
+        return ""
+    pick = lambda x: registry.pick(x, lang) if x else ""
+    zh = lang == "zh"
+    out = [("步驟代號：" if zh else "Step id: ") + str(step["id"])]
+    if step.get("kind") == "test":
+        out.append(f"這一步是測試：跑 sfctl connect test {service}" if zh else f"This step is the test: run sfctl connect test {service}")
+        return "\n".join(out)
+    acts = step.get("actions") or []
+    if acts:
+        out.append(("ShellBot 能做的動作：" if zh else "Actions ShellBot can do: ") + ", ".join(f"{a['id']} ({pick(a['label'])})" for a in acts))
+    res, chk = step.get("result"), step.get("check")
+    if with_result and res and res.get("text"):
+        out.append(("上一個動作：" if zh else "Last action: ") + f"{res['action']} → {pick(res['text'])}")
+    if chk and chk.get("text"):
+        out.append(("檢查：" if zh else "Check: ") + pick(chk["text"]) + ((" — " + pick(chk["hint"])) if chk.get("hint") and not chk.get("passed") else ""))
+    ops = (["check"] if step.get("check") else []) + ["done", "back"]
+    out.append(("往下走：" if zh else "Move it: ") + " | ".join(
+        [f"sfctl connect step {service} act --action <id>"] * bool(acts) + [f"sfctl connect step {service} {o}" for o in ops]))
+    return "\n".join(out)

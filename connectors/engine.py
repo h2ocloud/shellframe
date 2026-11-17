@@ -326,6 +326,18 @@ class Engine:
         return {"route": {"id": route["id"], "kind": route["kind"], "name": route["name"], "scopes": route.get("scopes", [])},
                 "routes": routes, "steps": steps, "step": step}
 
+    def last_result(self, service: str, step_id: str):
+        """{"action", "code", "tone", "text"} for what the last action on a step came to (the words are the description's), or
+        None. It lets a caller say what an action did even when the step has moved on since."""
+        desc, rec = self.registry.get(service), self.store.get(service)
+        route = self._route_of(desc, rec) if desc else None
+        sr = ((rec.get("steps") or {}).get(step_id) or {}).get("result")
+        step = next((x for x in (route or {}).get("steps", []) if x["id"] == step_id), None)
+        if not sr or not step:
+            return None
+        action = next((a for a in step.get("actions", []) if a["id"] == sr["action"]), None)
+        return {"action": sr["action"], "code": sr["code"], **self._step_words((action or {}).get("results"), sr["code"], fields=sr.get("fields"))}
+
     # ── start ──────────────────────────────────────────────────────────────
     def start(self, service: str, route: str = None, reconnect: bool = False) -> dict:
         desc = self.registry.get(service)

@@ -19,7 +19,7 @@ connectors/adapter.py    Adapter (what a service's code implements) and Ctx (wha
 connectors/engine.py     the steps: start / step / test / disconnect / refresh; connectors.json in the state folder
 connectors/health.py     the one status; its short form for the phone; one sentence for Telegram and sfctl
 connectors/detect.py     what already works: each AI program's own server list, matched per route from the descriptions
-connectors/services/     one <id>.json (+ <id>.py when it needs code) per service
+connectors/services/     one <id>.json (+ <id>.py when it needs code) per service; `_*.py` are what several share (_tab_test, _local_mcp, …)
 api_connect.py           js_api, sfctl connect, the phone's `connections`, a bot's connect tag, the hourly check
 connect_tabs.py          a temporary AI tab for an adapter's connection test
 ```
@@ -156,7 +156,7 @@ A route's state is its best place's (checked, then broken, then found); `places`
   `…connected (a local MCP server "my-mail", your own setting, in Claude Code)`. The phone's short form
   (`/link/bots` `connections`) keeps exactly its keys; `connected` there now also means "works on this computer".
 
-**When it looks.** Nothing in `connectors/` starts a thread: `Engine.detect()` runs one look on the caller's thread
+**When it looks.** Nothing in the core (`connectors/*.py`) starts a thread (an adapter may: a sign-in that waits for a person has to, see "A sign-in that waits" below): `Engine.detect()` runs one look on the caller's thread
 (seconds) and keeps the answer in memory (`Engine.detected`; never in `connectors.json`), and every status after it uses
 it. `api_connect` starts a one-shot thread for it: on the first `connect_list` (or `sfctl connect`), from the Connect page
 (`connect_list` with `{"detect": true}`, when the open page asks every minute) at most every `DETECT_EVERY_S` (300 s), on
@@ -199,7 +199,8 @@ route = { "id", "kind": "claude_connector" | "local_mcp" | "api_key" | "oauth",
 step = { "id", "title": T, "how": [T], "url": "https://…", "see": T, "note": T,
          "check":   {"id", "on": "enter" | "done", "gate": bool, "pass": ["ok"], "states": {"<code>": {"tone", "text": T, "hint": T}}},
          "actions": [ {"id", "label": T, "builtin": "cli_add" | "cli_remove" | "cli_check" | "secret_set" | null,
-                       "after": "check" | null, "results": {"<code>": {"tone", "text": T}}} ],
+                       "after": "check" | null,
+                       "results": {"<code>": {"tone", "text": T, "poll": "<action id of this step>"}}} ],   // poll: see below
          "options": [ {"id", "label": T, "default": bool} ],
          "stuck":   [ {"id", "q": T, "a": T, "links": [{"label": T, "url" | "step"}]} ],
          "redo_on_reconnect": false }
@@ -217,6 +218,9 @@ How a step moves:
 - `cli_add` adds the route's `mcp` to every AI program that has `"via": "mcp"` and that ShellBot can set up. The ones it
   cannot (`manual`) are listed on the step (`view.step.manual`) with what to enter: the command, the plain env, and
   only the *names* of values that come from the key store. `cli_remove` and `cli_check` are the other two.
+- A result may carry `"poll": "<action id>"` (an action of the same step): the action started something the person finishes
+  elsewhere (a sign-in in the browser), and the page asks again, quietly every 2.5 s, with the action it names until the
+  result stops asking; the step moves by itself when that action's check passes. `registry.validate` checks the id.
 - `stuck` entries are what "I'm stuck" offers; the chosen one's question goes into the line sent to a bot
   (`engine.stuck_message`: service, route, step, problem, and a promise that nothing secret is in it).
 
@@ -308,6 +312,7 @@ which), and the last one removes it.
 | id | Name | Way | Other AI programs | Checked |
 |---|---|---|---|---|
 | `gmail` | Gmail | a local MCP server, **recommended** (`@dguido/google-workspace-mcp@3.4.4`, pinned): added to the CLI the primary bot runs on (Claude Code or Codex…), tested in a tab of that CLI; or the claude.ai connector (Claude tabs only) | the local server for every program (see `gmail.json`) | descriptions, adapter and engine with stand-ins (a Claude primary and a Codex primary); `codex mcp add/get/remove` measured in a temporary `CODEX_HOME` (0.142.1 and 0.147.0) |
+| `plaud` | Plaud | a local MCP server (`@plaud-ai/mcp@0.3.14`, pinned; entry `shellbot-plaud`, `PLAUD_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK=1`), added to the CLI the primary bot runs on; sign-in by the server's own `login` tool (`_local_mcp.call_tool`, the browser opens on this computer, 150 s cap); tested in a tab of that CLI with `list_files` (1 item, no titles repeated) | every program by MCP | descriptions, adapter, engine, the sign-in against a fake stdio server (kill checked on the process and its child), `sfctl connect step`, the wizard in headless WebKit; the real server, a real Plaud account and the real browser step were not run |
 | `google_drive` | Google Drive | the connector, one click | `none` (noted: Codex's own Google Drive plugin; Google's own MCP server is a developer preview) | descriptions, adapter and engine with stand-ins; the tool names as a Claude Code session lists them |
 | `google_calendar` | Google Calendar | the connector, one click | `none` (noted: Google's own MCP server is a developer preview) | the same |
 | `notion` | Notion | the connector, one click | `none` (noted: Notion's own hosted MCP server; Notion's docs give steps for Codex, Antigravity and Cursor; Grok Build and OpenCode take remote MCP servers by their own docs; Pi has MCP built in since 0.99) | the same |
@@ -363,6 +368,21 @@ Result(rc, out), find(binary), open_tab(cmd, title), open_path(path), tabs (conn
 delete / has), cancel, now()`. A test that needs an AI tab uses `ctx.tabs` (a temporary tab that is not a bot, Telegram
 forwarding off; the adapter judges from the *names* of the tools called and the last line, never from what they returned).
 
+### A sign-in that waits (`_local_mcp.call_tool`)
+
+Some servers sign the person in by a tool that blocks until they have done something in the browser (Plaud's `login`: it
+opens the browser on this computer, listens on a fixed local port and waits up to two minutes). `ctx.run` cannot do that
+(one short command, not stoppable), so `services/_local_mcp.py` runs the server itself over stdio: `initialize`,
+`notifications/initialized`, `tools/call <tool>`, one deadline, a `cancel` event. The adapter starts it on a thread and
+answers the action at once (`waiting`); a check (and a second action that is the same look) reports how it went. Rules:
+
+- one at a time (a second press while it runs answers `waiting`: a second server would take the port itself);
+- the server's process group is always killed (`os.killpg`; `taskkill /T /F` on Windows) when it ends, hits the cap or is
+  cancelled (`disconnect` cancels), so the port is free for a retry; stderr is dropped, non-JSON lines are skipped;
+- the tool's text is classified into a fixed set of codes (ok, timeout, denied, port_busy, failed, no_node) by its `isError`
+  flag and a few words, and dropped: it may name the account;
+- under test the default starter refuses (`SHELLFRAME_TESTS`); a test passes a stand-in (`_plaud_fake.py`).
+
 ## Adding a service: 2 to 4 hours
 
 | | Time | What |
@@ -384,8 +404,12 @@ it names. A route that needs a key: `"kind": "api_key"`, `secrets`, `env_from_se
   ("Look again", in the background) (js_api, all answer JSON with `success`; a failure has `code` and
   `message` {text, next}). `connect_step` ops: `check`, `act` (`action`, `options`, a key's `value`), `done`, `back`, `route`,
   `stuck` (`problem`, `from_sid`: the line goes to the tab asked from, else the primary bot, else a new Claude tab).
-- **`sfctl connect list|status|start|test|disconnect <service>`** (`--json`, `--route`, `--reconnect`, `--refresh`).
-  `start` begins or goes on and says which step is next and that it is continued in Settings → Connect.
+- **`sfctl connect list|status|start|step|test|disconnect <service>`** (`--json`, `--route`, `--reconnect`, `--refresh`).
+  `start` begins or goes on and says which step is next and that it is continued in Settings → Connect; `start` and `status`
+  also print the step's id, the action ids and how to move it (`health.step_words`). `sfctl connect step <service>
+  check|act|done|back [--action ID]` is `connect_step` for a bot (api_connect `_connect_sfctl_step`): it says what the action did
+  (`Did: …`) and the step it is on now; on the test step it points at `sfctl connect test`. The rules for a bot are in
+  `docs/ai-skill.md` §4.8 (never `done` on a step only the person can do).
 - **A bot's `[[SF:RED:connect:<service>]]`**: `connect_signal` does the same as `connect_start`. The phone's
   `decision` carries `connect` ({service, name, state}); Telegram's question gets one more sentence
   (`api_connect._connect_line`).

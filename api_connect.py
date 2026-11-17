@@ -333,7 +333,13 @@ class ConnectApiMixin:
             return {"success": False, "message": sf_lang.pick(f"Unknown service '{service}'. Known: {ids}", f"不認得「{service}」。可用：{ids}")}
         if action == "status":
             res = eng.refresh(service, force=bool(args.get("refresh"))) if args.get("refresh") else eng.snapshot(service)
-            return done(res["success"], line(res["status"]), res)
+            text = line(res["status"])
+            if res["success"] and eng.store.get(service).get("state") not in ("connected", "not_started", None, ""):
+                more = health.step_words(service, eng.view(service), lang)
+                text += ("\n" + more) if more else ""
+            return done(res["success"], text, res)
+        if action == "step":
+            return self._connect_sfctl_step(service, str(args.get("op") or ""), str(args.get("act") or ""), as_json, lang)
         if action == "start":
             res = eng.start(service, route=str(args.get("route") or "") or None, reconnect=bool(args.get("reconnect")))
             if not res["success"]:
@@ -343,6 +349,7 @@ class ConnectApiMixin:
             if step and eng.store.get(service).get("state") != "connected":    # ShellBot's own steps (connected another way or not)
                 text += "\n" + sf_lang.pick("Now: ", "現在：") + reg_mod.pick(step["title"], lang)
                 text += "\n" + sf_lang.pick("Continue in ShellBot: Settings → Connect.", "請到 ShellBot 的「設定 → 連結」繼續。")
+                text += "\n" + health.step_words(service, res["view"], lang)
             return done(True, text, res)
         if action == "test":
             res = eng.test(service)
@@ -356,7 +363,33 @@ class ConnectApiMixin:
         if action == "disconnect":
             res = eng.disconnect(service)
             return done(res["success"], line(res["status"]) if res["success"] else reg_mod.pick(res["message"]["text"], lang), res)
-        return {"success": False, "message": "usage: sfctl connect list|status|start|test|disconnect [service]"}
+        return {"success": False, "message": "usage: sfctl connect list|status|start|step|test|disconnect [service]"}
+
+    def _connect_sfctl_step(self, service: str, op: str, act: str, as_json: bool, lang: str) -> dict:
+        """sfctl connect step <service> check|act|done|back [--action ID]: one move on the step in front of the person,
+        for a bot that finishes a connection in a conversation. The answer is the service's line and the step it is on
+        now (step_words). `done` is the person's word that they did it: a bot presses it only for a step ShellBot can
+        verify, or after the person says so (docs/ai-skill.md §4.8)."""
+        eng = self._connect()
+        if op not in ("check", "act", "done", "back"):
+            return {"success": False, "message": sf_lang.pick("usage: sfctl connect step <service> check|act|done|back [--action ID]",
+                                                              "用法：sfctl connect step <service> check|act|done|back [--action ID]")}
+        view = eng.view(service) or {}
+        if (view.get("step") or {}).get("kind") == "test":
+            return {"success": False, "message": sf_lang.pick(f"This step is the test: run sfctl connect test {service}",
+                                                              f"這一步是測試：跑 sfctl connect test {service}")}
+        before = (view.get("step") or {}).get("id")
+        res = eng.step(service, op, {"action": act} if op == "act" else {})
+        if not res["success"]:
+            hint = sf_lang.pick(f" Start it with: sfctl connect start {service}", f" 先跑：sfctl connect start {service}") if res.get("code") == "not_started" else ""
+            text = reg_mod.pick(res["message"]["text"], lang) + " " + reg_mod.pick(res["message"]["next"], lang) + hint
+            return {"success": False, "message": json.dumps(res, ensure_ascii=False) if as_json else text}
+        text = health.words(res["status"], lang)
+        did = eng.last_result(service, before) if op == "act" and before else None      # what the action did, though the step may have moved on
+        if did and did.get("text"):
+            text += "\n" + sf_lang.pick("Did: ", "做了：") + f"{did['action']} → " + reg_mod.pick(did["text"], lang)
+        more = health.step_words(service, res.get("view"), lang, with_result=not did) if res["status"]["state"] != "connected" else ""
+        return {"success": True, "message": json.dumps(res, ensure_ascii=False) if as_json else text + (("\n" + more) if more else "")}
 
     def _connect_poll_test(self, service: str, limit: float = 240.0):
         """Poll a test that sfctl started until it is done, so the result lands in the saved state without

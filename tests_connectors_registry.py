@@ -227,5 +227,13 @@ except RuntimeError:
     refused = True
 check("under test the default runner refuses", refused)
 
+# a result may say "ask again with this action" (`poll`): it has to name an action of the same step
+good = fake.demo()
+sig = [st for st in good["routes"][1]["steps"] if st["id"] == "signin"][0]
+sig["actions"][0]["results"]["opened"]["poll"] = "signin"
+check("a result's poll naming an action of its step is valid", registry.validate(good) == [], registry.validate(good))
+sig["actions"][0]["results"]["opened"]["poll"] = "nope"
+check("…and one naming no action of the step is refused", any("poll" in e for e in registry.validate(good)), registry.validate(good))
+
 print(f"\nResults: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

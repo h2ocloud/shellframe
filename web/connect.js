@@ -430,7 +430,7 @@
   // ── the wizard card ──────────────────────────────────────────────────────
   // UI-only state lives here: which route is picked before connect_start, the stuck panel, the test's
   // handle and timer. Where the person is (route, step, results) is the Python side's: `view`.
-  let S = null, card = null, lastFocus = null, pollTimer = 0;
+  let S = null, card = null, lastFocus = null, pollTimer = 0, waitTimer = 0;
   const fresh = (service, from) => ({ open: true, service, desc: null, status: null, view: null, mode: 'load', pick: '', stuck: false,
     prob: '', busy: '', err: null, test: null, from: from || '', checked: {}, opts: {}, optsFor: '', note: '', opened: {}, away: 0 });
   const routes = () => (S.desc && S.desc.routes) || [];
@@ -753,7 +753,31 @@
       openUrl(step.url);
     }
     render();
+    follow();
     if (step && step.check && step.check.on === 'enter' && !step.result && !S.checked[step.id]) { S.checked[step.id] = true; return runCheck(); }
+  }
+  // A result the description marks "poll": an action that started something the person finishes elsewhere (a sign-in in
+  // the browser). Ask again with the action it names, quietly, until the result stops asking; the step moves on by itself.
+  function pollOf(step) {
+    const r = step && step.result, def = r && stepDef(step.id);
+    const a = def && (def.actions || []).find(x => x.id === r.action);
+    return (a && a.results && a.results[r.code] && a.results[r.code].poll) || '';
+  }
+  function follow() {
+    clearTimeout(waitTimer);
+    const me = S, s = me && me.open && me.mode === 'step' ? vstep() : null, id = pollOf(s);
+    if (!id) return;
+    const sid = s.id;
+    waitTimer = setTimeout(async () => {
+      if (S !== me || !S.open || !vstep() || vstep().id !== sid) return;
+      if (S.busy || S.stuck) return follow();
+      const res = await call('connect_step', S.service, 'act', json({ action: id, options: S.opts }));
+      if (S !== me || !S.open) return;
+      absorb(res);
+      if (res && res.success !== false && vstep() && vstep().id !== sid) { S.checked[sid] = true; return enter(); }
+      render();
+      follow();
+    }, 2500);
   }
   // Back from the browser: the step that was done there counts as done, and the test runs (didIt starts it).
   function cameBack() {
@@ -786,8 +810,9 @@
     const me = S;
     const res = await step('act', { action: id, options: S.opts }, 'act:' + id);
     if (S !== me) return;
-    if (res && res.success !== false && a.after === 'check' && s.check) return runCheck();
+    if (res && res.success !== false && a.after === 'check' && s.check) { await runCheck(); return follow(); }
     render();
+    follow();
   }
   async function didIt() {
     const me = S, was = vstep() || {}, before = was.id;
@@ -1025,7 +1050,7 @@
     return true;
   }
   function close() {
-    clearTimeout(pollTimer);
+    clearTimeout(pollTimer); clearTimeout(waitTimer);
     if (!S || !S.open) return;
     const tt = S.test, svc = S.service;
     S.open = false;

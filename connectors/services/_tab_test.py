@@ -25,10 +25,12 @@ class TabTestAdapter(Adapter):
     words for the one small read it asks for, `failed_step` the step each verdict sends the person back to."""
 
     def __init__(self, service_id: str, prefix: str, mark: str, name, route: str, failed_step: dict,
-                 auth_tools=(), lookup=("a search or a list", "搜尋或列清單")):
+                 auth_tools=(), lookup=("a search or a list", "搜尋或列清單"), prefixes=None, clis=("claude",)):
         self.id = service_id
         self.route = route
         self.prefix = prefix
+        self.prefixes = tuple(prefixes) if prefixes else (prefix,)      # every spelling of the tool names that counts (Codex may write a `-` as `_`)
+        self.clis = tuple(clis)                                          # the CLIs a test tab may be opened in (their transcripts are read)
         self.auth_tools = set(auth_tools)
         self.mark = mark
         self.name = tuple(name)
@@ -41,7 +43,11 @@ class TabTestAdapter(Adapter):
         self._lock = threading.Lock()
 
     # ── the question and how its answer is read ────────────────────────────
-    def prompt(self) -> str:
+    def pick_cli(self, ctx) -> str:
+        """The CLI the test tab runs. Claude unless the service says otherwise (override, and list the CLIs in `clis`)."""
+        return "claude"
+
+    def prompt(self, cli: str = "claude") -> str:
         """The fixed one-line question the test tab gets, in the OS language like every agent-facing text.
         It asks for a count and forbids every change: the tools may well be able to write."""
         en_name, zh_name = self.name
@@ -82,7 +88,7 @@ class TabTestAdapter(Adapter):
             return {"state": "done", "verdict": "timeout", "calls": 0}
         turn = list(events)[start + 1:]
         names = [str(e.get("tool") or "") for e in turn if e.get("kind") == "tool_call"]
-        calls = [n for n in names if n.startswith(self.prefix) and n not in self.auth_tools]
+        calls = [n for n in names if n.startswith(self.prefixes) and n not in self.auth_tools]
         ended = any(e.get("kind") == "turn_end" for e in turn)
         reply = next((e.get("text") for e in reversed(turn) if e.get("kind") == "assistant_text"), "")
         marker = self.verdict_line(reply)
@@ -134,8 +140,11 @@ class TabTestAdapter(Adapter):
         self._forget_tabs(ctx)
         kit = ctx.tabs
         try:
-            sid = kit.open(kit.command("claude"), sf_lang.pick(f"{self.name[0]} test", f"{self.name[1]} 測試"))
-            kit.ask(sid, self.prompt(), READY_TIMEOUT_S)      # waits for the prompt in a thread of the kit's, then types the one line
+            cli = self.pick_cli(ctx)
+            cli = cli if cli in self.clis else "claude"
+            prog = "sf-codex" if cli == "codex" and ctx.find and ctx.find("sf-codex") else cli     # ShellBot's own Codex launcher when it is there
+            sid = kit.open(kit.command(prog), sf_lang.pick(f"{self.name[0]} test", f"{self.name[1]} 測試"))
+            kit.ask(sid, self.prompt(cli), READY_TIMEOUT_S)      # waits for the prompt in a thread of the kit's, then types the one line
         except Exception:
             return self._fail("start_failed")
         handle = uuid.uuid4().hex[:10]
