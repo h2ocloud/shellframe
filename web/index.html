@@ -684,6 +684,8 @@
   .sb-mobile-count { margin-left: 6px; font-size: 11px; color: #565f89; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0; }
   .sb-mobile-head .sb-label { flex: 0 0 auto; }
   .sb-mobile-row .sb-peer-dot { margin-right: 6px; }
+  .sb-mobile-addr { margin-left: auto; margin-right: 4px; font-size: 11px; color: #565f89; cursor: pointer; flex: none; }
+  .sb-mobile-addr:hover { color: #7aa2f7; }
   .sb-peer-head .sb-peer-dot, .sb-mobile-row .sb-peer-dot {
     width: 7px; height: 7px; border-radius: 50%; background: #3b4261; flex-shrink: 0;
   }
@@ -3191,7 +3193,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // 電腦對電腦為主：手機、平板裝不了 CLI，也不會被這台操作，收成一行（link_bots.targets 同一個判斷：
       // kind ios，或沒有自己的位址、只會來這台輪詢取件），展開才列出來。回報：一堆手機平板把側欄塞滿。
       const allPeers = (linkState && linkState.peers) || [];
-      const isMobilePeer = p => p.kind === 'ios' || !p.host;
+      // A phone or a tablet: kind "ios", or an old pairing with no kind and no address of its own. A computer says
+      // "shellframe" when it pairs, so one behind NAT (no address) stays with the computers and keeps ✎ 位址.
+      const isMobilePeer = p => p.kind === 'ios' || (!p.kind && !p.host);
       const peers = allPeers.filter(p => !isMobilePeer(p));
       const mobiles = allPeers.filter(isMobilePeer);
       const zoneCollapsed = !!linkUi.sbPeers;
@@ -3341,6 +3345,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             row.title = (m.reachable ? '連線中' : '沒連著（App 開著時會來這台取件）') + '｜✕ 斷開配對';
             row.innerHTML = `<span class="sb-peer-dot${m.reachable ? ' on' : ''}"></span>` +
               `<span class="sb-label" style="pointer-events:none">${esc(m.name)}</span>` +
+              // an old pairing with no kind could be a computer: it keeps the way to give it an address
+              (m.kind === 'ios' ? '' : `<span class="sb-mobile-addr" data-pact="edit" data-pid="${esc(m.id)}" title="是電腦的話：給它位址，就會列到電腦那邊">✎</span>`) +
               `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(m.id)}" title="斷開這台（會先確認）">&times;</span>`;
             container.appendChild(row);
           });

@@ -6,6 +6,7 @@ icon when given none, and the taskbar groups the window with other Python progra
   - the process gets an AppUserModelID of its own before the window opens
   - webview.start is given icon.ico (it ships beside main.py)
   - elsewhere nothing is passed (the Mac app bundle has its icon)
+  - a pywebview too old to take `icon` is not given it (an unknown keyword would stop the window opening)
 On Windows (CI) the real shell32 call runs; elsewhere it is a stand-in. Run: .venv/bin/python tests_win_icon.py
 """
 import os
@@ -50,6 +51,9 @@ else:
     check("…and the process gets its own AppUserModelID first", calls == ["h2ocloud.ShellBot"], calls)
     with patch.object(main, "IS_WIN", False):
         check("elsewhere nothing is passed", main._win_app_identity() == {})
+    old_start = lambda func=None, debug=False: None             # a pywebview without `icon`: not passed, the window still opens
+    with patch.object(main, "IS_WIN", True), patch.dict(sys.modules, {"ctypes": fake}), patch.object(main.webview, "start", old_start):
+        check("an older pywebview without `icon` is not given it", main._win_app_identity() == {})
 src = (HERE / "main.py").read_text(encoding="utf-8")
 check("webview.start is given it", "webview.start(debug=(\"--debug\" in sys.argv), **_win_app_identity())" in src)
 

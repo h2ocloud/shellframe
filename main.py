@@ -16,6 +16,7 @@ import ctypes
 import ctypes.util
 import errno
 import importlib
+import inspect
 import json
 import os
 import platform
@@ -5411,7 +5412,11 @@ def _win_app_identity() -> dict:
     except Exception:
         _swallow("win-app-identity")
     ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
-    return {"icon": ico} if os.path.isfile(ico) else {}
+    try:                                    # an older pywebview has no `icon`: passing it would stop the window opening
+        takes_icon = "icon" in inspect.signature(webview.start).parameters
+    except (TypeError, ValueError):
+        takes_icon = False
+    return {"icon": ico} if takes_icon and os.path.isfile(ico) else {}
 
 def main():
     sf_trail.start(_dlog, TMP_DIR)   # how it started, and a trail for when it goes (sf_trail)
