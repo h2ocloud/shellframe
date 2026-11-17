@@ -1306,8 +1306,9 @@ def close_inherited_fds():
 # also how every escape sequence starts, so ConPTY's input parser has no way to tell the key from the start of a
 # sequence. ConPTY asks its host for win32-input-mode at start (`CSI ? 9001 h`, microsoft/terminal spec #4999),
 # in which each key is one unambiguous record `CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _`; Windows Terminal sends all
-# keys that way. While ConPTY has asked for it, a keystroke that is only Esc goes as Escape's press and release.
-# Everything else is written as before.
+# keys that way. While ConPTY has asked for it, a keystroke that is only Esc goes as Escape's press and release,
+# in a Codex tab only (Session.write): the cause is inferred, not measured on Windows, and Esc may already work in
+# the other CLIs. Everything else is written as before. Each lone Esc leaves a debug line either way.
 _W32_MODE = re.compile(rb"\x1b\[\?9001([hl])")
 _W32_ESC = "\x1b[27;1;27;1;0;1_\x1b[27;1;27;0;0;1_"        # VK_ESCAPE, scan code 1, char 27: down, then up
 
@@ -1793,9 +1794,14 @@ class Session:
             if user_activity:
                 self._last_user_activity_time = now
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
-            keys = _w32_keys(data, getattr(self, "_w32_input", False))
+            # Codex tabs only for now: the cause is inferred, not measured, and Esc may already work in the others
+            codex = agent_status.worker_kind(getattr(self, "cmd", "") or "") == "codex"
+            keys = _w32_keys(data, getattr(self, "_w32_input", False) and codex)
             if keys is not data:
                 _dlog("write", f"sid={self.sid} Esc x{len(data)} as win32-input-mode key events")
+            elif data and set(data) == {"\x1b"}:     # so a missing line tells "never sent" from "sent as the byte"
+                _dlog("write", f"sid={self.sid} Esc x{len(data)} as the byte "
+                               f"({'not a Codex tab' if not codex else 'ConPTY has not asked for win32-input-mode'})")
             try:
                 self._winpty.write(keys)
             except (EOFError, OSError):

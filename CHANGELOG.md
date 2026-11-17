@@ -6,6 +6,23 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.50.1 (2026-11-17)
+
+### Changes
+
+- **Windows: the Esc change of v0.50.0 applies to Codex tabs only, for now.** v0.50.0 sent a lone Esc as a
+  win32-input-mode key event in every Windows tab once ConPTY had asked for that mode. The cause was inferred, not
+  measured on a Windows computer, and Esc may already work in the other CLIs, so they get the byte as before until
+  a Codex tab confirms the change. Each lone Esc to a Windows tab now leaves a debug line either way ("as
+  win32-input-mode key events", or "as the byte" and why: not a Codex tab, or ConPTY has not asked), so a report can
+  tell "never sent" from "sent as the byte". Covered by `tests_win_esc.py` (a Claude Code tab keeps the byte).
+
+  **Windows：v0.50.0 的 Esc 改動先只套用在 Codex 分頁。** v0.50.0 在 ConPTY 提出要求後，所有 Windows 分頁的單獨 Esc 都改成
+  win32-input-mode 按鍵事件。這個原因是推測的，沒有在 Windows 電腦上實測，而其他 CLI 的 Esc 可能本來就正常，所以在 Codex 分頁
+  確認有效之前，其他分頁照舊送原本的字元。現在 Windows 分頁每按一次單獨的 Esc，debug log 都會記一行（「as win32-input-mode key
+  events」，或「as the byte」加上原因：不是 Codex 分頁、或 ConPTY 沒有提出要求），回報時才分得出「根本沒送」和「照原字元送了」。
+  由 `tests_win_esc.py`（Claude Code 分頁保持原字元）守著。
+
 ## v0.50.0 (2026-11-17)
 
 ### Added

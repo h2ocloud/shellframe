@@ -4,11 +4,12 @@
 Reported: in a Codex tab on Windows, Esc did not interrupt the turn. A lone ESC byte is also how every escape
 sequence starts, so ConPTY's input parser cannot tell the key from the start of a sequence. ConPTY asks its host
 for win32-input-mode at start (CSI ? 9001 h); in that mode each key is one record CSI Vk;Sc;Uc;Kd;Cs;Rc _.
-  - a keystroke that is only Esc (one or a few) is written as Escape's press and release records, while ConPTY
-    has asked for the mode; nothing else changes (Alt+x, arrows, text, Esc inside a paste)
+  - in a Codex tab, a keystroke that is only Esc (one or a few) is written as Escape's press and release records,
+    while ConPTY has asked for the mode; nothing else changes (Alt+x, arrows, text, Esc inside a paste)
+  - other CLIs' tabs keep the byte for now (the cause is inferred, not measured; Esc may already work there)
   - the request is seen in the tab's output, also when it is split across two reads; CSI ? 9001 l turns it off
   - before any request, and on macOS/Linux, the byte goes as it always did
-  - the debug log says when an Esc was sent this way
+  - the debug log says how each lone Esc went (as key events, or as the byte and why)
 No Windows needed: the ConPTY is a stand-in. Run: .venv/bin/python tests_win_esc.py
 """
 import sys
@@ -58,9 +59,9 @@ class FakeConPTY:
         self.written.append(data)
 
 
-def tab(chunks):
+def tab(chunks, cmd="sf-codex --search"):
     s = main.Session.__new__(main.Session)
-    s.sid, s.alive, s.lock = "s1", True, threading.Lock()
+    s.sid, s.alive, s.lock, s.cmd = "s1", True, threading.Lock(), cmd
     s.buffer, s._recent = bytearray(), bytearray()
     s._on_data, s._use_winpty = None, True
     s._last_activity_time = s._last_user_activity_time = s._last_output_activity_time = 0
@@ -87,6 +88,12 @@ with patch.object(main, "IS_WIN", True), patch.object(main, "_dlog", lambda tag,
     s._reader_winpty()
     s.write("\x1b")
     check("once ConPTY turns it off, the byte again", s._winpty.written[-1] == "\x1b", s._winpty.written)
+    check("…and the log says why", any("as the byte (ConPTY has not asked" in m for _, m in logs), logs[-2:])
+    c = tab(["\x1b[?9001h"], cmd="claude --resume demo")
+    c._reader_winpty()
+    c.write("\x1b")
+    check("a Claude Code tab keeps the byte even after ConPTY asked (Codex tabs only, for now)",
+          c._winpty.written == ["\x1b"] and any("as the byte (not a Codex tab)" in m for _, m in logs), c._winpty.written)
 
 with patch.object(main, "IS_WIN", False):
     s = tab([])
