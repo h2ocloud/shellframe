@@ -9,7 +9,9 @@ own transcript). Only the folder is listed, the files stat'ed and the small meta
 State: written in the last WORKING_S seconds → working; silent for STUCK_S or more while not
 finished → stuck; in between → idle. An unfinished one silent for ABANDONED_S is a leftover of
 a conversation that ended mid-run (measured: most unfinished metas on a working machine were
-weeks old) and is not shown. Pure apart from the file system; no `import main`.
+weeks old) and is not shown. The transcript path is the one the status monitor already resolved
+(StatusTracker.transcript_path): nothing here runs a subprocess. Pure apart from the file system;
+no `import main`.
 """
 import json
 import os

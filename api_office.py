@@ -8,9 +8,10 @@ js_api:
   office_prefs_save(json)   writes it (atomic; known keys only, size-capped). Not config.json.
   office_helpers()          the open Claude Code tabs' running subagents (office_helpers.scan),
                             sid → list. Called by the page only while the office is open, every
-                            ~3 s; the transcript path comes from the status monitor's own lookup
-                            (StatusTracker.transcript_path); only a folder listing, stats and the
-                            small meta files. Refused while the switch is off.
+                            ~3 s; the transcript path is the one the status monitor already
+                            resolved (StatusTracker.transcript_path: no lookup, no subprocess);
+                            only a folder listing, stats and the small meta files. Refused while
+                            the switch is off.
 """
 import json
 import os
@@ -99,7 +100,7 @@ class OfficeApiMixin:
             if agent_status.worker_kind(str(getattr(s, "cmd", "") or "")) != "claude":
                 continue
             try:
-                path = tracker.transcript_path(sid, self._worker_ctx(sid, s))
+                path = tracker.transcript_path(sid)
                 rows = office_helpers.scan(office_helpers.folder_of(path or ""), now)
             except Exception:
                 _swallow(f"office_helpers:{sid}")

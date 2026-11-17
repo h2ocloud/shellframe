@@ -203,6 +203,12 @@ def run(browser, base, engine):
                            timeout=15000)
     page.wait_for_timeout(600)
     fr = office(page)
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-overview.png"))      # as it opens: nothing moved by the test
+    seen = fr.evaluate("""() => { const a = __office.assignments(), keys = ['sec', a.eng, a.res, 'p:pid-demo-1:0'];
+        return keys.map(k => { const p = __office.seatScreen(k); return [k, !!p && p.x > 0 && p.x < innerWidth && p.y > 58 && p.y < innerHeight]; }); }""")
+    check("as it opens, the whole floor is in view (lobby, office zone, the paired machine's room)",
+          all(ok for _, ok in seen), seen)
     check("the office opens over the whole window", page.evaluate("""() => { const r = document.getElementById('sfo-overlay').getBoundingClientRect();
         return r.left === 0 && r.top === 0 && r.width === innerWidth && r.height === innerHeight; }"""))
     check("…what it keeps was asked for before it loaded", calls(page, "office_prefs") == 1)
@@ -246,10 +252,6 @@ def run(browser, base, engine):
     check("the demo is off and the demo buttons are hidden",
           fr.evaluate("!__office.demoLive() && document.body.classList.contains('live-data') && getComputedStyle(document.getElementById('addOne')).display === 'none'"))
     check("the tag says experimental", fr.evaluate("document.getElementById('tag').textContent") == "實驗性")
-    fr.evaluate("__office.setArea('all', true)")
-    page.wait_for_timeout(500)
-    if shoot:
-        page.screenshot(path=str(SHOTS / "office-overview.png"))
 
     print(f"[{engine}] a part-timer's panel")
     fr.evaluate("__office.follow('h:s702/b1')")
@@ -298,6 +300,16 @@ def run(browser, base, engine):
           and fr.evaluate("localStorage.getItem('sbOffice.v2.mode')") is None, saved[-1:] if saved else saved)
 
     print(f"[{engine}] closing")
+    fr.select_option("#area", "lobby")
+    page.wait_for_timeout(300)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
+    check("Esc right after picking an area (focus on the picker) closes the office", page.query_selector("#sfo-overlay") is None)
+    page.click("#btn-office")
+    page.wait_for_function("""() => { const f = document.querySelector('#sfo-overlay iframe');
+        try { return f.contentWindow.__office && Object.keys(f.contentWindow.__office.assignments()).length >= 2; } catch (e) { return false; } }""",
+                           timeout=15000)       # a fresh office: the two bots still in the roster
+    fr = office(page)
     box = page.locator("#sfo-overlay iframe").bounding_box()
     page.mouse.click(box["x"] + box["width"] - 30, box["y"] + 110)     # into the office, on its sky
     page.wait_for_timeout(200)
@@ -348,6 +360,10 @@ def reopen(browser, base, prefs, engine):
     page.wait_for_timeout(500)
     check("after a restart the office comes back in the mode it was left in",
           fr.evaluate("document.querySelector('#mode button[data-m=\"flat\"]').getAttribute('aria-pressed')") == "true")
+    seats = fr.evaluate("__office.assignments()")
+    check("…a seat moved by hand is kept", seats.get("eng") == "z:辦公區#1:7", seats)
+    check("…and the accessories picked", fr.evaluate("__office.items('b:eng')") == ["globe", "duck"],
+          fr.evaluate("__office.items('b:eng')"))
     if shoot:
         page.screenshot(path=str(SHOTS / "office-flat.png"))
     check("no console error after the restart", not errors, errors[:5])
@@ -369,7 +385,7 @@ with sync_playwright() as pw:
                 continue
             try:
                 prefs = run(browser, base, engine)
-                reopen(browser, base, prefs, engine)
+                reopen(browser, base, dict(prefs, seats={"eng": {"zone": "辦公區#1", "slot": 7}}, items={"eng": ["globe", "duck"]}), engine)
             finally:
                 browser.close()
     finally:

@@ -1612,9 +1612,10 @@ class StatusTracker:
             return None, age
         return res, age
 
-    def transcript_path(self, sid, worker):
-        """The transcript the monitor resolves for this tab, through the same cache (office_helpers)."""
-        return self._resolve_cached(sid, worker, time.time())
+    def transcript_path(self, sid):
+        """The transcript the monitor last resolved for this tab, or None; no lookup of its own (office_helpers)."""
+        path = (self._path_cache.get(sid) or (None, 0))[0]
+        return path if path and os.path.exists(path) else None
 
     def _resolve_cached(self, sid, worker, now):
         path, at = self._path_cache.get(sid, (None, 0))

@@ -12,7 +12,7 @@
 
 - **The office (experimental, off by default).** Asked for: a picture of who is doing what, instead of reading
   the sidebar line by line. Settings → General → "Office" turns it on; a button then sits at the foot of the
-  sidebar and opens an office floor over the whole window (Esc or ✕ closes it). Bots are staff at their desks, the
+  sidebar and opens an office floor over the whole window (✕ or Esc closes it; while a person is followed, the first Esc stops following). Bots are staff at their desks, the
   primary bot at the lobby desk, a bot with no open tab asleep at its desk; AI tabs that are not bots are interns at
   a long table; each paired computer is a room with its bots and interns. A desk's screen, a red "!", a yellow sign
   and a coffee cup say busy, waiting on you, stuck and idle, from the same light the tab shows; a bot's open task
@@ -25,7 +25,8 @@
   conversation that ended mid-run) is not shown. Cost: nothing runs while it is closed (no button, no frame, no
   timer with the switch off); while open it refreshes every 3 s and not at all with the window in the background,
   from what the page already holds plus the task store (at most every 9 s) and a folder listing of the open Claude
-  tabs' subagents (file times and their small meta files, never a transcript or a screen). Not wired yet: hand-offs
+  tabs' subagents (file times and their small meta files, at the transcript path the status monitor already
+  resolved; never a transcript's content, a screen or a subprocess). Not wired yet: hand-offs
   are not drawn as flying paper, the office's own text is Chinese only, a paired computer's subagents are not
   shown, the panel's events are only the changes seen while the app runs, and seat order follows the roster order
   (bots have no creation time). Covered by `tests_office_ui.py` (the page and the office together, headless),
@@ -33,7 +34,7 @@
   screenshots in `qa-shots/office-*.png`.
 
   **辦公室（實驗性，預設關閉）。** 需求：一眼看出誰在做什麼，不用一行一行讀側欄。設定 → 一般 →「辦公室」打開後，側欄底部多一顆
-  按鈕，按下去整個視窗變成一層辦公室（Esc 或 ✕ 關閉）。bot 是正職，坐自己的桌子，主要 bot 坐大廳的秘書長辦公桌，沒開分頁的 bot
+  按鈕，按下去整個視窗變成一層辦公室（✕ 或 Esc 關閉；正在跟拍某個人時，第一次 Esc 先停止跟拍）。bot 是正職，坐自己的桌子，主要 bot 坐大廳的秘書長辦公桌，沒開分頁的 bot
   在自己的位子上休息；不是 bot 的 AI 分頁是實習生，坐長桌；配對的每台電腦是一間房，裡面是那台的 bot 和實習生。桌上螢幕亮、紅色
   「!」、黃色警示、咖啡杯分別代表在忙、等你決定、卡住、閒置，跟分頁燈號是同一個來源；bot 手上的任務（`sfctl task`）顯示在追蹤
   面板，任務太久沒動會多一個小時鐘。點一個人可以跟拍；拖曳 bot 可以換位子；座位、配件、平面或立體存在這台電腦（state 資料夾的

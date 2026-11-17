@@ -8,8 +8,8 @@ restart of the app.
   - a fake subagents folder (demo meta files): running and written lately = working; quiet for
     a few minutes = idle; silent 10 minutes = stuck; finished = gone; silent for hours = a
     leftover, not shown; a broken meta file is skipped; a meta file is read once until it changes
-  - office_helpers(): only while the switch is on, only Claude tabs, the transcript path from the
-    status monitor's own lookup, sid → list
+  - office_helpers(): only while the switch is on, only Claude tabs, the transcript path the status
+    monitor already resolved (no lookup of its own), sid → list
   - office_prefs / office_prefs_save: a file in the state folder (known keys only, size-capped,
     an object only), never config.json
 Demo data only. Run: .venv/bin/python tests_office_helpers.py
@@ -121,9 +121,9 @@ class Tracker:
     def __init__(self):
         self.asked = []
 
-    def transcript_path(self, sid, worker):
-        self.asked.append((sid, worker.get("demo")))
-        return str(TRANSCRIPT) if sid == "s1" else ""
+    def transcript_path(self, sid):
+        self.asked.append(sid)
+        return str(TRANSCRIPT) if sid == "s1" else None
 
 
 class App(api_office.OfficeApiMixin):
@@ -134,9 +134,6 @@ class App(api_office.OfficeApiMixin):
                          "s4": types.SimpleNamespace(cmd="claude", alive=True)}
         self._status_tracker = Tracker()
 
-    def _worker_ctx(self, sid, s):
-        return {"demo": sid}
-
 
 app = App()
 off = json.loads(app.office_helpers())
@@ -145,9 +142,17 @@ CFG["settings"]["experimental_office"] = True
 got = json.loads(app.office_helpers())
 check("on: sid → its running subagents", got["success"] and sorted(got["helpers"]) == ["s1"]
       and {r["id"] for r in got["helpers"]["s1"]} == {"quiet", "stale", "nojsonl"}, got)
-check("…only the open Claude tabs are looked at, through the monitor's lookup",
-      sorted(s for s, _ in app._status_tracker.asked) == ["s1", "s4"] and ("s1", "s1") in app._status_tracker.asked,
-      app._status_tracker.asked)
+check("…only the open Claude tabs are looked at, by the path the monitor already has",
+      sorted(app._status_tracker.asked) == ["s1", "s4"], app._status_tracker.asked)
+
+print("the monitor's path, no lookup of its own")
+import agent_status  # noqa: E402
+tr = agent_status.StatusTracker()
+check("nothing resolved yet: no path (and no lookup)", tr.transcript_path("s1") is None)
+tr._path_cache["s1"] = (str(TRANSCRIPT), 0.0)
+tr._path_cache["s2"] = (str(ROOT / "gone.jsonl"), 0.0)
+check("the path the monitor resolved, however old", tr.transcript_path("s1") == str(TRANSCRIPT))
+check("…not one whose file is gone", tr.transcript_path("s2") is None)
 
 print("what the office keeps")
 cfg_file = sf_config.config_file()

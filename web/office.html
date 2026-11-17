@@ -1421,7 +1421,7 @@ q.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !
 addEventListener('pointerdown', () => kick(), true);   // 任何地方的點按都算操作
 addEventListener('keydown', e => {
   kick();
-  if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (e.key === 'Escape' && e.target.tagName === 'SELECT') e.target.blur(); else return; }   // 選完區域後焦點留在選單上：Esc 照樣能退出
   if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (getComputedStyle($('#search')).display === 'none') document.body.classList.add('searching'); q.focus(); }
 });
@@ -1575,7 +1575,9 @@ function update(snap, opts = {}) {
     const s = M.seats.get(e.seatKey); if (s) e.walk = makeWalk(routeIn(s), 'in', i * stg); });
   leaving.forEach(e => { if (e.kind === 'helper') { const ps = parentSeat(e), sp = !e.hidden && helperSpot(e); e.walk = ps && sp ? makeWalk([sp, ...routeOut(ps)], 'out') : null; if (!e.walk) M.ents.delete(e.key); if (follow === e.key) stopFollow(); return; }
     const s = M.seats.get(e.seatKey); e.walk = s ? makeWalk(routeOut(s), 'out') : null; if (!e.walk) M.ents.delete(e.key); if (follow === e.key) stopFollow(); });
-  reroute(new Set(born)); M.ver++; statSig = ''; schedule();   // 資料更新只排下一幀，不算使用者操作（閒置照樣降到 5fps）
+  reroute(new Set(born)); M.ver++; statSig = '';
+  if (first && !follow) { goal = fitGoal(); Object.assign(cam, goal); goal = null; }   // 第一份資料：鏡頭對準整層（開機時還沒有資料，對的是空的版面）
+  schedule();   // 資料更新只排下一幀，不算使用者操作（閒置照樣降到 5fps）
   return { added: born.filter(e => e.kind === 'bot').map(e => e.id), seats: born.map(e => e.seatKey) };
 }
 function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = '實驗性'; }
