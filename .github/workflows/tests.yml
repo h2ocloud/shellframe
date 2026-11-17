@@ -17,7 +17,7 @@ jobs:
   macos:
     name: macOS (full suite)
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

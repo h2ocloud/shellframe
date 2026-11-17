@@ -28,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="sf-pi-model-"))
 os.environ["PI_CODING_AGENT_DIR"] = str(TMP / "agent")
 os.environ["CODEX_HOME"] = tempfile.mkdtemp()                # no models_cache.json: Codex lists the table here
+os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"                  # the wording below is the OS language's: pin it, as the other suites do
 sys.path.insert(0, str(HERE))
 sys.modules.setdefault("webview", MagicMock())
 import agent_model as M  # noqa: E402
@@ -162,6 +163,11 @@ import api_bots  # noqa: E402
 words = api_bots.BotsApiMixin._model_words("sf-pi-local", "model-x", M.check("sf-pi-local", "model-x"))
 check("a refusal lists the ids this command may take", "model-a" in words and "model-b" in words and "model-x」" in words
       and "model-x、" not in words, words)
+os.environ["SHELLFRAME_PROMPT_LANG"] = "en"
+words_en = api_bots.BotsApiMixin._model_words("sf-pi-local", "model-x", M.check("sf-pi-local", "model-x"))
+os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"
+check("…and in English, the same ids", 'Unknown model "model-x"' in words_en and "(model-a, model-b)" in words_en
+      and 'Did you mean "model-b"?' in words_en, words_en)
 check("the in-tab switch lists the same ids, by id (what pi's picker matches)",
       [c["key"] for c in tab_model.models_for("sf-pi-local")] == ["model-a", "model-b", "model-x"],
       tab_model.models_for("sf-pi-local"))

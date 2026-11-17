@@ -169,6 +169,30 @@ def _mesh_vpn_addresses() -> list:
     return found
 
 
+HOST_LOOKUP_S = 2.0          # how long the hostname lookup may take before it is given up
+
+
+def _hostname_addresses() -> list:
+    """What the resolver says this machine's hostname is: a second source of LAN addresses.
+
+    gethostbyname_ex has no timeout of its own. On a Mac whose hostname does not resolve (a CI
+    runner, a laptop on a new network) it waits out mDNS and DNS for a minute or more, and
+    pairing_begin and status() both ask: the pairing screen froze for that long. So it runs in a
+    thread the caller stops waiting for; the addresses found by then are used, the rest dropped."""
+    found = []
+
+    def lookup():
+        try:
+            found.extend(socket.gethostbyname_ex(socket.gethostname())[2])
+        except OSError:
+            pass
+
+    t = threading.Thread(target=lookup, daemon=True, name="sf-link-hostname")
+    t.start()
+    t.join(HOST_LOOKUP_S)
+    return list(found)
+
+
 def local_addresses() -> list:
     """Best-effort list of this machine's non-loopback IPv4 addresses.
 
@@ -186,12 +210,9 @@ def local_addresses() -> list:
             s.close()
     except OSError:
         pass
-    try:
-        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
-            if not ip.startswith("127.") and ip not in addrs:
-                addrs.append(ip)
-    except OSError:
-        pass
+    for ip in _hostname_addresses():
+        if not ip.startswith("127.") and ip not in addrs:
+            addrs.append(ip)
     for ip in _mesh_vpn_addresses():
         if ip not in addrs:
             addrs.append(ip)
@@ -474,6 +495,7 @@ class FrameLink:
                 return {"success": False,
                         "message": "Frame Link listener not running（先啟用跨機連線）"}
         code = generate_code()
+        addresses = local_addresses()   # before the window opens (and once): a slow lookup must not use up its PAIR_TTL
         with self._pairing_lock:
             self._pairing = {
                 "code": normalize_code(code),
@@ -484,8 +506,8 @@ class FrameLink:
             }
         cfg = self._cfg()
         port = int(cfg.get("listen_port", 8767))
-        hosts = local_addresses()
         public_host = str(cfg.get("public_host") or "").strip()
+        hosts = list(addresses)
         if public_host and public_host not in hosts:
             hosts.append(public_host)
         relay_url, relay_token = self._relay_settings()
@@ -497,7 +519,7 @@ class FrameLink:
             "success": True,
             "code": code,
             "port": port,
-            "addresses": local_addresses(),
+            "addresses": addresses,
             "public_host": public_host,
             "relay_url": relay_url,
             "pair_url": build_pair_url(payload),

@@ -100,11 +100,25 @@ check("soft restore 用 uuid 找 transcript，不信存下來的路徑",
 E = Api._claude_transcript_exists
 check("不存在的 uuid → False", E("00000000-dead-beef-0000-000000000000") is False)
 check("空 uuid → False", E("") is False)
-check("找得到的 uuid → True（用真實 manifest 裡的一筆驗）", any(
-    E(x.get("claude_session_id", ""))
-    for x in __import__("json").load(
-        open(Path.home() / ".config/shellframe/config.json", encoding="utf-8")).get("session_manifest", [])
-    if x.get("claude_session_id")))
+# 用自己造的暫存 HOME 與 manifest 驗，不讀這台電腦真實的 config.json 與 ~/.claude。
+import os as _os0  # noqa: E402
+import tempfile as _tf0  # noqa: E402
+from unittest.mock import patch as _p0  # noqa: E402
+
+_home0 = _tf0.mkdtemp(prefix="sf_resume_home_")
+_live = "dddddddd-4444-4444-8444-dddddddddddd"
+_os0.makedirs(_os0.path.join(_home0, ".claude", "projects", "-moved-project"))
+open(_os0.path.join(_home0, ".claude", "projects", "-moved-project", f"{_live}.jsonl"), "w").close()
+_manifest = [{"claude_session_id": "", "transcript_path": "/gone/x.jsonl"},
+             {"claude_session_id": "eeeeeeee-5555-4555-8555-eeeeeeeeeeee",      # no transcript anywhere
+              "transcript_path": "/gone/y.jsonl"},
+             {"claude_session_id": _live,                    # /clear moved the file: stored path is stale
+              "transcript_path": "/gone/old-slug/" + _live + ".jsonl"}]
+with _p0.dict(_os0.environ, {"HOME": _home0}):
+    check("找得到的 uuid → True（manifest 的路徑已消失，仍以 uuid 找到）", any(
+        E(x.get("claude_session_id", "")) for x in _manifest if x.get("claude_session_id")))
+    check("manifest 裡找不到檔案的 uuid → False",
+          E("eeeeeeee-5555-4555-8555-eeeeeeeeeeee") is False)
 
 # ── Windows 路徑：沒有 lsof、沒有 tmux pane，只能靠「spawn 之後才出現的
 #    rollout」＋認領表。用 Codex 真正的 rollout 檔名格式造情境（暫存資料夾裡的三份），

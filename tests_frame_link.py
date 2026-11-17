@@ -594,6 +594,44 @@ def main():
         finally:
             frame_link.subprocess.run = real_run
         check("mesh address discovery degrades quietly", degraded == [])
+
+        # ── a slow address lookup neither freezes pairing nor uses up the code's window ──
+        # (a CI runner whose hostname does not resolve: the lookup took minutes, the 120 s window was
+        # over before the joiner arrived, and "no active pairing window" was all the phone heard)
+        real_ghbn, real_now, real_la = socket.gethostbyname_ex, frame_link._now, frame_link.local_addresses
+        real_lookup_s = frame_link.HOST_LOOKUP_S
+        try:
+            frame_link.HOST_LOOKUP_S = 0.3
+            socket.gethostbyname_ex = lambda name: (time.sleep(5), (name, [], ["198.51.100.7"]))[1]
+            t0 = time.time()
+            addrs = frame_link.local_addresses()
+            check("a hostname lookup that hangs is given up on (does not freeze pairing)",
+                  time.time() - t0 < 3 and "198.51.100.7" not in addrs)
+            socket.gethostbyname_ex = lambda name: (name, [], ["198.51.100.7", "127.0.1.1"])
+            addrs = frame_link.local_addresses()
+            check("a lookup that answers adds its non-loopback addresses", "198.51.100.7" in addrs
+                  and "127.0.1.1" not in addrs)
+        finally:
+            socket.gethostbyname_ex, frame_link.HOST_LOOKUP_S = real_ghbn, real_lookup_s
+        clock = [real_now()]
+        try:
+            frame_link._now = lambda: clock[0]
+
+            def slow_lookup():
+                clock[0] += frame_link.PAIR_TTL + 30          # the lookup took longer than the window lasts
+                return ["192.0.2.10"]
+            frame_link.local_addresses = slow_lookup
+            pair3 = a.link.pairing_begin()
+            res3 = b.link.join("127.0.0.1", a.port, pair3["code"])
+            check("the pairing window opens after the address lookup: a slow one does not use it up",
+                  pair3.get("success") and res3.get("success") is True)
+            clock[0] += frame_link.PAIR_TTL + 1
+            pair4 = a.link.pairing_begin()
+            clock[0] += frame_link.PAIR_TTL + 1
+            res4 = b.link.join("127.0.0.1", a.port, pair4["code"])
+            check("…and a code still expires PAIR_TTL after it was shown", res4.get("success") is False)
+        finally:
+            frame_link._now, frame_link.local_addresses = real_now, real_la
     finally:
         a.cleanup()
         b.cleanup()
