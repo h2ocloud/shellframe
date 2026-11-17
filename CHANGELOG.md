@@ -6,6 +6,91 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.55.0 (2026-11-17)
+
+### Added
+
+- **Plaud on Settings → Connect: sign in in the browser, and every bot can read your recordings.** Asked for: Plaud
+  as a supported connection, where the person signs in in the browser and the bots then use that sign-in, done as
+  far as possible from a conversation. The way is Plaud's official MCP server (`@plaud-ai/mcp`, pinned), on this
+  computer, added to the AI the primary bot runs on (Claude Code, Codex…), in four steps: Node.js 20 or newer; add the
+  server (`shellbot-plaud`); sign in: ShellBot runs the server's own sign-in, which opens Plaud's page in the browser
+  on this computer, and the card follows it until you have allowed it (two minutes at most; from a phone or Telegram
+  you finish it at the computer); and a test, where a temporary tab of the primary bot's AI lists one recording and
+  repeats nothing of it. Its tools only read: the account, the recordings, a recording's note and transcript. The
+  sign-in is kept by the server in `~/.plaud` on this computer; ShellBot only looks whether that file is there and
+  never opens it, never runs Plaud's installer (it rewrites other programs' settings) and never signs you out. The
+  server's usage reporting is turned off (`PLAUD_TELEMETRY_DISABLED`, `DO_NOT_TRACK`). The sign-in's server is
+  always stopped afterwards, so a second try finds its port free. A Plaud server you added yourself is recognized
+  as before. Covered by `tests_connector_plaud.py` (83) and `tests_connect_plaud_ui.py` (18), against a stand-in
+  server; screenshots `qa-shots/connect-plaud-*.png`.
+
+  **設定 → 連結加入 Plaud：在瀏覽器登入，每個 bot 都能讀你的錄音。** 需求：Plaud 要成為支援的連線，讓人在瀏覽器登入，bot 再用這
+  份登入去操作，而且盡量能在對話裡完成。方式是 Plaud 官方的 MCP 伺服器（`@plaud-ai/mcp`，固定版本），跑在這台電腦，加進主 bot
+  用的那個 AI（Claude Code、Codex…），共四步：Node.js 20 以上；加入伺服器（`shellbot-plaud`）；登入：ShellBot 啟動伺服器自己的登
+  入，在這台電腦的瀏覽器打開 Plaud 的頁面，卡片會跟著進度，等你按允許（最多兩分鐘；在手機或 Telegram 上的話要回到電腦前完成）；
+  最後測試：主 bot 用的 AI 開一個臨時分頁，列出一筆錄音，內容一個字都不重複。它的工具都只能讀：帳號、錄音清單、單筆錄音的筆記
+  和逐字稿。登入資料由伺服器自己存在這台的 `~/.plaud`；ShellBot 只看檔案在不在，不會打開，不跑 Plaud 的安裝程式（它會改別的程式
+  的設定），也不會幫你登出。伺服器的使用統計回報已關掉（`PLAUD_TELEMETRY_DISABLED`、`DO_NOT_TRACK`）。登入用的伺服器結束後一定會
+  關掉，再試一次時埠是空的。你自己加過的 Plaud 伺服器照樣認得。由 `tests_connector_plaud.py`（83 項）和
+  `tests_connect_plaud_ui.py`（18 項）用替身伺服器守著；截圖在 `qa-shots/connect-plaud-*.png`。
+
+- **A bot can walk a connection through in the conversation: `sfctl connect step`.** `sfctl connect start` and
+  `status` now print the current step's id and title and the actions ShellBot can do there; `sfctl connect step
+  <service> check|act|done|back [--action ID]` does them (adding a server, starting a sign-in, checking again). A bot
+  tells you in one sentence what to do in the browser and does the rest; it does not press "done" on a step only you
+  can do until you say you did it. The card in the chat and Settings → Connect stay as they are. Covered by
+  `tests_connectors_api.py` and `tests_connector_plaud.py`.
+
+  **bot 可以在對話裡把連線一步步做完：`sfctl connect step`。** `sfctl connect start` 和 `status` 現在會印出目前這一步的編號、標題，
+  以及 ShellBot 在這一步能做的動作；`sfctl connect step <服務> check|act|done|back [--action ID]` 就去做（加入伺服器、開始登入、再檢查
+  一次）。bot 會用一句話告訴你要在瀏覽器做什麼，其他的它自己做；只有你能做的步驟，你說做好了之前它不會按「做好了」。對話裡的卡片
+  和設定 → 連結都照舊。由 `tests_connectors_api.py`、`tests_connector_plaud.py` 守著。
+
+- **The office: the lobby's whiteboard is the task board, and a wall calendar shows the schedules.** Asked for: open
+  the board in the primary bot's office to see what is on it, and give scheduled loops a small object of their own.
+  Click the whiteboard behind the primary bot's desk (or "看板" at the top): Waiting for you (your decisions), Stuck,
+  and In progress grouped by who owns it, each task with its number, state, next step, whom it waits on, due date and
+  when it last moved; click one for its history, click an owner to go to them. Its sticky notes follow the real
+  tasks, red for a decision or a stuck one; an empty board says how tasks get there (`sfctl task add`). The calendar
+  beside it carries how many conversations run a `/loop` or a cron; click it (or "排程") for those, with a live
+  countdown to the next wake, and this computer's scheduled jobs. Someone whose tab runs a loop has a small calendar
+  at their desk and a line in their card. It reads what is already there (the task store, the loops ShellBot sees in
+  each conversation, the schedule list) and changes nothing; it works with the Loops panel off. Covered by
+  `tests_office_board_ui.py` (106, Chromium and WebKit) and `tests_api_task_detail.py`; screenshots
+  `qa-shots/office-board-*.png`, `qa-shots/office-calendar-*.png`.
+
+  **辦公室：大廳的白板就是任務看板，牆上的行事曆顯示排程。** 需求：在主 bot 的辦公室點開看板看內容，排程 loop 也要有個小物件代表。
+  點主 bot 座位後面的白板（或上方的「看板」）：等你決定、卡住了、進行中（依負責人分組），每件任務有編號、狀態、下一步、在等誰、
+  期限和多久沒動；點任務看歷程，點負責人就跳到那個人。白板上的便利貼跟著真的任務，要你決定或卡住的是紅色；看板是空的會告訴你
+  任務怎麼來（`sfctl task add`）。旁邊的行事曆寫著有幾個對話在跑 `/loop` 或 cron；點它（或「排程」）列出這些排程，附上離下次醒來的
+  倒數，以及這台電腦的排程工作。分頁在跑 loop 的人，桌上會有一個小行事曆，名片裡也多一行。它只讀現有的資料（任務資料庫、ShellBot
+  在每個對話看到的 loop、排程清單），不改任何東西；排程面板關著也能用。由 `tests_office_board_ui.py`（106 項，Chromium 和 WebKit）
+  和 `tests_api_task_detail.py` 守著；截圖在 `qa-shots/office-board-*.png`、`qa-shots/office-calendar-*.png`。
+
+### Fixes
+
+- **Pairing no longer freezes, or runs out of time, on a computer whose name does not resolve.** Found by the tests on
+  a clean machine: ShellBot looks up its own addresses for the pairing code, and the name lookup has no time limit of
+  its own; where it hangs (a Mac on a new network), the pairing screen waited for it, and the code's two minutes were
+  partly spent before it showed. The lookup now gives up after 2 seconds, runs once at a time, keeps its answer for
+  30 seconds, and happens before the code's time starts. Covered by `tests_frame_link.py`.
+
+  **電腦名稱查不到的電腦，配對不會再卡住或來不及。** 在乾淨的機器上跑測試發現的：ShellBot 產生配對碼時會查自己的位址，而查名稱
+  這件事本身沒有時間上限；查不到時（例如 Mac 換到新網路），配對畫面會一直等，配對碼的兩分鐘也先被用掉一截。現在最多查 2 秒，同一時
+  間只查一次，答案保留 30 秒，而且在配對碼開始計時之前就查好。由 `tests_frame_link.py` 守著。
+
+### Internal
+
+- **The test suite passes on a clean Mac (GitHub Actions).** Seven test files depended on this computer: its own
+  config and transcripts, its language, the Python and tools installed, or its speed. They now build what they need
+  in a temporary folder, drive a fake clock instead of sleeping, and wait for what they test; none reads the real
+  config any more. The macOS job may take 90 minutes.
+
+  **測試在乾淨的 Mac 上也會過（GitHub Actions）。** 有七個測試檔依賴這台電腦：它自己的設定和對話紀錄、系統語言、裝好的 Python 和工具，
+  或它的速度。現在它們在暫存資料夾裡建好需要的東西、用假時鐘取代等待、等到要測的狀態出現才檢查；不再有測試讀真的設定檔。macOS 那一
+  個工作最多可跑 90 分鐘。
+
 ## v0.54.1 (2026-11-17)
 
 ### Fixes

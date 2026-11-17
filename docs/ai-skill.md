@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.54.1
-   version: 0.54.1
+OK ShellBot v0.55.0
+   version: 0.55.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -576,6 +576,7 @@ calendar on its desk and "排程：每 20 分鐘，下一次 14:20" on its info 
 | The office: an intern's current step, Ask to leave (closes its tab), pictures pasted into the panel's box; a paired computer's real states | 0.52.0 |
 | Connect recognizes connections that already work (`claude mcp list`, `codex mcp list`) and says which way each goes; `sfctl connect` names it | 0.53.0 |
 | No new commands: the sidebar folds paired phones and tablets into one row (they cannot be driven); Windows shows the app's own icon | 0.54.0 |
+| Plaud on the Connect page (the official local MCP server, browser sign-in); `sfctl connect step` lets a bot do the steps ShellBot can do itself; the office's task board (the lobby whiteboard) and schedule calendar | 0.55.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
