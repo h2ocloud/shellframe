@@ -15,7 +15,8 @@
   - Esc inside the office closes it; the iframe is gone and the 3 s refresh stops; the window
     in the background does not refresh either
   - no console error from either page
-Demo data only (made-up names). Headless Chromium. Screenshots: qa-shots/office-*.png.
+Demo data only (made-up names). Headless Chromium, and WebKit (the macOS app's engine) when playwright
+has it. Screenshots (Chromium): qa-shots/office-*.png.
 Needs playwright; SKIP without it. Run: .venv/bin/python tests_office_ui.py
 """
 import functools
@@ -158,7 +159,8 @@ def calls(page, name):
     return page.evaluate("(n) => window.__calls.filter(c => c === n).length", name)
 
 
-def run(browser, base):
+def run(browser, base, engine):
+    shoot = engine == "chromium"
     page = browser.new_page(viewport={"width": 1280, "height": 800})
     errors = []
     page.on("pageerror", lambda e: errors.append(f"pageerror {e}"))
@@ -170,7 +172,7 @@ def run(browser, base):
     page.wait_for_function("""['s701:sig-working','s702:sig-decision'].every(p => { const [sid, c] = p.split(':');
         const s = window.__sfHost.sessions()[sid]; return s && s._dotClass === c; })""", timeout=20000)
 
-    print("switch off")
+    print(f"[{engine}] switch off")
     check("no office button while the switch is off", page.query_selector("#btn-office") is None)
     check("…and no iframe", page.query_selector("iframe") is None)
     page.click("#btn-settings")
@@ -183,7 +185,8 @@ def run(browser, base):
     check("the switch sits after the Loops switch in Settings → General, off, with the guide's mark",
           sw["panel"] == "settings-panel-general" and sw["after"] and not sw["on"] and sw["guide"] == "office", sw)
     check("…its label is in the page's language", "辦公室" in sw["label"], sw["label"])
-    page.locator("#settings-panel-general > div").first.screenshot(path=str(SHOTS / "office-switch.png"))
+    if shoot:
+        page.locator("#settings-panel-general > div").first.screenshot(path=str(SHOTS / "office-switch.png"))
     page.click("#setting-experimental-office")
     page.wait_for_timeout(300)
     check("switching it on saves experimental_office", page.evaluate("window.__cfg.settings.experimental_office") is True)
@@ -192,7 +195,7 @@ def run(browser, base):
           page.evaluate("!!document.querySelector('#sb-footer-row #btn-office')"))
     check("…named in the page's language", page.get_attribute("#btn-office", "aria-label") == "辦公室（實驗性）")
 
-    print("open")
+    print(f"[{engine}] open")
     page.click("#btn-office")
     page.wait_for_selector("#sfo-overlay iframe", timeout=5000)
     page.wait_for_function("""() => { const f = document.querySelector('#sfo-overlay iframe');
@@ -245,9 +248,10 @@ def run(browser, base):
     check("the tag says experimental", fr.evaluate("document.getElementById('tag').textContent") == "實驗性")
     fr.evaluate("__office.setArea('all', true)")
     page.wait_for_timeout(500)
-    page.screenshot(path=str(SHOTS / "office-overview.png"))
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-overview.png"))
 
-    print("a part-timer's panel")
+    print(f"[{engine}] a part-timer's panel")
     fr.evaluate("__office.follow('h:s702/b1')")
     page.wait_for_timeout(1300)
     panel = fr.evaluate("document.getElementById('panel').innerText")
@@ -255,10 +259,11 @@ def run(browser, base):
           "工讀生" in panel and "查三份文件的差異" in panel and "demo-model" in panel and "跑了" in panel
           and "示範臨時分頁" in panel, panel[:300])
     check("…and says it has been quiet too long", "超過 10 分鐘" in panel)
-    page.screenshot(path=str(SHOTS / "office-follow-helper.png"))
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-follow-helper.png"))
     fr.evaluate("__office.unfollow()")
 
-    print("the next snapshots")
+    print(f"[{engine}] the next snapshots")
     page.evaluate("""() => { delete window.__bots.roster.res;
         window.__helpers = {s701: ['a1','a2','a3','a4','a5','a6'].map((id, i) => ({id, description: '示範：第 ' + (i + 1) + ' 件小事',
             model: 'demo-model', state: 'working', started_at: Date.now() / 1000 - 600 + i, last_at: Date.now() / 1000 - 5}))}; }""")
@@ -281,9 +286,10 @@ def run(browser, base):
     page.wait_for_timeout(300)
     fr.evaluate("__office.setArea('z:辦公區#1', true)")
     page.wait_for_timeout(900)
-    page.screenshot(path=str(SHOTS / "office-left-and-plus.png"))
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-left-and-plus.png"))
 
-    print("what it keeps")
+    print(f"[{engine}] what it keeps")
     fr.click("#mode button[data-m='flat']")
     page.wait_for_timeout(800)
     saved = page.evaluate("window.__saved")
@@ -291,7 +297,7 @@ def run(browser, base):
           bool(saved) and saved[-1].get("mode") == "flat"
           and fr.evaluate("localStorage.getItem('sbOffice.v2.mode')") is None, saved[-1:] if saved else saved)
 
-    print("closing")
+    print(f"[{engine}] closing")
     box = page.locator("#sfo-overlay iframe").bounding_box()
     page.mouse.click(box["x"] + box["width"] - 30, box["y"] + 110)     # into the office, on its sky
     page.wait_for_timeout(200)
@@ -305,7 +311,7 @@ def run(browser, base):
     page.wait_for_timeout(3600)
     check("…and the refresh stopped", calls(page, "office_helpers") == n, (n, calls(page, "office_helpers")))
 
-    print("the window in the background")
+    print(f"[{engine}] the window in the background")
     page.click("#btn-office")
     page.wait_for_selector("#sfo-overlay iframe", timeout=5000)
     page.wait_for_timeout(1500)
@@ -324,7 +330,8 @@ def run(browser, base):
     return saved_now[-1] if saved_now else {}
 
 
-def reopen(browser, base, prefs):
+def reopen(browser, base, prefs, engine):
+    shoot = engine == "chromium"
     page = browser.new_page(viewport={"width": 1280, "height": 800})
     errors = []
     page.on("pageerror", lambda e: errors.append(f"pageerror {e}"))
@@ -341,7 +348,8 @@ def reopen(browser, base, prefs):
     page.wait_for_timeout(500)
     check("after a restart the office comes back in the mode it was left in",
           fr.evaluate("document.querySelector('#mode button[data-m=\"flat\"]').getAttribute('aria-pressed')") == "true")
-    page.screenshot(path=str(SHOTS / "office-flat.png"))
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-flat.png"))
     check("no console error after the restart", not errors, errors[:5])
     page.close()
 
@@ -350,12 +358,21 @@ SHOTS.mkdir(exist_ok=True)
 srv = serve()
 base = f"http://127.0.0.1:{srv.server_port}"
 with sync_playwright() as pw:
-    browser = pw.chromium.launch()
     try:
-        prefs = run(browser, base)
-        reopen(browser, base, prefs)
+        for engine in ("chromium", "webkit"):
+            try:
+                browser = getattr(pw, engine).launch()
+            except Exception as e:                       # webkit is optional: `playwright install webkit`
+                if engine == "chromium":
+                    raise
+                print(f"[{engine}] not installed, skipped: {str(e).splitlines()[0][:80]}")
+                continue
+            try:
+                prefs = run(browser, base, engine)
+                reopen(browser, base, prefs, engine)
+            finally:
+                browser.close()
     finally:
-        browser.close()
         srv.shutdown()
 
 print(f"\nResults: {passed} passed, {failed} failed")

@@ -1976,7 +1976,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
-          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, TasksApiMixin, OfficeApiMixin):
+          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, OfficeApiMixin, TasksApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):
