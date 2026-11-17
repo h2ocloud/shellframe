@@ -159,10 +159,11 @@ cfg_file = sf_config.config_file()
 before = cfg_file.read_text(encoding="utf-8") if cfg_file.exists() else None
 check("nothing kept yet", json.loads(app.office_prefs()) == {"success": True, "prefs": {}})
 res = json.loads(app.office_prefs_save(json.dumps({"seats": {"eng": {"zone": "辦公區#1", "slot": 3}}, "items": {"eng": ["plant"]},
-                                                     "mode": "flat", "legendMin": True, "other": 1}, ensure_ascii=False)))
+                                                     "mode": "flat", "legendMin": True, "panelTab": "info", "other": 1}, ensure_ascii=False)))
 back = json.loads(app.office_prefs())["prefs"]
-check("saved and read back, unknown keys dropped", res["success"] and back == {
-    "seats": {"eng": {"zone": "辦公區#1", "slot": 3}}, "items": {"eng": ["plant"]}, "mode": "flat", "legendMin": True}, back)
+check("saved and read back (the panel's tab too), unknown keys dropped", res["success"] and back == {
+    "seats": {"eng": {"zone": "辦公區#1", "slot": 3}}, "items": {"eng": ["plant"]}, "mode": "flat", "legendMin": True,
+    "panelTab": "info"}, back)
 check("…in the state folder, as office.json", api_office.prefs_file() == sf_config.state_dir() / "office.json"
       and api_office.prefs_file().exists())
 check("…config.json untouched", (cfg_file.read_text(encoding="utf-8") if cfg_file.exists() else None) == before)

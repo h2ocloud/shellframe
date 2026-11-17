@@ -77,6 +77,13 @@
   一次）。分頁剛開時的第一個大小照樣立刻送。所有 CLI 都受益：全螢幕的 CLI 以前也是每次都整個重畫。由 `tests_resize_settle.py`
   （Chromium 和 WebKit；修正前會失敗）守著。
 
+- **The office remembers the panel's Conversation / Details choice after a restart.** v0.49.0 said the choice was
+  kept; it was, while the app ran, but the file the office saves to (`office.json`) takes only the names it knows
+  and dropped this one, so a restart went back to Conversation. Covered by `tests_office_helpers.py`.
+
+  **辦公室面板選「對話」還是「資料」，重啟後也記得。** v0.49.0 說會記住；app 開著時確實記得，但辦公室存檔（`office.json`）只收
+  認得的名稱，把這一項丟掉了，所以重啟後又回到「對話」。由 `tests_office_helpers.py` 守著。
+
 - **A pi tab taken back up shows its conversation right away.** Seen while checking v0.49.0: after a restart, a pi
   bot relaunched on its conversation (`--session <file>`) showed "no conversation yet" in the chat view and the
   office until its next message. Its file was looked for among the ones written since the tab started, and a
