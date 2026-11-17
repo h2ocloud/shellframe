@@ -82,12 +82,12 @@
 
 ### Internal
 
-- **The test suite passes on a clean Mac (GitHub Actions).** Seven test files depended on this computer: its own
+- **The test suite passes on a clean Mac (GitHub Actions).** Ten test files depended on this computer: its own
   config and transcripts, its language, the Python and tools installed, or its speed. They now build what they need
-  in a temporary folder, drive a fake clock instead of sleeping, and wait for what they test; none reads the real
-  config any more. The macOS job may take 90 minutes.
+  in a temporary folder, drive a fake clock instead of sleeping, and wait for what they test (a resize is judged by
+  when the terminal itself last changed); none reads the real config any more. The macOS job may take 90 minutes.
 
-  **測試在乾淨的 Mac 上也會過（GitHub Actions）。** 有七個測試檔依賴這台電腦：它自己的設定和對話紀錄、系統語言、裝好的 Python 和工具，
+  **測試在乾淨的 Mac 上也會過（GitHub Actions）。** 有十個測試檔依賴這台電腦：它自己的設定和對話紀錄、系統語言、裝好的 Python 和工具，
   或它的速度。現在它們在暫存資料夾裡建好需要的東西、用假時鐘取代等待、等到要測的狀態出現才檢查；不再有測試讀真的設定檔。macOS 那一
   個工作最多可跑 90 分鐘。
 

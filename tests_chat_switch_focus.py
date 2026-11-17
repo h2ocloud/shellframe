@@ -83,7 +83,16 @@ def run(browser, engine):
     page.wait_for_function(SHOWN, timeout=15000)
     page.wait_for_timeout(1500)                       # the sidebar's own opening redraws are over
     writes = lambda: page.evaluate("window.__calls.filter(c => c[0] === 'write_input').length")
-    focused = lambda: page.evaluate("document.activeElement && document.activeElement.classList.contains('xterm-helper-textarea')")
+    FOCUS_JS = "document.activeElement && document.activeElement.classList.contains('xterm-helper-textarea')"
+
+    def focused():
+        """The terminal's input has the focus: given up to 3 s to get there (a slow machine finishes the switch's
+        redraw later), then read once. Losing it later still fails: the read is after the wait."""
+        try:
+            page.wait_for_function(FOCUS_JS, timeout=3000)
+        except Exception:
+            pass
+        return page.evaluate(FOCUS_JS)
 
     def typed(text):
         before = writes()
