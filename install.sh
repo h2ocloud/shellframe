@@ -1,7 +1,7 @@
 #!/bin/bash
 # ShellBot (formerly ShellFrame) installer for macOS and Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh | bash
 #
 # One line from a new computer to ShellBot open. It installs what is missing, leaves
 # what is already there, and is safe to run again (running it again is also how an
@@ -34,7 +34,7 @@ set -Eeuo pipefail
 
 INSTALL_DIR="${HOME}/.local/apps/shellframe"
 BIN_DIR="${HOME}/.local/bin"
-REPO_URL="${SHELLFRAME_REPO:-https://github.com/h2ocloud/shellframe.git}"
+REPO_URL="${SHELLFRAME_REPO:-https://github.com/h2ocloud/shellbot.git}"
 REF="${SHELLFRAME_REF:-main}"
 DRY_RUN="${SHELLFRAME_DRY_RUN:-0}"
 BREW_INSTALL_URL="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"

@@ -130,7 +130,7 @@ TRUSTED_STARTUP_CWDS = {str(Path.home()), str(Path.home().resolve())}
 
 APP_DIR = Path(__file__).parent
 VERSION_FILE = APP_DIR / "version.json"
-REPO_URL = "https://raw.githubusercontent.com/h2ocloud/shellframe/main/version.json"
+REPO_URL = "https://raw.githubusercontent.com/h2ocloud/shellbot/main/version.json"
 CODEX_AUTONOMOUS_FLAGS = "--dangerously-bypass-approvals-and-sandbox --search --no-alt-screen"
 CODEX_LAUNCHER = "codex" if IS_WIN else "sf-codex"
 SHELLFRAME_CODEX_CMD = f"{CODEX_LAUNCHER} {CODEX_AUTONOMOUS_FLAGS}"
@@ -4611,7 +4611,7 @@ def _run_install_sh():
         # "fresh machine" case. Uses the same URL the user would curl by hand.
         cmd = (
             "curl -fsSL "
-            "https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh "
+            "https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh "
             "| bash"
         )
         r = subprocess.run(
@@ -4652,7 +4652,7 @@ def _self_heal_venv():
     else:
         print(f"[shellframe] self-heal failed ({msg}).")
         print("[shellframe] Recover with:")
-        print("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash")
+        print("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh | bash")
 
 
 _nap_activity = None  # module-global so NSProcessInfo doesn't GC the activity token
@@ -5638,14 +5638,14 @@ def _write_crash_log(exc: BaseException):
             f.write(f"cwd: {os.getcwd()}\n\n")
             _tb.print_exception(type(exc), exc, exc.__traceback__, file=f)
             f.write("\n\nRecover with:\n")
-            f.write("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash\n")
+            f.write("  curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh | bash\n")
         print(f"[shellframe] crash log written to {crash_file}", file=sys.stderr)
         # macOS: surface a dialog so the user's colleagues see the recovery command
         if sys.platform == "darwin":
             try:
                 subprocess.run([
                     "osascript", "-e",
-                    'display dialog "ShellBot failed to start.\n\nRecover by running in Terminal:\n\ncurl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash\n\nDetails: ~/.shellframe-crash.log" '
+                    'display dialog "ShellBot failed to start.\n\nRecover by running in Terminal:\n\ncurl -fsSL https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh | bash\n\nDetails: ~/.shellframe-crash.log" '
                     'with title "ShellBot" buttons {"OK"} default button 1'
                 ], capture_output=True, timeout=30)
             except Exception:

@@ -1,6 +1,6 @@
 # ShellBot (formerly ShellFrame) installer for Windows.
 #
-#   irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.ps1 | iex
 #
 # One line from a new PC to ShellBot open. It installs what is missing (Git, Python 3.12,
 # the WebView2 runtime), then ShellBot, its Python packages, the shellframe / sfctl
@@ -29,7 +29,7 @@ $ProgressPreference = "SilentlyContinue"
 
 $InstallDir = "$env:USERPROFILE\.local\apps\shellframe"
 $BinDir = "$env:USERPROFILE\.local\bin"
-$RepoUrl = if ($env:SHELLFRAME_REPO) { $env:SHELLFRAME_REPO } else { "https://github.com/h2ocloud/shellframe.git" }
+$RepoUrl = if ($env:SHELLFRAME_REPO) { $env:SHELLFRAME_REPO } else { "https://github.com/h2ocloud/shellbot.git" }
 $Ref = if ($env:SHELLFRAME_REF) { $env:SHELLFRAME_REF } else { "main" }
 $DryRun = ($env:SHELLFRAME_DRY_RUN -eq "1")
 $PythonVersion = "3.12.10"     # the python.org installer used when winget cannot install Python

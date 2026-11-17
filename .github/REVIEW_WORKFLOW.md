@@ -8,17 +8,17 @@ asked to "check shellframe inbox" or run on a schedule.
 
 ```bash
 # Repo health snapshot
-gh repo view h2ocloud/shellframe --json stargazerCount,forkCount,pushedAt,latestRelease
+gh repo view h2ocloud/shellbot --json stargazerCount,forkCount,pushedAt,latestRelease
 
 # Open PRs
-gh pr list --repo h2ocloud/shellframe --state open --json number,title,author,createdAt,additions,deletions
+gh pr list --repo h2ocloud/shellbot --state open --json number,title,author,createdAt,additions,deletions
 
 # Open issues
-gh issue list --repo h2ocloud/shellframe --state open --json number,title,author,createdAt,labels
+gh issue list --repo h2ocloud/shellbot --state open --json number,title,author,createdAt,labels
 
 # Recently closed (last 7 days)
-gh pr list --repo h2ocloud/shellframe --state closed --search "closed:>$(date -v-7d +%Y-%m-%d)" --limit 20
-gh issue list --repo h2ocloud/shellframe --state closed --search "closed:>$(date -v-7d +%Y-%m-%d)" --limit 20
+gh pr list --repo h2ocloud/shellbot --state closed --search "closed:>$(date -v-7d +%Y-%m-%d)" --limit 20
+gh issue list --repo h2ocloud/shellbot --state closed --search "closed:>$(date -v-7d +%Y-%m-%d)" --limit 20
 ```
 
 Report format:
@@ -38,9 +38,9 @@ are new PRs/issues, drop into the per-item review below.
 Run for each open PR. Don't merge anything without the maintainer's explicit approval.
 
 ```bash
-gh pr view <num> --repo h2ocloud/shellframe
-gh pr diff <num> --repo h2ocloud/shellframe
-gh pr checks <num> --repo h2ocloud/shellframe
+gh pr view <num> --repo h2ocloud/shellbot
+gh pr diff <num> --repo h2ocloud/shellbot
+gh pr checks <num> --repo h2ocloud/shellbot
 ```
 
 ### Hard blockers (auto-flag, do not merge)
@@ -91,9 +91,9 @@ gh pr checks <num> --repo h2ocloud/shellframe
 ### Posting a review
 
 ```bash
-gh pr review <num> --repo h2ocloud/shellframe --approve --body "..."
-gh pr review <num> --repo h2ocloud/shellframe --request-changes --body "..."
-gh pr review <num> --repo h2ocloud/shellframe --comment --body "..."
+gh pr review <num> --repo h2ocloud/shellbot --approve --body "..."
+gh pr review <num> --repo h2ocloud/shellbot --request-changes --body "..."
+gh pr review <num> --repo h2ocloud/shellbot --comment --body "..."
 ```
 
 For comments on specific lines, use the GitHub web UI — `gh` doesn't
@@ -102,7 +102,7 @@ support inline review comments well.
 ## Issue triage checklist
 
 ```bash
-gh issue view <num> --repo h2ocloud/shellframe
+gh issue view <num> --repo h2ocloud/shellbot
 ```
 
 ### Categorize
@@ -143,10 +143,10 @@ Is it abuse / spam?
 ### Posting a comment / closing
 
 ```bash
-gh issue comment <num> --repo h2ocloud/shellframe --body "..."
-gh issue close <num> --repo h2ocloud/shellframe --reason completed
-gh issue close <num> --repo h2ocloud/shellframe --reason "not planned" --comment "..."
-gh issue edit <num> --repo h2ocloud/shellframe --add-label bug,enhancement
+gh issue comment <num> --repo h2ocloud/shellbot --body "..."
+gh issue close <num> --repo h2ocloud/shellbot --reason completed
+gh issue close <num> --repo h2ocloud/shellbot --reason "not planned" --comment "..."
+gh issue edit <num> --repo h2ocloud/shellbot --add-label bug,enhancement
 ```
 
 ## Stars / forks tracking

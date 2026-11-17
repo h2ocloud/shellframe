@@ -72,7 +72,7 @@ import os as _os
 from pathlib import Path as _Path
 
 _FILTERS_FILE = _Path(__file__).parent / "filters.json"
-_FILTERS_URL = "https://raw.githubusercontent.com/h2ocloud/shellframe/main/filters.json"
+_FILTERS_URL = "https://raw.githubusercontent.com/h2ocloud/shellbot/main/filters.json"
 _filters_cache = None
 
 

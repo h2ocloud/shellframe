@@ -126,11 +126,11 @@ class UpdateApiMixin:
              APP_DIR, so if copy fails the user can still launch via CLI.
 
         Recovery hint (always returned on total failure):
-          curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
+          curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh | bash
         """
         post_steps = []
         RECOVERY_CMD = ("curl -fsSL "
-                        "https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh "
+                        "https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh "
                         "| bash")
         try:
             # Pre-check: APP_DIR must be a git repo for `git pull` to work.

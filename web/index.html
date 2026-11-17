@@ -1416,7 +1416,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     </div>
 
     <div class="modal-footer" style="gap:8px">
-      <a href="https://github.com/h2ocloud/shellframe" target="_blank" style="font-size:10px;color:#3b4261;text-decoration:none">github.com/h2ocloud/shellframe</a>
+      <a href="https://github.com/h2ocloud/shellbot" target="_blank" style="font-size:10px;color:#3b4261;text-decoration:none">github.com/h2ocloud/shellbot</a>
       <button class="btn btn-ghost" id="btn-report-issue" style="white-space:nowrap">Report Issue</button>
       <button class="btn btn-ghost" id="btn-close-about" style="white-space:nowrap">Close</button>
     </div>
@@ -8674,7 +8674,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const platform = navigator.platform || '';
     const title = encodeURIComponent(`[${ver}] `);
     const body = encodeURIComponent(`**Version:** ${ver}\n**Platform:** ${platform}\n\n**What happened:**\n\n\n**Steps to reproduce:**\n1. \n\n**Expected vs actual:**\n`);
-    window.open(`https://github.com/h2ocloud/shellframe/issues/new?title=${title}&body=${body}`, '_blank');
+    window.open(`https://github.com/h2ocloud/shellbot/issues/new?title=${title}&body=${body}`, '_blank');
   });
   // ── About → skill sheet for an AI ──
   let _skillText = '';
@@ -8954,7 +8954,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           lang === 'zh-TW' ? '有新版本可用' : 'A new version is available';
 
         try {
-          const resp = await fetch(`https://raw.githubusercontent.com/h2ocloud/shellframe/main/CHANGELOG.md`);
+          const resp = await fetch(`https://raw.githubusercontent.com/h2ocloud/shellbot/main/CHANGELOG.md`);
           if (resp.ok) {
             const md = await resp.text();
             // Extract the FIRST version section (newest = the remote version)

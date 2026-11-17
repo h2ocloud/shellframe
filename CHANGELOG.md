@@ -6,6 +6,22 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.53.1 (2026-11-17)
+
+### Changes
+
+- **The project's repository is now `h2ocloud/shellbot`.** The repository was renamed from `h2ocloud/shellframe`
+  to match the app's name. GitHub forwards the old addresses of the repository, its git remote and its files, so
+  an installed copy keeps updating; the product page moved to `https://h2ocloud.github.io/shellbot/` (GitHub does
+  not forward a renamed project's page). The app now reads its version, its install script and its Telegram filter
+  list from the new name, and its links (the sidebar's GitHub link, "Report a problem") open it; the install
+  scripts clone it. Folders on disk keep their names.
+
+  **專案的 repo 改名為 `h2ocloud/shellbot`。** repo 從 `h2ocloud/shellframe` 改名，跟 App 的名字一致。GitHub 會把 repo、git 遠端和
+  檔案的舊網址轉到新網址，已經安裝的電腦照樣能更新；產品頁搬到 `https://h2ocloud.github.io/shellbot/`（改名後 GitHub 不會轉
+  產品頁的舊網址）。App 現在從新名稱讀版本、安裝腳本和 Telegram 的過濾清單，側欄的 GitHub 連結和「回報問題」也開新的位置；安裝
+  腳本從新名稱下載。電腦上的資料夾名稱不變。
+
 ## v0.53.0 (2026-11-17)
 
 ### Added

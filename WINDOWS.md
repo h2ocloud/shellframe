@@ -6,11 +6,11 @@ a couple of macOS-only conveniences have to settle for less. This page is the
 
 ## Install
 
-Easiest: open **https://h2ocloud.github.io/shellframe/#install** and copy the Windows
+Easiest: open **https://h2ocloud.github.io/shellbot/#install** and copy the Windows
 command. Or run directly in **PowerShell**:
 
 ```powershell
-irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.ps1 | iex
 ```
 
 If `iex` is blocked by execution policy, first run
