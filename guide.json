@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.53",
+  "reviewed_for": "0.54",
   "tours": {
     "first_run": [
       "new-tab",

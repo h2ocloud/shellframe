@@ -6,6 +6,52 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.54.0 (2026-11-17)
+
+### Changes
+
+- **Phones and tablets fold into one row of the sidebar; computers come first.** Reported: paired phones and tablets
+  filled the sidebar's list of other ShellBots, each with Message, File and Address actions and "no address, waiting
+  for it to poll", although a phone or a tablet cannot run an AI CLI and is never driven from here. They are now one
+  row, "📱 Mobile devices", with how many there are and how many are on, folded by default (the fold is remembered);
+  unfolded, each is one line with its light, its name and ✕ to unpair. A phone or a tablet is one that paired as
+  one, or an old pairing with no kind and no address of its own; such a row keeps ✎ to give it an address, in case it
+  is a computer. A computer behind NAT (no address) stays with the computers, its actions unchanged. The divider
+  counts both, for example "(2 + 📱3)". Covered by `tests_sidebar_mobile_peers.py` (10); screenshots
+  `qa-shots/sidebar-mobile-*.png`.
+
+  **手機和平板收成側欄的一列，電腦排前面。** 回報：配對過的手機、平板佔滿側欄的「其他 ShellBot」清單，每台都有訊息、檔案、位址，
+  還寫著「無位址——等對方輪詢取件」，但手機和平板不能跑 AI CLI，也從來不會從這裡被操作。現在它們收成一列「📱 行動裝置」，寫著幾
+  台、幾台在線，預設收起（收合狀態會記住）；展開後每台一行：燈號、名稱和斷開配對的 ✕。手機或平板指的是以手機身分配對的，或沒有記
+  下種類、也沒有自己位址的舊配對；這種列保留 ✎，萬一它其實是電腦，可以給它位址。在 NAT 後面（沒有位址）的電腦仍列在電腦那邊，
+  動作不變。分隔線兩邊都算，例如「(2 + 📱3)」。由 `tests_sidebar_mobile_peers.py`（10 項）守著；截圖在
+  `qa-shots/sidebar-mobile-*.png`。
+
+### Fixes
+
+- **Windows: the window and its taskbar button show ShellBot's icon, not Python's.** Reported: on Windows the app
+  opened with Python's icon. The app runs under `pythonw.exe`; given no icon, pywebview takes the executable's, and
+  the taskbar groups the window with every other Python program. The process now gets an app ID of its own before
+  the window opens, and the window is given `icon.ico` (only when the installed pywebview accepts an icon, so an
+  older one still opens the window). Not yet tried on a real Windows computer. Covered by `tests_win_icon.py`, which
+  also runs on Windows in CI.
+
+  **Windows：視窗和工作列按鈕顯示 ShellBot 的圖示，不是 Python 的。** 回報：在 Windows 上 App 打開時是 Python 的圖示。App 是在
+  `pythonw.exe` 底下跑的；沒給圖示時 pywebview 會拿執行檔的圖示，工作列也會把視窗跟其他 Python 程式歸成同一組。現在行程在視窗
+  打開前先拿到自己的 App ID，視窗也會拿到 `icon.ico`（只在裝的 pywebview 收得下圖示時才給，舊版照樣打得開視窗）。還沒在真的
+  Windows 電腦上試過。由 `tests_win_icon.py` 守著，CI 也會在 Windows 上跑它。
+
+### Internal
+
+- **The tests run on GitHub Actions for every push and pull request.** A macOS job runs the full suite
+  (`./run_tests.sh`, with tmux and Playwright's Chromium and WebKit); a Windows job checks that the app imports and
+  runs the Windows-only tests (Esc in a Codex tab, the input box, Codex's models, the app icon). On CI the suite
+  prints the failing lines of a failed test file. Workflow: `.github/workflows/tests.yml`.
+
+  **每次 push 和 pull request 都會在 GitHub Actions 跑測試。** macOS 那一個跑完整測試（`./run_tests.sh`，含 tmux 和 Playwright 的
+  Chromium、WebKit）；Windows 那一個檢查 App 能 import，並跑只在 Windows 才有的測試（Codex 分頁的 Esc、輸入框、Codex 的模型清單、
+  App 圖示）。在 CI 上，測試檔失敗時會印出失敗的那幾行。設定檔：`.github/workflows/tests.yml`。
+
 ## v0.53.1 (2026-11-17)
 
 ### Changes
