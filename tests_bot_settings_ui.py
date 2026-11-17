@@ -53,6 +53,12 @@ import tempfile  # noqa: E402
 _PI = pathlib.Path(tempfile.mkdtemp(prefix="sf-botset-pi-"))          # pi's list is the computer's models.json: demo ids
 (_PI / "models.json").write_text(json.dumps({"providers": {"local": {"models": [{"id": "local-fast"}, {"id": "local-think"}]}}}))
 os.environ["PI_CODING_AGENT_DIR"] = str(_PI)
+_CODEX = pathlib.Path(tempfile.mkdtemp(prefix="sf-botset-codex-"))    # Codex's list is its own models_cache.json: demo ids
+(_CODEX / "models_cache.json").write_text(json.dumps({"models": [
+    {"slug": "gpt-9-demo-a", "display_name": "GPT-9 Demo A", "visibility": "list", "priority": 1},
+    {"slug": "gpt-9-demo-b", "display_name": "GPT-9 Demo B", "visibility": "list", "priority": 2},
+    {"slug": "gpt-5.5", "display_name": "GPT-5.5", "visibility": "hide", "priority": 3}]}))
+os.environ["CODEX_HOME"] = str(_CODEX)
 import agent_model  # noqa: E402
 import agent_status  # noqa: E402
 from main import Api  # noqa: E402
@@ -79,7 +85,7 @@ def row(label, cmd, model, job, avatar, primary=False):
 ROSTER = {
     "助理": row("助理", CLAUDE, "sonnet", "日常任務的第一站，盤點與派工", {"shape": "star", "color": "purple"}, primary=True),
     "寫程式": row("寫程式", CLAUDE, "opus", "程式、測試、部署", {"shape": "pill", "color": "red"}),
-    "研究": row("研究", CODEX, "gpt-5.4", "資料調研與彙整", {"shape": "hex", "color": "blue"}),
+    "研究": row("研究", CODEX, "gpt-9-demo-a", "資料調研與彙整", {"shape": "hex", "color": "blue"}),
     "舊設定": row("舊設定", CLAUDE, "sonet", "以前手打的模型，少了一個 n", {"shape": "cloud", "color": "green"}),
 }
 TABS = [("s2", "寫程式", CLAUDE, "working", {"action": "Editing relay.py"}),
@@ -265,7 +271,7 @@ def run(browser, engine):
     sleeper_edit.click()
     page.wait_for_selector(".sfb-modal #sfb-ed-name")
     check("…Edit opens its editor and does not wake it", page.input_value("#sfb-ed-name") == "研究"
-          and page.input_value("#sfb-ed-cmd") == CODEX and page.input_value("#sfb-ed-model") == "gpt-5.4"
+          and page.input_value("#sfb-ed-cmd") == CODEX and page.input_value("#sfb-ed-model") == "gpt-9-demo-a"
           and "bots_open" not in page.evaluate(CALLS), page.evaluate(CALLS))
     close_editor(page)
     page.locator('.sfb-sleeper[data-sfb-role="研究"] .sfb-avatar').click(button="right")
@@ -294,7 +300,7 @@ def run(browser, engine):
     check("every bot is listed, the primary first", names == ["助理", "寫程式", "研究", "舊設定"], names)
     rows = page.evaluate("Object.fromEntries([...document.querySelectorAll('#sfb-settings-list .sfb-bl-row')].map(r => [r.dataset.sfbRole, r.innerText.replace(/\\s+/g, ' ')]))")
     check("…each with its CLI and model", "Claude Code · Sonnet" in rows["助理"] and "★ 主要 Bot" in rows["助理"]
-          and "Claude Code · Opus" in rows["寫程式"] and "Codex · GPT-5.4" in rows["研究"], rows)
+          and "Claude Code · Opus" in rows["寫程式"] and "Codex · GPT-9 Demo A" in rows["研究"], rows)
     check("…awake or asleep", "醒著" in rows["寫程式"] and "休息中" in rows["研究"], rows)
     check("…a model ShellBot does not know is flagged on its row",
           "這個模型可能沒生效" in rows["舊設定"] and "sonet" in rows["舊設定"] and "可能沒生效" not in rows["助理"], rows["舊設定"])
@@ -342,10 +348,18 @@ def run(browser, engine):
     page.select_option("#sfb-ed-cmd", value=CODEX)
     page.wait_for_timeout(300)
     opts = model_options(page)
-    check("another CLI starts the choice over, from that CLI's own list (opus is no Codex model)",
-          [o[0] for o in opts] == ["", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2", "__custom__"] and page.input_value("#sfb-ed-model") == "", opts)
-    page.select_option("#sfb-ed-model", value="gpt-5.5")
-    check("a Codex model is sent as -m", "-m gpt-5.5" in page.inner_text("#sfb-ed-model-note"))
+    check("another CLI starts the choice over, from that CLI's own list (opus is no Codex model): Codex's own menu",
+          opts == [["", "CLI 預設"], ["gpt-9-demo-a", "GPT-9 Demo A"], ["gpt-9-demo-b", "GPT-9 Demo B"], ["__custom__", "其他（自訂）…"]]
+          and page.input_value("#sfb-ed-model") == "", opts)
+    page.select_option("#sfb-ed-model", value="gpt-9-demo-b")
+    check("a Codex model is sent as -m", "-m gpt-9-demo-b" in page.inner_text("#sfb-ed-model-note"))
+    page.select_option("#sfb-ed-model", value="__custom__")
+    page.fill("#sfb-ed-model-custom", "gpt-5.5")
+    page.wait_for_function("document.getElementById('sfb-ed-model-note').innerText.includes('不列')", timeout=5000)
+    note = page.inner_text("#sfb-ed-model-note")
+    check("a model Codex keeps off its own menu (gpt-5.5): a warning, the account may refuse it", "Codex 自己的模型選單已經不列" in note
+          and "-m gpt-5.5" in note and page.get_attribute("#sfb-ed-model-note", "class").find("warn") >= 0, note)
+    page.locator(".sfb-modal .modal").screenshot(path=str(SHOTS / f"botset-model-codex-hidden{tag}.png"))
     page.select_option("#sfb-ed-cmd", value="grok")
     page.wait_for_timeout(300)
     check("Grok Build: its own three", [o[0] for o in model_options(page)] == ["", "grok-4.7", "grok-4.7-build-fast", "grok-4.6", "__custom__"])

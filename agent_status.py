@@ -30,6 +30,7 @@ import agent_cursor
 import bridge_delivery
 import agent_grok
 import agent_link
+import launch_cmd
 import usage_probe
 
 # ── 狀態機門檻（秒）──
@@ -292,10 +293,11 @@ def _pi_session_file(worker: dict):
     別的對話的檔。⚠️ 同一個 cwd 開兩個 pi 分頁、而且兩個都在寫時分不出來——那要 pi
     自己吐 session id 才有解，目前它不吐。
     """
+    named = launch_cmd.pi_session_of(worker.get("cmd"), worker.get("cwd"))    # started on `--session <file>`
     files = glob.glob(os.path.join(
         PI_SESSIONS, _pi_cwd_slug(worker.get("cwd")), "*.jsonl"))
     if not files:
-        return None
+        return named or None
     pane = _tmux_pane_pid(worker.get("tmux_name"))
     start = _proc_start_epoch(pane) if pane else None
     pool = files
@@ -312,8 +314,12 @@ def _pi_session_file(worker: dict):
                 return False
             return (_pi_file_epoch(os.path.basename(f)) or 0) >= start - 5 or written >= start - 5
         pool = [f for f in files if mine(f)]
+        if named:   # a file it created after starting (/new, /fork in the tab) wins; else the one it was started on
+            pool = [f for f in pool if f != named and (_pi_file_epoch(os.path.basename(f)) or 0) >= start - 5] or [named]
         if not pool:
             return None
+    elif named:
+        return named
     try:
         return max(pool, key=os.path.getmtime)
     except (OSError, ValueError):

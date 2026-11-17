@@ -176,6 +176,47 @@ def pi_models() -> list:
     return out
 
 
+_CODEX_CACHE = {"key": None, "models": []}
+
+
+def _codex_dir() -> str:
+    return os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex")
+
+
+def codex_models() -> list:
+    """[{"key", "label", "listed"}] from Codex's own models_cache.json, the file its /model menu is
+    drawn from (Codex fetches it for the signed-in account), in Codex's order; [] when there is none.
+    `listed` False: Codex keeps it off its menu, as it did gpt-5.5 for ChatGPT accounts (reported: the
+    picker offered only gpt-5.5, which the account then refused). Only slug, display_name, visibility
+    and priority are read. Read again only when the file changes. It lists, it never refuses: the
+    cache can lag a Codex release, and a launcher may pin a model it does not name yet."""
+    path = os.path.join(_codex_dir(), "models_cache.json")
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return []
+    if _CODEX_CACHE["key"] == key:
+        return _CODEX_CACHE["models"]
+    out, seen = [], set()
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f) or {}
+        rows = [m for m in ((data.get("models") if isinstance(data, dict) else None) or []) if isinstance(m, dict)]
+        rank = lambda m: m.get("priority") if isinstance(m.get("priority"), (int, float)) else float("inf")  # noqa: E731
+        for m in sorted(rows, key=rank):
+            slug = m.get("slug")
+            if not isinstance(slug, str) or len(slug) > MODEL_MAX or not _SHAPE.fullmatch(slug) or slug in seen:
+                continue
+            seen.add(slug)
+            name = m.get("display_name")
+            out.append({"key": slug, "label": (name.strip()[:60] if isinstance(name, str) and name.strip() else slug),
+                        "listed": m.get("visibility") == "list"})
+    except (OSError, ValueError, AttributeError, TypeError):
+        out = []
+    _CODEX_CACHE.update(key=key, models=out)
+    return out
+
+
 def launcher_head(exe: str):
     """The first bytes of a launcher script found on PATH (or at its path), or None when it cannot
     be read. Read for the flags it gives its CLI; never shown."""
@@ -258,6 +299,10 @@ CUSTOM = "__custom__"            # the last item of a picker's list: not a model
 
 def label_of(provider: str, key: str) -> str:
     """The name a person reads for a model key; the key itself when the table has no name for it."""
+    if provider == "codex":
+        hit = next((m["label"] for m in codex_models() if m["key"] == key), "")
+        if hit:
+            return hit
     return next((lab for k, lab in (_TABLE.get(provider) or {}).get("models", []) if k == key), "") or key
 
 
@@ -266,7 +311,8 @@ def choices(provider: str, zh: bool = False) -> list:
     ""), then the table's models, and last "Other (custom)" (key CUSTOM, "custom": true: a text
     box, checked by `check`). A CLI that takes no model pin on its command line (Antigravity, a
     command ShellBot does not know) has only "CLI default": grey the field out. pi lists the models
-    its models.json defines on this computer ("id · provider")."""
+    its models.json defines on this computer ("id · provider"); Codex the ones its own menu lists
+    (models_cache.json), the table only when Codex has no such file."""
     out = [{"key": "", "label": "CLI 預設" if zh else "CLI default"}]
     spec = _TABLE.get(provider)
     if not spec:
@@ -277,7 +323,9 @@ def choices(provider: str, zh: bool = False) -> list:
             if mid not in seen:
                 seen.add(mid)
                 out.append({"key": mid, "label": f"{mid} · {prov}"})
-    out += [{"key": k, "label": lab} for k, lab in spec["models"]]
+    listed = [m for m in codex_models() if m["listed"]] if provider == "codex" else []
+    out += ([{"key": m["key"], "label": m["label"]} for m in listed] if listed
+            else [{"key": k, "label": lab} for k, lab in spec["models"]])
     out.append({"key": CUSTOM, "label": "其他（自訂）" if zh else "Other (custom)", "custom": True})
     return out
 
@@ -295,8 +343,12 @@ def _shapes(provider: str):
 
 def _kind(provider: str, model: str) -> str:
     """"listed" (in the picker), "known" (a key or id shape the CLI takes), or ""."""
-    if any(k == model for k, _ in _TABLE[provider]["models"]):
+    cm = codex_models() if provider == "codex" else []
+    listed = [m["key"] for m in cm if m["listed"]]
+    if model in listed or (not listed and any(k == model for k, _ in _TABLE[provider]["models"])):
         return "listed"
+    if any(m["key"] == model for m in cm):                     # Codex names it (off its menu): known
+        return "known"
     return "known" if any(p.fullmatch(model) for p in _shapes(provider)) else ""
 
 
@@ -325,6 +377,8 @@ def check(cmd: str, model: str) -> dict:
           shape ("known").
       code "bad_model"     not one short word of letters, digits and . _ : / - [ ] (`suggestion` as below)
       code "unknown_model" a word the table does not know (`suggestion`: the likely one)
+      codex: `hidden` true when Codex's own menu keeps that model off (models_cache.json): still ok,
+          the editor warns that the account may refuse it
     Plain refusals: a model the check does not know is never saved, because the CLI would
     ignore it or refuse to start with it."""
     model = ("" if model is None else str(model)).strip()      # a hand-edited config may hold a number
@@ -346,7 +400,8 @@ def check(cmd: str, model: str) -> dict:
         return dict(out, ok=False, code="unknown_model", kind="", suggestion=close[0] if close else "", keys=ids)
     kind = _kind(provider, model)
     if kind:
-        return dict(out, kind=kind)
+        hidden = provider == "codex" and any(m["key"] == model and not m["listed"] for m in codex_models())
+        return dict(out, kind=kind, hidden=True) if hidden else dict(out, kind=kind)
     return dict(out, ok=False, code="unknown_model", kind="", suggestion=suggest(provider, model))
 
 

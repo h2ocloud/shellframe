@@ -241,6 +241,60 @@ def test_resumed_session_written_after_start_is_its_own():
         restore()
 
 
+# ── 10. 重開的 pi 分頁（`--session <檔>` 接回原對話）：還沒送新訊息、檔案沒被寫過，也要讀得到那個對話
+#      （實機：bot 重開後辦公室／對話模式寫「還沒有可讀的對話」，其實指令列上寫著是哪個檔）──
+def test_relaunched_on_named_session_reads_it_before_any_write():
+    worker, restore = _pi_session_dir([
+        ("1970-01-11T00-00-00-000Z_named.jsonl", _pi_records("named-model") + [
+            {"type": "message", "timestamp": "2026-08-28T14:38:00.000Z",
+             "message": {"role": "user", "content": [{"type": "text", "text": "示範：接著做"}]}}]),
+        ("1970-01-11T01-00-00-000Z_other.jsonl", _pi_records("other-conversation")),
+    ], start=1_000_000.0)
+    try:
+        slug = _os.path.join(A.PI_SESSIONS, A._pi_cwd_slug(worker["cwd"]))
+        named = _os.path.join(slug, "1970-01-11T00-00-00-000Z_named.jsonl")
+        for f in ("_named", "_other"):
+            q = _os.path.join(slug, f"1970-01-11T0{0 if f == '_named' else 1}-00-00-000Z{f}.jsonl")
+            _os.utime(q, (900_000.0 + (5 if f == "_other" else 0),) * 2)     # both before this process: no write yet
+        w = dict(worker, cmd=f"pi --session {named} --append-system-prompt 'demo persona'")
+        assert A._pi_session_file(w) == named, A._pi_session_file(w)
+        import agent_pi
+        got = agent_pi.turns(w)
+        assert [t["text"] for t in got] == ["示範：接著做"], got
+        assert A._pi_session_file(worker) is None            # without --session: as before, nothing of another's
+        # a file this process created after starting (/new in the tab) wins over the named one
+        fresh = _os.path.join(slug, "1970-01-12T14-00-00-000Z_fresh.jsonl")
+        with open(fresh, "w") as fh:
+            fh.write(_json.dumps(_pi_records("fresh-model")[0]) + "\n")
+        _os.utime(fresh, (1_000_050.0, 1_000_050.0))
+        assert A._pi_session_file(w) == fresh, A._pi_session_file(w)
+        # a --session file that is gone: back to the usual rule
+        w2 = dict(worker, cmd=f"pi --session {_os.path.join(slug, 'gone.jsonl')}")
+        assert A._pi_session_file(w2) == fresh
+        # a relative --session is taken from the tab's folder; a named file outside the slug folder still counts
+        outside = _os.path.join(worker["cwd"], "mine.jsonl")
+        with open(outside, "w") as fh:
+            fh.write(_json.dumps(_pi_records("outside-model")[0]) + "\n")
+        _os.utime(outside, (900_000.0, 900_000.0))
+        _os.remove(fresh)
+        assert A._pi_session_file(dict(worker, cmd="cd x && pi --session=mine.jsonl")) == outside
+    finally:
+        restore()
+
+
+def test_session_of_parses_only_the_session_flag():
+    import launch_cmd
+    d = _tempfile.mkdtemp(prefix="sf_pi_named_")
+    f = _os.path.join(d, "s.jsonl")
+    open(f, "w").close()
+    assert launch_cmd.pi_session_of(f"pi --session {f}") == f
+    assert launch_cmd.pi_session_of(f"pi --session {f} --session-dir /nope") == f
+    assert launch_cmd.pi_session_of("pi --session-dir /nope") == ""
+    assert launch_cmd.pi_session_of("pi --continue") == ""
+    assert launch_cmd.pi_session_of(f"pi --session {d}/missing.jsonl") == ""
+    assert launch_cmd.pi_session_of("pi --session 'unclosed") == ""
+
+
 if __name__ == "__main__":
     fails = []
     for name, fn in sorted(globals().items()):

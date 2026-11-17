@@ -20,6 +20,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 _PI = pathlib.Path(tempfile.mkdtemp(prefix="sf-plan-a-pi-"))     # pi lists the computer's models.json: demo ids
 (_PI / "models.json").write_text(json.dumps({"providers": {"local": {"models": [{"id": "local-fast"}]}}}))
 os.environ["PI_CODING_AGENT_DIR"] = str(_PI)
+os.environ["CODEX_HOME"] = tempfile.mkdtemp()                # no models_cache.json: Codex lists the table here
 SHOTS = HERE / "qa-shots"
 passed = failed = 0
 

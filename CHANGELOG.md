@@ -6,6 +6,39 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.49.1 (2026-11-17)
+
+### Fixes
+
+- **A Codex bot's model list is Codex's own.** Reported: the bot settings offered only GPT-5.5 for Codex, and the
+  bot then failed at its first message ("The 'gpt-5.5' model is not supported when using Codex with a ChatGPT
+  account"). The list was ShellBot's, measured once on Codex 0.142.1; Codex has since moved on, and it keeps the
+  menu it shows the signed-in account in `~/.codex/models_cache.json` (`$CODEX_HOME`). The picker, the tab bar's
+  model menu and the phone's list now show the models Codex's own menu lists, in its order and by its names (here:
+  GPT-5.6-Sol, GPT-5.6-Terra, GPT-5.6-Luna); only each model's id, name, visibility and order are read. Without
+  that file the old list is shown. The file only lists: a model it does not name (a launcher's newer one) is still
+  taken, and one Codex keeps off its menu, such as GPT-5.5, is taken with a warning in the editor that the account
+  may refuse it. A bot already set to GPT-5.5 keeps it until it is changed. Covered by `tests_codex_models.py` and
+  `tests_bot_settings_ui.py` (the list and the warning, demo model names).
+
+  **Codex bot 的模型清單改用 Codex 自己的。** 回報：bot 設定裡 Codex 只選得到 GPT-5.5，選了之後 bot 第一則就失敗（「ChatGPT 帳號
+  不支援 gpt-5.5」）。那份清單是 ShellBot 自己的，當初在 Codex 0.142.1 量的；Codex 後來換了，而它給目前登入帳號看的選單存在
+  `~/.codex/models_cache.json`（`$CODEX_HOME`）。現在 bot 設定、分頁列的模型選單、手機上的清單，都列 Codex 自己選單上的模型，照它
+  的順序和名稱（這台是 GPT-5.6-Sol、GPT-5.6-Terra、GPT-5.6-Luna）；每個模型只讀 id、名稱、是否列出、順序。沒有那個檔就照舊列原本的
+  清單。這個檔只用來列選項：它沒寫到的模型（啟動器指定的新模型）照樣可以用；Codex 自己不列的（例如 GPT-5.5）也可以存，但編輯器
+  會警告帳號可能不能用。已經設成 GPT-5.5 的 bot 不會被自動改掉，要自己換。由 `tests_codex_models.py` 和 `tests_bot_settings_ui.py`
+  （清單和警告，示範模型名）守著。
+
+- **A pi tab taken back up shows its conversation right away.** Seen while checking v0.49.0: after a restart, a pi
+  bot relaunched on its conversation (`--session <file>`) showed "no conversation yet" in the chat view and the
+  office until its next message. Its file was looked for among the ones written since the tab started, and a
+  conversation taken back up writes nothing until then. The file named on its command line is now the one read;
+  a file the tab started afterwards (`/new` in pi) still takes over. Covered by `tests_pi_provider.py`.
+
+  **接回原對話的 pi 分頁，對話馬上看得到。** 驗 v0.49.0 時發現：ShellBot 重啟後，用 `--session <檔案>` 接回原對話的 pi bot，在對話
+  模式和辦公室都顯示「還沒有可讀的對話」，要等它下一則訊息才出現。原因是只在「分頁啟動後寫過的檔」裡找，而接回來的對話在下一則之前
+  不會寫檔。現在直接讀指令列上寫的那個檔；分頁之後自己開的新對話（在 pi 裡 `/new`）仍然優先。由 `tests_pi_provider.py` 守著。
+
 ## v0.49.0 (2026-11-17)
 
 ### Added

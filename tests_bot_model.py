@@ -31,6 +31,7 @@ TMP = Path(tempfile.mkdtemp(prefix="sf-bot-model-"))
 os.environ["SHELLFRAME_BOTS_DIR"] = str(TMP / "bots")
 os.environ["SHELLFRAME_PROMPT_LANG"] = "zh"
 os.environ["PI_CODING_AGENT_DIR"] = str(TMP / "pi")         # no models.json: pi lists nothing here (tests_pi_roster_model.py)
+os.environ["CODEX_HOME"] = tempfile.mkdtemp()                # no models_cache.json: Codex lists the table here
 sys.modules["webview"] = MagicMock()
 sys.path.insert(0, str(HERE))
 import sf_log  # noqa: E402

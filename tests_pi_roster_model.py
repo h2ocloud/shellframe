@@ -27,6 +27,7 @@ from unittest.mock import MagicMock
 HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="sf-pi-model-"))
 os.environ["PI_CODING_AGENT_DIR"] = str(TMP / "agent")
+os.environ["CODEX_HOME"] = tempfile.mkdtemp()                # no models_cache.json: Codex lists the table here
 sys.path.insert(0, str(HERE))
 sys.modules.setdefault("webview", MagicMock())
 import agent_model as M  # noqa: E402

@@ -127,6 +127,13 @@ the bot runs on:
   one ShellBot knows`) and tells the person. ShellBot does not read the CLI's own complaint off its screen: each CLI
   and version words it differently, and an unknown key may be ignored in silence, which a screen scrape would miss.
 - Choosing "CLI default" takes any `--model` already in the bot's command off it, so the choice really is the default.
+- **Codex lists its own menu.** Codex keeps the models its `/model` menu shows, for the signed-in account, in
+  `$CODEX_HOME/models_cache.json` (default `~/.codex`). The picker (and the tab bar's model menu) lists the ones
+  marked `visibility: "list"`, in Codex's order and by its names; only slug, name, visibility and priority are
+  read. Without that file the table below is listed. The file lists and never refuses: a model it does not name
+  (a launcher's newer one) is still taken by its shape, and one it keeps off its menu is taken with a warning in
+  the editor ("Codex no longer lists … your account may refuse it"), since that is how a ChatGPT account refused
+  gpt-5.5 at the first message.
 
 ### Updating the model list
 

@@ -1121,6 +1121,11 @@
         let res = { ok: true };
         try { res = JSON.parse(await api().bots_model_check(cmd, v)); } catch (_) { /* the server checks again on save */ }
         if (mine !== seq) return;                                 // a newer keystroke took over
+        if (res.ok && res.hidden) {     // Codex's own menu keeps it off (models_cache.json): the account may refuse it
+          setNote('warn', `⚠ ${esc(t(`Codex no longer lists ${q(v)} in its own model menu: your account may refuse it. Pick one from the list.`,
+            `Codex 自己的模型選單已經不列${q(v)}，你的帳號可能不能用。請從清單選一個。`))} · <code>${esc(i.flag)} ${esc(v)}</code>`);
+          return;
+        }
         if (res.ok) { setNote('ok', `✓ ${esc(t('ShellBot recognises this model', 'ShellBot 認得這個模型'))} · <code>${esc(i.flag)} ${esc(v)}</code>`); return; }
         if (storedBad && v === storedBad.model && i.provider === storedBad.provider) {     // the bot's own old key: flagged, saving is not blocked
           setNote('warn', `⚠ ${esc(t('This model may not take effect', '這個模型可能沒生效'))}: ${esc(modelWords(res, v, true))}${didYouMean(res.suggestion)}`);

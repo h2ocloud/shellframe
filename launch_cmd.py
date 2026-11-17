@@ -132,6 +132,30 @@ _PI_SESSION_FLAGS = {"--session", "--fork", "--session-dir"}    # take a value
 _PI_PICK_FLAGS = {"--continue", "-c", "--resume", "-r", "--no-session"}
 
 
+def pi_session_of(cmd: str, cwd: str = "") -> str:
+    """The session file a pi command was started on (`--session <file>`, the last one) as an absolute
+    path, when that file exists; "" otherwise (no flag, an id, a file that is gone). A relaunched pi tab
+    names the conversation it took back up here (pi_with_session) and writes nothing until the next
+    message, so the file it was started on is the one to read."""
+    _, rest = split_prefix(cmd or "")
+    try:
+        tokens = shlex.split(rest)
+    except ValueError:
+        return ""
+    val = ""
+    for i, t in enumerate(tokens):
+        if t == "--session" and i + 1 < len(tokens):
+            val = tokens[i + 1]
+        elif t.startswith("--session="):
+            val = t.split("=", 1)[1]
+    if not val:
+        return ""
+    path = os.path.expanduser(val)
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.expanduser(cwd or "~"), path)
+    return path if os.path.isfile(path) else ""
+
+
 def pi_with_session(cmd: str, path: str) -> str:
     """`pi …` (or an sf-pi-… launcher) started again on the session file it was writing: the other
     ways of choosing a session go (--session/--fork <x>, --continue, --resume, --no-session), the

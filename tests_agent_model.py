@@ -19,6 +19,7 @@ import sys
 import tempfile
 
 os.environ["PI_CODING_AGENT_DIR"] = tempfile.mkdtemp()     # no models.json: pi lists nothing here
+os.environ["CODEX_HOME"] = tempfile.mkdtemp()                # no models_cache.json: Codex lists the table here
 import agent_model as M  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
