@@ -6,6 +6,52 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.51.0 (2026-11-17)
+
+### Changes
+
+- **Gmail: the local server is the recommended way, for whatever AI your primary bot runs on.** Asked for: do not tie
+  Gmail to one model vendor's cloud connector; many colleagues use Codex, so use what the primary bot runs on, and
+  promote a local connection whose only hard part is Google's permission, with ShellBot opening Google Cloud for
+  each step. Settings → Connect → Gmail now lists **the Gmail server on this computer** first and recommended (any
+  AI; the permission stays on this computer), and the claude.ai connector second, as the way for Claude tabs only.
+  "Add it for me" puts the server into the CLI the primary bot runs on (read from its launch command: `sf-codex …`
+  is Codex; no primary bot or an unknown one means Claude Code), and the connection test opens a tab of that CLI
+  (ShellBot's own `sf-codex` when it is there) with a sentence it can follow (Claude Code loads the tools with
+  ToolSearch; Codex has them already). Disconnecting removes ShellBot's entry wherever it was put and from Claude
+  Code, so an entry made before the primary bot changed CLI is not left behind; checking looks only where it was put.
+  The Google Cloud steps say which audience to pick: a company Google Workspace address takes Internal and does
+  not expire; External stays in testing, and Google then asks to sign in again every 7 days. The server's package is
+  pinned (`@dguido/google-workspace-mcp@3.4.4`) instead of whatever npm has that day. Measured: `codex mcp
+  add / get / remove` in a temporary `CODEX_HOME` with Codex 0.142.1 and 0.147.0. Not tried here: a real Google
+  sign-in and a real Codex settings file, which are the person's. Covered by `tests_connector_gmail.py` (144: a
+  Claude primary and a Codex primary end to end, with stand-ins).
+
+  **Gmail：推薦用本機伺服器，而且跟著主 bot 用的 AI 走。** 需求：Gmail 不要綁在某一家模型的雲端連接器上；很多同事用 Codex，要看
+  主 bot 用什麼 AI；推廣用本機的方式連，難的只有 Google 授權那段，由 ShellBot 幫忙一步一步打開 Google Cloud。設定 → 連結 → Gmail
+  現在第一個、而且推薦的是**這台電腦上的 Gmail 伺服器**（每種 AI 都能用，授權存在這台電腦），claude.ai 的連接器排第二，只給 Claude
+  分頁用。第 6 步加進 AI 的按鈕，會把伺服器加進主 bot 用的 CLI（從它的啟動指令判斷：`sf-codex …` 就是 Codex；沒有主 bot 或認不出來就是
+  Claude Code），連線測試也開一個同樣 CLI 的分頁（有 ShellBot 自己的 `sf-codex` 就用它），給它照得做的指示（Claude Code 用
+  ToolSearch 載入工具；Codex 一開始就有）。斷開連結時，會從加過的地方和 Claude Code 都把 ShellBot 的設定拿掉，主 bot 換過 CLI 也
+  不會留下舊的；檢查只看加過的地方。Google Cloud 的步驟會說明選哪一種對象：公司 Google Workspace 信箱選 Internal，不會過期；
+  External 會停在測試中，Google 每 7 天要重新登入一次。伺服器的套件版本釘住（`@dguido/google-workspace-mcp@3.4.4`），不再是
+  npm 當天的最新版。實測過：`codex mcp add / get / remove` 在暫存的 `CODEX_HOME` 裡，Codex 0.142.1 和 0.147.0 都可以。這裡沒試的：
+  真的 Google 登入、真的 Codex 設定檔，那是使用者自己的。由 `tests_connector_gmail.py`（144 項：主 bot 是 Claude 和是 Codex 兩條
+  完整流程，用替身）守著。
+
+### Fixes
+
+- **A Codex tab's MCP calls are named by their server.** Codex writes an MCP call with its server in a `namespace`
+  (`mcp__playwright__` + `browser_click`); ShellBot read the name alone, so the chat view counted those calls as
+  "used a tool" and a check for a server's tools could not find them. The tool's name is now the namespace and the
+  name together, as Claude Code names it (`mcp__<server>__<tool>`); calls without a namespace are unchanged.
+  Covered by `tests_connector_gmail.py`.
+
+  **Codex 分頁的 MCP 呼叫認得出是哪個伺服器了。** Codex 記 MCP 呼叫時，把伺服器寫在 `namespace`（`mcp__playwright__` 加上
+  `browser_click`）；ShellBot 只讀了名稱，所以對話模式把這些呼叫算成「用了工具」，要檢查某個伺服器的工具時也找不到。現在工具名稱是
+  namespace 加名稱，跟 Claude Code 的命名一樣（`mcp__<伺服器>__<工具>`）；沒有 namespace 的呼叫照舊。由 `tests_connector_gmail.py`
+  守著。
+
 ## v0.50.1 (2026-11-17)
 
 ### Changes

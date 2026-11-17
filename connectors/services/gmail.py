@@ -43,7 +43,7 @@ ID = "gmail"
 # Docs, Calendar and the whole mailbox.
 SERVER = "shellbot-gmail"
 PROFILE = "shellbot"
-PACKAGE = "@dguido/google-workspace-mcp"
+PACKAGE = "@dguido/google-workspace-mcp@3.4.4"        # pinned: the version read through (2026-11); gmail.json names the same
 SERVICES = "gmail"
 NODE_MIN = 22
 
@@ -154,6 +154,10 @@ def action_auth_tab(ctx, args: dict) -> dict:
 # phase / read / close.
 TEST_MARK = "GMAIL-TEST"
 PREFIX = {"connector": "mcp__claude_ai_Gmail__", "local": f"mcp__{SERVER}__"}      # a tool's name starts with this
+# Codex names an MCP tool the same way (its call's namespace `mcp__<server>__` + the tool: agent_status._norm_codex);
+# it may write the server's `-` as `_`, so both spellings count.
+PREFIXES = {"connector": (PREFIX["connector"],), "local": (PREFIX["local"], PREFIX["local"].replace("-", "_"))}
+TEST_CLIS = ("claude", "codex")      # the CLIs a test tab can be opened in (their transcripts are read)
 AUTH_TOOL = "mcp__claude_ai_Gmail__authenticate"       # the connector is there but has not been authorized
 TEST_TIMEOUT_S = 180.0                                  # from the prompt going in, not counting a wait for the person's OK
 READY_TIMEOUT_S = 90.0                                  # the tab getting to its prompt (the kit waits this long)
@@ -163,16 +167,29 @@ FAILED_STEP = {"connector": {"needs_auth": "a2", "no_tools": "a2", "not_ready": 
 _VERDICT = re.compile(r"^" + TEST_MARK + r":\s*(OK|FAIL)\b", re.I)
 
 
-def test_prompt() -> str:
+def test_prompt(cli: str = "claude") -> str:
     """The fixed sentence the test tab is given. One line: it is pasted into a prompt box. It follows the OS
-    language like every prompt ShellBot writes for an agent."""
-    en = ("This is a Gmail connection test. First load the Gmail tools with ToolSearch, then look up only the "
+    language like every prompt ShellBot writes for an agent. Claude Code loads MCP tools on demand (ToolSearch);
+    Codex has them from the start, so its sentence names the server instead."""
+    if cli == "codex":
+        en_load, zh_load = f"Use the Gmail tools of the {SERVER} MCP server to", f"用 {SERVER} 這個 MCP 伺服器的 Gmail 工具，"
+    else:
+        en_load, zh_load = "First load the Gmail tools with ToolSearch, then", "先用 ToolSearch 載入 Gmail 工具，"
+    en = (f"This is a Gmail connection test. {en_load} look up only the "
           "sender and the subject of the newest email. Do not open the body, do not send anything and do not "
           f"change anything. Report it in one line. Then write a last line on its own: {TEST_MARK}: OK, or "
           f"{TEST_MARK}: FAIL followed by the reason.")
-    zh = ("這是 Gmail 連結測試。先用 ToolSearch 載入 Gmail 工具，只查最新一封信的寄件者和標題，不開內文、"
+    zh = (f"這是 Gmail 連結測試。{zh_load}只查最新一封信的寄件者和標題，不開內文、"
           f"不寄信、不改任何東西。用一行回報。最後單獨一行寫 {TEST_MARK}: OK，失敗就寫 {TEST_MARK}: FAIL 加原因。")
     return sf_lang.pick(en, zh)
+
+
+def test_cli(ctx, route: str) -> str:
+    """The CLI the test tab runs: for the local server, the one the primary bot runs on (where cli_add put the
+    server) when its transcript can be read; else Claude (the claude.ai connector only reaches Claude)."""
+    from connectors import clis as clis_mod
+    cli = clis_mod.preferred_cli(getattr(ctx, "cfg", None)) if route == "local" else "claude"
+    return cli if cli in TEST_CLIS else "claude"
 
 
 def verdict_line(text) -> str:
@@ -197,13 +214,13 @@ def judge(route: str, events: list, tab_state: str = "", elapsed: float = 0.0) -
       {"state": "done", "verdict": <code>, "calls": n}
 
     verdicts: pass | needs_auth (connector only) | no_tools | failed | said_ok | unclear | timeout."""
-    prefix = PREFIX.get(route, "")
+    prefixes = PREFIXES.get(route, ())
     start = max((i for i, e in enumerate(events or ()) if e.get("kind") == "user_msg" and TEST_MARK in (e.get("text") or "")), default=-1)
     if start < 0:                                           # the prompt is not in the transcript yet
         return {"state": "running", "phase": "asking", "calls": 0} if elapsed <= TEST_TIMEOUT_S else {"state": "done", "verdict": "timeout", "calls": 0}
     turn = list(events)[start + 1:]
     names = [str(e.get("tool") or "") for e in turn if e.get("kind") == "tool_call"]
-    calls = [n for n in names if prefix and n.startswith(prefix) and n != AUTH_TOOL]
+    calls = [n for n in names if prefixes and n.startswith(prefixes) and n != AUTH_TOOL]
     ended = any(e.get("kind") == "turn_end" for e in turn)
     reply = next((e.get("text") for e in reversed(turn) if e.get("kind") == "assistant_text"), "")
     marker = verdict_line(reply)
@@ -269,8 +286,10 @@ class GmailAdapter(Adapter):
         _forget_tabs(ctx)
         kit = ctx.tabs
         try:
-            sid = kit.open(kit.command("claude"), sf_lang.pick("Gmail test", "Gmail 測試"))
-            kit.ask(sid, test_prompt(), READY_TIMEOUT_S)       # waits for the prompt in a thread of the kit's, then types the one line
+            cli = test_cli(ctx, route)
+            prog = "sf-codex" if cli == "codex" and ctx.find and ctx.find("sf-codex") else cli   # ShellBot's own Codex launcher when it is there
+            sid = kit.open(kit.command(prog), sf_lang.pick("Gmail test", "Gmail 測試"))
+            kit.ask(sid, test_prompt(cli), READY_TIMEOUT_S)    # waits for the prompt in a thread of the kit's, then types the one line
         except Exception:
             return _fail("start_failed", route)
         handle = uuid.uuid4().hex[:10]

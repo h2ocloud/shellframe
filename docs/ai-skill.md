@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.50.0
-   version: 0.50.0
+OK ShellBot v0.51.0
+   version: 0.51.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -365,7 +365,7 @@ same way. Do not try to fix a connection by editing an AI program's settings: Sh
 
 | id | What | How it reaches your tab |
 |---|---|---|
-| `gmail` | Gmail | Claude tabs: the Claude account's connector; any AI tab: a local MCP server (`shellbot-gmail`) |
+| `gmail` | Gmail | recommended: a local MCP server (`shellbot-gmail`), added to the CLI the primary bot runs on (Claude Code, Codex…); Claude tabs only: the Claude account's connector |
 | `google_drive` | Google Drive | Claude tabs only, through the Claude account's connector (tools `mcp__claude_ai_Google_Drive__…`) |
 | `google_calendar` | Google Calendar | Claude tabs only, the same way (`mcp__claude_ai_Google_Calendar__…`) |
 | `notion` | Notion | Claude tabs only, the same way (`mcp__claude_ai_Notion__…`) |
@@ -532,6 +532,7 @@ kept on this computer (`office.json` in the state folder); do not edit that file
 | The office's panel: a followed person's conversation, a box to message them, their question answered by its number | 0.49.0 |
 | …and the same for a paired computer's bots and interns (through its `/link/chat`) | 0.49.1 |
 | The office's zoning: by AI (a walled room per CLI, default), custom groups, or one room | 0.50.0 |
+| Gmail's local server recommended, added to and tested in the primary bot's CLI | 0.51.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

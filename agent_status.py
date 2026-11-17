@@ -1165,8 +1165,8 @@ def _norm_codex(o):
         if pt in ("mcp_tool_call_end", "patch_apply_end"):
             return {"kind": "tool_result", "ts": ts}
     if outer == "response_item":
-        if pt == "function_call":
-            name = p.get("name", "")
+        if pt == "function_call":   # an MCP call's namespace is its server (mcp__<server>__), as Claude names the tool
+            name = str(p.get("namespace") or "") + str(p.get("name", "") or "")
             try:
                 args = json.loads(p.get("arguments") or "{}")
             except Exception:

@@ -93,6 +93,8 @@ Every text a person reads is `{"en": "…", "zh": "…"}` (both required). `regi
 route = { "id", "kind": "claude_connector" | "local_mcp" | "api_key" | "oauth",
           "name": T, "blurb": T, "recommended": false, "minutes": 5, "needs": [T],
           "scopes": ["read"],                  // the least this route asks for
+          "target": "primary",                 // optional: cli_add puts the server into the CLI the primary bot runs on
+                                               // (clis.preferred_cli; Claude when there is none), not Claude by default
           "clis": { "<cli>": {"via": "connector" | "mcp" | "none", "note": T} },   // cli: claude codex agy grok opencode cursor pi
           "mcp":  { "server": "shellbot-<name>", "command": "npx", "args": ["-y", "pkg"], "win_command": ["cmd", "/c", "npx", "-y", "pkg"],
                     "env": {"K": "plain value"}, "env_from_secret": {"ENV_NAME": "<secret id>"} },
@@ -175,6 +177,9 @@ question: "Yes, a claude.ai account"), and a step's `"in_browser": true` (below)
 
 The card asks as little as it can:
 
+- **Removing and checking an entry** look where it was recorded (`connectors.json` `clis`); removing also looks in Claude,
+  so an entry made before the primary bot moved to another CLI is not left behind. A Codex MCP call is read from its
+  transcript as `mcp__<server>__<tool>` (the call's `namespace` + its name: agent_status), the name Claude gives it.
 - **No choice of a way** when a service has one, or when its recommended way is the Claude account's connector
   (`claude_connector`): "Connect" starts that way at once. The other ways stay one "Change way" away.
 - **No sign-in card when ShellBot can tell**: the first step's check (`claude_account`, the plan ShellBot keeps) runs on
@@ -208,7 +213,7 @@ which), and the last one removes it.
 
 | id | Name | Way | Other AI programs | Checked |
 |---|---|---|---|---|
-| `gmail` | Gmail | the connector (one click), or a local MCP server | the local server for every program (see `gmail.json`) | as before; the one-click flow with stand-ins |
+| `gmail` | Gmail | a local MCP server, **recommended** (`@dguido/google-workspace-mcp@3.4.4`, pinned): added to the CLI the primary bot runs on (Claude Code or Codex…), tested in a tab of that CLI; or the claude.ai connector (Claude tabs only) | the local server for every program (see `gmail.json`) | descriptions, adapter and engine with stand-ins (a Claude primary and a Codex primary); `codex mcp add/get/remove` measured in a temporary `CODEX_HOME` (0.142.1 and 0.147.0) |
 | `google_drive` | Google Drive | the connector, one click | `none` (noted: Codex's own Google Drive plugin; Google's own MCP server is a developer preview) | descriptions, adapter and engine with stand-ins; the tool names as a Claude Code session lists them |
 | `google_calendar` | Google Calendar | the connector, one click | `none` (noted: Google's own MCP server is a developer preview) | the same |
 | `notion` | Notion | the connector, one click | `none` (noted: Notion's own hosted MCP server; Notion's docs give steps for Codex, Antigravity and Cursor; Grok Build and OpenCode take remote MCP servers by their own docs; Pi has MCP built in since 0.99) | the same |

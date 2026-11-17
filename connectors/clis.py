@@ -29,6 +29,33 @@ OWN_PREFIX = "shellbot-"
 TIMEOUT_S = 40.0
 CLI_IDS = ("claude", "codex", "pi", "opencode", "agy", "grok", "cursor")     # = usage_probe.PROVIDER_SPECS
 
+# The CLI a command runs: its program past `cd … &&`, `env`, `exec`, `VAR=…` and an `sf-` launcher prefix (sf-codex, sf-pi-x).
+_PROGRAM_CLI = {"claude": "claude", "codex": "codex", "pi": "pi", "opencode": "opencode", "agy": "agy", "grok": "grok",
+                "cursor-agent": "cursor", "cursor": "cursor"}
+
+
+def cli_of(cmd: str) -> str:
+    """One of CLI_IDS for a launch command, or ''."""
+    words = str(cmd or "").split("&&")[-1].split()
+    words = [w for w in words if w not in ("env", "exec") and not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
+    base = re.sub(r"\.(exe|cmd)$", "", (words[0] if words else "").replace("\\", "/").split("/")[-1].lower())
+    base = re.sub(r"^sf-", "", base)
+    for prog, cli in _PROGRAM_CLI.items():
+        if base == prog or base.startswith(prog + "-"):
+            return cli
+    return ""
+
+
+def preferred_cli(cfg) -> str:
+    """The CLI ShellBot connects a service for by default: the one the primary bot runs on (reported: most
+    colleagues run Codex, and a connection made for Claude only did nothing for them); "claude" when there is
+    no primary bot or ShellBot does not know its CLI. `cfg` is ShellBot's config (agent_roster)."""
+    for e in ((cfg or {}).get("agent_roster") or {}).values():
+        if isinstance(e, dict) and isinstance(e.get("bot"), dict) and e["bot"].get("primary") and not e["bot"].get("external"):
+            return cli_of(e.get("cmd") or "") or "claude"
+    return "claude"
+
+
 Result = namedtuple("Result", "rc out")      # out: stdout+stderr, lowercase, for one phrase search, never shown
 
 

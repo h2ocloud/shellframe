@@ -537,11 +537,24 @@ class Engine:
         return self._reply(service, detail=extra)
 
     # built-in actions: what the core can do for any service ------------------
-    def _targets(self, route, args) -> list:
+    def _targets(self, route, args, service=None, op="add") -> list:
+        """Which CLIs an MCP entry goes to (add) or is looked for in (remove, check, forget). Unless asked for
+        more: one CLI, never all of them at once. A route marked `"target": "primary"` in its description
+        goes to the CLI the primary bot runs on (clis.preferred_cli), else Claude. Checking looks where it was
+        recorded; removing also there and in Claude, so an entry made before the primary changed is not left behind."""
         want = args.get("clis")
         pool = [c for c in clis_mod.CLI_IDS if (route.get("clis", {}).get(c) or {}).get("via") == "mcp"]
-        if not isinstance(want, list):     # unless asked for more: the one CLI people use most, never all of them at once
-            want = ["claude"] if "claude" in pool else pool[:1]
+        if not isinstance(want, list):
+            first = "claude" if "claude" in pool else (pool[0] if pool else "")
+            if route.get("target") == "primary" and service:
+                pref = clis_mod.preferred_cli(self._ctx(service, route["id"]).cfg)
+                first = pref if pref in pool else first
+            want = [first] if first else []
+            recorded = list((self.store.get(service) or {}).get("clis") or {}) if service else []
+            if op == "check" and recorded:                  # where it was put, not where it never went
+                want = recorded
+            elif op in ("remove", "forget"):                # anywhere it may be, so nothing of ours is left behind
+                want = list(dict.fromkeys(want + recorded + (["claude"] if "claude" in pool else [])))
         return [c for c in want if c in pool]
 
     def _record_clis(self, service, results) -> None:
@@ -562,7 +575,7 @@ class Engine:
             if not v:
                 return {"state": "secret_missing"}
             extra[env_name] = v
-        results = {c: self.clis.add(c, mcp, extra) for c in self._targets(route, args)}
+        results = {c: self.clis.add(c, mcp, extra) for c in self._targets(route, args, service, "add")}
         self._record_clis(service, results)
         states = [r["state"] for r in results.values()]
         ok = [s for s in states if s in ("added", "replaced")]
@@ -578,7 +591,7 @@ class Engine:
                 "shown": {c: r["shown"] for c, r in results.items() if r.get("shown")}}
 
     def _b_cli_remove(self, service, route, args) -> dict:
-        results = {c: self.clis.remove(c, route["mcp"]["server"]) for c in self._targets(route, args)}
+        results = {c: self.clis.remove(c, route["mcp"]["server"]) for c in self._targets(route, args, service, "remove")}
         def fn(x):
             for cli, r in results.items():
                 if r["state"] in ("removed", "absent"):
@@ -587,7 +600,7 @@ class Engine:
         return {"state": "removed", "clis": {c: r["state"] for c, r in results.items()}}
 
     def _b_cli_check(self, service, route, args) -> dict:
-        results = {c: self.clis.check(c, route["mcp"]["server"]) for c in self._targets(route, args)}
+        results = {c: self.clis.check(c, route["mcp"]["server"]) for c in self._targets(route, args, service, "check")}
         states = [r["state"] for r in results.values() if r["state"] in ("present", "absent", "unknown")]
         code = "absent" if "absent" in states else ("present" if states and all(s == "present" for s in states) else "unknown")
         return {"state": code, "clis": {c: r["state"] for c, r in results.items()}}
@@ -799,7 +812,7 @@ class Engine:
         if kept:
             removed["kept_for"] = kept                       # another service still uses this entry
         elif route and route.get("mcp"):
-            for cli in self._targets(route, {}):                 # only ours (shellbot-…), whatever the record says
+            for cli in self._targets(route, {}, service, "forget"):     # only ours (shellbot-…), wherever it was put
                 removed["clis"][cli] = self.clis.remove(cli, route["mcp"]["server"])["state"]
         names = sorted(set(rec.get("secrets") or {}) | {s["id"] for s in (route or {}).get("secrets", [])})
         for name in names:

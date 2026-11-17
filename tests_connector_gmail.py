@@ -209,7 +209,8 @@ core = lambda d: {k: v for k, v in (d or {}).items() if k not in ("calls", "sid"
 
 check("read-only sign-in: services=gmail and READ_ONLY=true", "GOOGLE_WORKSPACE_SERVICES=gmail" in ro and "GOOGLE_WORKSPACE_READ_ONLY=true" in ro, ro)
 check("read-write sign-in: services=gmail, no READ_ONLY", "GOOGLE_WORKSPACE_SERVICES=gmail" in rw and "READ_ONLY" not in rw, rw)
-check("the sign-in names the shellbot profile on the command line", ro.endswith("npx -y @dguido/google-workspace-mcp auth --profile shellbot"), ro)
+check("the sign-in names the shellbot profile on the command line, with the pinned package",
+      ro.endswith(f"npx -y {gmail.PACKAGE} auth --profile shellbot") and gmail.PACKAGE.endswith("@3.4.4"), ro)
 check("only Gmail: no other Google service named", not re.search(r"drive|docs|calendar|sheets|slides", ro, re.I), ro)
 check("Windows sign-in: the same two settings in PowerShell form",
       "$env:GOOGLE_WORKSPACE_SERVICES='gmail'" in win and "$env:GOOGLE_WORKSPACE_READ_ONLY='true'" in win and win.startswith("powershell"), win)
@@ -436,8 +437,10 @@ if DESC is not None:
     check("the registry loads it with its adapter, nothing skipped", registry.Registry(dirs=[SERVICES_DIR]).adapter("gmail") is gmail.ADAPTER
           and "gmail" in registry.Registry(dirs=[SERVICES_DIR]).ids() and not registry.Registry(dirs=[SERVICES_DIR]).errors)
     routes = {r["id"]: r for r in DESC["routes"]}
-    check("two routes: the connector first and recommended, then the local server",
-          [r["id"] for r in DESC["routes"]] == ["connector", "local"] and routes["connector"]["recommended"] and not routes["local"]["recommended"]
+    check("two routes: the local server first and recommended (any AI, not one vendor's cloud), then the connector",
+          [r["id"] for r in DESC["routes"]] == ["local", "connector"] and routes["local"]["recommended"] and not routes["connector"]["recommended"]
+          and routes["local"].get("target") == "primary" and routes["local"]["mcp"]["args"][-1] == gmail.PACKAGE
+          and routes["local"]["mcp"]["win_command"][-1] == gmail.PACKAGE
           and routes["connector"]["kind"] == "claude_connector" and routes["local"]["kind"] == "local_mcp")
     check("connector: sign-in check, connect on claude.ai, test", [s["id"] for s in routes["connector"]["steps"]] == ["a1", "a2", "a3"])
     check("local: Node, Cloud project, API, consent, client, file, add, sign in, test",
@@ -758,8 +761,8 @@ check("no client secret, token, sender or subject in any command, tab, prompt, p
 
 # -- the connector: nothing to install --------------------------------------------------------------------------
 r = Rig("e2e-conn")
-res = r.engine.start("gmail")
-check("connector: the recommended route is picked; the account check passes on entering (a claude.ai plan), so connect-on-claude.ai is open",
+res = r.engine.start("gmail", route="connector")
+check("connector (chosen): the account check passes on entering (a claude.ai plan), so connect-on-claude.ai is open",
       res["status"]["route"] == "connector" and res["status"]["kind"] == "claude_connector" and sid_of(res) == "a2", str(res["status"]))
 res = r.step("done")
 check("connector: 'I connected it' -> the test", sid_of(res) == "a3")
@@ -769,7 +772,7 @@ check("connector: the test passes -> connected; only Claude is reached, the othe
 check("connector: no AI program was run and no file was looked at", r.runner.calls == [] and not r.prof.exists())
 
 r = Rig("e2e-fail")
-r.engine.start("gmail")
+r.engine.start("gmail", route="connector")
 r.step("done")
 res, res2 = r.test_until_done([user, say("GMAIL-TEST: FAIL I have no Gmail tool"), end])
 st = res2["status"]
@@ -777,19 +780,83 @@ check("a test that finds no Gmail tool: failed, back at step a2 with Gmail's wor
       st["state"] == "failed" and st["attention"] and sid_of(res2) == "a2" and st["problem"]["code"] == "no_tools"
       and st["problem"]["text"]["en"].startswith("Not yet"), str(st)[:400])
 check("...and a test before redoing that step is refused", r.engine.test("gmail")["code"] == "test_not_ready")
-r.engine.start("gmail")
+r.engine.start("gmail", route="connector")
 r.step("done")
 res, res2 = r.test_until_done([user, tool(CONNECTOR_TOOL), say("GMAIL-TEST: OK"), end])
 check("...redo the step, test again -> connected", res2["status"]["state"] == "connected")
 
 r = Rig("e2e-cancel")
-r.engine.start("gmail")
+r.engine.start("gmail", route="connector")
 r.step("done")
 res = r.engine.test("gmail")
 h = res["result"]["handle"]
 res = r.engine.test("gmail", h, cancel=True)
 check("cancel: the test tab is closed and the service goes back to waiting (not failed)",
       res["result"]["code"] == "test_cancelled" and r.closed == ["s1"] and res["status"]["state"] == "waiting_user" and not res["status"]["attention"], str(res)[:300])
+
+# -- the primary bot runs Codex: the server goes to Codex, the test runs in a Codex tab ----------------------------
+print("== the primary bot runs Codex ==")
+cfg_codex = dict(cfg_plan, agent_roster={"chief": {"label": "示範秘書長", "cmd": "sf-codex --search", "bot": {"primary": True}},
+                                          "eng": {"label": "示範工程師", "cmd": "claude", "bot": {}}})
+
+
+class CodexRig(Rig):
+    def make_ctx(self, service, route_id):
+        c = super().make_ctx(service, route_id)
+        c.cfg = cfg_codex
+        return c
+
+
+check("the CLI a primary bot runs on: its command's program (sf-codex → codex); none or unknown → claude",
+      clis_mod.preferred_cli(cfg_codex) == "codex" and clis_mod.preferred_cli(cfg_plan) == "claude"
+      and clis_mod.preferred_cli({"agent_roster": {"x": {"cmd": "bash", "bot": {"primary": True}}}}) == "claude")
+r = CodexRig("e2e-codex")
+res = r.engine.start("gmail")
+check("codex: with no route given, the recommended local server is started", res["status"]["route"] == "local", str(res["status"]))
+for _ in range(4):
+    res = r.step("done")
+r.prof.mkdir(parents=True, exist_ok=True)
+(r.prof / "credentials.json").write_text(CLIENT_SECRET)
+res = r.step("done")
+res = r.step("act", action="cli_add", options={"readonly": True})
+codex_adds = [c for c in r.runner.calls if c[1:3] == ["mcp", "add"] and c[0].endswith("/codex")]
+claude_adds = [c for c in r.runner.calls if c[1:3] == ["mcp", "add"] and c[0].endswith("/claude")]
+cargs = codex_adds[0] if codex_adds else []
+check("codex: `codex mcp add` once (--env pairs, the shellbot-gmail name, npx and the pinned package); nothing added to Claude",
+      len(codex_adds) == 1 and not claude_adds and "shellbot-gmail" in cargs and cargs[-3:] == ["npx", "-y", gmail.PACKAGE]
+      and sorted(cargs[i + 1] for i, a in enumerate(cargs) if a == "--env") ==
+      ["GOOGLE_WORKSPACE_MCP_PROFILE=shellbot", "GOOGLE_WORKSPACE_READ_ONLY=true", "GOOGLE_WORKSPACE_SERVICES=gmail"], r.runner.calls)
+check("codex: the status says Codex has it", res["status"]["clis"].get("codex") == "connected"
+      and res["status"]["clis"].get("claude") != "connected", res["status"]["clis"])
+res = r.step("act", action="auth_tab", options={"readonly": True})
+(r.prof / "tokens.json").write_text(TOKEN)
+res = r.step("done")
+before = len(r.world.opened)
+ctool = lambda name: {"kind": "tool_call", "tool": name, "target": ""}                         # noqa: E731
+res, res2 = r.test_until_done([{"kind": "user_msg", "text": gmail.test_prompt("codex")}, ctool("mcp__shellbot-gmail__search_emails"),
+                               mail, say("GMAIL-TEST: OK"), end])
+opened = r.world.opened[before:]
+check("codex: the test tab runs Codex, and its sentence names the server (no ToolSearch, which only Claude has)",
+      opened and opened[0][0].endswith("codex") and "ToolSearch" not in gmail.test_prompt("codex")
+      and gmail.SERVER in gmail.test_prompt("codex") and "ToolSearch" in gmail.test_prompt("claude"), opened)
+check("codex: a Codex MCP call (namespace mcp__shellbot-gmail__ + the tool) counts; the test passes",
+      res2["status"]["state"] == "connected", str(res2["status"])[:300])
+import agent_status  # noqa: E402
+rec = {"type": "response_item", "timestamp": "2026-11-17T04:00:00Z",
+       "payload": {"type": "function_call", "namespace": "mcp__shellbot-gmail__", "name": "search_emails", "arguments": "{}", "call_id": "c1"}}
+plain = {"type": "response_item", "timestamp": "2026-11-17T04:00:01Z",
+         "payload": {"type": "function_call", "name": "exec_command", "arguments": "{\"cmd\": \"ls\"}", "call_id": "c2"}}
+check("Codex's transcript: an MCP call's namespace is part of its tool name (as Claude names it); a plain call is as before",
+      agent_status._norm_codex(rec)["tool"] == "mcp__shellbot-gmail__search_emails" and agent_status._norm_codex(plain)["tool"] == "exec_command",
+      (agent_status._norm_codex(rec), agent_status._norm_codex(plain)))
+check("…the server's `-` written as `_` counts too",
+      gmail.judge("local", [{"kind": "user_msg", "text": "GMAIL-TEST"}, ctool("mcp__shellbot_gmail__search"), say("GMAIL-TEST: OK"), end])["verdict"] == "pass")
+check("…and a call to another server does not", gmail.judge("local", [{"kind": "user_msg", "text": "GMAIL-TEST"}, ctool("mcp__codex_apps__gmail_search_emails"),
+                                                                      say("GMAIL-TEST: OK"), end])["verdict"] == "said_ok")
+r.runner.entries["claude"].add("shellbot-gmail")                 # an entry left in Claude from before the primary changed
+res = r.engine.disconnect("gmail")
+check("codex: disconnect removes ours from Codex and from Claude (an older entry), the person's own entry stays",
+      all("shellbot-gmail" not in v for v in r.runner.entries.values()) and "my-other-server" in r.runner.entries["claude"], r.runner.entries)
 
 if __name__ == "__main__":
     print(f"\nResults: {passed} passed, {failed} failed")
