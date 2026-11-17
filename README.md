@@ -2,7 +2,7 @@
 
 A home for your AI bots. Every CLI agent you already pay for (Claude Code, Codex, Grok Build, OpenCode, …) runs in its own tab; turn a tab into a **bot** and it gets a face, a job, its own memory that survives the tab, and colleagues it can hand work to — with a primary bot on top that takes stock and dispatches.
 
-> ShellBot is the new name of **ShellFrame**. Only the name you see changed: the command (`sfctl`), the config folder (`~/.config/shellframe`), the repo and the install URL keep the old name, so existing setups and paired machines keep working.
+> ShellBot is the new name of **ShellFrame**. Only the name you see changed: the command (`sfctl`) and the config folder (`~/.config/shellframe`) keep the old name, so existing setups and paired machines keep working; the repo and the install URL are now named `shellbot`.
 
 ## Why
 
@@ -23,7 +23,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **Remote tabs** | A tab opened from the sidebar's other-ShellBot section follows this computer's mode: in chat style it opens as a conversation read from that computer, otherwise you get its terminal. Its name carries "Remote · machine name" and the message box names the machine; your messages, answers, "send now" and signing in again go to that computer. Both computers need v0.46.1 or later; an older one shows its terminal with a line saying to update. |
 | **iPhone / iPad app** | Pairs with your computer through Frame Link (Tailscale when you are off your network): bot list, chat view, one-tap answers. Not on the App Store; developer install only. [docs/mobile-link.md](docs/mobile-link.md) |
 | **Supported CLIs** | Claude Code, Codex, Grok Build, OpenCode, Pi, Cursor and Antigravity are built in; any other terminal command opens as a tab too. Usage display for most of them. |
-| **Connect** | Settings → Connect is a catalog of apps: a search box, categories, what needs your attention at the top and a row of recommended ones (Gmail, Google Calendar, Google Drive, Notion). Google Drive, Google Calendar, Notion and Slack link through the Claude account's connectors (Claude tabs): press Connect, ShellBot opens that service's own page on claude.ai, and when you come back it tests the connection by itself. Gmail is different: the Gmail server on this computer is recommended (any AI; the permission stays on this computer and reads mail only by default; it is added to, and tested in, the CLI the primary bot runs on, Claude Code or Codex), and the claude.ai connector comes second, for Claude tabs only. The Google Cloud steps say which audience to pick: Internal (a company Google Workspace address) does not expire; External stays in testing and asks you to sign in again every 7 days. “N connected” counts only what works; what needs fixing is counted apart. On a Mac, Reminders and Calendar have a beta route (a local server that asks before every change) that has not been tried on a real Mac yet, so macOS may not ask for access; Messages and Notes are listed as not available yet. A new service is one description file. ShellBot itself neither reads nor stores any mail. [docs/connectors.md](docs/connectors.md) |
+| **Connect** | Settings → Connect is a catalog of apps: a search box, categories, what needs your attention at the top and a row of recommended ones (Gmail, Google Calendar, Google Drive, Notion). Google Drive, Google Calendar, Notion and Slack link through the Claude account's connectors (Claude tabs): press Connect, ShellBot opens that service's own page on claude.ai, and when you come back it tests the connection by itself. Gmail is different: the Gmail server on this computer is recommended (any AI; the permission stays on this computer and reads mail only by default; it is added to, and tested in, the CLI the primary bot runs on, Claude Code or Codex), and the claude.ai connector comes second, for Claude tabs only. Connections that already work on this computer are recognized too, and the row says which way each goes (the Claude account’s connector, or a local MCP server you set up yourself); a server you added yourself is never removed when you disconnect. Right now it only labels them: you cannot pick the way on this page. The Google Cloud steps say which audience to pick: Internal (a company Google Workspace address) does not expire; External stays in testing and asks you to sign in again every 7 days. “N connected” counts only what works; what needs fixing is counted apart. On a Mac, Reminders and Calendar have a beta route (a local server that asks before every change) that has not been tried on a real Mac yet, so macOS may not ask for access; Messages and Notes are listed as not available yet. A new service is one description file. ShellBot itself neither reads nor stores any mail. [docs/connectors.md](docs/connectors.md) |
 | **Guide** | A first launch gets a short tour of the features (Next, Back, Skip). The sidebar's Guide button lists every feature with what it does and where it is; "show me" opens the Settings tab it lives on and points at it, and what is new since you last looked is counted on the button. During the tour the rest of the screen is dimmed and the place it points at gets a bright ring. A computer that already ran ShellBot gets no popup. [docs/guide.md](docs/guide.md) |
 | **Find a tab** | The sidebar's search takes a name, a job or the latest line. Chips under it filter by Bot or by tab (temporary ones and terminals), and by idle, quiet for over 30 minutes, or newest reply first; the choice is remembered. |
 | **Image/file paste** | `Cmd+V` screenshots, Finder files, or drag & drop. Preview bar + auto-attach on Enter. |
@@ -57,7 +57,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **遠端分頁** | 從側欄「其他 ShellBot」那一區打開別台電腦的分頁，會照這台電腦的模式顯示：對話模式就當對話打開（內容從那台電腦讀來），否則顯示終端機。名稱帶著「遠端 · 機器名稱」，輸入框寫明是傳給哪一台；你的訊息、回答、「立刻送出」和重新登入都送到那台電腦。兩台都要更新到 v0.46.1 以上；舊版那一台會顯示終端機並提醒你更新。 |
 | **iPhone／iPad App** | 透過 Frame Link 和你的電腦配對（不在同一個網路時用 Tailscale）：bot 清單、對話畫面、一按就回答。還沒上 App Store，目前只能由開發者安裝。[docs/mobile-link.md](docs/mobile-link.md) |
 | **支援的 CLI** | 內建 Claude Code、Codex、Grok Build、OpenCode、Pi、Cursor、Antigravity；其他終端機指令也能開成分頁。大部分有額度顯示。 |
-| **連結** | 設定 →「連結」是應用程式目錄：有搜尋框、分類，最上面是需要你處理的，接著是推薦（Gmail、Google 日曆、Google Drive、Notion）。Google Drive、Google 日曆、Notion、Slack 都透過 Claude 帳號的連接器（Claude 分頁可用）：按「連結」，ShellBot 直接打開 claude.ai 上那個服務的頁面，回到 ShellBot 時自動測試。Gmail 不一樣：推薦用這台電腦上的 Gmail 伺服器（每種 AI 都能用，授權存在這台電腦，預設只讀信；加進主 bot 用的 CLI，Claude Code 或 Codex，並在同一種 CLI 的分頁測試），claude.ai 的連接器排第二，只給 Claude 分頁用。Google Cloud 的步驟會說明選哪一種對象：公司 Google Workspace 信箱選 Internal，不會過期；選 External 會停在測試中，Google 每 7 天要重新登入一次。「已連結 N 個」只算真的通的，要處理的另外算。Mac 的提醒事項和行事曆有測試版路線（本機伺服器，每次修改前都會先問），還沒在真的 Mac 上試過，macOS 可能不會跳出授權；訊息和備忘錄標成「還不能連結」。新增一個服務只要一份描述檔。ShellBot 本身不讀、不存任何信件。[docs/connectors.md](docs/connectors.md) |
+| **連結** | 設定 →「連結」是應用程式目錄：有搜尋框、分類，最上面是需要你處理的，接著是推薦（Gmail、Google 日曆、Google Drive、Notion）。Google Drive、Google 日曆、Notion、Slack 都透過 Claude 帳號的連接器（Claude 分頁可用）：按「連結」，ShellBot 直接打開 claude.ai 上那個服務的頁面，回到 ShellBot 時自動測試。Gmail 不一樣：推薦用這台電腦上的 Gmail 伺服器（每種 AI 都能用，授權存在這台電腦，預設只讀信；加進主 bot 用的 CLI，Claude Code 或 Codex，並在同一種 CLI 的分頁測試），claude.ai 的連接器排第二，只給 Claude 分頁用。這台電腦上本來就能用的連線也會認出來，那一列會寫走哪一條路（Claude 帳號的連接器，或你自己設的本機 MCP 伺服器）；斷開連結不會刪掉你自己加的伺服器。目前只標出來，不能在這一頁挑走哪一種。Google Cloud 的步驟會說明選哪一種對象：公司 Google Workspace 信箱選 Internal，不會過期；選 External 會停在測試中，Google 每 7 天要重新登入一次。「已連結 N 個」只算真的通的，要處理的另外算。Mac 的提醒事項和行事曆有測試版路線（本機伺服器，每次修改前都會先問），還沒在真的 Mac 上試過，macOS 可能不會跳出授權；訊息和備忘錄標成「還不能連結」。新增一個服務只要一份描述檔。ShellBot 本身不讀、不存任何信件。[docs/connectors.md](docs/connectors.md) |
 | **導覽** | 第一次開 ShellBot 會走一段功能導覽（下一步、上一步、略過）。側欄的「導覽」按鈕列出每個功能做什麼、在哪裡，「指給我看」會打開它所在的設定分頁並指出位置，上次看過之後的新功能會在按鈕上顯示數量。導覽時其餘畫面會壓暗，指到的地方有一圈亮框。已經在用 ShellBot 的電腦不會跳出導覽。[docs/guide.md](docs/guide.md) |
 | **找分頁** | 側欄的搜尋用名稱、執掌或最新一句來找。下面的泡泡可以只看 Bot 或只看分頁（臨時的和終端機），也可以只看閒置、超過 30 分鐘沒動靜、最近回應排在上面；選的狀態會記住。 |
 | **圖片／檔案貼上** | `Cmd+V` 貼截圖、Finder 檔案，或拖放。預覽列顯示，按 Enter 時自動附上。 |
@@ -79,17 +79,17 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 
 ## Install
 
-**One URL, any device** — open **https://h2ocloud.github.io/shellframe/#install** (the product page, in English and 繁體中文). It detects your OS and shows the right command with a copy button. Re-running the same command later updates ShellBot in place.
+**One URL, any device** — open **https://h2ocloud.github.io/shellbot/#install** (the product page, in English and 繁體中文). It detects your OS and shows the right command with a copy button. Re-running the same command later updates ShellBot in place.
 
 Prefer to copy directly:
 
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh | bash
 ```
 
-Some Linux desktops (Ubuntu's among them) come without `curl`; there, use `wget -qO- https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.sh | bash`.
+Some Linux desktops (Ubuntu's among them) come without `curl`; there, use `wget -qO- https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.sh | bash`.
 
 Paste it into a terminal on a brand-new computer and it gets to ShellBot open: whatever is missing it installs, whatever is there it leaves alone. Each step says what it installs and why.
 
@@ -117,7 +117,7 @@ Then ShellBot itself in `~/.local/apps/shellframe`, its Python packages, the `sh
 ### Windows
 
 ```powershell
-irm https://raw.githubusercontent.com/h2ocloud/shellframe/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/h2ocloud/shellbot/main/install.ps1 | iex
 ```
 
 Run in **PowerShell**. When missing, it installs Git, Python 3.12 (for your account only) and the WebView2 runtime, with `winget`; where winget is not available (Windows Sandbox, LTSC, Server) it downloads the same official installers directly. Then ShellBot, its Python packages, the `shellframe` / `sfctl` commands and a **ShellBot** desktop shortcut, and it opens ShellBot.
