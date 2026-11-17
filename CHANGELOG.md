@@ -8,6 +8,23 @@
 
 ## v0.49.1 (2026-11-17)
 
+### Changes
+
+- **The office's panel reaches a paired computer's people too.** Reported: following a paired computer's bot showed
+  "idle" and no way to talk to it or give it work. v0.49.0 left them out; a paired computer's bot or intern with a
+  tab now gets the same conversation and message box, read and sent on that computer the way the chat view reaches a
+  remote tab (`link_chat` → its POST `/link/chat`, the tab's sid from the bot rows already polled), never a tab on
+  this computer. "To their tab ↗" opens that tab here as the sidebar's remote row does, and says so when this window
+  may not control it. A bot asleep there has no box; a computer whose ShellBot is older than 0.46.1 (no `/link/chat`)
+  or out of reach is said in one line. Covered by `tests_office_chat_ui.py` (80, with stand-ins for the paired
+  computer).
+
+  **辦公室的面板也能跟配對電腦上的人說話。** 回報：跟拍配對電腦上的 bot，只看到「閒置」，沒辦法對話或派工。v0.49.0 沒有把他們算
+  進來；現在配對電腦上有分頁的 bot 或實習生，一樣有對話和傳話框，讀和送都在那台電腦上進行，跟對話模式看遠端分頁同一條路（`link_chat`
+  → 那台的 `/link/chat`，分頁編號取自已經在輪詢的 bot 資料），不會送到這台的分頁。「到他的分頁 ↗」會像側欄的遠端列一樣在這台打開
+  那個分頁，這台沒有權限操作時會說明。那邊休息中的 bot 沒有傳話框；那台的 ShellBot 比 0.46.1 舊（沒有 `/link/chat`）或連不到時，會用
+  一行字說明。由 `tests_office_chat_ui.py`（80 項，配對電腦用替身）守著。
+
 ### Fixes
 
 - **A Codex bot's model list is Codex's own.** Reported: the bot settings offered only GPT-5.5 for Codex, and the
@@ -29,6 +46,21 @@
   會警告帳號可能不能用。已經設成 GPT-5.5 的 bot 不會被自動改掉，要自己換。由 `tests_codex_models.py` 和 `tests_bot_settings_ui.py`
   （清單和警告，示範模型名）守著。
 
+- **Resizing the window no longer makes a Codex tab reprint its whole conversation over and over.** Reported on
+  Windows: dragging the window's edge redrew all of a Codex tab's conversation, again and again, and was slow. Codex
+  reprints its transcript into the scrollback at each new size, and the page told the tab's process every size of a
+  drag, one per animation frame (measured: a ten-step drag sent ten); on Windows there is no tmux in between to
+  absorb them. The terminal on screen still follows the window at once; the process now hears the size once, 200 ms
+  after the window stops changing (the same drag: one). A tab's first size still goes when it opens. Every CLI
+  gains from it: a full-screen one redrew on each size too. Covered by `tests_resize_settle.py` (Chromium and
+  WebKit; it failed before the fix).
+
+  **縮放視窗時，Codex 分頁不會再一直重印整段對話。** 回報（Windows）：拖動視窗邊緣，Codex 分頁的整段對話會一次又一次重畫，很
+  慢。Codex 每換一個大小就把整段紀錄重新印進捲動區，而頁面在拖動時每一個畫面影格都把新大小告訴分頁（實測：拖十步送了十次）；
+  Windows 沒有 tmux 在中間緩衝。現在畫面上的終端機照樣即時跟著視窗變，但分頁要等視窗停下來 200 毫秒才收到一次大小（同樣的拖法：
+  一次）。分頁剛開時的第一個大小照樣立刻送。所有 CLI 都受益：全螢幕的 CLI 以前也是每次都整個重畫。由 `tests_resize_settle.py`
+  （Chromium 和 WebKit；修正前會失敗）守著。
+
 - **A pi tab taken back up shows its conversation right away.** Seen while checking v0.49.0: after a restart, a pi
   bot relaunched on its conversation (`--session <file>`) showed "no conversation yet" in the chat view and the
   office until its next message. Its file was looked for among the ones written since the tab started, and a
@@ -38,6 +70,17 @@
   **接回原對話的 pi 分頁，對話馬上看得到。** 驗 v0.49.0 時發現：ShellBot 重啟後，用 `--session <檔案>` 接回原對話的 pi bot，在對話
   模式和辦公室都顯示「還沒有可讀的對話」，要等它下一則訊息才出現。原因是只在「分頁啟動後寫過的檔」裡找，而接回來的對話在下一則之前
   不會寫檔。現在直接讀指令列上寫的那個檔；分頁之後自己開的新對話（在 pi 裡 `/new`）仍然優先。由 `tests_pi_provider.py` 守著。
+
+### Internal
+
+- **`tests_reboot_resume.py` no longer reads this computer's Codex conversations.** Its Windows case took the two
+  newest real rollouts under `~/.codex` and turned red whenever a few Codex runs had started within a minute (it
+  happened while checking v0.49.1's model list with `codex exec`). It now makes three rollouts with Codex's own file
+  name format in a temporary folder.
+
+  **`tests_reboot_resume.py` 不再讀這台電腦真的 Codex 對話。** 它的 Windows 情境拿 `~/.codex` 底下最新的兩份真實紀錄來用，只要
+  一分鐘內開過幾次 Codex 就會變紅（這次用 `codex exec` 驗 v0.49.1 的模型清單時就發生了）。現在改在暫存資料夾用 Codex 的檔名格式
+  自己造三份。
 
 ## v0.49.0 (2026-11-17)
 

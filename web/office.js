@@ -16,8 +16,9 @@
  *   - gives the panel of the person being followed their conversation and a message box
  *     (SFOffice.host.chat): the chat view's own routes for that one tab (chat_view every 2 s while
  *     the panel's Conversation tab is showing and the window is in front, chat_send, chat_answer),
- *     shaped by chatShape with web/chat.js's rules. A bot with no tab, a part-timer and a paired
- *     computer's people get no box.
+ *     shaped by chatShape with web/chat.js's rules. A paired computer's bot or intern with a tab is
+ *     reached through that computer's POST /link/chat (link_chat), as the chat view reaches a remote
+ *     tab. A bot with no tab (here or there) and a part-timer get no box.
  *   - pushes it every 3 s while the office is open and the window is in front:
  *     iframe.contentWindow.Office.update(snapshot).
  *   - keeps the office's seats, accessories and view mode for this computer: pywebview starts
@@ -294,42 +295,71 @@
     }
     return '';
   }
+  // 'p:<pid>/<role>' → a paired computer's bot's tab there, 'q:<pid>/<rsid>' → one of its interns: {peer, rsid},
+  // from the rows bots.js already polls (SFBots.peerBots). null for one asleep (no tab) or not listed.
+  function peerOf(key) {
+    const m = /^([pq]):([^/]+)\/(.+)$/.exec(String(key || ''));
+    if (!m) return null;
+    const B = root.SFBots, P = (B && B.peerBots && B.peerBots()) || {}, p = P[m[2]];
+    if (!p) return null;
+    if (m[1] === 'q') return (p.tabs || {})[m[3]] ? { peer: m[2], rsid: m[3] } : null;
+    const b = (p.bots || []).find(x => x && String(x.role) === m[3]);
+    return b && b.sid && b.state !== 'asleep' ? { peer: m[2], rsid: String(b.sid), label: String(b.label || b.role) } : null;
+  }
+  const targetOf = key => { const sid = sidOf(key); return sid ? { sid } : peerOf(key); };
+  // The chat view's calls, on this computer's tab or a paired one's (its POST /link/chat, arguments by name,
+  // as chat.js sends them for a remote tab).
+  const REMOTE_ARGS = { view: ['limit', 'rev'], send: ['text', 'clear_draft'], answer: ['n', 'qid'] };
+  function callOn(tg, action, ...args) {
+    if (tg.sid) return chatOf().call(tg.sid, action, ...args);
+    const named = {};
+    (REMOTE_ARGS[action] || []).forEach((n, i) => { named[n] = args[i]; });
+    return api().link_chat(tg.peer, tg.rsid, action, JSON.stringify(named));
+  }
   const lang = () => (host() && host().lang && host().lang()) || 'en';
   const chatOf = () => { const C = root.SFChat; return C && C.call && C.rules ? C : null; };
   // What the panel's conversation calls: the chat view's own routes (chat_view / chat_send / chat_answer),
   // for one person's tab. Answers are plain objects; nothing throws.
   const chatHost = {
     async view(key, rev, name) {
-      const sid = sidOf(key), C = chatOf();
-      if (!sid) return { ok: false, why: 'no_tab' };
+      const tg = targetOf(key), C = chatOf();
+      if (!tg) return { ok: false, why: 'no_tab' };
       if (!C) return { ok: false, why: 'no_chat' };
       let r = null;
-      try { r = JSON.parse(await C.call(sid, 'view', CHAT_LIMIT, rev || '')); } catch (_) { r = null; }
-      if (!r || r.success === false) return { ok: false, why: (r && r.code) || 'error' };
-      const s = (host().sessions() || {})[sid] || {};
-      const doing = C.rules.plainDoing(s._serverStatus, lang());
+      try { r = JSON.parse(await callOn(tg, 'view', CHAT_LIMIT, rev || '')); } catch (_) { r = null; }
+      if (!r || r.success === false) return { ok: false, why: (r && r.code) || 'error' };   // old_peer, unreachable…
+      // what it is doing: this computer's status monitor; a paired one's tab, the activity its chat_view gives
+      const st = tg.sid ? ((host().sessions() || {})[tg.sid] || {})._serverStatus : (r.unchanged ? null : { state: r.activity });
+      const doing = st ? C.rules.plainDoing(st, lang()) : null;
       if (r.unchanged) return { ok: true, unchanged: true, rev: r.rev, doing };
-      return Object.assign({ ok: true, doing }, chatShape(r, C.rules, lang(), name || '', Date.now()));
+      return Object.assign({ ok: true, doing, remote: !tg.sid }, chatShape(r, C.rules, lang(), name || '', Date.now()));
     },
     async send(key, text, clearDraft) {
-      const sid = sidOf(key), C = chatOf();
-      if (!sid || !C) return { success: false, code: 'no_tab' };
-      try { return JSON.parse(await C.call(sid, 'send', String(text || ''), !!clearDraft)); }
+      const tg = targetOf(key);
+      if (!tg || !chatOf()) return { success: false, code: 'no_tab' };
+      try { return JSON.parse(await callOn(tg, 'send', String(text || ''), !!clearDraft)); }
       catch (e) { return { success: false, message: String(e) }; }
     },
     async answer(key, n, qid) {
-      const sid = sidOf(key), C = chatOf();
-      if (!sid || !C) return { success: false, code: 'no_tab' };
-      try { return JSON.parse(await C.call(sid, 'answer', n, qid)); }
+      const tg = targetOf(key);
+      if (!tg || !chatOf()) return { success: false, code: 'no_tab' };
+      try { return JSON.parse(await callOn(tg, 'answer', n, qid)); }
       catch (e) { return { success: false, message: String(e) }; }
     },
-    has: key => !!sidOf(key),
-    // The tab itself, in the main window: the office closes and the sidebar switches to it.
+    has: key => !!targetOf(key),
+    // The tab itself, in the main window: the office closes and the sidebar switches to it (a paired
+    // computer's tab opens as the sidebar's remote row opens it).
     open(key) {
-      const sid = sidOf(key), H = host();
-      if (!sid || !H || !H.switchTab) return false;
+      const tg = targetOf(key), H = host();
+      if (!tg || !H) return false;
+      if (tg.sid) {
+        if (!H.switchTab) return false;
+        close();
+        H.switchTab(tg.sid);
+        return true;
+      }
+      if (!H.openRemote || !H.openRemote(tg.peer, tg.rsid, tg.label)) return false;   // not reachable or not ours to control
       close();
-      H.switchTab(sid);
       return true;
     },
     openUrl(url) { if (/^https?:\/\//i.test(String(url || ''))) { try { api().open_url(String(url)); } catch (_) {} } },

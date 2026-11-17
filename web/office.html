@@ -1258,7 +1258,6 @@ function renderPanel(force) {
      <dl class="kv"><dt>下一步</dt><dd>${esc(t.next || '—')}</dd><dt>在等誰</dt><dd>${whoChip(t.waitingOn)}</dd>${t.from ? `<dt>交辦自</dt><dd>${whoChip(t.from)}</dd>` : ''}</dl>
      ${e.stale ? `<p class="note stale">${CLOCK_SVG}這件已經 ${fmtAge(e.stale)}沒有更新</p>` : ''}
      ${e.st === 'asleep' ? '<p class="note">沒有開分頁。下次被叫醒時，從這裡接著做。</p>' : e.st === 'stuck' && t.why ? `<p class="note">原因：${esc(t.why)}</p>` : ''}`;
-  if (peer && CHAT) $('#pTask').insertAdjacentHTML('beforeend', '<p class="note">隔壁電腦的人：他的對話和傳話，在那台電腦上看。</p>');
   renderItemsCard(e);
   const evs = e.events.slice(-8).reverse(), now = performance.now();
   $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && now - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
@@ -1287,7 +1286,7 @@ const CHAT_POLL_MS = 2000;
 const chat = { key: null, gen: 1, loading: 0, rev: '', data: null, sending: false, draftCard: null, answered: null, flash: null, first: true, open: new Set(), askSig: '', noteSig: '' };
 const unsent = new Map();            // 每個人還沒送出的字：換人時收起來，換回來放回去（不會送到別人那裡）
 let panelTab = store.get('panelTab', 'chat') === 'info' ? 'info' : 'chat';
-const chatAble = e => !!(CHAT && e && (e.kind === 'bot' || e.kind === 'temp') && !e.gone);
+const chatAble = e => !!(CHAT && e && ['bot', 'temp', 'peer', 'peertemp'].includes(e.kind) && !e.gone);   // 隔壁電腦的人走那台的 /link/chat
 function chatSync(e) {
   const able = chatAble(e), showChat = able && panelTab === 'chat';
   $('#pTabs').hidden = !able;
@@ -1318,7 +1317,10 @@ function chatEnter(e) {
 }
 function chatEmpty(why) {
   const e = chat.key && M.ents.get(chat.key), name = e ? e.who.name : '他';
-  const text = why === 'no_tab' ? (e && e.st === 'asleep' ? `${name}在休息，沒有開分頁：叫醒之後，這裡就看得到對話、也能傳話。` : `${name}在這台電腦上沒有分頁，這裡看不到對話。`)
+  const there = e && (e.kind === 'peer' || e.kind === 'peertemp');
+  const text = why === 'no_tab' ? (e && e.st === 'asleep' ? `${name}在休息，沒有開分頁：叫醒之後，這裡就看得到對話、也能傳話。` : `${name}${there ? '在那台電腦上' : '在這台電腦上'}沒有分頁，這裡看不到對話。`)
+    : why === 'old_peer' ? '那台電腦的 ShellBot 版本太舊（要 0.46.1 以上），這裡看不到它的對話；那台更新之後就可以。'
+    : why === 'unreachable' ? '現在連不到那台電腦，稍後再試。'
     : why === 'no_chat' ? '這一版的主頁沒有對話模式，看不到對話。' : '這次讀不到對話，稍後再試。';
   const h = `<div class="empty">${esc(text)}</div>`;
   const list = $('#cList'); if (list.dataset.h !== h) { list.innerHTML = h; list.dataset.h = h; }
@@ -1422,7 +1424,8 @@ async function chatAnswer(btn) {
   else { chat.answered = null; flash(r && r.code === 'stale' ? '這題已經回答過或換題了，沒有送出。' : (r && r.message) || '沒有送出。', true); }
   chat.askSig = ''; renderAsk(); chat.rev = ''; chatTick(true);
 }
-function chatOpenTab() { if (CHAT && chat.key && !CHAT.open(chat.key)) flash('他現在沒有分頁可以切過去。', true); }
+function chatOpenTab() { const e = chat.key && M.ents.get(chat.key), there = e && (e.kind === 'peer' || e.kind === 'peertemp');
+  if (CHAT && chat.key && !CHAT.open(chat.key)) flash(there ? '打不開那台電腦的分頁：連不到，或這台沒有操作它的權限。' : '他現在沒有分頁可以切過去。', true); }
 $('#pTabs').addEventListener('click', ev => {
   const b = ev.target.closest('button[data-tab]'); if (!b) return;
   panelTab = b.dataset.tab === 'info' ? 'info' : 'chat'; store.set('panelTab', panelTab);

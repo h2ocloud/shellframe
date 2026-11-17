@@ -107,15 +107,27 @@ check("找得到的 uuid → True（用真實 manifest 裡的一筆驗）", any(
     if x.get("claude_session_id")))
 
 # ── Windows 路徑：沒有 lsof、沒有 tmux pane，只能靠「spawn 之後才出現的
-#    rollout」＋認領表。用真的 rollout 檔造情境，不是 mock 檔名。 ──
-import glob as _glob
+#    rollout」＋認領表。用 Codex 真正的 rollout 檔名格式造情境（暫存資料夾裡的三份），
+#    不讀這台電腦的 ~/.codex：以前拿真的最新兩份來用，只要 60 秒內多開過幾次 codex
+#    （例如 codex exec 試模型），更早的一份就落進範圍，測試隨機變紅。 ──
 import os as _os
+import tempfile as _tempfile
 import types as _types
 from unittest.mock import patch as _patch
 
-rolls = sorted(
-    _glob.glob(_os.path.expanduser("~/.codex/sessions/*/*/*/rollout-*.jsonl")),
-    key=_os.path.getmtime)
+_root = _tempfile.mkdtemp(prefix="sf_codex_rollouts_")
+_day = _os.path.join(_root, "2026", "11", "17")
+_os.makedirs(_day)
+rolls = []
+for _i, (_stamp, _uuid) in enumerate([("2026-11-17T09-00-00", "11111111-1111-4111-8111-111111111111"),
+                                      ("2026-11-17T10-00-00", "22222222-2222-4222-8222-222222222222"),
+                                      ("2026-11-17T10-05-00", "33333333-3333-4333-8333-333333333333")]):
+    _f = _os.path.join(_day, f"rollout-{_stamp}-{_uuid}.jsonl")
+    open(_f, "w").close()
+    _os.utime(_f, (1_800_000_000 + _i * 300 - (3000 if _i == 0 else 0),) * 2)   # the first one an hour earlier
+    rolls.append(_f)
+_codex_root = _patch("main.agent_status.codex_sessions_root", lambda ctx: _root)
+_codex_root.start()
 if len(rolls) >= 2:
     older, newer = rolls[-2], rolls[-1]
     uid = lambda f: Api._CODEX_ROLLOUT_RE.search(f).group(1)  # noqa: E731
@@ -156,8 +168,7 @@ if len(rolls) >= 2:
     s1._spawn_ts = _os.path.getmtime(newer) + 3600      # 條件已失效
     check("認領結果會快取（第二次不重掃）",
           api._codex_session_id("s1", s1) == first)
-else:
-    print("  [SKIP] 本機 rollout 少於兩份，跳過 Windows 認領情境")
+_codex_root.stop()
 
 # ── ShellFrame 自己的啟動器也要能接回對話（v0.35.17）──────────────────────
 # sf-codex / sf-claude-home 都是 `exec <真的 CLI> "$@"`，參數原樣透傳，所以續接

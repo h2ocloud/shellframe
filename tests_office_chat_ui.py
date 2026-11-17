@@ -13,8 +13,10 @@ stand-in Python side (chat_view / chat_send / chat_answer as the chat view gets 
   - queued: said so, and the queue's own words; refused: the reason, the text stays
   - a question: its options in plain words, answered with the option's own number; a reply for
     someone no longer followed is not drawn, and someone seen before is drawn again (not left on 讀取中)
-  - a bot asleep, a part-timer, a paired computer's bot: no box, one line why; a part-timer offers
+  - a bot asleep (here or on a paired computer), a part-timer: no box, one line why; a part-timer offers
     the conversation of whoever sent it
+  - a paired computer's bot with a tab: its conversation and the box, through that computer's /link/chat
+    (link_chat with its tab's sid), never a tab on this computer; a computer too old for /link/chat says so
   - 資料 showing, or nobody followed: no more chat_view calls
   - in a narrow window the panel is the bottom sheet, full width, with its box
   - "到他的分頁" closes the office and switches the sidebar to that tab
@@ -78,9 +80,16 @@ STATUS = {"s700": {"state": "idle", "dot": "", "summary": "idle"},
           "s701": {"state": "working", "dot": "sig-working", "action": "Running the demo tests"},
           "s702": {"state": "decision", "dot": "sig-decision", "narration": "示範：要繼續嗎？"}}
 PEERS = {"peers": {"pid-demo-1": {"name": "示範電腦", "addr": "示範電腦", "primary": "builder",
-                                  "bots": [{"role": "builder", "label": "示範建置員", "state": "awake", "primary": True,
-                                            "avatar": {"shape": "ghost", "color": "green"}, "activity": "working",
-                                            "responsibility": "建置與測試"}], "tabs": {}}}}
+                                  "bots": [{"role": "builder", "label": "示範建置員", "state": "awake", "primary": True, "sid": "r10",
+                                            "avatar": {"shape": "ghost", "color": "green"}, "activity": "idle",
+                                            "responsibility": "建置與測試"},
+                                           {"role": "napper", "label": "示範午睡員", "state": "asleep",
+                                            "avatar": {"shape": "round", "color": "teal"}, "responsibility": "休息中"}],
+                                  "tabs": {}},
+                   "pid-demo-old": {"name": "示範舊電腦", "addr": "示範舊電腦", "primary": "oldie",
+                                    "bots": [{"role": "oldie", "label": "示範老版本", "state": "awake", "primary": True, "sid": "r20",
+                                              "avatar": {"shape": "hex", "color": "amber"}, "activity": "idle",
+                                              "responsibility": "舊版"}], "tabs": {}}}}
 HELPERS = {"s701": [{"id": "a1", "description": "示範：跑一次完整測試", "model": "demo-model", "agent_type": "general-purpose",
                      "state": "working", "started_at": NOW - 300, "last_at": NOW - 20}]}
 LONG = "\n\n".join(f"示範段落 {i}：這一段很長，只是為了把泡泡撐高。" for i in range(40))
@@ -108,7 +117,8 @@ def stub():
     return """
 if (window.top === window) {
 window.__calls = []; window.__views = []; window.__sends = []; window.__answers = []; window.__urls = []; window.__saved = [];
-window.__sendMode = 'ok'; window.__slow = {};
+window.__sendMode = 'ok'; window.__slow = {}; window.__remote = []; window.__remoteVer = 0;
+window.__remoteTurns = [{kind: 'user_msg', text: '示範：幫我建置', ts: 1}, {kind: 'assistant_text', text: '示範建置員：建置完成。', ts: 2}];
 window.__cfg = %s; window.__sessions = %s; window.__bots = %s; window.__status = %s; window.__peers = %s;
 window.__helpers = %s; window.__guide = %s; window.__chats = %s; window.__ver = {};
 const R = v => Promise.resolve(typeof v === 'string' ? v : JSON.stringify(v));
@@ -156,6 +166,17 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
       case 'chat_view': return view(args[0], args[1], args[2]);
       case 'chat_send': return send(args[0], args[1], args[2]);
       case 'chat_answer': window.__answers.push({sid: args[0], n: args[1], qid: args[2]}); return R({success: true});
+      case 'link_chat': {                    // a paired computer's chat_<action>, arguments by name
+        const [pid, rsid, action, named] = args; const a = JSON.parse(named || '{}');
+        window.__remote.push({pid, rsid, action, args: a});
+        if (pid === 'pid-demo-old') return R({success: false, code: 'old_peer'});
+        if (action === 'view') return R(a.rev === 'r10:' + window.__remoteVer ? {success: true, unchanged: true, rev: a.rev}
+          : {success: true, rev: 'r10:' + window.__remoteVer, provider: 'claude', readable: true, activity: 'idle', decision: null, login: {},
+             queue: {queued: [], given_up: []}, turns: window.__remoteTurns});
+        if (action === 'send') { window.__remoteTurns.push({kind: 'user_msg', text: a.text, ts: Date.now() / 1000}); window.__remoteVer++;
+          return R({success: true, queued: false, id: 'x1'}); }
+        return R({success: false, code: 'unknown'});
+      }
       case 'open_url': window.__urls.push(args[0]); return R({success: true});
       case 'guide_data': return R(window.__guide);
       case 'guide_mark': return R({success: true, state: window.__guide.state});
@@ -329,10 +350,34 @@ def run(browser, base, engine):
     fr.click("#pTask button[data-act='parent-chat']")
     fr.wait_for_function("__office.following() === 'b:eng' && !document.getElementById('pChat').hidden", timeout=5000)
     check("…and 看示範工程師的對話 follows whoever sent it, on 對話", True)
+
+    print(f"[{engine}] a paired computer's people")
     fr.evaluate("__office.follow('p:pid-demo-1/builder')")
-    page.wait_for_timeout(200)
-    pp = fr.evaluate("""() => ({f: __office.following(), tabs: !document.getElementById('pTabs').hidden, task: document.getElementById('pTask').innerText})""")
-    check("a paired computer's bot: no tabs, one line why", pp["f"] == "p:pid-demo-1/builder" and not pp["tabs"] and "隔壁電腦" in pp["task"], pp)
+    fr.wait_for_function("document.getElementById('cList').innerText.includes('建置完成')", timeout=5000)
+    rv = page.evaluate("window.__remote.filter(r => r.action === 'view')")
+    check("a paired computer's bot with a tab: its conversation, read on that computer (link_chat, its tab's sid)",
+          rv and rv[0]["pid"] == "pid-demo-1" and rv[0]["rsid"] == "r10" and rv[0]["args"].get("limit") == 100, rv[:1])
+    check("…with tabs and a box", fr.evaluate("!document.getElementById('pTabs').hidden && !document.getElementById('cComp').hidden"))
+    if shoot:
+        page.wait_for_timeout(500)
+        page.screenshot(path=str(SHOTS / "office-chat-peer.png"))
+    fr.fill("#cBox", "示範：再建置一次")
+    fr.press("#cBox", "Enter")
+    fr.wait_for_function("document.getElementById('cList').innerText.includes('再建置一次')", timeout=5000)
+    rs = page.evaluate("window.__remote.filter(r => r.action === 'send')")
+    check("…a message goes to that tab on that computer, as the person's",
+          rs == [{"pid": "pid-demo-1", "rsid": "r10", "action": "send", "args": {"text": "示範：再建置一次", "clear_draft": False}}], rs)
+    check("…and nothing went to a tab on this computer", not any(x["text"] == "示範：再建置一次" for x in page.evaluate("window.__sends")))
+    fr.click("#cOpen")
+    page.wait_for_timeout(300)
+    check("to their tab, when this window cannot open it: says so and the office stays",
+          office(page) is not None and "打不開那台電腦的分頁" in text("#cNote"), text("#cNote"))
+    fr.evaluate("__office.follow('p:pid-demo-1/napper')")
+    fr.wait_for_function("document.getElementById('cList').innerText.includes('在休息')", timeout=5000)
+    check("a paired computer's bot asleep: no box, says why", fr.evaluate("document.getElementById('cComp').hidden"), text("#cList"))
+    fr.evaluate("__office.follow('p:pid-demo-old/oldie')")
+    fr.wait_for_function("document.getElementById('cList').innerText.includes('版本太舊')", timeout=5000)
+    check("a computer whose ShellBot has no /link/chat: says which version it needs", "0.46.1" in text("#cList"), text("#cList"))
 
     print(f"[{engine}] when nothing is read")
     fr.evaluate("__office.follow('b:eng')")
