@@ -59,7 +59,7 @@ PI = dict(CLAUDE, cli="pi", cli_name="Pi", current=None, current_key="", models=
 RESTART = dict(CLAUDE, cli="agy", cli_name="Antigravity", in_session=False, restart_note="Antigravity 沒辦法在對話中換模型，要重開才能換。", efforts=[])
 
 
-def stub(style):
+def stub(style, sessions=None):
     cfg = {"settings": {"language": "zh-TW", "sidebar_open": True, "ui_style": style, "experimental_bots": True},
            "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": ROSTER}
     return """
@@ -86,18 +86,18 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
     }
   };
 }})};
-""" % tuple(json.dumps(x, ensure_ascii=False) for x in (cfg, SESSIONS, VIEW, BOTS))
+""" % tuple(json.dumps(x, ensure_ascii=False) for x in (cfg, sessions or SESSIONS, VIEW, BOTS))
 
 
 SHOWN = "(() => { const l = document.getElementById('chat-layer'); return l && !l.hidden; })()"
 POP = "(() => { const p = document.getElementById('tm-pop'); return !!p && !p.hidden && p.getClientRects().length > 0; })()"
 
 
-def open_page(browser, style, info):
+def open_page(browser, style, info, sessions=None):
     page = browser.new_page(viewport={"width": 1100, "height": 760})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.add_init_script(stub(style))
+    page.add_init_script(stub(style, sessions))
     page.goto((HERE / "web" / "index.html").as_uri())
     if style == "chat":
         page.wait_for_function(SHOWN, timeout=15000)
@@ -281,6 +281,26 @@ def run(browser, engine):
     page.wait_for_timeout(300)
     check("it opens the same pop-up", page.evaluate(POP) and page.locator("#tm-pop .tm-opt").count() == 5)
     shot(page, "cli-style")
+    check("no page errors", not errors, errors)
+    page.close()
+
+    print(f"[{engine}] 9. switching tabs: the tab bar's chip follows the tab shown")
+    # Reported: the chip read "Opus 5.5 · max" on a tab running xhigh; the pop-up said xhigh. It was the last
+    # tab's chip: the bar was repainted only when the shown tab's own answer changed, and this one's had not.
+    two = SESSIONS + [{"sid": "s502", "cmd": "claude", "alive": True, "label": "示範二", "bridge_enabled": True}]
+    page, errors = open_page(browser, "cli", CLAUDE, sessions=two)
+    other = dict(CLAUDE, sid="s502", current={"name": "Sonnet 5.5", "effort": "xhigh", "from": "status"}, current_key="sonnet")
+    page.evaluate("i => { window.__info.s502 = i; return window.SFTabModel.refresh('s502', true); }", other)
+    page.wait_for_timeout(300)
+    slot = page.locator("#tab-bar #tm-slot .tm-chip")
+    check("the shown tab's chip", slot.inner_text().strip().startswith("Opus 5.5 · high"), slot.all_inner_texts())
+    page.click('#sidebar-sessions .sb-item[data-sid="s502"]')
+    page.wait_for_timeout(1600)
+    check("switched to a tab whose answer has not changed: the chip is that tab's, not the last one's",
+          slot.inner_text().strip().startswith("Sonnet 5.5 · xhigh"), slot.all_inner_texts())
+    page.evaluate("document.querySelector('#sidebar-sessions .sb-item[data-sid=\"s501\"]').click()")   # the primary bot's row hides behind its card
+    page.wait_for_timeout(1600)
+    check("…and back", slot.inner_text().strip().startswith("Opus 5.5 · high"), slot.all_inner_texts())
     check("no page errors", not errors, errors)
     page.close()
 

@@ -268,8 +268,11 @@
     if (doc.hidden) return;
     if (root.SFQuiet && root.SFQuiet.still()) return;     // nobody looking (web/quiet.js): asked again on wake
     const sid = activeSid();
+    // Painted on every tick, not only when the shown tab's answer changes: switching to a tab whose
+    // answer has not changed left the last tab's chip in the bar (reported: "Opus 5.5 · max" on a tab
+    // running xhigh). paintBar compares the HTML first, so an unchanged chip touches nothing.
+    paintBar();
     if (sid) refresh(sid, false);
-    else paintBar();
   }
   doc.addEventListener('mousedown', e => {
     if (pop && !pop.hidden && !pop.contains(e.target) && !e.target.closest('.tm-chip')) close();
