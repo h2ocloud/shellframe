@@ -5397,6 +5397,22 @@ def _ensure_mic_usage_plist():
             print(f"[shellframe] mic plist heal failed for {bundle}: {e}", file=sys.stderr)
 
 
+
+def _win_app_identity() -> dict:
+    """Windows: the app's own taskbar identity and window icon. Reported: on Windows the window and its taskbar
+    button showed Python's icon. The app runs under pythonw.exe; pywebview takes the icon of the executable when it
+    is given none, and the taskbar groups the window with every other Python program. An AppUserModelID of its own
+    and icon.ico fix both. Elsewhere: nothing (the Mac app bundle has its icon)."""
+    if not IS_WIN:
+        return {}
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("h2ocloud.ShellBot")
+    except Exception:
+        _swallow("win-app-identity")
+    ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+    return {"icon": ico} if os.path.isfile(ico) else {}
+
 def main():
     sf_trail.start(_dlog, TMP_DIR)   # how it started, and a trail for when it goes (sf_trail)
     _self_heal_venv()
@@ -5618,7 +5634,7 @@ def main():
     # so a slow network cannot hold up the window either.
     threading.Thread(target=api._autostart_bridge, daemon=True,
                      name="sf-bridge-autostart").start()
-    webview.start(debug=("--debug" in sys.argv))
+    webview.start(debug=("--debug" in sys.argv), **_win_app_identity())
 
     # If webview.start() returns but process is still alive, force exit
     sf_trail.exiting("webview.start() returned: the window's loop ended")

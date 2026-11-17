@@ -59,3 +59,4 @@ jobs:
           python tests_win_esc.py
           python tests_tab_delivery.py
           python tests_codex_models.py
+          python tests_win_icon.py

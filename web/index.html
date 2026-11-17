@@ -679,10 +679,15 @@
   /* 遠端（其他 ShellFrame）區塊：peer 標題列＋它的 session 列 */
   .sb-peer-head { border-left: 2px solid #9ece6a33; }
   .sb-peer-head.offline { border-left-color: transparent; }
-  .sb-peer-head .sb-peer-dot {
+  .sb-mobile-head { border-left-color: transparent; opacity: .85; }
+  .sb-mobile-row { padding-left: 26px; font-size: 12px; min-height: 26px; }
+  .sb-mobile-count { margin-left: 6px; font-size: 11px; color: #565f89; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0; }
+  .sb-mobile-head .sb-label { flex: 0 0 auto; }
+  .sb-mobile-row .sb-peer-dot { margin-right: 6px; }
+  .sb-peer-head .sb-peer-dot, .sb-mobile-row .sb-peer-dot {
     width: 7px; height: 7px; border-radius: 50%; background: #3b4261; flex-shrink: 0;
   }
-  .sb-peer-head .sb-peer-dot.on { background: #9ece6a; box-shadow: 0 0 5px #9ece6a; }
+  .sb-peer-head .sb-peer-dot.on, .sb-mobile-row .sb-peer-dot.on { background: #9ece6a; box-shadow: 0 0 5px #9ece6a; }
   .sb-remote { padding-left: 26px; color: #787c99; cursor: pointer; }
   .sb-remote:hover { color: #c0caf5; }
   .sb-remote-hint { padding: 2px 12px 4px 26px; font-size: 10px; color: #3b4261; }
@@ -3183,7 +3188,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
     // ── 隔離線＝Frame Link 入口；線以下是其他 ShellFrame 的 session 專區 ──
     try {
-      const peers = (linkState && linkState.peers) || [];
+      // 電腦對電腦為主：手機、平板裝不了 CLI，也不會被這台操作，收成一行（link_bots.targets 同一個判斷：
+      // kind ios，或沒有自己的位址、只會來這台輪詢取件），展開才列出來。回報：一堆手機平板把側欄塞滿。
+      const allPeers = (linkState && linkState.peers) || [];
+      const isMobilePeer = p => p.kind === 'ios' || !p.host;
+      const peers = allPeers.filter(p => !isMobilePeer(p));
+      const mobiles = allPeers.filter(isMobilePeer);
       const zoneCollapsed = !!linkUi.sbPeers;
       const divider = document.createElement('div');
       divider.className = 'sb-divider';
@@ -3191,7 +3201,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       divider.dataset.action = 'link-zone';
       divider.title = '隔離線以下＝配對的其他 ShellBot 的 session。點線收合／展開，點「＋ 配對」接上另一台。';
       divider.innerHTML =
-        `<span style="pointer-events:none">${zoneCollapsed ? '▸' : '▾'} 🔗 ${esc(t('linkSidebarDivider'))}${peers.length ? ` (${peers.length})` : ''}</span>` +
+        `<span style="pointer-events:none">${zoneCollapsed ? '▸' : '▾'} 🔗 ${esc(t('linkSidebarDivider'))}${allPeers.length ? ` (${peers.length}${mobiles.length ? ` + 📱${mobiles.length}` : ''})` : ''}</span>` +
         `<button class="sb-pair-btn" data-guide="pair" data-action="link-pair" title="配對另一台 ShellBot（產生配對碼／加入配對）">＋ 配對</button>`;
       container.appendChild(divider);
 
@@ -3199,7 +3209,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (!peers.length) {
           const hint = document.createElement('div');
           hint.className = 'sb-remote-hint';
-          hint.textContent = '尚未配對其他 ShellBot——按「＋ 配對」開始';
+          hint.textContent = mobiles.length ? '還沒有配對其他電腦——按「＋ 配對」開始' : '尚未配對其他 ShellBot——按「＋ 配對」開始';
           container.appendChild(hint);
         }
         peers.forEach(p => {
@@ -3314,6 +3324,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             container.appendChild(row);
           });
         });
+        if (mobiles.length) {
+          const open = !!linkUi.sbMobileOpen;
+          const head = document.createElement('div');
+          head.className = 'sb-item sb-peer-head sb-mobile-head';
+          head.dataset.action = 'mobile-zone';
+          head.title = '行動裝置：配對的手機和平板。它們用 App 連這台，不會被這台操作。點一下展開／收合';
+          const on = mobiles.filter(m => m.reachable).length;
+          head.innerHTML = `<span style="pointer-events:none;font-size:9px;color:#565f89">${open ? '▾' : '▸'}</span>` +
+            `<span class="sb-label" style="pointer-events:none">📱 行動裝置</span>` +
+            `<span class="sb-mobile-count">${mobiles.length}${on ? ` · ${on} 在線` : ''}</span>`;
+          container.appendChild(head);
+          if (open) mobiles.forEach(m => {
+            const row = document.createElement('div');
+            row.className = 'sb-item sb-mobile-row';
+            row.title = (m.reachable ? '連線中' : '沒連著（App 開著時會來這台取件）') + '｜✕ 斷開配對';
+            row.innerHTML = `<span class="sb-peer-dot${m.reachable ? ' on' : ''}"></span>` +
+              `<span class="sb-label" style="pointer-events:none">${esc(m.name)}</span>` +
+              `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(m.id)}" title="斷開這台（會先確認）">&times;</span>`;
+            container.appendChild(row);
+          });
+        }
       }
     } catch (e) { /* Frame Link 區塊壞掉不拖垮本機列表 */ }
     try { window.SFBots && SFBots.afterSidebar(container); } catch (e) { /* bots 壞掉不拖垮側欄 */ }
@@ -3470,6 +3501,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const zone = e.target.closest('[data-action="link-zone"]');
     if (zone) {
       linkUi.sbPeers = !linkUi.sbPeers;
+      saveLinkUi();
+      renderSidebar();
+      return;
+    }
+    const mobileZone = e.target.closest('[data-action="mobile-zone"]');
+    if (mobileZone) {
+      linkUi.sbMobileOpen = !linkUi.sbMobileOpen;
       saveLinkUi();
       renderSidebar();
       return;
