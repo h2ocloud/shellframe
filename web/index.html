@@ -3836,12 +3836,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     try { s.fitAddon.fit(); } catch (e) {}
     const cols = s.term.cols, rows = s.term.rows;
     if (cols > 0 && rows > 0 && (cols !== s._lastCols || rows !== s._lastRows)) {
-      s._lastCols = cols; s._lastRows = rows;
+      s._lastCols = cols; s._lastRows = rows; s._sizeSentAt = Date.now();
       const info = parseRemoteSid(sid);
       if (info) pywebview.api.link_remote_resize(info.peerId, info.rsid, cols, rows)
         .then(() => { s._streamSeq = -1; })   // resize→對方全畫面重繪，重新 attach
         .catch(() => {});
     }
+  }
+
+  // Tell the other computer our size again, even though it has not changed here. Reported: a remote Codex tab
+  // drew in an 85x24 corner of the pane (its tmux status showed the window bigger than its client) after that
+  // computer's ShellBot restarted. fitRemotePane sends only when the size changes on this side, so a restart
+  // over there (its tabs come back at its own window's size), or its own window refitting the tab, was never
+  // corrected. Now our size goes again when the stream (re)attaches, when the other side lost the stream (it
+  // restarted) and when the connection comes back. At most once every 3 s: a resize makes the other side redraw,
+  // which re-attaches the stream, and that must not loop.
+  const REMOTE_RESIZE_GAP_MS = 3000;
+  function resendRemoteSize(sid) {
+    const s = sessions[sid];
+    if (!s || !s.isRemote || activeId !== sid) return false;
+    if (s._sizeSentAt && Date.now() - s._sizeSentAt < REMOTE_RESIZE_GAP_MS) return false;
+    s._lastCols = 0; s._lastRows = 0;
+    fitRemotePane(sid);
+    return true;
   }
 
   function openRemoteSession(peer, rt) {
@@ -3960,6 +3977,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         if (_remoteStreamSid !== sid) return;      // 已切走
         if (res.success) {
           ok = true;
+          // the other side lost our stream (it restarted) or the connection is back: our size may be gone there
+          if ((res.reset && s._streamSeq >= 0) || s._connErr) resendRemoteSize(sid);
           if (res.reset) {   // attach 或 buffer 捲走 → 清屏＋重貼 snapshot
             try { s.term.reset(); } catch (e) {}
             if (res.snapshot) s.term.write(res.snapshot);
@@ -3975,6 +3994,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       delay = ok ? STREAM_OK_MS : Math.min(delay * 2, STREAM_MAX_MS);
       if (_remoteStreamSid === sid) _remoteStreamTimer = setTimeout(pull, delay);
     };
+    s._sizeSentAt = 0;                   // (re)attached: our size goes again, whatever it was before
+    resendRemoteSize(sid);
     pull();                              // 立刻 attach＋畫 snapshot、之後自排程
   }
 

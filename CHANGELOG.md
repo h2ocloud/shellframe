@@ -6,6 +6,25 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.54.1 (2026-11-17)
+
+### Fixes
+
+- **Another computer's tab fills the pane again after that computer's ShellBot restarts.** Reported with a screenshot:
+  a Codex tab on another computer drew in a small corner of the pane (its tmux status line said the window was bigger
+  than what it showed), right after that computer had updated and restarted ShellBot. This pane told the other side
+  its size only when the size changed here; the restart brought that computer's tabs back at its own window's size,
+  and nothing here sent ours again. Now our size goes again whenever the pane attaches to the tab, when the stream
+  comes back after failing, and when the other side lost the stream without an error (a quick restart). A resize
+  makes the other side redraw, which re-attaches the stream: it is sent at most once every 3 seconds, so that does
+  not loop. Only this computer needs the update. Covered by `tests_remote_pane_size.py` (8).
+
+  **另一台電腦的 ShellBot 重啟後，它的分頁又會撐滿畫面。** 回報附截圖：另一台電腦的 Codex 分頁只畫在畫面的一小角（它的 tmux
+  狀態列顯示視窗比畫出來的大），那台剛更新、重啟過 ShellBot。這裡的畫面只在自己這邊尺寸變了才把尺寸告訴對方；對方重啟後，
+  分頁回到它自己視窗的尺寸，這邊卻不會再送一次。現在畫面每次接上那個分頁、連線斷了又恢復、對方沒報錯卻弄丟串流（很快重啟）
+  時，都會再送一次這邊的尺寸。調整尺寸會讓對方重畫、串流重新接上，所以最多每 3 秒送一次，不會變成迴圈。只要這台更新就好。
+  由 `tests_remote_pane_size.py`（8 項）守著。
+
 ## v0.54.0 (2026-11-17)
 
 ### Changes
