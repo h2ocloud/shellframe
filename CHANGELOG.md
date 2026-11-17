@@ -6,6 +6,52 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.52.0 (2026-11-17)
+
+### Added
+
+- **The office: what interns are doing, asking one to leave, and pictures in the panel's box.** Asked for: many
+  interns, no way to tell what they are doing, and they should be dismissable from the office; the office's
+  conversation should take a pasted picture too. An intern's Details page now says what it is doing (its tab's
+  current step or last line; a bot's page adds it under its job). An intern's panel has **Ask to leave**: the first
+  press asks (and says when it is still working), a second press within 4 s closes its tab, as its ✕ does; on a
+  paired computer, that computer closes it, as the sidebar's remote close does. A bot has no such button. A
+  picture pasted into the panel's box (or a file copied in Finder) is saved the way the chat view saves it, shown
+  above the box with a thumbnail (× takes it off), and sent as its path ahead of the words; for a paired computer's
+  tab it is sent there first and named by that computer's path, and when that computer cannot take a file now the
+  panel says so. Covered by `tests_office_chat_ui.py` (110, both engines).
+
+  **辦公室：看得到實習生在做什麼、可以請他離開，面板也能貼圖片。** 需求：實習生很多，看不出在做什麼，應該能在辦公室直接請他走；
+  辦公室的對話也要能貼圖片。實習生的「資料」頁現在會寫他在做什麼（分頁目前這一步，或最後一句話；bot 的資料頁則寫在執掌下面）。實習生
+  的面板多了「請他離開」：按第一下只是確認（他還在做的話會提醒），4 秒內再按一次才關掉他的分頁，跟按分頁的 ✕ 一樣；配對電腦上的實習
+  生，由那台電腦關，跟側欄的遠端關閉一樣。bot 沒有這個按鈕。貼進面板傳話框的圖片（或在 Finder 複製的檔案），用對話模式同樣的方式存下
+  來，在傳話框上方顯示縮圖（按 × 拿掉），送出時路徑放在文字前面；配對電腦的分頁會先把檔案傳過去、用那台的路徑；那台現在收不到檔案時，
+  面板會說明。由 `tests_office_chat_ui.py`（110 項，兩種引擎）守著。
+
+### Fixes
+
+- **A paired computer's bots and interns show their real state in the office.** Reported: a paired computer's
+  bots always looked idle, and its interns were bare tab ids with "?" for their CLI. The other computer sends each
+  one's state, job, CLI, name and what it is doing; this computer kept only faces and kinds when it stored the
+  answer. It now keeps those too (one line of what it is doing, already redacted and cut to 140 characters over
+  there; a question waiting is kept as a yes or no, never its options). Covered by `tests_link_peer_bots.py`.
+
+  **辦公室裡配對電腦的 bot 和實習生，顯示真正的狀態了。** 回報：配對電腦的 bot 永遠顯示閒置，實習生只剩分頁編號，CLI 寫著「?」。
+  對方電腦其實有送每個人的狀態、執掌、CLI、名稱和在做什麼，這台存下來時只留了頭像和種類。現在也留下這些（在做什麼只留一行，對方已經
+  遮掉敏感內容、限制在 140 字內；有沒有問題在等你只留是或否，不留選項）。由 `tests_link_peer_bots.py` 守著。
+
+- **A message taken in mid-turn no longer stays "sending" in the chat view.** Reported: a message sent from the
+  chat view while the tab was working stayed "sending", below the reply that answered it. It had gone in: Claude
+  Code took it into the running turn and wrote it as a `queued_command` attachment, not a `user` record, which the
+  chat view did not read. That record (from a person; a background task's notification is not one) is now the
+  person's turn. Measured on a real conversation: 19 such records, none written twice. Covered by
+  `tests_queued_command.py`.
+
+  **回合中途收進去的訊息，對話模式不會再一直顯示「送出中」。** 回報：分頁在做事時從對話模式送出的訊息，一直顯示送出中，還排在回覆
+  它的那則下面。訊息其實送到了：Claude Code 把它併進正在跑的那一輪，紀錄寫成 `queued_command` 附件，不是一般的 `user` 紀錄，對話模
+  式沒讀這種。現在這種紀錄（人打的；背景工作的通知不算）就是你說的話。用一份真的對話量過：19 筆，沒有一筆重複。由
+  `tests_queued_command.py` 守著。
+
 ## v0.51.0 (2026-11-17)
 
 ### Changes

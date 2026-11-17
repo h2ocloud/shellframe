@@ -262,6 +262,13 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
 .cnote.warn{color:var(--yellow)}
 .cnote .row{display:flex;gap:6px;margin-top:6px}
 .cnote .row button{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:#24283b;font-size:12px;font-weight:600}
+.cfiles{flex:none;display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0}
+.cfiles[hidden]{display:none}
+.cfile{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 4px 3px 3px;border-radius:9px;border:1px solid var(--line);background:#24283b;font-size:12px;color:var(--dim)}
+.cfile img{width:34px;height:34px;object-fit:cover;border-radius:6px}
+.cfile span{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cfile button{width:20px;height:20px;border:0;border-radius:6px;background:none;color:var(--dim);font-size:14px;line-height:1}
+.cfile button:hover{color:var(--red)}
 .ccomp{flex:none;display:flex;gap:8px;align-items:flex-end;padding:8px 12px 10px;border-top:1px solid rgba(59,66,97,.6)}
 .ccomp[hidden]{display:none}
 .ccomp textarea{flex:1;min-width:0;resize:none;max-height:9em;min-height:38px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:#16161e;color:var(--ink);font:13px/1.45 var(--font);outline:none}
@@ -284,6 +291,11 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
 .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#24283b;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
 .btn:hover{border-color:var(--blue)}
 .pfoot .hint{margin-left:auto;font-size:11.5px;color:var(--mute)}
+.btn.bye{color:var(--dim)}
+.btn.bye:hover{border-color:var(--red);color:var(--red)}
+.btn.bye.armed{border-color:var(--red);color:#1a1b26;background:var(--red)}
+.btn.bye[hidden]{display:none}
+#panel.has-chat .pfoot .hint{display:none}
 
 #toast{position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:7;pointer-events:none;display:flex;flex-direction:column;gap:6px;align-items:center;max-width:calc(100vw - 24px)}
 #toast div{font-size:12.5px;padding:6px 12px;border-radius:99px;background:rgba(31,35,53,.95);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.3);animation:tin .25s ease-out;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
@@ -400,6 +412,7 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
     <div class="clist" id="cList" aria-live="polite"></div>
     <div class="cask" id="cAsk" hidden></div>
     <div class="cnote" id="cNote" hidden></div>
+    <div class="cfiles" id="cFiles" hidden></div>
     <div class="ccomp" id="cComp">
       <textarea id="cBox" rows="2" aria-label="傳話"></textarea>
       <button class="btn csend" id="cSend" type="button" title="送出（Enter）">送出</button>
@@ -413,7 +426,7 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
     <div class="card items" id="pItems"></div>
     <div class="events"><h3>最近事件</h3><ol id="pEvents"></ol></div>
   </div>
-  <div class="pfoot"><button class="btn" id="stopFollow">停止追蹤 <kbd>Esc</kbd></button><span class="hint">拖曳畫面可暫時看別處</span></div>
+  <div class="pfoot"><button class="btn" id="stopFollow">停止追蹤 <kbd>Esc</kbd></button><button class="btn bye" id="dismiss" type="button" hidden title="關掉這個實習生的分頁">請他離開</button><span class="hint">拖曳畫面可暫時看別處</span></div>
 </aside>
 <div id="toast" aria-live="polite"></div>
 
@@ -1280,6 +1293,29 @@ function renderHelperPanel(e, force) {
   $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
 }
 let groupSig = '';
+// 請實習生離開：關掉他的分頁（這台的、或配對電腦上的）。按第一下只是確認，4 秒內再按一次才關；換人就取消。
+let byeArmed = null, byeTimer = 0;
+function renderBye(e) {
+  const b = $('#dismiss'), can = !!(CHAT && CHAT.dismiss && e && (e.kind === 'temp' || e.kind === 'peertemp') && !e.leaving);
+  b.hidden = !can;
+  if (!can || byeArmed !== e.key) { byeArmed = null; b.classList.remove('armed'); b.textContent = '請他離開'; }
+}
+async function pressBye() {
+  const e = follow && M.ents.get(follow); if (!e || !CHAT || !CHAT.dismiss) return;
+  const b = $('#dismiss');
+  if (byeArmed !== e.key) {
+    byeArmed = e.key; b.classList.add('armed');
+    b.textContent = e.st === 'working' ? '他還在做，確定關掉？' : '確定關掉他的分頁？';
+    clearTimeout(byeTimer); byeTimer = setTimeout(() => { if (byeArmed === e.key) { byeArmed = null; renderBye(e); } }, 4000);
+    return;
+  }
+  clearTimeout(byeTimer); byeArmed = null; b.disabled = true;
+  let r = null;
+  try { r = await CHAT.dismiss(e.key); } catch (err) { r = { ok: false, message: String(err) }; }
+  b.disabled = false;
+  if (r && r.ok) { toast(`已請 ${e.who.name} 離開`); stopFollow(); }
+  else { toast(r && r.message ? `沒有關掉：${r.message}` : '沒有關掉他的分頁'); renderBye(e); }
+}
 function renderGroupCard(e) {
   const el = $('#pGroup');
   if (!e || e.kind !== 'bot') { el.hidden = true; groupSig = ''; return; }
@@ -1300,16 +1336,19 @@ function renderPanel(force) {
   if (!follow) return; const e = M.ents.get(follow); if (!e) { stopFollow(); return; }
   chatSync(e);
   renderGroupCard(e);
+  renderBye(e);
   if (e.kind === 'helper') { renderHelperPanel(e, force); return; }
   const last = e.events[e.events.length - 1];
-  const sig = [e.key, e.st, e.who.name, e.seatKey, JSON.stringify(e.task), e.events.length, last && last.t, e.stale, tagsOf(e).map(t => t.text).join(), itemsOf(e).join(), itemsOpen].join('|');
+  const sig = [e.key, e.st, e.who.name, e.who.doing, e.seatKey, JSON.stringify(e.task), e.events.length, last && last.t, e.stale, tagsOf(e).map(t => t.text).join(), itemsOf(e).join(), itemsOpen].join('|');
   if (!force && sig === panelSig) return; panelSig = sig;
   const w = e.who, stt = ST[e.st] || ST.idle, temp = e.kind === 'temp' || e.kind === 'peertemp', peer = e.kind === 'peer' || e.kind === 'peertemp', movable = e.kind === 'bot' && e.id !== M.primaryId;
   $('#pAv').src = avatarURL(w, 100);
   $('#pName').innerHTML = esc(w.name) + (e.kind === 'bot' && e.id === M.primaryId ? ' <span class="star" title="主要 bot">★ 主要</span>' : '');
   $('#pSub').textContent = temp ? `實習生 · ${w.cli}${peer ? ' · 隔壁' : ''}` : peer ? '正職 · ' + (roomOfEnt(e) || {}).label : `正職 · ${seatLabel(e)}`;
   const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
-  $('#pDuty').innerHTML = `<span>執掌</span>${esc(w.duty || '—')}`;
+  $('#pDuty').innerHTML = temp
+    ? `<span>在做</span>${esc(w.doing || (e.st === 'working' ? '正在做…' : '看不出來：還沒有對話，或沒有新的進度'))}`   // 實習生沒有執掌：看他在做什麼
+    : `<span>執掌</span>${esc(w.duty || '—')}` + (w.doing && e.st !== 'asleep' ? `<br><span>在做</span>${esc(w.doing)}` : '');
   $('#pMeta').innerHTML = temp ? '<span>不留記憶</span><span>做完就關分頁</span>' : `${w.runs == null ? '<span>記憶 已存</span><span>示範 CLI · 示範模型</span>' : (w.memory === false ? '<span>不留記憶</span>' : '<span>有記憶</span>') + (w.runs ? `<span>${esc(w.runs)}</span>` : '')}${e.st === 'asleep' ? '<span>沒有開分頁</span>' : ''}${movable ? '<span>拖曳頭像可換位子</span>' : ''}`;
   const t = e.task, stl = { todo: '待辦', doing: '進行中', waiting: '等待中', done: '完成', dropped: '放棄' };
   $('#pTask').innerHTML = !t ? '<h3>目前任務</h3><p class="note">沒有手上的任務。</p>' :
@@ -1329,7 +1368,7 @@ function startFollow(key) {
   renderPanel(true); kick();
 }
 function stopFollow(silent) {
-  if (!follow) return; follow = null; followCam = false; goal = null; chatSync(null);
+  if (!follow) return; follow = null; followCam = false; goal = null; chatSync(null); renderBye(null);
   document.body.classList.remove('following'); const p = $('#panel'); p.classList.remove('open'); p.setAttribute('aria-hidden', 'true');
   if (!silent) fit(); kick();
 }
@@ -1344,6 +1383,7 @@ const CHAT = HOST && HOST.chat ? HOST.chat : null;
 const CHAT_POLL_MS = 2000;
 const chat = { key: null, gen: 1, loading: 0, rev: '', data: null, sending: false, draftCard: null, answered: null, flash: null, first: true, open: new Set(), askSig: '', noteSig: '' };
 const unsent = new Map();            // 每個人還沒送出的字：換人時收起來，換回來放回去（不會送到別人那裡）
+const attached = new Map();          // 每個人貼上、還沒送出的圖片／檔案：[{path, name, url}]（url：縮圖）
 let panelTab = store.get('panelTab', 'chat') === 'info' ? 'info' : 'chat';
 const chatAble = e => !!(CHAT && e && ['bot', 'temp', 'peer', 'peertemp'].includes(e.kind) && !e.gone);   // 隔壁電腦的人走那台的 /link/chat
 function chatSync(e) {
@@ -1368,7 +1408,7 @@ function chatEnter(e) {
   chatLeave();
   Object.assign(chat, { key: e.key, rev: '', data: null, draftCard: null, answered: null, flash: null, first: true, askSig: '', noteSig: '' });
   chat.open.clear();
-  const box = $('#cBox'); box.value = unsent.get(e.key) || ''; autosize();
+  const box = $('#cBox'); box.value = unsent.get(e.key) || ''; autosize(); renderFiles();
   const list = $('#cList'); list.innerHTML = '<div class="empty">讀取對話中…</div>'; list.dataset.h = '';   // 回到看過的人：清單照樣重畫
   const doing = $('#cDoing'); doing.textContent = ''; doing.dataset.h = ''; doing.className = 'cdoing';
   renderAsk(); renderNote();
@@ -1454,17 +1494,42 @@ function renderNote() {
 let flashTimer = 0;
 function flash(text, warn) { chat.flash = text ? { text, warn: !!warn, until: Date.now() + 5000 } : null; renderNote(); clearTimeout(flashTimer); if (text) flashTimer = setTimeout(renderNote, 5100); }
 function autosize() { const b = $('#cBox'); b.style.height = 'auto'; b.style.height = Math.min(b.scrollHeight + 2, 150) + 'px'; }
+function renderFiles() {
+  const el = $('#cFiles'), files = (chat.key && attached.get(chat.key)) || [];
+  el.hidden = !files.length;
+  el.innerHTML = files.map((f, i) => `<span class="cfile" title="${esc(f.path)}">${f.url ? `<img src="${esc(f.url)}" alt="">` : ''}<span>${esc(f.name)}</span>` +
+    `<button type="button" data-act="unattach" data-i="${i}" title="拿掉" aria-label="拿掉 ${esc(f.name)}">×</button></span>`).join('');
+}
+const readDataUrl = blob => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(r.error); r.readAsDataURL(blob); });
+async function chatPaste(ev) {
+  const cd = ev.clipboardData, key = chat.key; if (!cd || !key || !CHAT || !CHAT.attach) return;
+  const images = [...(cd.items || [])].filter(it => it.kind === 'file' && /^image\//.test(it.type)).map(it => it.getAsFile()).filter(Boolean);
+  if (!images.length && ![...(cd.types || [])].includes('Files')) return;           // text pastes as text
+  ev.preventDefault();
+  flash('附上中…');
+  const got = [];
+  try {
+    if (images.length) for (const blob of images) { const url = await readDataUrl(blob); const r = await CHAT.attach(key, url, blob.name || '');
+      if (!r || !r.ok) throw new Error(r && r.remote ? '那台電腦現在收不到檔案' + (r.message ? `（${r.message}）` : '') : (r && r.message) || '存不下這張圖'); r.files.forEach(f => got.push(Object.assign({ url }, f))); }
+    else { const r = await CHAT.attach(key, '', ''); if (!r || !r.ok) throw new Error(r && r.remote ? '那台電腦現在收不到檔案' : (r && r.message) || '剪貼簿裡沒有檔案'); got.push(...r.files); }
+  } catch (err) { if (key === chat.key) flash('沒有附上：' + (err && err.message ? err.message : err), true); return; }
+  attached.set(key, (attached.get(key) || []).concat(got));
+  if (key === chat.key) { renderFiles(); flash(`附上了 ${got.length} 個檔案，送出時一起送`); }
+}
 async function chatSend(clearDraft) {
-  const key = chat.key, box = $('#cBox'), text = box.value;
-  if (!CHAT || !key || chat.sending || !text.trim()) return;
+  const key = chat.key, box = $('#cBox'), words = box.value, files = (attached.get(key) || []).slice();
+  if (!CHAT || !key || chat.sending || (!words.trim() && !files.length)) return;
+  // 附件照終端機的方式：路徑在前、字在後（對話模式、手機送照片都是這樣）
+  const text = files.length ? files.map(f => f.path).join('\n') + (words.trim() ? '\n\n' + words : '') : words;
   chat.sending = true; $('#cSend').disabled = true;
   let r = null;
   try { r = await CHAT.send(key, text, !!clearDraft); } catch (err) { r = { success: false, message: String(err) }; }
   chat.sending = false; $('#cSend').disabled = false;
   const here = key === chat.key;
   if (r && r.success) {
-    if (here) { if (box.value === text) box.value = ''; chat.draftCard = null; autosize(); }
-    else if (unsent.get(key) === text) unsent.delete(key);
+    attached.delete(key);
+    if (here) { if (box.value === words) box.value = ''; chat.draftCard = null; autosize(); renderFiles(); }
+    else if (unsent.get(key) === words) unsent.delete(key);
     if (here) { flash(r.queued ? '已送出，排隊中：好了就會打進去。' : '已送出。'); chat.rev = ''; chatTick(true); }
   } else if (r && r.code === 'draft') {
     if (here) { chat.draftCard = r.draft || '…'; renderNote(); }
@@ -1502,6 +1567,7 @@ $('#pChat').addEventListener('click', ev => {
   else if (act === 'clear-send') chatSend(true);
   else if (act === 'keep') { chat.draftCard = null; renderNote(); }
   else if (act === 'code-more') b.parentNode.classList.toggle('is-open');
+  else if (act === 'unattach') { const list = (attached.get(chat.key) || []).slice(); list.splice(+b.dataset.i, 1); attached.set(chat.key, list); renderFiles(); }
   else if (act === 'more') { const m = b.closest('.cm'); if (m) { chat.open.add(m.dataset.k); m.classList.remove('clip'); b.remove(); } }
 });
 $('#cBox').addEventListener('keydown', ev => {
@@ -1510,6 +1576,7 @@ $('#cBox').addEventListener('keydown', ev => {
   else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); ev.target.blur(); }   // 第一次 Esc 只離開輸入框
 });
 $('#cBox').addEventListener('input', autosize);
+$('#cBox').addEventListener('paste', chatPaste);
 $('#pTask').addEventListener('click', ev => {
   const b = ev.target.closest('button[data-act="parent-chat"]'), e = follow && M.ents.get(follow); if (!b || !e) return;
   panelTab = 'chat'; store.set('panelTab', panelTab); startFollow(e.parentKey);
@@ -1784,6 +1851,7 @@ addEventListener('keydown', e => {
 });
 $('#stats').addEventListener('click', e => { const b = e.target.closest('.stat'); if (b) setHl(b.dataset.k); });
 $('#stopFollow').onclick = () => stopFollow();
+$('#dismiss').onclick = () => pressBye();
 $('#zoning').value = zoning;
 $('#zoning').addEventListener('change', ev => setZoning(ev.target.value));
 $('#pGroup').addEventListener('click', ev => {
@@ -1876,8 +1944,8 @@ const ST_OK = new Set(['working', 'decision', 'stuck', 'idle', 'done', 'asleep']
 let seedN = 0;
 function fillEnt(e, r, kind) {
   const av = r.avatar || {};
-  if (kind === 'temp' || kind === 'peertemp') { const cli = r.cli || '示範 CLI'; e.who = { name: r.name || '實習生', cli, cap: CLI_CAP[Math.abs([...cli].reduce((a, ch) => a + ch.charCodeAt(0), 0)) % 3], duty: r.duty || '不是 bot 的 AI 分頁：沒有固定身份，關掉就忘了' }; e.created = Date.parse(r.opened_at) || e.created || ++seedN; }
-  else { e.who = { name: String(r.name || r.id), shape: SHAPES.includes(av.shape) ? av.shape : 'round', color: /^#[0-9a-f]{6}$/i.test(av.color || '') ? av.color : NAMED_COL[av.color] || COL.blue, cli: typeof r.cli === 'string' ? r.cli : '', group0: r.team ? String(r.team) : '', duty: r.duty || '', primary: !!r.primary, runs: typeof r.runs === 'string' ? r.runs : null, memory: r.memory }; e.who.team = teamOf(e); e.created = Date.parse(r.created_at) || 0; }
+  if (kind === 'temp' || kind === 'peertemp') { const cli = r.cli || '示範 CLI'; e.who = { name: r.name || '實習生', cli, cap: CLI_CAP[Math.abs([...cli].reduce((a, ch) => a + ch.charCodeAt(0), 0)) % 3], duty: r.duty || '不是 bot 的 AI 分頁：沒有固定身份，關掉就忘了', doing: typeof r.doing === 'string' ? r.doing : '' }; e.created = Date.parse(r.opened_at) || e.created || ++seedN; }
+  else { e.who = { name: String(r.name || r.id), shape: SHAPES.includes(av.shape) ? av.shape : 'round', color: /^#[0-9a-f]{6}$/i.test(av.color || '') ? av.color : NAMED_COL[av.color] || COL.blue, cli: typeof r.cli === 'string' ? r.cli : '', doing: typeof r.doing === 'string' ? r.doing : '', group0: r.team ? String(r.team) : '', duty: r.duty || '', primary: !!r.primary, runs: typeof r.runs === 'string' ? r.runs : null, memory: r.memory }; e.who.team = teamOf(e); e.created = Date.parse(r.created_at) || 0; }
   e.st = ST_OK.has(r.state) ? r.state : 'idle';
   const t = r.task; e.task = t ? { id: t.id ?? '—', title: t.title || '', status: t.status || 'doing', next: t.next || '', waitingOn: t.waiting_on ? refKey(t.waiting_on, e) : null, from: t.from ? refKey(t.from, e) : null, updated: Date.parse(t.updated_at) || (typeof t.updated_at === 'number' ? t.updated_at : 0), why: t.why } : null;
   e.stale = staleOf(e.task, t && t.stale);

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.51",
+  "reviewed_for": "0.52",
   "tours": {
     "first_run": [
       "new-tab",
@@ -26,7 +26,8 @@
     "0.45.4": "The sign-in card shows only in a conversation whose last turn says the sign-in expired, and it explains each step itself; there is no fixed place on the screen to point at.",
     "0.46.0": "Tasks are commands for the AI tabs (`sfctl task`, `--for-task`); nothing new on the desktop's screen yet. A page for them comes with its own entry.",
     "0.49.0": "The office's panel gains a conversation and a message box; it lives inside the office (an iframe the tour cannot point into), so the office entry says it.",
-    "0.50.0": "The office's zoning select and Group card live inside the office (an iframe the tour cannot point into); the office entry covers the office."
+    "0.50.0": "The office's zoning select and Group card live inside the office (an iframe the tour cannot point into); the office entry covers the office.",
+    "0.52.0": "Ask to leave and pictures in the box live inside the office's panel (an iframe the tour cannot point into); the office entry covers the office."
   },
   "features": [
     {

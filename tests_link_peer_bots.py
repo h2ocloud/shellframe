@@ -67,13 +67,15 @@ def free_port():
 BOTS_LINK = {"success": True, "v": 1, "rev": 41, "now": 1.0, "enabled": True, "primary": "總管",
              "bots": [{"role": "總管", "label": "總管", "avatar": {"shape": "star", "color": "red"}, "primary": True,
                        "external": False, "state": "awake", "sid": "s1", "former_names": ["主控"],
-                       "latest": "not for the page", "decision": None},
+                       "latest": "示範：跑測試中", "decision": {"id": "q1", "options": [{"n": 1, "text": "Yes"}]},
+                       "activity": "decision", "responsibility": "統籌", "runs_on": "Claude Code · demo", "cli": "claude"},
                       {"role": "研究", "label": "研究-CLD", "avatar": {"shape": "hex", "color": "blue"}, "primary": False,
                        "external": False, "state": "asleep", "sid": ""},
                       {"role": "信箱", "label": "信箱", "avatar": {"shape": "round", "color": "ink"}, "primary": False,
                        "external": True, "state": "external", "sid": ""}],
              "tabs": {"s1": {"bot": "總管", "avatar": {"shape": "star", "color": "red"}, "kind": "bot", "latest": "x"},
-                      "s2": {"bot": "", "avatar": {"shape": "pill", "color": "green"}, "kind": "temp"},
+                      "s2": {"bot": "", "avatar": {"shape": "pill", "color": "green"}, "kind": "temp", "name": "示範分頁", "cli": "codex",
+                             "activity": "working", "doing": "示範：Running npm test", "latest": "older line", "blocked": ""},
                       "s3": {"bot": "", "avatar": {"shape": "round", "color": "sky"}, "kind": "terminal"}},
              "choices": {"shapes": ["round"]}, "connections": []}
 
@@ -169,9 +171,15 @@ def part1():
         pa = v["peers"].get(a.fid) or {}
         check("…its name and address", pa.get("name") == "desk-a" and pa.get("addr") == "desk-a", pa)
         check("…its primary, the tab faces and kinds", pa.get("primary") == "總管"
-              and pa["tabs"]["s1"] == {"bot": "總管", "avatar": {"shape": "star", "color": "red"}, "kind": "bot"}
+              and pa["tabs"]["s1"]["bot"] == "總管" and pa["tabs"]["s1"]["kind"] == "bot"
               and pa["tabs"]["s3"]["kind"] == "terminal", pa.get("tabs"))
-        check("…without what the page does not draw", "latest" not in json.dumps(pa) and "choices" not in pa)
+        check("…what the office needs: a bot's state, job and line; a tab's name, CLI, state and what it is doing",
+              pa["bots"][0]["activity"] == "decision" and pa["bots"][0]["decision"] is True and pa["bots"][0]["responsibility"] == "統籌"
+              and pa["bots"][0]["latest"] == "示範：跑測試中" and pa["bots"][0]["runs_on"] == "Claude Code · demo"
+              and pa["tabs"]["s2"]["name"] == "示範分頁" and pa["tabs"]["s2"]["cli"] == "codex"
+              and pa["tabs"]["s2"]["activity"] == "working" and pa["tabs"]["s2"]["latest"] == "示範：Running npm test", pa)
+        check("…without a question's options or the choices", "options" not in json.dumps(pa) and "choices" not in pa
+              and pa["bots"][0]["decision"] is True)
     finally:
         old.shutdown()
         for n in (a, b, c):
@@ -227,7 +235,7 @@ def part2():
     d = v["peers"]["p-desk"]
     check("…compact: bots with face, primary, state; tabs with face, bot, kind",
           [b["role"] for b in d["bots"]] == ["總管", "研究", "信箱"] and d["bots"][0]["former_names"] == ["主控"]
-          and d["tabs"]["s2"] == {"bot": "", "avatar": {"shape": "pill", "color": "green"}, "kind": "temp"}, d)
+          and d["tabs"]["s2"]["kind"] == "temp" and d["tabs"]["s2"]["avatar"] == {"shape": "pill", "color": "green"}, d)
     check("an older machine (404) has no bots here", "p-mine" not in v["peers"])
     check("…and nothing is asked while the answer is fresh", not queued and v["pending"] == 0, queued)
     clock[0] += link_bots.FRESH + 1

@@ -125,14 +125,14 @@
                duty: String(e.responsibility || ''), created_at: iso(ROSTER_EPOCH + order.indexOf(role) * 60000),
                state: tab ? tabState(tab.dot) : 'asleep', task: taskFor([role], I.tasks, known),
                runs: runsOf(e), memory: b.memory !== false, cli: String((e.cli && e.cli.label) || cliName(e.cmd) || ''),
-               sid: tab ? tab.sid : '', line: tab ? clip(tab.line, 120) : '' };
+               doing: tab ? clip(tab.line, 120) : '', sid: tab ? tab.sid : '', line: tab ? clip(tab.line, 120) : '' };
     });
     let k = 0;
     const temps = tabs.filter(x => x.kind === 'temp' && !(x.role && known.has(x.role))).map(x => {
       if (!seen[x.sid]) seen[x.sid] = now + (k++);
       return { id: x.sid, name: String(x.label || x.sid), cli: cliName(x.cmd) || '?', state: tabState(x.dot),
                task: taskFor([String(x.label || ''), x.sid].filter(Boolean), I.tasks, known),
-               opened_at: iso(seen[x.sid]), line: clip(x.line, 120) };
+               opened_at: iso(seen[x.sid]), doing: clip(x.line, 120), line: clip(x.line, 120) };
     });
     for (const sid of Object.keys(seen)) if (!tabs.some(x => x.sid === sid)) delete seen[sid];
     const peers = Object.keys(I.peers || {}).map(pid => {
@@ -142,11 +142,12 @@
         bots: (p.bots || []).filter(b => b && b.role && b.state !== 'external').map((b, i) => ({
           id: String(b.role), name: String(b.label || b.role), avatar: avatar(b.avatar, `${p.name || ''}/${b.role}`, kit),
           primary: !!b.primary, duty: String(b.responsibility || ''), created_at: iso(ROSTER_EPOCH + i * 60000),
-          state: b.state === 'asleep' ? 'asleep' : peerState(b), runs: String(b.runs_on || ''), memory: b.memory !== false })),
+          state: b.state === 'asleep' ? 'asleep' : peerState(b), runs: String(b.runs_on || ''), memory: b.memory !== false,
+          doing: b.state === 'asleep' ? '' : clip(b.latest, 120) })),
         temps: Object.keys(p.tabs || {}).filter(r => (p.tabs[r] || {}).kind === 'temp').map((r, i) => {
           const tb = p.tabs[r];
           return { id: r, name: String(tb.name || r), cli: CLI_NAMES[tb.cli] || String(tb.cli || '?'), state: peerState(tb),
-                   opened_at: iso(ROSTER_EPOCH + i * 1000) };
+                   doing: clip(tb.latest, 120), opened_at: iso(ROSTER_EPOCH + i * 1000) };
         }),
       };
     });
@@ -364,6 +365,44 @@
       return true;
     },
     openUrl(url) { if (/^https?:\/\//i.test(String(url || ''))) { try { api().open_url(String(url)); } catch (_) {} } },
+    // A picture (or a file copied in Finder) pasted into the panel's box: saved as the terminal's paste saves it
+    // (save_image / get_clipboard_files); for a paired computer's tab the file is sent there first (link_send_file:
+    // that computer's own path comes back), since a path on this computer means nothing there. [{path, name}] or
+    // {ok: false, message}.
+    async attach(key, dataUrl, name) {
+      const tg = targetOf(key), a = api();
+      if (!tg || !a) return { ok: false, message: '' };
+      let paths = [];
+      try {
+        if (dataUrl) { const p = await a.save_image(dataUrl); if (p && !/^ERROR/.test(String(p))) paths = [String(p)]; }
+        else paths = JSON.parse((await a.get_clipboard_files()) || '[]');
+      } catch (e) { return { ok: false, message: String(e) }; }
+      if (!paths.length) return { ok: false, message: '' };
+      if (tg.sid) return { ok: true, files: paths.map(p => ({ path: p, name: name || p.split(/[\\/]/).pop() })) };
+      const out = [];
+      for (const p of paths) {
+        let r = null;
+        try { r = JSON.parse(await a.link_send_file(tg.peer, p)); } catch (_) { r = null; }
+        if (!r || !r.success || !r.saved) return { ok: false, message: (r && r.message) || '' , remote: true };
+        out.push({ path: String(r.saved), name: name || p.split(/[\\/]/).pop() });
+      }
+      return { ok: true, files: out };
+    },
+    // An intern asked to leave: its tab is closed, as its ✕ does (here: the sidebar's close; a paired computer's:
+    // that computer closes it, as the sidebar's remote ✕ does). Only an intern (a tab that is no bot); the office
+    // asks first in its own panel (the page's own confirm would sit under the office).
+    async dismiss(key) {
+      const k = String(key || ''), H = host();
+      if (k.startsWith('t:')) {
+        const sid = sidOf(k);
+        if (!sid || !H || !H.closeTab) return { ok: false };
+        try { await H.closeTab(sid); return { ok: true }; } catch (e) { return { ok: false, message: String(e) }; }
+      }
+      const m = /^q:([^/]+)\/(.+)$/.exec(k);
+      if (!m || !peerOf(k)) return { ok: false };
+      try { const r = JSON.parse(await api().link_remote_close(m[1], m[2])); return { ok: r && r.success !== false, message: (r && r.message) || '' }; }
+      catch (e) { return { ok: false, message: String(e) }; }
+    },
   };
   // What office.html's `store` calls (same origin, synchronous), and its conversation panel (promises).
   const officeHost = {

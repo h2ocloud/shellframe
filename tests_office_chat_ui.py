@@ -18,6 +18,8 @@ stand-in Python side (chat_view / chat_send / chat_answer as the chat view gets 
   - a paired computer's bot with a tab: its conversation and the box, through that computer's /link/chat
     (link_chat with its tab's sid), never a tab on this computer; a computer too old for /link/chat says so
   - 資料 showing, or nobody followed: no more chat_view calls
+  - a pasted picture is saved and shown above the box, and sent as its path ahead of the words; a paired computer's
+    tab gets it sent there first and named by that computer's path; when it cannot take it, said so
   - in a narrow window the panel is the bottom sheet, full width, with its box
   - "到他的分頁" closes the office and switches the sidebar to that tab
   - no console error from either page
@@ -84,8 +86,12 @@ PEERS = {"peers": {"pid-demo-1": {"name": "示範電腦", "addr": "示範電腦"
                                             "avatar": {"shape": "ghost", "color": "green"}, "activity": "idle",
                                             "responsibility": "建置與測試"},
                                            {"role": "napper", "label": "示範午睡員", "state": "asleep",
-                                            "avatar": {"shape": "round", "color": "teal"}, "responsibility": "休息中"}],
-                                  "tabs": {}},
+                                            "avatar": {"shape": "round", "color": "teal"}, "responsibility": "休息中"},
+                                           {"role": "asker", "label": "示範等待員", "state": "awake", "sid": "r11", "activity": "decision",
+                                            "decision": True, "latest": "示範：要不要部署？", "avatar": {"shape": "egg", "color": "pink"},
+                                            "responsibility": "部署"}],
+                                  "tabs": {"r30": {"kind": "temp", "name": "示範隔壁實習生", "cli": "codex", "activity": "working",
+                                                   "latest": "示範：Running npm test", "avatar": {"shape": "round", "color": "sky"}}}},
                    "pid-demo-old": {"name": "示範舊電腦", "addr": "示範舊電腦", "primary": "oldie",
                                     "bots": [{"role": "oldie", "label": "示範老版本", "state": "awake", "primary": True, "sid": "r20",
                                               "avatar": {"shape": "hex", "color": "amber"}, "activity": "idle",
@@ -117,7 +123,7 @@ def stub():
     return """
 if (window.top === window) {
 window.__calls = []; window.__views = []; window.__sends = []; window.__answers = []; window.__urls = []; window.__saved = [];
-window.__sendMode = 'ok'; window.__slow = {}; window.__remote = []; window.__remoteVer = 0;
+window.__sendMode = 'ok'; window.__slow = {}; window.__remote = []; window.__remoteVer = 0; window.__closed = []; window.__rclosed = []; window.__saved_images = []; window.__uploads = []; window.__uploadFail = false;
 window.__remoteTurns = [{kind: 'user_msg', text: '示範：幫我建置', ts: 1}, {kind: 'assistant_text', text: '示範建置員：建置完成。', ts: 2}];
 window.__cfg = %s; window.__sessions = %s; window.__bots = %s; window.__status = %s; window.__peers = %s;
 window.__helpers = %s; window.__guide = %s; window.__chats = %s; window.__ver = {};
@@ -178,6 +184,11 @@ window.pywebview = { api: new Proxy({}, { get: (t, prop) => {
         return R({success: false, code: 'unknown'});
       }
       case 'open_url': window.__urls.push(args[0]); return R({success: true});
+      case 'close_session': window.__closed.push(args[0]); window.__sessions = window.__sessions.filter(s => s.sid !== args[0]); return R({success: true});
+      case 'save_image': window.__saved_images.push(String(args[0]).slice(0, 22)); return R('/tmp/demo/paste-' + window.__saved_images.length + '.png');
+      case 'link_send_file': window.__uploads.push([args[0], args[1]]);
+        return R(window.__uploadFail ? {success: false, message: '示範：連不到'} : {success: true, saved: '/remote/demo/' + String(args[1]).split('/').pop()});
+      case 'link_remote_close': window.__rclosed.push([args[0], args[1]]); return R({success: true});
       case 'guide_data': return R(window.__guide);
       case 'guide_mark': return R({success: true, state: window.__guide.state});
       case 'get_changelog': return R('');
@@ -379,6 +390,51 @@ def run(browser, base, engine):
     fr.wait_for_function("document.getElementById('cList').innerText.includes('版本太舊')", timeout=5000)
     check("a computer whose ShellBot has no /link/chat: says which version it needs", "0.46.1" in text("#cList"), text("#cList"))
 
+    print(f"[{engine}] what interns are doing, and asking one to leave")
+    fr.evaluate("__office.follow('q:pid-demo-1/r30')")
+    page.wait_for_timeout(300)
+    fr.click("#tabInfo")
+    page.wait_for_timeout(200)
+    info = fr.evaluate("({name: document.getElementById('pName').innerText, sub: document.getElementById('pSub').innerText, duty: document.getElementById('pDuty').innerText, chip: document.getElementById('pChip').innerText})")
+    check("a paired computer's intern: its tab's name, its CLI, busy, and what it is doing",
+          "示範隔壁實習生" in info["name"] and "Codex" in info["sub"] and info["chip"] == "在忙" and "示範：Running npm test" in info["duty"], info)
+    fr.evaluate("__office.follow('p:pid-demo-1/asker')")
+    page.wait_for_timeout(300)
+    info = fr.evaluate("({chip: document.getElementById('pChip').innerText, duty: document.getElementById('pDuty').innerText, bye: !document.getElementById('dismiss').hidden})")
+    check("a paired computer's bot waiting on you shows so (no longer always idle), with its job and what it is on; no 請他離開 for a bot",
+          info["chip"] == "等你決定" and "部署" in info["duty"] and "要不要部署" in info["duty"] and not info["bye"], info)
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-peer-states.png"))
+    fr.evaluate("__office.follow('q:pid-demo-1/r30')")
+    page.wait_for_timeout(200)
+    check("an intern has 請他離開", fr.evaluate("!document.getElementById('dismiss').hidden"))
+    fr.click("#dismiss")
+    page.wait_for_timeout(150)
+    check("…the first press only asks (it is busy: says so); nothing is closed",
+          "他還在做" in fr.evaluate("document.getElementById('dismiss').innerText") and page.evaluate("window.__rclosed") == [])
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-dismiss-ask.png"))
+    fr.click("#dismiss")
+    page.wait_for_timeout(400)
+    check("…the second closes that tab on its computer (as the sidebar's remote close), and the panel closes",
+          page.evaluate("window.__rclosed") == [["pid-demo-1", "r30"]] and not fr.evaluate("__office.following()"), page.evaluate("window.__rclosed"))
+    fr.evaluate("__office.follow('t:s702')")
+    page.wait_for_timeout(200)
+    fr.click("#dismiss")
+    fr.wait_for_function("document.getElementById('dismiss').innerText === '請他離開'", timeout=10000)   # 4 s later it is forgotten
+    fr.click("#dismiss")
+    page.wait_for_timeout(300)
+    check("a first press left alone for 4 s is forgotten: the next press asks again", page.evaluate("window.__closed") == []
+          and "確定" in fr.evaluate("document.getElementById('dismiss').innerText"))
+    fr.click("#dismiss")
+    page.wait_for_function("window.__closed.length === 1", timeout=5000)
+    check("…and confirmed, this computer's intern tab is closed (close_session, as its ✕)", page.evaluate("window.__closed") == ["s702"])
+    window_sessions = page.evaluate("Object.keys(window.__sfHost.sessions())")
+    check("…and it is gone from the page", "s702" not in window_sessions, window_sessions)
+    fr.evaluate("__office.follow('b:eng')")
+    fr.wait_for_selector("#pTabs:not([hidden])", timeout=5000)
+    fr.click("#tabChat")                                   # back on 對話 for what follows
+
     print(f"[{engine}] when nothing is read")
     fr.evaluate("__office.follow('b:eng')")
     fr.wait_for_function("!document.getElementById('pChat').hidden", timeout=5000)
@@ -397,6 +453,52 @@ def run(browser, base, engine):
     n1 = views("s701")
     page.wait_for_timeout(4500)
     check("nobody followed: no chat_view either", views("s701") == n1, (n1, views("s701")))
+
+    print(f"[{engine}] pasting a picture")
+    paste = """async () => { const b = document.getElementById('cBox');
+        const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
+        const dt = new DataTransfer(); dt.items.add(new File([png], 'demo.png', {type: 'image/png'}));
+        b.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true})); }"""
+    fr.evaluate("__office.follow('b:eng')")
+    fr.wait_for_function("!document.getElementById('cComp').hidden", timeout=5000)
+    fr.evaluate(paste)
+    fr.wait_for_function("document.querySelectorAll('#cFiles .cfile').length === 1", timeout=5000)
+    check("a pasted picture is saved (save_image) and shown above the box, with a thumbnail",
+          page.evaluate("window.__saved_images.length") == 1 and fr.evaluate("!!document.querySelector('#cFiles .cfile img')"))
+    if shoot:
+        page.wait_for_timeout(900)            # the panel slides in
+        page.screenshot(path=str(SHOTS / "office-chat-paste.png"))
+    n0 = len(page.evaluate("window.__sends"))
+    fr.fill("#cBox", "示範：看這張圖")
+    fr.press("#cBox", "Enter")
+    page.wait_for_function(f"window.__sends.length === {n0 + 1}", timeout=5000)
+    last = page.evaluate("window.__sends[window.__sends.length - 1]")
+    check("…sent with the words: its path first, as the chat view and the terminal send a picture",
+          last["sid"] == "s701" and last["text"] == "/tmp/demo/paste-1.png\n\n示範：看這張圖", last)
+    check("…and the box and the picture are cleared", fr.evaluate("document.querySelectorAll('#cFiles .cfile').length") == 0
+          and fr.evaluate("document.getElementById('cBox').value") == "")
+    fr.evaluate(paste)
+    fr.wait_for_function("document.querySelectorAll('#cFiles .cfile').length === 1", timeout=5000)
+    fr.click("#cFiles button[data-act='unattach']")
+    check("× takes a picture off before sending", fr.evaluate("document.querySelectorAll('#cFiles .cfile').length") == 0)
+    fr.evaluate("__office.follow('p:pid-demo-1/builder')")
+    fr.wait_for_function("!document.getElementById('cComp').hidden", timeout=5000)
+    fr.evaluate(paste)
+    fr.wait_for_function("document.querySelectorAll('#cFiles .cfile').length === 1", timeout=5000)
+    up = page.evaluate("window.__uploads")
+    check("a paired computer's tab: the picture is sent there first (link_send_file)", up and up[-1][0] == "pid-demo-1"
+          and up[-1][1].startswith("/tmp/demo/paste-"), up)
+    fr.fill("#cBox", "示範：給你看")
+    fr.press("#cBox", "Enter")
+    page.wait_for_function("window.__remote.filter(r => r.action === 'send').length >= 2", timeout=5000)
+    rs = [r for r in page.evaluate("window.__remote") if r["action"] == "send"][-1]
+    check("…and the message names it by that computer's path, not this one's",
+          rs["args"]["text"].startswith("/remote/demo/paste-") and rs["args"]["text"].endswith("\n\n示範：給你看"), rs)
+    page.evaluate("window.__uploadFail = true")
+    fr.evaluate(paste)
+    fr.wait_for_function("document.getElementById('cNote').innerText.includes('收不到檔案')", timeout=5000)
+    check("…when it cannot take the file now: said so, nothing attached", fr.evaluate("document.querySelectorAll('#cFiles .cfile').length") == 0)
+    page.evaluate("window.__uploadFail = false")
 
     print(f"[{engine}] a narrow window")
     fr.evaluate("__office.follow('b:eng')")

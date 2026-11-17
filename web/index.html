@@ -8362,7 +8362,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   };
   // web/bots.js 唯一的接點（頭像、主要 Bot 卡、關閉前寫記憶都只透過這裡碰分頁與設定）
   window.__sfHost = { sessions: () => sessions, active: () => activeId, cfg: () => config,
-    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal, micGuide, confirmRelaunchTab,
+    lang: () => lang, order: () => sessionOrder, switchTab, renderTabs, renderSidebar, renameSession, fitTerm, openSession, closeModal, micGuide, confirmRelaunchTab, closeTab,
     // A paired computer's tab in this window (web/office.js "to their tab"), as the sidebar's remote row opens it
     openRemote: (pid, rsid, label) => {
       const p = ((linkState && linkState.peers) || []).find(x => x.id === pid);

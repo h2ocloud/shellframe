@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.51.0
-   version: 0.51.0
+OK ShellBot v0.52.0
+   version: 0.52.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -477,6 +477,9 @@ There is no command for it and nothing for you to emit. What it means for you:
 - A subagent left running and silent shows as stuck; one that never finished (a conversation
   that ended mid-run) stops showing after 6 hours.
 
+The person can ask an intern (an AI tab that is no bot) to leave from its panel: its tab is closed.
+If you are an intern, finish or hand off what matters before a long silence.
+
 Staff are zoned the way the person chose (a select in the office): by AI (default: a walled room
 per CLI a bot runs on), custom groups (set on a bot's Details page or by dragging it), or one room.
 Where each person sits, the zoning, the groups and the accessories on a desk are the person's choice,
@@ -533,6 +536,7 @@ kept on this computer (`office.json` in the state folder); do not edit that file
 | …and the same for a paired computer's bots and interns (through its `/link/chat`) | 0.49.1 |
 | The office's zoning: by AI (a walled room per CLI, default), custom groups, or one room | 0.50.0 |
 | Gmail's local server recommended, added to and tested in the primary bot's CLI | 0.51.0 |
+| The office: an intern's current step, Ask to leave (closes its tab), pictures pasted into the panel's box; a paired computer's real states | 0.52.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

@@ -1109,16 +1109,17 @@ def _norm_claude(o):
                 or "local-command-caveat" in text):
             return None
         return {"kind": "user_msg", "ts": ts, "text": text}
+    if t == "attachment":
+        # 回合中途收進去的訊息（Claude Code 2.1.3xx）不寫成 user，而是 attachment 的 queued_command
+        # （origin.kind human）。不認它，對話模式那則就一直「送出中」（回報）。背景通知（task-notification）不算。
+        a = o.get("attachment") if isinstance(o.get("attachment"), dict) else {}
+        if a.get("type") == "queued_command" and (a.get("origin") or {}).get("kind", "human") == "human":
+            return {"kind": "user_msg", "ts": ts, "text": str(a.get("prompt") or "")} if str(a.get("prompt") or "").strip() else None
+        return None
     if t == "assistant":
-        # 一筆 assistant 記錄可以同時帶 thinking、多個 tool_use、以及回覆文字。
-        # 舊版每筆只回一個事件，代價是兩件事：
-        #   1. `stop_reason == "end_turn"` 直接回 turn_end，把那一筆的文字丟掉
-        #      ——而回覆就在那一筆。上滑歷史因此看不到 agent 的回覆（實測某分頁
-        #      的 transcript 有兩個 text 區塊 161／79 字元，事件裡一個都沒有）。
-        #   2. 一筆裡有 N 個 tool_use 只留最後一個；只有 thinking 的那筆會回一個
-        #      **空的** assistant_text，那個空事件還會把待收合的工具行沖掉。
-        # 改成照順序把整筆的內容都吐出來。thinking 仍然刻意不輸出（歷史 overlay
-        # 不重播思考），但它不再變成一個空事件。
+        # 一筆 assistant 記錄可帶 thinking、多個 tool_use 和回覆文字：照順序全部吐出來（舊版每筆只回一個事件，
+        # end_turn 那筆的回覆文字被丟掉、多個 tool_use 只留最後一個、只有 thinking 的那筆變成空事件）。
+        # thinking 刻意不輸出（歷史 overlay 不重播思考），但不再變成一個空事件。
         events = []
         for c in (m.get("content") or []):
             if not isinstance(c, dict):

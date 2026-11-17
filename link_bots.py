@@ -32,8 +32,16 @@ def _avatar(av) -> dict:
     return {"shape": str(av.get("shape") or "")[:24], "color": str(av.get("color") or "")[:24]}
 
 
+ACTIVITIES = ("working", "idle", "done", "decision", "stuck")
+
+
 def compact(res: dict) -> dict:
-    """The part of a /link/bots answer the page draws: no decisions, choices or latest lines."""
+    """The part of a /link/bots answer the page draws: faces, names, which CLI, the state (activity, stuck, a
+    question waiting: only whether one is, never its options) and one line of what it is doing, which the other
+    computer already redacted and cut to 140 characters. Reported: the office showed a paired computer's bots as
+    always idle and its interns as bare tab ids with "?" for a CLI, because those fields were dropped here."""
+    line = lambda v: " ".join(str(v or "").split())[:140]          # noqa: E731
+    act = lambda d: str(d.get("activity") or "") if str(d.get("activity") or "") in ACTIVITIES else ""   # noqa: E731
     bots = []
     for b in res.get("bots") or []:
         if not isinstance(b, dict) or not b.get("role"):
@@ -42,12 +50,17 @@ def compact(res: dict) -> dict:
         bots.append({"role": role, "label": str(b.get("label") or role),
                      "former_names": [str(x) for x in (b.get("former_names") or []) if x][:8],
                      "avatar": _avatar(b.get("avatar")), "primary": bool(b.get("primary")),
-                     "state": str(b.get("state") or ""), "sid": str(b.get("sid") or "")})
+                     "state": str(b.get("state") or ""), "sid": str(b.get("sid") or ""),
+                     "responsibility": line(b.get("responsibility")), "runs_on": line(b.get("runs_on"))[:80],
+                     "cli": str(b.get("cli") or "")[:24], "activity": act(b), "latest": line(b.get("latest")),
+                     "blocked": bool(b.get("blocked")), "decision": bool(b.get("decision"))})
     tabs = {}
     for sid, t in (res.get("tabs") or {}).items():
         if isinstance(t, dict):
             tabs[str(sid)] = {"bot": str(t.get("bot") or ""), "avatar": _avatar(t.get("avatar")),
-                              "kind": str(t.get("kind") or "")}
+                              "kind": str(t.get("kind") or ""), "name": line(t.get("name"))[:60], "cli": str(t.get("cli") or "")[:24],
+                              "activity": act(t), "latest": line(t.get("doing") or t.get("latest")),
+                              "blocked": bool(t.get("blocked")), "decision": bool(t.get("decision"))}
     return {"enabled": bool(res.get("enabled")), "primary": str(res.get("primary") or ""),
             "bots": bots, "tabs": tabs}
 
