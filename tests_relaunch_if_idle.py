@@ -16,6 +16,7 @@ Run: .venv/bin/python tests_relaunch_if_idle.py
 """
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -89,7 +90,8 @@ check("sfctl relaunch <tab> --if-idle", 'add_parser("relaunch"' in sfctl and '"-
 bots_js = (HERE / "web" / "bots.js").read_text(encoding="utf-8")
 check("a face's right-click offers 'Restart (keep conversation)', through the sidebar's confirm",
       'data-act="relaunch"' in bots_js and "host().confirmRelaunchTab(sid)" in bots_js
-      and "confirmRelaunchTab }" in (HERE / "web" / "index.html").read_text(encoding="utf-8"))
+      and re.search(r"window\.__sfHost = \{[^;]{0,400}?\bconfirmRelaunchTab[,\s}]",
+                    (HERE / "web" / "index.html").read_text(encoding="utf-8")) is not None)
 accounts = (HERE / "api_accounts.py").read_text(encoding="utf-8")
 check("relaunch_session reports the id it resumed", '"resumed": m.group(1) if m else ""' in accounts)
 
