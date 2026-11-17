@@ -46,6 +46,19 @@
   裡的文字只有中文、配對電腦的 subagent 不顯示、追蹤面板的事件只有 app 開著時看到的狀態變化、座位順序照名冊順序（bot 沒有建立
   時間）。由 `tests_office_ui.py`（主頁和辦公室一起跑，無頭瀏覽器）、`tests_office_snapshot.js`（資料對應）和
   `tests_office_helpers.py`（工讀生、辦公室存的東西）守著；截圖在 `qa-shots/office-*.png`。
+## v0.47.2 (2026-11-17)
+
+### Fixes
+
+- **The model chip in the tab bar shows the tab you are on.** Reported: the chip read "Opus 5.5 · max" on a tab
+  running xhigh, while its pop-up marked xhigh. It was the previous tab's chip: the tab bar repainted the chip only
+  when the shown tab's own answer changed, so switching to a tab whose answer had not changed left the last tab's
+  model and level there. It is now painted on every one-second tick; an unchanged chip is compared first and the page
+  is not touched. Covered by `tests_tab_model_ui.py` (two tabs, switch and back; it failed before the fix).
+
+  **分頁列上的模型標籤，顯示的是你正在看的分頁。** 回報：一個跑 xhigh 的分頁，標籤寫「Opus 5.5 · max」，點開的選單卻標示 xhigh。那其實
+  是上一個分頁的標籤：分頁列只在「目前這個分頁的資料有變化」時才重畫標籤，切到一個資料沒變的分頁，就會留著上一個分頁的模型和思考
+  強度。現在每秒都重畫一次；內容沒變時先比對、不動畫面。由 `tests_tab_model_ui.py` 守著（兩個分頁切過去再切回來；修正前這項會失敗）。
 
 ## v0.47.1 (2026-11-17)
 
