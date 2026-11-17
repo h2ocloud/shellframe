@@ -6,6 +6,43 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.49.0 (2026-11-17)
+
+### Added
+
+- **The office: talk to the person you are following.** Asked for: picking someone in the office should show
+  their conversation, kept short like the chat view, and let you give them an instruction there; only watching felt
+  odd. Following a bot with a tab, or an intern, now opens the panel on a "Conversation" tab (the old card is under
+  "Details", and the choice is kept): their recent conversation drawn the chat view's way (what you said, their
+  replies with formatting, tool calls as one line, another agent's messages with its name; a long reply folds with
+  "show all"), what they are doing right now, and a box under it. Enter sends (Shift+Enter is a new line; Enter while
+  choosing a character in an input method does not send; Esc leaves the box, a second Esc stops following). It is the
+  chat view's own path: `chat_view` for that one tab every 2 s while the tab is showing and the window is in front
+  (an unchanged conversation answers with one short id), `chat_send` as your message (it goes in while they work; a
+  menu or a model switch holds it, and the panel says it is queued and why), `chat_answer` for a question (its
+  options in plain words, sent by their own number, with what it is about; a question the screen cannot read sends
+  you to the terminal instead of guessing). Text left unsent in the tab's terminal is shown, and nothing is sent until
+  you choose "clear it and send". "To their tab ↗" closes the office and switches to that tab. A half-typed message is
+  kept per person while you look at someone else and survives the 3 s refresh. A bot with no tab, a part-timer (it
+  offers the conversation of whoever sent it) and a paired computer's people get no box, with one line saying why.
+  Agent text reaches the page only through the chat view's escaping, and a link opens in the browser. Covered by
+  `tests_office_chat_ui.py` (Chromium and WebKit: the right tab, input-method Enter, the box kept across refreshes, a
+  late reply for someone no longer followed not drawn, the draft, queued and refused answers, no box where there is no
+  tab) and `tests_office_snapshot.js` (the shaping); screenshots in `qa-shots/office-chat-*.png`.
+
+  **辦公室：跟拍的人，可以直接跟他說話。** 需求：在辦公室選到一個人，要看得到他的對話（用對話模式那樣精簡就好），也要能直接下指令，
+  不然只能看有點怪。現在跟拍一個有分頁的 bot 或實習生，面板會停在「對話」頁（原本的卡片移到「資料」頁，選哪頁會記住）：用對話模式的
+  畫法列出最近的對話（你說的話、他的回覆含格式、工具呼叫濃縮成一行、別的 agent 傳來的話標出是誰；太長的回覆收起來，按「顯示全部」
+  展開），上面一行是他現在在做什麼，下面是傳話框。Enter 送出（Shift+Enter 換行；注音選字中按 Enter 不會送出；Esc 先離開輸入框，再按一
+  次才停止跟拍）。走的就是對話模式那條路：「對話」頁開著、視窗在前景時，每 2 秒對那一個分頁問一次 `chat_view`（沒變就只回一個很短的
+  代號）；`chat_send` 算你本人的訊息（他在忙也會打進去；遇到選單或正在換模型會先排隊，面板會說在排隊、為什麼）；`chat_answer` 回答他
+  問的問題（選項翻成白話，送出的是選項自己的號碼，並附上它在問什麼；畫面讀不到選項時改成請你到終端機處理，不會用猜的）。分頁終端機
+  裡有沒送出的字時會先告訴你，選了「清掉它，送出我的」才會送。「到他的分頁 ↗」會關掉辦公室、切到那個分頁。打到一半的字會依人分別留
+  著，換人看再回來還在，每 3 秒的刷新也不會吃掉。沒開分頁的 bot、工讀生（會提供「看派他的人的對話」）、配對電腦上的人沒有傳話框，
+  會用一行字說明原因。agent 的文字一律經過對話模式的跳脫才進畫面，連結用瀏覽器打開。由 `tests_office_chat_ui.py`（Chromium 和
+  WebKit：送到對的分頁、注音 Enter、刷新時輸入框不被清掉、換人後晚到的回應不會畫上去、草稿／排隊／被拒三種回應、沒分頁就沒有傳話
+  框）和 `tests_office_snapshot.js`（資料整形）守著；截圖在 `qa-shots/office-chat-*.png`。
+
 ## v0.48.0 (2026-11-17)
 
 ### Added

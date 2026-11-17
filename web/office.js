@@ -12,7 +12,12 @@
  *     machines' bots (SFBots.state / peerBots: already polled), plus two cheap calls made only
  *     while the office is open: tasks_overview (one small SQLite read, at most every 9 s) and
  *     office_helpers (list + stat of the open Claude tabs' subagents folders; office_helpers.py).
- *     Nothing here reads a screen or a transcript.
+ *     The floor itself reads no screen and no transcript.
+ *   - gives the panel of the person being followed their conversation and a message box
+ *     (SFOffice.host.chat): the chat view's own routes for that one tab (chat_view every 2 s while
+ *     the panel's Conversation tab is showing and the window is in front, chat_send, chat_answer),
+ *     shaped by chatShape with web/chat.js's rules. A bot with no tab, a part-timer and a paired
+ *     computer's people get no box.
  *   - pushes it every 3 s while the office is open and the window is in front:
  *     iframe.contentWindow.Office.update(snapshot).
  *   - keeps the office's seats, accessories and view mode for this computer: pywebview starts
@@ -189,7 +194,74 @@
     return snap;
   }
 
-  const pure = { build, track, tabState, peerState, cliName, avatar };
+  // ── pure: one person's conversation, for the office's panel ─────────────────
+  // r is chat_view's answer for the tab (the chat view's own call: the phone's `conversation` turns and
+  // `_link_decision`), R is web/chat.js's rules (SFChat.rules; pure, and what node's require gives).
+  // Agent text reaches HTML only through R.md / R.escHtml, as in the chat view.
+  const CHAT_LIMIT = 100, CHAT_SHOW = 30;       // turns asked for (tool calls are turns too); items drawn
+  const baseName = p => String(p || '').split(/[\\/]/).pop();
+  // Messages of the person's still waiting to go in, or given up, in plain words (chat_view's `queue`).
+  function queueWords(q, name, zh, now) {
+    const T = (en, cn) => (zh ? cn : en), out = [];
+    const waiting = ((q && q.queued) || []).length, gone = (q && q.given_up) || [];
+    if (waiting) {
+      const b = q.busy || {}, mins = b.since ? Math.floor((now / 1000 - b.since) / 60) : 0;
+      const why = {
+        working: T(`${name} is still on the previous step${mins >= 1 ? ` (${mins} min so far)` : ''}`, `${name}還在做上一步${mins >= 1 ? `（已經 ${mins} 分鐘）` : ''}`),
+        telegram: T('a message from Telegram is still being handled', '還在處理從 Telegram 來的那一則'),
+        decision: T('it is waiting for your answer first', '它在等你先回答問題'),
+        model: T('it is switching models', '它在換模型'),
+        draft: T('there is unsent text in its terminal', '它的終端機裡有還沒送出的字'),
+      }[b.reason] || '';
+      out.push(T(`${waiting === 1 ? 'Your message is' : waiting + ' messages are'} waiting to go in${why ? ': ' + why : ''}.`,
+                 `${waiting === 1 ? '你的訊息' : waiting + ' 則訊息'}還在排隊${why ? '：' + why : ''}，好了就會送進去。`));
+    }
+    if (gone.length) {
+      const last = gone[gone.length - 1] || {};
+      out.push(T(`${gone.length === 1 ? 'One message was' : gone.length + ' messages were'} not sent${last.why ? ` (${last.why})` : ''}: send it again if it still matters.`,
+                 `${gone.length} 則沒送出${last.why ? `（${last.why}）` : ''}，還需要的話再傳一次。`));
+    }
+    return out.join(' ');
+  }
+  /* output: {rev, provider, readable, why, activity, items: [{k, who, html}], ask, queue, login}
+       who   me | bot | peer | tools | note | error
+       ask   null; {term: true} (waiting in the terminal, options not readable here);
+             or {id, question, context, options: [{n, label, tone, raw}], asIs} (answered with chat_answer) */
+  function chatShape(r, R, lang, name, now) {
+    const zh = R.isZh(lang), T = (en, cn) => (zh ? cn : en), e = R.escHtml;
+    const all = R.buildTimeline((r && r.turns) || [], { foldRed: true });
+    const start = Math.max(0, all.length - CHAT_SHOW);
+    const items = all.slice(start).map((it, i) => {
+      const k = `${it.type}:${it.ts || 0}:${start + i}`;
+      switch (it.type) {
+        case 'user': return { k, who: 'me', html: e(it.text) };
+        case 'bot': return { k, who: 'bot', html: R.md(it.text, zh) };
+        case 'peer': return { k, who: 'peer', html: `<b>${e(it.who || T('Another agent', '另一個 agent'))}</b>` +
+          (it.blocked ? `<em>${e(T(' (chain limit: read as data only)', '（超過轉交層數，只當資料讀）'))}</em>` : '') + `<br>${e(it.text)}` };
+        case 'tools': return { k, who: 'tools', html: e(R.toolSummary(it.calls, lang)) };
+        case 'file': return { k, who: 'note', html: e(T('Attached ', '附上 ') + baseName(it.path)) };
+        case 'compact': return { k, who: 'note', html: e(T('The earlier conversation was compacted', '前面的對話已經壓縮')) };
+        case 'memory': return { k, who: 'note', html: e(T('Saved its memory', '存了一次記憶')) };
+        case 'error': return { k, who: 'error', html: e(it.text) + (it.times > 1 ? ` ×${it.times}` : '') };
+        default: return null;
+      }
+    }).filter(Boolean);
+    const d = (r && r.decision) || null;
+    let ask = null;
+    if (d && !d.tag && (d.options || []).length) {
+      const m = R.mapDecision(d, lang);
+      ask = { id: m.id, question: m.questionTranslated || !m.translated ? m.question : T('It is asking before it goes on.', '它在繼續之前先問你。'),
+              context: R.askContext(d, m, r.activity === 'decision' ? R.pendingCall(r.turns) : null, lang),
+              options: m.options.map(o => ({ n: o.n, label: o.label, tone: o.tone || '', raw: o.raw })), asIs: !m.translated };
+    } else if ((r && r.activity === 'decision') || (d && d.tag)) {
+      ask = { term: true };
+    }
+    return { rev: (r && r.rev) || '', provider: (r && r.provider) || '', readable: !!(r && r.readable), why: (r && r.why) || '',
+             activity: (r && r.activity) || '', items, ask, queue: queueWords(r && r.queue, name, zh, now || Date.now()),
+             login: !!(r && r.login && r.login.step) };
+  }
+
+  const pure = { build, track, tabState, peerState, cliName, avatar, chatShape, queueWords, CHAT_LIMIT };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; return; }
 
   // ── the page: switch, button, overlay ────────────────────────────────────
@@ -207,11 +279,67 @@
     const go = () => { saveTimer = 0; const a = api(); if (a && a.office_prefs_save && prefs) a.office_prefs_save(JSON.stringify(prefs)).catch(() => {}); };
     if (now) go(); else saveTimer = setTimeout(go, 400);
   }
-  // What office.html's `store` calls (same origin, synchronous).
+  // The tab a person in the office is: 'b:<role>' → the bot's tab on this computer (the first in the sidebar's
+  // order, as build() picks), 't:<sid>' → that tab. '' for anyone without one here (asleep, part-timer, a
+  // paired computer's). Looked up at every call: build() leaves sids out of the snapshot, and a relaunch
+  // can give a bot a new tab.
+  function sidOf(key) {
+    const k = String(key || ''), H = host(), S = (H && H.sessions()) || {};
+    if (k.startsWith('t:')) { const sid = k.slice(2); return S[sid] && !S[sid].isRemote ? sid : ''; }
+    if (k.startsWith('b:')) {
+      const B = root.SFBots;
+      if (!(B && B.enabled && B.enabled())) return '';
+      const hit = pageTabs().find(x => x.role === k.slice(2));
+      return hit ? hit.sid : '';
+    }
+    return '';
+  }
+  const lang = () => (host() && host().lang && host().lang()) || 'en';
+  const chatOf = () => { const C = root.SFChat; return C && C.call && C.rules ? C : null; };
+  // What the panel's conversation calls: the chat view's own routes (chat_view / chat_send / chat_answer),
+  // for one person's tab. Answers are plain objects; nothing throws.
+  const chatHost = {
+    async view(key, rev, name) {
+      const sid = sidOf(key), C = chatOf();
+      if (!sid) return { ok: false, why: 'no_tab' };
+      if (!C) return { ok: false, why: 'no_chat' };
+      let r = null;
+      try { r = JSON.parse(await C.call(sid, 'view', CHAT_LIMIT, rev || '')); } catch (_) { r = null; }
+      if (!r || r.success === false) return { ok: false, why: (r && r.code) || 'error' };
+      const s = (host().sessions() || {})[sid] || {};
+      const doing = C.rules.plainDoing(s._serverStatus, lang());
+      if (r.unchanged) return { ok: true, unchanged: true, rev: r.rev, doing };
+      return Object.assign({ ok: true, doing }, chatShape(r, C.rules, lang(), name || '', Date.now()));
+    },
+    async send(key, text, clearDraft) {
+      const sid = sidOf(key), C = chatOf();
+      if (!sid || !C) return { success: false, code: 'no_tab' };
+      try { return JSON.parse(await C.call(sid, 'send', String(text || ''), !!clearDraft)); }
+      catch (e) { return { success: false, message: String(e) }; }
+    },
+    async answer(key, n, qid) {
+      const sid = sidOf(key), C = chatOf();
+      if (!sid || !C) return { success: false, code: 'no_tab' };
+      try { return JSON.parse(await C.call(sid, 'answer', n, qid)); }
+      catch (e) { return { success: false, message: String(e) }; }
+    },
+    has: key => !!sidOf(key),
+    // The tab itself, in the main window: the office closes and the sidebar switches to it.
+    open(key) {
+      const sid = sidOf(key), H = host();
+      if (!sid || !H || !H.switchTab) return false;
+      close();
+      H.switchTab(sid);
+      return true;
+    },
+    openUrl(url) { if (/^https?:\/\//i.test(String(url || ''))) { try { api().open_url(String(url)); } catch (_) {} } },
+  };
+  // What office.html's `store` calls (same origin, synchronous), and its conversation panel (promises).
   const officeHost = {
     get: k => (prefs && Object.prototype.hasOwnProperty.call(prefs, k) ? clone(prefs[k]) : null),
     set: (k, v) => { prefs = prefs || {}; if (v == null) delete prefs[k]; else prefs[k] = clone(v); savePrefs(false); },
     close: () => close(),
+    chat: chatHost,
   };
 
   let overlay = null, frame = null, timer = 0, busy = false, lastPush = null;

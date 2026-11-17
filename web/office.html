@@ -196,6 +196,79 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
 .igrid button.on{border-color:var(--green);color:var(--ink);background:rgba(158,206,106,.1)}
 .igrid button.on::after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--green)}
 .igrid button:hover{border-color:var(--blue)}
+/* 對話（嵌在 ShellBot 裡、跟拍的人有自己的分頁時）：對話模式的精簡版＋傳話框 */
+#panel.has-chat{width:400px}
+.ptabs{display:flex;gap:4px;padding:8px 12px 0;border-bottom:1px solid rgba(59,66,97,.6);flex:none}
+.ptabs[hidden]{display:none}
+.ptabs button{height:32px;padding:0 14px;border:0;border-bottom:2px solid transparent;background:none;color:var(--dim);font-size:13px;font-weight:600}
+.ptabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--blue)}
+.ptabs button:hover{color:var(--ink)}
+.pchat{flex:1;min-height:0;display:flex;flex-direction:column}
+.pchat[hidden],.pbody[hidden]{display:none}
+.chead{display:flex;align-items:center;gap:8px;padding:8px 16px 6px;font-size:12px;color:var(--dim);flex:none;min-height:30px}
+.cdoing{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cdoing code{font:11px var(--mono);color:var(--mute);margin-left:6px}
+.cdoing.busy::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--blue);margin-right:7px;animation:cpulse 1.2s ease-in-out infinite}
+@keyframes cpulse{50%{opacity:.3}}
+.clink{margin-left:auto;flex:none;border:0;background:none;color:var(--blue);font-size:12px;padding:2px 0}
+.clink:hover{text-decoration:underline}
+.clist{flex:1;min-height:0;overflow:auto;padding:4px 14px 10px;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.55}
+.clist .empty{color:var(--mute);font-size:12.5px;margin:auto;text-align:center;padding:20px 8px}
+.cm{max-width:92%;overflow-wrap:anywhere}
+.cm .cbody{position:relative}
+.cm.clip .cbody{max-height:15.5em;overflow:hidden}
+.cm.clip .cbody::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2.6em;background:linear-gradient(transparent,var(--cmbg,var(--panel)))}
+.cm .cmore{border:0;background:none;color:var(--blue);font-size:12px;padding:2px 0 0}
+.cm-me{--cmbg:#2e3a63;align-self:flex-end;background:var(--cmbg);border-radius:12px 12px 4px 12px;padding:7px 11px;white-space:pre-wrap}
+.cm-bot{--cmbg:#24283b;align-self:flex-start;background:var(--cmbg);border:1px solid rgba(59,66,97,.7);border-radius:12px 12px 12px 4px;padding:7px 11px}
+.cm-peer{--cmbg:#262a3d;align-self:flex-start;background:var(--cmbg);border-left:3px solid var(--purple);border-radius:4px 10px 10px 4px;padding:6px 10px;font-size:12.5px;white-space:pre-wrap}
+.cm-peer b{color:var(--purple);font-weight:600}
+.cm-peer em{font-style:normal;color:var(--mute)}
+.cm-tools,.cm-note{align-self:flex-start;font-size:11.5px;color:var(--mute);padding:0 4px}
+.cm-tools .cbody::before{content:"⚙ ";opacity:.7}
+.cm-error{align-self:flex-start;font-size:12px;color:var(--red);padding:0 4px}
+.cm-bot p,.cm-bot blockquote,.cm-bot .cm-li{margin:.25em 0}
+.cm-bot p:first-child{margin-top:0}
+.cm-bot blockquote{border-left:3px solid var(--line);padding-left:8px;color:var(--dim)}
+.cm-bot .cm-li{padding-left:1em;text-indent:-.7em}
+.cm-bot .cm-h{font-weight:700;margin:.5em 0 .2em}
+.cm-bot hr{border:0;border-top:1px solid var(--line);margin:.5em 0}
+.cm-bot code{font:12px var(--mono);background:rgba(26,27,38,.8);padding:0 4px;border-radius:4px}
+.cm-bot a.cm-link{color:var(--blue);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.cm-code{position:relative;margin:.4em 0}
+.cm-code pre{margin:0;padding:.5em .7em;border-radius:8px;background:#16161e;border:1px solid var(--line);overflow:auto;font:11.5px/1.45 var(--mono)}
+.cm-code pre code{background:none;padding:0}
+.cm-code-lang,.cm-copy{display:none}
+.cm-code.is-long:not(.is-open) pre{max-height:12em;overflow:hidden}
+.cm-code.is-open .cm-more{display:none}
+.cm-more,.cm-more-text{border:0;background:none;color:var(--blue);font-size:12px;padding:2px 0}
+.cm-table{overflow-x:auto;margin:.4em 0}
+.cm-table table{border-collapse:collapse;font-size:12px}
+.cm-table th,.cm-table td{border:1px solid var(--line);padding:.2em .5em;text-align:left;vertical-align:top}
+.cask{flex:none;margin:0 12px 8px;padding:10px 12px;border-radius:12px;border:1px solid var(--red);background:rgba(247,118,142,.08)}
+.cask[hidden],.cnote[hidden]{display:none}
+.cask h4{font-size:12px;color:var(--red);font-weight:700}
+.cask .q{font-size:13px;margin:4px 0 6px}
+.cask pre,.cask .cm-ask-detail{font:11.5px/1.45 var(--mono);white-space:pre-wrap;max-height:8em;overflow:auto;background:#16161e;border-radius:6px;padding:5px 7px;margin:4px 0}
+.cask .cm-ask-ctx{font-size:12px;color:var(--dim);margin:4px 0}
+.cask .cm-ask-ctx code{font:11.5px var(--mono);color:var(--ink);margin-left:6px}
+.cask .opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.cask .opts button{min-height:30px;padding:4px 11px;border-radius:9px;border:1px solid var(--line);background:#24283b;font-size:12.5px;font-weight:600;text-align:left}
+.cask .opts button.tone-yes{border-color:var(--green);color:var(--green)}
+.cask .opts button.tone-no{color:var(--dim)}
+.cask .opts button:disabled{opacity:.5}
+.cask .small{font-size:11.5px;color:var(--mute);margin-top:6px}
+.cnote{flex:none;margin:0 14px 6px;font-size:12px;color:var(--dim);line-height:1.5}
+.cnote.warn{color:var(--yellow)}
+.cnote .row{display:flex;gap:6px;margin-top:6px}
+.cnote .row button{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:#24283b;font-size:12px;font-weight:600}
+.ccomp{flex:none;display:flex;gap:8px;align-items:flex-end;padding:8px 12px 10px;border-top:1px solid rgba(59,66,97,.6)}
+.ccomp[hidden]{display:none}
+.ccomp textarea{flex:1;min-width:0;resize:none;max-height:9em;min-height:38px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:#16161e;color:var(--ink);font:13px/1.45 var(--font);outline:none}
+.ccomp textarea:focus{border-color:var(--blue)}
+.ccomp textarea::placeholder{color:var(--mute)}
+.csend{flex:none;height:38px}
+.csend:disabled{opacity:.5}
 .pfoot{display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid rgba(59,66,97,.6);flex:none}
 .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#24283b;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
 .btn:hover{border-color:var(--blue)}
@@ -233,6 +306,7 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
   #legend:not(.min){bottom:60px}
   #legend ul{gap:4px 12px}
   #panel{top:auto;left:0;right:0;bottom:0;width:auto;max-height:60vh;border-radius:18px 18px 0 0;border-bottom:0;transform:translateY(calc(100% + 16px))}
+  #panel.has-chat{width:auto}
   #panel.open{transform:none}
   .grab{display:block}
   .ph{padding:10px 16px 12px}
@@ -304,7 +378,21 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
     <div class="nm"><div class="pname" id="pName"></div><div class="psub" id="pSub"></div></div>
     <span class="pchip" id="pChip"></span>
   </div>
-  <div class="pbody">
+  <div class="ptabs" id="pTabs" role="tablist" hidden>
+    <button role="tab" id="tabChat" data-tab="chat" aria-controls="pChat" aria-selected="true">對話</button>
+    <button role="tab" id="tabInfo" data-tab="info" aria-controls="pInfo" aria-selected="false">資料</button>
+  </div>
+  <section class="pchat" id="pChat" role="tabpanel" aria-labelledby="tabChat" hidden>
+    <div class="chead"><span class="cdoing" id="cDoing"></span><button class="clink" id="cOpen" type="button" title="關掉辦公室，切到他的分頁">到他的分頁 ↗</button></div>
+    <div class="clist" id="cList" aria-live="polite"></div>
+    <div class="cask" id="cAsk" hidden></div>
+    <div class="cnote" id="cNote" hidden></div>
+    <div class="ccomp" id="cComp">
+      <textarea id="cBox" rows="2" aria-label="傳話"></textarea>
+      <button class="btn csend" id="cSend" type="button" title="送出（Enter）">送出</button>
+    </div>
+  </section>
+  <div class="pbody" id="pInfo" role="tabpanel">
     <p class="duty" id="pDuty"></p>
     <div class="pmeta" id="pMeta"></div>
     <div class="card" id="pTask"></div>
@@ -1144,13 +1232,15 @@ function renderHelperPanel(e, force) {
   $('#pDuty').innerHTML = `<span>工作</span>${esc(w.duty || '（沒有說明）')}`;
   $('#pMeta').innerHTML = [w.model ? `<span>${esc(w.model)}</span>` : '', w.agentType ? `<span>${esc(w.agentType)}</span>` : '', '<span>做完就走</span>'].join('');
   $('#pTask').innerHTML = `<h3>這一趟</h3><dl class="kv"><dt>派他的</dt><dd>${whoChip(e.parentKey)}</dd><dt>跑了</dt><dd>${e.started ? fmtDur(now - e.started) : '—'}</dd><dt>最後動靜</dt><dd>${e.lastAt ? `${hhmm(e.lastAt)}（${fmtDur(now - e.lastAt)}前）` : '—'}</dd></dl>` +
-    (e.st === 'stuck' ? `<p class="note stale">${CLOCK_SVG}超過 10 分鐘沒有寫任何東西，也還沒做完</p>` : e.st === 'idle' ? '<p class="note">這幾分鐘沒有動靜。</p>' : '');
+    (e.st === 'stuck' ? `<p class="note stale">${CLOCK_SVG}超過 10 分鐘沒有寫任何東西，也還沒做完</p>` : e.st === 'idle' ? '<p class="note">這幾分鐘沒有動靜。</p>' : '') +
+    (CHAT ? `<p class="note">工讀生沒有自己的對話框：他做什麼、做完回報什麼，都在派他的人的對話裡。</p>${par && chatAble(par) ? `<div class="iact"><button data-act="parent-chat">看${esc(par.who.name)}的對話</button></div>` : ''}` : '');
   $('#pItems').innerHTML = '<h3>配件</h3><p class="note">工讀生只來做一件事，沒有配件。</p>';
   const evs = e.events.slice(-8).reverse(), pn = performance.now();
   $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
 }
 function renderPanel(force) {
   if (!follow) return; const e = M.ents.get(follow); if (!e) { stopFollow(); return; }
+  chatSync(e);
   if (e.kind === 'helper') { renderHelperPanel(e, force); return; }
   const last = e.events[e.events.length - 1];
   const sig = [e.key, e.st, e.who.name, e.seatKey, JSON.stringify(e.task), e.events.length, last && last.t, e.stale, tagsOf(e).map(t => t.text).join(), itemsOf(e).join(), itemsOpen].join('|');
@@ -1168,6 +1258,7 @@ function renderPanel(force) {
      <dl class="kv"><dt>下一步</dt><dd>${esc(t.next || '—')}</dd><dt>在等誰</dt><dd>${whoChip(t.waitingOn)}</dd>${t.from ? `<dt>交辦自</dt><dd>${whoChip(t.from)}</dd>` : ''}</dl>
      ${e.stale ? `<p class="note stale">${CLOCK_SVG}這件已經 ${fmtAge(e.stale)}沒有更新</p>` : ''}
      ${e.st === 'asleep' ? '<p class="note">沒有開分頁。下次被叫醒時，從這裡接著做。</p>' : e.st === 'stuck' && t.why ? `<p class="note">原因：${esc(t.why)}</p>` : ''}`;
+  if (peer && CHAT) $('#pTask').insertAdjacentHTML('beforeend', '<p class="note">隔壁電腦的人：他的對話和傳話，在那台電腦上看。</p>');
   renderItemsCard(e);
   const evs = e.events.slice(-8).reverse(), now = performance.now();
   $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && now - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
@@ -1180,10 +1271,189 @@ function startFollow(key) {
   renderPanel(true); kick();
 }
 function stopFollow(silent) {
-  if (!follow) return; follow = null; followCam = false; goal = null;
+  if (!follow) return; follow = null; followCam = false; goal = null; chatSync(null);
   document.body.classList.remove('following'); const p = $('#panel'); p.classList.remove('open'); p.setAttribute('aria-hidden', 'true');
   if (!silent) fit(); kick();
 }
+
+/* ══════════ 11.5 對話：跟拍的人有自己的分頁時，看他的對話、直接傳話 ══════════
+   只在嵌進 ShellBot 時有（主頁的 SFOffice.host.chat，web/office.js）：讀的是對話模式那一條（chat_view，
+   只讀跟拍的這一個分頁，「對話」頁籤開著、視窗在前景時每 2 秒問一次；沒變的話只回一個 rev），送的也是
+   對話模式那一條（chat_send：算你本人打的，它在忙也會打進去；chat_answer：只回答正在問的那一題）。
+   文字已經在主頁用對話模式的規則轉好（R.md / R.escHtml），這裡只排版。
+   清單和傳話框不在 renderPanel 重畫的範圍內：每 3 秒一次的快照不會吃掉打到一半的字或注音選字。 */
+const CHAT = HOST && HOST.chat ? HOST.chat : null;
+const CHAT_POLL_MS = 2000;
+const chat = { key: null, gen: 1, loading: 0, rev: '', data: null, sending: false, draftCard: null, answered: null, flash: null, first: true, open: new Set(), askSig: '', noteSig: '' };
+const unsent = new Map();            // 每個人還沒送出的字：換人時收起來，換回來放回去（不會送到別人那裡）
+let panelTab = store.get('panelTab', 'chat') === 'info' ? 'info' : 'chat';
+const chatAble = e => !!(CHAT && e && (e.kind === 'bot' || e.kind === 'temp') && !e.gone);
+function chatSync(e) {
+  const able = chatAble(e), showChat = able && panelTab === 'chat';
+  $('#pTabs').hidden = !able;
+  $('#panel').classList.toggle('has-chat', able);
+  $('#pChat').hidden = !showChat; $('#pInfo').hidden = showChat;
+  $('#tabChat').setAttribute('aria-selected', String(showChat)); $('#tabInfo').setAttribute('aria-selected', String(able && !showChat));
+  if (!able) { chatLeave(); return; }
+  if (chat.key !== e.key) chatEnter(e);
+  const can = !!CHAT.has(e.key);
+  $('#cComp').hidden = !can; $('#cOpen').hidden = !can;
+  if (!can && chat.data) { chat.data = null; chat.rev = ''; }
+  if (!can) chatEmpty('no_tab');
+  $('#cBox').placeholder = `傳話給${e.who.name}…（Enter 送出，Shift+Enter 換行）`;
+}
+function chatLeave() {
+  if (chat.key) { const v = $('#cBox').value; if (v.trim()) unsent.set(chat.key, v); else unsent.delete(chat.key); }
+  chat.key = null; chat.gen++; chat.data = null; chat.rev = '';
+}
+function chatEnter(e) {
+  chatLeave();
+  Object.assign(chat, { key: e.key, rev: '', data: null, draftCard: null, answered: null, flash: null, first: true, askSig: '', noteSig: '' });
+  chat.open.clear();
+  const box = $('#cBox'); box.value = unsent.get(e.key) || ''; autosize();
+  const list = $('#cList'); list.innerHTML = '<div class="empty">讀取對話中…</div>'; list.dataset.h = '';   // 回到看過的人：清單照樣重畫
+  const doing = $('#cDoing'); doing.textContent = ''; doing.dataset.h = ''; doing.className = 'cdoing';
+  renderAsk(); renderNote();
+  setTimeout(() => chatTick(true), 0);
+}
+function chatEmpty(why) {
+  const e = chat.key && M.ents.get(chat.key), name = e ? e.who.name : '他';
+  const text = why === 'no_tab' ? (e && e.st === 'asleep' ? `${name}在休息，沒有開分頁：叫醒之後，這裡就看得到對話、也能傳話。` : `${name}在這台電腦上沒有分頁，這裡看不到對話。`)
+    : why === 'no_chat' ? '這一版的主頁沒有對話模式，看不到對話。' : '這次讀不到對話，稍後再試。';
+  const h = `<div class="empty">${esc(text)}</div>`;
+  const list = $('#cList'); if (list.dataset.h !== h) { list.innerHTML = h; list.dataset.h = h; }
+  const doing = $('#cDoing'); doing.textContent = ''; doing.dataset.h = '';
+  const a = $('#cAsk'); a.hidden = true; a.innerHTML = ''; chat.askSig = '';
+}
+async function chatTick(force) {
+  if (!CHAT || !chat.key || document.hidden || $('#pChat').hidden || chat.loading === chat.gen) return;
+  const key = chat.key, gen = chat.gen, e = M.ents.get(key);
+  chat.loading = gen;
+  let r = null;
+  try { r = await CHAT.view(key, force ? '' : chat.rev, e ? e.who.name : ''); } catch (err) { r = null; }
+  if (chat.loading === gen) chat.loading = 0;
+  if (gen !== chat.gen || key !== chat.key || !r) return;          // 換人了：這份是別人的，不畫
+  renderDoing(r, e);
+  if (!r.ok) { chatEmpty(r.why); return; }
+  if (r.unchanged && chat.data) return;
+  if (r.unchanged) { chatTick(true); return; }
+  chat.rev = r.rev; chat.data = r;
+  if (chat.answered && (!r.ask || r.ask.id !== chat.answered.id)) chat.answered = null;
+  renderChat(); renderAsk(); renderNote();
+}
+function renderDoing(r, e) {
+  const el = $('#cDoing'), d = (r && r.doing) || {}, st = e ? e.st : '';
+  const text = d.text || (st === 'decision' ? '等你決定' : st === 'stuck' ? '好像卡住了' : st === 'working' ? '正在做…' : (ST[st] || {}).label || '');
+  const h = esc(text) + (d.detail ? `<code>${esc(d.detail)}</code>` : '');
+  if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; }
+  el.className = 'cdoing' + (st === 'working' ? ' busy' : '');
+}
+function renderChat() {
+  const d = chat.data, list = $('#cList'); if (!d) return;
+  const near = chat.first || list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+  const h = d.items.length ? d.items.map(it => `<div class="cm cm-${esc(it.who)}" data-k="${esc(it.k)}"><div class="cbody">${it.html}</div></div>`).join('')
+    : `<div class="empty">${!d.readable && d.why === 'provider' ? '這個 CLI 的對話這裡讀不到；傳話一樣可以。' : '還沒有對話。'}</div>`;
+  if (list.dataset.h !== h) {
+    list.innerHTML = h; list.dataset.h = h;
+    for (const el of list.querySelectorAll('.cm-me,.cm-bot,.cm-peer')) {        // 長的先收起來，按「顯示全部」再展開
+      if (chat.open.has(el.dataset.k)) continue;
+      el.classList.add('clip');
+      const b = el.querySelector('.cbody');
+      if (b.scrollHeight <= b.clientHeight + 4) el.classList.remove('clip');
+      else el.insertAdjacentHTML('beforeend', '<button class="cmore" type="button" data-act="more">顯示全部</button>');
+    }
+  }
+  if (near) list.scrollTop = list.scrollHeight;
+  chat.first = false;
+}
+function renderAsk() {
+  const el = $('#cAsk'), a = chat.data && chat.data.ask;
+  let h = '';
+  if (a && a.term) h = '<h4>等你決定</h4><div class="q">它在終端機上等你；這裡讀不到選項，所以不會替你選。</div><div class="opts"><button data-act="to-term">到他的分頁處理</button></div>';
+  else if (a) {
+    const done = chat.answered && chat.answered.id === a.id;
+    h = `<h4>要你決定</h4><div class="q">${esc(a.question)}</div>${a.context || ''}` +
+      `<div class="opts">${a.options.map(o => `<button class="${o.tone ? 'tone-' + esc(o.tone) : ''}" data-act="answer" data-n="${esc(String(o.n))}" title="${esc(`選項 ${o.n}：${o.raw}`)}"${done ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>` +
+      (done ? `<div class="small">已送出：${esc(chat.answered.label)}</div>` : '') + (a.asIs ? '<div class="small">照 CLI 的原文顯示。</div>' : '');
+  }
+  el.hidden = !h;
+  if (chat.askSig !== h) { el.innerHTML = h; chat.askSig = h; }
+}
+function renderNote() {
+  const el = $('#cNote'), d = chat.data || {}, e = chat.key && M.ents.get(chat.key), name = e ? e.who.name : '他';
+  const parts = []; let warn = false;
+  if (chat.draftCard != null) { warn = true; parts.push(`${esc(name)}的終端機輸入框裡還有沒送出的字：「${esc(chat.draftCard)}」。要先清掉它，你的話才送得進去。<div class="row"><button data-act="clear-send">清掉它，送出我的</button><button data-act="keep">先不要</button></div>`); }
+  if (chat.flash && chat.flash.until > Date.now()) { warn = warn || chat.flash.warn; parts.push(esc(chat.flash.text)); }
+  if (d.login) { warn = true; parts.push(`${esc(name)}要重新登入。<div class="row"><button data-act="to-term">到他的分頁處理</button></div>`); }
+  if (d.queue) parts.push(esc(d.queue));
+  const h = parts.join('<br>');
+  el.hidden = !h; el.classList.toggle('warn', warn);
+  if (chat.noteSig !== h) { el.innerHTML = h; chat.noteSig = h; }
+}
+let flashTimer = 0;
+function flash(text, warn) { chat.flash = text ? { text, warn: !!warn, until: Date.now() + 5000 } : null; renderNote(); clearTimeout(flashTimer); if (text) flashTimer = setTimeout(renderNote, 5100); }
+function autosize() { const b = $('#cBox'); b.style.height = 'auto'; b.style.height = Math.min(b.scrollHeight + 2, 150) + 'px'; }
+async function chatSend(clearDraft) {
+  const key = chat.key, box = $('#cBox'), text = box.value;
+  if (!CHAT || !key || chat.sending || !text.trim()) return;
+  chat.sending = true; $('#cSend').disabled = true;
+  let r = null;
+  try { r = await CHAT.send(key, text, !!clearDraft); } catch (err) { r = { success: false, message: String(err) }; }
+  chat.sending = false; $('#cSend').disabled = false;
+  const here = key === chat.key;
+  if (r && r.success) {
+    if (here) { if (box.value === text) box.value = ''; chat.draftCard = null; autosize(); }
+    else if (unsent.get(key) === text) unsent.delete(key);
+    if (here) { flash(r.queued ? '已送出，排隊中：好了就會打進去。' : '已送出。'); chat.rev = ''; chatTick(true); }
+  } else if (r && r.code === 'draft') {
+    if (here) { chat.draftCard = r.draft || '…'; renderNote(); }
+  } else if (here) {
+    flash((r && r.message) || '沒有送出。', true);
+  }
+}
+async function chatAnswer(btn) {
+  const key = chat.key, a = chat.data && chat.data.ask;
+  if (!CHAT || !key || !a || a.term) return;
+  $$('#cAsk .opts button').forEach(b => { b.disabled = true; });
+  let r = null;
+  try { r = await CHAT.answer(key, parseInt(btn.dataset.n, 10), a.id); } catch (err) { r = { success: false, message: String(err) }; }
+  if (key !== chat.key) return;
+  if (r && r.success) chat.answered = { id: a.id, label: btn.textContent };
+  else { chat.answered = null; flash(r && r.code === 'stale' ? '這題已經回答過或換題了，沒有送出。' : (r && r.message) || '沒有送出。', true); }
+  chat.askSig = ''; renderAsk(); chat.rev = ''; chatTick(true);
+}
+function chatOpenTab() { if (CHAT && chat.key && !CHAT.open(chat.key)) flash('他現在沒有分頁可以切過去。', true); }
+$('#pTabs').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-tab]'); if (!b) return;
+  panelTab = b.dataset.tab === 'info' ? 'info' : 'chat'; store.set('panelTab', panelTab);
+  const e = follow && M.ents.get(follow); chatSync(e);
+  if (panelTab === 'chat') { chat.first = true; const list = $('#cList'); list.dataset.h = ''; renderChat(); chatTick(false); }
+});
+$('#pChat').addEventListener('click', ev => {
+  const a = ev.target.closest('a'); if (a) ev.preventDefault();
+  if (a && a.classList.contains('cm-link') && a.dataset.url && CHAT) { CHAT.openUrl(a.dataset.url); return; }
+  const b = ev.target.closest('button'); if (!b) return;
+  const act = b.dataset.act || (b.id === 'cOpen' ? 'to-term' : b.id === 'cSend' ? 'send' : '');
+  if (act === 'send') chatSend(false);
+  else if (act === 'to-term') chatOpenTab();
+  else if (act === 'answer') chatAnswer(b);
+  else if (act === 'clear-send') chatSend(true);
+  else if (act === 'keep') { chat.draftCard = null; renderNote(); }
+  else if (act === 'code-more') b.parentNode.classList.toggle('is-open');
+  else if (act === 'more') { const m = b.closest('.cm'); if (m) { chat.open.add(m.dataset.k); m.classList.remove('clip'); b.remove(); } }
+});
+$('#cBox').addEventListener('keydown', ev => {
+  if (ev.isComposing || ev.keyCode === 229) return;                  // 注音選字中：Enter 是選字，不是送出
+  if (ev.key === 'Enter' && !ev.shiftKey && !ev.altKey && !ev.metaKey && !ev.ctrlKey) { ev.preventDefault(); chatSend(false); }
+  else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); ev.target.blur(); }   // 第一次 Esc 只離開輸入框
+});
+$('#cBox').addEventListener('input', autosize);
+$('#pTask').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-act="parent-chat"]'), e = follow && M.ents.get(follow); if (!b || !e) return;
+  panelTab = 'chat'; store.set('panelTab', panelTab); startFollow(e.parentKey);
+});
+if (CHAT) setInterval(() => chatTick(false), CHAT_POLL_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) chatTick(false); });
 
 /* ══════════ 12. 繪製一幀：一間房一間房，由後往前 ══════════ */
 const twCache = new Map();
@@ -1711,6 +1981,7 @@ $('#addTen').onclick = () => addBots(10);
 window.__office = {
   frames: () => frames, busyFrames: () => busyFrames, busyWhy: () => ({ papers: papers.length, rings: rings.length, walking: [...M.ents.values()].filter(e => e.walk).map(e => e.key + ':' + e.walk.dir), cam: camMoving(), morph: V.k < 1, rooms: [...M.rooms.values()].filter(r => r.alpha < 1 || Math.abs(r.tx - r.x) > .01 || Math.abs(r.ty - r.y) > .01 || Math.abs(r.th - r.h) > .01).map(r => r.id) }), counts, highlighted: () => counted().filter(e => hl && matches(hl, e)).length,
   following: () => follow, panelOpen: () => $('#panel').classList.contains('open'),
+  chat: () => ({ key: chat.key, rev: chat.rev, items: chat.data ? chat.data.items.length : 0, tab: panelTab, sending: chat.sending }),
   entScreen: key => { const e = M.ents.get(key), h = e && headTop(e); return h ? { x: h.x, y: (h.y + h.base.y) / 2 } : null; },
   seatScreen: key => { const s = M.seats.get(key), g = s && geo(s); if (!g) return null; const p = t2s(g.cx, g.cy, 10); return { x: p.x, y: p.y - 12 * cam.z }; },
   pause: on => { DEMO.paused = !!on; kick(); }, follow: key => startFollow(key), unfollow: () => stopFollow(), setMode: (m, i) => setMode(m, i), setArea: (id, i) => setArea(id, i),

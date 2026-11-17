@@ -9,6 +9,9 @@
  *   - part-timers under the bot or intern whose tab launched them; a tab the office does not show
  *     brings none
  *   - the panel's events are the state changes seen, nothing invented
+ *   - the panel's conversation (chatShape, with web/chat.js's rules): who said what, tool calls as one
+ *     line, agent text escaped, a question's options with their own numbers, a question it cannot read
+ *     sends the person to the terminal, the queue in plain words
  * Demo data only. Run: node tests_office_snapshot.js
  */
 const path = require('path');
@@ -113,6 +116,41 @@ const s3 = O.track(mem, O.build({ botsOn: true, roster, primary: 'chief', tabs: 
 check('no change, no event', s3.bots.find(b => b.id === 'eng').events.length === 2);
 check('a part-timer gone from the snapshot is forgotten', !Object.keys(mem).some(k => k.startsWith('h:')));
 check('the latest line is not sent on its own', !('line' in s3.bots[0]) && !('line' in s3.temps[0]));
+
+console.log('the conversation (chatShape)');
+const R = require(path.join(__dirname, 'web/chat.js'));
+const turns = [
+  { kind: 'user_msg', text: '示範：幫我跑一次測試', ts: 1 },
+  { kind: 'tool_call', tool: 'Bash', target: 'npm test', ts: 2 },
+  { kind: 'tool_call', tool: 'Read', target: '/tmp/demo/a.txt', ts: 3 },
+  { kind: 'assistant_text', text: '示範：**全部通過**，見 <script>alert(1)</script> https://example.com/x', ts: 4 },
+  { kind: 'error', text: '示範錯誤', ts: 5 }, { kind: 'error', text: '示範錯誤', ts: 6 },
+];
+const c1 = O.chatShape({ rev: 'r1', provider: 'claude', readable: true, activity: 'idle', turns, decision: null, queue: { queued: [], given_up: [] } }, R, 'zh-TW', '示範工程師', now);
+check('turns become items in order: me, tools, bot, error', c1.items.map(i => i.who).join() === 'me,tools,bot,error', c1.items);
+check('the tool calls are one line', c1.items[1].html === '查了 1 個檔案、跑了 1 個指令', c1.items[1]);
+check('agent text is escaped (no tag survives) and markdown applied', !/<script/i.test(c1.items[2].html) && /&lt;script&gt;/.test(c1.items[2].html) && /<strong>全部通過<\/strong>/.test(c1.items[2].html), c1.items[2].html);
+check('…a link is a data-url, not an href that leaves the page', /data-url="https:\/\/example\.com\/x"/.test(c1.items[2].html) && !/href="http/.test(c1.items[2].html));
+check('the same error twice is one item, counted', /×2/.test(c1.items[3].html), c1.items[3]);
+check('no question, no queue', c1.ask === null && c1.queue === '' && c1.rev === 'r1');
+const many = []; for (let i = 0; i < 50; i++) many.push({ kind: 'user_msg', text: '示範 ' + i, ts: i + 10 }, { kind: 'assistant_text', text: '回覆 ' + i, ts: i + 10.5 });
+const c2 = O.chatShape({ turns: many }, R, 'zh-TW', 'x', now);
+check('only the last 30 items are drawn, keys unique', c2.items.length === 30 && new Set(c2.items.map(i => i.k)).size === 30 && /回覆 49/.test(c2.items[29].html));
+const dec = { id: 'q1', reason: 'Do you want to proceed?', options: [{ n: 1, text: 'Yes' }, { n: 2, text: 'No' }] };
+const c3 = O.chatShape({ activity: 'decision', turns: [{ kind: 'tool_call', tool: 'Bash', target: 'rm -rf /tmp/demo', ts: 1 }], decision: dec }, R, 'zh-TW', 'x', now);
+check('a question in plain words, each option with its own number and tone', c3.ask && c3.ask.id === 'q1' && c3.ask.question === '要讓它繼續嗎？' &&
+      c3.ask.options.map(o => `${o.n}:${o.label}:${o.tone}`).join() === '1:允許:yes,2:不允許:no', c3.ask);
+check('…with what it is about (the pending command, escaped)', /rm -rf \/tmp\/demo/.test(c3.ask.context), c3.ask.context);
+const c4 = O.chatShape({ activity: 'decision', turns: [], decision: null }, R, 'zh-TW', 'x', now);
+check('waiting with no readable options: the terminal, nothing answered from here', c4.ask && c4.ask.term === true);
+const c5 = O.chatShape({ activity: 'decision', turns: [], decision: { id: 'q2', tag: 'connect:gmail', reason: 'x', options: [{ n: 1, text: 'Yes' }] } }, R, 'zh-TW', 'x', now);
+check('a connection question (tagged) goes to the terminal too', c5.ask && c5.ask.term === true);
+const c6 = O.chatShape({ turns: [], queue: { queued: ['a'], given_up: [{ id: 'b', why: '示範原因' }], busy: { reason: 'working', since: now / 1000 - 180 } } }, R, 'zh-TW', '示範工程師', now);
+check('the queue in plain words: waiting, why, how long; and one given up with its reason',
+      /還在排隊/.test(c6.queue) && /示範工程師還在做上一步（已經 3 分鐘）/.test(c6.queue) && /1 則沒送出（示範原因）/.test(c6.queue), c6.queue);
+check('in English too', /waiting to go in/.test(O.chatShape({ turns: [], queue: { queued: ['a'] } }, R, 'en', 'Demo', now).queue));
+const c7 = O.chatShape({ turns: [{ kind: 'user_msg', text: '<b>示範</b>', ts: 1 }], login: { step: 'menu' } }, R, 'zh-TW', 'x', now);
+check('the person\'s own text is escaped too; a sign-in under way is flagged', c7.items[0].html === '&lt;b&gt;示範&lt;/b&gt;' && c7.login === true, c7);
 
 console.log(fails ? `\n${fails} failed` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.48.0
-   version: 0.48.0
+OK ShellBot v0.49.0
+   version: 0.49.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -451,7 +451,7 @@ the current tab for exactly that request.
 Other platforms: the panel says "not supported yet" (launchd only); there is nothing to
 configure there.
 
-## 4.10 The office (needs `experimental_office`; the person's view, nothing to drive)
+## 4.10 The office (needs `experimental_office`; the person's view, nothing for you to drive)
 
 With `experimental_office` on, a button at the foot of the sidebar opens an office floor over
 the window: bots are **staff** (正職) at their desks (the primary bot at the lobby desk), AI tabs
@@ -461,6 +461,12 @@ paired computer is a room of its own. It only shows what ShellBot already knows:
 (busy, waiting on the person, stuck, done), its bot's open task (§4.9), the paired computers'
 bots. A part-timer is working while its transcript was written in the last 2 minutes and stuck
 after 10 silent minutes without finishing.
+
+Following a person (bot or intern) with a tab on this computer opens their conversation in the
+panel, with a box: what the person types there reaches your tab exactly as the chat view's
+message box does (`send` as the person's: it goes in while you work; only a decision menu on
+your screen, a model switch, or a Telegram/LINE message in flight holds it), and a question you put up (a numbered menu or `[[SF:RED]]`) can
+be answered from there by its own number. Treat it as the person talking to you.
 
 There is no command for it and nothing for you to emit. What it means for you:
 
@@ -521,6 +527,7 @@ computer (`office.json` in the state folder); do not edit that file.
 | A pi bot's model in its bot settings: the models pi defines on that computer (`models.json`), pinned as `--model <id>` on the provider its command starts on; another provider's or an unknown id is refused at save | 0.47.1 |
 | The tab bar's model chip is repainted for the tab shown (it could keep the previous tab's model and level) | 0.47.2 |
 | The office (`experimental_office`, off by default, §4.10): bots (staff), AI tabs that are not bots (interns) and a Claude Code tab's subagents (part-timers) on one floor, behind a sidebar button | 0.48.0 |
+| The office's panel: a followed person's conversation, a box to message them, their question answered by its number | 0.49.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
