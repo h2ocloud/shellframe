@@ -41,6 +41,9 @@ run() {
     failed_names="$failed_names $name"
     printf '  ✗ %-34s exit=%s  %s\n' "$name" "$rc" "$last"
     printf '%s\n' "$out" | tail -20 | sed 's/^/      /'
+    if [ -n "${CI:-}" ]; then                     # GitHub Actions: every failed check, not only the last lines
+      printf '%s\n' "$out" | grep -E 'FAIL|Traceback|Error' | head -40 | sed 's/^/      ! /'
+    fi
     return
   fi
   # 退出碼 0：再看它是不是自己說跳過了
