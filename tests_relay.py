@@ -33,6 +33,11 @@ import relay_server  # noqa: E402
 
 FAILED = []
 
+# Nothing here is about which addresses this machine has (a pair URL with no hosts is the test), and
+# looking them up can take a minute on a machine whose hostname does not resolve (a CI runner): the
+# lookup is stubbed, so the test proves the same thing on every machine. frame_link's own tests cover it.
+frame_link.local_addresses = lambda: ["192.0.2.10"]
+
 
 def check(name, cond):
     print(("  ok   " if cond else "  FAIL ") + name)

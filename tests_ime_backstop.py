@@ -11,6 +11,10 @@ ime-dup 足跡都沒留，表示那條路徑根本沒經過它（write_input 在
 要留住。2026-11-09 起單字也擋：前端雙送的單字（「主主」「的的」，間隔 0～64ms）
 以前全部漏過去；單字窗口 150ms，人用注音連打同一個字遠超過這個間隔。
 
+窗口是產品自己的時鐘（write_input 讀 time.time()），所以這裡不 sleep 也不賭 CPU 夠不夠快：
+測試自己撥那只時鐘（advance），間隔就是精確的幾毫秒。以前用 wait(0.16) 量「仍在 200ms
+窗口」，在慢又共用的 CI 機器上 sleep 實際睡了 200ms 以上，測試就紅了。
+
 跑法：.venv/bin/python tests_ime_backstop.py
 """
 import sys
@@ -27,6 +31,22 @@ import sf_log  # noqa: E402
 sf_log.DEBUG_LOG = str(Path(tempfile.mkdtemp(prefix="sf-log-")) / "shellframe_debug.log")  # fake tabs stay out of the real log
 
 from main import Api  # noqa: E402
+
+
+class Clock:
+    """The time write_input sees: it moves only when the test moves it."""
+    now = 1_800_000_000.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+clock = Clock()
+time.time = clock           # the product's `time.time()`; time.sleep stays real
+wait = clock.advance
 
 passed = failed = 0
 
@@ -74,7 +94,7 @@ check("連三送 → 仍只寫一次", written == ["確認"], f"written={written
 # 3. 2026-11-09 的 bug：單字被雙送（「主主」「的的」）
 api, s, written = _api_with_session()
 api.write_input("s1", "主")
-time.sleep(0.03)
+wait(0.03)
 api.write_input("s1", "主")
 api.write_input("s1", "bot ")
 api.write_input("s1", "的")
@@ -84,21 +104,34 @@ check("單字 30ms 內雙送 → 只寫一次", written == ["主", "bot ", "的"
 # 3b. 紅線：人真的連打同一個單字（注音要組字加選字，遠超過窗口）
 api, s, written = _api_with_session()
 api.write_input("s1", "哈")
-time.sleep(0.3)
+wait(0.3)
 api.write_input("s1", "哈")
 check("人打「哈」「哈」間隔 300ms → 兩個都留（不吃字）", written == ["哈", "哈"], f"written={written}")
 
 # 3c. 單字窗口比多字短：160ms 的單字重複不擋，但同間隔的詞組重複照擋
 api, s, written = _api_with_session()
 api.write_input("s1", "嗯")
-time.sleep(0.16)
+wait(0.16)
 api.write_input("s1", "嗯")
 check("單字超過 150ms → 兩個都留", written == ["嗯", "嗯"], f"written={written}")
 api, s, written = _api_with_session()
 api.write_input("s1", "好的")
-time.sleep(0.16)
+wait(0.16)
 api.write_input("s1", "好的")
 check("詞組 160ms 仍在 200ms 窗口 → 只寫一次", written == ["好的"], f"written={written}")
+
+# 3d. 窗口邊界：單字 150ms、多字 200ms，各自剛好內外
+for text, inside, outside, win in (("嗯", 0.149, 0.151, 150), ("好的", 0.199, 0.201, 200)):
+    api, s, written = _api_with_session()
+    api.write_input("s1", text)
+    wait(inside)
+    api.write_input("s1", text)
+    check(f"{text!r} 間隔 {int(inside * 1000)}ms（窗口 {win}ms 內）→ 只寫一次", written == [text], f"written={written}")
+    api, s, written = _api_with_session()
+    api.write_input("s1", text)
+    wait(outside)
+    api.write_input("s1", text)
+    check(f"{text!r} 間隔 {int(outside * 1000)}ms（窗口 {win}ms 外）→ 兩個都留", written == [text, text], f"written={written}")
 
 # 4. 紅線：純 ASCII 完全不經手
 api, s, written = _api_with_session()
@@ -109,7 +142,7 @@ check("ASCII 重複 → 全留", written == ["ls", "ls", "ls"], f"written={writt
 # 5. 紅線：超過窗口就是使用者真的又打了一次
 api, s, written = _api_with_session()
 api.write_input("s1", "確認")
-time.sleep(0.25)
+wait(0.25)
 api.write_input("s1", "確認")
 check("超過 200ms 窗口 → 兩個都留", written == ["確認", "確認"], f"written={written}")
 

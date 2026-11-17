@@ -54,6 +54,13 @@ def stub(bindir: Path, name: str, body: str):
     p.chmod(0o755)
 
 
+def fake_python(bindir: Path, name="python3", real="/opt/homebrew/Cellar/python@3.12/3.12.0/bin/python3.12"):
+    """A Python that is new enough and not Apple's, whatever interpreter runs this test.
+    install.sh only probes it twice: the version, and where it really lives (a framework Python,
+    which is what a CI runner's setup-python gives us, is one it rejects on macOS)."""
+    stub(bindir, name, f'case "$2" in *version_info*) exit 0 ;; *realpath*) echo {real} ;; *) exit 0 ;; esac')
+
+
 def fake_env(tmp: Path, os_name: str, *, uid=1000, admin=True):
     """A bin folder with the basic tools and the stubs every case needs; returns its path."""
     bindir = tmp / "bin"
@@ -141,8 +148,6 @@ with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
     check("…and nothing is written to HOME", home_untouched(tmp), list((tmp / "home").rglob("*"))[:5])
 
 # ── install.sh: a Mac that has everything ──────────────────
-py_ok = sys.version_info >= (3, 10) and not os.path.realpath(sys.executable).startswith(
-    ("/usr/bin/", "/Library/", "/System/", "/Applications/Xcode"))
 with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
     tmp = Path(d)
     b = fake_env(tmp, "Darwin")
@@ -150,8 +155,7 @@ with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
     (prefix / "bin").mkdir(parents=True)
     stub(prefix / "bin", "brew", 'echo "brew called: $*" >&2; [ "$1" = shellenv ] && exit 0; exit 9')
     stub(prefix / "bin", "tmux", "exit 0")
-    if py_ok:
-        (prefix / "bin" / "python3").symlink_to(sys.executable)
+    fake_python(prefix / "bin")
     clt = tmp / "clt"
     (clt / "usr" / "bin").mkdir(parents=True)
     stub(clt / "usr" / "bin", "git", "exit 0")
@@ -160,10 +164,7 @@ with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
     check("a Mac with Homebrew, the tools and tmux: nothing is reinstalled (safe to run again)",
           rc == 0 and "Installing" not in out.replace("Installing ShellBot", "") and "brew called: install" not in err,
           f"rc={rc}\n{out}\n{err}")
-    if py_ok:
-        check("…and its Homebrew Python is used", f"Using {prefix}/bin/python3" in out, out)
-    else:
-        print("  [info] this Python is Apple's or older than 3.10; the 'uses Homebrew Python' check was not run")
+    check("…and its Homebrew Python is used", f"Using {prefix}/bin/python3" in out, out)
 
 # ── install.sh: a new Debian/Ubuntu, nothing installed ─────
 with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
@@ -186,8 +187,7 @@ with tempfile.TemporaryDirectory(prefix="sf-inst-") as d:
     b = fake_env(tmp, "Linux")
     stub(b, "apt-get", f'echo "$@" >> {tmp}/apt-calls; exit 0')
     stub(b, "dpkg-query", "printf 'install ok installed'")
-    if py_ok:
-        (b / "python3").symlink_to(sys.executable)
+    fake_python(b)
     rc, out, err = run_sh(tmp, b)
     check("Debian/Ubuntu with everything: no apt-get call at all (safe to run again)",
           rc == 0 and "Everything is already installed" in out and not (tmp / "apt-calls").exists(),
@@ -313,14 +313,16 @@ if pwsh:
           r.stdout + r.stderr)
     # A dry run through irm | iex's path (the text into Invoke-Expression). Off Windows nothing
     # is found (no winget, no registry), so every install step is announced; the window survives.
-    with tempfile.TemporaryDirectory(prefix="sf-inst-ps-") as d:
-        env = dict(os.environ, USERPROFILE=d, TEMP=d, SHELLFRAME_DRY_RUN="1", SHELLFRAME_LANG="en")
+    # "Nothing is found" is made true, not assumed: PATH is an empty folder, because a runner or a
+    # developer's machine has git and python on it and install.ps1 would then (rightly) skip them.
+    with tempfile.TemporaryDirectory(prefix="sf-inst-ps-") as d, tempfile.TemporaryDirectory(prefix="sf-nopath-") as nopath:
+        env = dict(os.environ, USERPROFILE=d, TEMP=d, SHELLFRAME_DRY_RUN="1", SHELLFRAME_LANG="en", PATH=nopath)
         r = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command",
                             f"Get-Content -Raw -Encoding UTF8 '{PS1}' | Invoke-Expression; 'window-still-open'"],
                            capture_output=True, text=True, timeout=120, env=env)
         out = r.stdout
         check("install.ps1 dry run (pwsh): announces each missing piece, finishes, leaves the window open",
-              "Installing Python 3.12 (" in out and "Installing WebView2 Runtime (" in out
+              "Installing Git (" in out and "Installing Python 3.12 (" in out and "Installing WebView2 Runtime (" in out
               and "Dry run finished" in out and out.rstrip().endswith("window-still-open")
               and not any(Path(d).iterdir()), out + r.stderr)
 else:

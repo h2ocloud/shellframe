@@ -80,18 +80,36 @@ E = Api._claude_transcript_exists
 check("不存在的 uuid 仍回 False", E("00000000-0000-0000-0000-000000000000") is False)
 check("空 uuid 回 False", E("") is False)
 
-# 用真實環境驗：兩個目錄底下任一個 uuid 都要找得到
+# 兩個目錄底下任一個 uuid 都要找得到。用自己造的暫存 HOME 與帳號資料夾驗，不讀這台電腦的
+# ~/.claude（乾淨機器上根本沒有，結果會隨機器而異）。
 import glob  # noqa: E402
 import os  # noqa: E402
-found = []
-for root in (os.path.expanduser("~/.claude/projects"),          # the profiles under main's own config folder
-             str(main.CONFIG_DIR / "account-profiles" / "*" / "*" / "projects")):
-    hits = glob.glob(os.path.join(root, "*", "*.jsonl"))
-    if hits:
-        found.append((root, os.path.basename(hits[0])[:-6]))
-check(f"兩個 transcript 根目錄都掃得到（實測 {len(found)} 個）",
-      len(found) >= 1 and all(E(u) for _, u in found),
-      str([r for r, _ in found]))
+import tempfile  # noqa: E402
+from unittest.mock import patch  # noqa: E402
+
+_home = tempfile.mkdtemp(prefix="sf_alt_home_")
+_cfg = tempfile.mkdtemp(prefix="sf_alt_cfg_")
+U_HOME = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"      # the default account: ~/.claude/projects
+U_PROF = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"      # a switched account: <config>/account-profiles/...
+U_NONE = "cccccccc-3333-4333-8333-cccccccccccc"      # in neither
+for _root, _u in ((os.path.join(_home, ".claude", "projects"), U_HOME),
+                  (os.path.join(_cfg, "account-profiles", "claude", "work", "projects"), U_PROF)):
+    os.makedirs(os.path.join(_root, "-some-project"))
+    open(os.path.join(_root, "-some-project", f"{_u}.jsonl"), "w").close()
+
+with patch.dict(os.environ, {"HOME": _home}), patch.object(main, "CONFIG_DIR", Path(_cfg)):
+    roots = (os.path.expanduser("~/.claude/projects"),
+             str(main.CONFIG_DIR / "account-profiles" / "*" / "*" / "projects"))
+    found = []
+    for root in roots:
+        hits = glob.glob(os.path.join(root, "*", "*.jsonl"))
+        if hits:
+            found.append((root, os.path.basename(hits[0])[:-6]))
+    check(f"兩個 transcript 根目錄都掃得到（實測 {len(found)} 個）",
+          len(found) == 2 and all(E(u) for _, u in found), str([r for r, _ in found]))
+    check("預設帳號的 uuid 找得到", E(U_HOME) is True)
+    check("切過帳號的 uuid 找得到", E(U_PROF) is True)
+    check("兩邊都沒有的 uuid 找不到", E(U_NONE) is False)
 
 print(f"\nResults: {passed} passed, {failed} failed")
 print("ALL PASS" if not failed else f"{failed} FAILED")
