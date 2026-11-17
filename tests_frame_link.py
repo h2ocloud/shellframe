@@ -27,6 +27,7 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import frame_link  # noqa: E402
+import host_lookup  # noqa: E402
 
 FAILED = []
 
@@ -600,10 +601,10 @@ def main():
         # (a CI runner whose hostname does not resolve: the lookup took minutes, the 120 s window was
         # over before the joiner arrived, and "no active pairing window" was all the phone heard)
         real_ghbn, real_now, real_la = socket.gethostbyname_ex, frame_link._now, frame_link.local_addresses
-        real_lookup_s = frame_link.HOST_LOOKUP_S
+        real_lookup_s = host_lookup.LOOKUP_S
         try:
-            frame_link.HOST_LOOKUP_S = 0.3
-            fresh = lambda: frame_link._HOST_LOOKUP.update(thread=None, found=[], at=-1e9)
+            host_lookup.LOOKUP_S = 0.3
+            fresh = lambda: host_lookup._STATE.update(thread=None, found=[], at=-1e9)
             calls = []
             gate = threading.Event()
 
@@ -632,7 +633,7 @@ def main():
             check("…and its answer is reused for a while, not asked again", len(calls) == n + 1)
             fresh()
         finally:
-            socket.gethostbyname_ex, frame_link.HOST_LOOKUP_S = real_ghbn, real_lookup_s
+            socket.gethostbyname_ex, host_lookup.LOOKUP_S = real_ghbn, real_lookup_s
         clock = [real_now()]
         try:
             frame_link._now = lambda: clock[0]

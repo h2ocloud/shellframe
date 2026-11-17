@@ -54,6 +54,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, quote
 
 import link_records
+from host_lookup import hostname_addresses as _hostname_addresses
 try:
     import link_relay            # relay (NAT-friendly) transport, optional
 except ImportError:          # pragma: no cover
@@ -167,44 +168,6 @@ def _mesh_vpn_addresses() -> list:
         if ip in ipaddress.ip_network("100.64.0.0/10") and raw not in found:
             found.append(raw)
     return found
-
-
-HOST_LOOKUP_S = 2.0          # how long the hostname lookup may take before it is given up
-HOST_LOOKUP_KEEP_S = 30.0    # an answer is reused this long (status() asks every few seconds)
-_HOST_LOOKUP = {"thread": None, "found": [], "at": -1e9}
-_HOST_LOOKUP_LOCK = threading.Lock()
-
-
-def _hostname_addresses() -> list:
-    """What the resolver says this machine's hostname is: a second source of LAN addresses.
-
-    gethostbyname_ex has no timeout of its own. On a Mac whose hostname does not resolve (a CI
-    runner, a laptop on a new network) it waits out mDNS and DNS for a minute or more, and
-    pairing_begin and status() both ask: the pairing screen froze for that long. So it runs in a
-    thread the caller stops waiting for; the addresses found by then are used, the rest dropped.
-    status() is asked every few seconds: one lookup at a time (a hung one is not started again
-    while it hangs), and its answer is kept for HOST_LOOKUP_KEEP_S."""
-    with _HOST_LOOKUP_LOCK:
-        if time.monotonic() - _HOST_LOOKUP["at"] < HOST_LOOKUP_KEEP_S:
-            return list(_HOST_LOOKUP["found"])
-        t = _HOST_LOOKUP["thread"]
-        if t is None or not t.is_alive():
-            box = []
-
-            def lookup():
-                try:
-                    box.extend(socket.gethostbyname_ex(socket.gethostname())[2])
-                except OSError:
-                    pass
-                with _HOST_LOOKUP_LOCK:
-                    _HOST_LOOKUP.update(found=list(box), at=time.monotonic())
-
-            t = threading.Thread(target=lookup, daemon=True, name="sf-link-hostname")
-            _HOST_LOOKUP["thread"] = t
-            t.start()
-    t.join(HOST_LOOKUP_S)
-    with _HOST_LOOKUP_LOCK:
-        return list(_HOST_LOOKUP["found"])
 
 
 def local_addresses() -> list:
