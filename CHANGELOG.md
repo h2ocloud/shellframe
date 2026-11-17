@@ -6,6 +6,35 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.55.1 (2026-11-17)
+
+### Fixes
+
+- **Switching from the chat view to the terminal puts the keyboard on the terminal in Chromium too (Windows).**
+  Found by the tests on GitHub's machines, three runs in a row in Chromium: right after the first switch to the
+  terminal the focus was not on it. The terminal takes the focus only when nothing else has it; the button just
+  pressed lives in the chat view, which is now hidden, and Chromium (which the Windows app's WebView2 is built on)
+  moves the focus off a hidden element later than WebKit (the Mac app), so it still looked taken. Focus left inside
+  the hidden view now counts as free. With this change the check passes there; it was not reproduced on a Mac.
+  Covered by `tests_chat_switch_focus.py`, which now says where the focus is when it is not on the terminal.
+
+  **從對話畫面切到終端機，在 Chromium（Windows）上鍵盤也會回到終端機。** 在 GitHub 的機器上跑測試時發現的，Chromium 連續三次：第一次
+  切到終端機後，焦點不在終端機上。終端機只在焦點沒有被別處拿走時才接手；剛按的按鈕在對話畫面裡，而對話畫面已經隱藏，Chromium
+  （Windows App 用的 WebView2 就是它）把焦點從隱藏元素移開的時機比 WebKit（Mac App）晚，看起來就像焦點還被拿著。現在焦點停在已
+  隱藏的對話畫面裡也算空著。改了之後那邊的檢查就過了；在 Mac 上重現不了。由 `tests_chat_switch_focus.py` 守著，它現在會在焦點不在
+  終端機時寫出焦點在哪裡。
+
+### Internal
+
+- **On GitHub Actions a test file that fails runs once more.** Passing then, it is listed as flaky, apart from both
+  passes and failures, with its first failure's lines, so it is seen and fixed rather than hidden; a file that fails
+  twice is a failure. A failed check is printed with the lines before it (which engine, which section). A run on a
+  developer's machine stays strict. The suite now passes there (258 files, one flaky).
+
+  **在 GitHub Actions 上，失敗的測試檔會再跑一次。** 第二次過了就列為「不穩」，跟通過、失敗分開，並附上第一次失敗的那幾行，讓它被看
+  見、被修，而不是被藏起來；兩次都失敗就是失敗。失敗的檢查會連同前面幾行一起印出（哪個瀏覽器、哪一段）。在開發者自己的電腦上跑
+  照舊嚴格。現在那邊整套都過（258 個檔，一個不穩）。
+
 ## v0.55.0 (2026-11-17)
 
 ### Added
