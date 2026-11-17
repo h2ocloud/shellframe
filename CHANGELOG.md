@@ -6,6 +6,42 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.53.0 (2026-11-17)
+
+### Added
+
+- **Settings → Connect recognizes connections that already work, and says which way each goes.** Reported: the
+  Connect page showed Gmail stuck at step 2 of 9 and Google Calendar, Google Drive and Notion as not connected,
+  although this computer already reaches several of them. The page only knew what ShellBot's own wizard had done.
+  It now also asks the AI programs themselves, read-only: `claude mcp list` (in the account folder the Claude tabs
+  use; it reports each claude.ai connector as connected or needing authentication, and checks each local MCP
+  server) and `codex mcp list` (its plain table, where env values are masked; it lists without checking). Each way
+  of connecting a service (a protocol: the Claude account's connector, a local MCP server…) is then **checked**
+  (it works), **found** (there, not checked), **found but not working**, or not set up. A service with a checked way
+  is connected, and its row says through which (for example "Connected · Claude account connector" or "Connected ·
+  local MCP (your own setting)"); its card lists every way with its state and which one is in use, and a wizard
+  left half-way no longer hides a way that works. A server you added yourself is used as it is: disconnecting only
+  forgets ShellBot's record and never removes it. The look runs on its own thread (10–20 s: Claude starts each
+  server to check it) the first time the list is asked for, when the Connect page is open (at most every 5 minutes)
+  and on "Look again"; not every hour, since that would start every MCP server unasked. Nothing it reads is kept but
+  names and states: no command line, URL or env value. `sfctl connect list/status` say which way too. Not done yet:
+  a local script as a way, a folder of this computer's own descriptions (Plaud), choosing the way, and following a
+  bot to another CLI. Covered by `tests_connectors_detect.py` (100) and `tests_connect_detect_ui.py` (25); screenshots
+  `qa-shots/connect-detect-*.png`.
+
+  **設定 → 連結會認得已經能用的連線，並寫出各走哪一種方式。** 回報：連結頁顯示 Gmail 卡在 9 步裡的第 2 步，Google 日曆、Google
+  雲端硬碟、Notion 都顯示沒連，但這台其實已經連得到好幾個。以前這頁只知道 ShellBot 自己的精靈做過什麼。現在也會唯讀地問 AI 程式本
+  身：`claude mcp list`（在 Claude 分頁用的帳號資料夾裡問；它會回報每個 claude.ai 連接器是已連上還是要授權，也會檢查每個本機 MCP
+  伺服器），和 `codex mcp list`（它的純文字表格，env 值會遮起來；只列不檢查）。每個服務的每一種連線方式（協定：Claude 帳號連接器、
+  本機 MCP 伺服器…）會是**測過能通**、**找到了還沒測**、**找到但連不上**，或沒有設定。有一種測過能通的，服務就算已連結，那一列會寫走
+  哪一種（例如「已連結 · Claude 帳號連接器」或「已連結 · 本機 MCP（你自己的設定）」）；服務卡片列出每一種方式的狀態、哪一種正在用，
+  做到一半的精靈不會再蓋掉能用的那一種。你自己加的伺服器照原樣用：斷開連結只會忘掉 ShellBot 的紀錄，不會刪掉它。偵測在獨立的
+  執行緒跑（10–20 秒：Claude 會逐一啟動伺服器來檢查），時機是第一次讀清單、連結頁開著的時候（最多每 5 分鐘一次），以及按「重新找」；
+  不會每小時自動跑，因為那會在沒人要求時把每個 MCP 伺服器都啟動一次。讀到的東西只留名稱和狀態，不留指令列、網址或 env 值。
+  `sfctl connect list/status` 也會寫走哪一種。還沒做的：本機腳本這種方式、這台電腦自己的描述檔資料夾（Plaud）、自己選走哪一種、bot
+  換 CLI 時跟著註冊。由 `tests_connectors_detect.py`（100 項）和 `tests_connect_detect_ui.py`（25 項）守著；截圖在
+  `qa-shots/connect-detect-*.png`。
+
 ## v0.52.0 (2026-11-17)
 
 ### Added

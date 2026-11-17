@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Settings → Connect recognizes connections that already work (web/connect.js over the real js_api, engine and
 connectors/detect.py), for made-up services, with a stand-in for every AI program whose `claude mcp list` and
-`codex mcp list --json` answers are scripted here. Nothing opens a browser, a tab or a program.
+`codex mcp list` answers are scripted here. Nothing opens a browser, a tab or a program.
 
   1. opening the tab starts a look in the background; the page asks again until it is done, and says it counts
      connections already set up on this computer
@@ -110,10 +110,10 @@ CLAUDE = ["Checking MCP server health…", "",
           "claude.ai Demo Chat: https://chat.example/mcp - ! Needs authentication",
           "my-notes: npx -y @demo/notes-mcp - ✔ Connected",
           "unrelated: npx -y @demo/other-mcp - ✘ Failed to connect — demo"]
-CODEX = [{"name": "mail-tool", "enabled": True, "auth_status": "unsupported",
-          "transport": {"type": "stdio", "command": "npx", "args": ["-y", "@demo/mail-mcp"], "env": {"DEMO": "x"}}},
-         {"name": "chat-tool", "enabled": True, "auth_status": "unsupported",
-          "transport": {"type": "stdio", "command": "npx", "args": ["-y", "@demo/chat-mcp"], "env": {"DEMO": "x"}}}]
+# `codex mcp list` as it prints (its plain table; env values masked)
+CODEX = ("Name       Command  Args              Env         Cwd  Status   Auth       \n"
+         "mail-tool  npx      -y @demo/mail-mcp  DEMO=*****  -    enabled  Unsupported\n"
+         "chat-tool  npx      -y @demo/chat-mcp  DEMO=*****  -    enabled  Unsupported\n")
 
 
 class Quiet(Adapter):
@@ -127,7 +127,7 @@ class Api(api_connect.ConnectApiMixin):
         self.sessions = {}
         self.runner = fake.FakeRunner()
         self.runner.listing["claude"] = "\n".join(CLAUDE)
-        self.runner.listing["codex"] = json.dumps(CODEX)
+        self.runner.listing["codex"] = CODEX
         self.runner.entries["claude"] = {"my-notes", "unrelated"}
         reg = registry.Registry(dirs=[])
         for d in DESCS:

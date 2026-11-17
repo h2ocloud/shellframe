@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.52.0
-   version: 0.52.0
+OK ShellBot v0.53.0
+   version: 0.53.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -546,6 +546,7 @@ kept on this computer (`office.json` in the state folder); do not edit that file
 | The office's zoning: by AI (a walled room per CLI, default), custom groups, or one room | 0.50.0 |
 | Gmail's local server recommended, added to and tested in the primary bot's CLI | 0.51.0 |
 | The office: an intern's current step, Ask to leave (closes its tab), pictures pasted into the panel's box; a paired computer's real states | 0.52.0 |
+| Connect recognizes connections that already work (`claude mcp list`, `codex mcp list`) and says which way each goes; `sfctl connect` names it | 0.53.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

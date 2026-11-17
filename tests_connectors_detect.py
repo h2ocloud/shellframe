@@ -18,7 +18,7 @@ program, account folder or settings file is read.
   6. a program that does not answer keeps the last look; a program that is not there is "missing"
   7. api_connect: the first connect_list starts one look on a thread of its own and does not wait; the page's
      `detect` asks again at most every few minutes; connect_detect looks again now (not twice at once); the hourly
-     check looks first, so the phone and Telegram count what works
+     check does not look (a look starts every MCP server Claude has), it counts what the last look found
   8. the shipped descriptions: each connector's listed name agrees with its adapter's tool names; each local route's
      package is the one its server runs; and a typical shape (a Claude account folder with Gmail, Calendar, Drive
      connected and Notion needing authentication) comes out as it should
@@ -64,18 +64,30 @@ def claude_list(*lines):
 
 
 def codex_json(*servers, noise=""):
-    return noise + json.dumps(list(servers))
+    """What `codex mcp list` prints (its plain tables; the name is kept from when it was JSON): local servers in
+    one table, remote ones in another, env values masked as Codex masks them."""
+    loc = [x for x in servers if x["kind"] == "local"]
+    rem = [x for x in servers if x["kind"] == "remote"]
+    out = noise
+    if loc:
+        rows = [("Name", "Command", "Args", "Env", "Cwd", "Status", "Auth")] + [
+            (x["name"], x["command"], " ".join(x["args"]) or "-", "DEMO_SECRET=*****", "-", x["status"], x["auth"]) for x in loc]
+        w = [max(len(r[i]) for r in rows) + 2 for i in range(7)]
+        out += "\n".join("".join(c.ljust(w[i]) for i, c in enumerate(r)) for r in rows) + "\n"
+    if rem:
+        rows = [("Name", "Url", "Bearer Token Env Var", "Status", "Auth")] + [(x["name"], x["url"], "-", "enabled", x["auth"]) for x in rem]
+        w = [max(len(r[i]) for r in rows) + 2 for i in range(5)]
+        out += ("\n" if loc else "") + "\n".join("".join(c.ljust(w[i]) for i, c in enumerate(r)) for r in rows) + "\n"
+    return out if servers else (noise + "No MCP servers configured yet. Try `codex mcp add my-tool -- my-command`.\n")
 
 
-def stdio(name, command, args, enabled=True, auth="unsupported"):
-    return {"name": name, "enabled": enabled, "disabled_reason": None,
-            "transport": {"type": "stdio", "command": command, "args": args, "env": {"DEMO_SECRET": ENV_SECRET}, "env_vars": [], "cwd": None},
-            "startup_timeout_sec": None, "tool_timeout_sec": None, "auth_status": auth}
+def stdio(name, command, args, enabled=True, auth="Unsupported"):
+    return {"kind": "local", "name": name, "command": command, "args": args, "status": "enabled" if enabled else "disabled",
+            "auth": "Not logged in" if auth == "not_logged_in" else auth}
 
 
-def remote(name, url, auth="o_auth"):
-    return {"name": name, "enabled": True, "transport": {"type": "streamable_http", "url": url, "bearer_token_env_var": None},
-            "auth_status": auth}
+def remote(name, url, auth="OAuth"):
+    return {"kind": "remote", "name": name, "url": url, "auth": "Not logged in" if auth == "not_logged_in" else auth}
 
 
 class Rig:
@@ -137,12 +149,16 @@ CX = codex_json(stdio("demo-tool", "npx", ["-y", "demo-mcp"]), stdio("off-demo",
                 remote("cloud-demo", "https://demo.example/mcp", auth="not_logged_in"), stdio("in-demo", "/opt/demo/bin/demo-mcp", ["--serve"], auth="not_logged_in"),
                 noise="WARNING: a demo warning [not json]\n")
 cents = {e["name"]: e for e in detect.parse_codex(CX)}
-check("Codex: stderr before the JSON is skipped; every server is read", sorted(cents) == ["cloud-demo", "demo-tool", "in-demo", "off-demo"], sorted(cents))
+check("Codex: a warning before the tables is skipped; every server in both tables is read", sorted(cents) == ["cloud-demo", "demo-tool", "in-demo", "off-demo"], sorted(cents))
 check("Codex: an entry that is on is found (Codex does not check)", (cents["demo-tool"]["state"], cents["demo-tool"]["kind"]) == ("found", "local"))
 check("Codex: turned off is broken (off); not signed in is broken (auth)", (cents["off-demo"]["state"], cents["off-demo"]["why"]) == ("broken", "off")
       and (cents["in-demo"]["state"], cents["in-demo"]["why"]) == ("broken", "auth") and cents["cloud-demo"]["kind"] == "remote")
 check("Codex: its env values are never read into an entry", ENV_SECRET not in json.dumps(list(cents.values())))
-check("Codex: output that is not its JSON is 'could not read' (None), not 'nothing there'", detect.parse_codex("error: no config") is None and detect.parse_codex("[]") == [])
+check("Codex: output with no table is 'could not read' (None), not 'nothing there'; its empty-list sentence is nothing there",
+      detect.parse_codex("No MCP servers configured yet. Try `codex mcp add my-tool -- my-command`.") == []
+      and detect.parse_codex("error: no config") is None
+      and detect.parse_codex("Name  Command  Args  Env  Cwd  Status  Auth\n") == [])
+check("Codex: the listing used is the plain one (`--json` would carry env values)", detect.PARSERS["codex"][0] == ["mcp", "list"])
 
 # ── 2. matching from the description ──────────────────────────────────────
 print("== 2. a route is recognized by what its description says ==")
@@ -336,8 +352,8 @@ ans = r.look(claude=claude_list("claude.ai Demo: x - ✔ Connected"), codex=code
 check("a program that is not installed is 'missing' and not asked", ans["read"]["claude"] == "missing" and not any(c[0].endswith("/claude") for c in r.runner.calls))
 r = Rig()
 r.look(claude=claude_list(), codex=codex_json())
-check("the programs are asked read-only: `claude mcp list` and `codex mcp list --json`, nothing else",
-      [c[1:] for c in r.runner.calls] == [["mcp", "list"], ["mcp", "list", "--json"]], r.runner.calls)
+check("the programs are asked read-only: `claude mcp list` and `codex mcp list` (not --json), nothing else",
+      [c[1:] for c in r.runner.calls] == [["mcp", "list"], ["mcp", "list"]], r.runner.calls)
 check("no state file was written by a look", not os.path.exists(r.engine.store.path))
 
 # ── 7. api_connect: in the background, never waited for ────────────────────
@@ -410,9 +426,18 @@ api2.rig.runner.listing.update(claude=claude_list("claude.ai Demo: https://demo.
 told = []
 import bridge_home  # noqa: E402
 bridge_home.tell_all = lambda a, text: told.append(text) or 1
+calls_before = len(api2.rig.runner.calls)
 api2._connect_hourly_run()
-check("the hourly check looks first (on its own thread), so the phone's list counts what works",
-      api2._connect_engine.detected is not None and api2._connect_compact()[0]["state"] == "connected" and told == [], api2._connect_compact())
+check("the hourly check does not look (no `mcp list`): a look starts every MCP server Claude has",
+      not [c for c in api2.rig.runner.calls[calls_before:] if c[1:3] == ["mcp", "list"]], api2.rig.runner.calls[calls_before:])
+api2._connect_detect_kick(force=True)
+for _ in range(100):
+    if not getattr(api2, "_connect_detecting", False) and api2._connect_engine.detected is not None:
+        break
+    time.sleep(0.02)
+api2._connect_hourly_run()
+check("…it counts what the last look found, so the phone's list says connected", api2._connect_compact()[0]["state"] == "connected" and told == [],
+      api2._connect_compact())
 out = api2._connect_sfctl({"action": "list"})
 check("sfctl connect list says connected and which way", out["success"] and "Demo: connected (the Claude account's connector" in out["message"], out["message"])
 js = json.loads(api2._connect_sfctl({"action": "status", "service": "demo", "json": True})["message"])

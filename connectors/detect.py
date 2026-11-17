@@ -12,8 +12,9 @@ service this looks, read-only, in what the AI programs report about their own MC
             <name>: … - ⏸ Pending approval
           It starts every server to answer (10–20 s), so the caller runs `scan` on a thread of its own and keeps
           the answer; nothing here starts a thread.
-  codex   `codex mcp list --json`: each server's name, command and arguments, whether it is turned on and
-          signed in. Codex does not check them: an entry there is only found.
+  codex   `codex mcp list` (its tables; env values show as *****, and `--json` is not used because it carries
+          them): each server's name, command and arguments, whether it is turned on and signed in. Codex does
+          not check them: an entry there is only found.
 
 How a route is recognized comes from its description, never from a service's name here:
 
@@ -35,7 +36,6 @@ ShellBot's own or adopted. A command line, an argument, an environment value or 
 and dropped: Codex's JSON carries environment values, and a command line can carry a key.
 """
 
-import json
 import re
 import time
 
@@ -88,46 +88,47 @@ def parse_claude(out: str) -> list:
     return entries
 
 
-def _json_list(out: str):
-    """The first JSON array of objects in a program's output (stderr may be mixed in), else None."""
-    text = str(out or "")
-    dec = json.JSONDecoder()
-    for m in re.finditer(r"\[", text):
-        try:
-            data, _ = dec.raw_decode(text[m.start():])
-        except ValueError:
-            continue
-        if isinstance(data, list) and all(isinstance(x, dict) for x in data):
-            return data
-    return None
+def _cols(header: str) -> list:
+    """[(start, name)] of a table's header: names are separated by two spaces or more (one may have spaces)."""
+    return [(m.start(), m.group(0).strip().lower()) for m in re.finditer(r"\S+(?: \S+)*", header)]
 
 
 def parse_codex(out: str):
-    """The servers in `codex mcp list --json`, or None when the answer could not be read. Only the name, the
-    transport's type, command and arguments, `enabled` and `auth_status` are looked at; nothing else (its `env`
-    holds values) is read."""
-    data = _json_list(out)
-    if data is None:
-        return None
-    entries = []
-    for it in data:
-        name = it.get("name")
-        if not isinstance(name, str) or not name:
+    """The servers in `codex mcp list` (its tables, one for local servers and one for remote ones), or None when
+    there is no table. The plain listing shows env values as `*****`; `--json` would carry them, so it is not
+    used. Each row is cut by its header's columns; only Name, Command and Args (a local server), Status and Auth
+    are kept, the Env column is never read."""
+    entries, cols, seen = [], None, False
+    for line in str(out or "").splitlines():
+        if re.match(r"^\s*name\s{2,}", line, re.I):
+            cols, seen = _cols(line), True
             continue
-        tr = it.get("transport") if isinstance(it.get("transport"), dict) else {}
-        local = str(tr.get("type") or "") == "stdio"
-        words = ([str(tr.get("command") or "")] + [str(a) for a in (tr.get("args") or []) if isinstance(a, (str, int, float))]) if local else []
-        if it.get("enabled") is False:
+        if not cols or not line.strip():
+            continue
+        cell = {}
+        for i, (start, head) in enumerate(cols):
+            stop = cols[i + 1][0] if i + 1 < len(cols) else None
+            cell[head] = line[start:stop].strip() if len(line) > start else ""
+        name = cell.get("name", "")
+        if not name:
+            continue
+        local = "command" in cell
+        words = ([cell.get("command", "")] + cell.get("args", "").split()) if local else []
+        status, auth = cell.get("status", "").lower(), cell.get("auth", "").lower()
+        if status == "disabled":
             state, why = "broken", "off"
-        elif str(it.get("auth_status") or "").lower() in ("not_logged_in", "notloggedin", "logged_out"):
+        elif "not logged in" in auth:
             state, why = "broken", "auth"
         else:
             state, why = "found", ""
-        entries.append({"name": name, "kind": "local" if local else "remote", "label": "", "words": words, "state": state, "why": why})
-    return entries
+        entries.append({"name": name, "kind": "local" if local else "remote", "label": "", "words": [w for w in words if w],
+                        "state": state, "why": why})
+    if not seen and re.search(r"no mcp servers configured", str(out or ""), re.I):
+        return []                                   # its words for an empty list
+    return entries if seen else None
 
 
-PARSERS = {"claude": (["mcp", "list"], parse_claude), "codex": (["mcp", "list", "--json"], parse_codex)}
+PARSERS = {"claude": (["mcp", "list"], parse_claude), "codex": (["mcp", "list"], parse_codex)}
 
 
 # ── what a route is recognized by (its description) ────────────────────────

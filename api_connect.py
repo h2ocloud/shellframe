@@ -9,8 +9,9 @@ one-shot thread at most once an hour), `_connect_sfctl` (sfctl connect list|stat
 
 What already works (connectors/detect.py: each AI program's own `mcp list`, 10–20 s) is looked for on a one-shot
 thread started here: on the first connect_list, then at most every DETECT_EVERY_S while the Connect page asks
-(`connect_list` with {"detect": true}), on demand (`connect_detect`, not more often than DETECT_FLOOR_S), and with
-the hourly check. No call waits for it; `connect_list` says whether a look is running and when the last one was.
+(`connect_list` with {"detect": true}), and on demand (`connect_detect`, not more often than DETECT_FLOOR_S). Not with
+the hourly check: a look makes Claude start every MCP server it has, which is not worth doing unasked every hour.
+No call waits for it; `connect_list` says whether a look is running and when the last one was.
 
 Every method answers a JSON string with `success`; a failure has a `code` and `message` {text, next}
 (both languages: the page has its own language setting). Nothing secret is ever in an answer, a log
@@ -284,8 +285,6 @@ class ConnectApiMixin:
 
     def _connect_hourly_run(self):
         try:
-            if self._connect_detect_claim(force=True):        # what already works first: the phone and Telegram count it
-                self._connect_detect_run()
             self._connect_tell(self._connect().refresh_all())
         except Exception:
             _swallow("connect:hourly")

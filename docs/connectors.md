@@ -83,7 +83,7 @@ loss points at (the add step after `cli_entry_missing`, the key step after `secr
 
 > 中文摘要：連結頁會認得「已經能用、但不是在 ShellBot 設定的」連線，按協定（route）分開看：Claude 帳號連接器看
 > `claude mcp list`（用 Claude 分頁的帳號資料夾跑，「✔ Connected」就是測過能通）；本機 MCP 看 ShellBot 自己的
-> `shellbot-…` 項目，或使用者自己加的項目（指令裡跑的是描述檔寫的套件）；Codex 的 `codex mcp list --json` 只能說「找到」。
+> `shellbot-…` 項目，或使用者自己加的項目（指令裡跑的是描述檔寫的套件）；Codex 的 `codex mcp list`（純文字表格，env 值會遮成 `*****`；不用會帶出 env 值的 `--json`）只能說「找到」。
 > 每條協定是 ✅ checked、🟡 found、⚠ broken 或沒有。任何一條 checked，服務就是 connected，`via` 說走哪條、是不是使用者自己的設定；
 > 停在一半的精靈不會蓋掉能用的那條。使用者自己的項目只用不改，中斷連結也不會刪。偵測在背景跑、結果只放記憶體，不留任何指令、參數或環境值。
 
@@ -97,7 +97,7 @@ everything else, so Claude is asked with the account folder the Claude tabs use)
 | Program | Command | What it says |
 |---|---|---|
 | Claude Code | `claude mcp list` | one line per server, ending in Claude's own check: `claude.ai <Name>: <url> - ✔ Connected` (a Claude account connector), `… - ! Needs authentication`, `<name>: <command> - ✔ Connected` (a local server), `… - ✘ Failed to connect`, `… - ⏸ Pending approval`. It starts every server to answer (10–20 s) |
-| Codex | `codex mcp list --json` | each server's name, transport (`stdio` command and args, or a URL), `enabled`, `auth_status`. Codex does not check its servers |
+| Codex | `codex mcp list` (its plain tables; env values show as `*****`. `--json` is not used: it carries env values) | each server's name, command and args (a local one) or URL, Status (enabled/disabled), Auth. The Env column is never read. Codex does not check its servers |
 
 Antigravity, Grok Build, OpenCode, Cursor Agent and Pi are not looked in yet.
 
@@ -160,8 +160,8 @@ A route's state is its best place's (checked, then broken, then found); `places`
 (seconds) and keeps the answer in memory (`Engine.detected`; never in `connectors.json`), and every status after it uses
 it. `api_connect` starts a one-shot thread for it: on the first `connect_list` (or `sfctl connect`), from the Connect page
 (`connect_list` with `{"detect": true}`, when the open page asks every minute) at most every `DETECT_EVERY_S` (300 s), on
-"Look again" (`connect_detect`, at most every `DETECT_FLOOR_S`, 15 s), and before the hourly check (so the phone and
-Telegram count what works). One look at a time; no call waits for it. `connect_list` answers `detect: {"running", "at"}`,
+"Look again" (`connect_detect`, at most every `DETECT_FLOOR_S`, 15 s). Not with the hourly check: a look makes Claude
+start every MCP server it has, which is not done unasked. One look at a time; no call waits for it. `connect_list` answers `detect: {"running", "at"}`,
 and the page asks again every 2.5 s while it runs. A program that does not answer (timeout, an error, output that cannot be
 read) keeps what the last look found (`read: unknown`); one that is not installed is `missing`.
 
@@ -393,7 +393,7 @@ it names. A route that needs a key: `"kind": "api_key"`, `secrets`, `env_from_se
 
 ## Not verified (said, not hidden)
 
-- What already works: the lines of `claude mcp list` (Claude Code 2.1.326) and the fields of `codex mcp list --json` (Codex
+- What already works: the lines of `claude mcp list` (Claude Code 2.1.326) and the columns of `codex mcp list` (Codex
   0.142.1) were looked at once, shape only, on one Mac (2026-11-17); the tests use made-up lines in that shape. Claude's
   list is asked in the app's own folder: a server scoped to one project folder (`.mcp.json`, a local scope) shows only
   for that folder, so it may be missed. `✔ Connected` means Claude started the server and it answered, not that the
