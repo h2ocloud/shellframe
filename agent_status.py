@@ -1612,6 +1612,10 @@ class StatusTracker:
             return None, age
         return res, age
 
+    def transcript_path(self, sid, worker):
+        """The transcript the monitor resolves for this tab, through the same cache (office_helpers)."""
+        return self._resolve_cached(sid, worker, time.time())
+
     def _resolve_cached(self, sid, worker, now):
         path, at = self._path_cache.get(sid, (None, 0))
         # codex 用 lsof 較貴 + 路徑可能變，30s 重解一次；claude 便宜可 10s

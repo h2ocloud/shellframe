@@ -1886,6 +1886,7 @@
   window.SFBots = {
     face, remoteFace, afterSidebar, afterTabs, interceptClose, refresh, setPrimary, openSettings, sortedView,
     tabMentions, openTelegram, renameBotTab, faceForName, mentionables, refreshPeers, peerBots: () => peers,
+    state: () => st, botOf, kindOf, previewOf,      // web/office.js builds its snapshot from these
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled,

@@ -1,0 +1,14 @@
+/* ShellBot office overlay (web/office.js). The floor itself is web/office.html in the iframe. */
+#sfo-overlay {
+  position: fixed; inset: 0; z-index: 9000; background: #1a1b26;
+  outline: none;
+}
+#sfo-overlay .sfo-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #1a1b26; }
+#sfo-overlay .sfo-close {
+  position: absolute; top: 11px; right: 12px; z-index: 2; width: 36px; height: 36px; border-radius: 10px;
+  border: 1px solid #3b4261; background: rgba(31, 35, 53, .95); color: #a9b1d6; font-size: 15px; line-height: 1;
+  cursor: pointer; display: grid; place-items: center; box-shadow: 0 6px 18px rgba(0, 0, 0, .3);
+}
+#sfo-overlay .sfo-close:hover { color: #c0caf5; border-color: #7aa2f7; }
+#sfo-overlay .sfo-close:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
+#btn-office .sb-ico { display: grid; place-items: center; }

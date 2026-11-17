@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.47",
+  "reviewed_for": "0.48",
   "tours": {
     "first_run": [
       "new-tab",
@@ -230,6 +230,23 @@
       "body": {
         "en": "A side panel with the conversations that run on a schedule (/loop, cron routines, scheduled tabs): when each wakes next and what it waits on. Off by default.",
         "zh": "側邊面板列出按排程跑的對話（/loop、cron routine、排程開的分頁）：下次什麼時候醒、在等什麼。預設關閉。"
+      }
+    },
+    {
+      "id": "office",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.48.0",
+      "flag": "experimental_office",
+      "open": "settings:general",
+      "title": {
+        "en": "Office",
+        "zh": "辦公室"
+      },
+      "body": {
+        "en": "A button at the foot of the sidebar opens an office floor: bots (staff) at their desks, AI tabs that are not bots (interns) at a long table, a Claude Code tab's subagents (part-timers) beside it. Busy, waiting on you or stuck at a glance. Off by default.",
+        "zh": "側欄底部多一顆按鈕，打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，Claude Code 分頁派出去的 subagent（工讀生）站在旁邊。誰在忙、誰在等你、誰卡住，看圖就知道。預設關閉。"
       }
     },
     {

@@ -20,9 +20,9 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.47.0
-   version: 0.47.0
-   experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false}
+OK ShellBot v0.48.0
+   version: 0.48.0
+   experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
 The flag list is read from the live settings, so it always names every
@@ -451,6 +451,29 @@ the current tab for exactly that request.
 Other platforms: the panel says "not supported yet" (launchd only); there is nothing to
 configure there.
 
+## 4.10 The office (needs `experimental_office`; the person's view, nothing to drive)
+
+With `experimental_office` on, a button at the foot of the sidebar opens an office floor over
+the window: bots are **staff** (正職) at their desks (the primary bot at the lobby desk), AI tabs
+that are not bots are **interns** (實習生) at a long table, a Claude Code tab's subagents are
+**part-timers** (工讀生) standing beside the tab that launched them until they finish, and each
+paired computer is a room of its own. It only shows what ShellBot already knows: a tab's light
+(busy, waiting on the person, stuck, done), its bot's open task (§4.9), the paired computers'
+bots. A part-timer is working while its transcript was written in the last 2 minutes and stuck
+after 10 silent minutes without finishing.
+
+There is no command for it and nothing for you to emit. What it means for you:
+
+- Keep your task current (`sfctl task update … --next`): the person sees it on your desk, and a
+  task the store calls stuck carries a small clock.
+- Name your subagents' jobs plainly: the description you give a subagent is its tag in the
+  office ("工讀生：<description>").
+- A subagent left running and silent shows as stuck; one that never finished (a conversation
+  that ended mid-run) stops showing after 6 hours.
+
+Where each person sits and the accessories on a desk are the person's choice, kept on this
+computer (`office.json` in the state folder); do not edit that file.
+
 ## 5. Which build has what
 
 `sfctl version` first, then:
@@ -496,6 +519,7 @@ configure there.
 | A bot's persona also on a relaunch and a restore after a restart (so /new keeps it); a pi tab relaunched goes on with its conversation (`--session`) | 0.46.2 |
 | Settings → Connect (連結) is a catalog: Google Drive, Google Calendar, Notion, Slack through the Claude account's connectors (one click), Reminders/Calendar on a Mac (beta), Messages/Notes listed as not available; retired settings (coordinator set, init prompt, Telegram system prompt, glasses, plugin marketplace) and a new Advanced tab; a pi tab relaunched stays on the model its conversation was last switched to (`--model` after a launcher's; not across providers when the launcher passes `--api-key`) | 0.47.0 |
 | A pi bot's model in its bot settings: the models pi defines on that computer (`models.json`), pinned as `--model <id>` on the provider its command starts on; another provider's or an unknown id is refused at save | 0.47.1 |
+| The office (`experimental_office`, off by default, §4.10): bots (staff), AI tabs that are not bots (interns) and a Claude Code tab's subagents (part-timers) on one floor, behind a sidebar button | 0.48.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

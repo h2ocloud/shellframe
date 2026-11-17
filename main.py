@@ -90,6 +90,7 @@ from api_push import PushApiMixin
 from api_connect import ConnectApiMixin
 from api_guide import GuideApiMixin
 from api_tasks import TasksApiMixin
+from api_office import OfficeApiMixin
 import tmux_sessions
 import wake_watch
 import usage_probe
@@ -243,6 +244,9 @@ DEFAULT_CONFIG = {
         "fontSize": 14,
         "language": "en",
         "experimental_loops": False,
+        # The office (web/office.js + office.html): bots, AI tabs and their subagents drawn as an
+        # office floor behind a sidebar button. Off by default: no button, no iframe, no timer.
+        "experimental_office": False,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
         # every tab runs with permissions bypassed. Rules live in agent_link.py.
@@ -1972,7 +1976,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           LinkApiMixin, RemoteApiMixin, StatusApiMixin,
           UpdateApiMixin, VoiceApiMixin, TmuxApiMixin, BotsApiMixin, BotMemoryApiMixin, ChatApiMixin, PushApiMixin,
-          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, TasksApiMixin):
+          ConnectApiMixin, TabModelApiMixin, GuideApiMixin, TasksApiMixin, OfficeApiMixin):
     """JS <-> Python bridge."""
 
     def __init__(self):

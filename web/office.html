@@ -1,0 +1,1745 @@
+<!doctype html>
+<!--
+  ShellBot：Agent 辦公室（實驗性，settings.experimental_office，預設關閉）
+  ════════════════════════════════════════════════════════════════
+  這是什麼
+    把 bot（正職）、不是 bot 的 AI 分頁（實習生）和分頁派出去的 subagent（工讀生）畫成一層辦公室。
+    正職坐「辦公區」；主要 bot 坐大廳的秘書長辦公桌；實習生坐大廳的共用長桌；工讀生站在派他出去的
+    那張桌子旁邊，做完就走；配對的每台電腦是一間獨立的房間。誰在忙、誰在等你、誰卡住，看圖就知道；
+    點一個人可以跟拍。
+
+  怎麼接進 ShellBot
+    - web/office.js 在設定打開時，於側欄底部放一顆按鈕；按下去用 <iframe src="office.html"> 蓋滿整個視窗，
+      所以這頁的 CSS／DOM 不會和主頁打架。關掉就移除 iframe（沒有畫布、沒有計時器）。
+    - 主頁每 3 秒（只在開著、而且視窗在前景時）呼叫 window.Office.update(snapshot)；本檔不自己輪詢、
+      不開任何連線，不載入外部資源，只用 Canvas2D。snapshot 的欄位寫在程式第 15 節。
+    - 嵌在主頁裡時（window.parent.SFOffice.host 存在），座位、配件、顯示方式透過主頁存到這台電腦
+      （state 資料夾的 office.json：pywebview 每次啟動會清掉 localStorage）；單獨打開這個檔時改用
+      localStorage，並且跑示範資料與示範時間軸。
+    - 「立體」＝等角 2.5D，「平面」＝俯視。第一次依螢幕寬度與機器效能自動選，使用者切過就記住。
+
+  座位規則
+    - 不分團隊：正職都坐「辦公區」，一區 12 個位子，照 created_at 補空位；坐滿就長出「辦公區 2」。
+      （BY_TEAM = true 時才依 team 分區，沒有 team 的進「其他」）
+    - 主要 bot 固定坐大廳的秘書長辦公桌。
+    - 不見的 bot 位子保留 1 小時（名牌顯示「已離開」），不自動重排；1 小時內同一個 id 回來就坐回原位，
+      超過就讓出來，之後回來照規則重新排（拖曳換過的位子如果還空著，會坐回去）。
+    - 拖曳頭像可以和任何人互換，或換到任何空位。「還原座位」回到規則排法。
+    - 實習生長桌依人數加長，一張桌子坐滿 9 位就再加一張。配對的每台電腦一間房。
+    - 工讀生不佔位子：站在派他的人的椅子後面；同一張桌子超過 4 位時只畫 3 位，旁邊標「+N」。
+
+  效能
+    - 分頁不在前景（document.hidden）就完全停止繪製。
+    - 最多 20fps；20 秒沒有操作降到 5fps。紙在飛、有人在走、鏡頭在動、切換模式時暫時回到 20fps。
+    - 遠景（縮小時）只畫桌面、頭像、狀態燈；紅色「!」照畫。近景才畫螢幕、椅子與小動畫。
+    - 畫面外的房間不畫；文字寬度有快取；系統設定「減少動態效果」時關掉晃動與閃爍。
+
+  配件庫（程式第 7.5 節的 ITEMS）
+    每個人桌上、身上會依執掌自動配 2～3 件配件（固定種子，同一個人每次都一樣）；實習生依 CLI
+    戴不同顏色的帽子，桌上只放一件小東西。追蹤面板的「配件」可以手動加、拿掉。遠景不畫配件。
+    怎麼加一個配件：
+      1. 在 ITEMS 陣列最後加一筆：{ id, name: { zh, en }, slot, spot, tags, draw(x, s, a) { … } }
+      2. slot 選位置：'desk'（再用 spot 選 'side' 桌角或 'front' 桌面前緣）、'floor' 桌旁地上、
+         'wall' 牆上（桌後的小看板）、'head' 頭上、'body' 身上
+      3. tags 寫中英文職能關鍵字，例如 ['工程', '程式', 'code']；自動配會拿去比對執掌、名字、團隊
+      4. draw 用 box／poly／ellipse／wq／fquad 畫；s 是位置（格子座標，大小已對齊桌面），
+         a 是主人的顏色與狀態（可以讓配件跟著狀態變，例如監控燈）
+      5. 存檔、重新整理就生效：自動配會考慮它，配件庫格子會多一格（縮圖用同一個 draw 畫）。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Agent 辦公室</title>
+<style>
+:root{
+  --bg:#1a1b26;--panel:#1f2335;--line:#3b4261;--ink:#c0caf5;--dim:#7c84ad;--mute:#565f89;
+  --blue:#7aa2f7;--green:#9ece6a;--yellow:#e0af68;--red:#f7768e;--purple:#bb9af7;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+kbd{font:600 10.5px var(--mono);padding:1px 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;color:var(--dim)}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#stage.pt{cursor:pointer}
+#stage.drag{cursor:grabbing}
+#stage.seat{cursor:move}
+
+/* ── 頂部列 ── */
+#top{position:fixed;left:0;right:0;top:0;min-height:58px;display:flex;align-items:center;gap:14px;padding:0 14px;
+  background:linear-gradient(180deg,rgba(31,35,53,.97),rgba(31,35,53,.9));border-bottom:1px solid var(--line);
+  box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:5;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:none}
+.mark{width:28px;height:28px;flex:none;border-radius:8px;background:linear-gradient(150deg,#2b3150,#1d2133);border:1px solid var(--line);display:grid;place-items:center}
+.mark svg{display:block}
+.brand b{font-size:15px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+.brand .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:99px;padding:2px 9px;white-space:nowrap}
+#stats{display:flex;gap:6px;flex:none}
+.stat{--c:var(--blue);display:flex;align-items:center;gap:7px;height:40px;padding:0 12px 0 10px;border:1px solid var(--line);border-radius:11px;background:rgba(26,27,38,.55);transition:border-color .15s,background .15s,transform .08s}
+.stat i{width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px rgba(0,0,0,.18)}
+.stat .lb{font-size:12.5px;color:var(--dim);white-space:nowrap}
+.stat b{font:700 19px/1 var(--mono);color:var(--c);min-width:1.3ch;text-align:right}
+.stat:hover{border-color:var(--c)}
+.stat:active{transform:scale(.97)}
+.stat[aria-pressed=true]{border-color:var(--c);background:var(--cbg)}
+.stat[aria-pressed=true] .lb{color:var(--ink)}
+.stat.zero b{color:var(--mute)}
+.stat[data-k=working]{--c:var(--blue);--cbg:rgba(122,162,247,.15)}
+.stat[data-k=decision]{--c:var(--red);--cbg:rgba(247,118,142,.15)}
+.stat[data-k=stuck]{--c:var(--yellow);--cbg:rgba(224,175,104,.15)}
+.stat[data-k=idle]{--c:var(--green);--cbg:rgba(158,206,106,.14)}
+.right{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:1 1 auto;min-width:0}
+.search{position:relative;display:flex;align-items:center;gap:7px;height:36px;padding:0 8px 0 10px;border:1px solid var(--line);border-radius:10px;background:rgba(26,27,38,.55);flex:0 1 220px;min-width:150px}
+.search:focus-within{border-color:var(--blue)}
+.search svg{flex:none;color:var(--dim)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:13px}
+.search input::placeholder{color:var(--mute)}
+.search input::-webkit-search-cancel-button{display:none}
+.search kbd{flex:none}
+#qres{position:absolute;top:calc(100% + 6px);right:0;width:300px;max-height:min(380px,60vh);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.45);padding:6px;display:none;z-index:8}
+#qres.on{display:block}
+#qres button{display:grid;grid-template-columns:30px 1fr;gap:1px 10px;align-items:center;width:100%;text-align:left;padding:7px 8px;border-radius:8px}
+#qres button img{width:30px;height:30px;border-radius:9px;grid-row:span 2}
+#qres button b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#qres button small{font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#qres button.on,#qres button:hover{background:rgba(122,162,247,.14)}
+#qres .none{padding:10px;font-size:12.5px;color:var(--dim)}
+.ib{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:rgba(26,27,38,.55);display:none;place-items:center;color:var(--dim);flex:none}
+.ib:hover{color:var(--ink);border-color:var(--blue)}
+.sel{position:relative;flex:none;display:block}
+.sel select{appearance:none;-webkit-appearance:none;height:36px;padding:0 28px 0 11px;border-radius:10px;border:1px solid var(--line);background:rgba(26,27,38,.55);color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;max-width:156px}
+.sel select:focus{outline:0;border-color:var(--blue)}
+.sel select option{background:#1f2335;color:#c0caf5}
+.sel::after{content:"";position:absolute;right:12px;top:50%;width:6px;height:6px;border-right:1.5px solid var(--dim);border-bottom:1.5px solid var(--dim);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+.tb{height:36px;min-width:36px;padding:0 11px;border-radius:10px;background:rgba(31,35,53,.92);border:1px solid var(--line);color:var(--ink);font-size:12.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex:none}
+.tb:hover{border-color:var(--blue)}
+.tb.acc{color:var(--purple);border-color:rgba(187,154,247,.5)}
+.tb.add{color:#16161e;background:var(--green);border-color:var(--green)}
+.tb.add:hover{filter:brightness(1.08)}
+.tb[hidden]{display:none}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;padding:3px;background:rgba(26,27,38,.55);flex:none}
+.seg button{padding:5px 11px;border-radius:7px;font-size:12.5px;color:var(--dim);font-weight:600;white-space:nowrap}
+.seg button[aria-pressed=true]{background:var(--blue);color:#16161e}
+
+/* ── 圖例與工具 ── */
+#legend{position:fixed;left:16px;bottom:16px;z-index:4;padding:10px 12px 8px;background:rgba(31,35,53,.92);border:1px solid var(--line);border-radius:12px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:calc(100vw - 32px)}
+#legend h4{font-size:11px;color:var(--dim);font-weight:600;letter-spacing:.08em;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+#legend h4 button{margin-left:auto;font-size:11px;color:var(--dim)}
+#legend ul{list-style:none;display:grid;grid-template-columns:auto auto;gap:5px 16px}
+#legend li{display:flex;align-items:center;gap:8px;font-size:12px;white-space:nowrap}
+#legend svg{flex:none;display:block}
+#legend .lfoot{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-top:8px;padding-top:7px;border-top:1px solid rgba(59,66,97,.6);font-size:11.5px;color:var(--dim);white-space:nowrap}
+#legend .lfoot b{color:var(--ink);font-weight:600}
+#legend.min ul,#legend.min .lfoot{display:none}
+#legend.min h4{margin-bottom:0}
+#fps{font:11px var(--mono);color:var(--dim);display:flex;align-items:center;gap:6px}
+#fps::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green)}
+#fps.slow::before{background:var(--mute)}
+#tools{position:fixed;right:16px;bottom:16px;z-index:4;display:flex;gap:6px;transition:opacity .2s}
+body.following #tools{opacity:0;pointer-events:none}
+body.live-data #addOne,body.live-data #addTen,body.live-data #demoHandoff{display:none}
+body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the corner */
+
+/* ── 跟拍面板 ── */
+#panel{position:fixed;top:70px;right:12px;bottom:12px;width:340px;display:flex;flex-direction:column;z-index:6;
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.45);
+  transform:translateX(calc(100% + 28px));transition:transform .32s cubic-bezier(.2,.8,.2,1);overflow:hidden}
+#panel.open{transform:none}
+.grab{display:none;width:40px;height:4px;border-radius:2px;background:var(--line);margin:8px auto 0;flex:none}
+.ph{display:flex;gap:12px;align-items:center;padding:16px 16px 14px;border-bottom:1px solid rgba(59,66,97,.6);cursor:pointer;flex:none}
+.ph img{width:50px;height:50px;border-radius:13px;flex:none;background:#24283b}
+.ph .nm{min-width:0}
+.pname{font-size:16.5px;font-weight:700;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.pname .star{color:var(--yellow);font-size:12.5px}
+.psub{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pchip{--c:var(--blue);margin-left:auto;flex:none;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;color:var(--c);border:1px solid var(--c);background:rgba(26,27,38,.5);white-space:nowrap}
+.pbody{flex:1;overflow:auto;padding:14px 16px 16px;overscroll-behavior:contain}
+.duty{font-size:13px;line-height:1.6;color:var(--ink)}
+.duty span{color:var(--dim);margin-right:8px}
+.pmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pmeta span{font-size:11.5px;color:var(--dim);border:1px solid rgba(59,66,97,.9);border-radius:99px;padding:1px 9px;white-space:nowrap}
+.card{margin-top:14px;padding:12px 13px;border-radius:12px;background:rgba(26,27,38,.6);border:1px solid rgba(59,66,97,.85)}
+.card h3,.events h3{font-size:11.5px;color:var(--dim);font-weight:600;letter-spacing:.06em;display:flex;align-items:center;gap:8px}
+.card h3 em{font-style:normal;font:11px var(--mono);color:var(--mute)}
+.ttl{font-size:14.5px;font-weight:700;margin:6px 0 10px;line-height:1.45}
+.kv{display:grid;grid-template-columns:52px 1fr;gap:7px 10px;font-size:13px;align-items:center}
+.kv dt{color:var(--dim)}
+.kv dd{min-width:0}
+.who{display:inline-flex;align-items:center;gap:6px;padding:1px 8px 1px 2px;border-radius:99px;background:rgba(59,66,97,.45);white-space:nowrap}
+.who img{width:18px;height:18px;border-radius:6px}
+.who.you{background:rgba(247,118,142,.16);color:var(--red);padding-left:8px;font-weight:600}
+.note{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.55}
+.note.stale{color:var(--yellow);display:flex;gap:6px;align-items:center}
+.events{margin-top:16px}
+.events ol{list-style:none;margin-top:4px}
+.events li{display:grid;grid-template-columns:42px 8px 1fr;gap:9px;align-items:baseline;padding:7px 0;border-bottom:1px dashed rgba(59,66,97,.55);font-size:12.5px;line-height:1.5}
+.events li:last-child{border-bottom:0}
+.events time{font:11.5px var(--mono);color:var(--dim)}
+.events i{width:8px;height:8px;border-radius:50%;background:var(--c,var(--dim));transform:translateY(-1px)}
+.events li.new{animation:evin .5s ease-out}
+@keyframes evin{from{background:rgba(122,162,247,.14)}to{background:transparent}}
+.items .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ichip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px 2px 2px;border-radius:99px;background:rgba(59,66,97,.45);font-size:12px;white-space:nowrap}
+.ichip img{width:24px;height:24px;border-radius:7px}
+.iact{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.iact button{height:30px;padding:0 12px;border-radius:9px;border:1px solid var(--line);background:#24283b;font-size:12.5px;font-weight:600}
+.iact button:hover{border-color:var(--blue)}
+.iact button.on{border-color:var(--green);color:var(--green)}
+.igrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.igrid button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 5px;border-radius:10px;border:1px solid rgba(59,66,97,.85);background:rgba(26,27,38,.5);font-size:11px;color:var(--dim);position:relative}
+.igrid button img{width:48px;height:48px;border-radius:9px}
+.igrid button small{font-size:9.5px;color:var(--mute)}
+.igrid button.on{border-color:var(--green);color:var(--ink);background:rgba(158,206,106,.1)}
+.igrid button.on::after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--green)}
+.igrid button:hover{border-color:var(--blue)}
+.pfoot{display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid rgba(59,66,97,.6);flex:none}
+.btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#24283b;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{border-color:var(--blue)}
+.pfoot .hint{margin-left:auto;font-size:11.5px;color:var(--mute)}
+
+#toast{position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:7;pointer-events:none;display:flex;flex-direction:column;gap:6px;align-items:center;max-width:calc(100vw - 24px)}
+#toast div{font-size:12.5px;padding:6px 12px;border-radius:99px;background:rgba(31,35,53,.95);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.3);animation:tin .25s ease-out;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+@keyframes tin{from{opacity:0;transform:translateY(-6px)}}
+
+@media (prefers-reduced-motion:reduce){#panel,#tools{transition:none}.events li.new{animation:none}}
+
+/* ── 窄螢幕（媒體查詢放在基礎規則之後，才蓋得過）── */
+@media (max-width:1240px){.brand .tag{display:none}}
+@media (max-width:1100px){
+  .search{display:none}
+  #searchBtn{display:grid}
+  body.searching .search{display:flex;position:absolute;left:12px;right:12px;top:10px;z-index:9;background:var(--panel);flex:none}
+  body.searching .search kbd{display:none}
+  body.searching #qres{left:0;right:0;width:auto}
+}
+@media (max-width:900px){#addTen{display:none}}
+@media (max-width:720px){
+  #top{flex-wrap:wrap;gap:8px 10px;padding:8px 12px 10px;min-height:0}
+  .brand{flex:1 1 auto}
+  .right{flex:0 0 auto}
+  #addTen{display:flex}
+  #stats{order:3;width:100%;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .stat{height:42px;justify-content:center;gap:6px;padding:0 6px}
+  .stat b{font-size:18px;min-width:0}
+  .seg button{padding:5px 10px}
+  #tools{right:12px;bottom:12px;gap:6px}
+  #zoomIn,#zoomOut,#fitAll,#demoHandoff{display:none}
+  .sel select{max-width:118px}
+  #legend{left:12px;bottom:12px;padding:8px 10px}
+  #legend:not(.min){bottom:60px}
+  #legend ul{gap:4px 12px}
+  #panel{top:auto;left:0;right:0;bottom:0;width:auto;max-height:60vh;border-radius:18px 18px 0 0;border-bottom:0;transform:translateY(calc(100% + 16px))}
+  #panel.open{transform:none}
+  .grab{display:block}
+  .ph{padding:10px 16px 12px}
+  .pfoot .hint,.pfoot kbd{display:none}
+  body.following #legend{opacity:0;pointer-events:none}
+}
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="辦公室平面圖：每個座位是一位 bot 或一個實習生（不是 bot 的 AI 分頁）"></canvas>
+
+<header id="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1.5 14.5 5 8 8.5 1.5 5Z" fill="#7aa2f7"/><path d="M1.5 5v5.5L8 14V8.5Z" fill="#3d59a1"/><path d="M14.5 5v5.5L8 14V8.5Z" fill="#2c3f75"/></svg></span>
+    <b>辦公室</b><span class="tag" id="tag">選裝模組 · 示範資料</span>
+  </div>
+  <nav id="stats" aria-label="狀態統計（點數字高亮那些人）">
+    <button class="stat" data-k="working" aria-pressed="false" title="在忙：分頁正在跑"><i></i><span class="lb">忙</span><b>0</b></button>
+    <button class="stat" data-k="decision" aria-pressed="false" title="等你決定"><i></i><span class="lb">等你</span><b>0</b></button>
+    <button class="stat" data-k="stuck" aria-pressed="false" title="卡住或出錯"><i></i><span class="lb">卡住</span><b>0</b></button>
+    <button class="stat" data-k="idle" aria-pressed="false" title="閒置或做完，可以說話"><i></i><span class="lb">閒置</span><b>0</b></button>
+  </nav>
+  <div class="right" id="topRight">
+    <div class="search" id="search" role="search">
+      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3.6 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="q" type="search" placeholder="找人：名字或執掌" autocomplete="off" spellcheck="false" aria-label="找人" aria-controls="qres">
+      <kbd>/</kbd>
+      <div id="qres" role="listbox"></div>
+    </div>
+    <button class="ib" id="searchBtn" aria-label="找人"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3.6 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+    <label class="sel" id="areaWrap" title="看哪一區"><select id="area" aria-label="看哪一區"></select></label>
+    <button class="tb add" id="addOne" title="示範：加一位隨機團隊的正職">＋ 新增正職</button>
+    <button class="tb" id="addTen" title="示範：一次加 10 位">＋10</button>
+    <div class="seg" id="mode" role="group" aria-label="顯示方式">
+      <button data-m="flat" aria-pressed="false">平面</button>
+      <button data-m="iso" aria-pressed="true">立體</button>
+    </div>
+  </div>
+</header>
+
+<section id="legend" aria-label="圖例">
+  <h4>看圖就懂 <button id="legendToggle" aria-expanded="true">收起</button></h4>
+  <ul>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="2" y="1.5" width="18" height="11" rx="2" fill="#16161e" stroke="#3b4261"/><rect x="4" y="3.5" width="14" height="7" rx="1" fill="#7aa2f7" opacity=".85"/><rect x="5.5" y="5" width="7" height="1.3" fill="#c0caf5"/><rect x="5.5" y="7.5" width="4.5" height="1.3" fill="#c0caf5" opacity=".7"/><rect x="9" y="13" width="4" height="2" fill="#3b4261"/></svg>螢幕亮＝在忙</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="11" cy="7" r="6.5" fill="#f7768e"/><path d="M9 13.5 11 16l2-2.5Z" fill="#f7768e"/><rect x="10" y="3" width="2" height="5" rx="1" fill="#1a1b26"/><circle cx="11" cy="10" r="1.1" fill="#1a1b26"/></svg>紅色 !＝等你決定</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="8" cy="5" r="3.2" fill="#7c84ad" opacity=".5"/><circle cx="13" cy="3.5" r="2.4" fill="#7c84ad" opacity=".35"/><path d="M11 6.5 16 15H6Z" fill="#e0af68"/><rect x="10.4" y="9" width="1.2" height="3" fill="#1a1b26"/><circle cx="11" cy="13.3" r=".7" fill="#1a1b26"/></svg>冒煙＋警示＝卡住</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M8 2.5c-1 1.2 1 2-0 3.4M11.5 2.5c-1 1.2 1 2-0 3.4" stroke="#7c84ad" stroke-width="1" fill="none"/><rect x="5.5" y="7" width="9" height="7.5" rx="1.6" fill="#e6e9f5"/><path d="M14.5 8.5h1.6a2 2 0 0 1 0 4h-1.6" stroke="#e6e9f5" stroke-width="1.4" fill="none"/></svg>咖啡＝閒置／做完</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="6" y="2" width="10" height="7" rx="2" fill="#363b55"/><rect x="5" y="9" width="12" height="2.5" rx="1" fill="#2f3349"/><rect x="10.3" y="11.5" width="1.4" height="3" fill="#2f3349"/></svg>空椅子＝休息中</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M2 13c5-9 12-10 18-8" stroke="#bb9af7" stroke-width="1.2" stroke-dasharray="2 2" fill="none"/><g transform="rotate(-14 15 6)"><rect x="11" y="1.5" width="8" height="10" rx="1" fill="#e6e9f5"/><rect x="12.5" y="4" width="5" height="1" fill="#9aa5ce"/><rect x="12.5" y="6.5" width="3.5" height="1" fill="#9aa5ce"/></g></svg>飛紙＝交辦</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="11" cy="8" r="5.6" fill="none" stroke="#e0af68" stroke-width="1.5"/><path d="M11 5v3.3l2.2 1.4" stroke="#e0af68" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>小時鐘＝任務太久沒動</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M3 8h16M15 4.5 18.5 8 15 11.5M7 4.5 3.5 8 7 11.5" stroke="#9ece6a" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>拖曳頭像＝換位子</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="8" y="9" width="6" height="6" rx="2.5" fill="#414868"/><circle cx="11" cy="6" r="3.6" fill="#6b7399"/><path d="M7.4 5.6a3.6 3.6 0 0 1 7.2 0Z" fill="#ff9e64"/><circle cx="11" cy="1.9" r="1.1" fill="#f4f6ff"/></svg>小個子橘帽＝工讀生（分頁派出去的 subagent，做完就走）</li>
+  </ul>
+  <div class="lfoot"><span id="meta"></span><span id="fps" title="繪製頻率：有操作時 20fps，閒置降到 5fps，分頁在背景時停止"></span></div>
+</section>
+
+<div id="tools">
+  <button class="tb acc" id="demoHandoff" title="立刻演一次交辦">▶ 交辦示範</button>
+  <button class="tb" id="resetSeats" hidden title="清掉拖曳換過的位子，回到規則排法">還原座位</button>
+  <button class="tb" id="zoomOut" title="縮小" aria-label="縮小">−</button>
+  <button class="tb" id="zoomIn" title="放大" aria-label="放大">＋</button>
+  <button class="tb" id="fitAll" title="看整層">全景</button>
+</div>
+
+<aside id="panel" aria-hidden="true" aria-label="追蹤中的同事">
+  <div class="grab"></div>
+  <div class="ph" id="pHead" title="鏡頭回到他身上">
+    <img id="pAv" alt="">
+    <div class="nm"><div class="pname" id="pName"></div><div class="psub" id="pSub"></div></div>
+    <span class="pchip" id="pChip"></span>
+  </div>
+  <div class="pbody">
+    <p class="duty" id="pDuty"></p>
+    <div class="pmeta" id="pMeta"></div>
+    <div class="card" id="pTask"></div>
+    <div class="card items" id="pItems"></div>
+    <div class="events"><h3>最近事件</h3><ol id="pEvents"></ol></div>
+  </div>
+  <div class="pfoot"><button class="btn" id="stopFollow">停止追蹤 <kbd>Esc</kbd></button><span class="hint">拖曳畫面可暫時看別處</span></div>
+</aside>
+<div id="toast" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ══════════ 0. 小工具（取自《戰爭迷霧》src/00-util.js）══════════ */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => (t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash2(x, y) { let h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+// 嵌在 ShellBot 裡：主頁的 SFOffice.host（同源，可以直接呼叫）。座位、配件、顯示方式由它存到這台電腦；
+// 單獨打開這個檔時沒有它，改用 localStorage（key 帶版本，和 v0.1 分開）。
+const HOST = (() => { try { const p = window.parent; return p && p !== window && p.SFOffice && p.SFOffice.host ? p.SFOffice.host : null; } catch (e) { return null; } })();
+const store = { // 只存個人偏好與座位；讀不到就用預設
+  get(k, d) { if (HOST) { try { const v = HOST.get(k); return v == null ? d : v; } catch (e) { return d; } }
+    try { const v = localStorage.getItem('sbOffice.v2.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { if (HOST) { try { HOST.set(k, v == null ? null : JSON.parse(JSON.stringify(v))); } catch (e) { } return; }
+    try { if (v == null) localStorage.removeItem('sbOffice.v2.' + k); else localStorage.setItem('sbOffice.v2.' + k, JSON.stringify(v)); } catch (e) { } },
+};
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16, n >> 8 & 255, n & 255]; };
+function alpha(hex, a) { const [r, g, b] = hexRgb(hex); return `rgba(${r},${g},${b},${a})`; }   // 取自 40-render.js
+function shade(hex, k) { const [r, g, b] = hexRgb(hex), t = k < 0 ? 0 : 255, m = Math.abs(k); return `rgb(${Math.round(r + (t - r) * m)},${Math.round(g + (t - g) * m)},${Math.round(b + (t - b) * m)})`; }
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const RM = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
+const FONT = getComputedStyle(document.documentElement).getPropertyValue('--font').trim() || 'system-ui,sans-serif';
+
+/* ══════════ 1. 色票（ShellBot）══════════ */
+const COL = { bg: '#1a1b26', panel: '#1f2335', line: '#3b4261', ink: '#c0caf5', dim: '#7c84ad', mute: '#565f89', blue: '#7aa2f7', green: '#9ece6a', yellow: '#e0af68', red: '#f7768e', purple: '#bb9af7', cyan: '#7dcfff', teal: '#73daca' };
+const ST = {
+  working: { label: '在忙', c: COL.blue }, decision: { label: '等你決定', c: COL.red }, stuck: { label: '卡住了', c: COL.yellow },
+  idle: { label: '閒置', c: COL.green }, done: { label: '做完了', c: COL.green }, asleep: { label: '休息中', c: COL.mute }, empty: { label: '空位', c: COL.mute },
+};
+const EVC = { work: COL.blue, done: COL.green, result: COL.green, decision: COL.red, stuck: COL.yellow, handoff: COL.purple, handin: COL.purple, wake: COL.cyan, sleep: COL.mute, idle: '#8fb573', note: COL.dim, arrive: COL.cyan, leave: COL.mute };
+const TEAMS = ['營運組', '工程組', '研究組', '其他'];
+const TEAMCOL = { 營運組: '#73daca', 工程組: '#7aa2f7', 研究組: '#7dcfff', 其他: '#a9b1d6' };
+const teamCol = t => TEAMCOL[t] || '#a9b1d6';
+const SHAPES = ['tri', 'hex', 'drop', 'star', 'cloud', 'round', 'squircle', 'pill', 'blob', 'tilt', 'ghost', 'egg'];
+const NAMED_COL = { purple: '#bb9af7', blue: '#7aa2f7', cyan: '#7dcfff', green: '#9ece6a', pink: '#f5a8d4', yellow: '#e0af68', teal: '#73daca', sky: '#89ddff', lime: '#c3e88d', mint: '#b4f9f8', periw: '#94a8ff', orange: '#ff9e64' };
+
+/* ══════════ 2. 投影：等角（取自 40-render.js 的 P）＋ 平面，可互相過場 ══════════
+   原點固定在大廳左上角；場景長大時座標不跳，置中交給鏡頭。手機直式的平面圖把 x、y 對調。 */
+const TW = 64, TH = 32, FS = 46, FK = .5, SLAB = 16;
+const V = { m: 1, from: 1, to: 1, k: 1, tp: false };
+function P(x, y, z = 0) {
+  const m = V.m;
+  if (m >= 1) return { x: (x - y) * TW / 2, y: (x + y) * TH / 2 - z };
+  const fx = V.tp ? y * FS : x * FS, fy = (V.tp ? x : y) * FS - z * FK;
+  if (m <= 0) return { x: fx, y: fy };
+  return { x: fx + ((x - y) * TW / 2 - fx) * m, y: fy + ((x + y) * TH / 2 - z - fy) * m };
+}
+function poly(c, pts, fill, stroke, lw) {  // 取自 40-render.js
+  c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.closePath();
+  if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = lw || 1; c.stroke(); }
+}
+function box(c, x, y, w, h, z0, H, cols, edge) {  // 取自 40-render.js：有高度的方塊
+  const A = P(x, y, z0 + H), B = P(x + w, y, z0 + H), C = P(x + w, y + h, z0 + H), D = P(x, y + h, z0 + H);
+  const B0 = P(x + w, y, z0), C0 = P(x + w, y + h, z0), D0 = P(x, y + h, z0);
+  poly(c, [D, C, C0, D0], cols.l); poly(c, [C, B, B0, C0], cols.r); poly(c, [A, B, C, D], cols.t);
+  if (edge) { c.strokeStyle = edge; c.lineWidth = 1; c.beginPath(); c.moveTo(D.x, D.y); c.lineTo(C.x, C.y); c.lineTo(B.x, B.y); c.moveTo(C.x, C.y); c.lineTo(C0.x, C0.y); c.stroke(); }
+  return { A, B, C, D, B0, C0, D0 };
+}
+function ellipse(c, x, y, rx, ry, fill, stroke, lw) { c.beginPath(); c.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), 0, 0, 6.2832); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = lw || 1; c.stroke(); } }
+const floorR = r => ({ rx: r * lerp(FS, TW * .7071, V.m), ry: r * lerp(FS, TH * .7071, V.m) });   // 改自 isoR：平面時是正圓
+const wq = (x0, y0, x1, y1, u1, u2, z1, z2) => [P(lerp(x0, x1, u1), lerp(y0, y1, u1), z2), P(lerp(x0, x1, u2), lerp(y0, y1, u2), z2), P(lerp(x0, x1, u2), lerp(y0, y1, u2), z1), P(lerp(x0, x1, u1), lerp(y0, y1, u1), z1)];   // 改自 face
+const fquad = (x0, y0, x1, y1, z) => [P(x0, y0, z), P(x1, y0, z), P(x1, y1, z), P(x0, y1, z)];
+
+/* ══════════ 3. 頭像形狀（12 種，和 ShellBot 側欄的頭像一樣）══════════ */
+function roundPoly(c, pts, r) {
+  const n = pts.length; c.moveTo((pts[0].x + pts[n - 1].x) / 2, (pts[0].y + pts[n - 1].y) / 2);
+  for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; c.arcTo(a.x, a.y, b.x, b.y, r); }
+  c.closePath();
+}
+function shapePath(c, sh, r) {
+  c.beginPath();
+  const reg = (k, R, rot) => Array.from({ length: k }, (_, i) => { const a = rot + i / k * 6.2832; return { x: Math.cos(a) * R, y: Math.sin(a) * R }; });
+  switch (sh) {
+    case 'tri': roundPoly(c, [{ x: 0, y: -r * 1.12 }, { x: r * 1.08, y: r * .8 }, { x: -r * 1.08, y: r * .8 }], r * .3); break;
+    case 'hex': roundPoly(c, reg(6, r * 1.06, -Math.PI / 2), r * .2); break;
+    case 'drop': c.moveTo(0, -r * 1.18); c.bezierCurveTo(r * .42, -r * .7, r * .86, -r * .28, r * .86, r * .2); c.arc(0, r * .2, r * .86, 0, Math.PI); c.bezierCurveTo(-r * .86, -r * .28, -r * .42, -r * .7, 0, -r * 1.18); c.closePath(); break;
+    case 'star': { const pts = []; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, R = i % 2 ? r * .55 : r * 1.18; pts.push({ x: Math.cos(a) * R, y: Math.sin(a) * R + r * .06 }); } roundPoly(c, pts, r * .12); break; }
+    case 'cloud': c.moveTo(-r * .2, r * .72); c.arc(-r * .5, r * .2, r * .55, Math.PI * .5, Math.PI * 1.35); c.arc(-r * .05, -r * .28, r * .64, Math.PI * 1.1, Math.PI * 1.85); c.arc(r * .55, r * .15, r * .55, Math.PI * 1.45, Math.PI * .5); c.closePath(); break;
+    case 'round': c.arc(0, 0, r, 0, 6.2832); break;
+    case 'egg': c.ellipse(0, r * .04, r * 1.05, r * .85, -.42, 0, 6.2832); break;   // ShellBot 的「蛋」
+    case 'squircle': c.roundRect(-r * .95, -r * .95, r * 1.9, r * 1.9, r * .55); break;
+    case 'pill': c.roundRect(-r * .66, -r * 1.08, r * 1.32, r * 2.16, r * .66); break;
+    case 'blob': { const k = [1, .84, .98, .86, 1.04, .8, .96, .9], n = k.length, pt = i => { const a = i / n * 6.2832 - .3; return { x: Math.cos(a) * r * k[i % n], y: Math.sin(a) * r * k[i % n] }; };
+      const p0 = pt(0), p1 = pt(1); c.moveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2);
+      for (let i = 1; i <= n; i++) { const a = pt(i), b = pt(i + 1); c.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2); } c.closePath(); break; }
+    case 'tilt': { const pts = [[-.86, -.86], [.86, -.86], [.86, .86], [-.86, .86]].map(([x, y]) => { const a = .3; return { x: (x * Math.cos(a) - y * Math.sin(a)) * r, y: (x * Math.sin(a) + y * Math.cos(a)) * r }; }); roundPoly(c, pts, r * .3); break; }
+    case 'ghost': c.moveTo(-r, r * .95); c.lineTo(-r, -r * .05); c.arc(0, -r * .05, r, Math.PI, 0); c.lineTo(r, r * .95);
+      for (let i = 0; i < 3; i++) { const x1 = r - (i + .5) * r * 2 / 3, x2 = r - (i + 1) * r * 2 / 3; c.quadraticCurveTo(x1, r * .55, x2, r * .95); } c.closePath(); break;
+    default: c.arc(0, 0, r, 0, 6.2832);
+  }
+}
+function drawHead(c, who, r, eye, mood) {
+  const temp = !who.shape, col = temp ? '#6b7399' : who.color;
+  c.save(); c.translate(0, 1.6); shapePath(c, temp ? 'round' : who.shape, r); c.fillStyle = 'rgba(0,0,0,.28)'; c.fill(); c.restore();
+  shapePath(c, temp ? 'round' : who.shape, r); c.fillStyle = col; c.fill();
+  c.save(); c.clip(); ellipse(c, -r * .35, -r * .55, r * .7, r * .45, 'rgba(255,255,255,.22)'); ellipse(c, 0, r * 1.25, r * 1.4, r * .7, 'rgba(0,0,0,.14)'); c.restore();
+  if (temp) { // 實習生：沒有固定臉，戴一頂顏色代表 CLI 的帽子
+    c.fillStyle = who.cap; c.beginPath(); c.arc(0, -r * .15, r * 1.02, Math.PI * 1.06, Math.PI * 1.94); c.closePath(); c.fill();
+    if (who.helper) ellipse(c, 0, -r * 1.12, r * .27, r * .27, '#f4f6ff');   // 工讀生：毛線帽加一顆球，沒有帽簷
+    else c.fillRect(eye.x > 0 ? 0 : -r * 1.5, -r * .3, r * 1.5, r * .3);
+  }
+  const ex = eye.x * r * .42, ey = -r * .06 + eye.y * r * .3, gap = r * .38;
+  if (mood === 'stuck') { c.strokeStyle = '#1a1b26'; c.lineWidth = 1.4; c.lineCap = 'round'; for (const s of [-1, 1]) { c.beginPath(); c.moveTo(ex + s * gap - r * .16, ey); c.lineTo(ex + s * gap + r * .16, ey + r * .06); c.stroke(); } c.lineCap = 'butt'; return; }
+  for (const s of [-1, 1]) { ellipse(c, ex + s * gap, ey, r * .23, r * .28, '#f4f6ff'); ellipse(c, ex + s * gap + eye.x * r * .08, ey + eye.y * r * .07 + r * .03, r * .12, r * .14, '#1a1b26'); }
+}
+const avCache = new Map();
+function avatarURL(who, size = 96) {
+  const key = who ? [who.name, who.shape, who.color, who.cap, size].join('|') : 'empty' + size; if (avCache.has(key)) return avCache.get(key);
+  const cv = document.createElement('canvas'); cv.width = cv.height = size; const c = cv.getContext('2d');
+  c.fillStyle = '#24283b'; c.beginPath(); c.roundRect(0, 0, size, size, size * .26); c.fill();
+  if (who) {
+    const col = who.shape ? who.color : '#6b7399', g = c.createRadialGradient(size / 2, size * .4, 2, size / 2, size / 2, size * .7);
+    g.addColorStop(0, alpha(col, .28)); g.addColorStop(1, alpha(col, 0)); c.fillStyle = g; c.fillRect(0, 0, size, size);
+    c.translate(size / 2, size * .54); drawHead(c, who, size * .3, { x: 0, y: .5 }, 'ok');
+  }
+  const u = cv.toDataURL(); avCache.set(key, u); return u;
+}
+
+/* ══════════ 4. 世界：資料 → 座位分配 → 版面 ══════════
+   M 是畫面看的唯一一份狀態；資料只從 update()（第 15 節）進來。
+   座位分配（誰坐哪一區第幾位）和幾何位置分開：分配是黏的（不見的 bot 位子保留），
+   幾何位置每次由分配算出來，房間移動有動畫。                                         */
+const LW = 14, G = 2.6, GR = 3.0, ZW = 10.8, COLP = 2.5, ROWP = 2.4, ZCAP = 12, TMAX = 9;
+const BY_TEAM = false, OPEN_ZONE = '辦公區';      // A：不分團隊，大家坐同一間（滿 12 人長出「辦公區 2」）；BY_TEAM = true 才照 team 分區
+const SEAT_HOLD_MS = 60 * 60 * 1000;          // 離開的 bot 位子保留多久（1 小時），之後讓出來
+const M = {
+  loaded: false, ver: 0, gen: 0,
+  ents: new Map(),      // key → 人：'b:'本機正職、't:'實習生、'h:'工讀生（subagent）、'p:電腦/id' 隔壁正職、'q:電腦/id' 隔壁實習生
+  peers: new Map(),     // id → { id, name, order:[key], assign: Map(key → idx) }
+  handoffs: new Map(),  // id → { id, from, to, title, status, landed }
+  zones: [],            // { key:'工程組#2', team, n }（建立順序）
+  assign: new Map(),    // 正職 id → { zone, slot }
+  tempSeat: new Map(),  // 實習生 id → 長桌第幾位
+  primaryId: null,
+  rooms: new Map(), seats: new Map(), LH: 7.4, spineX: LW + G / 2, streetY: [], bounds: { x0: 0, y0: 0, x1: 20, y1: 10 }, plaza: null,
+};
+const byCreated = (a, b) => (a.created - b.created) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const bots = () => [...M.ents.values()].filter(e => e.kind === 'bot');
+const zoneOf = key => M.zones.find(z => z.key === key);
+function overrides() { const o = store.get('seats', {}); return o && typeof o === 'object' ? o : {}; }
+function assignSeats() {
+  const all = bots(), live = all.filter(e => !e.gone);
+  const prim = live.filter(e => e.who.primary).sort(byCreated)[0];
+  if (prim) M.primaryId = prim.id; else if (!(M.primaryId && M.ents.get('b:' + M.primaryId) && M.ents.get('b:' + M.primaryId).gone)) M.primaryId = null;
+  // 換了團隊、或升成主要 bot 的，原位子收回
+  for (const [id, a] of [...M.assign]) { const e = M.ents.get('b:' + id), z = zoneOf(a.zone); if (!e || id === M.primaryId || !z || z.team !== e.who.team || (e.gone && Date.now() - (e.goneAt || 0) > SEAT_HOLD_MS)) M.assign.delete(id); }
+  const taken = key => { const s = new Set(); for (const a of M.assign.values()) if (a.zone === key) s.add(a.slot); return s; };
+  const ensureZone = (team, n) => { let z = M.zones.find(q => q.team === team && q.n === n); if (!z) { z = { key: team + '#' + n, team, n }; M.zones.push(z); } return z; };
+  const order = all.filter(e => e.id !== M.primaryId && !M.assign.has(e.id) && !e.gone).sort(byCreated);
+  // 先套用拖曳換過的位子（嵌在 ShellBot 時存在這台電腦，單獨打開時存在 localStorage）
+  const ov = overrides();
+  for (const e of order) { const o = ov[e.id]; if (!o || typeof o.zone !== 'string') continue; const [team, n] = o.zone.split('#'); if (team !== e.who.team || !(+n >= 1) || !(o.slot >= 0 && o.slot < ZCAP)) continue; for (let k = 1; k < +n; k++) ensureZone(team, k); const z = ensureZone(team, +n); if (!taken(z.key).has(o.slot)) M.assign.set(e.id, { zone: z.key, slot: o.slot }); }
+  // 其餘照規則：同團隊的區照順序補最小的空位；都滿了就長出新的一區
+  for (const e of order) {
+    if (M.assign.has(e.id)) continue; const team = e.who.team; let done = false;
+    for (const z of M.zones) { if (z.team !== team) continue; const u = taken(z.key); for (let i = 0; i < ZCAP; i++) if (!u.has(i)) { M.assign.set(e.id, { zone: z.key, slot: i }); done = true; break; } if (done) break; }
+    if (!done) { const n = M.zones.filter(z => z.team === team).length + 1, z = ensureZone(team, n); M.assign.set(e.id, { zone: z.key, slot: 0 }); }
+  }
+  // 實習生：長桌照到達順序坐最小的空位
+  const temps = [...M.ents.values()].filter(e => e.kind === 'temp');
+  for (const id of [...M.tempSeat.keys()]) if (!M.ents.get('t:' + id)) M.tempSeat.delete(id);
+  for (const e of temps.sort(byCreated)) { if (M.tempSeat.has(e.id)) continue; const u = new Set(M.tempSeat.values()); let i = 0; while (u.has(i)) i++; M.tempSeat.set(e.id, i); }
+  // 隔壁：每台電腦自己排
+  for (const pe of M.peers.values()) { const mine = [...M.ents.values()].filter(e => e.peerId === pe.id).sort((a, b) => (a.kind === 'peertemp') - (b.kind === 'peertemp') || byCreated(a, b));
+    for (const k of [...pe.assign.keys()]) if (!M.ents.get(k)) pe.assign.delete(k);
+    for (const e of mine) { if (pe.assign.has(e.key)) continue; const u = new Set(pe.assign.values()); let i = 0; while (u.has(i)) i++; pe.assign.set(e.key, i); } }
+  // 每個人的座位代號
+  for (const e of M.ents.values()) {
+    if (e.kind === 'bot') { const a = M.assign.get(e.id); e.seatKey = e.id === M.primaryId ? 'sec' : a ? `z:${a.zone}:${a.slot}` : null; }
+    else if (e.kind === 'temp') e.seatKey = 't:' + M.tempSeat.get(e.id);
+    else if (e.kind === 'helper') e.seatKey = null;   // 工讀生不佔位子：站在派他的人旁邊（helperSpot）
+    else { const pe = M.peers.get(e.peerId); e.seatKey = pe ? `p:${pe.id}:${pe.assign.get(e.key)}` : null; }
+  }
+}
+function setRoom(id, props) {
+  let r = M.rooms.get(id);
+  if (!r) { r = { id, born: T, x: props.tx, y: props.ty, w: props.tw, h: props.th, alpha: M.loaded && M.gen > 1 ? 0 : 1 }; M.rooms.set(id, r); }
+  Object.assign(r, props); r.gen = M.gen; return r;
+}
+function layout() {
+  M.gen++; const S = new Map(), seat = o => S.set(o.key, o);
+  // 大廳：秘書長辦公桌＋實習生長桌（人多就加長，一張坐滿 9 位再加一張）
+  let need = 0; for (const i of M.tempSeat.values()) need = Math.max(need, i + 1);
+  const nT = Math.max(4, Math.ceil(need / 2) * 2), tables = Math.ceil(nT / TMAX), LH = 7.4 + (tables - 1) * 2.3;
+  M.LH = LH; M.nT = nT; M.spineX = LW + G / 2;
+  setRoom('lobby', { kind: 'lobby', label: '大廳', tx: 0, ty: 0, tw: LW, th: LH, wallH: 66 });
+  seat({ key: 'sec', room: 'lobby', lx: 9.4, ly: 1.0, w: 1.05, h: 2.7, face: 'nx', big: true });
+  for (let i = 0; i < nT; i++) { const t = Math.floor(i / TMAX), j = i % TMAX; seat({ key: 't:' + i, room: 'lobby', lx: 1.6 + j * 1.2, ly: 4.8 + t * 2.3, w: 1.2, h: .75, face: 'ny', shared: true }); }
+  // 隔壁電腦：每台一間房，排在大廳前面
+  let py = LH + 3.6;
+  for (const pe of M.peers.values()) {
+    let n = 3; for (const i of pe.assign.values()) n = Math.max(n, i + 1);
+    const cols = Math.min(4, n), rows = Math.ceil(n / 4), w = .9 + cols * COLP + .9, h = .6 + rows * ROWP + .5;
+    setRoom('peer:' + pe.id, { kind: 'peer', label: '隔壁：' + pe.name, tx: .8, ty: py, tw: w, th: h, wallH: 40, peerId: pe.id });
+    for (let i = 0; i < n; i++) seat({ key: `p:${pe.id}:${i}`, room: 'peer:' + pe.id, lx: .9 + (i % 4) * COLP, ly: .6 + Math.floor(i / 4) * ROWP, w: 1.5, h: .8, face: 'ny' });
+    py += h + G;
+  }
+  const lobbyColY = M.peers.size ? py - G : LH;
+  // 各區：用到幾排就蓋幾排（最多 3 排 × 4 位）；欄數取「整層最不寬」的排法
+  const zs = M.zones.map(z => { let mx = -1; for (const a of M.assign.values()) if (a.zone === z.key) mx = Math.max(mx, a.slot); const rows = clamp(Math.ceil((mx + 1) / 4), 1, 3); return { z, rows, d: .6 + rows * ROWP + .3 }; });
+  let best = null;
+  for (let cN = 1; cN <= 4; cN++) {
+    const rd = []; zs.forEach((q, i) => { const r = Math.floor(i / cN); rd[r] = Math.max(rd[r] || 0, q.d); });
+    const zoneY = rd.reduce((a, d) => a + d + GR, 0), X = zs.length ? LW + G + cN * ZW + (cN - 1) * G : LW + G, Y = Math.max(lobbyColY, zoneY), sc = X + Y;
+    if (!best || sc < best.sc - .01) best = { cN, rd, X, Y, zoneY, sc };
+    if (zs.length <= cN) break;
+  }
+  const rowY = []; let acc = 0; best.rd.forEach((d, r) => { rowY[r] = acc; acc += d + GR; });
+  M.streetY = best.rd.map((d, r) => rowY[r] + d + GR / 2);
+  zs.forEach((q, i) => {
+    const col = i % best.cN, row = Math.floor(i / best.cN), tx = LW + G + col * (ZW + G), ty = rowY[row] + best.rd[row] - q.d;   // 同一排的房間前緣對齊走道
+    const id = 'z:' + q.z.key;
+    setRoom(id, { kind: 'zone', team: q.z.team, zone: q.z.key, label: q.z.team + (q.z.n > 1 ? ' ' + q.z.n : ''), tx, ty, tw: ZW, th: q.d, wallH: 40, row });
+    for (let s = 0; s < q.rows * 4; s++) seat({ key: `z:${q.z.key}:${s}`, room: id, lx: .9 + (s % 4) * COLP, ly: .6 + Math.floor(s / 4) * ROWP, w: 1.5, h: .8, face: 'ny', zone: q.z.key, slot: s });
+  });
+  for (const [id, r] of M.rooms) if (r.gen !== M.gen) M.rooms.delete(id);
+  M.seats = S;
+  M.plaza = { lobby: { x: 0, y: 0, w: LW, h: LH }, zone: { x: LW, y: 0, w: Math.max(G, best.X - LW), h: Math.max(LH, best.zoneY) } };
+  M.bounds = { x0: -.8, y0: -.6, x1: best.X + .4, y1: Math.max(best.Y, LH) + .4 };
+  // 座位上的人
+  for (const s of S.values()) s.occ = null;
+  for (const e of M.ents.values()) { const s = e.seatKey && S.get(e.seatKey); if (s) s.occ = e; }
+}
+// 幾何：tgt=true 用目標位置（排路線用），否則用目前（動畫中）位置
+function geo(s, tgt) {
+  const r = M.rooms.get(s.room); if (!r) return null;
+  const x = (tgt ? r.tx : r.x) + s.lx, y = (tgt ? r.ty : r.y) + s.ly, f = s.face === 'nx' ? { x: -1, y: 0 } : { x: 0, y: -1 };
+  return { x, y, w: s.w, h: s.h, face: s.face, f, big: s.big, shared: s.shared, cx: s.face === 'nx' ? x + s.w + .48 : x + s.w / 2, cy: s.face === 'nx' ? y + s.h / 2 : y + s.h + .48 };
+}
+const roomOfEnt = e => { const s = e && (e.kind === 'helper' ? parentSeat(e) : e.seatKey && M.seats.get(e.seatKey)); return s ? M.rooms.get(s.room) : null; };
+/* ── 工讀生（分頁派出去的 subagent）：不佔位子，站在派他的人的椅子旁邊或後面；同一張桌子超過 4 位只畫 3 位＋「+N」── */
+const HELPER_SHOW = 4, HELPER_CAP = '#ff9e64';
+function parentSeat(e) { const p = e && M.ents.get(e.parentKey); return p && !p.gone && p.seatKey ? M.seats.get(p.seatKey) || null : null; }
+function helperSpot(e) {
+  const s = parentSeat(e), g = s && geo(s); if (!g) return null;
+  const n = Math.max(1, e.slotN || 1), i = e.slot || 0, off = (i - (n - 1) / 2) * .4, back = .66;
+  if (g.face === 'nx') return { x: g.cx + back, y: g.cy - off };      // 秘書長辦公桌：站在椅子後面
+  if (g.shared) return { x: g.cx + off, y: g.cy + back };             // 長桌：左右是別的實習生，站在椅子後面
+  return { x: g.cx + .62 + i * .36, y: g.cy + .06 };                  // 辦公區：站在椅子旁邊（下一張桌子前還有空間）
+}
+function arrangeHelpers() {
+  const by = new Map();
+  for (const e of M.ents.values()) if (e.kind === 'helper') { e.more = 0; if (e.leaving) continue; if (!by.has(e.parentKey)) by.set(e.parentKey, []); by.get(e.parentKey).push(e); }
+  for (const list of by.values()) {
+    list.sort(byCreated); const n = list.length, shown = n > HELPER_SHOW ? 3 : n;
+    list.forEach((e, i) => { e.hidden = i >= shown; e.slot = Math.min(i, shown - 1); e.slotN = shown; });
+    if (n > shown) list[shown - 1].more = n - shown;   // 「+N」掛在離派他的人最遠那位的外側，不蓋到別人
+  }
+}
+
+/* ── 走路路線：座位 → 走道 → 中央走廊 → 走道 → 座位（不做尋路，只走固定的走道）── */
+function access(s) {
+  const r = M.rooms.get(s.room), g = geo(s, true), p = { x: g.cx, y: g.cy };
+  if (r.kind === 'zone') { const ay = p.y + .62, sy = M.streetY[r.row]; return [p, { x: p.x, y: ay }, { x: r.tx + .45, y: ay }, { x: r.tx + .45, y: sy }]; }
+  if (r.kind === 'lobby') { const ay = p.y + .62, fy = M.LH - .45; return [p, { x: p.x, y: ay }, { x: 1.0, y: ay }, { x: 1.0, y: fy }, { x: M.spineX, y: fy }]; }
+  return [p];
+}
+const entrance = () => [{ x: -.6, y: M.LH - .95 }, { x: 1.0, y: M.LH - .95 }, { x: 1.0, y: M.LH - .45 }, { x: M.spineX, y: M.LH - .45 }];
+const link = (a, b) => Math.abs(a.y - b.y) < .05 ? [] : [{ x: M.spineX, y: a.y }, { x: M.spineX, y: b.y }];
+function routeIn(s) { const a = entrance(), b = access(s); return [...a, ...link(a[a.length - 1], b[b.length - 1]), ...b.reverse()]; }
+function routeOut(s) { const a = access(s), b = entrance(); return [...a, ...link(a[a.length - 1], b[b.length - 1]), ...b.reverse()]; }
+function routeMove(s1, s2) {
+  if (s1.room === s2.room && M.rooms.get(s1.room).kind === 'zone') { const a = access(s1), b = access(s2); return [a[0], a[1], a[2], b[2], b[1], b[0]]; }
+  const a = access(s1), b = access(s2); return [...a, ...link(a[a.length - 1], b[b.length - 1]), ...b.reverse()];
+}
+function makeWalk(pts, dir, delay = 0) {
+  const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+  const L = cum[cum.length - 1]; return { pts, cum, L, t: -delay, dur: clamp(L / 7, .7, 9), dir };
+}
+function walkPos(w) {
+  const d = clamp(w.t / w.dur, 0, 1) * w.L; let i = 1; while (i < w.cum.length - 1 && w.cum[i] < d) i++;
+  const a = w.pts[i - 1], b = w.pts[i], seg = (w.cum[i] - w.cum[i - 1]) || 1, u = clamp((d - w.cum[i - 1]) / seg, 0, 1);
+  return { x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), dx: b.x - a.x, dy: b.y - a.y };
+}
+function reroute(skip) { // 版面變了：目的地移動了的人，從目前位置改走新的路
+  for (const e of M.ents.values()) { const w = e.walk; if (!w || w.dir === 'out' || e.kind === 'helper' || (skip && skip.has(e))) continue; const s = M.seats.get(e.seatKey); if (!s) { e.walk = null; continue; }
+    const g = geo(s, true), end = w.pts[w.pts.length - 1]; if (Math.hypot(end.x - g.cx, end.y - g.cy) < .05) continue;
+    if (w.t < 0) { e.walk = makeWalk(routeIn(s), w.dir, -w.t); continue; }
+    const cur = walkPos(w), b = access(s); const pts = [{ x: cur.x, y: cur.y }, { x: M.spineX, y: cur.y }, ...link({ y: cur.y }, b[b.length - 1]), ...b.reverse()]; e.walk = makeWalk(pts, w.dir); }
+}
+
+/* ══════════ 5. 畫布、鏡頭（改自 40-render.js 的 focus／pan／zoomAt／step／t2s）══════════ */
+const cv = $('#stage'), c = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, T = 0;
+const cam = { x: 0, y: 0, z: 1 }; let goal = null, area = 'all';
+const isMobile = () => W <= 720;
+const wantTp = () => V.to < .5 && W < H && W <= 720;
+const t2s = (x, y, z = 0) => { const p = P(x, y, z); return { x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }; };
+function viewRect() {
+  const top = $('#top').getBoundingClientRect().bottom; let l = 0, r = W, t = top, b = H;
+  if (follow) { const pr = $('#panel').getBoundingClientRect(); if (isMobile()) b = H - Math.min(pr.height, H * .6); else r = W - pr.width - 24; }
+  return { l, r, t, b, w: r - l, h: b - t, cx: (l + r) / 2, cy: (t + b) / 2 };
+}
+const aim = (p, sx, sy, z) => ({ x: p.x - (sx - W / 2) / z, y: p.y - (sy - H / 2) / z, z });
+function worldBox(x0, y0, x1, y1, zTop) {
+  let a = 1e9, b = 1e9, cc = -1e9, d = -1e9;
+  for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) for (const z of [-SLAB, zTop]) { const p = P(x, y, z); a = Math.min(a, p.x); b = Math.min(b, p.y); cc = Math.max(cc, p.x); d = Math.max(d, p.y); }
+  return { x0: a, y0: b, x1: cc, y1: d, w: cc - a, h: d - b };
+}
+function withTarget(fn) { const m = V.m, tp = V.tp; V.m = V.to; V.tp = wantTp(); const r = fn(); V.m = m; V.tp = tp; return r; }
+function areaBox(id) {
+  const r = M.rooms.get(id), B = M.bounds;
+  return r ? worldBox(r.tx - .4, r.ty - .4, r.tx + r.tw + .4, r.ty + r.th + .4, r.wallH + 44) : worldBox(B.x0, B.y0, B.x1, B.y1, 80);
+}
+function fitGoal(id = area) {
+  return withTarget(() => {
+    const b = areaBox(id), vr = viewRect(), pad = isMobile() ? 14 : 32, foot = follow ? 0 : isMobile() ? 24 : 64;
+    const z = clamp(Math.min((vr.w - pad * 2) / b.w, (vr.h - pad * 2 - foot) / b.h), .12, id === 'all' ? 1.9 : 1.7);
+    return aim({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }, vr.cx, vr.cy - foot / 2, z);
+  });
+}
+function fit(instant) { goal = fitGoal(); if (instant) { Object.assign(cam, goal); goal = null; } kick(); }
+function setArea(id, instant) { area = M.rooms.has(id) ? id : 'all'; const sel = $('#area'); if (sel.value !== area) sel.value = area; if (follow) stopFollow(true); fit(instant); }
+function zoomAt(f, sx, sy) {
+  const z0 = cam.z, z1 = clamp(z0 * f, .12, 2.6); if (z1 === z0) return; goal = null; followCam = false;
+  const wx = (sx - W / 2) / z0 + cam.x, wy = (sy - H / 2) / z0 + cam.y; cam.z = z1; cam.x = wx - (sx - W / 2) / z1; cam.y = wy - (sy - H / 2) / z1;
+}
+function clampCam() { const B = M.bounds, b = worldBox(B.x0, B.y0, B.x1, B.y1, 80); cam.x = clamp(cam.x, b.x0, b.x1); cam.y = clamp(cam.y, b.y0, b.y1); }
+function entPos(e) { if (e.walk && e.walk.t >= 0) return walkPos(e.walk); if (e.kind === 'helper') return helperSpot(e); const s = M.seats.get(e.seatKey), g = s && geo(s); return g ? { x: g.cx, y: g.cy } : null; }
+function camStep(dt) {
+  if (follow && followCam) { const e = M.ents.get(follow), p = e && entPos(e); if (p) { const vr = viewRect(), z = isMobile() ? (V.to < .5 ? 1.25 : 1.05) : (V.to < .5 ? 1.35 : 1.6); goal = aim(P(p.x, p.y, 22), vr.cx, vr.cy + 10, Math.max(z, Math.min(cam.z, 2.2))); } }
+  if (goal) {
+    const k = 1 - Math.exp(-dt * 5), g = goal;
+    cam.x += (g.x - cam.x) * k; cam.y += (g.y - cam.y) * k; cam.z += (g.z - cam.z) * k;
+    if (Math.abs(g.x - cam.x) < .4 && Math.abs(g.y - cam.y) < .4 && Math.abs(g.z - cam.z) < .002) { cam.x = g.x; cam.y = g.y; cam.z = g.z; if (!(follow && followCam)) goal = null; }
+  }
+  clampCam();
+}
+const camMoving = () => !!goal && (Math.abs(goal.x - cam.x) > .6 || Math.abs(goal.y - cam.y) > .6 || Math.abs(goal.z - cam.z) > .003);
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  const tp = wantTp(); if (tp !== V.tp && V.k >= 1) V.tp = tp;
+  placeControls(); if (!follow) fit(true); kick();
+}
+
+/* ══════════ 6. 地板、牆、房間 ══════════ */
+let lodFar = false;   // 遠景：只畫桌面、頭像、狀態燈（縮放 < 0.34 進入、> 0.39 離開，避免來回閃）
+const lod = () => { if (!lodFar && cam.z < .34) lodFar = true; else if (lodFar && cam.z > .39) lodFar = false; return lodFar; };
+function gridLines(x, x0, y0, w, h, col) {
+  x.beginPath(); for (let i = 1; i < w; i++) { const a = P(x0 + i, y0), b = P(x0 + i, y0 + h); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); }
+  for (let j = 1; j < h; j++) { const a = P(x0, y0 + j), b = P(x0 + w, y0 + j); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); } x.strokeStyle = col; x.lineWidth = 1; x.stroke();
+}
+function drawPlaza(x, far) {
+  const pz = M.plaza; if (!pz) return;
+  const slab = { l: '#191b29', r: '#13141e', t: '#1e2131' };
+  box(x, pz.lobby.x, pz.lobby.y, pz.lobby.w, pz.lobby.h, -SLAB, SLAB, { ...slab, t: '#22253a' });
+  if (pz.zone.w > 0) { box(x, pz.zone.x, pz.zone.y, pz.zone.w, pz.zone.h, -SLAB, SLAB, slab); if (!far) gridLines(x, pz.zone.x, pz.zone.y, Math.round(pz.zone.w), Math.round(pz.zone.h), 'rgba(192,202,245,.028)'); }
+  // 中央走廊的導引線
+  if (!far && pz.zone.w > 0) { const a = P(M.spineX, .6), b = P(M.spineX, pz.zone.h - .6); x.setLineDash([2, 8]); x.strokeStyle = 'rgba(192,202,245,.12)'; x.lineWidth = 2; x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.stroke(); x.setLineDash([]); }
+  // 到隔壁電腦的連線橋
+  let fromY = M.LH;   // 第一台從大廳前緣接過去，第二台以後從前一台的前緣接（不穿過別的房間）
+  for (const r of [...M.rooms.values()].filter(q => q.kind === 'peer').sort((a, b) => a.ty - b.ty)) {
+    const y0 = fromY; fromY = r.y + r.h;
+    box(x, r.x + 1.2, y0, 1.1, Math.max(0, r.y - y0), -SLAB * .6, SLAB * .6, { l: '#171925', r: '#12131b', t: '#1c1f2e' });
+    const a = P(r.x + 1.75, y0 - .2, 1), b = P(r.x + 1.75, r.y + .3, 1);
+    x.setLineDash([5, 7]); x.lineDashOffset = RM ? 0 : -T * 14; x.strokeStyle = alpha(COL.teal, .6); x.lineWidth = 2; x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.stroke(); x.setLineDash([]); x.lineDashOffset = 0;
+  }
+}
+function wallFace(x, x0, y0, x1, y1, H, n, skip, glow) { // 窗（夜景）
+  for (let i = 0; i < n; i++) { if (skip && skip(i)) continue; const u1 = (i + .14) / n, u2 = (i + .86) / n;
+    poly(x, wq(x0, y0, x1, y1, u1, u2, H * .36, H * .82), '#1b2442', 'rgba(125,207,255,.16)', 1);
+    poly(x, wq(x0, y0, x1, y1, u1, u2, H * .74, H * .82), 'rgba(125,207,255,.10)');
+    const k = hash2(i + Math.round(x0 * 3), Math.round(y0 * 7) + n); if (k > .45) poly(x, wq(x0, y0, x1, y1, lerp(u1, u2, .2), lerp(u1, u2, .26), H * .45, H * .52), 'rgba(224,175,104,.35)');
+    if (k > .7) poly(x, wq(x0, y0, x1, y1, lerp(u1, u2, .62), lerp(u1, u2, .7), H * .5, H * .58), alpha(glow || COL.blue, .35)); }
+}
+const WALL = { lobby: { l: '#2b2f47', r: '#252840', t: '#3d4363' }, zone: { l: '#292d44', r: '#23263b', t: '#3a4060' }, peer: { l: '#263045', r: '#20293c', t: '#3a4b68' } };
+function drawRoomShell(x, r, far) {
+  const th = .22, Hh = r.wallH, cols = WALL[r.kind], edge = 'rgba(192,202,245,.12)';
+  if (r.kind === 'peer') { box(x, r.x, r.y, r.w, r.h, -SLAB, SLAB, { l: '#191b29', r: '#13141e', t: '#1e2738' }); }
+  if (r.kind === 'zone') { poly(x, fquad(r.x, r.y, r.x + r.w, r.y + r.h, .1), shade(teamCol(r.team), -.84)); poly(x, fquad(r.x, r.y, r.x + r.w, r.y + r.h, .1), null, alpha(teamCol(r.team), .22), 1.2); }
+  if (!far && r.kind !== 'lobby') gridLines(x, r.x, r.y, Math.round(r.w), Math.round(r.h), 'rgba(192,202,245,.035)');
+  if (r.kind === 'lobby') {
+    if (!far) gridLines(x, r.x, r.y, r.w, Math.round(r.h), 'rgba(192,202,245,.035)');
+    poly(x, fquad(8.9, .5, 12.6, 4.25, .2), '#2a2440', alpha(COL.purple, .35), 1.4);      // 秘書長的地毯
+    if (!far) poly(x, fquad(9.15, .75, 12.35, 4.0, .2), null, alpha(COL.purple, .14), 1);
+    const tx1 = 1.6 + Math.min(TMAX, M.nT) * 1.2 + .25;                                       // 實習生區的虛線框
+    x.setLineDash([6, 5]); poly(x, fquad(1.35, 4.55, tx1, M.LH - .15, .2), alpha(COL.yellow, .05), alpha(COL.yellow, .35), 1.2); x.setLineDash([]);
+  }
+  // 牆：後牆（沿 x）與左牆（沿 y）；大廳左牆有大門，隔壁電腦的後牆有門
+  if (r.kind === 'peer') { const d0 = r.x + 1.2, d1 = r.x + 2.3;
+    box(x, r.x - th, r.y - th, d0 - r.x + th, th, 0, Hh, cols, edge); box(x, d1, r.y - th, r.x + r.w - d1, th, 0, Hh, cols, edge); box(x, d0, r.y - th, d1 - d0, th, Hh - 14, 14, cols);
+    poly(x, wq(d0, r.y, d1, r.y, 0, 1, 0, Hh - 14), 'rgba(10,11,18,.55)', alpha(COL.teal, .4), 1.2);
+  } else box(x, r.x - th, r.y - th, r.w + th, th, 0, Hh, cols, edge);
+  if (r.kind === 'lobby') { const d0 = M.LH - 1.5, d1 = M.LH - .4;
+    box(x, r.x - th, r.y, th, d0 - r.y, 0, Hh, cols, edge); box(x, r.x - th, d1, th, r.y + r.h - d1, 0, Hh, cols, edge); box(x, r.x - th, d0, th, d1 - d0, Hh - 14, 14, cols);
+    poly(x, wq(r.x, d0, r.x, d1, 0, 1, 0, Hh - 14), 'rgba(10,11,18,.55)', alpha(COL.green, .45), 1.2);
+  } else box(x, r.x - th, r.y, th, r.h, 0, Hh, cols, edge);
+  if (far) return;
+  poly(x, wq(r.x, r.y, r.x + r.w, r.y, 0, 1, 0, 4), 'rgba(0,0,0,.18)'); poly(x, wq(r.x, r.y, r.x, r.y + r.h, 0, 1, 0, 4), 'rgba(0,0,0,.18)');
+  if (r.kind === 'lobby') {
+    wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 7, i => i <= 2 || i === 4);
+    wallFace(x, r.x, r.y, r.x, r.y + Math.min(r.h, 5.5), Hh, 3, i => i === 0);
+    poly(x, wq(1.4, 0, 4.9, 0, 0, 1, 28, 60), '#c8cde3', 'rgba(255,255,255,.4)', 1);          // 白板＋便利貼
+    [COL.blue, COL.yellow, COL.green, COL.purple, COL.blue, COL.red, COL.green].forEach((n, i) => { const col = i % 3, row = (i / 3) | 0, u = .08 + col * .3 + (row % 2) * .06, z = 52 - row * 10; poly(x, wq(1.4, 0, 4.9, 0, u, u + .1, z - 7, z), alpha(n, .85)); });
+  } else if (r.kind === 'zone') {
+    wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 4, null, teamCol(r.team));
+    poly(x, wq(r.x, r.y, r.x + r.w, r.y, 0, 1, Hh - 8, Hh - 4), alpha(teamCol(r.team), .55));   // 團隊色帶
+    if (r.h > 4) wallFace(x, r.x, r.y, r.x, r.y + r.h, Hh, 2, null, teamCol(r.team));
+  } else wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 3, i => i === 0, COL.teal);
+}
+
+/* ══════════ 7. 家具與人物（近景）══════════ */
+const DESK = { t: '#3a3f5c', l: '#2a2e45', r: '#22263a' }, BIGDESK = { t: '#4a4068', l: '#352d4f', r: '#2a2440' }, TABLE = { t: '#43405a', l: '#302d44', r: '#272538' };
+const CHAIR = { t: '#2f3349', l: '#282b40', r: '#202336' }, CHAIRB = { t: '#3d425f', l: '#363b56', r: '#2c3048' }, MON = { t: '#2a2d40', l: '#16161e', r: '#16161e' };
+const EDGE = 'rgba(192,202,245,.10)';
+const deskH = g => g.big ? 22 : 20;
+const pScale = e => lerp(.9, 1, V.m) * (e && e.kind === 'helper' ? .8 : e && e.kind === 'bot' && e.who.primary ? 1.3 : 1.12);
+function faceVec(g) { const a = P(g.cx, g.cy), b = P(g.cx + g.f.x, g.cy + g.f.y), dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; }
+function monitorGeo(g) {
+  const H = deskH(g);
+  if (g.shared) return { lap: true, x0: g.cx - .26, x1: g.cx + .26, y: g.y + .2, z0: H + 1.5, z1: H + 12.5, base: [g.cx - .26, g.y + .2, .52, .3] };
+  if (g.face === 'ny') { const w = g.big ? 1.1 : .78, x0 = g.x + g.w / 2 - w / 2; return { bx: [x0, g.y + .13, w, .08], plane: [x0, g.y + .21, x0 + w, g.y + .21], z0: H + 5, z1: H + 23 }; }
+  const w = g.big ? 1.15 : .78, y0 = g.y + g.h / 2 - w / 2; return { bx: [g.x + .13, y0, .08, w], plane: [g.x + .21, y0, g.x + .21, y0 + w], z0: H + 5, z1: H + 23 };
+}
+const SCREEN = { working: ['#1c2c55', COL.blue], decision: ['#3a1d2a', COL.red], stuck: ['#3a2c17', COL.yellow], done: ['#17301f', COL.green], idle: ['#1a1d2c', '#3d4466'], asleep: ['#0d0e14', '#0d0e14'], empty: ['#0d0e14', '#0d0e14'] };
+function drawScreen(x, q, st, seed) {
+  const at = (u, v) => ({ x: lerp(lerp(q[0].x, q[1].x, u), lerp(q[3].x, q[2].x, u), v), y: lerp(lerp(q[0].y, q[1].y, u), lerp(q[3].y, q[2].y, u), v) });
+  const rect = (u1, v1, u2, v2, col) => poly(x, [at(u1, v1), at(u2, v1), at(u2, v2), at(u1, v2)], col);
+  const [bg] = SCREEN[st] || SCREEN.idle; poly(x, q, bg);
+  if (st === 'working') { const off = RM ? 0 : (T * .9 + seed * 3) % 1;
+    for (let i = 0; i < 5; i++) { const v = .16 + (i - off) * .18; if (v < .1 || v > .86) continue; const L = .25 + .55 * hash2(i + Math.floor(T * .9 + seed * 3), 7 + seed * 10 | 0); rect(.12 + (i % 2) * .08, v, .12 + L, v + .07, alpha(i % 3 ? COL.blue : COL.cyan, .9)); } }
+  else if (st === 'decision') { rect(.14, .2, .86, .38, alpha(COL.red, .9)); rect(.14, .48, .7, .6, 'rgba(192,202,245,.35)'); rect(.14, .7, .62, .82, 'rgba(192,202,245,.35)'); }
+  else if (st === 'stuck') { poly(x, [at(.5, .14), at(.72, .82), at(.28, .82)], COL.yellow); rect(.475, .38, .525, .62, '#3a2c17'); rect(.475, .68, .525, .74, '#3a2c17'); }
+  else if (st === 'done') { x.strokeStyle = COL.green; x.lineWidth = 2; x.lineCap = 'round'; x.beginPath(); const a = at(.3, .5), b = at(.45, .68), d = at(.72, .3); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.lineTo(d.x, d.y); x.stroke(); x.lineCap = 'butt'; }
+  else if (st === 'idle') { const u = .2 + .6 * (.5 + .5 * Math.sin(T * .7 + seed * 5)), v = .3 + .4 * (.5 + .5 * Math.sin(T * .53 + seed)); rect(u - .05, v - .07, u + .05, v + .07, 'rgba(122,162,247,.35)'); }
+}
+function lightPool(x, g, col) { const m = P(g.cx + g.f.x * .55, g.cy + g.f.y * .55, deskH(g));
+  const gr = x.createRadialGradient(m.x, m.y, 2, m.x, m.y, 34); gr.addColorStop(0, alpha(col, .2)); gr.addColorStop(1, alpha(col, 0)); x.fillStyle = gr; x.fillRect(m.x - 36, m.y - 36, 72, 72); }
+function drawMonitor(x, g, st, seed) {
+  const mg = monitorGeo(g), lit = (SCREEN[st] || SCREEN.idle)[1];
+  if (mg.lap) {
+    box(x, mg.base[0], mg.base[1], mg.base[2], mg.base[3], deskH(g), 1.5, { t: '#4a4f6e', l: '#33374f', r: '#2a2d42' });
+    const q = wq(mg.x0, mg.y, mg.x1, mg.y, 0, 1, mg.z0, mg.z1); poly(x, q, '#16161e', 'rgba(192,202,245,.18)', 1);
+    if (st !== 'empty') drawScreen(x, wq(mg.x0, mg.y, mg.x1, mg.y, .08, .92, mg.z0 + 1.5, mg.z1 - 1.2), st, seed);
+    if (V.m < .5 && st !== 'empty') poly(x, fquad(mg.base[0], mg.base[1], mg.base[0] + mg.base[2], mg.base[1] + mg.base[3], deskH(g) + 1.6), alpha(lit, .55 * (1 - V.m * 2)));
+    return;
+  }
+  const [bx, by, bw, bh] = mg.bx, cxm = bx + bw / 2, cym = by + bh / 2;
+  box(x, cxm - .05, cym - .05, .1, .1, deskH(g), 5, MON); box(x, cxm - .16, cym - .1, .32, .2, deskH(g), 1.2, MON);
+  const f = box(x, bx, by, bw, bh, mg.z0, mg.z1 - mg.z0, MON, 'rgba(192,202,245,.14)');
+  const [x0, y0, x1, y1] = mg.plane; drawScreen(x, wq(x0, y0, x1, y1, .07, .93, mg.z0 + 2, mg.z1 - 2), st, seed);
+  if (V.m < .5 && st !== 'asleep' && st !== 'empty') poly(x, [f.A, f.B, f.C, f.D], alpha(lit, .7 * (1 - V.m * 2)));
+}
+function drawChair(x, g, part) {
+  if (g.shared) { if (part === 'seat') box(x, g.cx - .18, g.cy - .18, .36, .36, 0, 11, CHAIR, EDGE); return; }
+  if (part === 'seat') { box(x, g.cx - .05, g.cy - .05, .1, .1, 0, 9, CHAIR); box(x, g.cx - .23, g.cy - .23, .46, .46, 9, 3.5, CHAIR, EDGE); return; }
+  if (g.face === 'ny') box(x, g.cx - .23, g.cy + .19, .46, .07, 12, 12, CHAIRB, EDGE); else box(x, g.cx + .19, g.cy - .23, .07, .46, 12, 12, CHAIRB, EDGE);
+}
+function drawNameplate(x, g, col, dim) {
+  if (g.shared) return; const H = deskH(g);
+  if (g.face === 'ny') { const xm = g.x + g.w / 2, yy = g.y + g.h + .001; poly(x, wq(xm - .32, yy, xm + .32, yy, 0, 1, H - 9, H - 2), dim ? '#1d1f2e' : '#151724'); poly(x, wq(xm - .32, yy, xm + .32, yy, 0, .12, H - 9, H - 2), alpha(col, dim ? .25 : .9)); }
+  else { const ym = g.y + g.h / 2, xx = g.x + g.w + .001; poly(x, wq(xx, ym - .32, xx, ym + .32, 0, 1, H - 9, H - 2), dim ? '#1d1f2e' : '#151724'); poly(x, wq(xx, ym - .32, xx, ym + .32, 0, .12, H - 9, H - 2), alpha(col, dim ? .25 : .9)); }
+}
+// 人物：坐在椅子上；頭＝頭像形狀
+function drawPerson(x, g, e, its, ia) {
+  const who = e.who, st = e.st, fsv = faceVec(g), sc = pScale(e), temp = !who.shape;
+  const body = temp ? '#414868' : shade(who.color, -.5), t = T + e.seed * 10, p = P(g.cx, g.cy, 12);
+  x.save(); x.translate(p.x, p.y); x.scale(sc, sc);
+  let lean = 0, bob = 0;
+  if (st === 'working' && !RM) bob = Math.abs(Math.sin(t * 7)) * .7;
+  if (st === 'idle' || st === 'done') lean = fsv.x < -.2 ? .14 : fsv.x > .2 ? -.14 : 0;
+  ellipse(x, 0, 12, 8, 3.5, 'rgba(0,0,0,.22)');
+  x.rotate(lean); x.translate(0, -bob);
+  x.fillStyle = body; x.beginPath(); x.roundRect(-6.5, -15, 13, 15.5, [6.5, 6.5, 3, 3]); x.fill();
+  x.fillStyle = 'rgba(255,255,255,.08)'; x.fillRect(-4.5, -12, 2.4, 9);
+  if (its) for (const q of its) if (q.k === 'body') { x.save(); x.translate(0, -8); q.it.draw(x, { r: 7.5 }, ia); x.restore(); }
+  if (temp) { x.fillStyle = '#e6e9f5'; x.fillRect(-1.6, -9, 3.2, 4); x.fillStyle = who.cap; x.fillRect(-1.6, -9, 3.2, 1.2); }
+  const hx = fsv.x * 7.5, hy = -7 + fsv.y * 3.5, hand = shade(temp ? '#8089b3' : who.color, -.15);
+  if (st === 'working') { const k = RM ? 0 : (Math.floor(t * 8) % 2 ? 1 : -1); ellipse(x, hx - 3, hy + k, 2.4, 2.2, hand); ellipse(x, hx + 3, hy - k, 2.4, 2.2, hand); }
+  else if (st === 'decision') { ellipse(x, -fsv.x * 2 + 8, -24 + (RM ? 0 : Math.sin(t * 4) * .8), 2.4, 2.4, hand); x.strokeStyle = body; x.lineWidth = 3; x.beginPath(); x.moveTo(5, -12); x.lineTo(-fsv.x * 2 + 8, -22); x.stroke(); }
+  else if (st === 'idle' || st === 'done') {
+    const mx = fsv.x < 0 ? 6.5 : -9.5, my = -10; x.fillStyle = '#e6e9f5'; x.beginPath(); x.roundRect(mx, my, 4.4, 5.2, 1); x.fill();
+    x.strokeStyle = '#e6e9f5'; x.lineWidth = 1.1; x.beginPath(); x.arc(mx + 4.6, my + 2.5, 1.5, -1.4, 1.4); x.stroke(); ellipse(x, mx + 2.2, my + .6, 1.6, .7, '#6b4a33');
+    if (!RM) { x.strokeStyle = 'rgba(192,202,245,.32)'; x.lineWidth = 1; const ga = x.globalAlpha; for (let i = 0; i < 2; i++) { const ph = (t * .6 + i * .5) % 1, sx = mx + 1.3 + i * 1.8; x.globalAlpha = ga * (1 - ph); x.beginPath(); x.moveTo(sx, my - 1 - ph * 7); x.quadraticCurveTo(sx + 1.6 * Math.sin(t * 2 + i), my - 3 - ph * 7, sx, my - 5 - ph * 7); x.stroke(); } x.globalAlpha = ga; }
+    ellipse(x, mx - 1, my + 3, 2.3, 2.1, hand);
+  } else if (st === 'stuck') { ellipse(x, hx - 2.5, hy + 1.5, 2.3, 2.1, hand); ellipse(x, hx + 2.5, hy + 1.5, 2.3, 2.1, hand); }
+  x.translate(0, -23 - (st === 'stuck' ? -1.5 : 0));
+  const eye = st === 'decision' ? { x: 0, y: .7 } : st === 'idle' || st === 'done' ? { x: fsv.x * .4, y: .35 } : { x: fsv.x, y: fsv.y };
+  drawHead(x, who, temp ? 7.6 : 8.8, eye, st === 'stuck' ? 'stuck' : 'ok');
+  if (its) for (const q of its) if (q.k === 'head') q.it.draw(x, { r: temp ? 7.6 : 8.8 }, ia);
+  x.restore();
+}
+function drawWalker(x, e, far) {
+  const w = e.walk, p0 = walkPos(w), k = clamp(w.t / w.dur, 0, 1), p = P(p0.x, p0.y, 0), who = e.who;
+  const fade = w.dir === 'out' ? clamp((1 - k) * 8, 0, 1) : clamp(k * 10, 0, 1), step = RM ? 0 : Math.sin(T * 14 + e.seed);
+  const faceX = P(p0.x + p0.dx, p0.y + p0.dy).x - P(p0.x, p0.y).x < 0 ? -1 : 1, sc = lerp(.9, 1, V.m) * (e.kind === 'helper' ? .8 : 1.12);
+  x.save(); x.globalAlpha *= fade; x.translate(p.x, p.y); x.scale(sc, sc);
+  if (far) { x.fillStyle = who.shape ? shade(who.color, -.45) : '#414868'; x.beginPath(); x.roundRect(-5, -16, 10, 16, 4); x.fill(); x.translate(0, -22); shapePath(x, who.shape || 'round', 7.5); x.fillStyle = who.shape ? who.color : '#6b7399'; x.fill(); x.restore(); return; }
+  ellipse(x, 0, 0, 7, 3.2, 'rgba(0,0,0,.25)');
+  x.fillStyle = '#2b2f45'; x.fillRect(-4, -9 + Math.max(0, step) * 2, 3, 9 - Math.max(0, step) * 2); x.fillRect(1, -9 - Math.min(0, step) * 2, 3, 9 + Math.min(0, step) * 2);
+  x.translate(0, -9 - Math.abs(step) * .8); x.fillStyle = who.shape ? shade(who.color, -.5) : '#414868'; x.beginPath(); x.roundRect(-6, -14, 12, 14.5, [6, 6, 3, 3]); x.fill();
+  if (!who.shape) { x.fillStyle = '#e6e9f5'; x.fillRect(-1.6, -9, 3.2, 4); x.fillStyle = who.cap; x.fillRect(-1.6, -9, 3.2, 1.2); }
+  x.translate(0, -21); drawHead(x, who, who.shape ? 8.4 : 7.6, { x: faceX * .8, y: .2 }, 'ok');
+  x.restore();
+}
+// 工讀生站著：比較小、戴橘色毛線帽；在忙手上拿一張單子，卡住就垂著手（頭上的黃色警示由第 12 節的文字層畫）
+function drawHelper(x, e, far) {
+  const sp = helperSpot(e); if (!sp) return;
+  const p = P(sp.x, sp.y, 0), who = e.who, st = e.st, t = T + e.seed * 10, sc = pScale(e), dim = hl && !matches(hl, e) ? .26 : 1;
+  x.save(); x.globalAlpha *= dim * (e.vis == null ? 1 : e.vis); x.translate(p.x, p.y); x.scale(sc, sc);
+  if (follow === e.key) ellipse(x, 0, 0, 12, 5.5, alpha(COL.blue, .12), alpha(COL.blue, .8), 1.6);
+  else if (hoverKey === e.key) ellipse(x, 0, 0, 11, 5, null, 'rgba(192,202,245,.35)', 1.2);
+  if (far) { x.fillStyle = '#414868'; x.beginPath(); x.roundRect(-5, -16, 10, 16, 4); x.fill(); x.translate(0, -22); shapePath(x, 'round', 7); x.fillStyle = '#6b7399'; x.fill(); x.fillStyle = who.cap; x.beginPath(); x.arc(0, -1, 7.1, Math.PI, 0); x.fill(); x.restore(); return; }
+  ellipse(x, 0, 0, 7, 3.2, 'rgba(0,0,0,.25)');
+  const bob = st === 'working' && !RM ? Math.abs(Math.sin(t * 6)) * .8 : 0;
+  x.fillStyle = '#2b2f45'; x.fillRect(-4, -9, 3, 9); x.fillRect(1, -9, 3, 9);
+  x.translate(0, -9 - bob); x.fillStyle = '#414868'; x.beginPath(); x.roundRect(-6, -14, 12, 14.5, [6, 6, 3, 3]); x.fill();
+  x.fillStyle = '#e6e9f5'; x.fillRect(-1.6, -9, 3.2, 4); x.fillStyle = who.cap; x.fillRect(-1.6, -9, 3.2, 1.2);
+  const hand = '#8089b3';
+  if (st === 'working') { x.save(); x.rotate(-.12); x.fillStyle = '#e6e9f5'; x.fillRect(3, -12, 6, 8); x.fillStyle = '#9aa5ce'; x.fillRect(4.2, -10, 3.6, .9); x.fillRect(4.2, -8, 2.8, .9); x.fillRect(4.2, -6, 3.2, .9); x.restore(); ellipse(x, 4, -6, 2.2, 2, hand); }
+  else if (st === 'stuck') { ellipse(x, -6.5, -2, 2.1, 1.9, hand); ellipse(x, 6.5, -2, 2.1, 1.9, hand); }
+  else ellipse(x, 6, -4, 2.1, 1.9, hand);
+  x.translate(0, -21); drawHead(x, who, 7.2, { x: 0, y: .3 }, st === 'stuck' ? 'stuck' : 'ok');
+  x.restore();
+}
+function drawDecor(x, d) {
+  if (d.kind === 'shelf') {
+    box(x, d.x, d.y, d.w, d.h, 0, 48, { t: '#3a3550', l: '#2c2840', r: '#262236' }, EDGE);
+    const bc = [COL.blue, COL.red, COL.yellow, COL.green, COL.purple, COL.cyan];
+    for (let row = 0; row < 3; row++) for (let i = 0; i < 6; i++) { if (hash2(i, row) < .25) continue; const u = .06 + i * .15, z = 6 + row * 14; poly(x, wq(d.x + d.w, d.y, d.x + d.w, d.y + d.h, u, u + .1, z, z + 9 + hash2(row, i) * 3), alpha(bc[(i + row * 2) % 6], .55)); }
+  } else if (d.kind === 'counter') {
+    box(x, d.x, d.y, d.w, d.h, 0, 20, { t: '#45495f', l: '#33364a', r: '#2a2c3d' }, EDGE);
+    box(x, d.x + .15, d.y + .12, .5, .42, 20, 20, { t: '#2a2c3a', l: '#1c1d27', r: '#16171f' }, EDGE);
+    const lp = P(d.x + .4, d.y + .54, 33); ellipse(x, lp.x, lp.y, 1.6, 1.6, alpha(COL.red, .8 + .2 * Math.sin(T * 2)));
+    for (let i = 0; i < 2; i++) { const p = P(d.x + 1.0 + i * .22, d.y + .38, 20); x.fillStyle = i ? '#9aa5ce' : '#c0caf5'; x.beginPath(); x.roundRect(p.x - 2.2, p.y - 5.5, 4.4, 5.5, 1); x.fill(); }
+  } else if (d.kind === 'plant') {
+    const s = d.s || 1; box(x, d.x + .1, d.y + .1, d.w - .2, d.h - .2, 0, 11 * s, { t: '#3b2f2a', l: '#5a463b', r: '#4a3a31' }, EDGE);
+    const p = P(d.x + d.w / 2, d.y + d.h / 2, 11 * s), sway = RM ? 0 : Math.sin(T * .8 + d.x) * .8;
+    [[-6, -6, 7], [6, -7, 7], [0, -14, 8], [-3, -20, 6], [4, -19, 6]].forEach(([ox, oy, r], i) => ellipse(x, p.x + ox * s + sway * (i > 2 ? 1 : .4), p.y + oy * s, r * s, r * s * .85, i % 2 ? '#3f7a4c' : '#4f9460'));
+    ellipse(x, p.x - 3 * s, p.y - 17 * s, 3 * s, 2.2 * s, 'rgba(255,255,255,.12)');
+  } else if (d.kind === 'sofa') {
+    box(x, d.x, d.y, d.w, d.h, 0, 9, { t: '#3b4566', l: '#2e3652', r: '#262c44' }, EDGE);
+    box(x, d.x, d.y, .2, d.h, 9, 12, { t: '#46517a', l: '#36406a', r: '#2e3659' }, EDGE);
+    box(x, d.x + .2, d.y, d.w - .2, .16, 9, 7, { t: '#46517a', l: '#36406a', r: '#2e3659' });
+  } else if (d.kind === 'rack') {
+    box(x, d.x, d.y, d.w, d.h, 0, 50, { t: '#262a3c', l: '#191b27', r: '#14151f' }, EDGE);
+    for (let i = 0; i < 5; i++) { const z = 8 + i * 8.5, on = RM ? 1 : (Math.sin(T * (2 + i * .7) + i) > -.2); poly(x, wq(d.x, d.y + d.h, d.x + d.w, d.y + d.h, .15, .85, z, z + 4.5), '#0f1018'); const lp = P(d.x + .12 + (i % 2) * .08, d.y + d.h, z + 2.2); ellipse(x, lp.x, lp.y, 1.2, 1.2, on ? COL.teal : '#2a3b3a'); }
+  }
+}
+function decorOf(r) {
+  if (r.kind === 'lobby') return [{ x: .2, y: .6, w: .5, h: 1.7, kind: 'shelf' }, { x: 5.6, y: .3, w: 1.5, h: .7, kind: 'counter' }, { x: 13.25, y: .35, w: .6, h: .6, kind: 'plant', s: 1.15 }, { x: .35, y: 3.3, w: .6, h: .6, kind: 'plant', s: 1 }, { x: 1.4, y: 2.3, w: 1.7, h: .75, kind: 'sofa' }, { x: 13.2, y: M.LH - .95, w: .6, h: .6, kind: 'plant', s: 1.2 }];
+  if (r.kind === 'zone') return [{ x: r.x + r.w - .72, y: r.y + .3, w: .55, h: .55, kind: 'plant', s: .9 }];
+  if (r.kind === 'peer') return [{ x: r.x + r.w - .75, y: r.y + .5, w: .55, h: 1.2, kind: 'rack' }];
+  return [];
+}
+/* ══════════ 7.5 配件庫（ITEMS）：配件是資料，加一筆就多一件 ══════════
+   每一筆：
+     id       唯一代號（英文）
+     name     { zh, en }
+     slot     放哪裡：'desk' 桌上（spot：'side' 桌角，'front' 桌面前緣）、'floor' 桌旁地上、
+              'wall' 牆上（桌後的小看板）、'head' 頭上、'body' 身上
+     tags     適合的職能關鍵字（中英文），拿去比對 bot 的執掌、名字、團隊；對到越多越優先
+     generic  通用配件：關鍵字對不到時拿來補
+     temp     實習生也會拿到（桌上只放一件小東西）
+     tempOnly 只給實習生（正職不會自動拿到）
+     draw(x, s, a)
+       s：desk／floor → { x, y, w, h, z }（格子座標，已對齊桌面；z＝桌面高度 px，地上是 0）
+          wall → { x0, y0, x1, y1, z }（小看板正面的底線）；head／body → { r }（像素，原點在頭／身體中心）
+       a：{ face:'ny'|'nx', col:主人的顏色, st:主人的狀態, lit:螢幕亮著, t:動畫時間 }
+   畫法以 box／poly／ellipse／wq／fquad 為主，細節（線、圓弧、漸層）可以直接用 canvas 指令；縮圖也用同一個 draw 畫。                       */
+const PANEL = { t: '#3d425f', l: '#33384f', r: '#2a2e42' };
+const qAt = (q, u, v) => ({ x: lerp(lerp(q[0].x, q[1].x, u), lerp(q[3].x, q[2].x, u), v), y: lerp(lerp(q[0].y, q[1].y, u), lerp(q[3].y, q[2].y, u), v) });
+function codeLines(x, q, t) { const off = RM ? 0 : (t * .8) % 1; for (let i = 0; i < 4; i++) { const v = .2 + (i - off) * .2; if (v < .12 || v > .82) continue; const L = .3 + .5 * hash2(i + Math.floor(t * .8), 3); poly(x, [qAt(q, .12, v), qAt(q, .12 + L, v), qAt(q, .12 + L, v + .09), qAt(q, .12, v + .09)], alpha(i % 2 ? COL.cyan : COL.green, .85)); } }
+const ITEMS = [
+  // ── 工程 ──
+  { id: 'dualMonitor', name: { zh: '雙螢幕', en: 'Dual monitor' }, slot: 'desk', spot: 'side', tags: ['工程', '程式', '寫程式', 'code', 'dev', 'engineer', '前端', 'frontend', '切版', '測試', 'test', '建置', 'build'],
+    draw(x, s, a) { const cx = s.x + s.w / 2, cy = s.y + s.h / 2; box(x, cx - .04, cy - .04, .08, .08, s.z, 5, MON);
+      const ny = a.face !== 'nx'; if (ny) box(x, s.x, cy - .03, s.w, .06, s.z + 5, 14, MON, 'rgba(192,202,245,.14)'); else box(x, cx - .03, s.y, .06, s.h, s.z + 5, 14, MON, 'rgba(192,202,245,.14)');
+      const q = ny ? wq(s.x, cy + .03, s.x + s.w, cy + .03, .08, .92, s.z + 7, s.z + 17) : wq(cx + .03, s.y, cx + .03, s.y + s.h, .08, .92, s.z + 7, s.z + 17); poly(x, q, a.lit ? '#14303f' : '#0d0e14'); if (a.lit) codeLines(x, q, a.t); } },
+  { id: 'keyboard', name: { zh: '機械鍵盤', en: 'Mechanical keyboard' }, slot: 'desk', spot: 'front', tags: ['工程', '程式', 'code', 'dev', '前端', '切版', '文書', '信件', 'typing', 'write'],
+    draw(x, s, a) { box(x, s.x, s.y, s.w, s.h, s.z, 2.5, { t: '#30344a', l: '#1f2232', r: '#191b28' }, 'rgba(192,202,245,.12)'); const long = s.w >= s.h;
+      for (let i = 0; i < 6; i++) for (let j = 0; j < 2; j++) { const u = (i + .18) / 6, v = (j + .22) / 2, du = .64 / 6, dv = .56 / 2, x0 = s.x + (long ? u : v) * s.w, y0 = s.y + (long ? v : u) * s.h;
+        poly(x, fquad(x0, y0, x0 + (long ? du : dv) * s.w, y0 + (long ? dv : du) * s.h, s.z + 2.7), (i * 2 + j) % 5 === 1 ? alpha(a.col, .95) : '#a9b1d6'); } } },
+  { id: 'duck', name: { zh: '橡皮鴨', en: 'Rubber duck' }, slot: 'desk', spot: 'side', tags: ['工程', '程式', '修錯', 'bug', 'debug', '審查', 'review', '程式碼', 'code'],
+    draw(x, s, a) { const p = P(s.x + s.w / 2, s.y + s.h / 2, s.z); ellipse(x, p.x, p.y, 7, 3, 'rgba(0,0,0,.25)'); ellipse(x, p.x, p.y - 4, 6.5, 4.6, '#f5d547'); ellipse(x, p.x - 3, p.y - 9.5, 3.8, 3.6, '#f5d547');
+      poly(x, [{ x: p.x - 6.5, y: p.y - 10 }, { x: p.x - 9.8, y: p.y - 9 }, { x: p.x - 6.5, y: p.y - 8 }], '#ff9e64'); ellipse(x, p.x - 4, p.y - 10.4, .9, .9, '#1a1b26'); ellipse(x, p.x + 1.5, p.y - 6, 2.6, 1.4, 'rgba(255,255,255,.35)'); } },
+  // ── 設計 ──
+  { id: 'tablet', name: { zh: '繪圖板', en: 'Drawing tablet' }, slot: 'desk', spot: 'front', tags: ['設計', '介面', '草圖', '圖稿', 'design', 'ui', 'sketch', '樣式', 'style', 'draw'],
+    draw(x, s, a) { box(x, s.x, s.y, s.w, s.h, s.z, 1.6, { t: '#1d1f2e', l: '#151724', r: '#11121c' }, 'rgba(192,202,245,.16)'); poly(x, fquad(s.x + s.w * .14, s.y + s.h * .18, s.x + s.w * .86, s.y + s.h * .82, s.z + 1.7), '#2b3150');
+      const q = P(s.x + s.w * .45, s.y + s.h * .5, s.z + 1.8); x.strokeStyle = alpha(a.col, .95); x.lineWidth = 1.3; x.beginPath(); x.moveTo(q.x - 7, q.y + 1); x.quadraticCurveTo(q.x - 2, q.y - 5, q.x + 4, q.y + 1); x.stroke();
+      const p1 = P(s.x + s.w * .8, s.y + s.h * .3, s.z + 8), p2 = P(s.x + s.w * .62, s.y + s.h * .58, s.z + 2); x.strokeStyle = '#e6e9f5'; x.lineWidth = 2; x.lineCap = 'round'; x.beginPath(); x.moveTo(p1.x, p1.y); x.lineTo(p2.x, p2.y); x.stroke(); x.lineCap = 'butt'; } },
+  { id: 'swatches', name: { zh: '色票卡', en: 'Swatch cards' }, slot: 'wall', tags: ['設計', '色', '樣式', '圖稿', '品牌', 'design', 'color', 'style', 'brand'],
+    draw(x, s, a) { ['#f7768e', '#e0af68', '#9ece6a', '#7dcfff', '#bb9af7'].forEach((c, i) => { const u = .1 + i * .165; poly(x, wq(s.x0, s.y0, s.x1, s.y1, u, u + .13, s.z + 6 + (i % 2) * 2, s.z + 21 + (i % 2) * 2), c); }); } },
+  { id: 'lamp', name: { zh: '檯燈', en: 'Desk lamp' }, slot: 'desk', spot: 'side', tags: ['設計', '草圖', '閱讀', '校對', '潤稿', '翻譯', '編輯', 'design', 'read', 'edit', 'write'],
+    draw(x, s, a) { const b0 = P(s.x + s.w * .5, s.y + s.h * .55, s.z); ellipse(x, b0.x, b0.y, 5, 2.5, '#3b4261'); x.strokeStyle = '#7c84ad'; x.lineWidth = 1.6; x.beginPath(); x.moveTo(b0.x, b0.y - 1); x.lineTo(b0.x - 3, b0.y - 12); x.lineTo(b0.x + 4, b0.y - 19); x.stroke();
+      const gl = x.createRadialGradient(b0.x + 5, b0.y - 12, 1, b0.x + 5, b0.y - 6, 18); gl.addColorStop(0, alpha(COL.yellow, .32)); gl.addColorStop(1, alpha(COL.yellow, 0)); x.fillStyle = gl; x.fillRect(b0.x - 14, b0.y - 30, 38, 38);
+      poly(x, [{ x: b0.x + 1, y: b0.y - 20 }, { x: b0.x + 8, y: b0.y - 21.5 }, { x: b0.x + 10.5, y: b0.y - 14 }, { x: b0.x + 2.5, y: b0.y - 14 }], a.col); } },
+  // ── 研究 ──
+  { id: 'books', name: { zh: '書堆', en: 'Book stack' }, slot: 'desk', spot: 'side', tags: ['研究', '資料', '摘要', '文件', '翻譯', '編輯', '報表', 'research', 'paper', 'docs', 'read', 'edit'],
+    draw(x, s, a) { ['#7aa2f7', '#e0af68', '#9ece6a'].forEach((c, i) => { const o = i % 2 ? .03 : 0; box(x, s.x + .04 + o, s.y + .06 - o, s.w - .1, s.h - .16, s.z + i * 4, 4, { t: '#e6e9f5', l: c, r: shade(c, -.3) }); }); } },
+  { id: 'magnifier', name: { zh: '放大鏡', en: 'Magnifier' }, slot: 'desk', spot: 'side', tags: ['研究', '比較', '分析', '審查', '檢查', '查資料', 'research', 'analy', 'review', 'inspect', 'compare'],
+    draw(x, s, a) { const p = P(s.x + s.w / 2, s.y + s.h / 2, s.z + 1); x.strokeStyle = '#8a6246'; x.lineWidth = 3; x.lineCap = 'round'; x.beginPath(); x.moveTo(p.x + 3, p.y + 1); x.lineTo(p.x + 10, p.y + 4.5); x.stroke(); x.lineCap = 'butt';
+      ellipse(x, p.x - 2, p.y - 1, 6.5, 4, 'rgba(125,207,255,.28)', '#c0caf5', 1.6); ellipse(x, p.x - 4, p.y - 2, 2, 1, 'rgba(255,255,255,.55)'); } },
+  { id: 'globe', name: { zh: '地球儀', en: 'Globe' }, slot: 'desk', spot: 'side', tags: ['研究', '市場', '翻譯', '國際', '地圖', 'research', 'market', 'translate', 'global', 'world'],
+    draw(x, s, a) { const p = P(s.x + s.w / 2, s.y + s.h / 2, s.z); ellipse(x, p.x, p.y, 5, 2.4, '#3b4261'); x.strokeStyle = '#7c84ad'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(p.x, p.y); x.lineTo(p.x, p.y - 5); x.stroke();
+      const c0 = { x: p.x, y: p.y - 13 }, sp = RM ? 0 : (a.t * 2.5) % 15; ellipse(x, c0.x, c0.y, 7.5, 7.5, '#3d59a1'); x.save(); x.beginPath(); x.arc(c0.x, c0.y, 7.5, 0, 6.2832); x.clip();
+      ellipse(x, c0.x - 7 + sp, c0.y - 2, 3.6, 2.6, '#9ece6a'); ellipse(x, c0.x - 12 + sp, c0.y + 3, 2.6, 2, '#9ece6a'); ellipse(x, c0.x + 8 + sp - 15, c0.y + 1, 2.2, 3, '#9ece6a'); x.restore();
+      ellipse(x, c0.x, c0.y, 8.6, 8.6, null, '#a9b1d6', 1.2); ellipse(x, c0.x - 2.5, c0.y - 3, 2, 1.3, 'rgba(255,255,255,.35)'); } },
+  // ── 維運 ──
+  { id: 'rack', name: { zh: '小機櫃', en: 'Mini rack' }, slot: 'floor', tags: ['維運', '部署', '監控', '建置', '伺服器', 'ops', 'deploy', 'server', 'infra', 'build'],
+    draw(x, s, a) { box(x, s.x, s.y, s.w, s.h, 0, 26, { t: '#262a3c', l: '#191b27', r: '#14151f' }, 'rgba(192,202,245,.12)');
+      for (let i = 0; i < 3; i++) { const z = 5 + i * 7, on = RM || Math.sin(a.t * (2.2 + i) + i * 2) > -.3; poly(x, wq(s.x, s.y + s.h, s.x + s.w, s.y + s.h, .12, .88, z, z + 4), '#0f1018'); const lp = P(s.x + .1, s.y + s.h, z + 2); ellipse(x, lp.x, lp.y, 1.1, 1.1, on ? COL.teal : '#2a3b3a'); } } },
+  { id: 'towerLight', name: { zh: '監控燈', en: 'Status tower light' }, slot: 'desk', spot: 'side', tags: ['維運', '監控', '告警', '測試', '回歸', '值班', 'monitor', 'alert', 'ops', 'status'],
+    draw(x, s, a) { const p = P(s.x + s.w / 2, s.y + s.h / 2, s.z); ellipse(x, p.x, p.y, 4, 2, '#3b4261'); x.fillStyle = '#7c84ad'; x.fillRect(p.x - .8, p.y - 8, 1.6, 8);   // 燈號跟著主人的狀態：綠＝正常、黃＝卡住、紅＝等你
+      [['#2f6b3a', COL.green, ['working', 'idle', 'done']], ['#6b5a2f', COL.yellow, ['stuck']], ['#6b2f3a', COL.red, ['decision']]].forEach(([off, on, sts], i) => { const lit = sts.includes(a.st); x.fillStyle = lit ? on : off; x.beginPath(); x.roundRect(p.x - 3.2, p.y - 13 - i * 5, 6.4, 4.6, 1.5); x.fill(); if (lit) { x.fillStyle = alpha(on, .22); x.beginPath(); x.arc(p.x, p.y - 11 - i * 5, 7, 0, 6.2832); x.fill(); } }); } },
+  { id: 'walkie', name: { zh: '對講機', en: 'Walkie-talkie' }, slot: 'body', tags: ['維運', '告警', '客服', '值班', '聯絡', '回覆', 'ops', 'oncall', 'support', 'radio'],
+    draw(x, s, a) { const r = s.r; x.fillStyle = '#1d1f2e'; x.beginPath(); x.roundRect(r * .5, -r * .25, r * .45, r * .75, 1.5); x.fill(); x.strokeStyle = '#565f89'; x.lineWidth = 1.2; x.beginPath(); x.moveTo(r * .62, -r * .25); x.lineTo(r * .62, -r * .7); x.stroke();
+      ellipse(x, r * .73, -r * .08, 1, 1, RM || Math.sin(a.t * 4) > 0 ? COL.green : '#2f6b3a'); } },
+  // ── 秘書／行政 ──
+  { id: 'calendar', name: { zh: '行事曆', en: 'Calendar' }, slot: 'wall', tags: ['排程', '提醒', '秘書', '統籌', '會議', '行事', 'schedule', 'calendar', 'remind', 'meeting', 'coordinat'],
+    draw(x, s, a) { poly(x, wq(s.x0, s.y0, s.x1, s.y1, .1, .9, s.z + 5, s.z + 23), '#e6e9f5'); poly(x, wq(s.x0, s.y0, s.x1, s.y1, .1, .9, s.z + 18, s.z + 23), COL.red);
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) poly(x, wq(s.x0, s.y0, s.x1, s.y1, .18 + i * .25, .32 + i * .25, s.z + 7.5 + j * 5, s.z + 10.5 + j * 5), i === 1 && j === 1 ? alpha(COL.red, .85) : '#9aa5ce'); } },
+  { id: 'stamp', name: { zh: '印章', en: 'Stamp' }, slot: 'desk', spot: 'side', tags: ['秘書', '行政', '採購', '核准', '簽核', '報價', 'admin', 'approve', 'stamp', 'procure'],
+    draw(x, s, a) { box(x, s.x + .02, s.y + .08, s.w * .5, s.h * .55, s.z, 2, { t: '#a3354a', l: '#5a1d29', r: '#4a1822' }); const p = P(s.x + s.w * .75, s.y + s.h * .45, s.z);
+      ellipse(x, p.x, p.y, 3.4, 1.8, '#c0392b'); x.fillStyle = '#6b4a33'; x.fillRect(p.x - 2.4, p.y - 9, 4.8, 9); ellipse(x, p.x, p.y - 9, 2.4, 1.2, '#8a6246'); ellipse(x, p.x, p.y - 11, 3.2, 3, '#8a6246'); } },
+  { id: 'fileTray', name: { zh: '文件匣', en: 'File tray' }, slot: 'desk', spot: 'side', tags: ['文書', '紀錄', '信件', '文件', '秘書', '統籌', '行政', '整理', 'docs', 'mail', 'record', 'admin'],
+    draw(x, s, a) { for (let i = 0; i < 2; i++) { const z = s.z + i * 6; box(x, s.x + .02, s.y + .04, s.w - .06, s.h - .1, z, 1.2, { t: '#3b4261', l: '#2b3048', r: '#24283b' }, 'rgba(192,202,245,.12)'); poly(x, fquad(s.x + .07 + i * .02, s.y + .08, s.x + s.w - .1 + i * .02, s.y + s.h - .14, z + 1.6), '#e6e9f5'); } } },
+  // ── 通用 ──
+  { id: 'plant', name: { zh: '盆栽', en: 'Potted plant' }, slot: 'floor', generic: true, tags: ['植物', 'plant'],
+    draw(x, s, a) { box(x, s.x + .06, s.y + .06, s.w - .12, s.h - .12, 0, 9, { t: '#3b2f2a', l: '#5a463b', r: '#4a3a31' }); const p = P(s.x + s.w / 2, s.y + s.h / 2, 9), sw = RM ? 0 : Math.sin(a.t * .8 + s.x) * .6;
+      [[-4, -4, 5], [4, -5, 5], [0, -10, 6], [-2, -14, 4.5], [3, -13, 4.5]].forEach(([ox, oy, r], i) => ellipse(x, p.x + ox + sw * (i > 2 ? 1 : .4), p.y + oy, r, r * .85, i % 2 ? '#3f7a4c' : '#4f9460')); } },
+  { id: 'mug', name: { zh: '馬克杯', en: 'Mug' }, slot: 'desk', spot: 'side', generic: true, temp: true, tags: ['咖啡', '茶', 'coffee', 'tea'],
+    draw(x, s, a) { const p = P(s.x + s.w / 2, s.y + s.h / 2, s.z); ellipse(x, p.x, p.y, 4.5, 2.2, 'rgba(0,0,0,.25)'); x.fillStyle = a.col; x.beginPath(); x.roundRect(p.x - 3.5, p.y - 8, 7, 8, 1.6); x.fill();
+      x.strokeStyle = a.col; x.lineWidth = 1.4; x.beginPath(); x.arc(p.x + 4, p.y - 4.5, 2, -1.3, 1.3); x.stroke(); ellipse(x, p.x, p.y - 8, 3.5, 1.4, '#6b4a33');
+      if (!RM) { x.strokeStyle = 'rgba(192,202,245,.3)'; x.lineWidth = 1; const ph = (a.t * .6) % 1; x.beginPath(); x.moveTo(p.x - 1, p.y - 10 - ph * 6); x.quadraticCurveTo(p.x + 1.5, p.y - 12 - ph * 6, p.x - 1, p.y - 15 - ph * 6); x.stroke(); } } },
+  { id: 'headphones', name: { zh: '耳機', en: 'Headphones' }, slot: 'head', tags: ['工程', '程式', '設計', '翻譯', 'focus', 'code', 'design', 'translate'],
+    draw(x, s, a) { const r = s.r; x.strokeStyle = '#2b3048'; x.lineWidth = 2.2; x.beginPath(); x.arc(0, -r * .05, r * 1.06, Math.PI * 1.08, Math.PI * 1.92); x.stroke();
+      for (const sd of [-1, 1]) { x.fillStyle = shade(a.col, -.55); x.beginPath(); x.roundRect(sd * r * 1.02 - 2.3, -r * .38, 4.6, r * .72, 2); x.fill(); } } },
+  { id: 'sticky', name: { zh: '便利貼', en: 'Sticky notes' }, slot: 'desk', spot: 'side', generic: true, temp: true, tempOnly: true, tags: ['待辦', '提醒', 'todo', 'note'],
+    draw(x, s, a) { ['#e0af68', '#f7768e', '#9ece6a'].forEach((c, i) => poly(x, fquad(s.x + .03 + i * .06, s.y + .05 + i * .05, s.x + .2 + i * .06, s.y + .2 + i * .05, s.z + .4 + i * .4), c)); } },
+];
+const ITEM = Object.fromEntries(ITEMS.map(it => [it.id, it]));
+const SLOT_NAME = { side: '桌角', front: '桌面前緣', floor: '桌旁地上', wall: '牆上看板', head: '頭上', body: '身上' };
+const slotKey = it => it.slot === 'desk' ? (it.spot === 'front' ? 'front' : 'side') : it.slot;
+const hashStr = str => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
+const isTempEnt = e => e.kind === 'temp' || e.kind === 'peertemp';
+function capacityOf(e) { const s = M.seats.get(e.seatKey); if (!s || s.shared) return { side: 1, front: 0, floor: 0, wall: 0, head: 0, body: 0 }; return { side: s.big ? 3 : 2, front: 1, floor: 1, wall: 1, head: 1, body: 1 }; }
+function itemOverrides() { const o = store.get('items', {}); return o && typeof o === 'object' ? o : {}; }
+function autoItems(e) {  // 自動配：照執掌比對關鍵字；固定種子，同一個人每次都一樣
+  if (isTempEnt(e)) { const pool = ITEMS.filter(it => it.temp); return [pool[Math.floor(hashStr(e.id + '#t') * pool.length)].id]; }
+  const text = [e.who.duty, e.who.name, e.who.team].join(' ').toLowerCase(), cap = capacityOf(e), used = {}, out = [], n = 2 + (hashStr(e.id + '#n') < .5 ? 1 : 0);
+  const take = it => { const k = slotKey(it); if ((used[k] || 0) >= cap[k] || out.includes(it.id)) return; used[k] = (used[k] || 0) + 1; out.push(it.id); };
+  ITEMS.filter(it => !it.generic && !it.tempOnly).map(it => ({ it, s: it.tags.reduce((a, k) => a + (text.includes(k.toLowerCase()) ? 1 : 0), 0), r: hashStr(e.id + '|' + it.id) })).filter(q => q.s > 0).sort((a, b) => b.s - a.s || a.r - b.r).forEach(q => { if (out.length < n) take(q.it); });
+  ITEMS.filter(it => it.generic && !it.tempOnly).sort((a, b) => hashStr(e.id + a.id) - hashStr(e.id + b.id)).forEach(it => { if (out.length < 2) take(it); });
+  return out;
+}
+function itemsOf(e) {
+  if (e.kind === 'bot') { const o = itemOverrides()[e.id]; if (Array.isArray(o)) return o.filter(id => ITEM[id]); }
+  const sig = [e.who.duty, e.who.name, e.who.team, e.seatKey].join('|'); if (e._itSig !== sig) { e._itSig = sig; e._items = autoItems(e); } return e._items;
+}
+function spotsOf(g) {  // 桌上、地上、看板的位置（格子座標）；大小對齊桌面
+  const z = deskH(g);
+  if (g.shared) return { side: [{ x: g.x + g.w - .34, y: g.y + .12, w: .28, h: .28, z }], front: null, floor: null, wall: null };
+  if (g.face === 'nx') return { side: [{ x: g.x + .1, y: g.y + .42, w: .36, h: .34, z }, { x: g.x + .55, y: g.y + g.h - .62, w: .4, h: .4, z }, { x: g.x + .55, y: g.y + .4, w: .4, h: .4, z }],
+    front: { x: g.x + .62, y: g.y + g.h / 2 - .3, w: .26, h: .6, z }, floor: { x: g.x - .58, y: g.y + .25, w: .44, h: .44, z: 0 }, wall: { x0: g.x + .1, y0: g.y + g.h - .4, x1: g.x + .1, y1: g.y + g.h - .08, z } };
+  return { side: [{ x: g.x + .06, y: g.y + .08, w: .4, h: .4, z }, { x: g.x + g.w - .48, y: g.y + .34, w: .42, h: .4, z }],
+    front: { x: g.x + .44, y: g.y + .5, w: .52, h: .22, z }, floor: { x: g.x + g.w + .12, y: g.y + .16, w: .42, h: .42, z: 0 }, wall: { x0: g.x + g.w - .34, y0: g.y + .1, x1: g.x + g.w - .04, y1: g.y + .1, z } };
+}
+function placeItems(e, g) {
+  const sp = spotsOf(g), side = [...sp.side], out = []; let front = sp.front;
+  for (const id of itemsOf(e)) { const it = ITEM[id]; if (!it) continue; const k = slotKey(it); let s = null;
+    if (k === 'side') s = side.shift(); else if (k === 'front') { s = front; front = null; } else if (k === 'floor') s = sp.floor; else if (k === 'wall') s = sp.wall;
+    if (s || ((k === 'head' || k === 'body') && !g.shared)) out.push({ it, k, s }); }
+  return out;
+}
+function drawWallBoard(x, s, face) { // 牆上看板：桌後角落的小看板（不擋到後一排的人）
+  if (face === 'nx') box(x, s.x0 - .05, s.y0, .05, s.y1 - s.y0, s.z, 26, PANEL, EDGE); else box(x, s.x0, s.y0 - .05, s.x1 - s.x0, .05, s.z, 26, PANEL, EDGE);
+}
+const thumbCache = new Map();
+function itemThumb(it, size = 96) {  // 縮圖：用同一個 draw 畫在一塊小桌面／地板／看板上
+  if (thumbCache.has(it.id)) return thumbCache.get(it.id);
+  const cvs = document.createElement('canvas'); cvs.width = cvs.height = size; const x = cvs.getContext('2d'), sv = { m: V.m, tp: V.tp };
+  V.m = 1; V.tp = false;
+  try {
+    x.fillStyle = '#24283b'; x.beginPath(); x.roundRect(0, 0, size, size, size * .2); x.fill();
+    const k = size / 48, a = { face: 'ny', col: COL.purple, st: 'working', lit: true, t: 1.3 }, sk = slotKey(it);
+    x.translate(size / 2, size * .66); x.scale(k, k);
+    if (sk === 'head' || sk === 'body') { x.translate(0, 8); x.fillStyle = '#414868'; x.beginPath(); x.roundRect(-6.5, -15, 13, 15.5, [6.5, 6.5, 3, 3]); x.fill(); if (sk === 'body') { x.save(); x.translate(0, -8); x.scale(1.6, 1.6); it.draw(x, { r: 7.5 }, a); x.restore(); } x.translate(0, -23); drawHead(x, { name: '', shape: 'round', color: '#7c84ad' }, 8.8, { x: 0, y: .5 }, 'ok'); if (sk === 'head') it.draw(x, { r: 8.8 }, a); }
+    else { x.setTransform(1, 0, 0, 1, 0, 0); x.translate(size / 2, size * .7); x.scale(size / 36, size / 36); const o = P(.5, .5, 0); x.translate(-o.x, -o.y);
+      if (sk === 'floor') { poly(x, fquad(-.1, -.1, 1.1, 1.1, 0), '#2a2e45', 'rgba(192,202,245,.08)'); it.draw(x, { x: .28, y: .28, w: .44, h: .44, z: 0 }, a); }
+      else { box(x, -.6, -.6, 2.2, 2.2, -8, 8, DESK); poly(x, fquad(-.6, -.6, 1.6, 1.6, 0), null, 'rgba(192,202,245,.06)');
+        if (sk === 'wall') { const s = { x0: .3, y0: .55, x1: .78, y1: .55, z: 0 }; drawWallBoard(x, s, 'ny'); it.draw(x, s, a); }
+        else it.draw(x, sk === 'front' ? { x: .18, y: .38, w: .64, h: .26, z: 0 } : { x: .29, y: .29, w: .42, h: .42, z: 0 }, a); } }
+  } finally { V.m = sv.m; V.tp = sv.tp; }
+  const u = cvs.toDataURL(); thumbCache.set(it.id, u); return u;
+}
+
+const entSt = e => !e ? 'empty' : e.gone ? 'asleep' : e.st;
+function drawSeatNear(x, s, g) {
+  const e = s.occ, st = e && e.walk && e.walk.dir === 'in' ? 'empty' : entSt(e), dimmed = hl && !(e && !e.gone && matches(hl, e)) ? .26 : 1; x.globalAlpha = dimmed * s.ra;
+  const fp = P(g.cx + g.f.x * .25, g.cy + g.f.y * .25), R = floorR(.62);
+  if (e && follow === e.key) ellipse(x, fp.x, fp.y, R.rx * 1.18, R.ry * 1.18, alpha(COL.blue, .12), alpha(COL.blue, .75 + (RM ? 0 : .2 * Math.sin(T * 2.5))), 2);
+  else if (hl && e && !e.gone && matches(hl, e)) ellipse(x, fp.x, fp.y, R.rx * 1.1, R.ry * 1.1, alpha(hlColor(), .1), alpha(hlColor(), .55 + (RM ? 0 : .3 * Math.sin(T * 3))), 2);
+  else if (st === 'decision') ellipse(x, fp.x, fp.y, R.rx, R.ry, alpha(COL.red, .07), alpha(COL.red, .3), 1.2);
+  else if (e && hoverKey === e.key) ellipse(x, fp.x, fp.y, R.rx, R.ry, null, 'rgba(192,202,245,.35)', 1.2);
+  box(x, g.x, g.y, g.w, g.h, 0, deskH(g), g.big ? BIGDESK : g.shared ? TABLE : DESK, EDGE);
+  if (g.big) { poly(x, wq(g.x + g.w, g.y, g.x + g.w, g.y + g.h, 0, 1, deskH(g) - 3, deskH(g) - 1.5), alpha(COL.yellow, .55));
+    const lp = P(g.x + .3, g.y + .26, deskH(g)); box(x, g.x + .2, g.y + .16, .2, .2, deskH(g), 2, MON); x.strokeStyle = '#4a4f6e'; x.lineWidth = 1.6; x.beginPath(); x.moveTo(lp.x, lp.y - 2); x.lineTo(lp.x + 3, lp.y - 14); x.stroke();
+    const gl = x.createRadialGradient(lp.x + 3, lp.y - 13, 1, lp.x + 3, lp.y - 13, 16); gl.addColorStop(0, alpha(COL.yellow, .35)); gl.addColorStop(1, alpha(COL.yellow, 0)); x.fillStyle = gl; x.fillRect(lp.x - 13, lp.y - 29, 32, 32);
+    poly(x, [{ x: lp.x - 2, y: lp.y - 13 }, { x: lp.x + 8, y: lp.y - 13 }, { x: lp.x + 5.5, y: lp.y - 18 }, { x: lp.x + .5, y: lp.y - 18 }], alpha(COL.yellow, .9)); }
+  // 配件：牆上看板 → 桌上（在螢幕後面的先畫）→ 螢幕 → 桌上（前面的）→ 人 → 地上
+  const its = e && !e.gone ? placeItems(e, g) : []; itemsDrawn += its.length; const ia = e ? { face: g.face, col: e.who.shape ? e.who.color : e.who.cap, st, lit: st !== 'asleep', t: T + e.seed } : null;
+  for (const q of its) if (q.k === 'wall') { drawWallBoard(x, q.s, g.face); q.it.draw(x, q.s, ia); }
+  if (e) drawNameplate(x, g, e.who.shape ? e.who.color : COL.mute, st === 'asleep');
+  if (e && !e.gone && st !== 'asleep' && st !== 'idle') lightPool(x, g, SCREEN[st][1]);
+  const mg0 = monitorGeo(g), mDepth = mg0.lap ? P(g.cx, mg0.y).y : P(mg0.bx[0] + mg0.bx[2] / 2, mg0.bx[1] + mg0.bx[3] / 2).y, deskIts = its.filter(q => q.k === 'side' || q.k === 'front').map(q => ({ ...q, d: P(q.s.x + q.s.w / 2, q.s.y + q.s.h / 2).y }));
+  for (const q of deskIts) if (q.d < mDepth) q.it.draw(x, q.s, ia);
+  drawMonitor(x, g, st, e ? e.seed : 0);
+  for (const q of deskIts) if (q.d >= mDepth) q.it.draw(x, q.s, ia);
+  if (st === 'stuck') { const mg = monitorGeo(g), mx = mg.lap ? g.cx : mg.bx[0] + mg.bx[2] / 2, my = mg.lap ? mg.y : mg.bx[1] + mg.bx[3] / 2;
+    for (let i = 0; i < 3; i++) { const ph = RM ? i / 3 : (T * .32 + i / 3 + e.seed) % 1, p = P(mx, my, mg.z1 + 4 + ph * 34); ellipse(x, p.x + Math.sin(ph * 6 + i) * 4, p.y, 3.5 + ph * 7, 3 + ph * 6, `rgba(150,156,190,${(.42 * (1 - ph) * Math.min(1, ph * 5)).toFixed(3)})`); } }
+  drawChair(x, g, 'seat');
+  if (e && !e.gone && !e.walk && e.vis > .01 && st !== 'asleep' && !(drag && drag.mode === 'seat' && drag.key === e.key)) { x.globalAlpha = dimmed * s.ra * e.vis; drawPerson(x, g, e, its, ia); x.globalAlpha = dimmed * s.ra; }
+  drawChair(x, g, 'back');
+  for (const q of its) if (q.k === 'floor') q.it.draw(x, q.s, ia);
+  x.globalAlpha = 1;
+}
+// 遠景：桌面＋頭像＋狀態燈，不畫螢幕、椅子、動畫
+function drawSeatFar(x, s, g) {
+  const e = s.occ, st = e && e.walk && e.walk.dir === 'in' ? 'empty' : entSt(e), dimmed = hl && !(e && !e.gone && matches(hl, e)) ? .26 : 1; x.globalAlpha = dimmed * s.ra;
+  if (e && (follow === e.key || (hl && !dimmed && matches(hl, e)))) { const fp = P(g.cx, g.cy), R = floorR(.75); ellipse(x, fp.x, fp.y, R.rx, R.ry, alpha(follow === e.key ? COL.blue : hlColor(), .18), alpha(follow === e.key ? COL.blue : hlColor(), .8), 2); }
+  poly(x, fquad(g.x, g.y, g.x + g.w, g.y + g.h, deskH(g)), g.big ? '#4a4068' : g.shared ? '#43405a' : '#353a56');
+  if (st !== 'empty' && st !== 'asleep') { const lp = P(g.x + g.w / 2, g.y + g.h / 2, deskH(g)); ellipse(x, lp.x, lp.y, 6.5, 3.8, ST[st].c); }
+  if (e && !e.gone && !e.walk && st !== 'asleep' && !(drag && drag.mode === 'seat' && drag.key === e.key)) {
+    const p = P(g.cx, g.cy, 12), sc = pScale(e); x.save(); x.translate(p.x, p.y); x.scale(sc, sc); x.globalAlpha = dimmed * s.ra * e.vis;
+    x.fillStyle = e.who.shape ? shade(e.who.color, -.45) : '#414868'; x.beginPath(); x.roundRect(-6, -14, 12, 14, 5); x.fill();
+    x.translate(0, -23); shapePath(x, e.who.shape || 'round', e.who.shape ? 9 : 7.8); x.fillStyle = e.who.shape ? e.who.color : '#6b7399'; x.fill(); x.restore();
+  }
+  x.globalAlpha = 1;
+}
+
+/* ══════════ 8. 交辦的紙、光圈 ══════════ */
+const papers = [], rings = [];
+function deskTopOf(e) { const s = M.seats.get(e.seatKey), g = s && geo(s); return g ? { x: g.x + g.w / 2, y: g.y + g.h / 2, z: deskH(g) + 4 } : null; }
+function drawPaper(x, pp) {
+  const A = M.ents.get(pp.a), B = M.ents.get(pp.b); if (!A || !B) return; const a = deskTopOf(A), b = deskTopOf(B); if (!a || !b) return;
+  const k = clamp(pp.t / pp.dur, 0, 1);
+  const pos = kk => { const e = ease(kk), d = Math.hypot(b.x - a.x, b.y - a.y); return { x: lerp(a.x, b.x, e), y: lerp(a.y, b.y, e), z: lerp(a.z, b.z, e) + Math.sin(Math.PI * kk) * Math.min(220, 46 + d * 7) }; };
+  const cur = pos(k), sh = P(cur.x, cur.y, 0), sz = 1 - Math.sin(Math.PI * k) * .35, col = pp.kind === 'result' ? COL.green : COL.purple;
+  x.save(); x.setLineDash([3, 5]); x.strokeStyle = alpha(col, .5); x.lineWidth = 1.6; x.beginPath(); for (let i = 0; i <= 28; i++) { const p = pos(i / 28), q = P(p.x, p.y, p.z); i ? x.lineTo(q.x, q.y) : x.moveTo(q.x, q.y); } x.stroke(); x.restore();
+  { const e = P(b.x, b.y, b.z - 4), r = floorR(.45); ellipse(x, e.x, e.y, r.rx, r.ry, alpha(col, .08), alpha(col, .45 + (RM ? 0 : .25 * Math.sin(T * 6))), 1.4); }
+  ellipse(x, sh.x, sh.y, 7 * sz, 3.4 * sz, 'rgba(0,0,0,.28)');
+  for (let i = 4; i >= 1; i--) { const kk = k - i * .035; if (kk <= 0) continue; const p = pos(kk), q = P(p.x, p.y, p.z); ellipse(x, q.x, q.y, 2.2 - i * .3, 2.2 - i * .3, alpha(col, .5 - i * .1)); }
+  const q = P(cur.x, cur.y, cur.z); x.save(); x.translate(q.x, q.y); x.scale(1.45, 1.45); x.rotate((RM ? 0 : Math.sin(T * 9) * .25) + (k - .5) * 1.4);
+  x.shadowColor = alpha(col, .9); x.shadowBlur = 14; x.fillStyle = '#eef0fa'; x.beginPath(); x.roundRect(-6, -7.5, 12, 15, 1.5); x.fill(); x.shadowBlur = 0;
+  poly(x, [{ x: 2.5, y: -7.5 }, { x: 6, y: -4 }, { x: 2.5, y: -4 }], '#c3c8e0');
+  x.fillStyle = '#9aa5ce'; x.fillRect(-3.6, -3, 6.5, 1.2); x.fillRect(-3.6, -.2, 7.2, 1.2); x.fillRect(-3.6, 2.6, 4.5, 1.2);
+  x.fillStyle = col; x.fillRect(-6, -7.5, 1.6, 15);
+  x.restore();
+}
+function fly(h, kind) { const a = kind === 'task' ? h.fromKey : h.toKey, b = kind === 'task' ? h.toKey : h.fromKey; if (!M.ents.get(a) || !M.ents.get(b)) { h.landed = true; return; } papers.push({ a, b, t: 0, dur: kind === 'task' ? 1.6 : 1.4, kind, h }); const A = M.ents.get(a); const p = entPos(A); if (p) rings.push({ x: p.x, y: p.y, t: 0, max: .8, color: kind === 'task' ? COL.purple : COL.green }); schedule(); }
+function landPaper(pp) { const B = M.ents.get(pp.b), p = B && entPos(B); if (p) rings.push({ x: p.x, y: p.y, t: 0, max: .9, color: pp.kind === 'task' ? COL.purple : COL.green }); if (pp.kind === 'task') { pp.h.landed = true; pp.h.landedAt = T; } }
+
+/* ══════════ 9. 「在等」標籤（資料：還沒結案的交辦）══════════
+   交辦方 A 頭上「在等 B」；受辦方 B 頭上「A 交辦」（紙落地後出現）。結案（a2a-result）就收掉。 */
+function tagsOf(e) {
+  const out = [], waits = [];
+  for (const h of M.handoffs.values()) { if (h.status !== 'open') continue;
+    if (h.fromKey === e.key) waits.push(h.toKey);
+    if (h.toKey === e.key && h.landed) { const A = M.ents.get(h.fromKey); if (A) out.push({ text: A.who.name + ' 交辦', who: A.who, kind: 'in', born: h.landedAt || 0 }); } }
+  if (waits.length) { const B = M.ents.get(waits[0]); if (B) out.unshift({ text: '在等 ' + B.who.name + (waits.length > 1 ? ` 等 ${waits.length} 位` : ''), who: B.who, kind: 'wait', born: 0 }); }
+  return out;
+}
+
+/* ══════════ 10. 狀態統計與高亮（只算分頁層的狀態；小時鐘不算卡住）══════════ */
+let hl = null, follow = null, followCam = false, hoverKey = null;
+const matches = (k, e) => k === 'idle' ? (e.st === 'idle' || e.st === 'done') : e.st === k;
+const hlColor = () => ({ working: COL.blue, decision: COL.red, stuck: COL.yellow, idle: COL.green }[hl] || COL.blue);
+const counted = () => [...M.ents.values()].filter(e => !e.gone && !e.leaving);
+const counts = () => { const r = { working: 0, decision: 0, stuck: 0, idle: 0, asleep: 0 }; for (const e of counted()) { if (e.st === 'done') r.idle++; else if (r[e.st] != null) r[e.st]++; } return r; };
+let statSig = '';
+function renderStats() {
+  const n = counts(), all = counted(), bc = all.filter(e => e.kind === 'bot').length, tc = all.filter(e => e.kind === 'temp').length, hc = all.filter(e => e.kind === 'helper').length, pc = all.filter(e => e.kind === 'peer' || e.kind === 'peertemp').length;
+  const sig = JSON.stringify(n) + hl + bc + tc + hc + pc + M.zones.length; if (sig === statSig) return; statSig = sig;
+  $$('#stats .stat').forEach(b => { const k = b.dataset.k; b.querySelector('b').textContent = n[k]; b.classList.toggle('zero', !n[k]); b.setAttribute('aria-pressed', String(hl === k)); });
+  $('#meta').innerHTML = `正職 <b>${bc}</b> · 實習生 <b>${tc}</b> · 工讀生 <b>${hc}</b> · 隔壁 <b>${pc}</b> · 休息 <b>${n.asleep}</b> · <b>${M.zones.length}</b> 區`;
+}
+function setHl(k) { hl = hl === k ? null : k; statSig = ''; renderStats(); kick(); }
+let areaSig = '';
+function renderAreas() {
+  const rooms = [...M.rooms.values()], sig = rooms.map(r => r.id + r.label).join('|'); if (sig === areaSig) return; areaSig = sig;
+  const zs = rooms.filter(r => r.kind === 'zone').sort((a, b) => TEAMS.indexOf(a.team) - TEAMS.indexOf(b.team) || a.label.localeCompare(b.label, 'zh-Hant'));
+  const opts = [['all', '全景'], ['lobby', '大廳'], ...zs.map(r => [r.id, r.label]), ...rooms.filter(r => r.kind === 'peer').map(r => [r.id, r.label])];
+  const sel = $('#area'); sel.innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join(''); sel.value = M.rooms.has(area) ? area : 'all';
+}
+
+/* ══════════ 11. 跟拍面板 ══════════ */
+let panelSig = '', itemsOpen = false;
+function renderItemsCard(e) {
+  const ids = itemsOf(e), temp = isTempEnt(e), edit = e.kind === 'bot', manual = edit && Array.isArray(itemOverrides()[e.id]);
+  const chips = ids.map(id => `<span class="ichip" title="${esc(SLOT_NAME[slotKey(ITEM[id])])}"><img src="${itemThumb(ITEM[id])}" alt="">${esc(ITEM[id].name.zh)}</span>`).join('') || '<span class="note">沒有配件</span>';
+  let h = `<h3>配件 <em>${manual ? '自己選的' : '依執掌自動配'}</em></h3><div class="chips">${chips}</div>`;
+  if (!edit) h += `<p class="note">${temp ? '實習生：依 CLI 戴不同顏色的帽子，桌上只放一件小東西。' : '隔壁電腦的 bot，在那台電腦上換配件。'}</p>`;
+  else {
+    h += `<div class="iact"><button data-act="toggle" class="${itemsOpen ? 'on' : ''}">${itemsOpen ? '收起配件庫' : '打開配件庫'}</button>${manual ? '<button data-act="auto">恢復自動配</button>' : ''}</div>`;
+    if (itemsOpen) h += `<div class="igrid" role="listbox" aria-label="配件庫">${ITEMS.map(it => `<button data-item="${it.id}" class="${ids.includes(it.id) ? 'on' : ''}" aria-pressed="${ids.includes(it.id)}" title="${esc(it.name.en)}"><img src="${itemThumb(it)}" alt=""><span>${esc(it.name.zh)}</span><small>${SLOT_NAME[slotKey(it)]}</small></button>`).join('')}</div><p class="note">點一下加上或拿掉。同一個位置放滿時，會換掉最早放的那件。${HOST ? '存在這台電腦。' : '示範版存在這台瀏覽器。'}</p>`;
+  }
+  $('#pItems').innerHTML = h;
+}
+function toggleItem(e, id) {
+  const it = ITEM[id]; if (!it || e.kind !== 'bot') return; const cur = [...itemsOf(e)], k = slotKey(it), cap = capacityOf(e);
+  if (cur.includes(id)) cur.splice(cur.indexOf(id), 1);
+  else { if (!cap[k]) { toast('這個位子放不下' + it.name.zh); return; } const same = cur.filter(i => slotKey(ITEM[i]) === k); if (same.length >= cap[k]) { cur.splice(cur.indexOf(same[0]), 1); toast(`${SLOT_NAME[k]}放滿了，換掉${ITEM[same[0]].name.zh}`); } cur.push(id); }
+  const o = itemOverrides(); o[e.id] = cur; store.set('items', o); panelSig = ''; renderPanel(true); schedule();
+}
+const whoChip = key => { if (!key) return '<span style="color:var(--mute)">—</span>'; if (key === 'user') return '<span class="who you">你</span>'; const e = M.ents.get(key); if (!e) return esc(String(key).replace(/^[bp]:/, '')); return `<span class="who"><img src="${avatarURL(e.who, 40)}" alt="">${esc(e.who.name)}</span>`; };
+const fmtAge = ms => ms >= 86400e3 ? Math.round(ms / 86400e3) + ' 天' : Math.max(1, Math.round(ms / 3600e3)) + ' 小時';
+const CLOCK_SVG = '<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.6v3.6l2.4 1.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>';
+function seatLabel(e) { const s = M.seats.get(e.seatKey), r = s && M.rooms.get(s.room); if (!r) return ''; if (s.key === 'sec') return '大廳 · 秘書長辦公桌'; if (r.kind === 'zone') return `${r.label} · 第 ${s.slot + 1} 位`; if (r.kind === 'lobby') return '大廳 · 實習生長桌'; return r.label; }
+const fmtDur = ms => ms < 60e3 ? '不到 1 分鐘' : ms < 3600e3 ? Math.round(ms / 60e3) + ' 分鐘' : (ms / 3600e3).toFixed(1) + ' 小時';
+function renderHelperPanel(e, force) {
+  const w = e.who, now = Date.now(), last = e.events[e.events.length - 1];
+  const sig = [e.key, e.st, w.duty, w.model, e.events.length, last && last.t, e.lastAt, Math.floor(now / 30e3)].join('|');
+  if (!force && sig === panelSig) return; panelSig = sig;
+  const stt = ST[e.st] || ST.idle, par = M.ents.get(e.parentKey);
+  $('#pAv').src = avatarURL(w, 100);
+  $('#pName').textContent = '工讀生';
+  $('#pSub').textContent = `subagent · ${par ? par.who.name : w.parentName || '—'} 派的`;
+  const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
+  $('#pDuty').innerHTML = `<span>工作</span>${esc(w.duty || '（沒有說明）')}`;
+  $('#pMeta').innerHTML = [w.model ? `<span>${esc(w.model)}</span>` : '', w.agentType ? `<span>${esc(w.agentType)}</span>` : '', '<span>做完就走</span>'].join('');
+  $('#pTask').innerHTML = `<h3>這一趟</h3><dl class="kv"><dt>派他的</dt><dd>${whoChip(e.parentKey)}</dd><dt>跑了</dt><dd>${e.started ? fmtDur(now - e.started) : '—'}</dd><dt>最後動靜</dt><dd>${e.lastAt ? `${hhmm(e.lastAt)}（${fmtDur(now - e.lastAt)}前）` : '—'}</dd></dl>` +
+    (e.st === 'stuck' ? `<p class="note stale">${CLOCK_SVG}超過 10 分鐘沒有寫任何東西，也還沒做完</p>` : e.st === 'idle' ? '<p class="note">這幾分鐘沒有動靜。</p>' : '');
+  $('#pItems').innerHTML = '<h3>配件</h3><p class="note">工讀生只來做一件事，沒有配件。</p>';
+  const evs = e.events.slice(-8).reverse(), pn = performance.now();
+  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
+}
+function renderPanel(force) {
+  if (!follow) return; const e = M.ents.get(follow); if (!e) { stopFollow(); return; }
+  if (e.kind === 'helper') { renderHelperPanel(e, force); return; }
+  const last = e.events[e.events.length - 1];
+  const sig = [e.key, e.st, e.who.name, e.seatKey, JSON.stringify(e.task), e.events.length, last && last.t, e.stale, tagsOf(e).map(t => t.text).join(), itemsOf(e).join(), itemsOpen].join('|');
+  if (!force && sig === panelSig) return; panelSig = sig;
+  const w = e.who, stt = ST[e.st] || ST.idle, temp = e.kind === 'temp' || e.kind === 'peertemp', peer = e.kind === 'peer' || e.kind === 'peertemp', movable = e.kind === 'bot' && e.id !== M.primaryId;
+  $('#pAv').src = avatarURL(w, 100);
+  $('#pName').innerHTML = esc(w.name) + (e.kind === 'bot' && e.id === M.primaryId ? ' <span class="star" title="主要 bot">★ 主要</span>' : '');
+  $('#pSub').textContent = temp ? `實習生 · ${w.cli}${peer ? ' · 隔壁' : ''}` : peer ? '正職 · ' + (roomOfEnt(e) || {}).label : `正職 · ${seatLabel(e)}`;
+  const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
+  $('#pDuty').innerHTML = `<span>執掌</span>${esc(w.duty || '—')}`;
+  $('#pMeta').innerHTML = temp ? '<span>不留記憶</span><span>做完就關分頁</span>' : `${w.runs == null ? '<span>記憶 已存</span><span>示範 CLI · 示範模型</span>' : (w.memory === false ? '<span>不留記憶</span>' : '<span>有記憶</span>') + (w.runs ? `<span>${esc(w.runs)}</span>` : '')}${e.st === 'asleep' ? '<span>沒有開分頁</span>' : ''}${movable ? '<span>拖曳頭像可換位子</span>' : ''}`;
+  const t = e.task, stl = { todo: '待辦', doing: '進行中', waiting: '等待中', done: '完成', dropped: '放棄' };
+  $('#pTask').innerHTML = !t ? '<h3>目前任務</h3><p class="note">沒有手上的任務。</p>' :
+    `<h3>${e.st === 'asleep' ? '手上的待辦' : '目前任務'} <em>${esc(t.id)} · ${stl[t.status] || ''}</em></h3><div class="ttl">${esc(t.title)}</div>
+     <dl class="kv"><dt>下一步</dt><dd>${esc(t.next || '—')}</dd><dt>在等誰</dt><dd>${whoChip(t.waitingOn)}</dd>${t.from ? `<dt>交辦自</dt><dd>${whoChip(t.from)}</dd>` : ''}</dl>
+     ${e.stale ? `<p class="note stale">${CLOCK_SVG}這件已經 ${fmtAge(e.stale)}沒有更新</p>` : ''}
+     ${e.st === 'asleep' ? '<p class="note">沒有開分頁。下次被叫醒時，從這裡接著做。</p>' : e.st === 'stuck' && t.why ? `<p class="note">原因：${esc(t.why)}</p>` : ''}`;
+  renderItemsCard(e);
+  const evs = e.events.slice(-8).reverse(), now = performance.now();
+  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && now - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
+}
+const hhmm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+function startFollow(key) {
+  const e = M.ents.get(key); if (!e || e.gone) return;
+  follow = key; followCam = true; panelSig = '';
+  document.body.classList.add('following'); const p = $('#panel'); p.classList.add('open'); p.setAttribute('aria-hidden', 'false');
+  renderPanel(true); kick();
+}
+function stopFollow(silent) {
+  if (!follow) return; follow = null; followCam = false; goal = null;
+  document.body.classList.remove('following'); const p = $('#panel'); p.classList.remove('open'); p.setAttribute('aria-hidden', 'true');
+  if (!silent) fit(); kick();
+}
+
+/* ══════════ 12. 繪製一幀：一間房一間房，由後往前 ══════════ */
+const twCache = new Map();
+function tw(font, text) { const k = font + '|' + text; let w = twCache.get(k); if (w == null) { c.font = font; w = c.measureText(text).width; if (twCache.size > 3000) twCache.clear(); twCache.set(k, w); } return w; }
+function onScreen(b, m = 60) { return b.x1 >= -m && b.x0 <= W + m && b.y1 >= -m && b.y0 <= H + m; }
+function roomScreenBox(r) { let a = 1e9, b = 1e9, cc = -1e9, d = -1e9; for (const [x, y] of [[r.x - .3, r.y - .3], [r.x + r.w, r.y - .3], [r.x + r.w, r.y + r.h], [r.x - .3, r.y + r.h]]) for (const z of [-SLAB, r.wallH + 50]) { const p = t2s(x, y, z); a = Math.min(a, p.x); b = Math.min(b, p.y); cc = Math.max(cc, p.x); d = Math.max(d, p.y); } return { x0: a, y0: b, x1: cc, y1: d }; }
+const inRoom = (r, p) => p.x >= r.x - .25 && p.x <= r.x + r.w && p.y >= r.y - .25 && p.y <= r.y + r.h;
+let lastDrawMs = 0, roomsDrawn = 0, itemsDrawn = 0;
+function draw() {
+  const t0 = performance.now(), far = lod(); itemsDrawn = 0;
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const bg = c.createRadialGradient(W / 2, H * .5, 40, W / 2, H * .55, Math.max(W, H) * .8);
+  bg.addColorStop(0, '#222539'); bg.addColorStop(1, '#15161f'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
+  c.save(); c.translate(W / 2 - cam.x * cam.z, H / 2 - cam.y * cam.z); c.scale(cam.z, cam.z);
+  drawPlaza(c, far);
+  // 房間依深度排序；走廊上的人插在中間
+  const rooms = [...M.rooms.values()].map(r => ({ r, key: P(r.x, r.y).y, items: [] }));
+  const corridor = [];
+  for (const e of M.ents.values()) if (e.walk && e.walk.t >= 0 && !(e.hidden && e.walk.dir !== 'out')) { const p = walkPos(e.walk), home = rooms.find(q => inRoom(q.r, p)); const it = [P(p.x, p.y).y + .5, () => drawWalker(c, e, far)]; if (home) home.items.push(it); else corridor.push({ key: P(p.x, p.y).y, fn: it[1] }); }
+  for (const e of M.ents.values()) { if (e.kind !== 'helper' || e.walk || e.hidden || e.leaving) continue; const ps = parentSeat(e), sp = ps && helperSpot(e); if (!sp) continue; const q = rooms.find(o => o.r.id === ps.room); if (q) q.items.push([P(sp.x, sp.y).y + .2, () => drawHelper(c, e, far)]); }
+  for (const s of M.seats.values()) { const g = geo(s); if (!g) continue; const q = rooms.find(o => o.r.id === s.room); if (!q) continue; s.ra = q.r.alpha; q.items.push([P(g.cx - g.f.x * .3, g.cy - g.f.y * .3).y, far ? () => drawSeatFar(c, s, g) : () => drawSeatNear(c, s, g)]); }
+  const layers = [...rooms.map(q => ({ key: q.key, room: q })), ...corridor].sort((a, b) => a.key - b.key);
+  roomsDrawn = 0;
+  for (const L of layers) {
+    if (!L.room) { L.fn(); continue; }
+    const r = L.room.r; if (!onScreen(roomScreenBox(r))) continue; roomsDrawn++;
+    c.globalAlpha = r.alpha; drawRoomShell(c, r, far); c.globalAlpha = 1;
+    if (!far) for (const d of decorOf(r)) L.room.items.push([P(d.x + d.w, d.y + d.h).y, () => drawDecor(c, d)]);
+    L.room.items.sort((a, b) => a[0] - b[0]); for (const it of L.room.items) it[1]();
+  }
+  for (const r of rings) { const k = r.t / r.max, p = P(r.x, r.y), e = floorR(.3 + .9 * easeOut(k)); ellipse(c, p.x, p.y, e.rx, e.ry, null, alpha(r.color, (1 - k) * .9), 2.2); }
+  for (const pp of papers) drawPaper(c, pp);
+  c.restore();
+  drawOverlay(far);
+  lastDrawMs = performance.now() - t0;
+}
+// 文字與泡泡：最後一層，用螢幕座標畫，縮放時字不會糊、也不會被前排桌子蓋住
+function headTop(e) { const p = entPos(e); if (!p) return null; const sc = pScale(e) * cam.z, b = t2s(p.x, p.y, 12), standing = (e.walk && e.walk.t >= 0) || e.kind === 'helper'; return { x: b.x, y: b.y - (standing ? 42 : 33) * sc, base: standing ? t2s(p.x, p.y, 0) : b }; }
+function clockIcon(x, y, r, col) { c.strokeStyle = col; c.lineWidth = 1.3; c.beginPath(); c.arc(x, y, r, 0, 6.2832); c.moveTo(x, y - r * .62); c.lineTo(x, y); c.lineTo(x + r * .5, y + r * .32); c.stroke(); }
+function pill(x, y, text, o) {
+  const font = o.font || `600 11.5px ${FONT}`, txw = tw(font, text), ic = o.icon ? 15 : 0, h = o.h || 20; let sw = 0; if (o.suffix) sw = tw(o.sfont, o.suffix) + 5; const ck = o.clock ? h * .75 : 0;
+  const w = txw + 16 + ic + sw + ck;
+  let x0 = o.align === 'left' ? x : x - w / 2;
+  if (!o.free) x0 = clamp(x0, 4, W - w - 4);   // 不讓標籤被畫面邊緣切掉
+  if (o.avoid) { // 簡單的避讓（本檔自寫）：撞到已經畫好的標籤就挪開；標籤先往旁邊，名牌往下
+    const hitAt = (xx, yy) => o.avoid.find(r => xx < r.x + r.w && xx + w > r.x && yy - h / 2 < r.y + r.h && yy + h / 2 > r.y);
+    for (let it = 0; it < 4; it++) { const hit = hitAt(x0, y); if (!hit) break;
+      if (o.dir < 0) { const nx = x0 + w / 2 >= hit.x + hit.w / 2 ? hit.x + hit.w + 3 : hit.x - w - 3; if (nx >= 4 && nx + w <= W - 4 && !hitAt(nx, y)) { x0 = nx; break; } }
+      y = o.dir < 0 ? hit.y - h / 2 - 3 : hit.y + hit.h + h / 2 + 3; }
+    o.avoid.push({ x: x0, y: y - h / 2, w, h });
+  }
+  c.beginPath(); c.roundRect(x0, y - h / 2, w, h, h / 2); c.fillStyle = o.bg || 'rgba(26,27,38,.86)'; c.fill();
+  if (o.border) { c.strokeStyle = o.border; c.lineWidth = 1; c.stroke(); }
+  if (o.icon) o.icon(x0 + 11, y);
+  c.font = font; c.fillStyle = o.color || COL.ink; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(text, x0 + 8 + ic, y + .5);
+  if (o.suffix) { c.font = o.sfont; c.fillStyle = o.scolor; c.fillText(o.suffix, x0 + 8 + ic + txw + 5, y + .5); }
+  if (o.clock) clockIcon(x0 + w - 8 - ck / 2 + 2, y, h * .24, COL.yellow);
+  return w;
+}
+function miniAvatar(who, x, y, r) { c.save(); c.translate(x, y); if (who.shape) { shapePath(c, who.shape, r); c.fillStyle = who.color; c.fill(); } else { c.beginPath(); c.arc(0, 0, r, 0, 6.2832); c.fillStyle = '#6b7399'; c.fill(); } c.restore(); }
+function roomSign(r, far, placed) {
+  const iso = V.m >= .5, k = clamp(cam.z * 1.05, .8, 1.1), front = r.kind !== 'lobby';
+  let p = front ? (iso ? t2s(r.x + r.w * .3, r.y + r.h, 0) : V.tp ? t2s(r.x + r.w, r.y + r.h / 2, 0) : t2s(r.x + r.w * .5, r.y + r.h, 0)) : (iso || !V.tp) ? t2s(r.x + r.w / 2, r.y - .1, r.wallH + 24) : t2s(r.x - .1, r.y + r.h / 2, r.wallH + 24);
+  if (front) p = { x: p.x, y: p.y + (iso ? 17 : 15) * k };
+  const main = r.label, used = r.kind === 'zone' ? [...M.seats.values()].filter(s => s.room === r.id && s.occ && !s.occ.gone).length : 0;
+  const sub = r.kind === 'zone' ? `${used}/${ZCAP}` : r.kind === 'peer' ? '配對' : '秘書長 · 實習生';
+  const col = r.kind === 'zone' ? teamCol(r.team) : r.kind === 'peer' ? COL.teal : COL.purple;
+  const f1 = `700 ${Math.round(12.5 * k)}px ${FONT}`, f2 = `500 ${Math.round(10.5 * k)}px ${FONT}`, w1 = tw(f1, main), w2 = tw(f2, sub), w = w1 + w2 + 34 * k, h = 25 * k, x0 = p.x - w / 2;
+  if (p.x + w / 2 < 0 || p.x - w / 2 > W || p.y < -30 || p.y > H + 30) return; if (placed) placed.push({ x: x0, y: p.y - h / 2, w, h });
+  c.globalAlpha = r.alpha; c.beginPath(); c.roundRect(x0, p.y - h / 2, w, h, 8 * k); c.fillStyle = 'rgba(24,27,40,.94)'; c.fill(); c.strokeStyle = alpha(col, .55); c.lineWidth = 1; c.stroke();
+  ellipse(c, x0 + 12 * k, p.y, 3.6 * k, 3.6 * k, col);
+  c.font = f1; c.fillStyle = COL.ink; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(main, x0 + 22 * k, p.y + .5);
+  c.font = f2; c.fillStyle = alpha(col, .85); c.fillText(sub, x0 + 26 * k + w1, p.y + .5); c.globalAlpha = 1;
+}
+function drawOverlay(far) {
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const bs = clamp(cam.z * .95, .72, 1.12), showAll = !far && cam.z >= (V.to < .5 ? .36 : .7), nfs = Math.max(isMobile() ? 9.5 : 10, 11.5 * bs);
+  const placed = []; for (const r of M.rooms.values()) roomSign(r, far, placed);
+  if (M.rooms.get('lobby') && !far) { const iso = V.m >= .5, p = iso ? t2s(1.6 + Math.min(TMAX, M.nT) * .6, M.LH - .15, 0) : V.tp ? t2s(1.35, 4.8 + Math.min(TMAX, M.nT) * .3, 0) : t2s(1.6 + Math.min(TMAX, M.nT) * .6, 4.55, 0);
+    c.font = `600 ${Math.round(11 * bs)}px ${FONT}`; c.fillStyle = alpha(COL.yellow, .75); c.textAlign = 'center'; c.textBaseline = iso ? 'top' : 'bottom'; c.fillText('實習生區 · 不是 bot 的 AI 分頁', p.x, p.y + (iso ? 5 : -4) * bs); }
+  const list = []; for (const e of M.ents.values()) { if ((e.gone && !showAll) || (e.walk && e.walk.t < 0) || e.hidden) continue; const h = headTop(e); if (!h || h.x < -80 || h.x > W + 80 || h.y < -80 || h.y > H + 80) continue; list.push({ e, h }); }
+  list.sort((a, b) => a.h.base.y - b.h.base.y);
+  const tags = [];
+  for (const { e, h } of list) {
+    const dim = hl && !(!e.gone && matches(hl, e)), on = follow === e.key || (hl && !dim) || hoverKey === e.key || (drag && drag.key === e.key);
+    if (dim) continue;
+    const asleep = e.st === 'asleep' || e.gone, helper = e.kind === 'helper', temp = e.kind === 'temp' || e.kind === 'peertemp' || helper, walking = e.walk && e.walk.t >= 0, prim = e.kind === 'bot' && e.id === M.primaryId;
+    if ((showAll && !(temp && cam.z < 1.25)) || on || (prim && cam.z >= .45 && !far) || (helper && e.st === 'stuck' && !far && !walking)) {
+      const ly = h.base.y + 15 * bs;
+      pill(h.base.x, ly, e.who.name + (e.gone ? '（已離開・位子留到 ' + new Date((e.goneAt || Date.now()) + SEAT_HOLD_MS).toTimeString().slice(0, 5) + '）' : ''), { avoid: placed, dir: 1, suffix: prim ? '主要' : '', sfont: `700 ${Math.round(nfs * .87)}px ${FONT}`, scolor: COL.yellow, clock: !!e.stale && !e.gone, font: `${prim ? 700 : 600} ${Math.round(nfs)}px ${FONT}`, h: Math.round(nfs * 1.75),
+        color: asleep ? COL.mute : prim ? '#e9dcff' : COL.ink, bg: asleep ? 'rgba(26,27,38,.6)' : 'rgba(26,27,38,.86)', border: prim ? alpha(COL.purple, .6) : follow === e.key ? alpha(COL.blue, .8) : 'rgba(59,66,97,.9)',
+        icon: temp ? null : (ix, iy) => { if (asleep) { c.fillStyle = COL.mute; c.beginPath(); c.arc(ix, iy, 4.2 * bs, .6, 5.7); c.arc(ix + 2 * bs, iy - 1 * bs, 3.4 * bs, 5.4, .9, true); c.fill(); } else miniAvatar(e.who, ix, iy, 4.6 * bs); } });
+    }
+    if (e.gone || asleep || walking || e.vis < .5) continue;
+    if (e.more) pill(h.x + 22 * bs, h.y - 2 * bs, '+' + e.more, { font: `700 ${Math.round(10.5 * bs)}px ${FONT}`, h: Math.round(18 * bs), color: '#16161e', bg: HELPER_CAP, free: true });   // 這張桌子還有 N 位工讀生沒畫
+    const fb = far ? .8 : bs; let top = h.y - 6 * fb;
+    if (e.st === 'decision') { // 紅色「!」：遠景也照畫
+      const pu = RM ? 1 : .5 + .5 * Math.sin(T * 3.9 + e.seed), r = 10 * fb * (1 + .05 * pu), cy = top - r;
+      c.globalAlpha = .82 + .18 * pu; if (!far) { c.shadowColor = alpha(COL.red, .6); c.shadowBlur = 10 * pu; }
+      c.beginPath(); c.arc(h.x, cy, r, 0, 6.2832); c.moveTo(h.x - 4 * fb, cy + r * .78); c.lineTo(h.x, cy + r + 5 * fb); c.lineTo(h.x + 4 * fb, cy + r * .78); c.fillStyle = COL.red; c.fill(); c.shadowBlur = 0;
+      c.fillStyle = '#1a1b26'; c.beginPath(); c.roundRect(h.x - 1.4 * fb, cy - 6 * fb, 2.8 * fb, 7.5 * fb, 1.4 * fb); c.fill(); ellipse(c, h.x, cy + 4.6 * fb, 1.6 * fb, 1.6 * fb, '#1a1b26');
+      c.globalAlpha = 1; top = cy - r - 4 * fb;
+    } else if (e.st === 'stuck') {
+      const r = 8.5 * fb, cy = top - r; c.beginPath(); c.moveTo(h.x, cy - r); c.lineTo(h.x + r * 1.1, cy + r * .85); c.lineTo(h.x - r * 1.1, cy + r * .85); c.closePath(); c.fillStyle = COL.yellow; c.fill(); c.strokeStyle = 'rgba(26,27,38,.6)'; c.lineWidth = 1; c.stroke();
+      c.fillStyle = '#1a1b26'; c.fillRect(h.x - 1.1 * fb, cy - 3.5 * fb, 2.2 * fb, 5 * fb); ellipse(c, h.x, cy + 4 * fb, 1.3 * fb, 1.3 * fb, '#1a1b26'); top = cy - r - 4 * fb;
+    }
+    for (const tg of tagsOf(e)) {
+      const a = tg.kind === 'in' ? clamp((T - tg.born) * 3, 0, 1) : 1, ty = top - 11 * fb, isWait = tg.kind === 'wait';
+      tags.push(() => { c.globalAlpha = a; pill(h.x, ty, tg.text, { avoid: placed, dir: -1, font: `600 ${Math.round(Math.max(nfs - .5, 11 * fb))}px ${FONT}`, h: Math.round(21 * fb), color: isWait ? '#e3d5ff' : '#d6f5ef', bg: isWait ? 'rgba(40,33,64,.95)' : 'rgba(24,40,44,.95)', border: alpha(isWait ? COL.purple : COL.teal, .7), icon: (ix, iy) => miniAvatar(tg.who, ix, iy, 4.6 * fb) }); c.globalAlpha = 1; });
+      top -= 24 * fb;
+    }
+  }
+  for (const fn of tags) fn();
+  // 拖曳換位子：目標座位與跟著手指的頭像
+  if (drag && drag.mode === 'seat') {
+    const e = M.ents.get(drag.key);
+    if (drag.target) { const g = geo(drag.target), p = t2s(g.cx, g.cy, 0), ok = drag.ok; c.beginPath(); c.ellipse(p.x, p.y, 26 * cam.z + 6, 13 * cam.z + 3, 0, 0, 6.2832); c.fillStyle = alpha(ok ? COL.green : COL.red, .15); c.fill(); c.strokeStyle = ok ? COL.green : COL.red; c.lineWidth = 2; c.stroke();
+      const occ = drag.target.occ; const txt = !ok ? '不同團隊，不能換' : occ && occ !== e ? '和 ' + occ.who.name + ' 互換' : '換到這個空位'; pill(p.x, p.y + 30, txt, { font: `600 12px ${FONT}`, h: 22, color: ok ? '#d9f2c4' : '#ffd0d8', bg: 'rgba(26,27,38,.92)', border: ok ? COL.green : COL.red }); }
+    if (e) { c.save(); c.translate(drag.x, drag.y - 18); c.globalAlpha = .9; c.scale(1.4, 1.4); drawHead(c, e.who, 9, { x: 0, y: .5 }, 'ok'); c.restore(); }
+  }
+}
+
+/* ══════════ 13. 主迴圈：最多 20fps、閒置 5fps、背景停止 ══════════ */
+const FPS_ON = 20, FPS_IDLE = 5;
+let IDLE_AFTER = 20000, lastInput = performance.now(), lastT = performance.now(), timer = 0, frames = 0, fpsWin = [], fpsShown = '';
+const perfBuf = [];
+const busy = () => (!DEMO.paused && (papers.length > 0 || rings.length > 0 || [...M.ents.values()].some(e => e.walk && e.walk.t >= 0))) || camMoving() || V.k < 1 || [...M.rooms.values()].some(r => r.alpha < 1 || Math.abs(r.tx - r.x) > .01 || Math.abs(r.ty - r.y) > .01 || Math.abs(r.th - r.h) > .01);
+const active = () => performance.now() - lastInput < IDLE_AFTER || busy();
+function schedule() {   // 用計時器排下一幀：兩幀之間固定 50ms（閒置 200ms），閒置時一秒只醒 5 次
+  if (document.hidden || timer) return;
+  const gap = 1000 / (active() ? FPS_ON : FPS_IDLE), wait = Math.max(0, gap - (performance.now() - lastT));
+  timer = setTimeout(frame, wait);
+}
+function kick() { lastInput = performance.now(); if (timer) { clearTimeout(timer); timer = 0; } schedule(); }
+let busyFrames = 0;
+function frame() {
+  timer = 0; if (document.hidden) return;
+  const now = performance.now(), gap = 1000 / (active() ? FPS_ON : FPS_IDLE);
+  if (now - lastT < gap - 1) { schedule(); return; }   // 保險：兩幀至少隔 50ms（閒置 200ms）
+  const dt = Math.min(.25, Math.max(0, (now - lastT) / 1000)); lastT = now; T += dt;
+  if (busy()) busyFrames++;
+  try {
+    if (V.k < 1) { V.k = Math.min(1, V.k + dt / .7); V.m = lerp(V.from, V.to, ease(V.k)); if (V.k >= 1) { V.m = V.to; V.tp = wantTp(); } }
+    simStep(dt); roomStep(dt); camStep(dt); draw(); renderStats(); renderAreas(); renderPanel(); fpsTick(now);
+    perfBuf.push(lastDrawMs); if (perfBuf.length > 240) perfBuf.shift();
+  } catch (e) { console.error(e); }
+  frames++; schedule();
+}
+function roomStep(dt) { const k = 1 - Math.exp(-dt * 6); for (const r of M.rooms.values()) { r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.w += (r.tw - r.w) * k; r.h += (r.th - r.h) * k; if (Math.abs(r.tx - r.x) < .005) r.x = r.tx; if (Math.abs(r.ty - r.y) < .005) r.y = r.ty; if (Math.abs(r.tw - r.w) < .005) r.w = r.tw; if (Math.abs(r.th - r.h) < .005) r.h = r.th; if (r.alpha < 1) r.alpha = Math.min(1, r.alpha + dt * 2.2); } }
+function fpsTick(now) { fpsWin.push(now); while (fpsWin.length && now - fpsWin[0] > 1000) fpsWin.shift(); const f = fpsWin.length, txt = active() ? `${Math.min(f, FPS_ON)} fps · 即時` : `${Math.min(f, FPS_IDLE + 1)} fps · 省電`; if (txt !== fpsShown) { fpsShown = txt; const el = $('#fps'); el.textContent = txt; el.classList.toggle('slow', !active()); } }
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (timer) clearTimeout(timer); timer = 0; }
+  else { lastT = performance.now(); kick(); }
+});
+
+/* ══════════ 14. 操作：點人追蹤、拖地板平移、拖人換位子、雙指縮放（改自 60-input.js）══════════ */
+function pick(sx, sy) {
+  let best = null, bd = 1e9; const rad = Math.max(20, 34 * cam.z);
+  for (const e of M.ents.values()) { if (e.gone || e.leaving || e.hidden) continue; const h = headTop(e); if (!h) continue; const m = { x: h.x, y: (h.y + h.base.y) / 2 };
+    let d = Math.min(Math.hypot(sx - m.x, sy - m.y), Math.hypot(sx - h.base.x, sy - h.base.y));
+    if (!e.walk) { const s = M.seats.get(e.seatKey), g = s && geo(s); if (g) { const dp = t2s(g.x + g.w / 2, g.y + g.h / 2, deskH(g)); d = Math.min(d, Math.hypot(sx - dp.x, sy - dp.y) * 1.25); } }
+    if (d < rad && d < bd) { bd = d; best = e; } }
+  return best;
+}
+function pickSeat(sx, sy) { // 拖曳的目標：各區的座位（有人或空位）
+  let best = null, bd = 1e9; const rad = Math.max(26, 44 * cam.z);
+  for (const s of M.seats.values()) { if (!s.zone) continue; const g = geo(s); const p = t2s(g.cx, g.cy, 10), d = Math.hypot(sx - p.x, sy - (p.y - 12 * cam.z)); if (d < rad && d < bd) { bd = d; best = s; } }
+  return best;
+}
+const canDrag = e => e && e.kind === 'bot' && !e.gone && e.id !== M.primaryId && !e.walk && e.seatKey && e.seatKey.startsWith('z:');
+const ptrs = new Map(); let drag = null, pinch = null, lpTimer = 0;
+function enterSeatDrag(sx, sy) { drag.mode = 'seat'; drag.x = sx; drag.y = sy; cv.classList.add('seat'); updateSeatTarget(sx, sy); kick(); }
+function updateSeatTarget(sx, sy) { const e = M.ents.get(drag.key), s = pickSeat(sx, sy); drag.target = s && s.key !== e.seatKey ? s : null; drag.ok = !!drag.target && M.rooms.get(drag.target.room).team === e.who.team && !(drag.target.occ && drag.target.occ.walk); }
+cv.addEventListener('pointerdown', e => {
+  kick(); closeSearch(); try { cv.setPointerCapture(e.pointerId); } catch (er) { }
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1) { const who = pick(e.clientX, e.clientY); drag = { sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, moved: false, mode: null, key: who && canDrag(who) ? who.key : null, touch: e.pointerType !== 'mouse' };
+    clearTimeout(lpTimer); if (drag.key && drag.touch) lpTimer = setTimeout(() => { if (drag && !drag.moved && !drag.mode) enterSeatDrag(drag.x, drag.y); }, 380); }
+  else if (ptrs.size === 2) { clearTimeout(lpTimer); const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; drag = null; }
+});
+cv.addEventListener('pointermove', e => {
+  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && ptrs.size >= 2) { kick(); const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y); zoomAt(d / pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2); pinch.d = d; return; }
+  if (drag) {
+    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; clearTimeout(lpTimer); if (!drag.mode) { if (drag.key && !drag.touch) enterSeatDrag(e.clientX, e.clientY); else { drag.mode = 'pan'; cv.classList.add('drag'); } } }
+    if (drag.mode === 'seat') { kick(); drag.x = e.clientX; drag.y = e.clientY; updateSeatTarget(e.clientX, e.clientY); return; }
+    if (drag.mode === 'pan') { kick(); goal = null; followCam = false; cam.x -= (e.clientX - drag.x) / cam.z; cam.y -= (e.clientY - drag.y) / cam.z; }
+    drag.x = e.clientX; drag.y = e.clientY; return;
+  }
+  if (e.pointerType === 'mouse') { const s = pick(e.clientX, e.clientY), id = s ? s.key : null; if (id !== hoverKey) { hoverKey = id; cv.classList.toggle('pt', !!id); kick(); } }
+});
+const endPtr = e => {
+  clearTimeout(lpTimer); const d = drag; ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; cv.classList.remove('drag', 'seat');
+  if (d && d.mode === 'seat') { if (e.type === 'pointerup' && d.target && d.ok) swapSeat(d.key, d.target); else if (e.type === 'pointerup' && d.target) toast('不同團隊不能換位子（團隊由 bot 設定決定）'); drag = null; kick(); return; }
+  if (d && !d.moved && e.type === 'pointerup') { const s = pick(e.clientX, e.clientY); if (s) { if (follow === s.key) { followCam = true; kick(); } else startFollow(s.key); } }
+  if (!ptrs.size) drag = null;
+};
+cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
+cv.addEventListener('pointerleave', () => { if (hoverKey) { hoverKey = null; cv.classList.remove('pt'); kick(); } });
+cv.addEventListener('wheel', e => { e.preventDefault(); kick(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX, e.clientY); }, { passive: false });
+function swapSeat(key, target) {
+  const e = M.ents.get(key), from = M.seats.get(e.seatKey), other = target.occ && target.occ !== e ? target.occ : null;
+  const a = M.assign.get(e.id), b = { zone: target.zone, slot: target.slot };
+  if (other) M.assign.set(other.id, { ...a }); M.assign.set(e.id, b);
+  const ov = overrides(); ov[e.id] = b; if (other) ov[other.id] = { ...a }; store.set('seats', ov);
+  const oldFrom = from, oldTo = target; assignSeats(); layout();
+  e.walk = makeWalk(routeMove(oldFrom, M.seats.get(e.seatKey) || oldTo), 'move'); if (other) other.walk = makeWalk(routeMove(oldTo, M.seats.get(other.seatKey) || oldFrom), 'move', .15);
+  $('#resetSeats').hidden = false; toast(other ? `已互換：${e.who.name} ↔ ${other.who.name}` : `${e.who.name} 換到 ${M.rooms.get(target.room).label} 第 ${target.slot + 1} 位`); panelSig = ''; kick();
+}
+function resetSeats() {
+  const before = new Map([...M.ents.values()].filter(e => e.kind === 'bot').map(e => [e.id, e.seatKey]));
+  store.set('seats', null); M.assign.clear(); M.zones = []; assignSeats(); layout();
+  for (const e of M.ents.values()) if (e.kind === 'bot' && !e.gone && before.get(e.id) !== e.seatKey) { const s0 = M.seats.get(before.get(e.id)) || null, s1 = M.seats.get(e.seatKey); if (s0 && s1) e.walk = makeWalk(routeMove(s0, s1), 'move'); }
+  $('#resetSeats').hidden = true; toast('座位已還原成規則排法'); kick();
+}
+// 找人
+const q = $('#q'), qres = $('#qres'); let qSel = 0, qList = [];
+function searchList(s) { s = s.trim().toLowerCase(); if (!s) return []; const out = []; for (const e of M.ents.values()) { if (e.gone || e.hidden || e.leaving) continue; const r = roomOfEnt(e), hay = [e.who.name, e.who.duty, e.who.team, e.who.cli, r && r.label].join(' ').toLowerCase(); if (hay.includes(s)) out.push(e); } return out.sort((a, b) => (b.who.name.toLowerCase().includes(s)) - (a.who.name.toLowerCase().includes(s)) || a.who.name.localeCompare(b.who.name, 'zh-Hant')).slice(0, 8); }
+function renderSearch() { qList = searchList(q.value); qSel = clamp(qSel, 0, Math.max(0, qList.length - 1)); if (!q.value.trim()) { qres.classList.remove('on'); return; } qres.classList.add('on');
+  qres.innerHTML = qList.length ? qList.map((e, i) => { const r = roomOfEnt(e); return `<button role="option" data-k="${esc(e.key)}" class="${i === qSel ? 'on' : ''}"><img src="${avatarURL(e.who, 48)}" alt=""><b>${esc(e.who.name)}</b><small>${esc((r ? r.label : '') + ' · ' + (e.who.duty || ''))}</small></button>`; }).join('') : '<div class="none">找不到符合的人</div>'; }
+function chooseSearch(key) { if (!key) return; closeSearch(true); setTimeout(() => startFollow(key), 0); }
+function closeSearch(clear) { qres.classList.remove('on'); document.body.classList.remove('searching'); if (clear) q.value = ''; if (document.activeElement === q) q.blur(); }
+q.addEventListener('input', () => { qSel = 0; renderSearch(); });
+q.addEventListener('keydown', e => {
+  if (e.isComposing || e.keyCode === 229) return;   // 注音選字中：不搶 Enter
+  if (e.key === 'ArrowDown') { qSel = Math.min(qList.length - 1, qSel + 1); renderSearch(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { qSel = Math.max(0, qSel - 1); renderSearch(); e.preventDefault(); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (qList[qSel]) chooseSearch(qList[qSel].key); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSearch(true); }
+});
+qres.addEventListener('pointerdown', e => { const b = e.target.closest('button[data-k]'); if (b) { e.preventDefault(); chooseSearch(b.dataset.k); } });
+$('#searchBtn').onclick = () => { document.body.classList.add('searching'); setTimeout(() => q.focus(), 0); };
+q.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== q) { qres.classList.remove('on'); document.body.classList.remove('searching'); } }, 150));
+addEventListener('pointerdown', () => kick(), true);   // 任何地方的點按都算操作
+addEventListener('keydown', e => {
+  kick();
+  if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
+  if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (getComputedStyle($('#search')).display === 'none') document.body.classList.add('searching'); q.focus(); }
+});
+$('#stats').addEventListener('click', e => { const b = e.target.closest('.stat'); if (b) setHl(b.dataset.k); });
+$('#stopFollow').onclick = () => stopFollow();
+$('#pItems').addEventListener('click', ev => { const e = follow && M.ents.get(follow); if (!e) return; const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'toggle') { itemsOpen = !itemsOpen; panelSig = ''; renderPanel(true); if (itemsOpen) setTimeout(() => $('#pItems').scrollIntoView({ block: 'nearest', behavior: RM ? 'auto' : 'smooth' }), 30); }
+  else if (b.dataset.act === 'auto') { const o = itemOverrides(); delete o[e.id]; store.set('items', o); panelSig = ''; renderPanel(true); schedule(); toast('配件恢復成依執掌自動配'); }
+  else if (b.dataset.item) toggleItem(e, b.dataset.item); });
+$('#pHead').onclick = () => { followCam = true; kick(); };
+$('#fitAll').onclick = () => setArea('all');
+$('#zoomIn').onclick = () => { kick(); zoomAt(1.25, W / 2, H / 2); };
+$('#zoomOut').onclick = () => { kick(); zoomAt(1 / 1.25, W / 2, H / 2); };
+$('#area').addEventListener('change', e => setArea(e.target.value));
+$('#resetSeats').onclick = () => resetSeats();
+$('#mode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMode(b.dataset.m); });
+$('#legendToggle').onclick = () => { const L = $('#legend'), min = !L.classList.contains('min'); L.classList.toggle('min', min); $('#legendToggle').textContent = min ? '展開' : '收起'; $('#legendToggle').setAttribute('aria-expanded', String(!min)); store.set('legendMin', min); };
+function setMode(m, instant) {
+  const to = m === 'flat' ? 0 : 1; store.set('mode', m);
+  $$('#mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
+  if (to === V.to && V.k >= 1) return;
+  V.from = V.m; V.to = to; V.k = 0; if (to === 0) V.tp = wantTp();
+  if (instant) { V.k = 1; V.m = to; V.tp = wantTp(); }
+  if (!follow) { goal = fitGoal(); if (instant) { Object.assign(cam, goal); goal = null; } }
+  kick();
+}
+function placeControls() { // 手機：區域、新增按鈕移到底部工具列
+  const mob = innerWidth <= 720, tools = $('#tools'), right = $('#topRight');
+  for (const id of ['areaWrap', 'addOne', 'addTen']) { const el = $('#' + id); if (mob && el.parentNode !== tools) tools.insertBefore(el, $('#zoomOut')); else if (!mob && el.parentNode !== right) right.insertBefore(el, $('#mode')); }
+  $('#addOne').textContent = mob ? '＋新增' : '＋ 新增正職';
+}
+function toast(text) { const t = $('#toast'), d = document.createElement('div'); d.textContent = text; t.appendChild(d); setTimeout(() => d.remove(), 2600); while (t.children.length > 2) t.firstChild.remove(); }
+
+/* ══════════ 15. 接 ShellBot：window.Office.update(snapshot) ══════════
+   snapshot（每次給完整的一份；欄位名是提案，接的時候對照 ShellBot 實際的 JSON）：
+   {
+     bots: [{                      // 本機的正職
+       id,                         // 必填，穩定不變（換名字也不換）。沒看過的 id → 自動分配座位
+       name, avatar: { shape, color },   // shape：tri hex drop star cloud round squircle pill blob tilt ghost
+       team,                       // 分區用；沒有就進「其他」
+       created_at,                 // ISO 時間；同一區照這個補空位（不看陣列順序）
+       primary,                    // true 坐秘書長辦公桌（有兩個以上時取 created_at 最早的）
+       duty,                       // 執掌，一句話
+       state,                      // working | decision | stuck | idle | done | asleep（由分頁層算好）
+       task: { id, title, status, next, waiting_on, from, updated_at, stale },
+             // status：todo | doing | waiting | done；waiting_on：'user' 或 bot id；
+             // stale 不給就用 updated_at 算（等待 2 小時、進行中 24 小時、待辦 7 天）→ 名牌旁的小時鐘
+       events: [{ t, kind, text }] // t 是毫秒時間；面板顯示最後 8 筆
+     }],
+     temps: [{ id, cli, state, task, events, opened_at }],          // 實習生（不是 bot 的 AI 分頁）：沒看過的走進來，不見的走出去
+     peers: [{ id, name, bots: [...同上], temps: [...] }],           // 配對的每台電腦一間房
+     handoffs: [{ id, from, to, title, status }],                    // A2A 交辦；status open → 飛紙、掛「在等」；done → 飛回、收標籤
+     helpers: [{ id, parent, parent_kind, parent_name, description, model, agent_type, state, started_at, last_at }]
+             // 工讀生：分頁派出去的 subagent。parent＝正職 id（parent_kind 'bot'）或實習生 id（'temp'）；
+             // state working | idle | stuck（ShellBot 依它的紀錄檔多久沒寫算好）；不在清單裡＝做完了，走出去
+   }                                                                 // 隔壁的人用「電腦 id/人 id」表示
+   規則：同一份 snapshot 送兩次畫面不變；snapshot 裡沒有的 bot 位子保留 1 小時（名牌「已離開・位子留到 HH:MM」），不重排，超過就讓出來；
+   同一個 id 回來就坐回原位；坐滿 12 人長出新的一區；新的人從大門走進來（第一次載入不走）。
+   外部 update 進來後，示範時間軸停止、「＋新增正職」「＋10」「交辦示範」三顆示範按鈕收起來。
+   ShellBot 這邊怎麼組這份資料：web/office.js 的 build()（來源與規則寫在那個檔的開頭）。
+
+   每個欄位從哪裡來（「看過」＝在 sfctl skill 文件裡看過名稱；「待對照」＝還沒看過實際 JSON）：
+     id、name、avatar、primary、睡著／醒著  ← 側欄 bots_state（概念看過；鍵名待對照）
+     team、created_at                        ← 待對照：目前的 ShellBot 資料裡沒看過，需要新增或從 bot 設定推
+     duty                                    ← bot 的執掌（概念看過；鍵名待對照）
+     state                                   ← 分頁狀態快照：agent_state、agent_blocked、last_error、kind（看過）；
+                                               [[SF:RED]]／[[SF:YELLOW]] 標記（看過）；沒開分頁的 bot＝asleep
+     task.*                                  ← sfctl task list --json（status、next、waiting-on、owner 在指令參數看過；JSON 鍵名待對照）
+     task.stale                              ← sfctl task stuck 的結果（看過）；或用 updated_at 自己算
+     events                                  ← sfctl task show N 的歷程＋A2A 紀錄 a2a_history（名稱看過；內容待對照）
+     handoffs                                ← A2A 交辦紀錄：a2a-handoff 開、a2a-result 結（看過）
+     peers                                   ← 配對電腦的 /link/bots（路由看過；完整結構待對照）
+     tasks_overview                          ← 頂部數字目前只算分頁層；tasks_overview 待對照，之後可用來核對        */
+const DEMO_BASE = new Date(2026, 10, 16, 14, 20, 0).getTime();
+let simT = 0;
+const DEMO = { live: true, paused: false };
+const clockMs = () => DEMO.live ? DEMO_BASE + simT * 10000 : Date.now();
+const STALE_MS = { waiting: 2 * 3600e3, doing: 24 * 3600e3, todo: 7 * 86400e3 };
+function staleOf(t, flag) { if (flag === true) return t && t.updated ? Math.max(3600e3, clockMs() - t.updated) : 3600e3; if (flag === false) return 0; if (!t || !t.updated || !STALE_MS[t.status]) return 0; const age = clockMs() - t.updated; return age > STALE_MS[t.status] ? age : 0; }
+const CLI_CAP = ['#7aa2f7', '#9ece6a', '#e0af68'];
+const ST_OK = new Set(['working', 'decision', 'stuck', 'idle', 'done', 'asleep']);
+let seedN = 0;
+function fillEnt(e, r, kind) {
+  const av = r.avatar || {};
+  if (kind === 'temp' || kind === 'peertemp') { const cli = r.cli || '示範 CLI'; e.who = { name: r.name || '實習生', cli, cap: CLI_CAP[Math.abs([...cli].reduce((a, ch) => a + ch.charCodeAt(0), 0)) % 3], duty: r.duty || '不是 bot 的 AI 分頁：沒有固定身份，關掉就忘了' }; e.created = Date.parse(r.opened_at) || e.created || ++seedN; }
+  else { e.who = { name: String(r.name || r.id), shape: SHAPES.includes(av.shape) ? av.shape : 'round', color: /^#[0-9a-f]{6}$/i.test(av.color || '') ? av.color : NAMED_COL[av.color] || COL.blue, team: BY_TEAM && r.team ? String(r.team) : OPEN_ZONE, duty: r.duty || '', primary: !!r.primary, runs: typeof r.runs === 'string' ? r.runs : null, memory: r.memory }; e.created = Date.parse(r.created_at) || 0; }
+  e.st = ST_OK.has(r.state) ? r.state : 'idle';
+  const t = r.task; e.task = t ? { id: t.id ?? '—', title: t.title || '', status: t.status || 'doing', next: t.next || '', waitingOn: t.waiting_on ? refKey(t.waiting_on, e) : null, from: t.from ? refKey(t.from, e) : null, updated: Date.parse(t.updated_at) || (typeof t.updated_at === 'number' ? t.updated_at : 0), why: t.why } : null;
+  e.stale = staleOf(e.task, t && t.stale);
+  if (Array.isArray(r.events)) { const seen = new Set(e.events.map(v => v.t + '|' + v.text)), now = performance.now(); e.events = r.events.slice(-40).map(v => ({ t: typeof v.t === 'number' ? v.t : Date.parse(v.t) || 0, kind: v.kind || 'note', text: String(v.text || ''), fresh: M.loaded && !seen.has(v.t + '|' + v.text) ? now : 0 })); }
+}
+function fillHelper(e, r) {
+  const desc = String(r.description || '').replace(/\s+/g, ' ').trim();
+  e.parentKey = (r.parent_kind === 'temp' ? 't:' : 'b:') + String(r.parent == null ? '' : r.parent);
+  e.who = { name: '工讀生：' + (desc ? (desc.length > 14 ? desc.slice(0, 13) + '…' : desc) : '（沒有說明）'), cli: String(r.model || ''), cap: HELPER_CAP, helper: true,
+            duty: desc, model: String(r.model || ''), agentType: String(r.agent_type || ''), parentName: String(r.parent_name || '') };
+  e.st = r.state === 'working' || r.state === 'stuck' ? r.state : 'idle';
+  e.started = Date.parse(r.started_at) || 0; e.lastAt = Date.parse(r.last_at) || 0; e.created = e.started || e.created || ++seedN;
+  e.task = null; e.stale = 0;
+  if (Array.isArray(r.events)) { const seen = new Set(e.events.map(v => v.t + '|' + v.text)), now = performance.now(); e.events = r.events.slice(-40).map(v => ({ t: typeof v.t === 'number' ? v.t : Date.parse(v.t) || 0, kind: v.kind || 'note', text: String(v.text || ''), fresh: M.loaded && !seen.has(v.t + '|' + v.text) ? now : 0 })); }
+}
+function refKey(ref, from) { if (ref === 'user') return 'user'; ref = String(ref); if (ref.includes('/')) return 'p:' + ref; if (M.ents.get('b:' + ref)) return 'b:' + ref; if (from && from.peerId && M.ents.get(`p:${from.peerId}/${ref}`)) return `p:${from.peerId}/${ref}`; return 'b:' + ref; }
+function newEnt(key, kind, id, extra) { return { key, kind, id, events: [], vis: 0, walk: null, gone: false, seed: (hash2(id.length * 7, [...id].reduce((a, ch) => a + ch.charCodeAt(0), 0)) * 9) % 9, ...extra }; }
+function update(snap, opts = {}) {
+  if (!snap || typeof snap !== 'object') return null;
+  const first = !M.loaded, born = [], leaving = [];
+  if (Array.isArray(snap.bots)) {
+    const seen = new Set();
+    for (const r of snap.bots) { if (!r || r.id == null) continue; const id = String(r.id), key = 'b:' + id; seen.add(key);
+      let e = M.ents.get(key); const isNew = !e; if (!e) { e = newEnt(key, 'bot', id); M.ents.set(key, e); }
+      const wasGone = e.gone; e.gone = false; e.goneAt = 0; fillEnt(e, r, 'bot');
+      if (isNew) { if (!first && e.st !== 'asleep' && opts.walk !== false) born.push(e); else e.vis = 1; } else if (wasGone) e.vis = 1; }
+    for (const e of M.ents.values()) if (e.kind === 'bot' && !seen.has(e.key) && !e.gone) { e.gone = true; e.goneAt = Date.now(); e.walk = null; if (follow === e.key) stopFollow(); }
+  }
+  if (Array.isArray(snap.temps)) {
+    const seen = new Set();
+    for (const r of snap.temps) { if (!r || r.id == null) continue; const id = String(r.id), key = 't:' + id; seen.add(key);
+      let e = M.ents.get(key); const isNew = !e; if (!e) { e = newEnt(key, 'temp', id); M.ents.set(key, e); }
+      if (e.leaving) continue; fillEnt(e, r, 'temp'); if (isNew) { if (!first && opts.walk !== false) born.push(e); else e.vis = 1; } }
+    for (const e of M.ents.values()) if (e.kind === 'temp' && !seen.has(e.key) && !e.leaving) { e.leaving = true; leaving.push(e); }
+  }
+  if (Array.isArray(snap.peers)) {
+    const seenP = new Set();
+    for (const p of snap.peers) { if (!p || p.id == null) continue; const pid = String(p.id); seenP.add(pid);
+      let pe = M.peers.get(pid); if (!pe) { pe = { id: pid, name: p.name || pid, assign: new Map() }; M.peers.set(pid, pe); } pe.name = p.name || pid;
+      const seen = new Set();
+      for (const [list, kind] of [[p.bots || [], 'peer'], [p.temps || [], 'peertemp']]) for (const r of list) { if (!r || r.id == null) continue; const id = String(r.id), key = (kind === 'peer' ? 'p:' : 'q:') + pid + '/' + id; seen.add(key);
+        let e = M.ents.get(key); if (!e) { e = newEnt(key, kind, id, { peerId: pid, vis: 1 }); M.ents.set(key, e); } e.gone = false; fillEnt(e, r, kind); }
+      for (const e of M.ents.values()) if (e.peerId === pid && !seen.has(e.key)) { if (e.kind === 'peertemp') M.ents.delete(e.key); else e.gone = true; } }
+    for (const [pid] of M.peers) if (!seenP.has(pid)) { M.peers.delete(pid); for (const e of [...M.ents.values()]) if (e.peerId === pid) M.ents.delete(e.key); }
+  }
+  if (Array.isArray(snap.helpers)) {   // 工讀生：沒看過的從大門走到派他的人旁邊，做完（不在清單裡）就走出去
+    const seen = new Set();
+    for (const r of snap.helpers) { if (!r || r.id == null) continue; const id = String(r.id), key = 'h:' + id; seen.add(key);
+      let e = M.ents.get(key); const isNew = !e; if (!e) { e = newEnt(key, 'helper', id); M.ents.set(key, e); }
+      if (e.leaving) continue; fillHelper(e, r); if (isNew) { if (!first && opts.walk !== false) born.push(e); else e.vis = 1; } }
+    for (const e of M.ents.values()) if (e.kind === 'helper' && !seen.has(e.key) && !e.leaving) { e.leaving = true; leaving.push(e); }
+  }
+  if (Array.isArray(snap.handoffs)) {
+    const seen = new Set();
+    for (const h of snap.handoffs) { if (!h || h.id == null) continue; const id = String(h.id); seen.add(id); const fromKey = refKey(h.from), toKey = refKey(h.to), status = h.status === 'done' ? 'done' : 'open';
+      let o = M.handoffs.get(id);
+      if (!o) { o = { id, fromKey, toKey, title: h.title || '', status, landed: first || status !== 'open' }; M.handoffs.set(id, o); if (!first && status === 'open') { fly(o, 'task'); const A = M.ents.get(fromKey), B = M.ents.get(toKey); if (A && B) toast(`${A.who.name} → ${B.who.name}：${o.title}`); } }
+      else { if (o.status === 'open' && status === 'done') fly(o, 'result'); o.status = status; o.title = h.title || o.title; } }
+    for (const id of [...M.handoffs.keys()]) if (!seen.has(id)) M.handoffs.delete(id);
+  }
+  M.loaded = true;
+  assignSeats(); layout(); arrangeHelpers();
+  const stg = Math.min(.28, 2.4 / Math.max(1, born.length)); born.forEach((e, i) => { e.vis = 1;
+    if (e.kind === 'helper') { const ps = parentSeat(e), sp = !e.hidden && helperSpot(e); if (ps && sp) e.walk = makeWalk([...routeIn(ps), sp], 'in', i * stg); return; }
+    const s = M.seats.get(e.seatKey); if (s) e.walk = makeWalk(routeIn(s), 'in', i * stg); });
+  leaving.forEach(e => { if (e.kind === 'helper') { const ps = parentSeat(e), sp = !e.hidden && helperSpot(e); e.walk = ps && sp ? makeWalk([sp, ...routeOut(ps)], 'out') : null; if (!e.walk) M.ents.delete(e.key); if (follow === e.key) stopFollow(); return; }
+    const s = M.seats.get(e.seatKey); e.walk = s ? makeWalk(routeOut(s), 'out') : null; if (!e.walk) M.ents.delete(e.key); if (follow === e.key) stopFollow(); });
+  reroute(new Set(born)); M.ver++; statSig = ''; schedule();   // 資料更新只排下一幀，不算使用者操作（閒置照樣降到 5fps）
+  return { added: born.filter(e => e.kind === 'bot').map(e => e.id), seats: born.map(e => e.seatKey) };
+}
+function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = '實驗性'; }
+window.Office = { update(snap) { goLive(); return update(snap); } };   // 真資料一進來，示範就停，示範按鈕也收起來
+
+/* ══════════ 16. 示範資料與示範時間軸（全部經過 update）══════════ */
+const ago = m => DEMO_BASE - m * 60000;
+const ev = list => list.map(([m, kind, text]) => ({ t: ago(m), kind, text }));
+const iso = d => new Date(d).toISOString();
+const DB = { bots: [], temps: [], peers: [], handoffs: [], helpers: [] };
+const mkBot = (id, name, shape, color, team, duty, created, state, task, events, extra) => ({ id, name, avatar: { shape, color }, team, duty, created_at: created, state, task, events: ev(events), ...extra });
+DB.bots.push(
+  mkBot('sec', '示範秘書長', 'star', 'purple', '營運組', '統籌、分派工作、把各組結果整理給你', '2026-09-01T09:00:00+08:00', 'working', { id: '#21', title: '整理本週示範週報', status: 'doing', next: '收齊各組回報後合併成一頁', updated_at: iso(ago(3)) },
+    [[55, 'wake', '被叫醒：早上的例行彙整'], [48, 'handoff', '交辦「示範登入頁改版」給 示範工程師'], [42, 'handoff', '交辦「示範工具選型比較」給 示範研究員'], [34, 'result', '收到 示範審查員 的結果：PR #3 通過'], [27, 'note', '任務 #21 下一步：收齊各組回報'], [19, 'decision', '把「方案 A 或 B」轉給你決定'], [11, 'handoff', '交辦「示範首頁草圖匯出」給 示範設計師'], [3, 'work', '開始整理本週示範週報']], { primary: true }),
+  mkBot('ops', '示範維運', 'round', 'teal', '營運組', '部署、看監控、處理告警', '2026-09-03T09:00:00+08:00', 'working', { id: '#22', title: '示範環境例行檢查', status: 'doing', next: '檢查磁碟與憑證到期日', updated_at: iso(ago(26 * 60)) },
+    [[64, 'wake', '被排程叫醒：例行檢查'], [60, 'work', '開始：看監控面板'], [52, 'note', '一切正常'], [44, 'work', '檢查備份'], [36, 'note', '備份完整'], [28, 'work', '檢查服務回應時間'], [14, 'note', '有一項偏慢，持續觀察'], [5, 'work', '開始：檢查磁碟與憑證']]),
+  mkBot('doc', '示範文書', 'squircle', 'yellow', '營運組', '會議紀錄、信件草稿、文件排版', '2026-09-05T09:00:00+08:00', 'done', { id: '#16', title: '整理示範會議紀錄', status: 'done', next: '等你看過', updated_at: iso(ago(24)) },
+    [[70, 'wake', '被叫醒：會議結束'], [66, 'work', '開始：整理逐字稿'], [58, 'note', '抓出 6 項待辦'], [50, 'work', '排版'], [41, 'note', '加上決議清單'], [33, 'work', '校對'], [24, 'done', '完成：示範會議紀錄'], [23, 'note', '已放到共用資料夾（示範）']]),
+  mkBot('eng', '示範工程師', 'hex', 'blue', '工程組', '寫程式、修錯誤、跑測試', '2026-09-08T09:00:00+08:00', 'working', { id: '#18', title: '示範登入頁改版', status: 'doing', next: '補上表單驗證', from: 'sec', updated_at: iso(ago(4)) },
+    [[58, 'wake', '被叫醒：收到交辦'], [48, 'handin', '收到 示範秘書長 交辦：「示範登入頁改版」'], [41, 'work', '開始：拆出表單元件'], [33, 'note', '改了 3 個檔案'], [25, 'stuck', '測試失敗 2 項'], [20, 'work', '修好測試，繼續做'], [12, 'note', '任務 #18 下一步：補上表單驗證'], [4, 'work', '開始：表單驗證']]),
+  mkBot('res', '示範研究員', 'drop', 'cyan', '研究組', '查資料、比較方案、寫摘要', '2026-09-10T09:00:00+08:00', 'decision', { id: '#19', title: '示範工具選型比較', status: 'waiting', next: '等你在方案 A、B 之間選一個', waiting_on: 'user', from: 'sec', updated_at: iso(ago(19)) },
+    [[50, 'wake', '被叫醒：收到交辦'], [42, 'handin', '收到 示範秘書長 交辦：「示範工具選型比較」'], [38, 'work', '開始：列出候選工具'], [31, 'note', '整理出 5 個候選'], [26, 'work', '試用前兩名'], [21, 'note', '比較表完成'], [19, 'decision', '等你決定：方案 A 還是方案 B？'], [8, 'note', '提醒：還在等你選']]),
+  mkBot('rev', '示範審查員', 'tri', 'green', '工程組', '看程式碼、跑檢查、把關合併', '2026-09-12T09:00:00+08:00', 'idle', { id: '#17', title: '審查示範 PR #3', status: 'done', next: '等下一件', from: 'sec', updated_at: iso(ago(35)) },
+    [[62, 'wake', '被叫醒：收到審查請求'], [57, 'handin', '收到 示範秘書長 交辦：「審查示範 PR #3」'], [52, 'work', '開始逐檔看'], [46, 'note', '留了 4 則意見'], [40, 'work', '重跑檢查'], [35, 'done', '完成：PR #3 通過'], [34, 'result', '回報結果給 示範秘書長'], [30, 'idle', '閒下來，可以接新工作']]),
+  mkBot('des', '示範設計師', 'cloud', 'pink', '工程組', '畫介面草圖、整理圖稿', '2026-09-15T09:00:00+08:00', 'stuck', { id: '#20', title: '示範首頁草圖匯出', status: 'doing', next: '匯出逾時，等重試', from: 'sec', why: '匯出連續逾時 3 次', updated_at: iso(ago(6)) },
+    [[45, 'wake', '被叫醒：收到交辦'], [44, 'handin', '收到 示範秘書長 交辦：「示範首頁草圖匯出」'], [39, 'work', '開始：整理三張草圖'], [30, 'note', '草圖 1、2 完成'], [22, 'work', '開始匯出'], [16, 'stuck', '匯出逾時'], [10, 'note', '重試一次'], [6, 'stuck', '卡住：匯出連續逾時 3 次']]),
+  mkBot('sch', '示範排程員', 'pill', 'sky', '營運組', '排程、提醒、定時任務', '2026-09-20T09:00:00+08:00', 'asleep', { id: '#23', title: '下週示範提醒排程', status: 'todo', next: '下次叫醒時接著排', updated_at: iso(ago(166)) },
+    [[180, 'wake', '被叫醒：排今天的提醒'], [176, 'work', '開始排程'], [170, 'done', '完成：今天的提醒'], [168, 'note', '新增待辦 #23：下週提醒'], [166, 'sleep', '寫好記憶，下班休息'], [120, 'note', '待辦 #23 排進明天的清單'], [60, 'note', '示範秘書長 標記：下週一前要排好'], [15, 'note', '還在休息，等被叫醒']]),
+  mkBot('ana', '示範分析師', 'blob', 'lime', '研究組', '整理數據、做報表', '2026-09-25T09:00:00+08:00', 'asleep', { id: '#15', title: '示範月報數字', status: 'todo', next: '等資料到齊再做', updated_at: iso(ago(9 * 1440)) },
+    [[300, 'wake', '被叫醒：月報準備'], [290, 'work', '開始彙整'], [260, 'note', '缺兩份資料'], [255, 'note', '任務 #15 改成待辦'], [252, 'sleep', '寫好記憶，下班休息'], [200, 'note', '缺的資料到了一份'], [90, 'note', '待辦 #15 下一步：等最後一份資料'], [20, 'note', '還在休息，等被叫醒']]),
+);
+const mkTemp = (n, cli, state, title, next, extra = {}) => ({ id: 'tmp' + n, name: '臨時 #' + n, cli, state, task: { id: '—', title, status: state === 'done' ? 'done' : state === 'decision' ? 'waiting' : 'doing', next, waiting_on: state === 'decision' ? 'user' : null }, opened_at: iso(ago(10 - n)), events: ev([[state === 'done' ? 9 : 6, 'arrive', '開了一個臨時分頁'], [state === 'done' ? 8 : 5, 'work', '開始：' + title], ...(state === 'decision' ? [[2, 'decision', '等你決定：' + next.replace('等你', '')]] : state === 'done' ? [[3, 'done', '完成：' + title]] : [])]), ...extra });
+DB.temps.push(mkTemp(1, '示範 CLI-A', 'working', '整理一份示範清單', '做完就關分頁'), mkTemp(2, '示範 CLI-B', 'decision', '改一段示範文案', '等你選語氣'), mkTemp(3, '示範 CLI-C', 'done', '轉換示範檔案格式', '做完了，等關分頁'));
+DB.helpers.push(   // 示範工讀生：時間用現在算，追蹤面板的「跑了」才合理
+  { id: 'demo-h1', parent: 'eng', parent_kind: 'bot', parent_name: '示範工程師', description: '示範：跑一次完整測試並回報失敗項目', model: '示範模型', agent_type: 'general-purpose', state: 'working', started_at: iso(Date.now() - 6 * 60000), last_at: iso(Date.now() - 20000) },
+  { id: 'demo-h2', parent: 'tmp2', parent_kind: 'temp', parent_name: '臨時 #2', description: '示範：查三份文件的差異', model: '示範模型', agent_type: 'Explore', state: 'stuck', started_at: iso(Date.now() - 31 * 60000), last_at: iso(Date.now() - 14 * 60000) });
+DB.peers.push({ id: 'peer1', name: '示範電腦', bots: [
+  mkBot('bld', '示範建置員', 'ghost', 'mint', null, '在隔壁電腦上跑建置與測試', '2026-09-02T09:00:00+08:00', 'working', { id: '隔壁 #7', title: '示範建置與測試', status: 'doing', next: '跑完整測試', updated_at: iso(ago(2)) },
+    [[40, 'wake', '被叫醒：收到建置請求'], [36, 'work', '開始建置'], [30, 'note', '建置完成'], [26, 'work', '開始跑測試'], [20, 'note', '已跑 120／310 項'], [12, 'note', '已跑 240／310 項'], [7, 'work', '跑剩下的測試'], [2, 'note', '已跑 300／310 項']]),
+  mkBot('dat', '示範資料員', 'tilt', 'periw', null, '在隔壁電腦上整理資料表', '2026-09-04T09:00:00+08:00', 'idle', { id: '隔壁 #6', title: '整理示範資料表', status: 'done', next: '等下一件', updated_at: iso(ago(44)) },
+    [[80, 'wake', '被叫醒：例行整理'], [74, 'work', '開始：合併三張表'], [60, 'note', '去掉重複 18 筆'], [52, 'work', '補欄位說明'], [44, 'done', '完成：示範資料表'], [42, 'idle', '閒下來，可以接新工作'], [30, 'note', '在隔壁電腦待命'], [12, 'note', '記憶已存']])],
+  temps: [mkTemp(4, '示範 CLI-A', 'working', '跑一次示範檢查', '做完就關分頁')] });
+const push = () => { if (DEMO.live) update(DB); };
+const dbBot = ref => { ref = String(ref); if (ref.includes('/')) { const [pid, id] = ref.split('/'); const p = DB.peers.find(q => q.id === pid); return p && p.bots.find(b => b.id === id); } return DB.bots.find(b => b.id === ref); };
+const dbLog = (b, kind, text) => { b.events.push({ t: clockMs(), kind, text }); if (b.events.length > 40) b.events.shift(); };
+const rng = mulberry32(20261116), addRng = mulberry32(7);
+const sim = { nextChange: 7, nextHand: 3.2, hIdx: 0, nextTemp: 16, tempN: 5, hN: 0, pending: [] };
+const HANDOFFS = [
+  { a: 'sec', b: 'eng', title: '修正示範頁面的錯字', next: '改完跑一次測試', work: 16 },
+  { a: 'sec', b: 'peer1/bld', title: '在隔壁跑一次示範建置', next: '跑完回報結果', work: 15 },
+  { a: 'sec', b: 'sch', title: '排好下週的示範提醒', next: '先列出三個時段', work: 14 },
+  { a: 'eng', b: 'rev', title: '審查示範 PR #4', next: '看完留言', work: 16 },
+  { a: 'res', b: 'doc', title: '把比較表排成一頁', next: '套用示範版型', work: 14 },
+];
+const TEMP_TASKS = ['重新命名一批示範檔案', '把一段示範文字翻成英文', '查一個示範錯誤訊息', '整理一份示範連結清單', '算一下示範表格的總和'];
+function demoHandoff(h) {
+  const A = dbBot(h.a), B = dbBot(h.b); if (!A || !B || DB.handoffs.some(x => x.status === 'open' && (x.to === h.b || x.from === h.b))) return false;
+  const id = 'h' + (++sim.hN); DB.handoffs.push({ id, from: h.a, to: h.b, title: h.title, status: 'open' });
+  A.task = { ...(A.task || {}), status: 'waiting', waiting_on: h.b, updated_at: iso(clockMs()) }; dbLog(A, 'handoff', `交辦「${h.title}」給 ${B.name}`); push();
+  sim.pending.push({ at: simT + 1.6, fn: () => { if (B.state === 'asleep') dbLog(B, 'wake', '被叫醒：收到交辦'); B.state = 'working'; B.task = { id: '#' + (24 + sim.hN), title: h.title, status: 'doing', next: h.next, from: h.a, updated_at: iso(clockMs()) }; dbLog(B, 'handin', `收到 ${A.name} 交辦：「${h.title}」`); dbLog(B, 'work', '開始：' + h.title); B._lock = simT + h.work + 2; push(); } });
+  sim.pending.push({ at: simT + 1.6 + h.work, fn: () => {
+    const rec = DB.handoffs.find(x => x.id === id); if (rec) rec.status = 'done';
+    B.state = 'done'; B.task = { ...B.task, status: 'done', next: '已回報給 ' + A.name, updated_at: iso(clockMs()) }; dbLog(B, 'done', '完成：' + h.title); dbLog(B, 'result', '回報結果給 ' + A.name);
+    if (A.task && A.task.waiting_on === h.b) A.task = { ...A.task, status: 'doing', waiting_on: null, updated_at: iso(clockMs()) }; dbLog(A, 'result', `收到 ${B.name} 的結果：${h.title}`); push();
+    sim.pending.push({ at: simT + 6, fn: () => { DB.handoffs = DB.handoffs.filter(x => x.id !== id); push(); } });
+    if (h.b === 'sch') sim.pending.push({ at: simT + 9, fn: () => { if (B.state === 'done' || B.state === 'idle') { dbLog(B, 'sleep', '寫好記憶，下班休息'); B.state = 'asleep'; B.task = { id: '#23', title: '下週示範提醒排程', status: 'todo', next: '下次叫醒時確認時段', updated_at: iso(clockMs()) }; push(); } } });
+  } });
+  return true;
+}
+function demoChange() {
+  const pool = [...DB.bots, ...DB.peers.flatMap(p => p.bots), ...DB.temps].filter(b => !(b._lock > simT) && b.id !== 'sec' && b.state !== 'asleep' && !b._out);
+  if (!pool.length) return; const n = st => pool.filter(b => b.state === st).length;
+  let b = null, to;
+  if (!n('decision')) { b = pool.find(x => x.state === 'working'); to = 'decision'; } else if (!n('stuck')) { b = pool.find(x => x.state === 'working'); to = 'stuck'; }
+  if (!b) { b = pool[Math.floor(rng() * pool.length)]; const r = rng(); to = b.state === 'working' ? (r < .45 ? 'done' : r < .72 ? 'decision' : 'stuck') : b.state === 'done' ? 'idle' : 'working'; if (n('working') <= 3 && b.state === 'working') to = 'working'; }
+  if (!b || b.state === to) return;
+  const tk = b.task || (b.task = { id: '—', title: '示範工作', status: 'doing', next: '' }), prev = b.state, upd = iso(clockMs());
+  if (to === 'decision') { b.task = { ...tk, status: 'waiting', waiting_on: 'user', next: '等你決定要不要繼續', updated_at: upd }; dbLog(b, 'decision', '等你決定：要不要照這個做？'); }
+  else if (to === 'stuck') { b.task = { ...tk, next: '指令失敗，等重試', updated_at: upd }; dbLog(b, 'stuck', '卡住：指令失敗'); }
+  else if (to === 'done') { b.task = { ...tk, status: 'done', next: '等下一件', updated_at: upd }; dbLog(b, 'done', '完成：' + tk.title); }
+  else if (to === 'idle') dbLog(b, 'idle', '閒下來，可以接新工作');
+  else if (prev === 'decision') { b.task = { ...tk, waiting_on: null, status: 'doing', next: '照你的決定繼續', updated_at: upd }; dbLog(b, 'work', '你決定了，繼續做'); }
+  else if (prev === 'stuck') { b.task = { ...tk, next: '重試成功，繼續', updated_at: upd }; dbLog(b, 'work', '重試成功，繼續做'); }
+  else { const t = b.cli ? TEMP_TASKS[Math.floor(rng() * TEMP_TASKS.length)] : '新的示範工作'; b.task = { id: b.cli ? '—' : '#' + (30 + Math.floor(rng() * 9)), title: t, status: 'doing', next: '先看一下範圍', updated_at: upd }; dbLog(b, 'work', '開始：' + t); }
+  b.state = to; push();
+}
+function demoTempChurn() {
+  const out = DB.temps.find(t => t.state === 'done' || t.state === 'idle');
+  if (out) { DB.temps = DB.temps.filter(t => t !== out); push(); return; }
+  if (DB.temps.length < 3) { const n = sim.tempN++, t = TEMP_TASKS[Math.floor(rng() * TEMP_TASKS.length)]; DB.temps.push({ id: 'tmp' + n, name: '臨時 #' + n, cli: '示範 CLI-' + 'ABC'[n % 3], state: 'working', opened_at: iso(clockMs()), task: { id: '—', title: t, status: 'doing', next: '做完就關分頁' }, events: [{ t: clockMs(), kind: 'arrive', text: '開了一個臨時分頁' }, { t: clockMs(), kind: 'work', text: '開始：' + t }], _lock: simT + 10 }); push(); }
+}
+// 「＋新增正職」：隨機團隊、形狀、顏色
+const ROLES = { 營運組: [['文書', '會議紀錄、信件草稿'], ['維運', '部署、看監控'], ['排程員', '排程、提醒'], ['客服', '回覆示範客服單'], ['採購', '整理示範報價']], 工程組: [['工程師', '寫程式、修錯誤'], ['審查員', '看程式碼、把關合併'], ['設計師', '畫介面草圖'], ['測試員', '寫測試、跑回歸'], ['前端', '切版、調樣式']], 研究組: [['研究員', '查資料、寫摘要'], ['分析師', '整理數據、做報表'], ['翻譯', '中英文件互譯'], ['編輯', '潤稿、校對']], 其他: [['助理', '雜事、提醒'], ['顧問', '看方向、給建議']] };
+const ADD_COLORS = ['blue', 'cyan', 'green', 'pink', 'yellow', 'teal', 'sky', 'lime', 'mint', 'periw', 'orange', 'purple'];
+let addN = 0;
+function makeNewBot() {
+  const r = addRng(), team = r < .3 ? '營運組' : r < .65 ? '工程組' : r < .9 ? '研究組' : null, roles = ROLES[team || '其他'], [role, duty] = roles[Math.floor(addRng() * roles.length)];
+  const base = '示範' + role, same = [...DB.bots].filter(b => b.name === base || b.name.startsWith(base) && /\d+$/.test(b.name.slice(base.length))).length;
+  const name = same ? base + (same + 1) : base, id = 'add' + (++addN) + '-' + Math.floor(addRng() * 1e6).toString(36), t = clockMs() + addN;
+  const k = addRng(), state = k < .64 ? 'working' : k < .74 ? 'decision' : k < .82 ? 'stuck' : k < .92 ? 'idle' : 'done';   // 示範：新人也有各種狀態
+  const task = state === 'decision' ? { id: '#' + (100 + addN), title: '讀交接文件', status: 'waiting', next: '等你確認權限範圍', waiting_on: 'user', updated_at: iso(t) } : state === 'stuck' ? { id: '#' + (100 + addN), title: '讀交接文件', status: 'doing', next: '開不了交接資料夾，等重試', updated_at: iso(t) } : { id: '#' + (100 + addN), title: '讀交接文件', status: state === 'working' ? 'doing' : 'done', next: '讀完找 示範秘書長 報到', updated_at: iso(t) };
+  const evs = [{ t, kind: 'arrive', text: '報到：新的正職（示範）' }, { t, kind: 'work', text: '開始：讀交接文件' }]; if (state === 'decision') evs.push({ t, kind: 'decision', text: '等你決定：權限要開到哪裡？' }); if (state === 'stuck') evs.push({ t, kind: 'stuck', text: '卡住：開不了交接資料夾' }); if (state === 'done' || state === 'idle') evs.push({ t, kind: 'done', text: '完成：讀交接文件' });
+  return { id, name, avatar: { shape: SHAPES[Math.floor(addRng() * SHAPES.length)], color: ADD_COLORS[Math.floor(addRng() * ADD_COLORS.length)] }, team, duty, created_at: iso(t), state, task, events: evs, _lock: simT + 12 };
+}
+function addBots(n) {
+  for (let i = 0; i < n; i++) DB.bots.push(makeNewBot());
+  const wasLive = DEMO.live; DEMO.live = true; const res = update(DB); DEMO.live = wasLive;
+  if (n === 1 && res && res.seats[0]) { const s = M.seats.get(res.seats[0]); if (s) setArea(s.room); toast(`新的正職報到：${DB.bots[DB.bots.length - 1].name}`); }
+  else { setArea('all'); toast(`${n} 位新的正職報到`); }
+  return res;
+}
+function simStep(dt) {
+  if (DEMO.live && !DEMO.paused) {
+    simT += dt;
+    if (simT >= sim.nextHand) { const h = HANDOFFS[sim.hIdx % HANDOFFS.length]; if (!papers.length && demoHandoff(h)) sim.hIdx++; sim.nextHand = simT + 21; }
+    if (simT >= sim.nextChange) { demoChange(); sim.nextChange = simT + 5 + rng() * 3; }
+    if (simT >= sim.nextTemp) { demoTempChurn(); sim.nextTemp = simT + 11; }
+    for (let i = sim.pending.length - 1; i >= 0; i--) if (simT >= sim.pending[i].at) { const p = sim.pending.splice(i, 1)[0]; p.fn(); }
+  }
+  if (!DEMO.paused) {
+    for (let i = papers.length - 1; i >= 0; i--) { const pp = papers[i]; if (pp.frozen) continue; pp.t += dt; if (pp.t >= pp.dur) { papers.splice(i, 1); landPaper(pp); } }
+    for (const e of [...M.ents.values()]) if (e.walk) { e.walk.t += dt; if (e.walk.t >= e.walk.dur) { const w = e.walk; e.walk = null; if (w.dir === 'out') { M.ents.delete(e.key); assignSeats(); layout(); arrangeHelpers(); } } }
+  }
+  for (const r of rings) r.t += dt; for (let i = rings.length - 1; i >= 0; i--) if (rings[i].t > rings[i].max) rings.splice(i, 1);
+}
+$('#demoHandoff').onclick = () => { if (!DEMO.live) return; if (papers.length) return; for (let i = 0; i < HANDOFFS.length; i++) { const h = HANDOFFS[sim.hIdx % HANDOFFS.length]; sim.hIdx++; if (demoHandoff(h)) break; } sim.nextHand = simT + 21; };
+$('#addOne').onclick = () => addBots(1);
+$('#addTen').onclick = () => addBots(10);
+
+/* ══════════ 17. 給自動化測試用的掛鉤 ══════════ */
+window.__office = {
+  frames: () => frames, busyFrames: () => busyFrames, busyWhy: () => ({ papers: papers.length, rings: rings.length, walking: [...M.ents.values()].filter(e => e.walk).map(e => e.key + ':' + e.walk.dir), cam: camMoving(), morph: V.k < 1, rooms: [...M.rooms.values()].filter(r => r.alpha < 1 || Math.abs(r.tx - r.x) > .01 || Math.abs(r.ty - r.y) > .01 || Math.abs(r.th - r.h) > .01).map(r => r.id) }), counts, highlighted: () => counted().filter(e => hl && matches(hl, e)).length,
+  following: () => follow, panelOpen: () => $('#panel').classList.contains('open'),
+  entScreen: key => { const e = M.ents.get(key), h = e && headTop(e); return h ? { x: h.x, y: (h.y + h.base.y) / 2 } : null; },
+  seatScreen: key => { const s = M.seats.get(key), g = s && geo(s); if (!g) return null; const p = t2s(g.cx, g.cy, 10); return { x: p.x, y: p.y - 12 * cam.z }; },
+  pause: on => { DEMO.paused = !!on; kick(); }, follow: key => startFollow(key), unfollow: () => stopFollow(), setMode: (m, i) => setMode(m, i), setArea: (id, i) => setArea(id, i),
+  forceIdle: () => { lastInput = performance.now() - IDLE_AFTER - 1; goal = null; }, isActive: () => active(), busy: () => busy(), cam: () => ({ ...cam }), lod: () => lodFar ? 'far' : 'near',
+  addBots: n => addBots(n), setTemps: n => { while (DB.temps.length < n) { const k = sim.tempN++; DB.temps.push({ id: 'tmp' + k, name: '臨時 #' + k, cli: '示範 CLI-' + 'ABC'[k % 3], state: 'working', opened_at: iso(clockMs() + k), task: { id: '—', title: TEMP_TASKS[k % 5], status: 'doing', next: '做完就關分頁' }, events: [], _lock: 1e9 }); } while (DB.temps.length > n) DB.temps.pop(); push(); },
+  assignments: () => Object.fromEntries([...M.ents.values()].filter(e => e.kind === 'bot').map(e => [e.id, e.seatKey + (e.gone ? ' (已離開)' : '')])),
+  rooms: () => [...M.rooms.values()].map(r => ({ id: r.id, label: r.label, x: +r.tx.toFixed(2), y: +r.ty.toFixed(2), w: r.tw, h: +r.th.toFixed(2) })),
+  tags: () => Object.fromEntries([...M.ents.values()].map(e => [e.key, tagsOf(e).map(t => t.text)]).filter(([, t]) => t.length)),
+  walking: () => [...M.ents.values()].filter(e => e.walk).length,
+  helpers: () => [...M.ents.values()].filter(e => e.kind === 'helper').map(e => ({ key: e.key, parent: e.parentKey, state: e.st, hidden: !!e.hidden, more: e.more || 0, walk: e.walk ? e.walk.dir : null, name: e.who.name })),
+  people: () => [...M.ents.values()].map(e => ({ key: e.key, kind: e.kind, name: e.who.name, state: e.st, seat: e.seatKey, gone: !!e.gone, leaving: !!e.leaving })),
+  perf: () => { const a = [...perfBuf].sort((x, y) => x - y), n = a.length; return n ? { n, avg: +(a.reduce((s, v) => s + v, 0) / n).toFixed(2), p95: +a[Math.min(n - 1, Math.floor(n * .95))].toFixed(2), max: +a[n - 1].toFixed(2), rooms: roomsDrawn, items: itemsDrawn, lod: lodFar ? 'far' : 'near', zoom: +cam.z.toFixed(2) } : null; }, resetPerf: () => { perfBuf.length = 0; },
+  demoHandoff: (a, b, freezeAt) => { const ok = demoHandoff({ a, b, title: '修正示範頁面的錯字', next: '改完跑一次測試', work: 16 }); if (ok && freezeAt != null && papers.length) { const pp = papers[papers.length - 1]; pp.t = freezeAt * pp.dur; pp.frozen = true; } return ok; },
+  ff: sec => { for (let i = 0; i < sec * 20; i++) simStep(.05); kick(); return { simT: +simT.toFixed(1), bots: DB.bots.length }; },
+  db: () => JSON.parse(JSON.stringify(DB)), demoLive: () => DEMO.live,
+  items: key => { const e = M.ents.get(key); return e ? itemsOf(e) : null; }, allItems: () => Object.fromEntries([...M.ents.values()].map(e => [e.key, itemsOf(e)])), itemIds: () => ITEMS.map(i => i.id),
+};
+
+/* ══════════ 啟動 ══════════ */
+(function boot() {
+  const narrow = innerWidth <= 720, weak = (navigator.hardwareConcurrency || 8) < 4 || (navigator.deviceMemory || 8) < 4;
+  const saved = store.get('mode', null), m = saved === 'flat' || saved === 'iso' ? saved : (narrow || weak ? 'flat' : 'iso');
+  V.to = V.m = V.from = m === 'flat' ? 0 : 1; V.k = 1;
+  $$('#mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
+  if (store.get('legendMin', narrow)) { $('#legend').classList.add('min'); $('#legendToggle').textContent = '展開'; $('#legendToggle').setAttribute('aria-expanded', 'false'); }
+  if (Object.keys(overrides()).length) $('#resetSeats').hidden = false;
+  W = innerWidth; H = innerHeight; V.tp = wantTp();
+  if (HOST) { document.body.classList.add('embedded'); goLive(); } else update(DB);   // 嵌在 ShellBot 裡：等主頁的第一份 snapshot（那一份算第一次載入，沒有人走進來）
+  addEventListener('resize', resize); resize(); renderStats(); renderAreas(); kick();
+})();
+})();
+</script>
+</body>
+</html>

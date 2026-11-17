@@ -6,6 +6,46 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.48.0 (2026-11-17)
+
+### Added
+
+- **The office (experimental, off by default).** Asked for: a picture of who is doing what, instead of reading
+  the sidebar line by line. Settings → General → "Office" turns it on; a button then sits at the foot of the
+  sidebar and opens an office floor over the whole window (Esc or ✕ closes it). Bots are staff at their desks, the
+  primary bot at the lobby desk, a bot with no open tab asleep at its desk; AI tabs that are not bots are interns at
+  a long table; each paired computer is a room with its bots and interns. A desk's screen, a red "!", a yellow sign
+  and a coffee cup say busy, waiting on you, stuck and idle, from the same light the tab shows; a bot's open task
+  (`sfctl task`) is on its card, with a clock when the store calls it stuck. Click a person to follow them; drag a
+  bot to swap seats; seats, accessories and the flat or 3D view are kept on this computer (`office.json` in the
+  state folder: the window starts in private mode, which clears the page's own storage at every start).
+  **Part-timers:** the subagents a Claude Code tab has launched stand beside its desk until they finish, tagged
+  with their job; working while their transcript was written in the last 2 minutes, stuck after 10 silent minutes
+  without finishing; more than four at one desk show as three and "+N"; one left unfinished for 6 hours (a
+  conversation that ended mid-run) is not shown. Cost: nothing runs while it is closed (no button, no frame, no
+  timer with the switch off); while open it refreshes every 3 s and not at all with the window in the background,
+  from what the page already holds plus the task store (at most every 9 s) and a folder listing of the open Claude
+  tabs' subagents (file times and their small meta files, never a transcript or a screen). Not wired yet: hand-offs
+  are not drawn as flying paper, the office's own text is Chinese only, a paired computer's subagents are not
+  shown, the panel's events are only the changes seen while the app runs, and seat order follows the roster order
+  (bots have no creation time). Covered by `tests_office_ui.py` (the page and the office together, headless),
+  `tests_office_snapshot.js` (the mapping) and `tests_office_helpers.py` (part-timers, what the office keeps);
+  screenshots in `qa-shots/office-*.png`.
+
+  **辦公室（實驗性，預設關閉）。** 需求：一眼看出誰在做什麼，不用一行一行讀側欄。設定 → 一般 →「辦公室」打開後，側欄底部多一顆
+  按鈕，按下去整個視窗變成一層辦公室（Esc 或 ✕ 關閉）。bot 是正職，坐自己的桌子，主要 bot 坐大廳的秘書長辦公桌，沒開分頁的 bot
+  在自己的位子上休息；不是 bot 的 AI 分頁是實習生，坐長桌；配對的每台電腦是一間房，裡面是那台的 bot 和實習生。桌上螢幕亮、紅色
+  「!」、黃色警示、咖啡杯分別代表在忙、等你決定、卡住、閒置，跟分頁燈號是同一個來源；bot 手上的任務（`sfctl task`）顯示在追蹤
+  面板，任務太久沒動會多一個小時鐘。點一個人可以跟拍；拖曳 bot 可以換位子；座位、配件、平面或立體存在這台電腦（state 資料夾的
+  `office.json`：視窗用私密模式啟動，每次啟動都會清掉網頁自己的儲存）。**工讀生：** Claude Code 分頁派出去的 subagent 會站在
+  那張桌子旁邊，做完才走，頭上標著他的工作；紀錄檔 2 分鐘內有寫就是在忙，10 分鐘沒寫又還沒做完就是卡住；同一張桌子超過 4 位只
+  畫 3 位加「+N」；沒做完卻 6 小時沒動靜的（對話中途結束留下的）不顯示。成本：關著時什麼都不跑（開關關掉時沒有按鈕、沒有
+  iframe、沒有計時器）；開著時每 3 秒更新一次，視窗在背景就不更新，資料來自頁面已經有的東西，加上任務庫（最多 9 秒一次）和開著的
+  Claude 分頁的 subagent 資料夾清單（只看檔案時間和小小的 meta 檔，不讀紀錄檔也不讀畫面）。還沒接上的：交辦還不會畫成飛紙、辦公室
+  裡的文字只有中文、配對電腦的 subagent 不顯示、追蹤面板的事件只有 app 開著時看到的狀態變化、座位順序照名冊順序（bot 沒有建立
+  時間）。由 `tests_office_ui.py`（主頁和辦公室一起跑，無頭瀏覽器）、`tests_office_snapshot.js`（資料對應）和
+  `tests_office_helpers.py`（工讀生、辦公室存的東西）守著；截圖在 `qa-shots/office-*.png`。
+
 ## v0.47.1 (2026-11-17)
 
 ### Changes
