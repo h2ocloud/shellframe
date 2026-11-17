@@ -46,6 +46,22 @@
   會警告帳號可能不能用。已經設成 GPT-5.5 的 bot 不會被自動改掉，要自己換。由 `tests_codex_models.py` 和 `tests_bot_settings_ui.py`
   （清單和警告，示範模型名）守著。
 
+- **A message to a Codex tab no longer waits behind Codex's own last answer.** Reported: every `sfctl send` to a
+  Codex bot came back "draft", and the draft it named was the bot's previous reply; hand-offs to it stalled. The
+  check for unsent words in a tab's input box takes the rows between the last two `────` rules, which is Claude
+  Code's box (and pi's); Codex draws a dim rule above and below each turn's last answer, so that answer was read as
+  the person's draft. A box starts right under its upper rule (Claude Code's `❯`, pi's text or cursor); a blank row
+  there is no box, and the screen is not read as one. Codex's own box is not read, as before (its grey hint is
+  never a draft). Compared on every open tab of this computer: only the Codex tab's reading changed. Covered by
+  `tests_tab_delivery.py` (a Codex screen as captured, pi's editor, Claude Code's bash mode).
+
+  **送給 Codex 分頁的訊息，不會再卡在 Codex 自己上一則回覆後面。** 回報：`sfctl send` 給 Codex bot 每次都回「draft」，說的草稿
+  其實是 bot 上一則回覆；派工因此卡住。判斷「輸入框裡有沒有沒送出的字」時，取的是最後兩條 `────` 橫線中間那幾行，那是 Claude Code
+  （和 pi）的輸入框；Codex 會在每一輪最後的回覆上下各畫一條灰線，於是那段回覆被當成使用者的草稿。現在輸入框要從上橫線正下方開始
+  （Claude Code 的 `❯`、pi 的文字或游標）；那一行是空白就不是輸入框，不再當成輸入框來讀。Codex 自己的輸入框照舊不讀（灰色提示字
+  從來不算草稿）。對這台電腦所有開著的分頁比對過：只有 Codex 分頁的判斷改變。由 `tests_tab_delivery.py`（照實擷取的 Codex
+  畫面、pi 的輸入區、Claude Code 的 bash 模式）守著。
+
 - **Resizing the window no longer makes a Codex tab reprint its whole conversation over and over.** Reported on
   Windows: dragging the window's edge redrew all of a Codex tab's conversation, again and again, and was slow. Codex
   reprints its transcript into the scrollback at each new size, and the page told the tab's process every size of a

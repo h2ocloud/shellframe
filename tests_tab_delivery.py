@@ -102,6 +102,29 @@ check("…and so is typed text with the cursor on one of its characters",
 check("SGR 27 ends inverse, 0 ends both", [x[2] for x in td._chars_with_dim("\x1b[7ma\x1b[27mb\x1b[7;2mc\x1b[0md")]
       == [True, False, True, False])
 check("no input box in view: unknown, assume nothing", td.composer_state("› Ask Codex\n  ready")[0] == "unknown")
+# A Codex tab, as captured (sf-codex, gpt-5.6-luna): a dim rule above and below its last answer, then its own
+# prompt line with a dim hint. The answer between the rules is not a draft (it held every message to the tab).
+CODEX_SCREEN = "\n".join([
+    "    \x1b[2m  sid: s344\x1b[0m", "",
+    "\x1b[2m" + "─" * 110, "",
+    "• \x1b[0m示範：已完成並回報：", "",
+    "  - 未引用：\x1b[38;5;6mdemo-a.png\x1b[39m、\x1b[38;5;6mdemo-b.png\x1b[39m",
+    "  - 未修改或刪除任何檔案", "",
+    "\x1b[2m" + "─" * 110, "", "",
+    "\x1b[0;1m›\x1b[0m \x1b[2mRun /review on my current changes\x1b[0m", "",
+    "  \x1b[38;2;246;226;183mdemo-model medium\x1b[2m\x1b[39m · \x1b[0m\x1b[38;2;171;223;167m~\x1b[39m", ""])
+check("a Codex answer between its two rules is not a draft (unknown: Codex's box is not read)",
+      td.composer_state(CODEX_SCREEN) == ("unknown", ""), td.composer_state(CODEX_SCREEN))
+check("…nor is anything between two rules that starts with a blank row",
+      td.composer_state(box("", "\x1b[39m❯\xa0寫到一半")) == ("unknown", ""))
+# pi's editor, as captured (no prompt glyph: its own cursor, an inverse cell, then what is typed)
+PI_RULE = "\x1b[38;2;129;162;190m" + "─" * 80
+pi_box = lambda row: "\n".join(["some conversation", PI_RULE, row, PI_RULE, "\x1b[38;2;102;102;102m~\x1b[39m"])
+check("pi's empty editor (its cursor only) is still read as its box: empty",
+      td.composer_state(pi_box("\x1b[7m\x1b[39m \x1b[0m")) == ("empty", ""))
+check("…and text typed in it is a draft", td.composer_state(pi_box("示範：寫到一半\x1b[7m \x1b[0m"))[0] == "draft")
+check("Claude Code's bash mode (`!` under the rule) is still its box: a draft, never typed into",
+      td.composer_state(box("\x1b[38;5;204m!\x1b[39m ls -la"))[0] == "draft")
 check("peek's note names a suggestion as not the user's",
       "not the user's" in td.composer_note("suggestion", "hint") and td.composer_note("empty", "") == "")
 

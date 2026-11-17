@@ -136,6 +136,14 @@ def composer_state(screen_ansi: str):
     rules = [i for i, ln in enumerate(plain) if _RULE.match(ln)]
     if len(rules) < 2:
         return "unknown", ""
+    # An input box starts right under its upper rule: Claude Code's prompt glyph (`!` in its bash mode), pi's
+    # text or its cursor (an inverse cell). A blank row there is no box: Codex draws a dim rule above and below
+    # each turn's last answer with a blank row inside, and that answer was read as the person's draft, so every
+    # message to a Codex tab waited behind it (reported: `sfctl send` to a Codex bot answered "draft" with its
+    # own last reply as the draft). Codex's own box (the `›` row under them) is not read, as before.
+    under = lines[rules[-2] + 1]
+    if not plain[rules[-2] + 1].strip(_SPACE) and "\x1b[7m" not in under:
+        return "unknown", ""
     chars = []
     for i, raw in enumerate(lines[rules[-2] + 1:rules[-1]]):
         row = _chars_with_dim(raw)
