@@ -272,6 +272,12 @@ def run(browser, base, engine):
     check("…and is not asked again while it does not change", calls(page, "task_detail") == 1)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-board-open.png"))
+    fr.evaluate("window.__tagRow = document.querySelector('#vBody .trow[data-id=\"13\"]'); window.__tagRow.__mine = 1")
+    for _ in range(2):
+        page.evaluate("SFOffice.refresh()")                   # a snapshot every time: the view must not be rebuilt for it
+        page.wait_for_timeout(500)
+    check("the view is not rebuilt when a snapshot arrives (the same row node is still there: a click or a selection survives)",
+          fr.evaluate("document.body.contains(window.__tagRow) && window.__tagRow.__mine === 1"))
     fr.click('#vBody .trow[data-id="12"] .th')
     check("a second click closes it", fr.evaluate("document.querySelectorAll('#vBody .trow[data-id=\"12\"] .thist').length") == 0)
 
@@ -342,10 +348,13 @@ def run(browser, base, engine):
     check("…its default pace is once a minute", fr.evaluate("__office.schedPollMs()") == 60000)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-calendar-view.png"))
+    fr.evaluate("window.__tagLoop = document.querySelector('#vBody .lrow'); window.__tagLoop.__mine = 1")
     fr.evaluate("__office.setSchedPoll(1200)")
-    page.wait_for_timeout(3300)
+    page.wait_for_timeout(2900)
     n_open = calls(page, "schedules_list") - base_calls
     check("while the view is open it is asked again, no faster than the pace", 2 <= n_open <= 4, n_open)
+    check("…and the list is not rebuilt by the snapshots or the answers (same row node)",
+          fr.evaluate("document.body.contains(window.__tagLoop) && window.__tagLoop.__mine === 1"))
     fr.evaluate("__office.closeView()")
     page.wait_for_timeout(300)
     n_closed = calls(page, "schedules_list")
@@ -392,6 +401,17 @@ def run(browser, base, engine):
     page.wait_for_timeout(800)
     check("when the loops are over the marks and the badge are gone",
           fr.evaluate("__office.loopMarks()") == [] and fr.evaluate("__office.loops()") == [])
+    print(f"[{engine}] a narrow window")
+    page.set_viewport_size({"width": 600, "height": 800})
+    page.wait_for_timeout(500)
+    fr.evaluate("__office.openView('board')")
+    page.wait_for_timeout(700)
+    nar = fr.evaluate("""() => { const p = document.getElementById('panel').getBoundingClientRect(), b = document.getElementById('vBody');
+        return {pw: p.width, w: innerWidth, over: b.scrollWidth > b.clientWidth + 1}; }""")
+    check("the view takes the window's width as a sheet, nothing spills sideways", nar["pw"] == nar["w"] and not nar["over"], nar)
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-board-narrow.png"))
+    fr.evaluate("__office.closeView()")
     check("no console error from the page or the office", not errors, errors[:5])
     page.close()
 

@@ -393,7 +393,7 @@ button.who:hover{background:rgba(122,162,247,.28)}
   #legend:not(.min){bottom:60px}
   #legend ul{gap:4px 12px}
   #panel{top:auto;left:0;right:0;bottom:0;width:auto;max-height:60vh;border-radius:18px 18px 0 0;border-bottom:0;transform:translateY(calc(100% + 16px))}
-  #panel.has-chat{width:auto}
+  #panel.has-chat,#panel.viewing{width:auto}
   #panel.open{transform:none}
   .grab{display:block}
   .ph{padding:10px 16px 12px}
@@ -1670,10 +1670,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chat
      這台電腦的排程 ← SFOffice.host.board.schedules()（schedules_list，唯讀）：只在「排程」檢視開著時問，
               第一次馬上問，之後最多每 60 秒一次；關掉檢視就不問了（日曆上的數字因此不含它）。
    檢視不在 renderPanel 裡重畫：用簽章，沒變就不碰 DOM（展開的列、點擊才不會被吃掉）；倒數只改字，由畫面迴圈順手更新。 */
-M.board = null; M.notes = []; M.boardVer = 0; M.boardJson = ''; M.loops = []; M.loopsVer = 0; M.loopsJson = '';
+M.board = null; M.notes = []; M.boardVer = 0; M.boardJson = ''; M.boardAt = 0; M.loops = []; M.loopsVer = 0; M.loopsJson = '';
 const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
 const NOTE_COLS = [COL.blue, COL.yellow, COL.green, COL.purple, COL.cyan], NOTE_MAX = 7;
-const SCHED = { data: null, at: 0, busy: false, ver: 0, every: 60000, calls: 0 };
+const SCHED = { data: null, at: 0, busy: false, ver: 0, every: 60000, calls: 0, json: '' };
 const vstate = { open: new Set(), detail: new Map(), ver: 0, sig: '', tick: 0 };
 const boardHost = () => (HOST ? (HOST.board || null) : (typeof DEMO_BOARD !== 'undefined' ? DEMO_BOARD : null));
 const listOf = v => (Array.isArray(v) ? v.filter(x => x && x.id != null) : []);
@@ -1681,7 +1681,7 @@ function setBoard(b) {
   const nb = { decisions: listOf(b && b.decisions), stuck: listOf(b && b.stuck), open: listOf(b && b.open) };
   nb.all = nb.decisions.concat(nb.stuck, nb.open);
   const j = JSON.stringify(nb); if (j === M.boardJson) return;
-  M.boardJson = j; M.board = nb; M.boardVer++;
+  M.boardJson = j; M.board = nb; M.boardVer++; M.boardAt = Date.now() / 1000;
   let k = 0; M.notes = nb.all.slice(0, NOTE_MAX).map(t => (t.decision || t.stuck ? COL.red : NOTE_COLS[k++ % NOTE_COLS.length]));   // 一件一張，紅的（等你決定、卡住）排前面
 }
 function normLoop(l) {
@@ -1759,11 +1759,12 @@ function whoBtn(key, raw) {                          // 辦公室裡有的人＝
   return raw ? `<span>${esc(raw)}</span>` : '<span style="color:var(--mute)">—</span>';
 }
 const actorName = a => { a = String(a || ''); if (a === 'user') return '你'; const e = M.ents.get('b:' + a); return e ? e.who.name : a; };
+const idleOf = t => (t.idle_s ? t.idle_s + (nowS() - M.boardAt) : t.updated_at ? nowS() - t.updated_at : 0);
 const findTask = id => (M.board ? M.board.all.find(t => t.id === id) : null);
 
 // ── 任務看板 ──
 function taskRow(t, kind) {
-  const op = vstate.open.has(t.id), now = nowS(), idle = t.idle_s || (t.updated_at ? now - t.updated_at : 0), c0 = ST_COLOR[t.status] || COL.dim;
+  const op = vstate.open.has(t.id), now = nowS(), idle = idleOf(t), c0 = ST_COLOR[t.status] || COL.dim;
   const hist = vstate.detail.get(t.id);
   const evs = hist && hist.ok ? hist.events : [];
   const histHtml = !op ? '' : `<ol class="thist" aria-label="#${t.id} 的歷程">` + (!hist || hist.loading && !hist.ok ? '<li><span></span><span class="none">讀取中…</span></li>'
@@ -1776,7 +1777,7 @@ function taskRow(t, kind) {
     `<span class="ts" style="--c:${c0}">${ST_ZH[t.status] || esc(t.status)}</span><span class="tc" aria-hidden="true">${op ? '▲' : '▼'}</span></button>` +
     `<dl class="tm">${kind === 'stuck' ? `<dt>負責</dt><dd>${whoBtn(t.owner_key, t.owner)}</dd>` : ''}${kind === 'decision' ? `<dt>交辦自</dt><dd>${whoBtn(t.requester_key, t.requester)}</dd>` : ''}` +
     `<dt>下一步</dt><dd>${esc(t.next_step || '—')}</dd><dt>在等</dt><dd>${t.waiting_on ? whoBtn(t.waiting_key, t.waiting_on) : '<span style="color:var(--mute)">—</span>'}</dd>` +
-    `<dt>期限</dt><dd>${due}</dd><dt>動靜</dt><dd class="${kind === 'stuck' ? 'old' : ''}">${idle ? sinceWords(idle) + '沒動' : '—'}</dd></dl>${histHtml}</div>`;
+    `<dt>期限</dt><dd>${due}</dd><dt>動靜</dt><dd class="age ${kind === 'stuck' ? 'old' : ''}" data-id="${t.id}">${idle ? sinceWords(idle) + '沒動' : '—'}</dd></dl>${histHtml}</div>`;
 }
 function evText(e) {
   const t = String(e.text || '');
@@ -1817,7 +1818,7 @@ function schedSection() {
     : '<p class="vempty">沒有找到排程。</p>') + (d.launchd_ok ? '' : '<p class="vnote">讀不到 launchd 的狀態，啟用中／已停用可能不準。</p>');
   const on = d && d.ok ? d.rows.filter(r => r.enabled).length : 0;
   return `<section class="vsec" aria-label="這台電腦的排程"><h3>這台電腦的排程<b>${d && d.ok && !d.unsupported && d.configured ? `${on}/${d.rows.length}` : ''}</b></h3>${body}` +
-    `<div class="vtools"><span>唯讀；開著這一頁時每分鐘更新</span><span>${d ? hhmm(d.at) + ' 更新' : ''}</span></div></section>`;
+    `<div class="vtools"><span>唯讀；開著這一頁時每分鐘更新</span><span class="sat">${d ? hhmm(d.at) + ' 更新' : ''}</span></div></section>`;
 }
 function calHtml() {
   return `<section class="vsec" aria-label="對話裡的排程"><h3>對話裡的排程<b>${M.loops.length}</b></h3>` +
@@ -1833,7 +1834,10 @@ function viewSub() {
 }
 function renderView(force) {
   if (!view) return;
-  const sig = view === 'board' ? ['b', M.boardVer, M.ver, vstate.ver, [...vstate.open].join(), Math.floor(Date.now() / 30e3)].join('|') : ['c', M.loopsVer, M.ver, SCHED.ver].join('|');
+  // 簽章只看「畫出來的東西」：看板／排程的資料、誰在辦公室（名牌可不可以點、叫什麼）。M.ver 每 3 秒的快照都會加一，不能放進來：
+  // 放了，檢視每 3 秒整個重建，點到一半的按鈕、選起來的字、焦點都會掉。時間字（幾分鐘沒動、倒數）由 viewStep 原地改字。
+  const people = [...M.ents.values()].map(e => e.key + (e.gone || e.leaving ? '!' : '') + e.who.name).join('|');
+  const sig = view === 'board' ? ['b', M.boardVer, vstate.ver, [...vstate.open].join(), people].join('#') : ['c', M.loopsVer, SCHED.ver, people].join('#');
   if (!force && sig === vstate.sig) return; vstate.sig = sig;
   $('#vIcon').innerHTML = VIEW_ICON[view]; $('#vTitle').textContent = WALL_OBJ[view].name; $('#vSub').textContent = viewSub();
   const body = $('#vBody'), top = body.scrollTop;
@@ -1869,13 +1873,16 @@ async function schedPoll() {                                    // 只在「排�
   SCHED.busy = true; SCHED.at = performance.now(); SCHED.calls++;
   let r = null; try { r = await h.schedules(); } catch (err) { r = null; }
   SCHED.busy = false;
-  SCHED.data = r || { ok: false, unsupported: false, configured: true, launchd_ok: true, rows: [], at: Date.now() }; SCHED.ver++;
+  const nd = r || { ok: false, unsupported: false, configured: true, launchd_ok: true, rows: [], at: Date.now() }, j = JSON.stringify(Object.assign({}, nd, { at: 0 }));
+  SCHED.data = nd; if (j !== SCHED.json) { SCHED.json = j; SCHED.ver++; }          // 內容一樣就不重畫（只改「幾點更新」那幾個字）
 }
 function viewStep() {                                           // 每一幀：重畫（簽章沒變就不動）、倒數改字、該問的問
   if (!view) return;
   renderView(false);
   const now = performance.now();
-  if (now - vstate.tick >= 400) { vstate.tick = now; $$('#vBody .cd[data-ts]').forEach(el => { const t = cdText(+el.dataset.ts, el.dataset.st); if (el.textContent !== t) el.textContent = t; }); }
+  if (now - vstate.tick >= 400) { vstate.tick = now; $$('#vBody .cd[data-ts]').forEach(el => { const t = cdText(+el.dataset.ts, el.dataset.st); if (el.textContent !== t) el.textContent = t; });
+    const sat = $('#vBody .sat'); if (sat && SCHED.data) { const w = hhmm(SCHED.data.at) + ' 更新'; if (sat.textContent !== w) sat.textContent = w; }
+    $$('#vBody .age[data-id]').forEach(el => { const t = findTask(+el.dataset.id), i = t ? idleOf(t) : 0, w = i ? sinceWords(i) + '沒動' : '—'; if (el.textContent !== w) el.textContent = w; }); }
   if (view === 'board') { for (const id of vstate.open) { const t = findTask(id); if (t) loadDetail(id, t.updated_at); } }
   else schedPoll();
 }
