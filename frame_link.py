@@ -170,6 +170,9 @@ def _mesh_vpn_addresses() -> list:
 
 
 HOST_LOOKUP_S = 2.0          # how long the hostname lookup may take before it is given up
+HOST_LOOKUP_KEEP_S = 30.0    # an answer is reused this long (status() asks every few seconds)
+_HOST_LOOKUP = {"thread": None, "found": [], "at": -1e9}
+_HOST_LOOKUP_LOCK = threading.Lock()
 
 
 def _hostname_addresses() -> list:
@@ -178,19 +181,30 @@ def _hostname_addresses() -> list:
     gethostbyname_ex has no timeout of its own. On a Mac whose hostname does not resolve (a CI
     runner, a laptop on a new network) it waits out mDNS and DNS for a minute or more, and
     pairing_begin and status() both ask: the pairing screen froze for that long. So it runs in a
-    thread the caller stops waiting for; the addresses found by then are used, the rest dropped."""
-    found = []
+    thread the caller stops waiting for; the addresses found by then are used, the rest dropped.
+    status() is asked every few seconds: one lookup at a time (a hung one is not started again
+    while it hangs), and its answer is kept for HOST_LOOKUP_KEEP_S."""
+    with _HOST_LOOKUP_LOCK:
+        if time.monotonic() - _HOST_LOOKUP["at"] < HOST_LOOKUP_KEEP_S:
+            return list(_HOST_LOOKUP["found"])
+        t = _HOST_LOOKUP["thread"]
+        if t is None or not t.is_alive():
+            box = []
 
-    def lookup():
-        try:
-            found.extend(socket.gethostbyname_ex(socket.gethostname())[2])
-        except OSError:
-            pass
+            def lookup():
+                try:
+                    box.extend(socket.gethostbyname_ex(socket.gethostname())[2])
+                except OSError:
+                    pass
+                with _HOST_LOOKUP_LOCK:
+                    _HOST_LOOKUP.update(found=list(box), at=time.monotonic())
 
-    t = threading.Thread(target=lookup, daemon=True, name="sf-link-hostname")
-    t.start()
+            t = threading.Thread(target=lookup, daemon=True, name="sf-link-hostname")
+            _HOST_LOOKUP["thread"] = t
+            t.start()
     t.join(HOST_LOOKUP_S)
-    return list(found)
+    with _HOST_LOOKUP_LOCK:
+        return list(_HOST_LOOKUP["found"])
 
 
 def local_addresses() -> list:

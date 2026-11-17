@@ -75,6 +75,19 @@ SHOWN = "(() => { const l = document.getElementById('chat-layer'); return l && !
 VISIBLE = "sel => { const el = document.querySelector(sel); return !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'; }"
 BAR_IDS = "() => [...document.getElementById('tab-bar').children].map(e => e.id).filter(Boolean)"
 RECT = "sel => { const b = document.querySelector(sel).getBoundingClientRect(); return [b.left, b.top, b.width, b.height, b.bottom]; }"
+
+
+def settled_rect(page, sel, tries=40):
+    """The element's box once the sidebar's slide has finished: the same on two looks 120 ms apart.
+    A fixed wait measured mid-slide on a slow machine (CI: the pane 7 px narrower than at rest)."""
+    last = page.evaluate(RECT, sel)
+    for _ in range(tries):
+        page.wait_for_timeout(120)
+        now = page.evaluate(RECT, sel)
+        if now == last:
+            return now
+        last = now
+    return last
 MOVED = ["chat-switch", "btn-board", "usage-brief", "btn-bridge"]
 
 
@@ -120,7 +133,7 @@ def run(browser, engine):
     page.click("#chat-head .cm-side-btn")
     page.wait_for_timeout(250)
     check("…and brings it back", not page.evaluate("document.getElementById('sidebar').classList.contains('collapsed')"))
-    pane_chat = page.evaluate(RECT, ".term-pane.active")
+    pane_chat = settled_rect(page, ".term-pane.active")
     chat_head_h = page.evaluate(RECT, "#chat-head")[3]
     if engine == "webkit":
         page.screenshot(path=str(HERE / "qa-shots" / "chat-layout-chat.png"))
@@ -131,7 +144,8 @@ def run(browser, engine):
     check("the terminal has a header", page.evaluate(VISIBLE, "#term-head"))
     check("…with the Chat/Terminal switch in it", page.evaluate("!!document.querySelector('#term-head #chat-switch')")
           and page.evaluate(VISIBLE, "#chat-switch"))
-    head, pane = page.evaluate(RECT, "#term-head"), page.evaluate(RECT, ".term-pane.active")
+    pane = settled_rect(page, ".term-pane.active")
+    head = page.evaluate(RECT, "#term-head")
     check(f"the terminal starts under it, nothing over its text (head ends {head[4]:.0f}, terminal starts {pane[1]:.0f})",
           abs(pane[1] - head[4]) <= 1.5, (head, pane))
     check(f"…as tall as the chat view's ({head[3]:.0f} / {chat_head_h:.0f}px)", abs(head[3] - chat_head_h) <= 1.5)

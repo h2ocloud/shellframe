@@ -19,6 +19,7 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 import urllib.error
@@ -602,15 +603,34 @@ def main():
         real_lookup_s = frame_link.HOST_LOOKUP_S
         try:
             frame_link.HOST_LOOKUP_S = 0.3
-            socket.gethostbyname_ex = lambda name: (time.sleep(5), (name, [], ["198.51.100.7"]))[1]
+            fresh = lambda: frame_link._HOST_LOOKUP.update(thread=None, found=[], at=-1e9)
+            calls = []
+            gate = threading.Event()
+
+            def hung(name):
+                calls.append(name)
+                gate.wait(5)
+                return (name, [], ["198.51.100.7"])
+            fresh()
+            socket.gethostbyname_ex = hung
             t0 = time.time()
             addrs = frame_link.local_addresses()
             check("a hostname lookup that hangs is given up on (does not freeze pairing)",
                   time.time() - t0 < 3 and "198.51.100.7" not in addrs)
-            socket.gethostbyname_ex = lambda name: (name, [], ["198.51.100.7", "127.0.1.1"])
+            frame_link.local_addresses(); frame_link.local_addresses()
+            check("…and is not started again while it hangs (status() asks every few seconds)", len(calls) == 1)
+            gate.set()
+            time.sleep(0.2)
+            check("…its late answer is used by the next ask", "198.51.100.7" in frame_link.local_addresses())
+            fresh()
+            socket.gethostbyname_ex = lambda name: (calls.append(name), (name, [], ["198.51.100.7", "127.0.1.1"]))[1]
+            n = len(calls)
             addrs = frame_link.local_addresses()
             check("a lookup that answers adds its non-loopback addresses", "198.51.100.7" in addrs
                   and "127.0.1.1" not in addrs)
+            frame_link.local_addresses()
+            check("…and its answer is reused for a while, not asked again", len(calls) == n + 1)
+            fresh()
         finally:
             socket.gethostbyname_ex, frame_link.HOST_LOOKUP_S = real_ghbn, real_lookup_s
         clock = [real_now()]
