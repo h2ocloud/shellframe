@@ -6,6 +6,49 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.50.0 (2026-11-17)
+
+### Added
+
+- **The office: choose how staff are zoned.** Asked for: arrange the office by kind of agent, with at least a wall
+  between them, and let everyone choose for themselves. A select at the top of the office ("Zoning") has three
+  ways, kept on this computer: **by AI** (the default: a room per CLI a bot runs on, Claude Code, Codex, pi…, each
+  with its colour, in that order), **custom groups**, and **one room** (as before). Every zone is a room with walls;
+  a full one (12) grows a second. In custom groups, a bot's Details page has a Group card: its group, the others,
+  "Ungrouped", and a box for a new name; dragging a bot onto another group's seat moves it to that group (the bot
+  it swaps with takes its place). Groups are kept while another way is chosen. Changing the way walks everyone to
+  their new desk; a bot that left keeps its held seat, in its new zone. Interns stay at the lobby's long table and
+  a paired computer stays in its own room. Accessories no longer follow the zone's name, so a change of zoning
+  leaves them alone. Covered by `tests_office_ui.py` (116, both engines: rooms per CLI, one room, custom groups
+  from the panel and kept after a restart, a held seat moved with its zone) and `tests_office_snapshot.js` (each
+  bot's CLI); screenshots `qa-shots/office-zones-*.png`.
+
+  **辦公室：正職怎麼分區，可以自己選。** 需求：辦公室依 agent 類別排，至少用隔間稍微隔開；而且讓大家自己彈性設定。辦公室上方多一個
+  「分區」選單，三種，存在這台電腦：**依 AI**（預設：bot 跑的每種 CLI 一間，Claude Code、Codex、pi…，各有自己的顏色，照這個順序）、
+  **自訂分組**、**不分區**（大家同一間，跟以前一樣）。每一區都是有牆的房間，滿 12 人長出第二間。自訂分組時，bot 的「資料」頁有一張
+  「分組」卡：它在哪一組、其他組、「未分組」，還有新組名的輸入框；把 bot 拖到別組的座位上也會換到那一組（被換過來的那位換到這一組）。
+  換成別的分區方式時，分組照樣留著。換分區方式時大家會走到新座位；已離開、座位還保留著的 bot，在新的區照樣保留位子。實習生照舊坐
+  大廳長桌，配對電腦照舊是自己一間。配件不再跟著區的名字變，換分區不會換掉配件。由 `tests_office_ui.py`（116 項，兩種引擎：依 CLI
+  分間、不分區、從面板設自訂分組並在重啟後記得、保留中的座位跟著換區）和 `tests_office_snapshot.js`（每個 bot 的 CLI）守著；截圖在
+  `qa-shots/office-zones-*.png`。
+
+### Fixes
+
+- **Windows: Esc reaches a Codex tab again (unverified on Windows).** Reported: in a Codex tab on Windows, Esc did
+  not interrupt the turn. The page writes a lone ESC byte, which is also how every escape sequence starts, so
+  ConPTY's input parser cannot tell the key from the start of a sequence. ConPTY asks its host at start for
+  win32-input-mode (`CSI ? 9001 h`), where each key is one unambiguous record, and Windows Terminal sends every key
+  that way. While ConPTY has asked, a keystroke that is only Esc now goes as Escape's press and release in that
+  form; every other key is written as before, and macOS and Linux are untouched. The debug log says each time
+  ("Esc ×1 as win32-input-mode key events"). Not yet tried on a Windows computer: the ConPTY is a stand-in in
+  `tests_win_esc.py`.
+
+  **Windows：Esc 又能中斷 Codex 分頁了（尚未在 Windows 上驗證）。** 回報：Windows 上的 Codex 分頁按 Esc 中斷不了。頁面送出的是
+  單獨一個 ESC 字元，而它也是所有控制序列的開頭，ConPTY 的輸入解析分不出是按鍵還是序列的開頭。ConPTY 一啟動就會請宿主改用
+  win32-input-mode（`CSI ? 9001 h`），在那個模式裡每個按鍵都是一筆明確的紀錄，Windows Terminal 就是這樣送每個鍵。現在只要 ConPTY
+  提出過這個要求，「只有 Esc」的那一次按鍵就用這種格式送出按下和放開；其他按鍵照舊，macOS 和 Linux 不受影響。每次這樣送，debug log
+  都會記一行（「Esc ×1 as win32-input-mode key events」）。還沒在 Windows 電腦上試過：`tests_win_esc.py` 裡的 ConPTY 是替身。
+
 ## v0.49.1 (2026-11-17)
 
 ### Changes

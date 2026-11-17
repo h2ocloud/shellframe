@@ -124,7 +124,8 @@
       return { id: role, name: String(e.label || role), avatar: avatar(b.avatar, role, kit), primary: role === I.primary,
                duty: String(e.responsibility || ''), created_at: iso(ROSTER_EPOCH + order.indexOf(role) * 60000),
                state: tab ? tabState(tab.dot) : 'asleep', task: taskFor([role], I.tasks, known),
-               runs: runsOf(e), memory: b.memory !== false, sid: tab ? tab.sid : '', line: tab ? clip(tab.line, 120) : '' };
+               runs: runsOf(e), memory: b.memory !== false, cli: String((e.cli && e.cli.label) || cliName(e.cmd) || ''),
+               sid: tab ? tab.sid : '', line: tab ? clip(tab.line, 120) : '' };
     });
     let k = 0;
     const temps = tabs.filter(x => x.kind === 'temp' && !(x.role && known.has(x.role))).map(x => {

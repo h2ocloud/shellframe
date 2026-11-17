@@ -286,10 +286,68 @@ def run(browser, base, engine):
     page.wait_for_timeout(5000)          # the newcomers walk in from the door
     fr.evaluate("__office.setArea('lobby', true)")
     page.wait_for_timeout(300)
-    fr.evaluate("__office.setArea('z:辦公區#1', true)")
+    fr.evaluate("__office.setArea('z:Claude Code#1', true)")
     page.wait_for_timeout(900)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-left-and-plus.png"))
+
+    print(f"[{engine}] zoning")
+    check("by default staff sit by the AI they run on: a walled room per CLI, in the CLIs' order",
+          fr.evaluate("__office.zones()") == ["Claude Code", "Codex"] and fr.evaluate("document.getElementById('zoning').value") == "cli",
+          fr.evaluate("__office.zones()"))
+    seats = fr.evaluate("__office.assignments()")
+    check("…each bot in its CLI's room (the primary at the lobby desk)", seats.get("chief") == "sec"
+          and seats.get("eng", "").startswith("z:Claude Code#1:") and seats.get("res", "").startswith("z:Codex#1:"), seats)
+    if shoot:
+        fr.evaluate("__office.setArea('all', true)")
+        page.wait_for_timeout(700)
+        page.screenshot(path=str(SHOTS / "office-zones-cli.png"))
+    fr.select_option("#zoning", "none")
+    page.wait_for_timeout(500)
+    check("不分區: everyone in one room", fr.evaluate("__office.zones()") == ["辦公區"], fr.evaluate("__office.zones()"))
+    fr.select_option("#zoning", "custom")
+    page.wait_for_timeout(500)
+    check("自訂分組 before any group: everyone in 未分組", fr.evaluate("__office.zones()") == ["未分組"], fr.evaluate("__office.zones()"))
+    fr.evaluate("__office.follow('b:eng')")
+    fr.wait_for_selector("#pTabs:not([hidden])", timeout=5000)
+    fr.click("#tabInfo")
+    fr.wait_for_selector("#pGroup:not([hidden]) #gNew", timeout=5000)
+    fr.fill("#gNew", "示範專案組")
+    page.wait_for_timeout(3500)                       # a snapshot lands while the name is typed
+    check("a group name being typed survives the 3 s refresh", fr.evaluate("document.getElementById('gNew').value") == "示範專案組")
+    fr.press("#gNew", "Enter")
+    page.wait_for_timeout(600)
+    check("a new group from the panel: its own room, the bot moves there",
+          fr.evaluate("__office.zones()") == ["示範專案組", "未分組"]
+          and fr.evaluate("__office.assignments()").get("eng", "").startswith("z:示範專案組#1:"), fr.evaluate("__office.zones()"))
+    fr.evaluate("__office.setGroup('res', '示範專案組')")     # res left earlier (seat held): it cannot be followed
+    page.wait_for_timeout(600)
+    check("a bot that left keeps its held seat, in its group's room; the empty 未分組 room goes",
+          fr.evaluate("__office.zones()") == ["示範專案組"] and fr.evaluate("__office.assignments()").get("res", "").startswith("z:示範專案組#1:"),
+          (fr.evaluate("__office.zones()"), fr.evaluate("__office.assignments()")))
+    fr.click("#pGroup button[data-g='']")
+    page.wait_for_timeout(600)
+    check("未分組 takes it out again", fr.evaluate("__office.zones()") == ["示範專案組", "未分組"]
+          and fr.evaluate("__office.groups()") == {"res": "示範專案組"}, (fr.evaluate("__office.zones()"), fr.evaluate("__office.groups()")))
+    fr.click("#pGroup button[data-g='示範專案組']")
+    page.wait_for_timeout(600)
+    check("…and its chip puts it back", fr.evaluate("__office.zones()") == ["示範專案組"]
+          and fr.evaluate("document.querySelector(\"#pGroup button[data-g='示範專案組']\").classList.contains('on')"), fr.evaluate("__office.zones()"))
+    if shoot:
+        page.screenshot(path=str(SHOTS / "office-zones-custom.png"))
+    fr.select_option("#zoning", "cli")
+    page.wait_for_timeout(600)
+    check("back to 依 AI: the rooms per CLI again, the groups kept for later",
+          fr.evaluate("__office.zones()") == ["Claude Code", "Codex"]
+          and fr.evaluate("__office.groups()") == {"eng": "示範專案組", "res": "示範專案組"},
+          (fr.evaluate("__office.zones()"), fr.evaluate("__office.groups()")))
+    check("…and the panel says groups only count in 自訂分組", "改成自訂分組" in fr.evaluate("document.getElementById('pGroup').innerText"))
+    fr.click("#tabChat")
+    fr.evaluate("__office.unfollow()")
+    page.wait_for_timeout(600)
+    saved = page.evaluate("window.__saved")
+    check("the zoning and the groups are saved through office_prefs_save",
+          saved and saved[-1].get("zoning") == "cli" and saved[-1].get("groups") == {"eng": "示範專案組", "res": "示範專案組"}, saved[-1:] if saved else saved)
 
     print(f"[{engine}] what it keeps")
     fr.click("#mode button[data-m='flat']")
@@ -361,7 +419,9 @@ def reopen(browser, base, prefs, engine):
     check("after a restart the office comes back in the mode it was left in",
           fr.evaluate("document.querySelector('#mode button[data-m=\"flat\"]').getAttribute('aria-pressed')") == "true")
     seats = fr.evaluate("__office.assignments()")
-    check("…a seat moved by hand is kept", seats.get("eng") == "z:辦公區#1:7", seats)
+    check("…a seat moved by hand is kept", seats.get("eng") == "z:Claude Code#1:7", seats)
+    check("…the zoning and the groups too", fr.evaluate("__office.zoning()") == "cli"
+          and fr.evaluate("__office.groups()") == {"eng": "示範專案組", "res": "示範專案組"}, fr.evaluate("__office.groups()"))
     check("…and the accessories picked", fr.evaluate("__office.items('b:eng')") == ["globe", "duck"],
           fr.evaluate("__office.items('b:eng')"))
     if shoot:
@@ -385,7 +445,7 @@ with sync_playwright() as pw:
                 continue
             try:
                 prefs = run(browser, base, engine)
-                reopen(browser, base, dict(prefs, seats={"eng": {"zone": "辦公區#1", "slot": 7}}, items={"eng": ["globe", "duck"]}), engine)
+                reopen(browser, base, dict(prefs, seats={"eng": {"zone": "Claude Code#1", "slot": 7}}, items={"eng": ["globe", "duck"]}), engine)
             finally:
                 browser.close()
     finally:

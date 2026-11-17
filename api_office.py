@@ -25,7 +25,8 @@ import sf_config
 from api_host import main
 from sf_log import _swallow
 
-PREF_KEYS = ("seats", "items", "mode", "legendMin", "panelTab")      # panelTab: the panel's Conversation / Details tab
+PREF_KEYS = ("seats", "items", "mode", "legendMin", "panelTab",      # panelTab: the panel's Conversation / Details tab
+             "zoning", "groups")                                    # how staff are zoned; custom groups (role → name)
 PREFS_MAX = 256 * 1024
 _PREFS_LOCK = threading.Lock()
 

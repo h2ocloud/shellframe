@@ -28,7 +28,7 @@ const kit = { palette: { purple: '#A15BF0', amber: '#F0A934', gray: '#8B90A0' },
 const roster = {
   chief: { label: '示範秘書長', responsibility: '統籌', bot: { avatar: { shape: 'star', color: 'purple' }, primary: true }, cli: { label: 'Claude Code' }, pin: {} },
   eng: { label: '示範工程師', responsibility: '寫程式', bot: { avatar: { shape: 'egg', color: '#123456' }, memory: false }, cli: { label: 'Codex' }, pin: { model: 'demo-model' } },
-  res: { label: '示範研究員', bot: { avatar: { shape: 'nope', color: 'nope' } } },
+  res: { label: '示範研究員', cmd: 'sf-pi-demo --x', bot: { avatar: { shape: 'nope', color: 'nope' } } },
   ext: { label: '示範外部', bot: { external: { kind: 'webhook' } } },
   plain: { label: '示範角色' },
 };
@@ -66,6 +66,8 @@ check('only the roster\'s own bots, in roster order', snap.bots.map(b => b.id).j
 check('states: idle tab, working tab, no tab = asleep', [B.chief.state, B.eng.state, B.res.state].join() === 'idle,working,asleep');
 check('primary, duty, runs, memory', B.chief.primary && !B.eng.primary && B.chief.duty === '統籌' && B.eng.runs === 'Codex · demo-model'
   && B.chief.runs === 'Claude Code · CLI 預設' && B.eng.memory === false && B.chief.memory === true, [B.chief, B.eng]);
+check('the AI each bot runs on, for zoning by AI: the roster\'s CLI name, else its command\'s, else none',
+  B.chief.cli === 'Claude Code' && B.eng.cli === 'Codex' && B.res.cli === 'pi', [B.chief.cli, B.eng.cli, B.res.cli]);
 check('faces: palette key → hex, #hex kept, unknown → the default', B.chief.avatar.color === '#A15BF0' && B.eng.avatar.color === '#123456'
   && B.eng.avatar.shape === 'egg' && B.res.avatar.shape === 'round' && B.res.avatar.color === '#8B90A0', [B.chief.avatar, B.eng.avatar, B.res.avatar]);
 check('created_at follows the roster order', B.chief.created_at < B.eng.created_at && B.eng.created_at < B.res.created_at

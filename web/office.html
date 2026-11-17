@@ -269,6 +269,17 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
 .ccomp textarea::placeholder{color:var(--mute)}
 .csend{flex:none;height:38px}
 .csend:disabled{opacity:.5}
+/* 自訂分組（資料頁） */
+#pGroup[hidden]{display:none}
+.gchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.gchips button{height:28px;padding:0 11px;border-radius:99px;border:1px solid var(--line);background:#24283b;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+.gchips button i{width:8px;height:8px;border-radius:50%;background:var(--c,var(--dim))}
+.gchips button.on{border-color:var(--c,var(--blue));color:var(--ink);background:rgba(122,162,247,.1)}
+.gnew{display:flex;gap:6px;margin-top:8px}
+.gnew input{flex:1;min-width:0;height:30px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:#16161e;color:var(--ink);font:12.5px var(--font);outline:none}
+.gnew input:focus{border-color:var(--blue)}
+.gnew button,.gswitch{height:30px;padding:0 12px;border-radius:9px;border:1px solid var(--line);background:#24283b;font-size:12.5px;font-weight:600}
+.gswitch{margin-top:8px}
 .pfoot{display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid rgba(59,66,97,.6);flex:none}
 .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#24283b;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
 .btn:hover{border-color:var(--blue)}
@@ -337,6 +348,8 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
       <div id="qres" role="listbox"></div>
     </div>
     <button class="ib" id="searchBtn" aria-label="找人"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3.6 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+    <label class="sel" id="zoningWrap" title="正職怎麼分區（每一區是一間有牆的房間）"><select id="zoning" aria-label="怎麼分區">
+      <option value="cli">分區：依 AI</option><option value="custom">分區：自訂分組</option><option value="none">分區：不分區</option></select></label>
     <label class="sel" id="areaWrap" title="看哪一區"><select id="area" aria-label="看哪一區"></select></label>
     <button class="tb add" id="addOne" title="示範：加一位隨機團隊的正職">＋ 新增正職</button>
     <button class="tb" id="addTen" title="示範：一次加 10 位">＋10</button>
@@ -396,6 +409,7 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
     <p class="duty" id="pDuty"></p>
     <div class="pmeta" id="pMeta"></div>
     <div class="card" id="pTask"></div>
+    <div class="card" id="pGroup" hidden></div>
     <div class="card items" id="pItems"></div>
     <div class="events"><h3>最近事件</h3><ol id="pEvents"></ol></div>
   </div>
@@ -441,7 +455,11 @@ const ST = {
 const EVC = { work: COL.blue, done: COL.green, result: COL.green, decision: COL.red, stuck: COL.yellow, handoff: COL.purple, handin: COL.purple, wake: COL.cyan, sleep: COL.mute, idle: '#8fb573', note: COL.dim, arrive: COL.cyan, leave: COL.mute };
 const TEAMS = ['營運組', '工程組', '研究組', '其他'];
 const TEAMCOL = { 營運組: '#73daca', 工程組: '#7aa2f7', 研究組: '#7dcfff', 其他: '#a9b1d6' };
-const teamCol = t => TEAMCOL[t] || '#a9b1d6';
+// 依 AI 分區時每個 CLI 一個顏色；自訂分組的名字照雜湊固定配一個顏色
+Object.assign(TEAMCOL, { 'Claude Code': '#ff9e64', Codex: '#73daca', pi: '#bb9af7', Pi: '#bb9af7', 'Grok Build': '#7dcfff', OpenCode: '#9ece6a',
+  'Cursor Agent': '#94a8ff', Antigravity: '#e0af68', 'Gemini CLI': '#89ddff', 辦公區: '#a9b1d6', 未分組: '#a9b1d6', '其他 AI': '#a9b1d6' });
+const ZPAL = ['#73daca', '#7aa2f7', '#bb9af7', '#ff9e64', '#e0af68', '#9ece6a', '#f5a8d4', '#7dcfff', '#c3e88d', '#94a8ff'];
+const teamCol = t => TEAMCOL[t] || ZPAL[Math.floor(hashStr(String(t)) * ZPAL.length)];
 const SHAPES = ['tri', 'hex', 'drop', 'star', 'cloud', 'round', 'squircle', 'pill', 'blob', 'tilt', 'ghost', 'egg'];
 const NAMED_COL = { purple: '#bb9af7', blue: '#7aa2f7', cyan: '#7dcfff', green: '#9ece6a', pink: '#f5a8d4', yellow: '#e0af68', teal: '#73daca', sky: '#89ddff', lime: '#c3e88d', mint: '#b4f9f8', periw: '#94a8ff', orange: '#ff9e64' };
 
@@ -532,7 +550,27 @@ function avatarURL(who, size = 96) {
    座位分配（誰坐哪一區第幾位）和幾何位置分開：分配是黏的（不見的 bot 位子保留），
    幾何位置每次由分配算出來，房間移動有動畫。                                         */
 const LW = 14, G = 2.6, GR = 3.0, ZW = 10.8, COLP = 2.5, ROWP = 2.4, ZCAP = 12, TMAX = 9;
-const BY_TEAM = false, OPEN_ZONE = '辦公區';      // A：不分團隊，大家坐同一間（滿 12 人長出「辦公區 2」）；BY_TEAM = true 才照 team 分區
+// 正職怎麼分區（上方的選單，存在這台電腦）：每一區是一間有牆的房間，滿 12 人長出「… 2」。
+//   cli     依 AI：每個 bot 跑的 CLI 一區（Claude Code、Codex、pi…）
+//   custom  自訂分組：資料頁替每個 bot 選一組（或拖到別組的座位）；沒選的在「未分組」
+//   none    不分區：大家坐同一間「辦公區」
+const OPEN_ZONE = '辦公區', UNGROUPED = '未分組', OTHER_AI = '其他 AI', ZONINGS = ['cli', 'custom', 'none'];
+const ZONING_NAME = { cli: '依 AI', custom: '自訂分組', none: '不分區' };
+const CLI_ORDER = ['Claude Code', 'Codex', 'pi', 'Pi', 'Grok Build', 'OpenCode', 'Cursor Agent', 'Antigravity', 'Gemini CLI'];
+let zoning = (z => ZONINGS.includes(z) ? z : (HOST ? 'cli' : 'custom'))(store.get('zoning', null));
+const groupsOf = () => { const g = store.get('groups', null); return g && typeof g === 'object' && !Array.isArray(g) ? g : {}; };
+const groupName = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 24) : '');
+function teamOf(e) {             // 這個正職坐哪一區
+  if (e.kind !== 'bot') return OPEN_ZONE;
+  if (zoning === 'none') return OPEN_ZONE;
+  if (zoning === 'cli') return e.who.cli || OTHER_AI;
+  return groupName(groupsOf()[e.id]) || e.who.group0 || UNGROUPED;      // group0：示範資料自帶的團隊
+}
+function zoneRank(team) {        // 區的排列順序
+  if (zoning === 'cli') { const i = CLI_ORDER.indexOf(team); return i >= 0 ? i : team === OTHER_AI ? 99 : 50; }
+  const i = TEAMS.indexOf(team); return team === UNGROUPED ? 99 : i >= 0 ? i : 50;
+}
+const byZone = (a, b) => zoneRank(a.team) - zoneRank(b.team) || a.team.localeCompare(b.team, 'zh-Hant') || a.n - b.n;
 const SEAT_HOLD_MS = 60 * 60 * 1000;          // 離開的 bot 位子保留多久（1 小時），之後讓出來
 const M = {
   loaded: false, ver: 0, gen: 0,
@@ -549,6 +587,7 @@ const byCreated = (a, b) => (a.created - b.created) || (a.id < b.id ? -1 : a.id 
 const bots = () => [...M.ents.values()].filter(e => e.kind === 'bot');
 const zoneOf = key => M.zones.find(z => z.key === key);
 function overrides() { const o = store.get('seats', {}); return o && typeof o === 'object' ? o : {}; }
+let reseating = false;
 function assignSeats() {
   const all = bots(), live = all.filter(e => !e.gone);
   const prim = live.filter(e => e.who.primary).sort(byCreated)[0];
@@ -557,7 +596,9 @@ function assignSeats() {
   for (const [id, a] of [...M.assign]) { const e = M.ents.get('b:' + id), z = zoneOf(a.zone); if (!e || id === M.primaryId || !z || z.team !== e.who.team || (e.gone && Date.now() - (e.goneAt || 0) > SEAT_HOLD_MS)) M.assign.delete(id); }
   const taken = key => { const s = new Set(); for (const a of M.assign.values()) if (a.zone === key) s.add(a.slot); return s; };
   const ensureZone = (team, n) => { let z = M.zones.find(q => q.team === team && q.n === n); if (!z) { z = { key: team + '#' + n, team, n }; M.zones.push(z); } return z; };
-  const order = all.filter(e => e.id !== M.primaryId && !M.assign.has(e.id) && !e.gone).sort(byCreated);
+  // 重新分區時（rezone），離開了但位子還保留著的也照新的區重排，保留期照舊算
+  const held = e => e.gone && reseating && Date.now() - (e.goneAt || 0) <= SEAT_HOLD_MS;
+  const order = all.filter(e => e.id !== M.primaryId && !M.assign.has(e.id) && (!e.gone || held(e))).sort(byCreated);
   // 先套用拖曳換過的位子（嵌在 ShellBot 時存在這台電腦，單獨打開時存在 localStorage）
   const ov = overrides();
   for (const e of order) { const o = ov[e.id]; if (!o || typeof o.zone !== 'string') continue; const [team, n] = o.zone.split('#'); if (team !== e.who.team || !(+n >= 1) || !(o.slot >= 0 && o.slot < ZCAP)) continue; for (let k = 1; k < +n; k++) ensureZone(team, k); const z = ensureZone(team, +n); if (!taken(z.key).has(o.slot)) M.assign.set(e.id, { zone: z.key, slot: o.slot }); }
@@ -608,7 +649,7 @@ function layout() {
   }
   const lobbyColY = M.peers.size ? py - G : LH;
   // 各區：用到幾排就蓋幾排（最多 3 排 × 4 位）；欄數取「整層最不寬」的排法
-  const zs = M.zones.map(z => { let mx = -1; for (const a of M.assign.values()) if (a.zone === z.key) mx = Math.max(mx, a.slot); const rows = clamp(Math.ceil((mx + 1) / 4), 1, 3); return { z, rows, d: .6 + rows * ROWP + .3 }; });
+  const zs = M.zones.slice().sort(byZone).map(z => { let mx = -1; for (const a of M.assign.values()) if (a.zone === z.key) mx = Math.max(mx, a.slot); const rows = clamp(Math.ceil((mx + 1) / 4), 1, 3); return { z, rows, d: .6 + rows * ROWP + .3 }; });
   let best = null;
   for (let cN = 1; cN <= 4; cN++) {
     const rd = []; zs.forEach((q, i) => { const r = Math.floor(i / cN); rd[r] = Math.max(rd[r] || 0, q.d); });
@@ -1050,7 +1091,7 @@ function capacityOf(e) { const s = M.seats.get(e.seatKey); if (!s || s.shared) r
 function itemOverrides() { const o = store.get('items', {}); return o && typeof o === 'object' ? o : {}; }
 function autoItems(e) {  // 自動配：照執掌比對關鍵字；固定種子，同一個人每次都一樣
   if (isTempEnt(e)) { const pool = ITEMS.filter(it => it.temp); return [pool[Math.floor(hashStr(e.id + '#t') * pool.length)].id]; }
-  const text = [e.who.duty, e.who.name, e.who.team].join(' ').toLowerCase(), cap = capacityOf(e), used = {}, out = [], n = 2 + (hashStr(e.id + '#n') < .5 ? 1 : 0);
+  const text = [e.who.duty, e.who.name].join(' ').toLowerCase(), cap = capacityOf(e), used = {}, out = [], n = 2 + (hashStr(e.id + '#n') < .5 ? 1 : 0);
   const take = it => { const k = slotKey(it); if ((used[k] || 0) >= cap[k] || out.includes(it.id)) return; used[k] = (used[k] || 0) + 1; out.push(it.id); };
   ITEMS.filter(it => !it.generic && !it.tempOnly).map(it => ({ it, s: it.tags.reduce((a, k) => a + (text.includes(k.toLowerCase()) ? 1 : 0), 0), r: hashStr(e.id + '|' + it.id) })).filter(q => q.s > 0).sort((a, b) => b.s - a.s || a.r - b.r).forEach(q => { if (out.length < n) take(q.it); });
   ITEMS.filter(it => it.generic && !it.tempOnly).sort((a, b) => hashStr(e.id + a.id) - hashStr(e.id + b.id)).forEach(it => { if (out.length < 2) take(it); });
@@ -1058,7 +1099,7 @@ function autoItems(e) {  // 自動配：照執掌比對關鍵字；固定種子�
 }
 function itemsOf(e) {
   if (e.kind === 'bot') { const o = itemOverrides()[e.id]; if (Array.isArray(o)) return o.filter(id => ITEM[id]); }
-  const sig = [e.who.duty, e.who.name, e.who.team, e.seatKey].join('|'); if (e._itSig !== sig) { e._itSig = sig; e._items = autoItems(e); } return e._items;
+  const sig = [e.who.duty, e.who.name, e.seatKey].join('|'); if (e._itSig !== sig) { e._itSig = sig; e._items = autoItems(e); } return e._items;
 }
 function spotsOf(g) {  // 桌上、地上、看板的位置（格子座標）；大小對齊桌面
   const z = deskH(g);
@@ -1191,7 +1232,7 @@ function setHl(k) { hl = hl === k ? null : k; statSig = ''; renderStats(); kick(
 let areaSig = '';
 function renderAreas() {
   const rooms = [...M.rooms.values()], sig = rooms.map(r => r.id + r.label).join('|'); if (sig === areaSig) return; areaSig = sig;
-  const zs = rooms.filter(r => r.kind === 'zone').sort((a, b) => TEAMS.indexOf(a.team) - TEAMS.indexOf(b.team) || a.label.localeCompare(b.label, 'zh-Hant'));
+  const zs = rooms.filter(r => r.kind === 'zone').sort((a, b) => zoneRank(a.team) - zoneRank(b.team) || a.label.localeCompare(b.label, 'zh-Hant'));
   const opts = [['all', '全景'], ['lobby', '大廳'], ...zs.map(r => [r.id, r.label]), ...rooms.filter(r => r.kind === 'peer').map(r => [r.id, r.label])];
   const sel = $('#area'); sel.innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join(''); sel.value = M.rooms.has(area) ? area : 'all';
 }
@@ -1238,9 +1279,27 @@ function renderHelperPanel(e, force) {
   const evs = e.events.slice(-8).reverse(), pn = performance.now();
   $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
 }
+let groupSig = '';
+function renderGroupCard(e) {
+  const el = $('#pGroup');
+  if (!e || e.kind !== 'bot') { el.hidden = true; groupSig = ''; return; }
+  const gs = groupsOf(), mine = groupName(gs[e.id]) || (zoning === 'custom' ? e.who.team : '') || '';
+  const names = [...new Set([...Object.values(gs).map(groupName).filter(Boolean), ...(zoning === 'custom' ? M.zones.map(z => z.team) : [])])]
+    .filter(n => n !== UNGROUPED).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+  const sig = [e.id, zoning, mine, names.join('|')].join('#');
+  el.hidden = false;
+  if (sig === groupSig) return; groupSig = sig;
+  const chip = n => `<button type="button" data-act="group" data-g="${esc(n)}" class="${n === mine ? 'on' : ''}" style="--c:${teamCol(n)}" aria-pressed="${n === mine}"><i></i>${esc(n)}</button>`;
+  el.innerHTML = `<h3>分組 <em>${zoning === 'custom' ? '自訂分組' : '分區方式：' + ZONING_NAME[zoning]}</em></h3>` +
+    `<div class="gchips">${names.map(chip).join('')}<button type="button" data-act="group" data-g="" class="${!mine || mine === UNGROUPED ? 'on' : ''}" aria-pressed="${!mine || mine === UNGROUPED}"><i></i>未分組</button></div>` +
+    `<div class="gnew"><input id="gNew" type="text" maxlength="24" placeholder="新的組名，例如：專案組" aria-label="新的組名"><button type="button" data-act="group-new">加入</button></div>` +
+    (zoning === 'custom' ? '<p class="note">也可以把頭像拖到別組的座位上換組。</p>'
+      : `<p class="note">現在照「${ZONING_NAME[zoning]}」分區；改成「自訂分組」才會照這裡的組坐。</p><button type="button" class="gswitch" data-act="zoning-custom">改成自訂分組</button>`);
+}
 function renderPanel(force) {
   if (!follow) return; const e = M.ents.get(follow); if (!e) { stopFollow(); return; }
   chatSync(e);
+  renderGroupCard(e);
   if (e.kind === 'helper') { renderHelperPanel(e, force); return; }
   const last = e.events[e.events.length - 1];
   const sig = [e.key, e.st, e.who.name, e.seatKey, JSON.stringify(e.task), e.events.length, last && last.t, e.stale, tagsOf(e).map(t => t.text).join(), itemsOf(e).join(), itemsOpen].join('|');
@@ -1629,7 +1688,7 @@ function pickSeat(sx, sy) { // 拖曳的目標：各區的座位（有人或空�
 const canDrag = e => e && e.kind === 'bot' && !e.gone && e.id !== M.primaryId && !e.walk && e.seatKey && e.seatKey.startsWith('z:');
 const ptrs = new Map(); let drag = null, pinch = null, lpTimer = 0;
 function enterSeatDrag(sx, sy) { drag.mode = 'seat'; drag.x = sx; drag.y = sy; cv.classList.add('seat'); updateSeatTarget(sx, sy); kick(); }
-function updateSeatTarget(sx, sy) { const e = M.ents.get(drag.key), s = pickSeat(sx, sy); drag.target = s && s.key !== e.seatKey ? s : null; drag.ok = !!drag.target && M.rooms.get(drag.target.room).team === e.who.team && !(drag.target.occ && drag.target.occ.walk); }
+function updateSeatTarget(sx, sy) { const e = M.ents.get(drag.key), s = pickSeat(sx, sy); drag.target = s && s.key !== e.seatKey ? s : null; drag.ok = !!drag.target && (zoning === 'custom' || M.rooms.get(drag.target.room).team === e.who.team) && !(drag.target.occ && drag.target.occ.walk); }
 cv.addEventListener('pointerdown', e => {
   kick(); closeSearch(); try { cv.setPointerCapture(e.pointerId); } catch (er) { }
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1661,6 +1720,12 @@ cv.addEventListener('wheel', e => { e.preventDefault(); kick(); zoomAt(Math.exp(
 function swapSeat(key, target) {
   const e = M.ents.get(key), from = M.seats.get(e.seatKey), other = target.occ && target.occ !== e ? target.occ : null;
   const a = M.assign.get(e.id), b = { zone: target.zone, slot: target.slot };
+  const toTeam = M.rooms.get(target.room).team, fromTeam = e.who.team;
+  if (zoning === 'custom' && toTeam !== fromTeam) {            // 拖到別組的座位＝換組（被換過來的那位換到這組）
+    const g = { ...groupsOf() }; const put = (id, t) => { if (t === UNGROUPED) delete g[id]; else g[id] = t; };
+    put(e.id, toTeam); e.who.team = toTeam; if (other) { put(other.id, fromTeam); other.who.team = fromTeam; }
+    store.set('groups', g); groupSig = '';
+  }
   if (other) M.assign.set(other.id, { ...a }); M.assign.set(e.id, b);
   const ov = overrides(); ov[e.id] = b; if (other) ov[other.id] = { ...a }; store.set('seats', ov);
   const oldFrom = from, oldTo = target; assignSeats(); layout();
@@ -1672,6 +1737,25 @@ function resetSeats() {
   store.set('seats', null); M.assign.clear(); M.zones = []; assignSeats(); layout();
   for (const e of M.ents.values()) if (e.kind === 'bot' && !e.gone && before.get(e.id) !== e.seatKey) { const s0 = M.seats.get(before.get(e.id)) || null, s1 = M.seats.get(e.seatKey); if (s0 && s1) e.walk = makeWalk(routeMove(s0, s1), 'move'); }
   $('#resetSeats').hidden = true; toast('座位已還原成規則排法'); kick();
+}
+// 分區方式或分組變了：每個正職重新算區，區重排，換了位子的走過去（拖曳換過的位子照樣套用，跟區對得上才算）
+function rezone(msg) {
+  const before = new Map(bots().map(e => [e.id, e.seatKey]));
+  for (const e of bots()) e.who.team = teamOf(e);
+  M.assign.clear(); M.zones = []; reseating = true; try { assignSeats(); } finally { reseating = false; } layout(); arrangeHelpers();
+  for (const e of bots()) if (!e.gone && before.get(e.id) !== e.seatKey) { const s0 = M.seats.get(before.get(e.id)), s1 = M.seats.get(e.seatKey); if (s0 && s1) e.walk = makeWalk(routeMove(s0, s1), 'move'); }
+  areaSig = ''; renderAreas(); panelSig = ''; groupSig = ''; renderPanel(true); if (!follow) { goal = fitGoal(); } if (msg) toast(msg); kick();
+}
+function setZoning(z) {
+  if (!ZONINGS.includes(z) || z === zoning) { $('#zoning').value = zoning; return; }
+  zoning = z; store.set('zoning', z); $('#zoning').value = z;
+  rezone(`正職改成「${ZONING_NAME[z]}」分區`);
+}
+function setGroup(id, name) {
+  const g = { ...groupsOf() }, v = groupName(name);
+  if (v && v !== UNGROUPED) g[id] = v; else delete g[id];
+  store.set('groups', g); groupSig = '';
+  if (zoning === 'custom') rezone(v && v !== UNGROUPED ? `換到「${v}」` : '移到「未分組」'); else renderPanel(true);
 }
 // 找人
 const q = $('#q'), qres = $('#qres'); let qSel = 0, qList = [];
@@ -1700,6 +1784,19 @@ addEventListener('keydown', e => {
 });
 $('#stats').addEventListener('click', e => { const b = e.target.closest('.stat'); if (b) setHl(b.dataset.k); });
 $('#stopFollow').onclick = () => stopFollow();
+$('#zoning').value = zoning;
+$('#zoning').addEventListener('change', ev => setZoning(ev.target.value));
+$('#pGroup').addEventListener('click', ev => {
+  const e = follow && M.ents.get(follow), b = ev.target.closest('button'); if (!e || !b) return;
+  if (b.dataset.act === 'group') setGroup(e.id, b.dataset.g);
+  else if (b.dataset.act === 'group-new') { const v = groupName($('#gNew').value); if (v) setGroup(e.id, v); else $('#gNew').focus(); }
+  else if (b.dataset.act === 'zoning-custom') setZoning('custom');
+});
+$('#pGroup').addEventListener('keydown', ev => {
+  if (ev.target.id !== 'gNew' || ev.isComposing || ev.keyCode === 229) return;   // 注音選字中：Enter 是選字
+  if (ev.key === 'Enter') { ev.preventDefault(); const e = follow && M.ents.get(follow), v = groupName(ev.target.value); if (e && v) setGroup(e.id, v); }
+  else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); ev.target.blur(); }
+});
 $('#pItems').addEventListener('click', ev => { const e = follow && M.ents.get(follow); if (!e) return; const b = ev.target.closest('button'); if (!b) return;
   if (b.dataset.act === 'toggle') { itemsOpen = !itemsOpen; panelSig = ''; renderPanel(true); if (itemsOpen) setTimeout(() => $('#pItems').scrollIntoView({ block: 'nearest', behavior: RM ? 'auto' : 'smooth' }), 30); }
   else if (b.dataset.act === 'auto') { const o = itemOverrides(); delete o[e.id]; store.set('items', o); panelSig = ''; renderPanel(true); schedule(); toast('配件恢復成依執掌自動配'); }
@@ -1723,7 +1820,7 @@ function setMode(m, instant) {
 }
 function placeControls() { // 手機：區域、新增按鈕移到底部工具列
   const mob = innerWidth <= 720, tools = $('#tools'), right = $('#topRight');
-  for (const id of ['areaWrap', 'addOne', 'addTen']) { const el = $('#' + id); if (mob && el.parentNode !== tools) tools.insertBefore(el, $('#zoomOut')); else if (!mob && el.parentNode !== right) right.insertBefore(el, $('#mode')); }
+  for (const id of ['zoningWrap', 'areaWrap', 'addOne', 'addTen']) { const el = $('#' + id); if (mob && el.parentNode !== tools) tools.insertBefore(el, $('#zoomOut')); else if (!mob && el.parentNode !== right) right.insertBefore(el, $('#mode')); }
   $('#addOne').textContent = mob ? '＋新增' : '＋ 新增正職';
 }
 function toast(text) { const t = $('#toast'), d = document.createElement('div'); d.textContent = text; t.appendChild(d); setTimeout(() => d.remove(), 2600); while (t.children.length > 2) t.firstChild.remove(); }
@@ -1780,7 +1877,7 @@ let seedN = 0;
 function fillEnt(e, r, kind) {
   const av = r.avatar || {};
   if (kind === 'temp' || kind === 'peertemp') { const cli = r.cli || '示範 CLI'; e.who = { name: r.name || '實習生', cli, cap: CLI_CAP[Math.abs([...cli].reduce((a, ch) => a + ch.charCodeAt(0), 0)) % 3], duty: r.duty || '不是 bot 的 AI 分頁：沒有固定身份，關掉就忘了' }; e.created = Date.parse(r.opened_at) || e.created || ++seedN; }
-  else { e.who = { name: String(r.name || r.id), shape: SHAPES.includes(av.shape) ? av.shape : 'round', color: /^#[0-9a-f]{6}$/i.test(av.color || '') ? av.color : NAMED_COL[av.color] || COL.blue, team: BY_TEAM && r.team ? String(r.team) : OPEN_ZONE, duty: r.duty || '', primary: !!r.primary, runs: typeof r.runs === 'string' ? r.runs : null, memory: r.memory }; e.created = Date.parse(r.created_at) || 0; }
+  else { e.who = { name: String(r.name || r.id), shape: SHAPES.includes(av.shape) ? av.shape : 'round', color: /^#[0-9a-f]{6}$/i.test(av.color || '') ? av.color : NAMED_COL[av.color] || COL.blue, cli: typeof r.cli === 'string' ? r.cli : '', group0: r.team ? String(r.team) : '', duty: r.duty || '', primary: !!r.primary, runs: typeof r.runs === 'string' ? r.runs : null, memory: r.memory }; e.who.team = teamOf(e); e.created = Date.parse(r.created_at) || 0; }
   e.st = ST_OK.has(r.state) ? r.state : 'idle';
   const t = r.task; e.task = t ? { id: t.id ?? '—', title: t.title || '', status: t.status || 'doing', next: t.next || '', waitingOn: t.waiting_on ? refKey(t.waiting_on, e) : null, from: t.from ? refKey(t.from, e) : null, updated: Date.parse(t.updated_at) || (typeof t.updated_at === 'number' ? t.updated_at : 0), why: t.why } : null;
   e.stale = staleOf(e.task, t && t.stale);
@@ -1984,6 +2081,8 @@ $('#addTen').onclick = () => addBots(10);
 window.__office = {
   frames: () => frames, busyFrames: () => busyFrames, busyWhy: () => ({ papers: papers.length, rings: rings.length, walking: [...M.ents.values()].filter(e => e.walk).map(e => e.key + ':' + e.walk.dir), cam: camMoving(), morph: V.k < 1, rooms: [...M.rooms.values()].filter(r => r.alpha < 1 || Math.abs(r.tx - r.x) > .01 || Math.abs(r.ty - r.y) > .01 || Math.abs(r.th - r.h) > .01).map(r => r.id) }), counts, highlighted: () => counted().filter(e => hl && matches(hl, e)).length,
   following: () => follow, panelOpen: () => $('#panel').classList.contains('open'),
+  zoning: () => zoning, setZoning: z => setZoning(z), setGroup: (id, g) => setGroup(id, g), groups: () => groupsOf(),
+  zones: () => [...M.rooms.values()].filter(r => r.kind === 'zone').sort((a, b) => zoneRank(a.team) - zoneRank(b.team) || a.label.localeCompare(b.label, 'zh-Hant')).map(r => r.label),
   chat: () => ({ key: chat.key, rev: chat.rev, items: chat.data ? chat.data.items.length : 0, tab: panelTab, sending: chat.sending }),
   entScreen: key => { const e = M.ents.get(key), h = e && headTop(e); return h ? { x: h.x, y: (h.y + h.base.y) / 2 } : null; },
   seatScreen: key => { const s = M.seats.get(key), g = s && geo(s); if (!g) return null; const p = t2s(g.cx, g.cy, 10); return { x: p.x, y: p.y - 12 * cam.z }; },

@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.49.0
-   version: 0.49.0
+OK ShellBot v0.50.0
+   version: 0.50.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -477,8 +477,10 @@ There is no command for it and nothing for you to emit. What it means for you:
 - A subagent left running and silent shows as stuck; one that never finished (a conversation
   that ended mid-run) stops showing after 6 hours.
 
-Where each person sits and the accessories on a desk are the person's choice, kept on this
-computer (`office.json` in the state folder); do not edit that file.
+Staff are zoned the way the person chose (a select in the office): by AI (default: a walled room
+per CLI a bot runs on), custom groups (set on a bot's Details page or by dragging it), or one room.
+Where each person sits, the zoning, the groups and the accessories on a desk are the person's choice,
+kept on this computer (`office.json` in the state folder); do not edit that file.
 
 ## 5. Which build has what
 
@@ -529,6 +531,7 @@ computer (`office.json` in the state folder); do not edit that file.
 | The office (`experimental_office`, off by default, §4.10): bots (staff), AI tabs that are not bots (interns) and a Claude Code tab's subagents (part-timers) on one floor, behind a sidebar button | 0.48.0 |
 | The office's panel: a followed person's conversation, a box to message them, their question answered by its number | 0.49.0 |
 | …and the same for a paired computer's bots and interns (through its `/link/chat`) | 0.49.1 |
+| The office's zoning: by AI (a walled room per CLI, default), custom groups, or one room | 0.50.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
