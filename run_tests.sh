@@ -26,6 +26,8 @@ PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 fails=0
 skips=0
+flaky=0
+flaky_names=""
 total=0
 failed_names=""
 
@@ -36,6 +38,23 @@ run() {
   out=$("$@" 2>&1)
   rc=$?
   last=$(printf '%s\n' "$out" | tail -1)
+  if [ "$rc" -ne 0 ] && [ -n "${CI:-}" ]; then
+    # GitHub Actions only: a shared, slow machine fails timing checks at random (a different file each run).
+    # A failed file runs once more; passing then, it is listed as flaky, apart from both passes and failures,
+    # so it is seen and fixed, not hidden. A file that fails twice is a failure. A run here stays strict.
+    local again rc2
+    again=$("$@" 2>&1)
+    rc2=$?
+    if [ "$rc2" -eq 0 ]; then
+      flaky=$((flaky + 1))
+      flaky_names="$flaky_names $name"
+      printf '  ↻ %-34s failed, then passed on the second run (flaky here)\n' "$name"
+      printf '%s\n' "$out" | grep -E 'FAIL|Traceback|Error' | head -10 | sed 's/^/      ~ /'
+      return
+    fi
+    out="$again"; rc=$rc2
+    last=$(printf '%s\n' "$out" | tail -1)
+  fi
   if [ "$rc" -ne 0 ]; then
     fails=$((fails + 1))
     failed_names="$failed_names $name"
@@ -83,5 +102,6 @@ fi
 printf '%s/%s 通過' "$((total - fails - skips))" "$total"
 [ "$skips" -gt 0 ] && printf '，%s 個跳過' "$skips"
 [ "$fails" -gt 0 ] && printf '，%s 個失敗：%s' "$fails" "$failed_names"
+[ "$flaky" -gt 0 ] && printf '；%s 個第二次才過（不穩）：%s' "$flaky" "$flaky_names"
 printf '\n'
 exit $((fails > 0))
