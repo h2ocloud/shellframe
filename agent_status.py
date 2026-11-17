@@ -1371,7 +1371,7 @@ def _sched_blocks(o):
 def detect_schedules(path, now, tail_bytes=262144, max_records=800):
     """掃 claude transcript 檔尾，回傳該對話的 loop/cron 排程摘要，沒有則 None。
         {kind: 'loop'|'cron', status: 'sleeping'|'running'|'scheduled',
-         next_ts: epoch|None, reason: str, rounds: int, crons: [...]}"""
+         next_ts: epoch|None, reason: str, rounds: int, delay: secs (loop), crons: [...]}"""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as f:
@@ -1422,7 +1422,7 @@ def detect_schedules(path, now, tail_bytes=262144, max_records=800):
         elif (now - next_ts) < LOOP_RUNNING_GRACE:
             loop = {"kind": "loop", "status": "running"}
         if loop is not None:
-            loop.update(next_ts=next_ts, reason=last_wake["reason"], rounds=wake_count)
+            loop.update(next_ts=next_ts, reason=last_wake["reason"], rounds=wake_count, delay=last_wake["delay"])
     if loop is None and active_crons:
         loop = {"kind": "cron", "status": "scheduled", "next_ts": None,
                 "reason": active_crons[0]["desc"], "rounds": 0}

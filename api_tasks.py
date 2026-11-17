@@ -321,3 +321,20 @@ class TasksApiMixin:
                                "open": ss.listing(limit=100)}, ensure_ascii=False)
         except ss.Unavailable as e:
             return json.dumps({"success": False, "code": e.code, "message": _(e.en, e.zh)}, ensure_ascii=False)
+
+    def task_detail(self, task_id) -> str:
+        """One task with what happened to it, newest first (at most 20 events), as JSON: the
+        office's task board opens a row with it. Read only; the store masked the texts when it
+        wrote them."""
+        try:
+            t = ss.get(int(str(task_id).lstrip("#")), limit=20)
+            t["events"] = list(reversed(t.get("events") or []))
+            return json.dumps({"success": True, "task": t}, ensure_ascii=False)
+        except ss.Unavailable as e:
+            return json.dumps({"success": False, "code": e.code, "message": _(e.en, e.zh)}, ensure_ascii=False)
+        except ss.NotFound:
+            return json.dumps({"success": False, "code": "not_found",
+                               "message": _(f"No task #{task_id}.", f"沒有 #{task_id} 這件任務。")}, ensure_ascii=False)
+        except (ValueError, TypeError):
+            return json.dumps({"success": False, "code": "invalid",
+                               "message": _("a task number, e.g. 12", "要給任務編號，例如 12")}, ensure_ascii=False)

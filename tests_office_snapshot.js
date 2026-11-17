@@ -9,6 +9,8 @@
  *   - part-timers under the bot or intern whose tab launched them; a tab the office does not show
  *     brings none
  *   - the panel's events are the state changes seen, nothing invented
+ *   - the task board (decisions, stuck, open: each task once, owners as the office's people) and the tabs'
+ *     loops (a /loop or cron on a tab's status; a stale one dropped) and this computer's schedules (no command kept)
  *   - the panel's conversation (chatShape, with web/chat.js's rules): who said what, tool calls as one
  *     line, agent text escaped, a question's options with their own numbers, a question it cannot read
  *     sends the person to the terminal, the queue in plain words
@@ -153,6 +155,46 @@ check('the queue in plain words: waiting, why, how long; and one given up with i
 check('in English too', /waiting to go in/.test(O.chatShape({ turns: [], queue: { queued: ['a'] } }, R, 'en', 'Demo', now).queue));
 const c7 = O.chatShape({ turns: [{ kind: 'user_msg', text: '<b>示範</b>', ts: 1 }], login: { step: 'menu' } }, R, 'zh-TW', 'x', now);
 check('the person\'s own text is escaped too; a sign-in under way is flagged', c7.items[0].html === '&lt;b&gt;示範&lt;/b&gt;' && c7.login === true, c7);
+
+console.log('the task board and the loops (boardOf, loopOf, build)');
+const bt = O.build({ botsOn: true, roster, primary: 'chief', tabs, now, kit, seen: {}, tasks: {
+  decisions: [{ id: 9, title: '示範決定', kind: 'decision', status: 'waiting', owner: 'user', requester: 'eng', waiting_on: 'user', updated_at: 5 }],
+  stuck: [{ id: 2, idle_s: 90000 }, { id: 3, title: '示範分頁卡住', status: 'waiting', owner: '示範分頁', idle_s: 8000, updated_at: 1 }],
+  open: [{ id: 1, title: '示範待辦', status: 'todo', owner: 'eng', requester: 'chief', updated_at: 100, due_at: 1800000000 },
+         { id: 2, title: '示範進行中', status: 'doing', owner: '示範工程師', requester: 'chief', waiting_on: 'user', next_step: '示範下一步', updated_at: 50 },
+         { id: 3, title: '示範分頁卡住', status: 'waiting', owner: '示範分頁', updated_at: 1 },
+         { id: 9, title: '示範決定', kind: 'decision', status: 'waiting', owner: 'user', updated_at: 5 }] } });
+const BD = bt.board;
+check('the board is decisions, stuck, open: each task once, in that order', BD.decisions.map(x => x.id).join() === '9' && BD.stuck.map(x => x.id).join() === '2,3'
+  && BD.open.map(x => x.id).join() === '1' && BD.all.map(x => x.id).join() === '9,2,3,1', BD);
+check('a decision and a stuck row are marked; a stuck row with only {id, idle_s} borrows its text from the open list',
+  BD.decisions[0].decision === true && BD.stuck[0].stuck === true && BD.stuck[0].title === '示範進行中' && BD.stuck[0].idle_s === 90000 && BD.stuck[0].next_step === '示範下一步', BD.stuck[0]);
+check('an owner is a person of the office: by role, by the bot\'s label, by an intern\'s tab title; the person is "user"',
+  BD.open[0].owner_key === 'b:eng' && BD.stuck[0].owner_key === 'b:eng' && BD.stuck[1].owner_key === 't:s3' && BD.decisions[0].owner_key === 'user', [BD.open[0].owner_key, BD.stuck[0].owner_key, BD.stuck[1].owner_key]);
+check('…waiting-on and requester likewise; a name nobody has is empty', BD.stuck[0].waiting_key === 'user' && BD.decisions[0].requester_key === 'b:eng' && O.personKey('客戶回覆', { roles: new Set(), labels: {}, temps: {} }) === '');
+check('times stay in seconds (the store\'s), ids are numbers', BD.open[0].due_at === 1800000000 && typeof BD.open[0].id === 'number');
+const bo = O.build({ botsOn: true, roster, primary: 'chief', tabs, now, kit, seen: {}, tasks: null }).board;
+check('no tasks at all: an empty board, not a crash', bo.all.length === 0 && bo.decisions.length === 0);
+const sec = Math.floor(now / 1000);
+check('loopOf: a /loop keeps its wake, interval, rounds and a clipped summary',
+  JSON.stringify(O.loopOf({ kind: 'loop', status: 'sleeping', next_ts: sec + 600, delay: 1200, rounds: 4, reason: '示範'.repeat(60), crons: [] }, now)).length > 50
+  && O.loopOf({ kind: 'loop', status: 'sleeping', next_ts: sec + 600, delay: 1200, rounds: 4, reason: '示範'.repeat(60) }, now).reason.length <= 90);
+check('…one whose wake passed over half an hour ago is no loop (the status behind it can be stale)', O.loopOf({ kind: 'loop', status: 'sleeping', next_ts: sec - 3600 }, now) === null
+  && O.loopOf({ kind: 'loop', status: 'running', next_ts: sec - 60 }, now).status === 'running');
+check('…a cron has no wake and stays; nothing, or an unknown kind, is null', O.loopOf({ kind: 'cron', crons: [{ desc: '示範', schedule: '*/30 * * * *' }] }, now).status === 'scheduled'
+  && O.loopOf(null, now) === null && O.loopOf({ kind: 'weird' }, now) === null);
+const tabsL = tabs.map(q => q.sid === 's2' ? Object.assign({}, q, { loop: { kind: 'loop', status: 'sleeping', next_ts: sec + 900, delay: 900, reason: '示範輪詢' } })
+  : q.sid === 's3' ? Object.assign({}, q, { loop: { kind: 'cron', crons: [{ desc: '示範排程', schedule: '0 9 * * *' }] } })
+  : q.sid === 's4' ? Object.assign({}, q, { loop: { kind: 'loop', status: 'sleeping', next_ts: sec + 60 } }) : q);
+const sl = O.build({ botsOn: true, roster, primary: 'chief', tabs: tabsL, tasks: null, kit, seen: {}, now });
+check('a bot and an intern with a loop carry it; the snapshot lists them with who they are', sl.bots.find(b => b.id === 'eng').loop.delay === 900 && sl.temps[0].loop.kind === 'cron'
+  && sl.bots.find(b => b.id === 'chief').loop === null && sl.loops.map(x => x.key).join() === 'b:eng,t:s3,', sl.loops.map(x => x.key));
+check('…a tab no one sits at (the terminal) is listed without a person', sl.loops[2].name === '示範終端機' && sl.loops[2].key === '');
+const ss = O.schedShape({ schedules: [{ id: 'a', title: '示範', when: { en: 'Daily 09:00', zh: '每天 09:00' }, enabled: true, cmd: '/bin/secret --token x', members: [1, 2] }], configured: true, launchd_ok: true });
+check('schedShape keeps title, when, on/off and drops the command', ss.ok && ss.rows[0].title === '示範' && ss.rows[0].when.zh === '每天 09:00' && ss.rows[0].enabled === true
+  && ss.rows[0].count === 2 && !('cmd' in ss.rows[0]) && !JSON.stringify(ss).includes('secret'), ss);
+check('…not supported / not configured / failed are said, not an empty list', O.schedShape({ schedules: [], unsupported: true }).unsupported === true
+  && O.schedShape({ schedules: [], configured: false }).configured === false && O.schedShape({ schedules: [], error: 'x' }).ok === false);
 
 console.log(fails ? `\n${fails} failed` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

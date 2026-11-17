@@ -515,6 +515,13 @@ per CLI a bot runs on), custom groups (set on a bot's Details page or by draggin
 Where each person sits, the zoning, the groups and the accessories on a desk are the person's choice,
 kept on this computer (`office.json` in the state folder); do not edit that file.
 
+Two objects on the lobby's back wall open the panel's own views. The whiteboard is the task board: the
+person's decisions, the stuck tasks, and the open ones by owner (`sfctl task`, §4.9; a row opens the task's
+history, so `task note` and `--next` are what they read), one sticky note per open task. The calendar lists
+the tabs that run a `/loop` or a cron (read from the transcript, so it works with the Loops panel off) with a
+countdown, and this computer's own schedules (`schedules.json`, read only); a bot whose tab loops has a
+calendar on its desk and "排程：每 20 分鐘，下一次 14:20" on its info tab.
+
 ## 5. Which build has what
 
 `sfctl version` first, then:

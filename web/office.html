@@ -303,6 +303,70 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
 
 @media (prefers-reduced-motion:reduce){#panel,#tools{transition:none}.events li.new{animation:none}}
 
+/* 任務看板、排程（牆上的白板和日曆打開的面板檢視）：和跟拍同一個面板，但不是在看某個人 */
+#panel.viewing{width:400px}
+#panel.viewing .ph,#panel.viewing #pTabs,#panel.viewing #pChat,#panel.viewing #pInfo,#panel.viewing .pfoot{display:none}
+.pview{flex:1;min-height:0;display:none;flex-direction:column}
+#panel.viewing .pview{display:flex}
+.vhead{display:flex;align-items:center;gap:10px;padding:14px 14px 12px 16px;border-bottom:1px solid rgba(59,66,97,.6);flex:none}
+.vhead .vic{width:34px;height:34px;border-radius:10px;background:#24283b;display:grid;place-items:center;flex:none}
+.vhead .vt{min-width:0;flex:1}
+.vhead h2{font-size:16px;font-weight:700;line-height:1.25}
+.vhead p{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vhead .vx{width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:#24283b;color:var(--dim);font-size:13px;flex:none}
+.vhead .vx:hover{color:var(--ink);border-color:var(--blue)}
+.vbody{flex:1;overflow:auto;padding:6px 14px 16px;overscroll-behavior:contain}
+.vsec{margin-top:14px}
+.vsec>h3{font-size:12px;color:var(--dim);font-weight:700;letter-spacing:.06em;display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.vsec>h3 b{font:600 11px var(--mono);color:var(--mute)}
+.vsec.red>h3{color:var(--red)}
+.vsec.yel>h3{color:var(--yellow)}
+.vempty{font-size:12.5px;color:var(--mute);padding:6px 2px;line-height:1.55}
+.vempty code,.vnote code{font:12px var(--mono);color:var(--dim);background:rgba(59,66,97,.4);padding:0 5px;border-radius:5px}
+.vnote{font-size:12px;color:var(--dim);line-height:1.6;padding:8px 2px}
+.vown{display:flex;align-items:center;gap:8px;margin:10px 0 4px;font-size:12px;color:var(--dim)}
+.vown .who{font-size:12.5px;color:var(--ink)}
+.vown b{font:600 11px var(--mono);color:var(--mute)}
+button.who{border:0;color:inherit;cursor:pointer}
+button.who:hover{background:rgba(122,162,247,.28)}
+.trow{border:1px solid rgba(59,66,97,.85);border-left-width:3px;border-radius:11px;background:rgba(26,27,38,.55);margin-bottom:7px;overflow:hidden}
+.trow.dec{border-left-color:var(--red)}
+.trow.stk{border-left-color:var(--yellow)}
+.trow .th{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;padding:9px 10px 6px}
+.trow .th:hover{background:rgba(122,162,247,.06)}
+.trow .tid{font:600 11.5px var(--mono);color:var(--dim);flex:none;padding-top:1px}
+.trow .tt{flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.45;overflow-wrap:anywhere}
+.trow .ts{flex:none;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;border:1px solid var(--c,var(--line));color:var(--c,var(--dim));white-space:nowrap}
+.trow .tc{flex:none;color:var(--mute);font-size:10px;padding-top:3px}
+.trow .tm{display:grid;grid-template-columns:54px 1fr;gap:3px 8px;font-size:12px;padding:0 10px 9px 34px;align-items:center}
+.trow .tm dt{color:var(--mute)}
+.trow .tm dd{min-width:0;overflow-wrap:anywhere}
+.trow .tm .late{color:var(--red)}
+.trow .tm .old{color:var(--yellow)}
+.thist{list-style:none;border-top:1px dashed rgba(59,66,97,.7);padding:6px 10px 8px 12px;background:rgba(20,21,31,.55)}
+.thist[hidden]{display:none}
+.thist li{display:grid;grid-template-columns:78px 1fr;gap:8px;font-size:12px;line-height:1.5;padding:3px 0}
+.thist time{font:11px var(--mono);color:var(--dim);padding-top:1px}
+.thist .k{color:var(--blue);font-weight:600;margin-right:6px}
+.thist .a{color:var(--dim);margin-right:6px}
+.thist .tx{color:var(--ink);overflow-wrap:anywhere}
+.thist .none{display:block;color:var(--mute);font-size:12px;padding:4px 0}
+.lrow,.srow{border:1px solid rgba(59,66,97,.85);border-radius:11px;background:rgba(26,27,38,.55);padding:9px 11px;margin-bottom:7px}
+.lrow .l1,.srow .l1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lrow .nm{font-size:13.5px;font-weight:600}
+.lrow .tag,.srow .tag{font:700 10.5px var(--mono);padding:1px 7px;border-radius:99px;border:1px solid var(--c,var(--line));color:var(--c,var(--dim))}
+.lrow .int{font-size:12px;color:var(--dim)}
+.lrow .nx{display:flex;align-items:baseline;gap:8px;margin-top:5px;font-size:12.5px;color:var(--dim)}
+.lrow .nx b{color:var(--ink);font-weight:600}
+.lrow .cd{font:600 13px var(--mono);color:var(--yellow);margin-left:auto}
+.lrow.run .cd{color:var(--blue)}
+.lrow .sum{margin-top:5px;font-size:12px;color:var(--dim);line-height:1.5;overflow-wrap:anywhere}
+.srow .nm{font-size:13px;font-weight:600;flex:1;min-width:0;overflow-wrap:anywhere}
+.srow .wh{font-size:12px;color:var(--dim);margin-top:3px}
+.srow .on{--c:var(--green)}
+.srow .off{--c:var(--mute)}
+.srow.off-row .nm{color:var(--dim)}
+.vtools{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--mute);padding:2px 2px 6px}
 /* ── 窄螢幕（媒體查詢放在基礎規則之後，才蓋得過）── */
 @media (max-width:1240px){.brand .tag{display:none}}
 @media (max-width:1100px){
@@ -390,6 +454,8 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
 
 <div id="tools">
   <button class="tb acc" id="demoHandoff" title="立刻演一次交辦">▶ 交辦示範</button>
+  <button class="tb" id="openBoard" title="任務看板：大廳牆上的白板，記著大家手上的事" aria-label="任務看板">看板</button>
+  <button class="tb" id="openCal" title="排程：大廳牆上的日曆，對話裡的 /loop 和這台電腦的排程" aria-label="排程">排程</button>
   <button class="tb" id="resetSeats" hidden title="清掉拖曳換過的位子，回到規則排法">還原座位</button>
   <button class="tb" id="zoomOut" title="縮小" aria-label="縮小">−</button>
   <button class="tb" id="zoomIn" title="放大" aria-label="放大">＋</button>
@@ -420,12 +486,17 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
   </section>
   <div class="pbody" id="pInfo" role="tabpanel">
     <p class="duty" id="pDuty"></p>
+    <p class="duty" id="pLoop" hidden></p>
     <div class="pmeta" id="pMeta"></div>
     <div class="card" id="pTask"></div>
     <div class="card" id="pGroup" hidden></div>
     <div class="card items" id="pItems"></div>
     <div class="events"><h3>最近事件</h3><ol id="pEvents"></ol></div>
   </div>
+  <section class="pview" id="pView" aria-label="牆上的看板">
+    <div class="vhead"><span class="vic" id="vIcon" aria-hidden="true"></span><div class="vt"><h2 id="vTitle"></h2><p id="vSub"></p></div><button class="vx" id="vClose" type="button" title="關起來（Esc）" aria-label="關起來">✕</button></div>
+    <div class="vbody" id="vBody"></div>
+  </section>
   <div class="pfoot"><button class="btn" id="stopFollow">停止追蹤 <kbd>Esc</kbd></button><button class="btn bye" id="dismiss" type="button" hidden title="關掉這個實習生的分頁">請他離開</button><span class="hint">拖曳畫面可暫時看別處</span></div>
 </aside>
 <div id="toast" aria-live="polite"></div>
@@ -753,7 +824,7 @@ const wantTp = () => V.to < .5 && W < H && W <= 720;
 const t2s = (x, y, z = 0) => { const p = P(x, y, z); return { x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }; };
 function viewRect() {
   const top = $('#top').getBoundingClientRect().bottom; let l = 0, r = W, t = top, b = H;
-  if (follow) { const pr = $('#panel').getBoundingClientRect(); if (isMobile()) b = H - Math.min(pr.height, H * .6); else r = W - pr.width - 24; }
+  if (follow || view) { const pr = $('#panel').getBoundingClientRect(); if (isMobile()) b = H - Math.min(pr.height, H * .6); else r = W - pr.width - 24; }
   return { l, r, t, b, w: r - l, h: b - t, cx: (l + r) / 2, cy: (t + b) / 2 };
 }
 const aim = (p, sx, sy, z) => ({ x: p.x - (sx - W / 2) / z, y: p.y - (sy - H / 2) / z, z });
@@ -856,8 +927,7 @@ function drawRoomShell(x, r, far) {
   if (r.kind === 'lobby') {
     wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 7, i => i <= 2 || i === 4);
     wallFace(x, r.x, r.y, r.x, r.y + Math.min(r.h, 5.5), Hh, 3, i => i === 0);
-    poly(x, wq(1.4, 0, 4.9, 0, 0, 1, 28, 60), '#c8cde3', 'rgba(255,255,255,.4)', 1);          // 白板＋便利貼
-    [COL.blue, COL.yellow, COL.green, COL.purple, COL.blue, COL.red, COL.green].forEach((n, i) => { const col = i % 3, row = (i / 3) | 0, u = .08 + col * .3 + (row % 2) * .06, z = 52 - row * 10; poly(x, wq(1.4, 0, 4.9, 0, u, u + .1, z - 7, z), alpha(n, .85)); });
+    drawLobbyBoard(x); drawLobbyCalendar(x);                                                       // 白板＋便利貼、日曆（§11.7：都是可以點的）
   } else if (r.kind === 'zone') {
     wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 4, null, teamCol(r.team));
     poly(x, wq(r.x, r.y, r.x + r.w, r.y, 0, 1, Hh - 8, Hh - 4), alpha(teamCol(r.team), .55));   // 團隊色帶
@@ -1127,6 +1197,7 @@ function placeItems(e, g) {
   for (const id of itemsOf(e)) { const it = ITEM[id]; if (!it) continue; const k = slotKey(it); let s = null;
     if (k === 'side') s = side.shift(); else if (k === 'front') { s = front; front = null; } else if (k === 'floor') s = sp.floor; else if (k === 'wall') s = sp.wall;
     if (s || ((k === 'head' || k === 'body') && !g.shared)) out.push({ it, k, s }); }
+  if (e.loop && sp.wall) { const q = { it: ITEM.calendar, k: 'wall', s: sp.wall }, i = out.findIndex(o => o.k === 'wall'); if (i >= 0) out[i] = q; else out.push(q); }   // 這個人的分頁在跑 /loop 或 cron：桌後牆上掛日曆（有了牆上的看板就換成日曆）
   return out;
 }
 function drawWallBoard(x, s, face) { // 牆上看板：桌後角落的小看板（不擋到後一排的人）
@@ -1167,6 +1238,7 @@ function drawSeatNear(x, s, g) {
   // 配件：牆上看板 → 桌上（在螢幕後面的先畫）→ 螢幕 → 桌上（前面的）→ 人 → 地上
   const its = e && !e.gone ? placeItems(e, g) : []; itemsDrawn += its.length; const ia = e ? { face: g.face, col: e.who.shape ? e.who.color : e.who.cap, st, lit: st !== 'asleep', t: T + e.seed } : null;
   for (const q of its) if (q.k === 'wall') { drawWallBoard(x, q.s, g.face); q.it.draw(x, q.s, ia); }
+  if (e && !e.gone && e.loop && g.shared) { const q = { x0: g.x + .08, y0: g.y + .1, x1: g.x + .4, y1: g.y + .1, z: deskH(g) }; drawWallBoard(x, q, g.face); ITEM.calendar.draw(x, q, ia); }   // 長桌沒有牆上的看板：桌角立一本小日曆
   if (e) drawNameplate(x, g, e.who.shape ? e.who.color : COL.mute, st === 'asleep');
   if (e && !e.gone && st !== 'asleep' && st !== 'idle') lightPool(x, g, SCREEN[st][1]);
   const mg0 = monitorGeo(g), mDepth = mg0.lap ? P(g.cx, mg0.y).y : P(mg0.bx[0] + mg0.bx[2] / 2, mg0.bx[1] + mg0.bx[3] / 2).y, deskIts = its.filter(q => q.k === 'side' || q.k === 'front').map(q => ({ ...q, d: P(q.s.x + q.s.w / 2, q.s.y + q.s.h / 2).y }));
@@ -1230,6 +1302,7 @@ function tagsOf(e) {
 
 /* ══════════ 10. 狀態統計與高亮（只算分頁層的狀態；小時鐘不算卡住）══════════ */
 let hl = null, follow = null, followCam = false, hoverKey = null;
+let view = null, hoverObj = null, hoverPt = null;   // 牆上的檢視（'board' | 'cal'）、滑鼠停在哪件牆上的東西（§11.7）
 const matches = (k, e) => k === 'idle' ? (e.st === 'idle' || e.st === 'done') : e.st === k;
 const hlColor = () => ({ working: COL.blue, decision: COL.red, stuck: COL.yellow, idle: COL.green }[hl] || COL.blue);
 const counted = () => [...M.ents.values()].filter(e => !e.gone && !e.leaving);
@@ -1339,13 +1412,14 @@ function renderPanel(force) {
   renderBye(e);
   if (e.kind === 'helper') { renderHelperPanel(e, force); return; }
   const last = e.events[e.events.length - 1];
-  const sig = [e.key, e.st, e.who.name, e.who.doing, e.seatKey, JSON.stringify(e.task), e.events.length, last && last.t, e.stale, tagsOf(e).map(t => t.text).join(), itemsOf(e).join(), itemsOpen].join('|');
+  const sig = [e.key, e.st, e.who.name, e.who.doing, e.seatKey, JSON.stringify(e.task), loopLine(e.loop), e.events.length, last && last.t, e.stale, tagsOf(e).map(t => t.text).join(), itemsOf(e).join(), itemsOpen].join('|');
   if (!force && sig === panelSig) return; panelSig = sig;
   const w = e.who, stt = ST[e.st] || ST.idle, temp = e.kind === 'temp' || e.kind === 'peertemp', peer = e.kind === 'peer' || e.kind === 'peertemp', movable = e.kind === 'bot' && e.id !== M.primaryId;
   $('#pAv').src = avatarURL(w, 100);
   $('#pName').innerHTML = esc(w.name) + (e.kind === 'bot' && e.id === M.primaryId ? ' <span class="star" title="主要 bot">★ 主要</span>' : '');
   $('#pSub').textContent = temp ? `實習生 · ${w.cli}${peer ? ' · 隔壁' : ''}` : peer ? '正職 · ' + (roomOfEnt(e) || {}).label : `正職 · ${seatLabel(e)}`;
   const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
+  const ll = loopLine(e.loop), pl = $('#pLoop'); pl.hidden = !ll; pl.innerHTML = ll ? `<span>排程：</span>${esc(ll)}` : '';
   $('#pDuty').innerHTML = temp
     ? `<span>在做</span>${esc(w.doing || (e.st === 'working' ? '正在做…' : '看不出來：還沒有對話，或沒有新的進度'))}`   // 實習生沒有執掌：看他在做什麼
     : `<span>執掌</span>${esc(w.duty || '—')}` + (w.doing && e.st !== 'asleep' ? `<br><span>在做</span>${esc(w.doing)}` : '');
@@ -1363,6 +1437,7 @@ function renderPanel(force) {
 const hhmm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 function startFollow(key) {
   const e = M.ents.get(key); if (!e || e.gone) return;
+  if (view) closeView(true);
   follow = key; followCam = true; panelSig = '';
   document.body.classList.add('following'); const p = $('#panel'); p.classList.add('open'); p.setAttribute('aria-hidden', 'false');
   renderPanel(true); kick();
@@ -1584,6 +1659,241 @@ $('#pTask').addEventListener('click', ev => {
 if (CHAT) setInterval(() => chatTick(false), CHAT_POLL_MS);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) chatTick(false); });
 
+/* ══════════ 11.7 牆上的兩件東西：任務看板（大廳後牆的白板）、排程（旁邊的日曆）══════════
+   兩件都是牆上畫出來的東西，也是可以點的：點了，側邊面板換成它的檢視（和跟拍同一個面板，但不是在看某個人；
+   開檢視就收掉跟拍，跟拍一個人就收掉檢視，Esc 先關檢視）。畫的和點的用同一個四邊形（WALL_OBJ，wq 投影），
+   所以平面、立體都對得上；遠景（縮小）不畫牆上的東西，也就點不到，那時用右下角的「看板」「排程」按鈕。
+   資料：
+     board  ← snapshot.board（office.js 的 boardOf：等你決定、卡住、其他進行中，各件只出現一次）。歷程是點開一列才
+              問主頁的 SFOffice.host.board.detail(id)（task_detail：最新在前、最多 20 筆），一件一次，那件有新動靜才再問。
+     loops  ← snapshot.loops（每個分頁的 /loop 或 cron，來源是分頁狀態的 loop 欄位）；日曆上的數字就是它的個數。
+     這台電腦的排程 ← SFOffice.host.board.schedules()（schedules_list，唯讀）：只在「排程」檢視開著時問，
+              第一次馬上問，之後最多每 60 秒一次；關掉檢視就不問了（日曆上的數字因此不含它）。
+   檢視不在 renderPanel 裡重畫：用簽章，沒變就不碰 DOM（展開的列、點擊才不會被吃掉）；倒數只改字，由畫面迴圈順手更新。 */
+M.board = null; M.notes = []; M.boardVer = 0; M.boardJson = ''; M.loops = []; M.loopsVer = 0; M.loopsJson = '';
+const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
+const NOTE_COLS = [COL.blue, COL.yellow, COL.green, COL.purple, COL.cyan], NOTE_MAX = 7;
+const SCHED = { data: null, at: 0, busy: false, ver: 0, every: 60000, calls: 0 };
+const vstate = { open: new Set(), detail: new Map(), ver: 0, sig: '', tick: 0 };
+const boardHost = () => (HOST ? (HOST.board || null) : (typeof DEMO_BOARD !== 'undefined' ? DEMO_BOARD : null));
+const listOf = v => (Array.isArray(v) ? v.filter(x => x && x.id != null) : []);
+function setBoard(b) {
+  const nb = { decisions: listOf(b && b.decisions), stuck: listOf(b && b.stuck), open: listOf(b && b.open) };
+  nb.all = nb.decisions.concat(nb.stuck, nb.open);
+  const j = JSON.stringify(nb); if (j === M.boardJson) return;
+  M.boardJson = j; M.board = nb; M.boardVer++;
+  let k = 0; M.notes = nb.all.slice(0, NOTE_MAX).map(t => (t.decision || t.stuck ? COL.red : NOTE_COLS[k++ % NOTE_COLS.length]));   // 一件一張，紅的（等你決定、卡住）排前面
+}
+function normLoop(l) {
+  const r = l || {}, crons = Array.isArray(r.crons) ? r.crons : [];
+  return { kind: r.kind === 'cron' ? 'cron' : 'loop', status: r.status === 'running' ? 'running' : r.kind === 'cron' ? 'scheduled' : 'sleeping', next_ts: Number(r.next_ts) || 0,
+           delay: Number(r.delay) || 0, reason: String(r.reason || ''), rounds: Number(r.rounds) || 0, crons: crons.map(c => ({ desc: String((c && c.desc) || ''), schedule: String((c && c.schedule) || '') })) };
+}
+function setLoops(list) {
+  const nl = (Array.isArray(list) ? list : []).map(l => Object.assign(normLoop(l), { key: String((l && l.key) || ''), name: String((l && l.name) || '') }));
+  const j = JSON.stringify(nl); if (j === M.loopsJson) return;
+  M.loopsJson = j; M.loops = nl; M.loopsVer++;
+}
+// 畫與點用同一個四邊形（螢幕座標）
+const wallScreen = k => wq(...WALL_OBJ[k].q).map(p => ({ x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }));
+const inPoly = (pts, px, py) => { let r = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[i].y > py) !== (pts[j].y > py) && px < (pts[j].x - pts[i].x) * (py - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x) r = !r; return r; };
+function wallObjAt(sx, sy) {
+  const lobby = M.rooms.get('lobby'); if (!lobby || lodFar || lobby.alpha < .6) return null;
+  for (const k of ['cal', 'board']) if (inPoly(wallScreen(k), sx, sy)) return k;
+  return null;
+}
+function wallOutline(x, k) {
+  if (hoverObj !== k && view !== k) return;
+  const q = WALL_OBJ[k].q; poly(x, wq(q[0], q[1], q[2], q[3], -.03, 1.03, q[6] - 2, q[7] + 2), null, view === k ? COL.blue : 'rgba(192,202,245,.7)', view === k ? 2 : 1.6);
+}
+function drawLobbyBoard(x) {                       // 白板＋便利貼（一件進行中的任務一張，最多 7 張；沒有任務就是空白板）
+  const q = WALL_OBJ.board.q;
+  poly(x, wq(q[0], q[1], q[2], q[3], 0, 1, q[6], q[7]), '#c8cde3', 'rgba(255,255,255,.4)', 1);
+  poly(x, wq(q[0], q[1], q[2], q[3], .04, .96, q[6] + .8, q[6] + 2.6), 'rgba(90,96,128,.55)');   // 筆槽
+  M.notes.forEach((col, i) => { const c3 = i % 3, row = (i / 3) | 0, u = .08 + c3 * .3 + (row % 2) * .06, z = 52 - row * 10; poly(x, wq(q[0], q[1], q[2], q[3], u, u + .1, z - 7, z), alpha(col, .85)); });
+  wallOutline(x, 'board');
+}
+function drawLobbyCalendar(x) {                    // 牆上的日曆：紅色表頭、一格一格的日子；右上角的小紅點是對話裡正在跑的排程數
+  const q = WALL_OBJ.cal.q, w = (u1, u2, z1, z2) => wq(q[0], q[1], q[2], q[3], u1, u2, z1, z2);
+  poly(x, w(0, 1, q[6], q[7]), '#e6e9f5', 'rgba(255,255,255,.4)', 1); poly(x, w(0, 1, q[7] - 8, q[7]), COL.red);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) poly(x, w(.12 + i * .28, .12 + i * .28 + .2, q[6] + 3 + j * 4.6, q[6] + 3 + j * 4.6 + 3.2), i === 1 && j === 1 ? alpha(COL.red, .85) : '#9aa5ce');
+  const n = M.loops.length;
+  if (n) { const p = P(q[2], q[3], q[7] - 1); ellipse(x, p.x, p.y, 7.4, 7.4, COL.red, '#e6e9f5', 1.4); x.font = `700 ${n > 9 ? 8 : 9.5}px ${FONT}`; x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(n > 9 ? '9+' : String(n), p.x, p.y + .6); }
+  wallOutline(x, 'cal');
+}
+
+// ── 字：時間、狀態、人 ──
+const ST_ZH = { todo: '待辦', doing: '進行中', waiting: '等待中' }, ST_COLOR = { todo: COL.dim, doing: COL.blue, waiting: COL.purple };
+const KIND_ZH = { created: '建立', status: '狀態', owner: '負責人', waiting_on: '在等', next_step: '下一步', title: '標題', due_at: '期限', note: '記錄', result: '結果', why: '原因', kind: '種類', parent_id: '上層' };
+const nowS = () => Date.now() / 1000;
+const mdhm = ms => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()} ${hhmm(ms)}`; };
+function sinceWords(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? '剛剛' : sec < 3600 ? Math.floor(sec / 60) + ' 分鐘前' : sec < 86400 ? Math.floor(sec / 3600) + ' 小時前' : Math.floor(sec / 86400) + ' 天前'; }
+function everyWords(sec) { sec = Math.round(sec); if (sec <= 0) return ''; if (sec < 60) return `每 ${sec} 秒`; const m = Math.round(sec / 60); return m % 60 === 0 ? `每 ${m / 60} 小時` : `每 ${m} 分鐘`; }
+function cronWords(expr) {                          // 常見的幾種寫成白話；別的照原樣
+  const f = String(expr || '').trim().split(/\s+/); if (f.length !== 5) return String(expr || '');
+  const [mi, hr, dom, mon, dow] = f, num = v => /^\d+$/.test(v);
+  if (dom === '*' && mon === '*' && dow === '*') {
+    const ev = /^\*\/(\d+)$/.exec(mi); if (ev && hr === '*') return `每 ${ev[1]} 分鐘`;
+    const eh = /^\*\/(\d+)$/.exec(hr); if (eh && num(mi)) return `每 ${eh[1]} 小時`;
+    if (num(mi) && hr === '*') return `每小時的第 ${mi} 分`;
+    if (num(mi) && num(hr)) return `每天 ${hr.padStart(2, '0')}:${mi.padStart(2, '0')}`;
+  }
+  return String(expr);
+}
+function loopWords(l) {                              // 「每 20 分鐘」「每天 09:00」；不知道就空白
+  if (!l) return '';
+  if (l.kind === 'cron') return l.crons[0] && l.crons[0].schedule ? cronWords(l.crons[0].schedule) : '';
+  return everyWords(l.delay);
+}
+function cdText(next, status) {
+  const left = next * 1000 - Date.now();
+  if (left <= 0) return status === 'running' ? '這一輪正在跑' : '就是現在';
+  const s = Math.ceil(left / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h ? `${h} 小時 ${m} 分後` : m ? `${m} 分 ${String(s % 60).padStart(2, '0')} 秒後` : `${s} 秒後`;
+}
+const personEnt = key => { const e = key && key !== 'user' ? M.ents.get(key) : null; return e && !e.gone && !e.leaving ? e : null; };
+function whoBtn(key, raw) {                          // 辦公室裡有的人＝可以點的名牌；你；其他＝一般文字
+  if (key === 'user') return '<span class="who you">你</span>';
+  const e = personEnt(key);
+  if (e) return `<button type="button" class="who" data-act="person" data-key="${esc(key)}" title="看${esc(e.who.name)}"><img src="${avatarURL(e.who, 36)}" alt="">${esc(e.who.name)}</button>`;
+  return raw ? `<span>${esc(raw)}</span>` : '<span style="color:var(--mute)">—</span>';
+}
+const actorName = a => { a = String(a || ''); if (a === 'user') return '你'; const e = M.ents.get('b:' + a); return e ? e.who.name : a; };
+const findTask = id => (M.board ? M.board.all.find(t => t.id === id) : null);
+
+// ── 任務看板 ──
+function taskRow(t, kind) {
+  const op = vstate.open.has(t.id), now = nowS(), idle = t.idle_s || (t.updated_at ? now - t.updated_at : 0), c0 = ST_COLOR[t.status] || COL.dim;
+  const hist = vstate.detail.get(t.id);
+  const evs = hist && hist.ok ? hist.events : [];
+  const histHtml = !op ? '' : `<ol class="thist" aria-label="#${t.id} 的歷程">` + (!hist || hist.loading && !hist.ok ? '<li><span></span><span class="none">讀取中…</span></li>'
+    : !hist.ok ? `<li><span></span><span class="none">${esc(hist.message || '讀不到這件的歷程。')}</span></li>`
+    : evs.length ? evs.map(e => `<li><time>${esc(mdhm(e.ts * 1000))}</time><span><span class="k">${esc(KIND_ZH[e.kind] || e.kind)}</span><span class="a">${esc(actorName(e.actor))}</span><span class="tx">${esc(evText(e))}</span></span></li>`).join('')
+    : '<li><span></span><span class="none">還沒有紀錄。</span></li>') + '</ol>';
+  const due = t.due_at ? `<span class="${t.due_at < now ? 'late' : ''}">${esc(mdhm(t.due_at * 1000))}${t.due_at < now ? '（已逾期）' : ''}</span>` : '<span style="color:var(--mute)">—</span>';
+  return `<div class="trow ${t.decision ? 'dec' : t.stuck ? 'stk' : ''}" data-id="${t.id}">` +
+    `<button type="button" class="th" data-act="toggle" data-id="${t.id}" aria-expanded="${op}" title="${op ? '收起歷程' : '看歷程'}"><span class="tid">#${t.id}</span><span class="tt">${esc(t.title || '（沒有標題）')}</span>` +
+    `<span class="ts" style="--c:${c0}">${ST_ZH[t.status] || esc(t.status)}</span><span class="tc" aria-hidden="true">${op ? '▲' : '▼'}</span></button>` +
+    `<dl class="tm">${kind === 'stuck' ? `<dt>負責</dt><dd>${whoBtn(t.owner_key, t.owner)}</dd>` : ''}${kind === 'decision' ? `<dt>交辦自</dt><dd>${whoBtn(t.requester_key, t.requester)}</dd>` : ''}` +
+    `<dt>下一步</dt><dd>${esc(t.next_step || '—')}</dd><dt>在等</dt><dd>${t.waiting_on ? whoBtn(t.waiting_key, t.waiting_on) : '<span style="color:var(--mute)">—</span>'}</dd>` +
+    `<dt>期限</dt><dd>${due}</dd><dt>動靜</dt><dd class="${kind === 'stuck' ? 'old' : ''}">${idle ? sinceWords(idle) + '沒動' : '—'}</dd></dl>${histHtml}</div>`;
+}
+function evText(e) {
+  const t = String(e.text || '');
+  return e.kind === 'status' ? t.replace(/\b(todo|doing|waiting|done|dropped)\b/g, w => ({ todo: '待辦', doing: '進行中', waiting: '等待中', done: '完成', dropped: '放棄' }[w])) : t;
+}
+function boardHtml() {
+  const B = M.board;
+  if (!B || !B.all.length) return '<p class="vnote">看板上還沒有任務：bot 用 <code>sfctl task add</code> 記下手上的事後會出現在這裡</p>';
+  const sec = (cls, title, n, body, empty) => `<section class="vsec ${cls}" aria-label="${title}"><h3>${title}<b>${n}</b></h3>${n ? body : `<p class="vempty">${empty}</p>`}</section>`;
+  const groups = new Map();
+  for (const t of B.open) { const k = t.owner_key || 'n:' + (t.owner || ''); if (!groups.has(k)) groups.set(k, { key: t.owner_key, raw: t.owner, rows: [] }); groups.get(k).rows.push(t); }
+  const open = [...groups.values()].map(g => `<div class="vown">${whoBtn(g.key, g.raw || '（沒有負責人）')}<b>${g.rows.length}</b></div>` + g.rows.map(t => taskRow(t, 'open')).join('')).join('');
+  return sec('red', '等你決定', B.decisions.length, B.decisions.map(t => taskRow(t, 'decision')).join(''), '沒有在等你決定的事。') +
+    sec('yel', '卡住了', B.stuck.length, B.stuck.map(t => taskRow(t, 'stuck')).join(''), '沒有卡住的任務。') +
+    sec('', '進行中', B.open.length, open, '沒有其他進行中的任務。');
+}
+
+// ── 排程 ──
+function loopRow(l) {
+  const run = l.status === 'running', words = loopWords(l), cron = l.kind === 'cron';
+  const reason = (cron && !l.reason ? (l.crons[0] && l.crons[0].desc) : l.reason) || '';
+  const more = cron && l.crons.length > 1 ? `（共 ${l.crons.length} 個）` : '';
+  return `<div class="lrow ${run ? 'run' : ''}" data-key="${esc(l.key)}"><div class="l1">${l.key ? whoBtn(l.key, l.name) : `<span class="nm">${esc(l.name)}</span>`}` +
+    `<span class="tag" style="--c:${cron ? COL.purple : COL.blue}">${cron ? 'cron' : '/loop'}</span>${words ? `<span class="int">${esc(words)}</span>` : ''}</div>` +
+    (cron ? `<div class="nx"><span>${esc(more ? '依排程執行' + more : '依排程執行')}</span></div>`
+      : `<div class="nx"><span>下一次 <b>${l.next_ts ? esc(hhmm(l.next_ts * 1000)) : '—'}</b></span>${l.next_ts ? `<span class="cd" data-ts="${l.next_ts}" data-st="${esc(l.status)}">${esc(cdText(l.next_ts, l.status))}</span>` : ''}</div>`) +
+    (reason ? `<div class="sum" title="${esc(reason)}">${esc(reason.length > 80 ? reason.slice(0, 79) + '…' : reason)}</div>` : '') + '</div>';
+}
+function schedSection() {
+  const d = SCHED.data;
+  let body;
+  if (!d) body = '<p class="vempty">讀取中…</p>';
+  else if (d.unsupported) body = '<p class="vnote">這台電腦沒有可以列出的排程：目前只支援 macOS 的 launchd。</p>';
+  else if (!d.configured) body = '<p class="vnote">還沒有指定要列出哪些排程（設定資料夾裡的 <code>schedules.json</code>）。</p>';
+  else if (!d.ok) body = '<p class="vnote">這次讀不到排程，稍後會再試。</p>';
+  else body = (d.rows.length ? d.rows.map(r => `<div class="srow ${r.enabled ? '' : 'off-row'}" data-id="${esc(r.id)}"><div class="l1"><span class="nm">${esc(r.title)}${r.count > 1 ? ` ×${r.count}` : ''}</span>` +
+      `${r.running ? '<span class="tag" style="--c:var(--blue)">執行中</span>' : ''}<span class="tag ${r.enabled ? 'on' : 'off'}">${r.enabled ? '啟用中' : '已停用'}</span></div><div class="wh">${esc(r.when.zh || r.when.en || '—')}</div></div>`).join('')
+    : '<p class="vempty">沒有找到排程。</p>') + (d.launchd_ok ? '' : '<p class="vnote">讀不到 launchd 的狀態，啟用中／已停用可能不準。</p>');
+  const on = d && d.ok ? d.rows.filter(r => r.enabled).length : 0;
+  return `<section class="vsec" aria-label="這台電腦的排程"><h3>這台電腦的排程<b>${d && d.ok && !d.unsupported && d.configured ? `${on}/${d.rows.length}` : ''}</b></h3>${body}` +
+    `<div class="vtools"><span>唯讀；開著這一頁時每分鐘更新</span><span>${d ? hhmm(d.at) + ' 更新' : ''}</span></div></section>`;
+}
+function calHtml() {
+  return `<section class="vsec" aria-label="對話裡的排程"><h3>對話裡的排程<b>${M.loops.length}</b></h3>` +
+    (M.loops.length ? M.loops.map(loopRow).join('') : '<p class="vempty">現在沒有分頁在跑 /loop 或 cron。</p>') + '</section>' + schedSection();
+}
+
+// ── 檢視：開、關、畫 ──
+const VIEW_ICON = { board: '<svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="3" width="16" height="12" rx="1.5" fill="#c8cde3"/><rect x="4" y="5" width="4" height="3.5" fill="#7aa2f7"/><rect x="9.5" y="5" width="4" height="3.5" fill="#f7768e"/><rect x="4" y="9.6" width="4" height="3.5" fill="#e0af68"/><rect x="9.5" y="9.6" width="4" height="3.5" fill="#9ece6a"/></svg>',
+  cal: '<svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="1.5" fill="#e6e9f5"/><rect x="3" y="3" width="14" height="4.5" rx="1.5" fill="#f7768e"/><rect x="5.5" y="9.5" width="3" height="2" fill="#9aa5ce"/><rect x="10" y="9.5" width="3" height="2" fill="#f7768e"/><rect x="5.5" y="13" width="3" height="2" fill="#9aa5ce"/></svg>' };
+function viewSub() {
+  if (view === 'board') { const B = M.board || { decisions: [], stuck: [], open: [] }; return B.all && B.all.length ? `${B.decisions.length} 件等你決定 · ${B.stuck.length} 件卡住 · ${B.open.length} 件進行中` : '還沒有任務'; }
+  const d = SCHED.data; return `對話裡 ${M.loops.length} 個` + (d && d.ok && !d.unsupported && d.configured ? ` · 這台電腦 ${d.rows.filter(r => r.enabled).length}/${d.rows.length} 個啟用` : '');
+}
+function renderView(force) {
+  if (!view) return;
+  const sig = view === 'board' ? ['b', M.boardVer, M.ver, vstate.ver, [...vstate.open].join(), Math.floor(Date.now() / 30e3)].join('|') : ['c', M.loopsVer, M.ver, SCHED.ver].join('|');
+  if (!force && sig === vstate.sig) return; vstate.sig = sig;
+  $('#vIcon').innerHTML = VIEW_ICON[view]; $('#vTitle').textContent = WALL_OBJ[view].name; $('#vSub').textContent = viewSub();
+  const body = $('#vBody'), top = body.scrollTop;
+  body.innerHTML = view === 'board' ? boardHtml() : calHtml(); body.scrollTop = top; body.dataset.view = view;
+}
+function openView(kind) {
+  if (!WALL_OBJ[kind]) return;
+  if (view === kind) { closeView(); return; }
+  if (follow) stopFollow(true);
+  hoverObj = null; cv.classList.remove('pt');            // the camera is about to move: the pointer is not over it any more
+  view = kind; vstate.sig = '';
+  document.body.classList.add('following'); const p = $('#panel'); p.classList.add('open', 'viewing'); p.setAttribute('aria-hidden', 'false');
+  renderView(true); if (kind === 'cal') schedPoll();
+  fit(); kick();
+}
+function closeView(silent) {
+  if (!view) return; view = null; vstate.open.clear(); vstate.detail.clear(); vstate.sig = '';
+  document.body.classList.remove('following'); const p = $('#panel'); p.classList.remove('open', 'viewing'); p.setAttribute('aria-hidden', 'true');
+  if (!silent) fit(); kick();
+}
+function pickPerson(key) { const e = personEnt(key); if (!e) return; closeView(true); startFollow(key); }
+async function loadDetail(id, upd) {
+  const h = boardHost(), cur = vstate.detail.get(id); if (!h || (cur && (cur.loading || cur.upd === upd))) return;
+  vstate.detail.set(id, Object.assign({}, cur, { loading: true, upd }));
+  let r = null; try { r = await h.detail(id); } catch (err) { r = { success: false, message: String(err) }; }
+  if (!vstate.detail.has(id)) return;                          // 檢視關了：這份不要了
+  vstate.detail.set(id, { loading: false, upd, ok: !!(r && r.success && r.task), message: r && r.message, events: r && r.task ? (r.task.events || []).slice(0, 20) : [] });
+  vstate.ver++;
+}
+async function schedPoll() {                                    // 只在「排程」檢視開著時由畫面迴圈叫；第一次馬上問，之後最多每 SCHED.every 毫秒一次
+  const h = boardHost();
+  if (!h || !h.schedules || SCHED.busy || document.hidden || (SCHED.data && performance.now() - SCHED.at < SCHED.every)) return;
+  SCHED.busy = true; SCHED.at = performance.now(); SCHED.calls++;
+  let r = null; try { r = await h.schedules(); } catch (err) { r = null; }
+  SCHED.busy = false;
+  SCHED.data = r || { ok: false, unsupported: false, configured: true, launchd_ok: true, rows: [], at: Date.now() }; SCHED.ver++;
+}
+function viewStep() {                                           // 每一幀：重畫（簽章沒變就不動）、倒數改字、該問的問
+  if (!view) return;
+  renderView(false);
+  const now = performance.now();
+  if (now - vstate.tick >= 400) { vstate.tick = now; $$('#vBody .cd[data-ts]').forEach(el => { const t = cdText(+el.dataset.ts, el.dataset.st); if (el.textContent !== t) el.textContent = t; }); }
+  if (view === 'board') { for (const id of vstate.open) { const t = findTask(id); if (t) loadDetail(id, t.updated_at); } }
+  else schedPoll();
+}
+$('#vBody').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'person') { pickPerson(b.dataset.key); return; }
+  if (b.dataset.act === 'toggle') { const id = +b.dataset.id; if (vstate.open.has(id)) vstate.open.delete(id); else { vstate.open.add(id); const t = findTask(id); if (t) loadDetail(id, t.updated_at); } renderView(true); }
+});
+$('#vClose').onclick = () => closeView();
+$('#openBoard').onclick = () => openView('board');
+$('#openCal').onclick = () => openView('cal');
+// 一個人的排程，資料頁那一行：「每 20 分鐘，下一次 14:20」
+function loopLine(l) {
+  if (!l) return '';
+  const w = loopWords(l), nx = l.kind === 'loop' ? (l.status === 'running' ? '這一輪正在跑' : l.next_ts ? '下一次 ' + hhmm(l.next_ts * 1000) : '') : '';
+  return [l.kind === 'cron' ? 'cron' + (w ? ' ' + w : '') : w || '/loop', nx].filter(Boolean).join('，');
+}
+
 /* ══════════ 12. 繪製一幀：一間房一間房，由後往前 ══════════ */
 const twCache = new Map();
 function tw(font, text) { const k = font + '|' + text; let w = twCache.get(k); if (w == null) { c.font = font; w = c.measureText(text).width; if (twCache.size > 3000) twCache.clear(); twCache.set(k, w); } return w; }
@@ -1645,7 +1955,7 @@ function pill(x, y, text, o) {
 function miniAvatar(who, x, y, r) { c.save(); c.translate(x, y); if (who.shape) { shapePath(c, who.shape, r); c.fillStyle = who.color; c.fill(); } else { c.beginPath(); c.arc(0, 0, r, 0, 6.2832); c.fillStyle = '#6b7399'; c.fill(); } c.restore(); }
 function roomSign(r, far, placed) {
   const iso = V.m >= .5, k = clamp(cam.z * 1.05, .8, 1.1), front = r.kind !== 'lobby';
-  let p = front ? (iso ? t2s(r.x + r.w * .3, r.y + r.h, 0) : V.tp ? t2s(r.x + r.w, r.y + r.h / 2, 0) : t2s(r.x + r.w * .5, r.y + r.h, 0)) : (iso || !V.tp) ? t2s(r.x + r.w / 2, r.y - .1, r.wallH + 24) : t2s(r.x - .1, r.y + r.h / 2, r.wallH + 24);
+  let p = front ? (iso ? t2s(r.x + r.w * .3, r.y + r.h, 0) : V.tp ? t2s(r.x + r.w, r.y + r.h / 2, 0) : t2s(r.x + r.w * .5, r.y + r.h, 0)) : (iso || !V.tp) ? t2s(r.x + r.w * (r.kind === 'lobby' ? .74 : .5), r.y - .1, r.wallH + 24) : t2s(r.x - .1, r.y + r.h / 2, r.wallH + 24);
   if (front) p = { x: p.x, y: p.y + (iso ? 17 : 15) * k };
   const main = r.label, used = r.kind === 'zone' ? [...M.seats.values()].filter(s => s.room === r.id && s.occ && !s.occ.gone).length : 0;
   const sub = r.kind === 'zone' ? `${used}/${ZCAP}` : r.kind === 'peer' ? '配對' : '秘書長 · 實習生';
@@ -1696,6 +2006,7 @@ function drawOverlay(far) {
     }
   }
   for (const fn of tags) fn();
+  if (hoverObj && hoverPt && !hoverKey) pill(hoverPt.x + 4, hoverPt.y - 20, WALL_OBJ[hoverObj].name, { font: `700 12px ${FONT}`, h: 22, color: COL.ink, bg: 'rgba(26,27,38,.95)', border: alpha(COL.blue, .8) });   // 牆上東西的提示
   // 拖曳換位子：目標座位與跟著手指的頭像
   if (drag && drag.mode === 'seat') {
     const e = M.ents.get(drag.key);
@@ -1726,7 +2037,7 @@ function frame() {
   if (busy()) busyFrames++;
   try {
     if (V.k < 1) { V.k = Math.min(1, V.k + dt / .7); V.m = lerp(V.from, V.to, ease(V.k)); if (V.k >= 1) { V.m = V.to; V.tp = wantTp(); } }
-    simStep(dt); roomStep(dt); camStep(dt); draw(); renderStats(); renderAreas(); renderPanel(); fpsTick(now);
+    simStep(dt); roomStep(dt); camStep(dt); draw(); renderStats(); renderAreas(); renderPanel(); viewStep(); fpsTick(now);
     perfBuf.push(lastDrawMs); if (perfBuf.length > 240) perfBuf.shift();
   } catch (e) { console.error(e); }
   frames++; schedule();
@@ -1773,16 +2084,17 @@ cv.addEventListener('pointermove', e => {
     if (drag.mode === 'pan') { kick(); goal = null; followCam = false; cam.x -= (e.clientX - drag.x) / cam.z; cam.y -= (e.clientY - drag.y) / cam.z; }
     drag.x = e.clientX; drag.y = e.clientY; return;
   }
-  if (e.pointerType === 'mouse') { const s = pick(e.clientX, e.clientY), id = s ? s.key : null; if (id !== hoverKey) { hoverKey = id; cv.classList.toggle('pt', !!id); kick(); } }
+  if (e.pointerType === 'mouse') { const s = pick(e.clientX, e.clientY), id = s ? s.key : null, o = s ? null : wallObjAt(e.clientX, e.clientY); hoverPt = { x: e.clientX, y: e.clientY };
+    if (id !== hoverKey || o !== hoverObj) { hoverKey = id; hoverObj = o; cv.classList.toggle('pt', !!(id || o)); kick(); } else if (o) kick(); }
 });
 const endPtr = e => {
   clearTimeout(lpTimer); const d = drag; ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; cv.classList.remove('drag', 'seat');
   if (d && d.mode === 'seat') { if (e.type === 'pointerup' && d.target && d.ok) swapSeat(d.key, d.target); else if (e.type === 'pointerup' && d.target) toast('不同團隊不能換位子（團隊由 bot 設定決定）'); drag = null; kick(); return; }
-  if (d && !d.moved && e.type === 'pointerup') { const s = pick(e.clientX, e.clientY); if (s) { if (follow === s.key) { followCam = true; kick(); } else startFollow(s.key); } }
+  if (d && !d.moved && e.type === 'pointerup') { const s = pick(e.clientX, e.clientY); if (s) { if (follow === s.key) { followCam = true; kick(); } else startFollow(s.key); } else { const o = wallObjAt(e.clientX, e.clientY); if (o) openView(o); } }
   if (!ptrs.size) drag = null;
 };
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
-cv.addEventListener('pointerleave', () => { if (hoverKey) { hoverKey = null; cv.classList.remove('pt'); kick(); } });
+cv.addEventListener('pointerleave', () => { if (hoverKey || hoverObj) { hoverKey = null; hoverObj = null; cv.classList.remove('pt'); kick(); } });
 cv.addEventListener('wheel', e => { e.preventDefault(); kick(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX, e.clientY); }, { passive: false });
 function swapSeat(key, target) {
   const e = M.ents.get(key), from = M.seats.get(e.seatKey), other = target.occ && target.occ !== e ? target.occ : null;
@@ -1846,7 +2158,7 @@ addEventListener('pointerdown', () => kick(), true);   // 任何地方的點按�
 addEventListener('keydown', e => {
   kick();
   if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (e.key === 'Escape' && e.target.tagName === 'SELECT') e.target.blur(); else return; }   // 選完區域後焦點留在選單上：Esc 照樣能退出
-  if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
+  if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (view) closeView(); else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (getComputedStyle($('#search')).display === 'none') document.body.classList.add('searching'); q.focus(); }
 });
 $('#stats').addEventListener('click', e => { const b = e.target.closest('.stat'); if (b) setHl(b.dataset.k); });
@@ -1915,6 +2227,11 @@ function toast(text) { const t = $('#toast'), d = document.createElement('div');
      helpers: [{ id, parent, parent_kind, parent_name, description, model, agent_type, state, started_at, last_at }]
              // 工讀生：分頁派出去的 subagent。parent＝正職 id（parent_kind 'bot'）或實習生 id（'temp'）；
              // state working | idle | stuck（ShellBot 依它的紀錄檔多久沒寫算好）；不在清單裡＝做完了，走出去
+     board: { decisions, stuck, open },   // 大廳白板（任務看板，§11.7）：每件任務只在一份清單裡；一列 {id, title, status, kind, owner,
+             // requester, waiting_on, next_step, due_at, updated_at（都是秒）, idle_s, decision, stuck, owner_key, waiting_key, requester_key}；
+             // *_key 是辦公室裡的人（'user'、'b:<id>'、't:<id>'），認不得的名字是空字串。便利貼＝清單順序的前 7 件，紅的是 decision／stuck
+     loops: [{ key, name, kind, status, next_ts, delay, reason, rounds, crons }],   // 日曆（§11.7）：每個正在跑 /loop 或 cron 的分頁；
+             // bots／temps 裡的人也可以帶同樣的 loop（桌後牆上掛日曆、資料頁一行字）。next_ts、delay 的單位是秒
    }                                                                 // 隔壁的人用「電腦 id/人 id」表示
    規則：同一份 snapshot 送兩次畫面不變；snapshot 裡沒有的 bot 位子保留 1 小時（名牌「已離開・位子留到 HH:MM」），不重排，超過就讓出來；
    同一個 id 回來就坐回原位；坐滿 12 人長出新的一區；新的人從大門走進來（第一次載入不走）。
@@ -1947,6 +2264,7 @@ function fillEnt(e, r, kind) {
   if (kind === 'temp' || kind === 'peertemp') { const cli = r.cli || '示範 CLI'; e.who = { name: r.name || '實習生', cli, cap: CLI_CAP[Math.abs([...cli].reduce((a, ch) => a + ch.charCodeAt(0), 0)) % 3], duty: r.duty || '不是 bot 的 AI 分頁：沒有固定身份，關掉就忘了', doing: typeof r.doing === 'string' ? r.doing : '' }; e.created = Date.parse(r.opened_at) || e.created || ++seedN; }
   else { e.who = { name: String(r.name || r.id), shape: SHAPES.includes(av.shape) ? av.shape : 'round', color: /^#[0-9a-f]{6}$/i.test(av.color || '') ? av.color : NAMED_COL[av.color] || COL.blue, cli: typeof r.cli === 'string' ? r.cli : '', doing: typeof r.doing === 'string' ? r.doing : '', group0: r.team ? String(r.team) : '', duty: r.duty || '', primary: !!r.primary, runs: typeof r.runs === 'string' ? r.runs : null, memory: r.memory }; e.who.team = teamOf(e); e.created = Date.parse(r.created_at) || 0; }
   e.st = ST_OK.has(r.state) ? r.state : 'idle';
+  e.loop = r.loop && typeof r.loop === 'object' ? normLoop(r.loop) : null;   // 這個人的分頁正在跑 /loop 或 cron（桌後的牆上掛日曆、資料頁一行字）
   const t = r.task; e.task = t ? { id: t.id ?? '—', title: t.title || '', status: t.status || 'doing', next: t.next || '', waitingOn: t.waiting_on ? refKey(t.waiting_on, e) : null, from: t.from ? refKey(t.from, e) : null, updated: Date.parse(t.updated_at) || (typeof t.updated_at === 'number' ? t.updated_at : 0), why: t.why } : null;
   e.stale = staleOf(e.task, t && t.stale);
   if (Array.isArray(r.events)) { const seen = new Set(e.events.map(v => v.t + '|' + v.text)), now = performance.now(); e.events = r.events.slice(-40).map(v => ({ t: typeof v.t === 'number' ? v.t : Date.parse(v.t) || 0, kind: v.kind || 'note', text: String(v.text || ''), fresh: M.loaded && !seen.has(v.t + '|' + v.text) ? now : 0 })); }
@@ -1965,6 +2283,7 @@ function refKey(ref, from) { if (ref === 'user') return 'user'; ref = String(ref
 function newEnt(key, kind, id, extra) { return { key, kind, id, events: [], vis: 0, walk: null, gone: false, seed: (hash2(id.length * 7, [...id].reduce((a, ch) => a + ch.charCodeAt(0), 0)) * 9) % 9, ...extra }; }
 function update(snap, opts = {}) {
   if (!snap || typeof snap !== 'object') return null;
+  if (snap === DB) demoRefresh();
   const first = !M.loaded, born = [], leaving = [];
   if (Array.isArray(snap.bots)) {
     const seen = new Set();
@@ -2006,6 +2325,8 @@ function update(snap, opts = {}) {
       else { if (o.status === 'open' && status === 'done') fly(o, 'result'); o.status = status; o.title = h.title || o.title; } }
     for (const id of [...M.handoffs.keys()]) if (!seen.has(id)) M.handoffs.delete(id);
   }
+  if (snap.board) setBoard(snap.board);
+  if (Array.isArray(snap.loops)) setLoops(snap.loops);
   M.loaded = true;
   assignSeats(); layout(); arrangeHelpers();
   const stg = Math.min(.28, 2.4 / Math.max(1, born.length)); born.forEach((e, i) => { e.vis = 1;
@@ -2025,7 +2346,7 @@ window.Office = { update(snap) { goLive(); return update(snap); } };   // 真資
 const ago = m => DEMO_BASE - m * 60000;
 const ev = list => list.map(([m, kind, text]) => ({ t: ago(m), kind, text }));
 const iso = d => new Date(d).toISOString();
-const DB = { bots: [], temps: [], peers: [], handoffs: [], helpers: [] };
+const DB = { bots: [], temps: [], peers: [], handoffs: [], helpers: [], board: null, loops: [] };
 const mkBot = (id, name, shape, color, team, duty, created, state, task, events, extra) => ({ id, name, avatar: { shape, color }, team, duty, created_at: created, state, task, events: ev(events), ...extra });
 DB.bots.push(
   mkBot('sec', '示範秘書長', 'star', 'purple', '營運組', '統籌、分派工作、把各組結果整理給你', '2026-09-01T09:00:00+08:00', 'working', { id: '#21', title: '整理本週示範週報', status: 'doing', next: '收齊各組回報後合併成一頁', updated_at: iso(ago(3)) },
@@ -2058,6 +2379,38 @@ DB.peers.push({ id: 'peer1', name: '示範電腦', bots: [
   mkBot('dat', '示範資料員', 'tilt', 'periw', null, '在隔壁電腦上整理資料表', '2026-09-04T09:00:00+08:00', 'idle', { id: '隔壁 #6', title: '整理示範資料表', status: 'done', next: '等下一件', updated_at: iso(ago(44)) },
     [[80, 'wake', '被叫醒：例行整理'], [74, 'work', '開始：合併三張表'], [60, 'note', '去掉重複 18 筆'], [52, 'work', '補欄位說明'], [44, 'done', '完成：示範資料表'], [42, 'idle', '閒下來，可以接新工作'], [30, 'note', '在隔壁電腦待命'], [12, 'note', '記憶已存']])],
   temps: [mkTemp(4, '示範 CLI-A', 'working', '跑一次示範檢查', '做完就關分頁')] });
+
+// 示範：看板上的任務（一件等你決定、一件卡住、幾件進行中）、三個人的 /loop 與 cron、這台電腦的幾個排程。
+// 時間都用 Date.now() 算（不是示範時鐘：暫停示範時倒數也要照走）。
+const dtask = (id, owner, o) => { const k = v => (v === 'user' ? 'user' : v ? 'b:' + v : ''), now = Date.now() / 1000; const t = Object.assign({ id, title: '', status: 'doing', kind: 'work', owner, requester: 'sec', waiting_on: '', next_step: '', due_at: 0, updated_at: now - 600, idle_s: 0 }, o);
+  t.updated_at = now - (o.agoMin || 10) * 60; delete t.agoMin; return Object.assign(t, { owner_key: k(t.owner), requester_key: k(t.requester), waiting_key: k(t.waiting_on) }); };
+const demoBoard = () => { const now = Date.now() / 1000;
+  return { decisions: [dtask(24, 'user', { title: '示範工具選型：方案 A 還是 B？', status: 'waiting', kind: 'decision', requester: 'res', waiting_on: 'user', next_step: '等你在方案 A、B 之間選一個', due_at: now + 2 * 3600, agoMin: 19, decision: true })],
+    stuck: [dtask(20, 'des', { title: '示範首頁草圖匯出', next_step: '匯出逾時，等重試', agoMin: 26 * 60, idle_s: 26 * 3600, stuck: true })],
+    open: [dtask(18, 'eng', { title: '示範登入頁改版', next_step: '補上表單驗證', agoMin: 4 }), dtask(21, 'sec', { title: '整理本週示範週報', requester: 'user', next_step: '收齊各組回報後合併成一頁', agoMin: 3 }),
+      dtask(22, 'ops', { title: '示範環境例行檢查', requester: 'user', next_step: '檢查磁碟與憑證到期日', due_at: now - 1800, agoMin: 5 }), dtask(19, 'res', { title: '示範工具選型比較', status: 'waiting', waiting_on: 'user', next_step: '等你選方案', agoMin: 19 }),
+      dtask(23, 'sch', { title: '下週示範提醒排程', status: 'todo', next_step: '下次叫醒時接著排', due_at: now + 3 * 86400, agoMin: 166 }), dtask(15, 'ana', { title: '示範月報數字', status: 'todo', next_step: '等資料到齊再做', agoMin: 9 * 1440 })] };
+};
+DB.board = demoBoard();
+function demoRefresh() {                                      // 每次送示範資料前：倒數的時間往前排
+  const now = Date.now() / 1000, next = (every, phase) => now + every - ((now + phase) % every), L = [];
+  const add = (b, key, lp) => { if (!b) return; b.loop = lp; L.push(Object.assign({ key, name: b.name }, lp)); };
+  add(dbBot('ops'), 'b:ops', { kind: 'loop', status: 'sleeping', next_ts: next(1200, 0), delay: 1200, reason: '看一輪監控面板：磁碟、憑證到期日、服務回應時間，有異常才回報', rounds: 5, crons: [] });
+  add(dbBot('sec'), 'b:sec', { kind: 'cron', status: 'scheduled', next_ts: 0, delay: 0, reason: '每天早上把各組回報整理成示範週報', rounds: 0, crons: [{ desc: '每天早上把各組回報整理成示範週報', schedule: '0 9 * * *' }] });
+  add(DB.temps.find(t => t.id === 'tmp1'), 't:tmp1', { kind: 'loop', status: 'sleeping', next_ts: next(300, 90), delay: 300, reason: '每 5 分鐘看一次示範建置跑完了沒', rounds: 12, crons: [] });
+  DB.loops = L;
+}
+const DEMO_BOARD = {
+  async detail(id) { const t = findTask(id); if (!t) return { success: false, message: '沒有這件任務。' };
+    const at = t.updated_at, ev0 = [{ ts: at, actor: t.owner, kind: 'note', text: t.next_step || '更新進度' }, { ts: at - 1800, actor: t.owner, kind: 'status', text: 'todo → ' + t.status }, { ts: at - 3 * 3600, actor: t.requester, kind: 'created', text: t.title }];
+    return { success: true, task: { id, events: ev0 } }; },
+  async schedules() { const w = (en, zh) => ({ en, zh });
+    return { ok: true, unsupported: false, configured: true, launchd_ok: true, at: Date.now(), rows: [
+      { id: 'demo.backup', title: '示範每日備份', when: w('Daily 02:30', '每天 02:30'), enabled: true, running: false, kind: 'calendar', count: 0 },
+      { id: 'demo.report', title: '示範週報彙整', when: w('Mon–Fri 09:50', '週一至週五 09:50'), enabled: true, running: false, kind: 'calendar', count: 0 },
+      { id: 'demo.certs', title: '示範憑證檢查', when: w('Every 6 hours', '每 6 小時'), enabled: true, running: true, kind: 'interval', count: 0 },
+      { id: 'demo.old', title: '示範舊排程（已停用）', when: w('Sun 23:00', '每週日 23:00'), enabled: false, running: false, kind: 'calendar', count: 0 }] }; },
+};
 const push = () => { if (DEMO.live) update(DB); };
 const dbBot = ref => { ref = String(ref); if (ref.includes('/')) { const [pid, id] = ref.split('/'); const p = DB.peers.find(q => q.id === pid); return p && p.bots.find(b => b.id === id); } return DB.bots.find(b => b.id === ref); };
 const dbLog = (b, kind, text) => { b.events.push({ t: clockMs(), kind, text }); if (b.events.length > 40) b.events.shift(); };
@@ -2149,6 +2502,10 @@ $('#addTen').onclick = () => addBots(10);
 window.__office = {
   frames: () => frames, busyFrames: () => busyFrames, busyWhy: () => ({ papers: papers.length, rings: rings.length, walking: [...M.ents.values()].filter(e => e.walk).map(e => e.key + ':' + e.walk.dir), cam: camMoving(), morph: V.k < 1, rooms: [...M.rooms.values()].filter(r => r.alpha < 1 || Math.abs(r.tx - r.x) > .01 || Math.abs(r.ty - r.y) > .01 || Math.abs(r.th - r.h) > .01).map(r => r.id) }), counts, highlighted: () => counted().filter(e => hl && matches(hl, e)).length,
   following: () => follow, panelOpen: () => $('#panel').classList.contains('open'),
+  view: () => view, openView: k => openView(k), closeView: () => closeView(), board: () => (M.board ? JSON.parse(M.boardJson) : null), notes: () => [...M.notes], loops: () => JSON.parse(M.loopsJson || '[]'),
+  wallPoint: k => { const pts = wallScreen(k), p = { x: pts.reduce((a, q) => a + q.x, 0) / 4, y: pts.reduce((a, q) => a + q.y, 0) / 4 }; return wallObjAt(p.x, p.y) === k ? p : null; },
+  wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj ? WALL_OBJ[hoverObj].name : ''), schedCalls: () => SCHED.calls, schedPollMs: () => SCHED.every, setSchedPoll: ms => { SCHED.every = ms; },
+  loopMarks: () => [...M.ents.values()].filter(e => e.loop && !e.gone).map(e => { const s = M.seats.get(e.seatKey), g = s && geo(s); return { key: e.key, wall: !!g && (g.shared || placeItems(e, g).some(q => q.k === 'wall' && q.it.id === 'calendar')) }; }),
   zoning: () => zoning, setZoning: z => setZoning(z), setGroup: (id, g) => setGroup(id, g), groups: () => groupsOf(),
   zones: () => [...M.rooms.values()].filter(r => r.kind === 'zone').sort((a, b) => zoneRank(a.team) - zoneRank(b.team) || a.label.localeCompare(b.label, 'zh-Hant')).map(r => r.label),
   chat: () => ({ key: chat.key, rev: chat.rev, items: chat.data ? chat.data.items.length : 0, tab: panelTab, sending: chat.sending }),

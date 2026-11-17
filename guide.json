@@ -249,8 +249,8 @@
         "zh": "辦公室"
       },
       "body": {
-        "en": "A button at the foot of the sidebar opens an office floor: bots (staff) at desks, AI tabs that are not bots (interns) at a long table, subagents (part-timers) beside them. Click a person to read their conversation and message them. Off by default.",
-        "zh": "側欄底部多一顆按鈕，打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，subagent（工讀生）站在旁邊。誰在忙、等你、卡住，看圖就知道；點一個人就能看他的對話、直接傳話。預設關閉。"
+        "en": "A button at the foot of the sidebar opens an office floor: bots at desks, AI tabs that are not bots at a long table, subagents beside them. Click a person to chat; the wall's whiteboard is the task board, its calendar the loops and schedules. Off by default.",
+        "zh": "側欄底部多一顆按鈕，打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，subagent（工讀生）站在旁邊。誰在忙、等你、卡住，看圖就知道；點一個人就能看他的對話、直接傳話；牆上的白板是任務看板，日曆是排程。預設關閉。"
       }
     },
     {

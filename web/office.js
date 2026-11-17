@@ -13,6 +13,11 @@
  *     while the office is open: tasks_overview (one small SQLite read, at most every 9 s) and
  *     office_helpers (list + stat of the open Claude tabs' subagents folders; office_helpers.py).
  *     The floor itself reads no screen and no transcript.
+ *     Each tab's `loop` (a /loop or cron routine: agent_status.detect_schedules puts it on the tab's
+ *     status whether or not the Loops panel is on) comes from the sessions the page already holds.
+ *     The lobby's task board and calendar views ask SFOffice.host.board for what they open: task_detail
+ *     (a task's history, only when its row is opened) and schedules_list (this computer's schedules,
+ *     read only, only while the calendar view is showing, at most once a minute: office.html paces it).
  *   - gives the panel of the person being followed their conversation and a message box
  *     (SFOffice.host.chat): the chat view's own routes for that one tab (chat_view every 2 s while
  *     the panel's Conversation tab is showing and the window is in front, chat_send, chat_answer),
@@ -93,6 +98,62 @@
              from: from && owners.indexOf(from) < 0 ? (ref(from) || null) : null,
              updated_at: iso(Number(x.updated_at || 0) * 1000), stale: stuck.has(x.id) };
   }
+  // A loop or cron routine a tab runs, as agent_status.detect_schedules leaves it on the tab's status
+  // (`loop`: kind loop|cron, status, next_ts in seconds, delay in seconds, reason, rounds, crons). null for
+  // none, and for a /loop whose next wake passed more than LOOP_GRACE_S ago: the status behind it can be
+  // up to 25 s old, so the page does not trust "sleeping" forever.
+  const LOOP_GRACE_S = 1800;
+  function loopOf(raw, now) {
+    const r = raw && typeof raw === 'object' ? raw : null;
+    if (!r || (r.kind !== 'loop' && r.kind !== 'cron')) return null;
+    const next = Number(r.next_ts) > 0 ? Number(r.next_ts) : 0;
+    if (r.kind === 'loop' && (!next || next + LOOP_GRACE_S < (now || Date.now()) / 1000)) return null;
+    const crons = (Array.isArray(r.crons) ? r.crons : []).slice(0, 5).map(c => ({ desc: clip(c && c.desc, 60), schedule: clip(c && c.schedule, 40) }));
+    return { kind: r.kind, status: r.status === 'running' ? 'running' : r.kind === 'cron' ? 'scheduled' : 'sleeping', next_ts: next,
+             delay: Number(r.delay) > 0 ? Number(r.delay) : 0, reason: clip(r.reason, 90), rounds: Number(r.rounds) || 0, crons };
+  }
+  // A person's name for a task's owner / waiting-on / requester → the office's key ('user', 'b:<role>', 't:<sid>'),
+  // by role, by the bot's label, or by the title or sid of a tab that is no bot. '' when nobody here has that name.
+  function personKey(name, who) {
+    const n = String(name || '');
+    if (!n) return '';
+    if (n === 'user') return 'user';
+    if (who.roles.has(n)) return 'b:' + n;
+    if (who.labels[n]) return 'b:' + who.labels[n];
+    return who.temps[n] ? 't:' + who.temps[n] : '';
+  }
+  const TASK_KEYS = ['id', 'title', 'status', 'kind', 'owner', 'requester', 'waiting_on', 'next_step', 'due_at', 'updated_at', 'idle_s'];
+  // The task board: the person's decisions (kind decision, owned by `user`), the stuck ones, then every other open
+  // task. Each task is in ONE list, the first that has it (decision, stuck, open), so a stuck decision is not three
+  // rows; `all` is that order and is what the sticky notes follow. A stuck row from an older overview with only
+  // {id, idle_s} borrows its text from the open list. Times stay in seconds (the store's), as `age` needs them.
+  function boardOf(tasks, who, now) {
+    const T = tasks || {}, W = who || { roles: new Set(), labels: {}, temps: {} };
+    const byId = new Map(((T.open) || []).filter(x => x && x.id != null).map(x => [x.id, x]));
+    const seen = new Set();
+    const row = (x, extra) => {
+      const o = {};
+      for (const k of TASK_KEYS) o[k] = x[k] == null ? '' : x[k];
+      o.id = Number(x.id); o.title = clip(x.title, 200); o.next_step = clip(x.next_step, 200);
+      o.due_at = Number(x.due_at) || 0; o.updated_at = Number(x.updated_at) || 0; o.idle_s = Number(x.idle_s) || 0;
+      o.owner_key = personKey(x.owner, W); o.waiting_key = personKey(x.waiting_on, W); o.requester_key = personKey(x.requester, W);
+      return Object.assign(o, extra);
+    };
+    const take = (list, extra) => list.filter(x => x && x.id != null && !seen.has(x.id)).map(x => { seen.add(x.id); return row(Object.assign({}, byId.get(x.id) || {}, x), extra); });
+    const decisions = take(T.decisions || [], { decision: true });
+    const stuck = take(T.stuck || [], { stuck: true });
+    const open = take(T.open || [], {});
+    return { decisions, stuck, open, all: decisions.concat(stuck, open) };
+  }
+  // The computer's own schedules (api_schedules.schedules_list) as the office lists them: a title, when, on or off.
+  // The commands are left out: the office shows when something runs, not what.
+  function schedShape(raw) {
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const rows = (Array.isArray(r.schedules) ? r.schedules : []).map(x => ({
+      id: String(x.id || ''), title: String(x.title || x.id || ''), when: x.when && typeof x.when === 'object' ? { en: String(x.when.en || ''), zh: String(x.when.zh || '') } : { en: String(x.when || ''), zh: String(x.when || '') },
+      enabled: !!x.enabled, running: !!x.running, kind: String(x.kind || ''), count: Array.isArray(x.members) ? x.members.length : 0 }));
+    return { ok: !r.error, unsupported: !!r.unsupported, configured: r.configured !== false, launchd_ok: r.launchd_ok !== false, rows, at: Date.now() };
+  }
   function runsOf(e) {
     const pin = e.pin || {};
     return [(e.cli && e.cli.label) || '', pin.model ? (pin.label || pin.model) : 'CLI 預設'].filter(Boolean).join(' · ');
@@ -102,14 +163,17 @@
        botsOn    bots are on (settings.experimental_bots); off = every AI tab is an intern
        roster    bots_state().roster: role → {label, responsibility, bot: {avatar, primary, memory, external}, cli, pin}
        primary   the primary bot's role
-       tabs      this computer's tabs in sidebar order: [{sid, label, kind: bot|temp|terminal, role, dot, cmd, line}]
-       tasks     tasks_overview(): {open: [...], stuck: [...]}
+       tabs      this computer's tabs in sidebar order: [{sid, label, kind: bot|temp|terminal, role, dot, cmd, line, loop}]
+                 (loop: the tab's status `loop`, a /loop or cron routine it runs, or null)
+       tasks     tasks_overview(): {decisions: [...], open: [...], stuck: [...]}
        peers     SFBots.peerBots(): pid → {name, primary, bots: [/link/bots rows], tabs: {rsid: tab}}
        helpers   office_helpers().helpers: sid → [{id, description, model, agent_type, state, started_at, last_at}]
        seen      sid → first time this page saw the tab (ms); filled in for new ones (an intern's opened_at)
        kit       {palette, shapes, defaultAvatar} (SFBots)
        now       ms
-     output: the snapshot office.html's Office.update takes (its §15). */
+     output: the snapshot office.html's Office.update takes (its §15), with `board` (the task board: decisions, stuck,
+     open, all; boardOf) and `loops` (every tab with a loop or cron, who it is and when it wakes next); a bot or an
+     intern with one carries `loop` too. */
   function build(inp) {
     const I = inp || {}, now = I.now || Date.now(), seen = I.seen || {}, kit = I.kit || {};
     const roster = I.botsOn ? (I.roster || {}) : {};
@@ -166,8 +230,20 @@
                        started_at: iso(Number(h.started_at || 0) * 1000), last_at: iso(Number(h.last_at || 0) * 1000) });
       }
     }
+    const loops = [];
+    const loopOn = (tab, key, name) => {
+      const lp = loopOf(tab && tab.loop, now);
+      if (lp) loops.push(Object.assign({ key, name }, lp));
+      return lp;
+    };
+    for (const b of bots) { const tab = tabOf[b.id]; if (tab) b.loop = loopOn(tab, 'b:' + b.id, b.name); }
+    for (const x of temps) { const tab = tabs.find(q => q.sid === x.id); x.loop = loopOn(tab, 't:' + x.id, x.name); }
+    for (const tab of tabs) if (tab.loop && !tab.role && tab.kind !== 'temp') loopOn(tab, '', String(tab.label || tab.sid));   // a tab no one sits at
+    const who = { roles: known, labels: {}, temps: {} };
+    for (const r of roles) if (roster[r].label) who.labels[String(roster[r].label)] = r;
+    for (const x of tabs) if (x.kind === 'temp' && !(x.role && known.has(x.role))) { who.temps[String(x.label || '')] = x.sid; who.temps[x.sid] = x.sid; }
     for (const b of bots) { delete b.sid; }
-    return { bots, temps, peers, helpers, handoffs: [] };
+    return { bots, temps, peers, helpers, handoffs: [], board: boardOf(I.tasks, who, now), loops };
   }
 
   // What happened, as the office's panel lists it: each person's state changes this page has seen
@@ -264,7 +340,7 @@
              login: !!(r && r.login && r.login.step) };
   }
 
-  const pure = { build, track, tabState, peerState, cliName, avatar, chatShape, queueWords, CHAT_LIMIT };
+  const pure = { build, track, tabState, peerState, cliName, avatar, chatShape, queueWords, CHAT_LIMIT, loopOf, boardOf, personKey, schedShape };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; return; }
 
   // ── the page: switch, button, overlay ────────────────────────────────────
@@ -404,16 +480,30 @@
       catch (e) { return { ok: false, message: String(e) }; }
     },
   };
+  // The task board's and the schedule view's reads (read only; office.html asks only while that view is showing).
+  // detail: one task and its events newest first (task_detail); schedules: this computer's own schedules (schedules_list,
+  // asked at most once a minute by the view), shaped by schedShape.
+  const boardHost = {
+    async detail(id) {
+      try { return JSON.parse(await api().task_detail(String(id))); }
+      catch (e) { return { success: false, message: String(e) }; }
+    },
+    async schedules() {
+      try { return schedShape(JSON.parse(await api().schedules_list())); }
+      catch (e) { return { ok: false, unsupported: false, configured: true, launchd_ok: true, rows: [], at: Date.now() }; }
+    },
+  };
   // What office.html's `store` calls (same origin, synchronous), and its conversation panel (promises).
   const officeHost = {
     get: k => (prefs && Object.prototype.hasOwnProperty.call(prefs, k) ? clone(prefs[k]) : null),
     set: (k, v) => { prefs = prefs || {}; if (v == null) delete prefs[k]; else prefs[k] = clone(v); savePrefs(false); },
     close: () => close(),
     chat: chatHost,
+    board: boardHost,
   };
 
   let overlay = null, frame = null, timer = 0, busy = false, lastPush = null;
-  let tasks = { open: [], stuck: [] }, tasksAt = 0, helpers = {};
+  let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {};
   const seen = {}, mem = {};
   const TICK_MS = 3000, TASKS_MS = 9000;
 
@@ -425,7 +515,7 @@
       const s = S[sid] || {};
       let role = '', kind = 'terminal', line = '';
       try { role = (B && B.botOf && B.botOf(sid)) || ''; kind = (B && B.kindOf && B.kindOf(sid)) || 'terminal'; line = (B && B.previewOf && B.previewOf(sid)) || ''; } catch (_) {}
-      return { sid, label: s.label || '', kind, role, dot: s._dotClass || '', cmd: s.cmd || '', line };
+      return { sid, label: s.label || '', kind, role, dot: s._dotClass || '', cmd: s.cmd || '', line, loop: (s._serverStatus || {}).loop || null };
     });
   }
   function snapshot() {
@@ -443,7 +533,7 @@
     if (!a) return;
     if (a.tasks_overview && Date.now() - tasksAt >= TASKS_MS) {
       tasksAt = Date.now();
-      try { const r = JSON.parse(await a.tasks_overview()); if (r && r.success) tasks = { open: r.open || [], stuck: r.stuck || [] }; } catch (_) {}
+      try { const r = JSON.parse(await a.tasks_overview()); if (r && r.success) tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; } catch (_) {}
     }
     if (a.office_helpers) {
       try { const r = JSON.parse(await a.office_helpers()); if (r && r.success) helpers = r.helpers || {}; } catch (_) {}
@@ -476,6 +566,7 @@
       try { const r = JSON.parse(await api().office_prefs()); prefs = (r && r.prefs) || {}; } catch (_) { prefs = {}; }
     }
     if (overlay || !enabled()) return;
+    tasksAt = 0;                          // a freshly opened office asks again, not on the last open's answer
     overlay = document.createElement('div');
     overlay.id = 'sfo-overlay';
     overlay.tabIndex = -1;
