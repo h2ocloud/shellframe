@@ -873,7 +873,9 @@
   function focusTerminal(sid, s) {
     const go = () => {
       const el = document.activeElement;
-      const loose = !el || el === document.body || !!(el.closest && el.closest('#chat-switch'));
+      // …or still inside the view just hidden (the button that was pressed): WebKit moves focus off a hidden
+      // element at once, Chromium (Windows' WebView2) only later, and until then it looked taken (CI caught it)
+      const loose = !el || el === document.body || !!(el.closest && (el.closest('#chat-switch') || el.closest('#chat-layer')));
       if (!covers() && activeSid() === sid && loose) { try { s.term.focus(); } catch (_) {} }
     };
     go();

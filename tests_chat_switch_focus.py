@@ -92,7 +92,14 @@ def run(browser, engine):
             page.wait_for_function(FOCUS_JS, timeout=3000)
         except Exception:
             pass
-        return page.evaluate(FOCUS_JS)
+        ok = page.evaluate(FOCUS_JS)
+        if not ok:                                  # where the focus is instead (it has failed only on CI)
+            print("      focus is on:", page.evaluate("""(() => { const e = document.activeElement; if (!e) return 'nothing';
+                const up = (s) => !!(e.closest && e.closest(s));
+                return [e.tagName, e.id, String(e.className).slice(0, 40), 'in chat-layer=' + up('#chat-layer'),
+                        'layer hidden=' + !!(document.getElementById('chat-layer') || {}).hidden,
+                        'visible=' + (e.offsetParent !== null)].join(' '); })()"""))
+        return ok
 
     def typed(text):
         before = writes()
