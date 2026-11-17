@@ -49,7 +49,7 @@ run() {
       flaky=$((flaky + 1))
       flaky_names="$flaky_names $name"
       printf '  ↻ %-34s failed, then passed on the second run (flaky here)\n' "$name"
-      printf '%s\n' "$out" | grep -E 'FAIL|Traceback|Error' | head -10 | sed 's/^/      ~ /'
+      printf '%s\n' "$out" | grep -B4 -E 'FAIL|Traceback|Error' | head -20 | sed 's/^/      ~ /'
       return
     fi
     out="$again"; rc=$rc2
@@ -61,7 +61,7 @@ run() {
     printf '  ✗ %-34s exit=%s  %s\n' "$name" "$rc" "$last"
     printf '%s\n' "$out" | tail -20 | sed 's/^/      /'
     if [ -n "${CI:-}" ]; then                     # GitHub Actions: every failed check, not only the last lines
-      printf '%s\n' "$out" | grep -E 'FAIL|Traceback|Error' | head -40 | sed 's/^/      ! /'
+      printf '%s\n' "$out" | grep -B4 -E 'FAIL|Traceback|Error' | head -60 | sed 's/^/      ! /'   # with the lines before: which engine, which section
     fi
     return
   fi
