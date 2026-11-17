@@ -375,7 +375,7 @@ class ConnectApiMixin:
             return {"success": False, "message": sf_lang.pick("usage: sfctl connect step <service> check|act|done|back [--action ID]",
                                                               "用法：sfctl connect step <service> check|act|done|back [--action ID]")}
         view = eng.view(service) or {}
-        if (view.get("step") or {}).get("kind") == "test":
+        if (view.get("step") or {}).get("kind") == "test" and op != "back":
             return {"success": False, "message": sf_lang.pick(f"This step is the test: run sfctl connect test {service}",
                                                               f"這一步是測試：跑 sfctl connect test {service}")}
         before = (view.get("step") or {}).get("id")

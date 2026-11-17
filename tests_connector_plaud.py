@@ -63,8 +63,8 @@ def check(name, ok, detail=""):
             print(f"         {line[:300]}")
 
 
-eng_mod._dlog = lambda cat, msg: None
 LOG = []
+eng_mod._dlog = lambda cat, msg: LOG.append(msg)
 
 # ── the fake stdio MCP server (_plaud_fake.py) ──────────────────────────────────
 from _plaud_fake import IDENTITY, Spawner, alive, wait_for  # noqa: E402
@@ -267,7 +267,7 @@ for mode, code in (("timeout", "timeout"), ("denied", "denied"), ("port_busy", "
     wait_for(lambda: plaud.LOGIN.look()[0] == "done", 20)
 
 check("the tool's text never reaches a result, the state file or the log (the made-up address)",
-      IDENTITY not in json.dumps(RETURNS) and all(IDENTITY not in p.read_text() for p in _TMP.rglob("connectors.json")), "")
+      IDENTITY not in json.dumps(RETURNS) and all(IDENTITY not in p.read_text() for p in _TMP.rglob("connectors.json")) and LOG and IDENTITY not in " ".join(LOG), "")
 
 reset_login()
 r = Rig("no-node", node=False)
@@ -338,6 +338,7 @@ check("classify: the tool's flag and a few words only, nothing else comes out",
       plaud.classify({"code": "answered", "is_error": False, "text": "anything"}) == "ok" and plaud.classify({"code": "answered", "is_error": True, "text": "Authentication timed out"}) == "timeout"
       and plaud.classify({"code": "answered", "is_error": True, "text": "User denied access"}) == "denied" and plaud.classify({"code": "cancelled"}) == ""
       and plaud.classify({"code": "answered", "is_error": True, "text": "Failed to start callback server: EADDRINUSE"}) == "port_busy"
+      and plaud.classify({"code": "answered", "is_error": True, "text": "Request timed out on port 443"}) == "timeout"
       and plaud.classify({"code": "answered", "is_error": True, "text": "boom"}) == "failed" and plaud.classify({"code": "no_start"}) == "failed")
 reset_login()
 
@@ -462,7 +463,7 @@ out = api._connect_sfctl({"action": "step", "service": "plaud", "op": "act", "ac
 check("step act --action login answers at once: waiting in the browser on this computer",
       out["success"] and "Did: login" in out["message"] and "browser" in out["message"] and "computer" in out["message"], out["message"])
 out = api._connect_sfctl({"action": "status", "service": "plaud"})
-check("status shows the step in front of the person too", "Step id: p2" in out["message"] and "Last action: login" in out["message"], out["message"])
+check("status shows the step in front of the person too", "Step id: p2 — Sign in to Plaud" in out["message"] and "Last action: login" in out["message"], out["message"])
 wait_for(lambda: plaud.LOGIN.look()[0] == "done", 15)
 out = api._connect_sfctl({"action": "step", "service": "plaud", "op": "check"})
 check("step check, after the browser part: ok, and the step moved on to the test (which says to use sfctl connect test)",
@@ -470,7 +471,9 @@ check("step check, after the browser part: ok, and the step moved on to the test
 out = api._connect_sfctl({"action": "step", "service": "plaud", "op": "done"})
 check("on the test step `step` is refused and points at `sfctl connect test`", not out["success"] and "sfctl connect test plaud" in out["message"], out)
 out = api._connect_sfctl({"action": "step", "service": "plaud", "op": "back"})
-check("…and so is `back` (the person goes back in the page)", not out["success"])
+check("…but `back` goes through: from the test the bot can return to the sign-in step (with its title)",
+      out["success"] and "Step id: p2 — Sign in to Plaud" in out["message"], out)
+api._connect_sfctl({"action": "step", "service": "plaud", "op": "check"})          # the file is still there: on to the test again
 j = api._connect_sfctl({"action": "status", "service": "plaud", "json": True})
 check("--json gives the whole answer", json.loads(j["message"])["status"]["service"] == "plaud")
 out = api._connect_sfctl({"action": "test", "service": "plaud"})

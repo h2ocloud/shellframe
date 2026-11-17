@@ -82,7 +82,7 @@ def classify(res: dict) -> str:
     if not res.get("is_error"):
         return "ok"
     t = str(res.get("text") or "").lower()
-    if re.search(r"callback server|eaddrinuse|already in use|\bport\b", t):
+    if re.search(r"callback server|eaddrinuse|already in use", t):
         return "port_busy"
     if re.search(r"timed? ?out|timeout", t):
         return "timeout"

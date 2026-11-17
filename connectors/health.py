@@ -205,7 +205,7 @@ def step_words(service: str, view, lang: str = None, with_result: bool = True) -
         return ""
     pick = lambda x: registry.pick(x, lang) if x else ""
     zh = lang == "zh"
-    out = [("步驟代號：" if zh else "Step id: ") + str(step["id"])]
+    out = [("步驟代號：" if zh else "Step id: ") + f"{step['id']} — {pick(step.get('title'))}"]
     if step.get("kind") == "test":
         out.append(f"這一步是測試：跑 sfctl connect test {service}" if zh else f"This step is the test: run sfctl connect test {service}")
         return "\n".join(out)
