@@ -1301,6 +1301,31 @@ def close_inherited_fds():
     os.closerange(3, _FD_CEILING)
 
 
+# ── Windows: Esc to a ConPTY tab ──────────────────────────────────────────────
+# Reported: in a Codex tab on Windows, Esc did not interrupt the turn. The page sends a lone ESC byte, which is
+# also how every escape sequence starts, so ConPTY's input parser has no way to tell the key from the start of a
+# sequence. ConPTY asks its host for win32-input-mode at start (`CSI ? 9001 h`, microsoft/terminal spec #4999),
+# in which each key is one unambiguous record `CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _`; Windows Terminal sends all
+# keys that way. While ConPTY has asked for it, a keystroke that is only Esc goes as Escape's press and release.
+# Everything else is written as before.
+_W32_MODE = re.compile(rb"\x1b\[\?9001([hl])")
+_W32_ESC = "\x1b[27;1;27;1;0;1_\x1b[27;1;27;0;0;1_"        # VK_ESCAPE, scan code 1, char 27: down, then up
+
+
+def _w32_mode_after(tail: bytes, on: bool) -> bool:
+    """Whether ConPTY wants win32-input-mode after output `tail`: its last `CSI ? 9001 h/l`, else as it was."""
+    found = _W32_MODE.findall(tail or b"")
+    return found[-1] == b"h" if found else on
+
+
+def _w32_keys(data: str, on: bool) -> str:
+    """`data` as written to a ConPTY tab: a keystroke that is only Esc (one press, or a few) as win32-input-mode
+    records while ConPTY asked for that mode; anything else unchanged."""
+    if on and data and set(data) == {"\x1b"}:
+        return _W32_ESC * len(data)
+    return data
+
+
 class Session:
     """One PTY tab session."""
 
@@ -1715,6 +1740,11 @@ class Session:
                     raw = data.encode("utf-8", errors="replace") if isinstance(data, str) else data
                     with self.lock:
                         self.buffer.extend(raw)
+                        # ConPTY asking for win32-input-mode (or no longer): how a lone Esc is written (_w32_keys).
+                        # The window reaches back 16 bytes, so a sequence split across two reads is still seen.
+                        seen = bytes(self._recent[-16:]) + raw
+                        if b"9001" in seen:
+                            self._w32_input = _w32_mode_after(seen, getattr(self, "_w32_input", False))
                         # _recent 一定要跟 unix reader 一樣餵：Windows 上 peek_fn、
                         # startup-trust 自動接受、TG 送達驗證的 fallback 全靠它，
                         # 漏餵等於這些機制在 Windows 整組失明。
@@ -1763,8 +1793,11 @@ class Session:
             if user_activity:
                 self._last_user_activity_time = now
         if IS_WIN and hasattr(self, '_use_winpty') and self._use_winpty:
+            keys = _w32_keys(data, getattr(self, "_w32_input", False))
+            if keys is not data:
+                _dlog("write", f"sid={self.sid} Esc x{len(data)} as win32-input-mode key events")
             try:
-                self._winpty.write(data)
+                self._winpty.write(keys)
             except (EOFError, OSError):
                 _swallow("Session.write:1128")
             return
