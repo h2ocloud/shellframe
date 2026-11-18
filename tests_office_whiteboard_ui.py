@@ -308,8 +308,8 @@ def run(browser, base, engine):
     page.keyboard.press("Escape")
     open_card(21)
     b21 = buttons()
-    check("the buttons follow the rule: the person's own task or one waiting on them has 我做好了 and 留言; any other task only 留言",
-          b24 == ["我做好了", "留言"] and b19 == ["我做好了", "留言"] and b21 == ["留言"], (b24, b19, b21))
+    check("the buttons follow the rule: a decision for the person has 回覆 and 留言; their own task or one waiting on them 我做好了 and 留言; any other task only 留言",
+          b24 == ["回覆", "留言"] and b19 == ["我做好了", "留言"] and b21 == ["留言"], (b24, b19, b21))
     page.click('#vOver [data-act="anote"]')
     check("留言 opens a form in the card: a focused textarea, 確定 and 取消, and a tick box 「也告訴 …」 (the owner), ticked",
           page.evaluate("""() => ({ta: document.activeElement.tagName, ok: !!document.querySelector('#vOver .wform .ok'), cancel: !!document.querySelector('#vOver [data-act=acancel]'),
@@ -387,9 +387,9 @@ def run(browser, base, engine):
     check("…the owner was told: 「（看板）#19「…」我做好了：資料我補好了」", page.evaluate("__office.said()")[-1] == {"key": "b:res", "text": "（看板）#19「示範工具選型比較」我做好了：資料我補好了"}, page.evaluate("__office.said()"))
     page.wait_for_function("[...document.querySelectorAll('#vOver .thist li')].some(l => l.innerText.includes('資料我補好了'))", timeout=4000)
     page.keyboard.press("Escape")
-    # done on the person's own decision closes it
+    # a reply on the person's own decision closes it (the card's 回覆: tests_board_anywhere_ui.py has its rules)
     open_card(24)
-    page.click('#vOver [data-act="adone"]')
+    page.click('#vOver [data-act="areply"]')
     if shoot:
         page.fill("#vOver textarea", "選方案 A，下週一開始")
         page.wait_for_timeout(700)
@@ -397,9 +397,9 @@ def run(browser, base, engine):
     page.fill("#vOver textarea", "選方案 A")
     page.click('#vOver .wform .ok')
     page.wait_for_function("document.getElementById('vOver').hidden", timeout=4000)
-    check("done on your own decision closes it: it leaves the board, the card closes, the requester is told",
+    check("a reply to your own decision closes it: it leaves the board, the card closes, the requester is told",
           page.evaluate("__office.acted()")[4] == {"id": 24, "action": "done", "text": "選方案 A"} and 24 not in sum(([*l["ids"]] for l in page.evaluate("__office.lanes()")), [])
-          and page.evaluate("__office.said()")[-1] == {"key": "b:res", "text": "（看板）#24「示範工具選型：方案 A 還是 B？」我做好了：選方案 A"}, page.evaluate("__office.said()")[-1])
+          and page.evaluate("__office.said()")[-1] == {"key": "b:res", "text": "（看板）#24「示範工具選型：方案 A 還是 B？」我的回覆：選方案 A"}, page.evaluate("__office.said()")[-1])
     page.evaluate("__office.closeView()")
 
     print(f"[{engine}] a name follows the person")

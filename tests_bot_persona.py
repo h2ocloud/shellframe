@@ -67,6 +67,9 @@ check("the file says its name, its 執掌, its folder, and to read its memory an
       "「示範秘書」" in text and "替使用者整理每週筆記、追蹤待辦" in text and str(ROOT / role) in text
       and "MEMORY.md" in text and "sfctl task mine" in text, text)
 check("…and to answer 'who are you' with that first, by name", "第一句就回答：「我是示範秘書，負責" in text, text)
+check("it puts what it asks the user to decide on the board, and closes it when answered",
+      "sfctl task add --decision" in text and "sfctl task list --decisions" in text and "sfctl task done N" in text, text)
+check("…in English too", "sfctl task add --decision" in bots.persona_text(role, ENTRY, lang="en"))
 check("no 執掌 written: it says so", "還沒寫" in bots.persona_text("x", {"label": "x"}, lang="zh"))
 check("in English when the prompts are", 'Your name is "示範秘書"' in bots.persona_text(role, ENTRY, lang="en"))
 check("the first line says it is not the program it runs on (a small model reads that much)",

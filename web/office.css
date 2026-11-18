@@ -12,3 +12,14 @@
 #sfo-overlay .sfo-close:hover { color: #c0caf5; border-color: #7aa2f7; }
 #sfo-overlay .sfo-close:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 2px; }
 #btn-office .sb-ico { display: grid; place-items: center; }
+#btn-taskboard .sb-ico { display: grid; place-items: center; }
+#btn-taskboard .sfb-badge {
+  position: absolute; top: -4px; right: -6px; min-width: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
+  background: #f7768e; color: #1a1b26; font-size: 9px; font-weight: 700; line-height: 15px; text-align: center; pointer-events: none;
+}
+#btn-taskboard .sfb-badge[hidden] { display: none; }
+#btn-taskboard[hidden] { display: none; }
+/* The whiteboard alone (SFOffice.openBoard): the app stays visible, dimmed, behind the sheet; the sheet's own ✕ closes it. */
+#sfo-overlay.sfo-board, #sfo-overlay.sfo-board .sfo-frame { background: transparent; }
+/* One more icon in the foot row (board): in the narrowest sidebar the icons give up width before the row spills sideways. */
+#sb-footer-row .sb-footer-btn.sb-footer-ico { flex: 0 1 28px; min-width: 18px; }

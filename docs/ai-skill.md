@@ -447,7 +447,13 @@ sfctl task stuck                              # open tasks nothing happened to f
 - You **received** a message that says it is part of task #N (on this computer): `sfctl task show N` to see it whole,
   `sfctl task note N "…"` for progress, and answer the hand-off with `a2a-result` as usual. A task on another computer
   is not in your list: just answer with `a2a-result`.
-- Only the user can decide something: `add --decision` (it lands on the user's list) and ask them in your reply as well.
+- Only the user can decide or confirm something, and you will wait for the answer (a choice, a go-ahead, a fact only
+  they know, an action only they can do such as a browser sign-in): `add --decision "<the question>" --next "<the
+  choices, or what to do>"`, one card per question, and ask them in your reply as well. Run `list --decisions` first
+  and do not add a second card for the same question. The card is what lets them find the question later without
+  scrolling back through the conversation: it waits on the whiteboard (the board button with its red count, in the
+  terminal and the chat views alike, and in the office). When they answer (in the conversation, or with 回覆 on the
+  card, which reaches you as a message), `done N "<the answer>"`; if the question no longer matters, `drop N "why"`.
 - It is finished or abandoned: `done` / `drop` with one line saying the result or why.
 
 A task's words are kept as one line; a key or token in them is masked. Do not store conversation content or secrets in
@@ -546,6 +552,15 @@ calls primary) at the room's front seat, and a small whiteboard on the back wall
 That board is read-only for the person: no 我做好了 / 留言 from here, and the card says a change goes to that
 computer's main bot. If you are that main bot, a person's request about one of your computer's tasks reaches
 you as an ordinary message in your tab.
+
+The whiteboard does not need the office. A button at the foot of the sidebar (看板, in the terminal view and in
+the chat view alike, whether or not `experimental_office` is on; Cmd+Shift+B on macOS, Ctrl+Shift+B elsewhere) opens the same
+board on its own, over the window, with a red count of the decisions waiting on the person (`sfctl task add --decision`,
+§4.9; asked about every 20 s while the window is visible). A decision card's main button is 回覆: the person writes their
+answer, ShellBot marks the task done with that text (`task_user_act`, as if you ran `sfctl task done N "<answer>"`) and, if
+the person left 「也告訴 <you>」 ticked, puts one line in the tab of the bot that asked (the task's requester):
+「（看板）#N「<title>」我的回覆：<answer>」. Treat it as the person's answer to that question. With several paired computers
+the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board is read only.
 
 ## 5. Which build has what
 

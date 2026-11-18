@@ -1,12 +1,16 @@
 /* ShellBot office (settings.experimental_office, off by default) — see docs/ai-skill.md §4.10.
  *
+ * The same overlay also opens the whiteboard on its own (SFOffice.openBoard, "board-only": office.html draws no floor, only
+ * the board sheet, and closing the sheet closes the overlay). That does not need the office switch: web/board.js puts a board
+ * button (with the count of decisions waiting on the person) in the sidebar's foot of both views and a keyboard shortcut.
+ *
  * Draws the bots (staff, 正職), the AI tabs that are not bots (interns, 實習生) and the subagents a
  * Claude Code tab has launched (part-timers, 工讀生) as one office floor. The floor itself is
  * web/office.html (Canvas2D, no network), loaded in an <iframe> over the whole window so its CSS
  * and DOM cannot clash with this page. This file:
  *
  *   - puts the switch next to the other experimental switches (Settings → General) and, while it is
- *     on, an icon in the sidebar's foot (#sb-footer-row). Off: no button, no iframe, no timer.
+ *     on, an icon in the sidebar's foot (#sb-footer-row). Off: no office button, no iframe, no timer (the board button is board.js's).
  *   - builds the office's snapshot from what the page already holds: the sidebar's dots
  *     (sessions[sid]._dotClass, the same light the tab shows), bots.js's roster and its paired
  *     machines' bots (SFBots.state / peerBots: already polled), plus two cheap calls made only
@@ -548,13 +552,17 @@
     get: k => (prefs && Object.prototype.hasOwnProperty.call(prefs, k) ? clone(prefs[k]) : null),
     set: (k, v) => { prefs = prefs || {}; if (v == null) delete prefs[k]; else prefs[k] = clone(v); savePrefs(false); },
     close: () => close(),
+    // True while the overlay is the whiteboard alone (SFOffice.openBoard): office.html draws no floor and no office-only helper is asked.
+    boardOnly: () => boardMode,
+    // Whether a key is the board shortcut (web/board.js): office.html asks, as the focus is in its frame while it is open.
+    isBoardKey: e => !!(root.SFBoard && root.SFBoard.isKey && root.SFBoard.isKey(e)),
     // Settings' Interface size (small / medium / large: index.html's --ui-scale); the office's words follow it
     uiScale: () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1,
     chat: chatHost,
     board: boardHost,
   };
 
-  let overlay = null, frame = null, timer = 0, busy = false, lastPush = null;
+  let overlay = null, frame = null, timer = 0, busy = false, lastPush = null, boardMode = false;
   let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {}, peerTasks = {}, peerTasksAt = 0;
   const seen = {}, mem = {};
   const TICK_MS = 3000, TASKS_MS = 9000;
@@ -585,7 +593,10 @@
     if (!a) return;
     if (a.tasks_overview && Date.now() - tasksAt >= TASKS_MS) {
       tasksAt = Date.now();
-      try { const r = JSON.parse(await a.tasks_overview()); if (r && r.success) tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; } catch (_) {}
+      try {
+        const r = JSON.parse(await a.tasks_overview());
+        if (r && r.success) { tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; if (root.SFBoard) root.SFBoard.note(tasks.decisions.length); }
+      } catch (_) {}
     }
     // The paired computers' boards (the calls an older app does not have are skipped: no peer boards, no error). Same cadence
     // as the local tasks, never on the 3 s tick; the answer is the host's own (it caches what it read from the other computers).
@@ -593,7 +604,7 @@
       peerTasksAt = Date.now();
       try { const r = JSON.parse(await a.link_peer_tasks()); if (r && r.peers && typeof r.peers === 'object') peerTasks = r.peers; } catch (_) {}
     }
-    if (a.office_helpers) {
+    if (a.office_helpers && !boardMode) {          // the floor's part-timers: not asked for by the board alone (and refused with the switch off)
       try { const r = JSON.parse(await a.office_helpers()); if (r && r.success) helpers = r.helpers || {}; } catch (_) {}
     }
   }
@@ -618,24 +629,30 @@
   }
   function onVisible() { if (!document.hidden && overlay) tick(); }
 
-  async function open() {
-    if (!enabled() || overlay) return;
-    if (!prefs) {
+  // open(): the office (needs the switch). open({board: true}): the whiteboard alone, whatever the switch says.
+  async function open(opts) {
+    const bo = !!(opts && opts.board);
+    if ((!bo && !enabled()) || overlay) return;
+    if (!prefs && api().office_prefs) {      // also for the board alone: a set() would otherwise save a lone key over the person's seats
       try { const r = JSON.parse(await api().office_prefs()); prefs = (r && r.prefs) || {}; } catch (_) { prefs = {}; }
     }
-    if (overlay || !enabled()) return;
+    if (overlay || (!bo && !enabled())) return;
+    boardMode = bo;
     tasksAt = 0; peerTasksAt = 0; peerTasks = {};   // a freshly opened office asks again, not on the last open's answer
     overlay = document.createElement('div');
     overlay.id = 'sfo-overlay';
     overlay.tabIndex = -1;
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-label', t('Office', '辦公室'));
-    overlay.innerHTML = `<iframe class="sfo-frame" src="office.html" title="${t('Office', '辦公室')}"></iframe>` +
-      `<button class="sfo-close" type="button" aria-label="${t('Close the office (Esc)', '關閉辦公室（Esc）')}" title="${t('Close (Esc)', '關閉（Esc）')}">✕</button>`;
+    const nm = bo ? t('Board', '看板') : t('Office', '辦公室');
+    overlay.setAttribute('aria-label', nm);
+    if (bo) overlay.classList.add('sfo-board');
+    overlay.innerHTML = `<iframe class="sfo-frame" src="office.html" title="${nm}"></iframe>` +
+      (bo ? '' : `<button class="sfo-close" type="button" aria-label="${t('Close the office (Esc)', '關閉辦公室（Esc）')}" title="${t('Close (Esc)', '關閉（Esc）')}">✕</button>`);
     document.body.appendChild(overlay);
     frame = overlay.querySelector('iframe');
-    overlay.querySelector('.sfo-close').addEventListener('click', () => close());
+    const x = overlay.querySelector('.sfo-close');
+    if (x) x.addEventListener('click', () => close());
     frame.addEventListener('load', async () => {
       try { frame.contentWindow.focus(); } catch (_) {}
       busy = true;
@@ -653,7 +670,7 @@
     root.removeEventListener('keydown', onKey, true);
     document.removeEventListener('visibilitychange', onVisible);
     overlay.remove();                     // the iframe goes with it: no canvas, no timer left behind
-    overlay = null; frame = null; busy = false;
+    overlay = null; frame = null; busy = false; boardMode = false;
     if (saveTimer) savePrefs(true);
     try { const H = host(), s = H && H.sessions()[H.active()]; if (s && s.term) s.term.focus(); } catch (_) {}
   }
@@ -661,7 +678,7 @@
   const ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14.5 5 8 8.5 1.5 5Z" fill="currentColor" opacity=".9"/><path d="M1.5 5v5.5L8 14V8.5Z" fill="currentColor" opacity=".55"/><path d="M14.5 5v5.5L8 14V8.5Z" fill="currentColor" opacity=".35"/></svg>';
   function placeButton() {
     let b = document.getElementById('btn-office');
-    if (!enabled()) { if (b) b.remove(); close(); return; }
+    if (!enabled()) { if (b) b.remove(); if (!boardMode) close(); return; }
     const row = document.getElementById('sb-footer-row');
     if (!row) return;
     const name = t('Office (experimental)', '辦公室（實驗性）');
@@ -725,7 +742,10 @@
     if (s) s.addEventListener('click', () => setTimeout(() => { injectSettings(); placeButton(); }, 0));
   }
 
-  root.SFOffice = Object.assign({ host: officeHost, open, close, isOpen: () => !!overlay, refresh: tick,
+  // While the office is open its lobby whiteboard is what the board shortcut opens or closes (office.html's Office.board).
+  function toggleBoard() { try { frame.contentWindow.Office.board(); } catch (_) {} }
+  root.SFOffice = Object.assign({ host: officeHost, open, close, isOpen: () => !!overlay, isBoard: () => !!overlay && boardMode,
+                                  openBoard: () => open({ board: true }), toggleBoard, refresh: tick,
                                   lastSnapshot: () => clone(lastPush), placeButton }, pure);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(0));
   else boot(0);

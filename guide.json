@@ -241,6 +241,21 @@
       }
     },
     {
+      "id": "taskboard",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.57.0",
+      "title": {
+        "en": "Task board",
+        "zh": "看板"
+      },
+      "body": {
+        "en": "A button at the foot of the sidebar, in the terminal and the chat view alike, opens the whiteboard (Cmd/Ctrl+Shift+B). A red count is what agents wait on you for: open a card and answer with Reply. Needs no office switch.",
+        "zh": "側欄底部的看板按鈕（終端機、對話兩種畫面都有，快捷鍵 Cmd/Ctrl+Shift+B）打開白板。紅色數字是 agent 在等你決定的事：點開卡片、按「回覆」就能回答，不用翻對話。不必開辦公室。"
+      }
+    },
+    {
       "id": "office",
       "surfaces": [
         "desktop"
