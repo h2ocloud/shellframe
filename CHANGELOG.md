@@ -6,6 +6,164 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.59.0 (2026-11-19)
+
+### Fixes
+
+- **「請他離開」 asks the intern to leave on an ordinary press.**
+  Reported: pressing the button did nothing. Measured with the office running: a press held 90 ms or more (an
+  ordinary click by hand) was dropped in WebKit, and from 150 ms in Chromium. The office redrew the button's
+  label on every frame, even when the words were the same. That replaced the text node, so a press that spanned
+  a frame lost its click. The label is now written only when it changes, and holds of 90, 120 and 150 ms all ask
+  in both engines. Covered by `tests_office_dismiss_press.py`, which drives the live office as the app does and
+  fails without the fix.
+
+  **「請他離開」一般按一下就會問。** 回報：按下去沒反應。在辦公室執行中量到：按住 90 毫秒以上（手按的一般點擊）在 WebKit
+  會被吃掉，Chromium 從 150 毫秒起也一樣。原因是辦公室每一格畫面都重寫按鈕的字，就算字一樣也寫，文字節點被換掉，跨過
+  一格畫面的點擊就不算數。現在只有字變了才寫，按住 90、120、150 毫秒在兩種引擎都會問。由 `tests_office_dismiss_press.py`
+  守著：它照 App 的方式驅動執行中的辦公室，沒有這個修正就會失敗。
+
+- **Waking a bot whose tab has died opens a new tab.**
+  A bot whose CLI had ended (for example after it was logged out) still had its tab bound to it. Waking it
+  answered 「已經醒著」 while the sidebar showed it resting, so there was no way to wake it. Waking now checks that
+  the tab's process and its tmux session are still there. If they are not, it closes the dead tab and opens a new
+  one. `sfctl bots`, `/link/bots` and the sidebar count only tabs that are alive. Covered by
+  `tests_bots_wake_dead_tab.py`.
+
+  **叫醒分頁已經結束的 bot，會開一個新分頁。** bot 的 CLI 結束了（例如登出之後），分頁還綁在它身上。叫醒時回「已經醒著」，
+  側欄卻顯示休息中，怎麼叫都叫不醒。現在叫醒前會先確認分頁的程式和 tmux session 還在；不在就關掉那個死分頁，開一個新的。
+  `sfctl bots`、`/link/bots` 和側欄只算活著的分頁。由 `tests_bots_wake_dead_tab.py` 守著。
+
+- **A tab whose path contains "claude" no longer closes as soon as it opens.**
+  A new tab got `--session-id` whenever "claude" appeared anywhere in its command, so another CLI started from a
+  folder with that word in its path received an option it does not know and exited. The option is now added only
+  when the program is Claude Code: `claude`, its launchers, behind `cd`/`env`/`VAR=`, `npx claude`, or inside
+  `sh -lc '…'`. Covered by `tests_session_id_only_claude.py`.
+
+  **路徑含「claude」的分頁不會一開就結束。** 以前只要指令裡任何地方出現「claude」，新分頁就會加 `--session-id`。從路徑含這個字
+  的資料夾開別的 CLI，它收到不認得的參數就結束了。現在只有程式本身是 Claude Code 才加：`claude`、它的啟動器、前面有
+  `cd`／`env`／`VAR=`、`npx claude`，或包在 `sh -lc '…'` 裡。由 `tests_session_id_only_claude.py` 守著。
+
+- **Windows: Claude tabs should come back on their own conversation after a restart (not yet checked on a Windows machine).**
+  Reported: after a restart on Windows every Claude tab started a new conversation. Four causes were found in the
+  code:
+  1. The Telegram thread saved the tab list before the restore had read it, and with no tab open yet it saved an
+     empty list. The restore then fell back to the commands as first typed, without the conversation. The list is
+     now not written until the restore has read it, or for five minutes at most.
+  2. The status hooks ran `python3`, which Git Bash on Windows usually does not have. So no tab reported which
+     conversation it was on. On Windows they now run the Python that runs ShellBot, and older entries are
+     rewritten.
+  3. A Windows path in the command lost its backslashes when the resume option was added.
+  4. A plain `bash` started the WSL launcher, which exits at once on a machine without Linux. It now starts Git
+     Bash when it is installed.
+
+  A tab whose program ends within 30 seconds of starting is now named in the debug log. Covered by
+  `tests_win_restore_resume.py` (run on macOS with the Windows paths simulated).
+
+  **Windows：重開後 Claude 分頁應該會接回原本的對話（還沒在 Windows 實機確認）。** 回報：Windows 上重開後，每個 Claude
+  分頁都開了新對話。程式裡找到四個原因：
+  1. Telegram 執行緒在還原讀分頁清單之前就先存了一次，當時還沒開任何分頁，存成空清單。還原只好退回最早輸入的指令，沒有帶
+     對話。現在還原讀完之前不寫這份清單，最多等五分鐘。
+  2. 狀態 hook 用的是 `python3`，Windows 的 Git Bash 通常沒有它，所以分頁從來沒回報目前的對話。Windows 上改用跑 ShellBot
+     的那個 Python，舊的設定會改寫。
+  3. 加上接回對話的參數時，指令裡 Windows 路徑的反斜線會被吃掉。
+  4. 單打 `bash` 會開到 WSL 的啟動器，沒裝 Linux 的電腦上它會立刻結束。現在有裝 Git Bash 就開 Git Bash。
+
+  分頁的程式在開啟 30 秒內就結束時，debug log 會記一行。由 `tests_win_restore_resume.py` 守著（在 macOS 上模擬 Windows
+  路徑來跑）。
+
+### Changes
+
+- **Settings is a wide, two-column window.**
+  On a 1920px window Settings was a 560px column. Bot groups, loops, the office, the usage pacing switch and the
+  launch presets were all stacked under General, and most launch commands were cut off. Settings now grows with
+  the window up to 1200px and keeps that size on every category. The categories are listed on the left: General,
+  Bots, Office, Loops, Launch presets, Connect, Telegram, LINE and Advanced. At 900px they become a row on top.
+  - Each row has its label and hint on the left and its control on the right.
+  - A launch command is shown whole and wraps.
+  - Presets can be edited, added, deleted and dragged in the new table.
+  - The office switch is now under Office, and the role-groups switch under Bots.
+  - The New tab, About and AI manual windows are wider too.
+
+  The completion-notification hint now says ShellBot. Covered by `tests_settings_layout_ui.py` (900, 1280 and
+  1920px; interface sizes M and L; Chromium and WebKit).
+
+  **設定改成寬版、左右兩欄。** 在 1920px 的窗口裡，設定原本只有 560px 寬。Bots 群組、循環、辦公室、用量配速開關和啟動預設都
+  疊在「一般」，大部分啟動指令也被截掉。現在設定跟著窗口變寬，最寬 1200px，每個分類都一樣大。分類列在左邊：一般、Bots、
+  辦公室、循環、啟動預設、連線、Telegram、LINE、進階。窗口 900px 時，分類改成上方一排。
+  - 每一列左邊是名稱和說明，右邊是開關或欄位。
+  - 啟動指令完整顯示，太長會換行。
+  - 在新表格裡可以編輯、新增、刪除和拖曳排序預設。
+  - 辦公室開關移到「辦公室」，角色群組開關移到「Bots」。
+  - 新分頁、關於和 AI 說明書的窗口也加寬了。
+
+  完成通知的說明改稱 ShellBot。由 `tests_settings_layout_ui.py` 守著（900、1280、1920px，介面大小 M 和 L，Chromium 和
+  WebKit）。
+
+- **`sfctl tg-push` sends without a link preview.**
+  The scripts it replaces turned the preview off, so a push with a link now looks as it did before. Use
+  `--preview` to keep the preview. Covered by `tests_tg_push_preview.py`.
+
+  **`sfctl tg-push` 送出時不帶網址預覽。** 它取代的那些腳本原本就關掉預覽，所以帶網址的推播現在跟以前看起來一樣。要預覽就加
+  `--preview`。由 `tests_tg_push_preview.py` 守著。
+
+### Added
+
+- **「待你決定」 keeps everything that waits on you within reach on the right.**
+  Asked for: the questions agents wait on should stay visible, instead of being buried in long conversations. A
+  new list shows two kinds of item:
+  - Tabs waiting on a menu or a question. Their options are buttons you can answer from the list.
+  - Decision cards. Overdue ones come first, then those due soon, then those waiting longest. Each one opens in
+    place, where you can answer it (the bot that asked is told), jump to its tab, or see it on the board.
+
+  Each paired computer gets one line. In the chat view the list is a docked column when the window is wide, and
+  otherwise a thin strip that opens a drawer. In the terminal view it is a capsule that opens the same drawer.
+  The terminal is never resized. Whether it is open or folded is remembered across restarts. Nothing is read
+  while the window is hidden. Covered by `tests_pending_rail_ui.py` (Chromium and WebKit).
+
+  **新增「待你決定」：在等你的事，一直放在右邊。** 需求：agent 在等你回答的問題要看得到，不要埋在很長的對話裡。這個新清單
+  列出兩種項目：
+  - 卡在選單或問題的分頁。選項就是按鈕，可以直接在清單裡回答。
+  - 「等你決定」卡片。過期的排最前面，其次是快到期的，再來是等最久的。每張都在原地展開，可以回答（會告訴問的那個 bot）、
+    跳到它的分頁，或在看板上看。
+
+  每台配對電腦一行。對話模式下，窗口夠寬時它是固定在右側的一欄，不夠寬時是一條細條，點開成抽屜；終端機模式是一顆膠囊，
+  點開是同一個抽屜。終端機的大小不會被改。開著或收起會記住，重開也一樣。窗口沒在畫面上時不讀任何資料。由
+  `tests_pending_rail_ui.py` 守著（Chromium 和 WebKit）。
+
+- **Bots, the office and the board are at the top of the sidebar.**
+  Reported: Bots and the office were hard to find. They were an icon at the sidebar's foot and a switch in
+  Settings. A row at the top of the sidebar now shows 🤖 Bots, 🏢 辦公室 and 📋 看板 with its count, whether or
+  not those features are on. In the chat view the row sits under 「＋ 新對話」. A feature that is off is drawn
+  dashed, and it opens a short intro card with a picture and 打開 / 先不要. After this update a three-step tour
+  points at the row. A new install has the office on; an existing install keeps its setting. Covered by
+  `tests_entry_row_ui.py` and `tests_entry_defaults.py`.
+
+  **Bots、辦公室、看板移到側欄最上面。** 回報：Bots 和辦公室不好找，原本只是側欄底部的一個圖示和設定裡的一個開關。現在側欄
+  最上面有一排：🤖 Bots、🏢 辦公室、📋 看板和它的數字，功能有沒有打開都在。對話模式下，這排在「＋ 新對話」下面。沒打開的功能
+  畫成虛線，按了會出現一張介紹卡，有一張圖和「打開／先不要」。這次更新後，會有三步的導覽指出這一排。新安裝的辦公室預設打開；
+  已經裝好的維持原本的設定。由 `tests_entry_row_ui.py`、`tests_entry_defaults.py` 守著。
+
+- **A switch to stop sharing this computer's tasks with paired computers.**
+  Settings → Connect has 「不分享任務給隔壁電腦」, off by default. When it is on, `GET /link/tasks` answers 403
+  before reading anything, and the other computer's board shows this one as not shared. Covered by
+  `tests_link_share_tasks_off.py`.
+
+  **新增開關：不把這台的任務分享給配對的電腦。** 設定 → 連線有「不分享任務給隔壁電腦」，預設關。打開後，`GET /link/tasks`
+  在讀任何資料之前就回 403，另一台的看板會顯示這台沒有分享。由 `tests_link_share_tasks_off.py` 守著。
+
+### Internal
+
+- When a Telegram reply is delivered, the bridge log gets one line saying where it went and why
+  (`[reply-route] → <name> sid=<sid> by=registry|rule|owner|button|current`), with no message text. Before, only
+  failures were logged. Covered by `tests_tg_reply_route_log.py`.
+- The shared test server's backlog is now 64 instead of 5; under load, pages that load many files got
+  connection resets. The board test waits for its message to the bot instead of racing it.
+
+  Telegram 回覆送達時，bridge log 會記一行送給誰、依據是什麼（`[reply-route] → <名稱> sid=<sid> by=registry|rule|owner|button|current`），
+  不含訊息內容；以前只記失敗。由 `tests_tg_reply_route_log.py` 守著。共用測試伺服器的連線佇列從 5 改成 64，負載高時一次載很多檔
+  的頁面會被重設連線；看板測試改成等它送給 bot 的那行，不再跟它賽跑。
+
 ## v0.58.0 (2026-11-18)
 
 ### Added

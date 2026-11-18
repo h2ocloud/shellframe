@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.58",
+  "reviewed_for": "0.59",
   "tours": {
     "first_run": [
       "new-tab",
@@ -253,7 +253,7 @@
       "surfaces": [
         "desktop"
       ],
-      "since": "0.58.0",
+      "since": "0.59.0",
       "title": {
         "en": "Bots",
         "zh": "Bots"
@@ -268,7 +268,7 @@
       "surfaces": [
         "desktop"
       ],
-      "since": "0.58.0",
+      "since": "0.59.0",
       "title": {
         "en": "Office",
         "zh": "辦公室"
@@ -298,7 +298,7 @@
       "surfaces": [
         "desktop"
       ],
-      "since": "0.58.0",
+      "since": "0.59.0",
       "title": {
         "en": "Waiting on you",
         "zh": "待你決定"
@@ -330,14 +330,14 @@
       "surfaces": [
         "desktop"
       ],
-      "since": "0.44.6",
+      "since": "0.59.0",
       "title": {
         "en": "Settings",
         "zh": "設定"
       },
       "body": {
-        "en": "Language, font size, what the + menu offers, Telegram and LINE, the experimental features, and under Advanced the ones few people change (local HTTP API, idle tab cleanup).",
-        "zh": "語言、字級、＋ 選單裡有哪些、Telegram 和 LINE、實驗性功能；很少動的（本機 HTTP API、閒置分頁清理）在「進階」。"
+        "en": "Categories on the left: General, Bots, Office, Loops, Launch presets, Connect, Telegram, LINE and Advanced. Launch commands show in full and can be edited, added and dragged; the ones few people change (local HTTP API, idle tab cleanup) are under Advanced.",
+        "zh": "左邊是分類：一般、Bots、辦公室、Loops・排程、預設指令、連結、Telegram、LINE、進階。啟動指令完整顯示，可以直接改、新增、拖曳排序；很少動的（本機 HTTP API、閒置分頁清理）在「進階」。"
       }
     },
     {
