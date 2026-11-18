@@ -316,6 +316,11 @@ one-time QR code; `/start <code>` binds that person), send a test, and the switc
   restarts and reloads say nothing.
 - **`sfctl tg-send "…"`.** The primary bot's milestones and results, from its own tab
   only, at most 20 an hour.
+- **Reply to a message.** Telegram's "Reply" on a message the bot sent goes to whoever sent it, not to the
+  selected tab: a tab's own message to that tab (a bot that sleeps is woken), a scheduled script's push to
+  the bot `owners` in `schedules.json` names, and with nobody known a "who gets this?" keyboard. One line,
+  "→ 已交給 <name>", says where it went; the selected tab and your `/N` pick do not change. How a script
+  registers its push, and the rules file for old ones: docs/ai-skill.md ("Push to the person's Telegram").
 - **Quiet hours** (off by default): only decisions are sent then.
 - **A busy tab** (any tab): a message waits until its turn ends, up to 30 minutes; after a few seconds the
   phone hears it is queued, with "⚡ go in now". The user's unsent text in the box also holds it (the paste
