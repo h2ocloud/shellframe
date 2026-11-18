@@ -452,6 +452,8 @@ def run(browser, base, engine):
     act = args_of(page, "task_user_act")[-1]
     sent = page.evaluate("window.__sent")
     check("task_user_act(32, 'done', the answer)", act == ["32", "done", "加班，週五前交"], act)
+    st = page.evaluate("document.querySelector('#pend-panel .pend-status').textContent")
+    check("the status names the card (已回覆 #32), with no stray full stop after it", st == "已回覆 #32", st)
     check("one line to the bot that asked, in the board's own wording, into its tab (s701)", len(sent) == 1 and sent[0][0] == "s701" and sent[0][1] == "（看板）#32「示範：趕不上期限的那件」我的回覆：加班，週五前交", sent)
     page.wait_for_function("SFBoard.count() === 3", timeout=15000)
     check("the card is gone, and the red number and the badge are both 3", rail_ids(page) == [31, 34, 33] and badge(page) == "3" and page.evaluate("document.querySelector('#pend-panel .pend-n').dataset.n") == "3", (rail_ids(page), badge(page)))
@@ -476,7 +478,8 @@ def run(browser, base, engine):
     page.keyboard.press("Control+Enter")
     page.wait_for_function("SFBoard.count() === 1", timeout=15000)
     check("Ctrl+Enter sends too; a failing store keeps the card (below)", [a[0] for a in args_of(page, "task_user_act")][-1] == "31")
-    check("…and the answer says it could not tell 示範研究員", "沒辦法通知 示範研究員" in page.inner_text("#pend-panel"), page.inner_text("#pend-panel"))
+    st = page.evaluate("document.querySelector('#pend-panel .pend-status').textContent")
+    check("…and the answer says it could not tell 示範研究員: 已回覆 #31，但沒辦法通知 示範研究員", st == "已回覆 #31，但沒辦法通知 示範研究員", st)
     gone = page.evaluate("SFOffice.host.board.askerMiss({id: 99, title: '示範', kind: 'decision', owner: 'user', requester: '示範不在這台', status: 'waiting'})")
     old = page.evaluate("SFOffice.host.board.askerMiss({id: 98, title: '示範', kind: 'decision', owner: 'user', requester: '示範舊工程師', status: 'waiting'})")
     check("a name nobody here has: 沒辦法通知 <that name>, 這台找不到; an old name of a bot with a tab: nothing missing", gone == {"name": "示範不在這台", "why": "這台找不到這個名字的 bot 或分頁"} and old is None, (gone, old))

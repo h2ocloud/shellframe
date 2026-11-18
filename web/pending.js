@@ -398,8 +398,10 @@
     if (!r || !r.success) { form.msg = (r && r.message) || t('Not sent. Try again in a moment.', '沒有成功，稍後再試一次。'); form.bad = true; render(); return; }
     form.msg = ''; delete drafts[id]; detail.delete(id); openId = null;
     const miss = r.told === false ? askerMissOf(row) : null;
-    say(r.told === false ? (miss ? t(`Answered, but could not tell ${miss.name}.`, `已回覆，但沒辦法通知 ${miss.name}。`) : t('Answered, but could not tell the one who asked.', '已回覆，但沒能告訴問的人。'))
-      : t('Answered.', '已回覆。'), r.told === false);
+    // which card it was, and no trailing 「。」: alone after a short word it reads as a dot with something missing after it
+    say(r.told === false ? (miss ? t(`Answered #${id}, but could not tell ${miss.name}`, `已回覆 #${id}，但沒辦法通知 ${miss.name}`)
+      : t(`Answered #${id}, but could not tell the one who asked`, `已回覆 #${id}，但沒能告訴問的人`))
+      : t(`Answered #${id}`, `已回覆 #${id}`), r.told === false);
     render();
     const b = B(); if (b && b.poll) b.poll();                         // the card and the red count follow the store, at once
   }
