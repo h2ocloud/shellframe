@@ -1617,7 +1617,14 @@ let byeArmed = null, byeTimer = 0;
 function renderBye(e) {
   const b = $('#dismiss'), can = !!(CHAT && CHAT.dismiss && e && (e.kind === 'temp' || e.kind === 'peertemp') && !e.leaving);
   b.hidden = !can;
-  if (!can || byeArmed !== e.key) { byeArmed = null; b.classList.remove('armed'); b.textContent = '請他離開'; }
+  // Called every frame (renderPanel): write only what differs. Setting textContent swaps the button's text node even
+  // to the same words, and a press (mousedown ... mouseup, 50-150 ms) that straddles a frame loses its click: the
+  // browser's click goes to the common ancestor of the two press targets, and the first one is gone (measured: the
+  // first press of 「請他離開」 did nothing in WebKit with the office animating).
+  if (!can || byeArmed !== e.key) {
+    byeArmed = null; b.classList.remove('armed');
+    if (b.textContent !== '請他離開') b.textContent = '請他離開';
+  }
 }
 async function pressBye() {
   const e = follow && M.ents.get(follow); if (!e || !CHAT || !CHAT.dismiss) return;
