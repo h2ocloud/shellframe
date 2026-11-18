@@ -156,7 +156,25 @@ check('a state change adds one, with the tab\'s latest line', e2.length === 2 &&
 const s3 = O.track(mem, O.build({ botsOn: true, roster, primary: 'chief', tabs: tabs2, tasks, seen: {}, kit, now: now + 2000 }), now + 2000);
 check('no change, no event', s3.bots.find(b => b.id === 'eng').events.length === 2);
 check('a part-timer gone from the snapshot is forgotten', !Object.keys(mem).some(k => k.startsWith('h:')));
-check('the latest line is not sent on its own', !('line' in s3.bots[0]) && !('line' in s3.temps[0]));
+check('the latest line is not sent on its own', !('line' in s3.bots[0]) && !('line' in s3.temps[0]) && !('said' in s3.bots[0]) && !('said' in s3.temps[0]));
+
+console.log('woken again and again within a minute (its own background work ending, a worker reporting)');
+// the sidebar's line for a quiet tab falls back to the person's last message; a bot woken by its own work gets no new one
+const RECEIVED = '示範：收到的那則訊息（版本排法 OK）';
+const mem2 = {};
+const at = (dot, said, dt) => O.track(mem2, O.build({ botsOn: true, roster, primary: 'chief', seen: {}, kit, now: now + dt, tasks,
+  tabs: tabs.map(q => q.sid === 's2' ? Object.assign({}, q, { dot, line: RECEIVED, said }) : q) }), now + dt).bots.find(b => b.id === 'eng').events;
+at('sig-working', '', 0);
+let ev = [];
+for (let i = 0; i < 3; i++) { at('sig-done', '示範：全套 283/283 通過', 5000 + i * 10000); ev = at('', '示範：全套 283/283 通過', 8000 + i * 10000); }
+check('three rounds of 做完了 / 閒下來 in one minute are two lines, ×3 each', ev.length === 3 && ev[1].kind === 'done' && ev[1].n === 3 && ev[2].kind === 'idle' && ev[2].n === 3,
+  ev.map(v => [v.kind, v.text, v.n]));
+check('…做完了 says what it did (its own last words), never the message it got; 閒下來 says nothing more',
+  ev[1].text === '做完了：示範：全套 283/283 通過' && ev[2].text === '閒下來' && !ev.some(v => v.text.includes(RECEIVED)), ev.map(v => v.text));
+ev = at('sig-done', '', 70000);
+check('…a done with nothing said is just 做完了; a minute later the same event is a new line', ev[ev.length - 1].text === '做完了' && !ev[ev.length - 1].n && ev.length === 4, ev.map(v => [v.text, v.n]));
+ev = at('sig-decision', '', 71000);
+check('…the other states still say what it is on (the tab\'s line)', ev[ev.length - 1].text === '等你決定：' + RECEIVED, ev[ev.length - 1]);
 
 console.log('the conversation (chatShape)');
 const R = require(path.join(__dirname, 'web/chat.js'));

@@ -239,14 +239,14 @@
                duty: String(e.responsibility || ''), created_at: iso(ROSTER_EPOCH + order.indexOf(role) * 60000),
                state: tab ? tabState(tab.dot) : 'asleep', task: taskFor([role], I.tasks, known),
                runs: runsOf(e), memory: b.memory !== false, cli: String((e.cli && e.cli.label) || cliName(e.cmd) || ''),
-               doing: tab ? clip(tab.line, 120) : '', sid: tab ? tab.sid : '', line: tab ? clip(tab.line, 120) : '' };
+               doing: tab ? clip(tab.line, 120) : '', sid: tab ? tab.sid : '', line: tab ? clip(tab.line, 120) : '', said: tab ? clip(tab.said, 120) : '' };
     });
     let k = 0;
     const temps = tabs.filter(x => x.kind === 'temp' && !(x.role && known.has(x.role))).map(x => {
       if (!seen[x.sid]) seen[x.sid] = now + (k++);
       return { id: x.sid, name: String(x.label || x.sid), cli: cliName(x.cmd) || '?', state: tabState(x.dot),
                task: taskFor([String(x.label || ''), x.sid].filter(Boolean), I.tasks, known),
-               opened_at: iso(seen[x.sid]), doing: clip(x.line, 120), line: clip(x.line, 120) };
+               opened_at: iso(seen[x.sid]), doing: clip(x.line, 120), line: clip(x.line, 120), said: clip(x.said, 120) };
     });
     for (const sid of Object.keys(seen)) if (!tabs.some(x => x.sid === sid)) delete seen[sid];
     const peers = Object.keys(I.peers || {}).map(pid => {
@@ -304,9 +304,15 @@
       alive.add(key);
       const m = mem[key] || (mem[key] = { st: null, events: [] });
       if (m.st !== p.state) {
-        const line = p.line && p.state !== 'asleep' ? '：' + p.line : '';
-        m.events.push({ t: now, kind: m.st == null ? 'arrive' : EV_KIND[p.state] || 'note',
-                        text: (m.st == null ? first : EV_WORDS[p.state] || p.state) + (m.st == null ? '' : line) });
+        // 做完了 says what it did (its own last words), 閒下來 and 休息 say nothing more; the rest say what it is on
+        const said = p.state === 'done' ? p.said : p.state === 'idle' || p.state === 'asleep' ? '' : p.line;
+        const kind = m.st == null ? 'arrive' : EV_KIND[p.state] || 'note';
+        const text = (m.st == null ? first : EV_WORDS[p.state] || p.state) + (m.st == null || !said ? '' : '：' + said);
+        // woken again and again (its own background work ending, a worker reporting): done / idle / done… within a minute.
+        // The same event as one of the last few in the same minute is that line again: counted (×N) and moved to the end.
+        const same = m.st == null ? null : m.events.slice(-4).reverse().find(v => v.kind === kind && v.text === text && Math.floor(v.t / 60000) === Math.floor(now / 60000));
+        if (same) { m.events.splice(m.events.indexOf(same), 1); same.n = (same.n || 1) + 1; same.t = now; m.events.push(same); }
+        else m.events.push({ t: now, kind, text });
         if (m.events.length > 30) m.events.splice(0, m.events.length - 30);
         m.st = p.state;
       }
@@ -316,8 +322,8 @@
     for (const x of snap.temps || []) one('t:' + x.id, x, '開了這個分頁（實習生）：' + (EV_WORDS[x.state] || x.state));
     for (const h of snap.helpers || []) one('h:' + h.id, h, `${h.parent_name} 派出去：${clip(h.description, 60)}`);
     for (const key of Object.keys(mem)) if (!alive.has(key)) delete mem[key];
-    for (const b of snap.bots || []) delete b.line;
-    for (const x of snap.temps || []) delete x.line;
+    for (const b of snap.bots || []) { delete b.line; delete b.said; }
+    for (const x of snap.temps || []) { delete x.line; delete x.said; }
     return snap;
   }
 
@@ -635,6 +641,12 @@
   const seen = {}, mem = {};
   const TICK_MS = 3000, TASKS_MS = 9000;
 
+  // What the tab itself last said (the status monitor's `narration`), one plain line: what a 做完了 event shows. Never the
+  // person's message (`task`), which the sidebar's line falls back to: a bot woken by its own background work gets no new one.
+  function saidOf(s) {
+    const n = String(((s && s._serverStatus) || {}).narration || ''), R = root.SFChat && root.SFChat.rules;
+    try { return R && R.preview ? R.preview(n, 140, { agent: true, lang: lang() }) : n; } catch (_) { return n; }
+  }
   function pageTabs() {
     const H = host(), S = (H && H.sessions()) || {}, B = root.SFBots;
     const order = ((H && H.order && H.order()) || Object.keys(S)).filter(sid => S[sid]);
@@ -643,7 +655,7 @@
       const s = S[sid] || {};
       let role = '', kind = 'terminal', line = '';
       try { role = (B && B.botOf && B.botOf(sid)) || ''; kind = (B && B.kindOf && B.kindOf(sid)) || 'terminal'; line = (B && B.previewOf && B.previewOf(sid)) || ''; } catch (_) {}
-      return { sid, label: s.label || '', kind, role, dot: s._dotClass || '', cmd: s.cmd || '', line, loop: (s._serverStatus || {}).loop || null };
+      return { sid, label: s.label || '', kind, role, dot: s._dotClass || '', cmd: s.cmd || '', line, said: saidOf(s), loop: (s._serverStatus || {}).loop || null };
     });
   }
   function snapshot() {

@@ -184,6 +184,7 @@ body.embedded #top{padding-right:calc(58px / var(--ui))}   /* ShellBot's close b
 .events ol{list-style:none;margin-top:4px}
 .events li{display:grid;grid-template-columns:42px 8px 1fr;gap:9px;align-items:baseline;padding:7px 0;border-bottom:1px dashed rgba(59,66,97,.55);font-size:12.5px;line-height:1.5}
 .events li:last-child{border-bottom:0}
+.events .evn{margin-left:6px;padding:0 5px;border-radius:8px;background:rgba(122,162,247,.18);color:var(--soft,#a9b1d6);font-weight:600;font-size:11.5px}
 .events time{font:11.5px var(--mono);color:var(--dim)}
 .events i{width:8px;height:8px;border-radius:50%;background:var(--c,var(--dim));transform:translateY(-1px)}
 .events li.new{animation:evin .5s ease-out}
@@ -1610,7 +1611,7 @@ function renderHelperPanel(e, force) {
     (CHAT ? `<p class="note">工讀生沒有自己的對話框：他做什麼、做完回報什麼，都在派他的人的對話裡。</p>${par && chatAble(par) ? `<div class="iact"><button data-act="parent-chat">看${esc(par.who.name)}的對話</button></div>` : ''}` : '');
   $('#pItems').innerHTML = '<h3>配件</h3><p class="note">工讀生只來做一件事，沒有配件。</p>';
   const evs = e.events.slice(-8).reverse(), pn = performance.now();
-  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
+  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}${v.n > 1 ? `<b class="evn" title="這一分鐘內 ${v.n} 次">×${v.n}</b>` : ''}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
 }
 let groupSig = '';
 // 請實習生離開：關掉他的分頁（這台的、或配對電腦上的）。按第一下只是確認，4 秒內再按一次才關；換人就取消。
@@ -1686,7 +1687,7 @@ function renderPanel(force) {
      ${e.st === 'asleep' ? '<p class="note">沒有開分頁。下次被叫醒時，從這裡接著做。</p>' : e.st === 'stuck' && t.why ? `<p class="note">原因：${esc(t.why)}</p>` : ''}`;
   renderItemsCard(e);
   const evs = e.events.slice(-8).reverse(), now = performance.now();
-  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && now - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
+  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && now - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}${v.n > 1 ? `<b class="evn" title="這一分鐘內 ${v.n} 次">×${v.n}</b>` : ''}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
 }
 const hhmm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 function startFollow(key) {
@@ -3140,7 +3141,7 @@ function fillEnt(e, r, kind) {
   e.loop = r.loop && typeof r.loop === 'object' ? normLoop(r.loop) : null;   // 這個人的分頁正在跑 /loop 或 cron（桌後的牆上掛日曆、資料頁一行字）
   const t = r.task; e.task = t ? { id: t.id ?? '—', title: t.title || '', status: t.status || 'doing', next: t.next || '', waitingOn: t.waiting_on ? refKey(t.waiting_on, e) : null, from: t.from ? refKey(t.from, e) : null, updated: Date.parse(t.updated_at) || (typeof t.updated_at === 'number' ? t.updated_at : 0), why: t.why } : null;
   e.stale = staleOf(e.task, t && t.stale);
-  if (Array.isArray(r.events)) { const seen = new Set(e.events.map(v => v.t + '|' + v.text)), now = performance.now(); e.events = r.events.slice(-40).map(v => ({ t: typeof v.t === 'number' ? v.t : Date.parse(v.t) || 0, kind: v.kind || 'note', text: String(v.text || ''), fresh: M.loaded && !seen.has(v.t + '|' + v.text) ? now : 0 })); }
+  if (Array.isArray(r.events)) { const seen = new Set(e.events.map(v => v.t + '|' + v.text)), now = performance.now(); e.events = r.events.slice(-40).map(v => ({ t: typeof v.t === 'number' ? v.t : Date.parse(v.t) || 0, kind: v.kind || 'note', text: String(v.text || ''), n: Number(v.n) > 1 ? Math.floor(Number(v.n)) : 0, fresh: M.loaded && !seen.has(v.t + '|' + v.text) ? now : 0 })); }
 }
 function fillHelper(e, r) {
   const desc = String(r.description || '').replace(/\s+/g, ' ').trim();
@@ -3150,7 +3151,7 @@ function fillHelper(e, r) {
   e.st = r.state === 'working' || r.state === 'stuck' ? r.state : 'idle';
   e.started = Date.parse(r.started_at) || 0; e.lastAt = Date.parse(r.last_at) || 0; e.created = e.started || e.created || ++seedN;
   e.task = null; e.stale = 0;
-  if (Array.isArray(r.events)) { const seen = new Set(e.events.map(v => v.t + '|' + v.text)), now = performance.now(); e.events = r.events.slice(-40).map(v => ({ t: typeof v.t === 'number' ? v.t : Date.parse(v.t) || 0, kind: v.kind || 'note', text: String(v.text || ''), fresh: M.loaded && !seen.has(v.t + '|' + v.text) ? now : 0 })); }
+  if (Array.isArray(r.events)) { const seen = new Set(e.events.map(v => v.t + '|' + v.text)), now = performance.now(); e.events = r.events.slice(-40).map(v => ({ t: typeof v.t === 'number' ? v.t : Date.parse(v.t) || 0, kind: v.kind || 'note', text: String(v.text || ''), n: Number(v.n) > 1 ? Math.floor(Number(v.n)) : 0, fresh: M.loaded && !seen.has(v.t + '|' + v.text) ? now : 0 })); }
 }
 function refKey(ref, from) { if (ref === 'user') return 'user'; ref = String(ref); if (ref.includes('/')) return 'p:' + ref; if (M.ents.get('b:' + ref)) return 'b:' + ref; if (from && from.peerId && M.ents.get(`p:${from.peerId}/${ref}`)) return `p:${from.peerId}/${ref}`; return 'b:' + ref; }
 function newEnt(key, kind, id, extra) { return { key, kind, id, events: [], vis: 0, walk: null, gone: false, seed: (hash2(id.length * 7, [...id].reduce((a, ch) => a + ch.charCodeAt(0), 0)) * 9) % 9, ...extra }; }
