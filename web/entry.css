@@ -1,0 +1,78 @@
+/* ShellBot's entry row (web/entry.js): 「Bots · 辦公室 · 看板」 at the top of the sidebar, the words on the foot's icons, and the
+ * intro card an off feature opens. The row is the first thing in #sidebar; in the chat view 「＋ 新對話」 (#sb-new-convo) stays above it.
+ *
+ * The labels show when they all fit (entry.js measures: .sfe-words, or .sfe-text without the icons, on the row; .sfe-words on
+ * #sb-footer-row), and in a narrow sidebar (under about 185 px) or otherwise every button is an icon with its title. Nothing here is sized by the window, so a narrow sidebar never spills. */
+#sb-new-convo { order: -2; }
+#sb-entry { order: -1; flex: none; padding: 8px 10px 2px; min-width: 0; }
+#sb-entry .sfe-row { display: flex; align-items: stretch; gap: 3px; min-width: 0; }
+.sfe-btn {
+  position: relative; flex: 1 1 0; min-width: 0; height: 26px; box-sizing: border-box; padding: 0 3px; display: flex; align-items: center; justify-content: center; gap: 3px;
+  border: 1px solid #3b4261; border-radius: 7px; background: #1f2335; color: #c0caf5; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap;
+}
+.sfe-btn:hover { border-color: #7aa2f7; color: #fff; }
+.sfe-btn:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 1px; }
+.sfe-btn .sfe-ico { flex: none; font-size: 12px; line-height: 1; }
+.sfe-btn .sfe-label { display: none; }
+.sfe-btn.off { border-style: dashed; background: transparent; color: #7d86ab; font-weight: 500; }
+.sfe-btn.off .sfe-ico { opacity: .6; }
+.sfe-btn.off:hover { color: #c0caf5; }
+.sfe-btn[hidden] { display: none; }
+#sb-entry .sfe-btn .sfb-badge {
+  position: absolute; top: -6px; right: -4px; min-width: 14px; padding: 0 3px; box-sizing: border-box; border-radius: 8px;
+  background: #f7768e; color: #1a1b26; font-size: 9px; font-weight: 700; line-height: 14px; text-align: center; pointer-events: none;
+}
+#sb-entry .sfe-btn .sfb-badge[hidden] { display: none; }
+/* every label fits: words beside the icons, the count inline */
+#sb-entry.sfe-words .sfe-btn, #sb-entry.sfe-text .sfe-btn { flex: 1 1 auto; min-width: auto; padding: 0 4px; }
+#sb-entry.sfe-words .sfe-btn .sfe-label, #sb-entry.sfe-text .sfe-btn .sfe-label { display: inline; }
+#sb-entry.sfe-words .sfe-btn .sfb-badge, #sb-entry.sfe-text .sfe-btn .sfb-badge { position: static; margin-left: 1px; }
+/* a little narrower: the words without their icons */
+#sb-entry.sfe-text .sfe-btn .sfe-ico { display: none; }
+/* the row of the chat view and the terminal view look alike; a fresh Bots flash points at the section it opened */
+.sfe-flash { animation: sfe-flash 1.4s ease-out 1; }
+@keyframes sfe-flash { 0% { box-shadow: 0 0 0 2px #7aa2f7, 0 0 14px 2px rgba(122, 162, 247, .6); } 100% { box-shadow: 0 0 0 2px rgba(122, 162, 247, 0), 0 0 0 0 rgba(122, 162, 247, 0); } }
+@media (prefers-reduced-motion: reduce) { .sfe-flash { animation: none; } }
+
+/* a measurement in progress (entry.js trial): the transitions of the buttons must not blur it */
+.sfe-measure, .sfe-measure * { transition: none !important; }
+
+/* the foot: Settings · Guide · For AI · ? — words beside the icons when they fit, the icons with their titles when not */
+.sb-word { display: none; }
+#sb-footer-row.sfe-words { gap: 0; }
+#sb-footer-row.sfe-words > .sb-footer-btn, #sb-footer-row.sfe-words > #btn-settings { flex: none; width: auto; min-width: auto; overflow: visible; padding: 0 6px; gap: 4px; height: 28px; }
+#sb-footer-row.sfe-words > #btn-about { width: 28px; padding: 0; }
+#sb-footer-row.sfe-words .sb-word { display: inline; font-size: 12px; }
+#sb-footer-row.sfe-words .sb-footer-ico .sb-ico { opacity: .8; }
+#sb-footer-row.sfe-words .sfg-badge { position: static; margin: 0 0 0 1px; }
+
+/* the intro card of a feature that is off */
+.sfe-veil {
+  position: fixed; inset: 0; z-index: 9500; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;
+  background: rgba(10, 11, 18, .62);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Hiragino Sans", "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+}
+.sfe-card {
+  width: min(420px, 100%); max-height: 100%; overflow: auto; box-sizing: border-box; border-radius: 12px; background: #1f2335; color: #c0caf5;
+  border: 1px solid #3b4261; box-shadow: 0 18px 48px rgba(0, 0, 0, .55); font-size: 13px; line-height: 1.55;
+}
+.sfe-pic { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; background: #16161e; border-bottom: 1px solid #292e42; border-radius: 12px 12px 0 0; }
+.sfe-main { padding: 14px 20px 16px; }
+.sfe-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: #e6eafd; margin-bottom: 8px; }
+.sfe-chip { font-size: 11px; font-weight: 500; padding: 0 7px; border-radius: 8px; line-height: 17px; background: #3b4261; color: #a9b1d6; }
+.sfe-list { margin: 0 0 8px; padding: 0; list-style: none; }
+.sfe-list li { position: relative; padding-left: 16px; margin: 4px 0; }
+.sfe-list li::before { content: ""; position: absolute; left: 3px; top: .62em; width: 5px; height: 5px; border-radius: 50%; background: #7aa2f7; }
+.sfe-note { color: #6b7394; font-size: 12px; margin-top: 8px; }
+.sfe-err { color: #f7768e; font-size: 12px; margin-top: 8px; }
+.sfe-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.sfe-acts button {
+  min-width: 74px; padding: 6px 14px; border-radius: 7px; border: 1px solid #3b4261; background: transparent; color: #a9b1d6;
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.sfe-acts button:hover { border-color: #7aa2f7; color: #c0caf5; }
+.sfe-acts button.primary { background: #7aa2f7; border-color: #7aa2f7; color: #1a1b26; font-weight: 600; }
+.sfe-acts button.primary:hover { background: #89b4fa; }
+.sfe-acts button:focus-visible { outline: 2px solid #bb9af7; outline-offset: 1px; }
+.sfe-acts button:disabled { opacity: .55; cursor: default; }

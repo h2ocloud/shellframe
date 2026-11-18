@@ -1903,7 +1903,8 @@
     state: () => st, botOf, kindOf, previewOf,      // web/office.js builds its snapshot from these
     // for tests and for other modules that want the same faces
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
-    enabled: () => enabled,
+    enabled: () => enabled, setEnabled,
+    newBot: () => openEditor(null, { primary: true }),     // web/entry.js: the first bot, when there is none
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(0));
   else boot(0);

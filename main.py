@@ -246,8 +246,9 @@ DEFAULT_CONFIG = {
         "language": "en",
         "experimental_loops": False,
         # The office (web/office.js + office.html): bots, AI tabs and their subagents drawn as an
-        # office floor behind a sidebar button. Off by default: no button, no iframe, no timer.
-        "experimental_office": False,
+        # office floor behind the 辦公室 button of the sidebar's top row. On for a new install; one that predates it
+        # keeps off (bots.keep_old_install_office_setting). Off: the button shows an intro card, no iframe, no timer.
+        "experimental_office": True,
         # Agents addressing each other with [[SF:TO:<role>|<text>]]. Off by
         # default: delivery writes into another agent's prompt unattended, and
         # every tab runs with permissions bypassed. Rules live in agent_link.py.
@@ -732,6 +733,8 @@ def _load_config_pass(save):
         if ensure_ui_style(cfg):
             cfg_defaults_changed = True
         if bots.keep_old_install_bots_setting(cfg):
+            cfg_defaults_changed = True
+        if bots.keep_old_install_office_setting(cfg):
             cfg_defaults_changed = True
         if guide.keep_old_install(cfg):
             cfg_defaults_changed = True

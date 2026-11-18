@@ -43,7 +43,11 @@ added rather than written once and left.
 - Title at most 40 characters, body at most 260, in both languages. Say what it does and where,
   in the person's words; no internal names.
 
-`tours.first_run` lists the tour's steps in order. A step not on the page at that moment (no tab
+`tours.first_run` lists the tour's steps in order. `tours.entry` is the short tour shown once after an update: when
+any of its features has a `since` newer than what the person last saw (`config["guide"]["seen"]`), `guide.js` runs it
+once the page is up, and its end (Done or Skip) marks the running version seen. It points at the row at the top of the
+sidebar (Bots, the office, the board). Its entries' `since` must be raised to the release that ships them, or the tour
+never comes to people already on that version. A step not on the page at that moment (no tab
 yet, a button that appears later) is left out.
 
 ## The phone app's entries
@@ -70,6 +74,7 @@ differs from this file, so change the words here and copy them over.
 - A first launch (no `config.json`): `config["guide"]["tour"]` is `"pending"`, the tour starts by
   itself once the page is up, and ends `"done"` (Done or Skip).
 - A computer that already ran ShellBot: `"skip"`, and everything up to the running version counts
-  as seen. No popup after an update; the Guide button counts what is new.
+  as seen. After an update the Guide button counts what is new, and the short `entry` tour (see above)
+  points at the sidebar's row of ways in, once, while any of its features is newer than what was seen.
 - The state is `config["guide"]`, not `settings`: the page saves `settings` whole from its own copy
   (`save_settings`), which would put `"pending"` back after the tour.

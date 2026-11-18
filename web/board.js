@@ -4,7 +4,7 @@
  * file makes the board reachable from anywhere, in the terminal view and the chat view alike and whether or not the office
  * (settings.experimental_office) is on:
  *
- *   - a button at the sidebar's foot (#btn-taskboard in #sb-footer-row, beside the office's) with a red count of the decisions
+ *   - a button in the entry row at the top of the sidebar (#btn-taskboard, web/entry.js, beside Bots and the office) with a count of the decisions
  *     waiting on the person (tasks_overview's `decisions`; no badge at 0). The count is asked for about every 20 s while the
  *     window is visible and the board is closed; while the board is open web/office.js's own refresh feeds it (SFBoard.note),
  *     which includes the moment after a card was answered. The button is hidden only when the tasks store is unavailable.
@@ -33,7 +33,6 @@
   let count = 0, avail = true, btn = null, timer = 0, list = [], peers = {};
   const subs = [];
   const tell = () => subs.forEach(fn => { try { fn(); } catch (_) {} });
-  const ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="3.4" y="4.3" width="3.2" height="2.4" fill="currentColor" opacity=".9"/><rect x="7.6" y="4.3" width="3.2" height="2.4" fill="currentColor" opacity=".55"/><path d="M5 14l1.2-2.5M11 14l-1.2-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
   function paint() {
     if (!btn) return;
@@ -43,7 +42,7 @@
       : t(`Board (${keyName()})`, `看板（${keyName()}）`);
     btn.title = tip;
     btn.setAttribute('aria-label', tip);
-    btn.querySelector('.sb-ico-label').textContent = name;
+    btn.querySelector('.sfe-label').textContent = name;
     const b = btn.querySelector('.sfb-badge');
     b.hidden = count <= 0;
     b.textContent = count > 99 ? '99+' : String(count);
@@ -83,17 +82,11 @@
     else if (o.isBoard()) o.close();
     else o.toggleBoard();
   }
+  // The button is web/entry.js's: the third in the row at the top of the sidebar (built before this file runs).
   function place() {
-    const row = document.getElementById('sb-footer-row');
-    if (!row) return false;
-    btn = document.createElement('button');
-    btn.id = 'btn-taskboard';
-    btn.className = 'sb-footer-btn sb-footer-ico';
-    btn.type = 'button';
-    btn.setAttribute('data-guide', 'taskboard');
-    btn.innerHTML = `<span class="sb-ico">${ICON}</span><span class="sb-ico-label"></span><span class="sfb-badge" hidden></span>`;
+    btn = document.getElementById('btn-taskboard');
+    if (!btn) return false;
     btn.addEventListener('click', toggle);
-    row.insertBefore(btn, document.getElementById('btn-office') || document.getElementById('btn-guide') || null);
     paint();
     return true;
   }

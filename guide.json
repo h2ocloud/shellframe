@@ -4,6 +4,9 @@
   "tours": {
     "first_run": [
       "new-tab",
+      "entry-bots",
+      "entry-office",
+      "taskboard",
       "sessions",
       "chat-view",
       "usage",
@@ -11,6 +14,11 @@
       "telegram",
       "settings",
       "guide"
+    ],
+    "entry": [
+      "entry-bots",
+      "entry-office",
+      "taskboard"
     ],
     "app_first_run": [
       "app-bots",
@@ -241,6 +249,36 @@
       }
     },
     {
+      "id": "entry-bots",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.58.0",
+      "title": {
+        "en": "Bots",
+        "zh": "Bots"
+      },
+      "body": {
+        "en": "The first button in the row at the top of the sidebar. A bot is a tab with its own name, face, job and memory. Tap it to see them; if Bots is off it shows what they do and turns them on.",
+        "zh": "側欄最上面那排的第一顆。Bot 是有自己名字、頭像、執掌和記憶的分頁。按它看你的 bot；還沒開的話，會先說明它做什麼，再幫你打開。"
+      }
+    },
+    {
+      "id": "entry-office",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.58.0",
+      "title": {
+        "en": "Office",
+        "zh": "辦公室"
+      },
+      "body": {
+        "en": "The second button in that row opens the office: every bot as a person at a desk, who is busy and who waits on you. Dashed means it is off; tap it to see what it does and turn it on.",
+        "zh": "那排的第二顆打開辦公室：每個 bot 是桌前的一個人，誰在忙、誰在等你一眼看完。虛線代表還沒開，按一下看它做什麼，再決定要不要打開。"
+      }
+    },
+    {
       "id": "taskboard",
       "surfaces": [
         "desktop"
@@ -251,8 +289,8 @@
         "zh": "看板"
       },
       "body": {
-        "en": "A button at the foot of the sidebar, in the terminal and the chat view alike, opens the whiteboard (Cmd/Ctrl+Shift+B). A red count is what agents wait on you for: open a card and answer with Reply. Needs no office switch.",
-        "zh": "側欄底部的看板按鈕（終端機、對話兩種畫面都有，快捷鍵 Cmd/Ctrl+Shift+B）打開白板。紅色數字是 agent 在等你決定的事：點開卡片、按「回覆」就能回答，不用翻對話。不必開辦公室。"
+        "en": "The third button in the row at the top of the sidebar, in the terminal and the chat view alike, opens the whiteboard (Cmd/Ctrl+Shift+B). The count is what agents wait on you for: open a card and answer with Reply.",
+        "zh": "側欄最上面那排的第三顆（終端機、對話兩種畫面都有，快捷鍵 Cmd/Ctrl+Shift+B）打開白板。數字是 agent 在等你決定的事：點開卡片、按「回覆」就能回答，不用翻對話。"
       }
     },
     {
@@ -283,8 +321,8 @@
         "zh": "辦公室"
       },
       "body": {
-        "en": "A button at the foot of the sidebar opens an office floor: bots (staff) at desks, AI tabs that are not bots (interns) at a long table, subagents (part-timers) beside them. Click a person to read their conversation and message them. Off by default.",
-        "zh": "側欄底部多一顆按鈕，打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，subagent（工讀生）站在旁邊。誰在忙、等你、卡住，看圖就知道；點一個人就能看他的對話、直接傳話。預設關閉。"
+        "en": "The 辦公室 button at the top of the sidebar opens an office floor: bots (staff) at desks, AI tabs that are not bots (interns) at a long table, subagents (part-timers) beside them. Click a person to read their conversation and message them. On for a new install.",
+        "zh": "側欄最上面的「辦公室」鈕會打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，subagent（工讀生）站在旁邊。誰在忙、等你、卡住，看圖就知道；點一個人就能看他的對話、直接傳話。新安裝預設打開。"
       }
     },
     {

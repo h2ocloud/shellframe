@@ -560,7 +560,7 @@ configure there.
 
 ## 4.10 The office (needs `experimental_office`; the person's view, nothing for you to drive)
 
-With `experimental_office` on, a button at the foot of the sidebar opens an office floor over
+With `experimental_office` on (it is on for a new install), the 辦公室 button in the row at the top of the sidebar opens an office floor over
 the window: bots are **staff** (正職) at their desks (the primary bot at the lobby desk), AI tabs
 that are not bots are **interns** (實習生) at a long table, a Claude Code tab's subagents are
 **part-timers** (工讀生) standing beside the tab that launched them until they finish, and each
@@ -610,9 +610,9 @@ That board is read-only for the person: no 我做好了 / 留言 from here, and 
 computer's main bot. If you are that main bot, a person's request about one of your computer's tasks reaches
 you as an ordinary message in your tab.
 
-The whiteboard does not need the office. A button at the foot of the sidebar (看板, in the terminal view and in
+The whiteboard does not need the office. A button in the row at the top of the sidebar (看板, in the terminal view and in
 the chat view alike, whether or not `experimental_office` is on; Cmd+Shift+B on macOS, Ctrl+Shift+B elsewhere) opens the same
-board on its own, over the window, with a red count of the decisions waiting on the person (`sfctl task add --decision`,
+board on its own, over the window, with a count of the decisions waiting on the person (`sfctl task add --decision`,
 §4.9; asked about every 20 s while the window is visible). A decision card's main button is 回覆: the person writes their
 answer, ShellBot marks the task done with that text (`task_user_act`, as if you ran `sfctl task done N "<answer>"`) and, if
 the person left 「也告訴 <you>」 ticked, puts one line in the tab of the bot that asked (the task's requester):
@@ -665,7 +665,7 @@ the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board
 | Settings → Connect (連結) is a catalog: Google Drive, Google Calendar, Notion, Slack through the Claude account's connectors (one click), Reminders/Calendar on a Mac (beta), Messages/Notes listed as not available; retired settings (coordinator set, init prompt, Telegram system prompt, glasses, plugin marketplace) and a new Advanced tab; a pi tab relaunched stays on the model its conversation was last switched to (`--model` after a launcher's; not across providers when the launcher passes `--api-key`) | 0.47.0 |
 | A pi bot's model in its bot settings: the models pi defines on that computer (`models.json`), pinned as `--model <id>` on the provider its command starts on; another provider's or an unknown id is refused at save | 0.47.1 |
 | The tab bar's model chip is repainted for the tab shown (it could keep the previous tab's model and level) | 0.47.2 |
-| The office (`experimental_office`, off by default, §4.10): bots (staff), AI tabs that are not bots (interns) and a Claude Code tab's subagents (part-timers) on one floor, behind a sidebar button | 0.48.0 |
+| The office (`experimental_office`, on for a new install, §4.10): bots (staff), AI tabs that are not bots (interns) and a Claude Code tab's subagents (part-timers) on one floor, behind a sidebar button (now in the row at the top; off, it opens an intro card) | 0.48.0 |
 | The office's panel: a followed person's conversation, a box to message them, their question answered by its number | 0.49.0 |
 | …and the same for a paired computer's bots and interns (through its `/link/chat`) | 0.49.1 |
 | The office's zoning: by AI (a walled room per CLI, default), custom groups, or one room | 0.50.0 |

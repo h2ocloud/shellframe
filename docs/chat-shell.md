@@ -84,9 +84,10 @@ running underneath with its size unchanged, and everything that types into the t
   sidebar's foot (`#sb-dock`): usage, Telegram, loops. ☰ at the left of a header shows or
   hides the sidebar. Going by the setting, not by what the current tab shows, keeps the
   window still: going by the tab, it jumped 38px at each switch between a chat tab and a
-  terminal tab. The sidebar's foot row (Settings, 看板, the office, Guide, …) is the same in
-  both views: its 看板 button (`web/board.js`) opens the task board, with a red count of
-  the decisions agents wait on the person for; Cmd/Ctrl+Shift+B does the same.
+  terminal tab. The entry row at the top of the sidebar (`web/entry.js`: 🤖 Bots, 🏢 辦公室, 📋 看板) and the foot row
+  (Settings, Guide, For AI, ?) are the same in both views; in the chat view the entry row sits right under 「＋ 新對話」.
+  Its 看板 button (`web/board.js`) opens the task board, with a count of the decisions agents wait on the
+  person for; Cmd/Ctrl+Shift+B does the same.
 - **The terminal gets a header** (`#term-head`) of the view's height (`--cm-head-h`, 50px
   times the interface size): face, name, what it is doing, and the Chat/Terminal switch.
   The terminal starts under it, never under a control laid over its text (one that covered

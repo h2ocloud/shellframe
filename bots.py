@@ -239,6 +239,19 @@ def keep_old_install_bots_setting(cfg: dict) -> bool:
     return True
 
 
+def keep_old_install_office_setting(cfg: dict) -> bool:
+    """settings.experimental_office, same rule as the bots switch: a config.json that exists but never had it
+    belongs to a computer that used ShellBot without the office, so it keeps it off until someone turns it on.
+    A first launch has no config.json and gets DEFAULT_CONFIG's (on). True when written."""
+    st = cfg.get("settings")
+    if not isinstance(st, dict):
+        st = cfg["settings"] = {}
+    if isinstance(st.get("experimental_office"), bool):
+        return False
+    st["experimental_office"] = False
+    return True
+
+
 def normalize_bot(raw, previous=None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     prev = previous if isinstance(previous, dict) else {}

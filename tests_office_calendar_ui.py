@@ -500,9 +500,9 @@ SCHED2 = {"schedules": [
     {"id": "demo.once", "title": "示範單次", "when": {"en": "One-off", "zh": "單次"}, "enabled": True, "running": False, "kind": "once", "toggle": False,
      "slots": {"interval": None, "calendar": [{"Month": 12, "Day": 24, "Hour": 9, "Minute": 0}]}}], "unsupported": False, "configured": True, "launchd_ok": True}
 CFG = {"settings": {"language": "zh-TW", "experimental_bots": True, "experimental_office": True, "experimental_loops": False, "sidebar_open": True},
-       "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {}, "guide": {"tour": "done", "seen": "0.48.0"}}
+       "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {}, "guide": {"tour": "done", "seen": guide.app_version()}}
 GDATA = {"success": True, "features": guide.for_surface("desktop", CFG["settings"], DATA), "tours": DATA.get("tours"),
-         "state": {"tour": "done", "seen": "0.48.0", "version": guide.app_version()}}
+         "state": {"tour": "done", "seen": guide.app_version(), "version": guide.app_version()}}
 
 
 def stub():
