@@ -14,7 +14,8 @@ machine's tasks. This is the data path under it.
   3. PeerTasks, kept for the page: returns at once from what is kept, empty and `pending` the first time;
      asks in the background only when the page calls and the answer is older than TASKS_FRESH; unchanged
      keeps the lists; 404 -> old, 403 -> denied (both asked again only after REFUSED_RETRY); a timeout keeps
-     the last good lists for KEEP seconds, then error; offline is error at once; one machine's exception is
+     the last good lists for KEEP seconds, then marks them error (rows and `at` kept, the page says how old);
+     offline is error at once; one machine's exception is
      contained; an unpaired machine is forgotten; a phone is not listed.
   4. Over the real link and with real threads, through Api.link_peer_tasks' JSON.
 
@@ -364,7 +365,8 @@ def part3():
     pt.view()
     run()
     d = pt.view()["peers"]["p-desk"]
-    check("…past KEEP: error, no rows", d["state"] == "error" and d["open"] == [] and d["decisions"] == [], d)
+    check("…past KEEP: error, the last good rows and their time kept (the page says how old)",
+          d["state"] == "error" and len(d["open"]) == 3 and d["at"] == 1_800_000_025, d)
     fl.answers["p-desk"] = json.loads(json.dumps(ANSWER))
     clock[0] += link_bots.TASKS_FRESH + 1
     pt.view()

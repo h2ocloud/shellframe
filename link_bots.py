@@ -199,10 +199,11 @@ class PeerTasks:
 
     @staticmethod
     def _entry(k: dict) -> dict:
-        """The page's row for one machine: the kept lists while the answer is good (a failed ask keeps them up
-        to KEEP seconds after the last good one, see refresh), else the state with no rows."""
-        if k["state"] == "ok" and k["data"] is not None:
-            return dict(k["data"], state="ok", at=k["at"])
+        """The page's row for one machine: the kept lists while the answer is good (a failed ask keeps them as
+        ok up to KEEP seconds after the last good one, then as error: the page says how old they are, see
+        refresh), else the state with no rows."""
+        if k["state"] in ("ok", "error") and k["data"] is not None:
+            return dict(k["data"], state=k["state"], at=k["at"])
         return {"state": k["state"] or "pending", "at": k["at"], "decisions": [], "stuck": [], "open": []}
 
     def view(self) -> dict:
@@ -255,9 +256,9 @@ class PeerTasks:
                     k.update(rev="", data=None, state="old", next_at=now + REFUSED_RETRY)
                 elif code == 403:                      # one-way pairing: it may not be looked at from here
                     k.update(rev="", data=None, state="denied", next_at=now + REFUSED_RETRY)
-                else:                                  # offline, a timeout, a bad answer, its store unavailable
-                    if k["state"] != "ok" or code == "offline" or now - k["ok_at"] > KEEP:
-                        k.update(rev="", data=None, state="error")
+                else:                                  # offline, a timeout, a bad answer, its store unavailable:
+                    if k["state"] != "ok" or code == "offline" or now - k["ok_at"] > KEEP:   # the last good lists stay,
+                        k["state"] = "error"                                                  # marked error (with their `at`)
                     k["next_at"] = now + TASKS_FRESH
         finally:
             with self._lock:
