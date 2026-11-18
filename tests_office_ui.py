@@ -176,17 +176,19 @@ def run(browser, base, engine):
     check("no office button while the switch is off", page.query_selector("#btn-office") is None)
     check("…and no iframe", page.query_selector("iframe") is None)
     page.click("#btn-settings")
-    page.wait_for_selector("#setting-experimental-office", timeout=5000)
+    page.wait_for_selector("#setting-experimental-office", state="attached", timeout=5000)
+    page.click('#settings-tabs-bar [data-tab="office"]')
     sw = page.evaluate("""() => { const b = document.getElementById('setting-experimental-office'),
         loops = document.getElementById('setting-experimental-loops');
-        return {on: b.classList.contains('on'), guide: b.dataset.guide,
-                panel: b.closest('.settings-tab-panel').id, after: !!(loops.compareDocumentPosition(b) & 4),
+        return {on: b.classList.contains('on'), guide: b.dataset.guide, shown: !!b.getClientRects().length,
+                panel: b.closest('.settings-tab-panel').id, loopsPanel: loops.closest('.settings-tab-panel').id,
                 label: document.querySelector('#sfo-setting .sfo-label').textContent}; }""")
-    check("the switch sits after the Loops switch in Settings → General, off, with the guide's mark",
-          sw["panel"] == "settings-panel-general" and sw["after"] and not sw["on"] and sw["guide"] == "office", sw)
+    check("the switch sits in Settings → Office (its own category, apart from Loops), off, with the guide's mark",
+          sw["panel"] == "settings-panel-office" and sw["loopsPanel"] == "settings-panel-loops" and sw["shown"]
+          and not sw["on"] and sw["guide"] == "office", sw)
     check("…its label is in the page's language", "辦公室" in sw["label"], sw["label"])
     if shoot:
-        page.locator("#settings-panel-general > div").first.screenshot(path=str(SHOTS / "office-switch.png"))
+        page.locator("#settings-panel-office .sx-card").screenshot(path=str(SHOTS / "office-switch.png"))
     page.click("#setting-experimental-office")
     page.wait_for_timeout(300)
     check("switching it on saves experimental_office", page.evaluate("window.__cfg.settings.experimental_office") is True)

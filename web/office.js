@@ -696,21 +696,19 @@
     b.querySelector('.sb-ico-label').textContent = name;
   }
 
-  // ── the switch (Settings → General, next to the Loops panel's) ─────────────
+  // ── the switch (Settings → Office) ──────────────────────────────────────────
   function injectSettings() {
     let sw = document.getElementById('setting-experimental-office');
     if (!sw) {
-      const loops = document.getElementById('setting-experimental-loops');
-      const cell = loops && loops.parentElement && loops.parentElement.parentElement;
-      if (!cell || !cell.parentElement) return;
+      const box = document.getElementById('sx-office');
+      if (!box) return;
       const wrap = document.createElement('div');
       wrap.id = 'sfo-setting';
+      wrap.className = 'sx-row';
       wrap.innerHTML =
-        '<label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" class="sfo-label"></label>' +
-        '<div style="display:flex;align-items:center;gap:6px">' +
-        '<button class="toggle-switch" id="setting-experimental-office" data-guide="office"></button>' +
-        '<span style="font-size:11px;color:#565f89" class="sfo-hint"></span></div>';
-      cell.parentElement.insertBefore(wrap, cell.nextSibling);
+        '<div class="sx-txt"><div class="sx-label sfo-label"></div><div class="sx-hint sfo-hint"></div></div>' +
+        '<div class="sx-ctl"><button class="toggle-switch" id="setting-experimental-office" data-guide="office"></button></div>';
+      box.appendChild(wrap);
       sw = wrap.querySelector('#setting-experimental-office');
       sw.addEventListener('click', async function () {
         this.classList.toggle('on');

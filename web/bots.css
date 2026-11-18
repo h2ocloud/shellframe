@@ -392,3 +392,9 @@ body:not(.sfb-on) #sfb-convo { display: none; }
 .sfb-bl-empty { font-size: 11px; color: #565f89; padding: 8px 0; }
 /* The primary bot's row: it is on the card above the list (bots.js applyView). */
 .sfb-primary-dup { display: none !important; }
+
+/* the bot editor's labels sit at the top of rows that are taller than one line (Skills, Face, Model), not in the middle of them */
+.sfb-modal .modal:has(#sfb-ed-name) .sfb-form > label:has(+ div > .sfb-sub),
+.sfb-modal .modal:has(#sfb-ed-name) .sfb-form > label:has(+ div > .sfb-grid),
+.sfb-modal .modal:has(#sfb-ed-name) .sfb-form > label:has(+ .sfb-model),
+.sfb-modal .modal:has(#sfb-ed-name) .sfb-form > label:has(+ textarea) { align-self: start; padding-top: 7px; }

@@ -406,14 +406,11 @@
     tab.className = 'settings-tab';
     tab.dataset.tab = 'connect';
     tab.setAttribute('data-guide', 'connect');
-    bar.insertBefore(tab, bar.querySelector('[data-tab="advanced"]'));             // after LINE, before Advanced
+    bar.insertBefore(tab, bar.querySelector('[data-tab="bridge"]'));               // right after the launch presets: the connections, then the two bridges
     panel = doc.createElement('div');
     panel.className = 'settings-tab-panel cn-panel';
     panel.id = 'settings-panel-connect';
     modal.insertBefore(panel, modal.querySelector('.modal-footer'));
-    // Two columns need room: Settings is wider while this tab shows, and back to its own width on any other tab.
-    if (root.MutationObserver) new root.MutationObserver(() => modal.classList.toggle('cn-wide', panel.classList.contains('active')))
-      .observe(panel, { attributes: true, attributeFilter: ['class'] });
     tab.addEventListener('click', () => {
       modal.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active'));
       modal.querySelectorAll('.settings-tab-panel').forEach(x => x.classList.remove('active'));

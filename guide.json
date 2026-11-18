@@ -213,7 +213,7 @@
       ],
       "since": "0.44.6",
       "flag": "experimental_groups",
-      "open": "settings:general",
+      "open": "settings:bots",
       "title": {
         "en": "Role groups",
         "zh": "角色群組"
@@ -230,7 +230,7 @@
       ],
       "since": "0.44.6",
       "flag": "experimental_loops",
-      "open": "settings:general",
+      "open": "settings:loops",
       "title": {
         "en": "Scheduled conversations",
         "zh": "排程對話"
@@ -262,7 +262,7 @@
       ],
       "since": "0.48.0",
       "flag": "experimental_office",
-      "open": "settings:general",
+      "open": "settings:office",
       "title": {
         "en": "Office",
         "zh": "辦公室"

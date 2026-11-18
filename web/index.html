@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="dialog.css"/>
 <link rel="stylesheet" href="guide.css"/>
 <link rel="stylesheet" href="office.css"/>
+<link rel="stylesheet" href="settings.css"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1b26; overflow: hidden; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #a9b1d6; }
@@ -966,226 +967,241 @@
   </div>
 </div>
 
-<!-- Settings modal -->
+<!-- Settings modal: categories on the left, the chosen category on the right (web/settings.css). Every category is
+     a .settings-tab[data-tab] in #settings-tabs-bar and a .settings-tab-panel#settings-panel-<tab>; modules that
+     add one (bots.js, connect.js, the plugin loader) append to the same two places. Rows are .sx-row:
+     label and hint on the left, the control on the right. tests_settings_layout_ui.py -->
 <div class="modal-overlay" id="modal-settings">
-  <div class="modal" style="width:560px">
+  <div class="modal sx">
     <h2 data-i18n="settings">Settings</h2>
 
     <div class="settings-tabs" id="settings-tabs-bar">
       <button class="settings-tab active" data-tab="general" data-i18n="settingsGeneral">General</button>
+      <button class="settings-tab" data-tab="bots">Bots</button>
+      <button class="settings-tab" data-tab="office" data-i18n="settingsOffice">Office</button>
+      <button class="settings-tab" data-tab="loops" data-i18n="settingsLoops">Loops</button>
+      <button class="settings-tab" data-tab="presets" data-i18n="settingsPresets">Launch presets</button>
       <button class="settings-tab" data-tab="bridge" data-guide="telegram" data-i18n="settingsTelegram">Telegram Bridge</button>
       <button class="settings-tab" data-tab="line" data-guide="line" data-i18n="settingsLine">LINE</button>
       <button class="settings-tab" data-tab="advanced" data-i18n="settingsAdvanced">Advanced</button>
     </div>
 
-    <!-- Tab: General -->
+    <!-- General: what a person sets once and sees every day -->
     <div class="settings-tab-panel active" id="settings-panel-general">
-      <div style="display:flex;gap:16px;margin-bottom:10px;padding:12px;background:#24283b;border-radius:8px;flex-wrap:wrap">
-        <div style="flex:1;min-width:140px">
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="fontSize">Terminal font</label>
-          <div style="display:flex;align-items:center;gap:8px">
-            <input type="range" id="setting-fontsize" min="10" max="24" value="14" style="flex:1;accent-color:#7aa2f7"/>
-            <span id="fontsize-val" style="font-size:12px;color:#c0caf5;min-width:24px;text-align:center">14</span>
+      <div class="sx-card">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="fontSize">Terminal font</div></div>
+          <div class="sx-ctl">
+            <input type="range" id="setting-fontsize" min="10" max="24" value="14" style="width:200px;accent-color:#7aa2f7"/>
+            <span id="fontsize-val" class="sx-val">14</span>
           </div>
         </div>
-        <div style="flex:1;min-width:140px">
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="uiScale">Interface size</label>
-          <div style="display:flex;gap:4px" id="setting-uiscale">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="uiScale">Interface size</div></div>
+          <div class="sx-ctl" id="setting-uiscale">
             <button class="ui-scale-btn" data-scale="0.85">S</button>
             <button class="ui-scale-btn active" data-scale="1">M</button>
             <button class="ui-scale-btn" data-scale="1.18">L</button>
           </div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="language">Language</label>
-          <select id="setting-lang" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 8px;color:#c0caf5;font-size:12px;outline:none">
-            <option value="en">English</option>
-            <option value="zh-TW">繁體中文</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoUpdate">Update notify</label>
-          <button class="toggle-switch" id="setting-autoupdate"></button>
-        </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="globalHotkey">Global hotkey</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-global-hotkey"></button>
-            <span style="font-size:11px;color:#565f89">
-              <kbd style="font-family:inherit;font-size:10px;padding:1px 4px;background:#1a1b26;border:1px solid #3b4261;border-radius:3px;color:#c0caf5">⌃⌥Space</kbd>
-              <span data-i18n="showHide">show/hide</span>
-            </span>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="language">Language</div></div>
+          <div class="sx-ctl">
+            <select id="setting-lang" class="sx-input">
+              <option value="en">English</option>
+              <option value="zh-TW">繁體中文</option>
+            </select>
           </div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="completionNotifications">Completion notifications</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-complete-notify"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="completionNotificationsHint">Notify when an AI reply finishes while shellframe is not in the foreground</span>
-          </div>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="autoUpdate">Update notify</div></div>
+          <div class="sx-ctl"><button class="toggle-switch" id="setting-autoupdate"></button></div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">角色群組 — 一則訊息送給多個角色（實驗性）</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-experimental-groups" data-guide="groups"></button>
-            <span style="font-size:11px;color:#565f89">把名冊裡的角色組成群，一次送給全部成員，回覆合併成一條對話。手機 App 與 TG <code>/group</code> 都可用。預設關閉。</span>
-          </div>
-          <div id="groups-editor" style="display:none;margin-top:8px;padding:8px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px">
-            <div id="groups-list" style="font-size:11px;color:#a9b1d6"></div>
-            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-              <input type="text" id="group-new-name" placeholder="群組名稱"
-                style="flex:0 0 120px;background:#24283b;border:1px solid #3b4261;border-radius:3px;padding:4px 6px;color:#c0caf5;font-size:11px;outline:none"/>
-              <div id="group-role-picks" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"></div>
-              <button class="btn btn-primary" id="group-save" style="font-size:11px;padding:3px 10px">新增／更新</button>
-            </div>
-            <div id="group-msg" style="font-size:11px;margin-top:6px;min-height:14px"></div>
-          </div>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="globalHotkey">Global hotkey</div>
+            <div class="sx-hint"><kbd class="sx-kbd">⌃⌥Space</kbd> <span data-i18n="showHide">show/hide</span></div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="setting-global-hotkey"></button></div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="experimentalLoopsLabel">Loops panel — scheduled conversations (experimental)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch" id="setting-experimental-loops" data-guide="loops"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="experimentalLoopsHint">Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab. Off by default.</span>
-          </div>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="completionNotifications">Completion notifications</div>
+            <div class="sx-hint" data-i18n="completionNotificationsHint">Notify when an AI reply finishes while shellframe is not in the foreground</div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="setting-complete-notify"></button></div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="usagePaceLabel">Token pacing on the usage pill</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-usage-pace"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="usagePaceHint">Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.</span>
-          </div>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="usagePaceLabel">Token pacing on the usage pill</div>
+            <div class="sx-hint" data-i18n="usagePaceHint">Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.</div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="setting-usage-pace"></button></div>
         </div>
       </div>
-
-      <div style="font-size:11px;color:#3b4261;margin-bottom:10px;line-height:1.5" data-i18n="shiftEnterHint">
+      <div class="sx-note" data-i18n="shiftEnterHint">
         💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.
-      </div>
-
-      <div style="font-size:12px;color:#565f89;margin-bottom:10px" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
-      <div id="settings-presets"></div>
-      <div class="settings-add">
-        <button class="sp-icon emoji-btn" id="add-icon" style="width:36px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;color:#c0caf5;padding:4px;font-size:16px;cursor:pointer;line-height:1">▶</button>
-        <input type="text" id="add-name" placeholder="Name" style="width:100px"/>
-        <input type="text" id="add-cmd" placeholder="Command" style="flex:1;font-family:monospace"/>
-        <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
       </div>
     </div>
 
-    <!-- Tab: Telegram Bridge -->
+    <!-- Bots: bots.js adds the switches and the list in front of the groups row; the groups row is here so it stays with the bots -->
+    <div class="settings-tab-panel" id="settings-panel-bots">
+      <div class="sx-card sx-groups" id="sx-groups">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label">角色群組 — 一則訊息送給多個角色（實驗性）</div>
+            <div class="sx-hint">把名冊裡的角色組成群，一次送給全部成員，回覆合併成一條對話。手機 App 與 TG <code>/group</code> 都可用。預設關閉。</div></div>
+          <div class="sx-ctl"><button class="toggle-switch" id="setting-experimental-groups" data-guide="groups"></button></div>
+        </div>
+        <div id="groups-editor" class="sx-sub" style="display:none">
+          <div id="groups-list"></div>
+          <div class="sx-addgroup">
+            <input type="text" id="group-new-name" class="sx-input" placeholder="群組名稱"/>
+            <div id="group-role-picks"></div>
+            <button class="btn btn-primary" id="group-save">新增／更新</button>
+          </div>
+          <div id="group-msg" class="sx-msg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Office: office.js adds its switch here -->
+    <div class="settings-tab-panel" id="settings-panel-office"><div class="sx-card" id="sx-office"></div></div>
+
+    <!-- Loops -->
+    <div class="settings-tab-panel" id="settings-panel-loops">
+      <div class="sx-card">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="experimentalLoopsLabel">Loops panel — scheduled conversations (experimental)</div>
+            <div class="sx-hint" data-i18n="experimentalLoopsHint">Right-side panel collecting conversations with an active /loop, cron routine, or scheduler-launched tab. Off by default.</div></div>
+          <div class="sx-ctl"><button class="toggle-switch" id="setting-experimental-loops" data-guide="loops"></button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Launch presets: the table behind the + button -->
+    <div class="settings-tab-panel" id="settings-panel-presets">
+      <div class="sx-lead" data-i18n="settingsDesc">Manage presets — edit name, command, or icon. Changes save automatically.</div>
+      <div class="sp-table">
+        <div class="sp-head"><span></span><span data-i18n="presetColIcon">Icon</span><span data-i18n="presetColName">Name</span><span data-i18n="presetColCmd">Command</span><span></span></div>
+        <div id="settings-presets"></div>
+        <div class="settings-add settings-preset">
+          <span></span>
+          <button class="sp-icon emoji-btn" id="add-icon">▶</button>
+          <input type="text" id="add-name" class="sp-name" placeholder="Name"/>
+          <input type="text" id="add-cmd" class="sp-cmd" placeholder="Command"/>
+          <button class="btn btn-primary" id="btn-add-preset" data-i18n="addPreset">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Telegram -->
     <div class="settings-tab-panel" id="settings-panel-bridge">
-      <div class="bridge-setup">
-        <h4 style="display:flex;align-items:center;justify-content:space-between">
-          <span data-i18n="settingsTelegram">Telegram Bridge</span>
-          <span id="settings-bridge-status" style="font-size:11px;color:#565f89"></span>
-        </h4>
-        <div class="bridge-field">
-          <label data-i18n="tgBotToken">Bot Token</label>
-          <input type="password" id="settings-bridge-token" placeholder="123456:ABC-DEF..."/>
+      <div class="sx-h"><span data-i18n="settingsTelegram">Telegram Bridge</span><span id="settings-bridge-status" class="sx-pill"></span></div>
+      <div class="sx-card">
+        <div class="sx-row sx-field">
+          <div class="sx-txt"><label class="sx-label" for="settings-bridge-token" data-i18n="tgBotToken">Bot Token</label></div>
+          <div class="sx-ctl"><input type="password" id="settings-bridge-token" class="sx-input" placeholder="123456:ABC-DEF..."/></div>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="tgUsers">Users</label>
-          <input type="text" id="settings-bridge-users" data-i18n-placeholder="tgUsersPlaceholder" placeholder="User IDs (comma separated), empty = all"/>
+        <div class="sx-row sx-field">
+          <div class="sx-txt"><label class="sx-label" for="settings-bridge-users" data-i18n="tgUsers">Users</label></div>
+          <div class="sx-ctl"><input type="text" id="settings-bridge-users" class="sx-input" data-i18n-placeholder="tgUsersPlaceholder" placeholder="User IDs (comma separated), empty = all"/></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
+        <div class="sx-row sx-actions">
           <button class="btn btn-primary" id="btn-settings-bridge-connect" data-i18n="connect">Connect</button>
           <button class="btn btn-ghost" id="btn-settings-bridge-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
       </div>
 
       <!-- STT (voice transcription) -->
-      <div class="bridge-setup" style="margin-top:10px">
-        <h4 style="display:flex;align-items:center;justify-content:space-between">
-          <span>🎙 語音轉錄 (STT)</span>
-          <span id="stt-status-pill" style="font-size:11px;color:#565f89"></span>
-        </h4>
-        <div class="bridge-field">
-          <label>Backend</label>
-          <select id="stt-backend" style="flex:1">
-            <option value="auto">Auto (plugin → 本地 → 遠端)</option>
-            <option value="plugin">Plugin only</option>
-            <option value="local">Local (whisper.cpp)</option>
-            <option value="remote">Remote chain only</option>
-            <option value="off">Off</option>
-          </select>
+      <div class="sx-h"><span>🎙 語音轉錄 (STT)</span><span id="stt-status-pill" class="sx-pill"></span></div>
+      <div class="sx-card">
+        <div class="sx-row sx-field">
+          <div class="sx-txt"><label class="sx-label" for="stt-backend">Backend</label></div>
+          <div class="sx-ctl">
+            <select id="stt-backend" class="sx-input">
+              <option value="auto">Auto (plugin → 本地 → 遠端)</option>
+              <option value="plugin">Plugin only</option>
+              <option value="local">Local (whisper.cpp)</option>
+              <option value="remote">Remote chain only</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
         </div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label>Providers</label>
-          <textarea id="stt-providers" style="font-size:11px;font-family:monospace;min-height:90px"
-            placeholder='[
+        <div class="sx-row sx-stack">
+          <div class="sx-txt"><label class="sx-label" for="stt-providers">Providers</label></div>
+          <div class="sx-ctl">
+            <textarea id="stt-providers" class="sx-input sx-mono" rows="5"
+              placeholder='[
   {"name":"home", "url":"http://host:8787/stt", "field":"file", "query":{"language":"zh"}},
   {"name":"backup", "url":"http://other:8765/transcribe", "field":"audio"}
 ]'></textarea>
+          </div>
+          <div id="stt-detail" class="sx-hint sx-mono"></div>
         </div>
-        <div id="stt-detail" style="font-size:11px;color:#787c99;margin-top:6px;line-height:1.5"></div>
-        <div class="bridge-field" style="margin-top:8px">
-          <label data-i18n="micButtonLabel">介面錄音按鈕 🎙</label>
-          <button class="toggle-switch on" id="setting-mic-button"></button>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="micButtonLabel">介面錄音按鈕 🎙</div>
+            <div class="sx-hint" data-i18n="micButtonHelp">在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。</div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="setting-mic-button"></button></div>
         </div>
-        <div class="bridge-help" data-i18n="micButtonHelp">在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。</div>
-        <div class="bridge-field" style="margin-top:8px">
-          <label data-i18n="voiceApplyGateLabel">語音送出前先確認（Apply）</label>
-          <button class="toggle-switch" id="setting-voice-apply-gate"></button>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="voiceApplyGateLabel">語音送出前先確認（Apply）</div>
+            <div class="sx-hint" data-i18n="voiceApplyGateHelp">Telegram 語音轉錄後，先跳「✅ Apply」按鈕確認再送進分頁（STT 有誤差時較安全）。關閉＝轉錄完直接自動送出。</div></div>
+          <div class="sx-ctl"><button class="toggle-switch" id="setting-voice-apply-gate"></button></div>
         </div>
-        <div class="bridge-help" data-i18n="voiceApplyGateHelp">Telegram 語音轉錄後，先跳「✅ Apply」按鈕確認再送進分頁（STT 有誤差時較安全）。關閉＝轉錄完直接自動送出。</div>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <div class="sx-row sx-actions">
           <button class="btn btn-ghost" id="btn-stt-refresh">↻ 檢查</button>
           <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
           <button class="btn btn-primary" id="btn-stt-save">儲存</button>
         </div>
-        <div style="font-size:10px;color:#565f89;margin-top:6px;line-height:1.4">
-          Plugin: drop a Python file at <code>~/.config/shellframe/stt_plugin.py</code>
-          exporting <code>transcribe(audio_path) → str</code> for custom STT logic.
-        </div>
+      </div>
+      <div class="sx-note">
+        Plugin: drop a Python file at <code>~/.config/shellframe/stt_plugin.py</code>
+        exporting <code>transcribe(audio_path) → str</code> for custom STT logic.
       </div>
     </div>
 
-    <!-- Tab: LINE Bridge -->
+    <!-- LINE -->
     <div class="settings-tab-panel" id="settings-panel-line">
-      <div class="bridge-setup">
-        <h4 style="display:flex;align-items:center;justify-content:space-between">
-          <span data-i18n="lineBridgePlugin">LINE Bridge Plugin</span>
-          <span id="settings-line-status" style="font-size:11px;color:#565f89"></span>
-        </h4>
-        <div class="bridge-field">
-          <label data-i18n="lineAccessToken">Access token</label>
-          <input type="password" id="settings-line-token" data-i18n-placeholder="lineAccessTokenPlaceholder" placeholder="LINE channel access token"/>
+      <div class="sx-h"><span data-i18n="lineBridgePlugin">LINE Bridge Plugin</span><span id="settings-line-status" class="sx-pill"></span></div>
+      <div class="sx-card">
+        <div class="sx-row sx-field">
+          <div class="sx-txt"><label class="sx-label" for="settings-line-token" data-i18n="lineAccessToken">Access token</label></div>
+          <div class="sx-ctl"><input type="password" id="settings-line-token" class="sx-input" data-i18n-placeholder="lineAccessTokenPlaceholder" placeholder="LINE channel access token"/></div>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineSecret">Secret</label>
-          <input type="password" id="settings-line-secret" data-i18n-placeholder="lineSecretPlaceholder" placeholder="LINE channel secret"/>
+        <div class="sx-row sx-field">
+          <div class="sx-txt"><label class="sx-label" for="settings-line-secret" data-i18n="lineSecret">Secret</label></div>
+          <div class="sx-ctl"><input type="password" id="settings-line-secret" class="sx-input" data-i18n-placeholder="lineSecretPlaceholder" placeholder="LINE channel secret"/></div>
         </div>
-        <div class="bridge-field">
-          <label data-i18n="lineAllowedIds">Allowed IDs</label>
-          <input type="text" id="settings-line-users" data-i18n-placeholder="lineAllowedIdsPlaceholder" placeholder="LINE userId/groupId, comma separated; empty = allow all"/>
+        <div class="sx-row sx-field">
+          <div class="sx-txt"><label class="sx-label" for="settings-line-users" data-i18n="lineAllowedIds">Allowed IDs</label></div>
+          <div class="sx-ctl"><input type="text" id="settings-line-users" class="sx-input" data-i18n-placeholder="lineAllowedIdsPlaceholder" placeholder="LINE userId/groupId, comma separated; empty = allow all"/></div>
         </div>
         <!-- The webhook's technical fields: folded until LINE is connected or someone opens them -->
         <details id="settings-line-details" class="line-details">
           <summary data-i18n="lineDetailsSummary">Connection details: reply mode, local server, public URL, forward key</summary>
-          <div class="bridge-field">
-            <label data-i18n="lineDeliveryMode">Reply mode</label>
-            <select id="settings-line-mode" style="flex:1">
-              <option value="poll" data-i18n="lineModePoll">Forward + poll outbox</option>
-              <option value="push" data-i18n="lineModePush">Direct LINE Messaging API</option>
-            </select>
+          <div class="sx-row sx-field">
+            <div class="sx-txt"><label class="sx-label" for="settings-line-mode" data-i18n="lineDeliveryMode">Reply mode</label></div>
+            <div class="sx-ctl">
+              <select id="settings-line-mode" class="sx-input">
+                <option value="poll" data-i18n="lineModePoll">Forward + poll outbox</option>
+                <option value="push" data-i18n="lineModePush">Direct LINE Messaging API</option>
+              </select>
+            </div>
           </div>
-          <div class="bridge-field">
-            <label data-i18n="lineLocalServer">Local server</label>
-            <input type="number" id="settings-line-port" value="8787" min="1024" max="65535" style="width:90px;flex:0 0 auto"/>
-            <input type="text" id="settings-line-path" value="/line/webhook" style="font-family:monospace"/>
+          <div class="sx-row sx-field">
+            <div class="sx-txt"><label class="sx-label" for="settings-line-port" data-i18n="lineLocalServer">Local server</label></div>
+            <div class="sx-ctl sx-two">
+              <input type="number" id="settings-line-port" class="sx-input" value="8787" min="1024" max="65535" style="width:96px;flex:0 0 auto"/>
+              <input type="text" id="settings-line-path" class="sx-input sx-mono" value="/line/webhook"/>
+            </div>
           </div>
-          <div class="bridge-field">
-            <label data-i18n="linePollPath">Poll path</label>
-            <input type="text" id="settings-line-poll-path" value="/line/poll" style="font-family:monospace"/>
+          <div class="sx-row sx-field">
+            <div class="sx-txt"><label class="sx-label" for="settings-line-poll-path" data-i18n="linePollPath">Poll path</label></div>
+            <div class="sx-ctl"><input type="text" id="settings-line-poll-path" class="sx-input sx-mono" value="/line/poll"/></div>
           </div>
-          <div class="bridge-field">
-            <label data-i18n="linePublicUrl">Public URL</label>
-            <input type="text" id="settings-line-public-url" data-i18n-placeholder="linePublicUrlPlaceholder" placeholder="https://your-tunnel.example.com/line/webhook"/>
+          <div class="sx-row sx-field">
+            <div class="sx-txt"><label class="sx-label" for="settings-line-public-url" data-i18n="linePublicUrl">Public URL</label></div>
+            <div class="sx-ctl"><input type="text" id="settings-line-public-url" class="sx-input" data-i18n-placeholder="linePublicUrlPlaceholder" placeholder="https://your-tunnel.example.com/line/webhook"/></div>
           </div>
-          <div class="bridge-field">
-            <label data-i18n="lineForwardSecret">Forward key</label>
-            <input type="password" id="settings-line-forward-secret" data-i18n-placeholder="lineForwardSecretPlaceholder" placeholder="Optional shared key for company webhook"/>
+          <div class="sx-row sx-field">
+            <div class="sx-txt"><label class="sx-label" for="settings-line-forward-secret" data-i18n="lineForwardSecret">Forward key</label></div>
+            <div class="sx-ctl"><input type="password" id="settings-line-forward-secret" class="sx-input" data-i18n-placeholder="lineForwardSecretPlaceholder" placeholder="Optional shared key for company webhook"/></div>
           </div>
-          <div id="settings-line-help" style="font-size:11px;color:#787c99;line-height:1.55;background:#1f2335;border:1px solid #2f354d;border-radius:6px;padding:10px;margin-top:8px">
+          <div id="settings-line-help">
             <div><b data-i18n="lineSetupTitle">Setup</b></div>
             <div data-i18n="lineSetupStep1">1. Company webhook forwards LINE events to the local endpoint below.</div>
             <div data-i18n="lineSetupStep2">2. In Forward + poll mode, your webhook polls the poll endpoint for responses.</div>
@@ -1193,128 +1209,115 @@
             <div><span data-i18n="lineSetupStep4Prefix">4. Local endpoint:</span> <code id="settings-line-local-url">http://127.0.0.1:8787/line/webhook</code></div>
             <div><span data-i18n="lineSetupPollPrefix">5. Poll endpoint:</span> <code id="settings-line-poll-url">http://127.0.0.1:8787/line/poll</code></div>
           </div>
-          <div style="margin-top:8px">
+          <div class="sx-row sx-actions">
             <button class="btn btn-ghost" id="btn-settings-line-copy-url" data-i18n="lineCopyUrl">Copy local URL</button>
           </div>
         </details>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <div class="sx-row sx-actions">
           <button class="btn btn-primary" id="btn-settings-line-connect" data-i18n="lineConnect">Connect LINE</button>
           <button class="btn btn-ghost" id="btn-settings-line-disconnect" style="display:none" data-i18n="disconnect">Disconnect</button>
         </div>
       </div>
     </div>
 
-    <!-- Tab: Advanced. What few people change, moved here from General, Telegram and LINE with the same
+    <!-- Advanced. What few people change, moved here from General, Telegram and LINE with the same
          ids, keys and defaults; each saves (or is read on Connect) as it did. tests_settings_ui.py -->
     <div class="settings-tab-panel" id="settings-panel-advanced">
-      <div style="font-size:11px;color:#787c99;margin-bottom:10px;line-height:1.5" data-i18n="advancedIntro">Settings most people never change. Each one works as it did before it moved here.</div>
-      <div style="display:flex;gap:16px;margin-bottom:10px;padding:12px;background:#24283b;border-radius:8px;flex-wrap:wrap">
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="autoCompactClaude">Auto /compact (Claude)</label>
-          <div style="display:flex;align-items:center;gap:6px">
+      <div class="sx-lead" data-i18n="advancedIntro">Settings most people never change. Each one works as it did before it moved here.</div>
+      <div class="sx-card">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="autoCompactClaude">Auto /compact (Claude)</div></div>
+          <div class="sx-ctl">
+            <span class="sx-val">≤</span>
+            <input type="number" id="setting-auto-compact-threshold" class="sx-input sx-num sf-bright-spin" min="3" max="50" step="1" value="15"/>
+            <span class="sx-val" data-i18n="percentLeft">% left</span>
             <button class="toggle-switch on" id="setting-auto-compact"></button>
-            <span style="font-size:11px;color:#565f89">≤</span>
-            <input type="number" id="setting-auto-compact-threshold" class="sf-bright-spin" min="3" max="50" step="1" value="15"
-                   style="width:48px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:2px 4px;color:#c0caf5;font-size:12px;outline:none"/>
-            <span style="font-size:11px;color:#565f89" data-i18n="percentLeft">% left</span>
           </div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="modelBadgeLabel">Model badge on sessions (experimental)</label>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="toggle-switch on" id="setting-model-badge"></button>
-            <span style="font-size:11px;color:#565f89" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</span>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="modelBadgeLabel">Model badge on sessions (experimental)</div>
+            <div class="sx-hint" data-i18n="modelBadgeHint">Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.</div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="setting-model-badge"></button></div>
+        </div>
+        <div class="sx-row sx-multi">
+          <div class="sx-txt"><div class="sx-label" data-i18n="apiServerTitle">Local HTTP API</div>
+            <div class="sx-hint" data-i18n="apiServerHint">Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart.</div></div>
+          <div class="sx-ctl">
+            <span id="api-server-status" class="sx-val"></span>
+            <button class="btn btn-ghost" id="btn-api-docs" style="display:none" data-i18n="apiOpenDocs">API docs (Swagger)</button>
+            <button class="btn btn-ghost" id="btn-api-copy-token" style="display:none" data-i18n="apiCopyToken">Copy token</button>
+            <button class="toggle-switch" id="setting-api-server"></button>
+          </div>
+        </div>
+        <div class="sx-row sx-multi">
+          <div class="sx-txt"><div class="sx-label" data-i18n="statusHooksTitle">Exact agent status (Claude Code hooks)</div>
+            <div class="sx-hint" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div></div>
+          <div class="sx-ctl">
+            <span id="status-hooks-state" class="sx-val"></span>
+            <button class="toggle-switch" id="setting-status-hooks"></button>
           </div>
         </div>
       </div>
 
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="apiServerTitle">Local HTTP API</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button class="toggle-switch" id="setting-api-server"></button>
-          <span id="api-server-status" style="font-size:11px;color:#565f89"></span>
-          <button class="btn btn-ghost" id="btn-api-docs" style="display:none" data-i18n="apiOpenDocs">API docs (Swagger)</button>
-          <button class="btn btn-ghost" id="btn-api-copy-token" style="display:none" data-i18n="apiCopyToken">Copy token</button>
+      <div class="sx-card">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="idleCleanupTitle">Idle tab cleanup</div>
+            <div class="sx-hint" data-i18n="idleCleanupDesc">Automatically summarize and close idle AI tabs. Protected/main tabs are kept.</div></div>
+          <div class="sx-ctl"><button class="toggle-switch" id="setting-idle-enabled"></button></div>
         </div>
-        <div class="bridge-help" style="margin-top:6px" data-i18n="apiServerHint">Loopback HTTP/JSON control surface for local agents (OpenClaw etc.) — list/peek/send/delegate with Bearer token auth. Toggle takes effect immediately, no restart.</div>
-      </div>
-
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="font-size:12px;color:#c0caf5;font-weight:700;margin-bottom:8px" data-i18n="statusHooksTitle">Exact agent status (Claude Code hooks)</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button class="toggle-switch" id="setting-status-hooks"></button>
-          <span id="status-hooks-state" style="font-size:11px;color:#565f89"></span>
+        <div class="sx-row">
+          <div class="sx-txt"><label class="sx-label" for="setting-idle-value" data-i18n="idleAfter">Idle after</label></div>
+          <div class="sx-ctl">
+            <input type="number" id="setting-idle-value" class="sx-input sx-num sf-bright-spin" min="1" max="24" step="1" value="30"/>
+            <select id="setting-idle-unit" class="sx-input">
+              <option value="minutes" data-i18n="minutes">minutes</option>
+              <option value="hours" data-i18n="hours">hours</option>
+            </select>
+          </div>
         </div>
-        <div class="bridge-help" style="margin-top:6px" data-i18n="statusHooksHint">Installs lightweight async hooks into ~/.claude/settings.json so Claude itself reports working / turn done / waiting-for-permission — no more screen guessing. Applies to tabs opened after enabling; other tabs keep the heuristic fallback.</div>
-      </div>
-
-      <div style="padding:12px;background:#24283b;border-radius:8px;margin-bottom:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
-          <div>
-            <div style="font-size:12px;color:#c0caf5;font-weight:700" data-i18n="idleCleanupTitle">Idle tab cleanup</div>
-            <div style="font-size:10px;color:#565f89;margin-top:2px" data-i18n="idleCleanupDesc">Automatically summarize and close idle AI tabs. Protected/main tabs are kept.</div>
+        <div class="sx-row">
+          <div class="sx-txt"><label class="sx-label" for="setting-idle-grace" data-i18n="summaryWait">Summary wait</label></div>
+          <div class="sx-ctl">
+            <input type="number" id="setting-idle-grace" class="sx-input sx-num sf-bright-spin" min="1" max="30" step="1" value="2"/>
+            <span class="sx-val" data-i18n="minutes">minutes</span>
           </div>
-          <button class="toggle-switch" id="setting-idle-enabled"></button>
         </div>
-        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="idleAfter">Idle after</label>
-            <div style="display:flex;gap:6px">
-              <input type="number" id="setting-idle-value" class="sf-bright-spin" min="1" max="24" step="1" value="30"
-                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
-              <select id="setting-idle-unit" style="background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none">
-                <option value="minutes" data-i18n="minutes">minutes</option>
-                <option value="hours" data-i18n="hours">hours</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px" data-i18n="summaryWait">Summary wait</label>
-            <div style="display:flex;gap:6px;align-items:center">
-              <input type="number" id="setting-idle-grace" class="sf-bright-spin" min="1" max="30" step="1" value="2"
-                     style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:4px 6px;color:#c0caf5;font-size:12px;outline:none"/>
-              <span style="font-size:11px;color:#565f89" data-i18n="minutes">minutes</span>
-            </div>
-          </div>
+        <div class="sx-row sx-actions">
+          <span id="setting-idle-status" class="sx-val"></span>
           <button class="btn btn-primary" id="btn-save-idle-reaper" data-i18n="saveCleanup">Save cleanup</button>
-          <span id="setting-idle-status" style="font-size:11px;color:#565f89"></span>
         </div>
       </div>
 
-      <div class="bridge-setup" style="margin-bottom:10px">
-        <h4 data-i18n="tgAdvancedTitle">Telegram</h4>
-        <div class="bridge-field">
-          <label data-i18n="bridgePrefix">Prefix</label>
-          <button class="toggle-switch on" id="settings-bridge-prefix"></button>
-          <span style="font-size:11px;color:#565f89" data-i18n="tgPrefixHint">[TG @user]: message</span>
+      <div class="sx-h"><span data-i18n="tgAdvancedTitle">Telegram</span></div>
+      <div class="sx-card">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="bridgePrefix">Prefix</div>
+            <div class="sx-hint"><span data-i18n="tgPrefixHint">[TG @user]: message</span> · <span data-i18n="bridgePrefixOnConnect">Takes effect the next time Telegram connects (Telegram tab → Connect).</span></div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="settings-bridge-prefix"></button></div>
         </div>
-        <div class="bridge-help" data-i18n="bridgePrefixOnConnect">Takes effect the next time Telegram connects (Telegram tab → Connect).</div>
-        <div class="bridge-field">
-          <label data-i18n="showTgWrapperLabel">顯示 TG Wrapper 標記</label>
-          <button class="toggle-switch on" id="setting-show-tg-wrapper"></button>
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="showTgWrapperLabel">顯示 TG Wrapper 標記</div>
+            <div class="sx-hint" data-i18n="showTgWrapperHelp">TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴</div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="setting-show-tg-wrapper"></button></div>
         </div>
-        <div class="bridge-help" data-i18n="showTgWrapperHelp">TG 訊息注入本地終端時顯示 [SF-TG wrapper] 前綴</div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="tgPromptLabel">自訂 TG Prompt</label>
-          <textarea id="setting-tg-prompt" style="font-size:11px" data-i18n-placeholder="tgPromptPlaceholder" placeholder="[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c"></textarea>
+        <div class="sx-row sx-stack">
+          <div class="sx-txt"><label class="sx-label" for="setting-tg-prompt" data-i18n="tgPromptLabel">自訂 TG Prompt</label>
+            <div class="sx-hint" data-i18n="tgPromptHelp">每輪 TG 訊息的格式/協作提示。留空使用內建預設</div></div>
+          <div class="sx-ctl"><textarea id="setting-tg-prompt" class="sx-input" rows="3" data-i18n-placeholder="tgPromptPlaceholder" placeholder="[TG] Replying to Telegram mobile — keep responses short and skimmable: bullets > paragraphs, fence c"></textarea></div>
         </div>
-        <div class="bridge-help" data-i18n="tgPromptHelp">每輪 TG 訊息的格式/協作提示。留空使用內建預設</div>
       </div>
 
-      <div class="bridge-setup">
-        <h4 data-i18n="lineAdvancedTitle">LINE</h4>
-        <div class="bridge-field">
-          <label data-i18n="bridgePrefix">Prefix</label>
-          <button class="toggle-switch on" id="settings-line-prefix"></button>
-          <span style="font-size:11px;color:#565f89" data-i18n="linePrefixHint">[LINE userId]: message</span>
+      <div class="sx-h"><span data-i18n="lineAdvancedTitle">LINE</span></div>
+      <div class="sx-card">
+        <div class="sx-row">
+          <div class="sx-txt"><div class="sx-label" data-i18n="bridgePrefix">Prefix</div>
+            <div class="sx-hint"><span data-i18n="linePrefixHint">[LINE userId]: message</span> · <span data-i18n="linePrefixOnConnect">Takes effect the next time LINE connects (LINE tab → Connect LINE).</span></div></div>
+          <div class="sx-ctl"><button class="toggle-switch on" id="settings-line-prefix"></button></div>
         </div>
-        <div class="bridge-help" data-i18n="linePrefixOnConnect">Takes effect the next time LINE connects (LINE tab → Connect LINE).</div>
-        <div class="bridge-field" style="align-items:flex-start">
-          <label data-i18n="linePerTurnPreamble">Wrapper prompt</label>
-          <textarea id="setting-line-prompt" style="font-size:11px" data-i18n-placeholder="linePreamblePlaceholder" placeholder="Prepended to every LINE message sent to the AI. Leave empty to turn off."></textarea>
-        </div>
-        <div style="font-size:10px;color:#565f89;margin:-4px 0 4px 92px;line-height:1.4" data-i18n="linePreambleHelp">
-          Every non-command LINE message is wrapped with this prompt so agents reply in a LINE-friendly format. Empty = off.
+        <div class="sx-row sx-stack">
+          <div class="sx-txt"><label class="sx-label" for="setting-line-prompt" data-i18n="linePerTurnPreamble">Wrapper prompt</label>
+            <div class="sx-hint" data-i18n="linePreambleHelp">Every non-command LINE message is wrapped with this prompt so agents reply in a LINE-friendly format. Empty = off.</div></div>
+          <div class="sx-ctl"><textarea id="setting-line-prompt" class="sx-input" rows="3" data-i18n-placeholder="linePreamblePlaceholder" placeholder="Prepended to every LINE message sent to the AI. Leave empty to turn off."></textarea></div>
         </div>
       </div>
     </div>
@@ -1530,6 +1533,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       close: 'Close',
       settings: 'Settings',
       settingsGeneral: 'General',
+      settingsOffice: 'Office',
+      settingsLoops: 'Loops',
+      settingsPresets: 'Launch presets',
+      presetColIcon: 'Icon',
+      presetColName: 'Name',
+      presetColCmd: 'Command',
       apiServerTitle: 'Local HTTP API',
       apiOpenDocs: 'API docs (Swagger)',
       apiCopyToken: 'Copy token',
@@ -1686,6 +1695,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       close: '關閉',
       settings: '設定',
       settingsGeneral: '一般',
+      settingsOffice: '辦公室',
+      settingsLoops: 'Loops・排程',
+      settingsPresets: '預設指令',
+      presetColIcon: '圖示',
+      presetColName: '名稱',
+      presetColCmd: '指令',
       apiServerTitle: '本機 HTTP API',
       apiOpenDocs: 'API 文件 (Swagger)',
       apiCopyToken: '複製 token',
@@ -8090,9 +8105,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <span class="sp-grip" title="Drag to reorder">☰</span>
         <button class="sp-icon emoji-btn" data-field="icon" data-idx="${i}">${p.icon || '▶'}</button>
         <input class="sp-name" value="${esc(p.name)}" data-field="name" data-idx="${i}"/>
-        <input class="sp-cmd" value="${esc(p.cmd)}" data-field="cmd" data-idx="${i}"/>
-        <button class="sp-del" data-idx="${i}">&times;</button>
+        <span class="sp-cmdbox" data-v="${esc(p.cmd)}"><textarea class="sp-cmd" rows="1" spellcheck="false" data-field="cmd" data-idx="${i}">${esc(p.cmd)}</textarea></span>
+        <span class="sp-act"><button class="sp-del" data-idx="${i}">&times;</button></span>
       `;
+      // the command wraps instead of being cut off: the box is as tall as its text (settings.css .sp-cmdbox)
+      const cmdTa = row.querySelector('.sp-cmd');
+      cmdTa.addEventListener('input', () => { cmdTa.parentNode.dataset.v = cmdTa.value; });
+      cmdTa.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') ev.preventDefault(); });
       // Mouse-based drag reorder (HTML5 drag/drop unreliable in WKWebView)
       const grip = row.querySelector('.sp-grip');
       grip.addEventListener('mousedown', (e) => {
@@ -8140,7 +8159,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       saveBtn.className = 'btn btn-primary';
       saveBtn.style.cssText = 'font-size:10px;padding:2px 8px;display:none;white-space:nowrap';
       saveBtn.textContent = '✓';
-      row.querySelectorAll('input').forEach(inp => {
+      row.querySelectorAll('input, textarea').forEach(inp => {
         inp.addEventListener('input', () => {
           dirty = true;
           saveBtn.style.display = 'inline-block';
