@@ -30,6 +30,7 @@ import signal
 import subprocess
 import sys
 import threading
+import functools
 import time
 import unicodedata
 import urllib.request
@@ -55,6 +56,7 @@ import sf_lang
 import tab_delivery
 import agent_status
 import launch_cmd
+import win_shell
 import agent_cursor
 import agent_grok
 import account_manager
@@ -1674,7 +1676,7 @@ class Session:
         args = shlex.split(self.cmd)
         env = self._launch_env()
         self._carry_trust_to_profile(env)
-        exe = shutil.which(args[0], path=env.get("PATH"))
+        exe = win_shell.resolve(args[0], env.get("PATH"))       # a plain `bash` is Git Bash, not the WSL launcher
         cmd_args = [exe] + args[1:] if exe else ["powershell", "-NoProfile", "-Command", self.cmd]
 
         # Try pywinpty for full ConPTY support (colors, TUI)
@@ -1763,6 +1765,15 @@ class Session:
             except (EOFError, OSError):
                 break
         self.alive = False
+        self._note_exit(getattr(getattr(self, "_winpty", None), "exitstatus", None))
+
+    def _note_exit(self, code=None):
+        """A tab whose program ends within seconds of its start is not a tab that was closed: the command
+        did not run (a `bash` that is the WSL launcher, a missing CLI, a session id already taken). The tab
+        drops out of the list silently, so the debug log says what ended, when, and with which exit code."""
+        ran = time.time() - float(getattr(self, "_spawn_ts", 0) or 0)
+        if ran < 30 and not getattr(self, "_killed", False):
+            _dlog("lifecycle", f"{self.sid} ended {ran:.1f}s after it was started (exit code {code}); its command did not stay up: cmd={self.cmd!r}")
 
     def _reader_win(self):
         """Read from plain subprocess (fallback)."""
@@ -1782,6 +1793,7 @@ class Session:
             except:
                 break
         self.alive = False
+        self._note_exit(self.win_proc.poll() if self.win_proc else None)
 
     def write(self, data: str, user_activity: bool = True):
         # Only log multi-char writes (init prompt, paste) — single keystrokes
@@ -1872,6 +1884,7 @@ class Session:
 
     def kill(self, kill_tmux=True):
         """Kill the session. If kill_tmux=False, only detach (tmux session stays alive)."""
+        self._killed = True          # a reader that ends after this is not an early exit (_note_exit)
         self.alive = False
         if IS_WIN:
             if hasattr(self, '_use_winpty') and self._use_winpty:
@@ -2012,6 +2025,17 @@ def _win_set_clipboard_text(text: str) -> None:
             k32.GlobalFree(hmem)
 
 
+def _ends_manifest_hold(fn):
+    """The tab restore ends the hold on the manifest (Api._persist_session_manifest) however it returns."""
+    @functools.wraps(fn)
+    def wrapper(self, *a, **k):
+        try:
+            return fn(self, *a, **k)
+        finally:
+            self._manifest_hold_until = 0.0
+    return wrapper
+
+
 class Api(HistoryApiMixin, SchedulesApiMixin,
           AccountsApiMixin, BridgesApiMixin, DesktopApiMixin, ExtensionsApiMixin,
           LinkApiMixin, RemoteApiMixin, StatusApiMixin,
@@ -2033,6 +2057,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         self._bridge_queue = SimpleQueue()        # feed_output off the hot path
         self._plugins = None
         self._idle_reaper_started = False
+        # The tab manifest is not rewritten before the restore has read it (see _persist_session_manifest).
+        self._manifest_hold_until = time.monotonic() + self._MANIFEST_HOLD_S
         self._api_httpd = None        # Local HTTP API server handle (Settings hot-toggle)
         self.frame_link = None        # FrameLink instance (created lazily in _start_frame_link)
         self._hook_events = {}        # sid -> hook-driven state (see _on_agent_event)
@@ -2074,14 +2100,25 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         ordered.extend([sid for sid in self.sessions if sid not in ordered])
         return ordered
 
-    def _persist_session_manifest(self, preferred_order: list[str] | None = None):
+    _MANIFEST_HOLD_S = 300.0
+
+    def _persist_session_manifest(self, preferred_order: list[str] | None = None, restoring: bool = False):
         """Persist all open tabs, labels, order, tmux names, and bridge state.
 
         tmux keeps processes alive across app restarts, but not across a full
         machine reboot. This manifest is the disk-backed fallback: after reboot
         ShellFrame can recreate the same tabs and reconnect Telegram even when
         tmux has no surviving sessions.
+
+        Not before the restore has read it (`restoring` is the restore's own call): the Telegram
+        autostart thread persists as it comes up, with no tab open yet, and wrote an EMPTY manifest;
+        the restore then fell back to the old soft list (the command as first typed, no uuid) and every
+        Windows tab came back on a new --session-id instead of --resume. The hold ends when the restore
+        does, or after _MANIFEST_HOLD_S for an app nobody's page restores.
         """
+        if not restoring and time.monotonic() < getattr(self, "_manifest_hold_until", 0.0):
+            _dlog("lifecycle", "manifest not written yet: the restore of the tabs has not run")
+            return
         try:
             # grok 的 session 目錄要跑 pgrep／lsof（快取未命中時好幾次子行程），
             # 不能拿著 config 鎖去做——所以在鎖外先解析好，鎖裡只讀結果。
@@ -2905,7 +2942,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             new = Api._cmd_with_resume(rest, csid)
             return cmd if new == rest else f"{prefix} {new}"
         try:
-            tokens = shlex.split(cmd)
+            tokens = shlex.split(cmd.replace("\\", "/") if IS_WIN else cmd)   # a Windows path: posix shlex would eat its backslashes
         except ValueError:
             return cmd
         if not tokens:
@@ -2966,6 +3003,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         except Exception:
             _swallow(f"restore_transcript_hint:{getattr(session, 'sid', '?')}")
 
+    @_ends_manifest_hold
     def restore_tmux_sessions(self, cols: int = 80, rows: int = 24) -> str:
         """Restore orphaned sessions on startup.
 
@@ -3044,7 +3082,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                     session._custom_label = label
                 restored.append({"sid": sid, "cmd": cmd})
             if existing:
-                self._persist_session_manifest(saved_order)
+                self._persist_session_manifest(saved_order, restoring=True)
                 self._retry_failed_attach(failed)
                 # Bridge 可能在這些分頁存在之前就啟動了（見 _sync_bridge_sessions）
                 self._sync_bridge_sessions()
@@ -3139,7 +3177,7 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             except Exception as e:
                 _dlog("lifecycle", f"  soft restore failed for {sid}: {e}")
         if restored:
-            self._persist_session_manifest(saved_order)
+            self._persist_session_manifest(saved_order, restoring=True)
         # 同上：還原完無條件同步一次
         self._sync_bridge_sessions()
         tab_delivery.resume(self)
