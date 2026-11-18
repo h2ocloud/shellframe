@@ -6,6 +6,51 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.57.0 (2026-11-18)
+
+### Added
+
+- **Each paired computer's room in the office shows its main bot and has its own whiteboard.**
+  Asked for: every remote office should have its own whiteboard and its main bot, shown in the office. A paired
+  computer's room ("隔壁：…") now seats that computer's main bot (the bot it calls primary) at the room's front
+  desk, larger, marked ★ 主要, and names it on the room's sign. A small whiteboard on the room's back wall carries
+  a count and opens the same centred sheet of sticky notes by priority as the lobby's, with that computer's tasks.
+  It is read-only from here: no 「我做好了」 / 「留言」, no history; the card says a change goes through that
+  computer's main bot and, when its chat can be reached, offers 「跟 X 說」. The lists come over the pairing
+  (`GET /link/tasks`) under the same rule as the bots, which decides who can see whose tasks: on a two-way pairing
+  both computers see each other's; on a one-way pairing the main computer sees its member's, and the member gets
+  403 for the main computer's (and sees no other computer's through it). They are asked about every 9 s and only
+  while the office is open, and are kept when the computer stops answering (the sheet says how many minutes
+  old they are). A computer on an older build shows 「版本較舊」 until it is updated; both computers need this
+  version. Covered by `tests_link_peer_tasks.py` and `tests_office_peer_board_ui.py`.
+
+  **辦公室裡每台配對電腦的房間，都會顯示它的主要 bot，也有自己的白板。** 需求：每個遠端辦公室都要有自己的白板和主要 bot，
+  而且要呈現在辦公室裡。現在配對電腦的房間（「隔壁：…」）會讓那台的主要 bot（它設為主要的那位）坐在房間前排的大桌，
+  畫得比較大、標 ★ 主要，房牌上也寫出它的名字。房間後牆有一塊小白板帶著數字，點開就是跟大廳一樣置中、依輕重緩急排的便利貼，
+  內容是那台電腦的任務。從這台看是唯讀的：沒有「我做好了」／「留言」，也沒有歷程；卡片上寫著要改請找那台的主要 bot，
+  聊得到它時會有「跟 X 說」。清單走配對連線（`GET /link/tasks`），誰看得到誰的任務跟 bot 是同一條規則：雙向配對兩台互相看得到；
+  單向配對只有主控那台看得到成員的，成員去讀主控的會被拒（403），也不會經由主控看到其他電腦的。辦公室開著才問、大約每 9 秒一次；那台連不上時保留上次讀到的內容，並寫明是幾分鐘前的。舊版的電腦會顯示「版本較舊」，更新之後就有；
+  兩台都要是這一版。由 `tests_link_peer_tasks.py`、`tests_office_peer_board_ui.py` 守著。
+
+### Fixes
+
+- **The office's top bar and legend no longer overlap when the window is narrow.**
+  Reported: shrinking the window broke the office's layout; at Interface size large the top bar's search, zoning
+  and area menus slid over the status counts. The bar's breakpoints were written in window pixels while the bar
+  grows with Interface size, so a 1027px window at large had the room of an 870px one. The bar now measures
+  whether its pieces fit and steps down only as far as needed (the module tag, the search box to an icon, tighter
+  spacing, the word 辦公室, then the counts to a second row); the counts keep their words. The legend's width
+  follows Interface size, it goes to one column when two do not fit, and it moves above the bottom-right buttons
+  instead of covering them; those buttons wrap instead of leaving the screen. Covered by `tests_office_narrow.py`
+  (12 widths × 3 sizes, Chromium and WebKit).
+
+  **窗口縮小時，辦公室的上方列和圖例不再疊在一起。** 回報：縮小窗口會跑版；介面大小選「大」時，上方列的搜尋、分區和區域選單
+  會蓋住狀態數字。原因是上方列的斷點用窗口寬度算，但整列會跟著介面大小放大，所以 1027px 的窗口在「大」只放得下 870px 的東西。
+  現在上方列會量自己放不放得下，只收到剛好夠為止（先藏副標、搜尋縮成放大鏡、間距收緊、藏「辦公室」三個字，最後才把狀態數字
+  換到第二列）；狀態的字（忙／等你／卡住／閒置）不會藏。圖例的寬度跟著介面大小換算，兩欄放不下就改一欄，會壓到右下角按鈕時
+  改成移到按鈕上面；右下角按鈕太多時換行，不會跑出畫面。由 `tests_office_narrow.py` 守著（12 種寬度 × 3 種大小，Chromium 與
+  WebKit）。
+
 ## v0.56.0 (2026-11-18)
 
 ### Added

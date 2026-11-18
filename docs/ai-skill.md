@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.56.0
-   version: 0.56.0
+OK ShellBot v0.57.0
+   version: 0.57.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -604,6 +604,7 @@ you as an ordinary message in your tab.
 | Plaud on the Connect page (the official local MCP server, browser sign-in); `sfctl connect step` lets a bot do the steps ShellBot can do itself; the office's task board (the lobby whiteboard) and schedule calendar | 0.55.0 |
 | Pairing from the command line: `sfctl link-pair --mode duplex|host|member`, `link-join`, `link-enable` | 0.55.2 |
 | No new commands: the office's whiteboard (sticky notes by priority; 我做好了 / 留言 on a card) and wall calendar (day / week / month, an owner per entry; `schedules.json` may name `owners`) | 0.56.0 |
+| No new commands: each paired computer's room in the office shows its main bot and a read-only whiteboard of that computer's tasks (`link_peer_tasks`, GET /link/tasks; both computers need 0.57.0) | 0.57.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
