@@ -329,6 +329,61 @@ html[data-lang="en"] .os-detect b{margin-left:.35em}
 .more .card p{margin:0}
 details.tb.wide{margin-top:16px}
 
+
+/* ── 五個主要特點（第一屏） ── */
+.hero{gap:18px 28px}
+.hero h1{font-size:clamp(30px,4.4vw,46px);margin:4px 0 10px}
+.hero .lead{font-size:16.5px}
+.hero .cta{margin-top:14px}
+.hero .troupe{padding:14px 14px 10px}
+.hero .troupe-row{grid-template-columns:repeat(6,minmax(0,1fr));gap:6px 4px}
+.hero .troupe-row .face{width:clamp(38px,4.6vw,46px);height:clamp(38px,4.6vw,46px)}
+.hero .troupe-row figcaption{font-size:12px}
+.hero .troupe .primary-face{margin-bottom:6px}
+.hero .troupe .primary-face .face{width:clamp(56px,9vw,74px);height:clamp(56px,9vw,74px)}
+.hero .pillars{grid-column:1/-1;display:grid;gap:14px;grid-template-columns:repeat(5,minmax(0,1fr))}
+.hero .hero-facts{grid-column:1/-1;margin-top:0}
+.pillar{display:flex;flex-direction:column;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);color:inherit;text-decoration:none;transition:border-color .15s,transform .15s}
+.pillar:hover,.pillar:focus-visible{border-color:var(--accent);transform:translateY(-2px);text-decoration:none}
+.pillar-fig{position:relative;aspect-ratio:16/10;background:#0b0f17;overflow:hidden;border-bottom:1px solid var(--line)}
+.pillar-fig img{display:block;width:100%;height:100%;object-fit:cover}
+.pillar-fig.chipfig{background:linear-gradient(135deg,#151c2b,#0b0f17)}
+.pillar-fig .chips{position:absolute;inset:0;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:5px;padding:8px}
+.pillar-fig .chip{font:600 11px/1 var(--sans);padding:5px 8px;border-radius:999px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);color:#e6e9ef;white-space:nowrap}
+.pillar-fig .chip.more{background:transparent;border-style:dashed;color:#9aa4b6}
+.pillar-body{padding:11px 13px 13px;display:flex;flex-direction:column;gap:5px;flex:1}
+.pillar h3{font-size:15.5px;line-height:1.35;margin:0;display:flex;align-items:flex-start;gap:8px}
+.pillar h3 span:last-child{min-width:0}
+.pillar .n{flex:none;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:12.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
+.pillar-fig .tag{position:absolute;top:7px;right:7px;font-size:11.5px;font-weight:700;line-height:1.5;padding:0 8px;border-radius:999px;background:#f0b44c;color:#2a1d05;white-space:nowrap}
+.pillar p{font-size:13px;line-height:1.55;color:var(--dim);margin:0}
+.pillar .go{margin-top:auto;padding-top:6px;font-size:13px;font-weight:700;color:var(--accent2)}
+h3.sub[id],figure[id]{scroll-margin-top:128px}
+@media (max-width:1060px){
+  .hero .pillars{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .hero .pillars .pillar{grid-column:span 2}
+  .hero .pillars .pillar:nth-child(n+4){grid-column:span 3}
+}
+@media (max-width:900px){
+  .hero .hero-text{order:1}
+  .hero .pillars{order:2}
+  .hero .troupe{order:3}
+  .hero .hero-facts{order:4}
+}
+@media (max-width:640px){
+  .hero .pillars{grid-template-columns:minmax(0,1fr);gap:10px}
+  .hero .pillars .pillar,.hero .pillars .pillar:nth-child(n+4){grid-column:auto;flex-direction:row}
+  .pillar-fig{width:128px;aspect-ratio:auto;flex:none;border-bottom:0;border-right:1px solid var(--line)}
+  .pillar-fig .chips{gap:3px;padding:5px}
+  .pillar-fig .chip{font-size:9px;padding:3px 5px}
+  .pillar-fig .chip.more{display:none}
+  .pillar-body{padding:10px 12px;gap:3px}
+  .pillar h3{font-size:15px}
+  .pillar p{font-size:12.5px}
+  .pillar .go{display:none}
+}
+html[data-lang="en"] .hero h1{font-size:clamp(26px,3vw,36px)}
+html[data-lang="en"] .pillar p{font-size:12.5px}
 </style>
 </head>
 <body>
@@ -357,20 +412,14 @@ details.tb.wide{margin-top:16px}
 <!-- ═════════════ Overview ═════════════ -->
 <section class="panel" id="panel-overview" data-panel="overview" role="tabpanel" aria-label="Overview" data-zh-aria="總覽">
   <div class="hero">
-    <div>
+    <div class="hero-text">
       <div class="eyebrow"><span class="en">Open-source desktop app</span><span class="zh">開源桌面 App</span></div>
       <h1><span class="en">The AI CLIs you already use, turned into <em>bots that report back</em></span><span class="zh">你已經在用的 AI CLI，<br>變成一組<em>會回報的 bot</em></span></h1>
-      <p class="lead"><span class="en">ShellBot is a desktop app. Every AI CLI runs in its own tab, and you can read and answer it like a chat. A new AI tab starts as a temporary bot; press “Keep” and it becomes a bot with a name, a face and a memory, while one primary bot takes stock and hands out the work. Away from your computer, you can follow progress and answer their questions from your phone or Telegram.</span><span class="zh">ShellBot 是一個桌面 App：每個 AI CLI 跑在自己的分頁裡，可以改用聊天的方式看和回答。每個 AI 分頁一開就是臨時 bot，按「記住」就變成有名字、有臉、有記憶的 bot，由一個主要 bot 負責盤點和派工。人不在電腦前，也能從手機或 Telegram 看進度、回答它們的問題。</span></p>
+      <p class="lead"><span class="en">ShellBot is a desktop app. Every AI CLI runs in its own tab, and you can read and answer it like a chat. Away from your computer, you can follow progress and answer their questions from your phone or Telegram.</span><span class="zh">ShellBot 是一個桌面 App：每個 AI CLI 跑在自己的分頁裡，可以改用聊天的方式看和回答。人不在電腦前，也能從手機或 Telegram 看進度、回答它們的問題。</span></p>
       <div class="cta">
         <a class="btn primary" href="#install"><span class="en">Install with one line →</span><span class="zh">一行指令安裝 →</span></a>
         <a class="btn" href="#cli"><span class="en">Supported CLIs</span><span class="zh">支援哪些 CLI</span></a>
         <a class="btn" href="#model"><span class="en">How bots work</span><span class="zh">Bot 怎麼運作</span></a>
-      </div>
-      <div class="facts">
-        <span class="pill"><span class="en">macOS · Windows · Linux (install tested)</span><span class="zh">macOS · Windows · Linux（安裝已實測）</span></span>
-        <span class="pill"><span class="en">7 AI CLIs built in, any other CLI opens too</span><span class="zh">內建 7 種 AI CLI，其他 CLI 也能開</span></span>
-        <span class="pill"><span class="en">Open source · MIT</span><span class="zh">開源 MIT</span></span>
-        <span class="pill warn"><span class="en">iPhone / iPad app: developer install</span><span class="zh">iOS／iPad App：開發者安裝</span></span>
       </div>
     </div>
     <div class="troupe" aria-label="ShellBot's faces: shape and colour are identity, expression is state" data-zh-aria="ShellBot 的臉：形狀與顏色是身分，表情是狀態">
@@ -386,6 +435,34 @@ details.tb.wide{margin-top:16px}
         <figure><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#38B2E8" stroke="#38B2E8" stroke-width="12" stroke-linejoin="round" transform="rotate(-8 50 50)" d="M50 13L82 31.5L82 68.5L50 87L18 68.5L18 31.5Z"/><g class="eyes"><rect x="41" y="42.5" width="8" height="15" rx="4"/><rect x="57" y="42.5" width="8" height="15" rx="4"/></g></g></svg><figcaption><span class="en">Idle</span><span class="zh">閒著</span></figcaption></figure>
         <figure><svg class="face asleep" viewBox="0 0 100 100" aria-hidden="true"><g class="rig"><path fill="#1FA99E" d="M50 9C57 25 82 44 82 63a32 32 0 0 1-64 0C18 44 43 25 50 9z"/><path class="arc" d="M39.5 62Q44 69 48.5 62M55.5 62Q60 69 64.5 62"/></g><text class="zz" x="85" y="22">z</text></svg><figcaption><span class="en">Resting</span><span class="zh">休息中</span></figcaption></figure>
       </div>
+    </div>
+    <nav class="pillars" aria-label="The five main features" data-zh-aria="五個主要特點">
+      <a class="pillar" href="#cli">
+        <div class="pillar-fig chipfig"><div class="chips" aria-hidden="true"><span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">Grok Build</span><span class="chip">OpenCode</span><span class="chip">Pi</span><span class="chip">Cursor</span><span class="chip">Antigravity</span><span class="chip more"><span class="en">+ any other terminal command</span><span class="zh">＋ 其他終端機指令</span></span></div></div>
+        <div class="pillar-body"><h3><span class="n">1</span><span><span class="en">One framework, any AI CLI</span><span class="zh">一個框架，各種 AI CLI</span></span></h3><p><span class="en">Any terminal command opens as a tab; 7 AI CLIs are built in and ShellBot reads their state, and mostly their usage.</span><span class="zh">任何終端機指令都能開成分頁；內建 7 種 AI CLI，讀得懂它們的狀態，大部分也讀得到額度。</span></p><span class="go"><span class="en">See the CLI table →</span><span class="zh">看支援表 →</span></span></div>
+      </a>
+      <a class="pillar" href="#model">
+        <div class="pillar-fig"><img src="img/pillar-bot-faces.png" alt="A bot’s face: the same bot’s seven expressions (idle, working, question, stuck, done, resting, writing memory), four shapes in four rows" data-zh-alt="bot 的臉：同一個 bot 的發呆、運作、問號、卡住、完成、休息、寫記憶七種表情，四種形狀各一列" width="640" height="400"></div>
+        <div class="pillar-body"><h3><span class="n">2</span><span><span class="en">Bots: a name, a face, a memory</span><span class="zh">Bot：有名字、有臉、有記憶</span></span></h3><p><span class="en">Press “Keep” and a bot gets a name, a face and a memory; the primary bot takes stock and hands out work, and expressions show state.</span><span class="zh">按「記住」，臨時 bot 就有名字、有臉、有記憶；主要 bot 負責盤點和派工，表情就是狀態。</span></p><span class="go"><span class="en">See the six terms →</span><span class="zh">看六個名詞 →</span></span></div>
+      </a>
+      <a class="pillar" href="#office">
+        <div class="pillar-fig"><img src="img/pillar-office.png" alt="The office zoned by AI: the lobby with the primary bot’s desk and the interns’ long table, one walled room each for Claude Code and Codex, and a paired computer’s room; all the text in the picture is Chinese" data-zh-alt="依 AI 分區的辦公室：大廳的主要 bot 辦公桌和實習生長桌，Claude Code 和 Codex 各一間有牆的房間，另有一間配對電腦的房間；畫面上的字都是中文" width="640" height="400"><span class="tag"><span class="en">Experimental</span><span class="zh">實驗性</span></span></div>
+        <div class="pillar-body"><h3><span class="n">3</span><span><span class="en">The office: who is doing what, at a glance</span><span class="zh">辦公室：一眼看出誰在做什麼</span></span></h3><p><span class="en">On each desk a lit screen is busy, a red “!” waits on you, a yellow sign is stuck. Experimental, off by default.</span><span class="zh">桌上的螢幕亮是在忙，紅色「!」是等你決定，黃色警示是卡住。設定裡打開才有（實驗性，預設關閉）。</span></p><span class="go"><span class="en">See the office →</span><span class="zh">看辦公室 →</span></span></div>
+      </a>
+      <a class="pillar" href="#board">
+        <div class="pillar-fig"><img src="img/pillar-board.png" alt="The task board: a whiteboard covered in sticky notes in four lanes, urgent, important, in progress and not urgent; all the text in the picture is Chinese" data-zh-alt="任務看板：一塊白板貼滿便利貼，分緊急、重要、進行中、不急四欄；畫面上的字都是中文" width="640" height="400"><span class="tag"><span class="en">Experimental</span><span class="zh">實驗性</span></span></div>
+        <div class="pillar-body"><h3><span class="n">4</span><span><span class="en">Task management on a board</span><span class="zh">看板化的任務管理</span></span></h3><p><span class="en">Sticky notes by urgency; “done” or “note” on a card updates a task; a calendar shows schedules. Experimental, off by default.</span><span class="zh">便利貼依輕重緩急分四欄，按「我做好了」或「留言」更新任務；行事曆看排程。實驗性，預設關閉。</span></p><span class="go"><span class="en">See the whiteboard →</span><span class="zh">看白板 →</span></span></div>
+      </a>
+      <a class="pillar" href="#multi">
+        <div class="pillar-fig"><img src="img/pillar-multi.png" alt="A paired computer’s room in the office: the sign reads “Next door: Demo Computer A”, that computer’s primary bot sits at its desk and the whiteboard on the back wall carries a task count; all the text in the picture is Chinese" data-zh-alt="辦公室裡配對電腦的房間：房牌寫著「隔壁：示範電腦甲」，那台的主要 bot 坐在桌前，後牆的白板帶著任務數；畫面上的字都是中文" width="640" height="400"></div>
+        <div class="pillar-body"><h3><span class="n">5</span><span><span class="en">Many computers, one view</span><span class="zh">多機連動</span></span></h3><p><span class="en">Pair another computer: its tabs show in your sidebar and the office gains its room; the phone app connects (developer install for now).</span><span class="zh">配對另一台電腦：側欄看得到它的分頁，辦公室多一間房；手機 App 也能接（目前開發者安裝）。</span></p><span class="go"><span class="en">See remote tabs →</span><span class="zh">看遠端分頁 →</span></span></div>
+      </a>
+    </nav>
+    <div class="facts hero-facts">
+      <span class="pill"><span class="en">macOS · Windows · Linux (install tested)</span><span class="zh">macOS · Windows · Linux（安裝已實測）</span></span>
+      <span class="pill"><span class="en">7 AI CLIs built in, any other CLI opens too</span><span class="zh">內建 7 種 AI CLI，其他 CLI 也能開</span></span>
+      <span class="pill"><span class="en">Open source · MIT</span><span class="zh">開源 MIT</span></span>
+      <span class="pill warn"><span class="en">iPhone / iPad app: developer install</span><span class="zh">iOS／iPad App：開發者安裝</span></span>
     </div>
   </div>
 
@@ -521,7 +598,7 @@ details.tb.wide{margin-top:16px}
     </figure>
   </div>
 
-  <h3 class="sub"><span class="en">A tab from another computer</span><span class="zh">另一台電腦的分頁</span></h3>
+  <h3 class="sub" id="multi"><span class="en">A tab from another computer</span><span class="zh">另一台電腦的分頁</span></h3>
     <figure class="inline-shot" style="max-width:874px">
       <img src="img/remote-chat-view.png" alt="Chat view of a tab from another computer: the title carries a “Remote · machine name” badge, and the message box names that computer" data-zh-alt="另一台電腦分頁的對話畫面：標題帶著「遠端 · 機器名稱」標籤，輸入框寫明是傳給那台電腦" width="874" height="267" loading="lazy">
       <figcaption><span class="en"><b>A tab from another computer, opened as a conversation</b>: its name carries “Remote · machine name”, and the message box says which computer the message goes to (demo data).</span><span class="zh"><b>另一台電腦的分頁，一樣用對話打開</b>：名稱帶著「遠端 · 機器名稱」，輸入框寫明訊息會送到哪一台（示範資料）。</span></figcaption>
@@ -537,7 +614,7 @@ details.tb.wide{margin-top:16px}
       <figcaption><span class="en"><b>One click</b>: the service's own page opens in the browser; back in ShellBot, the connection tests itself (demo service).</span><span class="zh"><b>按一下就連</b>：瀏覽器打開那個服務自己的頁面；回到 ShellBot，它自己測試通不通（示範用的假服務）。</span></figcaption>
     </figure>
 
-  <h3 class="sub"><span class="en">The office (experimental)</span><span class="zh">辦公室（實驗性）</span></h3>
+  <h3 class="sub" id="office"><span class="en">The office (experimental)</span><span class="zh">辦公室（實驗性）</span></h3>
     <figure class="inline-shot" style="max-width:1000px">
       <img src="img/office-zones-cli.png" alt="The office zoned by AI: the Zoning select at the top reads “by AI”; staff sit in a walled room per CLI, a Claude Code room and a Codex room, each in its own colour with its count out of 12, beside the lobby with the interns' long table and a paired computer's room; all the text in the picture is Chinese" data-zh-alt="依 AI 分區的辦公室：上方的「分區」選單寫著「依 AI」；正職依 CLI 分成有牆的房間，一間 Claude Code、一間 Codex，各有自己的顏色和「幾／12」的人數，旁邊是大廳的實習生長桌和配對電腦的房間；畫面上的字都是中文" width="1280" height="800" loading="lazy">
       <figcaption><span class="en"><b>The office, zoned by AI</b> (the default): a walled room per CLI, each in its own colour; the lobby keeps the interns' long table and the primary bot's desk, and a paired computer keeps its own room (made-up demo names; the office's own text is Chinese only).</span><span class="zh"><b>依 AI 分區的辦公室</b>（預設）：每種 CLI 一間有牆的房間，各有自己的顏色；實習生的長桌和主要 bot 的辦公桌照舊在大廳，配對的電腦是自己一間（示範用的假名字）。</span></figcaption>
@@ -568,7 +645,7 @@ details.tb.wide{margin-top:16px}
         <figcaption><span class="en"><b>A picture in the box</b>: shown above it with a thumbnail, sent with the words (made-up demo data).</span><span class="zh"><b>貼圖片</b>：在傳話框上方顯示縮圖，送出時跟文字一起送（示範資料）。</span></figcaption>
       </figure>
     </div>
-    <figure class="inline-shot" style="max-width:1000px">
+    <figure class="inline-shot" style="max-width:1000px" id="board">
       <img src="img/office-wall-board-calendar.png" alt="The office lobby’s wall: behind the primary bot’s desk, a whiteboard with coloured sticky notes (the task board) and beside it a calendar with a red “2” on its corner (the schedules); an intern shows a red exclamation mark, waiting for your decision; the Board and Schedule buttons sit at the bottom right; all the text in the picture is Chinese" data-zh-alt="辦公室大廳的牆：主要 bot 的辦公桌後面，左邊是一塊貼著彩色便利貼的白板（任務看板），旁邊是一個右上角帶紅色數字「2」的行事曆（排程）；一位實習生頭上有紅色驚嘆號，表示在等你決定；右下角有「看板」「排程」按鈕；畫面上的字都是中文" width="1280" height="800" loading="lazy">
       <figcaption><span class="en"><b>The lobby’s wall</b>: the whiteboard behind the primary bot’s desk is the task board and the calendar beside it holds the schedules, its corner number being how many conversations run a loop or a cron; click either one, or the buttons at the bottom right, and the whiteboard or the calendar opens in the middle of the office (made-up demo data).</span><span class="zh"><b>大廳的牆</b>：主要 bot 辦公桌後面的白板是任務看板，旁邊的行事曆是排程，角落的數字是有幾個對話在跑 loop 或 cron；點它們，或點右下角的「看板」「排程」，辦公室中間就會打開白板或行事曆（示範資料）。</span></figcaption>
     </figure>
@@ -1171,9 +1248,18 @@ var SB_LANG = (function(){
   var TABS = ["overview","install","cli","model"];
   var panels = document.querySelectorAll("[data-panel]");
   var links = document.querySelectorAll("nav.tabs a[data-tab]");
+  function anchor(){   /* 頁內錨點（例如 #office）：找出它在哪一頁 */
+    var h = (location.hash || "").replace(/^#/, "");
+    if(!h || TABS.indexOf(h) >= 0) return null;
+    var el = null;
+    try { el = document.getElementById(decodeURIComponent(h)); } catch(e){}
+    return el && el.closest("[data-panel]") ? el : null;
+  }
   function current(){
     var h = (location.hash || "").replace(/^#/, "");
-    return TABS.indexOf(h) >= 0 ? h : "overview";
+    if(TABS.indexOf(h) >= 0) return h;
+    var el = anchor();
+    return el ? el.closest("[data-panel]").dataset.panel : "overview";
   }
   function show(id, scroll){
     panels.forEach(function(p){ p.classList.toggle("on", p.dataset.panel === id); });
@@ -1187,10 +1273,11 @@ var SB_LANG = (function(){
         else if(r > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = r - nav.clientWidth;
       }
     });
-    if(scroll) window.scrollTo(0, 0);
+    if(scroll){ var a = anchor(); if(a) a.scrollIntoView(); else window.scrollTo(0, 0); }
   }
   window.addEventListener("hashchange", function(){ show(current(), true); });
   show(current(), false);
+  if(anchor()) setTimeout(function(){ var a = anchor(); if(a) a.scrollIntoView(); }, 0);
 })();
 
 /* Light / dark: follows the system; the button switches and the choice is remembered in this browser. */
