@@ -20,7 +20,8 @@
  * on the right that does not cover the conversation (the chat layer gives up its right edge; the terminal under it is untouched).
  * Narrower, or folded: a thin strip with the count, and a click slides the list over the conversation as a drawer (outside click,
  * Esc close it). Terminal view: a small floating capsule at the pane's top-right that takes no width (the terminal is never
- * resized), a click opens the same drawer. Open or folded is kept per view (localStorage, a per-viewer convenience).
+ * resized), a click opens the same drawer. Open or folded is kept per view in the app's config (settings.pending_rail:
+ * pywebview clears localStorage at every launch, so it alone never survives a restart), with localStorage as the fast cache.
  * The pure parts (sortDecisions, ageWords) run in node.
  */
 (function (root) {
@@ -73,7 +74,32 @@
   const ARM_MS = 3000;                                                    // the tab lights settle in the first seconds
   let prefs = { chat: true, term: false };
   try { const p = JSON.parse(localStorage.getItem('sf.pending.v1') || 'null'); if (p && typeof p === 'object') prefs = Object.assign(prefs, { chat: p.chat !== false, term: p.term === true }); } catch (_) { /* no storage */ }
-  const savePrefs = () => { try { localStorage.setItem('sf.pending.v1', JSON.stringify(prefs)); } catch (_) { /* no storage */ } };
+  // Open or folded, per view, also lives in config.json (settings.pending_rail, like the sidebar's sidebar_open): pywebview starts
+  // with an empty localStorage every time, so the cache above is only the quick path and the config is what survives a restart.
+  let adopted = false;
+  const cfgSettings = () => { const c = host() && host().cfg && host().cfg(); return (c && c.settings) || null; };
+  const cacheLocal = () => { try { localStorage.setItem('sf.pending.v1', JSON.stringify(prefs)); } catch (_) { /* no storage */ } };
+  function savePrefs() {
+    cacheLocal();
+    adopted = true;                                                   // the person's own choice is newer than whatever the config held
+    const s = cfgSettings(), a = api(), cur = s && s.pending_rail;
+    if (!s || (cur && cur.chat === prefs.chat && cur.term === prefs.term)) return;
+    s.pending_rail = { chat: prefs.chat, term: prefs.term };
+    try { if (a && a.save_settings) Promise.resolve(a.save_settings(JSON.stringify(s))).catch(() => { /* kept on the page; the next save carries it */ }); } catch (_) { /* no bridge */ }
+  }
+  // Once, when the config has been read: what it remembers wins over the (empty after a start) cache.
+  function adoptConfig() {
+    if (adopted) return;
+    const s = cfgSettings();
+    if (!s) return;
+    adopted = true;
+    const p = s.pending_rail;
+    if (!p || typeof p !== 'object') return;
+    const next = { chat: p.chat !== false, term: p.term === true };
+    if (next.chat === prefs.chat && next.term === prefs.term) return;
+    prefs = next; cacheLocal();
+    if (kind === 'term') setDrawer(prefs.term, false); else { measure(); render(); }
+  }
 
   // state of the list
   const waiting = new Map();          // sid → {sid, since, d: mapped decision | null, asked: ms of the last chat_view, tries, busy, note}
@@ -435,6 +461,7 @@
     const b = B(), h = host();
     if (!(b && h && api() && O() && mount())) { if (tries < 240) setTimeout(() => boot(tries + 1), 250); return; }
     measure(); render();
+    (function tryAdopt(n) { adoptConfig(); if (!adopted && n < 240) setTimeout(() => tryAdopt(n + 1), 250); })(0);   // the page reads config.json a moment after it loads
     b.onData(() => { seen = true; if (!doc.hidden) render(); });
     new MutationObserver(() => render()).observe(doc.body, { attributes: true, attributeFilter: ['class'] });
     new MutationObserver(() => render()).observe(doc.documentElement, { attributes: true, attributeFilter: ['style'] });   // the interface size

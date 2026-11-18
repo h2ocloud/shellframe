@@ -15,6 +15,8 @@ Asked for: the questions an agent waits on the person for were buried in long co
     refused, nothing sent), 也告訴 <asker> (task_user_act + one chat line / unchecked: only task_user_act), 跳到那個分頁,
     在白板上看 (the board opens on that card, also when the board is already open)
   - 隔壁：X 有 N 件等你: one line per paired computer that opens its read-only board
+  - open / folded is kept in the app's config (settings.pending_rail): a stand-in host whose config remembers it applies it at start
+    with an empty localStorage (the terminal view's drawer open, the docked column folded), and a change is saved back through save_settings
   - the window hidden: no tasks_overview, link_peer_tasks, task_detail, no question asked of a tab; interface size 1.3 breaks nothing
   - no page error
 Demo data only. Headless Chromium, and WebKit when playwright has it. Screenshots (Chromium): qa-shots/pending-*.png.
@@ -108,9 +110,12 @@ def stub():
                 % (json.dumps(PEER_TASKS, ensure_ascii=False), json.dumps(QUESTION, ensure_ascii=False)))
 
 
-def new_page(browser, errors, style="chat", peers=False, tasks=None, waiting=True, width=1280, height=800, clock=False):
+def new_page(browser, errors, style="chat", peers=False, tasks=None, waiting=True, width=1280, height=800, clock=False, rail=None):
     cfg = copy.deepcopy(H.CFG)
     cfg["settings"].update({"experimental_office": False, "ui_style": style})
+    cfg["settings"].pop("pending_rail", None)       # H.CFG carries the last page's: each page starts from what it asks for
+    if rail is not None:
+        cfg["settings"]["pending_rail"] = rail      # what the app's config.json remembers (the page's localStorage starts empty)
     H.CFG = cfg
     H.PEERS = PEERS if peers else {"peers": {}}
     H.TASKS = copy.deepcopy(tasks if tasks is not None else TASKS)
@@ -347,6 +352,28 @@ def run(browser, base, engine):
     page.wait_for_timeout(400)
     check("closing it is remembered (term: false)", page.evaluate("JSON.parse(localStorage.getItem('sf.pending.v1')).term") is False)
     page.close()
+    # pywebview starts with an empty localStorage: what survives a restart is the config the host hands the page
+    print(f"{tag} remembered through the app's config (localStorage is empty at every start)")
+    page = new_page(browser, errors, style="cli", tasks=NONE, waiting=False, rail={"chat": True, "term": True})
+    start(page, base, count=0)
+    check("a stand-in host whose config says the terminal view's drawer was left open: open at start, localStorage empty",
+          page.evaluate("SFPending.state().drawer") and geo(page, "#pend-panel")["vis"] and page.evaluate("window.__cfg.settings.pending_rail.term") is True)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    check("closing it is saved to the config (settings.pending_rail via save_settings), other settings kept",
+          page.evaluate("window.__cfg.settings.pending_rail") == {"chat": True, "term": False} and page.evaluate("window.__cfg.settings.ui_style") == "cli",
+          page.evaluate("window.__cfg.settings"))
+    page.close()
+    page = new_page(browser, errors, style="chat", width=1920, height=900, rail={"chat": False, "term": False})
+    start(page, base, count=4)
+    check("the docked column folded in the config: the strip at start (not docked) on a wide window",
+          not page.evaluate("SFPending.state().docked") and page.evaluate("SFPending.state().stripped"), page.evaluate("SFPending.state()"))
+    page.click("#pend-cap")
+    page.wait_for_timeout(500)
+    check("docking it again is saved to the config", page.evaluate("window.__cfg.settings.pending_rail") == {"chat": True, "term": False}
+          and page.evaluate("SFPending.state().docked"), page.evaluate("window.__cfg.settings.pending_rail"))
+    page.close()
+
     page = new_page(browser, errors, style="chat", width=1280)
     start(page, base, count=4)
     page.evaluate("SFChat.setMode('s701', 'cli')")
