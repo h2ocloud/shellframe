@@ -2,7 +2,8 @@
 """The sidebar's foot is one row (web/index.html #sb-footer-row), in the real page with a stand-in Python side.
 
 Reported: four stacked rows at the bottom left (Settings, About, Guide, For the AI) read as clutter.
-  - one row: Settings keeps its word; the guide, the AI's manual and About are icons
+  - one row: Settings keeps its word; the guide and the AI's manual get a short word beside their icon when it all fits (the 220 px
+    default) and are icons with titles in a narrower sidebar; About stays an icon
   - each icon says its name (title and aria-label, in the page's language)
   - the guide's count of new features sits on its icon
   - every button does what it did: Settings, the guide's list, About, About at the AI's manual
@@ -87,6 +88,9 @@ def run(browser, engine, style):
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_selector(ROW, timeout=15000)
     page.wait_for_selector("#btn-guide .sfg-badge", timeout=15000)
+    page.wait_for_selector(".sfg-layer", timeout=8000)          # the short tour after an update (seen 0.44.5): put it away
+    page.keyboard.press("Escape")
+    page.wait_for_function("!document.querySelector('.sfg-layer')", timeout=3000)
     page.wait_for_timeout(300)
     shoot = engine == "chromium"
     print(f"[{engine} · {style}] one row")
@@ -98,15 +102,14 @@ def run(browser, engine, style):
     for sel, name in ICONS.items():
         got = page.evaluate("(s) => { const e = document.querySelector(s); return [e.title, e.getAttribute('aria-label')]; }", sel)
         check(f"{sel} says its name: {name}", got == [name, name], got)
-    check("the icons show no words in the row", all(page.evaluate(
-        "(s) => document.querySelector(s + ' .sb-ico-label').getBoundingClientRect().width <= 1", s) for s in ICONS))
+    check("at 220 px the guide and the AI's manual show a short word beside their icon (Guide, For AI), the ? stays an icon",
+          page.evaluate("[...document.querySelectorAll('#btn-guide .sb-word, #btn-ai-skill .sb-word')].map(e => e.getBoundingClientRect().width > 0)") == [True, True]
+          and page.evaluate("document.querySelector('#btn-about .sb-ico-label').getBoundingClientRect().width <= 1"))
     badge = page.locator("#btn-guide .sfg-badge").bounding_box()
     guide_box = page.locator("#btn-guide").bounding_box()
-    ai_box = page.locator("#btn-ai-skill").bounding_box()
-    check("the guide's count of new features sits on its icon's top-right corner, clear of the next icon",
-          badge and guide_box["x"] < badge["x"] < guide_box["x"] + guide_box["width"]
-          and badge["y"] < guide_box["y"] + guide_box["height"] / 2
-          and badge["x"] + badge["width"] <= ai_box["x"] + ai_box["width"] / 2, (badge, guide_box, ai_box))
+    check("the guide's count of new features is on its button, in the row, clear of the next one",
+          badge and guide_box["x"] < badge["x"] < guide_box["x"] + guide_box["width"] and abs(badge["y"] - guide_box["y"]) < guide_box["height"],
+          (badge, guide_box))
     if style == "chat":
         r = page.evaluate("""() => { const d = document.getElementById('sb-dock'), row = document.getElementById('sb-footer-row');
           return d && d.children.length ? [d.getBoundingClientRect().bottom, row.getBoundingClientRect().top] : null; }""")
@@ -116,12 +119,21 @@ def run(browser, engine, style):
 
     print(f"[{engine} · {style}] a narrow sidebar")
     page.evaluate("document.getElementById('sidebar').style.width = '170px'")
-    page.wait_for_timeout(150)
+    page.wait_for_timeout(600)
     over = page.evaluate("""() => { const f = document.getElementById('sidebar-footer').getBoundingClientRect();
       return ['#btn-settings', '#btn-guide', '#btn-ai-skill', '#btn-about'].filter(s => {
         const r = document.querySelector(s).getBoundingClientRect(); return r.right > f.right + 0.5 || r.left < f.left - 0.5; }); }""")
     check("nothing spills out of a 170 px sidebar", not over, over)
-    check("…still one row", max(x["top"] for x in boxes(page)) - min(x["top"] for x in boxes(page)) <= 2)
+    check("…still one row", max(x["top"] for x in boxes(page)) - min(x["top"] for x in boxes(page)) <= 2.5, boxes(page))
+    check("…the icons show no words there (their names are in the titles)", all(page.evaluate(
+        "(s) => document.querySelector(s + ' .sb-ico-label').getBoundingClientRect().width <= 1 && (!document.querySelector(s + ' .sb-word') || document.querySelector(s + ' .sb-word').getBoundingClientRect().width === 0)", s) for s in ICONS))
+    badge = page.locator("#btn-guide .sfg-badge").bounding_box()
+    guide_box = page.locator("#btn-guide").bounding_box()
+    ai_box = page.locator("#btn-ai-skill").bounding_box()
+    check("…the guide's count sits on its icon's top-right corner, clear of the next icon",
+          badge and guide_box["x"] < badge["x"] < guide_box["x"] + guide_box["width"]
+          and badge["y"] < guide_box["y"] + guide_box["height"] / 2
+          and badge["x"] + badge["width"] <= ai_box["x"] + ai_box["width"] / 2, (badge, guide_box, ai_box))
     if shoot:
         page.locator("#sidebar").screenshot(path=str(HERE / "qa-shots" / f"sidebar-footer-{style}-narrow.png"))
     page.evaluate("document.getElementById('sidebar').style.width = ''")

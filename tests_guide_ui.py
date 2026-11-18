@@ -46,13 +46,13 @@ DESK = [f for f in DATA["features"] if "desktop" in f["surfaces"]]   # the phone
 VERSION = guide.app_version()
 
 
-def stub(lang, tour, seen, sessions, settings_extra=None):
+def stub(lang, tour, seen, sessions, settings_extra=None, entry_tour=True):
     settings = {"language": lang, "ui_style": "chat", "experimental_bots": True, "experimental_a2a": False}
     settings.update(settings_extra or {})
     cfg = {"settings": settings, "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}],
            "agent_roster": {}, "guide": {"tour": tour, "seen": seen}}
     gdata = {"success": True, "features": guide.for_surface("desktop", settings, DATA),
-             "tours": DATA.get("tours"), "state": {"tour": tour, "seen": seen, "version": VERSION}}
+             "tours": DATA.get("tours") if entry_tour else {k: v for k, v in DATA["tours"].items() if k != "entry"}, "state": {"tour": tour, "seen": seen, "version": VERSION}}
     return """
 window.__calls = []; window.__cfg = %s; window.__sessions = %s; window.__guide = %s;
 const R = v => Promise.resolve(typeof v === 'string' ? v : JSON.stringify(v));
@@ -117,7 +117,7 @@ def run(browser, engine):
     check("…and the folded sidebar opened", not page.query_selector("#sidebar.collapsed"))
     shot(page, engine, "guide-tour-first-step.png")
     seen, settings_tab = [], None
-    for _ in range(12):
+    for _ in range(16):
         seen.append(title(page))
         if title(page).startswith(zh["telegram"]):
             settings_tab = page.evaluate("document.querySelector('#modal-settings.open .settings-tab.active')?.dataset.tab || ''")
@@ -146,7 +146,7 @@ def run(browser, engine):
     page = browser.new_page(viewport={"width": 1100, "height": 720})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.add_init_script(stub("zh-TW", "skip", "0.44.5", DEMO_TAB, {"sidebar_open": True}))
+    page.add_init_script(stub("zh-TW", "skip", "0.44.5", DEMO_TAB, {"sidebar_open": True}, entry_tour=False))   # the update tour: 2b
     page.goto((HERE / "web" / "index.html").as_uri())
     page.wait_for_selector("#btn-guide .sfg-badge", timeout=15000)
     page.wait_for_timeout(800)
@@ -163,6 +163,30 @@ def run(browser, engine):
     page.wait_for_timeout(300)
     check("opening it records this version as seen; the count goes away",
           ["guide_mark", "", True] in page.evaluate("window.__calls") and not page.query_selector("#btn-guide .sfg-badge"))
+
+    print(f"[{engine}] 2b. after an update: the short tour of the ways in, once")
+    page2 = browser.new_page(viewport={"width": 1100, "height": 720})
+    errors2 = []
+    page2.on("pageerror", lambda e: errors2.append(str(e)))
+    page2.add_init_script(stub("zh-TW", "skip", "0.57.0", DEMO_TAB, {"sidebar_open": True}))
+    page2.goto((HERE / "web" / "index.html").as_uri())
+    page2.wait_for_selector(".sfg-card", timeout=15000)
+    page2.wait_for_timeout(400)
+    steps2 = []
+    while True:
+        steps2.append(page2.inner_text(".sfg-card .sfg-step") + " " + title(page2))
+        last = page2.inner_text(".sfg-card .sfg-btn.primary") == "完成"
+        cur = page2.inner_text(".sfg-card .sfg-step")
+        page2.click(".sfg-card .sfg-btn.primary")
+        if last:
+            break
+        page2.wait_for_function("(s) => document.querySelector('.sfg-card .sfg-step') && document.querySelector('.sfg-card .sfg-step').textContent !== s", arg=cur, timeout=5000)
+    check("an older seen version gets a 3-step tour: Bots, 辦公室, 看板", steps2 == ["1 / 3 Bots", "2 / 3 辦公室", "3 / 3 看板"], steps2)
+    page2.wait_for_timeout(300)
+    check("…its end records the tour done and this version seen", ["guide_mark", "done", True] in page2.evaluate("window.__calls"))
+    check("…and it does not come back on a reload of the guide's data", page2.evaluate("SFGuide.reload().then(() => !document.querySelector('.sfg-layer'))"))
+    check("no page errors", not errors2, errors2)
+    page2.close()
 
     print(f"[{engine}] 3. show me: a switch that is off")
     page.click('.sfg-row[data-id="a2a"] [data-show]')

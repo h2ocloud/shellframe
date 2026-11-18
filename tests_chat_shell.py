@@ -73,8 +73,8 @@ check("…its first save keeps chat", main.load_config()["settings"]["ui_style"]
 main.CONFIG_FILE.write_text(json.dumps({"settings": {"fontSize": 13, "language": "zh-TW"}, "presets": []}), encoding="utf-8")
 old = main.load_config()
 check("a config.json from before the setting is an existing computer: cli", old["settings"]["ui_style"] == "cli", old["settings"])
-check("…written to disk once, the rest of its settings untouched (an old install also keeps bots off)",
-      {k: v for k, v in on_disk()["settings"].items() if k != "experimental_bots"}
+check("…written to disk once, the rest of its settings untouched (an old install also keeps bots and the office off)",
+      {k: v for k, v in on_disk()["settings"].items() if k not in ("experimental_bots", "experimental_office")}
       == {"fontSize": 13, "language": "zh-TW", "ui_style": "cli"}, on_disk()["settings"])
 check("…and it stays cli", main.load_config()["settings"]["ui_style"] == "cli")
 for chosen in ("chat", "cli"):

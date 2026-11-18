@@ -101,9 +101,9 @@ HELPERS = {"s701": [helper("a1", "示範：跑一次完整測試", "working", 30
            "s702": [helper("b1", "示範：查三份文件的差異", "stuck", 1800, 900)]}
 CFG = {"settings": {"language": "zh-TW", "experimental_bots": True, "experimental_office": False, "sidebar_open": True},
        "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {},
-       "guide": {"tour": "done", "seen": "0.48.0"}}
+       "guide": {"tour": "done", "seen": guide.app_version()}}
 GDATA = {"success": True, "features": guide.for_surface("desktop", CFG["settings"], DATA), "tours": DATA.get("tours"),
-         "state": {"tour": "done", "seen": "0.48.0", "version": guide.app_version()}}
+         "state": {"tour": "done", "seen": guide.app_version(), "version": guide.app_version()}}
 
 
 def stub(prefs):
@@ -173,7 +173,7 @@ def run(browser, base, engine):
         const s = window.__sfHost.sessions()[sid]; return s && s._dotClass === c; })""", timeout=20000)
 
     print(f"[{engine}] switch off")
-    check("no office button while the switch is off", page.query_selector("#btn-office") is None)
+    check("the office button is dashed (off) while the switch is off", page.evaluate("document.getElementById('btn-office').classList.contains('off')"))
     check("…and no iframe", page.query_selector("iframe") is None)
     page.click("#btn-settings")
     page.wait_for_selector("#setting-experimental-office", state="attached", timeout=5000)
@@ -193,9 +193,9 @@ def run(browser, base, engine):
     page.wait_for_timeout(300)
     check("switching it on saves experimental_office", page.evaluate("window.__cfg.settings.experimental_office") is True)
     page.click("#btn-close-settings")
-    check("…and puts the office button in the sidebar's foot",
-          page.evaluate("!!document.querySelector('#sb-footer-row #btn-office')"))
-    check("…named in the page's language", page.get_attribute("#btn-office", "aria-label") == "辦公室（實驗性）")
+    check("…and the office button in the entry row turns solid",
+          page.evaluate("!!document.querySelector('#sb-entry #btn-office') && !document.getElementById('btn-office').classList.contains('off')"))
+    check("…named in the page's language", page.get_attribute("#btn-office", "aria-label") == "辦公室")
 
     print(f"[{engine}] open")
     page.click("#btn-office")

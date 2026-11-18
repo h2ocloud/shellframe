@@ -5,7 +5,7 @@ Python side, with the office switch OFF unless a case says otherwise.
 
 Asked for: the questions an agent waits on the person for should be on a board they can call up in the terminal view and
 the chat view alike, instead of digging through long conversations.
-  - 看板 (#btn-taskboard) in the sidebar's foot in the terminal view and in the chat view, office switch off; a red badge =
+  - 看板 (#btn-taskboard) in the entry row at the top of the sidebar (web/entry.js) in the terminal view and in the chat view, office switch off; a red badge =
     tasks_overview's decisions, none at 0; the button goes only when the tasks store is unavailable
   - the count is asked about every 20 s while the window is visible (not while hidden), and again when it comes back
   - the button and the shortcut (Cmd+Shift+B / Ctrl+Shift+B, in the tooltip) open the board sheet over the window with no
@@ -150,7 +150,7 @@ def badge(page):
 
 
 def button_box(page):
-    return page.evaluate("""() => { const b = document.getElementById('btn-taskboard'), r = b.getBoundingClientRect(), row = document.getElementById('sb-footer-row').getBoundingClientRect();
+    return page.evaluate("""() => { const b = document.getElementById('btn-taskboard'), r = b.getBoundingClientRect(), row = document.querySelector('#sb-entry .sfe-row').getBoundingClientRect();
         const cs = getComputedStyle(b); return {w: r.width, h: r.height, visible: cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0,
         inRow: r.left >= row.left - 1 && r.right <= row.right + 1 && r.top >= row.top - 1 && r.bottom <= row.bottom + 1,
         tip: b.title, label: b.getAttribute('aria-label'), onTop: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2).closest('#btn-taskboard') !== null}; }""")
@@ -165,8 +165,9 @@ def run(browser, base, engine):
     start(page, base)
     page.wait_for_function("SFBoard.count() === 3", timeout=8000)
     bb = button_box(page)
-    check("看板 is in the sidebar's foot row, visible, and nothing covers it", bb["visible"] and bb["inRow"] and bb["onTop"], bb)
-    check("the office button is not there (switch off) and the office is not open", not page.evaluate("!!document.getElementById('btn-office')") and not page.evaluate("SFOffice.isOpen()"))
+    check("看板 is in the entry row at the top of the sidebar (not the foot), visible, and nothing covers it", bb["visible"] and bb["inRow"] and bb["onTop"], bb)
+    check("the office button is there but off (dashed; switch off) and the office is not open", page.evaluate("document.getElementById('btn-office').classList.contains('off')") and not page.evaluate("SFOffice.isOpen()"))
+    check("the board button is not at the foot", page.evaluate("!document.querySelector('#sb-footer-row #btn-taskboard')"))
     check("the badge is the number of decisions (3), as a red count", badge(page) == {"text": "3", "shown": True}, badge(page))
     mod = mod_of(page)
     key = "⌘⇧B" if mod == "Meta" else "Ctrl+Shift+B"
@@ -341,7 +342,7 @@ def run(browser, base, engine):
     start(page, base)
     page.wait_for_function("document.getElementById('sb-dock') !== null && SFBoard.count() === 3", timeout=10000)
     bb = button_box(page)
-    check("the chat view's sidebar has the button, visible, in the foot row", bb["visible"] and bb["inRow"] and bb["onTop"], bb)
+    check("the chat view's sidebar has the button, visible, in the entry row", bb["visible"] and bb["inRow"] and bb["onTop"], bb)
     check("…with the same badge (3)", badge(page) == {"text": "3", "shown": True}, badge(page))
     if shoot:
         page.locator("#sidebar").screenshot(path=str(H.SHOTS / "board-anywhere-button-chat.png"))
@@ -399,8 +400,8 @@ def run(browser, base, engine):
     page = new_page(browser, errors, office=True, style="cli")
     start(page, base)
     page.wait_for_selector("#btn-office", timeout=10000)
-    order = page.evaluate("[...document.querySelectorAll('#sb-footer-row > button')].map(b => b.id)")
-    check("the board button sits next to the office's (board first)", order.index("btn-taskboard") + 1 == order.index("btn-office"), order)
+    order = page.evaluate("[...document.querySelectorAll('#sb-entry button')].map(b => b.id)")
+    check("the board button sits right after the office's in the entry row", order.index("btn-office") + 1 == order.index("btn-taskboard"), order)
     page.click("#btn-taskboard")
     board_frame(page)
     check("with the switch on the board button still opens the board alone (not the floor)", page.evaluate("document.getElementById('sfo-overlay').classList.contains('sfo-board')"))

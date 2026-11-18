@@ -115,9 +115,9 @@ PEERS = {"peers": {}}
 CFG = {"settings": {"language": "zh-TW", "experimental_bots": True, "experimental_office": True,
                     "experimental_loops": False, "sidebar_open": True},
        "presets": [{"name": "Claude", "cmd": "claude", "icon": "C"}], "agent_roster": {},
-       "guide": {"tour": "done", "seen": "0.48.0"}}
+       "guide": {"tour": "done", "seen": guide.app_version()}}
 GDATA = {"success": True, "features": guide.for_surface("desktop", CFG["settings"], DATA), "tours": DATA.get("tours"),
-         "state": {"tour": "done", "seen": "0.48.0", "version": guide.app_version()}}
+         "state": {"tour": "done", "seen": guide.app_version(), "version": guide.app_version()}}
 
 
 def stub():

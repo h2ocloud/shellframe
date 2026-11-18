@@ -1,8 +1,8 @@
-/* ShellBot office (settings.experimental_office, off by default) — see docs/ai-skill.md §4.10.
+/* ShellBot office (settings.experimental_office, on for a new install) — see docs/ai-skill.md §4.10.
  *
  * The same overlay also opens the whiteboard on its own (SFOffice.openBoard, "board-only": office.html draws no floor, only
  * the board sheet, and closing the sheet closes the overlay). That does not need the office switch: web/board.js puts a board
- * button (with the count of decisions waiting on the person) in the sidebar's foot of both views and a keyboard shortcut.
+ * button (with the count of decisions waiting on the person) in the entry row at the top of the sidebar of both views and a keyboard shortcut.
  *
  * Draws the bots (staff, 正職), the AI tabs that are not bots (interns, 實習生) and the subagents a
  * Claude Code tab has launched (part-timers, 工讀生) as one office floor. The floor itself is
@@ -10,7 +10,7 @@
  * and DOM cannot clash with this page. This file:
  *
  *   - puts the switch next to the other experimental switches (Settings → Office) and, while it is
- *     on, an icon in the sidebar's foot (#sb-footer-row). Off: no office button, no iframe, no timer (the board button is board.js's).
+ *     on, the 辦公室 button (#btn-office, web/entry.js's row) opens it. Off: that button opens an intro card instead; no iframe, no timer.
  *   - builds the office's snapshot from what the page already holds: the sidebar's dots
  *     (sessions[sid]._dotClass, the same light the tab shows), bots.js's roster and its paired
  *     machines' bots (SFBots.state / peerBots: already polled), plus two cheap calls made only
@@ -727,25 +727,11 @@
     try { const H = host(), s = H && H.sessions()[H.active()]; if (s && s.term) s.term.focus(); } catch (_) {}
   }
 
-  const ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14.5 5 8 8.5 1.5 5Z" fill="currentColor" opacity=".9"/><path d="M1.5 5v5.5L8 14V8.5Z" fill="currentColor" opacity=".55"/><path d="M14.5 5v5.5L8 14V8.5Z" fill="currentColor" opacity=".35"/></svg>';
+  // The office's button is the 辦公室 one in web/entry.js's row (always there; dashed while the switch is off). With the switch off
+  // the office itself is closed here; the row repaints.
   function placeButton() {
-    let b = document.getElementById('btn-office');
-    if (!enabled()) { if (b) b.remove(); if (!boardMode) close(); return; }
-    const row = document.getElementById('sb-footer-row');
-    if (!row) return;
-    const name = t('Office (experimental)', '辦公室（實驗性）');
-    if (!b) {
-      b = document.createElement('button');
-      b.id = 'btn-office';
-      b.className = 'sb-footer-btn sb-footer-ico';
-      b.type = 'button';
-      b.innerHTML = `<span class="sb-ico">${ICON}</span><span class="sb-ico-label"></span>`;
-      b.addEventListener('click', () => open());
-      row.insertBefore(b, document.getElementById('btn-guide') || null);
-    }
-    b.title = name;
-    b.setAttribute('aria-label', name);
-    b.querySelector('.sb-ico-label').textContent = name;
+    if (!enabled() && !boardMode) close();
+    try { if (root.SFEntry) root.SFEntry.paint(); } catch (_) {}
   }
 
   // ── the switch (Settings → Office) ──────────────────────────────────────────
@@ -775,8 +761,8 @@
     const wrap = document.getElementById('sfo-setting');
     wrap.querySelector('.sfo-label').textContent = t('Office: your bots at their desks (experimental)', '辦公室：bot 坐在自己的桌子前（實驗性）');
     wrap.querySelector('.sfo-hint').textContent = t(
-      'A button at the foot of the sidebar opens an office floor: bots (staff) at their desks, AI tabs that are not bots (interns) at a long table, a Claude Code tab\'s subagents (part-timers) beside it; who is busy, waiting on you or stuck. Off by default.',
-      '側欄底部多一顆按鈕，打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，Claude Code 分頁派出去的 subagent（工讀生）站在旁邊；誰在忙、誰在等你、誰卡住，看圖就知道。預設關閉。');
+      'The 辦公室 button at the top of the sidebar opens an office floor: bots (staff) at their desks, AI tabs that are not bots (interns) at a long table, a Claude Code tab\'s subagents (part-timers) beside it; who is busy, waiting on you or stuck. On for a new install.',
+      '側欄最上面的「辦公室」鈕會打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，Claude Code 分頁派出去的 subagent（工讀生）站在旁邊；誰在忙、誰在等你、誰卡住，看圖就知道。新安裝預設打開。');
     sw.classList.toggle('on', enabled());
   }
 

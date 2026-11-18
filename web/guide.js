@@ -7,6 +7,8 @@
  *
  *   the tour      a first launch only (state.tour "pending"): one spotlight per feature of
  *                 tours.first_run that is on the page; one missing from it is skipped. Ends "done".
+ *   the entry tour after an update (state.seen older than a feature of tours.entry): the sidebar's row of ways in (Bots, the office,
+ *                 the board), once; its end marks the running version seen.
  *   the help list the "Guide" button: every feature, "new" since the version last seen, "off" when it
  *                 needs a setting; "show me" opens its settings tab and points at it.
  *
@@ -304,7 +306,12 @@
   function boot() {
     const ready = () => api() && host();
     const start = () => load().then(d => {
-      if (d && d.state && d.state.tour === 'pending') setTimeout(() => tour('first_run'), 400);
+      if (!d || !d.state) return;
+      if (d.state.tour === 'pending') { setTimeout(() => tour('first_run'), 400); return; }
+      // After an update: the short tour of the ways in (tours.entry) when any of its features is newer than what was last seen.
+      // Its end (Done or Skip) marks the running version seen, so it comes once.
+      const ids = (d.tours && d.tours.entry) || [];
+      if (ids.length && ids.some(id => { const f = byId(id); return f && isNew(f); })) setTimeout(() => tour('entry'), 400);
     });
     let tries = 0;
     const wait = () => {
