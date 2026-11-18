@@ -59,6 +59,7 @@
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   color-scheme:dark;
+  --ui:1;   /* 介面大小：跟 ShellBot 設定的「介面大小」（小／中／大）走，SFOffice.host.uiScale() */
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
@@ -143,6 +144,8 @@ kbd{font:600 10.5px var(--mono);padding:1px 5px;border:1px solid var(--line);bor
 body.following #tools{opacity:0;pointer-events:none}
 body.live-data #addOne,body.live-data #addTen,body.live-data #demoHandoff{display:none}
 body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the corner */
+/* 字級：DOM 上的字跟著介面大小縮放；畫布（#stage）不縮，牆上東西的點擊判定用的是畫布座標 */
+#top,#legend,#tools,#panel,#toast,#wall .vhead,#wall .vz{zoom:var(--ui)}
 
 /* ── 跟拍面板 ── */
 #panel{position:fixed;top:70px;right:12px;bottom:12px;width:340px;display:flex;flex-direction:column;z-index:6;
@@ -301,21 +304,27 @@ body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the 
 #toast div{font-size:12.5px;padding:6px 12px;border-radius:99px;background:rgba(31,35,53,.95);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.3);animation:tin .25s ease-out;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 @keyframes tin{from{opacity:0;transform:translateY(-6px)}}
 
-@media (prefers-reduced-motion:reduce){#panel,#tools{transition:none}.events li.new{animation:none}}
+@media (prefers-reduced-motion:reduce){#panel,#tools{transition:none}.events li.new,#wall,#wall .wbox{animation:none}}
 
-/* 任務看板、排程（牆上的白板和日曆打開的面板檢視）：和跟拍同一個面板，但不是在看某個人 */
-#panel.viewing{width:400px}
-#panel.viewing .ph,#panel.viewing #pTabs,#panel.viewing #pChat,#panel.viewing #pInfo,#panel.viewing .pfoot{display:none}
-.pview{flex:1;min-height:0;display:none;flex-direction:column}
-#panel.viewing .pview{display:flex}
+/* 任務看板、排程（牆上的白板和日曆）：點開是置中的蓋板，蓋在辦公室上面；點外面、✕、Esc 關 */
+#wall{position:fixed;inset:0;z-index:8;display:grid;place-items:center;padding:24px;background:rgba(10,11,18,.6);
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);animation:wfade .18s ease-out}
+#wall[hidden]{display:none}
+#wall .wbox{width:min(1240px,100%);height:min(860px,100%);display:flex;flex-direction:column;min-height:0;
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.55);overflow:hidden;animation:wpop .22s cubic-bezier(.2,.8,.2,1)}
+#wall .vbody{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0}
+#wall .vz{min-height:100%;padding:6px 18px 18px}
+@keyframes wfade{from{opacity:0}}
+@keyframes wpop{from{opacity:0;transform:scale(.97)}}
 .vhead{display:flex;align-items:center;gap:10px;padding:14px 14px 12px 16px;border-bottom:1px solid rgba(59,66,97,.6);flex:none}
 .vhead .vic{width:34px;height:34px;border-radius:10px;background:#24283b;display:grid;place-items:center;flex:none}
 .vhead .vt{min-width:0;flex:1}
 .vhead h2{font-size:16px;font-weight:700;line-height:1.25}
 .vhead p{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vhead .vhx{display:flex;align-items:center;gap:8px;flex:none}
+.vhead .vhx:empty{display:none}
 .vhead .vx{width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:#24283b;color:var(--dim);font-size:13px;flex:none}
 .vhead .vx:hover{color:var(--ink);border-color:var(--blue)}
-.vbody{flex:1;overflow:auto;padding:6px 14px 16px;overscroll-behavior:contain}
 .vsec{margin-top:14px}
 .vsec>h3{font-size:12px;color:var(--dim);font-weight:700;letter-spacing:.06em;display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .vsec>h3 b{font:600 11px var(--mono);color:var(--mute)}
@@ -393,7 +402,10 @@ button.who:hover{background:rgba(122,162,247,.28)}
   #legend:not(.min){bottom:60px}
   #legend ul{gap:4px 12px}
   #panel{top:auto;left:0;right:0;bottom:0;width:auto;max-height:60vh;border-radius:18px 18px 0 0;border-bottom:0;transform:translateY(calc(100% + 16px))}
-  #panel.has-chat,#panel.viewing{width:auto}
+  #panel.has-chat{width:auto}
+  #wall{padding:8px}
+  #wall .wbox{border-radius:14px}
+  #wall .vz{padding:4px 10px 12px}
   #panel.open{transform:none}
   .grab{display:block}
   .ph{padding:10px 16px 12px}
@@ -493,12 +505,14 @@ button.who:hover{background:rgba(122,162,247,.28)}
     <div class="card items" id="pItems"></div>
     <div class="events"><h3>最近事件</h3><ol id="pEvents"></ol></div>
   </div>
-  <section class="pview" id="pView" aria-label="牆上的看板">
-    <div class="vhead"><span class="vic" id="vIcon" aria-hidden="true"></span><div class="vt"><h2 id="vTitle"></h2><p id="vSub"></p></div><button class="vx" id="vClose" type="button" title="關起來（Esc）" aria-label="關起來">✕</button></div>
-    <div class="vbody" id="vBody"></div>
-  </section>
   <div class="pfoot"><button class="btn" id="stopFollow">停止追蹤 <kbd>Esc</kbd></button><button class="btn bye" id="dismiss" type="button" hidden title="關掉這個實習生的分頁">請他離開</button><span class="hint">拖曳畫面可暫時看別處</span></div>
 </aside>
+<div id="wall" hidden role="dialog" aria-modal="true" aria-labelledby="vTitle">
+  <section class="wbox" id="wBox">
+    <div class="vhead"><span class="vic" id="vIcon" aria-hidden="true"></span><div class="vt"><h2 id="vTitle"></h2><p id="vSub"></p></div><span class="vhx" id="vHeadX"></span><button class="vx" id="vClose" type="button" title="關起來（Esc）" aria-label="關起來">✕</button></div>
+    <div class="vbody" id="vBody"></div>
+  </section>
+</div>
 <div id="toast" aria-live="polite"></div>
 
 <script>
@@ -824,7 +838,7 @@ const wantTp = () => V.to < .5 && W < H && W <= 720;
 const t2s = (x, y, z = 0) => { const p = P(x, y, z); return { x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }; };
 function viewRect() {
   const top = $('#top').getBoundingClientRect().bottom; let l = 0, r = W, t = top, b = H;
-  if (follow || view) { const pr = $('#panel').getBoundingClientRect(); if (isMobile()) b = H - Math.min(pr.height, H * .6); else r = W - pr.width - 24; }
+  if (follow) { const pr = $('#panel').getBoundingClientRect(); if (isMobile()) b = H - Math.min(pr.height, H * .6); else r = W - pr.width - 24; }
   return { l, r, t, b, w: r - l, h: b - t, cx: (l + r) / 2, cy: (t + b) / 2 };
 }
 const aim = (p, sx, sy, z) => ({ x: p.x - (sx - W / 2) / z, y: p.y - (sy - H / 2) / z, z });
@@ -1841,7 +1855,8 @@ function renderView(force) {
   if (!force && sig === vstate.sig) return; vstate.sig = sig;
   $('#vIcon').innerHTML = VIEW_ICON[view]; $('#vTitle').textContent = WALL_OBJ[view].name; $('#vSub').textContent = viewSub();
   const body = $('#vBody'), top = body.scrollTop;
-  body.innerHTML = view === 'board' ? boardHtml() : calHtml(); body.scrollTop = top; body.dataset.view = view;
+  body.innerHTML = `<div class="vz">${view === 'board' ? boardHtml() : calHtml()}</div>`; body.scrollTop = top; body.dataset.view = view;
+  $('#wall').dataset.view = view;
 }
 function openView(kind) {
   if (!WALL_OBJ[kind]) return;
@@ -1849,14 +1864,15 @@ function openView(kind) {
   if (follow) stopFollow(true);
   hoverObj = null; cv.classList.remove('pt');            // the camera is about to move: the pointer is not over it any more
   view = kind; vstate.sig = '';
-  document.body.classList.add('following'); const p = $('#panel'); p.classList.add('open', 'viewing'); p.setAttribute('aria-hidden', 'false');
+  const w = $('#wall'); w.hidden = false; document.body.classList.add('walling');
   renderView(true); if (kind === 'cal') schedPoll();
-  fit(); kick();
+  try { $('#vClose').focus({ preventScroll: true }); } catch (e) {}
+  kick();
 }
 function closeView(silent) {
   if (!view) return; view = null; vstate.open.clear(); vstate.detail.clear(); vstate.sig = '';
-  document.body.classList.remove('following'); const p = $('#panel'); p.classList.remove('open', 'viewing'); p.setAttribute('aria-hidden', 'true');
-  if (!silent) fit(); kick();
+  const w = $('#wall'); w.hidden = true; delete w.dataset.view; $('#vBody').innerHTML = ''; document.body.classList.remove('walling');
+  kick();
 }
 function pickPerson(key) { const e = personEnt(key); if (!e) return; closeView(true); startFollow(key); }
 async function loadDetail(id, upd) {
@@ -1892,6 +1908,7 @@ $('#vBody').addEventListener('click', ev => {
   if (b.dataset.act === 'toggle') { const id = +b.dataset.id; if (vstate.open.has(id)) vstate.open.delete(id); else { vstate.open.add(id); const t = findTask(id); if (t) loadDetail(id, t.updated_at); } renderView(true); }
 });
 $('#vClose').onclick = () => closeView();
+$('#wall').addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeView(); });   // 點蓋板外面（暗掉的辦公室）就關
 $('#openBoard').onclick = () => openView('board');
 $('#openCal').onclick = () => openView('cal');
 // 一個人的排程，資料頁那一行：「每 20 分鐘，下一次 14:20」
@@ -2166,6 +2183,7 @@ addEventListener('keydown', e => {
   kick();
   if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (e.key === 'Escape' && e.target.tagName === 'SELECT') e.target.blur(); else return; }   // 選完區域後焦點留在選單上：Esc 照樣能退出
   if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (view) closeView(); else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
+  if (view) return;   // 蓋板開著：其他快捷鍵不碰底下的辦公室
   if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (getComputedStyle($('#search')).display === 'none') document.body.classList.add('searching'); q.focus(); }
 });
 $('#stats').addEventListener('click', e => { const b = e.target.closest('.stat'); if (b) setHl(b.dataset.k); });
@@ -2346,8 +2364,15 @@ function update(snap, opts = {}) {
   schedule();   // 資料更新只排下一幀，不算使用者操作（閒置照樣降到 5fps）
   return { added: born.filter(e => e.kind === 'bot').map(e => e.id), seats: born.map(e => e.seatKey) };
 }
+function applyScale() {
+  let s = 1;
+  try { s = HOST && HOST.uiScale ? Number(HOST.uiScale()) : Number(new URLSearchParams(location.search).get('ui')) || 1; } catch (e) { s = 1; }
+  s = Math.min(1.6, Math.max(.7, s || 1));
+  if (applyScale.v !== s) { applyScale.v = s; document.documentElement.style.setProperty('--ui', String(s)); }
+}
+applyScale();
 function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = '實驗性'; }
-window.Office = { update(snap) { goLive(); return update(snap); } };   // 真資料一進來，示範就停，示範按鈕也收起來
+window.Office = { update(snap) { goLive(); applyScale(); return update(snap); } };   // 真資料一進來，示範就停，示範按鈕也收起來
 
 /* ══════════ 16. 示範資料與示範時間軸（全部經過 update）══════════ */
 const ago = m => DEMO_BASE - m * 60000;

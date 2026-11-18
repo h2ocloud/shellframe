@@ -498,6 +498,8 @@
     get: k => (prefs && Object.prototype.hasOwnProperty.call(prefs, k) ? clone(prefs[k]) : null),
     set: (k, v) => { prefs = prefs || {}; if (v == null) delete prefs[k]; else prefs[k] = clone(v); savePrefs(false); },
     close: () => close(),
+    // Settings' Interface size (small / medium / large: index.html's --ui-scale); the office's words follow it
+    uiScale: () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1,
     chat: chatHost,
     board: boardHost,
   };

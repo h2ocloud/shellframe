@@ -237,8 +237,8 @@ def run(browser, base, engine):
         page.screenshot(path=str(SHOTS / "office-board-wall.png"))
     pt, tip, cursor = wall_click(page, fr, "board")
     check("the whiteboard is a hit target: pointer cursor and the tooltip 任務看板", tip == "任務看板" and cursor, (tip, cursor))
-    check("clicking it opens the panel's board view", fr.evaluate("__office.view()") == "board"
-          and fr.evaluate("document.getElementById('panel').classList.contains('open') && document.getElementById('panel').classList.contains('viewing')"))
+    check("clicking it opens the board as a centred sheet over the office", fr.evaluate("__office.view()") == "board"
+          and fr.evaluate("!document.getElementById('wall').hidden && !document.getElementById('panel').classList.contains('open')"))
     check("…titled 任務看板, and nobody is followed", fr.evaluate("document.getElementById('vTitle').textContent") == "任務看板"
           and fr.evaluate("__office.following()") is None)
     heads = fr.evaluate("[...document.querySelectorAll('#vBody .vsec > h3')].map(h => h.firstChild.textContent)")
@@ -286,7 +286,7 @@ def run(browser, base, engine):
     page.wait_for_timeout(500)
     check("clicking the owner closes the view and follows that person",
           fr.evaluate("__office.view()") is None and fr.evaluate("__office.following()") == "b:eng"
-          and fr.evaluate("!document.getElementById('panel').classList.contains('viewing')"))
+          and fr.evaluate("document.getElementById('wall').hidden"))
     fr.evaluate("__office.follow('b:eng')")
     page.wait_for_timeout(400)
     fr.evaluate("__office.openView('board')")                 # the camera is on the person: the wall may be out of view
@@ -406,9 +406,9 @@ def run(browser, base, engine):
     page.wait_for_timeout(500)
     fr.evaluate("__office.openView('board')")
     page.wait_for_timeout(700)
-    nar = fr.evaluate("""() => { const p = document.getElementById('panel').getBoundingClientRect(), b = document.getElementById('vBody');
-        return {pw: p.width, w: innerWidth, over: b.scrollWidth > b.clientWidth + 1}; }""")
-    check("the view takes the window's width as a sheet, nothing spills sideways", nar["pw"] == nar["w"] and not nar["over"], nar)
+    nar = fr.evaluate("""() => { const p = document.getElementById('wBox').getBoundingClientRect(), b = document.getElementById('vBody');
+        return {pw: p.width, l: p.left, w: innerWidth, over: b.scrollWidth > b.clientWidth + 1}; }""")
+    check("the sheet fits the narrow window, nothing spills sideways", nar["l"] >= 0 and nar["pw"] <= nar["w"] and nar["pw"] >= nar["w"] - 24 and not nar["over"], nar)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-board-narrow.png"))
     fr.evaluate("__office.closeView()")
