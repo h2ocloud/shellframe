@@ -47,7 +47,7 @@ const tasks = { open: [
   { id: 3, title: '示範分頁的事', status: 'waiting', owner: '示範分頁', requester: 'sfctl', waiting_on: 'user', updated_at: 70 },
 ], stuck: [{ id: 2 }] };
 const peers = { p1: { name: '示範電腦', bots: [
-  { role: 'b', label: '示範建置員', state: 'awake', activity: 'working', avatar: { shape: 'hex', color: 'amber' } },
+  { role: 'b', label: '示範建置員', state: 'awake', activity: 'working', primary: true, avatar: { shape: 'hex', color: 'amber' } },
   { role: 'c', label: '示範睡覺', state: 'asleep' }, { role: 'd', state: 'external' }],
   tabs: { r1: { kind: 'temp', name: '示範隔壁分頁', cli: 'codex', decision: { id: 'x' } }, r2: { kind: 'terminal' } } } };
 const helpers = { s2: [{ id: 'a1', description: '示範：查一下', model: 'demo', state: 'working', started_at: 1000, last_at: 1100 }],
@@ -98,6 +98,27 @@ const P = snap.peers[0];
 check('a paired machine: its bots but the external one, asleep kept', P.id === 'p1' && P.name === '示範電腦'
   && P.bots.map(b => `${b.id}:${b.state}`).join() === 'b:working,c:asleep', P.bots);
 check('…its interns, a question kept', P.temps.length === 1 && P.temps[0].state === 'decision' && P.temps[0].cli === 'Codex', P.temps);
+
+check('…the primary bot says so (exactly the row that is primary)', P.bots[0].primary === true && P.bots[1].primary === false, P.bots.map(b => b.primary));
+check('…no board and no state when link_peer_tasks has not answered for it', !('board' in P) && !('boardState' in P));
+const pt = { p1: { state: 'ok', at: 1700000000, decisions: [{ id: 31, title: '示範決定', kind: 'decision', owner: 'user', requester: 'b', waiting_on: 'user', status: 'waiting' }],
+  stuck: [{ id: 12, idle_s: 90000 }], open: [
+    { id: 12, title: '示範卡住', status: 'doing', owner: 'b', requester: 'user', updated_at: 50 },
+    { id: 31, title: '示範決定', status: 'waiting', owner: 'user', requester: 'b', waiting_on: 'user', updated_at: 60 },
+    { id: 13, title: '示範隔壁實習生的事', status: 'doing', owner: '示範隔壁分頁', requester: 'user', updated_at: 70 },
+    { id: 14, title: '示範沒人認得', status: 'todo', owner: '不認識的人', requester: 'b', updated_at: 80 }] } };
+const snap2 = O.build({ botsOn: true, roster, primary: 'chief', tabs, tasks, peers, peerTasks: pt, helpers, seen: {}, kit, now });
+const P2 = snap2.peers[0];
+check('a peer with link_peer_tasks: its board (decisions, stuck, open; each task once), state and when', P2.boardState === 'ok' && P2.boardAt === 1700000000
+  && P2.board.decisions.map(x => x.id).join() === '31' && P2.board.stuck.map(x => x.id).join() === '12' && P2.board.open.map(x => x.id).join() === '13,14'
+  && P2.board.all.length === 4, P2.board);
+check('…its owners are that computer\'s people (a bot p:, an intern q:, user stays, an unknown name is empty)',
+  P2.board.all.map(x => x.owner_key).join() === 'user,p:p1/b,q:p1/r1,' && P2.board.decisions[0].requester_key === 'p:p1/b' && P2.board.decisions[0].waiting_key === 'user', P2.board.all.map(x => x.owner_key));
+check('…the stuck row borrowed its text from the open list, and the local board is untouched', P2.board.stuck[0].title === '示範卡住' && snap2.board.all.every(x => x.id !== 31), snap2.board);
+const states = ['pending', 'old', 'denied', 'error', 'bogus'].map(state => O.build({ botsOn: true, roster, tabs, peers, peerTasks: { p1: { state, at: 0, decisions: [], stuck: [], open: [] } }, seen: {}, kit, now }).peers[0].boardState);
+check('…pending / old / denied / error pass through, an unknown state is an error', states.join() === 'pending,old,denied,error,error', states);
+const none = O.build({ botsOn: true, roster, tabs, peers, peerTasks: { other: pt.p1 }, seen: {}, kit, now }).peers[0];
+check('…a peer the answer does not list has no board', !('board' in none) && !('boardState' in none));
 
 console.log('part-timers');
 const H = Object.fromEntries(snap.helpers.map(h => [h.id, h]));

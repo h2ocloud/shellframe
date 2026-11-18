@@ -540,6 +540,13 @@ owner agent that starts with 「（辦公室排程）」: it is the person askin
 that /loop, cron or plist as written; do it, then answer in one line. A bot whose tab loops has a
 calendar on its desk and "排程：每 20 分鐘，下一次 14:20" on its info tab.
 
+Each paired computer's room has the same two things on its own scale: its main bot (the one that computer
+calls primary) at the room's front seat, and a small whiteboard on the back wall with that computer's tasks
+(`link_peer_tasks`, read through the pairing about every 9 s; an older build without it simply has no board).
+That board is read-only for the person: no 我做好了 / 留言 from here, and the card says a change goes to that
+computer's main bot. If you are that main bot, a person's request about one of your computer's tasks reaches
+you as an ordinary message in your tab.
+
 ## 5. Which build has what
 
 `sfctl version` first, then:
