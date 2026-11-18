@@ -1101,13 +1101,17 @@ class RemoteApiMixin:
                 return {"success": False, "message": f"link status failed: {e}"}
 
         elif cmd == "link_pair":
-            # 產生短效一次性配對碼（TG 遠端也能觸發，人在外面即可配對）。
+            # 產生短效一次性配對碼（TG 遠端也能觸發，人在外面即可配對）。`mode` (sfctl link-pair --mode): the
+            # direction, as the Pair window's three buttons; TG sends none, so duplex as before.
             try:
-                res = self._link().pairing_begin()
+                mode = str(args.get("mode") or "duplex")
+                res = self._link().pairing_begin(mode)
                 if not res.get("success"):
                     return res
                 addrs = ", ".join(res.get("addresses") or []) or "?"
-                msg = (f"🔗 配對碼：{res['code']}\n"
+                way = {"duplex": "雙向", "host_controls": "這台當主：只有這台能操作對方",
+                       "joiner_controls": "這台當從：只有對方能操作這台"}.get(mode, mode)
+                msg = (f"🔗 配對碼：{res['code']}（{way}）\n"
                        f"位址：{addrs}  port {res['port']}\n"
                        f"{res['expires_in']} 秒內、限一次，"
                        f"在另一台 ShellBot 選「加入配對」輸入\n"
@@ -1117,6 +1121,18 @@ class RemoteApiMixin:
                 return {"success": True, "message": msg, "details": res}
             except Exception as e:
                 return {"success": False, "message": f"link pair failed: {e}"}
+
+        elif cmd == "link_enable":
+            # sfctl link-enable on|off: what the switch under Settings → Other computers does (a headless machine
+            # has no window to press it in), no restart.
+            try:
+                st = json.loads(self.link_set_enabled(bool(args.get("enabled"))))
+                on = bool(st.get("enabled"))
+                return {"success": on == bool(args.get("enabled")),
+                        "message": ("🔗 連線已開：" + ("在聽" if st.get("running") else "還沒在聽，看 sfctl link-status"))
+                        if on else "🔗 連線已關", "details": st}
+            except Exception as e:
+                return {"success": False, "message": f"link enable failed: {e}"}
 
         elif cmd == "link_join":
             try:

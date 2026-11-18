@@ -1014,6 +1014,18 @@ def main():
     p_lr = sub.add_parser("link-rename", help="Rename a session on a paired computer")
     p_lr.add_argument("peer"); p_lr.add_argument("sid"); p_lr.add_argument("name")
     sub.add_parser("link-status", help="Paired computers and whether they are reachable")
+    p_lp = sub.add_parser("link-pair", help="A one-time pairing code (two minutes) another computer joins with. "
+                                            "--mode: duplex (both control each other, the default), host (this "
+                                            "computer controls the one that joins), member (the one that joins "
+                                            "controls this computer)")
+    p_lp.add_argument("--mode", choices=["duplex", "host", "member"], default="duplex")
+    p_lj = sub.add_parser("link-join", help="Join another computer with the code its link-pair (or Pair window) shows; "
+                                            "the direction is the one that computer chose")
+    p_lj.add_argument("host", help="That computer's address (its Tailscale address, say)")
+    p_lj.add_argument("code")
+    p_lj.add_argument("--port", type=int, default=8767)
+    p_le = sub.add_parser("link-enable", help="Turn this computer's link to other computers on or off, without a restart")
+    p_le.add_argument("state", choices=["on", "off"])
 
     p_peek = sub.add_parser("peek", help="Read the last N lines of a session's pane (deduped)")
     p_peek.add_argument("sid", help="Session id, or a bot's or tab's name")
@@ -1227,6 +1239,13 @@ def main():
                                                   "limit": args.limit}, timeout=30.0))
     elif args.cmd == "link-status":
         _print_result(_rpc("link_status"))
+    elif args.cmd == "link-pair":
+        _print_result(_rpc("link_pair", {"mode": {"duplex": "duplex", "host": "host_controls",
+                                                  "member": "joiner_controls"}[args.mode]}))
+    elif args.cmd == "link-join":
+        _print_result(_rpc("link_join", {"host": args.host, "port": args.port, "code": args.code}, timeout=40))
+    elif args.cmd == "link-enable":
+        _print_result(_rpc("link_enable", {"enabled": args.state == "on"}))
     elif args.cmd == "state":
         if not args.sid and not args.all:
             print("ERR state 要給 sid，或用 --all")

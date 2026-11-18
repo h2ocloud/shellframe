@@ -6,6 +6,28 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.55.2 (2026-11-18)
+
+### Added
+
+- **Pairing from the command line, with the direction: `sfctl link-pair --mode`, `link-join`, `link-enable`.**
+  Asked for: two Macs in charge and the other computers members, one of them a Linux machine with no window
+  (it runs on a virtual screen) to press the Pair buttons in. The Pair window offers three directions; the command
+  line offered only "both ways", and the link could be switched on only in Settings. Now `sfctl link-pair --mode
+  duplex|host|member` shows the one-time code (two minutes) with the direction it was made for: both control each
+  other, this computer controls the one that joins, or the one that joins controls this computer. `sfctl link-join
+  <address> <code> [--port]` joins that code from the other computer; the direction is the one the code was made
+  with. `sfctl link-enable on|off` is the Settings switch, without a restart. Telegram's `/link pair` stays both
+  ways. Covered by `tests_link_pair_cli.py` (17), which also pairs two real links: a member's code lets the
+  joiner control the member, and not the other way.
+
+  **用指令配對，並選方向：`sfctl link-pair --mode`、`link-join`、`link-enable`。** 需求：兩台 Mac 當主、其他電腦當成員，其中一台是
+  沒有視窗可以按配對按鈕的 Linux（跑在虛擬螢幕上）。配對視窗有三種方向，指令卻只有「雙向」，連線也只能在設定裡打開。現在
+  `sfctl link-pair --mode duplex|host|member` 會給出一次性的配對碼（兩分鐘內有效），並寫明方向：彼此都能操作、這台操作加入的那台、
+  或加入的那台操作這台。`sfctl link-join <位址> <配對碼> [--port]` 在另一台用這組碼加入，方向照產碼時選的。`sfctl link-enable
+  on|off` 就是設定裡那個開關，不用重開。Telegram 的 `/link pair` 照舊是雙向。由 `tests_link_pair_cli.py`（17 項）守著，它也用兩個
+  真的連線配對一次：成員給的碼，加入的那台能操作成員，反過來不行。
+
 ## v0.55.1 (2026-11-17)
 
 ### Fixes

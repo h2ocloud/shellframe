@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.55.1
-   version: 0.55.1
+OK ShellBot v0.55.2
+   version: 0.55.2
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -254,6 +254,16 @@ sfctl link-send mac-studio s3 "跑一下測試"
 sfctl link-new mac-studio codex
 sfctl link-rename mac-studio s3 deploy
 sfctl link-close mac-studio s3
+```
+
+Pairing itself can be done from the command line too, for a computer with no window to press buttons in
+(only when the user asked for it; the code is good once, for two minutes):
+
+```bash
+sfctl link-enable on                       # this computer's link on (Settings → Other computers), no restart
+sfctl link-pair --mode member              # a code; duplex (default) | host: this one controls the joiner |
+                                           #   member: the joiner controls this one
+sfctl link-join 198.51.100.7 ABCDE-FGHIJ   # on the other computer: join that code (its direction stands)
 ```
 
 The peer is named (`mac-studio`) or given by `frame_id`; `sfctl link-status`
@@ -577,6 +587,7 @@ calendar on its desk and "排程：每 20 分鐘，下一次 14:20" on its info 
 | Connect recognizes connections that already work (`claude mcp list`, `codex mcp list`) and says which way each goes; `sfctl connect` names it | 0.53.0 |
 | No new commands: the sidebar folds paired phones and tablets into one row (they cannot be driven); Windows shows the app's own icon | 0.54.0 |
 | Plaud on the Connect page (the official local MCP server, browser sign-in); `sfctl connect step` lets a bot do the steps ShellBot can do itself; the office's task board (the lobby whiteboard) and schedule calendar | 0.55.0 |
+| Pairing from the command line: `sfctl link-pair --mode duplex|host|member`, `link-join`, `link-enable` | 0.55.2 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to
