@@ -2,12 +2,12 @@
 """The office's two wall objects, in the real page with a stand-in Python side: the task board
 (the lobby's whiteboard) and the schedule calendar next to it.
 
-  - the whiteboard is a hit target (pointer, tooltip 任務看板); a click opens the panel's board view:
-    等你決定 / 卡住了 / 進行中 (by owner), one row per task (#id, title, status in Chinese, next step,
-    waiting on whom, due, how long since it moved), each task once; a row opens its history (newest
-    first, at most 20, asked for only when opened); an owner in the office selects that person
-  - an empty board says so in one line, and the sticky notes follow the data (one per task, at most 7,
-    red for a decision or a stuck task, none on an empty board)
+  - the whiteboard is a hit target (pointer, tooltip 任務看板); a click opens the board sheet: four lanes
+    緊急 / 重要 / 進行中 / 不急 of sticky notes (one per task, each once); a note opens a card with the
+    next step, waiting on whom, due, how long since it moved, and its history (newest first, at most 20,
+    asked for only when opened); an owner in the office selects that person
+  - an empty board says so, and the sticky notes on the wall follow the data (one per task, at most 7,
+    coloured by priority, none on an empty board). The whiteboard's own details: tests_office_whiteboard_ui.py
   - the calendar is a hit target too (tooltip 排程); its view lists the tabs that run a /loop or a cron
     (who, kind, interval, a countdown that ticks, a one-line summary) and this computer's schedules
     (title, when, on or off); schedules_list is asked only while that view is open, once at the start
@@ -54,6 +54,7 @@ except ImportError:
 
 DATA = guide.load()
 NOW = time.time()
+RED, ORANGE, YELLOW = "#ff8a8a", "#ffb067", "#ffe066"       # the wall's sticky notes: priority colours (see notePriority in office.html)
 ROSTER = {
     "chief": {"label": "示範秘書長", "responsibility": "統籌、分派工作", "cmd": "claude",
               "bot": {"avatar": {"shape": "star", "color": "purple"}, "primary": True, "memory": True},
@@ -231,8 +232,8 @@ def run(browser, base, engine):
     check("each task is in one list only (#12 is stuck, #31 a decision: neither is also 'open')",
           [x["id"] for x in snap["board"]["open"]] == [13, 14, 15], [x["id"] for x in snap["board"]["open"]])
     notes = fr.evaluate("__office.notes()")
-    check("five tasks → five sticky notes, the decision and the stuck one red (first)",
-          len(notes) == 5 and notes[:2] == ["#f7768e", "#f7768e"] and "#f7768e" not in notes[2:], notes)
+    check("five tasks → five sticky notes by priority: decision and overdue red, stuck orange, the rest yellow",
+          notes == [RED, RED, ORANGE, YELLOW, YELLOW], notes)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-board-wall.png"))
     pt, tip, cursor = wall_click(page, fr, "board")
@@ -241,48 +242,47 @@ def run(browser, base, engine):
           and fr.evaluate("!document.getElementById('wall').hidden && !document.getElementById('panel').classList.contains('open')"))
     check("…titled 任務看板, and nobody is followed", fr.evaluate("document.getElementById('vTitle').textContent") == "任務看板"
           and fr.evaluate("__office.following()") is None)
-    heads = fr.evaluate("[...document.querySelectorAll('#vBody .vsec > h3')].map(h => h.firstChild.textContent)")
-    check("three sections: 等你決定, 卡住了, 進行中", heads == ["等你決定", "卡住了", "進行中"], heads)
-    rows = fr.evaluate("""() => [...document.querySelectorAll('#vBody .trow')].map(r => ({id: r.dataset.id, sec: r.closest('.vsec').getAttribute('aria-label'),
+    heads = fr.evaluate("[...document.querySelectorAll('#vBody .wb-lane > h3')].map(h => h.firstChild.textContent)")
+    check("four lanes: 緊急, 重要, 進行中, 不急", heads == ["緊急", "重要", "進行中", "不急"], heads)
+    rows = fr.evaluate("""() => [...document.querySelectorAll('#vBody .nt')].map(r => ({id: r.dataset.id, sec: r.closest('.wb-lane').getAttribute('aria-label'),
         text: r.innerText}))""")
     ids = [(r["id"], r["sec"]) for r in rows]
-    check("one row per task, each once, in its section",
-          ids == [("31", "等你決定"), ("12", "卡住了"), ("13", "進行中"), ("14", "進行中"), ("15", "進行中")], ids)
+    check("one note per task, each once, in its lane (priority is derived: decision / overdue / stuck / the rest)",
+          ids == [("31", "緊急"), ("13", "緊急"), ("12", "重要"), ("14", "進行中"), ("15", "進行中")], ids)
     by = {r["id"]: r["text"] for r in rows}
-    check("a row: #id, title, status in Chinese, next step, waiting on whom, due, how long it did not move",
-          "#12" in by["12"] and "示範登入頁改版" in by["12"] and "進行中" in by["12"] and "補上表單驗證" in by["12"] and "1 天前沒動" in by["12"]
-          and "待辦" in by["13"] and "已逾期" in by["13"] and "等待中" in by["31"] and "等你選一個" in by["31"], by)
-    check("…waiting on 'you' reads 你; waiting on a bot shows that bot", "你" in by["31"] and "示範研究員" in by["14"], (by["31"], by["14"]))
-    groups = fr.evaluate("[...document.querySelectorAll('#vBody .vown .who')].map(b => b.textContent.trim())")
-    check("進行中 is grouped by owner, as the office names them (an intern's tab by its title)",
-          groups == ["示範研究員", "示範工程師", "示範臨時分頁"], groups)
+    check("a note: #id, title, why it is there, whose it is, how long it did not move",
+          "#12" in by["12"] and "示範登入頁改版" in by["12"] and "卡住" in by["12"] and "1 天前沒動" in by["12"]
+          and "逾期" in by["13"] and "等你決定" in by["31"] and "示範工程師" in by["14"] and "等待中" in by["15"], by)
+    check("…a decision shows who handed it over; a task of the user's own tab shows that tab's title",
+          "示範研究員" in by["31"] and "示範臨時分頁" in by["15"], (by["31"], by["15"]))
 
-    print(f"[{engine}] a row's history")
-    check("history is asked for only when a row is opened", calls(page, "task_detail") == 0)
-    fr.click('#vBody .trow[data-id="12"] .th')
+    print(f"[{engine}] a note's card and history")
+    check("history is asked for only when a note is opened", calls(page, "task_detail") == 0)
+    fr.click('#vBody .nt[data-id="12"] .nb')
     page.wait_for_function("window.__calls.filter(c => c === 'task_detail').length >= 1")
     page.wait_for_timeout(500)
     asked = page.evaluate("window.__args.filter(a => a[0] === 'task_detail').map(a => String(a[1][0]))")
-    hist = fr.evaluate("[...document.querySelectorAll('#vBody .trow[data-id=\"12\"] .thist li')].map(l => l.innerText.replace(/\\s+/g, ' '))")
+    hist = fr.evaluate("[...document.querySelectorAll('#vOver .thist li')].map(l => l.innerText.replace(/\\s+/g, ' '))")
     check("…then asked once, for that task", asked == ["12"], asked)
     check("…at most 20 events (the store sent 25), newest first", len(hist) == 20 and "第 25" not in hist[0] and "狀態" in hist[0], hist[:2])
     check("…a status event reads in Chinese (待辦 → 進行中)", "待辦 → 進行中" in hist[0], hist[0])
-    check("…the row says it is open", fr.evaluate("document.querySelector('#vBody .trow[data-id=\"12\"] .th').getAttribute('aria-expanded')") == "true")
+    card = fr.evaluate("document.querySelector('#vOver .wcard').innerText")
+    check("…the card has the next step, the due date (none), how long it did not move", "補上表單驗證" in card and "1 天前沒動" in card and "示範登入頁改版" in card, card)
     page.wait_for_timeout(1500)
     check("…and is not asked again while it does not change", calls(page, "task_detail") == 1)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-board-open.png"))
-    fr.evaluate("window.__tagRow = document.querySelector('#vBody .trow[data-id=\"13\"]'); window.__tagRow.__mine = 1")
+    fr.evaluate("window.__tagRow = document.querySelector('#vBody .nt[data-id=\"13\"]'); window.__tagRow.__mine = 1")
     for _ in range(2):
         page.evaluate("SFOffice.refresh()")                   # a snapshot every time: the view must not be rebuilt for it
         page.wait_for_timeout(500)
-    check("the view is not rebuilt when a snapshot arrives (the same row node is still there: a click or a selection survives)",
+    check("the view is not rebuilt when a snapshot arrives (the same note node is still there: a click or a selection survives)",
           fr.evaluate("document.body.contains(window.__tagRow) && window.__tagRow.__mine === 1"))
-    fr.click('#vBody .trow[data-id="12"] .th')
-    check("a second click closes it", fr.evaluate("document.querySelectorAll('#vBody .trow[data-id=\"12\"] .thist').length") == 0)
+    fr.click('#vOver [data-act="dclose"]')
+    check("✕ closes the card", fr.evaluate("document.getElementById('vOver').hidden && document.querySelectorAll('#vOver .thist').length === 0"))
 
     print(f"[{engine}] an owner selects the person")
-    fr.click('#vBody .vown .who[data-key="b:eng"]')
+    fr.click('#vBody .nt[data-id="14"] .who[data-key="b:eng"]')
     page.wait_for_timeout(500)
     check("clicking the owner closes the view and follows that person",
           fr.evaluate("__office.view()") is None and fr.evaluate("__office.following()") == "b:eng"
@@ -304,17 +304,17 @@ def run(browser, base, engine):
     print(f"[{engine}] sticky notes follow the data, and an empty board says so")
     fr = open_office(page, MANY)
     notes = fr.evaluate("__office.notes()")
-    check("more than seven tasks → seven notes", len(notes) == 7 and notes.count("#f7768e") == 2, notes)
+    check("more than seven tasks → seven notes, the two red ones first", len(notes) == 7 and notes[:2] == [RED, RED] and notes.count(RED) == 2, notes)
     fr = open_office(page, THREE)
     notes = fr.evaluate("__office.notes()")
-    check("three tasks → three notes, none red", len(notes) == 3 and "#f7768e" not in notes, notes)
+    check("three tasks → three notes, none red", len(notes) == 3 and RED not in notes, notes)
     fr = open_office(page, EMPTY)
     check("no tasks → a bare board (no notes)", fr.evaluate("__office.notes()") == [])
     wall_click(page, fr, "board")
-    one = fr.evaluate("""() => ({n: document.querySelectorAll('#vBody .vsec').length, rows: document.querySelectorAll('#vBody .trow').length,
+    one = fr.evaluate("""() => ({n: document.querySelectorAll('#vBody .wb-lane').length, rows: document.querySelectorAll('#vBody .nt').length,
         text: document.getElementById('vBody').innerText.trim(), sub: document.getElementById('vSub').textContent})""")
-    check("an empty board is one line telling how a task gets there",
-          one["n"] == 0 and one["rows"] == 0 and one["text"] == "看板上還沒有任務：bot 用 sfctl task add 記下手上的事後會出現在這裡", one)
+    check("an empty board says there are no tasks and how a task gets there",
+          one["n"] == 0 and one["rows"] == 0 and "還沒有任務" in one["text"] and "sfctl task add" in one["text"] and one["sub"] == "還沒有任務", one)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-board-empty.png"))
     fr.evaluate("__office.closeView()")

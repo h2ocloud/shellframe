@@ -16,7 +16,8 @@
  *     Each tab's `loop` (a /loop or cron routine: agent_status.detect_schedules puts it on the tab's
  *     status whether or not the Loops panel is on) comes from the sessions the page already holds.
  *     The lobby's task board and calendar views ask SFOffice.host.board for what they open: task_detail
- *     (a task's history, only when its row is opened) and schedules_list (this computer's schedules,
+ *     (a task's history, only when its card is opened), task_user_act (the person's 「我做好了」 / 「留言」 on that card; the only
+ *     write the office makes) and schedules_list (this computer's schedules,
  *     read only, only while the calendar view is showing, at most once a minute: office.html paces it).
  *   - gives the panel of the person being followed their conversation and a message box
  *     (SFOffice.host.chat): the chat view's own routes for that one tab (chat_view every 2 s while
@@ -487,6 +488,15 @@
     async detail(id) {
       try { return JSON.parse(await api().task_detail(String(id))); }
       catch (e) { return { success: false, message: String(e) }; }
+    },
+    // The person's own hand on a task (task_user_act): "done" or "note". After a success the next tick asks the store again
+    // at once (not in 9 s), so the board shows it within a second or two. No optimistic change: the answer is the store's.
+    async act(id, action, text) {
+      try {
+        const r = JSON.parse(await api().task_user_act(String(id), String(action), String(text || '')));
+        if (r && r.success) { tasksAt = 0; setTimeout(() => { tick(); }, 250); }
+        return r;
+      } catch (e) { return { success: false, message: String(e) }; }
     },
     async schedules() {
       try { return schedShape(JSON.parse(await api().schedules_list())); }

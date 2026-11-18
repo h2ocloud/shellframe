@@ -212,6 +212,55 @@ class TasksApiMixin:
 
         raise ValueError(_(f"unknown action: {action}", f"不認得的動作：{action}"))
 
+    def task_user_act(self, task_id, action, text="") -> str:
+        """The person acts on a task from the office's board (their own hand, never a bot's): "done" or
+        "note", with an optional text. JSON: {success, message, task, tell} where `tell` is the name of
+        whoever should hear about it ("" when that is the person). Done on the person's own task closes
+        it; done on a task waiting on the person is their part done: a result note, and the owner carries
+        on (the task stays open). Anything else is refused in words."""
+        try:
+            return json.dumps(self._task_user_act(task_id, str(action or ""), str(text or "").strip()), ensure_ascii=False)
+        except ss.Unavailable as e:
+            return json.dumps({"success": False, "code": e.code, "message": _(e.en, e.zh)}, ensure_ascii=False)
+        except ss.NotFound:
+            return json.dumps({"success": False, "code": "not_found",
+                               "message": _(f"No task #{task_id}.", f"沒有 #{task_id} 這件任務。")}, ensure_ascii=False)
+        except (ValueError, TypeError) as e:
+            return json.dumps({"success": False, "code": "invalid", "message": _(f"Not accepted: {e}", f"不接受：{e}")}, ensure_ascii=False)
+
+    def _task_user_act(self, task_id, action: str, text: str) -> dict:
+        def other(*names):                      # the first of these that is somebody (not the person, not empty)
+            return next((n for n in names if n and n != ss.USER), "")
+
+        def refuse(code, en, zh):
+            return {"success": False, "code": code, "message": _(en, zh)}
+
+        try:
+            n = int(str(task_id).lstrip("#"))
+        except ValueError:
+            raise ValueError(_("a task number, e.g. 12", "要給任務編號，例如 12")) from None
+        if action not in ("done", "note"):
+            raise ValueError(_(f"unknown action: {action}", f"不認得的動作：{action}"))
+        t = ss.get(n, events=False)
+        if action == "note":
+            if not text:
+                return refuse("empty", "Write something first.", "要先寫點什麼。")
+            t = ss.note(n, text, actor=ss.USER)
+            return {"success": True, "message": _("Noted.", "已留言。"), "task": t,
+                    "tell": other(t["owner"]) or other(t["requester"])}
+        if t["status"] in ss.CLOSED:
+            return refuse("closed", f"#{n} is already closed.", f"#{n} 已經結束了。")
+        if t["owner"] == ss.USER:
+            res = self._tasks_do("done", {"id": n, "text": text}, ss.USER)
+            return {"success": True, "message": _("Marked done.", "已標成做好了。"), "task": res["details"]["task"],
+                    "tell": other(t["requester"])}
+        if t["waiting_on"] == ss.USER:
+            ss.note(n, text or _("Done on my side.", "做好了"), actor=ss.USER, kind="result")
+            t = ss.update(n, actor=ss.USER, waiting_on="", status="doing")
+            return {"success": True, "message": _("Marked done on your side; the owner carries on.", "已標成做好了，交回負責人繼續。"),
+                    "task": t, "tell": other(t["owner"])}
+        return refuse("not_waiting", "This task is not waiting on you.", "這件不是在等你")
+
     # ── hand-offs tied to a task (a2a_host calls these; none of them may break A2A) ──
     def _tasks_link_check(self, task_id):
         """Before an A2A message `--for-task N` goes: (int id, "") or (None, why not)."""
