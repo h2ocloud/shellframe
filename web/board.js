@@ -1,0 +1,101 @@
+/* ShellBot task board button — see docs/ai-skill.md §4.10 and docs/chat-shell.md.
+ *
+ * Agents put what they wait on the person for on the task board (`sfctl task add --decision`, docs/ai-skill.md §4.9). This
+ * file makes the board reachable from anywhere, in the terminal view and the chat view alike and whether or not the office
+ * (settings.experimental_office) is on:
+ *
+ *   - a button at the sidebar's foot (#btn-taskboard in #sb-footer-row, beside the office's) with a red count of the decisions
+ *     waiting on the person (tasks_overview's `decisions`; no badge at 0). The count is asked for about every 20 s while the
+ *     window is visible and the board is closed; while the board is open web/office.js's own refresh feeds it (SFBoard.note),
+ *     which includes the moment after a card was answered. The button is hidden only when the tasks store is unavailable.
+ *   - a shortcut (Cmd+Shift+B on macOS, Ctrl+Shift+B elsewhere) that opens and closes the board.
+ *   - opening is SFOffice.openBoard(): the board sheet over the window without the office floor (office.js, office.html).
+ *     With the office already open the shortcut and the button toggle the lobby's whiteboard instead.
+ */
+(function (root) {
+  'use strict';
+  const host = () => root.__sfHost || null;
+  const api = () => (root.pywebview && root.pywebview.api) || null;
+  const isZh = () => /^zh/i.test((host() && host().lang && host().lang()) || navigator.language || '');
+  const t = (en, zh) => (isZh() ? zh : en);
+  const isMac = () => /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+
+  // The shortcut: Shift with Cmd (macOS) or Ctrl (Windows, Linux). A plain Ctrl+letter would take a shell's control key.
+  function isKey(e) {
+    if (!e || e.altKey || !e.shiftKey || e.isComposing) return false;
+    const mod = isMac() ? (e.metaKey && !e.ctrlKey) : (e.ctrlKey && !e.metaKey);
+    return mod && (String(e.key || '').toLowerCase() === 'b' || e.code === 'KeyB');
+  }
+  const keyName = () => (isMac() ? '⌘⇧B' : 'Ctrl+Shift+B');
+
+  let count = 0, avail = true, btn = null, timer = 0;
+  const ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="3.4" y="4.3" width="3.2" height="2.4" fill="currentColor" opacity=".9"/><rect x="7.6" y="4.3" width="3.2" height="2.4" fill="currentColor" opacity=".55"/><path d="M5 14l1.2-2.5M11 14l-1.2-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+
+  function paint() {
+    if (!btn) return;
+    btn.hidden = !avail;
+    const name = t('Board', '看板'), tip = count > 0
+      ? t(`Board: ${count} waiting on you (${keyName()})`, `看板：${count} 件等你決定（${keyName()}）`)
+      : t(`Board (${keyName()})`, `看板（${keyName()}）`);
+    btn.title = tip;
+    btn.setAttribute('aria-label', tip);
+    btn.querySelector('.sb-ico-label').textContent = name;
+    const b = btn.querySelector('.sfb-badge');
+    b.hidden = count <= 0;
+    b.textContent = count > 99 ? '99+' : String(count);
+  }
+  // The number of decisions waiting on the person (tasks_overview's own list), from whoever just asked the store.
+  function note(n) {
+    const v = Math.max(0, Number(n) || 0);
+    avail = true;
+    if (v !== count || !btn || btn.hidden) { count = v; paint(); }
+  }
+  async function poll() {
+    const a = api();
+    if (!a || !a.tasks_overview) { avail = false; paint(); return; }
+    let r = null;
+    try { r = JSON.parse(await a.tasks_overview()); } catch (_) { return; }
+    if (r && r.success === false) { avail = false; paint(); }                 // the store cannot be opened: nothing to show
+    else if (r && r.success) note((r.decisions || []).length);
+  }
+  const O = () => root.SFOffice || null;
+  function toggle() {
+    const o = O();
+    if (!o) return;
+    if (!o.isOpen()) o.openBoard();
+    else if (o.isBoard()) o.close();
+    else o.toggleBoard();
+  }
+  function place() {
+    const row = document.getElementById('sb-footer-row');
+    if (!row) return false;
+    btn = document.createElement('button');
+    btn.id = 'btn-taskboard';
+    btn.className = 'sb-footer-btn sb-footer-ico';
+    btn.type = 'button';
+    btn.setAttribute('data-guide', 'taskboard');
+    btn.innerHTML = `<span class="sb-ico">${ICON}</span><span class="sb-ico-label"></span><span class="sfb-badge" hidden></span>`;
+    btn.addEventListener('click', toggle);
+    row.insertBefore(btn, document.getElementById('btn-office') || document.getElementById('btn-guide') || null);
+    paint();
+    return true;
+  }
+  function boot(tries) {
+    if (!btn && !(api() && host() && place())) { if (tries < 240) setTimeout(() => boot(tries + 1), 250); return; }
+    poll();
+    timer = setInterval(() => { if (!document.hidden && !(O() && O().isOpen())) poll(); }, 20000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !(O() && O().isOpen())) poll(); });
+    const s = document.getElementById('btn-settings');                       // the language may have changed in Settings
+    if (s) s.addEventListener('click', () => setTimeout(paint, 0));
+  }
+  // Window capture: before the terminal sees the key, and before office.js's own capture handler (registered later).
+  root.addEventListener('keydown', e => {
+    if (!isKey(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!e.repeat) toggle();
+  }, true);
+
+  root.SFBoard = { isKey, note, poll, toggle, count: () => count, keyName, isShown: () => !!btn && !btn.hidden };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(0));
+  else boot(0);
+})(typeof window !== 'undefined' ? window : globalThis);

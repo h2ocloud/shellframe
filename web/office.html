@@ -356,6 +356,15 @@ button.who:hover{background:rgba(122,162,247,.28)}
 #wall[data-view=board] .vhead .vx:hover{color:#1f4aa8;border-color:#1f4aa8}
 #wall[data-view=board] .vbody{overflow-x:hidden}
 #wall[data-view=board] .vz{padding:4px 22px 26px}
+.wscope{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.wsc{font:600 14px var(--font);padding:3px 12px;border-radius:999px;border:1px solid #a9b1c4;background:rgba(255,255,255,.7);color:#46506f;line-height:1.5}
+.wsc:hover{border-color:#1f4aa8;color:#1f4aa8}
+.wsc[aria-pressed=true]{background:#1f4aa8;border-color:#1f4aa8;color:#fff}
+.wsc:focus-visible{outline:2px solid #1f4aa8;outline-offset:2px}
+/* 只有白板（SFOffice.openBoard）：不畫辦公室，底下的 ShellBot 畫面透過暗掉的蓋板看得到 */
+:root.bo{color-scheme:normal}
+:root.bo,html.bo body{background:transparent}
+html.bo body>*:not(#wall):not(#toast){display:none!important}
 #wall[data-view=board] .who{background:rgba(255,255,255,.6);color:var(--wink);font-size:13px;padding-right:9px}
 #wall[data-view=board] .who img{width:20px;height:20px}
 #wall[data-view=board] .who.you{background:rgba(255,255,255,.6);color:#a3122a}
@@ -740,6 +749,9 @@ function hash2(x, y) { let h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; h =
 // 嵌在 ShellBot 裡：主頁的 SFOffice.host（同源，可以直接呼叫）。座位、配件、顯示方式由它存到這台電腦；
 // 單獨打開這個檔時沒有它，改用 localStorage（key 帶版本，和 v0.1 分開）。
 const HOST = (() => { try { const p = window.parent; return p && p !== window && p.SFOffice && p.SFOffice.host ? p.SFOffice.host : null; } catch (e) { return null; } })();
+// 只開白板（SFOffice.openBoard：看板按鈕、快捷鍵）：不畫辦公室，只有白板那張大表，關掉白板就是關掉整個蓋板。主頁在載入這一頁前就決定好了。
+const BOARD_ONLY = !!(HOST && HOST.boardOnly && HOST.boardOnly());
+if (BOARD_ONLY) { document.documentElement.classList.add('bo'); const m = document.querySelector('meta[name="color-scheme"]'); if (m) m.remove(); }   // 透明的框：和主頁的 color-scheme 一樣才不會被塗上不透明底
 const store = { // 只存個人偏好與座位；讀不到就用預設
   get(k, d) { if (HOST) { try { const v = HOST.get(k); return v == null ? d : v; } catch (e) { return d; } }
     try { const v = localStorage.getItem('sbOffice.v2.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -2042,6 +2054,7 @@ const personEnt = key => { const e = key && key !== 'user' ? M.ents.get(key) : n
 function whoBtn(key, raw) {                          // 辦公室裡有的人＝可以點的名牌；你；其他＝一般文字
   if (key === 'user') return viewPeer() ? '<span class="who you">那台的使用者</span>' : '<span class="who you">你</span>';   // 隔壁電腦的任務：'user' 是坐在那台前面的人，不一定是你
   const e = personEnt(key);
+  if (e && BOARD_ONLY) return `<span class="who"><img src="${avatarURL(e.who, 36)}" alt="">${esc(e.who.name)}</span>`;   // 只有白板：沒有辦公室可以跳過去看他
   if (e) return `<button type="button" class="who" data-act="person" data-key="${esc(key)}" title="看${esc(e.who.name)}"><img src="${avatarURL(e.who, 36)}" alt="">${esc(e.who.name)}</button>`;
   return raw ? `<span>${esc(raw)}</span>` : '<span style="color:var(--mute)">—</span>';
 }
@@ -2117,7 +2130,7 @@ function boardSub() {
 }
 // 點開一張：便利貼「浮」到白板正中央，變成大張的卡（標題全文、負責／交辦自／在等／下一步／期限／動靜、歷程）。卡在 #vOver，不在 #vBody 裡：看板捲到哪裡，它都在蓋板正中間
 function peerTail(pe) {                              // 隔壁電腦的任務只能看：要改，請那台的主要 bot 處理（有辦法跟它說話就給一顆「跟 … 說」）
-  const k = pe.primaryKey, e = k ? personEnt(k) : null, can = !!(e && tellChat() && tellChat().has(k));
+  const k = pe.primaryKey, e = k ? personEnt(k) : null, can = !BOARD_ONLY && !!(e && tellChat() && tellChat().has(k));
   return `<div class="wpeer"><p>這是「${esc(pe.name)}」的任務，這裡只能看。要改它，${e ? `請跟那台的主要 bot（${esc(e.who.name)}）說` : '請到那台電腦上處理'}。</p>` +
     (can ? `<div class="wb-actions"><button type="button" class="wa" data-act="tellmain" data-key="${esc(k)}">跟 ${esc(e.who.name)} 說</button></div>` : '') + '</div>';
 }
@@ -2138,20 +2151,21 @@ function cardHtml(t, r, now) {
 // 卡底的兩個動作：「我做好了」（只有是你的事、或在等你的事才有）、「留言」。點了展開一個小表單；不先改畫面：送出去、後端說好了才算（板子隨後由下一輪 tasks_overview 更新）
 const isMe = (k, raw) => k === 'user' || raw === 'user';
 const canDone = t => isMe(t.owner_key, t.owner) || isMe(t.waiting_key, t.waiting_on);
+const isDecision = t => !viewPeer() && t.kind === 'decision' && isMe(t.owner_key, t.owner);   // 要你決定的卡：主要動作是「回覆」（寫下決定，標成做好了，也告訴問的人）
 function tellOf(t, mode) {                           // 這件事該讓誰知道（跟後端的 tell 同一條規則）；不在辦公室裡、或沒有分頁可送的人 = 沒有
   const meOwner = isMe(t.owner_key, t.owner), pick = (k, raw) => (isMe(k, raw) || !k ? null : { key: k, raw });
-  const c = mode === 'done' ? (meOwner ? pick(t.requester_key, t.requester) : pick(t.owner_key, t.owner)) : (meOwner ? pick(t.requester_key, t.requester) : pick(t.owner_key, t.owner));
+  const c = mode === 'done' || mode === 'reply' ? (meOwner ? pick(t.requester_key, t.requester) : pick(t.owner_key, t.owner)) : (meOwner ? pick(t.requester_key, t.requester) : pick(t.owner_key, t.owner));
   const e = c && personEnt(c.key); return e && tellChat() && tellChat().has(c.key) ? { key: c.key, name: e.who.name, raw: c.raw } : null;
 }
 function actionsHtml(t) {
   const a = vstate.act && vstate.act.id === t.id ? vstate.act : null;
-  if (!a) return `<div class="wb-actions" data-slot="actions">${canDone(t) ? '<button type="button" class="wa" data-act="adone">我做好了</button>' : ''}<button type="button" class="wa" data-act="anote">留言</button></div>`;
-  const tl = tellOf(t, a.mode), dis = a.busy ? ' disabled' : '';
-  return `<div class="wb-actions open" data-slot="actions"><form class="wform" novalidate><label class="wl" for="wText">${a.mode === 'done' ? '標成做好了。要補一句結果嗎？（可以不寫）' : '想留什麼話？（要寫）'}</label>` +
-    `<textarea id="wText" rows="3" maxlength="500"${dis}>${esc(a.text)}</textarea>` +
+  if (!a) return `<div class="wb-actions" data-slot="actions">${isDecision(t) ? '<button type="button" class="wa ok" data-act="areply">回覆</button>' : canDone(t) ? '<button type="button" class="wa" data-act="adone">我做好了</button>' : ''}<button type="button" class="wa" data-act="anote">留言</button></div>`;
+  const tl = tellOf(t, a.mode), dis = a.busy ? ' disabled' : '', reply = a.mode === 'reply';
+  return `<div class="wb-actions open" data-slot="actions"><form class="wform" novalidate><label class="wl" for="wText">${reply ? '你的決定或回答（要寫）。送出就把這件標成做好了。' : a.mode === 'done' ? '標成做好了。要補一句結果嗎？（可以不寫）' : '想留什麼話？（要寫）'}</label>` +
+    `<textarea id="wText" rows="3" maxlength="500"${reply ? ' placeholder="你的決定或回答" aria-required="true"' : ''}${dis}>${esc(a.text)}</textarea>` +
     (tl ? `<label class="wtell"><input type="checkbox" data-tell${a.tell ? ' checked' : ''}${dis}> 也告訴 ${esc(tl.name)}</label>` : '') +
     `<div class="wmsg${a.bad ? ' bad' : ''}" role="status">${esc(a.busy ? '送出中…' : a.msg)}</div>` +
-    `<div class="wrow"><button type="submit" class="wa ok"${dis}>確定</button><button type="button" class="wa" data-act="acancel"${dis}>取消</button><span class="wk">⌘/Ctrl + Enter 送出</span></div></form></div>`;
+    `<div class="wrow"><button type="submit" class="wa ok"${dis}>${reply ? '送出回覆' : '確定'}</button><button type="button" class="wa" data-act="acancel"${dis}>取消</button><span class="wk">⌘/Ctrl + Enter 送出</span></div></form></div>`;
 }
 function openAct(id, mode) {
   const t = findTask(id); if (!t) return;
@@ -2160,19 +2174,20 @@ function openAct(id, mode) {
 }
 function cancelAct() {
   const a = vstate.act; if (!a || a.busy) return; vstate.act = null; renderDetail(true);
-  const b = $(`#vOver [data-act="${a.mode === 'done' ? 'adone' : 'anote'}"]`); if (b) { try { b.focus({ preventScroll: true }); } catch (e) {} }
+  const b = $(`#vOver [data-act="${a.mode === 'done' ? 'adone' : a.mode === 'reply' ? 'areply' : 'anote'}"]`); if (b) { try { b.focus({ preventScroll: true }); } catch (e) {} }
 }
 async function submitAct() {
   const a = vstate.act, t = a && findTask(a.id), H = boardHost(); if (!a || a.busy || !t) return;
   const text = a.text.trim(), fail = m => { a.busy = false; a.msg = m; a.bad = true; renderDetail(true); const ta = $('#vOver textarea'); if (ta) { try { ta.focus({ preventScroll: true }); } catch (e) {} } };
   if (a.mode === 'note' && !text) { fail('要先寫點什麼。'); return; }
+  if (a.mode === 'reply' && !text) { fail('要先寫下你的決定或回答。'); return; }
   if (!H || !H.act) { fail('這裡不能操作任務。'); return; }
   a.busy = true; a.msg = ''; a.bad = false; renderDetail(true);
-  let r = null; try { r = await H.act(a.id, a.mode === 'done' ? 'done' : 'note', text); } catch (err) { r = { success: false, message: String(err) }; }
+  let r = null; try { r = await H.act(a.id, a.mode === 'note' ? 'note' : 'done', text); } catch (err) { r = { success: false, message: String(err) }; }
   if (!r || !r.success) { if (vstate.act === a) fail((r && r.message) || '沒有成功，稍後再試一次。'); else toast((r && r.message) || '沒有成功。'); return; }
-  toast(a.mode === 'done' ? '已標成做好了' : '已留言');
+  toast(a.mode === 'reply' ? '已回覆' : a.mode === 'done' ? '已標成做好了' : '已留言');
   const tl = a.tell ? tellOf(t, a.mode) : null;                  // 也告訴對方：一行字，走辦公室對話的送出
-  if (tl) { const ttl = String(t.title || '').slice(0, 40), line = `（看板）#${t.id}「${ttl}」${a.mode === 'done' ? '我做好了' : '留言'}${text ? '：' + text : ''}`;
+  if (tl) { const ttl = String(t.title || '').slice(0, 40), line = a.mode === 'reply' ? `（看板）#${t.id}「${ttl}」我的回覆：${text}` : `（看板）#${t.id}「${ttl}」${a.mode === 'done' ? '我做好了' : '留言'}${text ? '：' + text : ''}`;
     let q = null; try { q = await tellChat().send(tl.key, line, false); } catch (err) { q = null; }
     if (!q || q.success === false) toast(`已記下，但沒能告訴 ${tl.name}`); }
   if (vstate.act === a) { vstate.act = null; renderDetail(true); }
@@ -2205,7 +2220,7 @@ function boardClick(ev) {
   const b = ev.target.closest('[data-act]'); if (!b) return;
   if (b.dataset.act === 'note') openDetail(+b.dataset.id);
   else if (b.dataset.act === 'dclose') closeDetail();
-  else if (b.dataset.act === 'adone' || b.dataset.act === 'anote') openAct([...vstate.open][0], b.dataset.act === 'adone' ? 'done' : 'note');
+  else if (b.dataset.act === 'adone' || b.dataset.act === 'anote' || b.dataset.act === 'areply') openAct([...vstate.open][0], b.dataset.act === 'adone' ? 'done' : b.dataset.act === 'areply' ? 'reply' : 'note');
   else if (b.dataset.act === 'acancel') cancelAct();
   else if (ov && b.dataset.act === 'person') pickPerson(b.dataset.key);
   else if (ov && b.dataset.act === 'tellmain') { panelTab = 'chat'; store.set('panelTab', panelTab); pickPerson(b.dataset.key); }   // 跟那台的主要 bot 說：跟拍它，面板開在對話頁
@@ -2581,26 +2596,35 @@ function viewSub() {
   if (view === 'board') return boardSub();
   const d = SCHED.data; return `對話裡 ${M.loops.length} 個` + (d && d.ok && !d.unsupported && d.configured ? ` · 這台電腦 ${d.rows.filter(r => r.enabled).length}/${d.rows.length} 個啟用` : '');
 }
+// 只有白板時，沒有地板可以點隔壁的房間：白板頭上多一排「這台 / 隔壁：<電腦>」，每台有白板的配對電腦一顆
+const peerBoards = () => [...M.peers.values()].filter(pe => pe.boardState);
+const scopeSig = () => (BOARD_ONLY ? peerBoards().map(pe => pe.id + ':' + pe.name).join('|') : '');
+function scopeBar() {
+  const ps = peerBoards(); if (!BOARD_ONLY || !ps.length) return '';
+  const b = (id, w) => `<button type="button" class="wsc" data-act="scope" data-scope="${esc(id)}" aria-pressed="${(vscope || '') === id}">${esc(w)}</button>`;
+  return `<div class="wscope" role="group" aria-label="看哪一台電腦的白板">${b('', '這台')}${ps.map(pe => b(pe.id, '隔壁：' + pe.name)).join('')}</div>`;
+}
+function switchScope(id) { if ((vscope || '') === id) return; openView(id ? 'board:' + id : 'board'); }
 function renderView(force) {
   if (!view) return;
-  if (view === 'board' && vscope && !(viewPeer() && viewPeer().boardState)) { closeView(true); return; }   // 那台電腦不在了（或不再有白板）：看板收起來
+  if (view === 'board' && vscope && !(viewPeer() && viewPeer().boardState)) { if (BOARD_ONLY) { openView('board'); } else closeView(true); return; }   // 那台電腦不在了（或不再有白板）：看板收起來（只有白板時退回這台的）
   // 簽章只看「畫出來的東西」：看板／排程的資料、誰在辦公室（名牌可不可以點、叫什麼）。M.ver 每 3 秒的快照都會加一，不能放進來：
   // 放了，檢視每 3 秒整個重建，點到一半的按鈕、選起來的字、焦點都會掉。時間字（幾分鐘沒動、倒數）由 viewStep 原地改字。
   // 看板另加「各張現在落在哪一欄」（逾期、24 小時內到期是時間算出來的，資料沒變也會換欄）；打開的卡自己有簽章（renderDetail），開卡不重畫整塊白板。
   const people = peopleSig();
-  const sig = view === 'board' ? ['b', vscope || '', viewVer(), laneSig(boardLanes(nowS()), nowS()), people].join('#') : calSig(people);
+  const sig = view === 'board' ? ['b', vscope || '', viewVer(), laneSig(boardLanes(nowS()), nowS()), people, scopeSig()].join('#') : calSig(people);
   if (view === 'board') renderDetail(force);
   if (!force && sig === vstate.sig) return; vstate.sig = sig;
   $('#vIcon').innerHTML = VIEW_ICON[view]; $('#vTitle').textContent = viewTitle(); $('#vSub').textContent = viewSub();
   const body = $('#vBody'), top = body.scrollTop;
   body.innerHTML = `<div class="vz">${view === 'board' ? boardHtml() : calHtml()}</div>`; body.scrollTop = top; body.dataset.view = view;
   $('#wall').dataset.view = view;
-  const hs = view === 'cal' ? [CAL.mode, CAL.anchor, dayAt(calNow())].join('#') : ''; if (hs !== CAL.headSig) { CAL.headSig = hs; $('#vHeadX').innerHTML = view === 'cal' ? calHead() : ''; }
+  const hs = view === 'cal' ? [CAL.mode, CAL.anchor, dayAt(calNow())].join('#') : BOARD_ONLY ? 'sw#' + (vscope || '') + '#' + scopeSig() : ''; if (hs !== CAL.headSig) { CAL.headSig = hs; $('#vHeadX').innerHTML = view === 'cal' ? calHead() : scopeBar(); }
   if (view === 'cal') { calAfter(); calPopSync(); } else calPopSync();
 }
 function openView(key) {                                 // key：'board'、'cal'，或 'board:<電腦 id>'（那台電腦的白板）
-  if (!wallObj(key)) return;
   const m = /^board:(.+)$/.exec(String(key)), kind = m ? 'board' : key, scope = m ? m[1] : null;
+  if (!wallObj(key) && !(BOARD_ONLY && kind === 'board' && (!scope || (M.peers.get(scope) && M.peers.get(scope).boardState)))) return;   // 只有白板：沒有地板可以點，也就沒有牆上的東西，照樣開
   if (view === kind && vscope === scope) { closeView(); return; }
   if (follow) stopFollow(true);
   hoverObj = null; cv.classList.remove('pt');            // the camera is about to move: the pointer is not over it any more
@@ -2614,6 +2638,7 @@ function openView(key) {                                 // key：'board'、'cal
 function closeView(silent) {
   if (!view) return; view = null; vscope = null; vstate.open.clear(); vstate.detail.clear(); vstate.sig = ''; CAL.pop = null; CAL.msg = ''; CAL.headSig = ''; $('#vHeadX').innerHTML = ''; calPopSync();
   const w = $('#wall'); w.hidden = true; delete w.dataset.view; $('#vBody').innerHTML = ''; renderDetail(true); document.body.classList.remove('walling');
+  if (BOARD_ONLY && HOST && HOST.close) { HOST.close(); return; }   // 只有白板的時候，白板關了就是整個蓋板關了
   kick();
 }
 function pickPerson(key) { const e = personEnt(key); if (!e) return; closeView(true); startFollow(key); }
@@ -2659,7 +2684,10 @@ $('#vOver').addEventListener('keydown', ev => {            // 表單裡：Esc �
   else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey) && ev.target.tagName === 'TEXTAREA') { ev.preventDefault(); submitAct(); }
 });
 $('#vBody').addEventListener('click', ev => { if (view === 'cal') calClick(ev); });
-$('#vHeadX').addEventListener('click', ev => { if (view === 'cal') calClick(ev); });
+$('#vHeadX').addEventListener('click', ev => {
+  if (view === 'cal') { calClick(ev); return; }
+  const b = view === 'board' && ev.target.closest('[data-act="scope"]'); if (b) switchScope(b.dataset.scope);
+});
 $('#calPop').addEventListener('click', calClick); $('#calPop').addEventListener('input', calInput); $('#calPop').addEventListener('change', calInput);
 $('#vClose').onclick = () => closeView();
 $('#wall').addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeView(); });   // 點蓋板外面（暗掉的辦公室）就關
@@ -2802,13 +2830,14 @@ const busy = () => (!DEMO.paused && (papers.length > 0 || rings.length > 0 || [.
 const active = () => performance.now() - lastInput < IDLE_AFTER || busy();
 function schedule() {   // 用計時器排下一幀：兩幀之間固定 50ms（閒置 200ms），閒置時一秒只醒 5 次
   if (document.hidden || timer) return;
-  const gap = 1000 / (active() ? FPS_ON : FPS_IDLE), wait = Math.max(0, gap - (performance.now() - lastT));
+  const gap = BOARD_ONLY ? 250 : 1000 / (active() ? FPS_ON : FPS_IDLE), wait = Math.max(0, gap - (performance.now() - lastT));
   timer = setTimeout(frame, wait);
 }
 function kick() { lastInput = performance.now(); if (timer) { clearTimeout(timer); timer = 0; } schedule(); }
 let busyFrames = 0;
 function frame() {
   timer = 0; if (document.hidden) return;
+  if (BOARD_ONLY) { lastT = performance.now(); try { viewStep(); } catch (e) { console.error(e); } schedule(); return; }   // 只有白板：不模擬、不畫地板
   const now = performance.now(), gap = 1000 / (active() ? FPS_ON : FPS_IDLE);
   if (now - lastT < gap - 1) { schedule(); return; }   // 保險：兩幀至少隔 50ms（閒置 200ms）
   const dt = Math.min(.25, Math.max(0, (now - lastT) / 1000)); lastT = now; T += dt;
@@ -2935,6 +2964,7 @@ q.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !
 addEventListener('pointerdown', () => kick(), true);   // 任何地方的點按都算操作
 addEventListener('keydown', e => {
   kick();
+  if (HOST && HOST.isBoardKey && HOST.isBoardKey(e)) { e.preventDefault(); e.stopPropagation(); if (BOARD_ONLY) HOST.close(); else openView('board'); return; }   // 看板快捷鍵：焦點在這個框裡時主頁收不到
   if (e.key === 'Escape' && view === 'cal' && CAL.pop) { e.preventDefault(); calClosePop(); return; }   // 日曆：Esc 先關細節卡（焦點在卡裡的選單、時間欄也算），再關檢視
   if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (e.key === 'Escape' && e.target.tagName === 'SELECT') e.target.blur(); else return; }   // 選完區域後焦點留在選單上：Esc 照樣能退出
   if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (view) { if (vstate.open.size) closeDetail(); else closeView(); } else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
@@ -3173,7 +3203,10 @@ function applyScale() {
 }
 applyScale();
 function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = '實驗性'; }
-window.Office = { update(snap) { goLive(); applyScale(); return update(snap); } };   // 真資料一進來，示範就停，示範按鈕也收起來
+let boardShown = false;
+function showBoardOnly() { if (BOARD_ONLY && !boardShown) { boardShown = true; openView('board'); } }
+window.Office = { update(snap) { goLive(); applyScale(); const r = update(snap); showBoardOnly(); return r; },
+                  board() { if (!BOARD_ONLY) openView('board'); } };   // 看板快捷鍵：辦公室開著時開關大廳的白板   // 真資料一進來，示範就停，示範按鈕也收起來
 
 /* ══════════ 16. 示範資料與示範時間軸（全部經過 update）══════════ */
 const ago = m => DEMO_BASE - m * 60000;
@@ -3423,7 +3456,7 @@ window.__office = {
   if (store.get('legendMin', narrow)) { $('#legend').classList.add('min'); $('#legendToggle').textContent = '展開'; $('#legendToggle').setAttribute('aria-expanded', 'false'); }
   if (Object.keys(overrides()).length) $('#resetSeats').hidden = false;
   W = innerWidth; H = innerHeight; V.tp = wantTp();
-  if (HOST) { document.body.classList.add('embedded'); goLive(); } else update(DB);   // 嵌在 ShellBot 裡：等主頁的第一份 snapshot（那一份算第一次載入，沒有人走進來）
+  if (HOST) { document.body.classList.add('embedded'); goLive(); if (BOARD_ONLY) setTimeout(showBoardOnly, 1500); } else update(DB);   // 只有白板：第一份 snapshot 一到就開；1.5 秒還沒來也開   // 嵌在 ShellBot 裡：等主頁的第一份 snapshot（那一份算第一次載入，沒有人走進來）
   addEventListener('resize', resize); resize(); renderStats(); renderAreas(); kick();
 })();
 })();

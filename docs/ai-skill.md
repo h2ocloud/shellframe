@@ -553,6 +553,15 @@ That board is read-only for the person: no 我做好了 / 留言 from here, and 
 computer's main bot. If you are that main bot, a person's request about one of your computer's tasks reaches
 you as an ordinary message in your tab.
 
+The whiteboard does not need the office. A button at the foot of the sidebar (看板, in the terminal view and in
+the chat view alike, whether or not `experimental_office` is on; Cmd+Shift+B on macOS, Ctrl+Shift+B elsewhere) opens the same
+board on its own, over the window, with a red count of the decisions waiting on the person (`sfctl task add --decision`,
+§4.9; asked about every 20 s while the window is visible). A decision card's main button is 回覆: the person writes their
+answer, ShellBot marks the task done with that text (`task_user_act`, as if you ran `sfctl task done N "<answer>"`) and, if
+the person left 「也告訴 <you>」 ticked, puts one line in the tab of the bot that asked (the task's requester):
+「（看板）#N「<title>」我的回覆：<answer>」. Treat it as the person's answer to that question. With several paired computers
+the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board is read only.
+
 ## 5. Which build has what
 
 `sfctl version` first, then:

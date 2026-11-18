@@ -275,7 +275,7 @@ def run(browser, base, engine):
     check("…and a decision still reads 等你決定", "等你決定" in text_of(fr))
     fr.click('#vBody .nt[data-id="31"] .nb')
     page.wait_for_timeout(500)
-    check("…its card keeps 我做好了 and 留言, and asks for the history", fr.evaluate("!!document.querySelector('#vOver [data-act=adone]') && !!document.querySelector('#vOver [data-act=anote]')")
+    check("…its card (a decision: 回覆 and 留言) is still the live one, and asks for the history", fr.evaluate("!!document.querySelector('#vOver [data-act=areply]') && !!document.querySelector('#vOver [data-act=anote]')")
           and H.calls(page, "task_detail") >= 1)
     fr.evaluate("__office.closeView()")
     cal = fr.evaluate("__office.wallPoint('cal')")
