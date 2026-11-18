@@ -67,7 +67,7 @@
   const STRIP_MIN_PX = 420;                                               // a chat layer narrower than this (a huge sidebar, a tiny window) has no width to give: the capsule floats instead
 
   let wrap = null, cap = null, panel = null, scrim = null, secTabs = null, secCards = null, secPeers = null, headN = null, statusEl = null;
-  let kind = 'term', docked = false, stripped = false, drawer = false, mounted = false, armed = false, seen = false;
+  let kind = '', docked = false, stripped = false, drawer = false, mounted = false, armed = false, seen = false;
   const cssSet = {};
   let armAt = 0;
   const ARM_MS = 3000;                                                    // the tab lights settle in the first seconds
