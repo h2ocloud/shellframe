@@ -13,6 +13,10 @@ Asking never holds up the page: `view()` hands back what is kept and asks again 
 its own when that is older than FRESH seconds. A machine that is offline, refuses (403: one-way
 pairing, it may not be controlled from here) or is older than the route (404) simply has no bots
 here; it is asked again after a while, never in a loop. A phone is never asked.
+
+`PeerTasks` (at the end) is the same keeper for a paired machine's task lists, GET /link/tasks: the office's
+read-only whiteboard for that machine. It differs in what the page is told: every machine this one may
+control is listed, with a `state` (ok / pending / old / denied / error) instead of being left out.
 """
 
 import re
@@ -161,6 +165,100 @@ class PeerBots:
                     if code == "offline" or now - k["ok_at"] > KEEP:
                         k.update(rev="", data=None)
                     k["next_at"] = now + FRESH
+        finally:
+            with self._lock:
+                if pid in self._kept:
+                    self._kept[pid]["busy"] = False
+
+
+TASKS_FRESH = 20.0     # task lists change slower than a bot's state; the office asks every ~9 s while it is open
+TASK_LISTS = ("decisions", "stuck", "open")
+TASK_ROWS = 100        # at most this many rows of a list are kept (the serving side already caps open at 100)
+
+
+def compact_tasks(res: dict) -> dict:
+    """The three lists of a /link/tasks answer: rows (dicts) passed through as that machine's store gave them
+    (the texts were masked when written there), a list that is not a list is empty."""
+    return {k: [r for r in (res.get(k) if isinstance(res.get(k), list) else []) if isinstance(r, dict)][:TASK_ROWS]
+            for k in TASK_LISTS}
+
+
+class PeerTasks:
+    """What each paired machine said its tasks are, kept for the office's board of that machine.
+
+    Same shape as PeerBots (`link`, `spawn`, `clock`), plus `wall`, the epoch clock `at` is read from.
+    `view()` never touches the network: it answers from what is kept and, for a machine whose answer is older
+    than TASKS_FRESH, starts one background ask (so nothing is asked while no page calls)."""
+
+    def __init__(self, link, spawn=None, clock=time.monotonic, wall=time.time):
+        self._link = link
+        self._spawn = spawn or (lambda fn: threading.Thread(target=fn, daemon=True, name="link-tasks").start())
+        self._clock, self._wall = clock, wall
+        self._lock = threading.Lock()
+        self._kept = {}       # pid -> {"rev", "data", "ok_at", "at", "state", "next_at", "busy"}
+
+    @staticmethod
+    def _entry(k: dict) -> dict:
+        """The page's row for one machine: the kept lists while the answer is good (a failed ask keeps them up
+        to KEEP seconds after the last good one, see refresh), else the state with no rows."""
+        if k["state"] == "ok" and k["data"] is not None:
+            return dict(k["data"], state="ok", at=k["at"])
+        return {"state": k["state"] or "pending", "at": k["at"], "decisions": [], "stuck": [], "open": []}
+
+    def view(self) -> dict:
+        """{"peers": {pid: {state, at, decisions, stuck, open}}, "pending": n}."""
+        fl = self._link()
+        if fl is None:
+            return {"peers": {}, "pending": 0}
+        want = targets(fl.peers())
+        now = self._clock()
+        out, ask = {}, []
+        with self._lock:
+            for gone in [pid for pid in self._kept if pid not in want]:
+                del self._kept[gone]
+            for pid in want:
+                k = self._kept.setdefault(pid, {"rev": "", "data": None, "ok_at": 0.0, "at": 0, "state": "",
+                                                "next_at": 0.0, "busy": False})
+                if not k["busy"] and now >= k["next_at"]:
+                    k["busy"] = True
+                    ask.append(pid)
+                out[pid] = self._entry(k)
+            pending = sum(1 for k in self._kept.values() if k["busy"])
+        for pid in ask:
+            self._spawn(lambda pid=pid: self.refresh(pid))
+        return {"peers": out, "pending": pending}
+
+    def refresh(self, pid: str):
+        """Ask one machine now (on the caller's thread) and keep what it says."""
+        try:
+            fl = self._link()
+            with self._lock:
+                k = self._kept.get(pid)
+                rev = (k or {}).get("rev", "") if (k or {}).get("data") is not None else ""
+            try:
+                res = fl.remote_tasks(pid, rev) if fl is not None else {"success": False, "code": "offline"}
+            except Exception as e:                     # never let one machine break the others
+                res = {"success": False, "message": str(e)}
+            res = res if isinstance(res, dict) else {}
+            now = self._clock()
+            with self._lock:
+                k = self._kept.get(pid)
+                if k is None:                          # unpaired while it was being asked
+                    return
+                code = res.get("code")
+                if res.get("success") and res.get("unchanged") and k["data"] is not None:
+                    k.update(ok_at=now, at=int(self._wall()), state="ok", next_at=now + TASKS_FRESH)
+                elif res.get("success") and not res.get("unchanged"):
+                    k.update(rev=str(res.get("rev") or ""), data=compact_tasks(res), ok_at=now, at=int(self._wall()),
+                             state="ok", next_at=now + TASKS_FRESH)
+                elif code == 404:                      # older than the route
+                    k.update(rev="", data=None, state="old", next_at=now + REFUSED_RETRY)
+                elif code == 403:                      # one-way pairing: it may not be looked at from here
+                    k.update(rev="", data=None, state="denied", next_at=now + REFUSED_RETRY)
+                else:                                  # offline, a timeout, a bad answer, its store unavailable
+                    if k["state"] != "ok" or code == "offline" or now - k["ok_at"] > KEEP:
+                        k.update(rev="", data=None, state="error")
+                    k["next_at"] = now + TASKS_FRESH
         finally:
             with self._lock:
                 if pid in self._kept:

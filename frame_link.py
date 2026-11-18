@@ -798,7 +798,8 @@ class FrameLink:
         return mode in ("duplex", "slave")
 
     def _bots_route(self, peer_id: str, cmd: str, args: dict):
-        """GET /link/bots, POST /link/bots/wake (the phone's bot view, docs/mobile-link.md)."""
+        """GET /link/bots, GET /link/tasks, POST /link/bots/wake (the phone's bot view, docs/mobile-link.md).
+        One rule for all: a peer this one may not be controlled by (one-way pairing) gets 403."""
         if not self._peer_may_control(peer_id):
             return 403, {"success": False, "message": "單向配對：對方無權查看這台"}
         return 200, self._execute(cmd, dict(args, peer_id=peer_id)) or {"success": False, "message": "no answer"}
@@ -1384,9 +1385,9 @@ class FrameLink:
                     events, tail = link._signals_since(since)
                     return self._send(200, {"success": True, "cursor": tail, "events": events},
                                       sign_for=peer, nonce=nonce)
-                if path in ("/link/bots", "/link/push/status"):
-                    code, res = link._bots_route(peer_id, "bots_link" if path == "/link/bots" else "push_status",
-                                                 {"rev": (q.get("rev") or [""])[0]})
+                if path in ("/link/bots", "/link/tasks", "/link/push/status"):
+                    cmd = {"/link/bots": "bots_link", "/link/tasks": "tasks_link"}.get(path, "push_status")
+                    code, res = link._bots_route(peer_id, cmd, {"rev": (q.get("rev") or [""])[0]})
                     return self._send(code, res, sign_for=peer, nonce=nonce)
                 if path == "/link/events":
                     try:
@@ -1768,6 +1769,17 @@ class FrameLink:
             return err or {"success": False, "code": "offline", "message": "offline"}
         try:
             return self._signed_request(peer, "GET", f"/link/bots?rev={quote(str(rev or ''))}", timeout=6)
+        except Exception as e:
+            return {"success": False, "code": getattr(e, "status", 0), "message": str(e)}
+
+    def remote_tasks(self, peer_id: str, rev: str = "") -> dict:
+        """The peer's GET /link/tasks (its decisions, stuck and open tasks) for link_bots.PeerTasks. Same
+        rules as remote_bots: an offline peer is not asked; a refusal or an old version keeps its HTTP status as `code`."""
+        peer, err = self._peer_or_err(peer_id)
+        if err or not self._peer_status.get(peer_id, {}).get("reachable"):
+            return err or {"success": False, "code": "offline", "message": "offline"}
+        try:
+            return self._signed_request(peer, "GET", f"/link/tasks?rev={quote(str(rev or ''))}", timeout=6)
         except Exception as e:
             return {"success": False, "code": getattr(e, "status", 0), "message": str(e)}
 

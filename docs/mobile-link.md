@@ -236,6 +236,8 @@ xcodebuild -scheme ShellFrameMobile -destination 'platform=iOS Simulator,name=iP
 `GET /link/bots`（`link_bots.py`），拿那台分頁的臉（`tabs[sid].avatar`、`kind`）、主要 Bot（`primary`）和
 bot 名單（`bots[]`，給對話畫面的 `#` 用，放進去的是 A2A 的 `<電腦>/<bot>`）。回應的形狀沒有變；手機不用改任何東西。
 
+**`GET /link/tasks?rev=<上次的 rev>`**（桌面版的辦公室看另一台的任務白板用，`link_bots.PeerTasks`）：這台的三份清單，跟桌面的 `tasks_overview` 同一組列：`{"ok": true, "rev", "decisions": […], "stuck": […], "open": […]}`（`open` 最多 100 筆，文字寫入時已遮蔽）；`rev` 沒變就只回 `{"ok": true, "rev", "unchanged": true}`（`rev` 不含一直在長的 `idle_s`）；任務資料庫打不開回 `{"ok": false, "code"}`。權限跟 `/link/bots` 完全一樣：單向配對裡不能操作這台的一方得到 403，舊版本沒有這條路由是 404。
+
 **`POST /link/answer {"sid", "n", "id"}`**：回答 `/link/bots` 給的那一題。
 
 - **只在 `id` 還是那個分頁現在的題目時才送。** 成功回 `{"success": true}`。送法跟 Telegram 的選擇按鈕一樣（`tab_delivery.answer_choice`）：

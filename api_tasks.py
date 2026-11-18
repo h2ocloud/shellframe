@@ -18,6 +18,7 @@ its names (bot_names); `user` is the person. The status monitor calls `_tasks_ti
 pass; once a day a thread backs the store up and drops tasks closed a year ago.
 """
 
+import hashlib
 import json
 import threading
 import time
@@ -361,15 +362,34 @@ class TasksApiMixin:
             self._tasks_busy = False
 
     # ── for a page or the phone (read only) ─────────────────────────────────
+    def _tasks_lists(self) -> dict:
+        """The three lists, from the store (raises ss.Unavailable): what the page, a paired machine's office
+        board and the phone read."""
+        return {"decisions": ss.listing(owner=ss.USER, kind="decision"),
+                "stuck": ss.stuck(),
+                "open": ss.listing(limit=100)}
+
     def tasks_overview(self) -> str:
         """The person's three lists: waiting for their decision, stuck, open. JSON."""
         try:
-            return json.dumps({"success": True,
-                               "decisions": ss.listing(owner=ss.USER, kind="decision"),
-                               "stuck": ss.stuck(),
-                               "open": ss.listing(limit=100)}, ensure_ascii=False)
+            return json.dumps({"success": True, **self._tasks_lists()}, ensure_ascii=False)
         except ss.Unavailable as e:
             return json.dumps({"success": False, "code": e.code, "message": _(e.en, e.zh)}, ensure_ascii=False)
+
+    def _tasks_for_peer(self, args: dict) -> dict:
+        """GET /link/tasks?rev=: the same three lists for a paired machine that may control this one (its
+        office draws them as a read-only board). `rev` hashes the lists but not `idle_s`, which grows with the
+        clock; a caller that sends its last rev gets {"unchanged": true} back. The texts were masked when
+        the store wrote them."""
+        try:
+            lists = self._tasks_lists()
+        except ss.Unavailable as e:
+            return {"ok": False, "success": False, "code": e.code, "message": _(e.en, e.zh)}
+        calm = dict(lists, stuck=[{k: v for k, v in t.items() if k != "idle_s"} for t in lists["stuck"]])
+        rev = hashlib.sha1(json.dumps(calm, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:12]
+        if str(args.get("rev") or "") == rev:
+            return {"ok": True, "success": True, "rev": rev, "unchanged": True}
+        return {"ok": True, "success": True, "rev": rev, **lists}
 
     def task_detail(self, task_id) -> str:
         """One task with what happened to it, newest first (at most 20 events), as JSON: the

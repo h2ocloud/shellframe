@@ -117,6 +117,16 @@ class LinkApiMixin:
         except Exception as e:
             return json.dumps({"peers": {}, "pending": 0, "error": str(e)})
 
+    def link_peer_tasks(self) -> str:
+        """Each paired machine's task lists as kept by link_bots.PeerTasks (the office's read-only board for
+        that machine). Returns at once from the cache; stale machines are asked again in the background."""
+        try:
+            if getattr(self, "_peer_tasks", None) is None:
+                self._peer_tasks = link_bots.PeerTasks(self._link)
+            return json.dumps(self._peer_tasks.view(), ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"peers": {}, "pending": 0, "error": str(e)})
+
     def link_remote_maintenance(self, peer_id: str, action: str) -> str:
         return json.dumps(self._link().remote_maintenance(peer_id, action),
                           ensure_ascii=False)
