@@ -20,8 +20,8 @@ sfctl version
 ```
 
 ```
-OK ShellBot v0.57.0
-   version: 0.57.0
+OK ShellBot v0.58.0
+   version: 0.58.0
    experimental: {"experimental_a2a": true, "experimental_bots": true, "experimental_groups": true, "experimental_loops": false, "experimental_office": false}
 ```
 
@@ -678,6 +678,7 @@ the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board
 | No new commands: the office's whiteboard (sticky notes by priority; 我做好了 / 留言 on a card) and wall calendar (day / week / month, an owner per entry; `schedules.json` may name `owners`) | 0.56.0 |
 | No new commands: each paired computer's room in the office shows its main bot and a read-only whiteboard of that computer's tasks (`link_peer_tasks`, GET /link/tasks; both computers need 0.57.0) | 0.57.0 |
 | `sfctl tg-push --from <schedule id> [--env-file PATH] [--token-var NAME] [--chat ID] "text"`: a script's Telegram message, registered; a Telegram reply to a push (a tab's, a schedule's) goes to its tab or the schedule's `owners` bot instead of the selected tab (`tg_origins.json`, `tg_reply_rules.json`) | 0.58.0 |
+| No new commands: the board button (sidebar foot, both views, ⌘/Ctrl+Shift+B) opens the task board without the office; a decision card has 回覆 (the answer closes it and reaches the bot that asked); a bot's system prompt now says to put what it asks the user on the board (`task add --decision`) | 0.58.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

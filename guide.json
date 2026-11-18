@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.57",
+  "reviewed_for": "0.58",
   "tours": {
     "first_run": [
       "new-tab",
@@ -245,7 +245,7 @@
       "surfaces": [
         "desktop"
       ],
-      "since": "0.57.0",
+      "since": "0.58.0",
       "title": {
         "en": "Task board",
         "zh": "看板"

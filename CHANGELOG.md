@@ -6,6 +6,53 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.58.0 (2026-11-18)
+
+### Added
+
+- **The task board is one tap away in the terminal and chat views, a decision can be answered from its card, and bots put what they ask you on it.**
+  Asked for: the questions an agent waits on should be recorded where the person can call them up, from the
+  terminal view and the chat view alike, instead of being buried in long conversations. A board button now sits
+  at the sidebar's foot in both views, whether or not the office is on, with a red count of the decisions waiting
+  for you; it (or Cmd/Ctrl+Shift+B) opens the same whiteboard sheet without the office floor, with a 這台 /
+  隔壁 switcher for paired computers' read-only boards. A decision card's main action is 「回覆」: the answer
+  (required) closes the card and, ticked by default, reaches the bot that asked as one line. Every bot's system
+  prompt now says to put anything it asks the person to decide or confirm on the board as a decision card (one per
+  question, no duplicates) and to close it once answered. The count is read about every 20 s only while the
+  window is visible. Covered by `tests_board_anywhere_ui.py` and `tests_bot_persona.py`.
+
+  **任務看板在終端機和對話模式都一按就開，「等你決定」的卡片可以直接回覆，bot 問你的事也會放上看板。** 需求：agent
+  在等使用者回答的問題，要記在叫得出來的地方，終端機模式和對話模式都要能調出來，不用回頭翻很長的對話。現在兩種模式的側欄
+  底部都有看板鈕，不管辦公室有沒有打開都在，紅色數字是等你決定的件數；按它（或 Cmd/Ctrl+Shift+B）會打開同一塊白板，
+  不用開辦公室，上方可以切「這台／隔壁」，隔壁的白板唯讀。「等你決定」卡片的主要按鈕是「回覆」：答案必填，送出後卡片結案，
+  並在預設打勾時把這一行傳給問你的 bot。每個 bot 的系統提示也加了一條：要你決定或確認的事，一題寫一張「等你決定」卡片
+  （不重複），你回答後就結掉。數字只在窗口看得到時大約每 20 秒讀一次。由 `tests_board_anywhere_ui.py`、
+  `tests_bot_persona.py` 守著。
+
+- **A Telegram reply to a push goes to whoever sent it, not to the selected tab.**
+  Reported: replying in Telegram to a schedule's push reached whichever tab was selected, which answered about
+  something else. ShellBot now remembers who sent each message it pushes (a tab's replies, notices and menus,
+  `sfctl tg-send`, and scripts that use the new `sfctl tg-push --from <schedule>`), and a reply goes to that tab,
+  or to the schedule's owner bot (`owners` in `schedules.json`), waking a resting bot first; the delivered text
+  says it is a reply to that push and quotes the start of it, and Telegram answers 「→ 已交給 X」. The selected tab
+  does not change, and messages that are not replies behave as before. When nobody is known (no owner, an older
+  message, a script not yet switched to `tg-push`), Telegram asks 「這則要交給誰？」 with a button per bot instead
+  of guessing; a rules file (`tg_reply_rules.json`) can map a push's opening words to a schedule or a bot. The
+  record keeps only the message id, its source, the time and its first 40 characters, for 14 days. `tg-push`
+  sends through ShellBot when it runs, and otherwise straight to Telegram with the token from the calling
+  script's own environment or env file, which it never prints or stores. Covered by `tests_tg_origins.py`,
+  `tests_tg_push.py` and `tests_tg_reply_route.py`.
+
+  **在 Telegram 回覆推播時，會交給發那則推播的人，而不是目前選的分頁。** 回報：在 Telegram 回覆排程的推播，會送到當下選的
+  分頁，它回答的是別的事。現在 ShellBot 會記住它送出的每一則是誰發的（分頁的回覆、通知和選單、`sfctl tg-send`，以及改用新的
+  `sfctl tg-push --from <排程>` 的腳本）。回覆會送回那個分頁，或交給那個排程的負責 bot（`schedules.json` 的 `owners`），
+  bot 在休息就先叫醒；送進去的內容會註明是對哪則推播的回覆，並引用那則的開頭，Telegram 也會回「→ 已交給 X」。目前選的分頁
+  不會變，沒按回覆的訊息照舊。查不到該交給誰時（沒有負責人、是升級前的訊息、腳本還沒改用 `tg-push`），Telegram 會問
+  「這則要交給誰？」，每個 bot 一顆按鈕，不會亂猜；也可以用規則檔（`tg_reply_rules.json`）把推播的開頭對到某個排程或 bot。
+  紀錄只留訊息編號、來源、時間和前 40 個字，保留 14 天。`tg-push` 在 ShellBot 開著時由它送出；沒開時直接送到 Telegram，
+  token 從呼叫它的腳本自己的環境變數或環境檔讀，不會印出也不會存下來。由 `tests_tg_origins.py`、`tests_tg_push.py`、
+  `tests_tg_reply_route.py` 守著。
+
 ## v0.57.0 (2026-11-18)
 
 ### Added
