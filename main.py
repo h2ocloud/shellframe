@@ -856,12 +856,12 @@ def _session_cwd() -> str:
 def _maybe_claude_session_id(cmd: str):
     """For a `claude` launch command, inject `--session-id <uuid>` so the tab
     can be deterministically mapped to its transcript file
-    (~/.claude/projects/<slug>/<uuid>.jsonl). Skips codex/other commands and
+    (~/.claude/projects/<slug>/<uuid>.jsonl). Skips codex/pi/other commands and
     any command that already resumes a session. Returns (new_cmd, session_id)
     or (cmd, None) when not applicable."""
     try:
         low = f" {cmd.lower()} "
-        if "claude" not in low:
+        if not launch_cmd.launches_claude(cmd):     # the program, not a word in a path (a pi tab under .claude/)
             return cmd, None
         if ("--session-id" in low or "--resume" in low or "--continue" in low
                 or " -r " in low or " -c " in low):

@@ -45,6 +45,44 @@ def split_prefix(cmd: str):
     return s[:pos].rstrip(), s[pos:].lstrip()
 
 
+_SHELLS = {"sh", "bash", "zsh", "dash", "fish", "ksh"}
+
+
+def _exe_name(token: str) -> str:
+    """The program's own name: no folders (either slash), no .cmd/.bat/.exe, lower case."""
+    name = (token or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return name[:-4] if name.endswith((".cmd", ".bat", ".exe")) else name
+
+
+def launches_claude(cmd: str, _depth: int = 0) -> bool:
+    """Does this command start Claude Code, as its program (not as a word somewhere in a path or an
+    argument)? `claude`, `claude.cmd`, a folder in front of it, `sf-claude-home` style launchers, behind
+    `cd … &&` / `env …` / `VAR=… `, `npx claude`, and `zsh -lc '…claude…'`. A `pi` tab whose folder or
+    session file is under `.claude/` is not: it was given `--session-id`, which pi does not know, and
+    ended at once."""
+    if _depth > 3:
+        return False
+    _, rest = split_prefix(cmd or "")
+    try:
+        tokens = shlex.split(rest.replace("\\", "/"))
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    exe = _exe_name(tokens[0])
+    if exe == "claude":
+        return True
+    if exe.startswith("sf-") and "claude" in exe.split("-")[1:]:
+        return True
+    if exe in ("npx", "bunx", "pnpx") and len(tokens) > 1:
+        return _exe_name(tokens[1]) in ("claude", "claude-code") or tokens[1].endswith("/claude-code")
+    if exe in _SHELLS:
+        for i, t in enumerate(tokens[1:], 1):
+            if t.startswith("-") and not t.startswith("--") and "c" in t[1:] and i + 1 < len(tokens):
+                return launches_claude(tokens[i + 1], _depth + 1)       # sh -c '<script>': the script's program
+    return False
+
+
 def launch_cwd(cmd: str, cwd: str = "~") -> str:
     """The directory the CLI really starts in when its command begins with
     `cd <dir> &&` (or `;`). Claude Code names its transcript folder after that
