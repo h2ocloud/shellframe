@@ -60,7 +60,7 @@ ROSTER = {
     "chief": {"label": "示範秘書長", "responsibility": "統籌、分派工作", "cmd": "claude",
               "bot": {"avatar": {"shape": "star", "color": "purple"}, "primary": True, "memory": True},
               "cli": {"key": "claude", "label": "Claude Code"}, "pin": {"ok": True}},
-    "eng": {"label": "示範工程師", "responsibility": "寫程式、跑測試", "cmd": "claude",
+    "eng": {"label": "示範工程師", "responsibility": "寫程式、跑測試", "cmd": "claude", "former_names": ["示範舊工程師"],
             "bot": {"avatar": {"shape": "egg", "color": "amber"}, "memory": True},
             "cli": {"key": "claude", "label": "Claude Code"}, "pin": {"ok": True, "model": "demo-model"}},
     "res": {"label": "示範研究員", "responsibility": "查資料、寫摘要", "cmd": "codex",

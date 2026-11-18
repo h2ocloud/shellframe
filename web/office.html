@@ -450,6 +450,7 @@ html.bo body>*:not(#wall):not(#toast){display:none!important}
 .wform .wl{font-weight:700;font-size:14.5px}
 .wform textarea{width:100%;resize:vertical;min-height:72px;font:15px/1.5 var(--font);color:#1f2433;background:rgba(255,255,255,.88);border:1.5px solid rgba(31,36,51,.4);border-radius:8px;padding:8px 10px}
 .wtell{display:flex;align-items:center;gap:8px;font-size:15px}
+.wtell.wmiss{display:block;color:#8a4b00;background:#fff4e0;border:1px solid #f0c890;border-radius:8px;padding:8px 10px;font-size:14px;line-height:1.5}
 .wtell input{width:18px;height:18px;accent-color:#1f4aa8}
 .wmsg{min-height:1.4em;font-size:14px;color:rgba(31,36,51,.8)}
 .wmsg.bad{color:#a3122a;font-weight:700}
@@ -2159,18 +2160,26 @@ function cardHtml(t, r, now) {
 const isMe = (k, raw) => k === 'user' || raw === 'user';
 const canDone = t => isMe(t.owner_key, t.owner) || isMe(t.waiting_key, t.waiting_on);
 const isDecision = t => !viewPeer() && t.kind === 'decision' && isMe(t.owner_key, t.owner);   // 要你決定的卡：主要動作是「回覆」（寫下決定，標成做好了，也告訴問的人）
-function tellOf(t, mode) {                           // 這件事該讓誰知道（跟後端的 tell 同一條規則）；不在辦公室裡、或沒有分頁可送的人 = 沒有
-  const meOwner = isMe(t.owner_key, t.owner), pick = (k, raw) => (isMe(k, raw) || !k ? null : { key: k, raw });
-  const c = mode === 'done' || mode === 'reply' ? (meOwner ? pick(t.requester_key, t.requester) : pick(t.owner_key, t.owner)) : (meOwner ? pick(t.requester_key, t.requester) : pick(t.owner_key, t.owner));
-  const e = c && personEnt(c.key); return e && tellChat() && tellChat().has(c.key) ? { key: c.key, name: e.who.name, raw: c.raw } : null;
+// 這件事該讓誰知道（跟後端的 tell 同一條規則）：你負責的 → 交辦的人；別人負責的 → 負責的人。{key, raw}；key 是 '' = 這台找不到這個名字
+const tellTarget = t => (isMe(t.owner_key, t.owner) ? { key: t.requester_key, raw: t.requester } : { key: t.owner_key, raw: t.owner });
+function tellOf(t, mode) {                           // 告訴得到的那個人；不在辦公室裡、或沒有分頁可送的人 = 沒有（見 tellMiss）
+  const c = tellTarget(t); if (!c.key || isMe(c.key, c.raw)) return null;
+  const e = personEnt(c.key); return e && tellChat() && tellChat().has(c.key) ? { key: c.key, name: e.who.name, raw: c.raw } : null;
+}
+function tellMiss(t, mode) {                         // 該讓他知道、卻告訴不到：{name, why}，回覆框寫出來，不要默默跳過
+  const c = tellTarget(t), raw = String(c.raw || '');
+  if (!raw || isMe(c.key, c.raw) || tellOf(t, mode)) return null;
+  const e = c.key ? personEnt(c.key) : null;          // 有這個人、卻送不到 = 他沒有開著的分頁（休息中、或分頁已關）
+  return { name: e ? e.who.name : raw, why: c.key ? '他現在沒有開著的分頁（在休息）' : '這台找不到這個名字的 bot 或分頁' };
 }
 function actionsHtml(t) {
   const a = vstate.act && vstate.act.id === t.id ? vstate.act : null;
   if (!a) return `<div class="wb-actions" data-slot="actions">${isDecision(t) ? '<button type="button" class="wa ok" data-act="areply">回覆</button>' : canDone(t) ? '<button type="button" class="wa" data-act="adone">我做好了</button>' : ''}<button type="button" class="wa" data-act="anote">留言</button></div>`;
-  const tl = tellOf(t, a.mode), dis = a.busy ? ' disabled' : '', reply = a.mode === 'reply';
+  const tl = tellOf(t, a.mode), miss = tl ? null : tellMiss(t, a.mode), dis = a.busy ? ' disabled' : '', reply = a.mode === 'reply';
   return `<div class="wb-actions open" data-slot="actions"><form class="wform" novalidate><label class="wl" for="wText">${reply ? '你的決定或回答（要寫）。送出就把這件標成做好了。' : a.mode === 'done' ? '標成做好了。要補一句結果嗎？（可以不寫）' : '想留什麼話？（要寫）'}</label>` +
     `<textarea id="wText" rows="3" maxlength="500"${reply ? ' placeholder="你的決定或回答" aria-required="true"' : ''}${dis}>${esc(a.text)}</textarea>` +
-    (tl ? `<label class="wtell"><input type="checkbox" data-tell${a.tell ? ' checked' : ''}${dis}> 也告訴 ${esc(tl.name)}</label>` : '') +
+    (tl ? `<label class="wtell"><input type="checkbox" data-tell${a.tell ? ' checked' : ''}${dis}> 也告訴 ${esc(tl.name)}</label>`
+      : miss ? `<div class="wtell wmiss" role="note">沒辦法通知 ${esc(miss.name)}：${esc(miss.why)}。會記在這張卡上，他看白板才會知道。</div>` : '') +
     `<div class="wmsg${a.bad ? ' bad' : ''}" role="status">${esc(a.busy ? '送出中…' : a.msg)}</div>` +
     `<div class="wrow"><button type="submit" class="wa ok"${dis}>${reply ? '送出回覆' : '確定'}</button><button type="button" class="wa" data-act="acancel"${dis}>取消</button><span class="wk">⌘/Ctrl + Enter 送出</span></div></form></div>`;
 }
@@ -2198,6 +2207,7 @@ async function submitAct() {
       : a.mode === 'reply' ? `（看板）#${t.id}「${ttl}」我的回覆：${text}` : `（看板）#${t.id}「${ttl}」${a.mode === 'done' ? '我做好了' : '留言'}${text ? '：' + text : ''}`;
     let q = null; try { q = await tellChat().send(tl.key, line, false); } catch (err) { q = null; }
     if (!q || q.success === false) toast(`已記下，但沒能告訴 ${tl.name}`); }
+  else { const m = tellMiss(t, a.mode); if (m) toast(`已記下，但沒辦法通知 ${m.name}`); }
   if (vstate.act === a) { vstate.act = null; renderDetail(true); }
 }
 function renderDetail(force) {

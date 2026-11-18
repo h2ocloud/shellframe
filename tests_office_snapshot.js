@@ -120,6 +120,22 @@ check('…pending / old / denied / error pass through, an unknown state is an er
 const none = O.build({ botsOn: true, roster, tabs, peers, peerTasks: { other: pt.p1 }, seen: {}, kit, now }).peers[0];
 check('…a peer the answer does not list has no board', !('board' in none) && !('boardState' in none));
 
+console.log('a renamed bot');
+// bots.rename_in_config keeps the old role and label in former_names; the store keeps the name a task was written with
+const rRoster = Object.assign({}, roster, { chief: Object.assign({}, roster.chief, { former_names: ['舊秘書長', '舊主控', 'eng'] }) });
+const rTasks = { decisions: [{ id: 44, title: '示範舊名的決定', kind: 'decision', owner: 'user', requester: '舊秘書長', status: 'waiting' }],
+  open: [{ id: 45, title: '示範舊名交辦', status: 'todo', owner: '舊主控', requester: '舊秘書長', updated_at: 10 },
+         { id: 46, title: '示範舊名撞名', status: 'todo', owner: 'eng', requester: 'eng', updated_at: 10 }] };
+const rs = O.build({ botsOn: true, roster: rRoster, primary: 'chief', tabs, tasks: rTasks, peers: {}, helpers: {}, seen: {}, kit, now });
+const r44 = rs.board.decisions.find(x => x.id === 44), r45 = rs.board.all.find(x => x.id === 45), r46 = rs.board.all.find(x => x.id === 46);
+check('a decision written under a bot\'s old name is that bot\'s: requester_key b:chief', r44 && r44.requester_key === 'b:chief', r44);
+check('…any of its former names, as owner too', r45 && r45.owner_key === 'b:chief' && r45.requester_key === 'b:chief', r45);
+check('…but a former name that is another bot\'s role now stays that bot\'s', r46 && r46.owner_key === 'b:eng' && r46.requester_key === 'b:eng', r46);
+const rPeers = { p1: { name: '示範電腦', bots: [{ role: 'b', label: '示範建置員', former_names: ['示範舊建置員'], state: 'awake' }], tabs: {} } };
+const rPt = { p1: { state: 'ok', at: 1, decisions: [{ id: 51, title: '示範隔壁舊名', kind: 'decision', owner: 'user', requester: '示範舊建置員', status: 'waiting' }], stuck: [], open: [] } };
+const rp = O.build({ botsOn: true, roster, tabs, peers: rPeers, peerTasks: rPt, seen: {}, kit, now }).peers[0];
+check('…and on a paired computer\'s board (its /link/bots rows carry former_names)', rp.board.decisions[0].requester_key === 'p:p1/b', rp.board.decisions[0]);
+
 console.log('part-timers');
 const H = Object.fromEntries(snap.helpers.map(h => [h.id, h]));
 check('under the bot whose tab launched them, and under an intern', H['s2/a1'] && H['s2/a1'].parent === 'eng' && H['s2/a1'].parent_kind === 'bot'

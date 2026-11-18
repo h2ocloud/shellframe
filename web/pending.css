@@ -108,6 +108,7 @@ body.sf-chat-shown #pend-cap.capsule { top: calc(var(--cm-head-h, 50px) + 8px); 
 .pend-form textarea { display: block; width: 100%; box-sizing: border-box; margin: .3em 0; padding: .45em .55em; border: 1px solid var(--p-line); border-radius: 6px; background: #1a1b26; color: var(--p-text); font: inherit; resize: vertical; }
 .pend-form textarea:focus { outline: 2px solid var(--p-blue); outline-offset: -1px; }
 .pend-form label.pend-tell { display: flex; align-items: center; gap: .4em; color: var(--p-text); }
+.pend-form .pend-miss { margin: .2em 0; padding: .4em .55em; border: 1px solid var(--p-amber); border-radius: 6px; color: var(--p-amber); font-size: .88em; line-height: 1.45; overflow-wrap: anywhere; }
 
 /* chat view: the docked column and the strip take the chat layer's right edge, never the terminal's */
 body.sf-pend-docked #chat-layer { right: var(--pend-w); }

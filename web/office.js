@@ -187,6 +187,7 @@
     if (!pt || typeof pt !== 'object') return {};
     const who = { roles: new Set(), labels: {}, temps: {} };
     for (const b of p.bots || []) if (b && b.role && b.state !== 'external') { who.roles.add(String(b.role)); if (b.label) who.labels[String(b.label)] = String(b.role); }
+    for (const b of p.bots || []) if (b && b.role && b.state !== 'external') formerNames(who, b.former_names, String(b.role));
     for (const r of Object.keys(p.tabs || {})) { const tb = p.tabs[r]; if (tb && tb.kind === 'temp') { who.temps[String(tb.name || r)] = r; who.temps[r] = r; } }
     const b = boardOf({ open: pt.open, stuck: pt.stuck, decisions: pt.decisions }, who, now);
     const key = k => (k.startsWith('b:') ? `p:${pid}/${k.slice(2)}` : k.startsWith('t:') ? `q:${pid}/${k.slice(2)}` : k);
@@ -210,10 +211,16 @@
      output: the snapshot office.html's Office.update takes (its §15), with `board` (the task board: decisions, stuck,
      open, all; boardOf) and `loops` (every tab with a loop or cron, who it is and when it wakes next); a bot or an
      intern with one carries `loop` too. */
-  // Who a task's owner / requester name can mean: the bots' roles and labels, and the tabs that are no bot (build() and the page's rows).
+  // A renamed bot is still who a task names by its old name (bots.rename_in_config keeps them in former_names, and the store keeps
+  // the name a task was written with): an old name means that bot unless it is another bot's role or label now.
+  function formerNames(who, names, role) {
+    for (const n of Array.isArray(names) ? names : []) { const k = String(n || ''); if (k && !who.roles.has(k) && !who.labels[k]) who.labels[k] = role; }
+  }
+  // Who a task's owner / requester name can mean: the bots' roles, labels and former names, and the tabs that are no bot (build() and the page's rows).
   function whoOf(roles, roster, tabs) {
     const known = new Set(roles), who = { roles: known, labels: {}, temps: {} };
     for (const r of roles) if (roster[r].label) who.labels[String(roster[r].label)] = r;
+    for (const r of roles) formerNames(who, roster[r].former_names, r);
     for (const x of tabs) if (x.kind === 'temp' && !(x.role && known.has(x.role))) { who.temps[String(x.label || '')] = x.sid; who.temps[x.sid] = x.sid; }
     return who;
   }
@@ -553,6 +560,15 @@
       const row = boardRows({ decisions: [task] })[0], k = row && row.requester_key;
       if (!k || k === 'user' || !chatHost.has(k)) return null;
       return { key: k, name: nameOfKey(k) || String(task.requester || '') };
+    },
+    // Someone asked but cannot be told here (askerOf is null): {name, why} in the page's language, so the answer box says so
+    // instead of leaving the line out. null when there is nobody to tell (no requester, the person themselves) or they can be told.
+    askerMiss(task) {
+      const raw = String((task && task.requester) || '');
+      if (!raw || raw === 'user' || boardHost.askerOf(task)) return null;
+      const row = boardRows({ decisions: [task] })[0], k = row && row.requester_key;
+      return k ? { name: nameOfKey(k) || raw, why: t('no tab of theirs is open (resting)', '他現在沒有開著的分頁（在休息）') }
+        : { name: raw, why: t('no bot or tab here has that name', '這台找不到這個名字的 bot 或分頁') };
     },
     // Answer a decision from the pending list: task_user_act(id, 'done', text), then, when asked to, one line to whoever asked.
     // Nothing is sent without text. {success, message, told: true | false | null (null: not asked to)}.

@@ -59,7 +59,8 @@ task, NOW = H.task, H.NOW
 BASE_STATUS = copy.deepcopy(H.STATUS)
 WAITING_STATUS = copy.deepcopy(H.STATUS["s702"])      # the tab that waits on the person (the harness's)
 # four decisions for the person. asked: #34 first (the longest ago), then #31, #32, #33. #32 is overdue, #31 due soon.
-D32 = task(32, "示範：趕不上期限的那件", "waiting", "user", "eng", "user", "回「加班」或「延後」", NOW - 3600, 800, "decision")
+# #32 was asked under the engineer's old name (a bot renamed since: its former_names); it is still the engineer's to be told
+D32 = task(32, "示範：趕不上期限的那件", "waiting", "user", "示範舊工程師", "user", "回「加班」或「延後」", NOW - 3600, 800, "decision")
 D31 = task(31, "示範方案 A 或 B", "waiting", "user", "res", "user", "等你選一個", NOW + 7200, 1200, "decision")
 D34 = task(34, "示範週報要寄給誰", "waiting", "user", "chief", "user", "等你點頭", None, 90000, "decision")
 D33 = task(33, "示範要不要多開一個分頁", "waiting", "user", "chief", "user", "等你說好或不要", None, 500, "decision")
@@ -467,10 +468,18 @@ def run(browser, base, engine):
     page.wait_for_selector("#pend-cards .pend-card.open textarea", timeout=5000)
     check("a card whose asker has no tab here has no 「也告訴」 and no 跳到 (only the board)", not page.evaluate("!!document.querySelector('#pend-cards [data-tell]')")
           and "跳到" not in page.inner_text("#pend-cards .pend-card.open") and "在白板上看" in page.inner_text("#pend-cards .pend-card.open"))
+    check("…and says so instead of skipping it: 沒辦法通知 示範研究員 and why", "沒辦法通知 示範研究員：他現在沒有開著的分頁（在休息）" in page.inner_text("#pend-cards .pend-card.open .pend-miss"),
+          page.inner_text("#pend-cards .pend-card.open"))
+    if shoot:
+        page.screenshot(path=str(H.SHOTS / "pending-card-cannot-tell-1920.png"))
     page.fill("#pend-ans", "選 A")
     page.keyboard.press("Control+Enter")
     page.wait_for_function("SFBoard.count() === 1", timeout=15000)
     check("Ctrl+Enter sends too; a failing store keeps the card (below)", [a[0] for a in args_of(page, "task_user_act")][-1] == "31")
+    check("…and the answer says it could not tell 示範研究員", "沒辦法通知 示範研究員" in page.inner_text("#pend-panel"), page.inner_text("#pend-panel"))
+    gone = page.evaluate("SFOffice.host.board.askerMiss({id: 99, title: '示範', kind: 'decision', owner: 'user', requester: '示範不在這台', status: 'waiting'})")
+    old = page.evaluate("SFOffice.host.board.askerMiss({id: 98, title: '示範', kind: 'decision', owner: 'user', requester: '示範舊工程師', status: 'waiting'})")
+    check("a name nobody here has: 沒辦法通知 <that name>, 這台找不到; an old name of a bot with a tab: nothing missing", gone == {"name": "示範不在這台", "why": "這台找不到這個名字的 bot 或分頁"} and old is None, (gone, old))
     page.evaluate("window.__actReply = {success: false, code: 'closed', message: '#33 已經結束了。'}")
     page.click('#pend-cards .pend-card[data-id="33"] .pend-card-h')
     page.wait_for_selector("#pend-cards .pend-card.open textarea", timeout=5000)

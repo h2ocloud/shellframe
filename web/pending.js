@@ -214,6 +214,8 @@
     return { rows, keyOf, now };
   }
   const askerOf = row => { const o = O(); try { return o && o.host && o.host.board && o.host.board.askerOf ? o.host.board.askerOf(row) : null; } catch (_) { return null; } };
+  // Someone asked but cannot be told from here: {name, why} (office.js boardHost.askerMiss), said in the form instead of a silent skip.
+  const askerMissOf = row => { const o = O(); try { return o && o.host && o.host.board && o.host.board.askerMiss ? o.host.board.askerMiss(row) : null; } catch (_) { return null; } };
   // A name the store holds (a bot's role, a tab's title) as the person knows it: the bot's label, else as written.
   const personName = raw => {
     const r = String(raw || '');
@@ -272,7 +274,8 @@
         `<ol class="pend-hist" aria-label="${esc(t('History', '歷程'))}">${histHtml(r.id)}</ol>` +
         `<form class="pend-form" novalidate data-id="${esc(r.id)}"><label for="pend-ans">${esc(t('Your decision or answer (required). Sending it marks this done.', '你的決定或回答（要寫）。送出就把這件標成做好了。'))}</label>` +
         `<textarea id="pend-ans" rows="3" maxlength="500" aria-required="true" placeholder="${esc(t('Your decision or answer', '你的決定或回答'))}"${dis}>${esc(dr.text)}</textarea>` +
-        (a ? `<label class="pend-tell"><input type="checkbox" data-tell${dr.tell ? ' checked' : ''}${dis}> ${esc(t(`Also tell ${a.name}`, `也告訴 ${a.name}`))}</label>` : '') +
+        (a ? `<label class="pend-tell"><input type="checkbox" data-tell${dr.tell ? ' checked' : ''}${dis}> ${esc(t(`Also tell ${a.name}`, `也告訴 ${a.name}`))}</label>`
+          : (miss => miss ? `<div class="pend-tell pend-miss" role="note">${esc(t(`Can't tell ${miss.name}: ${miss.why}. The answer stays on the card.`, `沒辦法通知 ${miss.name}：${miss.why}。會記在這張卡上，他看白板才會知道。`))}</div>` : '')(askerMissOf(r))) +
         `<div class="pend-note${form.bad ? ' bad' : ''}" role="status">${esc(form.busy ? t('Sending…', '送出中…') : form.msg)}</div>` +
         `<div class="pend-row"><button type="submit" class="pend-go"${dis}>${esc(t('Send', '送出'))}</button>${jump}` +
         `<button type="button" class="pend-link" data-act="board" data-id="${esc(r.id)}">${esc(t('See it on the board', '在白板上看'))}</button></div></form></div></div>`;
@@ -394,7 +397,9 @@
     form.busy = false;
     if (!r || !r.success) { form.msg = (r && r.message) || t('Not sent. Try again in a moment.', '沒有成功，稍後再試一次。'); form.bad = true; render(); return; }
     form.msg = ''; delete drafts[id]; detail.delete(id); openId = null;
-    say(r.told === false ? t('Answered, but could not tell the one who asked.', '已回覆，但沒能告訴問的人。') : t('Answered.', '已回覆。'), r.told === false);
+    const miss = r.told === false ? askerMissOf(row) : null;
+    say(r.told === false ? (miss ? t(`Answered, but could not tell ${miss.name}.`, `已回覆，但沒辦法通知 ${miss.name}。`) : t('Answered, but could not tell the one who asked.', '已回覆，但沒能告訴問的人。'))
+      : t('Answered.', '已回覆。'), r.told === false);
     render();
     const b = B(); if (b && b.poll) b.poll();                         // the card and the red count follow the store, at once
   }

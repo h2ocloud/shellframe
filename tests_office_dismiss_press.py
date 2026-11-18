@@ -52,7 +52,7 @@ def run(browser, base, engine):
     page.on("pageerror", lambda e: errors.append(f"pageerror {e}"))
     page.add_init_script(H.stub())
     page.goto(base + "/index.html")
-    page.wait_for_selector("#sb-footer-row #btn-office", timeout=20000)
+    page.wait_for_selector("#sb-entry #btn-office", timeout=20000)          # the entry row at the sidebar top (web/entry.js)
     page.wait_for_function("window.SFOffice && window.SFBots && SFBots.enabled() && window.SFChat", timeout=20000)
     page.wait_for_function("""['s701:sig-working','s702:sig-decision'].every(p => { const [sid, c] = p.split(':');
         const s = window.__sfHost.sessions()[sid]; return s && s._dotClass === c; })""", timeout=20000)

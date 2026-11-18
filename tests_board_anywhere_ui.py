@@ -273,7 +273,11 @@ def run(browser, base, engine):
     fr.click('#vBody .nb[data-id="31"]')
     fr.wait_for_selector("#vOver .wcard", timeout=5000)
     fr.click('#vOver [data-act="areply"]')
-    check("#31's requester has no tab: no 「也告訴」 box (nobody to send to)", fr.evaluate("!document.querySelector('#vOver .wtell')"))
+    check("#31's requester has no tab: no 「也告訴」 box (nobody to send to)", fr.evaluate("!document.querySelector('#vOver .wtell input')"))
+    miss = fr.evaluate("(document.querySelector('#vOver .wmiss') || {}).innerText || ''")
+    check("…and the card says so instead of skipping it: 沒辦法通知 示範研究員 and why", "沒辦法通知 示範研究員：他現在沒有開著的分頁（在休息）" in miss, miss)
+    if shoot:
+        page.screenshot(path=str(H.SHOTS / "board-anywhere-cannot-tell.png"))
     page.evaluate("window.__actReply = {success: false, code: 'closed', message: '#31 已經結束了。'}")
     fr.fill("#vOver textarea", "示範：好")
     page.evaluate("window.__args.length = 0")
