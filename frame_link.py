@@ -802,6 +802,8 @@ class FrameLink:
         One rule for all: a peer this one may not be controlled by (one-way pairing) gets 403."""
         if not self._peer_may_control(peer_id):
             return 403, {"success": False, "message": "單向配對：對方無權查看這台"}
+        if cmd == "tasks_link" and ((self._get_config() or {}).get("settings") or {}).get("link_share_tasks_off") is True:
+            return 403, {"success": False, "message": "這台不分享任務給隔壁電腦"}     # the setting: the same refusal, nothing read
         return 200, self._execute(cmd, dict(args, peer_id=peer_id)) or {"success": False, "message": "no answer"}
 
     # ── raw output streaming（無縫遠端分頁）────────────────────────────────

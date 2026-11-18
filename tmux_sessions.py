@@ -74,6 +74,18 @@ def list_sf_sessions(tmux: str | None, prefix: str = PREFIX) -> list[dict]:
     return result
 
 
+def session_gone(tmux: str | None, name: str, timeout: float = 3.0) -> bool:
+    """True only when tmux answered and says there is no session `name`. No tmux, a timeout or an
+    error is False: a slow tmux must not make a live tab look dead."""
+    if not tmux or not name:
+        return False
+    try:
+        r = subprocess.run([tmux, "has-session", "-t", f"={name}"], capture_output=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return r.returncode != 0
+
+
 def session_details(tmux: str | None, prefix: str = PREFIX) -> list[dict]:
     """sf_* sessions with attach count, times and the pane's process, in two
     tmux calls total (no per-session round trips)."""

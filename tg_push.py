@@ -1,7 +1,10 @@
 """`sfctl tg-push`: a script's own message to the person's Telegram, registered so a reply
 to it goes back to that script's owner (see tg_origins.py).
 
-    sfctl tg-push --from <schedule id> [--env-file PATH] [--token-var NAME] [--chat ID] "text"
+    sfctl tg-push --from <schedule id> [--env-file PATH] [--token-var NAME] [--chat ID] [--preview] "text"
+
+Links in the text get no preview card unless `--preview` is given (the scripts this replaces sent
+`disable_web_page_preview`).
 
   * ShellBot running: the app sends it (to the person's bound chat) and registers it.
   * ShellBot not running, or it could not send: this process sends it with the Bot API and
@@ -66,11 +69,14 @@ def _api_base() -> str:
     return base.rstrip("/")
 
 
-def send_one(token: str, chat: str, text: str):
+def send_one(token: str, chat: str, text: str, preview: bool = False):
     """(message_id, "") on success, (None, why) on failure; the why never holds the token."""
     try:
         url = f"{_api_base()}/bot{token}/sendMessage"
-        data = json.dumps({"chat_id": int(chat) if re.fullmatch(r"-?\d+", chat) else chat, "text": text}).encode()
+        body = {"chat_id": int(chat) if re.fullmatch(r"-?\d+", chat) else chat, "text": text}
+        if not preview:
+            body["disable_web_page_preview"] = True
+        data = json.dumps(body).encode()
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=SEND_TIMEOUT_S) as resp:
             body = json.loads(resp.read().decode())
@@ -89,12 +95,12 @@ def send_one(token: str, chat: str, text: str):
         return None, f"{type(e).__name__}"          # nothing of the message: it may hold the URL
 
 
-def send_direct(token: str, chat: str, text: str, schedule_id: str):
+def send_direct(token: str, chat: str, text: str, schedule_id: str, preview: bool = False):
     """Send (split at Telegram's cap) and register every part. (parts sent, "") or (parts sent, why)."""
     parts = tg_origins.split_for_telegram(text)
     sent = 0
     for part in parts:
-        mid, why = send_one(token, chat, part)
+        mid, why = send_one(token, chat, part, preview)
         if mid is None:
             return sent, why
         sent += 1
@@ -143,7 +149,8 @@ def _cli(args, rpc, app_up, environ=None, stdin=None, out=None, err=None) -> int
 
     why = ""
     if app_up():
-        r = rpc("tg_push", {"text": text, "schedule": sid, "chat": chat}, timeout=RPC_TIMEOUT_S) or {}
+        preview = bool(getattr(args, "preview", False))
+        r = rpc("tg_push", {"text": text, "schedule": sid, "chat": chat, "preview": preview}, timeout=RPC_TIMEOUT_S) or {}
         if r.get("success"):
             print(f"OK {r.get('message') or 'sent by ShellBot'}", file=out)
             return 0
@@ -156,7 +163,7 @@ def _cli(args, rpc, app_up, environ=None, stdin=None, out=None, err=None) -> int
                     + f"no usable Telegram token in ${var}")
     if not chat:
         return fail((why + "; " if why else "") + "no chat: pass --chat or set CHAT_ID")
-    sent, bad = send_direct(token, chat, text, sid)
+    sent, bad = send_direct(token, chat, text, sid, bool(getattr(args, "preview", False)))
     if bad:
         return fail(f"Telegram refused it: {bad}" + (f" ({sent} part(s) went before)" if sent else ""))
     print(f"OK sent directly ({sent} message{'s' if sent != 1 else ''})", file=out)

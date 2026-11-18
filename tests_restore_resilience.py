@@ -67,7 +67,7 @@ def _api():
     api._output_event = threading.Event()
     api._start_startup_trust_watcher = lambda sid, s: None
     api._restore_transcript_hint = lambda s, e: None
-    api._persist_session_manifest = lambda order=None: None
+    api._persist_session_manifest = lambda order=None, **k: None
     api._sync_bridge_sessions = lambda: None
     return api
 

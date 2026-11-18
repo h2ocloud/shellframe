@@ -8,6 +8,7 @@ hook 事件驅動的精確狀態、狀態 hook 安裝開關、定期狀態監看
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -18,6 +19,8 @@ import sf_log
 import sf_notify
 import tab_delivery
 from api_host import main
+
+_IS_WIN = sys.platform == "win32"      # a module value, not main.IS_WIN: the mixins' late-bound main.* budget (tests_architecture)
 
 
 _AUTO_STATUS = [0.0, True]     # [read at, value]: the monitor asks every 0.6 s; config.json is read at most every 5 s
@@ -151,7 +154,16 @@ class StatusApiMixin:
         return out
 
     def _sf_hook_command(self) -> str:
-        return f'python3 "{main.APP_DIR / "sf_agent_hook.py"}"'
+        hook = str(main.APP_DIR / "sf_agent_hook.py")
+        if _IS_WIN:
+            # Claude Code runs a hook through Git Bash, where `python3` is usually not there (python.org's Python
+            # is `python.exe`; the Store's `python3` is a stub): hooks never ran, so no tab ever reported its
+            # current conversation. The console Python that runs ShellBot, with forward slashes (bash eats backslashes).
+            exe = sys.executable
+            if exe.lower().endswith("pythonw.exe"):
+                exe = exe[:-len("pythonw.exe")] + "python.exe"
+            return f'"{exe.replace(chr(92), "/")}" "{hook.replace(chr(92), "/")}"'
+        return f'python3 "{hook}"'
 
     # The one synchronous entry: Stop asks whether an unanswered hand-off should keep
     # the agent going (sf_agent_hook.py --stop-check, agent_link.stop_check).
@@ -173,11 +185,19 @@ class StatusApiMixin:
             pass
         return targets
 
+    @staticmethod
+    def _stale_sf_hook(h) -> bool:
+        """Our hook as an older Windows install wrote it: `python3 "…sf_agent_hook.py"` (see _sf_hook_command)."""
+        c = str((h or {}).get("command", ""))
+        return "sf_agent_hook.py" in c and c.lstrip().startswith("python3 ")
+
     def _hooks_installed_in(self, p: Path) -> bool:
         try:
             hooks = (json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}).get("hooks") or {}
         except Exception:
             return False
+        if _IS_WIN and any(self._stale_sf_hook(h) for gs in hooks.values() for g in (gs or []) for h in (g.get("hooks") or [])):
+            return False            # not installed as far as Windows is concerned: _sync_status_hooks_to_profiles rewrites it
         return (all(any("sf_agent_hook.py" in json.dumps(g) for g in (hooks.get(ev) or []))
                     for ev in self._HOOK_EVENTS)
                 and any(self._STOP_CHECK in json.dumps(g) for g in (hooks.get("Stop") or [])))
@@ -191,6 +211,14 @@ class StatusApiMixin:
         except Exception as e:
             return f"{p}: unreadable ({e})"
         hooks = cfg.setdefault("hooks", {})
+        if enabled and _IS_WIN:            # an older install's `python3` entries go; they are written again below
+            for ev in list(hooks):
+                kept = []
+                for g in hooks.get(ev) or []:
+                    inner = [h for h in (g.get("hooks") or []) if not self._stale_sf_hook(h)]
+                    if inner or len(inner) == len(g.get("hooks") or []):
+                        kept.append(dict(g, hooks=inner) if g.get("hooks") else g)
+                hooks[ev] = kept
         if enabled:
             for ev in self._HOOK_EVENTS:
                 groups = hooks.setdefault(ev, [])

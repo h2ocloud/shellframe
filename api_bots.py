@@ -32,12 +32,13 @@ import launch_cmd
 import sf_notify
 import tab_delivery
 import tab_model
+import tmux_sessions
 from api_host import main
 from sf_log import _dlog, _swallow
 
 BUSY_WAIT_SEC = 600      # a bot still mid-turn gets this long to finish before it is asked to write
 SUMMARY_WAIT_SEC = 180   # then this long to write its summary before the fallback capture
-SELF_REASONS = ("bot-memory", "bot-skip")   # close_session reasons this module uses itself
+SELF_REASONS = ("bot-memory", "bot-skip", "bot-dead")   # close_session reasons this module uses itself
 
 _CLOSING = {}            # sid -> {"role", "phase", "since"}; one Api per process
 _ = sf_lang.pick         # _(english, chinese): messages follow the OS language like the prompts
@@ -138,8 +139,21 @@ class BotsApiMixin:
         role = bots.primary_role(raw)
         if not role or bots.is_external(raw.get(role)):
             return "", "", ""
-        sid = next((s for s in list(self.sessions) if self._bots_role_of(s, cfg) == role), "")
+        sid = next((s for s in self._live_sids() if self._bots_role_of(s, cfg) == role), "")
         return role, sid, bots.label_of(role, raw[role])
+
+    def _live_sids(self) -> list:
+        """The tabs whose process runs: what the page lists (list_sessions drops the rest), so the sidebar, `sfctl bots`,
+        the phone and bots_open agree on which bots are awake."""
+        return [sid for sid, s in list(self.sessions.items()) if getattr(s, "alive", True)]
+
+    def _bots_tab_gone(self, sid: str) -> bool:
+        """The tab's process ended, or its tmux session is gone (asked of tmux itself; no answer counts as there)."""
+        s = self.sessions.get(sid)
+        if s is None or not getattr(s, "alive", True):
+            return True
+        name = getattr(s, "_tmux_name", None)
+        return bool(name) and not main.IS_WIN and tmux_sessions.session_gone(main._tmux_bin(), name)
 
     def _bots_role_of(self, sid: str, cfg: dict = None) -> str:
         """The bot a tab belongs to: its binding, else a tab whose title is a bot's name or
@@ -217,7 +231,7 @@ class BotsApiMixin:
         raw = cfg.get("agent_roster") or {}
         awake = {}
         order = self._ordered_sids(cfg)
-        for sid in list(self.sessions):
+        for sid in self._live_sids():
             role = self._bots_role_of(sid, cfg)
             if role:
                 awake.setdefault(role, sid)
@@ -273,7 +287,7 @@ class BotsApiMixin:
         now = time.time()
         tabs, awake = {}, {}
         order = self._ordered_sids(cfg) if on else []
-        for sid, s in (list(self.sessions.items()) if on else []):
+        for sid, s in ([(x, self.sessions[x]) for x in self._live_sids()] if on else []):
             if getattr(s, "_lifecycle_source", "") == "connect":
                 continue          # a connection's test tab: its words may name a mail or a file, not for the phone's list
             role = self._bots_role_of(sid, cfg)
@@ -1230,9 +1244,13 @@ class BotsApiMixin:
                 f"「{role}」住在 ShellBot 外面，用 A2A 或 webhook 找它")})
         label = bots.label_of(role, entry)
         for sid in list(self.sessions):
-            if self._bots_role_of(sid, cfg) == role:
+            if self._bots_role_of(sid, cfg) != role:
+                continue
+            if not self._bots_tab_gone(sid):
                 return json.dumps({"success": True, "message": _(f'"{label}" is already awake', f"「{label}」已經醒著"),
                                    "details": {"sid": sid, "existed": True}})
+            _dlog("bots", f"open role={role!r}: its tab {sid} is gone (process or tmux session); closing it and opening a new one")
+            self.close_session(sid, reason="bot-dead")          # bound to the role but nothing runs: not "awake"
         roster = self._agent_roster_config(cfg)
         cmd = (roster.get(role) or {}).get("cmd") or entry.get("cmd") or "claude"
         # A model ShellBot does not know may be ignored by the CLI, or stop it from starting: say so

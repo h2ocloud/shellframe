@@ -262,7 +262,7 @@ sfctl tg-push --from demo.report --env-file ~/jobs/report.env --chat 123456789 -
   like the bridge's replies, every part registered.
 - Exit 0 when it was sent, 1 when not, so a script keeps its old line as the fallback:
   `sfctl tg-push --from demo.report "$MSG" || curl … "$OLD_API_CALL"`. No rate limit and no quiet hours
-  (those are `tg-send`'s, for an agent talking on its own).
+  (those are `tg-send`'s, for an agent talking on its own). Links get no preview card; `--preview` allows one.
 
 **Where a Telegram reply goes.** When the person replies (Telegram's "Reply") to a message the bot
 sent, ShellBot looks the message up before it picks a tab. `tg_origins.json` in the config folder
