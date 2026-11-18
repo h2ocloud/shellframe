@@ -388,7 +388,7 @@ def on_callback(bridge, data: str, chat_id, message_id, cq_id) -> bool:
 
 # ── sfctl tg-push, the app's side ─────────────────────────────────────────
 
-def tg_push(api, text: str, schedule: str, chat: str = "") -> dict:
+def tg_push(api, text: str, schedule: str, chat: str = "", preview: bool = False) -> dict:
     """Send a script's message to the person's chat and register it as that schedule's. No
     rate limit and no quiet hours (that is `tg-send`'s, for agents): the script is the person's own."""
     bridge = getattr(api, "bridge", None)
@@ -415,7 +415,10 @@ def tg_push(api, text: str, schedule: str, chat: str = "") -> dict:
         for part in parts:
             if time.monotonic() > end:
                 break
-            r = bh._tg(bridge, "sendMessage", {"chat_id": chat_id, "text": part}, timeout=PUSH_CALL_S) or {}
+            body = {"chat_id": chat_id, "text": part}
+            if not preview:
+                body["disable_web_page_preview"] = True          # as the scripts this replaces sent it; `--preview` allows one
+            r = bh._tg(bridge, "sendMessage", body, timeout=PUSH_CALL_S) or {}
             if not r.get("ok"):
                 break
             tg_origins.note(r, chat_id, part, tg_origins.schedule_origin(schedule))

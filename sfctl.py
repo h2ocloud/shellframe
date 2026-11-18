@@ -911,6 +911,7 @@ def main():
     p_tgp.add_argument("--env-file", default="", help="KEY=VALUE lines to read the token and CHAT_ID from (read, not exported)")
     p_tgp.add_argument("--token-var", default="BOT_TOKEN", help="The variable that holds the bot token (default BOT_TOKEN)")
     p_tgp.add_argument("--chat", default="", help="The chat id (default: CHAT_ID)")
+    p_tgp.add_argument("--preview", action="store_true", help="Let Telegram show a link preview (off by default, as the scripts it replaces had it)")
     p_tgp.add_argument("text", nargs="?", default=None, help='The text, or "-" (or nothing) to read it from stdin')
     p_bsave = sub.add_parser("bots-save", help="Make a roster role a bot, or change one (the bot editor's save; "
                                                "fields you leave out keep their value)")
