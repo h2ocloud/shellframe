@@ -195,6 +195,17 @@ check('schedShape keeps title, when, on/off and drops the command', ss.ok && ss.
   && ss.rows[0].count === 2 && !('cmd' in ss.rows[0]) && !JSON.stringify(ss).includes('secret'), ss);
 check('…not supported / not configured / failed are said, not an empty list', O.schedShape({ schedules: [], unsupported: true }).unsupported === true
   && O.schedShape({ schedules: [], configured: false }).configured === false && O.schedShape({ schedules: [], error: 'x' }).ok === false);
+const sx = O.schedShape({ schedules: [
+  { id: 'a', title: 'A', when: { en: 'x', zh: 'x' }, enabled: false, owner: '  ops  ', toggle: false, state: 'armed', cmd: '/bin/secret',
+    slots: { interval: 600, calendar: [{ Hour: 9, Minute: 30, Weekday: 1, Bogus: 5, Day: 'x' }, null, { Month: -1, Hour: 99999 }], partial: false } },
+  { id: 'b', title: 'B', when: 'raw', enabled: true, slots: { interval: -5, calendar: Array.from({ length: 500 }, () => ({ Hour: 1 })) } },
+  { id: 'c', title: 'C', when: 'raw', enabled: true }] });
+check('schedShape passes owner, toggle, state and slots through, clipped to what the calendar uses',
+  sx.rows[0].owner === 'ops' && sx.rows[0].toggle === false && sx.rows[0].state === 'armed' && sx.rows[0].slots.interval === 600
+  && JSON.stringify(sx.rows[0].slots.calendar) === '[{"Weekday":1,"Hour":9,"Minute":30},{},{}]' && !JSON.stringify(sx).includes('secret'), JSON.stringify(sx.rows[0]));
+check('…a row without them: no owner, a switch, no slots; a long calendar is cut and a bad interval dropped',
+  sx.rows[2].owner === '' && sx.rows[2].toggle === true && sx.rows[2].slots.interval === null && sx.rows[2].slots.calendar.length === 0
+  && sx.rows[1].slots.calendar.length === 200 && sx.rows[1].slots.interval === null);
 
 console.log(fails ? `\n${fails} failed` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

@@ -9,7 +9,13 @@ Each schedule becomes one row, a dict that survives `json.dumps`:
 
     id, title, kind, group, when {en, zh}, tip {en, zh} | None, detail, cmd,
     script, enabled, running, last_exit, active, toggle, state, notes
-    [{level, code, text {en, zh}, tip}], members (a group of one-offs only)
+    [{level, code, text {en, zh}, tip}], owner, slots, members (a group of one-offs only)
+
+`slots` is `when` as numbers, for a calendar to place the runs: {"interval": seconds
+or None, "calendar": [{"Month", "Day", "Weekday", "Hour", "Minute"}, ...]} with launchd's
+meaning: a key that is missing is a wildcard, Weekday 0 is Sunday (7 is folded to 0). A
+list too long to be useful (SLOTS_MAX) is sent empty with "partial": true. `owner` is
+the bot (id or name) that looks after the job, from `owners` in schedules.json, or "".
 
 `kind` is one of interval, daily, weekly, monthly, calendar, once, daemon.
 
@@ -45,6 +51,9 @@ from pathlib import Path
 from sf_log import _swallow
 
 CONFIG_NAME = "schedules.json"
+SLOTS_MAX = 200                                     # calendar entries sent per row
+OWNERS_MAX = 200                                    # owners read from schedules.json
+OWNER_LEN = 60
 
 _WEEK_EN = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _WEEK_ZH = ("一", "二", "三", "四", "五", "六", "日")
@@ -74,7 +83,9 @@ def valid_label(label) -> bool:
 
 def parse_config(obj) -> dict:
     """The well-formed parts of a decoded `schedules.json`:
-    prefixes [str], titles {label or group id: str}, groups {group id: [label]}."""
+    prefixes [str], titles {label or group id: str}, groups {group id: [label]},
+    owners {label or group id: bot id or name}: who looks after the job (the calendar asks
+    them for changes; they are not an access rule)."""
     obj = obj if isinstance(obj, dict) else {}
     raw_prefixes = obj.get("prefixes")
     prefixes = [p for p in raw_prefixes if valid_prefix(p)] if isinstance(raw_prefixes, list) else []
@@ -87,7 +98,14 @@ def parse_config(obj) -> dict:
             ok = [x for x in labels if valid_label(x)] if isinstance(labels, list) else []
             if len(ok) >= 2:
                 groups[str(gid)] = ok
-    return {"prefixes": prefixes, "titles": titles, "groups": groups}
+    owners = {}
+    if isinstance(obj.get("owners"), dict):
+        for k, v in obj["owners"].items():
+            if len(owners) >= OWNERS_MAX:
+                break
+            if isinstance(k, str) and 0 < len(k) <= 120 and isinstance(v, str) and v.strip():
+                owners[k] = v.strip()[:OWNER_LEN]
+    return {"prefixes": prefixes, "titles": titles, "groups": groups, "owners": owners}
 
 
 def read_config(path) -> tuple:
@@ -165,6 +183,20 @@ def _times(items) -> tuple:
 def _dates(dates) -> tuple:
     """['11/10', '12/1'] -> ('11/10, 12/1', '11/10、12/1')."""
     return ", ".join(dates), "、".join(dates)
+
+
+# ── the same facts as numbers, for a calendar ──────────────────────────────
+
+_SLOT_KEYS = (("month", "Month"), ("day", "Day"), ("weekday", "Weekday"), ("hour", "Hour"), ("minute", "Minute"))
+
+
+def _slots(secs, entries) -> dict:
+    """{"interval", "calendar"} from a StartInterval in seconds (0 for none) and `_entries`."""
+    cal = [{cap: e[k] for k, cap in _SLOT_KEYS if k in e} for e in entries]
+    out = {"interval": secs if secs > 0 else None, "calendar": cal}
+    if len(cal) > SLOTS_MAX:
+        out["calendar"], out["partial"] = [], True
+    return out
 
 
 # ── frequency text ─────────────────────────────────────────────────────────
@@ -345,7 +377,8 @@ def describe(label: str, plist: dict, *, loaded=None, now: datetime = None, cfg:
            "when": L("—", "—"), "tip": None, "detail": None,
            "cmd": " ".join(prog), "script": script_path(prog),
            "enabled": loaded is not None, "running": pid is not None, "last_exit": last_exit,
-           "active": loaded is not None, "toggle": True, "state": "", "notes": [], "members": None}
+           "active": loaded is not None, "toggle": True, "state": "", "notes": [], "members": None,
+           "owner": (cfg.get("owners") or {}).get(label, ""), "slots": _slots(0, [])}
 
     interval = plist.get("StartInterval")
     entries = _entries(plist["StartCalendarInterval"]) if plist.get("StartCalendarInterval") else []
@@ -358,6 +391,7 @@ def describe(label: str, plist: dict, *, loaded=None, now: datetime = None, cfg:
             secs = int(interval)
         except (TypeError, ValueError):
             secs = 0
+        rec["slots"]["interval"] = secs if secs > 0 else None
         t = _interval_text(secs)
         phrases.append((t["en"], t["zh"]))
         kinds.append("interval")
@@ -365,6 +399,7 @@ def describe(label: str, plist: dict, *, loaded=None, now: datetime = None, cfg:
                        "so the real gap can be longer.",
                        "前一次還沒跑完時 launchd 不會再啟動一份，實際間隔可能比設定的長。")
     if entries:
+        rec["slots"] = _slots(rec["slots"]["interval"] or 0, entries)
         kind, parts = _calendar_parts(entries)
         phrases += parts
         kinds.append(kind)
@@ -457,11 +492,18 @@ def _make_group(gid: str, members: list, cfg: dict, now: datetime) -> dict:
     if loaded:
         notes.append(_repeat_note(dates))
     exits = [m["last_exit"] for m in loaded if m["last_exit"]]
+    owners = cfg.get("owners") or {}
+    owner = owners.get(f"group:{gid}") or owners.get(gid) or next((m["owner"] for m in members if m["owner"]), "")
+    cal = [c for m in members for c in m["slots"]["calendar"]]
+    slots = {"interval": None, "calendar": cal[:SLOTS_MAX]}
+    if len(cal) > SLOTS_MAX or any(m["slots"].get("partial") for m in members):
+        slots["partial"] = True
     return {"id": f"group:{gid}", "kind": "once", "group": True, "title": _group_title(gid, script, cfg),
             "when": when, "tip": None, "detail": None, "cmd": "", "script": script,
             "enabled": bool(loaded), "running": any(m["running"] for m in members),
             "last_exit": exits[0] if exits else 0, "active": state == "armed", "toggle": False,
-            "state": state, "notes": notes, "dates": dates, "members": [_member(m) for m in members]}
+            "state": state, "notes": notes, "dates": dates, "owner": owner, "slots": slots,
+            "members": [_member(m) for m in members]}
 
 
 def _group_once(rows: list, cfg: dict, now: datetime) -> list:

@@ -26,7 +26,8 @@ from api_host import main
 from sf_log import _swallow
 
 PREF_KEYS = ("seats", "items", "mode", "legendMin", "panelTab",      # panelTab: the panel's Conversation / Details tab
-             "zoning", "groups")                                    # how staff are zoned; custom groups (role → name)
+             "zoning", "groups",                                    # how staff are zoned; custom groups (role → name)
+             "calMode")                                             # the schedule calendar's day / week / month
 PREFS_MAX = 256 * 1024
 _PREFS_LOCK = threading.Lock()
 

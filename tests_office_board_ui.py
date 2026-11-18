@@ -8,10 +8,11 @@
     first, at most 20, asked for only when opened); an owner in the office selects that person
   - an empty board says so in one line, and the sticky notes follow the data (one per task, at most 7,
     red for a decision or a stuck task, none on an empty board)
-  - the calendar is a hit target too (tooltip 排程); its view lists the tabs that run a /loop or a cron
-    (who, kind, interval, a countdown that ticks, a one-line summary) and this computer's schedules
-    (title, when, on or off); schedules_list is asked only while that view is open, once at the start
-    and then at most every 60 s; the badge on the calendar is the number of tabs with a loop
+  - the calendar is a hit target too (tooltip 排程); its view is the day / week / month calendar
+    (tests_office_calendar_ui.py has the placement, the owner and the controls) with an entry for each
+    tab that runs a /loop or a cron and each of this computer's schedules, a card with a countdown that
+    ticks; schedules_list is asked only while that view is open, once at the start and then at most
+    every 60 s; the badge on the calendar is the number of tabs with a loop
   - a person whose tab runs a loop has the calendar on the desk (an intern: on the table) and a line
     「排程：每 20 分鐘，下一次 HH:MM」 in the info tab; when the loop is over both are gone
   - the loop is in the snapshot with `experimental_loops` OFF (the status carries it regardless)
@@ -326,34 +327,31 @@ def run(browser, base, engine):
     check("the calendar is a hit target: pointer cursor and the tooltip 排程", tip == "排程" and cursor, (tip, cursor))
     check("…a click opens the schedule view", fr.evaluate("__office.view()") == "cal" and fr.evaluate("document.getElementById('vTitle').textContent") == "排程")
     check("…its badge is the number of tabs with a loop (2)", fr.evaluate("__office.loops().length") == 2)
-    heads = fr.evaluate("[...document.querySelectorAll('#vBody .vsec > h3')].map(h => h.firstChild.textContent)")
-    check("two sections: 對話裡的排程, 這台電腦的排程", heads == ["對話裡的排程", "這台電腦的排程"], heads)
     page.wait_for_timeout(400)
-    lrows = fr.evaluate("""() => [...document.querySelectorAll('#vBody .lrow')].map(r => ({key: r.dataset.key, text: r.innerText.replace(/\\s+/g, ' ')}))""")
-    by = {r["key"]: r["text"] for r in lrows}
-    check("a row per tab with a loop: its name, the kind, the interval", len(lrows) == 2 and "示範工程師" in by["b:eng"] and "/loop" in by["b:eng"]
-          and "每 20 分鐘" in by["b:eng"] and "示範臨時分頁" in by["t:s702"] and "cron" in by["t:s702"] and "每 30 分鐘" in by["t:s702"], by)
-    check("…the next wake as a clock time and a countdown", "下一次" in by["b:eng"] and "分" in by["b:eng"] and "秒後" in by["b:eng"], by["b:eng"])
-    check("…a one-line summary of what it does, cut short", "每輪看一次示範建置" in by["b:eng"] and by["b:eng"].count("很長的說明") < 12
-          and "…" in by["b:eng"], by["b:eng"])
-    c1 = fr.evaluate("document.querySelector('#vBody .lrow[data-key=\"b:eng\"] .cd').textContent")
+    check("the view is the calendar (the full test is tests_office_calendar_ui.py): the day / week / month switch is in the head",
+          fr.evaluate("[...document.querySelectorAll('#vHeadX .cseg button')].map(b => b.textContent).join('')") == "日週月" and fr.evaluate("!!document.querySelector('#vBody .cal')"))
+    ents = fr.evaluate("__office.calModel().ents")
+    check("every tab's loop or cron and each of this computer's schedules is an entry (the command is not)",
+          {"l:b:eng", "c:t:s702:0", "s:demo.backup", "s:demo.report", "s:demo.old"} <= set(ents) and "secret" not in json.dumps(fr.evaluate("__office.calModel()")), ents)
+    fr.evaluate("__office.calSetNow(Date.now()); __office.calGo('day', Date.now() + 86400e3)")
+    fr.click('#vBody [data-act="ev"][data-id="l:b:eng"]')
+    page.wait_for_timeout(300)
+    card = fr.inner_text("#calPop").replace("\n", " ")
+    check("an entry's card: who, the pace, the next run with a countdown", "示範工程師" in card and "每 20 分鐘" in card and "下一次" in card and "秒後" in card, card)
+    c1 = fr.evaluate("document.querySelector('#calPop .cd').textContent")
     page.wait_for_timeout(2300)
-    c2 = fr.evaluate("document.querySelector('#vBody .lrow[data-key=\"b:eng\"] .cd').textContent")
+    c2 = fr.evaluate("document.querySelector('#calPop .cd').textContent")
     check("the countdown ticks", c1 != c2 and "秒後" in c2, (c1, c2))
-    srows = fr.evaluate("[...document.querySelectorAll('#vBody .srow')].map(r => r.innerText.replace(/\\s+/g, ' '))")
-    check("this computer's schedules: title, when, on or off (the command is not shown)",
-          len(srows) == 3 and "示範每日備份" in srows[0] and "每天 02:30" in srows[0] and "啟用中" in srows[0] and "已停用" in srows[2]
-          and "執行中" in srows[1] and not any("secret" in r for r in srows), srows)
     check("schedules_list was asked once, when the view opened", calls(page, "schedules_list") - base_calls == 1, calls(page, "schedules_list") - base_calls)
     check("…its default pace is once a minute", fr.evaluate("__office.schedPollMs()") == 60000)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-calendar-view.png"))
-    fr.evaluate("window.__tagLoop = document.querySelector('#vBody .lrow'); window.__tagLoop.__mine = 1")
+    fr.evaluate("window.__tagLoop = document.querySelector('#vBody .cg'); window.__tagLoop.__mine = 1")
     fr.evaluate("__office.setSchedPoll(1200)")
     page.wait_for_timeout(2900)
     n_open = calls(page, "schedules_list") - base_calls
     check("while the view is open it is asked again, no faster than the pace", 2 <= n_open <= 4, n_open)
-    check("…and the list is not rebuilt by the snapshots or the answers (same row node)",
+    check("…and the calendar is not rebuilt by the snapshots or the answers (same grid node)",
           fr.evaluate("document.body.contains(window.__tagLoop) && window.__tagLoop.__mine === 1"))
     fr.evaluate("__office.closeView()")
     page.wait_for_timeout(300)
@@ -363,12 +361,15 @@ def run(browser, base, engine):
     fr.evaluate("__office.openView('board')")
     page.wait_for_timeout(1500)
     check("…nor while the board is the view", calls(page, "schedules_list") == n_closed)
+    check("…and the board has no calendar head", fr.evaluate("document.getElementById('vHeadX').innerHTML") == "")
     fr.evaluate("__office.closeView()")
     fr.evaluate("__office.openView('cal')")
     page.wait_for_timeout(500)
-    fr.click('#vBody .lrow[data-key="b:eng"] .who')
+    fr.evaluate("__office.calGo('day', Date.now() + 86400e3)")
+    fr.click('#vBody [data-act="ev"][data-id="l:b:eng"]')
+    fr.click("#calPop .who")
     page.wait_for_timeout(500)
-    check("clicking a name in the list selects that person", fr.evaluate("__office.following()") == "b:eng" and fr.evaluate("__office.view()") is None)
+    check("clicking the owner's name on an entry selects that person", fr.evaluate("__office.following()") == "b:eng" and fr.evaluate("__office.view()") is None)
     fr.evaluate("__office.unfollow()")
 
     print(f"[{engine}] the person's desk and info tab")
