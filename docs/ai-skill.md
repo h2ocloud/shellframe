@@ -447,7 +447,13 @@ sfctl task stuck                              # open tasks nothing happened to f
 - You **received** a message that says it is part of task #N (on this computer): `sfctl task show N` to see it whole,
   `sfctl task note N "…"` for progress, and answer the hand-off with `a2a-result` as usual. A task on another computer
   is not in your list: just answer with `a2a-result`.
-- Only the user can decide something: `add --decision` (it lands on the user's list) and ask them in your reply as well.
+- Only the user can decide or confirm something, and you will wait for the answer (a choice, a go-ahead, a fact only
+  they know, an action only they can do such as a browser sign-in): `add --decision "<the question>" --next "<the
+  choices, or what to do>"`, one card per question, and ask them in your reply as well. Run `list --decisions` first
+  and do not add a second card for the same question. The card is what lets them find the question later without
+  scrolling back through the conversation: it waits on the whiteboard (the board button with its red count, in the
+  terminal and the chat views alike, and in the office). When they answer (in the conversation, or with 回覆 on the
+  card, which reaches you as a message), `done N "<the answer>"`; if the question no longer matters, `drop N "why"`.
 - It is finished or abandoned: `done` / `drop` with one line saying the result or why.
 
 A task's words are kept as one line; a key or token in them is masked. Do not store conversation content or secrets in
