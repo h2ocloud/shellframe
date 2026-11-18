@@ -764,6 +764,40 @@
       'The 辦公室 button at the top of the sidebar opens an office floor: bots (staff) at their desks, AI tabs that are not bots (interns) at a long table, a Claude Code tab\'s subagents (part-timers) beside it; who is busy, waiting on you or stuck. On for a new install.',
       '側欄最上面的「辦公室」鈕會打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，Claude Code 分頁派出去的 subagent（工讀生）站在旁邊；誰在忙、誰在等你、誰卡住，看圖就知道。新安裝預設打開。');
     sw.classList.toggle('on', enabled());
+    injectShare();
+  }
+
+  // 「不分享任務給隔壁電腦」 (settings.link_share_tasks_off, default off = shared as before): a paired computer asking for
+  // this one's tasks is refused (/link/tasks answers 403), so its office's next room and its board say this one does not share.
+  function shareOff() { const c = cfg(); return !!(c && c.settings && c.settings.link_share_tasks_off === true); }
+  function injectShare() {
+    const box = document.getElementById('sx-office');
+    if (!box) return;
+    let row = document.getElementById('sfo-share');
+    if (!row) {
+      row = document.createElement('div');
+      row.id = 'sfo-share';
+      row.className = 'sx-row';
+      row.innerHTML = '<div class="sx-txt"><div class="sx-label"></div><div class="sx-hint"></div></div>' +
+        '<div class="sx-ctl"><button type="button" class="toggle-switch" id="setting-link-share-off" role="switch"></button></div>';
+      box.appendChild(row);
+      row.querySelector('#setting-link-share-off').addEventListener('click', async function () {
+        const c = cfg(), a = api();
+        if (!c || !a) return;
+        c.settings = c.settings || {};
+        c.settings.link_share_tasks_off = !shareOff();           // through the page's own settings copy: save_settings replaces the whole dict
+        injectShare();
+        try { await a.save_settings(JSON.stringify(c.settings)); } catch (_) { /* the page keeps it; the next save carries it */ }
+      });
+    }
+    row.querySelector('.sx-label').textContent = t("Don't share tasks with paired computers", '不分享任務給隔壁電腦');
+    row.querySelector('.sx-hint').textContent = t(
+      "A paired computer's office and board can't see this one's whiteboard; they say it is not open to them.",
+      '開啟後，配對的電腦在辦公室和看板上看不到這台的白板，會顯示「這台沒有開放」。');
+    const sw = row.querySelector('.toggle-switch');
+    sw.classList.toggle('on', shareOff());
+    sw.setAttribute('aria-checked', String(shareOff()));
+    sw.setAttribute('aria-label', row.querySelector('.sx-label').textContent);
   }
 
   function boot(tries) {

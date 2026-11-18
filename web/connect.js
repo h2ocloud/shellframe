@@ -297,27 +297,6 @@
       (rest.length ? `<button type="button" class="cg-pill cg-more${inRest && !searching ? ' on' : ''}" data-cg="more" aria-expanded="${C.more}">${esc(t('More', '更多'))} ▾</button>` +
         (C.more ? `<div class="cg-more-list">${rest.map(c => pill(c.id, pick(c.name))).join('')}</div>` : '') : '');
   }
-  // 「不分享任務給隔壁電腦」: on = a paired computer asking for this one's tasks is refused (frame_link._bots_route)
-  function shareOff() { const h = host(), c = h && h.cfg && h.cfg(); return !!(c && c.settings && c.settings.link_share_tasks_off === true); }
-  function renderShare() {
-    const row = panel && panel.querySelector('.cg-share');
-    if (!row) return;
-    row.querySelector('.sx-label').textContent = t("Don't share tasks with other computers", '不分享任務給隔壁電腦');
-    row.querySelector('.sx-hint').textContent = t("A paired computer can't see this one's task list; its board says this computer doesn't share them.",
-      '開啟後，配對的電腦看不到這台的任務清單，它的看板會顯示這台沒有開放。');
-    const sw = row.querySelector('.toggle-switch');
-    sw.classList.toggle('on', shareOff());
-    sw.setAttribute('aria-checked', String(shareOff()));
-    sw.setAttribute('aria-label', row.querySelector('.sx-label').textContent);
-  }
-  async function toggleShare() {
-    const h = host(), c = h && h.cfg && h.cfg(), a = api();
-    if (!c || !a) return;
-    c.settings = c.settings || {};
-    c.settings.link_share_tasks_off = !shareOff();           // through the page's own settings copy: save_settings replaces the whole dict
-    renderShare();
-    try { await a.save_settings(JSON.stringify(c.settings)); } catch (_) { /* the page keeps it; the next save carries it */ }
-  }
   function renderList() {
     if (!panel) return;
     if (!panel.querySelector('.cg-body')) {          // the frame once: the search box keeps its focus and words across redraws
@@ -325,10 +304,7 @@
         '<button type="button" class="cg-count" data-cg="connected"></button></span></div>' +
         '<p class="cn-intro"></p><p class="cg-detect" hidden><span></span> <button type="button" class="cn-link" data-cg="detect"></button></p>' +
         `<label class="cg-search">${icon('search')}<input type="search" autocomplete="off" spellcheck="false"></label>` +
-        '<div class="cg-pills" role="group"></div><div class="cg-body"></div>' +
-        // Paired computers: one switch, in settings.link_share_tasks_off (default off = tasks are shared, as before)
-        '<div class="sx-row cg-share"><div class="sx-txt"><span class="sx-label"></span><div class="sx-hint"></div></div>' +
-        '<div class="sx-ctl"><button type="button" class="toggle-switch" id="setting-link-share-off" role="switch"></button></div></div>';
+        '<div class="cg-pills" role="group"></div><div class="cg-body"></div>';
       const box = panel.querySelector('.cg-search input');
       box.addEventListener('input', () => { C.q = box.value; C.why = ''; renderList(); });
       box.addEventListener('keydown', e => { if (e.key === 'Escape' && box.value) { e.preventDefault(); e.stopPropagation(); box.value = ''; C.q = ''; renderList(); } });
@@ -344,7 +320,6 @@
     box.placeholder = t('Search apps', '搜尋應用程式');
     box.setAttribute('aria-label', box.placeholder);
     panel.querySelector('.cg-head h3').textContent = t('Connect apps', '連結應用程式');
-    renderShare();
     panel.querySelector('.cn-intro').textContent = t('Services your bots can use. Press Connect and ShellBot walks you through it, and checks later that it still works.',
       '讓 bot 能用的外部服務。按「連結」，ShellBot 一步一步帶你連結，之後也會檢查它還通不通。');
     const det = panel.querySelector('.cg-detect'), D = L.detect;
@@ -444,7 +419,6 @@
       showList();
     });
     panel.addEventListener('click', onCatalog);
-    panel.addEventListener('click', e => { if (e.target.closest('#setting-link-share-off')) toggleShare(); });
     const gear = $('btn-settings');
     if (gear) gear.addEventListener('click', renderList);                          // the label follows the page's language
     renderList();

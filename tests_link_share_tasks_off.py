@@ -167,13 +167,14 @@ if sync_playwright:
         browser = pw.chromium.launch()
         try:
             page, errors = S.open_page(browser, "zh-TW", {"experimental_bots": True, "link_share_tasks_off": False, "usage_pace": False})
-            S.open_settings(page, "connect")
-            sel = "#settings-panel-connect #setting-link-share-off"
+            S.open_settings(page, "office")
+            sel = "#settings-panel-office #setting-link-share-off"
             page.wait_for_selector(sel, timeout=5000)
-            label = page.inner_text("#settings-panel-connect .cg-share .sx-label")
-            hint = page.inner_text("#settings-panel-connect .cg-share .sx-hint")
-            check("the switch is in the 連結 category, with its label and one line of help",
-                  page.inner_text('#settings-tabs-bar [data-tab="connect"]').startswith("連結") and label == "不分享任務給隔壁電腦" and len(hint) > 10, (label, hint))
+            label = page.inner_text("#settings-panel-office #sfo-share .sx-label")
+            hint = page.inner_text("#settings-panel-office #sfo-share .sx-hint")
+            check("the switch is in the 辦公室 category, under the office switch, with its label and one line of help",
+                  page.evaluate("() => !!document.querySelector('#sx-office #sfo-setting + #sfo-share')") and label == "不分享任務給隔壁電腦" and len(hint) > 10, (label, hint))
+            check("…and no longer in 連結應用程式", page.evaluate("() => !document.querySelector('#settings-panel-connect #setting-link-share-off')"))
             check("…visible, and off as saved", page.is_visible(sel) and not page.evaluate("s => document.querySelector(s).classList.contains('on')", sel))
             page.click(sel)
             page.wait_for_timeout(200)
@@ -187,7 +188,7 @@ if sync_playwright:
             check("no page errors", not errors, errors)
             page.close()
             page, errors = S.open_page(browser, "zh-TW", {"link_share_tasks_off": True})
-            S.open_settings(page, "connect")
+            S.open_settings(page, "office")
             page.wait_for_selector(sel, timeout=5000)
             check("a saved true shows as on", page.evaluate("s => document.querySelector(s).classList.contains('on')", sel))
             page.close()
