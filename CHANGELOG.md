@@ -72,6 +72,35 @@
   分頁的程式在開啟 30 秒內就結束時，debug log 會記一行。由 `tests_win_restore_resume.py` 守著（在 macOS 上模擬 Windows
   路徑來跑）。
 
+- **An answer on the board reaches a bot that was renamed after it asked, and an answer nobody can be told says so.**
+  Reported: an answer written on a decision card never reached the bot that asked. The card had been written
+  before that bot was renamed, so it named the asker by the old name. The office only recognized current names,
+  so it found nobody to tell: the 「也告訴」 box was left out and nothing was sent or shown. A bot's former
+  names (kept since the rename) now count as that bot, in the office, on the board and in 「待你決定」, for cards
+  already written too; a former name that is another bot's name now stays that bot's. When someone should hear of
+  an answer but cannot be told, the answer box now says 「沒辦法通知 X」 and why (no bot or tab here has that name,
+  or no tab of theirs is open), and so does the message after sending. Covered by `tests_office_snapshot.js`,
+  `tests_pending_rail_ui.py` and `tests_board_anywhere_ui.py`.
+
+  **在看板回覆，問的 bot 後來改了名也收得到；沒辦法通知時會寫出來。** 回報：在「等你決定」卡片上回覆了，問的那個 bot 卻沒收到。
+  那張卡是 bot 改名前寫的，記的是舊名字。辦公室只認得現在的名字，找不到要通知的人，於是「也告訴」勾選框不出現、什麼都沒送，
+  也沒有任何提示。現在 bot 改名前的舊名字（改名時就留著）在辦公室、看板和「待你決定」裡都認得是它，已經寫好的卡也一樣；
+  舊名字如果現在是另一個 bot 的名字，就算那個 bot 的。該讓某人知道卻通知不到時，回覆框會寫「沒辦法通知 X」和原因（這台找不到
+  這個名字的 bot 或分頁，或他現在沒有開著的分頁），送出後的提示也會寫。由 `tests_office_snapshot.js`、
+  `tests_pending_rail_ui.py`、`tests_board_anywhere_ui.py` 守著。
+
+- **A bot's 「最近事件」 says what it finished, and repeats within a minute are one line.**
+  Reported: a bot woken several times in a minute by its own background work showed three identical pairs of
+  「做完了／閒下來」, each quoting the message it had received, which looked like duplicated data. Each line took the
+  tab's sidebar line, which for a quiet tab falls back to the last message it received. 做完了 now quotes the
+  bot's own last words, and 閒下來 adds nothing. The same event again within a minute is counted on one line (×N).
+  Covered by `tests_office_snapshot.js` and `tests_office_events_ui.py`.
+
+  **bot 的「最近事件」寫它做完了什麼，一分鐘內重複的合成一行。** 回報：bot 在一分鐘內被自己的背景工作叫醒好幾次，「最近事件」
+  出現三組一模一樣的「做完了／閒下來」，每行都引用它收到的那則訊息，看起來像資料重複。原因是每一行都拿側欄那一行字，而分頁閒下來
+  時那一行會退回最後收到的訊息。現在「做完了」寫 bot 自己最後說的話，「閒下來」不再多寫。一分鐘內同樣的事件合成一行，標「×N」。
+  由 `tests_office_snapshot.js`、`tests_office_events_ui.py` 守著。
+
 ### Changes
 
 - **Settings is a wide, two-column window.**
