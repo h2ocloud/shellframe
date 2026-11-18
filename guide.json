@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.55",
+  "reviewed_for": "0.56",
   "tours": {
     "first_run": [
       "new-tab",
@@ -30,7 +30,8 @@
     "0.52.0": "Ask to leave and pictures in the box live inside the office's panel (an iframe the tour cannot point into); the office entry covers the office.",
     "0.53.0": "What already works shows on the Connect page's existing rows and cards, which the connect entry points to; its body says so. No new place on the screen.",
     "0.55.0": "Plaud is one more row on the Connect page, which the connect entry points to; the task board and the schedule calendar live inside the office (an iframe the tour cannot point into), which the office entry covers; `sfctl connect step` is a command for the AI tabs.",
-    "0.55.2": "Command-line pairing (`sfctl link-pair --mode`, `link-join`, `link-enable`) is for the AI tabs and headless machines; nothing new on the desktop's screen (the Pair window already offers the three directions)."
+    "0.55.2": "Command-line pairing (`sfctl link-pair --mode`, `link-join`, `link-enable`) is for the AI tabs and headless machines; nothing new on the desktop's screen (the Pair window already offers the three directions).",
+    "0.56.0": "The whiteboard's sticky notes and card actions and the calendar's day / week / month views live inside the office (an iframe the tour cannot point into); the office entry covers the office."
   },
   "features": [
     {

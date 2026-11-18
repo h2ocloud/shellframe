@@ -6,6 +6,63 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.56.0 (2026-11-18)
+
+### Added
+
+- **The office's task board is a whiteboard of sticky notes by priority, and a task can be marked done or noted from its card.**
+  Asked for: open the lobby whiteboard and see sticky notes by urgency, like a real whiteboard, centred over the
+  office; and a way to update a task yourself once you have done your part. The board opens as a whiteboard (frame,
+  marker tray) with four lanes: urgent (waiting for your decision, or overdue), important (stuck, or due within 24
+  hours), in progress (doing or waiting), not urgent (to do). Tasks carry no priority field: the lane is worked out
+  from those facts, and the board says how. Notes keep their tilt between refreshes, the wall's notes use the same
+  colours, and a note opens a card with the next step, who it waits on, the due time and its history. On the card,
+  「我做好了」 closes a task that is yours, or, on a task that waits on you, records that your part is done and hands it
+  back to its owner (it stays open); 「留言」 adds a note to any task. Both can also send one line to the bot concerned
+  (on by default). Nothing changes on the board until the store has the change. Covered by
+  `tests_office_whiteboard_ui.py`, `tests_api_task_user_act.py` and `tests_office_board_act_live.py`.
+
+  **辦公室的任務看板變成貼滿便利貼的白板，依輕重緩急排；在便利貼的卡片上就能標成做好了或留言。** 需求：打開大廳的白板，要看到依輕重緩急
+  分的便利貼，像真的白板、置中蓋在辦公室上；自己做完的事要能自己更新。現在看板打開是一塊白板（鋁框、筆槽），分四欄：緊急（等你決定，
+  或已逾期）、重要（卡住，或 24 小時內到期）、進行中（進行中或等待中）、不急（待辦）。任務本身沒有優先度欄位，欄位是從這些事實推算的，
+  白板上寫著怎麼算。便利貼的歪斜角度不會隨更新亂跳，牆上的便利貼用同一套顏色；點一張會打開卡片，有下一步、在等誰、期限和歷程。卡片上
+  「我做好了」：你負責的任務直接結案；在等你的任務，記下你那份做好了、交回負責人繼續（任務不結案）。「留言」：任何任務都能留。兩者都可以
+  順便傳一句話給相關的 bot（預設打勾）。任務資料真的改了，看板才跟著變。由 `tests_office_whiteboard_ui.py`、
+  `tests_api_task_user_act.py`、`tests_office_board_act_live.py` 守著。
+
+- **The office's wall calendar shows loops and schedules by day, week or month, each with the agent that owns it.**
+  Asked for: the loop schedules as a real calendar that switches between week, month and day, with an owner agent;
+  only the agent changes a schedule, a person may only switch it on or off or change how often it runs. The calendar
+  places the /loop and cron routines running in the tabs and this computer's own schedules: future runs only (past
+  days stay empty: there is no run history), a /loop's later runs marked as estimates, anything more often than about
+  hourly as one band or chip a day, and a cron line it cannot read listed apart rather than dropped. An entry's card
+  names its owner (a tab's routine: that tab's bot or intern; this computer's schedules: the optional `owners` map in
+  `schedules.json`, else unassigned) and offers exactly two controls. On / off for one of this computer's schedules
+  switches it directly; every other change (stopping a /loop, any change of how often) is a message to the owner's
+  tab, and the card shows 「已請 X 調整」 until the change is actually seen. Covered by `tests_office_calendar_ui.py`
+  and `tests_sched_slots.py`.
+
+  **辦公室牆上的行事曆可以用日、週、月看 loop 和排程，每一項都標出負責的 agent。** 需求：loop 排程要做成真的行事曆，能切週、月、日，
+  每項有負責的 agent；排程只能由 agent 調整，人只能開關或改頻率。行事曆會擺上各分頁正在跑的 /loop、cron，以及這台電腦自己的排程：
+  只放未來的執行（沒有執行紀錄，所以過去的日子是空的），/loop 之後幾次標成預估，比大約每小時更密的排程每天只畫一條帶狀或一個小標籤，
+  讀不懂的 cron 另外列出來，不會默默丟掉。每一項的卡片寫著負責人（分頁裡的排程是那個分頁的 bot 或實習生；這台電腦的排程看
+  `schedules.json` 裡選填的 `owners`，沒填就是未指定），只有兩個控制項。這台電腦的排程，開關直接生效；其他的改動（停掉 /loop、改任何
+  頻率）都是傳一句話到負責人的分頁，卡片上顯示「已請 X 調整」，直到真的看到改了才收掉。由 `tests_office_calendar_ui.py`、
+  `tests_sched_slots.py` 守著。
+
+### Changes
+
+- **The office's words follow Settings' Interface size, and the board and the calendar open as a centred sheet.**
+  Reported: the legend in the office's bottom-left corner and the list in the opened whiteboard were too small. The
+  office ignored the Interface size setting (small / medium / large); its top bar, legend, buttons, panel and the
+  opened sheet now follow it, while the floor plan itself does not zoom (clicks on the wall still land). The board and
+  the calendar used to open in the side panel; they now open as a sheet centred over the dimmed office (click outside,
+  ✕ or Esc closes it). Covered by `tests_office_ui_scale.py`.
+
+  **辦公室的字跟著設定的「介面大小」走，看板和行事曆改成置中的蓋板。** 回報：辦公室左下角的圖例、打開白板後的清單，字都太小。辦公室之前
+  不吃「介面大小」（小／中／大）這個設定；現在上方列、圖例、按鈕、側邊面板和打開的蓋板都跟著它，平面圖本身不縮放（點牆上的東西照樣點得到）。
+  看板和行事曆原本開在側邊面板，現在是置中蓋在變暗的辦公室上（點外面、✕ 或 Esc 關）。由 `tests_office_ui_scale.py` 守著。
+
 ## v0.55.2 (2026-11-18)
 
 ### Added
