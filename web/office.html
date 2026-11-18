@@ -127,7 +127,7 @@ kbd{font:600 10.5px var(--mono);padding:1px 5px;border:1px solid var(--line);bor
 .seg button[aria-pressed=true]{background:var(--blue);color:#16161e}
 
 /* ── 圖例與工具 ── */
-#legend{position:fixed;left:16px;bottom:16px;z-index:4;padding:10px 12px 8px;background:rgba(31,35,53,.92);border:1px solid var(--line);border-radius:12px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:calc(100vw - 32px)}
+#legend{position:fixed;left:16px;bottom:16px;z-index:4;padding:10px 12px 8px;background:rgba(31,35,53,.92);border:1px solid var(--line);border-radius:12px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 10px 30px rgba(0,0,0,.3)}
 #legend h4{font-size:11px;color:var(--dim);font-weight:600;letter-spacing:.08em;margin-bottom:6px;display:flex;align-items:center;gap:8px}
 #legend h4 button{margin-left:auto;font-size:11px;color:var(--dim)}
 #legend ul{list-style:none;display:grid;grid-template-columns:auto auto;gap:5px 16px}
@@ -136,14 +136,17 @@ kbd{font:600 10.5px var(--mono);padding:1px 5px;border:1px solid var(--line);bor
 #legend .lfoot{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-top:8px;padding-top:7px;border-top:1px solid rgba(59,66,97,.6);font-size:11.5px;color:var(--dim);white-space:nowrap}
 #legend .lfoot b{color:var(--ink);font-weight:600}
 #legend.min ul,#legend.min .lfoot{display:none}
+#legend.one ul{grid-template-columns:auto}
+#legend.one li{white-space:normal}
+#legend.one .lfoot{flex-wrap:wrap;white-space:normal}
 #legend.min h4{margin-bottom:0}
 #fps{font:11px var(--mono);color:var(--dim);display:flex;align-items:center;gap:6px}
 #fps::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green)}
 #fps.slow::before{background:var(--mute)}
-#tools{position:fixed;right:16px;bottom:16px;z-index:4;display:flex;gap:6px;transition:opacity .2s}
+#tools{position:fixed;right:16px;bottom:16px;z-index:4;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;transition:opacity .2s}
 body.following #tools{opacity:0;pointer-events:none}
 body.live-data #addOne,body.live-data #addTen,body.live-data #demoHandoff{display:none}
-body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the corner */
+body.embedded #top{padding-right:calc(58px / var(--ui))}   /* ShellBot's close button sits in the corner */
 /* 字級：DOM 上的字跟著介面大小縮放；畫布（#stage）不縮，牆上東西的點擊判定用的是畫布座標 */
 #top,#legend,#tools,#panel,#toast,#wall .vhead,#wall .vz,#wall .wcard,#wall .cp{zoom:var(--ui)}
 
@@ -560,29 +563,34 @@ button.who:hover{background:rgba(122,162,247,.28)}
 .cp .say{margin-top:2px}
 .vtools{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--mute);padding:2px 2px 6px}
 /* ── 窄螢幕（媒體查詢放在基礎規則之後，才蓋得過）── */
-@media (max-width:1240px){.brand .tag{display:none}}
-@media (max-width:1100px){
-  .search{display:none}
-  #searchBtn{display:grid}
-  body.searching .search{display:flex;position:absolute;left:12px;right:12px;top:10px;z-index:9;background:var(--panel);flex:none}
-  body.searching .search kbd{display:none}
-  body.searching #qres{left:0;right:0;width:auto}
-}
-@media (max-width:900px){#addTen{display:none}}
+/* 頂部列放不下時一級一級收（fitTop() 量了才加）：不用視窗寬度斷點，因為整列跟著 --ui 縮放，同樣寬的視窗在「大」的時候放得比較少 */
+#top.f-tag .brand .tag{display:none}
+#top.f-search .search{display:none}
+#top.f-search #searchBtn{display:grid}
+body.searching #top.f-search .search{display:flex;position:absolute;left:12px;right:12px;top:10px;z-index:9;background:var(--panel);flex:none}
+body.searching #top.f-search .search kbd{display:none}
+body.searching #top.f-search #qres{left:0;right:0;width:auto}
+#top.f-ten #addTen{display:none}
+#top.f-tight{gap:10px;padding-left:10px}
+#top.f-tight #stats{gap:4px}
+#top.f-tight .stat{padding:0 9px 0 8px;gap:5px}
+#top.f-tight .right{gap:6px}
+#top.f-tight .sel select{max-width:128px}
+#top.f-tight .seg button{padding:5px 9px}
+#top.f-brand .brand b{display:none}
+#top.f-wrap{flex-wrap:wrap;gap:8px 10px;padding-top:8px;padding-bottom:10px;min-height:0}
+#top.f-wrap .brand{flex:1 1 auto}
+#top.f-wrap .right{flex:0 1 auto}
+#top.f-wrap #stats{order:3;width:100%;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+#top.f-wrap .stat{height:42px;justify-content:center;gap:6px;padding:0 6px}
+#top.f-wrap .stat b{font-size:18px;min-width:0}
+#top.f-rwrap .right{flex-wrap:wrap;row-gap:6px}
 @media (max-width:720px){
-  #top{flex-wrap:wrap;gap:8px 10px;padding:8px 12px 10px;min-height:0}
-  .brand{flex:1 1 auto}
-  .right{flex:0 0 auto}
-  #addTen{display:flex}
-  #stats{order:3;width:100%;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-  .stat{height:42px;justify-content:center;gap:6px;padding:0 6px}
-  .stat b{font-size:18px;min-width:0}
   .seg button{padding:5px 10px}
   #tools{right:12px;bottom:12px;gap:6px}
   #zoomIn,#zoomOut,#fitAll,#demoHandoff{display:none}
   .sel select{max-width:118px}
   #legend{left:12px;bottom:12px;padding:8px 10px}
-  #legend:not(.min){bottom:60px}
   #legend ul{gap:4px 12px}
   #panel{top:auto;left:0;right:0;bottom:0;width:auto;max-height:60vh;border-radius:18px 18px 0 0;border-bottom:0;transform:translateY(calc(100% + 16px))}
   #panel.has-chat{width:auto}
@@ -1078,7 +1086,7 @@ function resize() {
   DPR = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   const tp = wantTp(); if (tp !== V.tp && V.k >= 1) V.tp = tp;
-  placeControls(); if (!follow) fit(true); kick();
+  placeControls(); fitChrome(true); if (!follow) fit(true); kick();
 }
 
 /* ══════════ 6. 地板、牆、房間 ══════════ */
@@ -2891,6 +2899,51 @@ function placeControls() { // 手機：區域、新增按鈕移到底部工具�
   for (const id of ['zoningWrap', 'areaWrap', 'addOne', 'addTen']) { const el = $('#' + id); if (mob && el.parentNode !== tools) tools.insertBefore(el, $('#zoomOut')); else if (!mob && el.parentNode !== right) right.insertBefore(el, $('#mode')); }
   $('#addOne').textContent = mob ? '＋新增' : '＋ 新增正職';
 }
+/* 頂部列與圖例：量了放不下才收。整列跟著 --ui 縮放，視窗寬度的斷點算不準（1027px 的視窗在「大」只有 870px 的空間）。
+   一級一級試（每級都是完整的一組 class），第一個不擠的就用；最後一級就算還擠也留著。 */
+const TOP_FIT = ['', 'f-tag', 'f-tag f-search', 'f-tag f-search f-ten', 'f-tag f-search f-ten f-tight', 'f-tag f-search f-ten f-tight f-brand',
+  'f-tag f-search f-ten f-tight f-wrap', 'f-tag f-search f-ten f-tight f-wrap f-brand', 'f-tag f-search f-ten f-tight f-wrap f-brand f-rwrap'];   // 狀態的字（忙／等你…）不藏：放不下就換到第二列
+const FIT_CLS = ['f-tag', 'f-search', 'f-ten', 'f-tight', 'f-brand', 'f-wrap', 'f-rwrap'];
+let topFit = 0, fitRaf = 0;
+function shown(el) { if (!el || el.hidden) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
+function crowded(list, maxR) {   // 有誰跑出畫面，或兩兩之間貼不到 2px
+  const rs = list.filter(shown).map(el => el.getBoundingClientRect());
+  for (let i = 0; i < rs.length; i++) {
+    const a = rs[i]; if (a.left < -1 || a.right > maxR + 1) return true;
+    for (let j = i + 1; j < rs.length; j++) { const b = rs[j]; if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > -2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) return true; }
+  }
+  return false;
+}
+function fitTop() {
+  if (document.body.classList.contains('searching')) return;   // 搜尋框展開時是蓋在列上的，不算
+  const top = $('#top'), maxR = innerWidth - (document.body.classList.contains('embedded') ? 52 : 0);   // 嵌在 ShellBot：右上角是它的關閉鈕
+  const els = [$('.mark'), $('.brand b'), $('.brand .tag'), ...$$('#stats .stat'), ...$('#topRight').children];
+  let n = 0;
+  for (; n < TOP_FIT.length; n++) {
+    top.classList.remove(...FIT_CLS); if (TOP_FIT[n]) top.classList.add(...TOP_FIT[n].split(' '));
+    if (!crowded(els, maxR)) break;
+  }
+  topFit = Math.min(n, TOP_FIT.length - 1);
+}
+function fitLegend() {   // 右下角按鈕不超出畫面；圖例寬度上限跟著 --ui 換算；兩欄放不下改一欄；壓到右下角按鈕就往上移
+  const L = $('#legend'), T = $('#tools'), s = applyScale.v || 1;
+  T.style.maxWidth = Math.max(120, Math.floor((innerWidth - 2 * (innerWidth - T.getBoundingClientRect().right)) / s)) + 'px';   // 右下角按鈕太多（手機＋示範）就換行
+  L.classList.remove('one'); L.style.bottom = '';
+  L.style.maxWidth = Math.max(140, Math.floor((innerWidth - 2 * L.getBoundingClientRect().left) / s)) + 'px';
+  const ul = L.querySelector('ul'), ft = L.querySelector('.lfoot');
+  if (!L.classList.contains('min') && (ul.scrollWidth > ul.clientWidth + 1 || ft.scrollWidth > ft.clientWidth + 1)) L.classList.add('one');
+  const a = L.getBoundingClientRect(), b = T.getBoundingClientRect();
+  if (shown(T) && Math.min(a.right, b.right) - Math.max(a.left, b.left) > -6 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > -6)
+    L.style.bottom = Math.ceil((innerHeight - b.top + 8 * s) / s) + 'px';
+}
+function fitChrome(now) {
+  if (now === true) { cancelAnimationFrame(fitRaf); fitRaf = 0; fitTop(); fitLegend(); return; }
+  if (!fitRaf) fitRaf = requestAnimationFrame(() => { fitRaf = 0; fitTop(); fitLegend(); });
+}
+if (typeof ResizeObserver === 'function') {   // 數字變位數、選單換字、示範按鈕收起、圖例收合、還原座位出現：都會改寬度
+  const ro = new ResizeObserver(() => fitChrome());
+  [$('.brand'), ...$$('#stats .stat'), ...$('#topRight').children, $('#legend'), $('#tools')].forEach(el => ro.observe(el));
+}
 function toast(text) { const t = $('#toast'), d = document.createElement('div'); d.textContent = text; t.appendChild(d); setTimeout(() => d.remove(), 2600); while (t.children.length > 2) t.firstChild.remove(); }
 
 /* ══════════ 15. 接 ShellBot：window.Office.update(snapshot) ══════════
@@ -3031,7 +3084,7 @@ function applyScale() {
   let s = 1;
   try { s = HOST && HOST.uiScale ? Number(HOST.uiScale()) : Number(new URLSearchParams(location.search).get('ui')) || 1; } catch (e) { s = 1; }
   s = Math.min(1.6, Math.max(.7, s || 1));
-  if (applyScale.v !== s) { applyScale.v = s; document.documentElement.style.setProperty('--ui', String(s)); }
+  if (applyScale.v !== s) { applyScale.v = s; document.documentElement.style.setProperty('--ui', String(s)); fitChrome(); }
 }
 applyScale();
 function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = '實驗性'; }
@@ -3223,6 +3276,7 @@ $('#addTen').onclick = () => addBots(10);
 
 /* ══════════ 17. 給自動化測試用的掛鉤 ══════════ */
 window.__office = {
+  fit: () => ({ top: topFit, cls: $('#top').className, legend: $('#legend').className, legendBottom: $('#legend').style.bottom }),
   frames: () => frames, busyFrames: () => busyFrames, busyWhy: () => ({ papers: papers.length, rings: rings.length, walking: [...M.ents.values()].filter(e => e.walk).map(e => e.key + ':' + e.walk.dir), cam: camMoving(), morph: V.k < 1, rooms: [...M.rooms.values()].filter(r => r.alpha < 1 || Math.abs(r.tx - r.x) > .01 || Math.abs(r.ty - r.y) > .01 || Math.abs(r.th - r.h) > .01).map(r => r.id) }), counts, highlighted: () => counted().filter(e => hl && matches(hl, e)).length,
   following: () => follow, panelOpen: () => $('#panel').classList.contains('open'),
   notePriority, prio: () => PRIO.slice(1).map(x => x.col), lanes: () => boardLanes(nowS()).map(l => ({ p: l.p, ids: l.items.map(i => i.t.id), why: l.items.map(i => i.r.why) })),
