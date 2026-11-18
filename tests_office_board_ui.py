@@ -162,7 +162,10 @@ def serve():
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *a):
             pass
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(HERE / "web")))
+    class Server(http.server.ThreadingHTTPServer):
+        request_queue_size = 64   # the page loads many files at once; the default backlog of 5 reset connections under load
+        daemon_threads = True
+    srv = Server(("127.0.0.1", 0), functools.partial(Quiet, directory=str(HERE / "web")))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 

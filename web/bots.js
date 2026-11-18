@@ -1527,32 +1527,39 @@
     const timer = setInterval(() => { if (!document.body.contains(ov)) clearInterval(timer); else load(); }, 2000);
   }
 
-  // ── Settings → Bots: its own tab (the switches, and every bot with Edit on it) ─
-  // The third way in to a bot's settings, beside the face and the Edit on its row in the sidebar. The tab is
-  // made here, not in index.html (which has no room for it), the way the plugins' tabs are.
+  // ── Settings → Bots: its own category (the switches, and every bot with Edit on it) ─
+  // The third way in to a bot's settings, beside the face and the Edit on its row in the sidebar. index.html has the
+  // tab and the panel (with the groups row in it); one that is missing is made here, the way the plugins' tabs are.
   function settingsPanel() {
     let panel = document.getElementById('settings-panel-bots');
-    if (panel) return panel;
     const bar = document.getElementById('settings-tabs-bar');
     const modal = document.querySelector('#modal-settings .modal');
     if (!bar || !modal) return null;
-    const tab = document.createElement('button');
-    tab.className = 'settings-tab';
-    tab.dataset.tab = 'bots';
-    tab.textContent = 'Bots';
-    const general = bar.querySelector('[data-tab="general"]');
-    bar.insertBefore(tab, general ? general.nextSibling : bar.firstChild);
-    panel = document.createElement('div');
-    panel.className = 'settings-tab-panel';
-    panel.id = 'settings-panel-bots';
-    modal.insertBefore(panel, modal.querySelector('.modal-footer'));
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('#modal-settings .settings-tab, #modal-settings .settings-tab-panel')
-        .forEach(x => x.classList.remove('active'));
-      tab.classList.add('active');
-      panel.classList.add('active');
-      syncSettings();
-    });
+    let tab = bar.querySelector('[data-tab="bots"]');
+    if (!tab) {
+      tab = document.createElement('button');
+      tab.className = 'settings-tab';
+      tab.dataset.tab = 'bots';
+      tab.textContent = 'Bots';
+      const general = bar.querySelector('[data-tab="general"]');
+      bar.insertBefore(tab, general ? general.nextSibling : bar.firstChild);
+    }
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.className = 'settings-tab-panel';
+      panel.id = 'settings-panel-bots';
+      modal.insertBefore(panel, modal.querySelector('.modal-footer'));
+    }
+    if (!tab.dataset.sfbBound) {                       // the page's own handler switches the panels; this one refreshes the list
+      tab.dataset.sfbBound = '1';
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('#modal-settings .settings-tab, #modal-settings .settings-tab-panel')
+          .forEach(x => x.classList.remove('active'));
+        tab.classList.add('active');
+        panel.classList.add('active');
+        syncSettings();
+      });
+    }
     return panel;
   }
 
@@ -1582,41 +1589,43 @@
         '還沒有 bot。把一個對話「記住」（它那一列的按鈕）就會變成 bot，也可以在這裡建立。'))}</div>`);
   }
 
-  // ── settings toggle (injected next to the other experimental switches) ─
+  // ── Settings → Bots: the switches, then the groups row (index.html), then Create and the list ─
   function injectSettings() {
     if (document.getElementById('setting-experimental-bots')) return;
     const panel = settingsPanel();
     if (!panel) return;
     const wrap = document.createElement('div');
-    wrap.innerHTML = `<label style="font-size:11px;color:#565f89;display:block;margin-bottom:4px">${t('Bots: faces, memory, primary bot', 'Bots — 頭像表情、獨立記憶、主要 Bot')}</label>
-      <div style="display:flex;align-items:center;gap:6px">
-        <button class="toggle-switch" id="setting-experimental-bots" data-guide="bots"></button>
-        <span style="font-size:11px;color:#565f89">${t('Lights become animated bot faces (idle, working, question, stuck, done). A tab can become a bot that wakes with its job, skills and memory, and writes its memory before it closes. On for a new install.',
-          '燈號換成會動的 bot 頭像（發呆／運作／問號／卡住／完成）；分頁可以開成 bot：叫醒時帶入執掌、skill 與記憶，關閉前先寫記憶。新安裝預設打開。')}</span>
+    wrap.innerHTML = `<div class="sx-card">
+      <div class="sx-row">
+        <div class="sx-txt"><div class="sx-label">${t('Bots: faces, memory, primary bot', 'Bots — 頭像表情、獨立記憶、主要 Bot')}</div>
+          <div class="sx-hint">${t('Lights become animated bot faces (idle, working, question, stuck, done). A tab can become a bot that wakes with its job, skills and memory, and writes its memory before it closes. On for a new install.',
+            '燈號換成會動的 bot 頭像（發呆／運作／問號／卡住／完成）；分頁可以開成 bot：叫醒時帶入執掌、skill 與記憶，關閉前先寫記憶。新安裝預設打開。')}</div></div>
+        <div class="sx-ctl"><button class="toggle-switch" id="setting-experimental-bots" data-guide="bots"></button></div>
       </div>
-      <div id="sfb-memsave" style="display:none">
-        <label style="font-size:11px;color:#565f89;display:block;margin:10px 0 4px">${t('Save a bot’s memory while it stays open', '開著的 Bot 也定期存記憶')}</label>
-        <div style="display:flex;align-items:center;gap:6px">
-          <button class="toggle-switch" id="setting-bot-memory-autosave"></button>
-          <span style="font-size:11px;color:#565f89">${t('After real work, once a bot has been idle for', '做完實質的事之後，Bot 閒置')}
-            <input type="number" id="setting-bot-memory-idle" min="5" max="1440" step="5" style="width:58px;font-size:11px;padding:1px 4px;background:#24283b;border:1px solid #3b4261;border-radius:4px;color:#c0caf5">
+      <div class="sx-row" id="sfb-memsave" style="display:none">
+        <div class="sx-txt"><div class="sx-label">${t('Save a bot’s memory while it stays open', '開著的 Bot 也定期存記憶')}</div>
+          <div class="sx-hint">${t('After real work, once a bot has been idle for', '做完實質的事之後，Bot 閒置')}
+            <input type="number" id="setting-bot-memory-idle" class="sx-input sx-mem-idle" min="5" max="1440" step="5">
             ${t('minutes, it is asked to update its memory (MEMORY.md and a summary in its folder), so one that is never closed still remembers. Each time is one turn of the bot’s own conversation and uses your quota like any message; nothing is sent while it is working, waiting for your answer, or while you have unsent text in its input box. Off: memory is written only when its tab closes.',
-              '分鐘，就會請它更新記憶（它資料夾裡的 MEMORY.md 和一份摘要），一直開著不關的 Bot 也記得住。每次是 Bot 自己的一輪對話，跟你傳一則訊息一樣會用掉額度；它在跑、在等你回答、或輸入框有你還沒送出的字時，都不會送。關掉：只有分頁關閉時才寫記憶。')}</span>
-        </div>
+              '分鐘，就會請它更新記憶（它資料夾裡的 MEMORY.md 和一份摘要），一直開著不關的 Bot 也記得住。每次是 Bot 自己的一輪對話，跟你傳一則訊息一樣會用掉額度；它在跑、在等你回答、或輸入框有你還沒送出的字時，都不會送。關掉：只有分頁關閉時才寫記憶。')}</div></div>
+        <div class="sx-ctl"><button class="toggle-switch" id="setting-bot-memory-autosave"></button></div>
       </div>
-      <label style="font-size:11px;color:#565f89;display:block;margin:10px 0 4px">${t('A2A: bots message each other by name (experimental)', 'A2A：bot 之間用名字互相傳話（實驗）')}</label>
-      <div style="display:flex;align-items:center;gap:6px">
-        <button class="toggle-switch" id="setting-experimental-a2a" data-guide="a2a"></button>
-        <span style="font-size:11px;color:#565f89">${t('The AI in a tab can send work or a note to another bot by its name (sfctl a2a-send, [[SF:TO:name|…]]), here or on a paired computer, and hand off a task that reports back. Off by default.',
-          '分頁裡的 AI 可以用名字把工作或訊息交給另一個 bot（sfctl a2a-send、[[SF:TO:名字|…]]），這台或配對的電腦都可以，也能交辦一件事、做完回報。預設關閉。')}</span>
+      <div class="sx-row">
+        <div class="sx-txt"><div class="sx-label">${t('A2A: bots message each other by name (experimental)', 'A2A：bot 之間用名字互相傳話（實驗）')}</div>
+          <div class="sx-hint">${t('The AI in a tab can send work or a note to another bot by its name (sfctl a2a-send, [[SF:TO:name|…]]), here or on a paired computer, and hand off a task that reports back. Off by default.',
+            '分頁裡的 AI 可以用名字把工作或訊息交給另一個 bot（sfctl a2a-send、[[SF:TO:名字|…]]），這台或配對的電腦都可以，也能交辦一件事、做完回報。預設關閉。')}</div></div>
+        <div class="sx-ctl"><button class="toggle-switch" id="setting-experimental-a2a" data-guide="a2a"></button></div>
       </div>
-      <div id="sfb-settings-more" style="display:none;margin-top:6px;gap:6px;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-ghost" id="sfb-settings-new" style="font-size:11px;padding:2px 10px">${t('＋ Create a bot', '＋ 建立 Bot')}</button>
-        <span style="font-size:10px;color:#565f89" id="sfb-settings-root"></span>
+    </div>`;
+    const more = document.createElement('div');
+    more.innerHTML = `<div id="sfb-settings-more" class="sx-bots-more">
+        <button class="btn btn-ghost" id="sfb-settings-new">${t('＋ Create a bot', '＋ 建立 Bot')}</button>
+        <span id="sfb-settings-root"></span>
       </div>
       <div id="sfb-settings-list"></div>`;
-    panel.appendChild(wrap);
-    const btn = wrap.querySelector('#setting-experimental-bots');
+    panel.insertBefore(wrap.firstElementChild, panel.firstChild);       // the switches first; the groups row (static) follows
+    while (more.firstElementChild) panel.appendChild(more.firstElementChild);
+    const btn = panel.querySelector('#setting-experimental-bots');
     btn.addEventListener('click', async () => {
       const cfg = host() && host().cfg();
       if (!cfg) return;
@@ -1626,9 +1635,9 @@
       await api().save_settings(JSON.stringify(cfg.settings));
       setEnabled(on);
     });
-    wrap.querySelector('#sfb-settings-new').addEventListener('click', () => openEditor(null));
+    panel.querySelector('#sfb-settings-new').addEventListener('click', () => openEditor(null));
     // Saving memory while a bot stays open (bot_memory.py): both settings live in settings, like the toggles above.
-    const memOn = wrap.querySelector('#setting-bot-memory-autosave'), memMin = wrap.querySelector('#setting-bot-memory-idle');
+    const memOn = panel.querySelector('#setting-bot-memory-autosave'), memMin = panel.querySelector('#setting-bot-memory-idle');
     const saveSettings = async patch => {
       const cfg = host() && host().cfg();
       if (!cfg) return;
@@ -1643,7 +1652,7 @@
       memMin.value = mins;                                  // the box shows what was kept (it has the focus: syncSettings leaves it alone)
       saveSettings({ bot_memory_idle_min: mins });
     });
-    const a2a = wrap.querySelector('#setting-experimental-a2a');
+    const a2a = panel.querySelector('#setting-experimental-a2a');
     a2a.addEventListener('click', async () => {
       const cfg = host() && host().cfg();
       if (!cfg) return;
@@ -1664,7 +1673,7 @@
     if (more) more.style.display = enabled ? 'flex' : 'none';
     const memBox = document.getElementById('sfb-memsave');
     if (memBox) {
-      memBox.style.display = enabled ? 'block' : 'none';
+      memBox.style.display = enabled ? '' : 'none';
       const set = (cfg && cfg.settings) || {};
       const on = set.bot_memory_autosave !== false;                  // on unless turned off (bot_memory.settings)
       document.getElementById('setting-bot-memory-autosave').classList.toggle('on', on);

@@ -774,10 +774,9 @@
     const box = panel && panel.firstElementChild;
     if (!box || document.getElementById('setting-ui-style')) return;
     const row = document.createElement('div');
-    row.className = 'cm-setting';
-    row.innerHTML = '<label class="cm-set-label"></label>' +
-      '<div id="setting-ui-style" class="cm-seg"><button data-style="chat"></button><button data-style="cli"></button></div>' +
-      '<div class="cm-set-hint"></div>';
+    row.className = 'cm-setting sx-row';
+    row.innerHTML = '<div class="sx-txt"><label class="cm-set-label sx-label"></label><div class="cm-set-hint sx-hint"></div></div>' +
+      '<div id="setting-ui-style" class="cm-seg sx-ctl"><button data-style="chat"></button><button data-style="cli"></button></div>';
     box.insertBefore(row, box.firstChild);
     row.addEventListener('click', e => {
       const b = e.target.closest('button[data-style]');

@@ -30,7 +30,6 @@
 @keyframes cn-pulse { 50% { opacity: .25; } }
 
 /* ── the catalog (Settings → Connect): search, bubbles, sections of two-column rows ── */
-#modal-settings .modal.cn-wide { width: min(720px, calc(100vw - 48px)) !important; }   /* two columns need room; other tabs keep 560px */
 .cg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 2px; }
 .cg-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--c-text); }
 .cg-count { border: 0; background: none; padding: 2px 4px; color: var(--c-soft); font-size: 12px; cursor: pointer; border-radius: 6px; white-space: nowrap; }

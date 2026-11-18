@@ -247,6 +247,10 @@ def run(browser, base, engine):
     fr.click("#vOver .wform .ok")
     page.wait_for_function("SFBoard.count() === 2", timeout=6000)
     check("task_user_act(32, done, the text) was called", args_of(page, "task_user_act") == [["32", "done", "示範：加班，週五前交"]], args_of(page, "task_user_act"))
+    try:   # the line to the bot goes out after the store's answer: wait for it rather than look at once
+        page.wait_for_function("window.__args.some(a => a[0] === 'chat_send')", timeout=4000)
+    except Exception:
+        pass
     sends = args_of(page, "chat_send")
     check("one line went to the bot that asked (the engineer's tab, s701), not as a draft-clear",
           sends == [["s701", "（看板）#32「示範要不要加班趕工」我的回覆：示範：加班，週五前交", False]], sends)

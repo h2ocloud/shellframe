@@ -849,7 +849,7 @@ class RemoteApiMixin:
             cfg = main.load_config()
             if not (cfg.get("settings") or {}).get("experimental_groups", False):
                 return {"success": False,
-                        "message": "群組是實驗性功能，請先在設定裡打開（實驗性 → 角色群組）"}
+                        "message": "群組是實驗性功能，請先在設定裡打開（Bots → 角色群組）"}
             roster = self._agent_roster_config(cfg)
             groups = agent_group.normalize(cfg.get("groups"))
 

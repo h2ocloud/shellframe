@@ -1,0 +1,147 @@
+/* Settings (index.html #modal-settings): categories on the left, the chosen one on the right.
+ *
+ * The modal grows with the window up to 1200px and has a stable height, so it does not jump between
+ * categories; the right pane scrolls. At 960px and below the categories become a row on top.
+ * Widths are percentages of the overlay (the overlay carries the Interface size, --ui-scale, as zoom), so
+ * the dialog fits at every size. One type scale: 15 title, 13 label, 12.5 control, 12 hint, 11 meta.
+ * Rows are .sx-row: label and hint on the left, the control on the right; .sx-field puts a text field
+ * to the right of its label, .sx-stack puts a wide control under it. Everything hangs off #modal-settings,
+ * so the page's older .modal / .settings-* rules lose by specificity and stay for the other dialogs. */
+
+#modal-settings { padding: 24px; box-sizing: border-box; }
+#modal-settings .modal.sx {
+  box-sizing: border-box; display: grid; grid-template-columns: 208px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%; max-width: 1200px; height: 100%; max-height: 800px; padding: 0; overflow: hidden;
+}
+#modal-settings .modal.sx > h2 { grid-column: 1 / -1; margin: 0; padding: 16px 24px; font-size: 15px; border-bottom: 1px solid #292e42; }
+
+/* the categories */
+#modal-settings .settings-tabs {
+  grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 12px;
+  border: 0; border-right: 1px solid #292e42; background: #1b1e2e; overflow-y: auto; min-height: 0;
+}
+#modal-settings .settings-tab {
+  width: 100%; text-align: left; padding: 9px 12px; font-size: 13px; line-height: 1.3; color: #787c99; border: 0; border-radius: 8px;
+  background: none; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#modal-settings .settings-tab:hover { color: #c0caf5; background: rgba(255, 255, 255, .04); }
+#modal-settings .settings-tab.active { color: #7aa2f7; background: rgba(122, 162, 247, .13); font-weight: 600; }
+
+/* the chosen category */
+#modal-settings .settings-tab-panel {
+  display: none; grid-column: 2; grid-row: 2; min-height: 0; overflow-y: auto; padding: 20px 28px 24px;
+  scrollbar-width: thin; scrollbar-color: #3b4261 transparent;
+}
+#modal-settings .settings-tab-panel.active { display: block; }
+#modal-settings .modal-footer { grid-column: 1 / -1; grid-row: 3; margin: 0; padding: 12px 24px; border-top: 1px solid #292e42; }
+
+.sx-card { background: #24283b; border-radius: 10px; padding: 0 20px; margin-bottom: 14px; }
+.sx-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 2px 8px; font-size: 13px; font-weight: 600; color: #c0caf5; }
+.sx-pill, .sx-val { font-size: 12px; font-weight: 400; color: #787c99; }
+.sx-note, .sx-lead { margin: 2px 2px 14px; font-size: 12px; line-height: 1.6; color: #787c99; }
+.sx-lead { color: #a9b1d6; }
+.sx-note code, .sx-hint code, .sx-lead code { background: #1a1b26; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #7dcfff; }
+.sx-kbd { font-family: inherit; font-size: 11px; padding: 1px 6px; background: #1a1b26; border: 1px solid #3b4261; border-radius: 4px; color: #c0caf5; }
+
+.sx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 28px; padding: 14px 0; border-top: 1px solid #2f354d; }
+.sx-card > .sx-row:first-child { border-top: 0; }
+.sx-label { display: block; font-size: 13px; line-height: 1.45; color: #c0caf5; }
+.sx-hint { margin-top: 3px; max-width: 660px; font-size: 12px; line-height: 1.55; color: #787c99; }
+.sx-ctl { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.sx-field { grid-template-columns: 190px minmax(0, 1fr); }
+.sx-field .sx-ctl { justify-content: flex-start; }
+.sx-field .sx-input { flex: 1 1 auto; min-width: 0; max-width: 600px; }
+.sx-two { display: flex; gap: 8px; }
+.sx-stack { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+.sx-stack .sx-ctl { display: block; }
+.sx-stack .sx-input { width: 100%; box-sizing: border-box; }
+.sx-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.sx-multi .sx-ctl { flex-wrap: wrap; }
+
+#modal-settings .sx-input, #modal-settings .settings-preset input, #modal-settings .settings-add input {
+  box-sizing: border-box; background: #1a1b26; border: 1px solid #3b4261; border-radius: 6px; padding: 6px 10px;
+  color: #c0caf5; font: inherit; font-size: 12.5px; line-height: 1.4; outline: none;
+}
+#modal-settings .sx-input:focus, #modal-settings .settings-preset input:focus { border-color: #7aa2f7; }
+#modal-settings textarea.sx-input { resize: vertical; min-height: 64px; }
+.sx-num { width: 72px; }
+.sx-mono, #modal-settings .sp-cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#modal-settings .sx-hint.sx-mono { max-width: none; font-size: 11px; white-space: pre-wrap; }
+.sx-sub { padding: 12px 0 14px; border-top: 1px solid #2f354d; font-size: 12px; color: #a9b1d6; }
+.sx-addgroup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.sx-addgroup .sx-input { width: 160px; }
+#group-role-picks { display: flex; flex-wrap: wrap; gap: 6px 14px; flex: 1 1 100%; order: 3; }
+.sx-msg { min-height: 14px; margin-top: 6px; font-size: 12px; }
+
+/* the Bots and Office categories, as bots.js and office.js fill them */
+#modal-settings .sx-bots-more { display: none; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 0 4px; }
+#modal-settings .sx-bots-more .btn { font-size: 12px; padding: 5px 12px; }
+#modal-settings .sx-bots-more span { font-size: 12px; color: #787c99; }
+#modal-settings .sx-mem-idle { width: 64px; font-size: 12px; padding: 3px 6px; }
+#modal-settings #sfb-settings-list { margin-top: 6px; }
+#modal-settings .sfb-bl-head { font-size: 13px; font-weight: 600; color: #c0caf5; letter-spacing: 0; margin: 14px 2px 8px; }
+#modal-settings .sfb-bl-row { padding: 10px 12px; margin-bottom: 6px; background: #24283b; }
+#modal-settings .sfb-bl-name { font-size: 13px; }
+#modal-settings .sfb-bl-sub { font-size: 12px; }
+#modal-settings .sfb-bl-edit { font-size: 12px; padding: 4px 14px; }
+
+/* LINE's folded connection details */
+#modal-settings .line-details { border-top: 1px solid #2f354d; }
+#modal-settings .line-details > summary { padding: 14px 0; font-size: 13px; color: #7aa2f7; }
+#modal-settings .line-details[open] > summary { padding-bottom: 2px; }
+#settings-line-help { margin: 6px 0 4px; padding: 12px 14px; background: #1f2335; border: 1px solid #2f354d; border-radius: 8px; font-size: 12px; line-height: 1.6; color: #787c99; }
+
+/* Launch presets: a table, the command column takes what is left */
+.sp-table { --sp-cols: 28px 48px minmax(120px, 220px) minmax(0, 1fr) 72px; }
+.sp-head { display: grid; grid-template-columns: var(--sp-cols); gap: 10px; padding: 0 12px 6px; font-size: 11px; color: #565f89; letter-spacing: .04em; }
+#modal-settings .settings-preset, #modal-settings .sp-addrow {
+  display: grid; grid-template-columns: var(--sp-cols); align-items: center; gap: 10px; margin: 0 0 6px; padding: 8px 12px;
+  background: #24283b; border-radius: 8px;
+}
+#modal-settings .sp-addrow { margin-top: 10px; background: transparent; border: 1px dashed #3b4261; }
+#modal-settings .settings-preset .sp-grip { text-align: center; color: #565f89; }
+#modal-settings .settings-preset .sp-icon, #modal-settings .sp-addrow .sp-icon { width: 100%; height: 32px; padding: 0; font-size: 16px; line-height: 1;
+  background: #1a1b26; border: 1px solid #3b4261; border-radius: 6px; color: #c0caf5; cursor: pointer; }
+#modal-settings .sp-addrow .sp-icon:hover { border-color: #7aa2f7; }
+#modal-settings .settings-preset .sp-name, #modal-settings .sp-addrow .sp-name { width: 100%; min-width: 0; }
+#modal-settings .settings-preset .sp-cmd, #modal-settings .sp-addrow .sp-cmd { width: 100%; min-width: 0; flex: none; }
+.sp-cmdbox { display: grid; min-width: 0; }
+.sp-cmdbox::after, .sp-cmdbox > textarea { grid-area: 1 / 1; box-sizing: border-box; padding: 6px 10px; border: 1px solid transparent;
+  font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sp-cmdbox::after { content: attr(data-v) " "; visibility: hidden; }              /* as tall as the text, wrapped */
+#modal-settings .sp-cmdbox > textarea { resize: none; overflow: hidden; border-color: #3b4261; border-radius: 6px; background: #1a1b26; color: #c0caf5; outline: none; }
+#modal-settings .sp-cmdbox > textarea:focus { border-color: #7aa2f7; }
+.sp-act { display: flex; align-items: center; justify-content: center; gap: 4px; }
+#modal-settings .settings-preset .sp-del { font-size: 18px; padding: 2px 8px; }
+#modal-settings .sp-addrow .btn { width: 100%; padding: 7px 0; }
+.sp-head > :nth-child(1), .settings-preset > :nth-child(1), .sp-addrow > :nth-child(1) { grid-area: g; }
+.sp-head > :nth-child(2), .settings-preset > :nth-child(2), .sp-addrow > :nth-child(2) { grid-area: i; }
+.sp-head > :nth-child(3), .settings-preset > :nth-child(3), .sp-addrow > :nth-child(3) { grid-area: n; }
+.sp-head > :nth-child(4), .settings-preset > :nth-child(4), .sp-addrow > :nth-child(4) { grid-area: c; }
+.sp-head > :nth-child(5), .settings-preset > :nth-child(5), .sp-addrow > :nth-child(5) { grid-area: d; }
+.sp-head, #modal-settings .settings-preset, #modal-settings .sp-addrow { grid-template-areas: "g i n c d"; }
+
+/* a window under ~960px: the categories become a row on top, fields go under their labels, a preset takes two lines */
+@media (max-width: 960px) {
+  #modal-settings { padding: 12px; }
+  #modal-settings .modal.sx { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  #modal-settings .modal.sx > h2 { padding: 12px 18px; }
+  #modal-settings .settings-tabs { grid-row: 2; flex-direction: row; flex-wrap: wrap; gap: 2px 4px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid #292e42; overflow: visible; }
+  #modal-settings .settings-tab { width: auto; padding: 6px 12px; font-size: 12.5px; }
+  #modal-settings .settings-tab-panel { grid-column: 1; grid-row: 3; padding: 16px 18px 20px; }
+  #modal-settings .modal-footer { grid-row: 4; padding: 10px 18px; }
+  .sx-card { padding: 0 14px; }
+  .sx-field, .sx-multi { grid-template-columns: minmax(0, 1fr); }
+  .sx-field .sx-input { max-width: none; }
+  .sx-multi .sx-ctl { justify-content: flex-start; }
+  .sp-head { display: none; }
+  .sp-table { --sp-cols: 24px 48px minmax(0, 1fr) 64px; }
+  .sp-head, #modal-settings .settings-preset, #modal-settings .sp-addrow { grid-template-areas: "g i n d" "c c c c"; }
+}
+
+/* ── the dialogs the audit found cramped, given room in the same type scale ──
+ * New tab: the command box showed "自訂指令，例如 claude --channels plugin:" cut off at 420px. About (and the
+ * AI manual that opens in it) and the release notes are long reading, 440px was a narrow column. */
+#modal-new .modal { width: 560px; max-width: calc(100% - 32px); }
+#modal-new .custom-cmd input { font-size: 12.5px; }
+#modal-about .modal, #modal-release .modal { width: 600px !important; max-width: calc(100% - 32px); }

@@ -43,7 +43,7 @@ except ImportError:
     sys.exit(0)
 
 html = (HERE / "web/index.html").read_text(encoding="utf-8")
-STYLE = re.search(r"<style>(.*?)</style>", html, re.S).group(1)
+STYLE = re.search(r"<style>(.*?)</style>", html, re.S).group(1) + (HERE / "web/settings.css").read_text(encoding="utf-8")
 
 
 def grab(pattern):
@@ -53,7 +53,7 @@ def grab(pattern):
 
 
 # The real markup block and the real handlers, lifted verbatim.
-MARKUP = grab(r'<div>\s*<label[^>]*>角色群組.*?</div>\s*</div>\s*</div>')
+MARKUP = grab(r'<div class="sx-card sx-groups" id="sx-groups">.*?<div id="group-msg" class="sx-msg"></div>\s*</div>\s*</div>')
 REFRESH = grab(r"  async function refreshGroupsEditor\(\) \{.*?\n  \}\n")
 SAVE = grab(r"  document\.getElementById\('group-save'\)\.addEventListener.*?\n  \}\);\n")
 TOGGLE = grab(r"  document\.getElementById\('setting-experimental-groups'\)\n"

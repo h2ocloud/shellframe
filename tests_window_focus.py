@@ -122,6 +122,7 @@ def run(browser, engine):
     print(f"{tag} 2. Settings, and a dialog with no text box")
     page.click("#btn-settings")
     page.wait_for_selector("#modal-settings.open")
+    page.click('#settings-tabs-bar [data-tab="presets"]')
     page.click("#add-name")
     check("a text box in Settings has the keyboard", page.evaluate(ACTIVE) == "add-name", page.evaluate(ACTIVE))
     window_back(page)

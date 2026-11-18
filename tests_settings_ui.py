@@ -5,7 +5,7 @@
     (settings.shiftEnterNewline: false): `\\n` to Claude Code, `CSI 27;2;13~` to Codex. Settings
     has no switch for it, and the tip at the foot of General says it is always so
   - Settings → Bots: the Bots switch is there, its label no longer says "experimental"
-  - the tabs, in order: General, Bots, Telegram, LINE, Connect, Advanced; no Plugins
+  - the tabs, in order: General, Bots, Office, Loops, Launch presets, Connect, Telegram, LINE, Advanced; no Plugins
   - Advanced holds what moved: auto /compact and its threshold, the model badge, the local HTTP
     API (Swagger, copy token), the status hooks, idle tab cleanup, Telegram's prefix, wrapper tag
     and prompt, LINE's prefix and wrapper prompt. Each is on the page once, none is left in
@@ -137,7 +137,8 @@ def shoot_tabs(page, out_dir, prefix, also=()):
     """One screenshot per settings tab, the whole panel (the modal's own scroll lifted for it)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     page.set_viewport_size({"width": 1180, "height": 3400})        # the longest panel fits, top-aligned
-    page.add_style_tag(content="#modal-settings .modal { max-height: none !important; overflow: visible !important; }"
+    page.add_style_tag(content="#modal-settings .modal { height: auto !important; max-height: none !important; overflow: visible !important; }"
+                               " #modal-settings .settings-tab-panel { overflow: visible !important; }"
                                " #modal-settings { align-items: flex-start !important; padding-top: 24px; }")
     page.add_style_tag(content=".sfb-edit, .sfb-pv { visibility: hidden !important; }")   # what the pointer last touched
     tabs = page.evaluate("[...document.querySelectorAll('#settings-tabs-bar .settings-tab')].map(t => t.dataset.tab)")
@@ -205,7 +206,7 @@ def run(browser, engine):
 
     print(f"[{engine}] 3. Settings → Bots: the switch, no longer called experimental")
     open_settings(page, "bots")
-    label = page.evaluate("document.getElementById('setting-experimental-bots').closest('#settings-panel-bots > div').querySelector('label').textContent")
+    label = page.evaluate("document.getElementById('setting-experimental-bots').closest('.sx-row').querySelector('.sx-label').textContent")
     check("the Bots switch is in Settings → Bots, on", page.locator("#settings-panel-bots #setting-experimental-bots.on").count() == 1)
     check("its label has no 實驗 / experimental", "實驗" not in label and "xperimental" not in label and label.startswith("Bots"), label)
     check("no page errors", not errors, errors)
@@ -213,7 +214,7 @@ def run(browser, engine):
 
     page, errors = open_page(browser, lang="en", settings=OLD_SETTINGS)
     open_settings(page, "bots")
-    label = page.evaluate("document.getElementById('setting-experimental-bots').closest('#settings-panel-bots > div').querySelector('label').textContent")
+    label = page.evaluate("document.getElementById('setting-experimental-bots').closest('.sx-row').querySelector('.sx-label').textContent")
     check("in English too: 'Bots: faces, memory, primary bot'", label.strip() == "Bots: faces, memory, primary bot", label)
     open_settings(page, "general")
     tip = page.locator('#settings-panel-general [data-i18n="shiftEnterHint"]').inner_text()
@@ -225,8 +226,8 @@ def run(browser, engine):
     page, errors = open_page(browser, settings=OLD_SETTINGS)
     open_settings(page, "general")
     tabs = page.evaluate("[...document.querySelectorAll('#settings-tabs-bar .settings-tab')].map(t => t.dataset.tab)")
-    check("General, Bots, Telegram, LINE, Connect, Advanced, in that order; no Plugins",
-          tabs == ["general", "bots", "bridge", "line", "connect", "advanced"], tabs)
+    check("General, Bots, Office, Loops, Launch presets, Connect, Telegram, LINE, Advanced, in that order; no Plugins",
+          tabs == ["general", "bots", "office", "loops", "presets", "connect", "bridge", "line", "advanced"], tabs)
     check("進階 in Chinese", page.locator('#settings-tabs-bar [data-tab="advanced"]').inner_text() == "進階")
     left = [i for i in GONE if page.locator(f'[id="{i}"]').count()]
     check("none of the retired controls is on the page", not left, left)
@@ -331,7 +332,7 @@ def run(browser, engine):
     tabs = shoot_tabs(page, SHOTS, "settings-cleanup",
                       also=(("line-open", lambda pg: (open_settings(pg, "line"),
                                                       pg.evaluate("document.getElementById('settings-line-details').open = true"))),))
-    check("one per tab", tabs == ["general", "bots", "bridge", "line", "connect", "advanced"]
+    check("one per tab", tabs == ["general", "bots", "office", "loops", "presets", "connect", "bridge", "line", "advanced"]
           and all((SHOTS / f"settings-cleanup-{t}.png").exists() for t in tabs), tabs)
     check("no page errors", not errors, errors)
     page.close()
