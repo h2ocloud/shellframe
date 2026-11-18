@@ -256,6 +256,21 @@
       }
     },
     {
+      "id": "pending",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.58.0",
+      "title": {
+        "en": "Waiting on you",
+        "zh": "待你決定"
+      },
+      "body": {
+        "en": "A list on the right of the chat view (a thin strip when the window is narrow; a capsule at the top right of the terminal) of what waits on you: tabs asking a question, with buttons, and decision cards you can answer in place.",
+        "zh": "對話畫面的右邊（窗口窄時收成一條窄邊；終端機畫面右上角是一顆膠囊）列出等你的事：正在問你問題的分頁（有按鈕可直接回答）、等你決定的卡片（可就地回覆）。"
+      }
+    },
+    {
       "id": "office",
       "surfaces": [
         "desktop"

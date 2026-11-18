@@ -1,0 +1,116 @@
+/* ShellBot 「待你決定」 (web/pending.js): the list of what waits on the person, on the right of the chat view and in reach in the terminal view.
+ *
+ * Everything sits inside #terminal-wrap and takes no width from the terminal: the chat view docks it by giving up its own right edge
+ * (the chat layer lies over the terminal, so the terminal under it never resizes), the terminal view gets a floating capsule and a drawer
+ * that slides over it. Sizes follow the interface size (--ui-scale) as chat.css does; #terminal-wrap is not zoomed.
+ */
+:root { --pend-w: 300px; --pend-strip-w: 26px; --pend-top: 0px; }
+body.sf-chat-style:not(.sf-chat-shown) { --pend-top: var(--cm-head-h); }       /* terminal under the chat style's header */
+#pend-cap, #pend-panel, #pend-scrim {
+  --p-bg: #1f2335; --p-raised: #24283b; --p-line: #3b4261; --p-text: #c0caf5; --p-soft: #a9b1d6; --p-dim: #6b7394;
+  --p-blue: #7aa2f7; --p-amber: #e0af68; --p-red: #f7768e;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Hiragino Sans", "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+  font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.5; color: var(--p-text);
+}
+#pend-cap[hidden], #pend-scrim[hidden], #pend-panel [hidden] { display: none !important; }
+
+/* the capsule (terminal view) */
+#pend-cap.capsule {
+  position: absolute; z-index: 44; top: calc(var(--pend-top) + 8px); right: calc(18px * var(--ui-scale, 1));
+  display: inline-flex; align-items: center; gap: .5em; padding: .2em .35em .2em .8em; border-radius: 999px; cursor: pointer;
+  background: rgba(31, 35, 53, .9); border: 1px solid var(--p-line); box-shadow: 0 3px 12px rgba(0, 0, 0, .35); opacity: .72;
+}
+/* a narrow chat view has no room for a strip: the capsule floats under its header */
+body.sf-chat-shown #pend-cap.capsule { top: calc(var(--cm-head-h, 50px) + 8px); }
+#pend-cap.capsule.has, #pend-cap.capsule:hover, #pend-cap.capsule:focus-visible { opacity: 1; }
+#pend-cap.capsule.has { border-color: var(--p-red); }
+/* the thin strip (chat view, not docked): the chat layer's right edge is given up to it */
+#pend-cap.strip {
+  position: absolute; z-index: 44; top: 0; right: 0; bottom: 0; width: var(--pend-strip-w); box-sizing: border-box; padding: .7em 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: .7em; background: #16161e; border: 0; border-left: 1px solid var(--p-line);
+}
+#pend-cap.strip .pend-cap-l { writing-mode: vertical-rl; letter-spacing: .15em; color: var(--p-soft); font-size: .92em; }
+#pend-cap.strip:hover { background: #1c1d2b; }
+#pend-cap:focus-visible { outline: 2px solid var(--p-blue); outline-offset: -2px; }
+.pend-n { display: inline-block; min-width: 1.5em; padding: 0 .4em; box-sizing: border-box; border-radius: 999px; text-align: center; font-weight: 700;
+  background: var(--p-raised); color: var(--p-dim); line-height: 1.5em; }
+.pend-n.on { background: var(--p-red); color: #1a1b26; }
+.pend-bang { font-style: normal; font-weight: 700; min-width: 1.4em; padding: 0 .3em; box-sizing: border-box; border-radius: 999px; text-align: center; line-height: 1.5em;
+  background: var(--p-amber); color: #1a1b26; }
+#pend-cap.pulse { animation: pend-pulse 1.2s ease-out 1; }
+@keyframes pend-pulse { 0% { box-shadow: 0 0 0 0 rgba(247, 118, 142, .85); } 100% { box-shadow: 0 0 0 14px rgba(247, 118, 142, 0); } }
+@media (prefers-reduced-motion: reduce) { #pend-cap.pulse { animation: none; } #pend-panel { transition: none !important; } }
+
+/* the list: a docked column (chat view) or a drawer sliding over what is under it */
+#pend-scrim { position: absolute; inset: 0; z-index: 45; background: rgba(10, 11, 18, .28); }
+#pend-panel {
+  position: absolute; z-index: 46; top: var(--pend-top); right: 0; bottom: 0; width: var(--pend-w); max-width: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; background: var(--p-bg); border-left: 1px solid var(--p-line); box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
+  transform: translateX(105%); transition: transform .18s ease-out; visibility: hidden;
+}
+#pend-panel.open { transform: none; visibility: visible; }
+#pend-panel.docked { z-index: 31; box-shadow: none; transition: none; top: 0; }
+.pend-head { display: flex; align-items: center; gap: .5em; flex: none; box-sizing: border-box; height: var(--cm-head-h, 50px); padding: 0 .8em 0 1em;
+  border-bottom: 1px solid var(--p-line); background: #16161e; }
+.pend-title { flex: 1; display: flex; align-items: center; gap: .6em; font-weight: 700; }
+.pend-x { flex: none; width: 1.9em; height: 1.9em; border: 0; border-radius: .45em; background: none; color: var(--p-dim); cursor: pointer; font-size: 1em; line-height: 1; }
+.pend-x:hover { background: var(--p-raised); color: var(--p-text); }
+.pend-status { flex: none; margin: .5em .8em 0; padding: .3em .6em; border-radius: 6px; background: var(--p-raised); color: var(--p-soft); font-size: .92em; }
+.pend-status.bad { color: var(--p-amber); }
+.pend-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: .4em .8em 1em; }
+.pend-scroll h3 { display: flex; align-items: center; gap: .5em; margin: 1em 0 .4em; font-size: .85em; font-weight: 700; letter-spacing: .06em; color: var(--p-dim); }
+.pend-scroll h3 b { font-weight: 700; padding: 0 .5em; border-radius: 999px; background: var(--p-raised); color: var(--p-soft); }
+.pend-none { display: none; margin: 2em .4em; text-align: center; color: var(--p-dim); }
+#pend-panel.empty .pend-none { display: block; }
+.pend-empty { margin: .4em .2em; color: var(--p-dim); }
+
+/* a tab waiting */
+.pend-tab { margin: 0 0 .6em; padding: .6em .7em; border: 1px solid var(--p-line); border-left: 3px solid var(--p-amber); border-radius: 8px; background: var(--p-raised); }
+.pend-h { display: flex; align-items: center; gap: .5em; min-width: 0; }
+.pend-h b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pend-face { display: inline-block; width: 1.8em; height: 1.8em; flex: none; }
+.pend-face svg { width: 100%; height: 100%; }
+.pend-ago { flex: none; color: var(--p-dim); font-size: .85em; }
+.pend-q { margin: .4em 0; overflow-wrap: anywhere; }
+.pend-opts { display: flex; flex-wrap: wrap; gap: .4em; margin: .4em 0; }
+.pend-opt, .pend-go { padding: .25em .75em; border: 1px solid var(--p-line); border-radius: 6px; background: #1a1b26; color: var(--p-text); cursor: pointer; font: inherit; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.pend-opt:hover:not(:disabled), .pend-go:hover:not(:disabled) { border-color: var(--p-blue); color: #fff; }
+.pend-opt.tone-yes { border-color: #4c7a45; } .pend-opt.tone-no { border-color: #8a4452; }
+.pend-opt:disabled, .pend-go:disabled { opacity: .5; cursor: default; }
+.pend-go { background: var(--p-blue); border-color: var(--p-blue); color: #1a1b26; font-weight: 700; }
+.pend-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .9em; margin-top: .3em; }
+.pend-link, .pend-peer { border: 0; background: none; padding: 0; color: var(--p-blue); cursor: pointer; font: inherit; text-align: left; }
+.pend-link:hover, .pend-peer:hover { text-decoration: underline; }
+.pend-peer { display: block; margin: .2em 0; overflow-wrap: anywhere; }
+.pend-note { min-height: 1.2em; font-size: .88em; color: var(--p-dim); }
+.pend-note.bad { color: var(--p-amber); }
+
+/* a decision card, folded and open */
+.pend-card { margin: 0 0 .5em; border: 1px solid var(--p-line); border-radius: 8px; background: var(--p-raised); }
+.pend-card.open { border-color: var(--p-blue); }
+.pend-card-h { display: grid; grid-template-columns: auto 1fr; gap: .1em .6em; width: 100%; box-sizing: border-box; padding: .55em .7em; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pend-id { color: var(--p-dim); grid-row: 1; }
+.pend-t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pend-card.open .pend-t { -webkit-line-clamp: unset; display: block; }
+.pend-m { grid-column: 2; display: flex; flex-wrap: wrap; gap: .1em .7em; color: var(--p-dim); font-size: .88em; }
+.pend-tag { padding: 0 .45em; border-radius: 4px; font-weight: 700; color: #1a1b26; }
+.pend-tag.late { background: var(--p-red); } .pend-tag.soon { background: var(--p-amber); }
+.pend-body-x { padding: 0 .7em .7em; }
+.pend-full { display: none; }
+.pend-next { margin: .2em 0 .5em; padding: .3em .5em; border-radius: 6px; background: #1a1b26; overflow-wrap: anywhere; }
+.pend-next span { display: block; color: var(--p-dim); font-size: .85em; }
+.pend-hist { list-style: none; margin: 0 0 .6em; padding: 0; font-size: .88em; color: var(--p-soft); }
+.pend-hist li { display: flex; gap: .6em; padding: .15em 0; border-top: 1px solid var(--p-line); }
+.pend-hist li.none { color: var(--p-dim); }
+.pend-hist time { flex: none; color: var(--p-dim); }
+.pend-hist li span { overflow-wrap: anywhere; min-width: 0; }
+.pend-form label { display: block; font-size: .88em; color: var(--p-soft); }
+.pend-form textarea { display: block; width: 100%; box-sizing: border-box; margin: .3em 0; padding: .45em .55em; border: 1px solid var(--p-line); border-radius: 6px; background: #1a1b26; color: var(--p-text); font: inherit; resize: vertical; }
+.pend-form textarea:focus { outline: 2px solid var(--p-blue); outline-offset: -1px; }
+.pend-form label.pend-tell { display: flex; align-items: center; gap: .4em; color: var(--p-text); }
+
+/* chat view: the docked column and the strip take the chat layer's right edge, never the terminal's */
+body.sf-pend-docked #chat-layer { right: var(--pend-w); }
+body.sf-pend-strip #chat-layer { right: var(--pend-strip-w); }
+body.sf-pend-docked #chat-notice { right: calc(var(--pend-w) + 14px); }
+body.sf-pend-strip #chat-notice { right: calc(var(--pend-strip-w) + 14px); }

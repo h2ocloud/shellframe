@@ -136,6 +136,18 @@ running underneath with its size unchanged, and everything that types into the t
   the words as their paths, as a phone sends a photo; Claude Code turns an image path
   into `[Image #N]` itself (measured), and its record of it shows as a file chip.
 
+## 「待你決定」 on the right (`web/pending.js`)
+
+What waits on the person is listed on the right and never needs scrolling up: first the tabs whose screen is on a menu
+or question right now (the office's decision light; the question is `chat_view`'s `decision`, asked when a tab starts
+waiting, when the list opens and after an answer, never on a timer; a button is `chat_answer`), then `tasks_overview`'s
+decision cards (overdue first, then due within a day, then the longest waiting), then one line per paired computer.
+A card opens in place for the answer (task_user_act, and one line to whoever asked, the board's own 回覆). The red
+number is the sidebar button's: both read `SFBoard`. In the chat view the list is a docked column when the chat layer is
+wide enough for the 880 px conversation plus the column, else a thin strip that opens a drawer; in the terminal view it
+is a capsule at the pane's top-right and the same drawer. Neither changes the terminal's size: the chat layer gives up its
+own right edge, and the capsule and drawer float.
+
 ## Display rules (display only; tested in `tests_chat_shell.js`)
 
 - **Questions** (`mapDecision`): an option list is put in plain words only when *every*

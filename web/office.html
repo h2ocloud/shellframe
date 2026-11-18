@@ -2187,7 +2187,8 @@ async function submitAct() {
   if (!r || !r.success) { if (vstate.act === a) fail((r && r.message) || '沒有成功，稍後再試一次。'); else toast((r && r.message) || '沒有成功。'); return; }
   toast(a.mode === 'reply' ? '已回覆' : a.mode === 'done' ? '已標成做好了' : '已留言');
   const tl = a.tell ? tellOf(t, a.mode) : null;                  // 也告訴對方：一行字，走辦公室對話的送出
-  if (tl) { const ttl = String(t.title || '').slice(0, 40), line = a.mode === 'reply' ? `（看板）#${t.id}「${ttl}」我的回覆：${text}` : `（看板）#${t.id}「${ttl}」${a.mode === 'done' ? '我做好了' : '留言'}${text ? '：' + text : ''}`;
+  if (tl) { const ttl = String(t.title || '').slice(0, 40), line = HOST && HOST.board && HOST.board.lineOf ? HOST.board.lineOf(a.mode, t.id, t.title, text)   // 主頁（office.js）的那一份，右邊「待你決定」的回覆也用它；單獨開這一頁（示範）才用下面這份
+      : a.mode === 'reply' ? `（看板）#${t.id}「${ttl}」我的回覆：${text}` : `（看板）#${t.id}「${ttl}」${a.mode === 'done' ? '我做好了' : '留言'}${text ? '：' + text : ''}`;
     let q = null; try { q = await tellChat().send(tl.key, line, false); } catch (err) { q = null; }
     if (!q || q.success === false) toast(`已記下，但沒能告訴 ${tl.name}`); }
   if (vstate.act === a) { vstate.act = null; renderDetail(true); }
@@ -3204,9 +3205,15 @@ function applyScale() {
 applyScale();
 function goLive() { if (!DEMO.live) return; DEMO.live = false; document.body.classList.add('live-data'); $('#tag').textContent = '實驗性'; }
 let boardShown = false;
-function showBoardOnly() { if (BOARD_ONLY && !boardShown) { boardShown = true; openView('board'); } }
+// 從主頁「待你決定」點進來：直接開在那一張卡（focus.task），或那台隔壁電腦的白板（focus.peer）。openView 是開關，所以已經開著的那塊不再叫它。
+function applyFocus(f) {
+  if (!f) return; const scope = f.peer || null;
+  if (!(view === 'board' && (vscope || null) === scope)) openView(scope ? 'board:' + scope : 'board');
+  if (f.task != null && !scope && view === 'board' && !vscope) openDetail(f.task);
+}
+function showBoardOnly() { if (BOARD_ONLY && !boardShown) { boardShown = true; openView('board'); applyFocus(HOST && HOST.board && HOST.board.takeFocus && HOST.board.takeFocus()); } }
 window.Office = { update(snap) { goLive(); applyScale(); const r = update(snap); showBoardOnly(); return r; },
-                  board() { if (!BOARD_ONLY) openView('board'); } };   // 看板快捷鍵：辦公室開著時開關大廳的白板   // 真資料一進來，示範就停，示範按鈕也收起來
+                  board(f) { if (f && (f.task != null || f.peer)) applyFocus(f); else if (!BOARD_ONLY) openView('board'); } };   // 看板快捷鍵：辦公室開著時開關大廳的白板   // 真資料一進來，示範就停，示範按鈕也收起來
 
 /* ══════════ 16. 示範資料與示範時間軸（全部經過 update）══════════ */
 const ago = m => DEMO_BASE - m * 60000;

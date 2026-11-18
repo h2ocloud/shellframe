@@ -210,6 +210,13 @@
      output: the snapshot office.html's Office.update takes (its §15), with `board` (the task board: decisions, stuck,
      open, all; boardOf) and `loops` (every tab with a loop or cron, who it is and when it wakes next); a bot or an
      intern with one carries `loop` too. */
+  // Who a task's owner / requester name can mean: the bots' roles and labels, and the tabs that are no bot (build() and the page's rows).
+  function whoOf(roles, roster, tabs) {
+    const known = new Set(roles), who = { roles: known, labels: {}, temps: {} };
+    for (const r of roles) if (roster[r].label) who.labels[String(roster[r].label)] = r;
+    for (const x of tabs) if (x.kind === 'temp' && !(x.role && known.has(x.role))) { who.temps[String(x.label || '')] = x.sid; who.temps[x.sid] = x.sid; }
+    return who;
+  }
   function build(inp) {
     const I = inp || {}, now = I.now || Date.now(), seen = I.seen || {}, kit = I.kit || {};
     const roster = I.botsOn ? (I.roster || {}) : {};
@@ -275,9 +282,7 @@
     for (const b of bots) { const tab = tabOf[b.id]; if (tab) b.loop = loopOn(tab, 'b:' + b.id, b.name); }
     for (const x of temps) { const tab = tabs.find(q => q.sid === x.id); x.loop = loopOn(tab, 't:' + x.id, x.name); }
     for (const tab of tabs) if (tab.loop && !tab.role && tab.kind !== 'temp') loopOn(tab, '', String(tab.label || tab.sid));   // a tab no one sits at
-    const who = { roles: known, labels: {}, temps: {} };
-    for (const r of roles) if (roster[r].label) who.labels[String(roster[r].label)] = r;
-    for (const x of tabs) if (x.kind === 'temp' && !(x.role && known.has(x.role))) { who.temps[String(x.label || '')] = x.sid; who.temps[x.sid] = x.sid; }
+    const who = whoOf(roles, roster, tabs);
     for (const b of bots) { delete b.sid; }
     return { bots, temps, peers, helpers, handoffs: [], board: boardOf(I.tasks, who, now), loops };
   }
@@ -536,6 +541,37 @@
         return r;
       } catch (e) { return { success: false, message: String(e) }; }
     },
+    // The line a decision's answer (or a done / note) sends to the bot that asked: office.html's reply box and the pending list's
+    // (web/pending.js) both use it, so the two read the same to that bot. mode: 'reply' | 'done' | 'note'.
+    lineOf(mode, id, title, text) {
+      const ttl = String(title || '').slice(0, 40), body = String(text || '');
+      return mode === 'reply' ? `（看板）#${id}「${ttl}」我的回覆：${body}` : `（看板）#${id}「${ttl}」${mode === 'done' ? '我做好了' : '留言'}${body ? '：' + body : ''}`;
+    },
+    // Who asked a decision (the tab to tell and what to call it), from the page's own roster and tabs: null when nobody here can be
+    // told (no tab, a paired computer's bot we cannot reach, the person themselves).
+    askerOf(task) {
+      const row = boardRows({ decisions: [task] })[0], k = row && row.requester_key;
+      if (!k || k === 'user' || !chatHost.has(k)) return null;
+      return { key: k, name: nameOfKey(k) || String(task.requester || '') };
+    },
+    // Answer a decision from the pending list: task_user_act(id, 'done', text), then, when asked to, one line to whoever asked.
+    // Nothing is sent without text. {success, message, told: true | false | null (null: not asked to)}.
+    async reply(task, text, tell) {
+      const body = String(text || '').trim();
+      if (!body) return { success: false, code: 'empty', message: t('Write your answer first.', '要先寫下你的決定或回答。') };
+      const r = await boardHost.act(task.id, 'done', body);
+      if (!r || !r.success) return r || { success: false };
+      let told = null;
+      if (tell) {
+        const a = boardHost.askerOf(task);
+        told = false;
+        if (a) { const q = await chatHost.send(a.key, boardHost.lineOf('reply', task.id, task.title, body), false); told = !!(q && q.success !== false); }
+      }
+      return Object.assign({}, r, { told });
+    },
+    // The whiteboard on a card of this computer's, or on a paired computer's (web/pending.js: 「在白板上看」, 「隔壁：X 有 N 件等你」).
+    // office.html takes it (focus) once the board shows.
+    takeFocus() { const f = boardFocus; boardFocus = null; return f; },
     async schedules() {
       try { return schedShape(JSON.parse(await api().schedules_list())); }
       catch (e) { return { ok: false, unsupported: false, configured: true, launchd_ok: true, rows: [], at: Date.now() }; }
@@ -547,6 +583,22 @@
     canRequest: key => chatHost.has(key),
     request: (key, text) => chatHost.send(key, text, false),
   };
+  // The board's rows (boardOf: each task once, with who it is as the office keys people) for a tasks_overview-shaped list, from the page's
+  // own roster and tabs: what the pending list (web/pending.js) needs to know who asked, without the office being open.
+  function boardRows(tasks) {
+    const B = root.SFBots || {}, st = (B.state && B.state()) || {}, on = !!(B.enabled && B.enabled());
+    const roster = on ? (st.roster || {}) : {};
+    const roles = Object.keys(roster).filter(r => roster[r] && roster[r].bot && !roster[r].bot.external);
+    const tabs = pageTabs().map(x => Object.assign({}, x, on ? {} : { role: '', kind: x.kind === 'bot' ? 'temp' : x.kind }));
+    return boardOf(Object.assign({ open: [], stuck: [], decisions: [] }, tasks), whoOf(roles, roster, tabs), Date.now()).all;
+  }
+  // 'b:<role>' → the bot's name, 't:<sid>' → the tab's, as the office would call them.
+  function nameOfKey(key) {
+    const k = String(key || ''), B = root.SFBots || {}, st = (B.state && B.state()) || {};
+    if (k.startsWith('b:')) { const e = (st.roster || {})[k.slice(2)]; return String((e && e.label) || k.slice(2)); }
+    if (k.startsWith('t:')) { const s = ((host() && host().sessions()) || {})[k.slice(2)]; return String((s && s.label) || k.slice(2)); }
+    return '';
+  }
   // What office.html's `store` calls (same origin, synchronous), and its conversation panel (promises).
   const officeHost = {
     get: k => (prefs && Object.prototype.hasOwnProperty.call(prefs, k) ? clone(prefs[k]) : null),
@@ -562,7 +614,7 @@
     board: boardHost,
   };
 
-  let overlay = null, frame = null, timer = 0, busy = false, lastPush = null, boardMode = false;
+  let overlay = null, frame = null, timer = 0, busy = false, lastPush = null, boardMode = false, boardFocus = null;
   let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {}, peerTasks = {}, peerTasksAt = 0;
   const seen = {}, mem = {};
   const TICK_MS = 3000, TASKS_MS = 9000;
@@ -595,14 +647,14 @@
       tasksAt = Date.now();
       try {
         const r = JSON.parse(await a.tasks_overview());
-        if (r && r.success) { tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; if (root.SFBoard) root.SFBoard.note(tasks.decisions.length); }
+        if (r && r.success) { tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; if (root.SFBoard) root.SFBoard.note(tasks.decisions.length, tasks.decisions); }
       } catch (_) {}
     }
     // The paired computers' boards (the calls an older app does not have are skipped: no peer boards, no error). Same cadence
     // as the local tasks, never on the 3 s tick; the answer is the host's own (it caches what it read from the other computers).
     if (a.link_peer_tasks && Date.now() - peerTasksAt >= TASKS_MS) {
       peerTasksAt = Date.now();
-      try { const r = JSON.parse(await a.link_peer_tasks()); if (r && r.peers && typeof r.peers === 'object') peerTasks = r.peers; } catch (_) {}
+      try { const r = JSON.parse(await a.link_peer_tasks()); if (r && r.peers && typeof r.peers === 'object') { peerTasks = r.peers; if (root.SFBoard && root.SFBoard.notePeers) root.SFBoard.notePeers(r.peers); } } catch (_) {}
     }
     if (a.office_helpers && !boardMode) {          // the floor's part-timers: not asked for by the board alone (and refused with the switch off)
       try { const r = JSON.parse(await a.office_helpers()); if (r && r.success) helpers = r.helpers || {}; } catch (_) {}
@@ -741,9 +793,17 @@
   }
 
   // While the office is open its lobby whiteboard is what the board shortcut opens or closes (office.html's Office.board).
-  function toggleBoard() { try { frame.contentWindow.Office.board(); } catch (_) {} }
+  function toggleBoard(focus) { try { frame.contentWindow.Office.board(focus); } catch (_) {} }
+  // The board on a card (`focus.task`: id) or on a paired computer's (`focus.peer`: its id): the board alone when nothing is open (office.html
+  // takes the focus once its sheet shows), else the open office's / board's sheet.
+  function openBoard(focus) {
+    const f = focus && (focus.task != null || focus.peer) ? { task: focus.task != null ? Number(focus.task) : null, peer: focus.peer ? String(focus.peer) : '' } : null;
+    if (!overlay) { boardFocus = f; return open({ board: true }); }
+    if (f) toggleBoard(f);
+    return undefined;
+  }
   root.SFOffice = Object.assign({ host: officeHost, open, close, isOpen: () => !!overlay, isBoard: () => !!overlay && boardMode,
-                                  openBoard: () => open({ board: true }), toggleBoard, refresh: tick,
+                                  openBoard, toggleBoard, refresh: tick, boardRows,
                                   lastSnapshot: () => clone(lastPush), placeButton }, pure);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(0));
   else boot(0);
