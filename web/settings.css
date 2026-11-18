@@ -94,15 +94,17 @@
 /* Launch presets: a table, the command column takes what is left */
 .sp-table { --sp-cols: 28px 48px minmax(120px, 220px) minmax(0, 1fr) 72px; }
 .sp-head { display: grid; grid-template-columns: var(--sp-cols); gap: 10px; padding: 0 12px 6px; font-size: 11px; color: #565f89; letter-spacing: .04em; }
-#modal-settings .settings-preset {
+#modal-settings .settings-preset, #modal-settings .sp-addrow {
   display: grid; grid-template-columns: var(--sp-cols); align-items: center; gap: 10px; margin: 0 0 6px; padding: 8px 12px;
   background: #24283b; border-radius: 8px;
 }
-#modal-settings .settings-add { margin-top: 10px; background: transparent; border: 1px dashed #3b4261; }
+#modal-settings .sp-addrow { margin-top: 10px; background: transparent; border: 1px dashed #3b4261; }
 #modal-settings .settings-preset .sp-grip { text-align: center; color: #565f89; }
-#modal-settings .settings-preset .sp-icon { width: 100%; height: 32px; padding: 0; font-size: 16px; }
-#modal-settings .settings-preset .sp-name { width: 100%; min-width: 0; }
-#modal-settings .settings-preset .sp-cmd { width: 100%; min-width: 0; flex: none; }
+#modal-settings .settings-preset .sp-icon, #modal-settings .sp-addrow .sp-icon { width: 100%; height: 32px; padding: 0; font-size: 16px; line-height: 1;
+  background: #1a1b26; border: 1px solid #3b4261; border-radius: 6px; color: #c0caf5; cursor: pointer; }
+#modal-settings .sp-addrow .sp-icon:hover { border-color: #7aa2f7; }
+#modal-settings .settings-preset .sp-name, #modal-settings .sp-addrow .sp-name { width: 100%; min-width: 0; }
+#modal-settings .settings-preset .sp-cmd, #modal-settings .sp-addrow .sp-cmd { width: 100%; min-width: 0; flex: none; }
 .sp-cmdbox { display: grid; min-width: 0; }
 .sp-cmdbox::after, .sp-cmdbox > textarea { grid-area: 1 / 1; box-sizing: border-box; padding: 6px 10px; border: 1px solid transparent;
   font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -111,13 +113,13 @@
 #modal-settings .sp-cmdbox > textarea:focus { border-color: #7aa2f7; }
 .sp-act { display: flex; align-items: center; justify-content: center; gap: 4px; }
 #modal-settings .settings-preset .sp-del { font-size: 18px; padding: 2px 8px; }
-#modal-settings .settings-preset .btn { width: 100%; padding: 7px 0; }
-.sp-head > :nth-child(1), .settings-preset > :nth-child(1) { grid-area: g; }
-.sp-head > :nth-child(2), .settings-preset > :nth-child(2) { grid-area: i; }
-.sp-head > :nth-child(3), .settings-preset > :nth-child(3) { grid-area: n; }
-.sp-head > :nth-child(4), .settings-preset > :nth-child(4) { grid-area: c; }
-.sp-head > :nth-child(5), .settings-preset > :nth-child(5) { grid-area: d; }
-.sp-head, #modal-settings .settings-preset { grid-template-areas: "g i n c d"; }
+#modal-settings .sp-addrow .btn { width: 100%; padding: 7px 0; }
+.sp-head > :nth-child(1), .settings-preset > :nth-child(1), .sp-addrow > :nth-child(1) { grid-area: g; }
+.sp-head > :nth-child(2), .settings-preset > :nth-child(2), .sp-addrow > :nth-child(2) { grid-area: i; }
+.sp-head > :nth-child(3), .settings-preset > :nth-child(3), .sp-addrow > :nth-child(3) { grid-area: n; }
+.sp-head > :nth-child(4), .settings-preset > :nth-child(4), .sp-addrow > :nth-child(4) { grid-area: c; }
+.sp-head > :nth-child(5), .settings-preset > :nth-child(5), .sp-addrow > :nth-child(5) { grid-area: d; }
+.sp-head, #modal-settings .settings-preset, #modal-settings .sp-addrow { grid-template-areas: "g i n c d"; }
 
 /* a window under ~960px: the categories become a row on top, fields go under their labels, a preset takes two lines */
 @media (max-width: 960px) {
@@ -133,9 +135,8 @@
   .sx-field .sx-input { max-width: none; }
   .sx-multi .sx-ctl { justify-content: flex-start; }
   .sp-head { display: none; }
-  .sp-table { --sp-cols: 24px 48px minmax(0, 1fr) 44px; }
-  .sp-head, #modal-settings .settings-preset { grid-template-areas: "g i n d" "c c c c"; }
-  #modal-settings .settings-add { grid-template-areas: "g i n d" "c c c c"; }
+  .sp-table { --sp-cols: 24px 48px minmax(0, 1fr) 64px; }
+  .sp-head, #modal-settings .settings-preset, #modal-settings .sp-addrow { grid-template-areas: "g i n d" "c c c c"; }
 }
 
 /* ── the dialogs the audit found cramped, given room in the same type scale ──

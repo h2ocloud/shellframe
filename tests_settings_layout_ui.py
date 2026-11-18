@@ -57,6 +57,12 @@ DEMO = [
     {"name": "Cursor Agent", "cmd": "cursor-agent --model composer-2.5 --trust --workspace /srv/demo/projects/example", "icon": "▮"},
 ]
 S.PRESETS[:] = DEMO
+# the stand-in host keeps the presets the page asks to save, delete or reorder, as the real one does
+S.STUB = S.STUB.replace("      default: return R('{}');", """      case 'save_preset': { const [n, c, i] = args, ps = window.__cfg.presets, k = ps.findIndex(p => p.name === n);
+                            if (k >= 0) ps[k] = {name: n, cmd: c, icon: i}; else ps.push({name: n, cmd: c, icon: i}); return R(window.__cfg); }
+      case 'delete_preset': window.__cfg.presets = window.__cfg.presets.filter(p => p.name !== args[0]); return R(window.__cfg);
+      case 'reorder_presets': return R(window.__cfg);
+      default: return R('{}');""")
 TABS = ["general", "bots", "office", "loops", "presets", "connect", "bridge", "line", "advanced"]
 # where each setting lives: panel -> ids that must be in it, and visible when it is shown
 EXPECT = {
@@ -125,6 +131,50 @@ def vis(page, el_id):
     return page.evaluate("id => { const e = document.getElementById(id); return !!(e && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden'); }", el_id)
 
 
+def edit_paths(page, tag, w):
+    """Editing a row, the icon picker, Add, Delete and a drag over the Add row, in the new table."""
+    rows = "#settings-presets .settings-preset"
+    cmd = "claude --model opus " + "--flag-with-a-long-name " * 6
+    ta = page.locator(rows + " .sp-cmd").nth(1)
+    ta.fill(cmd)
+    save = page.locator(rows).nth(1).locator("button.btn-primary")
+    check(f"{tag} editing a command shows the row's save button", save.is_visible())
+    fit = page.evaluate("""() => { const r = document.querySelectorAll('#settings-presets .settings-preset')[1], b = r.querySelector('button.btn-primary'),
+        d = r.querySelector('.sp-del'), rr = r.getBoundingClientRect(), br = b.getBoundingClientRect(), dr = d.getBoundingClientRect();
+        return {inRow: br.left >= rr.left && dr.right <= rr.right + 1, apart: dr.left >= br.right - 1}; }""")
+    check(f"{tag} the save button and the delete cross both fit in the row, side by side", fit["inRow"] and fit["apart"], fit)
+    save.click()
+    page.wait_for_timeout(300)
+    saved = [c[1] for c in page.evaluate("window.__calls") if c[0] == "save_preset"]
+    check(f"{tag} saving sends the whole command", saved and saved[-1][0] == DEMO[1]["name"] and saved[-1][1] == cmd, saved[-1:] )
+    check(f"{tag} the list is drawn again with that command", page.locator(rows + " .sp-cmd").nth(1).input_value() == cmd)
+    page.locator(rows + " .sp-icon").nth(0).click()
+    check(f"{tag} the icon button opens the picker", page.locator(".emoji-picker.open").count() == 1)
+    page.locator(".emoji-picker.open span").nth(3).click()
+    page.wait_for_timeout(150)
+    check(f"{tag} picking an icon closes it", page.locator(".emoji-picker.open").count() == 0)
+    n0 = page.locator(rows).count()
+    page.fill("#add-name", "Demo tool")
+    page.fill("#add-cmd", "demo-tool --flag")
+    page.click("#btn-add-preset")
+    page.wait_for_timeout(300)
+    check(f"{tag} Add saves a new row and clears the fields", page.locator(rows).count() == n0 + 1
+          and page.input_value("#add-name") == "" and page.input_value("#add-cmd") == "")
+    page.locator(rows).nth(n0).locator(".sp-del").click()
+    page.wait_for_timeout(300)
+    check(f"{tag} Delete removes that row", page.locator(rows).count() == n0)
+    grip = page.locator(rows + " .sp-grip").nth(0).bounding_box()
+    add = page.locator("#add-name").bounding_box()
+    page.mouse.move(grip["x"] + 4, grip["y"] + 4)
+    page.mouse.down()
+    page.mouse.move(add["x"] + 20, add["y"] + 10, steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(200)
+    check(f"{tag} dragging a row over the Add row marks nothing and reorders nothing",
+          page.locator(".sp-drag-over, .sp-dragging").count() == 0
+          and not [c for c in page.evaluate("window.__calls") if c[0] == "reorder_presets"])
+
+
 def run(browser, engine):
     for w, h, scale in ((1920, 1080, None), (1280, 800, None), (900, 700, None), (1280, 800, "1.18"), (900, 700, "1.18")):
         tag = f"[{engine} {w}x{h}{' L' if scale else ''}]"
@@ -185,6 +235,7 @@ def run(browser, engine):
             check(f"{tag} a long command typed into a row grows the row instead of scrolling", after > before + 10, (before, after))
             page.keyboard.press("Enter")
             check(f"{tag} Enter does not put a line break in a command", "\n" not in ta.input_value())
+        edit_paths(page, tag, w)
         page.close()
         check(f"{tag} no page errors", not errors, errors)
 

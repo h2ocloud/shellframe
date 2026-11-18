@@ -6501,7 +6501,7 @@ class TelegramBridge(BridgeBase):
                         msg = res.get("message") or "群組功能沒開"
                     elif not gs:
                         roles = "、".join(det.get("roles") or []) or "(名冊是空的)"
-                        msg = ("還沒有任何群組。在電腦的設定 → 實驗性 → 角色群組裡建立。\n"
+                        msg = ("還沒有任何群組。在電腦的設定 → Bots → 角色群組裡建立。\n"
                                f"可用角色：{roles}")
                     else:
                         lines = ["🧑‍🤝‍🧑 角色群組："]

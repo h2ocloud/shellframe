@@ -295,7 +295,7 @@ of four agents doing the same thing. `group-conversation` reads every member's
 transcript and merges it into one thread in time order, each turn tagged with
 who said it.
 
-The user creates and edits groups in Settings → 實驗性 → 角色群組; a group can
+The user creates and edits groups in Settings → Bots → 角色群組; a group can
 hold at most 8 roles. Groups are also on the phone app and on Telegram
 (`/group <名稱> <訊息>`), and all three read the same list.
 

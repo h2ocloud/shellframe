@@ -9,7 +9,7 @@
  * web/office.html (Canvas2D, no network), loaded in an <iframe> over the whole window so its CSS
  * and DOM cannot clash with this page. This file:
  *
- *   - puts the switch next to the other experimental switches (Settings → General) and, while it is
+ *   - puts the switch next to the other experimental switches (Settings → Office) and, while it is
  *     on, an icon in the sidebar's foot (#sb-footer-row). Off: no office button, no iframe, no timer (the board button is board.js's).
  *   - builds the office's snapshot from what the page already holds: the sidebar's dots
  *     (sessions[sid]._dotClass, the same light the tab shows), bots.js's roster and its paired
