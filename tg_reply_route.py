@@ -177,9 +177,12 @@ def _name_of(bridge, target: dict) -> str:
 def _resolve(bridge, chat_id, reply: dict):
     """(origin | None, target | None, head): where the reply should go. The target is
     {"sid"} for a tab, {"role"} for a bot (with "sid" when it is awake), None when nobody is known."""
-    origin = tg_origins.lookup(chat_id, reply.get("message_id")) or tg_origins.match_rule(reply.get("text") or reply.get("caption"))
+    origin, via = tg_origins.lookup(chat_id, reply.get("message_id")), "registry"
+    if not origin:
+        origin, via = tg_origins.match_rule(reply.get("text") or reply.get("caption")), "rule"
     if not origin:
         return None, None, sf_lang.pick("a reply to a push", "這是對一則推播的回覆")
+    origin = dict(origin, via=via)
     api = getattr(bridge, "home_api", None)
     kind = origin.get("kind")
     if kind == "tab":
@@ -233,8 +236,11 @@ def _park(msg: dict, text: str, file_paths, route: dict = None) -> dict:
     return {"message": m}
 
 
-def _route(target: dict, kind: str, head: str, quote: str) -> dict:
-    r = {"kind": kind, "head": head, "quote": quote}
+def _route(target: dict, kind: str, head: str, quote: str, by: str = "") -> dict:
+    """`by` says how the target was found, for the log line: registry (the replied-to message is in the
+    registry: a tab's), rule (tg_reply_rules.json), owner (a schedule's `owners` bot), button (the
+    person's tap on "who gets this?"), current (nobody to ask: the selected tab)."""
+    r = {"kind": kind, "head": head, "quote": quote, "by": by}
     r.update({k: v for k, v in target.items() if v})
     return r
 
@@ -260,6 +266,9 @@ def _arrive(bridge, route: dict, user_id, chat_id) -> dict:
     is not the person's selected one. The selected tab is not touched."""
     if chat_id not in bridge._target_chats_for(route["sid"]) - guest_chats(route["sid"]):
         add_guest(route["sid"], chat_id)                # not already one of its recipients: its answers come here for a while
+    # One line per routed reply, so what was decided can be read from the bridge log (only failures were logged).
+    # Ids and names only, never the message.
+    _log(f"[reply-route] → {_name_of(bridge, {'sid': route['sid']})} sid={route['sid']} by={route.get('by') or '?'}\n")
     return route
 
 
@@ -299,7 +308,8 @@ def _intercept(bridge, update, msg, user_id, chat_id, text, file_paths):
         return _ask(bridge, msg, user_id, chat_id, text, file_paths, kind, head, quote, active)
     if target.get("sid") and target["sid"] == active and kind == "tab":
         return None                                    # a reply to the tab it is already going to
-    route = _route(target, kind, head, quote)
+    by = "owner" if kind == "schedule" else (origin or {}).get("via", "registry")
+    route = _route(target, kind, head, quote, by)
     name = _name_of(bridge, target)
     if route.get("sid"):
         if route["sid"] != active:
@@ -316,7 +326,7 @@ def _ask(bridge, msg, user_id, chat_id, text, file_paths, kind, head, quote, act
     if not bots:                                       # nobody to choose among: the current tab, with the context
         if not active:
             return None
-        route = _route({"sid": active}, kind, head, quote)
+        route = _route({"sid": active}, kind, head, quote, "current")
         _say(bridge, chat_id, _ack(_name_of(bridge, {"sid": active})))
         return _arrive(bridge, route, user_id, chat_id)
     options = [{"role": b["role"], "label": str(b.get("label") or b["role"])} for b in bots]
@@ -373,7 +383,7 @@ def on_callback(bridge, data: str, chat_id, message_id, cq_id) -> bool:
         bh._tg(bridge, "editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": sf_lang.pick(
             "⚠ No tab is open; nothing was sent.", "⚠ 沒有開著的分頁，訊息沒有送出。")})
         return True
-    route = _route(target, held["kind"], held["head"], held["quote"])
+    route = _route(target, held["kind"], held["head"], held["quote"], "button")
     name = option["label"] if not option.get("current") else _name_of(bridge, target)
     awake = bool(route.get("sid"))
     bh._tg(bridge, "editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": _ack(name, waking=not awake)})
