@@ -16,9 +16,11 @@
  *     Each tab's `loop` (a /loop or cron routine: agent_status.detect_schedules puts it on the tab's
  *     status whether or not the Loops panel is on) comes from the sessions the page already holds.
  *     The lobby's task board and calendar views ask SFOffice.host.board for what they open: task_detail
- *     (a task's history, only when its card is opened), task_user_act (the person's 「我做好了」 / 「留言」 on that card; the only
- *     write the office makes) and schedules_list (this computer's schedules,
- *     read only, only while the calendar view is showing, at most once a minute: office.html paces it).
+ *     (a task's history, only when its card is opened), task_user_act (the person's 「我做好了」 / 「留言」 on that card)
+ *     and schedules_list (this computer's schedules, only while the calendar view is showing, at most once a minute:
+ *     office.html paces it). The office writes little itself: task_user_act, and setEnabled (schedule_set_enabled)
+ *     switching one of this computer's schedules on or off; every other schedule change is a message to the schedule's
+ *     owner agent (board.request, the chat panel's send).
  *   - gives the panel of the person being followed their conversation and a message box
  *     (SFOffice.host.chat): the chat view's own routes for that one tab (chat_view every 2 s while
  *     the panel's Conversation tab is showing and the window is in front, chat_send, chat_answer),
@@ -146,13 +148,25 @@
     const open = take(T.open || [], {});
     return { decisions, stuck, open, all: decisions.concat(stuck, open) };
   }
-  // The computer's own schedules (api_schedules.schedules_list) as the office lists them: a title, when, on or off.
-  // The commands are left out: the office shows when something runs, not what.
+  // The computer's own schedules (api_schedules.schedules_list) as the office lists them: a title, when, on or off, and
+  // what the calendar needs to place and change them: `slots` (sched_view's numbers: an interval, calendar entries; bounded),
+  // `owner` (the bot that looks after it, from schedules.json), `toggle` (false: no on/off switch for this one). The
+  // commands are left out: the office shows when something runs, not what.
+  function slotsOf(s) {
+    const o = s && typeof s === 'object' ? s : {}, iv = Number(o.interval);
+    const cal = (Array.isArray(o.calendar) ? o.calendar : []).slice(0, 200).map(c => {
+      const r = {};
+      for (const k of ['Month', 'Day', 'Weekday', 'Hour', 'Minute']) { const v = c && c[k]; if (Number.isInteger(v) && v >= 0 && v <= 366) r[k] = v; }
+      return r;
+    });
+    return { interval: iv > 0 ? Math.min(iv, 31536000) : null, calendar: cal, partial: !!o.partial };
+  }
   function schedShape(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
     const rows = (Array.isArray(r.schedules) ? r.schedules : []).map(x => ({
       id: String(x.id || ''), title: String(x.title || x.id || ''), when: x.when && typeof x.when === 'object' ? { en: String(x.when.en || ''), zh: String(x.when.zh || '') } : { en: String(x.when || ''), zh: String(x.when || '') },
-      enabled: !!x.enabled, running: !!x.running, kind: String(x.kind || ''), count: Array.isArray(x.members) ? x.members.length : 0 }));
+      enabled: !!x.enabled, running: !!x.running, kind: String(x.kind || ''), count: Array.isArray(x.members) ? x.members.length : 0,
+      owner: clip(x.owner, 60), toggle: x.toggle !== false, state: clip(x.state, 12), slots: slotsOf(x.slots) }));
     return { ok: !r.error, unsupported: !!r.unsupported, configured: r.configured !== false, launchd_ok: r.launchd_ok !== false, rows, at: Date.now() };
   }
   function runsOf(e) {
@@ -481,9 +495,12 @@
       catch (e) { return { ok: false, message: String(e) }; }
     },
   };
-  // The task board's and the schedule view's reads (read only; office.html asks only while that view is showing).
+  // The task board's and the schedule calendar's calls (office.html asks only while that view is showing).
   // detail: one task and its events newest first (task_detail); schedules: this computer's own schedules (schedules_list,
-  // asked at most once a minute by the view), shaped by schedShape.
+  // asked at most once a minute by the view), shaped by schedShape. The calendar changes only two things itself:
+  // setEnabled flips one of this computer's schedules on or off (schedule_set_enabled: the answer says what launchd did).
+  // Anything else is a request to the schedule's owner agent: request() puts a message in that agent's tab as the person
+  // typed it (the chat panel's send; never clears the person's unsent draft), canRequest says whether it has a tab to reach.
   const boardHost = {
     async detail(id) {
       try { return JSON.parse(await api().task_detail(String(id))); }
@@ -502,6 +519,12 @@
       try { return schedShape(JSON.parse(await api().schedules_list())); }
       catch (e) { return { ok: false, unsupported: false, configured: true, launchd_ok: true, rows: [], at: Date.now() }; }
     },
+    async setEnabled(label, on) {
+      try { return JSON.parse(await api().schedule_set_enabled(String(label), !!on)); }
+      catch (e) { return { success: false, message: String(e) }; }
+    },
+    canRequest: key => chatHost.has(key),
+    request: (key, text) => chatHost.send(key, text, false),
   };
   // What office.html's `store` calls (same origin, synchronous), and its conversation panel (promises).
   const officeHost = {

@@ -465,7 +465,8 @@ the person asks to see their schedules in the panel:
 {
   "prefixes": ["demo."],
   "titles": {"demo.backup": "Nightly backup", "punch": "Punch cards"},
-  "groups": {"punch": ["demo.punch-in", "demo.punch-out-early", "demo.punch-out"]}
+  "groups": {"punch": ["demo.punch-in", "demo.punch-out-early", "demo.punch-out"]},
+  "owners": {"demo.backup": "ops"}
 }
 ```
 
@@ -474,6 +475,9 @@ the person asks to see their schedules in the panel:
   never reach a vendor's agents by accident. Ask the person; do not guess it from the folder.
 - `titles` (optional): a label, or a group id, to the name shown. Without one the row is
   named for the last part of the label.
+- `owners` (optional): a label, or a group id, to the bot (id or name) that looks after the
+  job. The office calendar shows it and sends that bot the person's change requests; it is
+  not an access rule. A job without one shows "未指定" there.
 - `groups` (optional): one-offs that are armed together. Without it, one-offs that run the
   same script on the same month and day are grouped by themselves.
 
@@ -529,7 +533,11 @@ Two objects on the lobby's back wall open the panel's own views. The whiteboard 
 person's decisions, the stuck tasks, and the open ones by owner (`sfctl task`, §4.9; a row opens the task's
 history, so `task note` and `--next` are what they read), one sticky note per open task. The calendar lists
 the tabs that run a `/loop` or a cron (read from the transcript, so it works with the Loops panel off) with a
-countdown, and this computer's own schedules (`schedules.json`, read only); a bot whose tab loops has a
+countdown, and this computer's own schedules (`schedules.json`, §4.7), as a day / week / month calendar
+of what is still to come. The person can only switch one of this computer's schedules on or off there,
+or ask for another frequency; every other change (and every /loop or cron change) is a message to the
+owner agent that starts with 「（辦公室排程）」: it is the person asking you, through the calendar, to change
+that /loop, cron or plist as written; do it, then answer in one line. A bot whose tab loops has a
 calendar on its desk and "排程：每 20 分鐘，下一次 14:20" on its info tab.
 
 ## 5. Which build has what

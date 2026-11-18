@@ -145,7 +145,7 @@ body.following #tools{opacity:0;pointer-events:none}
 body.live-data #addOne,body.live-data #addTen,body.live-data #demoHandoff{display:none}
 body.embedded #top{padding-right:58px}   /* ShellBot's close button sits in the corner */
 /* 字級：DOM 上的字跟著介面大小縮放；畫布（#stage）不縮，牆上東西的點擊判定用的是畫布座標 */
-#top,#legend,#tools,#panel,#toast,#wall .vhead,#wall .vz,#wall .wcard{zoom:var(--ui)}
+#top,#legend,#tools,#panel,#toast,#wall .vhead,#wall .vz,#wall .wcard,#wall .cp{zoom:var(--ui)}
 
 /* ── 跟拍面板 ── */
 #panel{position:fixed;top:70px;right:12px;bottom:12px;width:340px;display:flex;flex-direction:column;z-index:6;
@@ -458,21 +458,106 @@ button.who:hover{background:rgba(122,162,247,.28)}
   .wcard.nt{padding:24px 16px 16px}
 }
 .wtray .er{left:auto;right:30px;height:32px}
-.lrow,.srow{border:1px solid rgba(59,66,97,.85);border-radius:11px;background:rgba(26,27,38,.55);padding:9px 11px;margin-bottom:7px}
-.lrow .l1,.srow .l1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.lrow .nm{font-size:13.5px;font-weight:600}
-.lrow .tag,.srow .tag{font:700 10.5px var(--mono);padding:1px 7px;border-radius:99px;border:1px solid var(--c,var(--line));color:var(--c,var(--dim))}
-.lrow .int{font-size:12px;color:var(--dim)}
-.lrow .nx{display:flex;align-items:baseline;gap:8px;margin-top:5px;font-size:12.5px;color:var(--dim)}
-.lrow .nx b{color:var(--ink);font-weight:600}
-.lrow .cd{font:600 13px var(--mono);color:var(--yellow);margin-left:auto}
-.lrow.run .cd{color:var(--blue)}
-.lrow .sum{margin-top:5px;font-size:12px;color:var(--dim);line-height:1.5;overflow-wrap:anywhere}
-.srow .nm{font-size:13px;font-weight:600;flex:1;min-width:0;overflow-wrap:anywhere}
-.srow .wh{font-size:12px;color:var(--dim);margin-top:3px}
-.srow .on{--c:var(--green)}
-.srow .off{--c:var(--mute)}
-.srow.off-row .nm{color:var(--dim)}
+/* 排程日曆：日／週／月；顏色＝來源（/loop 藍、cron 紫、這台電腦的排程綠、停用灰），虛線＝預估；字一律 13px 以上 */
+.c-loop{--c:#7aa2f7;--cb:rgba(122,162,247,.17)}
+.c-cron{--c:#bb9af7;--cb:rgba(187,154,247,.17)}
+.c-sched{--c:#9ece6a;--cb:rgba(158,206,106,.15)}
+.off{--c:#6b7399;--cb:rgba(86,95,137,.2)}
+.vhead .cseg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#24283b}
+.vhead .cseg button,.vhead .cnav button{font-size:14px;padding:5px 13px;color:var(--dim);line-height:1.3}
+.vhead .cseg button+button{border-left:1px solid var(--line)}
+.vhead .cseg button[aria-pressed=true]{background:var(--blue);color:#1a1b26;font-weight:700}
+.vhead .cseg button:not([aria-pressed=true]):hover,.vhead .cnav button:hover{color:var(--ink);background:rgba(122,162,247,.14)}
+.vhead .cnav{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#24283b}
+.vhead .cnav button+button{border-left:1px solid var(--line)}
+.vhead .cnav button:first-child,.vhead .cnav button:last-child{font-size:17px;padding:2px 11px}
+.vhead .crange{font-size:14.5px;font-weight:700;white-space:nowrap}
+.cal{padding-top:4px}
+.cleg{display:flex;flex-wrap:wrap;gap:4px 16px;list-style:none;font-size:13px;color:var(--dim);margin:8px 0 10px}
+.cleg li{display:flex;align-items:center;gap:6px}
+.cleg i{width:12px;height:12px;border-radius:4px;background:var(--cb);border:2px solid var(--c);border-width:0 0 0 4px}
+.cleg i.dash{border:1.5px dashed var(--dim);background:none}
+.cg{position:relative;display:grid;border:1px solid var(--line);border-radius:12px;background:rgba(26,27,38,.5);--lw:54px}
+.cg.w,.cg.d{grid-template-columns:var(--lw) repeat(var(--n),minmax(0,1fr));grid-auto-rows:minmax(34px,auto)}
+.cg.m{grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:auto}
+.cg .ch,.cg .ch0{position:sticky;top:0;z-index:3;background:#202437;font-size:14px;padding:7px 8px;text-align:center;border-bottom:1px solid var(--line);color:var(--dim);grid-row:1;height:36px}
+.cg.m .ch{position:static;height:auto;grid-row:auto}
+.cg .ch b{font-size:15px;color:var(--ink);margin-left:2px}
+.cg .ch.today{color:var(--blue)}
+.cg .ch.today b{color:var(--blue)}
+.cg .ch0{border-radius:12px 0 0 0}
+.cg .chr{font:13px var(--mono);color:var(--mute);padding:4px 6px 0 0;text-align:right;border-top:1px solid rgba(59,66,97,.55);background:rgba(26,27,38,.35)}
+.cg .cc{position:relative;display:flex;flex-direction:column;gap:2px;padding:2px 3px 2px calc(3px + var(--nb,0)*6px);border-top:1px solid rgba(59,66,97,.55);border-left:1px solid rgba(59,66,97,.4);min-width:0}
+.cg.d .cc{flex-direction:row;flex-wrap:wrap;align-content:flex-start}
+.cg.d .cc .ce{width:auto;max-width:100%}
+.cg .cc.today,.cg .cm.today{background:rgba(122,162,247,.07)}
+.cg .cc.past{background:rgba(10,11,18,.28)}
+.cg .bnd{position:absolute;top:0;bottom:0;width:4px;background:var(--c);opacity:.75;border-radius:2px}
+.cg .cnl{position:absolute;left:var(--lw);right:0;height:0;border-top:2px solid var(--red);z-index:2;pointer-events:none}
+.cg .cnl::before{content:"";position:absolute;left:-5px;top:-6px;width:9px;height:9px;border-radius:50%;background:var(--red)}
+.cg .cnl[hidden]{display:none}
+.cg .cm{min-height:112px;display:flex;flex-direction:column;gap:2px;padding:3px;border-top:1px solid rgba(59,66,97,.55);border-left:1px solid rgba(59,66,97,.4);min-width:0}
+.cg .cm.out{opacity:.62}
+.cg .cm.past{background:rgba(10,11,18,.28)}
+.cg .cdn{align-self:flex-start;font-size:13.5px;font-weight:600;color:var(--dim);padding:0 6px;border-radius:99px;line-height:1.55}
+.cg .cdn:hover{background:rgba(122,162,247,.2);color:var(--ink)}
+.cg .cm.today .cdn{background:var(--blue);color:#1a1b26}
+.ce{display:flex;align-items:center;gap:6px;width:100%;min-width:0;text-align:left;font-size:13px;line-height:1.35;padding:2px 6px;border-radius:7px;background:var(--cb);border:1px solid var(--cb);border-left:3px solid var(--c);color:var(--ink)}
+.ce:hover{border-color:var(--c);filter:brightness(1.18)}
+.ce.sel{outline:2px solid var(--c);outline-offset:1px}
+.ce.est{border-style:dashed;border-left-style:solid;border-color:var(--c)}
+.ce.off{color:var(--dim)}
+.ce.band .ct{font-weight:700}
+.ce .ct{font:600 13px var(--mono);flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ce .cx{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ce .cw{color:var(--dim);flex:none;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ce .pdg{flex:none;font-size:12px;font-weight:700;color:#1a1b26;background:var(--yellow);border-radius:99px;padding:0 6px}
+.cmore{font-size:13px;color:var(--dim);text-align:left;padding:1px 6px;border-radius:7px}
+.cmore:hover{background:rgba(122,162,247,.18);color:var(--ink)}
+.cun ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+.cun .ce{padding:5px 9px;font-size:13.5px}
+.cun .ce .cx{flex:1 1 auto}
+.cun .ce .ct{font-weight:600;font-family:var(--font);min-width:5.5em}
+.cun>h3{font-size:14px}
+/* 細節卡：蓋在日曆右上，窄螢幕貼底 */
+#wall .wbox{position:relative}
+.cpop{position:absolute;right:14px;top:66px;z-index:6;max-width:calc(100% - 28px)}
+.cpop[hidden]{display:none}
+.cp{width:min(372px,calc((100vw - 56px) / var(--ui)));max-height:calc((100vh - 170px) / var(--ui));overflow:auto;background:#252a41;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.55);padding:12px 14px 14px;font-size:14px}
+.cph{display:flex;align-items:flex-start;gap:8px}
+.cph h3{flex:1;min-width:0;font-size:15px;line-height:1.4;overflow-wrap:anywhere}
+.cph .vx{width:28px;height:28px;border-radius:9px;border:1px solid var(--line);background:#24283b;color:var(--dim);font-size:13px;flex:none}
+.cph .vx:hover{color:var(--ink);border-color:var(--blue)}
+.cp .tag{flex:none;font:700 12px var(--mono);padding:1px 8px;border-radius:99px;border:1px solid var(--c,var(--line));color:var(--c,var(--dim));margin-top:2px}
+.cpd{display:grid;grid-template-columns:64px 1fr;gap:5px 8px;margin:10px 0 8px;align-items:baseline}
+.cpd dt{color:var(--mute);font-size:13px}
+.cpd dd{min-width:0;overflow-wrap:anywhere}
+.cpd .cd{font:600 13px var(--mono);color:var(--yellow);margin-left:6px}
+.cpd .estag{font-size:12px;border:1px dashed var(--dim);border-radius:99px;padding:0 7px;color:var(--dim);margin-left:4px}
+.cpd .unset{color:var(--mute)}
+.cpb,.cpm{font-size:13.5px;border-radius:9px;padding:5px 10px;margin:6px 0}
+.cpb{background:rgba(224,175,104,.16);color:var(--yellow)}
+.cpb.stale{background:rgba(247,118,142,.14);color:var(--red)}
+.cpm{background:rgba(247,118,142,.14);color:var(--red)}
+.cpc{border-top:1px solid rgba(59,66,97,.8);margin-top:8px;padding-top:10px;display:flex;flex-direction:column;gap:9px}
+.cprow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cpl{width:64px;flex:none;color:var(--dim);font-size:13.5px;font-weight:600}
+.cpv{font-size:13.5px;color:var(--dim)}
+.cpw{font-size:13px;color:var(--mute);line-height:1.5;margin:-4px 0 0 72px}
+.cp .sw{position:relative;width:42px;height:24px;border-radius:99px;background:#3b4261;border:1px solid var(--line);flex:none;transition:background .15s}
+.cp .sw i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#c0caf5;transition:transform .15s}
+.cp .sw.on{background:var(--green);border-color:var(--green)}
+.cp .sw.on i{transform:translateX(18px);background:#1a1b26}
+.cp .sw:disabled{opacity:.45;cursor:not-allowed}
+.cp select,.cp input[type=time]{font:inherit;font-size:13.5px;color:var(--ink);background:#1a1b26;border:1px solid var(--line);border-radius:8px;padding:4px 8px;min-width:0;max-width:100%;color-scheme:dark}
+.cp select:disabled,.cp input:disabled{opacity:.45}
+.cp [hidden]{display:none}
+.cp .btn{font-size:13.5px;padding:5px 11px;border-radius:9px;border:1px solid var(--line);background:#24283b;color:var(--ink)}
+.cp .btn:hover:not(:disabled){border-color:var(--blue)}
+.cp .btn.go:not(:disabled){background:var(--blue);color:#1a1b26;border-color:var(--blue);font-weight:700}
+.cp .btn:disabled{opacity:.45;cursor:not-allowed}
+.cpn{font-size:13px;color:var(--dim);margin:12px 0 8px;line-height:1.5}
+.cp .say{margin-top:2px}
 .vtools{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--mute);padding:2px 2px 6px}
 /* ── 窄螢幕（媒體查詢放在基礎規則之後，才蓋得過）── */
 @media (max-width:1240px){.brand .tag{display:none}}
@@ -504,6 +589,17 @@ button.who:hover{background:rgba(122,162,247,.28)}
   #wall{padding:8px}
   #wall .wbox{border-radius:14px}
   #wall .vz{padding:4px 10px 12px}
+  .vhead{flex-wrap:wrap}
+  .vhead .vhx{order:5;flex:1 1 100%;justify-content:space-between;flex-wrap:wrap}
+  .cg.w,.cg.d{--lw:40px}
+  .cg .chr{font-size:12px;padding-right:3px}
+  .cg.w .ce .cx,.cg.w .ce .pdg{display:none}
+  .cg.w .ce{padding:2px 3px;gap:0}
+  .cg.m .cm{min-height:86px;padding:2px}
+  .cg.m .ce .cx{display:none}
+  .cg.m .ce{padding:2px 3px}
+  .cpop{right:8px;left:8px;top:auto;bottom:8px;max-width:none}
+  .cp{width:auto}
   #panel.open{transform:none}
   .grab{display:block}
   .ph{padding:10px 16px 12px}
@@ -611,6 +707,7 @@ button.who:hover{background:rgba(122,162,247,.28)}
     <div class="vbody" id="vBody"></div>
     <div class="wover" id="vOver" hidden></div>
     <div class="wtray" id="wTray" aria-hidden="true"><svg viewBox="0 0 330 34" xmlns="http://www.w3.org/2000/svg"><g transform="translate(2 17) rotate(-3)"><rect width="92" height="14" rx="6" fill="#f4f5f7" stroke="#8d93a0" stroke-width="1"/><rect x="0" width="26" height="14" rx="6" fill="#1f4aa8"/><rect x="74" y="2" width="18" height="10" rx="4" fill="#dfe3ea"/><rect x="92" y="4" width="6" height="6" rx="2" fill="#1f4aa8"/></g><g transform="translate(112 16) rotate(2)"><rect width="92" height="14" rx="6" fill="#f4f5f7" stroke="#8d93a0" stroke-width="1"/><rect x="0" width="26" height="14" rx="6" fill="#c4283a"/><rect x="74" y="2" width="18" height="10" rx="4" fill="#dfe3ea"/><rect x="92" y="4" width="6" height="6" rx="2" fill="#c4283a"/></g><g transform="translate(222 17) rotate(-1)"><rect width="92" height="14" rx="6" fill="#f4f5f7" stroke="#8d93a0" stroke-width="1"/><rect x="0" width="26" height="14" rx="6" fill="#2b3042"/><rect x="74" y="2" width="18" height="10" rx="4" fill="#dfe3ea"/><rect x="92" y="4" width="6" height="6" rx="2" fill="#2b3042"/></g></svg><svg class="er" viewBox="0 0 80 34" xmlns="http://www.w3.org/2000/svg"><g transform="translate(4 6) rotate(-2)"><rect width="70" height="22" rx="4" fill="#e8e1cc" stroke="#9a937c"/><rect width="70" height="13" rx="4" fill="#4f6a94"/><rect y="9" width="70" height="4" fill="#4f6a94"/></g></svg></div>
+    <div class="cpop" id="calPop" hidden></div>
   </section>
 </div>
 <div id="toast" aria-live="polite"></div>
@@ -1782,8 +1879,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chat
      board  ← snapshot.board（office.js 的 boardOf：等你決定、卡住、其他進行中，各件只出現一次）。歷程是點開一列才
               問主頁的 SFOffice.host.board.detail(id)（task_detail：最新在前、最多 20 筆），一件一次，那件有新動靜才再問。
      loops  ← snapshot.loops（每個分頁的 /loop 或 cron，來源是分頁狀態的 loop 欄位）；日曆上的數字就是它的個數。
-     這台電腦的排程 ← SFOffice.host.board.schedules()（schedules_list，唯讀）：只在「排程」檢視開著時問，
+     這台電腦的排程 ← SFOffice.host.board.schedules()（schedules_list）：只在「排程」檢視開著時問，
               第一次馬上問，之後最多每 60 秒一次；關掉檢視就不問了（日曆上的數字因此不含它）。
+              排程檢視是日／週／月日曆（見「排程日曆」那一節）：人只能開關這台電腦的排程（board.setEnabled）、
+              或請負責的 agent 改頻率；其他一律是請 agent 改（board.request＝送一句話到它的分頁），不唯讀也不能直接改。
    檢視不在 renderPanel 裡重畫：用簽章，沒變就不碰 DOM（展開的列、點擊才不會被吃掉）；倒數只改字，由畫面迴圈順手更新。 */
 M.board = null; M.notes = []; M.boardVer = 0; M.notesAt = 0; M.boardJson = ''; M.boardAt = 0; M.loops = []; M.loopsVer = 0; M.loopsJson = '';
 const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
@@ -2025,34 +2124,366 @@ function boardClick(ev) {
   else if (ov && b.dataset.act === 'person') pickPerson(b.dataset.key);
 }
 
-// ── 排程 ──
-function loopRow(l) {
-  const run = l.status === 'running', words = loopWords(l), cron = l.kind === 'cron';
-  const reason = (cron && !l.reason ? (l.crons[0] && l.crons[0].desc) : l.reason) || '';
-  const more = cron && l.crons.length > 1 ? `（共 ${l.crons.length} 個）` : '';
-  return `<div class="lrow ${run ? 'run' : ''}" data-key="${esc(l.key)}"><div class="l1">${l.key ? whoBtn(l.key, l.name) : `<span class="nm">${esc(l.name)}</span>`}` +
-    `<span class="tag" style="--c:${cron ? COL.purple : COL.blue}">${cron ? 'cron' : '/loop'}</span>${words ? `<span class="int">${esc(words)}</span>` : ''}</div>` +
-    (cron ? `<div class="nx"><span>${esc(more ? '依排程執行' + more : '依排程執行')}</span></div>`
-      : `<div class="nx"><span>下一次 <b>${l.next_ts ? esc(hhmm(l.next_ts * 1000)) : '—'}</b></span>${l.next_ts ? `<span class="cd" data-ts="${l.next_ts}" data-st="${esc(l.status)}">${esc(cdText(l.next_ts, l.status))}</span>` : ''}</div>`) +
-    (reason ? `<div class="sum" title="${esc(reason)}">${esc(reason.length > 80 ? reason.slice(0, 79) + '…' : reason)}</div>` : '') + '</div>';
+// ── 排程日曆（日／週／月）──
+// 放哪裡：只放「未來」的時間點（現在起算；沒有執行紀錄，過去的日子一律空白）。
+//   /loop     delay>0：next_ts、+delay、…（標「預估」，agent 隨時可以改步調）；delay=0 只有 next_ts。
+//   cron      自己的 5 欄解析器（cronParse）；看不懂的不放，列在下面「沒辦法放進日曆」。
+//   這台電腦的排程  slots（sched_view：interval＝沒有起點只能畫帶子；calendar＝launchd 的日曆項目，缺的欄位＝每個）。
+//   一天超過 24 次（每 20 分鐘、*/5、StartInterval < 1 小時）不畫一個一個，畫成一條帶子（月檢視一格一個「每 20 分鐘」）。
+// 誰能改：只有負責的 agent。人只有兩個鈕：開關（這台電腦的排程直接開關；其他是請 agent 停掉）和頻率（一律是請 agent 改）。
+//   請求＝送到負責人分頁的一句話；畫面不先翻過去，等偵測到的狀態真的變了才算數（CAL.pend：已請…／10 分鐘後「還沒改」）。
+const ALLMIN = [...Array(1440).keys()];
+const WK = ['日', '一', '二', '三', '四', '五', '六'], DAYMS = 864e5, PEND_STALE_MS = 600e3;
+const CAL = { mode: (m => ['day', 'week', 'month'].includes(m) ? m : (innerWidth <= 720 ? 'day' : 'week'))(store.get('calMode', null)), anchor: 0, pop: null, now: null,
+  pend: new Map(), pv: 0, tick: 0, msg: '', busy: '', draft: null, next: Infinity, headSig: '', popSig: '', scroll: true, stale: '' };
+const calNow = () => (CAL.now != null ? CAL.now : Date.now());
+const p2 = n => String(n).padStart(2, '0');
+const dayAt = (ms, n = 0) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n).getTime(); };   // 當地 0 點（跨夏令時間也對）
+const atMin = (day, m) => { const d = new Date(day); return new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(m / 60), m % 60).getTime(); };
+const hmOf = m => p2(Math.floor(m / 60)) + ':' + p2(m % 60);
+const monOf = day => dayAt(day, -((new Date(day).getDay() + 6) % 7));
+const ymd = day => { const d = new Date(day); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
+
+// cron 的 5 欄：數字、*、*/n、a-b、a-b/n、逗號清單；星期 0–7（0 和 7 都是週日）；日和星期都有限制時是「或」。別的寫法（名稱、?、L、@daily…）回 null。
+function cronField(spec, lo, hi) {
+  const out = new Set();
+  for (const part of String(spec).split(',')) {
+    const m = /^(\*|\d+(?:-\d+)?)(?:\/(\d+))?$/.exec(part); if (!m) return null;
+    let a, b;
+    if (m[1] === '*') { a = lo; b = hi; } else if (m[1].includes('-')) { [a, b] = m[1].split('-').map(Number); } else { a = +m[1]; b = m[2] ? hi : a; }
+    const st = m[2] ? +m[2] : 1;
+    if (!(st >= 1) || a < lo || b > hi || a > b) return null;
+    for (let v = a; v <= b; v += st) out.add(v);
+  }
+  return [...out].sort((x, y) => x - y);
 }
-function schedSection() {
-  const d = SCHED.data;
-  let body;
-  if (!d) body = '<p class="vempty">讀取中…</p>';
-  else if (d.unsupported) body = '<p class="vnote">這台電腦沒有可以列出的排程：目前只支援 macOS 的 launchd。</p>';
-  else if (!d.configured) body = '<p class="vnote">還沒有指定要列出哪些排程（設定資料夾裡的 <code>schedules.json</code>）。</p>';
-  else if (!d.ok) body = '<p class="vnote">這次讀不到排程，稍後會再試。</p>';
-  else body = (d.rows.length ? d.rows.map(r => `<div class="srow ${r.enabled ? '' : 'off-row'}" data-id="${esc(r.id)}"><div class="l1"><span class="nm">${esc(r.title)}${r.count > 1 ? ` ×${r.count}` : ''}</span>` +
-      `${r.running ? '<span class="tag" style="--c:var(--blue)">執行中</span>' : ''}<span class="tag ${r.enabled ? 'on' : 'off'}">${r.enabled ? '啟用中' : '已停用'}</span></div><div class="wh">${esc(r.when.zh || r.when.en || '—')}</div></div>`).join('')
-    : '<p class="vempty">沒有找到排程。</p>') + (d.launchd_ok ? '' : '<p class="vnote">讀不到 launchd 的狀態，啟用中／已停用可能不準。</p>');
-  const on = d && d.ok ? d.rows.filter(r => r.enabled).length : 0;
-  return `<section class="vsec" aria-label="這台電腦的排程"><h3>這台電腦的排程<b>${d && d.ok && !d.unsupported && d.configured ? `${on}/${d.rows.length}` : ''}</b></h3>${body}` +
-    `<div class="vtools"><span>唯讀；開著這一頁時每分鐘更新</span><span class="sat">${d ? hhmm(d.at) + ' 更新' : ''}</span></div></section>`;
+const cronMemo = new Map();
+function cronParse(expr) {
+  const k = String(expr || '').trim(); if (cronMemo.has(k)) return cronMemo.get(k);
+  const f = k.split(/\s+/); let r = null;
+  if (f.length === 5) {
+    const mi = cronField(f[0], 0, 59), hr = cronField(f[1], 0, 23), dom = cronField(f[2], 1, 31), mon = cronField(f[3], 1, 12), dw = cronField(f[4], 0, 7);
+    if (mi && hr && dom && mon && dw) r = { mi, hr, dom: new Set(dom), mon: new Set(mon), dow: new Set(dw.map(v => v % 7)), domR: f[2][0] !== '*', dowR: f[4][0] !== '*' };
+  }
+  if (cronMemo.size > 200) cronMemo.clear();
+  cronMemo.set(k, r); return r;
+}
+function cronOn(p, day) {
+  const d = new Date(day); if (!p.mon.has(d.getMonth() + 1)) return false;
+  const a = p.dom.has(d.getDate()), b = p.dow.has(d.getDay());
+  return p.domR && p.dowR ? a || b : a && b;
+}
+const cronMins = (p, day) => (cronOn(p, day) ? p.hr.flatMap(h => p.mi.map(m => h * 60 + m)) : []);
+// launchd 的一個日曆項目（sched_view slots.calendar）在這天的分鐘；缺的欄位＝每個
+const slotOn = (c, day) => { const d = new Date(day); return (c.Month == null || c.Month === d.getMonth() + 1) && (c.Day == null || c.Day === d.getDate()) && (c.Weekday == null || c.Weekday % 7 === d.getDay()); };
+const slotMins = (c, day) => { if (!slotOn(c, day)) return []; const hs = c.Hour != null ? [c.Hour] : [...Array(24).keys()], ms = c.Minute != null ? [c.Minute] : [...Array(60).keys()]; return hs.flatMap(h => ms.map(m => h * 60 + m)); };
+function slotWhy(s) { return s.partial ? '排程項目太多，放不進日曆' : !s.interval && !s.calendar.length ? '沒有排程時間' : s.calendar.some(c => c.Day != null && c.Weekday != null) ? '同時指定了「日」和「星期」，不確定哪天跑' : ''; }
+
+// 一天的時間點（分鐘）→ 日曆上的東西：超過 24 個＝帶子（連續的小時一條），不然一個一個（只留現在以後的）
+function calDayItems(mins, day, now, label) {
+  const out = [], today = dayAt(now), nm = Math.floor((now - today) / 60000);
+  if (day < today || !mins.length) return out;
+  const u = [...new Set(mins)].sort((a, b) => a - b);
+  if (u.length > 24) {
+    const hs = [...new Set(u.map(m => Math.floor(m / 60)))]; let a = hs[0], prev = a;
+    const run = (h0, h1) => { let m0 = h0 * 60; const m1 = (h1 + 1) * 60; if (day === today) m0 = Math.max(m0, nm + 1); if (m1 > m0) out.push({ day, band: true, m0, m1, label }); };
+    for (const h of hs.slice(1)) { if (h !== prev + 1) { run(a, prev); a = h; } prev = h; }
+    run(a, prev); return out;
+  }
+  for (const m of u) if (atMin(day, m) > now) out.push({ day, m });
+  return out;
+}
+// 單次（月＋日）：下一次出現的那一天
+function slotOnce(c, now) {
+  for (let y = new Date(now).getFullYear(); y <= new Date(now).getFullYear() + 4; y++) {
+    const d = new Date(y, (c.Month || 1) - 1, c.Day || 1, c.Hour || 0, c.Minute || 0);
+    if (d.getMonth() === (c.Month || 1) - 1 && d.getTime() > now) return d.getTime();
+  }
+  return 0;
+}
+
+function calEntries() {
+  const out = [], D = SCHED.data;
+  const ownerOf = name => { for (const e of M.ents.values()) if (!e.gone && !e.leaving && (e.key === 'b:' + name || e.id === name || e.who.name === name)) return { key: e.key, name: e.who.name }; return { key: '', name }; };   // schedules.json 寫的是 bot 的 id 或名字
+  for (const l of M.loops) {
+    const who = l.key || 'n:' + l.name, owner = { key: l.key, name: l.name };
+    if (l.kind === 'loop') out.push({ id: 'l:' + who, type: 'loop', cls: 'loop', title: l.reason || '（沒有說明的 /loop）', l, owner, est: l.delay > 0,
+      why: !l.next_ts ? '還沒有下一次的時間' : l.delay <= 0 && l.next_ts * 1000 <= calNow() ? '這一輪正在跑，下一次的時間還不知道' : '' });
+    else (l.crons.length ? l.crons : [{ desc: l.reason, schedule: '' }]).forEach((c, i) => { const p = c.schedule ? cronParse(c.schedule) : null;
+      out.push({ id: `c:${who}:${i}`, type: 'cron', cls: 'cron', title: c.desc || l.reason || 'cron', l, c, p, owner, why: !c.schedule ? '沒有排程時間' : !p ? `看不懂這個寫法：${c.schedule}` : '' }); });
+  }
+  if (D && D.ok && !D.unsupported && D.configured) for (const r of D.rows)
+    out.push({ id: 's:' + r.id, type: 'sched', cls: 'sched', title: r.title + (r.count > 1 ? ` ×${r.count}` : ''), r, off: !r.enabled, owner: r.owner ? ownerOf(r.owner) : { key: '', name: '' },
+      why: r.kind === 'daemon' ? '常駐程式，沒有排程時間' : slotWhy(r.slots) });
+  return out;
+}
+// 這一項在 [rs, re) 裡的位置：[{day, m} 一個時間點 | {day, band, m0, m1, label}]；est＝預估
+function calPlace(e, rs, re, now) {
+  const out = [], first = Math.max(rs, dayAt(now));
+  const days = fn => { for (let d = first; d < re; d = dayAt(d, 1)) fn(d); };
+  if (e.type === 'loop') {
+    const l = e.l, t0 = l.next_ts * 1000, step = l.delay * 1000;
+    if (l.delay > 0 && l.delay < 3600) {                 // 一天超過 24 次：一天一條帶子，從下一次（或現在）起
+      const s0 = Math.max(now, t0), sd = dayAt(s0);
+      days(d => { if (d >= sd) out.push({ day: d, band: true, m0: d === sd ? Math.floor((s0 - d) / 60000) : 0, m1: 1440, label: everyWords(l.delay), est: true }); });
+      return out;
+    }
+    let t = t0; if (step > 0) { if (t <= now) t += Math.ceil((now - t + 1) / step) * step; if (t < rs) t += Math.ceil((rs - t) / step) * step; }
+    for (let n = 0; t < re && n < 3000; n++, t += step) { if (t > now && t >= rs) out.push({ day: dayAt(t), m: Math.floor((t - dayAt(t)) / 60000), est: l.delay > 0 }); if (step <= 0) break; }
+    return out;
+  }
+  if (e.type === 'cron') { days(d => out.push(...calDayItems(cronMins(e.p, d), d, now, cronWords(e.c.schedule)))); return out; }
+  const s = e.r.slots;
+  if (e.r.kind === 'once') { for (const c of s.calendar) { const t = slotOnce(c, now); if (t >= rs && t < re) out.push({ day: dayAt(t), m: Math.floor((t - dayAt(t)) / 60000) }); } return out; }
+  days(d => {
+    if (s.interval) out.push(...calDayItems(ALLMIN, d, now, everyWords(s.interval)));
+    const mins = s.calendar.flatMap(c => slotMins(c, d)); if (mins.length) out.push(...calDayItems(mins, d, now, e.r.when.zh || e.r.when.en));
+  });
+  return out;
+}
+function calRange(mode = CAL.mode, anchor = CAL.anchor) {
+  if (mode === 'day') return [anchor, dayAt(anchor, 1)];
+  if (mode === 'week') { const m = monOf(anchor); return [m, dayAt(m, 7)]; }
+  const a = new Date(anchor), m = monOf(new Date(a.getFullYear(), a.getMonth(), 1).getTime()); return [m, dayAt(m, 42)];
+}
+function calModel() {
+  const now = calNow(), [rs, re] = calRange(), ents = calEntries(), days = new Map(), un = [];
+  let next = Infinity;
+  for (const e of ents) {
+    if (e.why) { un.push(e); continue; }
+    for (const it of calPlace(e, rs, re, now)) { it.e = e; if (!days.has(it.day)) days.set(it.day, []); days.get(it.day).push(it); if (!it.band) next = Math.min(next, atMin(it.day, it.m)); }
+  }
+  for (const v of days.values()) v.sort((a, b) => (a.band ? -1 : a.m) - (b.band ? -1 : b.m) || a.e.title.localeCompare(b.e.title, 'zh-Hant'));
+  if (days.has(dayAt(now)) && [...days.get(dayAt(now))].some(i => i.band)) next = Math.min(next, atMin(dayAt(now), (new Date(now).getHours() + 1) * 60));
+  return { ents, days, un, next, rs, re };
+}
+const calSrcName = e => (e.type === 'loop' ? '/loop' : e.type === 'cron' ? 'cron' : '這台電腦的排程');
+function calRangeLabel() {
+  const [rs, re] = calRange(), a = new Date(rs), b = new Date(dayAt(re, -1)), an = new Date(CAL.anchor);
+  if (CAL.mode === 'day') return `${an.getMonth() + 1} 月 ${an.getDate()} 日（週${WK[an.getDay()]}）`;
+  if (CAL.mode === 'month') return `${an.getFullYear()} 年 ${an.getMonth() + 1} 月`;
+  return `${a.getFullYear()} 年 ${a.getMonth() + 1}/${a.getDate()} – ${b.getMonth() + 1}/${b.getDate()}`;
+}
+function calHead() {
+  const seg = [['day', '日'], ['week', '週'], ['month', '月']].map(([m, t]) => `<button type="button" data-act="cmode" data-m="${m}" aria-pressed="${CAL.mode === m}">${t}</button>`).join('');
+  return `<div class="cseg" role="group" aria-label="日曆範圍">${seg}</div><div class="cnav"><button type="button" data-act="cnav" data-d="-1" aria-label="上一個" title="上一個">‹</button>` +
+    `<button type="button" data-act="ctoday">今天</button><button type="button" data-act="cnav" data-d="1" aria-label="下一個" title="下一個">›</button></div><span class="crange" id="calRange">${esc(calRangeLabel())}</span>`;
+}
+function calChip(it) {
+  const e = it.e, p = CAL.pend.get(e.id), when = it.band ? it.label : hmOf(it.m) + (it.n > 1 ? ` ×${it.n}` : '');
+  const tip = `${it.band ? it.label : hmOf(it.m) + (it.n > 1 ? ` 起，這天共 ${it.n} 次` : '')} ${e.title} · ${calSrcName(e)}${it.est ? ' · 預估' : ''}${e.off ? ' · 已停用' : ''}${p ? ` · ${calPendText(e, p)}` : ''}`;
+  return `<button type="button" class="ce ${e.off ? 'off' : 'c-' + e.cls}${it.est ? ' est' : ''}${it.band ? ' band' : ''}${CAL.pop === e.id ? ' sel' : ''}${p ? ' pend' : ''}" data-act="ev" data-id="${esc(e.id)}" title="${esc(tip)}">` +
+    `<span class="ct">${esc(when)}</span><span class="cx">${esc(e.title)}</span>${p ? '<b class="pdg">待改</b>' : ''}</button>`;
+}
+function calFold(its) {                                      // 月檢視：同一項一天出現好幾次（每小時的 cron…）只放一個，寫「×次數」，不然一格全是它
+  const seen = new Map(), out = [];
+  for (const it of its) { if (it.band) { out.push(it); continue; } const f = seen.get(it.e.id); if (f) { f.n++; f.est = f.est || it.est; } else { const c = Object.assign({ n: 1 }, it); seen.set(it.e.id, c); out.push(c); } }
+  return out;
+}
+function calGrid(M0) {
+  const now = calNow(), today = dayAt(now), nowH = new Date(now).getHours(), more = (d, n) => `<button type="button" class="cmore" data-act="cday" data-d="${d}" title="看這一天">+${n}</button>`;
+  if (CAL.mode === 'month') {
+    const mo = new Date(CAL.anchor).getMonth(), head = [1, 2, 3, 4, 5, 6, 0].map(w => `<div class="ch">週${WK[w]}</div>`).join('');
+    const cells = [...Array(42).keys()].map(i => {
+      const d = dayAt(M0.rs, i), dd = new Date(d), its = calFold(M0.days.get(d) || []);
+      return `<div class="cm${dd.getMonth() !== mo ? ' out' : ''}${d === today ? ' today' : ''}${d < today ? ' past' : ''}" data-d="${d}"><button type="button" class="cdn" data-act="cday" data-d="${d}" aria-label="${dd.getMonth() + 1} 月 ${dd.getDate()} 日">${dd.getDate() === 1 ? `${dd.getMonth() + 1}/${dd.getDate()}` : dd.getDate()}</button>` +
+        its.slice(0, 3).map(it => calChip(it)).join('') + (its.length > 3 ? more(d, its.length - 3) : '') + '</div>';
+    }).join('');
+    return `<div class="cg m">${head}${cells}</div>`;
+  }
+  const n = CAL.mode === 'day' ? 1 : 7, days = [...Array(n).keys()].map(i => dayAt(M0.rs, i));
+  const cols = `<div class="ch0"></div>` + days.map(d => { const dd = new Date(d); return `<div class="ch${d === today ? ' today' : ''}">週${WK[dd.getDay()]} <b>${dd.getDate()}</b></div>`; }).join('');
+  let rows = '';
+  for (let h = 0; h < 24; h++) {
+    rows += `<div class="chr" data-h="${h}">${p2(h)}:00</div>`;
+    for (const d of days) {
+      const its = M0.days.get(d) || [], here = [], bands = [];
+      for (const it of its) {
+        if (it.band) { if (h * 60 < it.m1 && (h + 1) * 60 > it.m0) { bands.push(it); if (Math.floor(it.m0 / 60) === h) here.push(it); } }
+        else if (Math.floor(it.m / 60) === h) here.push(it);
+      }
+      const cap = CAL.mode === 'day' ? 99 : 3, shown = here.slice(0, cap);
+      rows += `<div class="cc${d < today || (d === today && h < nowH) ? ' past' : ''}${d === today ? ' today' : ''}" data-d="${d}" data-h="${h}" style="--nb:${bands.length}">` +
+        bands.map((b, i) => `<i class="bnd ${b.e.off ? 'off' : 'c-' + b.e.cls}" style="left:${i * 6}px"></i>`).join('') + shown.map(it => calChip(it)).join('') + (here.length > cap ? more(d, here.length - cap) : '') + '</div>';
+    }
+  }
+  return `<div class="cg ${CAL.mode === 'day' ? 'd' : 'w'}" style="--n:${n}">${cols}${rows}<div class="cnl" id="calNL" hidden></div></div>`;
 }
 function calHtml() {
-  return `<section class="vsec" aria-label="對話裡的排程"><h3>對話裡的排程<b>${M.loops.length}</b></h3>` +
-    (M.loops.length ? M.loops.map(loopRow).join('') : '<p class="vempty">現在沒有分頁在跑 /loop 或 cron。</p>') + '</section>' + schedSection();
+  const M0 = calModel(), D = SCHED.data; CAL.next = M0.next;
+  const legend = '<ul class="cleg" aria-label="顏色"><li><i class="c-loop"></i>/loop</li><li><i class="c-cron"></i>cron</li><li><i class="c-sched"></i>這台電腦的排程</li><li><i class="off"></i>已停用</li><li><i class="dash"></i>虛線＝預估</li></ul>';
+  let note = '';
+  if (!D) note = '<p class="vnote">讀取這台電腦的排程中…</p>';
+  else if (D.unsupported) note = '<p class="vnote">這台電腦沒有可以列出的排程：目前只支援 macOS 的 launchd。</p>';
+  else if (!D.configured) note = '<p class="vnote">還沒有指定要列出哪些排程（設定資料夾裡的 <code>schedules.json</code>）。</p>';
+  else if (!D.ok) note = '<p class="vnote">這次讀不到這台電腦的排程，稍後會再試。</p>';
+  else if (!D.launchd_ok) note = '<p class="vnote">讀不到 launchd 的狀態，啟用中／已停用可能不準。</p>';
+  const un = M0.un.length ? `<section class="vsec cun" aria-label="沒辦法放進日曆"><h3>沒辦法放進日曆<b>${M0.un.length}</b></h3><ul>` + M0.un.map(e => {
+    const p = CAL.pend.get(e.id);
+    return `<li><button type="button" class="ce ${e.off ? 'off' : 'c-' + e.cls}${CAL.pop === e.id ? ' sel' : ''}${p ? ' pend' : ''}" data-act="ev" data-id="${esc(e.id)}"><span class="ct">${esc(calSrcName(e))}</span><span class="cx">${esc(e.title)}</span><span class="cw">${esc(e.why)}</span>${p ? '<b class="pdg">待改</b>' : ''}</button></li>`;
+  }).join('') + '</ul></section>' : '';
+  const none = !M0.ents.length ? '<p class="vempty">現在沒有分頁在跑 /loop 或 cron，也沒有這台電腦的排程。</p>' : '';
+  return `<div class="cal" data-mode="${CAL.mode}">${legend}${note}${none}${calGrid(M0)}${un}` +
+    `<div class="vtools"><span>只能在這裡開關、調頻率；其他設定只能由負責的 agent 調整。開著這一頁時每分鐘更新</span><span class="sat">${D ? hhmm(D.at) + ' 更新' : ''}</span></div></div>`;
+}
+// 現在線：在今天那一欄的現在那個小時列裡，依分鐘切；窗口在別的日子就收起來
+function calNowLine() {
+  const nl = $('#calNL'); if (!nl) return;
+  const now = calNow(), [rs, re] = calRange();
+  if (!(now >= rs && now < re)) { if (!nl.hidden) nl.hidden = true; return; }
+  const h = new Date(now).getHours(), row = $(`#vBody .chr[data-h="${h}"]`); if (!row) return;
+  const top = row.offsetTop + (new Date(now).getMinutes() / 60) * row.offsetHeight, t = Math.round(top) + 'px';
+  if (nl.style.top !== t) nl.style.top = t;
+  if (nl.hidden) nl.hidden = false;
+}
+function calAfter() {
+  const body = $('#vBody');
+  if (CAL.scroll && CAL.mode !== 'month') { const row = $(`#vBody .chr[data-h="${Math.max(0, new Date(calNow()).getHours() - 2)}"]`); if (row) body.scrollTop = Math.max(0, row.offsetTop - 40); }
+  else if (CAL.scroll) body.scrollTop = 0;
+  CAL.scroll = false; calNowLine();
+}
+
+// ── 日曆項目的細節卡：兩個人能動的東西（開關、頻率）＋其他都是唯讀 ──
+const FREQ = [['m5', '每 5 分鐘', 300], ['m10', '每 10 分鐘', 600], ['m15', '每 15 分鐘', 900], ['m30', '每 30 分鐘', 1800], ['h1', '每 1 小時', 3600], ['h2', '每 2 小時', 7200],
+  ['h4', '每 4 小時', 14400], ['h6', '每 6 小時', 21600], ['h12', '每 12 小時', 43200], ['daily', '每天', 0]];
+const freqOf = sec => { const f = FREQ.find(x => x[2] && x[2] === sec); return f ? f[0] : ''; };
+function calFreqNow(e) {                                     // 現在的頻率對得到哪個選項：{f, t}；對不到 f 是空的
+  if (e.type === 'loop') return { f: freqOf(e.l.delay), t: '' };
+  const daily = (h, m) => ({ f: 'daily', t: `${p2(h)}:${p2(m)}` });
+  if (e.type === 'cron') {
+    const x = /^每 (\d+) (分鐘|小時)$/.exec(cronWords(e.c.schedule)); if (x) return { f: freqOf(+x[1] * (x[2] === '分鐘' ? 60 : 3600)), t: '' };
+    const d = /^每天 (\d\d):(\d\d)$/.exec(cronWords(e.c.schedule)); return d ? daily(+d[1], +d[2]) : { f: '', t: '' };
+  }
+  const s = e.r.slots; if (s.interval && !s.calendar.length) return { f: freqOf(s.interval), t: '' };
+  const c = s.calendar; if (!s.interval && c.length === 1 && c[0].Hour != null && c[0].Minute != null && c[0].Month == null && c[0].Day == null && c[0].Weekday == null) return daily(c[0].Hour, c[0].Minute);
+  return { f: '', t: '' };
+}
+const freqPhrase = (f, t) => (f === 'daily' ? `每天 ${t || '09:00'} ` : (FREQ.find(x => x[0] === f) || [])[1] || '');
+const calOne = s => String(s || '').replace(/[「」\s]+/g, ' ').trim().slice(0, 60);
+function calText(e, what, phrase) {
+  const T = '（辦公室排程）', q = calOne(e.type === 'cron' ? e.title : e.type === 'sched' ? e.r.title : e.title);
+  if (e.type === 'loop') return what === 'stop' ? `${T}請把你的 /loop「${q}」停掉，停好回我一句。` : `${T}請把你的 /loop「${q}」改成${phrase}一次，改完回我一句。`;
+  if (e.type === 'cron') return what === 'stop' ? `${T}請把你的 cron 排程「${q}」（${e.c.schedule}）停掉，停好回我一句。` : `${T}請把你的 cron 排程「${q}」（${e.c.schedule}）改成${phrase}一次，改完回我一句。`;
+  return `${T}請把這台電腦的排程「${q}」（${e.r.id}）改成${phrase}一次：請編輯它的 launchd plist（~/Library/LaunchAgents/${e.r.id}.plist），改完重新載入（launchctl bootout／bootstrap），再回我一句。`;
+}
+const calBase = (e, what) => (what === 'stop' ? 'here' : e.type === 'loop' ? 'd' + e.l.delay : e.type === 'cron' ? 's' + e.c.schedule : [e.r.when.zh, e.r.enabled, JSON.stringify(e.r.slots)].join('|'));
+const calPendText = (e, p) => (Date.now() - p.at > PEND_STALE_MS ? `${p.owner} 還沒改` : `已請 ${p.owner} 調整`);
+function calOnline(e) { const h = boardHost(), k = e.owner.key; return !!(k && h && h.canRequest && h.canRequest(k)); }
+function calResolve() {                                      // 偵測到的狀態真的變了（或那一項已經不在了）才收掉「已請…」
+  if (!CAL.pend.size) return;
+  const ents = new Map(calEntries().map(e => [e.id, e])); let hit = 0;
+  for (const [id, p] of [...CAL.pend]) { const e = ents.get(id); if (!e || calBase(e, p.what) !== p.base) { CAL.pend.delete(id); hit++; toast(`${p.owner} 已經調整了「${calOne(p.title)}」`); } }
+  if (hit) CAL.pv++;
+}
+async function calAsk(e, what, phrase) {
+  const h = boardHost(), o = e.owner; if (!h || !h.request || !o.key || CAL.busy) return;
+  CAL.busy = e.id; calPopSync(true);
+  let r = null; try { r = await h.request(o.key, calText(e, what, phrase)); } catch (err) { r = { success: false, message: String(err) }; }
+  CAL.busy = '';
+  if (r && r.success) { CAL.pend.set(e.id, { at: Date.now(), what, base: calBase(e, what), owner: o.name || '負責的 agent', title: e.title }); CAL.pv++; CAL.msg = ''; toast(`已請 ${o.name} 調整`); }
+  else CAL.msg = r && r.code === 'draft' ? `${o.name} 的輸入框裡有還沒送出的字，這次沒有送出。` : r && r.code === 'no_tab' ? `${o.name} 現在沒有可以傳話的分頁。` : `沒有送出：${(r && r.message) || '不明原因'}`;
+  vstate.sig = ''; renderView(true);
+}
+async function calToggle(e) {                                // 這台電腦的排程：直接開關，畫面只認 launchd 回的實際狀態
+  const h = boardHost(), r0 = e.r; if (!h || !h.setEnabled || CAL.busy) return;
+  CAL.busy = e.id; calPopSync(true);
+  let r = null; try { r = await h.setEnabled(r0.id, !r0.enabled); } catch (err) { r = { success: false, message: String(err) }; }
+  CAL.busy = '';
+  const row = SCHED.data && SCHED.data.rows.find(x => x.id === r0.id);
+  if (r && typeof r.enabled === 'boolean' && row) { row.enabled = r.enabled; SCHED.json = JSON.stringify(Object.assign({}, SCHED.data, { at: 0 })); SCHED.ver++; }
+  CAL.msg = r && r.success ? '' : `沒有成功：${r && r.enabled != null ? `launchd 回報現在是「${r.enabled ? '啟用中' : '已停用'}」` : (r && r.message) || '不明原因'}`;
+  vstate.sig = ''; renderView(true);
+}
+function calCaps(e) {
+  const o = e.owner, online = calOnline(e), pend = CAL.pend.get(e.id), stale = pend && Date.now() - pend.at > PEND_STALE_MS, held = pend && !stale;
+  const noAsk = !o.name ? '沒有指定負責的 agent，這個要請它改' : !o.key ? `${o.name} 不在辦公室，沒辦法傳話` : !online ? `${o.name} 現在沒有可以傳話的分頁` : '';
+  const sw = e.type === 'sched'
+    ? (e.r.toggle ? { mode: 'direct', on: e.r.enabled, tip: e.r.enabled ? '關掉這個排程（直接生效）' : '打開這個排程（直接生效）', off: false }
+      : { mode: 'none', on: e.r.enabled, tip: '', off: true, why: e.r.kind === 'once' || e.r.count > 1 ? '單次排程沒有開關：要排或取消，請負責的 agent 處理' : '這個排程沒有開關' })
+    : { mode: 'ask', on: true, tip: '停掉它：請負責的 agent 停', off: !!noAsk || held, why: noAsk || (held ? '已經請過了，等它改' : '') };
+  const fqWhy = e.type === 'sched' && (e.r.kind === 'once' || e.r.kind === 'daemon') ? (e.r.kind === 'once' ? '單次排程沒有頻率' : '常駐程式沒有頻率') : noAsk || (held ? '已經請過了，等它改' : '');
+  return { sw, fq: { off: !!fqWhy, why: fqWhy, cur: calFreqNow(e) }, pend, stale, online, noAsk };
+}
+function calNextText(e) {
+  const now = calNow();
+  if (e.type === 'loop') { const t = e.l.next_ts * 1000; return t > now ? { ts: e.l.next_ts, text: hhmm(t) } : { text: e.l.status === 'running' ? '這一輪正在跑' : '—' }; }
+  if (e.type === 'sched' && e.r.slots.interval && !e.r.slots.calendar.length) return { text: `沒有固定時間（${everyWords(e.r.slots.interval)}）` };
+  const from = dayAt(now); let best = 0;
+  for (const it of calPlace(e, from, dayAt(from, e.type === 'sched' && e.r.kind === 'once' ? 800 : 370), now)) { if (it.band) return { text: '整天都會跑（' + it.label + '）' }; const t = atMin(it.day, it.m); if (!best || t < best) best = t; }
+  return best ? { ts: best / 1000, text: `${new Date(best).getMonth() + 1}/${new Date(best).getDate()} ${hhmm(best)}` } : { text: '—' };
+}
+function calPopHtml(e) {
+  const C = calCaps(e), o = e.owner, who = o.name ? whoBtn(o.key, o.name) : '<span class="unset">未指定</span>';
+  const nx = calNextText(e), words = e.type === 'loop' ? (e.l.delay > 0 ? everyWords(e.l.delay) : '自己決定') : e.type === 'cron' ? cronWords(e.c.schedule) : (e.r.when.zh || e.r.when.en);
+  const dr = CAL.draft && CAL.draft.id === e.id ? CAL.draft : { id: e.id, f: '', t: C.fq.cur.t || '09:00' };
+  const opts = `<option value=""${dr.f === '' ? ' selected' : ''}>${C.fq.cur.f ? '改成…' : '選一個新的頻率…'}</option>` + FREQ.map(([v, t]) => `<option value="${v}"${dr.f === v ? ' selected' : ''}>${t}${v === C.fq.cur.f && v !== 'daily' ? '（現在）' : ''}</option>`).join('');
+  const changed = dr.f !== '' && !(dr.f === C.fq.cur.f && (dr.f !== 'daily' || dr.t === C.fq.cur.t));
+  const busy = CAL.busy === e.id, ptxt = C.pend ? calPendText(e, C.pend) : '';
+  const swOn = C.sw.on, swTxt = C.sw.mode === 'ask' ? '執行中' : swOn ? '啟用中' : '已停用';
+  return `<div class="cp" role="dialog" aria-label="${esc(e.title)}"><div class="cph"><span class="tag ${e.off ? 'off' : 'c-' + e.cls}">${esc(calSrcName(e))}</span><h3>${esc(e.title)}</h3>` +
+    `<button type="button" class="vx" data-act="cpx" title="關起來（Esc）" aria-label="關起來細節">✕</button></div>` +
+    `<dl class="cpd"><dt>負責</dt><dd>${who}</dd><dt>頻率</dt><dd>${esc(words || '—')}${e.est ? ' <span class="estag">預估</span>' : ''}${e.off ? ' <span class="estag">已停用</span>' : ''}</dd>` +
+    `<dt>下一次</dt><dd>${esc(nx.text)}${nx.ts ? ` <span class="cd" data-ts="${nx.ts}" data-st="">${esc(cdText(nx.ts, ''))}</span>` : ''}</dd></dl>` +
+    (ptxt ? `<p class="cpb${C.stale ? ' stale' : ''}" role="status">${esc(ptxt)}</p>` : '') + (CAL.msg && CAL.pop === e.id ? `<p class="cpm" role="status">${esc(CAL.msg)}</p>` : '') +
+    `<div class="cpc"><div class="cprow"><span class="cpl">開關</span><button type="button" class="sw${swOn ? ' on' : ''}" role="switch" aria-checked="${swOn}" data-act="csw"${C.sw.off || busy ? ' disabled' : ''} title="${esc(C.sw.off ? C.sw.why : C.sw.tip)}"><i></i></button><span class="cpv">${swTxt}</span></div>` +
+    (C.sw.off && C.sw.why ? `<p class="cpw">${esc(C.sw.why)}</p>` : '') +
+    `<div class="cprow"><span class="cpl">頻率</span><select id="calFreq" data-act="cfsel"${C.fq.off || busy ? ' disabled' : ''} title="${esc(C.fq.why)}" aria-label="頻率">${opts}</select>` +
+    `<input type="time" id="calTime" value="${esc(dr.t)}" data-act="cftime"${dr.f === 'daily' ? '' : ' hidden'}${C.fq.off || busy ? ' disabled' : ''} aria-label="每天幾點">` +
+    `<button type="button" class="btn go" data-act="cfreq"${C.fq.off || busy || !changed ? ' disabled' : ''} title="${esc(C.fq.why)}">${o.name ? `請 ${esc(o.name)} 調整` : '請負責的 agent 調整'}</button></div>` +
+    (C.fq.off && C.fq.why ? `<p class="cpw">${esc(C.fq.why)}</p>` : '') + '</div>' +
+    `<p class="cpn">其他設定只能由負責的 agent 調整</p>` +
+    (o.name ? `<button type="button" class="btn say" data-act="csay"${personEnt(o.key) ? '' : ' disabled'} title="${personEnt(o.key) ? '到他的座位旁' : esc(o.name) + ' 不在辦公室'}">跟 ${esc(o.name)} 說</button>` : '') + '</div>';
+}
+function calPopSync(force) {
+  const el = $('#calPop'); if (!el) return;
+  const e = CAL.pop && view === 'cal' ? calEntries().find(x => x.id === CAL.pop) : null;
+  if (!e) { if (!el.hidden) { el.hidden = true; el.innerHTML = ''; } CAL.popSig = ''; if (CAL.pop && view === 'cal') CAL.pop = null; return; }
+  const C = calCaps(e), sig = [e.id, e.title, e.off, e.est, JSON.stringify(e.type === 'loop' ? [e.l.delay] : e.type === 'cron' ? e.c.schedule : [e.r.when.zh, e.r.enabled, e.r.toggle, e.r.slots.interval]), e.owner.name, e.owner.key, !!personEnt(e.owner.key), C.online, C.pend ? CAL.pend.get(e.id).at : '', !!C.stale,
+    CAL.msg, CAL.busy, CAL.draft && CAL.draft.id === e.id ? CAL.draft.f + CAL.draft.t : ''].join('#');
+  if (!force && sig === CAL.popSig && !el.hidden) return; CAL.popSig = sig;
+  const had = el.contains(document.activeElement) ? document.activeElement.id || document.activeElement.dataset.act : '';
+  el.innerHTML = calPopHtml(e); el.hidden = false;
+  if (had) { const b = el.querySelector(`#${had}`) || el.querySelector(`[data-act="${had}"]`); if (b && !b.disabled) try { b.focus({ preventScroll: true }); } catch (x) { } }
+}
+function calOpenPop(id) {
+  CAL.pop = id; CAL.msg = ''; CAL.draft = null; vstate.sig = ''; renderView(true);
+  const b = $('#calPop .vx'); if (b) try { b.focus({ preventScroll: true }); } catch (x) { }
+}
+function calClosePop() {
+  const id = CAL.pop; CAL.pop = null; CAL.msg = ''; vstate.sig = ''; renderView(true);
+  const c = id && [...$$('#vBody [data-act="ev"]')].find(x => x.dataset.id === id); if (c) try { c.focus({ preventScroll: true }); } catch (x) { }
+}
+function calGo(mode, anchor) {
+  if (mode && mode !== CAL.mode) { CAL.mode = mode; store.set('calMode', mode); }
+  if (anchor != null) CAL.anchor = Math.min(dayAt(calNow(), 400), Math.max(dayAt(calNow(), -400), dayAt(anchor)));
+  CAL.pop = null; CAL.scroll = true; vstate.sig = ''; renderView(true);
+}
+function calStep(d) { const a = new Date(CAL.anchor); calGo(null, CAL.mode === 'day' ? dayAt(CAL.anchor, d) : CAL.mode === 'week' ? dayAt(CAL.anchor, 7 * d) : new Date(a.getFullYear(), a.getMonth() + d, 1).getTime()); }
+function calSig(people) { if (CAL.pend.size) calResolve(); CAL.stale = [...CAL.pend.values()].map(p => Date.now() - p.at > PEND_STALE_MS ? 1 : 0).join(''); return ['c', M.loopsVer, SCHED.ver, people, CAL.mode, CAL.anchor, dayAt(calNow()), CAL.pv, CAL.stale, CAL.pop || '', calNow() >= CAL.next ? 'x' : ''].join('#'); }
+function calClick(ev) {
+  const b = ev.target.closest('[data-act]'), pop = CAL.pop;
+  if (!b) { if (pop && !ev.target.closest('#calPop')) calClosePop(); return; }
+  const a = b.dataset.act, e = pop ? calEntries().find(x => x.id === pop) : null;
+  if (a === 'cmode') { const tn = new Date(calNow()), an = new Date(CAL.anchor); calGo(b.dataset.m, CAL.mode === 'month' && tn.getFullYear() === an.getFullYear() && tn.getMonth() === an.getMonth() ? calNow() : null); }
+  else if (a === 'cnav') calStep(+b.dataset.d);
+  else if (a === 'ctoday') calGo(null, calNow());
+  else if (a === 'cday') calGo('day', +b.dataset.d);
+  else if (a === 'ev') { if (pop === b.dataset.id) calClosePop(); else calOpenPop(b.dataset.id); }
+  else if (a === 'cpx') calClosePop();
+  else if (a === 'person') pickPerson(b.dataset.key);
+  else if (a === 'csay') { if (e && personEnt(e.owner.key)) pickPerson(e.owner.key); }
+  else if (a === 'csw' && e) { const C = calCaps(e); if (C.sw.off) return; if (C.sw.mode === 'direct') calToggle(e); else if (C.sw.mode === 'ask') calAsk(e, 'stop', ''); }
+  else if (a === 'cfreq' && e) { const dr = CAL.draft; if (dr && dr.id === e.id && dr.f) calAsk(e, 'freq', freqPhrase(dr.f, dr.t)); }
+}
+function calInput(ev) {
+  const t = ev.target, e = CAL.pop ? calEntries().find(x => x.id === CAL.pop) : null; if (!e) return;
+  const C = calCaps(e), dr = CAL.draft && CAL.draft.id === e.id ? CAL.draft : (CAL.draft = { id: e.id, f: '', t: C.fq.cur.t || '09:00' });
+  if (t.id === 'calFreq') dr.f = t.value; else if (t.id === 'calTime') dr.t = t.value || dr.t;
+  else return;
+  const go = $('#calPop [data-act="cfreq"]'), tm = $('#calTime');                       // 原地改：不重畫，選單才不會被收掉
+  if (tm) tm.hidden = dr.f !== 'daily';
+  if (go) go.disabled = C.fq.off || !(dr.f !== '' && !(dr.f === C.fq.cur.f && (dr.f !== 'daily' || dr.t === C.fq.cur.t)));
+  CAL.popSig = '';
 }
 
 // ── 檢視：開、關、畫 ──
@@ -2068,27 +2499,29 @@ function renderView(force) {
   // 放了，檢視每 3 秒整個重建，點到一半的按鈕、選起來的字、焦點都會掉。時間字（幾分鐘沒動、倒數）由 viewStep 原地改字。
   // 看板另加「各張現在落在哪一欄」（逾期、24 小時內到期是時間算出來的，資料沒變也會換欄）；打開的卡自己有簽章（renderDetail），開卡不重畫整塊白板。
   const people = peopleSig();
-  const sig = view === 'board' ? ['b', M.boardVer, laneSig(boardLanes(nowS()), nowS()), people].join('#') : ['c', M.loopsVer, SCHED.ver, people].join('#');
+  const sig = view === 'board' ? ['b', M.boardVer, laneSig(boardLanes(nowS()), nowS()), people].join('#') : calSig(people);
   if (view === 'board') renderDetail(force);
   if (!force && sig === vstate.sig) return; vstate.sig = sig;
   $('#vIcon').innerHTML = VIEW_ICON[view]; $('#vTitle').textContent = WALL_OBJ[view].name; $('#vSub').textContent = viewSub();
   const body = $('#vBody'), top = body.scrollTop;
   body.innerHTML = `<div class="vz">${view === 'board' ? boardHtml() : calHtml()}</div>`; body.scrollTop = top; body.dataset.view = view;
   $('#wall').dataset.view = view;
+  const hs = view === 'cal' ? [CAL.mode, CAL.anchor, dayAt(calNow())].join('#') : ''; if (hs !== CAL.headSig) { CAL.headSig = hs; $('#vHeadX').innerHTML = view === 'cal' ? calHead() : ''; }
+  if (view === 'cal') { calAfter(); calPopSync(); } else calPopSync();
 }
 function openView(kind) {
   if (!WALL_OBJ[kind]) return;
   if (view === kind) { closeView(); return; }
   if (follow) stopFollow(true);
   hoverObj = null; cv.classList.remove('pt');            // the camera is about to move: the pointer is not over it any more
-  view = kind; vstate.sig = '';
+  view = kind; vstate.sig = ''; if (kind === 'cal') { CAL.anchor = dayAt(calNow()); CAL.pop = null; CAL.msg = ''; CAL.scroll = true; }
   const w = $('#wall'); w.hidden = false; document.body.classList.add('walling');
   renderView(true); if (kind === 'cal') schedPoll();
   try { $('#vClose').focus({ preventScroll: true }); } catch (e) {}
   kick();
 }
 function closeView(silent) {
-  if (!view) return; view = null; vstate.open.clear(); vstate.detail.clear(); vstate.sig = '';
+  if (!view) return; view = null; vstate.open.clear(); vstate.detail.clear(); vstate.sig = ''; CAL.pop = null; CAL.msg = ''; CAL.headSig = ''; $('#vHeadX').innerHTML = ''; calPopSync();
   const w = $('#wall'); w.hidden = true; delete w.dataset.view; $('#vBody').innerHTML = ''; renderDetail(true); document.body.classList.remove('walling');
   kick();
 }
@@ -2114,11 +2547,11 @@ function viewStep() {                                           // 每一幀：�
   if (!view) return;
   renderView(false);
   const now = performance.now();
-  if (now - vstate.tick >= 400) { vstate.tick = now; $$('#vBody .cd[data-ts]').forEach(el => { const t = cdText(+el.dataset.ts, el.dataset.st); if (el.textContent !== t) el.textContent = t; });
+  if (now - vstate.tick >= 400) { vstate.tick = now; $$('#vBody .cd[data-ts], #calPop .cd[data-ts]').forEach(el => { const t = cdText(+el.dataset.ts, el.dataset.st); if (el.textContent !== t) el.textContent = t; });
     const sat = $('#vBody .sat'); if (sat && SCHED.data) { const w = hhmm(SCHED.data.at) + ' 更新'; if (sat.textContent !== w) sat.textContent = w; }
     $$('#vBody .age[data-id], #vOver .age[data-id]').forEach(el => { const t = findTask(+el.dataset.id), i = t ? idleOf(t) : 0, w = i ? sinceWords(i) + '沒動' : '—'; if (el.textContent !== w) el.textContent = w; }); }
   if (view === 'board') { for (const id of vstate.open) { const t = findTask(id); if (t) loadDetail(id, t.updated_at); } }
-  else schedPoll();
+  else { schedPoll(); if (now - CAL.tick >= 400) { CAL.tick = now; calNowLine(); } }
 }
 $('#vBody').addEventListener('click', ev => {
   const b = ev.target.closest('[data-act]'); if (!b) return;
@@ -2133,6 +2566,9 @@ $('#vOver').addEventListener('keydown', ev => {            // 表單裡：Esc �
   if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cancelAct(); }
   else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey) && ev.target.tagName === 'TEXTAREA') { ev.preventDefault(); submitAct(); }
 });
+$('#vBody').addEventListener('click', ev => { if (view === 'cal') calClick(ev); });
+$('#vHeadX').addEventListener('click', ev => { if (view === 'cal') calClick(ev); });
+$('#calPop').addEventListener('click', calClick); $('#calPop').addEventListener('input', calInput); $('#calPop').addEventListener('change', calInput);
 $('#vClose').onclick = () => closeView();
 $('#wall').addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeView(); });   // 點蓋板外面（暗掉的辦公室）就關
 $('#openBoard').onclick = () => openView('board');
@@ -2407,6 +2843,7 @@ q.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !
 addEventListener('pointerdown', () => kick(), true);   // 任何地方的點按都算操作
 addEventListener('keydown', e => {
   kick();
+  if (e.key === 'Escape' && view === 'cal' && CAL.pop) { e.preventDefault(); calClosePop(); return; }   // 日曆：Esc 先關細節卡（焦點在卡裡的選單、時間欄也算），再關檢視
   if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (e.key === 'Escape' && e.target.tagName === 'SELECT') e.target.blur(); else return; }   // 選完區域後焦點留在選單上：Esc 照樣能退出
   if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (view) { if (vstate.open.size) closeDetail(); else closeView(); } else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
   if (view) return;   // 蓋板開著：其他快捷鍵不碰底下的辦公室
@@ -2657,11 +3094,16 @@ function demoRefresh() {                                      // 每次送示範
   const add = (b, key, lp) => { if (!b) return; b.loop = lp; L.push(Object.assign({ key, name: b.name }, lp)); };
   add(dbBot('ops'), 'b:ops', { kind: 'loop', status: 'sleeping', next_ts: next(1200, 0), delay: 1200, reason: '看一輪監控面板：磁碟、憑證到期日、服務回應時間，有異常才回報', rounds: 5, crons: [] });
   add(dbBot('sec'), 'b:sec', { kind: 'cron', status: 'scheduled', next_ts: 0, delay: 0, reason: '每天早上把各組回報整理成示範週報', rounds: 0, crons: [{ desc: '每天早上把各組回報整理成示範週報', schedule: '0 9 * * *' }] });
+  add(dbBot('eng'), 'b:eng', { kind: 'loop', status: 'sleeping', next_ts: now + 47 * 60, delay: 0, reason: '等示範建置跑完再回來看，什麼時候看由我自己決定', rounds: 2, crons: [] });
+  add(dbBot('rev'), 'b:rev', { kind: 'cron', status: 'scheduled', next_ts: 0, delay: 0, reason: '每小時整理一次示範 PR 清單', rounds: 0, crons: [{ desc: '每小時整理一次示範 PR 清單', schedule: '0 * * * *' }] });
+  add(dbBot('doc'), 'b:doc', { kind: 'cron', status: 'scheduled', next_ts: 0, delay: 0, reason: '每月最後一天整理示範月報', rounds: 0, crons: [{ desc: '每月最後一天整理示範月報', schedule: '0 9 L * *' }] });
+  L.push({ key: '', name: '示範背景分頁', kind: 'loop', status: 'sleeping', next_ts: next(7200, 600), delay: 7200, reason: '每 2 小時檢查一次示範備份有沒有成功', rounds: 1, crons: [] });   // 沒有人坐的分頁：沒有負責人
   add(DB.temps.find(t => t.id === 'tmp1'), 't:tmp1', { kind: 'loop', status: 'sleeping', next_ts: next(300, 90), delay: 300, reason: '每 5 分鐘看一次示範建置跑完了沒', rounds: 12, crons: [] });
   DB.loops = L;
 }
 const DEMO_SAID = [], DEMO_NOTES = {}, DEMO_ACT = { log: [], fail: '', delay: 0 };   // DEMO_ACT：測試用，記下收到的動作、可以叫它失敗或變慢
 const DEMO_CHAT = { has: key => !!personEnt(key), async send(key, text) { DEMO_SAID.push({ key, text }); return { success: true }; } };
+const DEMO_ON = {};
 const DEMO_BOARD = {
   async act(id, action, text) {                                   // 跟後端 task_user_act 同一套規則，改的是示範資料
     DEMO_ACT.log.push({ id, action, text }); if (DEMO_ACT.delay) await new Promise(r => setTimeout(r, DEMO_ACT.delay)); if (DEMO_ACT.fail) return { success: false, message: DEMO_ACT.fail };
@@ -2679,12 +3121,18 @@ const DEMO_BOARD = {
   async detail(id) { const t = findTask(id); if (!t) return { success: false, message: '沒有這件任務。' };
     const at = t.updated_at, ev0 = [...(DEMO_NOTES[id] || []), { ts: at, actor: t.owner, kind: 'note', text: t.next_step || '更新進度' }, { ts: at - 1800, actor: t.owner, kind: 'status', text: 'todo → ' + t.status }, { ts: at - 3 * 3600, actor: t.requester, kind: 'created', text: t.title }];
     return { success: true, task: { id, events: ev0 } }; },
-  async schedules() { const w = (en, zh) => ({ en, zh });
+  async schedules() {
+    const w = (en, zh) => ({ en, zh }), row = (id, title, en, zh, o) => Object.assign({ id, title, when: w(en, zh), enabled: DEMO_ON[id] !== false, running: false, kind: 'calendar', count: 0, owner: '', toggle: true, state: '', slots: { interval: null, calendar: [] } }, o);
+    const d3 = new Date(Date.now() + 3 * 86400e3), md = `${d3.getMonth() + 1}/${d3.getDate()}`;
     return { ok: true, unsupported: false, configured: true, launchd_ok: true, at: Date.now(), rows: [
-      { id: 'demo.backup', title: '示範每日備份', when: w('Daily 02:30', '每天 02:30'), enabled: true, running: false, kind: 'calendar', count: 0 },
-      { id: 'demo.report', title: '示範週報彙整', when: w('Mon–Fri 09:50', '週一至週五 09:50'), enabled: true, running: false, kind: 'calendar', count: 0 },
-      { id: 'demo.certs', title: '示範憑證檢查', when: w('Every 6 hours', '每 6 小時'), enabled: true, running: true, kind: 'interval', count: 0 },
-      { id: 'demo.old', title: '示範舊排程（已停用）', when: w('Sun 23:00', '每週日 23:00'), enabled: false, running: false, kind: 'calendar', count: 0 }] }; },
+      row('demo.backup', '示範每日備份', 'Daily 02:30', '每天 02:30', { kind: 'daily', owner: 'ops', slots: { interval: null, calendar: [{ Hour: 2, Minute: 30 }] } }),
+      row('demo.report', '示範週報彙整', 'Mon–Fri 09:30', '週一～五 09:30', { kind: 'weekly', slots: { interval: null, calendar: [1, 2, 3, 4, 5].map(d => ({ Weekday: d, Hour: 9, Minute: 30 })) } }),
+      row('demo.poll', '示範服務輪詢', 'Every 10 min', '每 10 分鐘', { kind: 'interval', owner: 'eng', running: true, slots: { interval: 600, calendar: [] } }),
+      row('demo.old', '示範舊排程（已停用）', 'Sun 23:00', '週日 23:00', { owner: 'ops', slots: { interval: null, calendar: [{ Weekday: 0, Hour: 23, Minute: 0 }] } }),
+      row('demo.once', '示範單次提醒', `One-off · armed ${md} 10:00`, `單次・已排 ${md} 10:00`, { kind: 'once', toggle: false, state: 'armed', owner: 'sch', slots: { interval: null, calendar: [{ Month: d3.getMonth() + 1, Day: d3.getDate(), Hour: 10, Minute: 0 }] } })] }; },
+  async setEnabled(label, on) { DEMO_ON[label] = !!on; return { success: true, enabled: !!on }; },                     // 示範：只記在這一頁
+  canRequest: key => !!personEnt(key),
+  async request(key, text) { (window.__reqs = window.__reqs || []).push({ key, text }); return { success: true }; },       // 示範：沒有人真的收到
 };
 const push = () => { if (DEMO.live) update(DB); };
 const dbBot = ref => { ref = String(ref); if (ref.includes('/')) { const [pid, id] = ref.split('/'); const p = DB.peers.find(q => q.id === pid); return p && p.bots.find(b => b.id === id); } return DB.bots.find(b => b.id === ref); };
@@ -2783,6 +3231,12 @@ window.__office = {
   wallPoint: k => { const pts = wallScreen(k), p = { x: pts.reduce((a, q) => a + q.x, 0) / 4, y: pts.reduce((a, q) => a + q.y, 0) / 4 }; return wallObjAt(p.x, p.y) === k ? p : null; },
   wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj ? WALL_OBJ[hoverObj].name : ''), schedCalls: () => SCHED.calls, schedPollMs: () => SCHED.every, setSchedPoll: ms => { SCHED.every = ms; },
   loopMarks: () => [...M.ents.values()].filter(e => e.loop && !e.gone).map(e => { const s = M.seats.get(e.seatKey), g = s && geo(s); return { key: e.key, wall: !!g && (g.shared || placeItems(e, g).some(q => q.k === 'wall' && q.it.id === 'calendar')) }; }),
+  calState: () => ({ mode: CAL.mode, anchor: ymd(CAL.anchor), pop: CAL.pop, next: CAL.next }), calGo: (m, a) => calGo(m, a), boardHost: () => boardHost(),
+  calSetNow: ms => { CAL.now = ms == null ? null : +ms; CAL.anchor = dayAt(calNow()); CAL.scroll = true; vstate.sig = ''; renderView(true); },
+  calFeed: o => { if (o.loops) setLoops(o.loops); if (o.rows) { SCHED.data = { ok: true, unsupported: false, configured: true, launchd_ok: true, rows: o.rows, at: Date.now() }; SCHED.json = JSON.stringify(Object.assign({}, SCHED.data, { at: 0 })); SCHED.at = performance.now(); SCHED.ver++; } vstate.sig = ''; renderView(true); },
+  calModel: () => { const m = calModel(); return { range: [ymd(m.rs), ymd(m.re)], days: [...m.days].map(([d, v]) => ({ day: ymd(d), items: v.map(i => ({ id: i.e.id, band: i.band ? i.label : '', time: i.band ? '' : hmOf(i.m), m0: i.m0, m1: i.m1, est: !!i.est, cls: i.e.off ? 'off' : i.e.cls })) })), un: m.un.map(e => ({ id: e.id, why: e.why })), ents: m.ents.map(e => e.id) }; },
+  calCron: (expr, from, n) => { const p = cronParse(expr); if (!p) return null; const out = []; for (let d = dayAt(from), i = 0; i < 800 && out.length < n; i++, d = dayAt(d, 1)) for (const m of cronMins(p, d).sort((a, b) => a - b)) if (atMin(d, m) > from && out.length < n) out.push(ymd(d) + ' ' + hmOf(m)); return out; },
+  calPending: () => [...CAL.pend].map(([id, p]) => Object.assign({ id }, p)), calBackdate: ms => { for (const p of CAL.pend.values()) p.at -= ms; CAL.pv++; },
   zoning: () => zoning, setZoning: z => setZoning(z), setGroup: (id, g) => setGroup(id, g), groups: () => groupsOf(),
   zones: () => [...M.rooms.values()].filter(r => r.kind === 'zone').sort((a, b) => zoneRank(a.team) - zoneRank(b.team) || a.label.localeCompare(b.label, 'zh-Hant')).map(r => r.label),
   chat: () => ({ key: chat.key, rev: chat.rev, items: chat.data ? chat.data.items.length : 0, tab: panelTab, sending: chat.sending }),

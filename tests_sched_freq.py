@@ -237,8 +237,8 @@ check("a label is a file name, not a path", [sv.valid_label(x) for x in ("demo.b
       == [True, True, False, False, False, False, False, False])
 c = sv.parse_config({"prefixes": ["demo.", "co.", 7], "titles": {"demo.a": " A ", "demo.b": 3, "demo.c": ""},
                      "groups": {"g": ["demo.a", "demo.b"], "solo": ["demo.a"], "bad": "x", "paths": ["../x", "demo.a"]}})
-check("only well-formed parts are kept", c == {"prefixes": ["demo."], "titles": {"demo.a": "A"}, "groups": {"g": ["demo.a", "demo.b"]}}, c)
-check("junk is an empty config", sv.parse_config(["x"]) == {"prefixes": [], "titles": {}, "groups": {}} and sv.parse_config(None)["prefixes"] == [])
+check("only well-formed parts are kept", c == {"prefixes": ["demo."], "titles": {"demo.a": "A"}, "groups": {"g": ["demo.a", "demo.b"]}, "owners": {}}, c)
+check("junk is an empty config", sv.parse_config(["x"]) == {"prefixes": [], "titles": {}, "groups": {}, "owners": {}} and sv.parse_config(None)["prefixes"] == [])
 with tempfile.TemporaryDirectory() as td:
     p = Path(td) / "schedules.json"
     check("no file: nothing configured, not an error", sv.read_config(p) == (sv.parse_config({}), ""))
