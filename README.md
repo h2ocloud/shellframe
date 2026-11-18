@@ -29,7 +29,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **Image/file paste** | `Cmd+V` screenshots, Finder files, or drag & drop. Preview bar + auto-attach on Enter. |
 | **Multi-tab** | Multiple CLI sessions side by side. Named tabs, drag reorder. |
 | **tmux persistence** | Sessions run inside tmux. Close ShellBot → reopen → all tabs and scrollback survive. (Windows restores the tab list; Claude Code and Codex reattach to their conversation, scrollback is not kept.) |
-| **Telegram bridge** | One TG bot routes across all sessions. `/list`, `/1 /2` to switch, voice messages (STT), file/photo forwarding. |
+| **Telegram bridge** | One TG bot routes across all sessions. `/list`, `/1 /2` to switch, voice messages (STT), file/photo forwarding. **Reply** to a message and it goes to whoever sent it, not to the tab you have selected: a tab's own message goes back to that tab, a scheduled script's push to the bot that looks after that schedule (`owners` in `schedules.json`; a script registers its push with `sfctl tg-push`), and when nobody is known you pick from buttons. The selected tab does not change. [docs/ai-skill.md](docs/ai-skill.md) |
 | **Status lights** | Each AI tab shows whether it is working, waiting on you, stuck or done, read from the CLI's own conversation log and the screen. |
 | **Session rename** | Double-click tab or sidebar to name sessions. Syncs to TG `/list`. |
 | **Ctrl+Click file paths** | Click local file paths in terminal output to open in default app. |
@@ -63,7 +63,7 @@ Terminal-based AI assistants can't receive screenshots from your clipboard. Shel
 | **圖片／檔案貼上** | `Cmd+V` 貼截圖、Finder 檔案，或拖放。預覽列顯示，按 Enter 時自動附上。 |
 | **多分頁** | 多個 CLI 工作階段並排。分頁可命名、拖曳排序。 |
 | **tmux 持久化** | 工作階段跑在 tmux 裡。關掉 ShellBot 再打開，所有分頁和捲動紀錄都還在。（Windows 保留分頁清單，Claude Code、Codex 會接回對話，捲動紀錄不會留。） |
-| **Telegram 橋接** | 一個 Telegram bot 串起所有工作階段：`/list`、`/1 /2` 切換、語音訊息（STT）、檔案和照片轉傳。 |
+| **Telegram 橋接** | 一個 Telegram bot 串起所有工作階段：`/list`、`/1 /2` 切換、語音訊息（STT）、檔案和照片轉傳。對訊息按「回覆」，會送給發那則訊息的人，不是你目前選的分頁：分頁自己的訊息回到那個分頁，排程腳本的推播交給負責那個排程的 bot（`schedules.json` 的 `owners`；腳本用 `sfctl tg-push` 登記它的推播），都不認得時用按鈕選。你選的分頁不會變。[docs/ai-skill.md](docs/ai-skill.md) |
 | **狀態燈** | 每個 AI 分頁顯示它是在做事、等你、卡住還是做完，從 CLI 自己的對話紀錄和畫面判斷。 |
 | **工作階段改名** | 雙擊分頁或側欄命名，同步到 TG `/list`。 |
 | **Ctrl+點擊檔案路徑** | 點終端機輸出裡的本機檔案路徑，用預設程式打開。 |

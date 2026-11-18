@@ -29,6 +29,7 @@ import time
 
 import agent_link
 import sf_lang
+import tg_reply_route
 
 SEND = None                  # tests replace the Telegram call
 RATE_PER_HOUR = 20
@@ -48,7 +49,7 @@ def _api(bridge):
     return getattr(bridge, "home_api", None)
 
 
-def _tg(bridge, method: str, payload: dict):
+def _tg(bridge, method: str, payload: dict, timeout: float = None):
     if method == "sendMessage" and "disable_notification" not in payload:
         try:      # the phone rings for it already (sf_push.telegram_quiet: push working, quiet asked for)
             import sf_push
@@ -59,7 +60,7 @@ def _tg(bridge, method: str, payload: dict):
     if SEND:
         return SEND(method, payload)
     import bridge_telegram
-    return bridge_telegram.tg_api(bridge.config.bot_token, method, payload)
+    return bridge_telegram.tg_api(bridge.config.bot_token, method, payload, **({"timeout": timeout} if timeout else {}))
 
 
 def settings(api) -> dict:
@@ -529,6 +530,7 @@ def opened(bridge, sid, text, chat_id, result):
     a different one retires the older: its buttons go and a tap on them is refused,
     since it would be read as the answer to the new question."""
     mid = ((result or {}).get("result") or {}).get("message_id")
+    tg_reply_route.note_tab(bridge, sid, chat_id, text, result)
     old = []
     with _lock:
         cur = _open.get(sid)
@@ -615,7 +617,8 @@ def push_decision(bridge, slot, reason: str = ""):
                 slot.pending_menu = True
                 bridge._send_choice_menu(chat_id, slot, f"{head}\n{menu}")
             else:
-                _tg(bridge, "sendMessage", {"chat_id": chat_id, "text": head + (f"：{reason}" if reason else "")})
+                note = head + (f"：{reason}" if reason else "")
+                tg_reply_route.note_tab(bridge, slot.sid, chat_id, note, _tg(bridge, "sendMessage", {"chat_id": chat_id, "text": note}))
         except Exception:
             pass
 
@@ -662,6 +665,7 @@ def tg_send(api, text: str, from_sid: str) -> dict:
     sent = 0
     for chat_id in _chats(bridge):
         r = _tg(bridge, "sendMessage", {"chat_id": chat_id, "text": f"⭐ {label}：{text[:3900]}"}) or {}
+        tg_reply_route.note_tab(bridge, from_sid, chat_id, text, r)
         sent += 1 if r.get("ok", True) else 0
     return {"success": sent > 0, "message": sf_lang.pick(f"Sent to {sent} chat(s)", f"已送到 {sent} 個對話"),
             "details": {"chats": sent}}

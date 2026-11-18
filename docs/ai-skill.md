@@ -240,6 +240,62 @@ if delivery fails it only warns on stderr and still exits 0, so calling it at th
 a task can never break the task. `--dry-run` shows the (masked) target and payload and
 sends nothing.
 
+### Push to the person's Telegram from a script, and where their reply goes
+
+A scheduled script (a LaunchAgent, a cron job) that reports to Telegram with its own Bot API call
+leaves ShellBot not knowing who sent it, so the person's Telegram **Reply** to it landed in whatever
+tab they had selected. `sfctl tg-push` sends the same message and registers it:
+
+```bash
+sfctl tg-push --from demo.report "Nightly report failed: board API unreachable (HTTP 401)"
+sfctl tg-push --from demo.report --env-file ~/jobs/report.env --chat 123456789 - < report.txt
+```
+
+- `--from <schedule id>`: the schedule's id, the launchd label the Loops panel shows (a group id works too).
+- ShellBot running: the app sends it to the person's bound chat and registers it. Not running (or it
+  could not): the command sends it with the Bot API itself and writes the registry file. That needs
+  the token **in the calling environment only**: the variable `--token-var` names (default
+  `BOT_TOKEN`), or the same name among the `KEY=VALUE` lines of `--env-file` (read, never exported or
+  copied), and the chat from `--chat` or `CHAT_ID`. The token is not printed, logged or stored; an error
+  says why without it.
+- The text is an argument, or `-` (or nothing) to read stdin. A text over Telegram's cap is split
+  like the bridge's replies, every part registered.
+- Exit 0 when it was sent, 1 when not, so a script keeps its old line as the fallback:
+  `sfctl tg-push --from demo.report "$MSG" || curl … "$OLD_API_CALL"`. No rate limit and no quiet hours
+  (those are `tg-send`'s, for an agent talking on its own).
+
+**Where a Telegram reply goes.** When the person replies (Telegram's "Reply") to a message the bot
+sent, ShellBot looks the message up before it picks a tab. `tg_origins.json` in the config folder
+remembers, for 14 days (5,000 messages at most), where each message came from: a tab's replies and
+notices (`kind: tab`, with its bot), `sfctl tg-send`, a `tg-push` (`kind: schedule`). Only ids, a time
+and the first 40 characters are kept.
+
+| The replied-to message came from | The reply goes to |
+|---|---|
+| the tab already selected | the old flow, nothing added |
+| another open tab | that tab (its bot's tab if the id was reused) |
+| a closed tab of a bot, or a bot that sleeps | that bot, woken; the message goes in once it is up |
+| a schedule | the bot `owners` in `schedules.json` names for it (the schedule's, else its group's, `group:<id>`) |
+| nobody known (no owner, an unregistered push) | "這則要交給誰？": the bots as buttons and 目前分頁; held 10 minutes |
+| the person's own message, another bot, a slash command | the old flow |
+
+What the tab reads is `（Telegram：這是對排程 <id> 推播的回覆）`, then `原推播：「<the first 300 characters>…」`,
+then `使用者的回覆：<their words>` (for a tab: `這是對這個分頁先前訊息的回覆` and `原訊息：`). A bare digit for a
+tab that shows a numbered menu goes in as it is. Telegram gets one line, `→ 已交給 <name>`. It is
+one-off: the selected tab and the person's `/N` pick do not change, and for an hour the target's answers
+also reach that chat. Files and voice in a reply follow it.
+
+**Pushes nobody registered yet.** A script you have not changed still sends with its own call. Name
+its pushes in `tg_reply_rules.json` (config folder), the person's data, nothing is built in:
+
+```json
+[{"prefix": "Nightly report", "schedule": "demo.report"},
+ {"prefix": "Backup", "bot": "ops"}]
+```
+
+A replied-to message whose text starts with `prefix` (whitespace stripped) counts as that schedule's
+(then its `owners` entry decides) or goes to that bot (id or name). Ask the person before you write it.
+
 ## 4. Drive another computer's tabs
 
 Two ShellFrames pair once with a one-time code (§ `docs/frame-link.md`). After
@@ -477,7 +533,8 @@ the person asks to see their schedules in the panel:
   named for the last part of the label.
 - `owners` (optional): a label, or a group id, to the bot (id or name) that looks after the
   job. The office calendar shows it and sends that bot the person's change requests; it is
-  not an access rule. A job without one shows "未指定" there.
+  not an access rule. A job without one shows "未指定" there. A Telegram reply to the job's
+  push (`sfctl tg-push --from <label>`) goes to this bot too (see "Push to the person's Telegram").
 - `groups` (optional): one-offs that are armed together. Without it, one-offs that run the
   same script on the same month and day are grouped by themselves.
 
@@ -605,6 +662,7 @@ you as an ordinary message in your tab.
 | Pairing from the command line: `sfctl link-pair --mode duplex|host|member`, `link-join`, `link-enable` | 0.55.2 |
 | No new commands: the office's whiteboard (sticky notes by priority; 我做好了 / 留言 on a card) and wall calendar (day / week / month, an owner per entry; `schedules.json` may name `owners`) | 0.56.0 |
 | No new commands: each paired computer's room in the office shows its main bot and a read-only whiteboard of that computer's tasks (`link_peer_tasks`, GET /link/tasks; both computers need 0.57.0) | 0.57.0 |
+| `sfctl tg-push --from <schedule id> [--env-file PATH] [--token-var NAME] [--chat ID] "text"`: a script's Telegram message, registered; a Telegram reply to a push (a tab's, a schedule's) goes to its tab or the schedule's `owners` bot instead of the selected tab (`tg_origins.json`, `tg_reply_rules.json`) | 0.58.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

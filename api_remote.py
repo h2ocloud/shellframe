@@ -24,6 +24,7 @@ import agent_status
 import a2a_host
 import agent_link
 import bridge_home
+import tg_reply_route
 import sf_lang
 import link_usage
 import tab_delivery
@@ -1405,6 +1406,9 @@ class RemoteApiMixin:
             return self._push_notify(args)
         elif cmd == "tg_send":
             return bridge_home.tg_send(self, str(args.get("text") or ""), str(args.get("from_sid") or ""))
+        elif cmd == "tg_push":                        # sfctl tg-push: a script's message, registered (tg_reply_route)
+            return tg_reply_route.tg_push(self, str(args.get("text") or ""), str(args.get("schedule") or ""),
+                                          str(args.get("chat") or ""))
         elif cmd == "chat_remote":                    # POST /link/chat: a paired computer's chat view (api_chat)
             return self._chat_remote(args)
         elif cmd == "connect":                        # sfctl connect list|status|start|test|disconnect (api_connect)

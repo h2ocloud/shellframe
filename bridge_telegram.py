@@ -58,6 +58,8 @@ import bridge_delivery
 import bridge_home   # the primary bot's place here (routing, decisions, pairing)
 import bridge_menu   # the command menu is sent off the thread that changed the tabs
 import bridge_queue  # a message for a busy tab waits (30 min, ⚡ to cut in)
+import tg_reply_route  # a Telegram reply to a push goes to whoever made it, not the selected tab
+from tg_origins import split_for_telegram  # noqa: F401  (moved to the leaf sfctl tg-push shares)
 
 try:
     import agent_link  # agent-to-agent messaging rules (experimental)
@@ -380,33 +382,6 @@ def clean_mobile_marker_response(text: str, markers=()) -> str:
         lines.append(stripped)
     return "\n".join(lines).strip()
 
-
-
-def split_for_telegram(text: str, limit: int = 3900) -> list:
-    """Split text into <=limit-char chunks at line boundaries so long replies
-    are sent as multiple Telegram messages instead of being truncated.
-
-    Telegram's hard cap is 4096 chars/message; 3900 leaves headroom for the
-    session-label prefix. A single oversized line is hard-split as a last
-    resort. Never drops content.
-    """
-    text = text or ""
-    if len(text) <= limit:
-        return [text]
-    chunks, buf = [], ""
-    for line in text.split("\n"):
-        while len(line) > limit:
-            if buf:
-                chunks.append(buf); buf = ""
-            chunks.append(line[:limit]); line = line[limit:]
-        piece = ("\n" + line) if buf else line
-        if len(buf) + len(piece) > limit:
-            chunks.append(buf); buf = line
-        else:
-            buf += piece
-    if buf:
-        chunks.append(buf)
-    return chunks
 
 
 def _parse_duration(s: str):
@@ -2724,6 +2699,7 @@ class TelegramBridge(BridgeBase):
                     try:
                         r = tg_api(self.config.bot_token, "sendMessage",
                                    {"chat_id": chat_id, "text": banner})
+                        tg_reply_route.note_tab(self, slot.sid, chat_id, banner, r)
                         _blog(f"[signal-tg] {slot.sid} {sig_state} "
                               f"chat={chat_id} ok={r.get('ok')}\n")
                     except Exception as e:
@@ -2894,7 +2870,7 @@ class TelegramBridge(BridgeBase):
         for chat_id in target_chats:
             try:
                 if info["interactive"]:
-                    tg_api(self.config.bot_token, "sendMessage", {
+                    r = tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id,
                         "text": msg,
                         "reply_markup": {"inline_keyboard": [
@@ -2905,9 +2881,10 @@ class TelegramBridge(BridgeBase):
                         ]},
                     })
                 else:
-                    tg_api(self.config.bot_token, "sendMessage", {
+                    r = tg_api(self.config.bot_token, "sendMessage", {
                         "chat_id": chat_id, "text": msg,
                     })
+                tg_reply_route.note_tab(self, slot.sid, chat_id, msg, r)
                 _blog(f"[rate-limit] {slot.sid} notified chat={chat_id}\n")
             except Exception as e:
                 _blog(f"[rate-limit] {slot.sid} notify failed: {e}\n")
@@ -3104,7 +3081,7 @@ class TelegramBridge(BridgeBase):
             for uid, chat_id in list(self._user_chat.items()):
                 if uid not in self._user_active:
                     chats.add(chat_id)
-        return chats
+        return chats | tg_reply_route.guest_chats(sid)    # a one-off reply sent here: its answer goes back
 
     # TG flood-wait 的 description 形狀：'Too Many Requests: retry after 12'
     _RETRY_AFTER_RE = re.compile(r'retry after (\d+)', re.I)
@@ -3138,6 +3115,7 @@ class TelegramBridge(BridgeBase):
                       {"chat_id": chat_id, "text": text},
                       timeout=self._SEND_TIMEOUT_S)
         if resp.get("ok"):
+            tg_reply_route.note_tab(self, sid, chat_id, text, resp)     # a reply to it goes back to this tab
             return True, 0.0, False
         desc = str(resp.get("description") or "")
         m = self._RETRY_AFTER_RE.search(desc)
@@ -3149,6 +3127,7 @@ class TelegramBridge(BridgeBase):
                           {"chat_id": chat_id, "text": text},
                           timeout=self._SEND_TIMEOUT_S)
             if resp.get("ok"):
+                tg_reply_route.note_tab(self, sid, chat_id, text, resp)
                 return True, 0.0, False
             desc = str(resp.get("description") or "")
             m = self._RETRY_AFTER_RE.search(desc)
@@ -3276,8 +3255,8 @@ class TelegramBridge(BridgeBase):
               f"state={status_line[:40]!r} preview={bool(preview)}\n")
         for chat_id in chats:
             try:
-                tg_api(self.config.bot_token, "sendMessage",
-                       {"chat_id": chat_id, "text": text}, timeout=10)
+                tg_reply_route.note_tab(self, sid, chat_id, text, tg_api(
+                    self.config.bot_token, "sendMessage", {"chat_id": chat_id, "text": text}, timeout=10))
             except Exception as e:
                 _blog(f"[heartbeat] {sid} send to {chat_id} failed: {e}\n")
 
@@ -3799,7 +3778,8 @@ class TelegramBridge(BridgeBase):
                                     retry_after = max(retry_after, ra)
                         # Send detected files as documents
                         for fp in file_paths:
-                            self._send_tg_file(chat_id, fp)
+                            tg_reply_route.note_tab(self, sid, chat_id, _Path(fp).name,
+                                                 self._send_tg_file(chat_id, fp))
                     except Exception as e:
                         retryable_fail = True
                         _blog(f"[flush] {sid} send to {chat_id} failed "
@@ -4094,10 +4074,10 @@ class TelegramBridge(BridgeBase):
         """Send a detected CLI approval/menu prompt as Telegram inline buttons."""
         options = list(getattr(slot, 'pending_menu_options', []) or [])
         if not options:
-            tg_api(self.config.bot_token, "sendMessage", {
+            tg_reply_route.note_tab(self, slot.sid, chat_id, text, tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
                 "text": text + "\n\n回覆數字也可以。",
-            })
+            }))
             return
         keyboard = []
         row = []
@@ -4198,7 +4178,7 @@ class TelegramBridge(BridgeBase):
                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
             )
             with urllib.request.urlopen(req, timeout=60) as resp:
-                resp.read()
+                return json.loads(resp.read().decode("utf-8", "replace"))      # Telegram's answer: the caller registers its message
         except Exception as e:
             _blog(f"_send_tg_file error: {file_path} -> {e}\n")
 
@@ -5039,7 +5019,8 @@ class TelegramBridge(BridgeBase):
                 "callback_query_id": cq_id, "text": "Access denied"})
             return
 
-        if bridge_home.on_choice(self, data, chat_id, message_id, cq_id) or bridge_home.on_list_button(self, data, chat_id, cq_id):
+        if (bridge_home.on_choice(self, data, chat_id, message_id, cq_id) or bridge_home.on_list_button(self, data, chat_id, cq_id)
+                or tg_reply_route.on_callback(self, data, chat_id, message_id, cq_id)):
             return
         # Always ack the callback so TG stops the spinner
         tg_api(self.config.bot_token, "answerCallbackQuery", {"callback_query_id": cq_id})
@@ -5243,6 +5224,7 @@ class TelegramBridge(BridgeBase):
                 "text": pending["text"],
                 "from": {"id": pending["user_id"]},
                 "chat": {"id": pending["chat_id"]},
+                "reply_to_message": pending.get("reply_to"),      # still a reply to that push
             }}
             threading.Thread(
                 target=self._handle_update, args=(synthetic,), daemon=True).start()
@@ -5513,7 +5495,7 @@ class TelegramBridge(BridgeBase):
         self._user_chat[user_id] = chat_id
 
         # ── Handle photo / document / video / voice / file messages ──
-        file_paths = []
+        file_paths = list(msg.get("_sf_files") or [])      # a message held or woken for (tg_reply_route) brings its files
         has_photo = bool(msg.get("photo"))
         has_doc = bool(msg.get("document"))
         has_voice = bool(msg.get("voice"))       # TG voice note (ogg/opus)
@@ -5600,6 +5582,7 @@ class TelegramBridge(BridgeBase):
                         token = str(self._voice_seq)
                         self._pending_voice[token] = {
                             "text": fwd_text, "user_id": user_id, "chat_id": chat_id,
+                            "reply_to": msg.get("reply_to_message"),
                         }
                         body = f"🎙 {refined[:800]}{'…' if len(refined) > 800 else ''}"
                         if refined.strip() != transcribed.strip():
@@ -5706,15 +5689,23 @@ class TelegramBridge(BridgeBase):
             return
 
         # ── Forward message to active session ──
-        if bridge_home.wake_for(self, user_id, chat_id, update):
+        # A reply to a push goes to whoever made it (tg_reply_route); the selected tab stays as it is.
+        route = tg_reply_route.intercept(self, update, msg, user_id, chat_id, text, file_paths)
+        if route is tg_reply_route.STOP:
+            return
+        if route:
+            text = tg_reply_route.wrap(self, route, text)
+        if not route and bridge_home.wake_for(self, user_id, chat_id, update):
             return
         active_sid = self.get_active_sid(user_id)
         # Ensure user is tracked in _user_active (so flush/typing can find them)
         # ——但重啟後使用者原本選的分頁還沒註冊（pending）時不要把「第一格」
         # 寫成他的選擇，不然等那個分頁註冊進來也補不回去，錯的落點會黏住。
-        if (active_sid and user_id not in self._user_active
+        if (active_sid and not route and user_id not in self._user_active
                 and user_id not in (getattr(self, "_pending_user_active", None) or {})):
             self._user_active[user_id] = active_sid
+        if route:
+            active_sid = route["sid"]          # this message only: the selected tab stays as it is
         if not active_sid or active_sid not in self.slots:
             tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id,
@@ -6108,12 +6099,11 @@ class TelegramBridge(BridgeBase):
                 "text": f"（剛剛那則沒有送進「{slot.label}」，回答完再重發一次）",
             }, timeout=10)
             return
-        tg_api(self.config.bot_token, "sendMessage", {
-            "chat_id": chat_id,
-            "text": (f"⚠「{slot.label}」還卡在{reason}，這則沒有送進去。\n"
-                     "先把那個對話框處理掉再重發——硬送會被當成在對話框裡選"
-                     "項目，分頁可能因此被關掉。"),
-        }, timeout=10)
+        text = (f"⚠「{slot.label}」還卡在{reason}，這則沒有送進去。\n"
+                "先把那個對話框處理掉再重發——硬送會被當成在對話框裡選"
+                "項目，分頁可能因此被關掉。")
+        tg_reply_route.note_tab(self, slot.sid, chat_id, text, tg_api(
+            self.config.bot_token, "sendMessage", {"chat_id": chat_id, "text": text}, timeout=10))
 
     def _offer_trust_buttons(self, sid: str, chat_id, label: str, reason: str = ""):
         """把 CLI 的啟動信任對話框帶回 TG，用 inline 按鈕讓使用者直接回答。
@@ -6129,16 +6119,17 @@ class TelegramBridge(BridgeBase):
                 return False
             slot.trust_prompt_sent = True
         tail = f"（{reason}）" if reason else ""
-        tg_api(self.config.bot_token, "sendMessage", {
+        ask = (f"❓「{label}」停在 Claude Code 的信任對話框{tail}。\n"
+               "這個對話框游標預設在「No, exit」，硬送訊息會把分頁關掉，"
+               "所以先在這裡回答：")
+        tg_reply_route.note_tab(self, sid, chat_id, ask, tg_api(self.config.bot_token, "sendMessage", {
             "chat_id": chat_id,
-            "text": (f"❓「{label}」停在 Claude Code 的信任對話框{tail}。\n"
-                     "這個對話框游標預設在「No, exit」，硬送訊息會把分頁關掉，"
-                     "所以先在這裡回答："),
+            "text": ask,
             "reply_markup": {"inline_keyboard": [[
                 {"text": "✅ 信任這個資料夾", "callback_data": f"trust:{sid}:yes"},
                 {"text": "✕ 關掉分頁", "callback_data": f"trust:{sid}:no"},
             ]]},
-        })
+        }))
         return True
 
     def _wait_input_safe(self, slot, timeout: float = 20.0) -> str:
@@ -6869,9 +6860,9 @@ class TelegramBridge(BridgeBase):
             # Don't pin (v0.11.58: the pinned banner in chat is noisy
             # and rarely useful — the message itself is enough; user scrolls
             # if they need to find it).
-            tg_api(self.config.bot_token, "sendMessage", {
+            tg_reply_route.note_tab(self, active_sid, chat_id, msg_text, tg_api(self.config.bot_token, "sendMessage", {
                 "chat_id": chat_id, "text": msg_text,
-            })
+            }))
 
         elif cmd in ("rename", "改名"):
             # /rename <新名稱> — 改 active 分頁；/rename <編號> <新名稱> — 改指定

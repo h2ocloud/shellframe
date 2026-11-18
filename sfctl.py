@@ -764,6 +764,28 @@ def _cmd_notify(args) -> int:
     return 0
 
 
+def _app_running() -> bool:
+    """A ShellBot process is up (its pid file names a live process); no wait, unlike _rpc."""
+    if _tests_running():
+        return False
+    try:
+        with open(PID_FILE, encoding="utf-8") as f:
+            pid = int(f.read().strip())
+        if sys.platform != "win32":
+            os.kill(pid, 0)
+            return True
+        import ctypes          # signal 0 is CTRL_C_EVENT on Windows: ask the process table instead
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)      # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return bool(ok) and code.value == 259          # STILL_ACTIVE
+    except Exception:
+        return False
+
+
 def _cmd_task(args) -> int:
     """sfctl task …: the app does the work (it knows which bot this tab is); see api_tasks.py."""
     words = list(args.words or [])
@@ -883,6 +905,13 @@ def main():
     p_tgs = sub.add_parser("tg-send", help="The primary bot tells the user's phone (a milestone, a result); "
                                            "only from the primary bot's tab, 20 an hour, not during quiet hours")
     p_tgs.add_argument("text", help="What to send")
+    p_tgp = sub.add_parser("tg-push", help="A script's message to the user's Telegram, registered so a Telegram reply to it "
+                                           "goes to that schedule's owner bot; exit 1 when it was not sent (see docs/ai-skill.md)")
+    p_tgp.add_argument("--from", dest="sched", required=True, metavar="SCHEDULE_ID", help="The schedule's id (its launchd label)")
+    p_tgp.add_argument("--env-file", default="", help="KEY=VALUE lines to read the token and CHAT_ID from (read, not exported)")
+    p_tgp.add_argument("--token-var", default="BOT_TOKEN", help="The variable that holds the bot token (default BOT_TOKEN)")
+    p_tgp.add_argument("--chat", default="", help="The chat id (default: CHAT_ID)")
+    p_tgp.add_argument("text", nargs="?", default=None, help='The text, or "-" (or nothing) to read it from stdin')
     p_bsave = sub.add_parser("bots-save", help="Make a roster role a bot, or change one (the bot editor's save; "
                                                "fields you leave out keep their value)")
     p_bsave.add_argument("role", help="Roster role (created if it does not exist)")
@@ -1162,6 +1191,10 @@ def main():
         return _cmd_task(args)
     elif args.cmd == "tg-send":
         _print_result(_rpc("tg_send", {"text": args.text, "from_sid": os.environ.get("SF_SID", "")}, timeout=20))
+    elif args.cmd == "tg-push":
+        _load_sf_notify()          # puts the install directory on sys.path
+        import tg_push
+        return tg_push.cli(args, _rpc, _app_running)
     elif args.cmd == "bots-save":
         _print_result(_rpc("bots_save", {"role": args.role, "data": args.data, "bind": args.bind}, timeout=15))
     elif args.cmd == "bots-keep":
