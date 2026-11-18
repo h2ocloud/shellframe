@@ -446,6 +446,10 @@ button.who:hover{background:rgba(122,162,247,.28)}
 .wmsg.bad{color:#a3122a;font-weight:700}
 .wform .wrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .wform .wk{font-size:12.5px;color:rgba(31,36,51,.6);margin-left:auto}
+/* 隔壁電腦的白板：唯讀，卡底一段說明、一顆「跟 … 說」；連不上時板子上面一行字 */
+.wcard .wpeer{margin-top:8px;display:grid;gap:8px;font-size:14.5px;line-height:1.55;color:rgba(31,36,51,.85);border-top:1.5px dashed rgba(31,36,51,.35);padding-top:10px}
+.wcard .wpeer .wb-actions{margin-top:0}
+.wpeer-banner{margin:2px 0 8px;padding:6px 12px;border-radius:8px;background:rgba(255,224,102,.55);border:1.5px dashed rgba(138,67,16,.6);font:700 16px/1.4 var(--marker);color:#6b4300}
 /* 筆槽 */
 .wtray{display:none;position:relative;flex:none;height:46px;z-index:1;background:linear-gradient(180deg,#e5e8ec,#b2b8c1 55%,#9aa1ac);border-top:1px solid rgba(0,0,0,.3);box-shadow:0 -6px 10px -6px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.8)}
 #wall[data-view=board] .wtray{display:block}
@@ -878,7 +882,7 @@ const SEAT_HOLD_MS = 60 * 60 * 1000;          // 離開的 bot 位子保留多�
 const M = {
   loaded: false, ver: 0, gen: 0,
   ents: new Map(),      // key → 人：'b:'本機正職、't:'實習生、'h:'工讀生（subagent）、'p:電腦/id' 隔壁正職、'q:電腦/id' 隔壁實習生
-  peers: new Map(),     // id → { id, name, order:[key], assign: Map(key → idx) }
+  peers: new Map(),     // id → { id, name, assign: Map(key → 座位序號), primaryKey/primaryName（主要 bot，坐第 0 位）, board/boardState/…（那台的白板，§11.7）}
   handoffs: new Map(),  // id → { id, from, to, title, status, landed }
   zones: [],            // { key:'工程組#2', team, n }（建立順序）
   assign: new Map(),    // 正職 id → { zone, slot }
@@ -916,8 +920,16 @@ function assignSeats() {
   for (const id of [...M.tempSeat.keys()]) if (!M.ents.get('t:' + id)) M.tempSeat.delete(id);
   for (const e of temps.sort(byCreated)) { if (M.tempSeat.has(e.id)) continue; const u = new Set(M.tempSeat.values()); let i = 0; while (u.has(i)) i++; M.tempSeat.set(e.id, i); }
   // 隔壁：每台電腦自己排
-  for (const pe of M.peers.values()) { const mine = [...M.ents.values()].filter(e => e.peerId === pe.id).sort((a, b) => (a.kind === 'peertemp') - (b.kind === 'peertemp') || byCreated(a, b));
+  for (const pe of M.peers.values()) {
+    const all = [...M.ents.values()].filter(e => e.peerId === pe.id), pm = all.filter(e => e.kind === 'peer' && !e.gone && e.who.primary).sort(byCreated)[0];   // 每台電腦至多一位主要 bot（有兩位取最早的）；沒有就沒有
+    pe.primaryKey = pm ? pm.key : ''; pe.primaryName = pm ? pm.who.name : '';
+    const mine = all.sort((a, b) => (a.kind === 'peertemp') - (b.kind === 'peertemp') || ((b === pm) - (a === pm)) || byCreated(a, b));
     for (const k of [...pe.assign.keys()]) if (!M.ents.get(k)) pe.assign.delete(k);
+    if (pm && pe.assign.get(pm.key) !== 0) {   // 主要 bot 坐這間房的第一個（最前面）座位：原本坐那裡的人換去他的舊位子
+      const cur = pe.assign.get(pm.key), at0 = [...pe.assign].find(([k, i]) => i === 0 && k !== pm.key);
+      if (at0) { if (cur != null) pe.assign.set(at0[0], cur); else pe.assign.delete(at0[0]); }
+      pe.assign.set(pm.key, 0);
+    }
     for (const e of mine) { if (pe.assign.has(e.key)) continue; const u = new Set(pe.assign.values()); let i = 0; while (u.has(i)) i++; pe.assign.set(e.key, i); } }
   // 每個人的座位代號
   for (const e of M.ents.values()) {
@@ -946,8 +958,8 @@ function layout() {
   for (const pe of M.peers.values()) {
     let n = 3; for (const i of pe.assign.values()) n = Math.max(n, i + 1);
     const cols = Math.min(4, n), rows = Math.ceil(n / 4), w = .9 + cols * COLP + .9, h = .6 + rows * ROWP + .5;
-    setRoom('peer:' + pe.id, { kind: 'peer', label: '隔壁：' + pe.name, tx: .8, ty: py, tw: w, th: h, wallH: 40, peerId: pe.id });
-    for (let i = 0; i < n; i++) seat({ key: `p:${pe.id}:${i}`, room: 'peer:' + pe.id, lx: .9 + (i % 4) * COLP, ly: .6 + Math.floor(i / 4) * ROWP, w: 1.5, h: .8, face: 'ny' });
+    setRoom('peer:' + pe.id, { kind: 'peer', label: '隔壁：' + pe.name, tx: .8, ty: py, tw: w, th: h, wallH: 40, peerId: pe.id, primary: pe.primaryName || '' });
+    for (let i = 0; i < n; i++) seat({ key: `p:${pe.id}:${i}`, room: 'peer:' + pe.id, lx: .9 + (i % 4) * COLP, ly: .6 + Math.floor(i / 4) * ROWP, w: 1.5, h: .8, face: 'ny', big: i === 0 && !!pe.primaryKey });
     py += h + G;
   }
   const lobbyColY = M.peers.size ? py - G : LH;
@@ -1151,7 +1163,9 @@ function drawRoomShell(x, r, far) {
     wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 4, null, teamCol(r.team));
     poly(x, wq(r.x, r.y, r.x + r.w, r.y, 0, 1, Hh - 8, Hh - 4), alpha(teamCol(r.team), .55));   // 團隊色帶
     if (r.h > 4) wallFace(x, r.x, r.y, r.x, r.y + r.h, Hh, 2, null, teamCol(r.team));
-  } else wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 3, i => i === 0, COL.teal);
+  } else { const pe = M.peers.get(r.peerId), hasB = !!(pe && pe.boardState);
+    wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 3, i => i === 0 || (hasB && i === 1), COL.teal);                    // 有白板的房間：中間那扇窗讓給白板
+    if (hasB) drawPeerBoard(x, r, pe); }
 }
 
 /* ══════════ 7. 家具與人物（近景）══════════ */
@@ -1159,7 +1173,8 @@ const DESK = { t: '#3a3f5c', l: '#2a2e45', r: '#22263a' }, BIGDESK = { t: '#4a40
 const CHAIR = { t: '#2f3349', l: '#282b40', r: '#202336' }, CHAIRB = { t: '#3d425f', l: '#363b56', r: '#2c3048' }, MON = { t: '#2a2d40', l: '#16161e', r: '#16161e' };
 const EDGE = 'rgba(192,202,245,.10)';
 const deskH = g => g.big ? 22 : 20;
-const pScale = e => lerp(.9, 1, V.m) * (e && e.kind === 'helper' ? .8 : e && e.kind === 'bot' && e.who.primary ? 1.3 : 1.12);
+const isPeerMain = e => !!e && e.kind === 'peer' && !e.gone && (M.peers.get(e.peerId) || {}).primaryKey === e.key;   // 隔壁電腦的主要 bot
+const pScale = e => lerp(.9, 1, V.m) * (e && e.kind === 'helper' ? .8 : (e && e.kind === 'bot' && e.who.primary) || isPeerMain(e) ? 1.3 : 1.12);
 function faceVec(g) { const a = P(g.cx, g.cy), b = P(g.cx + g.f.x, g.cy + g.f.y), dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; }
 function monitorGeo(g) {
   const H = deskH(g);
@@ -1521,7 +1536,7 @@ function tagsOf(e) {
 
 /* ══════════ 10. 狀態統計與高亮（只算分頁層的狀態；小時鐘不算卡住）══════════ */
 let hl = null, follow = null, followCam = false, hoverKey = null;
-let view = null, hoverObj = null, hoverPt = null;   // 牆上的檢視（'board' | 'cal'）、滑鼠停在哪件牆上的東西（§11.7）
+let view = null, vscope = null, hoverObj = null, hoverPt = null;   // 牆上的檢視（'board' | 'cal'；vscope：看板是哪台隔壁電腦的，本機的是 null）、滑鼠停在哪件牆上的東西（'board' | 'cal' | 'board:<電腦 id>'）（§11.7）
 const matches = (k, e) => k === 'idle' ? (e.st === 'idle' || e.st === 'done') : e.st === k;
 const hlColor = () => ({ working: COL.blue, decision: COL.red, stuck: COL.yellow, idle: COL.green }[hl] || COL.blue);
 const counted = () => [...M.ents.values()].filter(e => !e.gone && !e.leaving);
@@ -1635,7 +1650,7 @@ function renderPanel(force) {
   if (!force && sig === panelSig) return; panelSig = sig;
   const w = e.who, stt = ST[e.st] || ST.idle, temp = e.kind === 'temp' || e.kind === 'peertemp', peer = e.kind === 'peer' || e.kind === 'peertemp', movable = e.kind === 'bot' && e.id !== M.primaryId;
   $('#pAv').src = avatarURL(w, 100);
-  $('#pName').innerHTML = esc(w.name) + (e.kind === 'bot' && e.id === M.primaryId ? ' <span class="star" title="主要 bot">★ 主要</span>' : '');
+  $('#pName').innerHTML = esc(w.name) + ((e.kind === 'bot' && e.id === M.primaryId) || isPeerMain(e) ? ' <span class="star" title="主要 bot">★ 主要</span>' : '');
   $('#pSub').textContent = temp ? `實習生 · ${w.cli}${peer ? ' · 隔壁' : ''}` : peer ? '正職 · ' + (roomOfEnt(e) || {}).label : `正職 · ${seatLabel(e)}`;
   const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
   const ll = loopLine(e.loop), pl = $('#pLoop'); pl.hidden = !ll; pl.innerHTML = ll ? `<span>排程：</span>${esc(ll)}` : '';
@@ -1891,6 +1906,11 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chat
               第一次馬上問，之後最多每 60 秒一次；關掉檢視就不問了（日曆上的數字因此不含它）。
               排程檢視是日／週／月日曆（見「排程日曆」那一節）：人只能開關這台電腦的排程（board.setEnabled）、
               或請負責的 agent 改頻率；其他一律是請 agent 改（board.request＝送一句話到它的分頁），不唯讀也不能直接改。
+   隔壁電腦（配對的每台，各一間房）後牆上也有一塊白板：那台電腦的任務，開起來是同一張白板（'board:<電腦 id>'），但唯讀——
+              不問歷程、沒有「我做好了」「留言」（那些是這台電腦自己的 task_user_act），卡底說要改請跟那台的主要 bot 說
+              （點「跟 … 說」就跟拍它、開對話）。資料是快照的 peers[].board／boardState／boardAt（office.js 的 peerBoardOf，來源 link_peer_tasks，
+              每 9 秒問一次）：ok 照常；pending「讀取中…」；old「那台版本較舊」；denied「沒有開放」；error 留著上次的、說幾分鐘前。
+              沒有 boardState 的電腦（舊版 ShellBot 沒有這個呼叫）房裡就沒有白板。
    檢視不在 renderPanel 裡重畫：用簽章，沒變就不碰 DOM（展開的列、點擊才不會被吃掉）；倒數只改字，由畫面迴圈順手更新。 */
 M.board = null; M.notes = []; M.boardVer = 0; M.notesAt = 0; M.boardJson = ''; M.boardAt = 0; M.loops = []; M.loopsVer = 0; M.loopsJson = '';
 const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
@@ -1903,10 +1923,31 @@ function setBoard(b) {
   const nb = { decisions: listOf(b && b.decisions), stuck: listOf(b && b.stuck), open: listOf(b && b.open) };
   nb.all = nb.decisions.concat(nb.stuck, nb.open);
   const j = JSON.stringify(nb); if (j === M.boardJson) return;
-  M.boardJson = j; M.board = nb; M.boardVer++; M.boardAt = Date.now() / 1000;
+  M.boardJson = j; M.board = nb; M.boardVer++; M.boardAt = nb.at = Date.now() / 1000;
   setNotes();
 }
-function setNotes() { M.notes = boardLanes(nowS()).flatMap(l => l.items).slice(0, NOTE_MAX).map(i => PRIO[i.r.p].col); M.notesAt = nowS(); }   // 一件一張；緊急的排前面
+const notesOf = B => boardLanes(nowS(), B).flatMap(l => l.items).slice(0, NOTE_MAX).map(i => PRIO[i.r.p].col);   // 一件一張；緊急的排前面
+function setNotes() { M.notes = notesOf(M.board); M.notesAt = nowS(); }
+// 隔壁電腦的白板：同一套整理，記在那台的 pe 上（board、boardJson 簽章、boardVer、boardState、bAt＝那邊讀到的時間、notes）
+const PEER_ST = new Set(['ok', 'pending', 'old', 'denied', 'error']);
+function setPeerBoard(pe, b, state, at) {
+  const st = PEER_ST.has(state) ? state : 'error', ssig = st + (st === 'error' ? ':' + (Number(at) || 0) : '');
+  if (b && typeof b === 'object') {
+    const nb = { decisions: listOf(b.decisions), stuck: listOf(b.stuck), open: listOf(b.open) }; nb.all = nb.decisions.concat(nb.stuck, nb.open);
+    const j = JSON.stringify(nb); if (j !== pe.boardJson) { pe.boardJson = j; pe.board = nb; pe.boardVer++; nb.at = Date.now() / 1000; pe.notes = notesOf(nb); pe.notesAt = nowS(); }
+  }
+  if (ssig !== pe.boardSig) { pe.boardSig = ssig; pe.boardVer++; }
+  pe.boardState = st; pe.bAt = Number(at) > 0 ? Number(at) : 0;
+}
+function clearPeerBoard(pe) { if (!pe.boardState && !pe.board) return; pe.board = null; pe.boardJson = ''; pe.boardState = ''; pe.boardSig = ''; pe.bAt = 0; pe.notes = []; pe.boardVer++; }
+const viewPeer = () => (view === 'board' && vscope ? M.peers.get(vscope) || null : null);   // 開著的看板是不是某台隔壁電腦的
+const viewBoard = () => { const pe = viewPeer(); return pe ? pe.board : M.board; };
+const viewVer = () => { const pe = viewPeer(); return pe ? pe.boardVer : M.boardVer; };
+function peerNotice(pe) {                                        // 那台的白板現在是什麼狀況，一句白話
+  const s = pe.boardState, min = pe.bAt > 0 ? Math.max(1, Math.floor((nowS() - pe.bAt) / 60)) : 0;
+  return s === 'pending' ? '讀取中…' : s === 'old' ? '那台的 ShellBot 版本較舊，還看不到它的白板（更新那台之後就有）' : s === 'denied' ? '那台沒有開放給這台看任務'
+    : s === 'error' ? (min ? `暫時連不上，顯示的是 ${min} 分鐘前的內容` : '暫時連不上那台，還沒有讀到它的任務') : '';
+}
 function normLoop(l) {
   const r = l || {}, crons = Array.isArray(r.crons) ? r.crons : [];
   return { kind: r.kind === 'cron' ? 'cron' : 'loop', status: r.status === 'running' ? 'running' : r.kind === 'cron' ? 'scheduled' : 'sleeping', next_ts: Number(r.next_ts) || 0,
@@ -1918,16 +1959,38 @@ function setLoops(list) {
   M.loopsJson = j; M.loops = nl; M.loopsVer++;
 }
 // 畫與點用同一個四邊形（螢幕座標）
-const wallScreen = k => wq(...WALL_OBJ[k].q).map(p => ({ x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }));
+// 牆上的東西：大廳的 'board'、'cal'（固定在 WALL_OBJ），和每台有白板的隔壁電腦後牆上的 'board:<電腦 id>'（跟著那間房，房間移動時一起動）
+function wallObj(k) {
+  if (WALL_OBJ[k]) return WALL_OBJ[k];
+  const m = /^board:(.+)$/.exec(String(k)), pe = m && M.peers.get(m[1]), r = pe && pe.boardState ? M.rooms.get('peer:' + pe.id) : null;
+  if (!r) return null;
+  const x0 = r.x + 2.75;                                                                    // 門（1.2～2.3）和機櫃之間；窗讓出來（drawRoomShell）
+  return { name: pe.name + ' 的白板', q: [x0, r.y, x0 + clamp(r.w - 5.45, 2.6, 3.6), r.y, 0, 1, 16, 38], room: r.id };
+}
+const wallRoom = k => (WALL_OBJ[k] ? 'lobby' : 'peer:' + String(k).slice(6));
+const wallKeys = () => ['cal', 'board', ...[...M.peers.keys()].map(id => 'board:' + id)];
+const wallScreen = k => wq(...wallObj(k).q).map(p => ({ x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }));
 const inPoly = (pts, px, py) => { let r = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[i].y > py) !== (pts[j].y > py) && px < (pts[j].x - pts[i].x) * (py - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x) r = !r; return r; };
 function wallObjAt(sx, sy) {
-  const lobby = M.rooms.get('lobby'); if (!lobby || lodFar || lobby.alpha < .6) return null;
-  for (const k of ['cal', 'board']) if (inPoly(wallScreen(k), sx, sy)) return k;
+  if (lodFar) return null;
+  for (const k of wallKeys()) { const r = M.rooms.get(wallRoom(k)); if (!r || r.alpha < .6 || !wallObj(k)) continue; if (inPoly(wallScreen(k), sx, sy)) return k; }
   return null;
 }
+const viewKey = () => (view ? (vscope ? view + ':' + vscope : view) : null);
 function wallOutline(x, k) {
-  if (hoverObj !== k && view !== k) return;
-  const q = WALL_OBJ[k].q; poly(x, wq(q[0], q[1], q[2], q[3], -.03, 1.03, q[6] - 2, q[7] + 2), null, view === k ? COL.blue : 'rgba(192,202,245,.7)', view === k ? 2 : 1.6);
+  const on = viewKey() === k; if (hoverObj !== k && !on) return;
+  const q = wallObj(k).q; poly(x, wq(q[0], q[1], q[2], q[3], -.03, 1.03, q[6] - 2, q[7] + 2), null, on ? COL.blue : 'rgba(192,202,245,.7)', on ? 2 : 1.6);
+}
+function drawPeerBoard(x, r, pe) {                 // 隔壁電腦後牆的小白板：同樣的白板、便利貼（最多 7 張，2 排）；右上角的紅點是任務數
+  const k = 'board:' + pe.id, o = wallObj(k); if (!o) return;
+  const q = o.q, live = pe.boardState === 'ok' || pe.boardState === 'error';
+  if (pe.board && nowS() - pe.notesAt > 20) { pe.notes = notesOf(pe.board); pe.notesAt = nowS(); }
+  poly(x, wq(q[0], q[1], q[2], q[3], 0, 1, q[6], q[7]), live ? '#c8cde3' : '#7d84a0', 'rgba(255,255,255,.4)', 1);
+  poly(x, wq(q[0], q[1], q[2], q[3], .04, .96, q[6] + .6, q[6] + 2), 'rgba(90,96,128,.55)');
+  if (live) pe.notes.forEach((col, i) => { const c4 = i % 4, row = (i / 4) | 0, u = .07 + c4 * .235, z = q[7] - 4 - row * 9; poly(x, wq(q[0], q[1], q[2], q[3], u, u + .17, z - 7, z), alpha(col, .85)); });
+  const n = live && pe.board ? pe.board.all.length : 0;
+  if (n) { const p = P(q[2], q[3], q[7] - 1); ellipse(x, p.x, p.y, 7.4, 7.4, COL.red, '#e6e9f5', 1.4); x.font = `700 ${n > 9 ? 8 : 9.5}px ${FONT}`; x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(n > 9 ? '9+' : String(n), p.x, p.y + .6); }
+  wallOutline(x, k);
 }
 function drawLobbyBoard(x) {                       // 白板＋便利貼（一件進行中的任務一張，最多 7 張；沒有任務就是空白板）
   const q = WALL_OBJ.board.q;
@@ -1977,14 +2040,14 @@ function cdText(next, status) {
 }
 const personEnt = key => { const e = key && key !== 'user' ? M.ents.get(key) : null; return e && !e.gone && !e.leaving ? e : null; };
 function whoBtn(key, raw) {                          // 辦公室裡有的人＝可以點的名牌；你；其他＝一般文字
-  if (key === 'user') return '<span class="who you">你</span>';
+  if (key === 'user') return viewPeer() ? '<span class="who you">那台的使用者</span>' : '<span class="who you">你</span>';   // 隔壁電腦的任務：'user' 是坐在那台前面的人，不一定是你
   const e = personEnt(key);
   if (e) return `<button type="button" class="who" data-act="person" data-key="${esc(key)}" title="看${esc(e.who.name)}"><img src="${avatarURL(e.who, 36)}" alt="">${esc(e.who.name)}</button>`;
   return raw ? `<span>${esc(raw)}</span>` : '<span style="color:var(--mute)">—</span>';
 }
 const actorName = a => { a = String(a || ''); if (a === 'user') return '你'; const e = M.ents.get('b:' + a); return e ? e.who.name : a; };
-const idleOf = t => (t.idle_s ? t.idle_s + (nowS() - M.boardAt) : t.updated_at ? nowS() - t.updated_at : 0);
-const findTask = id => (M.board ? M.board.all.find(t => t.id === id) : null);
+const idleOf = (t, B = viewBoard()) => (t.idle_s ? t.idle_s + (nowS() - ((B && B.at) || M.boardAt)) : t.updated_at ? nowS() - t.updated_at : 0);
+const findTask = id => { const B = viewBoard(); return B ? B.all.find(t => t.id === id) : null; };
 
 // ── 任務看板：一塊白板，四欄便利貼（輕重緩急）──
 function evText(e) {
@@ -2009,10 +2072,10 @@ function notePriority(t, now) {
   if (t.status === 'todo') return { p: 4, why: '待辦' };
   return { p: 3, why: t.status === 'waiting' ? '等待中' : '進行中' };
 }
-function boardLanes(now) {                          // 四欄（緊急→不急），欄內：原因 → 期限近的 → 最久沒動的
+function boardLanes(now, B = viewBoard()) {         // 四欄（緊急→不急），欄內：原因 → 期限近的 → 最久沒動的（B：哪一塊看板；不給就是開著的那塊，沒開就是大廳的）
   const lanes = [1, 2, 3, 4].map(p => ({ p, items: [] }));
-  if (M.board) for (const t of M.board.all) { const r = notePriority(t, now); lanes[r.p - 1].items.push({ t, r }); }
-  const key = ({ t, r }) => [WHY_ORDER.indexOf(r.why), dueOf(t) || Infinity, -idleOf(t), t.id];
+  if (B) for (const t of B.all) { const r = notePriority(t, now); lanes[r.p - 1].items.push({ t, r }); }
+  const key = ({ t, r }) => [WHY_ORDER.indexOf(r.why), dueOf(t) || Infinity, -idleOf(t, B), t.id];
   for (const l of lanes) l.items.sort((a, b) => { const x = key(a), y = key(b); for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1; return 0; });
   return lanes;
 }
@@ -2022,40 +2085,55 @@ const peopleSig = () => [...M.ents.values()].map(e => e.key + (e.gone || e.leavi
 const dueHtml = (t, now, long) => { const d = dueOf(t); return d ? `<span class="${d < now ? 'late' : ''}">${esc(mdhm(d * 1000))}${long && d < now ? '（已逾期）' : ''}</span>` : '<span class="dash">—</span>'; };
 const ageHtml = t => { const i = idleOf(t); return `<span class="age ${t.stuck ? 'old' : ''}" data-id="${t.id}">${i ? sinceWords(i) + '沒動' : '—'}</span>`; };
 const WB_SQ = '<svg class="ul" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 5 Q18 1 38 5 T76 4 T118 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
+const whyText = w => (viewPeer() && w === '等你決定' ? '等使用者決定' : w);   // 隔壁電腦的決定，是那台的使用者要決定
 function noteHtml({ t, r }, now) {
   const dec = t.decision, who = dec ? `<span class="by">來自</span>${whoBtn(t.requester_key, t.requester)}` : whoBtn(t.owner_key, t.owner), ttl = t.title || '（沒有標題）';
   return `<div class="nt p${r.p} ${t.id % 2 ? 'tp' : 'mg'}" data-id="${t.id}" style="--tilt:${tiltOf(t.id)}deg">` +
-    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(r.why)}</span></div>` +
-    `<button type="button" class="nb" data-act="note" data-id="${t.id}" title="${esc(ttl)}" aria-label="${esc(`#${t.id} ${ttl}，${r.why}`)}"><span class="tt">${esc(ttl)}</span></button>` +
+    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span></div>` +
+    `<button type="button" class="nb" data-act="note" data-id="${t.id}" title="${esc(ttl)}" aria-label="${esc(`#${t.id} ${ttl}，${whyText(r.why)}`)}"><span class="tt">${esc(ttl)}</span></button>` +
     `<div class="nm"><div class="who1">${who}</div>${dueOf(t) ? `<div class="due">期限 ${dueHtml(t, now)}</div>` : ''}<div class="idl">${ageHtml(t)}</div></div></div>`;
 }
 function boardHtml() {
-  const B = M.board;
-  if (!B || !B.all.length) return '<div class="wb wb-empty"><p class="big">還沒有任務</p><p class="sm">bot 用 <code>sfctl task add</code> 記下手上的事，就會貼在這塊白板上。</p></div>';
+  const B = viewBoard(), pe = viewPeer();
+  if (pe && pe.boardState !== 'ok') {                // 隔壁電腦的白板還沒有可以看的：讀取中、版本較舊、沒開放、連不上（連不上但有上次的就照樣畫，上面加一行）
+    const st = pe.boardState, msg = peerNotice(pe);
+    if (st === 'pending') return `<div class="wb wb-empty"><p class="big wpeer-state">${esc(msg)}</p></div>`;
+    if (st === 'old' || st === 'denied') return `<div class="wb wb-empty"><p class="big">${st === 'old' ? '還看不到這台的白板' : '這台沒有開放'}</p><p class="sm wpeer-state">${esc(msg)}</p></div>`;
+    if (!B || !B.all.length) return `<div class="wb wb-empty"><p class="big">${pe.bAt > 0 ? '那台現在沒有任務' : '還沒有讀到'}</p><p class="sm wpeer-state">${esc(msg)}</p></div>`;
+  }
+  if (!B || !B.all.length) return pe ? '<div class="wb wb-empty"><p class="big">還沒有任務</p><p class="sm">那台電腦的 bot 用 <code>sfctl task add</code> 記下手上的事，就會貼在這塊白板上。</p></div>'
+    : '<div class="wb wb-empty"><p class="big">還沒有任務</p><p class="sm">bot 用 <code>sfctl task add</code> 記下手上的事，就會貼在這塊白板上。</p></div>';
   const now = nowS(), lanes = boardLanes(now);
   const cols = lanes.map(l => `minmax(0,${(1 + Math.min(l.items.length, 8) * .35).toFixed(2)}fr)`).join(' ');
-  const key = `<ul class="wb-key" aria-label="顏色怎麼來的">` + [['紅', '等你決定或逾期'], ['橘', '卡住或 24 小時內到期'], ['黃', '進行中、等待中'], ['藍', '待辦']].map(([c, w], i) => `<li><i class="p${i + 1}"></i>${c}＝${w}</li>`).join('') + '</ul>';
-  return `<div class="wb">${key}<div class="wb-lanes" style="--cols:${cols}">` + lanes.map(l => `<section class="wb-lane p${l.p}" aria-label="${PRIO[l.p].n}"><h3>${PRIO[l.p].n}<b class="cnt">${l.items.length}</b></h3>${WB_SQ}` +
+  const key = `<ul class="wb-key" aria-label="顏色怎麼來的">` + [['紅', pe ? '等那台的使用者決定或逾期' : '等你決定或逾期'], ['橘', '卡住或 24 小時內到期'], ['黃', '進行中、等待中'], ['藍', '待辦']].map(([c, w], i) => `<li><i class="p${i + 1}"></i>${c}＝${w}</li>`).join('') + '</ul>';
+  const banner = pe && pe.boardState === 'error' ? `<p class="wpeer-banner wpeer-state">${esc(peerNotice(pe))}</p>` : '';
+  return `<div class="wb">${banner}${key}<div class="wb-lanes" style="--cols:${cols}">` + lanes.map(l => `<section class="wb-lane p${l.p}" aria-label="${PRIO[l.p].n}"><h3>${PRIO[l.p].n}<b class="cnt">${l.items.length}</b></h3>${WB_SQ}` +
     (l.items.length ? `<div class="wb-notes">${l.items.map(i => noteHtml(i, now)).join('')}</div>` : '<p class="vempty wb-none">（沒有）</p>') + '</section>').join('') + '</div></div>';
 }
 function boardSub() {
-  const B = M.board; if (!B || !B.all.length) return '還沒有任務';
+  const B = viewBoard(), pe = viewPeer(); if (pe && pe.boardState !== 'ok' && !(B && B.all.length)) return peerNotice(pe);
+  if (!B || !B.all.length) return '還沒有任務';
   return boardLanes(nowS()).map(l => `${PRIO[l.p].n} ${l.items.length}`).join(' · ');
 }
 // 點開一張：便利貼「浮」到白板正中央，變成大張的卡（標題全文、負責／交辦自／在等／下一步／期限／動靜、歷程）。卡在 #vOver，不在 #vBody 裡：看板捲到哪裡，它都在蓋板正中間
+function peerTail(pe) {                              // 隔壁電腦的任務只能看：要改，請那台的主要 bot 處理（有辦法跟它說話就給一顆「跟 … 說」）
+  const k = pe.primaryKey, e = k ? personEnt(k) : null, can = !!(e && tellChat() && tellChat().has(k));
+  return `<div class="wpeer"><p>這是「${esc(pe.name)}」的任務，這裡只能看。要改它，${e ? `請跟那台的主要 bot（${esc(e.who.name)}）說` : '請到那台電腦上處理'}。</p>` +
+    (can ? `<div class="wb-actions"><button type="button" class="wa" data-act="tellmain" data-key="${esc(k)}">跟 ${esc(e.who.name)} 說</button></div>` : '') + '</div>';
+}
 function cardHtml(t, r, now) {
-  const hist = vstate.detail.get(t.id), evs = hist && hist.ok ? hist.events : [];
-  const histHtml = `<ol class="thist" aria-label="#${t.id} 的歷程">` + (!hist || hist.loading && !hist.ok ? '<li><span></span><span class="none">讀取中…</span></li>'
+  const pe = viewPeer(), hist = vstate.detail.get(t.id), evs = hist && hist.ok ? hist.events : [];
+  const histHtml = pe ? '' : `<ol class="thist" aria-label="#${t.id} 的歷程">` + (!hist || hist.loading && !hist.ok ? '<li><span></span><span class="none">讀取中…</span></li>'
     : !hist.ok ? `<li><span></span><span class="none">${esc(hist.message || '讀不到這件的歷程。')}</span></li>`
     : evs.length ? evs.map(e => `<li><time>${esc(mdhm(e.ts * 1000))}</time><span><span class="k">${esc(KIND_ZH[e.kind] || e.kind)}</span><span class="a">${esc(actorName(e.actor))}</span><span class="tx">${esc(evText(e))}</span></span></li>`).join('')
     : '<li><span></span><span class="none">還沒有紀錄。</span></li>') + '</ol>';
   const dash = '<span class="dash">—</span>';
   return `<div class="wcard nt p${r.p}" role="dialog" aria-modal="true" aria-label="任務 #${t.id}">` +
-    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(r.why)}</span><span class="st">${ST_ZH[t.status] || esc(t.status)}</span><button type="button" class="wx" data-act="dclose" title="收起來（Esc）" aria-label="收起來">✕</button></div>` +
+    `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span><span class="st">${ST_ZH[t.status] || esc(t.status)}</span><button type="button" class="wx" data-act="dclose" title="收起來（Esc）" aria-label="收起來">✕</button></div>` +
     `<h4 class="wt">${esc(t.title || '（沒有標題）')}</h4>` +
     `<dl class="tm"><dt>負責</dt><dd>${whoBtn(t.owner_key, t.owner)}</dd><dt>交辦自</dt><dd>${whoBtn(t.requester_key, t.requester)}</dd><dt>在等</dt><dd>${t.waiting_on ? whoBtn(t.waiting_key, t.waiting_on) : dash}</dd>` +
     `<dt>下一步</dt><dd>${esc(t.next_step || '—')}</dd><dt>期限</dt><dd>${dueHtml(t, now, true)}</dd><dt>動靜</dt><dd>${ageHtml(t)}</dd></dl>` +
-    `<h5 class="wh">歷程</h5>${histHtml}${actionsHtml(t)}</div>`;
+    (pe ? peerTail(pe) : `<h5 class="wh">歷程</h5>${histHtml}${actionsHtml(t)}`) + '</div>';
 }
 // 卡底的兩個動作：「我做好了」（只有是你的事、或在等你的事才有）、「留言」。點了展開一個小表單；不先改畫面：送出去、後端說好了才算（板子隨後由下一輪 tasks_overview 更新）
 const isMe = (k, raw) => k === 'user' || raw === 'user';
@@ -2103,7 +2181,7 @@ function renderDetail(force) {
   const ov = $('#vOver'), id = [...vstate.open][0], t = id != null ? findTask(id) : null;
   if (id != null && !t) { vstate.open.clear(); vstate.act = null; }                  // 這件不在板上了（做完、放棄）：卡收起來
   if (!t) { if (!ov.hidden) { ov.hidden = true; ov.innerHTML = ''; } vstate.dsig = ''; delete ov.dataset.id; return; }
-  const now = nowS(), r = notePriority(t, now), a = vstate.act, sig = [t.id, M.boardVer, vstate.ver, r.why, dueOf(t) && dueOf(t) < now, peopleSig(), a ? [a.id, a.mode, a.busy, a.msg, a.tell].join(':') : ''].join('#');
+  const now = nowS(), r = notePriority(t, now), a = vstate.act, sig = [t.id, vscope || '', viewVer(), vstate.ver, r.why, dueOf(t) && dueOf(t) < now, peopleSig(), a ? [a.id, a.mode, a.busy, a.msg, a.tell].join(':') : ''].join('#');
   if (!force && sig === vstate.dsig) return; vstate.dsig = sig;
   const fresh = ov.hidden || ov.dataset.id !== String(id), h = ov.querySelector('.thist'), top = h ? h.scrollTop : 0, held = ov.contains(document.activeElement), ta0 = ov.querySelector('textarea'), inTa = !!ta0 && document.activeElement === ta0, sel = inTa ? [ta0.selectionStart, ta0.selectionEnd] : null;
   ov.innerHTML = cardHtml(t, r, now); ov.hidden = false; ov.dataset.id = String(id);
@@ -2114,7 +2192,7 @@ function renderDetail(force) {
   else if (fresh || held) { try { card.querySelector('.wx').focus({ preventScroll: true }); } catch (e) {} }   // 歷程讀回來會重畫卡：原本在卡裡的焦點不能掉
 }
 function openDetail(id) {
-  vstate.act = null; vstate.open.clear(); vstate.open.add(id); const t = findTask(id); if (t) loadDetail(id, t.updated_at);
+  vstate.act = null; vstate.open.clear(); vstate.open.add(id); const t = findTask(id); if (t && !viewPeer()) loadDetail(id, t.updated_at);   // 隔壁電腦的任務沒有歷程可問（唯讀）
   renderDetail(true);
 }
 function closeDetail() {
@@ -2130,6 +2208,7 @@ function boardClick(ev) {
   else if (b.dataset.act === 'adone' || b.dataset.act === 'anote') openAct([...vstate.open][0], b.dataset.act === 'adone' ? 'done' : 'note');
   else if (b.dataset.act === 'acancel') cancelAct();
   else if (ov && b.dataset.act === 'person') pickPerson(b.dataset.key);
+  else if (ov && b.dataset.act === 'tellmain') { panelTab = 'chat'; store.set('panelTab', panelTab); pickPerson(b.dataset.key); }   // 跟那台的主要 bot 說：跟拍它，面板開在對話頁
 }
 
 // ── 排程日曆（日／週／月）──
@@ -2497,45 +2576,49 @@ function calInput(ev) {
 // ── 檢視：開、關、畫 ──
 const VIEW_ICON = { board: '<svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="3" width="16" height="12" rx="1.5" fill="#c8cde3"/><rect x="4" y="5" width="4" height="3.5" fill="#7aa2f7"/><rect x="9.5" y="5" width="4" height="3.5" fill="#f7768e"/><rect x="4" y="9.6" width="4" height="3.5" fill="#e0af68"/><rect x="9.5" y="9.6" width="4" height="3.5" fill="#9ece6a"/></svg>',
   cal: '<svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="1.5" fill="#e6e9f5"/><rect x="3" y="3" width="14" height="4.5" rx="1.5" fill="#f7768e"/><rect x="5.5" y="9.5" width="3" height="2" fill="#9aa5ce"/><rect x="10" y="9.5" width="3" height="2" fill="#f7768e"/><rect x="5.5" y="13" width="3" height="2" fill="#9aa5ce"/></svg>' };
+const viewTitle = () => { const pe = viewPeer(); return pe ? `隔壁：${pe.name} 的白板` : WALL_OBJ[view].name; };
 function viewSub() {
   if (view === 'board') return boardSub();
   const d = SCHED.data; return `對話裡 ${M.loops.length} 個` + (d && d.ok && !d.unsupported && d.configured ? ` · 這台電腦 ${d.rows.filter(r => r.enabled).length}/${d.rows.length} 個啟用` : '');
 }
 function renderView(force) {
   if (!view) return;
+  if (view === 'board' && vscope && !(viewPeer() && viewPeer().boardState)) { closeView(true); return; }   // 那台電腦不在了（或不再有白板）：看板收起來
   // 簽章只看「畫出來的東西」：看板／排程的資料、誰在辦公室（名牌可不可以點、叫什麼）。M.ver 每 3 秒的快照都會加一，不能放進來：
   // 放了，檢視每 3 秒整個重建，點到一半的按鈕、選起來的字、焦點都會掉。時間字（幾分鐘沒動、倒數）由 viewStep 原地改字。
   // 看板另加「各張現在落在哪一欄」（逾期、24 小時內到期是時間算出來的，資料沒變也會換欄）；打開的卡自己有簽章（renderDetail），開卡不重畫整塊白板。
   const people = peopleSig();
-  const sig = view === 'board' ? ['b', M.boardVer, laneSig(boardLanes(nowS()), nowS()), people].join('#') : calSig(people);
+  const sig = view === 'board' ? ['b', vscope || '', viewVer(), laneSig(boardLanes(nowS()), nowS()), people].join('#') : calSig(people);
   if (view === 'board') renderDetail(force);
   if (!force && sig === vstate.sig) return; vstate.sig = sig;
-  $('#vIcon').innerHTML = VIEW_ICON[view]; $('#vTitle').textContent = WALL_OBJ[view].name; $('#vSub').textContent = viewSub();
+  $('#vIcon').innerHTML = VIEW_ICON[view]; $('#vTitle').textContent = viewTitle(); $('#vSub').textContent = viewSub();
   const body = $('#vBody'), top = body.scrollTop;
   body.innerHTML = `<div class="vz">${view === 'board' ? boardHtml() : calHtml()}</div>`; body.scrollTop = top; body.dataset.view = view;
   $('#wall').dataset.view = view;
   const hs = view === 'cal' ? [CAL.mode, CAL.anchor, dayAt(calNow())].join('#') : ''; if (hs !== CAL.headSig) { CAL.headSig = hs; $('#vHeadX').innerHTML = view === 'cal' ? calHead() : ''; }
   if (view === 'cal') { calAfter(); calPopSync(); } else calPopSync();
 }
-function openView(kind) {
-  if (!WALL_OBJ[kind]) return;
-  if (view === kind) { closeView(); return; }
+function openView(key) {                                 // key：'board'、'cal'，或 'board:<電腦 id>'（那台電腦的白板）
+  if (!wallObj(key)) return;
+  const m = /^board:(.+)$/.exec(String(key)), kind = m ? 'board' : key, scope = m ? m[1] : null;
+  if (view === kind && vscope === scope) { closeView(); return; }
   if (follow) stopFollow(true);
   hoverObj = null; cv.classList.remove('pt');            // the camera is about to move: the pointer is not over it any more
-  view = kind; vstate.sig = ''; if (kind === 'cal') { CAL.anchor = dayAt(calNow()); CAL.pop = null; CAL.msg = ''; CAL.scroll = true; }
+  if (view) { vstate.open.clear(); vstate.detail.clear(); vstate.act = null; }   // 從一塊看板換到另一塊：上一塊開著的卡不帶過去
+  view = kind; vscope = scope; vstate.sig = ''; if (kind === 'cal') { CAL.anchor = dayAt(calNow()); CAL.pop = null; CAL.msg = ''; CAL.scroll = true; }
   const w = $('#wall'); w.hidden = false; document.body.classList.add('walling');
   renderView(true); if (kind === 'cal') schedPoll();
   try { $('#vClose').focus({ preventScroll: true }); } catch (e) {}
   kick();
 }
 function closeView(silent) {
-  if (!view) return; view = null; vstate.open.clear(); vstate.detail.clear(); vstate.sig = ''; CAL.pop = null; CAL.msg = ''; CAL.headSig = ''; $('#vHeadX').innerHTML = ''; calPopSync();
+  if (!view) return; view = null; vscope = null; vstate.open.clear(); vstate.detail.clear(); vstate.sig = ''; CAL.pop = null; CAL.msg = ''; CAL.headSig = ''; $('#vHeadX').innerHTML = ''; calPopSync();
   const w = $('#wall'); w.hidden = true; delete w.dataset.view; $('#vBody').innerHTML = ''; renderDetail(true); document.body.classList.remove('walling');
   kick();
 }
 function pickPerson(key) { const e = personEnt(key); if (!e) return; closeView(true); startFollow(key); }
 async function loadDetail(id, upd) {
-  const h = boardHost(), cur = vstate.detail.get(id); if (!h || (cur && (cur.loading || cur.upd === upd))) return;
+  const h = boardHost(), cur = vstate.detail.get(id); if (!h || viewPeer() || (cur && (cur.loading || cur.upd === upd))) return;
   vstate.detail.set(id, Object.assign({}, cur, { loading: true, upd }));
   let r = null; try { r = await h.detail(id); } catch (err) { r = { success: false, message: String(err) }; }
   if (!vstate.detail.has(id)) return;                          // 檢視關了：這份不要了
@@ -2557,8 +2640,9 @@ function viewStep() {                                           // 每一幀：�
   const now = performance.now();
   if (now - vstate.tick >= 400) { vstate.tick = now; $$('#vBody .cd[data-ts], #calPop .cd[data-ts]').forEach(el => { const t = cdText(+el.dataset.ts, el.dataset.st); if (el.textContent !== t) el.textContent = t; });
     const sat = $('#vBody .sat'); if (sat && SCHED.data) { const w = hhmm(SCHED.data.at) + ' 更新'; if (sat.textContent !== w) sat.textContent = w; }
-    $$('#vBody .age[data-id], #vOver .age[data-id]').forEach(el => { const t = findTask(+el.dataset.id), i = t ? idleOf(t) : 0, w = i ? sinceWords(i) + '沒動' : '—'; if (el.textContent !== w) el.textContent = w; }); }
-  if (view === 'board') { for (const id of vstate.open) { const t = findTask(id); if (t) loadDetail(id, t.updated_at); } }
+    $$('#vBody .age[data-id], #vOver .age[data-id]').forEach(el => { const t = findTask(+el.dataset.id), i = t ? idleOf(t) : 0, w = i ? sinceWords(i) + '沒動' : '—'; if (el.textContent !== w) el.textContent = w; });
+    const pe = viewPeer(); if (pe) $$('#vBody .wpeer-state').forEach(el => { const w = peerNotice(pe); if (w && el.textContent !== w) el.textContent = w; }); }   // 「X 分鐘前」只改字
+  if (view === 'board') { if (!viewPeer()) for (const id of vstate.open) { const t = findTask(id); if (t) loadDetail(id, t.updated_at); } }
   else { schedPoll(); if (now - CAL.tick >= 400) { CAL.tick = now; calNowLine(); } }
 }
 $('#vBody').addEventListener('click', ev => {
@@ -2652,7 +2736,7 @@ function roomSign(r, far, placed) {
   let p = front ? (iso ? t2s(r.x + r.w * .3, r.y + r.h, 0) : V.tp ? t2s(r.x + r.w, r.y + r.h / 2, 0) : t2s(r.x + r.w * .5, r.y + r.h, 0)) : (iso || !V.tp) ? t2s(r.x + r.w * (r.kind === 'lobby' ? .74 : .5), r.y - .1, r.wallH + 24) : t2s(r.x - .1, r.y + r.h / 2, r.wallH + 24);
   if (front) p = { x: p.x, y: p.y + (iso ? 17 : 15) * k };
   const main = r.label, used = r.kind === 'zone' ? [...M.seats.values()].filter(s => s.room === r.id && s.occ && !s.occ.gone).length : 0;
-  const sub = r.kind === 'zone' ? `${used}/${ZCAP}` : r.kind === 'peer' ? '配對' : '秘書長 · 實習生';
+  const sub = r.kind === 'zone' ? `${used}/${ZCAP}` : r.kind === 'peer' ? '配對' + (r.primary ? ' · 主要：' + r.primary : '') : '秘書長 · 實習生';
   const col = r.kind === 'zone' ? teamCol(r.team) : r.kind === 'peer' ? COL.teal : COL.purple;
   const f1 = `700 ${Math.round(12.5 * k)}px ${FONT}`, f2 = `500 ${Math.round(10.5 * k)}px ${FONT}`, w1 = tw(f1, main), w2 = tw(f2, sub), w = w1 + w2 + 34 * k, h = 25 * k, x0 = p.x - w / 2;
   if (p.x + w / 2 < 0 || p.x - w / 2 > W || p.y < -30 || p.y > H + 30) return; if (placed) placed.push({ x: x0, y: p.y - h / 2, w, h });
@@ -2673,7 +2757,7 @@ function drawOverlay(far) {
   for (const { e, h } of list) {
     const dim = hl && !(!e.gone && matches(hl, e)), on = follow === e.key || (hl && !dim) || hoverKey === e.key || (drag && drag.key === e.key);
     if (dim) continue;
-    const asleep = e.st === 'asleep' || e.gone, helper = e.kind === 'helper', temp = e.kind === 'temp' || e.kind === 'peertemp' || helper, walking = e.walk && e.walk.t >= 0, prim = e.kind === 'bot' && e.id === M.primaryId;
+    const asleep = e.st === 'asleep' || e.gone, helper = e.kind === 'helper', temp = e.kind === 'temp' || e.kind === 'peertemp' || helper, walking = e.walk && e.walk.t >= 0, prim = (e.kind === 'bot' && e.id === M.primaryId) || isPeerMain(e);
     if ((showAll && !(temp && cam.z < 1.25)) || on || (prim && cam.z >= .45 && !far) || (helper && e.st === 'stuck' && !far && !walking)) {
       const ly = h.base.y + 15 * bs;
       pill(h.base.x, ly, e.who.name + (e.gone ? '（已離開・位子留到 ' + new Date((e.goneAt || Date.now()) + SEAT_HOLD_MS).toTimeString().slice(0, 5) + '）' : ''), { avoid: placed, dir: 1, suffix: prim ? '主要' : '', sfont: `700 ${Math.round(nfs * .87)}px ${FONT}`, scolor: COL.yellow, clock: !!e.stale && !e.gone, font: `${prim ? 700 : 600} ${Math.round(nfs)}px ${FONT}`, h: Math.round(nfs * 1.75),
@@ -2700,7 +2784,7 @@ function drawOverlay(far) {
     }
   }
   for (const fn of tags) fn();
-  if (hoverObj && hoverPt && !hoverKey) pill(hoverPt.x + 4, hoverPt.y - 20, WALL_OBJ[hoverObj].name, { font: `700 12px ${FONT}`, h: 22, color: COL.ink, bg: 'rgba(26,27,38,.95)', border: alpha(COL.blue, .8) });   // 牆上東西的提示
+  if (hoverObj && hoverPt && !hoverKey && wallObj(hoverObj)) pill(hoverPt.x + 4, hoverPt.y - 20, wallObj(hoverObj).name, { font: `700 12px ${FONT}`, h: 22, color: COL.ink, bg: 'rgba(26,27,38,.95)', border: alpha(COL.blue, .8) });   // 牆上東西的提示
   // 拖曳換位子：目標座位與跟著手指的頭像
   if (drag && drag.mode === 'seat') {
     const e = M.ents.get(drag.key);
@@ -3044,7 +3128,8 @@ function update(snap, opts = {}) {
   if (Array.isArray(snap.peers)) {
     const seenP = new Set();
     for (const p of snap.peers) { if (!p || p.id == null) continue; const pid = String(p.id); seenP.add(pid);
-      let pe = M.peers.get(pid); if (!pe) { pe = { id: pid, name: p.name || pid, assign: new Map() }; M.peers.set(pid, pe); } pe.name = p.name || pid;
+      let pe = M.peers.get(pid); if (!pe) { pe = { id: pid, name: p.name || pid, assign: new Map(), primaryKey: '', primaryName: '', board: null, boardJson: '', boardVer: 0, boardState: '', boardSig: '', bAt: 0, notes: [], notesAt: 0 }; M.peers.set(pid, pe); } pe.name = p.name || pid;
+      if (p.board && typeof p.board === 'object') setPeerBoard(pe, p.board, p.boardState, p.boardAt); else clearPeerBoard(pe);   // 那台的白板（沒有 = 舊版或沒問到：房裡不畫白板）
       const seen = new Set();
       for (const [list, kind] of [[p.bots || [], 'peer'], [p.temps || [], 'peertemp']]) for (const r of list) { if (!r || r.id == null) continue; const id = String(r.id), key = (kind === 'peer' ? 'p:' : 'q:') + pid + '/' + id; seen.add(key);
         let e = M.ents.get(key); if (!e) { e = newEnt(key, kind, id, { peerId: pid, vis: 1 }); M.ents.set(key, e); } e.gone = false; fillEnt(e, r, kind); }
@@ -3123,10 +3208,10 @@ DB.helpers.push(   // 示範工讀生：時間用現在算，追蹤面板的「�
   { id: 'demo-h2', parent: 'tmp2', parent_kind: 'temp', parent_name: '臨時 #2', description: '示範：查三份文件的差異', model: '示範模型', agent_type: 'Explore', state: 'stuck', started_at: iso(Date.now() - 31 * 60000), last_at: iso(Date.now() - 14 * 60000) });
 DB.peers.push({ id: 'peer1', name: '示範電腦', bots: [
   mkBot('bld', '示範建置員', 'ghost', 'mint', null, '在隔壁電腦上跑建置與測試', '2026-09-02T09:00:00+08:00', 'working', { id: '隔壁 #7', title: '示範建置與測試', status: 'doing', next: '跑完整測試', updated_at: iso(ago(2)) },
-    [[40, 'wake', '被叫醒：收到建置請求'], [36, 'work', '開始建置'], [30, 'note', '建置完成'], [26, 'work', '開始跑測試'], [20, 'note', '已跑 120／310 項'], [12, 'note', '已跑 240／310 項'], [7, 'work', '跑剩下的測試'], [2, 'note', '已跑 300／310 項']]),
+    [[40, 'wake', '被叫醒：收到建置請求'], [36, 'work', '開始建置'], [30, 'note', '建置完成'], [26, 'work', '開始跑測試'], [20, 'note', '已跑 120／310 項'], [12, 'note', '已跑 240／310 項'], [7, 'work', '跑剩下的測試'], [2, 'note', '已跑 300／310 項']], { primary: true }),
   mkBot('dat', '示範資料員', 'tilt', 'periw', null, '在隔壁電腦上整理資料表', '2026-09-04T09:00:00+08:00', 'idle', { id: '隔壁 #6', title: '整理示範資料表', status: 'done', next: '等下一件', updated_at: iso(ago(44)) },
     [[80, 'wake', '被叫醒：例行整理'], [74, 'work', '開始：合併三張表'], [60, 'note', '去掉重複 18 筆'], [52, 'work', '補欄位說明'], [44, 'done', '完成：示範資料表'], [42, 'idle', '閒下來，可以接新工作'], [30, 'note', '在隔壁電腦待命'], [12, 'note', '記憶已存']])],
-  temps: [mkTemp(4, '示範 CLI-A', 'working', '跑一次示範檢查', '做完就關分頁')] });
+  temps: [mkTemp(4, '示範 CLI-A', 'working', '跑一次示範檢查', '做完就關分頁')], boardState: 'ok', boardAt: 0 });   // board：下面的 demoPeerBoard（時間用現在算）
 
 // 示範：看板上的任務（一件等你決定、一件卡住、幾件進行中）、三個人的 /loop 與 cron、這台電腦的幾個排程。
 // 時間都用 Date.now() 算（不是示範時鐘：暫停示範時倒數也要照走）。
@@ -3142,6 +3227,14 @@ const demoBoard = () => { const now = Date.now() / 1000;
       dtask(26, 'doc', { title: '整理示範資料夾命名規則', status: 'todo', next_step: '先寫三條規則給大家看', agoMin: 3 * 1440 })] };
 };
 DB.board = demoBoard();
+// 示範：隔壁電腦的白板（它自己的任務：一件等那台的使用者決定、一件卡住、三件進行中／待辦；擁有者用 'p:<電腦>/<人>'）
+const demoPeerBoard = () => { const now = Date.now() / 1000, K = v => (v === 'user' ? 'user' : v ? 'p:peer1/' + v : '');
+  const mk = (id, owner, o) => { const t = dtask(id, owner, Object.assign({ requester: 'user' }, o)); return Object.assign(t, { owner_key: K(t.owner), requester_key: K(t.requester), waiting_key: K(t.waiting_on) }); };
+  return { decisions: [mk(41, 'user', { title: '示範部署：要不要現在上線？', status: 'waiting', kind: 'decision', requester: 'bld', waiting_on: 'user', next_step: '等你回一句「上」或「再等等」', due_at: now + 3600, agoMin: 12, decision: true })],
+    stuck: [mk(38, 'dat', { title: '合併示範報表', next_step: '等來源檔補齊', agoMin: 30 * 60, idle_s: 30 * 3600, stuck: true })],
+    open: [mk(37, 'bld', { title: '示範建置與測試', next_step: '跑完整測試', agoMin: 2 }), mk(39, 'bld', { title: '示範夜間建置排程', status: 'todo', next_step: '先列出要跑的專案', agoMin: 120 }),
+      mk(40, 'dat', { title: '示範資料備份驗證', next_step: '核對檢查碼', due_at: now + 4 * 3600, agoMin: 45 })] }; };
+DB.peers[0].board = demoPeerBoard();
 function demoRefresh() {                                      // 每次送示範資料前：倒數的時間往前排
   const now = Date.now() / 1000, next = (every, phase) => now + every - ((now + phase) % every), L = [];
   const add = (b, key, lp) => { if (!b) return; b.loop = lp; L.push(Object.assign({ key, name: b.name }, lp)); };
@@ -3282,8 +3375,17 @@ window.__office = {
   notePriority, prio: () => PRIO.slice(1).map(x => x.col), lanes: () => boardLanes(nowS()).map(l => ({ p: l.p, ids: l.items.map(i => i.t.id), why: l.items.map(i => i.r.why) })),
   said: () => DEMO_SAID.map(x => ({ ...x })), acted: () => DEMO_ACT.log.map(x => ({ ...x })), actOpts: o => Object.assign(DEMO_ACT, o), setBoard: b => { DB.board = b; setBoard(b); kick(); }, snap: () => { update(DB); kick(); },
   view: () => view, openView: k => openView(k), closeView: () => closeView(), board: () => (M.board ? JSON.parse(M.boardJson) : null), notes: () => [...M.notes], loops: () => JSON.parse(M.loopsJson || '[]'),
-  wallPoint: k => { const pts = wallScreen(k), p = { x: pts.reduce((a, q) => a + q.x, 0) / 4, y: pts.reduce((a, q) => a + q.y, 0) / 4 }; return wallObjAt(p.x, p.y) === k ? p : null; },
-  wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj ? WALL_OBJ[hoverObj].name : ''), schedCalls: () => SCHED.calls, schedPollMs: () => SCHED.every, setSchedPoll: ms => { SCHED.every = ms; },
+  wallPoint: k => {                                   // 牆上那件東西可以點的一個點：優先正中間，被桌子、人擋住就找別處
+    if (!wallObj(k)) return null; const pts = wallScreen(k), at = (u, v) => ({ x: lerp(lerp(pts[0].x, pts[1].x, u), lerp(pts[3].x, pts[2].x, u), v), y: lerp(lerp(pts[0].y, pts[1].y, u), lerp(pts[3].y, pts[2].y, u), v) });
+    const mid = at(.5, .5); let first = wallObjAt(mid.x, mid.y) === k ? mid : null;
+    for (const [u, v] of [[.5, .5], [.2, .5], [.8, .5], [.5, .2], [.5, .8], [.15, .2], [.85, .2], [.15, .8], [.85, .8]]) { const p = at(u, v); if (wallObjAt(p.x, p.y) === k && !pick(p.x, p.y)) return p; }
+    return first;
+  },
+  wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj && wallObj(hoverObj) ? wallObj(hoverObj).name : ''), viewScope: () => vscope,
+  peerBoard: pid => { const pe = M.peers.get(pid); return pe && pe.board ? { state: pe.boardState, at: pe.bAt, notes: [...pe.notes], board: JSON.parse(pe.boardJson), ver: pe.boardVer, main: pe.primaryKey } : pe ? { state: pe.boardState, main: pe.primaryKey } : null; },
+  seatOf: key => { const e = M.ents.get(key); return e ? e.seatKey : null; },
+  entScale: key => { const e = M.ents.get(key); return e ? +pScale(e).toFixed(2) : null; },
+  peerMain: pid => { const pe = M.peers.get(pid), e = pe && pe.primaryKey && M.ents.get(pe.primaryKey); return e ? { key: e.key, seat: e.seatKey, scale: +pScale(e).toFixed(2), room: (roomOfEnt(e) || {}).label, sign: (roomOfEnt(e) || {}).primary } : null; }, schedCalls: () => SCHED.calls, schedPollMs: () => SCHED.every, setSchedPoll: ms => { SCHED.every = ms; },
   loopMarks: () => [...M.ents.values()].filter(e => e.loop && !e.gone).map(e => { const s = M.seats.get(e.seatKey), g = s && geo(s); return { key: e.key, wall: !!g && (g.shared || placeItems(e, g).some(q => q.k === 'wall' && q.it.id === 'calendar')) }; }),
   calState: () => ({ mode: CAL.mode, anchor: ymd(CAL.anchor), pop: CAL.pop, next: CAL.next }), calGo: (m, a) => calGo(m, a), boardHost: () => boardHost(),
   calSetNow: ms => { CAL.now = ms == null ? null : +ms; CAL.anchor = dayAt(calNow()); CAL.scroll = true; vstate.sig = ''; renderView(true); },

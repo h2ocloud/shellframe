@@ -174,6 +174,22 @@
     return [(e.cli && e.cli.label) || '', pin.model ? (pin.label || pin.model) : 'CLI 預設'].filter(Boolean).join(' · ');
   }
 
+  // A paired computer's task board (link_peer_tasks: its decisions, stuck and open tasks, rows shaped like the local ones) as
+  // the office's board: the same lists boardOf makes, owners as that computer's people ('p:<pid>/<role>' for a bot,
+  // 'q:<pid>/<tab>' for an intern; 'user' is whoever sits at that computer), plus `boardState` (ok | pending | old | denied |
+  // error) and `boardAt` (seconds; when the rows were last read fresh). Nothing for a computer the call did not answer for.
+  const PEER_STATES = ['ok', 'pending', 'old', 'denied', 'error'];
+  function peerBoardOf(pid, p, pt, now) {
+    if (!pt || typeof pt !== 'object') return {};
+    const who = { roles: new Set(), labels: {}, temps: {} };
+    for (const b of p.bots || []) if (b && b.role && b.state !== 'external') { who.roles.add(String(b.role)); if (b.label) who.labels[String(b.label)] = String(b.role); }
+    for (const r of Object.keys(p.tabs || {})) { const tb = p.tabs[r]; if (tb && tb.kind === 'temp') { who.temps[String(tb.name || r)] = r; who.temps[r] = r; } }
+    const b = boardOf({ open: pt.open, stuck: pt.stuck, decisions: pt.decisions }, who, now);
+    const key = k => (k.startsWith('b:') ? `p:${pid}/${k.slice(2)}` : k.startsWith('t:') ? `q:${pid}/${k.slice(2)}` : k);
+    for (const r of b.all) { r.owner_key = key(r.owner_key); r.waiting_key = key(r.waiting_key); r.requester_key = key(r.requester_key); }
+    return { board: b, boardState: PEER_STATES.indexOf(pt.state) >= 0 ? pt.state : 'error', boardAt: Number(pt.at) > 0 ? Number(pt.at) : 0 };
+  }
+
   /* input:
        botsOn    bots are on (settings.experimental_bots); off = every AI tab is an intern
        roster    bots_state().roster: role → {label, responsibility, bot: {avatar, primary, memory, external}, cli, pin}
@@ -182,6 +198,7 @@
                  (loop: the tab's status `loop`, a /loop or cron routine it runs, or null)
        tasks     tasks_overview(): {decisions: [...], open: [...], stuck: [...]}
        peers     SFBots.peerBots(): pid → {name, primary, bots: [/link/bots rows], tabs: {rsid: tab}}
+       peerTasks link_peer_tasks's `peers`: pid → {state, at, decisions, stuck, open}; a peer listed there carries board, boardState, boardAt
        helpers   office_helpers().helpers: sid → [{id, description, model, agent_type, state, started_at, last_at}]
        seen      sid → first time this page saw the tab (ms); filled in for new ones (an intern's opened_at)
        kit       {palette, shapes, defaultAvatar} (SFBots)
@@ -216,7 +233,7 @@
     for (const sid of Object.keys(seen)) if (!tabs.some(x => x.sid === sid)) delete seen[sid];
     const peers = Object.keys(I.peers || {}).map(pid => {
       const p = I.peers[pid] || {};
-      return {
+      return Object.assign({
         id: pid, name: String(p.name || pid.slice(0, 8)),
         bots: (p.bots || []).filter(b => b && b.role && b.state !== 'external').map((b, i) => ({
           id: String(b.role), name: String(b.label || b.role), avatar: avatar(b.avatar, `${p.name || ''}/${b.role}`, kit),
@@ -228,7 +245,7 @@
           return { id: r, name: String(tb.name || r), cli: CLI_NAMES[tb.cli] || String(tb.cli || '?'), state: peerState(tb),
                    doing: clip(tb.latest, 120), opened_at: iso(ROSTER_EPOCH + i * 1000) };
         }),
-      };
+      }, peerBoardOf(pid, p, (I.peerTasks || {})[pid], now));
     });
     const helpers = [];
     const parentOf = {};
@@ -538,7 +555,7 @@
   };
 
   let overlay = null, frame = null, timer = 0, busy = false, lastPush = null;
-  let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {};
+  let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {}, peerTasks = {}, peerTasksAt = 0;
   const seen = {}, mem = {};
   const TICK_MS = 3000, TASKS_MS = 9000;
 
@@ -557,7 +574,7 @@
     const B = root.SFBots || {}, st = (B.state && B.state()) || {};
     const snap = build({
       botsOn: !!(B.enabled && B.enabled()), roster: st.roster || {}, primary: st.primary || '',
-      tabs: pageTabs(), tasks, peers: (B.peerBots && B.peerBots()) || {}, helpers, seen,
+      tabs: pageTabs(), tasks, peers: (B.peerBots && B.peerBots()) || {}, peerTasks, helpers, seen,
       kit: { palette: B.PALETTE || {}, shapes: Object.keys(B.SHAPES || {}), defaultAvatar: B.defaultAvatar },
       now: Date.now(),
     });
@@ -569,6 +586,12 @@
     if (a.tasks_overview && Date.now() - tasksAt >= TASKS_MS) {
       tasksAt = Date.now();
       try { const r = JSON.parse(await a.tasks_overview()); if (r && r.success) tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; } catch (_) {}
+    }
+    // The paired computers' boards (the calls an older app does not have are skipped: no peer boards, no error). Same cadence
+    // as the local tasks, never on the 3 s tick; the answer is the host's own (it caches what it read from the other computers).
+    if (a.link_peer_tasks && Date.now() - peerTasksAt >= TASKS_MS) {
+      peerTasksAt = Date.now();
+      try { const r = JSON.parse(await a.link_peer_tasks()); if (r && r.peers && typeof r.peers === 'object') peerTasks = r.peers; } catch (_) {}
     }
     if (a.office_helpers) {
       try { const r = JSON.parse(await a.office_helpers()); if (r && r.success) helpers = r.helpers || {}; } catch (_) {}
@@ -601,7 +624,7 @@
       try { const r = JSON.parse(await api().office_prefs()); prefs = (r && r.prefs) || {}; } catch (_) { prefs = {}; }
     }
     if (overlay || !enabled()) return;
-    tasksAt = 0;                          // a freshly opened office asks again, not on the last open's answer
+    tasksAt = 0; peerTasksAt = 0; peerTasks = {};   // a freshly opened office asks again, not on the last open's answer
     overlay = document.createElement('div');
     overlay.id = 'sfo-overlay';
     overlay.tabIndex = -1;
