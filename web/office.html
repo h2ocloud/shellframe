@@ -432,8 +432,8 @@ html.bo body>*:not(#wall):not(#toast){display:none!important}
 .wcard .wx:hover{background:#fff;border-color:#1f4aa8;color:#1f4aa8}
 .wcard .wx:focus-visible{outline:3px solid #1f4aa8;outline-offset:2px}
 .wcard .wt{font-size:21px;font-weight:800;line-height:1.4;overflow-wrap:anywhere}
-.wcard .tm{display:grid;grid-template-columns:62px 1fr;gap:6px 10px;font-size:15px;align-items:center}
-.wcard .tm dt{color:rgba(31,36,51,.65);font-size:14px}
+.wcard .tm{display:grid;grid-template-columns:76px 1fr;gap:6px 10px;font-size:15px;align-items:center}
+.wcard .tm dt{color:rgba(31,36,51,.65);font-size:14px;white-space:nowrap}
 .wcard .tm dd{min-width:0;overflow-wrap:anywhere}
 .wcard .wh{font:700 14px var(--font);color:rgba(31,36,51,.65);margin-top:4px;letter-spacing:.06em}
 .wcard .thist{list-style:none;max-height:190px;overflow:auto;border-top:1.5px dashed rgba(31,36,51,.35);padding:6px 2px 4px;background:rgba(255,255,255,.28);border-radius:0 0 6px 6px}
@@ -765,6 +765,32 @@ const HOST = (() => { try { const p = window.parent; return p && p !== window &&
 // 用 t 當「那張任務卡」的變數名，在那些函式裡 t(...) 會呼叫到任務物件。
 const isZh = () => /^zh/i.test((HOST && HOST.lang && HOST.lang()) || navigator.language || '');
 const tr = (en, zh) => (isZh() ? zh : en);
+const statusLabel = st => ({ working: tr('Working', '在忙'), decision: tr('Needs your decision', '等你決定'), stuck: tr('Stuck', '卡住了'), idle: tr('Idle', '閒置'), done: tr('Done', '做完了'), asleep: tr('Away', '休息中'), empty: tr('Empty', '空位') }[st] || st);
+const zoningLabel = z => ({ cli: tr('By AI', '依 AI'), custom: tr('Custom groups', '自訂分組'), none: tr('No grouping', '不分區') }[z] || z);
+const SLOT_NAME_EN = { side: 'Desk corner', front: 'Front of desk', floor: 'Floor beside desk', wall: 'Wall board', head: 'On head', body: 'On body' };
+const slotLabel = k => tr(SLOT_NAME_EN[k] || k, SLOT_NAME[k] || k);
+const itemLabel = it => isZh() ? it.name.zh : it.name.en;
+function applyOfficeCopy() {
+  const text = (sel, en, zh) => { const el = $(sel); if (el) el.textContent = tr(en, zh); };
+  const attr = (sel, name, en, zh) => { const el = $(sel); if (el) el.setAttribute(name, tr(en, zh)); };
+  const spanText = (sel, en, zh) => { const el = $(sel); if (el) { const s = el.querySelector('span'); if (s) s.textContent = tr(en, zh); } };
+  spanText('#demoHandoff', 'Demo handoff', '交辦示範');
+  attr('#demoHandoff', 'title', 'Run a handoff demo', '立刻演一次交辦');
+  text('#openBoard', 'Board', '看板'); attr('#openBoard', 'title', 'Task board: the lobby whiteboard', '任務看板：大廳牆上的白板，記著大家手上的事'); attr('#openBoard', 'aria-label', 'Task board', '任務看板');
+  text('#resetSeats', 'Reset seats', '還原座位'); attr('#resetSeats', 'title', 'Clear dragged seats and restore the default layout', '清掉拖曳換過的位子，回到規則排法');
+  attr('#zoomOut', 'title', 'Zoom out', '縮小'); attr('#zoomOut', 'aria-label', 'Zoom out', '縮小');
+  attr('#zoomIn', 'title', 'Zoom in', '放大'); attr('#zoomIn', 'aria-label', 'Zoom in', '放大');
+  text('#fitAll', 'Whole floor', '全景'); attr('#fitAll', 'title', 'Show the whole floor', '看整層');
+  attr('#panel', 'aria-label', 'Followed coworker', '追蹤中的同事'); attr('#pHead', 'title', 'Return camera to them', '鏡頭回到他身上');
+  text('#tabChat', 'Chat', '對話'); text('#tabInfo', 'Info', '資料');
+  text('#cOpen', 'Open their tab ↗', '到他的分頁 ↗'); attr('#cOpen', 'title', 'Close the office and switch to their tab', '關掉辦公室，切到他的分頁');
+  attr('#cBox', 'aria-label', 'Message', '傳話'); text('#cSend', 'Send', '送出'); attr('#cSend', 'title', 'Send (Enter)', '送出（Enter）');
+  text('#pInfo .events h3', 'Recent events', '最近事件');
+  const stop = $('#stopFollow'); if (stop) stop.innerHTML = `${tr('Stop following', '停止追蹤')} <kbd>Esc</kbd>`;
+  text('#dismiss', 'Ask them to leave', '請他離開'); attr('#dismiss', 'title', "Close this intern's tab", '關掉這個實習生的分頁');
+  text('#panel .hint', 'Drag the view to look elsewhere temporarily', '拖曳畫面可暫時看別處');
+}
+applyOfficeCopy();
 // 只開白板（SFOffice.openBoard：看板按鈕、快捷鍵）：不畫辦公室，只有白板那張大表，關掉白板就是關掉整個蓋板。主頁在載入這一頁前就決定好了。
 const BOARD_ONLY = !!(HOST && HOST.boardOnly && HOST.boardOnly());
 if (BOARD_ONLY) { document.documentElement.classList.add('bo'); const m = document.querySelector('meta[name="color-scheme"]'); if (m) m.remove(); }   // 透明的框：和主頁的 color-scheme 一樣才不會被塗上不透明底
@@ -1614,43 +1640,43 @@ function renderAreas() {
 let panelSig = '', itemsOpen = false;
 function renderItemsCard(e) {
   const ids = itemsOf(e), temp = isTempEnt(e), edit = e.kind === 'bot', manual = edit && Array.isArray(itemOverrides()[e.id]);
-  const chips = ids.map(id => `<span class="ichip" title="${esc(SLOT_NAME[slotKey(ITEM[id])])}"><img src="${itemThumb(ITEM[id])}" alt="">${esc(ITEM[id].name.zh)}</span>`).join('') || '<span class="note">沒有配件</span>';
-  let h = `<h3>配件 <em>${manual ? '自己選的' : '依執掌自動配'}</em></h3><div class="chips">${chips}</div>`;
-  if (!edit) h += `<p class="note">${temp ? '實習生：依 CLI 戴不同顏色的帽子，桌上只放一件小東西。' : '隔壁電腦的 bot，在那台電腦上換配件。'}</p>`;
+  const chips = ids.map(id => `<span class="ichip" title="${esc(slotLabel(slotKey(ITEM[id])))}"><img src="${itemThumb(ITEM[id])}" alt="">${esc(itemLabel(ITEM[id]))}</span>`).join('') || `<span class="note">${tr('No accessories', '沒有配件')}</span>`;
+  let h = `<h3>${tr('Accessories', '配件')} <em>${manual ? tr('Manually chosen', '自己選的') : tr('Assigned by role', '依執掌自動配')}</em></h3><div class="chips">${chips}</div>`;
+  if (!edit) h += `<p class="note">${temp ? tr('Interns wear a CLI-colored hat and keep one small item on the desk.', '實習生：依 CLI 戴不同顏色的帽子，桌上只放一件小東西。') : tr('A bot from the other computer changes accessories there.', '隔壁電腦的 bot，在那台電腦上換配件。')}</p>`;
   else {
-    h += `<div class="iact"><button data-act="toggle" class="${itemsOpen ? 'on' : ''}">${itemsOpen ? '收起配件庫' : '打開配件庫'}</button>${manual ? '<button data-act="auto">恢復自動配</button>' : ''}</div>`;
-    if (itemsOpen) h += `<div class="igrid" role="listbox" aria-label="配件庫">${ITEMS.map(it => `<button data-item="${it.id}" class="${ids.includes(it.id) ? 'on' : ''}" aria-pressed="${ids.includes(it.id)}" title="${esc(it.name.en)}"><img src="${itemThumb(it)}" alt=""><span>${esc(it.name.zh)}</span><small>${SLOT_NAME[slotKey(it)]}</small></button>`).join('')}</div><p class="note">點一下加上或拿掉。同一個位置放滿時，會換掉最早放的那件。${HOST ? '存在這台電腦。' : '示範版存在這台瀏覽器。'}</p>`;
+    h += `<div class="iact"><button data-act="toggle" class="${itemsOpen ? 'on' : ''}">${itemsOpen ? tr('Collapse accessory library', '收起配件庫') : tr('Open accessory library', '打開配件庫')}</button>${manual ? `<button data-act="auto">${tr('Use automatic assignment', '恢復自動配')}</button>` : ''}</div>`;
+    if (itemsOpen) h += `<div class="igrid" role="listbox" aria-label="${tr('Accessory library', '配件庫')}">${ITEMS.map(it => `<button data-item="${it.id}" class="${ids.includes(it.id) ? 'on' : ''}" aria-pressed="${ids.includes(it.id)}" title="${esc(itemLabel(it))}"><img src="${itemThumb(it)}" alt=""><span>${esc(itemLabel(it))}</span><small>${esc(slotLabel(slotKey(it)))}</small></button>`).join('')}</div><p class="note">${tr('Click to add or remove. When a slot is full, the oldest item is replaced.', '點一下加上或拿掉。同一個位置放滿時，會換掉最早放的那件。')}${HOST ? tr(' Stored on this computer.', '存在這台電腦。') : tr(' Stored in this browser for the demo.', '示範版存在這台瀏覽器。')}</p>`;
   }
   $('#pItems').innerHTML = h;
 }
 function toggleItem(e, id) {
   const it = ITEM[id]; if (!it || e.kind !== 'bot') return; const cur = [...itemsOf(e)], k = slotKey(it), cap = capacityOf(e);
   if (cur.includes(id)) cur.splice(cur.indexOf(id), 1);
-  else { if (!cap[k]) { toast('這個位子放不下' + it.name.zh); return; } const same = cur.filter(i => slotKey(ITEM[i]) === k); if (same.length >= cap[k]) { cur.splice(cur.indexOf(same[0]), 1); toast(`${SLOT_NAME[k]}放滿了，換掉${ITEM[same[0]].name.zh}`); } cur.push(id); }
+  else { if (!cap[k]) { toast(tr('There is no room for ', '這個位子放不下') + itemLabel(it)); return; } const same = cur.filter(i => slotKey(ITEM[i]) === k); if (same.length >= cap[k]) { cur.splice(cur.indexOf(same[0]), 1); toast(`${slotLabel(k)}${tr(' is full; replaced ', '放滿了，換掉')}${itemLabel(ITEM[same[0]])}`); } cur.push(id); }
   const o = itemOverrides(); o[e.id] = cur; store.set('items', o); panelSig = ''; renderPanel(true); schedule();
 }
-const whoChip = key => { if (!key) return '<span style="color:var(--mute)">—</span>'; if (key === 'user') return '<span class="who you">你</span>'; const e = M.ents.get(key); if (!e) return esc(String(key).replace(/^[bp]:/, '')); return `<span class="who"><img src="${avatarURL(e.who, 40)}" alt="">${esc(e.who.name)}</span>`; };
-const fmtAge = ms => ms >= 86400e3 ? Math.round(ms / 86400e3) + ' 天' : Math.max(1, Math.round(ms / 3600e3)) + ' 小時';
+const whoChip = key => { if (!key) return '<span style="color:var(--mute)">—</span>'; if (key === 'user') return `<span class="who you">${tr('You', '你')}</span>`; const e = M.ents.get(key); if (!e) return esc(String(key).replace(/^[bp]:/, '')); return `<span class="who"><img src="${avatarURL(e.who, 40)}" alt="">${esc(e.who.name)}</span>`; };
+const fmtAge = ms => ms >= 86400e3 ? tr(`${Math.round(ms / 86400e3)} days`, `${Math.round(ms / 86400e3)} 天`) : tr(`${Math.max(1, Math.round(ms / 3600e3))} hours`, `${Math.max(1, Math.round(ms / 3600e3))} 小時`);
 const CLOCK_SVG = '<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.6v3.6l2.4 1.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>';
 function seatLabel(e) { const s = M.seats.get(e.seatKey), r = s && M.rooms.get(s.room); if (!r) return ''; if (s.key === 'sec') return '大廳 · 秘書長辦公桌'; if (r.kind === 'zone') return `${r.label} · 第 ${s.slot + 1} 位`; if (r.kind === 'lobby') return '大廳 · 實習生長桌'; return r.label; }
-const fmtDur = ms => ms < 60e3 ? '不到 1 分鐘' : ms < 3600e3 ? Math.round(ms / 60e3) + ' 分鐘' : (ms / 3600e3).toFixed(1) + ' 小時';
+const fmtDur = ms => ms < 60e3 ? tr('under 1 min', '不到 1 分鐘') : ms < 3600e3 ? tr(`${Math.round(ms / 60e3)} min`, `${Math.round(ms / 60e3)} 分鐘`) : tr(`${(ms / 3600e3).toFixed(1)} hr`, `${(ms / 3600e3).toFixed(1)} 小時`);
 function renderHelperPanel(e, force) {
   const w = e.who, now = Date.now(), last = e.events[e.events.length - 1];
   const sig = [e.key, e.st, w.duty, w.model, e.events.length, last && last.t, e.lastAt, Math.floor(now / 30e3)].join('|');
   if (!force && sig === panelSig) return; panelSig = sig;
   const stt = ST[e.st] || ST.idle, par = M.ents.get(e.parentKey);
   $('#pAv').src = avatarURL(w, 100);
-  $('#pName').textContent = '工讀生';
-  $('#pSub').textContent = `subagent · ${par ? par.who.name : w.parentName || '—'} 派的`;
-  const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
-  $('#pDuty').innerHTML = `<span>工作</span>${esc(w.duty || '（沒有說明）')}`;
-  $('#pMeta').innerHTML = [w.model ? `<span>${esc(w.model)}</span>` : '', w.agentType ? `<span>${esc(w.agentType)}</span>` : '', '<span>做完就走</span>'].join('');
-  $('#pTask').innerHTML = `<h3>這一趟</h3><dl class="kv"><dt>派他的</dt><dd>${whoChip(e.parentKey)}</dd><dt>跑了</dt><dd>${e.started ? fmtDur(now - e.started) : '—'}</dd><dt>最後動靜</dt><dd>${e.lastAt ? `${hhmm(e.lastAt)}（${fmtDur(now - e.lastAt)}前）` : '—'}</dd></dl>` +
-    (e.st === 'stuck' ? `<p class="note stale">${CLOCK_SVG}超過 10 分鐘沒有寫任何東西，也還沒做完</p>` : e.st === 'idle' ? '<p class="note">這幾分鐘沒有動靜。</p>' : '') +
-    (CHAT ? `<p class="note">工讀生沒有自己的對話框：他做什麼、做完回報什麼，都在派他的人的對話裡。</p>${par && chatAble(par) ? `<div class="iact"><button data-act="parent-chat">看${esc(par.who.name)}的對話</button></div>` : ''}` : '');
-  $('#pItems').innerHTML = '<h3>配件</h3><p class="note">工讀生只來做一件事，沒有配件。</p>';
+  $('#pName').textContent = tr('Part-timer', '工讀生');
+  $('#pSub').textContent = tr(`subagent · assigned by ${par ? par.who.name : w.parentName || '—'}`, `subagent · ${par ? par.who.name : w.parentName || '—'} 派的`);
+  const chip = $('#pChip'); chip.textContent = statusLabel(e.st); chip.style.setProperty('--c', stt.c);
+  $('#pDuty').innerHTML = `<span>${tr('Work', '工作')}</span>${esc(w.duty || tr('No description', '（沒有說明）'))}`;
+  $('#pMeta').innerHTML = [w.model ? `<span>${esc(w.model)}</span>` : '', w.agentType ? `<span>${esc(w.agentType)}</span>` : '', `<span>${tr('Leaves when done', '做完就走')}</span>`].join('');
+  $('#pTask').innerHTML = `<h3>${tr('This run', '這一趟')}</h3><dl class="kv"><dt>${tr('Assigned by', '派他的')}</dt><dd>${whoChip(e.parentKey)}</dd><dt>${tr('Running', '跑了')}</dt><dd>${e.started ? fmtDur(now - e.started) : '—'}</dd><dt>${tr('Last activity', '最後動靜')}</dt><dd>${e.lastAt ? `${hhmm(e.lastAt)} (${fmtDur(now - e.lastAt)}${tr(' ago', '前')})` : '—'}</dd></dl>` +
+    (e.st === 'stuck' ? `<p class="note stale">${CLOCK_SVG}${tr('No writing for over 10 minutes, and it is not done yet.', '超過 10 分鐘沒有寫任何東西，也還沒做完')}</p>` : e.st === 'idle' ? `<p class="note">${tr('No activity for the last few minutes.', '這幾分鐘沒有動靜。')}</p>` : '') +
+    (CHAT ? `<p class="note">${tr('Part-timers do not have their own chat: their work and report go to the person who assigned them.', '工讀生沒有自己的對話框：他做什麼、做完回報什麼，都在派他的人的對話裡。')}</p>${par && chatAble(par) ? `<div class="iact"><button data-act="parent-chat">${tr('View', '看')}${esc(par.who.name)}${tr("'s chat", '的對話')}</button></div>` : ''}` : '');
+  $('#pItems').innerHTML = `<h3>${tr('Accessories', '配件')}</h3><p class="note">${tr('Part-timers come for one task and have no accessories.', '工讀生只來做一件事，沒有配件。')}</p>`;
   const evs = e.events.slice(-8).reverse(), pn = performance.now();
-  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}${v.n > 1 ? `<b class="evn" title="這一分鐘內 ${v.n} 次">×${v.n}</b>` : ''}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
+  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && pn - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}${v.n > 1 ? `<b class="evn" title="${tr('3 events in this minute', '這一分鐘內 3 次')}">×${v.n}</b>` : ''}</span></li>`).join('') || `<li><time></time><i></i><span style="color:var(--mute)">${tr('No events yet', '還沒有事件')}</span></li>`;
 }
 let groupSig = '';
 // 請實習生離開：關掉他的分頁（這台的、或配對電腦上的）。按第一下只是確認，4 秒內再按一次才關；換人就取消。
@@ -1664,7 +1690,7 @@ function renderBye(e) {
   // first press of 「請他離開」 did nothing in WebKit with the office animating).
   if (!can || byeArmed !== e.key) {
     byeArmed = null; b.classList.remove('armed');
-    if (b.textContent !== '請他離開') b.textContent = '請他離開';
+    if (b.textContent !== tr('Ask them to leave', '請他離開')) b.textContent = tr('Ask them to leave', '請他離開');
   }
 }
 async function pressBye() {
@@ -1672,7 +1698,7 @@ async function pressBye() {
   const b = $('#dismiss');
   if (byeArmed !== e.key) {
     byeArmed = e.key; b.classList.add('armed');
-    b.textContent = e.st === 'working' ? '他還在做，確定關掉？' : '確定關掉他的分頁？';
+    b.textContent = e.st === 'working' ? tr('They are still working. Close it?', '他還在做，確定關掉？') : tr('Close their tab?', '確定關掉他的分頁？');
     clearTimeout(byeTimer); byeTimer = setTimeout(() => { if (byeArmed === e.key) { byeArmed = null; renderBye(e); } }, 4000);
     return;
   }
@@ -1680,8 +1706,8 @@ async function pressBye() {
   let r = null;
   try { r = await CHAT.dismiss(e.key); } catch (err) { r = { ok: false, message: String(err) }; }
   b.disabled = false;
-  if (r && r.ok) { toast(`已請 ${e.who.name} 離開`); stopFollow(); }
-  else { toast(r && r.message ? `沒有關掉：${r.message}` : '沒有關掉他的分頁'); renderBye(e); }
+  if (r && r.ok) { toast(tr(`Asked ${e.who.name} to leave`, `已請 ${e.who.name} 離開`)); stopFollow(); }
+  else { toast(r && r.message ? tr(`Could not close: ${r.message}`, `沒有關掉：${r.message}`) : tr('Could not close their tab', '沒有關掉他的分頁')); renderBye(e); }
 }
 function renderGroupCard(e) {
   const el = $('#pGroup');
@@ -1693,11 +1719,11 @@ function renderGroupCard(e) {
   el.hidden = false;
   if (sig === groupSig) return; groupSig = sig;
   const chip = n => `<button type="button" data-act="group" data-g="${esc(n)}" class="${n === mine ? 'on' : ''}" style="--c:${teamCol(n)}" aria-pressed="${n === mine}"><i></i>${esc(n)}</button>`;
-  el.innerHTML = `<h3>分組 <em>${zoning === 'custom' ? '自訂分組' : '分區方式：' + ZONING_NAME[zoning]}</em></h3>` +
-    `<div class="gchips">${names.map(chip).join('')}<button type="button" data-act="group" data-g="" class="${!mine || mine === UNGROUPED ? 'on' : ''}" aria-pressed="${!mine || mine === UNGROUPED}"><i></i>未分組</button></div>` +
-    `<div class="gnew"><input id="gNew" type="text" maxlength="24" placeholder="新的組名，例如：專案組" aria-label="新的組名"><button type="button" data-act="group-new">加入</button></div>` +
-    (zoning === 'custom' ? '<p class="note">也可以把頭像拖到別組的座位上換組。</p>'
-      : `<p class="note">現在照「${ZONING_NAME[zoning]}」分區；改成「自訂分組」才會照這裡的組坐。</p><button type="button" class="gswitch" data-act="zoning-custom">改成自訂分組</button>`);
+  el.innerHTML = `<h3>${tr('Groups', '分組')} <em>${zoning === 'custom' ? tr('Custom groups', '自訂分組') : tr('Grouping: ', '分區方式：') + zoningLabel(zoning)}</em></h3>` +
+    `<div class="gchips">${names.map(chip).join('')}<button type="button" data-act="group" data-g="" class="${!mine || mine === UNGROUPED ? 'on' : ''}" aria-pressed="${!mine || mine === UNGROUPED}"><i></i>${tr('Unassigned', '未分組')}</button></div>` +
+    `<div class="gnew"><input id="gNew" type="text" maxlength="24" placeholder="${tr('New group name, e.g. Project', '新的組名，例如：專案組')}" aria-label="${tr('New group name', '新的組名')}"><button type="button" data-act="group-new">${tr('Add', '加入')}</button></div>` +
+    (zoning === 'custom' ? `<p class="note">${tr('You can also drag an avatar to another group\'s seat.', '也可以把頭像拖到別組的座位上換組。')}</p>`
+      : `<p class="note">${tr('Currently grouped by "', '現在照「')}${zoningLabel(zoning)}${tr('"; switch to "Custom groups" to use these groups.', '」分區；改成「自訂分組」才會照這裡的組坐。')}</p><button type="button" class="gswitch" data-act="zoning-custom">${tr('Switch to custom groups', '改成自訂分組')}</button>`);
 }
 function renderPanel(force) {
   if (!follow) return; const e = M.ents.get(follow); if (!e) { stopFollow(); return; }
@@ -1710,23 +1736,25 @@ function renderPanel(force) {
   if (!force && sig === panelSig) return; panelSig = sig;
   const w = e.who, stt = ST[e.st] || ST.idle, temp = e.kind === 'temp' || e.kind === 'peertemp', peer = e.kind === 'peer' || e.kind === 'peertemp', movable = e.kind === 'bot' && e.id !== M.primaryId;
   $('#pAv').src = avatarURL(w, 100);
-  $('#pName').innerHTML = esc(w.name) + ((e.kind === 'bot' && e.id === M.primaryId) || isPeerMain(e) ? ` <span class="star" title="主要 bot">${SFIcons.html('star')} 主要</span>` : '');
-  $('#pSub').textContent = temp ? `實習生 · ${w.cli}${peer ? ' · 隔壁' : ''}` : peer ? '正職 · ' + (roomOfEnt(e) || {}).label : `正職 · ${seatLabel(e)}`;
-  const chip = $('#pChip'); chip.textContent = stt.label; chip.style.setProperty('--c', stt.c);
-  const ll = loopLine(e.loop), pl = $('#pLoop'); pl.hidden = !ll; pl.innerHTML = ll ? `<span>排程：</span>${esc(ll)}` : '';
+  $('#pName').innerHTML = esc(w.name) + ((e.kind === 'bot' && e.id === M.primaryId) || isPeerMain(e) ? ` <span class="star" title="${tr('Primary bot', '主要 bot')}">${SFIcons.html('star')} ${tr('Primary', '主要')}</span>` : '');
+  $('#pSub').textContent = temp ? `${tr('Intern', '實習生')} · ${w.cli}${peer ? ` · ${tr('other computer', '隔壁')}` : ''}` : peer ? `${tr('Staff', '正職')} · ` + (roomOfEnt(e) || {}).label : `${tr('Staff', '正職')} · ${seatLabel(e)}`;
+  const chip = $('#pChip'); chip.textContent = statusLabel(e.st); chip.style.setProperty('--c', stt.c);
+  const ll = loopLine(e.loop), pl = $('#pLoop'); pl.hidden = !ll; pl.innerHTML = ll ? `<span>${tr('Schedule:', '排程：')}</span>${esc(ll)}` : '';
+  const tempFallback = e.st === 'working' ? tr('Working…', '正在做…') : tr('No current conversation or progress', '看不出來：還沒有對話，或沒有新的進度');
+  const tempDoing = w.doing || tempFallback;
   $('#pDuty').innerHTML = temp
-    ? `<span>在做</span>${esc(w.doing || (e.st === 'working' ? '正在做…' : '看不出來：還沒有對話，或沒有新的進度'))}`   // 實習生沒有執掌：看他在做什麼
-    : `<span>執掌</span>${esc(w.duty || '—')}` + (w.doing && e.st !== 'asleep' ? `<br><span>在做</span>${esc(w.doing)}` : '');
-  $('#pMeta').innerHTML = temp ? '<span>不留記憶</span><span>做完就關分頁</span>' : `${w.runs == null ? '<span>記憶 已存</span><span>示範 CLI · 示範模型</span>' : (w.memory === false ? '<span>不留記憶</span>' : '<span>有記憶</span>') + (w.runs ? `<span>${esc(w.runs)}</span>` : '')}${e.st === 'asleep' ? '<span>沒有開分頁</span>' : ''}${movable ? '<span>拖曳頭像可換位子</span>' : ''}`;
-  const t = e.task, stl = { todo: '待辦', doing: '進行中', waiting: '等待中', done: '完成', dropped: '放棄' };
-  $('#pTask').innerHTML = !t ? '<h3>目前任務</h3><p class="note">沒有手上的任務。</p>' :
-    `<h3>${e.st === 'asleep' ? '手上的待辦' : '目前任務'} <em>${esc(t.id)} · ${stl[t.status] || ''}</em></h3><div class="ttl">${esc(t.title)}</div>
-     <dl class="kv"><dt>下一步</dt><dd>${esc(t.next || '—')}</dd><dt>在等誰</dt><dd>${whoChip(t.waitingOn)}</dd>${t.from ? `<dt>交辦自</dt><dd>${whoChip(t.from)}</dd>` : ''}</dl>
-     ${e.stale ? `<p class="note stale">${CLOCK_SVG}這件已經 ${fmtAge(e.stale)}沒有更新</p>` : ''}
-     ${e.st === 'asleep' ? '<p class="note">沒有開分頁。下次被叫醒時，從這裡接著做。</p>' : e.st === 'stuck' && t.why ? `<p class="note">原因：${esc(t.why)}</p>` : ''}`;
+    ? `<span>${tr('Doing', '在做')}</span>${esc(tempDoing)}`   // 實習生沒有執掌：看他在做什麼
+    : `<span>${tr('Role', '執掌')}</span>${esc(w.duty || '—')}` + (w.doing && e.st !== 'asleep' ? `<br><span>${tr('Doing', '在做')}</span>${esc(w.doing)}` : '');
+  $('#pMeta').innerHTML = temp ? `<span>${tr('No memory', '不留記憶')}</span><span>${tr('Close tab when done', '做完就關分頁')}</span>` : `${w.runs == null ? `<span>${tr('Memory saved', '記憶 已存')}</span><span>${tr('Demo CLI · demo model', '示範 CLI · 示範模型')}</span>` : (w.memory === false ? `<span>${tr('No memory', '不留記憶')}</span>` : `<span>${tr('Has memory', '有記憶')}</span>`) + (w.runs ? `<span>${esc(w.runs)}</span>` : '')}${e.st === 'asleep' ? `<span>${tr('No open tab', '沒有開分頁')}</span>` : ''}${movable ? `<span>${tr('Drag avatar to move seat', '拖曳頭像可換位子')}</span>` : ''}`;
+  const t = e.task, stl = { todo: tr('To do', '待辦'), doing: tr('In progress', '進行中'), waiting: tr('Waiting', '等待中'), done: tr('Done', '完成'), dropped: tr('Dropped', '放棄') };
+  $('#pTask').innerHTML = !t ? `<h3>${tr('Current task', '目前任務')}</h3><p class="note">${tr('No task in hand.', '沒有手上的任務。')}</p>` :
+    `<h3>${e.st === 'asleep' ? tr('Task in hand', '手上的待辦') : tr('Current task', '目前任務')} <em>${esc(t.id)} · ${stl[t.status] || ''}</em></h3><div class="ttl">${esc(t.title)}</div>
+     <dl class="kv"><dt>${tr('Next step', '下一步')}</dt><dd>${esc(t.next || '—')}</dd><dt>${tr('Waiting for', '在等誰')}</dt><dd>${whoChip(t.waitingOn)}</dd>${t.from ? `<dt>${tr('Assigned by', '交辦自')}</dt><dd>${whoChip(t.from)}</dd>` : ''}</dl>
+     ${e.stale ? `<p class="note stale">${CLOCK_SVG}${tr(`No update for ${fmtAge(e.stale)}`, `這件已經 ${fmtAge(e.stale)}沒有更新`)}</p>` : ''}
+     ${e.st === 'asleep' ? `<p class="note">${tr('No open tab. When woken, work continues here.', '沒有開分頁。下次被叫醒時，從這裡接著做。')}</p>` : e.st === 'stuck' && t.why ? `<p class="note">${tr('Reason: ', '原因：')}${esc(t.why)}</p>` : ''}`;
   renderItemsCard(e);
   const evs = e.events.slice(-8).reverse(), now = performance.now();
-  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && now - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}${v.n > 1 ? `<b class="evn" title="這一分鐘內 ${v.n} 次">×${v.n}</b>` : ''}</span></li>`).join('') || '<li><time></time><i></i><span style="color:var(--mute)">還沒有事件</span></li>';
+  $('#pEvents').innerHTML = evs.map(v => `<li class="${v.fresh && now - v.fresh < 1500 ? 'new' : ''}"><time>${hhmm(v.t)}</time><i style="--c:${EVC[v.kind] || COL.dim}"></i><span>${esc(v.text)}${v.n > 1 ? `<b class="evn" title="${tr(`${v.n} events in this minute`, `這一分鐘內 ${v.n} 次`)}">×${v.n}</b>` : ''}</span></li>`).join('') || `<li><time></time><i></i><span style="color:var(--mute)">${tr('No events yet', '還沒有事件')}</span></li>`;
 }
 const hhmm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 function startFollow(key) {
@@ -1768,7 +1796,7 @@ function chatSync(e) {
   $('#cComp').hidden = !can; $('#cOpen').hidden = !can;
   if (!can && chat.data) { chat.data = null; chat.rev = ''; }
   if (!can) chatEmpty('no_tab');
-  $('#cBox').placeholder = `傳話給${e.who.name}…（Enter 送出，Shift+Enter 換行）`;
+  $('#cBox').placeholder = tr(`Message ${e.who.name}… (Enter to send, Shift+Enter for a new line)`, `傳話給${e.who.name}…（Enter 送出，Shift+Enter 換行）`);
 }
 function chatLeave() {
   if (chat.key) { const v = $('#cBox').value; if (v.trim()) unsent.set(chat.key, v); else unsent.delete(chat.key); }
@@ -1779,18 +1807,18 @@ function chatEnter(e) {
   Object.assign(chat, { key: e.key, rev: '', data: null, draftCard: null, answered: null, flash: null, first: true, askSig: '', noteSig: '' });
   chat.open.clear();
   const box = $('#cBox'); box.value = unsent.get(e.key) || ''; autosize(); renderFiles();
-  const list = $('#cList'); list.innerHTML = '<div class="empty">讀取對話中…</div>'; list.dataset.h = '';   // 回到看過的人：清單照樣重畫
+  const list = $('#cList'); list.innerHTML = `<div class="empty">${tr('Loading conversation…', '讀取對話中…')}</div>`; list.dataset.h = '';   // 回到看過的人：清單照樣重畫
   const doing = $('#cDoing'); doing.textContent = ''; doing.dataset.h = ''; doing.className = 'cdoing';
   renderAsk(); renderNote();
   setTimeout(() => chatTick(true), 0);
 }
 function chatEmpty(why) {
-  const e = chat.key && M.ents.get(chat.key), name = e ? e.who.name : '他';
+  const e = chat.key && M.ents.get(chat.key), name = e ? e.who.name : tr('them', '他');
   const there = e && (e.kind === 'peer' || e.kind === 'peertemp');
-  const text = why === 'no_tab' ? (e && e.st === 'asleep' ? `${name}在休息，沒有開分頁：叫醒之後，這裡就看得到對話、也能傳話。` : `${name}${there ? '在那台電腦上' : '在這台電腦上'}沒有分頁，這裡看不到對話。`)
-    : why === 'old_peer' ? '那台電腦的 ShellBot 版本太舊（要 0.46.1 以上），這裡看不到它的對話；那台更新之後就可以。'
-    : why === 'unreachable' ? '現在連不到那台電腦，稍後再試。'
-    : why === 'no_chat' ? '這一版的主頁沒有對話模式，看不到對話。' : '這次讀不到對話，稍後再試。';
+  const text = why === 'no_tab' ? (e && e.st === 'asleep' ? tr(`${name} is away and has no open tab. Wake them to see and send chat here.`, `${name}在休息，沒有開分頁：叫醒之後，這裡就看得到對話、也能傳話。`) : tr(`${name} has no open tab ${there ? 'on the other computer' : 'on this computer'}; chat is unavailable here.`, `${name}${there ? '在那台電腦上' : '在這台電腦上'}沒有分頁，這裡看不到對話。`))
+    : why === 'old_peer' ? tr("That computer's ShellBot is too old (0.46.1+ is required), so its chat is unavailable until it is updated.", '那台電腦的 ShellBot 版本太舊（要 0.46.1 以上），這裡看不到它的對話；那台更新之後就可以。')
+    : why === 'unreachable' ? tr('That computer cannot be reached right now. Try again later.', '現在連不到那台電腦，稍後再試。')
+    : why === 'no_chat' ? tr('This version of the main page has no chat mode.', '這一版的主頁沒有對話模式，看不到對話。') : tr('The conversation could not be read. Try again later.', '這次讀不到對話，稍後再試。');
   const h = `<div class="empty">${esc(text)}</div>`;
   const list = $('#cList'); if (list.dataset.h !== h) { list.innerHTML = h; list.dataset.h = h; }
   const doing = $('#cDoing'); doing.textContent = ''; doing.dataset.h = '';
@@ -1814,7 +1842,7 @@ async function chatTick(force) {
 }
 function renderDoing(r, e) {
   const el = $('#cDoing'), d = (r && r.doing) || {}, st = e ? e.st : '';
-  const text = d.text || (st === 'decision' ? '等你決定' : st === 'stuck' ? '好像卡住了' : st === 'working' ? '正在做…' : (ST[st] || {}).label || '');
+  const text = d.text || (st === 'decision' ? tr('Needs your decision', '等你決定') : st === 'stuck' ? tr('Seems stuck', '好像卡住了') : st === 'working' ? tr('Working…', '正在做…') : statusLabel(st));
   const h = esc(text) + (d.detail ? `<code>${esc(d.detail)}</code>` : '');
   if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; }
   el.className = 'cdoing' + (st === 'working' ? ' busy' : '');
@@ -1823,7 +1851,7 @@ function renderChat() {
   const d = chat.data, list = $('#cList'); if (!d) return;
   const near = chat.first || list.scrollHeight - list.scrollTop - list.clientHeight < 60;
   const h = d.items.length ? d.items.map(it => `<div class="cm cm-${esc(it.who)}" data-k="${esc(it.k)}"><div class="cbody">${it.html}</div></div>`).join('')
-    : `<div class="empty">${!d.readable && d.why === 'provider' ? '這個 CLI 的對話這裡讀不到；傳話一樣可以。' : '還沒有對話。'}</div>`;
+    : `<div class="empty">${!d.readable && d.why === 'provider' ? tr('This CLI does not expose its conversation here; you can still send a message.', '這個 CLI 的對話這裡讀不到；傳話一樣可以。') : tr('No conversation yet.', '還沒有對話。')}</div>`;
   if (list.dataset.h !== h) {
     list.innerHTML = h; list.dataset.h = h;
     for (const el of list.querySelectorAll('.cm-me,.cm-bot,.cm-peer')) {        // 長的先收起來，按「顯示全部」再展開
@@ -1831,7 +1859,7 @@ function renderChat() {
       el.classList.add('clip');
       const b = el.querySelector('.cbody');
       if (b.scrollHeight <= b.clientHeight + 4) el.classList.remove('clip');
-      else el.insertAdjacentHTML('beforeend', '<button class="cmore" type="button" data-act="more">顯示全部</button>');
+      else el.insertAdjacentHTML('beforeend', `<button class="cmore" type="button" data-act="more">${tr('Show all', '顯示全部')}</button>`);
     }
   }
   if (near) list.scrollTop = list.scrollHeight;
@@ -1840,22 +1868,22 @@ function renderChat() {
 function renderAsk() {
   const el = $('#cAsk'), a = chat.data && chat.data.ask;
   let h = '';
-  if (a && a.term) h = '<h4>等你決定</h4><div class="q">它在終端機上等你；這裡讀不到選項，所以不會替你選。</div><div class="opts"><button data-act="to-term">到他的分頁處理</button></div>';
+  if (a && a.term) h = `<h4>${tr('Needs your decision', '等你決定')}</h4><div class="q">${tr('It is waiting in the terminal; its options are not available here, so nothing will be selected for you.', '它在終端機上等你；這裡讀不到選項，所以不會替你選。')}</div><div class="opts"><button data-act="to-term">${tr('Handle in its tab', '到他的分頁處理')}</button></div>`;
   else if (a) {
     const done = chat.answered && chat.answered.id === a.id;
-    h = `<h4>要你決定</h4><div class="q">${esc(a.question)}</div>${a.context || ''}` +
-      `<div class="opts">${a.options.map(o => `<button class="${o.tone ? 'tone-' + esc(o.tone) : ''}" data-act="answer" data-n="${esc(String(o.n))}" title="${esc(`選項 ${o.n}：${o.raw}`)}"${done ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>` +
-      (done ? `<div class="small">已送出：${esc(chat.answered.label)}</div>` : '') + (a.asIs ? '<div class="small">照 CLI 的原文顯示。</div>' : '');
+    h = `<h4>${tr('Needs your decision', '要你決定')}</h4><div class="q">${esc(a.question)}</div>${a.context || ''}` +
+      `<div class="opts">${a.options.map(o => `<button class="${o.tone ? 'tone-' + esc(o.tone) : ''}" data-act="answer" data-n="${esc(String(o.n))}" title="${esc(tr(`Option ${o.n}: ${o.raw}`, `選項 ${o.n}：${o.raw}`))}"${done ? ' disabled' : ''}>${esc(o.label)}</button>`).join('')}</div>` +
+      (done ? `<div class="small">${tr('Sent: ', '已送出：')}${esc(chat.answered.label)}</div>` : '') + (a.asIs ? `<div class="small">${tr('Shown as-is from the CLI.', '照 CLI 的原文顯示。')}</div>` : '');
   }
   el.hidden = !h;
   if (chat.askSig !== h) { el.innerHTML = h; chat.askSig = h; }
 }
 function renderNote() {
-  const el = $('#cNote'), d = chat.data || {}, e = chat.key && M.ents.get(chat.key), name = e ? e.who.name : '他';
+  const el = $('#cNote'), d = chat.data || {}, e = chat.key && M.ents.get(chat.key), name = e ? e.who.name : tr('They', '他');
   const parts = []; let warn = false;
-  if (chat.draftCard != null) { warn = true; parts.push(`${esc(name)}的終端機輸入框裡還有沒送出的字：「${esc(chat.draftCard)}」。要先清掉它，你的話才送得進去。<div class="row"><button data-act="clear-send">清掉它，送出我的</button><button data-act="keep">先不要</button></div>`); }
+  if (chat.draftCard != null) { warn = true; parts.push(tr(`${esc(name)}'s terminal still has unsent text: “${esc(chat.draftCard)}”. Clear it before sending your message.<div class="row"><button data-act="clear-send">Clear it and send mine</button><button data-act="keep">Not now</button></div>`, `${esc(name)}的終端機輸入框裡還有沒送出的字：「${esc(chat.draftCard)}」。要先清掉它，你的話才送得進去。<div class="row"><button data-act="clear-send">清掉它，送出我的</button><button data-act="keep">先不要</button></div>`)); }
   if (chat.flash && chat.flash.until > Date.now()) { warn = warn || chat.flash.warn; parts.push(esc(chat.flash.text)); }
-  if (d.login) { warn = true; parts.push(`${esc(name)}要重新登入。<div class="row"><button data-act="to-term">到他的分頁處理</button></div>`); }
+  if (d.login) { warn = true; parts.push(tr(`${esc(name)} needs to sign in again.<div class="row"><button data-act="to-term">Handle in its tab</button></div>`, `${esc(name)}要重新登入。<div class="row"><button data-act="to-term">到他的分頁處理</button></div>`)); }
   if (d.queue) parts.push(esc(d.queue));
   const h = parts.join('<br>');
   el.hidden = !h; el.classList.toggle('warn', warn);
@@ -1868,7 +1896,7 @@ function renderFiles() {
   const el = $('#cFiles'), files = (chat.key && attached.get(chat.key)) || [];
   el.hidden = !files.length;
   el.innerHTML = files.map((f, i) => `<span class="cfile" title="${esc(f.path)}">${f.url ? `<img src="${esc(f.url)}" alt="">` : ''}<span>${esc(f.name)}</span>` +
-    `<button type="button" data-act="unattach" data-i="${i}" title="拿掉" aria-label="拿掉 ${esc(f.name)}">${SFIcons.html('close')}</button></span>`).join('');
+    `<button type="button" data-act="unattach" data-i="${i}" title="${tr('Remove', '拿掉')}" aria-label="${tr('Remove ', '拿掉 ')}${esc(f.name)}">${SFIcons.html('close')}</button></span>`).join('');
 }
 const readDataUrl = blob => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(r.error); r.readAsDataURL(blob); });
 async function chatPaste(ev) {
@@ -1876,15 +1904,15 @@ async function chatPaste(ev) {
   const images = [...(cd.items || [])].filter(it => it.kind === 'file' && /^image\//.test(it.type)).map(it => it.getAsFile()).filter(Boolean);
   if (!images.length && ![...(cd.types || [])].includes('Files')) return;           // text pastes as text
   ev.preventDefault();
-  flash('附上中…');
+  flash(tr('Attaching…', '附上中…'));
   const got = [];
   try {
     if (images.length) for (const blob of images) { const url = await readDataUrl(blob); const r = await CHAT.attach(key, url, blob.name || '');
-      if (!r || !r.ok) throw new Error(r && r.remote ? '那台電腦現在收不到檔案' + (r.message ? `（${r.message}）` : '') : (r && r.message) || '存不下這張圖'); r.files.forEach(f => got.push(Object.assign({ url }, f))); }
-    else { const r = await CHAT.attach(key, '', ''); if (!r || !r.ok) throw new Error(r && r.remote ? '那台電腦現在收不到檔案' : (r && r.message) || '剪貼簿裡沒有檔案'); got.push(...r.files); }
-  } catch (err) { if (key === chat.key) flash('沒有附上：' + (err && err.message ? err.message : err), true); return; }
+      if (!r || !r.ok) throw new Error(r && r.remote ? tr('That computer cannot receive files right now', '那台電腦現在收不到檔案') + (r.message ? ` (${r.message})` : '') : (r && r.message) || tr('Could not save this image', '存不下這張圖')); r.files.forEach(f => got.push(Object.assign({ url }, f))); }
+    else { const r = await CHAT.attach(key, '', ''); if (!r || !r.ok) throw new Error(r && r.remote ? tr('That computer cannot receive files right now', '那台電腦現在收不到檔案') : (r && r.message) || tr('No file in the clipboard', '剪貼簿裡沒有檔案')); got.push(...r.files); }
+  } catch (err) { if (key === chat.key) flash(tr('Could not attach: ', '沒有附上：') + (err && err.message ? err.message : err), true); return; }
   attached.set(key, (attached.get(key) || []).concat(got));
-  if (key === chat.key) { renderFiles(); flash(`附上了 ${got.length} 個檔案，送出時一起送`); }
+  if (key === chat.key) { renderFiles(); flash(tr(`Attached ${got.length} file(s); they will be sent with your message`, `附上了 ${got.length} 個檔案，送出時一起送`)); }
 }
 async function chatSend(clearDraft) {
   const key = chat.key, box = $('#cBox'), words = box.value, files = (attached.get(key) || []).slice();
@@ -1900,11 +1928,11 @@ async function chatSend(clearDraft) {
     attached.delete(key);
     if (here) { if (box.value === words) box.value = ''; chat.draftCard = null; autosize(); renderFiles(); }
     else if (unsent.get(key) === words) unsent.delete(key);
-    if (here) { flash(r.queued ? '已送出，排隊中：好了就會打進去。' : '已送出。'); chat.rev = ''; chatTick(true); }
+    if (here) { flash(r.queued ? tr('Sent and queued; it will arrive when ready.', '已送出，排隊中：好了就會打進去。') : tr('Sent.', '已送出。')); chat.rev = ''; chatTick(true); }
   } else if (r && r.code === 'draft') {
     if (here) { chat.draftCard = r.draft || '…'; renderNote(); }
   } else if (here) {
-    flash((r && r.message) || '沒有送出。', true);
+    flash((r && r.message) || tr('Not sent.', '沒有送出。'), true);
   }
 }
 async function chatAnswer(btn) {
@@ -1915,11 +1943,11 @@ async function chatAnswer(btn) {
   try { r = await CHAT.answer(key, parseInt(btn.dataset.n, 10), a.id); } catch (err) { r = { success: false, message: String(err) }; }
   if (key !== chat.key) return;
   if (r && r.success) chat.answered = { id: a.id, label: btn.textContent };
-  else { chat.answered = null; flash(r && r.code === 'stale' ? '這題已經回答過或換題了，沒有送出。' : (r && r.message) || '沒有送出。', true); }
+  else { chat.answered = null; flash(r && r.code === 'stale' ? tr('This question was already answered or changed; nothing was sent.', '這題已經回答過或換題了，沒有送出。') : (r && r.message) || tr('Not sent.', '沒有送出。'), true); }
   chat.askSig = ''; renderAsk(); chat.rev = ''; chatTick(true);
 }
 function chatOpenTab() { const e = chat.key && M.ents.get(chat.key), there = e && (e.kind === 'peer' || e.kind === 'peertemp');
-  if (CHAT && chat.key && !CHAT.open(chat.key)) flash(there ? '打不開那台電腦的分頁：連不到，或這台沒有操作它的權限。' : '他現在沒有分頁可以切過去。', true); }
+  if (CHAT && chat.key && !CHAT.open(chat.key)) flash(there ? tr('Cannot open that computer\'s tab: it is unreachable or you do not have permission.', '打不開那台電腦的分頁：連不到，或這台沒有操作它的權限。') : tr('They do not have an open tab to switch to.', '他現在沒有分頁可以切過去。'), true); }
 $('#pTabs').addEventListener('click', ev => {
   const b = ev.target.closest('button[data-tab]'); if (!b) return;
   panelTab = b.dataset.tab === 'info' ? 'info' : 'chat'; store.set('panelTab', panelTab);
@@ -2109,6 +2137,18 @@ function loopWords(l) {                              // 「每 20 分鐘」「�
   if (!l) return '';
   if (l.kind === 'cron') return l.crons[0] && l.crons[0].schedule ? cronWords(l.crons[0].schedule) : '';
   return everyWords(l.delay);
+}
+function everyWordsEn(sec) { sec = Math.round(sec); if (sec <= 0) return ''; if (sec < 60) return `Every ${sec} sec`; const m = Math.round(sec / 60); return m % 60 === 0 ? `Every ${m / 60} hr` : `Every ${m} min`; }
+function cronWordsEn(expr) {
+  const f = String(expr || '').trim().split(/\s+/); if (f.length !== 5) return String(expr || '');
+  const [mi, hr, dom, mon, dow] = f, num = v => /^\d+$/.test(v);
+  if (dom === '*' && mon === '*' && dow === '*') {
+    const em = /^\*\/(\d+)$/.exec(mi); if (em && hr === '*') return `Every ${em[1]} min`;
+    const eh = /^\*\/(\d+)$/.exec(hr); if (eh && num(mi)) return `Every ${eh[1]} hr`;
+    if (num(mi) && hr === '*') return `Every hour at minute ${mi}`;
+    if (num(mi) && num(hr)) return `Daily ${hr.padStart(2, '0')}:${mi.padStart(2, '0')}`;
+  }
+  return String(expr || '');
 }
 function cdText(next, status) {
   const left = next * 1000 - Date.now();
@@ -2780,8 +2820,9 @@ $('#openCal').onclick = () => openView('cal');
 // 一個人的排程，資料頁那一行：「每 20 分鐘，下一次 14:20」
 function loopLine(l) {
   if (!l) return '';
-  const w = loopWords(l), nx = l.kind === 'loop' ? (l.status === 'running' ? '這一輪正在跑' : l.next_ts ? '下一次 ' + hhmm(l.next_ts * 1000) : '') : '';
-  return [l.kind === 'cron' ? 'cron' + (w ? ' ' + w : '') : w || '/loop', nx].filter(Boolean).join('，');
+  const w = isZh() ? loopWords(l) : l.kind === 'cron' ? (l.crons[0] && l.crons[0].schedule ? cronWordsEn(l.crons[0].schedule) : '') : everyWordsEn(l.delay);
+  const nx = l.kind === 'loop' ? (l.status === 'running' ? tr('This run is active', '這一輪正在跑') : l.next_ts ? tr('Next ', '下一次 ') + hhmm(l.next_ts * 1000) : '') : '';
+  return [l.kind === 'cron' ? 'cron' + (w ? ' ' + w : '') : w || '/loop', nx].filter(Boolean).join(tr(', ', '，'));
 }
 
 /* ══════════ 12. 繪製一幀：一間房一間房，由後往前 ══════════ */
