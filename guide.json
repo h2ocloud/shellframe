@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_for": "0.59",
+  "reviewed_for": "0.60",
   "tours": {
     "first_run": [
       "new-tab",
@@ -323,6 +323,40 @@
       "body": {
         "en": "The 辦公室 button at the top of the sidebar opens an office floor: bots (staff) at desks, AI tabs that are not bots (interns) at a long table, subagents (part-timers) beside them. Click a person to read their conversation and message them. On for a new install.",
         "zh": "側欄最上面的「辦公室」鈕會打開一層辦公室：bot（正職）坐自己的桌子，不是 bot 的 AI 分頁（實習生）坐長桌，subagent（工讀生）站在旁邊。誰在忙、等你、卡住，看圖就知道；點一個人就能看他的對話、直接傳話。新安裝預設打開。"
+      }
+    },
+    {
+      "id": "office-bookshelf",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.60.0",
+      "flag": "experimental_office",
+      "open": "settings:office",
+      "title": {
+        "en": "Bookshelf",
+        "zh": "書櫃"
+      },
+      "body": {
+        "en": "In the office, the bookshelf on the lobby wall (or the 書櫃 button at the bottom right) shows each bot's memory, skills and session summaries, and the shared skills. Read only; the red number is bots whose memory is almost full.",
+        "zh": "辦公室大廳牆邊的書櫃（或右下角的「書櫃」鈕）收著每個 bot 的記憶、技能、對話摘要，和共用技能。只看不改；紅色數字是記憶快滿的 bot 數。"
+      }
+    },
+    {
+      "id": "office-personnel",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.60.0",
+      "flag": "experimental_office",
+      "open": "settings:office",
+      "title": {
+        "en": "Personnel cabinet",
+        "zh": "人事檔案櫃"
+      },
+      "body": {
+        "en": "The cabinet next to the bookshelf (or the 人事 button) has one file per bot: its duty, the model it runs on, whether it is awake, its tasks and schedules. External and local-model bots are labelled. Read only; 編輯執掌 opens its settings.",
+        "zh": "書櫃旁的人事檔案櫃（或右下角的「人事」鈕）每個 bot 一份檔案：執掌、跑的模型、醒著或休息、手上任務和負責的排程。外部、地端模型的 bot 會標出來。只看不改；「編輯執掌」打開它的設定。"
       }
     },
     {
