@@ -70,6 +70,9 @@ check("…and to answer 'who are you' with that first, by name", "第一句就�
 check("it puts what it asks the user to decide on the board, and closes it when answered",
       "sfctl task add --decision" in text and "sfctl task list --decisions" in text and "sfctl task done N" in text, text)
 check("…in English too", "sfctl task add --decision" in bots.persona_text(role, ENTRY, lang="en"))
+check("every bot is told to register what it hands the person (sfctl deliver add, a title and a note), in both languages",
+      all("sfctl deliver add" in bots.persona_text(role, ENTRY, lang=l) and "--title" in bots.persona_text(role, ENTRY, lang=l)
+          and "--note" in bots.persona_text(role, ENTRY, lang=l) for l in ("zh", "en")))
 check("no 執掌 written: it says so", "還沒寫" in bots.persona_text("x", {"label": "x"}, lang="zh"))
 check("in English when the prompts are", 'Your name is "示範秘書"' in bots.persona_text(role, ENTRY, lang="en"))
 check("the first line says it is not the program it runs on (a small model reads that much)",
