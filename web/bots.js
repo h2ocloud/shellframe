@@ -1905,6 +1905,7 @@
     faceSvg, defaultAvatar, SHAPES, PALETTE, STATES,
     enabled: () => enabled, setEnabled,
     newBot: () => openEditor(null, { primary: true }),     // web/entry.js: the first bot, when there is none
+    editBot: role => openEditor(role),                     // web/office.js: the office's personnel cabinet opens the bot's editor
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(0));
   else boot(0);

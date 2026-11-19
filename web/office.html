@@ -630,6 +630,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
   body.following #legend{opacity:0;pointer-events:none}
 }
 </style>
+<link rel="stylesheet" href="office_objects.css">
 </head>
 <body>
 <canvas id="stage" aria-label="辦公室平面圖：每個座位是一位 bot 或一個實習生（不是 bot 的 AI 分頁）"></canvas>
@@ -735,6 +736,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
 </div>
 <div id="toast" aria-live="polite"></div>
 
+<script src="office_objects.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1176,7 +1178,7 @@ function drawRoomShell(x, r, far) {
   if (r.kind === 'lobby') {
     wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 7, i => i <= 2 || i === 4);
     wallFace(x, r.x, r.y, r.x, r.y + Math.min(r.h, 5.5), Hh, 3, i => i === 0);
-    drawLobbyBoard(x); drawLobbyCalendar(x);                                                       // 白板＋便利貼、日曆（§11.7：都是可以點的）
+    drawLobbyBoard(x); drawLobbyCalendar(x); OBJ.draw(x, { P, poly, box, ellipse, wq, COL, FONT, hover: hoverObj });                                                       // 白板＋便利貼、日曆（§11.7：都是可以點的）
   } else if (r.kind === 'zone') {
     wallFace(x, r.x, r.y, r.x + r.w, r.y, Hh, 4, null, teamCol(r.team));
     poly(x, wq(r.x, r.y, r.x + r.w, r.y, 0, 1, Hh - 8, Hh - 4), alpha(teamCol(r.team), .55));   // 團隊色帶
@@ -1939,6 +1941,19 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chat
    檢視不在 renderPanel 裡重畫：用簽章，沒變就不碰 DOM（展開的列、點擊才不會被吃掉）；倒數只改字，由畫面迴圈順手更新。 */
 M.board = null; M.notes = []; M.boardVer = 0; M.notesAt = 0; M.boardJson = ''; M.boardAt = 0; M.loops = []; M.loopsVer = 0; M.loopsJson = '';
 const WALL_OBJ = { board: { name: '任務看板', q: [1.4, 0, 4.9, 0, 0, 1, 28, 60] }, cal: { name: '排程', q: [5.1, 0, 5.9, 0, 0, 1, 38, 64] } };
+// 牆邊的家具（書櫃、人事檔案櫃…）：每件是一個「辦公室物件」（office_objects.py 的宣告＋四個掛鉤），畫法、蓋板（共用的彈出視窗）在 web/office_objects.js；
+// 這裡只接線：牆上的東西是 'obj:<id>'，點到、或按右下角同名的按鈕，開同一種蓋板。標題字、字樣都由主頁（HOST.objects）給，已是這一頁的語言。
+const OBJ = OfficeObjects.create({
+  tr, doc: document, kick: () => kick(),
+  host: HOST ? { objects: HOST.objects, md: HOST.md } : OfficeObjects.demoHost(tr),
+  beforeOpen() { if (view) closeView(true); if (follow) stopFollow(true); hoverObj = null; hoverKey = null; cv.classList.remove('pt'); },
+  hasTab: key => !!(HOST && HOST.chat && HOST.chat.has(key)),
+  send: (key, text) => HOST.chat.send(key, text, false),
+  openUrl: url => { if (HOST && HOST.chat && HOST.chat.openUrl) HOST.chat.openUrl(url); },
+  editBot: role => !!(HOST && HOST.editBot && HOST.editBot(role)),
+  view: (v, task) => { if (v === 'board') applyFocus({ task: task == null ? null : task }); else if (view !== 'cal') openView('cal'); },
+  follow: key => { if (M.ents.get(key)) startFollow(key); },
+});
 const NOTE_MAX = 7;   // 牆上的便利貼：一件一張，最多 7 張，顏色與順序跟「任務看板」的四欄一樣（PRIO、boardLanes 在看板那一節）
 const SCHED = { data: null, at: 0, busy: false, ver: 0, every: 60000, calls: 0, json: '' };
 const vstate = { open: new Set(), detail: new Map(), ver: 0, sig: '', dsig: '', tick: 0, act: null };   // act：卡裡正在填的「我做好了」「留言」表單 {id, mode, text, tell, busy, msg, bad}
@@ -1986,15 +2001,16 @@ function setLoops(list) {
 // 畫與點用同一個四邊形（螢幕座標）
 // 牆上的東西：大廳的 'board'、'cal'（固定在 WALL_OBJ），和每台有白板的隔壁電腦後牆上的 'board:<電腦 id>'（跟著那間房，房間移動時一起動）
 function wallObj(k) {
+  if (String(k).startsWith('obj:')) return OBJ.wall(k);
   if (WALL_OBJ[k]) return WALL_OBJ[k];
   const m = /^board:(.+)$/.exec(String(k)), pe = m && M.peers.get(m[1]), r = pe && pe.boardState ? M.rooms.get('peer:' + pe.id) : null;
   if (!r) return null;
   const x0 = r.x + 2.75;                                                                    // 門（1.2～2.3）和機櫃之間；窗讓出來（drawRoomShell）
   return { name: pe.name + ' 的白板', q: [x0, r.y, x0 + clamp(r.w - 5.45, 2.6, 3.6), r.y, 0, 1, 16, 38], room: r.id };
 }
-const wallRoom = k => (WALL_OBJ[k] ? 'lobby' : 'peer:' + String(k).slice(6));
-const wallKeys = () => ['cal', 'board', ...[...M.peers.keys()].map(id => 'board:' + id)];
-const wallScreen = k => wq(...wallObj(k).q).map(p => ({ x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }));
+const wallRoom = k => (WALL_OBJ[k] || String(k).startsWith('obj:') ? 'lobby' : 'peer:' + String(k).slice(6));
+const wallKeys = () => [...OBJ.keys(), 'cal', 'board', ...[...M.peers.keys()].map(id => 'board:' + id)];
+const wallScreen = k => String(k).startsWith('obj:') ? OBJ.hull(k, t2s) : wq(...wallObj(k).q).map(p => ({ x: (p.x - cam.x) * cam.z + W / 2, y: (p.y - cam.y) * cam.z + H / 2 }));
 const inPoly = (pts, px, py) => { let r = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[i].y > py) !== (pts[j].y > py) && px < (pts[j].x - pts[i].x) * (py - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x) r = !r; return r; };
 function wallObjAt(sx, sy) {
   if (lodFar) return null;
@@ -2645,7 +2661,9 @@ function renderView(force) {
   const hs = view === 'cal' ? [CAL.mode, CAL.anchor, dayAt(calNow())].join('#') : BOARD_ONLY ? 'sw#' + (vscope || '') + '#' + scopeSig() : ''; if (hs !== CAL.headSig) { CAL.headSig = hs; $('#vHeadX').innerHTML = view === 'cal' ? calHead() : scopeBar(); }
   if (view === 'cal') { calAfter(); calPopSync(); } else calPopSync();
 }
-function openView(key) {                                 // key：'board'、'cal'，或 'board:<電腦 id>'（那台電腦的白板）
+function openView(key) {                                 // key：'board'、'cal'，或 'board:<電腦 id>'（那台電腦的白板）；'obj:<id>'：牆邊的家具（共用蓋板）
+  if (String(key).startsWith('obj:')) { OBJ.open(String(key).slice(4)); return; }
+  OBJ.close();
   const m = /^board:(.+)$/.exec(String(key)), kind = m ? 'board' : key, scope = m ? m[1] : null;
   if (!wallObj(key) && !(BOARD_ONLY && kind === 'board' && (!scope || (M.peers.get(scope) && M.peers.get(scope).boardState)))) return;   // 只有白板：沒有地板可以點，也就沒有牆上的東西，照樣開
   if (view === kind && vscope === scope) { closeView(); return; }
@@ -2990,8 +3008,8 @@ addEventListener('keydown', e => {
   if (HOST && HOST.isBoardKey && HOST.isBoardKey(e)) { e.preventDefault(); e.stopPropagation(); if (BOARD_ONLY) HOST.close(); else openView('board'); return; }   // 看板快捷鍵：焦點在這個框裡時主頁收不到
   if (e.key === 'Escape' && view === 'cal' && CAL.pop) { e.preventDefault(); calClosePop(); return; }   // 日曆：Esc 先關細節卡（焦點在卡裡的選單、時間欄也算），再關檢視
   if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (e.key === 'Escape' && e.target.tagName === 'SELECT') e.target.blur(); else return; }   // 選完區域後焦點留在選單上：Esc 照樣能退出
-  if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (view) { if (vstate.open.size) closeDetail(); else closeView(); } else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
-  if (view) return;   // 蓋板開著：其他快捷鍵不碰底下的辦公室
+  if (e.key === 'Escape') { if (drag && drag.mode === 'seat') { drag = null; return; } if (OBJ.esc()) return; if (view) { if (vstate.open.size) closeDetail(); else closeView(); } else if (follow) stopFollow(); else if (hl) setHl(hl); else if (HOST && HOST.close) HOST.close(); return; }
+  if (view || OBJ.isOpen()) return;   // 蓋板開著：其他快捷鍵不碰底下的辦公室
   if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (getComputedStyle($('#search')).display === 'none') document.body.classList.add('searching'); q.focus(); }
 });
 $('#stats').addEventListener('click', e => { const b = e.target.closest('.stat'); if (b) setHl(b.dataset.k); });
@@ -3206,6 +3224,7 @@ function update(snap, opts = {}) {
   }
   if (snap.board) setBoard(snap.board);
   if (Array.isArray(snap.loops)) setLoops(snap.loops);
+  if (Array.isArray(snap.objects) && !BOARD_ONLY) OBJ.setObjects(snap.objects);   // 牆邊的家具和它們的角標（主頁最多 30 秒問一次）
   M.loaded = true;
   assignSeats(); layout(); arrangeHelpers();
   const stg = Math.min(.28, 2.4 / Math.max(1, born.length)); born.forEach((e, i) => { e.vis = 1;
@@ -3443,6 +3462,8 @@ window.__office = {
     for (const [u, v] of [[.5, .5], [.2, .5], [.8, .5], [.5, .2], [.5, .8], [.15, .2], [.85, .2], [.15, .8], [.85, .8]]) { const p = at(u, v); if (wallObjAt(p.x, p.y) === k && !pick(p.x, p.y)) return p; }
     return first;
   },
+  objects: () => OBJ.state(), objOpen: (id, o) => OBJ.open(id, o), objClose: () => OBJ.close(),
+  objPoint: id => { const h = OBJ.hull('obj:' + id, t2s); if (!h.length) return null; return { x: h.reduce((a, p) => a + p.x, 0) / h.length, y: h.reduce((a, p) => a + p.y, 0) / h.length }; },
   wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj && wallObj(hoverObj) ? wallObj(hoverObj).name : ''), viewScope: () => vscope,
   peerBoard: pid => { const pe = M.peers.get(pid); return pe && pe.board ? { state: pe.boardState, at: pe.bAt, notes: [...pe.notes], board: JSON.parse(pe.boardJson), ver: pe.boardVer, main: pe.primaryKey } : pe ? { state: pe.boardState, main: pe.primaryKey } : null; },
   seatOf: key => { const e = M.ents.get(key); return e ? e.seatKey : null; },
@@ -3485,6 +3506,7 @@ window.__office = {
   if (store.get('legendMin', narrow)) { $('#legend').classList.add('min'); $('#legendToggle').textContent = '展開'; $('#legendToggle').setAttribute('aria-expanded', 'false'); }
   if (Object.keys(overrides()).length) $('#resetSeats').hidden = false;
   W = innerWidth; H = innerHeight; V.tp = wantTp();
+  if (!HOST) OBJ.setObjects(OfficeObjects.DEMO_OBJECTS(tr));   // 單獨打開：示範的家具
   if (HOST) { document.body.classList.add('embedded'); goLive(); if (BOARD_ONLY) setTimeout(showBoardOnly, 1500); } else update(DB);   // 只有白板：第一份 snapshot 一到就開；1.5 秒還沒來也開   // 嵌在 ShellBot 裡：等主頁的第一份 snapshot（那一份算第一次載入，沒有人走進來）
   addEventListener('resize', resize); resize(); renderStats(); renderAreas(); kick();
 })();

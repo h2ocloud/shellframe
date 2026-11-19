@@ -621,6 +621,28 @@
     if (k.startsWith('t:')) { const s = ((host() && host().sessions()) || {})[k.slice(2)]; return String((s && s.label) || k.slice(2)); }
     return '';
   }
+  // The office's objects (furniture on the lobby wall: the bookshelf, the personnel cabinet; office_objects.py, web/office_objects.js):
+  // `objs` are their declarations with the badge (office_objects, asked at open and at most every 30 s, never for the board alone); a
+  // popup's list / entry / action are the backend's calls, one per use, in the page's language. A `{}` or failed answer is "no objects".
+  // md: an entry's Markdown through the chat view's own safe renderer (null when the chat view is not there: the popup shows it plain).
+  const OBJECTS_MS = 30000;
+  const objectsHost = {
+    async call(name, ...args) {
+      const a = api();
+      if (!a || !a[name]) return { success: false };
+      try { return JSON.parse(await a[name](...args, isZh() ? 'zh' : 'en')) || { success: false }; } catch (e) { return { success: false, message: String(e) }; }
+    },
+    list: (id, q) => objectsHost.call('office_object_list', String(id), JSON.stringify(q || {})),
+    item: (id, iid) => objectsHost.call('office_object_item', String(id), String(iid)),
+    action: (id, iid, aid) => objectsHost.call('office_object_action', String(id), String(iid), String(aid), '{}'),
+  };
+  async function refreshObjects(force) {
+    const a = api();
+    if (!a || !a.office_objects || boardMode || (!force && Date.now() - objsAt < OBJECTS_MS)) return;
+    objsAt = Date.now();
+    const r = await objectsHost.call('office_objects');
+    objs = r && r.success && Array.isArray(r.objects) ? r.objects : [];
+  }
   // What office.html's `store` calls (same origin, synchronous), and its conversation panel (promises).
   const officeHost = {
     get: k => (prefs && Object.prototype.hasOwnProperty.call(prefs, k) ? clone(prefs[k]) : null),
@@ -635,9 +657,20 @@
     uiScale: () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1,
     chat: chatHost,
     board: boardHost,
+    objects: objectsHost,
+    md: text => { const C = chatOf(); return C ? C.rules.md(String(text || ''), isZh()) : null; },
+    // A bot's settings editor (web/bots.js): the office closes first, the editor opens in the main window. false when there is none.
+    editBot(role) {
+      const B = root.SFBots;
+      if (!(B && B.editBot && role)) return false;
+      close();
+      B.editBot(String(role));
+      return true;
+    },
   };
 
   let overlay = null, frame = null, timer = 0, busy = false, lastPush = null, boardMode = false, boardFocus = null;
+  let objs = [], objsAt = 0;
   let tasks = { open: [], stuck: [], decisions: [] }, tasksAt = 0, helpers = {}, peerTasks = {}, peerTasksAt = 0;
   const seen = {}, mem = {};
   const TICK_MS = 3000, TASKS_MS = 9000;
@@ -667,6 +700,7 @@
       kit: { palette: B.PALETTE || {}, shapes: Object.keys(B.SHAPES || {}), defaultAvatar: B.defaultAvatar },
       now: Date.now(),
     });
+    snap.objects = clone(objs);
     return track(mem, snap, Date.now());
   }
   async function refreshData() {
@@ -685,6 +719,7 @@
       peerTasksAt = Date.now();
       try { const r = JSON.parse(await a.link_peer_tasks()); if (r && r.peers && typeof r.peers === 'object') { peerTasks = r.peers; if (root.SFBoard && root.SFBoard.notePeers) root.SFBoard.notePeers(r.peers); } } catch (_) {}
     }
+    await refreshObjects(false);
     if (a.office_helpers && !boardMode) {          // the floor's part-timers: not asked for by the board alone (and refused with the switch off)
       try { const r = JSON.parse(await a.office_helpers()); if (r && r.success) helpers = r.helpers || {}; } catch (_) {}
     }
@@ -719,7 +754,7 @@
     }
     if (overlay || (!bo && !enabled())) return;
     boardMode = bo;
-    tasksAt = 0; peerTasksAt = 0; peerTasks = {};   // a freshly opened office asks again, not on the last open's answer
+    tasksAt = 0; peerTasksAt = 0; peerTasks = {}; objsAt = 0; objs = [];   // a freshly opened office asks again, not on the last open's answer
     overlay = document.createElement('div');
     overlay.id = 'sfo-overlay';
     overlay.tabIndex = -1;
