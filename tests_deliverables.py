@@ -235,8 +235,16 @@ check("an absolute path in a reply, the file exists and is recent: a candidate w
 tilde_dir = HOME / "demo-proj"
 tilde = make("摘要.md", "# 摘要\n", age=100, base=tilde_dir)
 os.environ["HOME"] = str(HOME)
+os.environ["USERPROFILE"] = str(HOME)         # what ~ means on Windows (Python ignores HOME there)
 res = found("整理好了 ~/demo-proj/摘要.md，第二段是我猜的。")
 check("a ~/ path (home given by the environment) works too", [c["title"] for c in res["candidates"]] == ["摘要.md"], res)
+# Windows paths: detected wherever the app runs (the files below need not exist: this is the reading of the text only)
+WIN = lambda text: [m.group(1) for m in dv._WIN_PATH.finditer(dv._normalise(text))]
+check("Windows paths in a reply are read: C:\\…, C:/…, ~\\…, a Chinese name, glued to Chinese text, before a full stop",
+      WIN("檔案在 C:\\Users\\demo\\週報.md 好了") == ["C:\\Users\\demo\\週報.md"] and WIN("路徑 C:/srv/demo/a.pdf。") == ["C:/srv/demo/a.pdf"]
+      and WIN("看 ~\\proj\\x.html") == ["~\\proj\\x.html"] and WIN("檔案在C:\\demo\\x.md") == ["C:\\demo\\x.md"],
+      [WIN("檔案在 C:\\Users\\demo\\週報.md 好了"), WIN("路徑 C:/srv/demo/a.pdf。"), WIN("看 ~\\proj\\x.html"), WIN("檔案在C:\\demo\\x.md")])
+check("…a time (12:30), a lone drive (C:) and a POSIX path are not Windows paths", WIN("time 12:30 and C: drive, mac /srv/demo/b.md") == [])
 check("fullwidth punctuation around a path and a closing full stop do not break it",
       [c["title"] for c in found(f"（{good}）。檔案在：`{good}`.")["candidates"]] == ["示範週報.pdf"])
 check("a relative path is not a candidate", found("see out/示範週報.pdf and ./a.md")["candidates"] == [])

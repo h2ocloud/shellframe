@@ -520,10 +520,16 @@ def _path_regex():
     return TelegramBridge._FILE_PATH_RE
 
 
+# Windows: C:\\x\\y.md, C:/x/y.md and ~\\x\\y.md (the bridge's detector knows only /… and ~/…), same characters per part
+_WIN_PATH = re.compile(r"(?:^|\s|`)((?:[A-Za-z]:|~)[\\/](?:[\w.\-]+[\\/])*[\w.\-]+(?:\.\w{1,10})?)(?=\s|`|$|[)\]},;:])")
+_DRIVE = re.compile(r"(?<![A-Za-z])([A-Za-z]):(?=[\\/])")     # the colon of C:\ survives _PUNCT
+
+
 def _normalise(text) -> str:
-    t = _PUNCT.sub(" ", str(text or ""))
+    t = _DRIVE.sub("\\1\x01", str(text or ""))
+    t = _PUNCT.sub(" ", t).replace("\x01", ":")
     t = re.sub(r"\.(?=\s|$)", " ", t)                          # "…report.md." ends a sentence, not the name
-    return re.sub(r"(?<=[^\x00-\x7f])(?=~/)", " ", t)           # 「檔案在~/x.md」
+    return re.sub(r"(?<=[^\x00-\x7f])(?=~[/\\\\]|[A-Za-z]:[/\\\\])", " ", t)   # 「檔案在~/x.md」「檔案在C:\\x.md」
 
 
 def _sentence(text, raw) -> str:
@@ -559,7 +565,8 @@ def find_candidates(text, *, now=None, home=None, protected=()) -> dict:
     except Exception:
         return {"candidates": [], "skipped": []}
     cands, skipped, seen = [], [], set()
-    for m in rx.finditer(_normalise(text)):
+    norm = _normalise(text)
+    for m in sorted(list(rx.finditer(norm)) + list(_WIN_PATH.finditer(norm)), key=lambda x: x.start(1)):
         raw = m.group(1)
         p = os.path.abspath(os.path.expanduser(raw))
         if p in seen or not os.path.isabs(os.path.expanduser(raw)):
