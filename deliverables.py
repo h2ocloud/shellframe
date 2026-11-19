@@ -424,7 +424,7 @@ def overview(live_tabs=None, *, rail=30, cand_rail=10, path=None) -> dict:
     for r in rows:
         key = owner_ref(r, live_tabs)
         if r["state"] == "candidate":
-            cands.append(dict(_public(r), owner=key))
+            cands.append(dict({k: v for k, v in _public(r).items() if k != "source"}, owner=key))      # the sentence (it holds the path) is for the popup
             continue
         fresh = r["state"] == "new" and r["seen_at"] is None
         total_new += 1 if fresh else 0
@@ -465,6 +465,23 @@ def skipped_names(owner, path=None) -> list:
         return [str(x) for x in json.loads(r[0])] if r else []
     except (ValueError, TypeError):
         return []
+
+
+def all_skipped(path=None) -> list:
+    """The names passed over, for every person (newest first, without repeats)."""
+    import json
+    con = ss._open(path)
+    try:
+        vals = [r[0] for r in con.execute("SELECT value FROM meta WHERE key LIKE 'deliv_skipped:%'")]
+    finally:
+        con.close()
+    out = []
+    for v in vals:
+        try:
+            out += [str(x) for x in json.loads(v)]
+        except (ValueError, TypeError):
+            continue
+    return list(dict.fromkeys(out))
 
 
 def _note_skipped(owner, names, path=None) -> None:

@@ -299,7 +299,8 @@ def clean_item(raw, declared_actions=()) -> dict:
             # never scripted: the page puts it in an <img>); anything else is dropped
             "image": raw["image"] if isinstance(raw.get("image"), str) and len(raw["image"]) <= IMAGE_MAX
             and _IMAGE.fullmatch(raw["image"]) else "",
-            "owner": _name(raw.get("owner"), 60), "owner_key": _ident(raw.get("owner_key"), 80)}
+            "owner": _name(raw.get("owner"), 60), "owner_key": _ident(raw.get("owner_key"), 80),
+            "refresh": bool(raw.get("refresh"))}          # opening it changed what the list says (a "seen" mark): the popup reads the list again
 
 
 def clean_action(raw, trusted=False) -> dict:

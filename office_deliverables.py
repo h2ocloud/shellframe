@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -87,8 +88,18 @@ DECLARATION = {
 }
 
 
+_tl = threading.local()
+
+
+def _use(ctx):
+    """The page's language for this call (a hook runs on a thread of its own, so it is kept per thread)."""
+    _tl.lang = ctx.lang
+
+
 def _(en, zh):
-    return sf_lang.pick(en, zh)
+    """A text for the page, in the page's language (what ctx.lang says); the lines sent to a bot use sf_lang.pick: the language
+    agents are spoken to in is the computer's, not the page's."""
+    return zh if getattr(_tl, "lang", "en") == "zh" else en
 
 
 # ── small words ──────────────────────────────────────────────────────────────
@@ -160,12 +171,14 @@ class Deliverables(oo.OfficeObject):
     declaration = DECLARATION
 
     def summary(self, ctx) -> dict:
+        _use(ctx)
         e = _env(ctx)
         ov = dv.overview(ctx.live_tabs() or {}, path=e["path"])
         return {"badge": ov["new"], "by_owner": ov["by_owner"], "by_task": ov["by_task"]}
 
     # the list
     def list(self, ctx, query="", filters=None, sort="newest", offset=0, limit=oo.LIST_MAX) -> dict:
+        _use(ctx)
         e, filters = _env(ctx), filters or {}
         live = ctx.live_tabs() or {}
         st = filters.get("state") or ""
@@ -213,7 +226,14 @@ class Deliverables(oo.OfficeObject):
                                    "tag": _("tab", "分頁") if gid.startswith("t:") else ""})
         for x in out:
             x.pop("state_id", None)
-        return {"groups": groups, "items": out[offset:offset + limit], "total": len(out)}
+        note = ""
+        if st == "candidate" or (want_owner and not st):
+            owner = ("bot", want_owner[2:]) if want_owner.startswith("b:") else None
+            names = dv.skipped_names(owner, e["path"]) if owner else dv.all_skipped(e["path"]) if st == "candidate" else []
+            if names:
+                note = _(f"Passed over {len(names)} file(s) that look like keys or settings: {', '.join(names[:4])}. They are never listed or previewed.",
+                         f"已自動略過 {len(names)} 個看起來像金鑰或設定的檔案：{'、'.join(names[:4])}。這類檔不會列出，也不會預覽。")
+        return {"groups": groups, "items": out[offset:offset + limit], "total": len(out), "note": note}
 
     def _row(self, ctx, r, gid, key, gone, now) -> dict:
         zh = ctx.lang == "zh"
@@ -249,6 +269,7 @@ class Deliverables(oo.OfficeObject):
 
     # one entry
     def item(self, ctx, item_id) -> dict:
+        _use(ctx)
         e = _env(ctx)
         try:
             r = dv.get(int(str(item_id)), e["path"])
@@ -263,6 +284,7 @@ class Deliverables(oo.OfficeObject):
                 _set_flag(r["id"], flag, e["path"])
                 r["flag"] = flag
         gone = _gone(r)
+        fresh = r["state"] == "new" and r["seen_at"] is None
         if r["state"] == "new":
             dv.mark_seen(r["id"], e["now"], path=e["path"])
         owner = _owner_name(ctx, r)
@@ -320,7 +342,7 @@ class Deliverables(oo.OfficeObject):
             labels["open"] = _("Show in file manager", "在 Finder 顯示")
         return {"title": r["title"], "subtitle": f"{owner} / {short_path(shown_ref, e['home'])}", "markdown": text, "meta": meta,
                 "chips": chips, "links": links, "actions": acts, "action_labels": labels, "image": image,
-                "owner": owner, "owner_key": key,
+                "owner": owner, "owner_key": key, "refresh": fresh,
                 "action_hints": {"take": _("Clears it off the desk; the file is not deleted.", "從桌上清掉，原檔不刪。")}}
 
     @staticmethod
@@ -344,7 +366,7 @@ class Deliverables(oo.OfficeObject):
         out = []
         if r["source"]:
             out += [_("**It was mentioned in this sentence**", "**它是在這句話裡提到的**"), "", "> " + r["source"], ""]
-        out += [_("**Why it was guessed**", "**為什麼猜它是交付物**"), ""] + [f"- ✓ {c}" for c in cause]
+        out += [_("**Why it was guessed**", "**為什麼猜它是交付物**"), ""] + [f"✓ {c}\n" for c in cause]
         out += ["", _("**After you choose**", "**你按了之後**"), "",
                 _("- Take it: it goes onto the owner's desk as new", "- 收下：桌上多一份公文，標「新」，檔案名稱照原樣"),
                 _("- Ignore: nothing happens; it is not asked again unless the file changes", "- 忽略：什麼都不多；同一個檔案不再問（除非它又被改過）")]
@@ -419,6 +441,7 @@ class Deliverables(oo.OfficeObject):
 
     # the person's actions
     def action(self, ctx, item_id, action_id, args) -> dict:
+        _use(ctx)
         e, args = _env(ctx), args or {}
         try:
             r = dv.get(int(str(item_id)), e["path"])
@@ -441,7 +464,7 @@ class Deliverables(oo.OfficeObject):
                 return self._ask(ctx, r, key, args)
             if action_id == "ask_logged":
                 if r["task_id"] and str(args.get("text") or "").strip():
-                    ctx.task_note(r["task_id"], _("Asked for a change to “", "請改「") + r["title"] + _("”: ", "」：")
+                    ctx.task_note(r["task_id"], sf_lang.pick("Asked for a change to “", "請改「") + r["title"] + sf_lang.pick("”: ", "」：")
                                   + dv.mask_line(args["text"], 300, strict=False))
                 return {"ok": True}
         except ValueError:
@@ -476,8 +499,8 @@ class Deliverables(oo.OfficeObject):
         where = dv.mask_line(r["ref"], 300, strict=False)
         if r["flag"] == "secret":
             where = os.path.basename(r["ref"].rstrip("/")) if r["kind"] == "file" else "(link)"
-        text = _(f"(Deliverable) Please change {title}: {words}; it is at {where}",
-                 f"（交付物）請改{title}：{words}；檔案在{where}") if r["kind"] == "file" else _(
+        text = sf_lang.pick(f"(Deliverable) Please change {title}: {words}; it is at {where}",
+                 f"（交付物）請改{title}：{words}；檔案在{where}") if r["kind"] == "file" else sf_lang.pick(
             f"(Deliverable) Please change {title}: {words}; the link is {where}", f"（交付物）請改{title}：{words}；連結在{where}")
         tell = {"to": key, "text": text}
         if r["task_id"]:
