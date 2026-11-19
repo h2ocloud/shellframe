@@ -67,6 +67,13 @@ __MARKUP__
 <script>
 window.__errors = [];
 window.onerror = (m) => { window.__errors.push(String(m)); };
+const TEST_LANG = 'zh-TW';
+const TEST_I18N = {
+  groupReadFailed: '讀不到群組：', groupDelete: '刪除',
+  groupEmpty: '還沒有群組。取個名字、勾選角色，按「新增／更新」。',
+  groupNoRoles: '名冊裡還沒有角色',
+};
+const t = key => TEST_LANG === 'zh-TW' ? TEST_I18N[key] : key;
 const esc2 = (s) => { const d = document.createElement('div');
                       d.textContent = s == null ? '' : s; return d.innerHTML; };
 let _groupRoles = [];

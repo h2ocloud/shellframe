@@ -121,6 +121,11 @@
     const f = document.getElementById('sb-footer-row');
     if (!f) return;
     f.classList.remove('sfe-words');
+    // Keep the footer icon-only while the sidebar is genuinely narrow. The
+    // Settings button may shrink to its gear first, which can otherwise make
+    // the words appear to fit even though the entry row has already switched
+    // to its narrow mode.
+    if (f.clientWidth < NARROW + 10) return;
     trial(f, f, 'sfe-words');
   }
   function fitEntry() {

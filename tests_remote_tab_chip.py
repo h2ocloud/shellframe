@@ -56,6 +56,16 @@ PAGE = """<!doctype html><meta charset="utf-8">
 <script>
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc2 = esc;
+const TEST_LANG = 'zh-TW';
+const TEST_I18N = {
+  remoteDefaultName: '遠端',
+  remoteTabTitle: '「{peer}」分頁「{label}」— 鍵盤輸入會送到那台電腦',
+  remoteTabCloseTitle: '關閉這個檢視（另一台電腦的 session 會繼續）',
+};
+const t = key => TEST_LANG === 'zh-TW' ? TEST_I18N[key] : key;
+const tf = (key, values) => Object.keys(values).reduce(
+  (text, name) => text.replaceAll(`{${name}}`, values[name]), t(key));
 const $tabs = document.getElementById('tabs');
 const activeId = 'rmt:peer7:s42';
 window.__closed = null;

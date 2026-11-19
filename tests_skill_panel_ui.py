@@ -65,6 +65,17 @@ __MARKUP__
 <script>
 window.__errors = [];
 window.onerror = (m) => { window.__errors.push(String(m)); };
+const TEST_LANG = 'zh-TW';
+const TEST_I18N = {
+  skillLoading: '讀取中…', skillStatusReadFailed: '讀不到安裝狀態',
+  skillClaudeLabel: 'Claude Code：', skillInstalled: '已裝，新分頁自己會讀到',
+  skillNotInstalled: '未安裝', skillCodexLabel: 'Codex：',
+  skillMarkerWritten: '已寫入標記區塊', skillNotWritten: '未寫入',
+  skillNoCodex: '這台機器沒有 ~/.codex', skillAiCommand: 'AI 要跑的指令：',
+  skillRemoveCodex: '從 Codex AGENTS.md 移除', skillWriteCodex: '寫入 Codex AGENTS.md',
+  skillWorking: '處理中…',
+};
+const t = key => TEST_LANG === 'zh-TW' ? TEST_I18N[key] : key;
 window.__installs = [];
 // Claude installed, Codex present but not written to — the state a machine is in
 // right after a first launch, which is what the panel mostly has to explain.
