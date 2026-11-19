@@ -724,7 +724,6 @@
   .sb-footer-btn.sb-footer-ico { flex: none; position: relative; width: 28px; height: 28px; padding: 0; justify-content: center; gap: 0; }
   .sb-footer-ico .sb-ico { opacity: .6; font-size: 13px; line-height: 1; }
   .sb-footer-ico:hover .sb-ico { opacity: 1; }
-  .sb-footer-ico .sb-ico-ai { font-size: 9px; font-weight: 700; letter-spacing: .02em; border: 1px solid currentColor; border-radius: 3px; padding: 1px 2px; }
   .sb-footer-ico .sb-ico-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .sb-footer-ico .sfg-badge { position: absolute; top: -5px; right: -7px; margin: 0; min-width: 14px; padding: 0 3px; font-size: 9px; line-height: 14px; }
 
@@ -844,16 +843,17 @@
     font-variant-numeric: tabular-nums;
   }
 </style>
+<link rel="stylesheet" href="icons.css"/>
 </head>
 <body>
 
 <!-- Tab bar -->
 <div id="tab-bar">
-  <button class="tab-action" id="btn-sidebar" title="Toggle sidebar" style="font-size:14px">☰</button>
+  <button class="tab-action" id="btn-sidebar" title="Toggle sidebar" style="font-size:14px" data-sfi="menu"></button>
   <div id="tabs"></div>
   <button id="btn-new-tab" data-guide="new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
-  <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none">🔁</button>
+  <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none" data-sfi="loop"></button>
   <button id="usage-brief" data-guide="usage" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
@@ -861,12 +861,12 @@
 <!-- Attachment chips -->
 <div id="image-bar">
   <div id="attach-chips"></div>
-  <button class="close-img" id="close-preview" title="Remove all">&times;</button>
+  <button class="close-img" id="close-preview" title="Remove all" data-sfi="close"></button>
 </div>
 
 <!-- Large-paste confirm bar -->
 <div id="paste-confirm-bar">
-  <span>📋</span>
+  <span data-sfi="clipboard"></span>
   <span class="pc-hint">
     Large paste — <b id="pc-stats"></b>.
     <kbd>Enter</kbd> 送出 · <kbd>Esc</kbd> 取消
@@ -885,8 +885,8 @@
 <!-- Voice input (STT) floating mic — 錄音→STT→帶 tag 注入當前分頁 -->
 <div id="mic-fab" style="display:none">
   <span id="mic-timer" style="display:none">0:00</span>
-  <button id="btn-mic-cancel" data-i18n-title="micCancel" title="取消錄音" style="display:none;font-size:12px">✕</button>
-  <button id="btn-mic" data-i18n-title="micTitle" title="語音輸入（STT）">🎙</button>
+  <button id="btn-mic-cancel" data-i18n-title="micCancel" title="取消錄音" style="display:none;font-size:12px" data-sfi="close"></button>
+  <button id="btn-mic" data-i18n-title="micTitle" title="語音輸入（STT）" data-sfi="mic"></button>
 </div>
 
 <!-- Main content -->
@@ -896,7 +896,7 @@
       <span data-i18n="sessions">Sessions</span>
       <!-- 中斷對話後 hook 不一定發 Stop，燈號會卡在執行中；這顆是手動重判。
            後端在 hook 與畫面都安靜 90 秒後交回畫面判斷。 -->
-      <button id="btn-refresh-status" title="重新判斷所有分頁的狀態燈號">↻</button>
+      <button id="btn-refresh-status" title="重新判斷所有分頁的狀態燈號" data-sfi="refresh"></button>
     </div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
@@ -904,12 +904,12 @@
            names on hover (four stacked rows read as clutter at the sidebar's foot). Same ids and
            data-guide marks as before, so their handlers and the guide's pointers are unchanged. -->
       <div id="sb-footer-row">
-        <button class="sb-footer-btn" id="btn-settings" data-guide="settings"><span style="opacity:.5">⚙</span> <span data-i18n="settings">Settings</span></button>
-        <button class="sb-footer-btn sb-footer-ico" id="btn-guide" data-guide="guide" data-i18n-title="guideBtn" aria-label="Guide" title="Guide"><span class="sb-ico">✦</span><span class="sb-ico-label" data-i18n="guideBtn">Guide</span></button>
+        <button class="sb-footer-btn" id="btn-settings" data-guide="settings"><span style="opacity:.5" class="sb-gear" data-sfi="settings"></span> <span data-i18n="settings">Settings</span></button>
+        <button class="sb-footer-btn sb-footer-ico" id="btn-guide" data-guide="guide" data-i18n-title="guideBtn" aria-label="Guide" title="Guide"><span class="sb-ico" data-sfi="sparkle"></span><span class="sb-ico-label" data-i18n="guideBtn">Guide</span></button>
         <!-- 說明書放在「關於」裡面等於沒放：要有人記得去翻才會用到。這顆直接
              開到那一段，順便顯示它有沒有裝進 AI 會自己讀的地方。 -->
-        <button class="sb-footer-btn sb-footer-ico" id="btn-ai-skill" data-guide="ai-skill" data-i18n-title="aiSkillBtn" aria-label="What the AI reads" title="What the AI reads"><span class="sb-ico sb-ico-ai">AI</span><span class="sb-ico-label" data-i18n="aiSkillBtn">What the AI reads</span></button>
-        <button class="sb-footer-btn sb-footer-ico" id="btn-about" data-i18n-title="about" aria-label="About" title="About"><span class="sb-ico">?</span><span class="sb-ico-label" data-i18n="about">About</span></button>
+        <button class="sb-footer-btn sb-footer-ico" id="btn-ai-skill" data-guide="ai-skill" data-i18n-title="aiSkillBtn" aria-label="What the AI reads" title="What the AI reads"><span class="sb-ico sb-ico-ai" data-sfi="book"></span><span class="sb-ico-label" data-i18n="aiSkillBtn">What the AI reads</span></button>
+        <button class="sb-footer-btn sb-footer-ico" id="btn-about" data-i18n-title="about" aria-label="About" title="About"><span class="sb-ico" data-sfi="help"></span><span class="sb-ico-label" data-i18n="about">About</span></button>
       </div>
     </div>
   </div>
@@ -938,7 +938,7 @@
   <div id="link-main">
     <div id="link-main-head">
       <span id="link-main-title" style="color:#565f89">—</span>
-      <button class="link-act" id="btn-link-close" style="margin-left:auto" title="收起">✕</button>
+      <button class="link-act" id="btn-link-close" style="margin-left:auto" title="收起" data-sfi="close"></button>
     </div>
     <div id="link-main-body"></div>
     <div id="link-input-row" style="display:none">
@@ -1031,13 +1031,13 @@
         </div>
         <div class="sx-row">
           <div class="sx-txt"><div class="sx-label" data-i18n="usagePaceLabel">Token pacing on the usage pill</div>
-            <div class="sx-hint" data-i18n="usagePaceHint">Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.</div></div>
+            <div class="sx-hint" data-i18n="usagePaceHint">Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. An up arrow means burning ahead of schedule, a down arrow means quota going unused.</div></div>
           <div class="sx-ctl"><button class="toggle-switch on" id="setting-usage-pace"></button></div>
         </div>
       </div>
-      <div class="sx-note" data-i18n="shiftEnterHint">
-        💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.
-      </div>
+      <div class="sx-note"><i data-sfi="bulb" class="sx-note-ico"></i> <span data-i18n="shiftEnterHint">
+        <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.
+      </span></div>
     </div>
 
     <!-- Bots: bots.js adds the switches and the list in front of the groups row; the groups row is here so it stays with the bots -->
@@ -1109,7 +1109,7 @@
       </div>
 
       <!-- STT (voice transcription) -->
-      <div class="sx-h"><span>🎙 語音轉錄 (STT)</span><span id="stt-status-pill" class="sx-pill"></span></div>
+      <div class="sx-h"><span><i data-sfi="mic" class="sx-h-ico"></i> 語音轉錄 (STT)</span><span id="stt-status-pill" class="sx-pill"></span></div>
       <div class="sx-card">
         <div class="sx-row sx-field">
           <div class="sx-txt"><label class="sx-label" for="stt-backend">Backend</label></div>
@@ -1135,7 +1135,7 @@
           <div id="stt-detail" class="sx-hint sx-mono"></div>
         </div>
         <div class="sx-row">
-          <div class="sx-txt"><div class="sx-label" data-i18n="micButtonLabel">介面錄音按鈕 🎙</div>
+          <div class="sx-txt"><div class="sx-label" data-i18n="micButtonLabel">介面錄音按鈕</div>
             <div class="sx-hint" data-i18n="micButtonHelp">在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。</div></div>
           <div class="sx-ctl"><button class="toggle-switch on" id="setting-mic-button"></button></div>
         </div>
@@ -1145,7 +1145,7 @@
           <div class="sx-ctl"><button class="toggle-switch" id="setting-voice-apply-gate"></button></div>
         </div>
         <div class="sx-row sx-actions">
-          <button class="btn btn-ghost" id="btn-stt-refresh">↻ 檢查</button>
+          <button class="btn btn-ghost" id="btn-stt-refresh"><i data-sfi="refresh"></i> 檢查</button>
           <button class="btn btn-ghost" id="btn-stt-install">安裝本地 STT</button>
           <button class="btn btn-primary" id="btn-stt-save">儲存</button>
         </div>
@@ -1341,7 +1341,7 @@
       <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
         <span id="check-update-result" style="font-size:11px;white-space:nowrap"></span>
         <button class="btn btn-ghost" id="btn-check-update" style="white-space:nowrap;font-size:11px;padding:2px 8px">Check</button>
-        <button class="btn btn-ghost" id="btn-reload-ui" style="white-space:nowrap;font-size:11px;padding:2px 8px">↻</button>
+        <button class="btn btn-ghost" id="btn-reload-ui" style="white-space:nowrap;font-size:11px;padding:2px 8px" title="Reload" aria-label="Reload" data-sfi="refresh"></button>
       </div>
       <div class="update-bar" id="update-bar">
         <span class="status checking" id="update-status">Checking for updates...</span>
@@ -1454,7 +1454,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <div class="modal-overlay" id="modal-release">
   <div class="modal" style="width:440px;display:flex;flex-direction:column;max-height:80vh">
     <div style="text-align:center;margin-bottom:12px;flex-shrink:0">
-      <div style="font-size:36px;color:#9ece6a">✓</div>
+      <div class="up-big-ok" data-sfi="check"></div>
       <div style="font-size:15px;color:#c0caf5;font-weight:500" id="release-title">Updated!</div>
     </div>
     <div class="changelog-preview" id="release-changelog" style="display:block;max-height:none;flex:1;min-height:0;overflow-y:auto"></div>
@@ -1496,6 +1496,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
 <!-- 配對 QR（手機 App 掃這個；同一串也是 shellframe:// 深連結）。載不到時退回純文字配對碼。 -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="icons.js"></script>
 <script src="dialog.js"></script>
 <script src="quiet.js"></script>
 <script src="bots.js"></script>
@@ -1565,7 +1566,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: 'show/hide',
       completionNotifications: 'Completion notifications',
       completionNotificationsHint: 'Notify when an AI reply finishes while ShellBot is not in the foreground',
-      micButtonLabel: 'Voice input button 🎙',
+      micButtonLabel: 'Voice input button',
       micButtonHelp: 'Show a mic at the bottom-right of the terminal: record → STT → inject into the active tab with a voice tag, no more sending voice notes through Telegram.',
       voiceApplyGateLabel: 'Confirm voice before sending (Apply)',
       voiceApplyGateHelp: 'After transcribing a Telegram voice note, show an "✅ Apply" button to confirm before sending to the tab (safer when STT is imperfect). Off = auto-submit right after transcription.',
@@ -1574,7 +1575,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       micNeedFfmpeg: 'Recording needs ffmpeg, which is not installed. Install it now? (macOS: Homebrew / Windows: winget — may take a few minutes)',
       micFfmpegReady: 'ffmpeg ready — tap the mic again to record.',
       micNeedStt: 'No STT backend is ready (local whisper / remote provider). Install local STT now? Your recording is kept and will be transcribed right after install.',
-      micSttStillFail: 'STT still failed after install. Check Settings → 🎙 STT, then tap the mic to retry.',
+      micSttStillFail: 'STT still failed after install. Check Settings → Voice transcription (STT), then tap the mic to retry.',
       micEmpty: 'No audio captured. If this is the first use, allow Microphone for ShellBot (it may still be listed as ShellFrame) in System Settings → Privacy, then retry.',
       micRecordFailed: 'Recorder failed to start. Check that a microphone is available and ShellBot has mic permission.',
       micSttFail: 'Transcription returned nothing — try again, closer to the mic.',
@@ -1615,7 +1616,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: 'Cancel',
       sessions: 'Sessions',
       dropToAttach: 'Drop file to attach',
-      shiftEnterHint: '💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.',
+      shiftEnterHint: '<span class="kbd" style="font-size:10px">Shift+Enter</span> always inserts a new line without sending (Claude Code, Codex): handy for multi-line prompts.',
       shiftEnterShortcut: 'Newline (no submit)',
       linkSidebarDivider: 'Other ShellBots',
       linkSend: 'Send',
@@ -1684,7 +1685,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       modelBadgeLabel: 'Model badge on sessions (experimental)',
       modelBadgeHint: "Auto-detect and show each tab's model + thinking effort (Claude and Codex) in the session list.",
       usagePaceLabel: 'Token pacing on the usage pill',
-      usagePaceHint: 'Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. ▲ = burning ahead of schedule, ▼ = quota going unused.',
+      usagePaceHint: 'Adds a "pc" segment next to wk: the weekly quota spread evenly over the window, i.e. how much should be used by today. An up arrow means burning ahead of schedule, a down arrow means quota going unused.',
       releaseNotesTitle: "What's new",
       releaseNotesGotIt: 'Got it',
     },
@@ -1727,7 +1728,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       showHide: '顯示/隱藏',
       completionNotifications: '完成通知',
       completionNotificationsHint: 'AI 回覆完成且 ShellBot 不在前景時通知',
-      micButtonLabel: '介面錄音按鈕 🎙',
+      micButtonLabel: '介面錄音按鈕',
       micButtonHelp: '在終端右下角顯示麥克風：錄音 → STT → 帶語音標籤送入當前分頁，不必再透過 Telegram 傳語音。',
       voiceApplyGateLabel: '語音送出前先確認（Apply）',
       voiceApplyGateHelp: 'Telegram 語音轉錄後，先跳「✅ Apply」按鈕確認再送進分頁（STT 有誤差時較安全）。關閉＝轉錄完直接自動送出。',
@@ -1736,7 +1737,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       micNeedFfmpeg: '錄音需要 ffmpeg，目前未安裝。要現在安裝嗎？（macOS 走 Homebrew／Windows 走 winget，可能需要幾分鐘）',
       micFfmpegReady: 'ffmpeg 已就緒——再按一次麥克風即可錄音。',
       micNeedStt: 'STT 後端尚未就緒（本地 whisper／遠端服務都不可用）。要現在安裝本地 STT 嗎？剛剛的錄音已保留，裝完會自動轉錄。',
-      micSttStillFail: '安裝後轉錄仍失敗。請到 設定 → 🎙 語音轉錄 檢查，再按麥克風重試。',
+      micSttStillFail: '安裝後轉錄仍失敗。請到 設定 → 語音轉錄 檢查，再按麥克風重試。',
       micEmpty: '沒有收到聲音。若是第一次使用，請到 系統設定 → 隱私權與安全性 → 麥克風 允許 ShellBot（系統設定裡可能還叫 ShellFrame），然後重試。',
       micRecordFailed: '錄音啟動失敗。請確認有可用的麥克風、且 ShellBot 有麥克風權限。',
       micSttFail: '轉錄結果是空的——請再試一次、靠近麥克風一點。',
@@ -1777,7 +1778,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       cancel: '取消',
       sessions: '分頁',
       dropToAttach: '放開以附加檔案',
-      shiftEnterHint: '💡 <span class="kbd" style="font-size:10px">Shift+Enter</span> 一律換行、不送出（Claude Code、Codex），方便輸入多行 prompt。',
+      shiftEnterHint: '<span class="kbd" style="font-size:10px">Shift+Enter</span> 一律換行、不送出（Claude Code、Codex），方便輸入多行 prompt。',
       shiftEnterShortcut: '換行（不送出）',
       linkSidebarDivider: '其他 ShellBot',
       linkSend: '送出',
@@ -1844,7 +1845,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       experimentalLoopsLabel: 'Loops 排程對話面板（實驗性）',
       experimentalLoopsHint: '右側面板收納「有排程的對話」：正在跑 /loop、建了 cron routine、或被 scheduler 啟動的頁籤——顯示下次喚醒倒數與各自在等什麼。預設關閉。',
       usagePaceLabel: '用量膠囊顯示 token 配速',
-      usagePaceHint: '在 wk 旁邊加一段 pc：把週額度平均攤到整個週期，也就是「今天應該用到幾 %」才會剛好用完。▲ 表示燒太快、▼ 表示額度用不完。滑過膠囊看細節（第幾天／落後或超前幾天的量）。',
+      usagePaceHint: '在 wk 旁邊加一段 pc：把週額度平均攤到整個週期，也就是「今天應該用到幾 %」才會剛好用完。向上的箭頭表示燒太快、向下的箭頭表示額度用不完。滑過膠囊看細節（第幾天／落後或超前幾天的量）。',
       modelBadgeLabel: 'Session 顯示模型標籤（實驗性）',
       modelBadgeHint: '自動偵測每個分頁的模型與 thinking effort（Claude / Codex 都支援），顯示在左側 session 列。偵測屬盡力而為，可能有誤——不想看就在這裡關掉。',
       releaseNotesTitle: '本次更新',
@@ -2081,7 +2082,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       `<span class="p-icon">${item.icon || '▶'}</span>`
       + `<div class="p-info">${primary}`
       + `<div class="p-cmd">${esc(item.cmd)}</div></div>`
-      + `<button class="p-del" data-name="${esc(item.name)}" title="Delete">&times;</button>`;
+      + `<button class="p-del" data-name="${esc(item.name)}" title="Delete" aria-label="Delete">${SFIcons.html('close')}</button>`;
     el.title = grouped ? `${groupTitle} — ${item.name}` : item.name;
     el.addEventListener('click', (e) => {
       if (e.target.classList.contains('p-del')) return;
@@ -3036,7 +3037,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(shownLabel(sid, s))}</span>
-        <span class="close-tab" data-sid="${sid}">&times;</span>
+        <span class="close-tab" data-sid="${sid}" aria-label="關閉分頁">${SFIcons.html('close')}</span>
       `;
       tab.addEventListener('click', (e) => {
         if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
@@ -3090,11 +3091,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       tab.innerHTML =
         `<span class="busy-dot${s._remoteState === 'working' ? ' on' : ''}" `
         + `style="pointer-events:none">${window.SFBots ? SFBots.face(sid) : ''}</span>`
-        + `<span class="icon" style="font-size:11px;opacity:.8">⇄</span>`
+        + `<span class="icon" style="opacity:.8" aria-hidden="true">${SFIcons.html('swap')}</span>`
         + `<span class="label"><span class="peer">${esc(peer)}</span>`
         + `·${esc(s.label)}</span>`
         + `<span class="close-tab" data-sid="${sid}" `
-        + `title="收掉這台的檢視（不會關掉對方的 session）">&times;</span>`;
+        + `title="收掉這台的檢視（不會關掉對方的 session）" aria-label="收掉這台的檢視">${SFIcons.html('close')}</span>`;
       tab.addEventListener('click', (e) => {
         if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
         switchTab(sid);
@@ -3195,16 +3196,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.dataset.section = 'local';
       const tgChip = !hasBridge ? '' : (tgOff
         ? `<span class="sb-bridge sb-tg off" data-action="switch-tg" data-sid="${sid}" title="這個分頁的 TG 連線已停用（自管／不受 bridge 監控）。點一下重新啟用">TG</span>`
-        : `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? '再點一下＝停用這個分頁的 TG 連線' : '點一下把 TG 切到這個分頁'}">${isActiveTg ? '◀ TG' : 'TG'}</span>`);
+        : `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? '再點一下＝停用這個分頁的 TG 連線' : '點一下把 TG 切到這個分頁'}">${isActiveTg ? SFIcons.html('chev-left') + ' TG' : 'TG'}</span>`);
       el.innerHTML =
         `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>` +
         (hasAnyBridge ? `<span style="opacity:${tgOff ? '.3' : '.4'};font-size:10px;min-width:14px">${tgOff ? '·' : tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(shownLabel(sid, s))}</span>` +
         modelBadgeHtml(s) +
         tgChip +
-        (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? '◀ LINE' : 'LINE'}</span>` : '') +
-        (isAiSession(sid) ? `<span class="sb-relaunch" data-guide="relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">⟳</span>` : '') +
-        `<span class="sb-close" data-action="close" data-sid="${sid}">&times;</span>`;
+        (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? SFIcons.html('chev-left') + ' LINE' : 'LINE'}</span>` : '') +
+        (isAiSession(sid) ? `<span class="sb-relaunch" data-guide="relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">${SFIcons.html('refresh')}</span>` : '') +
+        `<span class="sb-close" data-action="close" data-sid="${sid}" aria-label="關閉分頁">${SFIcons.html('close')}</span>`;
       container.appendChild(el);
     });
 
@@ -3223,17 +3224,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       divider.className = 'sb-divider';
       divider.dataset.section = 'divider';
       divider.dataset.action = 'link-zone';
-      divider.title = '隔離線以下＝配對的其他 ShellBot 的 session。點線收合／展開，點「＋ 配對」接上另一台。';
+      divider.title = '隔離線以下＝配對的其他 ShellBot 的 session。點線收合／展開，點「配對」接上另一台。';
       divider.innerHTML =
-        `<span style="pointer-events:none">${zoneCollapsed ? '▸' : '▾'} 🔗 ${esc(t('linkSidebarDivider'))}${allPeers.length ? ` (${peers.length}${mobiles.length ? ` + 📱${mobiles.length}` : ''})` : ''}</span>` +
-        `<button class="sb-pair-btn" data-guide="pair" data-action="link-pair" title="配對另一台 ShellBot（產生配對碼／加入配對）">＋ 配對</button>`;
+        `<span style="pointer-events:none">${SFIcons.html(zoneCollapsed ? 'chev-right' : 'chev-down', { cls: 'sfi-s' })} ${SFIcons.html('link')} ${esc(t('linkSidebarDivider'))}${allPeers.length ? ` (${peers.length}${mobiles.length ? ` + ${SFIcons.html('phone')}${mobiles.length}` : ''})` : ''}</span>` +
+        `<button class="sb-pair-btn" data-guide="pair" data-action="link-pair" title="配對另一台 ShellBot（產生配對碼／加入配對）">${SFIcons.html('plus')} 配對</button>`;
       container.appendChild(divider);
 
       if (!zoneCollapsed) {
         if (!peers.length) {
           const hint = document.createElement('div');
           hint.className = 'sb-remote-hint';
-          hint.textContent = mobiles.length ? '還沒有配對其他電腦——按「＋ 配對」開始' : '尚未配對其他 ShellBot——按「＋ 配對」開始';
+          hint.textContent = mobiles.length ? '還沒有配對其他電腦——按「配對」開始' : '尚未配對其他 ShellBot——按「配對」開始';
           container.appendChild(hint);
         }
         peers.forEach(p => {
@@ -3243,12 +3244,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           head.dataset.action = 'peer-head';
           head.dataset.pid = p.id;
           head.title = (p.reachable ? '連線中' : '離線') +
-            `｜${p.host || '(無位址)'}${p.port ? ':' + p.port : ''}｜點一下收合／展開，✕ 斷開配對`;
+            `｜${p.host || '(無位址)'}${p.port ? ':' + p.port : ''}｜點一下收合／展開，按右邊的叉斷開配對`;
           head.innerHTML =
-            `<span style="pointer-events:none;font-size:9px;color:#565f89">${pCollapsed ? '▸' : '▾'}</span>` +
+            `<span class="sb-chev" style="pointer-events:none">${SFIcons.html(pCollapsed ? 'chev-right' : 'chev-down')}</span>` +
             `<span class="sb-peer-dot${p.reachable ? ' on' : ''}"></span>` +
-            `<span class="sb-label" style="pointer-events:none">🌐 ${esc(p.name)}</span>` +
-            `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(p.id)}" title="斷開這台 ShellBot（會先確認）">&times;</span>`;
+            `<span class="sb-label" style="pointer-events:none">${SFIcons.html('globe', { cls: 'sfi-lead' })} ${esc(p.name)}</span>` +
+            `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(p.id)}" title="斷開這台 ShellBot（會先確認）" aria-label="斷開這台 ShellBot">${SFIcons.html('close')}</span>`;
           // 配對方向徽章：單向時標「主／從」
           if (p.mode && p.mode !== 'duplex') {
             const badge = document.createElement('span');
@@ -3262,19 +3263,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           }
           container.appendChild(head);
           if (pCollapsed) return;
-          // peer 動作列：💬 訊息、📁 檔案、✎ 位址（都不受主從限制）
+          // peer 動作列：訊息、檔案、位址、維運（都不受主從限制）
           const acts = document.createElement('div');
           acts.className = 'sb-remote-hint';
           acts.style.cssText = 'display:flex;gap:12px;padding-left:26px;cursor:default';
           acts.innerHTML =
-            `<span data-pact="msg" data-pid="${esc(p.id)}" style="cursor:pointer" title="跟這台互傳訊息">💬 訊息</span>` +
-            `<span data-pact="file" data-pid="${esc(p.id)}" style="cursor:pointer" title="傳檔案給這台">📁 檔案</span>` +
-            `<span data-pact="edit" data-pid="${esc(p.id)}" style="cursor:pointer" title="編輯位址（IP 換了改這裡）">✎ 位址</span>` +
+            `<span data-pact="msg" data-pid="${esc(p.id)}" style="cursor:pointer" title="跟這台互傳訊息">${SFIcons.html('message', { cls: 'sfi-lead' })} 訊息</span>` +
+            `<span data-pact="file" data-pid="${esc(p.id)}" style="cursor:pointer" title="傳檔案給這台">${SFIcons.html('folder', { cls: 'sfi-lead' })} 檔案</span>` +
+            `<span data-pact="edit" data-pid="${esc(p.id)}" style="cursor:pointer" title="編輯位址（IP 換了改這裡）">${SFIcons.html('edit', { cls: 'sfi-lead' })} 位址</span>` +
             // 維運（更新／重啟對方那台）只在「這台有權操作它」且它線上時出現。
             // 權限最終還是由對方那端把關（單向配對會擋），這裡只是不要給一個
             // 按了必定被拒的入口。
             (p.can_control && p.reachable
-              ? `<span data-pact="maint" data-pid="${esc(p.id)}" style="cursor:pointer" title="更新／重啟這台的 ShellBot">⟳ 維運</span>`
+              ? `<span data-pact="maint" data-pid="${esc(p.id)}" style="cursor:pointer" title="更新／重啟這台的 ShellBot">${SFIcons.html('refresh', { cls: 'sfi-lead' })} 維運</span>`
               : '');
           container.appendChild(acts);
           if (!p.reachable) {
@@ -3305,7 +3306,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           newRow.className = 'sb-remote-hint';
           newRow.style.cssText = 'padding-left:26px;cursor:pointer;color:#7aa2f7';
           newRow.dataset.pnew = p.id;
-          newRow.textContent = '＋ 新增 session';
+          newRow.innerHTML = SFIcons.html('plus', { cls: 'sfi-lead' }) + ' 新增 session';
           newRow.title = `在「${p.name}」開一個新 session`;
           container.appendChild(newRow);
           if (!tabs.length) {
@@ -3344,7 +3345,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
               stateDot +
               `<span style="opacity:.5;font-size:10px;pointer-events:none">${dot}</span>` +
               `<span class="sb-label" style="pointer-events:none">${esc(rt.label || rt.sid)}</span>` +
-              `<span class="sb-close" data-action="kill-remote" data-pid="${esc(p.id)}" data-rsid="${esc(rt.sid)}" data-rlabel="${esc(rt.label || rt.sid)}" title="關閉「${esc(p.name)}」的這個 session（會先確認）">&times;</span>`;
+              `<span class="sb-close" data-action="kill-remote" data-pid="${esc(p.id)}" data-rsid="${esc(rt.sid)}" data-rlabel="${esc(rt.label || rt.sid)}" title="關閉「${esc(p.name)}」的這個 session（會先確認）" aria-label="關閉這個 session">${SFIcons.html('close')}</span>`;
             container.appendChild(row);
           });
         });
@@ -3355,19 +3356,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           head.dataset.action = 'mobile-zone';
           head.title = '行動裝置：配對的手機和平板。它們用 App 連這台，不會被這台操作。點一下展開／收合';
           const on = mobiles.filter(m => m.reachable).length;
-          head.innerHTML = `<span style="pointer-events:none;font-size:9px;color:#565f89">${open ? '▾' : '▸'}</span>` +
-            `<span class="sb-label" style="pointer-events:none">📱 行動裝置</span>` +
+          head.innerHTML = `<span class="sb-chev" style="pointer-events:none">${SFIcons.html(open ? 'chev-down' : 'chev-right')}</span>` +
+            `<span class="sb-label" style="pointer-events:none">${SFIcons.html('phone', { cls: 'sfi-lead' })} 行動裝置</span>` +
             `<span class="sb-mobile-count">${mobiles.length}${on ? ` · ${on} 在線` : ''}</span>`;
           container.appendChild(head);
           if (open) mobiles.forEach(m => {
             const row = document.createElement('div');
             row.className = 'sb-item sb-mobile-row';
-            row.title = (m.reachable ? '連線中' : '沒連著（App 開著時會來這台取件）') + '｜✕ 斷開配對';
+            row.title = (m.reachable ? '連線中' : '沒連著（App 開著時會來這台取件）') + '｜按右邊的叉斷開配對';
             row.innerHTML = `<span class="sb-peer-dot${m.reachable ? ' on' : ''}"></span>` +
               `<span class="sb-label" style="pointer-events:none">${esc(m.name)}</span>` +
               // an old pairing with no kind could be a computer: it keeps the way to give it an address
-              (m.kind === 'ios' ? '' : `<span class="sb-mobile-addr" data-pact="edit" data-pid="${esc(m.id)}" title="是電腦的話：給它位址，就會列到電腦那邊">✎</span>`) +
-              `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(m.id)}" title="斷開這台（會先確認）">&times;</span>`;
+              (m.kind === 'ios' ? '' : `<span class="sb-mobile-addr" data-pact="edit" data-pid="${esc(m.id)}" title="是電腦的話：給它位址，就會列到電腦那邊" aria-label="給它位址">${SFIcons.html('edit')}</span>`) +
+              `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(m.id)}" title="斷開這台（會先確認）" aria-label="斷開這台">${SFIcons.html('close')}</span>`;
             container.appendChild(row);
           });
         }
@@ -4030,7 +4031,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return document.getElementById('link-panel').classList.contains('open');
   }
 
-  // 底部面板現在只承載「訊息／檔案」內容。它由側欄 peer 的 💬📁 點開，
+  // 底部面板現在只承載「訊息／檔案」內容。它由側欄 peer 的「訊息」「檔案」點開，
   // 不再是遠端 session 的檢視入口（那個已無縫搬進主終端區）。
   function toggleLinkPanel(force) {
     const panel = document.getElementById('link-panel');
@@ -4075,9 +4076,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:340px;padding:20px">
-        <h2 style="font-size:14px">🔗 配對裝置</h2>
+        <h2 style="font-size:14px">${SFIcons.html('link', { cls: 'sfi-lead' })} 配對裝置</h2>
         <button class="btn btn-primary" id="pc-app" style="width:100%;padding:12px;margin-top:12px;display:flex;align-items:center;gap:10px;text-align:left">
-          <span style="font-size:20px">📱</span>
+          <span class="pc-app-ico">${SFIcons.html('phone')}</span>
           <span>
             <div>手機／平板 App</div>
             <div style="opacity:.7;font-weight:400;font-size:11px;margin-top:1px">立即顯示 QR code，用 ShellBot App 掃描</div>
@@ -4126,7 +4127,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function openLinkMessages(peer) {
     linkView = { type: 'messages', peerId: peer.id, peerName: peer.name };
     toggleLinkPanel(true);          // linkView 要先設好，toggle 會檢查
-    linkMainTitle(`💬 與 <b>${esc2(peer.name)}</b> 的訊息`);
+    linkMainTitle(`${SFIcons.html('message', { cls: 'sfi-lead' })} 與 <b>${esc2(peer.name)}</b> 的訊息`);
     const row = document.getElementById('link-input-row');
     row.style.display = 'flex';
     document.getElementById('link-input').placeholder = `傳訊息給 ${peer.name}（Enter 送出）`;
@@ -4150,7 +4151,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const who = ev.dir === 'out' ? (linkState && linkState.frame_name) || '我' : (ev.peer_name || 'peer');
     if (ev.kind === 'file') {
       div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · 已排隊' : ''}</div>` +
-        `<span class="lm-body">📁 <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
+        `<span class="lm-body">${SFIcons.html('folder', { cls: 'sfi-lead' })} <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
         ` <span style="color:#565f89;font-size:10px">${fmtBytes(ev.size)}</span></span>`;
     } else {
       div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · 已排隊（對方離線）' : ''}</div>` +
@@ -4171,7 +4172,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function openLinkFiles(peer) {
     linkView = { type: 'files', peerId: peer.id, peerName: peer.name };
     toggleLinkPanel(true);          // 同上
-    linkMainTitle(`📁 與 <b>${esc2(peer.name)}</b> 的檔案`);
+    linkMainTitle(`${SFIcons.html('folder', { cls: 'sfi-lead' })} 與 <b>${esc2(peer.name)}</b> 的檔案`);
     document.getElementById('link-input-row').style.display = 'none';
     const body = document.getElementById('link-main-body');
     body.innerHTML =
@@ -4204,9 +4205,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const div = document.createElement('div');
     div.className = 'link-msg' + (ev.dir === 'out' ? ' out' : '');
     const when = ev.ts ? new Date(ev.ts * 1000).toLocaleString() : '';
-    const arrow = ev.dir === 'out' ? '↗ 送出' : '↘ 收到';
+    const arrow = ev.dir === 'out' ? SFIcons.html('arrow-up-right', { cls: 'sfi-lead' }) + ' 送出' : SFIcons.html('arrow-down-right', { cls: 'sfi-lead' }) + ' 收到';
     div.innerHTML = `<div class="lm-meta">${arrow} · ${when}${ev.queued ? ' · 已排隊（對方離線）' : ''}</div>` +
-      `<span class="lm-body">📄 <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
+      `<span class="lm-body">${SFIcons.html('file', { cls: 'sfi-lead' })} <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
       ` <span style="color:#565f89;font-size:10px">${fmtBytes(ev.size)}</span></span>`;
     log.appendChild(div);
   }
@@ -4301,9 +4302,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <h2 style="font-size:14px">產生配對碼 — 選擇綁定方式</h2>
         <div style="font-size:11px;color:#565f89;margin:4px 0 12px">配對完兩邊都會出現彼此，差別在誰能操作誰的 session。訊息／檔案互傳不受限。</div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-primary" data-mode="duplex" style="padding:10px;text-align:left">🔄 雙向<span style="opacity:.65;font-weight:400"> — 兩邊都能操作對方</span></button>
-          <button class="btn btn-ghost" data-mode="host_controls" style="padding:10px;text-align:left;border:1px solid #3b4261">➡️ 這台當主<span style="opacity:.65"> — 只有這台能操作對方</span></button>
-          <button class="btn btn-ghost" data-mode="joiner_controls" style="padding:10px;text-align:left;border:1px solid #3b4261">⬅️ 這台當從<span style="opacity:.65"> — 只有對方能操作這台</span></button>
+          <button class="btn btn-primary" data-mode="duplex" style="padding:10px;text-align:left">${SFIcons.html('swap', { cls: 'sfi-lead' })} 雙向<span style="opacity:.65;font-weight:400"> — 兩邊都能操作對方</span></button>
+          <button class="btn btn-ghost" data-mode="host_controls" style="padding:10px;text-align:left;border:1px solid #3b4261">${SFIcons.html('arrow-right', { cls: 'sfi-lead' })} 這台當主<span style="opacity:.65"> — 只有這台能操作對方</span></button>
+          <button class="btn btn-ghost" data-mode="joiner_controls" style="padding:10px;text-align:left;border:1px solid #3b4261">${SFIcons.html('arrow-left', { cls: 'sfi-lead' })} 這台當從<span style="opacity:.65"> — 只有對方能操作這台</span></button>
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:12px">
           <button class="btn btn-ghost" id="pm-cancel">取消</button>
@@ -4332,22 +4333,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       SFDialog.alert(res.message || '產生配對碼失敗');
       return;
     }
-    const modeLabel = { duplex: '🔄 雙向', host_controls: '➡️ 這台當主',
-                        joiner_controls: '⬅️ 這台當從' }[mode] || mode;
+    const modeLabel = { duplex: SFIcons.html('swap', { cls: 'sfi-lead' }) + ' 雙向', host_controls: SFIcons.html('arrow-right', { cls: 'sfi-lead' }) + ' 這台當主',
+                        joiner_controls: SFIcons.html('arrow-left', { cls: 'sfi-lead' }) + ' 這台當從' }[mode] || esc2(mode);
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay open';
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:380px;padding:20px">
-        <h2 style="font-size:14px">🔗 配對碼（一次性，<span id="lp-count">${res.expires_in}</span> 秒內有效）</h2>
+        <h2 style="font-size:14px">${SFIcons.html('link', { cls: 'sfi-lead' })} 配對碼（一次性，<span id="lp-count">${res.expires_in}</span> 秒內有效）</h2>
         <div style="text-align:center;font-size:11px;color:#565f89;margin-top:4px">${modeLabel}</div>
         <div style="display:flex;gap:14px;align-items:center;margin-top:8px">
           <div id="lp-qr" style="flex:0 0 auto;background:#fff;border-radius:8px;padding:6px;line-height:0;min-width:132px;min-height:132px"></div>
           <div style="flex:1;min-width:0">
             <div class="link-code-display" style="margin:0 0 6px">${esc2(res.code)}</div>
             <div style="font-size:11px;color:#a9b1d6;line-height:1.6">
-              📱 <b>手機／iPad</b>：用 ShellBot App 掃 QR 即配對。<br>
-              🖥 <b>另一台 ShellBot</b>：「加入配對」輸入
+              ${SFIcons.html('phone', { cls: 'sfi-lead' })} <b>手機／iPad</b>：用 ShellBot App 掃 QR 即配對。<br>
+              ${SFIcons.html('computer', { cls: 'sfi-lead' })} <b>另一台 ShellBot</b>：「加入配對」輸入
               位址 <code style="color:#7aa2f7">${esc2((res.addresses || []).join(' 或 ') || '?')}</code>
               port <code style="color:#7aa2f7">${res.port}</code>，或貼上配對連結。
             </div>
@@ -4407,7 +4408,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:380px;padding:20px">
-        <h2 style="font-size:14px">🔗 加入配對</h2>
+        <h2 style="font-size:14px">${SFIcons.html('link', { cls: 'sfi-lead' })} 加入配對</h2>
         <div style="display:flex;gap:8px;margin:12px 0 8px">
           <input type="text" id="lj-host" placeholder="對方 IP 或網域" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
           <input type="text" id="lj-port" value="8767" style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
@@ -4458,15 +4459,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // 更新與重啟會改變另一台機器的狀態，所以每一個動作都先確認、而且確認框裡要
   // 寫出是哪一台。檢查更新是唯讀的，不必確認。
   const PEER_MAINT_ACTIONS = [
-    { action: 'check_update', label: '檢查更新', icon: '🔍', confirm: null,
+    { action: 'check_update', label: '檢查更新', icon: 'search', confirm: null,
       hint: '只比對版本，不做任何改動' },
-    { action: 'update', label: '更新', icon: '⬇️',
+    { action: 'update', label: '更新', icon: 'download',
       confirm: '會在那台執行 git pull 與依賴安裝（幾十秒）。更新完不會自動重啟。',
       hint: 'git pull ＋ 依賴安裝' },
-    { action: 'restart', label: '重新啟動', icon: '🔄',
+    { action: 'restart', label: '重新啟動', icon: 'refresh',
       confirm: '會重啟那台的 ShellBot。tmux 撐著的 session 會留下來，新的 instance 會接回去；連線會短暫中斷。',
       hint: 'session 會接回去，連線會短暫斷' },
-    { action: 'reload', label: '熱重載 bridge', icon: '♻️',
+    { action: 'reload', label: '熱重載 bridge', icon: 'refresh',
       confirm: '只重建那台的 Telegram bridge，不會動到任何 session。',
       hint: '只重建 bridge，不動 session' },
   ];
@@ -4477,7 +4478,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:420px;padding:20px">
-        <h2 style="font-size:14px">⟳ 維運「${esc2(peer.name)}」</h2>
+        <h2 style="font-size:14px">${SFIcons.html('refresh', { cls: 'sfi-lead' })} 維運「${esc2(peer.name)}」</h2>
         <div style="font-size:12px;color:#565f89;line-height:1.6;margin:8px 0 12px">
           這些動作在<b style="color:#a9b1d6">對方那台</b>執行。對方若把這台設為受控端，
           它會直接拒絕。
@@ -4500,7 +4501,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const btn = document.createElement('button');
       btn.className = 'btn btn-ghost';
       btn.style.cssText = 'text-align:left;padding:8px 10px;border:1px solid #3b4261';
-      btn.innerHTML = `${item.icon} ${esc2(item.label)}`
+      btn.innerHTML = `${SFIcons.html(item.icon, { cls: 'sfi-lead' })} ${esc2(item.label)}`
         + `<span style="color:#565f89;font-size:11px;margin-left:8px">${esc2(item.hint)}</span>`;
       btn.addEventListener('click', async () => {
         if (item.confirm && !await SFDialog.confirm(
@@ -4836,8 +4837,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const ov = document.getElementById('feed-overview');
       if (ov) {
         const parts = [];
-        if (sch.total) parts.push(`<span class="ov-sched">⏰ ${sch.on}/${sch.total}</span>`);
-        if (c.loop) parts.push(`<span class="ov-working">🔁 ${c.loop}</span>`);
+        if (sch.total) parts.push(`<span class="ov-sched">${SFIcons.html('clock')} ${sch.on}/${sch.total}</span>`);
+        if (c.loop) parts.push(`<span class="ov-working">${SFIcons.html('loop')} ${c.loop}</span>`);
         const ovHtml = parts.join(' · ');
         if (ovHtml !== renderLoops._ovHtml) { ov.innerHTML = ovHtml; renderLoops._ovHtml = ovHtml; }
       }
@@ -4915,8 +4916,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return 'lvl-ok';
   }
   function _paceArrow(diff) {
-    if (diff >= 10) return '▲';
-    if (diff <= -15) return '▼';
+    if (diff >= 10) return SFIcons.html('chev-up');
+    if (diff <= -15) return SFIcons.html('chev-down');
     return '';
   }
   function _paceEnabled() {
@@ -5056,9 +5057,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const d = JSON.parse(raw || '{}');
       const prov = (d && d.ai) || activeProv;
       const hasNums = !!(d && (d.five_hr || d.week));
-      // Hard error AND nothing to fall back on → ⚠ placeholder.
+      // Hard error AND nothing to fall back on → warning placeholder.
       if (!d || ((d.error && d.error !== 'no_data') && !hasNums)) {
-        _usageBriefPlaceholder(el, '用量 ⚠',
+        _usageBriefPlaceholder(el, '用量 ' + SFIcons.html('warn'),
           `用量查詢失敗：${(d && d.error) || '未知錯誤'}\n點擊重試`);
         _commitUsageRender(prov, false);
         return;
@@ -5093,7 +5094,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           `<span class="ub-arrow">${_paceArrow(pace.diff)}</span></span></span>`
         : '';
       const win = (...p) => (p.join('') ? `<span class="ub-win">${p.join('')}</span>` : '');   // a window and its pace wrap together (chat.css #sb-dock)
-      el.innerHTML = (d.stale ? '<span class="ub-seg ub-none">⚠</span>' : '') +
+      el.innerHTML = (d.stale ? '<span class="ub-seg ub-none">' + SFIcons.html('warn') + '</span>' : '') +
         win(seg('5h', d.five_hr), paceSeg(pace5)) + win(seg('wk', d.week), paceSeg(paceWk));
       const tip = [];
       if (d.stale) tip.push('⚠ 本次更新失敗，顯示上次資料');
@@ -5120,7 +5121,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         el.classList.add('stale');
         el.style.display = '';
       } else {
-        _usageBriefPlaceholder(el, '用量 ⚠', '用量查詢失敗，稍後自動重試\n點擊重試');
+        _usageBriefPlaceholder(el, '用量 ' + SFIcons.html('warn'), '用量查詢失敗，稍後自動重試\n點擊重試');
       }
       _commitUsageRender(activeProv, !!keptReal);
     }
@@ -5144,7 +5145,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       });
     } catch (error) {
       cells.forEach(el => {
-        el.innerHTML = `<span class="au-bad">⚠ ${esc(error.message || '用量查詢失敗')}</span>`;
+        el.innerHTML = `<span class="au-bad">${SFIcons.html('warn')} ${esc(error.message || '用量查詢失敗')}</span>`;
       });
     }
   }
@@ -5178,7 +5179,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         (u.error === 'no_data' ? '這個帳號還沒有用量資料'
           : u.error === 'not_ai' ? '不支援的帳號類型'
             : '查不到用量');
-      return `<span class="au-bad">⚠ ${esc(why)}</span>`;
+      return `<span class="au-bad">${SFIcons.html('warn')} ${esc(why)}</span>`;
     }
     const parts = [seg('5h', u.five_hr), seg('7d', u.week)];
     // Same pace line as the pill, but with room to spell the gap out.
@@ -5189,7 +5190,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         `<span class="au-reset">${esc(_paceGapText(pace))}</span></span>`);
     }
     if (u.stale) {
-      parts.push(`<span class="au-bad">⚠ ${esc(u.error_message || '本次更新失敗，顯示上次資料')}` +
+      parts.push(`<span class="au-bad">${SFIcons.html('warn')} ${esc(u.error_message || '本次更新失敗，顯示上次資料')}` +
         `${u.checked ? `（${esc(_shortWhen(u.checked))}）` : ''}</span>`);
     } else if (u.snapshot) {
       parts.push(`<span class="au-note">快照 ${esc(_shortWhen(u.snapshot))}</span>`);
@@ -5849,9 +5850,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // tmux's scrollback is authoritative. If the user ever sees the
       // wrong content again, the label tells us which buffer lied.
       const sourceTag = source ? ` · source: ${source}` : '';
-      hint.textContent = '📜 History (deduped) — scroll to bottom, type, or Esc to return' + sourceTag;
+      hint.innerHTML = SFIcons.html('history', { cls: 'sfi-lead' }) + ' ';
+      hint.appendChild(document.createTextNode('History (deduped) — scroll to bottom, type, or Esc to return' + sourceTag));
       const closeBtn = document.createElement('button');
-      closeBtn.textContent = '✕';
+      closeBtn.innerHTML = SFIcons.html('close');
+      closeBtn.setAttribute('aria-label', 'Close history');
       closeBtn.style.cssText = 'background:none;border:1px solid #3b4261;color:#a9b1d6;' +
         'padding:1px 9px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1';
       closeBtn.addEventListener('click', () => close());
@@ -6126,18 +6129,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const imgCount = s.attachments.filter(a =>
         a.dataUrl || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path)).length;
       const fileCount = total - imgCount;
-      // Count summary: "📷 4 images" / "📎 2 files" / "📷 3 📎 1"
+      // Count summary: [camera] 4 images / [paperclip] 2 files / both
       let summary = '';
-      if (imgCount && fileCount) summary = `📷 ${imgCount} 📎 ${fileCount}`;
-      else if (imgCount) summary = `📷 ${imgCount} image${imgCount > 1 ? 's' : ''}`;
-      else summary = `📎 ${fileCount} file${fileCount > 1 ? 's' : ''}`;
+      if (imgCount && fileCount) summary = `${SFIcons.html('camera')} ${imgCount} ${SFIcons.html('paperclip')} ${fileCount}`;
+      else if (imgCount) summary = `${SFIcons.html('camera')} ${imgCount} image${imgCount > 1 ? 's' : ''}`;
+      else summary = `${SFIcons.html('paperclip')} ${fileCount} file${fileCount > 1 ? 's' : ''}`;
       const summaryHtml = `<span class="attach-summary">${summary}</span>`;
       const chipsHtml = s.attachments.map((a, i) => {
         const isImg = a.dataUrl || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path);
-        const icon = isImg ? '📷' : '📎';
+        const icon = SFIcons.html(isImg ? 'camera' : 'paperclip');
         const name = shortPath(a.path);
         const thumb = a.dataUrl ? `<img src="${a.dataUrl}" class="chip-thumb"/>` : '';
-        return `<span class="attach-chip" title="${esc(a.path)}">${thumb}${icon} <b>#${a.tag}</b> ${esc(name)} <span class="chip-close" data-idx="${i}">&times;</span></span>`;
+        return `<span class="attach-chip" title="${esc(a.path)}">${thumb}${icon} <b>#${a.tag}</b> ${esc(name)} <span class="chip-close" data-idx="${i}" role="button" aria-label="Remove">${SFIcons.html('close')}</span></span>`;
       }).join('');
       chips.innerHTML = summaryHtml + chipsHtml;
       bar.style.display = 'flex';
@@ -6153,11 +6156,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const s = sessions[activeId];
     // 遠端 session：本機存的 path 對方讀不到。把圖片位元組送過去落地，由對方
     // 那端用 bracketed paste 注入路徑（跟本機貼圖同機制）。目前支援有 dataUrl
-    // 的貼上（截圖／圖片）；純檔案拖放請走側欄「📁 檔案」。
+    // 的貼上（截圖／圖片）；純檔案拖放請走側欄「檔案」。
     if (s.isRemote) {
       const info = parseRemoteSid(activeId);
       if (!dataUrl) {
-        s.term.write('\r\n\x1b[33m[遠端 session 僅支援貼「圖片」；一般檔案請用側欄的「📁 檔案」傳送]\x1b[0m\r\n');
+        s.term.write('\r\n\x1b[33m[遠端 session 僅支援貼「圖片」；一般檔案請用側欄的「檔案」傳送]\x1b[0m\r\n');
         return;
       }
       const fname = (path && path.split('/').pop()) || 'paste.png';
@@ -7505,7 +7508,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (result.exists && result.active) {
         lineBridgeState = result;
         document.getElementById('settings-line-details').open = true;   // connected: its details are shown
-        statusEl.textContent = result.paused ? `⏸ ${t('paused')}` : `● ${t('connected')} (${result.delivery_mode || 'line'})`;
+        statusEl.innerHTML = result.paused ? `${SFIcons.html('pause', { cls: 'sfi-lead' })} ${esc(t('paused'))}` : `${SFIcons.html('dot', { cls: 'sfi-lead' })} ${esc(t('connected'))} (${esc(result.delivery_mode || 'line')})`;
         statusEl.style.color = result.paused ? '#e0af68' : '#9ece6a';
         connectBtn.style.display = 'none';
         disconnectBtn.style.display = 'inline-block';
@@ -7549,7 +7552,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const raw = await pywebview.api.get_bridge_status();
       const result = JSON.parse(raw);
       if (result.exists && result.active) {
-        statusEl.textContent = result.paused ? `⏸ ${t('paused')}` : `● ${t('connected')} (@${result.bot})`;
+        statusEl.innerHTML = result.paused ? `${SFIcons.html('pause', { cls: 'sfi-lead' })} ${esc(t('paused'))}` : `${SFIcons.html('dot', { cls: 'sfi-lead' })} ${esc(t('connected'))} (@${esc(result.bot)})`;
         statusEl.style.color = result.paused ? '#e0af68' : '#9ece6a';
         connectBtn.style.display = 'none';
         disconnectBtn.style.display = 'inline-block';
@@ -7697,7 +7700,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     micState = state;
     $mic.classList.toggle('rec', state === 'rec');
     $mic.classList.toggle('busy', state === 'busy');
-    $mic.textContent = state === 'rec' ? '⏹' : (state === 'busy' ? '⏳' : '🎙');
+    $mic.innerHTML = SFIcons.html(state === 'rec' ? 'stop' : (state === 'busy' ? 'hourglass' : 'mic'));
     $micCancel.style.display = state === 'rec' ? '' : 'none';
     $micTimer.style.display = state === 'rec' ? '' : 'none';
     if (state === 'rec') {
@@ -7887,9 +7890,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     $apiToggle.classList.toggle('on', !!info.enabled);
     const isZh = lang === 'zh-TW';
     if (info.enabled && info.running) {
-      $apiStatus.innerHTML = `<span style="color:#9ece6a">●</span> http://${esc(info.host)}:${esc(String(info.port))}`;
+      $apiStatus.innerHTML = `<span style="color:#9ece6a">${SFIcons.html('dot', { cls: 'sfi-lead' })}</span> http://${esc(info.host)}:${esc(String(info.port))}`;
     } else if (info.enabled) {
-      $apiStatus.innerHTML = `<span style="color:#f7768e">●</span> ` +
+      $apiStatus.innerHTML = `<span style="color:#f7768e">${SFIcons.html('dot', { cls: 'sfi-lead' })}</span> ` +
         (isZh ? '已啟用但未在執行（port 被占用？）' : 'enabled but not running (port in use?)');
     } else {
       $apiStatus.textContent = isZh ? '已停用' : 'disabled';
@@ -7914,9 +7917,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     $hooksToggle.classList.toggle('on', !!info.installed);
     const isZh = lang === 'zh-TW';
     if (info.error) {
-      $hooksState.innerHTML = `<span style="color:#f7768e">●</span> ${esc(info.error)}`;
+      $hooksState.innerHTML = `<span style="color:#f7768e">${SFIcons.html('dot', { cls: 'sfi-lead' })}</span> ${esc(info.error)}`;
     } else if (info.installed) {
-      $hooksState.innerHTML = `<span style="color:#9ece6a">●</span> ` +
+      $hooksState.innerHTML = `<span style="color:#9ece6a">${SFIcons.html('dot', { cls: 'sfi-lead' })}</span> ` +
         (isZh ? `已安裝（${info.total || 1} 個設定檔，含帳號 profile；新開的 Claude tab 生效）` : `installed (${info.total || 1} settings files incl. account profiles; new Claude tabs)`);
     } else {
       $hooksState.textContent = info.installed_count ? (isZh ? `部分安裝（${info.installed_count}/${info.total} 個設定檔）——打開開關補齊` : `partly installed (${info.installed_count}/${info.total} settings files): switch on to complete`) : (isZh ? '未安裝' : 'not installed');
@@ -8112,11 +8115,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       row.className = 'settings-preset';
       row.dataset.idx = i;
       row.innerHTML = `
-        <span class="sp-grip" title="Drag to reorder">☰</span>
+        <span class="sp-grip" title="Drag to reorder">${SFIcons.html('grip')}</span>
         <button class="sp-icon emoji-btn" data-field="icon" data-idx="${i}">${p.icon || '▶'}</button>
         <input class="sp-name" value="${esc(p.name)}" data-field="name" data-idx="${i}"/>
         <span class="sp-cmdbox" data-v="${esc(p.cmd)}"><textarea class="sp-cmd" rows="1" spellcheck="false" data-field="cmd" data-idx="${i}">${esc(p.cmd)}</textarea></span>
-        <span class="sp-act"><button class="sp-del" data-idx="${i}">&times;</button></span>
+        <span class="sp-act"><button class="sp-del" data-idx="${i}" aria-label="Delete" title="Delete">${SFIcons.html('close')}</button></span>
       `;
       // the command wraps instead of being cut off: the box is as tall as its text (settings.css .sp-cmdbox)
       const cmdTa = row.querySelector('.sp-cmd');
@@ -8223,7 +8226,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     if (bridgeState && bridgeState.active) {
       $btnBridge.className = 'bridge-toggle' + (bridgeState.paused ? ' paused' : ' active');
       const count = bridgeState.sessions || 0;
-      $btnBridge.textContent = 'TG' + (bridgeState.paused ? ' ⏸' : ` ● ${count}`);
+      $btnBridge.innerHTML = 'TG ' + (bridgeState.paused ? SFIcons.html('pause') : `${SFIcons.html('dot')} ${count}`);
       $btnBridge.title = bridgeState.bot
         ? `@${bridgeState.bot} — ${count} sessions` + (bridgeState.paused ? ` (${t('paused')})` : '')
         : t('settingsTelegram');
@@ -8906,11 +8909,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           ${isZh ? '選擇重新載入方式' : 'Choose how to reload'}
         </div>
         <button class="btn btn-ghost" id="reload-ui" style="width:100%;text-align:left;padding:10px 12px;margin-bottom:6px">
-          <div style="font-size:12px;color:#c0caf5;font-weight:500">↻ ${isZh ? '重載 UI' : 'Reload UI'}</div>
+          <div style="font-size:12px;color:#c0caf5;font-weight:500">${SFIcons.html('refresh', { cls: 'sfi-lead' })} ${isZh ? '重載 UI' : 'Reload UI'}</div>
           <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '只重整前端，最快' : 'Frontend only, fastest'}</div>
         </button>
         <button class="btn btn-ghost" id="reload-restart" style="width:100%;text-align:left;padding:10px 12px">
-          <div style="font-size:12px;color:#c0caf5;font-weight:500">⟲ ${isZh ? '重啟 ShellBot' : 'Restart ShellBot'}</div>
+          <div style="font-size:12px;color:#c0caf5;font-weight:500">${SFIcons.html('refresh', { cls: 'sfi-lead' })} ${isZh ? '重啟 ShellBot' : 'Restart ShellBot'}</div>
           <div style="font-size:10px;color:#787c99;margin-top:2px">${isZh ? '套用 Python / 核心改動，session 會保留' : 'Apply Python/core changes, sessions preserved'}</div>
         </button>
         <div style="display:flex;justify-content:flex-end;margin-top:12px">
@@ -9116,7 +9119,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.setAttribute('data-restart-modal', '1');
     overlay.innerHTML = `
       <div class="modal" style="width:380px;padding:20px">
-        <div style="text-align:center;font-size:32px;color:#7aa2f7;font-family:monospace;margin-bottom:8px">↻</div>
+        <div class="up-big-restart">${SFIcons.html('refresh')}</div>
         <h2 style="font-size:14px;margin-bottom:10px;text-align:center">${isZh ? '需要重啟 ShellBot' : 'Restart Required'}</h2>
         <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin-bottom:6px">
           ${version ? `<div style="color:#9ece6a;margin-bottom:6px">v${version}</div>` : ''}
@@ -9126,8 +9129,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         </div>
         <div style="font-size:11px;color:#9ece6a;background:rgba(158,206,106,.08);border-left:2px solid #9ece6a;padding:8px 10px;margin:10px 0;border-radius:3px">
           ${isZh
-            ? '✓ 你的 session 會被保留 — 重啟後 tmux 會自動 reattach，對話從原本的位置繼續。'
-            : '✓ Your sessions will be preserved — tmux reattaches automatically after restart.'}
+            ? `${SFIcons.html('check', { cls: 'sfi-lead' })} 你的 session 會被保留 — 重啟後 tmux 會自動 reattach，對話從原本的位置繼續。`
+            : `${SFIcons.html('check', { cls: 'sfi-lead' })} Your sessions will be preserved — tmux reattaches automatically after restart.`}
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
           <button class="btn btn-ghost" id="restart-later">${isZh ? '稍後' : 'Later'}</button>
@@ -9177,8 +9180,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     document.getElementById('release-title').textContent = opts.whatsNew
       ? `${t('releaseNotesTitle')} · v${version}`
       : (lang === 'zh-TW' ? `已更新至 v${version}` : `Updated to v${version}`);
-    document.querySelector('#modal-release .modal > div:first-child > div:first-child').textContent =
-      opts.whatsNew ? '✨' : '✓';
+    document.querySelector('#modal-release .modal > div:first-child > div:first-child').innerHTML =
+      SFIcons.html(opts.whatsNew ? 'sparkle' : 'check');
     document.getElementById('btn-release-ok').textContent = t('releaseNotesGotIt');
     try {
       const changelog = await pywebview.api.get_changelog();
