@@ -398,3 +398,15 @@ body:not(.sfb-on) #sfb-convo { display: none; }
 .sfb-modal .modal:has(#sfb-ed-name) .sfb-form > label:has(+ div > .sfb-grid),
 .sfb-modal .modal:has(#sfb-ed-name) .sfb-form > label:has(+ .sfb-model),
 .sfb-modal .modal:has(#sfb-ed-name) .sfb-form > label:has(+ textarea) { align-self: start; padding-top: 7px; }
+
+/* icons (web/icons.js) */
+.sfb-add .sfi { width: 11px; height: 11px; vertical-align: -1px; }
+.sfb-card .sfi-lead { width: 12px; height: 12px; vertical-align: -2px; }
+.sfb-chip .sfi, .sfb-warn-mark .sfi, .sfb-bl-warn .sfi { width: .95em; height: .95em; vertical-align: -.14em; }
+.sfb-edit .sfi { width: 13px; height: 13px; vertical-align: -2px; }
+.sfb-card-tg .sfi, .sfb-card-edit .sfi { width: 15px; height: 15px; vertical-align: -3px; }
+.sfb-model-note .sfi-note { width: 1.15em; height: 1.15em; vertical-align: -.2em; }
+.sfb-chip a .sfi { width: 10px; height: 10px; vertical-align: -1px; }
+#sfb-tg-state .sfi, .sfb-tg-opts .sfi, .sfb-own-add .sfi { width: 1.1em; height: 1.1em; vertical-align: -.2em; }
+.sfb-own-add .sfi { width: 11px; height: 11px; vertical-align: -1px; }
+#sfb-settings-new .sfi { width: 12px; height: 12px; vertical-align: -2px; }

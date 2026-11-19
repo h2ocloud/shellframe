@@ -299,7 +299,7 @@ def run(browser, engine):
     names = page.evaluate("[...document.querySelectorAll('#sfb-settings-list .sfb-bl-row .sfb-bl-name')].map(n => n.firstChild.textContent)")
     check("every bot is listed, the primary first", names == ["助理", "寫程式", "研究", "舊設定"], names)
     rows = page.evaluate("Object.fromEntries([...document.querySelectorAll('#sfb-settings-list .sfb-bl-row')].map(r => [r.dataset.sfbRole, r.innerText.replace(/\\s+/g, ' ')]))")
-    check("…each with its CLI and model", "Claude Code · Sonnet" in rows["助理"] and "★ 主要 Bot" in rows["助理"]
+    check("…each with its CLI and model", "Claude Code · Sonnet" in rows["助理"] and "主要 Bot" in rows["助理"] and page.locator('#sfb-settings-list .sfb-bl-row[data-sfb-role="助理"] .sfb-chip svg.sfi').count() == 1
           and "Claude Code · Opus" in rows["寫程式"] and "Codex · GPT-9 Demo A" in rows["研究"], rows)
     check("…awake or asleep", "醒著" in rows["寫程式"] and "休息中" in rows["研究"], rows)
     check("…a model ShellBot does not know is flagged on its row",
