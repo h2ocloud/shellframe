@@ -23,6 +23,16 @@ import win_instance
 from sf_log import _dlog
 
 
+
+# remote commit → "every file it changes after this install's HEAD is documentation" (check_update; one fetch each)
+_DOCS_ONLY: dict = {}
+
+
+def _doc_path(name: str) -> bool:
+    """A file the running app never reads: the docs site, QA screenshots, Markdown, the repo's GitHub files."""
+    n = name.strip()
+    return n.startswith(("docs/", "qa-shots/", ".github/")) or n.lower().endswith(".md")
+
 class UpdateApiMixin:
     def get_version(self) -> str:
         """Return current local version info."""
@@ -87,6 +97,17 @@ class UpdateApiMixin:
                      "--is-ancestor", remote_sha, "HEAD"],
                     capture_output=True, timeout=8)
                 if anc.returncode == 0:
+                    has_update = False
+            if has_update and remote_ver and remote_ver == local.get("version"):
+                # Same version, other commit: a commit that only changed the docs (the product page, a CHANGELOG
+                # wording fix) is no update to install (reported: 「v0.59.1 可更新」 on a machine running v0.59.1).
+                # One fetch per remote commit, the answer kept; anything unknown (no fetch, no diff) stays an update.
+                docs = _DOCS_ONLY.get(remote_sha)
+                if docs is None:
+                    _git("fetch", "-q", "origin", "main", timeout=20)
+                    names = [n for n in _git("diff", "--name-only", "HEAD", remote_sha).splitlines() if n.strip()]
+                    docs = _DOCS_ONLY[remote_sha] = bool(names) and all(_doc_path(n) for n in names)
+                if docs:
                     has_update = False
             return json.dumps({
                 "local": local["version"],
