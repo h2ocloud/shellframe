@@ -17,6 +17,14 @@ Hooks (override in subclass; all optional, all best-effort):
     sidebar_badge(sid) -> str   — return HTML snippet for session row badge
                                   (called once per render per session)
     settings_panel() -> str     — return HTML for Settings tab body (cached)
+    office_summary(obj_id) -> dict
+    office_list(obj_id, query, filters, sort, offset, limit) -> dict
+    office_item(obj_id, item_id) -> dict
+    office_action(obj_id, item_id, action_id, args) -> dict
+                                — the office's furniture (docs/architecture.md, office_objects.py):
+                                  declare it in manifest.json as `office_objects`, answer these four.
+                                  Called only while the plugin is enabled and the office is open,
+                                  each with a 3 s limit; the answers are masked and capped by the host.
 
 The host (main.py) calls these in best-effort try/except blocks so a buggy
 plugin never crashes the app.
@@ -68,6 +76,25 @@ class SFPlugin:
         to the contents of settings.html in the plugin dir."""
         f = self.root / "settings.html"
         return f.read_text(encoding="utf-8") if f.exists() else ""
+
+    # ── office objects (a manifest's `office_objects`; see office_objects.py for the shapes) ──
+    def office_summary(self, obj_id: str) -> dict:
+        """The furniture's red number: {"badge": int, "hint": str}. A few stats, no content read."""
+        return {"badge": 0}
+
+    def office_list(self, obj_id: str, query: str = "", filters: dict | None = None, sort: str = "",
+                    offset: int = 0, limit: int = 200) -> dict:
+        """{"groups": [{id, title}], "items": [{id, group, title, subtitle, type, owner, mtime, tags}], "total": n}"""
+        return {"groups": [], "items": [], "total": 0}
+
+    def office_item(self, obj_id: str, item_id: str) -> dict:
+        """{"title", "markdown", "meta": [[k, v]], "chips", "links", "actions": [declared action ids]}.
+        `item_id` came from the page: look it up in your own listing, never join it into a path."""
+        return {}
+
+    def office_action(self, obj_id: str, item_id: str, action_id: str, args: dict) -> dict:
+        """{"ok": bool, "message"?, "open"?: path, "tell"?: {"to": "b:<bot>", "text": one line}, "go"?: {...}}"""
+        return {"ok": False}
 
     # ── ergonomic helpers ──
     def asset(self, name: str) -> str:
