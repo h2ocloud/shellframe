@@ -3099,11 +3099,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     Object.keys(sessions).forEach((sid) => {
       const s = sessions[sid];
       if (!s || !s.isRemote) return;
-      const peer = s.peerName || '遠端';
+      const peer = s.peerName || t('remoteDefaultName');
       const tab = document.createElement('button');
       tab.className = 'tab tab-remote' + (sid === activeId ? ' active' : '');
       tab.dataset.sid = sid;
-      tab.title = `「${peer}」的分頁「${s.label}」——鍵盤輸入會送到那台機器`;
+      tab.title = tf('remoteTabTitle', {peer: esc2(peer), label: esc2(s.label)});
       tab.innerHTML =
         `<span class="busy-dot${s._remoteState === 'working' ? ' on' : ''}" `
         + `style="pointer-events:none">${window.SFBots ? SFBots.face(sid) : ''}</span>`
@@ -3112,6 +3112,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         + `·${esc(s.label)}</span>`
         + `<span class="close-tab" data-sid="${sid}" `
         + `title="收掉這台的檢視（不會關掉對方的 session）" aria-label="收掉這台的檢視">${SFIcons.html('close')}</span>`;
+        + `title="${t('remoteTabCloseTitle')}" aria-label="${t('remoteTabCloseTitle')}">${SFIcons.html('close')}</span>`;
       tab.addEventListener('click', (e) => {
         if (e.target.classList.contains('close-tab')) { closeTab(e.target.dataset.sid); return; }
         switchTab(sid);
@@ -3260,22 +3261,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           head.className = 'sb-item sb-peer-head' + (p.reachable ? '' : ' offline');
           head.dataset.action = 'peer-head';
           head.dataset.pid = p.id;
-          head.title = (p.reachable ? '連線中' : '離線') +
-            `｜${p.host || '(無位址)'}${p.port ? ':' + p.port : ''}｜點一下收合／展開，按右邊的叉斷開配對`;
+          head.title = (p.reachable ? t('peerReachable') : t('peerOffline')) +
+            `｜${p.host || t('peerNoAddress')}${p.port ? ':' + p.port : ''}｜${t('peerToggleTitle')}`;
           head.innerHTML =
             `<span class="sb-chev" style="pointer-events:none">${SFIcons.html(pCollapsed ? 'chev-right' : 'chev-down')}</span>` +
             `<span class="sb-peer-dot${p.reachable ? ' on' : ''}"></span>` +
             `<span class="sb-label" style="pointer-events:none">${SFIcons.html('globe', { cls: 'sfi-lead' })} ${esc(p.name)}</span>` +
-            `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(p.id)}" title="斷開這台 ShellBot（會先確認）" aria-label="斷開這台 ShellBot">${SFIcons.html('close')}</span>`;
+            `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(p.id)}" title="${t('peerUnpairTitle')}" aria-label="${t('peerUnpairTitle')}">${SFIcons.html('close')}</span>`;
           // 配對方向徽章：單向時標「主／從」
           if (p.mode && p.mode !== 'duplex') {
             const badge = document.createElement('span');
             badge.className = 'sb-model';
             badge.style.marginLeft = '4px';
-            badge.textContent = p.mode === 'master' ? '主控' : '受控';
+            badge.textContent = p.mode === 'master' ? t('peerModeMaster') : t('peerModeMember');
             badge.title = p.mode === 'master'
-              ? '單向：這台能操作對方，對方不能操作這台'
-              : '單向：對方能操作這台，這台不能操作對方';
+              ? t('peerModeMasterTitle') : t('peerModeMemberTitle');
             head.insertBefore(badge, head.querySelector('.sb-close'));
           }
           container.appendChild(head);
@@ -3285,27 +3285,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           acts.className = 'sb-remote-hint';
           acts.style.cssText = 'display:flex;gap:12px;padding-left:26px;cursor:default';
           acts.innerHTML =
-            `<span data-pact="msg" data-pid="${esc(p.id)}" style="cursor:pointer" title="跟這台互傳訊息">${SFIcons.html('message', { cls: 'sfi-lead' })} 訊息</span>` +
-            `<span data-pact="file" data-pid="${esc(p.id)}" style="cursor:pointer" title="傳檔案給這台">${SFIcons.html('folder', { cls: 'sfi-lead' })} 檔案</span>` +
-            `<span data-pact="edit" data-pid="${esc(p.id)}" style="cursor:pointer" title="編輯位址（IP 換了改這裡）">${SFIcons.html('edit', { cls: 'sfi-lead' })} 位址</span>` +
+            `<span data-pact="msg" data-pid="${esc(p.id)}" style="cursor:pointer" title="${t('peerMessageTitle')}">${SFIcons.html('message', { cls: 'sfi-lead' })} ${t('peerMessage')}</span>` +
+            `<span data-pact="file" data-pid="${esc(p.id)}" style="cursor:pointer" title="${t('peerFileTitle')}">${SFIcons.html('folder', { cls: 'sfi-lead' })} ${t('peerFile')}</span>` +
+            `<span data-pact="edit" data-pid="${esc(p.id)}" style="cursor:pointer" title="${t('peerAddressTitle')}">${SFIcons.html('edit', { cls: 'sfi-lead' })} ${t('peerAddress')}</span>` +
             // 維運（更新／重啟對方那台）只在「這台有權操作它」且它線上時出現。
             // 權限最終還是由對方那端把關（單向配對會擋），這裡只是不要給一個
             // 按了必定被拒的入口。
             (p.can_control && p.reachable
-              ? `<span data-pact="maint" data-pid="${esc(p.id)}" style="cursor:pointer" title="更新／重啟這台的 ShellBot">${SFIcons.html('refresh', { cls: 'sfi-lead' })} 維運</span>`
+              ? `<span data-pact="maint" data-pid="${esc(p.id)}" style="cursor:pointer" title="${t('peerMaintenanceTitle')}">${SFIcons.html('refresh', { cls: 'sfi-lead' })} ${t('peerMaintenance')}</span>`
               : '');
           container.appendChild(acts);
           if (!p.reachable) {
             const em = document.createElement('div');
             em.className = 'sb-remote-hint';
-            em.textContent = p.host ? '離線——訊息／檔案會排隊等它上線來拉' : '無位址——等對方輪詢取件';
+            em.textContent = p.host ? t('peerOfflineHint') : t('peerNoAddressHint');
             container.appendChild(em);
             return;
           }
           if (!p.can_control) {
             const em = document.createElement('div');
             em.className = 'sb-remote-hint';
-            em.textContent = '對方為主控端——這台不能操作它的 session（仍可互傳訊息／檔案）';
+            em.textContent = t('peerControlledHint');
             container.appendChild(em);
             return;
           }
@@ -3313,7 +3313,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           if (!tabs) {
             const em = document.createElement('div');
             em.className = 'sb-remote-hint';
-            em.textContent = '載入遠端 session…';
+            em.textContent = t('remoteTabsLoading');
             container.appendChild(em);
             loadRemoteTabs(p.id);
             return;
@@ -3323,13 +3323,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           newRow.className = 'sb-remote-hint';
           newRow.style.cssText = 'padding-left:26px;cursor:pointer;color:#7aa2f7';
           newRow.dataset.pnew = p.id;
-          newRow.innerHTML = SFIcons.html('plus', { cls: 'sfi-lead' }) + ' 新增 session';
-          newRow.title = `在「${p.name}」開一個新 session`;
+          newRow.innerHTML = SFIcons.html('plus', { cls: 'sfi-lead' }) + ' ' + t('newRemoteSession');
+          newRow.title = tf('newRemoteSessionTitle', {peer: esc2(p.name)});
           container.appendChild(newRow);
           if (!tabs.length) {
             const em = document.createElement('div');
             em.className = 'sb-remote-hint';
-            em.textContent = '(對方沒有開分頁)';
+            em.textContent = t('noRemoteTabs');
             container.appendChild(em);
             return;
           }
@@ -3341,7 +3341,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             row.dataset.pid = p.id;
             row.dataset.rsid = rt.sid;
             row.dataset.rlabel = rt.label || rt.sid;
-            row.title = `操作「${p.name}」的這個 session（在主終端區，跟本機分頁一樣）`;
+            row.title = tf('remoteTabTitle', {peer: esc2(p.name), label: esc2(rt.label || rt.sid)});
             const dot = sessions[rmt] ? (activeId === rmt ? '●' : '▣') : '▫';
             // 工作狀態燈：沿用本機那顆 .busy-dot 的樣式，資料來自對方 list
             // 回傳的 agent_state。同步頻率就是拉遠端分頁列表的頻率，沒有另外
@@ -3355,14 +3355,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             // 左右錯開。沒回報時燈不亮（.busy-dot 預設透明），只是佔住位置。
             const stateDot =
               `<span class="busy-dot${rState === 'working' ? ' on' : ''}" `
-              + `title="${rState === 'working' ? '執行中' : rState ? '閒置' : '對方沒有回報狀態'}" `
+              + `title="${rState === 'working' ? t('remoteWorking') : rState ? t('remoteIdle') : t('remoteNoStatus')}" `
               + `style="pointer-events:none;margin-right:4px">${window.SFBots ? SFBots.remoteFace(p.name, rt.sid, rt.label, p.id) : ''}</span>`;
             // ✕ = 關閉對方的 session（跟 local 一樣，會先確認）
             row.innerHTML =
               stateDot +
               `<span style="opacity:.5;font-size:10px;pointer-events:none">${dot}</span>` +
               `<span class="sb-label" style="pointer-events:none">${esc(rt.label || rt.sid)}</span>` +
-              `<span class="sb-close" data-action="kill-remote" data-pid="${esc(p.id)}" data-rsid="${esc(rt.sid)}" data-rlabel="${esc(rt.label || rt.sid)}" title="關閉「${esc(p.name)}」的這個 session（會先確認）" aria-label="關閉這個 session">${SFIcons.html('close')}</span>`;
+              `<span class="sb-close" data-action="kill-remote" data-pid="${esc(p.id)}" data-rsid="${esc(rt.sid)}" data-rlabel="${esc(rt.label || rt.sid)}" title="${tf('remoteSessionCloseTitle', {peer: esc2(p.name), label: esc2(rt.label || rt.sid)})}" aria-label="${t('remoteSessionCloseTitle')}">${SFIcons.html('close')}</span>`;
             container.appendChild(row);
           });
         });
@@ -3371,21 +3371,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           const head = document.createElement('div');
           head.className = 'sb-item sb-peer-head sb-mobile-head';
           head.dataset.action = 'mobile-zone';
-          head.title = '行動裝置：配對的手機和平板。它們用 App 連這台，不會被這台操作。點一下展開／收合';
+          head.title = t('mobileDevicesTitle');
           const on = mobiles.filter(m => m.reachable).length;
           head.innerHTML = `<span class="sb-chev" style="pointer-events:none">${SFIcons.html(open ? 'chev-down' : 'chev-right')}</span>` +
             `<span class="sb-label" style="pointer-events:none">${SFIcons.html('phone', { cls: 'sfi-lead' })} 行動裝置</span>` +
-            `<span class="sb-mobile-count">${mobiles.length}${on ? ` · ${on} 在線` : ''}</span>`;
+            `<span class="sb-mobile-count">${mobiles.length}${on ? ` · ${tf('mobileOnline', {count: on})}` : ''}</span>`;
           container.appendChild(head);
           if (open) mobiles.forEach(m => {
             const row = document.createElement('div');
             row.className = 'sb-item sb-mobile-row';
-            row.title = (m.reachable ? '連線中' : '沒連著（App 開著時會來這台取件）') + '｜按右邊的叉斷開配對';
+            row.title = (m.reachable ? t('mobileConnected') : t('mobileOfflineHint')) + '｜' + t('peerUnpairButton');
             row.innerHTML = `<span class="sb-peer-dot${m.reachable ? ' on' : ''}"></span>` +
               `<span class="sb-label" style="pointer-events:none">${esc(m.name)}</span>` +
               // an old pairing with no kind could be a computer: it keeps the way to give it an address
-              (m.kind === 'ios' ? '' : `<span class="sb-mobile-addr" data-pact="edit" data-pid="${esc(m.id)}" title="是電腦的話：給它位址，就會列到電腦那邊" aria-label="給它位址">${SFIcons.html('edit')}</span>`) +
-              `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(m.id)}" title="斷開這台（會先確認）" aria-label="斷開這台">${SFIcons.html('close')}</span>`;
+              (m.kind === 'ios' ? '' : `<span class="sb-mobile-addr" data-pact="edit" data-pid="${esc(m.id)}" title="${t('mobileAddressTitle')}" aria-label="${t('mobileAddressTitle')}">${SFIcons.html('edit')}</span>`) +
+              `<span class="sb-close" style="visibility:visible" data-action="unpair-peer" data-pid="${esc(m.id)}" title="${t('mobileUnpairTitle')}" aria-label="${t('mobileUnpairTitle')}">${SFIcons.html('close')}</span>`;
             container.appendChild(row);
           });
         }
@@ -3598,7 +3598,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const p = ((linkState && linkState.peers) || []).find(x => x.id === remoteRow.dataset.pid);
       if (!p) return;
       if (!p.can_control) {
-        SFDialog.alert(`「${p.name}」是單向配對的主控端，這台無權操作它的 session。`);
+        SFDialog.alert(tf('remoteControlDenied', {peer: p.name}));
         return;
       }
       // 用快取裡的完整 rt（含 cols/rows），才能把遠端 pane 尺寸鎖成對方的
@@ -3772,7 +3772,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       let r = {}; try { r = JSON.parse(raw); } catch (_) {}
       if (!r.success) {
         if (s && s.term) {
-          s.term.write('\r\n\x1b[31m[遠端附檔失敗：'
+          s.term.write('\r\n\x1b[31m[' + t('remoteAttachFailed')
             + esc0((r && r.message) || '') + ']\x1b[0m\r\n');
         }
         return false;
@@ -3787,7 +3787,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       return true;
     } catch (e) {
       if (s && s.term) {
-        s.term.write('\r\n\x1b[31m[遠端附檔失敗：' + esc0(String(e)) + ']\x1b[0m\r\n');
+        s.term.write('\r\n\x1b[31m[' + t('remoteAttachFailed') + esc0(String(e)) + ']\x1b[0m\r\n');
       }
       return false;
     }
@@ -3912,19 +3912,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:360px;padding:20px">
-        <h2 style="font-size:14px">在「${esc2(peer.name)}」開新 session</h2>
+        <h2 style="font-size:14px">${tf('newRemoteSessionTitle', {peer: esc2(peer.name)})}</h2>
         <div style="display:flex;flex-direction:column;gap:6px;margin:12px 0">
           <button class="btn btn-primary" data-cmd="claude" style="padding:8px">Claude</button>
           <button class="btn btn-ghost" data-cmd="sf-codex --dangerously-bypass-approvals-and-sandbox --search --no-alt-screen" style="padding:8px;border:1px solid #3b4261">Codex</button>
           <button class="btn btn-ghost" data-cmd="bash" style="padding:8px;border:1px solid #3b4261">bash</button>
         </div>
         <div style="display:flex;gap:8px">
-          <input type="text" id="rn-cmd" placeholder="自訂指令" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
-          <button class="btn btn-primary" id="rn-run">開</button>
+          <input type="text" id="rn-cmd" placeholder="${t('customCommandPlaceholder')}" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+          <button class="btn btn-primary" id="rn-run">${t('createSession')}</button>
         </div>
         <div id="rn-err" style="color:#f7768e;font-size:12px;margin-top:8px;min-height:14px"></div>
         <div style="display:flex;justify-content:flex-end;margin-top:8px">
-          <button class="btn btn-ghost" id="rn-cancel">取消</button>
+          <button class="btn btn-ghost" id="rn-cancel">${t('cancel')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -3933,7 +3933,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(); });
     async function create(cmd) {
       const err = document.getElementById('rn-err');
-      err.style.color = '#a9b1d6'; err.textContent = '建立中…';
+      err.style.color = '#a9b1d6'; err.textContent = t('creatingSession');
       try {
         const res = JSON.parse(await pywebview.api.link_remote_new(peer.id, cmd));
         if (res.success) {
@@ -3943,9 +3943,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           const rsid = res.details && res.details.sid;
           if (rsid) openRemoteSession(peer, { sid: rsid, label: cmd.split(/\s/)[0] });
         } else {
-          err.style.color = '#f7768e'; err.textContent = res.message || '建立失敗';
+          err.style.color = '#f7768e'; err.textContent = res.message || t('sessionCreateFailed');
         }
-      } catch (e) { err.style.color = '#f7768e'; err.textContent = '建立失敗：' + e; }
+      } catch (e) { err.style.color = '#f7768e'; err.textContent = t('sessionCreateError') + e; }
     }
     overlay.querySelectorAll('[data-cmd]').forEach(b =>
       b.addEventListener('click', () => create(b.dataset.cmd)));
@@ -3963,13 +3963,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:340px;padding:20px">
-        <h2 style="font-size:14px">關閉「${esc2(peer.name)}／${esc2(rlabel || rsid)}」？</h2>
+        <h2 style="font-size:14px">${tf('closeRemoteSessionTitle', {peer: esc2(peer.name), label: esc2(rlabel || rsid)})}</h2>
         <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin:10px 0">
-          這會直接關閉對方那台的這個 session（等同在對方機器上關掉分頁）。
+          ${t('closeRemoteSessionDescription')}
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost" id="kr-cancel">取消</button>
-          <button class="btn btn-primary" id="kr-ok" style="background:#f7768e;border-color:#f7768e">關閉</button>
+          <button class="btn btn-ghost" id="kr-cancel">${t('cancel')}</button>
+          <button class="btn btn-primary" id="kr-ok" style="background:#f7768e;border-color:#f7768e">${t('remoteCloseSession')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -4026,7 +4026,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           s._connErr = false;
         } else if (!s._connErr) {
           s._connErr = true;
-          s.term.write(`\r\n\x1b[33m[${esc0(s.peerName)} 連線中斷：${esc0(res.message || '')}]\x1b[0m\r\n`);
+          s.term.write(`\r\n\x1b[33m[${tf('remoteStreamDisconnected', {peer: esc0(s.peerName), error: esc0(res.message || '')})}]\x1b[0m\r\n`);
         }
       } catch (e) {}
       delay = ok ? STREAM_OK_MS : Math.min(delay * 2, STREAM_MAX_MS);
@@ -4144,10 +4144,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function openLinkMessages(peer) {
     linkView = { type: 'messages', peerId: peer.id, peerName: peer.name };
     toggleLinkPanel(true);          // linkView 要先設好，toggle 會檢查
-    linkMainTitle(`${SFIcons.html('message', { cls: 'sfi-lead' })} 與 <b>${esc2(peer.name)}</b> 的訊息`);
+    linkMainTitle(`${SFIcons.html('message', { cls: 'sfi-lead' })} ${tf('messagesTitle', {peer: esc2(peer.name)})}`);
     const row = document.getElementById('link-input-row');
     row.style.display = 'flex';
-    document.getElementById('link-input').placeholder = `傳訊息給 ${peer.name}（Enter 送出）`;
+    document.getElementById('link-input').placeholder = tf('messageInputPlaceholder', {peer: peer.name});
     const body = document.getElementById('link-main-body');
     body.innerHTML = '';
     try {
@@ -4165,13 +4165,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const div = document.createElement('div');
     div.className = 'link-msg' + (ev.dir === 'out' ? ' out' : '');
     const when = ev.ts ? new Date(ev.ts * 1000).toLocaleTimeString() : '';
-    const who = ev.dir === 'out' ? (linkState && linkState.frame_name) || '我' : (ev.peer_name || 'peer');
+    const who = ev.dir === 'out' ? (linkState && linkState.frame_name) || t('me') : (ev.peer_name || t('peer'));
     if (ev.kind === 'file') {
-      div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · 已排隊' : ''}</div>` +
+      div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · ' + t('queued') : ''}</div>` +
         `<span class="lm-body">${SFIcons.html('folder', { cls: 'sfi-lead' })} <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
         ` <span style="color:#565f89;font-size:10px">${fmtBytes(ev.size)}</span></span>`;
     } else {
-      div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · 已排隊（對方離線）' : ''}</div>` +
+      div.innerHTML = `<div class="lm-meta">${esc2(who)} · ${when}${ev.queued ? ' · ' + t('queuedOffline') : ''}</div>` +
         `<span class="lm-body">${esc2(ev.text || '')}</span>`;
     }
     body.appendChild(div);
@@ -4189,13 +4189,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function openLinkFiles(peer) {
     linkView = { type: 'files', peerId: peer.id, peerName: peer.name };
     toggleLinkPanel(true);          // 同上
-    linkMainTitle(`${SFIcons.html('folder', { cls: 'sfi-lead' })} 與 <b>${esc2(peer.name)}</b> 的檔案`);
+    linkMainTitle(`${SFIcons.html('folder', { cls: 'sfi-lead' })} ${tf('filesTitle', {peer: esc2(peer.name)})}`);
     document.getElementById('link-input-row').style.display = 'none';
     const body = document.getElementById('link-main-body');
     body.innerHTML =
-      `<div id="link-dropzone">把檔案拖到這裡傳給 ${esc2(peer.name)}，或
-         <a href="#" id="link-pick" style="color:#7aa2f7">選擇檔案</a>
-         <span style="color:#3b4261">（收到的檔在 ~/Downloads/ShellFrame/）</span>
+      `<div id="link-dropzone">${tf('fileDropHint', {peer: esc2(peer.name)})}
+         <a href="#" id="link-pick" style="color:#7aa2f7">${t('chooseFile')}</a>
+         <span style="color:#3b4261">${t('downloadsHint')}</span>
        </div><div id="link-file-log"></div>`;
     document.getElementById('link-pick').addEventListener('click', async (e) => {
       e.preventDefault();
@@ -4222,8 +4222,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const div = document.createElement('div');
     div.className = 'link-msg' + (ev.dir === 'out' ? ' out' : '');
     const when = ev.ts ? new Date(ev.ts * 1000).toLocaleString() : '';
-    const arrow = ev.dir === 'out' ? SFIcons.html('arrow-up-right', { cls: 'sfi-lead' }) + ' 送出' : SFIcons.html('arrow-down-right', { cls: 'sfi-lead' }) + ' 收到';
-    div.innerHTML = `<div class="lm-meta">${arrow} · ${when}${ev.queued ? ' · 已排隊（對方離線）' : ''}</div>` +
+    const arrow = ev.dir === 'out'
+      ? SFIcons.html('arrow-up-right', { cls: 'sfi-lead' }) + ' ' + t('fileSent')
+      : SFIcons.html('arrow-down-right', { cls: 'sfi-lead' }) + ' ' + t('fileReceived');
+    div.innerHTML = `<div class="lm-meta">${arrow} · ${when}${ev.queued ? ' · ' + t('queuedOffline') : ''}</div>` +
       `<span class="lm-body">${SFIcons.html('file', { cls: 'sfi-lead' })} <span class="lm-file" data-path="${esc2(ev.path || '')}">${esc2(ev.name || 'file')}</span>` +
       ` <span style="color:#565f89;font-size:10px">${fmtBytes(ev.size)}</span></span>`;
     log.appendChild(div);
@@ -4239,8 +4241,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
           size: undefined,
         });
       }
-      if (!res.success && !res.queued) SFDialog.alert('傳檔失敗：' + (res.message || ''));
-    } catch (e) { SFDialog.alert('傳檔失敗：' + e); }
+      if (!res.success && !res.queued) SFDialog.alert(t('sendFailed') + (res.message || ''));
+    } catch (e) { SFDialog.alert(t('sendFailed') + e); }
   }
 
   // 面板內開檔（收到的檔案點一下用系統開啟）
@@ -4272,7 +4274,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
     } catch (_) {}
     if (!paths.length) {
-      SFDialog.alert('拿不到檔案路徑——請改用「選擇檔案」按鈕');
+      SFDialog.alert(t('dropPathError'));
       return;
     }
     paths.forEach(p => sendLinkFile(linkView.peerId, p));
@@ -4292,12 +4294,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       try {
         const res = JSON.parse(await pywebview.api.link_remote_send(
           linkView.peerId, linkView.sid, text, true));
-        if (!res.success && !res.queued) SFDialog.alert('送出失敗：' + (res.message || ''));
-      } catch (e) { SFDialog.alert('送出失敗：' + e); }
+        if (!res.success && !res.queued) SFDialog.alert(t('sendFailed') + (res.message || ''));
+      } catch (e) { SFDialog.alert(t('sendFailed') + e); }
     } else if (linkView.type === 'messages') {
       try {
         await pywebview.api.link_message(linkView.peerId, text);
-      } catch (e) { SFDialog.alert('送出失敗：' + e); }
+      } catch (e) { SFDialog.alert(t('sendFailed') + e); }
       // 樂觀 append —— 後端也會推 _sfLinkEvent，用 ts 去重太小題大作，
       // 這裡直接靠 dir=out 的事件不重複 append（見 _sfLinkEvent）。
     }
@@ -4340,14 +4342,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     mode = mode || 'duplex';
     let res;
     try { res = JSON.parse(await pywebview.api.link_pair_begin(mode)); }
-    catch (e) { SFDialog.alert('產生配對碼失敗：' + e); return; }
+    catch (e) { SFDialog.alert(t('pairCodeGenerationFailed') + e); return; }
     if (!res.success) {
       // listener 沒開 → 順手開起來再重試一次
       try {
         const st = JSON.parse(await pywebview.api.link_set_enabled(true));
         if (st.running) { showPairModal(mode); return; }
       } catch (e) {}
-      SFDialog.alert(res.message || '產生配對碼失敗');
+      SFDialog.alert(res.message || t('pairCodeGenerationFailed'));
       return;
     }
     const modeLabel = { duplex: SFIcons.html('swap', { cls: 'sfi-lead' }) + ' ' + t('duplexMode'), host_controls: SFIcons.html('arrow-right', { cls: 'sfi-lead' }) + ' ' + t('hostMode'),
@@ -4552,14 +4554,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:340px;padding:20px">
-        <h2 style="font-size:14px">斷開與「${esc2(peer.name)}」的配對？</h2>
+        <h2 style="font-size:14px">${tf('unpairConfirmTitle', {peer: esc2(peer.name)})}</h2>
         <div style="font-size:12px;color:#a9b1d6;line-height:1.6;margin:10px 0">
-          會刪除這台儲存的配對金鑰，之後要重新配對才能連。<br>
-          <span style="color:#565f89">對方那台的配對記錄要在對方機器上自行移除。</span>
+          ${t('unpairDescription')}<br>
+          <span style="color:#565f89">${t('unpairOtherDescription')}</span>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
-          <button class="btn btn-ghost" id="lu-cancel">取消</button>
-          <button class="btn btn-primary" id="lu-ok" style="background:#f7768e;border-color:#f7768e">斷開</button>
+          <button class="btn btn-ghost" id="lu-cancel">${t('cancel')}</button>
+          <button class="btn btn-primary" id="lu-ok" style="background:#f7768e;border-color:#f7768e">${t('peerUnpairButton')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -4598,14 +4600,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     overlay.style.zIndex = '300';
     overlay.innerHTML = `
       <div class="modal" style="width:340px;padding:20px">
-        <h2 style="font-size:14px">編輯「${esc2(peer.name)}」的位址</h2>
+        <h2 style="font-size:14px">${tf('editPeerAddressTitle', {peer: esc2(peer.name)})}</h2>
         <div style="display:flex;gap:8px;margin:12px 0">
-          <input type="text" id="le-host" value="${esc2(peer.host || '')}" placeholder="IP 或網域" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
+          <input type="text" id="le-host" value="${esc2(peer.host || '')}" placeholder="${t('peerAddressPlaceholder')}" style="flex:1;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
           <input type="text" id="le-port" value="${peer.port || 8767}" style="width:70px;background:#1a1b26;border:1px solid #3b4261;border-radius:4px;padding:8px;color:#c0caf5;font-size:13px;outline:none"/>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost" id="le-cancel">取消</button>
-          <button class="btn btn-primary" id="le-ok">儲存</button>
+          <button class="btn btn-ghost" id="le-cancel">${t('cancel')}</button>
+          <button class="btn btn-primary" id="le-ok">${t('save')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);

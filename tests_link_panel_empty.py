@@ -80,6 +80,13 @@ let activeId = 's1';
 const sessions = { s1: { fitAddon: { fit: () => { window.__fits++; } } } };
 const esc2 = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const I18N = {
+  messagesTitle: '💬 Messages with <b>{peer}</b>',
+  messageInputPlaceholder: 'Message {peer} (Enter to send)',
+};
+const t = (key) => I18N[key] || key;
+const tf = (key, values) => Object.entries(values || {}).reduce(
+  (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), t(key));
 function linkMainTitle(h) { document.getElementById('link-main-title').innerHTML = h; }
 function renderSidebar() { window.__sidebarRenders = (window.__sidebarRenders||0)+1; }
 function refreshLinkStatus() { renderSidebar(); }
