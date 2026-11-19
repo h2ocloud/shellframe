@@ -332,7 +332,6 @@
       ],
       "since": "0.60.0",
       "flag": "experimental_office",
-      "open": "settings:office",
       "title": {
         "en": "Bookshelf",
         "zh": "書櫃"
@@ -349,7 +348,6 @@
       ],
       "since": "0.60.0",
       "flag": "experimental_office",
-      "open": "settings:office",
       "title": {
         "en": "Personnel cabinet",
         "zh": "人事檔案櫃"
@@ -366,7 +364,6 @@
       ],
       "since": "0.60.0",
       "flag": "experimental_office",
-      "open": "settings:office",
       "title": {
         "en": "Deliverables",
         "zh": "交付物"
