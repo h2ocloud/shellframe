@@ -123,6 +123,23 @@ def table_lines(lines: list[str]) -> set[int]:
     return marked
 
 
+def external_locale_lines(lines: list[str]) -> set[int]:
+    """Return the zh-TW data block in the extracted locale table."""
+    marked: set[int] = set()
+    active = False
+    depth = 0
+    for lineno, line in enumerate(lines, 1):
+        if not active and re.search(r"['\"]zh-TW['\"]\s*:\s*\{", line):
+            active = True
+            depth = 0
+        if active:
+            marked.add(lineno)
+            depth += line.count("{") - line.count("}")
+            if depth <= 0:
+                active = False
+    return marked
+
+
 def helper_lines(lines: list[str]) -> set[int]:
     """Return lines belonging to a multi-line sf_lang.pick / _(en, zh) call."""
     marked: set[int] = set()
@@ -149,6 +166,8 @@ def web_records(root: Path) -> list[tuple[str, int, str]]:
         rel = path.relative_to(root).as_posix()
         lines = strip_comments(path.read_text(encoding="utf-8", errors="replace").splitlines())
         translated = i18n_lines(lines) | table_lines(lines)
+        if rel == "web/i18n.js":
+            translated |= external_locale_lines(lines)
         for lineno, line in enumerate(lines, 1):
             if not runs(line) or comment_only(line) or existing_i18n(line) or lineno in translated:
                 continue

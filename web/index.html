@@ -855,7 +855,7 @@
   <button id="btn-new-tab" data-guide="new-tab" title="New tab (Cmd/Ctrl+T)">+</button>
   <div class="tab-spacer"></div>
   <button class="tab-action" id="btn-board" data-i18n-title="boardBtnTitle" title="Loops" style="font-size:14px;display:none" data-sfi="loop"></button>
-  <button id="usage-brief" data-guide="usage" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
+  <button id="usage-brief" data-guide="usage" data-i18n-title="usageBriefTitle" title="AI 用量／帳號 — 點擊切換帳號" style="display:none"></button>
   <button class="bridge-toggle" id="btn-bridge" data-i18n-title="settingsTelegram" title="Telegram Bridge" style="display:none">TG</button>
 </div>
 
@@ -897,7 +897,7 @@
       <span data-i18n="sessions">Sessions</span>
       <!-- 中斷對話後 hook 不一定發 Stop，燈號會卡在執行中；這顆是手動重判。
            後端在 hook 與畫面都安靜 90 秒後交回畫面判斷。 -->
-      <button id="btn-refresh-status" title="重新判斷所有分頁的狀態燈號" data-sfi="refresh"></button>
+      <button id="btn-refresh-status" data-i18n-title="refreshStatusTitle" title="重新判斷所有分頁的狀態燈號" data-sfi="refresh"></button>
     </div>
     <div id="sidebar-sessions"></div>
     <div id="sidebar-footer">
@@ -914,7 +914,7 @@
       </div>
     </div>
   </div>
-  <div class="panel-resizer" id="sidebar-resizer" title="拖曳調整寬度"></div>
+  <div class="panel-resizer" id="sidebar-resizer" data-i18n-title="sidebarWidthTitle" title="拖曳調整寬度"></div>
   <div id="terminal-wrap">
     <!-- 現在在哪個分頁。日常使用中最常見也最貴的錯誤就是打錯分頁——訊息
          進到不相干的 agent 手裡，所以這個提示常駐、不做
@@ -1366,7 +1366,7 @@
       <p style="color:#9aa5ce" data-i18n="skillGuideNote">分頁裡的 AI 其實不用等你貼：讓它自己跑 <code>sfctl skill</code>，印出來的就是這台機器實際安裝的版本，開頭會標明版本與哪些實驗性功能是開著的。</p>
       <div id="skill-install" style="margin-top:8px;padding:8px 10px;background:#1a1b26;border:1px solid #3b4261;border-radius:6px">
         <div style="font-size:11px;color:#a9b1d6;margin-bottom:6px" data-i18n="skillDefault">讓 AI 預設就會用</div>
-        <div id="skill-install-status" style="font-size:11px;color:#565f89;line-height:1.7" data-i18n="skillLoading">讀取中…</div>
+        <div id="skill-install-status" style="font-size:11px;color:#565f89;line-height:1.7">讀取中…</div>
         <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btn-install-claude" style="font-size:11px;padding:4px 10px" data-i18n="skillRewriteClaude">重新寫入 Claude Code</button>
           <button class="btn btn-ghost" id="btn-install-codex" style="font-size:11px;padding:4px 10px" data-i18n="skillWriteCodex">寫入 Codex AGENTS.md</button>
@@ -3036,7 +3036,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const numLabel = tgNum ? tgNum : '·';
       const numOpacity = tgNum ? '.45' : '.2';
       tab.innerHTML = `
-        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>
+        <span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="${t('dotCycleTitle')}">${window.SFBots ? SFBots.face(sid) : ''}</span>
         <span class="icon" style="opacity:${numOpacity};font-size:10px;min-width:12px">${numLabel}</span>
         <span class="label">${esc(shownLabel(sid, s))}</span>
         <span class="close-tab" data-sid="${sid}" aria-label="關閉分頁">${SFIcons.html('close')}</span>
@@ -3146,7 +3146,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     const mi = (s._serverStatus || {}).model;
     if (!mi || !mi.name) return '';
     const txt = mi.name + (mi.effort ? ' · ' + mi.effort : '');
-    return `<span class="sb-model" title="自動偵測：模型與 thinking effort（${esc(mi.provider || '')}）">${esc(txt)}</span>`;
+    const title = t('modelBadgeTitle').replace('{provider}', esc(mi.provider || ''));
+    return `<span class="sb-model" title="${title}">${esc(txt)}</span>`;
   }
 
   function renderSidebar() {
@@ -3197,16 +3198,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.dataset.sid = sid;
       el.dataset.section = 'local';
       const tgChip = !hasBridge ? '' : (tgOff
-        ? `<span class="sb-bridge sb-tg off" data-action="switch-tg" data-sid="${sid}" title="這個分頁的 TG 連線已停用（自管／不受 bridge 監控）。點一下重新啟用">TG</span>`
-        : `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? '再點一下＝停用這個分頁的 TG 連線' : '點一下把 TG 切到這個分頁'}">${isActiveTg ? SFIcons.html('chev-left') + ' TG' : 'TG'}</span>`);
+        ? `<span class="sb-bridge sb-tg off" data-action="switch-tg" data-sid="${sid}" title="${t('tgDisabledTitle')}">TG</span>`
+        : `<span class="sb-bridge sb-tg on${isActiveTg ? ' active-bridge' : ''}" data-action="switch-tg" data-sid="${sid}" title="${isActiveTg ? t('tgDisableTitle') : t('tgSwitchTitle')}">${isActiveTg ? SFIcons.html('chev-left') + ' TG' : 'TG'}</span>`);
       el.innerHTML =
-        `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="點一下循環切換燈號顏色（下次對話自動接管重置）">${window.SFBots ? SFBots.face(sid) : ''}</span>` +
+        `<span class="busy-dot ${s._dotClass || (s._busy ? 'on' : '')}" title="${t('dotCycleTitle')}">${window.SFBots ? SFBots.face(sid) : ''}</span>` +
         (hasAnyBridge ? `<span style="opacity:${tgOff ? '.3' : '.4'};font-size:10px;min-width:14px">${tgOff ? '·' : tgIdx}</span>` : '') +
         `<span class="sb-label">${esc(shownLabel(sid, s))}</span>` +
         modelBadgeHtml(s) +
         tgChip +
         (hasLineBridge && !tgOff ? `<span class="sb-bridge sb-line on${isActiveLine ? ' active-bridge' : ''}" data-action="switch-line" data-sid="${sid}">${isActiveLine ? SFIcons.html('chev-left') + ' LINE' : 'LINE'}</span>` : '') +
-        (isAiSession(sid) ? `<span class="sb-relaunch" data-guide="relaunch" data-action="relaunch" data-sid="${sid}" title="重啟這個 CLI、套用更新（claude/codex 會 --resume 接回對話）">${SFIcons.html('refresh')}</span>` : '') +
+        (isAiSession(sid) ? `<span class="sb-relaunch" data-guide="relaunch" data-action="relaunch" data-sid="${sid}" title="${t('relaunchTitle')}">${SFIcons.html('refresh')}</span>` : '') +
         `<span class="sb-close" data-action="close" data-sid="${sid}" aria-label="關閉分頁">${SFIcons.html('close')}</span>`;
       container.appendChild(el);
     });
@@ -4934,28 +4935,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   // "落後 2%（約 0.2 天的量）" — expressing the gap in days is what makes it
   // actionable: 14% behind on a weekly window ≈ a full day of unused quota.
   function _paceGapText(pace) {
-    if (!pace.diff) return '剛好在配速線上';
+    if (!pace.diff) return t('paceOnLine');
     const days = Math.abs(pace.diff) / 100 * pace.totalDays;
-    const scale = days >= 0.1 ? `，約 ${days.toFixed(1)} 天的量` : '';
-    return `${pace.diff > 0 ? '超前' : '落後'} ${Math.abs(pace.diff)}%${scale}`;
+    const scale = days >= 0.1 ? t('paceDaysAmount').replace('{days}', days.toFixed(1)) : '';
+    return `${t(pace.diff > 0 ? 'paceAhead' : 'paceBehind').replace('{pct}', Math.abs(pace.diff))}${scale}`;
   }
   function _paceTooltipLines(pace, pct) {
     // 單位跟著窗口長度走：5 小時窗口用「天」會變成「第 0.1／0 天」這種廢話。
     const hours = pace.totalDays * 24;
     const short = hours <= 24;
-    const el = short ? `${(pace.elapsedDays * 24).toFixed(1)} 小時`
-                     : `${pace.elapsedDays.toFixed(1)} 天`;
-    const tot = short ? `${Math.round(hours)} 小時`
-                      : `${Math.round(pace.totalDays)} 天`;
-    const left = short ? `${(pace.remainingDays * 24).toFixed(1)} 小時`
-                       : `${pace.remainingDays.toFixed(1)} 天`;
-    const due = short ? '現在應累積' : '今天應累積';
+    const el = short ? `${(pace.elapsedDays * 24).toFixed(1)} ${t('paceHours')}`
+                     : `${pace.elapsedDays.toFixed(1)} ${t('paceDays')}`;
+    const tot = short ? `${Math.round(hours)} ${t('paceHours')}`
+                      : `${Math.round(pace.totalDays)} ${t('paceDays')}`;
+    const left = short ? `${(pace.remainingDays * 24).toFixed(1)} ${t('paceHours')}`
+                       : `${pace.remainingDays.toFixed(1)} ${t('paceDays')}`;
+    const due = short ? t('paceDueNow') : t('paceDueToday');
     return [
-      `配速：週期第 ${el}／${tot} → ${due} ${pace.target}%`,
-      `目前 ${pct}%（${_paceGapText(pace)}）`,
+      `${t('paceCycle')} ${el}/${tot} → ${due} ${pace.target}%`,
+      `${t('paceCurrent')} ${pct}%（${_paceGapText(pace)}）`,
       pace.diff >= 10
-        ? `照這個速度會在重置前用完（剩 ${left}）`
-        : pace.diff <= -15 ? '額度用不完，可以放心多用' : '',
+        ? `${t('paceBurnout')}（${t('paceRemaining')} ${left}）`
+        : pace.diff <= -15 ? t('paceUnderuse') : '',
     ].filter(Boolean);
   }
   // Render a muted placeholder instead of vanishing: a usage pill that
@@ -5061,8 +5062,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const hasNums = !!(d && (d.five_hr || d.week));
       // Hard error AND nothing to fall back on → warning placeholder.
       if (!d || ((d.error && d.error !== 'no_data') && !hasNums)) {
-        _usageBriefPlaceholder(el, '用量 ' + SFIcons.html('warn'),
-          `用量查詢失敗：${(d && d.error) || '未知錯誤'}\n點擊重試`);
+        _usageBriefPlaceholder(el, t('usageErrorLabel') + ' ' + SFIcons.html('warn'),
+          t('usageErrorTip').replace('{error}', (d && d.error) || t('unknownError')));
         _commitUsageRender(prov, false);
         return;
       }
@@ -5070,8 +5071,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       // cached reading to show.
       if (!hasNums) {
         const who = d.ai || 'AI';
-        _usageBriefPlaceholder(el, '用量 查不到',
-          `查不到 ${who} 水位（請確認已登入 ${who}）\n點擊重試`);
+        _usageBriefPlaceholder(el, t('usageMissingLabel'),
+          t('usageMissingTip').replaceAll('{who}', who));
         _commitUsageRender(prov, false);
         return;
       }
@@ -5099,20 +5100,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       el.innerHTML = (d.stale ? '<span class="ub-seg ub-none">' + SFIcons.html('warn') + '</span>' : '') +
         win(seg('5h', d.five_hr), paceSeg(pace5)) + win(seg('wk', d.week), paceSeg(paceWk));
       const tip = [];
-      if (d.stale) tip.push('⚠ 本次更新失敗，顯示上次資料');
+      if (d.stale) tip.push(t('usageStaleTip'));
       if (d.account) tip.push(d.account);
-      if (d.five_hr) tip.push(`5hr 已用 ${d.five_hr.pct}%・重置 ${d.five_hr.reset}`);
-      if (d.week) tip.push(`本週已用 ${d.week.pct}%・重置 ${d.week.reset}`);
+      if (d.five_hr) tip.push(t('usageFiveHrTip').replace('{pct}', d.five_hr.pct).replace('{reset}', d.five_hr.reset));
+      if (d.week) tip.push(t('usageWeekTip').replace('{pct}', d.week.pct).replace('{reset}', d.week.reset));
       if (Array.isArray(d.groups)) {
         d.groups.forEach(g => {
           if (g && g.name && g.pct != null) tip.push(`${g.name} ${g.pct}%`);
         });
       }
       // 兩個 pc 標籤同名，tooltip 必須標明各自屬於哪個窗口。
-      if (pace5) tip.push('— 5 小時配速 —', ..._paceTooltipLines(pace5, d.five_hr.pct));
-      if (paceWk) tip.push('— 每週配速 —', ..._paceTooltipLines(paceWk, d.week.pct));
-      if (d.snapshot) tip.push(`快照 ${d.snapshot}`);
-      el.title = tip.join('\n') || 'AI 用量水位 — 點擊看細節';
+      if (pace5) tip.push(t('pace5Title'), ..._paceTooltipLines(pace5, d.five_hr.pct));
+      if (paceWk) tip.push(t('paceWeekTitle'), ..._paceTooltipLines(paceWk, d.week.pct));
+      if (d.snapshot) tip.push(t('usageSnapshotTip').replace('{snapshot}', d.snapshot));
+      el.title = tip.join('\n') || t('usageBriefTitle');
       el.classList.toggle('stale', !!d.stale);
       el.style.display = '';
       _commitUsageRender(prov, !d.stale);
@@ -5123,7 +5124,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         el.classList.add('stale');
         el.style.display = '';
       } else {
-        _usageBriefPlaceholder(el, '用量 ' + SFIcons.html('warn'), '用量查詢失敗，稍後自動重試\n點擊重試');
+        _usageBriefPlaceholder(el, t('usageErrorLabel') + ' ' + SFIcons.html('warn'), t('usageExceptionTip'));
       }
       _commitUsageRender(activeProv, !!keptReal);
     }
@@ -8815,6 +8816,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   async function refreshSkillInstall() {
     const el = document.getElementById('skill-install-status');
     if (!el) return;
+    el.textContent = t('skillLoading');
     let d = null;
     try {
       const r = JSON.parse(await pywebview.api.ai_skill_status());

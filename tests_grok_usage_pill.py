@@ -76,6 +76,18 @@ var activeId = 't1';
 var config = { settings: { usage_pace: true } };
 var AI_PROVIDERS = { grok: { label: 'Grok Build', binaries: ['grok'] } };
 function _cmdTokens() { return ['grok']; }
+function t(key) {
+  return ({
+    paceOnLine: '剛好在配速線上', paceDaysAmount: '，約 {days} 天的量',
+    paceAhead: '超前 {pct}%', paceBehind: '落後 {pct}%',
+    paceHours: '小時', paceDays: '天', paceDueNow: '現在應累積',
+    paceDueToday: '今天應累積', paceCycle: '配速：週期第', paceCurrent: '目前',
+    paceBurnout: '照這個速度會在重置前用完', paceRemaining: '剩',
+    paceUnderuse: '額度用不完，可以放心多用',
+    usageWeekTip: '本週已用 {pct}%・重置 {reset}',
+    paceWeekTitle: '— 每週配速 —',
+  })[key] || key;
+}
 const pywebview = { api: { tab_usage_brief: () => Promise.resolve(__PAYLOAD__) } };
 __FUNCS__
 window.ready = refreshUsageBrief();

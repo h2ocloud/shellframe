@@ -4,6 +4,7 @@ const path = require('path');
 const vm = require('vm');
 
 const file = path.join(__dirname, 'web', 'i18n.js');
+const indexFile = path.join(__dirname, 'web', 'index.html');
 let failures = 0;
 function check(name, ok, detail = '') {
   console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${name}${ok ? '' : `  ${detail}`}`);
@@ -24,8 +25,16 @@ if (fs.existsSync(file)) {
       && zh.every(k => String(table['zh-TW'][k] || '').length > 0));
     check('the settings batch keys are present', [
       'groupsTitle', 'sttTitle', 'skillTitle', 'skillCopy', 'sttSave',
+      'refreshStatusTitle', 'usageBriefTitle', 'usageMissingLabel',
     ].every(k => Object.prototype.hasOwnProperty.call(table.en, k) && Object.prototype.hasOwnProperty.call(table['zh-TW'], k)));
   }
+}
+
+if (fs.existsSync(indexFile)) {
+  const index = fs.readFileSync(indexFile, 'utf8');
+  check('dynamic skill status has no static i18n attribute',
+    !/<[^>]*id="skill-install-status"[^>]*data-i18n=/.test(index));
+  check('skill status loading text uses t()', /el\.textContent\s*=\s*t\('skillLoading'\)/.test(index));
 }
 
 process.exit(failures ? 1 : 0);
