@@ -17,10 +17,20 @@
     return !!(el && el !== doc.body && el.matches && el.getClientRects().length > 0 &&
       el.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
   }
+  // What covers the terminal: a ShellBot window over it (Settings and the other dialogs, the guide's list and its
+  // spotlight, the office, a bot's popover or keep card, a menu, the scrolled history). Its keys are its own, Esc above
+  // all, which the CLI reads as "interrupt" (reported: Esc on the guide list interrupted the conversation underneath:
+  // the list was not in this list, so its Esc was handed to the terminal). Only what is on screen counts.
+  // index.html's xterm key handler asks the same (SFTermKeys.covered), for when the terminal itself kept the focus.
+  const OVER = '.modal-overlay.open, .sfb-pop, #sfb-keep, .sf-menu, .scroll-history-overlay, .sfg-help-veil, .sfg-layer, #sfo-overlay, [aria-modal="true"]';
+  function covering() {
+    for (const el of doc.querySelectorAll(OVER)) if (el.getClientRects().length) return el;
+    return null;
+  }
   function terminalShown(sid) {
     const layer = doc.getElementById('chat-layer');
     const chatUp = layer && !layer.hidden && root.SFChat && root.SFChat.modeOf && root.SFChat.modeOf(sid) === 'chat';
-    return !chatUp && !doc.querySelector('.modal-overlay.open, .sfb-pop, .sf-menu, .scroll-history-overlay');
+    return !chatUp && !covering();
   }
   // The focused terminal textarea is the active tab's own: typing there is xterm's business.
   function s_of(el) {
@@ -37,13 +47,15 @@
     const now = Date.now();
     if (now - missedAt < 5000) return;
     missedAt = now;
-    const over = doc.querySelector('.modal-overlay.open, .sfb-pop, .sf-menu, .scroll-history-overlay');
+    const over = covering();
     try {
       root.pywebview.api.js_debug('keys-missed', JSON.stringify({ sid, why,
         at: el ? (el.id || String(el.className || el.tagName)).slice(0, 60) : null,
         over: over ? (over.id || String(over.className)).slice(0, 60) : null, focused: doc.hasFocus() }));
     } catch (_) { /* no backend */ }
   }
+
+  root.SFTermKeys = { covered: () => !!covering() };
 
   doc.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.isComposing || e.key === 'Process' || e.metaKey || e.ctrlKey || e.altKey) return;

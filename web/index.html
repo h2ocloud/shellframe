@@ -5448,6 +5448,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     pywebview.api.link_remote_input(info.peerId, info.rsid, data).catch(() => {});
   }
 
+  // A ShellBot window over the terminal (Settings, the guide, the office, a dialog, a bot's popover) owns Esc. The terminal
+  // must not take it too: Claude Code reads Esc as "interrupt". WebKit leaves the focus in the terminal when a button is
+  // clicked, so the terminal can still hold it while such a window is up. What counts as "over it": web/termkeys.js
+  // (the same list decides which stray keys are handed to the terminal).
+  function overlayOverTerminal() { return !!(window.SFTermKeys && window.SFTermKeys.covered()); }
   function setupAttachKeyHandler(sid, term) {
     // 分頁名標籤要黏在游標那一行，游標一動就重新對位。
     try {
@@ -5457,6 +5462,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     } catch (_) {}
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
+      if (ev.key === 'Escape' && overlayOverTerminal()) return false;   // the window's Esc, not the CLI's (overlayOverTerminal)
       // ── 組字中「不」從 xterm 手上收走按鍵 ──
       // 這裡曾經在 composition 進行中攔掉 keydown，為的是不讓 xterm 的
       // `CompositionHelper.keydown` 把選字用的按鍵（空白叫候選、數字挑字）

@@ -237,17 +237,34 @@
   function point(id) {
     const f = byId(id);
     if (!f) return;
+    const back = help ? helpBack : document.activeElement;   // where the focus was before the list: it goes back there after
     closeHelp();
     reveal(f);
     setTimeout(() => {
-      const done = () => { clear(); unreveal(); };
+      const done = () => { clear(); unreveal(); refocusLater(back); };
       show(f, anchor(f.id), '', [{ label: t('Got it', '知道了'), primary: true, run: done }], done);
     }, f.open ? 120 : 0);
   }
 
   // ── the help list ──────────────────────────────────────────────────────
-  let help = null;
-  function closeHelp() { if (help) { help.remove(); help = null; } }
+  let help = null, helpBack = null;
+  // Esc closes the list and goes no further: under it is a terminal, where Esc interrupts the CLI (reported: it did).
+  function helpKeys(e) {
+    if (e.key !== 'Escape' || e.isComposing || !help || layer) return;     // the spotlight (point / tour) has its own Esc
+    e.preventDefault(); e.stopPropagation(); closeHelp(true);
+  }
+  function closeHelp(refocus) {
+    if (!help) return;
+    help.remove(); help = null;
+    document.removeEventListener('keydown', helpKeys, true);
+    const back = helpBack; helpBack = null;
+    if (refocus) refocusLater(back);
+  }
+  // Back to where the focus was (the terminal, usually) once this key is over: focused during the Esc's own keydown,
+  // the terminal would take that same key (index.html's Escape handler defers for the same reason).
+  function refocusLater(el) {
+    if (el && el.isConnected) setTimeout(() => { try { if (el.isConnected) el.focus({ preventScroll: true }); } catch (e) { /* gone */ } }, 0);
+  }
   function openHelp() {
     if (!data) { load().then(() => data && openHelp()); return; }
     closeHelp();
@@ -272,9 +289,13 @@
       if (s) { point(s.getAttribute('data-show')); return; }
       const a = e.target.closest('[data-act]');
       if (a && a.getAttribute('data-act') === 'tour') { closeHelp(); tour('first_run'); return; }
-      if ((a && a.getAttribute('data-act') === 'close') || e.target === help) closeHelp();
+      if ((a && a.getAttribute('data-act') === 'close') || e.target === help) closeHelp(true);
     });
+    helpBack = document.activeElement;            // the terminal, usually: it gets the focus back when the list closes
     document.body.appendChild(help);
+    document.addEventListener('keydown', helpKeys, true);
+    // WebKit does not move the focus to a clicked button, so it would stay in the terminal under the list
+    const x = help.querySelector('.sfg-x'); if (x) { try { x.focus({ preventScroll: true }); } catch (e) { /* no focus */ } }
     mark({ seen: true });
   }
 

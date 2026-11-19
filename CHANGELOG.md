@@ -10,6 +10,21 @@
 
 ### Fixes
 
+- **Esc on a ShellBot window closes the window, and never interrupts the CLI underneath.**
+  Reported: pressing Esc to close the guide list interrupted the Claude Code conversation in the terminal. The guide
+  list had no Esc of its own. ShellBot also hands keys the page does not use to the terminal, and that rule did not
+  know about the guide list, its spotlight, the office, the intro cards or the dialogs. So Esc on the list reached the
+  CLI, which reads it as "interrupt". There is now one list of the windows that cover the terminal, and those windows
+  keep Esc for themselves, also when the terminal still has the keyboard (on macOS, clicking a button does not move
+  it). The guide list closes on Esc and gives the keyboard back to the terminal. Covered by `tests_overlay_esc.py`,
+  which fails without the fix.
+
+  **在 ShellBot 的視窗上按 Esc，只會關掉那個視窗，不會打斷下面的 CLI。** 回報：在導覽清單上按 Esc 想關掉它，結果打斷了
+  終端機裡 Claude Code 的對話。原因是導覽清單自己沒有處理 Esc；ShellBot 又會把頁面沒用到的按鍵轉給終端機，而那條規則不知道
+  導覽清單、導覽的聚光框、辦公室、介紹卡和對話框也蓋在終端機上，所以 Esc 被送進 CLI，CLI 把它當成「中斷」。現在「哪些
+  視窗蓋在終端機上」只有一份清單，這些視窗開著時，Esc 由它們自己處理；就算鍵盤還停在終端機上也一樣（macOS 上點按鈕不會把
+  鍵盤移走）。導覽清單按 Esc 會關掉，鍵盤回到終端機。由 `tests_overlay_esc.py` 守著，沒有這個修正就會失敗。
+
 - **「請他離開」 asks the intern to leave on an ordinary press.**
   Reported: pressing the button did nothing. Measured with the office running: a press held 90 ms or more (an
   ordinary click by hand) was dropped in WebKit, and from 150 ms in Chromium. The office redrew the button's
