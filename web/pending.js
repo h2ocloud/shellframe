@@ -345,8 +345,9 @@
       }
     }
     put(secPeers, 'peers', peersHtml());
-    put(secDeliv, 'deliv', SD() ? SD().railHtml() : '', '|' + (SD() ? JSON.stringify(SD().state()) : ''));
-    const none = !last.tabs && !secCards.innerHTML && !last.peers && !last.deliv;
+    const dHtml = SD() ? SD().railHtml() : '';
+    put(secDeliv, 'deliv', dHtml, '|' + (SD() ? JSON.stringify(SD().state()) : ''));
+    const none = !last.tabs && !secCards.innerHTML && !last.peers && !dHtml;
     panel.classList.toggle('empty', none);
   }
 

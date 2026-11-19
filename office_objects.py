@@ -1,19 +1,21 @@
 """Office objects: the extension point behind the office's furniture.
 
-A piece of furniture in the office (the bookshelf, the personnel cabinet; later a deliverables
-desk, an ops TV) is an *office object*: a declaration (title, which built-in furniture, where it
+A piece of furniture in the office (the bookshelf, the personnel cabinet, the deliverables desk; later
+an ops TV) is an *office object*: a declaration (title, which built-in furniture, where it
 stands, the filters, sorts and actions its popup offers) and four small hooks. The office draws
 the furniture and one shared popup (web/office_objects.js: a list on the left, a Markdown preview
-on the right, actions at the bottom) and asks the hooks for everything it shows. The popup is
-read-only: an action either changes nothing (open a file in the person's editor), sends one line to
-a bot's tab, or navigates (to another object, a wall view, a bot's settings).
+on the right, actions at the bottom) and asks the hooks for everything it shows. The popup
+changes nothing on its own: an action either opens something in the person's own programs, sends one line to
+a bot's tab, navigates (to another object, a wall view, a bot's settings), or is the person's own decision on the
+object's records (the deliverables: keep, take).
 
 The four hooks (all optional for a plugin; each call is wrapped in try/except and a time limit, so
 a broken or stuck object makes only its own popup say "not available now"):
 
-    summary(obj_id)                                  -> {"badge": int, "hint": str}
+    summary(obj_id)                                  -> {"badge": int, "hint": str, "by_owner"?, "by_task"?}
         for the furniture's red number; a few stats, no content read; the page asks at most
-        every 30 s while the office is open
+        every 30 s while the office is open. `by_owner` ({key: {label, count, new, types, closed}}):
+        an object with one pile per person (the deliverables), drawn by the office on each desk
     list(obj_id, query, filters, sort, offset, limit) -> {"groups": [{id, title}], "items": [...],
                                                           "total": int}
         item: {id, group, title, subtitle, type, owner, owner_key, mtime, size, limit, fresh,
@@ -21,13 +23,18 @@ a broken or stuck object makes only its own popup say "not available now"):
                types, filters or sorts
     item(obj_id, item_id)                            -> {"title", "subtitle", "markdown", "meta":
                                                          [[label, value]], "chips": [{text, tone}],
-                                                         "links": [...], "actions": [action id]}
-        asked when one entry is opened; the only place its file is read
+                                                         "links": [...], "actions": [action id],
+                                                         "action_labels", "image", "refresh"}
+        asked when one entry is opened; the only place its file is read. `image`: a raster
+        data: URL the object read for this entry (kept as it is, shown in an <img>)
     action(obj_id, item_id, action_id, args)         -> {"ok": bool, "message": str,
-                                                         "open": path, "tell": {"to", "text"},
-                                                         "go": {...}}
-        `open` is opened by the app's own opener; `tell` is sent by the page into that bot's tab
-        (one line, through the chat view's send); `go` navigates the page
+                                                         "open": path, "reveal": path, "url": link,
+                                                         "tell": {"to", "text", "after"},
+                                                         "confirm": {...}, "refresh": bool, "go": {...}}
+        `open` / `reveal` / `url` are done by the app's own openers; `tell` is sent by the page into that
+        bot's tab (one line, through the chat view's send; `after` is asked of the object once it went
+        in); `confirm` makes the popup ask yes/no first; `refresh` makes it read the list again; `go`
+        navigates the page. An action declared with `input` first asks the person for one line (args.text)
 
 What the host does to every answer (so no object can forget it): strings are cut to a length,
 anything that looks like a secret is masked (`redact_text`: line by line, Markdown stays

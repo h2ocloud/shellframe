@@ -124,7 +124,9 @@ def seed():
     ss._ready.clear()
     NOTES.clear(); OPENED.clear(); LOG.clear()
     R.clear()
-    tk = ss.add("示範登入頁改版", owner="eng", now=NOW)
+    for i in range(11):
+        ss.add(f"示範任務 {i + 1}", now=NOW)
+    tk = ss.add("示範登入頁改版", owner="eng", now=NOW)                 # #12: the board's own demo card has this number
     R["md"] = reg(BOT("eng"), make("報告/示範週報草稿.md", WEEKLY, 1800), 1800, title="示範週報草稿", note="第 3 點是我猜的，你看一下再寄。", task_id=tk["id"])
     R["png"] = reg(BOT("eng"), make("報告/登入頁新版截圖.png", png(), 2400), 2400, title="登入頁新版截圖")
     R["pdf"] = reg(BOT("eng"), make("報告/示範測試報告.pdf", PDF, 3000), 3000, title="示範測試報告")
@@ -456,6 +458,21 @@ def run(browser, base, engine):
     pick(page, fr, "示範預覽站")
     check("a link: opens in the browser", "用瀏覽器打開" in fr.evaluate("[...document.querySelectorAll('#ooActs button')].map(b => b.textContent)"))
 
+    print(f"{tag} the whiteboard card")
+    fr.evaluate("__office.objClose()")
+    fr.evaluate("__office.openView('board')")
+    page.wait_for_timeout(700)
+    page.evaluate("document.querySelector('#sfo-overlay iframe').contentDocument.querySelector('#vBody .nb[data-id=\"12\"]').click()")
+    page.wait_for_timeout(600)
+    card = fr.evaluate("(() => { const b = document.querySelector('#vOver [data-act=\"adeliv\"]'); return b ? b.textContent.trim() : null; })()")
+    check("a task with a deliverable tied to it (--task 12) says 交付物 1 on its whiteboard card", card == "交付物 1", card)
+    fr.click('#vOver [data-act="adeliv"]')
+    page.wait_for_timeout(900)
+    check("…clicking it opens the deliverables of that task (the card closes, the popup is filtered to it)", fr.evaluate("__office.objects().open") == "deliverables"
+          and titles(fr) == ["示範週報草稿"] and fr.evaluate("__office.view()") is None, (fr.evaluate("__office.objects().open"), titles(fr)))
+    fr.evaluate("__office.objOpen('deliverables', {filters: {owner: 'b:eng'}})")
+    page.wait_for_timeout(700)
+
     print(f"{tag} keep, take, ask for a change")
     tot0 = fr.evaluate("__office.objects().objects.find(o => o.id === 'deliverables').badge")
     pick(page, fr, "示範測試報告")
@@ -508,7 +525,7 @@ def run(browser, base, engine):
     fr.select_option("select[data-f=state]", "")
     page.wait_for_timeout(500)
     if shoot:
-        fr.select_option("select[data-f=owner]", "")
+        pick(page, fr, "示範市場摘要")
         page.screenshot(path=str(SHOTS / "deliverables-all-1280.png"))
 
     print(f"{tag} widths and interface sizes")

@@ -43,9 +43,10 @@ TURN_MEMO_MAX = 400
 
 class DeliverablesApiMixin:
     # ── who a tab is ──────────────────────────────────────────────────────
-    def _deliv_opened(self, sid: str, s) -> str:
+    def _deliv_opened(self, sid: str, s, details=None) -> str:
         """When the tab was opened, as a stable string: tmux's session_created (the same after a restart of the app, and a
-        new tab with a used id has a new one), else the spawn time. Cached per tab object."""
+        new tab with a used id has a new one), else the spawn time. Cached per tab object; `details` is tmux's answer, when
+        the caller asked for several tabs at once."""
         cache = self.__dict__.setdefault("_deliv_open_cache", {})
         hit = cache.get(sid)
         if hit and hit[0] == id(s):
@@ -54,7 +55,9 @@ class DeliverablesApiMixin:
         name = getattr(s, "_tmux_name", None)
         if name and not main.IS_WIN:
             try:
-                for d in tmux_sessions.session_details(main._tmux_bin()):
+                if details is None:
+                    details = tmux_sessions.session_details(main._tmux_bin())
+                for d in details:
                     if d["name"] == name and d.get("created"):
                         opened = str(d["created"])
                         break
@@ -66,11 +69,19 @@ class DeliverablesApiMixin:
         return opened
 
     def _deliv_live_tabs(self) -> dict:
-        """{sid: opened} of the tabs that are open."""
-        out = {}
+        """{sid: opened} of the tabs that are open (one tmux call for all the tabs not seen before)."""
+        out, details = {}, None
+        cache = self.__dict__.get("_deliv_open_cache", {})
         for sid, s in list(self.sessions.items()):
-            if getattr(s, "alive", True):
-                out[sid] = self._deliv_opened(sid, s)
+            if not getattr(s, "alive", True):
+                continue
+            if details is None and getattr(s, "_tmux_name", None) and not (cache.get(sid) and cache[sid][0] == id(s)):
+                try:
+                    details = tmux_sessions.session_details(main._tmux_bin()) if not main.IS_WIN else []
+                except Exception:
+                    _swallow("deliv:details")
+                    details = []
+            out[sid] = self._deliv_opened(sid, s, details)
         return out
 
     def _deliv_tab_labels(self) -> dict:
