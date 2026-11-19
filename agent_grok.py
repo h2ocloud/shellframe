@@ -30,6 +30,12 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 
+import sf_lang
+
+
+def _lang(en, zh):
+    return sf_lang.pick(en, zh)
+
 GROK_SESSIONS = os.path.expanduser("~/.grok/sessions")
 
 # `grok <子指令>` 是管理動作（login、sessions…），不是開一段對話，不能 pin session。
@@ -444,8 +450,9 @@ def usage_text(worker):
         if u["context_used"] and u["context_window"]:
             parts.append(f"context {_k(u['context_used'])}/{_k(u['context_window'])}")
         parts.append(f"{u['tokens']:,} tokens")
-        parts.append(f"{u['turns']} 回合")
-        return "Grok Build 本 session：" + " · ".join(parts)
+        parts.append(_lang(f"{u['turns']} turns", f"{u['turns']} 回合"))
+        prefix = _lang("Grok Build this session: ", "Grok Build 本 session：")
+        return prefix + " · ".join(parts)
     except Exception:
         return ""
 
@@ -535,11 +542,13 @@ def _pct(value):
 def _quota_from_payload(payload):
     """把 billing JSON 收成 usage_probe 的原始形狀。沒有百分比就不編一個。"""
     if not isinstance(payload, dict):
-        return {"_error": "no_data", "_error_message": "帳單回應沒有用量百分比"}
+        return {"_error": "no_data", "_error_message": _lang(
+            "Billing response has no usage percentage", "帳單回應沒有用量百分比")}
     cfg = payload.get("config") if isinstance(payload.get("config"), dict) else payload
     pct = _pct(cfg.get("creditUsagePercent"))
     if pct is None:
-        return {"_error": "no_data", "_error_message": "帳單回應沒有用量百分比"}
+        return {"_error": "no_data", "_error_message": _lang(
+            "Billing response has no usage percentage", "帳單回應沒有用量百分比")}
     period = cfg.get("currentPeriod") if isinstance(cfg.get("currentPeriod"), dict) else {}
     start = _epoch(period.get("start") or cfg.get("billingPeriodStart"))
     end = _epoch(period.get("end") or cfg.get("billingPeriodEnd"))
@@ -598,22 +607,30 @@ def _quota_live():
     token = (cred or {}).get("key") if cred else None
     if not isinstance(token, str) or not token:
         return {"_error": "auth_required",
-                "_error_message": "尚未登入 Grok Build，請執行 grok login"}
+                "_error_message": _lang(
+                    "Grok Build is not signed in; run grok login",
+                    "尚未登入 Grok Build，請執行 grok login")}
     status, body = _fetch_billing(token)
     if status == 200:
         try:
             payload = json.loads(body.decode("utf-8"))
         except Exception:
-            return {"_error": "probe_failed", "_error_message": "週配額回應無法解析"}
+            return {"_error": "probe_failed", "_error_message": _lang(
+                "Could not parse weekly quota response", "週配額回應無法解析")}
         return _quota_from_payload(payload)
     if status in (401, 403):
         return {"_error": "auth_required",
-                "_error_message": "登入已過期，請執行 grok login"}
+                "_error_message": _lang(
+                    "Grok Build login expired; run grok login",
+                    "登入已過期，請執行 grok login")}
     if status == 429:
-        return {"_error": "rate_limited", "_error_message": "週配額查詢太頻繁，稍後再試"}
+        return {"_error": "rate_limited", "_error_message": _lang(
+            "Weekly quota was queried too often; try again later", "週配額查詢太頻繁，稍後再試")}
     if status == 0:
-        return {"_error": "probe_failed", "_error_message": "週配額查詢失敗（連不上）"}
-    return {"_error": "probe_failed", "_error_message": f"週配額查詢失敗（HTTP {status}）"}
+        return {"_error": "probe_failed", "_error_message": _lang(
+            "Weekly quota lookup failed (connection error)", "週配額查詢失敗（連不上）")}
+    return {"_error": "probe_failed", "_error_message": _lang(
+        f"Weekly quota lookup failed (HTTP {status})", f"週配額查詢失敗（HTTP {status}）")}
 
 
 def quota():
@@ -628,12 +645,14 @@ def quota():
                 return {**cached["data"], "_stale": True}
             if cached.get("error"):
                 return dict(cached["error"])
-            return {"_error": "rate_limited", "_error_message": "剛查過，稍後再試"}
+            return {"_error": "rate_limited", "_error_message": _lang(
+                "Checked recently; try again later", "剛查過，稍後再試")}
         cached["last_try"] = now
         try:
             data = _quota_live()
         except Exception:
-            data = {"_error": "probe_failed", "_error_message": "週配額查詢失敗"}
+            data = {"_error": "probe_failed", "_error_message": _lang(
+                "Weekly quota lookup failed", "週配額查詢失敗")}
         if data and data.get("week") and not data.get("_error"):
             cached["data"] = {k: v for k, v in data.items() if k != "_stale"}
             cached["ts"] = now
@@ -651,7 +670,8 @@ def quota():
             if data and data.get("_error_message"):
                 stale["_error_message"] = data["_error_message"]
             return stale
-        return data or {"_error": "probe_failed", "_error_message": "週配額查詢失敗"}
+        return data or {"_error": "probe_failed", "_error_message": _lang(
+            "Weekly quota lookup failed", "週配額查詢失敗")}
 
 
 def _pace_clause(data):
@@ -661,11 +681,13 @@ def _pace_clause(data):
         five = (data or {}).get("5hr")
         if not five:
             return ""
-        return f"短週期已用 {five[0]}%｜重置 {five[1]}"
+        return _lang(f"Short window used {five[0]}% | reset {five[1]}",
+                     f"短週期已用 {five[0]}%｜重置 {five[1]}")
     pct, reset = week
     epoch = ((data.get("_reset_epoch") or {}).get("week"))
     minutes = ((data.get("_window_minutes") or {}).get("week"))
-    base = f"週配額已用 {pct}%｜重置 {reset}"
+    base = _lang(f"Weekly quota used {pct}% | reset {reset}",
+                 f"週配額已用 {pct}%｜重置 {reset}")
     if not epoch or not minutes:
         return base
     total = minutes * 60
@@ -675,29 +697,33 @@ def _pace_clause(data):
     target = int(round((total - remaining) / total * 100))
     diff = int(round(pct - target))
     if diff <= -15:
-        gap = f"落後 {abs(diff)}%"
+        gap = _lang(f"behind by {abs(diff)}%", f"落後 {abs(diff)}%")
     elif diff >= 10:
-        gap = f"超前 {diff}%"
+        gap = _lang(f"ahead by {diff}%", f"超前 {diff}%")
     elif diff == 0:
-        gap = "剛好在配速線上"
+        gap = _lang("exactly on pace", "剛好在配速線上")
     else:
-        gap = f"接近配速（差 {diff:+d}%）"
-    return f"{base}｜配速應 {target}%（{gap}）"
+        gap = _lang(f"near pace (difference {diff:+d}%)",
+                    f"接近配速（差 {diff:+d}%）")
+    return _lang(f"{base} | target pace {target}% ({gap})",
+                 f"{base}｜配速應 {target}%（{gap}）")
 
 
 def usage_report(worker):
     """grok 分頁 /usage 的整段文字：週配額與配速，再加上這個 session 的 token。"""
-    lines = ["AI 水位 Grok Build"]
+    lines = [_lang("AI usage Grok Build", "AI 水位 Grok Build")]
     try:
         reading = quota()
     except Exception:
-        reading = {"_error": "probe_failed", "_error_message": "週配額查詢失敗"}
+        reading = {"_error": "probe_failed", "_error_message": _lang(
+            "Weekly quota lookup failed", "週配額查詢失敗")}
     if reading and (reading.get("week") or reading.get("5hr")):
         who = account_label()
         if who:
-            lines.append(f"帳號 {who}")
+            lines.append(_lang(f"Account {who}", f"帳號 {who}"))
         if reading.get("_stale"):
-            lines.append("⚠ 本次更新失敗，顯示上次資料")
+            lines.append(_lang("⚠ This update failed; showing the last known data",
+                               "⚠ 本次更新失敗，顯示上次資料"))
         clause = _pace_clause(reading)
         if clause:
             lines.append(clause)
@@ -705,7 +731,8 @@ def usage_report(worker):
             if group.get("name") and group.get("used") is not None:
                 lines.append(f"{group['name']} {group['used']}%")
     else:
-        lines.append((reading or {}).get("_error_message") or "查不到週配額。")
+        lines.append((reading or {}).get("_error_message") or
+                     _lang("No weekly quota data.", "查不到週配額。"))
     extra = usage_text(worker)
     if extra:
         lines.append(extra)

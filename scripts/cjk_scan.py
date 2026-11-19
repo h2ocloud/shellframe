@@ -147,6 +147,7 @@ def helper_lines(lines: list[str]) -> set[int]:
     depth = 0
     for lineno, line in enumerate(lines, 1):
         if not active and ("sf_lang.pick(" in line or re.search(r"\b_\s*\(", line)
+                           or re.search(r"\b_lang\s*\(", line)
                            or re.search(r"\bL\s*\(", line)):
             active = True
             depth = 0

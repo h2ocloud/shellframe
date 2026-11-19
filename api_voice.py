@@ -16,6 +16,11 @@ import urllib.request
 
 from sf_config import CONFIG_LOCK
 from api_host import main
+import sf_lang
+
+
+def _lang(en, zh):
+    return sf_lang.pick(en, zh)
 
 
 class VoiceApiMixin:
@@ -314,7 +319,9 @@ class VoiceApiMixin:
                 winget = shutil.which("winget")
                 if not winget:
                     return json.dumps({"success": False,
-                                       "message": "找不到 winget，請手動安裝 ffmpeg 後重試"})
+                                       "message": _lang(
+                                           "winget was not found; install ffmpeg manually and try again",
+                                           "找不到 winget，請手動安裝 ffmpeg 後重試")})
                 r = subprocess.run(
                     [winget, "install", "--id", "Gyan.FFmpeg",
                      "--accept-source-agreements", "--accept-package-agreements", "--silent"],
@@ -324,16 +331,21 @@ class VoiceApiMixin:
                     "/opt/homebrew/bin/brew" if os.path.exists("/opt/homebrew/bin/brew") else "")
                 if not brew:
                     return json.dumps({"success": False,
-                                       "message": "找不到 Homebrew，請先裝 brew 或手動安裝 ffmpeg"})
+                                       "message": _lang(
+                                           "Homebrew was not found; install brew or ffmpeg manually first",
+                                           "找不到 Homebrew，請先裝 brew 或手動安裝 ffmpeg")})
                 r = subprocess.run([brew, "install", "ffmpeg"],
                                    capture_output=True, text=True, timeout=1800)
             else:
                 return json.dumps({"success": False,
-                                   "message": "請用系統套件管理器安裝 ffmpeg（apt/dnf）"})
+                                   "message": _lang(
+                                       "Use your system package manager to install ffmpeg (apt/dnf)",
+                                       "請用系統套件管理器安裝 ffmpeg（apt/dnf）")})
             ok = bool(self._mic_ffmpeg())
             return json.dumps({
                 "success": ok,
-                "message": "ffmpeg 已就緒" if ok else ((r.stderr or r.stdout) or "")[-300:],
+                "message": _lang("ffmpeg is ready", "ffmpeg 已就緒") if ok
+                           else ((r.stderr or r.stdout) or "")[-300:],
             })
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})

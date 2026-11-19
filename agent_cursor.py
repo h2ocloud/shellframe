@@ -28,6 +28,12 @@ import subprocess
 import time
 import uuid
 
+import sf_lang
+
+
+def _lang(en, zh):
+    return sf_lang.pick(en, zh)
+
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _UUID_RE = re.compile(_UUID, re.I)
 _CMD_ID_RE = re.compile(
@@ -492,7 +498,9 @@ def status_view(monitor, sid, worker, now, screen_tail, model):
 def quota(env=None):
     """沒有本地配額檔。不估算已用百分比。"""
     return {"_error": "no_data",
-            "_error_message": "cursor-agent 沒有本地配額檔，不估算已用百分比"}
+            "_error_message": _lang(
+                "cursor-agent has no local quota file; usage percentage is not estimated",
+                "cursor-agent 沒有本地配額檔，不估算已用百分比")}
 
 
 def account_label(data=None, env=None):
@@ -507,18 +515,23 @@ def install_command(windows: bool) -> str:
 
 
 def _billing_label(kind):
-    return {"subscription": "訂閱", "paid": "付費",
-            "auto": "auto，可能選到付費模型", "unknown": "未分類"}.get(kind, "未分類")
+    return {
+        "subscription": _lang("Subscription", "訂閱"),
+        "paid": _lang("Paid", "付費"),
+        "auto": _lang("auto; may select a paid model", "auto，可能選到付費模型"),
+        "unknown": _lang("Unknown", "未分類"),
+    }.get(kind, _lang("Unknown", "未分類"))
 
 
 def usage_report(worker):
     """/usage 的文字。有模型就標訂閱或付費；沒有配額百分比。"""
-    lines = ["AI 水位 Cursor Agent"]
+    lines = [_lang("AI usage Cursor Agent", "AI 水位 Cursor Agent")]
     try:
         reading = quota()
     except Exception:
-        reading = {"_error_message": "用量查詢失敗"}
-    lines.append((reading or {}).get("_error_message") or "查不到帳號水位。")
+        reading = {"_error_message": _lang("Usage lookup failed", "用量查詢失敗")}
+    lines.append((reading or {}).get("_error_message") or
+                 _lang("Account usage unavailable.", "查不到帳號水位。"))
     info = None
     try:
         info = model_info(worker)
@@ -526,5 +539,7 @@ def usage_report(worker):
         info = None
     if info:
         extra = f" effort {info['effort']}" if info.get("effort") else ""
-        lines.append(f"模型 {info['name']}（{_billing_label(info.get('billing'))}）{extra}")
+        lines.append(_lang(
+            f"Model {info['name']} ({_billing_label(info.get('billing'))}){extra}",
+            f"模型 {info['name']}（{_billing_label(info.get('billing'))}）{extra}"))
     return "\n".join(lines)

@@ -20,8 +20,13 @@ import agent_grok
 import cli_install
 import launch_cmd
 import usage_probe
+import sf_lang
 from sf_config import CONFIG_LOCK
 from api_host import main
+
+
+def _lang(en, zh):
+    return sf_lang.pick(en, zh)
 
 
 class AccountsApiMixin:
@@ -174,7 +179,7 @@ class AccountsApiMixin:
     def _restart_session_for_account(self, sid: str, account_refs: dict):
         old = self.sessions.get(sid)
         if not old:
-            raise ValueError("此 tab 不存在或已關閉")
+            raise ValueError(_lang("This tab does not exist or is closed", "此 tab 不存在或已關閉"))
         cmd = old.cmd
         # 保留對話：把行程砍掉重開時（換帳號、或「套用 CLI 更新」重啟），用
         # --resume <uuid> 接回原對話。claude 換帳號會換 config dir，先把 uuid 的
@@ -295,7 +300,7 @@ class AccountsApiMixin:
             main.ACCOUNT_MANAGER.set_session_ref(cfg, sid, provider, ref)
             session = self.sessions.get(sid)
             if not session:
-                raise ValueError("此 tab 不存在或已關閉")
+                raise ValueError(_lang("This tab does not exist or is closed", "此 tab 不存在或已關閉"))
             refs = dict(session.account_refs)
             refs[provider] = ref
             cfg.setdefault("accounts", main.account_manager._empty_accounts()) \
@@ -318,7 +323,8 @@ class AccountsApiMixin:
         try:
             old = self.sessions.get(sid)
             if not old:
-                return json.dumps({"success": False, "message": "此 tab 不存在或已關閉"},
+                return json.dumps({"success": False, "message": _lang(
+                    "This tab does not exist or is closed", "此 tab 不存在或已關閉")},
                                   ensure_ascii=False)
             provider = None
             try:
@@ -329,9 +335,11 @@ class AccountsApiMixin:
             new = self.sessions.get(sid)
             label = getattr(new, "_custom_label", None) or sid
             m = re.search(r"--resume[ =]([0-9A-Za-z-]{8,})", getattr(new, "cmd", "") or "")
-            msg = (f"已重啟「{label}」的 CLI 並套用更新"
-                   + ("（已 --resume 接回對話）" if provider in ("claude", "codex")
-                      else ""))
+            msg = (_lang(f"Restarted CLI \"{label}\" with the update",
+                         f"已重啟「{label}」的 CLI 並套用更新")
+                   + (_lang(" (resumed the conversation with --resume)",
+                            "（已 --resume 接回對話）")
+                      if provider in ("claude", "codex") else ""))
             return json.dumps({"success": True, "sid": sid, "provider": provider or "",
                                "resumed": m.group(1) if m else "", "message": msg}, ensure_ascii=False)
         except Exception as e:
@@ -360,7 +368,10 @@ class AccountsApiMixin:
                     ) if self.sessions.get(sid) else None
                 ).start()
             return json.dumps({"success": True, "sid": sid, "provider": provider,
-                               "message": "登入頁籤已開啟；完成瀏覽器登入後回到面板按重新整理。"},
+                               "message": _lang(
+                                   "Login tab opened; finish signing in in the browser, "
+                                   "then return to the panel and click Refresh.",
+                                   "登入頁籤已開啟；完成瀏覽器登入後回到面板按重新整理。")},
                               ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
@@ -376,7 +387,7 @@ class AccountsApiMixin:
             cfg = self._account_config()
             discovered = main.ACCOUNT_MANAGER.discover(provider)
             if not discovered:
-                raise ValueError("尚未偵測到已登入帳號")
+                raise ValueError(_lang("No signed-in account detected", "尚未偵測到已登入帳號"))
             mm = discovered.get("mismatch") if isinstance(discovered, dict) else None
             if mm:
                 who = mm.get("email") or mm.get("organization") or "?"
@@ -385,20 +396,26 @@ class AccountsApiMixin:
                 return json.dumps({
                     "success": False,
                     "mismatch": True,
-                    "message": (f"擋下：憑證與帳號資料對不上，沒有存下。\n"
-                                f"帳號顯示 {who}（{tiers}），但目前的登入憑證是"
-                                f"「{plan}」方案——不是同一個帳號。\n"
-                                f"這通常是切帳號殘留造成的：請在該分頁重新 /login、"
-                                f"確認登入到正確帳號後，再按一次「重新整理已登入」。"),
+                    "message": _lang(
+                        f"Blocked: the credential does not match the account data; nothing was saved.\n"
+                        f"The account shows {who} ({tiers}), but the current login credential is"
+                        f" the {plan} plan — it is not the same account.\n"
+                        "This usually means an old account switch is left over: run /login in "
+                        "that tab, sign in to the correct account, then click Refresh signed-in.",
+                        f"擋下：憑證與帳號資料對不上，沒有存下。\n"
+                        f"帳號顯示 {who}（{tiers}），但目前的登入憑證是"
+                        f"「{plan}」方案——不是同一個帳號。\n"
+                        f"這通常是切帳號殘留造成的：請在該分頁重新 /login、"
+                        f"確認登入到正確帳號後，再按一次「重新整理已登入」。"),
                 }, ensure_ascii=False)
             ref = main.ACCOUNT_MANAGER.sync_current(cfg, provider, discovered)
             if not ref:
-                raise ValueError("尚未偵測到已登入帳號")
+                raise ValueError(_lang("No signed-in account detected", "尚未偵測到已登入帳號"))
             main.save_config(cfg)
             captured = main.ACCOUNT_MANAGER.profile(cfg, provider, ref) or {}
             who = captured.get("email") or captured.get("label") or ref
             return json.dumps({"success": True, "ref": ref,
-                               "message": f"已存下帳號：{who}",
+                               "message": _lang(f"Saved account: {who}", f"已存下帳號：{who}"),
                                "state": self._account_state()[1]}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
@@ -465,7 +482,9 @@ class AccountsApiMixin:
                 raise ValueError("unknown provider")
             command = (self._install_info(provider).get("command") or "").strip()
             if not command:
-                raise ValueError(f"{spec.get('label', provider)} 在這個平台沒有內建安裝指令，請參考官方文件")
+                raise ValueError(_lang(
+                    f"{spec.get('label', provider)} has no built-in installer on this platform; see the official docs",
+                    f"{spec.get('label', provider)} 在這個平台沒有內建安裝指令，請參考官方文件"))
             shell = "powershell" if main.IS_WIN else "bash"
             sid = self.new_session(shell, 120, 30, source="provider-install",
                                    inherit_accounts=False)
@@ -476,8 +495,11 @@ class AccountsApiMixin:
                 ).start()
             return json.dumps({
                 "success": True, "sid": sid, "command": command,
-                "message": f"已在新分頁執行 {spec.get('label', provider)} 安裝指令，"
-                           f"裝完再開分頁即可。",
+                "message": _lang(
+                    f"Running the {spec.get('label', provider)} installer in a new tab; "
+                    "open a new tab after it finishes.",
+                    f"已在新分頁執行 {spec.get('label', provider)} 安裝指令，"
+                    f"裝完再開分頁即可。"),
             }, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)}, ensure_ascii=False)
@@ -575,7 +597,7 @@ class AccountsApiMixin:
         """
         s = self.sessions.get(sid)
         if not s:
-            return "此 tab 不存在或已關閉。"
+            return _lang("This tab does not exist or is closed.", "此 tab 不存在或已關閉。")
         try:
             # grok 的視窗要同時有週配額與本 session 的 token；probe_text 只有前者。
             if agent_grok.is_grok_cmd(s.cmd):
@@ -585,7 +607,7 @@ class AccountsApiMixin:
             data = self._probe_session_data(s)
             return main.usage_probe.probe_text(data)
         except Exception as e:
-            return f"用量查詢失敗：{e}"
+            return _lang(f"Usage lookup failed: {e}", f"用量查詢失敗：{e}")
 
     def tab_usage_brief(self, sid: str) -> str:
         """Structured usage for the inline top-bar pill (polled ~every 5 min).

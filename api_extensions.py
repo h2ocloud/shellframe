@@ -12,6 +12,25 @@ import json
 from pathlib import Path
 
 from api_host import main
+import sf_lang
+
+
+def _lang(en, zh):
+    return sf_lang.pick(en, zh)
+
+
+def _skill_message(changed, where, remove):
+    """Localize the small status vocabulary returned by ai_skill; keep paths intact."""
+    text = str(where)
+    if text.startswith("寫入失敗："):
+        return _lang(f"Write failed: {text[len('寫入失敗：'):]}", text)
+    if text.startswith("找不到 "):
+        return _lang(text.replace("找不到 ", "Not found ", 1), text)
+    if changed:
+        verb_en = "Removed" if remove else "Wrote"
+        verb_zh = "移除" if remove else "寫入"
+        return _lang(f"{verb_en}: {text}", f"已{verb_zh}：{text}")
+    return _lang(f"Already up to date: {text}", f"已經是最新的：{text}")
 
 
 class ExtensionsApiMixin:
@@ -136,14 +155,12 @@ class ExtensionsApiMixin:
             import ai_skill
             if target == "codex":
                 changed, where = ai_skill.install_codex_agents(remove=bool(remove))
-                verb = "移除" if remove else "寫入"
             else:
                 changed, where = ai_skill.install_claude_skill()
-                verb = "寫入"
             ok = not str(where).startswith("寫入失敗") and "找不到" not in str(where)
             return json.dumps({"success": ok,
-                               "message": (f"已{verb}：{where}" if changed and ok
-                                           else where if not ok else f"已經是最新的：{where}"),
+                               "message": _skill_message(changed, where, remove) if ok
+                                          else _skill_message(False, where, remove),
                                "details": ai_skill.status()}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "message": str(e)})

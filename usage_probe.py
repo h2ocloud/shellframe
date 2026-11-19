@@ -75,12 +75,7 @@ PROVIDER_SPECS = {
         "install": {
             "command": "npm i -g @earendil-works/pi-coding-agent",
             "docs": "https://www.npmjs.com/package/@earendil-works/pi-coding-agent",
-            "note": "需 Node 22.19+。computer-use 擴充另外裝："
-                    "`pi install npm:@injaneity/pi-computer-use`——它的 "
-                    "postinstall 會被 npm allowScripts 擋下，要 approve 才會裝 "
-                    "helper app。接地端模型的 provider 設定在 "
-                    "~/.pi/agent/models.json（vLLM 需 "
-                    "compat.supportsDeveloperRole=false）。",
+            "note": _lang("Requires Node 22.19+. Install the computer-use extension separately: `pi install npm:@injaneity/pi-computer-use` — its postinstall is blocked by npm allowScripts; approve it to install the helper app. Configure local-model providers in ~/.pi/agent/models.json (vLLM needs compat.supportsDeveloperRole=false).", "需 Node 22.19+。computer-use 擴充另外裝：`pi install npm:@injaneity/pi-computer-use`——它的 postinstall 會被 npm allowScripts 擋下，要 approve 才會裝 helper app。接地端模型的 provider 設定在 ~/.pi/agent/models.json（vLLM 需 compat.supportsDeveloperRole=false）。"),
         },
     },
     "opencode": {
@@ -88,12 +83,7 @@ PROVIDER_SPECS = {
         "install": {
             "command": "curl -fsSL https://opencode.ai/install | bash",
             "docs": "https://opencode.ai/docs/",
-            "note": "也在 homebrew-core：`brew install opencode`。模型走使用者自己"
-                    "設定的 provider（~/.config/opencode/opencode.json），"
-                    "地端 OpenAI 相容端點也算，所以沒有單一配額可報。"
-                    "接地端 Spark 用 preset『OpenCode (Spark)』(sf-opencode-spark)——"
-                    "它首次執行會自動把 spark provider 寫進 opencode.json，裝好 "
-                    "opencode 就能直接開，不必手動編設定。",
+            "note": _lang("Also available in homebrew-core: `brew install opencode`. It uses the user's provider (~/.config/opencode/opencode.json), including local OpenAI-compatible endpoints, so there is no single quota to report. The local Spark preset is `OpenCode (Spark)` (sf-opencode-spark); it writes the Spark provider to opencode.json on first run, so OpenCode works after installation without manual configuration.", "也在 homebrew-core：`brew install opencode`。模型走使用者自己設定的 provider（~/.config/opencode/opencode.json），地端 OpenAI 相容端點也算，所以沒有單一配額可報。接地端 Spark 用 preset『OpenCode (Spark)』(sf-opencode-spark)——它首次執行會自動把 spark provider 寫進 opencode.json，裝好 opencode 就能直接開，不必手動編設定。"),
         },
     },
     "agy": {
@@ -101,8 +91,7 @@ PROVIDER_SPECS = {
         "install": {
             "command": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
             "docs": "https://antigravity.google/docs/cli/install",
-            "note": "安裝到 ~/.local/bin/agy，並把該路徑寫進 shell 設定；"
-                    "之後用 `agy update` 自我升級。",
+            "note": _lang("Installs to ~/.local/bin/agy and adds that path to your shell configuration; update it later with `agy update`.", "安裝到 ~/.local/bin/agy，並把該路徑寫進 shell 設定；之後用 `agy update` 自我升級。"),
         },
     },
     "grok": {
@@ -110,9 +99,7 @@ PROVIDER_SPECS = {
         "install": {
             "command": "curl -fsSL https://x.ai/cli/install.sh | bash",
             "docs": "https://x.ai/cli",
-            "note": "登入用 `grok login`。週配額來自 cli-chat-proxy 的 billing"
-                    "（已用百分比與週期起迄），頂列顯示 wk 與配速；沒有 5 小時窗口。"
-                    "分頁內 `/usage` 同時列出本 session 的 token 與 context。",
+            "note": _lang("Sign in with `grok login`. Weekly quota comes from cli-chat-proxy billing (used percentage and period start/end); the top bar shows the week and pace, with no 5-hour window. `/usage` in a tab also shows this session's tokens and context.", "登入用 `grok login`。週配額來自 cli-chat-proxy 的 billing（已用百分比與週期起迄），頂列顯示 wk 與配速；沒有 5 小時窗口。分頁內 `/usage` 同時列出本 session 的 token 與 context。"),
         },
     },
     "cursor": {
@@ -120,8 +107,7 @@ PROVIDER_SPECS = {
         "install": {
             "command": __import__("agent_cursor").install_command(os.name == "nt"),
             "docs": "https://cursor.com/docs/cli/overview",
-            "note": "`agent` 不是這支 CLI。預設 composer-2.5（訂閱）。"
-                    "Claude／GPT／Gemini 是付費。沒有本地配額，不估算百分比。",
+            "note": _lang("`agent` is not this CLI. The default is composer-2.5 (subscription). Claude/GPT/Gemini use paid credits. There is no local quota, so no percentage is estimated.", "`agent` 不是這支 CLI。預設 composer-2.5（訂閱）。Claude／GPT／Gemini 是付費。沒有本地配額，不估算百分比。"),
         },
     },
 }
@@ -292,10 +278,10 @@ def _plan_label(plan, org=None) -> str:
     low = plan.lower()
     nice = _PLAN_NICE.get(low, plan.capitalize())
     if low in _ENTERPRISE_PLANS:
-        tag = f"企業·{org}" if org else "企業"
+        tag = _lang(f"Enterprise·{org}", f"企業·{org}") if org else _lang("Enterprise", "企業")
     else:
-        tag = "個人"
-    return f"{nice}（{tag}）"
+        tag = _lang("Personal", "個人")
+    return _lang(f"{nice} ({tag})", f"{nice}（{tag}）")
 
 
 def _claude_oauth(env=None) -> dict:

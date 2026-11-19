@@ -2396,7 +2396,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             # delegating to a tab that is already open; the normal case for a
             # group fan-out, which opens every member that is not running.
             return {"success": False,
-                    "message": f"{label}（{sid}）開起來了，但等不到它就緒，這則沒有送出",
+                    "message": sf_lang.pick(
+                        f"{label} ({sid}) started, but it did not become ready in time; "
+                        "this message was not sent",
+                        f"{label}（{sid}）開起來了，但等不到它就緒，這則沒有送出"),
                     "details": {"sid": sid, "label": label, "role": resolved_role,
                                 "created": True, "not_ready": True}}
         session._startup_trust_pending = False
@@ -2612,7 +2615,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
     def delay_add(self, sid: str, text: str, delay_sec: int,
                   chat_id: int = 0, label: str = "") -> dict:
         if not sid or not text.strip():
-            return {"success": False, "message": "缺 sid 或內容"}
+            return {"success": False, "message": sf_lang.pick(
+                "sid or content is missing", "缺 sid 或內容")}
         delay_sec = max(1, int(delay_sec))
         items = self._load_delays()
         did = uuid.uuid4().hex[:6]
@@ -2631,7 +2635,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         items = self._load_delays()
         kept = [x for x in items if x.get("id") != did]
         if len(kept) == len(items):
-            return {"success": False, "message": f"找不到排程 {did}"}
+            return {"success": False, "message": sf_lang.pick(
+                f"Scheduled item {did} was not found", f"找不到排程 {did}")}
         self._save_delays(kept)
         return {"success": True}
 
@@ -4256,9 +4261,10 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
                 time.sleep(0.6)
                 s._startup_trust_pending = False
                 return ""
-            return "啟動信任對話框"
+            return sf_lang.pick("startup trust dialog", "啟動信任對話框")
         if self._STARTUP_EXIT_OPTION_RE.search(clean):
-            return "啟動選單（有 No, exit 選項）"
+            return sf_lang.pick("startup menu (with a No, exit option)",
+                                "啟動選單（有 No, exit 選項）")
         # A menu *replaces* the composer, so a capture that still shows an empty
         # composer line is a working tab, whatever else is on screen. Without
         # this, a tab whose scrollback happens to hold `❯ ls` above an indented
@@ -4272,7 +4278,8 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
             # rather than being told something unnamed is in the way.
             first = m.group(1).strip()[:70]
             second = m.group(2).strip()[:70]
-            return f"等你選：{first} ／ {second}"
+            return sf_lang.pick(f"Waiting for your choice: {first} / {second}",
+                                f"等你選：{first} ／ {second}")
         return ""
 
     def is_alive(self, sid: str) -> bool:
@@ -5427,7 +5434,9 @@ def _ensure_mic_usage_plist():
     重簽（不 --deep，同 install.sh 的理由），下次 TCC 檢查即生效。"""
     if sys.platform != "darwin":
         return
-    desc = "ShellFrame 需要使用麥克風進行語音輸入（STT 語音轉文字）。"
+    desc = sf_lang.pick(
+        "ShellBot needs microphone access for voice input (STT speech-to-text).",
+        "ShellFrame 需要使用麥克風進行語音輸入（STT 語音轉文字）。")
     for bundle in app_bundle.candidates() + [APP_DIR / app_bundle.TEMPLATE]:
         plist = bundle / "Contents" / "Info.plist"
         if not plist.exists():
