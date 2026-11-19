@@ -140,7 +140,7 @@
           b.addEventListener('click', () => (S && S.id === o.id ? close() : open(o.id)));
           bar.insertBefore(b, anchor);
         }
-        b.textContent = o.title;
+        b.textContent = o.short || o.title;              // a short word on the toolbar (人事), the full name on the popup (人事檔案櫃)
         b.title = o.subtitle || o.title;
         b.setAttribute('aria-label', o.title + (o.badge ? ` (${o.badge})` : ''));
         b.classList.toggle('has-badge', o.badge > 0);
@@ -420,7 +420,7 @@
   }
   const DEMO_OBJECTS = tr => [
     { id: 'bookshelf', title: tr('Bookshelf', '書櫃'), furniture: 'bookshelf', place: 'lobby:wall', button: true, badge: 2, filters: [], sorts: [], actions: [] },
-    { id: 'personnel', title: tr('Personnel', '人事檔案櫃'), furniture: 'cabinet', place: 'lobby:wall', button: true, badge: 0, filters: [], sorts: [], actions: [] }];
+    { id: 'personnel', title: tr('Personnel cabinet', '人事檔案櫃'), short: tr('Personnel', '人事'), furniture: 'cabinet', place: 'lobby:wall', button: true, badge: 0, filters: [], sorts: [], actions: [] }];
 
   root.OfficeObjects = { create, demoHost, DEMO_OBJECTS, KINDS, hullOf };
 })(typeof window !== 'undefined' ? window : globalThis);

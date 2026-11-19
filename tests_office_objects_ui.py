@@ -220,7 +220,7 @@ def run(browser, base, engine):
           badge == {"bookshelf": want, "personnel": 0} and want >= 2, (badge, want))
     tb = fr.evaluate("[...document.querySelectorAll('#tools button[data-obj]')].map(b => ({id: b.dataset.obj, text: b.textContent, badge: b.dataset.badge || '', guide: b.getAttribute('data-guide')}))")
     check("the toolbar has 書櫃 and 人事 (with the number on the first), each marked for the guide",
-          [(b["id"], b["text"], b["guide"]) for b in tb] == [("bookshelf", "書櫃", "office-bookshelf"), ("personnel", "人事檔案櫃", "office-personnel")]
+          [(b["id"], b["text"], b["guide"]) for b in tb] == [("bookshelf", "書櫃", "office-bookshelf"), ("personnel", "人事", "office-personnel")]
           and tb[0]["badge"] == str(want) and tb[1]["badge"] == "", tb)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-objects-lobby-1280.png"))
@@ -467,7 +467,7 @@ def run(browser, base, engine):
     fr = H.open_office(page)
     page.wait_for_function("""() => { const f = document.querySelector('#sfo-overlay iframe'); try { return f.contentWindow.__office.objects().objects.length === 2; } catch (e) { return false; } }""", timeout=10000)
     tb = fr.evaluate("[...document.querySelectorAll('#tools button[data-obj]')].map(b => b.textContent)")
-    check("the toolbar buttons are in English", tb == ["Bookshelf", "Personnel cabinet"], tb)
+    check("the toolbar buttons are in English (the short word: Personnel)", tb == ["Bookshelf", "Personnel"], tb)
     fr.evaluate("__office.objOpen('bookshelf')")
     page.wait_for_function("document.querySelector('#sfo-overlay iframe').contentDocument.querySelectorAll('.oo-it').length > 5", timeout=10000)
     check("the popup, its filters and its rows are in English", fr.evaluate("document.getElementById('ooTitle').textContent") == "Bookshelf"

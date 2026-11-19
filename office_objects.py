@@ -178,6 +178,7 @@ def normalize_declaration(raw, lang="en"):
     return {
         "id": oid,
         "title": _name(loc(raw.get("title"), lang) or oid, 40),
+        "short": _name(loc(raw.get("short"), lang), 12),          # the toolbar button's word; the title when there is none
         "subtitle": _name(loc(raw.get("subtitle"), lang), 160),
         "furniture": furniture,
         "place": place,

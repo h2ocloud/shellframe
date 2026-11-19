@@ -30,6 +30,7 @@ TASK_WORDS = {"todo": ("To do", "待辦"), "doing": ("Doing", "進行中"), "wai
 DECLARATION = {
     "id": "personnel",
     "title": {"en": "Personnel cabinet", "zh": "人事檔案櫃"},
+    "short": {"en": "Personnel", "zh": "人事"},           # the toolbar button's word (decided: 「書櫃」「人事」)
     "subtitle": {"en": "Each bot's duty, the model it runs on, its tasks and schedules. Read only, this computer.",
                  "zh": "每個 bot 的執掌、跑的模型、手上的任務和負責的排程。只讀，這台電腦。"},
     "furniture": "cabinet",
