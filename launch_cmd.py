@@ -83,6 +83,90 @@ def launches_claude(cmd: str, _depth: int = 0) -> bool:
     return False
 
 
+# `<shell> [-opts] -c|-lc|-ic '<inner>'`, the inner script quoted with ' or " and nothing after it.
+_WRAP = re.compile(
+    r"""^(?P<head>\s*(?:\S*[/\\])?(?:sh|bash|zsh|dash|ksh)(?:\.exe)?(?:\s+-\S+)*?\s+-[A-Za-z]*c[A-Za-z]*\s+)"""
+    r"""(?:'(?P<single>[^']*)'|"(?P<double>(?:[^"\\]|\\.)*)")\s*$""", re.S)
+
+
+def shell_wrapper(cmd: str):
+    """(head, quote, inner) for `zsh -lc '<inner>'` (also sh/bash/dash/ksh, -c/-ic, a folder in front of
+    the shell, either quote), else None. `head` is everything before the opening quote, verbatim. An
+    inner string in double quotes that holds a backslash, `$` or a backtick is not offered: what the
+    outer shell makes of it is not what is written, so nothing may be rewritten textually."""
+    m = _WRAP.match(cmd or "")
+    if not m:
+        return None
+    if m.group("single") is not None:
+        return m.group("head"), "'", m.group("single")
+    inner = m.group("double")
+    if any(c in inner for c in "\\$`"):
+        return None
+    return m.group("head"), '"', inner
+
+
+def runs_in_shell(cmd: str) -> bool:
+    """Is the program a shell (`zsh -lc '…'`), whose script is what actually starts the CLI?"""
+    try:
+        tokens = shlex.split((cmd or "").replace("\\", "/"))
+    except ValueError:
+        return False
+    return bool(tokens) and _exe_name(tokens[0]) in _SHELLS
+
+
+def _claude_tail(inner: str) -> bool:
+    """Is `inner` (the script of a wrapped shell) safe to extend or rewrite by its end: one simple command
+    after an optional `cd … &&` / `env …` prefix, the program Claude Code itself (not another shell around
+    it), and nothing after it that would make "the end" mean something else (a pipe, `&&`, `;`, `&`,
+    a redirect, a subshell, a comment, a newline, `--`)?"""
+    if "\n" in inner or "\r" in inner or "`" in inner:
+        return False
+    _, rest = split_prefix(inner)
+    if runs_in_shell(rest) or not launches_claude(rest):
+        return False
+    try:
+        lex = shlex.shlex(rest.replace("\\", "/"), posix=True, punctuation_chars=True)
+        lex.whitespace_split, lex.commenters = True, ""
+        tokens = list(lex)
+    except ValueError:
+        return False
+    return bool(tokens) and not any(
+        t == "--" or t.startswith("#") or all(c in "();<>|&" for c in t) for t in tokens)
+
+
+def claude_tail(cmd: str) -> bool:
+    """`_claude_tail` of the inner script of a `<shell> -c '<inner>'` command; False for anything else."""
+    w = shell_wrapper(cmd)
+    return bool(w) and _claude_tail(w[2])
+
+
+def wrapped_session_id(cmd: str, new_id: str):
+    """`zsh -lc 'claude --model x'` → `zsh -lc 'claude --model x --session-id <id>'`: the id goes inside the
+    quotes, after the invocation's own arguments (put after them it became the shell's own $0/$1, Claude
+    ran without it, and the tab recorded an id it never had). None when the command is not wrapped, when
+    the inner script already pins/resumes/continues a conversation, or when it is not a plain
+    `claude …` at its end (see _claude_tail): then no id is added at all."""
+    w = shell_wrapper(cmd)
+    if not w or not _claude_tail(w[2]):
+        return None
+    head, q, inner = w
+    low = f" {inner.lower()} "
+    if "--session-id" in low or "--resume" in low or "--continue" in low or " -r " in low or " -c " in low:
+        return None
+    return f"{head}{q}{inner.rstrip()} --session-id {new_id}{q}"
+
+
+def wrapped_resume(cmd: str, resume_inner):
+    """The wrapped command with `resume_inner(inner)` (the same rewrite a bare command gets) in place of its
+    inner script, re-quoted for the shell. None when `cmd` is not a wrapped plain `claude …`; `cmd` itself
+    when the rewrite changes nothing."""
+    w = shell_wrapper(cmd)
+    if not w or not _claude_tail(w[2]):
+        return None
+    new = resume_inner(w[2])
+    return cmd if not new or new == w[2] else f"{w[0]}{shlex.quote(new)}"
+
+
 def launch_cwd(cmd: str, cwd: str = "~") -> str:
     """The directory the CLI really starts in when its command begins with
     `cd <dir> &&` (or `;`). Claude Code names its transcript folder after that

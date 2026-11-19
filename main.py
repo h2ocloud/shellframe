@@ -865,9 +865,14 @@ def _maybe_claude_session_id(cmd: str):
     any command that already resumes a session. Returns (new_cmd, session_id)
     or (cmd, None) when not applicable."""
     try:
-        low = f" {cmd.lower()} "
         if not launch_cmd.launches_claude(cmd):     # the program, not a word in a path (a pi tab under .claude/)
             return cmd, None
+        prefix, rest = launch_cmd.split_prefix(cmd)
+        if launch_cmd.runs_in_shell(rest):          # `zsh -lc 'claude …'`: the id goes inside the quotes, or nowhere
+            new_id = str(uuid.uuid4())
+            wrapped = launch_cmd.wrapped_session_id(rest, new_id)
+            return (f"{prefix} {wrapped}".strip(), new_id) if wrapped else (cmd, None)
+        low = f" {cmd.lower()} "
         if ("--session-id" in low or "--resume" in low or "--continue" in low
                 or " -r " in low or " -c " in low):
             return cmd, None
@@ -2944,6 +2949,9 @@ class Api(HistoryApiMixin, SchedulesApiMixin,
         if prefix:
             new = Api._cmd_with_resume(rest, csid)
             return cmd if new == rest else f"{prefix} {new}"
+        wrapped = launch_cmd.wrapped_resume(cmd, lambda inner: Api._cmd_with_resume(inner, csid))
+        if wrapped is not None:         # `zsh -lc 'claude …'`: --resume goes inside the quotes (anything too complex stays as is)
+            return wrapped
         try:
             tokens = shlex.split(cmd.replace("\\", "/") if IS_WIN else cmd)   # a Windows path: posix shlex would eat its backslashes
         except ValueError:
