@@ -30,7 +30,8 @@
 .link-msg .sfi-lead { width: 12px; height: 12px; vertical-align: -2px; }
 .pc-app-ico { display: inline-flex; }
 .pc-app-ico .sfi { width: 22px; height: 22px; vertical-align: 0; }
-.sx-h-ico .sfi { width: 1.15em; height: 1.15em; vertical-align: -.22em; }
+.sx-h-ico { vertical-align: -.2em; }
+.sx-h-ico .sfi { width: 1.15em; height: 1.15em; vertical-align: 0; }
 .sx-note-ico .sfi { width: 14px; height: 14px; vertical-align: -3px; }
 .sx-note-ico { display: inline-flex; vertical-align: middle; }
 #btn-stt-refresh .sfi, #btn-reload-ui .sfi { width: 13px; height: 13px; vertical-align: -2px; }
