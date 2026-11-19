@@ -634,8 +634,17 @@
     },
     list: (id, q) => objectsHost.call('office_object_list', String(id), JSON.stringify(q || {})),
     item: (id, iid) => objectsHost.call('office_object_item', String(id), String(iid)),
-    action: (id, iid, aid) => objectsHost.call('office_object_action', String(id), String(iid), String(aid), '{}'),
+    action: (id, iid, aid, args) => objectsHost.call('office_object_action', String(id), String(iid), String(aid), JSON.stringify(args || {})),
   };
+  // The deliverables' counts ride on tasks_overview (the 9 s read above): the desks and the toolbar number follow without waiting for the
+  // 30 s object refresh. Only the numbers: the object's list and entries are asked of the backend when the popup opens.
+  function noteDeliv(d) {
+    const o = d && objs.find(x => x.id === 'deliverables');
+    if (!o) return;
+    o.badge = Number(d.new) || 0; o.by_task = d.by_task || {};
+    o.by_owner = {};
+    for (const k of Object.keys(d.by_owner || {})) { const v = d.by_owner[k]; o.by_owner[k] = { label: v.label, count: v.count, new: v.new, closed: !!v.closed, types: v.types || [] }; }
+  }
   async function refreshObjects(force) {
     const a = api();
     if (!a || !a.office_objects || boardMode || (!force && Date.now() - objsAt < OBJECTS_MS)) return;
@@ -658,6 +667,8 @@
     chat: chatHost,
     board: boardHost,
     objects: objectsHost,
+    // after an action in the popup that changed the lists (keep, take, accept…): the numbers on the desks and the toolbar button follow at once
+    objectsChanged() { objsAt = 0; refreshObjects(true).then(() => { if (root.SFBoard && root.SFBoard.poll) root.SFBoard.poll(); }); },
     md: text => { const C = chatOf(); return C ? C.rules.md(String(text || ''), isZh()) : null; },
     // A bot's settings editor (web/bots.js): the office closes first, the editor opens in the main window. false when there is none.
     editBot(role) {
@@ -710,7 +721,7 @@
       tasksAt = Date.now();
       try {
         const r = JSON.parse(await a.tasks_overview());
-        if (r && r.success) { tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; if (root.SFBoard) root.SFBoard.note(tasks.decisions.length, tasks.decisions); }
+        if (r && r.success) { tasks = { open: r.open || [], stuck: r.stuck || [], decisions: r.decisions || [] }; if (root.SFBoard) { root.SFBoard.note(tasks.decisions.length, tasks.decisions); if (root.SFBoard.noteDeliv) root.SFBoard.noteDeliv(r.deliverables); } noteDeliv(r.deliverables); }
       } catch (_) {}
     }
     // The paired computers' boards (the calls an older app does not have are skipped: no peer boards, no error). Same cadence

@@ -9,8 +9,9 @@
  *   ctl.keys() / wall(k) / hull(k, t2s) / draw(x, g)   the furniture: a hit target like the whiteboard (keys are 'obj:<id>')
  *   ctl.open(id, {filters, query, item}) / close() / isOpen() / esc()
  *
- * The popup (read only): a list on the left (search, filters, sort, groups), a preview on the right (title, chips, meta,
- * Markdown, links), the actions at the bottom; under 900 px wide the list is above the preview. host.objects answers:
+ * The popup: a list on the left (search, filters, sort, groups; a row may carry a small picture, E.rowIcon), a preview on the right (title, chips, meta,
+ * Markdown or a picture the host read for this entry, links), the actions at the bottom (an action may first ask for one line, or for a yes: the
+ * host answers `confirm`; an answer with `refresh` makes the list read again; E.changed() tells the office the numbers moved); under 900 px wide the list is above the preview. host.objects answers:
  *   list(id, {query, filters, sort}) -> {success, groups, items, total}      item(id, itemId) -> {success, item}
  *   action(id, itemId, actionId)     -> {success, ok, message, tell, go}      md(text) -> html | null
  * and host.chat.has(key) / send(key, text, false) is how 「Ask X to update」 reaches a bot's tab (one line; the button is
@@ -46,7 +47,7 @@
   function create(env) {
     const E = env || {}, tr = E.tr || ((en) => en), doc = E.doc || document, host = E.host || null;
     const kick = E.kick || (() => {});
-    let objs = [], sig = '', veil = null, S = null, seq = 0, typeTimer = 0, msgTimer = 0;
+    let objs = [], sig = '', veil = null, S = null, seq = 0, typeTimer = 0, msgTimer = 0, ask = null;
     const find = id => objs.find(o => o.id === id) || null;
     const guideOf = id => id;
 
@@ -55,6 +56,7 @@
       const out = {};
       let x = WALL_X0;
       for (const o of objs) {
+        if (o.place === 'button') continue;                      // no furniture: only the toolbar button (the deliverables' desks are on the people's desks)
         const k = KINDS[o.furniture] || KINDS.generic;
         if (x + k.w > WALL_X1) break;
         out[o.id] = { x0: x, x1: x + k.w, k };
@@ -137,6 +139,7 @@
           b.type = 'button'; b.className = 'tb'; b.dataset.obj = o.id;
           if (o.id === 'bookshelf') b.setAttribute('data-guide', 'office-bookshelf');
           else if (o.id === 'personnel') b.setAttribute('data-guide', 'office-personnel');
+          else if (o.id === 'deliverables') b.setAttribute('data-guide', 'office-deliverables');
           b.addEventListener('click', () => (S && S.id === o.id ? close() : open(o.id)));
           bar.insertBefore(b, anchor);
         }
@@ -169,6 +172,7 @@
         `<button class="oo-x" type="button" id="ooClose" title="${esc(T('Close (Esc)', '關起來（Esc）'))}" aria-label="${esc(T('Close', '關起來'))}">✕</button></header>` +
         '<div class="oo-bar" id="ooBar"></div>' +
         '<div class="oo-main"><nav class="oo-list" id="ooList" aria-label="list"></nav><article class="oo-view" id="ooView"></article></div>' +
+        '<div class="oo-ask" id="ooAsk" hidden></div>' +
         '<footer class="oo-foot"><span class="oo-note" id="ooNote"></span><span class="oo-msg" id="ooMsg" role="status" aria-live="polite"></span><div class="oo-acts" id="ooActs"></div></footer></section>';
       doc.body.appendChild(veil);
       veil.addEventListener('click', onClick);
@@ -194,7 +198,7 @@
       $('#ooTitle').textContent = o.title;
       $('#ooSub').textContent = o.subtitle || '';
       $('#ooNote').textContent = o.readonly_note || '';
-      $('#ooMsg').textContent = '';
+      $('#ooMsg').textContent = ''; hideAsk();
       paintBar(o);
       paintView();
       paintActs();
@@ -205,7 +209,7 @@
     }
     function close() {
       if (!S) return;
-      S = null; seq++;
+      S = null; seq++; ask = null;
       clearTimeout(typeTimer); clearTimeout(msgTimer);
       if (veil) { veil.hidden = true; veil.querySelector('#ooList').innerHTML = ''; veil.querySelector('#ooView').innerHTML = ''; }
       kick();
@@ -214,6 +218,7 @@
     // Esc: the popup closes (the search box first clears itself); true when it took the key
     function esc2() {
       if (!S) return false;
+      if (ask) { hideAsk(); return true; }                    // an open question (one line, a yes) is put away first
       const s = $('#ooSearch');
       if (s && doc.activeElement === s && s.value) { s.value = ''; S.query = ''; reload(false); return true; }
       close();
@@ -273,14 +278,17 @@
         html += rows.map(rowHtml).join('');
       }
       const top = L.scrollTop;
-      L.innerHTML = `<div class="oo-list-in" role="listbox">${html}</div>` + (S.list.total > items.length ? `<div class="oo-more">${esc(T(`Showing ${items.length} of ${S.list.total}`, `顯示 ${items.length} / ${S.list.total}`))}</div>` : '');
+      L.innerHTML = `<div class="oo-list-in" role="listbox">${html}</div>` + (S.list.total > items.length ? `<div class="oo-more">${esc(T(`Showing ${items.length} of ${S.list.total}`, `顯示 ${items.length} / ${S.list.total}`))}</div>` : '') +
+        (S.list.note ? `<div class="oo-more">${esc(S.list.note)}</div>` : '');
       L.scrollTop = top;
     }
     function rowHtml(i) {
       const meter = i.limit > 0 ? `<i class="oo-meter${i.tone ? ' ' + i.tone : ''}" aria-hidden="true"><u style="width:${Math.max(2, Math.min(100, Math.round(i.size / i.limit * 100)))}%"></u></i>` : '';
       const tags = (i.tags || []).map(t => `<span class="oo-tag ${esc(t.tone || '')}">${esc(t.label)}</span>`).join('');
-      return `<button type="button" class="oo-it${S.sel === i.id ? ' on' : ''}${i.tone ? ' ' + esc(i.tone) : ''}" role="option" aria-selected="${S.sel === i.id}" data-id="${esc(i.id)}">` +
-        `<span class="oo-it-t">${esc(i.title)}</span>${tags ? `<span class="oo-tags">${tags}</span>` : ''}` +
+      let pic = '';
+      try { pic = E.rowIcon ? E.rowIcon(find(S.id), i) || '' : ''; } catch (_) { pic = ''; }   // a small picture of the entry's kind (the host's drawing; markup of its own, never the entry's text)
+      return `<button type="button" class="oo-it${pic ? ' has-pic' : ''}${S.sel === i.id ? ' on' : ''}${i.tone ? ' ' + esc(i.tone) : ''}" role="option" aria-selected="${S.sel === i.id}" data-id="${esc(i.id)}">` +
+        (pic ? `<span class="oo-pic" aria-hidden="true">${pic}</span>` : '') + `<span class="oo-it-t">${esc(i.title)}</span>${tags ? `<span class="oo-tags">${tags}</span>` : ''}` +
         (i.subtitle ? `<span class="oo-it-s">${esc(i.subtitle)}</span>` : '') + meter + '</button>';
     }
     async function pick(iid) {
@@ -295,6 +303,7 @@
       if (!r || r.success === false || !r.item) { S.item = null; S.itemError = (r && r.message) || T('That entry is gone.', '這一筆已經不在了。'); }
       else S.item = r.item;
       paintView(); paintActs();
+      if (S.item && S.item.refresh) changed(false);                 // seeing it changed the list (a 看過 mark, the numbers elsewhere)
     }
     function md(text) {
       let html = null;
@@ -324,12 +333,13 @@
       V.innerHTML = '<div class="oo-view-in">' +
         `<h3>${esc(it.title)}</h3>${it.subtitle ? `<p class="oo-sub">${esc(it.subtitle)}</p>` : ''}` +
         (chips ? `<div class="oo-chips">${chips}</div>` : '') + (meta ? `<div class="oo-meta">${meta}</div>` : '') +
-        `<div class="oo-md">${body}</div>` +
+        (it.image ? `<div class="oo-shot"><img src="${esc(it.image)}" alt=""></div>` : '') +
+        (it.markdown ? `<div class="oo-md">${body}</div>` : '') +
         (it.note ? `<p class="oo-fine">${esc(it.note)}</p>` : '') +
         (links ? `<div class="oo-links">${links}</div>` : '') + '</div>';
       V.scrollTop = 0;
     }
-    function actionLabel(a, it) { return String(a.label || a.id).replace('{owner}', (it && it.owner) || ''); }
+    function actionLabel(a, it) { return String((it && it.action_labels && it.action_labels[a.id]) || a.label || a.id).replace('{owner}', (it && it.owner) || ''); }
     function paintActs() {
       const A = $('#ooActs'), o = S && find(S.id);
       if (!S || !o) return;
@@ -338,7 +348,8 @@
       A.innerHTML = acts.map(a => {
         const noTab = a.needs_tab && !(it.owner_key && E.hasTab && E.hasTab(it.owner_key));
         const why = noTab ? T('It has no open tab right now (resting): wake it first.', '它現在沒有開著的分頁（在休息）：先叫醒它。') : '';
-        return `<button type="button" class="oo-btn${a.primary ? ' primary' : ''}" data-action="${esc(a.id)}"${noTab ? ' disabled' : ''}${why ? ` title="${esc(why)}"` : ''}>${esc(actionLabel(a, it))}</button>`;
+        const hint = (it.action_hints || {})[a.id] || '';
+        return `<button type="button" class="oo-btn${a.primary ? ' primary' : ''}" data-action="${esc(a.id)}"${noTab ? ' disabled' : ''}${why || hint ? ` title="${esc(why || hint)}"` : ''}>${esc(actionLabel(a, it))}</button>`;
       }).join('');
     }
     function say(text, bad) {
@@ -348,25 +359,52 @@
       clearTimeout(msgTimer);
       if (text) msgTimer = setTimeout(() => { if (m) m.textContent = ''; }, 6000);
     }
-    async function act(aid) {
+    // an action that needs one line from the person first, or a yes (the host's `confirm`): a bar above the buttons
+    function hideAsk() { ask = null; const b = veil && veil.querySelector('#ooAsk'); if (b) { b.hidden = true; b.innerHTML = ''; } }
+    function showAsk(aid, a, conf) {
+      const bar = $('#ooAsk');
+      ask = { aid, conf: conf || null };
+      bar.hidden = false;
+      bar.innerHTML = conf
+        ? `<span class="oo-ask-t" role="alert">${esc(conf.text)}</span><button type="button" class="oo-btn primary" data-ask="yes">${esc(conf.label || T('OK', '好'))}</button><button type="button" class="oo-btn" data-ask="no">${esc(T('Cancel', '取消'))}</button>`
+        : `<label class="oo-ask-l" for="ooAskIn">${esc(actionLabel(a, S.item))}</label><input id="ooAskIn" type="text" maxlength="300" autocomplete="off" placeholder="${esc(a.input)}" aria-label="${esc(a.input)}"><button type="button" class="oo-btn primary" data-ask="go">${esc(T('Send', '送出'))}</button><button type="button" class="oo-btn" data-ask="no">${esc(T('Cancel', '取消'))}</button>`;
+      const inp = bar.querySelector('input');
+      try { (inp || bar.querySelector('[data-ask="yes"]')).focus({ preventScroll: true }); } catch (_) {}
+    }
+    async function changed(keep) {                           // the host changed what is listed: read it again, keep the entry open when it is still there
+      if (E.changed) { try { E.changed(); } catch (_) {} }
+      if (!S) return;
+      const sel = S.sel;
+      await reload(false);
+      if (S && sel && keep !== false && itemIn(sel)) await pick(sel);
+    }
+    async function act(aid, args) {
       if (!S || !S.item || S.busy || !host || !host.objects) return;
       const id = S.id, iid = S.sel, o = find(id), a = o.actions.find(x => x.id === aid), it = S.item;
+      if (a && a.input && !args) { showAsk(aid, a, null); return; }
+      hideAsk();
       S.busy = true;
       let r = null;
-      try { r = await host.objects.action(id, iid, aid); } catch (_) { r = null; }
+      try { r = await host.objects.action(id, iid, aid, args || {}); } catch (_) { r = null; }
       if (S) S.busy = false;
       if (!S || S.id !== id) return;
-      if (!r || r.success === false || r.ok === false) { say((r && r.message) || T('That did not work.', '這個沒成功。'), true); return; }
+      if (!r || r.success === false || r.ok === false) { say((r && r.message) || T('That did not work.', '這個沒成功。'), true); if (r && r.refresh) changed(); return; }
+      if (r.confirm) { showAsk(aid, a, r.confirm); return; }
       if (r.tell) {
         let sent = null;
         try { sent = E.send ? await E.send(r.tell.to, r.tell.text) : null; } catch (_) { sent = null; }
         if (!S) return;
-        if (sent && sent.success !== false) say(T(`Sent to ${it.owner || 'the bot'}: it is in their tab.`, `已傳給${it.owner || '那個 bot'}，在它的分頁裡。`));
+        if (sent && sent.success !== false) {
+          if (r.tell.after) { try { await host.objects.action(id, iid, r.tell.after.action, r.tell.after.args || {}); } catch (_) {} }   // e.g. a note on the task, only now that the line went in
+          say(T(`Sent to ${it.owner || 'the bot'}: it is in their tab.`, `已傳給${it.owner || '那個 bot'}，在它的分頁裡。`));
+        } else if (sent && sent.code === 'draft') say(T('Their tab has an unsent draft: it was not sent. Clear it in the tab first.', '它的分頁裡有還沒送出的草稿，這句沒送。先到分頁處理草稿。'), true);
         else say((sent && sent.message) || T('Could not send: it has no open tab.', '沒送出去：它沒有開著的分頁。'), true);
         return;
       }
       if (r.go) { go(r.go); return; }
-      say(r.message || (a ? actionLabel(a, it) : ''));
+      const msg = r.message || (a ? actionLabel(a, it) : '');
+      if (r.refresh) await changed();
+      say(msg);
     }
     // where a link or a `go` leads: another object (with a filter), a wall view, a bot's tab or its editor
     function go(l) {
@@ -385,6 +423,16 @@
       if (row) { pick(row.dataset.id); return; }
       const lk = ev.target.closest('[data-link]');
       if (lk && S.item) { const l = S.item.links[+lk.dataset.link]; if (l) go(l); return; }
+      const sk = ev.target.closest('[data-ask]');
+      if (sk && ask) {
+        const cur = ask, a = find(S.id).actions.find(x => x.id === cur.aid);
+        if (sk.dataset.ask === 'no') { hideAsk(); return; }
+        if (sk.dataset.ask === 'yes') { act(cur.aid, cur.conf.args || {}); return; }
+        const v = (veil.querySelector('#ooAskIn') || {}).value || '';
+        if (!v.trim()) { say(T('Write one line first.', '先寫一句話。'), true); return; }
+        if (a) act(cur.aid, { text: v.trim() });
+        return;
+      }
       const ac = ev.target.closest('[data-action]');
       if (ac && !ac.disabled) { act(ac.dataset.action); return; }
       const a = ev.target.closest('a.cm-link[data-url]');
@@ -401,7 +449,8 @@
     function onKey(ev) {
       if (!S) return;
       if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); esc2(); return; }
-      if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && !ev.target.matches('select, textarea')) {
+      if (ev.key === 'Enter' && ev.target.id === 'ooAskIn' && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); const b = veil.querySelector('[data-ask="go"]'); if (b) b.click(); return; }
+      if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && !ev.target.matches('select, textarea, input[type=text]')) {
         const rows = Array.from(veil.querySelectorAll('.oo-it'));
         if (!rows.length) return;
         ev.preventDefault();
@@ -412,8 +461,10 @@
       }
     }
 
-    return { setObjects, keys, wall, hull, draw, open, close, esc: esc2, isOpen: () => !!S, find, guideOf,
-             state: () => ({ open: S ? S.id : null, objects: objs.map(o => ({ id: o.id, title: o.title, badge: o.badge, furniture: o.furniture })) }) };
+    // what an object said per person (its summary's `by_owner`): the office draws a pile on each desk from it
+    const byOwner = (id, key) => { const o = find(id); return (o && o.by_owner && o.by_owner[key]) || null; };
+    return { setObjects, keys, wall, hull, draw, open, close, esc: esc2, isOpen: () => !!S, find, guideOf, byOwner,
+             state: () => ({ open: S ? S.id : null, objects: objs.map(o => ({ id: o.id, title: o.title, badge: o.badge, furniture: o.furniture, place: o.place, onWall: Object.prototype.hasOwnProperty.call(place(), o.id) })) }) };
   }
 
   // A stand-in for the page's own host when the office is opened alone (demo data; nothing here is real).

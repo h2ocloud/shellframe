@@ -1,19 +1,21 @@
 """Office objects: the extension point behind the office's furniture.
 
-A piece of furniture in the office (the bookshelf, the personnel cabinet; later a deliverables
-desk, an ops TV) is an *office object*: a declaration (title, which built-in furniture, where it
+A piece of furniture in the office (the bookshelf, the personnel cabinet, the deliverables desk; later
+an ops TV) is an *office object*: a declaration (title, which built-in furniture, where it
 stands, the filters, sorts and actions its popup offers) and four small hooks. The office draws
 the furniture and one shared popup (web/office_objects.js: a list on the left, a Markdown preview
-on the right, actions at the bottom) and asks the hooks for everything it shows. The popup is
-read-only: an action either changes nothing (open a file in the person's editor), sends one line to
-a bot's tab, or navigates (to another object, a wall view, a bot's settings).
+on the right, actions at the bottom) and asks the hooks for everything it shows. The popup
+changes nothing on its own: an action either opens something in the person's own programs, sends one line to
+a bot's tab, navigates (to another object, a wall view, a bot's settings), or is the person's own decision on the
+object's records (the deliverables: keep, take).
 
 The four hooks (all optional for a plugin; each call is wrapped in try/except and a time limit, so
 a broken or stuck object makes only its own popup say "not available now"):
 
-    summary(obj_id)                                  -> {"badge": int, "hint": str}
+    summary(obj_id)                                  -> {"badge": int, "hint": str, "by_owner"?, "by_task"?}
         for the furniture's red number; a few stats, no content read; the page asks at most
-        every 30 s while the office is open
+        every 30 s while the office is open. `by_owner` ({key: {label, count, new, types, closed}}):
+        an object with one pile per person (the deliverables), drawn by the office on each desk
     list(obj_id, query, filters, sort, offset, limit) -> {"groups": [{id, title}], "items": [...],
                                                           "total": int}
         item: {id, group, title, subtitle, type, owner, owner_key, mtime, size, limit, fresh,
@@ -21,13 +23,18 @@ a broken or stuck object makes only its own popup say "not available now"):
                types, filters or sorts
     item(obj_id, item_id)                            -> {"title", "subtitle", "markdown", "meta":
                                                          [[label, value]], "chips": [{text, tone}],
-                                                         "links": [...], "actions": [action id]}
-        asked when one entry is opened; the only place its file is read
+                                                         "links": [...], "actions": [action id],
+                                                         "action_labels", "image", "refresh"}
+        asked when one entry is opened; the only place its file is read. `image`: a raster
+        data: URL the object read for this entry (kept as it is, shown in an <img>)
     action(obj_id, item_id, action_id, args)         -> {"ok": bool, "message": str,
-                                                         "open": path, "tell": {"to", "text"},
-                                                         "go": {...}}
-        `open` is opened by the app's own opener; `tell` is sent by the page into that bot's tab
-        (one line, through the chat view's send); `go` navigates the page
+                                                         "open": path, "reveal": path, "url": link,
+                                                         "tell": {"to", "text", "after"},
+                                                         "confirm": {...}, "refresh": bool, "go": {...}}
+        `open` / `reveal` / `url` are done by the app's own openers; `tell` is sent by the page into that
+        bot's tab (one line, through the chat view's send; `after` is asked of the object once it went
+        in); `confirm` makes the popup ask yes/no first; `refresh` makes it read the list again; `go`
+        navigates the page. An action declared with `input` first asks the person for one line (args.text)
 
 What the host does to every answer (so no object can forget it): strings are cut to a length,
 anything that looks like a secret is masked (`redact_text`: line by line, Markdown stays
@@ -48,7 +55,7 @@ import agent_status
 
 HOOK_TIMEOUT = 3.0           # seconds a hook may take before the popup says it is not available
 FURNITURE = ("bookshelf", "cabinet", "noticeboard", "mailbox", "generic")
-PLACES = ("lobby:wall", "lobby:near-primary")     # `zone:<id>` is accepted and stands where lobby:wall does
+PLACES = ("lobby:wall", "lobby:near-primary", "button")     # `zone:<id>` stands where lobby:wall does; "button" has no furniture, only the toolbar button
 OBJECTS_MAX = 12
 LIST_MAX = 400               # entries one answer may carry
 GROUPS_MAX = 200
@@ -174,7 +181,8 @@ def normalize_declaration(raw, lang="en"):
     for a in raw.get("actions") or []:
         if isinstance(a, dict) and _ID.fullmatch(str(a.get("id") or "")):
             actions.append({"id": a["id"], "label": _name(loc(a.get("label"), lang), 80),
-                            "needs_tab": bool(a.get("needs_tab")), "primary": bool(a.get("primary"))})
+                            "needs_tab": bool(a.get("needs_tab")), "primary": bool(a.get("primary")),
+                            "input": _name(loc(a.get("input"), lang), 120)})      # a one-line box the person fills first (its placeholder)
     return {
         "id": oid,
         "title": _name(loc(raw.get("title"), lang) or oid, 40),
@@ -193,8 +201,21 @@ def normalize_declaration(raw, lang="en"):
 
 # ── what comes back from a hook ──────────────────────────────────────────────
 def clean_summary(raw) -> dict:
+    """The badge and hint, and (an object that has one per person) `by_owner`: {key: {label, count, new, types, closed}},
+    which the office draws on each person's desk, and `by_task`: {task id: count}."""
     raw = raw if isinstance(raw, dict) else {}
-    return {"badge": max(0, min(999, _num(raw.get("badge")))), "hint": _name(raw.get("hint"), 120)}
+    out = {"badge": max(0, min(999, _num(raw.get("badge")))), "hint": _name(raw.get("hint"), 120)}
+    if isinstance(raw.get("by_owner"), dict):
+        by = {}
+        for key, v in list(raw["by_owner"].items())[:400]:
+            if isinstance(v, dict):
+                by[_ident(key, 120)] = {"label": _name(v.get("label"), 60), "count": max(0, _num(v.get("count"))),
+                                        "new": max(0, _num(v.get("new"))), "closed": bool(v.get("closed")),
+                                        "types": [_ident(t, 20) for t in (v.get("types") or [])[:3]]}
+        out["by_owner"] = by
+    if isinstance(raw.get("by_task"), dict):
+        out["by_task"] = {_ident(k, 20): max(0, _num(v)) for k, v in list(raw["by_task"].items())[:400]}
+    return out
 
 
 def clean_list(raw, lang="en") -> dict:
@@ -253,6 +274,10 @@ def clean_link(raw):
     return out
 
 
+_IMAGE = re.compile(r"data:image/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+")
+IMAGE_MAX = 6_000_000            # characters of one inline picture (a data: URL)
+
+
 def clean_item(raw, declared_actions=()) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     meta = [[_name(m[0], 40), _body(m[1])] for m in (raw.get("meta") or [])[:20]
@@ -277,23 +302,44 @@ def clean_item(raw, declared_actions=()) -> dict:
             "sections": sections, "actions": actions,
             "action_hints": {k: _name(v, 120) for k, v in (raw.get("action_hints") or {}).items()
                              if isinstance(raw.get("action_hints"), dict) and k in known},
-            "owner": _name(raw.get("owner"), 60), "owner_key": _ident(raw.get("owner_key"), 80)}
+            "action_labels": {k: _name(v, 80) for k, v in (raw.get("action_labels") or {}).items()
+                              if isinstance(raw.get("action_labels"), dict) and k in known},
+            # a picture the object read for this entry: only a data: URL of a raster image, passed as it is (never masked,
+            # never scripted: the page puts it in an <img>); anything else is dropped
+            "image": raw["image"] if isinstance(raw.get("image"), str) and len(raw["image"]) <= IMAGE_MAX
+            and _IMAGE.fullmatch(raw["image"]) else "",
+            "owner": _name(raw.get("owner"), 60), "owner_key": _ident(raw.get("owner_key"), 80),
+            "refresh": bool(raw.get("refresh"))}          # opening it changed what the list says (a "seen" mark): the popup reads the list again
 
 
-def clean_action(raw) -> dict:
+def clean_action(raw, trusted=False) -> dict:
+    """What an action answered. `trusted` (a built-in object) keeps a long file name in a line to a bot readable: the
+    32-character rule is for text nobody checked (a plugin's); the other masking rules apply to both."""
     raw = raw if isinstance(raw, dict) else {}
     out = {"ok": raw.get("ok") is not False, "message": _name(raw.get("message"), 200)}
     tell = raw.get("tell")
     if isinstance(tell, dict) and tell.get("to") and str(tell.get("text") or "").strip():
-        out["tell"] = {"to": _ident(tell["to"], 80), "text": clip(" ".join(redact_text(tell["text"]).split()), 600)}
+        out["tell"] = {"to": _ident(tell["to"], 80),
+                       "text": clip(" ".join(redact_text(tell["text"], strict=not trusted).split()), 600)}
+        after = tell.get("after")             # asked of the object once the line went in (a note on a task)
+        if isinstance(after, dict) and _ID.fullmatch(str(after.get("action") or "")):
+            out["tell"]["after"] = {"action": after["action"], "args": {str(k)[:40]: _ident(v, 300) for k, v in
+                                                                         (after.get("args") or {}).items()}}
+    if raw.get("refresh"):
+        out["refresh"] = True                 # the list changed: the popup reads it again
+    conf = raw.get("confirm")
+    if isinstance(conf, dict) and conf.get("text"):
+        out["confirm"] = {"text": _name(conf["text"], 200), "label": _name(conf.get("label") or "OK", 40),
+                          "args": {str(k)[:40]: _ident(v, 60) for k, v in (conf.get("args") or {}).items()}}
     go = raw.get("go")
     if isinstance(go, dict):
         link = clean_link(dict(go, label=go.get("label") or "go")) or ({"settings": _ident(go["settings"], 80)}
                                                                        if go.get("settings") else None)
         if link:
             out["go"] = {k: v for k, v in link.items() if k != "label"}
-    if raw.get("open"):
-        out["open"] = str(raw["open"])        # a path the object derived itself; the host opens it, the page never sees it
+    for k in ("open", "reveal", "url"):
+        if raw.get(k):
+            out[k] = str(raw[k])              # a path or a URL the object derived itself; the host opens it, the page never sees it
     return out
 
 
@@ -460,4 +506,4 @@ class Registry:
                              args if isinstance(args, dict) else {})
         if isinstance(res, dict) and res.get("success") is False:
             return res
-        return dict(clean_action(res), success=True)
+        return dict(clean_action(res, trusted=not isinstance(obj, PluginObject)), success=True)

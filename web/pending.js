@@ -14,6 +14,8 @@
  *      and 「也告訴 <asker>」 (task_user_act + one line to the asker: SFOffice.host.board.reply, the board's own 回覆 path),
  *      plus 「跳到那個分頁」 and 「在白板上看」 (SFOffice.openBoard on that card).
  *   3. 隔壁：<電腦> 有 N 件等你, one line per paired computer (link_peer_tasks), which opens that computer's read-only board.
+ *   4. 交付物 (web/deliverables.js draws it, below the decisions in the same column): what the bots and tabs handed the person, undecided ones by
+ *      person with 打開 / 先放著 / 拿走, and the small 「可能是交付物」 group (收下 / 忽略). Its number is the new ones; a pill in the header jumps to it.
  * The red number is SFBoard.count(): the sidebar button's. A tab waiting is a number of its own beside it (a tab is no card).
  *
  * Where it sits (web/pending.css): chat view, wide window (the conversation's 880px column and the list both fit): a docked column
@@ -63,11 +65,12 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const O = () => root.SFOffice || null;
   const B = () => root.SFBoard || null;
+  const SD = () => root.SFDeliv || null;
   const scale = () => parseFloat(getComputedStyle(doc.documentElement).getPropertyValue('--ui-scale')) || 1;
   const PANEL_PX = 300, STRIP_PX = 26, COLUMN_PX = 880, SPARE_PX = 40;   // the docked list, the thin strip, the chat column, room to breathe
   const STRIP_MIN_PX = 420;                                               // a chat layer narrower than this (a huge sidebar, a tiny window) has no width to give: the capsule floats instead
 
-  let wrap = null, cap = null, panel = null, scrim = null, secTabs = null, secCards = null, secPeers = null, headN = null, statusEl = null;
+  let wrap = null, cap = null, panel = null, scrim = null, secTabs = null, secCards = null, secPeers = null, secDeliv = null, pillD = null, headN = null, statusEl = null;
   let kind = '', docked = false, stripped = false, drawer = false, mounted = false, armed = false, seen = false;
   const cssSet = {};
   let armAt = 0;
@@ -108,7 +111,7 @@
   const form = { busy: false, msg: '', bad: false };
   const detail = new Map();           // task id → {upd, loading, ok, events}
   let composing = false, dirty = false, lastTotal = 0;
-  const last = { tabs: '', cards: '', peers: '', cap: '', head: '' };
+  const last = { tabs: '', cards: '', peers: '', cap: '', head: '', deliv: '', pill: '' };
 
   // ── what is waiting ───────────────────────────────────────────────────
   const sessions = () => (host() && host().sessions && host().sessions()) || {};
@@ -304,7 +307,7 @@
   function render() {
     if (!mounted) return;
     measure();
-    const red = redCount(), nTabs = waiting.size, total = red + nTabs;
+    const red = redCount(), nTabs = waiting.size, total = red + nTabs, dNew = SD() ? SD().count() : 0;
     const open = shown();
     panel.classList.toggle('docked', docked);
     panel.classList.toggle('open', open);
@@ -314,7 +317,8 @@
     doc.body.classList.toggle('sf-pend-open', open);
     // the capsule (terminal) or the strip (chat, not docked): the red count, and a mark for tabs waiting
     const capHtml = `<span class="pend-cap-l">${esc(t('Waiting on you', '待你決定'))}</span>` +
-      `<b class="pend-n${red ? ' on' : ''}" data-n="${red}">${red > 99 ? '99+' : red}</b>` + (nTabs ? `<i class="pend-bang" title="${esc(t(`${nTabs} tab(s) waiting`, `${nTabs} 個分頁在等你`))}">!${nTabs > 1 ? nTabs : ''}</i>` : '');
+      `<b class="pend-n${red ? ' on' : ''}" data-n="${red}">${red > 99 ? '99+' : red}</b>` + (nTabs ? `<i class="pend-bang" title="${esc(t(`${nTabs} tab(s) waiting`, `${nTabs} 個分頁在等你`))}">!${nTabs > 1 ? nTabs : ''}</i>` : '') +
+      (dNew ? `<i class="pend-clip" title="${esc(t(`${dNew} new deliverable(s)`, `${dNew} 件新的交付物`))}">${root.SFDelivDraw ? root.SFDelivDraw.clip(dNew, false) : ''}${dNew > 99 ? '99+' : dNew}</i>` : '');
     put(cap, 'cap', capHtml);
     cap.hidden = docked || open;
     cap.classList.toggle('strip', stripped); cap.classList.toggle('capsule', !stripped); cap.classList.toggle('has', total > 0);
@@ -323,6 +327,8 @@
     cap.setAttribute('aria-label', cap.title);
     const headHtml = `${esc(t('Waiting on you', '待你決定'))}<b class="pend-n${red ? ' on' : ''}" data-n="${red}">${red > 99 ? '99+' : red}</b>`;
     if (last.head !== headHtml) { last.head = headHtml; headN.innerHTML = headHtml; }
+    const showD = !!SD() && (SD().hasRail() || dNew > 0), pillHtml = `${esc(t('Deliverables', '交付物'))}<b class="${dNew ? 'on' : ''}">${dNew > 99 ? '99+' : dNew}</b>`;
+    if (last.pill !== pillHtml + showD) { last.pill = pillHtml + showD; pillD.innerHTML = pillHtml; pillD.hidden = !showD; }
     panel.querySelector('.pend-x').textContent = docked ? '»' : '✕';
     panel.querySelector('.pend-x').title = docked ? t('Fold to the edge', '收到邊邊') : t('Close (Esc)', '關閉（Esc）');
     if (armed && lastTotal === 0 && total > 0 && !open && !docked) { cap.classList.remove('pulse'); void cap.offsetWidth; cap.classList.add('pulse'); }   // 0 → something: one pulse, no sound
@@ -339,7 +345,9 @@
       }
     }
     put(secPeers, 'peers', peersHtml());
-    const none = !last.tabs && !secCards.innerHTML && !last.peers;
+    const dHtml = SD() ? SD().railHtml() : '';
+    put(secDeliv, 'deliv', dHtml, '|' + (SD() ? JSON.stringify(SD().state()) : ''));
+    const none = !last.tabs && !secCards.innerHTML && !last.peers && !dHtml;
     panel.classList.toggle('empty', none);
   }
 
@@ -430,16 +438,19 @@
     cap = doc.createElement('button'); cap.id = 'pend-cap'; cap.type = 'button'; cap.className = 'pend-cap capsule'; cap.setAttribute('data-guide', 'pending');
     panel = doc.createElement('aside'); panel.id = 'pend-panel'; panel.className = 'pend-panel';
     panel.setAttribute('role', 'complementary'); panel.setAttribute('aria-label', t('Waiting on you', '待你決定')); panel.setAttribute('data-guide', 'pending');
-    panel.innerHTML = '<header class="pend-head"><span class="pend-title"></span><button type="button" class="pend-x"></button></header>' +
-      '<div class="pend-status" role="status" hidden></div><div class="pend-scroll"><section id="pend-tabs" hidden></section><section id="pend-cards" hidden></section><section id="pend-peers" hidden></section>' +
+    panel.innerHTML = '<header class="pend-head"><span class="pend-title"></span><button type="button" class="pend-pill" id="pend-jump-d" data-guide="deliverables" hidden></button><button type="button" class="pend-x"></button></header>' +
+      '<div class="pend-status" role="status" hidden></div><div class="pend-scroll"><section id="pend-tabs" hidden></section><section id="pend-cards" hidden></section><section id="pend-peers" hidden></section><section id="pend-deliv" hidden></section>' +
       '<p class="pend-none">' + esc(t('Nothing is waiting on you.', '現在沒有等你決定的事。')) + '</p></div>';
     wrap.append(scrim, cap, panel);
     headN = panel.querySelector('.pend-title'); statusEl = panel.querySelector('.pend-status');
-    secTabs = panel.querySelector('#pend-tabs'); secCards = panel.querySelector('#pend-cards'); secPeers = panel.querySelector('#pend-peers');
+    secTabs = panel.querySelector('#pend-tabs'); secCards = panel.querySelector('#pend-cards'); secPeers = panel.querySelector('#pend-peers'); secDeliv = panel.querySelector('#pend-deliv'); pillD = panel.querySelector('#pend-jump-d');
     cap.addEventListener('click', onCap);
     panel.querySelector('.pend-x').addEventListener('click', onFold);
     scrim.addEventListener('click', () => setDrawer(false));
     panel.addEventListener('click', onClick);
+    panel.addEventListener('click', e => { if (SD() && SD().click(e)) e.stopPropagation(); });   // the deliverables section's own buttons (data-dact)
+    pillD.addEventListener('click', () => { if (SD()) SD().unfold(); try { secDeliv.scrollIntoView({ block: 'start' }); } catch (_) { /* no layout */ } });
+    if (SD()) SD().setOnChange(() => render());
     panel.addEventListener('input', e => {
       const f = e.target.closest('.pend-form'); if (!f) return;
       const dr = drafts[Number(f.dataset.id)]; if (!dr) return;

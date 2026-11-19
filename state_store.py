@@ -7,6 +7,7 @@ whom". This module is the one place that opens the database; everything else (th
 
 Rules:
 - One file, WAL, no service. Nothing is opened at import time.
+- Deliverables (what a bot hands the person, as references) live in a table of their own (deliverables.py).
 - Events are appended, never edited; a task's columns are its current state. History,
   audit and "how long has it waited" all come from the events.
 - "Stuck" is not a status: it is an open task whose last event is older than a limit
@@ -24,7 +25,7 @@ from pathlib import Path
 
 import sf_config
 
-SCHEMA = 1
+SCHEMA = 2
 STATUSES = ("todo", "doing", "waiting", "done", "dropped")
 OPEN = ("todo", "doing", "waiting")
 CLOSED = ("done", "dropped")
@@ -75,6 +76,33 @@ _MIGRATIONS = {
     CREATE INDEX events_task ON events(task_id, ts);
     CREATE INDEX tasks_open ON tasks(status, owner);
     CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    """,
+    2: """
+    CREATE TABLE deliverables(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_kind TEXT NOT NULL,
+      owner_key TEXT NOT NULL,
+      owner_label TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL,
+      ref TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'file',
+      title TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+      state TEXT NOT NULL DEFAULT 'new',
+      origin TEXT NOT NULL DEFAULT 'sfctl',
+      source TEXT NOT NULL DEFAULT '',
+      flag TEXT NOT NULL DEFAULT '',
+      size INTEGER NOT NULL DEFAULT 0,
+      mtime REAL NOT NULL DEFAULT 0,
+      created_at REAL NOT NULL,
+      updated_at REAL NOT NULL,
+      seen_at REAL,
+      taken_at REAL,
+      UNIQUE(owner_kind, owner_key, ref)
+    );
+    CREATE INDEX deliverables_owner ON deliverables(owner_kind, owner_key, state);
+    CREATE INDEX deliverables_state ON deliverables(state, seen_at);
     """,
 }
 
@@ -432,6 +460,8 @@ def maintain(now: float = None, *, path=None) -> dict:
         cur = con.execute("DELETE FROM tasks WHERE closed_at IS NOT NULL AND closed_at < ?", (now - KEEP_CLOSED_S,))
         gone = cur.rowcount
         con.execute("DELETE FROM events WHERE task_id IS NULL AND ts < ?", (now - KEEP_CLOSED_S,))
+        import deliverables                          # late: it imports this module
+        deliverables.prune(con, now)
         con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('maintained_at', ?)", (str(now),))
         con.execute("COMMIT")
         return {"ran": True, "backup": stamp, "removed": gone}

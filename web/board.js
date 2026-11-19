@@ -30,7 +30,7 @@
   }
   const keyName = () => (isMac() ? '⌘⇧B' : 'Ctrl+Shift+B');
 
-  let count = 0, avail = true, btn = null, timer = 0, list = [], peers = {};
+  let count = 0, avail = true, btn = null, timer = 0, list = [], peers = {}, deliv = null;
   const subs = [];
   const tell = () => subs.forEach(fn => { try { fn(); } catch (_) {} });
 
@@ -55,6 +55,12 @@
     if (v !== count || !btn || btn.hidden) { count = v; paint(); }
     tell();
   }
+  // The deliverables' counts and list (tasks_overview's `deliverables`: the same read), from whoever just asked: web/deliverables.js and
+  // web/pending.js draw them (the sidebar's paperclips, the 「交付物」 section); null when the store cannot be used.
+  function noteDeliv(d) {
+    deliv = d && typeof d === 'object' ? d : null;
+    tell();
+  }
   // The paired computers' task lists (link_peer_tasks's `peers`), from whoever just asked.
   function notePeers(p) {
     peers = p && typeof p === 'object' ? p : {};
@@ -66,8 +72,8 @@
     if (!a || !a.tasks_overview) { avail = false; paint(); return; }
     let r = null;
     try { r = JSON.parse(await a.tasks_overview()); } catch (_) { return; }
-    if (r && r.success === false) { avail = false; list = []; paint(); tell(); }   // the store cannot be opened: nothing to show
-    else if (r && r.success) note((r.decisions || []).length, r.decisions || []);
+    if (r && r.success === false) { avail = false; list = []; deliv = null; paint(); tell(); }   // the store cannot be opened: nothing to show
+    else if (r && r.success) { deliv = r.deliverables || null; note((r.decisions || []).length, r.decisions || []); }
     if (a.link_peer_tasks && peersPaired()) {                        // the host's cache: it asks the other computers itself, no more often than it needs
       let q = null;
       try { q = JSON.parse(await a.link_peer_tasks()); } catch (_) { return; }
@@ -105,7 +111,7 @@
     if (!e.repeat) toggle();
   }, true);
 
-  root.SFBoard = { isKey, note, notePeers, poll, toggle, count: () => count, keyName, isShown: () => !!btn && !btn.hidden,
+  root.SFBoard = { isKey, note, noteDeliv, deliv: () => deliv, notePeers, poll, toggle, count: () => count, keyName, isShown: () => !!btn && !btn.hidden,
                    decisions: () => list.slice(), peers: () => peers, avail: () => avail, onData: fn => { subs.push(fn); } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(0));
   else boot(0);

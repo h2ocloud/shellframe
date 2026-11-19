@@ -210,18 +210,18 @@ def run(browser, base, engine):
 
     print(f"[{engine}] the furniture")
     fr = H.open_office(page)
-    page.wait_for_function("""() => { const f = document.querySelector('#sfo-overlay iframe'); try { return f.contentWindow.__office.objects().objects.length === 2; } catch (e) { return false; } }""", timeout=10000)
+    page.wait_for_function("""() => { const f = document.querySelector('#sfo-overlay iframe'); try { return f.contentWindow.__office.objects().objects.length === 3; } catch (e) { return false; } }""", timeout=10000)
     st = fr.evaluate("__office.objects()")
-    check("the snapshot carries the two objects: a bookshelf and a cabinet", [(o["id"], o["furniture"]) for o in st["objects"]] == [("bookshelf", "bookshelf"), ("personnel", "cabinet")], st)
+    check("the snapshot carries the three objects: a bookshelf, a cabinet and the deliverables desk (button only)", [(o["id"], o["furniture"]) for o in st["objects"]] == [("bookshelf", "bookshelf"), ("personnel", "cabinet"), ("deliverables", "generic")], st)
     badge = {o["id"]: o["badge"] for o in st["objects"]}
     want = sum(1 for k in ROSTER if bots.memory_file(k).is_file()
                and len(bots.memory_file(k).read_text(encoding="utf-8").strip()) > bots.MEMORY_CAP * 0.8)
     check("the bookshelf's red number is the count of memories over 80% of the cap (the boundary itself: tests_office_shelf.py)",
-          badge == {"bookshelf": want, "personnel": 0} and want >= 2, (badge, want))
+          badge == {"bookshelf": want, "personnel": 0, "deliverables": 0} and want >= 2, (badge, want))
     tb = fr.evaluate("[...document.querySelectorAll('#tools button[data-obj]')].map(b => ({id: b.dataset.obj, text: b.textContent, badge: b.dataset.badge || '', guide: b.getAttribute('data-guide')}))")
-    check("the toolbar has 書櫃 and 人事 (with the number on the first), each marked for the guide",
-          [(b["id"], b["text"], b["guide"]) for b in tb] == [("bookshelf", "書櫃", "office-bookshelf"), ("personnel", "人事", "office-personnel")]
-          and tb[0]["badge"] == str(want) and tb[1]["badge"] == "", tb)
+    check("the toolbar has 書櫃, 人事 and 交付物 (with the number on the first), each marked for the guide",
+          [(b["id"], b["text"], b["guide"]) for b in tb] == [("bookshelf", "書櫃", "office-bookshelf"), ("personnel", "人事", "office-personnel"), ("deliverables", "交付物", "office-deliverables")]
+          and tb[0]["badge"] == str(want) and tb[1]["badge"] == "" and tb[2]["badge"] == "", tb)
     if shoot:
         page.screenshot(path=str(SHOTS / "office-objects-lobby-1280.png"))
         tools = fr.evaluate("(() => { const r = document.getElementById('tools').getBoundingClientRect(); return {x: r.left - 8, y: r.top - 8, width: r.width + 16, height: r.height + 16}; })()")
@@ -472,9 +472,9 @@ def run(browser, base, engine):
     page.wait_for_selector("#sb-footer-row", timeout=20000)
     page.wait_for_function("window.SFOffice && window.SFBots && SFBots.enabled()", timeout=20000)
     fr = H.open_office(page)
-    page.wait_for_function("""() => { const f = document.querySelector('#sfo-overlay iframe'); try { return f.contentWindow.__office.objects().objects.length === 2; } catch (e) { return false; } }""", timeout=10000)
+    page.wait_for_function("""() => { const f = document.querySelector('#sfo-overlay iframe'); try { return f.contentWindow.__office.objects().objects.length === 3; } catch (e) { return false; } }""", timeout=10000)
     tb = fr.evaluate("[...document.querySelectorAll('#tools button[data-obj]')].map(b => b.textContent)")
-    check("the toolbar buttons are in English (the short word: Personnel)", tb == ["Bookshelf", "Personnel"], tb)
+    check("the toolbar buttons are in English (the short word: Personnel)", tb == ["Bookshelf", "Personnel", "Deliverables"], tb)
     fr.evaluate("__office.objOpen('bookshelf')")
     page.wait_for_function("document.querySelector('#sfo-overlay iframe').contentDocument.querySelectorAll('.oo-it').length > 5", timeout=10000)
     check("the popup, its filters and its rows are in English", fr.evaluate("document.getElementById('ooTitle').textContent") == "Bookshelf"

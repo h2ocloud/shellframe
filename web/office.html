@@ -736,6 +736,7 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
 </div>
 <div id="toast" aria-live="polite"></div>
 
+<script src="deliv_draw.js"></script>
 <script src="office_objects.js"></script>
 <script>
 (() => {
@@ -1446,8 +1447,31 @@ function spotsOf(g) {  // 桌上、地上、看板的位置（格子座標）；
   return { side: [{ x: g.x + .06, y: g.y + .08, w: .4, h: .4, z }, { x: g.x + g.w - .48, y: g.y + .34, w: .42, h: .4, z }],
     front: { x: g.x + .44, y: g.y + .5, w: .52, h: .22, z }, floor: { x: g.x + g.w + .12, y: g.y + .16, w: .42, h: .42, z: 0 }, wall: { x0: g.x + g.w - .34, y0: g.y + .1, x1: g.x + g.w - .04, y1: g.y + .1, z } };
 }
+/* ══════════ 交付物：每個人桌上的公文堆 ══════════
+   資料來自物件的 summary（OBJ.byOwner('deliverables', key)：桌上幾件、沒看過幾件、最新三件的類型），不讀任何檔案。
+   畫法在 web/deliv_draw.js（每種檔案一個小物件，桌上、清單圖示、圖例是同一批）；這裡只決定放哪、點到哪。
+   公文堆佔桌上最後一個「side」位子；有沒看過的：信封＋小星星＋紅色數字；遠景（lodFar）只畫信封和數字。 */
+const DD = SFDelivDraw.prims(P), PILES = new Map();   // key → {x, y, r}：這一幀畫在螢幕上的位置，給滑鼠用
+const deliverInfo = e => { const d = e ? OBJ.byOwner('deliverables', e.key) : null; return d && d.count > 0 ? d : null; };
+function drawPile(x, g, e, sp) {
+  const d = deliverInfo(e); if (!d || !sp) return;
+  const at = SFDelivDraw.pile(x, DD, { x: sp.x, y: sp.y, z: sp.z }, { count: d.count, types: d.types, fresh: d.new }, { T, RM, COL, FONT });
+  PILES.set(e.key, at);
+}
+function drawPileFar(x, g, e) {                               // 全景：看不出小物件是什麼，只看得到信封和紅色數字（故意的）
+  const d = deliverInfo(e); if (!d) return;
+  const p = P(g.x + g.w - .3, g.y + .3, deskH(g) + 4);
+  if (d.new > 0) { ellipse(x, p.x, p.y, 7, 5, '#fff8e6', '#9a6e3e', 1); ellipse(x, p.x + 6, p.y - 6, 5.4, 5.4, COL.red, '#f4f6ff', 1.2); x.font = `800 7.5px ${FONT}`; x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(d.new > 9 ? '9+' : String(d.new), p.x + 6, p.y - 5.6); }
+  else ellipse(x, p.x, p.y, 5, 3, '#f4f6fb', 'rgba(60,70,110,.5)', 1);
+}
+const pileAtPt = (sx, sy) => { let best = null, bd = 1e9; for (const [k, v] of PILES) { const d = Math.hypot(sx - v.x, sy - v.y); if (d < Math.max(14, v.r) && d < bd) { bd = d; best = k; } } return best; };
+let hoverPile = null;
+const pileName = key => { const e = M.ents.get(key), d = e && OBJ.byOwner('deliverables', key); return e && d ? tr(`${e.who.name}: ${d.count} deliverable(s)${d.new ? `, ${d.new} new` : ''}`, `${e.who.name} 的交付物 ${d.count} 件${d.new ? `（${d.new} 件新的）` : ''}`) : ''; };
+const openPile = key => OBJ.open('deliverables', { filters: { owner: key } });
+
 function placeItems(e, g) {
   const sp = spotsOf(g), side = [...sp.side], out = []; let front = sp.front;
+  if (side.length && deliverInfo(e)) side.pop();             // 交付物的公文堆佔桌上最後一個位子（配件讓出來，不重疊）
   for (const id of itemsOf(e)) { const it = ITEM[id]; if (!it) continue; const k = slotKey(it); let s = null;
     if (k === 'side') s = side.shift(); else if (k === 'front') { s = front; front = null; } else if (k === 'floor') s = sp.floor; else if (k === 'wall') s = sp.wall;
     if (s || ((k === 'head' || k === 'body') && !g.shared)) out.push({ it, k, s }); }
@@ -1496,6 +1520,7 @@ function drawSeatNear(x, s, g) {
   if (e) drawNameplate(x, g, e.who.shape ? e.who.color : COL.mute, st === 'asleep');
   if (e && !e.gone && st !== 'asleep' && st !== 'idle') lightPool(x, g, SCREEN[st][1]);
   const mg0 = monitorGeo(g), mDepth = mg0.lap ? P(g.cx, mg0.y).y : P(mg0.bx[0] + mg0.bx[2] / 2, mg0.bx[1] + mg0.bx[3] / 2).y, deskIts = its.filter(q => q.k === 'side' || q.k === 'front').map(q => ({ ...q, d: P(q.s.x + q.s.w / 2, q.s.y + q.s.h / 2).y }));
+  if (e && deliverInfo(e) && spotsOf(g).side.length) { const ps = spotsOf(g).side[spotsOf(g).side.length - 1]; deskIts.push({ it: { draw: xx => drawPile(xx, g, e, ps) }, k: 'side', s: ps, d: P(ps.x + ps.w / 2, ps.y + ps.h / 2).y }); }   // 公文堆也依深度跟配件、螢幕排在一起
   for (const q of deskIts) if (q.d < mDepth) q.it.draw(x, q.s, ia);
   drawMonitor(x, g, st, e ? e.seed : 0);
   for (const q of deskIts) if (q.d >= mDepth) q.it.draw(x, q.s, ia);
@@ -1513,6 +1538,7 @@ function drawSeatFar(x, s, g) {
   if (e && (follow === e.key || (hl && !dimmed && matches(hl, e)))) { const fp = P(g.cx, g.cy), R = floorR(.75); ellipse(x, fp.x, fp.y, R.rx, R.ry, alpha(follow === e.key ? COL.blue : hlColor(), .18), alpha(follow === e.key ? COL.blue : hlColor(), .8), 2); }
   poly(x, fquad(g.x, g.y, g.x + g.w, g.y + g.h, deskH(g)), g.big ? '#4a4068' : g.shared ? '#43405a' : '#353a56');
   if (st !== 'empty' && st !== 'asleep') { const lp = P(g.x + g.w / 2, g.y + g.h / 2, deskH(g)); ellipse(x, lp.x, lp.y, 6.5, 3.8, ST[st].c); }
+  if (e) drawPileFar(x, g, e);
   if (e && !e.gone && !e.walk && st !== 'asleep' && !(drag && drag.mode === 'seat' && drag.key === e.key)) {
     const p = P(g.cx, g.cy, 12), sc = pScale(e); x.save(); x.translate(p.x, p.y); x.scale(sc, sc); x.globalAlpha = dimmed * s.ra * e.vis;
     x.fillStyle = e.who.shape ? shade(e.who.color, -.45) : '#414868'; x.beginPath(); x.roundRect(-6, -14, 12, 14, 5); x.fill();
@@ -1948,6 +1974,8 @@ const OBJ = OfficeObjects.create({
   host: HOST ? { objects: HOST.objects, md: HOST.md } : OfficeObjects.demoHost(tr),
   beforeOpen() { if (view) closeView(true); if (follow) stopFollow(true); hoverObj = null; hoverKey = null; cv.classList.remove('pt'); },
   hasTab: key => !!(HOST && HOST.chat && HOST.chat.has(key)),
+  rowIcon: (o, i) => (o && o.id === 'deliverables' && i.type ? `<img src="${SFDelivDraw.thumb(i.type, 64)}" alt="">` : ''),   // 清單裡每種檔案一個小物件（和桌上同一套畫法）
+  changed: () => { if (HOST && HOST.objectsChanged) HOST.objectsChanged(); kick(); },
   send: (key, text) => HOST.chat.send(key, text, false),
   openUrl: url => { if (HOST && HOST.chat && HOST.chat.openUrl) HOST.chat.openUrl(url); },
   editBot: role => !!(HOST && HOST.editBot && HOST.editBot(role)),
@@ -2163,6 +2191,8 @@ function peerTail(pe) {                              // 隔壁電腦的任務只
   return `<div class="wpeer"><p>這是「${esc(pe.name)}」的任務，這裡只能看。要改它，${e ? `請跟那台的主要 bot（${esc(e.who.name)}）說` : '請到那台電腦上處理'}。</p>` +
     (can ? `<div class="wb-actions"><button type="button" class="wa" data-act="tellmain" data-key="${esc(k)}">跟 ${esc(e.who.name)} 說</button></div>` : '') + '</div>';
 }
+// 連到這件任務的交付物（sfctl deliver add --task N）：卡上多一行「交付物 N」，點了開那件任務的交付物清單
+const delivRow = t => { const o = !viewPeer() && OBJ.find('deliverables'), n = o && o.by_task ? Number(o.by_task[String(t.id)]) || 0 : 0; return n ? `<dt>${tr('Deliverables', '交付物')}</dt><dd><button type="button" class="wa dv" data-act="adeliv" data-id="${t.id}">${tr(`Deliverables ${n}`, `交付物 ${n}`)}</button></dd>` : ''; };
 function cardHtml(t, r, now) {
   const pe = viewPeer(), hist = vstate.detail.get(t.id), evs = hist && hist.ok ? hist.events : [];
   const histHtml = pe ? '' : `<ol class="thist" aria-label="#${t.id} 的歷程">` + (!hist || hist.loading && !hist.ok ? '<li><span></span><span class="none">讀取中…</span></li>'
@@ -2174,7 +2204,7 @@ function cardHtml(t, r, now) {
     `<div class="nh"><span class="nid">#${t.id}</span><span class="why">${esc(whyText(r.why))}</span><span class="st">${ST_ZH[t.status] || esc(t.status)}</span><button type="button" class="wx" data-act="dclose" title="收起來（Esc）" aria-label="收起來">✕</button></div>` +
     `<h4 class="wt">${esc(t.title || '（沒有標題）')}</h4>` +
     `<dl class="tm"><dt>負責</dt><dd>${whoBtn(t.owner_key, t.owner)}</dd><dt>交辦自</dt><dd>${whoBtn(t.requester_key, t.requester)}</dd><dt>在等</dt><dd>${t.waiting_on ? whoBtn(t.waiting_key, t.waiting_on) : dash}</dd>` +
-    `<dt>下一步</dt><dd>${esc(t.next_step || '—')}</dd><dt>期限</dt><dd>${dueHtml(t, now, true)}</dd><dt>動靜</dt><dd>${ageHtml(t)}</dd></dl>` +
+    `<dt>下一步</dt><dd>${esc(t.next_step || '—')}</dd><dt>期限</dt><dd>${dueHtml(t, now, true)}</dd><dt>動靜</dt><dd>${ageHtml(t)}</dd>${delivRow(t)}</dl>` +
     (pe ? peerTail(pe) : `<h5 class="wh">歷程</h5>${histHtml}${actionsHtml(t)}`) + '</div>';
 }
 // 卡底的兩個動作：「我做好了」（只有是你的事、或在等你的事才有）、「留言」。點了展開一個小表單；不先改畫面：送出去、後端說好了才算（板子隨後由下一輪 tasks_overview 更新）
@@ -2259,6 +2289,7 @@ function boardClick(ev) {
   const b = ev.target.closest('[data-act]'); if (!b) return;
   if (b.dataset.act === 'note') openDetail(+b.dataset.id);
   else if (b.dataset.act === 'dclose') closeDetail();
+  else if (b.dataset.act === 'adeliv') { const id = +b.dataset.id; closeDetail(); if (view) closeView(true); OBJ.open('deliverables', { filters: { task: String(id) } }); }
   else if (b.dataset.act === 'adone' || b.dataset.act === 'anote' || b.dataset.act === 'areply') openAct([...vstate.open][0], b.dataset.act === 'adone' ? 'done' : b.dataset.act === 'areply' ? 'reply' : 'note');
   else if (b.dataset.act === 'acancel') cancelAct();
   else if (ov && b.dataset.act === 'person') pickPerson(b.dataset.key);
@@ -2749,7 +2780,7 @@ function roomScreenBox(r) { let a = 1e9, b = 1e9, cc = -1e9, d = -1e9; for (cons
 const inRoom = (r, p) => p.x >= r.x - .25 && p.x <= r.x + r.w && p.y >= r.y - .25 && p.y <= r.y + r.h;
 let lastDrawMs = 0, roomsDrawn = 0, itemsDrawn = 0;
 function draw() {
-  const t0 = performance.now(), far = lod(); itemsDrawn = 0;
+  const t0 = performance.now(), far = lod(); itemsDrawn = 0; PILES.clear();
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   const bg = c.createRadialGradient(W / 2, H * .5, 40, W / 2, H * .55, Math.max(W, H) * .8);
   bg.addColorStop(0, '#222539'); bg.addColorStop(1, '#15161f'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
@@ -2853,6 +2884,7 @@ function drawOverlay(far) {
     }
   }
   for (const fn of tags) fn();
+  if (hoverPile && hoverPt && pileName(hoverPile)) pill(hoverPt.x + 4, hoverPt.y - 20, pileName(hoverPile), { font: `700 12px ${FONT}`, h: 22, color: COL.ink, bg: 'rgba(26,27,38,.95)', border: alpha(COL.blue, .8) });   // 公文堆的提示
   if (hoverObj && hoverPt && !hoverKey && wallObj(hoverObj)) pill(hoverPt.x + 4, hoverPt.y - 20, wallObj(hoverObj).name, { font: `700 12px ${FONT}`, h: 22, color: COL.ink, bg: 'rgba(26,27,38,.95)', border: alpha(COL.blue, .8) });   // 牆上東西的提示
   // 拖曳換位子：目標座位與跟著手指的頭像
   if (drag && drag.mode === 'seat') {
@@ -2932,17 +2964,18 @@ cv.addEventListener('pointermove', e => {
     if (drag.mode === 'pan') { kick(); goal = null; followCam = false; cam.x -= (e.clientX - drag.x) / cam.z; cam.y -= (e.clientY - drag.y) / cam.z; }
     drag.x = e.clientX; drag.y = e.clientY; return;
   }
-  if (e.pointerType === 'mouse') { const s = pick(e.clientX, e.clientY), id = s ? s.key : null, o = s ? null : wallObjAt(e.clientX, e.clientY); hoverPt = { x: e.clientX, y: e.clientY };
-    if (id !== hoverKey || o !== hoverObj) { hoverKey = id; hoverObj = o; cv.classList.toggle('pt', !!(id || o)); kick(); } else if (o) kick(); }
+  if (e.pointerType === 'mouse') { const pl = pileAtPt(e.clientX, e.clientY), s = pl ? null : pick(e.clientX, e.clientY), id = s ? s.key : null, o = s || pl ? null : wallObjAt(e.clientX, e.clientY); hoverPt = { x: e.clientX, y: e.clientY };
+    if (pl !== hoverPile) { hoverPile = pl; cv.classList.toggle('pt', !!(pl || id || o)); kick(); }
+    if (id !== hoverKey || o !== hoverObj) { hoverKey = id; hoverObj = o; cv.classList.toggle('pt', !!(pl || id || o)); kick(); } else if (o || pl) kick(); }
 });
 const endPtr = e => {
   clearTimeout(lpTimer); const d = drag; ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; cv.classList.remove('drag', 'seat');
   if (d && d.mode === 'seat') { if (e.type === 'pointerup' && d.target && d.ok) swapSeat(d.key, d.target); else if (e.type === 'pointerup' && d.target) toast('不同團隊不能換位子（團隊由 bot 設定決定）'); drag = null; kick(); return; }
-  if (d && !d.moved && e.type === 'pointerup') { const s = pick(e.clientX, e.clientY); if (s) { if (follow === s.key) { followCam = true; kick(); } else startFollow(s.key); } else { const o = wallObjAt(e.clientX, e.clientY); if (o) openView(o); } }
+  if (d && !d.moved && e.type === 'pointerup') { const pl = pileAtPt(e.clientX, e.clientY); if (pl) { openPile(pl); if (!ptrs.size) drag = null; return; } const s = pick(e.clientX, e.clientY); if (s) { if (follow === s.key) { followCam = true; kick(); } else startFollow(s.key); } else { const o = wallObjAt(e.clientX, e.clientY); if (o) openView(o); } }
   if (!ptrs.size) drag = null;
 };
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
-cv.addEventListener('pointerleave', () => { if (hoverKey || hoverObj) { hoverKey = null; hoverObj = null; cv.classList.remove('pt'); kick(); } });
+cv.addEventListener('pointerleave', () => { if (hoverKey || hoverObj || hoverPile) { hoverKey = null; hoverObj = null; hoverPile = null; cv.classList.remove('pt'); kick(); } });
 cv.addEventListener('wheel', e => { e.preventDefault(); kick(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX, e.clientY); }, { passive: false });
 function swapSeat(key, target) {
   const e = M.ents.get(key), from = M.seats.get(e.seatKey), other = target.occ && target.occ !== e ? target.occ : null;
@@ -3462,6 +3495,9 @@ window.__office = {
     for (const [u, v] of [[.5, .5], [.2, .5], [.8, .5], [.5, .2], [.5, .8], [.15, .2], [.85, .2], [.15, .8], [.85, .8]]) { const p = at(u, v); if (wallObjAt(p.x, p.y) === k && !pick(p.x, p.y)) return p; }
     return first;
   },
+  deskInfo: key => { const d = deliverInfo(M.ents.get(key)); return d ? { count: d.count, new: d.new, types: [...d.types] } : null; }, entGone: key => { const e = M.ents.get(key); return e ? !!e.gone : null; },
+  camTo: key => { const e = M.ents.get(key), p = e && deskTopOf(e); if (!p) return false; const q = P(p.x, p.y, p.z); goal = null; followCam = false; Object.assign(cam, { x: q.x, y: q.y, z: 1.5 }); kick(); return true; },
+  pileAt: key => { const p = PILES.get(key); return p ? { x: p.x, y: p.y, r: p.r } : null; }, piles: () => [...PILES.keys()], pileTip: () => (hoverPile ? pileName(hoverPile) : ''),
   objects: () => OBJ.state(), objOpen: (id, o) => OBJ.open(id, o), objClose: () => OBJ.close(),
   objPoint: id => { const h = OBJ.hull('obj:' + id, t2s); if (!h.length) return null; return { x: h.reduce((a, p) => a + p.x, 0) / h.length, y: h.reduce((a, p) => a + p.y, 0) / h.length }; },
   wallAt: (sx, sy) => wallObjAt(sx, sy), hoverTip: () => (hoverObj && wallObj(hoverObj) ? wallObj(hoverObj).name : ''), viewScope: () => vscope,

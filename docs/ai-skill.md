@@ -619,6 +619,38 @@ the person left 「也告訴 <you>」 ticked, puts one line in the tab of the bo
 「（看板）#N「<title>」我的回覆：<answer>」. Treat it as the person's answer to that question. With several paired computers
 the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board is read only.
 
+## 4.11 Deliverables (what you hand the person)
+
+A file or link you give the person is one line in a conversation, and a few messages later it is gone. Register it and it
+lands on **your desk** in the office as a pile of papers (the 「交付物」 button at the bottom right lists everybody's; the
+right-hand 「待你決定」 list has a 「交付物」 section; a paperclip with a count sits on your avatar in the sidebar). You act
+as your tab's bot (a tab that is no bot has a desk of its own, "this tab, opened at <time>": a later tab that gets the
+same id does not inherit it, and a closed tab's papers go to 「已關閉的分頁」).
+
+```bash
+sfctl deliver add ~/demo/週報草稿.md --title "示範週報草稿" --note "第 3 點是我猜的"     # a file (any path; made absolute from where you are)
+sfctl deliver add https://demo.example.test/preview/login --title "示範預覽站"        # or a link (http, https)
+sfctl deliver add ./report.pdf --title "示範報告" --task 14                          # tied to task #14 (the whiteboard card shows it)
+sfctl deliver list [--state new|kept|taken|candidate] [--owner <bot-or-tab>] [--json]  # yours by default
+sfctl deliver show N
+```
+
+- One line for the title (what it is) and one for the note (what the person should know). Both are masked before they are
+  kept, and only a **reference** is stored: ShellBot never copies the file. Registering the same file again updates it;
+  one the person had taken away comes back as new.
+- Only the person decides what happens next: 先放著 (keep it on the desk), 拿走 (clear it; History keeps it for 180 days),
+  or 請他改. There is no command for you to keep, take or clear: a bot cannot clean the person's desk.
+- **請他改** reaches you as one ordinary message in your tab, always in this form (Chinese, like the board's 「（看板）…」 lines):
+  「（交付物）請改<title>：<what to change>；檔案在<path or link>」. Change the file in place or register the new one, and answer in
+  one line. If the deliverable was tied to a task (`--task`), the request is also noted on it.
+- A file that looks like it holds a secret (a name such as `.env`, `*.pem`, `*token*`, a file in `~/.ssh`, `~/.aws`,
+  `~/.config`…, a private key or a known kind of token inside, a URL with a token) is registered but **flagged**: no
+  preview, no thumbnail, and the person is asked before it opens. Do not hand over keys; say where they are in words.
+- If you forget, ShellBot looks at the end of your turn: a file path in your last reply that exists, is a document, picture,
+  archive or web page, and was written in the last two hours is offered to the person as 「可能是交付物」 (收下 / 忽略).
+  It is not on the desk and not counted until they accept. Code and configuration files, key-like files and cache folders
+  are never offered. Registering yourself is better: it carries your title and note.
+
 ## 5. Which build has what
 
 `sfctl version` first, then:
@@ -680,6 +712,7 @@ the sheet has a 這台 / 隔壁：<computer> switcher; a paired computer's board
 | `sfctl tg-push --from <schedule id> [--env-file PATH] [--token-var NAME] [--chat ID] "text"`: a script's Telegram message, registered; a Telegram reply to a push (a tab's, a schedule's) goes to its tab or the schedule's `owners` bot instead of the selected tab (`tg_origins.json`, `tg_reply_rules.json`) | 0.58.0 |
 | No new commands: the board button (sidebar foot, both views, ⌘/Ctrl+Shift+B) opens the task board without the office; a decision card has 回覆 (the answer closes it and reaches the bot that asked); a bot's system prompt now says to put what it asks the user on the board (`task add --decision`) | 0.58.0 |
 | `sfctl tg-push --preview` (links get no preview card otherwise). No other new commands: Bots, 辦公室 and 看板 sit in a row at the top of the sidebar; 「待你決定」 on the right lists tabs waiting on a menu and decision cards; Settings → Office has 不分享任務給隔壁電腦 (`settings.link_share_tasks_off`: a paired computer's GET /link/tasks gets 403); `bots_open` on a bot whose tab has died opens a new tab instead of answering "already awake" | 0.59.0 |
+| `sfctl deliver add <path-or-url> --title … [--note …] [--task N]` / `list` / `show N` (§4.11): files and links handed to the person, kept as references on the bot's or tab's desk in the office; the 「交付物」 button, a section of 「待你決定」 and a paperclip in the sidebar; a bot's system prompt says to register what it hands over; the person's 請他改 reaches the bot as 「（交付物）請改…」 | 0.60.0 |
 
 When a feature is newer than the running build, the command simply does not
 exist and you get `ERR Unknown command`. Report that; do not fall back to

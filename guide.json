@@ -360,6 +360,38 @@
       }
     },
     {
+      "id": "office-deliverables",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.60.0",
+      "flag": "experimental_office",
+      "open": "settings:office",
+      "title": {
+        "en": "Deliverables",
+        "zh": "交付物"
+      },
+      "body": {
+        "en": "Files and links a bot or tab hands you land on its desk in the office as a pile of papers (the 交付物 button lists them all). Open one, then keep it on the desk, take it away, or ask the bot to change it.",
+        "zh": "bot 或分頁交給你的檔案、連結，會放在它在辦公室的桌上，像一疊公文（右下角的「交付物」鈕看全部）。打開看，然後先放著、拿走，或請它改。"
+      }
+    },
+    {
+      "id": "deliverables",
+      "surfaces": [
+        "desktop"
+      ],
+      "since": "0.60.0",
+      "title": {
+        "en": "Deliverables list",
+        "zh": "交付物清單"
+      },
+      "body": {
+        "en": "Below the decisions on the right: what was handed to you and not decided yet, with Open, Keep and Take. A paperclip with a number on a bot's or tab's avatar counts its new ones.",
+        "zh": "右邊「待你決定」的下面：交給你、還沒決定的東西，可以打開、先放著、拿走。側欄頭像和分頁上的迴紋針數字是它新的件數。"
+      }
+    },
+    {
       "id": "settings",
       "surfaces": [
         "desktop"

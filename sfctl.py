@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -807,6 +808,26 @@ def _cmd_task(args) -> int:
     return 0 if r.get("success") else 1
 
 
+def _cmd_deliver(args) -> int:
+    """sfctl deliver …: register what you hand the person (a file or a link); the app puts it on this tab's desk (api_deliverables.py)."""
+    words = list(args.words or [])
+    payload = {"action": args.action, "from_sid": os.environ.get("SF_SID", ""), "title": args.title or "", "note": args.note or "",
+               "task": args.task, "state": args.state or "", "owner": args.owner or "", "limit": args.limit}
+    if args.action == "add":
+        ref = " ".join(words).strip()
+        if ref and not re.match(r"https?://", ref, re.I):
+            ref = os.path.abspath(os.path.expanduser(ref))       # the app's directory is not this tab's: say where it is
+        payload["ref"] = ref
+    elif args.action == "show":
+        payload["id"] = words[0] if words else ""
+    r = _rpc("deliver", payload, timeout=20)
+    if args.json:
+        print(json.dumps(r.get("details") or {}, ensure_ascii=False, indent=1))
+    else:
+        print(f"{'OK' if r.get('success') else 'ERR'} {r.get('message', '')}")
+    return 0 if r.get("success") else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="sfctl",
@@ -902,6 +923,17 @@ def main():
     p_task.add_argument("--decisions", action="store_true", help="list: the decisions waiting for the person")
     p_task.add_argument("--limit", type=int, default=50)
     p_task.add_argument("--json", action="store_true", help="Print the answer as JSON")
+    p_dl = sub.add_parser("deliver", help="Hand the person a file or a link: add <path-or-url> --title \"…\" [--note \"…\"] [--task N] puts it on your desk; "
+                                           "list [--state new|kept|taken|candidate] [--owner NAME]; show N")
+    p_dl.add_argument("action", choices=["add", "list", "show"])
+    p_dl.add_argument("words", nargs="*", help="add: the file's path or the link; show: the number")
+    p_dl.add_argument("--title", default=None, help="add: one line, what it is")
+    p_dl.add_argument("--note", default=None, help="add: one line, what the person should know (masked before it is kept)")
+    p_dl.add_argument("--task", type=int, default=None, help="add: the task it belongs to (sfctl task)")
+    p_dl.add_argument("--state", default=None, help="list: new | kept | taken | candidate (default: new and kept)")
+    p_dl.add_argument("--owner", default=None, help="list: a bot's or tab's name (default: you)")
+    p_dl.add_argument("--limit", type=int, default=50)
+    p_dl.add_argument("--json", action="store_true", help="Print the answer as JSON")
     p_tgs = sub.add_parser("tg-send", help="The primary bot tells the user's phone (a milestone, a result); "
                                            "only from the primary bot's tab, 20 an hour, not during quiet hours")
     p_tgs.add_argument("text", help="What to send")
@@ -1190,6 +1222,8 @@ def main():
                                        "refresh": args.refresh, "json": args.json, "op": args.op, "act": args.act_id}, timeout=60))
     elif args.cmd == "task":
         return _cmd_task(args)
+    elif args.cmd == "deliver":
+        return _cmd_deliver(args)
     elif args.cmd == "tg-send":
         _print_result(_rpc("tg_send", {"text": args.text, "from_sid": os.environ.get("SF_SID", "")}, timeout=20))
     elif args.cmd == "tg-push":

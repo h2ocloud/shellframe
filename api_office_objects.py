@@ -17,12 +17,17 @@ person reads):
   office_object_action(obj_id, item_id, action_id, args_json, lang)
 """
 import json
+import os
+import subprocess
+import sys
 
 import api_office
 import office_bookshelf
+import office_deliverables
 import office_objects
 import office_personnel
 import sf_lang
+import state_store as ss
 from api_host import main
 from sf_log import _swallow
 
@@ -30,7 +35,7 @@ _ = sf_lang.pick
 
 
 def builtin_objects():
-    return [office_bookshelf.Bookshelf(), office_personnel.Personnel()]
+    return [office_bookshelf.Bookshelf(), office_personnel.Personnel(), office_deliverables.Deliverables()]
 
 
 class OfficeObjectsApiMixin:
@@ -80,7 +85,9 @@ class OfficeObjectsApiMixin:
         return office_objects.Ctx(
             lang, roster=roster, bot_states=bot_states, open_tasks=open_tasks, schedules=schedules,
             groups=lambda: api_office.read_prefs().get("groups") or {},
-            pi_hosts=office_personnel.pi_provider_hosts)
+            pi_hosts=office_personnel.pi_provider_hosts,
+            live_tabs=self._deliv_live_tabs, tab_labels=self._deliv_tab_labels,
+            task_note=lambda tid, text: ss.note(int(tid), text, actor=ss.USER))
 
     @staticmethod
     def _oo_json(res: dict) -> str:
@@ -131,13 +138,37 @@ class OfficeObjectsApiMixin:
             a = {}
         res = self._oo_registry().action(obj_id, self._oo_ctx(lang), lang, item_id, action_id,
                                          a if isinstance(a, dict) else {})
-        path = res.pop("open", "")
-        if path:
+        self._oo_open_result(res, lang)             # `open` (a file), `reveal` (in the file manager), `url` (the browser)
+        return self._oo_json(res)
+
+    def _oo_open_result(self, res: dict, lang: str = "") -> None:
+        """Carry out what an answer asked to be opened (a path, a folder to show, a link) and take it off the answer."""
+        for key in ("open", "reveal", "url"):
+            target = res.pop(key, "")
+            if not target:
+                continue
             try:
-                got = json.loads(self.open_local_file(path))
+                got = json.loads(self.open_url(target) if key == "url" else
+                                 self._oo_reveal(target) if key == "reveal" else self.open_local_file(target))
                 if not got.get("success"):
                     res.update(ok=False, message=office_objects.clip(got.get("message") or "", 120))
             except Exception:
                 _swallow("office_object_action:open")
                 res.update(ok=False, message=office_objects.words("unavailable", lang))
-        return self._oo_json(res)
+
+    @staticmethod
+    def _oo_reveal(path: str) -> str:
+        """Show a file or folder in the system's file manager (nothing is opened or unpacked)."""
+        try:
+            if not os.path.exists(path):
+                return json.dumps({"success": False, "message": "not found"})
+            if main.IS_WIN:
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["/usr/bin/open", "-R", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(["xdg-open", path if os.path.isdir(path) else os.path.dirname(path)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return json.dumps({"success": True})
+        except Exception as e:
+            return json.dumps({"success": False, "message": str(e)})

@@ -377,6 +377,9 @@ class StatusApiMixin:
         push = getattr(self, "_push_observe", None)   # the phones (api_push); returns at once without one
         if push:
             push(out)
+        deliv = getattr(self, "_deliv_observe", None)  # auto-pickup of deliverables at the end of a turn (api_deliverables)
+        if deliv:
+            deliv(out)
 
     def _start_status_monitor(self):
         """Background thread: every ~600ms compute each tab's agent status from
