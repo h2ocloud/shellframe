@@ -151,19 +151,21 @@ check("a file a newer ShellBot wrote: Unavailable (newer_schema), left as it was
 print("migrating an older file")
 old = TMP / "old.db"
 ss.add("舊版的一件事", now=T0, path=old)
-ss._MIGRATIONS[2] = "ALTER TABLE tasks ADD COLUMN machine TEXT NOT NULL DEFAULT ''"
-ss.SCHEMA = 2
+REAL_SCHEMA = ss.SCHEMA
+NEXT = REAL_SCHEMA + 1
+ss._MIGRATIONS[NEXT] = "ALTER TABLE tasks ADD COLUMN machine TEXT NOT NULL DEFAULT ''"
+ss.SCHEMA = NEXT
 ss._ready.discard(str(old))
 try:
     t = ss.get(1, path=old)
-    bak = TMP / "old.db.bak-v1"
+    bak = TMP / f"old.db.bak-v{REAL_SCHEMA}"
     check("an older file is copied first, then brought up; what it held is kept",
-          bak.exists() and sqlite3.connect(bak).execute("PRAGMA user_version").fetchone()[0] == 1
+          bak.exists() and sqlite3.connect(bak).execute("PRAGMA user_version").fetchone()[0] == REAL_SCHEMA
           and t["title"] == "舊版的一件事" and "machine" in t
-          and sqlite3.connect(old).execute("PRAGMA user_version").fetchone()[0] == 2)
+          and sqlite3.connect(old).execute("PRAGMA user_version").fetchone()[0] == NEXT)
 finally:
-    ss.SCHEMA = 1
-    del ss._MIGRATIONS[2]
+    ss.SCHEMA = REAL_SCHEMA
+    del ss._MIGRATIONS[NEXT]
 
 print("upkeep")
 up = TMP / "upkeep.db"
