@@ -751,8 +751,10 @@ function hash2(x, y) { let h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; h =
 // 嵌在 ShellBot 裡：主頁的 SFOffice.host（同源，可以直接呼叫）。座位、配件、顯示方式由它存到這台電腦；
 // 單獨打開這個檔時沒有它，改用 localStorage（key 帶版本，和 v0.1 分開）。
 const HOST = (() => { try { const p = window.parent; return p && p !== window && p.SFOffice && p.SFOffice.host ? p.SFOffice.host : null; } catch (e) { return null; } })();
+// 介面字：tr('English', '中文')，跟主視窗的語言走（HOST.lang()；單獨打開時看瀏覽器）。不叫 t：這一頁有六十多個函式
+// 用 t 當「那張任務卡」的變數名，在那些函式裡 t(...) 會呼叫到任務物件。
 const isZh = () => /^zh/i.test((HOST && HOST.lang && HOST.lang()) || navigator.language || '');
-const t = (en, zh) => (isZh() ? zh : en);
+const tr = (en, zh) => (isZh() ? zh : en);
 // 只開白板（SFOffice.openBoard：看板按鈕、快捷鍵）：不畫辦公室，只有白板那張大表，關掉白板就是關掉整個蓋板。主頁在載入這一頁前就決定好了。
 const BOARD_ONLY = !!(HOST && HOST.boardOnly && HOST.boardOnly());
 if (BOARD_ONLY) { document.documentElement.classList.add('bo'); const m = document.querySelector('meta[name="color-scheme"]'); if (m) m.remove(); }   // 透明的框：和主頁的 color-scheme 一樣才不會被塗上不透明底

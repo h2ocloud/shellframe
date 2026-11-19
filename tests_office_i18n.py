@@ -16,9 +16,11 @@ def check(name, ok):
 
 
 ok = True
-ok &= check("office.html exposes t(en, zh) through HOST.lang()",
-            bool(re.search(r"const t = \(en, zh\) => \(isZh\(\) \? zh : en\);", HTML))
+ok &= check("office.html exposes tr(en, zh) through HOST.lang()",
+            bool(re.search(r"const tr = \(en, zh\) => \(isZh\(\) \? zh : en\);", HTML))
             and "const isZh = () => /^zh/i.test((HOST && HOST.lang && HOST.lang())" in HTML)
+ok &= check("no top-level t(): office.html uses t for a task card in many functions, where t(...) would call the card",
+            not re.search(r"^const t = ", HTML, re.M))
 ok &= check("officeHost exposes lang()",
             bool(re.search(r"const officeHost = \{[\s\S]*?\n\s*lang: \(\) => lang\(\),", JS)))
 
