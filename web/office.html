@@ -639,53 +639,53 @@ body.searching #top.f-search #qres{left:0;right:0;width:auto}
 <link rel="stylesheet" href="office_objects.css">
 </head>
 <body>
-<canvas id="stage" aria-label="辦公室平面圖：每個座位是一位 bot 或一個實習生（不是 bot 的 AI 分頁）"></canvas>
+<canvas id="stage" aria-label="Office floor plan: each seat is a bot or an intern (an AI tab that is not a bot)"></canvas>
 
 <header id="top">
   <div class="brand">
     <span class="mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1.5 14.5 5 8 8.5 1.5 5Z" fill="#7aa2f7"/><path d="M1.5 5v5.5L8 14V8.5Z" fill="#3d59a1"/><path d="M14.5 5v5.5L8 14V8.5Z" fill="#2c3f75"/></svg></span>
-    <b>辦公室</b><span class="tag" id="tag">選裝模組 · 示範資料</span>
+    <b>Office</b><span class="tag" id="tag">Optional module · Demo data</span>
   </div>
-  <nav id="stats" aria-label="狀態統計（點數字高亮那些人）">
-    <button class="stat" data-k="working" aria-pressed="false" title="在忙：分頁正在跑"><i></i><span class="lb">忙</span><b>0</b></button>
-    <button class="stat" data-k="decision" aria-pressed="false" title="等你決定"><i></i><span class="lb">等你</span><b>0</b></button>
-    <button class="stat" data-k="stuck" aria-pressed="false" title="卡住或出錯"><i></i><span class="lb">卡住</span><b>0</b></button>
-    <button class="stat" data-k="idle" aria-pressed="false" title="閒置或做完，可以說話"><i></i><span class="lb">閒置</span><b>0</b></button>
+  <nav id="stats" aria-label="Status summary (click a number to highlight those people)">
+    <button class="stat" data-k="working" aria-pressed="false" title="Busy: a tab is running"><i></i><span class="lb">Busy</span><b>0</b></button>
+    <button class="stat" data-k="decision" aria-pressed="false" title="Needs your decision"><i></i><span class="lb">Waiting</span><b>0</b></button>
+    <button class="stat" data-k="stuck" aria-pressed="false" title="Stuck or errored"><i></i><span class="lb">Stuck</span><b>0</b></button>
+    <button class="stat" data-k="idle" aria-pressed="false" title="Idle or done; chat is available"><i></i><span class="lb">Idle</span><b>0</b></button>
   </nav>
   <div class="right" id="topRight">
     <div class="search" id="search" role="search">
       <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3.6 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      <input id="q" type="search" placeholder="找人：名字或執掌" autocomplete="off" spellcheck="false" aria-label="找人" aria-controls="qres">
+      <input id="q" type="search" placeholder="Find by name or role" autocomplete="off" spellcheck="false" aria-label="Find a person" aria-controls="qres">
       <kbd>/</kbd>
       <div id="qres" role="listbox"></div>
     </div>
-    <button class="ib" id="searchBtn" aria-label="找人"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3.6 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
-    <label class="sel" id="zoningWrap" title="正職怎麼分區（每一區是一間有牆的房間）"><select id="zoning" aria-label="怎麼分區">
-      <option value="cli">分區：依 AI</option><option value="custom">分區：自訂分組</option><option value="none">分區：不分區</option></select></label>
-    <label class="sel" id="areaWrap" title="看哪一區"><select id="area" aria-label="看哪一區"></select></label>
+    <button class="ib" id="searchBtn" aria-label="Find a person"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3.6 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+    <label class="sel" id="zoningWrap" title="How staff are grouped (each group is a room with walls)"><select id="zoning" aria-label="How to group staff">
+      <option value="cli">Group: By AI</option><option value="custom">Group: Custom</option><option value="none">Group: None</option></select></label>
+    <label class="sel" id="areaWrap" title="View an area"><select id="area" aria-label="View an area"></select></label>
     <button class="tb add" id="addOne" title="示範：加一位隨機團隊的正職"><i data-sfi="plus"></i><span class="tx">新增正職</span></button>
     <button class="tb" id="addTen" title="示範：一次加 10 位"><i data-sfi="plus"></i><span>10</span></button>
-    <div class="seg" id="mode" role="group" aria-label="顯示方式">
-      <button data-m="flat" aria-pressed="false">平面</button>
-      <button data-m="iso" aria-pressed="true">立體</button>
+    <div class="seg" id="mode" role="group" aria-label="View mode">
+      <button data-m="flat" aria-pressed="false">Flat</button>
+      <button data-m="iso" aria-pressed="true">3D</button>
     </div>
   </div>
 </header>
 
-<section id="legend" aria-label="圖例">
-  <h4>看圖就懂 <button id="legendToggle" aria-expanded="true">收起</button></h4>
+<section id="legend" aria-label="Legend">
+  <h4>Legend <button id="legendToggle" aria-expanded="true">Collapse</button></h4>
   <ul>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="2" y="1.5" width="18" height="11" rx="2" fill="#16161e" stroke="#3b4261"/><rect x="4" y="3.5" width="14" height="7" rx="1" fill="#7aa2f7" opacity=".85"/><rect x="5.5" y="5" width="7" height="1.3" fill="#c0caf5"/><rect x="5.5" y="7.5" width="4.5" height="1.3" fill="#c0caf5" opacity=".7"/><rect x="9" y="13" width="4" height="2" fill="#3b4261"/></svg>螢幕亮＝在忙</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="11" cy="7" r="6.5" fill="#f7768e"/><path d="M9 13.5 11 16l2-2.5Z" fill="#f7768e"/><rect x="10" y="3" width="2" height="5" rx="1" fill="#1a1b26"/><circle cx="11" cy="10" r="1.1" fill="#1a1b26"/></svg>紅色 !＝等你決定</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="8" cy="5" r="3.2" fill="#7c84ad" opacity=".5"/><circle cx="13" cy="3.5" r="2.4" fill="#7c84ad" opacity=".35"/><path d="M11 6.5 16 15H6Z" fill="#e0af68"/><rect x="10.4" y="9" width="1.2" height="3" fill="#1a1b26"/><circle cx="11" cy="13.3" r=".7" fill="#1a1b26"/></svg>冒煙＋警示＝卡住</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M8 2.5c-1 1.2 1 2-0 3.4M11.5 2.5c-1 1.2 1 2-0 3.4" stroke="#7c84ad" stroke-width="1" fill="none"/><rect x="5.5" y="7" width="9" height="7.5" rx="1.6" fill="#e6e9f5"/><path d="M14.5 8.5h1.6a2 2 0 0 1 0 4h-1.6" stroke="#e6e9f5" stroke-width="1.4" fill="none"/></svg>咖啡＝閒置／做完</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="6" y="2" width="10" height="7" rx="2" fill="#363b55"/><rect x="5" y="9" width="12" height="2.5" rx="1" fill="#2f3349"/><rect x="10.3" y="11.5" width="1.4" height="3" fill="#2f3349"/></svg>空椅子＝休息中</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M2 13c5-9 12-10 18-8" stroke="#bb9af7" stroke-width="1.2" stroke-dasharray="2 2" fill="none"/><g transform="rotate(-14 15 6)"><rect x="11" y="1.5" width="8" height="10" rx="1" fill="#e6e9f5"/><rect x="12.5" y="4" width="5" height="1" fill="#9aa5ce"/><rect x="12.5" y="6.5" width="3.5" height="1" fill="#9aa5ce"/></g></svg>飛紙＝交辦</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="11" cy="8" r="5.6" fill="none" stroke="#e0af68" stroke-width="1.5"/><path d="M11 5v3.3l2.2 1.4" stroke="#e0af68" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>小時鐘＝任務太久沒動</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M3 8h16M15 4.5 18.5 8 15 11.5M7 4.5 3.5 8 7 11.5" stroke="#9ece6a" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>拖曳頭像＝換位子</li>
-    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="8" y="9" width="6" height="6" rx="2.5" fill="#414868"/><circle cx="11" cy="6" r="3.6" fill="#6b7399"/><path d="M7.4 5.6a3.6 3.6 0 0 1 7.2 0Z" fill="#ff9e64"/><circle cx="11" cy="1.9" r="1.1" fill="#f4f6ff"/></svg>小個子橘帽＝工讀生（分頁派出去的 subagent，做完就走）</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="2" y="1.5" width="18" height="11" rx="2" fill="#16161e" stroke="#3b4261"/><rect x="4" y="3.5" width="14" height="7" rx="1" fill="#7aa2f7" opacity=".85"/><rect x="5.5" y="5" width="7" height="1.3" fill="#c0caf5"/><rect x="5.5" y="7.5" width="4.5" height="1.3" fill="#c0caf5" opacity=".7"/><rect x="9" y="13" width="4" height="2" fill="#3b4261"/></svg>Screen lit = busy</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="11" cy="7" r="6.5" fill="#f7768e"/><path d="M9 13.5 11 16l2-2.5Z" fill="#f7768e"/><rect x="10" y="3" width="2" height="5" rx="1" fill="#1a1b26"/><circle cx="11" cy="10" r="1.1" fill="#1a1b26"/></svg>Red ! = needs your decision</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="8" cy="5" r="3.2" fill="#7c84ad" opacity=".5"/><circle cx="13" cy="3.5" r="2.4" fill="#7c84ad" opacity=".35"/><path d="M11 6.5 16 15H6Z" fill="#e0af68"/><rect x="10.4" y="9" width="1.2" height="3" fill="#1a1b26"/><circle cx="11" cy="13.3" r=".7" fill="#1a1b26"/></svg>Smoke + warning = stuck</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M8 2.5c-1 1.2 1 2-0 3.4M11.5 2.5c-1 1.2 1 2-0 3.4" stroke="#7c84ad" stroke-width="1" fill="none"/><rect x="5.5" y="7" width="9" height="7.5" rx="1.6" fill="#e6e9f5"/><path d="M14.5 8.5h1.6a2 2 0 0 1 0 4h-1.6" stroke="#e6e9f5" stroke-width="1.4" fill="none"/></svg>Coffee = idle / done</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="6" y="2" width="10" height="7" rx="2" fill="#363b55"/><rect x="5" y="9" width="12" height="2.5" rx="1" fill="#2f3349"/><rect x="10.3" y="11.5" width="1.4" height="3" fill="#2f3349"/></svg>Empty chair = away</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M2 13c5-9 12-10 18-8" stroke="#bb9af7" stroke-width="1.2" stroke-dasharray="2 2" fill="none"/><g transform="rotate(-14 15 6)"><rect x="11" y="1.5" width="8" height="10" rx="1" fill="#e6e9f5"/><rect x="12.5" y="4" width="5" height="1" fill="#9aa5ce"/><rect x="12.5" y="6.5" width="3.5" height="1" fill="#9aa5ce"/></g></svg>Flying paper = handoff</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><circle cx="11" cy="8" r="5.6" fill="none" stroke="#e0af68" stroke-width="1.5"/><path d="M11 5v3.3l2.2 1.4" stroke="#e0af68" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>Clock = task has not moved</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><path d="M3 8h16M15 4.5 18.5 8 15 11.5M7 4.5 3.5 8 7 11.5" stroke="#9ece6a" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Drag avatar = move seat</li>
+    <li><svg width="22" height="16" viewBox="0 0 22 16"><rect x="8" y="9" width="6" height="6" rx="2.5" fill="#414868"/><circle cx="11" cy="6" r="3.6" fill="#6b7399"/><path d="M7.4 5.6a3.6 3.6 0 0 1 7.2 0Z" fill="#ff9e64"/><circle cx="11" cy="1.9" r="1.1" fill="#f4f6ff"/></svg>Small orange hat = part-timer (a subagent sent to a tab, leaves when done)</li>
   </ul>
-  <div class="lfoot"><span id="meta"></span><span id="fps" title="繪製頻率：有操作時 20fps，閒置降到 5fps，分頁在背景時停止"></span></div>
+  <div class="lfoot"><span id="meta"></span><span id="fps" title="Frame rate: 20fps while active, 5fps when idle, stops in a background tab"></span></div>
 </section>
 
 <div id="tools">
@@ -774,6 +774,25 @@ function applyOfficeCopy() {
   const text = (sel, en, zh) => { const el = $(sel); if (el) el.textContent = tr(en, zh); };
   const attr = (sel, name, en, zh) => { const el = $(sel); if (el) el.setAttribute(name, tr(en, zh)); };
   const spanText = (sel, en, zh) => { const el = $(sel); if (el) { const s = el.querySelector('span'); if (s) s.textContent = tr(en, zh); } };
+  const nodeText = (sel, en, zh) => { const el = $(sel); if (el) { const n = [...el.childNodes].find(x => x.nodeType === Node.TEXT_NODE); if (n) n.textContent = tr(en, zh); } };
+  text('.brand b', 'Office', '辦公室'); text('.brand .tag', 'Optional module · Demo data', '選裝模組 · 示範資料');
+  attr('#stage', 'aria-label', 'Office floor plan: each seat is a bot or an intern (an AI tab that is not a bot)', '辦公室平面圖：每個座位是一位 bot 或一個實習生（不是 bot 的 AI 分頁）');
+  attr('#stats', 'aria-label', 'Status summary (click a number to highlight those people)', '狀態統計（點數字高亮那些人）');
+  const statCopy = { working: ['Busy', '忙', 'Busy: a tab is running', '在忙：分頁正在跑'], decision: ['Waiting', '等你', 'Needs your decision', '等你決定'], stuck: ['Stuck', '卡住', 'Stuck or errored', '卡住或出錯'], idle: ['Idle', '閒置', 'Idle or done; chat is available', '閒置或做完，可以說話'] };
+  for (const [key, [en, zh, ten, tzh]] of Object.entries(statCopy)) { text(`#stats [data-k="${key}"] .lb`, en, zh); attr(`#stats [data-k="${key}"]`, 'title', ten, tzh); }
+  attr('#search', 'aria-label', 'Find a person', '找人'); attr('#q', 'placeholder', 'Find by name or role', '找人：名字或執掌'); attr('#q', 'aria-label', 'Find a person', '找人'); attr('#searchBtn', 'aria-label', 'Find a person', '找人');
+  attr('#zoningWrap', 'title', 'How staff are grouped (each group is a room with walls)', '正職怎麼分區（每一區是一間有牆的房間）'); attr('#zoning', 'aria-label', 'How to group staff', '怎麼分區');
+  text('#zoning option[value="cli"]', 'Group: By AI', '分區：依 AI'); text('#zoning option[value="custom"]', 'Group: Custom', '分區：自訂分組'); text('#zoning option[value="none"]', 'Group: None', '分區：不分區');
+  attr('#areaWrap', 'title', 'View an area', '看哪一區'); attr('#area', 'aria-label', 'View an area', '看哪一區');
+  attr('#mode', 'aria-label', 'View mode', '顯示方式'); text('#mode [data-m="flat"]', 'Flat', '平面'); text('#mode [data-m="iso"]', '3D', '立體');
+  attr('#legend', 'aria-label', 'Legend', '圖例'); nodeText('#legend h4', 'Legend', '看圖就懂'); text('#legendToggle', 'Collapse', '收起');
+  const legendCopy = [
+    ['Screen lit = busy', '螢幕亮＝在忙'], ['Red ! = needs your decision', '紅色 !＝等你決定'], ['Smoke + warning = stuck', '冒煙＋警示＝卡住'],
+    ['Coffee = idle / done', '咖啡＝閒置／做完'], ['Empty chair = away', '空椅子＝休息中'], ['Flying paper = handoff', '飛紙＝交辦'],
+    ['Clock = task has not moved', '小時鐘＝任務太久沒動'], ['Drag avatar = move seat', '拖曳頭像＝換位子'], ['Small orange hat = part-timer (a subagent sent to a tab, leaves when done)', '小個子橘帽＝工讀生（分頁派出去的 subagent，做完就走）']
+  ];
+  $$('#legend li').forEach((el, i) => { const [en, zh] = legendCopy[i] || []; if (en) { const n = [...el.childNodes].find(x => x.nodeType === Node.TEXT_NODE); if (n) n.textContent = tr(en, zh); } });
+  attr('#fps', 'title', 'Frame rate: 20fps while active, 5fps when idle, stops in a background tab', '繪製頻率：有操作時 20fps，閒置降到 5fps，分頁在背景時停止');
   spanText('#demoHandoff', 'Demo handoff', '交辦示範');
   attr('#demoHandoff', 'title', 'Run a handoff demo', '立刻演一次交辦');
   text('#openBoard', 'Board', '看板'); attr('#openBoard', 'title', 'Task board: the lobby whiteboard', '任務看板：大廳牆上的白板，記著大家手上的事'); attr('#openBoard', 'aria-label', 'Task board', '任務看板');
@@ -1625,14 +1644,14 @@ function renderStats() {
   const n = counts(), all = counted(), bc = all.filter(e => e.kind === 'bot').length, tc = all.filter(e => e.kind === 'temp').length, hc = all.filter(e => e.kind === 'helper').length, pc = all.filter(e => e.kind === 'peer' || e.kind === 'peertemp').length;
   const sig = JSON.stringify(n) + hl + bc + tc + hc + pc + M.zones.length; if (sig === statSig) return; statSig = sig;
   $$('#stats .stat').forEach(b => { const k = b.dataset.k; b.querySelector('b').textContent = n[k]; b.classList.toggle('zero', !n[k]); b.setAttribute('aria-pressed', String(hl === k)); });
-  $('#meta').innerHTML = `正職 <b>${bc}</b> · 實習生 <b>${tc}</b> · 工讀生 <b>${hc}</b> · 隔壁 <b>${pc}</b> · 休息 <b>${n.asleep}</b> · <b>${M.zones.length}</b> 區`;
+  $('#meta').innerHTML = tr(`Staff <b>${bc}</b> · Interns <b>${tc}</b> · Part-timers <b>${hc}</b> · Other computer <b>${pc}</b> · Away <b>${n.asleep}</b> · <b>${M.zones.length}</b> groups`, `正職 <b>${bc}</b> · 實習生 <b>${tc}</b> · 工讀生 <b>${hc}</b> · 隔壁 <b>${pc}</b> · 休息 <b>${n.asleep}</b> · <b>${M.zones.length}</b> 區`);
 }
 function setHl(k) { hl = hl === k ? null : k; statSig = ''; renderStats(); kick(); }
 let areaSig = '';
 function renderAreas() {
   const rooms = [...M.rooms.values()], sig = rooms.map(r => r.id + r.label).join('|'); if (sig === areaSig) return; areaSig = sig;
   const zs = rooms.filter(r => r.kind === 'zone').sort((a, b) => zoneRank(a.team) - zoneRank(b.team) || a.label.localeCompare(b.label, 'zh-Hant'));
-  const opts = [['all', '全景'], ['lobby', '大廳'], ...zs.map(r => [r.id, r.label]), ...rooms.filter(r => r.kind === 'peer').map(r => [r.id, r.label])];
+  const opts = [['all', tr('Whole floor', '全景')], ['lobby', tr('Lobby', '大廳')], ...zs.map(r => [r.id, r.label]), ...rooms.filter(r => r.kind === 'peer').map(r => [r.id, r.label])];
   const sel = $('#area'); sel.innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join(''); sel.value = M.rooms.has(area) ? area : 'all';
 }
 
@@ -2976,7 +2995,7 @@ function frame() {
   frames++; schedule();
 }
 function roomStep(dt) { const k = 1 - Math.exp(-dt * 6); for (const r of M.rooms.values()) { r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.w += (r.tw - r.w) * k; r.h += (r.th - r.h) * k; if (Math.abs(r.tx - r.x) < .005) r.x = r.tx; if (Math.abs(r.ty - r.y) < .005) r.y = r.ty; if (Math.abs(r.tw - r.w) < .005) r.w = r.tw; if (Math.abs(r.th - r.h) < .005) r.h = r.th; if (r.alpha < 1) r.alpha = Math.min(1, r.alpha + dt * 2.2); } }
-function fpsTick(now) { fpsWin.push(now); while (fpsWin.length && now - fpsWin[0] > 1000) fpsWin.shift(); const f = fpsWin.length, txt = active() ? `${Math.min(f, FPS_ON)} fps · 即時` : `${Math.min(f, FPS_IDLE + 1)} fps · 省電`; if (txt !== fpsShown) { fpsShown = txt; const el = $('#fps'); el.textContent = txt; el.classList.toggle('slow', !active()); } }
+function fpsTick(now) { fpsWin.push(now); while (fpsWin.length && now - fpsWin[0] > 1000) fpsWin.shift(); const f = fpsWin.length, txt = active() ? tr(`${Math.min(f, FPS_ON)} fps · live`, `${Math.min(f, FPS_ON)} fps · 即時`) : tr(`${Math.min(f, FPS_IDLE + 1)} fps · power save`, `${Math.min(f, FPS_IDLE + 1)} fps · 省電`); if (txt !== fpsShown) { fpsShown = txt; const el = $('#fps'); el.textContent = txt; el.classList.toggle('slow', !active()); } }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { if (timer) clearTimeout(timer); timer = 0; }
   else { lastT = performance.now(); kick(); }
@@ -3125,7 +3144,7 @@ $('#zoomOut').onclick = () => { kick(); zoomAt(1 / 1.25, W / 2, H / 2); };
 $('#area').addEventListener('change', e => setArea(e.target.value));
 $('#resetSeats').onclick = () => resetSeats();
 $('#mode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMode(b.dataset.m); });
-$('#legendToggle').onclick = () => { const L = $('#legend'), min = !L.classList.contains('min'); L.classList.toggle('min', min); $('#legendToggle').textContent = min ? '展開' : '收起'; $('#legendToggle').setAttribute('aria-expanded', String(!min)); store.set('legendMin', min); };
+$('#legendToggle').onclick = () => { const L = $('#legend'), min = !L.classList.contains('min'); L.classList.toggle('min', min); $('#legendToggle').textContent = min ? tr('Expand', '展開') : tr('Collapse', '收起'); $('#legendToggle').setAttribute('aria-expanded', String(!min)); store.set('legendMin', min); };
 function setMode(m, instant) {
   const to = m === 'flat' ? 0 : 1; store.set('mode', m);
   $$('#mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
