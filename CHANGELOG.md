@@ -89,12 +89,12 @@
   `tests_deliverables_api.py`、`tests_deliverables_ui.py` 守著。
 
 - **The interface in English.**
-  The main window (settings, the sidebar, pairing and remote maintenance, usage, accounts) and most of the office
-  (the board's cards and reply form, the person panel, the tool bar) now follow the interface language. Before, part
+  The main window (settings, the sidebar, pairing and remote maintenance, usage, accounts) and most of the office (the board's
+  cards and reply form, the person panel, the tool bar, the top bar and the legend) now follow the interface language. Before, part
   of them stayed in Chinese. Text sent to bots and Telegram is unchanged. Covered by the locale-aware UI tests and
   `tests_office_i18n.py`.
 
-  **介面英文版。** 主視窗（設定、側欄、配對與遠端維護、用量、帳號）和大部分辦公室（看板卡片和回覆框、人物面板、工具列）現在跟著介面
+  **介面英文版。** 主視窗（設定、側欄、配對與遠端維護、用量、帳號）和大部分辦公室（看板卡片和回覆框、人物面板、工具列、頂列、圖例）現在跟著介面
   語言走，以前有一部分固定是中文。送給 bot 和 Telegram 的字沒有改。由各支依語言檢查的介面測試和 `tests_office_i18n.py` 守著。
 
 ## v0.59.1 (2026-11-19)
