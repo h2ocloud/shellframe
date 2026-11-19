@@ -211,8 +211,12 @@ with sync_playwright() as pw:
           got == ["s201", "s207", "s202", "s205", "s204", "s203", "s206"], got)
 
     box = page.locator("#sidebar-sessions").bounding_box()
-    page.evaluate("window.__status.s205 = Object.assign({}, window.__status.s205, {state: 'working', dot: 'sig-working'})")
+    # the pointer is over the list BEFORE the change: under load the next status push (every 400 ms) could land
+    # before the first move reached the page, and nothing was aimed at yet, so the list was free to re-sort
+    page.mouse.move(box["x"] + 40, box["y"] + 60)
+    page.wait_for_function("document.querySelector('#sidebar-sessions').matches(':hover')", timeout=3000)
     before = page.evaluate(VISIBLE)
+    page.evaluate("window.__status.s205 = Object.assign({}, window.__status.s205, {state: 'working', dot: 'sig-working'})")
     for i in range(12):                        # aiming: the pointer keeps moving over the list
         page.mouse.move(box["x"] + 40, box["y"] + 60 + (i % 3) * 30)
         page.wait_for_timeout(100)
