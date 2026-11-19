@@ -444,3 +444,14 @@ body.sf-chat-style #sidebar-sessions .sb-item[data-section="local"] .sb-model { 
 .cm-ask-x { position: absolute; top: -.2em; right: -.1em; border: none; background: none; color: var(--cm-dim); cursor: pointer;
   font-size: .9em; padding: .1em .35em; border-radius: 5px; }
 .cm-ask-x:hover { color: var(--cm-text); background: var(--cm-raised); }
+
+/* icons (web/icons.js) */
+#chat-mic { display: inline-flex; align-items: center; gap: .4em; }
+#chat-mic .sfi { width: 1.5em; height: 1.5em; vertical-align: 0; }
+.cm-caret .sfi { width: .95em; height: .95em; vertical-align: -.12em; }
+.cm-side-btn .sfi { width: 1.25em; height: 1.25em; vertical-align: -.3em; }
+.cm-ask-x .sfi, #chat-notice button .sfi { width: .9em; height: .9em; }
+#sb-new-convo .sfi-lead { width: 1.2em; height: 1.2em; vertical-align: -.22em; }
+.cm-bubble .sfi-lead { width: 1.1em; height: 1.1em; vertical-align: -.2em; }
+.cm-pick-sub .sfi { width: 1em; height: 1em; vertical-align: -.15em; }
+.cm-file button .sfi { width: .9em; height: .9em; vertical-align: -.1em; stroke-width: 1.5px; }   /* beats `.cm-file svg` above */

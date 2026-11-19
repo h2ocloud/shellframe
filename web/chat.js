@@ -348,13 +348,15 @@
   }
   // An agent's words, minus ShellBot's protocol markers. `foldRed`: the [[SF:RED]]
   // question at the end is on screen as buttons, so its tail is left out.
-  function botView(text, foldRed) {
+  // `drawn`: the text goes on screen (the timeline), where the hourglass of a yellow marker becomes the icon: it is
+  // tagged with a word joiner so a ⏳ an agent typed itself stays a character (previews and Python's rule stay plain text).
+  function botView(text, foldRed, drawn) {
     let lines = String(text || '').replace(/(?:\[\[|<<)\/?TG_REPLY_[0-9a-fA-F]+(?:\]\]|>>)/g, '').split('\n');
     const red = lines.findIndex(l => RED_MARK.test(l));
     if (red >= 0) lines = foldRed ? lines.slice(0, red) : lines.filter((_, i) => i !== red);
     return lines.join('\n')
       .replace(/\[\[\s*SF\s*:\s*(?:GREEN|WORKING|MEMORY\s*:\s*SAVED)\s*\]\]/gi, '')
-      .replace(/\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]/gi, (_, why) => `⏳ ${why.trim()}`)
+      .replace(/\[\[\s*SF\s*:\s*YELLOW\s*:\s*([^\]]*)\]\]/gi, (_, why) => (drawn ? '⏳\u2060 ' : '⏳ ') + why.trim())
       .trim();
   }
 
@@ -447,7 +449,7 @@
         if (!raw || CODEX_CONTEXT.test(raw)) return;           // reasoning, or Codex's own context
         if (raw === lastUser) return;                          // Codex repeats the prompt as a message
         const prev = out[out.length - 1];
-        const text = botView(raw, !!o.foldRed && i === lastBot);
+        const text = botView(raw, !!o.foldRed && i === lastBot, true);
         if (!text) return;
         if (prev && prev.type === 'bot' && prev.text === text) return;   // Codex writes each answer twice
         out.push({ type: 'bot', text, ts: t.ts || 0 });
@@ -922,7 +924,7 @@
       sb.insertBefore(newBtn, sb.firstChild);
       newBtn.addEventListener('click', () => { const b = document.getElementById('btn-new-tab'); if (b) b.click(); });
     }
-    if (newBtn) newBtn.textContent = T('＋ New conversation', '＋ 新對話');
+    if (newBtn) newBtn.innerHTML = SFIcons.html('plus', { cls: 'sfi-lead' }) + ' ' + escHtml(T('New conversation', '新對話'));
     if (chat && foot && !dock) {
       dock = document.createElement('div');
       dock.id = 'sb-dock';
@@ -965,7 +967,7 @@
       notice.dataset.key = key;
       notice.innerHTML = `<span>${escHtml(T(`${remoteOf(sid)} runs an older ShellBot: update it to 0.46.1 or later to see its tabs as a conversation. Its terminal shows meanwhile.`,
         `${remoteOf(sid)} 的 ShellBot 比較舊：更新到 0.46.1 以上，才能用對話模式看它的分頁。先顯示終端機。`))}</span>` +
-        `<button data-act="notice-close" title="${escHtml(T('Hide', '收起'))}">×</button>`;
+        `<button data-act="notice-close" title="${escHtml(T('Hide', '收起'))}">${SFIcons.html('close')}</button>`;
       return;
     }
     const known = { opencode: 'OpenCode', grok: 'Grok Build', pi: 'Pi', cursor: 'Cursor Agent', agy: 'Antigravity' }[prov];
@@ -980,7 +982,7 @@
           `讀不到 ${known} 的對話記錄，所以這個分頁顯示終端機。`)
       : T('This is a terminal tab: there is no conversation to show, so it stays a terminal.',
           '這是終端機分頁，沒有對話可以整理，所以直接顯示終端機。'))}</span>` +
-      `<button data-act="notice-close" title="${escHtml(T('Hide', '收起'))}">×</button>`;
+      `<button data-act="notice-close" title="${escHtml(T('Hide', '收起'))}">${SFIcons.html('close')}</button>`;
   }
 
   // ── data ───────────────────────────────────────────────────────────────
@@ -1088,7 +1090,7 @@
           "This conversation's settings: face, name, bot", '這個對話的設定：頭像、名稱、Bot'))}">${faceHtml(sid, state)}</button>`
       : faceHtml(sid, state);
     const side = globalStyle() === 'chat'
-      ? `<button class="cm-side-btn" data-act="sidebar" title="${escHtml(T('Show or hide the sidebar', '顯示或收起側欄'))}">☰</button>` : '';
+      ? `<button class="cm-side-btn" data-act="sidebar" title="${escHtml(T('Show or hide the sidebar', '顯示或收起側欄'))}">${SFIcons.html('menu')}</button>` : '';
     const away = remoteOf(sid);
     const chip = away ? `<span class="cm-remote" title="${escHtml(T(`This tab runs on ${away}, not on this computer`,
       `這個分頁在 ${away} 上跑，不是這台電腦`))}">${escHtml(T('Remote', '遠端'))} · ${escHtml(away)}</span>` : '';
@@ -1191,11 +1193,11 @@
     const shown = long ? text.slice(0, LONG_TEXT).replace(/\s+\S*$/, '') + ' …' : text;
     let copy = '';
     if (cls === 'cm-bubble') {             // the whole message, even while it shows only its start
-      (v.copy || (v.copy = {}))[key] = text;
+      (v.copy || (v.copy = {}))[key] = text.replace(/\u2060/g, '');
       copy = `<button class="cm-copy" data-act="copy" data-key="${escHtml(key)}" data-label="${escHtml(T('Copy', '複製'))}" ` +
         `aria-label="${escHtml(T('Copy this message', '複製這則訊息'))}" title="${escHtml(T('Copy this message', '複製這則訊息'))}"></button>`;
     }
-    return `<div class="${cls}">${copy}${markdown ? md(shown, isZh(lang())) : escHtml(shown)}` +
+    return `<div class="${cls}">${copy}${markdown ? md(shown, isZh(lang())).replace(/⏳\u2060/g, SFIcons.html('hourglass', { cls: 'sfi-lead' })) : escHtml(shown)}` +
       (text.length > LONG_TEXT ? `<button class="cm-more-text" data-act="open" data-key="${escHtml(key)}">${escHtml(
         v.open.has(key) ? T('Show less', '收合') : T(`Show all (${text.length} characters)`, `顯示全部（${text.length} 字）`))}</button>` : '') +
       '</div>';
@@ -1207,7 +1209,7 @@
     const n = text.split('\n').length;
     const peek = (text.split('\n').find(l => l.trim()) || '').trim();
     return `<div class="cm-paste${open ? ' is-open' : ''}"><button class="cm-paste-sum" data-act="open" data-key="${escHtml(key)}">` +
-      `<span class="cm-caret">${open ? '▾' : '▸'}</span><span>${escHtml(pastedLabel(n, isZh(lang())))}</span>` +
+      `<span class="cm-caret">${SFIcons.html(open ? 'chev-down' : 'chev-right')}</span><span>${escHtml(pastedLabel(n, isZh(lang())))}</span>` +
       (open ? '' : `<span class="cm-paste-peek">${escHtml(peek)}</span>`) + '</button>' +
       (open ? `<div class="cm-paste-text">${escHtml(text)}</div>` : '') + '</div>';
   }
@@ -1250,14 +1252,14 @@
       const rows = it.calls.map(c => `<div class="cm-call"><span class="cm-call-tool">${escHtml(c.tool)}</span>` +
         `<span class="cm-call-target">${escHtml(c.target)}</span></div>`).join('');
       return `<div class="cm-row cm-tools${open ? ' is-open' : ''}"><span class="cm-face-gap"></span><div class="cm-tools-box">` +
-        `<button class="cm-tools-sum" data-act="open" data-key="${escHtml(key)}"><span class="cm-caret">${open ? '▾' : '▸'}</span>` +
+        `<button class="cm-tools-sum" data-act="open" data-key="${escHtml(key)}"><span class="cm-caret">${SFIcons.html(open ? 'chev-down' : 'chev-right')}</span>` +
         `${escHtml(toolSummary(it.calls, lang()))}</button>` +
         (open ? `<div class="cm-calls">${rows}</div>` : '') + '</div></div>';
     }
     if (it.type === 'compact') {
       const open = v.open.has(key);
       return `<div class="cm-row cm-compact${open ? ' is-open' : ''}"><button class="cm-compact-sum" data-act="open" data-key="${escHtml(key)}">` +
-        `<span class="cm-caret">${open ? '▾' : '▸'}</span>${escHtml(T('Earlier messages were folded into a summary', '較早的對話已整理成摘要'))}</button>` +
+        `<span class="cm-caret">${SFIcons.html(open ? 'chev-down' : 'chev-right')}</span>${escHtml(T('Earlier messages were folded into a summary', '較早的對話已整理成摘要'))}</button>` +
         (open ? `<div class="cm-compact-text">${md(it.text, isZh(lang()))}</div>` : '') + '</div>';
     }
     if (it.type === 'memory') {
@@ -1310,7 +1312,7 @@
     } else if (m) {
       const call = data.activity === 'decision' ? pendingCall(data.turns) : null;
       const answered = v.answered && v.answered.id === d.id;
-      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` + `<button class="cm-ask-x" data-act="ask-dismiss" data-key="${escHtml(askKey)}" title="${escHtml(T('Handled: put it away', '已處理，收起來'))}">✕</button>` +
+      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` + `<button class="cm-ask-x" data-act="ask-dismiss" data-key="${escHtml(askKey)}" title="${escHtml(T('Handled: put it away', '已處理，收起來'))}">${SFIcons.html('close')}</button>` +
         `<div class="cm-ask-title">${escHtml(T('Your call', '要你決定'))}</div>` +
         `<div class="cm-ask-q">${escHtml(m.questionTranslated || !m.translated ? m.question : T('It is asking before it goes on.', '它在繼續之前先問你。'))}</div>` +
         askContext(d, m, call, lang()) +
@@ -1321,7 +1323,7 @@
         (!m.translated ? `<div class="cm-ask-note">${escHtml(T('Shown as the CLI wrote it.', '照 CLI 的原文顯示。'))}</div>` : '') +
         '</div></div>';
     } else if (data.activity === 'decision') {
-      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` + `<button class="cm-ask-x" data-act="ask-dismiss" data-key="${escHtml(askKey)}" title="${escHtml(T('Handled: put it away', '已處理，收起來'))}">✕</button>` +
+      html = `<div class="cm-ask-card">${faceHtml(sid, 'decision')}<div class="cm-ask-body">` + `<button class="cm-ask-x" data-act="ask-dismiss" data-key="${escHtml(askKey)}" title="${escHtml(T('Handled: put it away', '已處理，收起來'))}">${SFIcons.html('close')}</button>` +
         `<div class="cm-ask-title">${escHtml(T('It is waiting for you in the terminal', '它在終端機上等你決定'))}</div>` +
         `<div class="cm-ask-q">${escHtml(T('This screen could not read the choices, so nothing is answered from here.',
                                             '這個畫面讀不到選項，所以不會從這裡替你選。'))}</div>` +
@@ -1355,7 +1357,7 @@
     box.hidden = !files.length;
     box.innerHTML = files.map((f, i) => `<span class="cm-file" title="${escHtml(f.path)}">` +
       (f.dataUrl ? `<img src="${escHtml(f.dataUrl)}" alt="">` : ICON_FILE) +
-      `<span>${escHtml(baseName(f.path))}</span><button data-act="unattach" data-i="${i}" title="${escHtml(T('Remove', '移除'))}">×</button></span>`).join('');
+      `<span>${escHtml(baseName(f.path))}</span><button data-act="unattach" data-i="${i}" title="${escHtml(T('Remove', '移除'))}">${SFIcons.html('close')}</button></span>`).join('');
   }
   const readDataUrl = blob => new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -1457,7 +1459,7 @@
           `${B && B.faceSvg ? B.faceSvg(b.avatar, { seed: b.role }) : ''}</span><span class="cm-new-txt"><b>${escHtml(b.label)}</b>` +
           `<span>${escHtml(b.resp)}</span></span></button>`).join('') + '</div>';
     }
-    html += `<button class="cm-new-adv" data-act="new-adv"><span class="cm-caret">▸</span>${escHtml(T('Advanced: pick a CLI or type a command', '進階：選 CLI 或自訂指令'))}</button>`;
+    html += `<button class="cm-new-adv" data-act="new-adv"><span class="cm-caret">${SFIcons.html('chev-right')}</span>${escHtml(T('Advanced: pick a CLI or type a command', '進階：選 CLI 或自訂指令'))}</button>`;
     el.innerHTML = html;
   }
   function waitAndSwitch(sid, tries) {
@@ -1470,7 +1472,7 @@
     const box = document.querySelector('#modal-new .modal');
     if (b.dataset.act === 'new-adv') {
       const open = box.classList.toggle('cm-adv-open');
-      b.querySelector('.cm-caret').textContent = open ? '▾' : '▸';
+      b.querySelector('.cm-caret').innerHTML = SFIcons.html(open ? 'chev-down' : 'chev-right');
       const list = document.getElementById('preset-list');
       if (open && list && list.scrollIntoView) list.scrollIntoView({ block: 'start', behavior: 'smooth' });
       return;
@@ -1634,7 +1636,7 @@
     pickEl.innerHTML = items.map((c, i) => `<div class="cm-pick-item${i === pick.sel ? ' sel' : ''}" data-i="${i}">` +
         `<span class="cm-face busy-dot">${c.face || ''}</span><b>${c.machine ? escHtml(c.label) +    // a bot on another machine: its name, then the machine's, dimmer
           `<span class="cm-pick-machine"> · ${escHtml(c.machine)}</span>` : escHtml(c.name)}</b><span class="cm-pick-sub">` +
-        `${escHtml((c.primary ? '★ ' + T('primary', '主要') + ' · ' : '') + (word[c.state] || ''))}</span></div>`)
+        `${c.primary ? SFIcons.html('star') + ' ' + escHtml(T('primary', '主要') + ' · ') : ''}${escHtml(word[c.state] || '')}</span></div>`)
       .join('') + `<div class="cm-pick-hint">${escHtml(T('↑↓ choose · Enter put in · Esc close', '↑↓ 選擇 · Enter 放進去 · Esc 收起'))}</div>`;
     pickEl.hidden = false;
     const sel = pickEl.querySelector('.cm-pick-item.sel');
@@ -1679,14 +1681,14 @@
     micBtn.classList.toggle('busy', state === 'busy');
     const show = () => {
       const sec = Math.floor((Date.now() - micT0) / 1000);
-      micBtn.textContent = `⏹ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+      micBtn.innerHTML = SFIcons.html('stop') + ` ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
       if (sec >= 300) micClick();
     };
     if (state === 'rec') { micT0 = Date.now(); show(); micIv = setInterval(show, 500); }
-    else micBtn.textContent = state === 'busy' ? '⏳' : '🎙';
+    else micBtn.innerHTML = SFIcons.html(state === 'busy' ? 'hourglass' : 'mic');
     micBtn.title = state === 'rec' ? T('Recording: press again to stop, Esc to cancel', '錄音中：再按一次停止，Esc 取消')
       : T('Voice input: the words go into the box, not sent', '語音輸入：轉出來的字放進輸入框，不會直接送出');
-    note(state === 'rec' ? T('Recording… press 🎙 again to stop, Esc to cancel', '錄音中…再按一次停止，Esc 取消')
+    note(state === 'rec' ? T('Recording… press the mic again to stop, Esc to cancel', '錄音中…再按一次麥克風停止，Esc 取消')
       : state === 'busy' ? T('Turning it into words…', '正在轉成文字…') : '');
   }
   function micPut(text) {                     // into the box where the cursor is, for a read before sending
@@ -1726,7 +1728,7 @@
     if (!micBtn) return;
     micBtn.hidden = ((settings() || {}).stt_mic_button === false);       // the same setting as the floating one
     if (micState !== 'idle') return;
-    micBtn.textContent = '🎙';
+    micBtn.innerHTML = SFIcons.html('mic');
     micBtn.title = T('Voice input: the words go into the box, not sent', '語音輸入：轉出來的字放進輸入框，不會直接送出');
   }
   // A right-click's "Reply": the message under the pointer, its sender and its first lines, quoted into the
