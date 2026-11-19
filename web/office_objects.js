@@ -169,7 +169,7 @@
       veil.innerHTML =
         '<section class="oo-box" role="dialog" aria-modal="true" aria-labelledby="ooTitle">' +
         '<header class="oo-head"><span class="oo-ic" id="ooIc" aria-hidden="true"></span><div class="oo-t"><h2 id="ooTitle"></h2><p id="ooSub"></p></div>' +
-        `<button class="oo-x" type="button" id="ooClose" title="${esc(T('Close (Esc)', '關起來（Esc）'))}" aria-label="${esc(T('Close', '關起來'))}">✕</button></header>` +
+        `<button class="oo-x" type="button" id="ooClose" title="${esc(T('Close (Esc)', '關起來（Esc）'))}" aria-label="${esc(T('Close', '關起來'))}">${root.SFIcons.html('close')}</button></header>` +
         '<div class="oo-bar" id="ooBar"></div>' +
         '<div class="oo-main"><nav class="oo-list" id="ooList" aria-label="list"></nav><article class="oo-view" id="ooView"></article></div>' +
         '<div class="oo-ask" id="ooAsk" hidden></div>' +
