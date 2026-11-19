@@ -6,6 +6,97 @@
 > 撰寫規範見 [`docs/changelog-guide.md`](docs/changelog-guide.md)，
 > 由 `tests_changelog_format.py` 強制檢查。
 
+## v0.60.0 (2026-11-19)
+
+### Fixes
+
+- **Report Issue and the About window's links open in the browser.**
+  Reported: About → Report Issue did nothing. The app's web view (WKWebView on macOS, WebView2 on Windows) does
+  nothing with `window.open` or `target=_blank`. Terminal links already went through the app's own opener, but the
+  About window did not. Report Issue, the About window's links and any other web link in the page now open in the
+  system browser. The new-issue page starts with a reminder, in English and Chinese, that it is public: do not paste
+  passwords, keys, internal addresses or customer names. Covered by `tests_external_links_ui.py`, which fails on the
+  old page.
+
+  **「Report Issue」和「關於」視窗的連結會在瀏覽器打開。** 回報：「關於」→「Report Issue」按了沒反應。App 的網頁視窗（macOS 的
+  WKWebView、Windows 的 WebView2）對 `window.open` 和 `target=_blank` 都不處理。終端機的連結早就改走 App 自己的開啟方式，「關於」
+  視窗沒有改到。現在 Report Issue、「關於」視窗的連結和頁面裡其他網址，都用系統瀏覽器打開。新問題頁的內容開頭加了一段中英提醒：這是
+  公開頁面，不要貼密碼、金鑰、內網位址、客戶名。由 `tests_external_links_ui.py` 守著，舊版會失敗。
+
+- **The update notice stays on one line, and a documentation-only commit is not offered as an update.**
+  Reported with a screenshot: 「v0.59.1 可更新（點我）」 was squeezed into a narrow column in a crowded tab bar, on a
+  machine that already ran v0.59.1. The notice now keeps its width and the tabs give way. The update check compares
+  commits, so a commit that only changed the product page counted as an update. With the same version, it now looks
+  at the changed files once: if they are all documentation (`docs/`, `qa-shots/`, `.github/`, Markdown), there is no
+  update. Anything it cannot read is still offered. Covered by `tests_update_banner_ui.py` and
+  `tests_update_docs_only.py`.
+
+  **更新提示維持一行；只改文件的 commit 不再當成有新版。** 回報（附截圖）：分頁很多時，「v0.59.1 可更新（點我）」被擠成一條窄直欄，
+  而且那台已經是 v0.59.1。現在提示保持自己的寬度，改由分頁讓位。更新檢查比的是 commit，所以只改了產品頁的 commit 也被當成新版。
+  現在版號相同時，會看一次改了哪些檔案；全部是文件（`docs/`、`qa-shots/`、`.github/`、Markdown）就不提示。讀不到的情況照舊提示。由
+  `tests_update_banner_ui.py`、`tests_update_docs_only.py` 守著。
+
+- **Switching a tab's conversation with /resume or /clear is recorded at once.**
+  Measured on Windows: after `/resume <id>` in a tab, ShellBot kept the old conversation id, so a restart reopened
+  the old one. `/resume` and `/clear` fire none of the hook events ShellBot listened to; they fire `SessionStart`,
+  which is now one of the status hooks. It records the conversation and changes no tab state. Covered by
+  `tests_win_restore_resume.py`.
+
+  **在分頁裡用 /resume 或 /clear 換對話，會立刻記下。** 在 Windows 上量到：分頁裡打 `/resume <編號>` 之後，ShellBot 還記著舊的對話
+  編號，重開又回到舊的。`/resume` 和 `/clear` 不會觸發 ShellBot 原本聽的任何 hook 事件，只會觸發 `SessionStart`；現在狀態 hook 也聽
+  它。它只記下對話，不改分頁狀態。由 `tests_win_restore_resume.py` 守著。
+
+### Added
+
+- **The office's bookshelf and personnel cabinet.**
+  Two pieces of furniture on the lobby wall, also reachable from 「書櫃」 and 「人事」 in the office's tool bar. They open
+  one shared popup: a list you can search and filter, a preview, and actions.
+  - The bookshelf holds each bot's memory, its skills (SKILL.md and the Markdown files it links to) and its session
+    summaries. Its red number is how many bots have a memory over 80% full.
+  - The personnel cabinet holds each bot's file: duty, CLI and model, awake or resting, open tasks and the schedules
+    it owns. External bots and bots on a local model are labelled, and each section lists its own items.
+  - Both are read only. 「用編輯器打開」 opens the file, 「請 X 更新」 sends that bot one line, and 「編輯執掌」 opens its
+    settings. Anything that looks like a secret is masked before it reaches the page.
+  Plugins can add their own office objects the same way (`docs/architecture.md` §7). Covered by
+  `tests_office_objects.py`, `tests_office_shelf.py` and `tests_office_objects_ui.py`.
+
+  **辦公室的書櫃和人事檔案櫃。** 大廳牆邊多兩件家具，也可以從辦公室工具列的「書櫃」「人事」打開。兩者共用一個彈出視窗：可以搜尋、篩選
+  的清單，旁邊是預覽，下面是動作鈕。
+  - 書櫃收著每個 bot 的記憶、技能（SKILL.md 和它連到的 Markdown）和對話摘要。紅色數字是記憶超過八成的 bot 數。
+  - 人事檔案櫃是每個 bot 一份檔案：執掌、CLI 和模型、醒著或休息、手上任務、負責的排程。外部的和跑地端模型的 bot 會標出來，每一段
+    底下直接列它自己的項目。
+  - 兩者都只看不改：「用編輯器打開」打開檔案，「請 X 更新」傳一行給那個 bot，「編輯執掌」打開它的設定。看起來像金鑰的字在送到畫面前就
+    遮掉。
+  外掛可以用同一套方式加自己的辦公室物件（`docs/architecture.md` 第 7 節）。由 `tests_office_objects.py`、`tests_office_shelf.py`、
+  `tests_office_objects_ui.py` 守著。
+
+- **Deliverables on the desk.**
+  Asked for: files and links a bot hands over get lost in long conversations. Each one now lands on its owner's desk
+  in the office as a pile of papers, with a small object per file type. Open it, then 先放著 (keep it on the desk),
+  拿走 (clear it; kept in history) or 請他改 (one line to the bot). Bots register what they hand over with
+  `sfctl deliver add <path or link> --title …`, and every bot's system prompt now says so. When a bot forgets, the
+  files its reply mentions are offered as 「可能是交付物」 at the end of the turn, and go on the desk only if you accept
+  them. Keys, credentials, config files and code are never picked up, and previews mask anything that looks like a
+  secret. The deliverables are also listed under 「待你決定」, with a paperclip and count on the owner's avatar in the
+  sidebar, and behind 「交付物」 in the office's tool bar. Covered by `tests_deliverables.py`,
+  `tests_office_deliverables.py`, `tests_deliverables_api.py` and `tests_deliverables_ui.py`.
+
+  **交付物放在桌上。** 需求：bot 交出來的檔案和連結，常常被長對話洗掉。現在每一件都放在它主人在辦公室的桌上，像一疊公文，不同檔案有
+  不同的小物件。打開看之後可以「先放著」（留在桌上）、「拿走」（清掉，留在紀錄裡）或「請他改」（傳一行給 bot）。bot 用
+  `sfctl deliver add <路徑或網址> --title …` 登記，每個 bot 的系統提示也加了這一句。bot 忘了登記時，每輪回覆結束後，回覆裡提到的檔案
+  會放進「可能是交付物」，你收下才上桌。金鑰、帳密、設定檔和程式碼一律不撿，預覽也會遮掉像秘密的字。交付物也列在右邊「待你決定」下面，
+  側欄頭像角落有迴紋針和件數，辦公室工具列有「交付物」鈕看全部。由 `tests_deliverables.py`、`tests_office_deliverables.py`、
+  `tests_deliverables_api.py`、`tests_deliverables_ui.py` 守著。
+
+- **The interface in English.**
+  The main window (settings, the sidebar, pairing and remote maintenance, usage, accounts) and most of the office
+  (the board's cards and reply form, the person panel, the tool bar) now follow the interface language. Before, part
+  of them stayed in Chinese. Text sent to bots and Telegram is unchanged. Covered by the locale-aware UI tests and
+  `tests_office_i18n.py`.
+
+  **介面英文版。** 主視窗（設定、側欄、配對與遠端維護、用量、帳號）和大部分辦公室（看板卡片和回覆框、人物面板、工具列）現在跟著介面
+  語言走，以前有一部分固定是中文。送給 bot 和 Telegram 的字沒有改。由各支依語言檢查的介面測試和 `tests_office_i18n.py` 守著。
+
 ## v0.59.1 (2026-11-19)
 
 ### Changes
